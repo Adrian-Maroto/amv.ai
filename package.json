@@ -1,17 +1,22 @@
 {
-  "name": "amv-ai",
-  "version": "0.1.0",
+  "name": "amv",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "AMV.AI — single-file AI platform with modular source + test suite.",
   "scripts": {
-    "build": "node build.mjs build",
-    "split": "node build.mjs split",
-    "dev": "node build.mjs dev",
-    "check": "node build.mjs check",
-    "test": "node tests/run-tests.mjs",
-    "start": "npm run dev"
+    "build": "node build.mjs",
+    "test": "node build.mjs && node tests/run.mjs",
+    "test:e2e": "node tests/run.mjs e2e",
+    "test:worker": "node tests/run.mjs worker",
+    "test:security": "node tests/run.mjs security",
+    "deploy": "wrangler deploy",
+    "preflight": "node preflight.mjs",
+    "predeploy": "node preflight.mjs",
+    "check": "node check.mjs",
+    "backup": "node backup.mjs export",
+    "restore": "node backup.mjs restore"
   },
-  "engines": { "node": ">=18" },
-  "devDependencies": { "playwright": "^1.40.0" }
+  "devDependencies": {
+    "playwright": "^1.44.0"
+  }
 }

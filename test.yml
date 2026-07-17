@@ -1,0 +1,25 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: npx playwright install --with-deps chromium
+      - name: Build
+        run: node build.mjs
+      - name: Syntax check the Worker as a MODULE
+        # `node --check` parses as a SCRIPT and will NOT catch a broken ES module.
+        # A `*/5` inside a block comment once closed it early and broke the whole
+        # Worker while --check stayed green. This catches that class of bug.
+        run: node --input-type=module -e "import('./amv-backend.js').catch(e => { if (e instanceof SyntaxError) { console.error(e); process.exit(1); } })"
+      - name: Run all tests
+        run: node tests/run.mjs

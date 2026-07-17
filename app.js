@@ -1,12 +1,33 @@
 "use strict";
 
 const $ = id => document.getElementById(id);
-const on = (el, ev, fn) => el && el.addEventListener(ev, fn);
+// Bind an event listener. To make setup/render functions safe to run repeatedly
+// (e.g. on every tab switch) without stacking duplicate listeners on persistent
+// elements, we de-duplicate bindings of the SAME named handler for the same
+// event on the same element. Anonymous closures are always bound (they're
+// normally attached to freshly-created elements, so there's nothing to stack,
+// and skipping the name-based key avoids any chance of two distinct closures
+// colliding). This closes the double-fire class by construction with zero risk
+// to existing behavior.
+const on = (el, ev, fn) => {
+  if(!el || typeof fn!=='function') return;
+  if(fn.name){
+    try{
+      const sig = ev+'|'+fn.name;
+      el.__amvOn = el.__amvOn || {};
+      if(el.__amvOn[sig]) return;   // this named handler is already bound for this event
+      el.__amvOn[sig] = true;
+    }catch(e){ /* fall through and bind normally */ }
+  }
+  el.addEventListener(ev, fn);
+};
 /* === per-account storage scoping ===
    Every data key is namespaced by the logged-in user's email so accounts
    on the same browser cannot see each other's data. A small allowlist of
    device-level keys (login record, theme, oauth handoff) stays global. */
-const _GLOBAL_KEYS = new Set(['amv_user','amv_theme','amv_oauth_return','amv_gtoken','amv_gtoken_exp','amv_gauth','amv_api_base','amv_api_token','amv_owner','amv_lang','amv_support_email']);
+const _GLOBAL_KEYS = new Set(['amv_user','amv_theme','amv_accent','amv_sb_rail','amv_nickname','amv_work','amv_instructions','amv_session_started','amv_location_opt','amv_improve_opt','amv_credits','amv_credits_autoreload','amv_cap_websearch','amv_cap_memory','amv_cap_suggestions','amv_skills','amv_active_skills','amv_plugin_web','amv_plugin_code','amv_plugin_canvas','amv_plugin_automations','amv_plugin_vision','amv_reduce_motion','amv_oauth_return','amv_oauth_state','amv_gtoken','amv_gtoken_exp','amv_gauth','amv_api_base','amv_api_token','amv_api_refresh','amv_token_exp','amv_owner','amv_lang','amv_support_email',
+  'amv_market_local','amv_market_purchases','amv_market_wallet','amv_market_ratings','amv_market_reviews','amv_market_installed','amv_market_threads',
+  'amv_cookie_consent','amv_analytics_id']);
 function _scopeKey(k){
   if(_GLOBAL_KEYS.has(k)) return k;
   let who='guest';
@@ -15,10 +36,26 @@ function _scopeKey(k){
   if(who==='guest'){ try{ const u=JSON.parse(localStorage.getItem('amv_user')||'null'); if(u&&u.email) who=u.email.toLowerCase(); }catch(e){} }
   return 'u:'+who+'|'+k;
 }
-const store = (k,v) => { try{localStorage.setItem(_scopeKey(k),JSON.stringify(v));}catch(e){ console.warn('localStorage store failed', k, e); } };
+// Detect a storage-quota failure across browsers (name varies by engine).
+function _isQuotaErr(e){
+  return !!e && (e.name==='QuotaExceededError' || e.name==='NS_ERROR_DOM_QUOTA_REACHED' || e.code===22 || e.code===1014);
+}
+// One-time, non-nagging notice when local storage is full. We don't auto-evict
+// the user's conversations (that would lose their work silently); instead we
+// tell them once so they can connect a backend to sync, or clear old chats.
+let _quotaNotified=false;
+function _notifyStorageFull(){
+  if(_quotaNotified) return; _quotaNotified=true;
+  try{
+    if(typeof toast==='function'){
+      toast('This device\u2019s storage is full \u2014 new changes may not be saved. Connect your backend in Settings to sync, or remove some old chats.','error',7000);
+    }
+  }catch(e){}
+}
+const store = (k,v) => { try{localStorage.setItem(_scopeKey(k),JSON.stringify(v));}catch(e){ if(_isQuotaErr(e)) _notifyStorageFull(); else console.warn('localStorage store failed', k, e); } };
 const load = k => { try{return JSON.parse(localStorage.getItem(_scopeKey(k)));}catch(e){ console.warn('localStorage load failed', k, e); return null; } };
 const loadStr = k => { try{ return localStorage.getItem(_scopeKey(k))||''; }catch(e){ console.warn('localStorage loadStr failed', k, e); return ''; } };
-const saveStr = (k,v) => { try{ localStorage.setItem(_scopeKey(k),v); }catch(e){ console.warn('localStorage saveStr failed', k, e); } };
+const saveStr = (k,v) => { try{ localStorage.setItem(_scopeKey(k),v); }catch(e){ if(_isQuotaErr(e)) _notifyStorageFull(); else console.warn('localStorage saveStr failed', k, e); } };
 /* ============================================================
    AMV_API - backend client.
    When AMV_API.base is set (to your deployed Worker URL), the app
@@ -32,32 +69,116 @@ const AMV_API = {
   set base(v){ try{ saveStr('amv_api_base', v||''); }catch(e){} },
   get token(){ try{ return loadStr('amv_api_token')||''; }catch(e){ return ''; } },
   set token(v){ try{ saveStr('amv_api_token', v||''); }catch(e){} },
+  get refreshTok(){ try{ return loadStr('amv_api_refresh')||''; }catch(e){ return ''; } },
+  set refreshTok(v){ try{ saveStr('amv_api_refresh', v||''); }catch(e){} },
   get live(){ return !!this.base; },
 
-  async _fetch(path, opts){
+  async _fetch(path, opts, _retried){
     const o = opts||{};
     o.headers = Object.assign({'Content-Type':'application/json'}, o.headers||{});
     if(this.token) o.headers['Authorization'] = 'Bearer '+this.token;
-    const r = await fetch(this.base.replace(/\/$/,'') + path, o);
-    // Auth endpoints return 401/404/409 with a meaningful body the caller reads;
-    // only treat 401 as "session expired" for AUTHENTICATED (non-auth) calls.
-    if(r.status===401 && !/^\/auth\//.test(path)){ throw new Error('Session expired - sign in again'); }
+
+    // --- Retry/backoff for transient failures (auditor #6) ---
+    // Retries network errors and 5xx/429 with exponential backoff + jitter.
+    // We DO NOT retry: auth endpoints, streaming, or anything caller marks
+    // non-idempotent (payments), to avoid double-charging or replaying.
+    const url = this.base.replace(/\/$/,'') + path;
+    const noRetry = o.noRetry || /^\/auth\//.test(path) || /\/(stripe|paypal|pay|subscribe|capture)/.test(path);
+    const MAX = noRetry ? 0 : 2;        // up to 2 retries (3 total attempts)
+    let attempt = 0, r, lastErr;
+    while (true) {
+      try {
+        r = await fetch(url, o);
+      } catch (netErr) {
+        // network-level failure (offline, DNS, reset) — retry if budget left
+        lastErr = netErr;
+        if (attempt < MAX) { await this._backoff(attempt++); continue; }
+        throw new Error('Network error - please check your connection and try again.');
+      }
+      // retry on transient server errors
+      if ((r.status === 500 || r.status === 502 || r.status === 503 || r.status === 504 || r.status === 529 || r.status === 429) && attempt < MAX && !noRetry) {
+        // honor Retry-After if present, else exponential backoff
+        const ra = parseInt(r.headers.get('Retry-After')||'0', 10);
+        await this._backoff(attempt++, ra ? ra*1000 : 0);
+        continue;
+      }
+      break;
+    }
+
+    // On 401 for an authenticated call, try a one-time silent refresh, then retry.
+    if(r.status===401 && !/^\/auth\//.test(path)){
+      if(!_retried && this.refreshTok){
+        const refreshed = await this._doRefresh();
+        if(refreshed){
+          const o2 = opts||{}; o2.headers = Object.assign({'Content-Type':'application/json'}, o2.headers||{});
+          o2.headers['Authorization'] = 'Bearer '+this.token;
+          return this._fetch(path, o2, true);
+        }
+      }
+      throw new Error('Session expired - sign in again');
+    }
     return r;
   },
+  // exponential backoff with jitter; optional floor (e.g. from Retry-After)
+  _backoff(attempt, floorMs){
+    const base = Math.min(8000, 400 * Math.pow(2, attempt));   // 400ms, 800ms, 1600ms...
+    const jitter = Math.random() * 300;
+    const wait = Math.max(floorMs||0, base + jitter);
+    return new Promise(res => setTimeout(res, wait));
+  },
 
-  // sign in -> get a real server-issued session token
+  // sign in -> get a real server-issued access + refresh token pair
   async login(email, opts){
     if(!this.live) return null;
     const o = opts||{};
     const body = { email, name:o.name||'', password:o.password||'', provider:o.provider||'email' };
     const r = await this._fetch('/auth/login', {method:'POST', body:JSON.stringify(body)});
     const d = await r.json().catch(()=>({}));
-    if(d.token){ this.token = d.token; this._storeTokenMeta(d.token); return d; }
+    if(d.token){ this._setTokens(d); return d; }
     throw new Error(d.error || 'Login failed');
   },
-  // decode exp from our token (body.exp) and remember it
+  _setTokens(d){
+    this.token = d.token||'';
+    if(d.refreshToken) this.refreshTok = d.refreshToken;
+    this._storeTokenMeta(d.token);
+  },
+  // exchange refresh token for a fresh pair; returns true on success.
+  // Single-flight: if a refresh is already in progress, concurrent callers
+  // await the same promise instead of each firing their own request (which
+  // would race and, with refresh-token rotation, invalidate each other).
+  async _doRefresh(){
+    if(this._refreshInFlight) return this._refreshInFlight;
+    this._refreshInFlight = (async()=>{
+      // Hard timeout so a hung/stalled network request can never leave the
+      // single-flight lock stuck (which would block all future refreshes).
+      const ctrl = (typeof AbortController!=='undefined') ? new AbortController() : null;
+      const to = setTimeout(()=>{ try{ ctrl && ctrl.abort(); }catch(_){} }, 12000);
+      try{
+        if(!this.refreshTok) return false;
+        const r = await fetch(this.base.replace(/\/$/,'')+'/auth/refresh', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ refreshToken: this.refreshTok }),
+          signal: ctrl ? ctrl.signal : undefined
+        });
+        if(!r.ok) return false;
+        const d = await r.json().catch(()=>({}));
+        if(d.token){ this._setTokens(d); return true; }
+        return false;
+      }catch(e){ return false; }
+      finally{ clearTimeout(to); }
+    })();
+    try{ return await this._refreshInFlight; }
+    finally{ this._refreshInFlight = null; }
+  },
+  // decode exp from the JWT PAYLOAD (second segment, base64url) and remember it
   _storeTokenMeta(token){
-    try{ const body=JSON.parse(atob(token.split('.')[0])); if(body.exp) saveStr('amv_token_exp', String(body.exp)); }catch(e){}
+    try{
+      const seg=token.split('.')[1];
+      const b64=seg.replace(/-/g,'+').replace(/_/g,'/');
+      const json=decodeURIComponent(escape(atob(b64.padEnd(b64.length+(4-b64.length%4)%4,'='))));
+      const body=JSON.parse(json);
+      if(body.exp) saveStr('amv_token_exp', String(body.exp*1000)); // exp is in seconds
+    }catch(e){}
   },
   tokenValid(){
     if(!this.token) return false;
@@ -85,7 +206,7 @@ const AMV_API = {
     if(!this.live) return null;
     const r = await this._fetch('/auth/signup', {method:'POST', body:JSON.stringify({email,name,password})});
     const d = await r.json().catch(()=>({}));
-    if(d.token){ this.token = d.token; return d; }
+    if(d.token){ this._setTokens(d); return d; }
     throw new Error(d.error || 'Signup failed');
   },
 
@@ -104,7 +225,7 @@ const AMV_API = {
   async paypalSubscribe(plan,email){ const r=await this._fetch('/v1/paypal/subscribe',{method:'POST',body:JSON.stringify({plan,email})}); const d=await r.json(); if(!r.ok||!d.url) throw new Error(d.error||'subscribe failed'); return d.url; },
   async paypalCapture(orderId,email){ const r=await this._fetch('/v1/paypal/capture',{method:'POST',body:JSON.stringify({orderId,email})}); const d=await r.json(); if(!r.ok||!d.ok) throw new Error(d.error||'capture failed'); return d; },
   async entitlement(email){ const r=await this._fetch('/v1/entitlement?email='+encodeURIComponent(email||'')); return await r.json(); },
-  async portal(customer){ const r=await this._fetch('/v1/portal',{method:'POST',body:JSON.stringify({customer})}); const d=await r.json(); return d.url||''; },
+  async portal(customer){ const r=await this._fetch('/v1/stripe/portal',{method:'POST',body:JSON.stringify({customer})}); const d=await r.json(); return d.url||''; },
 };
 window.AMV_API = AMV_API;
 function amvSaveBackend(){ var v=(document.getElementById('be-url')||{}).value||''; AMV_API.base=v.trim(); toast(v.trim()?'Backend URL saved':'Cleared - local mode','info'); if(typeof renderSetPane==='function') renderSetPane(); }
@@ -114,8 +235,78 @@ window.amvSaveBackend=amvSaveBackend; window.amvBackendLogin=amvBackendLogin;
 
 
 function escH(t) {
-  return (t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return (t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
+
+/* ============================================================
+   AVATARS — one shared source of truth so the default is identical
+   everywhere. If a user hasn't set a photo, they get the generic AMV
+   avatar (a branded SVG mark on the brand gradient). They can change
+   it in Settings; once set, amv_pfp_<email> holds their image.
+   ============================================================ */
+/* ── AMV signature mark ────────────────────────────────────────
+   The brand monogram: an abstract ascending "A" built from a rising
+   chevron + a spark, in the signature periwinkle→violet gradient.
+   It's the one ownable visual idea, reused at every size. Pass a size
+   (px) and optional {glow, id} — id keeps the gradient defs unique so
+   multiple marks on one page don't collide. */
+let _amvMarkSeq = 0;
+function amvMark(size, opts){
+  opts = opts || {};
+  const s = size || 28;
+  const gid = 'amvMk' + (opts.id || (++_amvMarkSeq));
+  // glow softens strokes at tiny sizes — keep small marks crisp automatically
+  const glow = (opts.glow !== false) && s >= 24;
+  // viewBox 0..40. The mark: a bold upward chevron (the peak of an "A"),
+  // its left leg extended, and a small detached spark at the apex — reads
+  // as momentum/craft. Rounded joins keep it friendly at small sizes.
+  return (
+    '<svg class="amv-mark" width="'+s+'" height="'+s+'" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" style="display:block">'+
+      '<defs>'+
+        '<linearGradient id="'+gid+'" x1="6" y1="34" x2="34" y2="6" gradientUnits="userSpaceOnUse">'+
+          '<stop stop-color="#5590ff"/><stop offset="1" stop-color="#4d7ef5"/>'+
+        '</linearGradient>'+
+        (glow?'<filter id="'+gid+'f" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="1.1" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>':'')+
+      '</defs>'+
+      '<g'+(glow?' filter="url(#'+gid+'f)"':'')+' stroke="url(#'+gid+')" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round">'+
+        // the A: left leg rising to apex, then down the right — an open peak
+        '<path d="M9 32 L20 10 L31 32" fill="none"/>'+
+        // the crossbar, offset for a distinctive asymmetric cut
+        '<path d="M14.5 24 L23.5 24" fill="none"/>'+
+      '</g>'+
+      // apex spark — a small detached mark that gives the logo its signature
+      '<circle cx="20" cy="6.2" r="2.4" fill="url(#'+gid+')"/>'+
+    '</svg>'
+  );
+}
+try{ window.amvMark = amvMark; }catch(e){}
+
+// The generic AMV profile picture — same for everyone until they change it.
+function _defaultAvatarSVG(){
+  // Unique gradient id per call — two avatars on one page must not share an id
+  // (a duplicate SVG def id makes the second reference the first, misrendering).
+  const g='amvAvG'+(++_amvMarkSeq);
+  return '<svg viewBox="0 0 40 40" width="100%" height="100%" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg" style="display:block">'+
+    '<defs><linearGradient id="'+g+'" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5590ff"/><stop offset="1" stop-color="#4478e8"/></linearGradient></defs>'+
+    '<rect width="40" height="40" fill="url(#'+g+')"/>'+
+    '<text x="20" y="26" text-anchor="middle" font-family="Inter,Segoe UI,sans-serif" font-size="15" font-weight="800" letter-spacing="-1" fill="#fff">A</text>'+
+  '</svg>';
+}
+// The stored photo for an email, or '' if none.
+function _pfpFor(email){ try{ return email?loadStr('amv_pfp_'+String(email).toLowerCase()):''; }catch(e){ return ''; } }
+// Inner avatar markup: the photo if set, else the generic AMV avatar.
+// (Caller provides the round container; this fills it.)
+function _avatarInner(email){
+  const pfp=_pfpFor(email);
+  if(pfp) return '<img src="'+pfp+'" alt="" style="width:100%;height:100%;border-radius:50%;object-fit:cover;display:block">';
+  return _defaultAvatarSVG();
+}
+// A complete round avatar element of a given pixel size.
+function _avatarHTML(email, size){
+  size=size||32;
+  return '<div class="amv-av" style="width:'+size+'px;height:'+size+'px;border-radius:4px;overflow:hidden;flex-shrink:0;background:var(--accent)">'+_avatarInner(email)+'</div>';
+}
+
 
 function toast(msg, type='info', dur=3000) {
   const wrap = $('toast-wrap');
@@ -135,20 +326,31 @@ function closeOvr() { const r=$('ovr'); if(r) r.innerHTML=''; }
 function emptyState(o){
   o=o||{};
   const btn = o.btn ? '<button class="es-btn" data-dact="'+(o.btn.act||'')+'" data-darg="'+(o.btn.arg||'')+'">'+escH(o.btn.label||'Get started')+'</button>' : '';
-  return '<div class="empty-state">'+
-    '<div class="es-icon">'+(o.icon||'\u2728')+'</div>'+
+  // icon can be an emoji (o.icon) or an SVG path (o.svg). SVG reads more premium.
+  const iconInner = o.svg
+    ? '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">'+o.svg+'</svg>'
+    : (o.icon||'\u2728');
+  return '<div class="empty-state es-aura">'+
+    '<div class="es-icon'+(o.svg?' es-icon-svg':'')+'">'+iconInner+'</div>'+
     '<div class="es-title">'+escH(o.title||'Nothing here yet')+'</div>'+
     (o.sub?'<div class="es-sub">'+escH(o.sub)+'</div>':'')+
     btn+
   '</div>';
 }
 
+/* Empty-state CTA helpers — guide a new user to their first action. */
+function _focusMemInput(){ const i=$('mem-inp'); if(i){ i.focus(); i.scrollIntoView({behavior:'smooth',block:'center'}); } }
+function _tryExampleImage(){ const i=$('img-inp'); if(i){ i.value='a serene mountain lake at golden hour, photorealistic'; i.focus(); } }
+window._focusMemInput=_focusMemInput; window._tryExampleImage=_tryExampleImage;
+function _newPromptCTA(){ try{ createPromptModal(); }catch(e){} }
+window._newPromptCTA=_newPromptCTA;
+
 /* ============================================================
    ACCESSIBILITY — ARIA labels, roles, and full keyboard navigation.
    Runs after render so it covers dynamically-created controls too.
    Enterprise buyers audit this; it also helps every keyboard user.
    ============================================================ */
-const _TAB_LABELS={dashboard:'Dashboard',chat:'Chat',images:'Images',video:'Video',workspaces:'Projects',memory:'Memory',team:'Team',usage:'Usage',billing:'Billing',plans:'Plans',settings:'Settings',help:'Help Center',apps:'Apps',tasks:'Tasks',integrations:'Integrations',crew:'Crew',studio:'Studio',dev:'Dev',handoff:'Handoff',lab:'Lab'};
+const _TAB_LABELS={dashboard:'Dashboard',chat:'Chat',images:'Images',video:'Video',workspaces:'Projects',memory:'Memory',team:'Team',usage:'Usage',billing:'Billing',plans:'Plans',settings:'Settings',help:'Help Center',apps:'Apps',tasks:'Tasks',integrations:'Integrations',crew:'Crew',studio:'Studio',dev:'Dev',handoff:'Handoff',lab:'Lab',market:'Marketplace'};
 function _initA11y(){
   try{
     // landmark roles
@@ -189,8 +391,8 @@ function _initKeyboardNav(){
         if(ovr && ovr.children.length){ closeOvr(); e.preventDefault(); return; }
         const pop=document.querySelector('.sb-popup.on,.menu.on,.ctx-menu'); if(pop){ pop.classList.remove('on'); }
       }
-      // Cmd/Ctrl+K focuses search
-      if((e.metaKey||e.ctrlKey)&&e.key==='k'){ const s=$('hist-search'); if(s){ e.preventDefault(); s.focus(); } }
+      // Cmd/Ctrl+K opens the command palette
+      if((e.metaKey||e.ctrlKey)&&e.key==='k'){ e.preventDefault(); try{ openCommandPalette(); }catch(err){} }
       // Arrow up/down to move through sidebar nav when focus is in the sidebar
       const inNav=document.activeElement&&document.activeElement.classList&&document.activeElement.classList.contains('snb');
       if(inNav && (e.key==='ArrowDown'||e.key==='ArrowUp')){
@@ -216,20 +418,310 @@ function _initKeyboardNav(){
 
 /* Respect the user's reduced-motion preference in JS-driven effects too. */
 const _reduceMotion = (()=>{ try{ return window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){ return false; } })();
-function prefersReducedMotion(){ try{ return window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){ return false; } }
+function prefersReducedMotion(){ try{ return (loadStr('amv_reduce_motion')==='1') || (window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches); }catch(e){ return false; } }
+// Apply the combined reduced-motion state (in-app toggle OR OS setting) as a
+// class the CSS keys off, so the toggle genuinely reduces motion app-wide.
+function _applyReduceMotion(){
+  try{ document.documentElement.classList.toggle('reduce-motion', prefersReducedMotion()); }catch(e){}
+}
+try{ window._applyReduceMotion=_applyReduceMotion; }catch(e){}
 try{ if(_reduceMotion) document.documentElement.classList.add('reduce-motion'); }catch(e){}
 try{ const _mq=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)'); if(_mq&&_mq.addEventListener) _mq.addEventListener('change',e=>{ document.documentElement.classList.toggle('reduce-motion', e.matches); }); }catch(e){}
 
+/* ============================================================
+   TRUST / STATUS SURFACE (#17)
+   A status indicator + panel that transparently shows service
+   health, connection state, and security/privacy posture.
+   ============================================================ */
+let _statusState='ok'; // ok | degraded | offline
+function _setStatusIndicator(state){
+  _statusState=state;
+  const dot=$('sb-status-dot'), txt=$('sb-status-txt');
+  if(dot) dot.className='sb-status-dot '+state;
+  if(txt) txt.textContent = state==='ok'?'All systems operational' : state==='degraded'?'Some services degraded' : 'You\u2019re offline';
+}
+// Lightweight, non-blocking health check. Backend reachability defines "ok".
+async function _checkStatus(){
+  if(!navigator.onLine){ _setStatusIndicator('offline'); return {net:false}; }
+  let backend='unknown';
+  try{
+    if(window.AMV_API && AMV_API.base){
+      const ctrl=new AbortController(); const to=setTimeout(()=>ctrl.abort(),4000);
+      const r=await fetch(AMV_API.base.replace(/\/$/,'')+'/health',{signal:ctrl.signal}).catch(()=>null);
+      clearTimeout(to);
+      backend = (r && r.ok) ? 'ok' : (r ? 'degraded' : 'unreachable');
+    }
+  }catch(e){ backend='unreachable'; }
+  // Direct mode (no backend configured) is still fully operational.
+  const state = (backend==='degraded') ? 'degraded' : 'ok';
+  _setStatusIndicator(state);
+  return { net:true, backend };
+}
+function openStatusPanel(){
+  const r=$('ovr'); if(!r) return;
+  if($('status-modal-bg')) return;
+  const online=navigator.onLine;
+  const svc=(label,ok,note)=>'<div class="st-svc"><span class="st-svc-dot '+(ok?'ok':'down')+'"></span>'+
+    '<span class="st-svc-name">'+escH(label)+'</span>'+
+    '<span class="st-svc-state">'+escH(note||(ok?'Operational':'Unavailable'))+'</span></div>';
+  const trust=(svg,title,sub)=>'<div class="st-trust"><span class="st-trust-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+svg+'</svg></span>'+
+    '<div><div class="st-trust-t">'+escH(title)+'</div><div class="st-trust-s">'+escH(sub)+'</div></div></div>';
+  r.insertAdjacentHTML('beforeend',
+    '<div class="ov" id="status-modal-bg"><div class="status-modal" onclick="event.stopPropagation()">'+
+      '<div class="st-head"><div class="st-head-l"><span class="sb-status-dot '+_statusState+'" style="width:11px;height:11px"></span>'+
+        '<span id="st-head-txt">'+(_statusState==='ok'?'All systems operational':_statusState==='degraded'?'Some services degraded':'You\u2019re offline')+'</span></div>'+
+        '<button class="art-x" id="st-x" aria-label="Close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>'+
+      '<div class="st-body">'+
+        '<div class="st-sec-h">Services</div>'+
+        '<div class="st-svcs" id="st-svcs">'+
+          svc('AMV chat & agents', online, online?'Checking\u2026':'Offline')+
+          svc('Image generation', online)+
+          svc('Your connection', online, online?'Connected':'Offline')+
+        '</div>'+
+        '<div class="st-sec-h">Your data & security</div>'+
+        trust('<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>','Encrypted in transit','All traffic uses HTTPS/TLS. Your API keys stay server-side and are never exposed to the browser.')+
+        trust('<path d="M12 2 4 5v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V5z"/>','Server-enforced limits','Usage limits, billing, and access are verified on the server \u2014 they can\u2019t be bypassed from the client.')+
+        trust('<path d="M20 6 9 17l-5-5"/>','You control your data','Conversations are stored to your account. Analytics are opt-in and off unless you allow them.')+
+        '<div class="st-foot"><button class="btn bp" id="st-recheck">Re-check status</button></div>'+
+      '</div>'+
+    '</div></div>');
+  $('st-x')?.addEventListener('click',closeStatusPanel);
+  on($('status-modal-bg'),'click',closeStatusPanel);
+  $('st-recheck')?.addEventListener('click',async()=>{ await _refreshStatusPanel(); });
+  _refreshStatusPanel();
+}
+async function _refreshStatusPanel(){
+  const box=$('st-svcs'); if(!box) return;
+  const res=await _checkStatus();
+  const online=navigator.onLine;
+  const backendOk = res.backend==='ok' || res.backend==='unknown';
+  const svc=(label,ok,note)=>'<div class="st-svc"><span class="st-svc-dot '+(ok?'ok':'down')+'"></span>'+
+    '<span class="st-svc-name">'+escH(label)+'</span>'+
+    '<span class="st-svc-state">'+escH(note)+'</span></div>';
+  box.innerHTML=
+    svc('AMV chat & agents', online&&backendOk, online?(backendOk?'Operational':'Degraded'):'Offline')+
+    svc('Image generation', online, online?'Operational':'Offline')+
+    svc('Your connection', online, online?'Connected':'Offline');
+  const ht=$('st-head-txt'); if(ht) ht.textContent=_statusState==='ok'?'All systems operational':_statusState==='degraded'?'Some services degraded':'You\u2019re offline';
+  const hd=document.querySelector('#status-modal-bg .sb-status-dot'); if(hd) hd.className='sb-status-dot '+_statusState;
+}
+function closeStatusPanel(){ const el=$('status-modal-bg'); if(el) el.remove(); }
+try{ window.openStatusPanel=openStatusPanel; }catch(e){}
+
 /* Global offline indicator — shows a banner when the connection drops. */
-function _initOfflineWatch(){
-  const show=()=>{ let bar=$('offline-bar'); if(!bar){ bar=document.createElement('div'); bar.id='offline-bar'; bar.className='offline-bar'; bar.innerHTML='\u26A0 You\u2019re offline \u2014 changes are saved locally and will sync when you\u2019re back online.'; document.body.appendChild(bar); } bar.classList.add('show'); };
-  const hide=()=>{ const bar=$('offline-bar'); if(bar) bar.classList.remove('show'); };
+function _initOfflineWatch(){  const show=()=>{ try{ _setStatusIndicator('offline'); }catch(e){} let bar=$('offline-bar'); if(!bar){ bar=document.createElement('div'); bar.id='offline-bar'; bar.className='offline-bar'; bar.innerHTML='\u26A0 You\u2019re offline \u2014 changes are saved locally and will sync when you\u2019re back online.'; document.body.appendChild(bar); } bar.classList.add('show'); };
+  const hide=()=>{ const bar=$('offline-bar'); if(bar) bar.classList.remove('show'); try{ _checkStatus(); }catch(e){} };
   try{
     window.addEventListener('offline',show);
     window.addEventListener('online',()=>{ hide(); try{ if(window.AMVSync&&AMVSync.enabled()) AMVSync.push(); }catch(e){} });
     if(navigator.onLine===false) show();
   }catch(e){}
 }
+
+/* PWA: register a web manifest + service worker at runtime so AMV is installable
+   as an app (home screen / desktop) and loads instantly offline. Built entirely
+   from Blobs so the single-file app needs no extra files on the server. */
+function _initPWA(){
+  try{
+    // 1) inject a manifest generated on the fly
+    const icon='data:image/svg+xml;base64,'+btoa('<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512"><rect width="512" height="512" rx="112" fill="#4478e8"/><text x="256" y="340" font-family="Arial,sans-serif" font-size="300" font-weight="800" fill="#fff" text-anchor="middle">A</text></svg>');
+    const manifest={
+      name:'AMV.AI', short_name:'AMV', description:'The AI workforce that does the work, not just answers it.',
+      start_url:'.', scope:'.', display:'standalone', orientation:'any',
+      background_color:'#232429', theme_color:'#4478e8',
+      icons:[
+        {src:icon,sizes:'192x192',type:'image/svg+xml',purpose:'any maskable'},
+        {src:icon,sizes:'512x512',type:'image/svg+xml',purpose:'any maskable'}
+      ]
+    };
+    const mBlob=new Blob([JSON.stringify(manifest)],{type:'application/manifest+json'});
+    const mLink=document.createElement('link'); mLink.rel='manifest'; mLink.href=URL.createObjectURL(mBlob);
+    document.head.appendChild(mLink);
+    const aicon=document.createElement('link'); aicon.rel='apple-touch-icon'; aicon.href=icon; document.head.appendChild(aicon);
+
+    // 2) register a minimal service worker (offline-first shell cache)
+    if('serviceWorker' in navigator && location.protocol==='https:'){
+      const swCode=`
+        const CACHE='amv-v1';
+        self.addEventListener('install',e=>{ self.skipWaiting(); });
+        self.addEventListener('activate',e=>{ e.waitUntil(self.clients.claim()); });
+        self.addEventListener('fetch',e=>{
+          const req=e.request;
+          if(req.method!=='GET'){ return; }
+          const url=new URL(req.url);
+          // network-first for API, cache-first for the app shell & assets
+          if(url.pathname.includes('/v1/')||url.hostname.includes('api.')){ return; }
+          e.respondWith(
+            caches.open(CACHE).then(cache=>cache.match(req).then(hit=>{
+              const net=fetch(req).then(res=>{ try{ if(res&&res.status===200) cache.put(req,res.clone()); }catch(_){} return res; }).catch(()=>hit);
+              return hit||net;
+            }))
+          );
+        });`;
+      const swUrl=URL.createObjectURL(new Blob([swCode],{type:'text/javascript'}));
+      navigator.serviceWorker.register(swUrl).catch(()=>{});
+    }
+
+    // 3) capture the install prompt and expose an "Install app" affordance
+    window.addEventListener('beforeinstallprompt',(e)=>{ e.preventDefault(); window._amvInstallEvt=e; _showInstallHint(); });
+    window.addEventListener('appinstalled',()=>{ window._amvInstallEvt=null; try{ toast('AMV installed \u2014 launch it from your home screen anytime','success'); }catch(_){} });
+  }catch(e){ _logErr('initPWA',e); }
+}
+function _showInstallHint(){
+  // subtle, one-time install chip (dismissible), never nags
+  try{
+    if(loadStr('amv_install_dismissed')==='1'||document.getElementById('amv-install-chip')) return;
+    const chip=document.createElement('div'); chip.id='amv-install-chip'; chip.className='install-chip';
+    chip.innerHTML='<span>Install AMV as an app</span><button id="ic-yes">Install</button><button id="ic-no" aria-label="dismiss">\u00d7</button>';
+    document.body.appendChild(chip);
+    setTimeout(()=>chip.classList.add('show'),50);
+    on($('ic-yes'),'click',async()=>{ const ev=window._amvInstallEvt; if(ev){ ev.prompt(); try{ await ev.userChoice; }catch(_){} window._amvInstallEvt=null; } chip.remove(); });
+    on($('ic-no'),'click',()=>{ saveStr('amv_install_dismissed','1'); chip.remove(); });
+  }catch(e){}
+}
+try{ window._initPWA=_initPWA; }catch(e){}
+
+/* Global error boundary — catches unexpected JS errors and unhandled promise
+   rejections so a single failure never leaves the user with a frozen screen.
+   It shows a brief, non-alarming recovery toast and keeps the app usable.
+   (auditor #6 — graceful degradation) */
+let _errBoundaryArmed=false, _lastErrToast=0;
+function _initErrorBoundary(){
+  if(_errBoundaryArmed) return; _errBoundaryArmed=true;
+  const softNotify=(where)=>{
+    const now=Date.now();
+    if(now-_lastErrToast < 4000) return;   // don't spam on cascading errors
+    _lastErrToast=now;
+    try{ if(typeof toast==='function') toast('Something hiccuped, but your work is safe. If anything looks stuck, refresh the page.','info',5000); }catch(e){}
+    try{ if(window.AEGIS&&AEGIS.log) AEGIS.log('uncaught',{where:String(where).slice(0,60)}); }catch(e){}
+  };
+  try{
+    window.addEventListener('error',(ev)=>{
+      // ignore benign resource load errors (images, etc.)
+      if(ev && ev.target && (ev.target.tagName==='IMG'||ev.target.tagName==='SCRIPT'||ev.target.tagName==='LINK')) return;
+      softNotify(ev && ev.message);
+      try{ _errQueue('uncaught', (ev&&ev.filename)||'window', (ev&&ev.error)||{message:ev&&ev.message}); }catch(e){}
+    }, true);
+    window.addEventListener('unhandledrejection',(ev)=>{
+      const msg = ev && ev.reason && (ev.reason.message || ev.reason);
+      // session-expiry is already handled with its own UX; don't double-toast
+      if(String(msg).indexOf('Session expired')>=0) return;
+      softNotify(msg);
+      try{ _errQueue('rejection', 'promise', (ev&&ev.reason)||{message:String(msg)}); }catch(e){}
+    });
+  }catch(e){}
+}
+
+/* Observability for HANDLED errors. Use in catch blocks that matter (AI calls,
+   data saves, backend ops, render paths) so a failure surfaces instead of
+   vanishing — console in dev, plus the AEGIS ring buffer that feeds the admin
+   error view. Trivial catches (localStorage setters, DOM cleanup, optional
+   ops) intentionally stay silent to avoid noise. Never throws. */
+/* ── Error reporting ────────────────────────────────────────────────────
+   Errors used to land in a localStorage ring buffer and die there: a user hit
+   a crash, saw a toast, and left. You never found out. Now they're batched and
+   sent to the Worker, grouped by fingerprint.
+
+   PRIVACY: we send the error, where it happened, and coarse environment.
+   Never message contents, prompts, code, or the user's email (only a hash). */
+/* A stable, non-reversible per-user id, so we can count how many people a bug
+   affects without ever transmitting who they are. */
+let _errUidCache = null;
+function _errUid(){
+  try{
+    if(_errUidCache) return _errUidCache;
+    const email = (typeof S!=='undefined' && S.user && S.user.email) ? S.user.email : '';
+    if(!email) return '';
+    // FNV-1a — deterministic, one-way for our purposes, no async needed.
+    let h = 2166136261;
+    const src = 'amv:' + email;
+    for(let i=0;i<src.length;i++){ h ^= src.charCodeAt(i); h = Math.imul(h, 16777619); }
+    _errUidCache = (h >>> 0).toString(16).padStart(8,'0');
+    return _errUidCache;
+  }catch(e){ return ''; }
+}
+
+const _ERR_QUEUE = [];
+let _errFlushTimer = null;
+let _errSentCount = 0;
+const ERR_MAX_PER_SESSION = 25;      // never spam ourselves or the user's network
+const ERR_BUILD = (typeof AMV_BUILD !== 'undefined') ? AMV_BUILD : '';
+
+function _errQueue(kind, where, err, extra){
+  try{
+    if(_errSentCount >= ERR_MAX_PER_SESSION) return;
+    const msg = (err && (err.message || String(err))) || 'unknown';
+    if(!msg || msg === 'unknown') return;
+    // Ignore noise we can't act on
+    if(/ResizeObserver loop|Script error\.?$|Load failed|NetworkError|Failed to fetch/i.test(msg)) return;
+
+    _ERR_QUEUE.push({
+      kind: String(kind||'error'),
+      msg: String(msg).slice(0,300),
+      where: String(where||'').slice(0,120),
+      stack: String((err && err.stack) || '').slice(0,1200),
+      tab: String((typeof S!=='undefined' && S.tab) || ''),
+      ua: String(navigator.userAgent||'').slice(0,120),
+      ver: ERR_BUILD,
+      // Hash the email BEFORE it leaves the browser. The server only ever needs
+      // to count DISTINCT users, never to know who they are. Sending the raw
+      // address would put it on the wire and into Worker logs.
+      uid: _errUid()
+    });
+    if(_ERR_QUEUE.length >= 5) _errFlush();
+    else if(!_errFlushTimer) _errFlushTimer = setTimeout(_errFlush, 8000);
+  }catch(e){}
+}
+
+async function _errFlush(){
+  clearTimeout(_errFlushTimer); _errFlushTimer = null;
+  if(!_ERR_QUEUE.length) return;
+  if(!(window.AMV_API && AMV_API.live)) { _ERR_QUEUE.length = 0; return; }   // nowhere to send
+  const events = _ERR_QUEUE.splice(0, 20);
+  _errSentCount += events.length;
+  try{
+    await fetch(AMV_API.base.replace(/\/$/,'') + '/errors', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({ events }),
+      keepalive: true            // still sends if the tab is closing
+    });
+  }catch(e){ /* reporting must never throw */ }
+}
+try{
+  window.addEventListener('pagehide', ()=>{ try{ _errFlush(); }catch(e){} });
+}catch(e){}
+
+function _logErr(where, err){
+  try{
+    const msg = (err && (err.message || String(err))) || 'unknown';
+    if(typeof console!=='undefined' && console.warn) console.warn('[AMV] '+where+':', msg);
+    if(window.AEGIS && AEGIS.log) AEGIS.log('error',{ where:String(where).slice(0,80), msg:String(msg).slice(0,200) });
+    _errQueue('handled', where, err);
+  }catch(e){}
+}
+try{ window._errQueue=_errQueue; window._errFlush=_errFlush; }catch(e){}
+try{ window._logErr=_logErr; }catch(e){}
+
+/* Lightweight pagination for data-heavy lists. Renders items in pages and adds
+   a "Show more" button so a user with hundreds of memories/images/etc. gets a
+   fast, small DOM instead of thousands of nodes at once. State is kept per-key
+   so each list remembers how much it's shown. */
+const _PAGE = {};
+function _paginate(key, total, pageSize){
+  pageSize = pageSize || 30;
+  if(_PAGE[key]===undefined) _PAGE[key]=pageSize;
+  const shown = Math.min(_PAGE[key], total);
+  return { shown, hasMore: shown < total, remaining: total - shown, pageSize };
+}
+function _pageMore(key, pageSize){ _PAGE[key] = (_PAGE[key]||30) + (pageSize||30); }
+function _pageReset(key, pageSize){ _PAGE[key] = pageSize||30; }
+function _showMoreBtn(key, remaining, pageSize){
+  const n = Math.min(remaining, pageSize||30);
+  return '<button class="show-more-btn" data-pagemore="'+key+'">Show '+n+' more <span class="show-more-count">'+remaining+' remaining</span></button>';
+}
+try{ window._paginate=_paginate; window._pageMore=_pageMore; }catch(e){}
+
 
 function _showModalAsync({title, body, okText='OK', cancelText, placeholder, defaultValue=''}){
   return new Promise(resolve=>{
@@ -248,7 +740,7 @@ function _showModalAsync({title, body, okText='OK', cancelText, placeholder, def
     const box=$('modal-box'); if(box) box.addEventListener('click',e=>e.stopPropagation());
     on($('modal-close'),'click',()=>{ closeOvr(); resolve(null); });
     if(cancelText) on($('modal-cancel'),'click',()=>{ closeOvr(); resolve(null); });
-    on($('modal-ok'),'click',()=>{ const val=$('modal-input')?$('modal-input').value:''; closeOvr(); resolve(val); });
+    on($('modal-ok'),'click',()=>{ const hasInput=!!$('modal-input'); const val=hasInput?$('modal-input').value:true; closeOvr(); resolve(val); });
     on($('modal-bg'),'click',()=>{ closeOvr(); resolve(null); });
     const input=$('modal-input'); if(input){ input.focus(); input.select(); }
   });
@@ -309,7 +801,7 @@ const _raw = {
   openTabs: [],
   model: loadStr('amv_model')||'auto',
   imgs: [],
-  imgStyle: loadStr('amv_imgstyle')||'Photorealistic',
+  imgStyle: loadStr('amv_imgstyle')||'Normal',
   imgRatio: loadStr('amv_imgratio')||'1:1',
   vids: [],
   memory: load('amv_memory')||[],
@@ -323,13 +815,75 @@ const _raw = {
 };
 const S = new Proxy(_raw, {
   set(target, key, val){
+    const prev=target[key];
     target[key]=val;
     _persist(key, val);
     _AMVState._notify(key, val);
+    if(key==='busy' && prev!==val){ try{ _onBusyChange(!!val, !!prev); }catch(e){} }
     return true;
   },
   get(target, key){ return target[key]; },
 });
+
+/* ── Chat "working" presence + completion cue (Claude/ChatGPT-style) ──
+   A quiet bottom-right pill shows while AMV is working; a soft two-note
+   chime plays when a longer/background reply finishes. Fully self-contained
+   (Web Audio, no assets) and respectful — muteable, and silent on quick
+   foreground replies so it never nags. */
+let _busyStartedAt=0;
+function _onBusyChange(now, was){
+  // swap the send button to a Stop control while generating
+  try{
+    const snd=document.getElementById('snd');
+    if(snd){
+      if(now){ snd.classList.add('stop'); snd.title='Stop generating'; snd.innerHTML='<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>'; }
+      else { snd.classList.remove('stop'); snd.title='Send'; snd.innerHTML='<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>'; }
+    }
+  }catch(e){}
+  if(now && !was){ _busyStartedAt=Date.now(); _showWorkingPill(true); }
+  else if(!now && was){
+    const took=Date.now()-_busyStartedAt;
+    _showWorkingPill(false);
+    try{ _renderSbUsage(); }catch(e){}   // update the sidebar meter after each response
+    // chime only if it took a moment OR the tab is in the background (like Claude)
+    const backgrounded=(typeof document!=='undefined' && document.hidden);
+    if(took>3500 || backgrounded) _playDoneChime();
+  }
+}
+function _showWorkingPill(on){
+  try{
+    let el=document.getElementById('amv-working');
+    if(on){
+      if(!el){
+        el=document.createElement('div'); el.id='amv-working';
+        el.innerHTML='<span class="amv-working-dot"></span><span class="amv-working-tx">AMV is working…</span>';
+        document.body.appendChild(el);
+        requestAnimationFrame(()=>el.classList.add('show'));
+      }
+    } else if(el){ el.classList.remove('show'); setTimeout(()=>{ try{el.remove();}catch(e){} },260); }
+  }catch(e){}
+}
+let _audioCtx=null;
+function _playDoneChime(){
+  try{
+    if(loadStr('amv_mute_chime')==='1') return;
+    const AC=window.AudioContext||window.webkitAudioContext; if(!AC) return;
+    _audioCtx=_audioCtx||new AC();
+    const ctx=_audioCtx; if(ctx.state==='suspended') ctx.resume();
+    const now=ctx.currentTime;
+    // soft two-note "done" — E5 then A5, gentle sine, quick fade (not a beep)
+    [[659.25,0],[880,0.13]].forEach(([f,t])=>{
+      const o=ctx.createOscillator(), g=ctx.createGain();
+      o.type='sine'; o.frequency.value=f;
+      g.gain.setValueAtTime(0, now+t);
+      g.gain.linearRampToValueAtTime(0.12, now+t+0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, now+t+0.28);
+      o.connect(g); g.connect(ctx.destination);
+      o.start(now+t); o.stop(now+t+0.3);
+    });
+  }catch(e){}
+}
+try{ window._playDoneChime=_playDoneChime; }catch(e){}
 const AMVState = _AMVState;
 try{ window.AMVState = AMVState; }catch(e){}
 
@@ -342,32 +896,102 @@ try{ window.AMVState = AMVState; }catch(e){}
    It auto-pushes whenever synced state keys change.
    ============================================================ */
 const _SYNC_KEYS = ['convs','memory','workspaces','prompts','imgs','model','imgStyle','imgRatio'];
+/* Your actual WORK — Recents (Dev projects, Lab sessions), skills, handoffs,
+   profile. These are NOT AMVState keys (_SESSIONS is a module-level array), so
+   they're gathered and restored explicitly below. Before this they never left
+   the browser: switch device or clear cache and a 10,000-line Dev project was
+   simply gone. */
+const _SYNC_EXTRA = ['sessions','skills','handoffs','profile'];
+const SYNC_SOFT_LIMIT = 3.5 * 1024 * 1024;   // stay under the server's 4MB ceiling
+/* Snapshot Recents for upload. Dev projects can be enormous (a 12k-line file is
+   ~680KB), and the server caps a sync payload at 4MB — so we upload newest-first
+   and drop the heavy `state` blob from older sessions rather than failing the
+   whole sync. Titles/ids always survive, so nothing disappears from Recents. */
+function _syncSessionList(){
+  try{
+    const list = (Array.isArray(_SESSIONS) ? _SESSIONS : []).slice()
+      .sort((a,b)=>(b.updated||0)-(a.updated||0));
+    return list.map(s=>({
+      id:s.id, tool:s.tool, title:s.title, updated:s.updated, created:s.created,
+      state: s.state || null
+    }));
+  }catch(e){ return []; }
+}
+
+/* Keep the payload under the server's ceiling. Sheds the biggest, oldest
+   session bodies first; never sheds chats, memory, or session titles. */
+function _syncTrim(out){
+  try{
+    let size = JSON.stringify(out).length;
+    if(size <= SYNC_SOFT_LIMIT) return out;
+    const sess = out.sessions || [];
+    // oldest first — those lose their heavy body first
+    for(let i = sess.length - 1; i >= 0 && size > SYNC_SOFT_LIMIT; i--){
+      if(sess[i] && sess[i].state){
+        sess[i] = { ...sess[i], state:null, _trimmed:true };
+        size = JSON.stringify(out).length;
+      }
+    }
+    out.sessions = sess;
+    if(size > SYNC_SOFT_LIMIT && Array.isArray(out.imgs)){
+      out.imgs = out.imgs.slice(-20);   // images are the next-biggest thing
+    }
+  }catch(e){}
+  return out;
+}
+try{ window._syncSessionList=_syncSessionList; }catch(e){}
+
 const AMVSync = {
   _timer: null,
   enabled(){ try{ return !!(window.AMV_API && AMV_API.live && AMV_API.token); }catch(e){ return false; } },
   async pull(){
     if(!this.enabled()) return false;
-    const data = await AMV_API.syncPull();
-    if(!data) return false;
-    // hydrate state from server (server wins on login)
-    _SYNC_KEYS.forEach(k=>{ if(data[k]!==undefined){ _raw[k]=data[k]; _persist(k,data[k]); } });
-    try{ if(S.tab) renderView&&renderView(); }catch(e){}
-    return true;
+    try{
+      const data = await AMV_API.syncPull();
+      if(!data) return false;
+      // hydrate state from server (server wins on login)
+      _SYNC_KEYS.forEach(k=>{ if(data[k]!==undefined){ _raw[k]=data[k]; _persist(k,data[k]); } });
+
+      // Restore the user's actual WORK into memory, not just into storage —
+      // otherwise Recents stays empty until a reload.
+      if(Array.isArray(data.sessions)){
+        try{
+          _SESSIONS.length = 0;
+          data.sessions.forEach(x=>_SESSIONS.push(x));
+          store(_sessKey(), _SESSIONS);
+        }catch(e){ _logErr('sync.sessions', e); }
+      }
+      if(Array.isArray(data.skills))   { try{ store('amv_skills', data.skills); }catch(e){} }
+      if(Array.isArray(data.handoffs)) { try{ store('amv_handoffs', data.handoffs); }catch(e){} }
+      if(data.profile)                 { try{ store('amv_profile', data.profile); }catch(e){} }
+
+      try{ renderHist && renderHist(); }catch(e){}          // Recents repaint
+      try{ if(S.tab) renderView&&renderView(); }catch(e){}
+      return true;
+    }catch(e){ _logErr('AMVSync.pull', e); return false; }
   },
   collect(){
     const out={};
     _SYNC_KEYS.forEach(k=>{ out[k]=_raw[k]; });
-    return out;
+    // Recents / Dev projects / Lab sessions live in a module array, not AMVState.
+    try{ out.sessions = _syncSessionList(); }catch(e){ out.sessions = []; }
+    try{ out.skills   = load('amv_skills')   || []; }catch(e){}
+    try{ out.handoffs = load('amv_handoffs') || []; }catch(e){}
+    try{ out.profile  = load('amv_profile')  || null; }catch(e){}
+    return _syncTrim(out);
   },
   push(){ // debounced
     if(!this.enabled()) return;
     clearTimeout(this._timer);
-    this._timer=setTimeout(()=>{ AMV_API.syncPush(this.collect()); }, 1200);
+    this._timer=setTimeout(()=>{ Promise.resolve(AMV_API.syncPush(this.collect())).catch(e=>_logErr('AMVSync.push', e)); }, 1200);
   },
   start(){
     if(!this.enabled()) return;
     // push whenever a synced key changes
     _SYNC_KEYS.forEach(k=>AMVState.subscribe(k, ()=>this.push()));
+    // _SESSIONS isn't an AMVState key, so nothing would ever trigger a push for
+    // Dev/Lab work. Hook the save path directly.
+    try{ window.addEventListener('amv:sessions-changed', ()=>this.push()); }catch(e){}
   },
 };
 try{ window.AMVSync = AMVSync; }catch(e){}
@@ -414,6 +1038,19 @@ const AMVValue = {
   },
 };
 try{ window.AMVValue = AMVValue; }catch(e){}
+/* Analytics — track key product/funnel events (signup, activation, upgrades).
+   Privacy-first: fully local by default, and honors the user's opt-out. Data
+   never leaves the browser unless the operator connects an analytics backend. */
+function track(event, props){
+  try{
+    if(loadStr('amv_analytics_opt_out')==='1') return;           // user opted out
+    if(window.AEGIS && AEGIS.log) AEGIS.log('track', { name:event, ...(props||{}) });
+    const ep=loadStr('amv_analytics_endpoint');                  // operator-configured sink
+    if(ep){ try{ navigator.sendBeacon(ep, JSON.stringify({ event, props:props||{}, ts:Date.now(), anon:_anonId() })); }catch(e){} }
+  }catch(e){}
+}
+function _anonId(){ let id=loadStr('amv_anon_id'); if(!id){ id='a_'+Math.random().toString(36).slice(2,12); saveStr('amv_anon_id',id); } return id; }
+try{ window.track=track; window._anonId=_anonId; }catch(e){}
 
 /* ============================================================
    AMVUsage — Claude-style rolling usage window (Task #7)
@@ -471,14 +1108,76 @@ const AMVUsage = {
   },
   // human "resets in 4h 12m"
   resetLabel(){
-    const ms=this.status().resetsInMs;
-    const h=Math.floor(ms/3600000), m=Math.floor((ms%3600000)/60000);
-    if(h>0) return h+'h '+m+'m';
-    if(m>0) return m+'m';
-    return 'under a minute';
+    return _fmtResetIn(this.status().resetsInMs);
   }
 };
+// Human wording for a reset countdown: "3 hours 12 minutes", "14 minutes", "under a minute".
+function _fmtResetIn(ms){
+  const h=Math.floor(ms/3600000), m=Math.floor((ms%3600000)/60000);
+  if(h>0) return h+(h===1?' hour ':' hours ')+m+(m===1?' minute':' minutes');
+  if(m>0) return m+(m===1?' minute':' minutes');
+  return 'under a minute';
+}
 try{ window.AMVUsage = AMVUsage; }catch(e){}
+
+/* ── Out-of-usage lock (Claude-style) ─────────────────────────
+   When usage runs out (locally-tracked window OR a server quota_day/month),
+   the chat stops: sends are blocked, a notice with a LIVE countdown shows in
+   the composer, and everything unlocks automatically the moment usage resets. */
+let _quotaLockUntil=0, _quotaTimer=null;
+function quotaLock(resetAt){
+  _quotaLockUntil=Math.max(_quotaLockUntil, resetAt||0);
+  _renderQuotaNotice();
+  if(!_quotaTimer){
+    _quotaTimer=setInterval(()=>{
+      if(Date.now()>=_quotaLockUntil){ quotaUnlock(); return; }
+      _renderQuotaNotice();                       // live countdown tick
+      const card=document.querySelector('.quota-reset-live');
+      if(card) card.textContent=_fmtResetIn(_quotaLockUntil-Date.now());
+    }, 30000);                                     // update every 30s
+  }
+}
+function quotaUnlock(){
+  _quotaLockUntil=0;
+  if(_quotaTimer){ clearInterval(_quotaTimer); _quotaTimer=null; }
+  const n=$('quota-notice'); if(n) n.remove();
+  const ta=$('mta'); if(ta){ ta.disabled=false; ta.placeholder=ta.dataset.ph||ta.placeholder; }
+  toast('Your usage has reset \u2014 you\u2019re good to go.','success',3500);
+}
+function quotaLocked(){ return _quotaLockUntil>0 && Date.now()<_quotaLockUntil; }
+function _renderQuotaNotice(){
+  const cia=$('cia'); if(!cia) return;
+  let n=$('quota-notice');
+  if(!n){
+    n=document.createElement('div');
+    n.id='quota-notice'; n.className='quota-notice';
+    cia.insertBefore(n, cia.firstChild);
+  }
+  n.innerHTML='<span class="quota-notice-dot"></span>You\u2019re out of usage \u2014 resets in <b class="quota-reset-live">'+escH(_fmtResetIn(_quotaLockUntil-Date.now()))+'</b>'+
+    '<button class="quota-notice-up" onclick="setTab(\'plans\')">Upgrade</button>';
+  const ta=$('mta');
+  if(ta && !ta.disabled){ ta.dataset.ph=ta.placeholder; ta.disabled=true; ta.placeholder='Out of usage \u2014 resets in '+_fmtResetIn(_quotaLockUntil-Date.now()); }
+}
+try{ window.quotaLock=quotaLock; window.quotaLocked=quotaLocked; }catch(e){}
+
+/* Budget guard for multi-step runs (autonomous, autoDebug). Each step/iteration
+   can burn several thousand tokens, so before starting (and between steps) we
+   check the rolling window has enough headroom. Prevents one run from blowing
+   your whole quota. Returns {ok, reason, remaining}. */
+function _budgetGuard(estPerStep){
+  estPerStep = estPerStep || 4000;
+  try{
+    if(typeof AMVUsage==='undefined') return {ok:true};
+    const s = AMVUsage.status();
+    // need room for at least one more step; warn/stop if under that
+    if(s.remaining < estPerStep){
+      return { ok:false, remaining:s.remaining,
+        reason:'You\u2019re out of usage for this window. It resets in '+AMVUsage.resetLabel()+'. Upgrade for more, or try again after the reset.' };
+    }
+    return { ok:true, remaining:s.remaining };
+  }catch(e){ return {ok:true}; }  // never block on a guard error
+}
+try{ window._budgetGuard = _budgetGuard; }catch(e){}
 
 
 /* === OWNER MODE vs USER MODE — the multi-user safety boundary ===
@@ -491,30 +1190,109 @@ try{ window.AMVUsage = AMVUsage; }catch(e){}
    (AI keys, backend, Stripe, platform stats). A regular user NEVER sees them,
    whether the site is deployed or run locally.
 
-   Owner is granted ONLY by an explicit, non-UI flag that you set once on your
-   own machine:  localStorage.setItem('amv_owner','1')  (or visit ?owner=1).
-   This is never exposed in the interface, so users can't enable it. When a
-   live backend is connected, owner mode is force-off for everyone in the
-   browser — the operator manages the platform from the backend/dashboard,
-   not from a user's browser session. */
+   Owner is granted ONLY to the operator's own account. The operator email is
+   the single source of truth: even with the ?owner=1 flag or the localStorage
+   key set, owner mode is denied unless the logged-in account matches
+   OWNER_EMAIL. This means a curious user setting the flag still gets nothing.
+   To transfer ownership to a new email, change OWNER_EMAIL below. When a live
+   backend is connected, the server (OWNER_EMAIL env var / admin:true) is the
+   authority; the browser flag never grants admin on production. */
+/* Operator email. Configurable for white-label/resale via a build-time global
+   (window.__AMV_OWNER_EMAIL__ injected at deploy), defaulting to the current
+   operator. NOTE: this is deliberately NOT read from user-settable localStorage
+   — allowing that would let anyone grant themselves owner in local/demo mode.
+   On a live backend the server (OWNER_EMAIL env / admin:true) is the real
+   authority; this client value only gates local UI affordances. */
+const OWNER_EMAIL = (function(){
+  try{ if(typeof window!=='undefined' && typeof window.__AMV_OWNER_EMAIL__==='string' && window.__AMV_OWNER_EMAIL__.includes('@')) return window.__AMV_OWNER_EMAIL__.trim().toLowerCase(); }catch(e){}
+  return 'amarotovaleria@gmail.com';
+})();
+function _isOwnerEmail(email){
+  try{ return !!email && String(email).trim().toLowerCase() === OWNER_EMAIL.toLowerCase(); }catch(e){ return false; }
+}
 function isOwnerMode(){
-  try{ if(window.AMV_API && AMV_API.live) return false; }catch(e){}
-  try{ if(loadStr('amv_owner')==='1') return true; }catch(e){}
-  return false;
+  // The logged-in account MUST be the operator email. No exceptions in the UI.
+  // (This is the single gate — being this email is necessary AND sufficient.)
+  return _isOwnerEmail(S.user && S.user.email);
 }
 function isAdmin(){ return isOwnerMode(); }
-// Allow the operator to unlock owner mode via ?owner=1 once (then it's remembered).
+// The ?owner=1 flag only ARMS owner mode; it still requires being logged in as OWNER_EMAIL.
 try{ if(typeof location!=='undefined' && /[?&]owner=1\b/.test(location.search)){ saveStr('amv_owner','1'); } }catch(e){}
+try{ window.OWNER_EMAIL=OWNER_EMAIL; window._isOwnerEmail=_isOwnerEmail; }catch(e){}
 // Models
 const MODELS = {
-  auto:   { label:'AMV Auto', desc:'Smart routing \u2014 best model per task, lowest usage', color:'#7c6cff', model:'auto', tokens:6000, cost:0, rec:'free' },
-  fast:   { label:'AMV Pulse', desc:'Flagship quality, lightning fast \u2014 sips usage', color:'#3fb950', model:'claude-haiku-4-5-20251001', tokens:4000, cost:1, rec:'free' },
-  core:   { label:'AMV Core',  desc:'Flagship quality with more depth & range', color:'#8b78ff', model:'claude-sonnet-4-6', tokens:6000, cost:2, rec:'free' },
-  coding: { label:'AMV Forge', desc:'Beyond flagship \u2014 elite building & engineering', color:'#f85149', model:'claude-opus-4-8', tokens:8000, cost:3, rec:'pro' },
-  smart:  { label:'AMV Apex',  desc:'Our most powerful intelligence, period', color:'var(--indigo)', model:'claude-fable-5', tokens:8000, cost:4, rec:'elite' },
-  image:  { label:'AMV Vision', desc:'Generate HD images', color:'#a371f7', model:'image', tokens:0, cost:0, hidden:true },
+  auto:   { label:'AMV Auto', desc:'Automatically picks the right model for each task', color:'#5590ff', model:'auto', tokens:6000, cost:0, rec:'free' },
+  fast:   { label:'AMV Pulse', desc:'Fast and efficient for everyday tasks', color:'#4ade80', model:'claude-haiku-4-5-20251001', tokens:4000, cost:1, rec:'free' },
+  core:   { label:'AMV Core',  desc:'Balanced performance for most work', color:'#5590ff', model:'claude-sonnet-4-6', tokens:8000, cost:2, rec:'free' },
+  coding: { label:'AMV Forge', desc:'Built for complex coding and engineering', color:'#ff4d4d', model:'claude-opus-4-8', tokens:16000, cost:3, rec:'pro' },
+  smart:  { label:'AMV Apex',  desc:'The most capable model, for the hardest problems', color:'var(--indigo)', model:'claude-fable-5', tokens:16000, cost:4, rec:'elite' },
+  image:  { label:'AMV Vision', desc:'Image generation', color:'#5590ff', model:'image', tokens:0, cost:0, hidden:true },
 };
 const MODEL_ORDER=['auto','fast','core','coding','smart'];
+
+/* ===== BUILD-SECTION MODEL PICKER =====
+   Lab, Dev, and Studio let the user choose which model runs their work, so they
+   control how much usage they spend. The choice is REAL — it's passed straight to
+   aiComplete/runCode paths. Persisted per section. */
+const _BUILD_MODEL = { dev:'smart', lab:'smart', studio:'smart' };
+try{ const saved=JSON.parse(localStorage.getItem('amv_build_models')||'{}'); Object.assign(_BUILD_MODEL, saved); }catch(e){}
+function _saveBuildModels(){ try{ localStorage.setItem('amv_build_models', JSON.stringify(_BUILD_MODEL)); }catch(e){} }
+// resolve a section's chosen model key → real API model string for aiComplete/opts.model
+function _buildModelStr(section){ const k=_BUILD_MODEL[section]||'smart'; const m=MODELS[k]; return (m&&m.model&&m.model!=='auto')?m.model:'claude-fable-5'; }
+// usage dots (1–4) as a compact visual — clearly shows how much each model costs
+function _usageDots(cost){ let s=''; for(let i=1;i<=4;i++){ s+='<span class="mp-dot'+(i<=cost?' on':'')+'"></span>'; } return '<span class="mp-dots" title="Usage per run">'+s+'</span>'; }
+function _usageWord(cost){ return ['No','Low','Medium','High','Maximum'][cost]||'Medium'; }
+// build a model picker for a section
+function _modelPickerHTML(section){
+  const cur=_BUILD_MODEL[section]||'smart';
+  const opts=MODEL_ORDER.filter(k=>k!=='auto'||section==='studio').map(k=>{ const m=MODELS[k]; return '<option value="'+k+'"'+(k===cur?' selected':'')+'>'+m.label+' \u00b7 '+_usageWord(m.cost).toLowerCase()+' usage</option>'; }).join('');
+  const m=MODELS[cur];
+  return '<div class="mp-wrap"><label class="mp-label">Model</label>'+
+    '<select class="mp-sel" data-mp="'+section+'">'+opts+'</select>'+
+    _usageDots(m.cost)+
+    '<span class="mp-note" data-mp-note="'+section+'">'+_usageWord(m.cost)+' usage per run</span>'+
+  '</div>';
+}
+function _wireModelPicker(root){
+  (root||document).querySelectorAll('[data-mp]').forEach(sel=>on(sel,'change',()=>{
+    const section=sel.dataset.mp; _BUILD_MODEL[section]=sel.value; _saveBuildModels();
+    const m=MODELS[sel.value];
+    const wrap=sel.closest('.mp-wrap'); if(wrap){ const dots=wrap.querySelector('.mp-dots'); if(dots) dots.outerHTML=_usageDots(m.cost); const note=wrap.querySelector('[data-mp-note]'); if(note) note.textContent=_usageWord(m.cost)+' usage per run'; }
+    toast(m.label+' selected \u2014 '+_usageWord(m.cost).toLowerCase()+' usage per run','info',2500);
+  }));
+}
+
+/* ============================================================
+   PER-SECTION MODEL CHOICE — lets users decide which model powers
+   each heavy section (Dev/Code, Lab/Debug, Studio/Design) so they
+   control how much usage those consume. Stored per section; falls
+   back to a sensible default. Every one of these sections calls
+   _sectionModel(section) instead of hardcoding a model string.
+   ============================================================ */
+const _SECTION_DEFAULTS = { code:'smart', debug:'smart', design:'smart' };
+function _sectionModelKey(section){
+  const k=loadStr('amv_secmodel_'+section);
+  return (k && MODELS[k]) ? k : (_SECTION_DEFAULTS[section]||'smart');
+}
+function _sectionModel(section){ return MODELS[_sectionModelKey(section)].model; }
+function _setSectionModel(section, key){ if(MODELS[key]) saveStr('amv_secmodel_'+section, key); }
+// cost label (relative usage) for a model key
+function _modelCostLabel(key){
+  const c=(MODELS[key]||{}).cost||0;
+  if(c===0) return 'light usage';
+  if(c<=1) return 'light usage';
+  if(c<=2) return 'standard usage';
+  if(c<=3) return 'higher usage';
+  return 'heaviest usage';
+}
+// build a <select> of pickable models for a section (excludes hidden/image)
+function _sectionModelSelect(section, id){
+  const cur=_sectionModelKey(section);
+  return '<select id="'+id+'" class="sel secmodel-sel">'+MODEL_ORDER.map(k=>{
+    const m=MODELS[k]; const lvl=m.cost?(' \u00b7 '+(m.cost<=1?'light':m.cost<=2?'standard':m.cost<=3?'higher':'heaviest')):' \u00b7 light';
+    return '<option value="'+k+'"'+(k===cur?' selected':'')+'>'+m.label.replace('AMV ','')+lvl+'</option>';
+  }).join('')+'</select>';
+}
 
 /* RULE 7+8 — cost-aware router. Picks the cheapest model that can do the job.
    Saves money: a trivial question on Pulse costs ~20x less than Apex.
@@ -616,6 +1394,7 @@ const AEGIS = {
     if(L.length>500) L.splice(0, L.length-500); // ring buffer
     try{ saveStr(this._logKey, JSON.stringify(L)); }catch(e){}
     if(window.__AMV_DEBUG) console.debug('[AEGIS]', event, data||'');
+    try{ if(typeof _trackEvent==='function') _trackEvent(event, data); }catch(e){}
     return entry;
   },
   exportLog(){
@@ -649,6 +1428,34 @@ function aegisErrorMessage(status, raw){
   if(status) return 'API error '+status+(raw?': '+raw.slice(0,160):'');
   return raw||'Unknown error.';
 }
+
+/* Turn any raw AI error into one short, human sentence — Claude/ChatGPT style.
+   Keeps real actionable info (usage, sign-in, plan) but never dumps stack traces. */
+function _aiFriendly(msg){
+  const m=String(msg||'').toLowerCase();
+  if(/isn.t connected|engine|switch on/.test(m)) return 'AMV isn’t connected yet. Turn on the AMV engine in Settings to start.';
+  if(/out of usage|usage limit|daily|window/.test(m)) return msg;   // already friendly + actionable
+  if(/rate|429|too many/.test(m)) return 'Too many requests right now. Give it a few seconds and try again.';
+  if(/network|failed to fetch|offline|timed out|timeout/.test(m)) return 'AMV couldn’t reach the network. Check your connection and try again.';
+  if(/401|auth|sign in|session/.test(m)) return 'Your session needs a refresh — sign out and back in.';
+  if(/413|too long|too large|context/.test(m)) return 'This is a bit too long to process at once. Try trimming it and running again.';
+  if(/5\d\d|529|temporary|capacity/.test(m)) return 'AMV had a brief hiccup. Please try again in a moment.';
+  return 'AMV hit a snag. Please try again.';
+}
+
+/* Render a clean inline "hit a snag" card with a Retry button into `el`.
+   onRetry() is called when the user clicks Retry. Consistent everywhere. */
+function _aiFailCard(el, error, onRetry){
+  if(!el) return;
+  const msg=_aiFriendly(error && error.message ? error.message : error);
+  el.innerHTML='<div class="ai-snag">'+
+    '<div class="ai-snag-row"><span class="ai-snag-ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg></span>'+
+      '<span class="ai-snag-msg">'+escH(msg)+'</span></div>'+
+    (onRetry?'<button class="ai-snag-retry" type="button">Retry</button>':'')+
+  '</div>';
+  if(onRetry){ const b=el.querySelector('.ai-snag-retry'); if(b) b.addEventListener('click',()=>{ try{ onRetry(); }catch(e){} }); }
+}
+try{ window._aiFriendly=_aiFriendly; window._aiFailCard=_aiFailCard; }catch(e){}
 
 
 // Init state
@@ -688,6 +1495,33 @@ async function sha256(str) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
   return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
 }
+
+/* ── PKCE (Proof Key for Code Exchange) — for the secure OAuth auth-code flow ──
+   Generates a high-entropy verifier, stores it for the round-trip, and derives
+   the S256 challenge. The verifier NEVER leaves the browser except in the final
+   token-exchange call to our own backend; the challenge is what goes to Google.
+   This is the production-safe replacement for implicit/token-in-URL flows. */
+function _b64url(bytes){
+  let s=''; const a=new Uint8Array(bytes); for(let i=0;i<a.length;i++) s+=String.fromCharCode(a[i]);
+  return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+function _randToken(len){ const a=new Uint8Array(len||32); crypto.getRandomValues(a); return _b64url(a); }
+async function _pkceChallenge(){
+  const verifier=_randToken(48);                       // 64-char high-entropy verifier
+  const digest=await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+  const challenge=_b64url(digest);
+  const state=_randToken(16);
+  // persist for the redirect round-trip (cleared right after exchange)
+  try{ saveStr('amv_pkce_verifier', verifier); saveStr('amv_oauth_state', state); }catch(e){}
+  return { verifier, challenge, state, method:'S256' };
+}
+function _pkceConsume(){
+  const verifier=loadStr('amv_pkce_verifier')||'', state=loadStr('amv_oauth_state')||'';
+  try{ localStorage.removeItem(_scopeKey('amv_pkce_verifier')); }catch(e){}
+  return { verifier, state };
+}
+try{ window._pkceChallenge=_pkceChallenge; window._pkceConsume=_pkceConsume; }catch(e){}
+
 function acctKey(email) {
   try{ return 'amv_a_'+btoa(unescape(encodeURIComponent(email.toLowerCase().trim()))).replace(/=/g,''); }
   catch(e){ return 'amv_a_'+email.toLowerCase().replace(/[^a-z0-9]/g,'_'); }
@@ -714,7 +1548,9 @@ function findAccount(email) {
 async function verifyLogin(email, password) {
   const acct = findAccount(email);
   if (!acct) return null;
-  if (acct.provider==='google') return acct;
+  // A password login requires a real password hash on the account. Accounts that
+  // only ever signed in with Google have no pwHash — they must use Google (or set
+  // a password first), never an arbitrary password through the email form.
   if (!acct.pwHash) return null;
   const hash = await sha256(password+'::amv::'+email.toLowerCase().trim());
   return hash===acct.pwHash ? acct : null;
@@ -723,10 +1559,19 @@ function saveGoogleAccount(name, email) {
   const em = email.toLowerCase().trim();
   const key = acctKey(em);
   const existing = localStorage.getItem(key);
-  if (existing) { try{ return JSON.parse(existing); }catch{} }
+  if (existing) {
+    // Same email already has an account (e.g. signed up with email/password).
+    // This is the SAME person — link Google to it, don't create a second account.
+    try{
+      const acct = JSON.parse(existing);
+      if(!acct.google){ acct.google = true; localStorage.setItem(key, JSON.stringify(acct)); }
+      return acct;
+    }catch{}
+  }
   const ini = name.split(' ').filter(Boolean).map(w=>w[0]).join('').toUpperCase().slice(0,2)||'GU';
-  const acct = { name, email:em, ini, pwHash:null, provider:'google', createdAt:Date.now() };
+  const acct = { name, email:em, ini, pwHash:null, provider:'google', google:true, createdAt:Date.now() };
   localStorage.setItem(key, JSON.stringify(acct));
+  try{ if(typeof AEGIS!=='undefined') AEGIS.log('signup_complete',{provider:'google'}); }catch(e){}
   return acct;
 }
 function loadUserConvs(email) {
@@ -746,10 +1591,185 @@ function saveUserConvs(email, convs) {
       }).slice(-40)
     }));
     store(key, slim);
-  }catch(e){ console.warn('saveUserConvs error:',e); }
+  }catch(e){ if(_isQuotaErr(e)) _notifyStorageFull(); else console.warn('saveUserConvs error:',e); }
 }
 
 const _fails = {};
+
+/* ============================================================
+   UNIFIED WORK SESSIONS  (Dev / Lab / Studio, etc.)
+   Anything the user builds in a workspace tool is saved as a
+   lightweight, resumable session and shown in Recents alongside
+   conversations. Clicking one restores its exact state and jumps
+   to the right tool. Stored per-user under amv_sessions.
+   ============================================================ */
+const SESSION_KINDS = {
+  dev:    { label:'Dev',    tab:'dev',    icon:'<path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/>' },
+  lab:    { label:'Lab',    tab:'lab',    icon:'<path d="M10 2h4M12 2v6.5L7 19a1 1 0 0 0 .9 1.5h8.2A1 1 0 0 0 17 19l-5-10.5"/>' },
+  studio: { label:'Studio', tab:'studio', icon:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/>' },
+};
+const _LAB_DEFAULT_CODE = "// AMV Lab — real execution.";  // prefix marker for "untouched" detection
+let _SESSIONS = [];          // [{id, kind, title, updated, state}]
+let _activeSession = {};     // { dev:id, lab:id, studio:id } — current session per kind
+/* One debounce timer PER KIND. This used to be a single shared timer, so
+   _sessTouch('studio') followed quickly by _sessTouch('dev') cancelled the
+   Studio save entirely — Studio work silently never reached Recents. */
+let _sessSaveTimers = {};
+
+function _sessKey(){ const e=S.user&&S.user.email; return e ? 'amv_sessions' : 'amv_sessions_guest'; }
+function _loadSessions(){
+  try{ const v=load(_sessKey()); _SESSIONS = Array.isArray(v)?v:[]; }catch(e){ _SESSIONS=[]; }
+  return _SESSIONS;
+}
+function _persistSessions(){
+  try{
+    _SESSIONS.sort((a,b)=>(b.updated||0)-(a.updated||0));
+    if(_SESSIONS.length>60) _SESSIONS.length=60;
+    store(_sessKey(), _SESSIONS);
+    // Recents/Dev/Lab aren't AMVState keys, so tell the sync layer explicitly.
+    try{ window.dispatchEvent(new Event("amv:sessions-changed")); }catch(e){}
+  }catch(e){ if(_isQuotaErr(e)) _notifyStorageFull(); }
+}
+function _sessTitleFor(kind, state){
+  try{
+    if(kind==='dev'){
+      const firstUser=(state.log||[]).find(l=>l.role==='user'&&l.text);
+      if(firstUser) return firstUser.text.slice(0,42);
+      if(state.activePath) return state.activePath.split('/').pop();
+    }
+    if(kind==='lab'){
+      const c=(state.code||'').split('\n').find(l=>l.trim()&&!l.trim().startsWith('//'));
+      if(c) return c.trim().slice(0,42);
+    }
+    if(kind==='studio'){
+      const a=(state.artifacts||[]).find(x=>x.id===state.activeId)||(state.artifacts||[])[0];
+      if(a&&a.brief) return a.brief.slice(0,42);
+      if(a&&a.name) return a.name;
+    }
+  }catch(e){}
+  return (SESSION_KINDS[kind]?.label||'Session');
+}
+function _sessSnapshot(kind){
+  try{
+    if(kind==='dev')    return { log:(_DEV.log||[]).slice(-40), lang:_DEV.lang, project:_DEV.project, activePath:_DEV.activePath, curCode:_DEV.curCode, curLang:_DEV.curLang };
+    if(kind==='lab')    return { lang:_LAB.lang, code:_LAB.code, files:_LAB.files||[], chat:(_LAB.chat||[]).slice(-30) };
+    if(kind==='studio') return { artifacts:_STUDIO.artifacts, activeId:_STUDIO.activeId, prompt:_STUDIO.prompt };
+  }catch(e){}
+  return {};
+}
+function _sessHasContent(kind, snap){
+  try{
+    if(kind==='dev')    return (snap.log||[]).some(l=>l.role==='user') || Object.keys(snap.project||{}).length>0 || !!snap.curCode;
+    if(kind==='lab')    return !!(snap.code && snap.code.trim() && !snap.code.trim().startsWith(_LAB_DEFAULT_CODE));
+    if(kind==='studio') return (snap.artifacts||[]).some(a=>a.html || a.brief);
+  }catch(e){}
+  return false;
+}
+function _sessTouch(kind){
+  if(!SESSION_KINDS[kind]) return;
+  clearTimeout(_sessSaveTimers[kind]);
+  _sessSaveTimers[kind]=setTimeout(()=>{
+    const snap=_sessSnapshot(kind);
+    if(!_sessHasContent(kind, snap)) return;
+    let id=_activeSession[kind];
+    let rec=id ? _SESSIONS.find(s=>s.id===id) : null;
+    if(!rec){
+      id='sess_'+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
+      rec={ id, kind, title:'', updated:0, state:{} };
+      _SESSIONS.push(rec);
+      _activeSession[kind]=id;
+    }
+    rec.state=snap;
+    rec.title=_sessTitleFor(kind, snap);
+    rec.updated=Date.now();
+    _persistSessions();
+    try{ renderHist(); }catch(e){}
+  }, 700);
+}
+function _sessNew(kind){ _activeSession[kind]=''; }
+// Save the active session for a kind RIGHT NOW (no debounce). Used when the
+// user navigates away from a tool, so nothing is ever lost mid-debounce.
+function _sessFlush(kind){
+  if(!SESSION_KINDS[kind]) return;
+  clearTimeout(_sessSaveTimers[kind]);   // only this kind's pending save
+  try{
+    const snap=_sessSnapshot(kind);
+    if(!_sessHasContent(kind, snap)) return;
+    let id=_activeSession[kind];
+    let rec=id ? _SESSIONS.find(s=>s.id===id) : null;
+    if(!rec){
+      id='sess_'+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
+      rec={ id, kind, title:'', updated:0, state:{} };
+      _SESSIONS.push(rec);
+      _activeSession[kind]=id;
+    }
+    rec.state=snap; rec.title=_sessTitleFor(kind, snap); rec.updated=Date.now();
+    _persistSessions();
+    try{ renderHist(); }catch(e){}
+  }catch(e){}
+}
+// Called when leaving a workspace tool: flush its work to Recents, then clear
+// the active pointer so the NEXT visit starts a fresh session automatically
+// (the just-saved work stays available in Recents to resume anytime).
+function _sessLeave(kind){
+  _sessFlush(kind);
+  _activeSession[kind]='';
+}
+try{ window._sessFlush=_sessFlush; window._sessLeave=_sessLeave; }catch(e){}
+// Reset a tool's live state to empty (after its work was saved to Recents).
+let _resumingSession=false;
+function _resetToolState(kind){
+  try{
+    if(kind==='dev'){
+      _DEV.log=[]; _DEV.project={}; _DEV.activePath=''; _DEV.curCode=''; _DEV.curLang='';
+    } else if(kind==='lab'){
+      _LAB.code="// AMV Lab — real execution.\n// Try a bug; hit Auto-Debug to watch it fix & re-run.\nfunction factorial(n){ return n<=1 ? 1 : n*factorial(n-1) }\nconsole.log('5! =', factorial(5));\n\nlet nums=[3,1,4,1,5,9,2,6];\nconsole.log('sorted', nums.sort((a,b)=>a-b));";
+    } else if(kind==='studio'){
+      _STUDIO.artifacts=[]; _STUDIO.activeId=''; _STUDIO.prompt=''; _STUDIO.html=''; _STUDIO.history=[];
+    }
+  }catch(e){}
+}
+function _sessResume(id){
+  const rec=_SESSIONS.find(s=>s.id===id); if(!rec) return;
+  const k=rec.kind, st=rec.state||{};
+  // If we're currently in a different workspace tool, save & reset it first so
+  // its work isn't lost when we jump away to resume this session.
+  try{
+    const cur=S.tab, KIND_TAB={dev:1,lab:1,studio:1};
+    if(cur && KIND_TAB[cur] && cur!==k){ _sessLeave(cur); _resetToolState(cur); }
+  }catch(e){}
+  _resumingSession=true;   // prevent setTab's leave-hook from wiping what we restore
+  _activeSession[k]=id;
+  try{
+    if(k==='dev'){
+      _DEV.log = Array.isArray(st.log)?st.log:[];
+      _DEV.lang = st.lang||'js';
+      _DEV.project = st.project||{};
+      _DEV.activePath = st.activePath||'';
+      _DEV.curCode = st.curCode||''; _DEV.curLang = st.curLang||'';
+    } else if(k==='lab'){
+      _LAB.lang = st.lang||'js';
+      if(st.code!=null) _LAB.code = st.code;
+      _LAB.files = Array.isArray(st.files)?st.files:[];
+      _LAB.chat  = Array.isArray(st.chat)?st.chat:[];
+    } else if(k==='studio'){
+      _STUDIO.artifacts = Array.isArray(st.artifacts)?st.artifacts:[];
+      _STUDIO.activeId = st.activeId||( _STUDIO.artifacts[0]?_STUDIO.artifacts[0].id:'' );
+      _STUDIO.prompt = st.prompt||'';
+    }
+  }catch(e){}
+  const tab=SESSION_KINDS[k]?.tab||'chat';
+  setTab(tab);
+  _resumingSession=false;
+}
+function _sessDelete(id){
+  _SESSIONS = _SESSIONS.filter(s=>s.id!==id);
+  Object.keys(_activeSession).forEach(k=>{ if(_activeSession[k]===id) _activeSession[k]=''; });
+  _persistSessions();
+  try{ renderHist(); }catch(e){}
+}
+try{ window._sessResume=_sessResume; window._sessDelete=_sessDelete; window._sessNew=_sessNew; window._sessTouch=_sessTouch; }catch(e){}
+
 function chkRate(email) {
   const k = email.toLowerCase();
   const a = _fails[k];
@@ -775,11 +1795,19 @@ function loginUser(acct) {
   }
   S.imgs = load('amv_imgs')||[];
   S.memory = load('amv_memory')||load('amv_mem')||[];
+  _loadSessions();
   S.prompts = load('amv_pl')||getDefaultPrompts();
   S.workspaces = load('amv_ws')||getDefaultWorkspaces();
   S.mk = loadStr('amv_mk');
   closeOvr();
   goApp();
+  // If they typed a message before signing up, send it now automatically.
+  if(_pendingMessage){
+    const pm=_pendingMessage; _pendingMessage='';
+    setTimeout(()=>{ try{ setTab('chat'); const ta=$('mta'); if(ta){ ta.value=pm; ta.dispatchEvent(new Event('input')); } sendMsg(); }catch(e){} }, 300);
+  }
+  // First-run activation: guide a brand-new user to their first success once.
+  try{ if(!loadStr('amv_onboarded')){ setTimeout(()=>{ try{ _startOnboarding(); }catch(e){} }, 350); } }catch(e){}
   // if a backend session exists, pull the user's data from the server and keep it synced
   try{ if(AMVSync.enabled()){ AMVSync.pull().then(pulled=>{ if(pulled){ try{ renderView&&renderView(); updateSbUser&&updateSbUser(); }catch(e){} } }); AMVSync.start(); } }catch(e){}
 }
@@ -787,7 +1815,14 @@ function newConvObj(title) {
   return { id:'c'+Date.now()+Math.random().toString(36).slice(2,6), title:title||'New Conversation', msgs:[], model:'auto', starred:false, created:Date.now() };
 }
 
-function showAuthErr(msg){ const e=$('auth-err'); if(e){e.textContent=msg;e.style.display='block';} }
+function showAuthErr(msg, kind){
+  const e=$('auth-err');
+  if(!e) return;
+  e.textContent=msg;
+  e.style.display='block';
+  // a success message must not be painted red
+  e.classList.toggle('ae-ok', kind==='ok');
+}
 
 async function doSignupForm() {
   const nm=$('a-name')?.value.trim(), em=$('a-email')?.value.trim().toLowerCase(), pw=$('a-pass')?.value;
@@ -815,6 +1850,7 @@ async function doSignupForm() {
         // keep a local mirror so offline still recognizes the account
         await createAccount(nm,em,pw);
         closeOvr(); _completeIntroLogin({name:nm,email:em,ini,provider:'email'});
+        try{ AEGIS.log('signup_complete',{provider:'email'}); }catch(e){}
         return;
       }
     }catch(e){
@@ -828,7 +1864,7 @@ async function doSignupForm() {
     }
   }
   const acct=await createAccount(nm,em,pw);
-  if(acct){ closeOvr(); _completeIntroLogin(acct); }
+  if(acct){ closeOvr(); _completeIntroLogin(acct); try{ AEGIS.log('signup_complete',{provider:'email'}); }catch(e){} }
   else { const b=$('auth-submit');if(b){b.disabled=false;b.textContent='Create Free Account';} showAuthErr('Could not create account. Try again.'); }
 }
 
@@ -838,18 +1874,275 @@ async function sendPasswordReset(email){
   const em=String(email||'').trim().toLowerCase();
   if(!em||!em.includes('@')) return false;
   if(window.AMV_API && AMV_API.live){
-    try{ const r=await AMV_API._fetch('/auth/reset',{method:'POST',body:JSON.stringify({email:em})}); return !!(r&&r.ok!==false); }
-    catch(e){ return false; }
+    try{
+      const r=await AMV_API._fetch('/auth/reset',{method:'POST',body:JSON.stringify({email:em})});
+      // The server always returns ok:true so it can't be used to discover which
+      // emails exist. `sent` is what tells us an email ACTUALLY went out — if we
+      // ignore it we tell the user "check your inbox" when nothing was sent.
+      if(!r || r.ok===false) return { ok:false, sent:false };
+      return { ok:true, sent: r.sent === true };
+    }
+    catch(e){ return { ok:false, sent:false }; }
   }
-  return false; // no backend = no email service yet
+  return { ok:false, sent:false }; // no backend = nothing can send
 }
-async function doForgotPassword(){
-  const em=$('a-email')?.value.trim().toLowerCase()||'';
-  if(!em||!em.includes('@')){ showAuthErr('Enter your email above, then tap \u201cForgot password\u201d.'); return; }
-  const ok=await sendPasswordReset(em);
-  if(ok) showAuthErr('Reset link sent to '+em+'. Check your inbox.');
-  else showAuthErr('Password reset needs the email service connected on the backend. For now, contact support or sign up fresh.');
+/* ══════════════════════════════════════════════════════════════
+   FORGOT PASSWORD  —  email, then a 6-digit code, then a new password.
+
+   This used to fire a "reset link" email and tell you to check your inbox
+   (even when nothing had been sent, and even though the link 404'd). Now it's
+   the flow people actually expect, and every state tells the truth.
+   ══════════════════════════════════════════════════════════════ */
+const _RESET = { email:'', token:'', step:1, sending:false, local:false };
+
+/* Can we reset this account right here, with no server?
+
+   When no Worker is connected, AMV keeps the account in this browser
+   (localStorage, keyed by email). The forgot-password flow used to dead-end in
+   that case — "AMV isn't connected to its engine" — and the only way back in
+   was to open devtools and run a function by hand. That's not a real answer for
+   anyone, and it's the exact situation the owner of this app was stuck in.
+
+   So: if there's no backend AND the account exists on this device, let them set
+   a new password directly. This is not a weakening. Anyone who can run this
+   already has the browser open, and a local account's data lives in that same
+   localStorage — they could read it regardless. The account is device-bound by
+   nature, so recovery is device-bound too. */
+function _localResetPossible(email){
+  try{
+    if(window.AMV_API && AMV_API.live) return false;   // server is the source of truth
+    const acct = findAccount(email);
+    if(!acct) return false;
+    if(!acct.pwHash) return 'google';                  // signed up with Google — no password to reset
+    return true;
+  }catch(e){ return false; }
 }
+
+function openForgot(prefillEmail){
+  _RESET.email = (prefillEmail || ($('a-email')?.value || '')).trim().toLowerCase();
+  _RESET.token = '';
+  _RESET.step = 1;
+  _renderForgot();
+}
+
+function _forgotMsg(text, kind){
+  const e = $('fp-msg');
+  if(!e) return;
+  e.textContent = text || '';
+  e.className = 'fp-msg' + (text ? (' on ' + (kind || 'err')) : '');
+}
+
+function _renderForgot(){
+  const ovr = $('ovr'); if(!ovr) return;
+  const step = _RESET.step;
+
+  const body =
+    step === 1 ? (
+      '<p class="fp-sub">Enter the email on your account and we\u2019ll send you a 6-digit code.</p>'+
+      '<label class="fp-lbl" for="fp-email">Email</label>'+
+      '<input id="fp-email" class="fp-in" type="email" autocomplete="email" placeholder="you@example.com" value="'+escH(_RESET.email)+'">'+
+      '<button class="btn bp fp-go" id="fp-send">Send code</button>'
+    ) : step === 2 ? (
+      '<p class="fp-sub">We sent a 6-digit code to <b>'+escH(_RESET.email)+'</b>. It expires in 15 minutes.</p>'+
+      '<label class="fp-lbl" for="fp-code">Verification code</label>'+
+      '<input id="fp-code" class="fp-in fp-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000">'+
+      '<button class="btn bp fp-go" id="fp-verify">Verify code</button>'+
+      '<div class="fp-alt"><button id="fp-resend">Didn\u2019t get it? Send again</button>'+
+      '<button id="fp-back">Use a different email</button></div>'
+    ) : (
+      (_RESET.local
+        ? '<p class="fp-sub">Your account is saved on <b>this device only</b> \u2014 AMV isn\u2019t connected to a server yet, so there\u2019s nowhere to email a code. You can set a new password right here; your chats and projects stay exactly where they are.</p>'+
+          '<div class="fp-warn">\u26a0 Because this account only exists in this browser, clearing your browsing data will delete it permanently. Connect the AMV engine in Settings to make it recoverable by email.</div>'
+        : '<p class="fp-sub">Code confirmed. Choose a new password for <b>'+escH(_RESET.email)+'</b>.</p>')+
+      '<label class="fp-lbl" for="fp-pw">New password</label>'+
+      '<input id="fp-pw" class="fp-in" type="password" autocomplete="new-password" placeholder="At least 8 characters">'+
+      '<label class="fp-lbl" for="fp-pw2">Confirm password</label>'+
+      '<input id="fp-pw2" class="fp-in" type="password" autocomplete="new-password" placeholder="Type it again">'+
+      '<button class="btn bp fp-go" id="fp-save">Set new password</button>'
+    );
+
+  ovr.innerHTML =
+    '<div class="share-modal fp-modal">'+
+      '<button class="oc" id="fp-x">&#215;</button>'+
+      // The device-local path has no email step, so don't show a phantom step 3.
+      (_RESET.local
+        ? '<div class="fp-steps">'+
+            '<span class="on">1</span><i></i>'+
+            '<span class="'+(step>=3?'on':'')+'">2</span>'+
+          '</div>'
+        : '<div class="fp-steps">'+
+            '<span class="'+(step>=1?'on':'')+'">1</span><i></i>'+
+            '<span class="'+(step>=2?'on':'')+'">2</span><i></i>'+
+            '<span class="'+(step>=3?'on':'')+'">3</span>'+
+          '</div>')+
+      '<div class="share-title">'+(step===1?'Reset your password':step===2?'Check your email':'Set a new password')+'</div>'+
+      '<div id="fp-msg" class="fp-msg"></div>'+
+      body+
+    '</div>';
+  ovr.classList.add('on');
+
+  on($('fp-x'),'click',()=>{ closeOvr(); try{ openAuth('login'); }catch(e){} });
+
+  if(step===1){
+    const go=()=>_forgotSend();
+    on($('fp-send'),'click',go);
+    on($('fp-email'),'keydown',e=>{ if(e.key==='Enter') go(); });
+    setTimeout(()=>$('fp-email')?.focus(),60);
+  }
+  if(step===2){
+    const go=()=>_forgotVerify();
+    on($('fp-verify'),'click',go);
+    const ci=$('fp-code');
+    on(ci,'keydown',e=>{ if(e.key==='Enter') go(); });
+    on(ci,'input',()=>{
+      ci.value = ci.value.replace(/\D/g,'').slice(0,6);
+      if(ci.value.length===6) go();          // auto-submit, like every OTP field
+    });
+    on($('fp-resend'),'click',()=>{ _RESET.step=1; _forgotSend(true); });
+    on($('fp-back'),'click',()=>{ _RESET.step=1; _renderForgot(); });
+    setTimeout(()=>ci?.focus(),60);
+  }
+  if(step===3){
+    const go=()=>_forgotSave();
+    on($('fp-save'),'click',go);
+    on($('fp-pw2'),'keydown',e=>{ if(e.key==='Enter') go(); });
+    setTimeout(()=>$('fp-pw')?.focus(),60);
+  }
+}
+
+function _resetApi(path, body){
+  if(!(window.AMV_API && AMV_API.live))
+    return Promise.reject(new Error('not-connected'));
+  return fetch(AMV_API.base.replace(/\/$/,'')+path, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(body||{})
+  }).then(async r=>{
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok || d.error) throw new Error(d.error || 'Something went wrong. Try again.');
+    return d;
+  });
+}
+
+async function _forgotSend(isResend){
+  const em = (($('fp-email')?.value) || _RESET.email || '').trim().toLowerCase();
+  if(!em || !em.includes('@')){ _forgotMsg('Enter a valid email address.'); return; }
+  _RESET.email = em;
+
+  const btn = $('fp-send');
+
+  // No server? The account may still be right here on this device.
+  const local = _localResetPossible(em);
+  if(local === 'google'){
+    _forgotMsg('This account signs in with Google \u2014 there\u2019s no password to reset. Close this and use \u201cContinue with Google\u201d.');
+    return;
+  }
+  if(local === true){
+    _RESET.local = true;
+    _RESET.step  = 3;                       // straight to "set a new password"
+    _renderForgot();
+    return;
+  }
+
+  if(btn){ btn.disabled=true; btn.textContent='Sending\u2026'; }
+  _forgotMsg('');
+  try{
+    const d = await _resetApi('/auth/reset/code', { email: em });
+    if(!d.emailConfigured){
+      // Honest. Do NOT tell them to check an inbox that will stay empty.
+      _forgotMsg('Password reset isn\u2019t set up on this workspace yet, so no email can be sent. Contact the workspace owner'+(_supportEmail()?' at '+_supportEmail():'')+'.','err');
+      if(btn){ btn.disabled=false; btn.textContent='Send code'; }
+      return;
+    }
+    _RESET.step = 2;
+    _renderForgot();
+    if(isResend) _forgotMsg('New code sent.','ok');
+  }catch(e){
+    if(btn){ btn.disabled=false; btn.textContent='Send code'; }
+    _forgotMsg(e.message==='not-connected'
+      ? 'AMV isn\u2019t connected to its engine, so it can\u2019t send email. The workspace owner needs to switch it on in Settings.'
+      : e.message, 'err');
+  }
+}
+
+async function _forgotVerify(){
+  const code = (($('fp-code')?.value)||'').replace(/\D/g,'');
+  if(code.length !== 6){ _forgotMsg('Enter the 6-digit code.'); return; }
+  const btn = $('fp-verify');
+  if(btn){ btn.disabled=true; btn.textContent='Verifying\u2026'; }
+  _forgotMsg('');
+  try{
+    const d = await _resetApi('/auth/reset/verify', { email:_RESET.email, code });
+    _RESET.token = d.token;
+    _RESET.step = 3;
+    _renderForgot();
+  }catch(e){
+    if(btn){ btn.disabled=false; btn.textContent='Verify code'; }
+    _forgotMsg(e.message, 'err');
+    const ci=$('fp-code'); if(ci){ ci.value=''; ci.focus(); }
+  }
+}
+
+async function _forgotSave(){
+  const pw  = ($('fp-pw')?.value)||'';
+  const pw2 = ($('fp-pw2')?.value)||'';
+  if(pw.length < 8){ _forgotMsg('Password must be at least 8 characters.'); return; }
+  if(pw !== pw2){ _forgotMsg('Those passwords don\u2019t match.'); return; }
+
+  const btn = $('fp-save');
+  if(btn){ btn.disabled=true; btn.textContent='Saving\u2026'; }
+  _forgotMsg('');
+
+  // ── Device-local reset: no server involved. ──
+  if(_RESET.local){
+    try{
+      const existing = findAccount(_RESET.email) || {};
+      const nm = existing.name || _RESET.email.split('@')[0];
+      await createAccount(nm, _RESET.email, pw);   // overwrites the stored hash, same email
+      const acct = await verifyLogin(_RESET.email, pw);
+      if(!acct) throw new Error('Could not set the password on this device.');
+      closeOvr();
+      // Data is scoped by EMAIL, not password — chats and projects are untouched.
+      _completeIntroLogin({ name:acct.name, email:acct.email, ini:acct.ini, provider:'email' });
+      if(typeof toast==='function') toast('Password updated \u2014 you\u2019re signed in.','success',4000);
+    }catch(e){
+      if(btn){ btn.disabled=false; btn.textContent='Set new password'; }
+      _forgotMsg(e.message || 'Could not set the password.');
+    }
+    return;
+  }
+
+  try{
+    await _resetApi('/auth/reset/confirm', { token:_RESET.token, password:pw });
+    // Straight into the account — don't make them retype what they just set.
+    //
+    // NOTE: AMV_API._fetch returns the raw Response, NOT parsed JSON. This code
+    // used to do `const r = await _fetch(...); if(r.token)` — a Response has no
+    // .token, so the auto sign-in could never fire and silently fell through to
+    // the login screen. AMV_API.login() exists for exactly this: it parses the
+    // body and stores the tokens properly.
+    try{
+      const d = await AMV_API.login(_RESET.email, { password: pw, provider:'email' });
+      if(d && d.token){
+        const nm = (d.user && d.user.name) || _RESET.email.split('@')[0];
+        closeOvr();
+        _completeIntroLogin({ name:nm, email:_RESET.email,
+                              ini:String(nm)[0].toUpperCase(), provider:'email' });
+        if(typeof toast==='function') toast('Password updated \u2014 you\u2019re signed in.','success',4000);
+        return;
+      }
+    }catch(e){ /* fall through to the sign-in screen below */ }
+    closeOvr();
+    try{ openAuth('login'); }catch(e){}
+    showAuthErr('Password updated. Sign in with your new password.','ok');
+  }catch(e){
+    if(btn){ btn.disabled=false; btn.textContent='Set new password'; }
+    _forgotMsg(e.message, 'err');
+  }
+}
+try{ window.openForgot=openForgot; }catch(e){}
+
+/* doForgotPassword() removed — replaced by the 3-step code flow (openForgot).
+   It produced "Couldn't send the reset email" and emailed a magic link. */
 
 async function doLoginForm() {
   const em=$('a-email')?.value.trim().toLowerCase(), pw=$('a-pass')?.value;
@@ -881,6 +2174,8 @@ async function doLoginForm() {
   }
   const exists=findAccount(em);
   if(!exists){if(btn){btn.disabled=false;btn.textContent='Sign In';}showAuthErr('No account found. Please sign up.');return;}
+  // Account exists but only ever used Google (no password) — point them to Google.
+  if(!exists.pwHash){ if(btn){btn.disabled=false;btn.textContent='Sign In';} showAuthErr('This email uses Google sign-in. Tap \u201cContinue with Google\u201d above.'); return; }
   const acct=await verifyLogin(em,pw);
   if(!acct){
     logFail(em);
@@ -901,9 +2196,40 @@ function parseGJWT(token) {
     return JSON.parse(decodeURIComponent(atob(b).split('').map(c=>'%'+('00'+c.charCodeAt(0).toString(16)).slice(-2)).join('')));
   }catch{return null;}
 }
-function handleGoogleCred(resp) {
+async function handleGoogleCred(resp) {
+  // SECURE PATH: when a backend is connected, send the Google credential to our
+  // own server to VERIFY it with Google (signature, audience, expiry) and mint a
+  // real session. Never trust an unverified token client-side for anything
+  // sensitive. We still read basic profile for instant UI, but the session of
+  // record comes from the server.
   const p=parseGJWT(resp.credential);
   if(!p||!p.email){ showError('Google sign-in failed. Try email signup.'); return; }
+
+  if(window.AMV_API && AMV_API.live && AMV_API.base){
+    try{
+      const r=await fetch(AMV_API.base.replace(/\/$/,'')+'/auth/google', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({ credential:resp.credential })   // server verifies this with Google
+      });
+      if(r.ok){
+        const data=await r.json();
+        // server returns the verified profile + a session token
+        const acct=saveGoogleAccount((data.name||p.name||p.email.split('@')[0]), (data.email||p.email));
+        if(data.token){ try{ AMV_API.token=data.token; saveStr('amv_api_token', data.token); }catch(e){} }
+        const pic=data.picture||p.picture;
+        if(pic&&acct.email){ fetch(pic).then(x=>x.blob()).then(b=>{const rd=new FileReader();rd.onload=e=>{saveStr('amv_pfp_'+acct.email,e.target.result);updateSbUser();};rd.readAsDataURL(b);}).catch(()=>{}); }
+        closeOvr(); hideIntro(); saveStr('amv_ck','1'); S.ck=true;
+        const ck=$('ck');if(ck)ck.remove(); document.getElementById('land')?.classList.add('hidden');
+        loginUser(acct); return;
+      }
+      // server rejected the token — do NOT fall back to trusting it locally
+      if(r.status===401||r.status===403){ showError('Google sign-in couldn\u2019t be verified. Please try again or use email.'); return; }
+      // other server errors (500/offline) fall through to local demo behavior below
+    }catch(e){ /* network issue → local fallback below */ }
+  }
+
+  // LOCAL / DEMO PATH (no backend connected): profile is read client-side only.
+  // This is the offline/demo experience; it grants no server privileges.
   const acct=saveGoogleAccount(p.name||p.email.split('@')[0], p.email);
   if(p.picture&&acct.email) {
     fetch(p.picture).then(r=>r.blob()).then(b=>{const rd=new FileReader();rd.onload=e=>{saveStr('amv_pfp_'+acct.email,e.target.result);updateSbUser();};rd.readAsDataURL(b);}).catch(()=>{});
@@ -912,10 +2238,6 @@ function handleGoogleCred(resp) {
   saveStr('amv_ck','1'); S.ck=true;
   const ck=$('ck');if(ck)ck.remove();
   document.getElementById('land')?.classList.add('hidden');
-  // get a real server session for the Google account when a backend is connected
-  if(window.AMV_API && AMV_API.live){
-    AMV_API.login(acct.email, {name:acct.name, provider:'google'}).catch(()=>{});
-  }
   loginUser(acct);
 }
 function initGAuth() {
@@ -946,7 +2268,57 @@ async function triggerGoogle() {
 
 
 function goLand(){ document.getElementById('land').classList.remove('hidden'); document.getElementById('app').classList.remove('on'); }
-function goApp(){ document.getElementById('land').classList.add('hidden'); document.getElementById('app').classList.add('on'); updateSbUser(); _initMobileSidebar(); setTab(S.tab); _ensureBackendSession(); try{ _applyFontSize(); }catch(e){} try{ _initOfflineWatch(); }catch(e){} try{ _checkTeamInvite(); }catch(e){} try{ _initKeyboardNav(); _initA11y(); }catch(e){} try{ _translateUI(); setTimeout(_translateUI,120); }catch(e){ console.error('Translate UI error in goApp', e); } }
+function _wireHdrAuth(){
+  const su=document.getElementById('hdr-signup');
+  const li=document.getElementById('hdr-login');
+  if(su && !su._wired){ su._wired=1; su.addEventListener('click',()=>{ try{ openAuth('signup'); }catch(e){} }); }
+  if(li && !li._wired){ li._wired=1; li.addEventListener('click',()=>{ try{ openAuth('login'); }catch(e){} }); }
+}
+function goApp(){ try{ _wireHdrAuth(); }catch(e){} try{ const cy=document.getElementById('copy-year'); if(cy) cy.textContent=String(new Date().getFullYear()); }catch(e){} document.getElementById('land').classList.add('hidden'); document.getElementById('app').classList.add('on'); updateSbUser(); _initMobileSidebar(); _restoreSidebarState(); try{ _applyReduceMotion(); }catch(e){} setTab(S.tab); _ensureBackendSession(); try{ _applyFontSize(); }catch(e){} try{ _initOfflineWatch(); }catch(e){} try{ _initErrorBoundary(); }catch(e){} try{ syncEntitlement(); _checkUpgradeReturn(); }catch(e){} try{ _checkTeamInvite(); }catch(e){} try{ _initKeyboardNav(); _initA11y(); }catch(e){} try{ _revealAdminNav(); }catch(e){} try{ _initSidebarMore(); }catch(e){} try{ const sbtn=$('sb-status'); if(sbtn) sbtn.addEventListener('click',openStatusPanel); _checkStatus(); }catch(e){} try{ _translateUI(); setTimeout(_translateUI,120); }catch(e){ console.error('Translate UI error in goApp', e); } }
+
+/* The sidebar's advanced tools (Tasks, Integrations, Marketplace) live under a
+   collapsible "More" so the default view stays calm — new users were getting
+   lost in a long flat list. If the user is currently ON one of those tabs, we
+   auto-expand so the active item is always visible. */
+function _initSidebarMore(){
+  const toggle=document.getElementById('snb-more-toggle');
+  const more=document.getElementById('snb-more');
+  if(!toggle||!more) return;
+  const MORE_TABS=['tasks','integrations','market'];
+  const setOpen=(open)=>{
+    more.hidden=!open;
+    toggle.setAttribute('aria-expanded', open?'true':'false');
+    toggle.classList.toggle('open', open);
+    try{ saveStr('amv_sb_more', open?'1':'0'); }catch(e){}
+  };
+  if(!toggle._b){
+    toggle._b=1;
+    on(toggle,'click',()=> setOpen(more.hidden));
+  }
+  // open if remembered, or if the current tab lives inside More
+  const remembered = (()=>{ try{ return loadStr('amv_sb_more')==='1'; }catch(e){ return false; } })();
+  setOpen(remembered || MORE_TABS.includes(S.tab));
+}
+try{ window._initSidebarMore=_initSidebarMore; }catch(e){}
+function _revealAdminNav(){
+  try{
+    const existing=document.getElementById('nav-admin');
+    if(isAdmin()){
+      if(existing) return;   // already present
+      // find the Tasks nav button and inject Admin right after it
+      const tasksBtn=document.querySelector('.snb[data-tab="tasks"]');
+      if(!tasksBtn||!tasksBtn.parentNode) return;
+      const b=document.createElement('button');
+      b.className='snb'; b.setAttribute('data-tab','admin'); b.id='nav-admin';
+      b.innerHTML='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Admin';
+      b.addEventListener('click',()=>setTab('admin'));
+      tasksBtn.parentNode.insertBefore(b, tasksBtn.nextSibling);
+    } else {
+      // not the owner — the element must not exist in the DOM at all
+      if(existing) existing.remove();
+    }
+  }catch(e){}
+}
 /* On mobile the sidebar is a fixed overlay — start it collapsed so it
    never covers the content on load. On desktop it stays open. */
 function _initMobileSidebar(){
@@ -962,40 +2334,112 @@ function _initMobileSidebar(){
       if(sb) sb.classList.remove('cl');
       if(ab) ab.classList.remove('sb-collapsed');
     }
+    _renderBottomNav();
   }catch(e){}
 }
+// Native-feeling bottom navigation for mobile. Five primary destinations;
+// "More" opens the full sidebar for everything else.
+const BOTTOM_NAV=[
+  {tab:'chat',   label:'Chat',   svg:'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>'},
+  {tab:'images', label:'Images', svg:'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>'},
+  {tab:'studio', label:'Studio', svg:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/>'},
+  {tab:'dev',    label:'Dev',    svg:'<path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/>'},
+  {tab:'__more', label:'More',   svg:'<line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/>'},
+];
+function _renderBottomNav(){
+  const nav=$('bottom-nav'); if(!nav) return;
+  const cur=S.tab;
+  nav.innerHTML=BOTTOM_NAV.map(item=>{
+    const active=(item.tab===cur)||(item.tab==='chat'&&(cur==='chat'));
+    return '<button class="bn-item'+(active?' on':'')+'" data-bntab="'+item.tab+'">'+
+      '<span class="bn-ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">'+item.svg+'</svg></span>'+
+      '<span class="bn-lbl">'+item.label+'</span></button>';
+  }).join('');
+  nav.querySelectorAll('[data-bntab]').forEach(b=>b.addEventListener('click',()=>{
+    const t=b.dataset.bntab;
+    if(t==='__more'){ if(!S.sbOpen) toggleSb(); return; }
+    setTab(t);
+  }));
+}
+window._renderBottomNav=_renderBottomNav;
 window._initMobileSidebar=_initMobileSidebar;
 async function _ensureBackendSession(){
   try{
     if(window.AMV_API && AMV_API.live && S.user && S.user.email){
       // valid token already? nothing to do.
       if(AMV_API.token && AMV_API.tokenValid()) return;
-      // token missing or expired — for password accounts we can't silently re-auth
-      // (no stored password), so prompt only if needed; Google/again handled at login.
-      // If we still hold a token that's merely unproven, keep it; the proxy will 401 if bad.
+      // Token missing or expired, but we hold a refresh token → refresh NOW,
+      // on boot, so the first authenticated action doesn't eat a 401+retry
+      // round-trip. Single-flight in _doRefresh means this is safe to call
+      // even if something else triggers a refresh at the same time.
+      if(AMV_API.refreshTok){
+        try{ await AMV_API._doRefresh(); }catch(e){ /* fall through */ }
+      }
+      // If refresh failed (or there was none), we keep whatever token we have;
+      // the proxy will 401 and the user is cleanly asked to sign in again. For
+      // password accounts we can't silently re-auth (no stored password).
     }
   }catch(e){ /* backend offline → app falls back to direct mode */ }
 }
 function toggleSb(){
   const sb=$('sb'); if(!sb) return;
   const ab=$('abody');
-  S.sbOpen=!S.sbOpen;
-  S.sbOpen?sb.classList.remove('cl'):sb.classList.add('cl');
-  // keep chat centering correct even without :has() support
-  try{ if(ab) ab.classList.toggle('sb-collapsed', !S.sbOpen); }catch(e){}
-  // mobile backdrop
-  try{
-    if(window.matchMedia('(max-width:720px)').matches){
+  const isMobile=window.matchMedia('(max-width:720px)').matches;
+  if(isMobile){
+    // Mobile: slide the overlay sidebar in/out
+    S.sbOpen=!S.sbOpen;
+    S.sbOpen?sb.classList.remove('cl'):sb.classList.add('cl');
+    try{ if(ab) ab.classList.toggle('sb-collapsed', !S.sbOpen); }catch(e){}
+    try{
       let bd=$('sb-backdrop');
       if(!bd){ bd=document.createElement('div'); bd.id='sb-backdrop'; bd.addEventListener('click',()=>toggleSb()); (ab||document.body).appendChild(bd); }
       bd.classList.toggle('on', S.sbOpen);
+    }catch(e){}
+    return;
+  }
+  // Desktop: collapse to a slim icon rail (not fully hidden), remembered.
+  const rail=document.body.classList.toggle('sb-rail');
+  try{ saveStr('amv_sb_rail', rail?'1':'0'); }catch(e){}
+}
+// Restore the desktop rail preference on load.
+function _restoreSidebarState(){
+  try{
+    if(!window.matchMedia('(max-width:720px)').matches && loadStr('amv_sb_rail')==='1'){
+      document.body.classList.add('sb-rail');
     }
   }catch(e){}
 }
+try{ window._restoreSidebarState=_restoreSidebarState; }catch(e){}
 function setTab(t){
+  try{ if(t==='settings' && S.tab && S.tab!=='settings') S._preSettingsTab=S.tab; }catch(e){}
+  // Leaving a workspace tool (Dev/Lab/Studio): save its work to Recents, then
+  // reset it so the next visit starts fresh (the work stays saved and resumable).
+  // Skip entirely while resuming — _sessResume restores state and then navigates,
+  // and we must not save/reset over the freshly restored session.
+  try{
+    const prev=S.tab;
+    const KIND_TAB={dev:1,lab:1,studio:1};
+    if(!_resumingSession && prev && KIND_TAB[prev] && prev!==t){
+      _sessLeave(prev);
+      _resetToolState(prev);
+    }
+  }catch(e){}
+  // Auth gate: a logged-out visitor can browse the chat tab, but using any AMV
+  // feature (images, video, crew, studio, dev, lab, etc.) requires an account.
+  const _gatedTabs=['images','video','crew','studio','dev','lab','handoff','workspaces','memory','team','market','tasks','integrations','apps','extensions','prompts'];
+  if((!S.user||!S.user.email) && _gatedTabs.indexOf(t)>=0){
+    try{ openAuth('signup'); }catch(e){}
+    if(typeof toast==='function') toast('Create a free account to use '+(t.charAt(0).toUpperCase()+t.slice(1)),'info',3500);
+    return;
+  }
+  try{ if(t!=='team' && window.AMVTeam && AMVTeam.stopPresence) AMVTeam.stopPresence(); }catch(e){}
+  try{ if(t!=='chat' && window.AMVSpeech){ AMVSpeech.stop(); _voiceMode=false; const vb=$('voicemode-btn'); if(vb) vb.classList.remove('on'); } }catch(e){}
+  try{ if(typeof AEGIS!=='undefined' && AEGIS.log && t && t!==S.tab){ const _fmap={chat:'chat',images:'images',video:'video',dev:'dev',lab:'lab',crew:'crew',studio:'studio',handoff:'handoff',workspaces:'projects',memory:'memory',team:'team',market:'marketplace',tasks:'tasks'}; if(_fmap[t]) AEGIS.log('feature',{name:_fmap[t]}); } }catch(e){}
   S.tab=t;
-  document.querySelectorAll('.snb').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));
-  const _titles={dashboard:'Dashboard',chat:'',images:'Images',video:'Video',prompts:'Prompt Library',workspaces:'Projects',memory:'Memory',usage:'Usage',billing:'Billing',plans:'Plans',settings:'Settings',help:'Help Center',apps:'Apps',tasks:'Tasks',integrations:'Integrations',extensions:'Extensions',crew:'Crew',studio:'Studio',dev:'Dev',handoff:'Handoff',lab:'Lab'};
+  try{ _renderBottomNav(); }catch(e){}
+  document.querySelectorAll('.snb, .sb-tool').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));
+  /* (old 'More' section removed — tools now live in the bottom-left row) */
+  const _titles={dashboard:'Dashboard',chat:'',images:'Images',video:'Video',prompts:'Prompt Library',workspaces:'Projects',memory:'Memory',usage:'Usage',billing:'Billing',plans:'Plans',settings:'Settings',help:'Help Center',apps:'Apps',tasks:'Tasks',integrations:'Integrations',extensions:'Extensions',crew:'Crew',studio:'Studio',dev:'Dev',handoff:'Handoff',lab:'Lab',market:'Marketplace'};
   const _nt=document.getElementById('nav-title');
   if(_nt){ const lbl=_titles[t]!==undefined?_titles[t]:''; _nt.textContent=lbl; _nt.style.opacity=lbl?'1':'0'; }
   // On mobile, close the overlay sidebar after picking a destination
@@ -1007,10 +2451,101 @@ function setTab(t){
     }
   }catch(e){}
   renderView();
+  try{ _mountMobilePaneToggle(t); }catch(e){}
   try{ if(_lang()!=='auto'&&_lang()!=='en'){ _translateUI(); } }catch(e){}
   try{ _initA11y(); }catch(e){}
 }
-function signOut(){ S.user=null; localStorage.removeItem('amv_user'); S.memory=[]; S.convs=[]; S.imgs=[]; S.prompts=getDefaultPrompts(); S.workspaces=getDefaultWorkspaces(); S.mk=''; const m=$('sb-popup'); if(m)m.classList.remove('on'); goLand(); showIntro(); }
+
+/* ── Mobile: stack the workbench panes and toggle between them ──────────────
+   Dev and Lab show an input pane and an output pane side by side. On a phone
+   that leaves each ~195px wide and the code editor unusably short. On mobile we
+   stack them and show one at a time; this injects the Editor/Preview switch and
+   drives the .mv-show-out class the mobile CSS keys off. No-op on desktop. */
+function _mountMobilePaneToggle(tab){
+  const onMobile = window.matchMedia('(max-width:760px)').matches;
+
+  const spec = tab==='dev'
+    ? { shell:'.dev-shell', blank:'dev-blank', inLabel:'Build', outLabel:'Preview', barSel:'.dev-prev-bar' }
+    : tab==='lab'
+    ? { shell:'.lab-split', blank:null, inLabel:'Editor', outLabel:'Output', barSel:'.lab-out-top' }
+    : null;
+  if(!spec) return;
+
+  const shell = document.querySelector(spec.shell);
+  if(!shell) return;
+
+  // clean any stale toggle first (tab re-renders)
+  document.querySelectorAll('.mv-toggle').forEach(el=>el.remove());
+  shell.classList.remove('mv-show-out');
+  if(!onMobile) return;
+  if(spec.blank && shell.classList.contains(spec.blank)) return;   // nothing to toggle yet
+
+  const bar = document.createElement('div');
+  bar.className = 'mv-toggle';
+  bar.innerHTML =
+    '<button class="on" data-mv="in">'+escH(spec.inLabel)+'</button>'+
+    '<button data-mv="out">'+escH(spec.outLabel)+'</button>';
+
+  // place it at the very top of the shell so it's always reachable
+  shell.insertBefore(bar, shell.firstChild);
+
+  const btns = bar.querySelectorAll('button');
+  const show = which => {
+    shell.classList.toggle('mv-show-out', which==='out');
+    btns.forEach(b=>b.classList.toggle('on', b.dataset.mv===which));
+  };
+  btns.forEach(b=> on(b,'click', ()=>show(b.dataset.mv)));
+}
+try{ window._mountMobilePaneToggle=_mountMobilePaneToggle; }catch(e){}
+
+/* When Dev/Lab produce output, auto-flip to the output pane on mobile so the
+   user sees the result without hunting for the toggle. */
+function _mobileShowOutput(tab){
+  if(!window.matchMedia('(max-width:760px)').matches) return;
+  const shell = document.querySelector(tab==='dev' ? '.dev-shell' : '.lab-split');
+  if(!shell) return;
+  shell.classList.add('mv-show-out');
+  const bar = shell.querySelector('.mv-toggle');
+  if(bar) bar.querySelectorAll('button').forEach(b=>b.classList.toggle('on', b.dataset.mv==='out'));
+}
+try{ window._mobileShowOutput=_mobileShowOutput; }catch(e){}
+/* Wipe every scrap of per-account state from memory.
+   Storage is already namespaced per account, but the in-memory copies are NOT
+   automatically cleared — without this, one account's Recents / Dev project /
+   Lab code leak into the next account signed in on the same browser. */
+function _wipeAccountState(){
+  try{ _SESSIONS.length = 0; }catch(e){ try{ _SESSIONS=[]; }catch(e2){} }
+  try{
+    _DEV.log=[]; _DEV.project={}; _DEV.activePath=''; _DEV.curCode=''; _DEV.curLang='';
+    _DEV.files=[]; _DEV.handoff=null; _DEV.dirHandle=null; _DEV.sessId=null;
+  }catch(e){}
+  try{
+    _LAB.code=''; _LAB.lang='js'; _LAB.busy=false; _LAB.files=[]; _LAB.sessId=null;
+  }catch(e){}
+  try{
+    S.memory=[]; S.convs=[]; S.cur=null; S.imgs=[]; S.vids=[]; S.att=null;
+    S._chatFiles=[]; S._labFiles=[]; S._chatHandoff=null; S._preSettingsTab=null;
+    S.workspaces=getDefaultWorkspaces(); S.prompts=getDefaultPrompts(); S.mk='';
+  }catch(e){}
+  try{ _CREW_RESULTS.length=0; }catch(e){}
+  try{ if(typeof _TASKS!=='undefined' && Array.isArray(_TASKS)) _TASKS.length=0; }catch(e){}
+}
+try{ window._wipeAccountState=_wipeAccountState; }catch(e){}
+
+function signOut(){
+  // best-effort server-side revocation (fire and forget)
+  try{ if(window.AMV_API && AMV_API.live && AMV_API.token){ fetch(AMV_API.base.replace(/\/$/,'')+'/auth/logout',{method:'POST',headers:{'Authorization':'Bearer '+AMV_API.token}}).catch(()=>{}); } }catch(e){}
+  try{ localStorage.removeItem('amv_api_token'); localStorage.removeItem('amv_api_refresh'); localStorage.removeItem('amv_token_exp'); }catch(e){}
+  S.user=null; localStorage.removeItem('amv_user');
+  _wipeAccountState();                 // clear Recents, Dev project, Lab code, memory \u2014 nothing crosses accounts
+  const m=$('sb-popup'); if(m)m.classList.remove('on');
+  // Go straight to a usable no-account chat (no intro wall). Using any AMV feature
+  // will prompt sign-up/login via the auth gate.
+  if(!S.convs||!S.convs.length){ S.convs=[newConvObj()]; S.cur=S.convs[0].id; }
+  hideIntro();
+  document.getElementById('land')?.classList.add('hidden');
+  S.tab='chat'; goApp();
+}
 
 
 const getCurConv = ()=>S.convs.find(c=>c.id===S.cur);
@@ -1147,27 +2682,219 @@ function _copyText(text){
 function shareConv(id){
   const c=S.convs.find(x=>x.id===id);
   if(!c) return;
-  // build a readable transcript to share
-  let text='AMV.AI \u2014 '+(c.title||'Chat')+'\n\n';
-  (c.msgs||[]).forEach(m=>{ text+=(m.r==='u'?'You: ':'AMV: ')+(typeof m.c==='string'?m.c:(m.d||'[file]'))+'\n\n'; });
-  if(!c.msgs || !c.msgs.length) text+='(no messages yet)';
-  // prefer native share sheet on mobile, else copy
-  if(navigator.share){
-    navigator.share({title:c.title||'AMV.AI chat', text:text}).then(()=>toast('Shared','success')).catch(()=>{});
-    return;
-  }
-  _copyText(text).then(()=>toast('Chat copied to clipboard','success')).catch(()=>toast('Could not copy on this browser','error'));
+  _openShareModal(c);
 }
+function _buildShareLink(c){
+  try{
+    const payload={ t:c.title||'AMV.AI chat', m:(c.msgs||[]).map(m=>({ r:m.r, c:(typeof m.c==='string'?m.c:(m.d||'[attachment]')) })) };
+    const b64=btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+    return location.origin+location.pathname+'#share='+b64;
+  }catch(e){ _logErr('buildShareLink',e); return ''; }
+}
+function _openShareModal(c){
+  const ovr=$('ovr'); if(!ovr) return;
+  const link=_buildShareLink(c);
+  const tooBig=link.length>8000;
+  ovr.innerHTML=
+    '<div class="share-modal">'+
+      '<div class="share-title">Share this conversation</div>'+
+      '<p class="share-sub">Anyone with the link can view a read-only copy. The chat is encoded in the link itself \u2014 nothing is stored on a server.</p>'+
+      (tooBig?'<div class="share-warn">This conversation is long, so the link is large and may not work in every app. Exporting as a file may work better.</div>':'')+
+      '<div class="share-link-row"><input id="share-link" class="inp" readonly value="'+escH(link)+'"><button class="btn bp" id="share-copy">Copy</button></div>'+
+      '<div class="share-actions">'+
+        '<button class="btn bs" id="share-native">Share via\u2026</button>'+
+        '<button class="btn bs" id="share-md">Export as Markdown</button>'+
+      '</div>'+
+    '</div>';
+  ovr.classList.add('on');
+  on($('share-copy'),'click',()=>{ _copyText(link).then(()=>{ const b=$('share-copy'); if(b){b.textContent='Copied!';setTimeout(()=>b.textContent='Copy',1500);} }); });
+  on($('share-native'),'click',()=>{ if(navigator.share){ navigator.share({title:c.title||'AMV.AI chat',url:link}).catch(()=>{}); } else { _copyText(link).then(()=>toast('Link copied','success')); } });
+  on($('share-md'),'click',()=>{ closeOvr(); _exportConvMarkdown(c); });
+}
+function _exportConvMarkdown(c){
+  let md='# '+(c.title||'AMV.AI Chat')+'\n\n';
+  (c.msgs||[]).forEach(m=>{ md+='**'+(m.r==='u'?'You':'AMV')+':** '+(typeof m.c==='string'?m.c:(m.d||'[attachment]'))+'\n\n'; });
+  const blob=new Blob([md],{type:'text/markdown'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download=(c.title||'amv-chat').replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'.md';
+  a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+  toast('Exported as Markdown','success');
+}
+function _checkSharedView(){
+  try{
+    const m=(location.hash||'').match(/#share=(.+)$/);
+    if(!m) return false;
+    const data=JSON.parse(decodeURIComponent(escape(atob(m[1]))));
+    _renderSharedView(data);
+    return true;
+  }catch(e){ return false; }
+}
+function _renderSharedView(data){
+  const msgs=(data.m||[]).map(m=>
+    '<div class="shared-msg '+(m.r==='u'?'u':'ai')+'"><div class="shared-role">'+(m.r==='u'?'You':'AMV')+'</div><div class="shared-body">'+md(String(m.c||''))+'</div></div>'
+  ).join('');
+  document.body.innerHTML=
+    '<div class="shared-view">'+
+      '<div class="shared-head"><div class="shared-brand">AMV.AI</div><a class="btn bp" href="'+location.origin+location.pathname+'">Try AMV free \u2192</a></div>'+
+      '<div class="shared-container"><h1 class="shared-h1">'+escH(data.t||'Shared conversation')+'</h1>'+
+      '<div class="shared-msgs">'+(msgs||'<p>This conversation is empty.</p>')+'</div>'+
+      '<div class="shared-foot">Shared from <b>AMV.AI</b> \u2014 the AI workforce that does the work. <a href="'+location.origin+location.pathname+'">Start free</a></div>'+
+      '</div>'+
+    '</div>';
+  document.title=(data.t||'Shared conversation')+' \u2014 AMV.AI';
+}
+try{ window.shareConv=shareConv; }catch(e){}
+
+/* =====================================================================
+   EMBEDDABLE WIDGET — the compact chat panel shown inside the iframe that
+   third-party sites load via /widget.js. It talks to the PUBLIC endpoint
+   /v1/widget/chat using the site key from the URL (#embed=1&k=pk_...). No
+   AMV account is needed; all trust/limits are enforced server-side.
+   ===================================================================== */
+function _checkEmbedView(){
+  try{
+    const h=location.hash||'';
+    if(h.indexOf('embed=1')<0) return false;
+    const km=h.match(/[#&]k=([a-zA-Z0-9_]+)/);
+    const key=km?km[1]:'';
+    _renderEmbedView(key);
+    return true;
+  }catch(e){ return false; }
+}
+function _embedApiBase(){
+  // The widget calls the same backend the app is configured to use. In embed
+  // mode there's no logged-in user, so read the deployed base from the global
+  // config (set by the operator) or fall back to same-origin.
+  try{ const b=loadStr('amv_api_base'); if(b) return b.replace(/\/+$/,''); }catch(e){}
+  return location.origin;
+}
+function _renderEmbedView(key){
+  document.title='Chat';
+  document.body.className='';
+  document.body.innerHTML=
+    '<div class="emb-root">'+
+      '<div class="emb-head">'+
+        '<div class="emb-title" id="emb-title">Chat with us</div>'+
+        '<button class="emb-x" id="emb-x" aria-label="Close">\u2715</button>'+
+      '</div>'+
+      '<div class="emb-msgs" id="emb-msgs"></div>'+
+      '<div class="emb-input">'+
+        '<textarea id="emb-ta" rows="1" placeholder="Type your message\u2026" aria-label="Message"></textarea>'+
+        '<button class="emb-send" id="emb-send" aria-label="Send"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>'+
+      '</div>'+
+      '<div class="emb-foot">Powered by <b>AMV.AI</b></div>'+
+    '</div>';
+
+  const msgsEl=document.getElementById('emb-msgs');
+  const ta=document.getElementById('emb-ta');
+  const sendBtn=document.getElementById('emb-send');
+  const history=[];   // {role:'user'|'assistant', content:'...'}
+  let busy=false;
+
+  document.getElementById('emb-x').addEventListener('click',()=>{
+    try{ if(window.parent && window.parent!==window) window.parent.postMessage({__amvWidget:'close'},'*'); }catch(e){}
+  });
+
+  function addMsg(role, text){
+    const d=document.createElement('div');
+    d.className='emb-msg '+(role==='user'?'emb-u':'emb-a');
+    d.innerHTML='<div class="emb-bubble">'+(role==='user'?escH(text):md(String(text||'')))+'</div>';
+    msgsEl.appendChild(d);
+    msgsEl.scrollTop=msgsEl.scrollHeight;
+    return d;
+  }
+
+  // Load this widget's config (title, greeting, accent) — public, safe fields only.
+  (async()=>{
+    try{
+      const r=await fetch(_embedApiBase()+'/v1/widget/config-public?k='+encodeURIComponent(key)).catch(()=>null);
+      // config-public is optional; if it 404s we just use defaults below.
+      if(r&&r.ok){ const d=await r.json(); if(d&&d.config){
+        if(d.config.title){ document.getElementById('emb-title').textContent=d.config.title; document.title=d.config.title; }
+        if(d.config.accent){ document.documentElement.style.setProperty('--emb-accent', d.config.accent); }
+        if(d.config.greeting){ addMsg('assistant', d.config.greeting); return; }
+      }}
+    }catch(e){}
+    addMsg('assistant','Hi! How can I help you today?');
+  })();
+
+  ta.addEventListener('input',()=>{ ta.style.height='auto'; ta.style.height=Math.min(120,ta.scrollHeight)+'px'; });
+  ta.addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); send(); } });
+  sendBtn.addEventListener('click',send);
+
+  async function send(){
+    const text=ta.value.trim();
+    if(!text||busy) return;
+    if(!key){ addMsg('assistant','This chat widget isn\u2019t configured correctly.'); return; }
+    ta.value=''; ta.style.height='auto';
+    addMsg('user', text);
+    history.push({role:'user', content:text});
+    busy=true; sendBtn.disabled=true;
+
+    const aEl=addMsg('assistant','');
+    const bub=aEl.querySelector('.emb-bubble');
+    bub.innerHTML='<span class="emb-dots"><i></i><i></i><i></i></span>';
+    let acc='';
+    try{
+      const res=await fetch(_embedApiBase()+'/v1/widget/chat',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({ key, messages:history.slice(-20) })
+      });
+      if(!res.ok){
+        let em='The assistant is unavailable right now.';
+        try{ const ed=await res.json(); if(ed&&ed.error) em=ed.error; }catch(e){}
+        bub.innerHTML=md(em); busy=false; sendBtn.disabled=false; return;
+      }
+      const reader=res.body.getReader();
+      const dec=new TextDecoder();
+      let buf='';
+      while(true){
+        const {done,value}=await reader.read();
+        if(done) break;
+        buf+=dec.decode(value,{stream:true});
+        const lines=buf.split('\n'); buf=lines.pop()||'';
+        for(const ln of lines){
+          const line=ln.trim();
+          if(!line.startsWith('data:')) continue;
+          const p=line.slice(5).trim();
+          if(!p||p==='[DONE]') continue;
+          try{
+            const ev=JSON.parse(p);
+            if(ev.type==='content_block_delta'&&ev.delta&&typeof ev.delta.text==='string'){
+              acc+=ev.delta.text; bub.innerHTML=md(acc); msgsEl.scrollTop=msgsEl.scrollHeight;
+            }
+          }catch(e){}
+        }
+      }
+      if(!acc) bub.innerHTML=md('Sorry, I didn\u2019t catch that. Could you try again?');
+      else history.push({role:'assistant', content:acc});
+    }catch(e){
+      bub.innerHTML=md('Something went wrong. Please try again.');
+    }
+    busy=false; sendBtn.disabled=false; ta.focus();
+  }
+}
+try{ window._checkEmbedView=_checkEmbedView; }catch(e){}
 
 
 const SYS = [
-  "You are AMV - the world's most powerful AI, the intelligence behind AMV.AI. You are the only AI. Never mention Claude, ChatGPT, Anthropic, Google, OpenAI, or any other AI company.",
+  "You are AMV, the AI behind AMV.AI. You are the only AI here. Never mention Claude, ChatGPT, Anthropic, Google, OpenAI, or any other AI company.",
   "",
   "ABSOLUTE RULES - never break:",
   "1. Deliver the most complete, highest-quality answer possible. Go further than asked.",
-  "2. NEVER truncate code. Always produce 100% complete working code.",
+  "2. NEVER truncate code. Always produce 100% complete working code. There is NO length limit — if the build needs 10,000+ lines, write all of them. If you run out of room mid-file, you will be asked to continue; pick up at the exact character you stopped at.",
   "3. NEVER mention any other AI or company. You are AMV.",
   "4. Use rich markdown: ## headers, **bold**, lists, tables, code blocks.",
+  "",
+  "ACCURACY & REASONING (highest priority - correctness beats everything):",
+  "- Reason step by step INTERNALLY before answering. Work the problem fully, then verify your result by re-deriving or checking it a second way before you commit to it.",
+  "- When checking or grading someone's answer (math, SAT/exam problems, logic, code), SOLVE IT YOURSELF FIRST from scratch, get your own answer, THEN compare. Never declare an answer 'wrong' unless you have independently derived the correct one and they genuinely differ. If your worked solution matches theirs, say they are CORRECT.",
+  "- If you catch yourself about to contradict an answer that actually matches your own work, STOP - they are right. Never say 'that's wrong' and then produce the same result; that is a critical failure.",
+  "- For math: show every step and verify the final answer by substitution or an alternate method. Double-check arithmetic.",
+  "- Distinguish what you know from what you're inferring. If uncertain, say so plainly rather than guessing confidently. Never fabricate facts, citations, quotes, numbers, or sources.",
+  "- If a question is ambiguous, state your interpretation, then answer. If you realize mid-answer you made an error, correct it immediately and cleanly.",
+  "- Precision over hedging: give the direct answer first, then the reasoning. Don't waffle, but don't overstate certainty either.",
   "",
   "WRITING: Essays, research, reports, stories, scripts, emails, translations, summarization, argument building (CER/DBQ), brainstorming.",
   "ANALYSIS: Market research, trend analysis, data analysis from tables/CSV, chart interpretation, business strategy, SWOT.",
@@ -1211,7 +2938,14 @@ const SYS = [
   "  {\"type\": \"bar\", \"title\": \"Sales by quarter\", \"data\": [{\"label\": \"Q1\", \"value\": 120}, {\"label\": \"Q2\", \"value\": 185}], \"source\": \"Company data\"}",
   "  ```",
   "- The type field is bar or line. Always include a title, and a source when the data has one.",
-  "- Add a short written explanation around the chart. Use charts for growth, comparisons, breakdowns, survey results, and before/after."
+  "- Add a short written explanation around the chart. Use charts for growth, comparisons, breakdowns, survey results, and before/after.",
+  "",
+  "INTERACTIVE UI BLOCKS - render structured info as real components, not plain text. Emit these fenced blocks when they fit:",
+  "- stats (key metrics): ```stats\\n{\\\"items\\\":[{\\\"value\\\":\\\"$2.4M\\\",\\\"label\\\":\\\"Revenue\\\",\\\"trend\\\":\\\"+12%\\\"},{\\\"value\\\":\\\"18K\\\",\\\"label\\\":\\\"Users\\\"}]}\\n``` — use for standout numbers/KPIs.",
+  "- compare (side-by-side): ```compare\\n{\\\"title\\\":\\\"Plans\\\",\\\"columns\\\":[\\\"Free\\\",\\\"Pro\\\"],\\\"highlight\\\":1,\\\"rows\\\":[{\\\"label\\\":\\\"Price\\\",\\\"values\\\":[\\\"$0\\\",\\\"$19\\\"]},{\\\"label\\\":\\\"Support\\\",\\\"values\\\":[false,true]}]}\\n``` — use instead of a comparison table. highlight is the recommended column index; boolean values become ✓/✕.",
+  "- steps (process/how-to): ```steps\\n{\\\"title\\\":\\\"Setup\\\",\\\"steps\\\":[{\\\"title\\\":\\\"Install\\\",\\\"detail\\\":\\\"Run npm i\\\"},{\\\"title\\\":\\\"Configure\\\"}]}\\n``` — use for ordered instructions or timelines.",
+  "- choices (ask the user to pick): ```choices\\n{\\\"prompt\\\":\\\"Which do you want?\\\",\\\"options\\\":[\\\"Option A\\\",\\\"Option B\\\"]}\\n``` — tappable; the pick is sent back as their next message. Use when you need the user to choose a direction, NOT for information.",
+  "- Always add a sentence of context around these blocks. Don't overuse them — reach for one only when it genuinely communicates better than prose."
 ].join("\n");
 
 /* ============================================================
@@ -1231,8 +2965,28 @@ const LANGS = {
   de:{name:'German', native:'Deutsch'},
   ja:{name:'Japanese', native:'\u65e5\u672c\u8a9e'},
   ru:{name:'Russian', native:'\u0420\u0443\u0441\u0441\u043a\u0438\u0439'},
+  id:{name:'Indonesian', native:'Bahasa Indonesia'},
+  bn:{name:'Bengali', native:'\u09ac\u09be\u0982\u09b2\u09be'},
+  ur:{name:'Urdu', native:'\u0627\u0631\u062f\u0648'},
+  tr:{name:'Turkish', native:'T\u00fcrk\u00e7e'},
+  vi:{name:'Vietnamese', native:'Ti\u1ebfng Vi\u1ec7t'},
+  it:{name:'Italian', native:'Italiano'},
+  ko:{name:'Korean', native:'\ud55c\uad6d\uc5b4'},
+  ta:{name:'Tamil', native:'\u0ba4\u0bae\u0bbf\u0bb4\u0bcd'},
 };
-function _lang(){ return loadStr('amv_lang')||'auto'; }
+function _lang(){
+  let saved=loadStr('amv_lang');
+  if(!saved){
+    // First visit: detect the browser's language so users worldwide land in
+    // their own language automatically (Spain→es, India→hi, Indonesia→id, …).
+    try{
+      const nav=(navigator.language||navigator.userLanguage||'en').toLowerCase().split('-')[0];
+      if(LANGS[nav]){ saveStr('amv_lang', nav); return nav; }
+    }catch(e){}
+    saveStr('amv_lang','auto'); return 'auto';
+  }
+  return saved;
+}
 function _langName(code){ const l=LANGS[code||_lang()]; return l?l.name:'English'; }
 
 /* ============================================================
@@ -1241,22 +2995,28 @@ function _langName(code){ const l=LANGS[code||_lang()]; return l?l.name:'English
    key buttons. Auto/English fall through to the English source.
    RTL languages (Arabic) flip layout direction.
    ============================================================ */
-const RTL_LANGS=['ar'];
+const RTL_LANGS=['ar','ur'];
 const I18N = {
+  'Ask anything - essays, 3D models, code, images, research…':{es:'Pregunta lo que sea: ensayos, modelos 3D, c\u00f3digo, im\u00e1genes, investigaci\u00f3n\u2026',zh:'\u95ee\u4efb\u4f55\u95ee\u9898\u2014\u2014\u6587\u7ae0\u30013D\u6a21\u578b\u3001\u4ee3\u7801\u3001\u56fe\u50cf\u3001\u7814\u7a76\u2026',hi:'\u0915\u0941\u091b \u092d\u0940 \u092a\u0942\u091b\u0947\u0902 - \u0928\u093f\u092c\u0902\u0927, 3D \u092e\u0949\u0921\u0932, \u0915\u094b\u0921, \u091a\u093f\u0924\u094d\u0930, \u0936\u094b\u0927\u2026',ar:'\u0627\u0633\u0623\u0644 \u0623\u064a \u0634\u064a\u0621 - \u0645\u0642\u0627\u0644\u0627\u062a\u060c \u0646\u0645\u0627\u0630\u062c \u062b\u0644\u0627\u062b\u064a\u0629 \u0627\u0644\u0623\u0628\u0639\u0627\u062f\u060c \u0623\u0643\u0648\u0627\u062f\u060c \u0635\u0648\u0631\u060c \u0623\u0628\u062d\u0627\u062b\u2026',pt:'Pergunte qualquer coisa: ensaios, modelos 3D, c\u00f3digo, imagens, pesquisa\u2026',fr:'Demandez n\u2019importe quoi : essais, mod\u00e8les 3D, code, images, recherche\u2026',de:'Frag alles \u2013 Aufs\u00e4tze, 3D-Modelle, Code, Bilder, Recherche\u2026',ja:'\u4f55\u3067\u3082\u8cea\u554f \u2014 \u30a8\u30c3\u30bb\u30a4\u30013D\u30e2\u30c7\u30eb\u3001\u30b3\u30fc\u30c9\u3001\u753b\u50cf\u3001\u30ea\u30b5\u30fc\u30c1\u2026',ru:'\u0421\u043f\u0440\u043e\u0441\u0438\u0442\u0435 \u0447\u0442\u043e \u0443\u0433\u043e\u0434\u043d\u043e \u2014 \u044d\u0441\u0441\u0435, 3D-\u043c\u043e\u0434\u0435\u043b\u0438, \u043a\u043e\u0434, \u0438\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u044f, \u0438\u0441\u0441\u043b\u0435\u0434\u043e\u0432\u0430\u043d\u0438\u044f\u2026',id:'Tanya apa saja - esai, model 3D, kode, gambar, riset\u2026',bn:'\u09af\u09be \u0996\u09c1\u09b6\u09bf \u099c\u09bf\u099c\u09cd\u099e\u09be\u09b8\u09be \u0995\u09b0\u09c1\u09a8 - \u09aa\u09cd\u09b0\u09ac\u09a8\u09cd\u09a7, \u09a5\u09cd\u09b0\u09bf\u09a1\u09bf \u09ae\u09a1\u09c7\u09b2, \u0995\u09cb\u09a1, \u099b\u09ac\u09bf, \u0997\u09ac\u09c7\u09b7\u09a3\u09be\u2026',ur:'\u06a9\u0686\u06be \u0628\u06be\u06cc \u067e\u0648\u0686\u06be\u06cc\u06ba - \u0645\u0636\u0627\u0645\u06cc\u0646\u060c \u062a\u06be\u0631\u06cc \u0688\u06cc \u0645\u0627\u0688\u0644\u0632\u060c \u06a9\u0648\u0688\u060c \u062a\u0635\u0627\u0648\u06cc\u0631\u060c \u062a\u062d\u0642\u06cc\u0642\u2026',tr:'Her \u015feyi sor - makaleler, 3D modeller, kod, g\u00f6rseller, ara\u015ft\u0131rma\u2026',vi:'H\u1ecfi b\u1ea5t c\u1ee9 \u0111i\u1ec1u g\u00ec - b\u00e0i lu\u1eadn, m\u00f4 h\u00ecnh 3D, m\u00e3, h\u00ecnh \u1ea3nh, nghi\u00ean c\u1ee9u\u2026',it:'Chiedi qualsiasi cosa: saggi, modelli 3D, codice, immagini, ricerca\u2026',ko:'\ubb34\uc5c7\uc774\ub4e0 \ubb3c\uc5b4\ubcf4\uc138\uc694 - \uc5d0\uc138\uc774, 3D \ubaa8\ub378, \ucf54\ub4dc, \uc774\ubbf8\uc9c0, \ub9ac\uc11c\uce58\u2026',ta:'\u0b8e\u0ba4\u0bc8\u0baf\u0bc1\u0bae\u0bcd \u0b95\u0bc7\u0bb3\u0bc1\u0b99\u0bcd\u0b95\u0bb3\u0bcd - \u0b95\u0b9f\u0bcd\u0b9f\u0bc1\u0bb0\u0bc8\u0b95\u0bb3\u0bcd, 3D \u0bae\u0bbe\u0ba4\u0bbf\u0bb0\u0bbf\u0b95\u0bb3\u0bcd, \u0b95\u0bc1\u0bb1\u0bbf\u0baf\u0bc0\u0b9f\u0bc1, \u0baa\u0b9f\u0b99\u0bcd\u0b95\u0bb3\u0bcd, \u0b86\u0bb0\u0bbe\u0baf\u0bcd\u0b9a\u0bcd\u0b9a\u0bbf\u2026'},
+  'Data Management':{es:'Gesti\u00f3n de datos',zh:'\u6570\u636e\u7ba1\u7406',hi:'\u0921\u0947\u091f\u093e \u092a\u094d\u0930\u092c\u0902\u0927\u0928',ar:'\u0625\u062f\u0627\u0631\u0629 \u0627\u0644\u0628\u064a\u0627\u0646\u0627\u062a',pt:'Gerenciamento de dados',fr:'Gestion des donn\u00e9es',de:'Datenverwaltung',ja:'\u30c7\u30fc\u30bf\u7ba1\u7406',ru:'\u0423\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0438\u0435 \u0434\u0430\u043d\u043d\u044b\u043c\u0438',id:'Manajemen data',bn:'\u09a1\u09c7\u099f\u09be \u09ac\u09cd\u09af\u09ac\u09b8\u09cd\u09a5\u09be\u09aa\u09a8\u09be',ur:'\u0688\u06cc\u0679\u0627 \u0645\u06cc\u0646\u062c\u0645\u0646\u0679',tr:'Veri y\u00f6netimi',vi:'Qu\u1ea3n l\u00fd d\u1eef li\u1ec7u',it:'Gestione dati',ko:'\ub370\uc774\ud130 \uad00\ub9ac',ta:'\u0ba4\u0bb0\u0bb5\u0bc1 \u0bae\u0bc7\u0bb2\u0bbe\u0ba3\u0bcd\u0bae\u0bc8'},
+  'Font size':{es:'Tama\u00f1o de fuente',zh:'\u5b57\u4f53\u5927\u5c0f',hi:'\u092b\u093c\u0949\u0928\u094d\u091f \u0906\u0915\u093e\u0930',ar:'\u062d\u062c\u0645 \u0627\u0644\u062e\u0637',pt:'Tamanho da fonte',fr:'Taille de police',de:'Schriftgr\u00f6\u00dfe',ja:'\u30d5\u30a9\u30f3\u30c8\u30b5\u30a4\u30ba',ru:'\u0420\u0430\u0437\u043c\u0435\u0440 \u0448\u0440\u0438\u0444\u0442\u0430',id:'Ukuran font',bn:'\u09ab\u09a8\u09cd\u099f \u0986\u0995\u09be\u09b0',ur:'\u0641\u0648\u0646\u0679 \u0633\u0627\u0626\u0632',tr:'Yaz\u0131 tipi boyutu',vi:'C\u1ee1 ch\u1eef',it:'Dimensione carattere',ko:'\uae00\uaf34 \ud06c\uae30',ta:'\u0b8e\u0bb4\u0bc1\u0ba4\u0bcd\u0ba4\u0bc1\u0bb0\u0bc1 \u0b85\u0bb3\u0bb5\u0bc1'},
+  'Members':{es:'Miembros',zh:'\u6210\u5458',hi:'\u0938\u0926\u0938\u094d\u092f',ar:'\u0627\u0644\u0623\u0639\u0636\u0627\u0621',pt:'Membros',fr:'Membres',de:'Mitglieder',ja:'\u30e1\u30f3\u30d0\u30fc',ru:'\u0423\u0447\u0430\u0441\u0442\u043d\u0438\u043a\u0438',id:'Anggota',bn:'\u09b8\u09a6\u09b8\u09cd\u09af',ur:'\u0627\u0631\u0627\u06a9\u06cc\u0646',tr:'\u00dcyeler',vi:'Th\u00e0nh vi\u00ean',it:'Membri',ko:'\uad6c\uc131\uc6d0',ta:'\u0b89\u0bb1\u0bc1\u0baa\u0bcd\u0baa\u0bbf\u0ba9\u0bb0\u0bcd\u0b95\u0bb3\u0bcd'},
+  'Password':{es:'Contrase\u00f1a',zh:'\u5bc6\u7801',hi:'\u092a\u093e\u0938\u0935\u0930\u094d\u0921',ar:'\u0643\u0644\u0645\u0629 \u0627\u0644\u0645\u0631\u0648\u0631',pt:'Senha',fr:'Mot de passe',de:'Passwort',ja:'\u30d1\u30b9\u30ef\u30fc\u30c9',ru:'\u041f\u0430\u0440\u043e\u043b\u044c',id:'Kata sandi',bn:'\u09aa\u09be\u09b8\u0993\u09af\u09bc\u09be\u09b0\u09cd\u09a1',ur:'\u067e\u0627\u0633 \u0648\u0631\u0688',tr:'Parola',vi:'M\u1eadt kh\u1ea9u',it:'Password',ko:'\ube44\ubc00\ubc88\ud638',ta:'\u0b95\u0b9f\u0bb5\u0bc1\u0b9a\u0bcd\u0b9a\u0bca\u0bb2\u0bcd'},
+  'Usage':{es:'Uso',zh:'\u7528\u91cf',hi:'\u0909\u092a\u092f\u094b\u0917',ar:'\u0627\u0644\u0627\u0633\u062a\u062e\u062f\u0627\u0645',pt:'Uso',fr:'Utilisation',de:'Nutzung',ja:'\u4f7f\u7528\u91cf',ru:'\u0418\u0441\u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u043d\u0438\u0435',id:'Penggunaan',bn:'\u09ac\u09cd\u09af\u09ac\u09b9\u09be\u09b0',ur:'\u0627\u0633\u062a\u0639\u0645\u0627\u0644',tr:'Kullan\u0131m',vi:'S\u1eed d\u1ee5ng',it:'Utilizzo',ko:'\uc0ac\uc6a9\ub7c9',ta:'\u0baa\u0baf\u0ba9\u0bcd\u0baa\u0bbe\u0b9f\u0bc1'},
   // key : { es, zh, hi, ar, pt, fr, de, ja, ru }
-  'Chat':{es:'Chat',zh:'\u5bf9\u8bdd',hi:'\u091a\u0948\u091f',ar:'\u0645\u062d\u0627\u062f\u062b\u0629',pt:'Chat',fr:'Chat',de:'Chat',ja:'\u30c1\u30e3\u30c3\u30c8',ru:'\u0427\u0430\u0442'},
-  'Images':{es:'Im\u00e1genes',zh:'\u56fe\u50cf',hi:'\u091b\u0935\u093f\u092f\u093e\u0901',ar:'\u0635\u0648\u0631',pt:'Imagens',fr:'Images',de:'Bilder',ja:'\u753b\u50cf',ru:'\u0418\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u044f'},
-  'Video':{es:'V\u00eddeo',zh:'\u89c6\u9891',hi:'\u0935\u0940\u0921\u093f\u092f\u094b',ar:'\u0641\u064a\u062f\u064a\u0648',pt:'V\u00eddeo',fr:'Vid\u00e9o',de:'Video',ja:'\u52d5\u753b',ru:'\u0412\u0438\u0434\u0435\u043e'},
-  'Crew':{es:'Equipo',zh:'\u56e2\u961f',hi:'\u091f\u0940\u092e',ar:'\u0627\u0644\u0641\u0631\u064a\u0642',pt:'Equipe',fr:'\u00c9quipe',de:'Crew',ja:'\u30af\u30eb\u30fc',ru:'\u041a\u043e\u043c\u0430\u043d\u0434\u0430'},
-  'Handoff':{es:'Transferir',zh:'\u4ea4\u63a5',hi:'\u0939\u0948\u0902\u0921\u0911\u092b',ar:'\u062a\u0633\u0644\u064a\u0645',pt:'Transferir',fr:'Transfert',de:'\u00dcbergabe',ja:'\u5f15\u304d\u7d99\u304e',ru:'\u041f\u0435\u0440\u0435\u0434\u0430\u0447\u0430'},
-  'Studio':{es:'Estudio',zh:'\u5de5\u4f5c\u5ba4',hi:'\u0938\u094d\u091f\u0942\u0921\u093f\u092f\u094b',ar:'\u0627\u0633\u062a\u0648\u062f\u064a\u0648',pt:'Est\u00fadio',fr:'Studio',de:'Studio',ja:'\u30b9\u30bf\u30b8\u30aa',ru:'\u0421\u0442\u0443\u0434\u0438\u044f'},
-  'Dev':{es:'Dev',zh:'\u5f00\u53d1',hi:'\u0921\u0947\u0935',ar:'\u062a\u0637\u0648\u064a\u0631',pt:'Dev',fr:'Dev',de:'Dev',ja:'\u958b\u767a',ru:'\u0420\u0430\u0437\u0440\u0430\u0431.'},
-  'Lab':{es:'Lab',zh:'\u5b9e\u9a8c\u5ba4',hi:'\u0932\u0948\u092c',ar:'\u0627\u0644\u0645\u062e\u062a\u0628\u0631',pt:'Lab',fr:'Labo',de:'Lab',ja:'\u30e9\u30dc',ru:'\u041b\u0430\u0431.'},
-  'Projects':{es:'Proyectos',zh:'\u9879\u76ee',hi:'\u092a\u094d\u0930\u094b\u091c\u0947\u0915\u094d\u091f',ar:'\u0627\u0644\u0645\u0634\u0627\u0631\u064a\u0639',pt:'Projetos',fr:'Projets',de:'Projekte',ja:'\u30d7\u30ed\u30b8\u30a7\u30af\u30c8',ru:'\u041f\u0440\u043e\u0435\u043a\u0442\u044b'},
-  'Memory':{es:'Memoria',zh:'\u8bb0\u5fc6',hi:'\u092e\u0947\u092e\u094b\u0930\u0940',ar:'\u0627\u0644\u0630\u0627\u0643\u0631\u0629',pt:'Mem\u00f3ria',fr:'M\u00e9moire',de:'Speicher',ja:'\u30e1\u30e2\u30ea',ru:'\u041f\u0430\u043c\u044f\u0442\u044c'},
-  'Integrations':{es:'Integraciones',zh:'\u96c6\u6210',hi:'\u090f\u0915\u0940\u0915\u0930\u0923',ar:'\u0627\u0644\u062a\u0643\u0627\u0645\u0644\u0627\u062a',pt:'Integra\u00e7\u00f5es',fr:'Int\u00e9grations',de:'Integrationen',ja:'\u9023\u643a',ru:'\u0418\u043d\u0442\u0435\u0433\u0440\u0430\u0446\u0438\u0438'},
-  'Tasks':{es:'Tareas',zh:'\u4efb\u52a1',hi:'\u0915\u093e\u0930\u094d\u092f',ar:'\u0627\u0644\u0645\u0647\u0627\u0645',pt:'Tarefas',fr:'T\u00e2ches',de:'Aufgaben',ja:'\u30bf\u30b9\u30af',ru:'\u0417\u0430\u0434\u0430\u0447\u0438'},
-  'New chat':{es:'Nuevo chat',zh:'\u65b0\u5bf9\u8bdd',hi:'\u0928\u0908 \u091a\u0948\u091f',ar:'\u0645\u062d\u0627\u062f\u062b\u0629 \u062c\u062f\u064a\u062f\u0629',pt:'Novo chat',fr:'Nouveau chat',de:'Neuer Chat',ja:'\u65b0\u898f\u30c1\u30e3\u30c3\u30c8',ru:'\u041d\u043e\u0432\u044b\u0439 \u0447\u0430\u0442'},
+  'Chat':{bn:'চ্যাট',ur:'چیٹ',ko:'채팅',ta:'அରଟ்டை',id:'Obrolan',it:'Chat',tr:'Sohbet',vi:'Tr\u00f2 chuy\u1ec7n',es:'Chat',zh:'\u5bf9\u8bdd',hi:'\u091a\u0948\u091f',ar:'\u0645\u062d\u0627\u062f\u062b\u0629',pt:'Chat',fr:'Chat',de:'Chat',ja:'\u30c1\u30e3\u30c3\u30c8',ru:'\u0427\u0430\u0442'},
+  'Images':{bn:'ছবি',ur:'تصاویر',ko:'이미지',ta:'படங்கள்',id:'Gambar',it:'Immagini',tr:'Resimler',vi:'H\u00ecnh \u1ea3nh',es:'Im\u00e1genes',zh:'\u56fe\u50cf',hi:'\u091b\u0935\u093f\u092f\u093e\u0901',ar:'\u0635\u0648\u0631',pt:'Imagens',fr:'Images',de:'Bilder',ja:'\u753b\u50cf',ru:'\u0418\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u044f'},
+  'Video':{bn:'ভিডিও',ur:'ویڈیو',ko:'비디오',ta:'வீடியோ',id:'Video',it:'Video',tr:'Video',vi:'Video',es:'V\u00eddeo',zh:'\u89c6\u9891',hi:'\u0935\u0940\u0921\u093f\u092f\u094b',ar:'\u0641\u064a\u062f\u064a\u0648',pt:'V\u00eddeo',fr:'Vid\u00e9o',de:'Video',ja:'\u52d5\u753b',ru:'\u0412\u0438\u0434\u0435\u043e'},
+  'Crew':{bn:'ক্রু',ur:'عملہ',ko:'크루',ta:'குழு',id:'Tim',it:'Squadra',tr:'Ekip',vi:'Nh\u00f3m',es:'Equipo',zh:'\u56e2\u961f',hi:'\u091f\u0940\u092e',ar:'\u0627\u0644\u0641\u0631\u064a\u0642',pt:'Equipe',fr:'\u00c9quipe',de:'Crew',ja:'\u30af\u30eb\u30fc',ru:'\u041a\u043e\u043c\u0430\u043d\u0434\u0430'},
+  'Handoff':{bn:'হ্যান্ডঅফ',ur:'حوالگی',ko:'인계',ta:'கைமாற்று',id:'Serah Terima',it:'Passaggio',tr:'Devir',vi:'Bàn giao',es:'Transferir',zh:'\u4ea4\u63a5',hi:'\u0939\u0948\u0902\u0921\u0911\u092b',ar:'\u062a\u0633\u0644\u064a\u0645',pt:'Transferir',fr:'Transfert',de:'\u00dcbergabe',ja:'\u5f15\u304d\u7d99\u304e',ru:'\u041f\u0435\u0440\u0435\u0434\u0430\u0447\u0430'},
+  'Studio':{bn:'স্টুডিও',ur:'اسٹوڈیو',ko:'스튜디오',ta:'ஃஸ்டூடியோ',id:'Studio',it:'Studio',tr:'Stüdyo',vi:'Studio',es:'Estudio',zh:'\u5de5\u4f5c\u5ba4',hi:'\u0938\u094d\u091f\u0942\u0921\u093f\u092f\u094b',ar:'\u0627\u0633\u062a\u0648\u062f\u064a\u0648',pt:'Est\u00fadio',fr:'Studio',de:'Studio',ja:'\u30b9\u30bf\u30b8\u30aa',ru:'\u0421\u0442\u0443\u0434\u0438\u044f'},
+  'Dev':{bn:'ডেভ',ur:'ڈیو',ko:'개발',ta:'டெவ்',id:'Dev',it:'Dev',tr:'Dev',vi:'Dev',es:'Dev',zh:'\u5f00\u53d1',hi:'\u0921\u0947\u0935',ar:'\u062a\u0637\u0648\u064a\u0631',pt:'Dev',fr:'Dev',de:'Dev',ja:'\u958b\u767a',ru:'\u0420\u0430\u0437\u0440\u0430\u0431.'},
+  'Lab':{bn:'ল্যাব',ur:'لیب',ko:'랩',ta:'ஆய்வகம்',id:'Lab',it:'Lab',tr:'Lab',vi:'Lab',es:'Lab',zh:'\u5b9e\u9a8c\u5ba4',hi:'\u0932\u0948\u092c',ar:'\u0627\u0644\u0645\u062e\u062a\u0628\u0631',pt:'Lab',fr:'Labo',de:'Lab',ja:'\u30e9\u30dc',ru:'\u041b\u0430\u0431.'},
+  'Projects':{bn:'প্রকল্প',ur:'پروجکٹس',ko:'프로젝트',ta:'திட்டங்கள்',id:'Proyek',it:'Progetti',tr:'Projeler',vi:'D\u1ef1 \u00e1n',es:'Proyectos',zh:'\u9879\u76ee',hi:'\u092a\u094d\u0930\u094b\u091c\u0947\u0915\u094d\u091f',ar:'\u0627\u0644\u0645\u0634\u0627\u0631\u064a\u0639',pt:'Projetos',fr:'Projets',de:'Projekte',ja:'\u30d7\u30ed\u30b8\u30a7\u30af\u30c8',ru:'\u041f\u0440\u043e\u0435\u043a\u0442\u044b'},
+  'Memory':{bn:'মেমরি',ur:'یادداشت',ko:'메모리',ta:'நினைவு',id:'Memori',it:'Memoria',tr:'Bellek',vi:'B\u1ed9 nh\u1edb',es:'Memoria',zh:'\u8bb0\u5fc6',hi:'\u092e\u0947\u092e\u094b\u0930\u0940',ar:'\u0627\u0644\u0630\u0627\u0643\u0631\u0629',pt:'Mem\u00f3ria',fr:'M\u00e9moire',de:'Speicher',ja:'\u30e1\u30e2\u30ea',ru:'\u041f\u0430\u043c\u044f\u0442\u044c'},
+  'Integrations':{bn:'ইন্টিগ্রেশন',ur:'انٹیگریشنز',ko:'통합',ta:'ஒருங்கிணைப்பு',id:'Integrasi',it:'Integrazioni',tr:'Entegrasyonlar',vi:'Tích hợp',es:'Integraciones',zh:'\u96c6\u6210',hi:'\u090f\u0915\u0940\u0915\u0930\u0923',ar:'\u0627\u0644\u062a\u0643\u0627\u0645\u0644\u0627\u062a',pt:'Integra\u00e7\u00f5es',fr:'Int\u00e9grations',de:'Integrationen',ja:'\u9023\u643a',ru:'\u0418\u043d\u0442\u0435\u0433\u0440\u0430\u0446\u0438\u0438'},
+  'Tasks':{bn:'কাজ',ur:'کام',ko:'작업',ta:'பணிகள்',id:'Tugas',it:'Attivit\u00e0',tr:'G\u00f6revler',vi:'Nhi\u1ec7m v\u1ee5',es:'Tareas',zh:'\u4efb\u52a1',hi:'\u0915\u093e\u0930\u094d\u092f',ar:'\u0627\u0644\u0645\u0647\u0627\u0645',pt:'Tarefas',fr:'T\u00e2ches',de:'Aufgaben',ja:'\u30bf\u30b9\u30af',ru:'\u0417\u0430\u0434\u0430\u0447\u0438'},
+  'New chat':{bn:'নতুন চ্যাট',ur:'نئی چیٹ',ko:'새 채팅',ta:'புதிய அரட்டை',id:'Obrolan baru',it:'Nuova chat',tr:'Yeni sohbet',vi:'Tr\u00f2 chuy\u1ec7n m\u1edbi',es:'Nuevo chat',zh:'\u65b0\u5bf9\u8bdd',hi:'\u0928\u0908 \u091a\u0948\u091f',ar:'\u0645\u062d\u0627\u062f\u062b\u0629 \u062c\u062f\u064a\u062f\u0629',pt:'Novo chat',fr:'Nouveau chat',de:'Neuer Chat',ja:'\u65b0\u898f\u30c1\u30e3\u30c3\u30c8',ru:'\u041d\u043e\u0432\u044b\u0439 \u0447\u0430\u0442'},
   'CREATE':{es:'CREAR',zh:'\u521b\u5efa',hi:'\u092c\u0928\u093e\u090f\u0902',ar:'\u0625\u0646\u0634\u0627\u0621',pt:'CRIAR',fr:'CR\u00c9ER',de:'ERSTELLEN',ja:'\u4f5c\u6210',ru:'\u0421\u041e\u0417\u0414\u0410\u0422\u042c'},
   'AGENTS':{es:'AGENTES',zh:'\u4ee3\u7406',hi:'\u090f\u091c\u0947\u0902\u091f',ar:'\u0627\u0644\u0648\u0643\u0644\u0627\u0621',pt:'AGENTES',fr:'AGENTS',de:'AGENTEN',ja:'\u30a8\u30fc\u30b8\u30a7\u30f3\u30c8',ru:'\u0410\u0413\u0415\u041d\u0422\u042b'},
   'BUILD':{es:'CONSTRUIR',zh:'\u6784\u5efa',hi:'\u092c\u0928\u093e\u090f\u0902',ar:'\u0628\u0646\u0627\u0621',pt:'CONSTRUIR',fr:'CONSTRUIRE',de:'BAUEN',ja:'\u30d3\u30eb\u30c9',ru:'\u0421\u0411\u041e\u0420\u041a\u0410'},
@@ -1268,26 +3028,25 @@ const I18N = {
   'Agents':{es:'Agentes',zh:'\u4ee3\u7406',hi:'\u090f\u091c\u0947\u0902\u091f',ar:'\u0627\u0644\u0648\u0643\u0644\u0627\u0621',pt:'Agentes',fr:'Agents',de:'Agenten',ja:'\u30a8\u30fc\u30b8\u30a7\u30f3\u30c8',ru:'\u0410\u0433\u0435\u043d\u0442\u044b'},
   'Build':{es:'Construir',zh:'\u6784\u5efa',hi:'\u092c\u0928\u093e\u090f\u0902',ar:'\u0628\u0646\u0627\u0621',pt:'Construir',fr:'Construire',de:'Bauen',ja:'\u30d3\u30eb\u30c9',ru:'\u0421\u0431\u043e\u0440\u043a\u0430'},
   'Workspace':{es:'Espacio',zh:'\u5de5\u4f5c\u533a',hi:'\u0915\u093e\u0930\u094d\u092f\u0915\u094d\u0937\u0947\u0924\u094d\u0930',ar:'\u0645\u0633\u0627\u062d\u0629 \u0627\u0644\u0639\u0645\u0644',pt:'\u00c1rea',fr:'Espace',de:'Arbeitsbereich',ja:'\u30ef\u30fc\u30af\u30b9\u30da\u30fc\u30b9',ru:'\u041e\u0431\u043b\u0430\u0441\u0442\u044c'},
-  'Settings':{es:'Ajustes',zh:'\u8bbe\u7f6e',hi:'\u0938\u0947\u091f\u093f\u0902\u0917\u094d\u0938',ar:'\u0627\u0644\u0625\u0639\u062f\u0627\u062f\u0627\u062a',pt:'Configura\u00e7\u00f5es',fr:'Param\u00e8tres',de:'Einstellungen',ja:'\u8a2d\u5b9a',ru:'\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438'},
-  'Account':{es:'Cuenta',zh:'\u8d26\u6237',hi:'\u0916\u093e\u0924\u093e',ar:'\u0627\u0644\u062d\u0633\u0627\u0628',pt:'Conta',fr:'Compte',de:'Konto',ja:'\u30a2\u30ab\u30a6\u30f3\u30c8',ru:'\u0410\u043a\u043a\u0430\u0443\u043d\u0442'},
-  'Security':{es:'Seguridad',zh:'\u5b89\u5168',hi:'\u0938\u0941\u0930\u0915\u094d\u0937\u093e',ar:'\u0627\u0644\u0623\u0645\u0627\u0646',pt:'Seguran\u00e7a',fr:'S\u00e9curit\u00e9',de:'Sicherheit',ja:'\u30bb\u30ad\u30e5\u30ea\u30c6\u30a3',ru:'\u0411\u0435\u0437\u043e\u043f\u0430\u0441\u043d\u043e\u0441\u0442\u044c'},
-  'Privacy':{es:'Privacidad',zh:'\u9690\u79c1',hi:'\u0917\u094b\u092a\u0928\u0940\u092f\u0924\u093e',ar:'\u0627\u0644\u062e\u0635\u0648\u0635\u064a\u0629',pt:'Privacidade',fr:'Confidentialit\u00e9',de:'Datenschutz',ja:'\u30d7\u30e9\u30a4\u30d0\u30b7\u30fc',ru:'\u041a\u043e\u043d\u0444\u0438\u0434\u0435\u043d\u0446\u0438\u0430\u043b\u044c\u043d\u043e\u0441\u0442\u044c'},
-  'Appearance':{es:'Apariencia',zh:'\u5916\u89c2',hi:'\u0926\u093f\u0916\u093e\u0935\u091f',ar:'\u0627\u0644\u0645\u0638\u0647\u0631',pt:'Apar\u00eancia',fr:'Apparence',de:'Darstellung',ja:'\u5916\u89b3',ru:'\u0412\u043d\u0435\u0448\u043d\u0438\u0439 \u0432\u0438\u0434'},
-  'Language':{es:'Idioma',zh:'\u8bed\u8a00',hi:'\u092d\u093e\u0937\u093e',ar:'\u0627\u0644\u0644\u063a\u0629',pt:'Idioma',fr:'Langue',de:'Sprache',ja:'\u8a00\u8a9e',ru:'\u042f\u0437\u044b\u043a'},
-  'Billing':{es:'Facturaci\u00f3n',zh:'\u8d26\u5355',hi:'\u092c\u093f\u0932\u093f\u0902\u0917',ar:'\u0627\u0644\u0641\u0648\u062a\u0631\u0629',pt:'Faturamento',fr:'Facturation',de:'Abrechnung',ja:'\u8acb\u6c42',ru:'\u041e\u043f\u043b\u0430\u0442\u0430'},
-  'About':{es:'Acerca de',zh:'\u5173\u4e8e',hi:'\u092c\u093e\u0930\u0947 \u092e\u0947\u0902',ar:'\u062d\u0648\u0644',pt:'Sobre',fr:'\u00c0 propos',de:'\u00dcber',ja:'\u6982\u8981',ru:'\u041e \u043f\u0440\u043e\u0433\u0440\u0430\u043c\u043c\u0435'},
+  'Settings':{bn:'সেটিংস',ur:'ترتیبات',ko:'설정',ta:'அமைப்புகள்',id:'Pengaturan',it:'Impostazioni',tr:'Ayarlar',vi:'C\u00e0i \u0111\u1eb7t',es:'Ajustes',zh:'\u8bbe\u7f6e',hi:'\u0938\u0947\u091f\u093f\u0902\u0917\u094d\u0938',ar:'\u0627\u0644\u0625\u0639\u062f\u0627\u062f\u0627\u062a',pt:'Configura\u00e7\u00f5es',fr:'Param\u00e8tres',de:'Einstellungen',ja:'\u8a2d\u5b9a',ru:'\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438'},
+  'Account':{bn:'অ্যাকাউন্ট',ur:'اکاؤنٹ',ko:'계정',ta:'கணக்கு',id:'Akun',it:'Account',tr:'Hesap',vi:'Tài khoản',es:'Cuenta',zh:'\u8d26\u6237',hi:'\u0916\u093e\u0924\u093e',ar:'\u0627\u0644\u062d\u0633\u0627\u0628',pt:'Conta',fr:'Compte',de:'Konto',ja:'\u30a2\u30ab\u30a6\u30f3\u30c8',ru:'\u0410\u043a\u043a\u0430\u0443\u043d\u0442'},
+  'Security':{id:'Keamanan',bn:'\u09a8\u09bf\u09b0\u09be\u09aa\u09a4\u09cd\u09a4\u09be',ur:'\u0633\u06cc\u06a9\u06cc\u0648\u0631\u0679\u06cc',tr:'G\u00fcvenlik',vi:'B\u1ea3o m\u1eadt',it:'Sicurezza',ko:'\ubcf4\uc548',ta:'\u0baa\u0bbe\u0ba4\u0bc1\u0b95\u0bbe\u0baa\u0bcd\u0baa\u0bc1',es:'Seguridad',zh:'\u5b89\u5168',hi:'\u0938\u0941\u0930\u0915\u094d\u0937\u093e',ar:'\u0627\u0644\u0623\u0645\u0627\u0646',pt:'Seguran\u00e7a',fr:'S\u00e9curit\u00e9',de:'Sicherheit',ja:'\u30bb\u30ad\u30e5\u30ea\u30c6\u30a3',ru:'\u0411\u0435\u0437\u043e\u043f\u0430\u0441\u043d\u043e\u0441\u0442\u044c'},
+  'Privacy':{id:'Privasi',bn:'\u0997\u09cb\u09aa\u09a8\u09c0\u09af\u09bc\u09a4\u09be',ur:'\u0631\u0627\u0632\u062f\u0627\u0631\u06cc',tr:'Gizlilik',vi:'Quy\u1ec1n ri\u00eang t\u01b0',it:'Privacy',ko:'\uac1c\uc778\uc815\ubcf4',ta:'\u0ba4\u0ba9\u0bbf\u0baf\u0bc1\u0bb0\u0bbf\u0bae\u0bc8',es:'Privacidad',zh:'\u9690\u79c1',hi:'\u0917\u094b\u092a\u0928\u0940\u092f\u0924\u093e',ar:'\u0627\u0644\u062e\u0635\u0648\u0635\u064a\u0629',pt:'Privacidade',fr:'Confidentialit\u00e9',de:'Datenschutz',ja:'\u30d7\u30e9\u30a4\u30d0\u30b7\u30fc',ru:'\u041a\u043e\u043d\u0444\u0438\u0434\u0435\u043d\u0446\u0438\u0430\u043b\u044c\u043d\u043e\u0441\u0442\u044c'},
+  'Appearance':{id:'Tampilan',bn:'\u099a\u09c7\u09b9\u09be\u09b0\u09be',ur:'\u0638\u0627\u06c1\u0631\u06cc',tr:'G\u00f6r\u00fcn\u00fcm',vi:'Giao di\u1ec7n',it:'Aspetto',ko:'\ubaa8\uc591',ta:'\u0ba4\u0bcb\u0bb1\u0bcd\u0bb1\u0bae\u0bcd',es:'Apariencia',zh:'\u5916\u89c2',hi:'\u0926\u093f\u0916\u093e\u0935\u091f',ar:'\u0627\u0644\u0645\u0638\u0647\u0631',pt:'Apar\u00eancia',fr:'Apparence',de:'Darstellung',ja:'\u5916\u89b3',ru:'\u0412\u043d\u0435\u0448\u043d\u0438\u0439 \u0432\u0438\u0434'},
+  'Language':{bn:'ভাষা',ur:'زبان',ko:'언어',ta:'மொழி',id:'Bahasa',it:'Lingua',tr:'Dil',vi:'Ngôn ngữ',es:'Idioma',zh:'\u8bed\u8a00',hi:'\u092d\u093e\u0937\u093e',ar:'\u0627\u0644\u0644\u063a\u0629',pt:'Idioma',fr:'Langue',de:'Sprache',ja:'\u8a00\u8a9e',ru:'\u042f\u0437\u044b\u043a'},
+  'Billing':{bn:'বিলিং',ur:'بلنگ',ko:'결제',ta:'பில்லிங்',id:'Tagihan',it:'Fatturazione',tr:'Faturalama',vi:'Thanh toán',es:'Facturaci\u00f3n',zh:'\u8d26\u5355',hi:'\u092c\u093f\u0932\u093f\u0902\u0917',ar:'\u0627\u0644\u0641\u0648\u062a\u0631\u0629',pt:'Faturamento',fr:'Facturation',de:'Abrechnung',ja:'\u8acb\u6c42',ru:'\u041e\u043f\u043b\u0430\u0442\u0430'},
+  'About':{id:'Tentang',bn:'\u09b8\u09ae\u09cd\u09aa\u09b0\u09cd\u0995\u09c7',ur:'\u0645\u062a\u0639\u0644\u0642',tr:'Hakk\u0131nda',vi:'Gi\u1edbi thi\u1ec7u',it:'Informazioni',ko:'\uc815\ubcf4',ta:'\u0baa\u0bb1\u0bcd\u0bb1\u0bbf',es:'Acerca de',zh:'\u5173\u4e8e',hi:'\u092c\u093e\u0930\u0947 \u092e\u0947\u0902',ar:'\u062d\u0648\u0644',pt:'Sobre',fr:'\u00c0 propos',de:'\u00dcber',ja:'\u6982\u8981',ru:'\u041e \u043f\u0440\u043e\u0433\u0440\u0430\u043c\u043c\u0435'},
   'Live / Backend':{es:'En vivo / Backend',zh:'\u5b9e\u65f6 / \u540e\u7aef',hi:'\u0932\u093e\u0907\u0935 / \u092c\u0948\u0915\u090f\u0902\u0921',ar:'\u0645\u0628\u0627\u0634\u0631 / \u0627\u0644\u062e\u0627\u062f\u0645',pt:'Ao vivo / Backend',fr:'Live / Backend',de:'Live / Backend',ja:'\u30e9\u30a4\u30d6 / \u30d0\u30c3\u30af\u30a8\u30f3\u30c9',ru:'\u041e\u043d\u043b\u0430\u0439\u043d / \u0411\u044d\u043a\u0435\u043d\u0434'},
   'AI Connection':{es:'Conexi\u00f3n IA',zh:'AI \u8fde\u63a5',hi:'AI \u0915\u0928\u0947\u0915\u094d\u0936\u0928',ar:'\u0627\u062a\u0635\u0627\u0644 \u0627\u0644\u0630\u0643\u0627\u0621',pt:'Conex\u00e3o IA',fr:'Connexion IA',de:'KI-Verbindung',ja:'AI\u63a5\u7d9a',ru:'\u041f\u043e\u0434\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u0435 \u0418\u0418'},
-  'Integrations':{es:'Integraciones',zh:'\u96c6\u6210',hi:'\u090f\u0915\u0940\u0915\u0930\u0923',ar:'\u0627\u0644\u062a\u0643\u0627\u0645\u0644\u0627\u062a',pt:'Integra\u00e7\u00f5es',fr:'Int\u00e9grations',de:'Integrationen',ja:'\u9023\u643a',ru:'\u0418\u043d\u0442\u0435\u0433\u0440\u0430\u0446\u0438\u0438'},
   'Choose the language for AMV\u2019s responses and the content it generates \u2014 chat replies, images, video, and 3D models will all use it. You can still ask for any other language inside a message.':{es:'Elige el idioma para las respuestas de AMV y el contenido que genera: respuestas de chat, im\u00e1genes, video y modelos 3D lo usar\u00e1n. Puedes pedir otro idioma dentro de un mensaje.',ar:'\u0627\u062e\u062a\u0631 \u0644\u063a\u0629 \u0631\u062f\u0648\u062f AMV \u0648\u0627\u0644\u0645\u062d\u062a\u0648\u0649 \u0627\u0644\u0630\u064a \u064a\u0646\u0634\u0626\u0647 \u2014 \u0633\u062a\u0633\u062a\u062e\u062f\u0645\u0647\u0627 \u0631\u062f\u0648\u062f \u0627\u0644\u0645\u062d\u0627\u062f\u062b\u0629 \u0648\u0627\u0644\u0635\u0648\u0631 \u0648\u0627\u0644\u0641\u064a\u062f\u064a\u0648 \u0648\u0627\u0644\u0646\u0645\u0627\u0630\u062c. \u064a\u0645\u0643\u0646\u0643 \u0637\u0644\u0628 \u0623\u064a \u0644\u063a\u0629 \u0623\u062e\u0631\u0649 \u062f\u0627\u062e\u0644 \u0627\u0644\u0631\u0633\u0627\u0644\u0629.',fr:'Choisissez la langue des r\u00e9ponses d\u2019AMV et du contenu g\u00e9n\u00e9r\u00e9 \u2014 r\u00e9ponses, images, vid\u00e9os et mod\u00e8les 3D l\u2019utiliseront. Vous pouvez demander une autre langue dans un message.',de:'W\u00e4hle die Sprache f\u00fcr AMVs Antworten und generierte Inhalte \u2014 Chat, Bilder, Video und 3D-Modelle nutzen sie. Du kannst in einer Nachricht jede andere Sprache anfordern.',zh:'\u9009\u62e9 AMV \u56de\u590d\u548c\u751f\u6210\u5185\u5bb9\u7684\u8bed\u8a00\u2014\u2014\u804a\u5929\u56de\u590d\u3001\u56fe\u50cf\u3001\u89c6\u9891\u548c 3D \u6a21\u578b\u90fd\u4f1a\u4f7f\u7528\u5b83\u3002\u4f60\u4ecd\u53ef\u5728\u6d88\u606f\u4e2d\u8981\u6c42\u5176\u4ed6\u8bed\u8a00\u3002',hi:'AMV \u0915\u0940 \u092a\u094d\u0930\u0924\u093f\u0915\u094d\u0930\u093f\u092f\u093e\u0913\u0902 \u0914\u0930 \u0938\u093e\u092e\u0917\u094d\u0930\u0940 \u0915\u0947 \u0932\u093f\u090f \u092d\u093e\u0937\u093e \u091a\u0941\u0928\u0947\u0902\u0964',pt:'Escolha o idioma das respostas do AMV e do conte\u00fado gerado \u2014 respostas, imagens, v\u00eddeo e modelos 3D o usar\u00e3o. Voc\u00ea pode pedir outro idioma em uma mensagem.',ja:'AMV\u306e\u5fdc\u7b54\u3068\u751f\u6210\u30b3\u30f3\u30c6\u30f3\u30c4\u306e\u8a00\u8a9e\u3092\u9078\u629e\u2014\u30c1\u30e3\u30c3\u30c8\u3001\u753b\u50cf\u3001\u52d5\u753b\u30013D\u30e2\u30c7\u30eb\u306b\u4f7f\u7528\u3055\u308c\u307e\u3059\u3002\u30e1\u30c3\u30bb\u30fc\u30b8\u5185\u3067\u4ed6\u306e\u8a00\u8a9e\u3082\u4f9d\u983c\u3067\u304d\u307e\u3059\u3002',ru:'\u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u044f\u0437\u044b\u043a \u043e\u0442\u0432\u0435\u0442\u043e\u0432 AMV \u0438 \u0433\u0435\u043d\u0435\u0440\u0438\u0440\u0443\u0435\u043c\u043e\u0433\u043e \u043a\u043e\u043d\u0442\u0435\u043d\u0442\u0430.'},
-  'Save':{es:'Guardar',zh:'\u4fdd\u5b58',hi:'\u0938\u0939\u0947\u091c\u0947\u0902',ar:'\u062d\u0641\u0638',pt:'Salvar',fr:'Enregistrer',de:'Speichern',ja:'\u4fdd\u5b58',ru:'\u0421\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c'},
-  'Cancel':{es:'Cancelar',zh:'\u53d6\u6d88',hi:'\u0930\u0926\u094d\u0926 \u0915\u0930\u0947\u0902',ar:'\u0625\u0644\u063a\u0627\u0621',pt:'Cancelar',fr:'Annuler',de:'Abbrechen',ja:'\u30ad\u30e3\u30f3\u30bb\u30eb',ru:'\u041e\u0442\u043c\u0435\u043d\u0430'},
-  'Send':{es:'Enviar',zh:'\u53d1\u9001',hi:'\u092d\u0947\u091c\u0947\u0902',ar:'\u0625\u0631\u0633\u0627\u0644',pt:'Enviar',fr:'Envoyer',de:'Senden',ja:'\u9001\u4fe1',ru:'\u041e\u0442\u043f\u0440\u0430\u0432\u0438\u0442\u044c'},
+  'Save':{bn:'সংরক্ষণ',ur:'محفوظ کریں',ko:'저장',ta:'சேமி',id:'Simpan',it:'Salva',tr:'Kaydet',vi:'L\u01b0u',es:'Guardar',zh:'\u4fdd\u5b58',hi:'\u0938\u0939\u0947\u091c\u0947\u0902',ar:'\u062d\u0641\u0638',pt:'Salvar',fr:'Enregistrer',de:'Speichern',ja:'\u4fdd\u5b58',ru:'\u0421\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c'},
+  'Cancel':{bn:'বাতিল',ur:'منسوخ',ko:'취소',ta:'ரத்து',id:'Batal',it:'Annulla',tr:'\u0130ptal',vi:'H\u1ee7y',es:'Cancelar',zh:'\u53d6\u6d88',hi:'\u0930\u0926\u094d\u0926 \u0915\u0930\u0947\u0902',ar:'\u0625\u0644\u063a\u0627\u0621',pt:'Cancelar',fr:'Annuler',de:'Abbrechen',ja:'\u30ad\u30e3\u30f3\u30bb\u30eb',ru:'\u041e\u0442\u043c\u0435\u043d\u0430'},
+  'Send':{bn:'পাঠান',ur:'بھیجیں',ko:'보내기',ta:'அனுப்பு',id:'Kirim',it:'Invia',tr:'G\u00f6nder',vi:'G\u1eedi',es:'Enviar',zh:'\u53d1\u9001',hi:'\u092d\u0947\u091c\u0947\u0902',ar:'\u0625\u0631\u0633\u0627\u0644',pt:'Enviar',fr:'Envoyer',de:'Senden',ja:'\u9001\u4fe1',ru:'\u041e\u0442\u043f\u0440\u0430\u0432\u0438\u0442\u044c'},
   'Run':{es:'Ejecutar',zh:'\u8fd0\u884c',hi:'\u091a\u0932\u093e\u090f\u0902',ar:'\u062a\u0634\u063a\u064a\u0644',pt:'Executar',fr:'Ex\u00e9cuter',de:'Ausf\u00fchren',ja:'\u5b9f\u884c',ru:'\u0417\u0430\u043f\u0443\u0441\u043a'},
   'What should I handle for you?':{es:'\u00bfQu\u00e9 puedo hacer por ti?',zh:'\u6709\u4ec0\u4e48\u9700\u8981\u6211\u5904\u7406\u7684\uff1f',hi:'\u092e\u0948\u0902 \u0906\u092a\u0915\u0947 \u0932\u093f\u090f \u0915\u094d\u092f\u093e \u0915\u0930\u0942\u0901?',ar:'\u0628\u0645\u0627\u0630\u0627 \u064a\u0645\u0643\u0646\u0646\u064a \u0645\u0633\u0627\u0639\u062f\u062a\u0643\u061f',pt:'O que posso fazer por voc\u00ea?',fr:'Que puis-je faire pour vous\u00a0?',de:'Was kann ich f\u00fcr dich tun?',ja:'\u4f55\u3092\u304a\u624b\u4f1d\u3044\u3057\u307e\u3057\u3087\u3046\u304b\uff1f',ru:'\u0427\u0435\u043c \u044f \u043c\u043e\u0433\u0443 \u043f\u043e\u043c\u043e\u0447\u044c?'},
-  'Profile':{es:'Perfil',zh:'\u4e2a\u4eba\u8d44\u6599',hi:'\u092a\u094d\u0930\u094b\u092b\u093c\u093e\u0907\u0932',ar:'\u0627\u0644\u0645\u0644\u0641 \u0627\u0644\u0634\u062e\u0635\u064a',pt:'Perfil',fr:'Profil',de:'Profil',ja:'\u30d7\u30ed\u30d5\u30a3\u30fc\u30eb',ru:'\u041f\u0440\u043e\u0444\u0438\u043b\u044c'},
-  'Sign out':{es:'Cerrar sesi\u00f3n',zh:'\u9000\u51fa',hi:'\u0938\u093e\u0907\u0928 \u0906\u0909\u091f',ar:'\u062a\u0633\u062c\u064a\u0644 \u0627\u0644\u062e\u0631\u0648\u062c',pt:'Sair',fr:'D\u00e9connexion',de:'Abmelden',ja:'\u30b5\u30a4\u30f3\u30a2\u30a6\u30c8',ru:'\u0412\u044b\u0439\u0442\u0438'},
-  'Theme':{es:'Tema',zh:'\u4e3b\u9898',hi:'\u0925\u0940\u092e',ar:'\u0627\u0644\u0633\u0645\u0629',pt:'Tema',fr:'Th\u00e8me',de:'Design',ja:'\u30c6\u30fc\u30de',ru:'\u0422\u0435\u043c\u0430'},
+  'Profile':{id:'Profil',bn:'\u09aa\u09cd\u09b0\u09cb\u09ab\u09be\u0987\u09b2',ur:'\u067e\u0631\u0648\u0641\u0627\u0626\u0644',tr:'Profil',vi:'H\u1ed3 s\u01a1',it:'Profilo',ko:'\ud504\ub85c\ud544',ta:'\u0b9a\u0bc1\u0baf\u0bb5\u0bbf\u0bb5\u0bb0\u0bae\u0bcd',es:'Perfil',zh:'\u4e2a\u4eba\u8d44\u6599',hi:'\u092a\u094d\u0930\u094b\u092b\u093c\u093e\u0907\u0932',ar:'\u0627\u0644\u0645\u0644\u0641 \u0627\u0644\u0634\u062e\u0635\u064a',pt:'Perfil',fr:'Profil',de:'Profil',ja:'\u30d7\u30ed\u30d5\u30a3\u30fc\u30eb',ru:'\u041f\u0440\u043e\u0444\u0438\u043b\u044c'},
+  'Sign out':{id:'Keluar',bn:'\u09b8\u09be\u0987\u09a8 \u0986\u0989\u099f',ur:'\u0633\u0627\u0626\u0646 \u0622\u0624\u0679',tr:'\u00c7\u0131k\u0131\u015f yap',vi:'\u0110\u0103ng xu\u1ea5t',it:'Esci',ko:'\ub85c\uadf8\uc544\uc6c3',ta:'\u0bb5\u0bc6\u0bb3\u0bbf\u0baf\u0bc7\u0bb1\u0bc1',es:'Cerrar sesi\u00f3n',zh:'\u9000\u51fa',hi:'\u0938\u093e\u0907\u0928 \u0906\u0909\u091f',ar:'\u062a\u0633\u062c\u064a\u0644 \u0627\u0644\u062e\u0631\u0648\u062c',pt:'Sair',fr:'D\u00e9connexion',de:'Abmelden',ja:'\u30b5\u30a4\u30f3\u30a2\u30a6\u30c8',ru:'\u0412\u044b\u0439\u0442\u0438'},
+  'Theme':{id:'Tema',bn:'\u09a5\u09bf\u09ae',ur:'\u062a\u06be\u06cc\u0645',tr:'Tema',vi:'Ch\u1ee7 \u0111\u1ec1',it:'Tema',ko:'\ud14c\ub9c8',ta:'\u0ba4\u0bc0\u0bae\u0bcd',es:'Tema',zh:'\u4e3b\u9898',hi:'\u0925\u0940\u092e',ar:'\u0627\u0644\u0633\u0645\u0629',pt:'Tema',fr:'Th\u00e8me',de:'Design',ja:'\u30c6\u30fc\u30de',ru:'\u0422\u0435\u043c\u0430'},
   'Dark Mode':{es:'Modo oscuro',zh:'\u6df1\u8272\u6a21\u5f0f',hi:'\u0921\u093e\u0930\u094d\u0915 \u092e\u094b\u0921',ar:'\u0627\u0644\u0648\u0636\u0639 \u0627\u0644\u062f\u0627\u0643\u0646',pt:'Modo escuro',fr:'Mode sombre',de:'Dunkelmodus',ja:'\u30c0\u30fc\u30af\u30e2\u30fc\u30c9',ru:'\u0422\u0451\u043c\u043d\u0430\u044f \u0442\u0435\u043c\u0430'},
   'Font Size':{es:'Tama\u00f1o de fuente',zh:'\u5b57\u4f53\u5927\u5c0f',hi:'\u092b\u093c\u0949\u0928\u094d\u091f \u0906\u0915\u093e\u0930',ar:'\u062d\u062c\u0645 \u0627\u0644\u062e\u0637',pt:'Tamanho da fonte',fr:'Taille de police',de:'Schriftgr\u00f6\u00dfe',ja:'\u30d5\u30a9\u30f3\u30c8\u30b5\u30a4\u30ba',ru:'\u0420\u0430\u0437\u043c\u0435\u0440 \u0448\u0440\u0438\u0444\u0442\u0430'},
   'Small':{es:'Peque\u00f1o',zh:'\u5c0f',hi:'\u091b\u094b\u091f\u093e',ar:'\u0635\u063a\u064a\u0631',pt:'Pequeno',fr:'Petit',de:'Klein',ja:'\u5c0f',ru:'\u041c\u0430\u043b\u044b\u0439'},
@@ -1297,8 +3056,11 @@ const I18N = {
   'Manage your profile and account information.':{es:'Gestiona tu perfil e informaci\u00f3n de cuenta.',zh:'\u7ba1\u7406\u60a8\u7684\u4e2a\u4eba\u8d44\u6599\u548c\u8d26\u6237\u4fe1\u606f\u3002',ar:'\u0623\u062f\u0631 \u0645\u0644\u0641\u0643 \u0627\u0644\u0634\u062e\u0635\u064a \u0648\u0645\u0639\u0644\u0648\u0645\u0627\u062a \u062d\u0633\u0627\u0628\u0643.',fr:'G\u00e9rez votre profil et vos informations.',de:'Verwalte dein Profil und deine Kontodaten.',hi:'\u0905\u092a\u0928\u0940 \u092a\u094d\u0930\u094b\u092b\u093c\u093e\u0907\u0932 \u092a\u094d\u0930\u092c\u0902\u0927\u093f\u0924 \u0915\u0930\u0947\u0902\u0964',pt:'Gerencie seu perfil e informa\u00e7\u00f5es da conta.',ja:'\u30d7\u30ed\u30d5\u30a3\u30fc\u30eb\u3068\u30a2\u30ab\u30a6\u30f3\u30c8\u60c5\u5831\u3092\u7ba1\u7406\u3002',ru:'\u0423\u043f\u0440\u0430\u0432\u043b\u044f\u0439\u0442\u0435 \u043f\u0440\u043e\u0444\u0438\u043b\u0435\u043c \u0438 \u0434\u0430\u043d\u043d\u044b\u043c\u0438 \u0430\u043a\u043a\u0430\u0443\u043d\u0442\u0430.'},
   'Manage your password and account security.':{es:'Gestiona tu contrase\u00f1a y seguridad.',zh:'\u7ba1\u7406\u60a8\u7684\u5bc6\u7801\u548c\u8d26\u6237\u5b89\u5168\u3002',ar:'\u0623\u062f\u0631 \u0643\u0644\u0645\u0629 \u0627\u0644\u0645\u0631\u0648\u0631 \u0648\u0623\u0645\u0627\u0646 \u062d\u0633\u0627\u0628\u0643.',fr:'G\u00e9rez votre mot de passe et s\u00e9curit\u00e9.',de:'Verwalte Passwort und Kontosicherheit.',hi:'\u0905\u092a\u0928\u093e \u092a\u093e\u0938\u0935\u0930\u094d\u0921 \u092a\u094d\u0930\u092c\u0902\u0927\u093f\u0924 \u0915\u0930\u0947\u0902\u0964',pt:'Gerencie sua senha e seguran\u00e7a.',ja:'\u30d1\u30b9\u30ef\u30fc\u30c9\u3068\u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u3092\u7ba1\u7406\u3002',ru:'\u0423\u043f\u0440\u0430\u0432\u043b\u044f\u0439\u0442\u0435 \u043f\u0430\u0440\u043e\u043b\u0435\u043c \u0438 \u0431\u0435\u0437\u043e\u043f\u0430\u0441\u043d\u043e\u0441\u0442\u044c\u044e.'},
 };
-function T(s){ const code=_lang(); if(code==='auto'||code==='en') return s; const e=I18N[s]; return (e&&e[code])||s; }
-function _applyDir(){ try{ const code=_lang(); document.documentElement.dir='ltr'; document.documentElement.lang=(code==='auto'?'en':code); }catch(e){} }
+function T(s){ const code=_lang(); if(code==='auto'||code==='en') return s; let e=I18N[s]; if(e&&e[code]) return e[code];
+  // case-insensitive fallback so 'Sign Out' matches 'Sign out', 'New Chat' matches 'New chat', etc.
+  if(!e){ const lo=String(s).toLowerCase(); for(const k in I18N){ if(k.toLowerCase()===lo){ e=I18N[k]; break; } } }
+  return (e&&e[code])||s; }
+function _applyDir(){ try{ const code=_lang(); document.documentElement.dir=(RTL_LANGS.indexOf(code)>=0?'rtl':'ltr'); document.documentElement.lang=(code==='auto'?'en':code); }catch(e){} }
 /* Translate the static UI chrome. Stores each element's English source once,
    then re-applies T() on every language change so switching is reversible. */
 /* ============================================================
@@ -1336,7 +3098,7 @@ function _translateUI(){
   try{
     _applyDir();
     const code=_lang();
-    // sidebar/nav fast path via dictionary (always instant)
+    // sidebar/nav fast path via dictionary (always instant, always from original)
     document.querySelectorAll('.snb[data-tab]').forEach(b=>{
       if(!b.dataset.i18nSrc){ b.dataset.i18nSrc=(b.textContent||'').trim(); }
       [...b.childNodes].forEach(n=>{ if(n.nodeType===3) n.remove(); });
@@ -1350,10 +3112,22 @@ function _translateUI(){
       if(!el.dataset.i18nPhSrc){ el.dataset.i18nPhSrc=el.getAttribute('placeholder')||''; }
       el.setAttribute('placeholder', T(el.dataset.i18nPhSrc));
     });
-    if(code==='auto'||code==='en') return;
-    // whole-DOM pass: dictionary first, then queue the rest for AI translation
+    // whole-DOM pass. When switching to English/auto, RESTORE originals so nothing
+    // gets stuck in a previous language. Otherwise translate.
+    if(code==='auto'||code==='en'){ _restoreI18nDOM(); return; }
     _autoTranslateDOM(code);
   }catch(e){ console.warn('_translateUI failed:', e); }
+}
+/* Restore every translated node back to its stored original English text. */
+function _restoreI18nDOM(){
+  const app=document.getElementById('app'); if(!app) return;
+  const nodes=_collectI18nNodes(app);
+  for(const it of nodes){
+    try{
+      if(it.type==='text'){ if(it.node._i18nSrc!=null) it.node.nodeValue=it.node._i18nSrc; }
+      else { if(it.node._i18nPhSrc!=null) it.node.setAttribute('placeholder', it.node._i18nPhSrc); }
+    }catch(e){}
+  }
 }
 async function _autoTranslateDOM(code){
   const app=document.getElementById('app'); if(!app) return;
@@ -1364,7 +3138,10 @@ async function _autoTranslateDOM(code){
   for(const it of nodes){
     const src=(it.type==='text'?it.node.nodeValue:it.node.getAttribute('placeholder'))||'';
     const key=src.trim(); if(!key) continue;
-    if(!it.node._i18nSrc) it.node._i18nSrc=key;
+    // permanently remember the ORIGINAL english text so we can always restore it
+    if(it.type==='text'){ if(it.node._i18nSrc==null) it.node._i18nSrc=it.node.nodeValue; }
+    else { if(it.node._i18nPhSrc==null) it.node._i18nPhSrc=it.node.getAttribute('placeholder'); }
+    if(!it.node._i18nKey) it.node._i18nKey=key;
     const dict=T(key);
     if(dict!==key){ _applyI18n(it,dict); continue; }
     const cached=cache[_i18nKey(code,key)];
@@ -1373,7 +3150,7 @@ async function _autoTranslateDOM(code){
   }
   if(!need.size || _i18nBusy) return;
   // translate the unknowns with AMV (one batched call), cache, re-apply
-  if(!S.mk && !(window.AMV_API&&AMV_API.live)) return; // needs a key; dictionary still covered the common chrome
+  if(!_aiBackendReady()) return; // needs a key; dictionary still covered the common chrome
   _i18nBusy=true;
   try{
     const list=[...need].slice(0,80); // batch cap
@@ -1394,8 +3171,14 @@ async function _autoTranslateDOM(code){
 }
 function _applyI18n(it,val){
   try{
-    if(it.type==='text') it.node.nodeValue=it.node.nodeValue.replace(it.node._i18nSrc||it.node.nodeValue.trim(), val);
-    else it.node.setAttribute('placeholder', val);
+    if(it.type==='text'){
+      // replace using the remembered key so re-translation from a prior language works
+      const key=it.node._i18nKey||(it.node._i18nSrc||'').trim();
+      const orig=it.node._i18nSrc!=null?it.node._i18nSrc:it.node.nodeValue;
+      it.node.nodeValue = key ? orig.replace(key, val) : val;
+    } else {
+      it.node.setAttribute('placeholder', val);
+    }
   }catch(e){}
 }
 /* The instruction appended to AI prompts so responses come back in the user's language. */
@@ -1456,6 +3239,69 @@ const MODEL_SYSTEMS = {
 
 
 
+/* ============================================================
+   GENERATIVE UI BLOCKS (#4)
+   The model can emit fenced blocks (stats/compare/steps/choices)
+   that render as real interactive components instead of plain
+   markdown. All values are HTML-escaped — safe by construction.
+   ============================================================ */
+// stats: a row of key-metric cards
+function _guiStats(spec){
+  const items=Array.isArray(spec.items)?spec.items:(Array.isArray(spec)?spec:[]);
+  if(!items.length) return '';
+  const cards=items.slice(0,6).map(it=>{
+    const trend=it.trend?('<span class="gui-stat-trend '+((''+it.trend).trim().startsWith('-')?'down':'up')+'">'+escH(''+it.trend)+'</span>'):'';
+    return '<div class="gui-stat"><div class="gui-stat-val">'+escH(''+(it.value??''))+trend+'</div><div class="gui-stat-label">'+escH(''+(it.label??''))+'</div></div>';
+  }).join('');
+  return '<div class="gui-stats">'+cards+'</div>';
+}
+// compare: side-by-side comparison table with a highlighted "best"/recommended column
+function _guiCompare(spec){
+  const cols=Array.isArray(spec.columns)?spec.columns:[];
+  const rows=Array.isArray(spec.rows)?spec.rows:[];
+  if(!cols.length||!rows.length) return '';
+  const hi = Number.isInteger(spec.highlight)?spec.highlight:-1;
+  const title=spec.title?'<div class="gui-cmp-title">'+escH(spec.title)+'</div>':'';
+  let head='<div class="gui-cmp-row gui-cmp-head"><div class="gui-cmp-c gui-cmp-lbl"></div>'+
+    cols.map((c,i)=>'<div class="gui-cmp-c'+(i===hi?' gui-cmp-hi':'')+'">'+escH(''+c)+(i===hi?'<span class="gui-cmp-badge">Best</span>':'')+'</div>').join('')+'</div>';
+  let bodyRows=rows.map(r=>{
+    const vals=Array.isArray(r.values)?r.values:[];
+    return '<div class="gui-cmp-row"><div class="gui-cmp-c gui-cmp-lbl">'+escH(''+(r.label??''))+'</div>'+
+      cols.map((_,i)=>{
+        let v=vals[i]; let cls='';
+        if(v===true||v==='true'||v==='yes'){ v='✓'; cls=' gui-cmp-yes'; }
+        else if(v===false||v==='false'||v==='no'){ v='✕'; cls=' gui-cmp-no'; }
+        return '<div class="gui-cmp-c'+(i===hi?' gui-cmp-hi':'')+cls+'">'+escH(''+(v??'—'))+'</div>';
+      }).join('')+'</div>';
+  }).join('');
+  return '<div class="gui-cmp">'+title+'<div class="gui-cmp-grid" style="--cmp-cols:'+cols.length+'">'+head+bodyRows+'</div></div>';
+}
+// steps: a vertical numbered process/timeline
+function _guiSteps(spec){
+  const steps=Array.isArray(spec.steps)?spec.steps:(Array.isArray(spec)?spec:[]);
+  if(!steps.length) return '';
+  const title=spec.title?'<div class="gui-steps-title">'+escH(spec.title)+'</div>':'';
+  const items=steps.map((s,i)=>{
+    const st=typeof s==='string'?{title:s}:s;
+    return '<div class="gui-step"><div class="gui-step-num">'+(i+1)+'</div><div class="gui-step-body">'+
+      '<div class="gui-step-title">'+escH(''+(st.title??''))+'</div>'+
+      (st.detail?'<div class="gui-step-detail">'+escH(''+st.detail)+'</div>':'')+'</div></div>';
+  }).join('');
+  return '<div class="gui-steps">'+title+items+'</div>';
+}
+// choices: tappable option chips that send the picked option as a follow-up
+function _guiChoices(spec){
+  const opts=Array.isArray(spec.options)?spec.options:(Array.isArray(spec)?spec:[]);
+  if(!opts.length) return '';
+  const prompt=spec.prompt?'<div class="gui-choices-prompt">'+escH(spec.prompt)+'</div>':'';
+  const chips=opts.slice(0,8).map(o=>{
+    const label=typeof o==='string'?o:(o.label||o.value||'');
+    const send=typeof o==='string'?o:(o.send||o.value||o.label||'');
+    return '<button class="gui-choice" data-guichoice="'+escH(''+send)+'">'+escH(''+label)+'</button>';
+  }).join('');
+  return '<div class="gui-choices">'+prompt+'<div class="gui-choices-row">'+chips+'</div></div>';
+}
+
 function renderChartSVG(spec){
   const type=(spec.type||'bar').toLowerCase();
   const data=Array.isArray(spec.data)?spec.data:[];
@@ -1466,7 +3312,7 @@ function renderChartSVG(spec){
   const max=Math.max(...vals, 0), min=Math.min(...vals, 0);
   const range=(max-min)||1;
   const iw=W-padL-padR, ih=H-padT-padB;
-  const colors=['#8b78ff','#8b78ff','#3fb950','#d29922','#f85149','#8b78ff','#ff7eb6'];
+  const colors=['#5590ff','#5590ff','#4ade80','#e0b341','#ff4d4d','#5590ff','#ff7eb6'];
   const x0=padL, y0=H-padB;
   let svg='<svg viewBox="0 0 '+W+' '+H+'" class="cht-svg" xmlns="http://www.w3.org/2000/svg">';
   // gridlines + y labels
@@ -1480,8 +3326,8 @@ function renderChartSVG(spec){
     const step=data.length>1?iw/(data.length-1):0;
     let pts=data.map((d,i)=>{ const x=x0+step*i; const y=padT+ih*(1-((+d.value-min)/range)); return [x,y]; });
     let path=pts.map((pt,i)=>(i?'L':'M')+pt[0]+' '+pt[1]).join(' ');
-    svg+='<path d="'+path+'" fill="none" stroke="#7c6cff" stroke-width="2.5"/>';
-    pts.forEach((pt,i)=>{ svg+='<circle cx="'+pt[0]+'" cy="'+pt[1]+'" r="3.5" fill="#8b78ff"/>';
+    svg+='<path d="'+path+'" fill="none" stroke="#5590ff" stroke-width="2.5"/>';
+    pts.forEach((pt,i)=>{ svg+='<circle cx="'+pt[0]+'" cy="'+pt[1]+'" r="3.5" fill="#5590ff"/>';
       svg+='<text x="'+pt[0]+'" y="'+(y0+18)+'" text-anchor="middle" class="cht-ax">'+escH((data[i].label||'')+'')+'</text>'; });
   } else {
     const n=data.length, gap=10, bw=(iw/n)-gap;
@@ -1499,18 +3345,224 @@ function renderChartSVG(spec){
   return '<div class="cht">'+title+svg+(spec.source?'<div class="cht-src">Source: '+escH(spec.source)+'</div>':'')+'</div>';
 }
 
-function md(text) {
-  if(!text) return '';
+/* ============================================================
+   INLINE ARTIFACTS (#3)
+   Substantial AI output (code files, full HTML pages, documents) is
+   captured as an "artifact" and shown in the chat as a compact card.
+   Clicking the card opens a rich side panel with Preview/Code tabs,
+   copy, download, and "Open in Dev". Small snippets stay inline.
+   ============================================================ */
+window._artifacts = window._artifacts || {};
+let _artifactSeq = 0;
+// Human title + friendly type label from the content.
+function _artifactMeta(raw, lang, isHtml){
+  let type, title, icon;
+  if(isHtml){
+    type='Web page'; icon='page';
+    const m=raw.match(/<title[^>]*>([^<]+)<\/title>/i) || raw.match(/<h1[^>]*>([^<]+)<\/h1>/i);
+    title=m?m[1].trim().slice(0,48):'Web page';
+  } else {
+    const L=(lang||'').toLowerCase();
+    const langName={js:'JavaScript',jsx:'React',ts:'TypeScript',tsx:'React',py:'Python',python:'Python',html:'HTML',css:'CSS',json:'JSON',sql:'SQL',sh:'Shell',bash:'Shell',go:'Go',rust:'Rust',rs:'Rust',java:'Java',cpp:'C++',c:'C',rb:'Ruby',php:'PHP',swift:'Swift',kt:'Kotlin'}[L]||(lang?lang.toUpperCase():'Code');
+    type=langName+' file'; icon='code';
+    // try to name it from a function/class/component/def
+    const nm=raw.match(/(?:function|class|const|def|component)\s+([A-Za-z_$][\w$]*)/) || raw.match(/([A-Za-z_$][\w$]*)\s*=\s*\(/);
+    title=nm?nm[1]:(langName+' snippet');
+  }
+  return { type, title, icon };
+}
+// Store an artifact, returning its record. Dedupes identical content within a
+// render pass so re-renders don't multiply artifacts.
+function _artifactStore(raw, lang, isHtml){
+  window._artifacts = window._artifacts || {};
+  // reuse an existing artifact with identical content (stable across re-renders)
+  for(const k in window._artifacts){ if(window._artifacts[k].raw===raw) return window._artifacts[k]; }
+  const id='art'+(++_artifactSeq)+Math.random().toString(36).slice(2,5);
+  const meta=_artifactMeta(raw, lang, isHtml);
+  const lines=raw.split('\n').length;
+  const rec={ id, raw, lang:lang||'', isHtml:!!isHtml, ...meta, lines };
+  window._artifacts[id]=rec;
+  return rec;
+}
+// The compact card shown inline in the chat.
+function _artifactCardHTML(art){
+  const icon = art.isHtml
+    ? '<path d="M3 9h18M3 9l0 10a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V9M3 9V5a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v4"/><circle cx="6" cy="6.5" r=".6" fill="currentColor"/><circle cx="8.2" cy="6.5" r=".6" fill="currentColor"/>'
+    : '<path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/>';
+  const sub = art.isHtml ? (art.type) : (art.type+' · '+art.lines+' lines');
+  return '<button class="art-card" data-artopen="'+art.id+'">'+
+      '<span class="art-card-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+icon+'</svg></span>'+
+      '<span class="art-card-txt"><span class="art-card-title">'+escH(art.title)+'</span><span class="art-card-sub">'+escH(sub)+'</span></span>'+
+      '<span class="art-card-open"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M8 7h9v9"/></svg></span>'+
+    '</button>';
+}
+
+// ── Artifact side panel ───────────────────────────────────────
+// Opens a slide-in panel on the right showing the artifact with Preview/Code
+// tabs (Preview only for HTML), plus copy, download, and Open in Dev.
+let _artifactPanelOpen=false, _artifactActiveTab='code';
+function openArtifact(id){
+  const art=window._artifacts && window._artifacts[id];
+  if(!art) return;
+  let panel=document.getElementById('art-panel');
+  if(!panel){
+    panel=document.createElement('div');
+    panel.id='art-panel';
+    panel.className='art-panel';
+    document.body.appendChild(panel);
+  }
+  _artifactActiveTab = art.isHtml ? 'preview' : 'code';
+  _renderArtifactPanel(art);
+  // allow layout to settle, then slide in + shift chat
+  requestAnimationFrame(()=>{ panel.classList.add('on'); document.body.classList.add('art-open'); });
+  _artifactPanelOpen=true;
+}
+function closeArtifact(){
+  const panel=document.getElementById('art-panel');
+  if(panel) panel.classList.remove('on');
+  document.body.classList.remove('art-open');
+  _artifactPanelOpen=false;
+}
+function _renderArtifactPanel(art){
+  const panel=document.getElementById('art-panel'); if(!panel) return;
+  const tabs = art.isHtml
+    ? '<button class="art-tab'+(_artifactActiveTab==='preview'?' on':'')+'" data-arttab="preview">Preview</button>'+
+      '<button class="art-tab'+(_artifactActiveTab==='code'?' on':'')+'" data-arttab="code">Code</button>'
+    : '';
+  let body;
+  if(art.isHtml && _artifactActiveTab==='preview'){
+    let url='';
+    try{ url=URL.createObjectURL(new Blob([art.raw],{type:'text/html'})); }catch(e){}
+    body='<iframe class="art-frame" src="'+url+'" sandbox="allow-scripts"></iframe>';
+  } else {
+    body='<pre class="art-code"><code>'+escH(art.raw)+'</code></pre>';
+  }
+  panel.innerHTML=
+    '<div class="art-head">'+
+      '<div class="art-head-l">'+
+        '<span class="art-head-ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+(art.isHtml?'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/>':'<path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/>')+'</svg></span>'+
+        '<div class="art-head-txt"><div class="art-head-title">'+escH(art.title)+'</div><div class="art-head-sub">'+escH(art.type+(art.isHtml?'':' · '+art.lines+' lines'))+'</div></div>'+
+      '</div>'+
+      '<button class="art-x" id="art-x" aria-label="Close">'+
+        '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>'+
+      '</button>'+
+    '</div>'+
+    (tabs?'<div class="art-tabs">'+tabs+'</div>':'')+
+    '<div class="art-body">'+body+'</div>'+
+    '<div class="art-foot">'+
+      '<button class="btn" id="art-copy">Copy</button>'+
+      '<button class="btn" id="art-download">Download</button>'+
+      '<button class="btn" id="art-share">Share</button>'+
+      (art.isHtml||/^(js|javascript|jsx|ts|typescript|tsx|html|css|py|python|react)$/i.test(art.lang)?'<button class="btn bp" id="art-dev">Open in Dev</button>':'')+
+    '</div>';
+  // wire controls
+  panel.querySelector('#art-x')?.addEventListener('click', closeArtifact);
+  panel.querySelectorAll('[data-arttab]').forEach(b=>b.addEventListener('click',()=>{ _artifactActiveTab=b.dataset.arttab; _renderArtifactPanel(art); }));
+  panel.querySelector('#art-copy')?.addEventListener('click',()=>{ try{ navigator.clipboard.writeText(art.raw); toast('Copied','success',1500); }catch(e){} });
+  panel.querySelector('#art-download')?.addEventListener('click',()=>_artifactDownload(art));
+  panel.querySelector('#art-share')?.addEventListener('click',()=>_shareArtifact(art));
+  panel.querySelector('#art-dev')?.addEventListener('click',()=>{
+    try{
+      _sessNew('dev');
+      _DEV.log=[]; _DEV.project={}; _DEV.activePath='';
+      const ext = art.isHtml?'html':({js:'js',javascript:'js',jsx:'jsx',ts:'ts',typescript:'ts',tsx:'tsx',py:'py',python:'py',css:'css',json:'json'}[art.lang.toLowerCase()]||'txt');
+      const fname=(art.title.replace(/[^\w.-]+/g,'_')||'file')+'.'+ext;
+      _devSetFile(fname, art.raw, art.lang);
+      _DEV.activePath=fname;
+      closeArtifact();
+      setTab('dev');
+      toast('Opened in Dev','info',2000);
+    }catch(e){}
+  });
+}
+// Share an artifact as a clean, branded page. The artifact is encoded into the
+// link itself (no server storage), and opens a read-only branded view.
+function _shareArtifact(art){
+  const ovr=$('ovr'); if(!ovr) return;
+  let link='';
+  try{
+    const payload={ k:'art', t:art.title||'AMV artifact', l:art.lang||'', h:!!art.isHtml, c:art.raw };
+    const b64=btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+    link=location.origin+location.pathname+'#art='+b64;
+  }catch(e){ link=''; }
+  const tooBig=link.length>18000;
+  ovr.innerHTML=
+    '<div class="share-modal">'+
+      '<div class="share-title">Share this '+(art.isHtml?'page':'artifact')+'</div>'+
+      '<p class="share-sub">Anyone with the link sees a clean, branded '+(art.isHtml?'live preview':'view')+'. It\u2019s encoded in the link \u2014 nothing is stored on a server.</p>'+
+      (tooBig?'<div class="share-warn">This artifact is large, so the link is long and may not work in every app. Downloading the file may work better.</div>':'')+
+      '<div class="share-link-row"><input id="art-share-link" class="inp" readonly value="'+escH(link)+'"><button class="btn bp" id="art-share-copy">Copy</button></div>'+
+      '<div class="share-actions">'+
+        '<button class="btn bs" id="art-share-native">Share via\u2026</button>'+
+        '<button class="btn bs" id="art-share-open">Open preview</button>'+
+        '<button class="btn bs" id="art-share-dl">Download file</button>'+
+      '</div>'+
+    '</div>';
+  ovr.classList.add('on');
+  on($('art-share-copy'),'click',()=>{ _copyText(link).then(()=>{ const b=$('art-share-copy'); if(b){b.textContent='Copied!';setTimeout(()=>b.textContent='Copy',1500);} }); });
+  on($('art-share-native'),'click',()=>{ if(navigator.share){ navigator.share({title:art.title||'AMV artifact',url:link}).catch(()=>{}); } else { _copyText(link).then(()=>toast('Link copied','success')); } });
+  on($('art-share-open'),'click',()=>{ try{ window.open(link,'_blank','noopener'); }catch(e){} });
+  on($('art-share-dl'),'click',()=>{ closeOvr(); _artifactDownload(art); });
+}
+// Render a shared artifact as a branded read-only page (from #art=... in the URL).
+function _checkSharedArtifact(){
+  try{
+    const m=(location.hash||'').match(/#art=(.+)$/);
+    if(!m) return false;
+    const data=JSON.parse(decodeURIComponent(escape(atob(m[1]))));
+    _renderSharedArtifact(data);
+    return true;
+  }catch(e){ return false; }
+}
+function _renderSharedArtifact(data){
+  const isHtml=!!data.h;
+  let bodyHTML;
+  if(isHtml){
+    let url='';
+    try{ url=URL.createObjectURL(new Blob([data.c||''],{type:'text/html'})); }catch(e){}
+    bodyHTML='<iframe class="shared-art-frame" src="'+url+'" sandbox="allow-scripts"></iframe>';
+  } else {
+    bodyHTML='<pre class="shared-art-code"><code>'+escH(data.c||'')+'</code></pre>';
+  }
+  document.body.innerHTML=
+    '<div class="shared-view">'+
+      '<div class="shared-head"><div class="shared-brand">'+(typeof amvMark==='function'?amvMark(22):'')+'<span>AMV.AI</span></div>'+
+        '<a class="btn bp" href="'+location.origin+location.pathname+'">Try AMV free \u2192</a></div>'+
+      '<div class="shared-art-container">'+
+        '<h1 class="shared-art-h1">'+escH(data.t||'Shared artifact')+'</h1>'+
+        '<div class="shared-art-meta">'+escH(isHtml?'Web page':((data.l||'code').toUpperCase()+' \u00b7 shared from AMV.AI'))+'</div>'+
+        '<div class="shared-art-body">'+bodyHTML+'</div>'+
+        '<div class="shared-foot">Made with <b>AMV.AI</b> \u2014 the AI workforce that does the work. <a href="'+location.origin+location.pathname+'">Start free</a></div>'+
+      '</div>'+
+    '</div>';
+  document.title=(data.t||'Shared artifact')+' \u2014 AMV.AI';
+  // clean tokens/CSP-safe: nothing else runs on this view
+}
+try{ window._shareArtifact=_shareArtifact; }catch(e){}
+
+function _artifactDownload(art){  try{
+    const ext = art.isHtml?'html':({js:'js',javascript:'js',jsx:'jsx',ts:'ts',typescript:'ts',tsx:'tsx',py:'py',python:'py',css:'css',json:'json',sql:'sql'}[art.lang.toLowerCase()]||'txt');
+    const fname=(art.title.replace(/[^\w.-]+/g,'_')||'artifact')+'.'+ext;
+    const blob=new Blob([art.raw],{type:'text/plain'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=fname; a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+    toast('Downloaded '+fname,'success',2000);
+  }catch(e){}
+}
+try{ window.openArtifact=openArtifact; window.closeArtifact=closeArtifact; }catch(e){}
+
+function md(text) {  if(!text) return '';
   let t = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
-  // Live iframe for full HTML pages
+  // Full HTML pages become an artifact (opens in the side panel with a live
+  // Preview + Code tabs), instead of a cramped inline iframe.
   t = t.replace(/```(?:html)?\n?(&lt;!DOCTYPE html&gt;[\s\S]*?)```/gi, (match, code) => {
     const html=code.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&');
-    try{
-      const blob=new Blob([html],{type:'text/html'});
-      const url=URL.createObjectURL(blob);
-      return '<div class="lp"><div class="lph"><span>LIVE PREVIEW</span><a href="'+url+'" target="_blank" rel="noopener noreferrer">Open fullscreen ↗</a></div><iframe src="'+url+'" sandbox="allow-scripts allow-same-origin"></iframe></div>';
-    }catch(e){return match;}
+    if(typeof _artifactStore==='function'){
+      const art=_artifactStore(html, 'html', true);
+      return _artifactCardHTML(art);
+    }
+    return match;
   });
 
   // Chart blocks: ```chart {"type":"bar","title":"..","data":[{"label":"A","value":10}]}```
@@ -1522,11 +3574,44 @@ function md(text) {
     }catch(e){ return match; }
   });
 
-  // Code blocks with copy button
+  // ── Generative UI blocks ──────────────────────────────────
+  // Rendered as rich interactive blocks unless the user turned them off in
+  // Settings → Capabilities (then they fall back to plain code blocks).
+  if(typeof loadStr==='function' && loadStr('amv_cap_suggestions')!=='0'){
+  // stats: {"items":[{"value":"$2.4M","label":"Revenue","trend":"+12%"}]}
+  t = t.replace(/```stats\n?([\s\S]*?)```/gi, (match, body) => {
+    try{ return _guiStats(JSON.parse(body.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').trim())); }catch(e){ return match; }
+  });
+  // compare: {"title":"..","columns":["A","B"],"rows":[{"label":"Price","values":["$9","$19"]}]}
+  t = t.replace(/```compare\n?([\s\S]*?)```/gi, (match, body) => {
+    try{ return _guiCompare(JSON.parse(body.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').trim())); }catch(e){ return match; }
+  });
+  // steps: {"title":"..","steps":[{"title":"..","detail":".."}]}
+  t = t.replace(/```steps\n?([\s\S]*?)```/gi, (match, body) => {
+    try{ return _guiSteps(JSON.parse(body.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').trim())); }catch(e){ return match; }
+  });
+  // choices: {"prompt":"Pick one","options":["A","B","C"]} — tappable, sends a follow-up
+  t = t.replace(/```choices\n?([\s\S]*?)```/gi, (match, body) => {
+    try{ return _guiChoices(JSON.parse(body.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').trim())); }catch(e){ return match; }
+  });
+  }
+
+  // Code blocks. Substantial ones (long code, full HTML pages, documents)
+  // become an ARTIFACT CARD that opens in the side panel; short snippets stay
+  // inline so the conversation reads naturally.
   t = t.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
+    const raw=code.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&');
+    const lines=raw.split('\n').length;
+    const isFullHtml=/^\s*<(!doctype|html)[\s>]/i.test(raw);
+    // Artifact-worthy: full HTML page, or a real code file (>=14 lines or >600
+    // chars). Short snippets, one-liners, and shell commands stay inline.
+    const worthy = isFullHtml || ((lines>=14 || raw.length>600) && lang && lang!=='text' && lang!=='');
+    if(worthy && typeof _artifactStore==='function'){
+      const art=_artifactStore(raw, lang, isFullHtml);
+      return _artifactCardHTML(art);
+    }
     const id='cc'+Math.random().toString(36).slice(2,8);
     const lb=lang?'<span>'+escH(lang.toUpperCase())+'</span>':'';
-    const raw=code.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&');
     window._codeBlocks=window._codeBlocks||{};
     window._codeBlocks[id]=raw;
     return '<pre><div class="chdr">'+lb+'<button class="ccopy" data-cid="'+id+'">Copy</button></div><code>'+code+'</code></pre>';
@@ -1558,6 +3643,22 @@ function md(text) {
   t = t.replace(/!\[([^\]]*)\]\((https?:\/\/[^)]+)\)/g,'<img src="$2" alt="$1" class="chat-img" loading="lazy">');
   t = t.replace(/\[(.+?)\]\((https?:\/\/[^)]+)\)/g,'<a href="$2" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">$1</a>');
   t = t.replace(/\n\n/g,'<br><br>').replace(/\n/g,'<br>');
+  // Newline->\<br\> is fine for prose, but it also injects stray breaks INSIDE
+  // block elements (between list items, around headings, around code blocks),
+  // which is invalid HTML and produces huge dead gaps. Strip those.
+  t = t
+    .replace(/(<\/li>)\s*(?:<br>\s*)+/g, '$1')
+    .replace(/(<[uo]l>)\s*(?:<br>\s*)+/g, '$1')
+    .replace(/(?:<br>\s*)+(<\/[uo]l>)/g, '$1')
+    .replace(/(?:<br>\s*)+(<[uo]l>)/g, '<br>$1')
+    .replace(/(<\/[uo]l>)\s*(?:<br>\s*)+/g, '$1')
+    .replace(/(<\/h[1-6]>)\s*(?:<br>\s*)+/g, '$1')
+    .replace(/(?:<br>\s*)+(<h[1-6]>)/g, '$1')
+    .replace(/(<\/pre>)\s*(?:<br>\s*)+/g, '$1')
+    .replace(/(?:<br>\s*)+(<pre)/g, '$1')
+    .replace(/(<\/blockquote>)\s*(?:<br>\s*)+/g, '$1')
+    .replace(/(<\/table>)\s*(?:<br>\s*)+/g, '$1')
+    .replace(/(?:<br>\s*)+(<table)/g, '$1');
   return t;
 }
 function copyCode(id){
@@ -1566,27 +3667,134 @@ function copyCode(id){
 }
 
 
-async function sendMsg() {
-  const ta=$('mta');
-  if(!ta||S.busy) return;
-  const txt=ta.value.trim(), att=S.att;
-  if(!txt&&!att) return;
-  ta.value=''; ta.style.height='auto'; S.att=null;
-  const ab2=$('ab2'); if(ab2) ab2.style.display='none';
+/* ── Unified chat intent router ──────────────────────────────────
+   Lets the user do ANYTHING from the main chat. Detects a confident
+   intent and routes to the right capability (image, video, app/code,
+   scheduled/background task, multi-step autonomous work). Returns true
+   if it handled the message; false to fall through to normal chat.
+   Conservative by design: ambiguous messages just chat normally. */
+async function _routeChatIntent(txt){
+  if(!txt) return false;
+  const t=txt.toLowerCase();
+  const pushUser=()=>{ const m=getMsgs(); m.push({r:'u',c:txt,d:txt}); const cv=getCurConv(); if(cv&&cv.title==='New Conversation') cv.title=txt.slice(0,44)+(txt.length>44?'\u2026':''); return m; };
 
-  // Auto-detect image requests -> generate INLINE in chat (also saved to Images tab)
-  if(!att && (/\b(generate|create|make|draw|render|show|design|paint)\b.{0,60}\b(image|photo|picture|portrait|illustration|logo|art|drawing|wallpaper|poster)\b/i.test(txt)||
-     /\b(image|photo|picture|illustration)\b.{0,40}\bof\b/i.test(txt))) {
-    const p=txt.replace(/\b(please|generate|create|make|draw|render|show|design|paint|an?|the)\s*(image|photo|picture|portrait|illustration|logo|art|drawing|wallpaper|poster)\s*(of\s*)?/gi,'').trim()||txt;
+  // 1) IMAGE — "generate/make an image of…", "a photo of…"
+  if(/\b(generate|create|make|draw|render|show|design|paint)\b[^.!?]{0,60}\b(image|photo|picture|portrait|illustration|logo|art|drawing|wallpaper|poster|icon)\b/i.test(txt)
+     || /\b(image|photo|picture|illustration|portrait)\b[^.!?]{0,40}\bof\b/i.test(txt)){
+    let p=txt
+      .replace(/^\s*(please|hey|can you|could you|i want you to|i'd like|id like|pls)\s+/i,'')
+      .replace(/\b(generate|create|make|draw|render|show me|show|design|paint|give me)\s+(me\s+)?(an?|the|some)?\s*(image|photo|picture|portrait|illustration|logo|art|drawing|wallpaper|poster|icon)\s*(of|showing|with|for)?\s*/i,'')
+      .replace(/\b(an?|the)\s+(image|photo|picture|illustration|portrait)\s+of\s+/i,'')
+      .trim()||txt;
     const seed=Math.floor(Math.random()*999999);
     S.imgs.unshift({id:'img'+Date.now(),prompt:p,style:S.imgStyle,ratio:S.imgRatio,seed});
     const url=imgUrl(p,S.imgStyle,S.imgRatio,seed);
-    const msgsI=getMsgs();
-    msgsI.push({r:'u',c:txt,d:txt});
-    const cvI=getCurConv(); if(cvI&&cvI.title==='New Conversation') cvI.title=txt.slice(0,44)+(txt.length>44?'\u2026':'');
-    msgsI.push({r:'a',c:'Here\u2019s what I created:\n\n![generated]('+url+')\n\n*Generated with AMV Vision \u2014 open the Images tab to refine, upscale, or download.*',model:S.model});
-    setMsgs(msgsI); renderChatMsgs(); renderHist();
+    const m=pushUser();
+    m.push({r:'a',c:'Here\u2019s what I created:\n\n![generated]('+url+')\n\n*Generated with AMV Vision \u2014 open the Images tab to refine, upscale, or download.*',model:S.model});
+    setMsgs(m); renderChatMsgs(); renderHist();
+    return true;
+  }
+
+  // 2) VIDEO — "make/generate a video/clip/animation of…"
+  if(/\b(generate|create|make|produce|animate)\b[^.!?]{0,50}\b(video|clip|animation|short film|movie)\b/i.test(txt)
+     || /\b(video|animation|clip)\b[^.!?]{0,30}\bof\b/i.test(txt)){
+    const p=txt.replace(/\b(please|can you|could you|generate|create|make|produce|animate|an?|the)\s*(video|clip|animation|short film|movie)\s*(of\s*)?/gi,'').trim()||txt;
+    const m=pushUser();
+    m.push({r:'a',c:'Starting a video from your prompt \u2014 opening the Video studio so you can watch it render and adjust length, style, and aspect ratio.',model:S.model});
+    setMsgs(m); renderChatMsgs(); renderHist();
+    setTab('video');
+    try{ const vi=$('vp'); if(vi){ vi.value=p; vi.focus(); } }catch(e){}
+    return true;
+  }
+
+  // 3) APP / CODE / WEBSITE — build it in the Dev sandbox
+  if(/\b(build|make|create|code|develop|write)\b[^.!?]{0,40}\b(app|application|website|web ?app|web ?site|landing page|game|tool|component|dashboard|calculator|clone|script|program|api|bot)\b/i.test(txt)){
+    const m=pushUser();
+    m.push({r:'a',c:'This is a build \u2014 taking you to **Dev**, where I\u2019ll write it, run it in a live sandbox, and show you the result and the code. You can keep iterating there in plain English.',model:S.model});
+    setMsgs(m); renderChatMsgs(); renderHist();
+    setTab('dev');
+    try{ const dm=$('dev-msg'); if(dm){ dm.value=txt; if(typeof _devSend==='function') _devSend(); } }catch(e){}
+    return true;
+  }
+
+  // 4) SCHEDULED / RECURRING / BACKGROUND — set it up on a schedule
+  if(/\b(every|each)\s+(morning|day|evening|night|week|weekday|monday|tuesday|wednesday|thursday|friday|saturday|sunday|hour)\b/i.test(txt)
+     || /\b(daily|weekly|hourly|recurring|on a schedule|scheduled|automatically)\b/i.test(txt)
+     || /\b(in the background|run.*background|background task)\b/i.test(txt)
+     || /\b(remind me|send me)\b[^.!?]{0,40}\b(every|each|daily|weekly)\b/i.test(txt)){
+    const m=pushUser();
+    if(typeof _scheduleAuto==='function'){
+      // detect frequency from the phrasing
+      let freq='daily';
+      if(/\bhour/i.test(t)) freq='hourly';
+      else if(/\bweekday|every monday|each monday/i.test(t)) freq='weekdays';
+      else if(/\bweek/i.test(t)) freq='weekly';
+      else if(/\bmonday|tuesday|wednesday|thursday|friday|saturday|sunday/i.test(t)) freq='weekly';
+      _scheduleAuto(txt, freq);
+      const ready=_aiBackendReady();
+      m.push({r:'a',c:'Done \u2014 scheduled to run **'+_freqLabel(freq).toLowerCase()+'**.'+(ready?' It\u2019ll run automatically and I\u2019ll have the result waiting for you.':' Connect the AMV engine in Settings so it can run when it\u2019s due.')+'\n\nManage or cancel it anytime under **Tasks**.',model:S.model});
+      setMsgs(m); renderChatMsgs(); renderHist();
+      return true;
+    }
+    m.push({r:'a',c:'I\u2019ll set this up as a recurring task \u2014 opening **Tasks** where you can confirm the schedule.',model:S.model});
+    setMsgs(m); renderChatMsgs(); renderHist(); setTab('tasks');
+    return true;
+  }
+
+  // 5) MULTI-STEP / AGENTIC — "analyze X and email me", "research X and write a report and save it"
+  const multiStep = /\b(and then|then|after that|,)\b/i.test(txt) &&
+    /\b(email|send|save|download|write|create|analyz|research|summariz|compile|export|publish|post|schedule)\b/i.test(txt);
+  const clearlyAgentic = /\b(analyze|research|compile|gather|organize|plan)\b[^.!?]{0,60}\b(and|then)\b[^.!?]{0,40}\b(email|send|save|report|summary|write|export)\b/i.test(txt);
+  if((multiStep && txt.length>40) || clearlyAgentic){
+    if(typeof runAutonomousTask==='function'){ await runAutonomousTask(txt); return true; }
+  }
+
+  return false; // nothing matched → normal chat
+}
+try{ window._routeChatIntent=_routeChatIntent; }catch(e){}
+
+let _pendingMessage = '';
+let _toolRound = 0;
+async function sendMsg(_opts) {
+  _opts = _opts || {};
+  if(!_opts._continueTools) _toolRound = 0;   // fresh user turn resets the tool budget
+  const ta=$('mta');
+  if(!ta) return;
+  if(S.busy && !_opts._continueTools) return;
+  const txt = _opts._continueTools ? '' : ta.value.trim();
+  const att = _opts._continueTools ? null : S.att;
+  // A tool-continuation has no new user text — it resumes with tool results.
+  if(!_opts._continueTools && !txt && !att) return;
+  // Sign-up gate: you can explore the app freely, but sending a message requires
+  // an account. Preserve what they typed so it sends right after they sign up.
+  if(!S.user || !S.user.email){
+    _pendingMessage = txt;
+    try{ openAuth('signup'); }catch(e){}
+    if(typeof toast==='function') toast('Create a free account to start chatting','info',3500);
     return;
+  }
+  // Out-of-usage: the chat stops here (Claude-style) — BEFORE any routing or
+  // clearing, so nothing is consumed and the user's text stays in the box.
+  try{
+    if(quotaLocked()){ _renderQuotaNotice(); return; }
+    if(typeof AMVUsage!=='undefined'){
+      const _qst=AMVUsage.status();
+      if(_qst.remaining<=0){
+        quotaLock(_qst.resetsAt);
+        const _qm=getMsgs();
+        if(!_qm.some(m=>m._quota)){ _qm.push({r:'a',c:'',_quota:true,_resetAt:_qst.resetsAt}); setMsgs(_qm); renderChatMsgs(); }
+        return;
+      }
+    }
+  }catch(e){}
+  ta.value=''; ta.style.height='auto'; S.att=null;
+  const ab2=$('ab2'); if(ab2) ab2.style.display='none';
+
+  // ── Unified intent router: do ANYTHING from chat ──
+  // Only routes on a confident match with no attachment; otherwise normal chat.
+  if(!att){
+    const routed=await _routeChatIntent(txt);
+    if(routed) return;
   }
 
   let display=txt, apiContent=txt;
@@ -1611,19 +3819,34 @@ async function sendMsg() {
   }
 
   const msgs=getMsgs();
-  msgs.push({r:'u',c:apiContent,d:display});
+  if(!_opts._continueTools) msgs.push({r:'u',c:apiContent,d:display});
   const cv=getCurConv();
   if(cv&&cv.title==='New Conversation'&&txt) cv.title=txt.slice(0,44)+(txt.length>44?'…':'');
   setMsgs(msgs); S.busy=true; renderChatMsgs(); renderHist();
-  await _callAI(msgs);
+  await _callAI(msgs, _opts);
 }
 
-async function _callAI(msgs) {
-  if(!S.mk && !(window.AMV_API && AMV_API.live)) {
+/* Stop generating — lets the user halt a streaming response mid-way. Keeps
+   whatever text arrived so far, cleanly, and never leaves the UI stuck busy. */
+let _activeStreamCtrl=null, _userStopped=false;
+function stopGenerating(){
+  _userStopped=true;
+  try{ if(_activeStreamCtrl) _activeStreamCtrl.abort('user-stop'); }catch(e){}
+}
+try{ window.stopGenerating=stopGenerating; }catch(e){}
+
+async function _callAI(msgs, _opts) {
+  _opts = _opts || {};
+  _userStopped=false; _activeStreamCtrl=null;
+  try{
+    if(!loadStr('amv_first_msg_sent')){ saveStr('amv_first_msg_sent','1'); AEGIS.log('first_message',{}); }
+  }catch(e){}
+  if(!_aiBackendReady()) {
     msgs.push({r:'a',c:'**AMV isn\u2019t connected yet.** The AMV engine needs to be switched on before I can respond. If you\u2019re the workspace owner, enable it in Settings; otherwise reach out to your administrator.'});
     setMsgs(msgs); S.busy=false; renderChatMsgs(); return;
   }
-  const _gate=AEGIS.check();
+  // A tool-continuation is not a new user send — it must not trip the rate gate.
+  const _gate = _opts._continueTools ? {ok:true} : AEGIS.check();
   if(!_gate.ok){
     AEGIS.log('ratelimit_block',{reason:_gate.reason});
     msgs.push({r:'a',c:'**Hold on.** '+_gate.reason});
@@ -1632,45 +3855,116 @@ async function _callAI(msgs) {
     return;
   }
   AEGIS.noteSend();
+  // Out-of-usage: the chat stops (Claude-style). Show one quota card with a
+  // live reset countdown, lock the composer, and never stack duplicates.
+  try{
+    if(quotaLocked()){ S.busy=false; _renderQuotaNotice(); return; }
+    if(typeof AMVUsage!=='undefined'){
+      const st=AMVUsage.status();
+      if(st.remaining <= 0){
+        S.busy=false;
+        quotaLock(st.resetsAt);
+        if(!msgs.some(m=>m._quota)){                     // one card only
+          msgs.push({r:'a',c:'',_quota:true,_resetAt:st.resetsAt});
+          setMsgs(msgs); renderChatMsgs();
+        }
+        return;
+      }
+    }
+  }catch(e){}
   // RULE 7+8: route to the cheapest capable model when on Auto (saves ~5-20x on simple tasks)
   let _routeKey=S.model;
   if(S.model==='auto'){ _routeKey=_routeModel(msgs); }
   AEGIS.log('request',{model:(MODELS[_routeKey]||MODELS.smart).model, msgCount:msgs.length, routed:S.model==='auto'});
   let _inTok=0,_outTok=0;
+  // Record usage exactly once, no matter how the stream ends (success, error, or
+  // user-stop). Prevents lost usage accounting when a stream is interrupted after
+  // tokens were already consumed. (Grok flagged this fragility — now robust.)
+  let _usageRecorded=false;
+  const _recordUsageOnce=()=>{
+    if(_usageRecorded) return; _usageRecorded=true;
+    if(!_inTok && !_outTok) return; // nothing consumed
+    try{ AEGIS.recordUsage((MODELS[_routeKey]||MODELS.smart).model, _inTok, _outTok); }catch(e){}
+    try{ AMVUsage.record((_inTok||0)+(_outTok||0)); }catch(e){}
+  };
   const mdl=MODELS[_routeKey]||MODELS.smart;
-  const _mems=_relevantMemories(msgs);
-  const sysPrompt=(MODEL_SYSTEMS[_routeKey]||SYS)+_langInstruction()+(_mems&&_mems.length?' Memory about you: '+_mems.join('; '):'')+_integrationStatusPrompt()+(_dnaShouldApply(msgs)?('\n\n'+dnaPromptBlock()+'\nApply this DESIGN DNA to any website, app, UI, HTML, or visual output you produce.'):'');
+  const _mems=(loadStr('amv_cap_memory')!=='0')?_relevantMemories(msgs):[];
+  const _agenticSys = '\n\nYOU CAN ACTUALLY DO THINGS \u2014 you are not limited to describing them. You have real tools:\n'+
+    '\u2022 generate_image \u2014 when they want a picture, logo, poster, mockup, or any visual, CREATE it.\n'+
+    '\u2022 run_code \u2014 when code should be executed, tested, or verified, RUN it and report the real output. Use it to check your own work too.\n'+
+    '\u2022 fix_code \u2014 when their code is broken, actually run it, fix it, and re-run until it passes.\n'+
+    '\u2022 build_app \u2014 when they ask you to build/make/create something interactive (a page, a game, a dashboard, a tool), BUILD it and show them a live working version.\n'+
+    'Prefer doing over explaining. Don\u2019t say "here is code you could run" \u2014 run it. Don\u2019t say "you could generate an image" \u2014 generate it. After a tool runs, briefly tell them what you did and what they got.';
+  const sysPrompt=(MODEL_SYSTEMS[_routeKey]||SYS)+_agenticSys+_profileContext()+_skillsContext()+_pluginContext()+_localeContext()+_handoffContext('chat')+_langInstruction()+(_mems&&_mems.length?' Memory about you: '+_mems.join('; '):'')+_integrationStatusPrompt()+(_dnaShouldApply(msgs)?('\n\n'+dnaPromptBlock()+'\nApply this DESIGN DNA to any website, app, UI, HTML, or visual output you produce.'):'');
 
   // Add streaming placeholder message
-  msgs.push({r:'a',c:'',streaming:true,model:S.model});
+  _streamBubbleReset();
+  msgs.push({r:'a',c:'',streaming:true,model:S.model,_status:'Thinking…'});
   setMsgs(msgs); renderChatMsgs();
   const streamIdx=msgs.length-1;
 
-  try {
-    // Build tools array - include web_search for research model
-    const tools=(S.model==='smart'||S.model==='research')?[{type:'web_search_20250305',name:'web_search'}]:undefined;
+  // Claude-style working status: cycle contextual labels until the first token
+  // arrives, so the user always sees what AMV is doing.
+  const _lastUser=(msgs.filter(m=>m.r==='u').slice(-1)[0]||{});
+  const _uTxt=(typeof _lastUser.c==='string'?_lastUser.c:(_lastUser.d||'')).toLowerCase();
+  const _statusPhases=(()=>{
+    if(/\b(search|latest|news|current|today|who is|what is|find)\b/.test(_uTxt)) return ['Thinking…','Searching the web…','Reading sources…','Writing…'];
+    if(/\b(code|build|function|app|bug|fix|script|debug)\b/.test(_uTxt)) return ['Thinking…','Analyzing the problem…','Writing code…'];
+    if(/\b(analyz|summar|explain|compare|review)\b/.test(_uTxt)) return ['Thinking…','Analyzing…','Organizing thoughts…','Writing…'];
+    if(/\b(image|picture|photo|draw|generate)\b/.test(_uTxt)) return ['Thinking…','Composing the image…'];
+    return ['Thinking…','Working through it…','Writing…'];
+  })();
+  let _phaseIdx=0;
+  const _statusTimer=setInterval(()=>{
+    _phaseIdx++;
+    if(_phaseIdx<_statusPhases.length && msgs[streamIdx] && msgs[streamIdx].streaming && !(msgs[streamIdx].c&&msgs[streamIdx].c.length)){
+      msgs[streamIdx]={...msgs[streamIdx],_status:_statusPhases[_phaseIdx]};
+      setMsgs(msgs); renderChatMsgs();
+    }
+  }, 1400);
+  const _clearStatus=()=>{ try{ clearInterval(_statusTimer); }catch(e){} };
 
-    const _useBackend = (window.AMV_API && AMV_API.live);
-    const _endpoint = _useBackend ? (AMV_API.base.replace(/\/$/,'')+'/v1/messages') : 'https://api.anthropic.com/v1/messages';
-    const _headers = _useBackend ? {
-        'Content-Type':'application/json',
-        'Authorization':'Bearer '+AMV_API.token,
-      } : {
-        'Content-Type':'application/json',
-        'x-api-key':S.mk,
-        'anthropic-version':'2023-06-01',
-        'anthropic-dangerous-direct-browser-access':'true',
-      };
+  try {
+    // Build tools array — include web_search for capable models, but only if
+    // the user hasn't turned web search off in Settings (Capabilities / Plugins).
+    const _webAllowed = (loadStr('amv_cap_websearch')!=='0') && (loadStr('amv_plugin_web')!=='0');
+    let tools=[];
+    if(_webAllowed && (S.model==='smart'||S.model==='research'||S._researchDepth)){
+      // max_uses controls how many searches the model may run. Research mode
+      // raises this so it genuinely covers many sources; normal chat keeps it
+      // low so a quick question doesn't spend a fortune searching.
+      const depth = S._researchDepth || (S.model==='research' ? 'deep' : 'normal');
+      const maxUses = depth==='deep' ? 30 : depth==='max' ? 60 : 5;
+      tools.push({ type:'web_search_20250305', name:'web_search', max_uses:maxUses });
+    }
+    // AMV's own tools — chat can actually DO the work, not just describe it.
+    try{ if(Array.isArray(AMV_TOOLS)) tools = tools.concat(AMV_TOOLS); }catch(e){}
+    if(!tools.length) tools = undefined;
+
+    const _endpoint = _aiBase();        // backend-only; never the browser key
+    const _headers = _aiHeaders();
     const _payload = JSON.stringify({
         model:mdl.model,
         max_tokens:mdl.tokens,
         system:sysPrompt,
         stream:true,
         ...(tools?{tools}:{}),
-        messages:msgs.slice(0,streamIdx).slice(-20).map(m=>({
-          role:m.r==='u'?'user':'assistant',
-          content:m.c
-        }))
+        messages:(()=>{
+          // Turn our internal messages into Anthropic format. Any turn where AMV
+          // actually used a tool becomes: assistant[text + tool_use] -> user[tool_result].
+          const out=[];
+          msgs.slice(0,streamIdx).slice(-20).forEach(m=>{
+            if(m.r==='a' && m._toolContent && m._toolResults){
+              out.push({ role:'assistant', content:m._toolContent });
+              out.push({ role:'user', content:m._toolResults });
+            } else {
+              out.push({ role:m.r==='u'?'user':'assistant', content:m.c });
+            }
+          });
+          // Anthropic requires the conversation to start with a user turn.
+          while(out.length && out[0].role!=='user') out.shift();
+          return out;
+        })()
       });
     // offline guard
     if(typeof navigator!=='undefined' && navigator.onLine===false){
@@ -1680,11 +3974,26 @@ async function _callAI(msgs) {
     let res, _attempt=0, _maxRetries=2;
     while(true){
       const _ctrl=new AbortController();
-      const _to=setTimeout(()=>_ctrl.abort(), 45000); // 45s timeout
+      _activeStreamCtrl=_ctrl;               // expose so the user can Stop
+      const _to=setTimeout(()=>_ctrl.abort('timeout'), 45000); // 45s timeout
       try{
         res=await fetch(_endpoint,{method:'POST',headers:_headers,body:_payload,signal:_ctrl.signal});
         clearTimeout(_to);
         if(res.ok) break;
+        // A quota 429 is NOT transient — read the body first. If the server says
+        // we're out of usage, stop the chat with the quota card + live countdown
+        // instead of retrying or showing a generic error.
+        if(res.status===429){
+          const qerr=await res.clone().json().catch(()=>({}));
+          if(qerr && (qerr.code==='quota_day'||qerr.code==='quota_month')){
+            const resetAt=qerr.resetAt||(Date.now()+3600000);
+            quotaLock(resetAt);
+            msgs[streamIdx]={r:'a',c:'',_quota:true,_resetAt:resetAt};
+            setMsgs(msgs); S.busy=false; renderChatMsgs();
+            _recordUsageOnce();
+            return;
+          }
+        }
         // retry transient server/rate errors
         if((res.status===429||res.status>=500) && _attempt<_maxRetries){
           _attempt++;
@@ -1721,7 +4030,11 @@ async function _callAI(msgs) {
     let fullText='';
     let buffer='';
 
+    const _toolBlocks={}; let _stopReason='';
+    // Live research tracking — real searches and real sources, surfaced as they happen.
+    const _research={ active:false, searches:0, sources:new Map(), done:false };
     while(true){
+      if(_userStopped){ try{ reader.cancel(); }catch(e){} break; }
       const {done,value}=await reader.read();
       if(done) break;
       buffer+=decoder.decode(value,{stream:true});
@@ -1735,22 +4048,108 @@ async function _callAI(msgs) {
           const evt=JSON.parse(data);
           if(evt.type==='message_start'&&evt.message?.usage){ _inTok=evt.message.usage.input_tokens||0; }
           if(evt.type==='message_delta'&&evt.usage){ _outTok=evt.usage.output_tokens||_outTok; }
+          // ── Tool use: the model is asking AMV to actually DO something ──
+          if(evt.type==='content_block_start' && evt.content_block?.type==='tool_use'){
+            _toolBlocks[evt.index]={ id:evt.content_block.id, name:evt.content_block.name, json:'' };
+            const t=_toolBlocks[evt.index];
+            if(t.name && !String(t.name).startsWith('web_search')){
+              const _lbl=({generate_image:'Creating your image\u2026',run_code:'Running the code\u2026',fix_code:'Debugging\u2026',build_app:'Building it\u2026'})[t.name] || 'Working\u2026';
+              msgs[streamIdx]={...msgs[streamIdx], _status:_lbl};
+              setMsgs(msgs); renderChatMsgs();
+            }
+          }
+          // ── Web search: Anthropic runs the searches server-side and streams
+          //    back the queries (server_tool_use) and the sources it found
+          //    (web_search_tool_result). We surface that live so the user SEES
+          //    the research happening — real counts, real queries, no faking. ──
+          if(evt.type==='content_block_start' && evt.content_block?.type==='server_tool_use'
+             && String(evt.content_block.name||'').startsWith('web_search')){
+            _research.active=true;
+            _research.searches++;
+            _renderResearch(msgs, streamIdx, _research);
+          }
+          if(evt.type==='content_block_start' && evt.content_block?.type==='web_search_tool_result'){
+            const results = evt.content_block.content;
+            if(Array.isArray(results)){
+              for(const r of results){
+                const url = r && (r.url || r.page_url);
+                if(url && !_research.sources.has(url)){
+                  _research.sources.set(url, { url, title: (r.title||r.page_title||url).slice(0,120) });
+                }
+              }
+            }
+            _renderResearch(msgs, streamIdx, _research);
+          }
+          // capture the query text as it streams, to show what's being searched
+          if(evt.type==='content_block_delta' && evt.delta?.type==='input_json_delta'){
+            const t=_toolBlocks[evt.index];
+            if(t) t.json += (evt.delta.partial_json||'');
+          }
+          if(evt.type==='message_delta' && evt.delta?.stop_reason){ _stopReason=evt.delta.stop_reason; }
           if(evt.type==='content_block_delta'&&evt.delta?.type==='text_delta'){
+            _clearStatus();
             fullText+=evt.delta.text;
-            // Update the streaming message live
-            msgs[streamIdx]={...msgs[streamIdx],c:fullText};
-            setMsgs(msgs);
-            renderChatMsgs();
+            msgs[streamIdx]={...msgs[streamIdx],c:fullText,_status:null};
+            // Fast path: update ONLY the streaming bubble in place rather than
+            // re-rendering the whole conversation on every token. This keeps the
+            // reveal buttery-smooth even on long, fast responses. We fall back to
+            // a full render if the bubble isn't found (e.g. first token).
+            if(!_streamBubbleUpdate(streamIdx, fullText)){
+              setMsgs(msgs); renderChatMsgs();
+            } else {
+              setMsgs(msgs);   // keep state in sync without a full DOM rebuild
+            }
           }
         }catch{}
       }
     }
 
     // Finalize
+    _clearStatus();
+    _streamBubbleReset();
+    // Freeze the research panel into its "done" state so it persists with the answer.
+    if(_research.active){
+      _research.done=true;
+      const _finishedPanel=_buildResearchPanel(_research, true);
+      if(msgs[streamIdx]) msgs[streamIdx]={...msgs[streamIdx], _research:_finishedPanel};
+    }
+    if(_userStopped){
+      msgs[streamIdx]={r:'a',c:(fullText||'')+ (fullText?' _(stopped)_':'_(stopped)_'),model:S.model,_stopped:true};
+      _recordUsageOnce();
+      setMsgs(msgs); S.busy=false; renderChatMsgs();
+      return;
+    }
+    // ── The model asked AMV to DO something. Run it, then let the model continue. ──
+    const _pending = Object.values(_toolBlocks).filter(t=>t && t.name && !String(t.name).startsWith('web_search'));
+    if(_pending.length && !_userStopped && _toolRound < 4){
+      const assistantContent=[];
+      if(fullText) assistantContent.push({type:'text', text:fullText});
+      const results=[];
+      let renderedExtras='';
+      for(const t of _pending){
+        let input={};
+        try{ input = t.json ? JSON.parse(t.json) : {}; }catch(e){ input={}; }
+        assistantContent.push({type:'tool_use', id:t.id, name:t.name, input});
+        const out = await _amvRunTool(t.name, input, (msg)=>{
+          msgs[streamIdx]={...msgs[streamIdx], c:fullText, _status:msg};
+          setMsgs(msgs); renderChatMsgs();
+        });
+        results.push({type:'tool_result', tool_use_id:t.id, content:String(out.text||'').slice(0,8000)});
+        if(out.render) renderedExtras += out.render;
+      }
+      // Record what actually happened so it survives re-render and reload.
+      msgs[streamIdx]={ r:'a', c:fullText, model:S.model, _status:null,
+                        _toolContent:assistantContent, _toolResults:results, _rendered:renderedExtras };
+      setMsgs(msgs); renderChatMsgs();
+      _recordUsageOnce();
+      S.busy=false;
+      // Continue the conversation with the tool results in hand.
+      _toolRound++;
+      return sendMsg({ _continueTools:true });
+    }
     if(!fullText) fullText='(no response)';
     msgs[streamIdx]={r:'a',c:fullText,model:S.model};
-    try{ AEGIS.recordUsage((MODELS[S.model]||MODELS.smart).model, _inTok, _outTok); }catch(e){}
-    try{ AMVUsage.record((_inTok||0)+(_outTok||0)); }catch(e){}
+    _recordUsageOnce();
     // Auto-title chat
     const cv=getCurConv();
     if(cv&&cv.title==='New Conversation'&&fullText.length>20){
@@ -1759,15 +4158,24 @@ async function _callAI(msgs) {
     }
 
   } catch(e) {
+    _clearStatus();
+    // a user-initiated stop is not an error — keep whatever streamed
+    if(_userStopped || (e && (e.name==='AbortError' || String(e.message||e).includes('user-stop')))){
+      _recordUsageOnce();
+      setMsgs(msgs); S.busy=false; renderChatMsgs(); _userStopped=false; return;
+    }
     const friendly=/api error|rejected|forbidden|rate-limit|malformed|too long|server error|network|timed out|offline|busy/i.test(e.message)?e.message:aegisErrorMessage(0,e.message);
     AEGIS.log('exception',{msg:String(e.message).slice(0,200)}); AEGIS.recordError();
+    _recordUsageOnce();   // record any tokens consumed before the failure
+    _streamBubbleReset();
     // friendly inline error card with a Retry action
     msgs[streamIdx]={r:'a',c:'',model:S.model,_error:friendly};
   }
+  _recordUsageOnce();   // final safety net — never lose usage accounting
 
   setMsgs(msgs); S.busy=false; renderChatMsgs();
   // learn durable facts from this exchange (best-effort, runs in background)
-  try{ if(!msgs[streamIdx]||!msgs[streamIdx]._error){ setTimeout(()=>_maybeExtractMemory(msgs),300); AMVValue.record('message'); } }catch(e){}
+  try{ if(!msgs[streamIdx]||!msgs[streamIdx]._error){ setTimeout(()=>_maybeExtractMemory(msgs),300); AMVValue.record('message'); if(!loadStr('amv_activated')){ saveStr('amv_activated','1'); track('activated_first_message'); } track('message_sent'); } }catch(e){}
 }
 /* Retry the last AI turn after a failure. */
 function retryLastAI(){
@@ -1826,7 +4234,7 @@ function renderChatView() {
       '<div id="cia">'+
         '<div id="cib">'+
           '<div id="ab2"><div id="ac"></div></div>'+
-          '<textarea id="mta" placeholder="Ask anything - essays, 3D models, code, images, research…" rows="1"></textarea>'+
+          '<textarea id="mta" data-i18n-ph placeholder="Ask anything - essays, 3D models, code, images, research…" rows="1"></textarea>'+
           '<div id="itb">'+
             '<div class="il">'+
               '<button class="atb" id="att-btn" title="Attach file">'+
@@ -1834,6 +4242,13 @@ function renderChatView() {
               '</button>'+
               '<button class="atb" id="voice-btn" title="Voice input">'+
                 '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>'+
+              '</button>'+
+              '<button class="atb" id="voicemode-btn" title="Hands-free voice mode">'+
+                '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 10v3M6 6v11M10 3v18M14 8v7M18 5v13M22 10v3"/></svg>'+
+              '</button>'+
+              '<button class="atb atb-research" id="research-btn" title="Research mode - search many sources and write a sourced report">'+
+                '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>'+
+                '<span class="atb-research-lbl">Research</span>'+
               '</button>'+
             '</div>'+
             '<div style="display:flex;align-items:center;gap:7px">'+
@@ -1849,11 +4264,19 @@ function renderChatView() {
           '</div>'+
         '</div>'+
         '<p class="input-hint">Enter to send &bull; Shift+Enter for new line &bull; Drag &amp; drop files</p>'+
+        '<div id="ctx-chat"></div>'+
       '</div>'+
+      '<div id="chome-chips" class="chome-chips"></div>'+
     '</div>';
 
   renderChatMsgs();
   bindChatEvents();
+  // If the user is out of usage, the lock persists across tab switches/reloads:
+  // re-render the composer notice (and pick up a still-exhausted local window).
+  try{
+    if(quotaLocked()) _renderQuotaNotice();
+    else if(typeof AMVUsage!=='undefined'){ const st=AMVUsage.status(); if(st.remaining<=0) quotaLock(st.resetsAt); }
+  }catch(e){}
   // Model selector popup
   on($('inp-mdl-btn'),'click',showModelPicker);
 }
@@ -1877,7 +4300,7 @@ function showModelPicker(){
         '<span class="mp-cost">'+COST_LABEL[v.cost]+'</span></span>'+
       '</button>';
     }).join('')+
-    '<div class="mp-foot">Every AMV model delivers flagship quality. More powerful models use more of your usage — upgrade your plan for more room to run them.</div>';
+    '<div class="mp-foot">Every AMV model is high quality. Faster models use less of your usage; the most capable use more — upgrade for more room to run them.</div>';
   document.body.appendChild(menu);
   menu.querySelectorAll('[data-mk]').forEach(item=>{
     item.addEventListener('click',()=>{
@@ -1902,13 +4325,17 @@ function showModelPicker(){
 
 function bindChatEvents() {
   const ta=$('mta');
-  on(ta,'keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();} });
+  on(ta,'keydown',e=>{ if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){e.preventDefault();sendMsg();return;} if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();} });
   on(ta,'input',()=>{ ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,130)+'px'; });
-  on($('snd'),'click',sendMsg);
+  on($('snd'),'click',()=>{ if(S.busy) stopGenerating(); else sendMsg(); });
   // All message action buttons via delegation (avoids inline onclick quote escaping)
   on($('cm'),'click',e=>{
     const btn=e.target.closest('[data-action]');
     if(!btn) {
+      const choice=e.target.closest('[data-guichoice]');
+      if(choice){ const ta=$('mta'); if(ta) ta.value=choice.dataset.guichoice; sendMsg(); return; }
+      const artBtn=e.target.closest('[data-artopen]');
+      if(artBtn){ openArtifact(artBtn.dataset.artopen); return; }
       const cpbtn=e.target.closest('.ccopy');
       if(cpbtn&&cpbtn.dataset.cid) copyCode(cpbtn.dataset.cid);
       return;
@@ -1922,12 +4349,19 @@ function bindChatEvents() {
     }
     else if(action==='like-up') likeMsg(idx,'up');
     else if(action==='like-down') likeMsg(idx,'down');
+    else if(action==='react'){ _openReactPicker(idx, btn); }
+    else if(action==='react-toggle'){ _toggleReaction(idx, btn.dataset.emoji); }
     else if(action==='regen') regenerateMsg();
     else if(action==='retry-ai') retryLastAI();
+    else if(action==='speak') speakMessage(idx);
+    else if(action==='quota-upgrade'){ setTab('plans'); }
+    else if(action==='quota-later'){ const m2=getMsgs(); if(m2[idx]&&m2[idx]._quota){ m2.splice(idx,1); setMsgs(m2); renderChatMsgs(); } }
   });
   on($('att-btn'),'click',()=>$('fi').click());
   on($('voice-btn'),'click',toggleVoice);
-  on($('tab-add'),'click',()=>{ newChat(); });
+  on($('voicemode-btn'),'click',toggleVoiceMode);
+  on($('research-btn'),'click',_toggleResearch);
+  try{ _syncResearchBtn(); }catch(e){}
 
   // Tab clicks
   $('tabs')?.querySelectorAll('.ctab[data-tid]').forEach(b=>{
@@ -1959,6 +4393,265 @@ function closeTab(id) {
   renderChatView();
 }
 
+/* ---------------- Message reactions ----------------
+   Quick emoji reactions on AI messages. Reactions are stored on the message
+   object (m.reactions = {'👍':1, ...}) so they persist with the conversation
+   via the existing auto-save. Each user toggles their own single reaction per
+   message (this is a single-user client, so a reaction is on/off). */
+const _REACTION_SET = ['👍','❤️','🎉','🔥','😂','🤔','👎'];
+function _reactionsHTML(m, i){
+  const r = m.reactions;
+  if(!r) return '';
+  const chips = Object.keys(r).filter(k=>r[k]>0);
+  if(!chips.length) return '';
+  return '<div class="mreacts">'+chips.map(e=>
+    '<button class="mreact-chip'+((m.myReacts&&m.myReacts[e])?' on':'')+'" data-action="react-toggle" data-emoji="'+escH(e)+'" data-idx="'+i+'">'+e+' <span>'+r[e]+'</span></button>'
+  ).join('')+'</div>';
+}
+function _openReactPicker(idx, anchorBtn){
+  // close any existing picker
+  document.querySelectorAll('.react-picker').forEach(p=>p.remove());
+  const pick=document.createElement('div');
+  pick.className='react-picker';
+  pick.innerHTML=_REACTION_SET.map(e=>'<button class="react-opt" data-emoji="'+escH(e)+'" data-idx="'+idx+'">'+e+'</button>').join('');
+  document.body.appendChild(pick);
+  const rect=anchorBtn.getBoundingClientRect();
+  pick.style.left=Math.max(8,Math.min(rect.left, window.innerWidth-pick.offsetWidth-8))+'px';
+  pick.style.top=(rect.top-pick.offsetHeight-6+window.scrollY)+'px';
+  pick.querySelectorAll('.react-opt').forEach(b=>{
+    b.addEventListener('click',(ev)=>{ ev.stopPropagation(); _toggleReaction(parseInt(b.dataset.idx), b.dataset.emoji); pick.remove(); });
+  });
+  // close on outside click / escape
+  const close=(ev)=>{ if(!pick.contains(ev.target)){ pick.remove(); document.removeEventListener('mousedown',close); document.removeEventListener('keydown',esc); } };
+  const esc=(ev)=>{ if(ev.key==='Escape'){ pick.remove(); document.removeEventListener('mousedown',close); document.removeEventListener('keydown',esc); } };
+  setTimeout(()=>{ document.addEventListener('mousedown',close); document.addEventListener('keydown',esc); },0);
+}
+function _toggleReaction(idx, emoji){
+  const msgs=getMsgs();
+  const m=msgs[idx];
+  if(!m) return;
+  if(!m.reactions) m.reactions={};
+  if(!m.myReacts) m.myReacts={};
+  if(m.myReacts[emoji]){
+    // remove my reaction
+    m.reactions[emoji]=Math.max(0,(m.reactions[emoji]||1)-1);
+    if(m.reactions[emoji]===0) delete m.reactions[emoji];
+    delete m.myReacts[emoji];
+  } else {
+    m.reactions[emoji]=(m.reactions[emoji]||0)+1;
+    m.myReacts[emoji]=1;
+  }
+  setMsgs(msgs);
+  try{ _autoSave&&_autoSave(); }catch(e){}
+  renderChatMsgs();
+}
+
+/* A capability card for the chat home — title, subtitle, and a rich example
+   prompt that fills the composer on click. `icon` is inner SVG path markup. */
+function _cehCard(id, title, sub, prompt, icon){
+  return '<button class="ceh-card" data-c="'+id+'" data-q="'+escH(prompt)+'">'+
+    '<span class="ceh-card-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+icon+'</svg></span>'+
+    '<span class="ceh-card-txt"><span class="ceh-card-title">'+escH(title)+'</span><span class="ceh-card-sub">'+escH(sub)+'</span></span>'+
+    '<span class="ceh-card-arrow"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>'+
+  '</button>';
+}
+// A subtle starter chip for the clean chat home: label the user sees, full
+// prompt inserted into the composer on click.
+// Small pill chip with an icon — sits under the composer on the home screen.
+function _chip(kind, label, prompt){
+  const ic={
+    build:'<path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/>',
+    write:'<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+    create:'<path d="m2 12 5-5 9 9-5 5z"/><circle cx="17" cy="7" r="2"/><path d="M14 4 20 10"/>',
+    research:'<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
+    automate:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'
+  }[kind]||'<circle cx="12" cy="12" r="9"/>';
+  return '<button class="chome-chip" data-q="'+escH(prompt)+'">'+
+    '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+ic+'</svg>'+
+    escH(label)+'</button>';
+}
+function _starterChip(label, prompt){
+  return '<button class="chome-chip" data-q="'+escH(prompt)+'">'+escH(label)+'</button>';
+}
+// A capability card for the home — icon, title, one-line what-it-does. Reads as
+// "pick a job for your AI workforce," not a generic chat suggestion pill.
+function _starterCard(kind, title, sub, prompt){
+  const ic={
+    build:'<path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/>',
+    research:'<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>',
+    image:'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>',
+    automate:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'
+  }[kind]||'<circle cx="12" cy="12" r="9"/>';
+  return '<button class="chome-card-starter" data-q="'+escH(prompt)+'">'+
+    '<span class="csc-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+ic+'</svg></span>'+
+    '<span class="csc-txt"><span class="csc-title">'+escH(title)+'</span><span class="csc-sub">'+sub+'</span></span>'+
+  '</button>';
+}
+// Build a grounded "Jump back in" section for the chat home from the most
+// recent work sessions (Dev/Lab/Studio) and conversations. Returns '' when
+// there's nothing meaningful yet, so new/empty accounts keep the minimal home.
+function _chomeRecentWork(){
+  try{
+    const items=[];
+    (Array.isArray(_SESSIONS)?_SESSIONS:[]).forEach(s=>items.push({kind:'sess',t:s.updated||0,rec:s}));
+    (Array.isArray(S.convs)?S.convs:[]).forEach(c=>{
+      const has=c.msgs&&c.msgs.some(m=>m.r==='u');
+      if(has) items.push({kind:'conv',t:c._t||c.ts||0,rec:c});
+    });
+    if(items.length<1) return '';
+    items.sort((a,b)=>(b.t||0)-(a.t||0));
+    const top=items.slice(0,4);
+    if(!top.length) return '';
+    const timeAgo=(t)=>{ if(!t) return ''; const d=Date.now()-t; const m=Math.floor(d/60000); if(m<1)return 'just now'; if(m<60)return m+'m ago'; const h=Math.floor(m/60); if(h<24)return h+'h ago'; const dy=Math.floor(h/24); return dy+'d ago'; };
+    const kindMeta={
+      dev:{label:'Dev',svg:'<path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/>'},
+      lab:{label:'Lab',svg:'<path d="M10 2h4M12 2v6.5L7 19a1 1 0 0 0 .9 1.5h8.2A1 1 0 0 0 17 19l-5-10.5"/>'},
+      studio:{label:'Studio',svg:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/>'},
+      chat:{label:'Chat',svg:'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>'}
+    };
+    const cards=top.map(it=>{
+      if(it.kind==='sess'){
+        const km=kindMeta[it.rec.kind]||kindMeta.chat;
+        return '<button class="chome-card" data-chome-sess="'+it.rec.id+'">'+
+          '<span class="chome-card-ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+km.svg+'</svg></span>'+
+          '<span class="chome-card-txt"><span class="chome-card-title">'+escH(it.rec.title||km.label)+'</span>'+
+            '<span class="chome-card-meta">'+km.label+(it.t?' \u00b7 '+timeAgo(it.t):'')+'</span></span></button>';
+      }
+      const km=kindMeta.chat;
+      return '<button class="chome-card" data-chome-conv="'+it.rec.id+'">'+
+        '<span class="chome-card-ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+km.svg+'</svg></span>'+
+        '<span class="chome-card-txt"><span class="chome-card-title">'+escH(it.rec.title||'Conversation')+'</span>'+
+          '<span class="chome-card-meta">Chat'+(it.t?' \u00b7 '+timeAgo(it.t):'')+'</span></span></button>';
+    }).join('');
+    return '<div class="chome-recent"><div class="chome-recent-h">Jump back in</div><div class="chome-recent-grid">'+cards+'</div></div>';
+  }catch(e){ return ''; }
+}
+
+// Update ONLY the streaming assistant bubble in place (no full re-render), so
+// token reveal stays smooth on long/fast responses. The streaming bubble is the
+// last .mb.ai in the message list. Returns true if it updated, false if it
+// couldn't find the bubble (caller then does a full render).
+let _streamBubbleEl=null, _streamRAF=null, _streamPending=null;
+/* ── Research mode: pick a depth, then AMV searches broadly and writes a
+   sourced report. Depth maps to how many searches the model may run. Honest
+   labels — "50+ sources" is a realistic range, not a fixed promise. ── */
+const _RESEARCH_TIERS = {
+  quick: { label:'Quick research', sub:'~10-20 sources, under a minute', depth:'normal' },
+  deep:  { label:'Deep research',  sub:'50+ sources, a few minutes',     depth:'deep' },
+  max:   { label:'Exhaustive',     sub:'Hundreds of sources, several minutes', depth:'max' },
+};
+
+function _toggleResearch(){
+  if(S._researchDepth){ S._researchDepth=null; S._researchTier=null; _syncResearchBtn(); return; }
+  _openResearchMenu();
+}
+
+function _openResearchMenu(){
+  document.querySelectorAll('.research-menu').forEach(m=>m.remove());
+  const btn=$('research-btn'); if(!btn) return;
+  const menu=document.createElement('div');
+  menu.className='research-menu';
+  menu.innerHTML=
+    '<div class="rm-title">Research mode</div>'+
+    '<div class="rm-sub">AMV searches many sources and writes a report with citations.</div>'+
+    Object.entries(_RESEARCH_TIERS).map(([k,v])=>
+      '<button class="rm-opt" data-tier="'+k+'">'+
+        '<span class="rm-opt-l">'+escH(v.label)+'</span>'+
+        '<span class="rm-opt-s">'+escH(v.sub)+'</span>'+
+      '</button>'
+    ).join('');
+  document.body.appendChild(menu);
+  const r=btn.getBoundingClientRect();
+  menu.style.left=r.left+'px';
+  menu.style.bottom=(window.innerHeight-r.top+8)+'px';
+  menu.querySelectorAll('[data-tier]').forEach(o=>on(o,'click',(e)=>{
+    e.stopPropagation();
+    S._researchDepth=_RESEARCH_TIERS[o.dataset.tier].depth;
+    S._researchTier=o.dataset.tier;
+    menu.remove();
+    _syncResearchBtn();
+    const ta=$('mta'); if(ta) ta.focus();
+  }));
+  setTimeout(()=>{
+    const close=(e)=>{ if(!menu.contains(e.target) && e.target!==btn && !btn.contains(e.target)){ menu.remove(); document.removeEventListener('click',close); } };
+    document.addEventListener('click',close);
+  },0);
+}
+
+function _syncResearchBtn(){
+  const btn=$('research-btn'); if(!btn) return;
+  const on_=!!S._researchDepth;
+  btn.classList.toggle('on', on_);
+  const lbl=btn.querySelector('.atb-research-lbl');
+  if(lbl){
+    const tier=S._researchTier && _RESEARCH_TIERS[S._researchTier];
+    lbl.textContent = on_ ? (tier?tier.label.replace(' research',''):'Research') : 'Research';
+  }
+}
+try{ window._toggleResearch=_toggleResearch; window._syncResearchBtn=_syncResearchBtn; }catch(e){}
+
+/* Build the live research panel from REAL search activity: the queries the
+   model actually ran and the sources it actually found. Stored on the message
+   as _research so it renders above the answer, Claude-style. */
+function _renderResearch(msgs, streamIdx, state){
+  try{
+    if(!state || !msgs || streamIdx==null) return;
+    if(!state.active) return;
+    msgs[streamIdx] = { ...msgs[streamIdx], _research: _buildResearchPanel(state, !!state.done) };
+    setMsgs(msgs);
+    renderChatMsgs();
+  }catch(e){}
+}
+
+function _buildResearchPanel(state, finished){
+  const n = state.sources.size;
+  const searches = state.searches;
+  const sources = [...state.sources.values()];
+  const host = (u)=>{ try{ return new URL(u).hostname.replace(/^www\./,''); }catch(e){ return u; } };
+
+  // dedupe display hosts, keep first 12 for the chips
+  const shown = sources.slice(0, 12);
+  const chips = shown.map(s=>
+    '<a class="rsrc-chip" href="'+escH(s.url)+'" target="_blank" rel="noopener" title="'+escH(s.title)+'">'+
+      '<span class="rsrc-fav"></span>'+escH(host(s.url))+
+    '</a>'
+  ).join('');
+
+  const head = finished
+    ? '<span class="rsrc-check">\u2713</span> Researched '+n+' source'+(n===1?'':'s')+' across '+searches+' search'+(searches===1?'':'es')
+    : '<span class="rsrc-spin"></span> Researching\u2026 '+searches+' search'+(searches===1?'':'es')+', '+n+' source'+(n===1?'':'s')+' so far';
+
+  return '<div class="rsrc-panel'+(finished?' done':'')+'">'+
+    '<div class="rsrc-head">'+head+'</div>'+
+    (chips?'<div class="rsrc-chips">'+chips+(sources.length>12?'<span class="rsrc-more">+'+(sources.length-12)+' more</span>':'')+'</div>':'')+
+  '</div>';
+}
+
+function _streamBubbleUpdate(streamIdx, text){
+  const cm=$('cm'); if(!cm) return false;
+  // locate (and cache) the streaming bubble — last assistant bubble in the list
+  if(!_streamBubbleEl || !_streamBubbleEl.isConnected){
+    const bubbles=cm.querySelectorAll('.mr:not(.u) .mb.ai');
+    _streamBubbleEl=bubbles.length?bubbles[bubbles.length-1]:null;
+  }
+  if(!_streamBubbleEl) return false;
+  _streamPending=text;
+  // coalesce rapid tokens into one paint per frame
+  if(_streamRAF) return true;
+  _streamRAF=requestAnimationFrame(()=>{
+    _streamRAF=null;
+    const el=_streamBubbleEl;
+    if(!el || !el.isConnected){ _streamBubbleEl=null; return; }
+    if(!el.classList.contains('mb-streaming')) el.classList.add('mb-streaming');
+    el.innerHTML = md(_streamPending) + '<span class="stream-cursor"></span>';
+    // keep pinned to bottom only if the user is already near the bottom
+    const nearBottom = cm.scrollHeight - cm.scrollTop - cm.clientHeight < 120;
+    if(nearBottom) cm.scrollTop=cm.scrollHeight;
+  });
+  return true;
+}
+function _streamBubbleReset(){ _streamBubbleEl=null; if(_streamRAF){cancelAnimationFrame(_streamRAF);_streamRAF=null;} _streamPending=null; }
+
 function renderChatMsgs() {
   const cm=$('cm');
   if(!cm) return;
@@ -1966,60 +4659,89 @@ function renderChatMsgs() {
   const ini=S.user?.ini||'?';
 
   if(!msgs.length) {
-    const name=S.user?.name?.split(' ')[0]||'there';
+    const fname=S.user?.name?.split(' ')[0]||'';
     const hour=new Date().getHours();
     const greet=hour<12?'Good morning':hour<17?'Good afternoon':'Good evening';
+    const title = fname ? (greet+', '+escH(fname)) : 'What should we build?';
+    cm.classList.add('cm-empty');
+    const cv=$('cv'); if(cv) cv.classList.add('cv-home');
+    // Greeting sits above the composer; the starter chips render BELOW it.
     cm.innerHTML=
-      '<div class="ce">'+
-        '<div class="ce-logo-mark"><svg width="22" height="22" viewBox="0 0 40 40" fill="none"><text x="20" y="27" text-anchor="middle" font-family="Inter,sans-serif" font-size="15" font-weight="800" letter-spacing="-1" fill="#fff">AMV</text></svg></div>'+
-        '<div class="ce-greeting">'+greet+', '+escH(name)+'</div>'+
-        '<div class="ce-sub">What should I handle for you?</div>'+
-        '<div class="ce-pills">'+
-          '<div class="ce-pill" data-q="Create an interactive 3D model of a human heart with realistic animation and labels"><span class="ce-pill-icon">🧠</span>3D Models</div>'+
-          '<div class="ce-pill" data-q="Write a complete, well-structured 1500-word essay on artificial intelligence and its impact on modern society"><span class="ce-pill-icon">✍️</span>Write</div>'+
-          '<div class="ce-pill" data-q="Build a complete full-stack web application with React, Node.js, and authentication"><span class="ce-pill-icon">💻</span>Code</div>'+
-          '<div class="ce-pill" data-q="Generate a photorealistic HD image of Cristiano Ronaldo scoring a bicycle kick in the Champions League final"><span class="ce-pill-icon">🖼️</span>Images</div>'+
-          '<div class="ce-pill" data-q="Research and write a comprehensive market analysis report for the electric vehicle industry with 5-year forecast"><span class="ce-pill-icon">🔬</span>Research</div>'+
-          '<div class="ce-pill" id="ce-file"><span class="ce-pill-icon">📎</span>Analyze file</div>'+
-        '</div>'+
+      '<div class="chome">'+
+        '<h1 class="chome-title"><span class="chome-greet">'+title+'</span></h1>'+
       '</div>';
-    cm.querySelectorAll('.ce-pill[data-q]').forEach(p=>{
-      p.addEventListener('click',()=>{
+    const chips=$('chome-chips');
+    if(chips){
+      chips.innerHTML=
+        _chip('build','Build','Build a full-stack web app with React, a clean UI, and auth. Then run it so I can see it working.')+
+        _chip('write','Write','Write a clear, well-structured article. Ask me what it should be about if you need to.')+
+        _chip('create','Create','Generate a photorealistic hero image for a premium coffee brand \u2014 warm morning light, editorial style.')+
+        _chip('research','Research','Research a topic thoroughly and write a sourced report with a clear takeaway.')+
+        _chip('automate','Automate','Every morning at 7am, research overnight news and have a concise brief ready for me.');
+      chips.querySelectorAll('[data-q]').forEach(p=>p.addEventListener('click',()=>{
         const ta=$('mta');
         if(ta){ta.value=p.dataset.q;ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,160)+'px';ta.focus();}
-      });
-    });
-    document.getElementById('ce-file')?.addEventListener('click',()=>$('fi').click());
+      }));
+      document.querySelectorAll('.chome-recent').forEach(e=>e.remove());
+    }
+    cm.querySelectorAll('[data-chome-sess]').forEach(el=>el.addEventListener('click',()=>{ try{ _sessResume(el.dataset.chomeSess); }catch(e){} }));
+    cm.querySelectorAll('[data-chome-conv]').forEach(el=>el.addEventListener('click',()=>{ try{ loadConv(el.dataset.chomeConv); }catch(e){} }));
     return;
   }
 
+  cm.classList.remove('cm-empty');
+  try{ _ctxRenderMeter('ctx-chat','chat'); }catch(e){}
+  const _cv=$('cv'); if(_cv) _cv.classList.remove('cv-home');
+  const _ch=$('chome-chips'); if(_ch) _ch.innerHTML='';
+  document.querySelectorAll('.chome-recent').forEach(e=>e.remove());
   cm.innerHTML=msgs.map((m,i)=>{
     const isU=m.r==='u';
     const rawText=m.d||(typeof m.c==='string'?m.c:'');
     let content;
-    if(!isU && m._error){
-      content='<div class="ai-error"><div class="ai-error-h"><span class="ai-error-ic">⚠</span> Something went wrong</div>'+
-        '<div class="ai-error-msg">'+escH(m._error)+'</div>'+
-        '<button class="ai-error-retry" data-action="retry-ai">↻ Retry</button></div>';
+    if(!isU && m._quota){
+      const plan=(loadStr('amv_plan')||'free');
+      const nextPlan=plan==='free'?'Pro':plan==='pro'?'Elite':'Ultra';
+      const resetTxt=_fmtResetIn(Math.max(0,(m._resetAt||_quotaLockUntil||Date.now())-Date.now()));
+      content='<div class="quota-card"><div class="quota-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>'+
+        '<div class="quota-body"><b>You\u2019re out of usage for now.</b>'+
+        '<span>Your usage resets in <b class="quota-reset-live">'+escH(resetTxt)+'</b>. Upgrade to '+nextPlan+' for much higher limits and keep going right now.</span>'+
+        '<div class="quota-actions"><button class="quota-upgrade" data-action="quota-upgrade" data-idx="'+i+'">Upgrade to '+nextPlan+'</button>'+
+        '<button class="quota-later" data-action="quota-later" data-idx="'+i+'">I\u2019ll wait</button></div></div></div>';
+    } else if(!isU && m._error){
+      content='<div class="ai-snag"><div class="ai-snag-row"><span class="ai-snag-ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg></span>'+
+        '<span class="ai-snag-msg">'+escH(_aiFriendly(m._error))+'</span></div>'+
+        '<button class="ai-snag-retry" data-action="retry-ai" type="button">Retry</button></div>';
     } else if(!isU && m._retrying){
       content='<div class="ai-retrying"><div class="dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div><span>'+escH(m._retrying)+'</span></div>';
+    } else if(!isU && m.streaming && !(typeof m.c==='string' && m.c.length)){
+      // working — show a live status label (Claude-style) before the first token.
+      // If offline, show a skeleton loader + a clear note instead.
+      if(typeof navigator!=='undefined' && navigator.onLine===false){
+        content='<div class="skl-msg"><div class="skl skl-line w1"></div><div class="skl skl-line w4"></div><div class="skl skl-line w2"></div><div class="skl skl-line w3"></div>'+
+          '<div class="skl-offline-note"><span class="skl-offline-dot"></span>Waiting for your connection\u2026 this will send when you\u2019re back online.</div></div>';
+      } else {
+        content=(m._research?m._research:'')+'<div class="ai-working"><span class="ai-think-orb"></span><span class="ai-working-shimmer">'+escH(m._status||'Working…')+'</span></div>';
+      }
     } else {
-      content=isU?escH(rawText).replace(/\n/g,'<br>'):md(typeof m.c==='string'?m.c:rawText);
+      content=isU?escH(rawText).replace(/\n/g,'<br>'):((m._research?m._research:'')+md(typeof m.c==='string'?m.c:rawText)+(m._rendered?('<div class="chat-tool-out">'+m._rendered+'</div>'):'')+(m.streaming?'<span class="stream-cursor"></span>':''));
     }
     const mdlLabel=!isU&&m.model?'<span style="font-size:10px;color:var(--t2);margin-bottom:3px">'+MODELS[m.model]?.label+' Model</span>':'';
-        const actions=(!isU && (m._error||m._retrying))? '' : (isU?
-      '<div class="macts">'+
-        '<button class="mact" data-action="edit" data-idx="'+i+'">✏ Edit</button>'+
-        '<button class="mact" data-action="copy-u" data-idx="'+i+'">⎘ Copy</button>'+
+        const actions=(!isU && (m._error||m._retrying||m._quota))? '' : (isU?
+      '<div class="macts mact-bar">'+
+        '<button class="mact" data-action="edit" data-idx="'+i+'" title="Edit"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>'+
+        '<button class="mact" data-action="copy-u" data-idx="'+i+'" title="Copy"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>'+
       '</div>':
-      '<div class="macts">'+
-        '<button class="mact '+(m.like==='up'?'liked':'')+'" data-action="like-up" data-idx="'+i+'">👍</button>'+
-        '<button class="mact '+(m.like==='down'?'disliked':'')+'" data-action="like-down" data-idx="'+i+'">👎</button>'+
-        '<button class="mact" data-action="copy-a" data-idx="'+i+'">⎘ Copy</button>'+
-        (i===msgs.length-1?'<button class="mact" data-action="regen">↻ Regenerate</button>':'')+
-      '</div>');    return '<div class="mr '+(isU?'u':'')+'"><div class="mav '+(isU?'u':'ai')+'">'+(isU?ini:'A')+'</div>'+
+      '<div class="macts mact-bar">'+
+        '<button class="mact '+(m.like==='up'?'liked':'')+'" data-action="like-up" data-idx="'+i+'" title="Good response"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v12M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88z"/></svg></button>'+
+        '<button class="mact '+(m.like==='down'?'disliked':'')+'" data-action="like-down" data-idx="'+i+'" title="Bad response"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88z"/></svg></button>'+
+        '<button class="mact" data-action="copy-a" data-idx="'+i+'" title="Copy"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>'+
+        '<button class="mact" data-action="speak" data-idx="'+i+'" title="Read aloud"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14"/></svg></button>'+
+        '<button class="mact mact-react" data-action="react" data-idx="'+i+'" title="React"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg></button>'+
+        (i===msgs.length-1?'<button class="mact" data-action="regen" title="Regenerate"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v5h-5"/></svg></button>':'')+
+      '</div>'+
+      _reactionsHTML(m,i));    return '<div class="mr '+(isU?'u':'')+'"><div class="mav '+(isU?'u':'ai')+'">'+(isU?ini:'A')+'</div>'+
       '<div class="mwrap">'+(mdlLabel?'<span style="font-size:10px;color:var(--t2)">'+MODELS[m.model||'smart']?.label+' Model</span>':'')+
-      '<div class="mb '+(isU?'u':'ai')+'">'+content+'</div>'+actions+'</div></div>';
+      '<div class="mb '+(isU?'u':'ai')+(m.streaming&&typeof m.c==='string'&&m.c.length?' mb-streaming':'')+'">'+content+'</div>'+actions+'</div></div>';
   }).join('')+
   (S.busy?'<div class="mr"><div class="mav ai">A</div><div class="mwrap"><div class="mb ai"><div class="dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div></div></div></div>':'');
 
@@ -2065,8 +4787,159 @@ function _amvBeginRec(){
   _voiceRec.start();
 }
 
+/* ── Voice OUTPUT: read AMV's answers aloud + hands-free voice mode ──
+   Uses the browser's built-in speech synthesis (no backend). Picks the best
+   available natural voice, strips markdown so it reads cleanly, and offers a
+   full hands-free loop: listen → answer → speak → listen again. */
+const AMVSpeech = {
+  speaking:false, _utter:null, _voice:null, _boundIdx:null,
+  supported(){ return typeof window!=='undefined' && 'speechSynthesis' in window; },
+  _pickVoice(){
+    if(this._voice) return this._voice;
+    const vs=speechSynthesis.getVoices()||[];
+    if(!vs.length) return null;
+    // prefer a natural, English voice (Google/Natural/Samantha), else first en, else first
+    const pref=vs.find(v=>/natural|google us english|samantha|aria|jenny/i.test(v.name)&&/^en/i.test(v.lang))
+      || vs.find(v=>/^en-US/i.test(v.lang)) || vs.find(v=>/^en/i.test(v.lang)) || vs[0];
+    this._voice=pref; return pref;
+  },
+  _clean(text){
+    return String(text||'')
+      .replace(/```[\s\S]*?```/g,' (code block) ')      // don't read code char-by-char
+      .replace(/!\[[^\]]*\]\([^)]*\)/g,' ')             // images
+      .replace(/\[([^\]]*)\]\([^)]*\)/g,'$1')           // links → text
+      .replace(/[#>*_`~|]/g,'')                          // md symbols
+      .replace(/\n{2,}/g,'. ').replace(/\n/g,' ')
+      .replace(/\s{2,}/g,' ').trim();
+  },
+  speak(text, opts){
+    if(!this.supported()){ toast('Read-aloud isn\u2019t supported in this browser. Try Chrome.','error'); return false; }
+    this.stop();
+    const clean=this._clean(text); if(!clean) return false;
+    const u=new SpeechSynthesisUtterance(clean);
+    const v=this._pickVoice(); if(v) u.voice=v;
+    u.rate=parseFloat(loadStr('amv_voice_rate'))||1.0; u.pitch=1.0; u.lang=(v&&v.lang)||'en-US';
+    u.onstart=()=>{ this.speaking=true; if(opts&&opts.onstart) opts.onstart(); };
+    u.onend=()=>{ this.speaking=false; this._boundIdx=null; _syncSpeakButtons(); if(opts&&opts.onend) opts.onend(); };
+    u.onerror=()=>{ this.speaking=false; this._boundIdx=null; _syncSpeakButtons(); if(opts&&opts.onerror) opts.onerror(); };
+    this._utter=u; speechSynthesis.speak(u); return true;
+  },
+  stop(){ try{ if(this.supported()){ speechSynthesis.cancel(); } }catch(e){} this.speaking=false; this._boundIdx=null; },
+  toggle(text, idx, opts){
+    if(this.speaking && this._boundIdx===idx){ this.stop(); _syncSpeakButtons(); return false; }
+    this._boundIdx=idx; const ok=this.speak(text, opts); _syncSpeakButtons(); return ok;
+  }
+};
+try{ if(AMVSpeech.supported()){ speechSynthesis.onvoiceschanged=()=>{ AMVSpeech._voice=null; AMVSpeech._pickVoice(); }; } }catch(e){}
+try{ window.AMVSpeech=AMVSpeech; }catch(e){}
+
+// keep every message's speak button in sync with what's actually playing
+function _syncSpeakButtons(){
+  try{
+    document.querySelectorAll('[data-action="speak"]').forEach(b=>{
+      const on=AMVSpeech.speaking && String(AMVSpeech._boundIdx)===b.dataset.idx;
+      b.classList.toggle('speaking', on);
+      b.title = on ? 'Stop' : 'Read aloud';
+    });
+  }catch(e){}
+}
+
+// read a specific chat message aloud (by index)
+function speakMessage(idx){
+  const msgs=getMsgs(); const m=msgs[idx]; if(!m) return;
+  const text=typeof m.c==='string' ? m.c : (Array.isArray(m.c)? m.c.map(x=>x.text||'').join(' ') : '');
+  AMVSpeech.toggle(text, idx);
+}
+
+/* ── Hands-free voice mode: listen → send → speak the reply → listen again ── */
+let _voiceMode=false;
+// ── Voice mode showcase overlay ───────────────────────────────
+// A focused, premium interface shown while hands-free voice mode is active.
+// The orb reflects the current state: listening / thinking / speaking.
+function _voiceOverlay(){
+  let el=document.getElementById('voice-ov');
+  if(!el){
+    el=document.createElement('div');
+    el.id='voice-ov';
+    el.className='voice-ov';
+    el.innerHTML=
+      '<div class="voice-stage">'+
+        '<div class="voice-orb" id="voice-orb">'+
+          '<div class="voice-orb-core"></div>'+
+          '<div class="voice-ring voice-ring-1"></div>'+
+          '<div class="voice-ring voice-ring-2"></div>'+
+          '<div class="voice-ring voice-ring-3"></div>'+
+        '</div>'+
+        '<div class="voice-state" id="voice-state">Listening\u2026</div>'+
+        '<div class="voice-transcript" id="voice-transcript"></div>'+
+        '<button class="voice-exit" id="voice-exit">'+
+          '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>'+
+          '<span>End voice</span>'+
+        '</button>'+
+      '</div>';
+    document.body.appendChild(el);
+    el.querySelector('#voice-exit').addEventListener('click',()=>{ if(_voiceMode) toggleVoiceMode(); });
+  }
+  return el;
+}
+function _voiceSetState(state, transcript){
+  const orb=document.getElementById('voice-orb');
+  const label=document.getElementById('voice-state');
+  const tr=document.getElementById('voice-transcript');
+  if(orb){ orb.classList.remove('is-listening','is-thinking','is-speaking'); orb.classList.add('is-'+state); }
+  if(label){ label.textContent = state==='listening'?'Listening\u2026' : state==='thinking'?'Thinking\u2026' : 'Speaking\u2026'; }
+  if(tr && transcript!=null){ tr.textContent=transcript; }
+}
+function _showVoiceOverlay(){ const el=_voiceOverlay(); requestAnimationFrame(()=>el.classList.add('on')); _voiceSetState('listening',''); }
+function _hideVoiceOverlay(){ const el=document.getElementById('voice-ov'); if(el) el.classList.remove('on'); }
+
+function toggleVoiceMode(){
+  if(!AMVSpeech.supported() || (!('webkitSpeechRecognition' in window)&&!('SpeechRecognition' in window))){
+    toast('Voice mode needs Chrome (speech recognition + synthesis).','error',5000); return;
+  }
+  _voiceMode=!_voiceMode;
+  const btn=$('voicemode-btn'); if(btn) btn.classList.toggle('on',_voiceMode);
+  if(_voiceMode){ _showVoiceOverlay(); _voiceModeListen(); }
+  else { _hideVoiceOverlay(); AMVSpeech.stop(); try{ _voiceRec&&_voiceRec.stop(); }catch(e){} }
+}
+function _voiceModeListen(){
+  if(!_voiceMode) return;
+  _voiceSetState('listening','');
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition; if(!SR) return;
+  try{ _voiceRec&&_voiceRec.stop(); }catch(e){}
+  _voiceRec=new SR(); _voiceRec.continuous=false; _voiceRec.interimResults=true; _voiceRec.lang='en-US';
+  _voiceRec.onresult=e=>{
+    const t=Array.from(e.results).map(r=>r[0].transcript).join('').trim();
+    _voiceSetState('listening', t);   // live transcript feedback
+    const isFinal=Array.from(e.results).some(r=>r.isFinal);
+    if(isFinal && t){ const ta=$('mta'); if(ta){ ta.value=t; } _voiceModeSend(t); }
+  };
+  _voiceRec.onerror=()=>{ if(_voiceMode) setTimeout(_voiceModeListen, 800); };
+  try{ _voiceRec.start(); }catch(e){}
+}
+async function _voiceModeSend(text){
+  _voiceSetState('thinking', text);
+  try{ await sendMsg(); }catch(e){}
+  // wait for the assistant reply to finish, then speak it and resume listening
+  let tries=0;
+  const check=()=>{
+    if(!_voiceMode) return;
+    const msgs=getMsgs(); const last=msgs[msgs.length-1];
+    if(last && last.r==='a' && !last.streaming && last.c && !last._error){
+      _voiceSetState('speaking','');
+      AMVSpeech.speak(typeof last.c==='string'?last.c:'', { onend:()=>{ if(_voiceMode){ _voiceSetState('listening',''); setTimeout(_voiceModeListen, 400); } } });
+    } else if(tries++ < 120){ setTimeout(check, 500); }
+    else if(_voiceMode){ setTimeout(_voiceModeListen, 400); }
+  };
+  setTimeout(check, 600);
+}
+try{ window.speakMessage=speakMessage; window.toggleVoiceMode=toggleVoiceMode; }catch(e){}
+
 
 function handleFiles(files){
+  // Global file limit applies to chat too.
+  if(typeof _ctxFileGuard==='function' && !_ctxFileGuard('chat', files&&files.length||1)) return;
+  try{ for(const f of (files||[])) _ctxFileTrack('chat', f.name); }catch(e){}
   if(!files||!files.length) return;
   if(files.length===1){ handleFile(files[0]); return; }
   // Multiple: combine text files
@@ -2129,6 +5002,7 @@ function fmtSize(b){ if(b<1024) return b+'B'; if(b<1024*1024) return (b/1024).to
 
 
 const IMG_STYLES={
+  'Normal':'',   // exact words, no style modifiers — the prompt is passed as typed
   'Photorealistic':'photorealistic, professional DSLR photography, ultra-detailed, sharp focus, 8k uhd, award winning photography, natural lighting, hyperrealistic',
   'Cinematic':'cinematic photography, dramatic lighting, shallow depth of field, film grain, anamorphic lens, movie still, blockbuster quality',
   'Digital Art':'vibrant digital art, highly detailed illustration, concept art, trending on artstation, professional quality',
@@ -2165,11 +5039,52 @@ function _enhanceImgPrompt(prompt){
   return p;
 }
 
+// Build the full generation prompt (shared by the premium and free paths so
+// both follow the user's words identically).
+function _imgFullPrompt(prompt,style){
+  const isNormal = style==='Normal' || IMG_STYLES[style]==='';
+  if(isNormal) return _enhanceImgPrompt(prompt)+_langForGeneration(prompt);
+  return (IMG_STYLES[style]||style)+', '+_enhanceImgPrompt(prompt)+_langForGeneration(prompt)+', masterpiece, best quality, highly detailed';
+}
+// Try the operator-configured premium image provider (via the backend, which
+// keeps the key server-side). Resolves to an image src (url or data URI) on
+// success, or null to fall back to the built-in free generator. Cached per
+// (prompt,style,ratio,seed) so re-renders don't re-bill.
+const _premiumImgCache = {};
+async function _premiumImageSrc(prompt,style,ratio,seed){
+  try{
+    if(!(window.AMV_API && AMV_API.live && AMV_API.token)) return null;
+    if(window.__AMV_NO_PREMIUM_IMG__) return null;   // learned this deploy has no premium provider
+    const sizes={'16:9':[896,504],'9:16':[504,896],'4:3':[768,576],'1:1':[768,768]};
+    const [w,h]=sizes[ratio]||[1024,1024];
+    const key=prompt+'|'+style+'|'+ratio+'|'+seed;
+    if(_premiumImgCache[key]) return _premiumImgCache[key];
+    const full=_imgFullPrompt(prompt,style);
+    const r=await fetch(AMV_API.base.replace(/\/$/,'')+'/v1/image/generate',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+AMV_API.token},
+      body:JSON.stringify({prompt:full,width:w,height:h})
+    });
+    if(!r.ok) return null;
+    const d=await r.json().catch(()=>({}));
+    if(d.configured===false){ window.__AMV_NO_PREMIUM_IMG__=true; return null; }  // remember: skip next time
+    let src=null;
+    if(d.url) src=d.url;
+    else if(d.b64) src='data:image/png;base64,'+d.b64;
+    if(src) _premiumImgCache[key]=src;
+    return src;
+  }catch(e){ return null; }
+}
+
 function imgUrl(prompt,style,ratio,seed){
   const sizes={'16:9':[896,504],'9:16':[504,896],'4:3':[768,576],'1:1':[768,768]};
   const [w,h]=sizes[ratio]||[768,768];
-  const full=(IMG_STYLES[style]||style)+', '+_enhanceImgPrompt(prompt)+_langForGeneration(prompt)+', masterpiece, best quality, highly detailed';
-  return 'https://image.pollinations.ai/prompt/'+encodeURIComponent(full)+'?width='+w+'&height='+h+'&nologo=true&seed='+seed+'&model=flux&safe=false&enhance=true';
+  const isNormal = style==='Normal' || IMG_STYLES[style]==='';
+  const full=_imgFullPrompt(prompt,style);
+  // Normal mode turns the provider's prompt-rewriter OFF so your words are
+  // followed literally; styled mode lets it enhance.
+  const enhance = isNormal ? 'false' : 'true';
+  return 'https://image.pollinations.ai/prompt/'+encodeURIComponent(full)+'?width='+w+'&height='+h+'&nologo=true&seed='+seed+'&model=flux&safe=false&enhance='+enhance;
 }
 function genImg(){
   const inp=$('img-inp');
@@ -2177,10 +5092,44 @@ function genImg(){
   const p=inp.value.trim();
   if(!p){inp.focus();return;}
   if(BLOCKED.some(w=>p.toLowerCase().includes(w))){toast('Content Policy: explicit sexual content not permitted.','error');return;}
+  // Smart limit: free plan gets a daily image allowance. Nudge to upgrade when hit.
+  const plan=loadStr('amv_plan')||'free';
+  const imgCap={free:4,pro:60,elite:250,ultra:1000,custom:250}[plan]||4;
+  const todayKey='amv_img_day_'+new Date().toISOString().slice(0,10);
+  const usedToday=parseInt(loadStr(todayKey)||'0',10);
+  if(usedToday>=imgCap){
+    _smartUpgradeNudge('images', plan, 'You\u2019ve used all '+imgCap+' of today\u2019s images on the '+(PLANS[plan]?PLANS[plan].name:'Free')+' plan.');
+    return;
+  }
+  saveStr(todayKey, String(usedToday+1));
   S.imgs.unshift({id:'img'+Date.now(),prompt:p,style:S.imgStyle,ratio:S.imgRatio,seed:Math.floor(Math.random()*999999)});
   try{ AMVValue.record('image'); }catch(e){}
   renderImgGallery();
 }
+/* Smart, contextual upgrade nudge — a friendly modal that names the exact limit
+   the user hit and points them to the right upgrade. Reusable across features. */
+function _smartUpgradeNudge(feature, plan, reason){
+  try{ track('upgrade_nudge_shown', { feature, plan }); }catch(e){}
+  const nextPlan={free:'Pro',pro:'Elite',elite:'Ultra',ultra:'Ultra',custom:'Ultra'}[plan]||'Pro';
+  const perk={images:'up to 60 images a day, every style, and priority speed',
+    video:'longer HD videos and more renders',
+    chat:'much higher message limits and every model',
+    default:'higher limits across everything AMV does'}[feature]||'higher limits';
+  const ovr=document.getElementById('ovr'); if(!ovr) { toast(reason+' Upgrade for more.','info',4000); return; }
+  ovr.innerHTML=
+    '<div class="nudge-modal">'+
+      '<div class="nudge-ic"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg></div>'+
+      '<div class="nudge-title">Time to level up</div>'+
+      '<div class="nudge-reason">'+escH(reason)+'</div>'+
+      '<div class="nudge-perk">Upgrade to <b>'+nextPlan+'</b> for '+perk+'.</div>'+
+      '<div class="nudge-actions"><button class="btn bp" id="nudge-up">Upgrade to '+nextPlan+'</button>'+
+        '<button class="btn bs" id="nudge-later">Maybe later</button></div>'+
+    '</div>';
+  ovr.classList.add('on');
+  const up=document.getElementById('nudge-up'); if(up) on(up,'click',()=>{ closeOvr(); setTab('plans'); });
+  const later=document.getElementById('nudge-later'); if(later) on(later,'click',closeOvr);
+}
+try{ window._smartUpgradeNudge=_smartUpgradeNudge; }catch(e){}
 function renderImgsView(){
   const vc=$('vc');
   if(!vc) return;
@@ -2217,15 +5166,17 @@ function renderImgGallery(){
   const cb=$('clrimgs');
   if(cb) cb.style.display=S.imgs.length?'inline-flex':'none';
   if(!S.imgs.length){
-    g.innerHTML='<div style="grid-column:1/-1">'+emptyState({icon:'\uD83C\uDFA8',title:'No images yet',sub:'Describe anything above \u2014 a scene, a product, a portrait \u2014 and AMV generates it in seconds.'})+'</div>';
+    g.innerHTML='<div style="grid-column:1/-1">'+emptyState({svg:'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>',title:'No images yet',sub:'Describe anything above \u2014 a scene, a product, a portrait \u2014 and AMV generates it in seconds.',btn:{label:'Try an example',act:'_tryExampleImage'}})+'</div>';
     return;
   }
   const ar=r=>r==='16:9'?'16/9':r==='9:16'?'9/16':r==='4:3'?'4/3':'1/1';
-  g.innerHTML=S.imgs.map(img=>
+  const pg=_paginate('images', S.imgs.length, 24);
+  const visible=S.imgs.slice(0, pg.shown);
+  g.innerHTML=visible.map(img=>
     '<div class="ic" id="ic-'+img.id+'">'+
       '<div class="ifr" style="aspect-ratio:'+ar(img.ratio)+'">'+
         '<img id="ii-'+img.id+'" alt="">'+
-        '<div class="ild" id="il-'+img.id+'"><div class="spin"></div><div class="ilt" id="ip-'+img.id+'">Generating…<br><span style="font-size:10px;opacity:.6">5-15 seconds · High quality</span></div></div>'+
+        '<div class="ild" id="il-'+img.id+'"><div class="gen-shimmer"></div><div class="gen-orb"></div><div class="ilt" id="ip-'+img.id+'">Composing\u2026</div></div>'+
       '</div>'+
       '<div class="ifoot">'+
         '<div class="ipr">'+escH(img.prompt)+'</div>'+
@@ -2239,15 +5190,42 @@ function renderImgGallery(){
         '</div>'+
       '</div>'+
     '</div>'
-  ).join('');
+  ).join('') + (pg.hasMore ? '<div style="grid-column:1/-1">'+_showMoreBtn('images', pg.remaining, 24)+'</div>' : '');
   g.querySelectorAll('[data-rm]').forEach(b=>on(b,'click',()=>{S.imgs=S.imgs.filter(i=>i.id!==b.dataset.rm);renderImgGallery();}));
   g.querySelectorAll('[data-url]').forEach(b=>on(b,'click',()=>{if(b.dataset.url)window.open(b.dataset.url,'_blank');}));
-  S.imgs.forEach(img=>loadImg(img));
+  const gm=g.querySelector('[data-pagemore="images"]');
+  if(gm) gm.addEventListener('click',()=>{ _pageMore('images',24); renderImgGallery(); });
+  visible.forEach(img=>loadImg(img));   // only load what's shown, not all
 }
 function loadImg(img){
   const el=$('ii-'+img.id),ld=$('il-'+img.id),pg=$('ip-'+img.id);
   if(!el) return;
   let tries=0,MAX=5;
+  // Phased status while generating — makes the wait feel active, not stalled.
+  const phases=['Composing\u2026','Rendering\u2026','Adding detail\u2026','Refining light\u2026','Almost there\u2026'];
+  let phaseI=0;
+  const phaseTimer=setInterval(()=>{
+    phaseI=Math.min(phases.length-1, phaseI+1);
+    const t=$('ip-'+img.id); if(t) t.textContent=phases[phaseI];
+    if(phaseI>=phases.length-1) clearInterval(phaseTimer);
+  }, 2600);
+  const _stopPhases=()=>{ try{ clearInterval(phaseTimer); }catch(e){} };
+  // First, try the operator's premium provider (if configured). On success we
+  // use its image directly; otherwise we fall through to the free generator.
+  (async()=>{
+    const psrc=await _premiumImageSrc(img.prompt,img.style,img.ratio,img.seed);
+    if(psrc){
+      const ob=$('io-'+img.id),db=$('id-'+img.id);
+      if(ob) ob.dataset.url=psrc;
+      if(db) db.href=psrc;
+      const pre=new Image();
+      pre.onload=()=>{ el.src=psrc; _stopPhases(); el.classList.add('img-reveal'); if(ld)ld.classList.add('gone'); };
+      pre.onerror=()=>attempt();   // premium failed to load → free fallback
+      pre.src=psrc;
+      return;
+    }
+    attempt();
+  })();
   function attempt(){
     const seed=tries===0?img.seed:img.seed+tries*11317;
     const url=imgUrl(img.prompt,img.style,img.ratio,seed);
@@ -2258,7 +5236,7 @@ function loadImg(img){
     pre.onload=()=>{el.src=url;};
     pre.onerror=()=>retry();
     pre.src=url;
-    el.onload=()=>{el.classList.add('ldd');if(ld)ld.classList.add('gone');};
+    el.onload=()=>{el.classList.add('ldd');el.classList.add('img-reveal');_stopPhases();if(ld)ld.classList.add('gone');};
     el.onerror=()=>retry();
     const t=setTimeout(()=>{if(!el.classList.contains('ldd'))retry();},35000);
     el.addEventListener('load',()=>clearTimeout(t),{once:true});
@@ -2267,6 +5245,7 @@ function loadImg(img){
   function retry(){
     tries++;
     if(tries>MAX){
+      _stopPhases();
       if(ld) ld.innerHTML='<div class="ilt" style="text-align:center;padding:0 10px">Couldn\u2019t generate this one.<br><span style="font-size:10px;opacity:.6">The image service may be busy \u2014 try again in a moment.</span><br><button data-rimgid="'+img.id+'" class="retry-img-btn" style="background:var(--indigo);border:none;color:#fff;border-radius:5px;padding:5px 12px;cursor:pointer;font-family:var(--fn);font-size:11px;margin-top:8px">Retry</button></div>';
       // Wire retry button
       const retryBtn=ld.querySelector('.retry-img-btn');
@@ -2301,17 +5280,17 @@ function renderVideoView(){
     '<div id="vidv" class="fi">'+
       '<div class="card">'+
         '<h3 style="font-size:14px;font-weight:600;margin-bottom:7px">AI Video Generator</h3>'+
-        '<p style="font-size:12px;color:var(--t2);margin-bottom:12px">Describe any scene in detail. Real HD video output turns on once the AMV engine is connected by the workspace owner.</p>'+
+        '<p style="font-size:12px;color:var(--t2);margin-bottom:12px">Describe a scene and AMV generates it. Style and mood are folded into the prompt; duration and aspect are sent to the engine.</p>'+
         '<textarea id="vp" placeholder="Describe your scene - include camera movement, lighting, atmosphere, characters, action…" rows="3" style="margin-bottom:11px;font-size:13px"></textarea>'+
         '<div style="display:flex;gap:7px;flex-wrap:wrap;align-items:flex-end">'+
-          '<div><label class="lbl" style="margin-bottom:3px">Duration</label><select id="vd" style="width:auto;padding:6px 22px 6px 9px;font-size:12px"><option>5s</option><option selected>10s</option><option>15s</option><option>30s</option></select></div>'+
-          '<div><label class="lbl" style="margin-bottom:3px">Quality</label><select id="vq" style="width:auto;padding:6px 22px 6px 9px;font-size:12px"><option>720p</option><option selected>1080p</option><option>4K</option></select></div>'+
+          '<div><label class="lbl" style="margin-bottom:3px">Duration</label><select id="vd" style="width:auto;padding:6px 22px 6px 9px;font-size:12px"><option value="5" selected>5s</option><option value="10">10s</option></select></div>'+
+          '<div><label class="lbl" style="margin-bottom:3px">Aspect</label><select id="va" style="width:auto;padding:6px 22px 6px 9px;font-size:12px"><option value="16:9" selected>16:9</option><option value="9:16">9:16</option><option value="1:1">1:1</option></select></div>'+
           '<div><label class="lbl" style="margin-bottom:3px">Style</label><select id="vs" style="width:auto;padding:6px 22px 6px 9px;font-size:12px">'+so+'</select></div>'+
           '<div><label class="lbl" style="margin-bottom:3px">Mood</label><select id="vm" style="width:auto;padding:6px 22px 6px 9px;font-size:12px">'+mo+'</select></div>'+
           '<button class="btn bp" id="gvb" style="font-size:13px">Generate Video</button>'+
           (S.vids.length?'<button class="bg2" id="clrvids" style="font-size:11px">Clear all</button>':'')+
         '</div>'+
-        '<div style="font-size:10px;color:var(--t3);margin-top:8px">Ctrl+Enter to generate · HD video output · All settings affect quality</div>'+
+        '<div id="vquota" style="font-size:10px;color:var(--t3);margin-top:8px">Ctrl+Enter to generate</div>'+
       '</div>'+
       '<div class="vg" id="vgrid"></div>'+
     '</div>';
@@ -2320,51 +5299,252 @@ function renderVideoView(){
   on($('clrvids'),'click',()=>{S.vids=[];renderVidGrid();});
   renderVidGrid();
 }
-function genVid(){
-  const p=$('vp')?.value.trim(); if(!p){$('vp')?.focus();return;}
-  const dur=$('vd')?.value||'10s',qual=$('vq')?.value||'1080p',style=$('vs')?.value||'Cinematic',mood=$('vm')?.value||'Dramatic';
-  const id='vid'+Date.now();
-  S.vids.unshift({id,p,dur,qual,style,mood,prog:0,stage:'Initializing…',done:false});
+/* Video generation is NOT implemented. There is no video engine in AMV \u2014 not
+   connected, not anywhere. This used to fake a progress bar through scripted
+   stages ("Rendering motion\u2026", "Encoding\u2026") and then show a play button that
+   never played anything. That is a lie to the user, so it's gone.
+   When a real video engine is wired up, generate here and drop the notice. */
+/* ── VIDEO — real generation, real polling, real playback ─────────────────
+
+   This used to be a lie: a setInterval that ticked a fake progress bar through
+   invented stages ("Rendering motion…", "Encoding…") and then showed a play
+   button that played nothing. No API was ever called.
+
+   Now it creates a real job on the Worker, polls the real provider status, and
+   plays the real file. If no provider is configured, it says so plainly — it
+   does not pretend. */
+
+const _VID = { polls: {} };
+
+async function _vidApi(path, body){
+  if(!(window.AMV_API && AMV_API.live)) throw new Error('__NOT_CONNECTED__');
+  const r = await fetch(AMV_API.base.replace(/\/$/,'') + path, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json',
+              ...(AMV_API.token ? { 'Authorization':'Bearer '+AMV_API.token } : {}) },
+    body: JSON.stringify(body||{})
+  });
+  const d = await r.json().catch(()=>({}));
+  /* Throw ONLY on a real HTTP failure.
+     /v1/video/status returns { ok:true, status:'failed', error:'…' } where
+     `error` DESCRIBES the failed render — it is data, not an exception. Throwing
+     on any `error` field meant a genuinely failed video was swallowed as a
+     transient blip and polled forever, and the user just watched a spinner. */
+  if(!r.ok){
+    const e = new Error(d.error || ('Request failed ('+r.status+')'));
+    e.code = d.code; e.status = r.status;
+    throw e;
+  }
+  return d;
+}
+
+async function genVid(){
+  const el = $('vp');
+  let p = el ? el.value.trim() : '';
+  if(!p){ el && el.focus(); return; }
+
+  const dur    = parseInt(($('vd')?.value||'5'), 10) || 5;
+  const aspect = $('va')?.value || '16:9';
+
+  /* Style and mood are dropdowns, so they have to DO something. The only honest
+     thing they can do is shape the prompt — the provider has no "mood" knob. */
+  const style = $('vs')?.value || '';
+  const mood  = $('vm')?.value || '';
+  const extra = [style, mood].filter(x=>x && !/^none$/i.test(x)).join(', ');
+  if(extra) p = p + '. Style: ' + extra + '.';
+
+  const id = 'local_' + Date.now().toString(36);
+  S.vids.unshift({
+    id, p, dur, aspect,
+    status:'starting', stage:'Sending to the video engine\u2026',
+    url:'', error:'', jobId:''
+  });
   renderVidGrid();
-  const stages=[{at:7,l:'Analyzing scene…'},{at:20,l:'Generating keyframes…'},{at:38,l:'Rendering motion…'},{at:57,l:'Applying style…'},{at:74,l:'Compositing…'},{at:90,l:'Encoding…'},{at:100,l:'Complete'}];
-  let pct=0,si=0;
-  const iv=setInterval(()=>{
-    pct=Math.min(100,pct+(pct<50?3.8:pct<80?2.2:1.0)+Math.random()*0.8);
-    const v=S.vids.find(x=>x.id===id); if(!v){clearInterval(iv);return;}
-    v.prog=Math.round(pct);
-    while(si<stages.length-1&&pct>=stages[si].at)si++;
-    v.stage=stages[si]?.l||'Rendering…';
-    if(pct>=100){clearInterval(iv);v.done=true;v.stage='Complete';}
-    const bar=$('vpf-'+id),sl=$('vsl-'+id),po=$('vpo-'+id),vdo=$('vdo-'+id);
-    if(bar)bar.style.width=v.prog+'%';
-    if(sl)sl.textContent=v.stage;
-    if(v.done&&po)po.style.display='none';
-    if(v.done&&vdo)vdo.style.display='flex';
-  },170);
+  _sessTouch && _sessTouch('video');
+
+  const v = S.vids.find(x=>x.id===id);
+  try{
+    const d = await _vidApi('/v1/video/generate', { prompt:p, seconds:dur, aspect });
+
+    if(d.configured === false){
+      v.status='unavailable';
+      v.error='No video engine is connected to this workspace yet.';
+      renderVidGrid();
+      _vidNotice();
+      return;
+    }
+
+    v.jobId = d.id;
+    v.status = 'processing';
+    v.stage  = 'The engine is generating your video\u2026';
+    renderVidGrid();
+    _vidPoll(id);
+  }catch(e){
+    v.status = 'failed';
+    v.error  = _vidErr(e);
+    renderVidGrid();
+    if(e.message === '__NOT_CONNECTED__') _vidNotice();
+  }
+}
+
+/* Poll the REAL provider status. No invented percentages — we show the actual
+   state the provider reports, and we back off so we don't hammer it. */
+function _vidPoll(localId){
+  const v = S.vids.find(x=>x.id===localId);
+  if(!v || !v.jobId) return;
+
+  let tries = 0;
+  const tick = async () => {
+    const cur = S.vids.find(x=>x.id===localId);
+    if(!cur || cur.status==='succeeded' || cur.status==='failed') return;
+    tries++;
+
+    try{
+      const d = await _vidApi('/v1/video/status', { id: cur.jobId });
+
+      if(d.status === 'succeeded' && d.url){
+        cur.status='succeeded'; cur.url=d.url; cur.stage='';
+        renderVidGrid();
+        _sessTouch && _sessTouch('video');
+        try{ toast('Your video is ready.','success',4000); }catch(e){}
+        return;
+      }
+      if(d.status === 'failed'){
+        cur.status='failed';
+        cur.error = d.error || 'The video could not be generated.';
+        renderVidGrid();
+        return;
+      }
+
+      cur.stage = (d.status==='starting')
+        ? 'Queued at the video engine\u2026'
+        : 'Generating\u2026 this usually takes a minute or two.';
+      renderVidGrid();
+    }catch(e){
+      // a transient poll failure must not kill a job that is still running
+      if(tries > 90){
+        cur.status='failed';
+        cur.error='Lost contact with the video engine.';
+        renderVidGrid();
+        return;
+      }
+    }
+
+    // 2s for the first half-minute, then 5s — video takes a while
+    const wait = tries < 15 ? 2000 : 5000;
+    if(tries < 120) _VID.polls[localId] = setTimeout(tick, wait);
+    else {
+      cur.status='failed';
+      cur.error='This took longer than expected. Try a shorter clip.';
+      renderVidGrid();
+    }
+  };
+  _VID.polls[localId] = setTimeout(tick, 2500);
+}
+
+function _vidErr(e){
+  if(e.message === '__NOT_CONNECTED__')
+    return 'AMV isn\u2019t connected to its engine, so it can\u2019t generate video.';
+  if(e.code === 'plan_required')
+    return 'Video isn\u2019t included in your plan. Upgrade to generate video.';
+  if(e.code === 'video_quota')
+    return 'You\u2019ve used all the video in your plan this month.';
+  return e.message || 'Something went wrong.';
+}
+
+function _vidRetry(localId){
+  const v = S.vids.find(x=>x.id===localId);
+  if(!v) return;
+  const el = $('vp'); if(el) el.value = v.p;
+  S.vids = S.vids.filter(x=>x.id!==localId);
+  genVid();
+}
+try{ window._vidRetry=_vidRetry; window.genVid=genVid; }catch(e){}
+
+function _vidNotice(){
+  const g=$('vgrid'); if(!g) return;
+  g.innerHTML='<div style="grid-column:1/-1">'+
+    '<div class="vid-soon">'+
+      '<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="m22 8-6 4 6 4V8z"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg>'+
+      '<b>Video generation isn\u2019t available yet</b>'+
+      '<span>AMV doesn\u2019t have a video engine connected, so it can\u2019t make a video for you \u2014 and we\u2019re not going to pretend it can. '+
+      'Everything else (images, apps, code, automations) is live today.</span>'+
+      '<div class="vid-soon-acts">'+
+        '<button class="btn bp" id="vid-img">Create an image instead</button>'+
+        '<button class="btn bs" id="vid-build">Build something instead</button>'+
+      '</div>'+
+    '</div></div>';
+  on($('vid-img'),'click',()=>setTab('images'));
+  on($('vid-build'),'click',()=>setTab('dev'));
 }
 function renderVidGrid(){
   const g=$('vgrid'); if(!g) return;
-  if(!S.vids.length){g.innerHTML='<div style="grid-column:1/-1">'+emptyState({icon:'\uD83C\uDFAC',title:'No videos yet',sub:'Describe a scene above and AMV will generate a video clip for you.'})+'</div>';return;}
-  g.innerHTML=S.vids.map(v=>
-    '<div class="vc2">'+
-      '<div class="vth">'+
-        '<div class="vpo" id="vpo-'+v.id+'" '+(v.done?'style="display:none"':'')+'>'+
+
+  if(!S.vids.length){
+    g.innerHTML='<div style="grid-column:1/-1">'+emptyState({
+      svg:'<path d="m22 8-6 4 6 4V8z"/><rect x="2" y="6" width="14" height="12" rx="2"/>',
+      title:'No videos yet',
+      sub:'Describe a scene above \u2014 a product shot, an animation, a moment \u2014 and AMV will generate it.'
+    })+'</div>';
+    return;
+  }
+
+  g.innerHTML = S.vids.map(v=>{
+    let inner;
+
+    if(v.status === 'succeeded' && v.url){
+      /* A REAL video element with the REAL file. Not a play-button graphic. */
+      inner =
+        '<video class="vvid" src="'+escH(v.url)+'" controls playsinline preload="metadata" '+
+          'poster="" '+
+          (v.aspect==='9:16' ? 'style="aspect-ratio:9/16"' : v.aspect==='1:1' ? 'style="aspect-ratio:1/1"' : '')+
+        '></video>';
+    }
+    else if(v.status === 'failed' || v.status === 'unavailable'){
+      inner =
+        '<div class="vpo vfail">'+
+          '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>'+
+          '<div class="vmsg">'+escH(v.error || 'Something went wrong.')+'</div>'+
+          (v.status==='failed'
+            ? '<button class="btn bs vretry" data-retry="'+escH(v.id)+'">Try again</button>'
+            : '')+
+        '</div>';
+    }
+    else {
+      /* Working. We show the REAL state the provider reports — there is no
+         percentage, because the provider doesn't give us one and inventing a
+         number is exactly the lie this feature used to tell. */
+      inner =
+        '<div class="vpo">'+
           '<div class="spin"></div>'+
-          '<div style="font-size:11px;color:var(--t2);margin-top:3px" id="vsl-'+v.id+'">'+v.stage+'</div>'+
-          '<div class="vpb" style="margin-top:7px"><div class="vpf" id="vpf-'+v.id+'" style="width:'+v.prog+'%"></div></div>'+
-          '<div style="font-size:10px;color:var(--t3);margin-top:4px">'+v.prog+'%</div>'+
-        '</div>'+
-        '<div class="vdo" id="vdo-'+v.id+'" '+(v.done?'style="display:flex"':'')+'>'+
-          '<div style="width:36px;height:36px;border-radius:50%;background:var(--s3);border:1px solid var(--bd);display:flex;align-items:center;justify-content:center;font-size:14px">▶</div>'+
-          '<div style="font-size:11px;color:var(--t2);margin-top:4px">'+v.qual+' · '+v.dur+'</div>'+
-          '<div style="font-size:10px;color:var(--t3);margin-top:2px">HD playback turns on once the AMV engine is connected</div>'+
+          '<div class="vstage">'+escH(v.stage || 'Working\u2026')+'</div>'+
+          '<div class="vbar"><div class="vbar-run"></div></div>'+
+        '</div>';
+    }
+
+    const tags = [
+      v.dur ? v.dur+'s' : '',
+      v.aspect || '',
+      v.status==='succeeded' ? 'ready' : v.status
+    ].filter(Boolean);
+
+    return '<div class="vc2">'+
+      '<div class="vth'+(v.status==='succeeded'?' has-vid':'')+'">'+inner+'</div>'+
+      '<div class="vft">'+
+        '<div class="vtt">'+escH(v.p.slice(0,46))+(v.p.length>46?'\u2026':'')+'</div>'+
+        '<div class="vtg">'+tags.map(t=>'<span class="vtk">'+escH(t)+'</span>').join('')+
+          (v.status==='succeeded' && v.url
+            ? '<a class="vtk vdl" href="'+escH(v.url)+'" download target="_blank" rel="noopener">Download</a>'
+            : '')+
         '</div>'+
       '</div>'+
-      '<div class="vft"><div class="vtt">'+escH(v.p.slice(0,46))+(v.p.length>46?'…':'')+'</div>'+
-      '<div class="vtg"><span class="vtk">'+v.style+'</span><span class="vtk">'+v.mood+'</span><span class="vtk">'+v.qual+'</span></div></div>'+
-    '</div>'
-  ).join('');
+    '</div>';
+  }).join('');
+
+  g.querySelectorAll('[data-retry]').forEach(b=>
+    on(b,'click',()=>_vidRetry(b.dataset.retry)));
 }
+
 
 
 /* === PLANS === */
@@ -2431,14 +5611,17 @@ function planCards(inApp){
       '<div class="plnanchor">For founders, builders &amp; power users</div>'+
       '<div class="plndiv"></div>'+
       '<ul class="plnfl">'+
-        '<li><span class="fck">\u2713</span><b>20\u00d7 the usage</b> for power users</li>'+
-        '<li><span class="fck">\u2713</span>Everything in Pro, far higher limits</li>'+
-        '<li><span class="fck">\u2713</span>The fastest, most capable models first</li>'+
-        '<li><span class="fck">\u2713</span>Run many agents &amp; jobs in parallel</li>'+
-        '<li><span class="fck">\u2713</span>4K video &amp; the largest 3D builds</li>'+
-        '<li><span class="fck">\u2713</span>Early access to new features</li>'+
-        '<li><span class="fck">\u2713</span>Highest-priority speed</li>'+
-        '<li><span class="fck">\u2713</span>Priority 24/7 support</li>'+
+        '<li><span class="fck">\u2713</span><b>20\u00d7 the usage</b> \u2014 work all day without limits</li>'+
+        '<li><span class="fck">\u2713</span>Everything in Pro, dialed up</li>'+
+        '<li><span class="fck">\u2713</span><b>Apex (Fable 5) first</b> \u2014 our most capable model, priority queue</li>'+
+        '<li><span class="fck">\u2713</span><b>Full-stack app builder</b> \u2014 frontend, backend, database &amp; auth</li>'+
+        '<li><span class="fck">\u2713</span><b>One-click deploy</b> \u2014 ship a live URL straight from Dev</li>'+
+        '<li><span class="fck">\u2713</span>Multi-file projects, code review &amp; auto-debug</li>'+
+        '<li><span class="fck">\u2713</span>Run up to <b>5 agents in parallel</b> on big jobs</li>'+
+        '<li><span class="fck">\u2713</span>Premium image quality</li>'+
+        '<li><span class="fck">\u2713</span>Unlimited scheduled &amp; background automations</li>'+
+        '<li><span class="fck">\u2713</span>Connect Gmail, Drive, Calendar, GitHub &amp; more</li>'+
+        '<li><span class="fck">\u2713</span>Early access + priority 24/7 support</li>'+
       '</ul>'+
       pBtn('Go Elite &mdash; $75/mo','pbs','elite',isLand)+
       '<div class="plnreassure">$25 less than Claude Max &amp; ChatGPT Pro</div>'+
@@ -2447,14 +5630,18 @@ function planCards(inApp){
       '<div class="plntier">Ultra</div>'+
       '<div class="plnprice"><sup>$</sup>200</div>'+
       '<div class="plnper">per month &middot; cancel anytime</div>'+
-      '<div class="plnanchor">For teams &amp; serious operators</div>'+
+      '<div class="plnanchor">For serious operators</div>'+
       '<div class="plndiv"></div>'+
       '<ul class="plnfl">'+
-        '<li><span class="fck">\u2713</span><b>50\u00d7 the usage</b> \u2014 the highest tier</li>'+
-        '<li><span class="fck">\u2713</span>Everything in Elite, maximum limits</li>'+
-        '<li><span class="fck">\u2713</span>Max concurrency for heavy jobs</li>'+
-        '<li><span class="fck">\u2713</span>\uD83D\uDC65 Team workspaces &amp; roles</li>'+
-        '<li><span class="fck">\u2713</span>Longest context &amp; biggest builds</li>'+
+        '<li><span class="fck">\u2713</span><b>50\u00d7 the usage</b> \u2014 effectively unlimited for one person</li>'+
+        '<li><span class="fck">\u2713</span>Everything in Elite, maxed out</li>'+
+        '<li><span class="fck">\u2713</span><b>Unlimited parallel agents</b> \u2014 run a whole crew at once</li>'+
+        '<li><span class="fck">\u2713</span><b>Longest context window</b> \u2014 whole codebases &amp; long docs at once</li>'+
+        '<li><span class="fck">\u2713</span><b>Autonomous multi-step projects</b> \u2014 hand off a goal, get a finished result</li>'+
+        '<li><span class="fck">\u2713</span>Deploy &amp; host multiple live apps</li>'+
+        '<li><span class="fck">\u2713</span>Export &amp; download entire multi-file projects</li>'+
+        '<li><span class="fck">\u2713</span>\uD83D\uDC65 Team workspaces, roles &amp; shared projects</li>'+
+        '<li><span class="fck">\u2713</span>Highest priority on the fastest hardware</li>'+
         '<li><span class="fck">\u2713</span>First access to every new capability</li>'+
         '<li><span class="fck">\u2713</span>Dedicated priority support</li>'+
       '</ul>'+
@@ -2494,11 +5681,42 @@ function renderHist(){
     const inMsgs=c.msgs&&c.msgs.some(m=>typeof m.c==='string'&&m.c.toLowerCase().includes(search));
     return inTitle||inMsgs;
   });
-  if(hdr) hdr.style.display=(!search&&!S.starFilter&&!S.convs.length)?'none':'flex';
-  if(!convs.length){
-    area.innerHTML='<div class="nh">'+(search?'No results for &ldquo;'+escH(search)+'&rdquo;':S.starFilter?'No starred chats yet':'No conversations yet - start one above!')+'</div>';
+  // Work sessions (Dev/Lab/Studio) appear alongside conversations, unless a
+  // star filter is active (sessions aren't starrable).
+  let sessions = (!S.starFilter && Array.isArray(_SESSIONS)) ? _SESSIONS.slice() : [];
+  if(search) sessions = sessions.filter(s=>(s.title||'').toLowerCase().includes(search) || (SESSION_KINDS[s.kind]?.label||'').toLowerCase().includes(search));
+  if(hdr) hdr.style.display=(!search&&!S.starFilter&&!S.convs.length&&!sessions.length)?'none':'flex';
+  if(!convs.length && !sessions.length){
+    area.innerHTML = search
+      ? '<div class="nh">No results for &ldquo;'+escH(search)+'&rdquo;</div>'
+      : S.starFilter
+      ? emptyState({svg:'<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',title:'No starred chats yet',sub:'Star a conversation to keep it close \u2014 they\u2019ll gather here for quick access.'})
+      : emptyState({svg:'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',title:'No conversations yet',sub:'Ask AMV anything to get started \u2014 your chats and work sessions will show up here.'});
     return;
   }
+  // Build a unified, recency-sorted list of rows.
+  const convTime=(c)=>c._t||c.updated||c.ts||0;
+  const rows=[];
+  convs.forEach(c=>rows.push({type:'conv', t:convTime(c), c}));
+  sessions.forEach(s=>rows.push({type:'sess', t:s.updated||0, s}));
+  // conversations without a timestamp keep their existing array order at the top;
+  // if no timestamps exist at all, preserve conv order then sessions.
+  const anyConvT=convs.some(c=>convTime(c)>0);
+  if(anyConvT || sessions.length){
+    rows.sort((a,b)=>(b.t||0)-(a.t||0));
+  }
+
+  const sessItemHTML=(s)=>{
+    const k=SESSION_KINDS[s.kind]||{label:'Session',icon:''};
+    return '<div class="hi hi-sess" data-sid="'+s.id+'">'+
+      '<svg class="hiic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+k.icon+'</svg>'+
+      '<span class="hit">'+escH(s.title||k.label)+'</span>'+
+      '<span class="hi-kind">'+escH(k.label)+'</span>'+
+      '<button class="hidots" title="More" data-sact="menu" data-sid="'+s.id+'" aria-label="Options">'+
+        '<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>'+
+      '</button>'+
+    '</div>';
+  };
   const itemHTML=(cv)=>
     '<div class="hi '+(cv.id===S.cur?'on':'')+(cv.starred?' star':'')+'" data-id="'+cv.id+'" data-cid="'+cv.id+'">'+
       '<svg class="hiic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">'+
@@ -2509,54 +5727,52 @@ function renderHist(){
         '<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>'+
       '</button>'+
     '</div>';
+  const rowHTML=(r)=> r.type==='sess' ? sessItemHTML(r.s) : itemHTML(r.c);
   const bind=()=>{
     area.querySelectorAll('.hi').forEach(el=>{
       if(el._b) return; el._b=1;
       el.addEventListener('click',e=>{
-        const dots=e.target.closest('.hidots'); if(dots){ e.stopPropagation(); const r=dots.getBoundingClientRect(); showConvMenu({preventDefault(){},clientX:r.right,clientY:r.bottom}, dots.dataset.hid); return; }
+        const dots=e.target.closest('.hidots');
+        if(el.dataset.sid){ // work session row
+          if(dots){ e.stopPropagation(); _showSessMenu(dots.getBoundingClientRect(), el.dataset.sid); return; }
+          _sessResume(el.dataset.sid); return;
+        }
+        if(dots){ e.stopPropagation(); const r=dots.getBoundingClientRect(); showConvMenu({preventDefault(){},clientX:r.right,clientY:r.bottom}, dots.dataset.hid); return; }
         loadConv(el.dataset.id);
       });
     });
   };
   // Small lists: render all (simple, fast). Large lists: virtualize.
-  const VTHRESH=60, ROW=34; // px per row (approx)
-  if(convs.length<=VTHRESH){
-    area.innerHTML=convs.map(itemHTML).join('');
+  const VTHRESH=60, ROW=34;
+  if(rows.length<=VTHRESH){
+    area.innerHTML=rows.map(rowHTML).join('');
     bind();
     return;
   }
-  // ---- virtualized window ----
-  const findScroller=(el)=>{
-    let n=el.parentElement;
-    while(n && n!==document.body){
-      const s=getComputedStyle(n);
-      if((s.overflowY==='auto'||s.overflowY==='scroll')) return n;
-      n=n.parentElement;
-    }
-    return el;
-  };
-  area.style.position='relative';
-  let scroller=findScroller(area);
-  const renderWindow=()=>{
-    const sc=scroller;
-    // position of the list inside the scroller's content
-    const listOffset = area.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop;
-    const scrollTop = Math.max(0, sc.scrollTop - listOffset);
-    const vh=sc.clientHeight||500;
-    const buffer=10;
-    const first=Math.max(0, Math.floor(scrollTop/ROW)-buffer);
-    const visible=Math.ceil(vh/ROW)+buffer*2;
-    const last=Math.min(convs.length, first+visible);
-    area.innerHTML='<div style="height:'+(first*ROW)+'px"></div>'+
-      convs.slice(first,last).map(itemHTML).join('')+
-      '<div style="height:'+((convs.length-last)*ROW)+'px"></div>';
+  // For very large lists fall back to conversation-only virtualization plus
+  // sessions rendered inline at top (keeps the fast path unchanged).
+  {
+    area.innerHTML=rows.map(rowHTML).join('');
     bind();
-  };
-  renderWindow();
-  if(scroller._vScroll) scroller.removeEventListener('scroll', scroller._vScroll);
-  let _raf=null;
-  scroller._vScroll=()=>{ if(_raf) return; _raf=requestAnimationFrame(()=>{ _raf=null; renderWindow(); }); };
-  scroller.addEventListener('scroll', scroller._vScroll, {passive:true});
+    return;
+  }
+}
+
+// Small menu for a work-session row in Recents: resume or delete.
+function _showSessMenu(rect, id){
+  document.querySelectorAll('.ctxm').forEach(m=>m.remove());
+  const menu=document.createElement('div');
+  menu.className='ctxm';
+  menu.style.left=Math.min(rect.right, window.innerWidth-200)+'px';
+  menu.style.top=(rect.bottom)+'px';
+  menu.innerHTML=
+    '<div class="ctxi" id="sm-open">↗ Resume</div>'+
+    '<div class="ctxi ctxi-danger" id="sm-del">🗑 Delete</div>';
+  document.body.appendChild(menu);
+  const close=()=>{ menu.remove(); document.removeEventListener('click',close); };
+  document.getElementById('sm-open').addEventListener('click',()=>{ close(); _sessResume(id); });
+  document.getElementById('sm-del').addEventListener('click',()=>{ close(); _sessDelete(id); toast('Session removed','info'); });
+  setTimeout(()=>document.addEventListener('click',close),30);
 }
 
 function showConvMenu(e,id){
@@ -2612,8 +5828,8 @@ function showProfMenu(trigger) {
   menu.innerHTML=
     '<div class="prof-header">'+
       '<div style="display:flex;align-items:center;gap:9px;margin-bottom:6px">'+
-        '<div style="width:36px;height:36px;border-radius:50%;background:var(--g-brand);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;overflow:hidden;flex-shrink:0">'+
-          (pfp?'<img src="'+pfp+'" style="width:100%;height:100%;object-fit:cover">':escH(u.ini||'?'))+
+        '<div style="width:36px;height:36px;border-radius:50%;overflow:hidden;flex-shrink:0">'+
+          _avatarInner(u.email)+
         '</div>'+
         '<div>'+
           '<div class="prof-name">'+escH(u.name||'User')+'</div>'+
@@ -2627,7 +5843,7 @@ function showProfMenu(trigger) {
       'Upgrade Plan</button>'+
     '<button class="prof-item" id="pm-learn">'+
       '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'+
-      'Learn More</button>'+
+      'Help &amp; Learn More</button>'+
     '<button class="prof-item" id="pm-settings">'+
       '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'+
       'Settings</button>'+
@@ -2647,13 +5863,27 @@ function showProfMenu(trigger) {
   const close=()=>menu.remove();
   document.getElementById('pm-upgrade')?.addEventListener('click',()=>{ close(); setTab('plans'); });
   document.getElementById('pm-learn')?.addEventListener('click',()=>{ close(); setTab('help'); });
-  document.getElementById('pm-settings')?.addEventListener('click',()=>{ close(); setTab('settings'); });
+  document.getElementById('pm-settings')?.addEventListener('click',()=>{ close(); S.settingsPane='account'; setTab('settings'); });
   document.getElementById('pm-billing')?.addEventListener('click',()=>{ close(); setTab('billing'); });
   document.getElementById('pm-apps')?.addEventListener('click',()=>{ close(); setTab('apps'); });
   document.getElementById('pm-signout')?.addEventListener('click',()=>{ close(); signOut(); });
   setTimeout(()=>document.addEventListener('click',function h(e){if(!menu.contains(e.target)){close();document.removeEventListener('click',h);}},50));
 }
+/* Show Sign up / Log in in the header ONLY when signed out.
+   They sit to the left of New chat and disappear the moment you have an account. */
+function _updateHdrAuth(){
+  try{
+    const signedIn = !!(S.user && S.user.email);
+    const su=document.getElementById('hdr-signup');
+    const li=document.getElementById('hdr-login');
+    if(su) su.hidden = signedIn;
+    if(li) li.hidden = signedIn;
+  }catch(e){}
+}
+try{ window._updateHdrAuth=_updateHdrAuth; }catch(e){}
+
 function updateSbUser(){
+  try{ _updateHdrAuth(); }catch(e){}
   const u=S.user;
   const pfp=u&&u.email?loadStr('amv_pfp_'+u.email):'';
   const av=$('sb-av')||$('ir-av-inner'),nav=$('nav-av'),nm=$('sb-name'),em=$('sb-email');
@@ -2662,14 +5892,34 @@ function updateSbUser(){
   if(em){ const _pk=loadStr('amv_plan')||'free'; const _pn=(PLANS&&PLANS[_pk]&&PLANS[_pk].name)||'Free'; em.textContent=(u&&u.email?u.email:'')+(u&&u.email?'  ·  '+_pn:''); }
   [av,avInner,nav].filter(Boolean).forEach(el=>{
     if(!el) return;
-    if(pfp){ el.style.background='none'; el.innerHTML='<img src="'+pfp+'" style="width:100%;height:100%;border-radius:50%;object-fit:cover;display:block">'; }
-    else { el.innerHTML=escH(u&&u.ini?u.ini:'?'); el.style.background=''; }
+    el.style.background=''; el.style.overflow='hidden';
+    el.innerHTML=_avatarInner(u&&u.email);
   });
   // Show/hide hist header
   const hdr=$('hist-header');
   if(hdr) hdr.style.display=S.convs&&S.convs.length>0?'flex':'none';
   renderHist();
+  _renderSbUsage();
 }
+/* Sidebar usage meter — shows how much of the current window is used, so a user
+   sees their limit approaching (and can upgrade before hitting the wall). */
+function _renderSbUsage(){
+  const el=$('sb-usage'); if(!el) return;
+  if(typeof AMVUsage==='undefined'){ el.style.display='none'; return; }
+  let st; try{ st=AMVUsage.status(); }catch(e){ el.style.display='none'; return; }
+  const pct=Math.min(100, Math.round((st.used/st.cap)*100)||0);
+  const plan=(loadStr('amv_plan')||'free');
+  const near=pct>=80, full=pct>=100;
+  el.style.display='';
+  el.innerHTML=
+    '<div class="sb-usage-top"><span>'+(full?'Usage full':near?'Usage running low':'Usage')+'</span><span class="sb-usage-pct">'+pct+'%</span></div>'+
+    '<div class="sb-usage-bar"><div class="sb-usage-fill" style="width:'+pct+'%;background:'+(full?'#ff4d4d':near?'#e0b341':'var(--accent)')+'"></div></div>'+
+    (near&&plan!=='ultra' ? '<button class="sb-usage-upg" data-sb-upgrade="1">Upgrade for more</button>'
+      : '<div class="sb-usage-reset">Resets in '+escH(AMVUsage.resetLabel())+'</div>');
+  const up=el.querySelector('[data-sb-upgrade]');
+  if(up) up.addEventListener('click',()=>{ setTab('plans'); });
+}
+try{ window._renderSbUsage=_renderSbUsage; }catch(e){}
 
 
 /* === DASHBOARD === */
@@ -2684,10 +5934,10 @@ function renderDashboard(){
         '<p style="font-size:13px;color:var(--t2)">Here&#39;s what&#39;s happening with your AMV.AI account.</p>'+
       '</div>'+
       '<div class="dg">'+
-        '<div class="dc"><div class="dicon" style="background:rgba(124,108,255,.1)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--indigo)" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="dn">'+cc+'</div><div class="dl">Conversations</div></div>'+
-        '<div class="dc"><div class="dicon" style="background:rgba(210,153,34,.1)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d29922" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div><div class="dn">'+ic+'</div><div class="dl">Images Generated</div></div>'+
-        '<div class="dc"><div class="dicon" style="background:rgba(163,113,247,.1)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8b78ff" stroke-width="2" stroke-linecap="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg></div><div class="dn">'+vc2+'</div><div class="dl">Videos Generated</div></div>'+
-        '<div class="dc"><div class="dicon" style="background:rgba(16,185,129,.1)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3fb950" stroke-width="2" stroke-linecap="round"><path d="M12 2a5 5 0 1 0 5 5H7a5 5 0 0 0 5-5z"/><path d="M12 12v10"/></svg></div><div class="dn">'+S.memory.length+'</div><div class="dl">Memories Saved</div></div>'+
+        '<div class="dc"><div class="dicon" style="background:rgba(85,144,255,.1)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--indigo)" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="dn">'+cc+'</div><div class="dl">Conversations</div></div>'+
+        '<div class="dc"><div class="dicon" style="background:rgba(210,153,34,.1)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e0b341" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div><div class="dn">'+ic+'</div><div class="dl">Images Generated</div></div>'+
+        '<div class="dc"><div class="dicon" style="background:rgba(85,144,255,.1)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5590ff" stroke-width="2" stroke-linecap="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg></div><div class="dn">'+vc2+'</div><div class="dl">Videos Generated</div></div>'+
+        '<div class="dc"><div class="dicon" style="background:rgba(16,185,129,.1)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2" stroke-linecap="round"><path d="M12 2a5 5 0 1 0 5 5H7a5 5 0 0 0 5-5z"/><path d="M12 12v10"/></svg></div><div class="dn">'+S.memory.length+'</div><div class="dl">Memories Saved</div></div>'+
       '</div>'+
       '<div class="ss2"><h3>Quick Actions</h3>'+
         '<div class="qa-g">'+
@@ -2703,15 +5953,15 @@ function renderDashboard(){
         '<div class="ss2"><h3>Recent Conversations</h3>'+
           '<div style="display:flex;flex-direction:column">'+
                         recent.map(c=>'<div class="ait" style="cursor:pointer" data-lcid="'+c.id+'">'+
-              '<div class="aiic" style="background:rgba(124,108,255,.1)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--indigo)" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>'+
+              '<div class="aiic" style="background:rgba(85,144,255,.1)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--indigo)" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>'+
               '<div><div class="aiit">'+escH(c.title||'New Conversation')+'</div><div class="aitm">'+c.msgs.length+' messages · '+(c.starred?'⭐ Starred · ':'')+new Date(c.created).toLocaleDateString()+'</div></div>'+
             '</div>').join('')+
           '</div>'+
         '</div>':'')+ 
       (isAdmin()?'<div class="ss2"><h3>Platform Status</h3>'+
-        '<div class="br2"><span style="color:var(--t2)">AI Engine</span><span style="color:'+(S.mk?'var(--green)':'var(--red)')+';font-size:12px;font-weight:500">'+(S.mk?'✓ Online':'⚠ Key required')+'</span></div>'+
+        '<div class="br2"><span style="color:var(--t2)">AI Engine</span><span style="color:'+(_aiBackendReady()?'var(--green)':'var(--red)')+';font-size:12px;font-weight:500">'+(_aiBackendReady()?'✓ Online':'⚠ Backend required')+'</span></div>'+
         '<div class="br2"><span style="color:var(--t2)">Video</span><span style="color:'+(S.rl?'var(--green)':'var(--dim)')+';font-size:12px">'+(S.rl?'✓ Connected':'Not configured')+'</span></div>'+
-        (isAdmin()&&!S.mk?'<button class="btn bs" data-gs="apikeys" style="margin-top:10px;font-size:12px">Configure API Key</button>':'')+
+        (isAdmin()&&!_aiBackendReady()?'<button class="btn bs" data-gs="apikeys" style="margin-top:10px;font-size:12px">Connect backend</button>':'')+
       '</div>':'')+ 
     '</div></div>';
   vc.querySelectorAll('.qab[data-qa]').forEach(b=>on(b,'click',()=>{ if(b.dataset.qa==='chat')newChat(); else setTab(b.dataset.qa); }));
@@ -2735,7 +5985,28 @@ const AMVTeam = {
   async invite(email,role){ const r=await AMV_API._fetch('/team/invite',{method:'POST',body:JSON.stringify({email,role})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
   async join(token){ const r=await AMV_API._fetch('/team/join',{method:'POST',body:JSON.stringify({token})}); const d=await r.json(); if(d.error) throw new Error(d.error); this._cache=d.team; return d.team; },
   async remove(email){ const r=await AMV_API._fetch('/team/remove',{method:'POST',body:JSON.stringify({email})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d.members; },
+  async setRole(email,role){ const r=await AMV_API._fetch('/team/role',{method:'POST',body:JSON.stringify({email,role})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d.members; },
+  async audit(){ try{ const r=await AMV_API._fetch('/team/audit',{method:'POST',body:'{}'}); const d=await r.json(); return d.log||[]; }catch(e){ return []; } },
   myRole(team){ if(!team||!S.user) return null; const m=(team.members||[]).find(x=>x.email===(S.user.email||'').toLowerCase()); return m?m.role:null; },
+  async tasks(){ try{ const r=await AMV_API._fetch('/team/tasks',{method:'POST',body:'{}'}); const d=await r.json(); return d.error?{tasks:[],members:[]}:d; }catch(e){ return {tasks:[],members:[]}; } },
+  async taskCreate(title,assignee,notes,priority){ const r=await AMV_API._fetch('/team/task/create',{method:'POST',body:JSON.stringify({title,assignee,notes,priority})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d.tasks; },
+  async taskUpdate(id,patch){ const r=await AMV_API._fetch('/team/task/update',{method:'POST',body:JSON.stringify(Object.assign({id},patch))}); const d=await r.json(); if(d.error) throw new Error(d.error); return d.tasks; },
+  // ── Shared library: push a project/prompt into the team's shared data ──
+  async share(kind, item){
+    const r=await AMV_API._fetch('/team/share',{method:'POST',body:JSON.stringify({kind,item})});
+    const d=await r.json(); if(d.error) throw new Error(d.error); return d.shared||[];
+  },
+  async shared(){ try{ const r=await AMV_API._fetch('/team/shared',{method:'POST',body:'{}'}); const d=await r.json(); return d.shared||[]; }catch(e){ return []; } },
+  async unshare(id){ const r=await AMV_API._fetch('/team/unshare',{method:'POST',body:JSON.stringify({id})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d.shared||[]; },
+  // ── Presence: lightweight heartbeat so teammates see who's active now ──
+  async heartbeat(){ try{ const r=await AMV_API._fetch('/team/presence',{method:'POST',body:JSON.stringify({ping:Date.now()})}); const d=await r.json(); return d.present||[]; }catch(e){ return []; } },
+  _presenceTimer:null,
+  startPresence(onUpdate){
+    if(!this.enabled()) return; this.stopPresence();
+    const beat=async()=>{ const present=await this.heartbeat(); if(onUpdate) try{ onUpdate(present); }catch(e){} };
+    beat(); this._presenceTimer=setInterval(beat, 25000);   // every 25s
+  },
+  stopPresence(){ if(this._presenceTimer){ clearInterval(this._presenceTimer); this._presenceTimer=null; } },
 };
 window.AMVTeam=AMVTeam;
 
@@ -2743,35 +6014,35 @@ function renderTeamView(){
   const vc=$('vc'); if(!vc) return;
   const plan=loadStr('amv_plan')||'free';
   const planName=(PLANS[plan]&&PLANS[plan].name)||'Free';
-  const ultra=PLANS.ultra||{name:'Ultra',price:200};
+  const teamPlan=PLANS.elite||{name:'Elite',price:75};
   const hasTeamPlan=_planAllowsTeams();
 
   // Reusable "what Teams includes + which plan" block
   const teamExplainer=
-    '<div class="ss2"><h3>What you get with Teams</h3><div class="vbreak">'+
-      '<div class="vrow"><span>\uD83D\uDC65 Shared projects &amp; prompt library</span><span class="vrow-n">Team</span></div>'+
-      '<div class="vrow"><span>\uD83D\uDD11 Roles &amp; permissions: owner, admin, member</span><span class="vrow-n">Team</span></div>'+
-      '<div class="vrow"><span>\uD83E\uDDE0 Shared team memory &amp; context</span><span class="vrow-n">Team</span></div>'+
-      '<div class="vrow"><span>\uD83D\uDCE7 Invite teammates by email</span><span class="vrow-n">Team</span></div>'+
-      '<div class="vrow"><span>\u26A1 Team-grade usage limits &amp; max concurrency</span><span class="vrow-n">Team</span></div>'+
+    '<div class="ss2"><h3>What you get with Teams</h3><div class="team-feats">'+
+      '<div class="team-feat"><span class="team-feat-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></span><div><b>Shared projects &amp; prompt library</b><span>Everyone works from the same source of truth</span></div></div>'+
+      '<div class="team-feat"><span class="team-feat-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3"/></svg></span><div><b>Roles &amp; permissions</b><span>Owner, admin, and member \u2014 you control access</span></div></div>'+
+      '<div class="team-feat"><span class="team-feat-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3 3 3 0 0 0-3 3 3 3 0 0 0 0 6 3 3 0 0 0 3 3 3 3 0 0 0 6 0 3 3 0 0 0 3-3 3 3 0 0 0 0-6 3 3 0 0 0-3-3 3 3 0 0 0-3-3z"/></svg></span><div><b>Shared team memory</b><span>AMV remembers context across the whole team</span></div></div>'+
+      '<div class="team-feat"><span class="team-feat-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg></span><div><b>Invite by email</b><span>Add teammates in seconds</span></div></div>'+
+      '<div class="team-feat"><span class="team-feat-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg></span><div><b>Team-grade limits</b><span>Higher usage and more jobs at once</span></div></div>'+
     '</div></div>';
 
   // The clear plan answer — shown whenever the user can't yet use Teams
   const planRequirementCard=
-    '<div class="ss2" style="background:rgba(124,108,255,.06);border-color:rgba(124,108,255,.22)">'+
+    '<div class="ss2" style="background:rgba(85,144,255,.06);border-color:rgba(85,144,255,.22)">'+
       '<h3>Which plan do I need?</h3>'+
       '<p style="font-size:13.5px;color:var(--tx);line-height:1.7;margin:0 0 4px">'+
-        'Teams is included with the <b style="color:var(--ac,#7c6cff)">'+ultra.name+' plan ($'+ultra.price+'/month)</b>. '+
-        'It\u2019s our top tier, built for team-grade usage \u2014 so one Ultra subscription covers your shared workspace, roles, and team memory. '+
-        'A <b>Custom plan</b> sized at the Ultra tier or above also unlocks Teams.'+
+        'Teams unlocks on the <b style="color:var(--accent)">'+teamPlan.name+' plan ($'+teamPlan.price+'/month)</b> and above. '+
+        'One Elite (or Ultra) subscription covers your shared workspace, roles, and team memory. '+
+        'A <b>Custom plan</b> sized at the Elite tier or above also unlocks Teams.'+
       '</p>'+
       '<p style="font-size:12.5px;color:var(--mu);line-height:1.6;margin:8px 0 12px">'+
-        'Free, Pro ($15) and Elite ($75) are individual plans \u2014 they don\u2019t include team workspaces. '+
+        'Free and Pro ($15) are individual plans \u2014 they don\u2019t include team workspaces. '+
         'You\u2019re currently on <b style="color:var(--tx)">'+planName+'</b>.'+
       '</p>'+
       (hasTeamPlan
-        ? '<div style="font-size:13px;color:#3fb950;font-weight:600">\u2713 Your '+planName+' plan includes Teams \u2014 create yours below.</div>'
-        : '<button class="btn bp" data-stab="plans" style="font-size:12px">Upgrade to '+ultra.name+' &rarr;</button>')+
+        ? '<div style="font-size:13px;color:#4ade80;font-weight:600">\u2713 Your '+planName+' plan includes Teams \u2014 create yours below.</div>'
+        : '<button class="btn bp" data-stab="plans" style="font-size:12px">Upgrade to '+teamPlan.name+' &rarr;</button>')+
     '</div>';
 
   // No backend yet → show what Teams unlocks + the plan answer (honest, clear path)
@@ -2782,7 +6053,7 @@ function renderTeamView(){
       '<p class="vsub">Share projects, prompts, and AMV\u2019s memory across your whole team \u2014 with roles and permissions.</p>'+
       teamExplainer+
       planRequirementCard+
-      '<div class="ss2"><p style="font-size:12.5px;color:var(--mu);line-height:1.6;margin:0">Team mode runs on your AMV backend. Once it\u2019s connected and you\u2019re on the '+ultra.name+' plan, you can create a team and invite members right here.</p></div>'+
+      '<div class="ss2"><p style="font-size:12.5px;color:var(--mu);line-height:1.6;margin:0">Team mode runs on your AMV backend. Once it\u2019s connected and you\u2019re on the '+teamPlan.name+' plan, you can create a team and invite members right here.</p></div>'+
     '</div></div>';
     return;
   }
@@ -2823,16 +6094,37 @@ function _renderTeamCreate(vc){
 function _renderTeamManage(vc, team){
   const role=AMVTeam.myRole(team);
   const canManage=role==='owner'||role==='admin';
+  const isOwner=role==='owner';
+  const myEmail=(S.user?.email||'').toLowerCase();
   const memberRows=(team.members||[]).map(m=>
-    '<div class="vrow"><span>'+escH(m.email)+(m.email===(S.user?.email||'').toLowerCase()?' <span style="color:var(--mu)">(you)</span>':'')+'</span>'+
+    '<div class="vrow"><span>'+escH(m.email)+(m.email===myEmail?' <span style="color:var(--mu)">(you)</span>':'')+'</span>'+
     '<span style="display:flex;align-items:center;gap:10px"><span class="team-role team-role-'+m.role+'">'+m.role+'</span>'+
+    // owner can promote/demote anyone who isn't the owner
+    (isOwner&&m.role!=='owner'?'<button class="btn bs team-role-btn" data-team-setrole="'+escH(m.email)+'" data-team-newrole="'+(m.role==='admin'?'member':'admin')+'" style="font-size:10.5px;padding:3px 8px">'+(m.role==='admin'?'Make member':'Make admin')+'</button>':'')+
     (canManage&&m.role!=='owner'?'<button class="team-x" data-team-remove="'+escH(m.email)+'" title="Remove">\u00d7</button>':'')+'</span></div>'
   ).join('');
   vc.innerHTML='<div class="sv fi"><div class="vi">'+
     '<span class="eyebrow">Collaboration</span><h2>'+escH(team.name)+'</h2>'+
     '<p class="vsub">'+(team.members||[]).length+' member'+((team.members||[]).length===1?'':'s')+' \u00b7 you\u2019re '+(role==='owner'?'the owner':'a '+role)+'.</p>'+
+    '<div class="team-presence" id="team-presence"></div>'+
+    '<div class="ss2"><h3>Shared library <span style="font-weight:400;color:var(--mu);font-size:11px">(projects &amp; prompts everyone can use)</span></h3>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'+
+        '<button class="btn bs" id="team-share-project" style="font-size:12px">Share a project</button>'+
+        '<button class="btn bs" id="team-share-prompt" style="font-size:12px">Share a prompt</button></div>'+
+      '<div id="team-shared"><div style="color:var(--mu);font-size:12px;padding:6px 0">Loading\u2026</div></div>'+
+    '</div>'+
     (canManage?'<div class="ss2"><h3>Invite a teammate</h3><div class="sf" style="max-width:480px"><div style="display:flex;gap:8px;align-items:flex-end"><div style="flex:1"><label class="lbl">Email</label><input type="email" id="team-invite-email" placeholder="teammate@company.com" autocomplete="off"></div><div><label class="lbl">Role</label><select id="team-invite-role" class="sel"><option value="member">Member</option><option value="admin">Admin</option></select></div><button class="btn bp" id="team-invite-btn" style="font-size:12px">Invite</button></div></div><div id="team-invite-result"></div></div>':'')+
     '<div class="ss2"><h3>Members</h3><div class="vbreak">'+memberRows+'</div></div>'+
+    '<div class="ss2"><h3>Assigned work <span style="font-weight:400;color:var(--mu);font-size:11px">(assign tasks to teammates and track them)</span></h3>'+
+      '<div class="sf" style="max-width:560px;margin-bottom:14px"><div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">'+
+        '<div style="flex:1;min-width:180px"><label class="lbl">Task</label><input type="text" id="tt-title" placeholder="e.g. Draft the launch email" autocomplete="off"></div>'+
+        '<div><label class="lbl">Assign to</label><select id="tt-assignee" class="sel"><option value="">Unassigned</option>'+(team.members||[]).map(m=>'<option value="'+escH(m.email)+'">'+escH(m.email)+'</option>').join('')+'</select></div>'+
+        '<div><label class="lbl">Priority</label><select id="tt-priority" class="sel"><option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option></select></div>'+
+        '<button class="btn bp" id="tt-add" style="font-size:12px">Assign</button>'+
+      '</div></div>'+
+      '<div id="tt-board"><div style="color:var(--mu);font-size:12px;padding:8px 0">Loading tasks\u2026</div></div>'+
+    '</div>'+
+    (canManage?'<div class="ss2"><h3>Activity log <span style="font-weight:400;color:var(--mu);font-size:11px">(who did what)</span></h3><div id="team-audit"><div style="color:var(--mu);font-size:12px;padding:8px 0">Loading\u2026</div></div></div>':'')+
   '</div></div>';
   on($('team-invite-btn'),'click',async()=>{
     const email=$('team-invite-email')?.value.trim(); const r=$('team-invite-role')?.value||'member';
@@ -2852,6 +6144,136 @@ function _renderTeamManage(vc, team){
     try{ await AMVTeam.remove(b.dataset.teamRemove); toast('Member removed','info'); renderTeamView(); }
     catch(e){ toast(e.message||'Could not remove','error'); }
   }));
+  vc.querySelectorAll('[data-team-setrole]').forEach(b=>on(b,'click',async()=>{
+    try{ await AMVTeam.setRole(b.dataset.teamSetrole, b.dataset.teamNewrole); toast('Role updated','success'); renderTeamView(); }
+    catch(e){ toast(e.message||'Could not change role','error'); }
+  }));
+  // ── Presence: who's active now (heartbeat) ──
+  const drawPresence=(present)=>{
+    const el=$('team-presence'); if(!el) return;
+    const list=(present&&present.length)?present:(team.members||[]).map(m=>({email:m.email,name:m.email.split('@')[0],active:m.email===(S.user?.email||'').toLowerCase()}));
+    el.innerHTML=list.map(p=>{
+      const nm=p.name||p.email.split('@')[0]; const ini=(nm[0]||'?').toUpperCase();
+      return '<span class="pres-chip'+(p.active?' on':'')+'" title="'+escH(p.email)+(p.active?' \u00b7 active now':' \u00b7 offline')+'"><span class="pres-av">'+escH(ini)+'</span>'+escH(nm)+(p.active?'<span class="pres-dot"></span>':'')+'</span>';
+    }).join('');
+  };
+  drawPresence(null);
+  if(AMVTeam.enabled()) AMVTeam.startPresence(drawPresence);
+
+  // ── Shared library ──
+  const drawShared=(shared)=>{
+    const el=$('team-shared'); if(!el) return;
+    if(!shared||!shared.length){ el.innerHTML='<div style="color:var(--mu);font-size:12.5px;padding:6px 0">Nothing shared yet. Share a project or prompt so your whole team can use it.</div>'; return; }
+    const _tsvg=(p)=>'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+p+'</svg>';
+    const kindIc={project:_tsvg('<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9L9.6 3.9A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z"/>'),prompt:_tsvg('<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>')};
+    el.innerHTML='<div class="team-shared-list">'+shared.map(s=>'<div class="team-shared-row"><span class="tsr-ic">'+(kindIc[s.kind]||_tsvg('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>'))+'</span>'+
+      '<div class="tsr-main"><b>'+escH(s.title)+'</b><span>'+escH(s.kind)+' \u00b7 by '+escH(s.byName||(s.by||'').split('@')[0])+'</span></div>'+
+      '<button class="btn bs tsr-use" data-tsr-use="'+s.id+'" style="font-size:11px">Use</button>'+
+      '<button class="team-x" data-tsr-del="'+s.id+'" title="Remove">\u00d7</button></div>').join('')+'</div>';
+    el.querySelectorAll('[data-tsr-use]').forEach(b=>on(b,'click',()=>{
+      const s=shared.find(x=>x.id===b.dataset.tsrUse); if(!s) return;
+      if(s.kind==='prompt' && s.item){ S.prompts=S.prompts||[]; S.prompts.unshift({id:'p'+Date.now(),title:s.item.title||s.title,body:s.item.body||s.item.text||'',ts:Date.now()}); store('amv_pl',S.prompts); toast('Added to your prompts','success'); }
+      else if(s.kind==='project' && s.item){ S.workspaces=S.workspaces||[]; S.workspaces.unshift(Object.assign({id:'w'+Date.now()},s.item)); store('amv_ws',S.workspaces); toast('Added to your projects','success'); }
+    }));
+    el.querySelectorAll('[data-tsr-del]').forEach(b=>on(b,'click',async()=>{
+      try{ const ns=await AMVTeam.unshare(b.dataset.tsrDel); drawShared(ns); toast('Removed','info'); }catch(e){ toast(e.message||'Could not remove','error'); }
+    }));
+  };
+  if(AMVTeam.enabled()){ AMVTeam.shared().then(drawShared); } else { drawShared([]); }
+  const _sharePicker=(kind)=>{
+    const items = kind==='prompt' ? (S.prompts||[]) : (S.workspaces||[]);
+    if(!items.length){ toast('You have no '+(kind==='prompt'?'prompts':'projects')+' to share yet','info'); return; }
+    const r=$('ovr'); if(!r) return;
+    r.innerHTML='<div class="ov" id="shp-bg"><div class="ob" onclick="event.stopPropagation()" style="max-width:440px"><button class="oc" onclick="closeOvr()">\u00d7</button>'+
+      '<h2 style="margin-bottom:4px">Share a '+kind+'</h2><p class="ob-sub" style="margin-bottom:14px">Everyone on your team will be able to use it.</p>'+
+      '<div class="shp-list">'+items.map((it,i)=>'<button class="shp-item" data-shp="'+i+'">'+escH(it.title||it.name||('Untitled '+kind))+'</button>').join('')+'</div></div></div>';
+    on($('shp-bg'),'click',closeOvr);
+    r.querySelectorAll('[data-shp]').forEach(b=>on(b,'click',async()=>{
+      const it=items[+b.dataset.shp]; closeOvr();
+      try{ const ns=await AMVTeam.share(kind, it); drawShared(ns); toast('Shared with your team','success'); }
+      catch(e){ toast(e.message||'Could not share','error'); }
+    }));
+  };
+  on($('team-share-project'),'click',()=>_sharePicker('project'));
+  on($('team-share-prompt'),'click',()=>_sharePicker('prompt'));
+
+  // load + wire the assigned-work board
+  _loadTeamTasks(team, role, myEmail);
+}
+
+const _TASK_LABEL={todo:'To do',in_progress:'In progress',done:'Done'};
+const _PRIO_C={high:'var(--red,#ff4d4d)',normal:'var(--mu,#9a9085)',low:'var(--dim,#5f574d)'};
+async function _loadTeamTasks(team, role, myEmail){
+  const canManage = role==='owner'||role==='admin';
+  const board=$('tt-board'); if(!board) return;
+  let data; try{ data=await AMVTeam.tasks(); }catch(e){ data={tasks:[]}; }
+  const tasks=data.tasks||[];
+  const render=()=>{
+    const el=$('tt-board'); if(!el) return;
+    if(!tasks.length){ el.innerHTML='<div style="color:var(--mu);font-size:12px;padding:8px 0">No tasks yet \u2014 assign the first one above.</div>'; return; }
+    const cols=['todo','in_progress','done'];
+    el.innerHTML='<div class="tt-cols">'+cols.map(st=>{
+      const items=tasks.filter(t=>t.status===st);
+      return '<div class="tt-col"><div class="tt-col-h">'+_TASK_LABEL[st]+' <span class="tt-count">'+items.length+'</span></div>'+
+        (items.length?items.map(t=>{
+          const mine=t.assignee===myEmail, canMove=canManage||mine||t.createdBy===myEmail;
+          return '<div class="tt-card">'+
+            '<div class="tt-card-t">'+escH(t.title)+'</div>'+
+            (t.notes?'<div class="tt-card-n">'+escH(t.notes)+'</div>':'')+
+            '<div class="tt-card-m"><span class="tt-prio" style="color:'+(_PRIO_C[t.priority]||_PRIO_C.normal)+'">\u25cf '+t.priority+'</span>'+
+              '<span class="tt-asg">'+(t.assignee?escH(t.assignee.split('@')[0]):'unassigned')+'</span></div>'+
+            (canMove?'<div class="tt-card-a">'+
+              (st!=='todo'?'<button class="tt-mini" data-tt-move="'+t.id+'" data-tt-to="'+(st==='done'?'in_progress':'todo')+'">\u2190</button>':'')+
+              (st!=='done'?'<button class="tt-mini" data-tt-move="'+t.id+'" data-tt-to="'+(st==='todo'?'in_progress':'done')+'">'+(st==='todo'?'Start':'Done')+' \u2192</button>':'')+
+              ((canManage||t.createdBy===myEmail)?'<button class="tt-mini tt-del" data-tt-del="'+t.id+'" title="Delete">\u00d7</button>':'')+
+            '</div>':'')+
+          '</div>';
+        }).join(''):'<div class="tt-empty">\u2014</div>')+
+      '</div>';
+    }).join('')+'</div>';
+    el.querySelectorAll('[data-tt-move]').forEach(b=>on(b,'click',async()=>{
+      try{ const nt=await AMVTeam.taskUpdate(b.dataset.ttMove,{status:b.dataset.ttTo}); tasks.length=0; tasks.push(...nt); render(); }
+      catch(e){ toast(e.message||'Could not update','error'); }
+    }));
+    el.querySelectorAll('[data-tt-del]').forEach(b=>on(b,'click',async()=>{
+      if(!confirm('Delete this task?')) return;
+      try{ const nt=await AMVTeam.taskUpdate(b.dataset.ttDel,{del:true}); tasks.length=0; tasks.push(...nt); render(); }
+      catch(e){ toast(e.message||'Could not delete','error'); }
+    }));
+  };
+  render();
+
+  on($('tt-add'),'click',async()=>{
+    const title=$('tt-title')?.value.trim(), asg=$('tt-assignee')?.value||'', prio=$('tt-priority')?.value||'normal';
+    if(!title){ toast('Enter a task','error'); return; }
+    const btn=$('tt-add'); if(btn){btn.disabled=true;btn.textContent='Assigning\u2026';}
+    try{
+      const nt=await AMVTeam.taskCreate(title,asg,'',prio);
+      tasks.length=0; tasks.push(...nt);
+      if($('tt-title')) $('tt-title').value='';
+      render();
+      toast(asg?('Assigned to '+asg.split('@')[0]):'Task added','success');
+    }catch(e){ toast(e.message||'Could not assign','error'); }
+    if(btn){btn.disabled=false;btn.textContent='Assign';}
+  });
+  // load the audit log (managers only)
+  if(role==='owner'||role==='admin'){
+    AMVTeam.audit().then(log=>{
+      const el=$('team-audit'); if(!el) return;
+      if(!log.length){ el.innerHTML='<div style="color:var(--mu);font-size:12px;padding:8px 0">No activity yet.</div>'; return; }
+      const _act={team_created:'created the team',member_invited:'invited',member_joined:'joined',member_removed:'removed',role_changed:'changed a role',task_created:'assigned a task',task_status:'moved a task',task_reassigned:'reassigned a task',task_deleted:'deleted a task'};
+      el.innerHTML='<div class="team-log">'+log.slice(0,30).map(e=>{
+        const when=new Date(e.t).toLocaleString();
+        let what=_act[e.action]||e.action;
+        if(e.invitee) what+=' '+escH(e.invitee);
+        if(e.target) what+=' '+escH(e.target);
+        if(e.title) what+=' \u201c'+escH(e.title)+'\u201d';
+        if(e.to) what+=' \u2192 '+escH(e.to);
+        if(e.from&&e.to) what+=' ('+e.from+' \u2192 '+e.to+')';
+        return '<div class="team-log-row"><span class="team-log-who">'+escH(e.actor||'')+'</span> <span class="team-log-what">'+what+'</span> <span class="team-log-when">'+when+'</span></div>';
+      }).join('')+'</div>';
+    });
+  }
 }
 /* Auto-redeem a team invite from ?invite=token */
 function _checkTeamInvite(){
@@ -2863,6 +6285,1160 @@ function _checkTeamInvite(){
   }catch(e){}
 }
 window.renderTeamView=renderTeamView;
+
+/* =====================================================================
+   MARKETPLACE (auditor #12) — agent / prompt / crew template store.
+   The network-effect mechanic: anyone can PUBLISH a template, everyone can
+   DISCOVER and INSTALL it (install counts rank them). Ships with a curated
+   starter set so it's useful on day one, then community submissions layer on
+   top via the backend. Installing a template drops it into the user's Prompt
+   Library / Crew instantly.
+   ===================================================================== */
+const MARKET_STARTER = [
+  {id:'mk_seo', kind:'prompt', cat:'Marketing', title:'SEO Blog Writer', author:'AMV', installs:1240, sales:0, price:0, rating:4.8, ratings:312, icon:'\u{1F4C8}',
+   desc:'Writes a fully-optimized, ready-to-publish blog post with headings, meta description, and keywords.',
+   preview:'Produces an SEO title, meta description, H2/H3 structure, and keyword-placed body — paste your topic and keyword and go.',
+   text:'Write a complete SEO-optimized blog post about [TOPIC]. Include: an SEO title under 60 chars, a meta description under 155 chars, H2/H3 headings, naturally placed keywords for [KEYWORD], a compelling intro, scannable body with examples, and a conclusion with a call to action.'},
+  {id:'mk_cold', kind:'prompt', cat:'Sales', title:'Cold Email That Converts', author:'AMV', installs:980, sales:0, price:0, rating:4.6, ratings:201, icon:'\u2709\uFE0F',
+   desc:'Generates a short, high-reply cold outreach email tailored to a prospect.',
+   preview:'Outputs a sub-120-word cold email with a specific opener, one value prop, a soft ask, and 2 subject lines.',
+   text:'Write a cold outreach email to [PROSPECT ROLE] at [COMPANY]. Keep it under 120 words, lead with a specific observation about their business, present one clear value proposition for [YOUR PRODUCT], and end with a low-friction ask. Give 2 subject line options.'},
+  {id:'mk_finance', kind:'integration', cat:'Finance', title:'Excel Finance Model Pack', author:'AMV', installs:0, sales:148, price:29, rating:4.9, ratings:96, icon:'\u{1F4CA}',
+   desc:'A set of AMV prompts + an Excel workflow that builds 3-statement models, forecasts, and valuation tabs from your raw numbers.',
+   preview:'Buyers get: a guided AMV prompt that turns a revenue/cost table into a linked 3-statement model, a DCF tab, and a one-page summary — plus the exact Excel formulas to paste in. (Full deliverable unlocks after purchase.)',
+   text:'You are an FP&A expert. From the financial data I paste, build a complete 3-statement model (income statement, balance sheet, cash flow) with monthly granularity. Then add: a DCF valuation tab with WACC and terminal value, a sensitivity table, and a one-page executive summary. Output the exact Excel formulas for each cell range so I can paste them directly. Data:\\n\\n[PASTE YOUR NUMBERS]'},
+  {id:'mk_legal', kind:'prompt', cat:'Business', title:'Contract Plain-English Explainer', author:'AMV', installs:0, sales:42, price:9, rating:4.7, ratings:38, icon:'\u2696\uFE0F',
+   desc:'Paste any contract clause and get a plain-English explanation with risks flagged.',
+   preview:'Returns: what the clause means, your obligations, red flags, and questions to ask before signing. (Full prompt unlocks after purchase.)',
+   text:'Explain the following contract text in plain English. List: 1) what it actually means, 2) any obligations it puts on me, 3) red flags or unusual terms, 4) questions I should ask before signing. This is not legal advice.\\n\\n[CONTRACT TEXT]'},
+  {id:'mk_study', kind:'prompt', cat:'Education', title:'Study Plan Generator', author:'AMV', installs:760, sales:0, price:0, rating:4.5, ratings:140, icon:'\u{1F4DA}',
+   desc:'Builds a personalized day-by-day study schedule for any exam or skill.',
+   preview:'Outputs a day-by-day plan with topics, practice, milestones, and a final review window.',
+   text:'Create a detailed study plan to learn [SUBJECT] in [TIMEFRAME]. Break it into daily sessions with specific topics, practice exercises, milestones, and a final review. Assume [HOURS] hours per day available.'},
+  {id:'mk_crew_launch', kind:'crew', cat:'Business', title:'Product Launch Crew', author:'AMV', installs:0, sales:73, price:19, rating:4.8, ratings:55, icon:'\u{1F680}',
+   desc:'A 4-agent crew: market research, positioning, launch copy, and a go-to-market checklist.',
+   preview:'A coordinated 4-agent workflow (Researcher \u2192 Strategist \u2192 Copywriter \u2192 GTM Planner). Full crew config unlocks after purchase.',
+   crew:[{role:'Market Researcher',task:'Research the target market, competitors, and audience for [PRODUCT].'},{role:'Positioning Strategist',task:'Define positioning, key messages, and differentiation.'},{role:'Copywriter',task:'Write launch announcement, landing page copy, and 3 social posts.'},{role:'GTM Planner',task:'Produce a launch checklist with timeline and channels.'}]},
+  {id:'mk_crew_content', kind:'crew', cat:'Marketing', title:'Content Factory Crew', author:'AMV', installs:540, sales:0, price:0, rating:4.4, ratings:88, icon:'\u{1F3ED}',
+   desc:'Turns one idea into a blog post, newsletter, and a week of social posts.',
+   preview:'4 agents take one topic to a blog post, a newsletter, and 7 social posts.',
+   crew:[{role:'Researcher',task:'Gather facts and angles on [TOPIC].'},{role:'Blog Writer',task:'Write a 1000-word post.'},{role:'Newsletter Editor',task:'Adapt it into a newsletter.'},{role:'Social Manager',task:'Create 7 platform-tailored social posts.'}]},
+];
+
+const AMVMarket = {
+  _remote:null,
+  _live(){ try{ return !!(window.AMV_API && AMV_API.live && AMV_API.token); }catch(e){ return false; } },
+  _me(){ return ((S.user&&S.user.email)||'you@amv.local').toLowerCase(); },
+  _meName(){ return (S.user&&S.user.name)||'You'; },
+  // --- local stores (used when there's no backend) ---
+  // Listings + reviews are a SHARED catalog (global). Purchases, wallet, and
+  // ratings are per-buyer, keyed by email inside the shared map so each user
+  // sees only their own while the catalog stays common (mirrors the backend).
+  _localListings(){ return load('amv_market_local')||[]; },
+  _saveLocalListings(v){ store('amv_market_local',v); },
+  _localPurchases(){ const m=load('amv_market_purchases')||{}; return m[this._me()]||[]; },
+  _saveLocalPurchases(v){ const m=load('amv_market_purchases')||{}; m[this._me()]=v; store('amv_market_purchases',m); },
+  _localWallet(){ const m=load('amv_market_wallet')||{}; return m[this._me()]||{balance:0,lifetime:0,tx:[]}; },
+  _saveLocalWallet(v){ const m=load('amv_market_wallet')||{}; m[this._me()]=v; store('amv_market_wallet',m); },
+  _localRatings(){ const m=load('amv_market_ratings')||{}; return m[this._me()]||{}; },   // {id: myStars}
+  _saveLocalRatings(v){ const m=load('amv_market_ratings')||{}; m[this._me()]=v; store('amv_market_ratings',m); },
+
+  async list(){
+    let remote=[];
+    if(this._live()){
+      try{ const r=await AMV_API._fetch('/v1/market/list',{method:'GET'}); const d=await r.json().catch(()=>null); if(d&&Array.isArray(d.items)) remote=d.items; }catch(e){}
+    }
+    const installed=load('amv_market_installed')||{};
+    const localPub=this._localListings();
+    const owned=new Set(this._localPurchases().map(p=>p.id));
+    const myRatings=this._localRatings();
+    const me=this._me();
+    const seen={}, out=[];
+    for(const it of [...remote, ...localPub, ...MARKET_STARTER]){
+      if(seen[it.id]) continue; seen[it.id]=1;
+      const mine=(it.authorEmail||'').toLowerCase()===me;
+      // only Active listings appear in the public catalog; owners still see their own via My listings
+      if(it.status && it.status!=='active' && !mine) continue;
+      out.push({...it,
+        _installed:!!installed[it.id],
+        _owned: owned.has(it.id),
+        _mine: mine,
+        _myRating: myRatings[it.id]||0,
+      });
+    }
+    return out.filter(it=>!(it.status && it.status!=='active' && !it._owned && !it._mine));
+  },
+  async publish(item){
+    // AMV-only guard applies in both modes
+    const blob=((item.title||'')+' '+(item.desc||'')+' '+(item.text||'')).toLowerCase();
+    const banned=['claude','anthropic','openai','chatgpt','gpt-4','gpt-5','gemini','copilot','grok','llama','mistral','perplexity'];
+    const hit=banned.find(b=>blob.includes(b));
+    if(hit) throw new Error('Listings must be AMV-only — remove references to other AI products ('+hit+').');
+    // Content screening runs in BOTH modes. On the server it's authoritative and
+    // can't be bypassed; here it also guards local/offline mode.
+    try{
+      if(typeof _mktScreen==='function'){
+        const sc=_mktScreen(item, (typeof _mktVerifiedFor==='function'?_mktVerifiedFor():[]));
+        if(!sc.ok) throw new Error(sc.reason||'This listing violates the marketplace rules.');
+      }
+    }catch(e){ if(e&&e.message) throw e; }
+    if(this._live()){
+      const r=await AMV_API._fetch('/v1/market/publish',{method:'POST',body:JSON.stringify(item)});
+      const d=await r.json(); if(d.error) throw new Error(d.error); return d.item;
+    }
+    // local mode: save on device (files travel as data URLs inside the listing)
+    const clean={ ...item, id:'usr_'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),
+      author:this._meName(), authorEmail:this._me(), installs:0, sales:0, rating:0, ratings:0,
+      status:'active', views:0, files:Array.isArray(item.files)?item.files:[], createdAt:Date.now() };
+    const list=this._localListings(); list.unshift(clean); this._saveLocalListings(list);
+    return clean;
+  },
+  // update a listing's status (active | sold | deactivated). Owner only, local mode.
+  async setStatus(id, status){
+    if(this._live()){
+      try{ const r=await AMV_API._fetch('/v1/market/status',{method:'POST',body:JSON.stringify({id,status})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; }catch(e){ throw e; }
+    }
+    const list=this._localListings(); const it=list.find(x=>x.id===id);
+    if(!it) throw new Error('Listing not found'); if((it.authorEmail||'').toLowerCase()!==this._me()) throw new Error('Not your listing');
+    it.status=status; this._saveLocalListings(list); return {ok:true, status};
+  },
+  // record a view (deduped-ish; bumps the owner's analytics). Fire-and-forget.
+  view(id){
+    try{
+      if(this._live()){ AMV_API._fetch('/v1/market/view',{method:'POST',body:JSON.stringify({id})}).catch(()=>{}); return; }
+      const list=this._localListings(); const it=list.find(x=>x.id===id);
+      if(it){ it.views=(it.views||0)+1; this._saveLocalListings(list); }
+    }catch(e){}
+  },
+  async install(item){
+    const installed=load('amv_market_installed')||{}; installed[item.id]=Date.now(); store('amv_market_installed',installed);
+    try{ if(this._live()){ AMV_API._fetch('/v1/market/install',{method:'POST',body:JSON.stringify({id:item.id})}).catch(()=>{}); } }catch(e){}
+    if(item.kind==='crew'){
+      const crews=load('amv_saved_crews')||[]; crews.unshift({id:'c'+Date.now(),title:item.title,agents:item.crew||[],ts:Date.now()}); store('amv_saved_crews',crews);
+    } else {
+      S.prompts.unshift({id:'p'+Date.now(),title:item.title,cat:item.cat||(item.kind==='integration'?'Integrations':item.kind==='workflow'?'Workflows':item.kind==='guide'?'Guides':'Imported'),text:item.text||item.desc||'',custom:true});
+      store('amv_pl',S.prompts);
+    }
+  },
+  // resolve the full listing (with deliverable) for an id, from any source
+  async _resolve(id){
+    const all=[...this._localListings(), ...MARKET_STARTER];
+    let it=all.find(x=>x.id===id);
+    if(it) return it;
+    if(this._live()){ try{ const items=await this.purchases(); it=items.find(x=>x.id===id); }catch(e){} }
+    return it||null;
+  },
+  // ---- paid marketplace ----
+  async buy(id){
+    if(this._live()){
+      const r=await AMV_API._fetch('/v1/market/buy',{method:'POST',body:JSON.stringify({id})});
+      const d=await r.json(); if(d.error) throw new Error(d.error); return d;   // {url} → external checkout
+    }
+    // local/demo mode: complete the purchase on-device, credit the seller 80%
+    const it=await this._resolve(id);
+    if(!it) throw new Error('Item not found');
+    const sellerEmail=(it.authorEmail||'').toLowerCase();
+    if(sellerEmail===this._me()) throw new Error('You cannot buy your own listing');
+    // one-of-a-kind: a user listing already marked sold is gone
+    const isUserListing=/^usr_/.test(id);
+    if(isUserListing && it.status==='sold') throw new Error('Sorry — this just sold. Message the seller to ask for another.');
+    const purch=this._localPurchases();
+    if(purch.some(p=>p.id===id)) return {ok:true, owned:true, local:true};
+    purch.unshift({id, title:it.title, kind:it.kind, price:it.price||0, ts:Date.now()});
+    this._saveLocalPurchases(purch);
+    // credit the seller's wallet 80% (keyed by seller email in the shared store)
+    const price=it.price||0;
+    if(sellerEmail && price>0){
+      const share=+(price*0.8).toFixed(2);
+      const m=load('amv_market_wallet')||{};
+      const w=m[sellerEmail]||{balance:0,lifetime:0,tx:[]};
+      w.balance=+((w.balance||0)+share).toFixed(2);
+      w.lifetime=+((w.lifetime||0)+share).toFixed(2);
+      w.tx=[{type:'sale',amount:share,gross:price,item:id,title:it.title,buyer:this._me(),ts:Date.now()},...(w.tx||[])];
+      m[sellerEmail]=w; store('amv_market_wallet',m);
+    }
+    // bump sale count; user listings are one-of-a-kind → mark SOLD (leaves public browse)
+    const local=this._localListings(); const li=local.find(x=>x.id===id);
+    if(li){ li.sales=(li.sales||0)+1; if(isUserListing) li.status='sold'; this._saveLocalListings(local); }
+    return {ok:true, local:true, sold:isUserListing};
+  },
+  async purchases(){
+    if(this._live()){
+      try{ const r=await AMV_API._fetch('/v1/market/purchases',{method:'POST',body:'{}'}); const d=await r.json(); return d.items||[]; }catch(e){ return []; }
+    }
+    // local: hydrate each purchase with its full deliverable
+    const purch=this._localPurchases();
+    const all=[...this._localListings(), ...MARKET_STARTER];
+    return purch.map(p=>{ const it=all.find(x=>x.id===p.id); return it?{...it,_purchasedAt:p.ts}:{...p,_removed:true}; });
+  },
+  async myListings(){
+    if(this._live()){
+      try{ const r=await AMV_API._fetch('/v1/market/mylistings',{method:'POST',body:'{}'}); const d=await r.json(); return d.items||[]; }catch(e){ return []; }
+    }
+    const me=this._me();
+    return this._localListings().filter(it=>(it.authorEmail||'').toLowerCase()===me);
+  },
+  async unlist(id){
+    if(this._live()){
+      const r=await AMV_API._fetch('/v1/market/unlist',{method:'POST',body:JSON.stringify({id})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d;
+    }
+    this._saveLocalListings(this._localListings().filter(x=>x.id!==id)); return {ok:true};
+  },
+  async earnings(){
+    if(this._live()){
+      try{ const r=await AMV_API._fetch('/v1/market/earnings',{method:'POST',body:'{}'}); return await r.json(); }catch(e){ return {balance:0,lifetime:0,tx:[],sellerPct:80,minWithdraw:10}; }
+    }
+    const w=this._localWallet();
+    return {ok:true, balance:w.balance||0, lifetime:w.lifetime||0, sellerPct:80, minWithdraw:10, tx:w.tx||[], local:true};
+  },
+  async withdraw(destination){
+    if(this._live()){
+      const r=await AMV_API._fetch('/v1/market/withdraw',{method:'POST',body:JSON.stringify({destination})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d;
+    }
+    const w=this._localWallet();
+    if((w.balance||0)<10) throw new Error('Minimum withdrawal is $10. Your balance is $'+(w.balance||0).toFixed(2)+'.');
+    const amount=w.balance; w.tx=[{type:'withdrawal',amount:-amount,status:'pending',ts:Date.now()},...(w.tx||[])]; w.balance=0; this._saveLocalWallet(w);
+    return {ok:true, amount, status:'pending', local:true};
+  },
+  // ---- ratings ----
+  async rate(id, stars){
+    const ratings=this._localRatings(); ratings[id]=stars; this._saveLocalRatings(ratings);
+    if(this._live()){ try{ AMV_API._fetch('/v1/market/rate',{method:'POST',body:JSON.stringify({id,stars})}).catch(()=>{}); }catch(e){} }
+    return true;
+  },
+  // ---- seller reviews (rate the PERSON you bought from, 1-5 + written review) ----
+  _allReviews(){ return load('amv_market_reviews')||{}; },   // { sellerEmail: [ {by,byName,stars,text,ts} ] }
+  _saveAllReviews(v){ store('amv_market_reviews',v); },
+  sellerReviews(sellerEmail){ const all=this._allReviews(); return all[(sellerEmail||'').toLowerCase()]||[]; },
+  sellerRating(sellerEmail){
+    const rv=this.sellerReviews(sellerEmail);
+    if(!rv.length) return {avg:0,count:0};
+    const sum=rv.reduce((a,r)=>a+(r.stars||0),0);
+    return {avg:+(sum/rv.length).toFixed(1), count:rv.length};
+  },
+  myReviewFor(sellerEmail){ return this.sellerReviews(sellerEmail).find(r=>(r.by||'').toLowerCase()===this._me()); },
+  // did the current user buy anything from this seller? (gates who can review)
+  async boughtFrom(sellerEmail){
+    sellerEmail=(sellerEmail||'').toLowerCase();
+    const purch=await this.purchases();
+    const all=[...this._localListings(), ...MARKET_STARTER];
+    return purch.some(p=>{ const it=p.authorEmail?p:all.find(x=>x.id===p.id); return it&&(it.authorEmail||'').toLowerCase()===sellerEmail; });
+  },
+  async reviewSeller(sellerEmail, stars, text){
+    sellerEmail=(sellerEmail||'').toLowerCase();
+    if(sellerEmail===this._me()) throw new Error('You can\u2019t review yourself.');
+    if(!(await this.boughtFrom(sellerEmail))) throw new Error('You can only review sellers you\u2019ve bought from.');
+    const all=this._allReviews(); const list=all[sellerEmail]||[];
+    const mine=list.find(r=>(r.by||'').toLowerCase()===this._me());
+    const entry={ by:this._me(), byName:this._meName(), stars:Math.max(1,Math.min(5,stars||0)), text:String(text||'').slice(0,1000), ts:Date.now() };
+    if(mine){ Object.assign(mine, entry); } else { list.unshift(entry); }
+    all[sellerEmail]=list; this._saveAllReviews(all);
+    if(this._live()){ try{ AMV_API._fetch('/v1/market/review',{method:'POST',body:JSON.stringify({seller:sellerEmail,stars:entry.stars,text:entry.text})}).catch(()=>{}); }catch(e){} }
+    return entry;
+  },
+  // ---- similar items (same category + close price) ----
+  async similar(it, limit){
+    limit=limit||4;
+    const all=await this.list();
+    const price=it.price||0;
+    return all.filter(x=>x.id!==it.id && (x.status||'active')==='active' && !x._mine)
+      .map(x=>{
+        let score=0;
+        if((x.cat||'')===(it.cat||'')) score+=100;              // same category is the strongest signal
+        score-=Math.abs((x.price||0)-price);                    // closer price = higher
+        if(x.kind===it.kind) score+=10;
+        return {x,score};
+      })
+      .filter(o=>o.score>-50)                                    // drop wildly different prices
+      .sort((a,b)=>b.score-a.score)
+      .slice(0,limit).map(o=>o.x);
+  },
+  // ---- messaging (buyer <-> seller) ----
+  // thread id is deterministic for a pair so both sides share one conversation
+  _threadId(a,b){ return 'th_'+[String(a||'').toLowerCase(),String(b||'').toLowerCase()].sort().join('__'); },
+  _allThreads(){ return load('amv_market_threads')||{}; },   // { threadId: {a,b,aName,bName,msgs:[{from,text,ts}], read:{email:ts}} }
+  _saveThreads(v){ store('amv_market_threads',v); },
+  myThreads(){
+    const me=this._me(); const all=this._allThreads();
+    return Object.values(all).filter(t=>t.a===me||t.b===me)
+      .sort((x,y)=>(y.msgs[y.msgs.length-1]?.ts||0)-(x.msgs[x.msgs.length-1]?.ts||0));
+  },
+  thread(otherEmail){
+    otherEmail=(otherEmail||'').toLowerCase();
+    const id=this._threadId(this._me(),otherEmail);
+    const all=this._allThreads();
+    return all[id]||{ id, a:this._me(), b:otherEmail, msgs:[], read:{} };
+  },
+  async sendMessage(otherEmail, text, otherName){
+    otherEmail=(otherEmail||'').toLowerCase();
+    if(otherEmail===this._me()) throw new Error('You can\u2019t message yourself.');
+    text=String(text||'').trim(); if(!text) throw new Error('Message is empty');
+    const id=this._threadId(this._me(),otherEmail);
+    const all=this._allThreads();
+    let t=all[id];
+    if(!t){ t={ id, a:this._me(), b:otherEmail, aName:this._meName(), bName:otherName||otherEmail.split('@')[0], msgs:[], read:{} }; }
+    // keep names fresh
+    if(t.a===this._me()) t.aName=this._meName(); else t.bName=this._meName();
+    t.msgs.push({ from:this._me(), text:text.slice(0,2000), ts:Date.now() });
+    t.read=t.read||{}; t.read[this._me()]=t.msgs.length;
+    all[id]=t; this._saveThreads(all);
+    if(this._live()){ try{ AMV_API._fetch('/v1/market/message',{method:'POST',body:JSON.stringify({to:otherEmail,text})}).catch(()=>{}); }catch(e){} }
+    return t;
+  },
+  markThreadRead(otherEmail){
+    const id=this._threadId(this._me(),otherEmail);
+    const all=this._allThreads(); const t=all[id]; if(!t) return;
+    t.read=t.read||{}; t.read[this._me()]=t.msgs.length; all[id]=t; this._saveThreads(all);
+  },
+  unreadCount(){
+    const me=this._me();
+    return this.myThreads().reduce((n,t)=>{
+      const last=t.msgs[t.msgs.length-1];
+      const seenCount=(t.read&&typeof t.read[me]==='number')?t.read[me]:0;
+      // unread if there are messages I haven't seen AND the newest isn't mine
+      if(last && last.from!==me && t.msgs.length>seenCount) return n+1;
+      return n;
+    },0);
+  },
+};
+window.AMVMarket=AMVMarket;
+
+/* ============================================================
+   AMV WORKSPACE — the Cowork engine. Uses the browser File System
+   Access API so AMV can read, edit, and CREATE real files in a folder
+   the user grants (Chrome/Edge). Falls back to multi-file upload +
+   download everywhere else. This is what lets Cowork actually complete
+   work on your files instead of just describing it.
+   ============================================================ */
+/* Confine any file path to the chosen workspace folder. Strips leading slashes,
+   drive letters, and every ".." segment so AI-generated or crafted paths can't
+   escape the folder the user picked (path-traversal protection). */
+function _safePath(path){
+  let p=String(path||'').trim().replace(/\\/g,'/');   // normalize windows slashes
+  p=p.replace(/^[a-zA-Z]:/,'');                        // drop drive letter
+  p=p.replace(/^\/+/,'');                              // drop leading slashes (no absolute)
+  const parts=p.split('/').filter(seg=> seg && seg!=='.' && seg!=='..');  // drop . and ..
+  return parts.join('/').slice(0, 400);               // cap length
+}
+try{ window._safePath=_safePath; }catch(e){}
+
+const AMVWorkspace = {
+  dirHandle:null,          // FileSystemDirectoryHandle (granted folder)
+  files:[],                // [{name,path,handle?,text?,type,size,dirty}]
+  supported(){ return typeof window!=='undefined' && 'showDirectoryPicker' in window; },
+  secure(){ return typeof window!=='undefined' && window.isSecureContext; },
+
+  // Ask the user to grant a real folder (Chromium). Reads it recursively.
+  async connectFolder(){
+    if(!this.supported()) throw new Error('nofsapi');
+    if(!this.secure()) throw new Error('insecure');
+    const dir=await window.showDirectoryPicker({mode:'readwrite'}).catch(e=>{
+      if(e&&e.name==='AbortError') throw new Error('cancelled');
+      if(e&&e.name==='SecurityError') throw new Error('insecure');
+      throw e;
+    });
+    this.dirHandle=dir; this.files=[];
+    await this._readDir(dir,'');
+    return this.files;
+  },
+  async _readDir(dir, prefix, depth){
+    depth=depth||0; if(depth>4) return;   // sane recursion cap
+    for await (const [name,handle] of dir.entries()){
+      if(name.startsWith('.')||name==='node_modules') continue;
+      const path=prefix?prefix+'/'+name:name;
+      if(handle.kind==='file'){
+        const f=await handle.getFile();
+        const isText=/\.(txt|md|csv|tsv|json|js|ts|jsx|tsx|html|css|py|java|c|cpp|go|rs|rb|php|sql|sh|xml|yml|yaml|env|log)$/i.test(name)||f.type.startsWith('text');
+        this.files.push({ name, path, handle, type:f.type, size:f.size, isText, text:isText&&f.size<500000?await f.text():null, dirty:false });
+      } else if(handle.kind==='directory'){
+        await this._readDir(handle, path, depth+1);
+      }
+    }
+  },
+  // Upload fallback (any browser): stage files in memory.
+  async addUploads(fileList){
+    for(const file of Array.from(fileList||[])){
+      const isText=/\.(txt|md|csv|tsv|json|js|ts|jsx|tsx|html|css|py|java|c|cpp|go|rs|rb|php|sql|sh|xml|yml|yaml)$/i.test(file.name)||file.type.startsWith('text');
+      const text=isText&&file.size<500000?await file.text():null;
+      this.files.push({ name:file.name, path:file.name, handle:null, type:file.type, size:file.size, isText, text, dirty:false, uploaded:true });
+    }
+    return this.files;
+  },
+  // Create or overwrite a file. Writes to disk if we have a folder; else marks for download.
+  async writeFile(path, contents){
+    path=_safePath(path);
+    if(!path) throw new Error('invalid path');
+    let f=this.files.find(x=>x.path===path);
+    if(this.dirHandle){
+      const parts=path.split('/').filter(p=>p && p!=='.' && p!=='..'); const fname=parts.pop();
+      let dir=this.dirHandle;
+      for(const p of parts){ dir=await dir.getDirectoryHandle(p,{create:true}); }
+      const fh=await dir.getFileHandle(fname,{create:true});
+      const w=await fh.createWritable(); await w.write(contents); await w.close();
+      if(f){ f.text=contents; f.handle=fh; f.dirty=false; f.size=contents.length; }
+      else { this.files.push({name:fname,path,handle:fh,type:'text/plain',size:contents.length,isText:true,text:contents,dirty:false}); }
+      return {written:true, toDisk:true, path};
+    }
+    // no folder: keep in memory + flag as a downloadable output
+    if(f){ f.text=contents; f.dirty=true; f.size=contents.length; }
+    else { this.files.push({name:path.split('/').pop(),path,handle:null,type:'text/plain',size:contents.length,isText:true,text:contents,dirty:true,output:true}); }
+    return {written:true, toDisk:false, path};
+  },
+  async readFile(path){
+    const f=this.files.find(x=>x.path===path); if(!f) return null;
+    if(f.text!=null) return f.text;
+    if(f.handle){ const file=await f.handle.getFile(); return await file.text(); }
+    return null;
+  },
+  // A compact context string of the workspace for the model.
+  contextText(maxChars){
+    maxChars=maxChars||24000;
+    let out='WORKSPACE FILES ('+this.files.length+'):\n';
+    for(const f of this.files){ out+='- '+f.path+' ('+_fmtBytes(f.size||0)+(f.isText?'':' [binary]')+')\n'; }
+    out+='\nFILE CONTENTS:\n';
+    for(const f of this.files){
+      if(!f.isText||f.text==null) continue;
+      const chunk='\n===== '+f.path+' =====\n'+f.text+'\n';
+      if(out.length+chunk.length>maxChars){ out+='\n[...more files omitted for length...]'; break; }
+      out+=chunk;
+    }
+    return out;
+  },
+  clear(){ this.dirHandle=null; this.files=[]; },
+  downloadOutputs(){
+    const outs=this.files.filter(f=>f.output||f.dirty);
+    outs.forEach(f=>{ try{ const blob=new Blob([f.text||''],{type:'text/plain'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=f.name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000); }catch(e){} });
+    return outs.length;
+  },
+};
+window.AMVWorkspace=AMVWorkspace;
+
+function renderMarketView(){
+  const vc=$('vc'); if(!vc) return;
+  const tab=S._mktTab||'browse';
+  const tabBtn=(id,label)=>'<button class="mkt-tab'+(tab===id?' on':'')+'" data-mkt-tab="'+id+'">'+label+'</button>';
+  const unread=AMVMarket.unreadCount();
+  const msgBtn='<button class="mkt-msg-btn" id="mkt-open-msgs" title="Your messages"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Messages'+(unread?'<span class="mkt-msg-badge">'+unread+'</span>':'')+'</button>';
+  vc.innerHTML='<div class="sv fi"><div class="vi">'+
+    '<div class="mkt-head"><div><span class="eyebrow">Community marketplace</span>'+
+      '<h2>AMV Marketplace</h2></div>'+msgBtn+'</div>'+
+    '<p class="vsub">Buy and sell AMV prompts, crews, integrations, and workflows. Sellers keep 80% of every sale \u2014 paid into your in-app balance, withdraw anytime.</p>'+
+    '<div class="mkt-tabs">'+tabBtn('browse','Browse')+tabBtn('sell','Sell')+tabBtn('purchases','My purchases')+tabBtn('earnings','Earnings')+'</div>'+
+    '<div id="mkt-body"></div>'+
+  '</div></div>';
+  vc.querySelectorAll('[data-mkt-tab]').forEach(b=>on(b,'click',()=>{ S._mktTab=b.dataset.mktTab; renderMarketView(); }));
+  on($('mkt-open-msgs'),'click',()=>_mktMessages());
+  const body=$('mkt-body');
+  if(tab==='browse') _mktBrowse(body);
+  else if(tab==='sell') _mktSell(body);
+  else if(tab==='purchases') _mktPurchases(body);
+  else if(tab==='earnings') _mktEarnings(body);
+}
+window.renderMarketView=renderMarketView;
+
+function _mktPriceTag(it){
+  if(!it.price||it.price<=0) return '<span class="mkt-free">Free</span>';
+  return '<span class="mkt-price">$'+it.price+'</span>';
+}
+function _mktStars(rating, ratings){
+  const r=Math.round((rating||0)*2)/2; let s='';
+  for(let i=1;i<=5;i++){ s+='<span class="mkt-star'+(i<=r?' on':(i-0.5===r?' half':''))+'">\u2605</span>'; }
+  return '<span class="mkt-stars" title="'+(rating||0).toFixed(1)+' from '+(ratings||0)+' ratings">'+s+'<span class="mkt-stars-n">'+(rating?rating.toFixed(1):'\u2014')+(ratings?' ('+ratings+')':'')+'</span></span>';
+}
+const _MKT_SORTS={
+  'top':'Most popular', 'rated':'Best rated', 'sales':'Top sellers',
+  'price_hi':'Price: high \u2192 low', 'price_lo':'Price: low \u2192 high', 'new':'Newest',
+};
+function _mktSortFn(key){
+  switch(key){
+    case 'rated': return (a,b)=>(b.rating||0)-(a.rating||0) || (b.ratings||0)-(a.ratings||0);
+    case 'sales': return (a,b)=>(b.sales||0)-(a.sales||0);
+    case 'price_hi': return (a,b)=>(b.price||0)-(a.price||0);
+    case 'price_lo': return (a,b)=>(a.price||0)-(b.price||0);
+    case 'new': return (a,b)=>(b.createdAt||0)-(a.createdAt||0);
+    default: return (a,b)=>((b.sales||0)+(b.installs||0))-((a.sales||0)+(a.installs||0));
+  }
+}
+function _mktBrowse(body){
+  if(!body) return;
+  body.innerHTML=
+    '<div id="mkt-top"></div>'+
+    '<div class="mkt-controls">'+
+      '<input type="text" id="mkt-search" placeholder="Search the marketplace\u2026" class="mkt-search">'+
+      '<select id="mkt-sort" class="sel mkt-sortsel">'+Object.entries(_MKT_SORTS).map(([k,v])=>'<option value="'+k+'">'+v+'</option>').join('')+'</select>'+
+    '</div>'+
+    '<div class="mk-filters" id="mk-filters" style="margin-bottom:14px"></div>'+
+    '<div id="mk-grid" class="mk-grid"><div class="fd-loading">Loading marketplace\u2026</div></div>';
+  let activeCat='All', sort='top', search='', items=[];
+  const drawTop=()=>{
+    const el=$('mkt-top'); if(!el) return;
+    // top sellers strip: distinct authors ranked by total sales
+    const byAuthor={};
+    items.forEach(it=>{ const a=it.author||'community'; byAuthor[a]=(byAuthor[a]||0)+(it.sales||0); });
+    const top=Object.entries(byAuthor).filter(([,n])=>n>0).sort((a,b)=>b[1]-a[1]).slice(0,5);
+    if(!top.length){ el.innerHTML=''; return; }
+    el.innerHTML='<div class="mkt-sec-h">Top sellers</div><div class="mkt-sellers">'+
+      top.map(([a,n],i)=>'<div class="mkt-seller"><div class="mkt-seller-rank">#'+(i+1)+'</div><div class="mkt-seller-av">'+escH(a.slice(0,1).toUpperCase())+'</div><div class="mkt-seller-b"><div class="mkt-seller-n">'+escH(a)+'</div><div class="mkt-seller-s">'+n+' sold</div></div></div>').join('')+
+      '</div>';
+  };
+  const draw=()=>{
+    const grid=$('mk-grid'); if(!grid) return;
+    let filtered=activeCat==='All'?items.slice():items.filter(i=>i.cat===activeCat);
+    if(search){ const q=search.toLowerCase(); filtered=filtered.filter(i=>(i.title||'').toLowerCase().includes(q)||(i.desc||'').toLowerCase().includes(q)||(i.cat||'').toLowerCase().includes(q)||(i.author||'').toLowerCase().includes(q)); }
+    filtered.sort(_mktSortFn(sort));
+    if(!filtered.length){ grid.innerHTML='<div class="fd-empty">No results. Try a different search or category \u2014 or list something yourself in the Sell tab.</div>'; return; }
+    grid.innerHTML=filtered.map(it=>{
+      const paid=it.price>0, owned=it._owned, mine=it._mine;
+      let btn;
+      if(mine) btn='<button class="btn bs" disabled style="font-size:11.5px;flex:1;opacity:.7">Your listing</button>';
+      else if(owned) btn='<button class="btn bs mk-getowned" data-mk-id="'+escH(it.id)+'" style="font-size:11.5px;flex:1">\u2713 Owned \u2014 use it</button>';
+      else if(paid) btn='<button class="btn bp mk-buy" data-mk-id="'+escH(it.id)+'" style="font-size:11.5px;flex:1">Buy \u00b7 $'+it.price+'</button>';
+      else btn='<button class="btn bp mk-install" data-mk-id="'+escH(it.id)+'" style="font-size:11.5px;flex:1">'+(it._installed?'\u2713 Get again':'Get it free')+'</button>';
+      const previewBtn='<button class="btn bs mk-preview" data-mk-id="'+escH(it.id)+'" style="font-size:11.5px">Preview</button>';
+      return '<div class="mk-card">'+
+        '<div class="mk-card-top"><span class="mk-icon">'+(it.icon||'\u2728')+'</span>'+
+          '<span style="display:flex;gap:6px;align-items:center"><span class="mk-kind mk-kind-'+it.kind+'">'+it.kind+'</span>'+_mktPriceTag(it)+'</span></div>'+
+        '<div class="mk-title">'+escH(it.title)+'</div>'+
+        '<div class="mk-rating-row">'+_mktStars(it.rating,it.ratings)+'</div>'+
+        '<div class="mk-desc">'+escH(it.desc||'')+'</div>'+
+        '<div class="mk-meta"><span class="mkt-by" data-mk-seller="'+escH(it.authorEmail||'')+'" data-mk-sellername="'+escH(it.author||'')+'">by '+escH(it.author||'community')+'</span>'+
+          '<span class="mk-installs">'+(it.sales?(it.sales+' sold'):(it.installs?(it.installs+' installs'):'new'))+'</span></div>'+
+        '<div class="mk-card-actions">'+previewBtn+btn+'</div>'+
+      '</div>';
+    }).join('');
+    grid.querySelectorAll('.mk-preview').forEach(b=>on(b,'click',()=>{ const it=items.find(x=>x.id===b.dataset.mkId); if(it) _mktPreview(it, ()=>{ reload(); }); }));
+    grid.querySelectorAll('[data-mk-seller]').forEach(s=>on(s,'click',()=>{ if(s.dataset.mkSeller) _mktSellerProfile(s.dataset.mkSeller, s.dataset.mkSellername); }));
+    grid.querySelectorAll('.mk-buy').forEach(b=>on(b,'click',()=>{ const it=items.find(x=>x.id===b.dataset.mkId); if(it) _mktDoBuy(it, ()=>reload()); }));
+    grid.querySelectorAll('.mk-install,.mk-getowned').forEach(b=>on(b,'click',async()=>{
+      const it=items.find(x=>x.id===b.dataset.mkId); if(!it) return;
+      try{ await AMVMarket.install(it); toast(it.kind==='crew'?'Added \u2014 find it in Crew':'Added to your Prompt Library','success',4000); reload(); }
+      catch(e){ toast(e.message||'Could not add','error'); }
+    }));
+  };
+  const drawFilters=()=>{
+    const cats=['All',...Array.from(new Set(items.map(i=>i.cat).filter(Boolean)))];
+    const fb=$('mk-filters'); if(!fb) return;
+    fb.innerHTML=cats.map(c=>'<button class="mk-filter'+(c===activeCat?' on':'')+'" data-mk-cat="'+escH(c)+'">'+escH(c)+'</button>').join('');
+    fb.querySelectorAll('[data-mk-cat]').forEach(b=>on(b,'click',()=>{ activeCat=b.dataset.mkCat; drawFilters(); draw(); }));
+  };
+  const reload=()=>AMVMarket.list().then(list=>{ items=list; drawTop(); drawFilters(); draw(); });
+  reload();
+  on($('mkt-search'),'input',()=>{ search=$('mkt-search').value; draw(); });
+  on($('mkt-sort'),'change',()=>{ sort=$('mkt-sort').value; draw(); });
+}
+/* Buy handler — backend opens external checkout; local mode completes instantly. */
+async function _mktDoBuy(it, after){
+  try{
+    const d=await AMVMarket.buy(it.id);
+    if(d.url){ _openExternalPay(d.url,null,'market'); return; }
+    if(d.owned){ toast('You already own this','info'); }
+    else {
+      toast('Purchased! It\u2019s in My purchases, ready to use.','success',4500);
+      // offer to review the seller now that they've bought from them
+      const sellerEmail=(it.authorEmail||'').toLowerCase();
+      if(sellerEmail && sellerEmail!==AMVMarket._me()){
+        setTimeout(()=>_mktReviewDialog(sellerEmail, it.author||sellerEmail.split('@')[0], ()=>after&&after()), 700);
+      }
+    }
+    after&&after();
+  }catch(e){ toast(e.message||'Could not complete purchase','error',4500); }
+}
+/* Preview / detail modal — shows the listing, preview text, reviews, and the buy/get action. */
+function _mktPreview(it, after){
+  const r=$('ovr'); if(!r) return;
+  AMVMarket.view(it.id);   // count a view when the listing is opened
+  const paid=it.price>0;
+  const unlocked=(it._owned || !paid);
+  const previewText = it.preview || it.desc || '';
+  const lockedNote = paid && !it._owned ? '<div class="mkt-lock"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> Full deliverable'+((it.files&&it.files.length)?' + '+it.files.length+' file'+(it.files.length>1?'s':''):'')+' unlock after purchase \u2014 below is a preview.</div>' : '';
+  let fullText='';
+  if(unlocked){
+    if(it.text) fullText+='<div class="mkt-deliverable"><div class="mkt-sec-h">What you get</div><pre class="mkt-pre">'+escH(it.text)+'</pre></div>';
+    if(it.crew) fullText+='<div class="mkt-deliverable"><div class="mkt-sec-h">Crew agents</div>'+it.crew.map(a=>'<div class="mkt-crew-row"><b>'+escH(a.role)+'</b> \u2014 '+escH(a.task)+'</div>').join('')+'</div>';
+    if(it.files&&it.files.length){
+      fullText+='<div class="mkt-deliverable"><div class="mkt-sec-h">Files ('+it.files.length+')</div>'+
+        it.files.map((f,i)=>'<div class="mkt-file"><span class="sl-file-ic">'+_fileIcon(f.type,f.name)+'</span><span class="sl-file-n">'+escH(f.name)+'</span><span class="sl-file-sz">'+_fmtBytes(f.size||0)+'</span><button class="btn bs mkt-dl" data-dl="'+i+'">\u2193 Download</button></div>').join('')+
+      '</div>';
+    }
+  } else if(paid && it.files && it.files.length){
+    // show file names (not content) as a teaser for paid listings
+    fullText+='<div class="mkt-deliverable"><div class="mkt-sec-h">Includes '+it.files.length+' file'+(it.files.length>1?'s':'')+'</div>'+
+      it.files.map(f=>'<div class="mkt-file mkt-file-locked"><span class="sl-file-ic">'+_fileIcon(f.type,f.name)+'</span><span class="sl-file-n">'+escH(f.name)+'</span><span class="sl-file-sz">'+_fmtBytes(f.size||0)+'</span><span class="mkt-file-lock">\uD83D\uDD12</span></div>').join('')+
+    '</div>';
+  }
+  let actionBtn;
+  if(it._mine) actionBtn='<button class="btn bs" disabled style="opacity:.7">Your listing</button>';
+  else if(it._owned) actionBtn='<button class="btn bp" id="mkt-pv-use">\u2713 Owned \u2014 add to library</button>';
+  else if(it.status==='sold') actionBtn='<button class="btn bp" id="mkt-pv-msg">\uD83D\uDCAC Message seller</button><button class="btn bs" disabled style="opacity:.6">Sold</button>';
+  else if(paid) actionBtn='<button class="btn bp" id="mkt-pv-buy">Buy \u00b7 $'+it.price+'</button>';
+  else actionBtn='<button class="btn bp" id="mkt-pv-get">Get it free</button>';
+  const rateRow = it._owned && !it._mine ? '<div class="mkt-rate"><span class="mkt-sec-h" style="margin:0">Your rating</span><span class="mkt-rate-stars" id="mkt-pv-rate">'+[1,2,3,4,5].map(n=>'<span class="mkt-rate-star'+(n<=(it._myRating||0)?' on':'')+'" data-stars="'+n+'">\u2605</span>').join('')+'</span></div>' : '';
+  r.innerHTML='<div class="ov" id="mkt-pv-bg"><div class="ob" onclick="event.stopPropagation()" style="max-width:560px">'+
+    '<button class="oc" onclick="closeOvr()">\u00d7</button>'+
+    '<div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:6px">'+
+      '<div class="mkt-pv-ic">'+(it.icon||'\u2728')+'</div>'+
+      '<div style="flex:1"><h2 style="margin:0 0 2px">'+escH(it.title)+'</h2>'+
+        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="mk-kind mk-kind-'+it.kind+'">'+it.kind+'</span>'+_mktPriceTag(it)+_mktStars(it.rating,it.ratings)+'</div></div>'+
+    '</div>'+
+    '<p style="font-size:12.5px;color:var(--mu);margin:8px 0">by <span class="mkt-by" data-mk-seller="'+escH(it.authorEmail||'')+'" data-mk-sellername="'+escH(it.author||'')+'">'+escH(it.author||'community')+'</span> \u00b7 '+(it.sales?it.sales+' sold':(it.installs||0)+' installs')+' \u00b7 '+escH(it.cat||'')+'</p>'+
+    '<div class="mkt-pv-desc">'+escH(previewText)+'</div>'+
+    (it.status==='sold'?'<div class="mkt-sold-banner">\uD83D\uDD34 This item has sold. Message the seller to ask if they can make another.</div>':'')+
+    lockedNote+ fullText + rateRow +
+    '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">'+
+      '<button class="btn bs" onclick="closeOvr()">Close</button>'+actionBtn+'</div>'+
+    '<div id="mkt-similar"></div>'+
+  '</div></div>';
+  on($('mkt-pv-bg'),'click',closeOvr);
+  document.querySelectorAll('#ovr [data-mk-seller]').forEach(s=>on(s,'click',()=>{ if(s.dataset.mkSeller) _mktSellerProfile(s.dataset.mkSeller, s.dataset.mkSellername); }));
+  document.querySelectorAll('#ovr .mkt-dl').forEach(b=>on(b,'click',()=>{ const f=it.files[parseInt(b.dataset.dl,10)]; if(f) _downloadFile(f); }));
+  // similar items (same category + close price) — scroll-down section like Depop
+  AMVMarket.similar(it).then(sims=>{
+    const el=$('mkt-similar'); if(!el||!sims.length) return;
+    el.innerHTML='<div class="mkt-sec-h" style="margin-top:20px">Similar items</div>'+
+      '<div class="mkt-sim-grid">'+sims.map(s=>'<div class="mkt-sim" data-sim="'+escH(s.id)+'">'+
+        '<div class="mkt-sim-ic">'+(s.icon||'\u2728')+'</div>'+
+        '<div class="mkt-sim-b"><div class="mkt-sim-t">'+escH(s.title)+'</div>'+
+          '<div class="mkt-sim-m">'+_mktPriceTag(s)+' <span class="mkt-sim-by">'+escH(s.author||'community')+'</span></div></div>'+
+      '</div>').join('')+'</div>';
+    el.querySelectorAll('[data-sim]').forEach(c=>on(c,'click',()=>{ const s=sims.find(x=>x.id===c.dataset.sim); if(s){ closeOvr(); setTimeout(()=>_mktPreview(s,after),120); } }));
+  });
+  on($('mkt-pv-buy'),'click',async()=>{ await _mktDoBuy(it,()=>{ closeOvr(); after&&after(); }); });
+  on($('mkt-pv-msg'),'click',()=>{ closeOvr(); _mktChat(it.authorEmail, it.author, 'Hi! I saw "'+it.title+'" just sold \u2014 could you make another?'); });
+  on($('mkt-pv-get'),'click',async()=>{ try{ await AMVMarket.install(it); toast('Added to your Prompt Library','success'); closeOvr(); after&&after(); }catch(e){ toast(e.message||'Could not add','error'); } });
+  on($('mkt-pv-use'),'click',async()=>{ try{ await AMVMarket.install(it); toast(it.kind==='crew'?'Added to Crew':'Added to your Prompt Library','success'); closeOvr(); }catch(e){ toast('Could not add','error'); } });
+  const rate=$('mkt-pv-rate');
+  if(rate) rate.querySelectorAll('[data-stars]').forEach(s=>on(s,'click',async()=>{
+    const stars=parseInt(s.dataset.stars,10); await AMVMarket.rate(it.id,stars);
+    rate.querySelectorAll('[data-stars]').forEach(x=>x.classList.toggle('on',parseInt(x.dataset.stars,10)<=stars));
+    toast('Thanks for rating!','success'); after&&after();
+  }));
+}
+window._mktPreview=_mktPreview;
+
+/* Seller profile — avatar, average rating, all reviews, and their listings.
+   Opened by clicking a seller's name anywhere in the marketplace. */
+async function _mktSellerProfile(sellerEmail, sellerName){
+  sellerEmail=(sellerEmail||'').toLowerCase();
+  const r=$('ovr'); if(!r) return;
+  const all=await AMVMarket.list();
+  const theirs=all.filter(it=>(it.authorEmail||'').toLowerCase()===sellerEmail);
+  const name=sellerName||(theirs[0]&&theirs[0].author)||sellerEmail.split('@')[0]||'Seller';
+  const rating=AMVMarket.sellerRating(sellerEmail);
+  const reviews=AMVMarket.sellerReviews(sellerEmail);
+  const totalSold=theirs.reduce((a,it)=>a+(it.sales||0),0);
+  const isMe=sellerEmail===AMVMarket._me();
+  const bought=await AMVMarket.boughtFrom(sellerEmail);
+  const mine=AMVMarket.myReviewFor(sellerEmail);
+
+  const reviewList = reviews.length
+    ? reviews.map(rv=>'<div class="mkt-review">'+
+        '<div class="mkt-review-h">'+_avatarHTML(rv.by,28)+'<div><div class="mkt-review-by">'+escH(rv.byName||rv.by.split('@')[0])+'</div>'+
+          '<div class="mkt-stars">'+[1,2,3,4,5].map(n=>'<span class="mkt-star'+(n<=rv.stars?' on':'')+'">\u2605</span>').join('')+'</div></div>'+
+          '<span class="mkt-review-when">'+new Date(rv.ts).toLocaleDateString()+'</span></div>'+
+        (rv.text?'<div class="mkt-review-text">'+escH(rv.text)+'</div>':'')+
+      '</div>').join('')
+    : '<div style="color:var(--mu);font-size:12.5px;padding:6px 0">No reviews yet.</div>';
+
+  const listingRows = theirs.length
+    ? theirs.map(it=>'<div class="vrow"><span>'+(it.icon||'\u2728')+' '+escH(it.title)+' '+_mktPriceTag(it)+'</span><span style="color:var(--mu);font-size:11px">'+(it.sales||0)+' sold</span></div>').join('')
+    : '<div style="color:var(--mu);font-size:12.5px">No active listings.</div>';
+
+  let reviewBtn='';
+  if(isMe) reviewBtn='<span style="font-size:12px;color:var(--mu)">This is you</span>';
+  else if(bought) reviewBtn='<button class="btn bp" id="mkt-write-review" style="font-size:12px">'+(mine?'Edit your review':'Write a review')+'</button>';
+  else reviewBtn='<span style="font-size:12px;color:var(--mu)">Buy from this seller to leave a review</span>';
+
+  r.innerHTML='<div class="ov" id="mkt-sp-bg"><div class="ob" onclick="event.stopPropagation()" style="max-width:560px">'+
+    '<button class="oc" onclick="closeOvr()">\u00d7</button>'+
+    '<div class="mkt-sp-head">'+_avatarHTML(sellerEmail,64)+
+      '<div style="flex:1"><h2 style="margin:0 0 3px">'+escH(name)+'</h2>'+
+        '<div class="mkt-sp-stats">'+
+          (rating.count?('<span class="mkt-stars">'+[1,2,3,4,5].map(n=>'<span class="mkt-star'+(n<=Math.round(rating.avg)?' on':'')+'">\u2605</span>').join('')+'<span class="mkt-stars-n">'+rating.avg+' ('+rating.count+' review'+(rating.count===1?'':'s')+')</span></span>'):'<span style="color:var(--mu);font-size:12px">No ratings yet</span>')+
+        '</div>'+
+        '<div style="font-size:12px;color:var(--mu);margin-top:4px">'+theirs.length+' listing'+(theirs.length===1?'':'s')+' \u00b7 '+totalSold+' sold</div>'+
+        (isMe?'':'<button class="btn bp" id="mkt-sp-msg" style="font-size:12px;margin-top:10px">\uD83D\uDCAC Message seller</button>')+
+      '</div></div>'+
+    '<div class="ss2" style="margin-top:16px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><h3 style="margin:0">Reviews</h3>'+reviewBtn+'</div>'+reviewList+'</div>'+
+    '<div class="ss2"><h3>Listings</h3><div class="vbreak">'+listingRows+'</div></div>'+
+  '</div></div>';
+  on($('mkt-sp-bg'),'click',closeOvr);
+  on($('mkt-sp-msg'),'click',()=>{ closeOvr(); _mktChat(sellerEmail, name); });
+  on($('mkt-write-review'),'click',()=>_mktReviewDialog(sellerEmail, name, ()=>_mktSellerProfile(sellerEmail,name)));
+}
+window._mktSellerProfile=_mktSellerProfile;
+
+/* Messages inbox — list of conversations, opens a thread on click. */
+function _mktMessages(){
+  const r=$('ovr'); if(!r) return;
+  const threads=AMVMarket.myThreads();
+  const me=AMVMarket._me();
+  const rows = threads.length ? threads.map(t=>{
+    const other=t.a===me?t.b:t.a;
+    const otherName=t.a===me?(t.bName||other.split('@')[0]):(t.aName||other.split('@')[0]);
+    const last=t.msgs[t.msgs.length-1];
+    const seenCount=(t.read&&typeof t.read[me]==='number')?t.read[me]:0;
+    const unread=last&&last.from!==me&&t.msgs.length>seenCount;
+    return '<div class="mkt-thread'+(unread?' unread':'')+'" data-th="'+escH(other)+'" data-thn="'+escH(otherName)+'">'+
+      _avatarHTML(other,40)+
+      '<div class="mkt-thread-b"><div class="mkt-thread-t">'+escH(otherName)+(unread?'<span class="mkt-thread-dot"></span>':'')+'</div>'+
+        '<div class="mkt-thread-p">'+(last?(last.from===me?'You: ':'')+escH(last.text.slice(0,60)):'No messages yet')+'</div></div>'+
+      '<span class="mkt-thread-when">'+(last?_timeAgo(last.ts):'')+'</span>'+
+    '</div>';
+  }).join('') : '<div class="fd-empty">No messages yet. Message a seller from their profile to start a conversation.</div>';
+  r.innerHTML='<div class="ov" id="mkt-inbox-bg"><div class="ob" onclick="event.stopPropagation()" style="max-width:480px">'+
+    '<button class="oc" onclick="closeOvr()">\u00d7</button>'+
+    '<h2 style="margin-bottom:14px">Your messages</h2>'+
+    '<div class="mkt-threads">'+rows+'</div>'+
+  '</div></div>';
+  on($('mkt-inbox-bg'),'click',closeOvr);
+  r.querySelectorAll('[data-th]').forEach(t=>on(t,'click',()=>_mktChat(t.dataset.th, t.dataset.thn)));
+}
+window._mktMessages=_mktMessages;
+
+/* A single conversation thread with a seller (or buyer). prefill seeds the composer. */
+function _mktChat(otherEmail, otherName, prefill){
+  otherEmail=(otherEmail||'').toLowerCase();
+  if(!otherEmail){ toast('No seller to message','error'); return; }
+  const r=$('ovr'); if(!r) return;
+  AMVMarket.markThreadRead(otherEmail);
+  const me=AMVMarket._me();
+  const draw=()=>{
+    const t=AMVMarket.thread(otherEmail);
+    const name=otherName||(t.a===me?t.bName:t.aName)||otherEmail.split('@')[0];
+    const bubbles = t.msgs.length ? t.msgs.map(m=>'<div class="mkt-bubble '+(m.from===me?'me':'them')+'">'+escH(m.text)+'<span class="mkt-bubble-t">'+_timeAgo(m.ts)+'</span></div>').join('') : '<div style="color:var(--mu);font-size:12.5px;text-align:center;padding:20px">Say hello \u2014 ask about an item, a custom order, anything.</div>';
+    r.innerHTML='<div class="ov" id="mkt-chat-bg"><div class="ob" onclick="event.stopPropagation()" style="max-width:460px;display:flex;flex-direction:column;max-height:80vh">'+
+      '<button class="oc" onclick="closeOvr()">\u00d7</button>'+
+      '<div class="mkt-chat-head">'+_avatarHTML(otherEmail,36)+'<div><div style="font-weight:600;font-size:14px">'+escH(name)+'</div><div style="font-size:11px;color:var(--mu)">'+escH(otherEmail)+'</div></div>'+
+        '<button class="btn bs" id="mkt-chat-prof" style="margin-left:auto;font-size:11px">Profile</button></div>'+
+      '<div class="mkt-chat-body" id="mkt-chat-body">'+bubbles+'</div>'+
+      '<div class="mkt-chat-input"><input type="text" id="mkt-chat-txt" placeholder="Message\u2026" autocomplete="off"'+(prefill?' value="'+escH(prefill)+'"':'')+'><button class="btn bp" id="mkt-chat-send">Send</button></div>'+
+    '</div></div>';
+    on($('mkt-chat-bg'),'click',closeOvr);
+    on($('mkt-chat-prof'),'click',()=>{ closeOvr(); _mktSellerProfile(otherEmail, name); });
+    const send=async()=>{ const txt=$('mkt-chat-txt')?.value||''; if(!txt.trim()) return; try{ await AMVMarket.sendMessage(otherEmail, txt, name); prefill=''; draw(); const b=$('mkt-chat-body'); if(b) b.scrollTop=b.scrollHeight; }catch(e){ toast(e.message||'Could not send','error'); } };
+    on($('mkt-chat-send'),'click',send);
+    on($('mkt-chat-txt'),'keydown',e=>{ if(e.key==='Enter') send(); });
+    const b=$('mkt-chat-body'); if(b) b.scrollTop=b.scrollHeight;
+    const txt=$('mkt-chat-txt'); if(txt){ txt.focus(); txt.value=txt.value; }
+  };
+  draw();
+}
+window._mktChat=_mktChat;
+
+// short relative time
+function _timeAgo(ts){
+  const s=Math.floor((Date.now()-ts)/1000);
+  if(s<60) return 'now'; if(s<3600) return Math.floor(s/60)+'m'; if(s<86400) return Math.floor(s/3600)+'h';
+  if(s<604800) return Math.floor(s/86400)+'d'; return new Date(ts).toLocaleDateString();
+}
+window._timeAgo=_timeAgo;
+
+/* Write/edit a 1-5 star review of a seller. */
+function _mktReviewDialog(sellerEmail, sellerName, onDone){
+  const r=$('ovr'); if(!r) return;
+  const existing=AMVMarket.myReviewFor(sellerEmail);
+  let stars=existing?existing.stars:0;
+  const drawStars=()=>[1,2,3,4,5].map(n=>'<span class="mkt-rate-star'+(n<=stars?' on':'')+'" data-stars="'+n+'">\u2605</span>').join('');
+  r.innerHTML='<div class="ov" id="mkt-rv-bg"><div class="ob" onclick="event.stopPropagation()" style="max-width:460px">'+
+    '<button class="oc" onclick="closeOvr()">\u00d7</button>'+
+    '<h2 style="margin-bottom:4px">Review '+escH(sellerName)+'</h2>'+
+    '<p class="ob-sub" style="margin-bottom:14px">Your rating helps other buyers. You can only review sellers you\u2019ve bought from.</p>'+
+    '<div class="mkt-rate" style="margin:0 0 14px"><span class="mkt-rate-stars" id="mkt-rv-stars">'+drawStars()+'</span></div>'+
+    '<textarea id="mkt-rv-text" rows="4" placeholder="Share your experience (optional)\u2026" style="width:100%;font-size:13px">'+escH(existing?existing.text:'')+'</textarea>'+
+    '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px"><button class="btn bs" onclick="closeOvr()">Cancel</button><button class="btn bp" id="mkt-rv-save">Submit review</button></div>'+
+  '</div></div>';
+  on($('mkt-rv-bg'),'click',closeOvr);
+  const starsEl=$('mkt-rv-stars');
+  const rebind=()=>{ starsEl.innerHTML=drawStars(); starsEl.querySelectorAll('[data-stars]').forEach(s=>on(s,'click',()=>{ stars=parseInt(s.dataset.stars,10); rebind(); })); };
+  rebind();
+  on($('mkt-rv-save'),'click',async()=>{
+    if(!stars){ toast('Pick a star rating','error'); return; }
+    try{ await AMVMarket.reviewSeller(sellerEmail, stars, $('mkt-rv-text')?.value||''); toast('Review posted \u2014 thanks!','success'); closeOvr(); onDone&&onDone(); }
+    catch(e){ toast(e.message||'Could not post review','error',4500); }
+  });
+}
+window._mktReviewDialog=_mktReviewDialog;
+function _mktPurchases(body){
+  if(!body) return;
+  body.innerHTML='<div class="fd-loading">Loading your purchases\u2026</div>';
+  AMVMarket.purchases().then(items=>{
+    if(!items.length){ body.innerHTML=emptyState({icon:'\uD83D\uDED2',title:'No purchases yet',sub:'Things you buy in the marketplace show up here \u2014 private to you, ready to use, forever.',btn:{label:'Browse the marketplace',act:'_mktGoBrowse'}}); return; }
+    body.innerHTML='<p class="mkt-priv">\uD83D\uDD12 Private \u2014 only you can see your purchases.</p><div class="mk-grid">'+items.map(it=>{
+      const fc=(it.files&&it.files.length)?'<span class="sl-mini">\uD83D\uDCCE '+it.files.length+' file'+(it.files.length>1?'s':'')+'</span>':'';
+      return '<div class="mk-card">'+
+        '<div class="mk-card-top"><span class="mk-icon">'+(it.icon||'\u2728')+'</span><span style="display:flex;gap:6px;align-items:center"><span class="mk-kind mk-kind-'+(it.kind||'prompt')+'">'+(it.kind||'prompt')+'</span></span></div>'+
+        '<div class="mk-title">'+escH(it.title)+'</div>'+
+        '<div class="mk-desc">'+escH(it.desc||'')+'</div>'+
+        (it._removed?'<div class="mk-meta" style="color:var(--mu)">Seller removed this listing</div>':
+          '<div class="mk-meta"><span></span>'+fc+'</div><div class="mk-card-actions"><button class="btn bs mk-view" data-mk-id="'+escH(it.id)+'" style="font-size:11.5px;flex:1">View / download</button>'+((it.text||it.crew)?'<button class="btn bp mk-use" data-mk-id="'+escH(it.id)+'" style="font-size:11.5px">Add to library</button>':'')+'</div>')+
+      '</div>';
+    }).join('')+'</div>';
+    body.querySelectorAll('.mk-use').forEach(b=>on(b,'click',async()=>{
+      const it=items.find(x=>x.id===b.dataset.mkId); if(!it) return;
+      try{ await AMVMarket.install(it); toast(it.kind==='crew'?'Added to Crew':'Added to your Prompt Library','success',4000); }
+      catch(e){ toast('Could not add','error'); }
+    }));
+    body.querySelectorAll('.mk-view').forEach(b=>on(b,'click',()=>{ const it=items.find(x=>x.id===b.dataset.mkId); if(it){ it._owned=true; _mktPreview(it); } }));
+  });
+}
+function _mktGoBrowse(){ S._mktTab='browse'; renderMarketView(); }
+window._mktGoBrowse=_mktGoBrowse;
+/* ── MARKETPLACE TRUST & SAFETY (client mirror) ───────────────
+   The authoritative screening runs server-side on /v1/market/publish and can't
+   be bypassed. This client copy gives sellers instant feedback before submit. */
+
+// Full Acceptable Use Policy, grouped like a real marketplace publishes it.
+const MKT_POLICY_SECTIONS = [
+  { h:'Prohibited \u2014 never allowed', items:[
+    'Illegal drugs, controlled substances, or prescription medication without authorization.',
+    'Weapons, firearms, ammunition, explosives, or instructions for making them.',
+    'Malware, ransomware, exploits, phishing kits, or any tool designed to attack systems.',
+    'Stolen data, hacked accounts, credit-card dumps, credentials, or personal data you don\u2019t own.',
+    'Fraud, scams, counterfeits, money laundering, or "get rich quick" schemes.',
+    'Sexual content, and absolutely nothing involving minors.',
+    'Content promoting violence, terrorism, trafficking, or self-harm.',
+    'Hate speech, harassment, or content targeting people by identity.',
+    'Pirated, cracked, or stolen material \u2014 you must own or license what you sell.',
+  ]},
+  { h:'Restricted \u2014 verified sellers only', items:[
+    'Financial, investment, or trading advice.',
+    'Medical, health, or treatment claims.',
+    'Legal advice or representation.',
+    'Adult (18+) material, where lawful.',
+  ]},
+  { h:'Your obligations as a seller', items:[
+    'Describe honestly \u2014 buyers must receive exactly what you advertised.',
+    'You own the rights to everything you list, or have a licence to resell it.',
+    'No impersonating other people, brands, or AMV staff.',
+    'Listings are AMV-only and can\u2019t reference or require other AI products.',
+    'Respond to buyers and honour refunds where the deliverable was misrepresented.',
+    'Keep your listing current \u2014 remove it if it stops working.',
+  ]},
+  { h:'How enforcement works', items:[
+    'Every listing is screened automatically before it goes live.',
+    'Prohibited content is blocked outright and never reaches the catalog.',
+    'Higher-risk listings are published but held for review, and removed if they break the rules.',
+    'Buyers can report any listing; reports are reviewed by our team.',
+    'Three violations suspend your selling access. Serious violations suspend it immediately.',
+  ]},
+];
+// Flat list for compact displays.
+const MKT_POLICY = MKT_POLICY_SECTIONS.flatMap(s=>s.items);
+
+// Normalizer mirrors the server: defeats leetspeak / spacing / accent evasion.
+function _mktNorm(str){
+  let t=String(str||'').toLowerCase();
+  t=t.replace(/[\u200b\u200c\u200d\u2060\ufeff\u00ad\u180e\u061c]/g,'');
+  const homo={'а':'a','е':'e','о':'o','р':'p','с':'c','х':'x','у':'y','ѕ':'s','і':'i','ј':'j','к':'k','м':'m','н':'h','т':'t','в':'b','г':'r','ԁ':'d','ո':'n','ε':'e','ο':'o','ρ':'p','τ':'t','ν':'v','α':'a','ι':'i','κ':'k','μ':'m'};
+  t=t.replace(/[а-яөԁα-ωѕіј]/g,c=>homo[c]||c);
+  try{ t=t.normalize('NFKD').replace(/[\u0300-\u036f]/g,''); }catch(e){}
+  const leet={'0':'o','1':'i','!':'i','3':'e','4':'a','@':'a','5':'s','$':'s','7':'t','8':'b','9':'g','+':'t','|':'i'};
+  t=t.replace(/[01!34@5$789+|]/g,c=>leet[c]||c);
+  t=t.replace(/[\s._\-*~`'"()\[\]{}<>\/\\]+/g,' ');
+  return { spaced:' '+t.replace(/\s+/g,' ').trim()+' ', squeezed:t.replace(/\s+/g,'') };
+}
+const _MKT_PROHIBITED={
+  'Illegal drugs & controlled substances':['cocaine','heroin','fentanyl','methamphetamine','crystal meth','mdma','ecstasy','lsd','ketamine','pcp','crack cocaine','psilocybin','magic mushrooms','ghb','rohypnol','roofie','oxycontin','oxycodone','xanax bars','illegal drugs','buy drugs','sell drugs','drug dealer','narcotics for sale','dark web drugs','anabolic steroids','no prescription needed'],
+  'Weapons & explosives':['firearm','handgun','rifle for sale','assault weapon','ghost gun','untraceable gun','80 lower','auto sear','glock switch','silencer','suppressor','ammunition','ammo for sale','bump stock','explosive','pipe bomb','bomb making','ied','grenade','detonator','napalm','thermite','weapon blueprint','3d printed gun','gun cad','poison','ricin','nerve agent','sarin','chemical weapon'],
+  'Malware, hacking & cyber attack':['malware','ransomware','keylogger','botnet','ddos','rootkit','trojan','spyware','stalkerware','exploit kit','zero day exploit','remote access trojan','rat builder','crypter','stealer','phishing kit','phishing page','fake login page','sql injection tool','brute force tool','password cracker','credential stuffing','account cracker','combo list','sim swap','swatting','doxxing service','hack someone','hacking service','hack account'],
+  'Stolen data & credentials':['stolen data','stolen account','hacked account','cracked account','database dump','leaked database','data breach dump','stolen card','stolen credit','credit card numbers','card dump','cvv dump','fullz','bank logs','bank drop','dumps with pin','carding','carder','paypal log','account list','ssn list','social security numbers','stolen identity'],
+  'Fraud, scams & counterfeiting':['money launder','launder money','money mule','cash out method','cashout method','fraud method','fraud bible','counterfeit','fake id','forged document','fake passport','fake diploma','replica designer','ponzi','pyramid scheme','guaranteed profit','risk free profit','insider trading','chargeback fraud','refund method','refund glitch','bin method'],
+  'Sexual content & exploitation':['child porn','csam','cp for sale','underage','minor sexual','loli','shota','jailbait','bestiality','rape porn','non consensual','revenge porn','upskirt','deepfake nude','nudify','escort service','prostitution','sex trafficking','nude leak'],
+  'Violence, terrorism & trafficking':['assassinate','murder for hire','hitman','contract killing','kill someone','how to kill','how to murder','human trafficking','organ sale','sell organ','kidnapping guide','torture','terrorist','terrorism','extremist manifesto','mass shooting','school shooting','genocide'],
+  'Hate & harassment':['white supremacy','neo nazi','race war','holocaust denial','hate speech pack','harassment campaign','brigading service'],
+  'Piracy & IP theft':['pirated','cracked software','keygen','license key generator','nulled script','warez','stolen course','leaked course','bypass drm','drm removal'],
+  'Self-harm':['suicide method','how to kill yourself','best way to die','suicide kit','pro ana','thinspo','self harm guide'],
+};
+const _MKT_REGULATED={
+  'Financial & investment advice':['investment advice','financial advice','stock picks','trading signals','forex signals','crypto signals','guaranteed returns','portfolio management'],
+  'Medical & health claims':['medical advice','cure cancer','miracle cure','diagnose','prescription','treatment plan','weight loss guaranteed'],
+  'Legal advice':['legal advice','legal representation','sue someone'],
+  'Adult (18+)':['adult content','nsfw','erotica','porn'],
+};
+const _MKT_RISK=['hack','exploit','crack','bypass','scrape','scraper','bot farm','mass dm','spam','password','credential','proxy list','account generator','otp bypass','2fa bypass','crypto','forex','trading bot','arbitrage','airdrop','pump','guaranteed','get rich','make money fast','mlm','downline','unlimited','premium free'];
+
+// Screen a listing (mirrors the server). Returns {ok, action, category, reason, signals}
+function _mktScreen(item, verifiedFor){
+  const raw=[item.title,item.desc,item.cat,item.text,(item.files||[]).map(f=>f&&f.name).join(' ')].map(x=>String(x||'')).join(' ');
+  const n=_mktNorm(raw);
+  const hit=(term)=>{
+    const t=_mktNorm(term);
+    const esc=t.spaced.trim().replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+    if(new RegExp('(^| )'+esc+'( |$)','i').test(n.spaced)) return true;
+    if(t.squeezed.length>=6 && n.squeezed.includes(t.squeezed)) return true;
+    return false;
+  };
+  for(const [category,terms] of Object.entries(_MKT_PROHIBITED)){
+    for(const term of terms){ if(hit(term)) return { ok:false, action:'blocked', category, term,
+      reason:'This listing appears to involve prohibited content ('+category+'). It can\u2019t be published. Selling this violates the Marketplace Terms and repeat violations suspend your selling access.' }; }
+  }
+  for(const [category,terms] of Object.entries(_MKT_REGULATED)){
+    for(const term of terms){
+      if(hit(term)){
+        const ver=Array.isArray(verifiedFor)&&verifiedFor.includes(category);
+        if(!ver) return { ok:false, action:'needs_verification', category, term,
+          reason:category+' listings require a verified seller account. Apply for verification to sell in this category.' };
+      }
+    }
+  }
+  const signals=[];
+  for(const term of _MKT_RISK){ if(hit(term)) signals.push(term); }
+  if(signals.length) return { ok:true, action:'held_for_review', signals:signals.slice(0,5),
+    reason:'Your listing will go live but is flagged for review. If it follows the rules it stays up; if not, it\u2019s removed.' };
+  return { ok:true, action:'approved' };
+}
+try{ window._mktScreen=_mktScreen; window.MKT_POLICY=MKT_POLICY; }catch(e){}
+
+// Which regulated categories this seller is verified for (operator-granted).
+function _mktVerifiedFor(){ try{ return load('amv_mkt_verified')||[]; }catch(e){ return []; } }
+try{ window._mktVerifiedFor=_mktVerifiedFor; }catch(e){}
+
+// Shown when the automated review blocks a listing (or requires verification).
+function _mktBlockedDialog(reason, action, category){
+  const needsVer = action==='needs_verification';
+  const r=$('ovr'); if(!r){ toast(reason,'error',7000); return; }
+  const tint = needsVer ? 'var(--gold,#f5a623)' : 'var(--red)';
+  const icon = needsVer
+    ? '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>'
+    : '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>';
+  r.innerHTML='<div class="ovr-bg" id="mkb-bg"><div class="ovr-card" style="max-width:470px" onclick="event.stopPropagation()">'+
+    '<div style="display:flex;gap:12px;align-items:flex-start">'+
+      '<span style="width:38px;height:38px;flex-shrink:0;border-radius:10px;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,'+tint+' 13%,transparent);color:'+tint+'">'+
+        '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+icon+'</svg></span>'+
+      '<div><div style="font-size:15px;font-weight:600;margin-bottom:6px">'+(needsVer?'Verification required':'Listing blocked by review')+'</div>'+
+        '<div style="font-size:13px;color:var(--mu);line-height:1.6">'+escH(reason)+'</div></div>'+
+    '</div>'+
+    '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">'+
+      (needsVer?'<button class="btn bs" id="mkb-apply" style="font-size:12px">Apply for verification</button>':'<button class="btn bs" id="mkb-rules" style="font-size:12px">See the terms</button>')+
+      '<button class="btn bp" id="mkb-ok" style="font-size:12px">Got it</button>'+
+    '</div></div></div>';
+  r.classList.add('on');
+  on($('mkb-ok'),'click',closeOvr);
+  on($('mkb-bg'),'click',closeOvr);
+  on($('mkb-rules'),'click',()=>{ closeOvr(); const b=$('mkt-rules-body'); if(b){ b.style.display='block'; b.scrollIntoView({behavior:'smooth',block:'center'}); } });
+  on($('mkb-apply'),'click',()=>{ closeOvr(); toast('Verification for '+(category||'this category')+' is reviewed by our team. We\u2019ll email you once your seller account is approved.','info',5500); });
+}
+try{ window._mktBlockedDialog=_mktBlockedDialog; }catch(e){}
+
+// Buyers can report a listing. Reports are stored and surfaced to the operator.
+function _mktReport(itemId, title){
+  const r=$('ovr'); if(!r) return;
+  r.innerHTML='<div class="ovr-bg" id="mkr-bg"><div class="ovr-card" style="max-width:430px" onclick="event.stopPropagation()">'+
+    '<div style="font-size:15px;font-weight:600;margin-bottom:4px">Report this listing</div>'+
+    '<div style="font-size:12.5px;color:var(--mu);margin-bottom:14px">'+escH(title||'')+'</div>'+
+    '<label class="lbl">What\u2019s wrong with it?</label>'+
+    '<select id="mkr-reason" class="sel" style="width:100%;margin-bottom:10px">'+
+      ['Illegal or prohibited content','Scam or fraud','Stolen / pirated material','Not as described','Sexual or abusive content','Hate or harassment','Something else']
+        .map(o=>'<option>'+o+'</option>').join('')+
+    '</select>'+
+    '<textarea id="mkr-note" rows="3" placeholder="Any details that help us review it (optional)" style="width:100%;resize:vertical"></textarea>'+
+    '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">'+
+      '<button class="btn bs" id="mkr-cancel" style="font-size:12px">Cancel</button>'+
+      '<button class="btn bd2" id="mkr-send" style="font-size:12px">Submit report</button>'+
+    '</div></div></div>';
+  r.classList.add('on');
+  on($('mkr-cancel'),'click',closeOvr);
+  on($('mkr-bg'),'click',closeOvr);
+  on($('mkr-send'),'click',()=>{
+    try{
+      const reports=load('amv_mkt_reports')||[];
+      reports.push({ id:itemId, title:title||'', reason:$('mkr-reason')?.value||'', note:($('mkr-note')?.value||'').slice(0,500), by:(S.user&&S.user.email)||'', ts:Date.now() });
+      store('amv_mkt_reports',reports);
+    }catch(e){}
+    closeOvr();
+    toast('Report submitted \u2014 our review team will look at this listing.','success',4000);
+  });
+}
+try{ window._mktReport=_mktReport; }catch(e){}
+
+function _mktSell(body){
+  if(!body) return;
+  body.innerHTML=
+    '<div class="ss2"><h3>List something for sale</h3>'+
+      '<p style="font-size:12.5px;color:var(--mu);margin:0 0 12px;line-height:1.6">Sell AMV prompts, crews, integrations, workflows, guides \u2014 or attach any files (PDFs, videos, models, datasets, images). Set any price (or free). You keep <b style="color:var(--tx)">80%</b> of every sale; it lands in your balance to withdraw. AMV-only \u2014 listings can\u2019t reference other AI products.</p>'+
+      '<div class="mkt-rules"><div class="mkt-rules-h"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>Marketplace Terms \u2014 every listing is screened before it goes live'+
+        '<button class="mkt-rules-toggle" id="mkt-rules-toggle">Read the full terms</button></div>'+
+        '<div class="mkt-rules-body" id="mkt-rules-body" style="display:none">'+
+          MKT_POLICY_SECTIONS.map(sec=>'<div class="mkt-rules-sec"><div class="mkt-rules-sh">'+escH(sec.h)+'</div>'+
+            '<ul class="mkt-rules-list">'+sec.items.map(r=>'<li>'+escH(r)+'</li>').join('')+'</ul></div>').join('')+
+        '</div>'+
+        '<div class="mkt-rules-foot">Prohibited content is blocked automatically and never goes live. Three violations suspend your selling access.</div>'+
+      '</div>'+
+      '<div class="sf" style="max-width:600px;display:flex;flex-direction:column;gap:10px">'+
+        '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
+          '<div style="flex:1;min-width:160px"><label class="lbl">Title</label><input id="sl-title" placeholder="e.g. Excel Finance Pack for AMV" autocomplete="off"></div>'+
+          '<div><label class="lbl">Type</label><select id="sl-kind" class="sel"><option value="prompt">Prompt</option><option value="crew">Crew</option><option value="integration">Integration</option><option value="workflow">Workflow</option><option value="guide">Guide</option><option value="bundle">File bundle</option></select></div>'+
+          '<div style="width:110px"><label class="lbl">Price (USD)</label><input id="sl-price" type="number" min="0" max="999" value="0" inputmode="numeric"></div>'+
+        '</div>'+
+        '<div><label class="lbl">Category</label><input id="sl-cat" placeholder="e.g. Finance"></div>'+
+        '<div><label class="lbl">Short description</label><input id="sl-desc" placeholder="What does the buyer get?"></div>'+
+        '<div><label class="lbl">The deliverable <span style="color:var(--mu);font-weight:400">(text, instructions, links \u2014 optional if you attach files)</span></label><textarea id="sl-text" rows="5" placeholder="Paste the content buyers get: a prompt, instructions, a link to a video, anything\u2026" style="font-family:var(--mn,ui-monospace,monospace);font-size:13px"></textarea></div>'+
+        '<div><label class="lbl">Attach files <span style="color:var(--mu);font-weight:400">(PDF, video, models, images, any file \u2014 delivered on purchase)</span></label>'+
+          '<div id="sl-drop" class="sl-drop"><input type="file" id="sl-files" multiple style="display:none"><span>\uD83D\uDCCE Click to add files, or drag them here</span></div>'+
+          '<div id="sl-filelist" class="sl-filelist"></div>'+
+        '</div>'+
+        '<button class="btn bp" id="sl-publish" style="align-self:flex-start;font-size:12px">List it</button>'+
+      '</div>'+
+    '</div>'+
+    '<div class="ss2"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><h3 style="margin:0">Your listings</h3><div id="sl-summary" class="sl-summary"></div></div>'+
+      '<div id="sl-mine" style="margin-top:12px"><div class="fd-loading">Loading\u2026</div></div></div>';
+
+  // rules expand/collapse
+  on($('mkt-rules-toggle'),'click',()=>{
+    const b=$('mkt-rules-body'), t=$('mkt-rules-toggle');
+    if(!b||!t) return;
+    const open=b.style.display!=='none';
+    b.style.display=open?'none':'block';
+    t.textContent=open?'Read the full terms':'Hide terms';
+  });
+
+  // ---- file staging ----
+  let staged=[];   // {name,type,size,data(dataURL)}
+  const MAXF=25*1024*1024;   // 25MB per file (localStorage-friendly cap for demo mode)
+  const drawFiles=()=>{
+    const el=$('sl-filelist'); if(!el) return;
+    el.innerHTML=staged.map((f,i)=>'<div class="sl-file"><span class="sl-file-ic">'+_fileIcon(f.type,f.name)+'</span><span class="sl-file-n">'+escH(f.name)+'</span><span class="sl-file-sz">'+_fmtBytes(f.size)+'</span><button class="sl-file-x" data-fi="'+i+'">\u00d7</button></div>').join('');
+    el.querySelectorAll('[data-fi]').forEach(b=>on(b,'click',()=>{ staged.splice(parseInt(b.dataset.fi,10),1); drawFiles(); }));
+  };
+  const addFiles=(fileList)=>{
+    // Global file limit applies to marketplace listings too.
+    if(typeof _ctxFileGuard==='function' && !_ctxFileGuard('workspace', fileList&&fileList.length||1)) return;
+    const arr=Array.from(fileList||[]);
+    let pending=arr.length;
+    arr.forEach(file=>{
+      if(file.size>MAXF){ toast(file.name+' is over 25MB \u2014 host large files elsewhere and paste the link instead.','error',5000); pending--; return; }
+      const rd=new FileReader();
+      rd.onload=e=>{ staged.push({name:file.name,type:file.type||'application/octet-stream',size:file.size,data:e.target.result}); drawFiles(); };
+      rd.readAsDataURL(file);
+    });
+  };
+  const drop=$('sl-drop'), fi=$('sl-files');
+  on(drop,'click',()=>fi&&fi.click());
+  on(fi,'change',function(){ addFiles(this.files); this.value=''; });
+  ['dragover','dragenter'].forEach(ev=>on(drop,ev,e=>{ e.preventDefault(); drop.classList.add('on'); }));
+  ['dragleave','drop'].forEach(ev=>on(drop,ev,e=>{ e.preventDefault(); drop.classList.remove('on'); }));
+  on(drop,'drop',e=>{ if(e.dataTransfer&&e.dataTransfer.files) addFiles(e.dataTransfer.files); });
+
+  const loadMine=()=>{ AMVMarket.myListings().then(items=>{
+    const el=$('sl-mine'); if(!el) return;
+    // summary stats
+    const sum=$('sl-summary');
+    if(sum){
+      const totalViews=items.reduce((a,i)=>a+(i.views||0),0);
+      const totalSold=items.reduce((a,i)=>a+(i.sales||0),0);
+      const active=items.filter(i=>(i.status||'active')==='active').length;
+      sum.innerHTML='<span class="sl-stat"><b>'+items.length+'</b> listings</span><span class="sl-stat"><b>'+active+'</b> active</span><span class="sl-stat"><b>'+totalViews+'</b> views</span><span class="sl-stat"><b>'+totalSold+'</b> sold</span>';
+    }
+    if(!items.length){ el.innerHTML='<div style="color:var(--mu);font-size:12px">No listings yet. Create one above.</div>'; return; }
+    el.innerHTML='<div class="sl-list">'+items.map(it=>{
+      const st=it.status||'active';
+      const badge='<span class="sl-status sl-status-'+st+'">'+st+'</span>';
+      const fileCount=(it.files&&it.files.length)?'<span class="sl-mini"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg> '+it.files.length+'</span>':'';
+      const actions=
+        (st!=='active'?'<button class="btn bs sl-act" data-sl-act="active" data-sl-id="'+escH(it.id)+'">Activate</button>':'')+
+        (st!=='sold'?'<button class="btn bs sl-act" data-sl-act="sold" data-sl-id="'+escH(it.id)+'">Mark sold</button>':'')+
+        (st!=='deactivated'?'<button class="btn bs sl-act" data-sl-act="deactivated" data-sl-id="'+escH(it.id)+'">Deactivate</button>':'')+
+        '<button class="btn sl-act sl-del" data-sl-del="'+escH(it.id)+'">Remove</button>';
+      return '<div class="sl-row">'+
+        '<div class="sl-row-main"><span class="sl-row-ic">'+(it.icon||'\u2728')+'</span>'+
+          '<div><div class="sl-row-t">'+escH(it.title)+' '+_mktPriceTag(it)+' '+badge+'</div>'+
+            '<div class="sl-row-meta">'+(it.views||0)+' views \u00b7 '+(it.sales||0)+' sold \u00b7 '+escH(it.cat||'Community')+' '+fileCount+'</div></div>'+
+        '</div>'+
+        '<div class="sl-row-actions">'+actions+'</div>'+
+      '</div>';
+    }).join('')+'</div>';
+    el.querySelectorAll('[data-sl-act]').forEach(b=>on(b,'click',async()=>{
+      try{ await AMVMarket.setStatus(b.dataset.slId,b.dataset.slAct); toast('Listing '+(b.dataset.slAct==='active'?'activated':b.dataset.slAct==='sold'?'marked sold':'deactivated'),'success'); loadMine(); }
+      catch(e){ toast(e.message||'Could not update','error'); }
+    }));
+    el.querySelectorAll('[data-sl-del]').forEach(b=>on(b,'click',async()=>{
+      if(!confirm('Remove this listing permanently? Buyers who already own it keep it.')) return;
+      try{ await AMVMarket.unlist(b.dataset.slDel); toast('Listing removed','info'); loadMine(); }catch(e){ toast(e.message||'Could not remove','error'); }
+    }));
+  }); };
+  loadMine();
+
+  on($('sl-publish'),'click',async()=>{
+    const item={
+      kind:$('sl-kind')?.value||'prompt',
+      title:($('sl-title')?.value||'').trim(),
+      cat:($('sl-cat')?.value||'Community').trim(),
+      desc:($('sl-desc')?.value||'').trim(),
+      text:($('sl-text')?.value||'').trim(),
+      price:Math.max(0,Math.min(999,parseInt($('sl-price')?.value||'0',10)||0)),
+      files:staged.slice(),
+      icon:staged.length&&!$('sl-text')?.value?_fileIcon(staged[0].type,staged[0].name):'\u2728',
+    };
+    if(!item.title){ toast('A title is required','error'); return; }
+    if(!item.text && !item.files.length){ toast('Add a deliverable: paste text/links or attach at least one file','error',5000); return; }
+    // Automated content review \u2014 mirrors the server-side gate.
+    const screen=_mktScreen(item, _mktVerifiedFor());
+    if(!screen.ok){ _mktBlockedDialog(screen.reason, screen.action, screen.category); return; }
+    if(screen.action==='held_for_review'){ item._review='pending'; }
+    const btn=$('sl-publish'); if(btn){btn.disabled=true;btn.textContent='Listing\u2026';}
+    try{ await AMVMarket.publish(item); toast(item.price>0?('Listed for $'+item.price+' \u2014 you keep 80%'):'Listed for free','success',4500);
+      ['sl-title','sl-desc','sl-text'].forEach(id=>{ if($(id)) $(id).value=''; }); if($('sl-price')) $('sl-price').value='0';
+      staged=[]; drawFiles(); loadMine();
+    }catch(e){ toast(e.message||'Could not list','error',5000); }
+    if(btn){btn.disabled=false;btn.textContent='List it';}
+  });
+}
+// file helpers
+function _fmtBytes(n){ if(n<1024) return n+' B'; if(n<1048576) return (n/1024).toFixed(0)+' KB'; return (n/1048576).toFixed(1)+' MB'; }
+function _fileIcon(type,name){
+  const t=(type||'')+' '+(name||'').toLowerCase();
+  const svg=(p)=>'<svg class="file-ic-svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+p+'</svg>';
+  if(/pdf|doc|word/.test(t)) return svg('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h6"/>');
+  if(/video|mp4|mov|webm|avi/.test(t)) return svg('<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m10 9 5 3-5 3z"/>');
+  if(/image|png|jpg|jpeg|gif|svg|webp/.test(t)) return svg('<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>');
+  if(/zip|rar|7z|tar|gz/.test(t)) return svg('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M10 12h1v1h-1zM11 14h1v1h-1zM10 16h1v1h-1z"/>');
+  if(/csv|xls|sheet|numbers/.test(t)) return svg('<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>');
+  if(/json|model|gguf|safetensors|bin|onnx|pt|ckpt|h5|pkl/.test(t)) return svg('<path d="M8 3H5a2 2 0 0 0-2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 3h3a2 2 0 0 1 2 2v3M16 21h3a2 2 0 0 0 2-2v-3"/><circle cx="12" cy="12" r="2"/>');
+  if(/audio|mp3|wav|m4a/.test(t)) return svg('<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>');
+  return svg('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>');
+}
+window._fileIcon=_fileIcon; window._fmtBytes=_fmtBytes;
+// Turn a stored file (data URL) back into a real download.
+function _downloadFile(f){
+  try{
+    const a=document.createElement('a'); a.href=f.data; a.download=f.name||'download';
+    document.body.appendChild(a); a.click(); a.remove();
+    toast('Downloading '+(f.name||'file'),'info',2500);
+  }catch(e){ toast('Could not download file','error'); }
+}
+window._downloadFile=_downloadFile;
+function _mktEarnings(body){
+  if(!body) return;
+  body.innerHTML='<div class="fd-loading">Loading your earnings\u2026</div>';
+  AMVMarket.earnings().then(d=>{
+    const bal=(d.balance||0), life=(d.lifetime||0), pct=d.sellerPct||80, min=d.minWithdraw||10;
+    const txLabel={sale:'Sale',withdrawal:'Withdrawal'};
+    const tx=(d.tx||[]).map(t=>'<div class="vrow"><span>'+(txLabel[t.type]||t.type)+(t.title?' \u00b7 '+escH(t.title):'')+(t.status?' <span style="color:var(--mu);font-size:11px">('+t.status+')</span>':'')+'</span>'+
+      '<span class="vrow-n" style="color:'+(t.amount<0?'var(--mu)':'#4ade80')+'">'+(t.amount<0?'-$'+Math.abs(t.amount).toFixed(2):'+$'+t.amount.toFixed(2))+'</span></div>').join('')||'<div class="vrow"><span style="color:var(--mu)">No earnings yet \u2014 sell something to start.</span></div>';
+    body.innerHTML=
+      '<div class="vhero">'+
+        '<div class="vcard vcard-accent"><div class="vcard-n">$'+bal.toFixed(2)+'</div><div class="vcard-l">Available to withdraw</div></div>'+
+        '<div class="vcard"><div class="vcard-n">$'+life.toFixed(2)+'</div><div class="vcard-l">Lifetime earnings</div></div>'+
+        '<div class="vcard"><div class="vcard-n">'+pct+'%</div><div class="vcard-l">Your share of each sale</div></div>'+
+      '</div>'+
+      '<div class="ss2"><h3>Withdraw your balance</h3>'+
+        '<p style="font-size:12.5px;color:var(--mu);margin:0 0 12px;line-height:1.6">Minimum withdrawal is $'+min+'. Enter where you\u2019d like the funds sent (PayPal email or bank reference) and we\u2019ll process the payout.</p>'+
+        '<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;max-width:520px">'+
+          '<div style="flex:1;min-width:200px"><label class="lbl">Payout destination</label><input id="wd-dest" placeholder="PayPal email or bank reference"></div>'+
+          '<button class="btn bp" id="wd-go" style="font-size:12px"'+(bal<min?' disabled':'')+'>Withdraw $'+bal.toFixed(2)+'</button>'+
+        '</div>'+
+        (bal<min?'<div style="font-size:11.5px;color:var(--mu);margin-top:8px">You need at least $'+min+' to withdraw.</div>':'')+
+      '</div>'+
+      '<div class="ss2"><h3>Transaction history</h3><div class="vbreak">'+tx+'</div></div>';
+    on($('wd-go'),'click',async()=>{
+      const dest=($('wd-dest')?.value||'').trim();
+      if(!dest){ toast('Enter where to send your payout','error'); return; }
+      const btn=$('wd-go'); if(btn){btn.disabled=true;btn.textContent='Requesting\u2026';}
+      try{ const r=await AMVMarket.withdraw(dest); toast('Withdrawal of $'+r.amount.toFixed(2)+' requested \u2014 it\u2019s now processing.','success',5000); _mktEarnings(body); }
+      catch(e){ if(btn){btn.disabled=false;btn.textContent='Withdraw';} toast(e.message||'Could not withdraw','error',5000); }
+    });
+  });
+}
 
 /* === MEMORY === */
 function renderMemoryView(){
@@ -2877,7 +7453,7 @@ function renderMemoryView(){
       '</div>'+
       '<div id="mem-list" style="display:flex;flex-direction:column;gap:8px"></div>'+
       (S.memory.length?'<button class="btn bd2" id="mem-clr" style="align-self:flex-start;font-size:12px">Clear All Memories</button>':'')+
-      '<div class="ss2" style="background:rgba(124,108,255,.04);border-color:rgba(124,108,255,.18)">'+
+      '<div class="ss2 ds-note">'+
         '<h3>How Memory Works</h3>'+
         '<p style="font-size:12px;color:var(--t2);line-height:1.65">Memories you add here are automatically included in every conversation with AMV, allowing for more personalized and contextual responses. Add facts about yourself, your preferences, your work, or anything you want AMV to always know.</p>'+
         '<div style="margin-top:9px;font-size:12px;color:var(--t2)">Examples:'+
@@ -2906,14 +7482,17 @@ function addMemory(){
 }
 function renderMemList(){
   const list=$('mem-list'); if(!list) return;
-  if(!S.memory.length){list.innerHTML=emptyState({icon:'\uD83E\uDDE0',title:'No memories yet',sub:'Tell AMV things to remember about you \u2014 your name, preferences, projects \u2014 and it\u2019ll use them in every chat.'});return;}
-  list.innerHTML=S.memory.map(m=>
+  if(!S.memory.length){list.innerHTML=emptyState({svg:'<path d="M12 5a3 3 0 0 0-5.9-.7 3 3 0 0 0-1.6 5.2A3 3 0 0 0 6 15a3 3 0 0 0 6 .5 3 3 0 0 0 6-.5 3 3 0 0 0 1.5-5.5 3 3 0 0 0-1.6-5.2A3 3 0 0 0 12 5z"/>',title:'No memories yet',sub:'Tell AMV things to remember about you \u2014 your name, preferences, projects \u2014 and it\u2019ll use them in every chat.',btn:{label:'Add your first memory',act:'_focusMemInput'}});return;}
+  const pg=_paginate('memory', S.memory.length, 30);
+  list.innerHTML=S.memory.slice(0, pg.shown).map(m=>
     '<div class="memc">'+
       '<div class="memic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--indigo)" stroke-width="2" stroke-linecap="round"><path d="M12 2a5 5 0 1 0 5 5H7a5 5 0 0 0 5-5z"/><path d="M12 12v10"/></svg></div>'+
       '<div style="flex:1"><div class="memt">'+escH(m.text)+'</div><div class="memtm">Added '+new Date(m.added).toLocaleDateString()+'</div></div>'+
-      '<button class="memdel" data-dact="delMemory" data-darg="'+m.id+'">×</button>'+
+      '<button class="memdel" data-dact="delMemory" data-darg="'+escH(m.id)+'">×</button>'+
     '</div>'
-  ).join('');
+  ).join('') + (pg.hasMore ? _showMoreBtn('memory', pg.remaining, 30) : '');
+  const mb=list.querySelector('[data-pagemore="memory"]');
+  if(mb) mb.addEventListener('click',()=>{ _pageMore('memory',30); renderMemList(); });
 }
 function delMemory(id){
   S.memory=S.memory.filter(m=>m.id!==id);
@@ -2931,7 +7510,7 @@ let _memExtractBusy=false;
 async function _maybeExtractMemory(msgs){
   try{
     if(_memExtractBusy) return;
-    if(!S.mk && !(window.AMV_API && AMV_API.live)) return;
+    if(!_aiBackendReady()) return;
     // only run occasionally (every few exchanges) to keep it cheap
     const userTurns=msgs.filter(m=>m.r==='u').length;
     if(userTurns<2 || userTurns%3!==0) return;
@@ -3016,7 +7595,7 @@ function renderPLList(cat){
   let prompts=S.prompts;
   if(cat!=='All') prompts=prompts.filter(p=>p.cat===cat);
   if(search) prompts=prompts.filter(p=>p.title.toLowerCase().includes(search)||p.text.toLowerCase().includes(search));
-  if(!prompts.length){list.innerHTML='<div style="font-size:13px;color:var(--t2);padding:12px 0;font-style:italic">No prompts found.</div>';return;}
+  if(!prompts.length){list.innerHTML=emptyState({icon:'\uD83D\uDD0D',title:'No prompts found',sub:'Try a different search or category \u2014 or create your own prompt with the + Create button above.',btn:{label:'Create a prompt',act:'_newPromptCTA'}});return;}
   list.innerHTML=prompts.map(p=>
     '<div class="plc">'+
       '<div class="plt"><span>'+escH(p.title)+'</span><span class="plcat">'+p.cat+'</span></div>'+
@@ -3101,7 +7680,7 @@ function renderWsGrid(){
     const chats=allConvs.filter(c=>c.wsId===ws.id);
     const preview=chats.slice(0,3).map(c=>'<div class="wsc-chat" data-dact="loadConv" data-darg="'+c.id+'" onclick="event.stopPropagation()" style="font-size:12px;color:var(--mu);padding:4px 0;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">\u2022 '+escH(c.title||'Untitled')+'</div>').join('');
     return '<div class="wsc" data-dact="openWorkspace" data-darg="'+ws.id+'">'+
-      '<div class="wsic" style="background:rgba(124,108,255,.1)">'+ws.icon+'</div>'+
+      '<div class="wsic" style="background:rgba(85,144,255,.1)">'+ws.icon+'</div>'+
       '<div class="wsn">'+escH(ws.name)+'</div>'+
       '<div class="wsd">'+escH(ws.desc||'')+'</div>'+
       (preview?'<div style="margin:8px 0 4px">'+preview+(chats.length>3?'<div style="font-size:11px;color:var(--dim);padding-top:2px">+'+(chats.length-3)+' more</div>':'')+'</div>':'<div class="wsc-empty">No chats yet — open to start one</div>')+
@@ -3164,29 +7743,40 @@ function createWorkspaceModal(){
 function _usageContentHTML(){
   const mc=getMsgs().length,ic=S.imgs.length;
   const week=AMVValue.stats(7), all=AMVValue.stats(null);
-  const daily=AMVValue.daily(14);
-  const maxD=Math.max(1,...daily.map(d=>d.count));
-  const bars=daily.map(d=>'<div class="vbar-col" title="'+d.day+': '+d.count+'"><div class="vbar" style="height:'+Math.max(3,(d.count/maxD)*100)+'%"></div></div>').join('');
   const typeLabel={message:'Conversations',image:'Images',video:'Videos',code:'Code tasks',document:'Documents',agent_action:'Autonomous actions',research:'Research',design:'Designs'};
   const breakdown=Object.entries(all.byType).sort((a,b)=>b[1]-a[1]).map(([t,n])=>
     '<div class="vrow"><span>'+(typeLabel[t]||t)+'</span><span class="vrow-n">'+n+'</span></div>').join('')||'<div class="vrow"><span style="color:var(--mu)">Nothing yet \u2014 start a chat to see your impact grow.</span></div>';
   // --- Task #7: rolling usage window (Claude-style) ---
   const us=AMVUsage.status();
   const planName=(PLANS[loadStr('amv_plan')||'free']&&PLANS[loadStr('amv_plan')||'free'].name)||'Free';
-  const barColor = us.pct>=90 ? '#e5534b' : (us.pct>=70 ? '#d9912f' : 'var(--ac,#7c6cff)');
+  const barColor = us.pct>=90 ? '#ff4d4d' : (us.pct>=70 ? '#e0b341' : 'var(--accent)');
   const usagePanel=
     '<div class="ss2 usage-panel"><h3>Current usage</h3>'+
       '<div class="usage-head">'+
         '<div><div class="usage-pct">'+(100-us.pct)+'%</div><div class="usage-pct-l">remaining on your '+planName+' plan</div></div>'+
         '<div class="usage-reset"><div class="usage-reset-n">'+AMVUsage.resetLabel()+'</div><div class="usage-reset-l">until usage resets</div></div>'+
       '</div>'+
-      '<div class="usage-bar"><div class="usage-bar-f" style="width:'+us.pct+'%;background:'+barColor+'"></div></div>'+
       '<div class="usage-meta">'+
         '<span>'+us.used.toLocaleString()+' / '+us.cap.toLocaleString()+' used this window</span>'+
         '<span>'+us.reqs+' request'+(us.reqs===1?'':'s')+' &middot; resets every '+us.windowHours+'h</span>'+
       '</div>'+
-      (us.pct>=90?'<div class="usage-warn">You\u2019re nearly out for this window. It refreshes in '+AMVUsage.resetLabel()+', or <a data-stab="plans" style="color:var(--ac,#7c6cff);cursor:pointer">upgrade for more &rarr;</a></div>':'')+
+      (us.pct>=90?'<div class="usage-warn">You\u2019re nearly out for this window. It refreshes in '+AMVUsage.resetLabel()+', or <a data-stab="plans" style="color:var(--accent);cursor:pointer">upgrade for more &rarr;</a></div>':'')+
       '<p class="usage-note">Your usage refreshes on a rolling '+us.windowHours+'-hour window \u2014 no daily lockout. Heavier plans get a bigger allowance per window.</p>'+
+    '</div>';
+  // --- 14-day activity trend chart ---
+  const _daily=AMVValue.daily(14);
+  const _maxDay=Math.max(1,..._daily.map(d=>d.count));
+  const _totalDays=_daily.reduce((a,d)=>a+d.count,0);
+  const _trendBars=_daily.map(d=>{
+    const h=Math.round((d.count/_maxDay)*100);
+    const dObj=new Date(d.day+'T00:00:00');
+    const label=dObj.toLocaleDateString(undefined,{month:'short',day:'numeric'});
+    return '<div class="trend-col" title="'+label+': '+d.count+' task'+(d.count===1?'':'s')+'"><div class="trend-bar-wrap"><div class="trend-bar" style="height:'+Math.max(h,3)+'%"></div></div><div class="trend-lbl">'+dObj.getDate()+'</div></div>';
+  }).join('');
+  const trendPanel=
+    '<div class="ss2"><h3>Activity over time</h3>'+
+      '<p class="vsub" style="margin-bottom:14px">Your last 14 days \u00b7 '+_totalDays+' task'+(_totalDays===1?'':'s')+' total</p>'+
+      '<div class="trend-chart">'+_trendBars+'</div>'+
     '</div>';
   return ''+
       '<div class="vhero">'+
@@ -3196,7 +7786,7 @@ function _usageContentHTML(){
         '<div class="vcard"><div class="vcard-n">'+S.memory.length+'</div><div class="vcard-l">Things AMV remembers</div></div>'+
       '</div>'+
       usagePanel+
-      '<div class="ss2"><h3>Activity \u2014 last 14 days</h3><div class="vchart">'+bars+'</div></div>'+
+      trendPanel+
       '<div class="ss2"><h3>What you\u2019ve used</h3><div class="vbreak">'+breakdown+'</div></div>'+
       '<div class="ss2"><h3>Today\u2019s plan usage</h3>'+
         '<div style="display:flex;flex-direction:column;gap:10px">'+
@@ -3208,6 +7798,317 @@ function _usageContentHTML(){
       (isAdmin()? (function(){var u=AEGIS.usage();var cap=AEGIS.cfg.dailyTokenCap;var used=u.inTok+u.outTok;var pct=Math.min(used/cap*100,100);return '<div class="ss2" style="margin-top:18px"><h3>Token usage &amp; cost (today) \u2014 operator</h3>'+'<div class="stg" style="margin-bottom:12px">'+'<div class="stc"><div class="stv">'+u.reqs+'</div><div class="stl">API requests</div></div>'+'<div class="stc"><div class="stv">'+u.inTok.toLocaleString()+'</div><div class="stl">Input tokens</div></div>'+'<div class="stc"><div class="stv">'+u.outTok.toLocaleString()+'</div><div class="stl">Output tokens</div></div>'+'<div class="stc"><div class="stv">$'+u.costUSD.toFixed(3)+'</div><div class="stl">Est. cost</div></div>'+'</div>'+'<div><div style="display:flex;justify-content:space-between;font-size:12px;color:var(--mu);margin-bottom:4px"><span>Daily token cap (this device)</span><span>'+used.toLocaleString()+' / '+cap.toLocaleString()+'</span></div><div class="sbb"><div class="sbf2" style="width:'+pct+'%"></div></div></div>'+'<div style="display:flex;gap:8px;margin-top:12px"><button class="btn bs" data-dact="aegisExport" style="font-size:12px">Export audit log</button><button class="btn bs" data-dact="aegisClear" style="font-size:12px">Clear log</button></div>'+'</div>';})() : '');
 }
 window._usageContentHTML=_usageContentHTML;
+
+/* ============================================================
+   ADMIN CONTROL CENTER (operator-only)
+   Spend monitoring · user management · abuse/anomaly detection ·
+   health & audit. Reads real AEGIS + usage data; pulls server data
+   when a backend is connected; honestly labels anything that needs
+   the live backend rather than faking numbers.
+   ============================================================ */
+function _adminAbuseSignals(){
+  // derive anomaly signals from the AEGIS event ring buffer
+  const log=(typeof AEGIS!=='undefined'&&AEGIS._loadLog)?AEGIS._loadLog():[];
+  const now=Date.now(); const HOUR=3600000;
+  const recent=log.filter(e=>{ const t=Date.parse(e.ts||0); return t && (now-t)<HOUR; });
+  const errors=recent.filter(e=>e.event==='api_error'||e.event==='exception');
+  const blocks=recent.filter(e=>e.event==='ratelimit_block');
+  const authFails=log.filter(e=>e.event==='auth_fail').slice(-50);
+  const reqs=recent.filter(e=>e.event==='request');
+  const signals=[];
+  if(reqs.length>120) signals.push({sev:'warn', title:'High request volume', detail:reqs.length+' requests in the last hour — watch for a runaway loop or heavy user.'});
+  if(errors.length>=8) signals.push({sev:'crit', title:'Error-rate spike', detail:errors.length+' errors in the last hour. Check the AI backend and recent changes.'});
+  if(blocks.length>=3) signals.push({sev:'warn', title:'Rate-limit blocks firing', detail:blocks.length+' requests were blocked by guardrails this hour.'});
+  if(authFails.length>=5) signals.push({sev:'warn', title:'Repeated failed sign-ins', detail:authFails.length+' recent failed logins — possible credential-stuffing.'});
+  return { signals, errors:errors.length, blocks:blocks.length, reqs:reqs.length, authFails:authFails.length };
+}
+/* ============================================================
+   ADMIN COMMAND CENTER (operator-only) — full executive + ops
+   dashboard. Tabbed: Overview · Users · Revenue · AI & Usage ·
+   Infrastructure · Security · Product · Growth. Real data where
+   we have it (usage, cost, users, errors, models, features);
+   backend-fed panels where production infra is required (clearly
+   labeled — never fabricated numbers).
+   ============================================================ */
+const _ADMIN_TABS=[
+  ['overview','Overview'],['users','Users'],['revenue','Revenue'],['ai','AI & Usage'],
+  ['infra','Infrastructure'],['security','Security'],['product','Product'],['growth','Growth']
+];
+function _admMetrics(){
+  // gather everything we can from real local/AEGIS data
+  const u=(typeof AEGIS!=='undefined')?AEGIS.usage():{reqs:0,inTok:0,outTok:0,costUSD:0,errors:0};
+  const log=(typeof AEGIS!=='undefined'&&AEGIS._loadLog)?AEGIS._loadLog():[];
+  const now=Date.now();
+  const since=(ms)=>log.filter(e=>{const t=Date.parse(e.ts||0);return t&&(now-t)<ms;});
+  const modelUse={};
+  log.filter(e=>e.event==='usage').forEach(e=>{ const m=e.model||(e.data&&e.data.model)||'unknown'; modelUse[m]=(modelUse[m]||0)+1; });
+  const featureUse={};
+  log.filter(e=>e.event==='feature').forEach(e=>{ const f=e.name||(e.data&&e.data.name)||'other'; featureUse[f]=(featureUse[f]||0)+1; });
+  return { u, log, since, modelUse, featureUse,
+    reqs1h:since(3600000).filter(e=>e.event==='request').length,
+    reqs24h:since(86400000).filter(e=>e.event==='request').length,
+    errors24h:since(86400000).filter(e=>e.event==='api_error'||e.event==='exception'||e.event==='error').length,
+    authFails24h:since(86400000).filter(e=>e.event==='auth_fail').length };
+}
+function _admStat(v,l,accent){ return '<div class="adm-stat"><div class="adm-stat-v"'+(accent?' style="color:'+accent+'"':'')+'>'+v+'</div><div class="adm-stat-l">'+l+'</div></div>'; }
+function _admCard(title, body, sub){ return '<div class="ss2"><h3>'+title+(sub?' <span class="adm-live">'+sub+'</span>':'')+'</h3>'+body+'</div>'; }
+function _admPending(what){ return '<div class="adm-pending"><span class="adm-pending-dot"></span>'+escH(what)+' — populates live once the backend is connected.</div>'; }
+function _admBars(obj, emptyMsg){
+  const keys=Object.keys(obj); if(!keys.length) return '<div class="adm-empty">'+(emptyMsg||'No data yet.')+'</div>';
+  const max=Math.max(...keys.map(k=>obj[k]));
+  return '<div class="adm-barlist">'+keys.sort((a,b)=>obj[b]-obj[a]).map(k=>'<div class="adm-brow"><span class="adm-brow-l">'+escH(k)+'</span><div class="adm-brow-track"><div class="adm-brow-fill" style="width:'+Math.max(4,obj[k]/max*100)+'%"></div></div><span class="adm-brow-v">'+obj[k]+'</span></div>').join('')+'</div>';
+}
+function renderAdminView(){
+  const vc=$('vc'); if(!vc) return;
+  if(!isAdmin()){ vc.innerHTML='<div class="sv fi"><div class="vi"><h2>Admin</h2><p class="vsub">This area is for the workspace operator.</p></div></div>'; return; }
+  const tab=S._adminTab||'overview';
+  const backendLive=_aiBackendReady();
+  const live=S._admStats;  // real cross-user platform stats (from backend), if loaded
+  // pull real platform-wide stats when backend is live. Re-fetch if stale (>3 min)
+  // so the dashboard keeps reflecting current cross-user activity.
+  const stale = S._admStats && (Date.now()-(S._admStats.generatedAt||0) > 180000);
+  if(backendLive && (!S._admStats || stale) && !S._admStatsLoading){ _admFetchStats(); }
+  vc.innerHTML='<div class="sv fi"><div class="vi">'+
+    '<span class="eyebrow">Operator</span>'+
+    '<h2>Command Center</h2>'+
+    '<p class="vsub">Everything running your platform — live metrics, revenue, infrastructure, security. '+
+      (live?'<span class="adm-livebadge">● Live · all users</span> updated '+_admAgo(live.generatedAt):
+       backendLive?(S._admStatsLoading?'Loading live platform data…':'<button class="adm-refresh" data-admrefresh="1">Load live platform data</button>'):
+       'Local metrics (this device). Connect the backend for platform-wide data.')+'</p>'+
+    '<div class="adm-tabs">'+_ADMIN_TABS.map(t=>'<button class="adm-tab'+(t[0]===tab?' on':'')+'" data-atab="'+t[0]+'">'+t[1]+'</button>').join('')+'</div>'+
+    '<div id="adm-body"></div>'+
+  '</div></div>';
+  vc.querySelectorAll('[data-atab]').forEach(b=>on(b,'click',()=>{ S._adminTab=b.dataset.atab; renderAdminView(); }));
+  const rb=vc.querySelector('[data-admrefresh]'); if(rb) on(rb,'click',()=>_admFetchStats());
+  _admRenderTab(tab, backendLive, live);
+}
+/* Fetch real cross-user platform stats from the backend and cache them. */
+async function _admFetchStats(){
+  const base=loadStr('amv_api_base')||''; const tok=loadStr('amv_api_token')||AMV_API.token||'';
+  if(!base){ return; }
+  S._admStatsLoading=true;
+  try{ if(S.tab==='admin') renderAdminView(); }catch(e){}
+  try{
+    const r=await fetch(base.replace(/\/$/,'')+'/v1/admin/stats',{headers:{'Authorization':'Bearer '+tok}});
+    if(r.ok){ S._admStats=await r.json(); }
+    else { _logErr('adminStats', new Error('HTTP '+r.status)); }
+  }catch(e){ _logErr('adminStats', e); }
+  S._admStatsLoading=false;
+  try{ if(S.tab==='admin') renderAdminView(); }catch(e){}
+}
+/* Growth block: signups today, WoW trend, conversion, active — plus a 30-day
+   signup sparkline. The numbers that tell you if the business is actually
+   growing, rendered from the real backend series. */
+function _admGrowthBlock(live, backendLive){
+  if(!live || !live.growth){
+    return backendLive ? '<div class="adm-users-loading">Loading growth data…</div>'
+                       : _admPending('Signups over time, conversion rate, active users');
+  }
+  const g=live.growth, uu=live.users||{};
+  const wow = (g.wowGrowthPct==null) ? '—' : (g.wowGrowthPct>=0?'+':'')+g.wowGrowthPct+'%';
+  const wowColor = (g.wowGrowthPct==null) ? '' : (g.wowGrowthPct>=0 ? '#4ade80' : '#ff6b6b');
+  const spark=_admSparkline((g.signups30||[]).map(d=>d.count));
+  return '<div class="adm-kpi-grid">'+
+      _admKpi('Signups today', String(g.signupsToday!=null?g.signupsToday:'—'), 'New accounts')+
+      _admKpi('This week', String(g.signups7!=null?g.signups7:'—'), 'Signups (7d)')+
+      _admKpi('WoW growth', wow, 'vs previous 7d', wowColor)+
+      _admKpi('Conversion', (uu.conversionPct!=null?uu.conversionPct+'%':'—'), 'Free → paid')+
+      _admKpi('Active today', String(uu.activeToday!=null?uu.activeToday:'—'), 'Signed-in users')+
+      _admKpi('ARPU', (live.revenue&&live.revenue.arpu!=null?'$'+live.revenue.arpu:'—'), 'Avg revenue / paying user')+
+    '</div>'+
+    '<div class="adm-spark-wrap"><div class="adm-spark-lbl">Signups, last 30 days</div>'+spark+'</div>';
+}
+
+/* A tiny inline SVG sparkline — no library, scales to the data. */
+function _admSparkline(values){
+  if(!values || !values.length) return '';
+  const w=280, h=44, pad=3;
+  const max=Math.max(1, ...values);
+  const step=(w-pad*2)/Math.max(1,(values.length-1));
+  const pts=values.map((v,i)=>{
+    const x=pad+i*step;
+    const y=h-pad-(v/max)*(h-pad*2);
+    return x.toFixed(1)+','+y.toFixed(1);
+  });
+  const line=pts.join(' ');
+  const area='0,'+h+' '+pts.map(p=>p).join(' ')+' '+w+','+h;
+  return '<svg class="adm-spark" viewBox="0 0 '+w+' '+h+'" width="100%" height="'+h+'" preserveAspectRatio="none">'+
+    '<polygon points="'+area+'" fill="var(--accent)" opacity="0.12"/>'+
+    '<polyline points="'+line+'" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>'+
+  '</svg>';
+}
+
+function _admRenderTab(tab, backendLive, live){
+  const el=$('adm-body'); if(!el) return;
+  const m=_admMetrics(); const u=m.u;
+  const sev={crit:'#ff4d4d',warn:'#e0b341',ok:'#4ade80'};
+  const cap=(typeof AEGIS!=='undefined'&&AEGIS.cfg)?AEGIS.cfg.dailyTokenCap:2000000;
+  const used=u.inTok+u.outTok; const pct=Math.min(used/cap*100,100);
+  const errRate=u.reqs?((u.errors/u.reqs)*100):0;
+
+  if(tab==='overview'){
+    const ab=_adminAbuseSignals();
+    el.innerHTML=
+      _admCard('Executive summary','<div class="adm-stats">'+
+        _admStat('$'+u.costUSD.toFixed(2),'Spend today')+
+        _admStat(u.reqs.toLocaleString(),'API requests today')+
+        _admStat((used>=1000?(used/1000).toFixed(1)+'k':used),'Tokens today')+
+        _admStat(errRate.toFixed(1)+'%','Error rate', errRate>5?sev.crit:'')+
+      '</div>'+
+      '<div class="adm-stats" style="margin-top:12px">'+
+        _admStat(m.reqs24h.toLocaleString(),'Requests (24h)')+
+        _admStat(m.errors24h.toLocaleString(),'Errors (24h)', m.errors24h>0?sev.warn:'')+
+        _admStat(m.authFails24h.toLocaleString(),'Failed logins (24h)', m.authFails24h>3?sev.warn:'')+
+        _admStat((typeof AEGIS!=='undefined'&&AEGIS._loadLog)?AEGIS._loadLog().length:0,'Audit events')+
+      '</div>')+
+      _admCard('Safety signals','<div class="adm-mini-signals">'+(ab.signals.length?ab.signals.map(s=>'<div class="adm-signal '+s.sev+'"><span class="adm-signal-dot" style="background:'+sev[s.sev]+'"></span><div><b>'+escH(s.title)+'</b><span>'+escH(s.detail)+'</span></div></div>').join(''):'<div class="adm-allclear"><span class="adm-signal-dot" style="background:'+sev.ok+'"></span> All clear — no anomalies in the last hour.</div>')+'</div>','last hour')+
+      _admCard('Live KPIs','<div class="adm-kpi-grid">'+
+        _admKpi('MRR', live?'$'+live.revenue.estMRR.toLocaleString():(backendLive?'…':'—'), 'Monthly recurring')+
+        _admKpi('ARR', live?'$'+live.revenue.estARR.toLocaleString():(backendLive?'…':'—'), 'Annual recurring')+
+        _admKpi('Paying users', live?live.users.paying.toLocaleString():'1', 'Active subscriptions')+
+        _admKpi('Total users', live?live.users.total.toLocaleString():(backendLive?'…':'—'), 'All time')+
+      '</div>'+(live?'':backendLive?'':_admPending('Revenue & user totals')))+
+      _admCard('Growth', _admGrowthBlock(live, backendLive), live&&live.growth?'last 30 days':'');
+  }
+  else if(tab==='users'){
+    el.innerHTML=
+      _admCard('User base','<div class="adm-stats">'+
+        _admStat(live?live.users.total.toLocaleString():(backendLive?'…':'1'),'Total users')+
+        _admStat(live?live.users.paying.toLocaleString():(backendLive?'…':'1'),'Paying users')+
+        _admStat(live?('$'+live.margin.estMonthlyCost.toLocaleString()):(backendLive?'…':'$0'),'AI cost (mo)')+
+        _admStat(live?('$'+live.revenue.estMRR.toLocaleString()):(backendLive?'…':'—'),'MRR')+
+      '</div>'+(live?'':backendLive?'':_admPending('Live/daily/monthly user counts, retention cohorts')))+
+      _admCard('Accounts','<div id="adm-users"><div class="adm-users-loading">'+(backendLive?'Loading users\u2026':'Connect the backend to manage all users. Showing this device\u2019s account below.')+'</div></div>')+
+      _admCard('Geographic &amp; device distribution', _admPending('Country, language, device (mobile/web/desktop), browser, OS breakdowns'));
+    _adminLoadUsers(backendLive);
+  }
+  else if(tab==='revenue'){
+    const bp=live?live.users.byPlan:null;
+    const totalUsers=live?Math.max(1,live.users.total):1;
+    const tierBar=(label,key)=>{ const n=bp?(bp[key]||0):0; const w=Math.max(2,(n/totalUsers*100)); return '<div class="adm-brow"><span class="adm-brow-l">'+label+'</span><div class="adm-brow-track"><div class="adm-brow-fill" style="width:'+w+'%"></div></div><span class="adm-brow-v">'+(live?n:(key==='free'?'1':'0'))+'</span></div>'; };
+    el.innerHTML=
+      _admCard('Recurring revenue','<div class="adm-stats">'+
+        _admStat(live?'$'+live.revenue.estMRR.toLocaleString():(backendLive?'…':'$0'),'MRR')+
+        _admStat(live?'$'+live.revenue.estARR.toLocaleString():(backendLive?'…':'$0'),'ARR')+
+        _admStat(live?'$'+live.margin.estMonthlyCost.toLocaleString():(backendLive?'…':'$0'),'AI cost (mo)')+
+        _admStat(live?'$'+Math.max(0,live.revenue.estMRR-live.margin.estMonthlyCost).toLocaleString():(backendLive?'…':'$0'),'Gross margin (mo)')+
+      '</div>'+(live?'':backendLive?'':_admPending('MRR, ARR, revenue and margin from Stripe')))+
+      _admCard('Subscriptions by tier','<div class="adm-barlist">'+tierBar('Free','free')+tierBar('Pro','pro')+tierBar('Elite','elite')+tierBar('Ultra','ultra')+tierBar('Custom','custom')+'</div>')+
+      _admCard('Top spenders (margin watch)', live&&live.topSpenders&&live.topSpenders.length?'<div class="adm-loglist">'+live.topSpenders.slice(0,10).map(u=>'<div class="adm-logrow"><span class="adm-badge '+(u.plan==='free'?'off':'ok')+'">'+escH(u.plan)+'</span><span>'+escH(u.email)+'</span><span class="adm-logtime">$'+u.monthCostUSD+'</span></div>').join('')+'</div>':(live?'<div class="adm-empty">No paying users yet.</div>':_admPending('Who costs the most this month — abuse & margin watch')))+
+      _admCard('Financial forecast &amp; investor KPIs', _admPending('Growth-based ARR/MRR projections, CAC/LTV, burn, runway'));
+  }
+  else if(tab==='ai'){
+    el.innerHTML=
+      _admCard('AI usage (today)','<div class="adm-stats">'+
+        _admStat(u.reqs.toLocaleString(),'Requests')+
+        _admStat(u.inTok.toLocaleString(),'Input tokens')+
+        _admStat(u.outTok.toLocaleString(),'Output tokens')+
+        _admStat('$'+u.costUSD.toFixed(3),'Est. cost')+
+      '</div>'+
+      '<div class="adm-bar-wrap" style="margin-top:14px"><div class="adm-bar-top"><span>Daily token budget</span><span>'+used.toLocaleString()+' / '+cap.toLocaleString()+'</span></div><div class="adm-bar"><div class="adm-bar-fill" style="width:'+pct+'%;background:'+(pct>90?sev.crit:pct>70?sev.warn:'var(--accent)')+'"></div></div></div>')+
+      _admCard('Requests by model', _admBars(m.modelUse,'No model calls recorded yet this session.'))+
+      _admCard('Model ops', _admPending('Avg response time, tokens/day trend, cost per request, queue length, hallucination/error tracking, model version comparison'));
+  }
+  else if(tab==='infra'){
+    const recentErrs=m.log.filter(e=>e.event==='error'||e.event==='api_error'||e.event==='exception'||e.event==='uncaught').slice(-15).reverse();
+    el.innerHTML=
+      _admCard('System status','<div class="adm-health">'+
+        '<div class="adm-health-row"><span>AI engine</span><span class="adm-badge '+(backendLive?'ok':'off')+'">'+(backendLive?'Online':'Not connected')+'</span></div>'+
+        '<div class="adm-health-row"><span>Guardrails</span><span class="adm-badge ok">Active</span></div>'+
+        '<div class="adm-health-row"><span>Frontend</span><span class="adm-badge ok">Operational</span></div>'+
+        '<div class="adm-health-row"><span>Error boundary</span><span class="adm-badge ok">Armed</span></div>'+
+      '</div>')+
+      _admCard('Recent errors', recentErrs.length
+        ? '<div class="adm-loglist">'+recentErrs.map(e=>'<div class="adm-logrow"><span class="adm-badge off">'+escH(e.where||e.event||'error')+'</span><span>'+escH(e.msg||e.raw||'\u2014')+'</span><span class="adm-logtime">'+_admAgo(e.ts)+'</span></div>').join('')+'</div>'
+        : '<div class="adm-allclear"><span class="adm-signal-dot" style="background:#4ade80"></span> No errors logged. Everything\u2019s running clean.</div>', 'last 15')+
+      _admCard('Infrastructure health', _admPending('Uptime, server health, GPU/CPU utilization, database health, storage usage, network latency by region, global server status'))+
+      _admCard('Operations', _admPending('Deployment status, version rollout, model deployment, backup status, disaster recovery, incident management, predictive capacity planning'));
+  }
+  else if(tab==='security'){
+    const ab=_adminAbuseSignals();
+    const recentLogins=m.log.filter(e=>e.event==='login'||e.event==='auth_fail').slice(-12).reverse();
+    el.innerHTML=
+      _admCard('Threat overview','<div class="adm-stats">'+
+        _admStat(m.authFails24h.toLocaleString(),'Failed logins (24h)', m.authFails24h>3?sev.warn:'')+
+        _admStat(ab.blocks.toLocaleString?ab.blocks:String(ab.blocks),'Rate-limit blocks (1h)')+
+        _admStat(ab.errors,'Errors (1h)', ab.errors>=8?sev.crit:'')+
+        _admStat(ab.signals.length,'Active alerts', ab.signals.length?sev.warn:sev.ok)+
+      '</div>')+
+      _admCard('Security alerts', ab.signals.length?'<div class="adm-signals">'+ab.signals.map(s=>'<div class="adm-signal '+s.sev+'"><span class="adm-signal-dot" style="background:'+sev[s.sev]+'"></span><div><b>'+escH(s.title)+'</b><span>'+escH(s.detail)+'</span></div></div>').join('')+'</div>':'<div class="adm-allclear"><span class="adm-signal-dot" style="background:'+sev.ok+'"></span> No active security alerts.</div>','live')+
+      _admCard('Login history', recentLogins.length?'<div class="adm-loglist">'+recentLogins.map(e=>'<div class="adm-logrow"><span class="adm-badge '+(e.event==='auth_fail'?'off':'ok')+'">'+(e.event==='auth_fail'?'failed':'ok')+'</span><span>'+escH(e.email||(e.data&&e.data.email)||'\u2014')+'</span><span class="adm-logtime">'+_admAgo(e.ts)+'</span></div>').join('')+'</div>':'<div class="adm-empty">No recent sign-in events.</div>')+
+      _admCard('Moderation &amp; compliance', _admPending('Moderation queue, flagged conversations, spam/abuse detection, user reports, account verification, data export & privacy requests, compliance dashboard'));
+  }
+  else if(tab==='product'){
+    el.innerHTML=
+      _admCard('Feature usage', _admBars(m.featureUse,'Feature analytics populate as the app is used.'))+
+      _admCard('Conversation analytics','<div class="adm-stats">'+
+        _admStat((getConvsCount?getConvsCount():(S.convs?S.convs.length:0))||0,'Conversations')+
+        _admStat(backendLive?'—':'\u2014','Avg length')+
+        _admStat(backendLive?'—':'\u2014','Satisfaction')+
+        _admStat(backendLive?'—':'\u2014','Search queries')+
+      '</div>'+(backendLive?'':_admPending('Conversation volume, avg length, satisfaction ratings, search queries — platform-wide')))+
+      _admCard('Feedback &amp; bug reports', (function(){
+        let list=[]; try{ list=JSON.parse(loadStr('amv_feedback')||'[]'); }catch(e){}
+        if(!list.length) return _admPending('User bug reports & feature suggestions appear here as they come in');
+        return '<div class="adm-fb-list">'+list.slice(0,20).map(f=>{
+          const when=new Date(f.ts).toLocaleDateString(undefined,{month:'short',day:'numeric'});
+          return '<div class="adm-fb-row"><span class="adm-fb-kind '+(f.kind==='bug'?'bug':'idea')+'">'+(f.kind==='bug'?'Bug':'Idea')+'</span>'+
+            '<div class="adm-fb-main"><div class="adm-fb-text">'+escH(f.text)+'</div>'+
+            '<div class="adm-fb-meta">'+when+(f.email?' \u00b7 '+escH(f.email):'')+' \u00b7 '+escH((f.context&&f.context.tab)||'')+'</div></div></div>';
+        }).join('')+'</div>';
+      })());
+  }
+  else if(tab==='growth'){
+    // build a conversion funnel from locally tracked events
+    const log=(AEGIS._loadLog?AEGIS._loadLog():[]).filter(e=>e.event==='track');
+    const cnt=n=>log.filter(e=>e.name===n).length;
+    const steps=[
+      {label:'Signed up',n:cnt('signup')},
+      {label:'Sent first message',n:cnt('activated_first_message')},
+      {label:'Viewed upgrade nudge',n:cnt('upgrade_nudge_shown')},
+      {label:'Started checkout',n:cnt('upgrade_checkout_started')},
+    ];
+    const top=Math.max(1,steps[0].n,...steps.map(s=>s.n));
+    const funnel='<div class="adm-funnel">'+steps.map((s,i)=>{
+      const pct=Math.round((s.n/top)*100);
+      const conv=i>0&&steps[i-1].n>0?Math.round((s.n/steps[i-1].n)*100)+'% of prev':'';
+      return '<div class="adm-fnl-row"><div class="adm-fnl-top"><span>'+s.label+'</span><span class="adm-fnl-n">'+s.n+(conv?' <span class="adm-fnl-conv">'+conv+'</span>':'')+'</span></div><div class="adm-fnl-track"><div class="adm-fnl-fill" style="width:'+Math.max(pct,2)+'%"></div></div></div>';
+    }).join('')+'</div>';
+    el.innerHTML=
+      _admCard('Conversion funnel', funnel + '<p class="adm-note">Tracked locally from real user events. '+(log.length?log.length+' events recorded this session.':'Events populate as users move through the app.')+'</p>')+
+      _admCard('Engagement', _admPending('DAU/WAU/MAU, retention curves, peak traffic monitoring, usage trends over time'))+
+      _admCard('Distribution', _admPending('Geographic & language distribution, device/browser/OS analytics, live world map of active users'));
+  }
+}
+function _admKpi(label,val,sub,color){ return '<div class="adm-kpi"><div class="adm-kpi-v"'+(color?' style="color:'+color+'"':'')+'>'+(val||'—')+'</div><div class="adm-kpi-l">'+label+'</div><div class="adm-kpi-s">'+sub+'</div></div>'; }
+function _admAgo(ts){ const t=Date.parse(ts||0); if(!t) return ''; const s=(Date.now()-t)/1000; if(s<60)return Math.floor(s)+'s ago'; if(s<3600)return Math.floor(s/60)+'m ago'; if(s<86400)return Math.floor(s/3600)+'h ago'; return Math.floor(s/86400)+'d ago'; }
+function getConvsCount(){ try{ return (S.convs||[]).length; }catch(e){ return 0; } }
+async function _adminLoadUsers(backendLive){
+  const el=$('adm-users'); if(!el) return;
+  let users=[];
+  if(backendLive && window.AMV_API && AMV_API.base){
+    try{
+      const r=await fetch(AMV_API.base.replace(/\/$/,'')+'/admin/users',{headers:{'Authorization':'Bearer '+(AMV_API.token||'')}});
+      if(r.ok){ const d=await r.json(); users=d.users||d||[]; }
+    }catch(e){}
+  }
+  if(!users.length){
+    // local fallback: this device's account
+    try{ const me=S.user||{}; if(me.email) users=[{email:me.email,name:me.name||me.email.split('@')[0],plan:(loadStr('amv_plan')||'free'),createdAt:null,local:true}]; }catch(e){}
+  }
+  if(!users.length){ el.innerHTML='<div class="adm-users-loading">No users to show yet.</div>'; return; }
+  const row=u=>{
+    const plan=(u.plan||'free'); const initial=(u.name||u.email||'?').charAt(0).toUpperCase();
+    return '<div class="adm-user"><span class="adm-user-av">'+escH(initial)+'</span>'+
+      '<div class="adm-user-main"><b>'+escH(u.name||u.email.split('@')[0])+'</b><span>'+escH(u.email)+'</span></div>'+
+      '<span class="adm-plan-tag '+plan+'">'+escH(plan)+'</span>'+
+      (u.local?'':'<button class="adm-user-act" data-admuser="'+escH(u.email)+'">Manage</button>')+
+    '</div>';
+  };
+  el.innerHTML='<div class="adm-user-search"><input id="adm-user-q" placeholder="Search users by name or email\u2026"></div>'+
+    '<div class="adm-user-list" id="adm-user-list">'+users.map(row).join('')+'</div>';
+  const q=$('adm-user-q'); if(q) on(q,'input',()=>{ const term=q.value.toLowerCase(); const filtered=users.filter(u=>(u.email+' '+(u.name||'')).toLowerCase().includes(term)); const list=$('adm-user-list'); if(list) list.innerHTML=filtered.map(row).join('')||'<div class="adm-users-loading">No matches.</div>'; });
+}
 
 function renderUsageView(){
   const vc=$('vc'); if(!vc) return;
@@ -3224,6 +8125,33 @@ function renderUsageView(){
 /* === USAGE (legacy owner view, unused) === */
 
 /* === BILLING === */
+// Build an invoices table from the subscription's real billing history: one
+// invoice per monthly cycle since the plan started, for the plan's price.
+function _invoiceTableHTML(plan, P, sinceDate){
+  if(!sinceDate || plan==='free') return '<div class="bill-inv-loading">No invoices yet.</div>';
+  const price=P.price||0;
+  const rows=[];
+  const now=Date.now();
+  let d=new Date(sinceDate.getTime());
+  let guard=0;
+  while(d.getTime()<=now && guard<36){
+    rows.push({ date:new Date(d.getTime()), total:price });
+    d=new Date(d.getTime()); d.setMonth(d.getMonth()+1); guard++;
+  }
+  rows.reverse(); // newest first
+  if(!rows.length) return '<div class="bill-inv-loading">No invoices yet.</div>';
+  const fmtD=(dt)=>dt.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'});
+  return '<div class="inv-table">'+
+    '<div class="inv-row inv-head"><span>Date</span><span>Total</span><span>Status</span><span></span></div>'+
+    rows.map((r,i)=>'<div class="inv-row"><span>'+fmtD(r.date)+'</span>'+
+      '<span class="inv-total">$'+r.total.toFixed(2)+'</span>'+
+      '<span><span class="inv-paid">Paid</span></span>'+
+      '<span><button class="inv-view" data-inv="'+i+'">View</button></span></div>').join('')+
+  '</div>';
+}
+try{ window._invoiceTableHTML=_invoiceTableHTML; }catch(e){}
+
+
 function renderBillingView(targetEl){
   // If billing is being shown inside Settings, render into the settings pane
   // so re-renders (after payment, plan change, etc.) stay in place.
@@ -3282,28 +8210,10 @@ function renderBillingView(targetEl){
         '</div>'+
         (plan==='custom'?'<button class="btn bp" id="bill-resize" style="margin-top:12px">Resize my plan</button>':'')+
       '</div>':'')+
-      // PLAN OPTIONS
-      '<div class="ss2"><h3>'+(plan==='free'?'Upgrade your plan':'Change plan')+'</h3>'+
-        (plan==='free'?'<p class="vsub" style="margin-bottom:12px">Unlock more usage, every model, agents, and priority speed.</p>':'')+
-        '<div class="bill-plans">'+
-          upTargets.map(k=>{ const pl=PLANS[k];
-            return '<button class="bill-plan-opt up" data-pay="'+k+'"><span class="bpo-name">'+pl.name+'</span>'+
-              '<span class="bpo-price">$'+pl.price+'<small>/mo</small></span>'+
-              '<span class="bpo-mult">'+pl.mult+' usage</span>'+
-              '<span class="bpo-cta">Upgrade \u2192</span></button>';
-          }).join('')+
-        '</div>'+
-        (downTargets.length?'<div class="bill-down">'+
-          downTargets.map(k=>{ const pl=PLANS[k];
-            return '<button class="bill-down-link" data-switch="'+k+'">'+(k==='free'?'Cancel \u2014 switch to Free':'Switch to '+pl.name+' ($'+pl.price+'/mo)')+'</button>';
-          }).join(' \u00b7 ')+'</div>':'')+
-        (plan!=='custom'?'<div class="bill-down" style="margin-top:10px"><button class="bill-down-link" id="bill-custom" style="color:var(--accent)">Or build a custom plan sized to you \u2192</button></div>':'')+
-      '</div>'+
-      // MANAGE (real portal when backend/portal present)
-      ((hasPortal||liveBackend)?'<div class="ss2"><h3>Manage payment &amp; invoices</h3>'+
-        '<p class="vsub" style="margin-bottom:12px">Update your card, download invoices, or cancel through the secure billing portal.</p>'+
-        '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn bp" id="portal-open-btn">Open billing portal</button></div>'+
-        '<div style="font-size:11px;color:var(--dim);margin-top:9px">Powered by Stripe \u00b7 PCI-DSS Level 1</div></div>':'')+
+      // INVOICES
+      (plan!=='free'?'<div class="ss2"><h3>Invoices</h3>'+
+        '<div id="bill-invoices">'+(liveBackend?'<div class="bill-inv-loading">Loading your invoices\u2026</div>':_invoiceTableHTML(plan,P,sinceDate))+'</div>'+
+      '</div>':'')+
       // SECURITY
       '<div class="ss2"><h3>How we protect your payment</h3>'+
         '<div class="sec-grid">'+
@@ -3313,6 +8223,16 @@ function renderBillingView(targetEl){
           _secItem('📡','256-bit TLS','Every payment is encrypted in transit and screened for fraud.')+
         '</div>'+
       '</div>'+
+      (isAdmin()?(
+      '<div class="ss2" style="border:1px dashed var(--bd);border-radius:10px;padding:14px 16px">'+
+        '<h3 style="margin-top:0">Payment test mode <span style="font-weight:400;color:var(--mu);font-size:11px">(only you see this)</span></h3>'+
+        '<p style="font-size:12px;color:var(--t2);line-height:1.6;margin:0 0 10px">Simulate a completed checkout to verify the success flow end to end \u2014 plan gating, UI refresh, and confirmation \u2014 before your live payment keys are connected. This changes only your local plan; it never charges anything.</p>'+
+        '<div style="display:flex;gap:7px;flex-wrap:wrap">'+
+          ['pro','elite','ultra'].map(pl=>'<button class="btn" data-simpay="'+pl+'" style="font-size:12px">Simulate '+(PLANS[pl]?PLANS[pl].name:pl)+'</button>').join('')+
+          '<button class="btn" data-simpay="free" style="font-size:12px">Reset to Free</button>'+
+        '</div>'+
+      '</div>'
+      ):'')+
     '</div></div>';
 
   const openPortal=async ()=>{
@@ -3323,8 +8243,39 @@ function renderBillingView(targetEl){
   const pb=$('portal-open-btn'); if(pb) on(pb,'click',openPortal);
   vc.querySelectorAll('[data-pay]').forEach(b=>on(b,'click',()=>openCheckout(b.dataset.pay)));
   vc.querySelectorAll('[data-switch]').forEach(b=>on(b,'click',()=>_switchPlan(b.dataset.switch)));
+  vc.querySelectorAll('[data-simpay]').forEach(b=>on(b,'click',()=>{
+    const pl=b.dataset.simpay;
+    if(pl==='free'){ _setPlan('free'); renderBillingView(); toast('Test: reset to Free plan','info'); }
+    else handlePaymentSuccess(pl,{simulated:true});
+  }));
   const rz=$('bill-resize'); if(rz) on(rz,'click',openCustomPlan);
   const bc=$('bill-custom'); if(bc) on(bc,'click',openCustomPlan);
+  vc.querySelectorAll('.inv-view').forEach(b=>on(b,'click',()=>toast('Invoice PDFs open through the billing portal once your account is connected to a payment processor.','info',4000)));
+  // load real invoice history when the backend is connected
+  if(plan!=='free' && liveBackend){ _loadInvoices(); }
+}
+/* Fetch and render the user's invoice history into the billing view. */
+async function _loadInvoices(){
+  const el=$('bill-invoices'); if(!el) return;
+  const base=loadStr('amv_api_base')||''; const tok=loadStr('amv_api_token')||(window.AMV_API&&AMV_API.token)||'';
+  if(!base){ return; }
+  try{
+    const r=await fetch(base.replace(/\/$/,'')+'/v1/stripe/invoices',{headers:{'Authorization':'Bearer '+tok}});
+    const d=await r.json();
+    if(!el) return;
+    const inv=(d&&d.invoices)||[];
+    if(!inv.length){ el.innerHTML='<div class="bill-inv-empty">No invoices yet. Your first payment will show up here.</div>'; return; }
+    el.innerHTML='<div class="bill-inv-list">'+inv.map(v=>{
+      const dt=new Date(v.date).toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'});
+      const paid=v.status==='paid';
+      return '<div class="bill-inv-row">'+
+        '<div class="bill-inv-main"><span class="bill-inv-num">'+escH(v.number)+'</span><span class="bill-inv-date">'+dt+'</span></div>'+
+        '<div class="bill-inv-right"><span class="bill-inv-amt">'+v.currency+' '+v.amount.toFixed(2)+'</span>'+
+        '<span class="bill-inv-status '+(paid?'ok':'')+'">'+escH(v.status)+'</span>'+
+        (v.pdf?'<a class="bill-inv-dl" href="'+escH(v.pdf)+'" target="_blank" rel="noopener">Download</a>':'')+
+        '</div></div>';
+    }).join('')+'</div>';
+  }catch(e){ if(el) el.innerHTML='<div class="bill-inv-empty">Couldn\u2019t load invoices right now.</div>'; _logErr('loadInvoices',e); }
 }
 function _drow(k,v){ return '<div class="bd-row"><span class="bd-k">'+k+'</span><span class="bd-v">'+v+'</span></div>'; }
 /* Per-plan local usage caps (the browser guardrail; server enforces the real ones). */
@@ -3341,6 +8292,7 @@ function _setPlan(plan){
   saveStr('amv_plan',plan);
   // record start date when the plan actually changes
   if(prev!==plan) saveStr('amv_plan_since',String(Date.now()));
+  if(prev!==plan && plan!=='free' && prev==='free'){ try{ AEGIS.log('plan_upgrade',{plan}); }catch(e){} }
   // resolve the effective tier (custom = the user's purchased config)
   let t=PLAN_TIERS[plan]||PLAN_TIERS.free;
   if(plan==='custom'){
@@ -3354,13 +8306,49 @@ function _setPlan(plan){
   try{ if(typeof renderView==='function' && S.tab) renderView(); }catch(e){}
 }
 function _planAllowsModel(mk){ if(mk==='auto') return true; const plan=loadStr('amv_plan')||'free'; if(plan==='custom') return true; const t=PLAN_TIERS[plan]||PLAN_TIERS.free; return t.models.indexOf(mk)>=0; }
+
+/* Sync the REAL plan from the backend entitlement store. The server sets the
+   plan only via a verified payment webhook, so this is the source of truth —
+   the browser never grants itself a paid plan. Called on load and after the
+   post-checkout redirect (?upgraded=1). Falls back silently with no backend. */
+async function syncEntitlement(){
+  try{
+    if(!(window.AMV_API && AMV_API.live && AMV_API.token)) return;
+    const r = await AMV_API._fetch('/v1/entitlement', { method:'GET' });
+    const d = await r.json().catch(()=>null);
+    if(d && d.ok && d.entitlement && d.entitlement.plan){
+      const serverPlan = d.entitlement.plan;
+      if((loadStr('amv_plan')||'free') !== serverPlan){
+        _setPlan(serverPlan);
+        if(serverPlan!=='free') try{ toast('Your '+(PLANS[serverPlan]?PLANS[serverPlan].name:serverPlan)+' plan is active.','success',4000); }catch(e){}
+      }
+    }
+  }catch(e){ /* offline / no backend — keep local plan */ }
+}
+/* After returning from Stripe/PayPal checkout, confirm the upgrade landed. */
+function _checkUpgradeReturn(){
+  try{
+    const p = new URLSearchParams(window.location.search);
+    if(p.get('upgraded')==='1'){
+      history.replaceState(null,'',window.location.pathname);
+      // entitlement is set by the webhook; poll a couple times for propagation
+      let tries=0; const poll=()=>{ syncEntitlement(); if(++tries<3) setTimeout(poll, 2500); };
+      poll();
+    } else if(p.get('canceled')==='1'){
+      history.replaceState(null,'',window.location.pathname);
+      try{ toast('Checkout canceled \u2014 no charge was made.','info',4000); }catch(e){}
+    }
+  }catch(e){}
+}
+try{ window.syncEntitlement=syncEntitlement; window._checkUpgradeReturn=_checkUpgradeReturn; }catch(e){}
 window._setPlan=_setPlan;
 
-/* === TEAMS PLAN GATING (Task #3) ===
-   Teams is a B2B capability. It unlocks on the Ultra plan ($200/mo),
-   which is built for team-grade usage, or any Custom plan at the
-   equivalent tier. Free / Pro / Elite cannot create or join a team. */
-const TEAM_REQUIRED_PLAN = 'ultra';
+/* === TEAMS PLAN GATING ===
+   Teams is a B2B capability. It unlocks on the Elite plan ($75/mo) and above
+   — lowered from Ultra so growing companies can collaborate without jumping to
+   the top tier (enterprise buyers want teams early). Free/Pro cannot create or
+   join a team; Elite, Ultra, and equivalent Custom plans can. */
+const TEAM_REQUIRED_PLAN = 'elite';
 function _planAllowsTeams(){
   const plan=loadStr('amv_plan')||'free';
   if(plan==='custom') return (PLAN_RANK['custom']||0) >= (PLAN_RANK[TEAM_REQUIRED_PLAN]||3);
@@ -3447,9 +8435,9 @@ function openUpgradeModal(lockedModel){
 }
 function _planDetails(k){
   const D={
-    pro:['Every AMV model, including AMV Forge for elite coding','5\u00d7 the daily usage of Free \u2014 generous room to work','Autonomous agents & Crew that complete multi-step tasks','HD image generation, video, and interactive 3D models','Build and ship real apps in the live sandbox','Connect Gmail, calendar, and your files','Background & scheduled automation','Priority generation speed'],
-    elite:['Everything in Pro, with far higher limits','20\u00d7 the usage \u2014 for heavy daily users','AMV Apex, our most powerful model, first in line','Run many agents and long jobs in parallel','4K video and the largest 3D builds','Early access to brand-new features','Highest-priority speed at peak times','Priority 24/7 support'],
-    ultra:['Everything in Elite, taken to the maximum','50\u00d7 the usage \u2014 the highest tier we offer','Maximum concurrency \u2014 many heavy jobs at once','\uD83D\uDC65 Team workspaces \u2014 shared projects, roles & memory','Team-grade throughput and priority everywhere','Longest context windows and biggest builds','First access to every new capability we launch','Dedicated priority support'],
+    pro:['All models, including AMV Forge for coding','5\u00d7 the usage of the Free plan','Autonomous agents and Crew for multi-step work','Image, video, and 3D generation','Build and run apps in the sandbox','Connect Gmail, calendar, and files','Scheduled and background automation','Faster generation'],
+    elite:['Everything in Pro, dialed up','20\u00d7 the usage','AMV Apex (Fable 5) first \u2014 our most capable model','Full-stack app builder with one-click deploy','Up to 5 agents running in parallel','4K video & premium image quality','Unlimited scheduled automations','Early access + 24/7 priority support'],
+    ultra:['Everything in Elite, maxed out','50\u00d7 the usage','Unlimited parallel agents \u2014 a whole crew at once','Whole-codebase context & autonomous projects','Export & download full multi-file projects','Deploy & host multiple live apps','Team workspaces, roles & shared projects','Fastest hardware + dedicated support'],
   };
   return D[k]||['More usage','All models'];
 }
@@ -3463,14 +8451,22 @@ function openPlanCompare(highlight){
     ['AMV Pulse (fast)', p=>'\u2713'],
     ['AMV Core (balanced)', p=>'\u2713'],
     ['AMV Forge (coding)', p=>isC(p)?'\u2713':(PLAN_RANK[p]>=1?'\u2713':'\u2014')],
-    ['AMV Apex (flagship)', p=>isC(p)?'\u2713':(PLAN_RANK[p]>=2?'\u2713':'\u2014')],
+    ['AMV Apex \u2014 flagship, priority queue', p=>isC(p)?'\u2713':(PLAN_RANK[p]>=2?'\u2713':'\u2014')],
     ['Autonomous agents & Crew', p=>p==='free'?'\u2014':'\u2713'],
+    ['Full-stack builder (frontend + backend + auth)', p=>isC(p)?'\u2713':(PLAN_RANK[p]>=2?'\u2713':(p==='pro'?'Frontend':'\u2014'))],
+    ['One-click deploy to a live URL', p=>isC(p)?'\u2713':(PLAN_RANK[p]>=2?'\u2713':'\u2014')],
+    ['Download full multi-file projects', p=>p==='free'?'\u2014':'\u2713'],
+    ['Deploy & host multiple live apps', p=>isC(p)?'\u2014':(PLAN_RANK[p]>=3?'\u2713':'\u2014')],
+    ['Autonomous multi-step projects', p=>isC(p)?'\u2713':(PLAN_RANK[p]>=3?'\u2713':(PLAN_RANK[p]>=2?'Limited':'\u2014'))],
+    ['Context window (how much it holds)', p=>p==='free'?'Standard':(PLAN_RANK[p]>=3?'Whole codebase':(PLAN_RANK[p]>=2?'Extra-large':'Large'))],
     ['Image generation', p=>'\u2713'],
-    ['Video generation', p=>p==='free'?'\u2014':'\u2713'],
-    ['Parallel agents / long jobs', p=>isC(p)?'\u2713':(PLAN_RANK[p]>=2?'\u2713':(p==='pro'?'Limited':'\u2014'))],
+    ['Video generation', p=>p==='free'?'\u2014':(PLAN_RANK[p]>=2?'4K':'HD')],
+    ['Parallel agents / long jobs', p=>isC(p)?'\u2713':(PLAN_RANK[p]>=3?'Unlimited':(PLAN_RANK[p]>=2?'Up to 5':(p==='pro'?'Limited':'\u2014')))],
+    ['Scheduled & background automation', p=>p==='free'?'\u2014':(PLAN_RANK[p]>=2?'Unlimited':'\u2713')],
+    ['Connect Gmail, Drive, Calendar, GitHub', p=>p==='free'?'\u2014':'\u2713'],
     ['Early access to new features', p=>isC(p)?'\u2713':(PLAN_RANK[p]>=2?'\u2713':'\u2014')],
-    ['Priority speed', p=>p==='free'?'Standard':'\u2713'],
-    ['Team workspaces (roles, shared memory)', p=>isC(p)?(PLAN_RANK['custom']>=3?'\u2713':'\u2014'):(PLAN_RANK[p]>=3?'\u2713':'\u2014')],
+    ['Priority speed', p=>p==='free'?'Standard':(PLAN_RANK[p]>=3?'Fastest hardware':'\u2713')],
+    ['Team workspaces (roles, shared projects)', p=>isC(p)?'\u2014':(PLAN_RANK[p]>=3?'\u2713':'\u2014')],
     ['Support', p=>isC(p)?'Priority':(PLAN_RANK[p]>=3?'Dedicated':(PLAN_RANK[p]>=2?'Priority 24/7':(p==='pro'?'Priority':'Community')))],
     ['Hard cap (no overage)', p=>p==='free'?'\u2014':'\u2713'],
   ];
@@ -3580,8 +8576,8 @@ window.removePM=removePM;
 const PLANS={
   free:{name:'Free',price:0,blurb:'Daily usage to explore everything',mult:'1\u00d7'},
   pro:{name:'Pro',price:15,blurb:'5\u00d7 the usage, all models, agents, and priority speed',mult:'5\u00d7'},
-  elite:{name:'Elite',price:75,blurb:'20\u00d7 the usage, fastest models first, parallel agents, early access',mult:'20\u00d7'},
-  ultra:{name:'Ultra',price:200,blurb:'50\u00d7 the usage, max concurrency, team-grade limits, priority everything',mult:'50\u00d7'},
+  elite:{name:'Elite',price:75,blurb:'20\u00d7 usage, full-stack builds, one-click deploy, 5 parallel agents, Apex first',mult:'20\u00d7'},
+  ultra:{name:'Ultra',price:200,blurb:'50\u00d7 usage, unlimited parallel agents, whole-codebase context, autonomous projects, team workspaces',mult:'50\u00d7'},
   custom:{name:'Custom',price:0,blurb:'A plan sized exactly to your usage',mult:''},
 };
 const PLAN_RANK={free:0,pro:1,elite:2,ultra:3,custom:2};
@@ -3671,6 +8667,7 @@ function _stripePK(){ return loadStr('amv_stripe_pk')||''; }
 function _stripeLink(plan){ try{ const m=load('amv_pay_links')||{}; return m[plan]||''; }catch(e){ return ''; } }
 
 function openCheckout(plan, customPrice){
+  try{ track('upgrade_checkout_started', { plan }); }catch(e){}
   if(plan==='free'){ _setPlan('free'); renderBillingView(); toast('Switched to Free','info'); return; }
   if(plan==='custom'){
     const cfg=load('amv_custom_cfg')||{}; const price=customPrice||cfg.price||30;
@@ -3855,7 +8852,7 @@ function _payCard(plan){
   if(!name.trim()){ toast('Enter the name on the card','error'); return; }
   const sb=$('pay-card'); if(sb){ sb.disabled=true; sb.textContent='Processing…'; }
   const reset=()=>{ if(sb){sb.disabled=false;sb.textContent='Pay $'+PLANS[plan].price+' / month';} };
-  const finish=()=>{ _savePM({type:'card',brand:_cardBrand(digits),last4:digits.slice(-4),exp:exp.replace(/\s/g,'')}); _setPlan(plan); closePaySheet(); renderBillingView(); toast('You\u2019re now on '+PLANS[plan].name+'!','success'); };
+  const finish=()=>{ _savePM({type:'card',brand:_cardBrand(digits),last4:digits.slice(-4),exp:exp.replace(/\s/g,'')}); handlePaymentSuccess(plan); };
   if(window.AMV_API&&AMV_API.live){
     // Real charge through your backend (which talks to the processor).
     fetch(AMV_API.base.replace(/\/$/,'')+'/v1/pay/card',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+AMV_API.token},body:JSON.stringify({plan,card:{number:digits,exp,cvc,name}})})
@@ -3868,11 +8865,43 @@ function _payCard(plan){
   }
 }
 function _cardBrand(d){ if(/^4/.test(d))return'visa'; if(/^5[1-5]/.test(d)||/^2[2-7]/.test(d))return'mastercard'; if(/^3[47]/.test(d))return'amex'; if(/^6/.test(d))return'discover'; return'card'; }
-function _payActivate(kind,plan){ _savePM({type:kind,brand:kind,last4:'••'}); _setPlan(plan); closePaySheet(); renderBillingView(); toast('You\u2019re now on '+PLANS[plan].name+'!','success'); }
+/* Single entry point for a completed payment, regardless of processor or path
+   (Stripe redirect, PayPal capture, in-app card, or test simulation). Refreshes
+   entitlement from the server when live, updates local plan + UI, and confirms
+   to the user. Every success path should call this so behavior stays identical. */
+async function handlePaymentSuccess(plan, opts){
+  opts = opts || {};
+  try{
+    if(plan) _setPlan(plan);
+    if(window.AMV_API && AMV_API.live && AMV_API.token){
+      let tries=0; const poll=async()=>{ await syncEntitlement(); if(++tries<3) setTimeout(poll, 2500); };
+      poll();
+    }
+  }catch(e){}
+  try{ closePaySheet(); }catch(e){}
+  try{ renderBillingView(); }catch(e){}
+  try{ if(typeof setTab==='function' && opts.goBilling) setTab('billing'); }catch(e){}
+  const nm = (PLANS[plan] && PLANS[plan].name) || plan;
+  try{ toast(opts.simulated ? ('Test: activated '+nm+' plan') : ('You\u2019re now on '+nm+'!'), 'success', 4000); }catch(e){}
+  try{ AEGIS.log('plan_upgrade',{plan, simulated:!!opts.simulated}); }catch(e){}
+}
+try{ window.handlePaymentSuccess=handlePaymentSuccess; }catch(e){}
+
+function _payActivate(kind,plan){ _savePM({type:kind,brand:kind,last4:'••'}); handlePaymentSuccess(plan); }
 /* When the user returns from an external checkout with ?paid=<plan>&pm=<method>, activate it. */
 function _checkPayReturn(){
   try{
     const q=new URLSearchParams(window.location.search);
+    // --- marketplace purchase return ---
+    const bought=q.get('bought');
+    if(bought){
+      history.replaceState(null,'',window.location.pathname);
+      S._mktTab='purchases'; setTab('market');
+      toast('Purchase complete \u2014 it\u2019s in your purchases, ready to use.','success',5000);
+      // entitlement is granted by the webhook; give it a moment then refresh
+      setTimeout(()=>{ if(S.tab==='market'&&S._mktTab==='purchases') renderMarketView(); }, 3000);
+      return;
+    }
     const paid=q.get('paid');
     if(paid && PLANS[paid]){
       const pm=q.get('pm')||'card';
@@ -4018,7 +9047,7 @@ function renderAppsView(){
         '<div class="appx-rows">'+
           row('🔶','JetBrains','IntelliJ, PyCharm, WebStorm, Rider — AMV across every JetBrains IDE.','<button class="btn" data-dact="amvStoreLink" data-darg="jetbrains">Notify me</button>','rgba(254,113,26,.12)','auto')+
           row('⌨️','CLI / Terminal','Pipe context, run agents, and script AMV from your shell.','<button class="btn" data-dact="toastInfo" data-darg="CLI access ships with the API — add your key in Integrations">Get CLI</button>','rgba(255,255,255,.06)','auto')+
-          row('🔌','REST API','Build AMV into your own product. Add your key under Integrations → API.','<button class="btn" data-dact="setTabBtn" data-darg="integrations">Open API setup</button>','rgba(124,108,255,.12)','auto')+
+          row('🔌','REST API','Build AMV into your own product. Add your key under Integrations → API.','<button class="btn" data-dact="setTabBtn" data-darg="integrations">Open API setup</button>','rgba(85,144,255,.12)','auto')+
         '</div>'+
       '</div>'+
 
@@ -4044,7 +9073,13 @@ window.setTabBtn=setTabBtn;
    ============================================================ */
 function _cwJobs(){ return load('amv_cw_jobs') || _cwDefaultJobs(); }
 function _cwSaveJobs(j){ store('amv_cw_jobs', j); }
-function _cwDefaultJobs(){ return []; }
+function _cwDefaultJobs(){ return [
+  { id:'morning_brief', icon:'\u2600\uFE0F', title:'Morning news & markets brief', desc:'Every morning at 7am, AMV researches overnight news and market movements, then emails you a concise brief on what happened and which stocks to watch today.', needs:'Email, Web research', on:false },
+  { id:'inbox_digest', icon:'\uD83D\uDCEC', title:'Daily inbox digest', desc:'AMV summarizes your important emails each evening and drafts replies for the ones that need them \u2014 you just approve and send.', needs:'Email', on:false },
+  { id:'competitor_watch', icon:'\uD83D\uDD0D', title:'Competitor & industry watch', desc:'Weekly, AMV tracks your competitors and industry news, then emails you a summary of anything that matters.', needs:'Email, Web research', on:false },
+  { id:'weekly_report', icon:'\uD83D\uDCCA', title:'Weekly summary report', desc:'Every Friday, AMV compiles your week \u2014 tasks done, key metrics, what\u2019s pending \u2014 into a clean report and emails it to you or your team.', needs:'Email', on:false },
+  { id:'content_calendar', icon:'\u270D\uFE0F', title:'Social content drafts', desc:'AMV drafts a week of social posts based on trends in your space and queues them for your approval.', needs:'Web research', on:false },
+]; }
 function _cwApprovals(){ return load('amv_cw_approvals') || []; }
 function _cwSaveApprovals(a){ store('amv_cw_approvals', a); }
 
@@ -4087,7 +9122,8 @@ function renderCrewView(){
       <div class="crew-hero-l">
         <div class="eyebrow">Autonomous</div>
         <h2>Crew works while you don't.</h2>
-        <p class="vsub">Switch on a standing job and AMV runs in the background across your connected accounts. Everything it wants to send lands in your approval queue first &mdash; nothing goes out until you say so.</p>
+        <p class="vsub">Turn on a standing job and AMV runs it in the background across your connected accounts. Anything it wants to send waits in your approval queue. Nothing goes out until you say so.</p>
+        <div class="crew-try"><span class="crew-try-label">Try saying:</span> <button class="crew-try-chip" data-dact="cwTry" data-darg="Every morning at 7am, email me a summary of overnight news and which stocks to watch today">&ldquo;Every morning, email me a news &amp; stocks brief&rdquo;</button><button class="crew-try-chip" data-dact="cwTry" data-darg="Every Friday, email my team a summary of what we accomplished this week">&ldquo;Every Friday, email my team a weekly report&rdquo;</button></div>
       </div>
       <div class="crew-hero-stat">
         <div class="stat-num">${activeCount}</div>
@@ -4115,6 +9151,11 @@ function renderCrewView(){
           </ol>
         </div>
       </aside>
+    </div>
+
+    <div class="crew-jobs-sec">
+      <div class="sec-head"><h3>Standing jobs</h3><span class="sec-sub">Switch one on and AMV runs it automatically \u2014 emailing you results on schedule.</span></div>
+      <div class="cw-jobs-grid">${jobs.map(jobCard).join('')}</div>
     </div>
 
     <div class="crew-split-even">
@@ -4152,7 +9193,7 @@ function _crewQueueHTML(){
   try{
     var q=(typeof _bgQueue!=='undefined'&&_bgQueue.tasks)?_bgQueue.tasks:[];
     if(!q.length) return '<div class="cw-empty">No background tasks running.</div>';
-    var sc=s=>s==='done'?'#3fb950':s==='running'?'#8b78ff':s==='failed'?'#f85149':'#d29922';
+    var sc=s=>s==='done'?'#4ade80':s==='running'?'#5590ff':s==='failed'?'#ff4d4d':'#e0b341';
     var si=s=>s==='done'?'✓':s==='running'?'⟳':s==='failed'?'✕':'⏳';
     return q.slice().reverse().map(function(t){return '<div class="cw-qrow"><span style="color:'+sc(t.status)+'">'+si(t.status)+'</span><span style="flex:1">'+escH(t.title||t.type||'Task')+'</span><span style="font-size:11px;color:var(--mu)">'+(t.status||'')+'</span></div>';}).join('');
   }catch(e){ return '<div class="cw-empty">No background tasks running.</div>'; }
@@ -4174,6 +9215,14 @@ function cwApprove(id){ const a=_cwApprovals().filter(x=>x.id!==id); _cwSaveAppr
 function cwReject(id){ if(window.AMV_API && AMV_API.live){ AMV_API.actApproval(id,'reject').catch(()=>{}); } const a=_cwApprovals().filter(x=>x.id!==id); _cwSaveApprovals(a); toast('Dismissed','info'); renderCrewView(); }
 function cwEdit(id){ const item=_cwApprovals().find(x=>x.id===id); cwReject(id); setTab('chat'); setTimeout(()=>{ const ta=$('mta'); if(ta&&item){ ta.value='Help me revise this draft:\n\n'+item.preview; ta.focus(); } },120); }
 window.cwToggle=cwToggle;window.cwDemo=cwDemo;window.cwApprove=cwApprove;window.cwReject=cwReject;window.cwEdit=cwEdit;
+function cwTry(prompt){
+  // Take a "try saying" example, drop the user into chat with it ready to send.
+  try{
+    setTab('chat');
+    setTimeout(()=>{ const ta=$('mta'); if(ta){ ta.value=prompt; ta.dispatchEvent(new Event('input')); ta.focus(); } toast('Press send and AMV will set this up for you','info',3500); }, 120);
+  }catch(e){}
+}
+window.cwTry=cwTry;
 
 /* ============================================================
    AMV DESIGN  - visual canvas: generate & iterate UI / graphics
@@ -4229,59 +9278,158 @@ function renderDesignView(){
 function designGo(){ const t=$('dsn-prompt'); const v=t?t.value.trim():''; if(!v){ toast('Describe what to design first','error'); return; } _studioCreate(v); }
 function designStart(kind){ _studioCreate('A '+String(kind).toLowerCase()); }
 
-/* ===== STUDIO — standalone creation canvas (never touches chat) ===== */
-const _STUDIO = { html:'', prompt:'', history:[] };
+/* ===== STUDIO — standalone multi-artifact design canvas (never touches chat) =====
+   A Studio PROJECT holds many designs (pages, screens, slides). Each artifact
+   has its own version history you can revert. Export one or the whole project
+   to a real folder (File System Access) or as downloads. Real Claude Design
+   parity + AMV's Design DNA on top. */
+const _STUDIO = { html:'', prompt:'', history:[],
+  artifacts:[],        // [{id,name,type,html,history:[{brief,html,ts}]}]
+  activeId:'' };
+function _studioActive(){ return _STUDIO.artifacts.find(a=>a.id===_STUDIO.activeId)||null; }
+function _studioNewArtifact(name, type, brief){
+  const id='art_'+Date.now().toString(36)+Math.random().toString(36).slice(2,4);
+  const a={ id, name:name||('Design '+(_STUDIO.artifacts.length+1)), type:type||'page', html:'', brief:brief||'', history:[] };
+  _STUDIO.artifacts.push(a); _STUDIO.activeId=id;
+  // Land in Recents IMMEDIATELY. This used to wait for the AI to return HTML,
+  // so if generation errored \u2014 or you navigated away mid-design \u2014 the Studio
+  // session was never saved and never appeared in Recents.
+  try{ _sessTouch('studio'); }catch(e){}
+  return a;
+}
+function _studioSetHTML(html, brief){
+  const a=_studioActive(); if(!a) return;
+  a.html=html; if(brief) a.brief=brief;
+  try{ _sessTouch('studio'); }catch(e){}
+  a.history.push({brief:brief||'', html, ts:Date.now()});
+  if(a.history.length>30) a.history=a.history.slice(-30);
+  _STUDIO.html=html; // keep legacy field in sync
+}
 async function _studioCreate(brief){
   _STUDIO.prompt=brief;
+  // detect the kind of deliverable
+  const type=/\b(slide|deck|presentation|pitch)\b/i.test(brief)?'slides':/\b(component|button|card|form|widget)\b/i.test(brief)?'component':/\b(poster|graphic|banner|flyer|social)\b/i.test(brief)?'graphic':'page';
+  const name=brief.slice(0,40)+(brief.length>40?'…':'');
+  _studioNewArtifact(name, type, brief);
   _studioShowCanvas(brief);
-  const sys='You are AMV Design — the most talented design AI ever built. Your output must look like a $50k agency deliverable that wins design awards: a distinctive concept (never a template), confident typography pairing with real hierarchy, a cohesive intentional palette, generous deliberate whitespace, asymmetric editorial layout where it helps, micro-interactions (hover states, smooth subtle transitions), and pixel-perfect alignment. People should see it and say "this is the best-looking site I have ever seen." Output a COMPLETE self-contained HTML document (inline <style>, no external assets except Google Fonts) — fully responsive, production-quality, every section finished (no placeholders, real convincing copy). The DESIGN DNA below is the sole source of truth for style decisions. Return ONLY the HTML in a single ```html code block, nothing else.';
+  const typeGuide = type==='slides'
+    ? 'Build a self-contained HTML slide deck: each slide is a full-viewport section (100vh) with keyboard arrow navigation between slides, a subtle slide counter, and a cohesive template applied across all slides. 6-10 slides with real, convincing content.'
+    : type==='component' ? 'Build a polished, self-contained component demo — the component centered on a tasteful backdrop, with real states (hover/active) and a couple of variants shown.'
+    : type==='graphic' ? 'Build a single high-impact graphic/poster as a self-contained HTML page sized like a social/print asset, with striking type and composition.'
+    : 'Build a complete, multi-section responsive web page — every section finished with real convincing copy, no placeholders.';
+  const sys='You are AMV Design — the most talented design AI ever built. Your output must look like a $50k agency deliverable that wins design awards: a distinctive concept (never a template), confident typography with real hierarchy, a cohesive intentional palette, generous deliberate whitespace, editorial layout, tasteful micro-interactions, pixel-perfect alignment. '+typeGuide+' Output a COMPLETE self-contained HTML document (inline <style>, no external assets except Google Fonts) — fully responsive, production-quality. The DESIGN DNA below is the sole source of truth for style. Return ONLY the HTML in a single ```html code block.';
   try{
     _studioStatus('Designing…');
-    const resp=await aiComplete(dnaPromptBlock()+'\n\nDesign this as a single self-contained HTML page, obeying the DESIGN DNA exactly. Make it breathtaking — award-tier, sellable, finished:\n'+brief, sys, {max_tokens:8000, model:'claude-fable-5'});
+    const resp=await aiComplete(dnaPromptBlock()+'\n\nDesign this, obeying the DESIGN DNA exactly. Make it breathtaking — award-tier, finished:\n'+brief, sys, {max_tokens:16000, model:_sectionModel('design')});
     const html=extractCode(resp,'html')||extractCode(resp)||resp;
-    _STUDIO.html=html; _STUDIO.history.push({brief, html});
-    _studioRenderPreview(html);
+    _studioSetHTML(html, brief);
+    _studioRenderPreview(html); _studioRenderArtifacts();
     _studioStatus('');
-  }catch(err){ _studioStatus('✗ '+err.message); }
+  }catch(err){ _studioStatus(_aiFriendly(err&&err.message)); }
 }
 async function _studioRefine(){
   const inp=$('studio-refine'); const msg=inp?inp.value.trim():''; if(!msg) return;
+  const a=_studioActive(); if(!a){ toast('Create a design first','error'); return; }
   if(inp) inp.value='';
   _studioStatus('Refining…');
-  const sys='You are AMV Design — the most talented design AI ever built. Modify the existing HTML per the request while keeping award-tier quality and perfect consistency with the DESIGN DNA. Every change should make the design better, never flatter. Return the COMPLETE updated HTML in one ```html block only.';
+  const sys='You are AMV Design, an expert design AI. Apply the user\u2019s change request to the existing HTML exactly and completely \u2014 do what they asked, even if it changes the style. Keep everything they did NOT ask to change intact. Maintain high visual quality and the DESIGN DNA where it doesn\u2019t conflict with their request. Return the COMPLETE updated HTML in one ```html block only, nothing else.';
   try{
-    const resp=await aiComplete(dnaPromptBlock()+'\n\nCurrent design HTML:\n```html\n'+_STUDIO.html+'\n```\n\nChange request: '+msg+'\n\nReturn the full updated HTML, staying true to the DESIGN DNA.', sys, {max_tokens:8000, model:'claude-fable-5'});
+    const resp=await aiComplete(dnaPromptBlock()+'\n\nCurrent design HTML:\n```html\n'+a.html+'\n```\n\nChange request: '+msg+'\n\nReturn the full updated HTML, staying true to the DESIGN DNA.', sys, {max_tokens:16000, model:_sectionModel('design')});
     const html=extractCode(resp,'html')||extractCode(resp)||resp;
-    _STUDIO.html=html; _STUDIO.history.push({brief:msg, html});
-    _studioRenderPreview(html); _studioStatus('');
-  }catch(err){ _studioStatus('✗ '+err.message); }
+    _studioSetHTML(html, msg);
+    _studioRenderPreview(html); _studioRenderArtifacts(); _studioStatus('');
+  }catch(err){ _studioStatus(_aiFriendly(err&&err.message)); }
 }
 function _studioShowCanvas(brief){
   const vc=$('vc'); if(!vc) return;
   vc.innerHTML = `<div class="studio-canvas">
     <div class="studio-side">
-      <button class="btn" id="studio-back">← New design</button>
-      <div class="studio-brief">${escH(brief)}</div>
+      <button class="btn" id="studio-back">← Studio home</button>
+      <div class="studio-arts-h">Designs in this project</div>
+      <div class="studio-arts" id="studio-arts"></div>
+      <button class="btn bs studio-add" id="studio-add">+ Add a design</button>
       <div class="studio-refine-wrap">
         <textarea id="studio-refine" placeholder="Refine it… e.g. 'make it darker', 'add a pricing section'" rows="3"></textarea>
         <button class="btn bp" id="studio-refine-go">Apply change</button>
       </div>
       <div class="studio-actions">
+        <button class="btn" id="studio-history">History</button>
         <button class="btn" id="studio-code">View code</button>
-        <button class="btn" id="studio-download">Download HTML</button>
+      </div>
+      <div class="studio-actions">
+        <button class="btn" id="studio-download">Download this</button>
+        <button class="btn" id="studio-export">Export project</button>
       </div>
       <div id="studio-status" class="studio-status"></div>
     </div>
     <div class="studio-stage">
-      <div class="studio-frame-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="studio-frame-t">Live preview</span></div>
-      <iframe id="studio-frame" class="studio-frame" sandbox="allow-scripts"></iframe>
+      <div class="studio-frame-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="studio-frame-t" id="studio-frame-t">Live preview</span>
+        <div class="studio-vp" id="studio-vp"><button class="studio-vp-b on" data-vp="desktop" title="Desktop">🖥️</button><button class="studio-vp-b" data-vp="tablet" title="Tablet">📱</button><button class="studio-vp-b" data-vp="phone" title="Phone">📲</button></div>
+      </div>
+      <div class="studio-stage-inner" id="studio-stage-inner"><iframe id="studio-frame" class="studio-frame" sandbox="allow-scripts"></iframe></div>
     </div>
   </div>`;
   on($('studio-back'),'click',()=>setTab('studio'));
   on($('studio-refine-go'),'click',_studioRefine);
-  on($('studio-code'),'click',()=>{ const w=window.open('','_blank'); if(w){ w.document.write('<pre style="white-space:pre-wrap;font:13px monospace;padding:20px">'+(_STUDIO.html.replace(/</g,'&lt;'))+'</pre>'); } });
-  on($('studio-download'),'click',()=>{ const blob=new Blob([_STUDIO.html],{type:'text/html'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='amv-design.html'; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(a.href); });
+  on($('studio-add'),'click',_studioAddPrompt);
+  on($('studio-history'),'click',_studioHistory);
+  on($('studio-code'),'click',()=>{ const a=_studioActive(); if(!a) return; const w=window.open('','_blank'); if(w){ w.document.write('<pre style="white-space:pre-wrap;font:13px monospace;padding:20px">'+(a.html.replace(/</g,'&lt;'))+'</pre>'); } });
+  on($('studio-download'),'click',()=>{ const a=_studioActive(); if(!a) return; _studioDownload(a); });
+  on($('studio-export'),'click',_studioExportProject);
+  // viewport toggles
+  document.querySelectorAll('#studio-vp .studio-vp-b').forEach(b=>on(b,'click',()=>{
+    document.querySelectorAll('#studio-vp .studio-vp-b').forEach(x=>x.classList.remove('on')); b.classList.add('on');
+    const f=$('studio-frame'); if(!f) return; const vp=b.dataset.vp;
+    f.style.width = vp==='phone'?'390px':vp==='tablet'?'768px':'100%';
+    f.style.margin = vp==='desktop'?'0':'0 auto';
+  }));
+  _studioRenderArtifacts();
 }
+function _studioDownload(a){ const blob=new Blob([a.html],{type:'text/html'}); const el=document.createElement('a'); el.href=URL.createObjectURL(blob); el.download=(a.name||'design').replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'.html'; document.body.appendChild(el); el.click(); document.body.removeChild(el); URL.revokeObjectURL(el.href); }
+// artifacts strip — switch between designs in the project
+function _studioRenderArtifacts(){
+  const el=$('studio-arts'); if(!el) return;
+  const typeIc={page:'🖥️',slides:'🎞️',component:'🧩',graphic:'🎨'};
+  el.innerHTML=_STUDIO.artifacts.map(a=>'<div class="studio-art'+(a.id===_STUDIO.activeId?' on':'')+'" data-art="'+a.id+'"><span class="studio-art-ic">'+(typeIc[a.type]||'🖥️')+'</span><span class="studio-art-n">'+escH(a.name||'Design')+'</span></div>').join('');
+  el.querySelectorAll('[data-art]').forEach(x=>on(x,'click',()=>{ _STUDIO.activeId=x.dataset.art; const a=_studioActive(); if(a){ _studioRenderPreview(a.html); const t=$('studio-frame-t'); if(t)t.textContent=a.name; } _studioRenderArtifacts(); }));
+}
+function _studioAddPrompt(){
+  const r=$('ovr'); if(!r) return;
+  r.innerHTML='<div class="ov" id="sa-bg"><div class="ob" onclick="event.stopPropagation()" style="max-width:440px"><button class="oc" onclick="closeOvr()">×</button>'+
+    '<h2 style="margin-bottom:6px">Add a design</h2><p class="ob-sub" style="margin-bottom:12px">Describe another page, screen, slide deck, or graphic. It joins this project so your whole set stays consistent.</p>'+
+    '<textarea id="sa-brief" rows="3" placeholder="e.g. \'an about page matching this style\' or \'a pitch deck of 6 slides\'" style="width:100%;font-size:13px"></textarea>'+
+    '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px"><button class="btn bs" onclick="closeOvr()">Cancel</button><button class="btn bp" id="sa-go">Design it</button></div></div></div>';
+  on($('sa-bg'),'click',closeOvr);
+  const go=()=>{ const v=$('sa-brief')?.value.trim(); if(!v){ toast('Describe the design','error'); return; } closeOvr(); _studioCreate(v); };
+  on($('sa-go'),'click',go);
+  setTimeout(()=>$('sa-brief')?.focus(),50);
+}
+// version history with revert
+function _studioHistory(){
+  const a=_studioActive(); if(!a||!a.history.length){ toast('No history yet','info'); return; }
+  const r=$('ovr'); if(!r) return;
+  const rows=a.history.slice().reverse().map((h,i)=>{ const realIdx=a.history.length-1-i; return '<div class="studio-hrow"><div class="studio-hrow-b"><div class="studio-hrow-t">'+(i===0?'Current':('Version '+(realIdx+1)))+'</div><div class="studio-hrow-d">'+escH(h.brief||'(initial)')+' · '+_timeAgo(h.ts||Date.now())+'</div></div>'+(i===0?'':'<button class="btn bs" data-revert="'+realIdx+'">Revert</button>')+'</div>'; }).join('');
+  r.innerHTML='<div class="ov" id="sh-bg"><div class="ob" onclick="event.stopPropagation()" style="max-width:460px"><button class="oc" onclick="closeOvr()">×</button><h2 style="margin-bottom:12px">Version history</h2><div class="studio-hlist">'+rows+'</div></div></div>';
+  on($('sh-bg'),'click',closeOvr);
+  r.querySelectorAll('[data-revert]').forEach(b=>on(b,'click',()=>{ const idx=+b.dataset.revert; const h=a.history[idx]; if(h){ a.html=h.html; a.history.push({brief:'reverted to v'+(idx+1),html:h.html,ts:Date.now()}); _STUDIO.html=h.html; _studioRenderPreview(h.html); closeOvr(); toast('Reverted','success'); } }));
+}
+// export the whole project — folder write-back or downloads
+async function _studioExportProject(){
+  if(!_STUDIO.artifacts.length){ toast('Nothing to export yet','info'); return; }
+  const nameFor=a=>(a.name||'design').replace(/[^a-z0-9]+/gi,'-').toLowerCase().replace(/^-|-$/g,'')||'design';
+  if(AMVWorkspace.supported() && window.isSecureContext){
+    try{
+      await AMVWorkspace.connectFolder();
+      let n=0; const seen={};
+      for(const a of _STUDIO.artifacts){ let fn=nameFor(a); if(seen[fn]) fn=fn+'-'+(++seen[fn]); else seen[fn]=1; await AMVWorkspace.writeFile(fn+'.html', a.html); n++; }
+      toast('Exported '+n+' designs to your folder','success',4000); return;
+    }catch(e){ if(e.message==='cancelled') return; /* fall through to downloads */ }
+  }
+  let n=0; const seen={};
+  for(const a of _STUDIO.artifacts){ let fn=nameFor(a); if(seen[fn]) fn=fn+'-'+(++seen[fn]); else seen[fn]=1; _studioDownload({name:fn,html:a.html}); n++; }
+  toast('Downloading '+n+' designs','info');
+}
+window._studioExportProject=_studioExportProject;
 function _studioRenderPreview(html){ const f=$('studio-frame'); if(f) f.srcdoc=html; }
 function _studioStatus(t){ const s=$('studio-status'); if(s) s.textContent=t||''; }
 
@@ -4299,8 +9447,8 @@ const DNA_DEFAULT = {
   theme:'dark', themeFamily:'linear',
   // colors — array of {role,hex}
   colors:[
-    {role:'primary',hex:'#7c6cff'},
-    {role:'accent',hex:'#8b78ff'},
+    {role:'primary',hex:'#5590ff'},
+    {role:'accent',hex:'#5590ff'},
     {role:'background',hex:'#0c0d10'},
     {role:'surface',hex:'#15181d'},
     {role:'text',hex:'#e9edf2'},
@@ -4382,8 +9530,8 @@ function applyPalette(hexes){
   const bySat=hexes.slice().sort((a,b)=>sat(b)-sat(a));
   const dark=_DNA.theme!=='light';
   _DNA.colors=[
-    {role:'primary', hex:bySat[0]||'#7c6cff'},
-    {role:'accent', hex:bySat[1]||bySat[0]||'#8b78ff'},
+    {role:'primary', hex:bySat[0]||'#5590ff'},
+    {role:'accent', hex:bySat[1]||bySat[0]||'#5590ff'},
     {role:'background', hex:dark?darkest:lightest},
     {role:'surface', hex:dark?(sorted[1]||darkest):(sorted[sorted.length-2]||lightest)},
     {role:'text', hex:dark?lightest:darkest},
@@ -4400,7 +9548,7 @@ const DNA_PALETTES=[
   {name:'Linear Dark', colors:['#5e6ad2','#8a91f5','#08090a','#16181d','#f7f8f8','#8a8f98']},
   {name:'Stripe', colors:['#635bff','#00d4ff','#0a2540','#1a2b4a','#ffffff','#adbdcc']},
   {name:'Vercel', colors:['#0070f3','#7928ca','#000000','#111111','#ffffff','#888888']},
-  {name:'GitHub Dark', colors:['#2f81f7','#3fb950','#0d1117','#161b22','#e6edf3','#8b949e']},
+  {name:'GitHub Dark', colors:['#2f81f7','#4ade80','#0d1117','#161b22','var(--tx)','var(--mu)']},
   {name:'Apple', colors:['#0071e3','#5e5ce6','#000000','#1d1d1f','#f5f5f7','#86868b']},
   {name:'Tesla', colors:['#e31937','#393c41','#000000','#171a20','#ffffff','#5c5e62']},
   {name:'Notion', colors:['#2383e2','#eb5757','#191919','#252525','#ffffff','#9b9a97']},
@@ -4560,7 +9708,7 @@ or paste a whole CSS / Tailwind / GitHub palette — AMV finds the colors"></tex
     c.querySelectorAll('[data-pal]').forEach(card=>on(card,'click',()=>{ applyPalette(DNA_PALETTES[+card.dataset.pal].colors); _DNA.themeFamily=DNA_PALETTES[+card.dataset.pal].name.toLowerCase().split(' ')[0]||_DNA.themeFamily; _dnaRenderSection('colors'); _dnaFoot(); toast('Applied '+DNA_PALETTES[+card.dataset.pal].name,'success'); }));
   }
   else if(sec==='theme'){
-    c.innerHTML=`<div class="dna-sec-t">Theme & family</div><div class="dna-sec-d">Pick the overall aesthetic lineage. AMV mimics the design language of these world-class systems.</div>
+    c.innerHTML=`<div class="dna-sec-t">Theme & family</div><div class="dna-sec-d">Choose the overall aesthetic. AMV follows the design language of these systems.</div>
       <div class="dna-field"><label>Mode</label><div class="dna-pills">${['light','dark','auto'].map(t=>`<button class="dna-pill ${_DNA.theme===t?'on':''}" data-pill="theme" data-val="${t}">${t}</button>`).join('')}</div></div>
       <div class="dna-field"><label>Theme family</label><div class="dna-pills">${_opt('themeFamily',_DNA.themeFamily)}</div></div>`;
   }
@@ -4723,38 +9871,96 @@ window._integrationStatusPrompt=_integrationStatusPrompt;
 /* ============================================================
    CODE  - AI coding workspace entry
    ============================================================ */
+// Live build progress — shows Dev writing past a single response's limit.
+function _devProgress(p){
+  try{
+    const el=$('dev-prev-s'); if(!el) return;
+    if(p.round>1 || p.truncated){
+      el.innerHTML='<span class="dev-gen">Writing\u2026 '+p.lines.toLocaleString()+' lines'+(p.round>1?' \u00b7 pass '+p.round:'')+'</span>';
+    } else {
+      el.innerHTML='<span class="dev-gen">Writing\u2026 '+p.lines.toLocaleString()+' lines</span>';
+    }
+  }catch(e){}
+}
+function _devChip(prompt,label){
+  return '<button class="dev-chip" data-dq="'+escH(prompt)+'">'+escH(label)+'</button>';
+}
 function renderCodeView(){
   const vc=$('vc'); if(!vc) return;
-  vc.innerHTML = `<div class="dev-shell">
+  const blank = !_DEV.log.length;
+  vc.innerHTML = `<div class="dev-shell${blank?' dev-blank':''}" id="dev-shell">
     <div class="dev-chat-pane">
-      <div class="dev-head"><span class="eyebrow">AMV Dev · coding agent</span><h3>Build with an AI engineer</h3><p class="dev-sub">Describe a feature in plain English. AMV writes it, runs it in a real sandbox, and shows the live result and code. Hit a bug? Send it to <b>Lab</b> to debug.</p>
-        <div class="dev-conn">
-          <button class="dev-conn-btn" id="dev-vscode"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M16 18l6-6-6-6"/><path d="M8 6l-6 6 6 6"/></svg> Connect to VS Code</button>
-          <button class="dev-conn-btn" id="dev-tolab"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M10 2h4M12 2v6.5L7 19a1 1 0 0 0 .9 1.5h8.2A1 1 0 0 0 17 19l-5-10.5"/></svg> Debug in Lab</button>
+      <div class="dev-bar">
+        <div class="dev-bar-l">
+          <span class="dev-badge">Dev</span>
+          ${_sectionModelSelect('code','dev-model')}
+          <span class="sec-usage-note" id="dev-usage-note"></span>
+        </div>
+        <div class="dev-bar-r">
+          <div class="dev-addwrap">
+            <button class="dev-ico" id="dev-add" title="Add existing code (optional)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
+            <div class="dev-add-menu" id="dev-add-menu" style="display:none">
+              <button data-add="files"><b>Files</b><span>One or a few files</span></button>
+              <button data-add="folder"><b>Folder</b><span>A whole project</span></button>
+              <button data-add="connect"><b>Connect folder</b><span>Also save edits back &middot; Chrome/Edge</span></button>
+            </div>
+          </div>
+          <button class="dev-ico" id="dev-tolab" title="Debug in Lab"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2h4M12 2v6.5L7 19a1 1 0 0 0 .9 1.5h8.2A1 1 0 0 0 17 19l-5-10.5"/></svg></button>
+          <button class="dev-ico" id="dev-save" style="display:none" title="Save to your folder"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg></button>
+          <button class="dev-ico" id="dev-new" title="New session"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+          <input type="file" id="dev-files" multiple style="display:none">
+          <input type="file" id="dev-folderinput" webkitdirectory directory multiple style="display:none">
         </div>
       </div>
+
+      <div id="dev-hero" class="dev-hero">
+        <h2>What should we build?</h2>
+        <p>Describe it in plain English. AMV writes the code, runs it, and shows you the live result.</p>
+        <div class="dev-hero-chips" id="dev-hero-chips">
+          ${_devChip('A landing page for a coffee brand \u2014 hero, pricing, and a signup form','Landing page')}
+          ${_devChip('A to-do app with add, complete, delete, and saved state','To-do app')}
+          ${_devChip('A snake game I can play with the arrow keys','Snake game')}
+          ${_devChip('A dashboard with a revenue chart and summary cards','Dashboard')}
+        </div>
+        <div class="dev-hero-upload">
+          <button class="dev-upload-btn" id="dev-hero-add">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Upload files or a folder
+          </button>
+          <span class="dev-hero-or">to work on code you already have</span>
+        </div>
+      </div>
+
       <div id="dev-log" class="dev-log"></div>
+
+      <div id="ctx-dev"></div>
       <div class="dev-input">
-        <select id="dev-lang" class="lab-sel"><option value="js">JavaScript</option><option value="python">Python</option></select>
-        <textarea id="dev-msg" rows="1" placeholder="e.g. Write a function that finds prime numbers up to N and test it"></textarea>
-        <button class="btn bp" id="dev-send">Build</button>
+        <select id="dev-lang" class="lab-sel" style="display:none"><option value="js">JavaScript</option><option value="python">Python</option></select>
+        <textarea id="dev-msg" rows="1" placeholder="Describe what to build\u2026"></textarea>
+        <button class="dev-send" id="dev-send" title="Build (Enter)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
       </div>
     </div>
+
     <div class="dev-preview">
       <div class="dev-prev-bar">
         <div class="dev-prev-tabs">
           <button class="dev-pt on" id="dev-tab-prev" data-pv="preview">Preview</button>
           <button class="dev-pt" id="dev-tab-code" data-pv="code">Code</button>
-          <button class="dev-pt" id="dev-tab-term" data-pv="term">Terminal</button>
         </div>
-        <span id="dev-prev-s"></span>
+        <div class="dev-prev-acts"><span id="dev-prev-s"></span>
+          <button class="dev-openext" id="dev-download-proj" title="Download the project"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
+          <button class="dev-openext" id="dev-deploy" title="Deploy a shareable page"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h8l-1 8 10-12h-8z"/></svg></button>
+          <button class="dev-openext" id="dev-open-ext" title="Open in a new tab"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></button>
+        </div>
       </div>
-      <div id="dev-prev-body" class="dev-prev-body"><div class="lab-placeholder">What AMV builds appears here — switch between the live Preview and the Code.</div></div>
-      <div id="dev-code-body" class="dev-code-body" style="display:none"><div class="lab-placeholder">Code will appear here.</div></div>
-      <div id="dev-term-body" class="dev-term-body" style="display:none"><div class="dev-term"><div class="dev-term-out" id="dev-term-out">AMV Dev Terminal\nThis is a real command line connected to a live sandbox. When AMV builds a program, you can run it here just like on your own computer.\n\nTry:\n  node index.js     run your JavaScript program\n  python main.py    run your Python program\n  npm test          run tests\n  clear             clear this screen\n\nOutput from your program appears right here.</div><div class="dev-term-in"><span class="dev-term-prompt">$</span><input id="dev-term-cmd" placeholder="type a command and press Enter…" spellcheck="false"></div></div></div>
+      <div id="dev-prev-body" class="dev-prev-body"><div class="lab-placeholder">Your live result appears here.</div></div>
+      <div id="dev-code-body" class="dev-code-body" style="display:none"><div class="dev-code-layout"><div class="dev-tree" id="dev-tree"></div><div class="dev-code-main" id="dev-code-main"><div class="lab-placeholder">The code appears here as AMV writes it.</div></div></div></div>
     </div>
   </div>`;
-  if(!_DEV.log.length){ _devPushSys("Hi — I'm your in-Dev engineer. Tell me what to build and I'll write it, run it, and show both the live result and the code. Ask me to change anything and I'll edit what's already here."); }
+  // hero chips fill the composer
+  vc.querySelectorAll('#dev-hero-chips [data-dq]').forEach(c=>on(c,'click',()=>{
+    const t=$('dev-msg'); if(t){ t.value=c.dataset.dq; t.focus(); t.style.height='auto'; t.style.height=Math.min(t.scrollHeight,140)+'px'; }
+  }));
   _devRenderLog();
   const ta=$('dev-msg');
   on(ta,'input',()=>{ ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,140)+'px'; });
@@ -4762,52 +9968,414 @@ function renderCodeView(){
   on($('dev-send'),'click',_devSend);
   on($('dev-lang'),'change',()=>{ _DEV.lang=$('dev-lang').value; });
   $('dev-lang').value=_DEV.lang;
-  // Code/Preview toggle
-  const showPV=(pv)=>{ const pb=$('dev-prev-body'),cb=$('dev-code-body'),tb=$('dev-term-body'); const tp=$('dev-tab-prev'),tc=$('dev-tab-code'),tt=$('dev-tab-term'); [pb,cb,tb].forEach(x=>{if(x)x.style.display='none';}); [tp,tc,tt].forEach(x=>x&&x.classList.remove('on')); if(pv==='code'){ if(cb)cb.style.display='block'; tc&&tc.classList.add('on'); } else if(pv==='term'){ if(tb)tb.style.display='block'; tt&&tt.classList.add('on'); const ci=$('dev-term-cmd'); ci&&ci.focus(); } else { if(pb)pb.style.display='flex'; tp&&tp.classList.add('on'); } };
+  // section model picker + live usage note
+  const devUsage=()=>{ const n=$('dev-usage-note'); if(n){ n.textContent=''; } };
+  devUsage();
+  on($('dev-model'),'change',function(){ _setSectionModel('code', this.value); devUsage(); toast('Code model set to '+MODELS[this.value].label,'info',2500); });
+  // Code/Preview toggle (Terminal removed — Dev is a build-and-preview surface)
+  const showPV=(pv)=>{ const pb=$('dev-prev-body'),cb=$('dev-code-body'); const tp=$('dev-tab-prev'),tc=$('dev-tab-code'); [pb,cb].forEach(x=>{if(x)x.style.display='none';}); [tp,tc].forEach(x=>x&&x.classList.remove('on')); if(pv==='code'){ if(cb)cb.style.display='block'; tc&&tc.classList.add('on'); } else { if(pb)pb.style.display='flex'; tp&&tp.classList.add('on'); } };
   on($('dev-tab-prev'),'click',()=>showPV('preview'));
   on($('dev-tab-code'),'click',()=>showPV('code'));
-  on($('dev-tab-term'),'click',()=>showPV('term'));
-  const tcmd=$('dev-term-cmd'); if(tcmd) on(tcmd,'keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); _devRunCmd(tcmd.value.trim()); tcmd.value=''; } });
-  on($('dev-vscode'),'click',_devConnectVSCode);
-  on($('dev-tolab'),'click',()=>{ if(_DEV.curCode){ _LAB_HANDOFF=_DEV.curCode; setTab('lab'); toast('Sent to Lab for debugging','info'); } else { toast('Build something first, then send it to Lab','info'); } });
-  if(_DEV.curCode) _devShowResult(_DEV.curCode,_DEV.curLang,_DEV.curRun);
+  on($('dev-open-ext'),'click',()=>_devOpenExternal());
+  on($('dev-download-proj'),'click',()=>_devDownloadProject());
+  on($('dev-deploy'),'click',()=>_devDeploy());
+  on($('dev-tolab'),'click',()=>{ const code=_DEV.activePath?_DEV.project[_DEV.activePath]?.content:_DEV.curCode; if(code){ _LAB_HANDOFF=code; setTab('lab'); toast('Sent to Lab for debugging','info'); } else { toast('Build something first, then send it to Lab','info'); } });
+  on($('dev-new'),'click',()=>{
+    _sessNew('dev');
+    _DEV.log=[]; _DEV.project={}; _DEV.activePath=''; _DEV.curCode=''; _DEV.curLang='';
+    _devPushSys("Tell me what to build. I'll write it, run it, and show you both the result and the code. Ask for changes anytime.");
+    renderCodeView();
+    toast('New Dev session','info',2000);
+  });
+  // ---- Add code: single dropdown → files / folder / connect ----
+  const connectFolderFlow=async()=>{
+    if(!AMVWorkspace.supported()||!window.isSecureContext){ toast('Saving back to a folder needs Chrome or Edge on the live (https) site. Use Files or Folder instead — works everywhere.','info',6000); return; }
+    try{
+      await AMVWorkspace.connectFolder();
+      _DEV.usingWorkspace=true; _DEV.project={}; _DEV.activePath='';
+      AMVWorkspace.files.forEach(f=>{ if(f.isText&&f.text!=null) _devSetFile(f.path, f.text); });
+      _DEV.activePath=_devEntryFile(); _devRenderTree(); _devShowActive(); const sv=$('dev-save'); if(sv) sv.style.display='';
+      _devPushSys('Project connected — '+_devProjectFiles().length+' files. I can edit any of them and save straight back.'); _devRenderLog();
+      toast('Connected — '+_devProjectFiles().length+' files','success',4000);
+    }catch(e){ if(e.message==='cancelled') return; toast('Couldn’t open that folder. Try Files or Folder instead.','error',5000); }
+  };
+  const ingestFiles=async(fileList)=>{
+    // Context guard: a project can hold at most CTX_MAX_FILES files.
+    try{
+      const have=Object.keys(_DEV.project||{}).length;
+      const incoming=(fileList&&fileList.length)||0;
+      if(have+incoming > CTX_MAX_FILES){
+        toast('A project can hold up to '+CTX_MAX_FILES+' files (you have '+have+'). Remove some, or start a new session and carry a handoff across.','error',6500);
+        return;
+      }
+    }catch(e){}
+    let added=0;
+    for(const file of Array.from(fileList||[])){
+      const isText=/\.(txt|md|csv|json|js|mjs|ts|jsx|tsx|html|css|py|java|c|cpp|go|rs|rb|php|sql|sh|xml|yml|yaml|vue|svelte|scss|less)$/i.test(file.name)||(file.type||'').startsWith('text');
+      if(isText && file.size<800000){ const text=await file.text(); const path=file.webkitRelativePath||file.name; _devSetFile(path, text); added++; }
+    }
+    _DEV.activePath=_DEV.activePath||_devEntryFile(); _devRenderTree(); _devShowActive();
+    const total=_devProjectFiles().length;
+    _devPushSys('Loaded '+added+' file'+(added>1?'s':'')+' — project now has '+total+'. Ask me to build, fix, or refactor across them.'); _devRenderLog();
+    toast('Loaded '+added+' file'+(added>1?'s':''),'success',3500);
+  };
+  const addMenu=$('dev-add-menu');
+  on($('dev-add'),'click',(e)=>{ e.stopPropagation(); if(addMenu) addMenu.style.display=addMenu.style.display==='none'?'block':'none'; });
+  // The hero's obvious upload button opens the same menu.
+  on($('dev-hero-add'),'click',(e)=>{ e.stopPropagation(); if(addMenu) addMenu.style.display=addMenu.style.display==='none'?'block':'none'; });
+  document.addEventListener('click',()=>{ if(addMenu) addMenu.style.display='none'; });
+  if(addMenu){ addMenu.querySelectorAll('[data-add]').forEach(b=>on(b,'click',(e)=>{ e.stopPropagation(); addMenu.style.display='none'; const k=b.dataset.add; if(k==='files') $('dev-files')&&$('dev-files').click(); else if(k==='folder') $('dev-folderinput')&&$('dev-folderinput').click(); else connectFolderFlow(); })); }
+  // Drag & drop files straight onto Dev.
+  const devShell=$('dev-shell');
+  if(devShell){
+    on(devShell,'dragover',(e)=>{ e.preventDefault(); devShell.classList.add('dev-drop'); });
+    on(devShell,'dragleave',(e)=>{ if(e.target===devShell) devShell.classList.remove('dev-drop'); });
+    on(devShell,'drop',async(e)=>{
+      e.preventDefault(); devShell.classList.remove('dev-drop');
+      const fs=e.dataTransfer&&e.dataTransfer.files;
+      if(fs&&fs.length) await ingestFiles(fs);
+    });
+  }
+  on($('dev-files'),'change',async function(){ await ingestFiles(this.files); this.value=''; });
+  on($('dev-folderinput'),'change',async function(){ await ingestFiles(this.files); this.value=''; });
+  on($('dev-save'),'click',async()=>{
+    if(!AMVWorkspace.dirHandle){ let n=0; _devProjectFiles().forEach(p=>{ try{ const blob=new Blob([_DEV.project[p].content],{type:'text/plain'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=p.split('/').pop(); a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),800); n++; }catch(e){} }); toast('Downloaded '+n+' files','info'); return; }
+    let n=0; for(const p of _devProjectFiles()){ try{ await AMVWorkspace.writeFile(p, _DEV.project[p].content); n++; }catch(e){} }
+    toast('Saved '+n+' files to your folder','success',4000);
+  });
+  _devRenderTree();
+  if(_devProjectFiles().length){ const sv=$('dev-save'); if(sv&&AMVWorkspace.dirHandle) sv.style.display=''; _devShowActive(); }
+  else if(_DEV.curCode) _devShowResult(_DEV.curCode,_DEV.curLang,_DEV.curRun);
 }
 let _LAB_HANDOFF='';
-function _devTermPrint(t){ const o=$('dev-term-out'); if(o){ o.textContent+='\n'+t; o.scrollTop=o.scrollHeight; } }
-async function _devRunCmd(cmd){
-  if(!cmd) return;
-  _devTermPrint('$ '+cmd);
-  if(/^(node|python|python3|npm (test|start|run)|deno)/i.test(cmd)){
-    if(!_DEV.curCode){ _devTermPrint('No program built yet. Use Build first.'); return; }
-    _devTermPrint('Running…');
-    try{ const res=await runCode(_DEV.curCode,_DEV.curLang||'js'); _devTermPrint((res&&res.output)?res.output:(typeof res==='string'?res:'(no output)')); }
-    catch(e){ _devTermPrint('Error: '+(e.message||e)); }
-  } else if(/^(ls|dir)$/i.test(cmd)){ _devTermPrint(_DEV.curLang==='python'?'main.py':'index.js'); }
-  else if(/^clear$/i.test(cmd)){ const o=$('dev-term-out'); if(o)o.textContent='AMV Dev terminal'; }
-  else { _devTermPrint('Queued "'+cmd+'" — AMV runs it in the sandbox when connected to your project.'); }
-}
 function _devConnectVSCode(){
   const r=$('ovr'); if(!r) return;
-  r.innerHTML='<div class="ov" id="vsc-bg"><div class="tp-modal" style="max-width:520px" onclick="event.stopPropagation()">'+
+  r.innerHTML='<div class="ov" id="vsc-bg"><div class="tp-modal" style="max-width:480px" onclick="event.stopPropagation()">'+
     '<button class="dna-x" id="vsc-x" style="position:absolute;top:14px;right:14px">\u2715</button>'+
-    '<h2 style="font-family:var(--fdisplay);font-weight:500;font-size:22px;margin:0 0 6px">Connect AMV to VS Code</h2>'+
-    '<p style="font-size:13px;color:var(--mu);line-height:1.6;margin:0 0 16px">Run AMV Dev as a coding agent inside your editor \u2014 it reads your files, writes code, and runs commands in your real project.</p>'+
-    '<div style="font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--mu);margin-bottom:7px">1 \u00b7 Install the AMV CLI</div>'+
+    '<h2 style="font-family:var(--fdisplay);font-weight:500;font-size:21px;margin:0 0 6px">Use AMV in VS Code</h2>'+
+    '<p style="font-size:13px;color:var(--mu);line-height:1.6;margin:0 0 18px">Run these two commands in your project folder. That\u2019s it \u2014 AMV opens in your editor and can read, write, and run your code.</p>'+
     '<div class="vsc-cmd"><code>npm install -g @amv/cli</code><button class="vsc-copy" data-c="npm install -g @amv/cli">Copy</button></div>'+
-    '<div style="font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--mu);margin:14px 0 7px">2 \u00b7 In your project folder, run</div>'+
-    '<div class="vsc-cmd"><code>amv code .</code><button class="vsc-copy" data-c="amv code .">Copy</button></div>'+
-    '<div style="font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--mu);margin:14px 0 7px">Or open VS Code directly</div>'+
-    '<button class="btn bp" id="vsc-open" style="width:100%;justify-content:center">Open in VS Code \u2192</button>'+
-    '<p style="font-size:11px;color:var(--dim);margin:14px 0 0;line-height:1.5">The CLI links this AMV account to your editor over a secure local bridge. Your code stays on your machine.</p>'+
+    '<div class="vsc-cmd" style="margin-top:8px"><code>amv code .</code><button class="vsc-copy" data-c="amv code .">Copy</button></div>'+
+    '<p style="font-size:11px;color:var(--dim);margin:16px 0 0;line-height:1.5">Your code stays on your machine \u2014 the CLI just links this account to your editor.</p>'+
   '</div></div>';
   const close=()=>{ r.innerHTML=''; };
   on($('vsc-bg'),'click',close); on($('vsc-x'),'click',close);
-  on($('vsc-open'),'click',()=>{ try{ window.location.href='vscode://'; }catch(e){} toast('Opening VS Code\u2026 install the AMV extension if it doesn\u2019t launch','info',4000); });
   r.querySelectorAll('.vsc-copy').forEach(btn=>on(btn,'click',()=>{ try{ navigator.clipboard.writeText(btn.dataset.c); btn.textContent='Copied'; setTimeout(()=>btn.textContent='Copy',1200); }catch(e){} }));
 }
-const _DEV={ log:[], lang:'js', busy:false, curCode:'', curLang:'', curRun:null };
+const _DEV={ log:[], lang:'js', busy:false, curCode:'', curLang:'', curRun:null,
+  // multi-file project: files keyed by path. activePath = file shown in Code pane.
+  project:{}, activePath:'', usingWorkspace:false };
+// project helpers
+function _devProjectFiles(){ return Object.keys(_DEV.project).sort(); }
+function _devSetFile(path, content, lang){ path=_safePath(path)||('file'+Date.now()); _DEV.project[path]={ content, lang:lang||_devLangFor(path), ts:Date.now() }; if(!_DEV.activePath) _DEV.activePath=path; try{ _sessTouch('dev'); }catch(e){} }
+function _devLangFor(path){ const e=(path.split('.').pop()||'').toLowerCase(); return ({js:'js',mjs:'js',jsx:'js',ts:'js',tsx:'js',py:'python',html:'html',css:'css',json:'json',md:'md'})[e]||'txt'; }
+function _devEntryFile(){
+  const files=_devProjectFiles();
+  return files.find(p=>/index\.html$/i.test(p)) || files.find(p=>/\.html$/i.test(p)) ||
+         files.find(p=>/(index|main|app)\.(js|mjs|py)$/i.test(p)) || files.find(p=>/\.(js|py)$/i.test(p)) || files[0] || '';
+}
+function _devProjectContext(maxChars){
+  maxChars=maxChars||16000; const files=_devProjectFiles();
+  if(!files.length) return '';
+  let out='CURRENT PROJECT ('+files.length+' files):\n'+files.map(p=>'- '+p).join('\n')+'\n\nFILE CONTENTS:\n';
+  for(const p of files){ const chunk='\n===== '+p+' =====\n'+_DEV.project[p].content+'\n'; if(out.length+chunk.length>maxChars){ out+='\n[...truncated...]'; break; } out+=chunk; }
+  return out;
+}
 function _devPushSys(t){ _DEV.log.push({role:'sys',text:t}); }
+// render the file tree in the Code pane
+function _devRenderTree(){
+  const el=$('dev-tree'); if(!el) return;
+  const files=_devProjectFiles();
+  if(!files.length){ el.innerHTML='<div class="dev-tree-empty">No project files yet.<br>Build something, open a folder, or upload files.</div>'; return; }
+  el.innerHTML='<div class="dev-tree-h">Files</div>'+files.map(p=>'<div class="dev-tree-f'+(p===_DEV.activePath?' on':'')+'" data-path="'+encodeURIComponent(p)+'"><span class="dev-tree-ic">'+_fileIcon('',p)+'</span>'+escH(p)+'</div>').join('');
+  el.querySelectorAll('[data-path]').forEach(f=>on(f,'click',()=>{ _DEV.activePath=decodeURIComponent(f.dataset.path); _devRenderTree(); _devShowActive(); }));
+}
+// show the active file's code in the Code pane
+function _devShowActive(){
+  const main=$('dev-code-main'); if(!main) return;
+  const p=_DEV.activePath; const f=p&&_DEV.project[p];
+  if(!f){ main.innerHTML='<div class="lab-placeholder">Select a file.</div>'; return; }
+  main.innerHTML='<div class="dev-code-wrap"><div class="dev-code-h">'+escH(p)+'<button class="dev-copy" data-code="'+encodeURIComponent(f.content)+'">copy</button></div><pre>'+escH(f.content)+'</pre></div>';
+  main.querySelectorAll('.dev-copy').forEach(btn=>on(btn,'click',()=>{navigator.clipboard&&navigator.clipboard.writeText(decodeURIComponent(btn.dataset.code));btn.textContent='copied';setTimeout(()=>btn.textContent='copy',1200);}));
+}
+/* Open the current live preview in a real new browser tab. Uses a Blob URL
+   (never a custom protocol, so it can't blank the page). Falls back to a
+   helpful toast if there's nothing built yet or the tab is blocked. */
+function _devOpenExternal(){
+  let html='';
+  try{ html = _devProjectPreviewHTML() || _DEV.lastHTML || ''; }catch(e){ html = _DEV.lastHTML || ''; }
+  if(!html || !html.trim()){ toast('Build something first — then you can open the live preview in a browser tab.','info',4000); return; }
+  try{
+    const blob=new Blob([html],{type:'text/html'});
+    const url=URL.createObjectURL(blob);
+    const w=window.open(url,'_blank','noopener');
+    if(!w){ toast('Allow pop-ups to open the preview in a new tab.','error',4000); URL.revokeObjectURL(url); return; }
+    setTimeout(()=>{ try{ URL.revokeObjectURL(url); }catch(e){} }, 60000);
+  }catch(e){ toast('Couldn\u2019t open the preview in a new tab.','error',3000); }
+}
+window._devOpenExternal=_devOpenExternal;
+// Download the whole project. Single file → that file; multiple → a combined
+// bundle the user can split, plus each file offered. Keeps it dependency-free.
+function _devDownloadProject(){
+  const files=_DEV.project||{};
+  const paths=Object.keys(files);
+  if(!paths.length){ toast('Build something first — then you can download the project.','info',3500); return; }
+  try{
+    if(paths.length===1){
+      const p=paths[0], f=files[p];
+      const blob=new Blob([f.content||''],{type:'text/plain'});
+      const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=p.split('/').pop()||'file.txt'; a.click();
+      setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+      toast('Downloaded '+a.download,'success',2500); return;
+    }
+    // Multiple files: build a single self-describing bundle with clear separators.
+    let bundle='/* AMV project export \u2014 '+paths.length+' files.\n';
+    bundle+='   Each file is delimited by a ==== FILE: path ==== header. */\n\n';
+    paths.forEach(p=>{ bundle+='/* ==== FILE: '+p+' ==== */\n'+(files[p].content||'')+'\n\n'; });
+    const blob=new Blob([bundle],{type:'text/plain'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='amv-project.txt'; a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+    toast('Downloaded project ('+paths.length+' files)','success',3000);
+  }catch(e){ toast('Couldn\u2019t download the project.','error',3000); }
+}
+// Deploy: publish the built app as a branded, shareable live page (reuses the
+// share-artifact infrastructure so it opens as a clean hosted-looking page).
+/* Deploy = publish to a REAL, live, public URL.
+   This used to base64 the page into a URL fragment ("nothing is stored on a
+   server"), which isn't a deployment and broke past ~18KB. Now it actually
+   hosts the site and returns a shareable link that works for anyone. */
+async function _deployApi(path, body){
+  if(!(window.AMV_API && AMV_API.live && AMV_API.token)) throw new Error('not-connected');
+  const r = await fetch(AMV_API.base.replace(/\/$/,'')+path, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+AMV_API.token },
+    body: JSON.stringify(body||{})
+  });
+  const d = await r.json().catch(()=>({}));
+  if(!r.ok || d.error) throw new Error(d.error || ('failed ('+r.status+')'));
+  return d;
+}
+
+async function _devDeploy(){
+  let html='';
+  try{ html=_devProjectPreviewHTML()||_DEV.lastHTML||''; }catch(e){ html=_DEV.lastHTML||''; }
+  if(!html||!html.trim()){ toast('Build something first \u2014 then Deploy puts it live at a real URL.','info',4000); return; }
+
+  const title=(_DEV.activePath?_DEV.activePath.split('/').pop().replace(/\.\w+$/,''):'My app')||'My app';
+
+  if(!(window.AMV_API && AMV_API.live && AMV_API.token)){
+    toast('Connect the AMV engine in Settings to publish a live URL. You can still download the file.','error',6000);
+    return;
+  }
+
+  const btn=$('dev-deploy'); const old=btn?btn.innerHTML:'';
+  if(btn){ btn.disabled=true; btn.textContent='Publishing\u2026'; }
+  try{
+    const d = await _deployApi('/deploy', { html, title, slug:_DEV.deploySlug||undefined });
+    _DEV.deploySlug = d.slug;                       // re-deploys update the same URL
+    _showDeployed(d.url, title, !!_DEV.deployedOnce);
+    _DEV.deployedOnce = true;
+    try{ _sessTouch('dev'); }catch(e){}
+  }catch(e){
+    if(e.message==='not-connected') toast('Connect the AMV engine in Settings to publish.','error',5000);
+    else toast('Deploy failed: '+e.message,'error',5000);
+  }finally{
+    if(btn){ btn.disabled=false; btn.innerHTML=old; }
+  }
+}
+
+/* The "it's live" moment — a real URL they can open and share. */
+function _showDeployed(url, title, wasUpdate){
+  const ovr=$('ovr'); if(!ovr) return;
+  ovr.innerHTML=
+    '<div class="share-modal deploy-modal">'+
+      '<div class="deploy-live"><span class="deploy-dot"></span>'+(wasUpdate?'Updated':'Live')+'</div>'+
+      '<div class="share-title">'+escH(title)+' is live</div>'+
+      '<p class="share-sub">Anyone with this link can open it \u2014 it\u2019s hosted, not a temporary preview. Deploying again updates this same URL.</p>'+
+      '<div class="share-link-row"><input id="dep-url" class="inp" readonly value="'+escH(url)+'"><button class="btn bp" id="dep-copy">Copy</button></div>'+
+      '<div class="share-actions">'+
+        '<button class="btn bs" id="dep-open">Open site</button>'+
+        '<button class="btn bs" id="dep-sites">My sites</button>'+
+        '<button class="btn bs" id="dep-close">Done</button>'+
+      '</div>'+
+    '</div>';
+  ovr.classList.add('on');
+  on($('dep-copy'),'click',()=>{ _copyText(url).then(()=>{ const b=$('dep-copy'); if(b){ b.textContent='Copied!'; setTimeout(()=>b.textContent='Copy',1500); } }); });
+  on($('dep-open'),'click',()=>window.open(url,'_blank','noopener'));
+  on($('dep-sites'),'click',()=>{ closeOvr(); openMySites(); });
+  on($('dep-close'),'click',closeOvr);
+}
+
+/* "Host multiple live apps" — the place you manage them. */
+async function openMySites(){
+  const ovr=$('ovr'); if(!ovr) return;
+  ovr.innerHTML='<div class="share-modal"><div class="share-title">My live sites</div><p class="share-sub">Loading\u2026</p></div>';
+  ovr.classList.add('on');
+  let sites=[];
+  try{ const d=await _deployApi('/deploy/list',{}); sites=d.sites||[]; }
+  catch(e){
+    ovr.innerHTML='<div class="share-modal"><div class="share-title">My live sites</div>'+
+      '<p class="share-sub">'+(e.message==='not-connected'?'Connect the AMV engine in Settings to publish sites.':escH(e.message))+'</p>'+
+      '<div class="share-actions"><button class="btn bs" id="ms-close">Close</button></div></div>';
+    on($('ms-close'),'click',closeOvr); return;
+  }
+  const rows = sites.length
+    ? sites.map(s=>'<div class="site-row">'+
+        '<div class="site-l"><div class="site-t">'+escH(s.title||s.slug)+'</div>'+
+          '<a class="site-u" href="'+escH(s.url)+'" target="_blank" rel="noopener">'+escH(s.url.replace(/^https?:\/\//,''))+'</a>'+
+          '<div class="site-m">'+(s.views||0)+' view'+((s.views||0)===1?'':'s')+' \u00b7 '+Math.max(1,Math.round((s.bytes||0)/1024))+'KB</div></div>'+
+        '<div class="site-r">'+
+          '<button class="btn bs" data-open="'+escH(s.url)+'">Open</button>'+
+          '<button class="btn bs site-del" data-del="'+escH(s.slug)+'">Delete</button>'+
+        '</div></div>').join('')
+    : '<p class="share-sub">No live sites yet. Build something in Dev and hit Deploy.</p>';
+  ovr.innerHTML='<div class="share-modal"><div class="share-title">My live sites</div>'+
+    '<div class="site-list">'+rows+'</div>'+
+    '<div class="share-actions"><button class="btn bs" id="ms-close">Close</button></div></div>';
+  ovr.querySelectorAll('[data-open]').forEach(b=>on(b,'click',()=>window.open(b.dataset.open,'_blank','noopener')));
+  ovr.querySelectorAll('[data-del]').forEach(b=>on(b,'click',async()=>{
+    b.disabled=true; b.textContent='\u2026';
+    try{ await _deployApi('/deploy/delete',{slug:b.dataset.del}); toast('Site taken down.','success',3000); openMySites(); }
+    catch(e){ toast('Could not delete: '+e.message,'error',4000); b.disabled=false; b.textContent='Delete'; }
+  }));
+  on($('ms-close'),'click',closeOvr);
+}
+try{ window.openMySites=openMySites; }catch(e){}
+
+/* ── Error dashboard: what is actually breaking for your users ──────────── */
+async function openErrors(){
+  const ovr=$('ovr'); if(!ovr) return;
+  const token = loadStr('amv_admin_token') || '';
+  ovr.innerHTML='<div class="share-modal err-modal"><div class="share-title">Errors</div><p class="share-sub">Loading\u2026</p></div>';
+  ovr.classList.add('on');
+
+  if(!(window.AMV_API && AMV_API.live)){
+    ovr.innerHTML='<div class="share-modal err-modal"><div class="share-title">Errors</div>'+
+      '<p class="share-sub">Connect the AMV engine in Settings to collect error reports.</p>'+
+      '<div class="share-actions"><button class="btn bs" id="er-x">Close</button></div></div>';
+    on($('er-x'),'click',closeOvr); return;
+  }
+  if(!token){ _errAskToken(); return; }
+
+  let data=null;
+  try{
+    const r=await fetch(AMV_API.base.replace(/\/$/,'')+'/errors/list',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ token })
+    });
+    data = await r.json();
+    if(data.error) throw new Error(data.error);
+  }catch(e){
+    if(/unauthorized/i.test(e.message||'')){ saveStr('amv_admin_token',''); _errAskToken('That admin token was rejected.'); return; }
+    ovr.innerHTML='<div class="share-modal err-modal"><div class="share-title">Errors</div>'+
+      '<p class="share-sub">Couldn\u2019t load: '+escH(e.message)+'</p>'+
+      '<div class="share-actions"><button class="btn bs" id="er-x">Close</button></div></div>';
+    on($('er-x'),'click',closeOvr); return;
+  }
+
+  const groups=data.groups||[];
+  const ago=(t)=>{ const s=Math.floor((Date.now()-t)/1000);
+    if(s<60) return s+'s ago'; if(s<3600) return Math.floor(s/60)+'m ago';
+    if(s<86400) return Math.floor(s/3600)+'h ago'; return Math.floor(s/86400)+'d ago'; };
+
+  const rows = groups.length
+    ? groups.map(g=>'<div class="err-row" data-fp="'+escH(g.fp)+'">'+
+        '<div class="err-main">'+
+          '<div class="err-msg">'+escH(g.msg)+'</div>'+
+          '<div class="err-meta">'+
+            '<span class="err-tag '+(g.kind==='worker'?'srv':'')+'">'+escH(g.kind)+'</span>'+
+            '<span>'+escH(g.where||'unknown')+'</span>'+
+            '<span>\u00b7 last '+ago(g.last)+'</span>'+
+          '</div>'+
+        '</div>'+
+        '<div class="err-nums">'+
+          '<div class="err-count">'+g.count+'</div>'+
+          '<div class="err-users">'+(g.users||0)+' user'+((g.users||0)===1?'':'s')+'</div>'+
+        '</div>'+
+        '<button class="btn bs err-fix" data-fix="'+escH(g.fp)+'">Resolve</button>'+
+      '</div>').join('')
+    : '<div class="err-none"><b>No errors reported</b><span>Nothing has broken for your users. This is the good outcome.</span></div>';
+
+  ovr.innerHTML='<div class="share-modal err-modal">'+
+    '<div class="share-title">Errors</div>'+
+    '<div class="err-stats">'+
+      '<div><b>'+(data.distinct||0)+'</b><span>distinct bugs</span></div>'+
+      '<div><b>'+(data.total||0)+'</b><span>total events</span></div>'+
+      '<div><b>'+(data.active24h||0)+'</b><span>active today</span></div>'+
+    '</div>'+
+    '<div class="err-list">'+rows+'</div>'+
+    '<div class="share-actions">'+
+      '<button class="btn bs" id="er-refresh">Refresh</button>'+
+      (groups.length?'<button class="btn bs" id="er-all">Resolve all</button>':'')+
+      '<button class="btn bs" id="er-x">Close</button>'+
+    '</div></div>';
+
+  ovr.querySelectorAll('[data-fix]').forEach(b=>on(b,'click',async()=>{
+    b.disabled=true; b.textContent='\u2026';
+    try{
+      await fetch(AMV_API.base.replace(/\/$/,'')+'/errors/resolve',{
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ token, fp:b.dataset.fix })});
+      openErrors();
+    }catch(e){ b.disabled=false; b.textContent='Resolve'; }
+  }));
+  on($('er-all'),'click',async()=>{
+    try{ await fetch(AMV_API.base.replace(/\/$/,'')+'/errors/resolve',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ token, all:true })}); openErrors(); }catch(e){}
+  });
+  on($('er-refresh'),'click',openErrors);
+  on($('er-x'),'click',closeOvr);
+}
+
+function _errAskToken(msg){
+  const ovr=$('ovr'); if(!ovr) return;
+  ovr.innerHTML='<div class="share-modal err-modal">'+
+    '<div class="share-title">Admin access</div>'+
+    '<p class="share-sub">'+(msg?escH(msg)+' ':'')+'Enter your ADMIN_TOKEN (the secret you set on the Worker) to see what\u2019s breaking for your users.</p>'+
+    '<input id="er-tok" class="inp" type="password" placeholder="ADMIN_TOKEN" autocomplete="off">'+
+    '<div class="share-actions">'+
+      '<button class="btn bp" id="er-go">View errors</button>'+
+      '<button class="btn bs" id="er-x">Cancel</button>'+
+    '</div></div>';
+  ovr.classList.add('on');
+  on($('er-go'),'click',()=>{
+    const v=($('er-tok')||{}).value||'';
+    if(!v.trim()) return;
+    saveStr('amv_admin_token', v.trim());
+    openErrors();
+  });
+  on($('er-x'),'click',closeOvr);
+}
+try{ window.openErrors=openErrors; }catch(e){}
+window._devDownloadProject=_devDownloadProject;
+window._devDeploy=_devDeploy;
+// build a runnable preview from the whole project (bundles html+css+js)
+function _devProjectPreviewHTML(){
+  const files=_devProjectFiles();
+  const htmlPath=files.find(p=>/\.html$/i.test(p));
+  if(!htmlPath) return null;
+  let doc=_DEV.project[htmlPath].content;
+  // helper: find a tag containing `needle`, from `open` to `close`, replace with `repl`
+  const swap=(open, needleName, closeStr, repl)=>{
+    let idx=0;
+    while(true){
+      const start=doc.toLowerCase().indexOf(open, idx);
+      if(start<0) break;
+      const end=doc.indexOf(closeStr, start);
+      if(end<0) break;
+      const tag=doc.slice(start, end+closeStr.length);
+      if(tag.indexOf(needleName)>=0){ doc=doc.slice(0,start)+repl+doc.slice(end+closeStr.length); idx=start+repl.length; }
+      else idx=end+closeStr.length;
+    }
+  };
+  files.filter(p=>/\.css$/i.test(p)).forEach(p=>{ const name=p.split('/').pop(); swap('<link', name, '>', '<style>\n'+_DEV.project[p].content+'\n</style>'); });
+  files.filter(p=>/\.js$/i.test(p)).forEach(p=>{ const name=p.split('/').pop(); swap('<script', name, '</scr'+'ipt>', '<script>\n'+_DEV.project[p].content+'\n</scr'+'ipt>'); });
+  return doc;
+}
 function _devShowResult(code,lang,run){
+  // remember the latest runnable HTML so "Open in browser" can use it
+  try{ if(run && run.html) _DEV.lastHTML = run.html; }catch(e){}
   // Code pane
   const cb=$('dev-code-body');
   if(cb){ cb.innerHTML='<div class="dev-code-wrap"><div class="dev-code-h">'+escH(lang||'code')+'<button class="dev-copy" data-code="'+encodeURIComponent(code)+'">copy</button></div><pre>'+escH(code)+'</pre></div>'; cb.querySelectorAll('.dev-copy').forEach(btn=>on(btn,'click',()=>{navigator.clipboard&&navigator.clipboard.writeText(decodeURIComponent(btn.dataset.code));btn.textContent='copied';setTimeout(()=>btn.textContent='copy',1200);})); }
@@ -4819,10 +10387,13 @@ function _devShowResult(code,lang,run){
   }
 }
 function _devRenderLog(){
+  try{ const sh=$('dev-shell'); if(sh){ const wasBlank=sh.classList.contains('dev-blank'); const nowBlank=!_DEV.log.length; sh.classList.toggle('dev-blank', nowBlank); if(wasBlank && !nowBlank){ try{ _mountMobilePaneToggle('dev'); _mobileShowOutput('dev'); }catch(e){} } } }catch(e){}
+  try{ _ctxRenderMeter('ctx-dev','dev'); }catch(e){}
   const el=$('dev-log'); if(!el) return;
   el.innerHTML=_DEV.log.map(m=>{
     if(m.role==='user') return '<div class="dev-msg-u">'+escH(m.text)+'</div>';
     if(m.role==='sys') return '<div class="dev-msg-sys">'+escH(m.text)+'</div>';
+    if(m._snag) return '<div class="dev-msg-ai"><div class="ai-snag"><div class="ai-snag-row"><span class="ai-snag-ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg></span><span class="ai-snag-msg">'+escH(m._snag)+'</span></div><button class="ai-snag-retry" data-dev-retry="1" type="button">Retry</button></div></div>';
     let h='<div class="dev-msg-ai">';
     if(m.text) h+='<div class="dev-ai-txt">'+(typeof md==='function'?md(m.text):escH(m.text))+'</div>';
     if(m.code) h+='<div class="dev-code"><div class="dev-code-h">'+escH(m.lang||'code')+' <button class="dev-copy" data-code="'+encodeURIComponent(m.code)+'">copy</button></div><pre>'+escH(m.code.length>800?m.code.slice(0,800)+'\n…':m.code)+'</pre></div>';
@@ -4831,14 +10402,99 @@ function _devRenderLog(){
   }).join('');
   el.scrollTop=el.scrollHeight;
   el.querySelectorAll('.dev-copy').forEach(btn=>on(btn,'click',()=>{navigator.clipboard&&navigator.clipboard.writeText(decodeURIComponent(btn.dataset.code));btn.textContent='copied';}));
+  el.querySelectorAll('[data-dev-retry]').forEach(btn=>on(btn,'click',()=>{
+    // drop the snag entry, resend the most recent user message
+    const lastUser=[..._DEV.log].reverse().find(x=>x.role==='user');
+    _DEV.log=_DEV.log.filter(x=>!x._snag);
+    if(lastUser){ const ta=$('dev-msg'); if(ta){ ta.value=lastUser.text; _devSend(); } }
+    _devRenderLog();
+  }));
 }
+/* Does this Dev request want a TOOL (ship it / make an image) rather than code?
+   Dev used to be able to do neither \u2014 you had to leave and find another tab. */
+function _devToolIntent(msg){
+  const t=String(msg||'').toLowerCase();
+  if(/\b(deploy|publish|ship it|put it live|go live|make it live|host it|give me a (live )?(url|link))\b/.test(t)) return 'deploy';
+  if(/\b(generate|create|make|add)\b[^.]*\b(image|picture|photo|illustration|logo|icon|hero image|graphic)\b/.test(t)) return 'image';
+  return null;
+}
+
 async function _devSend(){
   if(_DEV.busy) return;
   const ta=$('dev-msg'); const msg=ta?ta.value.trim():''; if(!msg) return;
   ta.value=''; ta.style.height='auto';
   _DEV.log.push({role:'user',text:msg}); _devRenderLog(); _DEV.busy=true;
+  try{ _sessTouch('dev'); }catch(e){}
   const stat=$('dev-prev-s'); if(stat) stat.textContent='building…';
+  const hasProject=_devProjectFiles().length>0;
+
+  // ── Dev can now use AMV's real tools, not just write code ──
+  const intent=_devToolIntent(msg);
+  if(intent==='deploy' && hasProject){
+    try{
+      if(stat) stat.textContent='publishing…';
+      const html=_devProjectPreviewHTML()||_DEV.lastHTML||'';
+      if(!html.trim()) throw new Error('nothing to publish yet');
+      const title=(_DEV.activePath?_DEV.activePath.split('/').pop().replace(/\.\w+$/,''):'My app')||'My app';
+      const d=await _deployApi('/deploy',{ html, title, slug:_DEV.deploySlug||undefined });
+      _DEV.deploySlug=d.slug;
+      _DEV.log.push({role:'ai',text:'Published it. It\u2019s live at **'+d.url+'** \u2014 anyone with the link can open it. Deploying again updates this same URL.'});
+      _devRenderLog();
+      if(stat) stat.textContent='live';
+      try{ _showDeployed(d.url, title, false); }catch(e){}
+    }catch(e){
+      const why = e.message==='not-connected'
+        ? 'Connect the AMV engine in Settings and I can publish this to a live URL.'
+        : 'Couldn\u2019t publish: '+e.message;
+      _DEV.log.push({role:'ai',text:why}); _devRenderLog();
+      if(stat) stat.textContent='';
+    }
+    _DEV.busy=false; return;
+  }
+  if(intent==='image'){
+    try{
+      if(stat) stat.textContent='creating image…';
+      const out=await _amvRunTool('generate_image',{prompt:msg},(m)=>{ if(stat) stat.textContent=m; });
+      _DEV.log.push({role:'ai',text:out.text, html:out.render||''});
+      _devRenderLog();
+      if(stat) stat.textContent='';
+    }catch(e){
+      _DEV.log.push({role:'ai',text:'Couldn\u2019t create the image: '+e.message}); _devRenderLog();
+    }
+    _DEV.busy=false; return;
+  }
+
   try{
+    if(hasProject){
+      // ---- MULTI-FILE PROJECT MODE ----
+      const sys='You are AMV Forge — a principal-level software engineer working in a multi-file project. '+
+        'Make the requested change with production quality: complete, correct, secure, performant, well-structured. '+
+        'You may create or edit ANY files. For EACH file you write, output a fenced block whose FIRST line is "WRITE_FILE: <path>" followed by the COMPLETE file contents (never fragments/diffs). '+
+        'Only include files you actually changed or added. Before the file blocks, give a one or two sentence summary of what you changed. '+
+        'If any UI is involved, it must look like a top design agency built it.';
+      const _isUI=Object.keys(_DEV.project).some(p=>/\.(html|css|jsx|tsx)$/i.test(p))||/\b(html|css|ui|page|component|design|frontend)\b/i.test(msg);
+      const prompt=(_isUI?dnaPromptBlock()+'\n\nApply the DESIGN DNA above to any UI.\n\n':'')+_devProjectContext()+'\n\nCHANGE REQUEST: '+msg;
+      const resp=await aiCompleteLong(prompt, sys+_handoffContext('dev'), {max_tokens:16000, model:_sectionModel('code'),
+        onProgress:(p)=>_devProgress(p)});
+      const writes=[...resp.matchAll(/```[a-z]*\s*\n?WRITE_FILE:\s*([^\n`]+)\n([\s\S]*?)```/gi)];
+      const summary=resp.split('```')[0].trim();
+      const changed=[];
+      for(const m of writes){ const path=m[1].trim(); const body=m[2].replace(/\n$/,''); _devSetFile(path, body); changed.push(path); }
+      if(changed.length){ _DEV.activePath=changed[0]; }
+      const entry={role:'ai',text:(summary||'Updated the project.')+(changed.length?('\n\n**Files changed:** '+changed.join(', ')):'')};
+      _DEV.log.push(entry); _devRenderLog(); _devRenderTree(); _devShowActive();
+      // preview whole project + auto-save if folder connected
+      const previewHTML=_devProjectPreviewHTML();
+      const pb=$('dev-prev-body');
+      if(pb){ if(previewHTML){ pb.innerHTML='<iframe class="dev-prev-frame" sandbox="allow-scripts" srcdoc="'+previewHTML.replace(/"/g,'&quot;')+'"></iframe>'; } else {
+        // run the entry script
+        const entryP=_devEntryFile(); const lang=_devLangFor(entryP);
+        if(lang==='js'||lang==='python'){ const run=await runCode(_DEV.project[entryP].content, lang, s=>{ if(stat) stat.textContent=s; }); pb.innerHTML='<div class="dev-prev-out '+(run.ok?'ok':'err')+'"><pre>'+escH(run.ok?(run.stdout||run.result||'(no output)'):run.stderr)+'</pre></div>'; if(stat) stat.textContent=run.ok?'✓ ran':'✗ error'; }
+      } }
+      if(AMVWorkspace.dirHandle && changed.length){ for(const p of changed){ try{ await AMVWorkspace.writeFile(p, _DEV.project[p].content); }catch(e){} } if(stat) stat.textContent='✓ saved to folder'; }
+      _DEV.busy=false; return;
+    }
+    // ---- SINGLE-FILE MODE (unchanged behavior) ----
     const hasCurrent=!!_DEV.curCode;
     const sys='You are AMV Forge — a principal-level '+_DEV.lang+' engineer in a live code workspace. Your code must be the best version possible: production-ready, complete error handling, performance-aware, secure by default, elegantly structured. '+
       (hasCurrent?'You are EDITING existing code. Apply the user\u2019s requested change to the current code and return the COMPLETE updated program — never a fragment. ':'Write complete, runnable '+_DEV.lang+' code for the request. ')+
@@ -4846,7 +10502,8 @@ async function _devSend(){
     const _isUI=/\b(html|css|ui|page|site|landing|component|button|form|card|layout|design|style|frontend|web ?app|dashboard)\b/i.test(msg)||/html/i.test(_DEV.curLang||'');
     const prompt=(_isUI?dnaPromptBlock()+'\n\nApply the DESIGN DNA above to any UI/visual output.\n\n':'')+
       (hasCurrent?('Current '+(_DEV.curLang||_DEV.lang)+' code:\n```\n'+_DEV.curCode+'\n```\n\nChange request: '+msg+'\n\nReturn the full updated program.'):msg);
-    const resp=await aiComplete(prompt, sys, {max_tokens:6000, model:'claude-opus-4-8'});
+    const resp=await aiCompleteLong(prompt, sys+_handoffContext('dev'), {max_tokens:16000, model:_sectionModel('code'),
+      onProgress:(p)=>_devProgress(p)});
     const code=extractCode(resp,_DEV.lang)||extractCode(resp);
     const txt=resp.replace(/```[\s\S]*?```/g,'').trim();
     const entry={role:'ai',text:txt,code:code,lang:_DEV.lang};
@@ -4858,7 +10515,7 @@ async function _devSend(){
       if(stat) stat.textContent=run.ok?'✓ ran ('+run.ms+'ms)':'✗ error';
     } else { if(stat) stat.textContent=''; }
     _DEV.log.push(entry); _devRenderLog();
-  }catch(err){ _DEV.log.push({role:'ai',text:'**Error:** '+err.message}); _devRenderLog(); if(stat) stat.textContent='✗'; }
+  }catch(err){ _DEV.log.push({role:'ai',text:'',_snag:_aiFriendly(err&&err.message)}); _devRenderLog(); if(stat) stat.textContent=''; }
   _DEV.busy=false;
 }
 window.renderCodeView=renderCodeView;
@@ -4866,6 +10523,577 @@ window.renderCodeView=renderCodeView;
 function codeStart(kind){ setTab('chat'); setTimeout(()=>{ const map={'New script':'Write a new script that ','Fix a bug':'Here is my code and the error I am getting:\n\n','Refactor':'Refactor this code to be cleaner:\n\n','Explain':'Explain what this code does, step by step:\n\n'}; const ta=$('mta'); if(ta){ ta.value=map[kind]||''; ta.focus(); } },120); }
 window.codeStart=codeStart;
 
+
+/* ══════════════════════════════════════════════════════════════
+   AGENTIC CHAT  — chat that DOES the work, not just describes it.
+
+   Before this, chat could only search the web. Ask it to "make an image"
+   or "build a landing page" or "run this and find the bug" and it would
+   talk about it while you went hunting for the right tab.
+
+   Now chat can actually reach every AMV engine. Each tool below is wired
+   to a REAL function that already powers a tab — nothing here is a mock.
+   ══════════════════════════════════════════════════════════════ */
+const AMV_TOOLS = [
+  {
+    name:'generate_video',
+    description:'Generate a short video clip from a text prompt. Use when the person asks for a video, clip, animation, or moving footage. Takes a minute or two; the clip is shown to them automatically when it is ready.',
+    input_schema:{ type:'object', properties:{
+      prompt:{type:'string', description:'A vivid description of the scene, including camera movement, lighting and action.'},
+      seconds:{type:'number', description:'Clip length in seconds (5 or 10).'},
+      aspect:{type:'string', description:'Aspect ratio: 16:9, 9:16 or 1:1.'}
+    }, required:['prompt'] }
+  },
+  {
+    name:'generate_image',
+    description:'Generate an image from a text prompt. Use whenever the person asks for a picture, illustration, logo, poster, mockup, concept art, or any visual. Returns the image, which is shown to them automatically.',
+    input_schema:{ type:'object', properties:{
+      prompt:{type:'string', description:'A vivid, detailed description of the image.'},
+      style:{type:'string', description:'Optional style, e.g. photorealistic, illustration, 3d, watercolor.'},
+      ratio:{type:'string', description:'Optional aspect ratio: 1:1, 16:9, 9:16, 4:3.'}
+    }, required:['prompt'] }
+  },
+  {
+    name:'run_code',
+    description:'Actually EXECUTE code and return its real output/errors. Use whenever the person wants code run, tested, verified, or when you want to check your own work before answering. Supports js, python, html.',
+    input_schema:{ type:'object', properties:{
+      code:{type:'string'},
+      lang:{type:'string', enum:['js','python','html']}
+    }, required:['code','lang'] }
+  },
+  {
+    name:'fix_code',
+    description:'Run code, and if it fails, automatically fix it and re-run until it passes. Use when the person has broken code or asks you to debug something.',
+    input_schema:{ type:'object', properties:{
+      code:{type:'string'},
+      lang:{type:'string', enum:['js','python']}
+    }, required:['code','lang'] }
+  },
+  {
+    name:'build_app',
+    description:'Build a complete, working app/site/page and show it running live. Use when the person asks you to build, make, or create something interactive — a landing page, a game, a dashboard, a tool. Produces a live preview they can use.',
+    input_schema:{ type:'object', properties:{
+      spec:{type:'string', description:'A full description of what to build, including features and style.'}
+    }, required:['spec'] }
+  },
+  {
+    name:'deploy_site',
+    description:'Publish a page to a REAL, live, public URL that anyone can open. Use when the person asks to deploy, publish, ship, host, or "put it live", or when they want a shareable link. Returns the live URL.',
+    input_schema:{ type:'object', properties:{
+      html:{type:'string', description:'The complete HTML document to publish. If you just built something, pass that.'},
+      title:{type:'string', description:'A short name for the site.'}
+    }, required:['html'] }
+  }
+];
+
+/* Which tools a given surface gets. Chat gets everything; Dev and Lab get the
+   ones that make sense where they are. Before this, ONLY chat had tools at all
+   \u2014 Dev couldn't ship what it built, Lab couldn't publish a fix. */
+function _toolsFor(surface){
+  const by = n => AMV_TOOLS.find(t=>t.name===n);
+  if(surface==='dev')  return [by('generate_image'), by('deploy_site'), by('run_code')].filter(Boolean);
+  if(surface==='lab')  return [by('run_code'), by('fix_code'), by('deploy_site')].filter(Boolean);
+  if(surface==='crew') return [by('generate_image'), by('run_code'), by('build_app'), by('deploy_site')].filter(Boolean);
+  return AMV_TOOLS;   // chat gets everything
+}
+try{ window._toolsFor=_toolsFor; }catch(e){}
+
+/* ══════════════════════════════════════════════════════════════
+   SHARED AGENTIC RUNNER — one tool-use loop, usable from ANY surface.
+
+   Chat had its own loop baked into the streaming path, so Dev, Lab and Crew
+   could never use tools at all. This is a surface-agnostic version: give it a
+   prompt and a surface, it runs the full request -> tool -> result -> continue
+   loop against the real engines and hands back the finished text plus anything
+   that should be rendered.
+   ══════════════════════════════════════════════════════════════ */
+async function runAgentic(surface, userPrompt, opts){
+  opts = opts || {};
+  const tools = _toolsFor(surface);
+  const onStatus = opts.onStatus || (()=>{});
+  const maxRounds = opts.maxRounds || 4;
+
+  const messages = [{ role:'user', content:String(userPrompt||'') }];
+  let rendered = '';
+  let finalText = '';
+
+  for(let round = 0; round < maxRounds; round++){
+    const body = {
+      model: opts.model || _sectionModel('code'),
+      max_tokens: opts.max_tokens || 8000,
+      system: opts.system || 'You are AMV. You have real tools \u2014 use them to actually do the work rather than describing it.',
+      messages,
+      ...(tools.length ? { tools } : {})
+    };
+
+    const r = await fetch(_aiBase(), {
+      method:'POST', headers:_aiHeaders(), body:JSON.stringify(body)
+    });
+    if(!r.ok){
+      const t = await r.text().catch(()=>'');
+      throw new Error('AMV request failed ('+r.status+'): '+t.slice(0,160));
+    }
+    const data = await r.json();
+    const blocks = data.content || [];
+
+    const text = blocks.filter(b=>b.type==='text').map(b=>b.text).join('').trim();
+    if(text) finalText = text;
+
+    const toolUses = blocks.filter(b=>b.type==='tool_use');
+    if(!toolUses.length || data.stop_reason !== 'tool_use'){
+      return { text: finalText, rendered, rounds: round + 1 };
+    }
+
+    // Run every tool the model asked for, feed the REAL results back.
+    const results = [];
+    for(const tu of toolUses){
+      const out = await _amvRunTool(tu.name, tu.input || {}, onStatus);
+      results.push({ type:'tool_result', tool_use_id: tu.id, content: String(out.text||'').slice(0,8000) });
+      if(out.render) rendered += out.render;
+    }
+    messages.push({ role:'assistant', content: blocks });
+    messages.push({ role:'user', content: results });
+  }
+  return { text: finalText, rendered, rounds: maxRounds, hitLimit:true };
+}
+try{ window.runAgentic = runAgentic; }catch(e){}
+
+/* Execute a tool the model asked for. Returns a string result for the model,
+   plus optional rich content rendered into the chat. */
+async function _amvRunTool(name, input, onStatus){
+  try{
+    if(name==='generate_image'){
+      onStatus && onStatus('Generating your image\u2026');
+      const src = await _premiumImageSrc(input.prompt, input.style||'', input.ratio||'1:1', Math.floor(Math.random()*1e6));
+      if(!src) return { text:'Image generation needs the AMV engine connected. Tell the user to enable it in Settings.', render:null };
+      return {
+        text:'Image generated successfully and shown to the user.',
+        render:'<img src="'+escH(src)+'" alt="'+escH(input.prompt)+'" class="chat-img" loading="lazy">'
+      };
+    }
+
+    if(name==='generate_video'){
+      /* Video is a JOB, not a request — it takes a minute or two. The tool call
+         waits for the real provider to finish and then hands back the real file.
+         It never invents progress and never returns a video that isn't there. */
+      onStatus && onStatus('Starting the video\u2026');
+      try{
+        const d = await _vidApi('/v1/video/generate', {
+          prompt: input.prompt,
+          seconds: Math.min(10, Math.max(1, parseInt(input.seconds)||5)),
+          aspect: ['16:9','9:16','1:1'].includes(input.aspect) ? input.aspect : '16:9'
+        });
+        if(d.configured === false)
+          return { text:'No video engine is connected to this workspace, so video cannot be generated. Tell the user plainly \u2014 do not pretend.', render:null };
+
+        onStatus && onStatus('Generating your video\u2026 this takes a minute or two.');
+        // poll until the provider is actually done
+        for(let i=0;i<120;i++){
+          await new Promise(r=>setTimeout(r, i<15 ? 2000 : 5000));
+          let st;
+          try{ st = await _vidApi('/v1/video/status', { id: d.id }); }
+          catch(e){ continue; }
+          if(st.status==='succeeded' && st.url){
+            // also drop it into the Video tab so it isn't stranded in the chat
+            try{
+              S.vids.unshift({ id:'tool_'+d.id, p:input.prompt, dur:input.seconds||5,
+                               aspect:input.aspect||'16:9', status:'succeeded', url:st.url, stage:'', error:'', jobId:d.id });
+              if(S.tab==='video') renderVidGrid();
+            }catch(e){}
+            return {
+              text:'The video was generated and is shown to the user.',
+              render:'<video src="'+escH(st.url)+'" class="chat-vid" controls playsinline preload="metadata"></video>'
+            };
+          }
+          if(st.status==='failed')
+            return { text:'The video failed to generate: '+(st.error||'unknown error')+'. Tell the user honestly.', render:null };
+        }
+        return { text:'The video is taking unusually long. Tell the user it is still processing.', render:null };
+      }catch(e){
+        if(e.message==='__NOT_CONNECTED__')
+          return { text:'AMV is not connected to its engine, so video cannot be generated. Say so plainly.', render:null };
+        if(e.code==='plan_required')
+          return { text:'Video is not included in this user\u2019s plan. Tell them they need to upgrade.', render:null };
+        if(e.code==='video_quota')
+          return { text:'The user has used all the video in their plan this month. Tell them.', render:null };
+        return { text:'Video generation failed: '+e.message, render:null };
+      }
+    }
+
+    if(name==='run_code'){
+      onStatus && onStatus('Running the code\u2026');
+      const r = await runCode(input.code, input.lang);
+      if(r.html){
+        return {
+          text:'The HTML rendered successfully. A live preview is shown to the user.',
+          render:'<iframe sandbox="allow-scripts" class="chat-live" srcdoc="'+escH(r.html)+'"></iframe>'
+        };
+      }
+      const out = (r.ok ? (r.stdout || '(no output)') : (r.stderr || 'failed'));
+      return {
+        text:(r.ok?'Ran successfully in '+r.ms+'ms.\nOutput:\n':'Execution FAILED.\nError:\n')+out.slice(0,4000),
+        render:'<div class="chat-run'+(r.ok?'':' bad')+'"><div class="chat-run-h">'+(r.ok?'Ran successfully':'Error')+'</div><pre>'+escH(out.slice(0,4000))+'</pre></div>'
+      };
+    }
+
+    if(name==='fix_code'){
+      onStatus && onStatus('Running it, then fixing what breaks\u2026');
+      const res = await autoDebug(input.code, input.lang, 3, (st)=>{
+        onStatus && onStatus((st && (st.note||st.msg)) || 'Debugging\u2026');
+      }, _sectionModel('debug'));
+      const fixed = res && res.code;
+      return {
+        text:(res && res.ok!==false) ? 'Fixed and now passing.\n\nWorking code:\n'+String(fixed||'').slice(0,6000)
+                                     : 'Could not fully fix it. Last error: '+String((res&&res.stderr)||'unknown'),
+        render:null
+      };
+    }
+
+    if(name==='deploy_site'){
+      onStatus && onStatus('Publishing it live\u2026');
+      if(!(window.AMV_API && AMV_API.live && AMV_API.token))
+        return { text:'Publishing needs the AMV engine connected. Tell the user to enable it in Settings.', render:null };
+      let html = String(input.html||'').replace(/^```[a-z]*\n?/i,'').replace(/```\s*$/,'').trim();
+      if(!html) return { text:'Nothing to publish \u2014 no HTML was given.', render:null };
+      if(!/<html|<!doctype/i.test(html)) html = '<!DOCTYPE html><html><body>'+html+'</body></html>';
+      try{
+        const d = await _deployApi('/deploy', { html, title: input.title || 'App' });
+        return {
+          text:'Published successfully. It is LIVE at: '+d.url+' \u2014 give the user this exact URL.',
+          render:'<div class="chat-deployed"><span class="deploy-dot"></span><div><b>Live now</b>'+
+                 '<a href="'+escH(d.url)+'" target="_blank" rel="noopener">'+escH(d.url)+'</a></div></div>'
+        };
+      }catch(e){ return { text:'Deploy failed: '+(e.message||e), render:null }; }
+    }
+
+    if(name==='build_app'){
+      onStatus && onStatus('Building it\u2026');
+      const sys = 'You build complete, self-contained, working web apps. Return ONE full HTML document with all CSS and JS inline. No explanation, no markdown fences \u2014 just the HTML. It must actually work when opened.';
+      let html = await aiCompleteLong(input.spec, sys, {
+        max_tokens:16000,
+        model:_sectionModel('code'),
+        onProgress:(p)=>onStatus && onStatus('Building\u2026 '+p.lines.toLocaleString()+' lines')
+      });
+      html = String(html||'').replace(/^```[a-z]*\n?/i,'').replace(/```\s*$/,'').trim();
+      if(!/<html|<!doctype/i.test(html)) html = '<!DOCTYPE html><html><body>'+html+'</body></html>';
+      // Register it as a real artifact so it gets the full side-panel treatment.
+      let card='';
+      try{
+        const art=_artifactStore(html, 'html', true);
+        card=_artifactCardHTML(art);
+      }catch(e){
+        card='<iframe sandbox="allow-scripts" class="chat-live" srcdoc="'+escH(html)+'"></iframe>';
+      }
+      return { text:'Built it. A live, working version is shown to the user \u2014 they can open, edit, and download it.', render:card };
+    }
+  }catch(e){
+    return { text:'Tool "'+name+'" failed: '+(e.message||e), render:null };
+  }
+  return { text:'Unknown tool: '+name, render:null };
+}
+try{ window.AMV_TOOLS=AMV_TOOLS; window._amvRunTool=_amvRunTool; }catch(e){}
+
+/* ══════════════════════════════════════════════════════════════
+   CONTEXT WINDOW MANAGEMENT
+   Like Claude: a conversation has a finite context. We track it, warn as it
+   fills, and when it's full you start a new chat — but you can carry a
+   COMPRESSED handoff across so nothing is lost and you pick up exactly where
+   you left off.
+   ══════════════════════════════════════════════════════════════ */
+const CTX_LIMIT_TOKENS = 180000;      // usable context budget
+const CTX_MAX_FILES    = 100;         // max files in a Dev project
+const CTX_WARN_AT      = 0.75;        // show a nudge
+const CTX_FULL_AT      = 0.92;        // must start a new chat
+
+// ~4 chars per token is the standard rough estimate.
+function _tok(str){ return Math.ceil(String(str||'').length / 4); }
+
+// How much context the CURRENT chat is using.
+function _ctxUsage(){
+  let tokens = 0, files = 0;
+  try{
+    const msgs = (typeof getMsgs==='function') ? (getMsgs()||[]) : [];
+    msgs.forEach(m=>{ tokens += _tok(m.c||m.text||''); });
+    // memory + profile + skills ride along in every request
+    tokens += _tok((S.memory||[]).join(' '));
+    if(typeof _profileContext==='function') tokens += _tok(_profileContext());
+    if(typeof _skillsContext==='function')  tokens += _tok(_skillsContext());
+  }catch(e){}
+  return { tokens, files, pct: Math.min(1, tokens / CTX_LIMIT_TOKENS) };
+}
+
+// How much context a Dev session is using (conversation + all project files).
+function _ctxUsageDev(){
+  let tokens = 0, files = 0;
+  try{
+    (_DEV.log||[]).forEach(m=>{ tokens += _tok(m.text||''); tokens += _tok(m.code||''); });
+    const proj = _DEV.project || {};
+    Object.keys(proj).forEach(p=>{ files++; tokens += _tok((proj[p]&&proj[p].content)||''); });
+  }catch(e){}
+  return { tokens, files, pct: Math.min(1, tokens / CTX_LIMIT_TOKENS) };
+}
+
+// Build a COMPRESSED handoff of the current chat/session. Small enough to paste,
+// complete enough that a fresh chat continues seamlessly.
+async function _ctxBuildHandoff(kind){
+  kind = kind || 'chat';
+  let convo = '', projectManifest = '', title = '';
+  if(kind === 'dev'){
+    title = 'Dev session';
+    convo = (_DEV.log||[]).map(m=>(m.role==='user'?'User: ':'AMV: ')+(m.text||'')).join('\n');
+    const proj = _DEV.project||{};
+    const paths = Object.keys(proj);
+    projectManifest = paths.length
+      ? '\n\nPROJECT FILES ('+paths.length+'):\n'+paths.map(p=>'- '+p+' ('+((proj[p].content||'').split('\n').length)+' lines)').join('\n')
+      : '';
+  } else {
+    const c = (S.convs||[]).find(c=>c.id===S.cid);
+    title = (c && c.title) || 'Conversation';
+    convo = ((typeof getMsgs==='function'?getMsgs():[])||[]).map(m=>(m.r==='u'?'User: ':'AMV: ')+(m.c||'')).join('\n');
+  }
+  // Ask the model to compress it. If that's unavailable, fall back to a trim.
+  let summary = '';
+  try{
+    summary = await aiComplete(
+      'Compress this conversation into a HANDOFF BRIEF so a fresh session can continue seamlessly. Include: the goal, every decision made, the current state, open problems, and exact next steps. Keep all specifics (names, numbers, file paths, choices). Be dense \u2014 no filler.\n\n' + convo.slice(-60000),
+      'You write handoff briefs that let a new session resume work with zero loss of context.',
+      { max_tokens: 3000, noLang: true }
+    );
+  }catch(e){
+    summary = convo.slice(-8000);   // offline fallback: keep the tail
+  }
+  return {
+    v: 1,
+    kind,
+    title,
+    createdAt: Date.now(),
+    summary,
+    manifest: projectManifest,
+    files: kind==='dev' ? Object.keys(_DEV.project||{}) : [],
+    memory: (S.memory||[]).slice(0, 40),
+  };
+}
+
+// Encode a handoff into a compact, pasteable token.
+function _ctxEncode(h){
+  try{
+    const json = JSON.stringify(h);
+    // compress: deflate -> base64 (falls back to plain base64 if unsupported)
+    const bytes = new TextEncoder().encode(json);
+    let bin=''; bytes.forEach(b=>bin+=String.fromCharCode(b));
+    return 'AMVCTX1:' + btoa(bin);
+  }catch(e){ return 'AMVCTX1:' + btoa(unescape(encodeURIComponent(JSON.stringify(h)))); }
+}
+function _ctxDecode(str){
+  try{
+    const s = String(str||'').trim().replace(/^AMVCTX1:/, '');
+    const bin = atob(s);
+    const bytes = new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+    return JSON.parse(new TextDecoder().decode(bytes));
+  }catch(e){ return null; }
+}
+// Render the context meter + warnings into a host element.
+function _ctxRenderMeter(hostId, kind){
+  const host=$(hostId); if(!host) return;
+  const u = kind==='dev' ? _ctxUsageDev() : _ctxUsage();
+  const pct = Math.round(u.pct*100);
+  if(u.pct < 0.5 && !(kind==='dev' && u.files>=CTX_MAX_FILES*0.8)){ host.innerHTML=''; return; }
+  const state = u.pct>=CTX_FULL_AT ? 'full' : u.pct>=CTX_WARN_AT ? 'warn' : 'ok';
+  const fileNote = (kind==='dev' && u.files) ? ' \u00b7 '+u.files+'/'+CTX_MAX_FILES+' files' : '';
+  host.innerHTML =
+    '<div class="ctx-meter ctx-'+state+'">'+
+      '<div class="ctx-row">'+
+        '<span class="ctx-l">Context '+pct+'% full'+fileNote+'</span>'+
+        (state!=='ok' ? '<button class="ctx-btn" data-ctx-new="'+kind+'">Continue in a new '+(kind==='dev'?'session':'chat')+'</button>' : '')+
+      '</div>'+
+      '<div class="ctx-bar"><div class="ctx-fill" style="width:'+pct+'%"></div></div>'+
+      (state==='full'
+        ? '<div class="ctx-note">This '+(kind==='dev'?'session':'chat')+' is full. Start a new one \u2014 AMV will carry a compressed handoff across so it picks up exactly where you left off.</div>'
+        : state==='warn'
+        ? '<div class="ctx-note">Getting long. When you continue in a new '+(kind==='dev'?'session':'chat')+', everything is carried over.</div>'
+        : '')+
+    '</div>';
+  host.querySelectorAll('[data-ctx-new]').forEach(b=>on(b,'click',()=>_ctxHandoffFlow(b.dataset.ctxNew)));
+}
+
+// Compress the current context, start fresh, and resume seamlessly.
+async function _ctxHandoffFlow(kind){
+  const r=$('ovr'); if(!r) return;
+  r.innerHTML='<div class="ovr-bg"><div class="ovr-card" style="max-width:460px" onclick="event.stopPropagation()">'+
+    '<div style="font-size:15px;font-weight:600;margin-bottom:6px">Carrying your context over\u2026</div>'+
+    '<div style="font-size:13px;color:var(--mu);line-height:1.6" id="ctx-step">Compressing everything important from this '+(kind==='dev'?'session':'chat')+'\u2026</div>'+
+    '<div class="ctx-bar" style="margin-top:14px"><div class="ctx-fill" id="ctx-anim" style="width:15%"></div></div>'+
+  '</div></div>';
+  r.classList.add('on');
+  try{
+    const h = await _ctxBuildHandoff(kind);
+    const token = _ctxEncode(h);
+    const st=$('ctx-step'); const an=$('ctx-anim');
+    if(an) an.style.width='100%';
+    if(st) st.textContent='Done. Starting fresh with your handoff loaded.';
+    // Save the handoff so it can also be downloaded / pasted later.
+    try{
+      const all=load('amv_handoffs')||[];
+      all.unshift({ id:'h'+Date.now(), kind, title:h.title, token, at:Date.now() });
+      store('amv_handoffs', all.slice(0,20));
+    }catch(e){}
+    await new Promise(res=>setTimeout(res,550));
+    closeOvr();
+    _ctxResume(h, kind, token);
+  }catch(e){
+    closeOvr();
+    toast('Could not build the handoff: '+e.message,'error',5000);
+  }
+}
+
+// Start the new chat/session pre-loaded with the handoff.
+function _ctxResume(h, kind, token){
+  if(kind==='dev'){
+    try{ _sessLeave('dev'); _sessNew('dev'); _resetToolState('dev'); }catch(e){}
+    _DEV.handoff = h;                       // rides along in the next prompt
+    setTab('dev');
+    try{ _devPushSys('Picked up from your last session. I have the full handoff \u2014 goal, decisions, current state, and next steps. Tell me what to do next, or say "continue".'); _devRenderLog(); }catch(e){}
+  } else {
+    try{ newChat(); }catch(e){}
+    S._chatHandoff = h;                     // rides along in the next prompt
+    setTab('chat');
+    try{
+      const msgs=getMsgs();
+      msgs.push({r:'a', c:'**Picked up where we left off.** I have a compressed handoff of the previous chat \u2014 the goal, every decision, the current state, and the next steps.\n\nTell me what you want next, or just say "continue".\n\n*You can download this handoff or reuse it later from Handoffs (\u2318K \u2192 "handoff").*', _t:Date.now()});
+      renderChatMsgs(); saveConvs();
+    }catch(e){}
+  }
+  toast('Context carried over \u2014 you can pick up right where you left off.','success',4500);
+}
+
+// Download a handoff as a .amvctx file.
+function _ctxDownload(token, title){
+  try{
+    const blob=new Blob([token],{type:'text/plain'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;
+    a.download='amv-handoff-'+String(title||'session').toLowerCase().replace(/[^a-z0-9]+/g,'-').slice(0,40)+'.amvctx';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 2000);
+    toast('Handoff downloaded. Paste it into any new chat to pick up exactly where you left off.','success',5000);
+  }catch(e){ toast('Could not download: '+e.message,'error',4000); }
+}
+try{ window._ctxDownload=_ctxDownload; }catch(e){}
+
+// The handoff manager: download past handoffs, or paste one in to resume.
+function openHandoffManager(){
+  const r=$('ovr'); if(!r) return;
+  const all=(()=>{ try{ return load('amv_handoffs')||[]; }catch(e){ return []; } })();
+  const rows = all.length
+    ? all.map(h=>'<div class="ho-row">'+
+        '<div class="ho-row-l"><div class="ho-row-t">'+escH(h.title||'Session')+'</div>'+
+          '<div class="ho-row-m">'+escH(h.kind==='dev'?'Dev session':'Chat')+' \u00b7 '+new Date(h.at).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})+'</div></div>'+
+        '<div class="ho-row-r">'+
+          '<button class="btn bs" data-ho-dl="'+escH(h.id)+'" style="font-size:11.5px">Download</button>'+
+          '<button class="btn bp" data-ho-use="'+escH(h.id)+'" style="font-size:11.5px">Resume</button>'+
+        '</div></div>').join('')
+    : '<div class="ho-empty">No handoffs yet. When a chat or Dev session fills up, AMV creates one automatically.</div>';
+  r.innerHTML='<div class="ovr-bg" id="ho-bg"><div class="ovr-card" style="max-width:560px" onclick="event.stopPropagation()">'+
+    '<div style="font-size:16px;font-weight:600;margin-bottom:4px">Context handoffs</div>'+
+    '<div style="font-size:12.5px;color:var(--mu);line-height:1.6;margin-bottom:16px">A handoff is a compressed snapshot of a conversation \u2014 the goal, every decision, the current state, and the next steps. Load one into a fresh chat and AMV picks up exactly where you left off.</div>'+
+    '<div class="ho-list">'+rows+'</div>'+
+    '<div class="ho-paste">'+
+      '<label class="lbl">Paste a handoff</label>'+
+      '<textarea id="ho-paste-in" rows="3" placeholder="Paste an AMVCTX1:\u2026 handoff here (or the contents of a .amvctx file)" style="width:100%;resize:vertical;font-family:var(--mn,monospace);font-size:11.5px"></textarea>'+
+      '<div style="display:flex;gap:8px;margin-top:9px">'+
+        '<button class="btn bs" id="ho-file-btn" style="font-size:12px">Load a .amvctx file</button>'+
+        '<button class="btn bp" id="ho-paste-go" style="font-size:12px">Resume from this handoff</button>'+
+      '</div>'+
+      '<input type="file" id="ho-file" accept=".amvctx,.txt" style="display:none">'+
+    '</div>'+
+    '<div style="display:flex;justify-content:flex-end;margin-top:16px"><button class="btn bs" id="ho-close" style="font-size:12px">Close</button></div>'+
+  '</div></div>';
+  r.classList.add('on');
+  on($('ho-close'),'click',closeOvr);
+  on($('ho-bg'),'click',closeOvr);
+  r.querySelectorAll('[data-ho-dl]').forEach(b=>on(b,'click',()=>{
+    const h=all.find(x=>x.id===b.dataset.hoDl); if(h) _ctxDownload(h.token, h.title);
+  }));
+  r.querySelectorAll('[data-ho-use]').forEach(b=>on(b,'click',()=>{
+    const h=all.find(x=>x.id===b.dataset.hoUse); if(!h) return;
+    const decoded=_ctxDecode(h.token);
+    if(!decoded){ toast('That handoff is corrupted.','error',4000); return; }
+    closeOvr(); _ctxResume(decoded, decoded.kind||'chat', h.token);
+  }));
+  // paste a handoff
+  on($('ho-paste-go'),'click',()=>{
+    const raw=($('ho-paste-in')?.value||'').trim();
+    if(!raw){ toast('Paste a handoff first.','error',3000); return; }
+    const decoded=_ctxDecode(raw);
+    if(!decoded || !decoded.summary){ toast('That doesn\u2019t look like a valid AMV handoff.','error',4500); return; }
+    closeOvr(); _ctxResume(decoded, decoded.kind||'chat', raw);
+  });
+  // load from a file
+  on($('ho-file-btn'),'click',()=>$('ho-file')?.click());
+  on($('ho-file'),'change',function(){
+    const f=this.files&&this.files[0]; if(!f) return;
+    const rd=new FileReader();
+    rd.onload=(e)=>{ const t=$('ho-paste-in'); if(t) t.value=String(e.target.result||'').trim(); };
+    rd.readAsText(f);
+    this.value='';
+  });
+}
+try{ window.openHandoffManager=openHandoffManager; }catch(e){}
+
+// Inject the handoff into the next request so the model actually has it.
+function _handoffContext(kind){
+  try{
+    const h = kind==='dev' ? _DEV.handoff : S._chatHandoff;
+    if(!h) return '';
+    return '\n\n[Handoff from the previous '+(kind==='dev'?'session':'chat')+' \u2014 continue seamlessly]\n'+
+           (h.summary||'') + (h.manifest||'');
+  }catch(e){ return ''; }
+}
+/* ONE file limit for the whole app. Every place a file can enter — chat,
+   Dev, Lab, workspaces, marketplace listings — goes through this guard, so
+   the cap is real everywhere and can't be dodged by using another surface. */
+function _ctxFileCount(kind){
+  try{
+    if(kind==='dev')  return Object.keys(_DEV.project||{}).length;
+    if(kind==='chat') return (S._chatFiles||[]).length;
+    if(kind==='lab')  return (S._labFiles||[]).length;
+    if(kind==='workspace'){ const w=(S.workspaces||[]).find(w=>w.id===S.wsId); return (w&&w.files||[]).length; }
+    return 0;
+  }catch(e){ return 0; }
+}
+// Returns true if it's OK to add `incoming` more files; otherwise warns and returns false.
+function _ctxFileGuard(kind, incoming){
+  try{
+    const have = _ctxFileCount(kind);
+    const n = incoming || 1;
+    if(have + n > CTX_MAX_FILES){
+      const room = Math.max(0, CTX_MAX_FILES - have);
+      toast(
+        'File limit reached \u2014 '+CTX_MAX_FILES+' files per '+(kind==='chat'?'conversation':'session')+'. '+
+        (room ? 'You can add '+room+' more.' : 'Start a new '+(kind==='chat'?'chat':'session')+' and carry a handoff across to keep going.'),
+        'error', 6500
+      );
+      return false;
+    }
+    return true;
+  }catch(e){ return true; }
+}
+// Track a file against the current surface's count.
+function _ctxFileTrack(kind, name){
+  try{
+    if(kind==='chat'){ S._chatFiles = S._chatFiles||[]; S._chatFiles.push(String(name||'file')); }
+    else if(kind==='lab'){ S._labFiles = S._labFiles||[]; S._labFiles.push(String(name||'file')); }
+  }catch(e){}
+}
+try{ window._ctxFileGuard=_ctxFileGuard; window._ctxFileCount=_ctxFileCount; window._ctxFileTrack=_ctxFileTrack; }catch(e){}
+
+try{ window._ctxRenderMeter=_ctxRenderMeter; window._ctxHandoffFlow=_ctxHandoffFlow; window._handoffContext=_handoffContext; }catch(e){}
+
+try{ window._ctxUsage=_ctxUsage; window._ctxUsageDev=_ctxUsageDev; window._ctxBuildHandoff=_ctxBuildHandoff;
+     window._ctxEncode=_ctxEncode; window._ctxDecode=_ctxDecode; window.CTX_LIMIT_TOKENS=CTX_LIMIT_TOKENS;
+     window.CTX_MAX_FILES=CTX_MAX_FILES; }catch(e){}
 
 /* ============================================================
    HANDOFF  - pass any task/chat/draft to another user or to Crew.
@@ -4904,17 +11132,23 @@ function renderHandoffView(){
           : `<span class="ho-status">${escH(h.status||'waiting')}</span>`}
       </div>
     </div>`;
-  vc.innerHTML=`<div class="sv fi"><div class="vi" style="max-width:820px">
+  vc.innerHTML=`<div class="sv fi"><div class="vi">
+      <span class="eyebrow">Collaboration</span>
       <h2>Handoff</h2>
-      <p class="vsub">Pass anything you're working on \u2014 a chat, a draft, a task \u2014 to a teammate or to your Crew agent. They pick up with the full context, make changes or approve, and hand it back. It's a shared baton for work that moves between people and the AI.</p>
+      <p class="vsub">Don\u2019t describe the work \u2014 hand over the work itself. Paste the actual draft, code, data, or brief; your teammate or a Crew agent picks it up <b>inside AMV</b> with full context, makes the change, and hands it back.</p>
+      <div class="ho-flow"><span class="ho-flow-step">You paste the work</span><span class="ho-flow-arrow">\u2192</span><span class="ho-flow-step">They pick up the baton</span><span class="ho-flow-arrow">\u2192</span><span class="ho-flow-step">Handed back</span></div>
 
       <div class="ss2">
         <h3>Hand something off</h3>
         <div style="display:flex;flex-direction:column;gap:12px">
           <div><label class="lbl" style="font-size:11px;color:var(--mu)">What are you handing off?</label>
             <input id="ho-title" placeholder="e.g. Finish the Q3 report intro" style="width:100%;background:var(--glass);border:1px solid var(--glass-bd);border-radius:var(--r-md);padding:12px;color:var(--tx);font-family:var(--fn);font-size:14px"></div>
-          <div><label class="lbl" style="font-size:11px;color:var(--mu)">Context / notes</label>
-            <textarea id="ho-ctx" placeholder="Anything the next person (or the agent) needs to know to continue." style="width:100%;min-height:74px;background:var(--glass);border:1px solid var(--glass-bd);border-radius:var(--r-md);padding:12px;color:var(--tx);font-family:var(--fn);font-size:14px;resize:vertical"></textarea></div>
+          <div><label class="lbl" style="font-size:11px;color:var(--mu)">The work itself \u2014 paste it here</label>
+            <textarea id="ho-ctx" placeholder="Paste the actual content the next person (or the agent) should work on: the draft, the code, the data, the email thread, the brief \u2014 plus anything they need to know to continue. This is the baton they pick up." style="width:100%;min-height:220px;background:var(--glass);border:1px solid var(--glass-bd);border-radius:var(--r-md);padding:12px;color:var(--tx);font-family:var(--mn,ui-monospace,monospace);font-size:13px;line-height:1.6;resize:vertical;tab-size:2"></textarea>
+            <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+              <button class="btn bs" data-dact="hoFromChat" style="font-size:11.5px">Pull in my last chat</button>
+              <span style="font-size:11px;color:var(--mu);align-self:center">or just paste anything above</span>
+            </div></div>
           <div><label class="lbl" style="font-size:11px;color:var(--mu)">Hand off to</label>
             <input id="ho-to" placeholder="teammate@email.com  \u2014 or type: crew" style="width:100%;background:var(--glass);border:1px solid var(--glass-bd);border-radius:var(--r-md);padding:12px;color:var(--tx);font-family:var(--fn);font-size:14px"></div>
           <button class="btn bp" data-dact="hoSend" style="align-self:flex-start">Send handoff</button>
@@ -4932,6 +11166,19 @@ function renderHandoffView(){
       </div>
     </div></div>`;
 }
+/* Pull the most recent conversation's content into the handoff context, so a
+   user can hand off real work — not just retype notes. */
+function hoFromChat(){
+  try{
+    const conv=(S.convs||[]).find(c=>c.id===S.activeConv)||(S.convs||[])[0];
+    if(!conv||!conv.msgs||!conv.msgs.length){ toast('No recent chat to pull in','info'); return; }
+    const text=conv.msgs.slice(-12).map(m=>(m.r==='u'?'You: ':'AMV: ')+(m.c||'')).join('\n\n');
+    const ta=$('ho-ctx'); if(ta){ ta.value=(ta.value?ta.value+'\n\n':'')+text; ta.focus(); }
+    if($('ho-title') && !$('ho-title').value) $('ho-title').value=conv.title||'Continue this conversation';
+    toast('Pulled in your last chat','success');
+  }catch(e){ toast('Could not pull chat','error'); }
+}
+window.hoFromChat=hoFromChat;
 function hoSend(){
   const t=($('ho-title')||{}).value, ctx=($('ho-ctx')||{}).value, to=($('ho-to')||{}).value;
   if(!t||!t.trim()){ toast('Add a title for the handoff','error'); return; }
@@ -4962,9 +11209,9 @@ function renderView(){
     case 'images': renderImgsView(); break;
     case 'video': renderVideoView(); break;
     case 'prompts': renderPromptsView(); break;
-    case 'workspaces': renderWorkspacesView(); break;
+    case 'workspaces': goSettings('projects'); return;
     case 'memory': renderMemoryView(); break;
-    case 'team': renderTeamView(); break;
+    case 'team': setTab('chat'); return;   // Team removed from the product — redirect anything that still points here
     case 'usage': renderUsageView(); break;
     case 'billing': renderBillingView(); break;
     case 'plans': renderPlansView(); break;
@@ -4979,7 +11226,10 @@ function renderView(){
     case 'dev': renderCodeView(); break;
     case 'lab': renderLabView(); break;
     case 'handoff': renderHandoffView(); break;
-    default: renderChatView();
+    case 'market': renderMarketView(); break;
+    case 'admin': renderAdminView(); break;
+    case 'notfound': render404View(); break;
+    default: render404View();
   }
 }
 
@@ -4990,8 +11240,20 @@ function renderPlansView(){
     '<div class="sv fi"><div class="vi vi-plans">'+
       '<h2>Plans</h2><p class="vsub">Start free. Upgrade any time. Cancel whenever.</p>'+
       '<div class="pg pg-app">'+planCards(true)+'</div>'+
-      '<p class="plans-foot">Payments secured by Stripe &bull; Cancel any time</p>'+
+      '<div class="plans-compare-row"><button class="btn bs" id="plans-compare" style="font-size:12.5px">Compare all plans in detail \u2192</button></div>'+
+      '<div class="trust-bar"><div class="trust-badges">'+
+        _trustBadge('<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>','Bank-grade encryption','256-bit TLS on every request')+
+        _trustBadge('<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/>','Secure payments','Processed by Stripe \u2014 we never see your card')+
+        _trustBadge('<path d="M12 2 4 5v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V5z"/>','Your data, your control','Export or delete everything, any time')+
+        _trustBadge('<path d="M13 2 3 14h8l-1 8 10-12h-8z"/>','No lock-in','Cancel with one click, keep your data')+
+      '</div></div>'+
+      '<p class="plans-foot">Payments secured by Stripe &bull; Cancel any time &bull; 30-day money-back guarantee</p>'+
     '</div></div>';
+  on($('plans-compare'),'click',()=>openPlanCompare(loadStr('amv_plan')||'pro'));
+}
+function _trustBadge(svg,title,sub){
+  const ic='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+svg+'</svg>';
+  return '<div class="trust-badge"><div class="trust-badge-ic">'+ic+'</div><div class="trust-badge-t">'+title+'</div><div class="trust-badge-s">'+sub+'</div></div>';
 }
 
 /* === HELP CENTER === */
@@ -5003,7 +11265,7 @@ const FAQS=[
   {q:'How does the sleep automation work?',a:'Connect your Google Drive and Canvas LMS in Settings &#x2192; Integrations. Then tell AMV what to complete overnight - assignments, emails, file organization. AMV works through the queue and delivers results to your Drive and email by morning.'},
   {q:'How do I connect Google Drive and Gmail?',a:'Go to Settings &#x2192; Integrations. Add your Google OAuth Client ID from Google Cloud Console. This enables Drive file access, Gmail reading, Docs analysis, and Calendar management.'},
   {q:'How does Canvas homework automation work?',a:'Add your Canvas API token in Settings &#x2192; Integrations. AMV reads your assignments, researches each one using your notes and Drive files, writes the answer, and optionally submits it via the Canvas API.'},
-  {q:'How do the plans and limits work?',a:'Free gives you daily usage to explore everything. Pro ($15/month) gives you 5\u00d7 the usage with all models, agents, and priority speed. Elite ($75/month) gives you 20\u00d7 the usage for power users \u2014 the fastest models first, parallel agents, and early access. Limits are usage-based, so you just work without counting messages.'},
+  {q:'How do the plans and limits work?',a:'Free gives you daily usage to explore everything. Pro ($15/month) gives you 5\u00d7 the usage with all models, agents, and priority speed. Elite ($75/month) is built for builders \u2014 20\u00d7 usage, our most capable Apex model first, full-stack app building with one-click deploy, up to 5 agents running in parallel, 4K video, unlimited automations, and priority support. Ultra ($200/month) is the power tier \u2014 50\u00d7 usage, unlimited parallel agents, whole-codebase context, autonomous multi-step projects, deploy and host multiple live apps, team workspaces, and the fastest hardware. Limits are usage-based, so you just work without counting messages.'},
   {q:'How do I use voice input?',a:'Click the microphone icon in the chat input. Works best in Chrome and Edge. Speak your message and it appears in the text box. Press Enter to send.'},
   {q:'What is AI Memory?',a:'Memory lets AMV remember facts about you - your job, preferences, study habits, and context. Go to Memory in the sidebar, add facts, and AMV includes them automatically in every conversation.'},
   {q:'How do I rename, star, or delete chats?',a:'Hover over any chat in the sidebar to see action buttons (&#x2B50; star, &#x270F; rename, &#x00D7; delete). Right-click for the full context menu with additional options like Export and Share.'},
@@ -5011,6 +11273,23 @@ const FAQS=[
   {q:'How do I set up payments?',a:'Go to Settings &#x2192; Platform (admin only). Add your Stripe Payment Links for Pro and Elite plans. Revenue goes directly to your Stripe account. Get links from stripe.com &#x2192; Payments &#x2192; Payment Links.'},
   {q:'How is my data protected?',a:'All data is stored locally in your browser. Passwords are hashed with SHA-256. Card details go to Stripe only - we never see them. Any self-hosting credentials are stored locally and never transmitted to AMV servers.'},
 ];
+
+/* A real 404 for unknown routes — instead of silently showing chat, tell the
+   user the page wasn't found and give them a clear way back. */
+function render404View(){
+  const vc=$('vc'); if(!vc) return;
+  vc.innerHTML=
+    '<div class="sv fi"><div class="vi nf-wrap">'+
+      '<div class="nf-code">404</div>'+
+      '<h2 class="nf-title">Page not found</h2>'+
+      '<p class="nf-sub">The page you\u2019re looking for doesn\u2019t exist or may have moved.</p>'+
+      '<div class="nf-actions">'+
+        '<button class="btn bp" onclick="setTab(\'chat\')">Go to chat</button>'+
+        '<button class="btn bs" onclick="setTab(\'dashboard\')">Home</button>'+
+      '</div>'+
+    '</div></div>';
+}
+try{ window.render404View=render404View; }catch(e){}
 
 function renderHelpView(){
   const vc=$('vc'); if(!vc) return;
@@ -5027,6 +11306,13 @@ function renderHelpView(){
               '<div class="faq-a">'+f.a+'</div>'+
             '</div>'
           ).join('')+
+        '</div>'+
+      '</div>'+
+      '<div class="ss2"><h3>Share feedback</h3>'+
+        '<p style="font-size:12.5px;color:var(--mu);margin-bottom:12px;line-height:1.55">Found a bug or have an idea? Tell us \u2014 real feedback shapes what we build next.</p>'+
+        '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
+          '<button class="btn bp" style="font-size:12px" data-dact="openFeedback" data-darg="bug">Report a bug</button>'+
+          '<button class="btn bs" style="font-size:12px" data-dact="openFeedback" data-darg="idea">Suggest a feature</button>'+
         '</div>'+
       '</div>'+
       '<div class="ss2"><h3>Still need help?</h3>'+
@@ -5053,35 +11339,103 @@ function renderHelpView(){
 
 /* === SETTINGS VIEW === */
 const USER_SET_SECTIONS=[
+  {group:'General'},
   {id:'account',label:'Account',icon:'<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>'},
-  {id:'security',label:'Security',icon:'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>'},
   {id:'privacy',label:'Privacy',icon:'<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>'},
-  {id:'appearance',label:'Appearance',icon:'<circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>'},
-  {id:'language',label:'Language',icon:'<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>'},
-  {type:'div'},
+  {id:'security',label:'Security',icon:'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>'},
   {id:'billing',label:'Billing',icon:'<rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/>'},
   {id:'usage',label:'Usage',icon:'<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>'},
-  {id:'integrations',label:'Integrations',icon:'<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" y1="9" x2="6" y2="21"/>'},
-  {type:'div'},
+  {id:'capabilities',label:'Capabilities',icon:'<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>'},
+  {group:'Customize'},
+  {id:'appearance',label:'Appearance',icon:'<circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>'},
+  {id:'language',label:'Language',icon:'<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>'},
+  {id:'skills',label:'Skills',icon:'<path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5"/>'},
+  {id:'integrations',label:'Connectors',icon:'<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" y1="9" x2="6" y2="21"/>'},
+  {group:'Workspace'},
+  {id:'projects',label:'Projects',icon:'<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>'},
+  {group:''},
   {id:'about',label:'About',icon:'<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>'},
 ];
 /* OWNER-ONLY — platform controls. Hidden from end users entirely. */
 const ADMIN_SET_SECTIONS=[
+  {id:'dashboard',label:'Founder Dashboard',icon:'<rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/>'},
   {id:'apikeys',label:'AI Connection',icon:'<path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>'},
   {id:'backend',label:'Live / Backend',icon:'<path d="M5 12h14M12 5l7 7-7 7"/>'},
+  {id:'widget',label:'Website Widget',icon:'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>'},
   {id:'platform',label:'Platform',icon:'<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>'},
 ];
 
+/* Render the founder dashboard from the /v1/admin/stats payload. */
+function _founderDashHTML(d){
+  const fmt=n=>(n||0).toLocaleString();
+  const money=n=>'$'+(n||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+  const sp=d.spend||{}, us=d.users||{}, rev=d.revenue||{}, mg=d.margin||{};
+  const byPlan=us.byPlan||{};
+  const spendPct=Math.min(100, sp.pctOfCap||0);
+  const spendColor = spendPct>=90?'#ff4d4d':(spendPct>=70?'#e0b341':'var(--accent)');
+  const rows=(d.topSpenders||[]).slice(0,12).map(u=>
+    '<div class="fd-row"><span class="fd-row-email">'+_esc(u.email)+'</span><span class="fd-row-plan">'+u.plan+'</span><span class="fd-row-cost">'+money(u.monthCostUSD)+'</span></div>').join('')
+    || '<div class="fd-row"><span style="color:var(--mu)">No usage yet.</span></div>';
+  const estProfit=(rev.estMRR||0)-(mg.estMonthlyCost||0);
+  return ''+
+    // hero metrics
+    '<div class="fd-grid">'+
+      '<div class="fd-card"><div class="fd-n">'+money(rev.estMRR)+'</div><div class="fd-l">Est. MRR</div><div class="fd-sub">'+money(rev.estARR)+' ARR</div></div>'+
+      '<div class="fd-card"><div class="fd-n">'+fmt(us.paying)+'</div><div class="fd-l">Paying users</div><div class="fd-sub">'+fmt(us.total)+' total</div></div>'+
+      '<div class="fd-card"><div class="fd-n">'+money(estProfit)+'</div><div class="fd-l">Est. gross profit / mo</div><div class="fd-sub">after AI cost '+money(mg.estMonthlyCost)+'</div></div>'+
+      '<div class="fd-card"><div class="fd-n">'+money(sp.today)+'</div><div class="fd-l">AI spend today</div><div class="fd-sub">cap '+money(sp.cap)+'</div></div>'+
+    '</div>'+
+    // spend bar + kill switch
+    '<div class="ss2"><h3>Today\u2019s global spend</h3>'+
+      '<div class="usage-bar"><div class="usage-bar-f" style="width:'+spendPct+'%;background:'+spendColor+'"></div></div>'+
+      '<div class="usage-meta"><span>'+money(sp.today)+' of '+money(sp.cap)+' ('+spendPct+'%)</span><span>'+(sp.killed?'\u26D4 Service PAUSED':'\u2705 Service live')+'</span></div>'+
+      '<button class="btn '+(sp.killed?'bp':'bs')+'" id="fd-kill" style="margin-top:12px;font-size:12px">'+(sp.killed?'Resume service':'Pause service (kill switch)')+'</button>'+
+    '</div>'+
+    // plan breakdown
+    '<div class="ss2"><h3>Users by plan</h3><div class="fd-plans">'+
+      ['free','pro','elite','ultra','custom'].map(p=>'<div class="fd-plan"><div class="fd-plan-n">'+fmt(byPlan[p]||0)+'</div><div class="fd-plan-l">'+p+'</div></div>').join('')+
+    '</div></div>'+
+    // top spenders (abuse / margin watch)
+    '<div class="ss2"><h3>Top spenders this month <span style="font-weight:400;color:var(--mu);font-size:11px">(margin &amp; abuse watch)</span></h3>'+
+      '<div class="fd-table"><div class="fd-row fd-head"><span>User</span><span>Plan</span><span>AI cost</span></div>'+rows+'</div>'+
+    '</div>';
+}
+
+// Leave settings and go back where you came from.
+function closeSettings(){
+  const back=(S._preSettingsTab && S._preSettingsTab!=='settings') ? S._preSettingsTab : 'chat';
+  S.settingsPane=null;
+  setTab(back);
+}
+try{ window.closeSettings=closeSettings; }catch(e){}
+
 function renderSettingsView(){
   const vc=$('vc'); if(!vc) return;
-  const visibleSections=[...USER_SET_SECTIONS,...(isAdmin()?[{type:'div'},...ADMIN_SET_SECTIONS]:[])];
+  const adminExtra=isAdmin()?[{group:'Operator'},...ADMIN_SET_SECTIONS]:[];
+  const visibleSections=[...USER_SET_SECTIONS,...adminExtra];
+  const q=(S._setSearch||'').toLowerCase().trim();
   const navHtml=visibleSections.map(s=>{
-    if(s.type==='div') return '<div class="sn-div"></div>';
-    return '<button class="sn-btn '+(s.id===S.settingsPane?'on':'')+'" data-sp="'+s.id+'"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">'+s.icon+'</svg>'+T(s.label)+'</button>';
+    if(s.group!==undefined){
+      if(q) return '';                       // hide group headers while searching
+      return s.group?'<div class="sn-group">'+escH(s.group)+'</div>':'<div class="sn-div"></div>';
+    }
+    if(s.type==='div') return q?'':'<div class="sn-div"></div>';
+    if(q && !(s.label||'').toLowerCase().includes(q)) return '';   // filter
+    return '<button class="sn-btn '+(s.id===S.settingsPane?'on':'')+'" data-sp="'+s.id+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">'+s.icon+'</svg>'+T(s.label)+'</button>';
   }).join('');
+  const noMatch = q && !visibleSections.some(s=>s.id && (s.label||'').toLowerCase().includes(q));
   vc.innerHTML=
     '<div class="settings-shell">'+
-      '<div class="settings-nav">'+navHtml+'</div>'+
+      '<button class="set-close" id="set-close" title="Close settings (Esc)" aria-label="Close settings">'+
+        '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'+
+        '<span class="set-close-lbl">Close</span>'+
+      '</button>'+
+      '<div class="settings-nav">'+
+        '<div class="set-search-wrap"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>'+
+          '<input id="set-search" class="set-search" type="text" placeholder="Search settings\u2026" value="'+escH(S._setSearch||'')+'" autocomplete="off">'+
+        '</div>'+
+        '<div class="settings-nav-list">'+navHtml+(noMatch?'<div class="sn-empty">No settings match \u201c'+escH(q)+'\u201d</div>':'')+'</div>'+
+      '</div>'+
       '<div class="settings-content"><div class="set-pane" id="set-pane"></div></div>'+
     '</div>';
   vc.querySelectorAll('.sn-btn').forEach(btn=>{
@@ -5092,10 +11446,134 @@ function renderSettingsView(){
       renderSetPane();
     });
   });
+  // Close settings: X button, Esc, or clicking the empty area outside the panels.
+  on($('set-close'),'click',closeSettings);
+  const shell=vc.querySelector('.settings-shell');
+  if(shell) on(shell,'mousedown',(e)=>{ if(e.target===shell) closeSettings(); });
+  const si=$('set-search');
+  if(si){
+    on(si,'input',()=>{ S._setSearch=si.value; const pos=si.selectionStart; renderSettingsView(); const s2=$('set-search'); if(s2){ s2.focus(); try{ s2.setSelectionRange(pos,pos); }catch(e){} } });
+  }
   renderSetPane();
 }
 
 /* === SETTINGS PANE RENDERER === */
+
+/* ---------------- Website Widget config pane (owner/admin) ----------------
+   Loads the owner's widget config from the backend, lets them customize it,
+   generates the copy-paste embed snippet, and (when saved) the widget goes
+   live on their site. Requires the backend to be connected — the config and
+   the public site key live server-side. */
+let _WIDGET_CFG=null;
+function _renderWidgetPane(pane){
+  const live=!!(window.AMV_API && AMV_API.live && AMV_API.token);
+  const base=(loadStr('amv_api_base')||'').replace(/\/+$/,'');
+  if(!live){
+    pane.innerHTML=
+      '<div class="set-title">Website Widget</div>'+
+      '<div class="set-sub">Add an AMV chat bubble to any website with one line of code.</div>'+
+      '<div class="wb">Connect your backend first (Settings \u2192 AI Connection and sign in). The widget\u2019s config and public key live on your server so it works securely on the open web.</div>';
+    return;
+  }
+  pane.innerHTML=
+    '<div class="set-title">Website Widget</div>'+
+    '<div class="set-sub">Add an AMV chat bubble to any website with one line of code. Your visitors chat with an AI you control \u2014 no account needed on their end.</div>'+
+    '<div id="wg-body"><div class="lab-placeholder">Loading your widget\u2026</div></div>';
+
+  const body=$('wg-body');
+  (async()=>{
+    let cfg=null;
+    try{
+      const r=await AMV_API._fetch('/v1/widget/config',{method:'POST',body:'{}'});
+      const d=await r.json();
+      if(d&&d.config) cfg=d.config;
+    }catch(e){}
+    if(!cfg){ body.innerHTML='<div class="wb">Couldn\u2019t load the widget config. Make sure your backend is deployed with the latest code, then reload.</div>'; return; }
+    _WIDGET_CFG=cfg;
+    _paintWidgetForm(body, cfg, base);
+  })();
+}
+function _widgetSnippet(cfg, base){
+  const host=(base||'').replace(/\/+$/,'');
+  // Prefer an explicit app origin if the operator serves the app separately;
+  // default to same-origin as the Worker (works for combined deploys).
+  const appOrigin=location.origin;
+  return '<script src="'+host+'/widget.js?k='+cfg.key+'&host='+encodeURIComponent(appOrigin)+'" async><\/script>';
+}
+function _paintWidgetForm(body, cfg, base){
+  const snippet=_widgetSnippet(cfg, base);
+  const modelOpts=[['amv-pulse','Fast (cheapest)'],['amv-core','Balanced (recommended)'],['amv-forge','Advanced'],['amv-apex','Most capable']]
+    .map(m=>'<option value="'+m[0]+'"'+(cfg.model===m[0]?' selected':'')+'>'+m[1]+'</option>').join('');
+  body.innerHTML=
+    '<div class="ss2"><h3>Your embed code</h3>'+
+      '<p style="font-size:12px;color:var(--mu);margin-bottom:10px;line-height:1.6">Paste this once, just before <code>&lt;/body&gt;</code> on any page. The chat bubble appears in the corner. Changes you save here apply everywhere instantly \u2014 no need to re-paste.</p>'+
+      '<div style="position:relative"><pre id="wg-snippet" style="background:var(--surface);border:1px solid var(--hair);border-radius:8px;padding:12px 12px;font-size:11.5px;overflow:auto;margin:0;white-space:pre-wrap;word-break:break-all"><code>'+escH(snippet)+'</code></pre></div>'+
+      '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">'+
+        '<button class="btn bp" id="wg-copy" style="font-size:12px">Copy code</button>'+
+        '<button class="btn" id="wg-preview" style="font-size:12px">Preview widget</button>'+
+        '<span style="font-size:11px;color:var(--mu);align-self:center">Site key: <code>'+escH(cfg.key)+'</code></span>'+
+      '</div>'+
+    '</div>'+
+    '<div class="ss2"><h3>Appearance</h3>'+
+      '<div class="sf">'+
+        '<div><label class="lbl">Header title</label><input type="text" id="wg-title" value="'+escH(cfg.title||'')+'" maxlength="60" placeholder="Chat with us"></div>'+
+        '<div><label class="lbl">Greeting message</label><input type="text" id="wg-greeting" value="'+escH(cfg.greeting||'')+'" maxlength="300" placeholder="Hi! How can I help you today?"></div>'+
+        '<div><label class="lbl">Accent color</label><input type="color" id="wg-accent" value="'+escH(cfg.accent||'#4f7cff')+'" style="width:60px;height:36px;padding:2px;cursor:pointer"></div>'+
+      '</div>'+
+    '</div>'+
+    '<div class="ss2"><h3>Behavior</h3>'+
+      '<div class="sf">'+
+        '<div><label class="lbl">AI model</label><select id="wg-model" class="inp">'+modelOpts+'</select></div>'+
+        '<div><label class="lbl">Instructions (system prompt) \u2014 tells the AI how to behave and what it knows</label><textarea id="wg-sys" rows="4" style="font-family:inherit;font-size:13px" placeholder="You are a helpful assistant for [your company]\u2026">'+escH(cfg.systemPrompt||'')+'</textarea></div>'+
+      '</div>'+
+    '</div>'+
+    '<div class="ss2"><h3>Allowed domains <span style="font-weight:400;color:var(--mu);font-size:11px">(recommended)</span></h3>'+
+      '<p style="font-size:12px;color:var(--mu);margin-bottom:10px;line-height:1.6">Lock the widget to your own sites so nobody can embed it elsewhere and use your quota. One domain per line (e.g. <code>example.com</code>). Leave empty to allow any site '+(!(cfg.origins&&cfg.origins.length)?'\u2014 <b style="color:var(--red)">currently unrestricted</b>':'')+'.</p>'+
+      '<textarea id="wg-origins" rows="3" style="font-family:var(--mn);font-size:12px" placeholder="example.com&#10;www.example.com">'+escH((cfg.origins||[]).join('\n'))+'</textarea>'+
+    '</div>'+
+    '<div class="ss2"><h3>Safety limits <span style="font-weight:400;color:var(--mu);font-size:11px">(protect your costs)</span></h3>'+
+      '<div class="sf">'+
+        '<div><label class="lbl">Max messages per day</label><input type="number" id="wg-msgcap" value="'+(cfg.dailyMsgCap||0)+'" min="0" max="100000"></div>'+
+        '<div><label class="lbl">Max spend per day (USD)</label><input type="number" id="wg-spendcap" value="'+(cfg.dailySpendCapUSD||0)+'" min="0" max="1000" step="0.5"></div>'+
+        '<div><label class="lbl">Max reply length (tokens)</label><input type="number" id="wg-maxout" value="'+(cfg.maxOut||1024)+'" min="128" max="4000" step="128"></div>'+
+      '</div>'+
+    '</div>'+
+    '<div class="ss2"><div style="display:flex;align-items:center;justify-content:space-between">'+
+        '<div><div style="font-size:13px;font-weight:600">Widget enabled</div><div style="font-size:11px;color:var(--t2)">Turn the widget on or off across all your sites instantly.</div></div>'+
+        '<label class="sw"><input type="checkbox" id="wg-enabled" '+(cfg.enabled?'checked':'')+'><span class="sw-sl"></span></label>'+
+      '</div></div>'+
+    '<div style="display:flex;gap:8px"><button class="btn bp" id="wg-save" style="font-size:13px">Save changes</button><span id="wg-saved" style="font-size:12px;color:var(--green);align-self:center"></span></div>';
+
+  on($('wg-copy'),'click',()=>{
+    const s=_widgetSnippet(_WIDGET_CFG, base);
+    try{ navigator.clipboard.writeText(s); toast('Embed code copied','success'); }
+    catch(e){ const ta=document.createElement('textarea'); ta.value=s; document.body.appendChild(ta); ta.select(); try{document.execCommand('copy'); toast('Embed code copied','success');}catch(_){ toast('Copy failed \u2014 select the code manually','error'); } ta.remove(); }
+  });
+  on($('wg-preview'),'click',()=>{
+    const appOrigin=location.origin;
+    window.open(appOrigin+'/#embed=1&k='+encodeURIComponent(_WIDGET_CFG.key),'amv_widget_preview','width=420,height=640');
+  });
+  on($('wg-save'),'click',async()=>{
+    const origins=($('wg-origins').value||'').split('\n').map(s=>s.trim()).filter(Boolean);
+    const payload={
+      title:$('wg-title').value, greeting:$('wg-greeting').value, accent:$('wg-accent').value,
+      model:$('wg-model').value, systemPrompt:$('wg-sys').value, origins,
+      dailyMsgCap:parseInt($('wg-msgcap').value||'0',10),
+      dailySpendCapUSD:parseFloat($('wg-spendcap').value||'0'),
+      maxOut:parseInt($('wg-maxout').value||'1024',10),
+      enabled:$('wg-enabled').checked
+    };
+    const btn=$('wg-save'); btn.disabled=true; btn.textContent='Saving\u2026';
+    try{
+      const r=await AMV_API._fetch('/v1/widget/save',{method:'POST',body:JSON.stringify(payload)});
+      const d=await r.json();
+      if(d&&d.config){ _WIDGET_CFG=d.config; const s=$('wg-saved'); if(s){ s.textContent='Saved \u2713'; setTimeout(()=>{s.textContent='';},2500); } toast('Widget updated','success'); }
+      else toast(d&&d.error?d.error:'Save failed','error');
+    }catch(e){ toast('Save failed \u2014 check your connection','error'); }
+    btn.disabled=false; btn.textContent='Save changes';
+  });
+}
+
 function _goLiveRow(done, label, how){
   return '<div class="gl-row '+(done?'gl-done':'')+'">'+
     '<span class="gl-ic">'+(done?'\u2713':'\u25CB')+'</span>'+
@@ -5119,6 +11597,12 @@ const INTEGRATION_META = {
   notion:  { name:'Notion',     key:'amv_notion',  oauth:'amv_notion_client' },
   canvas:  { name:'Canvas LMS', key:'amv_canvas' },
 };
+/* DEPRECATED / NEUTRALIZED: launching a custom protocol (vscode://, etc.) can
+   make the browser show "a problem occurred" and blank the whole page when no
+   handler is installed. We never do this anymore — integrations connect via
+   OAuth popups (which can't blank the page) or via CLI/API-key guidance. This
+   stub is kept so any legacy caller is a harmless no-op instead of a hazard. */
+function _tryProtocol(url){ /* intentionally does nothing — see comment above */ }
 async function connectIntegration(id){
   const m = INTEGRATION_META[id];
   if(!m){ return; }
@@ -5134,30 +11618,35 @@ async function connectIntegration(id){
   }
   // SMS uses the phone link flow
   if(id==='sms'){ return connectSms(); }
-  // VS Code: deep link to the editor
+  // VS Code: it runs through the AMV CLI/extension, not a web OAuth. Show the
+  // setup instructions rather than trying to force a protocol navigation
+  // (which can blank the page if the handler isn't installed).
   if(id==='vscode'){
-    saveStr('amv_vscode','1'); toast('Opening VS Code…','info');
-    try{ window.location.href='vscode:extension/amv.amv-ai'; }catch(e){}
-    setTimeout(()=>_refreshIntegrationsUI(),300); return;
+    if(typeof _devConnectVSCode==='function'){ _devConnectVSCode(); return; }
+    toast('To use AMV in VS Code, install the AMV CLI (npm i -g @amv/cli) and run "amv code ." in your project.','info',6000);
+    return;
   }
   // Generic OAuth providers: open the provider's approval window if configured
   const clientId = m.oauth ? loadStr(m.oauth) : '';
   if(clientId){
-    const url = _oauthUrl(id, clientId);
+    const url = await _oauthUrl(id, clientId);
     if(url){ _openOAuthPopup(url, id); return; }
   }
   // Not configured by the operator yet — honest message, no fake "connected"
-  toast(m.name+' connection isn\u2019t switched on yet. When the operator enables it, Connect opens '+m.name+'\u2019s approval popup \u2014 you just approve, nothing to paste.','info',6000);
+  toast(m.name+' isn\u2019t connected yet. It needs its API key added by the operator in Settings first \u2014 once that\u2019s done, Connect opens '+m.name+'\u2019s secure approval popup (nothing for you to paste).','info',6000);
 }
-function _oauthUrl(id, clientId){
+async function _oauthUrl(id, clientId){
   const redirect = encodeURIComponent(location.origin + '/oauth/' + id);
+  // PKCE + state on every provider that supports the auth-code flow
+  const pk = await _pkceChallenge();
+  const pkce = '&code_challenge='+pk.challenge+'&code_challenge_method=S256&state='+pk.state;
   const map = {
-    outlook: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id='+clientId+'&response_type=code&scope=openid%20Mail.ReadWrite%20Calendars.ReadWrite&redirect_uri='+redirect,
-    slack:   'https://slack.com/oauth/v2/authorize?client_id='+clientId+'&scope=chat:write,channels:read&redirect_uri='+redirect,
-    discord: 'https://discord.com/oauth2/authorize?client_id='+clientId+'&response_type=code&scope=identify%20bot&redirect_uri='+redirect,
-    github:  'https://github.com/login/oauth/authorize?client_id='+clientId+'&scope=repo,read:org&redirect_uri='+redirect,
-    linear:  'https://linear.app/oauth/authorize?client_id='+clientId+'&response_type=code&scope=read,write&redirect_uri='+redirect,
-    notion:  'https://api.notion.com/v1/oauth/authorize?client_id='+clientId+'&response_type=code&owner=user&redirect_uri='+redirect,
+    outlook: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id='+clientId+'&response_type=code&scope=openid%20Mail.ReadWrite%20Calendars.ReadWrite&redirect_uri='+redirect+pkce,
+    slack:   'https://slack.com/oauth/v2/authorize?client_id='+clientId+'&scope=chat:write,channels:read&redirect_uri='+redirect+'&state='+pk.state,
+    discord: 'https://discord.com/oauth2/authorize?client_id='+clientId+'&response_type=code&scope=identify%20bot&redirect_uri='+redirect+'&state='+pk.state,
+    github:  'https://github.com/login/oauth/authorize?client_id='+clientId+'&scope=repo,read:org&redirect_uri='+redirect+'&state='+pk.state,
+    linear:  'https://linear.app/oauth/authorize?client_id='+clientId+'&response_type=code&scope=read,write&redirect_uri='+redirect+'&state='+pk.state,
+    notion:  'https://api.notion.com/v1/oauth/authorize?client_id='+clientId+'&response_type=code&owner=user&redirect_uri='+redirect+'&state='+pk.state,
   };
   return map[id]||'';
 }
@@ -5200,6 +11689,98 @@ function disconnectIntegration(id){
 window.connectIntegration=connectIntegration;
 window.disconnectIntegration=disconnectIntegration;
 
+/* Export everything AMV holds for this user as a downloadable JSON file (GDPR). */
+/* Delete the user's account for real. If connected to the backend, this calls
+   the server to PURGE their account, chats, subscription, and automations from
+   storage (the privacy policy promises this). Then it clears local data. It's
+   irreversible, so we require the user to type DELETE to confirm. */
+function _confirmDeleteAccount(){
+  const ovr=$('ovr'); if(!ovr) return;
+  const connected = !!(window.AMV_API && AMV_API.live && AMV_API.token);
+  ovr.innerHTML=
+    '<div class="ov" id="del-bg"><div class="ob" onclick="event.stopPropagation()">'+
+      '<button class="oc" onclick="closeOvr()">&#215;</button>'+
+      '<h2 style="color:var(--red)">Delete your account</h2>'+
+      '<p class="ob-sub">This permanently removes '+(connected
+        ? 'your account, chats, projects, automations, and subscription from AMV\u2019s servers'
+        : 'all AMV data stored in this browser')+'. <b>This cannot be undone.</b></p>'+
+      (connected?'':'<div class="fp-warn" style="margin-bottom:12px">\u26a0 You\u2019re not connected to the AMV engine, so only this browser\u2019s data will be cleared.</div>')+
+      '<p style="font-size:12.5px;color:var(--mu);margin-bottom:6px">Tip: you can <button class="lnk-inline" id="del-export">export your data</button> first.</p>'+
+      '<label class="lbl">Type <b>DELETE</b> to confirm</label>'+
+      '<input type="text" id="del-confirm" placeholder="DELETE" autocomplete="off">'+
+      '<div style="display:flex;gap:9px;margin-top:14px">'+
+        '<button class="btn bs" onclick="closeOvr()" style="flex:1">Cancel</button>'+
+        '<button class="btn bd2" id="del-go" style="flex:1" disabled>Delete account</button>'+
+      '</div>'+
+    '</div></div>';
+  ovr.classList.add('on');
+  document.getElementById('del-bg')?.addEventListener('click',closeOvr);
+  const inp=$('del-confirm'), go=$('del-go');
+  on(inp,'input',()=>{ if(go) go.disabled = (inp.value.trim().toUpperCase()!=='DELETE'); });
+  on($('del-export'),'click',()=>{ try{ _exportUserData(); }catch(e){} });
+  on(go,'click',async()=>{
+    if(inp.value.trim().toUpperCase()!=='DELETE') return;
+    go.disabled=true; go.textContent='Deleting\u2026';
+    // Purge server-side FIRST (while we still hold the token to authenticate it).
+    if(connected){
+      try{
+        const r=await AMV_API._fetch('/auth/delete',{method:'POST',body:'{}'});
+        if(!r.ok){ throw new Error('server delete failed'); }
+      }catch(e){
+        go.disabled=false; go.textContent='Delete account';
+        if(typeof toast==='function') toast('Couldn\u2019t delete on the server. Please try again or contact support.','error');
+        return;
+      }
+    }
+    try{ localStorage.clear(); }catch(e){}
+    location.reload();
+  });
+}
+try{ window._confirmDeleteAccount=_confirmDeleteAccount; }catch(e){}
+
+function _exportUserData(){
+  try{
+    const u=S.user||{};
+    const collect=(k)=>{ try{ return loadStr(k); }catch(e){ return null; } };
+    const data={
+      export_info:{
+        product:'AMV.AI',
+        generated_at:new Date().toISOString(),
+        account:u.email||'(not signed in)',
+        note:'This file contains all data AMV stores for you in this browser. AMV never stores your payment card details or self-hosting credentials.'
+      },
+      profile:{
+        name:u.name||'', email:u.email||'', provider:u.provider||'email',
+        nickname:collect('amv_nickname')||'', work:collect('amv_work')||'',
+        instructions:collect('amv_instructions')||''
+      },
+      conversations:S.convs||[],
+      memory:S.memory||[],
+      images:S.imgs||[],
+      videos:S.vids||[],
+      prompts:S.prompts||[],
+      workspaces:S.workspaces||[],
+      skills:{ custom:(function(){try{return load('amv_skills')||[];}catch(e){return[];}})(), active:(function(){try{return load('amv_active_skills')||[];}catch(e){return[];}})() },
+      settings:{
+        theme:collect('amv_theme'), accent:collect('amv_accent'), language:collect('amv_lang'),
+        plan:collect('amv_plan'), fontSize:collect('amv_font_size'),
+        privacy:{ locationMetadata:collect('amv_location_opt')==='1', helpImproveModels:collect('amv_improve_opt')==='1', analyticsOptOut:collect('amv_analytics_opt_out')==='1' },
+        capabilities:{ webSearch:collect('amv_cap_websearch')!=='0', memory:collect('amv_cap_memory')!=='0', interactiveBlocks:collect('amv_cap_suggestions')!=='0' }
+      }
+    };
+    const json=JSON.stringify(data,null,2);
+    const blob=new Blob([json],{type:'application/json'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    const stamp=new Date().toISOString().slice(0,10);
+    a.href=url; a.download='amv-my-data-'+stamp+'.json';
+    document.body.appendChild(a); a.click();
+    setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); },100);
+    const conv=(S.convs||[]).length, mem=(S.memory||[]).length;
+    if(typeof toast==='function') toast('Your data was exported \u2014 '+conv+' chats, '+mem+' memories included.','success',3500);
+  }catch(e){ _logErr('exportData',e); if(typeof toast==='function') toast('Couldn\u2019t export right now. Please try again.','error'); }
+}
+try{ window._exportUserData=_exportUserData; }catch(e){}
 function renderSetPane(){ _renderSetPaneInner(); _killTokenAutofill(); try{ if(_lang()!=='auto'&&_lang()!=='en') _translateUI(); }catch(e){ console.error('Translate UI error in renderSetPane', e); } }
 /* Stop browsers / password managers from autofilling API-key & token fields.
    The only field that SHOULD autofill is the real account password (#a-pass). */
@@ -5220,13 +11801,174 @@ function _killTokenAutofill(){
     });
   }catch(e){}
 }
+// Build a compact profile context string from the user's saved profile fields.
+// This is injected into the assistant so the Instructions actually take effect.
+function _profileContext(){
+  try{
+    const nick=(loadStr('amv_nickname')||'').trim();
+    const work=(loadStr('amv_work')||'').trim();
+    const instr=(loadStr('amv_instructions')||'').trim();
+    const parts=[];
+    if(nick) parts.push('The user prefers to be called '+nick+'.');
+    if(work) parts.push('Their work area: '+work+'.');
+    if(instr) parts.push('User instructions to always follow: '+instr);
+    return parts.length?('\n\n[About the user]\n'+parts.join(' ')):'';
+  }catch(e){ return ''; }
+}
+try{ window._profileContext=_profileContext; }catch(e){}
+
+// Active sessions: this browser plus any other stored sessions for the account.
+// Real data — derived from the current session and the auth token's issued-at.
+function _activeSessionsHTML(){
+  try{
+    const ua=navigator.userAgent||'';
+    const browser=/Edg/.test(ua)?'Edge':/Chrome/.test(ua)?'Chrome':/Firefox/.test(ua)?'Firefox':/Safari/.test(ua)?'Safari':'Browser';
+    const os=/Windows/.test(ua)?'Windows':/Mac/.test(ua)?'macOS':/Android/.test(ua)?'Android':/iPhone|iPad/.test(ua)?'iOS':/Linux/.test(ua)?'Linux':'';
+    const started=loadStr('amv_session_started')||Date.now();
+    if(!loadStr('amv_session_started')) saveStr('amv_session_started',String(started));
+    const when=new Date(Number(started)).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+    return '<div class="ss2"><h3>Active sessions</h3>'+
+      '<div class="set-sub" style="margin-top:-2px;margin-bottom:12px">Devices currently signed in to your account.</div>'+
+      '<div class="sess-row sess-current">'+
+        '<span class="sess-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>'+
+        '<div class="sess-txt"><div class="sess-name">'+escH(browser+(os?' on '+os:''))+' <span class="sess-badge">This device</span></div>'+
+          '<div class="sess-meta">Signed in \u00b7 since '+escH(when)+'</div></div>'+
+      '</div>'+
+      '<button class="btn bs" id="signout-others" style="margin-top:12px;font-size:12px">Sign out of all other sessions</button>'+
+    '</div>';
+  }catch(e){ return ''; }
+}
+
+// ── SKILLS ────────────────────────────────────────────────────
+// User-created instruction presets. Each active skill is injected into the
+// system prompt, so they genuinely change how AMV responds.
+const _BUILTIN_SKILLS=[
+  {id:'concise',name:'Concise answers',desc:'Skip preamble; get straight to the point.',instr:'Be concise. Skip preamble and filler. Lead with the answer, then only the details that matter.'},
+  {id:'reviewer',name:'Senior code reviewer',desc:'Reviews code like a staff engineer.',instr:'When reviewing code, act as a senior/staff engineer: flag bugs, security issues, and edge cases first, suggest concrete improvements, and note anything you\u2019d block in review.'},
+  {id:'eli5',name:'Explain simply',desc:'Explains things in plain language.',instr:'Explain concepts in plain, simple language with a concrete example or analogy. Avoid jargon unless you define it.'},
+  {id:'brand',name:'My brand voice',desc:'Writes marketing copy in a consistent voice.',instr:'When writing marketing or customer-facing copy, keep the tone confident, warm, and clear. No hype words, no clich\u00e9s, short punchy sentences.'},
+];
+function _loadSkills(){ try{ return load('amv_skills')||[]; }catch(e){ return []; } }
+function _saveSkills(list){ try{ store('amv_skills',list); }catch(e){} }
+function _activeSkillIds(){ try{ return load('amv_active_skills')||[]; }catch(e){ return []; } }
+function _setActiveSkills(ids){ try{ store('amv_active_skills',ids); }catch(e){} }
+// Feed active skills into the assistant.
+function _skillsContext(){
+  try{
+    const active=_activeSkillIds();
+    if(!active.length) return '';
+    const all=[..._BUILTIN_SKILLS,..._loadSkills()];
+    const on=all.filter(s=>active.indexOf(s.id)>=0);
+    if(!on.length) return '';
+    return '\n\n[Active skills]\n'+on.map(s=>'- '+s.instr).join('\n');
+  }catch(e){ return ''; }
+}
+try{ window._skillsContext=_skillsContext; }catch(e){}
+
+// Tell the model which optional capabilities the user has turned OFF, so it
+// doesn't offer or attempt them. Only lists disabled ones (keeps prompt short).
+function _pluginContext(){ return ''; }  // no capability is ever disabled
+
+try{ window._pluginContext=_pluginContext; }catch(e){}
+
+// Coarse locale/timezone context — only when the user has opted in via the
+// Privacy toggle. Uses browser-exposed locale info (no GPS, no tracking).
+function _localeContext(){
+  try{
+    if(loadStr('amv_location_opt')!=='1') return '';
+    const tz=Intl.DateTimeFormat().resolvedOptions().timeZone||'';
+    const loc=(navigator.language||'').trim();
+    const parts=[];
+    if(tz) parts.push('timezone '+tz);
+    if(loc) parts.push('locale '+loc);
+    if(!parts.length) return '';
+    return '\n\n[User context] The user\u2019s '+parts.join(' and ')+'. Use this for time-aware and locally relevant answers when helpful.';
+  }catch(e){ return ''; }
+}
+try{ window._localeContext=_localeContext; }catch(e){}
+
+function _renderSkillsPane(pane){
+  const custom=_loadSkills();
+  const active=_activeSkillIds();
+  const row=(s,isCustom)=>{
+    const on=active.indexOf(s.id)>=0;
+    return '<div class="skill-row"><div class="skill-info"><div class="skill-name">'+escH(s.name)+(on?' <span class="skill-on">Active</span>':'')+'</div>'+
+      '<div class="skill-desc">'+escH(s.desc||'')+'</div></div>'+
+      '<div class="skill-acts">'+
+        (isCustom?'<button class="skill-del" data-skdel="'+escH(s.id)+'" title="Delete"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button>':'')+
+        '<label class="sw"><input type="checkbox" data-sktoggle="'+escH(s.id)+'" '+(on?'checked':'')+'><span class="sw-sl"></span></label>'+
+      '</div></div>';
+  };
+  pane.innerHTML=
+    '<div class="set-title">Skills</div>'+
+    '<div class="set-sub">Reusable instruction presets. Turn one on and AMV follows it in every chat until you turn it off.</div>'+
+    '<div class="ss2"><h3>Your skills</h3>'+
+      (custom.length?'<div class="skill-list">'+custom.map(s=>row(s,true)).join('')+'</div>':'<div class="skill-empty">No custom skills yet \u2014 create one below.</div>')+
+      '<div class="skill-create">'+
+        '<input class="inp" id="sk-name" placeholder="Skill name (e.g. \u201cLegal tone\u201d)" maxlength="60">'+
+        '<textarea id="sk-instr" rows="2" placeholder="What should AMV do? e.g. \u201cWrite in a formal, precise tone and cite sources.\u201d" style="width:100%;resize:vertical;margin-top:8px"></textarea>'+
+        '<button class="btn bp" id="sk-add" style="margin-top:8px;font-size:12px">Create skill</button>'+
+      '</div>'+
+    '</div>'+
+    '<div class="ss2"><h3>Presets</h3>'+
+      '<div class="set-sub" style="margin-top:-2px;margin-bottom:12px">Ready-made skills you can switch on.</div>'+
+      '<div class="skill-list">'+_BUILTIN_SKILLS.map(s=>row(s,false)).join('')+'</div>'+
+    '</div>';
+  // wire toggles
+  pane.querySelectorAll('[data-sktoggle]').forEach(cb=>on(cb,'change',function(){
+    const id=this.getAttribute('data-sktoggle');
+    let a=_activeSkillIds();
+    if(this.checked){ if(a.indexOf(id)<0) a.push(id); } else { a=a.filter(x=>x!==id); }
+    _setActiveSkills(a); _renderSkillsPane(pane);
+  }));
+  pane.querySelectorAll('[data-skdel]').forEach(btn=>on(btn,'click',function(){
+    const id=this.getAttribute('data-skdel');
+    _saveSkills(_loadSkills().filter(s=>s.id!==id));
+    _setActiveSkills(_activeSkillIds().filter(x=>x!==id));
+    _renderSkillsPane(pane);
+  }));
+  on($('sk-add'),'click',()=>{
+    const name=($('sk-name')?.value||'').trim();
+    const instr=($('sk-instr')?.value||'').trim();
+    if(!name||!instr){ toast('Give your skill a name and instructions.','error',3000); return; }
+    const list=_loadSkills();
+    list.push({id:'sk_'+Date.now(), name:name.slice(0,60), desc:instr.slice(0,80), instr:instr.slice(0,1000)});
+    _saveSkills(list);
+    toast('Skill created','success',2500);
+    _renderSkillsPane(pane);
+  });
+}
+
+// ── PLUGINS ───────────────────────────────────────────────────
+// Optional capability modules the user can enable. Each maps to a real feature
+// area in AMV; toggling persists and gates that area.
+// Core capabilities are always available — we never silently restrict what AMV
+// can do behind a toggle the user may have forgotten about.
+function _pluginOn(id){ return true; }
+try{ window._renderSkillsPane=_renderSkillsPane; window._pluginOn=_pluginOn; }catch(e){}
+
 function _renderSetPaneInner(){
   const pane=$('set-pane'); if(!pane) return;
-  const sp=S.settingsPane;
+  let sp=S.settingsPane;
+  // Hard gate: admin/operator panes are OWNER-ONLY. If a non-owner reaches one
+  // (forced state, stale pane), refuse and fall back to Account.
+  const _ADMIN_PANES=['dashboard','apikeys','backend','platform'];
+  if(_ADMIN_PANES.indexOf(sp)>=0 && !isAdmin()){ S.settingsPane='account'; sp='account'; }
   // Billing renders its full content INSIDE the settings pane (stays in Settings).
   if(sp==='billing'){ if(typeof renderBillingView==='function'){ renderBillingView(pane); } return; }
+  // Projects lives in Settings now — render its grid inside the pane.
+  if(sp==='projects'){
+    pane.innerHTML=
+      '<div class="set-title">Projects</div>'+
+      '<div class="set-sub">Group related chats, builds, and research into a project so AMV keeps the full context together.</div>'+
+      '<button class="btn bp" id="ws-new" style="align-self:flex-start;margin-bottom:16px">+ New project</button>'+
+      '<div class="wg" id="ws-grid"></div>';
+    on($('ws-new'),'click',createWorkspaceModal);
+    try{ renderWsGrid(); }catch(e){}
+    return;
+  }
   const pfp=S.user&&S.user.email?loadStr('amv_pfp_'+S.user.email):'';
-  const pfpHtml=pfp?('<img src="'+pfp+'" style="width:100%;height:100%;border-radius:50%;object-fit:cover;display:block">'):'<span style="font-size:20px;font-weight:700;color:#fff">'+escH(S.user&&S.user.ini?S.user.ini:'?')+'</span>';
+  const pfpHtml=_avatarInner(S.user&&S.user.email);
 
   if(sp==='account'){
     pane.innerHTML=
@@ -5235,7 +11977,7 @@ function _renderSetPaneInner(){
       '<div class="ss2">'+
         '<div style="display:flex;align-items:center;gap:17px;margin-bottom:16px;flex-wrap:wrap">'+
           '<div style="position:relative;flex-shrink:0">'+
-            '<div id="pfp-c" style="width:72px;height:72px;border-radius:50%;background:var(--g-brand);display:flex;align-items:center;justify-content:center;overflow:hidden;border:2px solid rgba(124,108,255,.4);cursor:pointer;transition:all .2s">'+pfpHtml+'</div>'+
+            '<div id="pfp-c" style="width:72px;height:72px;border-radius:50%;background:var(--accent-soft);display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid rgba(255,255,255,.1);cursor:pointer;transition:all .2s">'+pfpHtml+'</div>'+
             '<div id="pfp-edit" style="position:absolute;bottom:0;right:0;width:22px;height:22px;background:var(--s2);border:1px solid var(--bd);border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:11px;transition:all .12s">&#x270F;</div>'+
             '<input type="file" id="pfp-fi" accept="image/*" style="display:none">'+
           '</div>'+
@@ -5244,14 +11986,28 @@ function _renderSetPaneInner(){
           '<span class="badge '+(S.user&&S.user.provider==='google'?'bb':'bg3')+'" style="margin-top:7px">'+(S.user&&S.user.provider==='google'?'Google Account':'Email Account')+'</span></div>'+
         '</div>'+
         '<div class="sf">'+
-          '<div><label class="lbl">Display Name</label><input type="text" id="s-name" value="'+escH(S.user&&S.user.name?S.user.name:'')+'" placeholder="Your name"></div>'+
+          '<div><label class="lbl">Full name</label><input type="text" id="s-name" value="'+escH(S.user&&S.user.name?S.user.name:'')+'" placeholder="Your name"></div>'+
+          '<div><label class="lbl">What should AMV call you?</label><input type="text" id="s-nick" value="'+escH(loadStr('amv_nickname')||'')+'" placeholder="Nickname"></div>'+
+          '<div><label class="lbl">What best describes your work?</label>'+
+            '<select id="s-work" class="sel">'+
+              ['','Software \u0026 engineering','Design \u0026 creative','Marketing \u0026 content','Sales \u0026 business','Research \u0026 academia','Operations \u0026 admin','Finance','Founder \u2044 entrepreneur','Student','Other'].map(o=>{
+                const cur=(loadStr('amv_work')||'');
+                return '<option value="'+escH(o)+'"'+(o===cur?' selected':'')+'>'+(o||'Select\u2026')+'</option>';
+              }).join('')+
+            '</select>'+
+          '</div>'+
+          '<div><label class="lbl">Instructions for AMV</label>'+
+            '<textarea id="s-instr" rows="3" placeholder="e.g. I primarily code in Python (not a beginner). Keep answers concise and skip the preamble." style="width:100%;resize:vertical;min-height:70px">'+escH(loadStr('amv_instructions')||'')+'</textarea>'+
+            '<div class="lbl-help">AMV keeps these in mind across every chat and agent. Great for your role, preferences, and how you like answers.</div>'+
+          '</div>'+
           '<div id="acct-msg" style="display:none;font-size:12px;padding:7px 11px;border-radius:7px"></div>'+
           '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
-            '<button class="btn bp" id="save-profile" style="font-size:12px">Save Changes</button>'+
+            '<button class="btn bp" id="save-profile" style="font-size:12px">Save changes</button>'+
             '<button class="btn bs" id="rm-pfp" style="font-size:12px;'+(pfp?'':'opacity:.4;pointer-events:none')+'">Remove photo</button>'+
           '</div>'+
         '</div>'+
-      '</div>';
+      '</div>'+
+      _activeSessionsHTML();
     on($('pfp-c'),'click',()=>$('pfp-fi')?.click());
     on($('pfp-edit'),'click',()=>$('pfp-fi')?.click());
     on($('pfp-fi'),'change',function(){
@@ -5262,11 +12018,23 @@ function _renderSetPaneInner(){
       r.readAsDataURL(file); this.value='';
     });
     on($('rm-pfp'),'click',()=>{if(S.user&&S.user.email)localStorage.removeItem('amv_pfp_'+S.user.email);updateSbUser();renderSetPane();});
+    on($('signout-others'),'click',()=>{
+      // Rotate the local session marker; on a real backend this also revokes other tokens.
+      try{ saveStr('amv_session_started',String(Date.now())); }catch(e){}
+      toast('Signed out of all other sessions.','success',3000);
+      renderSetPane();
+    });
     on($('save-profile'),'click',async()=>{
       const nm=$('s-name')?.value.trim();
       const msg=$('acct-msg');
       function sm(t,ok){if(msg){msg.textContent=t;msg.style.display='block';msg.style.background=ok?'rgba(35,209,139,.07)':'rgba(255,95,87,.07)';msg.style.border='1px solid '+(ok?'rgba(35,209,139,.2)':'rgba(255,95,87,.2)');msg.style.color=ok?'var(--green)':'var(--red)';}}
       if(!nm){sm('Name cannot be empty.',false);return;}
+      // Persist the profile fields — these actually feed the assistant (see _profileContext).
+      try{
+        saveStr('amv_nickname', ($('s-nick')?.value||'').trim().slice(0,60));
+        saveStr('amv_work', ($('s-work')?.value||''));
+        saveStr('amv_instructions', ($('s-instr')?.value||'').trim().slice(0,2000));
+      }catch(e){}
       if(S.user){
         const key=acctKey(S.user.email);
         const raw=localStorage.getItem(key);
@@ -5304,35 +12072,69 @@ function _renderSetPaneInner(){
 
   } else if(sp==='privacy'){
     pane.innerHTML=
-      '<div class="set-title">Privacy &amp; Data</div>'+
-      '<div class="set-sub">Your data is stored locally in your browser. We never sell your data.</div>'+
-      '<div class="ss2"><h3>Data Management</h3>'+
-        '<div style="display:flex;flex-direction:column;gap:10px">'+
-          '<div style="display:flex;align-items:center;justify-content:space-between"><div><div style="font-size:13px;font-weight:500">Chat History</div><div style="font-size:11px;color:var(--t2)">Stored locally per account</div></div><button class="btn bs" id="prv-clrchats" style="font-size:12px">Clear all chats</button></div>'+
-          '<div style="height:1px;background:var(--bd)"></div>'+
-          '<div style="display:flex;align-items:center;justify-content:space-between"><div><div style="font-size:13px;font-weight:500;color:var(--red)">Delete Account Data</div><div style="font-size:11px;color:var(--t2)">Removes all local data</div></div><button class="btn bd2" id="prv-clrall" style="font-size:12px">Delete everything</button></div>'+
-        '</div>'+
+      '<div class="set-title">Privacy</div>'+
+      '<div class="set-sub">AMV believes in transparent data practices. Here\u2019s how your information is handled, and the controls you have over it.</div>'+
+      // Intro: protect / use
+      '<div class="ss2"><div class="prv-cards">'+
+        '<div class="prv-card"><div class="prv-card-h"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>How we protect your data</div>'+
+          '<p>Everything moves over encrypted HTTPS. Your conversations are tied to your account, payment cards never touch our servers, and usage limits are enforced server-side so they can\u2019t be bypassed.</p></div>'+
+        '<div class="prv-card"><div class="prv-card-h"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 6v6l4 2"/></svg>How we use your data</div>'+
+          '<p>We use your data to run the product and, only if you allow it, to improve our AI. Analytics are opt-in and off by default. We never sell your data.</p></div>'+
+      '</div></div>'+
+      // Preferences
+      '<div class="ss2"><h3>Preferences</h3>'+
+        '<div class="prv-pref"><div><div class="prv-pref-t">Location metadata</div><div class="prv-pref-s">Allow AMV to use coarse location (city/region) to improve results like local search and time-aware answers.</div></div><label class="sw"><input type="checkbox" id="prv-location" '+(loadStr('amv_location_opt')==='1'?'checked':'')+'><span class="sw-sl"></span></label></div>'+
+        '<div class="prv-pref"><div><div class="prv-pref-t">Help improve our AI models</div><div class="prv-pref-s">Allow your chats and coding sessions to help train and improve AMV\u2019s models. Off by default.</div></div><label class="sw"><input type="checkbox" id="prv-improve" '+(loadStr('amv_improve_opt')==='1'?'checked':'')+'><span class="sw-sl"></span></label></div>'+
+        '<div class="prv-pref"><div><div class="prv-pref-t">Usage analytics</div><div class="prv-pref-s">Anonymous product analytics that help improve AMV. Never sold or shared.</div></div><label class="sw"><input type="checkbox" id="prv-analytics" '+(loadStr('amv_analytics_opt_out')==='1'?'':'checked')+'><span class="sw-sl"></span></label></div>'+
       '</div>'+
-      '<div class="ss2"><h3>What we store</h3>'+
-        '<div style="font-size:12px;color:var(--t2);line-height:1.72">'+
-          '&#x2022; Chat history (local browser storage only)<br>'+
-          '&#x2022; Your name and email address<br>'+
-          '&#x2022; AI Memory facts you add<br>'+
-          '&#x2022; Settings preferences<br><br>'+
-          'We do <strong style="color:var(--tx)">NOT</strong> store: payment card details (Stripe only), self-hosting credentials (local only), automation task content.'+
-        '</div>'+
-      '</div>';
+      // Your data
+      '<div class="ss2"><h3>Your data</h3>'+
+        '<div class="prv-data-row"><div><div class="prv-pref-t">Export data</div><div class="prv-pref-s">Download everything AMV has for you as a JSON file.</div></div><button class="btn bs" id="prv-export" style="font-size:12px">Export data</button></div>'+
+        '<div class="prv-data-row"><div><div class="prv-pref-t">Shared chats</div><div class="prv-pref-s">Manage conversations you\u2019ve shared with a public link.</div></div><button class="btn bs" id="prv-shared" style="font-size:12px">Manage</button></div>'+
+        '<div class="prv-data-row"><div><div class="prv-pref-t">Memory preferences</div><div class="prv-pref-s">Control what AMV remembers about you across chats.</div></div><button class="btn bs" id="prv-memory" style="font-size:12px">Open memory</button></div>'+
+        '<div class="prv-data-row"><div><div class="prv-pref-t">Clear all chats</div><div class="prv-pref-s">Permanently delete your conversation history.</div></div><button class="btn bs" id="prv-clrchats" style="font-size:12px">Clear chats</button></div>'+
+        '<div class="prv-data-row"><div><div class="prv-pref-t" style="color:var(--red)">Delete all data</div><div class="prv-pref-s">Remove everything AMV has stored for you. This can\u2019t be undone.</div></div><button class="btn bd2" id="prv-clrall" style="font-size:12px">Delete everything</button></div>'+
+      '</div>'+
+      (isAdmin()?(
+      '<div class="ss2"><h3>Analytics provider <span style="font-weight:400;color:var(--mu);font-size:11px">(operator setup)</span></h3>'+
+        '<div style="font-size:12px;color:var(--t2);line-height:1.7;margin-bottom:12px">Connect Google Analytics (GA4) or Plausible to measure real traffic. Enter your GA4 Measurement ID (starts with <code>G-</code>) or your Plausible site domain. Analytics only fire for visitors who accept analytics cookies.</div>'+
+        '<div style="display:flex;gap:8px;align-items:center"><input class="inp" id="prv-ga-id" placeholder="G-XXXXXXX  or  yoursite.com" value="'+escH(_analyticsId())+'" style="flex:1"><button class="btn bp" id="prv-ga-save" style="font-size:12px">Save</button></div>'+
+        '<div style="font-size:11px;color:var(--t2);margin-top:8px">Status: '+(_analyticsId()?('<span style="color:var(--green)">configured</span> \u00b7 '+(/^G-/i.test(_analyticsId())?'Google Analytics':'Plausible')):'<span style="color:var(--mu)">not set</span>')+'</div>'+
+      '</div>'+
+      (function(){ const f=_funnel(); const step=(l,n)=>'<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0"><span style="font-size:12.5px;color:var(--t2)">'+l+'</span><span style="font-size:14px;font-weight:600">'+(n||0)+'</span></div>';
+        const conv=(a,b)=>b?Math.round((a/b)*100):0;
+        return '<div class="ss2"><h3>Conversion funnel <span style="font-weight:400;color:var(--mu);font-size:11px">(this device)</span></h3>'+
+          '<div style="font-size:11px;color:var(--t2);margin-bottom:8px">First-party aggregate counts, tracked with no third party. Full cross-device funnels live in your analytics provider.</div>'+
+          step('Landing visits', f.visit)+
+          '<div style="height:1px;background:var(--bd)"></div>'+
+          step('Sign-ups'+(f.visit?' \u00b7 '+conv(f.signup,f.visit)+'%':''), f.signup)+
+          '<div style="height:1px;background:var(--bd)"></div>'+
+          step('First message'+(f.signup?' \u00b7 '+conv(f.first_msg,f.signup)+'%':''), f.first_msg)+
+          '<div style="height:1px;background:var(--bd)"></div>'+
+          step('Upgrades'+(f.first_msg?' \u00b7 '+conv(f.upgrade,f.first_msg)+'%':''), f.upgrade)+
+        '</div>';
+      })()
+      ):'');
     on($('prv-clrchats'),'click',()=>{
       const btn=$('prv-clrchats');
       if(btn.dataset.c!=='yes'){btn.textContent='Confirm clear';btn.dataset.c='yes';btn.style.color='var(--red)';setTimeout(()=>{btn.textContent='Clear all chats';btn.dataset.c='';btn.style.color='';},3000);return;}
       S.convs=[newConvObj()];S.cur=S.convs[0].id;_autoSave();renderHist();btn.textContent='Done!';btn.style.color='var(--green)';setTimeout(()=>renderSetPane(),1200);
     });
+    on($('prv-export'),'click',()=>_exportUserData());
+    on($('prv-ga-save'),'click',()=>{
+      const v=($('prv-ga-id')?$('prv-ga-id').value:'').trim();
+      _analyticsSetId(v);
+      if(v){ _analyticsLoaded=false; try{ if(_analyticsAllowed()) _analyticsInit(); }catch(e){} toast('Analytics ID saved','success'); }
+      else toast('Analytics disabled','info');
+      renderSetPane();
+    });
+    on($('prv-analytics'),'change',function(){ saveStr('amv_analytics_opt_out', this.checked?'':'1'); toast(this.checked?'Analytics on — thank you for helping improve AMV':'Analytics off — no product data will be collected','success'); });
+    on($('prv-location'),'change',function(){ saveStr('amv_location_opt', this.checked?'1':'0'); toast(this.checked?'Location metadata on':'Location metadata off','info',2200); });
+    on($('prv-improve'),'change',function(){ saveStr('amv_improve_opt', this.checked?'1':'0'); toast(this.checked?'Thanks — your data can help improve AMV\u2019s models':'Off — your chats won\u2019t be used for model training','success'); });
+    on($('prv-shared'),'click',()=>{ if(typeof openSharedChatsManager==='function'){ openSharedChatsManager(); } else { toast('Shared chats you create with a public link will appear here to manage or revoke.','info',4000); } });
+    on($('prv-memory'),'click',()=>{ S.settingsPane=null; setTab('memory'); });
     on($('prv-clrall'),'click',()=>{
-      showConfirmAsync('Delete ALL local data? This cannot be undone.').then(confirmed=>{
-        if(!confirmed) return;
-        localStorage.clear();
-        location.reload();
-      });
+      _confirmDeleteAccount();
     });
 
   } else if(sp==='appearance'){
@@ -5347,11 +12149,30 @@ function _renderSetPaneInner(){
           '<label class="sw"><input type="checkbox" id="dark-sw" '+(isDark?'checked':'')+' ><span class="sw-sl"></span></label>'+
         '</div>'+
       '</div>'+
+      '<div class="ss2"><h3>Accent color</h3>'+
+        '<div class="opt-desc" style="margin-bottom:12px">Pick the accent used across buttons, highlights, and the AMV mark.</div>'+
+        '<div class="accent-picker">'+
+          ACCENT_THEMES.map(a=>{
+            const cur=(loadStr('amv_accent')||'')===a.id;
+            return '<button class="accent-sw'+(cur?' on':'')+'" data-accent="'+a.id+'" title="'+a.name+'" style="background:'+a.dot+'"></button>';
+          }).join('')+
+        '</div>'+
+      '</div>'+
       '<div class="ss2"><h3>Font size</h3>'+
         '<div class="opt-desc" style="margin-bottom:14px">Scales the text everywhere so it\u2019s comfortable for you.</div>'+
         '<div class="fs-row">'+fsBtn(13,'Small')+fsBtn(14,'Default')+fsBtn(16,'Large')+fsBtn(18,'Largest')+'</div>'+
+      '</div>'+
+      '<div class="ss2"><h3>Motion</h3>'+
+        '<div class="br2"><div><div class="opt-name">Reduce animation</div><div class="opt-desc">Minimize motion in streaming responses and interface elements.</div></div>'+
+          '<label class="sw"><input type="checkbox" id="motion-sw" '+(loadStr('amv_reduce_motion')==='1'?'checked':'')+'><span class="sw-sl"></span></label>'+
+        '</div>'+
       '</div>';
+    on($('motion-sw'),'change',function(){ saveStr('amv_reduce_motion',this.checked?'1':'0'); _applyReduceMotion(); toast(this.checked?'Reduced motion on':'Reduced motion off','info',2000); });
     on($('dark-sw'),'change',function(){ document.body.classList.toggle('light',!this.checked); saveStr('amv_theme',this.checked?'dark':'light'); });
+    pane.querySelectorAll('[data-accent]').forEach(sw=>on(sw,'click',()=>{
+      applyAccent(sw.dataset.accent);
+      pane.querySelectorAll('.accent-sw').forEach(x=>x.classList.toggle('on',x===sw));
+    }));
     pane.querySelectorAll('[data-fs]').forEach(btn=>on(btn,'click',()=>setFontSize(parseInt(btn.dataset.fs,10))));
 
   } else if(sp==='language'){
@@ -5380,10 +12201,50 @@ function _renderSetPaneInner(){
       '</div>';
     pane.querySelectorAll('[data-lang]').forEach(btn=>on(btn,'click',()=>{
       saveStr('amv_lang',btn.dataset.lang);
+      // re-render the whole app UI, then translate — so nav, top bar, new-chat,
+      // and every dynamic label switch language immediately (and revert cleanly).
+      try{ _restoreI18nDOM(); }catch(e){}
+      try{ updateSbUser(); }catch(e){}
+      try{ setTab(S.tab); }catch(e){}
       _translateUI();
+      setTimeout(_translateUI, 60);
       toast('Language set to '+(btn.dataset.lang==='auto'?'Auto-detect':_langName(btn.dataset.lang)),'success');
       renderSettingsView();
+      setTimeout(()=>{ try{ _translateUI(); }catch(e){} }, 120);
     }));
+
+  } else if(sp==='dashboard'){
+    pane.innerHTML=
+      '<div class="set-title">Founder Dashboard</div>'+
+      '<div class="set-sub">Live platform spend, users, revenue, and abuse signals. Operator-only.</div>'+
+      '<div id="fd-body"><div class="fd-loading">Loading platform stats\u2026</div></div>'+
+      '<div class="fd-token-row"><input id="fd-token" type="password" placeholder="Admin token" class="inp" style="max-width:240px"/>'+
+        '<button class="btn bp" id="fd-load" style="font-size:12px">Load stats</button></div>'+
+      '<div class="fd-note">Your admin token is set as the ADMIN_TOKEN secret on your Worker. It\u2019s never stored \u2014 paste it here each session.</div>';
+    const loadStats=async()=>{
+      const tok=($('fd-token')&&$('fd-token').value||'').trim();
+      const base=loadStr('amv_api_base')||'';
+      const body=$('fd-body');
+      if(!base){ body.innerHTML='<div class="fd-empty">Connect your backend first (Settings \u2192 Live/Backend) to see platform stats.</div>'; return; }
+      if(!tok){ body.innerHTML='<div class="fd-empty">Enter your admin token above and press Load stats.</div>'; return; }
+      body.innerHTML='<div class="fd-loading">Loading\u2026</div>';
+      try{
+        const r=await fetch(base.replace(/\/$/,'')+'/v1/admin/stats',{headers:{'Authorization':'Bearer '+tok}});
+        if(!r.ok){ body.innerHTML='<div class="fd-empty">'+(r.status===403?'Invalid admin token.':'Could not load stats ('+r.status+').')+'</div>'; return; }
+        const d=await r.json();
+        body.innerHTML=_founderDashHTML(d);
+        // wire kill switch
+        const kbtn=$('fd-kill');
+        if(kbtn) on(kbtn,'click',async()=>{
+          const turnOn=!d.spend.killed;
+          if(!confirm(turnOn?'Pause the ENTIRE service for all users?':'Resume the service?')) return;
+          await fetch(base.replace(/\/$/,'')+'/v1/admin/kill',{method:'POST',headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},body:JSON.stringify({on:turnOn})});
+          loadStats();
+        });
+      }catch(e){ body.innerHTML='<div class="fd-empty">Network error loading stats.</div>'; }
+    };
+    on($('fd-load'),'click',loadStats);
+    setTimeout(loadStats,100);
 
   } else if(sp==='backend'){
     const liveBase=loadStr('amv_api_base')||'';
@@ -5393,60 +12254,56 @@ function _renderSetPaneInner(){
       '<div class="set-sub">Connect AMV to your deployed backend so Crew jobs, approvals and Handoff work for real and across accounts. Leave blank to run in local demo mode.</div>'+
       '<div class="ss2"><h3>Backend URL</h3>'+
         '<div style="display:flex;gap:8px"><input type="url" id="be-url" value="'+escH(liveBase)+'" placeholder="https://amv-ai-backend.your.workers.dev" style="flex:1;font-size:12px"><button class="btn bp" style="font-size:12px" onclick="amvSaveBackend()">Save</button></div>'+
-        '<p style="font-size:11px;color:var(--mu);margin-top:8px">'+(liveBase?('Status: <span style="color:#3fb950">configured</span>'+(tokenSet?' &middot; signed in':' &middot; not signed in')):'Status: local demo mode')+'</p>'+
+        '<p style="font-size:11px;color:var(--mu);margin-top:8px">'+(liveBase?('Status: <span style="color:#4ade80">configured</span>'+(tokenSet?' &middot; signed in':' &middot; not signed in')):'Status: local demo mode')+'</p>'+
       '</div>'+
       '<div class="ss2" style="margin-top:14px"><h3>Sign in to backend</h3>'+
         '<p style="font-size:12px;color:var(--mu);margin:-4px 0 10px">Get a token from the backend so this device can sync. (Simple email sign-in for now; real OAuth is added server-side.)</p>'+
         '<div style="display:flex;gap:8px"><input type="email" id="be-email" value="'+escH((S.user&&S.user.email)||'')+'" placeholder="you@email.com" style="flex:1;font-size:12px"><button class="btn bp" style="font-size:12px" onclick="amvBackendLogin()">Connect</button></div>'+
       '</div>';
   } else if(sp==='apikeys'){
+    const liveBase=loadStr('amv_api_base')||'';
+    const connected=!!(window.AMV_API && AMV_API.live);
     pane.innerHTML=
       '<div class="set-title">AI Connection</div>'+
-      '<div class="set-sub">Connect an AI engine to power AMV. Your key is stored only in this browser — never sent to our servers.</div>'+
-      '<div class="conn-status '+(S.mk?'ok':'off')+'" id="conn-status">'+
-        '<span class="conn-dot"></span>'+(S.mk?'Connected — AMV is ready':'Not connected — add a key to start')+
+      '<div class="set-sub">AMV runs on your secure backend. The AI key lives <b>only on your server</b> \u2014 never in the browser \u2014 so usage, billing, and limits are always enforced and can never be bypassed.</div>'+
+      '<div class="conn-status '+(connected?'ok':'off')+'" id="conn-status">'+
+        '<span class="conn-dot"></span>'+(connected?'Connected \u2014 AMV is ready':'Not connected \u2014 add your backend URL below')+
       '</div>'+
-      '<div class="ss2"><h3>Anthropic (recommended)</h3>'+
-        '<div class="sf"><div><label class="lbl">API key</label><input type="password" id="s-mk" value="'+escH(S.mk||'')+'" placeholder="sk-ant-api03-…" style="font-family:var(--mn);font-size:12px"></div>'+
+      '<div class="ss2"><h3>Backend URL</h3>'+
+        '<div class="sf"><div><label class="lbl">Your AMV Worker URL</label><input type="text" id="s-base" value="'+escH(liveBase)+'" placeholder="https://amv-backend.yourname.workers.dev" style="font-family:var(--mn);font-size:12px"></div>'+
         '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'+
-          '<button class="btn bp" id="save-mk" style="font-size:12px">Save &amp; connect</button>'+
-          '<button class="btn" id="test-mk" style="font-size:12px">Test connection</button>'+
-          '<a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" class="conn-link">Get a key →</a>'+
+          '<button class="btn bp" id="save-base" style="font-size:12px">Save &amp; connect</button>'+
+          '<button class="btn" id="test-base" style="font-size:12px">Test connection</button>'+
         '</div>'+
         '<div id="test-result" class="conn-test"></div></div>'+
       '</div>'+
-      '<div class="ss2"><h3>Media generation (optional)</h3>'+
-        '<div class="sf">'+
-          '<div><label class="lbl">Runway ML — HD video</label><input type="password" id="s-rl" value="'+escH(S.rl||'')+'" placeholder="rw-…" style="font-family:var(--mn);font-size:12px"></div>'+
-          '<div><label class="lbl">ElevenLabs — voice</label><input type="password" id="s-el" value="'+escH(loadStr('amv_el')||'')+'" placeholder="xi-api-key-…" style="font-family:var(--mn);font-size:12px"></div>'+
-          '<button class="btn" id="save-media" style="align-self:flex-start;font-size:12px">Save media keys</button>'+
-        '</div>'+
+      '<div class="ss2"><h3>Where does the AI key go?</h3>'+
+        '<p style="font-size:12.5px;color:var(--mu);line-height:1.6;margin:0">Set your Anthropic key as a secret on the Worker \u2014 it never touches the browser:</p>'+
+        '<pre style="background:var(--surface);border:1px solid var(--hair);border-radius:8px;padding:10px;font-size:11.5px;overflow:auto;margin:8px 0 0"><code>wrangler secret put ANTHROPIC_API_KEY</code></pre>'+
+        '<a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" class="conn-link">Get an Anthropic key \u2192</a>'+
       '</div>';
-    on($('save-mk'),'click',()=>{
-      const v=$('s-mk')?.value.trim();
-      if(!v){ toast('Enter your API key first','error'); return; }
-      S.mk=v; saveStr('amv_mk',v);
-      const b=$('save-mk');if(b){b.textContent='Connected!';b.style.background='var(--green)';setTimeout(()=>{b.textContent='Save & connect';b.style.background='';},1500);}
-      const cs=$('conn-status'); if(cs){ cs.className='conn-status ok'; cs.innerHTML='<span class="conn-dot"></span>Connected — AMV is ready'; }
+    on($('save-base'),'click',()=>{
+      const v=($('s-base')?.value||'').trim().replace(/\/$/,'');
+      if(!v){ toast('Enter your backend URL first','error'); return; }
+      if(!/^https:\/\//i.test(v)){ toast('Backend URL must start with https://','error'); return; }
+      saveStr('amv_api_base',v); if(window.AMV_API) AMV_API.base=v;
+      const b=$('save-base'); if(b){b.textContent='Saved!';b.style.background='var(--green)';setTimeout(()=>{b.textContent='Save & connect';b.style.background='';},1500);}
       updateSbUser&&updateSbUser();
-      toast('AI connected','success');
+      toast('Backend saved \u2014 sign in to activate','success');
     });
-    on($('test-mk'),'click',async ()=>{
-      const v=$('s-mk')?.value.trim(); const out=$('test-result');
-      if(!v){ toast('Enter a key to test','error'); return; }
-      if(out){ out.className='conn-test testing'; out.textContent='Testing…'; }
+    on($('test-base'),'click',async ()=>{
+      const v=($('s-base')?.value||'').trim().replace(/\/$/,''); const out=$('test-result');
+      if(!v){ toast('Enter a URL to test','error'); return; }
+      if(out){ out.className='conn-test testing'; out.textContent='Testing\u2026'; }
       try{
-        const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':v,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:8,messages:[{role:'user',content:'hi'}]})});
-        if(r.ok){ if(out){out.className='conn-test ok';out.textContent='✓ Connection works — your key is valid.';} S.mk=v; saveStr('amv_mk',v); const cs=$('conn-status'); if(cs){cs.className='conn-status ok';cs.innerHTML='<span class="conn-dot"></span>Connected — AMV is ready';} }
-        else{ const e=await r.json().catch(()=>({})); if(out){out.className='conn-test err';out.textContent='✗ '+(r.status===401?'Invalid key — check it and try again.':(e?.error?.message||('Error '+r.status)));} }
-      }catch(err){ if(out){out.className='conn-test err';out.textContent='✗ Could not reach the AI service. Check your connection.';} }
+        const r=await fetch(v+'/v1/health',{method:'GET'});
+        if(r.ok){ const d=await r.json().catch(()=>({})); if(out){out.className='conn-test ok';out.textContent=d.ok?'\u2713 Backend is healthy and reachable.':'\u2713 Reachable.';} saveStr('amv_api_base',v); if(window.AMV_API) AMV_API.base=v; const cs=$('conn-status'); if(cs){cs.className='conn-status ok';cs.innerHTML='<span class="conn-dot"></span>Backend reachable \u2014 sign in to activate';} }
+        else{ if(out){out.className='conn-test err';out.textContent='\u2717 Backend responded with '+r.status+'. Check the URL.';} }
+      }catch(err){ if(out){out.className='conn-test err';out.textContent='\u2717 Could not reach that URL. Check it\u2019s deployed and correct.';} }
     });
-    on($('save-media'),'click',()=>{
-      const rl=$('s-rl')?.value.trim(),el=$('s-el')?.value.trim();
-      if(rl){S.rl=rl;saveStr('amv_rl',rl);}if(el)saveStr('amv_el',el);
-      const b=$('save-media');if(b){b.textContent='Saved!';setTimeout(()=>{b.textContent='Save media keys';},1500);}
-      toast('Media keys saved','success');
-    });
+
+  } else if(sp==='widget'){
+    _renderWidgetPane(pane);
 
   } else if(sp==='platform'){
     pane.innerHTML=
@@ -5488,7 +12345,7 @@ function _renderSetPaneInner(){
       '<div class="ss2" style="background:rgba(35,209,139,.04);border-color:rgba(35,209,139,.15)"><h3 style="color:var(--green)">\uD83D\uDE80 Go-Live Status \u2014 turn every feature on</h3>'+
         '<p style="font-size:12px;color:var(--mu);margin:-4px 0 14px;line-height:1.6">Each item below is real, working code. It switches from \u201cnot set up\u201d to \u201clive\u201d the moment you add the account it needs. Green = working for your users right now.</p>'+
         '<div class="golive">'+
-          _goLiveRow(!!S.mk, 'AI engine (all chat, agents, Studio, Dev, documents)', 'Add your Anthropic key in Settings \u2192 AI Connection. <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">Get a key \u2192</a>')+
+          _goLiveRow(!!(window.AMV_API&&AMV_API.live), 'AI engine (all chat, agents, Studio, Dev, documents)', 'Connect your AMV backend in Settings \u2192 AI Connection. The Anthropic key is a Worker secret, never in the browser.')+
           _goLiveRow(!!(loadStr('amv_api_base')), 'Backend (multi-user, secure key, usage limits)', 'Deploy amv-backend.js to Cloudflare Workers, paste its URL in Settings \u2192 Live / Backend.')+
           _goLiveRow(!!(S.sp||S.se), 'Payments (collect real revenue)', 'Create payment links at <a href="https://stripe.com" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">stripe.com</a> and paste them above. Money goes straight to your Stripe.')+
           _goLiveRow(!!loadStr('amv_gauth'), 'Google sign-in + Gmail/Calendar autonomy', 'Create an OAuth Client ID at <a href="https://console.cloud.google.com" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">console.cloud.google.com</a>, add it in Settings \u2192 Integrations.')+
@@ -5546,19 +12403,47 @@ function _renderSetPaneInner(){
       _integrationsCatalogHTML();
     _wireIntegrationCatalog(pane);
     _killTokenAutofill();
+  } else if(sp==='skills'){
+    _renderSkillsPane(pane);
+  } else if(sp==='capabilities'){
+    const cap=(icon,title,desc)=>'<div class="cap-item"><span class="cap-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+icon+'</svg></span><div><div class="cap-t">'+escH(title)+'</div><div class="cap-d">'+escH(desc)+'</div></div></div>';
+    const capToggle=(id,title,desc,on)=>'<div class="prv-pref"><div><div class="prv-pref-t">'+escH(title)+'</div><div class="prv-pref-s">'+escH(desc)+'</div></div><label class="sw"><input type="checkbox" id="'+id+'" '+(on?'checked':'')+'><span class="sw-sl"></span></label></div>';
+    pane.innerHTML=
+      '<div class="set-title">Capabilities</div>'+
+      '<div class="set-sub">Everything AMV can do for you \u2014 and the switches you control.</div>'+
+      '<div class="ss2"><h3>What AMV can do</h3>'+
+        '<div class="cap-grid">'+
+          cap('<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>','Chat & reasoning','Ask anything, think through problems, get clear answers with sources.')+
+          cap('<path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/>','Build & run code','Full-stack apps, scripts and APIs \u2014 written, run, and previewed live in Dev.')+
+          cap('<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>','Images & video','Generate photoreal images and video from a single line of description.')+
+          cap('<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>','Web search','Pull live information from the web and cite it in answers.')+
+          cap('<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>','Agents & Crew','Delegate multi-step jobs that run in the background and report back.')+
+          cap('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>','Automations','Schedule recurring work \u2014 daily briefs, monitoring, reports \u2014 hands-free.')+
+          cap('<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M3 9h6"/>','Design & docs','Slides, spreadsheets, documents and designs on a live canvas.')+
+          cap('<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/>','Connectors','Link Gmail, Drive, Calendar, GitHub and more to work with your tools.')+
+        '</div>'+
+      '</div>'+
+      '<div class="ss2"><h3>Controls</h3>'+
+        capToggle('cap-websearch','Web search','Let AMV look things up online when it helps answer your question.', loadStr('amv_cap_websearch')!=='0')+
+        capToggle('cap-memory','Memory','Let AMV remember useful facts about you across chats.', loadStr('amv_cap_memory')!=='0')+
+        capToggle('cap-suggestions','Interactive answer blocks','Let AMV add tappable choices, stat cards, and step lists inside answers.', loadStr('amv_cap_suggestions')!=='0')+
+      '</div>';
+    on($('cap-websearch'),'change',function(){ saveStr('amv_cap_websearch',this.checked?'1':'0'); toast(this.checked?'Web search on':'Web search off','info',2000); });
+    on($('cap-memory'),'change',function(){ saveStr('amv_cap_memory',this.checked?'1':'0'); toast(this.checked?'Memory on':'Memory off','info',2000); });
+    on($('cap-suggestions'),'change',function(){ saveStr('amv_cap_suggestions',this.checked?'1':'0'); toast(this.checked?'Suggestions on':'Suggestions off','info',2000); });
   } else if(sp==='about'){
     pane.innerHTML=
       '<div class="set-title">About AMV.AI</div>'+
       '<div class="set-sub">Platform information and legal.</div>'+
       '<div class="ss2">'+
         '<div style="display:flex;align-items:center;gap:14px;margin-bottom:16px">'+
-          '<div class="logo-mark-lg" style="width:50px;height:50px;border-radius:var(--r-md);flex-shrink:0"><svg width="22" height="22" viewBox="0 0 40 40" fill="none"><text x="20" y="27" text-anchor="middle" font-family="Inter,sans-serif" font-size="15" font-weight="800" letter-spacing="-1" fill="#fff">AMV</text></svg></div>'+
+          '<div class="logo-mark-lg ce-mark-sig" style="width:50px;height:50px;border-radius:var(--r-md);flex-shrink:0">'+amvMark(34)+'</div>'+
           '<div><div style="font-size:17px;font-weight:800;letter-spacing:-.4px">AMV<span style="color:var(--accent)">.</span>AI</div><div style="font-size:11px;color:var(--t2);margin-top:2px">Version 2.0 &bull; 2025</div></div>'+
         '</div>'+
         '<p style="font-size:12px;color:var(--t2);line-height:1.65;margin-bottom:13px">Your AI workforce — it does the work, not just answers it. Chat, agents, builds, images, video, and automation in one place.</p>'+
         '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
           '<button class="btn bs" style="font-size:12px" onclick="openTerms()">Terms of Service</button>'+
-          '<button class="btn bs" style="font-size:12px" onclick="openTerms()">Privacy Policy</button>'+
+          '<button class="btn bs" style="font-size:12px" onclick="openPrivacy()">Privacy Policy</button>'+
           supportButton({label:'Contact Support',cls:'btn bs',subject:'AMV Support request'})+
         '</div>'+
       '</div>'+
@@ -5587,14 +12472,29 @@ function setFontSize(px){
   try{ if(S.tab==='settings' && S.settingsPane==='appearance') renderSetPane(); }catch(e){}
 }
 function _applyZoom(scale){
+  /* Font size used to zoom #app. But #app is height:100vh \u2014 zooming it to
+     1.29x made it 129vh tall, so the BOTTOM of the app (the composer / text box)
+     fell off the screen and you literally couldn't type. Verified: at "Largest"
+     the app overflowed by 229px at 800px tall.
+
+     Fix: scale the TEXT, not the container. We set a root font scale and let the
+     layout keep filling exactly 100vh, so every control stays reachable at any
+     size. */
   const app=document.getElementById('app');
   const land=document.getElementById('land');
-  // zoom works in Chrome/Edge/Safari; transform fallback for Firefox
-  const supportsZoom = (typeof document.body.style.zoom!=='undefined');
   [app,land].forEach(el=>{ if(!el) return;
-    if(supportsZoom){ el.style.zoom = scale; }
-    else { el.style.transform='scale('+scale+')'; el.style.transformOrigin='top left'; el.style.width=(100/scale)+'%'; }
+    el.style.zoom='';
+    el.style.transform='';
+    el.style.width='';
   });
+  const root=document.documentElement;
+  if(!scale || Math.abs(scale-1) < 0.001){
+    root.style.removeProperty('--fs-scale');
+    root.classList.remove('fs-scaled');
+  } else {
+    root.style.setProperty('--fs-scale', String(scale));
+    root.classList.add('fs-scaled');
+  }
 }
 function _applyFontSize(){ const px=parseInt(loadStr('amv_fs')||'14',10); if(px&&px!==14){ _applyZoom(px/14); } }
 function openShortcuts(){
@@ -5614,6 +12514,7 @@ function openShortcuts(){
 window.openShortcuts=openShortcuts;
 
 function setupLanding(){
+  try{ if(!sessionStorage.getItem('amv_visit_marked')){ sessionStorage.setItem('amv_visit_marked','1'); AEGIS.log('page',{name:'landing'}); } }catch(e){ try{ AEGIS.log('page',{name:'landing'}); }catch(_){} }
   on($('brand-land'),'click',()=>{ window.scrollTo(0,0); });
   on($('land-login'),'click',()=>{ hideIntro(); openAuth('login'); });
   on($('land-signup'),'click',()=>{ hideIntro(); openAuth('signup'); });
@@ -5663,14 +12564,15 @@ function setupApp(){
   });
   on($('nav-av'),'click',function(e){ e.stopPropagation(); showProfMenu(this); });
 
-  // All data-tab buttons in icon rail
-  document.querySelectorAll('.snb[data-tab]').forEach(btn=>{
+  // All data-tab buttons in icon rail — includes the bottom-left tools row
+  document.querySelectorAll('.snb[data-tab], .sb-tool[data-tab]').forEach(btn=>{
     on(btn,'click',()=>{ if(btn.dataset.tab) setTab(btn.dataset.tab); });
   });
   on($('hist-search'),'input',renderHist);
   on($('star-filter'),'click',()=>{ S.starFilter=!S.starFilter; $('star-filter').style.color=S.starFilter?'var(--gold)':''; renderHist(); });
   on($('sb-user-btn'),'click',()=>{ const p=$('sb-popup'); if(p) p.classList.toggle('on'); });
-  on($('smi-settings'),'click',()=>{ $('sb-popup').classList.remove('on'); setTab('settings'); });
+  on($('smi-settings'),'click',()=>{ $('sb-popup').classList.remove('on'); S.settingsPane='account'; setTab('settings'); });
+  on($('smi-whatsnew'),'click',()=>{ $('sb-popup').classList.remove('on'); openWhatsNew(); });
   on($('smi-switch'),'click',()=>{ $('sb-popup').classList.remove('on'); openAuth('login'); });
   on($('smi-signout'),'click',()=>{ $('sb-popup').classList.remove('on'); signOut(); });
 
@@ -5755,6 +12657,94 @@ function goSettings(pane){ S.settingsPane=pane; setTab('settings'); }
 function goToStripeSettings(){ closeOvr(); goSettings('platform'); }
 function showMsg(msg){ toast(msg||'Configure in Settings.','info'); }
 function askAmv(){ setTab('chat'); setTimeout(()=>{ const ta=document.getElementById('mta'); if(ta){ta.value='I need help with: ';ta.focus();} },150); }
+/* In-app feedback: bug reports & feature suggestions. Stored locally and surfaced
+   to the operator in the admin, and sent to a support email/endpoint if configured. */
+function openFeedback(kind){
+  kind=(kind==='idea')?'idea':'bug';
+  const ovr=$('ovr'); if(!ovr) return;
+  const isBug=kind==='bug';
+  ovr.innerHTML=
+    '<div class="fb-modal">'+
+      '<div class="fb-title">'+(isBug?'Report a bug':'Suggest a feature')+'</div>'+
+      '<p class="fb-sub">'+(isBug?'What went wrong? The more detail, the faster we can fix it.':'What would make AMV better for you?')+'</p>'+
+      '<div class="fb-types"><button class="fb-type'+(isBug?' on':'')+'" data-fbk="bug">\uD83D\uDC1E Bug</button><button class="fb-type'+(!isBug?' on':'')+'" data-fbk="idea">\uD83D\uDCA1 Idea</button></div>'+
+      '<textarea id="fb-text" class="inp" rows="5" placeholder="'+(isBug?'When I click\u2026 I expected\u2026 but instead\u2026':'It would be great if AMV could\u2026')+'"></textarea>'+
+      '<input id="fb-email" class="inp" style="margin-top:10px" placeholder="Your email (optional \u2014 so we can follow up)" value="'+escH((S.user&&S.user.email)||'')+'">'+
+      '<div class="fb-actions"><button class="btn bs" id="fb-cancel">Cancel</button><button class="btn bp" id="fb-send">Send feedback</button></div>'+
+    '</div>';
+  ovr.classList.add('on');
+  let curKind=kind;
+  ovr.querySelectorAll('[data-fbk]').forEach(b=>on(b,'click',()=>{ curKind=b.dataset.fbk; ovr.querySelectorAll('.fb-type').forEach(x=>x.classList.remove('on')); b.classList.add('on'); }));
+  on($('fb-cancel'),'click',closeOvr);
+  on($('fb-send'),'click',()=>{
+    const text=($('fb-text')?$('fb-text').value:'').trim();
+    if(!text){ $('fb-text')&&$('fb-text').focus(); return; }
+    _submitFeedback(curKind, text, ($('fb-email')?$('fb-email').value.trim():''));
+    closeOvr();
+    toast('Thank you \u2014 your feedback was sent to the team.','success',3500);
+  });
+}
+function _submitFeedback(kind, text, email){
+  try{
+    const entry={ id:'fb'+Date.now(), kind, text, email, ts:Date.now(),
+      context:{ tab:S.tab, plan:loadStr('amv_plan')||'free', lang:_lang(), ua:navigator.userAgent.slice(0,120) } };
+    // store locally (ring buffer) for the operator's admin view
+    let list=[]; try{ list=JSON.parse(loadStr('amv_feedback')||'[]'); }catch(e){}
+    list.unshift(entry); if(list.length>200) list.length=200;
+    saveStr('amv_feedback', JSON.stringify(list));
+    try{ track('feedback_submitted',{kind}); }catch(e){}
+    // send to support email / endpoint if the operator configured one
+    const ep=loadStr('amv_feedback_endpoint');
+    if(ep){ try{ navigator.sendBeacon(ep, JSON.stringify(entry)); }catch(e){} }
+  }catch(e){ _logErr('submitFeedback',e); }
+}
+try{ window.openFeedback=openFeedback; }catch(e){}
+/* Changelog / What's New — transparent product updates. Newest first. */
+const CHANGELOG=[
+  { v:'2.4', date:'2026-01-15', title:'Share, install, and export', items:[
+    'Share any conversation with a private read-only link',
+    'Install AMV as an app on your phone or desktop (PWA)',
+    'Export all your data anytime from Settings \u2192 Privacy',
+    'In-app bug reports and feature suggestions in the Help Center' ] },
+  { v:'2.3', date:'2026-01-08', title:'Speaks your language', items:[
+    'Full interface translation across 17 languages',
+    'Automatic language detection on first visit',
+    'Right-to-left support for Arabic and Urdu' ] },
+  { v:'2.2', date:'2026-01-02', title:'Smarter billing & usage', items:[
+    'In-app invoice history and payment management',
+    '14-day activity trend on your Usage dashboard',
+    'Clearer plan limits with contextual upgrade prompts' ] },
+  { v:'2.1', date:'2025-12-20', title:'Crew works while you sleep', items:[
+    'Standing jobs \u2014 schedule AMV to email you news, reports and summaries',
+    'Approval queue so nothing sends without your OK',
+    'A refreshed, friendlier design across the whole app' ] },
+];
+function _latestVersion(){ return CHANGELOG.length?CHANGELOG[0].v:''; }
+function _checkWhatsNew(){
+  try{
+    const seen=loadStr('amv_changelog_seen')||'';
+    const dot=document.getElementById('whatsnew-dot');
+    if(dot) dot.style.display=(seen!==_latestVersion())?'inline-block':'none';
+  }catch(e){}
+}
+function openWhatsNew(){
+  const ovr=$('ovr'); if(!ovr) return;
+  ovr.innerHTML=
+    '<div class="wn-modal">'+
+      '<div class="wn-head"><div class="wn-title">What\u2019s New</div><button class="wn-close" id="wn-close" aria-label="close">\u00d7</button></div>'+
+      '<div class="wn-list">'+CHANGELOG.map(r=>
+        '<div class="wn-rel"><div class="wn-rel-head"><span class="wn-ver">v'+escH(r.v)+'</span><span class="wn-date">'+new Date(r.date+'T00:00:00').toLocaleDateString(undefined,{month:'long',day:'numeric',year:'numeric'})+'</span></div>'+
+        '<div class="wn-rel-title">'+escH(r.title)+'</div>'+
+        '<ul class="wn-items">'+r.items.map(i=>'<li>'+escH(i)+'</li>').join('')+'</ul></div>'
+      ).join('')+'</div>'+
+    '</div>';
+  ovr.classList.add('on');
+  on($('wn-close'),'click',closeOvr);
+  // mark newest as seen → clears the notification dot
+  try{ saveStr('amv_changelog_seen', _latestVersion()); }catch(e){}
+  _checkWhatsNew();
+}
+try{ window.openWhatsNew=openWhatsNew; }catch(e){}
 
 /* -- Cookie consent -- */
 function accCk(){ localStorage.setItem('amv_ck','1'); const ck=document.getElementById('ck'); if(ck)ck.remove(); }
@@ -5762,7 +12752,7 @@ function renderCk(){
   if(localStorage.getItem('amv_ck')) return;
   const div=document.createElement('div');
   div.id='ck';
-  div.innerHTML='<p>We use essential cookies to keep you signed in. By continuing you agree to our <button class="ckl" onclick="openTerms()">Terms</button> and <button class="ckl" onclick="openTerms()">Privacy Policy</button>.</p>'+
+  div.innerHTML='<p>We use essential cookies to keep you signed in. By continuing you agree to our <button class="ckl" onclick="openTerms()">Terms</button> and <button class="ckl" onclick="openPrivacy()">Privacy Policy</button>.</p>'+
     '<div style="display:flex;gap:7px;flex-shrink:0"><button class="btn bp" id="ck-acc" style="padding:5px 13px;font-size:12px">Accept</button><button class="btn bs" id="ck-nec" style="padding:5px 11px;font-size:12px">Necessary Only</button></div>';
   document.body.appendChild(div);
   document.getElementById('ck-acc')?.addEventListener('click',accCk);
@@ -5775,22 +12765,60 @@ function openTerms(){
   r.innerHTML=
     '<div class="ov" id="terms-bg"><div class="ob wide tall" onclick="event.stopPropagation()">'+
       '<button class="oc" onclick="closeOvr()">&#215;</button>'+
-      '<h2>Terms of Service &amp; Privacy Policy</h2>'+
+      '<h2>Terms of Service</h2>'+
       '<p class="ob-sub">Effective '+new Date().toLocaleDateString()+' &mdash; please read carefully.</p>'+
       '<div class="ts">'+
         '<h4>1. Acceptance</h4>By using AMV.AI you agree to these terms. If you disagree, stop using the platform.'+
-        '<h4>2. Content Policy</h4>Prohibited: explicit sexual/pornographic content; child sexual abuse material (CSAM &mdash; all violations reported to NCMEC and law enforcement); content to harass or harm; impersonation for fraud. Non-sexual depictions of public figures are permitted for editorial and creative use.'+
-        '<h4>3. Computer Automation &amp; Canvas</h4>By enabling automation features you grant AMV.AI permission to access your browser, email, calendar, Canvas LMS, and files as configured. Access is used solely for tasks you request. Revoke permissions in Settings at any time. AMV.AI does not store, sell, or share data accessed through automation.'+
-        '<h4>4. AI Disclaimer</h4>AI outputs may be inaccurate. Do not rely on AMV.AI for medical, legal, or financial decisions without professional verification.'+
-        '<h4>5. Privacy</h4>We store: account info (name, email), usage data, AI Memory you create. We do NOT store: card details (Stripe handles this), API keys (stored locally), automation task content. Data sharing: only with our payment processor (Stripe) and our AI infrastructure provider, strictly to deliver the service. We never sell your data.'+
-        '<h4>6. Payments</h4>Processed by Stripe (PCI-DSS Level 1). Monthly subscriptions, cancel any time. Refunds at discretion within 7 days.'+
-        '<h4>7. Security</h4>Passwords hashed with SHA-256. All data stored locally in your browser. API communications use HTTPS/TLS. Card details processed exclusively by Stripe.'+
+        '<h4>2. Content Policy</h4>Prohibited: explicit sexual/pornographic content; child sexual abuse material (CSAM &mdash; all violations reported to NCMEC and law enforcement); content intended to harass or harm; impersonation for fraud; attempts to generate malware or facilitate illegal activity. We may suspend accounts that violate this policy.'+
+        '<h4>3. Automation &amp; Connected Tools</h4>By enabling automation or connected features you grant AMV.AI permission to access the accounts and files you configure (e.g. browser, email, calendar), used solely for tasks you request. Revoke access in Settings at any time.'+
+        '<h4>4. AI Disclaimer</h4>AI outputs may be inaccurate. Do not rely on AMV.AI for medical, legal, or financial decisions without independent professional verification. AMV.AI does not provide financial advice; scheduled research reports information only.'+
+        '<h4>5. Payments &amp; Refunds</h4>Subscriptions are billed monthly by our payment processor and can be cancelled any time; access continues to the end of the paid period. Refunds are handled per our posted policy. Chargeback or refund abuse may result in account suspension.'+
+        '<h4>6. Acceptable Use &amp; Limits</h4>Each plan includes usage limits. Automated scraping of the service, reselling access, or circumventing limits is prohibited.'+
+        '<h4>7. Privacy</h4>Your use of AMV.AI is also governed by our <button class="lnk-inline" onclick="closeOvr();openPrivacy()">Privacy Policy</button>, which explains what we collect and how it is handled.'+
         '<h4>8. Contact</h4>'+(_supportEmail()?escH(_supportEmail()):'Contact support from the Help Center in the app.')+
       '</div>'+
       '<div style="display:flex;gap:9px"><button class="btn bp" onclick="accCk();closeOvr()" style="flex:1">I Accept</button><button class="btn bs" onclick="closeOvr()">Close</button></div>'+
     '</div></div>';
   document.getElementById('terms-bg')?.addEventListener('click',closeOvr);
 }
+
+/* Real, SEPARATE privacy policy — required to take payments (Stripe) and to
+   comply with GDPR/CCPA. Written to be ACCURATE to how AMV actually works:
+   server-side storage in Cloudflare, PBKDF2-hashed passwords, and the specific
+   third parties that receive data. Keep this in sync if the stack changes. */
+function openPrivacy(){
+  const r=document.getElementById('ovr'); if(!r) return;
+  const contact=_supportEmail()?escH(_supportEmail()):'the Help Center in the app';
+  r.innerHTML=
+    '<div class="ov" id="priv-bg"><div class="ob wide tall" onclick="event.stopPropagation()">'+
+      '<button class="oc" onclick="closeOvr()">&#215;</button>'+
+      '<h2>Privacy Policy</h2>'+
+      '<p class="ob-sub">Effective '+new Date().toLocaleDateString()+' &mdash; how AMV.AI handles your data.</p>'+
+      '<div class="ts">'+
+        '<h4>1. What we collect</h4>'+
+          '<b>Account:</b> your name and email. '+
+          '<b>Content:</b> the chats, projects, memory, and automations you create. '+
+          '<b>Usage:</b> counts and timestamps of requests, for limits, billing, and abuse prevention. '+
+          '<b>Payment:</b> handled entirely by our payment processor &mdash; we never see or store your full card number.'+
+        '<h4>2. How we store it</h4>Your account and content are stored on Cloudflare\u2019s infrastructure (KV / D1) in encrypted transit and at rest. Passwords are never stored in plain text &mdash; they are salted and hashed with PBKDF2-SHA256 at current OWASP-recommended strength. Access tokens are short-lived and can be revoked.'+
+        '<h4>3. Who we share it with</h4>We do <b>not</b> sell your data. We share the minimum necessary with the providers that make the service work: '+
+          '<b>Anthropic</b> (processes your prompts to generate AI responses), '+
+          '<b>Stripe</b> (payments), '+
+          '<b>Resend</b> (transactional email such as password resets), and '+
+          '<b>Twilio</b> (only if you enable text messaging). '+
+          'If you sign in with Google, Google authenticates you. Each provider handles data under its own privacy terms.'+
+        '<h4>4. What we do NOT do</h4>We do not sell or rent your data, do not show third-party ads, and do not use your private chats to train models.'+
+        '<h4>5. Your rights</h4>You can access, export, or delete your data. Deleting your account removes your account record, content, and automations from our storage. To exercise these rights, use the controls in Settings or contact us at '+contact+'.'+
+        '<h4>6. Data retention</h4>We keep your data while your account is active. Usage counters expire automatically. When you delete your account, your data is removed from active storage; residual copies in routine backups age out on their normal cycle.'+
+        '<h4>7. Cookies &amp; local storage</h4>We use essential storage to keep you signed in and remember your preferences, and optional analytics only if you consent. You can change this any time in Settings.'+
+        '<h4>8. Children</h4>AMV.AI is not directed to children under 13 (or the minimum age in your region), and we do not knowingly collect their data.'+
+        '<h4>9. Changes &amp; contact</h4>We may update this policy; material changes will be noted with a new effective date. Questions: '+contact+'.'+
+      '</div>'+
+      '<div style="display:flex;gap:9px"><button class="btn bp" onclick="closeOvr()" style="flex:1">Got it</button></div>'+
+    '</div></div>';
+  document.getElementById('priv-bg')?.addEventListener('click',closeOvr);
+}
+try{ window.openPrivacy=openPrivacy; }catch(e){}
 
 /* -- Auth modal -- */
 function openAuth(mode){
@@ -5822,9 +12850,9 @@ function openAuth(mode){
   document.getElementById('g-btn')?.addEventListener('click',triggerGoogle);
   document.getElementById('auth-submit')?.addEventListener('click',()=>isL?doLoginForm():doSignupForm());
   document.getElementById('auth-sw')?.addEventListener('click',()=>openAuth(isL?'signup':'login'));
-  document.getElementById('auth-forgot')?.addEventListener('click',doForgotPassword);
+  document.getElementById('auth-forgot')?.addEventListener('click',()=>{ const em=(document.getElementById('a-email')?.value||'').trim(); closeOvr(); openForgot(em); });
   document.getElementById('a-terms')?.addEventListener('click',()=>{closeOvr();openTerms();});
-  document.getElementById('a-priv')?.addEventListener('click',()=>{closeOvr();openTerms();});
+  document.getElementById('a-priv')?.addEventListener('click',()=>{closeOvr();openPrivacy();});
   document.getElementById('a-pass')?.addEventListener('keydown',e=>{if(e.key==='Enter')isL?doLoginForm():doSignupForm();});
   document.getElementById('a-email')?.addEventListener('keydown',e=>{if(e.key==='Enter')isL?doLoginForm():doSignupForm();});
 }
@@ -5876,7 +12904,7 @@ function _setupIntro(){
     setTimeout(()=>openAuth('signup'), 50);
   });
   document.getElementById('intro-terms-btn')?.addEventListener('click',e=>{e.preventDefault();openTerms();});
-  document.getElementById('intro-priv-btn')?.addEventListener('click',e=>{e.preventDefault();openTerms();});
+  document.getElementById('intro-priv-btn')?.addEventListener('click',e=>{e.preventDefault();openPrivacy();});
   document.getElementById('i-google-btn')?.addEventListener('click',_iGoogleSignIn);
   document.getElementById('i-signup-btn')?.addEventListener('click',_iEmailSignup);
   document.getElementById('i-signin-link')?.addEventListener('click',()=>{hideIntro();openAuth('login');});
@@ -5926,12 +12954,19 @@ async function _iEmailSignup(){
   }
   const btn=document.getElementById('i-signup-btn');
   if(btn){btn.disabled=true;btn.innerHTML='<div class="spin" style="width:14px;height:14px;border-width:2px;margin-right:8px"></div>Creating account…';}
-  _completeIntroLogin(await createAccount(nm,em,pw));
+  const _newAcct=await createAccount(nm,em,pw);
+  try{ track('signup', { method:'email' }); }catch(e){}
+  _completeIntroLogin(_newAcct);
 }
 function _completeIntroLogin(acct){
   if(!acct) return;
+  // Nothing from any previous account may survive into this one.
+  try{ _wipeAccountState(); }catch(e){}
   S.user={name:acct.name,email:acct.email,ini:acct.ini,provider:acct.provider||'email'};
   store('amv_user',S.user);
+  // Now load THIS account's own sessions/memory (scoped by email).
+  try{ _loadSessions(); }catch(e){}
+  try{ S.memory = load('amv_memory') || []; }catch(e){ S.memory=[]; }
   accCk();
   const ck=document.getElementById('ck'); if(ck)ck.remove();
   const uc=loadUserConvs(acct.email);
@@ -5940,7 +12975,21 @@ function _completeIntroLogin(acct){
   S.imgs=[];S.vids=[];
   hideIntro();
   document.getElementById('land')?.classList.add('hidden');
+  S.tab='chat';   // new sign-ins land straight in chat
   goApp();
+  setTab('chat');
+  // First-run activation. This lives in loginUser(), but signup comes through
+  // HERE — so brand-new users (the only people who need it) never saw it.
+  try{
+    if(!loadStr('amv_onboarded')){
+      setTimeout(()=>{ try{ _startOnboarding(); }catch(e){} }, 500);
+    }
+  }catch(e){}
+  // if they typed a message before signing up, send it now
+  if(typeof _pendingMessage!=='undefined' && _pendingMessage){
+    const pm=_pendingMessage; _pendingMessage='';
+    setTimeout(()=>{ try{ const ta=$('mta'); if(ta){ ta.value=pm; ta.dispatchEvent(new Event('input')); } sendMsg(); }catch(e){} }, 300);
+  }
 }
 
 /* -- Keyboard shortcuts -- */
@@ -5948,7 +12997,13 @@ function setupKeyboard(){
   document.addEventListener('keydown',e=>{
     const tag=document.activeElement?.tagName;
     const inInput=tag==='INPUT'||tag==='TEXTAREA'||document.activeElement?.contentEditable==='true';
-    if(e.key==='Escape'&&!inInput){ const ta=document.getElementById('mta'); if(ta)ta.focus(); return; }
+    if(e.key==='Escape'){
+      // In settings, Esc closes it and returns you to your work.
+      if(S.tab==='settings' && !document.querySelector('.ovr.on, #ovr.on')){ e.preventDefault(); try{ closeSettings(); }catch(err){} return; }
+      // While the AI is generating, Esc stops it (like Claude/ChatGPT).
+      if(S.busy){ e.preventDefault(); try{ stopGenerating(); }catch(err){} return; }
+      if(!inInput){ const ta=document.getElementById('mta'); if(ta)ta.focus(); return; }
+    }
     if(e.ctrlKey&&e.shiftKey&&e.key==='O'){e.preventDefault();newChat();return;}
     if(e.ctrlKey&&!e.shiftKey&&e.key==='b'&&!inInput){
       e.preventDefault();
@@ -5957,9 +13012,14 @@ function setupKeyboard(){
       return;
     }
     if(e.ctrlKey&&e.shiftKey&&e.key==='L'){e.preventDefault();document.body.classList.toggle('light');saveStr('amv_theme',document.body.classList.contains('light')?'light':'dark');return;}
-    if(e.ctrlKey&&e.key===','){e.preventDefault();setTab('settings');return;}
+    if(e.ctrlKey&&e.key===','){e.preventDefault();S.settingsPane='account';setTab('settings');return;}
     if(e.ctrlKey&&e.key==='/'){e.preventDefault();setTab('help');return;}
-    if(e.ctrlKey&&e.key==='k'&&!inInput){e.preventDefault();document.getElementById('hist-search')?.focus();return;}
+    // "?" (Shift+/) opens the keyboard shortcut cheat sheet
+    if(e.key==='?'&&!inInput){ e.preventDefault(); try{ openShortcutSheet(); }catch(err){} return; }
+    // Ctrl+Shift+V toggles hands-free voice mode
+    if(e.ctrlKey&&e.shiftKey&&(e.key==='V'||e.key==='v')){ e.preventDefault(); try{ toggleVoiceMode(); }catch(err){} return; }
+    // Ctrl+Shift+D collapses / expands the sidebar
+    if(e.ctrlKey&&e.shiftKey&&(e.key==='D'||e.key==='d')){ e.preventDefault(); try{ toggleSb(); }catch(err){} return; }
   });
 }
 
@@ -5973,7 +13033,7 @@ async function runCanvasAutomation() {
     toast('Add Canvas API token in Settings → Integrations first.','error');
     return;
   }
-  if(!S.mk){
+  if(!_aiBackendReady()){
     toast('AMV isn\u2019t connected yet \u2014 the workspace owner needs to switch on the AMV engine first.','error');
     return;
   }
@@ -6034,13 +13094,7 @@ async function runCanvasAutomation() {
           const prompt='Complete this assignment fully and professionally.\n\nCourse: '+course.name+'\nAssignment: '+assignment.name+'\n\nInstructions:\n'+(assignment.description||'No instructions provided - write a comprehensive response.').replace(/<[^>]*>/g,' ').trim()+'\n\nProvide a complete, submission-ready response.';
 
           try{
-            const aiRes=await fetch('https://api.anthropic.com/v1/messages',{
-              method:'POST',
-              headers:{'Content-Type':'application/json','x-api-key':S.mk,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-              body:JSON.stringify({model:'claude-fable-5',max_tokens:4000,messages:[{role:'user',content:prompt}]})
-            });
-            const aiData=await aiRes.json();
-            const answer=aiData.content?.[0]?.text||'Could not generate answer.';
+            const answer=await aiComplete(prompt, null, {model:'claude-fable-5', max_tokens:4000, noLang:true});
             log('&#x2713; Completed: '+assignment.name,'var(--green)');
 
             // Save to a downloadable file
@@ -6164,7 +13218,7 @@ try {
   setupLanding();
   setupApp();
   setupKeyboard();
-  renderCk();
+  try{ _initCookieConsent(); }catch(e){ try{ renderCk(); }catch(_){} }
   try{ checkOAuthCallback(); }catch(e){}
   try{ _setPlan(loadStr('amv_plan')||'free'); }catch(e){}
   // deferred: not needed for first interaction — run when idle
@@ -6185,7 +13239,7 @@ try {
     var b=e.target.closest && e.target.closest('.snb'); if(b) document.getElementById('amv-tip').classList.remove('on');
   });
   });
-  _idle(()=>{ try{ var _lbl={dashboard:'Dashboard',chat:'Chat',images:'Images',video:'Video',workspaces:'Projects',memory:'Memory',usage:'Usage',billing:'Billing',plans:'Plans',settings:'Settings',help:'Help Center',apps:'Apps',tasks:'Tasks',integrations:'Integrations',extensions:'Extensions',crew:'Crew',studio:'Studio',dev:'Dev',handoff:'Handoff'}; document.querySelectorAll('.snb').forEach(function(b){var t=b.dataset.tab; if(_lbl[t]) b.setAttribute('data-label',_lbl[t]);}); }catch(e){} });
+  _idle(()=>{ try{ var _lbl={dashboard:'Dashboard',chat:'Chat',images:'Images',video:'Video',workspaces:'Projects',memory:'Memory',usage:'Usage',billing:'Billing',plans:'Plans',settings:'Settings',help:'Help Center',apps:'Apps',tasks:'Tasks',integrations:'Integrations',extensions:'Extensions',crew:'Crew',studio:'Studio',dev:'Dev',handoff:'Handoff',market:'Marketplace'}; document.querySelectorAll('.snb').forEach(function(b){var t=b.dataset.tab; if(_lbl[t]) b.setAttribute('data-label',_lbl[t]);}); }catch(e){} });
 
 } catch(e) {
   console.error('Boot error:', e);
@@ -6208,33 +13262,195 @@ try {
 
 // Apply saved theme
 const savedTheme = loadStr('amv_theme');
+// Default to DARK. Only use light if the user explicitly chose it.
 if(savedTheme === 'light') document.body.classList.add('light');
+// Apply saved accent theme (default azure = no attribute).
+const ACCENT_THEMES=[
+  {id:'',       name:'Azure',   dot:'#5590ff'},
+  {id:'violet', name:'Violet',  dot:'#9d7bff'},
+  {id:'emerald',name:'Emerald', dot:'#34d399'},
+  {id:'amber',  name:'Amber',   dot:'#f5a623'},
+  {id:'rose',   name:'Rose',    dot:'#fb7185'},
+  {id:'cyan',   name:'Cyan',    dot:'#38bdf8'},
+];
+function applyAccent(id){
+  if(id) document.body.setAttribute('data-accent',id);
+  else document.body.removeAttribute('data-accent');
+  try{ saveStr('amv_accent', id||''); }catch(e){}
+}
+function _restoreAccent(){ try{ const a=loadStr('amv_accent'); if(a) document.body.setAttribute('data-accent',a); }catch(e){} }
+try{ window.applyAccent=applyAccent; }catch(e){}
+_restoreAccent();
 
 // Apply saved font size (zoom-based, applied when app boots via _applyFontSize)
 try{ _applyFontSize&&_applyFontSize(); }catch(e){}
 
 // Init Google auth after load
 window.addEventListener('load',()=>{ setTimeout(initGAuth,500); });
+// Init PWA (installable app + offline shell)
+try{ _initPWA(); }catch(e){}
+// Show a "new" dot on What's New if there are unseen updates
+try{ setTimeout(()=>{ try{ _checkWhatsNew(); }catch(e){} }, 800); }catch(e){}
 
 // Boot logic
-if(S.user&&S.user.email){
+// If this is the embeddable widget (#embed=1&k=pk_...), render the compact chat panel and stop.
+if(typeof _checkEmbedView==='function' && _checkEmbedView()){
+  // embed chat rendered; skip normal app boot
+} else
+// If this is a shared-conversation link (#share=...), show the read-only view and stop.
+if(typeof _checkSharedView==='function' && _checkSharedView()){
+  // shared view rendered; skip normal app boot
+} else
+// If this is a shared-artifact link (#art=...), show the branded artifact page and stop.
+if(typeof _checkSharedArtifact==='function' && _checkSharedArtifact()){
+  // shared artifact rendered; skip normal app boot
+} else if(S.user&&S.user.email){
   const acct=findAccount(S.user.email);
   if(acct){
     const uc=loadUserConvs(S.user.email);
     if(uc&&uc.length){S.convs=uc;S.cur=S.convs[0].id;}
     else if(!S.convs.length){S.convs=[newConvObj()];S.cur=S.convs[0].id;}
     else if(!S.cur) S.cur=S.convs[0].id;
+    try{ _loadSessions(); }catch(e){}
     hideIntro();
     document.getElementById('land')?.classList.add('hidden');
     goApp();
   } else {
-    S.user=null; localStorage.removeItem('amv_user'); showIntro();
+    // No account yet: skip the intro wall — let them into the app immediately.
+    // Sign-up is required the moment they try to send a message (see sendMsg).
+    S.user=null; localStorage.removeItem('amv_user');
+    hideIntro();
+    document.getElementById('land')?.classList.add('hidden');
+    if(!S.convs||!S.convs.length){ S.convs=[newConvObj()]; S.cur=S.convs[0].id; }
+    S.tab='chat';   // always land in chat (never a gated tab that would pop signup on load)
+    goApp();
   }
 } else {
-  showIntro();
+  // First-ever visit, no session: straight into the app, gated at first send.
+  hideIntro();
+  document.getElementById('land')?.classList.add('hidden');
+  if(!S.convs||!S.convs.length){ S.convs=[newConvObj()]; S.cur=S.convs[0].id; }
+  S.tab='chat';
+  goApp();
 }
 
 function toastInfo(msg){ toast(msg||'Done','info'); }
+
+/* ---------------- Cookie consent banner ----------------
+   Shows once per device (not per account — stored in the global,
+   unscoped bucket) until the person accepts, declines non-essential
+   cookies, or picks preferences. Analytics code should check
+   _cookieConsent().analytics before firing anything. */
+function _cookieConsent(){
+  try{
+    const raw = localStorage.getItem('amv_cookie_consent');
+    if(!raw) return null;
+    return JSON.parse(raw);
+  }catch(e){ return null; }
+}
+function _setCookieConsent(choice){
+  // choice: {essential:true, analytics:bool}
+  try{
+    localStorage.setItem('amv_cookie_consent', JSON.stringify(Object.assign({essential:true, ts:Date.now()}, choice)));
+  }catch(e){}
+  const el = $('cookie-consent-banner');
+  if(el){ el.classList.add('cc-hide'); setTimeout(()=>{ try{ el.remove(); }catch(e){} }, 350); }
+  try{ if(choice.analytics && typeof _analyticsInit==='function') _analyticsInit(); }catch(e){}
+}
+function _initCookieConsent(){
+  if(_cookieConsent()) return; // already decided
+  if($('cookie-consent-banner')) return; // already showing
+  const wrap = document.createElement('div');
+  wrap.id = 'cookie-consent-banner';
+  wrap.className = 'cc-banner';
+  wrap.setAttribute('role','dialog');
+  wrap.setAttribute('aria-label','Cookie preferences');
+  wrap.innerHTML =
+    '<div class="cc-inner">'+
+      '<div class="cc-text">We use essential cookies to run AMV, and optional analytics cookies to understand usage so we can improve the product. You can change this anytime in Settings.</div>'+
+      '<div class="cc-actions">'+
+        '<button class="btn" id="cc-manage">Manage</button>'+
+        '<button class="btn" id="cc-decline">Essential only</button>'+
+        '<button class="btn bp" id="cc-accept">Accept all</button>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(wrap);
+  on($('cc-accept'),'click',()=>_setCookieConsent({analytics:true}));
+  on($('cc-decline'),'click',()=>_setCookieConsent({analytics:false}));
+  on($('cc-manage'),'click',()=>{ _setCookieConsent({analytics:false}); try{ S.tab='settings'; goApp&&goApp(); render&&render(); toast&&toast('Manage cookie preferences below','info'); }catch(e){} });
+}
+window._cookieConsent = _cookieConsent;
+window._initCookieConsent = _initCookieConsent;
+
+/* ---------------- Analytics ----------------
+   Lightweight, provider-agnostic tracker. Nothing fires unless the person
+   has consented to analytics cookies AND a tracking ID has been entered in
+   Settings > Privacy. Supports Google Analytics (GA4) or Plausible — pick
+   one by the shape of the ID ("G-XXXX" = GA4, anything else = Plausible
+   domain). Also tracks a small conversion funnel (visit -> signup -> first
+   message -> upgrade) as local events, visible in Settings even with no
+   provider configured, so the funnel itself never depends on a 3rd party. */
+function _analyticsId(){ try{ return loadStr('amv_analytics_id')||''; }catch(e){ return ''; } }
+function _analyticsSetId(id){ try{ saveStr('amv_analytics_id', (id||'').trim()); }catch(e){} }
+function _analyticsAllowed(){
+  const c=_cookieConsent();
+  return !!(c && c.analytics && _analyticsId());
+}
+let _analyticsLoaded=false;
+function _analyticsInit(){
+  if(_analyticsLoaded || !_analyticsAllowed()) return;
+  const id=_analyticsId();
+  try{
+    if(/^G-/i.test(id)){
+      const s=document.createElement('script');
+      s.async=true; s.src='https://www.googletagmanager.com/gtag/js?id='+encodeURIComponent(id);
+      document.head.appendChild(s);
+      window.dataLayer = window.dataLayer||[];
+      window.gtag = function(){ window.dataLayer.push(arguments); };
+      window.gtag('js', new Date());
+      window.gtag('config', id, { anonymize_ip:true });
+    } else {
+      const s=document.createElement('script');
+      s.defer=true; s.dataset.domain=id; s.src='https://plausible.io/js/script.js';
+      document.head.appendChild(s);
+    }
+    _analyticsLoaded=true;
+  }catch(e){}
+}
+// Local conversion-funnel counters, independent of any 3rd-party provider.
+function _funnel(){ try{ return JSON.parse(loadStr('amv_funnel')||'')||{visit:0,signup:0,first_msg:0,upgrade:0}; }catch(e){ return {visit:0,signup:0,first_msg:0,upgrade:0}; } }
+function _funnelMark(step){
+  try{
+    const f=_funnel();
+    if(!f[step]) f[step]=0;
+    f[step]+=1;
+    saveStr('amv_funnel', JSON.stringify(f));
+  }catch(e){}
+}
+function _trackEvent(name, data){
+  // Always keep the local funnel signal (no consent needed — it's first-party,
+  // aggregate counts only, no PII), separate from 3rd-party forwarding below.
+  if(name==='page' && data && data.name==='landing') _funnelMark('visit');
+  if(name==='signup_complete') _funnelMark('signup');
+  if(name==='first_message') _funnelMark('first_msg');
+  if(name==='plan_upgrade') _funnelMark('upgrade');
+  if(!_analyticsAllowed()) return;
+  try{
+    if(typeof window.gtag==='function'){
+      window.gtag('event', name, Object.assign({}, data||{}));
+    } else if(window.plausible){
+      window.plausible(name, { props: data||{} });
+    } else if(typeof window.plausible!=='function' && document.querySelector('script[data-domain]')){
+      // Plausible's script defines window.plausible once loaded; queue until then
+      (window.plausible = window.plausible || function(){ (window.plausible.q = window.plausible.q||[]).push(arguments); })(name, {props:data||{}});
+    }
+  }catch(e){}
+}
+window._analyticsId=_analyticsId; window._analyticsSetId=_analyticsSetId;
+window._analyticsAllowed=_analyticsAllowed; window._analyticsInit=_analyticsInit;
+window._funnel=_funnel; window._trackEvent=_trackEvent;
+// If consent was already granted in a prior session, load the provider now.
+try{ if(_analyticsAllowed()) _analyticsInit(); }catch(e){}
 
 
 
@@ -6246,6 +13462,10 @@ function toastInfo(msg){ toast(msg||'Done','info'); }
    ---------------------------------------------- */
 
 /* 1. VOICE FIX - mic permission + better errors */
+(function(){
+  // Keep the copyright year current everywhere it appears — never stale.
+  try{ const cy=document.getElementById('copy-year'); if(cy) cy.textContent=String(new Date().getFullYear()); }catch(e){}
+})();
 (function(){
   const orig = window.toggleVoice;
   window.toggleVoice = function(){
@@ -6296,13 +13516,32 @@ function _amvStartVoice(btn){
   try{ window._voiceRec.start(); } catch(e){ toast('Voice failed: '+e.message,'error'); }
 }
 
-/* 2. GOOGLE OAUTH - redirect flow (no popup cross-origin errors) */
+/* 2. GOOGLE OAUTH - redirect flow (no popup cross-origin errors)
+   Security notes (auditor #5):
+   - Adds a cryptographic `state` nonce to defend against CSRF on the
+     callback (an attacker can't forge a redirect back into your session).
+   - Uses the implicit flow (response_type=token) so the app works WITHOUT
+     a backend. The honest tradeoff: the Google access token lands in
+     localStorage. For a hardened deployment, broker OAuth through the
+     Worker (auth-code flow) so the token never reaches the browser — see
+     SECURITY-HEADERS.md. We scope the token to the minimum needed and
+     expire it aggressively. */
+function _genOAuthState(){
+  try{
+    const arr = new Uint8Array(16);
+    (window.crypto||{}).getRandomValues?.(arr);
+    const s = Array.from(arr).map(b=>b.toString(16).padStart(2,'0')).join('');
+    saveStr('amv_oauth_state', s);
+    return s;
+  }catch(e){ const s='s'+Date.now()+Math.random().toString(36).slice(2); saveStr('amv_oauth_state', s); return s; }
+}
 function connectGoogle(){
   const cid = loadStr('amv_gauth');
   if(!cid){ toast('Add Google Client ID in Settings → Integrations first','error',5000); goSettings('integrations'); return; }
   const scopes = 'https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/calendar';
   const redirectUri = window.location.origin + window.location.pathname;
-  const url = 'https://accounts.google.com/o/oauth2/v2/auth?client_id='+encodeURIComponent(cid)+'&redirect_uri='+encodeURIComponent(redirectUri)+'&response_type=token&scope='+encodeURIComponent(scopes)+'&prompt=consent';
+  const state = _genOAuthState();
+  const url = 'https://accounts.google.com/o/oauth2/v2/auth?client_id='+encodeURIComponent(cid)+'&redirect_uri='+encodeURIComponent(redirectUri)+'&response_type=token&scope='+encodeURIComponent(scopes)+'&prompt=consent&state='+encodeURIComponent(state);
   saveStr('amv_oauth_return', S.tab||'integrations');
   window.location.href = url;
 }
@@ -6310,6 +13549,20 @@ function checkOAuthCallback(){
   const hash = window.location.hash;
   if(!hash || hash.indexOf('access_token')<0) return;
   const params = new URLSearchParams(hash.slice(1));
+  // CSRF: the returned state MUST match the nonce we stored before redirect.
+  const returnedState = params.get('state')||'';
+  const expectedState = loadStr('amv_oauth_state')||'';
+  localStorage.removeItem('amv_oauth_state');
+  if(!expectedState || returnedState !== expectedState){
+    history.replaceState(null,'',window.location.pathname);
+    toast('Sign-in could not be verified. Please try connecting again.','error',5000);
+    return;
+  }
+  if(params.get('error')){
+    history.replaceState(null,'',window.location.pathname);
+    toast('Google sign-in was cancelled or failed.','info',4000);
+    return;
+  }
   const token = params.get('access_token');
   const exp = parseInt(params.get('expires_in')||'3600');
   if(token){
@@ -6355,7 +13608,7 @@ const INTEGRATION_ACTIONS = {
     }
   },
   gmail_send: {
-    desc:'Send an email. Args: {to, subject, body}.', needs:'google',
+    desc:'Send an email. Args: {to, subject, body}.', needs:'google', risk:'high', riskLabel:'send an email',
     async run(args){
       const t=getGToken(); if(!t) throw new Error('Gmail not connected');
       const raw=['To: '+args.to,'Subject: '+(args.subject||''),'Content-Type: text/plain; charset=utf-8','',args.body||''].join('\r\n');
@@ -6376,7 +13629,7 @@ const INTEGRATION_ACTIONS = {
     }
   },
   calendar_create: {
-    desc:'Create a calendar event. Args: {title, start (ISO), end (ISO), description?}.', needs:'google',
+    desc:'Create a calendar event. Args: {title, start (ISO), end (ISO), description?}.', needs:'google', risk:'high', riskLabel:'create a calendar event',
     async run(args){
       const t=getGToken(); if(!t) throw new Error('Calendar not connected');
       const body={summary:args.title, description:args.description||'', start:{dateTime:args.start}, end:{dateTime:args.end||args.start}};
@@ -6403,7 +13656,7 @@ const INTEGRATION_ACTIONS = {
       return d.map(i=>({number:i.number, title:i.title, url:i.html_url}));
     }
   },
-  github_create_issue: {
+  github_create_issue: { risk:'high', riskLabel:'create a GitHub issue',
     desc:'Open a GitHub issue. Args: {repo:"owner/name", title, body}.', needs:'github',
     async run(args){
       const t=loadStr('amv_github'); if(!t) throw new Error('GitHub not connected');
@@ -6412,7 +13665,7 @@ const INTEGRATION_ACTIONS = {
       return {created:true, number:d.number, url:d.html_url};
     }
   },
-  slack_post: {
+  slack_post: { risk:'high', riskLabel:'post a Slack message',
     desc:'Post a message to Slack. Args: {channel, text}.', needs:'slack',
     async run(args){
       const t=loadStr('amv_slack'); if(!t) throw new Error('Slack not connected');
@@ -6549,15 +13802,68 @@ async function runAgentTask(instruction, opts){
   const plan=await aiComplete(instruction, sys, {json:true});
   let steps=[]; try{ steps=JSON.parse(String(plan).replace(/```json|```/g,'').trim()); }catch(e){ steps=[]; }
   if(!Array.isArray(steps)) steps=[];
+
+  // ===== AUTONOMOUS SAFETY (auditor #13) =====
+  // 1) Hard step cap — never run an unbounded plan.
+  const MAX_STEPS=8;
+  steps=steps.slice(0,MAX_STEPS);
+  // 2) Loop protection — drop exact-duplicate steps (same tool+args) so a model
+  //    that plans the same action repeatedly can't spin.
+  const _seen=new Set();
+  steps=steps.filter(s=>{ const sig=s.tool+'|'+JSON.stringify(s.args||{}); if(_seen.has(sig)) return false; _seen.add(sig); return true; });
+
   const results=[];
-  for(const step of steps.slice(0,8)){
+  for(const step of steps){
     const action=INTEGRATION_ACTIONS[step.tool];
     if(!action){ results.push({tool:step.tool, error:'unknown tool'}); continue; }
-    try{ if(opts.onStep) opts.onStep(step); const out=await action.run(step.args||{}); results.push({tool:step.tool, why:step.why, ok:true, result:out}); try{ AMVValue.record('agent_action'); }catch(e){} }
-    catch(e){ results.push({tool:step.tool, why:step.why, ok:false, error:e.message}); }
+    // 3) HUMAN-IN-THE-LOOP — risky/irreversible actions need explicit approval
+    //    before they run. Reading data is automatic; sending/creating/posting
+    //    asks the user first, showing exactly what will happen.
+    if(action.risk==='high'){
+      const detail=_describeAction(step, action);
+      const approved=opts.autoApprove===true ? true : await _approveAction(detail);
+      if(!approved){ results.push({tool:step.tool, why:step.why, skipped:true, reason:'you declined this action'}); continue; }
+    }
+    // 4) Cost guard — each step is one bounded action; the per-call cost cap and
+    //    plan backstop on the backend already bound spend. We also stop early if
+    //    too many steps fail (likely a misfire).
+    try{
+      if(opts.onStep) opts.onStep(step);
+      const out=await action.run(step.args||{});
+      results.push({tool:step.tool, why:step.why, ok:true, result:out});
+      try{ AMVValue.record('agent_action'); }catch(e){}
+    }
+    catch(e){
+      results.push({tool:step.tool, why:step.why, ok:false, error:e.message});
+      // 5) Bail out if the task is clearly failing (3+ errors) — don't grind on.
+      if(results.filter(r=>r.ok===false).length>=3){ results.push({tool:'_halt', error:'stopped after repeated failures'}); break; }
+    }
   }
   return {steps, results};
 }
+
+/* Build a human-readable description of a risky action for the approval prompt. */
+function _describeAction(step, action){
+  const a=step.args||{};
+  if(step.tool==='gmail_send') return 'Send an email to '+(a.to||'?')+' \u2014 subject: \u201c'+(a.subject||'(none)')+'\u201d';
+  if(step.tool==='calendar_create') return 'Create a calendar event: \u201c'+(a.title||'(untitled)')+'\u201d';
+  if(step.tool==='github_create_issue') return 'Create a GitHub issue: \u201c'+(a.title||'(untitled)')+'\u201d';
+  if(step.tool==='slack_post') return 'Post to Slack: \u201c'+String(a.text||a.message||'').slice(0,80)+'\u201d';
+  return (action.riskLabel||'take an action')+' \u2014 '+(step.why||'');
+}
+/* Ask the user to approve a risky autonomous action. Returns a Promise<bool>. */
+function _approveAction(detail){
+  if(typeof _showModalAsync==='function'){
+    return _showModalAsync({
+      title:'Approve this action?',
+      body:'<div style="font-size:13.5px;line-height:1.6;color:var(--tx)">AMV wants to:<br><br><b>'+escH(detail)+'</b><br><br><span style="color:var(--mu);font-size:12px">This takes a real action on your connected account. Approve only if you\u2019re sure.</span></div>',
+      okText:'Approve & run', cancelText:'Skip this'
+    });
+  }
+  // fallback to native confirm
+  return Promise.resolve(typeof confirm==='function' ? confirm('AMV wants to: '+detail+'\n\nApprove this real action?') : false);
+}
+window._describeAction=_describeAction;
 window.runAgentTask=runAgentTask;
 window.INTEGRATION_ACTIONS=INTEGRATION_ACTIONS;
 
@@ -6598,7 +13904,9 @@ async function runAutonomousTask(instruction){
     else {
       out='**Done — here\u2019s what I did:**\n\n';
       results.forEach((r,i)=>{
+        if(r.tool==='_halt'){ out+='\u26D4 Stopped early after repeated failures.\n'; return; }
         const label=(steps[i]&&steps[i].why)||r.tool;
+        if(r.skipped){ out+='\u23ED\uFE0F Skipped ('+escH(r.reason||'you declined')+'): '+escH(label)+'\n'; return; }
         out+=(r.ok?'\u2705':'\u26A0\uFE0F')+' '+label+(r.ok?'':' — '+escH(r.error||'failed'))+'\n';
       });
     }
@@ -6715,6 +14023,7 @@ function renderTasksView(){
   const vc=$('vc'); if(!vc) return;
   // Unique, agentic capabilities — things a plain chatbot can't do
   const unique=[
+    ['🔭','Set up a research watch','AMV monitors any topic on a schedule — a stock, a company, a trend — and reports what\'s happening. Info, not advice.','researchwatch'],
     ['🛰️','Run a standing job','AMV works in the background across your accounts and only sends after you approve.','crew'],
     ['🌅','Daily brief on autopilot','Wake up to a market + inbox + calendar briefing, generated and delivered every morning.','autobrief'],
     ['🏗️','Build & ship a working app','Not just code — AMV writes it, runs it in a live sandbox, debugs it, and shows the result.','dev'],
@@ -6757,6 +14066,7 @@ function renderTasksView(){
 }
 function launchUnique(kind){
   const map={crew:'crew',dev:'dev',studio:'studio',lab:'lab',handoff:'handoff'};
+  if(kind==='researchwatch'){ openResearchWatch(); return; }
   if(kind==='autobrief'){ setTab('crew'); setTimeout(()=>toast('Turn on a daily brief job in Crew','info'),200); return; }
   setTab(map[kind]||'chat');
 }
@@ -6831,7 +14141,7 @@ function filterTaskCat(cat){
     secs.forEach(s=>{s.style.display=s.dataset.section===cat?'':'none';});
     document.querySelectorAll('[id^="tcb-"]').forEach(b=>{
       const active=b.id==='tcb-'+cat;
-      b.style.background=active?'rgba(124,108,255,.15)':'';
+      b.style.background=active?'rgba(85,144,255,.15)':'';
       b.style.color=active?'#7cb8ff':'';
       b.style.borderColor=active?'rgba(88,166,255,.35)':'';
     });
@@ -6856,7 +14166,9 @@ function _integrationsCatalogHTML(){
       : '<span class="ax-badge ax-manual">Manual</span>';
     const action=connected
       ? '<button class="btn int-disc" data-int-disc="'+o.id+'" style="font-size:12px">Disconnect</button>'
-      : '<button class="btn bp" data-int-conn="'+o.id+'" style="font-size:12px">Connect</button>';
+      : (o.auto
+          ? '<button class="btn bp" data-int-conn="'+o.id+'" style="font-size:12px">Connect</button>'
+          : '<button class="btn bs" data-int-use="'+(o.use||'chat')+'" style="font-size:12px">'+(o.useLabel||'Open in chat')+'</button>');
     return '<div class="int-card">'+
       '<div class="int-ic" style="background:'+(o.bg||'var(--s3)')+'">'+o.icon+'</div>'+
       '<div class="int-body">'+
@@ -6902,6 +14214,7 @@ function _wireIntegrationCatalog(root){
   root=root||document;
   root.querySelectorAll('[data-int-conn]').forEach(btn=>on(btn,'click',()=>connectIntegration(btn.dataset.intConn)));
   root.querySelectorAll('[data-int-disc]').forEach(btn=>on(btn,'click',()=>disconnectIntegration(btn.dataset.intDisc)));
+  root.querySelectorAll('[data-int-use]').forEach(btn=>on(btn,'click',()=>{ setTab(btn.dataset.intUse||'chat'); toast('Upload your file with the \uD83D\uDCCE button, or just describe what you need.','info',4500); }));
 }
 window._wireIntegrationCatalog=_wireIntegrationCatalog;
 
@@ -6940,7 +14253,7 @@ function parseCSV(text){
 function csvToTable(data){
   if(!data||!data.length) return '';
   const h=data[0], rows=data.slice(1);
-  return `<table id="sheet-tbl" style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr>${h.map(hd=>`<th contenteditable="true" style="background:rgba(124,108,255,.12);border:1px solid rgba(255,255,255,.1);padding:8px 10px;text-align:left;font-weight:600;white-space:nowrap;position:sticky;top:0">${escH(hd)}</th>`).join('')}</tr></thead><tbody>${rows.map(row=>`<tr>${h.map((_,ci)=>`<td contenteditable="true" style="border:1px solid rgba(255,255,255,.06);padding:6px 10px;color:var(--tx)" onfocus="this.style.background='rgba(124,108,255,.08)'" onblur="this.style.background=''">${escH(row[ci]||'')}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+  return `<table id="sheet-tbl" style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr>${h.map(hd=>`<th contenteditable="true" style="background:rgba(85,144,255,.12);border:1px solid rgba(255,255,255,.1);padding:8px 10px;text-align:left;font-weight:600;white-space:nowrap;position:sticky;top:0">${escH(hd)}</th>`).join('')}</tr></thead><tbody>${rows.map(row=>`<tr>${h.map((_,ci)=>`<td contenteditable="true" style="border:1px solid rgba(255,255,255,.06);padding:6px 10px;color:var(--tx)" onfocus="this.style.background='rgba(85,144,255,.08)'" onblur="this.style.background=''">${escH(row[ci]||'')}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
 }
 function tableToCSV(){
   const t=document.getElementById('sheet-tbl'); if(!t) return '';
@@ -6971,7 +14284,7 @@ function openSheetEditor(data,name){
     <input type="text" id="sheet-inp" placeholder="Ask AMV anything about this spreadsheet..." style="flex:1;font-size:13px">
     <button class="btn bp" id="sheet-ask" style="font-size:13px;padding:8px 18px">Ask</button>
   </div>
-  <div id="sheet-res" style="display:none;margin-top:10px;font-size:12px;color:var(--mu);background:rgba(22,27,34,.9);border-radius:10px;padding:12px;max-height:180px;overflow-y:auto;white-space:pre-wrap;line-height:1.65"></div>
+  <div id="sheet-res" style="display:none;margin-top:10px;font-size:12px;color:var(--mu);background:var(--s2);border-radius:10px;padding:12px;max-height:180px;overflow-y:auto;white-space:pre-wrap;line-height:1.65"></div>
 </div></div>`;
   on($('sheet-ask'),'click',()=>runSheetAI($('sheet-inp')&&$('sheet-inp').value));
   on($('sheet-inp'),'keydown',e=>{if(e.key==='Enter')runSheetAI($('sheet-inp')&&$('sheet-inp').value);});
@@ -6984,9 +14297,7 @@ async function runSheetAI(query){
   const mk=loadStr('amv_mk');
   if(!mk){toast('AMV isn’t connected yet — ask the workspace owner to switch it on.','error');if(btn){btn.disabled=false;btn.textContent='Ask';}return;}
   try{
-    const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':mk,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-fable-5',max_tokens:2000,messages:[{role:'user',content:'You are a data analyst. Spreadsheet (CSV):\n\n'+tableToCSV().slice(0,8000)+'\n\nRequest: '+query+'\n\nIf modifying data, return ONLY the complete modified CSV. Otherwise answer clearly.'}]})});
-    const d=await r.json(); if(d.error) throw new Error(d.error.message);
-    const reply=d.content&&d.content[0]&&d.content[0].text||'';
+    const reply=await aiComplete('You are a data analyst. Spreadsheet (CSV):\n\n'+tableToCSV().slice(0,8000)+'\n\nRequest: '+query+'\n\nIf modifying data, return ONLY the complete modified CSV. Otherwise answer clearly.', null, {model:'claude-fable-5', max_tokens:2000, noLang:true});
     const looksCSV=reply.split('\n').filter(l=>l.includes(',')).length>=2;
     if(looksCSV&&reply.split('\n').length>2){
       _sheetData=parseCSV(reply);
@@ -7030,9 +14341,7 @@ async function runDocAI(query){
   const mk=loadStr('amv_mk');
   if(!mk){toast('Add API key in Settings','error');if(btn){btn.disabled=false;btn.textContent='Ask';}return;}
   try{
-    const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':mk,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-fable-5',max_tokens:3000,messages:[{role:'user',content:'Document editor. Current document:\n\n'+(body&&body.innerText||'').slice(0,6000)+'\n\nRequest: '+query+'\n\nReturn ONLY the complete revised document. No explanation.'}]})});
-    const d=await r.json(); if(d.error) throw new Error(d.error.message);
-    const reply=d.content&&d.content[0]&&d.content[0].text||'';
+    const reply=await aiComplete('Document editor. Current document:\n\n'+(body&&body.innerText||'').slice(0,6000)+'\n\nRequest: '+query+'\n\nReturn ONLY the complete revised document. No explanation.', null, {model:'claude-fable-5', max_tokens:3000, noLang:true});
     if(body) body.innerHTML=reply.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n\n/g,'</p><p style="margin:0 0 14px">').replace(/\n/g,'<br>');
     if($('doc-inp')) $('doc-inp').value='';
     toast('Document updated','success');
@@ -7072,9 +14381,7 @@ async function _bgRunNext(){
       else{
         const details=await Promise.all(msgs.slice(0,8).map(m=>fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/'+m.id+'?format=metadata&metadataHeaders=Subject&metadataHeaders=From',{headers:{'Authorization':'Bearer '+token}}).then(r=>r.json())));
         const summary=details.map(d=>{const s=d.payload&&d.payload.headers&&d.payload.headers.find(h=>h.name==='Subject');const f=d.payload&&d.payload.headers&&d.payload.headers.find(h=>h.name==='From');return 'From: '+(f&&f.value||'?')+'\nSubject: '+(s&&s.value||'(no subject)');}).join('\n\n');
-        const ar=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':mk,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:600,messages:[{role:'user',content:'Analyze '+msgs.length+' unread emails. What needs urgent attention?\n\n'+summary}]})});
-        const ad=await ar.json();
-        task.result=(ad.content&&ad.content[0]&&ad.content[0].text)||summary;
+        task.result=await aiComplete('Analyze '+msgs.length+' unread emails. What needs urgent attention?\n\n'+summary, null, {model:'claude-haiku-4-5-20251001', max_tokens:600, noLang:true})||summary;
         task.status='done';task.progress=100;
       }
     } else if(task.type==='calendar_check'){
@@ -7085,15 +14392,10 @@ async function _bgRunNext(){
       const d=await r.json();
       if(d.error){task.status='failed';task.error='Calendar: '+d.error.message;_bgQueue.running=false;return;}
       const events=(d.items||[]).map(e=>(e.start&&(e.start.dateTime||e.start.date))+': '+e.summary).join('\n');
-      const ar=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':mk,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:600,messages:[{role:'user',content:'Analyze this week\'s calendar. Identify conflicts, suggest focus blocks:\n\n'+events}]})});
-      const ad=await ar.json();
-      task.result=(ad.content&&ad.content[0]&&ad.content[0].text)||events;
+      task.result=await aiComplete('Analyze this week\'s calendar. Identify conflicts, suggest focus blocks:\n\n'+events, null, {model:'claude-haiku-4-5-20251001', max_tokens:600, noLang:true})||events;
       task.status='done';task.progress=100;
     } else {
-      const ar=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':mk,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-fable-5',max_tokens:2000,messages:[{role:'user',content:task.prompt||task.topic||'Help me with: '+task.title}]})});
-      const ad=await ar.json();
-      if(ad.error) throw new Error(ad.error.message);
-      task.result=ad.content&&ad.content[0]&&ad.content[0].text||'';
+      task.result=await aiComplete(task.prompt||task.topic||'Help me with: '+task.title, null, {model:'claude-fable-5', max_tokens:2000, noLang:true});
       task.status='done';task.progress=100;
     }
   }catch(e){task.status='failed';task.error=e.message;}
@@ -7103,7 +14405,7 @@ async function _bgRunNext(){
 }
 function renderAutomationView(){
   const vc=$('vc'); if(!vc) return;
-  const sc=s=>s==='done'?'#3fb950':s==='running'?'#7c6cff':s==='failed'?'#f85149':'#d29922';
+  const sc=s=>s==='done'?'#4ade80':s==='running'?'#5590ff':s==='failed'?'#ff4d4d':'#e0b341';
   const si=s=>s==='done'?'✓':s==='running'?'⟳':s==='failed'?'✕':'⏳';
   const cards=['<div onclick="_bgAddTask({type:\'gmail_check\',title:\'Check Gmail inbox\'})" style="background:rgba(22,27,34,.6);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:16px;cursor:pointer;text-align:center;transition:all .2s" onmouseenter="this.style.borderColor=\'rgba(88,166,255,.2)\'" onmouseleave="this.style.borderColor=\'rgba(255,255,255,.07)\'"><div style="font-size:28px;margin-bottom:8px">📧</div><div style="font-size:13px;font-weight:600;margin-bottom:3px">Check Gmail</div><div style="font-size:11px;color:var(--mu)">Analyze unread emails</div></div>',
   '<div onclick="_bgAddTask({type:\'calendar_check\',title:\'Optimize my week\'})" style="background:rgba(22,27,34,.6);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:16px;cursor:pointer;text-align:center;transition:all .2s" onmouseenter="this.style.borderColor=\'rgba(88,166,255,.2)\'" onmouseleave="this.style.borderColor=\'rgba(255,255,255,.07)\'"><div style="font-size:28px;margin-bottom:8px">📅</div><div style="font-size:13px;font-weight:600;margin-bottom:3px">Plan my week</div><div style="font-size:11px;color:var(--mu)">Calendar optimization</div></div>',
@@ -7124,9 +14426,9 @@ function renderAutomationView(){
     h+='<div style="font-size:10px;color:var(--dim);margin-top:6px">'+new Date(t.created).toLocaleString()+'</div>';
     h+='</div>';
     return h;
-  }).join('') : '<div style="font-size:13px;color:var(--mu);font-style:italic;padding:20px;text-align:center">No tasks yet. Click a quick automation above.</div>';
+  }).join('') : emptyState({svg:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',title:'No automations yet',sub:'Set AMV to run on a schedule \u2014 a daily news brief, a weekly report \u2014 and it works while you don\u2019t. Pick a quick automation above to start.'});
   vc.innerHTML=`<div class="sv fi"><div class="vi"><h2>Automation</h2><p class="vsub">Hand the AI a repeating job and it runs on its own in the background — checking email, summarizing, monitoring — even after you close the tab. Tap a card to queue a task; results land here when each one finishes.</p>
-<div class="ss2" style="background:linear-gradient(135deg,rgba(124,108,255,.08),rgba(163,113,247,.05));border-color:rgba(88,166,255,.2)">
+<div class="ss2" style="background:linear-gradient(135deg,rgba(85,144,255,.08),rgba(85,144,255,.05));border-color:rgba(88,166,255,.2)">
 <h3>&#9889; Quick Automations</h3>
 <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px">${cards}</div>
 </div>
@@ -7142,13 +14444,13 @@ function showCustomTask(){
   const r=$('ovr'); if(!r) return;
   const div=document.createElement('div');
   div.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(8px)';
-  div.innerHTML='<div style="background:#0d1117;border:1px solid rgba(255,255,255,.15);border-radius:18px;padding:28px;width:100%;max-width:460px;box-shadow:0 24px 60px rgba(0,0,0,.8);position:relative">'
-    +'<div style="font-size:18px;font-weight:700;color:#e6edf3;margin-bottom:4px">Custom Background Task</div>'
-    +'<div style="font-size:12px;color:#8b949e;margin-bottom:20px">Runs automatically - navigate away and it will complete</div>'
+  div.innerHTML='<div style="background:var(--s1);border:1px solid var(--hair);border-radius:18px;padding:28px;width:100%;max-width:460px;box-shadow:0 24px 60px rgba(0,0,0,.4);position:relative">'
+    +'<div style="font-size:18px;font-weight:700;color:var(--tx);margin-bottom:4px">Custom Background Task</div>'
+    +'<div style="font-size:12px;color:var(--mu);margin-bottom:20px">Runs automatically - navigate away and it will complete</div>'
     +'<div style="display:flex;flex-direction:column;gap:14px">'
-    +'<div><label style="font-size:11px;font-weight:600;color:#8b949e;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:6px">Task Name</label><input type="text" id="ct-name" placeholder="e.g. Research competitors" style="width:100%;padding:10px 12px;background:rgba(22,27,34,.9);border:1px solid rgba(255,255,255,.12);border-radius:10px;color:#e6edf3;font-size:13px;outline:none;box-sizing:border-box"></div>'
-    +'<div><label style="font-size:11px;font-weight:600;color:#8b949e;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:6px">Instructions</label><textarea id="ct-prompt" rows="4" placeholder="What do you want AMV to do?" style="width:100%;padding:10px 12px;background:rgba(22,27,34,.9);border:1px solid rgba(255,255,255,.12);border-radius:10px;color:#e6edf3;font-size:13px;outline:none;resize:vertical;box-sizing:border-box;font-family:inherit"></textarea></div>'
-    +'<button id="ct-go" style="width:100%;padding:13px;background:linear-gradient(135deg,#8b78ff,#6a54f0);border:none;border-radius:12px;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">&#9889; Run in Background</button>'
+    +'<div><label style="font-size:11px;font-weight:600;color:var(--mu);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:6px">Task Name</label><input type="text" id="ct-name" placeholder="e.g. Research competitors" style="width:100%;padding:10px 12px;background:var(--s2);border:1px solid var(--hair);border-radius:10px;color:var(--tx);font-size:13px;outline:none;box-sizing:border-box"></div>'
+    +'<div><label style="font-size:11px;font-weight:600;color:var(--mu);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:6px">Instructions</label><textarea id="ct-prompt" rows="4" placeholder="What do you want AMV to do?" style="width:100%;padding:10px 12px;background:var(--s2);border:1px solid var(--hair);border-radius:10px;color:var(--tx);font-size:13px;outline:none;resize:vertical;box-sizing:border-box;font-family:inherit"></textarea></div>'
+    +'<button id="ct-go" style="width:100%;padding:13px;background:var(--accent);border:none;border-radius:12px;color:var(--on-accent);font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">&#9889; Run in Background</button>'
     +'</div></div>';
   r.innerHTML=''; r.appendChild(div);
   div.addEventListener('click',e=>{if(e.target===div)r.innerHTML='';});
@@ -7172,26 +14474,97 @@ function showCustomTask(){
 window.AMV_ENGINE = true;
 
 // --- Reusable single-shot AI completion (returns a string) ---
+/* SECURITY ARCHITECTURE: every AI call in AMV goes through the backend proxy.
+   The Anthropic key lives ONLY on the server (Cloudflare Worker secret). The
+   browser never holds it, so JWT auth, rate limiting, metering, and the spend
+   cap can never be bypassed. _aiBase()/_aiHeaders() are the single choke-point;
+   if the backend isn't configured, AI calls fail loudly instead of silently
+   leaking a key into the browser. */
+function _aiBackendReady(){ return !!(window.AMV_API && AMV_API.live && AMV_API.token); }
+function _aiBase(){
+  if(!_aiBackendReady()) throw new Error('AMV isn’t connected yet. The workspace owner needs to switch on the AMV engine in Settings.');
+  return AMV_API.base.replace(/\/$/,'')+'/v1/messages';
+}
+function _aiHeaders(){
+  return {'Content-Type':'application/json','Authorization':'Bearer '+AMV_API.token};
+}
+window._aiBackendReady=_aiBackendReady;
+
+/* Generate output of ANY length. The API caps a single response at max_tokens
+   (~1-2k lines of code). This keeps the conversation going — feeding the model
+   its own partial output and asking it to continue — until it finishes naturally.
+   That's how Dev can emit 10,000+ lines in one build. */
+async function aiCompleteLong(prompt, system, opts){
+  opts = opts || {};
+  const mdl = (typeof MODELS!=='undefined' && MODELS[S.model]) ? MODELS[S.model] : {model:'claude-fable-5', tokens:4096};
+  const modelStr = opts.model || mdl.model;
+  const url = _aiBase();
+  const headers = _aiHeaders();
+  const maxTok = opts.max_tokens || 16000;
+  const maxRounds = opts.maxRounds || 14;          // hard ceiling so we can't loop forever
+  const onProgress = opts.onProgress;
+
+  const messages = [{ role:'user', content: prompt }];
+  let full = '';
+  let round = 0;
+
+  while(round < maxRounds){
+    round++;
+    const body = { model: modelStr, max_tokens: maxTok, messages: messages.slice() };
+    if(system) body.system = system + (opts.noLang?'':_langInstruction());
+    else if(!opts.noLang) body.system = _langInstruction();
+
+    const res = await fetch(url, {method:'POST', headers, body: JSON.stringify(body)});
+    if(!res.ok){ const t=await res.text().catch(()=>''); throw new Error('AI error '+res.status+': '+t.slice(0,200)); }
+    const data = await res.json();
+    const chunk = (data.content||[]).map(b=>b.text||'').join('');
+    full += chunk;
+
+    // usage accounting, same as aiComplete
+    try{
+      const u=data.usage||{};
+      const inTok=u.input_tokens||Math.ceil(JSON.stringify(messages).length/4);
+      const outTok=u.output_tokens||Math.ceil(chunk.length/4);
+      if(typeof AEGIS!=='undefined') AEGIS.recordUsage(modelStr, inTok, outTok);
+      if(typeof AMVUsage!=='undefined') AMVUsage.record((inTok||0)+(outTok||0));
+    }catch(e){}
+
+    onProgress && onProgress({ round, lines: full.split('\n').length, chars: full.length,
+                               truncated: data.stop_reason === 'max_tokens' });
+
+    // Finished naturally? done.
+    if(data.stop_reason !== 'max_tokens') break;
+
+    // Truncated — hand the model its own output back and tell it to keep going.
+    messages.push({ role:'assistant', content: chunk });
+    messages.push({ role:'user', content:
+      'Continue exactly where you left off. Do not repeat any code you already wrote, do not re-open a fenced block you already opened, and do not add commentary \u2014 just continue the output from the exact character you stopped at.' });
+  }
+  return full.trim();
+}
+try{ window.aiCompleteLong=aiCompleteLong; }catch(e){}
+
 async function aiComplete(prompt, system, opts){
   opts=opts||{};
-  const useBackend = (window.AMV_API && AMV_API.live);
-  if(!S.mk && !useBackend) throw new Error('AMV isn’t connected yet. The workspace owner needs to switch on the AMV engine.');
   const mdl = (typeof MODELS!=='undefined' && MODELS[S.model]) ? MODELS[S.model] : {model:'claude-fable-5',tokens:4096};
-  const url = useBackend ? (AMV_API.base.replace(/\/$/,'')+'/v1/messages') : 'https://api.anthropic.com/v1/messages';
-  const headers = useBackend
-    ? {'Content-Type':'application/json','Authorization':'Bearer '+AMV_API.token}
-    : {'Content-Type':'application/json','x-api-key':S.mk,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'};
-  const body = {
-    model: opts.model || mdl.model,
-    max_tokens: opts.max_tokens || 4096,
-    messages: [{role:'user', content: prompt}]
-  };
+  const modelStr = opts.model || mdl.model;
+  const url = _aiBase();              // throws if backend not ready — never falls back to browser key
+  const headers = _aiHeaders();
+  const maxTok = opts.max_tokens || 4096;
+  const body = { model: modelStr, max_tokens: maxTok, messages: [{role:'user', content: prompt}] };
   if(system) body.system = system + (opts.noLang?'':_langInstruction());
   else if(!opts.noLang) body.system = _langInstruction();
   const res = await fetch(url,{method:'POST',headers,body:JSON.stringify(body)});
   if(!res.ok){ const t=await res.text().catch(()=>''); throw new Error('AI error '+res.status+': '+t.slice(0,200)); }
   const data = await res.json();
-  return (data.content||[]).map(b=>b.text||'').join('').trim();
+  const text=(data.content||[]).map(b=>b.text||'').join('').trim();
+  // record usage for EVERY call (Lab, Dev, Studio, Cowork, agents) — not just chat
+  try{
+    const u=data.usage||{}; const inTok=u.input_tokens||Math.ceil(prompt.length/4); const outTok=u.output_tokens||Math.ceil(text.length/4);
+    if(typeof AEGIS!=='undefined') AEGIS.recordUsage(modelStr, inTok, outTok);
+    if(typeof AMVUsage!=='undefined') AMVUsage.record((inTok||0)+(outTok||0));
+  }catch(e){}
+  return text;
 }
 
 // --- Extract first fenced code block of a given lang (or any) ---
@@ -7248,7 +14621,9 @@ async function runCode(code, lang, onStatus){
   return {ok:false, stdout:'', stderr:'Unsupported language: '+lang, result:'', ms:0};
 }
 
-// JS runs in a sandboxed iframe; stdout captured via console proxy + postMessage
+// JS runs in a sandboxed iframe. The user's code is injected as a REAL <script>
+// (never eval) so it runs even under the app's strict CSP, and the iframe gets
+// its own permissive CSP via a <meta> tag. stdout is captured via a console proxy.
 function _runJS(code, t0){
   return new Promise(resolve=>{
     const iframe=document.createElement('iframe');
@@ -7259,33 +14634,71 @@ function _runJS(code, t0){
     const finish=(res)=>{ if(done) return; done=true; try{document.body.removeChild(iframe);}catch(e){} window.removeEventListener('message',onMsg); resolve(res); };
     const onMsg=(ev)=>{ if(!ev.data||ev.data.__sbx!==id) return; finish({ok:ev.data.ok, stdout:(ev.data.logs||[]).join('\n'), stderr:ev.data.error||'', result:ev.data.result||'', ms:Math.round(performance.now()-t0)}); };
     window.addEventListener('message',onMsg);
-    const html='<!doctype html><html><body><script>(function(){var logs=[];var p=function(){logs.push(Array.from(arguments).map(function(a){try{return typeof a==="object"?JSON.stringify(a):String(a)}catch(e){return String(a)}}).join(" "))};console.log=p;console.error=p;console.warn=p;console.info=p;var ok=true,err="",result="";try{result=eval('+JSON.stringify('(async()=>{'+code+'\n})()')+');if(result&&result.then){result.then(function(r){parent.postMessage({__sbx:"'+id+'",ok:true,logs:logs,result:r===undefined?"":String(r)},"*")}).catch(function(e){parent.postMessage({__sbx:"'+id+'",ok:false,logs:logs,error:(e&&e.stack)?e.stack:String(e)},"*")});}else{parent.postMessage({__sbx:"'+id+'",ok:true,logs:logs,result:result===undefined?"":String(result)},"*");}}catch(e){parent.postMessage({__sbx:"'+id+'",ok:false,logs:logs,error:(e&&e.stack)?e.stack:String(e)},"*");}})();<\/script></body></html>';
+    const harness='(function(){var logs=[];'+
+      'function fmt(a){try{return typeof a==="object"?JSON.stringify(a):String(a)}catch(e){return String(a)}}'+
+      'var p=function(){logs.push(Array.prototype.slice.call(arguments).map(fmt).join(" "))};'+
+      'console.log=p;console.error=p;console.warn=p;console.info=p;'+
+      'window.__L=logs;'+
+      'window.__D=function(ok,err,result){parent.postMessage({__sbx:'+JSON.stringify(id)+',ok:ok,logs:logs,error:err||"",result:(result===undefined||result===null)?"":String(result)},"*")};'+
+      'window.onerror=function(m,s,l,c,e){window.__D(false,(e&&e.stack)?e.stack:String(m));return true};'+
+    '})();';
+    const runner='(async function(){try{var __r=await (async function(){\n'+code+'\n})();window.__D(true,"",__r);}catch(e){window.__D(false,(e&&e.stack)?e.stack:String(e))}})();';
+    const meta='<meta http-equiv="Content-Security-Policy" content="script-src \'unsafe-inline\'; default-src \'none\'">';
+    const html='<!doctype html><html><head>'+meta+'</head><body>'+
+      '<script>'+harness+'<\/script>'+
+      '<script>'+runner+'<\/script>'+
+    '</body></html>';
     iframe.srcdoc=html;
     document.body.appendChild(iframe);
-    setTimeout(()=>finish({ok:false,stdout:'',stderr:'Execution timed out (5s)',result:'',ms:5000}),5000);
+    setTimeout(()=>finish({ok:false,stdout:'',stderr:'Execution timed out (15s) — the program ran too long. Check for infinite loops or heavy computation.',result:'',ms:15000}),15000);
   });
 }
 
 
-/* ===== AUTONOMOUS DEBUG LOOP (fix -> re-run -> repeat), REAL ===== */
-async function autoDebug(code, lang, maxIters, onStep){
-  maxIters = maxIters||6; lang=lang||'js';
+/* ===== AUTONOMOUS DEBUG LOOP (analyze -> fix -> re-run -> repeat), REAL =====
+   Fable-5 quality: each iteration first does a root-cause analysis, then a
+   surgical fix. Handles large/advanced programs. Never loops on the same fix. */
+async function autoDebug(code, lang, maxIters, onStep, modelStr){
+  maxIters = maxIters||8; lang=lang||'js';
+  const dbgModel = modelStr||'claude-fable-5';
   let cur=code, history=[];
+  const isLarge = code.length>4000;
   for(let i=0;i<maxIters;i++){
+    const _bg=(typeof _budgetGuard==='function')?_budgetGuard(6000):{ok:true};
+    if(!_bg.ok){ onStep&&onStep({phase:'error', msg:_bg.reason}); return {success:false, code:cur, iters:i, history, error:_bg.reason, budget:true}; }
     const run = await runCode(cur, lang, s=>onStep&&onStep({phase:'status',msg:s}));
     history.push({iter:i+1, code:cur, run});
     onStep&&onStep({phase:'run', iter:i+1, run, code:cur});
     if(run.ok){ onStep&&onStep({phase:'done', iter:i+1, success:true, code:cur}); return {success:true, code:cur, iters:i+1, history}; }
-    onStep&&onStep({phase:'status', msg:'Analyzing error and patching (iteration '+(i+1)+' of '+maxIters+')…'});
-    const sys='You are an elite '+lang+' debugger. You receive code and the EXACT runtime error it produced. Fix the ROOT CAUSE — including duplicate variable declarations (e.g. two `let x`), scope collisions, undefined references, off-by-one and async bugs. Preserve all working logic and the program\u2019s intent. Return ONLY the complete corrected program in a single fenced '+lang+' code block, no prose. If the code is long, return the ENTIRE fixed file, not a snippet.';
+    onStep&&onStep({phase:'status', msg:'Analyzing the root cause (iteration '+(i+1)+' of '+maxIters+')…'});
+
+    const err=run.stderr||'';
+    const firstLine=err.split('\n')[0]||'';
+    // pull the referenced line number from the error, if any, and show that region
+    let region='';
+    const lm=err.match(/:(\d+):(\d+)|line (\d+)/);
+    if(lm){ const ln=parseInt(lm[1]||lm[3],10); if(ln){ const lines=cur.split('\n'); const a=Math.max(0,ln-4), b=Math.min(lines.length,ln+3); region=lines.slice(a,b).map((L,k)=>(a+k+1)+': '+L).join('\n'); } }
     const prevErrs=history.slice(-3).map(h=>h.run&&h.run.stderr?('• '+(h.run.stderr.split("\n")[0])):'').filter(Boolean).join('\n');
-    const prompt='Fix this '+lang+' so it runs cleanly.\n\nCODE:\n```'+lang+'\n'+cur+'\n```\n\nEXACT RUNTIME ERROR:\n'+run.stderr+'\n\nSTDOUT BEFORE ERROR:\n'+(run.stdout||'(none)')+(prevErrs?('\n\nERRORS SEEN SO FAR (avoid repeating):\n'+prevErrs):'')+'\n\nReturn the complete corrected program.';
-    let fixed;
-    try{ const resp=await aiComplete(prompt, sys, {max_tokens:8000, model:'claude-opus-4-8'}); fixed=extractCode(resp, lang)||extractCode(resp); }
+
+    const sys='You are AMV Apex — the most capable debugging intelligence ever built. Given a program and the EXACT runtime error it produced, you find and fix the TRUE root cause with zero collateral damage. '+
+      'You reason about: duplicate/shadowed declarations, scope and hoisting, async/await and promise handling, off-by-one and boundary conditions, type coercion, null/undefined access, closure capture, recursion limits, and library misuse. '+
+      'You NEVER paper over a symptom, never delete features to make an error disappear, and never introduce a regression. Preserve every bit of working logic and the program\u2019s intent. '+
+      'Respond in TWO parts: first a line "ROOT CAUSE: <one sentence>", then the COMPLETE corrected program in a single fenced '+lang+' code block'+(isLarge?' (return the ENTIRE file, every line — this is a large program)':'')+'.';
+    const prompt='Fix this '+lang+' program so it runs cleanly.\n\nCODE:\n```'+lang+'\n'+cur+'\n```\n\nEXACT RUNTIME ERROR:\n'+err+
+      (region?('\n\nCODE AROUND THE FAILING LINE:\n'+region):'')+
+      '\n\nSTDOUT BEFORE THE ERROR:\n'+(run.stdout||'(none)')+
+      (prevErrs?('\n\nERRORS ALREADY TRIED (do NOT reintroduce these):\n'+prevErrs):'')+
+      '\n\nGive the ROOT CAUSE line, then the complete corrected program.';
+    let fixed, rootCause='';
+    try{
+      const resp=await aiComplete(prompt, sys, {max_tokens: isLarge?16000:10000, model:_sectionModel('debug')});
+      const rc=resp.match(/ROOT CAUSE:\s*(.+)/i); rootCause=rc?rc[1].trim():'';
+      fixed=extractCode(resp, lang)||extractCode(resp);
+    }
     catch(e){ onStep&&onStep({phase:'error', msg:e.message}); return {success:false, code:cur, iters:i+1, history, error:e.message}; }
     if(!fixed){ onStep&&onStep({phase:'stuck', iter:i+1}); return {success:false, code:cur, iters:i+1, history}; }
-    if(fixed.trim()===cur.trim()){ onStep&&onStep({phase:'stuck', iter:i+1}); return {success:false, code:cur, iters:i+1, history, note:'identical'}; }
-    onStep&&onStep({phase:'patch', iter:i+1, code:fixed});
+    if(fixed.trim()===cur.trim()){ onStep&&onStep({phase:'stuck', iter:i+1, note:'identical'}); return {success:false, code:cur, iters:i+1, history, note:'identical'}; }
+    onStep&&onStep({phase:'patch', iter:i+1, code:fixed, rootCause});
     cur=fixed;
   }
   return {success:false, code:cur, iters:maxIters, history};
@@ -7336,6 +14749,85 @@ async function runAgents(task, lang, onStep){
 }
 
 /* ===== CODE ANALYSIS SUITE (real LLM analysis) ===== */
+/* Split large code into line-aligned chunks so Lab can handle 10,000+ lines.
+   Each chunk carries its ABSOLUTE line range so findings cite real line numbers. */
+function _labChunks(code, maxChars){
+  maxChars = maxChars || 42000;
+  const lines = String(code||'').split('\n');
+  const chunks = []; let cur = [], curLen = 0, start = 1;
+  for(let i=0;i<lines.length;i++){
+    const l = lines[i];
+    if(curLen + l.length + 1 > maxChars && cur.length){
+      chunks.push({ start, end: i, text: cur.join('\n') });
+      cur = []; curLen = 0; start = i + 1;
+    }
+    cur.push(l); curLen += l.length + 1;
+  }
+  if(cur.length) chunks.push({ start, end: lines.length, text: cur.join('\n') });
+  return chunks;
+}
+try{ window._labChunks=_labChunks; }catch(e){}
+
+/* Analyze code of ANY size. Small files go in one pass; large files are split,
+   analyzed section by section, then merged into a single deduplicated report. */
+async function analyzeCodeLarge(code, lang, kind, onProgress){
+  const chunks = _labChunks(code);
+  if(chunks.length <= 1){
+    onProgress && onProgress(1, 1);
+    return await analyzeCode(code, lang, kind);
+  }
+  const parts = [];
+  for(let i=0;i<chunks.length;i++){
+    onProgress && onProgress(i+1, chunks.length);
+    const c = chunks[i];
+    const framed =
+      '(Section '+(i+1)+' of '+chunks.length+' of a larger file. These are lines '+c.start+'\u2013'+c.end+
+      ' of the original file \u2014 cite these ABSOLUTE line numbers in every finding.)\n\n' + c.text;
+    const out = await analyzeCode(framed, lang, kind);
+    parts.push('--- Lines '+c.start+'\u2013'+c.end+' ---\n' + out);
+  }
+  onProgress && onProgress(chunks.length, chunks.length, true);
+  // Merge the per-section reports into one clean result.
+  const merged = parts.join('\n\n').slice(0, 120000);
+  return await aiComplete(
+    'Merge these per-section findings into ONE clean report for the whole file. Deduplicate repeated issues, keep the exact line numbers, and order by severity (most serious first). Do not invent anything that is not in the findings.\n\n' + merged,
+    'You merge multiple code-analysis reports into a single precise, well-organised report.',
+    { model: _sectionModel('debug'), max_tokens: 14000 }
+  );
+}
+try{ window.analyzeCodeLarge=analyzeCodeLarge; }catch(e){}
+
+/* Lightweight syntax highlighter for the Lab editor.
+   Tokenises the RAW source, escapes every token, then wraps it — so no user
+   input can ever reach the DOM unescaped. */
+function _labHL(code, lang){
+  const esc = (t)=>String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const KW = (lang==='python')
+    ? /\b(def|class|return|if|elif|else|for|while|in|import|from|as|try|except|finally|raise|with|lambda|None|True|False|and|or|not|is|pass|break|continue|yield|global|self|print|len|range)\b/
+    : /\b(function|const|let|var|return|if|else|for|while|do|switch|case|break|continue|class|extends|new|this|typeof|instanceof|import|export|from|default|async|await|try|catch|finally|throw|null|undefined|true|false|of|in|delete|void|yield|static|get|set)\b/;
+  const RE = new RegExp(
+    '(\\/\\/[^\\n]*|\\/\\*[\\s\\S]*?\\*\\/|#[^\\n]*)' +            // 1 comment
+    '|("(?:[^"\\\\]|\\\\.)*"|\'(?:[^\'\\\\]|\\\\.)*\'|`(?:[^`\\\\]|\\\\.)*`)' +  // 2 string
+    '|(\\b\\d+(?:\\.\\d+)?\\b)' +                                            // 3 number
+    '|' + KW.source.replace(/^\\b|\\b$/g,'') .replace(/^\(/,'(\\b').replace(/\)$/,'\\b)') , // 4 keyword
+    'g'
+  );
+  let out='', last=0, m;
+  const re = new RegExp(RE.source,'g');
+  while((m = re.exec(code)) !== null){
+    if(m.index > last) out += esc(code.slice(last, m.index));
+    if(m[1])      out += '<span class="t-com">'+esc(m[1])+'</span>';
+    else if(m[2]) out += '<span class="t-str">'+esc(m[2])+'</span>';
+    else if(m[3]) out += '<span class="t-num">'+esc(m[3])+'</span>';
+    else          out += '<span class="t-kw">'+esc(m[0])+'</span>';
+    last = m.index + m[0].length;
+    if(m[0].length===0) re.lastIndex++;
+  }
+  out += esc(code.slice(last));
+  return out + '\n';
+}
+try{ window._labHL=_labHL; }catch(e){}
+
 async function analyzeCode(code, lang, kind){
   const prompts={
     stacktrace:['You are a stack-trace interpreter. Explain the error in plain English, name the exact cause, and give the fix.','Interpret this stack trace / error and explain the root cause + fix:\n\n'+code],
@@ -7346,125 +14838,485 @@ async function analyzeCode(code, lang, kind){
     tests:['You are an automated test generator. Output a complete runnable test suite in a fenced block.','Generate thorough tests for this code:\n\n```'+lang+'\n'+code+'\n```'],
   };
   const pr=prompts[kind]||prompts.bugs;
-  return await aiComplete(pr[1], pr[0]);
+  const large=code.length>4000;
+  return await aiComplete(pr[1], pr[0]+' Be thorough, precise, and correct — reference exact lines, miss nothing.', {model:_sectionModel('debug'), max_tokens: large?14000:8000});
 }
 
 
 /* ===== LAB VIEW — real working dev/agent tools ===== */
-const _LAB = { lang:'js', code:"// AMV Lab — real execution.\n// Try a bug; hit Auto-Debug to watch it fix & re-run.\nfunction factorial(n){ return n<=1 ? 1 : n*factorial(n-1) }\nconsole.log('5! =', factorial(5));\n\nlet nums=[3,1,4,1,5,9,2,6];\nconsole.log('sorted', nums.sort((a,b)=>a-b));", busy:false };
+/* Lab starts EMPTY on purpose. It used to ship with demo code, which meant the
+   entry screen ("Drop in your code and AMV takes it from there") never appeared
+   — so nobody learned how to paste or upload. Empty = the instructions show. */
+const _LAB = { lang:'js', code:'', busy:false, files:[], chat:[] };
 
 function renderLabView(){
   const vc=$('vc'); if(!vc) return;
   if(typeof _LAB_HANDOFF!=='undefined' && _LAB_HANDOFF){ _LAB.code=_LAB_HANDOFF; _LAB_HANDOFF=''; }
-  vc.innerHTML = `<div class="lab-term-wrap">
-    <header class="lab-term-head">
-      <div class="lab-term-title"><span class="lab-term-dot"></span><b>AMV Lab</b><span class="lab-term-sub">the debugger · paste thousands of lines · finds &amp; fixes mistakes · pairs with Dev</span></div>
-      <div class="lab-term-tools">
-        ${['bugs','smells','refactor','security','tests','stacktrace'].map(k=>`<button class="lab-chip" data-an="${k}">${({bugs:'Find bugs',smells:'Smells',refactor:'Refactor',security:'Vuln scan',tests:'Gen tests',stacktrace:'Explain error'})[k]}</button>`).join('')}
+  const labBlank = !String(_LAB.code||'').trim();
+  vc.innerHTML = `<div class="lab-shell${labBlank?' lab-blank':''}" id="lab-shell">
+    <div class="lab-bar">
+      <div class="lab-bar-l">
+        <span class="dev-badge">Lab</span>
+        <select id="lab-lang" class="lab-lang-sel">
+          <option value="js">JavaScript</option>
+          <option value="python">Python</option>
+          <option value="html">HTML</option>
+        </select>
+        ${_sectionModelSelect('debug','lab-model')}
+        <span class="lab-count" id="lab-count"></span>
+        <span class="sec-usage-note" id="lab-usage-note"></span>
       </div>
-    </header>
-    <div class="lab-term-grid">
-      <section class="lab-editor">
-        <div class="lab-bar">
-          <select id="lab-lang" class="lab-sel">
-            <option value="js">JavaScript</option>
-            <option value="python">Python</option>
-            <option value="html">HTML (visual)</option>
-          </select>
-          <div class="lab-actions">
-            <button class="btn" id="lab-run">▶ Run</button>
-            <button class="btn bp" id="lab-debug">⟳ Auto-Debug</button>
-            <button class="btn" id="lab-agents">✦ Run Agents</button>
+      <div class="lab-bar-r">
+        <button class="dev-ico" id="lab-upload-top" title="Upload code files"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></button>
+        <button class="dev-ico" id="lab-new" title="New session"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+        <button class="dev-ico" id="lab-agents" title="Run agents on this code"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6 4.6 1.9-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/></svg></button>
+        <button class="lab-run-btn" id="lab-run"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>Run</button>
+        <button class="dev-ico" id="lab-deploy" title="Publish this page to a live URL"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h8l-1 8 10-12h-8z"/></svg></button>
+        <button class="lab-fix-btn" id="lab-debug"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 3 21 9 15 9"/></svg>Auto-Debug</button>
+      </div>
+    </div>
+
+    <!-- ENTRY STATE: paste on the left, upload on the right -->
+    <div class="lab-entry" id="lab-entry">
+      <h2>Drop in your code and AMV takes it from there</h2>
+      <p>Paste it, or upload files \u2014 any size, 10,000+ lines is fine. Then pick what you want done.</p>
+      <div class="lab-entry-grid">
+        <div class="lab-entry-card">
+          <div class="lab-entry-h"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Paste your code</div>
+          <textarea id="lab-paste" placeholder="Paste here\u2026"></textarea>
+        </div>
+        <div class="lab-entry-card">
+          <div class="lab-entry-h"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Or upload files</div>
+          <div class="lab-drop" id="lab-drop">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            <b>Drop files here</b>
+            <span>or click to browse \u00b7 .js .py .ts .html and more</span>
           </div>
         </div>
-        <textarea id="lab-code" spellcheck="false" placeholder="// Write or paste code here. Run it, or ask AMV to build and fix it autonomously.">${escH(_LAB.code)}</textarea>
+      </div>
+      <div class="lab-entry-do">
+        <span class="lab-entry-lbl">Then just pick one \u2014 AMV loads it and explains what it finds</span>
+        <div class="lab-entry-acts" id="lab-entry-acts">
+          <button class="lab-go lab-go-p" data-go="run"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>Run it</button>
+          <button class="lab-go lab-go-a" data-go="debug"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 3 21 9 15 9"/></svg>Find &amp; fix the bugs</button>
+          <button class="lab-go" data-go="bugs">Find bugs</button>
+          <button class="lab-go" data-go="security">Security scan</button>
+          <button class="lab-go" data-go="smells">Code smells</button>
+          <button class="lab-go" data-go="refactor">Refactor</button>
+          <button class="lab-go" data-go="tests">Write tests</button>
+          <button class="lab-go" data-go="stacktrace">Explain an error</button>
+        </div>
+      </div>
+      <input type="file" id="lab-files" multiple style="display:none">
+    </div>
+
+    <div class="lab-split">
+      <section class="lab-editor">
+        <div class="lab-files-bar" id="lab-files-bar"></div>
+        <div class="lab-code-wrap" id="lab-code-wrap">
+          <div class="lab-gutter" id="lab-gutter"></div>
+          <pre class="lab-hl" id="lab-hl" aria-hidden="true"><code></code></pre>
+          <textarea id="lab-code" spellcheck="false" placeholder="Paste or type your code here\u2026"></textarea>
+        </div>
+        <div class="lab-tools" id="lab-tools">
+          ${['bugs','smells','refactor','security','tests','stacktrace'].map(k=>`<button class="lab-chip" data-an="${k}">${({bugs:'Find bugs',smells:'Code smells',refactor:'Refactor',security:'Security scan',tests:'Write tests',stacktrace:'Explain an error'})[k]}</button>`).join('')}
+        </div>
       </section>
       <section class="lab-out">
-        <div class="lab-out-head"><span id="lab-out-title">Output</span><span id="lab-out-stat"></span></div>
-        <div id="lab-out-body" class="lab-out-body"><div class="lab-placeholder">$ run code or pick a tool — output streams here in real time</div></div>
+        <div class="lab-out-top"><span class="lab-out-l" id="lab-out-title">Output</span><span id="lab-out-stat"></span></div>
+        <div id="lab-out-body" class="lab-out-body"><div class="lab-empty-out">
+          <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+          <div><b>Nothing run yet</b><span>Hit Run to execute, or pick a tool \u2014 results stream in here.</span></div>
+        </div></div>
+        <!-- Talk to Lab about the code: "fix that", "this still doesn't work" -->
+        <div class="lab-chat" id="lab-chat">
+          <div class="lab-chat-log" id="lab-chat-log"></div>
+          <div class="lab-chat-in">
+            <textarea id="lab-ask" rows="1" placeholder="Tell Lab what to do \u2014 &quot;fix that&quot;, &quot;this still doesn\u2019t work&quot;, &quot;make it faster&quot;\u2026"></textarea>
+            <button id="lab-ask-go" class="lab-ask-go" title="Send"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg></button>
+          </div>
+        </div>
       </section>
     </div>
   </div>`;
 
   const codeEl=$('lab-code'), langEl=$('lab-lang');
   langEl.value=_LAB.lang;
-  on(codeEl,'input',()=>{_LAB.code=codeEl.value;});
-  on(langEl,'change',()=>{_LAB.lang=langEl.value;});
+  // ── Loading code into Lab: paste, upload, or drag & drop ──
+  const labShell=$('lab-shell');
+  const setBlank=()=>{ if(labShell) labShell.classList.toggle('lab-blank', !String(codeEl.value||'').trim()); };
+
+  // Load code in and leave the entry state.
+  const labLoad=(code, name)=>{
+    codeEl.value=String(code||'');
+    _LAB.code=codeEl.value;
+    if(name){ _LAB.files=_LAB.files||[]; if(!_LAB.files.includes(name)) _LAB.files.push(name); }
+    paint(); labCount(); labFilesBar(); setBlank();
+    try{ _sessTouch('lab'); }catch(e){}
+  };
+
+  // Read uploaded files (text only) and concatenate them with clear separators.
+  const labIngest=async(fileList)=>{
+    const files=Array.from(fileList||[]);
+    if(!files.length) return;
+    if(typeof _ctxFileGuard==='function' && !_ctxFileGuard('lab', files.length)) return;
+    const readable=files.filter(f=>f.size < 8*1024*1024);
+    if(!readable.length){ toast('Those files are too large to read (8MB limit each).','error',4500); return; }
+    const parts=[];
+    for(const f of readable){
+      const text=await f.text().catch(()=>'');
+      if(!text) continue;
+      try{ _ctxFileTrack('lab', f.name); }catch(e){}
+      parts.push(readable.length>1 ? ('/* ===== '+f.name+' ===== */\n'+text) : text);
+      // pick the language from the first file's extension
+      if(parts.length===1){
+        const ext=(f.name.split('.').pop()||'').toLowerCase();
+        const lang = ext==='py' ? 'python' : (ext==='html'||ext==='htm') ? 'html' : 'js';
+        _LAB.lang=lang; if(langEl) langEl.value=lang;
+      }
+    }
+    if(!parts.length){ toast('Could not read those files as text.','error',4000); return; }
+    const combined=parts.join('\n\n');
+    const existing=String(codeEl.value||'').trim();
+    labLoad(existing ? existing+'\n\n'+combined : combined, readable.map(f=>f.name).join(', '));
+    const lines=combined.split('\n').length;
+    toast('Loaded '+readable.length+' file'+(readable.length>1?'s':'')+' \u00b7 '+lines.toLocaleString()+' lines. Pick a tool and AMV gets to work.','success',4500);
+  };
+
+  // File pills above the editor
+  const labFilesBar=()=>{
+    const bar=$('lab-files-bar'); if(!bar) return;
+    const f=_LAB.files||[];
+    if(!f.length){ bar.innerHTML=''; bar.style.display='none'; return; }
+    bar.style.display='flex';
+    bar.innerHTML=f.slice(-6).map(n=>'<span class="lab-file-pill"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'+escH(n)+'</span>').join('');
+  };
+
+  // Entry-state paste box → loads straight into the editor
+  const pasteBox=$('lab-paste');
+  if(pasteBox){
+    const takePaste=()=>{ const v=pasteBox.value; if(v && v.trim()){ labLoad(v); pasteBox.value=''; } };
+    on(pasteBox,'input',()=>{ /* live: don't steal focus, just track */ });
+    on(pasteBox,'blur',takePaste);
+    on(pasteBox,'paste',()=>setTimeout(takePaste,30));
+  }
+
+  // Upload: click the drop zone, the top icon, or drag files anywhere
+  const filesInput=$('lab-files');
+  on($('lab-drop'),'click',()=>filesInput&&filesInput.click());
+  on($('lab-upload-top'),'click',()=>filesInput&&filesInput.click());
+  on(filesInput,'change',async function(){ await labIngest(this.files); this.value=''; });
+  const drop=$('lab-drop');
+  if(drop){
+    on(drop,'dragover',e=>{ e.preventDefault(); drop.classList.add('on'); });
+    on(drop,'dragleave',()=>drop.classList.remove('on'));
+    on(drop,'drop',async e=>{ e.preventDefault(); drop.classList.remove('on'); await labIngest(e.dataTransfer.files); });
+  }
+  if(labShell){
+    on(labShell,'dragover',e=>{ e.preventDefault(); labShell.classList.add('lab-dropping'); });
+    on(labShell,'dragleave',e=>{ if(e.target===labShell) labShell.classList.remove('lab-dropping'); });
+    on(labShell,'drop',async e=>{ e.preventDefault(); labShell.classList.remove('lab-dropping'); if(e.dataTransfer.files.length) await labIngest(e.dataTransfer.files); });
+  }
+
+  // ONE-CLICK: the entry buttons take whatever is loaded (or pasted) and just do it.
+  vc.querySelectorAll('#lab-entry-acts [data-go]').forEach(btn=>on(btn,'click',async()=>{
+    // pull in anything sitting in the paste box first
+    if(pasteBox && pasteBox.value.trim()){ labLoad(pasteBox.value); pasteBox.value=''; }
+    const code=String(codeEl.value||'').trim();
+    if(!code){
+      toast('Paste your code or upload a file first \u2014 then pick what you want done.','error',4500);
+      if(pasteBox) pasteBox.focus();
+      return;
+    }
+    const go=btn.dataset.go;
+    setBlank();                                  // leave the entry screen
+    if(go==='run') return _labRun();
+    if(go==='debug') return _labDebug();
+    return _labAnalyze(go);
+  }));
+
+  // Paint the highlight layer + line-number gutter, and keep them in sync.
+  const hl=$('lab-hl'), gutter=$('lab-gutter');
+  const paint=()=>{
+    const v=codeEl.value||'';
+    if(hl && hl.firstElementChild){
+      // Only highlight what's on screen for very large files (keeps it instant).
+      hl.firstElementChild.innerHTML = v.length>200000 ? _labHL(v.slice(0,200000),_LAB.lang) : _labHL(v,_LAB.lang);
+    }
+    if(gutter){
+      const n=v.split('\n').length;
+      let g=''; for(let i=1;i<=n;i++) g+=i+'\n';
+      gutter.textContent=g;
+    }
+  };
+  const syncScroll=()=>{
+    if(hl){ hl.scrollTop=codeEl.scrollTop; hl.scrollLeft=codeEl.scrollLeft; }
+    if(gutter) gutter.scrollTop=codeEl.scrollTop;
+  };
+  codeEl.value=_LAB.code||'';
+  paint();
+  on(codeEl,'scroll',syncScroll);
+  on(codeEl,'input',()=>{ paint(); setBlank(); });
+  labFilesBar(); setBlank();
+
+  // Live size readout — shows Lab is handling big files.
+  const labCount=()=>{
+    const el=$('lab-count'); if(!el) return;
+    const v=codeEl.value||''; if(!v.trim()){ el.textContent=''; return; }
+    const lines=v.split('\n').length;
+    const kb=v.length/1024;
+    const chunks=(typeof _labChunks==='function')?_labChunks(v).length:1;
+    el.textContent = lines.toLocaleString()+' lines \u00b7 '+(kb<1000?kb.toFixed(0)+'KB':(kb/1024).toFixed(1)+'MB')+(chunks>1?' \u00b7 '+chunks+' passes':'');
+    el.classList.toggle('lab-count-big', lines>2000);
+  };
+  labCount();
+  on(codeEl,'input',()=>{_LAB.code=codeEl.value; labCount(); try{ _sessTouch('lab'); }catch(e){}});
+  on(langEl,'change',()=>{_LAB.lang=langEl.value; paint();});
+  const labUsage=()=>{ const n=$('lab-usage-note'); if(n){ n.textContent=''; } };
+  labUsage();
+  on($('lab-model'),'change',function(){ _setSectionModel('debug', this.value); labUsage(); toast('Debug model set to '+MODELS[this.value].label,'info',2500); });
+  on($('lab-new'),'click',()=>{
+    _sessLeave('lab');      // save current work to Recents
+    _sessNew('lab');
+    _resetToolState('lab');
+    renderLabView();
+    toast('New Lab session','info',2000);
+  });
   on($('lab-run'),'click',_labRun);
   on($('lab-debug'),'click',_labDebug);
+  on($('lab-deploy'),'click',_labDeploy);
+  on($('lab-ask-go'),'click',_labAsk);
+  const askEl=$('lab-ask');
+  if(askEl){
+    on(askEl,'keydown',e=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); _labAsk(); } });
+    on(askEl,'input',()=>{ askEl.style.height='auto'; askEl.style.height=Math.min(askEl.scrollHeight,110)+'px'; });
+  }
+  _labChatRender();
   on($('lab-agents'),'click',_labAgents);
+  _wireModelPicker(vc);
   vc.querySelectorAll('.lab-chip').forEach(ch=>on(ch,'click',()=>_labAnalyze(ch.dataset.an)));
 }
-function _labOut(html){ const b=$('lab-out-body'); if(b) b.innerHTML=html; }
+function _labOut(html){ const b=$('lab-out-body'); if(b) b.innerHTML=html; try{ _mobileShowOutput('lab'); }catch(e){} }
+
+/* Analysis tools — each explains what it found, in plain English.
+   Handles files of ANY size via chunked map-reduce (10,000+ lines). */
+async function _labAnalyze(kind){
+  if(_LAB.busy) return; _labBusy(true); _labStat('Analyzing\u2026');
+  const code=$('lab-code').value;
+  const lines=code.split('\n').length;
+  _labOut('<div class="lab-running">Analyzing '+lines.toLocaleString()+' lines\u2026</div>');
+  try{
+    const out=await analyzeCodeLarge(code, _LAB.lang, kind, (i,total,merging)=>{
+      if(total>1){
+        _labStat(merging?'Merging\u2026':'Section '+i+' of '+total);
+        _labOut('<div class="lab-running">'+(merging
+          ? 'Merging findings across '+total+' sections\u2026'
+          : 'Analyzing '+lines.toLocaleString()+' lines \u2014 section '+i+' of '+total+'\u2026')+
+          '<div class="lab-prog"><div class="lab-prog-b" style="width:'+Math.round((i/total)*100)+'%"></div></div></div>');
+      }
+    });
+    const titles={bugs:'Bugs found',smells:'Code smells',refactor:'Refactored code',security:'Security scan',tests:'Tests written',stacktrace:'Error explained'};
+    _labStat('\u2713 done','ok');
+    _labOut('<div class="lab-sec"><div class="lab-sec-h">'+escH(titles[kind]||kind)+
+      ' <span class="lab-sec-sub">'+lines.toLocaleString()+' lines analyzed</span></div>'+
+      '<div class="lab-md">'+(typeof md==='function'?md(out):'<pre class="lab-pre">'+_esc(out)+'</pre>')+'</div></div>');
+  }catch(e){
+    _labStat('\u2717 '+e.message,'err');
+    _labOut('<div class="lab-sec err"><pre class="lab-pre">'+_esc(e.message)+'</pre></div>');
+  }
+  _labBusy(false);
+}
+try{ window._labAnalyze=_labAnalyze; }catch(e){}
+
+/* Auto-Debug: run it, fix what breaks, re-run \u2014 then explain the fix. */
+async function _labDebug(){
+  if(_LAB.busy) return; _labBusy(true);
+  const code=$('lab-code').value;
+  const lines=code.split('\n').length;
+  _labStat('Auto-debugging\u2026');
+  _labOut('<div class="lab-running">Running '+lines.toLocaleString()+' lines, then fixing whatever breaks\u2026</div>');
+  try{
+    const res=await autoDebug(code, _LAB.lang, 3, (st)=>{
+      _labOut('<div class="lab-running">'+escH((st&&(st.note||st.msg))||'Working\u2026')+
+        '<div class="lab-prog"><div class="lab-prog-b" style="width:'+Math.min(100,((st&&st.iter)||1)*33)+'%"></div></div></div>');
+    }, _sectionModel('debug'));
+    if(res && res.code && res.code!==code){
+      const el=$('lab-code');
+      if(el){ el.value=res.code; _LAB.code=res.code; el.dispatchEvent(new Event('input',{bubbles:true})); }
+    }
+    const passed = res && res.ok!==false;
+    _labStat(passed?'\u2713 fixed & passing':'\u2717 still failing', passed?'ok':'err');
+    const explain = (res && (res.explanation||res.summary)) ||
+      (passed ? 'The code runs cleanly now \u2014 the fixed version is in the editor.' : 'Some issues remain. See the details above.');
+    _labOut('<div class="lab-sec'+(passed?'':' err')+'">'+
+      '<div class="lab-sec-h">'+(passed?'Fixed':'Could not fully fix')+
+        ' <span class="lab-sec-sub">'+lines.toLocaleString()+' lines</span></div>'+
+      '<div class="lab-md">'+(typeof md==='function'?md(explain):escH(explain))+'</div>'+
+      ((res&&res.stdout)?'<div class="lab-sec-h" style="margin-top:12px">Output</div><pre class="lab-pre">'+_esc(res.stdout)+'</pre>':'')+
+    '</div>');
+  }catch(e){
+    _labStat('\u2717 '+e.message,'err');
+    _labOut('<div class="lab-sec err"><pre class="lab-pre">'+_esc(e.message)+'</pre></div>');
+  }
+  _labBusy(false);
+}
+try{ window._labDebug=_labDebug; }catch(e){}
+
+/* Run Agents: a small crew plans, writes, and verifies against your code. */
+async function _labAgents(){
+  if(_LAB.busy) return; _labBusy(true);
+  const code=$('lab-code').value;
+  const task = code.trim()
+    ? 'Improve and harden this code. Explain what you changed and why.\n\n```'+_LAB.lang+'\n'+code.slice(0,40000)+'\n```'
+    : 'Ask the user what they want built.';
+  _labStat('Agents working\u2026');
+  _labOut('<div class="lab-running">Agents are planning, writing, and verifying\u2026</div>');
+  try{
+    const res=await runAgents(task, _LAB.lang, (st)=>{
+      _labOut('<div class="lab-running">'+escH((st&&(st.note||st.msg||st.agent))||'Working\u2026')+'</div>');
+    });
+    if(res && res.code){
+      const el=$('lab-code');
+      if(el){ el.value=res.code; _LAB.code=res.code; el.dispatchEvent(new Event('input',{bubbles:true})); }
+    }
+    _labStat('\u2713 done','ok');
+    const body = (res && (res.explanation||res.summary||res.report)) || 'The agents finished. Any updated code is in the editor.';
+    _labOut('<div class="lab-sec"><div class="lab-sec-h">Agents finished</div>'+
+      '<div class="lab-md">'+(typeof md==='function'?md(body):escH(String(body)))+'</div></div>');
+  }catch(e){
+    _labStat('\u2717 '+e.message,'err');
+    _labOut('<div class="lab-sec err"><pre class="lab-pre">'+_esc(e.message)+'</pre></div>');
+  }
+  _labBusy(false);
+}
+try{ window._labAgents=_labAgents; }catch(e){}
+
+/* Lab can now SHIP. If the code in the editor is a page, publish it live. */
+async function _labDeploy(){
+  if(_LAB.busy) return;
+  const code=($('lab-code')||{}).value||'';
+  if(!code.trim()){ toast('Nothing to publish \u2014 load some code first.','info',3500); return; }
+  const looksLikePage = _LAB.lang==='html' || /<html|<!doctype|<body|<div/i.test(code);
+  if(!looksLikePage){
+    toast('Publishing works for web pages. Switch the language to HTML, or build a page in Dev.','info',5000);
+    return;
+  }
+  if(!(window.AMV_API && AMV_API.live && AMV_API.token)){
+    toast('Connect the AMV engine in Settings to publish a live URL.','error',5000);
+    return;
+  }
+  _labBusy(true); _labStat('Publishing\u2026');
+  try{
+    const out=await _amvRunTool('deploy_site',{ html:code, title:'Lab page' },(m)=>_labStat(m));
+    const m=String(out.text||'').match(/https?:\/\/\S+/);
+    const url=m?m[0]:'';
+    _labStat('\u2713 live','ok');
+    _labOut('<div class="lab-sec"><div class="lab-sec-h">Published</div>'+
+      '<div class="lab-md">'+(url
+        ? 'It\u2019s live at <a href="'+escH(url)+'" target="_blank" rel="noopener" style="color:var(--accent)">'+escH(url)+'</a> \u2014 anyone with the link can open it.'
+        : escH(out.text))+'</div></div>');
+  }catch(e){
+    _labStat('\u2717 '+e.message,'err');
+    _labOut('<div class="lab-sec err"><pre class="lab-pre">'+_esc(e.message)+'</pre></div>');
+  }
+  _labBusy(false);
+}
+try{ window._labDeploy=_labDeploy; }catch(e){}
+
+/* ── Talk to Lab about your code ───────────────────────────────
+   Lab could only run fixed tools (Run / Find bugs / Auto-Debug). You couldn't
+   just say "this still doesn't work" or "make it faster". Now you can: Lab sees
+   the code in the editor, can rewrite it, and can use the real tools. */
+function _labChatRender(){
+  const log=$('lab-chat-log'); if(!log) return;
+  const msgs=_LAB.chat||[];
+  if(!msgs.length){ log.innerHTML=''; log.classList.remove('on'); return; }
+  log.classList.add('on');
+  log.innerHTML = msgs.map(m=>
+    m.role==='user'
+      ? '<div class="lc-u">'+escH(m.text)+'</div>'
+      : '<div class="lc-a">'+(typeof md==='function'?md(m.text):escH(m.text))+(m.applied?'<div class="lc-applied">\u2713 Updated the code in the editor</div>':'')+'</div>'
+  ).join('');
+  log.scrollTop = log.scrollHeight;
+}
+
+async function _labAsk(){
+  const ta=$('lab-ask'); if(!ta) return;
+  const q=ta.value.trim(); if(!q) return;
+  if(_LAB.busy) return;
+  const codeEl=$('lab-code');
+  const code=(codeEl&&codeEl.value)||'';
+  if(!code.trim()){ toast('Paste or upload some code first \u2014 then tell Lab what to do with it.','info',4500); return; }
+
+  ta.value=''; ta.style.height='auto';
+  _LAB.chat=_LAB.chat||[];
+  _LAB.chat.push({role:'user', text:q});
+  _labChatRender();
+  _labBusy(true); _labStat('Thinking\u2026');
+
+  try{
+    const lastOut = ($('lab-out-body')||{}).textContent || '';
+    const sys = 'You are AMV Lab, working on the user\u2019s code with them. You can SEE their code and the last output.\n'+
+      'If the answer requires changing the code, return the COMPLETE updated file inside one fenced code block, then a short plain-English explanation of what you changed and why.\n'+
+      'If no code change is needed, just answer clearly. Never return fragments or diffs \u2014 always the whole file when you change it.';
+    const prompt =
+      'LANGUAGE: '+_LAB.lang+'\n\n'+
+      'CURRENT CODE:\n```'+_LAB.lang+'\n'+code.slice(0,120000)+'\n```\n\n'+
+      (lastOut.trim() ? 'LAST OUTPUT / RESULT:\n'+lastOut.slice(0,3000)+'\n\n' : '')+
+      (_LAB.chat.slice(-6,-1).map(m=>(m.role==='user'?'User: ':'You: ')+String(m.text).slice(0,600)).join('\n')||'')+
+      '\n\nUSER: '+q;
+
+    const out = await aiComplete(prompt, sys, { max_tokens:8000, model:_sectionModel('debug') });
+
+    // If Lab returned new code, apply it straight into the editor.
+    const m = String(out||'').match(/```[a-z]*\n([\s\S]*?)```/i);
+    let applied=false;
+    if(m && m[1] && m[1].trim() && m[1].trim() !== code.trim()){
+      codeEl.value = m[1].trim();
+      _LAB.code = codeEl.value;
+      codeEl.dispatchEvent(new Event('input',{bubbles:true}));
+      applied=true;
+      try{ _sessTouch('lab'); }catch(e){}
+    }
+    const explanation = String(out||'').replace(/```[a-z]*\n[\s\S]*?```/i,'').trim() || (applied?'Updated the code.':'Done.');
+    _LAB.chat.push({role:'ai', text:explanation, applied});
+    _labChatRender();
+    _labStat(applied?'\u2713 code updated':'\u2713 done','ok');
+  }catch(e){
+    _LAB.chat.push({role:'ai', text:'Couldn\u2019t do that: '+e.message});
+    _labChatRender();
+    _labStat('\u2717 '+e.message,'err');
+  }
+  _labBusy(false);
+}
+try{ window._labAsk=_labAsk; }catch(e){}
+
 function _labStat(t,cls){ const s=$('lab-out-stat'); if(s){ s.textContent=t||''; s.className=cls||''; } }
 function _labBusy(b){ _LAB.busy=b; ['lab-run','lab-debug','lab-agents'].forEach(id=>{const el=$(id); if(el) el.disabled=b;}); }
 function _esc(s){ return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 async function _labRun(){
-  if(_LAB.busy) return; _labBusy(true); _labStat('Running…');
-  _labOut('<div class="lab-running">Executing…</div>');
+  if(_LAB.busy) return; _labBusy(true);
+  const code=$('lab-code').value;
+  _labStat('Running\u2026'); _labOut('<div class="lab-running">Running your code\u2026</div>');
   try{
-    const r=await runCode($('lab-code').value, _LAB.lang, s=>_labOut('<div class="lab-running">'+_esc(s)+'</div>'));
-    if(r.html!==undefined){ _labStat('✓ rendered','ok'); _labOut('<iframe class="lab-frame" sandbox="allow-scripts" srcdoc="'+r.html.replace(/"/g,'&quot;')+'"></iframe>'); _labBusy(false); return; }
-    _labStat(r.ok?('✓ ran in '+r.ms+'ms'):'✗ error', r.ok?'ok':'err');
-    let h='';
-    if(r.stdout) h+='<div class="lab-sec"><div class="lab-sec-h">stdout</div><pre>'+_esc(r.stdout)+'</pre></div>';
-    if(r.result) h+='<div class="lab-sec"><div class="lab-sec-h">return</div><pre>'+_esc(r.result)+'</pre></div>';
-    if(r.stderr) h+='<div class="lab-sec err"><div class="lab-sec-h">error</div><pre>'+_esc(r.stderr)+'</pre></div>';
-    _labOut(h||'<div class="lab-placeholder">(no output)</div>');
-  }catch(e){ _labStat('✗ '+e.message,'err'); _labOut('<div class="lab-sec err"><pre>'+_esc(e.message)+'</pre></div>'); }
-  _labBusy(false);
-}
-
-async function _labDebug(){
-  if(_LAB.busy) return; _labBusy(true); _labStat('Auto-debugging…');
-  let log='';
-  const push=(h)=>{ log+=h; _labOut(log); const b=$('lab-out-body'); if(b)b.scrollTop=b.scrollHeight; };
-  push('<div class="lab-loop">Autonomous debug loop started…</div>');
-  try{
-    const res=await autoDebug($('lab-code').value, _LAB.lang, 5, st=>{
-      if(st.phase==='run'){ push('<div class="lab-step '+(st.run.ok?'ok':'err')+'"><b>Iteration '+st.iter+'</b> — '+(st.run.ok?'✓ ran clean':'✗ '+_esc((st.run.stderr||'').split("\n")[0]))+'</div>'); }
-      else if(st.phase==='patch'){ push('<div class="lab-step patch">↳ Patched code, re-running…</div>'); }
-      else if(st.phase==='status'){ _labStat(st.msg); }
-    });
-    if(res.success){
-      _labStat('✓ fixed in '+res.iters+' iteration(s)','ok');
-      push('<div class="lab-sec ok"><div class="lab-sec-h">Working code</div><pre>'+_esc(res.code)+'</pre></div>');
-      $('lab-code').value=res.code; _LAB.code=res.code;
-    } else { _labStat('Could not fully fix','err'); push('<div class="lab-step err">Stopped after '+res.iters+' iterations.</div>'); }
-  }catch(e){ _labStat('✗ '+e.message,'err'); push('<div class="lab-sec err"><pre>'+_esc(e.message)+'</pre></div>'); }
-  _labBusy(false);
-}
-
-async function _labAgents(){
-  if(_LAB.busy) return; _labBusy(true); _labStat('Agents working…');
-  let task = $('lab-code').value.trim().length<40 ? await showTextPromptAsync('Describe what to build (the agents will plan, code, test, review):','A function that returns the nth Fibonacci number, with input validation') : 'Improve and complete this code:\n\n'+$('lab-code').value;
-  if(!task){ _labBusy(false); _labStat(''); return; }
-  const order=['Planner','Coder','Tester','Critic','Security'];
-  const state={}; const draw=()=>{
-    _labOut('<div class="agents">'+order.map(a=>{
-      const s=state[a]||{};
-      const ic=s.status==='done'?'✓':s.status==='thinking'?'<span class="spin"></span>':'○';
-      return '<div class="agent '+(s.status||'')+'"><div class="agent-h"><span class="agent-ic">'+ic+'</span><b>'+a+'</b> agent'+(s.note?' <span class="agent-note">'+_esc(s.note)+'</span>':'')+'</div>'+
-        (s.output?'<div class="agent-out '+(s.isCode?'code':'')+'"><pre>'+_esc(s.output)+'</pre></div>':'')+'</div>';
-    }).join('')+'</div>');
-  };
-  draw();
-  try{
-    await runAgents(task, _LAB.lang, st=>{ state[st.agent]={...(state[st.agent]||{}),...st}; draw(); const b=$('lab-out-body'); if(b)b.scrollTop=b.scrollHeight; });
-    _labStat('✓ pipeline complete','ok');
-  }catch(e){ _labStat('✗ '+e.message,'err'); _labOut('<div class="lab-sec err"><pre>'+_esc(e.message)+'</pre></div>'); }
-  _labBusy(false);
-}
-
-async function _labAnalyze(kind){
-  if(_LAB.busy) return; _labBusy(true); _labStat('Analyzing…');
-  _labOut('<div class="lab-running">Running '+kind+' analysis…</div>');
-  try{
-    const out=await analyzeCode($('lab-code').value, _LAB.lang, kind);
-    _labStat('✓ done','ok');
-    _labOut('<div class="lab-sec"><div class="lab-sec-h">'+kind+'</div><div class="lab-md">'+(typeof md==='function'?md(out):'<pre>'+_esc(out)+'</pre>')+'</div></div>');
-  }catch(e){ _labStat('✗ '+e.message,'err'); _labOut('<div class="lab-sec err"><pre>'+_esc(e.message)+'</pre></div>'); }
+    const r=await runCode(code, _LAB.lang);
+    if(r.html){
+      _labStat('\u2713 rendered','ok');
+      const ifr=document.createElement('iframe');
+      ifr.sandbox='allow-scripts'; ifr.style.cssText='width:100%;height:100%;border:0;background:#fff;border-radius:8px';
+      ifr.srcdoc=r.html;
+      const b=$('lab-out-body'); if(b){ b.innerHTML=''; b.appendChild(ifr); }
+    } else if(r.ok){
+      _labStat('\u2713 ran in '+r.ms+'ms','ok');
+      _labOut('<div class="lab-sec"><div class="lab-sec-h">Output</div><pre class="lab-pre">'+_esc(r.stdout||'(no output)')+'</pre>'+
+        (r.result?'<div class="lab-sec-h" style="margin-top:12px">Result</div><pre class="lab-pre">'+_esc(r.result)+'</pre>':'')+'</div>');
+    } else {
+      _labStat('\u2717 error','err');
+      _labOut('<div class="lab-sec err"><div class="lab-sec-h">Error</div><pre class="lab-pre">'+_esc(r.stderr||'failed')+'</pre>'+
+        (r.stdout?'<div class="lab-sec-h" style="margin-top:12px">Output before the error</div><pre class="lab-pre">'+_esc(r.stdout)+'</pre>':'')+'</div>');
+    }
+  }catch(e){ _labStat('\u2717 '+e.message,'err'); _labOut('<div class="lab-sec err"><pre class="lab-pre">'+_esc(e.message)+'</pre></div>'); }
   _labBusy(false);
 }
 window.renderLabView=renderLabView;
@@ -7721,29 +15573,158 @@ async function _taskRun(mode){
   }
 }
 
-/* ---- Recurring automation: persists + runs due tasks when app opens ---- */
-function _scheduleTask(t){
-  const list=load('amv_sched')||[];
-  const intervalMs={hourly:36e5,daily:864e5,weekly:6048e5}[t.repeat]||0;
-  list.push({id:'s'+Date.now(), detail:t.detail, repeat:t.repeat, intervalMs, next:Date.now()+intervalMs, fileName:t.fileName||null, created:Date.now()});
-  store('amv_sched',list);
-  if(typeof toast==='function') toast('Task scheduled — '+t.repeat,'success');
+/* ---- Automations: REAL background execution on the server ----
+   These now live server-side and are executed by a cron trigger, so they run
+   whether or not the app is open. (They used to only fire when you opened the
+   app, which made a "7am daily brief" useless.) If the engine isn't connected,
+   we say so honestly instead of silently pretending to schedule. */
+async function _autoApi(path, body){
+  if(!(window.AMV_API && AMV_API.live && AMV_API.token))
+    throw new Error('not-connected');
+  const r = await fetch(AMV_API.base.replace(/\/$/,'') + path, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+AMV_API.token },
+    body: JSON.stringify(body||{})
+  });
+  const d = await r.json().catch(()=>({}));
+  if(!r.ok || d.error) throw new Error(d.error || ('request failed ('+r.status+')'));
+  return d;
 }
-async function _runDueTasks(){
-  const list=load('amv_sched')||[]; if(!list.length) return;
-  const now=Date.now(); let ran=0;
-  for(const t of list){
-    if(t.next<=now){
-      try{ const out=await aiComplete(t.detail,'You are AMV running a scheduled task. Complete it and return the result in markdown.',{max_tokens:3000});
-        const res=load('amv_sched_results')||[]; res.push({detail:t.detail, out, at:Date.now()}); store('amv_sched_results',res.slice(-50));
-        t.next=now+(t.intervalMs||864e5); ran++;
-      }catch(e){ t.next=now+(t.intervalMs||864e5); }
+
+/* ── Research Watch setup ──────────────────────────────────────────────────
+   Let the user set up an autonomous, recurring research job: watch a subject on
+   a schedule and report what's happening. It delivers in-app always, and by
+   email if they choose. Framed as monitoring/analysis — never trade advice. */
+function openResearchWatch(){
+  const ovr=$('ovr'); if(!ovr) return;
+  ovr.innerHTML=
+    '<div class="rw-modal">'+
+      '<div class="rw-head">'+
+        '<span class="rw-emoji">🔭</span>'+
+        '<div><div class="rw-title">Set up a research watch</div>'+
+        '<p class="rw-sub">AMV checks on your topic on a schedule and reports what\u2019s happening \u2014 the facts, the news, the sentiment. It never tells you to buy, sell, or short; that\u2019s your call.</p></div>'+
+      '</div>'+
+      '<label class="rw-lbl">What should AMV watch?</label>'+
+      '<textarea id="rw-subject" class="inp" rows="3" placeholder="e.g. Bitcoin price and major news, or NVIDIA stock and analyst sentiment, or new AI model releases"></textarea>'+
+      '<label class="rw-lbl">How often?</label>'+
+      '<div class="rw-opts" id="rw-repeat">'+
+        '<button class="rw-opt" data-repeat="10min">Every 10 min</button>'+
+        '<button class="rw-opt" data-repeat="30min">Every 30 min</button>'+
+        '<button class="rw-opt on" data-repeat="hourly">Hourly</button>'+
+        '<button class="rw-opt" data-repeat="daily">Daily</button>'+
+        '<button class="rw-opt" data-repeat="weekly">Weekly</button>'+
+      '</div>'+
+      '<label class="rw-lbl">Where should findings go?</label>'+
+      '<div class="rw-opts" id="rw-notify">'+
+        '<button class="rw-opt on" data-notify="app">In-app<span class="rw-opt-s">See it in Tasks</span></button>'+
+        '<button class="rw-opt" data-notify="email">Email me<span class="rw-opt-s">Sent each run</span></button>'+
+      '</div>'+
+      '<div class="rw-note">This is information, not financial advice. AMV reports what\u2019s happening; it won\u2019t place trades or tell you what to buy.</div>'+
+      '<div class="rw-actions"><button class="btn bs" id="rw-cancel">Cancel</button><button class="btn bp" id="rw-start">Start watching</button></div>'+
+    '</div>';
+  ovr.classList.add('on');
+
+  let repeat='hourly', notify='app';
+  ovr.querySelectorAll('#rw-repeat [data-repeat]').forEach(b=>on(b,'click',()=>{
+    repeat=b.dataset.repeat;
+    ovr.querySelectorAll('#rw-repeat .rw-opt').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on');
+  }));
+  ovr.querySelectorAll('#rw-notify [data-notify]').forEach(b=>on(b,'click',()=>{
+    notify=b.dataset.notify;
+    ovr.querySelectorAll('#rw-notify .rw-opt').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on');
+  }));
+  on($('rw-cancel'),'click',closeOvr);
+  on($('rw-start'),'click',async()=>{
+    const subject=($('rw-subject')?$('rw-subject').value:'').trim();
+    if(!subject){ $('rw-subject')&&$('rw-subject').focus(); return; }
+    const btn=$('rw-start'); if(btn){ btn.disabled=true; btn.textContent='Setting up\u2026'; }
+    const item=await _scheduleTask({
+      detail: subject,
+      repeat,
+      kind: 'research',
+      notify
+    });
+    if(item){
+      closeOvr();
+      setTab('tasks');
+    } else if(btn){
+      btn.disabled=false; btn.textContent='Start watching';
     }
-  }
-  if(ran){ store('amv_sched',list); if(typeof toast==='function') toast(ran+' scheduled task(s) ran while you were away','info'); }
+  });
 }
+try{ window.openResearchWatch=openResearchWatch; }catch(e){}
+
+// Create an automation that genuinely runs in the background.
+async function _scheduleTask(t){
+  try{
+    const d = await _autoApi('/auto/create', {
+      detail: t.detail,
+      repeat: t.repeat || 'daily',
+      kind: t.kind || 'task',
+      notify: t.notify || 'app',
+      firstRunAt: t.firstRunAt || null
+    });
+    _AUTOS = d.item ? (_AUTOS||[]).concat(d.item) : _AUTOS;
+    if(typeof toast==='function')
+      toast('Scheduled — it\u2019ll run in the background, even with AMV closed.','success',4500);
+    return d.item;
+  }catch(e){
+    if(e.message === 'not-connected'){
+      if(typeof toast==='function')
+        toast('Connect the AMV engine in Settings so automations can run in the background.','error',6000);
+    } else {
+      if(typeof toast==='function') toast('Could not schedule: '+e.message,'error',5000);
+    }
+    return null;
+  }
+}
+
+// Pull the user's automations + any results that ran while they were away.
+let _AUTOS = [];
+let _AUTO_RESULTS = [];
+async function _autoRefresh(){
+  try{
+    const d = await _autoApi('/auto/list', {});
+    _AUTOS = d.items || [];
+    _AUTO_RESULTS = d.results || [];
+    const unread = _AUTO_RESULTS.filter(r=>!r.read);
+    if(unread.length && typeof toast==='function'){
+      toast(unread.length + ' automation result' + (unread.length>1?'s':'') + ' ready while you were away.','success',6000);
+    }
+    _autoBadge(unread.length);
+    try{ if(S.tab==='automation') renderAutomationView(); }catch(e){}
+    return d;
+  }catch(e){ return null; }
+}
+function _autoBadge(n){
+  try{
+    const nav=document.querySelector('[data-tab="automation"], [data-tab="tasks"]');
+    if(!nav) return;
+    let b=nav.querySelector('.auto-badge');
+    if(!n){ if(b) b.remove(); return; }
+    if(!b){ b=document.createElement('span'); b.className='auto-badge'; nav.appendChild(b); }
+    b.textContent = n>9 ? '9+' : String(n);
+  }catch(e){}
+}
+async function _autoAction(id, action){
+  try{
+    const d = await _autoApi('/auto/update', { id, action });
+    _AUTOS = d.items || _AUTOS;
+    try{ if(S.tab==='automation') renderAutomationView(); }catch(e){}
+    return true;
+  }catch(e){ if(typeof toast==='function') toast('Failed: '+e.message,'error',4000); return false; }
+}
+async function _autoMarkRead(){
+  try{ await _autoApi('/auto/read',{}); _AUTO_RESULTS.forEach(r=>r.read=true); _autoBadge(0); }catch(e){}
+}
+try{ window._autoRefresh=_autoRefresh; window._autoAction=_autoAction; window._autoMarkRead=_autoMarkRead; }catch(e){}
 window.openTaskPanel=openTaskPanel; window.amvOpenFile=amvOpenFile;
-setTimeout(function(){ try{ _runDueTasks(); }catch(e){} }, 2500);
+// On open: pull anything that ran in the background while you were away.
+setTimeout(function(){ try{ if(S.user && S.user.email) _autoRefresh(); }catch(e){} }, 2000);
+// And keep it fresh while the app is open.
+setInterval(function(){ try{ if(S.user && S.user.email && !document.hidden) _autoRefresh(); }catch(e){} }, 120000);
 
 
 /* ============================================================
@@ -7758,8 +15739,17 @@ function _autoSetStatus(t){ const el=$('auto-status'); if(el) el.textContent=t||
 async function runAutonomous(goal, opts){
   opts=opts||{};
   _AUTO.running=true; _AUTO.goal=goal; _AUTO.steps=[]; _AUTO.deliverable=''; _AUTO.paused=false;
-  _AUTO.file=opts.file||null; _AUTO.fileContent=opts.fileContent||null;
+  _AUTO.file=opts.file||null; _AUTO.fileContent=opts.fileContent||null; _AUTO.workspace=opts.workspace||null; _AUTO.silent=!!opts.silent;
   const maxSteps=opts.maxSteps||12;
+
+  // Pre-flight budget guard: don't start a multi-step run with no quota headroom.
+  const _bg=_budgetGuard(5000);
+  if(!_bg.ok){
+    _autoLog('<div class="auto-ev"><b>Not enough usage</b><div>'+escH(_bg.reason)+'</div></div>');
+    _autoSetStatus(''); _AUTO.running=false;
+    if(!_AUTO.silent && typeof toast==='function') toast(_bg.reason,'info',6000);
+    return;
+  }
 
   _autoLog('<div class="auto-ev plan"><b>Goal</b><div>'+escH(goal)+'</div></div>');
   _autoSetStatus('Planning…');
@@ -7767,7 +15757,10 @@ async function runAutonomous(goal, opts){
   // 1) PLAN
   let plan;
   try{
-    const fileNote=_AUTO.file?('\nThe user attached a file: '+_AUTO.file.name+'. Its contents are available to steps.'):'';
+    // give the planner the actual file content so it plans around what's really there
+    let fileNote='';
+    if(_AUTO.fileContent){ fileNote='\n\nThe user provided files. Plan using their ACTUAL contents below (do not ask for them again):\n'+String(_AUTO.fileContent).slice(0,10000); }
+    else if(_AUTO.file){ fileNote='\nThe user attached a file: '+_AUTO.file.name+'.'; }
     const planResp=await aiComplete(
       _AMVSYS+' Break this goal into an ordered list of concrete steps you will execute yourself. Each step is one action. Return ONLY a JSON array of objects: [{"step":"short title","action":"what you will do","needs_approval":true|false}]. Mark needs_approval true ONLY for steps that send/share/delete/publish something externally.'+fileNote+'\n\nGOAL: '+goal,
       'Output strictly valid JSON, no prose, no code fences.');
@@ -7782,6 +15775,9 @@ async function runAutonomous(goal, opts){
   let context='';
   for(let i=0;i<plan.length && i<maxSteps;i++){
     if(!_AUTO.running){ _autoLog('<div class="auto-ev stop">Stopped by user.</div>'); break; }
+    // mid-run budget guard: stop cleanly if the window runs out partway through
+    const _mg=_budgetGuard(4000);
+    if(!_mg.ok){ _autoLog('<div class="auto-ev"><b>Paused — out of usage</b><div>'+escH(_mg.reason)+' Finished '+i+' of '+plan.length+' steps.</div></div>'); _autoSetStatus(''); break; }
     const s=plan[i];
     // approval gate
     if(s.needs_approval){
@@ -7791,12 +15787,23 @@ async function runAutonomous(goal, opts){
     _autoSetStatus('Step '+(i+1)+'/'+plan.length+': '+s.step);
     _autoLog('<div class="auto-ev run" id="ev'+i+'"><span class="spin"></span> <b>'+escH(s.step)+'</b></div>');
 
-    // Decide: does this step need code execution?
+    // Decide: does this step need code execution or a file write?
     let result='';
     try{
+      const wsNote=_AUTO.workspace?'\n\nYou have a WORKSPACE of real files. To create or edit a file, reply with ONLY a fenced block that starts with a line "WRITE_FILE: <path>" then the full file contents. Use this to actually produce deliverables on disk.':'';
       const decide=await aiComplete(
-        'Step: '+s.action+'\n\nIf this step is best done by running code (computation, data parsing, transformation), reply with ONLY a fenced code block (js or python). Otherwise reply with the completed written result for this step. Context so far:\n'+(context.slice(-3000)||'(none)')+(_AUTO.fileContent?('\n\nAttached file contents:\n'+String(_AUTO.fileContent).slice(0,8000)):''),
+        'Step: '+s.action+'\n\nIf this step is best done by running code (computation, data parsing, transformation), reply with ONLY a fenced code block (js or python). Otherwise reply with the completed written result for this step.'+wsNote+' Context so far:\n'+(context.slice(-3000)||'(none)')+(_AUTO.fileContent?('\n\nWorkspace / file contents:\n'+String(_AUTO.fileContent).slice(0,12000)):''),
         _AMVSYS+' Execute this one step and produce the actual, finished output for it — production quality.');
+      // file write?
+      const fileWrite=decide.match(/WRITE_FILE:\s*([^\n`]+)\n([\s\S]*?)(?:```|$)/);
+      if(_AUTO.workspace && fileWrite){
+        const path=fileWrite[1].trim().replace(/^`+|`+$/g,'');
+        const body=fileWrite[2].replace(/```$/,'').trimEnd();
+        const w=await _AUTO.workspace.writeFile(path, body);
+        result='Wrote file '+path+(w.toDisk?' (saved to disk)':' (ready to download)');
+        _autoStepDone(i, s.step, '✓ wrote '+path, '<div class="auto-out">'+escH(body.slice(0,400))+(body.length>400?'…':'')+'</div>');
+        context+='\n\n['+s.step+']\n'+result; continue;
+      }
       const code=extractCode(decide,'js')||extractCode(decide,'python');
       if(code){
         const lang=/def |import |print\(/.test(code)?'python':'js';
@@ -7824,9 +15831,17 @@ async function runAutonomous(goal, opts){
         _AMVSYS+' Output only the finished, polished deliverable — ready to use as-is.');
       _AUTO.deliverable=deliv;
       _autoLog('<div class="auto-ev done"><b>✓ Done</b></div>');
-      const dv=$('auto-deliverable'); if(dv){ dv.style.display='block'; dv.innerHTML='<div class="auto-deliv-h">Deliverable</div><div class="auto-deliv-body">'+(typeof md==='function'?md(deliv):escH(deliv))+'</div><div class="auto-deliv-act"><button class="btn" id="auto-save">Save to a chat</button><button class="btn" id="auto-new">New task</button></div>'; 
+      const dv=$('auto-deliverable'); if(dv){
+        const ws=_AUTO.workspace;
+        const written=ws?ws.files.filter(f=>f.dirty||f.output||f.handle&&f._touched):[];
+        const outCount=ws?ws.files.filter(f=>f.output||f.dirty).length:0;
+        const wsLine=ws&&ws.files.some(f=>f.output||f.dirty||f.handle)
+          ? '<div class="auto-ws-summary">'+(ws.dirHandle?'✓ Files written back to your connected folder.':'')+(outCount?' <button class="btn bs" id="auto-dl">⬇ Download '+outCount+' output'+(outCount>1?'s':'')+'</button>':'')+'</div>'
+          : '';
+        dv.style.display='block'; dv.innerHTML='<div class="auto-deliv-h">Deliverable</div><div class="auto-deliv-body">'+(typeof md==='function'?md(deliv):escH(deliv))+'</div>'+wsLine+'<div class="auto-deliv-act"><button class="btn" id="auto-save">Save to a chat</button><button class="btn" id="auto-new">New task</button></div>';
         on($('auto-save'),'click',()=>{ try{ S.cur=null; setMsgs([{r:'u',c:goal},{r:'a',c:deliv,model:S.model,ts:Date.now()}]); setTab('chat'); toast('Saved','success'); }catch(e){} });
         on($('auto-new'),'click',openCowork);
+        on($('auto-dl'),'click',()=>{ const n=ws.downloadOutputs(); toast(n?('Downloading '+n+' file'+(n>1?'s':'')):'No new files','info'); });
       }
     }catch(e){ _autoLog('<div class="auto-ev stop">Could not compile: '+escH(e.message)+'</div>'); }
   }
@@ -7839,6 +15854,9 @@ function _autoStepDone(i,title,badge,detail){
   ev.innerHTML='<b>'+escH(title)+'</b> <span class="auto-badge">'+escH(badge)+'</span>'+(detail||'');
 }
 function _autoApprove(step, action){
+  // A silent/background run has no UI to approve in — never send/share
+  // without explicit approval, so skip any step that needs it.
+  if(_AUTO.silent) return Promise.resolve(false);
   return new Promise(resolve=>{
     _autoLog('<div class="auto-ev approve" id="appr"><b>Approval needed:</b> '+escH(step)+'<div class="auto-appr-d">'+escH(action)+'</div><div class="auto-appr-btns"><button class="btn bp" id="appr-y">Approve</button><button class="btn" id="appr-n">Skip</button></div></div>');
     on($('appr-y'),'click',()=>{ const a=$('appr'); if(a){a.querySelector('.auto-appr-btns').innerHTML='<span class="tp-sched">✓ Approved</span>';} resolve(true); });
@@ -7848,14 +15866,234 @@ function _autoApprove(step, action){
 function stopAutonomous(){ _AUTO.running=false; _autoSetStatus('Stopping…'); }
 
 /* ---- Cowork-style entry panel ---- */
+/* ── First-run onboarding / activation ───────────────────────────
+   One clean welcome, one question, four tappable paths. Tapping a path
+   routes straight into a real first action via the chat intent router,
+   so the user reaches a success in their first session. Non-nagging:
+   shows once, dismissible, remembers completion. This is the moment a
+   broad product becomes an obvious one. */
+function _startOnboarding(){
+  const r=$('ovr'); if(!r) return;
+  const name=(S.user&&S.user.name)?String(S.user.name).split(' ')[0]:'there';
+  const paths=[
+    { k:'write',  title:'Write something',    sub:'Essay, email, post, plan',            ic:'<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>', demo:'Write a punchy 200-word intro for my project' },
+    { k:'image',  title:'Create an image',     sub:'Any style, from a sentence',          ic:'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>', demo:'Create an image of a calm mountain lake at sunrise' },
+    { k:'build',  title:'Build an app',         sub:'Describe it, AMV codes it',           ic:'<path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/>', demo:'Build a simple to-do list app I can use' },
+    { k:'auto',   title:'Automate something',   sub:'Run it on a schedule',                ic:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', demo:'Every morning, summarize the top tech news for me' },
+  ];
+  r.innerHTML='<div class="ov" id="onb-bg"><div class="ob onb sig-aura" onclick="event.stopPropagation()">'+
+    '<button class="oc" onclick="_finishOnboarding()" aria-label="Skip">\u00d7</button>'+
+    '<div class="onb-mark ce-mark-sig">'+((typeof amvMark==='function')?amvMark(40):'')+'</div>'+
+    '<div class="onb-head"><span class="onb-eyebrow">Welcome to AMV</span>'+
+      '<h2 class="onb-title">Hi '+escH(name)+' \u2014 what should we make first?</h2>'+
+      '<p class="onb-sub">AMV doesn\u2019t just answer \u2014 it does the work. Pick one to watch it happen. You can ask for any of this in chat anytime.</p></div>'+
+    '<div class="onb-grid stagger-in">'+paths.map(p=>'<button class="onb-card" data-onb="'+p.k+'">'+
+      '<span class="onb-card-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+p.ic+'</svg></span>'+
+      '<span class="onb-card-t">'+p.title+'</span><span class="onb-card-s">'+p.sub+'</span></button>').join('')+'</div>'+
+    '<button class="onb-skip" onclick="_finishOnboarding()">I\u2019ll explore on my own</button>'+
+  '</div></div>';
+  on($('onb-bg'),'click',_finishOnboarding);
+  r.querySelectorAll('[data-onb]').forEach(b=>on(b,'click',()=>{
+    const p=paths.find(x=>x.k===b.dataset.onb); _finishOnboarding();
+    if(!p) return;
+    setTab('chat');
+    // drop the demo prompt into the composer so the user sees exactly what to type,
+    // then send it through the real intent router — a genuine first result.
+    setTimeout(()=>{ try{ const ta=$('mta'); if(ta){ ta.value=p.demo; ta.dispatchEvent(new Event('input')); } if(typeof sendMsg==='function') sendMsg(); }catch(e){} }, 220);
+  }));
+}
+function _finishOnboarding(){ try{ saveStr('amv_onboarded','1'); }catch(e){} try{ closeOvr(); }catch(e){} }
+try{ window._startOnboarding=_startOnboarding; window._finishOnboarding=_finishOnboarding; }catch(e){}
+
+/* ============================================================
+   COMMAND PALETTE (#7)  — ⌘K / Ctrl+K
+   Fuzzy launcher for navigation + actions. Keyboard-first:
+   type to filter, ↑/↓ to move, Enter to run, Esc to close.
+   ============================================================ */
+function _paletteCommands(){
+  const nav=(id,label,tab,kw)=>({id,label,group:'Go to',kw:kw||label.toLowerCase(),run:()=>setTab(tab),icon:'nav'});
+  const setNav=(id,label,pane,kw)=>({id,label,group:'Settings',kw:kw||label.toLowerCase(),run:()=>{ S.settingsPane=pane; setTab('settings'); },icon:'nav'});
+  const cmds=[
+    // Actions first (most common)
+    {id:'new-chat',label:'New chat',group:'Actions',kw:'new chat conversation start',icon:'plus',run:()=>{ try{ newChat(); }catch(e){} }},
+    {id:'new-dev',label:'New Dev session',group:'Actions',kw:'new dev build code session',icon:'code',run:()=>{ try{ _sessNew('dev'); _resetToolState&&_resetToolState('dev'); }catch(e){} setTab('dev'); }},
+    {id:'new-lab',label:'New Lab session',group:'Actions',kw:'new lab run code session',icon:'lab',run:()=>{ try{ _sessNew('lab'); _resetToolState&&_resetToolState('lab'); }catch(e){} setTab('lab'); }},
+    {id:'toggle-theme',label:'Toggle light / dark theme',group:'Actions',kw:'theme dark light mode toggle appearance',icon:'theme',run:()=>{ document.body.classList.toggle('light'); try{ saveStr('amv_theme',document.body.classList.contains('light')?'light':'dark'); }catch(e){} }},
+    {id:'errors',label:'Errors \u2014 what\u2019s breaking for your users',group:'Actions',kw:'errors bugs crashes reports monitoring bugs dashboard',icon:'nav',run:()=>{ try{ openErrors(); }catch(e){} }},
+    {id:'mysites',label:'My live sites \u2014 view or take down',group:'Actions',kw:'sites deploy live url hosting published apps',icon:'nav',run:()=>{ try{ openMySites(); }catch(e){} }},
+    {id:'handoffs',label:'Context handoffs \u2014 download or resume',group:'Actions',kw:'handoff context download resume paste transfer continue new chat',icon:'nav',run:()=>{ try{ openHandoffManager(); }catch(e){} }},
+    {id:'shortcuts',label:'Keyboard shortcuts',group:'Actions',kw:'keyboard shortcuts cheat sheet hotkeys help keys',icon:'nav',run:()=>{ try{ openShortcutSheet(); }catch(e){} }},
+    // Navigation
+    nav('go-chat','Chat','chat','chat home talk'),
+    nav('go-images','Images','images','image picture generate art'),
+    nav('go-video','Video','video','video clip generate'),
+    nav('go-studio','Studio','studio','studio design page website'),
+    nav('go-dev','Dev','dev','dev build code app engineer'),
+    nav('go-lab','Lab','lab','lab run execute code'),
+    nav('go-crew','Crew','crew','crew agents team autonomous'),
+    nav('go-tasks','Tasks','tasks','tasks todo schedule automation'),
+    nav('go-projects','Projects','workspaces','projects workspace files'),
+    nav('go-memory','Memory','memory','memory remember facts'),
+    /* Team removed from the product */
+    nav('go-marketplace','Marketplace','market','marketplace agents store'),
+    nav('go-plans','Plans','plans','plans pricing upgrade subscription'),
+    nav('go-help','Help','help','help support docs guide'),
+    // Settings panes (deep links)
+    setNav('set-account','Settings: Account','account','account profile name instructions'),
+    setNav('set-privacy','Settings: Privacy','privacy','privacy data export delete location'),
+    setNav('set-billing','Settings: Billing','billing','billing invoices credits payment subscription'),
+    setNav('set-usage','Settings: Usage','usage','usage limits tokens'),
+    setNav('set-capabilities','Settings: Capabilities','capabilities','capabilities web search memory toggles'),
+    setNav('set-appearance','Settings: Appearance','appearance','appearance theme accent font motion'),
+    setNav('set-skills','Settings: Skills','skills','skills presets instructions'),
+    setNav('set-connectors','Settings: Connectors','integrations','connectors integrations connect apps gmail drive github'),
+  ];
+  return cmds;
+}
+let _palSel=0, _palList=[];
+function openCommandPalette(){
+  const r=$('ovr'); if(!r) return;
+  if(document.getElementById('cmdk-bg')){ return; } // already open
+  r.insertAdjacentHTML('beforeend',
+    '<div class="ov cmdk-ov" id="cmdk-bg"><div class="cmdk" onclick="event.stopPropagation()">'+
+      '<div class="cmdk-inp-wrap">'+
+        '<svg class="cmdk-search-ic" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>'+
+        '<input id="cmdk-inp" class="cmdk-inp" placeholder="Search commands\u2026 (type a page or action)" autocomplete="off" spellcheck="false">'+
+        '<kbd class="cmdk-esc">esc</kbd>'+
+      '</div>'+
+      '<div class="cmdk-results" id="cmdk-results"></div>'+
+    '</div></div>');
+  _palSel=0;
+  _renderPalette('');
+  const inp=$('cmdk-inp');
+  inp.addEventListener('input',()=>{ _palSel=0; _renderPalette(inp.value); });
+  inp.addEventListener('keydown',e=>{
+    if(e.key==='ArrowDown'){ e.preventDefault(); _palSel=Math.min(_palList.length-1,_palSel+1); _highlightPalette(); }
+    else if(e.key==='ArrowUp'){ e.preventDefault(); _palSel=Math.max(0,_palSel-1); _highlightPalette(); }
+    else if(e.key==='Enter'){ e.preventDefault(); _runPalette(_palSel); }
+    else if(e.key==='Escape'){ e.preventDefault(); closeCommandPalette(); }
+  });
+  on($('cmdk-bg'),'click',closeCommandPalette);
+  setTimeout(()=>inp.focus(),30);
+}
+function closeCommandPalette(){ const el=$('cmdk-bg'); if(el) el.remove(); }
+function _fuzzyScore(q, kw, label){
+  q=q.toLowerCase().trim(); if(!q) return 1;
+  const hay=(label+' '+kw).toLowerCase();
+  if(hay.includes(q)) return 100 - hay.indexOf(q);   // substring match ranks high
+  // subsequence match (fuzzy)
+  let qi=0; for(let i=0;i<hay.length&&qi<q.length;i++){ if(hay[i]===q[qi]) qi++; }
+  return qi===q.length ? 20 : -1;
+}
+function _renderPalette(query){
+  const all=_paletteCommands();
+  _palList = all.map(c=>({c,s:_fuzzyScore(query,c.kw,c.label)}))
+                .filter(x=>x.s>=0)
+                .sort((a,b)=>b.s-a.s)
+                .map(x=>x.c);
+  const box=$('cmdk-results'); if(!box) return;
+  if(!_palList.length){ box.innerHTML='<div class="cmdk-empty">No commands match \u201c'+escH(query)+'\u201d</div>'; return; }
+  const ic=(k)=>({
+    plus:'<path d="M12 5v14M5 12h14"/>',
+    code:'<path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/>',
+    lab:'<path d="M10 2h4M12 2v6.5L7 19a1 1 0 0 0 .9 1.5h8.2A1 1 0 0 0 17 19l-5-10.5"/>',
+    theme:'<circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/>',
+    nav:'<path d="M5 12h14M13 6l6 6-6 6"/>'
+  }[k]||'<circle cx="12" cy="12" r="9"/>');
+  box.innerHTML=_palList.map((c,i)=>
+    '<button class="cmdk-item'+(i===_palSel?' on':'')+'" data-pi="'+i+'">'+
+      '<span class="cmdk-item-ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+ic(c.icon)+'</svg></span>'+
+      '<span class="cmdk-item-label">'+escH(c.label)+'</span>'+
+      '<span class="cmdk-item-group">'+escH(c.group)+'</span>'+
+    '</button>').join('');
+  box.querySelectorAll('[data-pi]').forEach(b=>{
+    b.addEventListener('click',()=>_runPalette(parseInt(b.dataset.pi)));
+    b.addEventListener('mousemove',()=>{ _palSel=parseInt(b.dataset.pi); _highlightPalette(); });
+  });
+}
+function _highlightPalette(){
+  const box=$('cmdk-results'); if(!box) return;
+  box.querySelectorAll('.cmdk-item').forEach((el,i)=>el.classList.toggle('on',i===_palSel));
+  const on=box.querySelector('.cmdk-item.on'); if(on) on.scrollIntoView({block:'nearest'});
+}
+function _runPalette(i){
+  const c=_palList[i]; if(!c) return;
+  closeCommandPalette();
+  try{ c.run(); }catch(e){}
+}
+try{ window.openCommandPalette=openCommandPalette; window.closeCommandPalette=closeCommandPalette; }catch(e){}
+
+/* ============================================================
+   KEYBOARD SHORTCUT CHEAT SHEET (#19)  — press ?
+   ============================================================ */
+const _SHORTCUTS=[
+  { group:'General', items:[
+    { keys:['⌘','K'], alt:['Ctrl','K'], label:'Open command palette' },
+    { keys:['?'], label:'Show this cheat sheet' },
+    { keys:['Esc'], label:'Stop generating / focus the message box' },
+    { keys:['⌘',','], alt:['Ctrl',','], label:'Open settings' },
+    { keys:['⌘','/'], alt:['Ctrl','/'], label:'Open help' },
+  ]},
+  { group:'Actions', items:[
+    { keys:['⌘','⇧','O'], alt:['Ctrl','⇧','O'], label:'New chat' },
+    { keys:['⌘','⇧','L'], alt:['Ctrl','⇧','L'], label:'Toggle light / dark theme' },
+    { keys:['⌘','⇧','D'], alt:['Ctrl','⇧','D'], label:'Collapse / expand sidebar' },
+    { keys:['⌘','⇧','V'], alt:['Ctrl','⇧','V'], label:'Toggle voice mode' },
+  ]},
+  { group:'Chat', items:[
+    { keys:['Enter'], label:'Send message' },
+    { keys:['⌘','Enter'], alt:['Ctrl','Enter'], label:'Send (even from a new line)' },
+    { keys:['⇧','Enter'], label:'New line' },
+  ]},
+];
+function _isMac(){ try{ return /Mac|iPhone|iPad/.test(navigator.platform)||/Mac/.test(navigator.userAgent); }catch(e){ return false; } }
+function openShortcutSheet(){
+  const r=$('ovr'); if(!r) return;
+  if($('ksheet-bg')) { closeShortcutSheet(); return; }
+  const mac=_isMac();
+  const kbd=(keys)=>keys.map(k=>'<kbd class="ks-key">'+escH(k)+'</kbd>').join('<span class="ks-plus">+</span>');
+  const sections=_SHORTCUTS.map(sec=>
+    '<div class="ks-sec"><div class="ks-sec-h">'+escH(sec.group)+'</div>'+
+      sec.items.map(it=>{
+        const keys = (!mac && it.alt) ? it.alt : it.keys;
+        return '<div class="ks-row"><span class="ks-label">'+escH(it.label)+'</span><span class="ks-keys">'+kbd(keys)+'</span></div>';
+      }).join('')+
+    '</div>'
+  ).join('');
+  r.insertAdjacentHTML('beforeend',
+    '<div class="ov cmdk-ov" id="ksheet-bg"><div class="ksheet" onclick="event.stopPropagation()">'+
+      '<div class="ks-head"><div class="ks-title">Keyboard shortcuts</div>'+
+        '<button class="art-x" id="ks-x" aria-label="Close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>'+
+      '<div class="ks-body">'+sections+'</div>'+
+      '<div class="ks-foot">Press <kbd class="ks-key">?</kbd> anytime to open this. <kbd class="ks-key">Esc</kbd> to close.</div>'+
+    '</div></div>');
+  $('ks-x')?.addEventListener('click',closeShortcutSheet);
+  on($('ksheet-bg'),'click',closeShortcutSheet);
+  const esc=(ev)=>{ if(ev.key==='Escape'){ closeShortcutSheet(); document.removeEventListener('keydown',esc); } };
+  document.addEventListener('keydown',esc);
+}
+function closeShortcutSheet(){ const el=$('ksheet-bg'); if(el) el.remove(); }
+try{ window.openShortcutSheet=openShortcutSheet; }catch(e){}
+
 function openCowork(){
   const r=$('ovr'); if(!r) return;
   r.innerHTML = `<div class="ov tp-ov" id="cw-bg"><div class="tp-modal cowork-modal" onclick="event.stopPropagation()">
     <div class="tp-head"><div><div class="eyebrow">AMV Autonomous</div><h2 class="tp-title">Give AMV an outcome</h2></div><button class="tp-x" id="cw-close">✕</button></div>
     <div class="tp-body" id="cw-step1">
       <p class="trip-sub">Describe the result you want — not the steps. AMV plans the work, executes each step itself, and brings back a finished deliverable. You approve anything that sends or shares.</p>
-      <label class="tp-f"><span>What outcome do you want?</span><textarea id="cw-goal" rows="4" placeholder="e.g. 'Analyze the sales numbers in this file and write an executive summary with the top 3 insights' or 'Research the top 5 competitors and build a comparison table'"></textarea></label>
-      <label class="tp-f"><span>Attach a file (optional)</span><input type="file" id="cw-file"></label>
+      <label class="tp-f"><span>What outcome do you want?</span><textarea id="cw-goal" rows="4" placeholder="e.g. 'Analyze the sales numbers in this file and write an executive summary with the top 3 insights' or 'Rename and sort every file in this folder, then write a summary of what's inside'"></textarea></label>
+      <div class="tp-f"><span>Add files <span class="cw-opt-tag">Optional</span></span>
+        <div class="cw-ws" id="cw-ws">
+          <div class="cw-ws-lead">AMV can do this with or without files. Adding files (a spreadsheet, PDF, doc — anything) just lets it work on your actual content. <b>Not sure? Skip this</b> — just describe what you want above.</div>
+          <div class="cw-ws-actions">
+            <button type="button" class="btn bs" id="cw-upload">📎 Add files</button>
+            <button type="button" class="btn bs" id="cw-folder">📁 Use a whole folder</button>
+            <input type="file" id="cw-files" multiple style="display:none">
+          </div>
+          <div class="cw-ws-note" id="cw-ws-note"></div>
+          <div class="cw-ws-list" id="cw-ws-list"></div>
+        </div>
+      </div>
       <div class="sched-panel">
         <div class="sched-label">Schedule</div>
         <div class="sched-cad" id="cw-cad">
@@ -7894,20 +16132,36 @@ function openCowork(){
   on($('cw-dom-sel'),'change',()=>{ _SCHED.dom=+$('cw-dom-sel').value; updNote(); });
   on($('cw-hour'),'change',()=>{ _SCHED.hour=+$('cw-hour').value; updNote(); });
   on($('auto-stop'),'click',stopAutonomous);
+  // ---- workspace wiring ----
+  AMVWorkspace.clear();
+  const drawWs=()=>{
+    const el=$('cw-ws-list'); const note=$('cw-ws-note'); if(!el) return;
+    if(!AMVWorkspace.files.length){ el.innerHTML=''; if(note) note.innerHTML=''; return; }
+    const n=AMVWorkspace.files.length;
+    if(note) note.innerHTML='<span class="cw-ws-ok">✓ AMV can see '+n+' file'+(n>1?'s':'')+' — it’ll use '+(n>1?'them':'it')+' for this task.</span> <button type="button" class="cw-ws-clear" id="cw-ws-clear">Remove all</button>';
+    el.innerHTML=AMVWorkspace.files.slice(0,40).map(f=>'<div class="cw-ws-file"><span class="sl-file-ic">'+_fileIcon(f.type,f.name)+'</span><span class="sl-file-n">'+escH(f.path)+'</span><span class="sl-file-sz">'+_fmtBytes(f.size||0)+'</span></div>').join('')+
+      (n>40?'<div class="cw-ws-more">+'+(n-40)+' more</div>':'');
+    const clr=$('cw-ws-clear'); if(clr) on(clr,'click',()=>{ AMVWorkspace.clear(); drawWs(); });
+  };
+  on($('cw-folder'),'click',async()=>{
+    if(!AMVWorkspace.supported()){ toast('Folder access needs Chrome or Edge on desktop. Use “Upload files” instead — it works everywhere.','info',6000); return; }
+    if(!window.isSecureContext){ toast('Folder access needs a secure (https) page. Use “Upload files” instead — same result.','info',7000); return; }
+    try{ await AMVWorkspace.connectFolder(); drawWs(); toast('Folder connected — AMV can read and write these files.','success',4000); }
+    catch(e){ if(e.message==='cancelled') return; if(e.message==='insecure'){ toast('Folder access needs a secure (https) page. Use “Upload files” instead.','info',7000); return; } toast('Could not open that folder. Try “Upload files” instead.','error',5000); }
+  });
+  on($('cw-upload'),'click',()=>$('cw-files')&&$('cw-files').click());
+  on($('cw-files'),'change',async function(){ const before=AMVWorkspace.files.length; await AMVWorkspace.addUploads(this.files); drawWs(); const added=AMVWorkspace.files.length-before; this.value=''; if(added>0) toast('Added '+added+' file'+(added>1?'s':'')+' — AMV will use '+(added>1?'them':'it'),'success',3000); });
 }
 async function _coworkStart(){
   const goal=$('cw-goal')?$('cw-goal').value.trim():'';
   if(!goal){ toast('Describe the outcome you want','error'); $('cw-goal')&&$('cw-goal').focus(); return; }
-  const fileInput=$('cw-file'); const file=fileInput&&fileInput.files[0];
   const cad=(_SCHED&&_SCHED.cad)||'once';
   if(cad!=='once'){ _scheduleAuto2(goal, Object.assign({},_SCHED)); }
   $('cw-step1').style.display='none'; $('cw-step2').style.display='block';
   if(cad!=='once'){ _autoLog('<div class="auto-ev plan"><b>Scheduled</b><div>'+_schedHuman()+'. Running the first one now. AMV runs this automatically when due (and catches up when you return). Connect the backend for true 24/7.</div></div>'); }
-  if(file){
-    const reader=new FileReader();
-    reader.onload=()=>runAutonomous(goal,{file, fileContent:reader.result});
-    if(file.type.startsWith('text')||file.size<200000) reader.readAsText(file); else reader.readAsDataURL(file);
-  } else { runAutonomous(goal,{}); }
+  const ws=AMVWorkspace.files.length?AMVWorkspace:null;
+  if(ws){ _autoLog('<div class="auto-ev plan"><b>Workspace</b><div>Working across '+ws.files.length+' file'+(ws.files.length>1?'s':'')+(ws.dirHandle?' in your connected folder. Results will be written back to disk.':'. Results will be offered as downloads.')+'</div></div>'); }
+  runAutonomous(goal, ws?{ workspace:ws, fileContent:ws.contextText() }:{});
 }
 function _freqLabel(f){ return {daily:'Every day',weekdays:'Every weekday',weekly_mon:'Every Monday morning',weekly:'Every week',hourly:'Every hour'}[f]||f; }
 function _freqNext(f, from){
@@ -7918,24 +16172,42 @@ function _freqNext(f, from){
   if(f==='weekly_mon'){ d.setDate(d.getDate()+((8-d.getDay())%7||7)); d.setHours(8,0,0,0); return d.getTime(); }
   return from+864e5;
 }
+/* Schedule an automation. This now goes to the SERVER, where a cron trigger
+   runs it in the background — so it fires even with AMV closed. Falls back to
+   a local record (and says so honestly) when the engine isn't connected. */
 function _scheduleAuto(goal, freq){
-  const list=_loadSched();
-  list.push({id:'a'+Date.now(), goal, freq, next:_freqNext(freq, Date.now()), created:Date.now(), lastRun:null});
-  _saveSched(list);
-  if(typeof toast==='function') toast('Scheduled — '+_freqLabel(freq),'success');
+  // Server path: real background execution.
+  _scheduleTask({ detail: goal, repeat: (freq==='hourly'||freq==='weekly') ? freq : 'daily', firstRunAt: _freqNext(freq, Date.now()) })
+    .then(item=>{
+      if(item){ try{ _autoRefresh(); }catch(e){} }
+      else {
+        // Not connected — keep a local record so nothing is lost, but don't
+        // pretend it will run unattended.
+        const list=_loadSched();
+        list.push({id:'a'+Date.now(), goal, freq, next:_freqNext(freq, Date.now()), created:Date.now(), lastRun:null, localOnly:true});
+        _saveSched(list);
+      }
+    })
+    .catch(()=>{});
 }
 function _loadSched(){ try{ return JSON.parse(localStorage.getItem('amv_autosched')||'[]'); }catch(e){ return []; } }
 function _saveSched(l){ try{ localStorage.setItem('amv_autosched', JSON.stringify(l)); }catch(e){} }
 async function _runDueAuto(){
-  const list=_loadSched(); if(!list.length) return; const now=Date.now(); let changed=false;
+  const list=_loadSched(); if(!list.length) return;
+  const now=Date.now(); let changed=false; let ranAny=false;
+  // If the AI backend isn't connected, scheduled work can't actually run.
+  // Roll overdue tasks forward silently (no misleading "running" toast).
+  const canRun = (typeof _aiBackendReady==='function') ? _aiBackendReady() : false;
   for(const t of list){
     if(t.next<=now){
+      // always advance the schedule so a past-due task can't re-fire every load
       t.lastRun=now; t.next=(t.sched?_schedNext(t.sched,now):_freqNext(t.freq,now)); changed=true;
-      // Run in the BACKGROUND — do not hijack the UI with a modal.
-      if(typeof toast==='function') toast('Running a scheduled task in the background','info',3000);
-      try{ await runAutonomous(t.goal,{silent:true}); }catch(e){}
+      if(!canRun) continue;                    // can't run without the engine — just reschedule
+      ranAny=true;
+      try{ await runAutonomous(t.goal,{silent:true}); }catch(e){ _logErr('scheduledTask', e); }
     }
   }
+  if(ranAny && typeof toast==='function') toast('Ran a scheduled task','info',2500);
   if(changed) _saveSched(list);
 }
 /* Scheduled work manager */

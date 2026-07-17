@@ -1,0 +1,44 @@
+name = "amv-backend"
+main = "amv-backend.js"
+compatibility_date = "2024-09-23"
+
+# ── THIS is what makes automations run in the background ──
+# Cloudflare fires the Worker's scheduled() handler on this cron, whether or
+# not anyone has AMV open. Every 5 minutes it looks for due automations,
+# runs them, and stores the results for the user.
+[triggers]
+crons = ["*/5 * * * *"]
+
+[[kv_namespaces]]
+binding = "AMV_KV"
+id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+
+# ── THIS is what makes usage limits actually hold ──
+# Quota enforcement is "read usage → compare to cap → call the model → add usage".
+# With a plain KV counter that read-then-write is NOT atomic: 20 parallel requests
+# all read the same number, all pass the check, and all bill you. A user with
+# devtools could blow straight through their plan.
+#
+# AMVCounter is a Durable Object — a single-threaded actor per counter — so
+# increments are serialised and the cap genuinely holds under concurrency.
+#
+# WITHOUT this binding the Worker silently falls back to the non-atomic KV path.
+# It keeps working, but your limits become suggestions.
+[[durable_objects.bindings]]
+name = "AMV_COUNTER"
+class_name = "AMVCounter"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["AMVCounter"]
+
+# Secrets (set with: wrangler secret put NAME)
+#   ANTHROPIC_API_KEY   - required, so the model can be called
+#   JWT_SECRET          - required, to authenticate users
+#   ADMIN_TOKEN         - required, for the error dashboard + admin password reset
+#   EMAIL_API_KEY       - required, or password-reset emails never send
+#   RESET_EMAIL_FROM    - optional; without it, Resend's default sender is used
+#                         (which only delivers to YOUR OWN address)
+#   GLOBAL_DAILY_USD_CAP - optional (defaults to $500). A global ceiling on what
+#                         AMV can cost you in a day across ALL users. This is
+#                         your protection against a runaway bill.
