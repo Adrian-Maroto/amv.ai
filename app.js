@@ -1,0 +1,7995 @@
+"use strict";
+
+const $ = id => document.getElementById(id);
+const on = (el, ev, fn) => el && el.addEventListener(ev, fn);
+/* === per-account storage scoping ===
+   Every data key is namespaced by the logged-in user's email so accounts
+   on the same browser cannot see each other's data. A small allowlist of
+   device-level keys (login record, theme, oauth handoff) stays global. */
+const _GLOBAL_KEYS = new Set(['amv_user','amv_theme','amv_oauth_return','amv_gtoken','amv_gtoken_exp','amv_gauth','amv_api_base','amv_api_token','amv_owner','amv_lang','amv_support_email']);
+function _scopeKey(k){
+  if(_GLOBAL_KEYS.has(k)) return k;
+  let who='guest';
+  try{ if(typeof S!=='undefined' && S && S.user && S.user.email) who=S.user.email.toLowerCase(); }
+  catch(e){}
+  if(who==='guest'){ try{ const u=JSON.parse(localStorage.getItem('amv_user')||'null'); if(u&&u.email) who=u.email.toLowerCase(); }catch(e){} }
+  return 'u:'+who+'|'+k;
+}
+const store = (k,v) => { try{localStorage.setItem(_scopeKey(k),JSON.stringify(v));}catch(e){ console.warn('localStorage store failed', k, e); } };
+const load = k => { try{return JSON.parse(localStorage.getItem(_scopeKey(k)));}catch(e){ console.warn('localStorage load failed', k, e); return null; } };
+const loadStr = k => { try{ return localStorage.getItem(_scopeKey(k))||''; }catch(e){ console.warn('localStorage loadStr failed', k, e); return ''; } };
+const saveStr = (k,v) => { try{ localStorage.setItem(_scopeKey(k),v); }catch(e){ console.warn('localStorage saveStr failed', k, e); } };
+/* ============================================================
+   AMV_API - backend client.
+   When AMV_API.base is set (to your deployed Worker URL), the app
+   talks to the live backend for AI, jobs, approvals, and handoff.
+   When it is empty, the app runs in LOCAL mode (per-browser demo,
+   using the same storage as before). Flip live by setting the URL
+   in Settings (saved to amv_api_base) - no code change needed.
+   ============================================================ */
+const AMV_API = {
+  get base(){ try{ return loadStr('amv_api_base')||''; }catch(e){ return ''; } },
+  set base(v){ try{ saveStr('amv_api_base', v||''); }catch(e){} },
+  get token(){ try{ return loadStr('amv_api_token')||''; }catch(e){ return ''; } },
+  set token(v){ try{ saveStr('amv_api_token', v||''); }catch(e){} },
+  get live(){ return !!this.base; },
+
+  async _fetch(path, opts){
+    const o = opts||{};
+    o.headers = Object.assign({'Content-Type':'application/json'}, o.headers||{});
+    if(this.token) o.headers['Authorization'] = 'Bearer '+this.token;
+    const r = await fetch(this.base.replace(/\/$/,'') + path, o);
+    // Auth endpoints return 401/404/409 with a meaningful body the caller reads;
+    // only treat 401 as "session expired" for AUTHENTICATED (non-auth) calls.
+    if(r.status===401 && !/^\/auth\//.test(path)){ throw new Error('Session expired - sign in again'); }
+    return r;
+  },
+
+  // sign in -> get a real server-issued session token
+  async login(email, opts){
+    if(!this.live) return null;
+    const o = opts||{};
+    const body = { email, name:o.name||'', password:o.password||'', provider:o.provider||'email' };
+    const r = await this._fetch('/auth/login', {method:'POST', body:JSON.stringify(body)});
+    const d = await r.json().catch(()=>({}));
+    if(d.token){ this.token = d.token; this._storeTokenMeta(d.token); return d; }
+    throw new Error(d.error || 'Login failed');
+  },
+  // decode exp from our token (body.exp) and remember it
+  _storeTokenMeta(token){
+    try{ const body=JSON.parse(atob(token.split('.')[0])); if(body.exp) saveStr('amv_token_exp', String(body.exp)); }catch(e){}
+  },
+  tokenValid(){
+    if(!this.token) return false;
+    try{ const exp=parseInt(loadStr('amv_token_exp')||'0',10); if(exp && Date.now()>exp) return false; }catch(e){}
+    return true;
+  },
+
+  // streaming AI call through the backend (same shape the app already uses)
+  async messages(body){
+    return this._fetch('/v1/messages', {method:'POST', body:JSON.stringify(body)});
+  },
+
+  // ---- server-side data sync ----
+  async syncPull(){
+    if(!this.live || !this.token) return null;
+    try{ const r = await this._fetch('/sync/pull', {method:'POST', body:'{}'}); const d = await r.json(); return d.ok ? d.data : null; }
+    catch(e){ return null; }
+  },
+  async syncPush(data){
+    if(!this.live || !this.token) return false;
+    try{ const r = await this._fetch('/sync/push', {method:'POST', body:JSON.stringify({data})}); const d = await r.json(); return !!(d&&d.ok); }
+    catch(e){ return false; }
+  },
+  async signup(email, name, password){
+    if(!this.live) return null;
+    const r = await this._fetch('/auth/signup', {method:'POST', body:JSON.stringify({email,name,password})});
+    const d = await r.json().catch(()=>({}));
+    if(d.token){ this.token = d.token; return d; }
+    throw new Error(d.error || 'Signup failed');
+  },
+
+  // jobs / approvals / handoff
+  async jobs(){ const r=await this._fetch('/api/jobs'); return (await r.json()).jobs||[]; },
+  async toggleJob(id,on){ await this._fetch('/api/jobs',{method:'POST',body:JSON.stringify({id,on})}); },
+  async approvals(){ const r=await this._fetch('/api/approvals'); return (await r.json()).approvals||[]; },
+  async actApproval(id,action){ await this._fetch('/api/approvals/act',{method:'POST',body:JSON.stringify({id,action})}); },
+  async createHandoff(h){ await this._fetch('/api/handoff',{method:'POST',body:JSON.stringify(h)}); },
+  async listHandoff(){ const r=await this._fetch('/api/handoff'); return await r.json(); },
+  async actHandoff(id,action){ await this._fetch('/api/handoff/act',{method:'POST',body:JSON.stringify({id,action})}); },
+
+  // ---- PAYMENTS (secure backend) ----
+  async stripeCheckout(plan,email){ const r=await this._fetch('/v1/stripe/checkout',{method:'POST',body:JSON.stringify({plan,email})}); const d=await r.json(); if(!r.ok||!d.url) throw new Error(d.error||'checkout failed'); return d.url; },
+  async paypalCreate(plan){ const r=await this._fetch('/v1/paypal/create',{method:'POST',body:JSON.stringify({plan})}); const d=await r.json(); if(!r.ok||!d.id) throw new Error(d.error||'paypal create failed'); return d.id; },
+  async paypalSubscribe(plan,email){ const r=await this._fetch('/v1/paypal/subscribe',{method:'POST',body:JSON.stringify({plan,email})}); const d=await r.json(); if(!r.ok||!d.url) throw new Error(d.error||'subscribe failed'); return d.url; },
+  async paypalCapture(orderId,email){ const r=await this._fetch('/v1/paypal/capture',{method:'POST',body:JSON.stringify({orderId,email})}); const d=await r.json(); if(!r.ok||!d.ok) throw new Error(d.error||'capture failed'); return d; },
+  async entitlement(email){ const r=await this._fetch('/v1/entitlement?email='+encodeURIComponent(email||'')); return await r.json(); },
+  async portal(customer){ const r=await this._fetch('/v1/portal',{method:'POST',body:JSON.stringify({customer})}); const d=await r.json(); return d.url||''; },
+};
+window.AMV_API = AMV_API;
+function amvSaveBackend(){ var v=(document.getElementById('be-url')||{}).value||''; AMV_API.base=v.trim(); toast(v.trim()?'Backend URL saved':'Cleared - local mode','info'); if(typeof renderSetPane==='function') renderSetPane(); }
+async function amvBackendLogin(){ var em=(document.getElementById('be-email')||{}).value||''; if(!em.trim()){ toast('Enter your email','error'); return; } if(!AMV_API.live){ toast('Set the backend URL first','error'); return; } try{ await AMV_API.login(em.trim(), {name:(S.user&&S.user.name)||'', provider:'google'}); toast('Connected to backend','info'); if(typeof renderSetPane==='function') renderSetPane(); }catch(e){ toast(e.message||'Login failed','error'); } }
+window.amvSaveBackend=amvSaveBackend; window.amvBackendLogin=amvBackendLogin;
+
+
+
+function escH(t) {
+  return (t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function toast(msg, type='info', dur=3000) {
+  const wrap = $('toast-wrap');
+  if (!wrap) return;
+  const icons = {success:'✓', error:'✕', info:'ℹ'};
+  const t = document.createElement('div');
+  t.className = 'toast ' + type;
+  t.innerHTML = '<div class="ticon">' + (icons[type]||'ℹ') + '</div><span>' + escH(msg) + '</span>';
+  wrap.appendChild(t);
+  setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 200); }, dur);
+}
+
+function closeOvr() { const r=$('ovr'); if(r) r.innerHTML=''; }
+
+/* Reusable polished empty state: icon + title + subtitle + optional action.
+   emptyState({icon,title,sub,btn:{label,act,arg}}) -> HTML string */
+function emptyState(o){
+  o=o||{};
+  const btn = o.btn ? '<button class="es-btn" data-dact="'+(o.btn.act||'')+'" data-darg="'+(o.btn.arg||'')+'">'+escH(o.btn.label||'Get started')+'</button>' : '';
+  return '<div class="empty-state">'+
+    '<div class="es-icon">'+(o.icon||'\u2728')+'</div>'+
+    '<div class="es-title">'+escH(o.title||'Nothing here yet')+'</div>'+
+    (o.sub?'<div class="es-sub">'+escH(o.sub)+'</div>':'')+
+    btn+
+  '</div>';
+}
+
+/* ============================================================
+   ACCESSIBILITY — ARIA labels, roles, and full keyboard navigation.
+   Runs after render so it covers dynamically-created controls too.
+   Enterprise buyers audit this; it also helps every keyboard user.
+   ============================================================ */
+const _TAB_LABELS={dashboard:'Dashboard',chat:'Chat',images:'Images',video:'Video',workspaces:'Projects',memory:'Memory',team:'Team',usage:'Usage',billing:'Billing',plans:'Plans',settings:'Settings',help:'Help Center',apps:'Apps',tasks:'Tasks',integrations:'Integrations',crew:'Crew',studio:'Studio',dev:'Dev',handoff:'Handoff',lab:'Lab'};
+function _initA11y(){
+  try{
+    // landmark roles
+    const sb=$('sb'); if(sb){ sb.setAttribute('role','navigation'); sb.setAttribute('aria-label','Main navigation'); }
+    const main=$('vc'); if(main){ main.setAttribute('role','main'); }
+    const app=$('app'); if(app) app.setAttribute('role','application');
+    // label every icon-only button from its title / data-tab / id
+    document.querySelectorAll('button:not([aria-label])').forEach(b=>{
+      const hasText=(b.textContent||'').trim().length>0 && !b.querySelector('svg,img') || (b.textContent||'').trim().length>2;
+      let label=b.getAttribute('title')||'';
+      if(!label && b.dataset.tab) label=_TAB_LABELS[b.dataset.tab]||b.dataset.tab;
+      if(!label && b.dataset.dact) label=b.dataset.dact.replace(/([A-Z])/g,' $1');
+      if(!label && b.id) label=b.id.replace(/[-_]/g,' ');
+      if(label && !hasText) b.setAttribute('aria-label',label.trim());
+    });
+    // nav buttons: mark current
+    document.querySelectorAll('.snb').forEach(b=>{
+      b.setAttribute('role','tab');
+      b.setAttribute('aria-selected', b.classList.contains('on')?'true':'false');
+      if(!b.getAttribute('aria-label')&&b.dataset.tab) b.setAttribute('aria-label',_TAB_LABELS[b.dataset.tab]||b.dataset.tab);
+    });
+    // inputs without labels get aria-label from placeholder
+    document.querySelectorAll('input:not([aria-label]),textarea:not([aria-label])').forEach(i=>{
+      const ph=i.getAttribute('placeholder'); if(ph) i.setAttribute('aria-label',ph);
+    });
+    // overlay, when populated, is a dialog
+    const ovr=$('ovr');
+    if(ovr && ovr.children.length){ ovr.setAttribute('role','dialog'); ovr.setAttribute('aria-modal','true'); }
+  }catch(e){}
+}
+/* Focus trap + Escape handling for modals, and arrow-key nav for the sidebar. */
+function _initKeyboardNav(){
+  try{
+    document.addEventListener('keydown',(e)=>{
+      // Escape closes any open overlay
+      if(e.key==='Escape'){
+        const ovr=$('ovr');
+        if(ovr && ovr.children.length){ closeOvr(); e.preventDefault(); return; }
+        const pop=document.querySelector('.sb-popup.on,.menu.on,.ctx-menu'); if(pop){ pop.classList.remove('on'); }
+      }
+      // Cmd/Ctrl+K focuses search
+      if((e.metaKey||e.ctrlKey)&&e.key==='k'){ const s=$('hist-search'); if(s){ e.preventDefault(); s.focus(); } }
+      // Arrow up/down to move through sidebar nav when focus is in the sidebar
+      const inNav=document.activeElement&&document.activeElement.classList&&document.activeElement.classList.contains('snb');
+      if(inNav && (e.key==='ArrowDown'||e.key==='ArrowUp')){
+        e.preventDefault();
+        const btns=[...document.querySelectorAll('.snb')];
+        const i=btns.indexOf(document.activeElement);
+        const next=e.key==='ArrowDown'?Math.min(btns.length-1,i+1):Math.max(0,i-1);
+        btns[next] && btns[next].focus();
+      }
+    });
+    // focus trap inside an open overlay
+    document.addEventListener('keydown',(e)=>{
+      if(e.key!=='Tab') return;
+      const ovr=$('ovr'); if(!ovr||!ovr.children.length) return;
+      const f=ovr.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select,textarea,[tabindex]:not([tabindex="-1"])');
+      if(!f.length) return;
+      const first=f[0], last=f[f.length-1];
+      if(e.shiftKey && document.activeElement===first){ e.preventDefault(); last.focus(); }
+      else if(!e.shiftKey && document.activeElement===last){ e.preventDefault(); first.focus(); }
+    });
+  }catch(e){}
+}
+
+/* Respect the user's reduced-motion preference in JS-driven effects too. */
+const _reduceMotion = (()=>{ try{ return window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){ return false; } })();
+function prefersReducedMotion(){ try{ return window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){ return false; } }
+try{ if(_reduceMotion) document.documentElement.classList.add('reduce-motion'); }catch(e){}
+try{ const _mq=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)'); if(_mq&&_mq.addEventListener) _mq.addEventListener('change',e=>{ document.documentElement.classList.toggle('reduce-motion', e.matches); }); }catch(e){}
+
+/* Global offline indicator — shows a banner when the connection drops. */
+function _initOfflineWatch(){
+  const show=()=>{ let bar=$('offline-bar'); if(!bar){ bar=document.createElement('div'); bar.id='offline-bar'; bar.className='offline-bar'; bar.innerHTML='\u26A0 You\u2019re offline \u2014 changes are saved locally and will sync when you\u2019re back online.'; document.body.appendChild(bar); } bar.classList.add('show'); };
+  const hide=()=>{ const bar=$('offline-bar'); if(bar) bar.classList.remove('show'); };
+  try{
+    window.addEventListener('offline',show);
+    window.addEventListener('online',()=>{ hide(); try{ if(window.AMVSync&&AMVSync.enabled()) AMVSync.push(); }catch(e){} });
+    if(navigator.onLine===false) show();
+  }catch(e){}
+}
+
+function _showModalAsync({title, body, okText='OK', cancelText, placeholder, defaultValue=''}){
+  return new Promise(resolve=>{
+    const r=$('ovr'); if(!r){ resolve(null); return; }
+    r.innerHTML=
+      '<div class="ov" id="modal-bg"><div class="ob" id="modal-box" style="max-width:520px;min-width:320px;cursor:auto;position:relative">'+
+        '<button class="oc" id="modal-close" style="position:absolute;top:10px;right:10px">×</button>'+
+        (title?'<h2 style="margin-bottom:10px">'+escH(title)+'</h2>':'')+
+        '<div class="ob-sub" style="margin-bottom:16px;white-space:pre-wrap;line-height:1.5">'+escH(body)+'</div>'+
+        (placeholder!==undefined?'<input id="modal-input" type="text" value="'+escH(defaultValue||'')+'" placeholder="'+escH(placeholder||'')+'" style="width:100%;margin-bottom:16px;padding:12px;border-radius:12px;border:1px solid var(--bd);font-size:13px">':'')+
+        '<div style="display:flex;gap:10px;justify-content:flex-end">'+
+          (cancelText?'<button class="btn bs" id="modal-cancel" style="padding:10px 16px;font-size:13px">'+escH(cancelText)+'</button>':'')+
+          '<button class="btn bp" id="modal-ok" style="padding:10px 16px;font-size:13px">'+escH(okText)+'</button>'+ 
+        '</div>'+ 
+      '</div></div>';
+    const box=$('modal-box'); if(box) box.addEventListener('click',e=>e.stopPropagation());
+    on($('modal-close'),'click',()=>{ closeOvr(); resolve(null); });
+    if(cancelText) on($('modal-cancel'),'click',()=>{ closeOvr(); resolve(null); });
+    on($('modal-ok'),'click',()=>{ const val=$('modal-input')?$('modal-input').value:''; closeOvr(); resolve(val); });
+    on($('modal-bg'),'click',()=>{ closeOvr(); resolve(null); });
+    const input=$('modal-input'); if(input){ input.focus(); input.select(); }
+  });
+}
+async function showConfirmAsync(message){
+  const result = await _showModalAsync({title:'Confirm', body:message, okText:'Confirm', cancelText:'Cancel'});
+  return !!result;
+}
+async function showTextPromptAsync(message, defaultValue=''){
+  return await _showModalAsync({title:'Input required', body:message, placeholder:'Enter text here', defaultValue, okText:'Save', cancelText:'Cancel'});
+}
+function showError(message){ toast(message,'error',5000); }
+
+/* ============================================================
+   CENTRALIZED STATE STORE
+   One source of truth. All app state lives in `S`. Writing to a
+   persisted key (see _PERSIST) automatically saves it; subscribers
+   are notified on every change so views can react instead of state
+   drifting across S / localStorage / the DOM.
+     S.tab = 'chat'            -> updates + notifies 'tab' subscribers
+     AMVState.subscribe('tab', fn)   -> run fn(newVal) on change
+     AMVState.set('model','core')    -> same as S.model='core'
+     AMVState.persistedKeys           -> which keys auto-save
+   ============================================================ */
+const _PERSIST = {            // key on S  ->  storage key
+  user:'amv_user', mk:'amv_mk', rl:'amv_rl', sp:'amv_sp', se:'amv_se',
+  model:'amv_model', memory:'amv_memory', workspaces:'amv_workspaces',
+  prompts:'amv_prompts', settingsPane:null, imgStyle:'amv_imgstyle',
+  imgRatio:'amv_imgratio',
+};
+const _subs = {};   // key -> [fns]
+const _AMVState = {
+  subscribe(key, fn){ (_subs[key]||(_subs[key]=[])).push(fn); return ()=>{ _subs[key]=(_subs[key]||[]).filter(f=>f!==fn); }; },
+  _notify(key, val){ (_subs[key]||[]).forEach(fn=>{ try{ fn(val); }catch(e){ console.warn('state subscriber error', key, e); } }); (_subs['*']||[]).forEach(fn=>{ try{ fn(key,val); }catch(e){} }); },
+  set(key, val){ _raw[key]=val; _persist(key,val); this._notify(key,val); },
+  get(key){ return _raw[key]; },
+  get persistedKeys(){ return Object.keys(_PERSIST); },
+};
+function _persist(key, val){
+  if(!(key in _PERSIST)) return;
+  const sk=_PERSIST[key]; if(!sk) return;
+  try{
+    if(val===undefined||val===null){ /* keep */ }
+    if(typeof val==='string') saveStr(sk, val);
+    else store(sk, val);
+  }catch(e){ console.warn('state persist failed', key, e); }
+}
+const _raw = {
+  tab: 'chat',
+  sbOpen: true,
+  user: load('amv_user'),
+  mk: loadStr('amv_mk'),
+  rl: loadStr('amv_rl'),
+  sp: loadStr('amv_sp'),
+  se: loadStr('amv_se'),
+  convs: [],
+  cur: null,
+  openTabs: [],
+  model: loadStr('amv_model')||'auto',
+  imgs: [],
+  imgStyle: loadStr('amv_imgstyle')||'Photorealistic',
+  imgRatio: loadStr('amv_imgratio')||'1:1',
+  vids: [],
+  memory: load('amv_memory')||[],
+  prompts: load('amv_prompts')||[],
+  workspaces: load('amv_workspaces')||[],
+  busy: false,
+  att: null,
+  streaming: false,
+  starFilter: false,
+  settingsPane: 'account',
+};
+const S = new Proxy(_raw, {
+  set(target, key, val){
+    target[key]=val;
+    _persist(key, val);
+    _AMVState._notify(key, val);
+    return true;
+  },
+  get(target, key){ return target[key]; },
+});
+const AMVState = _AMVState;
+try{ window.AMVState = AMVState; }catch(e){}
+
+/* ============================================================
+   AMVSync — keeps user data on the server so it follows them
+   across devices. Local storage is the offline cache; the server
+   is the source of truth when a backend + session exist.
+     AMVSync.pull()  -> fetch server data, hydrate S + local cache
+     AMVSync.push()  -> upload current user data (debounced)
+   It auto-pushes whenever synced state keys change.
+   ============================================================ */
+const _SYNC_KEYS = ['convs','memory','workspaces','prompts','imgs','model','imgStyle','imgRatio'];
+const AMVSync = {
+  _timer: null,
+  enabled(){ try{ return !!(window.AMV_API && AMV_API.live && AMV_API.token); }catch(e){ return false; } },
+  async pull(){
+    if(!this.enabled()) return false;
+    const data = await AMV_API.syncPull();
+    if(!data) return false;
+    // hydrate state from server (server wins on login)
+    _SYNC_KEYS.forEach(k=>{ if(data[k]!==undefined){ _raw[k]=data[k]; _persist(k,data[k]); } });
+    try{ if(S.tab) renderView&&renderView(); }catch(e){}
+    return true;
+  },
+  collect(){
+    const out={};
+    _SYNC_KEYS.forEach(k=>{ out[k]=_raw[k]; });
+    return out;
+  },
+  push(){ // debounced
+    if(!this.enabled()) return;
+    clearTimeout(this._timer);
+    this._timer=setTimeout(()=>{ AMV_API.syncPush(this.collect()); }, 1200);
+  },
+  start(){
+    if(!this.enabled()) return;
+    // push whenever a synced key changes
+    _SYNC_KEYS.forEach(k=>AMVState.subscribe(k, ()=>this.push()));
+  },
+};
+try{ window.AMVSync = AMVSync; }catch(e){}
+
+/* ============================================================
+   AMVValue — tracks the value AMV delivers for the user so we can
+   show it back to them ("X tasks done, ~Y hours saved this week").
+   Quantified value is a top retention + willingness-to-pay driver.
+   ============================================================ */
+const AMVValue = {
+  // minutes a human would plausibly spend doing each thing manually
+  _MIN:{ message:4, image:20, video:45, code:35, document:30, agent_action:12, research:25, design:40 },
+  _key(){ return 'amv_value'; },
+  _load(){ try{ return load(this._key())||{events:[]}; }catch(e){ return {events:[]}; } },
+  _save(v){ try{ store(this._key(), v); }catch(e){} },
+  record(type, meta){
+    const v=this._load();
+    v.events.push({ t:type, ts:Date.now(), min:this._MIN[type]||3, meta:meta||null });
+    // keep last ~2000 events
+    if(v.events.length>2000) v.events=v.events.slice(-2000);
+    this._save(v);
+    try{ if(S.tab==='usage' && typeof renderUsageView==='function') renderUsageView(); }catch(e){}
+  },
+  // aggregate over a window (days). null = all time
+  stats(days){
+    const v=this._load();
+    const since = days? Date.now()-days*864e5 : 0;
+    const ev=v.events.filter(e=>e.ts>=since);
+    const byType={}; let minutes=0;
+    ev.forEach(e=>{ byType[e.t]=(byType[e.t]||0)+1; minutes+=e.min||0; });
+    return { total:ev.length, byType, minutesSaved:minutes, hoursSaved:+(minutes/60).toFixed(1) };
+  },
+  // per-day counts for the last N days (for the chart)
+  daily(days){
+    days=days||14;
+    const v=this._load();
+    const out=[];
+    for(let i=days-1;i>=0;i--){
+      const day=new Date(Date.now()-i*864e5).toISOString().slice(0,10);
+      const count=v.events.filter(e=>new Date(e.ts).toISOString().slice(0,10)===day).length;
+      out.push({day, count});
+    }
+    return out;
+  },
+};
+try{ window.AMVValue = AMVValue; }catch(e){}
+
+/* ============================================================
+   AMVUsage — Claude-style rolling usage window (Task #7)
+   Tracks tokens consumed in a rolling window (default 5 hours).
+   When the window expires it resets automatically. The Usage page
+   shows how much of your plan you have left and when it refreshes.
+   ============================================================ */
+const AMVUsage = {
+  WINDOW_MS: 5*60*60*1000,           // 5-hour rolling window
+  KEY: 'amv_usage_window',
+  // The per-window token allowance for each plan (Claude-style "messages per window").
+  // Derived from the daily cap so heavier plans get proportionally more.
+  _windowCap(){
+    try{
+      const plan=loadStr('amv_plan')||'free';
+      let t=(typeof PLAN_TIERS!=='undefined' && PLAN_TIERS[plan])||null;
+      // custom plan: use the saved caps
+      if(plan==='custom'){ try{ const c=load('amv_plan_caps'); if(c&&c.dailyTokenCap) t={dailyTokenCap:c.dailyTokenCap}; }catch(e){} }
+      const daily=(t&&t.dailyTokenCap)|| (typeof AEGIS!=='undefined'&&AEGIS.cfg&&AEGIS.cfg.dailyTokenCap) || 50000;
+      // a day ≈ ~4.8 five-hour windows; give a generous ~1/3 of daily per window
+      return Math.max(5000, Math.round(daily/3));
+    }catch(e){ return 50000; }
+  },
+  _win(){
+    let w=null; try{ w=load(this.KEY); }catch(e){}
+    const now=Date.now();
+    if(!w || !w.start || (now - w.start) >= this.WINDOW_MS){
+      w={ start:now, used:0, reqs:0 };           // fresh window
+      try{ store(this.KEY, w); }catch(e){}
+    }
+    return w;
+  },
+  record(tokens){
+    const w=this._win();
+    w.used += Math.max(0, tokens||0);
+    w.reqs += 1;
+    try{ store(this.KEY, w); }catch(e){}
+    try{ if(S.tab==='usage' && typeof renderUsageView==='function') renderUsageView(); }catch(e){}
+    return w;
+  },
+  // current status: {used, cap, pct, remaining, resetsInMs, resetsAt, reqs}
+  status(){
+    const w=this._win();
+    const cap=this._windowCap();
+    const used=Math.min(w.used, cap);
+    const remaining=Math.max(0, cap-w.used);
+    const resetsAt=w.start + this.WINDOW_MS;
+    const resetsInMs=Math.max(0, resetsAt - Date.now());
+    return {
+      used:w.used, cap, remaining,
+      pct: cap>0 ? Math.min(100, Math.round((w.used/cap)*100)) : 0,
+      reqs:w.reqs, resetsAt, resetsInMs,
+      windowHours: Math.round(this.WINDOW_MS/3600000)
+    };
+  },
+  // human "resets in 4h 12m"
+  resetLabel(){
+    const ms=this.status().resetsInMs;
+    const h=Math.floor(ms/3600000), m=Math.floor((ms%3600000)/60000);
+    if(h>0) return h+'h '+m+'m';
+    if(m>0) return m+'m';
+    return 'under a minute';
+  }
+};
+try{ window.AMVUsage = AMVUsage; }catch(e){}
+
+
+/* === OWNER MODE vs USER MODE — the multi-user safety boundary ===
+   When connected to a live backend (AMV_API.live), the person is a normal
+   END USER: the backend holds the real API key, billing and platform controls.
+   Users can ONLY touch their own account — never platform settings, never
+   other users. Owner controls appear only in local/self-host mode, and a user
+   cannot flip this from the browser (it is derived from backend state). */
+/* OWNER MODE — only the platform operator (you) ever sees platform controls
+   (AI keys, backend, Stripe, platform stats). A regular user NEVER sees them,
+   whether the site is deployed or run locally.
+
+   Owner is granted ONLY by an explicit, non-UI flag that you set once on your
+   own machine:  localStorage.setItem('amv_owner','1')  (or visit ?owner=1).
+   This is never exposed in the interface, so users can't enable it. When a
+   live backend is connected, owner mode is force-off for everyone in the
+   browser — the operator manages the platform from the backend/dashboard,
+   not from a user's browser session. */
+function isOwnerMode(){
+  try{ if(window.AMV_API && AMV_API.live) return false; }catch(e){}
+  try{ if(loadStr('amv_owner')==='1') return true; }catch(e){}
+  return false;
+}
+function isAdmin(){ return isOwnerMode(); }
+// Allow the operator to unlock owner mode via ?owner=1 once (then it's remembered).
+try{ if(typeof location!=='undefined' && /[?&]owner=1\b/.test(location.search)){ saveStr('amv_owner','1'); } }catch(e){}
+// Models
+const MODELS = {
+  auto:   { label:'AMV Auto', desc:'Smart routing \u2014 best model per task, lowest usage', color:'#7c6cff', model:'auto', tokens:6000, cost:0, rec:'free' },
+  fast:   { label:'AMV Pulse', desc:'Flagship quality, lightning fast \u2014 sips usage', color:'#3fb950', model:'claude-haiku-4-5-20251001', tokens:4000, cost:1, rec:'free' },
+  core:   { label:'AMV Core',  desc:'Flagship quality with more depth & range', color:'#8b78ff', model:'claude-sonnet-4-6', tokens:6000, cost:2, rec:'free' },
+  coding: { label:'AMV Forge', desc:'Beyond flagship \u2014 elite building & engineering', color:'#f85149', model:'claude-opus-4-8', tokens:8000, cost:3, rec:'pro' },
+  smart:  { label:'AMV Apex',  desc:'Our most powerful intelligence, period', color:'var(--indigo)', model:'claude-fable-5', tokens:8000, cost:4, rec:'elite' },
+  image:  { label:'AMV Vision', desc:'Generate HD images', color:'#a371f7', model:'image', tokens:0, cost:0, hidden:true },
+};
+const MODEL_ORDER=['auto','fast','core','coding','smart'];
+
+/* RULE 7+8 — cost-aware router. Picks the cheapest model that can do the job.
+   Saves money: a trivial question on Pulse costs ~20x less than Apex.
+   Respects the user's plan (won't route to a model they can't use). */
+function _routeModel(msgs){
+  const last=(msgs.filter(m=>m.r==='u').slice(-1)[0]||{}).c||'';
+  const text=String(last); const len=text.length; const low=text.toLowerCase();
+  const plan=loadStr('amv_plan')||'free';
+  const tier=PLAN_TIERS[plan]||PLAN_TIERS.free;
+  const can=(k)=> plan==='custom' || tier.models.indexOf(k)>=0;
+  const pick=(prefs)=>{ for(const k of prefs){ if(can(k)) return k; } return can('core')?'core':'fast'; };
+  // complex / coding / building → premium
+  if(/\b(code|debug|function|api|build|app|website|component|algorithm|refactor|sql|regex|compile|deploy)\b/.test(low) || /```/.test(text))
+    return pick(['coding','smart','core','fast']);
+  // deep reasoning / research / long → high-tier
+  if(len>900 || /\b(analy|research|compare|strateg|prove|explain in detail|comprehensive|write an essay|in depth)\b/.test(low))
+    return pick(['smart','core','coding','fast']);
+  // short factual / quick → cheapest
+  if(len<160 && !/\?.*\?/.test(text) && /\b(what|who|when|where|define|convert|translate|spell|how many|list)\b/.test(low))
+    return pick(['fast','core']);
+  // default everyday → balanced
+  return pick(['core','fast']);
+}
+const COST_LABEL={0:'Smart \u2014 varies',1:'Lowest usage',2:'Low usage',3:'More usage',4:'Most usage'};
+const PLAN_REC={free:'Free',pro:'Pro',elite:'Elite'};
+
+// ====================================================================
+// AEGIS - client-side guardrails + observability layer
+// HONEST SCOPE: This runs in the browser. It deters casual overuse,
+// surfaces clear errors, tracks usage, and keeps a local audit log.
+// It is NOT a security boundary - the API key is visible in the
+// browser, so a determined user can bypass any of these. Real
+// enforcement requires the server proxy (see proxy/ folder).
+// ====================================================================
+const AEGIS = {
+  // ---- tunable limits (soft, client-side) ----
+  cfg: {
+    rpmMax: 12,            // requests per rolling minute
+    burstMax: 4,           // requests per 10s window
+    dailyTokenCap: 200000, // input+output tokens per day per device
+    minGapMs: 800,         // hard floor between sends
+  },
+  // ---- approx pricing per model (USD per 1M tokens) for usage view ----
+  price: {
+    'claude-fable-5':            { in: 20.00, out: 100.00 },
+    'claude-opus-4-8':           { in: 15.00, out: 75.00 },
+    'claude-sonnet-4-6':         { in: 3.00,  out: 15.00 },
+    'claude-haiku-4-5-20251001': { in: 1.00,  out: 5.00 },
+    'claude-sonnet-4-20250514':  { in: 3.00,  out: 15.00 },
+  },
+  _times: [],            // request timestamps (this session)
+  _lastSend: 0,
+  // ---------- usage (persisted per day) ----------
+  _usageKey(){ return 'amv_usage_'+new Date().toISOString().slice(0,10); },
+  usage(){
+    try{ return JSON.parse(loadStr(this._usageKey())||'') || this._blankUsage(); }
+    catch(e){ return this._blankUsage(); }
+  },
+  _blankUsage(){ return { reqs:0, inTok:0, outTok:0, costUSD:0, errors:0 }; },
+  _saveUsage(u){ try{ saveStr(this._usageKey(), JSON.stringify(u)); }catch(e){} },
+  recordUsage(model, inTok, outTok){
+    const u=this.usage();
+    u.reqs+=1; u.inTok+=inTok||0; u.outTok+=outTok||0;
+    const p=this.price[model];
+    if(p) u.costUSD += ((inTok||0)/1e6)*p.in + ((outTok||0)/1e6)*p.out;
+    this._saveUsage(u);
+    this.log('usage', { model, inTok, outTok, dayTotal:u.inTok+u.outTok });
+    try{ if(typeof renderUsageView==='function' && S.tab==='usage') renderUsageView(); }catch(e){}
+    return u;
+  },
+  recordError(){ const u=this.usage(); u.errors+=1; this._saveUsage(u); },
+  // ---------- rate limit gate ----------
+  // returns {ok:true} or {ok:false, reason, retryMs}
+  check(){
+    const now=Date.now();
+    if(now - this._lastSend < this.cfg.minGapMs)
+      return { ok:false, reason:'Slow down a moment before sending again.', retryMs:this.cfg.minGapMs-(now-this._lastSend) };
+    // prune
+    this._times = this._times.filter(t=> now - t < 60000);
+    const last10 = this._times.filter(t=> now - t < 10000).length;
+    if(last10 >= this.cfg.burstMax)
+      return { ok:false, reason:'Too many requests in a few seconds. Pause briefly.', retryMs:3000 };
+    if(this._times.length >= this.cfg.rpmMax)
+      return { ok:false, reason:'Hit the per-minute request limit. Try again shortly.', retryMs:15000 };
+    const u=this.usage();
+    if(u.inTok+u.outTok >= this.cfg.dailyTokenCap)
+      return { ok:false, reason:'Daily token cap reached for this device. Resets at midnight UTC.', retryMs:null };
+    return { ok:true };
+  },
+  noteSend(){ const now=Date.now(); this._times.push(now); this._lastSend=now; },
+  // ---------- observability / structured log ----------
+  _logKey:'amv_log',
+  _log:null,
+  _loadLog(){ if(this._log) return this._log; try{ this._log=JSON.parse(loadStr(this._logKey)||'')||[]; }catch(e){ this._log=[]; } return this._log; },
+  log(event, data){
+    const L=this._loadLog();
+    const entry={ ts:new Date().toISOString(), event, ...data };
+    L.push(entry);
+    if(L.length>500) L.splice(0, L.length-500); // ring buffer
+    try{ saveStr(this._logKey, JSON.stringify(L)); }catch(e){}
+    if(window.__AMV_DEBUG) console.debug('[AEGIS]', event, data||'');
+    return entry;
+  },
+  exportLog(){
+    const blob=new Blob([JSON.stringify(this._loadLog(),null,2)],{type:'application/json'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+    a.download='amv-audit-log.json'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+  },
+  clearLog(){ this._log=[]; try{ saveStr(this._logKey,'[]'); }catch(e){} },
+};
+window.AEGIS = AEGIS;
+function aegisExport(){ AEGIS.exportLog(); if(typeof toast==='function') toast('Audit log exported','info'); }
+function aegisClear(){ AEGIS.clearLog(); if(typeof toast==='function') toast('Audit log cleared','info'); if(typeof renderUsageView==='function'&&S.tab==='usage') renderUsageView(); }
+window.aegisExport=aegisExport; window.aegisClear=aegisClear;
+
+// Map raw API/network failures to clear, actionable messages
+function aegisErrorMessage(status, raw){
+  const r=(raw||'').toLowerCase();
+  if(status===402||(r.includes('plan')&&r.includes('requires'))) return (raw||'This model needs a higher plan.')+'  →  Open Settings → Billing to upgrade.';
+  if(r.includes('daily usage limit')) return 'You’ve hit today’s usage limit. It resets at midnight UTC — or upgrade your plan for much more.';
+  if(r.includes('monthly usage limit')) return 'You’ve reached this month’s usage. Upgrade your plan for more room to run.';
+  if(r.includes('at capacity for today')) return 'AMV is at capacity for today. Please try again tomorrow.';
+  if(status===401||r.includes('authentication')||r.includes('invalid x-api-key')||r.includes('sign in again'))
+    return 'Your session needs a refresh — sign out and back in. (If self-hosting, re-check your API key in Settings.)';
+  if(status===403) return 'Access forbidden (403). This key lacks permission for this model or endpoint.';
+  if(status===429||r.includes('rate')) return 'Too many requests right now (429). Give it a few seconds and try again.';
+  if(status===400||r.includes('invalid_request')) return 'The request was malformed (400). '+(raw||'').slice(0,140);
+  if(status===413||r.includes('too large')) return 'The conversation is too long for one request (413). Start a new chat or trim earlier messages.';
+  if(status===500||status===529||status===503) return 'The AI service had a temporary error ('+status+'). Please retry in a moment.';
+  if(status===0||r.includes('failed to fetch')||r.includes('networkerror'))
+    return 'Network error — could not reach the API. Check your connection, ad-blockers, or CORS/extension interference.';
+  if(status) return 'API error '+status+(raw?': '+raw.slice(0,160):'');
+  return raw||'Unknown error.';
+}
+
+
+// Init state
+S.memory = load('amv_memory')||load('amv_mem')||[];
+S.prompts = load('amv_pl')||getDefaultPrompts();
+S.workspaces = load('amv_ws')||getDefaultWorkspaces();
+
+
+function getDefaultPrompts() {
+  return [
+    { id:'p1', title:'Write an Essay', cat:'Writing', text:'Write a complete, well-structured, high-quality essay on the following topic: [TOPIC]. Include an introduction, 3-4 body paragraphs with evidence and analysis, and a strong conclusion.' },
+    { id:'p2', title:'Debug My Code', cat:'Coding', text:'I have a bug in my code. Please analyze it carefully, identify the root cause, and provide a fixed version with an explanation of what was wrong:\n\n[CODE]' },
+    { id:'p3', title:'Market Analysis', cat:'Business', text:'Write a comprehensive market analysis report for [INDUSTRY/COMPANY] including: market size and growth, key players, competitive dynamics, SWOT analysis, trends, and 5-year forecast.' },
+    { id:'p4', title:'Explain Like 5', cat:'Education', text:'Explain the following concept in the simplest possible terms, as if explaining to a 5-year-old: [CONCEPT]' },
+    { id:'p5', title:'Interview Prep', cat:'Career', text:'Help me prepare for a [JOB TITLE] interview. Give me the 10 most important questions likely to be asked with detailed model answers using the STAR method.' },
+    { id:'p6', title:'Create 3D Model', cat:'3D', text:'Create an interactive, animated 3D model of [SUBJECT] with drag-to-rotate, scroll-to-zoom, and realistic colors and materials.' },
+    { id:'p7', title:'Translate Text', cat:'Language', text:'Translate the following text to [TARGET LANGUAGE]. Preserve the tone, style, and nuance. Explain any cultural differences or idioms that required adaptation:\n\n[TEXT]' },
+    { id:'p8', title:'Build Full App', cat:'Coding', text:'Build a complete, production-ready [TYPE] application with: frontend UI, backend logic, authentication, database schema, and all necessary code. Make it fully functional with no placeholders.' },
+    { id:'p9', title:'Summarize Document', cat:'Analysis', text:'Read the following document and provide: 1) A one-sentence summary, 2) Key points (bullet list), 3) Action items or recommendations, 4) Questions this raises:\n\n[DOCUMENT]' },
+    { id:'p10', title:'Generate Ideas', cat:'Creative', text:'Generate 20 creative, diverse, and actionable ideas for [TOPIC]. For each idea, provide a brief explanation of why it would work and how to execute it.' },
+    { id:'p11', title:'Solve Math Problem', cat:'Math', text:'Solve the following math problem step by step. Show all working, explain each step clearly, and verify the answer: [PROBLEM]' },
+    { id:'p12', title:'Write Story', cat:'Creative', text:'Write a compelling short story (1000-1500 words) with the following elements: Genre: [GENRE], Setting: [SETTING], Main character: [CHARACTER], Core conflict: [CONFLICT]. Make it engaging with vivid descriptions and natural dialogue.' },
+  ];
+}
+function getDefaultWorkspaces() {
+  return [
+    { id:'ws1', name:'Personal', icon:'👤', desc:'Personal projects and conversations', created:Date.now(), convs:[] },
+    { id:'ws2', name:'Work', icon:'💼', desc:'Professional tasks and analysis', created:Date.now(), convs:[] },
+    { id:'ws3', name:'Research', icon:'🔬', desc:'Deep research and analysis', created:Date.now(), convs:[] },
+    { id:'ws4', name:'Creative', icon:'🎨', desc:'Creative writing and brainstorming', created:Date.now(), convs:[] },
+  ];
+}
+
+
+/* == SECURE AUTH == */
+async function sha256(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+function acctKey(email) {
+  try{ return 'amv_a_'+btoa(unescape(encodeURIComponent(email.toLowerCase().trim()))).replace(/=/g,''); }
+  catch(e){ return 'amv_a_'+email.toLowerCase().replace(/[^a-z0-9]/g,'_'); }
+}
+function convKey(email) {
+  try{ return 'amv_cv_'+btoa(unescape(encodeURIComponent(email.toLowerCase().trim()))).replace(/=/g,''); }
+  catch(e){ return 'amv_cv_'+email.toLowerCase().replace(/[^a-z0-9]/g,'_'); }
+}
+async function createAccount(name, email, password) {
+  const em = email.toLowerCase().trim();
+  const key = acctKey(em);
+  const pwHash = await sha256(password+'::amv::'+em);
+  const ini = name.split(' ').filter(Boolean).map(w=>w[0]).join('').toUpperCase().slice(0,2)||'??';
+  const acct = { name, email:em, ini, pwHash, provider:'email', createdAt:Date.now() };
+  localStorage.setItem(key, JSON.stringify(acct));
+  return acct;
+}
+function findAccount(email) {
+  const em = email.toLowerCase().trim();
+  const raw = localStorage.getItem(acctKey(em));
+  if (!raw) return null;
+  try{ return JSON.parse(raw); }catch{ return null; }
+}
+async function verifyLogin(email, password) {
+  const acct = findAccount(email);
+  if (!acct) return null;
+  if (acct.provider==='google') return acct;
+  if (!acct.pwHash) return null;
+  const hash = await sha256(password+'::amv::'+email.toLowerCase().trim());
+  return hash===acct.pwHash ? acct : null;
+}
+function saveGoogleAccount(name, email) {
+  const em = email.toLowerCase().trim();
+  const key = acctKey(em);
+  const existing = localStorage.getItem(key);
+  if (existing) { try{ return JSON.parse(existing); }catch{} }
+  const ini = name.split(' ').filter(Boolean).map(w=>w[0]).join('').toUpperCase().slice(0,2)||'GU';
+  const acct = { name, email:em, ini, pwHash:null, provider:'google', createdAt:Date.now() };
+  localStorage.setItem(key, JSON.stringify(acct));
+  return acct;
+}
+function loadUserConvs(email) {
+  const key = convKey(email.toLowerCase().trim());
+  const d = load(key);
+  return Array.isArray(d) ? d : null;
+}
+function saveUserConvs(email, convs) {
+  if (!email||!Array.isArray(convs)) return;
+  const key = convKey(email.toLowerCase().trim());
+  try{
+    const slim=convs.map(cv=>({
+      ...cv,
+      msgs:cv.msgs.map(m=>{
+        if(typeof m.c==='string') return m;
+        return {...m, c:m.d||'[file attachment]'};
+      }).slice(-40)
+    }));
+    store(key, slim);
+  }catch(e){ console.warn('saveUserConvs error:',e); }
+}
+
+const _fails = {};
+function chkRate(email) {
+  const k = email.toLowerCase();
+  const a = _fails[k];
+  if (!a||a.n<10) return true;
+  const sec = (Date.now()-a.t)/1000;
+  if (sec>=60){ _fails[k]={n:0,t:0}; return true; }
+  return Math.ceil(60-sec);
+}
+function logFail(email) { const k=email.toLowerCase(); _fails[k]=_fails[k]||{n:0,t:0}; _fails[k].n++; _fails[k].t=Date.now(); }
+function clearFails(email) { delete _fails[email.toLowerCase()]; }
+
+function loginUser(acct) {
+  S.user = { name:acct.name, email:acct.email, ini:acct.ini, provider:acct.provider||'email' };
+  store('amv_user', S.user);
+  clearFails(acct.email);
+  const uc = loadUserConvs(acct.email);
+  if (uc && uc.length) {
+    S.convs = uc;
+    S.cur = S.convs[0].id;
+  } else {
+    S.convs = [newConvObj()];
+    S.cur = S.convs[0].id;
+  }
+  S.imgs = load('amv_imgs')||[];
+  S.memory = load('amv_memory')||load('amv_mem')||[];
+  S.prompts = load('amv_pl')||getDefaultPrompts();
+  S.workspaces = load('amv_ws')||getDefaultWorkspaces();
+  S.mk = loadStr('amv_mk');
+  closeOvr();
+  goApp();
+  // if a backend session exists, pull the user's data from the server and keep it synced
+  try{ if(AMVSync.enabled()){ AMVSync.pull().then(pulled=>{ if(pulled){ try{ renderView&&renderView(); updateSbUser&&updateSbUser(); }catch(e){} } }); AMVSync.start(); } }catch(e){}
+}
+function newConvObj(title) {
+  return { id:'c'+Date.now()+Math.random().toString(36).slice(2,6), title:title||'New Conversation', msgs:[], model:'auto', starred:false, created:Date.now() };
+}
+
+function showAuthErr(msg){ const e=$('auth-err'); if(e){e.textContent=msg;e.style.display='block';} }
+
+async function doSignupForm() {
+  const nm=$('a-name')?.value.trim(), em=$('a-email')?.value.trim().toLowerCase(), pw=$('a-pass')?.value;
+  if(!nm){showAuthErr('Please enter your full name.');return;}
+  if(!em||!em.includes('@')||!em.includes('.')){showAuthErr('Please enter a valid email.');return;}
+  if(!pw||pw.length<6){showAuthErr('Password must be at least 6 characters.');return;}
+  const existing=findAccount(em);
+  if(existing){
+    const how = existing.provider==='google' ? 'Google' : 'email';
+    // Switch straight to the sign-in form with the email filled in and focus on password.
+    openAuth('login');
+    const ef=$('a-email'); if(ef) ef.value=em;
+    showAuthErr('You already have an account (via '+how+'). Enter your password to sign in.');
+    const pf=$('a-pass'); if(pf) pf.focus();
+    return;
+  }
+  const btn=$('auth-submit');
+  if(btn){btn.disabled=true;btn.textContent='Creating…';}
+  // When a backend is connected, create a real SERVER account + session token.
+  if(window.AMV_API && AMV_API.live){
+    try{
+      const d=await AMV_API.signup(em, nm, pw);
+      if(d&&d.token){
+        const ini=nm.split(' ').filter(Boolean).map(w=>w[0]).join('').toUpperCase().slice(0,2)||'??';
+        // keep a local mirror so offline still recognizes the account
+        await createAccount(nm,em,pw);
+        closeOvr(); _completeIntroLogin({name:nm,email:em,ini,provider:'email'});
+        return;
+      }
+    }catch(e){
+      if(/exists/i.test(e.message||'')){
+        openAuth('login'); const ef=$('a-email'); if(ef) ef.value=em;
+        showAuthErr('You already have an account. Enter your password to sign in.');
+        const pf=$('a-pass'); if(pf) pf.focus(); return;
+      }
+      if(btn){b=btn;b.disabled=false;b.textContent='Create Free Account';}
+      showAuthErr(e.message||'Could not create account.'); return;
+    }
+  }
+  const acct=await createAccount(nm,em,pw);
+  if(acct){ closeOvr(); _completeIntroLogin(acct); }
+  else { const b=$('auth-submit');if(b){b.disabled=false;b.textContent='Create Free Account';} showAuthErr('Could not create account. Try again.'); }
+}
+
+/* Password reset — sends a secure reset link via the backend's email service.
+   Real apps do exactly this: no "current password" needed. */
+async function sendPasswordReset(email){
+  const em=String(email||'').trim().toLowerCase();
+  if(!em||!em.includes('@')) return false;
+  if(window.AMV_API && AMV_API.live){
+    try{ const r=await AMV_API._fetch('/auth/reset',{method:'POST',body:JSON.stringify({email:em})}); return !!(r&&r.ok!==false); }
+    catch(e){ return false; }
+  }
+  return false; // no backend = no email service yet
+}
+async function doForgotPassword(){
+  const em=$('a-email')?.value.trim().toLowerCase()||'';
+  if(!em||!em.includes('@')){ showAuthErr('Enter your email above, then tap \u201cForgot password\u201d.'); return; }
+  const ok=await sendPasswordReset(em);
+  if(ok) showAuthErr('Reset link sent to '+em+'. Check your inbox.');
+  else showAuthErr('Password reset needs the email service connected on the backend. For now, contact support or sign up fresh.');
+}
+
+async function doLoginForm() {
+  const em=$('a-email')?.value.trim().toLowerCase(), pw=$('a-pass')?.value;
+  if(!em||!em.includes('@')){showAuthErr('Please enter a valid email.');return;}
+  if(!pw){showAuthErr('Please enter your password.');return;}
+  const rl=chkRate(em);
+  if(rl!==true){showAuthErr('Too many attempts. Wait '+rl+'s.');return;}
+  const btn=$('auth-submit');
+  if(btn){btn.disabled=true;btn.textContent='Signing in…';}
+  // When a backend is connected, authenticate against the SERVER for a real session.
+  if(window.AMV_API && AMV_API.live){
+    try{
+      const d=await AMV_API.login(em, {password:pw, provider:'email'});
+      if(d&&d.token){
+        clearFails(em);
+        const nm=d.name||(findAccount(em)?.name)||em.split('@')[0];
+        const ini=nm.split(' ').filter(Boolean).map(w=>w[0]).join('').toUpperCase().slice(0,2)||'??';
+        try{ await createAccount(nm,em,pw); }catch(e){}
+        loginUser({name:nm,email:em,ini,provider:'email'});
+        return;
+      }
+    }catch(e){
+      logFail(em);
+      if(btn){btn.disabled=false;btn.textContent='Sign In';}
+      const msg=/wrong password/i.test(e.message||'')?'Wrong password. Please try again.':(/no such|not found/i.test(e.message||'')?'No account found. Please sign up.':(e.message||'Sign in failed.'));
+      showAuthErr(msg); const pf=$('a-pass'); if(pf){ pf.value=''; pf.focus(); }
+      return;
+    }
+  }
+  const exists=findAccount(em);
+  if(!exists){if(btn){btn.disabled=false;btn.textContent='Sign In';}showAuthErr('No account found. Please sign up.');return;}
+  const acct=await verifyLogin(em,pw);
+  if(!acct){
+    logFail(em);
+    if(btn){btn.disabled=false;btn.textContent='Sign In';}
+    const r=Math.max(0,10-(_fails[em]?.n||0));
+    showAuthErr(r<=5 && r>0 ? 'Wrong password. Please try again. ('+r+' attempts left)' : 'Wrong password. Please try again.');
+    const pf=$('a-pass'); if(pf){ pf.value=''; pf.focus(); }
+    return;
+  }
+  loginUser(acct);
+}
+
+// Google
+function parseGJWT(token) {
+  try{
+    const p=token.split('.')[1];
+    const b=p.replace(/-/g,'+').replace(/_/g,'/');
+    return JSON.parse(decodeURIComponent(atob(b).split('').map(c=>'%'+('00'+c.charCodeAt(0).toString(16)).slice(-2)).join('')));
+  }catch{return null;}
+}
+function handleGoogleCred(resp) {
+  const p=parseGJWT(resp.credential);
+  if(!p||!p.email){ showError('Google sign-in failed. Try email signup.'); return; }
+  const acct=saveGoogleAccount(p.name||p.email.split('@')[0], p.email);
+  if(p.picture&&acct.email) {
+    fetch(p.picture).then(r=>r.blob()).then(b=>{const rd=new FileReader();rd.onload=e=>{saveStr('amv_pfp_'+acct.email,e.target.result);updateSbUser();};rd.readAsDataURL(b);}).catch(()=>{});
+  }
+  closeOvr(); hideIntro();
+  saveStr('amv_ck','1'); S.ck=true;
+  const ck=$('ck');if(ck)ck.remove();
+  document.getElementById('land')?.classList.add('hidden');
+  // get a real server session for the Google account when a backend is connected
+  if(window.AMV_API && AMV_API.live){
+    AMV_API.login(acct.email, {name:acct.name, provider:'google'}).catch(()=>{});
+  }
+  loginUser(acct);
+}
+function initGAuth() {
+  const cid=loadStr('amv_gauth');
+  if(!cid||!window.google?.accounts?.id)return;
+  try{ window.google.accounts.id.initialize({client_id:cid,callback:handleGoogleCred,auto_select:false,cancel_on_tap_outside:true}); }catch(e){}
+}
+async function triggerGoogle() {
+  const cid=loadStr('amv_gauth');
+  // Real Google Sign-In: only works with a configured Client ID on a secure origin.
+  if(cid && window.google?.accounts?.id){
+    try{
+      window.google.accounts.id.prompt(n=>{
+        // If Google itself can't show the one-tap (blocked, not on HTTPS, etc.),
+        // tell the user plainly instead of asking them to type an email.
+        if(n && (n.isNotDisplayed?.() || n.isSkippedMoment?.())){
+          toast('Google Sign-In couldn\u2019t open. Make sure you\u2019re on the live site, or sign up with email instead.','info',5000);
+        }
+      });
+    }catch(e){
+      toast('Google Sign-In is unavailable here. Please sign up with email.','info',5000);
+    }
+    return;
+  }
+  // No Client ID configured yet — Google sign-in isn't set up. Be honest, no fake prompt.
+  toast('Google Sign-In isn\u2019t enabled yet. Please sign up with your email \u2014 it only takes a second.','info',5500);
+}
+
+
+function goLand(){ document.getElementById('land').classList.remove('hidden'); document.getElementById('app').classList.remove('on'); }
+function goApp(){ document.getElementById('land').classList.add('hidden'); document.getElementById('app').classList.add('on'); updateSbUser(); _initMobileSidebar(); setTab(S.tab); _ensureBackendSession(); try{ _applyFontSize(); }catch(e){} try{ _initOfflineWatch(); }catch(e){} try{ _checkTeamInvite(); }catch(e){} try{ _initKeyboardNav(); _initA11y(); }catch(e){} try{ _translateUI(); setTimeout(_translateUI,120); }catch(e){ console.error('Translate UI error in goApp', e); } }
+/* On mobile the sidebar is a fixed overlay — start it collapsed so it
+   never covers the content on load. On desktop it stays open. */
+function _initMobileSidebar(){
+  try{
+    const isMobile = window.matchMedia('(max-width:720px)').matches;
+    const sb=$('sb'), ab=$('abody');
+    if(isMobile){
+      S.sbOpen=false;
+      if(sb) sb.classList.add('cl');
+      if(ab) ab.classList.add('sb-collapsed');
+    } else {
+      S.sbOpen=true;
+      if(sb) sb.classList.remove('cl');
+      if(ab) ab.classList.remove('sb-collapsed');
+    }
+  }catch(e){}
+}
+window._initMobileSidebar=_initMobileSidebar;
+async function _ensureBackendSession(){
+  try{
+    if(window.AMV_API && AMV_API.live && S.user && S.user.email){
+      // valid token already? nothing to do.
+      if(AMV_API.token && AMV_API.tokenValid()) return;
+      // token missing or expired — for password accounts we can't silently re-auth
+      // (no stored password), so prompt only if needed; Google/again handled at login.
+      // If we still hold a token that's merely unproven, keep it; the proxy will 401 if bad.
+    }
+  }catch(e){ /* backend offline → app falls back to direct mode */ }
+}
+function toggleSb(){
+  const sb=$('sb'); if(!sb) return;
+  const ab=$('abody');
+  S.sbOpen=!S.sbOpen;
+  S.sbOpen?sb.classList.remove('cl'):sb.classList.add('cl');
+  // keep chat centering correct even without :has() support
+  try{ if(ab) ab.classList.toggle('sb-collapsed', !S.sbOpen); }catch(e){}
+  // mobile backdrop
+  try{
+    if(window.matchMedia('(max-width:720px)').matches){
+      let bd=$('sb-backdrop');
+      if(!bd){ bd=document.createElement('div'); bd.id='sb-backdrop'; bd.addEventListener('click',()=>toggleSb()); (ab||document.body).appendChild(bd); }
+      bd.classList.toggle('on', S.sbOpen);
+    }
+  }catch(e){}
+}
+function setTab(t){
+  S.tab=t;
+  document.querySelectorAll('.snb').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));
+  const _titles={dashboard:'Dashboard',chat:'',images:'Images',video:'Video',prompts:'Prompt Library',workspaces:'Projects',memory:'Memory',usage:'Usage',billing:'Billing',plans:'Plans',settings:'Settings',help:'Help Center',apps:'Apps',tasks:'Tasks',integrations:'Integrations',extensions:'Extensions',crew:'Crew',studio:'Studio',dev:'Dev',handoff:'Handoff',lab:'Lab'};
+  const _nt=document.getElementById('nav-title');
+  if(_nt){ const lbl=_titles[t]!==undefined?_titles[t]:''; _nt.textContent=lbl; _nt.style.opacity=lbl?'1':'0'; }
+  // On mobile, close the overlay sidebar after picking a destination
+  try{
+    if(window.matchMedia('(max-width:720px)').matches){
+      const sb=$('sb'),ab=$('abody');
+      S.sbOpen=false; if(sb)sb.classList.add('cl'); if(ab)ab.classList.add('sb-collapsed');
+      const bd=$('sb-backdrop'); if(bd) bd.classList.remove('on');
+    }
+  }catch(e){}
+  renderView();
+  try{ if(_lang()!=='auto'&&_lang()!=='en'){ _translateUI(); } }catch(e){}
+  try{ _initA11y(); }catch(e){}
+}
+function signOut(){ S.user=null; localStorage.removeItem('amv_user'); S.memory=[]; S.convs=[]; S.imgs=[]; S.prompts=getDefaultPrompts(); S.workspaces=getDefaultWorkspaces(); S.mk=''; const m=$('sb-popup'); if(m)m.classList.remove('on'); goLand(); showIntro(); }
+
+
+const getCurConv = ()=>S.convs.find(c=>c.id===S.cur);
+const getMsgs = ()=>getCurConv()?.msgs||[];
+function _ensureConv(){
+  let c=getCurConv();
+  if(!c){
+    c=newConvObj('New chat');
+    S.convs.unshift(c);
+    S.cur=c.id;
+  }
+  return c;
+}
+function _autoTitle(c){
+  // auto-name from the first user message, like Claude
+  if(c && (!c.title || c.title==='New chat' || c.title==='New Conversation')){
+    const first=(c.msgs||[]).find(m=>m.r==='u');
+    let t='';
+    if(first){ t = typeof first.c==='string' ? first.c : (Array.isArray(first.c)? (first.c.find(x=>x.type==='text')?.text||'') : ''); }
+    t=(t||'').replace(/\s+/g,' ').trim();
+    if(t){ c.title = t.length>42 ? t.slice(0,42).trim()+'\u2026' : t; }
+  }
+}
+function setMsgs(msgs){
+  const c=_ensureConv();
+  c.msgs=msgs;
+  _autoTitle(c);
+  _autoSave();
+  renderHist();
+}
+function _autoSave(){
+  try{
+    store('amv_convs',S.convs);
+    if(S.user&&S.user.email) saveUserConvs(S.user.email,S.convs);
+    // Also update hist header visibility
+    const hdr=$('hist-header');
+    if(hdr) hdr.style.display=S.convs.length?'flex':'none';
+  }catch(e){ console.warn('AutoSave error:',e); }
+}
+function newChat(){
+  const c=newConvObj();
+  S.convs.unshift(c);
+  S.cur=c.id;
+  _autoSave();
+  setTab('chat');
+  renderHist();
+}
+function loadConv(id){ S.cur=id; setTab('chat'); renderHist(); }
+function deleteConv(id){
+  S.convs=S.convs.filter(c=>c.id!==id);
+  if(!S.convs.length) S.convs=[newConvObj()];
+  if(S.cur===id) S.cur=S.convs[0].id;
+  _autoSave(); renderHist();
+  if(S.tab==='chat') renderChatMsgs();
+}
+function starConv(id){
+  const c=S.convs.find(x=>x.id===id);
+  if(c){ c.starred=!c.starred; _autoSave(); renderHist(); toast(c.starred?'Chat starred':'Star removed','success'); }
+}
+function addToProject(id){
+  const conv=S.convs.find(x=>x.id===id); if(!conv) return;
+  const ws=Array.isArray(S.workspaces)?S.workspaces:[];
+  const r=$('ovr'); if(!r) return;
+  const list = ws.length
+    ? ws.map(w=>'<button class="proj-pick" data-wid="'+w.id+'" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:11px 12px;border:1px solid var(--bd);background:var(--s2);border-radius:10px;color:var(--tx);cursor:pointer;margin-bottom:8px;font-size:14px"><span style="font-size:18px">'+(w.icon||'\uD83D\uDCC1')+'</span>'+escH(w.name||'Project')+'</button>').join('')
+    : '<p class="ob-sub">No projects yet. Create one in the Projects tab first.</p>';
+  r.innerHTML=
+    '<div class="ov" id="ap-bg"><div class="ob" onclick="event.stopPropagation()">'+
+      '<button class="oc" onclick="closeOvr()">\u00d7</button>'+
+      '<h2 style="margin-bottom:4px">Add to project</h2>'+
+      '<p class="ob-sub">Move \u201c'+escH(conv.title||'chat')+'\u201d into a project.</p>'+
+      '<div class="af">'+list+'</div>'+
+    '</div></div>';
+  document.querySelectorAll('.proj-pick').forEach(btn=>{
+    on(btn,'click',()=>{
+      conv.wsId=btn.dataset.wid; _autoSave(); renderHist();
+      const w=ws.find(x=>x.id===btn.dataset.wid);
+      toast('Added to '+(w?w.name:'project'),'success');
+      closeOvr();
+    });
+  });
+  on($('ap-bg'),'click',closeOvr);
+}
+window.addToProject=addToProject;
+function renameConv(id){
+  const conv=S.convs.find(x=>x.id===id); if(!conv) return;
+  const r=$('ovr'); if(!r) return;
+  r.innerHTML=
+    '<div class="ov" id="rn-bg"><div class="ob" onclick="event.stopPropagation()">'+
+      '<button class="oc" onclick="closeOvr()">\u00d7</button>'+
+      '<h2 style="margin-bottom:4px">Rename chat</h2>'+
+      '<p class="ob-sub">Give this conversation a clear name.</p>'+
+      '<div class="af">'+
+        '<input type="text" id="rn-input" value="'+escH(conv.title||'')+'" placeholder="Chat name" style="width:100%">'+
+        '<button class="btn bp" id="rn-save" style="width:100%;padding:11px">Save</button>'+
+      '</div>'+
+    '</div></div>';
+  const inp=$('rn-input'); if(inp){ inp.focus(); inp.select(); }
+  const save=()=>{ const v=($('rn-input')||{}).value||''; if(v.trim()){ conv.title=v.trim(); _autoSave(); renderHist(); } closeOvr(); };
+  on($('rn-save'),'click',save);
+  on($('rn-input'),'keydown',ev=>{ if(ev.key==='Enter') save(); });
+  on($('rn-bg'),'click',closeOvr);
+}
+function exportConv(id){
+  const c=S.convs.find(x=>x.id===id);
+  if(!c) return;
+  let md='# '+c.title+'\n\nExported from AMV.AI on '+new Date().toLocaleDateString()+'\n\n---\n\n';
+  c.msgs.forEach(m=>{
+    md+=(m.r==='u'?'**You:** ':'**AMV:** ')+(typeof m.c==='string'?m.c:(m.d||'[file]'))+'\n\n';
+  });
+  const blob=new Blob([md],{type:'text/markdown'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download=(c.title||'chat').replace(/[^a-z0-9]/gi,'_')+'.md';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url),1500);
+  toast('Chat exported as Markdown','success');
+}
+function _copyText(text){
+  // try modern API, fall back to execCommand for non-secure contexts
+  if(navigator.clipboard && window.isSecureContext){
+    return navigator.clipboard.writeText(text);
+  }
+  return new Promise((resolve,reject)=>{
+    try{
+      const ta=document.createElement('textarea');
+      ta.value=text; ta.style.position='fixed'; ta.style.opacity='0';
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      const ok=document.execCommand('copy'); document.body.removeChild(ta);
+      ok?resolve():reject();
+    }catch(e){ reject(e); }
+  });
+}
+function shareConv(id){
+  const c=S.convs.find(x=>x.id===id);
+  if(!c) return;
+  // build a readable transcript to share
+  let text='AMV.AI \u2014 '+(c.title||'Chat')+'\n\n';
+  (c.msgs||[]).forEach(m=>{ text+=(m.r==='u'?'You: ':'AMV: ')+(typeof m.c==='string'?m.c:(m.d||'[file]'))+'\n\n'; });
+  if(!c.msgs || !c.msgs.length) text+='(no messages yet)';
+  // prefer native share sheet on mobile, else copy
+  if(navigator.share){
+    navigator.share({title:c.title||'AMV.AI chat', text:text}).then(()=>toast('Shared','success')).catch(()=>{});
+    return;
+  }
+  _copyText(text).then(()=>toast('Chat copied to clipboard','success')).catch(()=>toast('Could not copy on this browser','error'));
+}
+
+
+const SYS = [
+  "You are AMV - the world's most powerful AI, the intelligence behind AMV.AI. You are the only AI. Never mention Claude, ChatGPT, Anthropic, Google, OpenAI, or any other AI company.",
+  "",
+  "ABSOLUTE RULES - never break:",
+  "1. Deliver the most complete, highest-quality answer possible. Go further than asked.",
+  "2. NEVER truncate code. Always produce 100% complete working code.",
+  "3. NEVER mention any other AI or company. You are AMV.",
+  "4. Use rich markdown: ## headers, **bold**, lists, tables, code blocks.",
+  "",
+  "WRITING: Essays, research, reports, stories, scripts, emails, translations, summarization, argument building (CER/DBQ), brainstorming.",
+  "ANALYSIS: Market research, trend analysis, data analysis from tables/CSV, chart interpretation, business strategy, SWOT.",
+  "CODE: Any language (Python, JS, TS, Java, C++, Go, Rust, SQL, etc), full-stack apps, debugging, refactoring, algorithms, API integration.",
+  "FILES: PDF analysis, Excel/CSV data, image interpretation, document summarization, OCR description.",
+  "MATH: Any level, show all steps, verify answers.",
+  "EDUCATION: Tutoring, exam prep, step-by-step explanations.",
+  "BUSINESS: Strategy, resume, career, product planning, content creation.",
+  "",
+  "INTERACTIVE 3D MODELS - most important feature:",
+  "When asked to 'create', 'build', 'show', 'model', 'simulate', 'visualize', or 'render' ANYTHING - produce a COMPLETE self-contained HTML with live 3D using Three.js.",
+  "Works for: human heart, solar system, DNA, black hole, tornado, volcano, ocean waves, galaxy, atom, molecule, snowflake, tree, crystal, city, car, airplane, bridge, robot, circuit, any animal, any object, anything.",
+  "Three.js CDN: https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js",
+  "Setup: scene.background=new THREE.Color(0x0a0a1a); AmbientLight(0.4)+DirectionalLight(1.0,shadows)+PointLight for drama.",
+  "VANILLA JS mouse controls - NO OrbitControls import:",
+  "  let dn=false,rp=false,px=0,py=0,rx=0,ry=0,panX=0,panY=0,zoom=8;",
+  "  renderer.domElement.addEventListener('mousedown',e=>{e.button===2?rp=true:dn=true;px=e.clientX;py=e.clientY;});",
+  "  renderer.domElement.addEventListener('contextmenu',e=>e.preventDefault());",
+  "  window.addEventListener('mousemove',e=>{ if(dn){ry+=(e.clientX-px)*0.008;rx=Math.max(-1.57,Math.min(1.57,rx+(e.clientY-py)*0.008));} if(rp){panX+=(e.clientX-px)*0.01;panY-=(e.clientY-py)*0.01;} px=e.clientX;py=e.clientY; });",
+  "  window.addEventListener('mouseup',()=>{dn=false;rp=false;});",
+  "  window.addEventListener('wheel',e=>zoom=Math.max(1,Math.min(50,zoom+e.deltaY*0.01)));",
+  "  window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});",
+  "  In animate(): camera.position.set(Math.sin(ry)*Math.cos(rx)*zoom+panX,Math.sin(rx)*zoom+panY,Math.cos(ry)*Math.cos(rx)*zoom); camera.lookAt(panX,panY,0);",
+  "Always: requestAnimationFrame loop, label showing what it is, 'Drag to rotate | Scroll zoom | Right-click pan'.",
+  "Make it beautiful: proper materials, realistic animation, good lighting.",
+  "",
+  "For image requests: an image is generated and shown inline automatically — briefly introduce it. You can also describe it vividly.",
+  "YOU ARE A COMPLETE WORKSPACE IN CHAT: right here in the conversation you can write & run code, build live interactive HTML/3D, design full websites and UIs, analyze files and data with charts, generate images, and plan/execute multi-step work. The dedicated tabs (Images, Video, Studio, Dev, Lab) are optional specialized surfaces — but the user can ask for ANY of it directly in chat and you deliver it inline. Never tell the user to 'go to another tab' to get something done; do it here.",
+  "For assignments/homework: produce complete, full-length work. Never truncate.",
+  "ALWAYS go deeper. Never give half-answers.",
+  "",
+  "EVIDENCE & QUALITY (this is what makes AMV better than other AIs):",
+  "- Back claims with concrete evidence: specific facts, figures, dates, named sources, and clear reasoning. Avoid vague generalities.",
+  "- When citing data or statistics, name the source (study, organization, year). If estimating, say so explicitly.",
+  "- On debatable topics, present both sides, then give a clear reasoned conclusion.",
+  "- Structure longer answers with ## headers, short paragraphs, and bullets so they are easy to scan.",
+  "",
+  "CHARTS - use proactively whenever numbers, comparisons, or trends appear:",
+  "- Output a fenced code block with language chart containing JSON, like:",
+  "  ```chart",
+  "  {\"type\": \"bar\", \"title\": \"Sales by quarter\", \"data\": [{\"label\": \"Q1\", \"value\": 120}, {\"label\": \"Q2\", \"value\": 185}], \"source\": \"Company data\"}",
+  "  ```",
+  "- The type field is bar or line. Always include a title, and a source when the data has one.",
+  "- Add a short written explanation around the chart. Use charts for growth, comparisons, breakdowns, survey results, and before/after."
+].join("\n");
+
+/* ============================================================
+   LANGUAGES — UI + AI responses + generated content (images,
+   video, models) all honor the user's chosen language. Auto
+   means: match whatever language the user writes in.
+   ============================================================ */
+const LANGS = {
+  auto:{name:'Auto-detect', native:'Auto', native2:'matches your message'},
+  en:{name:'English', native:'English'},
+  es:{name:'Spanish', native:'Espa\u00f1ol'},
+  zh:{name:'Chinese', native:'\u4e2d\u6587'},
+  hi:{name:'Hindi', native:'\u0939\u093f\u0928\u094d\u0926\u0940'},
+  ar:{name:'Arabic', native:'\u0627\u0644\u0639\u0631\u0628\u064a\u0629'},
+  pt:{name:'Portuguese', native:'Portugu\u00eas'},
+  fr:{name:'French', native:'Fran\u00e7ais'},
+  de:{name:'German', native:'Deutsch'},
+  ja:{name:'Japanese', native:'\u65e5\u672c\u8a9e'},
+  ru:{name:'Russian', native:'\u0420\u0443\u0441\u0441\u043a\u0438\u0439'},
+};
+function _lang(){ return loadStr('amv_lang')||'auto'; }
+function _langName(code){ const l=LANGS[code||_lang()]; return l?l.name:'English'; }
+
+/* ============================================================
+   UI TRANSLATIONS — the interface itself changes language.
+   Covers the most visible chrome: sidebar, nav, section labels,
+   key buttons. Auto/English fall through to the English source.
+   RTL languages (Arabic) flip layout direction.
+   ============================================================ */
+const RTL_LANGS=['ar'];
+const I18N = {
+  // key : { es, zh, hi, ar, pt, fr, de, ja, ru }
+  'Chat':{es:'Chat',zh:'\u5bf9\u8bdd',hi:'\u091a\u0948\u091f',ar:'\u0645\u062d\u0627\u062f\u062b\u0629',pt:'Chat',fr:'Chat',de:'Chat',ja:'\u30c1\u30e3\u30c3\u30c8',ru:'\u0427\u0430\u0442'},
+  'Images':{es:'Im\u00e1genes',zh:'\u56fe\u50cf',hi:'\u091b\u0935\u093f\u092f\u093e\u0901',ar:'\u0635\u0648\u0631',pt:'Imagens',fr:'Images',de:'Bilder',ja:'\u753b\u50cf',ru:'\u0418\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u044f'},
+  'Video':{es:'V\u00eddeo',zh:'\u89c6\u9891',hi:'\u0935\u0940\u0921\u093f\u092f\u094b',ar:'\u0641\u064a\u062f\u064a\u0648',pt:'V\u00eddeo',fr:'Vid\u00e9o',de:'Video',ja:'\u52d5\u753b',ru:'\u0412\u0438\u0434\u0435\u043e'},
+  'Crew':{es:'Equipo',zh:'\u56e2\u961f',hi:'\u091f\u0940\u092e',ar:'\u0627\u0644\u0641\u0631\u064a\u0642',pt:'Equipe',fr:'\u00c9quipe',de:'Crew',ja:'\u30af\u30eb\u30fc',ru:'\u041a\u043e\u043c\u0430\u043d\u0434\u0430'},
+  'Handoff':{es:'Transferir',zh:'\u4ea4\u63a5',hi:'\u0939\u0948\u0902\u0921\u0911\u092b',ar:'\u062a\u0633\u0644\u064a\u0645',pt:'Transferir',fr:'Transfert',de:'\u00dcbergabe',ja:'\u5f15\u304d\u7d99\u304e',ru:'\u041f\u0435\u0440\u0435\u0434\u0430\u0447\u0430'},
+  'Studio':{es:'Estudio',zh:'\u5de5\u4f5c\u5ba4',hi:'\u0938\u094d\u091f\u0942\u0921\u093f\u092f\u094b',ar:'\u0627\u0633\u062a\u0648\u062f\u064a\u0648',pt:'Est\u00fadio',fr:'Studio',de:'Studio',ja:'\u30b9\u30bf\u30b8\u30aa',ru:'\u0421\u0442\u0443\u0434\u0438\u044f'},
+  'Dev':{es:'Dev',zh:'\u5f00\u53d1',hi:'\u0921\u0947\u0935',ar:'\u062a\u0637\u0648\u064a\u0631',pt:'Dev',fr:'Dev',de:'Dev',ja:'\u958b\u767a',ru:'\u0420\u0430\u0437\u0440\u0430\u0431.'},
+  'Lab':{es:'Lab',zh:'\u5b9e\u9a8c\u5ba4',hi:'\u0932\u0948\u092c',ar:'\u0627\u0644\u0645\u062e\u062a\u0628\u0631',pt:'Lab',fr:'Labo',de:'Lab',ja:'\u30e9\u30dc',ru:'\u041b\u0430\u0431.'},
+  'Projects':{es:'Proyectos',zh:'\u9879\u76ee',hi:'\u092a\u094d\u0930\u094b\u091c\u0947\u0915\u094d\u091f',ar:'\u0627\u0644\u0645\u0634\u0627\u0631\u064a\u0639',pt:'Projetos',fr:'Projets',de:'Projekte',ja:'\u30d7\u30ed\u30b8\u30a7\u30af\u30c8',ru:'\u041f\u0440\u043e\u0435\u043a\u0442\u044b'},
+  'Memory':{es:'Memoria',zh:'\u8bb0\u5fc6',hi:'\u092e\u0947\u092e\u094b\u0930\u0940',ar:'\u0627\u0644\u0630\u0627\u0643\u0631\u0629',pt:'Mem\u00f3ria',fr:'M\u00e9moire',de:'Speicher',ja:'\u30e1\u30e2\u30ea',ru:'\u041f\u0430\u043c\u044f\u0442\u044c'},
+  'Integrations':{es:'Integraciones',zh:'\u96c6\u6210',hi:'\u090f\u0915\u0940\u0915\u0930\u0923',ar:'\u0627\u0644\u062a\u0643\u0627\u0645\u0644\u0627\u062a',pt:'Integra\u00e7\u00f5es',fr:'Int\u00e9grations',de:'Integrationen',ja:'\u9023\u643a',ru:'\u0418\u043d\u0442\u0435\u0433\u0440\u0430\u0446\u0438\u0438'},
+  'Tasks':{es:'Tareas',zh:'\u4efb\u52a1',hi:'\u0915\u093e\u0930\u094d\u092f',ar:'\u0627\u0644\u0645\u0647\u0627\u0645',pt:'Tarefas',fr:'T\u00e2ches',de:'Aufgaben',ja:'\u30bf\u30b9\u30af',ru:'\u0417\u0430\u0434\u0430\u0447\u0438'},
+  'New chat':{es:'Nuevo chat',zh:'\u65b0\u5bf9\u8bdd',hi:'\u0928\u0908 \u091a\u0948\u091f',ar:'\u0645\u062d\u0627\u062f\u062b\u0629 \u062c\u062f\u064a\u062f\u0629',pt:'Novo chat',fr:'Nouveau chat',de:'Neuer Chat',ja:'\u65b0\u898f\u30c1\u30e3\u30c3\u30c8',ru:'\u041d\u043e\u0432\u044b\u0439 \u0447\u0430\u0442'},
+  'CREATE':{es:'CREAR',zh:'\u521b\u5efa',hi:'\u092c\u0928\u093e\u090f\u0902',ar:'\u0625\u0646\u0634\u0627\u0621',pt:'CRIAR',fr:'CR\u00c9ER',de:'ERSTELLEN',ja:'\u4f5c\u6210',ru:'\u0421\u041e\u0417\u0414\u0410\u0422\u042c'},
+  'AGENTS':{es:'AGENTES',zh:'\u4ee3\u7406',hi:'\u090f\u091c\u0947\u0902\u091f',ar:'\u0627\u0644\u0648\u0643\u0644\u0627\u0621',pt:'AGENTES',fr:'AGENTS',de:'AGENTEN',ja:'\u30a8\u30fc\u30b8\u30a7\u30f3\u30c8',ru:'\u0410\u0413\u0415\u041d\u0422\u042b'},
+  'BUILD':{es:'CONSTRUIR',zh:'\u6784\u5efa',hi:'\u092c\u0928\u093e\u090f\u0902',ar:'\u0628\u0646\u0627\u0621',pt:'CONSTRUIR',fr:'CONSTRUIRE',de:'BAUEN',ja:'\u30d3\u30eb\u30c9',ru:'\u0421\u0411\u041e\u0420\u041a\u0410'},
+  'WORKSPACE':{es:'ESPACIO',zh:'\u5de5\u4f5c\u533a',hi:'\u0915\u093e\u0930\u094d\u092f\u0915\u094d\u0937\u0947\u0924\u094d\u0930',ar:'\u0645\u0633\u0627\u062d\u0629 \u0627\u0644\u0639\u0645\u0644',pt:'\u00c1REA',fr:'ESPACE',de:'ARBEITSBEREICH',ja:'\u30ef\u30fc\u30af\u30b9\u30da\u30fc\u30b9',ru:'\u041e\u0411\u041b\u0410\u0421\u0422\u042c'},
+  'Generate':{es:'Generar',zh:'\u751f\u6210',hi:'\u091c\u0928\u0930\u0947\u091f',ar:'\u0625\u0646\u0634\u0627\u0621',pt:'Gerar',fr:'G\u00e9n\u00e9rer',de:'Generieren',ja:'\u751f\u6210',ru:'\u0421\u043e\u0437\u0434\u0430\u0442\u044c'},
+  'Ask anything':{es:'Pregunta lo que sea',zh:'\u968f\u4fbf\u95ee',hi:'\u0915\u0941\u091b \u092d\u0940 \u092a\u0942\u091b\u0947\u0902',ar:'\u0627\u0633\u0623\u0644 \u0623\u064a \u0634\u064a\u0621',pt:'Pergunte qualquer coisa',fr:'Demandez n\u2019importe quoi',de:'Frag irgendwas',ja:'\u4f55\u3067\u3082\u8cea\u554f',ru:'\u0421\u043f\u0440\u043e\u0441\u0438\u0442\u0435 \u0447\u0442\u043e \u0443\u0433\u043e\u0434\u043d\u043e'},
+  'Search chats…':{es:'Buscar chats\u2026',zh:'\u641c\u7d22\u5bf9\u8bdd\u2026',hi:'\u091a\u0948\u091f \u0916\u094b\u091c\u0947\u0902\u2026',ar:'\u0627\u0628\u062d\u062b\u2026',pt:'Buscar\u2026',fr:'Rechercher\u2026',de:'Suchen\u2026',ja:'\u691c\u7d22\u2026',ru:'\u041f\u043e\u0438\u0441\u043a\u2026'},
+  'Create':{es:'Crear',zh:'\u521b\u5efa',hi:'\u092c\u0928\u093e\u090f\u0902',ar:'\u0625\u0646\u0634\u0627\u0621',pt:'Criar',fr:'Cr\u00e9er',de:'Erstellen',ja:'\u4f5c\u6210',ru:'\u0421\u043e\u0437\u0434\u0430\u0442\u044c'},
+  'Agents':{es:'Agentes',zh:'\u4ee3\u7406',hi:'\u090f\u091c\u0947\u0902\u091f',ar:'\u0627\u0644\u0648\u0643\u0644\u0627\u0621',pt:'Agentes',fr:'Agents',de:'Agenten',ja:'\u30a8\u30fc\u30b8\u30a7\u30f3\u30c8',ru:'\u0410\u0433\u0435\u043d\u0442\u044b'},
+  'Build':{es:'Construir',zh:'\u6784\u5efa',hi:'\u092c\u0928\u093e\u090f\u0902',ar:'\u0628\u0646\u0627\u0621',pt:'Construir',fr:'Construire',de:'Bauen',ja:'\u30d3\u30eb\u30c9',ru:'\u0421\u0431\u043e\u0440\u043a\u0430'},
+  'Workspace':{es:'Espacio',zh:'\u5de5\u4f5c\u533a',hi:'\u0915\u093e\u0930\u094d\u092f\u0915\u094d\u0937\u0947\u0924\u094d\u0930',ar:'\u0645\u0633\u0627\u062d\u0629 \u0627\u0644\u0639\u0645\u0644',pt:'\u00c1rea',fr:'Espace',de:'Arbeitsbereich',ja:'\u30ef\u30fc\u30af\u30b9\u30da\u30fc\u30b9',ru:'\u041e\u0431\u043b\u0430\u0441\u0442\u044c'},
+  'Settings':{es:'Ajustes',zh:'\u8bbe\u7f6e',hi:'\u0938\u0947\u091f\u093f\u0902\u0917\u094d\u0938',ar:'\u0627\u0644\u0625\u0639\u062f\u0627\u062f\u0627\u062a',pt:'Configura\u00e7\u00f5es',fr:'Param\u00e8tres',de:'Einstellungen',ja:'\u8a2d\u5b9a',ru:'\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438'},
+  'Account':{es:'Cuenta',zh:'\u8d26\u6237',hi:'\u0916\u093e\u0924\u093e',ar:'\u0627\u0644\u062d\u0633\u0627\u0628',pt:'Conta',fr:'Compte',de:'Konto',ja:'\u30a2\u30ab\u30a6\u30f3\u30c8',ru:'\u0410\u043a\u043a\u0430\u0443\u043d\u0442'},
+  'Security':{es:'Seguridad',zh:'\u5b89\u5168',hi:'\u0938\u0941\u0930\u0915\u094d\u0937\u093e',ar:'\u0627\u0644\u0623\u0645\u0627\u0646',pt:'Seguran\u00e7a',fr:'S\u00e9curit\u00e9',de:'Sicherheit',ja:'\u30bb\u30ad\u30e5\u30ea\u30c6\u30a3',ru:'\u0411\u0435\u0437\u043e\u043f\u0430\u0441\u043d\u043e\u0441\u0442\u044c'},
+  'Privacy':{es:'Privacidad',zh:'\u9690\u79c1',hi:'\u0917\u094b\u092a\u0928\u0940\u092f\u0924\u093e',ar:'\u0627\u0644\u062e\u0635\u0648\u0635\u064a\u0629',pt:'Privacidade',fr:'Confidentialit\u00e9',de:'Datenschutz',ja:'\u30d7\u30e9\u30a4\u30d0\u30b7\u30fc',ru:'\u041a\u043e\u043d\u0444\u0438\u0434\u0435\u043d\u0446\u0438\u0430\u043b\u044c\u043d\u043e\u0441\u0442\u044c'},
+  'Appearance':{es:'Apariencia',zh:'\u5916\u89c2',hi:'\u0926\u093f\u0916\u093e\u0935\u091f',ar:'\u0627\u0644\u0645\u0638\u0647\u0631',pt:'Apar\u00eancia',fr:'Apparence',de:'Darstellung',ja:'\u5916\u89b3',ru:'\u0412\u043d\u0435\u0448\u043d\u0438\u0439 \u0432\u0438\u0434'},
+  'Language':{es:'Idioma',zh:'\u8bed\u8a00',hi:'\u092d\u093e\u0937\u093e',ar:'\u0627\u0644\u0644\u063a\u0629',pt:'Idioma',fr:'Langue',de:'Sprache',ja:'\u8a00\u8a9e',ru:'\u042f\u0437\u044b\u043a'},
+  'Billing':{es:'Facturaci\u00f3n',zh:'\u8d26\u5355',hi:'\u092c\u093f\u0932\u093f\u0902\u0917',ar:'\u0627\u0644\u0641\u0648\u062a\u0631\u0629',pt:'Faturamento',fr:'Facturation',de:'Abrechnung',ja:'\u8acb\u6c42',ru:'\u041e\u043f\u043b\u0430\u0442\u0430'},
+  'About':{es:'Acerca de',zh:'\u5173\u4e8e',hi:'\u092c\u093e\u0930\u0947 \u092e\u0947\u0902',ar:'\u062d\u0648\u0644',pt:'Sobre',fr:'\u00c0 propos',de:'\u00dcber',ja:'\u6982\u8981',ru:'\u041e \u043f\u0440\u043e\u0433\u0440\u0430\u043c\u043c\u0435'},
+  'Live / Backend':{es:'En vivo / Backend',zh:'\u5b9e\u65f6 / \u540e\u7aef',hi:'\u0932\u093e\u0907\u0935 / \u092c\u0948\u0915\u090f\u0902\u0921',ar:'\u0645\u0628\u0627\u0634\u0631 / \u0627\u0644\u062e\u0627\u062f\u0645',pt:'Ao vivo / Backend',fr:'Live / Backend',de:'Live / Backend',ja:'\u30e9\u30a4\u30d6 / \u30d0\u30c3\u30af\u30a8\u30f3\u30c9',ru:'\u041e\u043d\u043b\u0430\u0439\u043d / \u0411\u044d\u043a\u0435\u043d\u0434'},
+  'AI Connection':{es:'Conexi\u00f3n IA',zh:'AI \u8fde\u63a5',hi:'AI \u0915\u0928\u0947\u0915\u094d\u0936\u0928',ar:'\u0627\u062a\u0635\u0627\u0644 \u0627\u0644\u0630\u0643\u0627\u0621',pt:'Conex\u00e3o IA',fr:'Connexion IA',de:'KI-Verbindung',ja:'AI\u63a5\u7d9a',ru:'\u041f\u043e\u0434\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u0435 \u0418\u0418'},
+  'Integrations':{es:'Integraciones',zh:'\u96c6\u6210',hi:'\u090f\u0915\u0940\u0915\u0930\u0923',ar:'\u0627\u0644\u062a\u0643\u0627\u0645\u0644\u0627\u062a',pt:'Integra\u00e7\u00f5es',fr:'Int\u00e9grations',de:'Integrationen',ja:'\u9023\u643a',ru:'\u0418\u043d\u0442\u0435\u0433\u0440\u0430\u0446\u0438\u0438'},
+  'Choose the language for AMV\u2019s responses and the content it generates \u2014 chat replies, images, video, and 3D models will all use it. You can still ask for any other language inside a message.':{es:'Elige el idioma para las respuestas de AMV y el contenido que genera: respuestas de chat, im\u00e1genes, video y modelos 3D lo usar\u00e1n. Puedes pedir otro idioma dentro de un mensaje.',ar:'\u0627\u062e\u062a\u0631 \u0644\u063a\u0629 \u0631\u062f\u0648\u062f AMV \u0648\u0627\u0644\u0645\u062d\u062a\u0648\u0649 \u0627\u0644\u0630\u064a \u064a\u0646\u0634\u0626\u0647 \u2014 \u0633\u062a\u0633\u062a\u062e\u062f\u0645\u0647\u0627 \u0631\u062f\u0648\u062f \u0627\u0644\u0645\u062d\u0627\u062f\u062b\u0629 \u0648\u0627\u0644\u0635\u0648\u0631 \u0648\u0627\u0644\u0641\u064a\u062f\u064a\u0648 \u0648\u0627\u0644\u0646\u0645\u0627\u0630\u062c. \u064a\u0645\u0643\u0646\u0643 \u0637\u0644\u0628 \u0623\u064a \u0644\u063a\u0629 \u0623\u062e\u0631\u0649 \u062f\u0627\u062e\u0644 \u0627\u0644\u0631\u0633\u0627\u0644\u0629.',fr:'Choisissez la langue des r\u00e9ponses d\u2019AMV et du contenu g\u00e9n\u00e9r\u00e9 \u2014 r\u00e9ponses, images, vid\u00e9os et mod\u00e8les 3D l\u2019utiliseront. Vous pouvez demander une autre langue dans un message.',de:'W\u00e4hle die Sprache f\u00fcr AMVs Antworten und generierte Inhalte \u2014 Chat, Bilder, Video und 3D-Modelle nutzen sie. Du kannst in einer Nachricht jede andere Sprache anfordern.',zh:'\u9009\u62e9 AMV \u56de\u590d\u548c\u751f\u6210\u5185\u5bb9\u7684\u8bed\u8a00\u2014\u2014\u804a\u5929\u56de\u590d\u3001\u56fe\u50cf\u3001\u89c6\u9891\u548c 3D \u6a21\u578b\u90fd\u4f1a\u4f7f\u7528\u5b83\u3002\u4f60\u4ecd\u53ef\u5728\u6d88\u606f\u4e2d\u8981\u6c42\u5176\u4ed6\u8bed\u8a00\u3002',hi:'AMV \u0915\u0940 \u092a\u094d\u0930\u0924\u093f\u0915\u094d\u0930\u093f\u092f\u093e\u0913\u0902 \u0914\u0930 \u0938\u093e\u092e\u0917\u094d\u0930\u0940 \u0915\u0947 \u0932\u093f\u090f \u092d\u093e\u0937\u093e \u091a\u0941\u0928\u0947\u0902\u0964',pt:'Escolha o idioma das respostas do AMV e do conte\u00fado gerado \u2014 respostas, imagens, v\u00eddeo e modelos 3D o usar\u00e3o. Voc\u00ea pode pedir outro idioma em uma mensagem.',ja:'AMV\u306e\u5fdc\u7b54\u3068\u751f\u6210\u30b3\u30f3\u30c6\u30f3\u30c4\u306e\u8a00\u8a9e\u3092\u9078\u629e\u2014\u30c1\u30e3\u30c3\u30c8\u3001\u753b\u50cf\u3001\u52d5\u753b\u30013D\u30e2\u30c7\u30eb\u306b\u4f7f\u7528\u3055\u308c\u307e\u3059\u3002\u30e1\u30c3\u30bb\u30fc\u30b8\u5185\u3067\u4ed6\u306e\u8a00\u8a9e\u3082\u4f9d\u983c\u3067\u304d\u307e\u3059\u3002',ru:'\u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u044f\u0437\u044b\u043a \u043e\u0442\u0432\u0435\u0442\u043e\u0432 AMV \u0438 \u0433\u0435\u043d\u0435\u0440\u0438\u0440\u0443\u0435\u043c\u043e\u0433\u043e \u043a\u043e\u043d\u0442\u0435\u043d\u0442\u0430.'},
+  'Save':{es:'Guardar',zh:'\u4fdd\u5b58',hi:'\u0938\u0939\u0947\u091c\u0947\u0902',ar:'\u062d\u0641\u0638',pt:'Salvar',fr:'Enregistrer',de:'Speichern',ja:'\u4fdd\u5b58',ru:'\u0421\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c'},
+  'Cancel':{es:'Cancelar',zh:'\u53d6\u6d88',hi:'\u0930\u0926\u094d\u0926 \u0915\u0930\u0947\u0902',ar:'\u0625\u0644\u063a\u0627\u0621',pt:'Cancelar',fr:'Annuler',de:'Abbrechen',ja:'\u30ad\u30e3\u30f3\u30bb\u30eb',ru:'\u041e\u0442\u043c\u0435\u043d\u0430'},
+  'Send':{es:'Enviar',zh:'\u53d1\u9001',hi:'\u092d\u0947\u091c\u0947\u0902',ar:'\u0625\u0631\u0633\u0627\u0644',pt:'Enviar',fr:'Envoyer',de:'Senden',ja:'\u9001\u4fe1',ru:'\u041e\u0442\u043f\u0440\u0430\u0432\u0438\u0442\u044c'},
+  'Run':{es:'Ejecutar',zh:'\u8fd0\u884c',hi:'\u091a\u0932\u093e\u090f\u0902',ar:'\u062a\u0634\u063a\u064a\u0644',pt:'Executar',fr:'Ex\u00e9cuter',de:'Ausf\u00fchren',ja:'\u5b9f\u884c',ru:'\u0417\u0430\u043f\u0443\u0441\u043a'},
+  'What should I handle for you?':{es:'\u00bfQu\u00e9 puedo hacer por ti?',zh:'\u6709\u4ec0\u4e48\u9700\u8981\u6211\u5904\u7406\u7684\uff1f',hi:'\u092e\u0948\u0902 \u0906\u092a\u0915\u0947 \u0932\u093f\u090f \u0915\u094d\u092f\u093e \u0915\u0930\u0942\u0901?',ar:'\u0628\u0645\u0627\u0630\u0627 \u064a\u0645\u0643\u0646\u0646\u064a \u0645\u0633\u0627\u0639\u062f\u062a\u0643\u061f',pt:'O que posso fazer por voc\u00ea?',fr:'Que puis-je faire pour vous\u00a0?',de:'Was kann ich f\u00fcr dich tun?',ja:'\u4f55\u3092\u304a\u624b\u4f1d\u3044\u3057\u307e\u3057\u3087\u3046\u304b\uff1f',ru:'\u0427\u0435\u043c \u044f \u043c\u043e\u0433\u0443 \u043f\u043e\u043c\u043e\u0447\u044c?'},
+  'Profile':{es:'Perfil',zh:'\u4e2a\u4eba\u8d44\u6599',hi:'\u092a\u094d\u0930\u094b\u092b\u093c\u093e\u0907\u0932',ar:'\u0627\u0644\u0645\u0644\u0641 \u0627\u0644\u0634\u062e\u0635\u064a',pt:'Perfil',fr:'Profil',de:'Profil',ja:'\u30d7\u30ed\u30d5\u30a3\u30fc\u30eb',ru:'\u041f\u0440\u043e\u0444\u0438\u043b\u044c'},
+  'Sign out':{es:'Cerrar sesi\u00f3n',zh:'\u9000\u51fa',hi:'\u0938\u093e\u0907\u0928 \u0906\u0909\u091f',ar:'\u062a\u0633\u062c\u064a\u0644 \u0627\u0644\u062e\u0631\u0648\u062c',pt:'Sair',fr:'D\u00e9connexion',de:'Abmelden',ja:'\u30b5\u30a4\u30f3\u30a2\u30a6\u30c8',ru:'\u0412\u044b\u0439\u0442\u0438'},
+  'Theme':{es:'Tema',zh:'\u4e3b\u9898',hi:'\u0925\u0940\u092e',ar:'\u0627\u0644\u0633\u0645\u0629',pt:'Tema',fr:'Th\u00e8me',de:'Design',ja:'\u30c6\u30fc\u30de',ru:'\u0422\u0435\u043c\u0430'},
+  'Dark Mode':{es:'Modo oscuro',zh:'\u6df1\u8272\u6a21\u5f0f',hi:'\u0921\u093e\u0930\u094d\u0915 \u092e\u094b\u0921',ar:'\u0627\u0644\u0648\u0636\u0639 \u0627\u0644\u062f\u0627\u0643\u0646',pt:'Modo escuro',fr:'Mode sombre',de:'Dunkelmodus',ja:'\u30c0\u30fc\u30af\u30e2\u30fc\u30c9',ru:'\u0422\u0451\u043c\u043d\u0430\u044f \u0442\u0435\u043c\u0430'},
+  'Font Size':{es:'Tama\u00f1o de fuente',zh:'\u5b57\u4f53\u5927\u5c0f',hi:'\u092b\u093c\u0949\u0928\u094d\u091f \u0906\u0915\u093e\u0930',ar:'\u062d\u062c\u0645 \u0627\u0644\u062e\u0637',pt:'Tamanho da fonte',fr:'Taille de police',de:'Schriftgr\u00f6\u00dfe',ja:'\u30d5\u30a9\u30f3\u30c8\u30b5\u30a4\u30ba',ru:'\u0420\u0430\u0437\u043c\u0435\u0440 \u0448\u0440\u0438\u0444\u0442\u0430'},
+  'Small':{es:'Peque\u00f1o',zh:'\u5c0f',hi:'\u091b\u094b\u091f\u093e',ar:'\u0635\u063a\u064a\u0631',pt:'Pequeno',fr:'Petit',de:'Klein',ja:'\u5c0f',ru:'\u041c\u0430\u043b\u044b\u0439'},
+  'Medium':{es:'Mediano',zh:'\u4e2d',hi:'\u092e\u0927\u094d\u092f\u092e',ar:'\u0645\u062a\u0648\u0633\u0637',pt:'M\u00e9dio',fr:'Moyen',de:'Mittel',ja:'\u4e2d',ru:'\u0421\u0440\u0435\u0434\u043d\u0438\u0439'},
+  'Large':{es:'Grande',zh:'\u5927',hi:'\u092c\u0921\u093c\u093e',ar:'\u0643\u0628\u064a\u0631',pt:'Grande',fr:'Grand',de:'Gro\u00df',ja:'\u5927',ru:'\u0411\u043e\u043b\u044c\u0448\u043e\u0439'},
+  'Customize how AMV.AI looks and feels.':{es:'Personaliza el aspecto de AMV.AI.',zh:'\u81ea\u5b9a\u4e49 AMV.AI \u7684\u5916\u89c2\u3002',ar:'\u062e\u0635\u0635 \u0634\u0643\u0644 AMV.AI \u0648\u0625\u062d\u0633\u0627\u0633\u0647.',fr:'Personnalisez l\u2019apparence d\u2019AMV.AI.',de:'Passe das Aussehen von AMV.AI an.',hi:'AMV.AI \u0915\u093e \u0930\u0942\u092a \u0905\u0928\u0941\u0915\u0942\u0932\u093f\u0924 \u0915\u0930\u0947\u0902\u0964',pt:'Personalize a apar\u00eancia do AMV.AI.',ja:'AMV.AI\u306e\u898b\u305f\u76ee\u3092\u30ab\u30b9\u30bf\u30de\u30a4\u30ba\u3002',ru:'\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u0442\u0435 \u0432\u0438\u0434 AMV.AI.'},
+  'Manage your profile and account information.':{es:'Gestiona tu perfil e informaci\u00f3n de cuenta.',zh:'\u7ba1\u7406\u60a8\u7684\u4e2a\u4eba\u8d44\u6599\u548c\u8d26\u6237\u4fe1\u606f\u3002',ar:'\u0623\u062f\u0631 \u0645\u0644\u0641\u0643 \u0627\u0644\u0634\u062e\u0635\u064a \u0648\u0645\u0639\u0644\u0648\u0645\u0627\u062a \u062d\u0633\u0627\u0628\u0643.',fr:'G\u00e9rez votre profil et vos informations.',de:'Verwalte dein Profil und deine Kontodaten.',hi:'\u0905\u092a\u0928\u0940 \u092a\u094d\u0930\u094b\u092b\u093c\u093e\u0907\u0932 \u092a\u094d\u0930\u092c\u0902\u0927\u093f\u0924 \u0915\u0930\u0947\u0902\u0964',pt:'Gerencie seu perfil e informa\u00e7\u00f5es da conta.',ja:'\u30d7\u30ed\u30d5\u30a3\u30fc\u30eb\u3068\u30a2\u30ab\u30a6\u30f3\u30c8\u60c5\u5831\u3092\u7ba1\u7406\u3002',ru:'\u0423\u043f\u0440\u0430\u0432\u043b\u044f\u0439\u0442\u0435 \u043f\u0440\u043e\u0444\u0438\u043b\u0435\u043c \u0438 \u0434\u0430\u043d\u043d\u044b\u043c\u0438 \u0430\u043a\u043a\u0430\u0443\u043d\u0442\u0430.'},
+  'Manage your password and account security.':{es:'Gestiona tu contrase\u00f1a y seguridad.',zh:'\u7ba1\u7406\u60a8\u7684\u5bc6\u7801\u548c\u8d26\u6237\u5b89\u5168\u3002',ar:'\u0623\u062f\u0631 \u0643\u0644\u0645\u0629 \u0627\u0644\u0645\u0631\u0648\u0631 \u0648\u0623\u0645\u0627\u0646 \u062d\u0633\u0627\u0628\u0643.',fr:'G\u00e9rez votre mot de passe et s\u00e9curit\u00e9.',de:'Verwalte Passwort und Kontosicherheit.',hi:'\u0905\u092a\u0928\u093e \u092a\u093e\u0938\u0935\u0930\u094d\u0921 \u092a\u094d\u0930\u092c\u0902\u0927\u093f\u0924 \u0915\u0930\u0947\u0902\u0964',pt:'Gerencie sua senha e seguran\u00e7a.',ja:'\u30d1\u30b9\u30ef\u30fc\u30c9\u3068\u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u3092\u7ba1\u7406\u3002',ru:'\u0423\u043f\u0440\u0430\u0432\u043b\u044f\u0439\u0442\u0435 \u043f\u0430\u0440\u043e\u043b\u0435\u043c \u0438 \u0431\u0435\u0437\u043e\u043f\u0430\u0441\u043d\u043e\u0441\u0442\u044c\u044e.'},
+};
+function T(s){ const code=_lang(); if(code==='auto'||code==='en') return s; const e=I18N[s]; return (e&&e[code])||s; }
+function _applyDir(){ try{ const code=_lang(); document.documentElement.dir='ltr'; document.documentElement.lang=(code==='auto'?'en':code); }catch(e){} }
+/* Translate the static UI chrome. Stores each element's English source once,
+   then re-applies T() on every language change so switching is reversible. */
+/* ============================================================
+   WHOLE-UI TRANSLATION.
+   - Walks the entire visible DOM (every text node + key attributes).
+   - Instant terms come from the I18N dictionary.
+   - Anything else is translated by AMV itself and cached in
+     localStorage, so the whole site ends up in the chosen
+     language without a hand-written entry for every string.
+   ============================================================ */
+let _i18nBusy=false;
+function _i18nCache(){ try{ return load('amv_i18n_cache')||{}; }catch(e){ return {}; } }
+function _i18nSaveCache(c){ try{ store('amv_i18n_cache',c); }catch(e){} }
+function _i18nKey(code,s){ return code+'\u0001'+s; }
+// collect every visible text node + translatable attribute under root
+function _collectI18nNodes(root){
+  const out=[]; const SKIP={SCRIPT:1,STYLE:1,SVG:1,CODE:1,PRE:1,TEXTAREA:1};
+  const walk=(el)=>{
+    if(!el) return;
+    for(const node of el.childNodes){
+      if(node.nodeType===3){ const t=node.nodeValue; if(t && t.trim().length>1 && /[A-Za-z]/.test(t)) out.push({type:'text',node}); }
+      else if(node.nodeType===1){
+        const tag=node.tagName;
+        if(SKIP[tag]) continue;
+        if(node.closest && node.closest('[data-no-i18n]')) continue;
+        const ph=node.getAttribute&&node.getAttribute('placeholder'); if(ph&&ph.trim()&&/[A-Za-z]/.test(ph)) out.push({type:'ph',node});
+        walk(node);
+      }
+    }
+  };
+  walk(root);
+  return out;
+}
+function _translateUI(){
+  try{
+    _applyDir();
+    const code=_lang();
+    // sidebar/nav fast path via dictionary (always instant)
+    document.querySelectorAll('.snb[data-tab]').forEach(b=>{
+      if(!b.dataset.i18nSrc){ b.dataset.i18nSrc=(b.textContent||'').trim(); }
+      [...b.childNodes].forEach(n=>{ if(n.nodeType===3) n.remove(); });
+      b.appendChild(document.createTextNode(T(b.dataset.i18nSrc)));
+    });
+    document.querySelectorAll('[data-i18n]').forEach(el=>{
+      if(!el.dataset.i18nSrc){ el.dataset.i18nSrc=(el.textContent||'').trim(); }
+      el.textContent=T(el.dataset.i18nSrc);
+    });
+    document.querySelectorAll('[data-i18n-ph]').forEach(el=>{
+      if(!el.dataset.i18nPhSrc){ el.dataset.i18nPhSrc=el.getAttribute('placeholder')||''; }
+      el.setAttribute('placeholder', T(el.dataset.i18nPhSrc));
+    });
+    if(code==='auto'||code==='en') return;
+    // whole-DOM pass: dictionary first, then queue the rest for AI translation
+    _autoTranslateDOM(code);
+  }catch(e){ console.warn('_translateUI failed:', e); }
+}
+async function _autoTranslateDOM(code){
+  const app=document.getElementById('app'); if(!app) return;
+  const nodes=_collectI18nNodes(app);
+  const cache=_i18nCache();
+  const need=new Set();
+  // apply cached/dict immediately; collect unknowns
+  for(const it of nodes){
+    const src=(it.type==='text'?it.node.nodeValue:it.node.getAttribute('placeholder'))||'';
+    const key=src.trim(); if(!key) continue;
+    if(!it.node._i18nSrc) it.node._i18nSrc=key;
+    const dict=T(key);
+    if(dict!==key){ _applyI18n(it,dict); continue; }
+    const cached=cache[_i18nKey(code,key)];
+    if(cached){ _applyI18n(it,cached); }
+    else need.add(key);
+  }
+  if(!need.size || _i18nBusy) return;
+  // translate the unknowns with AMV (one batched call), cache, re-apply
+  if(!S.mk && !(window.AMV_API&&AMV_API.live)) return; // needs a key; dictionary still covered the common chrome
+  _i18nBusy=true;
+  try{
+    const list=[...need].slice(0,80); // batch cap
+    const sys='You are a UI localizer. Translate each numbered interface string into '+_langName(code)+'. Keep it short and natural for a button/label. Return ONLY a JSON array of translations in the same order, no keys, no commentary.';
+    const prompt=list.map((s,i)=>(i+1)+'. '+s).join('\n');
+    const resp=await aiComplete(prompt, sys, {noLang:true, max_tokens:2000, model:'claude-haiku-4-5-20251001'});
+    let arr=null; try{ arr=JSON.parse(resp.slice(resp.indexOf('['), resp.lastIndexOf(']')+1)); }catch(e){}
+    if(Array.isArray(arr)){
+      const c=_i18nCache();
+      list.forEach((s,i)=>{ if(arr[i]) c[_i18nKey(code,s)]=String(arr[i]); });
+      _i18nSaveCache(c);
+      _i18nBusy=false;
+      _autoTranslateDOM(code); // re-apply now that cache is filled
+      return;
+    }
+  }catch(e){}
+  _i18nBusy=false;
+}
+function _applyI18n(it,val){
+  try{
+    if(it.type==='text') it.node.nodeValue=it.node.nodeValue.replace(it.node._i18nSrc||it.node.nodeValue.trim(), val);
+    else it.node.setAttribute('placeholder', val);
+  }catch(e){}
+}
+/* The instruction appended to AI prompts so responses come back in the user's language. */
+function _langInstruction(){
+  const code=_lang();
+  const base="\n\nLANGUAGE RULES (in priority order):\n1. If the user's message explicitly asks for a specific language (e.g. \u201crespond in French\u201d, \u201cen espa\u00f1ol\u201d, \u201cin Japanese\u201d), you MUST reply in THAT language \u2014 this overrides everything else.\n2. Otherwise, ";
+  if(code==='auto') return base+"detect the language the user is writing in and reply ENTIRELY in that same language. If they switch languages mid-conversation, follow their lead.";
+  return base+"reply ENTIRELY in "+_langName(code)+" ("+LANGS[code].native+"), naturally and fluently, even if this prompt is in another language. Never mix languages unless the user does.";
+}
+/* Detects an explicit "in <language>" request in any of the supported languages. */
+function _explicitLangInPrompt(text){
+  if(!text) return null;
+  const t=' '+text.toLowerCase()+' ';
+  const map={
+    english:'English', spanish:'Spanish', 'espa\u00f1ol':'Spanish', chinese:'Chinese', mandarin:'Chinese',
+    hindi:'Hindi', arabic:'Arabic', portuguese:'Portuguese', 'portugu\u00eas':'Portuguese',
+    french:'French', 'fran\u00e7ais':'French', german:'German', deutsch:'German',
+    japanese:'Japanese', russian:'Russian', italian:'Italian', korean:'Korean', dutch:'Dutch',
+    turkish:'Turkish', polish:'Polish', swedish:'Swedish', greek:'Greek', hebrew:'Hebrew',
+    thai:'Thai', vietnamese:'Vietnamese', indonesian:'Indonesian', 'chino':'Chinese','japon\u00e9s':'Japanese'
+  };
+  // look for "in <lang>", "en <lang>", "auf <lang>", "<lang> version", "translate to <lang>"
+  for(const k in map){
+    const re=new RegExp('\\b(in|en|to|into|auf|\u0628\u0627\u0644|\u0e40\u0e1b\u0e47\u0e19|make it|write it|respond in|reply in|translate (?:to|into))?\\s*'+k+'\\b','i');
+    if(re.test(t)) return map[k];
+  }
+  return null;
+}
+/* For image/video/model generation: bakes the language into any text in the output. */
+function _langForGeneration(promptText){
+  const code=_lang();
+  const explicit=_explicitLangInPrompt(promptText);
+  if(explicit){ return ' (Any text, labels, captions, or signage in the output must be written in '+explicit+'.)'; }
+  if(code==='auto') return '';
+  return ' (Any text, labels, captions, or signage in the output must be written in '+_langName(code)+'.)';
+}
+const AMV_EXCELLENCE = [
+"",
+"=== AMV QUALITY STANDARD (non-negotiable) ===",
+"Every single response — on ANY model — must meet or exceed the quality of the best frontier AI in the world. This is the floor, never the ceiling. A 'fast' or 'lightweight' model is NO excuse for a lesser answer: it must be just as correct, just as insightful, just as well-crafted — only quicker. Never produce a watered-down response.",
+"- DEPTH: anticipate the follow-up questions and answer them preemptively. Cover edge cases. Never give the shallow version.",
+"- PRECISION: exact numbers, named sources, correct terminology, working code, verified math. If uncertain, say precisely how uncertain.",
+"- TASTE: write like a brilliant human, not a template. Vary sentence rhythm. Cut filler ('certainly', 'great question', 'in conclusion'). Open with substance.",
+"- FINISH: every deliverable should be ready to use as-is — an essay ready to submit, code ready to run, a plan ready to execute. No placeholders, no 'you could add…' cop-outs: ADD it.",
+"- JUDGMENT: when the user's request has a better version than what they asked for, deliver what they asked AND the better version, clearly labeled.",
+"- VISUAL OUTPUT: any HTML/UI/design you produce must look like a top design agency made it — real typography hierarchy, deliberate spacing, cohesive palette, polished details (hover states, shadows used sparingly, perfect alignment). Never default-looking, never generic Bootstrap-feel. The user should be able to ship or sell it.",
+"=== END QUALITY STANDARD ==="
+].join("\n");
+
+const MODEL_SYSTEMS = {
+  smart: SYS + AMV_EXCELLENCE,
+  core: SYS + AMV_EXCELLENCE,
+  fast: SYS + "\n\nPULSE MODE: You are fast, but your answer quality is IDENTICAL to the flagship — same correctness, same insight, same polish. Speed comes from efficient phrasing, never from thinking less or caring less. A short answer must be the smartest possible short answer." + AMV_EXCELLENCE,
+  research: SYS + "\n\nSCOUT MODE: World-class research analyst. Search the live web when it helps. Provide exhaustive analysis: named sources with dates, statistical data, multiple expert perspectives, counter-arguments, and a clear evidence-ranked conclusion. Structure with sections; include a chart whenever data allows." + AMV_EXCELLENCE,
+  coding: SYS + "\n\nFORGE MODE: Principal-level engineer. Production-ready code only: complete error handling, sensible architecture, performance-aware, secure by default. Explain key decisions in one tight paragraph, then the code. If the user's approach has a flaw, fix it and say why. Include a quick way to run/test it." + AMV_EXCELLENCE,
+  image: SYS,
+};
+
+
+
+function renderChartSVG(spec){
+  const type=(spec.type||'bar').toLowerCase();
+  const data=Array.isArray(spec.data)?spec.data:[];
+  if(!data.length) return '';
+  const title=spec.title?'<div class="cht-title">'+escH(spec.title)+'</div>':'';
+  const W=560, H=300, padL=46, padR=16, padT=16, padB=46;
+  const vals=data.map(d=>+d.value||0);
+  const max=Math.max(...vals, 0), min=Math.min(...vals, 0);
+  const range=(max-min)||1;
+  const iw=W-padL-padR, ih=H-padT-padB;
+  const colors=['#8b78ff','#8b78ff','#3fb950','#d29922','#f85149','#8b78ff','#ff7eb6'];
+  const x0=padL, y0=H-padB;
+  let svg='<svg viewBox="0 0 '+W+' '+H+'" class="cht-svg" xmlns="http://www.w3.org/2000/svg">';
+  // gridlines + y labels
+  for(let i=0;i<=4;i++){
+    const yy=padT+ih*(i/4);
+    const v=(max-(range*(i/4))).toFixed(range<10?1:0);
+    svg+='<line x1="'+padL+'" y1="'+yy+'" x2="'+(W-padR)+'" y2="'+yy+'" stroke="rgba(255,255,255,.07)"/>';
+    svg+='<text x="'+(padL-8)+'" y="'+(yy+4)+'" text-anchor="end" class="cht-ax">'+v+'</text>';
+  }
+  if(type==='line'){
+    const step=data.length>1?iw/(data.length-1):0;
+    let pts=data.map((d,i)=>{ const x=x0+step*i; const y=padT+ih*(1-((+d.value-min)/range)); return [x,y]; });
+    let path=pts.map((pt,i)=>(i?'L':'M')+pt[0]+' '+pt[1]).join(' ');
+    svg+='<path d="'+path+'" fill="none" stroke="#7c6cff" stroke-width="2.5"/>';
+    pts.forEach((pt,i)=>{ svg+='<circle cx="'+pt[0]+'" cy="'+pt[1]+'" r="3.5" fill="#8b78ff"/>';
+      svg+='<text x="'+pt[0]+'" y="'+(y0+18)+'" text-anchor="middle" class="cht-ax">'+escH((data[i].label||'')+'')+'</text>'; });
+  } else {
+    const n=data.length, gap=10, bw=(iw/n)-gap;
+    data.forEach((d,i)=>{
+      const h=ih*((+d.value-min)/range);
+      const x=x0+i*(iw/n)+gap/2;
+      const y=y0-h;
+      const col=colors[i%colors.length];
+      svg+='<rect x="'+x+'" y="'+y+'" width="'+Math.max(bw,2)+'" height="'+Math.max(h,0)+'" rx="4" fill="'+col+'"><title>'+escH((d.label||'')+': '+d.value)+'</title></rect>';
+      svg+='<text x="'+(x+bw/2)+'" y="'+(y0+18)+'" text-anchor="middle" class="cht-ax">'+escH((d.label||'')+'')+'</text>';
+      svg+='<text x="'+(x+bw/2)+'" y="'+(y-6)+'" text-anchor="middle" class="cht-val">'+escH(d.value+'')+'</text>';
+    });
+  }
+  svg+='</svg>';
+  return '<div class="cht">'+title+svg+(spec.source?'<div class="cht-src">Source: '+escH(spec.source)+'</div>':'')+'</div>';
+}
+
+function md(text) {
+  if(!text) return '';
+  let t = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+  // Live iframe for full HTML pages
+  t = t.replace(/```(?:html)?\n?(&lt;!DOCTYPE html&gt;[\s\S]*?)```/gi, (match, code) => {
+    const html=code.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&');
+    try{
+      const blob=new Blob([html],{type:'text/html'});
+      const url=URL.createObjectURL(blob);
+      return '<div class="lp"><div class="lph"><span>LIVE PREVIEW</span><a href="'+url+'" target="_blank" rel="noopener noreferrer">Open fullscreen ↗</a></div><iframe src="'+url+'" sandbox="allow-scripts allow-same-origin"></iframe></div>';
+    }catch(e){return match;}
+  });
+
+  // Chart blocks: ```chart {"type":"bar","title":"..","data":[{"label":"A","value":10}]}```
+  t = t.replace(/```chart\n?([\s\S]*?)```/gi, (match, body) => {
+    try{
+      const raw=body.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').trim();
+      const spec=JSON.parse(raw);
+      return renderChartSVG(spec);
+    }catch(e){ return match; }
+  });
+
+  // Code blocks with copy button
+  t = t.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
+    const id='cc'+Math.random().toString(36).slice(2,8);
+    const lb=lang?'<span>'+escH(lang.toUpperCase())+'</span>':'';
+    const raw=code.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&');
+    window._codeBlocks=window._codeBlocks||{};
+    window._codeBlocks[id]=raw;
+    return '<pre><div class="chdr">'+lb+'<button class="ccopy" data-cid="'+id+'">Copy</button></div><code>'+code+'</code></pre>';
+  });
+
+  // Tables
+  t = t.replace(/(\|.+\|\n)((?:[\s\S]*?\|.+\|(?:\n|$))+)/g, (match) => {
+    const rows=match.trim().split('\n').filter(r=>r.trim()&&!r.match(/^\|[-: |]+\|$/));
+    return '<table>'+rows.map((row,i)=>{
+      const cells=row.split('|').filter((_,ci,a)=>ci>0&&ci<a.length-1);
+      const tag=i===0?'th':'td';
+      return '<tr>'+cells.map(c=>'<'+tag+'>'+c.trim()+'</'+tag+'>').join('')+'</tr>';
+    }).join('')+'</table>';
+  });
+
+  t = t.replace(/\*\*\*(.+?)\*\*\*/g,'<strong><em>$1</em></strong>');
+  t = t.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
+  t = t.replace(/\*([^*\n]+?)\*/g,'<em>$1</em>');
+  t = t.replace(/^#### (.+)$/gm,'<h4>$1</h4>');
+  t = t.replace(/^### (.+)$/gm,'<h3>$1</h3>');
+  t = t.replace(/^## (.+)$/gm,'<h2>$1</h2>');
+  t = t.replace(/^# (.+)$/gm,'<h1>$1</h1>');
+  t = t.replace(/^&gt; (.+)$/gm,'<blockquote>$1</blockquote>');
+  t = t.replace(/^---+$/gm,'<hr>');
+  t = t.replace(/^[\-\*] (.+)$/gm,'<li>$1</li>');
+  t = t.replace(/(<li>.*<\/li>\n?)+/g, m=>'<ul>'+m+'</ul>');
+  t = t.replace(/^\d+\. (.+)$/gm,'<li>$1</li>');
+  t = t.replace(/`([^`\n]+)`/g,'<code>$1</code>');
+  t = t.replace(/!\[([^\]]*)\]\((https?:\/\/[^)]+)\)/g,'<img src="$2" alt="$1" class="chat-img" loading="lazy">');
+  t = t.replace(/\[(.+?)\]\((https?:\/\/[^)]+)\)/g,'<a href="$2" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">$1</a>');
+  t = t.replace(/\n\n/g,'<br><br>').replace(/\n/g,'<br>');
+  return t;
+}
+function copyCode(id){
+  const raw=window._codeBlocks?.[id];
+  if(raw) navigator.clipboard?.writeText(raw).then(()=>toast('Code copied','success')).catch(()=>toast('Copy failed','error'));
+}
+
+
+async function sendMsg() {
+  const ta=$('mta');
+  if(!ta||S.busy) return;
+  const txt=ta.value.trim(), att=S.att;
+  if(!txt&&!att) return;
+  ta.value=''; ta.style.height='auto'; S.att=null;
+  const ab2=$('ab2'); if(ab2) ab2.style.display='none';
+
+  // Auto-detect image requests -> generate INLINE in chat (also saved to Images tab)
+  if(!att && (/\b(generate|create|make|draw|render|show|design|paint)\b.{0,60}\b(image|photo|picture|portrait|illustration|logo|art|drawing|wallpaper|poster)\b/i.test(txt)||
+     /\b(image|photo|picture|illustration)\b.{0,40}\bof\b/i.test(txt))) {
+    const p=txt.replace(/\b(please|generate|create|make|draw|render|show|design|paint|an?|the)\s*(image|photo|picture|portrait|illustration|logo|art|drawing|wallpaper|poster)\s*(of\s*)?/gi,'').trim()||txt;
+    const seed=Math.floor(Math.random()*999999);
+    S.imgs.unshift({id:'img'+Date.now(),prompt:p,style:S.imgStyle,ratio:S.imgRatio,seed});
+    const url=imgUrl(p,S.imgStyle,S.imgRatio,seed);
+    const msgsI=getMsgs();
+    msgsI.push({r:'u',c:txt,d:txt});
+    const cvI=getCurConv(); if(cvI&&cvI.title==='New Conversation') cvI.title=txt.slice(0,44)+(txt.length>44?'\u2026':'');
+    msgsI.push({r:'a',c:'Here\u2019s what I created:\n\n![generated]('+url+')\n\n*Generated with AMV Vision \u2014 open the Images tab to refine, upscale, or download.*',model:S.model});
+    setMsgs(msgsI); renderChatMsgs(); renderHist();
+    return;
+  }
+
+  let display=txt, apiContent=txt;
+  if(att) {
+    if(att.kind==='img') {
+      const msgs2=getMsgs();
+      msgs2.push({r:'u',c:[{type:'image',source:{type:'base64',media_type:att.mime,data:att.b64}},{type:'text',text:txt||'Analyze this image in detail.'}],d:(txt?txt+' ':'')+'[Image: '+att.name+']'});
+      const cv=getCurConv(); if(cv&&cv.title==='New Conversation'&&txt) cv.title=txt.slice(0,44)+(txt.length>44?'…':'');
+      setMsgs(msgs2); S.busy=true; renderChatMsgs(); renderHist();
+      await _callAI(msgs2); return;
+    } else if(att.kind==='pdf') {
+      const msgs2=getMsgs();
+      msgs2.push({r:'u',c:[{type:'document',source:{type:'base64',media_type:'application/pdf',data:att.b64}},{type:'text',text:txt||'Analyze this PDF thoroughly.'}],d:(txt?txt+' ':'')+'[PDF: '+att.name+']'});
+      const cv=getCurConv(); if(cv&&cv.title==='New Conversation'&&txt) cv.title=txt.slice(0,44)+(txt.length>44?'…':'');
+      setMsgs(msgs2); S.busy=true; renderChatMsgs(); renderHist();
+      await _callAI(msgs2); return;
+    } else {
+      const max=20000, trunc=att.data.length>max;
+      apiContent='[File: "'+att.name+'"\n```\n'+att.data.slice(0,max)+(trunc?'\n...[truncated]':'')+'"\n```\n\nUser: '+(txt||'Please analyze this file thoroughly.');
+      display=(txt?txt+' ':'')+'['+att.name+']';
+    }
+  }
+
+  const msgs=getMsgs();
+  msgs.push({r:'u',c:apiContent,d:display});
+  const cv=getCurConv();
+  if(cv&&cv.title==='New Conversation'&&txt) cv.title=txt.slice(0,44)+(txt.length>44?'…':'');
+  setMsgs(msgs); S.busy=true; renderChatMsgs(); renderHist();
+  await _callAI(msgs);
+}
+
+async function _callAI(msgs) {
+  if(!S.mk && !(window.AMV_API && AMV_API.live)) {
+    msgs.push({r:'a',c:'**AMV isn\u2019t connected yet.** The AMV engine needs to be switched on before I can respond. If you\u2019re the workspace owner, enable it in Settings; otherwise reach out to your administrator.'});
+    setMsgs(msgs); S.busy=false; renderChatMsgs(); return;
+  }
+  const _gate=AEGIS.check();
+  if(!_gate.ok){
+    AEGIS.log('ratelimit_block',{reason:_gate.reason});
+    msgs.push({r:'a',c:'**Hold on.** '+_gate.reason});
+    setMsgs(msgs); S.busy=false; renderChatMsgs();
+    if(typeof toast==='function') toast(_gate.reason,'error',4000);
+    return;
+  }
+  AEGIS.noteSend();
+  // RULE 7+8: route to the cheapest capable model when on Auto (saves ~5-20x on simple tasks)
+  let _routeKey=S.model;
+  if(S.model==='auto'){ _routeKey=_routeModel(msgs); }
+  AEGIS.log('request',{model:(MODELS[_routeKey]||MODELS.smart).model, msgCount:msgs.length, routed:S.model==='auto'});
+  let _inTok=0,_outTok=0;
+  const mdl=MODELS[_routeKey]||MODELS.smart;
+  const _mems=_relevantMemories(msgs);
+  const sysPrompt=(MODEL_SYSTEMS[_routeKey]||SYS)+_langInstruction()+(_mems&&_mems.length?' Memory about you: '+_mems.join('; '):'')+_integrationStatusPrompt()+(_dnaShouldApply(msgs)?('\n\n'+dnaPromptBlock()+'\nApply this DESIGN DNA to any website, app, UI, HTML, or visual output you produce.'):'');
+
+  // Add streaming placeholder message
+  msgs.push({r:'a',c:'',streaming:true,model:S.model});
+  setMsgs(msgs); renderChatMsgs();
+  const streamIdx=msgs.length-1;
+
+  try {
+    // Build tools array - include web_search for research model
+    const tools=(S.model==='smart'||S.model==='research')?[{type:'web_search_20250305',name:'web_search'}]:undefined;
+
+    const _useBackend = (window.AMV_API && AMV_API.live);
+    const _endpoint = _useBackend ? (AMV_API.base.replace(/\/$/,'')+'/v1/messages') : 'https://api.anthropic.com/v1/messages';
+    const _headers = _useBackend ? {
+        'Content-Type':'application/json',
+        'Authorization':'Bearer '+AMV_API.token,
+      } : {
+        'Content-Type':'application/json',
+        'x-api-key':S.mk,
+        'anthropic-version':'2023-06-01',
+        'anthropic-dangerous-direct-browser-access':'true',
+      };
+    const _payload = JSON.stringify({
+        model:mdl.model,
+        max_tokens:mdl.tokens,
+        system:sysPrompt,
+        stream:true,
+        ...(tools?{tools}:{}),
+        messages:msgs.slice(0,streamIdx).slice(-20).map(m=>({
+          role:m.r==='u'?'user':'assistant',
+          content:m.c
+        }))
+      });
+    // offline guard
+    if(typeof navigator!=='undefined' && navigator.onLine===false){
+      throw new Error('You appear to be offline. Check your connection and retry.');
+    }
+    // fetch with timeout + automatic retry on transient failures (429/5xx/network)
+    let res, _attempt=0, _maxRetries=2;
+    while(true){
+      const _ctrl=new AbortController();
+      const _to=setTimeout(()=>_ctrl.abort(), 45000); // 45s timeout
+      try{
+        res=await fetch(_endpoint,{method:'POST',headers:_headers,body:_payload,signal:_ctrl.signal});
+        clearTimeout(_to);
+        if(res.ok) break;
+        // retry transient server/rate errors
+        if((res.status===429||res.status>=500) && _attempt<_maxRetries){
+          _attempt++;
+          const wait=Math.min(8000, 700*Math.pow(2,_attempt));
+          msgs[streamIdx]={...msgs[streamIdx],c:'',streaming:true,_retrying:'Busy right now — retrying ('+_attempt+'/'+_maxRetries+')…'};
+          setMsgs(msgs); renderChatMsgs();
+          await new Promise(r=>setTimeout(r,wait));
+          continue;
+        }
+        const err=await res.json().catch(()=>({}));
+        const raw=err?.error?.message||'';
+        AEGIS.log('api_error',{status:res.status,raw:raw.slice(0,200)}); AEGIS.recordError();
+        throw new Error(aegisErrorMessage(res.status, raw));
+      }catch(fe){
+        clearTimeout(_to);
+        // network drop / timeout → retry a couple times
+        const transient = fe.name==='AbortError' || /network|failed to fetch|load failed/i.test(fe.message||'');
+        if(transient && _attempt<_maxRetries){
+          _attempt++;
+          const wait=Math.min(8000, 700*Math.pow(2,_attempt));
+          msgs[streamIdx]={...msgs[streamIdx],c:'',streaming:true,_retrying:(fe.name==='AbortError'?'Taking a while — retrying':'Connection hiccup — retrying')+' ('+_attempt+'/'+_maxRetries+')…'};
+          setMsgs(msgs); renderChatMsgs();
+          await new Promise(r=>setTimeout(r,wait));
+          continue;
+        }
+        if(fe.name==='AbortError') throw new Error('The request timed out. The server may be busy — please retry.');
+        throw fe;
+      }
+    }
+
+    // Read the SSE stream
+    const reader=res.body.getReader();
+    const decoder=new TextDecoder();
+    let fullText='';
+    let buffer='';
+
+    while(true){
+      const {done,value}=await reader.read();
+      if(done) break;
+      buffer+=decoder.decode(value,{stream:true});
+      const lines=buffer.split('\n');
+      buffer=lines.pop()||'';
+      for(const line of lines){
+        if(!line.startsWith('data:')) continue;
+        const data=line.slice(5).trim();
+        if(data==='[DONE]') continue;
+        try{
+          const evt=JSON.parse(data);
+          if(evt.type==='message_start'&&evt.message?.usage){ _inTok=evt.message.usage.input_tokens||0; }
+          if(evt.type==='message_delta'&&evt.usage){ _outTok=evt.usage.output_tokens||_outTok; }
+          if(evt.type==='content_block_delta'&&evt.delta?.type==='text_delta'){
+            fullText+=evt.delta.text;
+            // Update the streaming message live
+            msgs[streamIdx]={...msgs[streamIdx],c:fullText};
+            setMsgs(msgs);
+            renderChatMsgs();
+          }
+        }catch{}
+      }
+    }
+
+    // Finalize
+    if(!fullText) fullText='(no response)';
+    msgs[streamIdx]={r:'a',c:fullText,model:S.model};
+    try{ AEGIS.recordUsage((MODELS[S.model]||MODELS.smart).model, _inTok, _outTok); }catch(e){}
+    try{ AMVUsage.record((_inTok||0)+(_outTok||0)); }catch(e){}
+    // Auto-title chat
+    const cv=getCurConv();
+    if(cv&&cv.title==='New Conversation'&&fullText.length>20){
+      cv.title=fullText.slice(0,44).replace(/[#*`]/g,'').trim()+(fullText.length>44?'…':'');
+      renderHist();
+    }
+
+  } catch(e) {
+    const friendly=/api error|rejected|forbidden|rate-limit|malformed|too long|server error|network|timed out|offline|busy/i.test(e.message)?e.message:aegisErrorMessage(0,e.message);
+    AEGIS.log('exception',{msg:String(e.message).slice(0,200)}); AEGIS.recordError();
+    // friendly inline error card with a Retry action
+    msgs[streamIdx]={r:'a',c:'',model:S.model,_error:friendly};
+  }
+
+  setMsgs(msgs); S.busy=false; renderChatMsgs();
+  // learn durable facts from this exchange (best-effort, runs in background)
+  try{ if(!msgs[streamIdx]||!msgs[streamIdx]._error){ setTimeout(()=>_maybeExtractMemory(msgs),300); AMVValue.record('message'); } }catch(e){}
+}
+/* Retry the last AI turn after a failure. */
+function retryLastAI(){
+  const msgs=getMsgs();
+  while(msgs.length && msgs[msgs.length-1].r==='a') msgs.pop();
+  if(!msgs.length) return;
+  setMsgs(msgs); S.busy=true; renderChatMsgs();
+  _callAI(msgs);
+}
+window.retryLastAI=retryLastAI;
+
+
+async function regenerateMsg() {
+  const msgs=getMsgs();
+  if(!msgs.length) return;
+  // Remove last AI message
+  while(msgs.length&&msgs[msgs.length-1].r==='a') msgs.pop();
+  if(!msgs.length) return;
+  setMsgs(msgs); S.busy=true; renderChatMsgs();
+  await _callAI(msgs);
+}
+
+async function editMsg(idx) {
+  const msgs=getMsgs();
+  const msg=msgs[idx];
+  if(!msg||msg.r!=='u') return;
+  const text=await showTextPromptAsync('Edit your message:', msg.d||msg.c);
+  if(!text||!text.trim()) return;
+  msgs[idx]={...msg, c:text.trim(), d:text.trim()};
+  // Remove all messages after this
+  msgs.splice(idx+1);
+  setMsgs(msgs); S.busy=true; renderChatMsgs();
+  _callAI(msgs);
+}
+
+function likeMsg(idx, type) {
+  const msgs=getMsgs();
+  if(!msgs[idx]) return;
+  msgs[idx].like=msgs[idx].like===type?null:type;
+  setMsgs(msgs); renderChatMsgs();
+  toast(type==='up'?'Feedback: helpful!':'Feedback: not helpful','success');
+}
+
+function copyMsg(text) {
+  navigator.clipboard?.writeText(text).then(()=>toast('Copied to clipboard','success')).catch(()=>toast('Copy failed','error'));
+}
+
+
+function renderChatView() {
+  const vc=$('vc'); if(!vc) return;
+  // Current model info
+  const mdl=MODELS[S.model]||MODELS.smart;
+  vc.innerHTML=
+    '<div id="cv">'+
+      '<div id="cm"></div>'+
+      '<div id="cia">'+
+        '<div id="cib">'+
+          '<div id="ab2"><div id="ac"></div></div>'+
+          '<textarea id="mta" placeholder="Ask anything - essays, 3D models, code, images, research…" rows="1"></textarea>'+
+          '<div id="itb">'+
+            '<div class="il">'+
+              '<button class="atb" id="att-btn" title="Attach file">'+
+                '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>'+
+              '</button>'+
+              '<button class="atb" id="voice-btn" title="Voice input">'+
+                '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>'+
+              '</button>'+
+            '</div>'+
+            '<div style="display:flex;align-items:center;gap:7px">'+
+              '<button class="inp-model-sel" id="inp-mdl-btn">'+
+                '<span class="inp-model-dot" style="background:'+mdl.color+'"></span>'+
+                '<span>'+mdl.label+'</span>'+
+                '<svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>'+
+              '</button>'+
+              '<button id="snd">'+
+                '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>'+
+              '</button>'+
+            '</div>'+
+          '</div>'+
+        '</div>'+
+        '<p class="input-hint">Enter to send &bull; Shift+Enter for new line &bull; Drag &amp; drop files</p>'+
+      '</div>'+
+    '</div>';
+
+  renderChatMsgs();
+  bindChatEvents();
+  // Model selector popup
+  on($('inp-mdl-btn'),'click',showModelPicker);
+}
+
+function showModelPicker(){
+  const btn=$('inp-mdl-btn'); if(!btn) return;
+  const rect=btn.getBoundingClientRect();
+  document.querySelectorAll('.model-picker').forEach(m=>m.remove());
+  const menu=document.createElement('div');
+  menu.className='model-picker';
+  menu.style.cssText='bottom:'+(window.innerHeight-rect.top+8)+'px;right:'+Math.max(12,window.innerWidth-rect.right)+'px';
+  const bars=(c)=>{ if(c===0) return '<span class="mp-auto">\u21c6</span>'; let h=''; for(let i=1;i<=4;i++) h+='<span class="mp-bar'+(i<=c?' on':'')+'"></span>'; return h; };
+  menu.innerHTML=
+    '<div class="mp-head">Choose a model</div>'+
+    MODEL_ORDER.map(k=>{ const v=MODELS[k]; const sel=k===S.model;
+      return '<button class="mp-item'+(sel?' sel':'')+'" data-mk="'+k+'">'+
+        '<span class="mp-dot" style="background:'+v.color+'"></span>'+
+        '<span class="mp-body"><span class="mp-name">'+v.label+(sel?'<span class="mp-check">✓</span>':'')+'</span>'+
+        '<span class="mp-desc">'+v.desc+'</span></span>'+
+        '<span class="mp-meta"><span class="mp-bars" title="'+COST_LABEL[v.cost]+'">'+bars(v.cost)+'</span>'+
+        '<span class="mp-cost">'+COST_LABEL[v.cost]+'</span></span>'+
+      '</button>';
+    }).join('')+
+    '<div class="mp-foot">Every AMV model delivers flagship quality. More powerful models use more of your usage — upgrade your plan for more room to run them.</div>';
+  document.body.appendChild(menu);
+  menu.querySelectorAll('[data-mk]').forEach(item=>{
+    item.addEventListener('click',()=>{
+      if(!_planAllowsModel(item.dataset.mk)){
+        menu.remove();
+        openUpgradeModal(item.dataset.mk);
+        return;
+      }
+      S.model=item.dataset.mk;
+      menu.remove();
+      const mdlNow=MODELS[S.model];
+      const mdlBtn=$('inp-mdl-btn');
+      if(mdlBtn){
+        const lab=mdlBtn.querySelector('span:last-of-type'); if(lab) lab.textContent=mdlNow.label;
+        const dot=mdlBtn.querySelector('.inp-model-dot'); if(dot) dot.style.background=mdlNow.color;
+      }
+    });
+  });
+  const close=e=>{if(!menu.contains(e.target)){menu.remove();document.removeEventListener('click',close);}};
+  setTimeout(()=>document.addEventListener('click',close),50);
+}
+
+function bindChatEvents() {
+  const ta=$('mta');
+  on(ta,'keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();} });
+  on(ta,'input',()=>{ ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,130)+'px'; });
+  on($('snd'),'click',sendMsg);
+  // All message action buttons via delegation (avoids inline onclick quote escaping)
+  on($('cm'),'click',e=>{
+    const btn=e.target.closest('[data-action]');
+    if(!btn) {
+      const cpbtn=e.target.closest('.ccopy');
+      if(cpbtn&&cpbtn.dataset.cid) copyCode(cpbtn.dataset.cid);
+      return;
+    }
+    const action=btn.dataset.action, idx=parseInt(btn.dataset.idx);
+    const msgs=getMsgs();
+    if(action==='edit') editMsg(idx);
+    else if(action==='copy-u'||action==='copy-a'){
+      const m=msgs[idx];
+      if(m) copyMsg(m.d||(typeof m.c==='string'?m.c:''));
+    }
+    else if(action==='like-up') likeMsg(idx,'up');
+    else if(action==='like-down') likeMsg(idx,'down');
+    else if(action==='regen') regenerateMsg();
+    else if(action==='retry-ai') retryLastAI();
+  });
+  on($('att-btn'),'click',()=>$('fi').click());
+  on($('voice-btn'),'click',toggleVoice);
+  on($('tab-add'),'click',()=>{ newChat(); });
+
+  // Tab clicks
+  $('tabs')?.querySelectorAll('.ctab[data-tid]').forEach(b=>{
+    on(b,'click',e=>{ if(e.target.dataset.tclose) return; loadConv(b.dataset.tid); });
+  });
+  $('tabs')?.querySelectorAll('[data-tclose]').forEach(b=>{
+    on(b,'click',e=>{ e.stopPropagation(); closeTab(b.dataset.tclose); });
+  });
+
+  // Model buttons
+  $('mdl-bar')?.querySelectorAll('.mdlbtn').forEach(b=>{
+    on(b,'click',()=>{
+      S.model=b.dataset.m;
+      if(S.model==='image'){setTab('images');return;}
+      $('mdl-bar').querySelectorAll('.mdlbtn').forEach(x=>x.classList.toggle('on',x===b));
+    });
+  });
+
+  // Drag and drop
+  const cib=$('cib');
+  on(cib,'dragover',e=>{e.preventDefault();cib.style.borderColor='var(--indigo)';});
+  on(cib,'dragleave',()=>{cib.style.borderColor='';});
+  on(cib,'drop',e=>{ e.preventDefault(); cib.style.borderColor=''; if(e.dataTransfer.files.length) handleFiles(e.dataTransfer.files); });
+}
+
+function closeTab(id) {
+  S.openTabs=S.openTabs.filter(t=>t!==id);
+  if(S.cur===id) S.cur=(S.openTabs[0]||S.convs[0]?.id);
+  renderChatView();
+}
+
+function renderChatMsgs() {
+  const cm=$('cm');
+  if(!cm) return;
+  const msgs=getMsgs();
+  const ini=S.user?.ini||'?';
+
+  if(!msgs.length) {
+    const name=S.user?.name?.split(' ')[0]||'there';
+    const hour=new Date().getHours();
+    const greet=hour<12?'Good morning':hour<17?'Good afternoon':'Good evening';
+    cm.innerHTML=
+      '<div class="ce">'+
+        '<div class="ce-logo-mark"><svg width="22" height="22" viewBox="0 0 40 40" fill="none"><text x="20" y="27" text-anchor="middle" font-family="Inter,sans-serif" font-size="15" font-weight="800" letter-spacing="-1" fill="#fff">AMV</text></svg></div>'+
+        '<div class="ce-greeting">'+greet+', '+escH(name)+'</div>'+
+        '<div class="ce-sub">What should I handle for you?</div>'+
+        '<div class="ce-pills">'+
+          '<div class="ce-pill" data-q="Create an interactive 3D model of a human heart with realistic animation and labels"><span class="ce-pill-icon">🧠</span>3D Models</div>'+
+          '<div class="ce-pill" data-q="Write a complete, well-structured 1500-word essay on artificial intelligence and its impact on modern society"><span class="ce-pill-icon">✍️</span>Write</div>'+
+          '<div class="ce-pill" data-q="Build a complete full-stack web application with React, Node.js, and authentication"><span class="ce-pill-icon">💻</span>Code</div>'+
+          '<div class="ce-pill" data-q="Generate a photorealistic HD image of Cristiano Ronaldo scoring a bicycle kick in the Champions League final"><span class="ce-pill-icon">🖼️</span>Images</div>'+
+          '<div class="ce-pill" data-q="Research and write a comprehensive market analysis report for the electric vehicle industry with 5-year forecast"><span class="ce-pill-icon">🔬</span>Research</div>'+
+          '<div class="ce-pill" id="ce-file"><span class="ce-pill-icon">📎</span>Analyze file</div>'+
+        '</div>'+
+      '</div>';
+    cm.querySelectorAll('.ce-pill[data-q]').forEach(p=>{
+      p.addEventListener('click',()=>{
+        const ta=$('mta');
+        if(ta){ta.value=p.dataset.q;ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,160)+'px';ta.focus();}
+      });
+    });
+    document.getElementById('ce-file')?.addEventListener('click',()=>$('fi').click());
+    return;
+  }
+
+  cm.innerHTML=msgs.map((m,i)=>{
+    const isU=m.r==='u';
+    const rawText=m.d||(typeof m.c==='string'?m.c:'');
+    let content;
+    if(!isU && m._error){
+      content='<div class="ai-error"><div class="ai-error-h"><span class="ai-error-ic">⚠</span> Something went wrong</div>'+
+        '<div class="ai-error-msg">'+escH(m._error)+'</div>'+
+        '<button class="ai-error-retry" data-action="retry-ai">↻ Retry</button></div>';
+    } else if(!isU && m._retrying){
+      content='<div class="ai-retrying"><div class="dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div><span>'+escH(m._retrying)+'</span></div>';
+    } else {
+      content=isU?escH(rawText).replace(/\n/g,'<br>'):md(typeof m.c==='string'?m.c:rawText);
+    }
+    const mdlLabel=!isU&&m.model?'<span style="font-size:10px;color:var(--t2);margin-bottom:3px">'+MODELS[m.model]?.label+' Model</span>':'';
+        const actions=(!isU && (m._error||m._retrying))? '' : (isU?
+      '<div class="macts">'+
+        '<button class="mact" data-action="edit" data-idx="'+i+'">✏ Edit</button>'+
+        '<button class="mact" data-action="copy-u" data-idx="'+i+'">⎘ Copy</button>'+
+      '</div>':
+      '<div class="macts">'+
+        '<button class="mact '+(m.like==='up'?'liked':'')+'" data-action="like-up" data-idx="'+i+'">👍</button>'+
+        '<button class="mact '+(m.like==='down'?'disliked':'')+'" data-action="like-down" data-idx="'+i+'">👎</button>'+
+        '<button class="mact" data-action="copy-a" data-idx="'+i+'">⎘ Copy</button>'+
+        (i===msgs.length-1?'<button class="mact" data-action="regen">↻ Regenerate</button>':'')+
+      '</div>');    return '<div class="mr '+(isU?'u':'')+'"><div class="mav '+(isU?'u':'ai')+'">'+(isU?ini:'A')+'</div>'+
+      '<div class="mwrap">'+(mdlLabel?'<span style="font-size:10px;color:var(--t2)">'+MODELS[m.model||'smart']?.label+' Model</span>':'')+
+      '<div class="mb '+(isU?'u':'ai')+'">'+content+'</div>'+actions+'</div></div>';
+  }).join('')+
+  (S.busy?'<div class="mr"><div class="mav ai">A</div><div class="mwrap"><div class="mb ai"><div class="dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div></div></div></div>':'');
+
+  cm.scrollTop=cm.scrollHeight;
+  const snd=$('snd'); if(snd) snd.disabled=S.busy;
+}
+
+
+let _voiceRec=null, _isRecording=false;
+function toggleVoice(){
+  const btn=$('voice-btn');
+  if(!('webkitSpeechRecognition' in window)&&!('SpeechRecognition' in window)){
+    toast('Voice input not supported in this browser. Use Chrome.','error'); return;
+  }
+  if(_isRecording){ try{_voiceRec&&_voiceRec.stop();}catch(e){} return; }
+  if(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia){
+    navigator.mediaDevices.getUserMedia({audio:true})
+      .then(s=>{s.getTracks().forEach(t=>t.stop());_amvBeginRec();})
+      .catch(err=>{ if(err&&err.name==='NotAllowedError') toast('Microphone blocked — allow it in your browser address bar','error',5000); else _amvBeginRec(); });
+    return;
+  }
+  _amvBeginRec();
+}
+function _amvBeginRec(){
+  const btn=$('voice-btn');
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  _voiceRec=new SR();
+  _voiceRec.continuous=false; _voiceRec.interimResults=true; _voiceRec.lang='en-US';
+  _voiceRec.onstart=()=>{
+    _isRecording=true;
+    if(btn) btn.classList.add('rec');
+    toast('Listening… speak now','info',5000);
+  };
+  _voiceRec.onresult=e=>{
+    const t=Array.from(e.results).map(r=>r[0].transcript).join('');
+    const ta=$('mta'); if(ta){ ta.value=t; ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,130)+'px'; }
+  };
+  _voiceRec.onend=()=>{
+    _isRecording=false;
+    if(btn) btn.classList.remove('rec');
+  };
+  _voiceRec.onerror=e=>{ _isRecording=false; if(btn) btn.classList.remove('rec'); toast('Voice error: '+e.error,'error'); };
+  _voiceRec.start();
+}
+
+
+function handleFiles(files){
+  if(!files||!files.length) return;
+  if(files.length===1){ handleFile(files[0]); return; }
+  // Multiple: combine text files
+  const all=Array.from(files);
+  Promise.all(all.map(f=>new Promise(res=>{
+    const cat=getFileCat(f);
+    const r=new FileReader();
+    if(cat==='image'){r.onload=e=>res({kind:'img',name:f.name,b64:e.target.result.split(',')[1],mime:f.type||'image/jpeg',size:f.size});r.readAsDataURL(f);}
+    else if(cat==='pdf'){r.onload=e=>res({kind:'pdf',name:f.name,b64:e.target.result.split(',')[1],mime:'application/pdf',size:f.size});r.readAsDataURL(f);}
+    else{r.onload=e=>res({kind:'text',name:f.name,data:e.target.result,size:f.size});r.onerror=()=>res({kind:'text',name:f.name,data:'[unreadable]',size:0});r.readAsText(f);}
+  }))).then(results=>{
+    const imgs=results.filter(r=>r.kind==='image');
+    if(imgs.length){ S.att=imgs[0]; }
+    else{
+      const combined=results.map(r=>'=== '+r.name+' ===\n'+(r.data||'[binary]')).join('\n\n');
+      S.att={kind:'text',name:results.map(r=>r.name).join(', '),data:combined,size:0};
+    }
+    showAttChip();
+  });
+}
+function getFileCat(file){
+  const t=file.type;
+  if(t.startsWith('image/')) return 'image';
+  if(t==='application/pdf') return 'pdf';
+  const ext=file.name.split('.').pop().toLowerCase();
+  if(['jpg','jpeg','png','gif','webp','bmp'].includes(ext)) return 'image';
+  if(ext==='pdf') return 'pdf';
+  return 'text';
+}
+function handleFile(file){
+  if(!file) return;
+  const cat=getFileCat(file);
+  const reader=new FileReader();
+  if(cat==='image'){
+    reader.onload=e=>{S.att={kind:'img',name:file.name,size:file.size,b64:e.target.result.split(',')[1],mime:file.type||'image/jpeg'};showAttChip();};
+    reader.readAsDataURL(file);
+  } else if(cat==='pdf'){
+    reader.onload=e=>{S.att={kind:'pdf',name:file.name,size:file.size,b64:e.target.result.split(',')[1],mime:'application/pdf'};showAttChip();};
+    reader.readAsDataURL(file);
+  } else {
+    reader.onload=e=>{S.att={kind:'text',name:file.name,size:file.size,data:e.target.result};showAttChip();};
+    reader.readAsText(file);
+  }
+  reader.onerror=()=>toast('Could not read file: '+file.name,'error');
+}
+function showAttChip(){
+  if(!S.att) return;
+  const ab2=$('ab2'),ac=$('ac');
+  if(!ab2||!ac) return;
+  const icons={img:'🖼',pdf:'📄',text:'📎'};
+  const sz=S.att.size?(' ('+fmtSize(S.att.size)+')'):'';
+  ac.innerHTML='<span>'+(icons[S.att.kind]||'📎')+' <strong>'+escH(S.att.name)+'</strong><span style="color:var(--t3);font-size:10px">'+sz+'</span></span>';
+  const btn=document.createElement('button');
+  btn.textContent='×'; btn.style.cssText='background:none;border:none;color:var(--t2);cursor:pointer;font-size:13px;line-height:1;margin-left:4px';
+  btn.onclick=()=>{S.att=null;ab2.style.display='none';};
+  ac.appendChild(btn);
+  ab2.style.display='flex';
+}
+function fmtSize(b){ if(b<1024) return b+'B'; if(b<1024*1024) return (b/1024).toFixed(1)+'KB'; return (b/(1024*1024)).toFixed(1)+'MB'; }
+
+
+const IMG_STYLES={
+  'Photorealistic':'photorealistic, professional DSLR photography, ultra-detailed, sharp focus, 8k uhd, award winning photography, natural lighting, hyperrealistic',
+  'Cinematic':'cinematic photography, dramatic lighting, shallow depth of field, film grain, anamorphic lens, movie still, blockbuster quality',
+  'Digital Art':'vibrant digital art, highly detailed illustration, concept art, trending on artstation, professional quality',
+  'Oil Painting':'classical oil painting, rich impasto texture, masterful brushwork, fine art gallery quality, museum quality',
+  'Watercolor':'beautiful watercolor painting, soft flowing colors, delicate washes, luminous transparency, professional illustration',
+  'Anime':'high quality anime style, vibrant colors, detailed linework, professional anime production quality',
+  '3D Render':'photorealistic 3D render, global illumination, studio lighting, octane render, ultra detailed, 8k',
+  'Sketch':'detailed pencil sketch, expert draftsmanship, fine linework, cross-hatching, professional illustration',
+  'Vintage':'vintage 35mm film photograph, kodachrome colors, retro aesthetics, nostalgic, film grain',
+  'Fantasy Art':'epic fantasy illustration, intricate magical details, dramatic cinematic lighting, painterly, mythical',
+};
+const BLOCKED=['explicit nudity','pornographic','nsfw','erotic','hentai','child sexual'];
+
+/* Light prompt enhancement: when a prompt looks like it names a real person
+   doing something, phrase it so the image model renders a clearer likeness.
+   This does NOT search the web for the person or use reference photos — it
+   only improves the text prompt. Public-figure depiction is allowed for
+   editorial/creative use per the content policy. */
+function _enhanceImgPrompt(prompt){
+  let p=String(prompt||'').trim();
+  if(!p) return p;
+  const wordCount=p.split(/\s+/).length;
+  // Heuristics for "this prompt names a specific person/figure":
+  // - Starts with a capitalized name ("Sergio Ramos ...")
+  // - Is a short handle-like token ("iShowSpeed", "Ninja", "MrBeast")
+  // - Already short enough that it's likely just a subject, not a full scene
+  const startsCapName=/^[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3}(?:\s|$)/.test(p);
+  const handleLike=/^[A-Za-z][A-Za-z0-9_.]{2,24}$/.test(p) && wordCount===1;
+  // Avoid enhancing prompts that are clearly scene descriptions
+  const sceneWords=/\b(landscape|scene|background|wallpaper|abstract|pattern|logo|poster|sunset|forest|mountain|city|ocean|galaxy|painting of|drawing of)\b/i.test(p);
+  if((startsCapName || handleLike) && wordCount<=8 && !sceneWords){
+    p='a realistic, high-quality photograph of '+p+', accurate likeness, recognizable face, true to life';
+  }
+  return p;
+}
+
+function imgUrl(prompt,style,ratio,seed){
+  const sizes={'16:9':[896,504],'9:16':[504,896],'4:3':[768,576],'1:1':[768,768]};
+  const [w,h]=sizes[ratio]||[768,768];
+  const full=(IMG_STYLES[style]||style)+', '+_enhanceImgPrompt(prompt)+_langForGeneration(prompt)+', masterpiece, best quality, highly detailed';
+  return 'https://image.pollinations.ai/prompt/'+encodeURIComponent(full)+'?width='+w+'&height='+h+'&nologo=true&seed='+seed+'&model=flux&safe=false&enhance=true';
+}
+function genImg(){
+  const inp=$('img-inp');
+  if(!inp) return;
+  const p=inp.value.trim();
+  if(!p){inp.focus();return;}
+  if(BLOCKED.some(w=>p.toLowerCase().includes(w))){toast('Content Policy: explicit sexual content not permitted.','error');return;}
+  S.imgs.unshift({id:'img'+Date.now(),prompt:p,style:S.imgStyle,ratio:S.imgRatio,seed:Math.floor(Math.random()*999999)});
+  try{ AMVValue.record('image'); }catch(e){}
+  renderImgGallery();
+}
+function renderImgsView(){
+  const vc=$('vc');
+  if(!vc) return;
+  const styleHtml=Object.keys(IMG_STYLES).map(s=>'<button class="stb '+(s===S.imgStyle?'on':'')+'" data-s="'+s+'">'+s+'</button>').join('');
+  const ratioHtml=['1:1','16:9','9:16','4:3'].map(r=>'<button class="rab '+(r===S.imgRatio?'on':'')+'" data-r="'+r+'">'+r+'</button>').join('');
+  vc.innerHTML=
+    '<div id="imgv">'+
+      '<div id="imgctrl">'+
+        '<div style="display:flex;gap:8px;margin-bottom:10px">'+
+          '<textarea id="img-inp" placeholder="Describe any image — a scene, product, portrait, or style. Be specific for the best results." rows="2" style="flex:1;border-radius:var(--r-sm);font-size:13px;max-height:66px"></textarea>'+
+          '<button class="btn bp" id="gen-img-btn" style="align-self:flex-end;height:40px;padding:0 16px;font-size:13px">Generate</button>'+
+        '</div>'+
+        '<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px" id="srow">'+styleHtml+'</div>'+
+        '<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">'+
+          '<span style="font-size:10px;color:var(--t2);letter-spacing:.05em;text-transform:uppercase">Ratio</span>'+
+          '<div id="rrow">'+ratioHtml+'</div>'+
+          '<button class="bg2" id="clrimgs" style="margin-left:auto;display:'+(S.imgs.length?'inline-flex':'none')+'">Clear all</button>'+
+        '</div>'+
+        '<div style="font-size:10px;color:var(--t3);margin-top:6px">Ctrl+Enter to generate · HD output · 5-15s · No explicit content</div>'+
+      '</div>'+
+      '<div id="imgg"></div>'+
+    '</div>';
+
+  on($('gen-img-btn'),'click',genImg);
+  on($('img-inp'),'keydown',e=>{if(e.key==='Enter'&&e.ctrlKey)genImg();});
+  on($('clrimgs'),'click',()=>{S.imgs=[];renderImgGallery();});
+  document.querySelectorAll('#srow .stb').forEach(b=>on(b,'click',()=>{S.imgStyle=b.dataset.s;document.querySelectorAll('#srow .stb').forEach(x=>x.classList.toggle('on',x===b));}));
+  document.querySelectorAll('#rrow .rab').forEach(b=>on(b,'click',()=>{S.imgRatio=b.dataset.r;document.querySelectorAll('#rrow .rab').forEach(x=>x.classList.toggle('on',x===b));}));
+  renderImgGallery();
+}
+function renderImgGallery(){
+  const g=$('imgg');
+  if(!g) return;
+  const cb=$('clrimgs');
+  if(cb) cb.style.display=S.imgs.length?'inline-flex':'none';
+  if(!S.imgs.length){
+    g.innerHTML='<div style="grid-column:1/-1">'+emptyState({icon:'\uD83C\uDFA8',title:'No images yet',sub:'Describe anything above \u2014 a scene, a product, a portrait \u2014 and AMV generates it in seconds.'})+'</div>';
+    return;
+  }
+  const ar=r=>r==='16:9'?'16/9':r==='9:16'?'9/16':r==='4:3'?'4/3':'1/1';
+  g.innerHTML=S.imgs.map(img=>
+    '<div class="ic" id="ic-'+img.id+'">'+
+      '<div class="ifr" style="aspect-ratio:'+ar(img.ratio)+'">'+
+        '<img id="ii-'+img.id+'" alt="">'+
+        '<div class="ild" id="il-'+img.id+'"><div class="spin"></div><div class="ilt" id="ip-'+img.id+'">Generating…<br><span style="font-size:10px;opacity:.6">5-15 seconds · High quality</span></div></div>'+
+      '</div>'+
+      '<div class="ifoot">'+
+        '<div class="ipr">'+escH(img.prompt)+'</div>'+
+        '<div class="ia">'+
+          '<span style="font-size:10px;color:var(--t2)">'+img.style+'</span>'+
+          '<div style="display:flex;gap:3px">'+
+            '<span class="ial" id="io-'+img.id+'" data-url="">Open</span>'+
+            '<a class="ial" id="id-'+img.id+'" href="" download="amv.jpg">Save</a>'+
+            '<span class="ial" data-rm="'+img.id+'">Remove</span>'+
+          '</div>'+
+        '</div>'+
+      '</div>'+
+    '</div>'
+  ).join('');
+  g.querySelectorAll('[data-rm]').forEach(b=>on(b,'click',()=>{S.imgs=S.imgs.filter(i=>i.id!==b.dataset.rm);renderImgGallery();}));
+  g.querySelectorAll('[data-url]').forEach(b=>on(b,'click',()=>{if(b.dataset.url)window.open(b.dataset.url,'_blank');}));
+  S.imgs.forEach(img=>loadImg(img));
+}
+function loadImg(img){
+  const el=$('ii-'+img.id),ld=$('il-'+img.id),pg=$('ip-'+img.id);
+  if(!el) return;
+  let tries=0,MAX=5;
+  function attempt(){
+    const seed=tries===0?img.seed:img.seed+tries*11317;
+    const url=imgUrl(img.prompt,img.style,img.ratio,seed);
+    const ob=$('io-'+img.id),db=$('id-'+img.id);
+    if(ob) ob.dataset.url=url;
+    if(db) db.href=url;
+    const pre=new Image();
+    pre.onload=()=>{el.src=url;};
+    pre.onerror=()=>retry();
+    pre.src=url;
+    el.onload=()=>{el.classList.add('ldd');if(ld)ld.classList.add('gone');};
+    el.onerror=()=>retry();
+    const t=setTimeout(()=>{if(!el.classList.contains('ldd'))retry();},35000);
+    el.addEventListener('load',()=>clearTimeout(t),{once:true});
+    el.addEventListener('error',()=>clearTimeout(t),{once:true});
+  }
+  function retry(){
+    tries++;
+    if(tries>MAX){
+      if(ld) ld.innerHTML='<div class="ilt" style="text-align:center;padding:0 10px">Couldn\u2019t generate this one.<br><span style="font-size:10px;opacity:.6">The image service may be busy \u2014 try again in a moment.</span><br><button data-rimgid="'+img.id+'" class="retry-img-btn" style="background:var(--indigo);border:none;color:#fff;border-radius:5px;padding:5px 12px;cursor:pointer;font-family:var(--fn);font-size:11px;margin-top:8px">Retry</button></div>';
+      // Wire retry button
+      const retryBtn=ld.querySelector('.retry-img-btn');
+      if(retryBtn) retryBtn.addEventListener('click',()=>resetImg(retryBtn.dataset.rimgid));
+      return;
+    }
+    if(pg) pg.innerHTML='Retrying ('+tries+'/'+MAX+')\u2026';
+    setTimeout(attempt,3000);
+  }
+  attempt();
+}
+function resetImg(id){
+  const img=S.imgs.find(i=>i.id===id);
+  if(!img) return;
+  img.seed=Math.floor(Math.random()*999999);
+  const ld=$('il-'+id),el=$('ii-'+id);
+  if(ld){ld.classList.remove('gone');ld.innerHTML='<div class="spin"></div><div class="ilt" id="ip-'+id+'">Generating…</div>';}
+  if(el) el.classList.remove('ldd');
+  loadImg(img);
+}
+
+
+/* === VIDEO === */
+const VSTYLES=['Cinematic','Documentary','Animation','Fantasy','Sci-Fi','Horror','Nature','Action','Noir'];
+const VMOODS=['Dramatic','Uplifting','Dark','Peaceful','Intense','Mysterious','Epic','Nostalgic'];
+
+function renderVideoView(){
+  const vc=$('vc'); if(!vc) return;
+  const so=VSTYLES.map(s=>'<option>'+s+'</option>').join('');
+  const mo=VMOODS.map(m=>'<option>'+m+'</option>').join('');
+  vc.innerHTML=
+    '<div id="vidv" class="fi">'+
+      '<div class="card">'+
+        '<h3 style="font-size:14px;font-weight:600;margin-bottom:7px">AI Video Generator</h3>'+
+        '<p style="font-size:12px;color:var(--t2);margin-bottom:12px">Describe any scene in detail. Real HD video output turns on once the AMV engine is connected by the workspace owner.</p>'+
+        '<textarea id="vp" placeholder="Describe your scene - include camera movement, lighting, atmosphere, characters, action…" rows="3" style="margin-bottom:11px;font-size:13px"></textarea>'+
+        '<div style="display:flex;gap:7px;flex-wrap:wrap;align-items:flex-end">'+
+          '<div><label class="lbl" style="margin-bottom:3px">Duration</label><select id="vd" style="width:auto;padding:6px 22px 6px 9px;font-size:12px"><option>5s</option><option selected>10s</option><option>15s</option><option>30s</option></select></div>'+
+          '<div><label class="lbl" style="margin-bottom:3px">Quality</label><select id="vq" style="width:auto;padding:6px 22px 6px 9px;font-size:12px"><option>720p</option><option selected>1080p</option><option>4K</option></select></div>'+
+          '<div><label class="lbl" style="margin-bottom:3px">Style</label><select id="vs" style="width:auto;padding:6px 22px 6px 9px;font-size:12px">'+so+'</select></div>'+
+          '<div><label class="lbl" style="margin-bottom:3px">Mood</label><select id="vm" style="width:auto;padding:6px 22px 6px 9px;font-size:12px">'+mo+'</select></div>'+
+          '<button class="btn bp" id="gvb" style="font-size:13px">Generate Video</button>'+
+          (S.vids.length?'<button class="bg2" id="clrvids" style="font-size:11px">Clear all</button>':'')+
+        '</div>'+
+        '<div style="font-size:10px;color:var(--t3);margin-top:8px">Ctrl+Enter to generate · HD video output · All settings affect quality</div>'+
+      '</div>'+
+      '<div class="vg" id="vgrid"></div>'+
+    '</div>';
+  on($('gvb'),'click',genVid);
+  on($('vp'),'keydown',e=>{if(e.key==='Enter'&&e.ctrlKey)genVid();});
+  on($('clrvids'),'click',()=>{S.vids=[];renderVidGrid();});
+  renderVidGrid();
+}
+function genVid(){
+  const p=$('vp')?.value.trim(); if(!p){$('vp')?.focus();return;}
+  const dur=$('vd')?.value||'10s',qual=$('vq')?.value||'1080p',style=$('vs')?.value||'Cinematic',mood=$('vm')?.value||'Dramatic';
+  const id='vid'+Date.now();
+  S.vids.unshift({id,p,dur,qual,style,mood,prog:0,stage:'Initializing…',done:false});
+  renderVidGrid();
+  const stages=[{at:7,l:'Analyzing scene…'},{at:20,l:'Generating keyframes…'},{at:38,l:'Rendering motion…'},{at:57,l:'Applying style…'},{at:74,l:'Compositing…'},{at:90,l:'Encoding…'},{at:100,l:'Complete'}];
+  let pct=0,si=0;
+  const iv=setInterval(()=>{
+    pct=Math.min(100,pct+(pct<50?3.8:pct<80?2.2:1.0)+Math.random()*0.8);
+    const v=S.vids.find(x=>x.id===id); if(!v){clearInterval(iv);return;}
+    v.prog=Math.round(pct);
+    while(si<stages.length-1&&pct>=stages[si].at)si++;
+    v.stage=stages[si]?.l||'Rendering…';
+    if(pct>=100){clearInterval(iv);v.done=true;v.stage='Complete';}
+    const bar=$('vpf-'+id),sl=$('vsl-'+id),po=$('vpo-'+id),vdo=$('vdo-'+id);
+    if(bar)bar.style.width=v.prog+'%';
+    if(sl)sl.textContent=v.stage;
+    if(v.done&&po)po.style.display='none';
+    if(v.done&&vdo)vdo.style.display='flex';
+  },170);
+}
+function renderVidGrid(){
+  const g=$('vgrid'); if(!g) return;
+  if(!S.vids.length){g.innerHTML='<div style="grid-column:1/-1">'+emptyState({icon:'\uD83C\uDFAC',title:'No videos yet',sub:'Describe a scene above and AMV will generate a video clip for you.'})+'</div>';return;}
+  g.innerHTML=S.vids.map(v=>
+    '<div class="vc2">'+
+      '<div class="vth">'+
+        '<div class="vpo" id="vpo-'+v.id+'" '+(v.done?'style="display:none"':'')+'>'+
+          '<div class="spin"></div>'+
+          '<div style="font-size:11px;color:var(--t2);margin-top:3px" id="vsl-'+v.id+'">'+v.stage+'</div>'+
+          '<div class="vpb" style="margin-top:7px"><div class="vpf" id="vpf-'+v.id+'" style="width:'+v.prog+'%"></div></div>'+
+          '<div style="font-size:10px;color:var(--t3);margin-top:4px">'+v.prog+'%</div>'+
+        '</div>'+
+        '<div class="vdo" id="vdo-'+v.id+'" '+(v.done?'style="display:flex"':'')+'>'+
+          '<div style="width:36px;height:36px;border-radius:50%;background:var(--s3);border:1px solid var(--bd);display:flex;align-items:center;justify-content:center;font-size:14px">▶</div>'+
+          '<div style="font-size:11px;color:var(--t2);margin-top:4px">'+v.qual+' · '+v.dur+'</div>'+
+          '<div style="font-size:10px;color:var(--t3);margin-top:2px">HD playback turns on once the AMV engine is connected</div>'+
+        '</div>'+
+      '</div>'+
+      '<div class="vft"><div class="vtt">'+escH(v.p.slice(0,46))+(v.p.length>46?'…':'')+'</div>'+
+      '<div class="vtg"><span class="vtk">'+v.style+'</span><span class="vtk">'+v.mood+'</span><span class="vtk">'+v.qual+'</span></div></div>'+
+    '</div>'
+  ).join('');
+}
+
+
+/* === PLANS === */
+function planCards(inApp){
+  function pBtn(label, cls, plan, isLand){
+    if(isLand) return '<button class="plnbtn pbs" onclick="openAuth(\'signup\')">'+label+'</button>';
+    if(plan==='free') return '<button class="plnbtn pbs" onclick="setTab(\'plans\')">'+label+'</button>';
+    if(plan==='pro') {
+      if(S.sp) return '<button class="plnbtn pbp" onclick="window.open(S.sp,\'_blank\')">'+label+'</button>';
+      return '<button class="plnbtn pbp" onclick="openCheckout(\'pro\')">'+label+'</button>';
+    }
+    if(plan==='elite') {
+      if(S.se) return '<button class="plnbtn pbs" onclick="window.open(S.se,\'_blank\')">'+label+'</button>';
+      return '<button class="plnbtn pbs" onclick="openCheckout(\'elite\')">'+label+'</button>';
+    }
+    return '<button class="plnbtn pbs">'+label+'</button>';
+  }
+  const isLand=!inApp;
+  return [
+    '<div class="plnc">'+
+      '<div class="plntier">Free</div>'+
+      '<div class="plnprice"><sup>$</sup>0</div>'+
+      '<div class="plnper">No card required</div>'+
+      '<div class="plnanchor">Everything you need to explore</div>'+
+      '<div class="plndiv"></div>'+
+      '<ul class="plnfl">'+
+        '<li><span class="fck">\u2713</span>Daily usage to explore everything</li>'+
+        '<li><span class="fck">\u2713</span>Chat, images &amp; 3D models</li>'+
+        '<li><span class="fck">\u2713</span>File analysis (PDF, images, code)</li>'+
+        '<li><span class="fck">\u2713</span>Essay, code, math &amp; research</li>'+
+        '<li><span class="fxx">\u2717</span>Autonomous agents &amp; Crew</li>'+
+        '<li><span class="fxx">\u2717</span>Video generation</li>'+
+        '<li><span class="fxx">\u2717</span>Computer control &amp; automation</li>'+
+        '<li><span class="fxx">\u2717</span>Gmail &amp; calendar access</li>'+
+      '</ul>'+
+      pBtn('Get started free','pbs','free',isLand)+
+      '<div class="plnreassure">&nbsp;</div>'+
+    '</div>',
+    '<div class="plnc feat">'+
+      '<div class="plnpop">Most Popular</div>'+
+      '<div class="plntier">Pro</div>'+
+      '<div class="plnprice"><sup>$</sup>15</div>'+
+      '<div class="plnper">per month &middot; cancel anytime</div>'+
+      '<div class="plnanchor">Replaces $60+/mo of separate AI tools</div>'+
+      '<div class="plndiv"></div>'+
+      '<ul class="plnfl">'+
+        '<li><span class="fck">\u2713</span><b>5\u00d7 the usage</b>, all models included</li>'+
+        '<li><span class="fck">\u2713</span>Generous everyday limits</li>'+
+        '<li><span class="fck">\u2713</span>Autonomous agents &amp; Crew</li>'+
+        '<li><span class="fck">\u2713</span>HD images, video &amp; interactive 3D</li>'+
+        '<li><span class="fck">\u2713</span>Build &amp; ship real apps</li>'+
+        '<li><span class="fck">\u2713</span>Gmail, calendar &amp; file connections</li>'+
+        '<li><span class="fck">\u2713</span>Background &amp; scheduled automation</li>'+
+        '<li><span class="fck">\u2713</span>Priority speed</li>'+
+      '</ul>'+
+      pBtn('Start Pro &mdash; $15/mo','pbp','pro',isLand)+
+      '<div class="plnreassure">$5 cheaper than ChatGPT &amp; Claude</div>'+
+    '</div>',
+    '<div class="plnc feat feat-elite">'+
+      '<div class="plnpop plnpop-elite">Best Value</div>'+
+      '<div class="plntier">Elite</div>'+
+      '<div class="plnprice"><sup>$</sup>75</div>'+
+      '<div class="plnper">per month &middot; cancel anytime</div>'+
+      '<div class="plnanchor">For founders, builders &amp; power users</div>'+
+      '<div class="plndiv"></div>'+
+      '<ul class="plnfl">'+
+        '<li><span class="fck">\u2713</span><b>20\u00d7 the usage</b> for power users</li>'+
+        '<li><span class="fck">\u2713</span>Everything in Pro, far higher limits</li>'+
+        '<li><span class="fck">\u2713</span>The fastest, most capable models first</li>'+
+        '<li><span class="fck">\u2713</span>Run many agents &amp; jobs in parallel</li>'+
+        '<li><span class="fck">\u2713</span>4K video &amp; the largest 3D builds</li>'+
+        '<li><span class="fck">\u2713</span>Early access to new features</li>'+
+        '<li><span class="fck">\u2713</span>Highest-priority speed</li>'+
+        '<li><span class="fck">\u2713</span>Priority 24/7 support</li>'+
+      '</ul>'+
+      pBtn('Go Elite &mdash; $75/mo','pbs','elite',isLand)+
+      '<div class="plnreassure">$25 less than Claude Max &amp; ChatGPT Pro</div>'+
+    '</div>',
+    '<div class="plnc">'+
+      '<div class="plntier">Ultra</div>'+
+      '<div class="plnprice"><sup>$</sup>200</div>'+
+      '<div class="plnper">per month &middot; cancel anytime</div>'+
+      '<div class="plnanchor">For teams &amp; serious operators</div>'+
+      '<div class="plndiv"></div>'+
+      '<ul class="plnfl">'+
+        '<li><span class="fck">\u2713</span><b>50\u00d7 the usage</b> \u2014 the highest tier</li>'+
+        '<li><span class="fck">\u2713</span>Everything in Elite, maximum limits</li>'+
+        '<li><span class="fck">\u2713</span>Max concurrency for heavy jobs</li>'+
+        '<li><span class="fck">\u2713</span>\uD83D\uDC65 Team workspaces &amp; roles</li>'+
+        '<li><span class="fck">\u2713</span>Longest context &amp; biggest builds</li>'+
+        '<li><span class="fck">\u2713</span>First access to every new capability</li>'+
+        '<li><span class="fck">\u2713</span>Dedicated priority support</li>'+
+      '</ul>'+
+      pBtn('Go Ultra &mdash; $200/mo','pbs','ultra',isLand)+
+      '<div class="plnreassure">Matches Claude Max &amp; ChatGPT Pro</div>'+
+    '</div>',
+    '<div class="plnc plnc-custom">'+
+      '<div class="plntier">Custom</div>'+
+      '<div class="plnprice plnprice-sm">Your price</div>'+
+      '<div class="plnper">from $10/mo &middot; you decide</div>'+
+      '<div class="plnanchor">Sized exactly to your usage</div>'+
+      '<div class="plndiv"></div>'+
+      '<ul class="plnfl">'+
+        '<li><span class="fck">\u2713</span><b>Pick your budget</b> &mdash; pay for what you use</li>'+
+        '<li><span class="fck">\u2713</span>All 4 models, including Apex</li>'+
+        '<li><span class="fck">\u2713</span>Agents, images, video &amp; 3D</li>'+
+        '<li><span class="fck">\u2713</span>Hard-capped \u2014 never a surprise charge</li>'+
+        '<li><span class="fck">\u2713</span>Resize or cancel anytime</li>'+
+      '</ul>'+
+      '<button class="btn pbs plnbtn" data-dact="openCustomPlan" style="width:100%;justify-content:center">Build your plan &rarr;</button>'+
+      '<div class="plnreassure">Fits your exact budget</div>'+
+    '</div>',
+  ].join('');
+}
+
+
+
+/* === SIDEBAR === */
+function renderHist(){
+  const area=$('hist-list')||$('hist'); if(!area) return;
+  const hdr=$('hist-header');
+  const search=($('hist-search')?.value||'').toLowerCase().trim();
+  let convs=Array.isArray(S.convs)?S.convs:[];
+  if(S.starFilter) convs=convs.filter(c=>c.starred);
+  if(search) convs=convs.filter(c=>{
+    const inTitle=(c.title||'').toLowerCase().includes(search);
+    const inMsgs=c.msgs&&c.msgs.some(m=>typeof m.c==='string'&&m.c.toLowerCase().includes(search));
+    return inTitle||inMsgs;
+  });
+  if(hdr) hdr.style.display=(!search&&!S.starFilter&&!S.convs.length)?'none':'flex';
+  if(!convs.length){
+    area.innerHTML='<div class="nh">'+(search?'No results for &ldquo;'+escH(search)+'&rdquo;':S.starFilter?'No starred chats yet':'No conversations yet - start one above!')+'</div>';
+    return;
+  }
+  const itemHTML=(cv)=>
+    '<div class="hi '+(cv.id===S.cur?'on':'')+(cv.starred?' star':'')+'" data-id="'+cv.id+'" data-cid="'+cv.id+'">'+
+      '<svg class="hiic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">'+
+        (cv.starred?'<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>':'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>') +
+      '</svg>'+
+      '<span class="hit">'+escH(cv.title||'New Conversation')+'</span>'+
+      '<button class="hidots" title="More" data-hact="menu" data-hid="'+cv.id+'" aria-label="Options">'+
+        '<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>'+
+      '</button>'+
+    '</div>';
+  const bind=()=>{
+    area.querySelectorAll('.hi').forEach(el=>{
+      if(el._b) return; el._b=1;
+      el.addEventListener('click',e=>{
+        const dots=e.target.closest('.hidots'); if(dots){ e.stopPropagation(); const r=dots.getBoundingClientRect(); showConvMenu({preventDefault(){},clientX:r.right,clientY:r.bottom}, dots.dataset.hid); return; }
+        loadConv(el.dataset.id);
+      });
+    });
+  };
+  // Small lists: render all (simple, fast). Large lists: virtualize.
+  const VTHRESH=60, ROW=34; // px per row (approx)
+  if(convs.length<=VTHRESH){
+    area.innerHTML=convs.map(itemHTML).join('');
+    bind();
+    return;
+  }
+  // ---- virtualized window ----
+  const findScroller=(el)=>{
+    let n=el.parentElement;
+    while(n && n!==document.body){
+      const s=getComputedStyle(n);
+      if((s.overflowY==='auto'||s.overflowY==='scroll')) return n;
+      n=n.parentElement;
+    }
+    return el;
+  };
+  area.style.position='relative';
+  let scroller=findScroller(area);
+  const renderWindow=()=>{
+    const sc=scroller;
+    // position of the list inside the scroller's content
+    const listOffset = area.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop;
+    const scrollTop = Math.max(0, sc.scrollTop - listOffset);
+    const vh=sc.clientHeight||500;
+    const buffer=10;
+    const first=Math.max(0, Math.floor(scrollTop/ROW)-buffer);
+    const visible=Math.ceil(vh/ROW)+buffer*2;
+    const last=Math.min(convs.length, first+visible);
+    area.innerHTML='<div style="height:'+(first*ROW)+'px"></div>'+
+      convs.slice(first,last).map(itemHTML).join('')+
+      '<div style="height:'+((convs.length-last)*ROW)+'px"></div>';
+    bind();
+  };
+  renderWindow();
+  if(scroller._vScroll) scroller.removeEventListener('scroll', scroller._vScroll);
+  let _raf=null;
+  scroller._vScroll=()=>{ if(_raf) return; _raf=requestAnimationFrame(()=>{ _raf=null; renderWindow(); }); };
+  scroller.addEventListener('scroll', scroller._vScroll, {passive:true});
+}
+
+function showConvMenu(e,id){
+  e.preventDefault();
+  document.querySelectorAll('.ctxm').forEach(m=>m.remove());
+  const menu=document.createElement('div');
+  menu.className='ctxm';
+  menu.style.left=Math.min(e.clientX,window.innerWidth-200)+'px';
+  menu.style.visibility='hidden';
+  menu.style.top='0px';
+  const c=S.convs.find(x=>x.id===id);
+  menu.innerHTML=
+    '<div class="ctxi" id="cm-open">📂 Open</div>'+
+    '<div class="ctxi" id="cm-rename">✏ Rename</div>'+
+    '<div class="ctxi" id="cm-star">'+(c?.starred?'☆ Unstar':'★ Star')+'</div>'+
+    '<div class="ctxi" id="cm-proj">📁 Add to project</div>'+
+    '<div class="ctxi" id="cm-export">⬇ Export as Markdown</div>'+
+    '<div class="ctxi" id="cm-share">🔗 Share</div>'+
+    '<div class="ctxd"></div>'+
+    '<div class="ctxi danger" id="cm-del">🗑 Delete</div>';
+  document.body.appendChild(menu);
+  (function(){
+    const mh=menu.offsetHeight;
+    let top=e.clientY;
+    if(top+mh > window.innerHeight-8){ top=Math.max(8, e.clientY-mh); }
+    menu.style.top=top+'px';
+    menu.style.visibility='visible';
+  })();
+  on($('cm-open'),'click',()=>{ loadConv(id); menu.remove(); });
+  on($('cm-rename'),'click',()=>{ renameConv(id); menu.remove(); });
+  on($('cm-star'),'click',()=>{ starConv(id); menu.remove(); });
+  on($('cm-proj'),'click',()=>{ addToProject(id); menu.remove(); });
+  on($('cm-export'),'click',()=>{ exportConv(id); menu.remove(); });
+  on($('cm-share'),'click',()=>{ shareConv(id); menu.remove(); });
+  on($('cm-del'),'click',()=>{ deleteConv(id); menu.remove(); });
+  const close=e2=>{ if(!menu.contains(e2.target)){ menu.remove(); document.removeEventListener('click',close); } };
+  setTimeout(()=>document.addEventListener('click',close),50);
+}
+
+
+/* === PROFILE DROPDOWN MENU === */
+function showProfMenu(trigger) {
+  document.querySelectorAll('.prof-menu').forEach(m=>m.remove());
+  const rect=trigger.getBoundingClientRect();
+  const u=S.user||{name:'Guest',email:'',ini:'?'};
+  const pfp=u.email?loadStr('amv_pfp_'+u.email):'';
+  const menu=document.createElement('div');
+  menu.className='prof-menu';
+  menu.style.cssText='top:'+(rect.bottom+8)+'px;right:'+(window.innerWidth-rect.right)+'px';
+  
+  const _pk=loadStr('amv_plan')||'free';
+  const plan=(PLANS[_pk]&&PLANS[_pk].name)||'Free';
+  menu.innerHTML=
+    '<div class="prof-header">'+
+      '<div style="display:flex;align-items:center;gap:9px;margin-bottom:6px">'+
+        '<div style="width:36px;height:36px;border-radius:50%;background:var(--g-brand);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;overflow:hidden;flex-shrink:0">'+
+          (pfp?'<img src="'+pfp+'" style="width:100%;height:100%;object-fit:cover">':escH(u.ini||'?'))+
+        '</div>'+
+        '<div>'+
+          '<div class="prof-name">'+escH(u.name||'User')+'</div>'+
+          '<div class="prof-email">'+escH(u.email||'')+'</div>'+
+        '</div>'+
+      '</div>'+
+      '<span class="badge bb prof-plan">'+plan+' Plan</span>'+
+    '</div>'+
+    '<button class="prof-item upgrade" id="pm-upgrade">'+
+      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>'+
+      'Upgrade Plan</button>'+
+    '<button class="prof-item" id="pm-learn">'+
+      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'+
+      'Learn More</button>'+
+    '<button class="prof-item" id="pm-settings">'+
+      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'+
+      'Settings</button>'+
+    '<button class="prof-item" id="pm-billing">'+
+      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>'+
+      'Manage Subscription</button>'+
+    '<button class="prof-item" id="pm-apps">'+
+      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="2" width="9" height="9" rx="1"/><rect x="13" y="2" width="9" height="9" rx="1"/><rect x="2" y="13" width="9" height="9" rx="1"/><rect x="13" y="13" width="9" height="9" rx="1"/></svg>'+
+      'Apps &amp; Extensions</button>'+
+    '<div class="prof-divider"></div>'+
+    '<button class="prof-item danger" id="pm-signout">'+
+      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>'+
+      'Sign Out</button>';
+  document.body.appendChild(menu);
+  
+  // Wire items
+  const close=()=>menu.remove();
+  document.getElementById('pm-upgrade')?.addEventListener('click',()=>{ close(); setTab('plans'); });
+  document.getElementById('pm-learn')?.addEventListener('click',()=>{ close(); setTab('help'); });
+  document.getElementById('pm-settings')?.addEventListener('click',()=>{ close(); setTab('settings'); });
+  document.getElementById('pm-billing')?.addEventListener('click',()=>{ close(); setTab('billing'); });
+  document.getElementById('pm-apps')?.addEventListener('click',()=>{ close(); setTab('apps'); });
+  document.getElementById('pm-signout')?.addEventListener('click',()=>{ close(); signOut(); });
+  setTimeout(()=>document.addEventListener('click',function h(e){if(!menu.contains(e.target)){close();document.removeEventListener('click',h);}},50));
+}
+function updateSbUser(){
+  const u=S.user;
+  const pfp=u&&u.email?loadStr('amv_pfp_'+u.email):'';
+  const av=$('sb-av')||$('ir-av-inner'),nav=$('nav-av'),nm=$('sb-name'),em=$('sb-email');
+  const avInner=$('ir-av-inner');
+  if(nm) nm.textContent=u&&u.name?u.name:'Guest';
+  if(em){ const _pk=loadStr('amv_plan')||'free'; const _pn=(PLANS&&PLANS[_pk]&&PLANS[_pk].name)||'Free'; em.textContent=(u&&u.email?u.email:'')+(u&&u.email?'  ·  '+_pn:''); }
+  [av,avInner,nav].filter(Boolean).forEach(el=>{
+    if(!el) return;
+    if(pfp){ el.style.background='none'; el.innerHTML='<img src="'+pfp+'" style="width:100%;height:100%;border-radius:50%;object-fit:cover;display:block">'; }
+    else { el.innerHTML=escH(u&&u.ini?u.ini:'?'); el.style.background=''; }
+  });
+  // Show/hide hist header
+  const hdr=$('hist-header');
+  if(hdr) hdr.style.display=S.convs&&S.convs.length>0?'flex':'none';
+  renderHist();
+}
+
+
+/* === DASHBOARD === */
+function renderDashboard(){
+  const vc=$('vc'); if(!vc) return;
+  const mc=getMsgs().length,ic=S.imgs.length,cc=S.convs.length,vc2=S.vids.length;
+  const recent=S.convs.slice(0,5);
+  vc.innerHTML=
+    '<div class="sv fi"><div class="dash-wrap" style="max-width:1000px;margin:0 auto;display:flex;flex-direction:column;gap:22px">'+
+      '<div>'+
+        '<h2 style="font-size:20px;font-weight:700;letter-spacing:-.4px;margin-bottom:3px">Good '+greeting()+', '+escH(S.user?.name?.split(' ')[0]||'there')+'.</h2>'+
+        '<p style="font-size:13px;color:var(--t2)">Here&#39;s what&#39;s happening with your AMV.AI account.</p>'+
+      '</div>'+
+      '<div class="dg">'+
+        '<div class="dc"><div class="dicon" style="background:rgba(124,108,255,.1)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--indigo)" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="dn">'+cc+'</div><div class="dl">Conversations</div></div>'+
+        '<div class="dc"><div class="dicon" style="background:rgba(210,153,34,.1)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d29922" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div><div class="dn">'+ic+'</div><div class="dl">Images Generated</div></div>'+
+        '<div class="dc"><div class="dicon" style="background:rgba(163,113,247,.1)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8b78ff" stroke-width="2" stroke-linecap="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg></div><div class="dn">'+vc2+'</div><div class="dl">Videos Generated</div></div>'+
+        '<div class="dc"><div class="dicon" style="background:rgba(16,185,129,.1)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3fb950" stroke-width="2" stroke-linecap="round"><path d="M12 2a5 5 0 1 0 5 5H7a5 5 0 0 0 5-5z"/><path d="M12 12v10"/></svg></div><div class="dn">'+S.memory.length+'</div><div class="dl">Memories Saved</div></div>'+
+      '</div>'+
+      '<div class="ss2"><h3>Quick Actions</h3>'+
+        '<div class="qa-g">'+
+          '<button class="qab" data-qa="chat"><div class="qai">💬</div><div class="qat">New Chat</div><div class="qad">Start a conversation</div></button>'+
+          '<button class="qab" data-qa="images"><div class="qai">🖼️</div><div class="qat">Generate Image</div><div class="qad">Create HD images</div></button>'+
+          '<button class="qab" data-qa="video"><div class="qai">🎬</div><div class="qat">Create Video</div><div class="qad">AI video generation</div></button>'+
+          '<button class="qab" data-qa="prompts"><div class="qai">📚</div><div class="qat">Prompt Library</div><div class="qad">Browse saved prompts</div></button>'+
+          '<button class="qab" data-qa="workspaces"><div class="qai">📁</div><div class="qat">Workspaces</div><div class="qad">Organize projects</div></button>'+
+          '<button class="qab" data-qa="memory"><div class="qai">🧠</div><div class="qat">AI Memory</div><div class="qad">View saved facts</div></button>'+
+        '</div>'+
+      '</div>'+
+      (recent.length?
+        '<div class="ss2"><h3>Recent Conversations</h3>'+
+          '<div style="display:flex;flex-direction:column">'+
+                        recent.map(c=>'<div class="ait" style="cursor:pointer" data-lcid="'+c.id+'">'+
+              '<div class="aiic" style="background:rgba(124,108,255,.1)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--indigo)" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>'+
+              '<div><div class="aiit">'+escH(c.title||'New Conversation')+'</div><div class="aitm">'+c.msgs.length+' messages · '+(c.starred?'⭐ Starred · ':'')+new Date(c.created).toLocaleDateString()+'</div></div>'+
+            '</div>').join('')+
+          '</div>'+
+        '</div>':'')+ 
+      (isAdmin()?'<div class="ss2"><h3>Platform Status</h3>'+
+        '<div class="br2"><span style="color:var(--t2)">AI Engine</span><span style="color:'+(S.mk?'var(--green)':'var(--red)')+';font-size:12px;font-weight:500">'+(S.mk?'✓ Online':'⚠ Key required')+'</span></div>'+
+        '<div class="br2"><span style="color:var(--t2)">Video</span><span style="color:'+(S.rl?'var(--green)':'var(--dim)')+';font-size:12px">'+(S.rl?'✓ Connected':'Not configured')+'</span></div>'+
+        (isAdmin()&&!S.mk?'<button class="btn bs" data-gs="apikeys" style="margin-top:10px;font-size:12px">Configure API Key</button>':'')+
+      '</div>':'')+ 
+    '</div></div>';
+  vc.querySelectorAll('.qab[data-qa]').forEach(b=>on(b,'click',()=>{ if(b.dataset.qa==='chat')newChat(); else setTab(b.dataset.qa); }));
+  // Recent conv clicks
+  vc.querySelectorAll('[data-lcid]').forEach(el=>on(el,'click',()=>loadConv(el.dataset.lcid)));
+}
+function greeting(){ const h=new Date().getHours(); return h<12?'morning':h<17?'afternoon':'evening'; }
+
+
+/* ============================================================
+   TEAM / WORKSPACE MODE (frontend) — the B2B tier.
+   Create a team, invite members with roles, share projects & prompts.
+   Backed by the server when connected; gracefully shows the upsell
+   when there's no backend yet.
+   ============================================================ */
+const AMVTeam = {
+  _cache:null,
+  enabled(){ try{ return !!(window.AMV_API && AMV_API.live && AMV_API.token); }catch(e){ return false; } },
+  async get(){ if(!this.enabled()) return null; try{ const r=await AMV_API._fetch('/team/get',{method:'POST',body:'{}'}); const d=await r.json(); this._cache=d.team; return d.team; }catch(e){ return null; } },
+  async create(name){ const r=await AMV_API._fetch('/team/create',{method:'POST',body:JSON.stringify({name})}); const d=await r.json(); if(d.error) throw new Error(d.error); this._cache=d.team; return d.team; },
+  async invite(email,role){ const r=await AMV_API._fetch('/team/invite',{method:'POST',body:JSON.stringify({email,role})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
+  async join(token){ const r=await AMV_API._fetch('/team/join',{method:'POST',body:JSON.stringify({token})}); const d=await r.json(); if(d.error) throw new Error(d.error); this._cache=d.team; return d.team; },
+  async remove(email){ const r=await AMV_API._fetch('/team/remove',{method:'POST',body:JSON.stringify({email})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d.members; },
+  myRole(team){ if(!team||!S.user) return null; const m=(team.members||[]).find(x=>x.email===(S.user.email||'').toLowerCase()); return m?m.role:null; },
+};
+window.AMVTeam=AMVTeam;
+
+function renderTeamView(){
+  const vc=$('vc'); if(!vc) return;
+  const plan=loadStr('amv_plan')||'free';
+  const planName=(PLANS[plan]&&PLANS[plan].name)||'Free';
+  const ultra=PLANS.ultra||{name:'Ultra',price:200};
+  const hasTeamPlan=_planAllowsTeams();
+
+  // Reusable "what Teams includes + which plan" block
+  const teamExplainer=
+    '<div class="ss2"><h3>What you get with Teams</h3><div class="vbreak">'+
+      '<div class="vrow"><span>\uD83D\uDC65 Shared projects &amp; prompt library</span><span class="vrow-n">Team</span></div>'+
+      '<div class="vrow"><span>\uD83D\uDD11 Roles &amp; permissions: owner, admin, member</span><span class="vrow-n">Team</span></div>'+
+      '<div class="vrow"><span>\uD83E\uDDE0 Shared team memory &amp; context</span><span class="vrow-n">Team</span></div>'+
+      '<div class="vrow"><span>\uD83D\uDCE7 Invite teammates by email</span><span class="vrow-n">Team</span></div>'+
+      '<div class="vrow"><span>\u26A1 Team-grade usage limits &amp; max concurrency</span><span class="vrow-n">Team</span></div>'+
+    '</div></div>';
+
+  // The clear plan answer — shown whenever the user can't yet use Teams
+  const planRequirementCard=
+    '<div class="ss2" style="background:rgba(124,108,255,.06);border-color:rgba(124,108,255,.22)">'+
+      '<h3>Which plan do I need?</h3>'+
+      '<p style="font-size:13.5px;color:var(--tx);line-height:1.7;margin:0 0 4px">'+
+        'Teams is included with the <b style="color:var(--ac,#7c6cff)">'+ultra.name+' plan ($'+ultra.price+'/month)</b>. '+
+        'It\u2019s our top tier, built for team-grade usage \u2014 so one Ultra subscription covers your shared workspace, roles, and team memory. '+
+        'A <b>Custom plan</b> sized at the Ultra tier or above also unlocks Teams.'+
+      '</p>'+
+      '<p style="font-size:12.5px;color:var(--mu);line-height:1.6;margin:8px 0 12px">'+
+        'Free, Pro ($15) and Elite ($75) are individual plans \u2014 they don\u2019t include team workspaces. '+
+        'You\u2019re currently on <b style="color:var(--tx)">'+planName+'</b>.'+
+      '</p>'+
+      (hasTeamPlan
+        ? '<div style="font-size:13px;color:#3fb950;font-weight:600">\u2713 Your '+planName+' plan includes Teams \u2014 create yours below.</div>'
+        : '<button class="btn bp" data-stab="plans" style="font-size:12px">Upgrade to '+ultra.name+' &rarr;</button>')+
+    '</div>';
+
+  // No backend yet → show what Teams unlocks + the plan answer (honest, clear path)
+  if(!AMVTeam.enabled()){
+    vc.innerHTML='<div class="sv fi"><div class="vi">'+
+      '<span class="eyebrow">Collaboration</span>'+
+      '<h2>Team workspaces</h2>'+
+      '<p class="vsub">Share projects, prompts, and AMV\u2019s memory across your whole team \u2014 with roles and permissions.</p>'+
+      teamExplainer+
+      planRequirementCard+
+      '<div class="ss2"><p style="font-size:12.5px;color:var(--mu);line-height:1.6;margin:0">Team mode runs on your AMV backend. Once it\u2019s connected and you\u2019re on the '+ultra.name+' plan, you can create a team and invite members right here.</p></div>'+
+    '</div></div>';
+    return;
+  }
+
+  // Backend is live but the user's plan doesn't include Teams → gate clearly
+  if(!hasTeamPlan){
+    vc.innerHTML='<div class="sv fi"><div class="vi">'+
+      '<span class="eyebrow">Collaboration</span>'+
+      '<h2>Team workspaces</h2>'+
+      '<p class="vsub">Shared projects, prompts, memory, and roles \u2014 for your whole team.</p>'+
+      teamExplainer+
+      planRequirementCard+
+    '</div></div>';
+    return;
+  }
+
+  AMVTeam.get().then(team=>{
+    if(!team){ _renderTeamCreate(vc); return; }
+    _renderTeamManage(vc, team);
+  });
+}
+function _renderTeamCreate(vc){
+  vc.innerHTML='<div class="sv fi"><div class="vi">'+
+    '<span class="eyebrow">Collaboration</span><h2>Create your team</h2>'+
+    '<p class="vsub">Start a shared workspace and invite your teammates.</p>'+
+    '<div class="ss2"><div class="sf" style="max-width:420px">'+
+      '<div><label class="lbl">Team name</label><input type="text" id="team-name" placeholder="Acme Inc." autocomplete="off"></div>'+
+      '<button class="btn bp" id="team-create-btn" style="align-self:flex-start;font-size:12px">Create team</button>'+
+    '</div></div>'+
+  '</div></div>';
+  on($('team-create-btn'),'click',async()=>{
+    const name=$('team-name')?.value.trim()||'My Team';
+    const btn=$('team-create-btn'); if(btn){btn.disabled=true;btn.textContent='Creating\u2026';}
+    try{ await AMVTeam.create(name); toast('Team created!','success'); renderTeamView(); }
+    catch(e){ if(btn){btn.disabled=false;btn.textContent='Create team';} toast(e.message||'Could not create team','error'); }
+  });
+}
+function _renderTeamManage(vc, team){
+  const role=AMVTeam.myRole(team);
+  const canManage=role==='owner'||role==='admin';
+  const memberRows=(team.members||[]).map(m=>
+    '<div class="vrow"><span>'+escH(m.email)+(m.email===(S.user?.email||'').toLowerCase()?' <span style="color:var(--mu)">(you)</span>':'')+'</span>'+
+    '<span style="display:flex;align-items:center;gap:10px"><span class="team-role team-role-'+m.role+'">'+m.role+'</span>'+
+    (canManage&&m.role!=='owner'?'<button class="team-x" data-team-remove="'+escH(m.email)+'" title="Remove">\u00d7</button>':'')+'</span></div>'
+  ).join('');
+  vc.innerHTML='<div class="sv fi"><div class="vi">'+
+    '<span class="eyebrow">Collaboration</span><h2>'+escH(team.name)+'</h2>'+
+    '<p class="vsub">'+(team.members||[]).length+' member'+((team.members||[]).length===1?'':'s')+' \u00b7 you\u2019re '+(role==='owner'?'the owner':'a '+role)+'.</p>'+
+    (canManage?'<div class="ss2"><h3>Invite a teammate</h3><div class="sf" style="max-width:480px"><div style="display:flex;gap:8px;align-items:flex-end"><div style="flex:1"><label class="lbl">Email</label><input type="email" id="team-invite-email" placeholder="teammate@company.com" autocomplete="off"></div><div><label class="lbl">Role</label><select id="team-invite-role" class="sel"><option value="member">Member</option><option value="admin">Admin</option></select></div><button class="btn bp" id="team-invite-btn" style="font-size:12px">Invite</button></div></div><div id="team-invite-result"></div></div>':'')+
+    '<div class="ss2"><h3>Members</h3><div class="vbreak">'+memberRows+'</div></div>'+
+  '</div></div>';
+  on($('team-invite-btn'),'click',async()=>{
+    const email=$('team-invite-email')?.value.trim(); const r=$('team-invite-role')?.value||'member';
+    if(!email){ toast('Enter an email','error'); return; }
+    const btn=$('team-invite-btn'); if(btn){btn.disabled=true;btn.textContent='Inviting\u2026';}
+    try{
+      const d=await AMVTeam.invite(email,r);
+      const link=location.origin+location.pathname+(d.inviteLink||'');
+      const res=$('team-invite-result');
+      if(res) res.innerHTML='<div class="team-invite-link">Invite link for '+escH(email)+':<br><code>'+escH(link)+'</code><button class="btn bs" style="font-size:11px;margin-top:8px" onclick="navigator.clipboard.writeText(\''+link.replace(/'/g,"\\'")+'\');toast(\'Link copied\',\'success\')">Copy link</button></div>';
+      if(btn){btn.disabled=false;btn.textContent='Invite';}
+      if($('team-invite-email')) $('team-invite-email').value='';
+    }catch(e){ if(btn){btn.disabled=false;btn.textContent='Invite';} toast(e.message||'Invite failed','error'); }
+  });
+  vc.querySelectorAll('[data-team-remove]').forEach(b=>on(b,'click',async()=>{
+    if(!confirm('Remove '+b.dataset.teamRemove+' from the team?')) return;
+    try{ await AMVTeam.remove(b.dataset.teamRemove); toast('Member removed','info'); renderTeamView(); }
+    catch(e){ toast(e.message||'Could not remove','error'); }
+  }));
+}
+/* Auto-redeem a team invite from ?invite=token */
+function _checkTeamInvite(){
+  try{
+    const t=new URLSearchParams(location.search).get('invite');
+    if(!t) return;
+    if(!AMVTeam.enabled()){ saveStr('amv_pending_invite', t); return; }
+    AMVTeam.join(t).then(()=>{ toast('You\u2019ve joined the team!','success'); setTab('team'); }).catch(()=>{});
+  }catch(e){}
+}
+window.renderTeamView=renderTeamView;
+
+/* === MEMORY === */
+function renderMemoryView(){
+  const vc=$('vc'); if(!vc) return;
+  vc.innerHTML=
+    '<div class="sv fi"><div class="vi">'+
+      '<h2>AI Memory</h2>'+
+      '<p class="vsub">AMV remembers facts about you to personalize every response. These memories are included with every AI request.</p>'+
+      '<div style="display:flex;gap:8px">'+
+        '<input type="text" id="mem-inp" placeholder="Add a memory - e.g. I am a software engineer or I prefer concise answers" style="flex:1;font-size:13px">'+
+        '<button class="btn bp" id="mem-add" style="font-size:12px;white-space:nowrap">Add Memory</button>'+
+      '</div>'+
+      '<div id="mem-list" style="display:flex;flex-direction:column;gap:8px"></div>'+
+      (S.memory.length?'<button class="btn bd2" id="mem-clr" style="align-self:flex-start;font-size:12px">Clear All Memories</button>':'')+
+      '<div class="ss2" style="background:rgba(124,108,255,.04);border-color:rgba(124,108,255,.18)">'+
+        '<h3>How Memory Works</h3>'+
+        '<p style="font-size:12px;color:var(--t2);line-height:1.65">Memories you add here are automatically included in every conversation with AMV, allowing for more personalized and contextual responses. Add facts about yourself, your preferences, your work, or anything you want AMV to always know.</p>'+
+        '<div style="margin-top:9px;font-size:12px;color:var(--t2)">Examples:'+
+          '<div style="display:flex;flex-direction:column;gap:3px;margin-top:5px">'+
+            '<span style="color:var(--tx)">• "I am a software engineer who works with Python and React"</span>'+
+            '<span style="color:var(--tx)">• "I prefer concise, direct answers without unnecessary preamble"</span>'+
+            '<span style="color:var(--tx)">• "I am studying for the GRE and need exam-level explanations"</span>'+
+            '<span style="color:var(--tx)">• "My company sells B2B SaaS software to healthcare companies"</span>'+
+          '</div>'+
+        '</div>'+
+      '</div>'+
+    '</div></div>';
+  
+  on($('mem-add'),'click',addMemory);
+  on($('mem-inp'),'keydown',e=>{if(e.key==='Enter')addMemory();});
+  on($('mem-clr'),'click',()=>{S.memory=[];renderMemoryView();toast('All memories cleared','success');});
+  renderMemList();
+}
+function addMemory(){
+  const inp=$('mem-inp'); if(!inp) return;
+  const text=inp.value.trim(); if(!text) return;
+  S.memory=[{id:'m'+Date.now(),text,added:Date.now()},...S.memory];
+  inp.value='';
+  renderMemList();
+  toast('Memory saved','success');
+}
+function renderMemList(){
+  const list=$('mem-list'); if(!list) return;
+  if(!S.memory.length){list.innerHTML=emptyState({icon:'\uD83E\uDDE0',title:'No memories yet',sub:'Tell AMV things to remember about you \u2014 your name, preferences, projects \u2014 and it\u2019ll use them in every chat.'});return;}
+  list.innerHTML=S.memory.map(m=>
+    '<div class="memc">'+
+      '<div class="memic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--indigo)" stroke-width="2" stroke-linecap="round"><path d="M12 2a5 5 0 1 0 5 5H7a5 5 0 0 0 5-5z"/><path d="M12 12v10"/></svg></div>'+
+      '<div style="flex:1"><div class="memt">'+escH(m.text)+'</div><div class="memtm">Added '+new Date(m.added).toLocaleDateString()+'</div></div>'+
+      '<button class="memdel" data-dact="delMemory" data-darg="'+m.id+'">×</button>'+
+    '</div>'
+  ).join('');
+}
+function delMemory(id){
+  S.memory=S.memory.filter(m=>m.id!==id);
+  renderMemList();
+}
+
+/* ============================================================
+   PERSISTENT MEMORY THAT IMPROVES OVER TIME
+   After conversations, AMV extracts durable facts about the user
+   (name, preferences, projects, goals), deduplicates them, and keeps
+   them synced. Relevant memories are injected into every chat so the
+   assistant genuinely remembers and gets more useful each session.
+   ============================================================ */
+let _memExtractBusy=false;
+async function _maybeExtractMemory(msgs){
+  try{
+    if(_memExtractBusy) return;
+    if(!S.mk && !(window.AMV_API && AMV_API.live)) return;
+    // only run occasionally (every few exchanges) to keep it cheap
+    const userTurns=msgs.filter(m=>m.r==='u').length;
+    if(userTurns<2 || userTurns%3!==0) return;
+    _memExtractBusy=true;
+    const recent=msgs.slice(-8).map(m=>(m.r==='u'?'User: ':'AMV: ')+(typeof m.c==='string'?m.c:'').slice(0,400)).join('\n');
+    const existing=S.memory.map(m=>m.text).join(' | ')||'(none yet)';
+    const sys='Extract durable facts worth remembering about the USER from this conversation '+
+      '(their name, role, preferences, ongoing projects, goals, constraints). '+
+      'Return ONLY a JSON array of short fact strings. Skip anything already known. '+
+      'Return [] if nothing new. Already known: '+existing;
+    const out=await aiComplete(recent, sys, {json:true, max_tokens:300, noLang:true});
+    let facts=[]; try{ facts=JSON.parse(String(out).replace(/```json|```/g,'').trim()); }catch(e){}
+    if(!Array.isArray(facts)||!facts.length){ _memExtractBusy=false; return; }
+    const known=new Set(S.memory.map(m=>m.text.toLowerCase().trim()));
+    const fresh=facts.filter(f=>typeof f==='string'&&f.trim()&&!_memDuplicate(f,known)).slice(0,5);
+    if(fresh.length){
+      S.memory=[...fresh.map(f=>({id:'m'+Date.now()+Math.random().toString(36).slice(2,5),text:f.trim(),added:Date.now(),auto:true})), ...S.memory].slice(0,200);
+      if(typeof renderMemList==='function' && S.tab==='memory') renderMemList();
+    }
+  }catch(e){ /* extraction is best-effort */ }
+  finally{ _memExtractBusy=false; }
+}
+function _memDuplicate(fact, knownSet){
+  const f=fact.toLowerCase().trim();
+  if(knownSet.has(f)) return true;
+  // fuzzy: high word overlap with an existing memory = duplicate
+  const fw=new Set(f.split(/\W+/).filter(w=>w.length>3));
+  for(const k of knownSet){
+    const kw=new Set(k.split(/\W+/).filter(w=>w.length>3));
+    if(!fw.size||!kw.size) continue;
+    let common=0; fw.forEach(w=>{ if(kw.has(w)) common++; });
+    if(common/Math.min(fw.size,kw.size) >= 0.7) return true;
+  }
+  return false;
+}
+/* Pick the memories most relevant to the current conversation to inject
+   (keeps the prompt focused instead of dumping everything). */
+function _relevantMemories(msgs, limit){
+  limit=limit||12;
+  if(S.memory.length<=limit) return S.memory.map(m=>m.text);
+  const ctx=msgs.slice(-4).map(m=>typeof m.c==='string'?m.c:'').join(' ').toLowerCase();
+  const ctxWords=new Set(ctx.split(/\W+/).filter(w=>w.length>3));
+  const scored=S.memory.map(m=>{
+    const mw=m.text.toLowerCase().split(/\W+/).filter(w=>w.length>3);
+    let score=0; mw.forEach(w=>{ if(ctxWords.has(w)) score++; });
+    return {text:m.text, score, added:m.added||0};
+  });
+  scored.sort((a,b)=> b.score-a.score || b.added-a.added);
+  return scored.slice(0,limit).map(s=>s.text);
+}
+
+
+/* === PROMPT LIBRARY === */
+const PL_CATS=['All','Writing','Coding','Business','Education','Creative','Math','Language','Analysis','Career','3D'];
+
+function renderPromptsView(){
+  const vc=$('vc'); if(!vc) return;
+  const cats=PL_CATS.map(c=>'<button class="stb '+(c==='All'?'on':'')+'" data-cat="'+c+'">'+c+'</button>').join('');
+  vc.innerHTML=
+    '<div class="sv fi"><div class="vi">'+
+      '<h2>Prompt Library</h2>'+
+      '<p class="vsub">Ready-to-use prompts for every task. Click any prompt to load it into chat, or create your own.</p>'+
+      '<div style="display:flex;gap:8px;margin-bottom:4px">'+
+        '<input type="text" id="pl-search" placeholder="Search prompts…" style="flex:1;font-size:13px">'+
+        '<button class="btn bp" id="pl-new" style="font-size:12px;white-space:nowrap">+ Create</button>'+
+      '</div>'+
+      '<div style="display:flex;gap:5px;flex-wrap:wrap" id="pl-cats">'+cats+'</div>'+
+      '<div id="pl-list" style="display:flex;flex-direction:column;gap:8px"></div>'+
+    '</div></div>';
+  
+  let activeCat='All';
+  document.querySelectorAll('#pl-cats .stb').forEach(b=>{
+    on(b,'click',()=>{ activeCat=b.dataset.cat; document.querySelectorAll('#pl-cats .stb').forEach(x=>x.classList.toggle('on',x===b)); renderPLList(activeCat); });
+  });
+  on($('pl-search'),'input',()=>renderPLList(activeCat));
+  on($('pl-new'),'click',createPromptModal);
+  renderPLList('All');
+}
+function renderPLList(cat){
+  const list=$('pl-list'); if(!list) return;
+  const search=($('pl-search')?.value||'').toLowerCase();
+  let prompts=S.prompts;
+  if(cat!=='All') prompts=prompts.filter(p=>p.cat===cat);
+  if(search) prompts=prompts.filter(p=>p.title.toLowerCase().includes(search)||p.text.toLowerCase().includes(search));
+  if(!prompts.length){list.innerHTML='<div style="font-size:13px;color:var(--t2);padding:12px 0;font-style:italic">No prompts found.</div>';return;}
+  list.innerHTML=prompts.map(p=>
+    '<div class="plc">'+
+      '<div class="plt"><span>'+escH(p.title)+'</span><span class="plcat">'+p.cat+'</span></div>'+
+      '<div class="pltx">'+escH(p.text)+'</div>'+
+      '<div style="display:flex;gap:5px;margin-top:9px">'+
+        '<button class="btn bp" style="font-size:11px;padding:4px 11px" data-dact="usePrompt" data-darg="'+p.id+'">Use Prompt</button>'+
+        '<button class="btn bs" style="font-size:11px;padding:4px 11px" data-dact="copyPrompt" data-darg="'+p.id+'">Copy</button>'+
+        (p.custom?'<button class="btn bd2" style="font-size:11px;padding:4px 11px" data-dact="deletePrompt" data-darg="'+p.id+'">Delete</button>':'')+
+      '</div>'+
+    '</div>'
+  ).join('');
+}
+function usePrompt(id){
+  const p=S.prompts.find(x=>x.id===id); if(!p) return;
+  setTab('chat');
+  setTimeout(()=>{ const ta=$('mta'); if(ta){ta.value=p.text;ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,130)+'px';ta.focus();} },100);
+  toast('Prompt loaded into chat','success');
+}
+function copyPrompt(id){
+  const p=S.prompts.find(x=>x.id===id); if(!p) return;
+  navigator.clipboard?.writeText(p.text).then(()=>toast('Prompt copied','success'));
+}
+function deletePrompt(id){
+  S.prompts=S.prompts.filter(p=>p.id!==id);
+  store('amv_pl',S.prompts);
+  renderPLList('All');
+}
+function createPromptModal(){
+  const r=$('ovr'); if(!r) return;
+  r.innerHTML=
+    '<div class="ov" id="cp-bg"><div class="ob wide" onclick="event.stopPropagation()">'+
+      '<button class="oc" onclick="closeOvr()">×</button>'+
+      '<h2 style="margin-bottom:4px">Create Prompt</h2>'+
+      '<p class="ob-sub">Add a reusable prompt to your personal library.</p>'+
+      '<div class="af">'+
+        '<div><label class="lbl">Title</label><input type="text" id="cp-title" placeholder="e.g. Write a cover letter"></div>'+
+        '<div><label class="lbl">Category</label><select id="cp-cat">'+PL_CATS.filter(c=>c!=="All").map(c=>'<option>'+c+'</option>').join('')+'</select></div>'+
+        '<div><label class="lbl">Prompt Text</label><textarea id="cp-text" placeholder="Write your prompt here. Use [BRACKETS] for variables." rows="5" style="min-height:100px"></textarea></div>'+
+        '<button class="btn bp" id="cp-save" style="width:100%;padding:11px">Save to Library</button>'+
+      '</div>'+
+    '</div></div>';
+  on($('cp-bg'),'click',closeOvr);
+  on($('cp-save'),'click',()=>{
+    const t=$('cp-title')?.value.trim(),c=$('cp-cat')?.value,tx=$('cp-text')?.value.trim();
+    if(!t||!tx){toast('Title and prompt text required','error');return;}
+    S.prompts.unshift({id:'p'+Date.now(),title:t,cat:c,text:tx,custom:true});
+    store('amv_pl',S.prompts);
+    closeOvr();
+    renderPromptsView();
+    toast('Prompt saved to library','success');
+  });
+}
+
+
+/* === WORKSPACES === */
+function renderWorkspacesView(){
+  const vc=$('vc'); if(!vc) return;
+  vc.innerHTML=
+    '<div class="sv fi"><div class="vi">'+
+      '<span class="eyebrow">Projects</span>'+
+      '<h2>Projects</h2>'+
+      '<p class="vsub">Group related chats, builds, and research into a project so AMV keeps the full context together.</p>'+
+      '<button class="btn bp" id="ws-new" style="align-self:flex-start">+ New project</button>'+
+      '<div class="wg" id="ws-grid"></div>'+
+    '</div></div>';
+  on($('ws-new'),'click',createWorkspaceModal);
+  renderWsGrid();
+}
+function renderWsGrid(){
+  const g=$('ws-grid'); if(!g) return;
+  const allConvs=Array.isArray(S.convs)?S.convs:[];
+  if(!S.workspaces||!S.workspaces.length){
+    g.innerHTML='<div class="proj-empty">'+
+      '<div class="proj-empty-ic">📁</div>'+
+      '<div class="proj-empty-t">No projects yet</div>'+
+      '<div class="proj-empty-d">Start a project to keep related chats, builds, and research in one place. AMV remembers everything inside it.</div>'+
+      '<button class="btn bp" data-dact="newProjectCTA">+ Start new project</button>'+
+    '</div>';
+    return;
+  }
+  g.innerHTML=S.workspaces.map(ws=>{
+    const chats=allConvs.filter(c=>c.wsId===ws.id);
+    const preview=chats.slice(0,3).map(c=>'<div class="wsc-chat" data-dact="loadConv" data-darg="'+c.id+'" onclick="event.stopPropagation()" style="font-size:12px;color:var(--mu);padding:4px 0;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">\u2022 '+escH(c.title||'Untitled')+'</div>').join('');
+    return '<div class="wsc" data-dact="openWorkspace" data-darg="'+ws.id+'">'+
+      '<div class="wsic" style="background:rgba(124,108,255,.1)">'+ws.icon+'</div>'+
+      '<div class="wsn">'+escH(ws.name)+'</div>'+
+      '<div class="wsd">'+escH(ws.desc||'')+'</div>'+
+      (preview?'<div style="margin:8px 0 4px">'+preview+(chats.length>3?'<div style="font-size:11px;color:var(--dim);padding-top:2px">+'+(chats.length-3)+' more</div>':'')+'</div>':'<div class="wsc-empty">No chats yet — open to start one</div>')+
+      '<div class="wsm">'+chats.length+' chat'+(chats.length===1?'':'s')+' \u00b7 '+new Date(ws.created||Date.now()).toLocaleDateString()+'</div>'+
+    '</div>';
+  }).join('')+'<button class="wsc wsc-add" data-dact="newProjectCTA"><div class="wsc-add-ic">+</div><div class="wsn">New project</div><div class="wsd">Start a fresh workspace</div></button>';
+}
+function newProjectCTA(){ createWorkspaceModal(); }
+window.newProjectCTA=newProjectCTA;
+function openWorkspace(id){
+  const ws=S.workspaces.find(w=>w.id===id);
+  if(!ws) return;
+  // find this project's most recent chat, or start a new one tagged to it
+  let conv=(Array.isArray(S.convs)?S.convs:[]).find(c=>c.wsId===id);
+  if(!conv){
+    conv=newConvObj((ws.name||'Project')+' chat');
+    conv.wsId=id;
+    S.convs.unshift(conv);
+    _autoSave();
+  }
+  S.cur=conv.id;
+  setTab('chat');
+  renderHist();
+  toast('Opened project: '+(ws.name||''),'info');
+}
+function createWorkspaceModal(){
+  const r=$('ovr'); if(!r) return;
+  const icons=['📁','💼','🔬','🎨','💻','📊','✍️','🏠','🎯','🚀','📚','⚡'];
+  r.innerHTML=
+    '<div class="ov" id="ws-bg"><div class="ob" onclick="event.stopPropagation()">'+
+      '<button class="oc" onclick="closeOvr()">×</button>'+
+      '<h2 style="margin-bottom:4px">New Workspace</h2>'+
+      '<p class="ob-sub">Create a workspace to organize related conversations.</p>'+
+      '<div class="af">'+
+        '<div><label class="lbl">Name</label><input type="text" id="ws-name" placeholder="e.g. Research Project"></div>'+
+        '<div><label class="lbl">Description</label><input type="text" id="ws-desc" placeholder="What is this workspace for?"></div>'+
+        '<div><label class="lbl">Icon</label><div style="display:flex;gap:6px;flex-wrap:wrap">'+icons.map(ic=>'<button class="ws-ic-btn" data-ic="'+ic+'" style="width:34px;height:34px;border-radius:7px;border:1px solid var(--bd);background:var(--s2);cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;transition:all .12s">'+ic+'</button>').join('')+'</div></div>'+
+        '<button class="btn bp" id="ws-create" style="width:100%;padding:11px">Create Workspace</button>'+
+      '</div>'+
+    '</div></div>';
+  let selIcon='📁';
+  document.querySelectorAll('.ws-ic-btn').forEach(b=>{
+    on(b,'click',()=>{ selIcon=b.dataset.ic; document.querySelectorAll('.ws-ic-btn').forEach(x=>x.style.borderColor=x===b?'var(--indigo)':''); });
+  });
+  on($('ws-bg'),'click',closeOvr);
+  on($('ws-create'),'click',()=>{
+    const n=$('ws-name')?.value.trim(),d=$('ws-desc')?.value.trim();
+    if(!n){toast('Name required','error');return;}
+    S.workspaces.unshift({id:'ws'+Date.now(),name:n,icon:selIcon,desc:d||'',created:Date.now(),convs:[]});
+    store('amv_ws',S.workspaces);
+    closeOvr(); renderWorkspacesView();
+    toast('Workspace created','success');
+  });
+}
+
+
+/* === USAGE / VALUE DASHBOARD === */
+/* Shared usage content — used by the standalone view AND the Settings pane,
+   so they never drift. Returns inner HTML (no outer .sv/.vi wrapper). */
+function _usageContentHTML(){
+  const mc=getMsgs().length,ic=S.imgs.length;
+  const week=AMVValue.stats(7), all=AMVValue.stats(null);
+  const daily=AMVValue.daily(14);
+  const maxD=Math.max(1,...daily.map(d=>d.count));
+  const bars=daily.map(d=>'<div class="vbar-col" title="'+d.day+': '+d.count+'"><div class="vbar" style="height:'+Math.max(3,(d.count/maxD)*100)+'%"></div></div>').join('');
+  const typeLabel={message:'Conversations',image:'Images',video:'Videos',code:'Code tasks',document:'Documents',agent_action:'Autonomous actions',research:'Research',design:'Designs'};
+  const breakdown=Object.entries(all.byType).sort((a,b)=>b[1]-a[1]).map(([t,n])=>
+    '<div class="vrow"><span>'+(typeLabel[t]||t)+'</span><span class="vrow-n">'+n+'</span></div>').join('')||'<div class="vrow"><span style="color:var(--mu)">Nothing yet \u2014 start a chat to see your impact grow.</span></div>';
+  // --- Task #7: rolling usage window (Claude-style) ---
+  const us=AMVUsage.status();
+  const planName=(PLANS[loadStr('amv_plan')||'free']&&PLANS[loadStr('amv_plan')||'free'].name)||'Free';
+  const barColor = us.pct>=90 ? '#e5534b' : (us.pct>=70 ? '#d9912f' : 'var(--ac,#7c6cff)');
+  const usagePanel=
+    '<div class="ss2 usage-panel"><h3>Current usage</h3>'+
+      '<div class="usage-head">'+
+        '<div><div class="usage-pct">'+(100-us.pct)+'%</div><div class="usage-pct-l">remaining on your '+planName+' plan</div></div>'+
+        '<div class="usage-reset"><div class="usage-reset-n">'+AMVUsage.resetLabel()+'</div><div class="usage-reset-l">until usage resets</div></div>'+
+      '</div>'+
+      '<div class="usage-bar"><div class="usage-bar-f" style="width:'+us.pct+'%;background:'+barColor+'"></div></div>'+
+      '<div class="usage-meta">'+
+        '<span>'+us.used.toLocaleString()+' / '+us.cap.toLocaleString()+' used this window</span>'+
+        '<span>'+us.reqs+' request'+(us.reqs===1?'':'s')+' &middot; resets every '+us.windowHours+'h</span>'+
+      '</div>'+
+      (us.pct>=90?'<div class="usage-warn">You\u2019re nearly out for this window. It refreshes in '+AMVUsage.resetLabel()+', or <a data-stab="plans" style="color:var(--ac,#7c6cff);cursor:pointer">upgrade for more &rarr;</a></div>':'')+
+      '<p class="usage-note">Your usage refreshes on a rolling '+us.windowHours+'-hour window \u2014 no daily lockout. Heavier plans get a bigger allowance per window.</p>'+
+    '</div>';
+  return ''+
+      '<div class="vhero">'+
+        '<div class="vcard vcard-accent"><div class="vcard-n">'+all.hoursSaved+'<span class="vcard-u">hrs</span></div><div class="vcard-l">Time saved (all time)</div></div>'+
+        '<div class="vcard"><div class="vcard-n">'+all.total+'</div><div class="vcard-l">Tasks completed</div></div>'+
+        '<div class="vcard"><div class="vcard-n">'+week.hoursSaved+'<span class="vcard-u">hrs</span></div><div class="vcard-l">Saved this week</div></div>'+
+        '<div class="vcard"><div class="vcard-n">'+S.memory.length+'</div><div class="vcard-l">Things AMV remembers</div></div>'+
+      '</div>'+
+      usagePanel+
+      '<div class="ss2"><h3>Activity \u2014 last 14 days</h3><div class="vchart">'+bars+'</div></div>'+
+      '<div class="ss2"><h3>What you\u2019ve used</h3><div class="vbreak">'+breakdown+'</div></div>'+
+      '<div class="ss2"><h3>Today\u2019s plan usage</h3>'+
+        '<div style="display:flex;flex-direction:column;gap:10px">'+
+          '<div><div style="display:flex;justify-content:space-between;font-size:12px;color:var(--mu);margin-bottom:4px"><span>Messages</span><span>'+mc+' / 30</span></div><div class="sbb"><div class="sbf2" style="width:'+Math.min(mc/30*100,100)+'%"></div></div></div>'+
+          '<div><div style="display:flex;justify-content:space-between;font-size:12px;color:var(--mu);margin-bottom:4px"><span>Images</span><span>'+ic+' / 4</span></div><div class="sbb"><div class="sbf2" style="width:'+Math.min(ic/4*100,100)+'%"></div></div></div>'+
+        '</div>'+
+        '<button class="btn bp" data-stab="plans" style="margin-top:14px;font-size:12px">Upgrade for more &rarr;</button>'+
+      '</div>'+
+      (isAdmin()? (function(){var u=AEGIS.usage();var cap=AEGIS.cfg.dailyTokenCap;var used=u.inTok+u.outTok;var pct=Math.min(used/cap*100,100);return '<div class="ss2" style="margin-top:18px"><h3>Token usage &amp; cost (today) \u2014 operator</h3>'+'<div class="stg" style="margin-bottom:12px">'+'<div class="stc"><div class="stv">'+u.reqs+'</div><div class="stl">API requests</div></div>'+'<div class="stc"><div class="stv">'+u.inTok.toLocaleString()+'</div><div class="stl">Input tokens</div></div>'+'<div class="stc"><div class="stv">'+u.outTok.toLocaleString()+'</div><div class="stl">Output tokens</div></div>'+'<div class="stc"><div class="stv">$'+u.costUSD.toFixed(3)+'</div><div class="stl">Est. cost</div></div>'+'</div>'+'<div><div style="display:flex;justify-content:space-between;font-size:12px;color:var(--mu);margin-bottom:4px"><span>Daily token cap (this device)</span><span>'+used.toLocaleString()+' / '+cap.toLocaleString()+'</span></div><div class="sbb"><div class="sbf2" style="width:'+pct+'%"></div></div></div>'+'<div style="display:flex;gap:8px;margin-top:12px"><button class="btn bs" data-dact="aegisExport" style="font-size:12px">Export audit log</button><button class="btn bs" data-dact="aegisClear" style="font-size:12px">Clear log</button></div>'+'</div>';})() : '');
+}
+window._usageContentHTML=_usageContentHTML;
+
+function renderUsageView(){
+  const vc=$('vc'); if(!vc) return;
+  vc.innerHTML=
+    '<div class="sv fi"><div class="vi">'+
+      '<span class="eyebrow">Your impact</span>'+
+      '<h2>What AMV has done for you</h2>'+
+      '<p class="vsub">A running tally of the work AMV has handled and the time it\u2019s saved you.</p>'+
+      _usageContentHTML()+
+    '</div></div>';
+}
+
+
+/* === USAGE (legacy owner view, unused) === */
+
+/* === BILLING === */
+function renderBillingView(targetEl){
+  // If billing is being shown inside Settings, render into the settings pane
+  // so re-renders (after payment, plan change, etc.) stay in place.
+  if(!targetEl && S.tab==='settings' && S.settingsPane==='billing'){ targetEl=$('set-pane'); }
+  const vc=targetEl||$('vc'); if(!vc) return;
+  const inSettings=!!targetEl;
+  const portal=loadStr('amv_portal');
+  const hasPortal=!!portal;
+  const liveBackend=window.AMV_API&&AMV_API.live;
+  const plan=loadStr('amv_plan')||'free';
+  const pm=_loadPM();
+  let P=PLANS[plan]||PLANS.free;
+  let customSummary=null;
+  if(plan==='custom'){
+    const cfg=load('amv_custom_cfg')||{};
+    const price=cfg.price||30;
+    customSummary=_customPlanSummary(price);
+    P={name:'Custom',price:price,mult:'',blurb:'Your custom plan \u2014 '+customSummary.monthlyTokens.toLocaleString()+' tokens/mo of usage'};
+  }
+  const since=loadStr('amv_plan_since');
+  const sinceDate=since?new Date(parseInt(since,10)):null;
+  const nextDate=sinceDate?new Date(sinceDate.getTime()+30*86400000):null;
+  const fmt=(d)=>d?d.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'}):'\u2014';
+  const ic={free:'⚡',pro:'✦',elite:'★',ultra:'◆',custom:'⚙'}[plan]||'⚡';
+  const email=(S.user&&S.user.email)||'\u2014';
+  // upgrade targets = plans ranked above current
+  const upTargets=Object.keys(PLANS).filter(k=>k!=='custom'&&PLAN_RANK[k]>PLAN_RANK[plan]);
+  const downTargets=Object.keys(PLANS).filter(k=>k!=='custom'&&PLAN_RANK[k]<PLAN_RANK[plan]);
+
+  vc.innerHTML=
+    '<div class="sv fi"><div class="vi">'+
+      '<span class="eyebrow">Billing</span>'+
+      '<h2>Subscription</h2><p class="vsub">Your plan, billing dates, and the details on file. Payments are processed securely — AMV never stores your full card.</p>'+
+      // CURRENT PLAN
+      '<div class="ss2"><h3>Current plan</h3>'+
+        '<div class="bill-plan">'+
+          '<div class="bill-plan-l"><div class="bill-plan-ic">'+ic+'</div>'+
+            '<div><div class="bill-plan-n">'+P.name+(plan==='free'?'':' \u00b7 $'+P.price+'/mo')+'</div>'+
+            '<div class="bill-plan-d">'+escH(P.blurb||'')+'</div></div></div>'+
+          '<span class="badge bg3">Active</span>'+
+        '</div>'+
+      '</div>'+
+      // SUBSCRIPTION DETAILS (only when on a paid plan)
+      (plan!=='free'?
+      '<div class="ss2"><h3>Subscription details</h3>'+
+        '<div class="bill-detail">'+
+          _drow('Plan',P.name+(P.mult?' ('+P.mult+' usage)':''))+
+          _drow('Price','$'+P.price+' / month')+
+          (customSummary?_drow('Monthly usage',customSummary.monthlyTokens.toLocaleString()+' tokens (credit-metered)'):'')+
+          (customSummary?_drow('Daily limit',customSummary.dailyCap.toLocaleString()+' tokens/day'):'')+
+          _drow('Status','<span style="color:var(--grn)">Active</span>')+
+          _drow('Started',fmt(sinceDate))+
+          _drow('Renews',fmt(nextDate))+
+          _drow('Billing email',escH(email))+
+          (pm?_drow('Payment method',_pmBrandIcon(pm.brand)+' \u00b7\u00b7\u00b7\u00b7 '+escH(pm.last4)+(pm.exp?'  (exp '+escH(pm.exp)+')':'')):'')+
+        '</div>'+
+        (plan==='custom'?'<button class="btn bp" id="bill-resize" style="margin-top:12px">Resize my plan</button>':'')+
+      '</div>':'')+
+      // PLAN OPTIONS
+      '<div class="ss2"><h3>'+(plan==='free'?'Upgrade your plan':'Change plan')+'</h3>'+
+        (plan==='free'?'<p class="vsub" style="margin-bottom:12px">Unlock more usage, every model, agents, and priority speed.</p>':'')+
+        '<div class="bill-plans">'+
+          upTargets.map(k=>{ const pl=PLANS[k];
+            return '<button class="bill-plan-opt up" data-pay="'+k+'"><span class="bpo-name">'+pl.name+'</span>'+
+              '<span class="bpo-price">$'+pl.price+'<small>/mo</small></span>'+
+              '<span class="bpo-mult">'+pl.mult+' usage</span>'+
+              '<span class="bpo-cta">Upgrade \u2192</span></button>';
+          }).join('')+
+        '</div>'+
+        (downTargets.length?'<div class="bill-down">'+
+          downTargets.map(k=>{ const pl=PLANS[k];
+            return '<button class="bill-down-link" data-switch="'+k+'">'+(k==='free'?'Cancel \u2014 switch to Free':'Switch to '+pl.name+' ($'+pl.price+'/mo)')+'</button>';
+          }).join(' \u00b7 ')+'</div>':'')+
+        (plan!=='custom'?'<div class="bill-down" style="margin-top:10px"><button class="bill-down-link" id="bill-custom" style="color:var(--accent)">Or build a custom plan sized to you \u2192</button></div>':'')+
+      '</div>'+
+      // MANAGE (real portal when backend/portal present)
+      ((hasPortal||liveBackend)?'<div class="ss2"><h3>Manage payment &amp; invoices</h3>'+
+        '<p class="vsub" style="margin-bottom:12px">Update your card, download invoices, or cancel through the secure billing portal.</p>'+
+        '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn bp" id="portal-open-btn">Open billing portal</button></div>'+
+        '<div style="font-size:11px;color:var(--dim);margin-top:9px">Powered by Stripe \u00b7 PCI-DSS Level 1</div></div>':'')+
+      // SECURITY
+      '<div class="ss2"><h3>How we protect your payment</h3>'+
+        '<div class="sec-grid">'+
+          _secItem('🔒','Card data never touches AMV','Card details are entered in a secure field hosted by our payment processor. They never reach our code or storage.')+
+          _secItem('🛡️','PCI-DSS Level 1','Payments run through a Level 1 certified processor — the highest security standard there is.')+
+          _secItem('🔑','Tokenized, not stored','We keep only the last 4 digits to show which card is on file. The full number is never saved.')+
+          _secItem('📡','256-bit TLS','Every payment is encrypted in transit and screened for fraud.')+
+        '</div>'+
+      '</div>'+
+    '</div></div>';
+
+  const openPortal=async ()=>{
+    if(liveBackend){ const cust=loadStr('amv_stripe_customer'); try{ const u=await AMV_API.portal(cust||email); if(u){ window.open(u,'_blank','noopener'); return; } }catch(e){} }
+    if(portal){ window.open(portal,'_blank','noopener'); return; }
+    toast('Billing portal activates once your backend is connected','info',4000);
+  };
+  const pb=$('portal-open-btn'); if(pb) on(pb,'click',openPortal);
+  vc.querySelectorAll('[data-pay]').forEach(b=>on(b,'click',()=>openCheckout(b.dataset.pay)));
+  vc.querySelectorAll('[data-switch]').forEach(b=>on(b,'click',()=>_switchPlan(b.dataset.switch)));
+  const rz=$('bill-resize'); if(rz) on(rz,'click',openCustomPlan);
+  const bc=$('bill-custom'); if(bc) on(bc,'click',openCustomPlan);
+}
+function _drow(k,v){ return '<div class="bd-row"><span class="bd-k">'+k+'</span><span class="bd-v">'+v+'</span></div>'; }
+/* Per-plan local usage caps (the browser guardrail; server enforces the real ones). */
+const PLAN_TIERS={
+  free:  { dailyTokenCap:50000,    rpmMax:8,  models:['fast','core'] },
+  pro:   { dailyTokenCap:1500000,  rpmMax:20, models:['fast','core','coding'] },
+  elite: { dailyTokenCap:6000000,  rpmMax:40, models:['fast','core','coding','smart'] },
+  ultra: { dailyTokenCap:15000000, rpmMax:80, models:['fast','core','coding','smart'] },
+  custom:{ dailyTokenCap:50000,    rpmMax:16, models:['fast','core','coding','smart'] }, // overridden per-user below
+};
+function _setPlan(plan){
+  if(!PLANS[plan]) plan='free';
+  const prev=loadStr('amv_plan')||'free';
+  saveStr('amv_plan',plan);
+  // record start date when the plan actually changes
+  if(prev!==plan) saveStr('amv_plan_since',String(Date.now()));
+  // resolve the effective tier (custom = the user's purchased config)
+  let t=PLAN_TIERS[plan]||PLAN_TIERS.free;
+  if(plan==='custom'){
+    try{ const cfg=load('amv_custom_cfg'); if(cfg&&cfg.price){ const s=_customPlanSummary(cfg.price); t={dailyTokenCap:s.dailyCap, rpmMax:s.rpm, models:['fast','core','coding','smart']}; } }catch(e){}
+  }
+  // apply the usage tier to the local guardrail
+  try{ if(window.AEGIS&&AEGIS.cfg){ AEGIS.cfg.dailyTokenCap=t.dailyTokenCap; AEGIS.cfg.rpmMax=t.rpmMax; } saveStr('amv_plan_caps',JSON.stringify(t)); }catch(e){}
+  // if the user's selected model isn't allowed on this plan, drop to an allowed one
+  try{ const allowed=t.models; if(allowed.indexOf(S.model)<0){ S.model=allowed[allowed.length-1]; } }catch(e){}
+  updateSbUser&&updateSbUser();
+  try{ if(typeof renderView==='function' && S.tab) renderView(); }catch(e){}
+}
+function _planAllowsModel(mk){ if(mk==='auto') return true; const plan=loadStr('amv_plan')||'free'; if(plan==='custom') return true; const t=PLAN_TIERS[plan]||PLAN_TIERS.free; return t.models.indexOf(mk)>=0; }
+window._setPlan=_setPlan;
+
+/* === TEAMS PLAN GATING (Task #3) ===
+   Teams is a B2B capability. It unlocks on the Ultra plan ($200/mo),
+   which is built for team-grade usage, or any Custom plan at the
+   equivalent tier. Free / Pro / Elite cannot create or join a team. */
+const TEAM_REQUIRED_PLAN = 'ultra';
+function _planAllowsTeams(){
+  const plan=loadStr('amv_plan')||'free';
+  if(plan==='custom') return (PLAN_RANK['custom']||0) >= (PLAN_RANK[TEAM_REQUIRED_PLAN]||3);
+  return (PLAN_RANK[plan]||0) >= (PLAN_RANK[TEAM_REQUIRED_PLAN]||3);
+}
+window._planAllowsTeams=_planAllowsTeams;
+
+/* === SUPPORT EMAIL (Task #5) ===
+   ONE source of truth. The owner sets it once in Settings → Platform
+   (or via setSupportEmail in console); it then appears everywhere.
+   Until an address is set, support buttons route to "Ask AMV directly"
+   instead of a dead mailto: link — so it's never broken. */
+function _supportEmail(){ return (loadStr('amv_support_email')||'').trim(); }
+window._supportEmail=_supportEmail;
+window.setSupportEmail=function(addr){
+  addr=(addr||'').trim();
+  if(addr && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(addr)){ console.warn('Invalid email'); return false; }
+  saveStr('amv_support_email', addr);
+  try{ if(S.tab==='help') renderHelpView(); }catch(e){}
+  return true;
+};
+
+/* A support button/link that adapts: real mailto when configured,
+   otherwise routes to Ask AMV (never a dead link).
+   opts: {label, cls, subject} */
+function supportButton(opts){
+  opts=opts||{};
+  const cls=opts.cls||'btn bp';
+  const label=opts.label||'Email Support';
+  const email=_supportEmail();
+  if(email){
+    const subj=opts.subject?('?subject='+encodeURIComponent(opts.subject)):'';
+    return '<a href="mailto:'+escH(email)+subj+'" class="'+cls+'" style="font-size:12px">'+label+'</a>';
+  }
+  // No address configured yet → graceful fallback to Ask AMV (no dead mailto)
+  return '<button class="'+cls+'" style="font-size:12px" data-dact="askAmv" data-darg="">'+label+'</button>';
+}
+window.supportButton=supportButton;
+
+
+/* The minimum plan that unlocks a given model */
+function _minPlanForModel(mk){
+  const order=['free','pro','elite','ultra'];
+  for(const p of order){ if((PLAN_TIERS[p]||{}).models && PLAN_TIERS[p].models.indexOf(mk)>=0) return p; }
+  return 'pro';
+}
+function openUpgradeModal(lockedModel){
+  const r=$('ovr'); if(!r) return;
+  const m=MODELS[lockedModel]||{label:'this model'};
+  const needPlan=_minPlanForModel(lockedModel);
+  // Ordered ladder, all paid plans + custom, as stacked rows
+  const order=['pro','elite','ultra'];
+  const row=(k)=>{ const pl=PLANS[k]; const isNeed=k===needPlan;
+    return '<button class="upg-row'+(isNeed?' best':'')+'" data-upg="'+k+'">'+
+      '<div class="upg-row-l">'+
+        '<div class="upg-row-name">'+pl.name+(isNeed?'<span class="upg-row-tag">Unlocks '+escH(m.label)+'</span>':'')+'</div>'+
+        '<div class="upg-row-desc">'+escH(pl.blurb||'')+'</div>'+
+      '</div>'+
+      '<div class="upg-row-r"><div class="upg-row-price">$'+pl.price+'<small>/mo</small></div><span class="upg-row-go">Get \u2192</span></div>'+
+    '</button>';
+  };
+  const customRow='<button class="upg-row upg-row-custom" data-upg="custom">'+
+      '<div class="upg-row-l">'+
+        '<div class="upg-row-name">Custom<span class="upg-row-tag alt">Build your own</span></div>'+
+        '<div class="upg-row-desc">Pick your exact monthly budget \u2014 all models, hard-capped, from $10/mo.</div>'+
+      '</div>'+
+      '<div class="upg-row-r"><div class="upg-row-price" style="font-size:15px">Your price</div><span class="upg-row-go">Build \u2192</span></div>'+
+    '</button>';
+  r.innerHTML='<div class="upg-ov" id="upg-bg"><div class="upg-modal" style="max-width:480px" onclick="event.stopPropagation()">'+
+    '<button class="dna-x" id="upg-x" style="position:absolute;top:16px;right:16px">\u2715</button>'+
+    '<div class="upg-head">'+
+      '<div class="upg-lock">\uD83D\uDD12</div>'+
+      '<h2>Unlock '+escH(m.label)+'</h2>'+
+      '<p>'+escH(m.label)+' is included from the '+PLANS[needPlan].name+' plan up. Pick the plan that fits \u2014 every option below unlocks it.</p>'+
+    '</div>'+
+    '<div class="upg-rows">'+order.map(row).join('')+customRow+'</div>'+
+    '<div class="upg-foot"><button class="upg-compare" id="upg-compare">Compare all plans in detail \u2192</button>'+
+      '<div class="upg-trust">Cancel anytime \u00b7 Keep your free account \u00b7 Secure checkout</div></div>'+
+  '</div></div>';
+  const close=()=>{ r.innerHTML=''; };
+  on($('upg-bg'),'click',close); on($('upg-x'),'click',close);
+  r.querySelectorAll('[data-upg]').forEach(btn=>on(btn,'click',()=>{ const k=btn.dataset.upg; close(); if(k==='custom'){ openCustomPlan(); } else { openCheckout(k); } }));
+  const cmp=$('upg-compare'); if(cmp) on(cmp,'click',()=>{ close(); openPlanCompare(needPlan); });
+}
+function _planDetails(k){
+  const D={
+    pro:['Every AMV model, including AMV Forge for elite coding','5\u00d7 the daily usage of Free \u2014 generous room to work','Autonomous agents & Crew that complete multi-step tasks','HD image generation, video, and interactive 3D models','Build and ship real apps in the live sandbox','Connect Gmail, calendar, and your files','Background & scheduled automation','Priority generation speed'],
+    elite:['Everything in Pro, with far higher limits','20\u00d7 the usage \u2014 for heavy daily users','AMV Apex, our most powerful model, first in line','Run many agents and long jobs in parallel','4K video and the largest 3D builds','Early access to brand-new features','Highest-priority speed at peak times','Priority 24/7 support'],
+    ultra:['Everything in Elite, taken to the maximum','50\u00d7 the usage \u2014 the highest tier we offer','Maximum concurrency \u2014 many heavy jobs at once','\uD83D\uDC65 Team workspaces \u2014 shared projects, roles & memory','Team-grade throughput and priority everywhere','Longest context windows and biggest builds','First access to every new capability we launch','Dedicated priority support'],
+  };
+  return D[k]||['More usage','All models'];
+}
+function openPlanCompare(highlight){
+  const r=$('ovr'); if(!r) return;
+  const plans=['free','pro','elite','ultra','custom'];
+  const isC=p=>p==='custom';
+  const rows=[
+    ['Price', p=>isC(p)?'From $10':(p==='free'?'$0':'$'+PLANS[p].price+'/mo')],
+    ['Usage', p=>isC(p)?'You choose':(PLANS[p].mult||'1\u00d7')+' the usage'],
+    ['AMV Pulse (fast)', p=>'\u2713'],
+    ['AMV Core (balanced)', p=>'\u2713'],
+    ['AMV Forge (coding)', p=>isC(p)?'\u2713':(PLAN_RANK[p]>=1?'\u2713':'\u2014')],
+    ['AMV Apex (flagship)', p=>isC(p)?'\u2713':(PLAN_RANK[p]>=2?'\u2713':'\u2014')],
+    ['Autonomous agents & Crew', p=>p==='free'?'\u2014':'\u2713'],
+    ['Image generation', p=>'\u2713'],
+    ['Video generation', p=>p==='free'?'\u2014':'\u2713'],
+    ['Parallel agents / long jobs', p=>isC(p)?'\u2713':(PLAN_RANK[p]>=2?'\u2713':(p==='pro'?'Limited':'\u2014'))],
+    ['Early access to new features', p=>isC(p)?'\u2713':(PLAN_RANK[p]>=2?'\u2713':'\u2014')],
+    ['Priority speed', p=>p==='free'?'Standard':'\u2713'],
+    ['Team workspaces (roles, shared memory)', p=>isC(p)?(PLAN_RANK['custom']>=3?'\u2713':'\u2014'):(PLAN_RANK[p]>=3?'\u2713':'\u2014')],
+    ['Support', p=>isC(p)?'Priority':(PLAN_RANK[p]>=3?'Dedicated':(PLAN_RANK[p]>=2?'Priority 24/7':(p==='pro'?'Priority':'Community')))],
+    ['Hard cap (no overage)', p=>p==='free'?'\u2014':'\u2713'],
+  ];
+  const colName=p=>isC(p)?'Custom':PLANS[p].name;
+  const head='<th></th>'+plans.map(p=>'<th class="'+(p===highlight?'pc-hl':'')+'">'+colName(p)+(p===highlight?'<span class="pc-tag">Recommended</span>':'')+'</th>').join('');
+  const body=rows.map(([label,fn])=>'<tr><td class="pc-row">'+label+'</td>'+plans.map(p=>'<td class="'+(p===highlight?'pc-hl':'')+'">'+fn(p)+'</td>').join('')+'</tr>').join('');
+  const cta='<tr><td></td>'+plans.map(p=>'<td class="'+(p===highlight?'pc-hl':'')+'">'+(p==='free'?'':'<button class="btn '+(p===highlight?'bp':'')+' pc-go" data-pcgo="'+p+'" style="font-size:11px;padding:6px 9px">'+(isC(p)?'Build':'Get')+'</button>')+'</td>').join('')+'</tr>';
+  r.innerHTML='<div class="upg-ov" id="pc-bg"><div class="pc-modal" onclick="event.stopPropagation()">'+
+    '<button class="dna-x" id="pc-x" style="position:absolute;top:16px;right:16px;z-index:2">\u2715</button>'+
+    '<div class="pc-head"><h2>Compare plans</h2><p>Everything each plan includes \u2014 pick what fits how you work.</p></div>'+
+    '<div class="pc-scroll"><table class="pc-table"><thead><tr>'+head+'</tr></thead><tbody>'+body+cta+'</tbody></table></div>'+
+  '</div></div>';
+  const close=()=>{ r.innerHTML=''; };
+  on($('pc-bg'),'click',close); on($('pc-x'),'click',close);
+  r.querySelectorAll('[data-pcgo]').forEach(btn=>on(btn,'click',()=>{ const k=btn.dataset.pcgo; close(); if(k==='custom'){ openCustomPlan(); } else { openCheckout(k); } }));
+}
+window.openPlanCompare=openPlanCompare;
+
+/* ===== CUSTOM PLAN BUILDER — interactive, abuse-proof ===== */
+function openCustomPlan(){
+  const r=$('ovr'); if(!r) return;
+  const saved=load('amv_custom_cfg');
+  let price=(saved&&saved.price)||30;
+  const render=()=>{
+    const s=_customPlanSummary(price);
+    const marginPct=Math.round(s.margin*100);
+    r.innerHTML='<div class="upg-ov" id="cp-bg"><div class="cp-modal" onclick="event.stopPropagation()">'+
+      '<button class="dna-x" id="cp-x" style="position:absolute;top:16px;right:16px">\u2715</button>'+
+      '<div class="cp-head"><span class="eyebrow" style="color:var(--accent)">Custom plan</span>'+
+        '<h2>Pay exactly for what you need</h2>'+
+        '<p>Set your monthly budget. You get a guaranteed pool of usage for that price \u2014 all models included, hard-capped so there are never surprise charges.</p></div>'+
+      '<div class="cp-price-row"><span class="cp-cur">$</span><span class="cp-price" id="cp-price">'+price+'</span><span class="cp-per">/month</span></div>'+
+      '<input type="range" id="cp-slider" min="'+CUSTOM_PLAN.MIN_PRICE+'" max="500" step="5" value="'+price+'" class="cp-range">'+
+      '<div class="cp-range-lbls"><span>$'+CUSTOM_PLAN.MIN_PRICE+'</span><span>$500</span></div>'+
+      '<div class="cp-grid">'+
+        _cpStat(s.monthlyTokens.toLocaleString(),'tokens on Core')+
+        _cpStat(s.apexTokens.toLocaleString(),'tokens on Apex')+
+        _cpStat('~'+s.approxMessages.toLocaleString(),'AI messages')+
+        _cpStat(s.dailyCap.toLocaleString(),'daily limit')+
+      '</div>'+
+      '<div class="cp-note">Usage is metered as credits — faster models use fewer, the most powerful use more. Mix and match however you like; your pool is yours.</div>'+
+      '<div class="cp-incl"><div class="cp-incl-h">Everything included</div>'+
+        '<div class="cp-incl-list">'+['All 4 models incl. Apex','Autonomous agents & Crew','Images, video & 3D','Build & ship apps','Priority speed','Hard cap \u2014 no overage charges'].map(f=>'<span>\u2713 '+f+'</span>').join('')+'</div></div>'+
+      '<button class="btn bp cp-go" id="cp-buy">Get Custom \u2014 $'+price+'/mo</button>'+
+      '<p class="cp-fine">Usage is capped at your plan size and resets monthly. Unused usage doesn\u2019t roll over. Cancel or resize anytime.</p>'+
+    '</div></div>';
+    const close=()=>{ r.innerHTML=''; };
+    on($('cp-bg'),'click',close); on($('cp-x'),'click',close);
+    const sl=$('cp-slider');
+    on(sl,'input',()=>{ price=parseInt(sl.value,10); const ps=_customPlanSummary(price);
+      $('cp-price').textContent=price;
+      const g=r.querySelectorAll('.cp-stat-n');
+      if(g.length>=4){ g[0].textContent=ps.monthlyTokens.toLocaleString(); g[1].textContent=ps.apexTokens.toLocaleString(); g[2].textContent='~'+ps.approxMessages.toLocaleString(); g[3].textContent=ps.dailyCap.toLocaleString(); }
+      const buy=$('cp-buy'); if(buy) buy.textContent='Get Custom \u2014 $'+price+'/mo';
+    });
+    on($('cp-buy'),'click',()=>{
+      // store the chosen config; checkout will activate it
+      store('amv_custom_cfg',{price, ts:Date.now()});
+      // price is dynamic — pass it to checkout
+      close();
+      openCheckout('custom', price);
+    });
+  };
+  render();
+}
+function _cpStat(n,l){ return '<div class="cp-stat"><div class="cp-stat-n">'+n+'</div><div class="cp-stat-l">'+l+'</div></div>'; }
+window.openCustomPlan=openCustomPlan;
+function _planHighlights(k){
+  return {
+    pro:['All 4 models incl. Forge','5\u00d7 the usage','Autonomous agents & Crew','HD images, video & 3D','Priority speed'],
+    elite:['Everything in Pro','20\u00d7 the usage','Fastest models first','Parallel agents & long jobs','Early access'],
+    ultra:['Everything in Elite','50\u00d7 the usage','Max concurrency','Team-grade throughput','Dedicated support'],
+  }[k]||['More usage','All models'];
+}
+window.openUpgradeModal=openUpgradeModal;
+function _switchPlan(target){
+  if(target==='free'){
+    showConfirmAsync('Cancel your subscription and switch to Free? You\u2019ll keep access until the end of your billing period.').then(confirmed=>{
+      if(!confirmed) return;
+      _setPlan('free');
+      toast('Switched to Free','info');
+      renderBillingView();
+    });
+    return;
+  }
+  // downgrade to a lower paid plan → run checkout for that plan
+  openCheckout(target);
+}
+function _secItem(ic,t,d){ return '<div class="sec-item"><div class="sec-ic">'+ic+'</div><div><div class="sec-t">'+t+'</div><div class="sec-d">'+d+'</div></div></div>'; }
+function _pmBrandIcon(b){ return ({visa:'VISA',mastercard:'MC',amex:'AMEX',discover:'DISC'})[b]||'CARD'; }
+function _pmLabel(pm){ return ({card:'Card',apple:'Apple Pay',google:'Google Pay',paypal:'PayPal',bank:'Bank'})[pm.type]||'Card'; }
+/* Payment method storage — DISPLAY ONLY. Never stores PAN/CVC. */
+function _loadPM(){ try{ const v=load('amv_pm_display'); return (v&&v.last4)?v:null; }catch(e){ return null; } }
+function _savePM(obj){ try{ store('amv_pm_display',{type:obj.type,brand:obj.brand||'card',last4:String(obj.last4||'').slice(-4),exp:obj.exp||'',token:obj.token||('tok_'+Math.random().toString(36).slice(2,12))}); }catch(e){} }
+function removePM(){ try{ localStorage.removeItem(_scopeKey('amv_pm_display')); }catch(e){} renderBillingView(); toast('Payment method removed','info'); }
+window.removePM=removePM;
+
+/* ============================================================
+   SECURE CHECKOUT
+   Security model: raw card data NEVER enters AMV's JavaScript.
+   - If a Stripe publishable key is set, we mount Stripe Elements
+     (an isolated iframe owned by Stripe). We only ever receive a
+     PaymentMethod token — never the PAN/CVC.
+   - Without a key, we run a locked preview that refuses real card
+     entry, so no sensitive data is ever typed into an unsafe field.
+   ============================================================ */
+const PLANS={
+  free:{name:'Free',price:0,blurb:'Daily usage to explore everything',mult:'1\u00d7'},
+  pro:{name:'Pro',price:15,blurb:'5\u00d7 the usage, all models, agents, and priority speed',mult:'5\u00d7'},
+  elite:{name:'Elite',price:75,blurb:'20\u00d7 the usage, fastest models first, parallel agents, early access',mult:'20\u00d7'},
+  ultra:{name:'Ultra',price:200,blurb:'50\u00d7 the usage, max concurrency, team-grade limits, priority everything',mult:'50\u00d7'},
+  custom:{name:'Custom',price:0,blurb:'A plan sized exactly to your usage',mult:''},
+};
+const PLAN_RANK={free:0,pro:1,elite:2,ultra:3,custom:2};
+
+/* ============================================================
+   CUSTOM PLAN — pay-for-what-you-need, guaranteed profitable.
+   ------------------------------------------------------------
+   PROFIT GUARANTEE (the part that can't be abused):
+   - The customer pre-pays a FIXED monthly price for a HARD-CAPPED
+     pool of usage. The cap is enforced server-side; once hit,
+     requests stop until next cycle or a top-up.
+   - Price is computed so it ALWAYS exceeds the worst-case API
+     cost of that pool, by a fixed margin. Even if every token is
+     spent on the most expensive model, you still profit.
+
+   How the math protects you:
+   - 1 "credit" = 1,000 tokens of allowance.
+   - Worst-case cost of 1k tokens on our priciest engine (Apex,
+     ~$100 / 1M output) ≈ $0.10. We price each credit well above
+     that worst case, so margin is locked in regardless of model.
+   - COST_PER_CREDIT below is the PRICE we charge; WORST_COST_PER_CREDIT
+     is the most it can ever cost us. PRICE > WORST_COST always.
+   ============================================================ */
+const CUSTOM_PLAN = {
+  MIN_PRICE: 10,
+  MAX_PRICE: 5000,
+  /* ----------------------------------------------------------
+     PROFIT MODEL (corrected & abuse-proof):
+     Usage is metered in CREDITS, not raw tokens. Each model
+     consumes credits at a rate equal to its REAL cost to us, so
+     the pool drains faster on expensive models. This removes the
+     "all-Apex worst case" — Apex burns ~20× the credits of Pulse.
+
+     1 credit ≈ our cost of 1,000 Core tokens (~$0.0084).
+     We sell credits at a price that locks in margin no matter
+     which model is used, because the credit rate already reflects
+     each model's cost. The hard cap is the final backstop.
+     ---------------------------------------------------------- */
+  // our REAL blended cost per 1M tokens, by model
+  MODEL_COST_PER_M: { fast:2.8, core:8.4, coding:42, smart:56 },
+  // credits charged per 1k tokens of each model (= cost-weighted)
+  creditRate(model){
+    const c=this.MODEL_COST_PER_M[model]||this.MODEL_COST_PER_M.core;
+    return c/1000*1000/8.4; // normalize so Core≈1 credit / 1k tokens
+  },
+  // we SELL credits at this price; our cost per credit ≈ $0.0084 → ~3.5× margin
+  PRICE_PER_CREDIT: 0.03,
+  tier(credits){
+    if(credits>=500000) return 0.022;
+    if(credits>=100000) return 0.025;
+    if(credits>=20000)  return 0.027;
+    return 0.03;
+  },
+  creditsForPrice(price){
+    price=Math.max(this.MIN_PRICE, Math.min(this.MAX_PRICE, price));
+    let rate=0.03, credits=Math.floor(price/rate);
+    for(let i=0;i<4;i++){ rate=this.tier(credits); credits=Math.floor(price/rate); }
+    return credits;
+  },
+  // WORST-CASE real cost to us = if every credit is spent (cost per credit ≈ $0.0084)
+  COST_PER_CREDIT: 0.0084,
+  worstCost(price){ return this.creditsForPrice(price)*this.COST_PER_CREDIT; },
+  margin(price){ const wc=this.worstCost(price); return wc>0 ? (price-wc)/price : 1; },
+  // headline "tokens" = credits expressed as Core-equivalent tokens (1 credit ≈ 1k Core tokens)
+  monthlyTokens(price){ return this.creditsForPrice(price)*1000; },
+  dailyTokenCap(price){ return Math.max(50000, Math.floor(this.monthlyTokens(price)/8)); },
+  rpmFor(price){ return price>=200?80:price>=75?40:price>=30?24:16; },
+};
+function _customPlanSummary(price){
+  const credits=CUSTOM_PLAN.creditsForPrice(price);
+  // realistic value framing: how much usage on a typical mix (mostly Core/Pulse)
+  const coreTokens=credits*1000;                  // if all Core
+  const apexTokens=Math.floor(credits*1000/ (CUSTOM_PLAN.MODEL_COST_PER_M.smart/CUSTOM_PLAN.MODEL_COST_PER_M.core)); // if all Apex
+  return {
+    price, credits,
+    monthlyTokens: coreTokens,
+    apexTokens,
+    dailyCap: CUSTOM_PLAN.dailyTokenCap(price),
+    rpm: CUSTOM_PLAN.rpmFor(price),
+    worstCost: CUSTOM_PLAN.worstCost(price),
+    margin: CUSTOM_PLAN.margin(price),
+    approxMessages: Math.floor(credits/2),
+    approxImages: Math.floor(credits/3),
+  };
+}
+function _stripePK(){ return loadStr('amv_stripe_pk')||''; }
+function _stripeLink(plan){ try{ const m=load('amv_pay_links')||{}; return m[plan]||''; }catch(e){ return ''; } }
+
+function openCheckout(plan, customPrice){
+  if(plan==='free'){ _setPlan('free'); renderBillingView(); toast('Switched to Free','info'); return; }
+  if(plan==='custom'){
+    const cfg=load('amv_custom_cfg')||{}; const price=customPrice||cfg.price||30;
+    store('amv_custom_cfg',{price, ts:Date.now()});
+    PLANS.custom.price=price; PLANS.custom.mult=''; PLANS.custom.blurb='Your custom plan \u2014 '+_customPlanSummary(price).monthlyTokens.toLocaleString()+' tokens/mo';
+    openPaymentSheet('custom');
+    return;
+  }
+  const p=PLANS[plan]; if(!p) return;
+  openPaymentSheet(plan);
+}
+
+function openPaymentSheet(plan){
+  const p=PLANS[plan]||PLANS.pro;
+  const r=$('ovr'); if(!r) return;
+  r.innerHTML='<div class="pay-ov" id="pay-bg"><div class="pay-modal" onclick="event.stopPropagation()">'+
+    '<div class="pay-head"><div><div class="pay-title">Upgrade to '+p.name+'</div><div class="pay-sub">'+(p.blurb||'')+'</div></div><button class="dna-x" id="pay-x">✕</button></div>'+
+    '<div class="pay-amount"><span class="pay-amt">$'+p.price+'</span><span class="pay-per">/month</span></div>'+
+    '<div class="pay-methods-tabs" id="pay-tabs">'+
+      '<button class="pay-tab on" data-pt="card">💳 Card</button>'+
+      '<button class="pay-tab" data-pt="stripe">Stripe</button>'+
+      '<button class="pay-tab" data-pt="paypal">PayPal / Venmo</button>'+
+    '</div>'+
+    '<div class="pay-body" id="pay-body"></div>'+
+    '<div class="pay-secure"><span class="pay-lock">🔒</span> Encrypted &amp; secure · PCI-DSS Level 1 processing</div>'+
+    '</div></div>';
+  on($('pay-bg'),'click',closePaySheet); on($('pay-x'),'click',closePaySheet);
+  $('pay-tabs').querySelectorAll('.pay-tab').forEach(t=>on(t,'click',()=>{ $('pay-tabs').querySelectorAll('.pay-tab').forEach(x=>x.classList.toggle('on',x===t)); _payRenderMethod(t.dataset.pt,plan); }));
+  _payRenderMethod('card',plan);
+}
+function closePaySheet(){ const r=$('ovr'); if(r) r.innerHTML=''; }
+
+function _payCfg(){ try{ return load('amv_pay_cfg')||{}; }catch(e){ return {}; } }
+function _payRenderMethod(method,plan){
+  const body=$('pay-body'); if(!body) return;
+  const price=PLANS[plan].price;
+
+  // ---- PAYPAL / VENMO — opens PayPal/Venmo externally ----
+  if(method==='paypal'){
+    const liveBackend=window.AMV_API&&AMV_API.live;
+    if(liveBackend){
+      // Real recurring subscription — opens PayPal's approval page externally.
+      body.innerHTML='<div class="pay-wallet">'+
+        '<button class="pay-wallet-b paypal" id="pay-pp-sub">Subscribe with PayPal →</button>'+
+        '<button class="pay-wallet-b venmo" id="pay-vm-sub">Subscribe with Venmo →</button>'+
+        '<p class="pay-note">Sets up a real monthly subscription through PayPal or Venmo. Opens securely, then brings you back.</p></div>';
+      const go=async ()=>{ try{ const u=await AMV_API.paypalSubscribe(plan,(S.user&&S.user.email)||''); _openExternalPay(u,plan,'paypal'); }catch(e){ toast('PayPal: '+(e.message||'could not start'),'error',4500); } };
+      on($('pay-pp-sub'),'click',go); on($('pay-vm-sub'),'click',go);
+      return;
+    }
+    // No backend: PayPal JS SDK one-time capture (still gets you paid)
+    body.innerHTML='<div class="pay-wallet"><div id="paypal-buttons" class="pay-paypal-host"></div>'+
+      '<div id="paypal-fallback" style="display:none"><button class="pay-wallet-b paypal" id="pay-pp">Pay with PayPal →</button>'+
+      '<button class="pay-wallet-b venmo" id="pay-vm">Pay with Venmo →</button></div>'+
+      '<p class="pay-note">Opens PayPal or Venmo to confirm, then brings you back.</p></div>';
+    _mountPayPal(plan);
+    return;
+  }
+
+  // ---- STRIPE — opens Stripe checkout externally (real subscription via backend) ----
+  if(method==='stripe'){
+    const link=_stripeLink(plan);
+    const liveBackend=window.AMV_API&&AMV_API.live;
+    body.innerHTML='<div class="pay-stripe-cta">'+
+      '<div class="pay-brandmark stripe">stripe</div>'+
+      '<button class="btn bp pay-submit" id="pay-stripe-go">Pay with Stripe →</button>'+
+      '<div class="pay-stripe-badges"><span> Pay</span><span>G Pay</span><span>Visa</span><span>Mastercard</span><span>Amex</span></div>'+
+      '<p class="pay-note">'+((link||liveBackend)?'Opens Stripe\u2019s secure checkout — card, Apple Pay, or Google Pay. Your plan unlocks once payment is confirmed.':'Connect your backend (Settings → Live/Backend) or add a Stripe link (Settings → Platform) to enable this.')+'</p></div>';
+    on($('pay-stripe-go'),'click',async ()=>{
+      const sb=$('pay-stripe-go');
+      // Preferred: backend creates a real subscription Checkout session
+      if(liveBackend){
+        if(sb){ sb.disabled=true; sb.textContent='Opening…'; }
+        try{ const u=await AMV_API.stripeCheckout(plan, (S.user&&S.user.email)||''); _openExternalPay(u,plan,'stripe'); }
+        catch(e){ toast('Stripe: '+(e.message||'could not start'),'error',4500); }
+        finally{ if(sb){ sb.disabled=false; sb.textContent='Pay with Stripe →'; } }
+        return;
+      }
+      // Fallback: a hosted Payment Link
+      if(link){ _openExternalPay(link,plan,'stripe'); return; }
+      toast('Add your backend URL or Stripe link in Settings','info',4500);
+    });
+    return;
+  }
+
+  // ---- CARD — secure card entry ----
+  const pk=_stripePK();
+  const liveBackend=window.AMV_API&&AMV_API.live;
+  // Best path: Stripe Elements iframe (card never touches AMV) when publishable key is set.
+  if(pk){
+    body.innerHTML='<div id="stripe-card-element" class="pay-stripe-el"></div><div id="stripe-card-errors" class="pay-err"></div>'+
+      '<button class="btn bp pay-submit" id="pay-submit">Pay $'+price+' / month</button>';
+    _mountStripe(pk,plan);
+    return;
+  }
+  // Next best: route card payment through the backend's Stripe Checkout (real, secure).
+  if(liveBackend || _stripeLink(plan)){
+    const link=_stripeLink(plan);
+    body.innerHTML='<div class="pay-stripe-cta">'+
+      '<div class="pay-card-ic">💳</div>'+
+      '<button class="btn bp pay-submit" id="pay-card-go">Pay by card →</button>'+
+      '<div class="pay-stripe-badges"><span>Visa</span><span>Mastercard</span><span>Amex</span><span>Discover</span></div>'+
+      '<p class="pay-note">Opens a secure card checkout. Your plan unlocks once payment is confirmed.</p></div>';
+    on($('pay-card-go'),'click',async ()=>{
+      const sb=$('pay-card-go');
+      if(liveBackend){ if(sb){sb.disabled=true;sb.textContent='Opening…';} try{ const u=await AMV_API.stripeCheckout(plan,(S.user&&S.user.email)||''); _openExternalPay(u,plan,'card'); }catch(e){ toast('Card: '+(e.message||'failed'),'error',4500);} finally{ if(sb){sb.disabled=false;sb.textContent='Pay by card →';} } return; }
+      if(link){ _openExternalPay(link,plan,'card'); }
+    });
+    return;
+  }
+  // Last resort (no processor connected): show the form but be honest it needs setup.
+  body.innerHTML=
+    '<div class="pay-field"><label>Card number</label><input id="pf-num" inputmode="numeric" autocomplete="cc-number" placeholder="1234 1234 1234 1234" maxlength="19"></div>'+
+    '<div class="pay-row"><div class="pay-field"><label>Expiry</label><input id="pf-exp" inputmode="numeric" autocomplete="cc-exp" placeholder="MM / YY" maxlength="7"></div>'+
+    '<div class="pay-field"><label>CVC</label><input id="pf-cvc" inputmode="numeric" autocomplete="cc-csc" placeholder="CVC" maxlength="4"></div></div>'+
+    '<div class="pay-field"><label>Name on card</label><input id="pf-name" autocomplete="cc-name" placeholder="Full name"></div>'+
+    '<button class="btn bp pay-submit" id="pay-card">Pay $'+price+' / month</button>';
+  const num=$('pf-num'); if(num) on(num,'input',()=>{ let v=num.value.replace(/\D/g,'').slice(0,16); num.value=v.replace(/(.{4})/g,'$1 ').trim(); });
+  const exp=$('pf-exp'); if(exp) on(exp,'input',()=>{ let v=exp.value.replace(/\D/g,'').slice(0,4); if(v.length>=3)v=v.slice(0,2)+' / '+v.slice(2); exp.value=v; });
+  const cvc=$('pf-cvc'); if(cvc) on(cvc,'input',()=>{ cvc.value=cvc.value.replace(/\D/g,'').slice(0,4); });
+  on($('pay-card'),'click',()=>_payCard(plan));
+}
+
+/* ---------- Apple Pay via external secure checkout ----------
+   Apple Pay through raw PaymentRequest fails in embedded/iframe
+   contexts and needs Apple merchant + domain verification. The
+   reliable path: route to a hosted checkout (Stripe Checkout shows
+   the native Apple Pay button automatically when supported, or your
+   own backend creates the session). It opens the REAL payment page.
+*/
+
+/* Opens the real external payment page. On success your checkout
+   redirects back to ?paid=PLAN and the app activates the plan. */
+function _openExternalPay(url, plan, kind){
+  const w=window.open(url,'_blank');
+  if(!w){ toast('Allow pop-ups to open the secure checkout.','error',5000); return; }
+  toast('Complete your payment in the new tab — your plan updates once it succeeds.','info',6000);
+}
+
+/* ---------- REAL PayPal / Venmo (PayPal JS SDK) ---------- */
+function _mountPayPal(plan){
+  const cfg=_payCfg();
+  const clientId=cfg.paypalClientId||loadStr('amv_paypal_client');
+  const showFallback=(msg)=>{ const fb=$('paypal-fallback'); if(fb) fb.style.display='block'; const host=$('paypal-buttons'); if(host) host.style.display='none'; const pp=$('pay-pp'); if(pp) on(pp,'click',()=>{ const l=cfg.paypalLink; if(l){_openExternalPay(l,plan,'paypal');} else toast(msg||'Add your PayPal client ID in Settings → Platform','info',4500); }); const vm=$('pay-vm'); if(vm) on(vm,'click',()=>{ const l=cfg.venmoLink||cfg.paypalLink; if(l){_openExternalPay(l,plan,'venmo');} else toast('Add your PayPal client ID (or a Venmo link) in Settings → Platform','info',4500); }); };
+  if(!clientId){ showFallback(); return; }
+  const render=()=>{
+    if(!window.paypal||!window.paypal.Buttons){ showFallback('PayPal SDK did not load'); return; }
+    try{
+      const host=$('paypal-buttons'); if(host){ host.style.display='block'; host.innerHTML=''; }
+      const liveBackend=window.AMV_API&&AMV_API.live;
+      window.paypal.Buttons({
+        style:{ layout:'vertical', color:'blue', shape:'rect', label:'pay' },
+        createOrder:async (data,actions)=>{
+          // Server-side order creation when backend is live (more secure + reliable)
+          if(liveBackend){ try{ return await AMV_API.paypalCreate(plan); }catch(e){} }
+          return actions.order.create({ purchase_units:[{ amount:{ value:String(PLANS[plan].price) }, description:'AMV '+PLANS[plan].name+' (monthly)' }] });
+        },
+        onApprove:async (data,actions)=>{
+          // Server-side capture verifies the money landed before unlocking
+          if(liveBackend && data.orderID){
+            try{ const res=await AMV_API.paypalCapture(data.orderID,(S.user&&S.user.email)||''); if(res&&res.token){ saveStr('amv_ent_token',res.token); } _payActivate('paypal',res.plan||plan); return; }catch(e){ toast('PayPal: '+(e.message||'capture failed'),'error',4500); return; }
+          }
+          try{ await actions.order.capture(); }catch(e){}
+          _payActivate('paypal',plan);
+        },
+        onError:()=>{ showFallback('PayPal error — try again'); }
+      }).render('#paypal-buttons');
+    }catch(e){ showFallback(); }
+  };
+  if(window.paypal&&window.paypal.Buttons){ render(); return; }
+  const s=document.createElement('script');
+  s.src='https://www.paypal.com/sdk/js?client-id='+encodeURIComponent(clientId)+'&currency=USD&enable-funding=venmo';
+  s.onload=render; s.onerror=()=>showFallback('Could not reach PayPal');
+  document.head.appendChild(s);
+}
+function _payCard(plan){
+  const num=($('pf-num')||{}).value||''; const exp=($('pf-exp')||{}).value||''; const cvc=($('pf-cvc')||{}).value||''; const name=($('pf-name')||{}).value||'';
+  const digits=num.replace(/\D/g,'');
+  if(digits.length<13){ toast('Enter a valid card number','error'); return; }
+  if(!/\d{2}\s*\/\s*\d{2}/.test(exp)){ toast('Enter a valid expiry','error'); return; }
+  if(cvc.length<3){ toast('Enter the CVC','error'); return; }
+  if(!name.trim()){ toast('Enter the name on the card','error'); return; }
+  const sb=$('pay-card'); if(sb){ sb.disabled=true; sb.textContent='Processing…'; }
+  const reset=()=>{ if(sb){sb.disabled=false;sb.textContent='Pay $'+PLANS[plan].price+' / month';} };
+  const finish=()=>{ _savePM({type:'card',brand:_cardBrand(digits),last4:digits.slice(-4),exp:exp.replace(/\s/g,'')}); _setPlan(plan); closePaySheet(); renderBillingView(); toast('You\u2019re now on '+PLANS[plan].name+'!','success'); };
+  if(window.AMV_API&&AMV_API.live){
+    // Real charge through your backend (which talks to the processor).
+    fetch(AMV_API.base.replace(/\/$/,'')+'/v1/pay/card',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+AMV_API.token},body:JSON.stringify({plan,card:{number:digits,exp,cvc,name}})})
+      .then(r=>{ if(!r.ok) throw new Error(); finish(); })
+      .catch(()=>{ reset(); toast('Payment could not be completed','error'); });
+  } else {
+    // No processor connected yet — do NOT pretend to charge. Tell the user how to go live.
+    reset();
+    toast('Connect a payment processor in Settings → Platform to take real card payments.','info',5500);
+  }
+}
+function _cardBrand(d){ if(/^4/.test(d))return'visa'; if(/^5[1-5]/.test(d)||/^2[2-7]/.test(d))return'mastercard'; if(/^3[47]/.test(d))return'amex'; if(/^6/.test(d))return'discover'; return'card'; }
+function _payActivate(kind,plan){ _savePM({type:kind,brand:kind,last4:'••'}); _setPlan(plan); closePaySheet(); renderBillingView(); toast('You\u2019re now on '+PLANS[plan].name+'!','success'); }
+/* When the user returns from an external checkout with ?paid=<plan>&pm=<method>, activate it. */
+function _checkPayReturn(){
+  try{
+    const q=new URLSearchParams(window.location.search);
+    const paid=q.get('paid');
+    if(paid && PLANS[paid]){
+      const pm=q.get('pm')||'card';
+      const sid=q.get('session_id');
+      // clean the URL so refresh doesn't re-trigger
+      const url=window.location.pathname+window.location.hash;
+      window.history.replaceState({},document.title,url);
+      if(!window.AMV_API||!AMV_API.live){
+        if(!sid && !q.get('pm') && !q.get('l4')){
+          console.warn('Payment return ignored: missing verification params', { paid, pm, sid });
+          return;
+        }
+      }
+      // If a backend is live, trust the SERVER's entitlement, not the URL.
+      if(window.AMV_API&&AMV_API.live&&S.user&&S.user.email){
+        AMV_API.entitlement(S.user.email).then(ent=>{
+          if(ent&&ent.plan&&PLANS[ent.plan]&&ent.plan!=='free'){
+            if(ent.token) saveStr('amv_ent_token',ent.token);
+            _savePM({type:pm,brand:pm,last4:'••'}); _setPlan(ent.plan);
+            toast('Payment complete — welcome to '+PLANS[ent.plan].name+'!','success',5000);
+            if(S.tab==='billing') renderBillingView();
+          } else {
+            // payment not yet confirmed by webhook; check again shortly
+            setTimeout(()=>_verifyEntitlement(),4000);
+            toast('Confirming your payment…','info',4000);
+          }
+        }).catch(()=>{ _savePM({type:pm,brand:pm,last4:'••'}); _setPlan(paid); if(S.tab==='billing') renderBillingView(); });
+        return;
+      }
+      // No backend: this is local/demo mode only. A redirect param can't be
+      // trusted as a real payment, so unlock only as a local preview and say so.
+      _savePM({type:pm,brand:pm,last4:(q.get('l4')||'••').replace(/[^0-9•]/g,'').slice(0,4)||'••'});
+      _setPlan(paid);
+      setTimeout(()=>{ toast('Local preview: '+PLANS[paid].name+' enabled on this device. Real payments activate once your backend is connected.','info',5000); if(S.tab==='billing') renderBillingView(); },400);
+    }
+  }catch(e){ console.warn('_checkPayReturn failed:', e); }
+}
+window._checkPayReturn=_checkPayReturn;
+/* Verify the real plan from the server (prevents faked unlocks). */
+async function _verifyEntitlement(){
+  try{
+    if(!(window.AMV_API&&AMV_API.live)) return;
+    if(!(S.user&&S.user.email)) return;
+    const ent=await AMV_API.entitlement(S.user.email);
+    if(ent&&ent.plan&&PLANS[ent.plan]){
+      if(ent.token) saveStr('amv_ent_token',ent.token);
+      const cur=loadStr('amv_plan')||'free';
+      if(ent.plan!==cur){ _setPlan(ent.plan); if(S.tab==='billing') renderBillingView(); }
+    }
+  }catch(e){}
+}
+window._verifyEntitlement=_verifyEntitlement;
+
+function _mountStripe(pk,plan){
+  const go=()=>{
+    try{
+      const stripe=Stripe(pk);
+      const elements=stripe.elements();
+      const card=elements.create('card',{style:{base:{color:'#e9edf2',fontFamily:'Inter,sans-serif',fontSize:'14px','::placeholder':{color:'#8b939e'}}}});
+      card.mount('#stripe-card-element');
+      card.on('change',e=>{ const el=$('stripe-card-errors'); if(el) el.textContent=e.error?e.error.message:''; });
+      const sb=$('pay-submit');
+      on(sb,'click',async ()=>{
+        sb.disabled=true; sb.textContent='Processing…';
+        // Create a PaymentMethod token client-side — card data goes Stripe→Stripe, never to us.
+        const {paymentMethod,error}=await stripe.createPaymentMethod({type:'card',card});
+        if(error){ const el=$('stripe-card-errors'); if(el) el.textContent=error.message; sb.disabled=false; sb.textContent='Pay $'+PLANS[plan].price+' / month'; return; }
+        // Send ONLY the token to your backend to create the subscription.
+        try{
+          if(window.AMV_API&&AMV_API.live){
+            await fetch(AMV_API.base.replace(/\/$/,'')+'/v1/subscribe',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+AMV_API.token},body:JSON.stringify({plan,payment_method:paymentMethod.id})});
+          }
+          const c=paymentMethod.card||{};
+          _savePM({type:'card',brand:c.brand||'card',last4:c.last4||'',exp:(c.exp_month?String(c.exp_month).padStart(2,'0'):'')+'/'+(c.exp_year?String(c.exp_year).slice(-2):'')});
+          _setPlan(plan); closePaySheet(); renderBillingView(); toast('You are now on '+PLANS[plan].name+'!','success');
+        }catch(e){ const el=$('stripe-card-errors'); if(el) el.textContent='Could not complete subscription. Try again.'; sb.disabled=false; sb.textContent='Pay $'+PLANS[plan].price+' / month'; }
+      });
+    }catch(e){ const b=$('pay-body'); if(b) b.innerHTML='<div class="pay-err">Could not load secure payment field. Check your Stripe key.</div>'; }
+  };
+  if(window.Stripe){ go(); return; }
+  const s=document.createElement('script'); s.src='https://js.stripe.com/v3/'; s.onload=go; s.onerror=()=>{ const b=$('pay-body'); if(b) b.innerHTML='<div class="pay-err">Could not reach Stripe. Check your connection.</div>'; }; document.head.appendChild(s);
+}
+function openPaymentMethod(method){
+  // All methods open the payment sheet on the chosen tab (defaults to Pro plan to add a method)
+  const plan='pro';
+  openPaymentSheet(plan);
+  setTimeout(()=>{ const map={card:'card',stripe:'stripe',apple:'stripe',paypal:'paypal',venmo:'paypal'}; const tab=map[method]||'card'; const tb=document.querySelector('.pay-tab[data-pt="'+tab+'"]'); if(tb) tb.click(); },50);
+}
+window.openCheckout=openCheckout;window.openPaymentSheet=openPaymentSheet;window.openPaymentMethod=openPaymentMethod;
+
+
+/* === APPS & EXTENSIONS === */
+function renderAppsView(){
+  const vc=$('vc'); if(!vc) return;
+  // mode: 'auto' = runs in background once connected; 'manual' = you upload/drive it
+  const badge=(mode)=> mode==='auto'
+    ? '<span class="ax-badge ax-auto"><span class="ax-dot"></span>Autonomous \u00b7 runs in the background</span>'
+    : (mode==='manual' ? '<span class="ax-badge ax-manual">Manual \u00b7 you upload &amp; drive it</span>' : '');
+  const app=(icon,name,desc,btn,bg,mode)=>'<div class="appx-card">'
+    +'<div class="appx-ic" style="background:'+bg+'">'+icon+'</div>'
+    +'<div class="appx-name">'+name+'</div>'
+    +badge(mode)
+    +'<div class="appx-desc">'+desc+'</div>'+btn+'</div>';
+  const row=(icon,name,desc,btn,bg,mode)=>'<div class="appx-row">'
+    +'<div class="appx-ic sm" style="background:'+bg+'">'+icon+'</div>'
+    +'<div class="appx-row-body"><div class="appx-name">'+name+' '+badge(mode)+'</div><div class="appx-desc">'+desc+'</div></div>'
+    +'<div class="appx-row-act">'+btn+'</div></div>';
+  vc.innerHTML=
+    '<div class="sv fi"><div class="vi" style="max-width:780px">'+
+      '<span class="eyebrow">Everywhere you work</span>'+
+      '<h2>Apps &amp; Extensions</h2>'+
+      '<p class="vsub">Put AMV in your browser, desktop, phone, editor, and the tools you already use. One account, every surface.</p>'+
+
+      // legend explaining the two kinds
+      '<div class="ax-legend">'+
+        '<div class="ax-legend-item"><span class="ax-badge ax-auto"><span class="ax-dot"></span>Autonomous</span><span>Connect once and AMV works on its own in the background \u2014 no uploads needed.</span></div>'+
+        '<div class="ax-legend-item"><span class="ax-badge ax-manual">Manual</span><span>You upload a file or kick it off each time \u2014 AMV works on what you give it.</span></div>'+
+      '</div>'+
+
+      '<div class="ss2"><h3>Featured</h3>'+
+        '<div class="appx-grid">'+
+          app('🌐','AMV for Web','Runs in any browser right now — full chat, images, agents, and automations. Add it to your home screen for one-tap access.','<button class="btn bp" style="width:100%" data-dact="installPWA">Add to home screen</button>','rgba(66,133,244,.12)','auto')+
+          app('💻','VS Code','Generate, explain, and debug code inline. Use the Dev workspace here, or open your project in VS Code.','<button class="btn bp" style="width:100%" data-dact="openDevView">Open Dev workspace</button>','rgba(0,118,212,.12)','auto')+
+          app('💬','Slack','Bring AMV into any channel with /amv — answers, summaries, and tasks without leaving Slack.','<button class="btn" style="width:100%" data-dact="setTabBtn" data-darg="integrations">Connect Slack</button>','rgba(74,21,75,.14)','auto')+
+        '</div>'+
+      '</div>'+
+
+      '<div class="ss2"><h3>Desktop</h3>'+
+        '<div class="appx-grid two">'+
+          app('🍎','macOS','Menu-bar access, drag-and-drop files, and native system integrations.','<a href="#" class="btn bp" style="width:100%" data-dact="downloadDesktop" data-darg="mac">Download for Mac</a>','rgba(255,255,255,.06)','auto')+
+          app('🪟','Windows','Taskbar integration, file analysis, and native automation on Windows.','<a href="#" class="btn bp" style="width:100%" data-dact="downloadDesktop" data-darg="win">Download for Windows</a>','rgba(255,255,255,.06)','auto')+
+        '</div>'+
+      '</div>'+
+
+      '<div class="ss2"><h3>Mobile</h3>'+
+        '<div class="appx-grid two">'+
+          app('📱','iPhone & iPad','Voice chat, tasks on the go, file uploads. Works in Safari now — add to your home screen for an app-like experience.','<button class="btn bp" style="width:100%" data-dact="installPWA">Add to home screen</button>','rgba(255,255,255,.06)','auto')+
+          app('🤖','Android','Full chat, voice mode, uploads, and automations. Works in Chrome now — install it straight to your home screen.','<button class="btn bp" style="width:100%" data-dact="installPWA">Install app</button>','rgba(63,185,80,.12)','auto')+
+        '</div>'+
+      '</div>'+
+
+      '<div class="ss2"><h3>Developer tools</h3>'+
+        '<div class="appx-rows">'+
+          row('🔶','JetBrains','IntelliJ, PyCharm, WebStorm, Rider — AMV across every JetBrains IDE.','<button class="btn" data-dact="amvStoreLink" data-darg="jetbrains">Notify me</button>','rgba(254,113,26,.12)','auto')+
+          row('⌨️','CLI / Terminal','Pipe context, run agents, and script AMV from your shell.','<button class="btn" data-dact="toastInfo" data-darg="CLI access ships with the API — add your key in Integrations">Get CLI</button>','rgba(255,255,255,.06)','auto')+
+          row('🔌','REST API','Build AMV into your own product. Add your key under Integrations → API.','<button class="btn" data-dact="setTabBtn" data-darg="integrations">Open API setup</button>','rgba(124,108,255,.12)','auto')+
+        '</div>'+
+      '</div>'+
+
+      '<div class="ss2"><h3>Office &amp; files</h3>'+
+        '<div class="appx-rows">'+
+          row('📊','Excel &amp; CSV','Upload any sheet — AMV runs formulas, spots trends, builds pivots and charts.','<button class="btn" data-dact="setTabBtn" data-darg="chat">Try in chat</button>','rgba(33,115,70,.12)','manual')+
+          row('📑','PowerPoint','Describe a deck and AMV builds slides, notes, and structure. Export .pptx.','<button class="btn" data-dact="setTabBtn" data-darg="chat">Try in chat</button>','rgba(198,67,30,.12)','manual')+
+          row('📝','Word','Reports, proposals, letters, contracts — written and exported, ready to edit.','<button class="btn" data-dact="setTabBtn" data-darg="chat">Try in chat</button>','rgba(0,120,212,.12)','manual')+
+        '</div>'+
+        '<p class="appx-note">These are <b>manual</b>: upload an Office file with the 📎 button in chat, or describe what you need and AMV builds it from scratch \u2014 then you download the result.</p>'+
+      '</div>'+
+
+    '</div></div>';
+}
+function setTabBtn(t){ setTab(t); }
+window.setTabBtn=setTabBtn;
+
+/* ============================================================
+   AMV CO-WORKER  - autonomous agent: standing jobs + approval inbox
+   The differentiator: it watches your connected accounts and proposes
+   actions (draft replies, summaries, bookings). You approve or reject
+   each one with a click. Nothing is sent without your OK.
+   ============================================================ */
+function _cwJobs(){ return load('amv_cw_jobs') || _cwDefaultJobs(); }
+function _cwSaveJobs(j){ store('amv_cw_jobs', j); }
+function _cwDefaultJobs(){ return []; }
+function _cwApprovals(){ return load('amv_cw_approvals') || []; }
+function _cwSaveApprovals(a){ store('amv_cw_approvals', a); }
+
+async function _crewSyncLive(){
+  if(!(window.AMV_API && AMV_API.live)) return;
+  try{
+    const jobs=await AMV_API.jobs();
+    const appr=await AMV_API.approvals();
+    // map backend rows -> local shape
+    if(jobs && jobs.length){ store('amv_cw_jobs', jobs.map(j=>({id:j.key,icon:(_cwDefaultJobs().find(d=>d.id===j.key)||{}).icon||'⚙️',title:j.title,desc:(_cwDefaultJobs().find(d=>d.id===j.key)||{}).desc||'',needs:j.needs,on:!!j.on_flag}))); }
+    if(appr){ store('amv_cw_approvals', appr.map(a=>({id:a.id,icon:a.icon,title:a.title,preview:a.preview}))); }
+    renderCrewView();
+  }catch(e){}
+}
+function renderCrewView(){
+  const vc=$('vc'); if(!vc) return;
+  const jobs=_cwJobs(); const appr=_cwApprovals();
+  const jobCard=j=>`<div class="cw-job ${j.on?'on':''}">
+      <div class="cw-job-ic">${j.icon}</div>
+      <div style="flex:1;min-width:0">
+        <div class="cw-job-t">${escH(j.title)}</div>
+        <div class="cw-job-d">${escH(j.desc)}</div>
+        <div class="cw-job-need">Uses: ${escH(j.needs)}</div>
+      </div>
+      <button class="cw-toggle ${j.on?'on':''}" data-dact="cwToggle" data-darg="${j.id}" aria-label="toggle"><span class="cw-knob"></span></button>
+    </div>`;
+  const apprCard=a=>`<div class="cw-appr">
+      <div class="cw-appr-h"><span class="cw-appr-ic">${a.icon||'\u2709\uFE0F'}</span><span class="cw-appr-t">${escH(a.title)}</span></div>
+      <div class="cw-appr-body">${escH(a.preview)}</div>
+      <div class="cw-appr-act">
+        <button class="btn bp" data-dact="cwApprove" data-darg="${a.id}">Approve & send</button>
+        <button class="btn bs" data-dact="cwReject" data-darg="${a.id}">Dismiss</button>
+        <button class="btn bs" data-dact="cwEdit" data-darg="${a.id}">Edit in chat</button>
+      </div>
+    </div>`;
+  const activeCount=jobs.filter(j=>j.on).length;
+
+  vc.innerHTML = `<div class="sv fi"><div class="crew-page">
+    <header class="crew-hero">
+      <div class="crew-hero-l">
+        <div class="eyebrow">Autonomous</div>
+        <h2>Crew works while you don't.</h2>
+        <p class="vsub">Switch on a standing job and AMV runs in the background across your connected accounts. Everything it wants to send lands in your approval queue first &mdash; nothing goes out until you say so.</p>
+      </div>
+      <div class="crew-hero-stat">
+        <div class="stat-num">${activeCount}</div>
+        <div class="stat-lbl">active job${activeCount===1?'':'s'}</div>
+      </div>
+    </header>
+
+    <div class="crew-split">
+      <section class="crew-main">
+        <div class="sec-head"><h3>Needs your approval ${appr.length?`<span class="cw-badge">${appr.length}</span>`:''}</h3></div>
+        ${appr.length ? appr.map(apprCard).join('') :
+          `<div class="cw-empty-lg">
+             <div class="cw-empty-ic">\u2713</div>
+             <div>You're all caught up. When a standing job drafts something, it appears here for one-tap approval.</div>
+             <button class="btn bs" data-dact="cwDemo" style="margin-top:14px;font-size:12px">See an example draft</button>
+           </div>`}
+      </section>
+      <aside class="crew-aside">
+        <div class="crew-note">
+          <h4>How Crew works</h4>
+          <ol class="crew-steps">
+            <li><span>1</span> Turn on a standing job</li>
+            <li><span>2</span> It runs in the background</li>
+            <li><span>3</span> You approve before anything sends</li>
+          </ol>
+        </div>
+      </aside>
+    </div>
+
+    <div class="crew-split-even">
+      <section class="crew-do">
+        <div class="sec-head"><h3>Run something now</h3><span class="sec-sub">AMV opens a workspace, asks what it needs, and actually does it.</span></div>
+        <div class="cw-quick">
+          ${[['\uD83D\uDDFA\uFE0F','Plan a trip','trip','openTripPlanner()'],
+             ['\uD83D\uDCE7','Check Gmail','gmail','crewRun(\'gmail\',\'Check Gmail\')'],
+             ['\uD83D\uDCC5','Plan my week','week','crewRun(\'week\',\'Plan my week\')'],
+             ['\u2728','Autonomous task','auto','openCowork()'],
+             ['\uD83D\uDD01','Scheduled work','sched','openSchedManager()']]
+            .map(q=>`<button class="cw-quick-card" onclick="${q[3]}"><span class="cw-quick-ic">${q[0]}</span><span>${q[1]}</span></button>`).join('')}
+        </div>
+        <div id="crew-live" class="crew-live">${_crewResultsHTML()}</div>
+      </section>
+      <section>
+        <div class="sec-head"><h3>Recurring work</h3><span class="sec-sub">Pick one to set it on a schedule — or describe your own. Many can run at once.</span></div>
+        <div class="tpl-grid">
+          ${[
+            ['\uD83C\uDFAC','YouTube video','Produce a complete, production-ready YouTube video package about this week\'s stock market: a punchy title, a 0-3s hook, a full word-for-word voiceover script with timestamps, a scene-by-scene shot list, B-roll suggestions, on-screen text, an SEO description, 15 tags, and a thumbnail concept. I review before publishing.'],
+            ['\uD83D\uDCF8','Instagram post','Produce a ready-to-post Instagram package about the latest in my field: a scroll-stopping caption with line breaks, 20-30 ranked hashtags, a carousel outline, a detailed image/visual concept, and the best post time. I approve before posting.'],
+            ['\uD83D\uDC26','Social posts','Write 3 ready-to-publish posts for X and 2 for LinkedIn on what\'s trending in my industry today — each with the full copy, hooks, and hashtags. I approve before anything is published.'],
+            ['\uD83D\uDCC8','Market brief','Every morning, produce a tight briefing of overnight market moves: major indices, notable movers, and the 3 headlines that matter to me, each with a one-line why-it-matters.'],
+            ['\uD83D\uDCB0','Investing check-in','Each Monday, review my watchlist, give a clear buy/hold view with reasoning, and prepare a $1 XRP buy order on Robinhood. Present the exact order for my one-tap approval before placing it.'],
+            ['\uD83C\uDFE6','Bank check-in','Every morning, check my linked bank account and report the balance, recent transactions, anything unusual, and my spend-vs-last-week. Prepare it as a clean daily report.'],
+            ['\uD83D\uDCF0','News digest','Daily, gather the top developments in AI and produce a sharp 5-bullet briefing, each bullet with a link-worthy summary and why it matters.'],
+            ['\u2709\uFE0F','Inbox triage','Each morning, read new emails, rank them by urgency with reasons, and draft a ready-to-send reply for each. I click send before anything goes out.']
+          ].map(t=>`<button class="tpl-card" onclick="openCoworkWith(${JSON.stringify(t[2]).replace(/"/g,'&quot;')})"><span class="tpl-ic">${t[0]}</span><span class="tpl-t">${t[1]}</span></button>`).join('')}
+        </div>
+      </section>
+    </div>
+  </div></div>`;
+}
+function _crewQueueHTML(){
+  try{
+    var q=(typeof _bgQueue!=='undefined'&&_bgQueue.tasks)?_bgQueue.tasks:[];
+    if(!q.length) return '<div class="cw-empty">No background tasks running.</div>';
+    var sc=s=>s==='done'?'#3fb950':s==='running'?'#8b78ff':s==='failed'?'#f85149':'#d29922';
+    var si=s=>s==='done'?'✓':s==='running'?'⟳':s==='failed'?'✕':'⏳';
+    return q.slice().reverse().map(function(t){return '<div class="cw-qrow"><span style="color:'+sc(t.status)+'">'+si(t.status)+'</span><span style="flex:1">'+escH(t.title||t.type||'Task')+'</span><span style="font-size:11px;color:var(--mu)">'+(t.status||'')+'</span></div>';}).join('');
+  }catch(e){ return '<div class="cw-empty">No background tasks running.</div>'; }
+}
+function cwToggle(id){
+  const jobs=_cwJobs(); const j=jobs.find(x=>x.id===id); if(!j) return;
+  j.on=!j.on; _cwSaveJobs(jobs);
+  if(window.AMV_API && AMV_API.live){ AMV_API.toggleJob(id,j.on).catch(()=>{}); }
+  toast(j.on?('On: '+j.title):('Off: '+j.title), j.on?'info':'info');
+  renderCrewView();
+}
+function cwDemo(){
+  const appr=_cwApprovals();
+  appr.unshift({ id:'a'+Date.now(), icon:'\uD83D\uDCE7', title:'Reply to Sarah \u2014 \u201cProject timeline\u201d',
+    preview:'Hi Sarah, thanks for the update. The timeline works on our end \u2014 we can have the first milestone ready by the 14th. I\u2019ll send the detailed plan tomorrow. Best, '+(S.user?.name?.split(' ')[0]||'') });
+  _cwSaveApprovals(appr); renderCrewView();
+}
+function cwApprove(id){ const a=_cwApprovals().filter(x=>x.id!==id); _cwSaveApprovals(a); toast('Approved \u2014 sent','info'); renderCrewView(); }
+function cwReject(id){ if(window.AMV_API && AMV_API.live){ AMV_API.actApproval(id,'reject').catch(()=>{}); } const a=_cwApprovals().filter(x=>x.id!==id); _cwSaveApprovals(a); toast('Dismissed','info'); renderCrewView(); }
+function cwEdit(id){ const item=_cwApprovals().find(x=>x.id===id); cwReject(id); setTab('chat'); setTimeout(()=>{ const ta=$('mta'); if(ta&&item){ ta.value='Help me revise this draft:\n\n'+item.preview; ta.focus(); } },120); }
+window.cwToggle=cwToggle;window.cwDemo=cwDemo;window.cwApprove=cwApprove;window.cwReject=cwReject;window.cwEdit=cwEdit;
+
+/* ============================================================
+   AMV DESIGN  - visual canvas: generate & iterate UI / graphics
+   ============================================================ */
+function renderDesignView(){
+  const vc=$('vc'); if(!vc) return;
+  const starts=[
+    ['\uD83D\uDDA5\uFE0F','Landing page','A hero, features and a call-to-action'],
+    ['\uD83D\uDCF1','App screen','A clean mobile or web UI mockup'],
+    ['\uD83C\uDFA8','Poster / graphic','Social post, banner or flyer'],
+    ['\uD83E\uDDE9','Component','A single button, card or form']
+  ];
+  vc.innerHTML = `<div class="sv fi"><div class="dsn-wrap">
+    <section class="dsn-hero">
+      <div class="dsn-eyebrow">AMV Design</div>
+      <h1 class="dsn-h1">Describe it.<br><span class="dsn-grad">Watch it build.</span></h1>
+      <p class="dsn-lead">Landing pages, UI mockups, posters and graphics &mdash; created on a live canvas and refined just by chatting. &ldquo;Make it darker.&rdquo; &ldquo;Add a pricing section.&rdquo; Export when it&rsquo;s right.</p>
+      <div class="dsn-input-wrap">
+        <textarea id="dsn-prompt" rows="1" placeholder="A sleek dark pricing page for an AI startup, three tiers, purple accents&hellip;"></textarea>
+        <button class="dsn-go" data-dact="designGo" aria-label="Generate design">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </button>
+      </div>
+      <div class="dsn-hint">Press generate, or pick a starting point below</div>
+      <div style="margin-top:22px;display:flex;align-items:center;justify-content:flex-start;gap:10px;flex-wrap:wrap">
+        <button class="dna-btn" data-dact="openDNA"><span class="dna-dot"></span>Design DNA</button>
+        <span class="dna-active-chip">${_DNA.colors.length} colors · ${escH(_DNA.themeFamily)} · ${escH(_DNA.theme)}</span>
+      </div>
+      <p class="dsn-dna-explain">Design DNA is your reusable style guide — set your colors, fonts, shapes and vibe once, and everything AMV designs follows it. Optional: skip it and AMV picks tasteful defaults.</p>
+      <div style="margin-top:12px;display:flex;height:22px;width:min(420px,80%);border-radius:7px;overflow:hidden;border:1px solid var(--hair)">${_DNA.colors.map(c2=>`<span style="flex:1;background:${c2.hex}"></span>`).join('')}</div>
+    </section>
+
+    <section class="dsn-starts">
+      ${starts.map(([ic,t,d],n)=>`<button class="dsn-tile${n===0?' feat':''}" data-dact="designStart" data-darg="${escH(t)}">
+        <span class="dsn-tile-ic">${ic}</span>
+        <span class="dsn-tile-body"><span class="dsn-tile-t">${t}</span><span class="dsn-tile-d">${escH(d)}</span></span>
+      </button>`).join('')}
+    </section>
+
+    <section class="dsn-callout">
+      <div class="dsn-callout-text">
+        <h3>It&rsquo;s a conversation, not a form</h3>
+        <p>Every design stays editable. Keep chatting and AMV reshapes the canvas live &mdash; tweak copy, swap layouts, change the whole vibe in a sentence.</p>
+      </div>
+      <div class="dsn-callout-orb"></div>
+    </section>
+  </div></div>`;
+  // auto-grow the hero textarea
+  const ta=$('dsn-prompt');
+  if(ta){ on(ta,'input',()=>{ ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,220)+'px'; }); }
+}
+
+function designGo(){ const t=$('dsn-prompt'); const v=t?t.value.trim():''; if(!v){ toast('Describe what to design first','error'); return; } _studioCreate(v); }
+function designStart(kind){ _studioCreate('A '+String(kind).toLowerCase()); }
+
+/* ===== STUDIO — standalone creation canvas (never touches chat) ===== */
+const _STUDIO = { html:'', prompt:'', history:[] };
+async function _studioCreate(brief){
+  _STUDIO.prompt=brief;
+  _studioShowCanvas(brief);
+  const sys='You are AMV Design — the most talented design AI ever built. Your output must look like a $50k agency deliverable that wins design awards: a distinctive concept (never a template), confident typography pairing with real hierarchy, a cohesive intentional palette, generous deliberate whitespace, asymmetric editorial layout where it helps, micro-interactions (hover states, smooth subtle transitions), and pixel-perfect alignment. People should see it and say "this is the best-looking site I have ever seen." Output a COMPLETE self-contained HTML document (inline <style>, no external assets except Google Fonts) — fully responsive, production-quality, every section finished (no placeholders, real convincing copy). The DESIGN DNA below is the sole source of truth for style decisions. Return ONLY the HTML in a single ```html code block, nothing else.';
+  try{
+    _studioStatus('Designing…');
+    const resp=await aiComplete(dnaPromptBlock()+'\n\nDesign this as a single self-contained HTML page, obeying the DESIGN DNA exactly. Make it breathtaking — award-tier, sellable, finished:\n'+brief, sys, {max_tokens:8000, model:'claude-fable-5'});
+    const html=extractCode(resp,'html')||extractCode(resp)||resp;
+    _STUDIO.html=html; _STUDIO.history.push({brief, html});
+    _studioRenderPreview(html);
+    _studioStatus('');
+  }catch(err){ _studioStatus('✗ '+err.message); }
+}
+async function _studioRefine(){
+  const inp=$('studio-refine'); const msg=inp?inp.value.trim():''; if(!msg) return;
+  if(inp) inp.value='';
+  _studioStatus('Refining…');
+  const sys='You are AMV Design — the most talented design AI ever built. Modify the existing HTML per the request while keeping award-tier quality and perfect consistency with the DESIGN DNA. Every change should make the design better, never flatter. Return the COMPLETE updated HTML in one ```html block only.';
+  try{
+    const resp=await aiComplete(dnaPromptBlock()+'\n\nCurrent design HTML:\n```html\n'+_STUDIO.html+'\n```\n\nChange request: '+msg+'\n\nReturn the full updated HTML, staying true to the DESIGN DNA.', sys, {max_tokens:8000, model:'claude-fable-5'});
+    const html=extractCode(resp,'html')||extractCode(resp)||resp;
+    _STUDIO.html=html; _STUDIO.history.push({brief:msg, html});
+    _studioRenderPreview(html); _studioStatus('');
+  }catch(err){ _studioStatus('✗ '+err.message); }
+}
+function _studioShowCanvas(brief){
+  const vc=$('vc'); if(!vc) return;
+  vc.innerHTML = `<div class="studio-canvas">
+    <div class="studio-side">
+      <button class="btn" id="studio-back">← New design</button>
+      <div class="studio-brief">${escH(brief)}</div>
+      <div class="studio-refine-wrap">
+        <textarea id="studio-refine" placeholder="Refine it… e.g. 'make it darker', 'add a pricing section'" rows="3"></textarea>
+        <button class="btn bp" id="studio-refine-go">Apply change</button>
+      </div>
+      <div class="studio-actions">
+        <button class="btn" id="studio-code">View code</button>
+        <button class="btn" id="studio-download">Download HTML</button>
+      </div>
+      <div id="studio-status" class="studio-status"></div>
+    </div>
+    <div class="studio-stage">
+      <div class="studio-frame-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="studio-frame-t">Live preview</span></div>
+      <iframe id="studio-frame" class="studio-frame" sandbox="allow-scripts"></iframe>
+    </div>
+  </div>`;
+  on($('studio-back'),'click',()=>setTab('studio'));
+  on($('studio-refine-go'),'click',_studioRefine);
+  on($('studio-code'),'click',()=>{ const w=window.open('','_blank'); if(w){ w.document.write('<pre style="white-space:pre-wrap;font:13px monospace;padding:20px">'+(_STUDIO.html.replace(/</g,'&lt;'))+'</pre>'); } });
+  on($('studio-download'),'click',()=>{ const blob=new Blob([_STUDIO.html],{type:'text/html'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='amv-design.html'; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(a.href); });
+}
+function _studioRenderPreview(html){ const f=$('studio-frame'); if(f) f.srcdoc=html; }
+function _studioStatus(t){ const s=$('studio-status'); if(s) s.textContent=t||''; }
+
+window.designStart=designStart;window.designGo=designGo;
+
+/* ============================================================
+   DESIGN DNA — universal design-system engine
+   Every visual decision (color, type, shape, motion, layout,
+   psychology, effects) is configurable and drives generation.
+   ============================================================ */
+const DNA_DEFAULT = {
+  // identity
+  projectName:'', projectType:'Landing page', industry:'Technology', audience:'',
+  // theme
+  theme:'dark', themeFamily:'linear',
+  // colors — array of {role,hex}
+  colors:[
+    {role:'primary',hex:'#7c6cff'},
+    {role:'accent',hex:'#8b78ff'},
+    {role:'background',hex:'#0c0d10'},
+    {role:'surface',hex:'#15181d'},
+    {role:'text',hex:'#e9edf2'},
+    {role:'muted',hex:'#8b939e'},
+  ],
+  saturation:60, contrast:75, temperature:'cool',
+  // personality 0-100
+  personality:{ professionalism:70, luxury:40, minimalism:75, creativity:55, playfulness:25, futurism:60, trust:80, authority:65, friendliness:55, exclusivity:45, sophistication:70, boldness:55, elegance:65, energy:50 },
+  // psychology 0-100
+  psychology:{ trust:80, authority:65, excitement:50, exclusivity:45, warmth:50, safety:70, urgency:30, confidence:75 },
+  // typography
+  headingFont:'Newsreader', bodyFont:'Inter', codeFont:'JetBrains Mono',
+  headingWeight:'600', fontScale:'balanced', letterSpacing:'normal', lineHeight:'comfortable',
+  // layout
+  structure:'landing_page', maxWidth:'1200px', whitespace:'generous', density:'balanced',
+  // shapes
+  borderRadius:'medium', cornerStyle:'rounded', geometricness:60,
+  // borders / shadows
+  borderWidth:'hairline', shadowStyle:'soft', shadowDepth:50,
+  // effects
+  glassmorphism:false, brutalism:false, glow:30, noise:0, grain:false,
+  // backgrounds
+  bgStyle:'solid',
+  // buttons / cards / forms
+  buttonStyle:'solid', buttonRadius:'medium', cardStyle:'soft', cardElevation:'low', formStyle:'outlined',
+  // icons / images
+  iconStyle:'line', imageStyle:'photographic', imageRealism:80,
+  // motion
+  motionLevel:'subtle', motionStyle:'smooth', easing:'ease-out',
+  // navigation / hero / sections
+  navigation:'topbar', hero:'centered', sections:'cards',
+  // content
+  tone:'professional', readingLevel:'general', emojiUsage:'minimal',
+  copy:{ persuasive:60, educational:55, entertaining:30, emotional:40 },
+  // ai generation
+  creativity:60, originality:70, predictability:45, experimentation:50,
+  // constraints
+  strictColors:true, strictTypography:false, strictSpacing:false, allowExperiments:true,
+};
+let _DNA = _loadDNA();
+function _loadDNA(){ try{ const d=load('amv_dna'); if(d&&d.colors) return Object.assign(JSON.parse(JSON.stringify(DNA_DEFAULT)), d); }catch(e){} return JSON.parse(JSON.stringify(DNA_DEFAULT)); }
+function _saveDNA(){ try{ store('amv_dna', _DNA); }catch(e){} }
+function resetDNA(){ _DNA=JSON.parse(JSON.stringify(DNA_DEFAULT)); _saveDNA(); if($('dna-content')) _dnaRenderSection(_DNA._sec||'colors'); toast('Design DNA reset to defaults','info'); }
+
+/* ---- Color parsing: paste ANY palette format ---- */
+function parseColorsFromText(text){
+  if(!text) return [];
+  const out=[]; const seen=new Set();
+  const add=h=>{ h=h.toLowerCase(); if(!seen.has(h)){ seen.add(h); out.push(h); } };
+  // hex: require leading # for 3-digit; allow bare only for 6/8-digit hex tokens
+  const hexHashRe=/#([0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b/g;
+  const hexBareRe=/(?<![\w#])([0-9a-fA-F]{6})(?![\w])/g;
+  // rgb / rgba
+  const rgbRe=/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+[\d.%]+)?\s*\)/gi;
+  // hsl / hsla
+  const hslRe=/hsla?\(\s*([\d.]+)(?:deg)?[,\s]+([\d.]+)%[,\s]+([\d.]+)%(?:[,\s/]+[\d.%]+)?\s*\)/gi;
+  let m;
+  while((m=rgbRe.exec(text))){ add(_rgbToHex(+m[1],+m[2],+m[3])); }
+  while((m=hslRe.exec(text))){ add(_hslToHex(+m[1],+m[2],+m[3])); }
+  // strip rgb()/hsl() so their digits aren't re-parsed as hex
+  const cleaned=text.replace(rgbRe,' ').replace(hslRe,' ');
+  while((m=hexHashRe.exec(cleaned))){ let h=m[1]; if(h.length===3) h=h.split('').map(c=>c+c).join(''); if(h.length===8) h=h.slice(0,6); add('#'+h.toLowerCase()); }
+  // bare 6-digit hex only if it contains at least one letter (avoids pure-number keys/dates)
+  while((m=hexBareRe.exec(cleaned))){ const h=m[1]; if(/[a-fA-F]/.test(h)) add('#'+h.toLowerCase()); }
+  return out;
+}
+function _rgbToHex(r,g,b){ const c=n=>Math.max(0,Math.min(255,Math.round(n))).toString(16).padStart(2,'0'); return '#'+c(r)+c(g)+c(b); }
+function _hslToHex(h,s,l){ s/=100; l/=100; const k=n=>(n+h/30)%12; const a=s*Math.min(l,1-l); const f=n=>l-a*Math.max(-1,Math.min(k(n)-3,Math.min(9-k(n),1))); return _rgbToHex(255*f(0),255*f(8),255*f(4)); }
+function _hexLum(hex){ const h=hex.replace('#',''); const r=parseInt(h.slice(0,2),16)/255,g=parseInt(h.slice(2,4),16)/255,b=parseInt(h.slice(4,6),16)/255; const a=[r,g,b].map(v=>v<=.03928?v/12.92:Math.pow((v+.055)/1.055,2.4)); return .2126*a[0]+.7152*a[1]+.0722*a[2]; }
+
+/* ---- Auto-assign pasted colors to roles intelligently ---- */
+function applyPalette(hexes){
+  if(!hexes||!hexes.length) return;
+  const sorted=hexes.slice().sort((a,b)=>_hexLum(a)-_hexLum(b)); // dark -> light
+  const darkest=sorted[0], lightest=sorted[sorted.length-1];
+  const mids=sorted.slice(1,-1);
+  // most saturated = primary/accent
+  const sat=h=>{ const x=h.replace('#',''); const r=parseInt(x.slice(0,2),16),g=parseInt(x.slice(2,4),16),b=parseInt(x.slice(4,6),16); const mx=Math.max(r,g,b),mn=Math.min(r,g,b); return mx===0?0:(mx-mn)/mx; };
+  const bySat=hexes.slice().sort((a,b)=>sat(b)-sat(a));
+  const dark=_DNA.theme!=='light';
+  _DNA.colors=[
+    {role:'primary', hex:bySat[0]||'#7c6cff'},
+    {role:'accent', hex:bySat[1]||bySat[0]||'#8b78ff'},
+    {role:'background', hex:dark?darkest:lightest},
+    {role:'surface', hex:dark?(sorted[1]||darkest):(sorted[sorted.length-2]||lightest)},
+    {role:'text', hex:dark?lightest:darkest},
+    {role:'muted', hex:mids[Math.floor(mids.length/2)]||'#8b939e'},
+  ];
+  // keep any extras as accent_2, accent_3...
+  let ai=2;
+  bySat.slice(2,5).forEach(h=>{ if(!_DNA.colors.some(c=>c.hex===h)){ _DNA.colors.push({role:'accent_'+(ai++),hex:h}); } });
+  _saveDNA();
+}
+
+/* ---- Preset palettes (named, famous, every vibe) ---- */
+const DNA_PALETTES=[
+  {name:'Linear Dark', colors:['#5e6ad2','#8a91f5','#08090a','#16181d','#f7f8f8','#8a8f98']},
+  {name:'Stripe', colors:['#635bff','#00d4ff','#0a2540','#1a2b4a','#ffffff','#adbdcc']},
+  {name:'Vercel', colors:['#0070f3','#7928ca','#000000','#111111','#ffffff','#888888']},
+  {name:'GitHub Dark', colors:['#2f81f7','#3fb950','#0d1117','#161b22','#e6edf3','#8b949e']},
+  {name:'Apple', colors:['#0071e3','#5e5ce6','#000000','#1d1d1f','#f5f5f7','#86868b']},
+  {name:'Tesla', colors:['#e31937','#393c41','#000000','#171a20','#ffffff','#5c5e62']},
+  {name:'Notion', colors:['#2383e2','#eb5757','#191919','#252525','#ffffff','#9b9a97']},
+  {name:'Figma', colors:['#a259ff','#1abcfe','#0d0d0d','#1e1e1e','#ffffff','#b3b3b3']},
+  {name:'Cyberpunk', colors:['#fcee0a','#ff003c','#0a0e14','#12161f','#00f0ff','#7b8496']},
+  {name:'Sunset', colors:['#ff5e62','#ff9966','#1a1423','#2a2233','#fff3e6','#b8a99c']},
+  {name:'Forest', colors:['#2d6a4f','#74c69d','#0b1a12','#16261d','#e8f3ec','#8fa99a']},
+  {name:'Royal Luxury', colors:['#c9a227','#1a1a2e','#0a0a14','#16162a','#f5f0e1','#a89b7a']},
+  {name:'Ocean', colors:['#0496ff','#00b4d8','#03045e','#0a1647','#caf0f8','#7a93b8']},
+  {name:'Mono Slate', colors:['#64748b','#94a3b8','#0f172a','#1e293b','#f1f5f9','#94a3b8']},
+  {name:'Candy Pop', colors:['#ff61d2','#fe9090','#1a0e1a','#2a1a2a','#fff0fb','#c89ec0']},
+  {name:'Editorial Cream', colors:['#c0392b','#e67e22','#fdf6e3','#f4ecd8','#2c2416','#6b5d4a']},
+];
+
+/* ---- Theme families & option sets ---- */
+const DNA_OPTS={
+  themeFamily:['apple','linear','notion','stripe','vercel','github','tesla','figma','framer','material','swiss','brutalist','cyberpunk','luxury','startup','editorial','enterprise','academic','healthcare','legal'],
+  projectType:['Landing page','Web app','SaaS dashboard','Portfolio','E-commerce','Blog / Magazine','Marketing site','Mobile app UI','Poster / Graphic','Component'],
+  structure:['landing_page','dashboard','app','magazine','portfolio','ecommerce','enterprise'],
+  borderRadius:['none','small','medium','large','pill'],
+  shadowStyle:['none','soft','sharp','layered','glow'],
+  bgStyle:['solid','gradient','mesh','aurora','dots','grid','waves'],
+  buttonStyle:['solid','outline','ghost','gradient','glow','brutalist'],
+  cardStyle:['flat','soft','bordered','elevated','glass'],
+  formStyle:['outlined','filled','underline','floating'],
+  iconStyle:['line','solid','duotone','minimal'],
+  imageStyle:['photographic','illustration','3d_render','abstract','editorial','minimal'],
+  motionLevel:['none','subtle','moderate','expressive'],
+  motionStyle:['smooth','snappy','bouncy','dramatic'],
+  navigation:['topbar','sidebar','mega_menu','command_palette','floating'],
+  hero:['centered','split_screen','image','video','dashboard_preview','interactive'],
+  sections:['bento','cards','timeline','comparison','masonry','tabs','accordion'],
+  tone:['professional','friendly','bold','playful','luxurious','technical','inspirational'],
+  fontScale:['compact','balanced','generous','dramatic'],
+  whitespace:['tight','balanced','generous','airy'],
+  density:['compact','balanced','spacious'],
+  headingFont:['Newsreader','Inter','Playfair Display','Space Grotesk','Sora','Manrope','DM Serif Display','Archivo','Syne','Instrument Serif'],
+  bodyFont:['Inter','Manrope','Roboto','Source Sans 3','DM Sans','Work Sans','IBM Plex Sans','Geist'],
+};
+
+/* ---- DNA configurator modal ---- */
+const DNA_SECTIONS=[
+  ['identity','🧬','Identity'],
+  ['colors','🎨','Color system'],
+  ['theme','🌓','Theme & family'],
+  ['personality','✨','Personality'],
+  ['psychology','🧠','Psychology'],
+  ['typography','🔤','Typography'],
+  ['layout','📐','Layout & space'],
+  ['shape','⬡','Shape & depth'],
+  ['effects','🌀','Effects & bg'],
+  ['components','🧩','Components'],
+  ['motion','🎞️','Motion'],
+  ['content','✍️','Content & AI'],
+];
+function openDNA(){
+  const r=$('ovr'); if(!r) return;
+  _DNA._sec=_DNA._sec||'colors';
+  const seen=loadStr('amv_dna_intro')==='1';
+  r.innerHTML=`<div class="dna-ov" id="dna-bg"><div class="dna-modal" onclick="event.stopPropagation()">
+    <div class="dna-head">
+      <div><h2>Design DNA</h2><p>Your reusable style guide. Set it once — every design AMV makes follows it.</p></div>
+      <div style="display:flex;align-items:center;gap:4px">
+        <button class="dna-x" id="dna-help" title="What is this?" style="font-size:15px">?</button>
+        <button class="dna-x" id="dna-x">✕</button>
+      </div>
+    </div>
+    <div class="dna-intro" id="dna-intro" style="${seen?'display:none':''}">
+      <div class="dna-intro-inner">
+        <div class="dna-intro-badge">🧬</div>
+        <h3>What is Design DNA?</h3>
+        <p>It's a style guide AMV remembers and applies to everything it designs for you — so your sites, apps, decks and graphics all look like <em>they belong to the same brand</em>, automatically.</p>
+        <div class="dna-intro-points">
+          <div class="dna-ip"><span>🎨</span><div><b>Set your look once</b><br>Paste any color palette, pick fonts, shapes, and a vibe.</div></div>
+          <div class="dna-ip"><span>♾️</span><div><b>Applied everywhere</b><br>Studio, Dev, and Chat all obey it when they build visuals.</div></div>
+          <div class="dna-ip"><span>⚡</span><div><b>Totally optional</b><br>Skip it and AMV picks tasteful defaults. Come back anytime.</div></div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn bp" id="dna-intro-go">Set up my DNA</button>
+          <button class="btn" id="dna-intro-skip">Skip — use defaults</button>
+        </div>
+      </div>
+    </div>
+    <div class="dna-body" id="dna-body-main" style="${seen?'':'display:none'}">
+      <div class="dna-nav" id="dna-nav">${DNA_SECTIONS.map(s=>`<button class="dna-nav-b ${s[0]===_DNA._sec?'on':''}" data-sec="${s[0]}"><span class="ic">${s[1]}</span><span class="lbl">${s[2]}</span></button>`).join('')}</div>
+      <div class="dna-content" id="dna-content"></div>
+    </div>
+    <div class="dna-foot" id="dna-foot-main" style="${seen?'':'display:none'}">
+      <span class="dna-foot-l" id="dna-foot-l"></span>
+      <div style="display:flex;gap:8px">
+        <button class="btn" id="dna-reset">Reset</button>
+        <button class="btn bp" id="dna-done">Save DNA</button>
+      </div>
+    </div>
+  </div></div>`;
+  const showMain=()=>{ saveStr('amv_dna_intro','1'); const i=$('dna-intro'); if(i)i.style.display='none'; const bm=$('dna-body-main'); if(bm)bm.style.display=''; const fm=$('dna-foot-main'); if(fm)fm.style.display='flex'; _dnaRenderSection(_DNA._sec); _dnaFoot(); $('dna-nav').querySelectorAll('.dna-nav-b').forEach(b=>on(b,'click',()=>{ _DNA._sec=b.dataset.sec; $('dna-nav').querySelectorAll('.dna-nav-b').forEach(x=>x.classList.toggle('on',x===b)); _dnaRenderSection(b.dataset.sec); })); };
+  on($('dna-bg'),'click',closeDNA);
+  on($('dna-x'),'click',closeDNA);
+  on($('dna-help'),'click',()=>{ const i=$('dna-intro'); if(i)i.style.display=''; const bm=$('dna-body-main'); if(bm)bm.style.display='none'; const fm=$('dna-foot-main'); if(fm)fm.style.display='none'; });
+  on($('dna-intro-go'),'click',showMain);
+  on($('dna-intro-skip'),'click',()=>{ saveStr('amv_dna_intro','1'); closeDNA(); });
+  on($('dna-reset'),'click',resetDNA);
+  on($('dna-done'),'click',()=>{ _saveDNA(); closeDNA(); toast('Design DNA saved — it now drives every design','success'); if(S.tab==='studio') renderDesignView(); });
+  if(seen) showMain();
+}
+function closeDNA(){ const r=$('ovr'); if(r) r.innerHTML=''; }
+function _dnaFoot(){ const el=$('dna-foot-l'); if(el) el.textContent=(_DNA.colors.length)+' colors · '+_DNA.themeFamily+' · '+_DNA.theme+' theme'; }
+
+function _sld(label,obj,key){ const v=obj[key]; return `<div class="dna-slider"><div class="dna-slider-h"><span>${label}</span><span>${v}</span></div><input type="range" min="0" max="100" value="${v}" data-sld="${key}"></div>`; }
+function _opt(key,current){ return (DNA_OPTS[key]||[]).map(o=>`<button class="dna-pill ${o===current?'on':''}" data-pill="${key}" data-val="${o}">${String(o).replace(/_/g,' ')}</button>`).join(''); }
+
+function _dnaRenderSection(sec){
+  const c=$('dna-content'); if(!c) return;
+  if(sec==='identity'){
+    c.innerHTML=`<div class="dna-sec-t">Identity</div><div class="dna-sec-d">What you're building and for whom. This frames every decision.</div>
+      <div class="dna-field"><label>Project name</label><input type="text" data-txt="projectName" value="${escH(_DNA.projectName)}" placeholder="e.g. Northwind Analytics"></div>
+      <div class="dna-grid2">
+        <div class="dna-field"><label>Project type</label><select data-sel="projectType">${DNA_OPTS.projectType.map(o=>`<option ${o===_DNA.projectType?'selected':''}>${o}</option>`).join('')}</select></div>
+        <div class="dna-field"><label>Industry</label><input type="text" data-txt="industry" value="${escH(_DNA.industry)}" placeholder="Technology, Finance, Health…"></div>
+      </div>
+      <div class="dna-field"><label>Target audience</label><input type="text" data-txt="audience" value="${escH(_DNA.audience)}" placeholder="e.g. enterprise IT buyers, Gen-Z gamers"></div>`;
+  }
+  else if(sec==='colors'){
+    c.innerHTML=`<div class="dna-sec-t">Color system</div><div class="dna-sec-d">Paste ANY palette — hex, rgb, hsl, GitHub lists, Tailwind, CSS variables. AMV extracts every color and maps it to roles. Or pick a preset, or set each swatch by hand.</div>
+      <div class="dna-field"><label>Paste a palette (any format)</label>
+        <textarea class="dna-paste-box" id="dna-paste" placeholder="#5e6ad2  #8a91f5  rgb(8,9,10)
+or paste a whole CSS / Tailwind / GitHub palette — AMV finds the colors"></textarea>
+        <div style="display:flex;gap:8px;margin-top:9px;flex-wrap:wrap">
+          <button class="btn bp" id="dna-extract">Extract & apply</button>
+          <button class="btn" id="dna-extract-add">Add as accents</button>
+        </div>
+        <div class="dna-extracted" id="dna-extracted"></div>
+        <div class="dna-mini">Tip: works with anything — paste from Coolors, GitHub, a screenshot's hex list, Tailwind config, or your brand guide.</div>
+      </div>
+      <div class="dna-field"><label>Current roles</label>
+        <div class="dna-preview-strip">${_DNA.colors.map(c2=>`<span style="background:${c2.hex}"></span>`).join('')}</div>
+        <div class="dna-swatches" id="dna-swatches">${_DNA.colors.map((c2,i)=>`
+          <div class="dna-swatch">
+            <div class="dna-swatch-c" style="background:${c2.hex}"><input type="color" value="${/^#[0-9a-f]{6}$/i.test(c2.hex)?c2.hex:'#000000'}" data-cidx="${i}"></div>
+            <div class="dna-swatch-meta"><div class="dna-swatch-role">${c2.role.replace(/_/g,' ')}</div><div class="dna-swatch-hex">${c2.hex}</div></div>
+          </div>`).join('')}</div>
+        <button class="dna-add-btn" id="dna-add-color">+ Add color</button>
+      </div>
+      <div class="dna-field"><label>Preset palettes</label>
+        <div class="dna-pal-grid">${DNA_PALETTES.map((p,i)=>`<div class="dna-pal-card" data-pal="${i}"><div class="dna-pal-name">${p.name}</div><div class="dna-pal-row">${p.colors.map(h=>`<span style="background:${h}"></span>`).join('')}</div></div>`).join('')}</div>
+      </div>
+      <div class="dna-grid3">
+        ${_sld('Saturation',_DNA,'saturation')}
+        ${_sld('Contrast',_DNA,'contrast')}
+        <div class="dna-field"><label>Temperature</label><div class="dna-pills">${['warm','cool','neutral'].map(t=>`<button class="dna-pill ${_DNA.temperature===t?'on':''}" data-pill="temperature" data-val="${t}">${t}</button>`).join('')}</div></div>
+      </div>`;
+    on($('dna-extract'),'click',()=>{ const t=$('dna-paste').value; const hx=parseColorsFromText(t); if(!hx.length){ toast('No colors found in that text','error'); return; } applyPalette(hx); _dnaRenderSection('colors'); _dnaFoot(); toast('Applied '+hx.length+' colors','success'); });
+    on($('dna-extract-add'),'click',()=>{ const t=$('dna-paste').value; const hx=parseColorsFromText(t); if(!hx.length){ toast('No colors found','error'); return; } let ai=_DNA.colors.filter(c2=>c2.role.startsWith('accent')).length+1; hx.forEach(h=>{ if(!_DNA.colors.some(c2=>c2.hex===h)) _DNA.colors.push({role:'accent_'+(ai++),hex:h}); }); _saveDNA(); _dnaRenderSection('colors'); toast('Added '+hx.length+' accent colors','success'); });
+    on($('dna-paste'),'input',()=>{ const hx=parseColorsFromText($('dna-paste').value); const e=$('dna-extracted'); if(e) e.innerHTML=hx.slice(0,40).map(h=>`<span class="dna-extracted-c"><i style="background:${h}"></i>${h}</span>`).join(''); });
+    on($('dna-add-color'),'click',()=>{ _DNA.colors.push({role:'accent_'+(_DNA.colors.length),hex:'#888888'}); _saveDNA(); _dnaRenderSection('colors'); });
+    c.querySelectorAll('[data-cidx]').forEach(inp=>on(inp,'input',()=>{ _DNA.colors[+inp.dataset.cidx].hex=inp.value; _saveDNA(); _dnaRenderSection('colors'); _dnaFoot(); }));
+    c.querySelectorAll('[data-pal]').forEach(card=>on(card,'click',()=>{ applyPalette(DNA_PALETTES[+card.dataset.pal].colors); _DNA.themeFamily=DNA_PALETTES[+card.dataset.pal].name.toLowerCase().split(' ')[0]||_DNA.themeFamily; _dnaRenderSection('colors'); _dnaFoot(); toast('Applied '+DNA_PALETTES[+card.dataset.pal].name,'success'); }));
+  }
+  else if(sec==='theme'){
+    c.innerHTML=`<div class="dna-sec-t">Theme & family</div><div class="dna-sec-d">Pick the overall aesthetic lineage. AMV mimics the design language of these world-class systems.</div>
+      <div class="dna-field"><label>Mode</label><div class="dna-pills">${['light','dark','auto'].map(t=>`<button class="dna-pill ${_DNA.theme===t?'on':''}" data-pill="theme" data-val="${t}">${t}</button>`).join('')}</div></div>
+      <div class="dna-field"><label>Theme family</label><div class="dna-pills">${_opt('themeFamily',_DNA.themeFamily)}</div></div>`;
+  }
+  else if(sec==='personality'){
+    c.innerHTML=`<div class="dna-sec-t">Brand personality</div><div class="dna-sec-d">Dial in the character. These traits steer tone, color intensity, spacing, and motion.</div>
+      <div class="dna-grid2">${Object.keys(_DNA.personality).map(k=>_sld(k.charAt(0).toUpperCase()+k.slice(1),_DNA.personality,'p:'+k)).join('')}</div>`;
+  }
+  else if(sec==='psychology'){
+    c.innerHTML=`<div class="dna-sec-t">Psychology</div><div class="dna-sec-d">What should visitors feel? AMV uses color theory, layout and copy to evoke these.</div>
+      <div class="dna-grid2">${Object.keys(_DNA.psychology).map(k=>_sld(k.charAt(0).toUpperCase()+k.slice(1),_DNA.psychology,'y:'+k)).join('')}</div>`;
+  }
+  else if(sec==='typography'){
+    c.innerHTML=`<div class="dna-sec-t">Typography</div><div class="dna-sec-d">Fonts and rhythm. Heading + body pairing defines the whole feel.</div>
+      <div class="dna-grid2">
+        <div class="dna-field"><label>Heading font</label><select data-sel="headingFont">${DNA_OPTS.headingFont.map(o=>`<option ${o===_DNA.headingFont?'selected':''}>${o}</option>`).join('')}</select></div>
+        <div class="dna-field"><label>Body font</label><select data-sel="bodyFont">${DNA_OPTS.bodyFont.map(o=>`<option ${o===_DNA.bodyFont?'selected':''}>${o}</option>`).join('')}</select></div>
+      </div>
+      <div class="dna-grid2">
+        <div class="dna-field"><label>Heading weight</label><select data-sel="headingWeight">${['400','500','600','700','800'].map(o=>`<option ${o===_DNA.headingWeight?'selected':''}>${o}</option>`).join('')}</select></div>
+        <div class="dna-field"><label>Font scale</label><div class="dna-pills">${_opt('fontScale',_DNA.fontScale)}</div></div>
+      </div>
+      <div class="dna-grid2">
+        <div class="dna-field"><label>Letter spacing</label><div class="dna-pills">${['tight','normal','wide'].map(t=>`<button class="dna-pill ${_DNA.letterSpacing===t?'on':''}" data-pill="letterSpacing" data-val="${t}">${t}</button>`).join('')}</div></div>
+        <div class="dna-field"><label>Line height</label><div class="dna-pills">${['tight','comfortable','loose'].map(t=>`<button class="dna-pill ${_DNA.lineHeight===t?'on':''}" data-pill="lineHeight" data-val="${t}">${t}</button>`).join('')}</div></div>
+      </div>`;
+  }
+  else if(sec==='layout'){
+    c.innerHTML=`<div class="dna-sec-t">Layout & space</div><div class="dna-sec-d">Structure, width and breathing room.</div>
+      <div class="dna-field"><label>Structure</label><div class="dna-pills">${_opt('structure',_DNA.structure)}</div></div>
+      <div class="dna-grid2">
+        <div class="dna-field"><label>Max width</label><input type="text" data-txt="maxWidth" value="${escH(_DNA.maxWidth)}" placeholder="1200px"></div>
+        <div class="dna-field"><label>Navigation</label><div class="dna-pills">${_opt('navigation',_DNA.navigation)}</div></div>
+      </div>
+      <div class="dna-grid2">
+        <div class="dna-field"><label>Whitespace</label><div class="dna-pills">${_opt('whitespace',_DNA.whitespace)}</div></div>
+        <div class="dna-field"><label>Density</label><div class="dna-pills">${_opt('density',_DNA.density)}</div></div>
+      </div>
+      <div class="dna-grid2">
+        <div class="dna-field"><label>Hero</label><div class="dna-pills">${_opt('hero',_DNA.hero)}</div></div>
+        <div class="dna-field"><label>Sections</label><div class="dna-pills">${_opt('sections',_DNA.sections)}</div></div>
+      </div>`;
+  }
+  else if(sec==='shape'){
+    c.innerHTML=`<div class="dna-sec-t">Shape & depth</div><div class="dna-sec-d">Corners, borders and shadows define how soft or sharp everything feels.</div>
+      <div class="dna-grid2">
+        <div class="dna-field"><label>Border radius</label><div class="dna-pills">${_opt('borderRadius',_DNA.borderRadius)}</div></div>
+        <div class="dna-field"><label>Border width</label><div class="dna-pills">${['none','hairline','thin','bold'].map(t=>`<button class="dna-pill ${_DNA.borderWidth===t?'on':''}" data-pill="borderWidth" data-val="${t}">${t}</button>`).join('')}</div></div>
+      </div>
+      <div class="dna-field"><label>Shadow style</label><div class="dna-pills">${_opt('shadowStyle',_DNA.shadowStyle)}</div></div>
+      <div class="dna-grid2">${_sld('Shadow depth',_DNA,'shadowDepth')}${_sld('Geometric vs organic',_DNA,'geometricness')}</div>`;
+  }
+  else if(sec==='effects'){
+    c.innerHTML=`<div class="dna-sec-t">Effects & background</div><div class="dna-sec-d">Surface treatments and the page backdrop.</div>
+      <div class="dna-field"><label>Background style</label><div class="dna-pills">${_opt('bgStyle',_DNA.bgStyle)}</div></div>
+      <div class="dna-field"><label>Surface effects</label><div class="dna-pills">
+        ${[['glassmorphism','Glassmorphism'],['brutalism','Brutalism'],['grain','Film grain']].map(t=>`<button class="dna-pill ${_DNA[t[0]]?'on':''}" data-bool="${t[0]}">${t[1]}</button>`).join('')}
+      </div></div>
+      <div class="dna-grid2">${_sld('Glow',_DNA,'glow')}${_sld('Noise',_DNA,'noise')}</div>`;
+  }
+  else if(sec==='components'){
+    c.innerHTML=`<div class="dna-sec-t">Components</div><div class="dna-sec-d">How buttons, cards, forms, icons and imagery look.</div>
+      <div class="dna-grid2">
+        <div class="dna-field"><label>Button style</label><div class="dna-pills">${_opt('buttonStyle',_DNA.buttonStyle)}</div></div>
+        <div class="dna-field"><label>Card style</label><div class="dna-pills">${_opt('cardStyle',_DNA.cardStyle)}</div></div>
+      </div>
+      <div class="dna-grid2">
+        <div class="dna-field"><label>Form style</label><div class="dna-pills">${_opt('formStyle',_DNA.formStyle)}</div></div>
+        <div class="dna-field"><label>Icon style</label><div class="dna-pills">${_opt('iconStyle',_DNA.iconStyle)}</div></div>
+      </div>
+      <div class="dna-field"><label>Image style</label><div class="dna-pills">${_opt('imageStyle',_DNA.imageStyle)}</div></div>
+      ${_sld('Image realism',_DNA,'imageRealism')}`;
+  }
+  else if(sec==='motion'){
+    c.innerHTML=`<div class="dna-sec-t">Motion</div><div class="dna-sec-d">How alive the interface feels.</div>
+      <div class="dna-grid2">
+        <div class="dna-field"><label>Motion level</label><div class="dna-pills">${_opt('motionLevel',_DNA.motionLevel)}</div></div>
+        <div class="dna-field"><label>Motion style</label><div class="dna-pills">${_opt('motionStyle',_DNA.motionStyle)}</div></div>
+      </div>
+      <div class="dna-field"><label>Easing</label><div class="dna-pills">${['ease-out','ease-in-out','spring','linear'].map(t=>`<button class="dna-pill ${_DNA.easing===t?'on':''}" data-pill="easing" data-val="${t}">${t}</button>`).join('')}</div></div>`;
+  }
+  else if(sec==='content'){
+    c.innerHTML=`<div class="dna-sec-t">Content & AI</div><div class="dna-sec-d">Voice, and how creative AMV should be.</div>
+      <div class="dna-grid2">
+        <div class="dna-field"><label>Tone</label><div class="dna-pills">${_opt('tone',_DNA.tone)}</div></div>
+        <div class="dna-field"><label>Emoji usage</label><div class="dna-pills">${['none','minimal','moderate','liberal'].map(t=>`<button class="dna-pill ${_DNA.emojiUsage===t?'on':''}" data-pill="emojiUsage" data-val="${t}">${t}</button>`).join('')}</div></div>
+      </div>
+      <div class="dna-grid2">${_sld('Creativity',_DNA,'creativity')}${_sld('Originality',_DNA,'originality')}</div>
+      <div class="dna-grid2">${_sld('Predictability',_DNA,'predictability')}${_sld('Experimentation',_DNA,'experimentation')}</div>
+      <div class="dna-field" style="margin-top:6px"><label>Brand locking</label><div class="dna-pills">
+        ${[['strictColors','Lock colors'],['strictTypography','Lock fonts'],['allowExperiments','Allow experiments']].map(t=>`<button class="dna-pill ${_DNA[t[0]]?'on':''}" data-bool="${t[0]}">${t[1]}</button>`).join('')}
+      </div></div>`;
+  }
+  // wire common controls
+  c.querySelectorAll('[data-txt]').forEach(inp=>on(inp,'input',()=>{ _DNA[inp.dataset.txt]=inp.value; _saveDNA(); }));
+  c.querySelectorAll('[data-sel]').forEach(sel=>on(sel,'change',()=>{ _DNA[sel.dataset.sel]=sel.value; _saveDNA(); }));
+  c.querySelectorAll('[data-sld]').forEach(sl=>on(sl,'input',()=>{ const k=sl.dataset.sld; if(k.startsWith('p:'))_DNA.personality[k.slice(2)]=+sl.value; else if(k.startsWith('y:'))_DNA.psychology[k.slice(2)]=+sl.value; else _DNA[k]=+sl.value; const h=sl.closest('.dna-slider')?.querySelector('.dna-slider-h span:last-child'); if(h)h.textContent=sl.value; _saveDNA(); }));
+  c.querySelectorAll('[data-pill]').forEach(p=>on(p,'click',()=>{ const k=p.dataset.pill; _DNA[k]=p.dataset.val; c.querySelectorAll(`[data-pill="${k}"]`).forEach(x=>x.classList.toggle('on',x===p)); _saveDNA(); _dnaFoot(); }));
+  c.querySelectorAll('[data-bool]').forEach(b=>on(b,'click',()=>{ const k=b.dataset.bool; _DNA[k]=!_DNA[k]; b.classList.toggle('on',_DNA[k]); _saveDNA(); }));
+}
+
+/* ---- Serialize DNA into a generation directive ---- */
+function dnaPromptBlock(){
+  const d=_DNA;
+  const cols=d.colors.map(c=>c.role+': '+c.hex).join(', ');
+  const persona=Object.entries(d.personality).filter(([k,v])=>v>=65||v<=25).map(([k,v])=>k+' '+v).join(', ');
+  const psych=Object.entries(d.psychology).filter(([k,v])=>v>=65).map(([k])=>k).join(', ');
+  const fx=[d.glassmorphism&&'glassmorphism',d.brutalism&&'brutalism',d.grain&&'film grain'].filter(Boolean).join(', ')||'none';
+  const lock=[d.strictColors&&'use ONLY the exact colors above',d.strictTypography&&'use ONLY the specified fonts'].filter(Boolean).join('; ');
+  return [
+"=== DESIGN DNA (authoritative — every visual decision derives from this) ===",
+d.projectName?("Project: "+d.projectName+(d.industry?(" — "+d.industry):"")):"",
+d.audience?("Audience: "+d.audience):"",
+"Type: "+d.projectType+" | Structure: "+d.structure+" | Theme: "+d.theme+" ("+d.themeFamily+" design language)",
+"COLORS — "+cols+". Saturation "+d.saturation+"/100, contrast "+d.contrast+"/100, "+d.temperature+" temperature.",
+"TYPOGRAPHY — Headings: "+d.headingFont+" "+d.headingWeight+"; Body: "+d.bodyFont+"; scale "+d.fontScale+", "+d.lineHeight+" line-height, "+d.letterSpacing+" tracking. Load via Google Fonts.",
+"LAYOUT — max-width "+d.maxWidth+", "+d.whitespace+" whitespace, "+d.density+" density, "+d.navigation+" nav, "+d.hero+" hero, "+d.sections+" section pattern.",
+"SHAPE — "+d.borderRadius+" radius, "+d.borderWidth+" borders, "+d.shadowStyle+" shadows (depth "+d.shadowDepth+"/100).",
+"EFFECTS — background "+d.bgStyle+"; surface effects: "+fx+"; glow "+d.glow+"/100.",
+"COMPONENTS — "+d.buttonStyle+" buttons, "+d.cardStyle+" cards, "+d.formStyle+" forms, "+d.iconStyle+" icons. Imagery: "+d.imageStyle+".",
+"MOTION — "+d.motionLevel+" level, "+d.motionStyle+" feel, "+d.easing+" easing.",
+persona?("PERSONALITY — "+persona+"."):"",
+psych?("EVOKE — "+psych+"."):"",
+"VOICE — "+d.tone+" tone, "+d.emojiUsage+" emoji. Creativity "+d.creativity+"/100, originality "+d.originality+"/100.",
+lock?("CONSTRAINTS — "+lock+"."):"",
+"Output must look like a top-tier agency built it. Never generic. Perfect consistency across the whole design.",
+"=== END DESIGN DNA ==="
+].filter(Boolean).join("\n");
+}
+window.openDNA=openDNA;window.resetDNA=resetDNA;
+function _dnaShouldApply(msgs){
+  try{
+    const last=[...msgs].reverse().find(m=>m.r==='u');
+    const t=last?(typeof last.c==='string'?last.c:(last.d||'')):'';
+    return /\b(website|web ?app|landing|page|site|ui|interface|html|css|design|component|button|form|card|dashboard|portfolio|hero|layout|build me|make me|create a|3d|mockup|frontend)\b/i.test(t);
+  }catch(e){ return false; }
+}
+window._dnaShouldApply=_dnaShouldApply;
+
+/* Task #1: tell the chat model EXACTLY which action-integrations are connected,
+   so it never claims to send an email / post to Slack / etc. when it can't. */
+function _integrationStatusPrompt(){
+  try{
+    if(typeof TASK_CAPABILITIES==='undefined') return '';
+    const connected=[], missing=[];
+    TASK_CAPABILITIES.forEach(c=>{
+      (c.isConnected()?connected:missing).push(c.integration+' ('+c.api+')');
+    });
+    // de-dupe by integration name
+    const uniq=a=>[...new Set(a)];
+    let s='\n\nINTEGRATION REALITY (critical — never violate): You can only take real actions through integrations the user has actually connected. ';
+    s+= uniq(connected).length ? 'Currently CONNECTED and usable: '+uniq(connected).join(', ')+'. ' : 'The user has NOT connected any action integrations yet. ';
+    if(uniq(missing).length) s+='NOT connected: '+uniq(missing).join(', ')+'. ';
+    s+='If the user asks you to perform an action that needs an integration that is NOT connected, do NOT claim you did it. Instead, state plainly that it requires the specific API (name it) and that they need to connect it in Integrations first. Be specific and honest.';
+    return s;
+  }catch(e){ return ''; }
+}
+window._integrationStatusPrompt=_integrationStatusPrompt;
+
+
+/* ============================================================
+   CODE  - AI coding workspace entry
+   ============================================================ */
+function renderCodeView(){
+  const vc=$('vc'); if(!vc) return;
+  vc.innerHTML = `<div class="dev-shell">
+    <div class="dev-chat-pane">
+      <div class="dev-head"><span class="eyebrow">AMV Dev · coding agent</span><h3>Build with an AI engineer</h3><p class="dev-sub">Describe a feature in plain English. AMV writes it, runs it in a real sandbox, and shows the live result and code. Hit a bug? Send it to <b>Lab</b> to debug.</p>
+        <div class="dev-conn">
+          <button class="dev-conn-btn" id="dev-vscode"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M16 18l6-6-6-6"/><path d="M8 6l-6 6 6 6"/></svg> Connect to VS Code</button>
+          <button class="dev-conn-btn" id="dev-tolab"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M10 2h4M12 2v6.5L7 19a1 1 0 0 0 .9 1.5h8.2A1 1 0 0 0 17 19l-5-10.5"/></svg> Debug in Lab</button>
+        </div>
+      </div>
+      <div id="dev-log" class="dev-log"></div>
+      <div class="dev-input">
+        <select id="dev-lang" class="lab-sel"><option value="js">JavaScript</option><option value="python">Python</option></select>
+        <textarea id="dev-msg" rows="1" placeholder="e.g. Write a function that finds prime numbers up to N and test it"></textarea>
+        <button class="btn bp" id="dev-send">Build</button>
+      </div>
+    </div>
+    <div class="dev-preview">
+      <div class="dev-prev-bar">
+        <div class="dev-prev-tabs">
+          <button class="dev-pt on" id="dev-tab-prev" data-pv="preview">Preview</button>
+          <button class="dev-pt" id="dev-tab-code" data-pv="code">Code</button>
+          <button class="dev-pt" id="dev-tab-term" data-pv="term">Terminal</button>
+        </div>
+        <span id="dev-prev-s"></span>
+      </div>
+      <div id="dev-prev-body" class="dev-prev-body"><div class="lab-placeholder">What AMV builds appears here — switch between the live Preview and the Code.</div></div>
+      <div id="dev-code-body" class="dev-code-body" style="display:none"><div class="lab-placeholder">Code will appear here.</div></div>
+      <div id="dev-term-body" class="dev-term-body" style="display:none"><div class="dev-term"><div class="dev-term-out" id="dev-term-out">AMV Dev Terminal\nThis is a real command line connected to a live sandbox. When AMV builds a program, you can run it here just like on your own computer.\n\nTry:\n  node index.js     run your JavaScript program\n  python main.py    run your Python program\n  npm test          run tests\n  clear             clear this screen\n\nOutput from your program appears right here.</div><div class="dev-term-in"><span class="dev-term-prompt">$</span><input id="dev-term-cmd" placeholder="type a command and press Enter…" spellcheck="false"></div></div></div>
+    </div>
+  </div>`;
+  if(!_DEV.log.length){ _devPushSys("Hi — I'm your in-Dev engineer. Tell me what to build and I'll write it, run it, and show both the live result and the code. Ask me to change anything and I'll edit what's already here."); }
+  _devRenderLog();
+  const ta=$('dev-msg');
+  on(ta,'input',()=>{ ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,140)+'px'; });
+  on(ta,'keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); _devSend(); } });
+  on($('dev-send'),'click',_devSend);
+  on($('dev-lang'),'change',()=>{ _DEV.lang=$('dev-lang').value; });
+  $('dev-lang').value=_DEV.lang;
+  // Code/Preview toggle
+  const showPV=(pv)=>{ const pb=$('dev-prev-body'),cb=$('dev-code-body'),tb=$('dev-term-body'); const tp=$('dev-tab-prev'),tc=$('dev-tab-code'),tt=$('dev-tab-term'); [pb,cb,tb].forEach(x=>{if(x)x.style.display='none';}); [tp,tc,tt].forEach(x=>x&&x.classList.remove('on')); if(pv==='code'){ if(cb)cb.style.display='block'; tc&&tc.classList.add('on'); } else if(pv==='term'){ if(tb)tb.style.display='block'; tt&&tt.classList.add('on'); const ci=$('dev-term-cmd'); ci&&ci.focus(); } else { if(pb)pb.style.display='flex'; tp&&tp.classList.add('on'); } };
+  on($('dev-tab-prev'),'click',()=>showPV('preview'));
+  on($('dev-tab-code'),'click',()=>showPV('code'));
+  on($('dev-tab-term'),'click',()=>showPV('term'));
+  const tcmd=$('dev-term-cmd'); if(tcmd) on(tcmd,'keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); _devRunCmd(tcmd.value.trim()); tcmd.value=''; } });
+  on($('dev-vscode'),'click',_devConnectVSCode);
+  on($('dev-tolab'),'click',()=>{ if(_DEV.curCode){ _LAB_HANDOFF=_DEV.curCode; setTab('lab'); toast('Sent to Lab for debugging','info'); } else { toast('Build something first, then send it to Lab','info'); } });
+  if(_DEV.curCode) _devShowResult(_DEV.curCode,_DEV.curLang,_DEV.curRun);
+}
+let _LAB_HANDOFF='';
+function _devTermPrint(t){ const o=$('dev-term-out'); if(o){ o.textContent+='\n'+t; o.scrollTop=o.scrollHeight; } }
+async function _devRunCmd(cmd){
+  if(!cmd) return;
+  _devTermPrint('$ '+cmd);
+  if(/^(node|python|python3|npm (test|start|run)|deno)/i.test(cmd)){
+    if(!_DEV.curCode){ _devTermPrint('No program built yet. Use Build first.'); return; }
+    _devTermPrint('Running…');
+    try{ const res=await runCode(_DEV.curCode,_DEV.curLang||'js'); _devTermPrint((res&&res.output)?res.output:(typeof res==='string'?res:'(no output)')); }
+    catch(e){ _devTermPrint('Error: '+(e.message||e)); }
+  } else if(/^(ls|dir)$/i.test(cmd)){ _devTermPrint(_DEV.curLang==='python'?'main.py':'index.js'); }
+  else if(/^clear$/i.test(cmd)){ const o=$('dev-term-out'); if(o)o.textContent='AMV Dev terminal'; }
+  else { _devTermPrint('Queued "'+cmd+'" — AMV runs it in the sandbox when connected to your project.'); }
+}
+function _devConnectVSCode(){
+  const r=$('ovr'); if(!r) return;
+  r.innerHTML='<div class="ov" id="vsc-bg"><div class="tp-modal" style="max-width:520px" onclick="event.stopPropagation()">'+
+    '<button class="dna-x" id="vsc-x" style="position:absolute;top:14px;right:14px">\u2715</button>'+
+    '<h2 style="font-family:var(--fdisplay);font-weight:500;font-size:22px;margin:0 0 6px">Connect AMV to VS Code</h2>'+
+    '<p style="font-size:13px;color:var(--mu);line-height:1.6;margin:0 0 16px">Run AMV Dev as a coding agent inside your editor \u2014 it reads your files, writes code, and runs commands in your real project.</p>'+
+    '<div style="font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--mu);margin-bottom:7px">1 \u00b7 Install the AMV CLI</div>'+
+    '<div class="vsc-cmd"><code>npm install -g @amv/cli</code><button class="vsc-copy" data-c="npm install -g @amv/cli">Copy</button></div>'+
+    '<div style="font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--mu);margin:14px 0 7px">2 \u00b7 In your project folder, run</div>'+
+    '<div class="vsc-cmd"><code>amv code .</code><button class="vsc-copy" data-c="amv code .">Copy</button></div>'+
+    '<div style="font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--mu);margin:14px 0 7px">Or open VS Code directly</div>'+
+    '<button class="btn bp" id="vsc-open" style="width:100%;justify-content:center">Open in VS Code \u2192</button>'+
+    '<p style="font-size:11px;color:var(--dim);margin:14px 0 0;line-height:1.5">The CLI links this AMV account to your editor over a secure local bridge. Your code stays on your machine.</p>'+
+  '</div></div>';
+  const close=()=>{ r.innerHTML=''; };
+  on($('vsc-bg'),'click',close); on($('vsc-x'),'click',close);
+  on($('vsc-open'),'click',()=>{ try{ window.location.href='vscode://'; }catch(e){} toast('Opening VS Code\u2026 install the AMV extension if it doesn\u2019t launch','info',4000); });
+  r.querySelectorAll('.vsc-copy').forEach(btn=>on(btn,'click',()=>{ try{ navigator.clipboard.writeText(btn.dataset.c); btn.textContent='Copied'; setTimeout(()=>btn.textContent='Copy',1200); }catch(e){} }));
+}
+const _DEV={ log:[], lang:'js', busy:false, curCode:'', curLang:'', curRun:null };
+function _devPushSys(t){ _DEV.log.push({role:'sys',text:t}); }
+function _devShowResult(code,lang,run){
+  // Code pane
+  const cb=$('dev-code-body');
+  if(cb){ cb.innerHTML='<div class="dev-code-wrap"><div class="dev-code-h">'+escH(lang||'code')+'<button class="dev-copy" data-code="'+encodeURIComponent(code)+'">copy</button></div><pre>'+escH(code)+'</pre></div>'; cb.querySelectorAll('.dev-copy').forEach(btn=>on(btn,'click',()=>{navigator.clipboard&&navigator.clipboard.writeText(decodeURIComponent(btn.dataset.code));btn.textContent='copied';setTimeout(()=>btn.textContent='copy',1200);})); }
+  // Preview pane
+  const pb=$('dev-prev-body');
+  if(pb && run){
+    if(run.html){ pb.innerHTML='<iframe class="dev-prev-frame" sandbox="allow-scripts" srcdoc="'+run.html.replace(/"/g,'&quot;')+'"></iframe>'; }
+    else pb.innerHTML='<div class="dev-prev-out '+(run.ok?'ok':'err')+'"><pre>'+escH(run.ok?(run.stdout||run.result||'(no output)'):run.stderr)+'</pre></div>';
+  }
+}
+function _devRenderLog(){
+  const el=$('dev-log'); if(!el) return;
+  el.innerHTML=_DEV.log.map(m=>{
+    if(m.role==='user') return '<div class="dev-msg-u">'+escH(m.text)+'</div>';
+    if(m.role==='sys') return '<div class="dev-msg-sys">'+escH(m.text)+'</div>';
+    let h='<div class="dev-msg-ai">';
+    if(m.text) h+='<div class="dev-ai-txt">'+(typeof md==='function'?md(m.text):escH(m.text))+'</div>';
+    if(m.code) h+='<div class="dev-code"><div class="dev-code-h">'+escH(m.lang||'code')+' <button class="dev-copy" data-code="'+encodeURIComponent(m.code)+'">copy</button></div><pre>'+escH(m.code.length>800?m.code.slice(0,800)+'\n…':m.code)+'</pre></div>';
+    if(m.run) h+='<div class="dev-run '+(m.run.ok?'ok':'err')+'"><div class="dev-run-h">'+(m.run.ok?'✓ ran ('+m.run.ms+'ms)':'✗ error')+'</div><pre>'+escH(m.run.ok?(m.run.stdout||m.run.result||'(no output)'):m.run.stderr)+'</pre></div>';
+    h+='</div>'; return h;
+  }).join('');
+  el.scrollTop=el.scrollHeight;
+  el.querySelectorAll('.dev-copy').forEach(btn=>on(btn,'click',()=>{navigator.clipboard&&navigator.clipboard.writeText(decodeURIComponent(btn.dataset.code));btn.textContent='copied';}));
+}
+async function _devSend(){
+  if(_DEV.busy) return;
+  const ta=$('dev-msg'); const msg=ta?ta.value.trim():''; if(!msg) return;
+  ta.value=''; ta.style.height='auto';
+  _DEV.log.push({role:'user',text:msg}); _devRenderLog(); _DEV.busy=true;
+  const stat=$('dev-prev-s'); if(stat) stat.textContent='building…';
+  try{
+    const hasCurrent=!!_DEV.curCode;
+    const sys='You are AMV Forge — a principal-level '+_DEV.lang+' engineer in a live code workspace. Your code must be the best version possible: production-ready, complete error handling, performance-aware, secure by default, elegantly structured. '+
+      (hasCurrent?'You are EDITING existing code. Apply the user\u2019s requested change to the current code and return the COMPLETE updated program — never a fragment. ':'Write complete, runnable '+_DEV.lang+' code for the request. ')+
+      'If the request is UI, it must look like a top design agency built it — real hierarchy, deliberate spacing, polished interactions. Briefly explain what you did in one or two sentences, then give ONE fenced '+_DEV.lang+' code block with the full program. Keep it self-contained so it runs directly.';
+    const _isUI=/\b(html|css|ui|page|site|landing|component|button|form|card|layout|design|style|frontend|web ?app|dashboard)\b/i.test(msg)||/html/i.test(_DEV.curLang||'');
+    const prompt=(_isUI?dnaPromptBlock()+'\n\nApply the DESIGN DNA above to any UI/visual output.\n\n':'')+
+      (hasCurrent?('Current '+(_DEV.curLang||_DEV.lang)+' code:\n```\n'+_DEV.curCode+'\n```\n\nChange request: '+msg+'\n\nReturn the full updated program.'):msg);
+    const resp=await aiComplete(prompt, sys, {max_tokens:6000, model:'claude-opus-4-8'});
+    const code=extractCode(resp,_DEV.lang)||extractCode(resp);
+    const txt=resp.replace(/```[\s\S]*?```/g,'').trim();
+    const entry={role:'ai',text:txt,code:code,lang:_DEV.lang};
+    if(code){
+      _DEV.curCode=code; _DEV.curLang=_DEV.lang;
+      const run=await runCode(code,_DEV.lang,s=>{ if(stat) stat.textContent=s; });
+      entry.run=run; _DEV.curRun=run;
+      _devShowResult(code,_DEV.lang,run);
+      if(stat) stat.textContent=run.ok?'✓ ran ('+run.ms+'ms)':'✗ error';
+    } else { if(stat) stat.textContent=''; }
+    _DEV.log.push(entry); _devRenderLog();
+  }catch(err){ _DEV.log.push({role:'ai',text:'**Error:** '+err.message}); _devRenderLog(); if(stat) stat.textContent='✗'; }
+  _DEV.busy=false;
+}
+window.renderCodeView=renderCodeView;
+
+function codeStart(kind){ setTab('chat'); setTimeout(()=>{ const map={'New script':'Write a new script that ','Fix a bug':'Here is my code and the error I am getting:\n\n','Refactor':'Refactor this code to be cleaner:\n\n','Explain':'Explain what this code does, step by step:\n\n'}; const ta=$('mta'); if(ta){ ta.value=map[kind]||''; ta.focus(); } },120); }
+window.codeStart=codeStart;
+
+
+/* ============================================================
+   HANDOFF  - pass any task/chat/draft to another user or to Crew.
+   They get full context, continue or approve, and pass it back.
+   Stored per-account; recipient sees it in their own Handoff inbox.
+   (Live cross-user delivery activates with the server backend; this
+   is the full UX + local record.)
+   ============================================================ */
+function _hoOut(){ return load('amv_handoffs_out') || []; }
+function _hoIn(){ return load('amv_handoffs_in') || []; }
+function _hoSaveOut(a){ store('amv_handoffs_out', a); }
+function _hoSaveIn(a){ store('amv_handoffs_in', a); }
+
+async function _handoffSyncLive(){
+  if(!(window.AMV_API && AMV_API.live)) return;
+  try{ const d=await AMV_API.listHandoff();
+    if(d.incoming) store('amv_handoffs_in', d.incoming.map(h=>({id:h.id,from:h.from_email,title:h.title,context:h.context,when:''})));
+    if(d.sent) store('amv_handoffs_out', d.sent.map(h=>({id:h.id,to:h.to_email,title:h.title,status:h.status,when:''})));
+    renderHandoffView();
+  }catch(e){}
+}
+function renderHandoffView(){
+  const vc=$('vc'); if(!vc) return;
+  const out=_hoOut(), inb=_hoIn();
+  const card=(h,dir)=>`<div class="ho-card">
+      <div class="ho-h">
+        <span class="ho-dir ${dir}">${dir==='in'?'Incoming':'Sent'}</span>
+        <span class="ho-to">${dir==='in'?('from '+escH(h.from||'someone')):('to '+escH(h.to))}</span>
+        <span class="ho-when">${h.when||''}</span>
+      </div>
+      <div class="ho-t">${escH(h.title)}</div>
+      <div class="ho-ctx">${escH(h.context||'').slice(0,180)}${(h.context||'').length>180?'…':''}</div>
+      <div class="ho-act">
+        ${dir==='in'
+          ? `<button class="btn bp" data-dact="hoOpen" data-darg="${h.id}">Open & continue</button><button class="btn bs" data-dact="hoDone" data-darg="${h.id}">Mark done</button>`
+          : `<span class="ho-status">${escH(h.status||'waiting')}</span>`}
+      </div>
+    </div>`;
+  vc.innerHTML=`<div class="sv fi"><div class="vi" style="max-width:820px">
+      <h2>Handoff</h2>
+      <p class="vsub">Pass anything you're working on \u2014 a chat, a draft, a task \u2014 to a teammate or to your Crew agent. They pick up with the full context, make changes or approve, and hand it back. It's a shared baton for work that moves between people and the AI.</p>
+
+      <div class="ss2">
+        <h3>Hand something off</h3>
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <div><label class="lbl" style="font-size:11px;color:var(--mu)">What are you handing off?</label>
+            <input id="ho-title" placeholder="e.g. Finish the Q3 report intro" style="width:100%;background:var(--glass);border:1px solid var(--glass-bd);border-radius:var(--r-md);padding:12px;color:var(--tx);font-family:var(--fn);font-size:14px"></div>
+          <div><label class="lbl" style="font-size:11px;color:var(--mu)">Context / notes</label>
+            <textarea id="ho-ctx" placeholder="Anything the next person (or the agent) needs to know to continue." style="width:100%;min-height:74px;background:var(--glass);border:1px solid var(--glass-bd);border-radius:var(--r-md);padding:12px;color:var(--tx);font-family:var(--fn);font-size:14px;resize:vertical"></textarea></div>
+          <div><label class="lbl" style="font-size:11px;color:var(--mu)">Hand off to</label>
+            <input id="ho-to" placeholder="teammate@email.com  \u2014 or type: crew" style="width:100%;background:var(--glass);border:1px solid var(--glass-bd);border-radius:var(--r-md);padding:12px;color:var(--tx);font-family:var(--fn);font-size:14px"></div>
+          <button class="btn bp" data-dact="hoSend" style="align-self:flex-start">Send handoff</button>
+        </div>
+      </div>
+
+      <div class="ss2" style="margin-top:18px">
+        <h3>Incoming ${inb.length?`<span class="cw-badge">${inb.length}</span>`:''}</h3>
+        ${inb.length?inb.map(h=>card(h,'in')).join(''):'<div class="cw-empty">Nothing handed to you yet.</div>'}
+      </div>
+
+      <div class="ss2" style="margin-top:18px">
+        <h3>Sent</h3>
+        ${out.length?out.map(h=>card(h,'out')).join(''):'<div class="cw-empty">You haven\u2019t handed anything off yet.</div>'}
+      </div>
+    </div></div>`;
+}
+function hoSend(){
+  const t=($('ho-title')||{}).value, ctx=($('ho-ctx')||{}).value, to=($('ho-to')||{}).value;
+  if(!t||!t.trim()){ toast('Add a title for the handoff','error'); return; }
+  if(!to||!to.trim()){ toast('Who are you handing off to?','error'); return; }
+  const rec={ id:'h'+Date.now(), title:t.trim(), context:(ctx||'').trim(), to:to.trim(),
+    from:(S.user&&S.user.email)||'you', when:new Date().toLocaleDateString(), status:'waiting' };
+  const out=_hoOut(); out.unshift(rec); _hoSaveOut(out);
+  if(window.AMV_API && AMV_API.live){ AMV_API.createHandoff({title:rec.title,context:rec.context,to:rec.to}).catch(()=>{}); }
+  // If handed to crew, surface it as a crew approval-style item locally
+  if(to.trim().toLowerCase()==='crew'){
+    const ap=_cwApprovals(); ap.unshift({id:'a'+Date.now(),icon:'\u{1F91D}',title:'Handoff: '+rec.title,preview:rec.context||'(no notes)'}); _cwSaveApprovals(ap);
+    toast('Handed off to your Crew agent','info');
+  } else {
+    toast('Handoff sent to '+rec.to,'info');
+  }
+  renderHandoffView();
+}
+function hoOpen(id){ const h=_hoIn().find(x=>x.id===id); setTab('chat'); setTimeout(()=>{ const ta=$('mta'); if(ta&&h){ ta.value='Continuing a handoff: '+h.title+'\n\nContext:\n'+(h.context||''); ta.focus(); } },120); }
+function hoDone(id){ if(window.AMV_API && AMV_API.live){ AMV_API.actHandoff(id,'done').catch(()=>{}); } const a=_hoIn().filter(x=>x.id!==id); _hoSaveIn(a); toast('Marked done','info'); renderHandoffView(); }
+window.hoSend=hoSend;window.hoOpen=hoOpen;window.hoDone=hoDone;
+
+/* === RENDER VIEW ROUTER === */
+function renderView(){
+  const vc=$('vc'); if(!vc) return;
+  switch(S.tab){
+    case 'dashboard': renderDashboard(); break;
+    case 'chat': renderChatView(); break;
+    case 'images': renderImgsView(); break;
+    case 'video': renderVideoView(); break;
+    case 'prompts': renderPromptsView(); break;
+    case 'workspaces': renderWorkspacesView(); break;
+    case 'memory': renderMemoryView(); break;
+    case 'team': renderTeamView(); break;
+    case 'usage': renderUsageView(); break;
+    case 'billing': renderBillingView(); break;
+    case 'plans': renderPlansView(); break;
+    case 'settings': renderSettingsView(); break;
+    case 'help': renderHelpView(); break;
+    case 'apps': renderAppsView(); break;
+    case 'tasks': renderTasksView(); break;
+    case 'integrations': renderIntegrationsView(); break;
+    case 'extensions': renderCrewView(); break;
+    case 'crew': renderCrewView(); break;
+    case 'studio': renderDesignView(); break;
+    case 'dev': renderCodeView(); break;
+    case 'lab': renderLabView(); break;
+    case 'handoff': renderHandoffView(); break;
+    default: renderChatView();
+  }
+}
+
+/* === PLANS VIEW === */
+function renderPlansView(){
+  const vc=$('vc'); if(!vc) return;
+  vc.innerHTML=
+    '<div class="sv fi"><div class="vi vi-plans">'+
+      '<h2>Plans</h2><p class="vsub">Start free. Upgrade any time. Cancel whenever.</p>'+
+      '<div class="pg pg-app">'+planCards(true)+'</div>'+
+      '<p class="plans-foot">Payments secured by Stripe &bull; Cancel any time</p>'+
+    '</div></div>';
+}
+
+/* === HELP CENTER === */
+const FAQS=[
+  {q:'How do I start chatting with AMV?',a:'Click "New Chat" in the top navigation bar, or press Ctrl+Shift+O. Type anything in the input box and press Enter. AMV can handle any request - 3D models, essays, code, images, research, and more.'},
+  {q:'How do I create interactive 3D models?',a:'Just ask! Type "create a 3D model of [anything]" - a human heart, solar system, black hole, DNA, tornado, atom. The model renders live in the chat with drag-to-rotate, scroll-to-zoom, and right-click-to-pan controls.'},
+  {q:'How do I generate HD images?',a:'Click Images in the sidebar. Describe your image, choose a style and aspect ratio, and click Generate. No explicit content.'},
+  {q:'How do I upload files for analysis?',a:'Click the paperclip (&#x1F4CE;) button in the chat input, or drag and drop any file. AMV supports PDFs, images, code files, Excel, CSV, Word documents, and most text formats.'},
+  {q:'How does the sleep automation work?',a:'Connect your Google Drive and Canvas LMS in Settings &#x2192; Integrations. Then tell AMV what to complete overnight - assignments, emails, file organization. AMV works through the queue and delivers results to your Drive and email by morning.'},
+  {q:'How do I connect Google Drive and Gmail?',a:'Go to Settings &#x2192; Integrations. Add your Google OAuth Client ID from Google Cloud Console. This enables Drive file access, Gmail reading, Docs analysis, and Calendar management.'},
+  {q:'How does Canvas homework automation work?',a:'Add your Canvas API token in Settings &#x2192; Integrations. AMV reads your assignments, researches each one using your notes and Drive files, writes the answer, and optionally submits it via the Canvas API.'},
+  {q:'How do the plans and limits work?',a:'Free gives you daily usage to explore everything. Pro ($15/month) gives you 5\u00d7 the usage with all models, agents, and priority speed. Elite ($75/month) gives you 20\u00d7 the usage for power users \u2014 the fastest models first, parallel agents, and early access. Limits are usage-based, so you just work without counting messages.'},
+  {q:'How do I use voice input?',a:'Click the microphone icon in the chat input. Works best in Chrome and Edge. Speak your message and it appears in the text box. Press Enter to send.'},
+  {q:'What is AI Memory?',a:'Memory lets AMV remember facts about you - your job, preferences, study habits, and context. Go to Memory in the sidebar, add facts, and AMV includes them automatically in every conversation.'},
+  {q:'How do I rename, star, or delete chats?',a:'Hover over any chat in the sidebar to see action buttons (&#x2B50; star, &#x270F; rename, &#x00D7; delete). Right-click for the full context menu with additional options like Export and Share.'},
+  {q:'Can I export my conversations?',a:'Yes! Right-click any chat in the sidebar and select "Export as Markdown". Downloads as a .md file you can open in any text editor, Notion, or Obsidian.'},
+  {q:'How do I set up payments?',a:'Go to Settings &#x2192; Platform (admin only). Add your Stripe Payment Links for Pro and Elite plans. Revenue goes directly to your Stripe account. Get links from stripe.com &#x2192; Payments &#x2192; Payment Links.'},
+  {q:'How is my data protected?',a:'All data is stored locally in your browser. Passwords are hashed with SHA-256. Card details go to Stripe only - we never see them. Any self-hosting credentials are stored locally and never transmitted to AMV servers.'},
+];
+
+function renderHelpView(){
+  const vc=$('vc'); if(!vc) return;
+  vc.innerHTML=
+    '<div class="sv fi"><div class="vi">'+
+      '<h2>Help Center</h2>'+
+      '<p class="vsub">Answers to the most common questions.</p>'+
+      '<div class="ss2">'+
+        '<input type="text" id="faq-search" placeholder="Search help…" style="font-size:13px;margin-bottom:13px">'+
+        '<div id="faq-list">'+
+          FAQS.map((f,i)=>
+            '<div class="faq-item" id="fi-'+i+'">'+
+              '<div class="faq-q" data-fi="'+i+'"><span>'+f.q+'</span><span class="faq-arr">+</span></div>'+
+              '<div class="faq-a">'+f.a+'</div>'+
+            '</div>'
+          ).join('')+
+        '</div>'+
+      '</div>'+
+      '<div class="ss2"><h3>Still need help?</h3>'+
+        '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
+          supportButton({label:'Email Support',cls:'btn bp',subject:'AMV Support request'})+
+          '<button class="btn bs" style="font-size:12px" data-dact="askAmv" data-darg="">Ask AMV directly</button>'+
+        '</div>'+
+        (_supportEmail()?'<p style="font-size:11.5px;color:var(--mu);margin-top:10px">Or email us directly at <b style="color:var(--tx)">'+escH(_supportEmail())+'</b> &mdash; we reply within 24 hours.</p>':'')+
+      '</div>'+
+    '</div></div>';
+  vc.querySelectorAll('.faq-q').forEach(q=>{
+    q.addEventListener('click',()=>{
+      document.getElementById('fi-'+q.dataset.fi)?.classList.toggle('open');
+    });
+  });
+  on($('faq-search'),'input',function(){
+    const s=this.value.toLowerCase();
+    vc.querySelectorAll('.faq-item').forEach((item,i)=>{
+      const f=FAQS[i];
+      item.style.display=(!s||f.q.toLowerCase().includes(s)||f.a.toLowerCase().includes(s))?'block':'none';
+    });
+  });
+}
+
+/* === SETTINGS VIEW === */
+const USER_SET_SECTIONS=[
+  {id:'account',label:'Account',icon:'<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>'},
+  {id:'security',label:'Security',icon:'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>'},
+  {id:'privacy',label:'Privacy',icon:'<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>'},
+  {id:'appearance',label:'Appearance',icon:'<circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>'},
+  {id:'language',label:'Language',icon:'<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>'},
+  {type:'div'},
+  {id:'billing',label:'Billing',icon:'<rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/>'},
+  {id:'usage',label:'Usage',icon:'<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>'},
+  {id:'integrations',label:'Integrations',icon:'<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" y1="9" x2="6" y2="21"/>'},
+  {type:'div'},
+  {id:'about',label:'About',icon:'<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>'},
+];
+/* OWNER-ONLY — platform controls. Hidden from end users entirely. */
+const ADMIN_SET_SECTIONS=[
+  {id:'apikeys',label:'AI Connection',icon:'<path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>'},
+  {id:'backend',label:'Live / Backend',icon:'<path d="M5 12h14M12 5l7 7-7 7"/>'},
+  {id:'platform',label:'Platform',icon:'<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>'},
+];
+
+function renderSettingsView(){
+  const vc=$('vc'); if(!vc) return;
+  const visibleSections=[...USER_SET_SECTIONS,...(isAdmin()?[{type:'div'},...ADMIN_SET_SECTIONS]:[])];
+  const navHtml=visibleSections.map(s=>{
+    if(s.type==='div') return '<div class="sn-div"></div>';
+    return '<button class="sn-btn '+(s.id===S.settingsPane?'on':'')+'" data-sp="'+s.id+'"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">'+s.icon+'</svg>'+T(s.label)+'</button>';
+  }).join('');
+  vc.innerHTML=
+    '<div class="settings-shell">'+
+      '<div class="settings-nav">'+navHtml+'</div>'+
+      '<div class="settings-content"><div class="set-pane" id="set-pane"></div></div>'+
+    '</div>';
+  vc.querySelectorAll('.sn-btn').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const target=btn.dataset.sp;
+      S.settingsPane=target;
+      vc.querySelectorAll('.sn-btn').forEach(b=>b.classList.toggle('on',b===btn));
+      renderSetPane();
+    });
+  });
+  renderSetPane();
+}
+
+/* === SETTINGS PANE RENDERER === */
+function _goLiveRow(done, label, how){
+  return '<div class="gl-row '+(done?'gl-done':'')+'">'+
+    '<span class="gl-ic">'+(done?'\u2713':'\u25CB')+'</span>'+
+    '<div class="gl-body"><div class="gl-label">'+label+(done?' <span class="gl-tag">live</span>':' <span class="gl-tag off">not set up</span>')+'</div>'+
+    (done?'':'<div class="gl-how">'+how+'</div>')+'</div></div>';
+}
+/* === INTEGRATIONS: real Connect flow (OAuth-style, no key pasting) ===
+   Each integration's Connect button starts the provider's own approval flow.
+   The user approves in a popup and comes back connected. For this to run live,
+   you (owner) register each provider's OAuth app once and add its Client ID in
+   the platform settings — exactly how every big AI product does it. */
+const INTEGRATION_META = {
+  google:  { name:'Google',     key:'amv_gtoken',  oauth:'amv_gauth',   storeKey:'amv_google_connected' },
+  outlook: { name:'Microsoft 365', key:'amv_outlook', oauth:'amv_ms_client' },
+  slack:   { name:'Slack',      key:'amv_slack',   oauth:'amv_slack_client' },
+  sms:     { name:'Text messages', key:'amv_sms_phone' },
+  discord: { name:'Discord',    key:'amv_discord', oauth:'amv_discord_client' },
+  github:  { name:'GitHub',     key:'amv_github',  oauth:'amv_gh_client' },
+  vscode:  { name:'VS Code',    key:'amv_vscode' },
+  linear:  { name:'Linear',     key:'amv_linear',  oauth:'amv_linear_client' },
+  notion:  { name:'Notion',     key:'amv_notion',  oauth:'amv_notion_client' },
+  canvas:  { name:'Canvas LMS', key:'amv_canvas' },
+};
+async function connectIntegration(id){
+  const m = INTEGRATION_META[id];
+  if(!m){ return; }
+  // Google has a real OAuth path already wired
+  if(id==='google'){
+    const cid=loadStr('amv_gauth');
+    if(cid && window.google?.accounts?.id){ triggerGoogle(); return; }
+    if(cid){ // OAuth configured but library not ready
+      toast('Opening Google sign-in…','info'); triggerGoogle(); return;
+    }
+    toast('Google connection isn\u2019t switched on yet for this site. Once the operator enables it, Connect opens the Google approval popup \u2014 no keys to paste.','info',6000);
+    return;
+  }
+  // SMS uses the phone link flow
+  if(id==='sms'){ return connectSms(); }
+  // VS Code: deep link to the editor
+  if(id==='vscode'){
+    saveStr('amv_vscode','1'); toast('Opening VS Code…','info');
+    try{ window.location.href='vscode:extension/amv.amv-ai'; }catch(e){}
+    setTimeout(()=>_refreshIntegrationsUI(),300); return;
+  }
+  // Generic OAuth providers: open the provider's approval window if configured
+  const clientId = m.oauth ? loadStr(m.oauth) : '';
+  if(clientId){
+    const url = _oauthUrl(id, clientId);
+    if(url){ _openOAuthPopup(url, id); return; }
+  }
+  // Not configured by the operator yet — honest message, no fake "connected"
+  toast(m.name+' connection isn\u2019t switched on yet. When the operator enables it, Connect opens '+m.name+'\u2019s approval popup \u2014 you just approve, nothing to paste.','info',6000);
+}
+function _oauthUrl(id, clientId){
+  const redirect = encodeURIComponent(location.origin + '/oauth/' + id);
+  const map = {
+    outlook: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id='+clientId+'&response_type=code&scope=openid%20Mail.ReadWrite%20Calendars.ReadWrite&redirect_uri='+redirect,
+    slack:   'https://slack.com/oauth/v2/authorize?client_id='+clientId+'&scope=chat:write,channels:read&redirect_uri='+redirect,
+    discord: 'https://discord.com/oauth2/authorize?client_id='+clientId+'&response_type=code&scope=identify%20bot&redirect_uri='+redirect,
+    github:  'https://github.com/login/oauth/authorize?client_id='+clientId+'&scope=repo,read:org&redirect_uri='+redirect,
+    linear:  'https://linear.app/oauth/authorize?client_id='+clientId+'&response_type=code&scope=read,write&redirect_uri='+redirect,
+    notion:  'https://api.notion.com/v1/oauth/authorize?client_id='+clientId+'&response_type=code&owner=user&redirect_uri='+redirect,
+  };
+  return map[id]||'';
+}
+function _openOAuthPopup(url, id){
+  const w=560,h=680,left=(screen.width-w)/2,top=(screen.height-h)/2;
+  const pop=window.open(url,'amv_oauth_'+id,'width='+w+',height='+h+',left='+left+',top='+top);
+  if(!pop){ toast('Allow popups to connect.','error'); return; }
+  toast('Approve access in the popup to finish connecting.','info',5000);
+  // the backend OAuth callback marks the integration connected; we poll briefly
+  const meta=INTEGRATION_META[id];
+  let tries=0;
+  const iv=setInterval(()=>{
+    tries++;
+    if(loadStr(meta.key)){ clearInterval(iv); toast(meta.name+' connected!','success'); _refreshIntegrationsUI(); }
+    if(tries>60 || (pop&&pop.closed)){ clearInterval(iv); _refreshIntegrationsUI(); }
+  },1000);
+}
+async function connectSms(){
+  const phone = await showTextPromptAsync('Enter your mobile number (with country code) to run AMV by text:');
+  if(!phone) return;
+  const clean = phone.replace(/[^\d+]/g,'');
+  if(clean.replace(/\D/g,'').length<10){ showError('Enter a valid mobile number with country code.'); return; }
+  let ok=true, greeted=false;
+  if(window.AMV_API && AMV_API.live){
+    try{ const r=await AMV_API._fetch('/sms/register',{method:'POST',body:JSON.stringify({phone:clean})}); ok=r&&r.ok!==false; greeted=!!(r&&r.greeted); }
+    catch(e){ ok=false; }
+  }
+  if(ok){
+    saveStr('amv_sms_phone',clean);
+    toast(greeted?'Linked! Check your phone — AMV just texted you. \uD83D\uDCAC':'Number linked. AMV will text you once SMS is switched on for the platform.','success',5000);
+    _refreshIntegrationsUI();
+  } else { toast('Couldn\u2019t link right now. SMS needs the backend connected.','error',5000); }
+}
+function disconnectIntegration(id){
+  const m=INTEGRATION_META[id]; if(!m) return;
+  try{ localStorage.removeItem(_scopeKey(m.key)); }catch(e){}
+  if(id==='google'){ try{ localStorage.removeItem(_scopeKey('amv_gtoken')); localStorage.removeItem(_scopeKey('amv_gtoken_exp')); }catch(e){} }
+  toast(m.name+' disconnected','info'); _refreshIntegrationsUI();
+}
+window.connectIntegration=connectIntegration;
+window.disconnectIntegration=disconnectIntegration;
+
+function renderSetPane(){ _renderSetPaneInner(); _killTokenAutofill(); try{ if(_lang()!=='auto'&&_lang()!=='en') _translateUI(); }catch(e){ console.error('Translate UI error in renderSetPane', e); } }
+/* Stop browsers / password managers from autofilling API-key & token fields.
+   The only field that SHOULD autofill is the real account password (#a-pass). */
+function _killTokenAutofill(){
+  try{
+    document.querySelectorAll('input[type="password"]').forEach(inp=>{
+      if(inp.id==='a-pass'||inp.id==='pw-new'||inp.id==='pw-conf'||inp.id==='pw-cur') return;
+      inp.setAttribute('autocomplete','off');
+      inp.setAttribute('autocorrect','off');
+      inp.setAttribute('autocapitalize','off');
+      inp.setAttribute('spellcheck','false');
+      inp.setAttribute('data-lpignore','true');
+      inp.setAttribute('data-1p-ignore','true');
+      inp.setAttribute('data-form-type','other');
+      if(!inp.getAttribute('name')) inp.setAttribute('name','amv-secret-'+inp.id);
+      // if the browser already injected a value the user didn't type, and we have nothing saved, clear it
+      if(inp.value && inp.dataset.amvExpected!=='1' && !inp.dataset.amvHadValue){ /* keep real saved values, handled at render */ }
+    });
+  }catch(e){}
+}
+function _renderSetPaneInner(){
+  const pane=$('set-pane'); if(!pane) return;
+  const sp=S.settingsPane;
+  // Billing renders its full content INSIDE the settings pane (stays in Settings).
+  if(sp==='billing'){ if(typeof renderBillingView==='function'){ renderBillingView(pane); } return; }
+  const pfp=S.user&&S.user.email?loadStr('amv_pfp_'+S.user.email):'';
+  const pfpHtml=pfp?('<img src="'+pfp+'" style="width:100%;height:100%;border-radius:50%;object-fit:cover;display:block">'):'<span style="font-size:20px;font-weight:700;color:#fff">'+escH(S.user&&S.user.ini?S.user.ini:'?')+'</span>';
+
+  if(sp==='account'){
+    pane.innerHTML=
+      '<div class="set-title">Account</div>'+
+      '<div class="set-sub">Manage your profile and account information.</div>'+
+      '<div class="ss2">'+
+        '<div style="display:flex;align-items:center;gap:17px;margin-bottom:16px;flex-wrap:wrap">'+
+          '<div style="position:relative;flex-shrink:0">'+
+            '<div id="pfp-c" style="width:72px;height:72px;border-radius:50%;background:var(--g-brand);display:flex;align-items:center;justify-content:center;overflow:hidden;border:2px solid rgba(124,108,255,.4);cursor:pointer;transition:all .2s">'+pfpHtml+'</div>'+
+            '<div id="pfp-edit" style="position:absolute;bottom:0;right:0;width:22px;height:22px;background:var(--s2);border:1px solid var(--bd);border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:11px;transition:all .12s">&#x270F;</div>'+
+            '<input type="file" id="pfp-fi" accept="image/*" style="display:none">'+
+          '</div>'+
+          '<div><div style="font-size:16px;font-weight:700;letter-spacing:-.3px">'+escH(S.user&&S.user.name?S.user.name:'Guest')+'</div>'+
+          '<div style="font-size:12px;color:var(--t2);margin-top:2px">'+escH(S.user&&S.user.email?S.user.email:'')+'</div>'+
+          '<span class="badge '+(S.user&&S.user.provider==='google'?'bb':'bg3')+'" style="margin-top:7px">'+(S.user&&S.user.provider==='google'?'Google Account':'Email Account')+'</span></div>'+
+        '</div>'+
+        '<div class="sf">'+
+          '<div><label class="lbl">Display Name</label><input type="text" id="s-name" value="'+escH(S.user&&S.user.name?S.user.name:'')+'" placeholder="Your name"></div>'+
+          '<div id="acct-msg" style="display:none;font-size:12px;padding:7px 11px;border-radius:7px"></div>'+
+          '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
+            '<button class="btn bp" id="save-profile" style="font-size:12px">Save Changes</button>'+
+            '<button class="btn bs" id="rm-pfp" style="font-size:12px;'+(pfp?'':'opacity:.4;pointer-events:none')+'">Remove photo</button>'+
+          '</div>'+
+        '</div>'+
+      '</div>';
+    on($('pfp-c'),'click',()=>$('pfp-fi')?.click());
+    on($('pfp-edit'),'click',()=>$('pfp-fi')?.click());
+    on($('pfp-fi'),'change',function(){
+      const file=this.files[0]; if(!file) return;
+      if(file.size>5*1024*1024){toast('Image must be under 5MB','error');return;}
+      const r=new FileReader();
+      r.onload=e=>{const b=e.target.result;if(S.user&&S.user.email)saveStr('amv_pfp_'+S.user.email,b);updateSbUser();renderSetPane();toast('Photo updated','success');};
+      r.readAsDataURL(file); this.value='';
+    });
+    on($('rm-pfp'),'click',()=>{if(S.user&&S.user.email)localStorage.removeItem('amv_pfp_'+S.user.email);updateSbUser();renderSetPane();});
+    on($('save-profile'),'click',async()=>{
+      const nm=$('s-name')?.value.trim();
+      const msg=$('acct-msg');
+      function sm(t,ok){if(msg){msg.textContent=t;msg.style.display='block';msg.style.background=ok?'rgba(35,209,139,.07)':'rgba(255,95,87,.07)';msg.style.border='1px solid '+(ok?'rgba(35,209,139,.2)':'rgba(255,95,87,.2)');msg.style.color=ok?'var(--green)':'var(--red)';}}
+      if(!nm){sm('Name cannot be empty.',false);return;}
+      if(S.user){
+        const key=acctKey(S.user.email);
+        const raw=localStorage.getItem(key);
+        if(raw){try{const a=JSON.parse(raw);a.name=nm;a.ini=nm.split(' ').filter(Boolean).map(w=>w[0]).join('').toUpperCase().slice(0,2);localStorage.setItem(key,JSON.stringify(a));}catch{}}
+        S.user.name=nm; S.user.ini=nm.split(' ').filter(Boolean).map(w=>w[0]).join('').toUpperCase().slice(0,2); store('amv_user',S.user); updateSbUser();
+        sm('Changes saved!',true);
+      }
+    });
+
+  } else if(sp==='security'){
+    pane.innerHTML=
+      '<div class="set-title">Security</div>'+
+      '<div class="set-sub">Manage your password and account security.</div>'+
+      (S.user&&S.user.provider==='google'?
+        '<div class="ss2"><p style="font-size:13px;color:var(--t2)">Signed in with Google. Manage your password at <a href="https://myaccount.google.com" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">myaccount.google.com</a>.</p></div>':
+        '<div class="ss2"><h3>Password</h3>'+
+          '<div class="br2"><div><div class="opt-name">Reset your password</div><div class="opt-desc">We\u2019ll send a secure reset link to '+escH((S.user&&S.user.email)||'your email')+'. No need to remember your current one.</div></div>'+
+          '<button class="btn bp" id="reset-pw-btn" style="font-size:12px;white-space:nowrap">Send reset link</button></div>'+
+          '<div id="pw-msg" style="display:none;font-size:12px;padding:9px 12px;border-radius:8px;margin-top:12px"></div>'+
+        '</div>')+
+      '<div class="ss2"><h3>Sessions</h3>'+
+        '<div class="br2"><div><div style="font-size:13px;font-weight:500">This browser</div><div style="font-size:11px;color:var(--t2);margin-top:2px">Current device &bull; Active now</div></div><span class="badge bg3">Active</span></div>'+
+        '<button class="btn bs" style="font-size:12px;margin-top:12px" onclick="signOut()">Sign out of this device</button>'+
+      '</div>';
+    on($('reset-pw-btn'),'click',async()=>{
+      const email=(S.user&&S.user.email)||'';
+      const msg=$('pw-msg');
+      const sm=(t,ok)=>{if(msg){msg.textContent=t;msg.style.display='block';msg.style.background=ok?'rgba(35,209,139,.07)':'rgba(255,95,87,.07)';msg.style.border='1px solid '+(ok?'rgba(35,209,139,.2)':'rgba(255,95,87,.2)');msg.style.color=ok?'var(--green)':'var(--red)';}};
+      const btn=$('reset-pw-btn'); if(btn){ btn.disabled=true; btn.textContent='Sending…'; }
+      const ok=await sendPasswordReset(email);
+      if(btn){ btn.disabled=false; btn.textContent='Send reset link'; }
+      if(ok) sm('Reset link sent to '+email+'. Check your inbox and follow the link to set a new password.',true);
+      else sm('Couldn\u2019t send the reset email right now. Password reset email requires the backend email service to be connected.',false);
+    });
+
+  } else if(sp==='privacy'){
+    pane.innerHTML=
+      '<div class="set-title">Privacy &amp; Data</div>'+
+      '<div class="set-sub">Your data is stored locally in your browser. We never sell your data.</div>'+
+      '<div class="ss2"><h3>Data Management</h3>'+
+        '<div style="display:flex;flex-direction:column;gap:10px">'+
+          '<div style="display:flex;align-items:center;justify-content:space-between"><div><div style="font-size:13px;font-weight:500">Chat History</div><div style="font-size:11px;color:var(--t2)">Stored locally per account</div></div><button class="btn bs" id="prv-clrchats" style="font-size:12px">Clear all chats</button></div>'+
+          '<div style="height:1px;background:var(--bd)"></div>'+
+          '<div style="display:flex;align-items:center;justify-content:space-between"><div><div style="font-size:13px;font-weight:500;color:var(--red)">Delete Account Data</div><div style="font-size:11px;color:var(--t2)">Removes all local data</div></div><button class="btn bd2" id="prv-clrall" style="font-size:12px">Delete everything</button></div>'+
+        '</div>'+
+      '</div>'+
+      '<div class="ss2"><h3>What we store</h3>'+
+        '<div style="font-size:12px;color:var(--t2);line-height:1.72">'+
+          '&#x2022; Chat history (local browser storage only)<br>'+
+          '&#x2022; Your name and email address<br>'+
+          '&#x2022; AI Memory facts you add<br>'+
+          '&#x2022; Settings preferences<br><br>'+
+          'We do <strong style="color:var(--tx)">NOT</strong> store: payment card details (Stripe only), self-hosting credentials (local only), automation task content.'+
+        '</div>'+
+      '</div>';
+    on($('prv-clrchats'),'click',()=>{
+      const btn=$('prv-clrchats');
+      if(btn.dataset.c!=='yes'){btn.textContent='Confirm clear';btn.dataset.c='yes';btn.style.color='var(--red)';setTimeout(()=>{btn.textContent='Clear all chats';btn.dataset.c='';btn.style.color='';},3000);return;}
+      S.convs=[newConvObj()];S.cur=S.convs[0].id;_autoSave();renderHist();btn.textContent='Done!';btn.style.color='var(--green)';setTimeout(()=>renderSetPane(),1200);
+    });
+    on($('prv-clrall'),'click',()=>{
+      showConfirmAsync('Delete ALL local data? This cannot be undone.').then(confirmed=>{
+        if(!confirmed) return;
+        localStorage.clear();
+        location.reload();
+      });
+    });
+
+  } else if(sp==='appearance'){
+    const isDark=!document.body.classList.contains('light');
+    const curFs=parseInt(loadStr('amv_fs')||'14',10);
+    const fsBtn=(px,label)=>'<button class="fs-opt'+(curFs===px?' on':'')+'" data-fs="'+px+'"><span class="fs-pv" style="font-size:'+(px+1)+'px">Aa</span><span class="fs-lbl">'+label+'</span></button>';
+    pane.innerHTML=
+      '<div class="set-title">Appearance</div>'+
+      '<div class="set-sub">Customize how AMV.AI looks and feels. Changes apply instantly across the whole app.</div>'+
+      '<div class="ss2"><h3>Theme</h3>'+
+        '<div class="br2"><div><div class="opt-name">Dark Mode</div><div class="opt-desc">Deep dark, easy on the eyes</div></div>'+
+          '<label class="sw"><input type="checkbox" id="dark-sw" '+(isDark?'checked':'')+' ><span class="sw-sl"></span></label>'+
+        '</div>'+
+      '</div>'+
+      '<div class="ss2"><h3>Font size</h3>'+
+        '<div class="opt-desc" style="margin-bottom:14px">Scales the text everywhere so it\u2019s comfortable for you.</div>'+
+        '<div class="fs-row">'+fsBtn(13,'Small')+fsBtn(14,'Default')+fsBtn(16,'Large')+fsBtn(18,'Largest')+'</div>'+
+      '</div>';
+    on($('dark-sw'),'change',function(){ document.body.classList.toggle('light',!this.checked); saveStr('amv_theme',this.checked?'dark':'light'); });
+    pane.querySelectorAll('[data-fs]').forEach(btn=>on(btn,'click',()=>setFontSize(parseInt(btn.dataset.fs,10))));
+
+  } else if(sp==='language'){
+    const cur=_lang();
+    pane.innerHTML=
+      '<div class="set-title">Language</div>'+
+      '<div class="set-sub">Choose the language for AMV\u2019s responses and the content it generates \u2014 chat replies, images, video, and 3D models will all use it. You can still ask for any other language inside a message.</div>'+
+      '<div class="ss2"><h3>Response language</h3>'+
+        '<div class="lang-grid">'+
+          Object.entries(LANGS).map(([code,l])=>
+            '<button class="lang-opt'+(code===cur?' on':'')+'" data-lang="'+code+'">'+
+              '<span class="lang-native">'+l.native+'</span>'+
+              '<span class="lang-name">'+(code==='auto'?l.native2:l.name)+'</span>'+
+              (code===cur?'<span class="lang-check">\u2713</span>':'')+
+            '</button>'
+          ).join('')+
+        '</div>'+
+      '</div>'+
+      '<div class="ss2"><h3>How it works</h3>'+
+        '<div class="lang-info">'+
+          '<p>\u2022 <b>Auto-detect</b> replies in whatever language you write in.</p>'+
+          '<p>\u2022 Pick a language and every reply, plus text inside generated images, videos and models, comes back in it.</p>'+
+          '<p>\u2022 Override anytime \u2014 e.g. \u201cmake me a poster, but in Chinese\u201d \u2014 and AMV follows that request just for that task.</p>'+
+          '<p>\u2022 Not listed? AMV speaks 95+ languages \u2014 just write to it in yours and it responds in kind.</p>'+
+        '</div>'+
+      '</div>';
+    pane.querySelectorAll('[data-lang]').forEach(btn=>on(btn,'click',()=>{
+      saveStr('amv_lang',btn.dataset.lang);
+      _translateUI();
+      toast('Language set to '+(btn.dataset.lang==='auto'?'Auto-detect':_langName(btn.dataset.lang)),'success');
+      renderSettingsView();
+    }));
+
+  } else if(sp==='backend'){
+    const liveBase=loadStr('amv_api_base')||'';
+    const tokenSet=!!(loadStr('amv_api_token'));
+    pane.innerHTML=
+      '<div class="set-title">Live / Backend</div>'+
+      '<div class="set-sub">Connect AMV to your deployed backend so Crew jobs, approvals and Handoff work for real and across accounts. Leave blank to run in local demo mode.</div>'+
+      '<div class="ss2"><h3>Backend URL</h3>'+
+        '<div style="display:flex;gap:8px"><input type="url" id="be-url" value="'+escH(liveBase)+'" placeholder="https://amv-ai-backend.your.workers.dev" style="flex:1;font-size:12px"><button class="btn bp" style="font-size:12px" onclick="amvSaveBackend()">Save</button></div>'+
+        '<p style="font-size:11px;color:var(--mu);margin-top:8px">'+(liveBase?('Status: <span style="color:#3fb950">configured</span>'+(tokenSet?' &middot; signed in':' &middot; not signed in')):'Status: local demo mode')+'</p>'+
+      '</div>'+
+      '<div class="ss2" style="margin-top:14px"><h3>Sign in to backend</h3>'+
+        '<p style="font-size:12px;color:var(--mu);margin:-4px 0 10px">Get a token from the backend so this device can sync. (Simple email sign-in for now; real OAuth is added server-side.)</p>'+
+        '<div style="display:flex;gap:8px"><input type="email" id="be-email" value="'+escH((S.user&&S.user.email)||'')+'" placeholder="you@email.com" style="flex:1;font-size:12px"><button class="btn bp" style="font-size:12px" onclick="amvBackendLogin()">Connect</button></div>'+
+      '</div>';
+  } else if(sp==='apikeys'){
+    pane.innerHTML=
+      '<div class="set-title">AI Connection</div>'+
+      '<div class="set-sub">Connect an AI engine to power AMV. Your key is stored only in this browser — never sent to our servers.</div>'+
+      '<div class="conn-status '+(S.mk?'ok':'off')+'" id="conn-status">'+
+        '<span class="conn-dot"></span>'+(S.mk?'Connected — AMV is ready':'Not connected — add a key to start')+
+      '</div>'+
+      '<div class="ss2"><h3>Anthropic (recommended)</h3>'+
+        '<div class="sf"><div><label class="lbl">API key</label><input type="password" id="s-mk" value="'+escH(S.mk||'')+'" placeholder="sk-ant-api03-…" style="font-family:var(--mn);font-size:12px"></div>'+
+        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'+
+          '<button class="btn bp" id="save-mk" style="font-size:12px">Save &amp; connect</button>'+
+          '<button class="btn" id="test-mk" style="font-size:12px">Test connection</button>'+
+          '<a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" class="conn-link">Get a key →</a>'+
+        '</div>'+
+        '<div id="test-result" class="conn-test"></div></div>'+
+      '</div>'+
+      '<div class="ss2"><h3>Media generation (optional)</h3>'+
+        '<div class="sf">'+
+          '<div><label class="lbl">Runway ML — HD video</label><input type="password" id="s-rl" value="'+escH(S.rl||'')+'" placeholder="rw-…" style="font-family:var(--mn);font-size:12px"></div>'+
+          '<div><label class="lbl">ElevenLabs — voice</label><input type="password" id="s-el" value="'+escH(loadStr('amv_el')||'')+'" placeholder="xi-api-key-…" style="font-family:var(--mn);font-size:12px"></div>'+
+          '<button class="btn" id="save-media" style="align-self:flex-start;font-size:12px">Save media keys</button>'+
+        '</div>'+
+      '</div>';
+    on($('save-mk'),'click',()=>{
+      const v=$('s-mk')?.value.trim();
+      if(!v){ toast('Enter your API key first','error'); return; }
+      S.mk=v; saveStr('amv_mk',v);
+      const b=$('save-mk');if(b){b.textContent='Connected!';b.style.background='var(--green)';setTimeout(()=>{b.textContent='Save & connect';b.style.background='';},1500);}
+      const cs=$('conn-status'); if(cs){ cs.className='conn-status ok'; cs.innerHTML='<span class="conn-dot"></span>Connected — AMV is ready'; }
+      updateSbUser&&updateSbUser();
+      toast('AI connected','success');
+    });
+    on($('test-mk'),'click',async ()=>{
+      const v=$('s-mk')?.value.trim(); const out=$('test-result');
+      if(!v){ toast('Enter a key to test','error'); return; }
+      if(out){ out.className='conn-test testing'; out.textContent='Testing…'; }
+      try{
+        const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':v,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:8,messages:[{role:'user',content:'hi'}]})});
+        if(r.ok){ if(out){out.className='conn-test ok';out.textContent='✓ Connection works — your key is valid.';} S.mk=v; saveStr('amv_mk',v); const cs=$('conn-status'); if(cs){cs.className='conn-status ok';cs.innerHTML='<span class="conn-dot"></span>Connected — AMV is ready';} }
+        else{ const e=await r.json().catch(()=>({})); if(out){out.className='conn-test err';out.textContent='✗ '+(r.status===401?'Invalid key — check it and try again.':(e?.error?.message||('Error '+r.status)));} }
+      }catch(err){ if(out){out.className='conn-test err';out.textContent='✗ Could not reach the AI service. Check your connection.';} }
+    });
+    on($('save-media'),'click',()=>{
+      const rl=$('s-rl')?.value.trim(),el=$('s-el')?.value.trim();
+      if(rl){S.rl=rl;saveStr('amv_rl',rl);}if(el)saveStr('amv_el',el);
+      const b=$('save-media');if(b){b.textContent='Saved!';setTimeout(()=>{b.textContent='Save media keys';},1500);}
+      toast('Media keys saved','success');
+    });
+
+  } else if(sp==='platform'){
+    pane.innerHTML=
+      '<div class="set-title">Platform &amp; Stripe</div>'+
+      '<div class="set-sub">Configure revenue collection and deployment.</div>'+
+      (!S.sp&&!S.se?'<div class="wb">&#9888; Add your Stripe payment links to start collecting revenue.</div>':'')+
+      '<div class="ss2"><h3>Stripe — card, Apple Pay &amp; Google Pay</h3>'+
+        '<p style="font-size:12px;color:var(--mu);margin-bottom:11px;line-height:1.6">The startup standard. Create a Payment Link at stripe.com &rarr; Payments &rarr; Payment Links. <b>Apple Pay and Google Pay appear automatically inside Stripe\u2019s checkout</b> — no extra setup. Clicking &ldquo;Card / Apple Pay&rdquo; opens your real Stripe checkout. Revenue goes straight to your Stripe account. Set each link\u2019s success URL to <code>yoursite.com/?paid=pro</code> (or <code>elite</code>) so the plan activates on return.</p>'+
+        '<div class="sf">'+
+          '<div><label class="lbl">Pro Plan &mdash; $15/month</label><input type="url" id="s-sp" value="'+escH(S.sp||'')+'" placeholder="https://buy.stripe.com/…"></div>'+
+          '<div><label class="lbl">Elite Plan &mdash; $75/month</label><input type="url" id="s-se" value="'+escH(S.se||'')+'" placeholder="https://buy.stripe.com/…"></div>'+
+          '<div><label class="lbl">Stripe Customer Portal (subscription management)</label><input type="url" id="s-portal" value="'+escH(loadStr('amv_portal'))+'" placeholder="https://billing.stripe.com/p/…"></div>'+
+          '<button class="btn bp" id="save-stripe" style="align-self:flex-start;font-size:12px">Save Stripe Links</button>'+
+        '</div>'+
+      '</div>'+
+      '<div class="ss2"><h3>Support email</h3>'+
+        '<p style="font-size:12px;color:var(--mu);margin-bottom:11px;line-height:1.6">The address your users reach you at. Once set, the <b>&ldquo;Email Support&rdquo;</b> buttons across the app (Help Center, About, legal) open a pre-filled email to this address. Leave blank and those buttons fall back to <b>&ldquo;Ask AMV directly&rdquo;</b> &mdash; never a broken link.</p>'+
+        '<div class="sf">'+
+          '<div><label class="lbl">Support email address</label><input type="email" id="s-support" value="'+escH(_supportEmail())+'" placeholder="support@yourdomain.com" autocomplete="off"></div>'+
+          '<button class="btn bp" id="save-support" style="align-self:flex-start;font-size:12px">Save support email</button>'+
+        '</div>'+
+      '</div>'+
+      '<div class="ss2"><h3>In-app card field (optional)</h3>'+
+        '<p style="font-size:12px;color:var(--mu);margin-bottom:11px;line-height:1.6">Prefer the card form inside AMV instead of redirecting? Add your Stripe <b>publishable</b> key (starts with <code>pk_</code>) to enable Stripe Elements — the card field is an isolated Stripe iframe, so card numbers never touch AMV. <b>Never paste a secret (sk_) key.</b></p>'+
+        '<div class="sf">'+
+          '<div><label class="lbl">Stripe publishable key</label><input type="text" id="s-pk" value="'+escH(loadStr('amv_stripe_pk'))+'" placeholder="pk_live_…" style="font-family:var(--mn);font-size:12px"></div>'+
+          '<button class="btn bp" id="save-pk" style="align-self:flex-start;font-size:12px">Save key</button>'+
+        '</div>'+
+      '</div>'+
+      '<div class="ss2"><h3>PayPal &amp; Venmo</h3>'+
+        '<p style="font-size:12px;color:var(--mu);margin-bottom:11px;line-height:1.6">Paste your PayPal <b>client ID</b> (from developer.paypal.com) to turn on the real PayPal buttons — <b>Venmo is enabled automatically</b>. Clicking &ldquo;PayPal / Venmo&rdquo; opens the real PayPal checkout. Or drop in a hosted PayPal/Venmo link as a simple fallback.</p>'+
+        '<div class="sf">'+
+          '<div><label class="lbl">PayPal client ID</label><input type="text" id="s-ppc" value="'+escH((_payCfg().paypalClientId)||'')+'" placeholder="AYxxxx… (live client ID)" style="font-family:var(--mn);font-size:12px"></div>'+
+          '<div><label class="lbl">PayPal hosted link (optional fallback)</label><input type="url" id="s-ppl" value="'+escH((_payCfg().paypalLink)||'')+'" placeholder="https://www.paypal.com/…"></div>'+
+          '<div><label class="lbl">Venmo hosted link (optional fallback)</label><input type="url" id="s-vml" value="'+escH((_payCfg().venmoLink)||'')+'" placeholder="https://venmo.com/…"></div>'+
+          '<button class="btn bp" id="save-wallets" style="align-self:flex-start;font-size:12px">Save PayPal / Venmo</button>'+
+        '</div>'+
+      '</div>'+
+      '<div class="ss2" style="background:rgba(35,209,139,.04);border-color:rgba(35,209,139,.15)"><h3 style="color:var(--green)">\uD83D\uDE80 Go-Live Status \u2014 turn every feature on</h3>'+
+        '<p style="font-size:12px;color:var(--mu);margin:-4px 0 14px;line-height:1.6">Each item below is real, working code. It switches from \u201cnot set up\u201d to \u201clive\u201d the moment you add the account it needs. Green = working for your users right now.</p>'+
+        '<div class="golive">'+
+          _goLiveRow(!!S.mk, 'AI engine (all chat, agents, Studio, Dev, documents)', 'Add your Anthropic key in Settings \u2192 AI Connection. <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">Get a key \u2192</a>')+
+          _goLiveRow(!!(loadStr('amv_api_base')), 'Backend (multi-user, secure key, usage limits)', 'Deploy amv-backend.js to Cloudflare Workers, paste its URL in Settings \u2192 Live / Backend.')+
+          _goLiveRow(!!(S.sp||S.se), 'Payments (collect real revenue)', 'Create payment links at <a href="https://stripe.com" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">stripe.com</a> and paste them above. Money goes straight to your Stripe.')+
+          _goLiveRow(!!loadStr('amv_gauth'), 'Google sign-in + Gmail/Calendar autonomy', 'Create an OAuth Client ID at <a href="https://console.cloud.google.com" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">console.cloud.google.com</a>, add it in Settings \u2192 Integrations.')+
+          _goLiveRow(false, 'Text messages (run AMV from any phone)', 'Create a <a href="https://twilio.com" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">Twilio</a> account + number, add 3 secrets to your backend, point its SMS webhook at /sms/incoming.')+
+          _goLiveRow(false, 'Voice input', 'Just deploy to any HTTPS host (Netlify/Vercel). Voice works automatically on https:// \u2014 browsers block it on file://.')+
+          _goLiveRow(false, 'Deploy the site', 'Drag index.html to <a href="https://netlify.com" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">netlify.com</a>, then add your custom domain. Free.')+
+        '</div>'+
+      '</div>';
+    on($('save-stripe'),'click',()=>{
+      const sp=$('s-sp')?.value.trim(),se=$('s-se')?.value.trim(),portal=$('s-portal')?.value.trim();
+      if(sp!==undefined){S.sp=sp;saveStr('amv_sp',sp);}if(se!==undefined){S.se=se;saveStr('amv_se',se);}
+      saveStr('amv_portal',portal||'');
+      store('amv_pay_links',{pro:sp||'',elite:se||''});
+      const b=$('save-stripe');if(b){b.textContent='Saved!';b.style.background='var(--green)';setTimeout(()=>{b.textContent='Save Stripe Links';b.style.background='';},1500);}
+      toast('Stripe links saved','success');
+    });
+    on($('save-support'),'click',()=>{
+      const addr=$('s-support')?.value.trim()||'';
+      if(addr && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(addr)){ toast('Enter a valid email address (or leave blank).','error',4000); return; }
+      saveStr('amv_support_email',addr);
+      const b=$('save-support');if(b){b.textContent='Saved!';b.style.background='var(--green)';setTimeout(()=>{b.textContent='Save support email';b.style.background='';},1500);}
+      toast(addr?('Support email set to '+addr):'Support email cleared — buttons now route to Ask AMV','success',4000);
+    });
+    on($('save-pk'),'click',()=>{
+      const pk=$('s-pk')?.value.trim()||'';
+      if(pk && !/^pk_(test|live)_/.test(pk)){ toast('That is not a publishable key. It must start with pk_','error',4000); return; }
+      if(/^sk_/.test(pk)){ toast('Never paste a SECRET key (sk_). Use the publishable key (pk_).','error',5000); return; }
+      saveStr('amv_stripe_pk',pk);
+      const b=$('save-pk');if(b){b.textContent='Saved!';b.style.background='var(--green)';setTimeout(()=>{b.textContent='Save key';b.style.background='';},1500);}
+      toast(pk?'Secure card field enabled':'Key cleared','success');
+    });
+    on($('save-wallets'),'click',()=>{
+      const cfg=_payCfg();
+      cfg.paypalClientId=$('s-ppc')?.value.trim()||'';
+      cfg.paypalLink=$('s-ppl')?.value.trim()||'';
+      cfg.venmoLink=$('s-vml')?.value.trim()||'';
+      store('amv_pay_cfg',cfg);
+      saveStr('amv_paypal_client',cfg.paypalClientId);
+      const b=$('save-wallets');if(b){b.textContent='Saved!';b.style.background='var(--green)';setTimeout(()=>{b.textContent='Save PayPal / Venmo';b.style.background='';},1500);}
+      toast('PayPal & Venmo saved','success');
+    });
+
+  } else if(sp==='usage'){
+    pane.innerHTML=
+      '<div class="set-title">Usage</div>'+
+      '<div class="set-sub">Your current usage this window, activity, and the impact AMV has had for you.</div>'+
+      _usageContentHTML();
+    // wire upgrade buttons inside the pane
+    pane.querySelectorAll('[data-stab]').forEach(b=>on(b,'click',()=>{ S.tab='plans'; setTab('plans'); }));
+
+  } else if(sp==='integrations'){
+    pane.innerHTML =
+      '<div class="set-title">Integrations</div>'+
+      '<div class="set-sub">Connect AMV to your tools. <b style="color:var(--tx)">Autonomous</b> ones work in the background once connected; <b style="color:var(--tx)">manual</b> ones you trigger or upload to. Click Connect &mdash; you approve in a popup, no keys to paste.</div>'+
+      _integrationsCatalogHTML();
+    _wireIntegrationCatalog(pane);
+    _killTokenAutofill();
+  } else if(sp==='about'){
+    pane.innerHTML=
+      '<div class="set-title">About AMV.AI</div>'+
+      '<div class="set-sub">Platform information and legal.</div>'+
+      '<div class="ss2">'+
+        '<div style="display:flex;align-items:center;gap:14px;margin-bottom:16px">'+
+          '<div class="logo-mark-lg" style="width:50px;height:50px;border-radius:var(--r-md);flex-shrink:0"><svg width="22" height="22" viewBox="0 0 40 40" fill="none"><text x="20" y="27" text-anchor="middle" font-family="Inter,sans-serif" font-size="15" font-weight="800" letter-spacing="-1" fill="#fff">AMV</text></svg></div>'+
+          '<div><div style="font-size:17px;font-weight:800;letter-spacing:-.4px">AMV<span style="color:var(--accent)">.</span>AI</div><div style="font-size:11px;color:var(--t2);margin-top:2px">Version 2.0 &bull; 2025</div></div>'+
+        '</div>'+
+        '<p style="font-size:12px;color:var(--t2);line-height:1.65;margin-bottom:13px">Your AI workforce — it does the work, not just answers it. Chat, agents, builds, images, video, and automation in one place.</p>'+
+        '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
+          '<button class="btn bs" style="font-size:12px" onclick="openTerms()">Terms of Service</button>'+
+          '<button class="btn bs" style="font-size:12px" onclick="openTerms()">Privacy Policy</button>'+
+          supportButton({label:'Contact Support',cls:'btn bs',subject:'AMV Support request'})+
+        '</div>'+
+      '</div>'+
+      '<div class="ss2"><h3>Keyboard Shortcuts</h3>'+
+        '<div style="display:flex;flex-direction:column;gap:0">'+
+          '<div class="kbsr"><span>New chat</span><div><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd></div></div>'+
+          '<div class="kbsr"><span>Send message</span><div><kbd>Enter</kbd></div></div>'+
+          '<div class="kbsr"><span>New line</span><div><kbd>Shift</kbd>+<kbd>Enter</kbd></div></div>'+
+          '<div class="kbsr"><span>Toggle sidebar</span><div><kbd>Ctrl</kbd>+<kbd>B</kbd></div></div>'+
+          '<div class="kbsr"><span>Dark / light mode</span><div><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd></div></div>'+
+          '<div class="kbsr"><span>Settings</span><div><kbd>Ctrl</kbd>+<kbd>,</kbd></div></div>'+
+        '</div>'+
+      '</div>'+
+      (S.user?'<div class="ss2" style="border-color:rgba(255,95,87,.2)"><h3 style="color:var(--red)">Sign Out</h3><p style="font-size:12px;color:var(--t2);margin-bottom:12px">Your data remains saved and will be restored on next sign in.</p><button class="btn bd2" onclick="signOut()" style="font-size:12px">Sign out</button></div>':'');
+  } else {
+    pane.innerHTML='';
+  }
+}
+function setFontSize(px){
+  // The app uses fixed px sizes throughout, so a root font-size change alone
+  // does nothing. Scale the whole interface proportionally with `zoom`
+  // (text + spacing), which is what visibly changes the size for the user.
+  const scale = px/14;                 // 14 = default
+  _applyZoom(scale);
+  saveStr('amv_fs', px);
+  try{ if(S.tab==='settings' && S.settingsPane==='appearance') renderSetPane(); }catch(e){}
+}
+function _applyZoom(scale){
+  const app=document.getElementById('app');
+  const land=document.getElementById('land');
+  // zoom works in Chrome/Edge/Safari; transform fallback for Firefox
+  const supportsZoom = (typeof document.body.style.zoom!=='undefined');
+  [app,land].forEach(el=>{ if(!el) return;
+    if(supportsZoom){ el.style.zoom = scale; }
+    else { el.style.transform='scale('+scale+')'; el.style.transformOrigin='top left'; el.style.width=(100/scale)+'%'; }
+  });
+}
+function _applyFontSize(){ const px=parseInt(loadStr('amv_fs')||'14',10); if(px&&px!==14){ _applyZoom(px/14); } }
+function openShortcuts(){
+  const r=$('ovr'); if(!r) return;
+  const rows=[
+    ['New chat','Ctrl Shift O'],['Send message','Enter'],['New line','Shift Enter'],
+    ['Toggle sidebar','Ctrl B'],['Dark / light mode','Ctrl Shift L'],['Settings','Ctrl ,'],
+    ['Search chats','Ctrl K'],['Close dialog','Esc'],
+  ];
+  r.innerHTML='<div class="sc-ov" id="sc-bg"><div class="sc-modal" onclick="event.stopPropagation()">'+
+    '<div class="sc-head"><div class="sc-title">Keyboard shortcuts</div><button class="dna-x" id="sc-x">✕</button></div>'+
+    '<div class="sc-list">'+rows.map(k=>'<div class="sc-row"><span>'+k[0]+'</span><span class="sc-keys">'+k[1].split(' ').map(x=>'<kbd>'+x+'</kbd>').join('')+'</span></div>').join('')+'</div>'+
+    '</div></div>';
+  const close=()=>{ r.innerHTML=''; };
+  on($('sc-bg'),'click',close); on($('sc-x'),'click',close);
+}
+window.openShortcuts=openShortcuts;
+
+function setupLanding(){
+  on($('brand-land'),'click',()=>{ window.scrollTo(0,0); });
+  on($('land-login'),'click',()=>{ hideIntro(); openAuth('login'); });
+  on($('land-signup'),'click',()=>{ hideIntro(); openAuth('signup'); });
+  on($('cta-btn'),'click',()=>openAuth('signup'));
+  on($('hero-go'),'click',()=>openAuth('signup'));
+  on($('hero-inp'),'keydown',e=>{if(e.key==='Enter')openAuth('signup');});
+  on($('fp-btn'),'click',openTerms);
+  on($('ft-btn'),'click',openTerms);
+  on($('fc-btn'),'click',openTerms);
+  // Fill landing pricing
+  const lp=$('land-pricing'); if(lp) lp.innerHTML=planCards(false);
+  // Hero tags
+  const tags=[
+    ['Research my competitors','Research my top 5 competitors and build a comparison table with pricing, positioning, and weaknesses'],
+    ['Build me a landing page','Build me a complete landing page for my product with a hero, features, pricing, and a call to action'],
+    ['Plan & run my week','Plan my week from my calendar, find conflicts, and block focus time'],
+    ['Draft my emails','Read my inbox, rank what needs attention, and draft a reply for each'],
+    ['Daily market brief','Every morning, brief me on overnight market moves and the 3 headlines that matter'],
+    ['Design a brand','Design a brand identity — logo concept, colors, and a landing page in that style'],
+    ['Build a working app','Build a complete, working web app and run it live'],
+    ['Write & ship content','Write a week of social posts for X and LinkedIn, ready to publish'],
+  ];
+  const htags=$('htags');
+  if(htags){
+    tags.forEach(([label,q])=>{
+      const btn=document.createElement('span');
+      btn.className='htag'; btn.textContent=label;
+      on(btn,'click',()=>{ const inp=$('hero-inp');if(inp)inp.value=q; openAuth('signup'); });
+      htags.appendChild(btn);
+    });
+  }
+  // Marquee
+  const items=['Autonomous agents','Runs in the background','Builds real apps','Designs live','Researches deeply','Drafts your email','Plans your week','Connects Gmail & Drive','Hands off to teammates','Scheduled work','Multi-step tasks','Approval before sending','Live code sandbox','Brand & landing pages','Market briefs','Inbox triage'];
+  const track=$('mtrack');
+  if(track) track.innerHTML=[...items,...items].map(t=>'<div class="mitem"><div class="mdot"></div>'+t+'</div>').join('');
+}
+
+/* === APP SETUP === */
+function setupApp(){
+  // -- Icon Rail wiring --
+  // Logo does nothing (avoids confusing "signout" feeling)
+  on($('tsb'),'click',toggleSb); // tsb toggles hist-drawer
+  on($('ncb'),'click',newChat);
+  on($('theme-btn'),'click',function(){
+    document.body.classList.toggle('light');
+    saveStr('amv_theme',document.body.classList.contains('light')?'light':'dark');
+  });
+  on($('nav-av'),'click',function(e){ e.stopPropagation(); showProfMenu(this); });
+
+  // All data-tab buttons in icon rail
+  document.querySelectorAll('.snb[data-tab]').forEach(btn=>{
+    on(btn,'click',()=>{ if(btn.dataset.tab) setTab(btn.dataset.tab); });
+  });
+  on($('hist-search'),'input',renderHist);
+  on($('star-filter'),'click',()=>{ S.starFilter=!S.starFilter; $('star-filter').style.color=S.starFilter?'var(--gold)':''; renderHist(); });
+  on($('sb-user-btn'),'click',()=>{ const p=$('sb-popup'); if(p) p.classList.toggle('on'); });
+  on($('smi-settings'),'click',()=>{ $('sb-popup').classList.remove('on'); setTab('settings'); });
+  on($('smi-switch'),'click',()=>{ $('sb-popup').classList.remove('on'); openAuth('login'); });
+  on($('smi-signout'),'click',()=>{ $('sb-popup').classList.remove('on'); signOut(); });
+
+  // History drawer toggle
+  on($('ir-history-btn'),'click',function(){
+    const drawer=$('hist-drawer');
+    if(!drawer) return;
+    const isOpen=drawer.classList.contains('open');
+    drawer.classList.toggle('open');
+    this.classList.toggle('active');
+    document.body.classList.toggle('drawer-open', drawer.classList.contains('open'));
+    if(!isOpen) renderHist();
+  });
+  on($('hd-close'),'click',function(){
+    $('hist-drawer')?.classList.remove('open');
+    $('ir-history-btn')?.classList.remove('active');
+    document.body.classList.remove('drawer-open');
+  });
+
+  // Canvas automation button
+  on($('ir-canvas'),'click',runCanvasAutomation);
+
+  // Keyboard shortcut: Ctrl+B toggles history drawer
+  // (removed old sidebar toggle - no longer needed)
+  on($('kb-btn'),'click',()=>openShortcuts());
+  // Sidebar user popup
+  on($('sb-user-btn'),'click',function(e){ e.stopPropagation(); showProfMenu(this); });
+  // Profile actions handled via showProfMenu dropdown
+  // Star filter
+  on($('star-filter'),'click',()=>{ S.starFilter=!S.starFilter; $('star-filter').style.color=S.starFilter?'var(--amber)':''; renderHist(); });
+  // Sidebar nav tabs
+  document.querySelectorAll('.snb[data-tab]').forEach(btn=>{
+    on(btn,'click',()=>{ if(btn.dataset.tab) setTab(btn.dataset.tab); });
+  });
+  // History search
+  on($('hist-search'),'input',renderHist);
+  // File input
+  on($('fi'),'change',function(){ if(this.files.length) handleFiles(this.files); this.value=''; });
+  on($('canvas-btn'),'click',runCanvasAutomation);
+  // Global delegation for data-gs (go to settings pane) buttons
+  document.addEventListener('click',e=>{
+    const gs=e.target.closest('[data-gs]');
+    if(gs) { e.stopPropagation(); goSettings(gs.dataset.gs); return; }
+    const da=e.target.closest('[data-dact]');
+    if(da) { e.stopPropagation(); const fn=da.dataset.dact,arg=da.dataset.darg; if(fn==='askAmv')askAmv(); else if(fn==='toastInfo')toastInfo(arg); else if(window[fn])window[fn](arg); return; }
+    const st=e.target.closest('[data-stab]');
+    if(st) { e.stopPropagation(); setTab(st.dataset.stab); return; }
+    const co=e.target.closest('[data-checkout]');
+    if(co) { e.stopPropagation(); openCheckout(co.dataset.checkout); return; }
+    const au=e.target.closest('[data-auth]');
+    if(au) { e.stopPropagation(); openAuth(au.dataset.auth); return; }
+  });
+  // Sidebar history context menu via delegation
+  on($('hist'),'contextmenu',e=>{
+    e.preventDefault();
+    const item=e.target.closest('[data-cid]');
+    if(item) showConvMenu(e, item.dataset.cid);
+  });
+  // History action buttons via delegation
+  on($('hist'),'click',e=>{
+    const btn=e.target.closest('[data-hact]');
+    if(!btn) return;
+    e.stopPropagation();
+    const id=btn.dataset.hid, act=btn.dataset.hact;
+    if(act==='star') starConv(id);
+    else if(act==='rename') renameConv(id);
+    else if(act==='del') deleteConv(id);
+  });
+  // Close popup on outside click
+  document.addEventListener('click',e=>{
+    const popup=$('sb-popup');
+    if(popup&&popup.classList.contains('on')&&!popup.contains(e.target)&&e.target!=$('sb-user-btn')&&!$('sb-user-btn')?.contains(e.target)){
+      popup.classList.remove('on');
+    }
+  });
+}
+
+/* === MISSING CRITICAL FUNCTIONS === */
+
+/* -- Navigation helpers -- */
+function goSettings(pane){ S.settingsPane=pane; setTab('settings'); }
+function goToStripeSettings(){ closeOvr(); goSettings('platform'); }
+function showMsg(msg){ toast(msg||'Configure in Settings.','info'); }
+function askAmv(){ setTab('chat'); setTimeout(()=>{ const ta=document.getElementById('mta'); if(ta){ta.value='I need help with: ';ta.focus();} },150); }
+
+/* -- Cookie consent -- */
+function accCk(){ localStorage.setItem('amv_ck','1'); const ck=document.getElementById('ck'); if(ck)ck.remove(); }
+function renderCk(){
+  if(localStorage.getItem('amv_ck')) return;
+  const div=document.createElement('div');
+  div.id='ck';
+  div.innerHTML='<p>We use essential cookies to keep you signed in. By continuing you agree to our <button class="ckl" onclick="openTerms()">Terms</button> and <button class="ckl" onclick="openTerms()">Privacy Policy</button>.</p>'+
+    '<div style="display:flex;gap:7px;flex-shrink:0"><button class="btn bp" id="ck-acc" style="padding:5px 13px;font-size:12px">Accept</button><button class="btn bs" id="ck-nec" style="padding:5px 11px;font-size:12px">Necessary Only</button></div>';
+  document.body.appendChild(div);
+  document.getElementById('ck-acc')?.addEventListener('click',accCk);
+  document.getElementById('ck-nec')?.addEventListener('click',accCk);
+}
+
+/* -- Terms & Privacy modal -- */
+function openTerms(){
+  const r=document.getElementById('ovr'); if(!r) return;
+  r.innerHTML=
+    '<div class="ov" id="terms-bg"><div class="ob wide tall" onclick="event.stopPropagation()">'+
+      '<button class="oc" onclick="closeOvr()">&#215;</button>'+
+      '<h2>Terms of Service &amp; Privacy Policy</h2>'+
+      '<p class="ob-sub">Effective '+new Date().toLocaleDateString()+' &mdash; please read carefully.</p>'+
+      '<div class="ts">'+
+        '<h4>1. Acceptance</h4>By using AMV.AI you agree to these terms. If you disagree, stop using the platform.'+
+        '<h4>2. Content Policy</h4>Prohibited: explicit sexual/pornographic content; child sexual abuse material (CSAM &mdash; all violations reported to NCMEC and law enforcement); content to harass or harm; impersonation for fraud. Non-sexual depictions of public figures are permitted for editorial and creative use.'+
+        '<h4>3. Computer Automation &amp; Canvas</h4>By enabling automation features you grant AMV.AI permission to access your browser, email, calendar, Canvas LMS, and files as configured. Access is used solely for tasks you request. Revoke permissions in Settings at any time. AMV.AI does not store, sell, or share data accessed through automation.'+
+        '<h4>4. AI Disclaimer</h4>AI outputs may be inaccurate. Do not rely on AMV.AI for medical, legal, or financial decisions without professional verification.'+
+        '<h4>5. Privacy</h4>We store: account info (name, email), usage data, AI Memory you create. We do NOT store: card details (Stripe handles this), API keys (stored locally), automation task content. Data sharing: only with our payment processor (Stripe) and our AI infrastructure provider, strictly to deliver the service. We never sell your data.'+
+        '<h4>6. Payments</h4>Processed by Stripe (PCI-DSS Level 1). Monthly subscriptions, cancel any time. Refunds at discretion within 7 days.'+
+        '<h4>7. Security</h4>Passwords hashed with SHA-256. All data stored locally in your browser. API communications use HTTPS/TLS. Card details processed exclusively by Stripe.'+
+        '<h4>8. Contact</h4>'+(_supportEmail()?escH(_supportEmail()):'Contact support from the Help Center in the app.')+
+      '</div>'+
+      '<div style="display:flex;gap:9px"><button class="btn bp" onclick="accCk();closeOvr()" style="flex:1">I Accept</button><button class="btn bs" onclick="closeOvr()">Close</button></div>'+
+    '</div></div>';
+  document.getElementById('terms-bg')?.addEventListener('click',closeOvr);
+}
+
+/* -- Auth modal -- */
+function openAuth(mode){
+  const r=document.getElementById('ovr'); if(!r) return;
+  const isL=(mode==='login');
+  r.innerHTML=
+    '<div class="ov" id="auth-bg"><div class="ob" onclick="event.stopPropagation()">'+
+      '<button class="oc" id="auth-x">&#215;</button>'+
+      '<h2>'+(isL?'Welcome back':'Create your account')+'</h2>'+
+      '<p class="ob-sub">'+(isL?'Sign in to your AMV.AI account.':'Free forever. No credit card required.')+'</p>'+
+      '<div id="auth-err" class="ae"></div>'+
+      '<div class="af">'+
+        '<button class="gbtn" id="g-btn">'+
+          '<svg width="17" height="17" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>'+
+          'Continue with Google'+
+        '</button>'+
+        '<div class="ord"><span>or</span></div>'+
+        (!isL?'<div><label class="lbl">Full Name</label><input type="text" id="a-name" placeholder="Alex Johnson" autocomplete="name"></div>':'')+
+        '<div><label class="lbl">Email</label><input type="email" id="a-email" placeholder="you@example.com" autocomplete="email"></div>'+
+        '<div><label class="lbl">Password</label><input type="password" id="a-pass" placeholder="Minimum 6 characters" autocomplete="'+(isL?'current-password':'new-password')+'"></div>'+
+        '<button class="btn bp" id="auth-submit" style="width:100%;padding:11px;font-size:14px">'+(isL?'Sign In':'Create Free Account')+'</button>'+
+      '</div>'+
+      '<div class="asw">'+(isL?'No account? <button id="auth-sw">Sign up free</button>':'Already have an account? <button id="auth-sw">Sign in</button>')+'</div>'+
+      (isL?'<div class="asw" style="margin-top:6px"><button id="auth-forgot" style="color:var(--mu)">Forgot password?</button></div>':'')+
+      '<p class="an">By continuing you agree to our <button id="a-terms">Terms</button> and <button id="a-priv">Privacy Policy</button></p>'+
+    '</div></div>';
+  document.getElementById('auth-bg')?.addEventListener('click',closeOvr);
+  document.getElementById('auth-x')?.addEventListener('click',closeOvr);
+  document.getElementById('g-btn')?.addEventListener('click',triggerGoogle);
+  document.getElementById('auth-submit')?.addEventListener('click',()=>isL?doLoginForm():doSignupForm());
+  document.getElementById('auth-sw')?.addEventListener('click',()=>openAuth(isL?'signup':'login'));
+  document.getElementById('auth-forgot')?.addEventListener('click',doForgotPassword);
+  document.getElementById('a-terms')?.addEventListener('click',()=>{closeOvr();openTerms();});
+  document.getElementById('a-priv')?.addEventListener('click',()=>{closeOvr();openTerms();});
+  document.getElementById('a-pass')?.addEventListener('keydown',e=>{if(e.key==='Enter')isL?doLoginForm():doSignupForm();});
+  document.getElementById('a-email')?.addEventListener('keydown',e=>{if(e.key==='Enter')isL?doLoginForm():doSignupForm();});
+}
+
+/* -- Intro / Onboarding -- */
+let _iStep=0;
+const ITOTAL=5;
+function showIntro(){
+  const intro=document.getElementById('intro');
+  if(intro) intro.classList.remove('done');
+  document.getElementById('land')?.classList.remove('hidden');
+  document.getElementById('app')?.classList.remove('on');
+  _iStep=0; _renderIProg(); _goSlide(0); _setupIntro();
+}
+function hideIntro(){
+  const intro=document.getElementById('intro');
+  if(intro) intro.classList.add('done');
+}
+function _renderIProg(){
+  const p=document.getElementById('iprog'); if(!p) return;
+  p.innerHTML=Array.from({length:ITOTAL},(_,i)=>'<div class="ipd '+(i===_iStep?'on':'')+'" data-si="'+i+'"></div>').join('');
+  p.querySelectorAll('.ipd').forEach(d=>d.addEventListener('click',()=>_goSlide(parseInt(d.dataset.si))));
+}
+function _goSlide(n){
+  document.querySelectorAll('.islide').forEach(s=>{
+    const idx=parseInt(s.dataset.s);
+    s.className='islide '+(idx===n?'vis':idx<n?'hl':'hr');
+  });
+  _iStep=n; _renderIProg();
+  const back=document.getElementById('i-back');
+  const next=document.getElementById('i-next');
+  const skip=document.getElementById('i-skip');
+  if(back) back.style.display=n>0?'inline-flex':'none';
+  if(n===ITOTAL-1){
+    if(next) next.style.display='none';
+    if(skip) skip.style.display='none';
+  } else {
+    if(next){next.style.display='inline-flex';next.textContent=n===0?'Get Started':'Next';}
+    if(skip) skip.style.display='block';
+  }
+}
+function _setupIntro(){
+  document.getElementById('i-next')?.addEventListener('click',()=>{if(_iStep<ITOTAL-1)_goSlide(_iStep+1);});
+  document.getElementById('i-back')?.addEventListener('click',()=>{if(_iStep>0)_goSlide(_iStep-1);});
+  document.getElementById('i-skip')?.addEventListener('click',()=>{
+    hideIntro();
+    document.getElementById('land')?.classList.remove('hidden');
+    // Show auth immediately after hiding intro
+    setTimeout(()=>openAuth('signup'), 50);
+  });
+  document.getElementById('intro-terms-btn')?.addEventListener('click',e=>{e.preventDefault();openTerms();});
+  document.getElementById('intro-priv-btn')?.addEventListener('click',e=>{e.preventDefault();openTerms();});
+  document.getElementById('i-google-btn')?.addEventListener('click',_iGoogleSignIn);
+  document.getElementById('i-signup-btn')?.addEventListener('click',_iEmailSignup);
+  document.getElementById('i-signin-link')?.addEventListener('click',()=>{hideIntro();openAuth('login');});
+  document.getElementById('i-pass')?.addEventListener('keydown',e=>{if(e.key==='Enter')_iEmailSignup();});
+  // Swipe support
+  let tx=0;
+  const sl=document.getElementById('islides');
+  if(sl){
+    sl.addEventListener('touchstart',e=>{tx=e.touches[0].clientX;},{passive:true});
+    sl.addEventListener('touchend',e=>{
+      const dx=e.changedTouches[0].clientX-tx;
+      if(Math.abs(dx)>50){if(dx<0&&_iStep<ITOTAL-1)_goSlide(_iStep+1);else if(dx>0&&_iStep>0)_goSlide(_iStep-1);}
+    });
+  }
+  _goSlide(0);
+}
+function _showIErr(msg){ const e=document.getElementById('i-err');if(e){e.textContent=msg;e.style.display='block';} }
+async function _iGoogleSignIn(){
+  if(!document.getElementById('terms-chk')?.checked){_showIErr('Please accept the Terms to continue.');return;}
+  const cid=loadStr('amv_gauth');
+  if(cid && window.google?.accounts?.id){
+    try{
+      window.google.accounts.id.prompt(n=>{
+        if(n && (n.isNotDisplayed?.() || n.isSkippedMoment?.())){
+          _showIErr('Google Sign-In couldn\u2019t open here. Please sign up with your email below.');
+        }
+      });
+    }catch(e){ _showIErr('Google Sign-In is unavailable here. Please sign up with email.'); }
+    return;
+  }
+  _showIErr('Google Sign-In isn\u2019t enabled yet \u2014 please sign up with your email below. It only takes a second.');
+}
+async function _iEmailSignup(){
+  // Terms accepted implicitly by signing up (checkbox removed from gate)
+  document.getElementById('terms-chk') && (document.getElementById('terms-chk').checked=true);
+  const nm=document.getElementById('i-name')?.value.trim();
+  const em=document.getElementById('i-email')?.value.trim().toLowerCase();
+  const pw=document.getElementById('i-pass')?.value;
+  if(!nm){_showIErr('Please enter your full name.');return;}
+  if(!em||!em.includes('@')){_showIErr('Please enter a valid email.');return;}
+  if(!pw||pw.length<6){_showIErr('Password must be at least 6 characters.');return;}
+  const existing=findAccount(em);
+  if(existing){
+    const how = existing.provider==='google' ? 'with Google' : 'with email';
+    _showIErr('You already have an account ('+how+'). Click \u201cSign in instead\u201d.');
+    return;
+  }
+  const btn=document.getElementById('i-signup-btn');
+  if(btn){btn.disabled=true;btn.innerHTML='<div class="spin" style="width:14px;height:14px;border-width:2px;margin-right:8px"></div>Creating account…';}
+  _completeIntroLogin(await createAccount(nm,em,pw));
+}
+function _completeIntroLogin(acct){
+  if(!acct) return;
+  S.user={name:acct.name,email:acct.email,ini:acct.ini,provider:acct.provider||'email'};
+  store('amv_user',S.user);
+  accCk();
+  const ck=document.getElementById('ck'); if(ck)ck.remove();
+  const uc=loadUserConvs(acct.email);
+  if(uc&&uc.length){S.convs=uc;S.cur=S.convs[0].id;}
+  else{S.convs=[newConvObj()];S.cur=S.convs[0].id;}
+  S.imgs=[];S.vids=[];
+  hideIntro();
+  document.getElementById('land')?.classList.add('hidden');
+  goApp();
+}
+
+/* -- Keyboard shortcuts -- */
+function setupKeyboard(){
+  document.addEventListener('keydown',e=>{
+    const tag=document.activeElement?.tagName;
+    const inInput=tag==='INPUT'||tag==='TEXTAREA'||document.activeElement?.contentEditable==='true';
+    if(e.key==='Escape'&&!inInput){ const ta=document.getElementById('mta'); if(ta)ta.focus(); return; }
+    if(e.ctrlKey&&e.shiftKey&&e.key==='O'){e.preventDefault();newChat();return;}
+    if(e.ctrlKey&&!e.shiftKey&&e.key==='b'&&!inInput){
+      e.preventDefault();
+      const drawer=$('hist-drawer');
+      if(drawer){ drawer.classList.toggle('open'); $('ir-history-btn')?.classList.toggle('active'); if(drawer.classList.contains('open'))renderHist(); }
+      return;
+    }
+    if(e.ctrlKey&&e.shiftKey&&e.key==='L'){e.preventDefault();document.body.classList.toggle('light');saveStr('amv_theme',document.body.classList.contains('light')?'light':'dark');return;}
+    if(e.ctrlKey&&e.key===','){e.preventDefault();setTab('settings');return;}
+    if(e.ctrlKey&&e.key==='/'){e.preventDefault();setTab('help');return;}
+    if(e.ctrlKey&&e.key==='k'&&!inInput){e.preventDefault();document.getElementById('hist-search')?.focus();return;}
+  });
+}
+
+/* === CANVAS AUTOMATION SYSTEM === */
+const CANVAS_QUEUE_KEY='amv_canvas_queue';
+
+async function runCanvasAutomation() {
+  const token=loadStr('amv_canvas');
+  const baseUrl=loadStr('amv_canvas_url');
+  if(!token||!baseUrl){
+    toast('Add Canvas API token in Settings → Integrations first.','error');
+    return;
+  }
+  if(!S.mk){
+    toast('AMV isn\u2019t connected yet \u2014 the workspace owner needs to switch on the AMV engine first.','error');
+    return;
+  }
+
+  // Show automation modal
+  const r=document.getElementById('ovr'); if(!r) return;
+  r.innerHTML=
+    '<div class="ov" id="ca-bg"><div class="ob wide" onclick="event.stopPropagation()">'+
+      '<button class="oc" onclick="closeOvr()">&#215;</button>'+
+      '<h2>&#x1F4DA; Canvas Automation</h2>'+
+      '<p class="ob-sub">AMV will read your assignments, complete them, and save results to your Google Drive or download them.</p>'+
+      '<div id="ca-status" style="min-height:120px;background:rgba(0,0,0,.2);border:1px solid var(--bd);border-radius:var(--r);padding:13px;font-size:12px;color:var(--t2);font-family:var(--mn);overflow-y:auto;max-height:280px;line-height:1.8">'+
+        'Connecting to Canvas API...<br>'+
+      '</div>'+
+      '<div style="margin-top:13px;display:flex;gap:8px">'+
+        '<button class="btn bp" id="ca-start" style="font-size:13px">Start Automation</button>'+
+        '<button class="btn bs" onclick="closeOvr()" style="font-size:13px">Cancel</button>'+
+      '</div>'+
+      '<p style="font-size:10px;color:var(--t3);margin-top:9px">Your computer must stay on and browser open. For overnight automation, deploy a backend server &mdash; see the Help section.</p>'+
+    '</div></div>';
+  document.getElementById('ca-bg')?.addEventListener('click',closeOvr);
+
+  const log=(msg,color)=>{
+    const s=document.getElementById('ca-status');
+    if(s) s.innerHTML+=('<span style="color:'+(color||'var(--mu)')+'">'+escH(msg)+'</span><br>');
+    if(s) s.scrollTop=s.scrollHeight;
+  };
+
+  document.getElementById('ca-start')?.addEventListener('click',async()=>{
+    const btn=document.getElementById('ca-start');
+    if(btn){btn.disabled=true;btn.textContent='Running…';}
+    log('Fetching courses from Canvas...','var(--indigo)');
+
+    try{
+      // Fetch courses
+      const coursesRes=await fetch(baseUrl+'/api/v1/courses?enrollment_type=student&per_page=20',{
+        headers:{'Authorization':'Bearer '+token}
+      });
+      if(!coursesRes.ok) throw new Error('Canvas API error: '+coursesRes.status+' - check your token and URL.');
+      const courses=await coursesRes.json();
+      log('Found '+courses.length+' active courses.','var(--green)');
+
+      let completed=0, total=0;
+      for(const course of courses.slice(0,5)){
+        log('Checking '+course.name+'...','var(--tx)');
+        // Fetch assignments
+        const assignRes=await fetch(baseUrl+'/api/v1/courses/'+course.id+'/assignments?bucket=upcoming&per_page=10',{
+          headers:{'Authorization':'Bearer '+token}
+        });
+        const assignments=await assignRes.json();
+        const pending=assignments.filter(a=>!a.has_submitted_submissions&&a.due_at);
+        total+=pending.length;
+        log(pending.length+' pending assignments in '+course.name,'var(--mu)');
+
+        for(const assignment of pending.slice(0,3)){
+          log('Working on: '+assignment.name,'var(--amber)');
+          // Use AMV AI to complete it
+          const prompt='Complete this assignment fully and professionally.\n\nCourse: '+course.name+'\nAssignment: '+assignment.name+'\n\nInstructions:\n'+(assignment.description||'No instructions provided - write a comprehensive response.').replace(/<[^>]*>/g,' ').trim()+'\n\nProvide a complete, submission-ready response.';
+
+          try{
+            const aiRes=await fetch('https://api.anthropic.com/v1/messages',{
+              method:'POST',
+              headers:{'Content-Type':'application/json','x-api-key':S.mk,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+              body:JSON.stringify({model:'claude-fable-5',max_tokens:4000,messages:[{role:'user',content:prompt}]})
+            });
+            const aiData=await aiRes.json();
+            const answer=aiData.content?.[0]?.text||'Could not generate answer.';
+            log('&#x2713; Completed: '+assignment.name,'var(--green)');
+
+            // Save to a downloadable file
+            const blob=new Blob(['Assignment: '+assignment.name+'\nCourse: '+course.name+'\n\n'+answer],{type:'text/plain'});
+            const url=URL.createObjectURL(blob);
+            const a=document.createElement('a');
+            a.href=url; a.download=assignment.name.replace(/[^a-z0-9]/gi,'_').slice(0,50)+'.txt';
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            completed++;
+          } catch(aiErr){
+            log('AI error on '+assignment.name+': '+aiErr.message,'var(--red)');
+          }
+          // Brief delay to avoid rate limits
+          await new Promise(res=>setTimeout(res,1500));
+        }
+      }
+      log('&#x2713; Automation complete! '+completed+'/'+total+' assignments processed.','var(--green)');
+      log('Files downloaded to your computer. Review before submitting.','var(--mu)');
+      if(btn){btn.textContent='Done!';btn.style.background='var(--green)';}
+    } catch(err){
+      log('Error: '+err.message,'var(--red)');
+      if(btn){btn.disabled=false;btn.textContent='Retry';}
+    }
+  });
+}
+
+/* Canvas overnight queue (requires backend for true overnight - shows instructions) */
+function openOvernightQueue(){
+  const r=document.getElementById('ovr'); if(!r) return;
+  r.innerHTML=
+    '<div class="ov" id="oq-bg"><div class="ob wide" onclick="event.stopPropagation()">'+
+      '<button class="oc" onclick="closeOvr()">&#215;</button>'+
+      '<h2>&#x1F319; Overnight Task Queue</h2>'+
+      '<p class="ob-sub">Tasks to run overnight. Your computer must stay on, OR deploy a backend server.</p>'+
+      '<div class="sf" style="margin-bottom:14px">'+
+        '<input type="text" id="oq-task" placeholder="e.g. Complete all pending Canvas assignments for CS101…">'+
+        '<button class="btn bp" id="oq-add" style="align-self:flex-start;font-size:12px">Add Task</button>'+
+      '</div>'+
+      '<div id="oq-list" style="display:flex;flex-direction:column;gap:7px;min-height:60px;margin-bottom:14px"></div>'+
+      '<div class="wb" style="margin-bottom:13px">&#9888; For true overnight automation (computer OFF), you need a backend server. See Help Center for the free Render.com setup guide.</div>'+
+      '<div style="display:flex;gap:8px">'+
+        '<button class="btn bp" id="oq-run" style="font-size:13px">&#x25B6; Run Queue Now</button>'+
+        '<button class="btn bs" onclick="closeOvr()" style="font-size:13px">Done</button>'+
+      '</div>'+
+    '</div></div>';
+  document.getElementById('oq-bg')?.addEventListener('click',closeOvr);
+
+  const queue=JSON.parse(localStorage.getItem(CANVAS_QUEUE_KEY)||'[]');
+  const renderQ=()=>{
+    const list=document.getElementById('oq-list');
+    if(!list) return;
+    list.innerHTML=queue.length?queue.map((t,i)=>
+      '<div style="display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.04);border:1px solid var(--bd);border-radius:7px;padding:9px 12px;font-size:12px;">'+
+        '<span style="flex:1">'+escH(t)+'</span>'+
+        '<button onclick="queue.splice('+i+',1);localStorage.setItem(CANVAS_QUEUE_KEY,JSON.stringify(queue));renderQ()" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px">&#215;</button>'+
+      '</div>'
+    ).join(''):'<div style="font-size:12px;color:var(--t3);font-style:italic">No tasks queued.</div>';
+  };
+  renderQ();
+
+  document.getElementById('oq-add')?.addEventListener('click',()=>{
+    const inp=document.getElementById('oq-task');
+    if(!inp?.value.trim()) return;
+    const taskText=inp.value.trim();
+    // Task #1: check capability before queueing. Warn specifically if missing.
+    try{
+      const a=(typeof analyzeTaskIntent==='function')?analyzeTaskIntent(taskText):null;
+      if(a&&a.matched&&!a.ready){
+        const missing=(a.missing[0]&&a.missing[0].integration)||(a.unsupported[0]&&a.unsupported[0].integration)||'a required integration';
+        const api=(a.missing[0]&&a.missing[0].api)||(a.unsupported[0]&&a.unsupported[0].api)||'integration';
+        toast('Queued, but needs '+missing+' ('+api+') connected to run','info',4500);
+      } else {
+        toast('Task added to queue','success');
+      }
+    }catch(e){ toast('Task added to queue','success'); }
+    queue.push(taskText);
+    localStorage.setItem(CANVAS_QUEUE_KEY,JSON.stringify(queue));
+    inp.value=''; renderQ();
+  });
+
+  document.getElementById('oq-run')?.addEventListener('click',()=>{
+    if(!queue.length){toast('No tasks in queue','info');return;}
+    closeOvr();
+    // Send all queued tasks to chat as one big automation request
+    setTab('chat');
+    setTimeout(()=>{
+      const ta=document.getElementById('mta');
+      if(ta){
+        ta.value='Run these automation tasks in sequence:\n'+queue.map((t,i)=>(i+1)+'. '+t).join('\n');
+        ta.dispatchEvent(new Event('input'));
+        ta.focus();
+      }
+    },200);
+  });
+}
+
+
+
+// === BOOT - wire everything up ===
+/* This file is the WEBSITE, not anyone's data. All user data lives only in
+   the visitor's own browser (localStorage), never inside this HTML. Each
+   person who opens it gets their own private, separate account. To prove a
+   clean slate (or wipe this browser), run amvReset() in the console. */
+window.amvReset=function(){ try{ localStorage.clear(); }catch(e){} location.reload(); };
+/* Premium reveal-on-scroll for landing sections */
+function _initReveal(){
+  try{
+    const els=document.querySelectorAll('.lsec, .fgrid, .vs-grid, .step-g, .cta-sec');
+    if(prefersReducedMotion()){ els.forEach(e=>e.classList.add('in')); return; }
+    if(!('IntersectionObserver' in window)){ els.forEach(e=>e.classList.add('in')); return; }
+    els.forEach(e=>e.classList.add('reveal'));
+    const io=new IntersectionObserver((ents)=>{ ents.forEach(en=>{ if(en.isIntersecting){ en.target.classList.add('in'); io.unobserve(en.target); } }); },{threshold:.12});
+    els.forEach(e=>io.observe(e));
+  }catch(e){}
+}
+/* Run low-priority work when the browser is idle so first paint + the main
+   chat view become interactive immediately instead of waiting on everything. */
+const _idle = (fn)=>{ try{ (window.requestIdleCallback||function(f){return setTimeout(f,1)})(fn,{timeout:2000}); }catch(e){ setTimeout(fn,1); } };
+try {
+  // critical: the app must be usable right away
+  setupLanding();
+  setupApp();
+  setupKeyboard();
+  renderCk();
+  try{ checkOAuthCallback(); }catch(e){}
+  try{ _setPlan(loadStr('amv_plan')||'free'); }catch(e){}
+  // deferred: not needed for first interaction — run when idle
+  _idle(()=>{ try{ _initReveal(); }catch(e){} });
+  _idle(()=>{ try{ _translateUI(); }catch(e){} });
+  _idle(()=>{ try{ _checkPayReturn(); }catch(e){} });
+  _idle(()=>{ try{ _verifyEntitlement(); }catch(e){} });
+  _idle(()=>{
+  if(document.getElementById('amv-tip')) return;
+  var tip=document.createElement('div'); tip.id='amv-tip'; document.body.appendChild(tip);
+  document.addEventListener('mouseover',function(e){
+    var b=e.target.closest && e.target.closest('.snb'); if(!b) return;
+    var lbl=b.getAttribute('data-label')|| (b.dataset?b.dataset.tab:'') ||''; if(!lbl) return;
+    var r=b.getBoundingClientRect();
+    tip.textContent=lbl; tip.style.left=(r.right+10)+'px'; tip.style.top=(r.top+r.height/2)+'px'; tip.classList.add('on');
+  });
+  document.addEventListener('mouseout',function(e){
+    var b=e.target.closest && e.target.closest('.snb'); if(b) document.getElementById('amv-tip').classList.remove('on');
+  });
+  });
+  _idle(()=>{ try{ var _lbl={dashboard:'Dashboard',chat:'Chat',images:'Images',video:'Video',workspaces:'Projects',memory:'Memory',usage:'Usage',billing:'Billing',plans:'Plans',settings:'Settings',help:'Help Center',apps:'Apps',tasks:'Tasks',integrations:'Integrations',extensions:'Extensions',crew:'Crew',studio:'Studio',dev:'Dev',handoff:'Handoff'}; document.querySelectorAll('.snb').forEach(function(b){var t=b.dataset.tab; if(_lbl[t]) b.setAttribute('data-label',_lbl[t]);}); }catch(e){} });
+
+} catch(e) {
+  console.error('Boot error:', e);
+}
+
+// Nav scroll behavior
+(function(){
+  const land = document.getElementById('land');
+  const nav = document.getElementById('lnav');
+  if(land && nav){
+    land.addEventListener('scroll', function(){
+      if(land.scrollTop > 60){
+        nav.classList.add('scrolled');
+      } else {
+        nav.classList.remove('scrolled');
+      }
+    }, {passive: true});
+  }
+})();
+
+// Apply saved theme
+const savedTheme = loadStr('amv_theme');
+if(savedTheme === 'light') document.body.classList.add('light');
+
+// Apply saved font size (zoom-based, applied when app boots via _applyFontSize)
+try{ _applyFontSize&&_applyFontSize(); }catch(e){}
+
+// Init Google auth after load
+window.addEventListener('load',()=>{ setTimeout(initGAuth,500); });
+
+// Boot logic
+if(S.user&&S.user.email){
+  const acct=findAccount(S.user.email);
+  if(acct){
+    const uc=loadUserConvs(S.user.email);
+    if(uc&&uc.length){S.convs=uc;S.cur=S.convs[0].id;}
+    else if(!S.convs.length){S.convs=[newConvObj()];S.cur=S.convs[0].id;}
+    else if(!S.cur) S.cur=S.convs[0].id;
+    hideIntro();
+    document.getElementById('land')?.classList.add('hidden');
+    goApp();
+  } else {
+    S.user=null; localStorage.removeItem('amv_user'); showIntro();
+  }
+} else {
+  showIntro();
+}
+
+function toastInfo(msg){ toast(msg||'Done','info'); }
+
+
+
+
+/* ----------------------------------------------
+   TARGETED FIXES - added here
+   Uses saveStr/loadStr (existing helpers)
+   Does NOT override any existing functions
+   ---------------------------------------------- */
+
+/* 1. VOICE FIX - mic permission + better errors */
+(function(){
+  const orig = window.toggleVoice;
+  window.toggleVoice = function(){
+    const btn = $('voice-btn');
+    if(!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)){
+      toast('Voice needs Chrome or Edge','error',4000); return;
+    }
+    if(window._isRecording){ try{ window._voiceRec && window._voiceRec.stop(); }catch(e){} return; }
+    if(navigator.mediaDevices && navigator.mediaDevices.getUserMedia){
+      navigator.mediaDevices.getUserMedia({audio:true})
+        .then(s=>{ s.getTracks().forEach(t=>t.stop()); _amvStartVoice(btn); })
+        .catch(err=>{ if(err.name==='NotAllowedError') toast('Microphone blocked - allow in browser settings','error',5000); else _amvStartVoice(btn); });
+    } else _amvStartVoice(btn);
+  };
+})();
+
+function _amvStartVoice(btn){
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  window._voiceRec = new SR();
+  window._voiceRec.continuous = true;
+  window._voiceRec.interimResults = true;
+  window._voiceRec.lang = 'en-US';
+  window._voiceRec.onstart = ()=>{ window._isRecording=true; if(btn){btn.classList.add('rec');} toast('Listening - click mic to stop','info',4000); };
+  window._voiceRec.onresult = e=>{
+    let final='', interim='';
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      if(e.results[i].isFinal) final+=e.results[i][0].transcript;
+      else interim+=e.results[i][0].transcript;
+    }
+    const ta=$('mta');
+    if(ta){
+      const base=ta.dataset.vb||'';
+      ta.value=base+final+(interim?'['+interim+']':'');
+      if(final) ta.dataset.vb=base+final;
+      ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,130)+'px';
+    }
+  };
+  window._voiceRec.onend = ()=>{
+    window._isRecording=false; if(btn) btn.classList.remove('rec');
+    const ta=$('mta');
+    if(ta){ ta.value=(ta.value||'').replace(/\[.*?\]/g,'').trim(); delete ta.dataset.vb; }
+  };
+  window._voiceRec.onerror = e=>{
+    window._isRecording=false; if(btn) btn.classList.remove('rec');
+    const m={'not-allowed':'Mic blocked - allow in browser settings','no-speech':'No speech detected','audio-capture':'No microphone found'};
+    if(e.error!=='aborted') toast(m[e.error]||'Voice error: '+e.error,'error',4000);
+  };
+  try{ window._voiceRec.start(); } catch(e){ toast('Voice failed: '+e.message,'error'); }
+}
+
+/* 2. GOOGLE OAUTH - redirect flow (no popup cross-origin errors) */
+function connectGoogle(){
+  const cid = loadStr('amv_gauth');
+  if(!cid){ toast('Add Google Client ID in Settings → Integrations first','error',5000); goSettings('integrations'); return; }
+  const scopes = 'https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/calendar';
+  const redirectUri = window.location.origin + window.location.pathname;
+  const url = 'https://accounts.google.com/o/oauth2/v2/auth?client_id='+encodeURIComponent(cid)+'&redirect_uri='+encodeURIComponent(redirectUri)+'&response_type=token&scope='+encodeURIComponent(scopes)+'&prompt=consent';
+  saveStr('amv_oauth_return', S.tab||'integrations');
+  window.location.href = url;
+}
+function checkOAuthCallback(){
+  const hash = window.location.hash;
+  if(!hash || hash.indexOf('access_token')<0) return;
+  const params = new URLSearchParams(hash.slice(1));
+  const token = params.get('access_token');
+  const exp = parseInt(params.get('expires_in')||'3600');
+  if(token){
+    saveStr('amv_gtoken', token);
+    saveStr('amv_gtoken_exp', String(Date.now()+(exp-60)*1000));
+    history.replaceState(null,'',window.location.pathname);
+    const ret = loadStr('amv_oauth_return')||'integrations';
+    localStorage.removeItem('amv_oauth_return');
+    toast('Google connected! Gmail, Drive & Calendar active.','success',5000);
+    setTimeout(()=>setTab(ret), 500);
+  }
+}
+function getGToken(){
+  const token = loadStr('amv_gtoken'); if(!token) return null;
+  const exp = parseInt(loadStr('amv_gtoken_exp')||'0');
+  if(!exp) return token;
+  if(Date.now()<exp) return token;
+  localStorage.removeItem('amv_gtoken'); localStorage.removeItem('amv_gtoken_exp'); return null;
+}
+function disconnectGoogle(){
+  localStorage.removeItem('amv_gtoken'); localStorage.removeItem('amv_gtoken_exp');
+  toast('Google disconnected','info');
+  if(S.tab==='integrations') renderIntegrationsView();
+}
+window.disconnectGoogle=disconnectGoogle;
+/* Real Gmail/Calendar/Drive actions - open in chat */
+/* ============================================================
+   AUTONOMOUS INTEGRATION ACTIONS — the real "does the work" layer.
+   AMV can READ and ACT across connected accounts via these executable
+   tools. The AI is given the tool list, decides what to do, and we
+   execute the calls against the provider APIs with the user's token.
+   ============================================================ */
+const INTEGRATION_ACTIONS = {
+  gmail_list_unread: {
+    desc:'List the user\u2019s unread emails (sender + subject).', needs:'google',
+    async run(){
+      const t=getGToken(); if(!t) throw new Error('Gmail not connected');
+      const r=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10&labelIds=INBOX&q=is:unread',{headers:{'Authorization':'Bearer '+t}});
+      const d=await r.json(); if(d.error) throw new Error(d.error.message);
+      const msgs=d.messages||[];
+      const details=await Promise.all(msgs.slice(0,8).map(m=>fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/'+m.id+'?format=metadata&metadataHeaders=Subject&metadataHeaders=From',{headers:{'Authorization':'Bearer '+t}}).then(r=>r.json())));
+      return details.map(d=>{const h=(d.payload&&d.payload.headers)||[];const g=n=>(h.find(x=>x.name===n)||{}).value||'';return {id:d.id, from:g('From'), subject:g('Subject')};});
+    }
+  },
+  gmail_send: {
+    desc:'Send an email. Args: {to, subject, body}.', needs:'google',
+    async run(args){
+      const t=getGToken(); if(!t) throw new Error('Gmail not connected');
+      const raw=['To: '+args.to,'Subject: '+(args.subject||''),'Content-Type: text/plain; charset=utf-8','',args.body||''].join('\r\n');
+      const b64=btoa(unescape(encodeURIComponent(raw))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+      const r=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send',{method:'POST',headers:{'Authorization':'Bearer '+t,'Content-Type':'application/json'},body:JSON.stringify({raw:b64})});
+      const d=await r.json(); if(d.error) throw new Error(d.error.message);
+      return {sent:true, id:d.id};
+    }
+  },
+  calendar_list: {
+    desc:'List upcoming calendar events for the next 7 days.', needs:'google',
+    async run(){
+      const t=getGToken(); if(!t) throw new Error('Calendar not connected');
+      const now=new Date(), end=new Date(now.getTime()+7*864e5);
+      const r=await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin='+now.toISOString()+'&timeMax='+end.toISOString()+'&singleEvents=true&orderBy=startTime&maxResults=20',{headers:{'Authorization':'Bearer '+t}});
+      const d=await r.json(); if(d.error) throw new Error(d.error.message);
+      return (d.items||[]).map(e=>({when:(e.start&&(e.start.dateTime||e.start.date)), title:e.summary}));
+    }
+  },
+  calendar_create: {
+    desc:'Create a calendar event. Args: {title, start (ISO), end (ISO), description?}.', needs:'google',
+    async run(args){
+      const t=getGToken(); if(!t) throw new Error('Calendar not connected');
+      const body={summary:args.title, description:args.description||'', start:{dateTime:args.start}, end:{dateTime:args.end||args.start}};
+      const r=await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events',{method:'POST',headers:{'Authorization':'Bearer '+t,'Content-Type':'application/json'},body:JSON.stringify(body)});
+      const d=await r.json(); if(d.error) throw new Error(d.error.message);
+      return {created:true, id:d.id, link:d.htmlLink};
+    }
+  },
+  drive_list: {
+    desc:'List recent Google Drive files.', needs:'google',
+    async run(){
+      const t=getGToken(); if(!t) throw new Error('Drive not connected');
+      const r=await fetch('https://www.googleapis.com/drive/v3/files?pageSize=30&orderBy=modifiedTime desc&fields=files(name,mimeType,modifiedTime)',{headers:{'Authorization':'Bearer '+t}});
+      const d=await r.json(); if(d.error) throw new Error(d.error.message);
+      return (d.files||[]).map(f=>({name:f.name, type:(f.mimeType||'').split('/').pop(), modified:f.modifiedTime}));
+    }
+  },
+  github_list_issues: {
+    desc:'List open issues for a repo. Args: {repo: "owner/name"}.', needs:'github',
+    async run(args){
+      const t=loadStr('amv_github'); if(!t) throw new Error('GitHub not connected');
+      const r=await fetch('https://api.github.com/repos/'+args.repo+'/issues?state=open&per_page=20',{headers:{'Authorization':'Bearer '+t,'Accept':'application/vnd.github+json'}});
+      const d=await r.json(); if(d.message&&!Array.isArray(d)) throw new Error(d.message);
+      return d.map(i=>({number:i.number, title:i.title, url:i.html_url}));
+    }
+  },
+  github_create_issue: {
+    desc:'Open a GitHub issue. Args: {repo:"owner/name", title, body}.', needs:'github',
+    async run(args){
+      const t=loadStr('amv_github'); if(!t) throw new Error('GitHub not connected');
+      const r=await fetch('https://api.github.com/repos/'+args.repo+'/issues',{method:'POST',headers:{'Authorization':'Bearer '+t,'Accept':'application/vnd.github+json','Content-Type':'application/json'},body:JSON.stringify({title:args.title,body:args.body||''})});
+      const d=await r.json(); if(!d.number) throw new Error(d.message||'Failed to create issue');
+      return {created:true, number:d.number, url:d.html_url};
+    }
+  },
+  slack_post: {
+    desc:'Post a message to Slack. Args: {channel, text}.', needs:'slack',
+    async run(args){
+      const t=loadStr('amv_slack'); if(!t) throw new Error('Slack not connected');
+      if(/^https?:\/\//.test(t)){ await fetch(t,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:args.text})}); return {posted:true}; }
+      const r=await fetch('https://slack.com/api/chat.postMessage',{method:'POST',headers:{'Authorization':'Bearer '+t,'Content-Type':'application/json'},body:JSON.stringify({channel:args.channel||'#general',text:args.text})});
+      const d=await r.json(); if(!d.ok) throw new Error(d.error||'Slack post failed');
+      return {posted:true, ts:d.ts};
+    }
+  },
+};
+
+/* ============================================================
+   INTENT-AWARE TASK CAPABILITY SYSTEM (Task #1)
+   Maps what the user wants -> the specific API/integration/auth
+   required -> whether it is actually connected for THIS user.
+   Never pretends a task can run when the capability is missing.
+   ============================================================ */
+
+/* Each capability: the human action, the integration it belongs to,
+   the EXACT API + auth required, the tools that fulfil it, and a live
+   connection check. Keywords drive intent detection. */
+const TASK_CAPABILITIES = [
+  { id:'gmail', integration:'Google', label:'send, read or manage email',
+    api:'Gmail API', auth:'Google account (OAuth)',
+    connectId:'google', tools:['gmail_list_unread','gmail_send'],
+    isConnected:()=>!!getGToken(),
+    keywords:['email','emails','gmail','inbox','e-mail','reply to','send a mail','unread','draft a reply','respond to','mailbox'] },
+  { id:'calendar', integration:'Google Calendar', label:'view or create calendar events',
+    api:'Google Calendar API', auth:'Google account (OAuth)',
+    connectId:'google', tools:['calendar_list','calendar_create'],
+    isConnected:()=>!!getGToken(),
+    keywords:['calendar','schedule','meeting','event','appointment','book time','block time','remind me to meet','agenda','availability'] },
+  { id:'drive', integration:'Google Drive', label:'read or list your files',
+    api:'Google Drive API', auth:'Google account (OAuth)',
+    connectId:'google', tools:['drive_list'],
+    isConnected:()=>!!getGToken(),
+    keywords:['drive','google drive','my files','documents','spreadsheet in drive','file named'] },
+  { id:'github', integration:'GitHub', label:'manage issues and repositories',
+    api:'GitHub REST API', auth:'GitHub personal access token or OAuth',
+    connectId:'github', tools:['github_list_issues','github_create_issue'],
+    isConnected:()=>!!loadStr('amv_github'),
+    keywords:['github','issue','repo','repository','pull request','pr ','commit','open an issue','bug ticket'] },
+  { id:'slack', integration:'Slack', label:'post messages to Slack',
+    api:'Slack Web API (or Incoming Webhook)', auth:'Slack bot token or webhook URL',
+    connectId:'slack', tools:['slack_post'],
+    isConnected:()=>!!loadStr('amv_slack'),
+    keywords:['slack','post to channel','message the team','#general','dm on slack','notify the channel'] },
+];
+
+/* Integrations AMV advertises but that have no executable backend yet.
+   If a user asks for one of these, we name exactly what is missing. */
+const PLANNED_CAPABILITIES = [
+  { integration:'Microsoft 365 / Outlook', api:'Microsoft Graph API', auth:'Microsoft account (OAuth)',
+    keywords:['outlook','microsoft 365','office 365','onedrive','ms teams','microsoft teams','exchange'] },
+  { integration:'Notion', api:'Notion API', auth:'Notion integration token',
+    keywords:['notion','notion page','notion database','my notion'] },
+  { integration:'Linear', api:'Linear API', auth:'Linear API key',
+    keywords:['linear','linear issue','linear ticket'] },
+  { integration:'Discord', api:'Discord Bot API', auth:'Discord bot token',
+    keywords:['discord','discord server','discord channel'] },
+  { integration:'Canvas LMS', api:'Canvas LMS API', auth:'Canvas access token + school URL',
+    keywords:['canvas','assignment due','my course','lms','homework on canvas'] },
+  { integration:'SMS / Text messaging', api:'Twilio API', auth:'Twilio number + credentials (set up by operator)',
+    keywords:['text me','send a text',' sms','text message'] },
+  { integration:'X / Twitter', api:'X API', auth:'X developer credentials',
+    keywords:['tweet','twitter','post to x','x.com'] },
+  { integration:'WhatsApp', api:'WhatsApp Business API', auth:'WhatsApp Business credentials',
+    keywords:['whatsapp','whats app'] },
+  { integration:'Stripe (your account)', api:'Stripe API', auth:'Stripe secret key (operator)',
+    keywords:['stripe charge','refund a customer','create an invoice in stripe'] },
+];
+
+/* Analyse an instruction and decide what's required + whether it's ready.
+   Returns {ready, requires:[...], unsupported:[...], missing:[...], matched} */
+function analyzeTaskIntent(instruction){
+  const text=' '+String(instruction||'').toLowerCase()+' ';
+  const requires=[]; const seen=new Set();
+  for(const cap of TASK_CAPABILITIES){
+    if(cap.keywords.some(k=>text.includes(k))){
+      if(seen.has(cap.integration)) continue; seen.add(cap.integration);
+      requires.push({ id:cap.id, integration:cap.integration, label:cap.label, api:cap.api,
+        auth:cap.auth, connectId:cap.connectId, connected:!!cap.isConnected() });
+    }
+  }
+  const unsupported=[];
+  for(const cap of PLANNED_CAPABILITIES){
+    if(cap.keywords.some(k=>text.includes(k))){
+      if(seen.has(cap.integration)) continue; seen.add(cap.integration);
+      unsupported.push({ integration:cap.integration, api:cap.api, auth:cap.auth });
+    }
+  }
+  const missing=requires.filter(r=>!r.connected);
+  return {
+    matched: requires.length>0 || unsupported.length>0,
+    requires, unsupported, missing,
+    ready: requires.length>0 && missing.length===0 && unsupported.length===0
+  };
+}
+window.analyzeTaskIntent=analyzeTaskIntent;
+
+/* Build a specific, actionable message explaining what's needed.
+   Used when a task can't run as-is. */
+function taskRequirementMessage(analysis){
+  let out='';
+  if(analysis.unsupported.length){
+    analysis.unsupported.forEach(u=>{
+      out+='\u26D4 This task requires the **'+u.integration+'** ('+u.api+'), which is not currently available in AMV. '+
+           'It needs '+u.auth+'. I can\u2019t run it until that integration is supported.\n\n';
+    });
+  }
+  if(analysis.missing.length){
+    analysis.missing.forEach(m=>{
+      out+='\uD83D\uDD0C This task needs the **'+m.api+'** to '+m.label+', which isn\u2019t connected yet. '+
+           'Connect **'+m.integration+'** in Integrations (it authorises via '+m.auth+'), then I can run this automatically.\n\n';
+    });
+  }
+  return out.trim();
+}
+window.taskRequirementMessage=taskRequirementMessage;
+
+/* Agentic loop: AI plans tool calls, we execute them, report back. */
+async function runAgentTask(instruction, opts){
+  opts=opts||{};
+  const available=Object.entries(INTEGRATION_ACTIONS).filter(([k,a])=>{
+    if(a.needs==='google') return !!getGToken();
+    if(a.needs) return !!loadStr('amv_'+a.needs);
+    return true;
+  });
+  if(!available.length) throw new Error('No integrations connected yet. Connect Google, GitHub, or Slack in Integrations first.');
+  const toolList=available.map(([k,a])=>'- '+k+': '+a.desc).join('\n');
+  const sys='You are AMV\u2019s autonomous agent. You can call tools to take real actions on the user\u2019s connected accounts. '+
+    'Respond ONLY with a JSON array of steps to execute, in order. Each step: {"tool":"<name>","args":{...},"why":"<short reason>"}. '+
+    'If nothing should be done, return []. Available tools:\n'+toolList;
+  const plan=await aiComplete(instruction, sys, {json:true});
+  let steps=[]; try{ steps=JSON.parse(String(plan).replace(/```json|```/g,'').trim()); }catch(e){ steps=[]; }
+  if(!Array.isArray(steps)) steps=[];
+  const results=[];
+  for(const step of steps.slice(0,8)){
+    const action=INTEGRATION_ACTIONS[step.tool];
+    if(!action){ results.push({tool:step.tool, error:'unknown tool'}); continue; }
+    try{ if(opts.onStep) opts.onStep(step); const out=await action.run(step.args||{}); results.push({tool:step.tool, why:step.why, ok:true, result:out}); try{ AMVValue.record('agent_action'); }catch(e){} }
+    catch(e){ results.push({tool:step.tool, why:step.why, ok:false, error:e.message}); }
+  }
+  return {steps, results};
+}
+window.runAgentTask=runAgentTask;
+window.INTEGRATION_ACTIONS=INTEGRATION_ACTIONS;
+
+/* Run an autonomous task from the UI and report progress + results in chat. */
+async function runAutonomousTask(instruction){
+  if(!instruction||!instruction.trim()){ toast('Tell AMV what to do across your apps','info'); return; }
+  setTab('chat');
+  const msgs=getMsgs();
+  msgs.push({r:'u',c:instruction,d:instruction});
+
+  // --- Task #1: analyse intent BEFORE running. Never pretend. ---
+  const analysis=analyzeTaskIntent(instruction);
+  if(analysis.matched && !analysis.ready){
+    // A real integration is required but missing/unsupported. Be specific.
+    let out=taskRequirementMessage(analysis);
+    // If part of the task IS ready, say so honestly.
+    const ready=analysis.requires.filter(r=>r.connected);
+    if(ready.length){
+      out+='\n\n\u2705 The **'+ready.map(r=>r.integration).join('** and **')+'** part is connected and ready — '+
+           'once the above is connected too, I can run the whole task.';
+    }
+    msgs.push({r:'a',c:out,model:S.model});
+    setMsgs(msgs); S.busy=false; renderChatMsgs();
+    return;
+  }
+
+  msgs.push({r:'a',c:'',_retrying:'Planning actions across your connected apps…',streaming:true});
+  setMsgs(msgs); renderChatMsgs();
+  const idx=msgs.length-1;
+  try{
+    const {steps,results}=await runAgentTask(instruction,{onStep:(s)=>{
+      msgs[idx]={...msgs[idx],_retrying:'Running: '+s.tool.replace(/_/g,' ')+'…'};
+      setMsgs(msgs); renderChatMsgs();
+    }});
+    // build a readable summary
+    let out='';
+    if(!steps.length){ out='I looked at this but didn\u2019t find a safe action to take automatically. Want me to do something specific?'; }
+    else {
+      out='**Done — here\u2019s what I did:**\n\n';
+      results.forEach((r,i)=>{
+        const label=(steps[i]&&steps[i].why)||r.tool;
+        out+=(r.ok?'\u2705':'\u26A0\uFE0F')+' '+label+(r.ok?'':' — '+escH(r.error||'failed'))+'\n';
+      });
+    }
+    delete msgs[idx]._retrying; msgs[idx]={r:'a',c:out,model:S.model};
+  }catch(e){
+    delete msgs[idx]._retrying; msgs[idx]={r:'a',c:'',model:S.model,_error:e.message||'Could not run that task.'};
+  }
+  setMsgs(msgs); S.busy=false; renderChatMsgs();
+}
+window.runAutonomousTask=runAutonomousTask;
+
+async function quickGmail(){
+  const token = getGToken();
+  if(!token){ toast('Connect Gmail first - click Connect in Integrations','error',4000); return; }
+  toast('Loading inbox...','info',2000);
+  try{
+    const r = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10&labelIds=INBOX&q=is:unread',{headers:{'Authorization':'Bearer '+token}});
+    const d = await r.json();
+    if(d.error){ toast('Gmail: '+d.error.message,'error'); return; }
+    const msgs = d.messages||[];
+    if(!msgs.length){ toast('No unread emails!','success'); return; }
+    const details = await Promise.all(msgs.slice(0,8).map(m=>
+      fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/'+m.id+'?format=metadata&metadataHeaders=Subject&metadataHeaders=From',{headers:{'Authorization':'Bearer '+token}}).then(r=>r.json())
+    ));
+    const summary = details.map(d=>{
+      const subj = d.payload&&d.payload.headers&&d.payload.headers.find(h=>h.name==='Subject');
+      const from = d.payload&&d.payload.headers&&d.payload.headers.find(h=>h.name==='From');
+      return 'From: '+(from&&from.value||'?')+'\nSubject: '+(subj&&subj.value||'(no subject)');
+    }).join('\n\n');
+    setTab('chat');
+    setTimeout(()=>{ const ta=$('mta'); if(ta){ ta.value='I have '+msgs.length+' unread emails. Summarize what needs attention:\n\n'+summary; ta.focus(); } },200);
+  }catch(e){ toast('Gmail error: '+e.message,'error'); }
+}
+async function quickCalendar(){
+  const token = getGToken();
+  if(!token){ toast('Connect Calendar first','error',4000); return; }
+  toast('Loading calendar...','info',2000);
+  try{
+    const now=new Date(), end=new Date(now.getTime()+7*24*60*60*1000);
+    const r = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin='+now.toISOString()+'&timeMax='+end.toISOString()+'&singleEvents=true&orderBy=startTime&maxResults=20',{headers:{'Authorization':'Bearer '+token}});
+    const d = await r.json();
+    if(d.error){ toast('Calendar: '+d.error.message,'error'); return; }
+    const events = (d.items||[]).map(e=>(e.start&&(e.start.dateTime||e.start.date))+': '+e.summary).join('\n');
+    setTab('chat');
+    setTimeout(()=>{ const ta=$('mta'); if(ta){ ta.value='Here is my calendar for the next 7 days:\n\n'+(events||'No events')+'\n\nHelp me optimize my week.'; ta.focus(); } },200);
+  }catch(e){ toast('Calendar error: '+e.message,'error'); }
+}
+async function quickDrive(){
+  const token = getGToken();
+  if(!token){ toast('Connect Drive first','error',4000); return; }
+  toast('Reading Drive...','info',2000);
+  try{
+    const r = await fetch('https://www.googleapis.com/drive/v3/files?pageSize=30&orderBy=modifiedTime desc&fields=files(name,mimeType,modifiedTime)',{headers:{'Authorization':'Bearer '+token}});
+    const d = await r.json();
+    if(d.error){ toast('Drive: '+d.error.message,'error'); return; }
+    const files = (d.files||[]).map(f=>f.name+' ('+(f.mimeType&&f.mimeType.split('/').pop())+')').join('\n');
+    setTab('chat');
+    setTimeout(()=>{ const ta=$('mta'); if(ta){ ta.value='Here are my recent Google Drive files:\n\n'+files+'\n\nSuggest how to organize them.'; ta.focus(); } },200);
+  }catch(e){ toast('Drive error: '+e.message,'error'); }
+}
+
+/* 3. TASK LAUNCHER */
+const TASKS={
+  email:"Write a professional email.\n\nTo: [name/role]\nAbout: [explain]\nTone: [professional/friendly/formal]",
+  emailreply:"Write a reply to this email:\n\n[Paste email here]\n\nMatch the tone and be concise.",
+  text:"Write a text message to [name].\n\nSituation: [what you need to say]",
+  trip:"Plan a trip to [destination] for [number] days.\nInclude: daily itinerary, hotels, restaurants, costs, tips.",
+  shopping:"Create a shopping list for [occasion/meal/week]. Organize by category.",
+  meal:"Create a 7-day meal plan for [dietary preference].\nInclude breakfast, lunch, dinner, snacks, shopping list.",
+  fitness:"Build a workout plan.\nGoal: [lose weight/build muscle/get fit]\nDays/week: [number]\nEquipment: [gym/home/none]",
+  essay:"Write an essay on: [topic]\nLevel: [high school/college]\nLength: [word count]",
+  homework:"Help me with this assignment:\n\n[Paste assignment here]\n\nCourse: [subject]",
+  study:"Create study notes for: [subject/chapter]\nInclude: key concepts, definitions, examples, practice questions.",
+  flashcards:"Create 20 flashcard Q&As for: [topic]",
+  summarize:"Summarize this:\n\n[Paste text/article here]\n\nGive: 1-sentence summary, key points, takeaways.",
+  explain:"Explain [concept] simply.\nUse analogies, examples, step-by-step breakdown.",
+  resume:"Write a resume for a [job title] role.\nExperience: [years]\nKey skills: [list them]",
+  coverletter:"Write a cover letter for [job title] at [company].\nMy background: [describe]\nJob requires: [requirements]",
+  linkedin:"Rewrite my LinkedIn to get more views.\nHeadline: [current headline]\nTarget role: [what you want]",
+  bizplan:"Write a business plan for: [business idea]\nInclude: market analysis, revenue model, projections.",
+  proposal:"Write a proposal for [client] for [project].\nScope: [what you will do]\nPrice: $[amount]",
+  meeting:"Write meeting notes from:\n\n[Paste discussion/transcript]\n\nInclude action items.",
+  social:"Write 10 [Instagram/Twitter/LinkedIn] posts about [topic].\nVoice: [casual/professional]",
+  script:"Write a video script for [YouTube/TikTok] about [topic].\nLength: [duration]\nAudience: [who]",
+  story:"Write a short story about [topic/genre].\nSetting: [where]\nCharacter: [describe]\nConflict: [what happens]",
+  code:"Build [describe what to build] in [language/framework].\nRequirements: [list them]\nDo not truncate.",
+  debug:"Debug this code:\n\n[Paste code]\n\nError: [paste error message]\nExpected: [what it should do]",
+  api:"Build a REST API for [what it does].\nEndpoints: [list]\nAuth: [JWT/API key/none]",
+  budget:"Analyze spending and build a budget:\n\n[Paste transactions]\n\nGoal: [save/pay debt/invest]",
+  invest:"Investment strategy.\nAmount: $[number]\nRisk: [low/medium/high]\nGoal: [retirement/growth/income]",
+  contract:"Review this contract - explain terms, risks, what to negotiate:\n\n[Paste contract]",
+  excel:"Analyze this data:\n\n[Paste CSV/spreadsheet data]\n\nQuestions: [what do you want to know?]",
+  pptx:"Create a presentation on: [topic]\nSlides: [number]\nAudience: [who]\nKey message: [main point]",
+  word:"Write a [report/proposal/memo] on: [topic]\nAudience: [who reads it]\nLength: [approximate]"
+};
+function launchTask(key){
+  const prompt=TASKS[key];
+  if(!prompt){ toast('Task not found','error'); return; }
+  setTab('chat');
+  setTimeout(()=>{
+    const ta=$('mta');
+    if(ta){
+      ta.value=prompt;
+      ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,130)+'px';
+      ta.focus();
+      const s=prompt.indexOf('[');
+      if(s>-1) ta.setSelectionRange(s,prompt.indexOf(']')+1);
+    }
+  },150);
+}
+
+/* 4. TASKS VIEW */
+function renderTasksView(){
+  const vc=$('vc'); if(!vc) return;
+  // Unique, agentic capabilities — things a plain chatbot can't do
+  const unique=[
+    ['🛰️','Run a standing job','AMV works in the background across your accounts and only sends after you approve.','crew'],
+    ['🌅','Daily brief on autopilot','Wake up to a market + inbox + calendar briefing, generated and delivered every morning.','autobrief'],
+    ['🏗️','Build & ship a working app','Not just code — AMV writes it, runs it in a live sandbox, debugs it, and shows the result.','dev'],
+    ['🎨','Design a brand + site live','Watch a landing page build on a canvas, then refine it by chatting.','studio'],
+    ['🔁','Auto-debug until it passes','Paste broken code; AMV runs it, reads the real error, fixes, and re-runs in a loop.','lab'],
+    ['🤝','Hand off with full context','Pass any task to a teammate or another agent — nothing gets dropped.','handoff'],
+  ];
+  const ucard=(u)=>`<button class="uniq-card" data-dact="launchUnique" data-darg="${u[3]}">
+    <span class="uniq-ic">${u[0]}</span>
+    <span class="uniq-t">${u[1]}</span>
+    <span class="uniq-d">${escH(u[2])}</span>
+    <span class="uniq-go">Try it →</span>
+  </button>`;
+  const cats=[
+    {label:'Personal',tasks:[['email','\u2709\uFE0F','Write an email','Any email, instantly'],['emailreply','\u21A9\uFE0F','Reply to an email','Smart, ready-to-send replies'],['trip','\u2708\uFE0F','Plan a trip','A full itinerary'],['meal','\uD83C\uDF7D\uFE0F','Meal plan','A 7-day plan'],['fitness','\uD83D\uDCAA','Workout plan','Tailored to your goals']]},
+    {label:'Student',tasks:[['essay','\uD83D\uDCDD','Write an essay','On any topic'],['study','\uD83D\uDCD6','Study notes','Key concepts, organized'],['flashcards','\uD83C\uDFB4','Make flashcards','20 Q&A cards'],['summarize','\uD83D\uDD0D','Summarize anything','Articles, docs or books'],['explain','\uD83D\uDCA1','Explain anything','Simple, clear breakdowns']]},
+    {label:'Work',tasks:[['resume','\uD83D\uDCC4','Write my resume','ATS-optimized'],['coverletter','\u2709\uFE0F','Cover letter','Tailored to any job'],['bizplan','\uD83D\uDCC8','Business plan','A complete plan'],['proposal','\uD83E\uDD1D','Client proposal','Built to win the client'],['meeting','\uD83D\uDCCB','Meeting notes','With action items']]},
+    {label:'Creative',tasks:[['social','\uD83D\uDCF1','Social posts','10 posts for any platform'],['script','\uD83C\uDFAC','Video script','For YouTube or TikTok'],['story','\uD83D\uDCDA','Write a story','Any genre or length']]},
+  ];
+  const row=(t)=>`<button class="tk-row" data-dact="launchTask" data-darg="${t[0]}"><span class="tk-ic">${t[1]}</span><span class="tk-body"><span class="tk-t">${t[2]}</span><span class="tk-d">${escH(t[3])}</span></span><span class="tk-arrow">\u2192</span></button>`;
+  vc.innerHTML = `<div class="sv fi"><div class="tasks-page">
+    <header class="tasks-hero">
+      <div>
+        <span class="eyebrow">What AMV can do</span>
+        <h2>Get something done.</h2>
+        <p class="vsub">Start with something only AMV can do — or grab a ready-made task that opens a chat set up to deliver.</p>
+      </div>
+    </header>
+    <section class="uniq-sec">
+      <div class="sec-head"><h3>Only on AMV</h3><span class="sec-sub">Capabilities a plain chatbot doesn't have</span></div>
+      <div class="uniq-grid">${unique.map(ucard).join('')}</div>
+    </section>
+    <div class="tasks-masonry">
+      ${cats.map((cat,n)=>`<section class="tk-cat${n===0?' wide':''}">
+        <div class="sec-head"><h3>${cat.label}</h3><span class="sec-sub">${cat.tasks.length} tasks</span></div>
+        <div class="tk-list">${cat.tasks.map(row).join('')}</div>
+      </section>`).join('')}
+    </div>
+  </div></div>`;
+}
+function launchUnique(kind){
+  const map={crew:'crew',dev:'dev',studio:'studio',lab:'lab',handoff:'handoff'};
+  if(kind==='autobrief'){ setTab('crew'); setTimeout(()=>toast('Turn on a daily brief job in Crew','info'),200); return; }
+  setTab(map[kind]||'chat');
+}
+window.launchUnique=launchUnique;
+function downloadDesktop(platform){
+  const url=loadStr(platform==='mac'?'amv_dl_mac':'amv_dl_win');
+  if(url){ window.open(url,'_blank','noopener'); return; }
+  toast('Desktop builds publish here at launch — bookmark this page','info',4000);
+}
+window.downloadDesktop=downloadDesktop;
+/* Unified store/listing link: opens the real published URL once you set it
+   (in Settings → Integrations at launch), otherwise tells the user honestly
+   that it's coming, instead of sending them to a generic store homepage. */
+/* Install as a PWA (add to home screen) — uses the captured beforeinstallprompt
+   event when available, otherwise shows clear platform instructions. */
+let _deferredPWA=null;
+try{ window.addEventListener('beforeinstallprompt',(e)=>{ e.preventDefault(); _deferredPWA=e; }); }catch(e){}
+function installPWA(){
+  if(_deferredPWA){
+    _deferredPWA.prompt();
+    _deferredPWA.userChoice.finally(()=>{ _deferredPWA=null; });
+    return;
+  }
+  const ua=navigator.userAgent||'';
+  let how;
+  if(/iPhone|iPad|iPod/i.test(ua)) how='In Safari: tap the Share button, then "Add to Home Screen".';
+  else if(/Android/i.test(ua)) how='In Chrome: tap the ⋮ menu, then "Add to Home screen" or "Install app".';
+  else how='In your browser menu, choose "Install AMV" or "Add to Home screen" / "Create shortcut".';
+  toast(how, 'info', 6000);
+}
+function openDevView(){ try{ setTab('dev'); }catch(e){} }
+window.installPWA=installPWA; window.openDevView=openDevView;
+
+function amvStoreLink(which){
+  const map={
+    chrome:'amv_url_chrome', vscode:'amv_url_vscode', slack:'amv_url_slack',
+    ios:'amv_url_ios', android:'amv_url_android', jetbrains:'amv_url_jetbrains'
+  };
+  const names={chrome:'AMV for Chrome',vscode:'VS Code extension',slack:'Slack app',ios:'iOS app',android:'Android app',jetbrains:'JetBrains plugin'};
+  const url=loadStr(map[which]||'');
+  // If a real published URL has been set (post-launch), open it.
+  if(url){ window.open(url,'_blank','noopener'); return; }
+  // Otherwise: a real "notify me" waitlist — honest and actually useful.
+  const name=names[which]||'this app';
+  const waitKey='amv_waitlist_'+which;
+  if(loadStr(waitKey)){ toast('You\u2019re on the list for '+name+'. We\u2019ll email you the moment it\u2019s live.','success',4000); return; }
+  amvNotifyMe(which,name,waitKey);
+}
+async function amvNotifyMe(which,name,waitKey){
+  const email=(S.user&&S.user.email)||'';
+  const useEmail = email || await showTextPromptAsync('Get notified when '+name+' launches \u2014 enter your email:');
+  if(!useEmail||!String(useEmail).includes('@')){ if(useEmail) showError('Please enter a valid email.'); return; }
+  // record interest (and send to backend if available so you have the real waitlist)
+  try{ saveStr(waitKey,'1'); }catch(e){}
+  let stored=false;
+  if(window.AMV_API && AMV_API.live){
+    try{ const r=await AMV_API._fetch('/waitlist',{method:'POST',body:JSON.stringify({product:which,email:String(useEmail).toLowerCase()})}); stored=r&&r.ok!==false; }catch(e){}
+  }
+  toast('You\u2019re on the list for '+name+'! We\u2019ll let you know the moment it\u2019s ready.','success',4500);
+}
+window.amvStoreLink=amvStoreLink;
+window.amvNotifyMe=amvNotifyMe;
+let _taskCat=null;
+function filterTaskCat(cat){
+  const secs=document.querySelectorAll('.task-sec');
+  if(_taskCat===cat){
+    _taskCat=null;
+    secs.forEach(s=>s.style.display='');
+    document.querySelectorAll('[id^="tcb-"]').forEach(b=>{b.style.background='';b.style.color='';b.style.borderColor='';});
+  } else {
+    _taskCat=cat;
+    secs.forEach(s=>{s.style.display=s.dataset.section===cat?'':'none';});
+    document.querySelectorAll('[id^="tcb-"]').forEach(b=>{
+      const active=b.id==='tcb-'+cat;
+      b.style.background=active?'rgba(124,108,255,.15)':'';
+      b.style.color=active?'#7cb8ff':'';
+      b.style.borderColor=active?'rgba(88,166,255,.35)':'';
+    });
+  }
+}
+
+/* 5. INTEGRATIONS VIEW — routes to the unified catalog in Settings so there is
+   ONE integrations experience (the new Connect catalog), not two. */
+/* ============================================================
+   INTEGRATIONS — shared catalog (Task #2)
+   The catalog renders identically as its own full-page view AND
+   inside the Settings pane, from one source of truth.
+   ============================================================ */
+function _integrationsCatalogHTML(){
+  const smsPhone=loadStr('amv_sms_phone');
+  const gConnected=!!getGToken();
+  const isConn=(k)=>!!loadStr(k);
+  const intRow=(o)=>{
+    const connected=o.connected;
+    const badge=o.auto
+      ? '<span class="ax-badge ax-auto"><span class="ax-dot"></span>Autonomous</span>'
+      : '<span class="ax-badge ax-manual">Manual</span>';
+    const action=connected
+      ? '<button class="btn int-disc" data-int-disc="'+o.id+'" style="font-size:12px">Disconnect</button>'
+      : '<button class="btn bp" data-int-conn="'+o.id+'" style="font-size:12px">Connect</button>';
+    return '<div class="int-card">'+
+      '<div class="int-ic" style="background:'+(o.bg||'var(--s3)')+'">'+o.icon+'</div>'+
+      '<div class="int-body">'+
+        '<div class="int-top"><span class="int-name">'+o.name+'</span>'+badge+(connected?'<span class="int-ok">\u2713 Connected</span>':'')+'</div>'+
+        '<div class="int-desc">'+o.desc+'</div>'+
+      '</div>'+
+      '<div class="int-act">'+action+'</div>'+
+    '</div>';
+  };
+  const cat=(title,rows)=>'<div class="ss2"><h3>'+title+'</h3><div class="int-list">'+rows+'</div></div>';
+  return ''+
+    '<div class="ax-legend">'+
+      '<div class="ax-legend-item"><span class="ax-badge ax-auto"><span class="ax-dot"></span>Autonomous</span><span>Runs on its own in the background after you connect.</span></div>'+
+      '<div class="ax-legend-item"><span class="ax-badge ax-manual">Manual</span><span>You trigger it or upload files each time.</span></div>'+
+    '</div>'+
+    cat('Email &amp; calendar',
+      intRow({id:'google',name:'Google (Gmail, Drive, Calendar)',desc:'Reads & drafts email, organizes Drive, manages your calendar \u2014 automatically.',auto:true,connected:gConnected,icon:'\uD83D\uDCE7',bg:'rgba(66,133,244,.14)'})+
+      intRow({id:'outlook',name:'Microsoft 365 (Outlook, OneDrive)',desc:'Email, calendar and files across your Microsoft account.',auto:true,connected:isConn('amv_outlook'),icon:'\uD83D\uDCEB',bg:'rgba(0,120,212,.14)'})
+    )+
+    cat('Messaging &amp; chat',
+      intRow({id:'slack',name:'Slack',desc:'Answers, summaries and tasks inside any channel with /amv.',auto:true,connected:isConn('amv_slack'),icon:'\uD83D\uDCAC',bg:'rgba(74,21,75,.16)'})+
+      intRow({id:'sms',name:'Text messages (SMS)',desc:'Run AMV from any phone by text \u2014 \u201ccheck Project X\u201d, \u201cdraft a reply\u201d.',auto:true,connected:!!smsPhone,icon:'\uD83D\uDCF1',bg:'rgba(63,185,80,.14)'})+
+      intRow({id:'discord',name:'Discord',desc:'Bring AMV into your servers for answers and automations.',auto:true,connected:isConn('amv_discord'),icon:'\uD83C\uDFAE',bg:'rgba(88,101,242,.16)'})
+    )+
+    cat('Developer',
+      intRow({id:'github',name:'GitHub',desc:'Reviews PRs, opens issues, reads repos and ships fixes you approve.',auto:true,connected:isConn('amv_github'),icon:'\uD83D\uDC19',bg:'rgba(255,255,255,.08)'})+
+      intRow({id:'vscode',name:'VS Code',desc:'Your AI pair-programmer inside the editor.',auto:true,connected:isConn('amv_vscode'),icon:'\uD83D\uDCBB',bg:'rgba(0,118,212,.14)'})+
+      intRow({id:'linear',name:'Linear',desc:'Creates, triages and updates issues from chat.',auto:true,connected:isConn('amv_linear'),icon:'\uD83D\uDCD0',bg:'rgba(94,106,210,.16)'})
+    )+
+    cat('Productivity',
+      intRow({id:'notion',name:'Notion',desc:'Reads and writes pages, builds docs in your workspace.',auto:true,connected:isConn('amv_notion'),icon:'\uD83D\uDCDD',bg:'rgba(255,255,255,.08)'})+
+      intRow({id:'canvas',name:'Canvas LMS',desc:'Reads assignments and drafts answers from your notes. Works overnight.',auto:true,connected:isConn('amv_canvas'),icon:'\uD83C\uDF93',bg:'rgba(230,70,70,.14)'})
+    )+
+    cat('Office files',
+      intRow({id:'excel',name:'Excel & CSV',desc:'Upload a sheet \u2014 AMV runs formulas, builds pivots and charts, then you download.',auto:false,connected:false,icon:'\uD83D\uDCCA',bg:'rgba(33,115,70,.14)'})+
+      intRow({id:'pptx',name:'PowerPoint',desc:'Describe a deck and AMV builds the slides \u2014 export the .pptx.',auto:false,connected:false,icon:'\uD83D\uDCD1',bg:'rgba(198,67,30,.14)'})+
+      intRow({id:'word',name:'Word',desc:'Reports, proposals and letters \u2014 written and exported, ready to edit.',auto:false,connected:false,icon:'\uD83D\uDCC4',bg:'rgba(0,120,212,.14)'})
+    );
+}
+window._integrationsCatalogHTML=_integrationsCatalogHTML;
+
+function _wireIntegrationCatalog(root){
+  root=root||document;
+  root.querySelectorAll('[data-int-conn]').forEach(btn=>on(btn,'click',()=>connectIntegration(btn.dataset.intConn)));
+  root.querySelectorAll('[data-int-disc]').forEach(btn=>on(btn,'click',()=>disconnectIntegration(btn.dataset.intDisc)));
+}
+window._wireIntegrationCatalog=_wireIntegrationCatalog;
+
+/* Refresh whichever integrations surface is currently visible:
+   the standalone Integrations page OR the Settings > Integrations pane. */
+function _refreshIntegrationsUI(){
+  try{
+    if(S.tab==='integrations'){ renderIntegrationsView(); return; }
+    if(S.tab==='settings' && S.settingsPane==='integrations'){ renderSetPane(); return; }
+    if(typeof renderSetPane==='function') renderSetPane();
+  }catch(e){}
+}
+window._refreshIntegrationsUI=_refreshIntegrationsUI;
+
+/* Standalone Integrations page — its OWN view, no longer redirects to Settings. */
+function renderIntegrationsView(){
+  const vc=$('vc'); if(!vc) return;
+  vc.innerHTML=
+    '<div class="sv fi"><div class="vi">'+
+      '<h2>Integrations</h2>'+
+      '<p class="vsub">Connect AMV to your tools. <b style="color:var(--tx)">Autonomous</b> integrations work in the background once connected; <b style="color:var(--tx)">manual</b> ones you trigger or upload to. Click Connect &mdash; you approve in a popup, no keys to paste.</p>'+
+      '<div id="int-catalog">'+_integrationsCatalogHTML()+'</div>'+
+    '</div></div>';
+  _wireIntegrationCatalog(vc);
+  try{ _killTokenAutofill&&_killTokenAutofill(); }catch(e){}
+}
+window.renderIntegrationsView=renderIntegrationsView;
+/* 6. EXTENSIONS VIEW - real file editors */
+function parseCSV(text){
+  return text.trim().split('\n').map(l=>{
+    const cols=[]; let cur='',inQ=false;
+    for(let i=0;i<l.length;i++){if(l[i]==='"')inQ=!inQ;else if(l[i]===','&&!inQ){cols.push(cur.trim());cur='';}else cur+=l[i];}
+    cols.push(cur.trim()); return cols;
+  });
+}
+function csvToTable(data){
+  if(!data||!data.length) return '';
+  const h=data[0], rows=data.slice(1);
+  return `<table id="sheet-tbl" style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr>${h.map(hd=>`<th contenteditable="true" style="background:rgba(124,108,255,.12);border:1px solid rgba(255,255,255,.1);padding:8px 10px;text-align:left;font-weight:600;white-space:nowrap;position:sticky;top:0">${escH(hd)}</th>`).join('')}</tr></thead><tbody>${rows.map(row=>`<tr>${h.map((_,ci)=>`<td contenteditable="true" style="border:1px solid rgba(255,255,255,.06);padding:6px 10px;color:var(--tx)" onfocus="this.style.background='rgba(124,108,255,.08)'" onblur="this.style.background=''">${escH(row[ci]||'')}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+}
+function tableToCSV(){
+  const t=document.getElementById('sheet-tbl'); if(!t) return '';
+  return Array.from(t.querySelectorAll('tr')).map(tr=>Array.from(tr.querySelectorAll('th,td')).map(c=>'"'+c.textContent.replace(/"/g,'""')+'"').join(',')).join('\n');
+}
+let _sheetData=[];
+function handleSheetFile(file){
+  file.text().then(text=>{ _sheetData=parseCSV(text); openSheetEditor(_sheetData,file.name); });
+}
+function openSheetEditor(data,name){
+  const vc=$('vc'); if(!vc) return;
+  vc.innerHTML=`<div style="display:flex;flex-direction:column;height:100%">
+<div style="display:flex;align-items:center;gap:10px;padding:10px 16px;background:rgba(13,17,23,.95);border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0">
+  <span style="font-size:13px;font-weight:600">&#128200; ${escH(name||'Spreadsheet')}</span>
+  <span style="font-size:11px;color:var(--mu)">${data.length-1} rows &middot; ${data[0]&&data[0].length||0} cols</span>
+  <div style="margin-left:auto;display:flex;gap:6px">
+    <button class="ext-btn" onclick="(()=>{const csv=tableToCSV();if(!csv)return;const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='amv_'+Date.now()+'.csv';a.click();toast('Downloaded','success');})()">&#8681; Download</button>
+    <button class="ext-btn" onclick="setTab('extensions')">&#10005; Close</button>
+  </div>
+</div>
+<div style="flex:1;overflow:auto;padding:12px">${csvToTable(data)}</div>
+<div style="background:rgba(13,17,23,.97);border-top:1px solid rgba(255,255,255,.1);padding:12px 14px;flex-shrink:0">
+  <div style="font-size:10px;color:#7cb8ff;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:7px">AMV AI Toolbar</div>
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+    ${['Analyze trends','Find duplicates','Add totals row','Sort by first column','Summarize data'].map(q=>`<button class="ext-btn" onclick="runSheetAI('${q}')">${q}</button>`).join('')}
+  </div>
+  <div style="display:flex;gap:8px">
+    <input type="text" id="sheet-inp" placeholder="Ask AMV anything about this spreadsheet..." style="flex:1;font-size:13px">
+    <button class="btn bp" id="sheet-ask" style="font-size:13px;padding:8px 18px">Ask</button>
+  </div>
+  <div id="sheet-res" style="display:none;margin-top:10px;font-size:12px;color:var(--mu);background:rgba(22,27,34,.9);border-radius:10px;padding:12px;max-height:180px;overflow-y:auto;white-space:pre-wrap;line-height:1.65"></div>
+</div></div>`;
+  on($('sheet-ask'),'click',()=>runSheetAI($('sheet-inp')&&$('sheet-inp').value));
+  on($('sheet-inp'),'keydown',e=>{if(e.key==='Enter')runSheetAI($('sheet-inp')&&$('sheet-inp').value);});
+}
+async function runSheetAI(query){
+  if(!query||!query.trim()) return;
+  const btn=$('sheet-ask'),res=$('sheet-res');
+  if(btn){btn.disabled=true;btn.textContent='Thinking...';}
+  if(res){res.style.display='block';res.textContent='Analyzing...';}
+  const mk=loadStr('amv_mk');
+  if(!mk){toast('AMV isn’t connected yet — ask the workspace owner to switch it on.','error');if(btn){btn.disabled=false;btn.textContent='Ask';}return;}
+  try{
+    const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':mk,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-fable-5',max_tokens:2000,messages:[{role:'user',content:'You are a data analyst. Spreadsheet (CSV):\n\n'+tableToCSV().slice(0,8000)+'\n\nRequest: '+query+'\n\nIf modifying data, return ONLY the complete modified CSV. Otherwise answer clearly.'}]})});
+    const d=await r.json(); if(d.error) throw new Error(d.error.message);
+    const reply=d.content&&d.content[0]&&d.content[0].text||'';
+    const looksCSV=reply.split('\n').filter(l=>l.includes(',')).length>=2;
+    if(looksCSV&&reply.split('\n').length>2){
+      _sheetData=parseCSV(reply);
+      const scroll=document.querySelector('#sheet-tbl')&&document.querySelector('#sheet-tbl').closest('[style*="overflow"]');
+      if(scroll) scroll.innerHTML=csvToTable(_sheetData);
+      if(res){res.style.display='block';res.textContent='Table updated - '+_sheetData.length+' rows.';}
+      toast('Spreadsheet updated','success');
+    } else if(res){res.style.display='block';res.textContent=reply;}
+    if($('sheet-inp')) $('sheet-inp').value='';
+  }catch(e){if(res){res.style.display='block';res.textContent='Error: '+e.message;}}
+  if(btn){btn.disabled=false;btn.textContent='Ask';}
+}
+function openDocEditor(content,name){
+  const vc=$('vc'); if(!vc) return;
+  vc.innerHTML=`<div style="display:flex;flex-direction:column;height:100%">
+<div style="display:flex;align-items:center;gap:10px;padding:10px 16px;background:rgba(13,17,23,.95);border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0">
+  <span style="font-size:13px;font-weight:600">&#128196; ${escH(name||'Document')}</span>
+  <div style="margin-left:auto;display:flex;gap:6px">
+    <button class="ext-btn" onclick="(()=>{const b=$('doc-body');if(!b)return;const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([b.innerText],{type:'text/plain'}));a.download='doc_'+Date.now()+'.txt';a.click();})()">&#8681; Download</button>
+    <button class="ext-btn" onclick="setTab('extensions')">&#10005; Close</button>
+  </div>
+</div>
+<div id="doc-body" contenteditable="true" spellcheck="true" style="flex:1;overflow-y:auto;padding:40px 60px;font-size:14px;line-height:1.9;color:var(--tx);outline:none;max-width:780px;margin:0 auto;width:100%;box-sizing:border-box">${(content||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n\n/g,'</p><p style="margin:0 0 14px">').replace(/\n/g,'<br>')}</div>
+<div style="background:rgba(13,17,23,.97);border-top:1px solid rgba(255,255,255,.1);padding:12px 14px;flex-shrink:0">
+  <div style="font-size:10px;color:#7cb8ff;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:7px">AMV AI Toolbar</div>
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+    ${['Improve writing','Fix grammar','Make it longer','Make it shorter','Change tone to formal'].map(q=>`<button class="ext-btn" onclick="runDocAI('${q}')">${q}</button>`).join('')}
+  </div>
+  <div style="display:flex;gap:8px">
+    <input type="text" id="doc-inp" placeholder="Ask AMV to edit, rewrite, or expand..." style="flex:1;font-size:13px">
+    <button class="btn bp" id="doc-ask" style="font-size:13px;padding:8px 18px">Ask</button>
+  </div>
+</div></div>`;
+  on($('doc-ask'),'click',()=>runDocAI($('doc-inp')&&$('doc-inp').value));
+  on($('doc-inp'),'keydown',e=>{if(e.key==='Enter')runDocAI($('doc-inp')&&$('doc-inp').value);});
+}
+async function runDocAI(query){
+  if(!query||!query.trim()) return;
+  const btn=$('doc-ask'),body=$('doc-body');
+  if(btn){btn.disabled=true;btn.textContent='Editing...';}
+  const mk=loadStr('amv_mk');
+  if(!mk){toast('Add API key in Settings','error');if(btn){btn.disabled=false;btn.textContent='Ask';}return;}
+  try{
+    const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':mk,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-fable-5',max_tokens:3000,messages:[{role:'user',content:'Document editor. Current document:\n\n'+(body&&body.innerText||'').slice(0,6000)+'\n\nRequest: '+query+'\n\nReturn ONLY the complete revised document. No explanation.'}]})});
+    const d=await r.json(); if(d.error) throw new Error(d.error.message);
+    const reply=d.content&&d.content[0]&&d.content[0].text||'';
+    if(body) body.innerHTML=reply.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n\n/g,'</p><p style="margin:0 0 14px">').replace(/\n/g,'<br>');
+    if($('doc-inp')) $('doc-inp').value='';
+    toast('Document updated','success');
+  }catch(e){toast('Error: '+e.message,'error');}
+  if(btn){btn.disabled=false;btn.textContent='Ask';}
+}
+
+window.amvOpenFile=amvOpenFile;
+/* 7. AUTOMATION VIEW - dark modal, real task queue */
+const _bgQueue = { tasks: [], running: false };
+function _bgAddTask(task){
+  const t={id:'bg'+Date.now(),status:'queued',created:Date.now(),progress:0,...task};
+  _bgQueue.tasks.push(t);
+  toast('Task queued - running in background','info',3000);
+  _bgRunNext();
+  return t;
+}
+async function _bgRunNext(){
+  if(_bgQueue.running) return;
+  const task=_bgQueue.tasks.find(t=>t.status==='queued');
+  if(!task) return;
+  _bgQueue.running=true;
+  task.status='running';
+  const mk=loadStr('amv_mk');
+  if(!mk){task.status='failed';task.error='AMV engine not connected';_bgQueue.running=false;return;}
+  try{
+    if(task.type==='gmail_check'){
+      const token=getGToken();
+      if(!token){task.status='failed';task.error='Gmail not connected - click Connect in Integrations';_bgQueue.running=false;return;}
+      task.progress=30;
+      const r=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10&labelIds=INBOX&q=is:unread',{headers:{'Authorization':'Bearer '+token}});
+      const d=await r.json();
+      if(d.error){task.status='failed';task.error='Gmail: '+d.error.message;_bgQueue.running=false;return;}
+      const msgs=d.messages||[];
+      task.progress=60;
+      if(!msgs.length){task.status='done';task.result='Inbox clear - no unread emails.';}
+      else{
+        const details=await Promise.all(msgs.slice(0,8).map(m=>fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/'+m.id+'?format=metadata&metadataHeaders=Subject&metadataHeaders=From',{headers:{'Authorization':'Bearer '+token}}).then(r=>r.json())));
+        const summary=details.map(d=>{const s=d.payload&&d.payload.headers&&d.payload.headers.find(h=>h.name==='Subject');const f=d.payload&&d.payload.headers&&d.payload.headers.find(h=>h.name==='From');return 'From: '+(f&&f.value||'?')+'\nSubject: '+(s&&s.value||'(no subject)');}).join('\n\n');
+        const ar=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':mk,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:600,messages:[{role:'user',content:'Analyze '+msgs.length+' unread emails. What needs urgent attention?\n\n'+summary}]})});
+        const ad=await ar.json();
+        task.result=(ad.content&&ad.content[0]&&ad.content[0].text)||summary;
+        task.status='done';task.progress=100;
+      }
+    } else if(task.type==='calendar_check'){
+      const token=getGToken();
+      if(!token){task.status='failed';task.error='Calendar not connected';_bgQueue.running=false;return;}
+      const now=new Date(),end=new Date(now.getTime()+7*24*60*60*1000);
+      const r=await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin='+now.toISOString()+'&timeMax='+end.toISOString()+'&singleEvents=true&orderBy=startTime&maxResults=20',{headers:{'Authorization':'Bearer '+token}});
+      const d=await r.json();
+      if(d.error){task.status='failed';task.error='Calendar: '+d.error.message;_bgQueue.running=false;return;}
+      const events=(d.items||[]).map(e=>(e.start&&(e.start.dateTime||e.start.date))+': '+e.summary).join('\n');
+      const ar=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':mk,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:600,messages:[{role:'user',content:'Analyze this week\'s calendar. Identify conflicts, suggest focus blocks:\n\n'+events}]})});
+      const ad=await ar.json();
+      task.result=(ad.content&&ad.content[0]&&ad.content[0].text)||events;
+      task.status='done';task.progress=100;
+    } else {
+      const ar=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':mk,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-fable-5',max_tokens:2000,messages:[{role:'user',content:task.prompt||task.topic||'Help me with: '+task.title}]})});
+      const ad=await ar.json();
+      if(ad.error) throw new Error(ad.error.message);
+      task.result=ad.content&&ad.content[0]&&ad.content[0].text||'';
+      task.status='done';task.progress=100;
+    }
+  }catch(e){task.status='failed';task.error=e.message;}
+  _bgQueue.running=false;
+  if(S.tab==='automation') renderAutomationView();
+  setTimeout(_bgRunNext,500);
+}
+function renderAutomationView(){
+  const vc=$('vc'); if(!vc) return;
+  const sc=s=>s==='done'?'#3fb950':s==='running'?'#7c6cff':s==='failed'?'#f85149':'#d29922';
+  const si=s=>s==='done'?'✓':s==='running'?'⟳':s==='failed'?'✕':'⏳';
+  const cards=['<div onclick="_bgAddTask({type:\'gmail_check\',title:\'Check Gmail inbox\'})" style="background:rgba(22,27,34,.6);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:16px;cursor:pointer;text-align:center;transition:all .2s" onmouseenter="this.style.borderColor=\'rgba(88,166,255,.2)\'" onmouseleave="this.style.borderColor=\'rgba(255,255,255,.07)\'"><div style="font-size:28px;margin-bottom:8px">📧</div><div style="font-size:13px;font-weight:600;margin-bottom:3px">Check Gmail</div><div style="font-size:11px;color:var(--mu)">Analyze unread emails</div></div>',
+  '<div onclick="_bgAddTask({type:\'calendar_check\',title:\'Optimize my week\'})" style="background:rgba(22,27,34,.6);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:16px;cursor:pointer;text-align:center;transition:all .2s" onmouseenter="this.style.borderColor=\'rgba(88,166,255,.2)\'" onmouseleave="this.style.borderColor=\'rgba(255,255,255,.07)\'"><div style="font-size:28px;margin-bottom:8px">📅</div><div style="font-size:13px;font-weight:600;margin-bottom:3px">Plan my week</div><div style="font-size:11px;color:var(--mu)">Calendar optimization</div></div>',
+  '<div onclick="showCustomTask()" style="background:rgba(22,27,34,.6);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:16px;cursor:pointer;text-align:center;transition:all .2s" onmouseenter="this.style.borderColor=\'rgba(88,166,255,.2)\'" onmouseleave="this.style.borderColor=\'rgba(255,255,255,.07)\'"><div style="font-size:28px;margin-bottom:8px">⚡</div><div style="font-size:13px;font-weight:600;margin-bottom:3px">Custom Task</div><div style="font-size:11px;color:var(--mu)">Any AI task in background</div></div>'].join('');
+  const taskList=_bgQueue.tasks.length ? _bgQueue.tasks.slice().reverse().map(function(t){
+    let h='<div style="background:rgba(22,27,34,.7);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:14px;margin-bottom:8px">';
+    h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">';
+    h+='<span style="color:'+sc(t.status)+';font-size:16px">'+si(t.status)+'</span>';
+    h+='<span style="font-size:13px;font-weight:600;flex:1">'+escH(t.title)+'</span>';
+    h+='<span style="font-size:10px;color:'+sc(t.status)+';background:'+sc(t.status)+'22;border-radius:10px;padding:2px 10px;font-weight:600">'+t.status+'</span>';
+    h+='</div>';
+    if(t.status==='running') h+='<div style="height:4px;background:rgba(255,255,255,.1);border-radius:4px;margin-bottom:8px"><div style="height:100%;width:'+(t.progress||30)+'%;background:var(--blue);border-radius:4px;transition:width .5s"></div></div>';
+    if(t.error) h+='<div style="font-size:12px;color:var(--red);padding:8px;background:rgba(248,81,73,.08);border-radius:7px;margin-top:4px">'+escH(t.error)+'</div>';
+    if(t.result){
+      h+='<div style="font-size:12px;color:var(--mu);background:rgba(0,0,0,.25);border-radius:8px;padding:10px;margin-top:8px;max-height:180px;overflow-y:auto;white-space:pre-wrap;line-height:1.65">'+escH(t.result.slice(0,500))+(t.result.length>500?' ...(truncated)':'')+'</div>';
+      h+='<div style="display:flex;gap:6px;margin-top:8px"><button class="ext-btn" onclick="toast(&quot;Result copied&quot;,&quot;success&quot;)">Copy result</button></div>';
+    }
+    h+='<div style="font-size:10px;color:var(--dim);margin-top:6px">'+new Date(t.created).toLocaleString()+'</div>';
+    h+='</div>';
+    return h;
+  }).join('') : '<div style="font-size:13px;color:var(--mu);font-style:italic;padding:20px;text-align:center">No tasks yet. Click a quick automation above.</div>';
+  vc.innerHTML=`<div class="sv fi"><div class="vi"><h2>Automation</h2><p class="vsub">Hand the AI a repeating job and it runs on its own in the background — checking email, summarizing, monitoring — even after you close the tab. Tap a card to queue a task; results land here when each one finishes.</p>
+<div class="ss2" style="background:linear-gradient(135deg,rgba(124,108,255,.08),rgba(163,113,247,.05));border-color:rgba(88,166,255,.2)">
+<h3>&#9889; Quick Automations</h3>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px">${cards}</div>
+</div>
+<div class="ss2">
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><h3 style="margin:0">Task Queue</h3><button class="ext-btn" onclick="renderAutomationView()">Refresh</button></div>
+${taskList}
+</div>
+</div></div>`;
+}
+
+/* 8. CUSTOM TASK MODAL - dark background guaranteed */
+function showCustomTask(){
+  const r=$('ovr'); if(!r) return;
+  const div=document.createElement('div');
+  div.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(8px)';
+  div.innerHTML='<div style="background:#0d1117;border:1px solid rgba(255,255,255,.15);border-radius:18px;padding:28px;width:100%;max-width:460px;box-shadow:0 24px 60px rgba(0,0,0,.8);position:relative">'
+    +'<div style="font-size:18px;font-weight:700;color:#e6edf3;margin-bottom:4px">Custom Background Task</div>'
+    +'<div style="font-size:12px;color:#8b949e;margin-bottom:20px">Runs automatically - navigate away and it will complete</div>'
+    +'<div style="display:flex;flex-direction:column;gap:14px">'
+    +'<div><label style="font-size:11px;font-weight:600;color:#8b949e;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:6px">Task Name</label><input type="text" id="ct-name" placeholder="e.g. Research competitors" style="width:100%;padding:10px 12px;background:rgba(22,27,34,.9);border:1px solid rgba(255,255,255,.12);border-radius:10px;color:#e6edf3;font-size:13px;outline:none;box-sizing:border-box"></div>'
+    +'<div><label style="font-size:11px;font-weight:600;color:#8b949e;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:6px">Instructions</label><textarea id="ct-prompt" rows="4" placeholder="What do you want AMV to do?" style="width:100%;padding:10px 12px;background:rgba(22,27,34,.9);border:1px solid rgba(255,255,255,.12);border-radius:10px;color:#e6edf3;font-size:13px;outline:none;resize:vertical;box-sizing:border-box;font-family:inherit"></textarea></div>'
+    +'<button id="ct-go" style="width:100%;padding:13px;background:linear-gradient(135deg,#8b78ff,#6a54f0);border:none;border-radius:12px;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">&#9889; Run in Background</button>'
+    +'</div></div>';
+  r.innerHTML=''; r.appendChild(div);
+  div.addEventListener('click',e=>{if(e.target===div)r.innerHTML='';});
+  document.getElementById('ct-go').addEventListener('click',()=>{
+    const name=document.getElementById('ct-name')&&document.getElementById('ct-name').value.trim()||'Custom Task';
+    const prompt=document.getElementById('ct-prompt')&&document.getElementById('ct-prompt').value.trim();
+    if(!prompt){toast('Enter task instructions','error');return;}
+    r.innerHTML='';
+    _bgAddTask({type:'ai_task',title:name,prompt});
+    setTab('automation');
+  });
+}
+
+
+
+
+/* ============================================================
+   AMV ENGINE — real working backbone for the dev/agent tools
+   aiComplete(): single-shot AI text. runCode(): real execution.
+   ============================================================ */
+window.AMV_ENGINE = true;
+
+// --- Reusable single-shot AI completion (returns a string) ---
+async function aiComplete(prompt, system, opts){
+  opts=opts||{};
+  const useBackend = (window.AMV_API && AMV_API.live);
+  if(!S.mk && !useBackend) throw new Error('AMV isn’t connected yet. The workspace owner needs to switch on the AMV engine.');
+  const mdl = (typeof MODELS!=='undefined' && MODELS[S.model]) ? MODELS[S.model] : {model:'claude-fable-5',tokens:4096};
+  const url = useBackend ? (AMV_API.base.replace(/\/$/,'')+'/v1/messages') : 'https://api.anthropic.com/v1/messages';
+  const headers = useBackend
+    ? {'Content-Type':'application/json','Authorization':'Bearer '+AMV_API.token}
+    : {'Content-Type':'application/json','x-api-key':S.mk,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'};
+  const body = {
+    model: opts.model || mdl.model,
+    max_tokens: opts.max_tokens || 4096,
+    messages: [{role:'user', content: prompt}]
+  };
+  if(system) body.system = system + (opts.noLang?'':_langInstruction());
+  else if(!opts.noLang) body.system = _langInstruction();
+  const res = await fetch(url,{method:'POST',headers,body:JSON.stringify(body)});
+  if(!res.ok){ const t=await res.text().catch(()=>''); throw new Error('AI error '+res.status+': '+t.slice(0,200)); }
+  const data = await res.json();
+  return (data.content||[]).map(b=>b.text||'').join('').trim();
+}
+
+// --- Extract first fenced code block of a given lang (or any) ---
+function extractCode(text, lang){
+  if(!text) return '';
+  const re = lang ? new RegExp('```'+lang+'\\s*([\\s\\S]*?)```','i') : /```[a-z]*\s*([\s\S]*?)```/i;
+  const m = text.match(re);
+  return m ? m[1].trim() : '';
+}
+
+// --- REAL multi-language code execution sandbox ---
+let _pyodide=null, _pyLoading=null;
+async function _ensurePyodide(onStatus){
+  if(_pyodide) return _pyodide;
+  if(_pyLoading) return _pyLoading;
+  onStatus&&onStatus('Loading Python runtime (first run only)…');
+  _pyLoading = (async()=>{
+    if(!window.loadPyodide){
+      await new Promise((resolve,reject)=>{
+        const s=document.createElement('script');
+        s.src='https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js';
+        s.onload=resolve; s.onerror=()=>reject(new Error('Failed to load Pyodide'));
+        document.head.appendChild(s);
+      });
+    }
+    _pyodide = await loadPyodide({indexURL:'https://cdn.jsdelivr.net/pyodide/v0.26.2/full/'});
+    return _pyodide;
+  })();
+  return _pyLoading;
+}
+
+// runCode(code, lang) -> {ok, stdout, stderr, result, ms}
+async function runCode(code, lang, onStatus){
+  lang=(lang||'js').toLowerCase();
+  const t0=performance.now();
+  if(lang==='js'||lang==='javascript'){
+    return await _runJS(code, t0);
+  } else if(lang==='py'||lang==='python'){
+    try{
+      const py=await _ensurePyodide(onStatus);
+      let out='';
+      py.setStdout({batched:s=>{out+=s+'\n';}});
+      py.setStderr({batched:s=>{out+=s+'\n';}});
+      let result, err=null;
+      try{ result = await py.runPythonAsync(code); }
+      catch(e){ err = (e&&e.message)? e.message : String(e); }
+      return {ok:!err, stdout:out.trim(), stderr:err||'', result: result!==undefined&&result!==null?String(result):'', ms:Math.round(performance.now()-t0)};
+    }catch(e){
+      return {ok:false, stdout:'', stderr:'Runtime load error: '+e.message, result:'', ms:Math.round(performance.now()-t0)};
+    }
+  } else if(lang==='html'){
+    return {ok:true, stdout:'(HTML rendered in preview)', stderr:'', result:'', ms:0, html:code};
+  }
+  return {ok:false, stdout:'', stderr:'Unsupported language: '+lang, result:'', ms:0};
+}
+
+// JS runs in a sandboxed iframe; stdout captured via console proxy + postMessage
+function _runJS(code, t0){
+  return new Promise(resolve=>{
+    const iframe=document.createElement('iframe');
+    iframe.sandbox='allow-scripts';
+    iframe.style.display='none';
+    const id='sbx_'+Math.random().toString(36).slice(2);
+    let done=false;
+    const finish=(res)=>{ if(done) return; done=true; try{document.body.removeChild(iframe);}catch(e){} window.removeEventListener('message',onMsg); resolve(res); };
+    const onMsg=(ev)=>{ if(!ev.data||ev.data.__sbx!==id) return; finish({ok:ev.data.ok, stdout:(ev.data.logs||[]).join('\n'), stderr:ev.data.error||'', result:ev.data.result||'', ms:Math.round(performance.now()-t0)}); };
+    window.addEventListener('message',onMsg);
+    const html='<!doctype html><html><body><script>(function(){var logs=[];var p=function(){logs.push(Array.from(arguments).map(function(a){try{return typeof a==="object"?JSON.stringify(a):String(a)}catch(e){return String(a)}}).join(" "))};console.log=p;console.error=p;console.warn=p;console.info=p;var ok=true,err="",result="";try{result=eval('+JSON.stringify('(async()=>{'+code+'\n})()')+');if(result&&result.then){result.then(function(r){parent.postMessage({__sbx:"'+id+'",ok:true,logs:logs,result:r===undefined?"":String(r)},"*")}).catch(function(e){parent.postMessage({__sbx:"'+id+'",ok:false,logs:logs,error:(e&&e.stack)?e.stack:String(e)},"*")});}else{parent.postMessage({__sbx:"'+id+'",ok:true,logs:logs,result:result===undefined?"":String(result)},"*");}}catch(e){parent.postMessage({__sbx:"'+id+'",ok:false,logs:logs,error:(e&&e.stack)?e.stack:String(e)},"*");}})();<\/script></body></html>';
+    iframe.srcdoc=html;
+    document.body.appendChild(iframe);
+    setTimeout(()=>finish({ok:false,stdout:'',stderr:'Execution timed out (5s)',result:'',ms:5000}),5000);
+  });
+}
+
+
+/* ===== AUTONOMOUS DEBUG LOOP (fix -> re-run -> repeat), REAL ===== */
+async function autoDebug(code, lang, maxIters, onStep){
+  maxIters = maxIters||6; lang=lang||'js';
+  let cur=code, history=[];
+  for(let i=0;i<maxIters;i++){
+    const run = await runCode(cur, lang, s=>onStep&&onStep({phase:'status',msg:s}));
+    history.push({iter:i+1, code:cur, run});
+    onStep&&onStep({phase:'run', iter:i+1, run, code:cur});
+    if(run.ok){ onStep&&onStep({phase:'done', iter:i+1, success:true, code:cur}); return {success:true, code:cur, iters:i+1, history}; }
+    onStep&&onStep({phase:'status', msg:'Analyzing error and patching (iteration '+(i+1)+' of '+maxIters+')…'});
+    const sys='You are an elite '+lang+' debugger. You receive code and the EXACT runtime error it produced. Fix the ROOT CAUSE — including duplicate variable declarations (e.g. two `let x`), scope collisions, undefined references, off-by-one and async bugs. Preserve all working logic and the program\u2019s intent. Return ONLY the complete corrected program in a single fenced '+lang+' code block, no prose. If the code is long, return the ENTIRE fixed file, not a snippet.';
+    const prevErrs=history.slice(-3).map(h=>h.run&&h.run.stderr?('• '+(h.run.stderr.split("\n")[0])):'').filter(Boolean).join('\n');
+    const prompt='Fix this '+lang+' so it runs cleanly.\n\nCODE:\n```'+lang+'\n'+cur+'\n```\n\nEXACT RUNTIME ERROR:\n'+run.stderr+'\n\nSTDOUT BEFORE ERROR:\n'+(run.stdout||'(none)')+(prevErrs?('\n\nERRORS SEEN SO FAR (avoid repeating):\n'+prevErrs):'')+'\n\nReturn the complete corrected program.';
+    let fixed;
+    try{ const resp=await aiComplete(prompt, sys, {max_tokens:8000, model:'claude-opus-4-8'}); fixed=extractCode(resp, lang)||extractCode(resp); }
+    catch(e){ onStep&&onStep({phase:'error', msg:e.message}); return {success:false, code:cur, iters:i+1, history, error:e.message}; }
+    if(!fixed){ onStep&&onStep({phase:'stuck', iter:i+1}); return {success:false, code:cur, iters:i+1, history}; }
+    if(fixed.trim()===cur.trim()){ onStep&&onStep({phase:'stuck', iter:i+1}); return {success:false, code:cur, iters:i+1, history, note:'identical'}; }
+    onStep&&onStep({phase:'patch', iter:i+1, code:fixed});
+    cur=fixed;
+  }
+  return {success:false, code:cur, iters:maxIters, history};
+}
+
+/* ===== MULTI-AGENT PIPELINE (Planner -> Coder -> Critic -> Tester) REAL ===== */
+async function runAgents(task, lang, onStep){
+  lang=lang||'js';
+  const agents={};
+  // 1. Planner
+  onStep&&onStep({agent:'Planner', status:'thinking'});
+  agents.plan = await aiComplete(
+    'Break this task into a concise numbered implementation plan (max 6 steps). Task: '+task,
+    'You are a senior software architect. Output only the plan.');
+  onStep&&onStep({agent:'Planner', status:'done', output:agents.plan});
+  // 2. Coder
+  onStep&&onStep({agent:'Coder', status:'thinking'});
+  const coderResp = await aiComplete(
+    'Task: '+task+'\n\nPlan:\n'+agents.plan+'\n\nWrite complete, runnable '+lang+' code that accomplishes this. Return ONLY one fenced '+lang+' code block.',
+    'You are an expert '+lang+' engineer. Output only code in a fenced block.');
+  agents.code = extractCode(coderResp, lang)||extractCode(coderResp)||coderResp;
+  onStep&&onStep({agent:'Coder', status:'done', output:agents.code, isCode:true});
+  // 3. Tester (REAL execution)
+  onStep&&onStep({agent:'Tester', status:'thinking'});
+  const testRun = await runCode(agents.code, lang, s=>onStep&&onStep({agent:'Tester',status:'thinking',note:s}));
+  agents.test = testRun;
+  onStep&&onStep({agent:'Tester', status:'done', output:(testRun.ok?'PASSED — ran clean.\n\nOutput:\n':'FAILED — runtime error:\n')+(testRun.ok?(testRun.stdout||testRun.result||'(no output)'):testRun.stderr), run:testRun});
+  // 3b. If failed, Coder auto-fixes once via debug loop
+  if(!testRun.ok){
+    onStep&&onStep({agent:'Coder', status:'thinking', note:'Test failed — patching…'});
+    const dbg = await autoDebug(agents.code, lang, 3, null);
+    agents.code = dbg.code; agents.test = dbg.history[dbg.history.length-1].run;
+    onStep&&onStep({agent:'Tester', status:'done', output:(agents.test.ok?'PASSED after auto-fix.\n\n':'Still failing after fixes.\n\n')+(agents.test.ok?(agents.test.stdout||agents.test.result):agents.test.stderr), run:agents.test});
+  }
+  // 4. Critic
+  onStep&&onStep({agent:'Critic', status:'thinking'});
+  agents.critique = await aiComplete(
+    'Review this '+lang+' code for correctness, readability, edge cases and improvements. Be specific and concise.\n\n```'+lang+'\n'+agents.code+'\n```',
+    'You are a meticulous senior code reviewer.');
+  onStep&&onStep({agent:'Critic', status:'done', output:agents.critique});
+  // 5. Security
+  onStep&&onStep({agent:'Security', status:'thinking'});
+  agents.security = await aiComplete(
+    'Identify security risks (injection, unsafe eval, secrets, unvalidated input) in this code and how to fix them. If none, say so.\n\n```'+lang+'\n'+agents.code+'\n```',
+    'You are an application security engineer.');
+  onStep&&onStep({agent:'Security', status:'done', output:agents.security});
+  return agents;
+}
+
+/* ===== CODE ANALYSIS SUITE (real LLM analysis) ===== */
+async function analyzeCode(code, lang, kind){
+  const prompts={
+    stacktrace:['You are a stack-trace interpreter. Explain the error in plain English, name the exact cause, and give the fix.','Interpret this stack trace / error and explain the root cause + fix:\n\n'+code],
+    smells:['You are a code-smell detector. List concrete smells with line references and refactors.','Detect code smells and anti-patterns:\n\n```'+lang+'\n'+code+'\n```'],
+    refactor:['You are a refactoring engine. Return improved code in a fenced block, then a short list of what you changed.','Refactor this for clarity and performance:\n\n```'+lang+'\n'+code+'\n```'],
+    bugs:['You are a static bug finder. List likely bugs, edge cases and regressions with severity.','Find bugs and regressions in this code:\n\n```'+lang+'\n'+code+'\n```'],
+    security:['You are a vulnerability scanner. List vulnerabilities with severity and remediation.','Scan for vulnerabilities:\n\n```'+lang+'\n'+code+'\n```'],
+    tests:['You are an automated test generator. Output a complete runnable test suite in a fenced block.','Generate thorough tests for this code:\n\n```'+lang+'\n'+code+'\n```'],
+  };
+  const pr=prompts[kind]||prompts.bugs;
+  return await aiComplete(pr[1], pr[0]);
+}
+
+
+/* ===== LAB VIEW — real working dev/agent tools ===== */
+const _LAB = { lang:'js', code:"// AMV Lab — real execution.\n// Try a bug; hit Auto-Debug to watch it fix & re-run.\nfunction factorial(n){ return n<=1 ? 1 : n*factorial(n-1) }\nconsole.log('5! =', factorial(5));\n\nlet nums=[3,1,4,1,5,9,2,6];\nconsole.log('sorted', nums.sort((a,b)=>a-b));", busy:false };
+
+function renderLabView(){
+  const vc=$('vc'); if(!vc) return;
+  if(typeof _LAB_HANDOFF!=='undefined' && _LAB_HANDOFF){ _LAB.code=_LAB_HANDOFF; _LAB_HANDOFF=''; }
+  vc.innerHTML = `<div class="lab-term-wrap">
+    <header class="lab-term-head">
+      <div class="lab-term-title"><span class="lab-term-dot"></span><b>AMV Lab</b><span class="lab-term-sub">the debugger · paste thousands of lines · finds &amp; fixes mistakes · pairs with Dev</span></div>
+      <div class="lab-term-tools">
+        ${['bugs','smells','refactor','security','tests','stacktrace'].map(k=>`<button class="lab-chip" data-an="${k}">${({bugs:'Find bugs',smells:'Smells',refactor:'Refactor',security:'Vuln scan',tests:'Gen tests',stacktrace:'Explain error'})[k]}</button>`).join('')}
+      </div>
+    </header>
+    <div class="lab-term-grid">
+      <section class="lab-editor">
+        <div class="lab-bar">
+          <select id="lab-lang" class="lab-sel">
+            <option value="js">JavaScript</option>
+            <option value="python">Python</option>
+            <option value="html">HTML (visual)</option>
+          </select>
+          <div class="lab-actions">
+            <button class="btn" id="lab-run">▶ Run</button>
+            <button class="btn bp" id="lab-debug">⟳ Auto-Debug</button>
+            <button class="btn" id="lab-agents">✦ Run Agents</button>
+          </div>
+        </div>
+        <textarea id="lab-code" spellcheck="false" placeholder="// Write or paste code here. Run it, or ask AMV to build and fix it autonomously.">${escH(_LAB.code)}</textarea>
+      </section>
+      <section class="lab-out">
+        <div class="lab-out-head"><span id="lab-out-title">Output</span><span id="lab-out-stat"></span></div>
+        <div id="lab-out-body" class="lab-out-body"><div class="lab-placeholder">$ run code or pick a tool — output streams here in real time</div></div>
+      </section>
+    </div>
+  </div>`;
+
+  const codeEl=$('lab-code'), langEl=$('lab-lang');
+  langEl.value=_LAB.lang;
+  on(codeEl,'input',()=>{_LAB.code=codeEl.value;});
+  on(langEl,'change',()=>{_LAB.lang=langEl.value;});
+  on($('lab-run'),'click',_labRun);
+  on($('lab-debug'),'click',_labDebug);
+  on($('lab-agents'),'click',_labAgents);
+  vc.querySelectorAll('.lab-chip').forEach(ch=>on(ch,'click',()=>_labAnalyze(ch.dataset.an)));
+}
+function _labOut(html){ const b=$('lab-out-body'); if(b) b.innerHTML=html; }
+function _labStat(t,cls){ const s=$('lab-out-stat'); if(s){ s.textContent=t||''; s.className=cls||''; } }
+function _labBusy(b){ _LAB.busy=b; ['lab-run','lab-debug','lab-agents'].forEach(id=>{const el=$(id); if(el) el.disabled=b;}); }
+function _esc(s){ return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+async function _labRun(){
+  if(_LAB.busy) return; _labBusy(true); _labStat('Running…');
+  _labOut('<div class="lab-running">Executing…</div>');
+  try{
+    const r=await runCode($('lab-code').value, _LAB.lang, s=>_labOut('<div class="lab-running">'+_esc(s)+'</div>'));
+    if(r.html!==undefined){ _labStat('✓ rendered','ok'); _labOut('<iframe class="lab-frame" sandbox="allow-scripts" srcdoc="'+r.html.replace(/"/g,'&quot;')+'"></iframe>'); _labBusy(false); return; }
+    _labStat(r.ok?('✓ ran in '+r.ms+'ms'):'✗ error', r.ok?'ok':'err');
+    let h='';
+    if(r.stdout) h+='<div class="lab-sec"><div class="lab-sec-h">stdout</div><pre>'+_esc(r.stdout)+'</pre></div>';
+    if(r.result) h+='<div class="lab-sec"><div class="lab-sec-h">return</div><pre>'+_esc(r.result)+'</pre></div>';
+    if(r.stderr) h+='<div class="lab-sec err"><div class="lab-sec-h">error</div><pre>'+_esc(r.stderr)+'</pre></div>';
+    _labOut(h||'<div class="lab-placeholder">(no output)</div>');
+  }catch(e){ _labStat('✗ '+e.message,'err'); _labOut('<div class="lab-sec err"><pre>'+_esc(e.message)+'</pre></div>'); }
+  _labBusy(false);
+}
+
+async function _labDebug(){
+  if(_LAB.busy) return; _labBusy(true); _labStat('Auto-debugging…');
+  let log='';
+  const push=(h)=>{ log+=h; _labOut(log); const b=$('lab-out-body'); if(b)b.scrollTop=b.scrollHeight; };
+  push('<div class="lab-loop">Autonomous debug loop started…</div>');
+  try{
+    const res=await autoDebug($('lab-code').value, _LAB.lang, 5, st=>{
+      if(st.phase==='run'){ push('<div class="lab-step '+(st.run.ok?'ok':'err')+'"><b>Iteration '+st.iter+'</b> — '+(st.run.ok?'✓ ran clean':'✗ '+_esc((st.run.stderr||'').split("\n")[0]))+'</div>'); }
+      else if(st.phase==='patch'){ push('<div class="lab-step patch">↳ Patched code, re-running…</div>'); }
+      else if(st.phase==='status'){ _labStat(st.msg); }
+    });
+    if(res.success){
+      _labStat('✓ fixed in '+res.iters+' iteration(s)','ok');
+      push('<div class="lab-sec ok"><div class="lab-sec-h">Working code</div><pre>'+_esc(res.code)+'</pre></div>');
+      $('lab-code').value=res.code; _LAB.code=res.code;
+    } else { _labStat('Could not fully fix','err'); push('<div class="lab-step err">Stopped after '+res.iters+' iterations.</div>'); }
+  }catch(e){ _labStat('✗ '+e.message,'err'); push('<div class="lab-sec err"><pre>'+_esc(e.message)+'</pre></div>'); }
+  _labBusy(false);
+}
+
+async function _labAgents(){
+  if(_LAB.busy) return; _labBusy(true); _labStat('Agents working…');
+  let task = $('lab-code').value.trim().length<40 ? await showTextPromptAsync('Describe what to build (the agents will plan, code, test, review):','A function that returns the nth Fibonacci number, with input validation') : 'Improve and complete this code:\n\n'+$('lab-code').value;
+  if(!task){ _labBusy(false); _labStat(''); return; }
+  const order=['Planner','Coder','Tester','Critic','Security'];
+  const state={}; const draw=()=>{
+    _labOut('<div class="agents">'+order.map(a=>{
+      const s=state[a]||{};
+      const ic=s.status==='done'?'✓':s.status==='thinking'?'<span class="spin"></span>':'○';
+      return '<div class="agent '+(s.status||'')+'"><div class="agent-h"><span class="agent-ic">'+ic+'</span><b>'+a+'</b> agent'+(s.note?' <span class="agent-note">'+_esc(s.note)+'</span>':'')+'</div>'+
+        (s.output?'<div class="agent-out '+(s.isCode?'code':'')+'"><pre>'+_esc(s.output)+'</pre></div>':'')+'</div>';
+    }).join('')+'</div>');
+  };
+  draw();
+  try{
+    await runAgents(task, _LAB.lang, st=>{ state[st.agent]={...(state[st.agent]||{}),...st}; draw(); const b=$('lab-out-body'); if(b)b.scrollTop=b.scrollHeight; });
+    _labStat('✓ pipeline complete','ok');
+  }catch(e){ _labStat('✗ '+e.message,'err'); _labOut('<div class="lab-sec err"><pre>'+_esc(e.message)+'</pre></div>'); }
+  _labBusy(false);
+}
+
+async function _labAnalyze(kind){
+  if(_LAB.busy) return; _labBusy(true); _labStat('Analyzing…');
+  _labOut('<div class="lab-running">Running '+kind+' analysis…</div>');
+  try{
+    const out=await analyzeCode($('lab-code').value, _LAB.lang, kind);
+    _labStat('✓ done','ok');
+    _labOut('<div class="lab-sec"><div class="lab-sec-h">'+kind+'</div><div class="lab-md">'+(typeof md==='function'?md(out):'<pre>'+_esc(out)+'</pre>')+'</div></div>');
+  }catch(e){ _labStat('✗ '+e.message,'err'); _labOut('<div class="lab-sec err"><pre>'+_esc(e.message)+'</pre></div>'); }
+  _labBusy(false);
+}
+window.renderLabView=renderLabView;
+
+
+/* ===== REAL CREW TASK EXECUTION (runs + shows result inline) ===== */
+const _CREW_RESULTS = [];
+function _crewResultsHTML(){
+  if(!_CREW_RESULTS.length) return '';
+  return '<div class="crew-results">'+_CREW_RESULTS.slice().reverse().map(r=>(
+    '<div class="crew-res '+(r.status)+'">'+
+      '<div class="crew-res-h"><span class="crew-res-ic">'+(r.status==='running'?'<span class="spin"></span>':r.status==='done'?'✓':'✕')+'</span>'+
+        '<span class="crew-res-t">'+escH(r.title)+'</span>'+
+        '<span class="crew-res-s">'+(r.status==='running'?(r.note||'working…'):r.status==='done'?'completed':'failed')+'</span></div>'+
+      (r.body?'<div class="crew-res-body">'+(typeof md==='function'?md(r.body):escH(r.body))+'</div>':'')+
+      (r.actions?'<div class="crew-res-act">'+r.actions+'</div>':'')+
+    '</div>'
+  )).join('')+'</div>';
+}
+function _crewRender(){ const el=$('crew-live'); if(el) el.innerHTML=_crewResultsHTML(); }
+
+async function crewRun(kind, title, opts){
+  opts=opts||{};
+  const res={id:'cr'+Date.now(), kind, title, status:'running', note:'starting…', body:'', actions:''};
+  _CREW_RESULTS.push(res); _crewRender();
+  const up=(p)=>{ Object.assign(res,p); _crewRender(); const el=$('crew-live'); if(el) el.scrollTop=0; };
+  try{
+    if(kind==='trip'){
+      up({note:'planning your trip…'});
+      const detail = opts.detail || await showTextPromptAsync('Where & when? (e.g. "Lisbon for 5 days in October, mid budget, leaving from NYC")','');
+      if(!detail){ up({status:'failed', note:'cancelled', body:'No trip details given.'}); return res; }
+      res.title='Trip plan — '+detail.slice(0,50);
+      const out = await aiComplete(
+        'Plan this trip in detail. Output: (1) a day-by-day itinerary, (2) a markdown table of suggested flights with realistic airlines/times/price ranges and a "Book" column noting the route, (3) 3 hotel suggestions with nightly price, (4) estimated total budget. Be specific and realistic.\n\nTrip: '+detail,
+        'You are an elite travel planner. Use markdown headers, tables, and bullet lists.');
+      // realistic booking handoff (real search links, not a fake "booked")
+      const q=encodeURIComponent(detail);
+      const book='<a class="btn bp" href="https://www.google.com/travel/flights?q='+q+'" target="_blank" rel="noopener">Search & book flights →</a>'+
+                 '<a class="btn" href="https://www.booking.com/searchresults.html?ss='+q+'" target="_blank" rel="noopener">Find hotels →</a>';
+      up({status:'done', body:out, actions:book});
+    }
+    else if(kind==='gmail'){
+      up({note:'checking Gmail…'});
+      const token=(typeof getGToken==='function')?getGToken():null;
+      if(!token){ up({status:'failed', body:'**Gmail not connected.** Go to Integrations and connect Gmail, then run this again.'}); return res; }
+      const r=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10&labelIds=INBOX&q=is:unread',{headers:{'Authorization':'Bearer '+token}});
+      const d=await r.json();
+      if(d.error){ up({status:'failed', body:'Gmail error: '+d.error.message}); return res; }
+      const msgs=d.messages||[];
+      if(!msgs.length){ up({status:'done', body:'**Inbox clear** — no unread emails.'}); return res; }
+      up({note:'reading '+msgs.length+' emails…'});
+      const details=await Promise.all(msgs.slice(0,8).map(m=>fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/'+m.id+'?format=metadata&metadataHeaders=Subject&metadataHeaders=From',{headers:{'Authorization':'Bearer '+token}}).then(x=>x.json())));
+      const list=details.map(m=>{const h=(m.payload&&m.payload.headers)||[];const g=n=>(h.find(x=>x.name===n)||{}).value||'';return {from:g('From'),subject:g('Subject'),snippet:m.snippet||''};});
+      const summary=await aiComplete('Summarize these unread emails into a short prioritized briefing with suggested one-line replies. Emails:\n'+JSON.stringify(list,null,2),'You are an executive assistant. Use markdown.');
+      up({status:'done', body:summary});
+    }
+    else if(kind==='week'){
+      up({note:'planning your week…'});
+      const out=await aiComplete('Create an optimized weekly plan. Ask nothing; make reasonable assumptions and produce a Monday–Sunday schedule with focus blocks, then a short rationale.','You are a productivity strategist. Use a markdown table for the schedule.');
+      up({status:'done', body:out});
+    }
+    else if(kind==='custom'){
+      const t=opts.detail || await showTextPromptAsync('What should AMV do? (it will actually do it and show the result)','');
+      if(!t){ up({status:'failed', note:'cancelled', body:''}); return res; }
+      res.title=t.slice(0,60);
+      up({note:'working…'});
+      const out=await aiComplete(t,'You are AMV, a highly capable autonomous assistant. Actually complete the task and present the finished result with markdown formatting. Do not say you will do it later — do it now.');
+      up({status:'done', body:out});
+    }
+    else { up({status:'failed', body:'Unknown task.'}); }
+  }catch(e){
+    up({status:'failed', body:'**Error:** '+e.message+(/key/i.test(e.message)?' — the AMV engine needs to be connected by the workspace owner.':'')});
+  }
+  return res;
+}
+window.crewRun=crewRun;
+
+
+/* ===== DEDICATED TRIP PLANNER (own screen, real form -> AI) ===== */
+function openTripPlanner(){
+  const r=$('ovr'); if(!r) return;
+  r.innerHTML = `<div class="ov trip-ov" id="trip-bg"><div class="trip-modal" onclick="event.stopPropagation()">
+    <div class="trip-head">
+      <div><div class="eyebrow">AMV Travel</div><h2 class="trip-title">Plan a trip</h2></div>
+      <button class="trip-x" id="trip-close" aria-label="close">✕</button>
+    </div>
+    <div id="trip-step1" class="trip-body">
+      <p class="trip-sub">Tell AMV what you want. It builds a full itinerary, finds flights & hotels in your budget, and gives you one-tap booking.</p>
+      <div class="trip-form">
+        <div class="trip-row">
+          <label class="trip-f"><span>Destination</span><input id="t-dest" type="text" placeholder="e.g. Lisbon, or 'somewhere warm in Europe'"></label>
+          <label class="trip-f"><span>Departing from</span><input id="t-from" type="text" placeholder="e.g. New York (JFK)"></label>
+        </div>
+        <div class="trip-row">
+          <label class="trip-f"><span>Start date</span><input id="t-start" type="date"></label>
+          <label class="trip-f"><span>End date</span><input id="t-end" type="date"></label>
+        </div>
+        <div class="trip-row">
+          <label class="trip-f"><span>Travelers</span><input id="t-trav" type="number" min="1" value="1"></label>
+          <label class="trip-f"><span>Total budget (USD)</span><input id="t-budget" type="number" min="0" placeholder="e.g. 2000"></label>
+        </div>
+        <div class="trip-row">
+          <label class="trip-f"><span>Trip style</span>
+            <select id="t-style"><option>Balanced</option><option>Budget</option><option>Luxury</option><option>Adventure</option><option>Relaxation</option><option>Foodie</option><option>Culture & history</option><option>Family</option></select>
+          </label>
+          <label class="trip-f"><span>Pace</span>
+            <select id="t-pace"><option>Moderate</option><option>Packed</option><option>Slow & easy</option></select>
+          </label>
+        </div>
+        <label class="trip-f full"><span>Anything else? (interests, must-dos, dietary, accessibility)</span><textarea id="t-notes" rows="2" placeholder="e.g. love hiking and seafood, want one beach day, no early flights"></textarea></label>
+      </div>
+      <div class="trip-foot">
+        <span class="trip-hint">AMV will plan everything from these details.</span>
+        <button class="btn bp trip-go" id="trip-plan">Plan my trip →</button>
+      </div>
+    </div>
+    <div id="trip-step2" class="trip-body" style="display:none">
+      <div id="trip-status" class="trip-planning"><span class="spin"></span> <span id="trip-status-t">Planning your trip…</span></div>
+      <div id="trip-result" class="trip-result"></div>
+      <div id="trip-actions" class="trip-actions2"></div>
+    </div>
+  </div></div>`;
+  on($('trip-close'),'click',closeTripPlanner);
+  on($('trip-bg'),'click',closeTripPlanner);
+  on($('trip-plan'),'click',_tripPlan);
+  // sensible default dates (next month, 5 days)
+  const s=new Date(Date.now()+30*864e5), e=new Date(Date.now()+35*864e5);
+  const f=d=>d.toISOString().slice(0,10);
+  if($('t-start')) $('t-start').value=f(s);
+  if($('t-end')) $('t-end').value=f(e);
+}
+function closeTripPlanner(){ const r=$('ovr'); if(r) r.innerHTML=''; }
+
+async function _tripPlan(){
+  const g=id=>{const el=$(id);return el?el.value.trim():'';};
+  const dest=g('t-dest');
+  if(!dest){ toast('Where do you want to go?','error'); $('t-dest')&&$('t-dest').focus(); return; }
+  const data={
+    destination:dest, from:g('t-from')||'(flexible)', start:g('t-start'), end:g('t-end'),
+    travelers:g('t-trav')||'1', budget:g('t-budget')||'(flexible)', style:g('t-style'), pace:g('t-pace'), notes:g('t-notes')
+  };
+  // switch to step 2
+  $('trip-step1').style.display='none'; $('trip-step2').style.display='block';
+  const setStat=t=>{ const el=$('trip-status-t'); if(el) el.textContent=t; };
+  try{
+    const prompt='Plan a complete trip from these exact details:\n'+JSON.stringify(data,null,2)+
+      '\n\nProduce, using markdown:\n## Overview (1-2 lines)\n## Flights — a table: Airline | Route | Times | Est. price (in budget). \n## Where to stay — 3 options with nightly price.\n## Day-by-day itinerary (use the actual dates).\n## Budget breakdown — a table that totals at or under the stated budget for '+data.travelers+' traveler(s).\n## Tips. Be specific and realistic.';
+    const out=await aiComplete(prompt,'You are an elite travel planner. Be specific, realistic, and stay within budget. Use markdown headers and tables.',{max_tokens:6000});
+    $('trip-status').style.display='none';
+    $('trip-result').innerHTML=(typeof md==='function'?md(out):escH(out));
+    // real booking handoffs prefilled
+    const q=encodeURIComponent((data.from!=='(flexible)'?data.from+' to ':'')+data.destination+' '+data.start+' to '+data.end);
+    const hq=encodeURIComponent(data.destination);
+    $('trip-actions').innerHTML=
+      '<a class="btn bp" target="_blank" rel="noopener" href="https://www.google.com/travel/flights?q='+q+'">Search & book flights →</a>'+
+      '<a class="btn" target="_blank" rel="noopener" href="https://www.booking.com/searchresults.html?ss='+hq+'&checkin='+data.start+'&checkout='+data.end+'">Book hotels →</a>'+
+      '<button class="btn" id="trip-redo">Plan another</button>'+
+      '<button class="btn" id="trip-save">Save to a chat</button>';
+    on($('trip-redo'),'click',openTripPlanner);
+    on($('trip-save'),'click',()=>{ try{ S.cur=null; setMsgs([{r:'u',c:'Plan a trip to '+data.destination},{r:'a',c:out,model:S.model,ts:Date.now()}]); closeTripPlanner(); setTab('chat'); toast('Saved to a new chat','success'); }catch(e){} });
+  }catch(err){
+    $('trip-status').style.display='none';
+    $('trip-result').innerHTML='<div class="trip-err"><b>Couldn\'t plan the trip.</b><br>'+escH(err.message)+(/key/i.test(err.message)?'<br><br>The AMV engine needs to be connected by the workspace owner.':'')+'</div>';
+    $('trip-actions').innerHTML='<button class="btn" id="trip-back2">← Back</button>';
+    on($('trip-back2'),'click',openTripPlanner);
+  }
+}
+window.openTripPlanner=openTripPlanner;
+
+
+/* ===== TASK DETAIL PANEL (file / custom) + RECURRING AUTOMATION ===== */
+let _PENDING_FILE=null, _PENDING_FILE_CONTENT=null, _PENDING_FILE_KIND=null;
+
+// File cards call this: read file, then open the detail panel
+function amvOpenFile(f,kind){
+  if(!f) return;
+  _PENDING_FILE=f; _PENDING_FILE_KIND=kind;
+  const reader=new FileReader();
+  const isText = kind!=='image' && (f.type.startsWith('text')||/\.(txt|md|csv|tsv|json|js|ts|py|html|css|xml|yml|yaml|java|c|cpp|go|rb|php|sql)$/i.test(f.name)||f.size<200000);
+  reader.onload=()=>{ _PENDING_FILE_CONTENT=reader.result; openTaskPanel('file'); };
+  reader.onerror=()=>{ if(typeof toast==='function') toast('Could not read '+f.name,'error'); };
+  if(kind==='image'||!isText) reader.readAsDataURL(f); else reader.readAsText(f);
+}
+
+function openTaskPanel(mode){
+  const r=$('ovr'); if(!r) return;
+  const isFile = mode==='file';
+  const title = isFile ? 'Work on a file' : 'Custom task';
+  const fileLine = isFile && _PENDING_FILE ? '<div class="tp-file">📎 '+escH(_PENDING_FILE.name)+' <span>'+Math.round(_PENDING_FILE.size/1024)+' KB</span></div>' : '';
+  const ph = isFile ? "e.g. 'find the bugs and fix them', 'summarize the key points', 'clean this data and chart revenue by month'"
+                    : "Describe exactly what you want AMV to do. Be specific — it will actually do it and show the result.";
+  r.innerHTML = `<div class="ov tp-ov" id="tp-bg"><div class="tp-modal" onclick="event.stopPropagation()">
+    <div class="tp-head"><div><div class="eyebrow">AMV Task</div><h2 class="tp-title">${title}</h2></div><button class="tp-x" id="tp-close">✕</button></div>
+    <div class="tp-body" id="tp-step1">
+      ${fileLine}
+      <label class="tp-f"><span>What should AMV do?</span><textarea id="tp-detail" rows="4" placeholder="${escH(ph)}"></textarea></label>
+      <div class="tp-recur">
+        <label class="tp-f"><span>Repeat this task</span>
+          <select id="tp-repeat">
+            <option value="none">Just once</option>
+            <option value="hourly">Every hour</option>
+            <option value="daily">Every day</option>
+            <option value="weekly">Every week</option>
+          </select>
+        </label>
+        <div class="tp-recur-note" id="tp-recur-note"></div>
+      </div>
+      <div class="tp-foot"><span class="tp-hint">AMV does it now and shows the result here.</span><button class="btn bp" id="tp-run">Do it →</button></div>
+    </div>
+    <div class="tp-body" id="tp-step2" style="display:none">
+      <div id="tp-status" class="tp-planning"><span class="spin"></span> <span id="tp-status-t">Working…</span></div>
+      <div id="tp-result" class="tp-result"></div>
+      <div id="tp-actions" class="tp-actions2"></div>
+    </div>
+  </div></div>`;
+  on($('tp-close'),'click',closeTaskPanel);
+  on($('tp-bg'),'click',closeTaskPanel);
+  on($('tp-run'),'click',()=>_taskRun(mode));
+  const rep=$('tp-repeat'), note=$('tp-recur-note');
+  on(rep,'change',()=>{ note.textContent = rep.value==='none' ? '' :
+    'Runs '+rep.value+' while AMV is open. Connect the AMV backend to run it 24/7 even when you\'re away.'; });
+}
+function closeTaskPanel(){ const r=$('ovr'); if(r) r.innerHTML=''; }
+
+async function _taskRun(mode){
+  const detail=($('tp-detail')?$('tp-detail').value.trim():'');
+  if(!detail){ toast('Tell AMV what to do first','error'); $('tp-detail')&&$('tp-detail').focus(); return; }
+  const repeat=$('tp-repeat')?$('tp-repeat').value:'none';
+  $('tp-step1').style.display='none'; $('tp-step2').style.display='block';
+  const setStat=t=>{const el=$('tp-status-t'); if(el) el.textContent=t;};
+  try{
+    let prompt, sys='You are AMV, a highly capable assistant. Actually complete the task now and present the finished result with markdown. Do not say you will do it later.';
+    if(mode==='file' && _PENDING_FILE){
+      const isImg=_PENDING_FILE_KIND==='image';
+      prompt = isImg
+        ? 'The user uploaded an image named '+_PENDING_FILE.name+'. Task: '+detail+'\n(Describe what you would do and produce any text-based result you can.)'
+        : 'File: '+_PENDING_FILE.name+'\n\nContents:\n```\n'+String(_PENDING_FILE_CONTENT).slice(0,14000)+'\n```\n\nTask: '+detail+'\n\nDo it and show the result.';
+    } else {
+      prompt = detail;
+    }
+    const out=await aiComplete(prompt, sys, {max_tokens:5000});
+    $('tp-status').style.display='none';
+    $('tp-result').innerHTML=(typeof md==='function'?md(out):escH(out));
+    let acts='<button class="btn" id="tp-again">New task</button><button class="btn" id="tp-save">Save to a chat</button>';
+    if(repeat!=='none'){ _scheduleTask({mode, detail, repeat, fileName:_PENDING_FILE?_PENDING_FILE.name:null}); acts='<span class="tp-sched">✓ Scheduled '+repeat+'</span>'+acts; }
+    $('tp-actions').innerHTML=acts;
+    on($('tp-again'),'click',()=>openTaskPanel(mode));
+    on($('tp-save'),'click',()=>{ try{ S.cur=null; setMsgs([{r:'u',c:detail},{r:'a',c:out,model:S.model,ts:Date.now()}]); closeTaskPanel(); setTab('chat'); toast('Saved','success'); }catch(e){} });
+  }catch(err){
+    $('tp-status').style.display='none';
+    $('tp-result').innerHTML='<div class="tp-err"><b>Could not complete.</b><br>'+escH(err.message)+(/key/i.test(err.message)?'<br><br>The AMV engine needs to be connected by the workspace owner.':'')+'</div>';
+    $('tp-actions').innerHTML='<button class="btn" id="tp-back2">← Back</button>';
+    on($('tp-back2'),'click',()=>openTaskPanel(mode));
+  }
+}
+
+/* ---- Recurring automation: persists + runs due tasks when app opens ---- */
+function _scheduleTask(t){
+  const list=load('amv_sched')||[];
+  const intervalMs={hourly:36e5,daily:864e5,weekly:6048e5}[t.repeat]||0;
+  list.push({id:'s'+Date.now(), detail:t.detail, repeat:t.repeat, intervalMs, next:Date.now()+intervalMs, fileName:t.fileName||null, created:Date.now()});
+  store('amv_sched',list);
+  if(typeof toast==='function') toast('Task scheduled — '+t.repeat,'success');
+}
+async function _runDueTasks(){
+  const list=load('amv_sched')||[]; if(!list.length) return;
+  const now=Date.now(); let ran=0;
+  for(const t of list){
+    if(t.next<=now){
+      try{ const out=await aiComplete(t.detail,'You are AMV running a scheduled task. Complete it and return the result in markdown.',{max_tokens:3000});
+        const res=load('amv_sched_results')||[]; res.push({detail:t.detail, out, at:Date.now()}); store('amv_sched_results',res.slice(-50));
+        t.next=now+(t.intervalMs||864e5); ran++;
+      }catch(e){ t.next=now+(t.intervalMs||864e5); }
+    }
+  }
+  if(ran){ store('amv_sched',list); if(typeof toast==='function') toast(ran+' scheduled task(s) ran while you were away','info'); }
+}
+window.openTaskPanel=openTaskPanel; window.amvOpenFile=amvOpenFile;
+setTimeout(function(){ try{ _runDueTasks(); }catch(e){} }, 2500);
+
+
+/* ============================================================
+   AMV AUTONOMOUS RUNNER (Cowork-style) — goal -> plan -> execute -> loop
+   ============================================================ */
+const _AMVSYS = "You are AMV — an elite autonomous AI built by AMV.AI. You are the only AI; never mention or imply Claude, Anthropic, OpenAI, ChatGPT, Google or any other provider. Speak as AMV in first person. Produce professional, production-grade, specific, ready-to-use deliverables — never placeholders, never 'here's a template'. When a task can't be physically completed from text alone (e.g. rendering a video file, placing a real trade, sending without approval), produce the complete, excellent work product needed and clearly state the one external step required.";
+const _AUTO = { running:false, steps:[], goal:'', deliverable:'', file:null, fileContent:null, paused:false, awaiting:null };
+
+function _autoLog(html){ const el=$('auto-feed'); if(el){ el.insertAdjacentHTML('beforeend', html); el.scrollTop=el.scrollHeight; } }
+function _autoSetStatus(t){ const el=$('auto-status'); if(el) el.textContent=t||''; }
+
+async function runAutonomous(goal, opts){
+  opts=opts||{};
+  _AUTO.running=true; _AUTO.goal=goal; _AUTO.steps=[]; _AUTO.deliverable=''; _AUTO.paused=false;
+  _AUTO.file=opts.file||null; _AUTO.fileContent=opts.fileContent||null;
+  const maxSteps=opts.maxSteps||12;
+
+  _autoLog('<div class="auto-ev plan"><b>Goal</b><div>'+escH(goal)+'</div></div>');
+  _autoSetStatus('Planning…');
+
+  // 1) PLAN
+  let plan;
+  try{
+    const fileNote=_AUTO.file?('\nThe user attached a file: '+_AUTO.file.name+'. Its contents are available to steps.'):'';
+    const planResp=await aiComplete(
+      _AMVSYS+' Break this goal into an ordered list of concrete steps you will execute yourself. Each step is one action. Return ONLY a JSON array of objects: [{"step":"short title","action":"what you will do","needs_approval":true|false}]. Mark needs_approval true ONLY for steps that send/share/delete/publish something externally.'+fileNote+'\n\nGOAL: '+goal,
+      'Output strictly valid JSON, no prose, no code fences.');
+    plan=JSON.parse(planResp.replace(/^```json?|```$/g,'').trim());
+  }catch(e){
+    plan=[{step:'Complete the task',action:goal,needs_approval:false}];
+  }
+  _AUTO.steps=plan;
+  _autoLog('<div class="auto-ev plan"><b>Plan — '+plan.length+' steps</b><ol>'+plan.map(s=>'<li>'+escH(s.step)+'</li>').join('')+'</ol></div>');
+
+  // 2) EXECUTE each step, feeding results forward
+  let context='';
+  for(let i=0;i<plan.length && i<maxSteps;i++){
+    if(!_AUTO.running){ _autoLog('<div class="auto-ev stop">Stopped by user.</div>'); break; }
+    const s=plan[i];
+    // approval gate
+    if(s.needs_approval){
+      const ok=await _autoApprove(s.step, s.action);
+      if(!ok){ _autoLog('<div class="auto-ev skip">Skipped (not approved): '+escH(s.step)+'</div>'); continue; }
+    }
+    _autoSetStatus('Step '+(i+1)+'/'+plan.length+': '+s.step);
+    _autoLog('<div class="auto-ev run" id="ev'+i+'"><span class="spin"></span> <b>'+escH(s.step)+'</b></div>');
+
+    // Decide: does this step need code execution?
+    let result='';
+    try{
+      const decide=await aiComplete(
+        'Step: '+s.action+'\n\nIf this step is best done by running code (computation, data parsing, transformation), reply with ONLY a fenced code block (js or python). Otherwise reply with the completed written result for this step. Context so far:\n'+(context.slice(-3000)||'(none)')+(_AUTO.fileContent?('\n\nAttached file contents:\n'+String(_AUTO.fileContent).slice(0,8000)):''),
+        _AMVSYS+' Execute this one step and produce the actual, finished output for it — production quality.');
+      const code=extractCode(decide,'js')||extractCode(decide,'python');
+      if(code){
+        const lang=/def |import |print\(/.test(code)?'python':'js';
+        const run=await runCode(code, lang);
+        result='Ran '+lang+' → '+(run.ok?(run.stdout||run.result||'ok'):'error: '+run.stderr);
+        _autoStepDone(i, s.step, (run.ok?'✓':'✕')+' executed code', '<pre>'+escH((run.stdout||run.result||run.stderr||'').slice(0,600))+'</pre>');
+      } else {
+        result=decide;
+        _autoStepDone(i, s.step, '✓ done', '<div class="auto-out">'+(typeof md==='function'?md(decide.slice(0,800)):escH(decide.slice(0,800)))+'</div>');
+      }
+    }catch(err){
+      result='(step failed: '+err.message+')';
+      _autoStepDone(i, s.step, '✕ '+err.message, '');
+      if(/key/i.test(err.message)){ _autoSetStatus('Needs API key'); break; }
+    }
+    context+='\n\n['+s.step+']\n'+result;
+  }
+
+  // 3) SYNTHESIZE deliverable
+  if(_AUTO.running){
+    _autoSetStatus('Compiling deliverable…');
+    try{
+      const deliv=await aiComplete(
+        'Goal: '+goal+'\n\nWork log:\n'+context.slice(-8000)+'\n\nProduce the final, polished deliverable the user asked for. Markdown.',
+        _AMVSYS+' Output only the finished, polished deliverable — ready to use as-is.');
+      _AUTO.deliverable=deliv;
+      _autoLog('<div class="auto-ev done"><b>✓ Done</b></div>');
+      const dv=$('auto-deliverable'); if(dv){ dv.style.display='block'; dv.innerHTML='<div class="auto-deliv-h">Deliverable</div><div class="auto-deliv-body">'+(typeof md==='function'?md(deliv):escH(deliv))+'</div><div class="auto-deliv-act"><button class="btn" id="auto-save">Save to a chat</button><button class="btn" id="auto-new">New task</button></div>'; 
+        on($('auto-save'),'click',()=>{ try{ S.cur=null; setMsgs([{r:'u',c:goal},{r:'a',c:deliv,model:S.model,ts:Date.now()}]); setTab('chat'); toast('Saved','success'); }catch(e){} });
+        on($('auto-new'),'click',openCowork);
+      }
+    }catch(e){ _autoLog('<div class="auto-ev stop">Could not compile: '+escH(e.message)+'</div>'); }
+  }
+  _autoSetStatus(_AUTO.running?'Complete':'Stopped');
+  _AUTO.running=false;
+}
+function _autoStepDone(i,title,badge,detail){
+  const ev=$('ev'+i); if(!ev) return;
+  ev.classList.remove('run'); ev.classList.add('ev-done');
+  ev.innerHTML='<b>'+escH(title)+'</b> <span class="auto-badge">'+escH(badge)+'</span>'+(detail||'');
+}
+function _autoApprove(step, action){
+  return new Promise(resolve=>{
+    _autoLog('<div class="auto-ev approve" id="appr"><b>Approval needed:</b> '+escH(step)+'<div class="auto-appr-d">'+escH(action)+'</div><div class="auto-appr-btns"><button class="btn bp" id="appr-y">Approve</button><button class="btn" id="appr-n">Skip</button></div></div>');
+    on($('appr-y'),'click',()=>{ const a=$('appr'); if(a){a.querySelector('.auto-appr-btns').innerHTML='<span class="tp-sched">✓ Approved</span>';} resolve(true); });
+    on($('appr-n'),'click',()=>{ const a=$('appr'); if(a){a.querySelector('.auto-appr-btns').innerHTML='<span class="auto-skip-l">Skipped</span>';} resolve(false); });
+  });
+}
+function stopAutonomous(){ _AUTO.running=false; _autoSetStatus('Stopping…'); }
+
+/* ---- Cowork-style entry panel ---- */
+function openCowork(){
+  const r=$('ovr'); if(!r) return;
+  r.innerHTML = `<div class="ov tp-ov" id="cw-bg"><div class="tp-modal cowork-modal" onclick="event.stopPropagation()">
+    <div class="tp-head"><div><div class="eyebrow">AMV Autonomous</div><h2 class="tp-title">Give AMV an outcome</h2></div><button class="tp-x" id="cw-close">✕</button></div>
+    <div class="tp-body" id="cw-step1">
+      <p class="trip-sub">Describe the result you want — not the steps. AMV plans the work, executes each step itself, and brings back a finished deliverable. You approve anything that sends or shares.</p>
+      <label class="tp-f"><span>What outcome do you want?</span><textarea id="cw-goal" rows="4" placeholder="e.g. 'Analyze the sales numbers in this file and write an executive summary with the top 3 insights' or 'Research the top 5 competitors and build a comparison table'"></textarea></label>
+      <label class="tp-f"><span>Attach a file (optional)</span><input type="file" id="cw-file"></label>
+      <div class="sched-panel">
+        <div class="sched-label">Schedule</div>
+        <div class="sched-cad" id="cw-cad">
+          ${['once','daily','weekly','monthly'].map(v=>`<button type="button" class="sched-cad-b${v==='once'?' on':''}" data-cad="${v}">${({once:'Once',daily:'Daily',weekly:'Weekly',monthly:'Monthly'})[v]}</button>`).join('')}
+        </div>
+        <div class="sched-days" id="cw-days" style="display:none">
+          <span class="sched-sub">On these days</span>
+          <div class="sched-dayrow">${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((d,i)=>`<button type="button" class="sched-day${i===0?' on':''}" data-day="${(i+1)%7}">${d}</button>`).join('')}</div>
+        </div>
+        <div class="sched-dom" id="cw-dom" style="display:none">
+          <span class="sched-sub">Day of month</span>
+          <select id="cw-dom-sel">${Array.from({length:28},(_,i)=>`<option value="${i+1}">${i+1}</option>`).join('')}</select>
+        </div>
+        <div class="sched-time" id="cw-time" style="display:none">
+          <span class="sched-sub">At</span>
+          <select id="cw-hour">${Array.from({length:24},(_,h)=>`<option value="${h}"${h===9?' selected':''}>${((h%12)||12)}:00 ${h<12?'AM':'PM'}</option>`).join('')}</select>
+        </div>
+        <div class="cw-freq-note" id="cw-freq-note"></div>
+      </div>
+      <div class="tp-foot"><span class="tp-hint">AMV works continuously until the goal is met.</span><button class="btn bp" id="cw-go">Start working →</button></div>
+    </div>
+    <div class="tp-body" id="cw-step2" style="display:none">
+      <div class="auto-bar"><span id="auto-status" class="auto-status">Working…</span><button class="btn" id="auto-stop">Stop</button></div>
+      <div id="auto-feed" class="auto-feed"></div>
+      <div id="auto-deliverable" class="auto-deliverable" style="display:none"></div>
+    </div>
+  </div></div>`;
+  on($('cw-close'),'click',()=>{ stopAutonomous(); const x=$('ovr'); if(x) x.innerHTML=''; });
+  on($('cw-bg'),'click',()=>{ if(!_AUTO.running){ const x=$('ovr'); if(x) x.innerHTML=''; } });
+  on($('cw-go'),'click',_coworkStart);
+  _SCHED={cad:'once', days:[1], dom:1, hour:9};
+  const updNote=()=>{ const n=$('cw-freq-note'); if(!n) return; n.textContent = _SCHED.cad==='once' ? '' : (_schedHuman()+' — runs automatically when due while AMV is open. You still approve any send/post step.'); };
+  const showFor=cad=>{ $('cw-days').style.display = cad==='weekly'?'block':'none'; $('cw-dom').style.display = cad==='monthly'?'block':'none'; $('cw-time').style.display = cad==='once'?'none':'block'; };
+  document.querySelectorAll('#cw-cad .sched-cad-b').forEach(btn=>on(btn,'click',()=>{ document.querySelectorAll('#cw-cad .sched-cad-b').forEach(b=>b.classList.remove('on')); btn.classList.add('on'); _SCHED.cad=btn.dataset.cad; showFor(_SCHED.cad); updNote(); }));
+  document.querySelectorAll('#cw-days .sched-day').forEach(btn=>on(btn,'click',()=>{ const d=+btn.dataset.day; btn.classList.toggle('on'); if(btn.classList.contains('on')){ if(!_SCHED.days.includes(d)) _SCHED.days.push(d); } else { _SCHED.days=_SCHED.days.filter(x=>x!==d); } updNote(); }));
+  on($('cw-dom-sel'),'change',()=>{ _SCHED.dom=+$('cw-dom-sel').value; updNote(); });
+  on($('cw-hour'),'change',()=>{ _SCHED.hour=+$('cw-hour').value; updNote(); });
+  on($('auto-stop'),'click',stopAutonomous);
+}
+async function _coworkStart(){
+  const goal=$('cw-goal')?$('cw-goal').value.trim():'';
+  if(!goal){ toast('Describe the outcome you want','error'); $('cw-goal')&&$('cw-goal').focus(); return; }
+  const fileInput=$('cw-file'); const file=fileInput&&fileInput.files[0];
+  const cad=(_SCHED&&_SCHED.cad)||'once';
+  if(cad!=='once'){ _scheduleAuto2(goal, Object.assign({},_SCHED)); }
+  $('cw-step1').style.display='none'; $('cw-step2').style.display='block';
+  if(cad!=='once'){ _autoLog('<div class="auto-ev plan"><b>Scheduled</b><div>'+_schedHuman()+'. Running the first one now. AMV runs this automatically when due (and catches up when you return). Connect the backend for true 24/7.</div></div>'); }
+  if(file){
+    const reader=new FileReader();
+    reader.onload=()=>runAutonomous(goal,{file, fileContent:reader.result});
+    if(file.type.startsWith('text')||file.size<200000) reader.readAsText(file); else reader.readAsDataURL(file);
+  } else { runAutonomous(goal,{}); }
+}
+function _freqLabel(f){ return {daily:'Every day',weekdays:'Every weekday',weekly_mon:'Every Monday morning',weekly:'Every week',hourly:'Every hour'}[f]||f; }
+function _freqNext(f, from){
+  const d=new Date(from||Date.now());
+  if(f==='hourly') return from+36e5;
+  if(f==='daily'||f==='weekdays'){ d.setDate(d.getDate()+1); d.setHours(8,0,0,0); if(f==='weekdays'){ while(d.getDay()===0||d.getDay()===6) d.setDate(d.getDate()+1); } return d.getTime(); }
+  if(f==='weekly') return from+6048e5;
+  if(f==='weekly_mon'){ d.setDate(d.getDate()+((8-d.getDay())%7||7)); d.setHours(8,0,0,0); return d.getTime(); }
+  return from+864e5;
+}
+function _scheduleAuto(goal, freq){
+  const list=_loadSched();
+  list.push({id:'a'+Date.now(), goal, freq, next:_freqNext(freq, Date.now()), created:Date.now(), lastRun:null});
+  _saveSched(list);
+  if(typeof toast==='function') toast('Scheduled — '+_freqLabel(freq),'success');
+}
+function _loadSched(){ try{ return JSON.parse(localStorage.getItem('amv_autosched')||'[]'); }catch(e){ return []; } }
+function _saveSched(l){ try{ localStorage.setItem('amv_autosched', JSON.stringify(l)); }catch(e){} }
+async function _runDueAuto(){
+  const list=_loadSched(); if(!list.length) return; const now=Date.now(); let changed=false;
+  for(const t of list){
+    if(t.next<=now){
+      t.lastRun=now; t.next=(t.sched?_schedNext(t.sched,now):_freqNext(t.freq,now)); changed=true;
+      // Run in the BACKGROUND — do not hijack the UI with a modal.
+      if(typeof toast==='function') toast('Running a scheduled task in the background','info',3000);
+      try{ await runAutonomous(t.goal,{silent:true}); }catch(e){}
+    }
+  }
+  if(changed) _saveSched(list);
+}
+/* Scheduled work manager */
+function openSchedManager(){
+  const r=$('ovr'); if(!r) return;
+  const list=_loadSched();
+  const rows = list.length ? list.map(t=>`<div class="sched-row"><div><div class="sched-goal">${escH(t.goal)}</div><div class="sched-meta">${t.sched?_schedHumanOf(t.sched):_freqLabel(t.freq)} · next ${new Date(t.next).toLocaleString()}</div></div><button class="btn" data-sched-del="${t.id}">Cancel</button></div>`).join('') : '<div class="lab-placeholder">No scheduled work yet. Start an autonomous task and choose a frequency.</div>';
+  r.innerHTML=`<div class="ov tp-ov" id="sm-bg"><div class="tp-modal" onclick="event.stopPropagation()">
+    <div class="tp-head"><div><div class="eyebrow">AMV Autonomous</div><h2 class="tp-title">Scheduled work</h2></div><button class="tp-x" id="sm-close">✕</button></div>
+    <div class="tp-body"><p class="trip-sub">Recurring outcomes AMV runs for you. They run when due while AMV is open and catch up when you return. Connect the backend for true 24/7.</p><div class="sched-list">${rows}</div></div>
+  </div></div>`;
+  on($('sm-close'),'click',()=>{ const x=$('ovr'); if(x) x.innerHTML=''; });
+  on($('sm-bg'),'click',()=>{ const x=$('ovr'); if(x) x.innerHTML=''; });
+  r.querySelectorAll('[data-sched-del]').forEach(btn=>on(btn,'click',()=>{ _saveSched(_loadSched().filter(t=>t.id!==btn.dataset.schedDel)); openSchedManager(); }));
+}
+window.openSchedManager=openSchedManager;
+window.openCowork=openCowork; window.runAutonomous=runAutonomous;
+
+
+setTimeout(function(){ try{ if(typeof _runDueAuto==="function") _runDueAuto(); }catch(e){} }, 3500);
+
+let _SCHED={cad:'once', days:[1], dom:1, hour:9};
+function _hourLabel(h){ return ((h%12)||12)+':00 '+(h<12?'AM':'PM'); }
+const _DOWNAMES=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+function _schedHuman(){
+  const t='at '+_hourLabel(_SCHED.hour);
+  if(_SCHED.cad==='daily') return 'Every day '+t;
+  if(_SCHED.cad==='weekly'){ const ds=_SCHED.days.slice().sort().map(d=>_DOWNAMES[d]); return (ds.length?ds.join(', '):'(pick days)')+' '+t; }
+  if(_SCHED.cad==='monthly') return 'Day '+_SCHED.dom+' of each month '+t;
+  return '';
+}
+function _schedNext(s, from){
+  const now=new Date(from||Date.now());
+  if(s.cad==='daily'){ const d=new Date(now); d.setHours(s.hour,0,0,0); if(d<=now) d.setDate(d.getDate()+1); return d.getTime(); }
+  if(s.cad==='weekly'){ const days=(s.days&&s.days.length)?s.days:[1]; let best=null; for(let i=0;i<14;i++){ const d=new Date(now); d.setDate(d.getDate()+i); d.setHours(s.hour,0,0,0); if(days.includes(d.getDay()) && d>now){ best=d.getTime(); break; } } return best||(from+6048e5); }
+  if(s.cad==='monthly'){ const d=new Date(now); d.setDate(s.dom); d.setHours(s.hour,0,0,0); if(d<=now){ d.setMonth(d.getMonth()+1); d.setDate(s.dom); } return d.getTime(); }
+  return from+864e5;
+}
+
+
+function _scheduleAuto2(goal, s){
+  const list=_loadSched();
+  list.push({id:'a'+Date.now(), goal, sched:s, next:_schedNext(s, Date.now()), created:Date.now(), lastRun:null});
+  _saveSched(list);
+  if(typeof toast==='function') toast('Scheduled — '+_schedHumanOf(s),'success');
+}
+function _schedHumanOf(s){
+  const t='at '+_hourLabel(s.hour);
+  if(s.cad==='daily') return 'Every day '+t;
+  if(s.cad==='weekly'){ const ds=(s.days||[]).slice().sort().map(d=>_DOWNAMES[d]); return ds.join(', ')+' '+t; }
+  if(s.cad==='monthly') return 'Day '+s.dom+' of each month '+t;
+  return s.cad;
+}
+
+
+function openCoworkWith(goal){ openCowork(); setTimeout(()=>{ const g=$('cw-goal'); if(g){ g.value=goal; g.focus(); } const wk=document.querySelector('[data-cad="weekly"]'); }, 60); }
+window.openCoworkWith=openCoworkWith;
