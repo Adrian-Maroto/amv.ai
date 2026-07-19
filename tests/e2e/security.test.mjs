@@ -20,6 +20,9 @@ const payloads = [
   '```\n<img src=x onerror="window.__xss=1">\n```',
   '<iframe srcdoc="<script>parent.__xss=1<\/script>">',
   '<a href="javascript:window.__xss=1">x</a>',
+  // AMV-004: attribute injection through markdown link/image syntax
+  '![x" onerror="window.__xss=1](https://e.com/i.png)',
+  '[click](https://e.com/" onmouseover="window.__xss=1)',
 ];
 
 const xss = await page.evaluate(async (payloads) => {
@@ -49,6 +52,32 @@ const labXss = await page.evaluate(() => {
 });
 ok(!labXss.leaked, 'Lab highlighter does not emit live HTML from code');
 ok(labXss.escaped, 'Lab highlighter escapes before tokenizing');
+
+/* ── AMV-004: markdown attribute injection ─────────────────────────────────
+   md() drops link/image URLs and alt text into "-quoted attributes. A quote in
+   the alt or URL must not close the attribute and add an inline event handler
+   (onerror/onmouseover) that would read tokens from localStorage. */
+section('XSS: markdown attribute injection (AMV-004)');
+const mdAttr = await page.evaluate(() => {
+  const out = md('![x" onerror="window.__mx=1](https://e.com/i.png)')
+            + md('[click](https://e.com/" onmouseover="window.__mx=1)');
+  const d = document.createElement('div');
+  d.innerHTML = out;
+  document.body.appendChild(d);
+  const img = d.querySelector('img'), a = d.querySelector('a');
+  const res = {
+    imgOnerror: img ? img.hasAttribute('onerror') : 'no-img',
+    aOnmouseover: a ? a.hasAttribute('onmouseover') : 'no-a',
+    rendered: !!img && !!a,
+    escaped: /&quot;/.test(out),
+  };
+  d.remove();
+  return res;
+});
+ok(mdAttr.imgOnerror === false, 'md image alt cannot inject an onerror attribute', mdAttr.imgOnerror);
+ok(mdAttr.aOnmouseover === false, 'md link URL cannot inject an onmouseover attribute', mdAttr.aOnmouseover);
+ok(mdAttr.rendered, 'legitimate image and link still render');
+ok(mdAttr.escaped, 'attribute-breaking quotes are entity-escaped');
 
 /* ── Sandboxing: generated apps run with no same-origin access ─────────────
    A generated app is untrusted code. It must render in an iframe WITHOUT

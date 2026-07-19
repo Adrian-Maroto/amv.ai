@@ -3614,6 +3614,12 @@ function _artifactDownload(art){  try{
 }
 try{ window.openArtifact=openArtifact; window.closeArtifact=closeArtifact; }catch(e){}
 
+/* Escape a value for safe insertion into a double-quoted HTML attribute inside
+   md(). md() has already entity-escaped < > & across the whole string, so here
+   we only neutralize the attribute-delimiter characters that could otherwise
+   terminate a href/src/alt value early and inject an inline event handler
+   (onerror/onmouseover) — the DOM-XSS vector from the security audit (AMV-004). */
+function _mdAttr(s){ return String(s==null?'':s).replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/`/g,'&#96;'); }
 function md(text) {  if(!text) return '';
   let t = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
@@ -3703,8 +3709,10 @@ function md(text) {  if(!text) return '';
   t = t.replace(/(<li>.*<\/li>\n?)+/g, m=>'<ul>'+m+'</ul>');
   t = t.replace(/^\d+\. (.+)$/gm,'<li>$1</li>');
   t = t.replace(/`([^`\n]+)`/g,'<code>$1</code>');
-  t = t.replace(/!\[([^\]]*)\]\((https?:\/\/[^)]+)\)/g,'<img src="$2" alt="$1" class="chat-img" loading="lazy">');
-  t = t.replace(/\[(.+?)\]\((https?:\/\/[^)]+)\)/g,'<a href="$2" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">$1</a>');
+  t = t.replace(/!\[([^\]]*)\]\((https?:\/\/[^)]+)\)/g, (m,alt,url)=>'<img src="'+_mdAttr(url)+'" alt="'+_mdAttr(alt)+'" class="chat-img" loading="lazy">');
+  // Link TEXT ($1) is intentionally left as already-rendered inline HTML (bold/
+  // italic/code were applied above); only the href URL is attribute-escaped.
+  t = t.replace(/\[(.+?)\]\((https?:\/\/[^)]+)\)/g, (m,txt,url)=>'<a href="'+_mdAttr(url)+'" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">'+txt+'</a>');
   t = t.replace(/\n\n/g,'<br><br>').replace(/\n/g,'<br>');
   // Newline->\<br\> is fine for prose, but it also injects stray breaks INSIDE
   // block elements (between list items, around headings, around code blocks),
