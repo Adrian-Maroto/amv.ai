@@ -142,6 +142,18 @@ ok(r.status === 200, 'refresh with a valid refresh token succeeds', r.status);
 const refreshed = await r.json();
 ok(!!refreshed.token && !!refreshed.refreshToken, 'and returns a fresh access + refresh pair');
 
+/* ── AMV-011: refresh tokens are single-use and rotate; replay revokes the family ── */
+section('AMV-011: refresh-token rotation + reuse detection');
+const rotPair = await W.issueTokens(env, 'rot@test.com', 'Rot');
+r = await W.authRefresh(req({ refreshToken: rotPair.refreshToken }), env);
+ok(r.status === 200, 'a refresh token can be exchanged once', r.status);
+const rot1 = await r.json();
+ok(rot1.refreshToken && rot1.refreshToken !== rotPair.refreshToken, 'exchange rotates to a NEW refresh token');
+r = await W.authRefresh(req({ refreshToken: rotPair.refreshToken }), env);
+ok(r.status === 401, 'replaying the SAME refresh token is rejected (single-use)', r.status);
+const deadAccess = await W.verifyToken(rot1.token, SECRET, env, 'access');
+ok(deadAccess === null, 'detected replay revokes the whole token family', deadAccess);
+
 /* ── requireUser: the gate every protected endpoint relies on ────────────── */
 section('requireUser is the real gate');
 

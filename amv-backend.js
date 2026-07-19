@@ -1831,6 +1831,19 @@ async function authRefresh(request, env) {
   if (!refreshToken) return json({ error: 'refresh token required' }, 400);
   const data = await verifyToken(refreshToken, env.JWT_SECRET, env, 'refresh');
   if (!data || !data.email) return json({ error: 'invalid or expired refresh token' }, 401);
+  // AMV-011: refresh-token ROTATION with reuse detection. Each refresh token may
+  // be exchanged exactly once. Claiming its jti is atomic (on D1); if the jti was
+  // already used, the token is being REPLAYED — it was stolen and used twice — so
+  // we revoke every token for the account (kills both the thief and the victim's
+  // session; the victim simply signs in again) instead of quietly issuing more.
+  if (data.jti) {
+    const firstUse = await _claimOnce(env, 'usedrefresh', data.jti, Math.floor(REFRESH_TTL_MS / 1000));
+    if (!firstUse) {
+      await revokeUserTokens(env, data.email);
+      audit(env, 'refresh_replay', { email: data.email });
+      return json({ error: 'refresh token already used' }, 401);
+    }
+  }
   try{ await _markActive(env, data.email); }catch(e){}
   return json(await issueTokens(env, data.email, data.name || ''));
 }
