@@ -3524,16 +3524,34 @@ async function smsRegister(request, env) {
   const body = await request.json().catch(() => ({}));
   const phone = normalizePhone(body.phone || '');
   if (!phone) return json({ error: 'invalid phone number' }, 400);
-  // one phone per account; one account per phone
-  await env.AMV_KV.put(`sms:phone:${phone}`, user.email.toLowerCase());
-  await env.AMV_KV.put(`sms:user:${user.email.toLowerCase()}`, phone);
-  // greet the user so the conversation starts immediately
-  let greeted = false;
-  try {
-    await sendSms(env, phone, 'Hey! You just linked your phone number to AMV. \uD83D\uDC4B What would you like to do next? Try: "summarize my latest task", "draft a reply to my last email", or just ask me anything.');
-    greeted = true;
-  } catch (e) { /* Twilio not configured yet — link still succeeds */ }
-  return json({ ok: true, phone, greeted });
+  const email = user.email.toLowerCase();
+
+  // AMV-033: a phone number is not self-asserted identity. Never bind a number to
+  // an account on an unverified claim (that would send an unsolicited SMS and let
+  // an attacker link a victim's number). Require a one-time code AND enforce
+  // one-account-per-phone uniqueness.
+  const existing = await env.AMV_KV.get(`sms:phone:${phone}`);
+  if (existing && existing !== email) return json({ error: 'that phone number is already linked to another account' }, 409);
+
+  const code = String(body.code || '').trim();
+  if (!code) {
+    if (!(env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN && env.TWILIO_FROM_NUMBER))
+      return json({ error: 'SMS is not configured on this workspace yet.', code: 'sms_unconfigured' }, 503);
+    const rl = await limitAction(env, `smsverify:${phone}`, 3, 10);
+    if (!rl.ok) return json({ error: 'Too many codes requested. Please wait a few minutes.' }, 429);
+    const vcode = String(Math.floor(100000 + Math.random() * 900000));
+    await env.AMV_KV.put(`smsverify:${email}:${phone}`, vcode, { expirationTtl: 600 });
+    try { await sendSms(env, phone, `Your AMV verification code is ${vcode}. It expires in 10 minutes.`); }
+    catch (e) { return json({ error: 'Could not send the verification code.' }, 502); }
+    return json({ ok: true, pending: true });
+  }
+  const want = await env.AMV_KV.get(`smsverify:${email}:${phone}`);
+  if (!want || !timingSafeEqual(new TextEncoder().encode(code), new TextEncoder().encode(String(want))))
+    return json({ error: 'Incorrect or expired code.' }, 401);
+  await env.AMV_KV.delete(`smsverify:${email}:${phone}`);
+  await env.AMV_KV.put(`sms:phone:${phone}`, email);
+  await env.AMV_KV.put(`sms:user:${email}`, phone);
+  return json({ ok: true, phone, verified: true });
 }
 
 // Send an outbound SMS via Twilio's REST API.
@@ -3563,7 +3581,11 @@ async function smsIncoming(request, env, ctx) {
   // --- SECURITY: verify this request actually came from Twilio ---
   // Without this, anyone could POST here and trigger AI spend on a linked
   // account. Twilio signs each webhook with HMAC-SHA1 over the URL + params.
-  if (env.TWILIO_AUTH_TOKEN) {
+  // FAIL CLOSED (AMV-033): never accept an inbound webhook we can't authenticate.
+  // If TWILIO_AUTH_TOKEN isn't configured, reject rather than run the AI agent
+  // (and incur model/Twilio cost) on a forged, unsigned request.
+  if (!env.TWILIO_AUTH_TOKEN) { audit(env,'sms_unconfigured',{}); return new Response('Forbidden', { status: 403 }); }
+  {
     const sig = request.headers.get('X-Twilio-Signature') || '';
     const params = {};
     for (const [k, v] of form.entries()) params[k] = v;

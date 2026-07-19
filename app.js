@@ -11905,16 +11905,23 @@ async function connectSms(){
   if(!phone) return;
   const clean = phone.replace(/[^\d+]/g,'');
   if(clean.replace(/\D/g,'').length<10){ showError('Enter a valid mobile number with country code.'); return; }
-  let ok=true, greeted=false;
-  if(window.AMV_API && AMV_API.live){
-    try{ const r=await AMV_API._fetch('/sms/register',{method:'POST',body:JSON.stringify({phone:clean})}); ok=r&&r.ok!==false; greeted=!!(r&&r.greeted); }
-    catch(e){ ok=false; }
-  }
-  if(ok){
-    saveStr('amv_sms_phone',clean);
-    toast(greeted?'Linked! Check your phone — AMV just texted you. \uD83D\uDCAC':'Number linked. AMV will text you once SMS is switched on for the platform.','success',5000);
-    _refreshIntegrationsUI();
-  } else { toast('Couldn\u2019t link right now. SMS needs the backend connected.','error',5000); }
+  if(!(window.AMV_API && AMV_API.live)){ toast('SMS needs the backend connected.','error',5000); return; }
+  try{
+    const r1=await AMV_API._fetch('/sms/register',{method:'POST',body:JSON.stringify({phone:clean})});
+    const d1=await r1.json().catch(()=>({}));
+    if(r1.status===503 || d1.code==='sms_unconfigured'){ toast('SMS is not switched on for this workspace yet.','error',5000); return; }
+    if(r1.status===409){ toast(d1.error||'That number is already linked to another account.','error',5000); return; }
+    if(!d1.pending){ toast(d1.error||'Could not start SMS linking.','error',5000); return; }
+    const code=await showTextPromptAsync('Enter the 6-digit code AMV just texted to '+clean+':');
+    if(!code) return;
+    const r2=await AMV_API._fetch('/sms/register',{method:'POST',body:JSON.stringify({phone:clean, code:String(code).replace(/\D/g,'')})});
+    const d2=await r2.json().catch(()=>({}));
+    if(r2.status===200 && d2.verified){
+      saveStr('amv_sms_phone',clean);
+      toast('Number verified and linked!','success',5000);
+      _refreshIntegrationsUI();
+    } else { toast(d2.error||'That code did not match. Try linking again.','error',5000); }
+  }catch(e){ toast('Could not link right now. SMS needs the backend connected.','error',5000); }
 }
 function disconnectIntegration(id){
   const m=INTEGRATION_META[id]; if(!m) return;
