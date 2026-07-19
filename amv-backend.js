@@ -1691,47 +1691,52 @@ async function authLogin(request, env) {
   if (body.company || body.website) { audit(env,'bot_blocked',{where:'login_honeypot'}); return json({ error:'sign in failed' }, 400); }
   const em = String(email||'').toLowerCase().trim();
   if (!em) return json({ error: 'email required' }, 400);
-  // Turnstile on password login (skipped for Google, which is already verified).
-  if (provider !== 'google') {
+  // /auth/login is the EMAIL + PASSWORD endpoint ONLY. Turnstile ALWAYS applies:
+  // a `provider` value in the request body is attacker-controlled and must never
+  // skip verification or stand in for proof of identity. Federated identities
+  // (Google, etc.) authenticate through their own server-verified callback
+  // (/auth/google), never here.
+  {
     const capOk = await _verifyCaptcha(env, body.captchaToken, request);
     if (!capOk) return json({ error:'Please complete the verification and try again.', code:'captcha_required' }, 400);
   }
-  // brute-force throttle: cap failed password attempts per email+IP per 15 min
+  // brute-force throttle: cap failed password attempts per email+IP
   const ip = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'noip';
   const rlKey = `authfail:${em}:${ip}`;
-  if (provider !== 'google') {
+  {
     const fails = parseInt(await env.AMV_KV.get(rlKey) || '0', 10);
     if (fails >= 8) { audit(env, 'auth_fail', { email: em, reason: 'throttled' }); return json({ error: 'Too many attempts. Please wait a few minutes and try again.' }, 429); }
   }
   const acct0 = await DB.get(env, 'acct', em);
-  // Google/OAuth sign-in: create the account on first login, no password
-  if(provider === 'google'){
-    if(!acct0){ await DB.put(env, 'acct', em, { email:em, name:name||'', provider:'google', createdAt:Date.now() }); }
-    try{ await _markActive(env, em); }catch(e){}
-    return json(await issueTokens(env, em, name || ''));
-  }
-  // email + password
   if(!acct0){ await _noteAuthFail(env, rlKey); return json({ error:'no such account' }, 404); }
   const acct = acct0;
-  if(acct.provider === 'email'){
-    if(!password) return json({ error:'password required' }, 400);
-    // verify using the iteration count the hash was MADE with (default 100k for
-    // pre-upgrade accounts), so raising the global count never locks anyone out
-    const usedIter = acct.pwIter || 100000;
-    const hash = await _hashPassword(password, acct.salt, usedIter);
-    // constant-time compare to avoid password-timing leaks
-    const ok = timingSafeEqual(new TextEncoder().encode(hash), new TextEncoder().encode(acct.pwHash || ''));
-    if(!ok){ await _noteAuthFail(env, rlKey); audit(env,'auth_fail',{email:em,reason:'bad_password'}); return json({ error:'wrong password' }, 401); }
-    // success — clear the failure counter
-    try{ await env.AMV_KV.delete(rlKey); }catch(e){}
-    // transparent upgrade: if this account is below the current target, re-hash now
-    if(usedIter < PBKDF2_ITERATIONS){
-      try{
-        const newHash = await _hashPassword(password, acct.salt, PBKDF2_ITERATIONS);
-        acct.pwHash = newHash; acct.pwIter = PBKDF2_ITERATIONS;
-        await DB.put(env, 'acct', em, acct);
-      }catch(e){ /* non-fatal — login still succeeds */ }
-    }
+  // FAIL CLOSED: only a real email-password account with a stored password hash
+  // may obtain a token here. A federated account (provider !== 'email', or no
+  // pwHash) has no password to check, so it must be rejected — never fall through
+  // to issueTokens. This closes both the provider-impersonation bypass and the
+  // "any password logs in a federated account" bypass.
+  if(acct.provider !== 'email' || !acct.pwHash){
+    await _noteAuthFail(env, rlKey);
+    audit(env,'auth_fail',{email:em,reason:'wrong_method'});
+    return json({ error:'wrong password' }, 401);   // generic — never reveal the account's provider
+  }
+  if(!password) return json({ error:'password required' }, 400);
+  // verify using the iteration count the hash was MADE with (default 100k for
+  // pre-upgrade accounts), so raising the global count never locks anyone out
+  const usedIter = acct.pwIter || 100000;
+  const hash = await _hashPassword(password, acct.salt, usedIter);
+  // constant-time compare to avoid password-timing leaks
+  const ok = timingSafeEqual(new TextEncoder().encode(hash), new TextEncoder().encode(acct.pwHash || ''));
+  if(!ok){ await _noteAuthFail(env, rlKey); audit(env,'auth_fail',{email:em,reason:'bad_password'}); return json({ error:'wrong password' }, 401); }
+  // success — clear the failure counter
+  try{ await env.AMV_KV.delete(rlKey); }catch(e){}
+  // transparent upgrade: if this account is below the current target, re-hash now
+  if(usedIter < PBKDF2_ITERATIONS){
+    try{
+      const newHash = await _hashPassword(password, acct.salt, PBKDF2_ITERATIONS);
+      acct.pwHash = newHash; acct.pwIter = PBKDF2_ITERATIONS;
+      await DB.put(env, 'acct', em, acct);
+    }catch(e){ /* non-fatal — login still succeeds */ }
   }
   try{ await _markActive(env, em); }catch(e){}
   return json(await issueTokens(env, em, acct.name || name || ''));
@@ -3205,8 +3210,13 @@ function timingSafeEqual(a, b) {
   return diff === 0;
 }
 async function _hmacKey(secret) {
+  // FAIL CLOSED: never fall back to a public/default signing key. A missing
+  // JWT_SECRET must break token signing and verification (no tokens issued, all
+  // verification returns null → 401) rather than silently signing with a key an
+  // attacker could know and use to forge tokens for any account.
+  if (!secret) throw new Error('JWT_SECRET is not configured — refusing to sign or verify tokens');
   return crypto.subtle.importKey(
-    'raw', new TextEncoder().encode(secret || 'dev-insecure-secret'),
+    'raw', new TextEncoder().encode(secret),
     { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']
   );
 }

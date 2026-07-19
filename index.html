@@ -6472,7 +6472,7 @@ const AMV_API = {
 };
 window.AMV_API = AMV_API;
 function amvSaveBackend(){ var v=(document.getElementById('be-url')||{}).value||''; AMV_API.base=v.trim(); toast(v.trim()?'Backend URL saved':'Cleared - local mode','info'); if(typeof renderSetPane==='function') renderSetPane(); }
-async function amvBackendLogin(){ var em=(document.getElementById('be-email')||{}).value||''; if(!em.trim()){ toast('Enter your email','error'); return; } if(!AMV_API.live){ toast('Set the backend URL first','error'); return; } try{ await AMV_API.login(em.trim(), {name:(S.user&&S.user.name)||'', provider:'google'}); toast('Connected to backend','info'); if(typeof renderSetPane==='function') renderSetPane(); }catch(e){ toast(e.message||'Login failed','error'); } }
+async function amvBackendLogin(){ var em=(document.getElementById('be-email')||{}).value||''; var pw=(document.getElementById('be-pass')||{}).value||''; if(!em.trim()){ toast('Enter your email','error'); return; } if(!pw){ toast('Enter your password','error'); return; } if(!AMV_API.live){ toast('Set the backend URL first','error'); return; } try{ await AMV_API.login(em.trim(), {name:(S.user&&S.user.name)||'', password:pw}); var p=document.getElementById('be-pass'); if(p) p.value=''; toast('Connected to backend','info'); if(typeof renderSetPane==='function') renderSetPane(); }catch(e){ toast(e.message||'Login failed','error'); } }
 window.amvSaveBackend=amvSaveBackend; window.amvBackendLogin=amvBackendLogin;
 
 
@@ -18675,8 +18675,8 @@ function _renderSetPaneInner(){
         '<p style="font-size:11px;color:var(--mu);margin-top:8px">'+(liveBase?('Status: <span style="color:#4ade80">configured</span>'+(tokenSet?' &middot; signed in':' &middot; not signed in')):'Status: local demo mode')+'</p>'+
       '</div>'+
       '<div class="ss2" style="margin-top:14px"><h3>Sign in to backend</h3>'+
-        '<p style="font-size:12px;color:var(--mu);margin:-4px 0 10px">Get a token from the backend so this device can sync. (Simple email sign-in for now; real OAuth is added server-side.)</p>'+
-        '<div style="display:flex;gap:8px"><input type="email" id="be-email" value="'+escH((S.user&&S.user.email)||'')+'" placeholder="you@email.com" style="flex:1;font-size:12px"><button class="btn bp" style="font-size:12px" onclick="amvBackendLogin()">Connect</button></div>'+
+        '<p style="font-size:12px;color:var(--mu);margin:-4px 0 10px">Sign in with your AMV account email and password to sync this device. To use Google, sign in with Google on the main sign-in screen &mdash; it is verified server-side.</p>'+
+        '<div style="display:flex;flex-direction:column;gap:8px"><input type="email" id="be-email" value="'+escH((S.user&&S.user.email)||'')+'" placeholder="you@email.com" style="font-size:12px" autocomplete="username"><div style="display:flex;gap:8px"><input type="password" id="be-pass" placeholder="Your password" style="flex:1;font-size:12px" autocomplete="current-password"><button class="btn bp" style="font-size:12px" onclick="amvBackendLogin()">Connect</button></div></div>'+
       '</div>';
   } else if(sp==='apikeys'){
     const liveBase=loadStr('amv_api_base')||'';
