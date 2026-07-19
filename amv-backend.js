@@ -908,9 +908,7 @@ async function errorsReport(request, env){
 /* POST /errors/list — YOUR dashboard. Admin only. */
 async function errorsList(request, env){
   const body = await request.json().catch(()=>({}));
-  const token = String(body.token || request.headers.get('X-Admin-Token') || '');
-  if(!env.ADMIN_TOKEN || token !== env.ADMIN_TOKEN)
-    return json({ error:'unauthorized' }, 401);
+  if(!_adminTokenOK(request, env)) return json({ error:'unauthorized' }, 401);
 
   const idx = (await DB.get(env, 'errors', 'index')) || { groups:{} };
   const groups = Object.values(idx.groups)
@@ -927,9 +925,7 @@ async function errorsList(request, env){
 /* POST /errors/resolve — mark a bug fixed (clears it from the board). */
 async function errorsResolve(request, env){
   const body = await request.json().catch(()=>({}));
-  const token = String(body.token || request.headers.get('X-Admin-Token') || '');
-  if(!env.ADMIN_TOKEN || token !== env.ADMIN_TOKEN)
-    return json({ error:'unauthorized' }, 401);
+  if(!_adminTokenOK(request, env)) return json({ error:'unauthorized' }, 401);
   const idx = (await DB.get(env, 'errors', 'index')) || { groups:{} };
   if(body.all) idx.groups = {};
   else if(body.fp) delete idx.groups[String(body.fp)];
@@ -942,9 +938,7 @@ async function errorsResolve(request, env){
    positive. */
 async function abuseList(request, env){
   const body = await request.json().catch(()=>({}));
-  const token = String(body.token || request.headers.get('X-Admin-Token') || '');
-  if(!env.ADMIN_TOKEN || token !== env.ADMIN_TOKEN)
-    return json({ error:'unauthorized' }, 401);
+  if(!_adminTokenOK(request, env)) return json({ error:'unauthorized' }, 401);
   const listing = await env.AMV_KV.list({ prefix: 'abuse:' });
   const rows = [];
   for(const k of (listing.keys||[])){
@@ -961,9 +955,7 @@ async function abuseList(request, env){
    Admin-only. */
 async function abuseClear(request, env){
   const body = await request.json().catch(()=>({}));
-  const token = String(body.token || request.headers.get('X-Admin-Token') || '');
-  if(!env.ADMIN_TOKEN || token !== env.ADMIN_TOKEN)
-    return json({ error:'unauthorized' }, 401);
+  if(!_adminTokenOK(request, env)) return json({ error:'unauthorized' }, 401);
   const email = String(body.email||'').toLowerCase();
   if(!email) return json({ error:'email required' }, 400);
   const rec = await DB.get(env, 'abuse', email);
@@ -1080,11 +1072,18 @@ const BACKUP_PREFIXES = [
   'wallet:', 'purchases:', 'stripecust:', 'tokepoch:', 'sms:'
 ];
 
-async function _adminOk(request, env){
-  const body = await request.clone().json().catch(()=>({}));
-  const token = String(body.token || request.headers.get('X-Admin-Token')
+/* AMV-035: admin-token auth. Read the token ONLY from a header (never the
+   request body — bodies get captured by logs, traces and error telemetry),
+   compare in constant time, and FAIL CLOSED when ADMIN_TOKEN is unconfigured. */
+function _adminTokenOK(request, env){
+  if(!env.ADMIN_TOKEN) return false;
+  const hdr = String(request.headers.get('X-Admin-Token')
     || (request.headers.get('Authorization')||'').replace(/^Bearer\s+/i,''));
-  return env.ADMIN_TOKEN && token === env.ADMIN_TOKEN;
+  if(!hdr) return false;
+  return timingSafeEqual(new TextEncoder().encode(hdr), new TextEncoder().encode(String(env.ADMIN_TOKEN)));
+}
+async function _adminOk(request, env){
+  return _adminTokenOK(request, env);
 }
 
 /* POST /admin/backup/export → a JSON snapshot of all durable data. */
@@ -1314,9 +1313,7 @@ async function sendResetCodeEmail(env, to, code) {
    simply rejected, and the token never leaves your machine. */
 async function authAdminReset(request, env){
   const body = await request.json().catch(()=>({}));
-  const token = String(body.token || request.headers.get('X-Admin-Token') || '');
-  if(!env.ADMIN_TOKEN || token !== env.ADMIN_TOKEN)
-    return json({ error:'unauthorized' }, 401);
+  if(!_adminTokenOK(request, env)) return json({ error:'unauthorized' }, 401);
 
   const email = String(body.email||'').toLowerCase().trim();
   const password = String(body.password||'');
@@ -1775,8 +1772,11 @@ async function adminUsers(request, env) {
   const acct = await DB.get(env, 'acct', String(claims.email).toLowerCase());
   // Operator email — from env, falling back to the hard-coded owner. Change both
   // (this line and OWNER_EMAIL in app.js) when transferring ownership.
-  const ownerEmail = (env.OWNER_EMAIL || 'amarotovaleria@gmail.com').toLowerCase();
-  const isOwner = String(claims.email).toLowerCase() === ownerEmail;
+  // AMV-034: owner identity comes ONLY from the configured OWNER_EMAIL secret —
+  // no hardcoded personal-email fallback. If it isn't set, nobody is owner (fail
+  // closed) rather than a source-code constant silently granting privilege.
+  const ownerEmail = String(env.OWNER_EMAIL || '').toLowerCase();
+  const isOwner = !!ownerEmail && String(claims.email).toLowerCase() === ownerEmail;
   if(!isOwner && !(acct && acct.admin)) return json({ error:'forbidden' }, 403);
   // list accounts (KV list is best-effort; cap for safety)
   let users=[];

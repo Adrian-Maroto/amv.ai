@@ -247,7 +247,7 @@ await W.errorsReport(req({ events: [evt('Cannot read x of undefined', 'renderCha
 // and one different bug
 await W.errorsReport(req({ events: [evt('deploy failed', 'deploySite', 'u1')] }, null, 'https://api/errors'), env);
 
-let list = await (await W.errorsList(req({ token: 'admin-secret' }, null, 'https://api/errors/list'), env)).json();
+let list = await (await W.errorsList(req({}, 'admin-secret', 'https://api/errors/list'), env)).json();
 ok(list.distinct === 2, '3 reports of one bug + 1 other = 2 distinct bugs', list.distinct);
 ok(list.total === 4, 'total event count is right', list.total);
 const top = list.groups.find(g => g.msg.includes('Cannot read'));
@@ -257,7 +257,7 @@ ok(top.users === 3, 'and that it affects 3 distinct users', top.users);
 section('Errors: line numbers / ids do not split one bug into many');
 await W.errorsReport(req({ events: [evt('Timeout after 3000ms', 'api', 'u1')] }, null, 'https://api/errors'), env);
 await W.errorsReport(req({ events: [evt('Timeout after 9500ms', 'api', 'u2')] }, null, 'https://api/errors'), env);
-list = await (await W.errorsList(req({ token: 'admin-secret' }, null, 'https://api/errors/list'), env)).json();
+list = await (await W.errorsList(req({}, 'admin-secret', 'https://api/errors/list'), env)).json();
 const timeouts = list.groups.filter(g => g.msg.includes('Timeout'));
 ok(timeouts.length === 1, 'varying numbers still group as ONE bug', timeouts.length);
 ok(timeouts[0].count === 2, 'with a count of 2', timeouts[0].count);
@@ -265,13 +265,13 @@ ok(timeouts[0].count === 2, 'with a count of 2', timeouts[0].count);
 section('Errors: the dashboard is admin-only');
 let r2 = await W.errorsList(req({}, null, 'https://api/errors/list'), env);
 ok(r2.status === 401, 'no token is rejected', r2.status);
-r2 = await W.errorsList(req({ token: 'wrong' }, null, 'https://api/errors/list'), env);
+r2 = await W.errorsList(req({}, 'wrong', 'https://api/errors/list'), env);
 ok(r2.status === 401, 'a wrong token is rejected', r2.status);
 
 section('Errors: resolving clears the board');
-r2 = await W.errorsResolve(req({ token: 'admin-secret', fp: top.fp }, null, 'https://api/errors/resolve'), env);
+r2 = await W.errorsResolve(req({ fp: top.fp }, 'admin-secret', 'https://api/errors/resolve'), env);
 ok((await r2.json()).ok, 'a bug can be marked resolved');
-list = await (await W.errorsList(req({ token: 'admin-secret' }, null, 'https://api/errors/list'), env)).json();
+list = await (await W.errorsList(req({}, 'admin-secret', 'https://api/errors/list'), env)).json();
 ok(!list.groups.some(g => g.fp === top.fp), 'it is gone from the board');
 
 section('Errors: reporting is bounded (cannot be used to flood KV)');

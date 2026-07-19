@@ -10470,8 +10470,8 @@ async function openErrors(){
   let data=null;
   try{
     const r=await fetch(AMV_API.base.replace(/\/$/,'')+'/errors/list',{
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ token })
+      method:'POST', headers:{'Content-Type':'application/json','X-Admin-Token':token},
+      body: JSON.stringify({})
     });
     data = await r.json();
     if(data.error) throw new Error(data.error);
@@ -10524,15 +10524,15 @@ async function openErrors(){
     b.disabled=true; b.textContent='\u2026';
     try{
       await fetch(AMV_API.base.replace(/\/$/,'')+'/errors/resolve',{
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ token, fp:b.dataset.fix })});
+        method:'POST', headers:{'Content-Type':'application/json','X-Admin-Token':token},
+        body: JSON.stringify({ fp:b.dataset.fix })});
       openErrors();
     }catch(e){ b.disabled=false; b.textContent='Resolve'; }
   }));
   on($('er-all'),'click',async()=>{
     try{ await fetch(AMV_API.base.replace(/\/$/,'')+'/errors/resolve',{
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ token, all:true })}); openErrors(); }catch(e){}
+      method:'POST', headers:{'Content-Type':'application/json','X-Admin-Token':token},
+      body: JSON.stringify({ all:true })}); openErrors(); }catch(e){}
   });
   on($('er-refresh'),'click',openErrors);
   on($('er-x'),'click',closeOvr);

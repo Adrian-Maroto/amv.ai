@@ -43,6 +43,12 @@ const post = (path, body, env) => new Request('https://api.amv.dev' + path, {
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify(body)
 });
+// admin endpoints take the token in the X-Admin-Token HEADER (never the body)
+const adminPost = (path, body, adminTok) => new Request('https://api.amv.dev' + path, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', ...(adminTok != null ? { 'X-Admin-Token': adminTok } : {}) },
+  body: JSON.stringify(body)
+});
 
 /* ── Set up a real account ─────────────────────────────────────────────── */
 section('Setup: a real account exists');
@@ -128,18 +134,18 @@ ok(!!(await r.json()).error, 'a weak password is rejected');
 /* ── Owner escape hatch ────────────────────────────────────────────────── */
 section('Owner escape hatch: you can never be permanently locked out');
 
-r = await W.authAdminReset(post('/auth/admin-reset',
-  { token: 'admin-secret', email: 'amarotovaleria@gmail.com', password: 'ownerSetPass999' }), env);
+r = await W.authAdminReset(adminPost('/auth/admin-reset',
+  { email: 'amarotovaleria@gmail.com', password: 'ownerSetPass999' }, 'admin-secret'), env);
 ok((await r.json()).ok, 'the owner can set a password directly with ADMIN_TOKEN');
 
 r = await W.authLogin(post('/auth/login', { email: 'amarotovaleria@gmail.com', password: 'ownerSetPass999' }), env);
 ok((await r.json()).token, 'and that password works immediately');
 
-r = await W.authAdminReset(post('/auth/admin-reset',
-  { token: 'WRONG', email: 'amarotovaleria@gmail.com', password: 'hackerPass123' }), env);
+r = await W.authAdminReset(adminPost('/auth/admin-reset',
+  { email: 'amarotovaleria@gmail.com', password: 'hackerPass123' }, 'WRONG'), env);
 ok(r.status === 401, 'a wrong admin token is rejected', r.status);
 
-r = await W.authAdminReset(post('/auth/admin-reset',
+r = await W.authAdminReset(adminPost('/auth/admin-reset',
   { email: 'amarotovaleria@gmail.com', password: 'hackerPass123' }), env);
 ok(r.status === 401, 'no admin token is rejected', r.status);
 
