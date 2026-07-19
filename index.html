@@ -6305,9 +6305,16 @@ const saveStr = (k,v) => { try{ localStorage.setItem(_scopeKey(k),v); }catch(e){
    using the same storage as before). Flip live by setting the URL
    in Settings (saved to amv_api_base) - no code change needed.
    ============================================================ */
+/* AMV-013: only ever attach the bearer token to the exact HTTPS origin that
+   issued it. If the configured API base is swapped to another origin (injected
+   config, a tricked user, or a future DOM bug), refuse to attach the token so it
+   can't be exfiltrated. Re-pointing to a new backend just requires signing in
+   again. localhost/127.0.0.1 are allowed for local development. */
+function _originOf(u){ try{ return new URL(u).origin; }catch(e){ return ''; } }
+function _isSecureApiOrigin(o){ return /^https:\/\/[^/]+$/.test(o) || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(o); }
 const AMV_API = {
   get base(){ try{ return loadStr('amv_api_base')||''; }catch(e){ return ''; } },
-  set base(v){ try{ saveStr('amv_api_base', v||''); }catch(e){} },
+  set base(v){ try{ const val=(v||'').trim(); if(val && !_isSecureApiOrigin(_originOf(val))){ try{ toast('Backend URL must be a valid https:// address','error'); }catch(e){} return; } saveStr('amv_api_base', val); }catch(e){} },
   get token(){ try{ return loadStr('amv_api_token')||''; }catch(e){ return ''; } },
   set token(v){ try{ saveStr('amv_api_token', v||''); }catch(e){} },
   get refreshTok(){ try{ return loadStr('amv_api_refresh')||''; }catch(e){ return ''; } },
@@ -6317,7 +6324,12 @@ const AMV_API = {
   async _fetch(path, opts, _retried){
     const o = opts||{};
     o.headers = Object.assign({'Content-Type':'application/json'}, o.headers||{});
-    if(this.token) o.headers['Authorization'] = 'Bearer '+this.token;
+    // AMV-013: attach the bearer token ONLY to the secure origin it was issued for.
+    const _reqOrigin = _originOf(this.base.replace(/\/$/,'') + path);
+    const _boundOrigin = (loadStr('amv_api_token_origin')||'');
+    if(this.token && _isSecureApiOrigin(_reqOrigin) && (!_boundOrigin || _boundOrigin===_reqOrigin)){
+      o.headers['Authorization'] = 'Bearer '+this.token;
+    } else { delete o.headers['Authorization']; }
 
     // --- Retry/backoff for transient failures (auditor #6) ---
     // Retries network errors and 5xx/429 with exponential backoff + jitter.
@@ -6351,9 +6363,8 @@ const AMV_API = {
       if(!_retried && this.refreshTok){
         const refreshed = await this._doRefresh();
         if(refreshed){
-          const o2 = opts||{}; o2.headers = Object.assign({'Content-Type':'application/json'}, o2.headers||{});
-          o2.headers['Authorization'] = 'Bearer '+this.token;
-          return this._fetch(path, o2, true);
+          // re-run through _fetch so the token is re-attached under the origin guard
+          return this._fetch(path, opts||{}, true);
         }
       }
       throw new Error('Session expired - sign in again');
@@ -6383,6 +6394,8 @@ const AMV_API = {
   _setTokens(d){
     this.token = d.token||'';
     if(d.refreshToken) this.refreshTok = d.refreshToken;
+    // AMV-013: bind these tokens to the origin that issued them.
+    try{ saveStr('amv_api_token_origin', _originOf(this.base)); }catch(e){}
     this._storeTokenMeta(d.token);
   },
   // exchange refresh token for a fresh pair; returns true on success.

