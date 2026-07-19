@@ -79,6 +79,64 @@ ok(mdAttr.aOnmouseover === false, 'md link URL cannot inject an onmouseover attr
 ok(mdAttr.rendered, 'legitimate image and link still render');
 ok(mdAttr.escaped, 'attribute-breaking quotes are entity-escaped');
 
+/* ── AMV-007: model-driven high-impact tools require user consent ───────────
+   A tool call the MODEL emits may come from prompt injection or untrusted
+   content. Side-effecting / code-executing tools must get explicit user
+   approval on the agentic path before they run. */
+section('AMV-007: model-driven side-effect tools require consent');
+const consent = await page.evaluate(async () => {
+  const cls = {
+    deploy_site: _toolNeedsConsent('deploy_site'),
+    run_code: _toolNeedsConsent('run_code'),
+    fix_code: _toolNeedsConsent('fix_code'),
+    generate_image: _toolNeedsConsent('generate_image'),
+    generate_video: _toolNeedsConsent('generate_video'),
+  };
+  const orig = window._showModalAsync;
+  const race = (p) => Promise.race([p, new Promise(r => setTimeout(() => r('HANG'), 3000))]);
+  window._showModalAsync = async () => null;             // user clicks Deny / closes
+  const denied = await race(_confirmModelTool('deploy_site', { title: 'x' }));
+  window._showModalAsync = async () => true;             // user clicks Allow
+  const allowed = await race(_confirmModelTool('deploy_site', { title: 'x' }));
+  window._showModalAsync = orig;
+  const wired = /_toolNeedsConsent/.test(_callAI.toString());
+  return { cls, denied, allowed, wired };
+});
+ok(consent.cls.deploy_site && consent.cls.run_code && consent.cls.fix_code, 'deploy/run/fix are consent-gated');
+ok(!consent.cls.generate_image && !consent.cls.generate_video, 'benign content tools are not gated');
+ok(consent.denied === false, 'denying the approval blocks the tool');
+ok(consent.allowed === true, 'approving the tool lets it proceed');
+ok(consent.wired, 'the agentic dispatch actually consults the consent gate');
+
+/* ── AMV-006: Python runs in an isolated Worker (no DOM / no localStorage) ──
+   Pyodide's js bridge exposes the host globalThis. On the main thread that is
+   the page (document, localStorage, tokens). In a Worker it is the worker scope,
+   which has neither — so untrusted Python cannot read tokens or touch the DOM. */
+section('AMV-006: Python executes in a Worker sandbox, not the page');
+const pyiso = await page.evaluate(async () => {
+  const src = (typeof _pyWorkerSource === 'function') ? _pyWorkerSource() : '';
+  const out = {
+    routesToWorker: /_runPythonInWorker/.test(runCode.toString()),
+    noMainThread: (typeof _ensurePyodide === 'undefined'),
+    srcDomFree: !/document|localStorage/.test(src),
+    srcLoadsPy: /importScripts|loadPyodide/.test(src),
+  };
+  const RealWorker = window.Worker;
+  let posted = null;
+  window.Worker = class { addEventListener(t, f) { if (t === 'message') this._h = f; } removeEventListener() {} postMessage(m) { posted = m; setTimeout(() => this._h && this._h({ data: { id: m.id, ok: true, stdout: '42', stderr: '', result: '42' } }), 0); } terminate() {} };
+  const r = await runCode('print(6*7)', 'python');
+  window.Worker = RealWorker;
+  out.ranInWorker = !!posted && posted.code === 'print(6*7)';
+  out.output = r && r.stdout;
+  return out;
+});
+ok(pyiso.routesToWorker, 'runCode routes Python through the Worker sandbox');
+ok(pyiso.noMainThread, 'the main-thread Pyodide execution path is gone');
+ok(pyiso.srcDomFree, 'the Worker sandbox has no document/localStorage access');
+ok(pyiso.srcLoadsPy, 'the Worker sandbox loads the Python runtime');
+ok(pyiso.ranInWorker, 'Python is executed inside the Worker, not on the page');
+ok(pyiso.output === '42', 'Python output is returned from the Worker');
+
 /* ── Sandboxing: generated apps run with no same-origin access ─────────────
    A generated app is untrusted code. It must render in an iframe WITHOUT
    allow-same-origin, or it could read AMV's storage and steal the API token. */

@@ -17,10 +17,11 @@
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
   script-src 'self' 'unsafe-inline' blob: https://accounts.google.com https://js.stripe.com https://www.paypal.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com;
+  worker-src 'self' blob:;
   style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
   font-src 'self' https://fonts.gstatic.com data:;
   img-src 'self' data: blob: https:;
-  connect-src 'self' https://image.pollinations.ai https://accounts.google.com https://gmail.googleapis.com https://www.googleapis.com https://api.github.com https://slack.com https://api.notion.com https://login.microsoftonline.com https://discord.com https://*.workers.dev https://api.stripe.com;
+  connect-src 'self' https://cdn.jsdelivr.net https://image.pollinations.ai https://accounts.google.com https://gmail.googleapis.com https://www.googleapis.com https://api.github.com https://slack.com https://api.notion.com https://login.microsoftonline.com https://discord.com https://*.workers.dev https://api.stripe.com;
   frame-src blob: https://accounts.google.com https://js.stripe.com https://www.paypal.com https://buy.stripe.com https://billing.stripe.com;
   object-src 'none';
   base-uri 'self';
@@ -10441,7 +10442,18 @@ async function _callAI(msgs, _opts) {
         let input={};
         try{ input = t.json ? JSON.parse(t.json) : {}; }catch(e){ input={}; }
         assistantContent.push({type:'tool_use', id:t.id, name:t.name, input});
-        const out = await _amvRunTool(t.name, input, (msg)=>{
+        // AMV-007: a model-requested side-effecting/code-executing tool needs the
+        // user's explicit approval before it runs, so injected instructions can't
+        // silently deploy sites or execute code.
+        let out;
+        if(_toolNeedsConsent(t.name)){
+          const allowed = await _confirmModelTool(t.name, input);
+          if(!allowed){
+            out = { text:'The user DENIED permission to run "'+t.name+'". Do not attempt it again unless they explicitly ask for it. Continue helping without it.', render:null };
+            try{ if(typeof AEGIS!=='undefined') AEGIS.log('tool_denied',{tool:t.name}); }catch(e){}
+          }
+        }
+        if(!out) out = await _amvRunTool(t.name, input, (msg)=>{
           msgs[streamIdx]={...msgs[streamIdx], c:fullText, _status:msg};
           setMsgs(msgs); renderChatMsgs();
         });
@@ -17086,6 +17098,32 @@ try{ window.runAgentic = runAgentic; }catch(e){}
 
 /* Execute a tool the model asked for. Returns a string result for the model,
    plus optional rich content rendered into the chat. */
+/* AMV-007: tool authorization. When the MODEL requests a side-effecting or
+   code-executing tool, the request may originate from prompt injection or from
+   untrusted content the model read — not from the user's actual intent. Those
+   tools require an explicit, per-call user approval that shows exactly what will
+   happen. User-INITIATED calls (Dev/Lab "Run", explicit buttons) bypass this —
+   they ARE the user's intent — so the gate lives only on the agentic
+   model-driven dispatch path, never inside _amvRunTool itself. */
+const _TOOL_CONSENT = { deploy_site:true, run_code:true, fix_code:true };
+function _toolNeedsConsent(name){ return !!_TOOL_CONSENT[name]; }
+async function _confirmModelTool(name, input){
+  input = input || {};
+  const what = ({
+    deploy_site:'publish a public web page live on the internet',
+    run_code:'run '+String(input.lang||'code')+' on your device',
+    fix_code:'run and edit '+String(input.lang||'code')+' on your device'
+  })[name] || ('run the "'+name+'" action');
+  let detail='';
+  if(name==='deploy_site') detail='Page title: '+String(input.title||'App');
+  else if(name==='run_code'||name==='fix_code') detail=String(input.code||'').slice(0,600);
+  const ok = await _showModalAsync({
+    title:'Allow the assistant to '+what+'?',
+    body:'The assistant wants to '+what+' while answering you. This can be triggered by content it read, so allow it only if you actually want this to happen.'+(detail?'\n\n'+detail:''),
+    okText:'Allow once', cancelText:'Deny'
+  });
+  return ok===true;
+}
 async function _amvRunTool(name, input, onStatus){
   try{
     if(name==='generate_image'){
@@ -21007,24 +21045,54 @@ function extractCode(text, lang){
 }
 
 // --- REAL multi-language code execution sandbox ---
-let _pyodide=null, _pyLoading=null;
-async function _ensurePyodide(onStatus){
-  if(_pyodide) return _pyodide;
-  if(_pyLoading) return _pyLoading;
-  onStatus&&onStatus('Loading Python runtime (first run only)…');
-  _pyLoading = (async()=>{
-    if(!window.loadPyodide){
-      await new Promise((resolve,reject)=>{
-        const s=document.createElement('script');
-        s.src='https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js';
-        s.onload=resolve; s.onerror=()=>reject(new Error('Failed to load Pyodide'));
-        document.head.appendChild(s);
-      });
-    }
-    _pyodide = await loadPyodide({indexURL:'https://cdn.jsdelivr.net/pyodide/v0.26.2/full/'});
-    return _pyodide;
-  })();
-  return _pyLoading;
+/* AMV-006: run untrusted Python inside a Web Worker sandbox. A Worker has NO
+   document and NO localStorage, so Pyodide's `js` bridge there cannot read page
+   tokens or touch the DOM — closing the same-origin code-execution hole. The
+   worker is TERMINATED on timeout so malicious/synchronous code can't hang the
+   tab. If the sandbox can't start, Python degrades to an honest error; it NEVER
+   falls back to executing on the main thread. */
+const _PY_CDN='https://cdn.jsdelivr.net/pyodide/v0.26.2/full/';
+let _pyWorker=null;
+function _pyWorkerSource(){
+  return "let py=null,loading=null;"+
+    "async function ensure(){ if(py) return py; if(!loading) loading=(async()=>{"+
+      "importScripts('"+_PY_CDN+"pyodide.js');"+
+      "py=await loadPyodide({indexURL:'"+_PY_CDN+"'}); return py; })(); return loading; }"+
+    "self.onmessage=async(e)=>{ const d=e.data||{}; let out='';"+
+      "try{ const p=await ensure();"+
+        "p.setStdout({batched:s=>{out+=s+'\\n';}});"+
+        "p.setStderr({batched:s=>{out+=s+'\\n';}});"+
+        "let result,err=null;"+
+        "try{ result=await p.runPythonAsync(d.code); }catch(x){ err=(x&&x.message)?x.message:String(x); }"+
+        "self.postMessage({id:d.id, ok:!err, stdout:out.trim(), stderr:err||'', result:(result!==undefined&&result!==null)?String(result):''});"+
+      "}catch(x){ self.postMessage({id:d.id, ok:false, stdout:'', stderr:'Runtime load error: '+((x&&x.message)||x), result:''}); } };";
+}
+function _ensurePyWorker(){
+  if(_pyWorker) return _pyWorker;
+  const blob=new Blob([_pyWorkerSource()],{type:'application/javascript'});
+  _pyWorker=new Worker(URL.createObjectURL(blob));
+  return _pyWorker;
+}
+function _runPythonInWorker(code, onStatus){
+  return new Promise((resolve)=>{
+    let w;
+    try{ w=_ensurePyWorker(); }
+    catch(e){ resolve({ok:false,stdout:'',stderr:'Python sandbox unavailable: '+((e&&e.message)||e),result:'',ms:0}); return; }
+    const id='py_'+Math.random().toString(36).slice(2);
+    const t0=performance.now();
+    let done=false;
+    const onMsg=(ev)=>{ if(!ev.data||ev.data.id!==id) return; const d=ev.data; finish({ok:d.ok,stdout:d.stdout,stderr:d.stderr,result:d.result,ms:Math.round(performance.now()-t0)}); };
+    const finish=(r)=>{ if(done) return; done=true; try{w.removeEventListener('message',onMsg);}catch(e){} resolve(r); };
+    w.addEventListener('message',onMsg);
+    onStatus&&onStatus('Running Python in a sandbox (first run loads the runtime)…');
+    w.postMessage({id, code});
+    setTimeout(()=>{
+      if(done) return;
+      try{ w.terminate(); }catch(e){}
+      _pyWorker=null; // dead worker — rebuild next time
+      finish({ok:false,stdout:'',stderr:'Execution timed out (30s) — the sandbox was terminated.',result:'',ms:Math.round(performance.now()-t0)});
+    },30000);
+  });
 }
 
 // runCode(code, lang) -> {ok, stdout, stderr, result, ms}
@@ -21034,18 +21102,7 @@ async function runCode(code, lang, onStatus){
   if(lang==='js'||lang==='javascript'){
     return await _runJS(code, t0);
   } else if(lang==='py'||lang==='python'){
-    try{
-      const py=await _ensurePyodide(onStatus);
-      let out='';
-      py.setStdout({batched:s=>{out+=s+'\n';}});
-      py.setStderr({batched:s=>{out+=s+'\n';}});
-      let result, err=null;
-      try{ result = await py.runPythonAsync(code); }
-      catch(e){ err = (e&&e.message)? e.message : String(e); }
-      return {ok:!err, stdout:out.trim(), stderr:err||'', result: result!==undefined&&result!==null?String(result):'', ms:Math.round(performance.now()-t0)};
-    }catch(e){
-      return {ok:false, stdout:'', stderr:'Runtime load error: '+e.message, result:'', ms:Math.round(performance.now()-t0)};
-    }
+    return await _runPythonInWorker(code, onStatus);
   } else if(lang==='html'){
     return {ok:true, stdout:'(HTML rendered in preview)', stderr:'', result:'', ms:0, html:code};
   }
