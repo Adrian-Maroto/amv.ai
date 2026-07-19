@@ -3814,7 +3814,11 @@ async function stripeCheckout(request, env) {
   const price = _stripePriceId(env, plan);
   if (!price) return json({ error: 'unknown plan' }, 400);
 
-  const origin = request.headers.get('Origin') || env.APP_URL || '';
+  // AMV-025: the server-configured origin is authoritative for payment redirects.
+  // NEVER reflect the request Origin header when APP_URL is set — a direct caller
+  // could point the post-payment redirect at a phishing site. Origin is only a
+  // dev fallback when no APP_URL is configured.
+  const origin = (env.APP_URL || env.APP_ORIGIN || request.headers.get('Origin') || '').replace(/\/$/, '');
   const form = new URLSearchParams();
   form.set('mode', 'subscription');
   form.set('line_items[0][price]', price);
@@ -3849,7 +3853,11 @@ async function stripePortal(request, env) {
   if (!env.STRIPE_SECRET_KEY) return json({ error: 'payments not configured' }, 503);
   const custId = await env.AMV_KV.get(`stripecust:${user.email}`);
   if (!custId) return json({ error: 'no subscription found' }, 404);
-  const origin = request.headers.get('Origin') || env.APP_URL || '';
+  // AMV-025: the server-configured origin is authoritative for payment redirects.
+  // NEVER reflect the request Origin header when APP_URL is set — a direct caller
+  // could point the post-payment redirect at a phishing site. Origin is only a
+  // dev fallback when no APP_URL is configured.
+  const origin = (env.APP_URL || env.APP_ORIGIN || request.headers.get('Origin') || '').replace(/\/$/, '');
   const form = new URLSearchParams({ customer: custId, return_url: origin });
   const r = await fetch('https://api.stripe.com/v1/billing_portal/sessions', {
     method: 'POST',
@@ -4351,18 +4359,32 @@ async function marketPublish(request, env) {
   if (hit) return json({ error: 'Listings must be AMV-only — remove references to other AI products (' + hit + ').' }, 400);
   // File attachments: store metadata + data. NOTE: KV caps values at 25MB — for
   // large media, production should upload to R2 and store only the URL here.
-  let files = Array.isArray(item.files) ? item.files.slice(0, 20).map(f => ({
+  // AMV-028: bound inline file payloads by DECODED byte size (not just string
+  // length), per-file and in aggregate, so a listing can't smuggle a huge blob or
+  // a decompression bomb into the record (which would amplify every read, write,
+  // backup and response). Larger deliverables must be hosted and linked by URL.
+  const MAX_FILE_B64 = 700 * 1024;             // ~512 KB decoded per file
+  const MAX_FILES_B64_TOTAL = 3 * 1024 * 1024; // ~2.2 MB decoded across all files
+  const rawFiles = Array.isArray(item.files) ? item.files.slice(0, 20) : [];
+  let filesTotal = 0;
+  for (const f of rawFiles) {
+    const dlen = (f && typeof f.data === 'string') ? f.data.length : 0;
+    if (dlen > MAX_FILE_B64) return json({ error: 'a file is too large to attach inline — host it and share a download link instead' }, 413);
+    filesTotal += dlen;
+  }
+  if (filesTotal > MAX_FILES_B64_TOTAL) return json({ error: 'the attached files are too large in total — keep them under ~2MB or link them' }, 413);
+  let files = rawFiles.map(f => ({
     name: String(f.name || 'file').slice(0, 160),
     type: String(f.type || 'application/octet-stream').slice(0, 100),
     size: Math.max(0, Number(f.size) || 0),
     data: typeof f.data === 'string' ? f.data : '',
     url: f.url ? String(f.url).slice(0, 500) : undefined,
-  })) : [];
+  }));
   if (!body && !files.length && !(Array.isArray(item.crew) && item.crew.length)) {
     return json({ error: 'add a deliverable: text, a crew, or at least one file' }, 400);
   }
   const clean = {
-    id: 'usr_' + crypto.randomUUID().slice(0, 10),
+    id: 'usr_' + crypto.randomUUID().replace(/-/g,''),
     kind, title,
     cat: String(item.cat || 'Community').slice(0, 40),
     desc: String(item.desc || '').slice(0, 280),
@@ -4471,7 +4493,11 @@ async function marketBuy(request, env) {
   if (await _ownsItem(env, user.email, id)) return json({ error: 'you already own this', owned: true }, 400);
   if (!env.STRIPE_SECRET_KEY) return json({ error: 'payments not configured' }, 503);
 
-  const origin = request.headers.get('Origin') || env.APP_URL || '';
+  // AMV-025: the server-configured origin is authoritative for payment redirects.
+  // NEVER reflect the request Origin header when APP_URL is set — a direct caller
+  // could point the post-payment redirect at a phishing site. Origin is only a
+  // dev fallback when no APP_URL is configured.
+  const origin = (env.APP_URL || env.APP_ORIGIN || request.headers.get('Origin') || '').replace(/\/$/, '');
   const form = new URLSearchParams();
   form.set('mode', 'payment');
   form.set('line_items[0][price_data][currency]', 'usd');
@@ -5045,6 +5071,15 @@ async function paypalCapture(request, env) {
   const custom = d.purchase_units?.[0]?.payments?.captures?.[0]?.custom_id
               || d.purchase_units?.[0]?.custom_id || '';
   const [email, plan] = custom.split('|');
+  // AMV-027: bind the capture to the authenticated caller. The provider response
+  // proves an order was captured, NOT that THIS user is entitled to the grant.
+  // The order's custom_id was set by us to the buyer's email at create time;
+  // require it to match the caller so a stale or attacker-supplied order id can't
+  // grant a plan to a chosen account.
+  if (email && email.toLowerCase() !== user.email) {
+    audit(env, 'paypal_capture_mismatch', { caller: user.email, order: orderId });
+    return json({ error: 'this order does not belong to your account' }, 403);
+  }
   if (email && plan) {
     const cap = d.purchase_units?.[0]?.payments?.captures?.[0];
     const capId = cap?.id || d.id || orderId;
