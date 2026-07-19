@@ -198,6 +198,8 @@ const MAX_MESSAGES = 200;          // conversation turns per request
 const MAX_TOTAL_CHARS = 600000;    // ~150k tokens of input — generous but bounded
 const MAX_SYSTEM_CHARS = 100000;
 const VALID_ROLES = new Set(['user', 'assistant']);
+const MAX_BLOCKS_PER_MSG = 64;
+const VALID_BLOCK_TYPES = new Set(['text', 'image', 'tool_use', 'tool_result', 'document', 'thinking', 'redacted_thinking']);
 
 function validateMessagesPayload(body) {
   const msgs = body.messages;
@@ -213,10 +215,18 @@ function validateMessagesPayload(body) {
     if (typeof m.content === 'string') {
       totalChars += m.content.length;
     } else if (Array.isArray(m.content)) {
+      if (m.content.length > MAX_BLOCKS_PER_MSG) return 'too many content blocks in a message';
       for (const block of m.content) {
         if (!block || typeof block !== 'object') return 'invalid content block';
+        // reject unknown block types instead of forwarding them unbounded
+        if (block.type && !VALID_BLOCK_TYPES.has(block.type)) return `unknown content block type: ${String(block.type).slice(0, 24)}`;
         if (typeof block.text === 'string') totalChars += block.text.length;
-        // allow image/tool blocks through but bound any text
+        // count embedded binary (base64 image/document data) and nested
+        // tool_result content toward the size bound so a request can't smuggle
+        // megabytes of unmetered payload past the limit (AMV-019)
+        const data = block.source && block.source.data;
+        if (typeof data === 'string') totalChars += data.length;
+        if (typeof block.content === 'string') totalChars += block.content.length;
       }
     } else {
       return 'message content must be a string or array';
@@ -2635,7 +2645,7 @@ async function aiProxy(request, env, ctx) {
   const mName = `usg:${user.email}:${monthKey()}`;
 
   // Upper bound for this call: what we're sending + the most it can generate.
-  const estIn  = _estimateInputTokens(body.messages || []);
+  const estIn  = _estimateReserveInput(body);
   const estOut = Math.max(1, Math.min(Number(body.max_tokens) || 1024, 200000));
   const reserve = estIn + estOut;
 
@@ -2866,10 +2876,18 @@ function _estimateInputTokens(messages) {
     let chars = 0;
     for (const m of messages) {
       if (typeof m.content === 'string') chars += m.content.length;
-      else if (Array.isArray(m.content)) for (const b of m.content) chars += (b.text || '').length;
+      else if (Array.isArray(m.content)) for (const b of m.content) chars += (b.text || '').length + ((b.source && typeof b.source.data === 'string') ? b.source.data.length : 0);
     }
     return Math.max(200, Math.ceil(chars / 4));
   } catch { return 500; }
+}
+/* Reservation estimate for a full request — includes the client-supplied system
+   prompt so it is METERED and reserved rather than sent to the model for free
+   (AMV-020). Every token-bearing field must be counted here. */
+function _estimateReserveInput(body) {
+  const msgs = _estimateInputTokens((body && body.messages) || []);
+  const sys = Math.ceil(String((body && body.system) || '').length / 4);
+  return msgs + sys;
 }
 
 /* ---------------- IMAGE METERING ----------------------------------- */
