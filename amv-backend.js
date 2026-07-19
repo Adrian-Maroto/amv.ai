@@ -1886,7 +1886,7 @@ async function teamCreate(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
   const { name } = await request.json().catch(()=>({}));
-  const id = 'team_' + crypto.randomUUID().slice(0,8);
+  const id = 'team_' + crypto.randomUUID().replace(/-/g,'');
   const team = {
     id, name: name||'My Team', ownerEmail: user.email,
     members: [{ email:user.email, role:'owner', joinedAt:Date.now() }],
@@ -1907,9 +1907,32 @@ async function teamGet(request, env){
 async function _teamOf(env, email){
   const tid = await env.AMV_KV.get(`userteam:${email}`);
   if(!tid) return null;
-  return await DB.get(env, 'team', tid);
+  const team = await DB.get(env, 'team', tid);
+  // Membership is the source of truth. A stale or tampered userteam pointer must
+  // NOT grant access to a team the caller is no longer an active member of.
+  if(!team || !_role(team, email)) return null;
+  return team;
 }
 function _role(team, email){ const m=(team.members||[]).find(x=>x.email===email); return m?m.role:null; }
+/* Reject an oversized or too-deeply-nested JSON payload so a member can't amplify
+   storage or make a shared record fail to parse/write. Returns an error string or
+   null when the value is within bounds. */
+function _boundedJson(obj, maxBytes, maxDepth){
+  let s; try{ s = JSON.stringify(obj); }catch{ return 'invalid data'; }
+  if(s == null) return 'invalid data';
+  if(new TextEncoder().encode(s).length > maxBytes) return 'data too large';
+  const depth = (o, d)=>{
+    if(d > maxDepth) return d;
+    if(o && typeof o === 'object'){
+      let mx = d;
+      for(const k in o){ mx = Math.max(mx, depth(o[k], d+1)); if(mx > maxDepth) return mx; }
+      return mx;
+    }
+    return d;
+  };
+  if(depth(obj, 0) > maxDepth) return 'data nesting too deep';
+  return null;
+}
 
 /* =====================================================================
    TEAM ROLES & PERMISSIONS (auditor #11)
@@ -1952,8 +1975,8 @@ async function teamInvite(request, env){
   if(!invitee) return json({ error:'email required' }, 400);
   // can't grant a role higher than allowed; only owner/admin roles are 'admin'/'member'
   const inviteRole = (role==='admin') ? 'admin' : 'member';
-  // create an invite token the invitee redeems
-  const token = crypto.randomUUID().slice(0,12);
+  // create a high-entropy invite token (256 bits) bound to THIS recipient email
+  const token = b64urlEncode(crypto.getRandomValues(new Uint8Array(32)));
   await env.AMV_KV.put(`invite:${token}`, JSON.stringify({ teamId:team.id, email:invitee, role:inviteRole, ts:Date.now() }), { expirationTtl: 7*86400 });
   await _teamAudit(env, team, user.email, 'member_invited', { invitee, role:inviteRole });
   return json({ ok:true, inviteToken: token, inviteLink: `?invite=${token}` });
@@ -1962,9 +1985,15 @@ async function teamJoin(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
   const { token } = await request.json().catch(()=>({}));
-  const raw = await env.AMV_KV.get(`invite:${token}`);
+  const raw = token ? await env.AMV_KV.get(`invite:${token}`) : null;
   if(!raw) return json({ error:'invalid or expired invite' }, 404);
   const inv = JSON.parse(raw);
+  // BIND to the recipient: only the authenticated user the invite was sent to may
+  // redeem it. A leaked/forwarded invite link cannot grant a role to any other
+  // account (this is how an admin invite became a transferable privilege grant).
+  if(!inv.email || inv.email !== user.email) return json({ error:'this invite was sent to a different email' }, 403);
+  // Consume atomically so two racers can't both redeem the same token.
+  if(!(await _claimOnce(env, 'inviteused', token))) return json({ error:'this invite has already been used' }, 409);
   const team0 = await DB.get(env, 'team', inv.teamId);
   if(!team0) return json({ error:'team gone' }, 404);
   const team = team0;
@@ -2040,8 +2069,13 @@ async function teamData(request, env){
   const team = await _teamOf(env, user.email);
   if(!team) return json({ error:'no team' }, 404);
   if(request.method==='GET') return json({ ok:true, data: team.data||{} });
+  // WRITE — enforce the role model: only owner/admin may edit shared team data.
+  if(!_can(team, user.email, 'editData')) return json({ error:'editing team data requires an admin or owner role' }, 403);
   const body = await request.json().catch(()=>({}));
-  team.data = Object.assign({}, team.data, body.data||{});
+  const patch = body.data || {};
+  const bad = _boundedJson(patch, 64*1024, 6);
+  if(bad) return json({ error: bad }, 413);
+  team.data = Object.assign({}, team.data, patch);
   await DB.put(env, 'team', team.id, team);
   return json({ ok:true, data: team.data });
 }
@@ -2056,8 +2090,10 @@ async function teamShare(request, env){
   if(!team) return json({ error:'no team' }, 404);
   const { kind, item } = await request.json().catch(()=>({}));
   if(!kind || !item) return json({ error:'kind and item required' }, 400);
+  const tooBig = _boundedJson(item, 32*1024, 6);
+  if(tooBig) return json({ error: tooBig }, 413);
   const shared = Array.isArray(team.data && team.data.shared) ? team.data.shared : [];
-  const entry = { id:'shr_'+crypto.randomUUID().slice(0,8), kind:String(kind).slice(0,24),
+  const entry = { id:'shr_'+crypto.randomUUID().replace(/-/g,''), kind:String(kind).slice(0,24),
     title:String(item.title||item.name||'Untitled').slice(0,120), item,
     by:user.email, byName:user.name||user.email.split('@')[0], at:Date.now() };
   shared.unshift(entry);
