@@ -284,11 +284,14 @@ export class AMVCounter {
        through — no matter how many arrive at once. */
     if (op === 'reserve') {
       const cur = (await this.state.storage.get('v')) || 0;
-      const amount = body.amount || 0;
-      if (cur >= body.cap) {
-        return json({ allowed: false, value: cur });
-      }
+      const amount = Number(body.amount);
+      // reject invalid reservation amounts (NaN, non-finite, negative)
+      if (!Number.isFinite(amount) || amount < 0) return json({ allowed: false, value: cur });
       const next = cur + amount;
+      // Deny when the RESULT would exceed the cap, not merely when the current
+      // value already does — otherwise the final reservation overshoots by up to
+      // `amount` (AMV-017). Reserving up to exactly the cap is allowed.
+      if (next > body.cap) return json({ allowed: false, value: cur });
       await this.state.storage.put('v', next);
       if (body.ttlMs) await this.state.storage.setAlarm(Date.now() + body.ttlMs);
       return json({ allowed: true, value: next });
@@ -319,7 +322,13 @@ async function counter(env, name, payload) {
       });
       return await r.json();
     }
-  } catch (e) { /* fall through to KV fallback */ }
+  } catch (e) {
+    // AMV-016: the DO was BOUND but the atomic call failed. That is a real
+    // degradation of a security/cost counter to non-atomic KV — do not do it
+    // silently. Alert operators (throttled) so a transient/fault condition that
+    // weakens quota enforcement is visible instead of a transparent downgrade.
+    try { if (env.AMV_COUNTER) await alertOnce(env, 'counter_degraded', 'Atomic counter DO failed — falling back to non-atomic KV, quota enforcement is weakened: ' + String((e && e.message) || e), 15); } catch (_) {}
+  }
   // ---- KV fallback (best-effort, NOT atomic) — only used if DO unbound ----
   return _counterKVFallback(env, name, payload);
 }
@@ -342,8 +351,11 @@ async function _counterKVFallback(env, name, payload) {
     // AMV_COUNTER binding a concurrent burst can still overshoot. Bind the
     // Durable Object in wrangler.toml (see the comments there).
     const cur = parseFloat(await env.AMV_KV.get('ctr:' + name) || '0');
-    if (cur >= payload.cap) return { allowed: false, value: cur };
-    const next = cur + (payload.amount || 0);
+    const amount = Number(payload.amount);
+    if (!Number.isFinite(amount) || amount < 0) return { allowed: false, value: cur };
+    const next = cur + amount;
+    // deny when the RESULT would exceed the cap (AMV-017), not just when cur does
+    if (next > payload.cap) return { allowed: false, value: cur };
     await env.AMV_KV.put('ctr:' + name, String(next), payload.ttlMs ? { expirationTtl: Math.ceil(payload.ttlMs / 1000) } : undefined);
     return { allowed: true, value: next };
   }
@@ -1867,26 +1879,69 @@ async function authDeleteAccount(request, env) {
   if (!user) return json({ error: 'unauthorized' }, 401);
   const email = user.email;
 
-  // Per-user keys are keyed by email under these prefixes. Delete each.
-  // NOTE: we intentionally do NOT delete `tokepoch` — it's the token-revocation
-  // marker (a bare integer, no personal data). Keeping it guarantees any tokens
-  // still in circulation stay dead even after the account row is gone.
+  // (AMV-015) Erase referenced records too, not just the top-level per-user rows.
+
+  // 1) Remove the user from their team's member list before dropping the pointer,
+  //    so team records don't retain a ghost member. (A team-OWNER's team is left
+  //    intact — ownership transfer/teardown is a separate flow.)
+  try {
+    const tid = await env.AMV_KV.get(`userteam:${email}`);
+    if (tid) {
+      const team = await DB.get(env, 'team', tid);
+      if (team && Array.isArray(team.members) && team.ownerEmail !== email) {
+        const before = team.members.length;
+        team.members = team.members.filter(m => m.email !== email);
+        if (team.members.length !== before) await DB.put(env, 'team', tid, team);
+      }
+    }
+  } catch {}
+
+  // 2) Delete the user's deployed public sites (records + index).
+  try {
+    const idx = await DB.get(env, 'sites', email);
+    for (const slug of (idx && idx.slugs) || []) { try { await DB.del(env, 'site', slug); } catch {} }
+  } catch {}
+
+  // 3) Delete the user's marketplace listings.
+  try {
+    for (const l of await DB.list(env, 'market', 5000)) {
+      if (l && l.value && l.value.authorEmail === email) { try { await env.AMV_KV.delete(`market:${l.id}`); } catch {} }
+    }
+  } catch {}
+
+  // 4) Unlink phone/SMS records (email↔phone are cross-referenced).
+  try {
+    const link = await env.AMV_KV.get(`sms:user:${email}`);
+    if (link) { let phone = link; try { phone = JSON.parse(link).phone || link; } catch {} if (phone) await env.AMV_KV.delete(`sms:phone:${phone}`); }
+    await env.AMV_KV.delete(`sms:user:${email}`);
+    await env.AMV_KV.delete(`sms:email:${email}`);
+  } catch {}
+
+  // 5) Delete the Stripe customer reverse-map (custemail:{customerId}).
+  try {
+    const custId = await env.AMV_KV.get(`stripecust:${email}`);
+    if (custId) await env.AMV_KV.delete(`custemail:${custId}`);
+  } catch {}
+
+  // 6) Per-user records keyed by email. DB.del handles both D1 and KV so the
+  //    erasure is complete under either storage backend (AMV-014). We intentionally
+  //    KEEP `tokepoch` (a bare revocation integer, no personal data) so any tokens
+  //    still in circulation stay dead after the account row is gone.
   const perUserKinds = ['acct', 'ent', 'entitleitem', 'data', 'auto', 'crewjobs',
-    'approvals', 'handoff', 'abuse', 'seller', 'widget', 'wallet', 'purchases',
-    'stripecust', 'userteam'];
+    'approvals', 'handoff', 'abuse', 'seller', 'widget', 'wallet', 'wallet_tx',
+    'purchases', 'stripecust', 'userteam', 'sites'];
   let deleted = 0;
   for (const kind of perUserKinds) {
-    try { await env.AMV_KV.delete(`${kind}:${email}`); deleted++; } catch {}
+    try { await DB.del(env, kind, email); deleted++; } catch {}
   }
-  // Also clear any lookup keys that reference this email (phone link, reset state).
-  for (const raw of [`sms:email:${email}`, `reset:${email}`, `active:${email}:${todayKey()}`]) {
+  for (const raw of [`reset:${email}`, `active:${email}:${todayKey()}`]) {
     try { await env.AMV_KV.delete(raw); } catch {}
   }
   // Revoke all tokens so existing sessions die immediately.
   try { await revokeUserTokens(env, email); } catch {}
 
   audit(env, 'account_deleted', { email, keysRemoved: deleted });
-  return json({ ok: true, deleted: true });
+  return json({ ok: true, deleted: true, prefixesPurged: deleted });
 }
 
 /* Pull all of a user's synced data (or just keys changed since `since`). */

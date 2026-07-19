@@ -65,6 +65,33 @@ section('Deleting one account does NOT touch anyone else');
 const bobLeft = [...store.keys()].filter(k => k.includes('bob@test.com'));
 ok(bobLeft.length === 6, "bob's data is fully intact — you can only delete YOURSELF", bobLeft.length);
 
+/* ── AMV-015: erasure reaches REFERENCED records, not just top-level rows ── */
+section('AMV-015: deletion also erases referenced records');
+store.clear();
+store.set('acct:dana@test.com', JSON.stringify({ email: 'dana@test.com' }));
+store.set('wallet_tx:dana@test.com', JSON.stringify([{ type: 'sale', amount: 5 }]));
+store.set('sites:dana@test.com', JSON.stringify({ slugs: ['dana-site'] }));
+store.set('site:dana-site', JSON.stringify({ slug: 'dana-site', owner: 'dana@test.com' }));
+store.set('market:usr_dana1', JSON.stringify({ id: 'usr_dana1', authorEmail: 'dana@test.com', title: 'Mine' }));
+store.set('market:usr_other', JSON.stringify({ id: 'usr_other', authorEmail: 'else@test.com', title: 'Theirs' }));
+store.set('sms:user:dana@test.com', JSON.stringify({ phone: '+15551234' }));
+store.set('sms:phone:+15551234', JSON.stringify({ email: 'dana@test.com' }));
+store.set('stripecust:dana@test.com', 'cus_dana');
+store.set('custemail:cus_dana', 'dana@test.com');
+store.set('userteam:dana@test.com', 'team_x');
+store.set('team:team_x', JSON.stringify({ id: 'team_x', ownerEmail: 'owner@test.com', members: [{ email: 'owner@test.com', role: 'owner' }, { email: 'dana@test.com', role: 'member' }] }));
+asUser = 'dana@test.com';
+await W.authDeleteAccount(req(), env);
+ok(!store.has('wallet_tx:dana@test.com'), 'wallet transaction history is erased');
+ok(!store.has('sites:dana@test.com') && !store.has('site:dana-site'), 'deployed sites (index + record) are erased');
+ok(!store.has('market:usr_dana1'), "the user's marketplace listing is erased");
+ok(store.has('market:usr_other'), "another seller's listing is untouched");
+ok(!store.has('sms:user:dana@test.com') && !store.has('sms:phone:+15551234'), 'SMS/phone links are erased');
+ok(!store.has('custemail:cus_dana'), 'the Stripe customer reverse-map is erased');
+const teamAfter = JSON.parse(store.get('team:team_x'));
+ok(!teamAfter.members.find(m => m.email === 'dana@test.com'), 'the user is removed from their team roster');
+ok(!!teamAfter.members.find(m => m.email === 'owner@test.com'), 'the team and its owner remain intact');
+
 section('After deletion, the account record is truly gone');
 ok(!store.has('acct:alice@test.com'), 'the account record is removed');
 ok(!store.has('ent:alice@test.com'), 'the subscription record is removed');
