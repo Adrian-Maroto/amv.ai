@@ -3866,6 +3866,36 @@ async function stripeInvoices(request, env) {
   }));
   return json({ ok: true, invoices });
 }
+/* ── Atomic exactly-once guard ─────────────────────────────────────────────
+   Money must never be credited, captured or withdrawn twice. Payment providers
+   retry webhooks, and concurrent/duplicate deliveries can race. _claimOnce
+   returns true ONLY for the first caller for a given (kind,id); every duplicate
+   or concurrent caller gets false. On D1 this is a hard atomic guarantee — the
+   PRIMARY KEY (kind,id) makes the second INSERT fail. On KV it is best-effort
+   (KV is eventually consistent — enable D1 for the money paths, see DEPLOY.md).
+   ttlSec is only honored on the KV path and is used for short-lived locks. */
+async function _claimOnce(env, kind, id, ttlSec){
+  if(!id) return true;
+  if(env && env.DB && typeof env.DB.prepare === 'function'){
+    try{
+      await env.DB.prepare('INSERT INTO kv (kind,id,json,updated_at) VALUES (?,?,?,?)')
+        .bind(kind, String(id), '1', Date.now()).run();
+      return true;
+    }catch(e){ return false; }   // PRIMARY KEY violation → already claimed
+  }
+  const k = `${kind}:${id}`;
+  if(await env.AMV_KV.get(k)) return false;
+  await env.AMV_KV.put(k, '1', ttlSec ? { expirationTtl: ttlSec } : undefined);
+  return true;
+}
+async function _releaseClaim(env, kind, id){
+  try{
+    if(env && env.DB && typeof env.DB.prepare === 'function'){
+      await env.DB.prepare('DELETE FROM kv WHERE kind=? AND id=?').bind(kind, String(id)).run();
+    } else { await env.AMV_KV.delete(`${kind}:${id}`); }
+  }catch(e){}
+}
+
 async function stripeWebhook(request, env, ctx) {
   const sig = request.headers.get('Stripe-Signature') || '';
   const raw = await request.text();
@@ -3875,6 +3905,14 @@ async function stripeWebhook(request, env, ctx) {
   let evt; try { evt = JSON.parse(raw); } catch { return new Response('bad json', { status: 400 }); }
   const type = evt.type;
   const obj = evt.data?.object || {};
+
+  // Exactly-once: ignore a re-delivered/duplicate event so it can't double-credit
+  // a sale, double-record a renewal payment, or re-run any side effect. If later
+  // processing throws we RELEASE the claim (below) so the provider's retry is
+  // allowed to reprocess a genuinely-failed event.
+  if (evt.id && !(await _claimOnce(env, 'stripeevt', evt.id))) {
+    return json({ received: true, duplicate: true });
+  }
 
   try {
     if (type === 'checkout.session.completed') {
@@ -3946,7 +3984,11 @@ async function stripeWebhook(request, env, ctx) {
     }
   } catch (e) {
     audit(env, 'webhook_error', { kind: 'stripe', msg: String(e.message).slice(0, 120) });
-    // still return 200 so Stripe doesn't hammer retries on a non-signature error we logged
+    // release the exactly-once claim so Stripe's retry can reprocess this event
+    // (it genuinely failed — do NOT swallow it as "already processed"), and
+    // return 500 so Stripe knows to retry.
+    if (evt.id) await _releaseClaim(env, 'stripeevt', evt.id);
+    return new Response('processing error', { status: 500 });
   }
   return json({ received: true });
 }
@@ -4337,8 +4379,11 @@ async function marketBuy(request, env) {
    Grants the item to the buyer and credits the seller their 80% share. */
 async function _creditSale(env, { itemId, buyer, seller, amountCents }) {
   if (!itemId || !buyer) return;
-  // idempotency: if the buyer already owns it, don't double-credit
-  if (await _ownsItem(env, buyer, itemId)) return;
+  // Exactly-once: atomically claim this (buyer,item) sale. A buyer can never own
+  // the same item twice (marketBuy blocks re-purchase), so this is a stable key.
+  // The claim is atomic on D1, closing the double-credit race that a plain
+  // "already owns it?" read cannot (two concurrent callers both read "no").
+  if (!(await _claimOnce(env, 'sale', `${buyer}:${itemId}`))) return;
   const it = await _getListing(env, itemId);
   const price = amountCents != null ? amountCents / 100 : (it ? it.price : 0);
   const sellerEmail = seller || (it && it.authorEmail) || '';
@@ -4436,20 +4481,31 @@ async function marketWithdraw(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
   const { destination } = await request.json().catch(() => ({}));
-  const w = await _wallet(env, user.email);
-  if (w.balance < MARKET_MIN_WITHDRAW) return json({ error: `Minimum withdrawal is $${MARKET_MIN_WITHDRAW}. Your balance is $${w.balance.toFixed(2)}.` }, 400);
-  const amount = w.balance;
-  const wid = 'wd_' + crypto.randomUUID().slice(0, 12);
-  await env.AMV_KV.put(`withdraw:${wid}`, JSON.stringify({
-    id: wid, seller: user.email, amount, destination: String(destination || '').slice(0, 200),
-    status: 'pending', ts: Date.now(),
-  }));
-  // zero the balance and log the debit
-  w.balance = 0;
-  await _saveWallet(env, user.email, w);
-  await _pushWalletTx(env, user.email, { type: 'withdrawal', amount: -amount, status: 'pending', id: wid, ts: Date.now() });
-  audit(env, 'market_withdraw', { seller: user.email, amount, id: wid });
-  return json({ ok: true, amount, id: wid, status: 'pending' });
+  // Serialize withdrawals per seller so two concurrent requests can't both read
+  // the same balance and each create a payout for it (double withdrawal). The
+  // lock is atomic on D1; on KV it is a best-effort short-TTL guard. Balance is
+  // re-read INSIDE the lock.
+  if (!(await _claimOnce(env, 'wdlock', user.email, 30))) {
+    return json({ error: 'A withdrawal is already being processed. Please try again in a moment.' }, 409);
+  }
+  try {
+    const w = await _wallet(env, user.email);
+    if (w.balance < MARKET_MIN_WITHDRAW) return json({ error: `Minimum withdrawal is $${MARKET_MIN_WITHDRAW}. Your balance is $${w.balance.toFixed(2)}.` }, 400);
+    const amount = w.balance;
+    const wid = 'wd_' + crypto.randomUUID().slice(0, 12);
+    await env.AMV_KV.put(`withdraw:${wid}`, JSON.stringify({
+      id: wid, seller: user.email, amount, destination: String(destination || '').slice(0, 200),
+      status: 'pending', ts: Date.now(),
+    }));
+    // zero the balance and log the debit
+    w.balance = 0;
+    await _saveWallet(env, user.email, w);
+    await _pushWalletTx(env, user.email, { type: 'withdrawal', amount: -amount, status: 'pending', id: wid, ts: Date.now() });
+    audit(env, 'market_withdraw', { seller: user.email, amount, id: wid });
+    return json({ ok: true, amount, id: wid, status: 'pending' });
+  } finally {
+    await _releaseClaim(env, 'wdlock', user.email);
+  }
 }
 
 /* Seller changes a listing's status: active | sold | deactivated. Owner only. */
@@ -4868,9 +4924,13 @@ async function paypalCapture(request, env) {
               || d.purchase_units?.[0]?.custom_id || '';
   const [email, plan] = custom.split('|');
   if (email && plan) {
+    const cap = d.purchase_units?.[0]?.payments?.captures?.[0];
+    const capId = cap?.id || d.id || orderId;
+    // Exactly-once: a replayed or concurrent capture of the same order must not
+    // grant twice or double-record the payment. Atomic on D1.
+    if (!(await _claimOnce(env, 'ppcapture', capId))) return json({ ok: true, plan, duplicate: true });
     await setEntitlement(env, email.toLowerCase(), plan, { source: 'paypal' });
     // log it so it shows in the admin finance page alongside Stripe
-    const cap = d.purchase_units?.[0]?.payments?.captures?.[0];
     const amt = parseFloat(cap?.amount?.value || '0') || 0;
     const cur = cap?.amount?.currency_code || 'USD';
     await _recordTxn(env, { provider: 'paypal', email: email.toLowerCase(), amount: amt, currency: cur,
