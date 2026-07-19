@@ -1878,7 +1878,7 @@ hr,.mb hr,.plndiv{border-color:var(--hair)!important;background:none!important}
 .dev-pt.on{background:var(--surface);color:var(--tx)}
 .dev-code-body{flex:1;overflow:auto;min-height:0}
 .dev-code-wrap .dev-code-h{display:flex;justify-content:space-between;align-items:center;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--mu);padding:9px 14px;border-bottom:1px solid var(--hair);position:sticky;top:0;background:#0a0a0c}
-.dev-code-wrap pre{margin:0;padding:14px;font-family:var(--mn);font-size:12.5px;line-height:1.6;color:var(--tx);white-space:pre-wrap;word-break:break-word}
+.dev-code-wrap pre{margin:0;padding:18px 22px;font-family:var(--mn);font-size:12.5px;line-height:1.7;color:var(--tx);white-space:pre;overflow-x:auto;tab-size:2;-moz-tab-size:2;word-break:normal;overflow-wrap:normal}
 .dev-copy{background:var(--surface);border:1px solid var(--hair);border-radius:5px;color:var(--mu);font-size:10px;padding:3px 8px;cursor:pointer;font-family:var(--fn)}
 .dev-copy:hover{color:var(--tx);border-color:var(--hair-strong)}
 
@@ -2405,7 +2405,7 @@ hr,.divider,.hairline{border-color:var(--hair)!important;background:var(--hair)!
 
 /* Dev — multi-file project: file tree + code layout */
 .dev-code-layout{display:flex;height:100%;min-height:0}
-.dev-tree{width:190px;flex-shrink:0;border-right:1px solid var(--hair,#2a2620);overflow-y:auto;background:var(--glass-soft,rgba(255,255,255,.02))}
+.dev-tree{width:160px;flex-shrink:0;border-right:1px solid var(--hair,#2a2620);overflow-y:auto;background:var(--glass-soft,rgba(255,255,255,.02))}
 .dev-tree-h{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mu,#9a9085);padding:10px 12px 6px}
 .dev-tree-empty{padding:16px 12px;font-size:11.5px;color:var(--mu,#9a9085);line-height:1.6}
 .dev-tree-f{display:flex;align-items:center;gap:7px;padding:6px 12px;font-size:12px;color:var(--tx,#ece8e1);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--mn,ui-monospace,monospace)}
@@ -3028,7 +3028,7 @@ html[dir="rtl"] .qab,html[dir="rtl"] .dc,html[dir="rtl"] .ss2{text-align:right}
 
 /* Embeddable widget — the compact chat panel rendered inside the iframe */
 :root{--emb-accent:#4f7cff}
-.emb-root{display:flex;flex-direction:column;height:100vh;width:100%;background:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Roboto,sans-serif;color:#1a1a2e}
+.emb-root{display:flex;flex-direction:column;height:100vh;height:100dvh;width:100%;background:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Roboto,sans-serif;color:#1a1a2e}
 .emb-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;background:var(--emb-accent);color:#fff;flex-shrink:0}
 .emb-title{font-size:15px;font-weight:650}
 .emb-x{background:transparent;border:none;color:#fff;font-size:16px;cursor:pointer;opacity:.85;padding:4px;line-height:1}
@@ -3210,7 +3210,7 @@ html[dir="rtl"] .qab,html[dir="rtl"] .dc,html[dir="rtl"] .ss2{text-align:right}
 .art-card:hover .art-card-open{color:var(--accent)}
 
 /* Side panel */
-.art-panel{position:fixed;top:0;right:0;height:100vh;width:min(560px,46vw);z-index:900;
+.art-panel{position:fixed;top:0;right:0;height:100vh;height:100dvh;width:min(560px,46vw);z-index:900;
   background:var(--bg);border-left:1px solid var(--bd);box-shadow:-8px 0 40px rgba(0,0,0,.28);
   display:flex;flex-direction:column;transform:translateX(100%);transition:transform .34s cubic-bezier(.4,0,.2,1)}
 .art-panel.on{transform:translateX(0)}
@@ -4107,7 +4107,7 @@ html.reduce-motion #cv.cv-home .chome-greet{
    ═══════════════════════════════════════════════════════════ */
 .dev-shell{display:flex;height:100%;min-height:0;overflow:hidden}
 .dev-chat-pane{display:flex;flex-direction:column;min-width:0;min-height:0;flex:1;border-right:1px solid var(--bd)}
-.dev-preview{display:flex;flex-direction:column;flex:1.15;min-width:0;min-height:0;background:var(--bg)}
+.dev-preview{display:flex;flex-direction:column;flex:1.5;min-width:0;min-height:0;background:var(--bg)}
 
 /* BLANK STATE: no split — a single centered "what should we build" */
 .dev-shell.dev-blank .dev-preview{display:none}
@@ -5202,7 +5202,8 @@ html.fs-scaled #cv{ overflow:hidden !important; }   /* chat keeps its own scroll
    can't double-overlay the ones that already work.
    ═══════════════════════════════════════════════════════════ */
 #ovr.on:has(> .share-modal),
-#ovr.on:has(> .rw-modal){
+#ovr.on:has(> .rw-modal),
+#ovr.on:has(> .wn-modal){
   position:fixed;
   inset:0;
   z-index:9000;
@@ -5214,7 +5215,12 @@ html.fs-scaled #cv{ overflow:hidden !important; }   /* chat keeps its own scroll
   backdrop-filter:blur(5px);
   overflow-y:auto;
 }
-#ovr.on > .share-modal{ max-height:calc(100vh - 32px); overflow-y:auto; }
+#ovr.on > .share-modal,
+#ovr.on > .wn-modal{ max-height:calc(100vh - 32px); overflow-y:auto; }
+/* light-mode backdrop for these centered overlays */
+body.light #ovr.on:has(> .share-modal),
+body.light #ovr.on:has(> .rw-modal),
+body.light #ovr.on:has(> .wn-modal){ background:rgba(40,40,50,.55); }
 
 /* Auth message shown as success, not an error */
 .ae.ae-ok{
@@ -5556,6 +5562,25 @@ body.sb-rail .sb-tool .sb-tool-tip{
 body.sb-rail .sb-tool:hover .sb-tool-tip{
   transform:translateY(-50%) translateX(0);
 }
+/* ── Collapsed-rail FOOTER fix (the bottom-left "block" glitch) ──
+   In rail mode the footer (user profile / status) was 150px+ wide and spilled
+   left out of the 64px rail. Collapse it to a centered avatar-only control and
+   hide the name/email/status text so nothing overflows. */
+body.sb-rail #sb .sbfoot{ padding:8px 0!important; }
+body.sb-rail #sb .sb-user,
+body.sb-rail #sb .sb-status{
+  width:44px!important; min-width:44px!important; max-width:44px!important;
+  margin:2px auto!important; padding:0!important;
+  justify-content:center!important; gap:0!important; overflow:hidden;
+}
+body.sb-rail #sb .sb-un,
+body.sb-rail #sb .sb-ue,
+body.sb-rail #sb .sb-name,
+body.sb-rail #sb .sb-email,
+body.sb-rail #sb .sb-status-lbl,
+body.sb-rail #sb .sb-user .sb-caret,
+body.sb-rail #sb .sb-user > div:not(.sb-av){ display:none!important; }
+body.sb-rail #sb .sb-av{ margin:0 auto!important; }
 
 /* ── Research Watch modal ── */
 .rw-modal{
@@ -5606,3 +5631,178 @@ body.sb-rail .sb-tool:hover .sb-tool-tip{
 .nf-title{ margin:14px 0 6px; font-size:22px; }
 .nf-sub{ color:var(--mu); font-size:14px; line-height:1.6; margin-bottom:22px; }
 .nf-actions{ display:flex; gap:10px; justify-content:center; }
+
+/* ── Admin financial statement ── */
+.adm-fin-note{color:var(--mu);font-size:13px;padding:14px 4px;line-height:1.5}
+.adm-fin-table-wrap{overflow-x:auto;margin-top:4px}
+.adm-fin-table{width:100%;border-collapse:collapse;font-size:12.5px}
+.adm-fin-table th{text-align:left;color:var(--mu);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em;padding:8px 10px;border-bottom:1px solid var(--bd)}
+.adm-fin-table td{padding:9px 10px;border-bottom:1px solid var(--hair);color:var(--tx)}
+.adm-fin-email{color:var(--mu);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.adm-fin-amt{font-weight:600;font-variant-numeric:tabular-nums}
+.adm-fin-ref{color:#e0b341;font-weight:500;font-size:11px}
+.adm-fin-status{font-size:11px;padding:2px 8px;border-radius:20px;text-transform:capitalize;background:var(--s2);color:var(--mu)}
+.adm-fin-status.s-succeeded{background:rgba(74,222,128,.14);color:#4ade80}
+.adm-fin-status.s-refunded{background:rgba(224,179,65,.14);color:#e0b341}
+.adm-fin-status.s-disputed{background:rgba(255,77,77,.14);color:#ff6b6b}
+.adm-fin-rc{color:var(--accent);text-decoration:none;font-size:12px}
+.adm-fin-rc:hover{text-decoration:underline}
+.adm-fin-more{color:var(--dim);font-size:11.5px;padding:10px 4px;text-align:center}
+
+/* payment-method badge in finance table */
+.adm-fin-prov{font-size:11px;padding:2px 8px;border-radius:20px;background:var(--s2);color:var(--mu)}
+.adm-fin-prov.p-stripe{background:rgba(99,91,255,.14);color:#8b85ff}
+.adm-fin-prov.p-paypal{background:rgba(0,112,186,.16);color:#3b9fe0}
+.adm-fin-prov.p-marketplace{background:rgba(74,222,128,.12);color:#4ade80}
+
+/* ── Admin user list: full detail ── */
+.adm-user-summary{font-size:12px;color:var(--mu);padding:4px 2px 10px;font-weight:500}
+.adm-user-meta{display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:5px;font-size:11px;color:var(--dim)}
+.adm-user-meta span{white-space:nowrap}
+.adm-user-admin{color:var(--accent);font-weight:600}
+.adm-user-flag{font-size:10.5px;color:#e0b341;font-weight:500;margin-left:4px}
+
+/* ════════════════════════════════════════════════════════════════
+   FINAL POLISH (authoritative, loads last) — targeted, safe.
+   Goal: consistent spacing rhythm + a touch more room, so the app
+   reads deliberate rather than templated. Minimal surface area:
+   only rhythm + a few generic tells. No structural changes.
+   ════════════════════════════════════════════════════════════════ */
+
+/* 1. One consistent gap between stacked section panels everywhere.
+   (Different layers set this to 18/20/24/26/34px — unify to one calm rhythm.) */
+#vc .ss2 + .ss2{margin-top:22px!important}
+
+/* 2. Consistent inner padding on section panels — not cramped, not bloated. */
+#vc .ss2{padding:24px 26px!important}
+@media(max-width:720px){#vc .ss2{padding:18px 18px!important}}
+
+/* 3. Section headings sit a touch closer to their content (deliberate grouping). */
+#vc .ss2 h3{margin-bottom:15px!important}
+
+/* 4. Give the content column a hair more breathing room on big screens,
+   and keep it comfortably centered (never pinned wide). */
+@media(min-width:1200px){ #vc .sv{padding:52px 44px 84px!important} }
+
+/* 5. Soften the one generic tell: heading-to-subtitle spacing is uniform. */
+#vc .vi h2 + .vsub,#vc .vi .eyebrow + h2{margin-top:0!important}
+#vc .vsub{margin-bottom:10px!important}
+
+/* 6. Cards get a single consistent hover behaviour (some layers lift, some
+   don't — pick one restrained treatment so it doesn't feel scattered). */
+.fcrd,.wsc,.dc,.memc,.mk-card,.onb-card,.ceh-card,.chome-card{
+  transition:border-color .16s ease, background .16s ease!important;
+}
+.fcrd:hover,.wsc:hover,.dc:hover,.memc:hover,.ceh-card:hover,.chome-card:hover{
+  transform:none!important;   /* drop the scattered bouncy lifts — calmer, more premium */
+}
+
+/* ════════════════════════════════════════════════════════════════
+   RESPONSIVE FIT — final pass (authoritative, loads last)
+   Ensures comfortable use on the smallest phones and sensible
+   layout on the largest monitors. Pure enhancement, no structure change.
+   ════════════════════════════════════════════════════════════════ */
+
+/* 1. Small phones: guarantee tappable controls (44px is the accessibility
+   target). Applies to every interactive control, not just .btn. */
+@media(max-width:560px){
+  .btn,.plnbtn,.gbtn,.pbp,.pbs,.pm-method,.pay-tab,.fb-type,
+  .accent-sw,.dna-btn,.es-btn,.mk-filter,.mkt-tab{ min-height:44px!important; }
+  .btn,.plnbtn{ padding-top:11px!important;padding-bottom:11px!important; }
+  /* inputs comfortable to tap + no iOS zoom-on-focus (needs >=16px) */
+  input,textarea,select,#mta,#dev-msg,#lab-code,.hsi{ font-size:16px!important; }
+  /* icon buttons stay square + tappable */
+  .ib,.atb,.mact,.oc,.set-close{ min-width:40px;min-height:40px; }
+}
+
+/* 2. Very small phones (≤360px): tighten padding so content isn't crushed. */
+@media(max-width:360px){
+  #vc .sv{padding-left:14px!important;padding-right:14px!important}
+  .ob{padding:24px 18px!important}
+  #cm > .mr{padding-left:14px!important;padding-right:14px!important}
+  #cia{padding-left:12px!important;padding-right:12px!important}
+}
+
+/* 3. Large monitors: the chat/reading column stays a comfortable measure and
+   centers — never stretched edge-to-edge on ultrawide displays. The message
+   rows already cap at ~748px; ensure views cap too and sit centered. */
+@media(min-width:1800px){
+  #vc .vi{max-width:960px!important}
+  /* keep the whole content area from feeling lost on huge screens */
+  #vc .sv{padding-left:6vw!important;padding-right:6vw!important}
+}
+@media(min-width:2400px){
+  #vc .sv{padding-left:10vw!important;padding-right:10vw!important}
+}
+
+/* 4. Landscape phones (short height): trim vertical padding so content fits. */
+@media(max-height:480px) and (orientation:landscape){
+  #vc .sv{padding-top:20px!important;padding-bottom:32px!important}
+  .hero{padding-top:28px!important;padding-bottom:28px!important}
+}
+
+/* ════════════════════════════════════════════════════════════════
+   LIGHT-MODE MENU FIX (authoritative, loads last)
+   The account popup, context menus, profile menu and toasts had a
+   hardcoded dark background (#15191f !important) with no light-mode
+   override — so they stayed black in light mode. These restore them
+   to proper light surfaces. Dark mode is unaffected.
+   ════════════════════════════════════════════════════════════════ */
+body.light .sb-popup,
+body.light .ctxm,
+body.light .prof-menu,
+body.light .toast,
+body.light .ob,
+body.light .ctx-menu,
+body.light .menu.on,
+body.light .dna-modal,
+body.light .trip-modal,
+body.light .tp-modal,
+body.light .cowork-modal,
+body.light .studio-side{
+  background:#ffffff!important;
+  border:1px solid var(--bd,rgba(0,0,0,.1))!important;
+  box-shadow:0 12px 40px -16px rgba(30,28,35,.22)!important;
+}
+/* menu items + text inside those popups read dark on the light surface */
+body.light .sb-popup .sb-mi,
+body.light .sb-popup a,
+body.light .ctxm *,
+body.light .prof-menu *,
+body.light .ctx-menu *{ color:var(--tx)!important; }
+/* hover state for menu rows in light mode */
+body.light .sb-popup .sb-mi:hover,
+body.light .ctxm > *:hover,
+body.light .ctx-menu > *:hover{ background:var(--s2,#f0efec)!important; }
+
+/* ════════════════════════════════════════════════════════════════
+   RESPONSIVE FIT v2 — tablet & large-screen refinements (loads last)
+   The base layout has zero overflow 320px→3440px. These tune the
+   in-between sizes so it doesn't just fit, it looks right everywhere.
+   ════════════════════════════════════════════════════════════════ */
+
+/* Tablets (721–1000px): the 250px sidebar ate a third of a 768px screen.
+   Narrow it so content breathes, while keeping the full nav visible. */
+@media(min-width:721px) and (max-width:1000px){
+  :root{ --sbw:212px; }
+  #sb .snb{ font-size:13.5px; }
+  #vc .sv{ padding-left:28px!important; padding-right:28px!important; }
+}
+
+/* Large tablets / small laptops in landscape: comfortable reading column. */
+@media(min-width:1001px) and (max-width:1300px){
+  #vc .vi{ max-width:min(860px, 92%); }
+}
+
+/* Ultra-wide safety: never let any centered content column stretch too far;
+   keep it centered with real breathing room past 2000px. */
+@media(min-width:2000px){
+  #vc .sv{ padding-left:8vw!important; padding-right:8vw!important; }
+  #cm > .mr{ margin-left:auto; margin-right:auto; }
+}
+
+/* Short landscape phones: keep the composer reachable, trim hero space. */
+@media(max-height:460px) and (orientation:landscape){
+  .chome-hero,.hero{ padding-top:18px!important; padding-bottom:18px!important; }
+  #cia{ padding-bottom:12px!important; }
+}

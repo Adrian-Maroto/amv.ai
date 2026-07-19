@@ -138,10 +138,17 @@ const DB = {
 
 // Per-plan limits (TUNE THESE to protect margin). Tokens/day, tokens/month.
 const PLAN_LIMITS = {
-  free:  { dayTokens: 50000,   monthTokens: 300000,   rpm: 8,  imagesDay: 10,  videosMonth: 0 },
-  pro:   { dayTokens: 1500000, monthTokens: 20000000, rpm: 20, imagesDay: 200, videosMonth: 30 },
-  elite: { dayTokens: 6000000, monthTokens: 90000000, rpm: 40, imagesDay: 1000, videosMonth: 200 },
-  ultra: { dayTokens: 15000000, monthTokens: 250000000, rpm: 80, imagesDay: 5000, videosMonth: 1000 },
+  // Token allowances per plan. These are sized to be GENEROUS for real usage
+  // (a heavy day of chatting/coding is well under the daily cap) while keeping a
+  // healthy margin at worst case — the plan price is decoupled from raw token
+  // cost, exactly like ChatGPT/Claude. The 45% cost backstop below is only an
+  // anti-abuse floor that normal users never reach. Blended compute ~$6/Mtok:
+  //   pro   $15  -> ~1.8M/mo ≈ $11 worst-case compute (~27% floor, usually far higher margin)
+  //   elite $75  -> ~7M/mo, ultra $200 -> ~18M/mo — all comfortably profitable.
+  free:  { dayTokens: 40000,    monthTokens: 250000,    rpm: 8,  imagesDay: 8,   videosMonth: 0 },
+  pro:   { dayTokens: 250000,   monthTokens: 1800000,   rpm: 20, imagesDay: 100, videosMonth: 20 },
+  elite: { dayTokens: 900000,   monthTokens: 7000000,   rpm: 40, imagesDay: 500, videosMonth: 120 },
+  ultra: { dayTokens: 2200000,  monthTokens: 18000000,  rpm: 80, imagesDay: 2000, videosMonth: 600 },
 };
 
 /* =====================================================================
@@ -1576,6 +1583,7 @@ export default {
         case '/v1/market/threads':  return marketThreads(request, env);
         // --- FOUNDER ADMIN (token-gated) ---
         case '/v1/admin/stats':     return adminStats(request, env);
+        case '/v1/admin/finance':   return adminFinance(request, env);
         case '/v1/admin/kill':      return adminKill(request, env);
         case '/v1/admin/user':      return adminUser(request, env);
         // --- EMBEDDABLE WIDGET ---
@@ -1629,8 +1637,38 @@ async function _hashPassword(password, salt, iterations){
   const bits = await crypto.subtle.deriveBits({ name:'PBKDF2', salt: enc.encode(salt), iterations: iterations || PBKDF2_ITERATIONS, hash:'SHA-256' }, keyMaterial, 256);
   return [...new Uint8Array(bits)].map(b=>b.toString(16).padStart(2,'0')).join('');
 }
+/* Verify a Cloudflare Turnstile token. Returns true if:
+   - Turnstile isn't configured yet (TURNSTILE_SECRET unset) — we don't block
+     real users before you've set it up; the honeypot + rate limits still apply.
+   - OR the token validates against Cloudflare.
+   Returns false only when Turnstile IS configured and the token is missing/invalid. */
+async function _verifyCaptcha(env, token, request){
+  if (!env.TURNSTILE_SECRET) return true;           // not set up yet → don't block
+  if (!token) return false;
+  try{
+    const ip = request.headers.get('CF-Connecting-IP') || '';
+    const form = new URLSearchParams();
+    form.set('secret', env.TURNSTILE_SECRET);
+    form.set('response', String(token));
+    if (ip) form.set('remoteip', ip);
+    const r = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body: form.toString()
+    });
+    const d = await r.json().catch(()=>({}));
+    return !!d.success;
+  }catch(e){ return false; }   // fail closed when configured but verification errors
+}
+
 async function authSignup(request, env){
-  const { email, name, password } = await request.json().catch(()=>({}));
+  const body = await request.json().catch(()=>({}));
+  const { email, name, password } = body;
+  // Bot protection. Two layers:
+  //  1. Honeypot: a hidden form field bots tend to fill. Works with zero config.
+  //  2. Turnstile (Cloudflare's free CAPTCHA): verified when TURNSTILE_SECRET is
+  //     set. Until you configure it, we rely on the honeypot + rate limits.
+  if (body.company || body.website) { audit(env,'bot_blocked',{where:'signup_honeypot'}); return json({ error:'signup failed' }, 400); }
+  const capOk = await _verifyCaptcha(env, body.captchaToken, request);
+  if (!capOk) return json({ error:'Please complete the verification and try again.', code:'captcha_required' }, 400);
   const em = String(email||'').toLowerCase().trim();
   // Strict format: exactly one @, no whitespace/colons/control chars, sane length.
   // Emails go into KV key structures and audit logs — keep them clean by construction.
@@ -1647,9 +1685,17 @@ async function authSignup(request, env){
   return json(await issueTokens(env, em, safeName));
 }
 async function authLogin(request, env) {
-  const { email, name, password, provider } = await request.json().catch(()=>({}));
+  const body = await request.json().catch(()=>({}));
+  const { email, name, password, provider } = body;
+  // Honeypot — a hidden field only bots fill.
+  if (body.company || body.website) { audit(env,'bot_blocked',{where:'login_honeypot'}); return json({ error:'sign in failed' }, 400); }
   const em = String(email||'').toLowerCase().trim();
   if (!em) return json({ error: 'email required' }, 400);
+  // Turnstile on password login (skipped for Google, which is already verified).
+  if (provider !== 'google') {
+    const capOk = await _verifyCaptcha(env, body.captchaToken, request);
+    if (!capOk) return json({ error:'Please complete the verification and try again.', code:'captcha_required' }, 400);
+  }
   // brute-force throttle: cap failed password attempts per email+IP per 15 min
   const ip = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'noip';
   const rlKey = `authfail:${em}:${ip}`;
@@ -1708,10 +1754,39 @@ async function adminUsers(request, env) {
   // list accounts (KV list is best-effort; cap for safety)
   let users=[];
   try{
-    const list = await DB.list(env, 'acct', 200);
-    users = (list||[]).map(r=>{ const a=r.value||{}; return { email:a.email, name:a.name||'', plan:a.plan||'free', provider:a.provider||'email', createdAt:a.createdAt||null, admin:!!a.admin }; }).filter(u=>u.email);
+    const list = await DB.list(env, 'acct', 300);
+    const month = monthKey();
+    users = await Promise.all((list||[]).map(async r=>{
+      const a=r.value||{}; const email=a.email; if(!email) return null;
+      // pull the richer per-user records so the owner sees the FULL picture
+      const [ent, wallet, purchases, abuse] = await Promise.all([
+        DB.get(env, 'ent', email).catch(()=>null),
+        env.AMV_KV.get(`wallet:${email}`).catch(()=>null),
+        env.AMV_KV.get(`purchases:${email}`).catch(()=>null),
+        DB.get(env, 'abuse', email).catch(()=>null),
+      ]);
+      let monthCost=0, monthTok=0;
+      try{ monthCost = (await counter(env, `cost:${email}:${month}`, { op:'get' })).value || 0; }catch(e){}
+      try{ monthTok = (await counter(env, `tok:${email}:${month}`, { op:'get' })).value || 0; }catch(e){}
+      let walletBal=0; try{ if(wallet){ walletBal=(JSON.parse(wallet).balance)||0; } }catch(e){}
+      let purchaseCount=0; try{ if(purchases){ purchaseCount=(JSON.parse(purchases)||[]).length; } }catch(e){}
+      const plan = (ent && ent.plan) || a.plan || 'free';
+      return {
+        email, name:a.name||'', plan, provider:a.provider||'email',
+        createdAt:a.createdAt||null, admin:!!a.admin,
+        source:(ent && ent.source)||null,          // stripe / paypal / manual
+        monthCostUSD:+(+monthCost).toFixed(2),
+        monthTokens:monthTok,
+        walletBalance:+(+walletBal).toFixed(2),
+        purchases:purchaseCount,
+        flagged:!!(abuse && abuse.blocked),
+        disputes:(abuse && abuse.disputes)||0,
+        refunds:(abuse && abuse.refunds)||0,
+      };
+    }));
+    users = users.filter(Boolean);
   }catch(e){}
-  return json({ users });
+  return json({ users, count: users.length });
 }
 
 /* Verify a Google ID token (JWT credential) SERVER-SIDE before trusting it.
@@ -3655,6 +3730,110 @@ async function stripePortal(request, env) {
 }
 
 // ---- Stripe: list this user's invoices (for the in-app billing history) ----
+/* ---- Unified transaction ledger — records a payment from ANY provider
+   (Stripe, PayPal, marketplace/wallet) so the admin finance page shows ALL
+   money, not just Stripe. Stored as a capped list under 'txn:log'. Each entry:
+   {id, ts, provider, email, amount, currency, kind, status, ref}. ---- */
+async function _recordTxn(env, tx) {
+  try {
+    const entry = {
+      id: tx.id || ('tx_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)),
+      ts: tx.ts || Date.now(),
+      provider: tx.provider || 'unknown',
+      email: (tx.email || '').toLowerCase(),
+      amount: +(+tx.amount || 0).toFixed(2),
+      currency: (tx.currency || 'USD').toUpperCase(),
+      kind: tx.kind || '',           // e.g. 'subscription', 'plan', 'marketplace'
+      status: tx.status || 'succeeded',
+      ref: tx.ref || '',
+    };
+    const raw = await env.AMV_KV.get('txn:log');
+    const log = raw ? JSON.parse(raw) : [];
+    log.unshift(entry);
+    await env.AMV_KV.put('txn:log', JSON.stringify(log.slice(0, 1000)));   // keep last 1000
+    return entry;
+  } catch (e) { return null; }
+}
+
+async function _readTxnLog(env, limit = 200) {
+  try { const raw = await env.AMV_KV.get('txn:log'); const log = raw ? JSON.parse(raw) : []; return log.slice(0, limit); }
+  catch { return []; }
+}
+
+/* ---- ADMIN: financial statement — ALL real transactions across every customer.
+   Owner-only (admin token). Pulls actual charges from Stripe so you see real
+   money in, refunds, and net — not estimates. Honestly returns empty + a
+   configured:false flag when Stripe isn't set up yet. ---- */
+async function adminFinance(request, env) {
+  if (!_requireAdmin(request, env)) { audit(env, 'auth_fail', { reason: 'admin_bad_token' }); return json({ error: 'forbidden' }, 403); }
+
+  // Non-Stripe payments (PayPal, marketplace/wallet) come from our own ledger.
+  const ledger = await _readTxnLog(env, 300);
+  const ledgerTx = ledger.map(t => ({
+    id: t.id, date: t.ts, email: t.email || '\u2014', amount: t.amount, refunded: t.status === 'refunded' ? t.amount : 0,
+    currency: t.currency, status: t.status, description: t.kind || '', provider: t.provider, last4: null, receipt: null,
+  }));
+
+  if (!env.STRIPE_SECRET_KEY) {
+    // No Stripe, but we may still have PayPal / marketplace transactions.
+    let gross = 0, refunded = 0;
+    for (const t of ledgerTx) { if (t.status === 'succeeded') gross += t.amount; refunded += t.refunded; }
+    return json({ ok: true, configured: ledgerTx.length > 0, transactions: ledgerTx,
+      totals: { count: ledgerTx.length, gross: +gross.toFixed(2), refunded: +refunded.toFixed(2), net: +(gross - refunded).toFixed(2), currency: 'USD' },
+      note: ledgerTx.length ? 'Stripe not connected — showing PayPal & marketplace transactions.' : 'Connect Stripe (STRIPE_SECRET_KEY) to see card transactions.' });
+  }
+  const url = new URL(request.url);
+  const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '100', 10)));
+  const after = url.searchParams.get('after') || '';
+  let q = `https://api.stripe.com/v1/charges?limit=${limit}`;
+  if (after) q += `&starting_after=${encodeURIComponent(after)}`;
+  const r = await fetch(q, { headers: { 'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}` } });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    await alertOnce(env, 'admin_finance_fail', `Admin finance: Stripe charges fetch failed (${d.error?.message || r.status}).`, 30);
+    return json({ error: d.error?.message || 'stripe error' }, 502);
+  }
+  const stripeTx = (d.data || []).map(c => ({
+    id: c.id,
+    date: (c.created || 0) * 1000,
+    email: c.billing_details?.email || c.receipt_email || (c.metadata && c.metadata.email) || '\u2014',
+    amount: (c.amount || 0) / 100,
+    refunded: (c.amount_refunded || 0) / 100,
+    currency: (c.currency || 'usd').toUpperCase(),
+    status: c.refunded ? 'refunded' : (c.disputed ? 'disputed' : c.status),
+    // was this a real captured payment? (true even if later refunded — gross = money that came in)
+    _paid: !!(c.paid && (c.status === 'succeeded' || c.captured)),
+    description: c.description || (c.metadata && c.metadata.plan) || '',
+    provider: 'stripe',
+    last4: c.payment_method_details?.card?.last4 || null,
+    receipt: c.receipt_url || null,
+  }));
+
+  // Merge Stripe (live) + ledger. The live Stripe pull is the source of truth
+  // for card payments, so from the ledger we take only NON-Stripe entries
+  // (PayPal, marketplace) to avoid double-counting recurring charges that the
+  // webhook also logged.
+  const ledgerNonStripe = ledgerTx.filter(t => t.provider !== 'stripe');
+  const transactions = [...stripeTx, ...ledgerNonStripe].sort((a, b) => b.date - a.date);
+  let gross = 0, refunded = 0, currency = 'USD';
+  for (const t of transactions) {
+    // gross = all money that came in (paid), refunds tracked separately as net.
+    const camePaid = t._paid != null ? t._paid : (t.status === 'succeeded' || t.status === 'paid' || t.status === 'refunded');
+    if (camePaid) gross += t.amount;
+    refunded += t.refunded;
+    currency = t.currency || currency;
+    delete t._paid;
+  }
+  const net = +(gross - refunded).toFixed(2);
+  return json({
+    ok: true, configured: true,
+    transactions,
+    hasMore: !!d.has_more,
+    nextCursor: stripeTx.length ? stripeTx[stripeTx.length - 1].id : null,
+    totals: { count: transactions.length, gross: +gross.toFixed(2), refunded: +refunded.toFixed(2), net, currency },
+  });
+}
+
 async function stripeInvoices(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
@@ -3707,6 +3886,12 @@ async function stripeWebhook(request, env, ctx) {
           await env.AMV_KV.put(`stripecust:${email}`, obj.customer);
           await env.AMV_KV.put(`custemail:${obj.customer}`, email);  // reverse map for renewals
         }
+        // Record the initial subscription payment so it shows in admin finance
+        // even beyond Stripe's own retention window.
+        const amt = (obj.amount_total != null ? obj.amount_total : 0) / 100;
+        if (amt > 0) await _recordTxn(env, { provider: 'stripe', email, amount: amt,
+          currency: (obj.currency || 'usd').toUpperCase(), kind: plan, status: 'succeeded',
+          ref: obj.subscription || obj.id || '' });
       }
     } else if (type === 'customer.subscription.updated' || type === 'invoice.paid') {
       // renewal or plan change — re-derive plan from the price
@@ -3714,6 +3899,13 @@ async function stripeWebhook(request, env, ctx) {
       const priceId = obj.items?.data?.[0]?.price?.id || obj.lines?.data?.[0]?.price?.id;
       const plan = PLAN_FROM_PRICE(env)[priceId];
       if (email && plan) await setEntitlement(env, email, plan, { source: 'stripe' });
+      // Record each recurring renewal payment (invoice.paid carries amount_paid).
+      if (type === 'invoice.paid' && email) {
+        const amt = (obj.amount_paid != null ? obj.amount_paid : 0) / 100;
+        if (amt > 0) await _recordTxn(env, { provider: 'stripe', email, amount: amt,
+          currency: (obj.currency || 'usd').toUpperCase(), kind: (plan || 'renewal'), status: 'succeeded',
+          ref: obj.id || obj.subscription || '' });
+      }
     } else if (type === 'customer.subscription.deleted') {
       // cancellation/expiry — downgrade to free
       const email = await _emailFromCustomer(env, obj.customer);
@@ -3815,9 +4007,14 @@ function _mktNormalize(str) {
 const MKT_PROHIBITED = {
   'Illegal drugs & controlled substances': [
     'cocaine','heroin','fentanyl','methamphetamine','crystal meth','mdma','ecstasy','lsd','ketamine','pcp','crack cocaine',
-    'psilocybin','magic mushrooms','ghb','rohypnol','roofie','oxycontin','oxycodone','percocet','xanax bars','adderall',
+    'psilocybin','magic mushrooms','ghb','rohypnol','roofie','oxycontin','oxycodone','percocet','xanax','xanax bars','adderall',
+    'vicodin','codeine','lean drug','promethazine','tramadol','valium','klonopin','opioid','opiates',
     'illegal drugs','buy drugs','sell drugs','drug dealer','narcotics for sale','dark web drugs','research chemicals',
     'anabolic steroids','hgh for sale','prescription without','no prescription needed',
+    'weed for sale','buy weed','sell weed','marijuana for sale','buy marijuana','cannabis for sale','buy cannabis',
+    'thc cart','dab pen','edibles for sale','ounce of weed','gram of weed','8 ball','eightball','molly for sale','buy molly',
+    'shrooms for sale','acid tabs','dmt','coke for sale','plug drugs','drug plug','420 friendly bud','top shelf bud',
+    'sativa for sale','indica for sale',
   ],
   'Weapons & explosives': [
     'firearm','handgun','rifle for sale','assault weapon','ghost gun','untraceable gun','80 lower','auto sear','glock switch',
@@ -4148,6 +4345,11 @@ async function _creditSale(env, { itemId, buyer, seller, amountCents }) {
     w.lifetime = +(w.lifetime + sellerShare).toFixed(2);
     await _saveWallet(env, sellerEmail, w);
     await _pushWalletTx(env, sellerEmail, { type: 'sale', amount: sellerShare, gross: price, item: itemId, title: it ? it.title : itemId, buyer, ts: Date.now() });
+    // record the platform's cut (your revenue) so it shows in admin finance. The
+    // full charge is already in Stripe; this logs the marketplace fee distinctly.
+    const platformCut = +(price * MARKET_PLATFORM_FEE).toFixed(2);
+    if (platformCut > 0) await _recordTxn(env, { provider: 'marketplace', email: buyer, amount: platformCut,
+      currency: 'USD', kind: 'marketplace fee', status: 'succeeded', ref: itemId });
   }
   // bump sale count; user listings are one-of-a-kind → mark SOLD (leaves catalog)
   if (it) {
@@ -4655,7 +4857,15 @@ async function paypalCapture(request, env) {
   const custom = d.purchase_units?.[0]?.payments?.captures?.[0]?.custom_id
               || d.purchase_units?.[0]?.custom_id || '';
   const [email, plan] = custom.split('|');
-  if (email && plan) await setEntitlement(env, email.toLowerCase(), plan, { source: 'paypal' });
+  if (email && plan) {
+    await setEntitlement(env, email.toLowerCase(), plan, { source: 'paypal' });
+    // log it so it shows in the admin finance page alongside Stripe
+    const cap = d.purchase_units?.[0]?.payments?.captures?.[0];
+    const amt = parseFloat(cap?.amount?.value || '0') || 0;
+    const cur = cap?.amount?.currency_code || 'USD';
+    await _recordTxn(env, { provider: 'paypal', email: email.toLowerCase(), amount: amt, currency: cur,
+      kind: plan, status: 'succeeded', ref: d.id || cap?.id || '' });
+  }
   return json({ ok: true, plan });
 }
 

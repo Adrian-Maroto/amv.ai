@@ -1,3 +1,13 @@
+## Usage model — plan tiers, not dollar passthrough
+
+Users get named model tiers (AMV Pulse/Core/Forge/Apex → real backend models) and a
+Claude-style rolling usage window shown as "% remaining on your plan" — never a dollar
+balance. The plan PRICE is decoupled from raw token cost: monthly token allowances are
+sized to stay ~28-46%+ margin even if fully maxed (blended ~\$6/Mtok), and are typically
+80%+ in practice since cheaper models handle most calls. A 45% cost backstop remains as an
+invisible anti-abuse floor normal users never hit. Guarded by tests/worker/plan-margins.test.mjs.
+Allowances live in the LIMITS table (amv-backend.js) and PLAN_TIERS (app.js) — keep them in sync.
+
 # Deploying AMV
 
 The app (`index.html`) is a single file — host it anywhere (Netlify, Vercel, S3, GitHub Pages).
@@ -201,6 +211,21 @@ ultra 1000. The reservation is taken atomically before the provider is called, a
 **refunded if the render fails** — a failed video never counts against your users'
 plan. Chat can also generate video itself via the `generate_video` tool.
 
+## Admin user directory (owner-only)
+
+The admin Users tab lists EVERY account with full detail (/admin/users, owner-gated):
+name, email, plan, payment source, monthly AI cost, wallet balance, marketplace
+purchases, join date, and abuse flags (chargeback/refund). Searchable, with a summary
+count of total/paying/flagged. Covered by tests/worker/admin-users.test.mjs.
+
+## Financial statement (admin-only)
+
+The admin dashboard has a Finance tab showing REAL transactions from ALL payment methods (Stripe cards, PayPal, and marketplace fees) — Stripe pulled live, PayPal & marketplace from a unified ledger (txn:log)
+(/v1/admin/finance, admin-token gated): every charge across all customers with date,
+email, amount, refund, status, card last-4, and receipt link, plus totals (gross received,
+refunded, net kept). Honest empty state with configured:false until STRIPE_SECRET_KEY is
+set. Covered by tests/worker/finance.test.mjs.
+
 ## Owner analytics dashboard
 
 The Admin (Command Center) view shows the numbers that tell you if the business is
@@ -211,6 +236,18 @@ once per day, and the dashboard renders signups today, signups this week, week-o
 growth %, free→paid conversion %, active today, ARPU, and a 30-day signup sparkline.
 All growth counters are best-effort and never block signup/login. Needs the backend
 deployed + ADMIN_TOKEN; degrades to local metrics otherwise.
+
+## Bot protection on sign-in / sign-up
+
+Two layers stop bots from hammering auth:
+- Honeypot: a hidden form field real users never see. Bots fill it → rejected. Works
+  with ZERO config, active now.
+- Cloudflare Turnstile (free CAPTCHA): set TURNSTILE_SECRET (Worker secret) and
+  window.__AMV_TURNSTILE_SITE_KEY__ (client, injected at deploy). When set, signup and
+  password login require a valid token; the widget renders automatically. Until set, the
+  box stays hidden and auth relies on the honeypot + the existing brute-force throttle
+  (8 failed attempts / 15 min per email+IP). Get keys at Cloudflare dashboard → Turnstile.
+Covered by tests/worker/captcha.test.mjs.
 
 ## Auth & sessions (hardened + tested)
 

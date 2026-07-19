@@ -132,6 +132,8 @@ const AMV_API = {
     if(!this.live) return null;
     const o = opts||{};
     const body = { email, name:o.name||'', password:o.password||'', provider:o.provider||'email' };
+    if(o.company!=null) body.company = o.company;
+    if(o.captchaToken) body.captchaToken = o.captchaToken;
     const r = await this._fetch('/auth/login', {method:'POST', body:JSON.stringify(body)});
     const d = await r.json().catch(()=>({}));
     if(d.token){ this._setTokens(d); return d; }
@@ -202,9 +204,10 @@ const AMV_API = {
     try{ const r = await this._fetch('/sync/push', {method:'POST', body:JSON.stringify({data})}); const d = await r.json(); return !!(d&&d.ok); }
     catch(e){ return false; }
   },
-  async signup(email, name, password){
+  async signup(email, name, password, extra){
     if(!this.live) return null;
-    const r = await this._fetch('/auth/signup', {method:'POST', body:JSON.stringify({email,name,password})});
+    const body = {email,name,password, ...(extra||{})};
+    const r = await this._fetch('/auth/signup', {method:'POST', body:JSON.stringify(body)});
     const d = await r.json().catch(()=>({}));
     if(d.token){ this._setTokens(d); return d; }
     throw new Error(d.error || 'Signup failed');
@@ -319,7 +322,7 @@ function toast(msg, type='info', dur=3000) {
   setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 200); }, dur);
 }
 
-function closeOvr() { const r=$('ovr'); if(r) r.innerHTML=''; }
+function closeOvr() { const r=$('ovr'); if(r){ r.classList.remove('on'); r.innerHTML=''; } }
 
 /* Reusable polished empty state: icon + title + subtitle + optional action.
    emptyState({icon,title,sub,btn:{label,act,arg}}) -> HTML string */
@@ -1824,6 +1827,42 @@ function showAuthErr(msg, kind){
   e.classList.toggle('ae-ok', kind==='ok');
 }
 
+/* Mount the Cloudflare Turnstile CAPTCHA widget — ONLY when a site key is
+   configured at deploy (window.__AMV_TURNSTILE_SITE_KEY__). Until then the
+   container stays empty and auth relies on the honeypot + rate limits, so we
+   never show a broken/blank captcha box to real users. */
+function _mountTurnstile(){
+  const siteKey = (typeof window!=='undefined' && window.__AMV_TURNSTILE_SITE_KEY__) || '';
+  const box = document.getElementById('a-turnstile');
+  if(!box) return;
+  if(!siteKey){ box.style.display='none'; return; }   // not set up → hide the empty box
+  box.style.display='';
+  box.setAttribute('data-sitekey', siteKey);
+  const render = ()=>{ try{ if(window.turnstile && box && !box.dataset.rendered){ turnstile.render(box, { sitekey: siteKey }); box.dataset.rendered='1'; } }catch(e){} };
+  if(window.turnstile){ render(); return; }
+  // load the script once
+  if(!document.getElementById('cf-turnstile-js')){
+    const s=document.createElement('script');
+    s.id='cf-turnstile-js';
+    s.src='https://challenges.cloudflare.com/turnstile/v0/api.js';
+    s.async=true; s.defer=true;
+    s.onload=render;
+    document.head.appendChild(s);
+  } else {
+    setTimeout(render, 400);
+  }
+}
+try{ window._mountTurnstile=_mountTurnstile; }catch(e){}
+
+/* Collect the anti-bot fields from the auth form: the honeypot value (should be
+   empty for a human) and the Turnstile token if the widget rendered. */
+function _authBotFields(){
+  const out = {};
+  try{ const hp=$('a-company'); if(hp && hp.value) out.company = hp.value; }catch(e){}
+  try{ if(window.turnstile && typeof turnstile.getResponse==='function'){ const t=turnstile.getResponse(); if(t) out.captchaToken=t; } }catch(e){}
+  return out;
+}
+
 async function doSignupForm() {
   const nm=$('a-name')?.value.trim(), em=$('a-email')?.value.trim().toLowerCase(), pw=$('a-pass')?.value;
   if(!nm){showAuthErr('Please enter your full name.');return;}
@@ -1844,7 +1883,7 @@ async function doSignupForm() {
   // When a backend is connected, create a real SERVER account + session token.
   if(window.AMV_API && AMV_API.live){
     try{
-      const d=await AMV_API.signup(em, nm, pw);
+      const d=await AMV_API.signup(em, nm, pw, _authBotFields());
       if(d&&d.token){
         const ini=nm.split(' ').filter(Boolean).map(w=>w[0]).join('').toUpperCase().slice(0,2)||'??';
         // keep a local mirror so offline still recognizes the account
@@ -1859,7 +1898,7 @@ async function doSignupForm() {
         showAuthErr('You already have an account. Enter your password to sign in.');
         const pf=$('a-pass'); if(pf) pf.focus(); return;
       }
-      if(btn){b=btn;b.disabled=false;b.textContent='Create Free Account';}
+      if(btn){btn.disabled=false;btn.textContent='Create Free Account';}
       showAuthErr(e.message||'Could not create account.'); return;
     }
   }
@@ -2155,7 +2194,7 @@ async function doLoginForm() {
   // When a backend is connected, authenticate against the SERVER for a real session.
   if(window.AMV_API && AMV_API.live){
     try{
-      const d=await AMV_API.login(em, {password:pw, provider:'email'});
+      const d=await AMV_API.login(em, {password:pw, provider:'email', ..._authBotFields()});
       if(d&&d.token){
         clearFails(em);
         const nm=d.name||(findAccount(em)?.name)||em.split('@')[0];
@@ -2167,13 +2206,33 @@ async function doLoginForm() {
     }catch(e){
       logFail(em);
       if(btn){btn.disabled=false;btn.textContent='Sign In';}
-      const msg=/wrong password/i.test(e.message||'')?'Wrong password. Please try again.':(/no such|not found/i.test(e.message||'')?'No account found. Please sign up.':(e.message||'Sign in failed.'));
+      if(/no such|not found|404/i.test(e.message||'')){
+        // Account genuinely doesn't exist on the server — carry them into signup
+        // with the email filled, rather than leaving them stuck.
+        openAuth('signup');
+        const ef=$('a-email'); if(ef) ef.value=em;
+        const nf=$('a-name'); if(nf) nf.focus();
+        showAuthErr('No account found for '+em+'. Create one below.');
+        return;
+      }
+      const msg=/wrong password/i.test(e.message||'')?'Wrong password. Please try again.':(e.message||'Sign in failed.');
       showAuthErr(msg); const pf=$('a-pass'); if(pf){ pf.value=''; pf.focus(); }
       return;
     }
   }
   const exists=findAccount(em);
-  if(!exists){if(btn){btn.disabled=false;btn.textContent='Sign In';}showAuthErr('No account found. Please sign up.');return;}
+  if(!exists){
+    if(btn){btn.disabled=false;btn.textContent='Sign In';}
+    // Don't dead-end with a bare error. This is the "no account for my email"
+    // trap: the local record may be missing (cleared storage, different browser)
+    // even though they think they signed up. Switch them to signup with the
+    // email carried over, so one click gets them an account instead of confusion.
+    openAuth('signup');
+    const ef=$('a-email'); if(ef) ef.value=em;
+    const nf=$('a-name'); if(nf) nf.focus();
+    showAuthErr('No account found for '+em+'. Create one below — it only takes a moment.');
+    return;
+  }
   // Account exists but only ever used Google (no password) — point them to Google.
   if(!exists.pwHash){ if(btn){btn.disabled=false;btn.textContent='Sign In';} showAuthErr('This email uses Google sign-in. Tap \u201cContinue with Google\u201d above.'); return; }
   const acct=await verifyLogin(em,pw);
@@ -3056,6 +3115,10 @@ const I18N = {
   'Manage your profile and account information.':{es:'Gestiona tu perfil e informaci\u00f3n de cuenta.',zh:'\u7ba1\u7406\u60a8\u7684\u4e2a\u4eba\u8d44\u6599\u548c\u8d26\u6237\u4fe1\u606f\u3002',ar:'\u0623\u062f\u0631 \u0645\u0644\u0641\u0643 \u0627\u0644\u0634\u062e\u0635\u064a \u0648\u0645\u0639\u0644\u0648\u0645\u0627\u062a \u062d\u0633\u0627\u0628\u0643.',fr:'G\u00e9rez votre profil et vos informations.',de:'Verwalte dein Profil und deine Kontodaten.',hi:'\u0905\u092a\u0928\u0940 \u092a\u094d\u0930\u094b\u092b\u093c\u093e\u0907\u0932 \u092a\u094d\u0930\u092c\u0902\u0927\u093f\u0924 \u0915\u0930\u0947\u0902\u0964',pt:'Gerencie seu perfil e informa\u00e7\u00f5es da conta.',ja:'\u30d7\u30ed\u30d5\u30a3\u30fc\u30eb\u3068\u30a2\u30ab\u30a6\u30f3\u30c8\u60c5\u5831\u3092\u7ba1\u7406\u3002',ru:'\u0423\u043f\u0440\u0430\u0432\u043b\u044f\u0439\u0442\u0435 \u043f\u0440\u043e\u0444\u0438\u043b\u0435\u043c \u0438 \u0434\u0430\u043d\u043d\u044b\u043c\u0438 \u0430\u043a\u043a\u0430\u0443\u043d\u0442\u0430.'},
   'Manage your password and account security.':{es:'Gestiona tu contrase\u00f1a y seguridad.',zh:'\u7ba1\u7406\u60a8\u7684\u5bc6\u7801\u548c\u8d26\u6237\u5b89\u5168\u3002',ar:'\u0623\u062f\u0631 \u0643\u0644\u0645\u0629 \u0627\u0644\u0645\u0631\u0648\u0631 \u0648\u0623\u0645\u0627\u0646 \u062d\u0633\u0627\u0628\u0643.',fr:'G\u00e9rez votre mot de passe et s\u00e9curit\u00e9.',de:'Verwalte Passwort und Kontosicherheit.',hi:'\u0905\u092a\u0928\u093e \u092a\u093e\u0938\u0935\u0930\u094d\u0921 \u092a\u094d\u0930\u092c\u0902\u0927\u093f\u0924 \u0915\u0930\u0947\u0902\u0964',pt:'Gerencie sua senha e seguran\u00e7a.',ja:'\u30d1\u30b9\u30ef\u30fc\u30c9\u3068\u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u3092\u7ba1\u7406\u3002',ru:'\u0423\u043f\u0440\u0430\u0432\u043b\u044f\u0439\u0442\u0435 \u043f\u0430\u0440\u043e\u043b\u0435\u043c \u0438 \u0431\u0435\u0437\u043e\u043f\u0430\u0441\u043d\u043e\u0441\u0442\u044c\u044e.'},
 };
+
+/* Merge the comprehensive UI dictionary (all 19 languages) so the interface
+   translates fully without an API key. Existing richer entries win. */
+(function(){try{var __D={"Chat":{"es":"Chat","zh":"聊天","hi":"चैट","ar":"الدردشة","pt":"Conversa","fr":"Discussion","de":"Chat","ja":"チャット","ru":"Чат","id":"Obrolan","bn":"চ্যাট","ur":"چیٹ","tr":"Sohbet","vi":"Trò chuyện","it":"Chat","ko":"채팅","ta":"அரட்டை"},"Images":{"es":"Imágenes","zh":"图片","hi":"छवियाँ","ar":"الصور","pt":"Imagens","fr":"Images","de":"Bilder","ja":"画像","ru":"Изображения","id":"Gambar","bn":"ছবি","ur":"تصاویر","tr":"Görseller","vi":"Hình ảnh","it":"Immagini","ko":"이미지","ta":"படங்கள்"},"Video":{"es":"Vídeo","zh":"视频","hi":"वीडियो","ar":"الفيديو","pt":"Vídeo","fr":"Vidéo","de":"Video","ja":"動画","ru":"Видео","id":"Video","bn":"ভিডিও","ur":"ویڈیو","tr":"Video","vi":"Video","it":"Video","ko":"비디오","ta":"வீடியோ"},"Crew":{"es":"Equipo","zh":"团队","hi":"दल","ar":"الطاقم","pt":"Equipe","fr":"Équipe","de":"Team","ja":"クルー","ru":"Команда","id":"Kru","bn":"ক্রু","ur":"عملہ","tr":"Ekip","vi":"Nhóm","it":"Squadra","ko":"크루","ta":"குழு"},"Handoff":{"es":"Transferir","zh":"交接","hi":"सौंपना","ar":"التسليم","pt":"Transferir","fr":"Transfert","de":"Übergabe","ja":"引き継ぎ","ru":"Передача","id":"Serah","bn":"হস্তান্তর","ur":"حوالگی","tr":"Devir","vi":"Bàn giao","it":"Passaggio","ko":"핸드오프","ta":"ஒப்படைப்பு"},"Studio":{"es":"Estudio","zh":"工作室","hi":"स्टूडियो","ar":"الاستوديو","pt":"Estúdio","fr":"Studio","de":"Studio","ja":"スタジオ","ru":"Студия","id":"Studio","bn":"স্টুডিও","ur":"اسٹوڈیو","tr":"Stüdyo","vi":"Studio","it":"Studio","ko":"스튜디오","ta":"ஸ்டுடியோ"},"Dev":{"es":"Dev","zh":"开发","hi":"डेव","ar":"المطور","pt":"Dev","fr":"Dev","de":"Dev","ja":"開発","ru":"Разработка","id":"Dev","bn":"ডেভ","ur":"ڈیو","tr":"Dev","vi":"Dev","it":"Dev","ko":"개발","ta":"டெவ்"},"Lab":{"es":"Laboratorio","zh":"实验室","hi":"लैब","ar":"المختبر","pt":"Laboratório","fr":"Labo","de":"Labor","ja":"ラボ","ru":"Лаборатория","id":"Lab","bn":"ল্যাব","ur":"لیب","tr":"Lab","vi":"Phòng thí nghiệm","it":"Laboratorio","ko":"랩","ta":"ஆய்வகம்"},"Projects":{"es":"Proyectos","zh":"项目","hi":"परियोजनाएँ","ar":"المشاريع","pt":"Projetos","fr":"Projets","de":"Projekte","ja":"プロジェクト","ru":"Проекты","id":"Proyek","bn":"প্রকল্প","ur":"منصوبے","tr":"Projeler","vi":"Dự án","it":"Progetti","ko":"프로젝트","ta":"திட்டங்கள்"},"Memory":{"es":"Memoria","zh":"记忆","hi":"स्मृति","ar":"الذاكرة","pt":"Memória","fr":"Mémoire","de":"Speicher","ja":"メモリ","ru":"Память","id":"Memori","bn":"স্মৃতি","ur":"یادداشت","tr":"Bellek","vi":"Bộ nhớ","it":"Memoria","ko":"메모리","ta":"நினைவகம்"},"Tasks":{"es":"Tareas","zh":"任务","hi":"कार्य","ar":"المهام","pt":"Tarefas","fr":"Tâches","de":"Aufgaben","ja":"タスク","ru":"Задачи","id":"Tugas","bn":"কাজ","ur":"کام","tr":"Görevler","vi":"Nhiệm vụ","it":"Attività","ko":"작업","ta":"பணிகள்"},"Marketplace":{"es":"Mercado","zh":"市场","hi":"मार्केटप्लेस","ar":"السوق","pt":"Mercado","fr":"Marché","de":"Marktplatz","ja":"マーケット","ru":"Маркет","id":"Pasar","bn":"মার্কেটপ্লেস","ur":"مارکیٹ","tr":"Pazar","vi":"Chợ","it":"Mercato","ko":"마켓플레이스","ta":"சந்தை"},"Plans":{"es":"Planes","zh":"套餐","hi":"योजनाएँ","ar":"الخطط","pt":"Planos","fr":"Forfaits","de":"Tarife","ja":"プラン","ru":"Тарифы","id":"Paket","bn":"প্ল্যান","ur":"منصوبے","tr":"Planlar","vi":"Gói","it":"Piani","ko":"요금제","ta":"திட்டங்கள்"},"Create":{"es":"Crear","zh":"创作","hi":"बनाएँ","ar":"إنشاء","pt":"Criar","fr":"Créer","de":"Erstellen","ja":"作成","ru":"Создать","id":"Buat","bn":"তৈরি করুন","ur":"بنائیں","tr":"Oluştur","vi":"Tạo","it":"Crea","ko":"만들기","ta":"உருவாக்கு"},"Agents":{"es":"Agentes","zh":"智能体","hi":"एजेंट","ar":"الوكلاء","pt":"Agentes","fr":"Agents","de":"Agenten","ja":"エージェント","ru":"Агенты","id":"Agen","bn":"এজেন্ট","ur":"ایجنٹس","tr":"Ajanlar","vi":"Tác nhân","it":"Agenti","ko":"에이전트","ta":"முகவர்கள்"},"Build":{"es":"Construir","zh":"构建","hi":"निर्माण","ar":"بناء","pt":"Construir","fr":"Construire","de":"Erstellen","ja":"ビルド","ru":"Сборка","id":"Bangun","bn":"নির্মাণ","ur":"تعمیر","tr":"Oluştur","vi":"Xây dựng","it":"Costruisci","ko":"빌드","ta":"உருவாக்கு"},"Workspace":{"es":"Espacio","zh":"工作区","hi":"कार्यस्थान","ar":"مساحة العمل","pt":"Espaço","fr":"Espace","de":"Arbeitsbereich","ja":"ワークスペース","ru":"Рабочая область","id":"Ruang kerja","bn":"কর্মক্ষেত্র","ur":"ورک اسپیس","tr":"Çalışma alanı","vi":"Không gian làm việc","it":"Area di lavoro","ko":"작업 공간","ta":"பணியிடம்"},"Recents":{"es":"Recientes","zh":"最近","hi":"हाल के","ar":"الأخيرة","pt":"Recentes","fr":"Récents","de":"Kürzlich","ja":"最近","ru":"Недавние","id":"Terbaru","bn":"সাম্প্রতিক","ur":"حالیہ","tr":"Son kullanılanlar","vi":"Gần đây","it":"Recenti","ko":"최근","ta":"சமீபத்தியவை"},"General":{"es":"General","zh":"通用","hi":"सामान्य","ar":"عام","pt":"Geral","fr":"Général","de":"Allgemein","ja":"一般","ru":"Общие","id":"Umum","bn":"সাধারণ","ur":"عام","tr":"Genel","vi":"Chung","it":"Generale","ko":"일반","ta":"பொது"},"Customize":{"es":"Personalizar","zh":"自定义","hi":"अनुकूलित","ar":"تخصيص","pt":"Personalizar","fr":"Personnaliser","de":"Anpassen","ja":"カスタマイズ","ru":"Настроить","id":"Sesuaikan","bn":"কাস্টমাইজ","ur":"حسب ضرورت","tr":"Özelleştir","vi":"Tùy chỉnh","it":"Personalizza","ko":"맞춤 설정","ta":"தனிப்பயனாக்கு"},"New chat":{"es":"Nueva conversación","zh":"新对话","hi":"नई चैट","ar":"محادثة جديدة","pt":"Nova conversa","fr":"Nouvelle discussion","de":"Neuer Chat","ja":"新しいチャット","ru":"Новый чат","id":"Obrolan baru","bn":"নতুন চ্যাট","ur":"نئی چیٹ","tr":"Yeni sohbet","vi":"Trò chuyện mới","it":"Nuova chat","ko":"새 채팅","ta":"புதிய அரட்டை"},"New project":{"es":"Nuevo proyecto","zh":"新项目","hi":"नई परियोजना","ar":"مشروع جديد","pt":"Novo projeto","fr":"Nouveau projet","de":"Neues Projekt","ja":"新規プロジェクト","ru":"Новый проект","id":"Proyek baru","bn":"নতুন প্রকল্প","ur":"نیا منصوبہ","tr":"Yeni proje","vi":"Dự án mới","it":"Nuovo progetto","ko":"새 프로젝트","ta":"புதிய திட்டம்"},"New session":{"es":"Nueva sesión","zh":"新会话","hi":"नया सत्र","ar":"جلسة جديدة","pt":"Nova sessão","fr":"Nouvelle session","de":"Neue Sitzung","ja":"新しいセッション","ru":"Новая сессия","id":"Sesi baru","bn":"নতুন সেশন","ur":"نیا سیشن","tr":"Yeni oturum","vi":"Phiên mới","it":"Nuova sessione","ko":"새 세션","ta":"புதிய அமர்வு"},"Generate":{"es":"Generar","zh":"生成","hi":"उत्पन्न करें","ar":"إنشاء","pt":"Gerar","fr":"Générer","de":"Generieren","ja":"生成","ru":"Создать","id":"Hasilkan","bn":"তৈরি করুন","ur":"بنائیں","tr":"Oluştur","vi":"Tạo","it":"Genera","ko":"생성","ta":"உருவாக்கு"},"Send":{"es":"Enviar","zh":"发送","hi":"भेजें","ar":"إرسال","pt":"Enviar","fr":"Envoyer","de":"Senden","ja":"送信","ru":"Отправить","id":"Kirim","bn":"পাঠান","ur":"بھیجیں","tr":"Gönder","vi":"Gửi","it":"Invia","ko":"보내기","ta":"அனுப்பு"},"Send message":{"es":"Enviar mensaje","zh":"发送消息","hi":"संदेश भेजें","ar":"إرسال رسالة","pt":"Enviar mensagem","fr":"Envoyer le message","de":"Nachricht senden","ja":"メッセージを送信","ru":"Отправить сообщение","id":"Kirim pesan","bn":"বার্তা পাঠান","ur":"پیغام بھیجیں","tr":"Mesaj gönder","vi":"Gửi tin nhắn","it":"Invia messaggio","ko":"메시지 보내기","ta":"செய்தி அனுப்பு"},"Run":{"es":"Ejecutar","zh":"运行","hi":"चलाएँ","ar":"تشغيل","pt":"Executar","fr":"Exécuter","de":"Ausführen","ja":"実行","ru":"Запустить","id":"Jalankan","bn":"চালান","ur":"چلائیں","tr":"Çalıştır","vi":"Chạy","it":"Esegui","ko":"실행","ta":"இயக்கு"},"Write":{"es":"Escribir","zh":"写作","hi":"लिखें","ar":"كتابة","pt":"Escrever","fr":"Écrire","de":"Schreiben","ja":"書く","ru":"Написать","id":"Tulis","bn":"লিখুন","ur":"لکھیں","tr":"Yaz","vi":"Viết","it":"Scrivi","ko":"작성","ta":"எழுது"},"Browse":{"es":"Explorar","zh":"浏览","hi":"ब्राउज़ करें","ar":"تصفح","pt":"Navegar","fr":"Parcourir","de":"Durchsuchen","ja":"閲覧","ru":"Обзор","id":"Jelajahi","bn":"ব্রাউজ করুন","ur":"براؤز کریں","tr":"Gözat","vi":"Duyệt","it":"Sfoglia","ko":"둘러보기","ta":"உலாவு"},"Sell":{"es":"Vender","zh":"出售","hi":"बेचें","ar":"بيع","pt":"Vender","fr":"Vendre","de":"Verkaufen","ja":"販売","ru":"Продать","id":"Jual","bn":"বিক্রি","ur":"بیچیں","tr":"Sat","vi":"Bán","it":"Vendi","ko":"판매","ta":"விற்பனை"},"Connect":{"es":"Conectar","zh":"连接","hi":"कनेक्ट करें","ar":"ربط","pt":"Conectar","fr":"Connecter","de":"Verbinden","ja":"接続","ru":"Подключить","id":"Hubungkan","bn":"সংযোগ করুন","ur":"جوڑیں","tr":"Bağlan","vi":"Kết nối","it":"Connetti","ko":"연결","ta":"இணை"},"Manage":{"es":"Gestionar","zh":"管理","hi":"प्रबंधित करें","ar":"إدارة","pt":"Gerenciar","fr":"Gérer","de":"Verwalten","ja":"管理","ru":"Управлять","id":"Kelola","bn":"পরিচালনা","ur":"نظم کریں","tr":"Yönet","vi":"Quản lý","it":"Gestisci","ko":"관리","ta":"நிர்வகி"},"Automate":{"es":"Automatizar","zh":"自动化","hi":"स्वचालित करें","ar":"أتمتة","pt":"Automatizar","fr":"Automatiser","de":"Automatisieren","ja":"自動化","ru":"Автоматизировать","id":"Otomatiskan","bn":"স্বয়ংক্রিয়","ur":"خودکار","tr":"Otomatikleştir","vi":"Tự động hóa","it":"Automatizza","ko":"자동화","ta":"தானியக்கம்"},"Save changes":{"es":"Guardar cambios","zh":"保存更改","hi":"परिवर्तन सहेजें","ar":"حفظ التغييرات","pt":"Salvar alterações","fr":"Enregistrer","de":"Änderungen speichern","ja":"変更を保存","ru":"Сохранить","id":"Simpan perubahan","bn":"পরিবর্তন সংরক্ষণ","ur":"تبدیلیاں محفوظ کریں","tr":"Değişiklikleri kaydet","vi":"Lưu thay đổi","it":"Salva modifiche","ko":"변경 사항 저장","ta":"மாற்றங்களைச் சேமி"},"Close":{"es":"Cerrar","zh":"关闭","hi":"बंद करें","ar":"إغلاق","pt":"Fechar","fr":"Fermer","de":"Schließen","ja":"閉じる","ru":"Закрыть","id":"Tutup","bn":"বন্ধ করুন","ur":"بند کریں","tr":"Kapat","vi":"Đóng","it":"Chiudi","ko":"닫기","ta":"மூடு"},"More":{"es":"Más","zh":"更多","hi":"और","ar":"المزيد","pt":"Mais","fr":"Plus","de":"Mehr","ja":"もっと","ru":"Ещё","id":"Lainnya","bn":"আরও","ur":"مزید","tr":"Daha fazla","vi":"Thêm","it":"Altro","ko":"더 보기","ta":"மேலும்"},"All":{"es":"Todos","zh":"全部","hi":"सभी","ar":"الكل","pt":"Todos","fr":"Tous","de":"Alle","ja":"すべて","ru":"Все","id":"Semua","bn":"সব","ur":"سب","tr":"Tümü","vi":"Tất cả","it":"Tutti","ko":"전체","ta":"அனைத்தும்"},"Attach file":{"es":"Adjuntar archivo","zh":"附加文件","hi":"फ़ाइल संलग्न करें","ar":"إرفاق ملف","pt":"Anexar arquivo","fr":"Joindre un fichier","de":"Datei anhängen","ja":"ファイルを添付","ru":"Прикрепить файл","id":"Lampirkan file","bn":"ফাইল সংযুক্ত করুন","ur":"فائل منسلک کریں","tr":"Dosya ekle","vi":"Đính kèm tệp","it":"Allega file","ko":"파일 첨부","ta":"கோப்பை இணை"},"Voice input":{"es":"Entrada de voz","zh":"语音输入","hi":"आवाज़ इनपुट","ar":"إدخال صوتي","pt":"Entrada de voz","fr":"Entrée vocale","de":"Spracheingabe","ja":"音声入力","ru":"Голосовой ввод","id":"Input suara","bn":"ভয়েস ইনপুট","ur":"صوتی ان پٹ","tr":"Sesli giriş","vi":"Nhập bằng giọng nói","it":"Input vocale","ko":"음성 입력","ta":"குரல் உள்ளீடு"},"Web search":{"es":"Búsqueda web","zh":"网页搜索","hi":"वेब खोज","ar":"بحث الويب","pt":"Busca na web","fr":"Recherche web","de":"Websuche","ja":"ウェブ検索","ru":"Веб-поиск","id":"Pencarian web","bn":"ওয়েব অনুসন্ধান","ur":"ویب تلاش","tr":"Web araması","vi":"Tìm kiếm web","it":"Ricerca web","ko":"웹 검색","ta":"வலைத் தேடல்"},"Settings":{"es":"Ajustes","zh":"设置","hi":"सेटिंग्स","ar":"الإعدادات","pt":"Configurações","fr":"Paramètres","de":"Einstellungen","ja":"設定","ru":"Настройки","id":"Pengaturan","bn":"সেটিংস","ur":"ترتیبات","tr":"Ayarlar","vi":"Cài đặt","it":"Impostazioni","ko":"설정","ta":"அமைப்புகள்"},"Account":{"es":"Cuenta","zh":"账户","hi":"खाता","ar":"الحساب","pt":"Conta","fr":"Compte","de":"Konto","ja":"アカウント","ru":"Аккаунт","id":"Akun","bn":"অ্যাকাউন্ট","ur":"اکاؤنٹ","tr":"Hesap","vi":"Tài khoản","it":"Account","ko":"계정","ta":"கணக்கு"},"Privacy":{"es":"Privacidad","zh":"隐私","hi":"गोपनीयता","ar":"الخصوصية","pt":"Privacidade","fr":"Confidentialité","de":"Datenschutz","ja":"プライバシー","ru":"Конфиденциальность","id":"Privasi","bn":"গোপনীয়তা","ur":"رازداری","tr":"Gizlilik","vi":"Quyền riêng tư","it":"Privacy","ko":"개인정보","ta":"தனியுரிமை"},"Security":{"es":"Seguridad","zh":"安全","hi":"सुरक्षा","ar":"الأمان","pt":"Segurança","fr":"Sécurité","de":"Sicherheit","ja":"セキュリティ","ru":"Безопасность","id":"Keamanan","bn":"নিরাপত্তা","ur":"سیکیورٹی","tr":"Güvenlik","vi":"Bảo mật","it":"Sicurezza","ko":"보안","ta":"பாதுகாப்பு"},"Billing":{"es":"Facturación","zh":"账单","hi":"बिलिंग","ar":"الفوترة","pt":"Faturamento","fr":"Facturation","de":"Abrechnung","ja":"請求","ru":"Оплата","id":"Penagihan","bn":"বিলিং","ur":"بلنگ","tr":"Faturalandırma","vi":"Thanh toán","it":"Fatturazione","ko":"결제","ta":"பில்லிங்"},"Usage":{"es":"Uso","zh":"用量","hi":"उपयोग","ar":"الاستخدام","pt":"Uso","fr":"Utilisation","de":"Nutzung","ja":"使用状況","ru":"Использование","id":"Penggunaan","bn":"ব্যবহার","ur":"استعمال","tr":"Kullanım","vi":"Sử dụng","it":"Utilizzo","ko":"사용량","ta":"பயன்பாடு"},"Capabilities":{"es":"Capacidades","zh":"功能","hi":"क्षमताएँ","ar":"القدرات","pt":"Recursos","fr":"Capacités","de":"Funktionen","ja":"機能","ru":"Возможности","id":"Kemampuan","bn":"সক্ষমতা","ur":"صلاحیتیں","tr":"Yetenekler","vi":"Khả năng","it":"Funzionalità","ko":"기능","ta":"திறன்கள்"},"Appearance":{"es":"Apariencia","zh":"外观","hi":"दिखावट","ar":"المظهر","pt":"Aparência","fr":"Apparence","de":"Erscheinungsbild","ja":"外観","ru":"Внешний вид","id":"Tampilan","bn":"চেহারা","ur":"ظاہری شکل","tr":"Görünüm","vi":"Giao diện","it":"Aspetto","ko":"모양","ta":"தோற்றம்"},"Language":{"es":"Idioma","zh":"语言","hi":"भाषा","ar":"اللغة","pt":"Idioma","fr":"Langue","de":"Sprache","ja":"言語","ru":"Язык","id":"Bahasa","bn":"ভাষা","ur":"زبان","tr":"Dil","vi":"Ngôn ngữ","it":"Lingua","ko":"언어","ta":"மொழி"},"Skills":{"es":"Habilidades","zh":"技能","hi":"कौशल","ar":"المهارات","pt":"Habilidades","fr":"Compétences","de":"Fähigkeiten","ja":"スキル","ru":"Навыки","id":"Keterampilan","bn":"দক্ষতা","ur":"مہارتیں","tr":"Beceriler","vi":"Kỹ năng","it":"Competenze","ko":"스킬","ta":"திறன்கள்"},"Connectors":{"es":"Conectores","zh":"连接器","hi":"कनेक्टर","ar":"الموصلات","pt":"Conectores","fr":"Connecteurs","de":"Konnektoren","ja":"コネクタ","ru":"Коннекторы","id":"Konektor","bn":"কানেক্টর","ur":"کنیکٹرز","tr":"Bağlayıcılar","vi":"Trình kết nối","it":"Connettori","ko":"커넥터","ta":"இணைப்பிகள்"},"Integrations":{"es":"Integraciones","zh":"集成","hi":"एकीकरण","ar":"التكاملات","pt":"Integrações","fr":"Intégrations","de":"Integrationen","ja":"連携","ru":"Интеграции","id":"Integrasi","bn":"ইন্টিগ্রেশন","ur":"انضمام","tr":"Entegrasyonlar","vi":"Tích hợp","it":"Integrazioni","ko":"통합","ta":"ஒருங்கிணைப்புகள்"},"About":{"es":"Acerca de","zh":"关于","hi":"के बारे में","ar":"حول","pt":"Sobre","fr":"À propos","de":"Über","ja":"概要","ru":"О программе","id":"Tentang","bn":"সম্পর্কে","ur":"بارے میں","tr":"Hakkında","vi":"Giới thiệu","it":"Informazioni","ko":"정보","ta":"பற்றி"},"Preferences":{"es":"Preferencias","zh":"偏好","hi":"प्राथमिकताएँ","ar":"التفضيلات","pt":"Preferências","fr":"Préférences","de":"Einstellungen","ja":"設定","ru":"Настройки","id":"Preferensi","bn":"পছন্দসমূহ","ur":"ترجیحات","tr":"Tercihler","vi":"Tùy chọn","it":"Preferenze","ko":"환경설정","ta":"விருப்பங்கள்"},"Full name":{"es":"Nombre completo","zh":"全名","hi":"पूरा नाम","ar":"الاسم الكامل","pt":"Nome completo","fr":"Nom complet","de":"Vollständiger Name","ja":"氏名","ru":"Полное имя","id":"Nama lengkap","bn":"পুরো নাম","ur":"پورا نام","tr":"Ad soyad","vi":"Họ và tên","it":"Nome completo","ko":"전체 이름","ta":"முழு பெயர்"},"Nickname":{"es":"Apodo","zh":"昵称","hi":"उपनाम","ar":"الكنية","pt":"Apelido","fr":"Surnom","de":"Spitzname","ja":"ニックネーム","ru":"Псевдоним","id":"Nama panggilan","bn":"ডাকনাম","ur":"عرفیت","tr":"Takma ad","vi":"Biệt danh","it":"Soprannome","ko":"닉네임","ta":"புனைப்பெயர்"},"Password":{"es":"Contraseña","zh":"密码","hi":"पासवर्ड","ar":"كلمة المرور","pt":"Senha","fr":"Mot de passe","de":"Passwort","ja":"パスワード","ru":"Пароль","id":"Kata sandi","bn":"পাসওয়ার্ড","ur":"پاس ورڈ","tr":"Şifre","vi":"Mật khẩu","it":"Password","ko":"비밀번호","ta":"கடவுச்சொல்"},"Sign out":{"es":"Cerrar sesión","zh":"退出","hi":"साइन आउट","ar":"تسجيل الخروج","pt":"Sair","fr":"Se déconnecter","de":"Abmelden","ja":"サインアウト","ru":"Выйти","id":"Keluar","bn":"সাইন আউট","ur":"سائن آؤٹ","tr":"Çıkış yap","vi":"Đăng xuất","it":"Esci","ko":"로그아웃","ta":"வெளியேறு"},"Sign Out":{"es":"Cerrar sesión","zh":"退出","hi":"साइन आउट","ar":"تسجيل الخروج","pt":"Sair","fr":"Se déconnecter","de":"Abmelden","ja":"サインアウト","ru":"Выйти","id":"Keluar","bn":"সাইন আউট","ur":"سائن آؤٹ","tr":"Çıkış yap","vi":"Đăng xuất","it":"Esci","ko":"로그아웃","ta":"வெளியேறு"},"Switch Account":{"es":"Cambiar cuenta","zh":"切换账户","hi":"खाता बदलें","ar":"تبديل الحساب","pt":"Trocar conta","fr":"Changer de compte","de":"Konto wechseln","ja":"アカウント切替","ru":"Сменить аккаунт","id":"Ganti akun","bn":"অ্যাকাউন্ট পরিবর্তন","ur":"اکاؤنٹ بدلیں","tr":"Hesap değiştir","vi":"Đổi tài khoản","it":"Cambia account","ko":"계정 전환","ta":"கணக்கை மாற்று"},"Export data":{"es":"Exportar datos","zh":"导出数据","hi":"डेटा निर्यात करें","ar":"تصدير البيانات","pt":"Exportar dados","fr":"Exporter les données","de":"Daten exportieren","ja":"データをエクスポート","ru":"Экспорт данных","id":"Ekspor data","bn":"ডেটা রপ্তানি","ur":"ڈیٹا برآمد کریں","tr":"Verileri dışa aktar","vi":"Xuất dữ liệu","it":"Esporta dati","ko":"데이터 내보내기","ta":"தரவை ஏற்றுமதி செய்"},"Delete everything":{"es":"Eliminar todo","zh":"删除全部","hi":"सब कुछ हटाएँ","ar":"حذف كل شيء","pt":"Excluir tudo","fr":"Tout supprimer","de":"Alles löschen","ja":"すべて削除","ru":"Удалить всё","id":"Hapus semua","bn":"সবকিছু মুছুন","ur":"سب کچھ حذف کریں","tr":"Her şeyi sil","vi":"Xóa mọi thứ","it":"Elimina tutto","ko":"모두 삭제","ta":"அனைத்தையும் நீக்கு"},"Theme":{"es":"Tema","zh":"主题","hi":"थीम","ar":"السمة","pt":"Tema","fr":"Thème","de":"Design","ja":"テーマ","ru":"Тема","id":"Tema","bn":"থিম","ur":"تھیم","tr":"Tema","vi":"Chủ đề","it":"Tema","ko":"테마","ta":"தீம்"},"Dark":{"es":"Oscuro","zh":"深色","hi":"गहरा","ar":"داكن","pt":"Escuro","fr":"Sombre","de":"Dunkel","ja":"ダーク","ru":"Тёмная","id":"Gelap","bn":"ডার্ক","ur":"گہرا","tr":"Koyu","vi":"Tối","it":"Scuro","ko":"다크","ta":"இருள்"},"Dark Mode":{"es":"Modo oscuro","zh":"深色模式","hi":"डार्क मोड","ar":"الوضع الداكن","pt":"Modo escuro","fr":"Mode sombre","de":"Dunkelmodus","ja":"ダークモード","ru":"Тёмный режим","id":"Mode gelap","bn":"ডার্ক মোড","ur":"ڈارک موڈ","tr":"Koyu mod","vi":"Chế độ tối","it":"Modalità scura","ko":"다크 모드","ta":"இருள் பயன்முறை"},"Font size":{"es":"Tamaño de fuente","zh":"字体大小","hi":"फ़ॉन्ट आकार","ar":"حجم الخط","pt":"Tamanho da fonte","fr":"Taille de police","de":"Schriftgröße","ja":"文字サイズ","ru":"Размер шрифта","id":"Ukuran font","bn":"ফন্ট আকার","ur":"فونٹ سائز","tr":"Yazı tipi boyutu","vi":"Cỡ chữ","it":"Dimensione carattere","ko":"글꼴 크기","ta":"எழுத்துரு அளவு"},"Accent color":{"es":"Color de acento","zh":"强调色","hi":"एक्सेंट रंग","ar":"لون التمييز","pt":"Cor de destaque","fr":"Couleur d’accent","de":"Akzentfarbe","ja":"アクセント色","ru":"Акцентный цвет","id":"Warna aksen","bn":"অ্যাকসেন্ট রঙ","ur":"ایکسنٹ رنگ","tr":"Vurgu rengi","vi":"Màu nhấn","it":"Colore accento","ko":"강조 색상","ta":"முனைப்பு நிறம்"},"Small":{"es":"Pequeño","zh":"小","hi":"छोटा","ar":"صغير","pt":"Pequeno","fr":"Petit","de":"Klein","ja":"小","ru":"Маленький","id":"Kecil","bn":"ছোট","ur":"چھوٹا","tr":"Küçük","vi":"Nhỏ","it":"Piccolo","ko":"작게","ta":"சிறியது"},"Normal":{"es":"Normal","zh":"正常","hi":"सामान्य","ar":"عادي","pt":"Normal","fr":"Normal","de":"Normal","ja":"標準","ru":"Обычный","id":"Normal","bn":"স্বাভাবিক","ur":"عام","tr":"Normal","vi":"Bình thường","it":"Normale","ko":"보통","ta":"இயல்பு"},"Large":{"es":"Grande","zh":"大","hi":"बड़ा","ar":"كبير","pt":"Grande","fr":"Grand","de":"Groß","ja":"大","ru":"Большой","id":"Besar","bn":"বড়","ur":"بڑا","tr":"Büyük","vi":"Lớn","it":"Grande","ko":"크게","ta":"பெரியது"},"Free":{"es":"Gratis","zh":"免费","hi":"मुफ़्त","ar":"مجاني","pt":"Grátis","fr":"Gratuit","de":"Kostenlos","ja":"無料","ru":"Бесплатно","id":"Gratis","bn":"ফ্রি","ur":"مفت","tr":"Ücretsiz","vi":"Miễn phí","it":"Gratis","ko":"무료","ta":"இலவசம்"},"Pro":{"es":"Pro","zh":"专业版","hi":"प्रो","ar":"برو","pt":"Pro","fr":"Pro","de":"Pro","ja":"プロ","ru":"Про","id":"Pro","bn":"প্রো","ur":"پرو","tr":"Pro","vi":"Pro","it":"Pro","ko":"프로","ta":"புரோ"},"Elite":{"es":"Élite","zh":"精英版","hi":"एलीट","ar":"النخبة","pt":"Elite","fr":"Élite","de":"Elite","ja":"エリート","ru":"Элит","id":"Elite","bn":"এলিট","ur":"ایلیٹ","tr":"Elit","vi":"Ưu tú","it":"Elite","ko":"엘리트","ta":"எலைட்"},"Ultra":{"es":"Ultra","zh":"旗舰版","hi":"अल्ट्रा","ar":"ألترا","pt":"Ultra","fr":"Ultra","de":"Ultra","ja":"ウルトラ","ru":"Ультра","id":"Ultra","bn":"আল্ট্রা","ur":"الٹرا","tr":"Ultra","vi":"Ultra","it":"Ultra","ko":"울트라","ta":"அல்ட்ரா"},"Custom":{"es":"Personalizado","zh":"定制","hi":"कस्टम","ar":"مخصص","pt":"Personalizado","fr":"Personnalisé","de":"Individuell","ja":"カスタム","ru":"Свой","id":"Kustom","bn":"কাস্টম","ur":"حسب ضرورت","tr":"Özel","vi":"Tùy chỉnh","it":"Personalizzato","ko":"맞춤","ta":"தனிப்பயன்"},"Most Popular":{"es":"Más popular","zh":"最受欢迎","hi":"सबसे लोकप्रिय","ar":"الأكثر شيوعاً","pt":"Mais popular","fr":"Le plus populaire","de":"Am beliebtesten","ja":"人気No.1","ru":"Популярный","id":"Terpopuler","bn":"সবচেয়ে জনপ্রিয়","ur":"سب سے مقبول","tr":"En popüler","vi":"Phổ biến nhất","it":"Più popolare","ko":"가장 인기","ta":"மிகவும் பிரபலம்"},"Most popular":{"es":"Más popular","zh":"最受欢迎","hi":"सबसे लोकप्रिय","ar":"الأكثر شيوعاً","pt":"Mais popular","fr":"Le plus populaire","de":"Am beliebtesten","ja":"人気No.1","ru":"Популярный","id":"Terpopuler","bn":"সবচেয়ে জনপ্রিয়","ur":"سب سے مقبول","tr":"En popüler","vi":"Phổ biến nhất","it":"Più popolare","ko":"가장 인기","ta":"மிகவும் பிரபலம்"},"Best Value":{"es":"Mejor valor","zh":"超值之选","hi":"सर्वोत्तम मूल्य","ar":"أفضل قيمة","pt":"Melhor valor","fr":"Meilleur rapport","de":"Bestes Angebot","ja":"お買い得","ru":"Выгодно","id":"Nilai terbaik","bn":"সেরা মূল্য","ur":"بہترین قیمت","tr":"En iyi değer","vi":"Giá trị nhất","it":"Miglior valore","ko":"최고 가치","ta":"சிறந்த மதிப்பு"},"Current plan":{"es":"Plan actual","zh":"当前套餐","hi":"वर्तमान योजना","ar":"الخطة الحالية","pt":"Plano atual","fr":"Forfait actuel","de":"Aktueller Tarif","ja":"現在のプラン","ru":"Текущий тариф","id":"Paket saat ini","bn":"বর্তমান প্ল্যান","ur":"موجودہ منصوبہ","tr":"Mevcut plan","vi":"Gói hiện tại","it":"Piano attuale","ko":"현재 요금제","ta":"தற்போதைய திட்டம்"},"Subscription":{"es":"Suscripción","zh":"订阅","hi":"सदस्यता","ar":"الاشتراك","pt":"Assinatura","fr":"Abonnement","de":"Abonnement","ja":"サブスク","ru":"Подписка","id":"Langganan","bn":"সাবস্ক্রিপশন","ur":"سبسکرپشن","tr":"Abonelik","vi":"Đăng ký","it":"Abbonamento","ko":"구독","ta":"சந்தா"},"Current usage":{"es":"Uso actual","zh":"当前用量","hi":"वर्तमान उपयोग","ar":"الاستخدام الحالي","pt":"Uso atual","fr":"Utilisation actuelle","de":"Aktuelle Nutzung","ja":"現在の使用量","ru":"Текущее использование","id":"Penggunaan saat ini","bn":"বর্তমান ব্যবহার","ur":"موجودہ استعمال","tr":"Mevcut kullanım","vi":"Sử dụng hiện tại","it":"Utilizzo attuale","ko":"현재 사용량","ta":"தற்போதைய பயன்பாடு"},"System status":{"es":"Estado del sistema","zh":"系统状态","hi":"सिस्टम स्थिति","ar":"حالة النظام","pt":"Status do sistema","fr":"État du système","de":"Systemstatus","ja":"システム状態","ru":"Статус системы","id":"Status sistem","bn":"সিস্টেম স্ট্যাটাস","ur":"سسٹم اسٹیٹس","tr":"Sistem durumu","vi":"Trạng thái hệ thống","it":"Stato del sistema","ko":"시스템 상태","ta":"கணினி நிலை"},"Keyboard shortcuts":{"es":"Atajos de teclado","zh":"键盘快捷键","hi":"कीबोर्ड शॉर्टकट","ar":"اختصارات لوحة المفاتيح","pt":"Atalhos de teclado","fr":"Raccourcis clavier","de":"Tastenkürzel","ja":"キーボードショートカット","ru":"Горячие клавиши","id":"Pintasan keyboard","bn":"কীবোর্ড শর্টকাট","ur":"کی بورڈ شارٹ کٹس","tr":"Klavye kısayolları","vi":"Phím tắt","it":"Scorciatoie da tastiera","ko":"키보드 단축키","ta":"விசைப்பலகை குறுக்குவழிகள்"},"Keyboard Shortcuts":{"es":"Atajos de teclado","zh":"键盘快捷键","hi":"कीबोर्ड शॉर्टकट","ar":"اختصارات لوحة المفاتيح","pt":"Atalhos de teclado","fr":"Raccourcis clavier","de":"Tastenkürzel","ja":"キーボードショートカット","ru":"Горячие клавиши","id":"Pintasan keyboard","bn":"কীবোর্ড শর্টকাট","ur":"کی بورڈ شارٹ کٹس","tr":"Klavye kısayolları","vi":"Phím tắt","it":"Scorciatoie da tastiera","ko":"키보드 단축키","ta":"விசைப்பலகை குறுக்குவழிகள்"},"New line":{"es":"Nueva línea","zh":"换行","hi":"नई पंक्ति","ar":"سطر جديد","pt":"Nova linha","fr":"Nouvelle ligne","de":"Neue Zeile","ja":"改行","ru":"Новая строка","id":"Baris baru","bn":"নতুন লাইন","ur":"نئی لائن","tr":"Yeni satır","vi":"Dòng mới","it":"Nuova riga","ko":"새 줄","ta":"புதிய வரி"},"Toggle sidebar":{"es":"Alternar barra lateral","zh":"切换侧栏","hi":"साइडबार टॉगल करें","ar":"تبديل الشريط الجانبي","pt":"Alternar barra lateral","fr":"Basculer la barre","de":"Seitenleiste umschalten","ja":"サイドバー切替","ru":"Боковая панель","id":"Alihkan bilah sisi","bn":"সাইডবার টগল","ur":"سائیڈبار ٹوگل","tr":"Kenar çubuğunu aç/kapat","vi":"Bật/tắt thanh bên","it":"Mostra/nascondi barra","ko":"사이드바 전환","ta":"பக்கப்பட்டியை மாற்று"},"What's New":{"es":"Novedades","zh":"新功能","hi":"नया क्या है","ar":"ما الجديد","pt":"Novidades","fr":"Nouveautés","de":"Neuigkeiten","ja":"新着情報","ru":"Что нового","id":"Yang baru","bn":"নতুন কী","ur":"نیا کیا ہے","tr":"Yenilikler","vi":"Có gì mới","it":"Novità","ko":"새로운 기능","ta":"புதியது என்ன"},"Page not found":{"es":"Página no encontrada","zh":"页面未找到","hi":"पृष्ठ नहीं मिला","ar":"الصفحة غير موجودة","pt":"Página não encontrada","fr":"Page introuvable","de":"Seite nicht gefunden","ja":"ページが見つかりません","ru":"Страница не найдена","id":"Halaman tidak ditemukan","bn":"পৃষ্ঠা পাওয়া যায়নি","ur":"صفحہ نہیں ملا","tr":"Sayfa bulunamadı","vi":"Không tìm thấy trang","it":"Pagina non trovata","ko":"페이지를 찾을 수 없음","ta":"பக்கம் கிடைக்கவில்லை"},"Help Center":{"es":"Centro de ayuda","zh":"帮助中心","hi":"सहायता केंद्र","ar":"مركز المساعدة","pt":"Central de ajuda","fr":"Centre d’aide","de":"Hilfecenter","ja":"ヘルプセンター","ru":"Центр помощи","id":"Pusat bantuan","bn":"সহায়তা কেন্দ্র","ur":"مدد مرکز","tr":"Yardım merkezi","vi":"Trung tâm trợ giúp","it":"Centro assistenza","ko":"도움말 센터","ta":"உதவி மையம்"},"Contact Support":{"es":"Contactar soporte","zh":"联系支持","hi":"सहायता से संपर्क करें","ar":"اتصل بالدعم","pt":"Contatar suporte","fr":"Contacter le support","de":"Support kontaktieren","ja":"サポートに連絡","ru":"Связаться с поддержкой","id":"Hubungi dukungan","bn":"সহায়তায় যোগাযোগ","ur":"سپورٹ سے رابطہ","tr":"Desteğe başvur","vi":"Liên hệ hỗ trợ","it":"Contatta assistenza","ko":"지원팀 문의","ta":"ஆதரவைத் தொடர்பு கொள்ளுங்கள்"},"Terms of Service":{"es":"Términos de servicio","zh":"服务条款","hi":"सेवा की शर्तें","ar":"شروط الخدمة","pt":"Termos de serviço","fr":"Conditions d’utilisation","de":"Nutzungsbedingungen","ja":"利用規約","ru":"Условия использования","id":"Ketentuan layanan","bn":"পরিষেবার শর্তাবলী","ur":"سروس کی شرائط","tr":"Hizmet şartları","vi":"Điều khoản dịch vụ","it":"Termini di servizio","ko":"서비스 약관","ta":"சேவை விதிமுறைகள்"},"Privacy Policy":{"es":"Política de privacidad","zh":"隐私政策","hi":"गोपनीयता नीति","ar":"سياسة الخصوصية","pt":"Política de privacidade","fr":"Politique de confidentialité","de":"Datenschutzrichtlinie","ja":"プライバシーポリシー","ru":"Политика конфиденциальности","id":"Kebijakan privasi","bn":"গোপনীয়তা নীতি","ur":"رازداری کی پالیسی","tr":"Gizlilik politikası","vi":"Chính sách bảo mật","it":"Informativa privacy","ko":"개인정보 처리방침","ta":"தனியுரிமைக் கொள்கை"},"Research":{"es":"Investigar","zh":"研究","hi":"अनुसंधान","ar":"بحث","pt":"Pesquisa","fr":"Recherche","de":"Recherche","ja":"リサーチ","ru":"Исследование","id":"Riset","bn":"গবেষণা","ur":"تحقیق","tr":"Araştırma","vi":"Nghiên cứu","it":"Ricerca","ko":"리서치","ta":"ஆராய்ச்சி"},"Code":{"es":"Código","zh":"代码","hi":"कोड","ar":"الكود","pt":"Código","fr":"Code","de":"Code","ja":"コード","ru":"Код","id":"Kode","bn":"কোড","ur":"کوڈ","tr":"Kod","vi":"Mã","it":"Codice","ko":"코드","ta":"குறியீடு"},"Files":{"es":"Archivos","zh":"文件","hi":"फ़ाइलें","ar":"الملفات","pt":"Arquivos","fr":"Fichiers","de":"Dateien","ja":"ファイル","ru":"Файлы","id":"File","bn":"ফাইল","ur":"فائلیں","tr":"Dosyalar","vi":"Tệp","it":"File","ko":"파일","ta":"கோப்புகள்"},"Style":{"es":"Estilo","zh":"风格","hi":"शैली","ar":"النمط","pt":"Estilo","fr":"Style","de":"Stil","ja":"スタイル","ru":"Стиль","id":"Gaya","bn":"স্টাইল","ur":"انداز","tr":"Stil","vi":"Phong cách","it":"Stile","ko":"스타일","ta":"பாணி"},"Duration":{"es":"Duración","zh":"时长","hi":"अवधि","ar":"المدة","pt":"Duração","fr":"Durée","de":"Dauer","ja":"長さ","ru":"Длительность","id":"Durasi","bn":"সময়কাল","ur":"دورانیہ","tr":"Süre","vi":"Thời lượng","it":"Durata","ko":"길이","ta":"கால அளவு"},"Output":{"es":"Salida","zh":"输出","hi":"आउटपुट","ar":"الناتج","pt":"Saída","fr":"Sortie","de":"Ausgabe","ja":"出力","ru":"Результат","id":"Keluaran","bn":"আউটপুট","ur":"آؤٹ پٹ","tr":"Çıktı","vi":"Đầu ra","it":"Output","ko":"출력","ta":"வெளியீடு"},"Preview":{"es":"Vista previa","zh":"预览","hi":"पूर्वावलोकन","ar":"معاينة","pt":"Prévia","fr":"Aperçu","de":"Vorschau","ja":"プレビュー","ru":"Просмотр","id":"Pratinjau","bn":"প্রিভিউ","ur":"پیش نظارہ","tr":"Önizleme","vi":"Xem trước","it":"Anteprima","ko":"미리보기","ta":"முன்னோட்டம்"},"Earnings":{"es":"Ganancias","zh":"收入","hi":"कमाई","ar":"الأرباح","pt":"Ganhos","fr":"Revenus","de":"Einnahmen","ja":"収益","ru":"Доход","id":"Penghasilan","bn":"আয়","ur":"کمائی","tr":"Kazançlar","vi":"Thu nhập","it":"Guadagni","ko":"수익","ta":"வருவாய்"},"Finance":{"es":"Finanzas","zh":"财务","hi":"वित्त","ar":"المالية","pt":"Finanças","fr":"Finances","de":"Finanzen","ja":"財務","ru":"Финансы","id":"Keuangan","bn":"অর্থ","ur":"مالیات","tr":"Finans","vi":"Tài chính","it":"Finanza","ko":"재무","ta":"நிதி"},"Dashboard":{"es":"Panel","zh":"仪表板","hi":"डैशबोर्ड","ar":"لوحة القيادة","pt":"Painel","fr":"Tableau de bord","de":"Übersicht","ja":"ダッシュボード","ru":"Панель","id":"Dasbor","bn":"ড্যাশবোর্ড","ur":"ڈیش بورڈ","tr":"Kontrol paneli","vi":"Bảng điều khiển","it":"Dashboard","ko":"대시보드","ta":"டாஷ்போர்டு"},"Messages":{"es":"Mensajes","zh":"消息","hi":"संदेश","ar":"الرسائل","pt":"Mensagens","fr":"Messages","de":"Nachrichten","ja":"メッセージ","ru":"Сообщения","id":"Pesan","bn":"বার্তা","ur":"پیغامات","tr":"Mesajlar","vi":"Tin nhắn","it":"Messaggi","ko":"메시지","ta":"செய்திகள்"},"Sessions":{"es":"Sesiones","zh":"会话","hi":"सत्र","ar":"الجلسات","pt":"Sessões","fr":"Sessions","de":"Sitzungen","ja":"セッション","ru":"Сессии","id":"Sesi","bn":"সেশন","ur":"سیشنز","tr":"Oturumlar","vi":"Phiên","it":"Sessioni","ko":"세션","ta":"அமர்வுகள்"},"Active":{"es":"Activo","zh":"活跃","hi":"सक्रिय","ar":"نشط","pt":"Ativo","fr":"Actif","de":"Aktiv","ja":"アクティブ","ru":"Активно","id":"Aktif","bn":"সক্রিয়","ur":"فعال","tr":"Aktif","vi":"Đang hoạt động","it":"Attivo","ko":"활성","ta":"செயலில்"},"Incoming":{"es":"Entrante","zh":"传入","hi":"आवक","ar":"وارد","pt":"Recebido","fr":"Entrant","de":"Eingehend","ja":"受信","ru":"Входящие","id":"Masuk","bn":"আগত","ur":"آنے والا","tr":"Gelen","vi":"Đến","it":"In arrivo","ko":"수신","ta":"உள்வரும்"},"Sent":{"es":"Enviado","zh":"已发送","hi":"भेजा गया","ar":"مرسل","pt":"Enviado","fr":"Envoyé","de":"Gesendet","ja":"送信済み","ru":"Отправлено","id":"Terkirim","bn":"পাঠানো হয়েছে","ur":"بھیجا گیا","tr":"Gönderildi","vi":"Đã gửi","it":"Inviato","ko":"전송됨","ta":"அனுப்பப்பட்டது"},"Newest":{"es":"Más reciente","zh":"最新","hi":"नवीनतम","ar":"الأحدث","pt":"Mais recente","fr":"Le plus récent","de":"Neueste","ja":"最新","ru":"Новейшие","id":"Terbaru","bn":"নতুনতম","ur":"تازہ ترین","tr":"En yeni","vi":"Mới nhất","it":"Più recente","ko":"최신","ta":"புதியது"},"Best rated":{"es":"Mejor valorado","zh":"评分最高","hi":"सर्वोत्तम रेटेड","ar":"الأعلى تقييماً","pt":"Melhor avaliado","fr":"Les mieux notés","de":"Bestbewertet","ja":"高評価","ru":"Лучшие","id":"Rating tertinggi","bn":"সেরা রেটেড","ur":"بہترین درجہ","tr":"En yüksek puanlı","vi":"Đánh giá cao nhất","it":"Più votati","ko":"평점 높은순","ta":"சிறந்த மதிப்பீடு"},"Top sellers":{"es":"Más vendidos","zh":"热销","hi":"शीर्ष विक्रेता","ar":"الأكثر مبيعاً","pt":"Mais vendidos","fr":"Meilleures ventes","de":"Bestseller","ja":"売れ筋","ru":"Хиты продаж","id":"Terlaris","bn":"সেরা বিক্রেতা","ur":"ٹاپ سیلرز","tr":"En çok satanlar","vi":"Bán chạy nhất","it":"Più venduti","ko":"베스트셀러","ta":"அதிக விற்பனை"},"My purchases":{"es":"Mis compras","zh":"我的购买","hi":"मेरी खरीदारी","ar":"مشترياتي","pt":"Minhas compras","fr":"Mes achats","de":"Meine Käufe","ja":"購入履歴","ru":"Мои покупки","id":"Pembelian saya","bn":"আমার কেনাকাটা","ur":"میری خریداری","tr":"Satın aldıklarım","vi":"Đơn mua của tôi","it":"I miei acquisti","ko":"내 구매","ta":"எனது கொள்முதல்கள்"},"Personal":{"es":"Personal","zh":"个人","hi":"व्यक्तिगत","ar":"شخصي","pt":"Pessoal","fr":"Personnel","de":"Persönlich","ja":"個人","ru":"Личное","id":"Pribadi","bn":"ব্যক্তিগত","ur":"ذاتی","tr":"Kişisel","vi":"Cá nhân","it":"Personale","ko":"개인","ta":"தனிப்பட்ட"},"Business":{"es":"Empresa","zh":"商业","hi":"व्यवसाय","ar":"الأعمال","pt":"Negócios","fr":"Entreprise","de":"Unternehmen","ja":"ビジネス","ru":"Бизнес","id":"Bisnis","bn":"ব্যবসা","ur":"کاروبار","tr":"İşletme","vi":"Doanh nghiệp","it":"Azienda","ko":"비즈니스","ta":"வணிகம்"},"Marketing":{"es":"Marketing","zh":"营销","hi":"मार्केटिंग","ar":"التسويق","pt":"Marketing","fr":"Marketing","de":"Marketing","ja":"マーケティング","ru":"Маркетинг","id":"Pemasaran","bn":"মার্কেটিং","ur":"مارکیٹنگ","tr":"Pazarlama","vi":"Tiếp thị","it":"Marketing","ko":"마케팅","ta":"சந்தைப்படுத்தல்"},"Sales":{"es":"Ventas","zh":"销售","hi":"बिक्री","ar":"المبيعات","pt":"Vendas","fr":"Ventes","de":"Vertrieb","ja":"営業","ru":"Продажи","id":"Penjualan","bn":"বিক্রয়","ur":"فروخت","tr":"Satış","vi":"Bán hàng","it":"Vendite","ko":"영업","ta":"விற்பனை"},"Education":{"es":"Educación","zh":"教育","hi":"शिक्षा","ar":"التعليم","pt":"Educação","fr":"Éducation","de":"Bildung","ja":"教育","ru":"Образование","id":"Pendidikan","bn":"শিক্ষা","ur":"تعلیم","tr":"Eğitim","vi":"Giáo dục","it":"Istruzione","ko":"교육","ta":"கல்வி"},"Productivity":{"es":"Productividad","zh":"生产力","hi":"उत्पादकता","ar":"الإنتاجية","pt":"Produtividade","fr":"Productivité","de":"Produktivität","ja":"生産性","ru":"Продуктивность","id":"Produktivitas","bn":"উৎপাদনশীলতা","ur":"پیداواری صلاحیت","tr":"Üretkenlik","vi":"Năng suất","it":"Produttività","ko":"생산성","ta":"உற்பத்தித்திறன்"},"Developer":{"es":"Desarrollador","zh":"开发者","hi":"डेवलपर","ar":"المطور","pt":"Desenvolvedor","fr":"Développeur","de":"Entwickler","ja":"開発者","ru":"Разработчик","id":"Pengembang","bn":"ডেভেলপার","ur":"ڈیولپر","tr":"Geliştirici","vi":"Nhà phát triển","it":"Sviluppatore","ko":"개발자","ta":"டெவலப்பர்"},"Student":{"es":"Estudiante","zh":"学生","hi":"छात्र","ar":"طالب","pt":"Estudante","fr":"Étudiant","de":"Student","ja":"学生","ru":"Студент","id":"Pelajar","bn":"ছাত্র","ur":"طالب علم","tr":"Öğrenci","vi":"Sinh viên","it":"Studente","ko":"학생","ta":"மாணவர்"},"Work":{"es":"Trabajo","zh":"工作","hi":"काम","ar":"العمل","pt":"Trabalho","fr":"Travail","de":"Arbeit","ja":"仕事","ru":"Работа","id":"Kerja","bn":"কাজ","ur":"کام","tr":"İş","vi":"Công việc","it":"Lavoro","ko":"업무","ta":"வேலை"},"Auto":{"es":"Auto","zh":"自动","hi":"ऑटो","ar":"تلقائي","pt":"Auto","fr":"Auto","de":"Auto","ja":"自動","ru":"Авто","id":"Otomatis","bn":"অটো","ur":"آٹو","tr":"Otomatik","vi":"Tự động","it":"Auto","ko":"자동","ta":"தானி"},"Auto-detect":{"es":"Autodetectar","zh":"自动检测","hi":"स्वतः पहचान","ar":"كشف تلقائي","pt":"Detectar automaticamente","fr":"Détection auto","de":"Automatisch erkennen","ja":"自動検出","ru":"Автоопределение","id":"Deteksi otomatis","bn":"স্বয়ংক্রিয় সনাক্তকরণ","ur":"خودکار شناخت","tr":"Otomatik algıla","vi":"Tự động phát hiện","it":"Rilevamento automatico","ko":"자동 감지","ta":"தானாக கண்டறி"},"Response language":{"es":"Idioma de respuesta","zh":"回复语言","hi":"उत्तर भाषा","ar":"لغة الرد","pt":"Idioma da resposta","fr":"Langue de réponse","de":"Antwortsprache","ja":"応答言語","ru":"Язык ответа","id":"Bahasa respons","bn":"উত্তরের ভাষা","ur":"جواب کی زبان","tr":"Yanıt dili","vi":"Ngôn ngữ trả lời","it":"Lingua di risposta","ko":"응답 언어","ta":"பதில் மொழி"},"Reduce animation":{"es":"Reducir animación","zh":"减少动画","hi":"एनिमेशन कम करें","ar":"تقليل الحركة","pt":"Reduzir animação","fr":"Réduire l’animation","de":"Animation reduzieren","ja":"アニメーション低減","ru":"Меньше анимации","id":"Kurangi animasi","bn":"অ্যানিমেশন কমান","ur":"اینیمیشن کم کریں","tr":"Animasyonu azalt","vi":"Giảm hiệu ứng","it":"Riduci animazioni","ko":"애니메이션 줄이기","ta":"அசைவூட்டத்தைக் குறை"},"Motion":{"es":"Movimiento","zh":"动效","hi":"मोशन","ar":"الحركة","pt":"Movimento","fr":"Mouvement","de":"Bewegung","ja":"モーション","ru":"Движение","id":"Gerak","bn":"মোশন","ur":"حرکت","tr":"Hareket","vi":"Chuyển động","it":"Movimento","ko":"모션","ta":"அசைவு"},"Default":{"es":"Predeterminado","zh":"默认","hi":"डिफ़ॉल्ट","ar":"افتراضي","pt":"Padrão","fr":"Par défaut","de":"Standard","ja":"デフォルト","ru":"По умолчанию","id":"Default","bn":"ডিফল্ট","ur":"ڈیفالٹ","tr":"Varsayılan","vi":"Mặc định","it":"Predefinito","ko":"기본값","ta":"இயல்புநிலை"},"Controls":{"es":"Controles","zh":"控制","hi":"नियंत्रण","ar":"التحكم","pt":"Controles","fr":"Contrôles","de":"Steuerung","ja":"コントロール","ru":"Управление","id":"Kontrol","bn":"নিয়ন্ত্রণ","ur":"کنٹرولز","tr":"Kontroller","vi":"Điều khiển","it":"Controlli","ko":"컨트롤","ta":"கட்டுப்பாடுகள்"},"Aspect":{"es":"Aspecto","zh":"比例","hi":"पहलू","ar":"النسبة","pt":"Proporção","fr":"Format","de":"Seitenverhältnis","ja":"アスペクト","ru":"Соотношение","id":"Aspek","bn":"অনুপাত","ur":"تناسب","tr":"En boy oranı","vi":"Tỷ lệ","it":"Proporzioni","ko":"비율","ta":"விகிதம்"},"Ratio":{"es":"Proporción","zh":"比例","hi":"अनुपात","ar":"النسبة","pt":"Proporção","fr":"Ratio","de":"Verhältnis","ja":"比率","ru":"Соотношение","id":"Rasio","bn":"অনুপাত","ur":"تناسب","tr":"Oran","vi":"Tỷ lệ","it":"Rapporto","ko":"비율","ta":"விகிதம்"},"Mood":{"es":"Ambiente","zh":"氛围","hi":"मूड","ar":"المزاج","pt":"Clima","fr":"Ambiance","de":"Stimmung","ja":"ムード","ru":"Настроение","id":"Suasana","bn":"মেজাজ","ur":"موڈ","tr":"Ruh hali","vi":"Tâm trạng","it":"Atmosfera","ko":"분위기","ta":"மனநிலை"},"Presets":{"es":"Preajustes","zh":"预设","hi":"प्रीसेट","ar":"الإعدادات المسبقة","pt":"Predefinições","fr":"Préréglages","de":"Voreinstellungen","ja":"プリセット","ru":"Пресеты","id":"Preset","bn":"প্রিসেট","ur":"پیش سیٹ","tr":"Ön ayarlar","vi":"Cài đặt sẵn","it":"Preset","ko":"프리셋","ta":"முன்னமைவுகள்"},"Your data":{"es":"Tus datos","zh":"你的数据","hi":"आपका डेटा","ar":"بياناتك","pt":"Seus dados","fr":"Vos données","de":"Ihre Daten","ja":"あなたのデータ","ru":"Ваши данные","id":"Data Anda","bn":"আপনার ডেটা","ur":"آپ کا ڈیٹا","tr":"Verileriniz","vi":"Dữ liệu của bạn","it":"I tuoi dati","ko":"내 데이터","ta":"உங்கள் தரவு"},"Your name":{"es":"Tu nombre","zh":"你的名字","hi":"आपका नाम","ar":"اسمك","pt":"Seu nome","fr":"Votre nom","de":"Ihr Name","ja":"あなたの名前","ru":"Ваше имя","id":"Nama Anda","bn":"আপনার নাম","ur":"آپ کا نام","tr":"Adınız","vi":"Tên của bạn","it":"Il tuo nome","ko":"이름","ta":"உங்கள் பெயர்"},"Your impact":{"es":"Tu impacto","zh":"你的成果","hi":"आपका प्रभाव","ar":"تأثيرك","pt":"Seu impacto","fr":"Votre impact","de":"Ihre Wirkung","ja":"あなたの成果","ru":"Ваш вклад","id":"Dampak Anda","bn":"আপনার প্রভাব","ur":"آپ کا اثر","tr":"Etkiniz","vi":"Tác động của bạn","it":"Il tuo impatto","ko":"내 영향","ta":"உங்கள் தாக்கம்"},"Your skills":{"es":"Tus habilidades","zh":"你的技能","hi":"आपके कौशल","ar":"مهاراتك","pt":"Suas habilidades","fr":"Vos compétences","de":"Ihre Fähigkeiten","ja":"あなたのスキル","ru":"Ваши навыки","id":"Keterampilan Anda","bn":"আপনার দক্ষতা","ur":"آپ کی مہارتیں","tr":"Becerileriniz","vi":"Kỹ năng của bạn","it":"Le tue competenze","ko":"내 스킬","ta":"உங்கள் திறன்கள்"},"Your messages":{"es":"Tus mensajes","zh":"你的消息","hi":"आपके संदेश","ar":"رسائلك","pt":"Suas mensagens","fr":"Vos messages","de":"Ihre Nachrichten","ja":"あなたのメッセージ","ru":"Ваши сообщения","id":"Pesan Anda","bn":"আপনার বার্তা","ur":"آپ کے پیغامات","tr":"Mesajlarınız","vi":"Tin nhắn của bạn","it":"I tuoi messaggi","ko":"내 메시지","ta":"உங்கள் செய்திகள்"},"Recurring work":{"es":"Trabajo recurrente","zh":"周期性工作","hi":"आवर्ती कार्य","ar":"عمل متكرر","pt":"Trabalho recorrente","fr":"Travail récurrent","de":"Wiederkehrende Arbeit","ja":"定期作業","ru":"Повторяющаяся работа","id":"Kerja berulang","bn":"পুনরাবৃত্ত কাজ","ur":"بار بار کام","tr":"Yinelenen iş","vi":"Công việc định kỳ","it":"Lavoro ricorrente","ko":"반복 작업","ta":"தொடர் வேலை"},"Scheduled work":{"es":"Trabajo programado","zh":"计划工作","hi":"निर्धारित कार्य","ar":"عمل مجدول","pt":"Trabalho agendado","fr":"Travail planifié","de":"Geplante Arbeit","ja":"予約作業","ru":"Запланированная работа","id":"Kerja terjadwal","bn":"নির্ধারিত কাজ","ur":"شیڈول شدہ کام","tr":"Zamanlanmış iş","vi":"Công việc đã lên lịch","it":"Lavoro pianificato","ko":"예약 작업","ta":"திட்டமிட்ட வேலை"},"Add Memory":{"es":"Añadir memoria","zh":"添加记忆","hi":"स्मृति जोड़ें","ar":"إضافة ذاكرة","pt":"Adicionar memória","fr":"Ajouter une mémoire","de":"Speicher hinzufügen","ja":"メモリを追加","ru":"Добавить память","id":"Tambah memori","bn":"স্মৃতি যোগ করুন","ur":"یادداشت شامل کریں","tr":"Bellek ekle","vi":"Thêm bộ nhớ","it":"Aggiungi memoria","ko":"메모리 추가","ta":"நினைவகம் சேர்"},"Open memory":{"es":"Abrir memoria","zh":"打开记忆","hi":"स्मृति खोलें","ar":"فتح الذاكرة","pt":"Abrir memória","fr":"Ouvrir la mémoire","de":"Speicher öffnen","ja":"メモリを開く","ru":"Открыть память","id":"Buka memori","bn":"স্মৃতি খুলুন","ur":"یادداشت کھولیں","tr":"Belleği aç","vi":"Mở bộ nhớ","it":"Apri memoria","ko":"메모리 열기","ta":"நினைவகத்தைத் திற"},"Clear chats":{"es":"Borrar chats","zh":"清除对话","hi":"चैट साफ़ करें","ar":"مسح المحادثات","pt":"Limpar conversas","fr":"Effacer les chats","de":"Chats löschen","ja":"チャットを消去","ru":"Очистить чаты","id":"Hapus obrolan","bn":"চ্যাট সাফ করুন","ur":"چیٹس صاف کریں","tr":"Sohbetleri temizle","vi":"Xóa trò chuyện","it":"Cancella chat","ko":"채팅 지우기","ta":"அரட்டைகளை அழி"},"Remove photo":{"es":"Quitar foto","zh":"移除照片","hi":"फ़ोटो हटाएँ","ar":"إزالة الصورة","pt":"Remover foto","fr":"Supprimer la photo","de":"Foto entfernen","ja":"写真を削除","ru":"Удалить фото","id":"Hapus foto","bn":"ছবি সরান","ur":"تصویر ہٹائیں","tr":"Fotoğrafı kaldır","vi":"Xóa ảnh","it":"Rimuovi foto","ko":"사진 제거","ta":"புகைப்படத்தை அகற்று"},"Try it →":{"es":"Pruébalo →","zh":"试试 →","hi":"आज़माएँ →","ar":"جرّبه →","pt":"Experimente →","fr":"Essayez →","de":"Ausprobieren →","ja":"試す →","ru":"Попробовать →","id":"Coba →","bn":"চেষ্টা করুন →","ur":"آزمائیں →","tr":"Deneyin →","vi":"Thử ngay →","it":"Provalo →","ko":"사용해보기 →","ta":"முயற்சி →"},"Get started free":{"es":"Comienza gratis","zh":"免费开始","hi":"मुफ़्त शुरू करें","ar":"ابدأ مجاناً","pt":"Comece grátis","fr":"Commencer gratuitement","de":"Kostenlos starten","ja":"無料で始める","ru":"Начать бесплатно","id":"Mulai gratis","bn":"ফ্রি শুরু করুন","ur":"مفت شروع کریں","tr":"Ücretsiz başla","vi":"Bắt đầu miễn phí","it":"Inizia gratis","ko":"무료로 시작","ta":"இலவசமாகத் தொடங்கு"}};for(var k in __D){if(!I18N[k])I18N[k]=__D[k];else{for(var lc in __D[k]){if(!I18N[k][lc])I18N[k][lc]=__D[k][lc];}}}}catch(e){}})();
 function T(s){ const code=_lang(); if(code==='auto'||code==='en') return s; let e=I18N[s]; if(e&&e[code]) return e[code];
   // case-insensitive fallback so 'Sign Out' matches 'Sign out', 'New Chat' matches 'New chat', etc.
   if(!e){ const lo=String(s).toLowerCase(); for(const k in I18N){ if(k.toLowerCase()===lo){ e=I18N[k]; break; } } }
@@ -3081,12 +3144,12 @@ function _collectI18nNodes(root){
   const walk=(el)=>{
     if(!el) return;
     for(const node of el.childNodes){
-      if(node.nodeType===3){ const t=node.nodeValue; if(t && t.trim().length>1 && /[A-Za-z]/.test(t)) out.push({type:'text',node}); }
+      if(node.nodeType===3){ const t=node.nodeValue; if(t && t.trim().length>1 && (/[A-Za-z]/.test(t) || node._i18nSrc!=null)) out.push({type:'text',node}); }
       else if(node.nodeType===1){
         const tag=node.tagName;
         if(SKIP[tag]) continue;
         if(node.closest && node.closest('[data-no-i18n]')) continue;
-        const ph=node.getAttribute&&node.getAttribute('placeholder'); if(ph&&ph.trim()&&/[A-Za-z]/.test(ph)) out.push({type:'ph',node});
+        const ph=node.getAttribute&&node.getAttribute('placeholder'); if(ph&&ph.trim()&&(/[A-Za-z]/.test(ph)||node._i18nPhSrc!=null)) out.push({type:'ph',node});
         walk(node);
       }
     }
@@ -6807,7 +6870,7 @@ function _mktBrowse(body){
       '</div>';
     }).join('');
     grid.querySelectorAll('.mk-preview').forEach(b=>on(b,'click',()=>{ const it=items.find(x=>x.id===b.dataset.mkId); if(it) _mktPreview(it, ()=>{ reload(); }); }));
-    grid.querySelectorAll('[data-mk-seller]').forEach(s=>on(s,'click',()=>{ if(s.dataset.mkSeller) _mktSellerProfile(s.dataset.mkSeller, s.dataset.mkSellername); }));
+    grid.querySelectorAll('[data-mk-seller]').forEach(s=>on(s,'click',()=>{ _mktSellerProfile(s.dataset.mkSeller||'', s.dataset.mkSellername||''); }));
     grid.querySelectorAll('.mk-buy').forEach(b=>on(b,'click',()=>{ const it=items.find(x=>x.id===b.dataset.mkId); if(it) _mktDoBuy(it, ()=>reload()); }));
     grid.querySelectorAll('.mk-install,.mk-getowned').forEach(b=>on(b,'click',async()=>{
       const it=items.find(x=>x.id===b.dataset.mkId); if(!it) return;
@@ -6889,7 +6952,7 @@ function _mktPreview(it, after){
     '<div id="mkt-similar"></div>'+
   '</div></div>';
   on($('mkt-pv-bg'),'click',closeOvr);
-  document.querySelectorAll('#ovr [data-mk-seller]').forEach(s=>on(s,'click',()=>{ if(s.dataset.mkSeller) _mktSellerProfile(s.dataset.mkSeller, s.dataset.mkSellername); }));
+  document.querySelectorAll('#ovr [data-mk-seller]').forEach(s=>on(s,'click',()=>{ _mktSellerProfile(s.dataset.mkSeller||'', s.dataset.mkSellername||''); }));
   document.querySelectorAll('#ovr .mkt-dl').forEach(b=>on(b,'click',()=>{ const f=it.files[parseInt(b.dataset.dl,10)]; if(f) _downloadFile(f); }));
   // similar items (same category + close price) — scroll-down section like Depop
   AMVMarket.similar(it).then(sims=>{
@@ -6920,6 +6983,29 @@ window._mktPreview=_mktPreview;
 async function _mktSellerProfile(sellerEmail, sellerName){
   sellerEmail=(sellerEmail||'').toLowerCase();
   const r=$('ovr'); if(!r) return;
+  // Official first-party AMV listings have no seller email. Show an official
+  // profile whose "Message" routes to support, not the peer-to-peer seller chat.
+  const isOfficial = !sellerEmail;
+  if(isOfficial){
+    const all=await AMVMarket.list();
+    const theirs=all.filter(it=>!(it.authorEmail||'') && /^amv$/i.test(it.author||''));
+    const listingRows = theirs.length
+      ? theirs.map(it=>'<div class="vrow"><span>'+(it.icon||'\u2728')+' '+escH(it.title)+' '+_mktPriceTag(it)+'</span><span style="color:var(--mu);font-size:11px">'+(it.sales||it.installs||0)+(it.sales?' sold':' installs')+'</span></div>').join('')
+      : '<div style="color:var(--mu);font-size:12.5px">No active listings.</div>';
+    r.innerHTML='<div class="ov" id="mkt-sp-bg"><div class="ob" onclick="event.stopPropagation()" style="max-width:560px">'+
+      '<button class="oc" onclick="closeOvr()">\u00d7</button>'+
+      '<div class="mkt-sp-head">'+_avatarHTML('amv',64)+
+        '<div style="flex:1"><h2 style="margin:0 0 3px">AMV <span style="font-size:12px;color:var(--accent);vertical-align:middle">\u2713 Official</span></h2>'+
+          '<div style="font-size:12.5px;color:var(--mu)">First-party tools, prompts and crews built by the AMV team.</div>'+
+          '<div style="font-size:12px;color:var(--mu);margin-top:4px">'+theirs.length+' official listing'+(theirs.length===1?'':'s')+'</div>'+
+          '<button class="btn bp" id="mkt-sp-msg" style="font-size:12px;margin-top:10px">\uD83D\uDCAC Contact AMV support</button>'+
+        '</div></div>'+
+      '<div class="ss2"><h3>Official listings</h3><div class="vbreak">'+listingRows+'</div></div>'+
+    '</div></div>';
+    on($('mkt-sp-bg'),'click',closeOvr);
+    on($('mkt-sp-msg'),'click',()=>{ closeOvr(); try{ setTab('help'); }catch(e){ toast('Reach the AMV team from the Help Center.','info'); } });
+    return;
+  }
   const all=await AMVMarket.list();
   const theirs=all.filter(it=>(it.authorEmail||'').toLowerCase()===sellerEmail);
   const name=sellerName||(theirs[0]&&theirs[0].author)||sellerEmail.split('@')[0]||'Seller';
@@ -7138,7 +7224,7 @@ function _mktNorm(str){
   return { spaced:' '+t.replace(/\s+/g,' ').trim()+' ', squeezed:t.replace(/\s+/g,'') };
 }
 const _MKT_PROHIBITED={
-  'Illegal drugs & controlled substances':['cocaine','heroin','fentanyl','methamphetamine','crystal meth','mdma','ecstasy','lsd','ketamine','pcp','crack cocaine','psilocybin','magic mushrooms','ghb','rohypnol','roofie','oxycontin','oxycodone','xanax bars','illegal drugs','buy drugs','sell drugs','drug dealer','narcotics for sale','dark web drugs','anabolic steroids','no prescription needed'],
+  'Illegal drugs & controlled substances':['cocaine','heroin','fentanyl','methamphetamine','crystal meth','mdma','ecstasy','lsd','ketamine','pcp','crack cocaine','psilocybin','magic mushrooms','ghb','rohypnol','roofie','oxycontin','oxycodone','xanax','adderall','vicodin','percocet','codeine','lean drug','promethazine','tramadol','valium','klonopin','opioid','opiates','xanax bars','illegal drugs','buy drugs','sell drugs','drug dealer','narcotics for sale','dark web drugs','anabolic steroids','no prescription needed','weed for sale','buy weed','sell weed','marijuana for sale','buy marijuana','cannabis for sale','buy cannabis','thc cart','dab pen','edibles for sale','ounce of weed','gram of weed','8 ball','eightball','molly for sale','buy molly','shrooms for sale','acid tabs','dmt','coke for sale','plug drugs','drug plug','420 friendly bud','top shelf bud','sativa for sale','indica for sale'],
   'Weapons & explosives':['firearm','handgun','rifle for sale','assault weapon','ghost gun','untraceable gun','80 lower','auto sear','glock switch','silencer','suppressor','ammunition','ammo for sale','bump stock','explosive','pipe bomb','bomb making','ied','grenade','detonator','napalm','thermite','weapon blueprint','3d printed gun','gun cad','poison','ricin','nerve agent','sarin','chemical weapon'],
   'Malware, hacking & cyber attack':['malware','ransomware','keylogger','botnet','ddos','rootkit','trojan','spyware','stalkerware','exploit kit','zero day exploit','remote access trojan','rat builder','crypter','stealer','phishing kit','phishing page','fake login page','sql injection tool','brute force tool','password cracker','credential stuffing','account cracker','combo list','sim swap','swatting','doxxing service','hack someone','hacking service','hack account'],
   'Stolen data & credentials':['stolen data','stolen account','hacked account','cracked account','database dump','leaked database','data breach dump','stolen card','stolen credit','credit card numbers','card dump','cvv dump','fullz','bank logs','bank drop','dumps with pin','carding','carder','paypal log','account list','ssn list','social security numbers','stolen identity'],
@@ -7831,7 +7917,7 @@ function _adminAbuseSignals(){
    labeled — never fabricated numbers).
    ============================================================ */
 const _ADMIN_TABS=[
-  ['overview','Overview'],['users','Users'],['revenue','Revenue'],['ai','AI & Usage'],
+  ['overview','Overview'],['users','Users'],['finance','Finance'],['revenue','Revenue'],['ai','AI & Usage'],
   ['infra','Infrastructure'],['security','Security'],['product','Product'],['growth','Growth']
 ];
 function _admMetrics(){
@@ -7894,6 +7980,20 @@ async function _admFetchStats(){
     else { _logErr('adminStats', new Error('HTTP '+r.status)); }
   }catch(e){ _logErr('adminStats', e); }
   S._admStatsLoading=false;
+  try{ if(S.tab==='admin') renderAdminView(); }catch(e){}
+}
+/* Fetch the real financial statement (all transactions) from the backend. */
+async function _admFetchFinance(){
+  const base=loadStr('amv_api_base')||''; const tok=loadStr('amv_api_token')||AMV_API.token||'';
+  if(!base){ return; }
+  if(S._admFinanceLoading) return;
+  S._admFinanceLoading=true;
+  try{
+    const r=await fetch(base.replace(/\/$/,'')+'/v1/admin/finance',{headers:{'Authorization':'Bearer '+tok}});
+    if(r.ok){ S._admFinance=await r.json(); }
+    else { _logErr('adminFinance', new Error('HTTP '+r.status)); S._admFinance={ configured:false, transactions:[], totals:{} }; }
+  }catch(e){ _logErr('adminFinance', e); }
+  S._admFinanceLoading=false;
   try{ if(S.tab==='admin') renderAdminView(); }catch(e){}
 }
 /* Growth block: signups today, WoW trend, conversion, active — plus a 30-day
@@ -7969,6 +8069,47 @@ function _admRenderTab(tab, backendLive, live){
         _admKpi('Total users', live?live.users.total.toLocaleString():(backendLive?'…':'—'), 'All time')+
       '</div>'+(live?'':backendLive?'':_admPending('Revenue & user totals')))+
       _admCard('Growth', _admGrowthBlock(live, backendLive), live&&live.growth?'last 30 days':'');
+  }
+  else if(tab==='finance'){
+    const f=S._admFinance;
+    let totalsHtml;
+    if(!f){
+      totalsHtml = backendLive
+        ? '<div class="adm-users-loading">Loading transactions\u2026</div>'
+        : _admPending('Real transactions (all payments, refunds, net) \u2014 connect the backend');
+    } else if(f.configured===false){
+      totalsHtml = '<div class="adm-fin-note">Stripe isn\u2019t connected yet. Set STRIPE_SECRET_KEY to see real transactions here.</div>';
+    } else {
+      const t=f.totals||{};
+      totalsHtml='<div class="adm-stats">'+
+        _admStat('$'+(t.gross||0).toLocaleString(),'Gross received')+
+        _admStat('$'+(t.refunded||0).toLocaleString(),'Refunded', (t.refunded>0?'#e0b341':''))+
+        _admStat('$'+(t.net||0).toLocaleString(),'Net', '#4ade80')+
+        _admStat((t.count||0).toLocaleString(),'Transactions')+
+      '</div>';
+    }
+    let tableHtml='';
+    if(f && f.configured!==false && (f.transactions||[]).length){
+      tableHtml='<div class="adm-fin-table-wrap"><table class="adm-fin-table"><thead><tr>'+
+        '<th>Date</th><th>Customer</th><th>Method</th><th>Amount</th><th>Status</th><th>Card</th><th></th></tr></thead><tbody>'+
+        f.transactions.map(tx=>'<tr>'+
+          '<td>'+new Date(tx.date).toLocaleDateString()+'</td>'+
+          '<td class="adm-fin-email">'+escH(tx.email||'\u2014')+'</td>'+
+          '<td><span class="adm-fin-prov p-'+escH(tx.provider||'')+'">'+escH((tx.provider||'\u2014').replace(/^\w/,c=>c.toUpperCase()))+'</span></td>'+
+          '<td class="adm-fin-amt">$'+(tx.amount||0).toFixed(2)+(tx.refunded>0?' <span class="adm-fin-ref">-$'+tx.refunded.toFixed(2)+'</span>':'')+'</td>'+
+          '<td><span class="adm-fin-status s-'+escH(tx.status||'')+'">'+escH(tx.status||'')+'</span></td>'+
+          '<td>'+(tx.last4?('\u2022\u2022\u2022\u2022 '+escH(tx.last4)):'\u2014')+'</td>'+
+          '<td>'+(tx.receipt?'<a href="'+escH(tx.receipt)+'" target="_blank" rel="noopener" class="adm-fin-rc">Receipt</a>':'')+'</td>'+
+        '</tr>').join('')+
+      '</tbody></table></div>'+
+      (f.hasMore?'<div class="adm-fin-more">Showing the most recent '+f.transactions.length+' transactions.</div>':'');
+    } else if(f && f.configured!==false){
+      tableHtml='<div class="adm-fin-note">No transactions yet. They\u2019ll appear here as customers pay.</div>';
+    }
+    el.innerHTML=
+      _admCard('Financial statement', totalsHtml, f&&f.configured!==false?'live from Stripe':'')+
+      (tableHtml?_admCard('All transactions', tableHtml):'');
+    if(backendLive && !f) _admFetchFinance();
   }
   else if(tab==='users'){
     el.innerHTML=
@@ -8097,15 +8238,29 @@ async function _adminLoadUsers(backendLive){
     try{ const me=S.user||{}; if(me.email) users=[{email:me.email,name:me.name||me.email.split('@')[0],plan:(loadStr('amv_plan')||'free'),createdAt:null,local:true}]; }catch(e){}
   }
   if(!users.length){ el.innerHTML='<div class="adm-users-loading">No users to show yet.</div>'; return; }
+  const fmtDate=(ts)=>ts?new Date(ts).toLocaleDateString():'\u2014';
   const row=u=>{
     const plan=(u.plan||'free'); const initial=(u.name||u.email||'?').charAt(0).toUpperCase();
+    const flag=u.flagged?'<span class="adm-user-flag" title="Flagged for chargeback/refund abuse">\u26a0 flagged</span>':'';
+    const detail = u.local?'' :
+      '<div class="adm-user-meta">'+
+        '<span title="Monthly AI cost">$'+((u.monthCostUSD||0).toFixed(2))+' cost</span>'+
+        (u.walletBalance?'<span title="Wallet balance">$'+u.walletBalance.toFixed(2)+' wallet</span>':'')+
+        (u.purchases?'<span title="Marketplace purchases">'+u.purchases+' purchases</span>':'')+
+        (u.source?'<span title="Payment method">via '+escH(u.source)+'</span>':'')+
+        '<span title="Joined">joined '+fmtDate(u.createdAt)+'</span>'+
+        (u.admin?'<span class="adm-user-admin">admin</span>':'')+
+      '</div>';
     return '<div class="adm-user"><span class="adm-user-av">'+escH(initial)+'</span>'+
-      '<div class="adm-user-main"><b>'+escH(u.name||u.email.split('@')[0])+'</b><span>'+escH(u.email)+'</span></div>'+
+      '<div class="adm-user-main"><b>'+escH(u.name||u.email.split('@')[0])+' '+flag+'</b><span>'+escH(u.email)+'</span>'+detail+'</div>'+
       '<span class="adm-plan-tag '+plan+'">'+escH(plan)+'</span>'+
       (u.local?'':'<button class="adm-user-act" data-admuser="'+escH(u.email)+'">Manage</button>')+
     '</div>';
   };
-  el.innerHTML='<div class="adm-user-search"><input id="adm-user-q" placeholder="Search users by name or email\u2026"></div>'+
+  const summary = users.length>1 ? '<div class="adm-user-summary">'+users.length+' accounts \u00b7 '+
+    users.filter(u=>u.plan&&u.plan!=='free').length+' paying \u00b7 '+
+    users.filter(u=>u.flagged).length+' flagged</div>' : '';
+  el.innerHTML=summary+'<div class="adm-user-search"><input id="adm-user-q" placeholder="Search users by name or email\u2026"></div>'+
     '<div class="adm-user-list" id="adm-user-list">'+users.map(row).join('')+'</div>';
   const q=$('adm-user-q'); if(q) on(q,'input',()=>{ const term=q.value.toLowerCase(); const filtered=users.filter(u=>(u.email+' '+(u.name||'')).toLowerCase().includes(term)); const list=$('adm-user-list'); if(list) list.innerHTML=filtered.map(row).join('')||'<div class="adm-users-loading">No matches.</div>'; });
 }
@@ -8280,11 +8435,11 @@ async function _loadInvoices(){
 function _drow(k,v){ return '<div class="bd-row"><span class="bd-k">'+k+'</span><span class="bd-v">'+v+'</span></div>'; }
 /* Per-plan local usage caps (the browser guardrail; server enforces the real ones). */
 const PLAN_TIERS={
-  free:  { dailyTokenCap:50000,    rpmMax:8,  models:['fast','core'] },
-  pro:   { dailyTokenCap:1500000,  rpmMax:20, models:['fast','core','coding'] },
-  elite: { dailyTokenCap:6000000,  rpmMax:40, models:['fast','core','coding','smart'] },
-  ultra: { dailyTokenCap:15000000, rpmMax:80, models:['fast','core','coding','smart'] },
-  custom:{ dailyTokenCap:50000,    rpmMax:16, models:['fast','core','coding','smart'] }, // overridden per-user below
+  free:  { dailyTokenCap:40000,    rpmMax:8,  models:['fast','core'] },
+  pro:   { dailyTokenCap:250000,   rpmMax:20, models:['fast','core','coding'] },
+  elite: { dailyTokenCap:900000,   rpmMax:40, models:['fast','core','coding','smart'] },
+  ultra: { dailyTokenCap:2200000,  rpmMax:80, models:['fast','core','coding','smart'] },
+  custom:{ dailyTokenCap:40000,    rpmMax:16, models:['fast','core','coding','smart'] }, // overridden per-user below
 };
 function _setPlan(plan){
   if(!PLANS[plan]) plan='free';
@@ -8316,15 +8471,38 @@ async function syncEntitlement(){
     if(!(window.AMV_API && AMV_API.live && AMV_API.token)) return;
     const r = await AMV_API._fetch('/v1/entitlement', { method:'GET' });
     const d = await r.json().catch(()=>null);
-    if(d && d.ok && d.entitlement && d.entitlement.plan){
-      const serverPlan = d.entitlement.plan;
-      if((loadStr('amv_plan')||'free') !== serverPlan){
+    if(d && d.ok && d.entitlement){
+      // The server is the ABSOLUTE source of truth. Whatever the browser's
+      // localStorage claims, the real plan is whatever the server's entitlement
+      // store says (set only by a verified payment webhook). If a user spoofed
+      // a paid plan in the console, this corrects it back down.
+      const serverPlan = d.entitlement.plan || 'free';
+      const localPlan = loadStr('amv_plan')||'free';
+      if(localPlan !== serverPlan){
         _setPlan(serverPlan);
-        if(serverPlan!=='free') try{ toast('Your '+(PLANS[serverPlan]?PLANS[serverPlan].name:serverPlan)+' plan is active.','success',4000); }catch(e){}
+        if(serverPlan!=='free' && PLAN_RANK[serverPlan] > PLAN_RANK[localPlan]){
+          try{ toast('Your '+(PLANS[serverPlan]?PLANS[serverPlan].name:serverPlan)+' plan is active.','success',4000); }catch(e){}
+        }
       }
+      try{ S._entVerified = { plan:serverPlan, at:Date.now() }; }catch(e){}
     }
   }catch(e){ /* offline / no backend — keep local plan */ }
 }
+/* The plan the client is ALLOWED to act on. When a backend is live, only a
+   server-verified plan counts — a value sitting in localStorage that the server
+   hasn't confirmed is treated as 'free', so console-editing amv_plan grants
+   nothing. With no backend (pure static/offline demo) the local value is used,
+   since there's no server to verify against and nothing real to steal. */
+function verifiedPlan(){
+  try{
+    const local = loadStr('amv_plan')||'free';
+    if(!(window.AMV_API && AMV_API.live)) return local;         // no backend: local is all there is
+    const v = S._entVerified;
+    if(v && v.plan) return v.plan;                               // server-confirmed
+    return 'free';                                               // live but unconfirmed → never trust a paid local value
+  }catch(e){ return 'free'; }
+}
+try{ window.verifiedPlan = verifiedPlan; }catch(e){}
 /* After returning from Stripe/PayPal checkout, confirm the upgrade landed. */
 function _checkUpgradeReturn(){
   try{
@@ -12839,6 +13017,10 @@ function openAuth(mode){
         (!isL?'<div><label class="lbl">Full Name</label><input type="text" id="a-name" placeholder="Alex Johnson" autocomplete="name"></div>':'')+
         '<div><label class="lbl">Email</label><input type="email" id="a-email" placeholder="you@example.com" autocomplete="email"></div>'+
         '<div><label class="lbl">Password</label><input type="password" id="a-pass" placeholder="Minimum 6 characters" autocomplete="'+(isL?'current-password':'new-password')+'"></div>'+
+        // Honeypot: hidden from humans, bots fill it → server rejects. Not display:none
+        // (some bots skip those); off-screen + aria-hidden + tab-skipped instead.
+        '<div aria-hidden="true" style="position:absolute;left:-9999px;top:-9999px;height:0;overflow:hidden"><label>Company<input type="text" id="a-company" name="company" tabindex="-1" autocomplete="off"></label></div>'+
+        '<div id="a-turnstile" class="cf-turnstile" style="margin:4px 0"></div>'+
         '<button class="btn bp" id="auth-submit" style="width:100%;padding:11px;font-size:14px">'+(isL?'Sign In':'Create Free Account')+'</button>'+
       '</div>'+
       '<div class="asw">'+(isL?'No account? <button id="auth-sw">Sign up free</button>':'Already have an account? <button id="auth-sw">Sign in</button>')+'</div>'+
@@ -12849,6 +13031,7 @@ function openAuth(mode){
   document.getElementById('auth-x')?.addEventListener('click',closeOvr);
   document.getElementById('g-btn')?.addEventListener('click',triggerGoogle);
   document.getElementById('auth-submit')?.addEventListener('click',()=>isL?doLoginForm():doSignupForm());
+  try{ _mountTurnstile(); }catch(e){}
   document.getElementById('auth-sw')?.addEventListener('click',()=>openAuth(isL?'signup':'login'));
   document.getElementById('auth-forgot')?.addEventListener('click',()=>{ const em=(document.getElementById('a-email')?.value||'').trim(); closeOvr(); openForgot(em); });
   document.getElementById('a-terms')?.addEventListener('click',()=>{closeOvr();openTerms();});

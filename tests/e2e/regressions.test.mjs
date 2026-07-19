@@ -377,6 +377,240 @@ const nf = await page.evaluate(() => {
 ok(nf.has404 && nf.hasTitle, 'an unknown route shows a 404 "Page not found" view', nf);
 ok(nf.hasWayBack, 'with a button to get back');
 
+/* The bottom-left sidebar "glitch": in collapsed rail mode the footer (user
+   profile/status) was ~150px wide and spilled left out of the 64px rail. This
+   asserts NOTHING visible overflows the rail when collapsed. */
+section('Collapsed sidebar: nothing overflows the rail (footer glitch fixed)');
+
+const railOverflow = await page.evaluate(async () => {
+  document.body.classList.add('sb-rail');
+  await new Promise(r => setTimeout(r, 120));
+  const sb = document.getElementById('sb');
+  const sr = sb.getBoundingClientRect();
+  let worst = null;
+  sb.querySelectorAll('*').forEach(el => {
+    const r = el.getBoundingClientRect();
+    const cs = getComputedStyle(el);
+    const vis = cs.display !== 'none' && cs.visibility !== 'hidden' && parseFloat(cs.opacity) > 0;
+    if (vis && r.width > 0 && (r.right > sr.right + 3 || r.left < sr.left - 3)) {
+      if (!worst) worst = { cls: (el.className || '').toString().slice(0, 30), left: Math.round(r.left) };
+    }
+  });
+  document.body.classList.remove('sb-rail');
+  return { railWidth: Math.round(sr.width), worst };
+});
+ok(railOverflow.worst === null, 'no sidebar element spills out of the collapsed rail', railOverflow.worst);
+
+/* Imported code in Dev looked "squished / wrong font": the <pre> used
+   white-space:pre-wrap + word-break:break-word, which wraps and chops code
+   lines mid-token. Code must render monospace and scroll, not wrap. */
+section('Dev code renders as proper monospace (import text fix)');
+
+const devCode = await page.evaluate(() => {
+  setTab('dev');
+  _DEV.project = { 'x.js': { content: 'const aVeryLongIdentifierThatShouldNotWrapAcrossLines = doSomething(a, b, c);\n\tindented();' } };
+  _DEV.activePath = 'x.js';
+  _devShowActive();
+  const pre = document.querySelector('.dev-code-wrap pre');
+  if (!pre) return { err: 'no pre' };
+  const cs = getComputedStyle(pre);
+  return {
+    monospace: /mono|jetbrains|sf mono|consolas|menlo/i.test(cs.fontFamily),
+    preservesWhitespace: cs.whiteSpace === 'pre',
+    noWordBreak: cs.wordBreak === 'normal',
+    scrolls: cs.overflowX === 'auto' || cs.overflowX === 'scroll'
+  };
+});
+ok(devCode.monospace, 'imported code renders in a monospace font');
+ok(devCode.preservesWhitespace, 'it preserves whitespace (white-space:pre), not wrap');
+ok(devCode.noWordBreak, 'and does not break words mid-token');
+ok(devCode.scrolls, 'long lines scroll horizontally instead of squishing');
+
+/* "No account for my email" trap: logging in with an unknown email used to
+   dead-end. The fix routes unknown-email logins into signup with the email
+   kept. Verified directly: findAccount returns null for an unknown email, and
+   doLoginForm's source routes that case to openAuth('signup'). */
+section('Login with an unknown email is routed to signup (no dead-end)');
+
+const loginFix = await page.evaluate(() => {
+  const unknownEmail = 'ghost' + Date.now() + '@example.com';
+  const noLocal = (typeof findAccount === 'function') && findAccount(unknownEmail) === null;
+  const src = doLoginForm.toString();
+  // the no-account branch must route into signup and carry the email, not dead-end
+  const routesToSignup = /openAuth\('signup'\)/.test(src);
+  const noBareDeadEnd = !/Please sign up\.'\);return;\}/.test(src.replace(/\s/g, ''));
+  return { noLocal, routesToSignup, noBareDeadEnd };
+});
+ok(loginFix.noLocal, 'an unknown email has no local account (the trigger case)');
+ok(loginFix.routesToSignup, 'the login handler routes an unknown email into the signup form');
+ok(loginFix.noBareDeadEnd, 'it no longer dead-ends with a bare "please sign up" error');
+
+/* Admin financial statement: a real transactions view (all payments, refunds,
+   net) — owner-only. Renders from the /v1/admin/finance payload. */
+section('Admin finance tab renders real transactions');
+
+const fin = await page.evaluate(() => {
+  S.user = { name: 'Op', email: (window.OWNER_EMAIL || 'amarotovaleria@gmail.com'), ini: 'O' };
+  S._admFinance = { configured: true, hasMore: false, transactions: [
+    { id: 'c1', date: Date.now(), email: 'x@test.com', amount: 15, refunded: 0, currency: 'USD', status: 'succeeded', last4: '4242', receipt: 'https://r/1' },
+    { id: 'c2', date: Date.now(), email: 'y@test.com', amount: 75, refunded: 75, currency: 'USD', status: 'refunded', last4: '1111' }
+  ], totals: { count: 2, gross: 90, refunded: 75, net: 15, currency: 'USD' } };
+  S.tab = 'admin'; S._adminTab = 'finance';
+  let threw = null;
+  try { renderAdminView(); } catch (e) { threw = String(e.message || e); }
+  const body = document.getElementById('adm-body');
+  const txt = body ? body.textContent : '';
+  return {
+    threw,
+    tabExists: !!document.querySelector('[data-atab="finance"]'),
+    showsGrossNet: /Gross/.test(txt) && /Net/.test(txt),
+    hasTable: !!(body && body.querySelector('.adm-fin-table')),
+    rows: body ? body.querySelectorAll('.adm-fin-table tbody tr').length : 0,
+    showsEmail: /x@test.com/.test(txt)
+  };
+});
+ok(fin.threw === null, 'the finance tab renders without throwing', fin.threw);
+ok(fin.tabExists, 'there is a Finance tab in the admin dashboard');
+ok(fin.showsGrossNet, 'it shows gross and net totals');
+ok(fin.hasTable && fin.rows === 2, 'it lists each real transaction', fin.rows);
+ok(fin.showsEmail, 'with the customer email per transaction');
+
+/* Responsive fit: the app must not overflow horizontally at any realistic size,
+   and touch targets must stay tappable on small phones. */
+section('Responsive: no horizontal overflow across screen sizes');
+
+const sizes = [
+  { w: 320, h: 568 }, { w: 390, h: 844 }, { w: 768, h: 1024 }, { w: 820, h: 1180 },
+  { w: 1024, h: 768 }, { w: 1280, h: 800 }, { w: 1920, h: 1080 }, { w: 2560, h: 1440 },
+  { w: 3440, h: 1440 }
+];
+let anyOverflow = null;
+for (const sz of sizes) {
+  await page.setViewportSize({ width: sz.w, height: sz.h });
+  await page.evaluate(() => setTab('plans'));
+  await new Promise(r => setTimeout(r, 80));
+  const over = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 2);
+  if (over && !anyOverflow) anyOverflow = sz.w + 'px';
+}
+ok(anyOverflow === null, 'no horizontal overflow from 320px phone to 2560px monitor', anyOverflow);
+
+await page.setViewportSize({ width: 360, height: 740 });
+await page.evaluate(() => setTab('plans'));
+await new Promise(r => setTimeout(r, 100));
+const touch = await page.evaluate(() => {
+  const btns = [...document.querySelectorAll('.btn,.plnbtn')].filter(b => b.offsetParent && b.getBoundingClientRect().height > 0);
+  return { total: btns.length, small: btns.filter(b => b.getBoundingClientRect().height < 40).length };
+});
+ok(touch.small === 0, 'all buttons meet a tappable height on small phones', touch);
+await page.setViewportSize({ width: 1280, height: 800 });
+
+/* Language switching must translate the whole UI and fully restore on switch-back
+   (no text stuck in the previous language — the exact bug reported repeatedly). */
+section('Language: switching translates nav and restores cleanly');
+
+await page.evaluate(() => { saveStr('amv_lang','ar'); if(typeof _translateUI==='function') _translateUI(); });
+await new Promise(r => setTimeout(r, 200));
+const ar = await page.evaluate(() => {
+  const dir = document.documentElement.dir;
+  const navArabic = [...document.querySelectorAll('.snb[data-tab]')].filter(b => /[\u0600-\u06FF]/.test(b.textContent)).length;
+  return { dir, navArabic };
+});
+ok(ar.dir === 'rtl', 'Arabic sets right-to-left layout', ar.dir);
+ok(ar.navArabic >= 5, 'the sidebar nav is translated to Arabic', ar.navArabic);
+
+await page.evaluate(() => { saveStr('amv_lang','en'); if(typeof _translateUI==='function') _translateUI(); });
+await new Promise(r => setTimeout(r, 200));
+const en = await page.evaluate(() => {
+  const dir = document.documentElement.dir;
+  const stuck = [...document.querySelectorAll('#app *')].filter(el => {
+    for (const n of el.childNodes) if (n.nodeType === 3 && /[\u0600-\u06FF]/.test(n.nodeValue)) return true;
+    return false;
+  }).length;
+  return { dir, stuck };
+});
+ok(en.dir === 'ltr', 'switching back to English restores left-to-right', en.dir);
+ok(en.stuck === 0, 'no text is left stuck in the previous language', en.stuck);
+
+/* The account popup (Settings / What's New / Sign out) and context menus had a
+   hardcoded dark background that stayed black in light mode. They must follow the theme. */
+section('Light mode: the account menu is light, not black');
+
+await page.evaluate(() => { document.body.classList.add('light'); const b=document.getElementById('sb-user-btn'); if(b) b.click(); });
+await new Promise(r => setTimeout(r, 200));
+const lightMenu = await page.evaluate(() => {
+  const pop = document.getElementById('sb-popup');
+  if (!pop) return { ok:false };
+  const m = getComputedStyle(pop).backgroundColor.match(/[\d.]+/g).map(Number);
+  return { light: m[0] > 200 && m[1] > 200 && m[2] > 200 };
+});
+ok(lightMenu.light, 'the account popup is a light surface in light mode', lightMenu);
+
+await page.evaluate(() => { document.body.classList.remove('light'); });
+await new Promise(r => setTimeout(r, 100));
+const darkMenu = await page.evaluate(() => {
+  const pop = document.getElementById('sb-popup');
+  const m = getComputedStyle(pop).backgroundColor.match(/[\d.]+/g).map(Number);
+  return { dark: m[0] < 55 && m[1] < 55 && m[2] < 60 };
+});
+ok(darkMenu.dark, 'and stays dark in dark mode (fix is theme-aware)', darkMenu);
+await page.evaluate(() => { const b=document.getElementById('sb-user-btn'); if(b) b.click(); });
+
+/* What's New opened a modal that rendered OFF-SCREEN (top ~= viewport height)
+   because #ovr wasn't centering .wn-modal, and closeOvr left an invisible
+   click-trapping overlay. Both must work. */
+section("What's New opens on-screen and closes cleanly");
+
+const wn = await page.evaluate(() => {
+  try { openWhatsNew(); } catch(e) { return { err: e.message }; }
+  const m = document.querySelector('.wn-modal');
+  if (!m) return { opened: false };
+  const r = m.getBoundingClientRect();
+  return { opened: true, releases: document.querySelectorAll('.wn-rel').length,
+           onScreen: r.top >= 0 && r.top < window.innerHeight - 100 && r.width > 100 };
+});
+ok(wn.opened, "What's New opens a modal", wn);
+ok(wn.releases >= 1, 'it shows changelog entries', wn.releases);
+ok(wn.onScreen, 'the modal is visible on-screen, not rendered off the bottom', wn);
+
+const closed = await page.evaluate(() => {
+  closeOvr();
+  const ovr = document.getElementById('ovr');
+  return { on: ovr.classList.contains('on'), html: ovr.innerHTML.length };
+});
+ok(!closed.on && closed.html === 0, 'closing removes the overlay (no invisible click-trap left behind)', closed);
+
+/* Marketplace: clicking "by AMV" (official listing, no seller email) must open a
+   proper profile with a working contact button, not a dead end. Real sellers
+   (with an email) get the peer-to-peer message chat. */
+section('Marketplace seller messaging works for official and real sellers');
+
+const official = await page.evaluate(async () => {
+  await _mktSellerProfile('', 'AMV');
+  await new Promise(r => setTimeout(r, 120));
+  const btn = document.getElementById('mkt-sp-msg');
+  const ob = document.querySelector('#mkt-sp-bg .ob');
+  return { hasBtn: !!btn, onScreen: ob ? ob.getBoundingClientRect().top >= 0 : false };
+});
+ok(official.hasBtn && official.onScreen, 'clicking "by AMV" opens a profile with a contact button (no dead end)', official);
+
+const realSeller = await page.evaluate(async () => {
+  closeOvr();
+  await _mktSellerProfile('seller@shop.com', 'Shop');
+  await new Promise(r => setTimeout(r, 120));
+  const msgBtn = document.getElementById('mkt-sp-msg');
+  if (!msgBtn) return { ok:false };
+  msgBtn.click();
+  await new Promise(r => setTimeout(r, 150));
+  const input = document.getElementById('mkt-chat-txt');
+  if (!input) return { chatOpen:false };
+  input.value = 'Hi there';
+  document.getElementById('mkt-chat-send').click();
+  await new Promise(r => setTimeout(r, 200));
+  return { chatOpen:true, sent: document.querySelectorAll('.mkt-bubble').length > 0 };
+});
+ok(realSeller.chatOpen && realSeller.sent, 'a real seller can be messaged and the message sends', realSeller);
+await page.evaluate(() => closeOvr());
+
 section('No JavaScript errors');
 ok(errors.length === 0, 'zero uncaught page errors', errors.slice(0, 3));
 
