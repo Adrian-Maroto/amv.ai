@@ -101,7 +101,7 @@ ok(/set a new password/i.test(s.title || ''), 'the correct code advances to the 
 ok(s.fields, 'both password fields are present');
 
 const mismatch = await page.evaluate(async () => {
-  document.getElementById('fp-pw').value = 'newpassword123';
+  document.getElementById('fp-pw').value = 'newStr0ngPass!88';
   document.getElementById('fp-pw2').value = 'somethingelse';
   document.getElementById('fp-save').click();
   await new Promise(r => setTimeout(r, 300));
@@ -121,8 +121,8 @@ ok(/8 characters/i.test(short), 'a too-short password is caught', short);
 section('It signs you straight in (no retyping what you just set)');
 
 const finished = await page.evaluate(async () => {
-  document.getElementById('fp-pw').value = 'newpassword123';
-  document.getElementById('fp-pw2').value = 'newpassword123';
+  document.getElementById('fp-pw').value = 'newStr0ngPass!88';
+  document.getElementById('fp-pw2').value = 'newStr0ngPass!88';
   document.getElementById('fp-save').click();
   await new Promise(r => setTimeout(r, 1200));
   return {

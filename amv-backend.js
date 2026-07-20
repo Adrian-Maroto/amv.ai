@@ -1691,6 +1691,15 @@ export default {
    (Argon2id would be preferable but isn't available in the Workers runtime.)
    ============================================================ */
 const PBKDF2_ITERATIONS = 210000;   // OWASP 2023 recommendation for PBKDF2-SHA256
+// AMV-051: reject the most common / trivially-weak passwords at signup.
+const _COMMON_PASSWORDS = new Set(['password','12345678','123456789','1234567890','qwerty123','password1','password123','iloveyou','admin123','welcome1','letmein1','abc12345','11111111','qwertyuiop','1q2w3e4r','sunshine1','football1','baseball1','trustno1','superman1']);
+function _isCommonPassword(pw){
+  const p = String(pw||'').toLowerCase();
+  if(_COMMON_PASSWORDS.has(p)) return true;
+  if(/^(.)\1+$/.test(p)) return true;                       // all one repeated character
+  if(/^(01234567|12345678|abcdefgh|87654321)/.test(p)) return true;   // obvious sequences
+  return false;
+}
 async function _hashPassword(password, salt, iterations){
   const enc = new TextEncoder();
   const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
@@ -1733,7 +1742,10 @@ async function authSignup(request, env){
   // Strict format: exactly one @, no whitespace/colons/control chars, sane length.
   // Emails go into KV key structures and audit logs — keep them clean by construction.
   if(!em || em.length > 254 || !/^[^\s@:]{1,64}@[^\s@:]+\.[^\s@:]{2,}$/.test(em)) return json({ error:'valid email required' }, 400);
-  if(!password || password.length < 6 || password.length > 512) return json({ error:'password must be 6+ chars' }, 400);
+  // AMV-051: raise the password baseline — 8+ chars and reject the most common
+  // passwords so a leaked hash has meaningfully more offline resistance.
+  if(!password || password.length < 8 || password.length > 512) return json({ error:'password must be at least 8 characters' }, 400);
+  if(_isCommonPassword(password)) return json({ error:'that password is too common — please choose a stronger one' }, 400);
   const safeName = String(name||'').slice(0, 80);
   const existing = await DB.get(env, 'acct', em);
   if(existing) return json({ error:'account exists' }, 409);
@@ -3005,19 +3017,23 @@ async function imageGenerate(request, env) {
       body: JSON.stringify({ model, prompt, size, n: 1 }),
     });
     if (!upstream.ok) {
+      // AMV-053: log the provider's raw response server-side; return a generic
+      // message so upstream/internal details aren't exposed to the client.
       const txt = await upstream.text().catch(() => '');
+      try { await _workerError(env, 'imageGenerate.provider', new Error('status ' + upstream.status + ': ' + txt.slice(0, 300))); } catch (_) {}
       await refundImage();
-      return json({ error: 'image provider error', detail: txt.slice(0, 300) }, 502);
+      return json({ error: 'Image generation is temporarily unavailable. Please try again.' }, 502);
     }
     const data = await upstream.json().catch(() => ({}));
     const item = (data && data.data && data.data[0]) || {};
     if (item.url) return json({ ok: true, url: item.url });
     if (item.b64_json) return json({ ok: true, b64: item.b64_json });
     await refundImage();
-    return json({ error: 'image provider returned no image' }, 502);
+    return json({ error: 'Image generation returned no image. Please try again.' }, 502);
   } catch (e) {
+    try { await _workerError(env, 'imageGenerate', e); } catch (_) {}
     await refundImage();
-    return json({ error: 'image generation failed', detail: String(e && e.message || e).slice(0, 200) }, 502);
+    return json({ error: 'Image generation failed. Please try again.' }, 502);
   }
 }
 
@@ -3776,10 +3792,15 @@ function twiml(message) {
 /* Waitlist — captures interest for not-yet-launched apps (Chrome, iOS, etc.).
    Stored in KV so you have a real list to email when each product ships. */
 async function waitlistAdd(request, env) {
+  // AMV-060: rate-limit per IP so the public waitlist can't be used to spam
+  // third-party addresses or inflate signups.
+  const wip = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'noip';
+  const wl = await limitAction(env, `waitlist:${wip}`, 5, 50);
+  if (!wl.ok) return json({ error: 'Too many requests. Please try again later.' }, 429);
   const body = await request.json().catch(() => ({}));
   const email = String(body.email || '').toLowerCase().trim();
   const product = String(body.product || 'general').replace(/[^a-z0-9_-]/gi, '').slice(0, 40);
-  if (!email || !email.includes('@')) return json({ error: 'invalid email' }, 400);
+  if (!email || !/^[^\s@:]{1,64}@[^\s@:]+\.[^\s@:]{2,}$/.test(email)) return json({ error: 'invalid email' }, 400);
   await env.AMV_KV.put(`waitlist:${product}:${email}`, JSON.stringify({ email, product, ts: Date.now() }));
   return json({ ok: true });
 }

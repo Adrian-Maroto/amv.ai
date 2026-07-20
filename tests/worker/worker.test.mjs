@@ -312,8 +312,8 @@ store.delete('grow:signup:' + day);
 const suReq = (body) => new Request('https://api.amv.dev/auth/signup', {
   method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
 });
-await W.authSignup(suReq({ email: 'grow1@test.com', name: 'G', password: 'password123' }), env);
-await W.authSignup(suReq({ email: 'grow2@test.com', name: 'G', password: 'password123' }), env);
+await W.authSignup(suReq({ email: 'grow1@test.com', name: 'G', password: 'Str0ngPass!88' }), env);
+await W.authSignup(suReq({ email: 'grow2@test.com', name: 'G', password: 'Str0ngPass!88' }), env);
 ok(parseInt(store.get('grow:signup:' + day)) === 2, 'two signups → the daily counter reads 2', store.get('grow:signup:' + day));
 
 section('Analytics: daily-active counts each user at most once');

@@ -27,21 +27,21 @@ const req = (body) => new Request('https://x',{method:'POST',headers:{'Content-T
 /* ── Honeypot ─────────────────────────────────────────────────────────────── */
 section('A filled honeypot is treated as a bot and blocked');
 store.clear();
-let r = await W.authSignup(req({ email:'bot@x.com', name:'Bot', password:'password123', company:'Acme Inc' }), baseEnv);
+let r = await W.authSignup(req({ email:'bot@x.com', name:'Bot', password:'Str0ngPass!88', company:'Acme Inc' }), baseEnv);
 ok(r.status === 400, 'signup with a filled honeypot is rejected', r.status);
 ok(!store.has('acct:bot@x.com'), 'and no account is created for the bot');
 
-r = await W.authLogin(req({ email:'bot@x.com', password:'password123', website:'http://spam' }), baseEnv);
+r = await W.authLogin(req({ email:'bot@x.com', password:'Str0ngPass!88', website:'http://spam' }), baseEnv);
 ok(r.status === 400, 'login with a filled honeypot is rejected', r.status);
 
 /* ── Honest degradation with no captcha configured ───────────────────────── */
 section('With no TURNSTILE_SECRET, real signup/login still work');
 store.clear();
-r = await W.authSignup(req({ email:'real@x.com', name:'Real', password:'password123' }), baseEnv);
+r = await W.authSignup(req({ email:'real@x.com', name:'Real', password:'Str0ngPass!88' }), baseEnv);
 ok(r.status === 200, 'a normal signup succeeds when captcha is not configured', r.status);
 ok(store.has('acct:real@x.com'), 'the real account is created');
 
-r = await W.authLogin(req({ email:'real@x.com', password:'password123', provider:'email' }), baseEnv);
+r = await W.authLogin(req({ email:'real@x.com', password:'Str0ngPass!88', provider:'email' }), baseEnv);
 ok(r.status === 200, 'and they can log in', r.status);
 
 /* ── Turnstile enforced when configured ──────────────────────────────────── */
@@ -58,13 +58,13 @@ globalThis.fetch = async (url, opts) => {
 };
 
 store.clear();
-r = await W.authSignup(req({ email:'nocap@x.com', name:'N', password:'password123' }), capEnv);
+r = await W.authSignup(req({ email:'nocap@x.com', name:'N', password:'Str0ngPass!88' }), capEnv);
 ok(r.status === 400, 'signup with NO captcha token is rejected when captcha is on', r.status);
 
-r = await W.authSignup(req({ email:'badcap@x.com', name:'N', password:'password123', captchaToken:'bad' }), capEnv);
+r = await W.authSignup(req({ email:'badcap@x.com', name:'N', password:'Str0ngPass!88', captchaToken:'bad' }), capEnv);
 ok(r.status === 400, 'an INVALID captcha token is rejected', r.status);
 
-r = await W.authSignup(req({ email:'goodcap@x.com', name:'N', password:'password123', captchaToken:'good' }), capEnv);
+r = await W.authSignup(req({ email:'goodcap@x.com', name:'N', password:'Str0ngPass!88', captchaToken:'good' }), capEnv);
 ok(r.status === 200, 'a VALID captcha token lets a real user through', r.status);
 ok(store.has('acct:goodcap@x.com'), 'and the account is created');
 
