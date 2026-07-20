@@ -9341,15 +9341,35 @@ function renderCrewView(){
       </div>
       <button class="cw-toggle ${j.on?'on':''}" data-dact="cwToggle" data-darg="${j.id}" aria-label="toggle"><span class="cw-knob"></span></button>
     </div>`;
-  const apprCard=a=>`<div class="cw-appr">
-      <div class="cw-appr-h"><span class="cw-appr-ic">${a.icon||'\u2709\uFE0F'}</span><span class="cw-appr-t">${escH(a.title)}</span></div>
-      <div class="cw-appr-body">${escH(a.preview)}</div>
-      <div class="cw-appr-act">
-        <button class="btn bp" data-dact="cwApprove" data-darg="${a.id}">Approve & send</button>
-        <button class="btn bs" data-dact="cwReject" data-darg="${a.id}">Dismiss</button>
-        <button class="btn bs" data-dact="cwEdit" data-darg="${a.id}">Edit in chat</button>
+  const apprCard=a=>{
+    const act=_apvAction(a);
+    const meta=[
+      a.project?['Project',a.project]:null,
+      a.crewName?['Crew',a.crewName]:null,
+      a.destination?['To',a.destination]:null,
+      (a.recipients!=null)?['Recipients',String(a.recipients)]:null,
+      a.scheduledAt?['Scheduled',a.scheduledAt]:null,
+      a.readyAt?['Ready',_apvAgo(a.readyAt)]:null
+    ].filter(Boolean);
+    return `<div class="apv-card">
+      <div class="apv-card-top">
+        <span class="apv-ic">${a.icon||'\u2709\uFE0F'}</span>
+        <div class="apv-card-hd">
+          <div class="apv-title">${escH(a.title)}</div>
+          <div class="apv-req">${escH(a.requesting||act.line)}</div>
+        </div>
+        <span class="apv-status ${a.autoApprove?'auto':'wait'}">${a.autoApprove?'Auto-approve on':'Needs approval'}</span>
+      </div>
+      ${meta.length?`<div class="apv-meta">${meta.map(m=>`<span class="apv-mi"><span class="apv-mk">${escH(m[0])}</span>${escH(m[1])}</span>`).join('')}</div>`:''}
+      ${a.warning?`<div class="apv-warn">${escH(a.warning)}</div>`:''}
+      <div class="apv-act">
+        <button class="btn apv-preview" data-dact="apvPreview" data-darg="${a.id}">Preview</button>
+        <button class="btn apv-ghost" data-dact="apvEdit" data-darg="${a.id}">Edit</button>
+        <button class="btn apv-ghost apv-reject" data-dact="apvReject" data-darg="${a.id}">Reject</button>
+        <button class="btn apv-approve" data-dact="apvQuickApprove" data-darg="${a.id}">${escH(act.btn)}</button>
       </div>
     </div>`;
+  };
   const activeCount=jobs.filter(j=>j.on).length;
 
   vc.innerHTML = `<div class="sv fi"><div class="crew-page">
@@ -9442,9 +9462,41 @@ function cwToggle(id){
 }
 function cwDemo(){
   const appr=_cwApprovals();
-  appr.unshift({ id:'a'+Date.now(), icon:'\uD83D\uDCE7', title:'Reply to Sarah \u2014 \u201cProject timeline\u201d',
-    preview:'Hi Sarah, thanks for the update. The timeline works on our end \u2014 we can have the first milestone ready by the 14th. I\u2019ll send the detailed plan tomorrow. Best, '+(S.user?.name?.split(' ')[0]||'') });
+  const now=Date.now(), me=(S.user&&S.user.name)||'You', first=me.split(' ')[0];
+  appr.unshift({
+    id:'a'+now, icon:'\uD83D\uDCE7',
+    title:'Weekly customer update \u2014 September',
+    project:'Growth', crewName:'Content Crew',
+    actionType:'send', resultType:'email', recipients:42,
+    destination:'42 customers (newsletter list)', account:'you@amv.dev',
+    requesting:'Send the finished monthly update to your customer list.',
+    autoApprove:false,
+    startedAt:now-26*6e4, readyAt:now-3*6e4,
+    warning:'Goes to 42 recipients. Double-check the subject line before approving.',
+    result:{ type:'email', from:'you@amv.dev', to:'42 customers (undisclosed recipients)',
+      subject:'What we shipped this month + what\u2019s next',
+      body:'Hi there,\n\nThis month we shipped three things you asked for: faster exports, a redesigned dashboard, and one-click sharing. Exports now finish in seconds, the dashboard puts your key numbers first, and sharing a report is now a single click.\n\nNext month we\u2019re focused on team workspaces \u2014 shared projects, roles, and a single bill. If you want early access, just reply to this email.\n\nThank you for building with us.\n\n\u2014 '+first },
+    timeline:[
+      {t:'9:02 AM', agent:'Planner', text:'Broke the update into research, draft, and review.'},
+      {t:'9:06 AM', agent:'Researcher', text:'Pulled this month\u2019s shipped features and the top 3 customer requests.'},
+      {t:'9:11 AM', agent:'Copywriter', text:'Wrote the subject line, intro, and the three highlights.'},
+      {t:'9:15 AM', agent:'Reviewer', text:'Tightened the copy and flagged the subject line for your eyes.'},
+      {t:'9:17 AM', agent:'AMV', text:'Ready for your approval.'}
+    ],
+    crew:[
+      {role:'Planner', resp:'Structured the work', status:'done'},
+      {role:'Researcher', resp:'Gathered the month\u2019s highlights', status:'done'},
+      {role:'Copywriter', resp:'Wrote the email', status:'done'},
+      {role:'Reviewer', resp:'Checked tone and accuracy', status:'done'}
+    ],
+    artifacts:[
+      {name:'highlights.md', from:'Researcher', to:'Copywriter', note:'the month\u2019s shipped features'},
+      {name:'draft-v1', from:'Copywriter', to:'Reviewer', note:'first email draft'},
+      {name:'final-email', from:'Reviewer', to:'AMV', note:'approved-for-review copy'}
+    ]
+  });
   _cwSaveApprovals(appr); renderCrewView();
+  toast('Example draft added \u2014 press Preview to see the full workspace','info',4000);
 }
 function cwApprove(id){ const a=_cwApprovals().filter(x=>x.id!==id); _cwSaveApprovals(a); toast('Approved \u2014 sent','info'); renderCrewView(); }
 function cwReject(id){ if(window.AMV_API && AMV_API.live){ AMV_API.actApproval(id,'reject').catch(()=>{}); } const a=_cwApprovals().filter(x=>x.id!==id); _cwSaveApprovals(a); toast('Dismissed','info'); renderCrewView(); }
@@ -9458,6 +9510,228 @@ function cwTry(prompt){
   }catch(e){}
 }
 window.cwTry=cwTry;
+
+/* ============================================================
+   APPROVAL + PREVIEW WORKSPACE  (Phase 1 of the Mission Control redesign)
+   ------------------------------------------------------------
+   Task -> Plan -> Agent execution -> PREVIEW -> APPROVAL -> Final action.
+   AMV stops before any consequential external action unless Auto Approve
+   is on. This module renders the "Needs your approval" cards and the full
+   Preview workspace: the finished result, what happened while you were away,
+   the Crew that did it, artifact handoffs, and a plain-language final-action
+   summary with a specific Approve button.
+
+   Everything renders from real data on the approval object and degrades
+   honestly: sections with no data are hidden, never fabricated. No token
+   cost, model cost, or price is ever shown on an approval or preview.
+   ============================================================ */
+
+/* Derive the specific final action from the approval's actionType. */
+function _apvAction(a){
+  const t=(a.actionType||'').toLowerCase();
+  const n=a.recipients, dest=a.destination||'', when=a.scheduledAt||'';
+  const map={
+    send:    {btn:'Approve & send',     verb:'send',     line:'Approve to send this '+(a.resultType==='email'?'email':'message')+(n!=null?(' to '+n+' recipient'+(n===1?'':'s')):(dest?(' to '+dest):''))+'.'},
+    publish: {btn:'Approve & publish',  verb:'publish',  line:'Approve to publish'+(dest?(' to '+dest):' this')+(when?(' on '+when):'')+'.'},
+    schedule:{btn:'Approve & schedule', verb:'schedule', line:'Approve to schedule this'+(when?(' for '+when):'')+'.'},
+    post:    {btn:'Approve & post',     verb:'post',     line:'Approve to post'+(dest?(' to '+dest):'')+(when?(' — scheduled for '+when):'')+'.'},
+    submit:  {btn:'Approve & submit',   verb:'submit',   line:'Approve to submit this'+(dest?(' to '+dest):'')+'.'},
+    update:  {btn:'Approve & update',   verb:'update',   line:'Approve to update'+(n!=null?(' '+n+' record'+(n===1?'':'s')):(dest?(' '+dest):' this data'))+'.'},
+    deploy:  {btn:'Approve & deploy',   verb:'deploy',   line:'Approve to deploy'+(dest?(' to '+dest):'')+'.'}
+  };
+  return map[t]||{btn:'Approve', verb:'approve', line:'Approve to complete this action.'};
+}
+
+/* Human "x ago" / "in x" for timestamps (accepts ms epoch or a string). */
+function _apvAgo(ts){
+  if(typeof ts!=='number') return String(ts||'');
+  const d=Date.now()-ts, abs=Math.abs(d), fut=d<0;
+  const m=Math.round(abs/6e4), h=Math.round(abs/36e5), day=Math.round(abs/864e5);
+  let s = m<1?'just now' : m<60?(m+' min') : h<24?(h+' hr') : (day+' day'+(day===1?'':'s'));
+  if(s==='just now') return s;
+  return fut ? ('in '+s) : (s+' ago');
+}
+
+/* ---- the finished result, rendered as close to reality as the data allows ---- */
+function _apvFrame(a){
+  const r=a.result||{}, type=r.type||a.resultType||'doc';
+  const par=txt=>String(txt||'').split(/\n\n+/).map(p=>'<p>'+escH(p).replace(/\n/g,'<br>')+'</p>').join('');
+  if(type==='email'){
+    return `<div class="pvw-frame email"><div class="pvw-mail">
+      <div class="pvw-mail-hd">
+        <div class="pvw-mail-row"><span class="pvw-mail-k">From</span><span>${escH(r.from||'you@amv.dev')}</span></div>
+        <div class="pvw-mail-row"><span class="pvw-mail-k">To</span><span>${escH(r.to||a.destination||'')}</span></div>
+        <div class="pvw-mail-row subj"><span class="pvw-mail-k">Subject</span><span>${escH(r.subject||a.title||'')}</span></div>
+      </div>
+      <div class="pvw-mail-body">${par(r.body||a.preview)}</div>
+    </div></div>`;
+  }
+  if(type==='social'){
+    const plat=(r.platform||'Post');
+    return `<div class="pvw-frame social"><div class="pvw-post">
+      <div class="pvw-post-hd"><span class="pvw-post-av">${escH((r.handle||'A').replace(/^@/,'')[0]||'A').toUpperCase()}</span>
+        <div><div class="pvw-post-name">${escH(r.name||S.user?.name||'You')}</div><div class="pvw-post-h">${escH(r.handle||'')} · ${escH(plat)}</div></div></div>
+      <div class="pvw-post-body">${par(r.text||a.preview)}</div>
+      ${r.image?`<div class="pvw-post-img" style="background-image:url('${encodeURI(r.image)}')"></div>`:''}
+    </div></div>`;
+  }
+  if(type==='website'){
+    const src=r.html?` srcdoc="${escH(r.html)}"`:'';
+    const note=r.html?'':`<div class="pvw-web-note">Live preview appears here after the site is generated.</div>`;
+    return `<div class="pvw-frame web"><div class="pvw-web-tabs"><button class="pvw-web-tab on" data-apvweb="desk">Desktop</button><button class="pvw-web-tab" data-apvweb="mob">Mobile</button><span class="pvw-web-url">${escH(r.url||a.destination||'')}</span></div>
+      <div class="pvw-web-stage desk"><div class="pvw-web-frame">${r.html?`<iframe class="pvw-web-if" title="Website preview"${src}></iframe>`:note}</div></div></div>`;
+  }
+  if(type==='data'){
+    const rows=(r.rows||[]);
+    return `<div class="pvw-frame data"><div class="pvw-data-lead">${escH(r.summary||((rows.length||a.recipients||0)+' record'+((rows.length||a.recipients)===1?'':'s')+' will change'))}</div>
+      <table class="pvw-data-tbl"><thead><tr><th>Field</th><th>Current</th><th>New</th></tr></thead>
+      <tbody>${rows.slice(0,60).map(x=>`<tr><td>${escH(x.field||'')}</td><td class="old">${escH(x.old==null?'—':x.old)}</td><td class="new">${escH(x.new==null?'—':x.new)}</td></tr>`).join('')||`<tr><td colspan="3" class="pvw-empty-cell">Change details appear here.</td></tr>`}</tbody></table></div>`;
+  }
+  // report / doc / generic
+  return `<div class="pvw-frame doc"><div class="pvw-doc">${r.title?`<h1>${escH(r.title)}</h1>`:''}<div class="pvw-doc-body">${par(r.body||a.preview)}</div></div></div>`;
+}
+
+/* ---- what happened while you were away: a readable work history ---- */
+function _apvTimeline(a){
+  const tl=a.timeline||[];
+  if(!tl.length){
+    const bits=[];
+    if(a.startedAt) bits.push('Started '+_apvAgo(a.startedAt));
+    if(a.readyAt) bits.push('Ready '+_apvAgo(a.readyAt));
+    if(!bits.length) return '';
+    return `<div class="pvw-sec"><div class="pvw-sec-h">Activity</div><div class="pvw-tl-min">${escH(bits.join(' · '))}</div></div>`;
+  }
+  return `<div class="pvw-sec"><div class="pvw-sec-h">What happened while you were away</div>
+    <ol class="pvw-tl">${tl.map(e=>`<li class="pvw-tl-ev"><span class="pvw-tl-dot"></span>
+      <div class="pvw-tl-b"><div class="pvw-tl-top"><span class="pvw-tl-agent">${escH(e.agent||'AMV')}</span><span class="pvw-tl-t">${escH(e.t||'')}</span></div>
+      <div class="pvw-tl-txt">${escH(e.text||'')}</div></div></li>`).join('')}</ol></div>`;
+}
+
+/* ---- the Crew: restrained identity (initials + role + status dot) ---- */
+function _apvCrew(a){
+  const crew=a.crew||[];
+  if(!crew.length) return '';
+  const ini=n=>String(n||'A').trim().split(/\s+/).map(w=>w[0]).join('').slice(0,2).toUpperCase();
+  return `<div class="pvw-sec"><div class="pvw-sec-h">Crew</div>
+    <div class="pvw-crew">${crew.map((c,i)=>`<div class="pvw-agent">
+      <span class="pvw-agent-mk m${i%5}">${escH(ini(c.name||c.role))}</span>
+      <div class="pvw-agent-b"><div class="pvw-agent-role">${escH(c.role||c.name||'Agent')}</div>
+        <div class="pvw-agent-resp">${escH(c.resp||'')}</div></div>
+      <span class="pvw-agent-st ${c.status==='done'?'done':c.status==='blocked'?'blocked':'active'}">${escH(c.status==='done'?'Done':c.status==='blocked'?'Blocked':c.status||'Working')}</span>
+    </div>`).join('')}</div></div>`;
+}
+
+/* ---- artifact handoffs: click an artifact to inspect it ---- */
+function _apvArtifacts(a){
+  const arts=a.artifacts||[];
+  if(!arts.length) return '';
+  return `<div class="pvw-sec"><div class="pvw-sec-h">Work handed between agents</div>
+    <div class="pvw-hand">${arts.map((x,i)=>`<div class="pvw-hand-row">
+      <span class="pvw-hand-a">${escH(x.from||'')}</span>
+      <button class="pvw-hand-art" data-apvart="${i}" title="Inspect">${escH(x.name||'artifact')}</button>
+      <span class="pvw-hand-arrow">→</span><span class="pvw-hand-a">${escH(x.to||'')}</span>
+    </div>`).join('')}</div></div>`;
+}
+
+/* Skeleton shown while a preview's data / iframe is genuinely loading. */
+function _apvSkeleton(){
+  return `<div class="pvw-body"><main class="pvw-stage"><div class="pvw-skel-frame">
+      <div class="skel skel-l"></div><div class="skel skel-l"></div><div class="skel skel-l w70"></div>
+      <div class="skel skel-block"></div><div class="skel skel-l"></div><div class="skel skel-l w80"></div></div></main>
+    <aside class="pvw-side"><div class="skel skel-card"></div><div class="skel skel-card"></div></aside></div>`;
+}
+
+/* Open the full-page Preview workspace for an approval. */
+function apvPreview(id){
+  const a=_cwApprovals().find(x=>x.id===id); if(!a){ toast('That item is no longer waiting','info'); return; }
+  const r=$('ovr'); if(!r) return;
+  const act=_apvAction(a);
+  // Shell + skeleton first (real progressive render; iframe results keep the skeleton until load).
+  r.innerHTML=`<div class="ov pvw-ov" id="pvw-bg"><div class="pvw" role="dialog" aria-label="Preview and approve" onclick="event.stopPropagation()">
+    <header class="pvw-top">
+      <button class="pvw-back" data-dact="apvClose" aria-label="Back">← <span>Back</span></button>
+      <div class="pvw-top-mid"><span class="pvw-top-ic">${a.icon||'✉️'}</span><span class="pvw-top-t">${escH(a.title)}</span>${a.project?`<span class="pvw-chip">${escH(a.project)}</span>`:''}</div>
+      <div class="pvw-top-r">${a.timeline&&a.timeline.length?`<button class="pvw-quiet" data-apvhist="1">View history</button>`:''}<span class="pvw-mode ${a.autoApprove?'auto':'wait'}">${a.autoApprove?'Auto-approve on':'Auto-approve off'}</span></div>
+    </header>
+    <div id="pvw-mount">${_apvSkeleton()}</div>
+    <footer class="pvw-foot">
+      <div class="pvw-foot-line"><span class="pvw-foot-ic">●</span>${escH(act.line)}</div>
+      <div class="pvw-foot-act">
+        <button class="btn pvw-revise" data-dact="apvRevise" data-darg="${a.id}">Ask AMV to revise</button>
+        <button class="btn pvw-edit" data-dact="apvEdit" data-darg="${a.id}">Edit</button>
+        <button class="btn pvw-reject" data-dact="apvReject" data-darg="${a.id}">Reject</button>
+        <button class="btn pvw-approve" data-dact="apvApprove" data-darg="${a.id}">${escH(act.btn)}</button>
+      </div>
+      <button class="pvw-more" data-apvmore="1" aria-label="More actions">⋯</button>
+    </footer>
+  </div></div>`;
+  on($('pvw-bg'),'click',apvClose);
+  const hist=r.querySelector('[data-apvhist]'); if(hist) on(hist,'click',()=>{ const s=r.querySelector('.pvw-side'); if(s) s.scrollIntoView({behavior:'smooth'}); });
+  const more=r.querySelector('[data-apvmore]'); if(more) on(more,'click',()=>r.querySelector('.pvw-foot-act')?.classList.toggle('open'));
+  // Progressive render: paint the skeleton, then mount the real content next frame.
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    const m=$('pvw-mount'); if(!m) return;
+    m.innerHTML=`<div class="pvw-body">
+      <main class="pvw-stage">
+        <div class="pvw-stage-h"><span>Final result</span><span class="pvw-stage-sub">This is exactly what will ${escH(act.verb)}.</span></div>
+        ${_apvFrame(a)}
+      </main>
+      <aside class="pvw-side">
+        <div class="pvw-final">
+          <div class="pvw-final-h">Before you approve</div>
+          <div class="pvw-final-line">${escH(act.line)}</div>
+          ${a.warning?`<div class="pvw-final-warn">${escH(a.warning)}</div>`:''}
+          <div class="pvw-final-meta">
+            ${a.crewName?`<span class="pvw-fm"><span>Crew</span>${escH(a.crewName)}</span>`:''}
+            ${a.destination?`<span class="pvw-fm"><span>Destination</span>${escH(a.destination)}</span>`:''}
+            ${a.scheduledAt?`<span class="pvw-fm"><span>When</span>${escH(a.scheduledAt)}</span>`:''}
+            ${a.account?`<span class="pvw-fm"><span>Account</span>${escH(a.account)}</span>`:''}
+          </div>
+        </div>
+        ${_apvTimeline(a)}
+        ${_apvCrew(a)}
+        ${_apvArtifacts(a)}
+      </aside>
+    </div>`;
+    // website preview: reveal iframe only once it has genuinely loaded
+    const ifr=m.querySelector('.pvw-web-if');
+    if(ifr){ ifr.style.opacity='0'; ifr.addEventListener('load',()=>{ ifr.style.transition='opacity .2s'; ifr.style.opacity='1'; }); }
+    m.querySelectorAll('[data-apvweb]').forEach(b=>on(b,'click',()=>{ m.querySelectorAll('[data-apvweb]').forEach(x=>x.classList.remove('on')); b.classList.add('on'); const st=m.querySelector('.pvw-web-stage'); if(st){ st.classList.toggle('mob',b.dataset.apvweb==='mob'); st.classList.toggle('desk',b.dataset.apvweb==='desk'); } }));
+    m.querySelectorAll('[data-apvart]').forEach(b=>on(b,'click',()=>{ const art=(a.artifacts||[])[+b.dataset.apvart]; if(art) _apvInspectArtifact(art); }));
+  }));
+}
+function apvClose(){ const x=$('ovr'); if(x) x.innerHTML=''; }
+function _apvInspectArtifact(art){
+  toast((art.name||'Artifact')+(art.note?(' — '+art.note):': intermediate work handed between agents'),'info',4200);
+}
+/* Approve straight from a card (no preview) with a confirm on the consequence. */
+function apvQuickApprove(id){
+  const a=_cwApprovals().find(x=>x.id===id); if(!a){ renderCrewView(); return; }
+  const act=_apvAction(a);
+  if(!confirm(act.line)) return;
+  _apvDoApprove(a);
+}
+function apvApprove(id){
+  const a=_cwApprovals().find(x=>x.id===id); if(!a){ apvClose(); return; }
+  _apvDoApprove(a); apvClose();
+}
+function _apvDoApprove(a){
+  if(window.AMV_API && AMV_API.live){ AMV_API.actApproval(a.id,'approve').catch(()=>{}); }
+  _cwSaveApprovals(_cwApprovals().filter(x=>x.id!==a.id));
+  const act=_apvAction(a);
+  toast('Approved — '+(act.verb==='approve'?'done':act.verb.replace(/e?$/,act.verb.endsWith('e')?'ed':'ed')),'success');
+  renderCrewView();
+}
+function apvReject(id){ apvClose(); cwReject(id); }
+function apvEdit(id){ apvClose(); cwEdit(id); }
+function apvRevise(id){
+  const item=_cwApprovals().find(x=>x.id===id); apvClose();
+  setTab('chat');
+  setTimeout(()=>{ const ta=$('mta'); if(ta&&item){ ta.value='Revise this before it goes out — tell me what you changed and why:\n\n'+(item.result?.body||item.preview||item.title); ta.dispatchEvent(new Event('input')); ta.focus(); } },140);
+}
+window.apvPreview=apvPreview; window.apvClose=apvClose; window.apvApprove=apvApprove;
+window.apvQuickApprove=apvQuickApprove; window.apvReject=apvReject; window.apvEdit=apvEdit; window.apvRevise=apvRevise;
+
 
 /* ============================================================
    AMV DESIGN  - visual canvas: generate & iterate UI / graphics

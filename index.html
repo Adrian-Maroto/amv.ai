@@ -5892,6 +5892,197 @@ body.light .ctx-menu > *:hover{ background:var(--s2,#f0efec)!important; }
   #cia{ padding-bottom:12px!important; }
 }
 
+/* ============================================================
+   LAYER 26 — APPROVAL + PREVIEW WORKSPACE  (Mission Control, Phase 1)
+   Governed tokens (spacing / radii / status), the approval card,
+   and the full-page Preview workspace. Fits phone -> TV: fluid grid,
+   capped + centered on ultrawide, full-screen with a sticky Approve
+   bar on mobile. No glow-on-everything, restrained agent identity.
+   ============================================================ */
+:root{
+  --sp-1:4px;--sp-2:8px;--sp-3:12px;--sp-4:16px;--sp-5:24px;--sp-6:32px;--sp-7:48px;--sp-8:64px;
+  --rc:8px;   /* controls */ --rk:12px;  /* cards */ --rp:16px;  /* large panels */
+  --ok:#42b883;--warn:#d8a84e;--err:#d96666;--wait:#7d8aa3;
+  --ok-soft:rgba(66,184,131,.14);--warn-soft:rgba(216,168,78,.15);--err-soft:rgba(217,102,102,.14);--wait-soft:rgba(125,138,163,.16);
+}
+body.light{--wait:#6b7690;--ok:#2f9e6e;--warn:#b7862f;--err:#c4544f;}
+
+/* ---- ultrawide: cap + center the Crew/approval page so it never floats left ---- */
+@media(min-width:1500px){ .crew-page{max-width:1180px;margin-left:auto;margin-right:auto} }
+
+/* ---- Approval card ---- */
+.apv-card{background:var(--s1);border:1px solid var(--bd);border-radius:var(--rk);padding:var(--sp-4) var(--sp-4) var(--sp-3);margin-bottom:var(--sp-3);transition:border-color .16s,box-shadow .16s}
+.apv-card:hover{border-color:rgba(63,118,245,.34)}
+.apv-card-top{display:flex;align-items:flex-start;gap:var(--sp-3)}
+.apv-ic{width:36px;height:36px;flex:none;display:grid;place-items:center;font-size:18px;background:var(--s2);border-radius:var(--rc)}
+.apv-card-hd{flex:1;min-width:0}
+.apv-title{font-size:16px;font-weight:600;color:var(--tx);line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.apv-req{font-size:13px;color:var(--mu);margin-top:2px;line-height:1.45}
+.apv-status{flex:none;font-size:11px;font-weight:600;letter-spacing:.02em;padding:4px 9px;border-radius:999px;white-space:nowrap}
+.apv-status.wait{color:var(--wait);background:var(--wait-soft)}
+.apv-status.auto{color:var(--ok);background:var(--ok-soft)}
+.apv-meta{display:flex;flex-wrap:wrap;gap:var(--sp-2) var(--sp-4);margin:var(--sp-3) 0 0;padding-left:48px}
+.apv-mi{font-size:12.5px;color:var(--tx);display:inline-flex;gap:6px;align-items:baseline}
+.apv-mk{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.04em}
+.apv-warn{margin:var(--sp-3) 0 0 48px;font-size:12.5px;color:var(--warn);background:var(--warn-soft);border:1px solid rgba(216,168,78,.28);border-radius:var(--rc);padding:8px 11px;line-height:1.45}
+.apv-act{display:flex;gap:var(--sp-2);margin-top:var(--sp-4);padding-left:48px;flex-wrap:wrap}
+.apv-act .btn{font-size:13px;padding:8px 16px;border-radius:var(--rc)}
+.apv-preview{background:var(--s3);color:var(--tx);border:1px solid var(--bd);font-weight:600;order:1}
+.apv-preview:hover{background:var(--s4)}
+.apv-approve{background:var(--accent);color:#fff;font-weight:600;margin-left:auto;order:4}
+.apv-approve:hover{background:var(--accent-d)}
+.apv-ghost{background:transparent;color:var(--mu);border:1px solid transparent}
+.apv-ghost:hover{background:var(--s2);color:var(--tx)}
+.apv-reject:hover{color:var(--err)}
+.apv-ghost{order:2}.apv-reject{order:3}
+
+/* ---- Skeletons (real loading state) ---- */
+.skel{position:relative;overflow:hidden;background:var(--s2);border-radius:var(--rc)}
+.skel::after{content:"";position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,rgba(255,255,255,.06),transparent);animation:apvShimmer 1.15s infinite}
+@keyframes apvShimmer{100%{transform:translateX(100%)}}
+.skel-l{height:14px;margin:10px 0}.skel-l.w70{width:70%}.skel-l.w80{width:80%}
+.skel-block{height:180px;margin:16px 0;border-radius:var(--rk)}
+.skel-card{height:120px;margin-bottom:16px;border-radius:var(--rk)}
+.skel-frame{padding:22px;border:1px solid var(--bd);border-radius:var(--rp);background:var(--s1)}
+@media(prefers-reduced-motion:reduce){.skel::after{animation:none}}
+
+/* ---- Preview workspace overlay ---- */
+.pvw-ov{position:fixed;inset:0;z-index:1200;background:rgba(8,10,15,.62);backdrop-filter:blur(3px);display:flex;padding:var(--sp-5)}
+.pvw{position:relative;margin:auto;width:min(1200px,100%);max-height:calc(100vh - var(--sp-8));display:flex;flex-direction:column;background:var(--bg);border:1px solid var(--bd);border-radius:var(--rp);overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.45)}
+.pvw-top{display:flex;align-items:center;gap:var(--sp-3);padding:var(--sp-3) var(--sp-4);border-bottom:1px solid var(--bd);background:var(--s1)}
+.pvw-back{display:inline-flex;align-items:center;gap:6px;background:transparent;border:none;color:var(--mu);font-size:13px;font-weight:500;cursor:pointer;padding:6px 8px;border-radius:var(--rc)}
+.pvw-back:hover{background:var(--s2);color:var(--tx)}
+.pvw-top-mid{flex:1;min-width:0;display:flex;align-items:center;gap:var(--sp-2)}
+.pvw-top-ic{font-size:16px}.pvw-top-t{font-weight:600;color:var(--tx);font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pvw-chip{flex:none;font-size:11px;color:var(--mu);background:var(--s2);border:1px solid var(--bd);border-radius:999px;padding:3px 9px}
+.pvw-top-r{display:flex;align-items:center;gap:var(--sp-3);flex:none}
+.pvw-quiet{background:transparent;border:none;color:var(--mu);font-size:12.5px;cursor:pointer}.pvw-quiet:hover{color:var(--tx)}
+.pvw-mode{font-size:11px;font-weight:600;padding:4px 9px;border-radius:999px}
+.pvw-mode.wait{color:var(--wait);background:var(--wait-soft)}.pvw-mode.auto{color:var(--ok);background:var(--ok-soft)}
+.pvw-body{flex:1;min-height:0;display:grid;grid-template-columns:1fr 340px;overflow:hidden}
+.pvw-stage{overflow:auto;padding:var(--sp-5);background:var(--bg)}
+.pvw-stage-h{display:flex;align-items:baseline;gap:var(--sp-3);margin-bottom:var(--sp-4)}
+.pvw-stage-h>span:first-child{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--dim)}
+.pvw-stage-sub{font-size:12.5px;color:var(--mu)}
+.pvw-side{overflow:auto;padding:var(--sp-5) var(--sp-4);border-left:1px solid var(--bd);background:var(--s1);display:flex;flex-direction:column;gap:var(--sp-5)}
+.pvw-sec-h{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--dim);margin-bottom:var(--sp-3)}
+
+/* result frames */
+.pvw-frame{border:1px solid var(--bd);border-radius:var(--rp);background:var(--s1);overflow:hidden}
+.pvw-mail-hd{padding:var(--sp-4);border-bottom:1px solid var(--bd);background:var(--s2)}
+.pvw-mail-row{display:flex;gap:var(--sp-3);font-size:13px;padding:3px 0;color:var(--tx)}
+.pvw-mail-k{width:58px;flex:none;color:var(--dim);font-size:12px}
+.pvw-mail-row.subj{font-weight:600;margin-top:2px}
+.pvw-mail-body{padding:var(--sp-5) var(--sp-5) var(--sp-6);font-size:15px;line-height:1.7;color:var(--tx);max-width:660px}
+.pvw-mail-body p{margin:0 0 14px}
+.pvw-post{max-width:520px;margin:0 auto}
+.pvw-post-hd{display:flex;align-items:center;gap:10px;padding:var(--sp-4)}
+.pvw-post-av{width:40px;height:40px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font-weight:700}
+.pvw-post-name{font-weight:600;color:var(--tx);font-size:14px}.pvw-post-h{font-size:12.5px;color:var(--mu)}
+.pvw-post-body{padding:0 var(--sp-4) var(--sp-4);font-size:15px;line-height:1.6;color:var(--tx)}
+.pvw-post-img{height:260px;background-size:cover;background-position:center;background-color:var(--s2)}
+.pvw-web-tabs{display:flex;align-items:center;gap:var(--sp-2);padding:var(--sp-2) var(--sp-3);border-bottom:1px solid var(--bd);background:var(--s2)}
+.pvw-web-tab{font-size:12px;padding:5px 12px;border-radius:var(--rc);background:transparent;border:1px solid transparent;color:var(--mu);cursor:pointer}
+.pvw-web-tab.on{background:var(--s1);border-color:var(--bd);color:var(--tx)}
+.pvw-web-url{margin-left:auto;font-size:12px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:50%}
+.pvw-web-stage{padding:var(--sp-5);display:flex;justify-content:center;background:var(--s2)}
+.pvw-web-frame{width:100%;background:var(--bg);border:1px solid var(--bd);border-radius:var(--rk);min-height:340px;overflow:hidden;transition:max-width .28s ease}
+.pvw-web-stage.desk .pvw-web-frame{max-width:100%}
+.pvw-web-stage.mob .pvw-web-frame{max-width:390px}
+.pvw-web-if{width:100%;height:440px;border:0;display:block;background:#fff}
+.pvw-web-note{padding:60px 20px;text-align:center;color:var(--mu);font-size:13px}
+.pvw-data{padding:0}
+.pvw-data-lead{padding:var(--sp-4);font-size:13.5px;color:var(--tx);border-bottom:1px solid var(--bd);background:var(--s2)}
+.pvw-data-tbl{width:100%;border-collapse:collapse;font-size:13px}
+.pvw-data-tbl th{text-align:left;padding:9px var(--sp-4);color:var(--dim);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid var(--bd)}
+.pvw-data-tbl td{padding:9px var(--sp-4);border-bottom:1px solid var(--bd);color:var(--tx)}
+.pvw-data-tbl td.old{color:var(--mu);text-decoration:line-through}
+.pvw-data-tbl td.new{color:var(--ok);font-weight:600}
+.pvw-empty-cell{color:var(--mu);text-align:center;padding:22px!important}
+.pvw-doc{max-width:720px}.pvw-doc h1{font-size:24px;font-weight:600;color:var(--tx);margin-bottom:var(--sp-4);letter-spacing:-.01em}
+.pvw-doc-body{font-size:15px;line-height:1.75;color:var(--tx)}.pvw-doc-body p{margin:0 0 15px}
+
+/* final action card */
+.pvw-final{background:var(--s2);border:1px solid rgba(63,118,245,.28);border-radius:var(--rk);padding:var(--sp-4)}
+.pvw-final-h{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--dim);margin-bottom:8px}
+.pvw-final-line{font-size:14px;font-weight:600;color:var(--tx);line-height:1.5}
+.pvw-final-warn{margin-top:10px;font-size:12.5px;color:var(--warn);background:var(--warn-soft);border-radius:var(--rc);padding:8px 10px;line-height:1.45}
+.pvw-final-meta{display:flex;flex-direction:column;gap:8px;margin-top:var(--sp-4)}
+.pvw-fm{font-size:13px;color:var(--tx);display:flex;flex-direction:column;gap:1px}
+.pvw-fm>span{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.04em}
+
+/* timeline */
+.pvw-tl{list-style:none;margin:0;padding:0;position:relative}
+.pvw-tl-min{font-size:13px;color:var(--mu)}
+.pvw-tl-ev{position:relative;padding:0 0 var(--sp-4) var(--sp-5)}
+.pvw-tl-ev::before{content:"";position:absolute;left:4px;top:12px;bottom:-2px;width:1px;background:var(--bd)}
+.pvw-tl-ev:last-child::before{display:none}
+.pvw-tl-dot{position:absolute;left:0;top:5px;width:9px;height:9px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px var(--s1)}
+.pvw-tl-top{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.pvw-tl-agent{font-size:13px;font-weight:600;color:var(--tx)}
+.pvw-tl-t{font-size:11.5px;color:var(--dim);flex:none}
+.pvw-tl-txt{font-size:13px;color:var(--mu);line-height:1.5;margin-top:2px}
+
+/* crew */
+.pvw-crew{display:flex;flex-direction:column;gap:var(--sp-2)}
+.pvw-agent{display:flex;align-items:center;gap:var(--sp-3);padding:8px;border:1px solid var(--bd);border-radius:var(--rc);background:var(--s2)}
+.pvw-agent-mk{width:30px;height:30px;flex:none;border-radius:8px;display:grid;place-items:center;font-size:11px;font-weight:700;color:#fff}
+.pvw-agent-mk.m0{background:#3f76f5}.pvw-agent-mk.m1{background:#5b6fd6}.pvw-agent-mk.m2{background:#4f86c6}.pvw-agent-mk.m3{background:#6a63c9}.pvw-agent-mk.m4{background:#4670b8}
+.pvw-agent-b{flex:1;min-width:0}
+.pvw-agent-role{font-size:13px;font-weight:600;color:var(--tx)}
+.pvw-agent-resp{font-size:12px;color:var(--mu);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pvw-agent-st{flex:none;font-size:10.5px;font-weight:600;padding:3px 8px;border-radius:999px}
+.pvw-agent-st.done{color:var(--ok);background:var(--ok-soft)}
+.pvw-agent-st.active{color:var(--accent);background:var(--accent-soft)}
+.pvw-agent-st.blocked{color:var(--err);background:var(--err-soft)}
+
+/* artifact handoffs */
+.pvw-hand{display:flex;flex-direction:column;gap:8px}
+.pvw-hand-row{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--mu);flex-wrap:wrap}
+.pvw-hand-a{color:var(--tx);font-weight:500}
+.pvw-hand-art{font-size:12px;font-family:var(--mn);background:var(--s2);border:1px solid var(--bd);color:var(--accent);border-radius:6px;padding:2px 8px;cursor:pointer}
+.pvw-hand-art:hover{border-color:var(--accent)}
+.pvw-hand-arrow{color:var(--dim)}
+
+/* footer — the approval surface */
+.pvw-foot{display:flex;align-items:center;gap:var(--sp-4);padding:var(--sp-3) var(--sp-4);border-top:1px solid var(--bd);background:var(--s1);flex-wrap:wrap}
+.pvw-foot-line{flex:1;min-width:200px;font-size:13.5px;font-weight:600;color:var(--tx);display:flex;align-items:center;gap:8px}
+.pvw-foot-ic{color:var(--accent);font-size:9px}
+.pvw-foot-act{display:flex;gap:var(--sp-2);align-items:center}
+.pvw-foot-act .btn{font-size:13px;padding:9px 16px;border-radius:var(--rc)}
+.pvw-revise,.pvw-edit{background:transparent;border:1px solid var(--bd);color:var(--tx)}
+.pvw-revise:hover,.pvw-edit:hover{background:var(--s2)}
+.pvw-reject{background:transparent;border:1px solid transparent;color:var(--mu)}
+.pvw-reject:hover{color:var(--err);background:var(--err-soft)}
+.pvw-approve{background:var(--accent);color:#fff;font-weight:600}
+.pvw-approve:hover{background:var(--accent-d)}
+.pvw-more{display:none;background:transparent;border:1px solid var(--bd);color:var(--tx);border-radius:var(--rc);width:40px;height:40px;font-size:18px;cursor:pointer}
+
+/* ---- tablet: stack the side panel under the stage ---- */
+@media(max-width:900px){
+  .pvw-body{grid-template-columns:1fr;overflow:auto}
+  .pvw-stage{overflow:visible}
+  .pvw-side{border-left:none;border-top:1px solid var(--bd);overflow:visible}
+}
+/* ---- mobile: full-screen, focused, sticky Approve, secondary actions collapsed ---- */
+@media(max-width:640px){
+  .pvw-ov{padding:0}
+  .pvw{width:100%;max-height:100vh;height:100vh;border-radius:0;border:none}
+  .pvw-stage{padding:var(--sp-4)}
+  .pvw-side{padding:var(--sp-4)}
+  .apv-meta,.apv-warn,.apv-act{padding-left:0}
+  .pvw-foot{position:sticky;bottom:0;gap:var(--sp-2)}
+  .pvw-foot-line{flex-basis:100%;font-size:13px}
+  .pvw-foot-act{flex:1}
+  .pvw-approve{flex:1;justify-content:center;padding:12px 16px}
+  .pvw-revise,.pvw-edit,.pvw-reject{display:none}
+  .pvw-foot-act.open .pvw-revise,.pvw-foot-act.open .pvw-edit,.pvw-foot-act.open .pvw-reject{display:inline-flex}
+  .pvw-more{display:grid;place-items:center}
+  .pvw-mail-body{font-size:15px;padding:var(--sp-4)}
+  .apv-title{white-space:normal}
+}
+@media(hover:none){ .apv-approve,.pvw-approve,.apv-preview{min-height:44px} }
+
 </style>
 <!-- BUILD:CSS:END -->
 <script>
@@ -15582,15 +15773,35 @@ function renderCrewView(){
       </div>
       <button class="cw-toggle ${j.on?'on':''}" data-dact="cwToggle" data-darg="${j.id}" aria-label="toggle"><span class="cw-knob"></span></button>
     </div>`;
-  const apprCard=a=>`<div class="cw-appr">
-      <div class="cw-appr-h"><span class="cw-appr-ic">${a.icon||'\u2709\uFE0F'}</span><span class="cw-appr-t">${escH(a.title)}</span></div>
-      <div class="cw-appr-body">${escH(a.preview)}</div>
-      <div class="cw-appr-act">
-        <button class="btn bp" data-dact="cwApprove" data-darg="${a.id}">Approve & send</button>
-        <button class="btn bs" data-dact="cwReject" data-darg="${a.id}">Dismiss</button>
-        <button class="btn bs" data-dact="cwEdit" data-darg="${a.id}">Edit in chat</button>
+  const apprCard=a=>{
+    const act=_apvAction(a);
+    const meta=[
+      a.project?['Project',a.project]:null,
+      a.crewName?['Crew',a.crewName]:null,
+      a.destination?['To',a.destination]:null,
+      (a.recipients!=null)?['Recipients',String(a.recipients)]:null,
+      a.scheduledAt?['Scheduled',a.scheduledAt]:null,
+      a.readyAt?['Ready',_apvAgo(a.readyAt)]:null
+    ].filter(Boolean);
+    return `<div class="apv-card">
+      <div class="apv-card-top">
+        <span class="apv-ic">${a.icon||'\u2709\uFE0F'}</span>
+        <div class="apv-card-hd">
+          <div class="apv-title">${escH(a.title)}</div>
+          <div class="apv-req">${escH(a.requesting||act.line)}</div>
+        </div>
+        <span class="apv-status ${a.autoApprove?'auto':'wait'}">${a.autoApprove?'Auto-approve on':'Needs approval'}</span>
+      </div>
+      ${meta.length?`<div class="apv-meta">${meta.map(m=>`<span class="apv-mi"><span class="apv-mk">${escH(m[0])}</span>${escH(m[1])}</span>`).join('')}</div>`:''}
+      ${a.warning?`<div class="apv-warn">${escH(a.warning)}</div>`:''}
+      <div class="apv-act">
+        <button class="btn apv-preview" data-dact="apvPreview" data-darg="${a.id}">Preview</button>
+        <button class="btn apv-ghost" data-dact="apvEdit" data-darg="${a.id}">Edit</button>
+        <button class="btn apv-ghost apv-reject" data-dact="apvReject" data-darg="${a.id}">Reject</button>
+        <button class="btn apv-approve" data-dact="apvQuickApprove" data-darg="${a.id}">${escH(act.btn)}</button>
       </div>
     </div>`;
+  };
   const activeCount=jobs.filter(j=>j.on).length;
 
   vc.innerHTML = `<div class="sv fi"><div class="crew-page">
@@ -15683,9 +15894,41 @@ function cwToggle(id){
 }
 function cwDemo(){
   const appr=_cwApprovals();
-  appr.unshift({ id:'a'+Date.now(), icon:'\uD83D\uDCE7', title:'Reply to Sarah \u2014 \u201cProject timeline\u201d',
-    preview:'Hi Sarah, thanks for the update. The timeline works on our end \u2014 we can have the first milestone ready by the 14th. I\u2019ll send the detailed plan tomorrow. Best, '+(S.user?.name?.split(' ')[0]||'') });
+  const now=Date.now(), me=(S.user&&S.user.name)||'You', first=me.split(' ')[0];
+  appr.unshift({
+    id:'a'+now, icon:'\uD83D\uDCE7',
+    title:'Weekly customer update \u2014 September',
+    project:'Growth', crewName:'Content Crew',
+    actionType:'send', resultType:'email', recipients:42,
+    destination:'42 customers (newsletter list)', account:'you@amv.dev',
+    requesting:'Send the finished monthly update to your customer list.',
+    autoApprove:false,
+    startedAt:now-26*6e4, readyAt:now-3*6e4,
+    warning:'Goes to 42 recipients. Double-check the subject line before approving.',
+    result:{ type:'email', from:'you@amv.dev', to:'42 customers (undisclosed recipients)',
+      subject:'What we shipped this month + what\u2019s next',
+      body:'Hi there,\n\nThis month we shipped three things you asked for: faster exports, a redesigned dashboard, and one-click sharing. Exports now finish in seconds, the dashboard puts your key numbers first, and sharing a report is now a single click.\n\nNext month we\u2019re focused on team workspaces \u2014 shared projects, roles, and a single bill. If you want early access, just reply to this email.\n\nThank you for building with us.\n\n\u2014 '+first },
+    timeline:[
+      {t:'9:02 AM', agent:'Planner', text:'Broke the update into research, draft, and review.'},
+      {t:'9:06 AM', agent:'Researcher', text:'Pulled this month\u2019s shipped features and the top 3 customer requests.'},
+      {t:'9:11 AM', agent:'Copywriter', text:'Wrote the subject line, intro, and the three highlights.'},
+      {t:'9:15 AM', agent:'Reviewer', text:'Tightened the copy and flagged the subject line for your eyes.'},
+      {t:'9:17 AM', agent:'AMV', text:'Ready for your approval.'}
+    ],
+    crew:[
+      {role:'Planner', resp:'Structured the work', status:'done'},
+      {role:'Researcher', resp:'Gathered the month\u2019s highlights', status:'done'},
+      {role:'Copywriter', resp:'Wrote the email', status:'done'},
+      {role:'Reviewer', resp:'Checked tone and accuracy', status:'done'}
+    ],
+    artifacts:[
+      {name:'highlights.md', from:'Researcher', to:'Copywriter', note:'the month\u2019s shipped features'},
+      {name:'draft-v1', from:'Copywriter', to:'Reviewer', note:'first email draft'},
+      {name:'final-email', from:'Reviewer', to:'AMV', note:'approved-for-review copy'}
+    ]
+  });
   _cwSaveApprovals(appr); renderCrewView();
+  toast('Example draft added \u2014 press Preview to see the full workspace','info',4000);
 }
 function cwApprove(id){ const a=_cwApprovals().filter(x=>x.id!==id); _cwSaveApprovals(a); toast('Approved \u2014 sent','info'); renderCrewView(); }
 function cwReject(id){ if(window.AMV_API && AMV_API.live){ AMV_API.actApproval(id,'reject').catch(()=>{}); } const a=_cwApprovals().filter(x=>x.id!==id); _cwSaveApprovals(a); toast('Dismissed','info'); renderCrewView(); }
@@ -15699,6 +15942,228 @@ function cwTry(prompt){
   }catch(e){}
 }
 window.cwTry=cwTry;
+
+/* ============================================================
+   APPROVAL + PREVIEW WORKSPACE  (Phase 1 of the Mission Control redesign)
+   ------------------------------------------------------------
+   Task -> Plan -> Agent execution -> PREVIEW -> APPROVAL -> Final action.
+   AMV stops before any consequential external action unless Auto Approve
+   is on. This module renders the "Needs your approval" cards and the full
+   Preview workspace: the finished result, what happened while you were away,
+   the Crew that did it, artifact handoffs, and a plain-language final-action
+   summary with a specific Approve button.
+
+   Everything renders from real data on the approval object and degrades
+   honestly: sections with no data are hidden, never fabricated. No token
+   cost, model cost, or price is ever shown on an approval or preview.
+   ============================================================ */
+
+/* Derive the specific final action from the approval's actionType. */
+function _apvAction(a){
+  const t=(a.actionType||'').toLowerCase();
+  const n=a.recipients, dest=a.destination||'', when=a.scheduledAt||'';
+  const map={
+    send:    {btn:'Approve & send',     verb:'send',     line:'Approve to send this '+(a.resultType==='email'?'email':'message')+(n!=null?(' to '+n+' recipient'+(n===1?'':'s')):(dest?(' to '+dest):''))+'.'},
+    publish: {btn:'Approve & publish',  verb:'publish',  line:'Approve to publish'+(dest?(' to '+dest):' this')+(when?(' on '+when):'')+'.'},
+    schedule:{btn:'Approve & schedule', verb:'schedule', line:'Approve to schedule this'+(when?(' for '+when):'')+'.'},
+    post:    {btn:'Approve & post',     verb:'post',     line:'Approve to post'+(dest?(' to '+dest):'')+(when?(' — scheduled for '+when):'')+'.'},
+    submit:  {btn:'Approve & submit',   verb:'submit',   line:'Approve to submit this'+(dest?(' to '+dest):'')+'.'},
+    update:  {btn:'Approve & update',   verb:'update',   line:'Approve to update'+(n!=null?(' '+n+' record'+(n===1?'':'s')):(dest?(' '+dest):' this data'))+'.'},
+    deploy:  {btn:'Approve & deploy',   verb:'deploy',   line:'Approve to deploy'+(dest?(' to '+dest):'')+'.'}
+  };
+  return map[t]||{btn:'Approve', verb:'approve', line:'Approve to complete this action.'};
+}
+
+/* Human "x ago" / "in x" for timestamps (accepts ms epoch or a string). */
+function _apvAgo(ts){
+  if(typeof ts!=='number') return String(ts||'');
+  const d=Date.now()-ts, abs=Math.abs(d), fut=d<0;
+  const m=Math.round(abs/6e4), h=Math.round(abs/36e5), day=Math.round(abs/864e5);
+  let s = m<1?'just now' : m<60?(m+' min') : h<24?(h+' hr') : (day+' day'+(day===1?'':'s'));
+  if(s==='just now') return s;
+  return fut ? ('in '+s) : (s+' ago');
+}
+
+/* ---- the finished result, rendered as close to reality as the data allows ---- */
+function _apvFrame(a){
+  const r=a.result||{}, type=r.type||a.resultType||'doc';
+  const par=txt=>String(txt||'').split(/\n\n+/).map(p=>'<p>'+escH(p).replace(/\n/g,'<br>')+'</p>').join('');
+  if(type==='email'){
+    return `<div class="pvw-frame email"><div class="pvw-mail">
+      <div class="pvw-mail-hd">
+        <div class="pvw-mail-row"><span class="pvw-mail-k">From</span><span>${escH(r.from||'you@amv.dev')}</span></div>
+        <div class="pvw-mail-row"><span class="pvw-mail-k">To</span><span>${escH(r.to||a.destination||'')}</span></div>
+        <div class="pvw-mail-row subj"><span class="pvw-mail-k">Subject</span><span>${escH(r.subject||a.title||'')}</span></div>
+      </div>
+      <div class="pvw-mail-body">${par(r.body||a.preview)}</div>
+    </div></div>`;
+  }
+  if(type==='social'){
+    const plat=(r.platform||'Post');
+    return `<div class="pvw-frame social"><div class="pvw-post">
+      <div class="pvw-post-hd"><span class="pvw-post-av">${escH((r.handle||'A').replace(/^@/,'')[0]||'A').toUpperCase()}</span>
+        <div><div class="pvw-post-name">${escH(r.name||S.user?.name||'You')}</div><div class="pvw-post-h">${escH(r.handle||'')} · ${escH(plat)}</div></div></div>
+      <div class="pvw-post-body">${par(r.text||a.preview)}</div>
+      ${r.image?`<div class="pvw-post-img" style="background-image:url('${encodeURI(r.image)}')"></div>`:''}
+    </div></div>`;
+  }
+  if(type==='website'){
+    const src=r.html?` srcdoc="${escH(r.html)}"`:'';
+    const note=r.html?'':`<div class="pvw-web-note">Live preview appears here after the site is generated.</div>`;
+    return `<div class="pvw-frame web"><div class="pvw-web-tabs"><button class="pvw-web-tab on" data-apvweb="desk">Desktop</button><button class="pvw-web-tab" data-apvweb="mob">Mobile</button><span class="pvw-web-url">${escH(r.url||a.destination||'')}</span></div>
+      <div class="pvw-web-stage desk"><div class="pvw-web-frame">${r.html?`<iframe class="pvw-web-if" title="Website preview"${src}></iframe>`:note}</div></div></div>`;
+  }
+  if(type==='data'){
+    const rows=(r.rows||[]);
+    return `<div class="pvw-frame data"><div class="pvw-data-lead">${escH(r.summary||((rows.length||a.recipients||0)+' record'+((rows.length||a.recipients)===1?'':'s')+' will change'))}</div>
+      <table class="pvw-data-tbl"><thead><tr><th>Field</th><th>Current</th><th>New</th></tr></thead>
+      <tbody>${rows.slice(0,60).map(x=>`<tr><td>${escH(x.field||'')}</td><td class="old">${escH(x.old==null?'—':x.old)}</td><td class="new">${escH(x.new==null?'—':x.new)}</td></tr>`).join('')||`<tr><td colspan="3" class="pvw-empty-cell">Change details appear here.</td></tr>`}</tbody></table></div>`;
+  }
+  // report / doc / generic
+  return `<div class="pvw-frame doc"><div class="pvw-doc">${r.title?`<h1>${escH(r.title)}</h1>`:''}<div class="pvw-doc-body">${par(r.body||a.preview)}</div></div></div>`;
+}
+
+/* ---- what happened while you were away: a readable work history ---- */
+function _apvTimeline(a){
+  const tl=a.timeline||[];
+  if(!tl.length){
+    const bits=[];
+    if(a.startedAt) bits.push('Started '+_apvAgo(a.startedAt));
+    if(a.readyAt) bits.push('Ready '+_apvAgo(a.readyAt));
+    if(!bits.length) return '';
+    return `<div class="pvw-sec"><div class="pvw-sec-h">Activity</div><div class="pvw-tl-min">${escH(bits.join(' · '))}</div></div>`;
+  }
+  return `<div class="pvw-sec"><div class="pvw-sec-h">What happened while you were away</div>
+    <ol class="pvw-tl">${tl.map(e=>`<li class="pvw-tl-ev"><span class="pvw-tl-dot"></span>
+      <div class="pvw-tl-b"><div class="pvw-tl-top"><span class="pvw-tl-agent">${escH(e.agent||'AMV')}</span><span class="pvw-tl-t">${escH(e.t||'')}</span></div>
+      <div class="pvw-tl-txt">${escH(e.text||'')}</div></div></li>`).join('')}</ol></div>`;
+}
+
+/* ---- the Crew: restrained identity (initials + role + status dot) ---- */
+function _apvCrew(a){
+  const crew=a.crew||[];
+  if(!crew.length) return '';
+  const ini=n=>String(n||'A').trim().split(/\s+/).map(w=>w[0]).join('').slice(0,2).toUpperCase();
+  return `<div class="pvw-sec"><div class="pvw-sec-h">Crew</div>
+    <div class="pvw-crew">${crew.map((c,i)=>`<div class="pvw-agent">
+      <span class="pvw-agent-mk m${i%5}">${escH(ini(c.name||c.role))}</span>
+      <div class="pvw-agent-b"><div class="pvw-agent-role">${escH(c.role||c.name||'Agent')}</div>
+        <div class="pvw-agent-resp">${escH(c.resp||'')}</div></div>
+      <span class="pvw-agent-st ${c.status==='done'?'done':c.status==='blocked'?'blocked':'active'}">${escH(c.status==='done'?'Done':c.status==='blocked'?'Blocked':c.status||'Working')}</span>
+    </div>`).join('')}</div></div>`;
+}
+
+/* ---- artifact handoffs: click an artifact to inspect it ---- */
+function _apvArtifacts(a){
+  const arts=a.artifacts||[];
+  if(!arts.length) return '';
+  return `<div class="pvw-sec"><div class="pvw-sec-h">Work handed between agents</div>
+    <div class="pvw-hand">${arts.map((x,i)=>`<div class="pvw-hand-row">
+      <span class="pvw-hand-a">${escH(x.from||'')}</span>
+      <button class="pvw-hand-art" data-apvart="${i}" title="Inspect">${escH(x.name||'artifact')}</button>
+      <span class="pvw-hand-arrow">→</span><span class="pvw-hand-a">${escH(x.to||'')}</span>
+    </div>`).join('')}</div></div>`;
+}
+
+/* Skeleton shown while a preview's data / iframe is genuinely loading. */
+function _apvSkeleton(){
+  return `<div class="pvw-body"><main class="pvw-stage"><div class="pvw-skel-frame">
+      <div class="skel skel-l"></div><div class="skel skel-l"></div><div class="skel skel-l w70"></div>
+      <div class="skel skel-block"></div><div class="skel skel-l"></div><div class="skel skel-l w80"></div></div></main>
+    <aside class="pvw-side"><div class="skel skel-card"></div><div class="skel skel-card"></div></aside></div>`;
+}
+
+/* Open the full-page Preview workspace for an approval. */
+function apvPreview(id){
+  const a=_cwApprovals().find(x=>x.id===id); if(!a){ toast('That item is no longer waiting','info'); return; }
+  const r=$('ovr'); if(!r) return;
+  const act=_apvAction(a);
+  // Shell + skeleton first (real progressive render; iframe results keep the skeleton until load).
+  r.innerHTML=`<div class="ov pvw-ov" id="pvw-bg"><div class="pvw" role="dialog" aria-label="Preview and approve" onclick="event.stopPropagation()">
+    <header class="pvw-top">
+      <button class="pvw-back" data-dact="apvClose" aria-label="Back">← <span>Back</span></button>
+      <div class="pvw-top-mid"><span class="pvw-top-ic">${a.icon||'✉️'}</span><span class="pvw-top-t">${escH(a.title)}</span>${a.project?`<span class="pvw-chip">${escH(a.project)}</span>`:''}</div>
+      <div class="pvw-top-r">${a.timeline&&a.timeline.length?`<button class="pvw-quiet" data-apvhist="1">View history</button>`:''}<span class="pvw-mode ${a.autoApprove?'auto':'wait'}">${a.autoApprove?'Auto-approve on':'Auto-approve off'}</span></div>
+    </header>
+    <div id="pvw-mount">${_apvSkeleton()}</div>
+    <footer class="pvw-foot">
+      <div class="pvw-foot-line"><span class="pvw-foot-ic">●</span>${escH(act.line)}</div>
+      <div class="pvw-foot-act">
+        <button class="btn pvw-revise" data-dact="apvRevise" data-darg="${a.id}">Ask AMV to revise</button>
+        <button class="btn pvw-edit" data-dact="apvEdit" data-darg="${a.id}">Edit</button>
+        <button class="btn pvw-reject" data-dact="apvReject" data-darg="${a.id}">Reject</button>
+        <button class="btn pvw-approve" data-dact="apvApprove" data-darg="${a.id}">${escH(act.btn)}</button>
+      </div>
+      <button class="pvw-more" data-apvmore="1" aria-label="More actions">⋯</button>
+    </footer>
+  </div></div>`;
+  on($('pvw-bg'),'click',apvClose);
+  const hist=r.querySelector('[data-apvhist]'); if(hist) on(hist,'click',()=>{ const s=r.querySelector('.pvw-side'); if(s) s.scrollIntoView({behavior:'smooth'}); });
+  const more=r.querySelector('[data-apvmore]'); if(more) on(more,'click',()=>r.querySelector('.pvw-foot-act')?.classList.toggle('open'));
+  // Progressive render: paint the skeleton, then mount the real content next frame.
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    const m=$('pvw-mount'); if(!m) return;
+    m.innerHTML=`<div class="pvw-body">
+      <main class="pvw-stage">
+        <div class="pvw-stage-h"><span>Final result</span><span class="pvw-stage-sub">This is exactly what will ${escH(act.verb)}.</span></div>
+        ${_apvFrame(a)}
+      </main>
+      <aside class="pvw-side">
+        <div class="pvw-final">
+          <div class="pvw-final-h">Before you approve</div>
+          <div class="pvw-final-line">${escH(act.line)}</div>
+          ${a.warning?`<div class="pvw-final-warn">${escH(a.warning)}</div>`:''}
+          <div class="pvw-final-meta">
+            ${a.crewName?`<span class="pvw-fm"><span>Crew</span>${escH(a.crewName)}</span>`:''}
+            ${a.destination?`<span class="pvw-fm"><span>Destination</span>${escH(a.destination)}</span>`:''}
+            ${a.scheduledAt?`<span class="pvw-fm"><span>When</span>${escH(a.scheduledAt)}</span>`:''}
+            ${a.account?`<span class="pvw-fm"><span>Account</span>${escH(a.account)}</span>`:''}
+          </div>
+        </div>
+        ${_apvTimeline(a)}
+        ${_apvCrew(a)}
+        ${_apvArtifacts(a)}
+      </aside>
+    </div>`;
+    // website preview: reveal iframe only once it has genuinely loaded
+    const ifr=m.querySelector('.pvw-web-if');
+    if(ifr){ ifr.style.opacity='0'; ifr.addEventListener('load',()=>{ ifr.style.transition='opacity .2s'; ifr.style.opacity='1'; }); }
+    m.querySelectorAll('[data-apvweb]').forEach(b=>on(b,'click',()=>{ m.querySelectorAll('[data-apvweb]').forEach(x=>x.classList.remove('on')); b.classList.add('on'); const st=m.querySelector('.pvw-web-stage'); if(st){ st.classList.toggle('mob',b.dataset.apvweb==='mob'); st.classList.toggle('desk',b.dataset.apvweb==='desk'); } }));
+    m.querySelectorAll('[data-apvart]').forEach(b=>on(b,'click',()=>{ const art=(a.artifacts||[])[+b.dataset.apvart]; if(art) _apvInspectArtifact(art); }));
+  }));
+}
+function apvClose(){ const x=$('ovr'); if(x) x.innerHTML=''; }
+function _apvInspectArtifact(art){
+  toast((art.name||'Artifact')+(art.note?(' — '+art.note):': intermediate work handed between agents'),'info',4200);
+}
+/* Approve straight from a card (no preview) with a confirm on the consequence. */
+function apvQuickApprove(id){
+  const a=_cwApprovals().find(x=>x.id===id); if(!a){ renderCrewView(); return; }
+  const act=_apvAction(a);
+  if(!confirm(act.line)) return;
+  _apvDoApprove(a);
+}
+function apvApprove(id){
+  const a=_cwApprovals().find(x=>x.id===id); if(!a){ apvClose(); return; }
+  _apvDoApprove(a); apvClose();
+}
+function _apvDoApprove(a){
+  if(window.AMV_API && AMV_API.live){ AMV_API.actApproval(a.id,'approve').catch(()=>{}); }
+  _cwSaveApprovals(_cwApprovals().filter(x=>x.id!==a.id));
+  const act=_apvAction(a);
+  toast('Approved — '+(act.verb==='approve'?'done':act.verb.replace(/e?$/,act.verb.endsWith('e')?'ed':'ed')),'success');
+  renderCrewView();
+}
+function apvReject(id){ apvClose(); cwReject(id); }
+function apvEdit(id){ apvClose(); cwEdit(id); }
+function apvRevise(id){
+  const item=_cwApprovals().find(x=>x.id===id); apvClose();
+  setTab('chat');
+  setTimeout(()=>{ const ta=$('mta'); if(ta&&item){ ta.value='Revise this before it goes out — tell me what you changed and why:\n\n'+(item.result?.body||item.preview||item.title); ta.dispatchEvent(new Event('input')); ta.focus(); } },140);
+}
+window.apvPreview=apvPreview; window.apvClose=apvClose; window.apvApprove=apvApprove;
+window.apvQuickApprove=apvQuickApprove; window.apvReject=apvReject; window.apvEdit=apvEdit; window.apvRevise=apvRevise;
+
 
 /* ============================================================
    AMV DESIGN  - visual canvas: generate & iterate UI / graphics
