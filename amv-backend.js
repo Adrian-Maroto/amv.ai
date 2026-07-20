@@ -598,11 +598,12 @@ async function _autoEmailResult(env, email, item, out){
 async function runDueAutomations(env){
   const now = Date.now();
   let scanned = 0, ran = 0, failed = 0;
-  // KV list of every user's automation record
-  const listing = await env.AMV_KV.list({ prefix: 'auto:' });
-  for(const k of (listing.keys||[])){
-    const email = k.name.slice('auto:'.length);
-    const rec = await DB.get(env, 'auto', email);
+  // AMV-032: paginate the scan so users beyond the first KV page aren't silently
+  // skipped (DB.list walks every page).
+  const users = await DB.list(env, 'auto', 1000000);
+  for(const u of users){
+    const email = u.id;
+    const rec = u.value;
     if(!rec || !Array.isArray(rec.items) || !rec.items.length) continue;
 
     let changed = false;
@@ -631,6 +632,10 @@ async function runDueAutomations(env){
         // no paid budget — don't run paid automations for a free/unknown plan
         item.lastError = 'automations require a paid plan'; item.active = false; changed = true; continue;
       }
+      // AMV-032: LEASE this specific run slot so two overlapping/retried cron
+      // invocations can't both execute the same due job (duplicate model call or
+      // email). The key is unique to this item's scheduled time; atomic on D1.
+      if(!(await _claimOnce(env, 'autorun', `${email}:${item.id}:${item.next}`, 3*86400))) continue;
       try{
         const exec = await _autoExecute(env, item);
         const out = (exec && exec.text) || '';
@@ -695,13 +700,19 @@ function _siteUrl(request, slug){
 async function deploySite(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
+  // AMV-030: bound deploy abuse per user (a handful a minute, a sane daily cap).
+  const dblock = await guardAction(env, `deploy:${String(user.email).toLowerCase()}`, 10, 100, 'deploys');
+  if(dblock) return dblock;
 
   const body  = await request.json().catch(()=>({}));
   const html  = String(body.html||'');
   const title = String(body.title||'App').slice(0,80);
   if(!html.trim())            return json({ error:'nothing to deploy' }, 400);
-  if(html.length > SITE_MAX_BYTES)
-    return json({ error:'Site is too large ('+(html.length/1048576).toFixed(1)+'MB). Limit is 2MB.' }, 413);
+  // AMV-030: measure real UTF-8 BYTES, not UTF-16 string length — otherwise
+  // multibyte content slips past the size cap.
+  const htmlBytes = new TextEncoder().encode(html).length;
+  if(htmlBytes > SITE_MAX_BYTES)
+    return json({ error:'Site is too large ('+(htmlBytes/1048576).toFixed(1)+'MB). Limit is 2MB.' }, 413);
 
   const owner = String(user.email).toLowerCase();
   const idx   = (await DB.get(env, 'sites', owner)) || { slugs: [] };
@@ -785,15 +796,22 @@ async function serveSite(request, env, slug){
   const rec = await DB.get(env, 'site', slug);
   if(!rec || !rec.html) return new Response('Not found', { status:404 });
 
-  // best-effort view counter
-  try{ rec.views = (rec.views||0) + 1; await DB.put(env, 'site', slug, rec); }catch(e){}
+  // AMV-030: count views in an ATOMIC counter instead of rewriting the whole
+  // site record on every read — that was write-amplification on a read-heavy
+  // public page AND a lost-update race between concurrent viewers.
+  try{ await counter(env, `siteviews:${slug}`, { op:'incr', amount:1, ttlMs: 86400000 * 400 }); }catch(e){}
 
   return new Response(rec.html, {
     status: 200,
     headers: {
       'Content-Type': 'text/html; charset=utf-8',
-      'Content-Security-Policy': "sandbox allow-scripts allow-forms allow-popups allow-modals",
+      // AMV-031: user content is untrusted. Sandbox it, forbid popups/modals and
+      // top-navigation, and keep it OUT of search indexes so the trusted hostname
+      // can't be used to host indexed phishing pages. (A fully separate untrusted
+      // domain, per the audit, remains the recommended production hardening.)
+      'Content-Security-Policy': "sandbox allow-scripts allow-forms",
       'X-Content-Type-Options': 'nosniff',
+      'X-Robots-Tag': 'noindex, nofollow',
       'Referrer-Policy': 'no-referrer',
       'Cache-Control': 'public, max-age=60'
     }

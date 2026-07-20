@@ -97,6 +97,18 @@ ok(alice.items[1].runs === 0, 'a not-due task is skipped');
 ok(bob.items[0].runs === 0, 'a PAUSED task does not run');
 ok(bob.results.length === 0, 'other users are unaffected');
 
+/* AMV-032: a run is LEASED per scheduled slot, so an overlapping/retried cron
+   can't execute the same due job twice. Rewind alice's task to its ORIGINAL due
+   time (same slot, still leased) and run again — it must NOT run a second time. */
+section('Automations: overlapping crons cannot double-run the same slot (AMV-032)');
+const beforeRuns = alice.items[0].runs;
+alice.items[0].next = now - 1000;          // put it back to the slot we already ran
+store.set('auto:alice@test.com', JSON.stringify(alice));
+globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: 'dup' }], usage: { input_tokens: 1, output_tokens: 1 } }) });
+await W.runDueAutomations(env);
+const alice2 = JSON.parse(store.get('auto:alice@test.com'));
+ok(alice2.items[0].runs === beforeRuns, 'the same scheduled slot does not execute twice (lease held)', { before: beforeRuns, after: alice2.items[0].runs });
+
 section('Automations: a failing task cannot burn quota forever');
 globalThis.fetch = async () => ({ ok: false, status: 500, text: async () => 'boom' });
 await W.setEntitlement(env, 'carl@test.com', 'pro');
