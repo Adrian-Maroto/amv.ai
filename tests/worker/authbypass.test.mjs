@@ -23,7 +23,7 @@ const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'authbypass.harness.mjs');
 writeFileSync(harness, src +
-  '\nexport { authSignup, authLogin, issueTokens, signToken, verifyToken };\n');
+  '\nexport { authSignup, authLogin, authGoogle, issueTokens, signToken, verifyToken };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 const store = new Map();
@@ -97,6 +97,36 @@ ok(threw, 'issueTokens refuses to sign when JWT_SECRET is absent');
 const good = await W.issueTokens(env, 'alice@x.com', 'Alice');
 const goodClaims = await W.verifyToken(good.token, env.JWT_SECRET, env, 'access');
 ok(goodClaims && goodClaims.email === 'alice@x.com', 'a properly-signed token still verifies');
+
+/* ── AMV-052: Google OIDC validation fails closed and pins the audience ─── */
+section('AMV-052: Google sign-in validates audience/issuer, fails closed');
+{
+  const realFetch = globalThis.fetch;
+  const gReq = (credential) => new Request('https://api/auth/google', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ credential }) });
+  // tokeninfo stub: returns claims for whatever token
+  const stub = (claims) => { globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => claims }); };
+
+  // no GOOGLE_CLIENT_ID configured -> fail closed (503), never accept a token
+  stub({ aud: 'someapp', iss: 'accounts.google.com', email: 'v@x.com', email_verified: true });
+  let r = await W.authGoogle(gReq('tok'), env);
+  ok(r.status === 503, 'Google login is refused when GOOGLE_CLIENT_ID is unset (fail closed)', r.status);
+
+  const genv = { ...env, GOOGLE_CLIENT_ID: 'my-real-client-id' };
+  // audience minted for a DIFFERENT app -> rejected
+  stub({ aud: 'attacker-app', iss: 'accounts.google.com', email: 'v@x.com', email_verified: true });
+  r = await W.authGoogle(gReq('tok'), genv);
+  ok(r.status === 401, 'a token minted for another app (aud mismatch) is rejected', r.status);
+  // unverified email -> rejected
+  stub({ aud: 'my-real-client-id', iss: 'accounts.google.com', email: 'v@x.com', email_verified: false });
+  r = await W.authGoogle(gReq('tok'), genv);
+  ok(r.status === 401, 'an unverified Google email is rejected', r.status);
+  // valid token -> accepted
+  stub({ aud: 'my-real-client-id', iss: 'accounts.google.com', email: 'v@x.com', email_verified: true, name: 'V' });
+  r = await W.authGoogle(gReq('tok'), genv);
+  const gd = await body(r);
+  ok(r.status === 200 && !!gd.token, 'a valid, audience-matched Google token is accepted', r.status);
+  globalThis.fetch = realFetch;
+}
 
 if (report() > 0) process.exitCode = 1;
 done();

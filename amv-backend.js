@@ -1887,11 +1887,15 @@ async function authGoogle(request, env) {
     const r = await fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(credential));
     if(!r.ok){ audit(env,'google_verify_fail',{status:r.status}); return json({ error:'invalid google token' }, 401); }
     const claims = await r.json();
-    // audience check: the token must have been minted for OUR client id
+    // AMV-052: FAIL CLOSED. Google sign-in requires GOOGLE_CLIENT_ID so we can
+    // pin the audience — without it, a token minted for ANY other Google app
+    // would be accepted (audience confusion). Validate aud, issuer and
+    // email_verified unconditionally.
     const expectedAud = env.GOOGLE_CLIENT_ID || '';
-    if(expectedAud && claims.aud !== expectedAud){ audit(env,'google_aud_mismatch',{}); return json({ error:'token audience mismatch' }, 401); }
-    // issuer + verified-email sanity
-    if(claims.iss && !/accounts\.google\.com$/.test(claims.iss)){ return json({ error:'bad issuer' }, 401); }
+    if(!expectedAud){ audit(env,'google_unconfigured',{}); return json({ error:'Google sign-in is not configured for this workspace.', code:'google_unconfigured' }, 503); }
+    if(claims.aud !== expectedAud){ audit(env,'google_aud_mismatch',{}); return json({ error:'token audience mismatch' }, 401); }
+    if(!/(^|\.)accounts\.google\.com$/.test(String(claims.iss||''))){ return json({ error:'bad issuer' }, 401); }
+    if(claims.email_verified === false || claims.email_verified === 'false'){ return json({ error:'unverified google email' }, 401); }
     const em = String(claims.email||'').toLowerCase().trim();
     if(!em) return json({ error:'no email in token' }, 401);
     const name = claims.name || em.split('@')[0];
@@ -4537,6 +4541,11 @@ function _publicListing(it) {
 }
 
 async function marketInstall(request, env) {
+  // AMV-057: rate-limit per IP so the public install counter can't be spammed to
+  // manipulate ranking / write-amplify the listing record.
+  const iip = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'noip';
+  const irl = await limitAction(env, `mktinstall:${iip}`, 30, 300);
+  if (!irl.ok) return json({ ok: true, throttled: true });
   // bump the install counter (atomic) so popular templates rank up
   const { id } = await request.json().catch(() => ({}));
   if (!id || !/^[a-z0-9_]+$/i.test(id)) return json({ error: 'bad id' }, 400);
