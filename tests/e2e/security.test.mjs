@@ -164,6 +164,42 @@ ok(exfil.goodAuth === 'Bearer tok-abc', 'token IS sent to the origin that issued
 ok(!exfil.attackerAuth, 'token is NOT attached after the API base is swapped', exfil.attackerAuth);
 ok(exfil.baseAfterHttp !== 'http://plain.example', 'a non-https backend URL is refused', exfil.baseAfterHttp);
 
+/* ── AMV-039: OAuth transactions are per-attempt, provider-bound, single-use ─
+   Concurrent flows must not overwrite each other, and a callback for one
+   provider must not consume another's transaction. */
+section('AMV-039: OAuth state is per-attempt and provider-bound');
+const oauth = await page.evaluate(() => {
+  // two concurrent flows for different providers
+  const sG = _oauthTxStart('google', '');
+  const sS = _oauthTxStart('slack', 'verifier-slack');
+  const distinct = sG !== sS;
+  // each consumes correctly (proves no shared-key overwrite)
+  const g = _oauthTxConsume(sG, 'google');
+  const s = _oauthTxConsume(sS, 'slack');
+  // provider mismatch is rejected
+  const sX = _oauthTxStart('google', '');
+  const mismatch = _oauthTxConsume(sX, 'slack');
+  // single-use: consuming again returns null
+  const sR = _oauthTxStart('notion', '');
+  _oauthTxConsume(sR, 'notion');
+  const reuse = _oauthTxConsume(sR, 'notion');
+  // unknown/forged state is rejected
+  const forged = _oauthTxConsume('deadbeefdeadbeef', 'google');
+  return {
+    distinct,
+    gOk: !!(g && g.provider === 'google'),
+    sOk: !!(s && s.provider === 'slack' && s.verifier === 'verifier-slack'),
+    mismatchNull: mismatch === null,
+    reuseNull: reuse === null,
+    forgedNull: forged === null,
+  };
+});
+ok(oauth.distinct, 'concurrent flows get distinct states (no overwrite)');
+ok(oauth.gOk && oauth.sOk, 'each flow consumes its own provider-bound transaction');
+ok(oauth.mismatchNull, "a callback with the wrong provider is rejected");
+ok(oauth.reuseNull, 'a transaction is single-use (reuse rejected)');
+ok(oauth.forgedNull, 'an unknown/forged state is rejected');
+
 /* ── Sandboxing: generated apps run with no same-origin access ─────────────
    A generated app is untrusted code. It must render in an iframe WITHOUT
    allow-same-origin, or it could read AMV's storage and steal the API token. */

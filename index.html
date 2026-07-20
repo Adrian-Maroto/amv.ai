@@ -7763,21 +7763,40 @@ function _b64url(bytes){
   return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
 }
 function _randToken(len){ const a=new Uint8Array(len||32); crypto.getRandomValues(a); return _b64url(a); }
-async function _pkceChallenge(){
+/* AMV-039: each OAuth attempt gets its OWN transaction, keyed by its random
+   state and bound to the provider with an expiry. Concurrent flows (two tabs, or
+   starting a second provider before finishing the first) can no longer overwrite
+   each other's verifier/state, and a callback for one provider can't consume
+   another's transaction. */
+function _oauthTxPrune(){
+  try{ const now=Date.now(); for(let i=localStorage.length-1;i>=0;i--){ const k=localStorage.key(i); if(k && k.indexOf('amv_oauthtx_')>-1){ try{ const t=JSON.parse(localStorage.getItem(k)||'{}'); if(!t.exp||t.exp<now) localStorage.removeItem(k); }catch(e){ localStorage.removeItem(k); } } } }catch(e){}
+}
+function _oauthTxStart(provider, verifier){
+  const state=_randToken(16);
+  try{ _oauthTxPrune(); saveStr('amv_oauthtx_'+state, JSON.stringify({ provider:String(provider||''), verifier:verifier||'', exp: Date.now()+10*60*1000 })); }catch(e){}
+  return state;
+}
+function _oauthTxConsume(returnedState, expectedProvider){
+  const st=String(returnedState||''); if(!st) return null;
+  let tx=null; try{ tx=JSON.parse(loadStr('amv_oauthtx_'+st)||'null'); }catch(e){}
+  try{ localStorage.removeItem(_scopeKey('amv_oauthtx_'+st)); }catch(e){}   // single-use
+  if(!tx) return null;
+  if(tx.exp && tx.exp < Date.now()) return null;                            // expired
+  if(expectedProvider && tx.provider && tx.provider !== String(expectedProvider)) return null;  // provider mismatch
+  return tx;
+}
+async function _pkceChallenge(provider){
   const verifier=_randToken(48);                       // 64-char high-entropy verifier
   const digest=await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
   const challenge=_b64url(digest);
-  const state=_randToken(16);
-  // persist for the redirect round-trip (cleared right after exchange)
-  try{ saveStr('amv_pkce_verifier', verifier); saveStr('amv_oauth_state', state); }catch(e){}
+  const state=_oauthTxStart(provider, verifier);
   return { verifier, challenge, state, method:'S256' };
 }
-function _pkceConsume(){
-  const verifier=loadStr('amv_pkce_verifier')||'', state=loadStr('amv_oauth_state')||'';
-  try{ localStorage.removeItem(_scopeKey('amv_pkce_verifier')); }catch(e){}
-  return { verifier, state };
+function _pkceConsume(returnedState, provider){
+  const tx=_oauthTxConsume(returnedState, provider);
+  return tx ? { ok:true, verifier:tx.verifier||'', state:String(returnedState||'') } : { ok:false, verifier:'', state:'' };
 }
-try{ window._pkceChallenge=_pkceChallenge; window._pkceConsume=_pkceConsume; }catch(e){}
+try{ window._pkceChallenge=_pkceChallenge; window._pkceConsume=_pkceConsume; window._oauthTxStart=_oauthTxStart; window._oauthTxConsume=_oauthTxConsume; }catch(e){}
 
 function acctKey(email) {
   try{ return 'amv_a_'+btoa(unescape(encodeURIComponent(email.toLowerCase().trim()))).replace(/=/g,''); }
@@ -18114,8 +18133,9 @@ async function connectIntegration(id){
 }
 async function _oauthUrl(id, clientId){
   const redirect = encodeURIComponent(location.origin + '/oauth/' + id);
-  // PKCE + state on every provider that supports the auth-code flow
-  const pk = await _pkceChallenge();
+  // PKCE + state on every provider that supports the auth-code flow (AMV-039:
+  // the transaction is bound to THIS provider so callbacks can't be mixed up)
+  const pk = await _pkceChallenge(id);
   const pkce = '&code_challenge='+pk.challenge+'&code_challenge_method=S256&state='+pk.state;
   const map = {
     outlook: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id='+clientId+'&response_type=code&scope=openid%20Mail.ReadWrite%20Calendars.ReadWrite&redirect_uri='+redirect+pkce,
@@ -20015,21 +20035,12 @@ function _amvStartVoice(btn){
      Worker (auth-code flow) so the token never reaches the browser — see
      SECURITY-HEADERS.md. We scope the token to the minimum needed and
      expire it aggressively. */
-function _genOAuthState(){
-  try{
-    const arr = new Uint8Array(16);
-    (window.crypto||{}).getRandomValues?.(arr);
-    const s = Array.from(arr).map(b=>b.toString(16).padStart(2,'0')).join('');
-    saveStr('amv_oauth_state', s);
-    return s;
-  }catch(e){ const s='s'+Date.now()+Math.random().toString(36).slice(2); saveStr('amv_oauth_state', s); return s; }
-}
 function connectGoogle(){
   const cid = loadStr('amv_gauth');
   if(!cid){ toast('Add Google Client ID in Settings → Integrations first','error',5000); goSettings('integrations'); return; }
   const scopes = 'https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/calendar';
   const redirectUri = window.location.origin + window.location.pathname;
-  const state = _genOAuthState();
+  const state = _oauthTxStart('google', '');   // AMV-039: provider-bound, per-attempt state
   const url = 'https://accounts.google.com/o/oauth2/v2/auth?client_id='+encodeURIComponent(cid)+'&redirect_uri='+encodeURIComponent(redirectUri)+'&response_type=token&scope='+encodeURIComponent(scopes)+'&prompt=consent&state='+encodeURIComponent(state);
   saveStr('amv_oauth_return', S.tab||'integrations');
   window.location.href = url;
@@ -20038,11 +20049,11 @@ function checkOAuthCallback(){
   const hash = window.location.hash;
   if(!hash || hash.indexOf('access_token')<0) return;
   const params = new URLSearchParams(hash.slice(1));
-  // CSRF: the returned state MUST match the nonce we stored before redirect.
+  // CSRF: validate the returned state against the per-attempt, provider-bound
+  // transaction we stored before redirect (AMV-039 — single-use, expiring).
   const returnedState = params.get('state')||'';
-  const expectedState = loadStr('amv_oauth_state')||'';
-  localStorage.removeItem('amv_oauth_state');
-  if(!expectedState || returnedState !== expectedState){
+  const tx = _oauthTxConsume(returnedState, 'google');
+  if(!tx){
     history.replaceState(null,'',window.location.pathname);
     toast('Sign-in could not be verified. Please try connecting again.','error',5000);
     return;
