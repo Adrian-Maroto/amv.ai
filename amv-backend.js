@@ -2557,9 +2557,12 @@ async function videoStatus(request, env) {
     }
     if (status === 'failed' && !job.error) {
       job.error = String(d.error || 'The video could not be generated.');
-      // It produced nothing, so it shouldn't count against their plan.
+      // It produced nothing, so it shouldn't count against their plan — but refund
+      // EXACTLY ONCE (AMV-024). Concurrent status polls both see a fresh failure;
+      // an atomic per-job claim guarantees only the first one gives the quota back
+      // (a plain "!job.error" read races and can refund twice / go negative).
       const limits = effectiveLimits(user);
-      if (limits.videosMonth) {
+      if (limits.videosMonth && await _claimOnce(env, 'vidrefund', id)) {
         try {
           await counter(env, `vid:${user.email}:${monthKey()}`,
             { op: 'incr', amount: -1, ttlMs: 86400000 * 70 });
@@ -2896,11 +2899,11 @@ async function imageMeter(request, env) {
   if (!user) return json({ error: 'sign in' }, 401);
   const limits = effectiveLimits(user);
   const imgName = `img:${user.email}:${todayKey()}`;
-  // atomic test-and-increment so parallel image requests can't exceed the cap
-  const used = (await counter(env, imgName, { op: 'get' })).value || 0;
-  if (used >= limits.imagesDay) return json({ error: 'Daily image limit reached. Upgrade for more.', code: 'img_quota' }, 429);
-  const res = await counter(env, imgName, { op: 'incr', amount: 1, ttlMs: 86400000 * 2 });
-  return json({ ok: true, remaining: Math.max(0, limits.imagesDay - (res.value || used + 1)) });
+  // ATOMIC reserve (not get-then-incr) so parallel image requests can't race past
+  // the cap (AMV-023). The counter denies when the result would exceed the cap.
+  const res = await counter(env, imgName, { op: 'reserve', amount: 1, cap: limits.imagesDay, ttlMs: 86400000 * 2 });
+  if (!res.allowed) return json({ error: 'Daily image limit reached. Upgrade for more.', code: 'img_quota' }, 429);
+  return json({ ok: true, remaining: Math.max(0, limits.imagesDay - (res.value || 0)) });
 }
 
 /* ---------------- PREMIUM IMAGE GENERATION (operator-configured) ------
@@ -2921,12 +2924,8 @@ async function imageGenerate(request, env) {
     return json({ configured: false });
   }
 
-  // Enforce the daily image cap (atomic), same as the meter.
+  // Validate input first (cheap), then reserve, then call the provider.
   const limits = effectiveLimits(user);
-  const imgName = `img:${user.email}:${todayKey()}`;
-  const used = (await counter(env, imgName, { op: 'get' })).value || 0;
-  if (used >= limits.imagesDay) return json({ error: 'Daily image limit reached. Upgrade for more.', code: 'img_quota' }, 429);
-
   let body;
   try { body = await request.json(); } catch (e) { return json({ error: 'bad request' }, 400); }
   const prompt = String(body.prompt || '').slice(0, 4000);
@@ -2935,8 +2934,12 @@ async function imageGenerate(request, env) {
   const height = Math.min(2048, Math.max(256, parseInt(body.height) || 1024));
   const size = `${width}x${height}`;
 
-  // Count the image up-front (atomic) so parallel calls can't exceed the cap.
-  await counter(env, imgName, { op: 'incr', amount: 1, ttlMs: 86400000 * 2 });
+  // ATOMIC reserve (AMV-023): parallel calls can't exceed the cap, and every
+  // failure path REFUNDS so a provider error never permanently burns quota.
+  const imgName = `img:${user.email}:${todayKey()}`;
+  const reserved = await counter(env, imgName, { op: 'reserve', amount: 1, cap: limits.imagesDay, ttlMs: 86400000 * 2 });
+  if (!reserved.allowed) return json({ error: 'Daily image limit reached. Upgrade for more.', code: 'img_quota' }, 429);
+  const refundImage = async () => { try { await counter(env, imgName, { op: 'incr', amount: -1, ttlMs: 86400000 * 2 }); } catch (e) {} };
 
   try {
     const model = env.IMAGE_API_MODEL || 'gpt-image-1';
@@ -2950,14 +2953,17 @@ async function imageGenerate(request, env) {
     });
     if (!upstream.ok) {
       const txt = await upstream.text().catch(() => '');
+      await refundImage();
       return json({ error: 'image provider error', detail: txt.slice(0, 300) }, 502);
     }
     const data = await upstream.json().catch(() => ({}));
     const item = (data && data.data && data.data[0]) || {};
     if (item.url) return json({ ok: true, url: item.url });
     if (item.b64_json) return json({ ok: true, b64: item.b64_json });
+    await refundImage();
     return json({ error: 'image provider returned no image' }, 502);
   } catch (e) {
+    await refundImage();
     return json({ error: 'image generation failed', detail: String(e && e.message || e).slice(0, 200) }, 502);
   }
 }
@@ -3129,6 +3135,15 @@ async function widgetChat(request, env, ctx) {
   if (!_originAllowed(reqOrigin, cfg.origins)) {
     audit(env, 'widget_origin_block', { key, origin: reqOrigin });
     return new Response(JSON.stringify({ error: 'This widget is not enabled for this domain.' }), { status: 403, headers: { 'Content-Type': 'application/json', ...wcors } });
+  }
+  // AMV-022: per-visitor (IP) throttle so a single abuser can't drain the whole
+  // widget's daily budget in a burst. The per-widget message/spend caps below
+  // bound the total; this bounds any one caller.
+  const vip = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'noip';
+  const vRl = await limitAction(env, `widgetip:${key}:${vip}`, 15, 300);
+  if (!vRl.ok) {
+    audit(env, 'widget_visitor_throttle', { key });
+    return new Response(JSON.stringify({ error: 'Too many messages — please slow down and try again in a moment.' }), { status: 429, headers: { 'Content-Type': 'application/json', ...wcors } });
   }
   if (!body || !Array.isArray(body.messages)) {
     return new Response(JSON.stringify({ error: 'Invalid request.' }), { status: 400, headers: { 'Content-Type': 'application/json', ...wcors } });
