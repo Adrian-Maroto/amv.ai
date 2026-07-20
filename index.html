@@ -6336,7 +6336,13 @@ const AMV_API = {
     // We DO NOT retry: auth endpoints, streaming, or anything caller marks
     // non-idempotent (payments), to avoid double-charging or replaying.
     const url = this.base.replace(/\/$/,'') + path;
-    const noRetry = o.noRetry || /^\/auth\//.test(path) || /\/(stripe|paypal|pay|subscribe|capture)/.test(path);
+    // AMV-050: never auto-retry a NON-IDEMPOTENT mutation — a retry on a 5xx/429
+    // could double-submit it (a second invite, listing, purchase, withdrawal,
+    // deploy, etc.). Auth and payments were already excluded; extend to the other
+    // state-creating endpoints. Metered/idempotent POSTs (AI proxy, sync) still retry.
+    const noRetry = o.noRetry || /^\/auth\//.test(path)
+      || /\/(stripe|paypal|pay|subscribe|capture)/.test(path)
+      || /\/(team\/(invite|join|remove|setrole|share)|market\/(publish|buy|withdraw|review|install)|deploy|sms\/register|widget\/save)/.test(path);
     const MAX = noRetry ? 0 : 2;        // up to 2 retries (3 total attempts)
     let attempt = 0, r, lastErr;
     while (true) {

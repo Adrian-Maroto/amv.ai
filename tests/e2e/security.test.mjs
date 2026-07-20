@@ -200,6 +200,23 @@ ok(oauth.mismatchNull, "a callback with the wrong provider is rejected");
 ok(oauth.reuseNull, 'a transaction is single-use (reuse rejected)');
 ok(oauth.forgedNull, 'an unknown/forged state is rejected');
 
+/* ── AMV-050: non-idempotent mutations are not auto-retried ─────────────── */
+section('AMV-050: mutating requests are not double-submitted on 5xx');
+const retry = await page.evaluate(async () => {
+  AMV_API.base = 'https://good.example';
+  AMV_API._setTokens({ token: 't', refreshToken: 'r' });
+  AMV_API._backoff = () => Promise.resolve();   // don't actually sleep in the test
+  const realFetch = window.fetch;
+  const calls = {};
+  window.fetch = async (url) => { const u = String(url); calls[u] = (calls[u] || 0) + 1; return { status: 503, ok: false, json: async () => ({}), headers: { get: () => null } }; };
+  try { await AMV_API._fetch('/v1/team/invite', { method: 'POST', body: '{}' }); } catch (e) {}
+  try { await AMV_API._fetch('/v1/generic', { method: 'POST', body: '{}' }); } catch (e) {}
+  window.fetch = realFetch;
+  return { invite: calls['https://good.example/v1/team/invite'] || 0, generic: calls['https://good.example/v1/generic'] || 0 };
+});
+ok(retry.invite === 1, 'a non-idempotent mutation (team invite) is NOT retried', retry.invite);
+ok(retry.generic > 1, 'a retryable request still retries on 5xx', retry.generic);
+
 /* ── Sandboxing: generated apps run with no same-origin access ─────────────
    A generated app is untrusted code. It must render in an iframe WITHOUT
    allow-same-origin, or it could read AMV's storage and steal the API token. */
