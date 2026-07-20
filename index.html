@@ -6204,6 +6204,77 @@ body.light .aa-date{color-scheme:light}
 .mc-sched-mode.auto{color:var(--ok);background:var(--ok-soft)}
 .mc-sched-mode.req{color:var(--wait);background:var(--wait-soft)}
 
+/* ============================================================
+   LAYER A2 — CREW LIVE / RUN ROOM (live autonomous execution)
+   ============================================================ */
+.rr{display:flex;flex-direction:column;gap:var(--sp-4)}
+.rr-top{display:flex;align-items:center;gap:var(--sp-4);flex-wrap:wrap}
+.rr-status{display:flex;align-items:center;gap:9px;font-size:14px;font-weight:600;color:var(--tx);flex:1;min-width:150px}
+.rr-dot{width:9px;height:9px;border-radius:50%;background:var(--accent);flex:none;box-shadow:0 0 0 0 var(--accent-soft);animation:rrPulse 1.6s ease-out infinite}
+.rr-dot.paused{background:var(--warn);animation:none}
+@keyframes rrPulse{0%{box-shadow:0 0 0 0 rgba(63,118,245,.45)}70%{box-shadow:0 0 0 8px rgba(63,118,245,0)}100%{box-shadow:0 0 0 0 rgba(63,118,245,0)}}
+.rr-prog{display:flex;align-items:center;gap:10px;min-width:180px}
+.rr-prog-bar{flex:1;height:5px;border-radius:4px;background:var(--s3);overflow:hidden}
+.rr-prog-bar>span{display:block;height:100%;width:0;background:var(--accent);border-radius:4px;transition:width .45s ease}
+#rr-prog-lbl{font-size:12px;color:var(--mu);white-space:nowrap}
+.rr-controls{display:flex;gap:var(--sp-2)}
+.rr-controls button{font-size:12.5px;font-weight:600;padding:7px 13px;border-radius:var(--rc);background:var(--s2);border:1px solid var(--bd);color:var(--tx);cursor:pointer;white-space:nowrap;transition:background .13s,border-color .13s}
+.rr-controls button:hover{background:var(--s3)}
+.rr-controls #auto-stop{color:var(--mu)}
+.rr-controls #auto-stop:hover{color:var(--err);border-color:rgba(217,102,102,.4)}
+
+.rr-stages{display:flex;flex-direction:column;gap:6px;max-height:44vh;overflow:auto;padding-right:2px}
+.rr-stage{display:flex;align-items:center;gap:var(--sp-3);padding:11px var(--sp-3);border:1px solid var(--bd);border-radius:var(--rk);background:var(--s1);transition:border-color .2s,background .2s,opacity .2s}
+.rr-stage.waiting{opacity:.6}
+.rr-stage.active{border-color:var(--accent);background:var(--accent-soft)}
+.rr-stage.done{opacity:1}
+.rr-stage.blocked{border-color:var(--warn);background:var(--warn-soft)}
+.rr-st-ix{flex:none;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:700;background:var(--s3);color:var(--mu)}
+.rr-stage.active .rr-st-ix{background:var(--accent);color:#fff}
+.rr-stage.done .rr-st-ix{background:var(--ok-soft);color:var(--ok)}
+.rr-stage.blocked .rr-st-ix{background:var(--warn);color:#fff}
+.rr-st-b{flex:1;min-width:0}
+.rr-st-t{font-size:13.5px;font-weight:500;color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rr-st-meta{font-size:11.5px;color:var(--mu);margin-top:1px}
+.rr-st-tag{color:var(--warn)}
+.rr-st-ic{flex:none;width:16px;height:16px;position:relative}
+.rr-stage.active .rr-st-ic{border:2px solid var(--accent-soft);border-top-color:var(--accent);border-radius:50%;animation:rrSpin .8s linear infinite}
+.rr-stage.done .rr-st-ic::after{content:"✓";color:var(--ok);font-size:14px;font-weight:700;position:absolute;inset:0;text-align:center;line-height:16px}
+@keyframes rrSpin{to{transform:rotate(360deg)}}
+
+.rr-artifacts:empty{display:none}
+.rr-art-h{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--dim);margin-bottom:8px}
+.rr-art-row{display:flex;flex-wrap:wrap;gap:8px}
+.rr-art{font-size:12px;font-family:var(--mn);background:var(--s2);border:1px solid var(--bd);color:var(--accent);border-radius:6px;padding:3px 9px;animation:aaFade .25s ease}
+
+.rr-activity{border:1px solid var(--bd);border-radius:var(--rk);background:var(--s1)}
+.rr-activity>summary{cursor:pointer;font-size:12.5px;color:var(--mu);padding:9px var(--sp-3);list-style:none;user-select:none}
+.rr-activity>summary::-webkit-details-marker{display:none}
+.rr-activity>summary::before{content:"▸ ";color:var(--dim)}
+.rr-activity[open]>summary::before{content:"▾ "}
+.rr-activity .auto-feed{padding:0 var(--sp-3) var(--sp-3);max-height:200px;overflow:auto}
+
+@media(prefers-reduced-motion:reduce){.rr-dot,.rr-stage.active .rr-st-ic{animation:none}}
+@media(max-width:560px){
+  .rr-top{gap:var(--sp-3)}
+  .rr-controls{width:100%}
+  .rr-controls button{flex:1}
+  .rr-stages{max-height:38vh}
+}
+@media(hover:none){ .rr-controls button{min-height:40px} }
+
+/* Run Room — prominent inline approval pause */
+.rr-approve:empty{display:none}
+.rr-appr{border:1px solid rgba(216,168,78,.4);background:var(--warn-soft);border-radius:var(--rk);padding:var(--sp-4)}
+.rr-appr-h{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.rr-appr-ic{width:30px;height:30px;flex:none;border-radius:8px;display:grid;place-items:center;background:var(--warn);color:#1a1b1f;font-size:14px}
+.rr-appr-t{font-size:13.5px;font-weight:600;color:var(--tx)}
+.rr-appr-s{font-size:12.5px;color:var(--mu)}
+.rr-appr-d{font-size:13px;color:var(--tx);line-height:1.5;margin:0 0 var(--sp-3);padding:10px 12px;background:var(--s1);border:1px solid var(--bd);border-radius:var(--rc)}
+.rr-appr-btns{display:flex;gap:var(--sp-2)}
+.rr-appr-btns .btn{font-size:13px;padding:9px 16px;border-radius:var(--rc)}
+@media(hover:none){ .rr-appr-btns .btn{min-height:44px} }
+
 </style>
 <!-- BUILD:CSS:END -->
 <script>
@@ -22927,6 +22998,67 @@ const _AUTO = { running:false, steps:[], goal:'', deliverable:'', file:null, fil
 function _autoLog(html){ const el=$('auto-feed'); if(el){ el.insertAdjacentHTML('beforeend', html); el.scrollTop=el.scrollHeight; } }
 function _autoSetStatus(t){ const el=$('auto-status'); if(el) el.textContent=t||''; }
 
+/* ============================================================
+   CREW LIVE / RUN ROOM  (Phase 4) — a premium live view of an
+   autonomous run, driven entirely by the real execution state in
+   _AUTO. Stages come from the actual plan; status, progress, and
+   artifacts reflect what actually happened. Progress is an honest
+   "step X of N" — never a fabricated percentage or ETA. Takeover
+   controls (pause / add instruction / cancel) genuinely act on the run.
+   ============================================================ */
+function _rrInit(plan){
+  _AUTO._art=[];
+  const el=document.getElementById('rr-stages'); if(!el) return;
+  el.innerHTML=(plan||[]).map((s,i)=>`<div class="rr-stage waiting" id="rr-st-${i}"><span class="rr-st-ix">${i+1}</span><div class="rr-st-b"><div class="rr-st-t">${escH(s.step||('Step '+(i+1)))}</div><div class="rr-st-meta">${s.needs_approval?'<span class="rr-st-tag">Needs approval</span>':'Waiting'}</div></div><span class="rr-st-ic"></span></div>`).join('');
+  _rrArtifacts(); _rrProg();
+}
+function _rrActive(i){
+  const el=document.getElementById('rr-st-'+i);
+  if(el){ el.className='rr-stage active'; const m=el.querySelector('.rr-st-meta'); if(m) m.textContent='AMV is working on this…'; try{ el.scrollIntoView({block:'nearest'}); }catch(e){} }
+  _rrProg();
+}
+function _rrBlocked(i){
+  const el=document.getElementById('rr-st-'+i);
+  if(el){ el.className='rr-stage blocked'; const m=el.querySelector('.rr-st-meta'); if(m) m.textContent='Waiting for your approval'; }
+}
+function _rrDone(i, badge){
+  const el=document.getElementById('rr-st-'+i);
+  if(el){ el.className='rr-stage done'; const m=el.querySelector('.rr-st-meta'); if(m) m.textContent=(badge||'Done').replace(/^[✓✕]\s*/,''); }
+  if(badge){ const w=/wrote\s+(\S+)/.exec(badge); if(w) _rrAddArtifact(w[1]); }
+  _rrProg();
+}
+function _rrAddArtifact(name){ _AUTO._art=_AUTO._art||[]; if(name && _AUTO._art.indexOf(name)<0){ _AUTO._art.push(name); _rrArtifacts(); } }
+function _rrArtifacts(){
+  const el=document.getElementById('rr-artifacts'); if(!el) return;
+  const a=_AUTO._art||[];
+  el.innerHTML=a.length?('<div class="rr-art-h">Artifacts created</div><div class="rr-art-row">'+a.map(n=>`<span class="rr-art">${escH(n)}</span>`).join('')+'</div>'):'';
+}
+function _rrProg(){
+  const plan=_AUTO.steps||[];
+  const done=document.querySelectorAll('.rr-stage.done').length;
+  const active=document.querySelector('.rr-stage.active')?1:0;
+  const bar=document.getElementById('rr-bar'); if(bar) bar.style.width=(plan.length?Math.round(done/plan.length*100):0)+'%';
+  const lbl=document.getElementById('rr-prog-lbl');
+  if(lbl) lbl.textContent=plan.length?('Step '+Math.min(done+active||1, plan.length)+' of '+plan.length):'';
+}
+function _rrComplete(){
+  document.querySelectorAll('.rr-stage.active').forEach(e=>{ e.className='rr-stage done'; });
+  const bar=document.getElementById('rr-bar'); if(bar) bar.style.width='100%';
+  const lbl=document.getElementById('rr-prog-lbl'); const plan=_AUTO.steps||[]; if(lbl&&plan.length) lbl.textContent='All '+plan.length+' steps done';
+}
+function _rrTogglePause(){
+  _AUTO.paused=!_AUTO.paused;
+  const b=document.getElementById('rr-pause');
+  if(b) b.textContent=_AUTO.paused?'▶ Resume':'⏸ Pause';
+  const dot=document.getElementById('rr-dot'); if(dot) dot.classList.toggle('paused',_AUTO.paused);
+  if(typeof _autoSetStatus==='function') _autoSetStatus(_AUTO.paused?'Paused — will stop after this step':'Working…');
+}
+function _rrAddInstruction(){
+  const t=prompt('Add an instruction for AMV — it will use this on the next step:');
+  if(t && t.trim()){ _AUTO.inject=t.trim(); if(typeof toast==='function') toast('Noted — AMV will use this on the next step','info',3500); }
+}
+window._rrTogglePause=_rrTogglePause; window._rrAddInstruction=_rrAddInstruction;
+
 async function runAutonomous(goal, opts){
   opts=opts||{};
   _AUTO.running=true; _AUTO.goal=goal; _AUTO.steps=[]; _AUTO.deliverable=''; _AUTO.paused=false;
@@ -22961,21 +23093,27 @@ async function runAutonomous(goal, opts){
   }
   _AUTO.steps=plan;
   _autoLog('<div class="auto-ev plan"><b>Plan — '+plan.length+' steps</b><ol>'+plan.map(s=>'<li>'+escH(s.step)+'</li>').join('')+'</ol></div>');
+  try{ _rrInit(plan); }catch(e){}
 
   // 2) EXECUTE each step, feeding results forward
   let context='';
   for(let i=0;i<plan.length && i<maxSteps;i++){
     if(!_AUTO.running){ _autoLog('<div class="auto-ev stop">Stopped by user.</div>'); break; }
+    while(_AUTO.paused && _AUTO.running){ await new Promise(r=>setTimeout(r,300)); }
+    if(!_AUTO.running){ _autoLog('<div class="auto-ev stop">Stopped by user.</div>'); break; }
+    if(_AUTO.inject){ context+='\n\n[User instruction]: '+_AUTO.inject; _autoLog('<div class="auto-ev plan"><b>Your instruction</b><div>'+escH(_AUTO.inject)+'</div></div>'); _AUTO.inject=null; }
     // mid-run budget guard: stop cleanly if the window runs out partway through
     const _mg=_budgetGuard(4000);
     if(!_mg.ok){ _autoLog('<div class="auto-ev"><b>Paused — out of usage</b><div>'+escH(_mg.reason)+' Finished '+i+' of '+plan.length+' steps.</div></div>'); _autoSetStatus(''); break; }
     const s=plan[i];
     // approval gate
     if(s.needs_approval){
+      try{ _rrBlocked(i); }catch(e){}
       const ok=await _autoApprove(s.step, s.action);
       if(!ok){ _autoLog('<div class="auto-ev skip">Skipped (not approved): '+escH(s.step)+'</div>'); continue; }
     }
     _autoSetStatus('Step '+(i+1)+'/'+plan.length+': '+s.step);
+    try{ _rrActive(i); }catch(e){}
     _autoLog('<div class="auto-ev run" id="ev'+i+'"><span class="spin"></span> <b>'+escH(s.step)+'</b></div>');
 
     // Decide: does this step need code execution or a file write?
@@ -23022,6 +23160,7 @@ async function runAutonomous(goal, opts){
         _AMVSYS+' Output only the finished, polished deliverable — ready to use as-is.');
       _AUTO.deliverable=deliv;
       _autoLog('<div class="auto-ev done"><b>✓ Done</b></div>');
+      try{ _rrComplete(); }catch(e){}
       const dv=$('auto-deliverable'); if(dv){
         const ws=_AUTO.workspace;
         const written=ws?ws.files.filter(f=>f.dirty||f.output||f.handle&&f._touched):[];
@@ -23040,6 +23179,7 @@ async function runAutonomous(goal, opts){
   _AUTO.running=false;
 }
 function _autoStepDone(i,title,badge,detail){
+  try{ _rrDone(i, badge); }catch(e){}
   const ev=$('ev'+i); if(!ev) return;
   ev.classList.remove('run'); ev.classList.add('ev-done');
   ev.innerHTML='<b>'+escH(title)+'</b> <span class="auto-badge">'+escH(badge)+'</span>'+(detail||'');
@@ -23049,9 +23189,11 @@ function _autoApprove(step, action){
   // without explicit approval, so skip any step that needs it.
   if(_AUTO.silent) return Promise.resolve(false);
   return new Promise(resolve=>{
-    _autoLog('<div class="auto-ev approve" id="appr"><b>Approval needed:</b> '+escH(step)+'<div class="auto-appr-d">'+escH(action)+'</div><div class="auto-appr-btns"><button class="btn bp" id="appr-y">Approve</button><button class="btn" id="appr-n">Skip</button></div></div>');
-    on($('appr-y'),'click',()=>{ const a=$('appr'); if(a){a.querySelector('.auto-appr-btns').innerHTML='<span class="tp-sched">✓ Approved</span>';} resolve(true); });
-    on($('appr-n'),'click',()=>{ const a=$('appr'); if(a){a.querySelector('.auto-appr-btns').innerHTML='<span class="auto-skip-l">Skipped</span>';} resolve(false); });
+    const host=document.getElementById('rr-approve');
+    const html='<div class="rr-appr" id="appr"><div class="rr-appr-h"><span class="rr-appr-ic">\u23F8</span><div><div class="rr-appr-t">Approval needed before AMV continues</div><div class="rr-appr-s">'+escH(step)+'</div></div></div><div class="rr-appr-d">'+escH(action)+'</div><div class="rr-appr-btns auto-appr-btns"><button class="btn bp" id="appr-y">Approve &amp; continue</button><button class="btn" id="appr-n">Skip this step</button></div></div>';
+    if(host){ host.innerHTML=html; try{ host.scrollIntoView({block:'center'}); }catch(e){} } else { _autoLog(html); }
+    on($('appr-y'),'click',()=>{ const a=$('appr'); if(a){const b=a.querySelector('.auto-appr-btns'); if(b) b.innerHTML='<span class="tp-sched">\u2713 Approved</span>';} setTimeout(()=>{ if(host) host.innerHTML=''; },700); resolve(true); });
+    on($('appr-n'),'click',()=>{ const a=$('appr'); if(a){const b=a.querySelector('.auto-appr-btns'); if(b) b.innerHTML='<span class="auto-skip-l">Skipped</span>';} setTimeout(()=>{ if(host) host.innerHTML=''; },700); resolve(false); });
   });
 }
 function stopAutonomous(){ _AUTO.running=false; _autoSetStatus('Stopping…'); }
@@ -23377,8 +23519,21 @@ function openCowork(){
       <div class="tp-foot"><span class="tp-hint">AMV works continuously until the goal is met.</span><button class="btn bp" id="cw-go">Start working →</button></div>
     </div>
     <div class="tp-body" id="cw-step2" style="display:none">
-      <div class="auto-bar"><span id="auto-status" class="auto-status">Working…</span><button class="btn" id="auto-stop">Stop</button></div>
-      <div id="auto-feed" class="auto-feed"></div>
+      <div class="rr">
+        <div class="rr-top">
+          <div class="rr-status"><span class="rr-dot" id="rr-dot"></span><span id="auto-status" class="auto-status">Working…</span></div>
+          <div class="rr-prog"><div class="rr-prog-bar"><span id="rr-bar"></span></div><span id="rr-prog-lbl"></span></div>
+          <div class="rr-controls">
+            <button type="button" id="rr-pause" data-dact="_rrTogglePause">⏸ Pause</button>
+            <button type="button" id="rr-add" data-dact="_rrAddInstruction">Add instruction</button>
+            <button type="button" class="btn" id="auto-stop">Cancel</button>
+          </div>
+        </div>
+        <div class="rr-stages" id="rr-stages"></div>
+        <div class="rr-artifacts" id="rr-artifacts"></div>
+        <div class="rr-approve" id="rr-approve"></div>
+        <details class="rr-activity"><summary>Activity</summary><div id="auto-feed" class="auto-feed"></div></details>
+      </div>
       <div id="auto-deliverable" class="auto-deliverable" style="display:none"></div>
     </div>
   </div></div>`;
