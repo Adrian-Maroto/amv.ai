@@ -341,7 +341,7 @@ function toast(msg, type='info', dur=3000) {
   setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 200); }, dur);
 }
 
-function closeOvr() { const r=$('ovr'); if(r){ r.classList.remove('on'); r.innerHTML=''; } }
+function closeOvr() { try{ if(typeof _AUTO!=='undefined' && _AUTO.running && typeof stopAutonomous==='function') stopAutonomous(); }catch(e){} const r=$('ovr'); if(r){ r.classList.remove('on'); r.innerHTML=''; } }
 
 /* Reusable polished empty state: icon + title + subtitle + optional action.
    emptyState({icon,title,sub,btn:{label,act,arg}}) -> HTML string */
@@ -9380,7 +9380,7 @@ function _mcSchedRow(t){
   const when = t.sched?((typeof _schedHumanOf==='function')?_schedHumanOf(t.sched):''):((typeof _freqLabel==='function')?_freqLabel(t.freq):'');
   let next='';
   try{ if(t.next) next=new Date(t.next).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }catch(e){}
-  const mode = t.approval==='auto' ? '<span class="mc-sched-mode auto">Auto-approve</span>' : '<span class="mc-sched-mode req">Approval required</span>';
+  const mode = t.paused ? '<span class="mc-sched-mode req">Paused</span>' : (t.approval==='auto' ? '<span class="mc-sched-mode auto">Auto-approve</span>' : '<span class="mc-sched-mode req">Approval required</span>');
   return `<div class="mc-sched-row">${mode}<div class="mc-sched-b"><div class="mc-sched-goal">${escH(t.goal||'Scheduled task')}</div><div class="mc-sched-meta">${escH(when)}${next?` · next ${escH(next)}`:''}${t.localOnly?' · runs while AMV is open':''}</div></div><button class="btn mc-mini ghost" data-dact="_mcCancelSched" data-darg="${t.id}">Cancel</button></div>`;
 }
 function _mcCancelSched(id){ try{ _saveSched(_loadSched().filter(t=>t.id!==id)); }catch(e){} toast('Scheduled task cancelled','info'); renderCrewView(); }
@@ -9746,6 +9746,7 @@ function apvPreview(id){
     </footer>
   </div></div>`;
   on($('pvw-bg'),'click',apvClose);
+  setTimeout(()=>{ try{ document.querySelector('.pvw-back').focus(); }catch(e){} },30);
   const hist=r.querySelector('[data-apvhist]'); if(hist) on(hist,'click',()=>{ const s=r.querySelector('.pvw-side'); if(s) s.scrollIntoView({behavior:'smooth'}); });
   const more=r.querySelector('[data-apvmore]'); if(more) on(more,'click',()=>r.querySelector('.pvw-foot-act')?.classList.toggle('open'));
   // Progressive render: paint the skeleton, then mount the real content next frame.
@@ -16993,6 +16994,7 @@ async function _runDueAuto(){
   // Roll overdue tasks forward silently (no misleading "running" toast).
   const canRun = (typeof _aiBackendReady==='function') ? _aiBackendReady() : false;
   for(const t of list){
+    if(t.paused) continue;
     if(t.next<=now){
       // always advance the schedule so a past-due task can't re-fire every load
       t.lastRun=now; t.next=(t.sched?_schedNext(t.sched,now):_freqNext(t.freq,now)); changed=true;
@@ -17004,18 +17006,71 @@ async function _runDueAuto(){
   if(ranAny && typeof toast==='function') toast('Ran a scheduled task','info',2500);
   if(changed) _saveSched(list);
 }
+/* ============================================================
+   SCHEDULED AUTONOMOUS MANAGEMENT  (Phase 5)
+   A real control surface for recurring work: cadence, next/last run,
+   approval mode, and per-task pause/resume — plus switching a task
+   between "require approval" and "auto-approve" without recreating it.
+   All values are real (from the schedule record); nothing is invented.
+   ============================================================ */
+function _schedTogglePause(id){
+  const l=_loadSched(); const t=l.find(x=>x.id===id);
+  if(t){ t.paused=!t.paused; _saveSched(l); if(typeof toast==='function') toast(t.paused?'Task paused':'Task resumed','info'); }
+  openSchedManager(); if(S.tab==='crew'){ try{ renderCrewView(); }catch(e){} }
+}
+function _schedToggleApproval(id){
+  const l=_loadSched(); const t=l.find(x=>x.id===id);
+  if(t){ t.approval=(t.approval==='auto')?'require':'auto'; _saveSched(l); if(typeof toast==='function') toast(t.approval==='auto'?'Auto-approve on for this task':'This task now waits for your approval','info',3200); }
+  openSchedManager(); if(S.tab==='crew'){ try{ renderCrewView(); }catch(e){} }
+}
+function _schedCancel(id){
+  _saveSched(_loadSched().filter(t=>t.id!==id)); if(typeof toast==='function') toast('Scheduled task cancelled','info');
+  openSchedManager(); if(S.tab==='crew'){ try{ renderCrewView(); }catch(e){} }
+}
+window._schedTogglePause=_schedTogglePause; window._schedToggleApproval=_schedToggleApproval; window._schedCancel=_schedCancel;
+
+function _smRow(t){
+  const cadence = t.sched ? _schedHumanOf(t.sched) : ((typeof _freqLabel==='function')?_freqLabel(t.freq):'');
+  let nextTxt='';
+  try{ nextTxt = t.paused ? 'Paused' : new Date(t.next).toLocaleString([], {weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }catch(e){ nextTxt = t.paused?'Paused':''; }
+  const lastTxt = t.lastRun ? new Date(t.lastRun).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : 'Not run yet';
+  const auto = t.approval==='auto';
+  const mode = t.paused
+    ? '<span class="mc-sched-mode req">Paused</span>'
+    : (auto ? '<span class="mc-sched-mode auto">Auto-approve</span>' : '<span class="mc-sched-mode req">Approval required</span>');
+  return `<div class="smr${t.paused?' paused':''}">
+    <div class="smr-top"><div class="smr-goal">${escH(t.goal||'Scheduled task')}</div>${mode}</div>
+    <div class="smr-meta">
+      <span><b>Runs</b> ${escH(cadence)}</span>
+      <span><b>Next</b> ${escH(nextTxt)}</span>
+      <span><b>Last run</b> ${escH(lastTxt)}</span>
+      ${t.localOnly?'<span class="smr-local">Runs while AMV is open</span>':''}
+    </div>
+    <div class="smr-act">
+      <button class="btn mc-mini ghost" data-dact="_schedTogglePause" data-darg="${t.id}">${t.paused?'Resume':'Pause'}</button>
+      <button class="btn mc-mini ghost" data-dact="_schedToggleApproval" data-darg="${t.id}">${auto?'Require approval':'Auto-approve'}</button>
+      <button class="btn mc-mini ghost smr-cancel" data-dact="_schedCancel" data-darg="${t.id}">Cancel</button>
+    </div>
+  </div>`;
+}
+
 /* Scheduled work manager */
 function openSchedManager(){
   const r=$('ovr'); if(!r) return;
   const list=_loadSched();
-  const rows = list.length ? list.map(t=>`<div class="sched-row"><div><div class="sched-goal">${escH(t.goal)}</div><div class="sched-meta">${t.sched?_schedHumanOf(t.sched):_freqLabel(t.freq)} · next ${new Date(t.next).toLocaleString()}</div></div><button class="btn" data-sched-del="${t.id}">Cancel</button></div>`).join('') : '<div class="lab-placeholder">No scheduled work yet. Start an autonomous task and choose a frequency.</div>';
+  const anyPaused = (typeof _autonomyPaused==='function') && _autonomyPaused();
+  const rows = list.length ? list.map(_smRow).join('') : '<div class="lab-placeholder">No scheduled work yet. Start an autonomous task and choose how often it should run.</div>';
   r.innerHTML=`<div class="ov tp-ov" id="sm-bg"><div class="tp-modal" onclick="event.stopPropagation()">
-    <div class="tp-head"><div><div class="eyebrow">AMV Autonomous</div><h2 class="tp-title">Scheduled work</h2></div><button class="tp-x" id="sm-close">✕</button></div>
-    <div class="tp-body"><p class="trip-sub">Recurring outcomes AMV runs for you. They run when due while AMV is open and catch up when you return. Connect the backend for true 24/7.</p><div class="sched-list">${rows}</div></div>
+    <div class="tp-head"><div><div class="eyebrow">AMV Autonomous</div><h2 class="tp-title">Scheduled work</h2></div><button class="tp-x" id="sm-close" aria-label="Close">\u2715</button></div>
+    <div class="tp-body">
+      <p class="trip-sub">Recurring outcomes AMV runs for you. They run when due while AMV is open and catch up when you return \u2014 connect the backend for true 24/7. Pause a task, switch its approval mode, or cancel it anytime.</p>
+      ${anyPaused?'<div class="mc-paused-banner" style="margin-bottom:14px"><b>All autonomous work is paused.</b> Individual schedules won\u2019t run until you resume from Mission Control.</div>':''}
+      <div class="sched-list">${rows}</div>
+    </div>
   </div></div>`;
   on($('sm-close'),'click',()=>{ const x=$('ovr'); if(x) x.innerHTML=''; });
   on($('sm-bg'),'click',()=>{ const x=$('ovr'); if(x) x.innerHTML=''; });
-  r.querySelectorAll('[data-sched-del]').forEach(btn=>on(btn,'click',()=>{ _saveSched(_loadSched().filter(t=>t.id!==btn.dataset.schedDel)); openSchedManager(); }));
+  setTimeout(()=>{ try{ $('sm-close').focus(); }catch(e){} },30);
 }
 window.openSchedManager=openSchedManager;
 window.openCowork=openCowork; window.runAutonomous=runAutonomous;
