@@ -863,6 +863,11 @@ async function _fingerprint(e){
 /* POST /errors — the client reports a batch. No auth required (errors can
    happen before/without login), but it is strictly bounded and sanitised. */
 async function errorsReport(request, env){
+  // AMV-054: this is a PUBLIC (unauthenticated) telemetry sink. Rate-limit per IP
+  // so it can't be flooded to amplify storage or poison the dashboard.
+  const eip = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'noip';
+  const erl = await limitAction(env, `errreport:${eip}`, 30, 500);
+  if (!erl.ok) return json({ ok: true, accepted: 0, throttled: true });
   const body = await request.json().catch(()=>({}));
   const events = Array.isArray(body.events) ? body.events.slice(0, ERR_MAX_BATCH) : [];
   if(!events.length) return json({ ok:true, accepted:0 });
@@ -4862,8 +4867,12 @@ async function marketReview(request, env) {
     audit(env, 'market_review_blocked', { by: user.email, category: rScreen.category });
     return json({ error: 'Your review contains content that isn\u2019t allowed.', code: 'policy_violation' }, 422);
   }
-  const entry = { by: user.email, byName: (user.name || user.email.split('@')[0]).slice(0, 40), stars: s, text: reviewText, ts: Date.now() };
-  const existing = list.findIndex(r => (r.by || '').toLowerCase() === user.email.toLowerCase());
+  // AMV-059: store a PSEUDONYMOUS reviewer id (a non-reversible hash of the
+  // email) for one-review-per-buyer dedup, plus a display name — never the raw
+  // email, so a review list can be shown publicly without leaking addresses.
+  const byId = await _errHash(user.email.toLowerCase());
+  const entry = { byId, byName: (user.name || user.email.split('@')[0]).slice(0, 40), stars: s, text: reviewText, ts: Date.now() };
+  const existing = list.findIndex(r => (r.byId || '') === byId || (r.by || '').toLowerCase() === user.email.toLowerCase());
   if (existing >= 0) list[existing] = entry; else list.unshift(entry);
   await env.AMV_KV.put(key, JSON.stringify(list.slice(0, 500)));
   audit(env, 'market_review', { seller: sellerEmail, by: user.email, stars: s });
