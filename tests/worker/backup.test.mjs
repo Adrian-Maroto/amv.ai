@@ -124,6 +124,15 @@ section('A non-snapshot file is refused');
 r = await W.backupImport(importReq({ snapshot: { foo: 'bar' } }), env);
 ok(r.status === 400, 'a file without the backup marker is a 400', r.status);
 
+/* ── AMV-036: import is bounded ───────────────────────────────────────────── */
+section('AMV-036: import rejects oversized values');
+r = await W.backupImport(new Request('https://api.amv.dev/admin/backup/import', {
+  method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Admin-Token': 'admin-secret' },
+  body: JSON.stringify({ snapshot: { _amv_backup: 1, data: { 'acct:huge@x.com': 'A'.repeat(3 * 1024 * 1024) } } })
+}), env);
+const bd = await r.json();
+ok(r.status === 200 && bd.restored === 0 && bd.rejected >= 1, 'an oversized value is rejected, not written', bd);
+
 /* ── Admin only ──────────────────────────────────────────────────────────── */
 section('Backup endpoints are admin-only');
 

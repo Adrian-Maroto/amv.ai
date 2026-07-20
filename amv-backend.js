@@ -1122,6 +1122,21 @@ async function backupExport(request, env){
     } while(cursor);
   }
 
+  // AMV-036: when D1 is the source of truth, KV won't hold these records — pull
+  // them from D1 too so the export is a COMPLETE recovery artifact, not a
+  // silently-empty one.
+  if(DB._hasD1(env)){
+    for(const prefix of BACKUP_PREFIXES){
+      const kind = prefix.slice(0, -1);
+      try{
+        for(const r of await DB.list(env, kind, 1000000)){
+          const key = `${kind}:${r.id}`;
+          if(data[key] == null){ data[key] = JSON.stringify(r.value); count++; bytes += data[key].length + key.length; }
+        }
+      }catch(e){}
+    }
+  }
+
   const snapshot = {
     _amv_backup: 1,
     createdAt: Date.now(),
@@ -1160,9 +1175,16 @@ async function backupImport(request, env){
   // can't write arbitrary control keys (e.g. GLOBAL_KILL).
   const allowed = (key) => BACKUP_PREFIXES.some(p => key.startsWith(p));
 
+  // AMV-036: bound the import so a crafted/accidental snapshot can't exhaust
+  // resources — cap the key count and reject oversized values.
+  const entries = Object.entries(snap.data);
+  const MAX_IMPORT_KEYS = 500000;
+  const MAX_VALUE_BYTES = 2 * 1024 * 1024;   // 2MB per value
+  if(entries.length > MAX_IMPORT_KEYS) return json({ error:'snapshot has too many keys to import safely' }, 413);
+
   let restored = 0, skipped = 0, rejected = 0;
-  for(const [key, val] of Object.entries(snap.data)){
-    if(typeof val !== 'string' || !allowed(key)){ rejected++; continue; }
+  for(const [key, val] of entries){
+    if(typeof val !== 'string' || !allowed(key) || val.length > MAX_VALUE_BYTES){ rejected++; continue; }
     if(mode === 'missing'){
       const existing = await env.AMV_KV.get(key);
       if(existing != null){ skipped++; continue; }
