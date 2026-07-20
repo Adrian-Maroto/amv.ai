@@ -6289,6 +6289,19 @@ body.light .aa-date{color-scheme:light}
 .smr-cancel:hover{color:var(--err)!important;border-color:rgba(217,102,102,.4)!important}
 @media(max-width:560px){ .smr-act{width:100%} .smr-act .btn{flex:1} }
 
+/* ============================================================
+   LAYER A4 — ULTRAWIDE: cap + center create views so content
+   never stretches edge-to-edge on large monitors / TVs.
+   Only engages >=1500px; normal desktops are untouched.
+   ============================================================ */
+@media(min-width:1500px){
+  #imgv,#vidv{max-width:1120px;margin-left:auto;margin-right:auto}
+  #imgctrl,#imgg{max-width:100%}
+}
+@media(min-width:1900px){
+  #imgv,#vidv{max-width:1240px}
+}
+
 </style>
 <!-- BUILD:CSS:END -->
 <script>
