@@ -2426,6 +2426,9 @@ async function syncPush(request, env){
   // arbitrary fields (auditor #3: validate + bound what we store).
   const filtered = {};
   for(const k of Object.keys(incoming)){ if(SYNC_ALLOWED_KEYS.has(k)) filtered[k] = incoming[k]; }
+  // AMV-056: bound nesting depth so a pathological deeply-nested structure can't
+  // blow up parse/serialize (the size cap alone doesn't bound depth).
+  if(_boundedJson(filtered, SYNC_MAX_BYTES, 24)){ return json({ error:'synced data is too deeply nested', code:'sync_too_deep' }, 413); }
   const current = (await DB.get(env, 'data', user.email)) || {};
   const merged = Object.assign({}, current, filtered, { _updatedAt: Date.now() });
   // Enforce a real size cap (the comment used to promise this but didn't do it).
