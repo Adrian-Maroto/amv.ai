@@ -199,6 +199,7 @@ const MAX_TOTAL_CHARS = 600000;    // ~150k tokens of input — generous but bou
 const MAX_SYSTEM_CHARS = 100000;
 const VALID_ROLES = new Set(['user', 'assistant']);
 const MAX_BLOCKS_PER_MSG = 64;
+const WEB_SEARCH_COST_USD = 0.01;   // ~$10 / 1000 provider web-search requests (AMV-021)
 const VALID_BLOCK_TYPES = new Set(['text', 'image', 'tool_use', 'tool_result', 'document', 'thinking', 'redacted_thinking']);
 
 function validateMessagesPayload(body) {
@@ -562,7 +563,7 @@ async function _autoExecute(env, item){
 function _autoCostUSD(usage){
   const inUSD  = (usage.input||0)  / 1e6 * 3;     // ~$3 / M input
   const outUSD = (usage.output||0) / 1e6 * 15;    // ~$15 / M output
-  const searchUSD = (usage.webSearches||0) * 0.01; // ~$10 / 1000 searches
+  const searchUSD = (usage.webSearches||0) * WEB_SEARCH_COST_USD; // ~$10 / 1000 searches
   return inUSD + outUSD + searchUSD;
 }
 
@@ -2831,6 +2832,7 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, user, e
   const dec = new TextDecoder();
   let buf = '';
   let inTok = 0, cacheRead = 0, cacheWrite = 0, outTok = 0;
+  let webSearches = 0;   // AMV-021: separately-billed web-search tool calls
   let sawUsage = false, sawAnyEvent = false;
   try {
     while (true) {
@@ -2852,17 +2854,20 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, user, e
           cacheRead  = u.cache_read_input_tokens || 0;
           cacheWrite = u.cache_creation_input_tokens || 0;
           if (typeof u.output_tokens === 'number') outTok = u.output_tokens;
+          if (u.server_tool_use && typeof u.server_tool_use.web_search_requests === 'number') webSearches = u.server_tool_use.web_search_requests;
           sawUsage = true;
         }
         // output token count accumulates and finalizes in message_delta
-        if (ev.type === 'message_delta' && ev.usage && typeof ev.usage.output_tokens === 'number') {
-          outTok = ev.usage.output_tokens;  // Anthropic sends the running TOTAL, not a delta
+        if (ev.type === 'message_delta' && ev.usage) {
+          if (typeof ev.usage.output_tokens === 'number') outTok = ev.usage.output_tokens;  // running TOTAL, not a delta
+          if (ev.usage.server_tool_use && typeof ev.usage.server_tool_use.web_search_requests === 'number') webSearches = ev.usage.server_tool_use.web_search_requests;
           sawUsage = true;
         }
         // some responses (tool use, final) also carry usage on message_stop
         if (ev.type === 'message_stop' && ev.usage) {
           if (typeof ev.usage.output_tokens === 'number') outTok = ev.usage.output_tokens;
           if (typeof ev.usage.input_tokens === 'number') inTok = ev.usage.input_tokens;
+          if (ev.usage.server_tool_use && typeof ev.usage.server_tool_use.web_search_requests === 'number') webSearches = ev.usage.server_tool_use.web_search_requests;
           sawUsage = true;
         }
       }
@@ -2883,7 +2888,11 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, user, e
       (inTok      / 1e6) * eng.inCost
     + (cacheRead  / 1e6) * eng.inCost * 0.10
     + (cacheWrite / 1e6) * eng.inCost * 1.25
-    + (outTok     / 1e6) * eng.outCost;
+    + (outTok     / 1e6) * eng.outCost
+    // AMV-021: web search is a separately-billed provider dimension (~$0.01 per
+    // request). Price it into the same spend ledger as tokens so interactive
+    // searches aren't consumed for free.
+    + (webSearches * WEB_SEARCH_COST_USD);
 
   // total tokens for quota accounting (count cache tokens too — they're real usage)
   const total = inTok + cacheRead + cacheWrite + outTok;
