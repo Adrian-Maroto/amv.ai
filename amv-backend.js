@@ -1930,11 +1930,15 @@ async function authDeleteAccount(request, env) {
     for (const slug of (idx && idx.slugs) || []) { try { await DB.del(env, 'site', slug); } catch {} }
   } catch {}
 
-  // 3) Delete the user's marketplace listings.
+  // 3) Delete the user's marketplace listings and their purchased-item snapshots.
   try {
     for (const l of await DB.list(env, 'market', 5000)) {
       if (l && l.value && l.value.authorEmail === email) { try { await env.AMV_KV.delete(`market:${l.id}`); } catch {} }
     }
+  } catch {}
+  try {
+    const snaps = await env.AMV_KV.list({ prefix: `mktsnap:${email}:` });
+    for (const k of (snaps.keys || [])) { try { await env.AMV_KV.delete(k.name); } catch {} }
   } catch {}
 
   // 4) Unlink phone/SMS records (email↔phone are cross-referenced).
@@ -4595,6 +4599,9 @@ async function _creditSale(env, { itemId, buyer, seller, amountCents }) {
   const purchases = await _purchasesList(env, buyer);
   purchases.unshift({ id: itemId, title: it ? it.title : itemId, kind: it ? it.kind : 'prompt', price, ts: Date.now() });
   await env.AMV_KV.put(`purchases:${buyer}`, JSON.stringify(purchases.slice(0, 500)));
+  // AMV-037: snapshot the deliverable at purchase time. The buyer paid for THIS
+  // content — a later seller edit or delete must never revoke their access.
+  if (it) { try { await DB.put(env, 'mktsnap', `${buyer}:${itemId}`, { ...it, _boughtAt: Date.now() }); } catch (e) {} }
   // credit the seller 80%
   if (sellerEmail) {
     const sellerShare = +(price * (1 - MARKET_PLATFORM_FEE)).toFixed(2);
@@ -4628,12 +4635,16 @@ async function marketPurchases(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
   const list = await _purchasesList(env, user.email);
-  // attach the live deliverable for each owned item
   const items = [];
   for (const p of list) {
+    // AMV-037: serve the immutable snapshot taken at purchase — the buyer keeps
+    // full access to what they paid for even if the seller later edited or
+    // deleted the listing. Fall back to the live listing for legacy purchases.
+    const snap = await DB.get(env, 'mktsnap', `${user.email}:${p.id}`);
+    if (snap) { items.push({ ...snap, _purchasedAt: p.ts }); continue; }
     const it = await _getListing(env, p.id);
-    if (it) items.push({ ...it, _purchasedAt: p.ts });        // full content — they own it
-    else items.push({ ...p, _removed: true });                // seller unlisted it; keep the record
+    if (it) items.push({ ...it, _purchasedAt: p.ts });
+    else items.push({ ...p, _removed: true });
   }
   return json({ ok: true, items });
 }
