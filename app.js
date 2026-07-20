@@ -9329,6 +9329,66 @@ async function _crewSyncLive(){
     renderCrewView();
   }catch(e){}
 }
+/* ============================================================
+   MISSION CONTROL  (Phase 2) — the workforce overview.
+   Aggregates the real state of everything AMV is doing: what needs
+   approval, what's active, what's autonomous, what's scheduled, what
+   finished, and what's blocked. Reads only real stores; empty groups
+   collapse to a quiet line instead of fabricating activity.
+   ============================================================ */
+function _autonomyPaused(){ try{ return localStorage.getItem('amv_autonomy_paused')==='1'; }catch(e){ return false; } }
+function _setAutonomyPaused(v){ try{ localStorage.setItem('amv_autonomy_paused', v?'1':'0'); }catch(e){} }
+function pauseAllAutonomous(){ _setAutonomyPaused(true); if(window.AMV_API && AMV_API.live && AMV_API.pauseAutonomy) AMV_API.pauseAutonomy(true).catch(()=>{}); toast('All autonomous work paused — nothing runs until you resume.','info',3800); renderCrewView(); }
+function resumeAllAutonomous(){ _setAutonomyPaused(false); if(window.AMV_API && AMV_API.live && AMV_API.pauseAutonomy) AMV_API.pauseAutonomy(false).catch(()=>{}); toast('Autonomous work resumed.','success'); renderCrewView(); }
+window.pauseAllAutonomous=pauseAllAutonomous; window.resumeAllAutonomous=resumeAllAutonomous;
+
+function _mcState(){
+  const appr=_cwApprovals();
+  const jobs=_cwJobs();
+  const sched=(typeof _loadSched==='function')?_loadSched():[];
+  const bg=(typeof _bgQueue!=='undefined'&&_bgQueue.tasks)?_bgQueue.tasks:[];
+  return {
+    appr,
+    active: bg.filter(t=>t.status==='running'||t.status==='queued'),
+    failed: bg.filter(t=>t.status==='failed'),
+    done: bg.filter(t=>t.status==='done'),
+    auton: jobs.filter(j=>j.on),
+    sched
+  };
+}
+function _mcActiveCard(t){
+  const running=t.status==='running';
+  const bar = running
+    ? (t.progress ? `<div class="mc-bar"><span style="width:${Math.max(6,Math.min(100,t.progress))}%"></span></div>` : `<div class="mc-bar indet"><span></span></div>`)
+    : '';
+  return `<div class="mc-card"><div class="mc-card-top"><span class="mc-card-t">${escH(t.title||t.type||'Task')}</span><span class="mc-pill ${running?'run':'wait'}">${running?'Running':'Queued'}</span></div>${bar}<div class="mc-card-sub">${running?'AMV is working on this now.':'Waiting to start.'}</div></div>`;
+}
+function _mcFailCard(t){
+  return `<div class="mc-card fail"><div class="mc-card-top"><span class="mc-card-t">${escH(t.title||'Task')}</span><span class="mc-pill err">Needs you</span></div><div class="mc-card-sub">${escH(t.error||'This task could not complete.')}</div><div class="mc-card-act"><button class="btn mc-mini" data-dact="_mcRetry" data-darg="${t.id}">Retry</button></div></div>`;
+}
+function _mcRetry(id){
+  const t=((typeof _bgQueue!=='undefined'&&_bgQueue.tasks)||[]).find(x=>x.id===id); if(!t){ renderCrewView(); return; }
+  t.status='queued'; t.error=null; t.progress=0;
+  if(typeof _bgRunNext==='function') _bgRunNext();
+  toast('Retrying — running in the background','info'); renderCrewView();
+}
+window._mcRetry=_mcRetry;
+function _mcAutonCard(j){
+  return `<div class="mc-card"><div class="mc-card-top"><span class="mc-card-t">${escH(j.title)}</span><span class="mc-pill ok">On</span></div><div class="mc-card-sub">${escH(j.desc||'')}</div><div class="mc-card-act"><span class="mc-card-uses">Uses: ${escH(j.needs||'—')}</span><button class="btn mc-mini ghost" data-dact="cwToggle" data-darg="${j.id}">Turn off</button></div></div>`;
+}
+function _mcSchedRow(t){
+  const when = t.sched?((typeof _schedHumanOf==='function')?_schedHumanOf(t.sched):''):((typeof _freqLabel==='function')?_freqLabel(t.freq):'');
+  let next='';
+  try{ if(t.next) next=new Date(t.next).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }catch(e){}
+  return `<div class="mc-sched-row"><div class="mc-sched-b"><div class="mc-sched-goal">${escH(t.goal||'Scheduled task')}</div><div class="mc-sched-meta">${escH(when)}${next?` · next ${escH(next)}`:''}${t.localOnly?' · runs while AMV is open':''}</div></div><button class="btn mc-mini ghost" data-dact="_mcCancelSched" data-darg="${t.id}">Cancel</button></div>`;
+}
+function _mcCancelSched(id){ try{ _saveSched(_loadSched().filter(t=>t.id!==id)); }catch(e){} toast('Scheduled task cancelled','info'); renderCrewView(); }
+window._mcCancelSched=_mcCancelSched;
+function _mcDoneCard(t){
+  const snip=t.result?String(t.result).replace(/\s+/g,' ').trim():'';
+  return `<div class="mc-card done"><div class="mc-card-top"><span class="mc-card-t">${escH(t.title||'Task')}</span><span class="mc-pill ok">Done</span></div>${snip?`<div class="mc-card-sub">${escH(snip.slice(0,140))}${snip.length>140?'…':''}</div>`:''}</div>`;
+}
+
 function renderCrewView(){
   const vc=$('vc'); if(!vc) return;
   const jobs=_cwJobs(); const appr=_cwApprovals();
@@ -9370,46 +9430,64 @@ function renderCrewView(){
       </div>
     </div>`;
   };
-  const activeCount=jobs.filter(j=>j.on).length;
+  const st=_mcState();
+  const paused=_autonomyPaused();
+  const tiles=[
+    ['appr','Needs approval',st.appr.length,'wait'],
+    ['fail','Action required',st.failed.length,'err'],
+    ['active','Active work',st.active.length,'active'],
+    ['auton','Autonomous',st.auton.length,'ok'],
+    ['sched','Scheduled',st.sched.length,'info'],
+    ['done','Completed',st.done.length,'muted']
+  ];
 
-  vc.innerHTML = `<div class="sv fi"><div class="crew-page">
-    <header class="crew-hero">
-      <div class="crew-hero-l">
+  vc.innerHTML = `<div class="sv fi"><div class="crew-page mc-page">
+    <header class="mc-head">
+      <div class="mc-head-l">
         <div class="eyebrow">Autonomous</div>
-        <h2>Crew works while you don't.</h2>
-        <p class="vsub">Turn on a standing job and AMV runs it in the background across your connected accounts. Anything it wants to send waits in your approval queue. Nothing goes out until you say so.</p>
-        <div class="crew-try"><span class="crew-try-label">Try saying:</span> <button class="crew-try-chip" data-dact="cwTry" data-darg="Every morning at 7am, email me a summary of overnight news and which stocks to watch today">&ldquo;Every morning, email me a news &amp; stocks brief&rdquo;</button><button class="crew-try-chip" data-dact="cwTry" data-darg="Every Friday, email my team a summary of what we accomplished this week">&ldquo;Every Friday, email my team a weekly report&rdquo;</button></div>
+        <h2>Mission Control</h2>
+        <p class="vsub">Everything AMV is doing for you — what’s waiting on you, what’s running now, and what’s scheduled next. Nothing consequential goes out until you approve it.</p>
       </div>
-      <div class="crew-hero-stat">
-        <div class="stat-num">${activeCount}</div>
-        <div class="stat-lbl">active job${activeCount===1?'':'s'}</div>
+      <div class="mc-head-r">
+        <button class="mc-pause ${paused?'paused':''}" data-dact="${paused?'resumeAllAutonomous':'pauseAllAutonomous'}">${paused?'▶ Resume autonomy':'⏸ Pause all autonomous'}</button>
       </div>
     </header>
+    ${paused?`<div class="mc-paused-banner"><b>Autonomous work is paused.</b> Scheduled and standing jobs won’t run until you resume. Anything already waiting still needs your approval.</div>`:''}
+    <div class="mc-tiles">${tiles.map(t=>`<button class="mc-tile mc-${t[3]}${t[2]?'':' zero'}" data-mcjump="mc-${t[0]}"><span class="mc-tile-n">${t[2]}</span><span class="mc-tile-l">${t[1]}</span></button>`).join('')}</div>
 
-    <div class="crew-split">
-      <section class="crew-main">
-        <div class="sec-head"><h3>Needs your approval ${appr.length?`<span class="cw-badge">${appr.length}</span>`:''}</h3></div>
-        ${appr.length ? appr.map(apprCard).join('') :
-          `<div class="cw-empty-lg">
-             <div class="cw-empty-ic">\u2713</div>
-             <div>You're all caught up. When a standing job drafts something, it appears here for one-tap approval.</div>
-             <button class="btn bs" data-dact="cwDemo" style="margin-top:14px;font-size:12px">See an example draft</button>
-           </div>`}
-      </section>
-      <aside class="crew-aside">
-        <div class="crew-note">
-          <h4>How Crew works</h4>
-          <ol class="crew-steps">
-            <li><span>1</span> Turn on a standing job</li>
-            <li><span>2</span> It runs in the background</li>
-            <li><span>3</span> You approve before anything sends</li>
-          </ol>
-        </div>
-      </aside>
-    </div>
+    <section id="mc-appr" class="mc-sec">
+      <div class="sec-head"><h3>Needs your approval ${appr.length?`<span class="cw-badge">${appr.length}</span>`:''}</h3></div>
+      ${appr.length ? appr.map(apprCard).join('') :
+        `<div class="mc-empty"><span class="mc-empty-ic">✓</span><div>You’re all caught up. When AMV drafts something that sends or changes anything, it waits here for your decision.</div><button class="mc-empty-cta" data-dact="cwDemo">See an example draft</button></div>`}
+    </section>
 
-    <div class="crew-jobs-sec">
-      <div class="sec-head"><h3>Standing jobs</h3><span class="sec-sub">Switch one on and AMV runs it automatically \u2014 emailing you results on schedule.</span></div>
+    ${st.failed.length?`<section id="mc-fail" class="mc-sec">
+      <div class="sec-head"><h3>Action required <span class="cw-badge err">${st.failed.length}</span></h3><span class="sec-sub">Blocked or failed — these need you.</span></div>
+      <div class="mc-grid">${st.failed.map(_mcFailCard).join('')}</div>
+    </section>`:''}
+
+    ${st.active.length?`<section id="mc-active" class="mc-sec">
+      <div class="sec-head"><h3>Active work</h3><span class="sec-sub">AMV is on these right now.</span></div>
+      <div class="mc-grid">${st.active.map(_mcActiveCard).join('')}</div>
+    </section>`:''}
+
+    <section id="mc-auton" class="mc-sec">
+      <div class="sec-head"><h3>Autonomous</h3><span class="sec-sub">Standing jobs running in the background.</span></div>
+      ${st.auton.length?`<div class="mc-grid">${st.auton.map(_mcAutonCard).join('')}</div>`:`<div class="mc-empty-row">No standing jobs are on yet — turn one on under “Start new work” below.</div>`}
+    </section>
+
+    <section id="mc-sched" class="mc-sec">
+      <div class="sec-head"><h3>Scheduled</h3><span class="sec-sub">Recurring work and next run times.</span><button class="mc-sec-link" data-dact="openSchedManager">Manage</button></div>
+      ${st.sched.length?`<div class="mc-sched">${st.sched.slice(0,6).map(_mcSchedRow).join('')}</div>`:`<div class="mc-empty-row">Nothing scheduled yet. Start a task below and choose how often it should run.</div>`}
+    </section>
+
+    ${st.done.length?`<section id="mc-done" class="mc-sec">
+      <div class="sec-head"><h3>Recently completed</h3></div>
+      <div class="mc-grid">${st.done.slice(-6).reverse().map(_mcDoneCard).join('')}</div>
+    </section>`:''}
+
+    <div class="crew-jobs-sec mc-start">
+      <div class="sec-head"><h3>Start new work</h3><span class="sec-sub">Turn on a standing job — AMV runs it automatically and emails you results.</span></div>
       <div class="cw-jobs-grid">${jobs.map(jobCard).join('')}</div>
     </div>
 
@@ -9443,6 +9521,7 @@ function renderCrewView(){
       </section>
     </div>
   </div></div>`;
+  try{ vc.querySelectorAll('[data-mcjump]').forEach(function(b){ on(b,'click',function(){ var el=document.getElementById(b.dataset.mcjump); if(el) el.scrollIntoView({behavior:'smooth',block:'start'}); }); }); }catch(e){}
 }
 function _crewQueueHTML(){
   try{
@@ -16751,6 +16830,7 @@ function _scheduleAuto(goal, freq){
 function _loadSched(){ try{ return JSON.parse(localStorage.getItem('amv_autosched')||'[]'); }catch(e){ return []; } }
 function _saveSched(l){ try{ localStorage.setItem('amv_autosched', JSON.stringify(l)); }catch(e){} }
 async function _runDueAuto(){
+  if(typeof _autonomyPaused==='function' && _autonomyPaused()) return;
   const list=_loadSched(); if(!list.length) return;
   const now=Date.now(); let changed=false; let ranAny=false;
   // If the AI backend isn't connected, scheduled work can't actually run.

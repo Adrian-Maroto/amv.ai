@@ -5997,3 +5997,84 @@ body.light{--wait:#6b7690;--ok:#2f9e6e;--warn:#b7862f;--err:#c4544f;}
   .apv-title{white-space:normal}
 }
 @media(hover:none){ .apv-approve,.pvw-approve,.apv-preview{min-height:44px} }
+
+/* ============================================================
+   LAYER 27 — MISSION CONTROL  (workforce overview)
+   ============================================================ */
+.mc-head{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--sp-4);margin-bottom:var(--sp-5)}
+.mc-head h2{font-size:clamp(28px,3.4vw,36px)!important;line-height:1.1;font-weight:600!important;letter-spacing:-.01em;color:var(--tx)!important}
+.mc-head .vsub{max-width:620px;margin-top:6px}
+.mc-head-r{flex:none}
+.mc-pause{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:600;padding:9px 15px;border-radius:var(--rc);background:var(--s2);border:1px solid var(--bd);color:var(--tx);cursor:pointer;white-space:nowrap;transition:border-color .15s,background .15s}
+.mc-pause:hover{border-color:var(--warn);color:var(--warn)}
+.mc-pause.paused{background:var(--ok-soft);border-color:rgba(66,184,131,.4);color:var(--ok)}
+.mc-paused-banner{margin:0 0 var(--sp-4);padding:11px 14px;font-size:13px;color:var(--warn);background:var(--warn-soft);border:1px solid rgba(216,168,78,.3);border-radius:var(--rk);line-height:1.5}
+.mc-paused-banner b{color:var(--warn)}
+
+.mc-tiles{display:grid;grid-template-columns:repeat(6,1fr);gap:var(--sp-3);margin-bottom:var(--sp-6)}
+.mc-tile{display:flex;flex-direction:column;gap:2px;align-items:flex-start;text-align:left;padding:var(--sp-3) var(--sp-4);background:var(--s1);border:1px solid var(--bd);border-radius:var(--rk);cursor:pointer;transition:border-color .15s,transform .12s}
+.mc-tile:hover{border-color:rgba(63,118,245,.35);transform:translateY(-1px)}
+.mc-tile-n{font-size:24px;font-weight:700;color:var(--tx);line-height:1}
+.mc-tile-l{font-size:12px;color:var(--mu);font-weight:500}
+.mc-tile.zero{opacity:.55}
+.mc-tile.zero .mc-tile-n{color:var(--dim)}
+.mc-tile.mc-wait:not(.zero) .mc-tile-n{color:var(--accent)}
+.mc-tile.mc-err:not(.zero){border-color:rgba(217,102,102,.4)}
+.mc-tile.mc-err:not(.zero) .mc-tile-n{color:var(--err)}
+.mc-tile.mc-ok:not(.zero) .mc-tile-n{color:var(--ok)}
+
+.mc-sec{margin-bottom:var(--sp-6);scroll-margin-top:70px}
+.mc-sec .sec-head{display:flex;align-items:baseline;gap:10px;margin-bottom:var(--sp-3)}
+.cw-badge.err{background:var(--err-soft);color:var(--err)}
+.mc-sec-link{margin-left:auto;background:transparent;border:none;color:var(--accent);font-size:12.5px;font-weight:600;cursor:pointer}
+.mc-sec-link:hover{text-decoration:underline}
+
+.mc-empty{display:flex;flex-direction:column;align-items:center;text-align:center;gap:10px;padding:var(--sp-6) var(--sp-4);background:var(--s1);border:1px solid var(--bd);border-radius:var(--rp);color:var(--mu);font-size:13.5px;line-height:1.55}
+.mc-empty-ic{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:var(--ok-soft);color:var(--ok);font-size:18px}
+.mc-empty>div{max-width:440px}
+.mc-empty-cta{margin-top:4px;font-size:12.5px;font-weight:600;color:var(--accent);background:transparent;border:1px solid var(--bd);border-radius:var(--rc);padding:7px 14px;cursor:pointer}
+.mc-empty-cta:hover{border-color:var(--accent)}
+.mc-empty-row{padding:14px 16px;background:var(--s1);border:1px dashed var(--bd);border-radius:var(--rk);color:var(--mu);font-size:13px}
+
+.mc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:var(--sp-3)}
+.mc-card{background:var(--s1);border:1px solid var(--bd);border-radius:var(--rk);padding:var(--sp-4)}
+.mc-card.fail{border-color:rgba(217,102,102,.32)}
+.mc-card-top{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+.mc-card-t{flex:1;min-width:0;font-size:14px;font-weight:600;color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mc-pill{flex:none;font-size:10.5px;font-weight:600;padding:3px 9px;border-radius:999px;letter-spacing:.02em}
+.mc-pill.run{color:var(--accent);background:var(--accent-soft)}
+.mc-pill.wait{color:var(--wait);background:var(--wait-soft)}
+.mc-pill.ok{color:var(--ok);background:var(--ok-soft)}
+.mc-pill.err{color:var(--err);background:var(--err-soft)}
+.mc-card-sub{font-size:12.5px;color:var(--mu);line-height:1.5}
+.mc-card-act{display:flex;align-items:center;gap:10px;margin-top:var(--sp-3)}
+.mc-card-uses{font-size:11.5px;color:var(--dim);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mc-mini{font-size:12px;padding:5px 12px;border-radius:var(--rc);background:var(--accent);color:#fff;font-weight:600}
+.mc-mini:hover{background:var(--accent-d)}
+.mc-mini.ghost{background:transparent;border:1px solid var(--bd);color:var(--mu)}
+.mc-mini.ghost:hover{background:var(--s2);color:var(--tx)}
+
+.mc-bar{height:5px;border-radius:4px;background:var(--s3);overflow:hidden;margin:8px 0}
+.mc-bar>span{display:block;height:100%;background:var(--accent);border-radius:4px;transition:width .5s ease}
+.mc-bar.indet>span{width:35%;animation:mcIndet 1.25s ease-in-out infinite}
+@keyframes mcIndet{0%{margin-left:-38%}100%{margin-left:100%}}
+@media(prefers-reduced-motion:reduce){.mc-bar.indet>span{animation:none;width:100%;opacity:.5}}
+
+.mc-sched{display:flex;flex-direction:column;gap:var(--sp-2)}
+.mc-sched-row{display:flex;align-items:center;gap:var(--sp-3);padding:12px var(--sp-4);background:var(--s1);border:1px solid var(--bd);border-radius:var(--rk)}
+.mc-sched-b{flex:1;min-width:0}
+.mc-sched-goal{font-size:13.5px;font-weight:500;color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mc-sched-meta{font-size:12px;color:var(--mu);margin-top:2px}
+.mc-start{margin-top:var(--sp-7)}
+
+/* tablet / mobile: tiles wrap to 3 then 2 across, sections stay readable */
+@media(max-width:1024px){ .mc-tiles{grid-template-columns:repeat(3,1fr)} }
+@media(max-width:560px){
+  .mc-head{flex-direction:column;gap:var(--sp-3)}
+  .mc-head-r{width:100%}
+  .mc-pause{width:100%;justify-content:center}
+  .mc-tiles{grid-template-columns:repeat(2,1fr);gap:var(--sp-2)}
+  .mc-tile-n{font-size:20px}
+  .mc-grid{grid-template-columns:1fr}
+}
+@media(hover:none){ .mc-pause,.mc-mini{min-height:40px} }
