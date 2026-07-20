@@ -4,15 +4,22 @@ on:
   push:
   pull_request:
 
+# Least privilege: the workflow only needs to read the repo (AMV-041).
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
+      # NOTE (AMV-041): for supply-chain hardening, pin these to full-length
+      # commit SHAs (e.g. actions/checkout@<sha>) once you've verified them.
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: npm install
+      # Reproducible install straight from the committed lockfile.
+      - run: npm ci
       - run: npx playwright install --with-deps chromium
       - name: Build
         run: node build.mjs
