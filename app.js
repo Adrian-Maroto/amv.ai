@@ -9418,6 +9418,43 @@ function _mcSchedRow(t){
 }
 function _mcCancelSched(id){ try{ _saveSched(_loadSched().filter(t=>t.id!==id)); }catch(e){} toast('Scheduled task cancelled','info'); renderCrewView(); }
 window._mcCancelSched=_mcCancelSched;
+/* A standing job shown as a row in the unified Scheduled section. */
+function _mcAutonSchedRow(j){
+  return `<div class="mc-sched-row"><span class="mc-sched-mode auto">Standing job</span><div class="mc-sched-b"><div class="mc-sched-goal">${escH(j.title)}</div><div class="mc-sched-meta">${escH(j.desc||'Runs in the background')} · Uses: ${escH(j.needs||'—')}</div></div><button class="btn mc-mini ghost" data-dact="cwToggle" data-darg="${j.id}">Turn off</button></div>`;
+}
+/* Run a typed command INLINE on Mission Control — never leaves Crew. Recognizes
+   intent, and if a needed app isn't connected it says so right here; once
+   connected it actually performs the task on the real account. */
+async function mcRunCommand(instruction){
+  const box=document.getElementById('mc-cmd-result'); if(!box) return;
+  instruction=(instruction||'').trim(); if(!instruction){ const i=document.getElementById('mc-cmd-input'); i&&i.focus(); return; }
+  const analysis=(typeof analyzeTaskIntent==='function')?analyzeTaskIntent(instruction):{matched:false,ready:false};
+  // Needs an integration that isn't connected → explain here, stay in Crew.
+  if(analysis.matched && !analysis.ready){
+    const msg=(typeof taskRequirementMessage==='function')?taskRequirementMessage(analysis):'This task needs an app that isn’t connected yet.';
+    box.innerHTML='<div class="mc-cmd-msg warn"><div>'+escH(msg.replace(/\*\*/g,''))+'</div><div class="mc-cmd-actions"><button class="btn mc-mini" data-dact="_mcGoConnect">Open Connectors</button></div></div>';
+    return;
+  }
+  box.innerHTML='<div class="mc-cmd-msg run"><span class="rr-dot"></span> Working on it…</div>';
+  try{
+    if(typeof runAgentTask!=='function') throw new Error('agent-unavailable');
+    const {steps,results}=await runAgentTask(instruction,{onStep:(s)=>{ const m=box.querySelector('.mc-cmd-msg'); if(m) m.innerHTML='<span class="rr-dot"></span> Running: '+escH(String(s.tool||'').replace(/_/g,' '))+'…'; }});
+    let html;
+    if(!steps.length){ html='<div>I couldn’t find a safe automatic action for that. Try being more specific, or use <b>Autonomous task</b> below to plan a multi-step job.</div>'; }
+    else { html='<div class="mc-cmd-done-h">✓ Done — here’s what I did:</div><ul class="mc-cmd-steps">'+results.map((r,i)=>{ const label=(steps[i]&&steps[i].why)||r.tool; if(r.skipped) return '<li>⏭ Skipped: '+escH(label)+'</li>'; return '<li>'+(r.ok?'✓':'⚠')+' '+escH(label)+(r.ok?'':' — '+escH(r.error||'failed'))+'</li>'; }).join('')+'</ul>'; }
+    box.innerHTML='<div class="mc-cmd-msg done">'+html+'</div>';
+  }catch(e){
+    const m=String(e&&e.message||'');
+    if(/No integrations connected/i.test(m) || m==='agent-unavailable'){
+      box.innerHTML='<div class="mc-cmd-msg warn"><div>To actually do this, connect an app (Google, Slack, or GitHub) in <b>Settings → Connectors</b>. The moment it’s connected, AMV performs the task for real — right here.</div><div class="mc-cmd-actions"><button class="btn mc-mini" data-dact="_mcGoConnect">Open Connectors</button></div></div>';
+    } else {
+      box.innerHTML='<div class="mc-cmd-msg warn"><div>'+escH(m||'Could not run that task.')+'</div></div>';
+    }
+  }
+}
+window.mcRunCommand=mcRunCommand;
+function _mcGoConnect(){ try{ S.settingsPane='integrations'; setTab('settings'); }catch(e){} }
+window._mcGoConnect=_mcGoConnect;
 function _mcDoneCard(t){
   const snip=t.result?String(t.result).replace(/\s+/g,' ').trim():'';
   return `<div class="mc-card done"><div class="mc-card-top"><span class="mc-card-t">${escH(t.title||'Task')}</span><span class="mc-pill ok">Done</span></div>${snip?`<div class="mc-card-sub">${escH(snip.slice(0,140))}${snip.length>140?'…':''}</div>`:''}</div>`;
@@ -9470,7 +9507,6 @@ function renderCrewView(){
     ['appr','Needs approval',st.appr.length,'wait'],
     ['fail','Action required',st.failed.length,'err'],
     ['active','Active work',st.active.length,'active'],
-    ['auton','Autonomous',st.auton.length,'ok'],
     ['sched','Scheduled',st.sched.length,'info'],
     ['done','Completed',st.done.length,'muted']
   ];
@@ -9478,18 +9514,19 @@ function renderCrewView(){
   vc.innerHTML = `<div class="sv fi"><div class="crew-page mc-page">
     <header class="mc-head">
       <div class="mc-head-l">
-        <div class="eyebrow">Autonomous</div>
+        <div class="eyebrow">Crew · Autonomous work</div>
         <h2>Mission Control</h2>
-        <p class="vsub">Everything AMV is doing for you — what’s waiting on you, what’s running now, and what’s scheduled next. Nothing consequential goes out until you approve it.</p>
+        <p class="vsub">Crew is AMV working on its own. Tell it an outcome and it plans the steps, does the work across your connected apps, and stops for your approval before anything is sent. This page is where you watch it all — what needs you, what’s running, and what’s scheduled.</p>
       </div>
       <div class="mc-head-r">
         <button class="mc-pause ${paused?'paused':''}" data-dact="${paused?'resumeAllAutonomous':'pauseAllAutonomous'}">${paused?'▶ Resume autonomy':'⏸ Pause all autonomous'}</button>
       </div>
     </header>
-    <div class="mc-cmd">
+    <div class="mc-cmd mc-cmd-lg">
+      <div class="mc-cmd-label">Tell AMV what to do <span>— it recognizes what you mean and does it, right here</span></div>
       <div class="mc-cmd-inner">
-        <svg class="mc-cmd-ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/></svg>
-        <input id="mc-cmd-input" class="mc-cmd-input" type="text" placeholder="Tell AMV what to do — “email my team this week’s recap”, “research our competitors and write a brief”…" autocomplete="off">
+        <svg class="mc-cmd-ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/></svg>
+        <input id="mc-cmd-input" class="mc-cmd-input" type="text" placeholder="e.g. “email me a summary of my unread emails” or “research the top AI news and write a brief”" autocomplete="off">
         <button class="mc-cmd-go" id="mc-cmd-go">Run</button>
       </div>
       <div class="mc-cmd-chips">${[
@@ -9498,6 +9535,7 @@ function renderCrewView(){
         'Draft a reply to my latest email',
         'Plan my week from my calendar'
       ].map(c=>`<button class="mc-cmd-chip" data-mccmd="${escH(c)}">${escH(c)}</button>`).join('')}</div>
+      <div id="mc-cmd-result" class="mc-cmd-result"></div>
     </div>
     ${paused?`<div class="mc-paused-banner"><b>Autonomous work is paused.</b> Scheduled and standing jobs won’t run until you resume. Anything already waiting still needs your approval.</div>`:''}
     <div class="mc-tiles">${tiles.map(t=>`<button class="mc-tile mc-${t[3]}${t[2]?'':' zero'}" data-mcjump="mc-${t[0]}"><span class="mc-tile-n">${t[2]}</span><span class="mc-tile-l">${t[1]}</span></button>`).join('')}</div>
@@ -9518,14 +9556,9 @@ function renderCrewView(){
       <div class="mc-grid">${st.active.map(_mcActiveCard).join('')}</div>
     </section>`:''}
 
-    <section id="mc-auton" class="mc-sec">
-      <div class="sec-head"><h3>Autonomous</h3><span class="sec-sub">Standing jobs running in the background.</span></div>
-      ${st.auton.length?`<div class="mc-grid">${st.auton.map(_mcAutonCard).join('')}</div>`:`<div class="mc-empty-row">No standing jobs are on yet — turn one on under “Start new work” below.</div>`}
-    </section>
-
     <section id="mc-sched" class="mc-sec">
-      <div class="sec-head"><h3>Scheduled</h3><span class="sec-sub">Recurring work and next run times.</span><button class="mc-sec-link" data-dact="openSchedManager">Manage</button></div>
-      ${st.sched.length?`<div class="mc-sched">${st.sched.slice(0,6).map(_mcSchedRow).join('')}</div>`:`<div class="mc-empty-row">Nothing scheduled yet. Start a task below and choose how often it should run.</div>`}
+      <div class="sec-head"><h3>Scheduled</h3><span class="sec-sub">Everything recurring lives here — standing jobs and scheduled tasks, with their next run times.</span><button class="mc-sec-link" data-dact="openSchedManager">Manage</button></div>
+      ${(st.sched.length||st.auton.length)?`<div class="mc-sched">${st.auton.map(_mcAutonSchedRow).join('')}${st.sched.slice(0,8).map(_mcSchedRow).join('')}</div>`:`<div class="mc-empty-row">Nothing scheduled yet. Start a task above and choose how often it should run.</div>`}
     </section>
 
     ${st.done.length?`<section id="mc-done" class="mc-sec">
@@ -9545,8 +9578,7 @@ function renderCrewView(){
           ${[['\uD83D\uDDFA\uFE0F','Plan a trip','trip','openTripPlanner()'],
              ['\uD83D\uDCE7','Check Gmail','gmail','crewRun(\'gmail\',\'Check Gmail\')'],
              ['\uD83D\uDCC5','Plan my week','week','crewRun(\'week\',\'Plan my week\')'],
-             ['\u2728','Autonomous task','auto','openCowork()'],
-             ['\uD83D\uDD01','Scheduled work','sched','openSchedManager()']]
+             ['\u2728','Autonomous task','auto','openCowork()']]
             .map(q=>`<button class="cw-quick-card" onclick="${q[3]}"><span class="cw-quick-ic">${q[0]}</span><span>${q[1]}</span></button>`).join('')}
         </div>
         <div id="crew-live" class="crew-live">${_crewResultsHTML()}</div>
@@ -9571,7 +9603,7 @@ function renderCrewView(){
   try{ vc.querySelectorAll('[data-mcjump]').forEach(function(b){ on(b,'click',function(){ var el=document.getElementById(b.dataset.mcjump); if(el) el.scrollIntoView({behavior:'smooth',block:'start'}); }); }); }catch(e){}
   // Command bar: type any goal → the real agent recognizes intent and does it.
   try{
-    var _mcRun=function(){ var el=$('mc-cmd-input'); var v=el?el.value.trim():''; if(!v){ el&&el.focus(); return; } if(typeof runAutonomousTask==='function'){ runAutonomousTask(v); } else { setTab('chat'); setTimeout(function(){ var ta=$('mta'); if(ta){ ta.value=v; ta.dispatchEvent(new Event('input')); sendMsg&&sendMsg(); } },140); } };
+    var _mcRun=function(){ var el=$('mc-cmd-input'); var v=el?el.value.trim():''; if(!v){ el&&el.focus(); return; } mcRunCommand(v); };
     on($('mc-cmd-go'),'click',_mcRun);
     var _ci=$('mc-cmd-input'); if(_ci) on(_ci,'keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); _mcRun(); } });
     vc.querySelectorAll('[data-mccmd]').forEach(function(c){ on(c,'click',function(){ var el=$('mc-cmd-input'); if(el){ el.value=c.dataset.mccmd; el.focus(); } }); });
