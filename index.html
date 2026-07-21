@@ -6511,6 +6511,33 @@ html,body{height:100%;height:100dvh}
   .pvw-side,.pvw-stage{overflow:visible!important}
 }
 
+/* ============================================================
+   LAYER A11 — Marketplace payment modal + Billing transactions
+   ============================================================ */
+.mkpay-item{display:flex;align-items:center;gap:12px;padding:14px;background:var(--s2);border:1px solid var(--bd);border-radius:var(--rk);margin-bottom:14px}
+.mkpay-ic{font-size:24px}
+.mkpay-t{font-size:14px;font-weight:600;color:var(--tx)}
+.mkpay-k{font-size:12px;color:var(--mu)}
+.mkpay-price{font-size:20px;font-weight:700;color:var(--tx)}
+.mkpay-rows{display:flex;flex-direction:column;gap:8px;padding:0 2px 4px}
+.mkpay-row{display:flex;justify-content:space-between;font-size:13.5px;color:var(--mu)}
+.mkpay-row.total{color:var(--tx);font-weight:700;padding-top:8px;border-top:1px solid var(--bd);font-size:15px}
+.mkpay-note{font-size:12px;color:var(--mu);line-height:1.5;margin:14px 0}
+.mkpay-sub{font-size:11.5px;color:var(--dim);text-align:center;margin-top:8px}
+
+.bill-txns-sub{font-size:12.5px;color:var(--mu);margin:-4px 0 12px;line-height:1.5}
+.bill-txn-list{display:flex;flex-direction:column;gap:1px;border:1px solid var(--bd);border-radius:var(--rk);overflow:hidden}
+.bill-txn-row{display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--s1)}
+.bill-txn-row:not(:last-child){border-bottom:1px solid var(--bd)}
+.bill-txn-b{flex:1;min-width:0}
+.bill-txn-t{font-size:13.5px;font-weight:500;color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bill-txn-m{font-size:11.5px;color:var(--mu);margin-top:1px}
+.bill-txn-amt{font-size:13.5px;font-weight:600;color:var(--tx);flex:none}
+.bill-txn-st{flex:none;font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px;text-transform:uppercase}
+.bill-txn-st.paid{color:var(--ok,#42b883);background:var(--ok-soft,rgba(66,184,131,.14))}
+.bill-txn-st.pending{color:var(--warn,#d8a84e);background:var(--warn-soft,rgba(216,168,78,.15))}
+.bill-txn-st.refunded{color:var(--mu);background:var(--wait-soft,rgba(125,138,163,.16))}
+
 </style>
 <!-- BUILD:CSS:END -->
 <script>
@@ -13393,12 +13420,21 @@ const AMVMarket = {
   async install(item){
     const installed=load('amv_market_installed')||{}; installed[item.id]=Date.now(); store('amv_market_installed',installed);
     try{ if(this._live()){ AMV_API._fetch('/v1/market/install',{method:'POST',body:JSON.stringify({id:item.id})}).catch(()=>{}); } }catch(e){}
+    // Everything you get — free or paid — is recorded as OWNED so it shows in
+    // Purchases, the one place your items live.
+    this._markOwned(item);
     if(item.kind==='crew'){
-      const crews=load('amv_saved_crews')||[]; crews.unshift({id:'c'+Date.now(),title:item.title,agents:item.crew||[],ts:Date.now()}); store('amv_saved_crews',crews);
+      const me=this._me();
+      const crews=load('amv_saved_crews')||[];
+      crews.unshift({id:'c'+Date.now(),title:item.title,agents:(item.crew||[]).map(a=>({role:a.role,task:_mktPersonalize(a.task,item.authorEmail,me)})),fromMarket:true,seller:item.author||'',ts:Date.now()});
+      store('amv_saved_crews',crews);
     } else {
       S.prompts.unshift({id:'p'+Date.now(),title:item.title,cat:item.cat||(item.kind==='integration'?'Integrations':item.kind==='workflow'?'Workflows':item.kind==='guide'?'Guides':'Imported'),text:item.text||item.desc||'',custom:true});
       store('amv_pl',S.prompts);
     }
+  },
+  _markOwned(item){
+    try{ const p=this._localPurchases(); if(!p.some(x=>x.id===item.id)){ p.unshift({id:item.id,title:item.title,kind:item.kind,price:item.price||0,ts:Date.now()}); this._saveLocalPurchases(p); } }catch(e){}
   },
   // resolve the full listing (with deliverable) for an id, from any source
   async _resolve(id){
@@ -13815,13 +13851,40 @@ function _mktBrowse(body){
   on($('mkt-sort'),'change',()=>{ sort=$('mkt-sort').value; draw(); });
 }
 /* Buy handler — backend opens external checkout; local mode completes instantly. */
+/* Record a payment to the user's own transaction history (subscriptions +
+   marketplace). Shown in Billing \u2192 your transactions. Private per user. */
+function _txnKey(){ return ((S.user&&S.user.email)||'you@amv.local').toLowerCase(); }
+function _loadTxns(){ try{ const m=load('amv_txns')||{}; return m[_txnKey()]||[]; }catch(e){ return []; } }
+function _recordTxn(t){ try{ const m=load('amv_txns')||{}; const arr=m[_txnKey()]||[]; arr.unshift(Object.assign({id:'tx'+Date.now().toString(36), ts:Date.now(), status:'paid', method:'card'}, t)); m[_txnKey()]=arr.slice(0,200); store('amv_txns',m); }catch(e){} }
+window._recordTxn=_recordTxn;
+
+/* A clear payment screen for a paid marketplace item \u2014 shows exactly what
+   you're buying and the total, instead of dumping you into Billing. */
+function _mktPaymentModal(it){
+  const r=$('ovr'); if(!r) return;
+  const price=it.price||0;
+  r.innerHTML='<div class="ov" id="mkpay-bg"><div class="ob mkpay" onclick="event.stopPropagation()" style="max-width:420px">'+
+    '<button class="oc" onclick="closeOvr()">\u00d7</button>'+
+    '<h2 style="margin-bottom:14px">Complete your purchase</h2>'+
+    '<div class="mkpay-item"><span class="mkpay-ic">'+(it.icon||'\u2728')+'</span><div style="flex:1"><div class="mkpay-t">'+escH(it.title)+'</div><div class="mkpay-k">'+escH(it.kind||'prompt')+' \u00b7 by '+escH(it.author||'community')+'</div></div><div class="mkpay-price">$'+price+'</div></div>'+
+    '<div class="mkpay-rows"><div class="mkpay-row"><span>Item price</span><span>$'+price+'.00</span></div><div class="mkpay-row total"><span>Total due</span><span>$'+price+'.00</span></div></div>'+
+    '<p class="mkpay-note">\ud83d\udd12 Processed securely by Stripe \u2014 AMV never sees your card. You get instant access in Purchases the moment payment clears.</p>'+
+    '<button class="btn bp" id="mkpay-go" style="width:100%;justify-content:center;margin-top:6px">Add a payment method to continue</button>'+
+    '<p class="mkpay-sub">No payment method is connected yet. Add one to finish \u2014 you\u2019ll come right back here.</p>'+
+  '</div></div>';
+  on($('mkpay-bg'),'click',closeOvr);
+  on($('mkpay-go'),'click',()=>{ closeOvr(); try{ S.settingsPane='billing'; setTab('settings'); }catch(e){} });
+}
+window._mktPaymentModal=_mktPaymentModal;
+
 async function _mktDoBuy(it, after){
   try{
     const d=await AMVMarket.buy(it.id);
-    if(d.url){ _openExternalPay(d.url,null,'market'); return; }
+    if(d.url){ _recordTxn({type:'marketplace', title:it.title, amount:it.price||0, status:'pending'}); _openExternalPay(d.url,null,'market'); return; }
     if(d.owned){ toast('You already own this','info'); }
     else {
-      toast('Purchased! It\u2019s in My purchases, ready to use.','success',4500);
+      if((it.price||0)>0) _recordTxn({type:'marketplace', title:it.title, amount:it.price||0, status:'paid'});
+      toast('Purchased! It\u2019s in your Purchases, ready to use.','success',4500);
       // offer to review the seller now that they've bought from them
       const sellerEmail=(it.authorEmail||'').toLowerCase();
       if(sellerEmail && sellerEmail!==AMVMarket._me()){
@@ -13830,11 +13893,7 @@ async function _mktDoBuy(it, after){
     }
     after&&after();
   }catch(e){
-    if(e && e.code==='needs_payment'){
-      toast(e.message,'info',5500);
-      setTimeout(()=>{ try{ closeOvr(); }catch(_){}; try{ setTab('billing'); }catch(_){}; }, 900);
-      return;
-    }
+    if(e && e.code==='needs_payment'){ _mktPaymentModal(it); return; }
     toast(e.message||'Could not complete purchase','error',4500);
   }
 }
@@ -14095,26 +14154,53 @@ function _mktPurchases(body){
         '<div class="mk-title">'+escH(it.title)+'</div>'+
         '<div class="mk-desc">'+escH(it.desc||'')+'</div>'+
         (it._removed?'<div class="mk-meta" style="color:var(--mu)">Seller removed this listing</div>':
-          '<div class="mk-meta"><span></span>'+fc+'</div><div class="mk-card-actions"><button class="btn bs mk-view" data-mk-id="'+escH(it.id)+'" style="font-size:11.5px;flex:1">View / download</button>'+((it.text||it.crew)?'<button class="btn bp mk-use" data-mk-id="'+escH(it.id)+'" style="font-size:11.5px">Add to library</button>':'')+'</div>')+
+          '<div class="mk-meta"><span></span>'+fc+'</div><div class="mk-card-actions"><button class="btn bs mk-view" data-mk-id="'+escH(it.id)+'" style="font-size:11.5px;flex:1">View / download</button><button class="btn bp mk-use" data-mk-id="'+escH(it.id)+'" style="font-size:11.5px;flex:1">'+(it.kind==='crew'?'Use in Crew':(it.kind==='workflow'||it.kind==='integration')?'Use it':'Try in chat')+'</button></div>')+
       '</div>';
     }).join('')+'</div>';
-    body.querySelectorAll('.mk-use').forEach(b=>on(b,'click',async()=>{
+    body.querySelectorAll('.mk-use').forEach(b=>on(b,'click',()=>{
       const it=items.find(x=>x.id===b.dataset.mkId); if(!it) return;
-      try{ await AMVMarket.install(it); toast(it.kind==='crew'?'Added to Crew':'Added to your Prompt Library','success',4000); }
-      catch(e){ toast('Could not add','error'); }
+      _mktUsePurchase(it);
     }));
     body.querySelectorAll('.mk-view').forEach(b=>on(b,'click',()=>{ const it=items.find(x=>x.id===b.dataset.mkId); if(it){ it._owned=true; _mktPreview(it); } }));
   });
 }
 /* After adding a marketplace item to the user's library, take them straight
    to where it now lives so "added to library" is never a mystery. */
+/* Swap a seller's own email for the buyer's inside a bought template, so it
+   works as your own the moment you use it. */
+function _mktPersonalize(text, sellerEmail, myEmail){
+  let t=String(text||'');
+  if(sellerEmail && myEmail){ try{ t=t.split(sellerEmail).join(myEmail); }catch(e){} }
+  return t;
+}
+window._mktPersonalize=_mktPersonalize;
+/* Use a purchased item. Routes to the actual page and makes it usable there:
+   crews open in Crew (under "From the marketplace"); prompts paste straight
+   into chat; workflows/integrations install and open where they live. */
+function _mktUsePurchase(it){
+  if(!it) return;
+  const me=(S.user&&S.user.email)||'';
+  try{ closeOvr&&closeOvr(); }catch(e){}
+  if(it.kind==='crew' && (it.crew||it.agents)){
+    try{ AMVMarket.install(it); }catch(e){}
+    toast('Added to Crew — see “From the marketplace” at the bottom of this page.','success',4500);
+    setTab('crew');
+    setTimeout(()=>{ const el=document.getElementById('mc-bought'); if(el) el.scrollIntoView({behavior:'smooth',block:'center'}); }, 700);
+    return;
+  }
+  // prompt / guide / anything text-based → chat + auto-paste (personalized)
+  const text=_mktPersonalize(it.text||it.preview||it.desc||it.title||'', it.authorEmail, me);
+  try{ AMVMarket.install(it); }catch(e){}
+  setTab('chat');
+  setTimeout(()=>{ const ta=$('mta'); if(ta){ ta.value=text; ta.dispatchEvent(new Event('input')); ta.focus(); try{ ta.setSelectionRange(ta.value.length, ta.value.length); }catch(e){} } }, 240);
+  toast('Pasted into chat — tweak it and send.','success',3800);
+}
+window._mktUsePurchase=_mktUsePurchase;
 function _mktAfterInstall(it){
-  const isCrew = it && it.kind==='crew';
-  const dest = isCrew ? 'crew' : 'prompts';
-  const name = isCrew ? 'Crew' : 'your Prompt Library';
+  // Everything you get lands in Purchases — the one place your items live.
   try{ closeOvr(); }catch(e){}
-  toast('Added to '+name+' — opening it now','success',3500);
-  setTimeout(()=>{ try{ setTab(dest); }catch(e){} }, 550);
+  toast('Added to your purchases — open it there to use it.','success',3800);
+  setTimeout(()=>{ try{ S._mktTab='purchases'; setTab('market'); if(S.tab==='market') renderMarketView(); }catch(e){} }, 550);
 }
 window._mktAfterInstall=_mktAfterInstall;
 function _mktGoBrowse(){ S._mktTab='browse'; renderMarketView(); }
@@ -15257,6 +15343,22 @@ function _invoiceTableHTML(plan, P, sinceDate){
 try{ window._invoiceTableHTML=_invoiceTableHTML; }catch(e){}
 
 
+/* Unified transaction history — every payment the user has made (subscription
+   upgrades + marketplace purchases). Private to them. */
+function _billingTxnsHTML(){
+  const txns=(typeof _loadTxns==='function')?_loadTxns():[];
+  if(!txns.length) return '';
+  const money=n=>'$'+(Number(n)||0).toFixed(2);
+  return '<div class="ss2 bill-txns"><h3>Your transactions</h3>'+
+    '<p class="bill-txns-sub">Every payment you’ve made on AMV — subscriptions and marketplace. Only you can see these.</p>'+
+    '<div class="bill-txn-list">'+txns.slice(0,60).map(t=>{
+      let d=''; try{ d=new Date(t.ts).toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'}); }catch(e){}
+      const kind=t.type==='subscription'?'Subscription':t.type==='marketplace'?'Marketplace':'Payment';
+      const st=t.status==='pending'?'<span class="bill-txn-st pending">Pending</span>':t.status==='refunded'?'<span class="bill-txn-st refunded">Refunded</span>':'<span class="bill-txn-st paid">Paid</span>';
+      return '<div class="bill-txn-row"><div class="bill-txn-b"><div class="bill-txn-t">'+escH(t.title||kind)+'</div><div class="bill-txn-m">'+kind+' · '+escH(d)+'</div></div><div class="bill-txn-amt">'+money(t.amount)+'</div>'+st+'</div>';
+    }).join('')+'</div></div>';
+}
+window._billingTxnsHTML=_billingTxnsHTML;
 function renderBillingView(targetEl){
   // If billing is being shown inside Settings, render into the settings pane
   // so re-renders (after payment, plan change, etc.) stay in place.
@@ -15319,6 +15421,7 @@ function renderBillingView(targetEl){
       (plan!=='free'?'<div class="ss2"><h3>Invoices</h3>'+
         '<div id="bill-invoices">'+(liveBackend?'<div class="bill-inv-loading">Loading your invoices\u2026</div>':_invoiceTableHTML(plan,P,sinceDate))+'</div>'+
       '</div>':'')+
+      _billingTxnsHTML()+
       // SECURITY
       '<div class="ss2"><h3>How we protect your payment</h3>'+
         '<div class="sec-grid">'+
@@ -15398,6 +15501,13 @@ function _setPlan(plan){
   // record start date when the plan actually changes
   if(prev!==plan) saveStr('amv_plan_since',String(Date.now()));
   if(prev!==plan && plan!=='free' && prev==='free'){ try{ AEGIS.log('plan_upgrade',{plan}); }catch(e){} }
+  // Record the payment in the user's transaction history (upgrades only).
+  try{
+    if(prev!==plan && plan!=='free' && (PLAN_RANK[plan]||0)>(PLAN_RANK[prev]||0)){
+      const _pp=PLANS[plan]; const _amt=(plan==='custom')?((load('amv_custom_cfg')||{}).price||0):((_pp&&_pp.price)||0);
+      if(_amt>0) _recordTxn({type:'subscription', title:((_pp&&_pp.name)||plan)+' plan — monthly', amount:_amt, status:'paid'});
+    }
+  }catch(e){}
   // resolve the effective tier (custom = the user's purchased config)
   let t=PLAN_TIERS[plan]||PLAN_TIERS.free;
   if(plan==='custom'){
@@ -16278,6 +16388,28 @@ function _mcSchedRow(t){
 }
 function _mcCancelSched(id){ try{ _saveSched(_loadSched().filter(t=>t.id!==id)); }catch(e){} toast('Scheduled task cancelled','info'); renderCrewView(); }
 window._mcCancelSched=_mcCancelSched;
+/* "From the marketplace" — crews the user bought, usable right here in Crew. */
+function _mcBoughtCrewsHTML(){
+  let crews=[];
+  try{ crews=(load('amv_saved_crews')||[]).filter(c=>c.fromMarket); }catch(e){}
+  if(!crews.length) return '';
+  return `<div class="mc-sec mc-bought" id="mc-bought">
+    <div class="sec-head"><h3>From the marketplace</h3><span class="sec-sub">Crews you bought — ready to run as your own.</span></div>
+    <div class="mc-grid">${crews.slice(0,8).map(c=>`<div class="mc-card">
+      <div class="mc-card-top"><span class="mc-card-t">${escH(c.title||'Crew')}</span><span class="mc-pill ok">Owned</span></div>
+      <div class="mc-card-sub">${(c.agents||[]).slice(0,4).map(a=>escH(a.role)).join(' → ')||'Multi-agent crew'}${c.seller?` · by ${escH(c.seller)}`:''}</div>
+      <div class="mc-card-act"><button class="btn mc-mini" data-dact="_mcUseCrew" data-darg="${escH(c.id)}">Use this crew</button></div>
+    </div>`).join('')}</div>
+  </div>`;
+}
+function _mcUseCrew(id){
+  let c=null; try{ c=(load('amv_saved_crews')||[]).find(x=>x.id===id); }catch(e){}
+  if(!c){ toast('Crew not found','error'); return; }
+  const goal='Run this crew for me:\n\n'+(c.agents||[]).map(a=>'• '+(a.role||'Agent')+': '+(a.task||'')).join('\n');
+  if(typeof openCoworkWith==='function') openCoworkWith(goal);
+  else { setTab('chat'); setTimeout(()=>{ const ta=$('mta'); if(ta){ ta.value=goal; ta.dispatchEvent(new Event('input')); ta.focus(); } },200); }
+}
+window._mcUseCrew=_mcUseCrew;
 /* A standing job shown as a row in the unified Scheduled section. */
 function _mcAutonSchedRow(j){
   return `<div class="mc-sched-row"><span class="mc-sched-mode auto">Standing job</span><div class="mc-sched-b"><div class="mc-sched-goal">${escH(j.title)}</div><div class="mc-sched-meta">${escH(j.desc||'Runs in the background')} · Uses: ${escH(j.needs||'—')}</div></div><button class="btn mc-mini ghost" data-dact="cwToggle" data-darg="${j.id}">Turn off</button></div>`;
@@ -16459,6 +16591,7 @@ function renderCrewView(){
         </div>
       </section>
     </div>
+    ${_mcBoughtCrewsHTML()}
   </div></div>`;
   try{ vc.querySelectorAll('[data-mcjump]').forEach(function(b){ on(b,'click',function(){ var el=document.getElementById(b.dataset.mcjump); if(el) el.scrollIntoView({behavior:'smooth',block:'start'}); }); }); }catch(e){}
   // Command bar: type any goal → the real agent recognizes intent and does it.
