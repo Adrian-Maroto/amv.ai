@@ -5768,24 +5768,21 @@ function planCards(inApp){
       pBtn('Go Ultra &mdash; $200/mo','pbs','ultra',isLand)+
       '<div class="plnreassure">Matches Claude Max &amp; ChatGPT Pro</div>'+
     '</div>',
-    '<div class="plnc plnc-custom">'+
-      '<div class="plntier">Custom</div>'+
-      '<div class="plnprice plnprice-sm">Your price</div>'+
-      '<div class="plnper">from $10/mo &middot; you decide</div>'+
-      '<div class="plnanchor">Sized exactly to your usage</div>'+
-      '<div class="plndiv"></div>'+
-      '<ul class="plnfl">'+
-        '<li><span class="fck">\u2713</span><b>Pick your budget</b> — pay for what you use</li>'+
-        '<li><span class="fck">\u2713</span>All models, including Apex</li>'+
-        '<li><span class="fck">\u2713</span>Agents, images, video &amp; 3D</li>'+
-        '<li><span class="fck">\u2713</span>Hard-capped — never a surprise charge</li>'+
-        '<li><span class="fck">\u2713</span>Resize or cancel anytime</li>'+
-      '</ul>'+
-      '<button class="btn pbs plnbtn" data-dact="openCustomPlan" style="width:100%;justify-content:center">Build your plan &rarr;</button>'+
-      '<div class="plnreassure">Fits your exact budget</div>'+
-    '</div>',
   ].join('');
 }
+/* Custom plan as a slim full-width banner below the four core tiers. */
+function _customPlanBanner(inApp){
+  const btn = inApp
+    ? '<button class="btn pbp plnbtn cpb-btn" data-dact="openCustomPlan">Build your plan \u2192</button>'
+    : '<button class="btn pbp plnbtn cpb-btn" onclick="openAuth(\'signup\')">Build your plan \u2192</button>';
+  return '<div class="cpb">'+
+    '<div class="cpb-l"><div class="cpb-tier">Custom \u00b7 from $10/mo</div>'+
+      '<div class="cpb-t">Want a plan sized exactly to you?</div>'+
+      '<div class="cpb-d">Pick your budget and pay for what you use \u2014 all models including Apex, agents, images, video &amp; 3D. Hard-capped, so it\u2019s never a surprise charge. Resize or cancel anytime.</div></div>'+
+    '<div class="cpb-r">'+btn+'</div>'+
+  '</div>';
+}
+
 
 
 
@@ -12048,7 +12045,8 @@ function renderPlansView(){
       '<div class="plans-head"><div class="eyebrow">Pricing</div>'+
         '<h2>One subscription. Every AI tool you need.</h2>'+
         '<p class="vsub">Chat, images, video, autonomous agents, an app builder and Mission Control — in one place. Start free, upgrade any time, cancel whenever.</p></div>'+
-      '<div class="pg pg-app">'+planCards(true)+'</div>'+
+      '<div class="pg pg-app pg-4">'+planCards(true)+'</div>'+
+      _customPlanBanner(true)+
       '<div class="plans-compare-row"><button class="btn bs" id="plans-compare" style="font-size:12.5px">Compare all plans in detail \u2192</button></div>'+
       '<div class="trust-bar"><div class="trust-badges">'+
         _trustBadge('<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>','Bank-grade encryption','256-bit TLS on every request')+
@@ -13348,7 +13346,7 @@ function setupLanding(){
   on($('ft-btn'),'click',openTerms);
   on($('fc-btn'),'click',openTerms);
   // Fill landing pricing
-  const lp=$('land-pricing'); if(lp) lp.innerHTML=planCards(false);
+  const lp=$('land-pricing'); if(lp){ lp.classList.add('pg-4'); lp.innerHTML=planCards(false); if(lp.parentNode && !lp.parentNode.querySelector('.cpb')){ lp.insertAdjacentHTML('afterend', _customPlanBanner(false)); } }
   // Hero tags
   const tags=[
     ['Research my competitors','Research my top 5 competitors and build a comparison table with pricing, positioning, and weaknesses'],

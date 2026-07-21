@@ -6452,3 +6452,35 @@ html,body{height:100%;height:100dvh}
 .bill-txn-st.paid{color:var(--ok,#42b883);background:var(--ok-soft,rgba(66,184,131,.14))}
 .bill-txn-st.pending{color:var(--warn,#d8a84e);background:var(--warn-soft,rgba(216,168,78,.15))}
 .bill-txn-st.refunded{color:var(--mu);background:var(--wait-soft,rgba(125,138,163,.16))}
+
+/* ============================================================
+   LAYER A12 — Pricing: 4 clean tiers + slim Custom banner
+   ============================================================ */
+.pg.pg-app.pg-4{grid-template-columns:repeat(4,1fr)!important;max-width:1100px!important;gap:16px!important}
+/* Cards: aligned heights, buttons pinned bottom, roomier text */
+.pg-4 .plnc{display:flex!important;flex-direction:column;min-height:560px}
+.pg-4 .plnc .plnfl{flex:1 1 auto}
+.pg-4 .plnc .plnbtn{margin-top:auto!important}
+.pg-4 .plnc .plnfl li{font-size:12.5px!important;line-height:1.45}
+.pg-4 .plnc .plnprice{font-size:38px!important}
+
+/* Custom banner */
+.cpb{display:flex;align-items:center;gap:var(--sp-5);max-width:1100px;margin:18px auto 0;padding:var(--sp-5) var(--sp-6);
+  background:var(--s1);border:1px solid var(--bd);border-radius:var(--rp);position:relative;overflow:hidden}
+.cpb::before{content:"";position:absolute;inset:0;background:var(--accent-grad-soft,linear-gradient(135deg,rgba(63,118,245,.14),transparent 60%));opacity:.5;pointer-events:none}
+.cpb-l{flex:1;min-width:0;position:relative}
+.cpb-tier{font-size:11.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin-bottom:6px}
+.cpb-t{font-size:19px;font-weight:600;color:var(--tx);letter-spacing:-.01em;margin-bottom:6px}
+.cpb-d{font-size:13.5px;color:var(--mu);line-height:1.55;max-width:640px}
+.cpb-r{flex:none;position:relative}
+.cpb-btn{white-space:nowrap;padding:12px 22px!important;font-size:14px!important}
+
+@media(max-width:1100px){
+  .pg.pg-app.pg-4{grid-template-columns:repeat(2,1fr)!important;max-width:620px!important}
+  .pg-4 .plnc{min-height:0}
+}
+@media(max-width:640px){
+  .pg.pg-app.pg-4{grid-template-columns:1fr!important;max-width:420px!important}
+  .cpb{flex-direction:column;align-items:flex-start;gap:var(--sp-4);padding:var(--sp-5)}
+  .cpb-btn{width:100%;justify-content:center}
+}
