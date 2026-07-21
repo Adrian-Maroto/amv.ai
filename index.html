@@ -6408,6 +6408,14 @@ body.light .aa-date{color-scheme:light}
 @media(max-width:760px){ .pg.pg-app{grid-template-columns:repeat(2,1fr)!important;max-width:520px!important} }
 @media(max-width:520px){ .pg.pg-app{grid-template-columns:1fr!important;max-width:400px!important} .plans-head{margin-bottom:var(--sp-5)} }
 
+/* Lab toolbar: on phones let the action bar wrap instead of overflowing */
+@media(max-width:640px){
+  .lab-bar{flex-wrap:wrap!important;gap:8px!important;padding:10px 12px!important}
+  .lab-bar-l,.lab-bar-r{flex-wrap:wrap;min-width:0}
+  .lab-bar-r{gap:6px}
+  .lab-bar-l .lab-lang-sel,.lab-bar-l #lab-model{max-width:44vw}
+}
+
 </style>
 <!-- BUILD:CSS:END -->
 <script>
