@@ -6302,6 +6302,71 @@ body.light .aa-date{color-scheme:light}
   #imgv,#vidv{max-width:1240px}
 }
 
+/* ============================================================
+   LAYER A5 — MOBILE HARDENING (authoritative, last word)
+   Fixes real phone breakage: nav items sticking off-screen, a
+   translucent "dark" sidebar, an over-tall cookie banner, and a
+   clipped composer. Appended last so it wins the cascade.
+   ============================================================ */
+/* Cookie banner: the flex-basis was becoming a 320px HEIGHT in the
+   mobile column layout — pin the text to content height. */
+@media(max-width:640px){
+  .cc-banner{left:8px;right:8px;bottom:8px}
+  .cc-inner{flex-direction:column;align-items:stretch;gap:12px;padding:14px}
+  .cc-text{flex:0 0 auto!important;font-size:12.5px}
+  .cc-actions{flex-direction:row;gap:8px}
+  .cc-actions .btn{flex:1;min-height:42px;font-size:12.5px;padding:0 6px}
+}
+
+@media(max-width:720px){
+  /* Let flex children shrink instead of overflowing the bar */
+  #anav{gap:6px!important;padding:0 10px!important}
+  #anav>*{min-width:0}
+  #anav .nav-l,#anav .hdr-mid,#anav .nav-r{min-width:0}
+  #anav .logo-wm{font-size:14px!important;white-space:nowrap}
+  /* Keyboard-shortcuts button is useless on touch — reclaim its width */
+  #anav #kb-btn{display:none!important}
+  #anav .nav-r{gap:4px!important;border-left:none!important;padding-left:0!important}
+  #anav .ib{width:32px!important;height:32px!important;flex:none}
+  #anav .ua,#anav #nav-av{flex:none}
+  /* "New chat" → icon-only so it never pushes the avatar off-screen */
+  #anav #ncb{font-size:0!important;gap:0!important;padding:8px 11px!important;flex:none}
+  #anav #ncb svg{width:15px!important;height:15px!important}
+
+  /* Sidebar: a SOLID opaque drawer (no translucency/blur that read as "dark"),
+     sliding over the content with a dimmed backdrop. */
+  #sb{
+    position:fixed!important;top:var(--nav-h)!important;bottom:0!important;left:0!important;
+    width:min(84vw,300px)!important;min-width:0!important;max-width:300px!important;
+    background:var(--bg)!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;
+    border-right:1px solid var(--bd)!important;box-shadow:6px 0 40px rgba(0,0,0,.55);
+    transform:translateX(0);opacity:1!important;z-index:400!important;
+    overflow-y:auto!important;align-items:stretch!important;padding:12px 10px!important;
+    transition:transform .22s ease!important;pointer-events:auto;
+  }
+  #sb.cl{transform:translateX(-100%)!important;opacity:1!important;width:min(84vw,300px)!important;min-width:0!important;padding:12px 10px!important;border:none;pointer-events:none}
+  #sb.cl *{visibility:visible!important}
+  #sb .sbl{display:block!important}
+  #sb .snb{font-size:14px!important;padding:11px 12px!important;min-height:44px}
+  #sb-backdrop{position:fixed;inset:var(--nav-h) 0 0 0;background:rgba(0,0,0,.5);z-index:390;opacity:0;pointer-events:none;transition:opacity .2s;border:0}
+  #sb-backdrop.on{opacity:1;pointer-events:auto}
+
+  /* Composer + content: never let anything spill past the right edge */
+  #vc,#imgv,#vidv,.vi,.sv{max-width:100%!important}
+  .vi,.sv{padding-left:14px!important;padding-right:14px!important}
+  #snd{flex:none}
+  .input-bar,.inp-wrap,#chome-input{max-width:100%!important;box-sizing:border-box}
+}
+@media(max-width:560px){
+  #itb{gap:6px!important;flex-wrap:nowrap;min-width:0}
+  #itb .il{gap:5px!important;min-width:0;flex:0 1 auto}
+  #itb .il .atb{flex:none}
+  #voicemode-btn{display:none!important}          /* hands-free voice: niche on phones */
+  .atb-research .atb-research-lbl{display:none}   /* research → icon-only, no truncation */
+  .inp-model-sel{padding:6px 8px!important;gap:5px!important}
+  #snd{width:34px!important;height:34px!important;flex:none}
+}
+
 </style>
 <!-- BUILD:CSS:END -->
 <script>
