@@ -6379,6 +6379,35 @@ body.light .aa-date{color-scheme:light}
 .dsn-hint{text-align:center}
 @media(max-width:560px){ .dsn-input-wrap{max-width:100%!important} .dsn-input-wrap textarea{font-size:16px!important;min-height:58px!important} }
 
+/* ============================================================
+   LAYER A7 — PLANS page polish (professional, current, breathable)
+   ============================================================ */
+.plans-head{text-align:center;max-width:680px;margin:0 auto var(--sp-7)}
+.plans-head .eyebrow{color:var(--accent);font-weight:600;letter-spacing:.14em;font-size:12px;margin-bottom:12px}
+.plans-head h2{font-size:clamp(26px,3vw,38px)!important;font-weight:600!important;letter-spacing:-.02em;line-height:1.12;color:var(--tx)!important;margin-bottom:12px}
+.plans-head .vsub{font-size:15px!important;line-height:1.6;color:var(--mu)!important}
+/* Give the five tiers room to breathe and read as premium */
+.pg.pg-app{max-width:1240px!important;gap:16px!important}
+.pg-app .plnc{padding:28px 22px!important;border-radius:16px!important;background:var(--s1)!important;border:1px solid var(--bd)!important}
+.pg-app .plnc:hover{border-color:rgba(63,118,245,.35)!important;transform:translateY(-3px)}
+.pg-app .plnc.feat{border-color:var(--accent)!important;box-shadow:0 0 0 1px var(--accent), 0 18px 50px -24px rgba(63,118,245,.55)!important}
+.pg-app .plnc .plntier{color:var(--accent)!important;letter-spacing:.08em!important;font-weight:700!important}
+.pg-app .plnc .plnprice{font-size:36px!important;font-weight:700!important;letter-spacing:-1.5px;color:var(--tx)}
+.pg-app .plnc .plnprice sup{color:var(--mu)}
+.pg-app .plnc .plnanchor{color:var(--accent)!important;font-weight:600;font-size:12px!important;min-height:34px}
+.pg-app .plnc .plnfl{gap:11px!important}
+.pg-app .plnc .plnfl li{font-size:12.5px!important;color:var(--tx)!important;line-height:1.45}
+.pg-app .plnc .plnfl li .fck{color:var(--ok,#42b883)!important}
+.pg-app .plnc .plnfl li .fxx{color:var(--dim)!important}
+.pg-app .plnc .plnfl li .fxx ~ *,.pg-app .plnc .plnfl li:has(.fxx){color:var(--mu)!important}
+.pg-app .plnc .plnpop,.pg-app .plnc .plnpop-elite{top:-11px!important;padding:4px 13px!important;font-size:10px!important;font-weight:700!important;box-shadow:0 4px 12px rgba(0,0,0,.3)}
+.pg-app .plnc .plnbtn{padding:12px 14px!important;font-size:13px!important;border-radius:10px!important}
+.pg-app .plnc .plnreassure{font-size:11px;color:var(--dim);text-align:center;margin-top:10px;min-height:14px}
+/* Tablet: 3 across then wrap; phone: single column, already handled */
+@media(max-width:1200px){ .pg.pg-app{grid-template-columns:repeat(3,1fr)!important;max-width:820px!important} }
+@media(max-width:760px){ .pg.pg-app{grid-template-columns:repeat(2,1fr)!important;max-width:520px!important} }
+@media(max-width:520px){ .pg.pg-app{grid-template-columns:1fr!important;max-width:400px!important} .plans-head{margin-bottom:var(--sp-5)} }
+
 </style>
 <!-- BUILD:CSS:END -->
 <script>
@@ -12422,13 +12451,12 @@ function planCards(inApp){
       '<div class="plndiv"></div>'+
       '<ul class="plnfl">'+
         '<li><span class="fck">\u2713</span>Daily usage to explore everything</li>'+
-        '<li><span class="fck">\u2713</span>Chat, images &amp; 3D models</li>'+
-        '<li><span class="fck">\u2713</span>File analysis (PDF, images, code)</li>'+
-        '<li><span class="fck">\u2713</span>Essay, code, math &amp; research</li>'+
+        '<li><span class="fck">\u2713</span>Chat, images &amp; 3D generation</li>'+
+        '<li><span class="fck">\u2713</span>File analysis — PDF, images, code</li>'+
+        '<li><span class="fck">\u2713</span>Essays, code, math &amp; research</li>'+
         '<li><span class="fxx">\u2717</span>Autonomous agents &amp; Crew</li>'+
         '<li><span class="fxx">\u2717</span>Video generation</li>'+
-        '<li><span class="fxx">\u2717</span>Computer control &amp; automation</li>'+
-        '<li><span class="fxx">\u2717</span>Gmail &amp; calendar access</li>'+
+        '<li><span class="fxx">\u2717</span>Connected accounts (Gmail, Calendar)</li>'+
       '</ul>'+
       pBtn('Get started free','pbs','free',isLand)+
       '<div class="plnreassure">&nbsp;</div>'+
@@ -12441,14 +12469,14 @@ function planCards(inApp){
       '<div class="plnanchor">Replaces $60+/mo of separate AI tools</div>'+
       '<div class="plndiv"></div>'+
       '<ul class="plnfl">'+
-        '<li><span class="fck">\u2713</span><b>5\u00d7 the usage</b>, all models included</li>'+
-        '<li><span class="fck">\u2713</span>Generous everyday limits</li>'+
-        '<li><span class="fck">\u2713</span>Autonomous agents &amp; Crew</li>'+
+        '<li><span class="fck">\u2713</span><b>5× the usage</b>, all models included</li>'+
+        '<li><span class="fck">\u2713</span>Autonomous agents &amp; Crew, run from <b>Mission Control</b></li>'+
+        '<li><span class="fck">\u2713</span><b>Preview &amp; approve</b> every action before it runs</li>'+
+        '<li><span class="fck">\u2713</span><b>Auto Approve</b> for trusted recurring tasks</li>'+
         '<li><span class="fck">\u2713</span>HD images, video &amp; interactive 3D</li>'+
-        '<li><span class="fck">\u2713</span>Build &amp; ship real apps</li>'+
-        '<li><span class="fck">\u2713</span>Gmail, calendar &amp; file connections</li>'+
-        '<li><span class="fck">\u2713</span>Background &amp; scheduled automation</li>'+
-        '<li><span class="fck">\u2713</span>Priority speed</li>'+
+        '<li><span class="fck">\u2713</span>Build &amp; ship real apps in Dev</li>'+
+        '<li><span class="fck">\u2713</span>Connect Gmail, Calendar &amp; files</li>'+
+        '<li><span class="fck">\u2713</span>Scheduled &amp; background automation</li>'+
       '</ul>'+
       pBtn('Start Pro &mdash; $15/mo','pbp','pro',isLand)+
       '<div class="plnreassure">$5 cheaper than ChatGPT &amp; Claude</div>'+
@@ -12461,17 +12489,13 @@ function planCards(inApp){
       '<div class="plnanchor">For founders, builders &amp; power users</div>'+
       '<div class="plndiv"></div>'+
       '<ul class="plnfl">'+
-        '<li><span class="fck">\u2713</span><b>20\u00d7 the usage</b> \u2014 work all day without limits</li>'+
-        '<li><span class="fck">\u2713</span>Everything in Pro, dialed up</li>'+
-        '<li><span class="fck">\u2713</span><b>Apex (Fable 5) first</b> \u2014 our most capable model, priority queue</li>'+
-        '<li><span class="fck">\u2713</span><b>Full-stack app builder</b> \u2014 frontend, backend, database &amp; auth</li>'+
-        '<li><span class="fck">\u2713</span><b>One-click deploy</b> \u2014 ship a live URL straight from Dev</li>'+
+        '<li><span class="fck">\u2713</span><b>Everything in Pro</b>, plus:</li>'+
+        '<li><span class="fck">\u2713</span><b>20× the usage</b> — work all day</li>'+
+        '<li><span class="fck">\u2713</span><b>Apex (Fable 5) first</b> — our most capable model</li>'+
+        '<li><span class="fck">\u2713</span><b>Full-stack app builder</b> + one-click deploy</li>'+
+        '<li><span class="fck">\u2713</span>Run up to <b>5 agents in parallel</b></li>'+
         '<li><span class="fck">\u2713</span>Multi-file projects, code review &amp; auto-debug</li>'+
-        '<li><span class="fck">\u2713</span>Run up to <b>5 agents in parallel</b> on big jobs</li>'+
-        '<li><span class="fck">\u2713</span>Premium image quality</li>'+
-        '<li><span class="fck">\u2713</span>Unlimited scheduled &amp; background automations</li>'+
-        '<li><span class="fck">\u2713</span>Connect Gmail, Drive, Calendar, GitHub &amp; more</li>'+
-        '<li><span class="fck">\u2713</span>Early access + priority 24/7 support</li>'+
+        '<li><span class="fck">\u2713</span>Priority speed &amp; 24/7 support</li>'+
       '</ul>'+
       pBtn('Go Elite &mdash; $75/mo','pbs','elite',isLand)+
       '<div class="plnreassure">$25 less than Claude Max &amp; ChatGPT Pro</div>'+
@@ -12483,17 +12507,13 @@ function planCards(inApp){
       '<div class="plnanchor">For serious operators</div>'+
       '<div class="plndiv"></div>'+
       '<ul class="plnfl">'+
-        '<li><span class="fck">\u2713</span><b>50\u00d7 the usage</b> \u2014 effectively unlimited for one person</li>'+
-        '<li><span class="fck">\u2713</span>Everything in Elite, maxed out</li>'+
-        '<li><span class="fck">\u2713</span><b>Unlimited parallel agents</b> \u2014 run a whole crew at once</li>'+
-        '<li><span class="fck">\u2713</span><b>Longest context window</b> \u2014 whole codebases &amp; long docs at once</li>'+
-        '<li><span class="fck">\u2713</span><b>Autonomous multi-step projects</b> \u2014 hand off a goal, get a finished result</li>'+
+        '<li><span class="fck">\u2713</span><b>Everything in Elite</b>, plus:</li>'+
+        '<li><span class="fck">\u2713</span><b>50× the usage</b> — effectively unlimited</li>'+
+        '<li><span class="fck">\u2713</span><b>Unlimited parallel agents</b> — a whole crew at once</li>'+
+        '<li><span class="fck">\u2713</span><b>Longest context</b> — whole codebases at once</li>'+
+        '<li><span class="fck">\u2713</span>Hand off a goal, get a finished result</li>'+
         '<li><span class="fck">\u2713</span>Deploy &amp; host multiple live apps</li>'+
-        '<li><span class="fck">\u2713</span>Export &amp; download entire multi-file projects</li>'+
-        '<li><span class="fck">\u2713</span>\uD83D\uDC65 Team workspaces, roles &amp; shared projects</li>'+
-        '<li><span class="fck">\u2713</span>Highest priority on the fastest hardware</li>'+
-        '<li><span class="fck">\u2713</span>First access to every new capability</li>'+
-        '<li><span class="fck">\u2713</span>Dedicated priority support</li>'+
+        '<li><span class="fck">\u2713</span>👥 Team workspaces, roles &amp; shared projects</li>'+
       '</ul>'+
       pBtn('Go Ultra &mdash; $200/mo','pbs','ultra',isLand)+
       '<div class="plnreassure">Matches Claude Max &amp; ChatGPT Pro</div>'+
@@ -12505,10 +12525,10 @@ function planCards(inApp){
       '<div class="plnanchor">Sized exactly to your usage</div>'+
       '<div class="plndiv"></div>'+
       '<ul class="plnfl">'+
-        '<li><span class="fck">\u2713</span><b>Pick your budget</b> &mdash; pay for what you use</li>'+
-        '<li><span class="fck">\u2713</span>All 4 models, including Apex</li>'+
+        '<li><span class="fck">\u2713</span><b>Pick your budget</b> — pay for what you use</li>'+
+        '<li><span class="fck">\u2713</span>All models, including Apex</li>'+
         '<li><span class="fck">\u2713</span>Agents, images, video &amp; 3D</li>'+
-        '<li><span class="fck">\u2713</span>Hard-capped \u2014 never a surprise charge</li>'+
+        '<li><span class="fck">\u2713</span>Hard-capped — never a surprise charge</li>'+
         '<li><span class="fck">\u2713</span>Resize or cancel anytime</li>'+
       '</ul>'+
       '<button class="btn pbs plnbtn" data-dact="openCustomPlan" style="width:100%;justify-content:center">Build your plan &rarr;</button>'+
@@ -18612,7 +18632,9 @@ function renderPlansView(){
   const vc=$('vc'); if(!vc) return;
   vc.innerHTML=
     '<div class="sv fi"><div class="vi vi-plans">'+
-      '<h2>Plans</h2><p class="vsub">Start free. Upgrade any time. Cancel whenever.</p>'+
+      '<div class="plans-head"><div class="eyebrow">Pricing</div>'+
+        '<h2>One subscription. Every AI tool you need.</h2>'+
+        '<p class="vsub">Chat, images, video, autonomous agents, an app builder and Mission Control — in one place. Start free, upgrade any time, cancel whenever.</p></div>'+
       '<div class="pg pg-app">'+planCards(true)+'</div>'+
       '<div class="plans-compare-row"><button class="btn bs" id="plans-compare" style="font-size:12.5px">Compare all plans in detail \u2192</button></div>'+
       '<div class="trust-bar"><div class="trust-badges">'+
