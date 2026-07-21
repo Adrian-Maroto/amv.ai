@@ -447,6 +447,8 @@ async function autoCreate(request, env){
   const repeat = String(body.repeat||'daily').toLowerCase();
   const kind = (body.kind === 'research') ? 'research' : 'task';
   const notify = (body.notify === 'email') ? 'email' : 'app';
+  const approval = (body.approval === 'auto') ? 'auto' : 'require';
+  const scope = (body.scope && typeof body.scope === 'object') ? body.scope : null;
   if(!detail) return json({ error:'detail required' }, 400);
   if(detail.length > 2000) return json({ error:'detail too long' }, 400);
   if(!AUTO_INTERVALS[repeat]) return json({ error:'invalid repeat interval' }, 400);
@@ -465,7 +467,7 @@ async function autoCreate(request, env){
   }
   const item = {
     id: 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2,7),
-    detail, repeat, interval, next, kind, notify,
+    detail, repeat, interval, next, kind, notify, approval, scope,
     created: Date.now(), runs: 0, lastError: null, active: true
   };
   rec.items = (rec.items||[]).concat(item);
@@ -488,6 +490,7 @@ async function autoUpdate(request, env){
   if(body.action === 'delete') items.splice(i,1);
   else if(body.action === 'pause')  items[i].active = false;
   else if(body.action === 'resume'){ items[i].active = true; items[i].next = Date.now() + items[i].interval; }
+  else if(body.action === 'approval'){ items[i].approval = (items[i].approval === 'auto') ? 'require' : 'auto'; }
   else return json({ error:'unknown action' }, 400);
 
   rec.items = items;
@@ -504,6 +507,45 @@ async function autoClearResults(request, env){
   (rec.results||[]).forEach(r=>{ r.read = true; });
   await DB.put(env, 'auto', key, rec);
   return json({ ok:true });
+}
+
+/* ---- Emergency pause: stop ALL of a user's autonomous work ----
+   Sets a flag on the user's automation record; the cron honours it and
+   skips every due run until the user resumes. Mirrors the Mission Control
+   "Pause all autonomous" control. */
+async function autoPause(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'unauthorized' }, 401);
+  const key = _autoKey(user.email);
+  const rec = (await DB.get(env, 'auto', key)) || { items:[], results:[] };
+  if(request.method === 'POST'){
+    const body = await request.json().catch(()=>({}));
+    rec.paused = !!body.paused;
+    await DB.put(env, 'auto', key, rec);
+  }
+  return json({ ok:true, paused: !!rec.paused });
+}
+
+/* ---- Enqueue a finished scheduled-task result for the user's approval ----
+   Require-approval automations stop before delivery: the completed work
+   waits in the approval queue exactly like an interactive draft would. */
+const AUTO_APPROVALS_MAX = 50;
+async function _enqueueApproval(env, email, item, out){
+  const now = Date.now();
+  const arec = (await DB.get(env, 'approvals', email)) || { items:[] };
+  arec.items = (arec.items||[]).concat({
+    id: 'ap' + now.toString(36) + Math.random().toString(36).slice(2,6),
+    icon: item.kind === 'research' ? '\uD83D\uDD0D' : '\u2709\uFE0F',
+    title: String(item.detail || 'Scheduled task').slice(0,140),
+    requesting: 'Review the finished result from your scheduled task before it goes out.',
+    project: 'Autonomous',
+    actionType: item.notify === 'email' ? 'send' : 'review',
+    resultType: 'doc',
+    result: { type:'doc', title: String(item.detail||'').slice(0,140), body: String(out||'').slice(0,8000) },
+    preview: String(out||'').slice(0,4000),
+    startedAt: now, readyAt: now, autoApprove: false
+  }).slice(-AUTO_APPROVALS_MAX);
+  await DB.put(env, 'approvals', email, arec);
 }
 
 /* ---- Execute ONE automation against the real model ---- */
@@ -606,6 +648,7 @@ async function runDueAutomations(env){
     const email = u.id;
     const rec = u.value;
     if(!rec || !Array.isArray(rec.items) || !rec.items.length) continue;
+    if(rec.paused) continue;   // user hit "Pause all autonomous"
 
     let changed = false;
     // The plan's monthly cost ceiling — automations spend real money and must
@@ -651,8 +694,12 @@ async function runDueAutomations(env){
         item.runs = (item.runs||0) + 1;
         item.lastError = null;
         ran++;
-        // Deliver by email if the user asked for it and email is configured.
-        if(item.notify === 'email' && env.EMAIL_API_KEY){
+        // Deliver by approval mode. Auto-approve tasks complete on their
+        // own (emailed if requested). Require-approval tasks stop before
+        // delivery: the finished work waits in the approval queue.
+        if(item.approval === 'require'){
+          try{ await _enqueueApproval(env, email, item, out); }catch(e){ /* best-effort */ }
+        } else if(item.notify === 'email' && env.EMAIL_API_KEY){
           try{ await _autoEmailResult(env, email, item, out); }catch(e){ /* delivery is best-effort */ }
         }
       }catch(e){
@@ -1579,6 +1626,7 @@ export default {
         case '/auto/create':     return autoCreate(request, env);
         case '/auto/update':     return autoUpdate(request, env);
         case '/auto/read':       return autoClearResults(request, env);
+        case '/auto/pause':      return autoPause(request, env);
         case '/deploy':          return deploySite(request, env);
         case '/deploy/list':     return deployList(request, env);
         case '/deploy/delete':   return deployDelete(request, env);

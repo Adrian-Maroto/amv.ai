@@ -6888,6 +6888,7 @@ const AMV_API = {
   async toggleJob(id,on){ await this._fetch('/api/jobs',{method:'POST',body:JSON.stringify({id,on})}); },
   async approvals(){ const r=await this._fetch('/api/approvals'); return (await r.json()).approvals||[]; },
   async actApproval(id,action){ await this._fetch('/api/approvals/act',{method:'POST',body:JSON.stringify({id,action})}); },
+  async pauseAutonomy(paused){ await this._fetch('/auto/pause',{method:'POST',body:JSON.stringify({paused:!!paused})}); },
   async createHandoff(h){ await this._fetch('/api/handoff',{method:'POST',body:JSON.stringify(h)}); },
   async listHandoff(){ const r=await this._fetch('/api/handoff'); return await r.json(); },
   async actHandoff(id,action){ await this._fetch('/api/handoff/act',{method:'POST',body:JSON.stringify({id,action})}); },
@@ -22954,7 +22955,9 @@ async function _scheduleTask(t){
       repeat: t.repeat || 'daily',
       kind: t.kind || 'task',
       notify: t.notify || 'app',
-      firstRunAt: t.firstRunAt || null
+      firstRunAt: t.firstRunAt || null,
+      approval: t.approval || 'require',
+      scope: t.scope || null
     });
     _AUTOS = d.item ? (_AUTOS||[]).concat(d.item) : _AUTOS;
     if(typeof toast==='function')
