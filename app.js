@@ -6894,7 +6894,7 @@ function _mktBrowse(body){
   body.innerHTML=
     '<div id="mkt-top"></div>'+
     '<div class="mkt-controls">'+
-      '<input type="text" id="mkt-search" placeholder="Search the marketplace\u2026" class="mkt-search">'+
+      '<input type="text" id="mkt-search" placeholder="Search items, categories, or sellers\u2026" class="mkt-search">'+
       '<select id="mkt-sort" class="sel mkt-sortsel">'+Object.entries(_MKT_SORTS).map(([k,v])=>'<option value="'+k+'">'+v+'</option>').join('')+'</select>'+
     '</div>'+
     '<div class="mk-filters" id="mk-filters" style="margin-bottom:14px"></div>'+
@@ -6941,7 +6941,7 @@ function _mktBrowse(body){
     grid.querySelectorAll('.mk-buy').forEach(b=>on(b,'click',()=>{ const it=items.find(x=>x.id===b.dataset.mkId); if(it) _mktDoBuy(it, ()=>reload()); }));
     grid.querySelectorAll('.mk-install,.mk-getowned').forEach(b=>on(b,'click',async()=>{
       const it=items.find(x=>x.id===b.dataset.mkId); if(!it) return;
-      try{ await AMVMarket.install(it); toast(it.kind==='crew'?'Added \u2014 find it in Crew':'Added to your Prompt Library','success',4000); reload(); }
+      try{ await AMVMarket.install(it); reload(); _mktAfterInstall(it); }
       catch(e){ toast(e.message||'Could not add','error'); }
     }));
   };
@@ -7041,8 +7041,8 @@ function _mktPreview(it, after){
   });
   on($('mkt-pv-buy'),'click',async()=>{ await _mktDoBuy(it,()=>{ closeOvr(); after&&after(); }); });
   on($('mkt-pv-msg'),'click',()=>{ closeOvr(); _mktChat(it.authorEmail, it.author, 'Hi! I saw "'+it.title+'" just sold \u2014 could you make another?'); });
-  on($('mkt-pv-get'),'click',async()=>{ try{ await AMVMarket.install(it); toast('Added to your Prompt Library','success'); closeOvr(); after&&after(); }catch(e){ toast(e.message||'Could not add','error'); } });
-  on($('mkt-pv-use'),'click',async()=>{ try{ await AMVMarket.install(it); toast(it.kind==='crew'?'Added to Crew':'Added to your Prompt Library','success'); closeOvr(); }catch(e){ toast('Could not add','error'); } });
+  on($('mkt-pv-get'),'click',async()=>{ try{ await AMVMarket.install(it); after&&after(); _mktAfterInstall(it); }catch(e){ toast(e.message||'Could not add','error'); } });
+  on($('mkt-pv-use'),'click',async()=>{ try{ await AMVMarket.install(it); _mktAfterInstall(it); }catch(e){ toast('Could not add','error'); } });
   const rate=$('mkt-pv-rate');
   if(rate) rate.querySelectorAll('[data-stars]').forEach(s=>on(s,'click',async()=>{
     const stars=parseInt(s.dataset.stars,10); await AMVMarket.rate(it.id,stars);
@@ -7064,7 +7064,7 @@ async function _mktSellerProfile(sellerEmail, sellerName){
     const all=await AMVMarket.list();
     const theirs=all.filter(it=>!(it.authorEmail||'') && /^amv$/i.test(it.author||''));
     const listingRows = theirs.length
-      ? theirs.map(it=>'<div class="vrow"><span>'+(it.icon||'\u2728')+' '+escH(it.title)+' '+_mktPriceTag(it)+'</span><span style="color:var(--mu);font-size:11px">'+(it.sales||it.installs||0)+(it.sales?' sold':' installs')+'</span></div>').join('')
+      ? theirs.map(it=>'<div class="vrow mkt-listing-row" data-mk-open="'+escH(it.id)+'" style="cursor:pointer"><span>'+(it.icon||'\u2728')+' '+escH(it.title)+' '+_mktPriceTag(it)+'</span><span style="color:var(--mu);font-size:11px">'+(it.sales||it.installs||0)+(it.sales?' sold':' installs')+' \u203a</span></div>').join('')
       : '<div style="color:var(--mu);font-size:12.5px">No active listings.</div>';
     r.innerHTML='<div class="ov" id="mkt-sp-bg"><div class="ob" onclick="event.stopPropagation()" style="max-width:560px">'+
       '<button class="oc" onclick="closeOvr()">\u00d7</button>'+
@@ -7078,6 +7078,7 @@ async function _mktSellerProfile(sellerEmail, sellerName){
     '</div></div>';
     on($('mkt-sp-bg'),'click',closeOvr);
     on($('mkt-sp-msg'),'click',()=>{ closeOvr(); try{ setTab('help'); }catch(e){ toast('Reach the AMV team from the Help Center.','info'); } });
+    document.querySelectorAll('#mkt-sp-bg [data-mk-open]').forEach(el=>on(el,'click',()=>{ const it=theirs.find(x=>x.id===el.dataset.mkOpen); if(it) _mktPreview(it, ()=>{}); }));
     return;
   }
   const all=await AMVMarket.list();
@@ -7100,7 +7101,7 @@ async function _mktSellerProfile(sellerEmail, sellerName){
     : '<div style="color:var(--mu);font-size:12.5px;padding:6px 0">No reviews yet.</div>';
 
   const listingRows = theirs.length
-    ? theirs.map(it=>'<div class="vrow"><span>'+(it.icon||'\u2728')+' '+escH(it.title)+' '+_mktPriceTag(it)+'</span><span style="color:var(--mu);font-size:11px">'+(it.sales||0)+' sold</span></div>').join('')
+    ? theirs.map(it=>'<div class="vrow mkt-listing-row" data-mk-open="'+escH(it.id)+'" style="cursor:pointer"><span>'+(it.icon||'\u2728')+' '+escH(it.title)+' '+_mktPriceTag(it)+'</span><span style="color:var(--mu);font-size:11px">'+(it.sales||0)+' sold \u203a</span></div>').join('')
     : '<div style="color:var(--mu);font-size:12.5px">No active listings.</div>';
 
   let reviewBtn='';
@@ -7124,6 +7125,7 @@ async function _mktSellerProfile(sellerEmail, sellerName){
   on($('mkt-sp-bg'),'click',closeOvr);
   on($('mkt-sp-msg'),'click',()=>{ closeOvr(); _mktChat(sellerEmail, name); });
   on($('mkt-write-review'),'click',()=>_mktReviewDialog(sellerEmail, name, ()=>_mktSellerProfile(sellerEmail,name)));
+  document.querySelectorAll('#mkt-sp-bg [data-mk-open]').forEach(el=>on(el,'click',()=>{ const it=theirs.find(x=>x.id===el.dataset.mkOpen); if(it) _mktPreview(it, ()=>_mktSellerProfile(sellerEmail,name)); }));
 }
 window._mktSellerProfile=_mktSellerProfile;
 
@@ -7241,6 +7243,17 @@ function _mktPurchases(body){
     body.querySelectorAll('.mk-view').forEach(b=>on(b,'click',()=>{ const it=items.find(x=>x.id===b.dataset.mkId); if(it){ it._owned=true; _mktPreview(it); } }));
   });
 }
+/* After adding a marketplace item to the user's library, take them straight
+   to where it now lives so "added to library" is never a mystery. */
+function _mktAfterInstall(it){
+  const isCrew = it && it.kind==='crew';
+  const dest = isCrew ? 'crew' : 'prompts';
+  const name = isCrew ? 'Crew' : 'your Prompt Library';
+  try{ closeOvr(); }catch(e){}
+  toast('Added to '+name+' — opening it now','success',3500);
+  setTimeout(()=>{ try{ setTab(dest); }catch(e){} }, 550);
+}
+window._mktAfterInstall=_mktAfterInstall;
 function _mktGoBrowse(){ S._mktTab='browse'; renderMarketView(); }
 window._mktGoBrowse=_mktGoBrowse;
 /* ── MARKETPLACE TRUST & SAFETY (client mirror) ───────────────
