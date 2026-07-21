@@ -7055,7 +7055,7 @@ async function _mktSellerProfile(sellerEmail, sellerName){
     const all=await AMVMarket.list();
     const theirs=all.filter(it=>!(it.authorEmail||'') && /^amv$/i.test(it.author||''));
     const listingRows = theirs.length
-      ? theirs.map(it=>'<div class="vrow mkt-listing-row" data-mk-open="'+escH(it.id)+'" style="cursor:pointer"><span>'+(it.icon||'\u2728')+' '+escH(it.title)+' '+_mktPriceTag(it)+'</span><span style="color:var(--mu);font-size:11px">'+(it.sales||it.installs||0)+(it.sales?' sold':' installs')+' \u203a</span></div>').join('')
+      ? theirs.map(it=>'<div class="vrow mkt-listing-row" data-mk-open="'+escH(it.id)+'" style="cursor:pointer"><span>'+(it.icon||'\u2728')+' '+escH(it.title)+' '+_mktPriceTag(it)+'</span><span class="mkt-row-meta"><span class="mkt-st active">Active</span><span style="color:var(--mu);font-size:11px">'+(it.sales||it.installs||0)+(it.sales?' sold':' installs')+'</span><span class="mkt-row-arr">\u203a</span></span></div>').join('')
       : '<div style="color:var(--mu);font-size:12.5px">No active listings.</div>';
     r.innerHTML='<div class="ov" id="mkt-sp-bg"><div class="ob" onclick="event.stopPropagation()" style="max-width:560px">'+
       '<button class="oc" onclick="closeOvr()">\u00d7</button>'+
@@ -7072,8 +7072,13 @@ async function _mktSellerProfile(sellerEmail, sellerName){
     document.querySelectorAll('#mkt-sp-bg [data-mk-open]').forEach(el=>on(el,'click',()=>{ const it=theirs.find(x=>x.id===el.dataset.mkOpen); if(it) _mktPreview(it, ()=>{}); }));
     return;
   }
-  const all=await AMVMarket.list();
-  const theirs=all.filter(it=>(it.authorEmail||'').toLowerCase()===sellerEmail);
+  // Build the seller's FULL catalog — including SOLD items — so their profile
+  // shows everything (active and sold), even though sold items leave public browse.
+  const pub=await AMVMarket.list();
+  const seen={}, merged=[];
+  for(const it of [...pub, ...AMVMarket._localListings()]){ if(seen[it.id]) continue; seen[it.id]=1; merged.push(it); }
+  const theirs=merged.filter(it=>(it.authorEmail||'').toLowerCase()===sellerEmail)
+    .sort((a,b)=>(a.status==='sold'?1:0)-(b.status==='sold'?1:0));   // active first, sold last
   const name=sellerName||(theirs[0]&&theirs[0].author)||sellerEmail.split('@')[0]||'Seller';
   const rating=AMVMarket.sellerRating(sellerEmail);
   const reviews=AMVMarket.sellerReviews(sellerEmail);
@@ -7092,7 +7097,7 @@ async function _mktSellerProfile(sellerEmail, sellerName){
     : '<div style="color:var(--mu);font-size:12.5px;padding:6px 0">No reviews yet.</div>';
 
   const listingRows = theirs.length
-    ? theirs.map(it=>'<div class="vrow mkt-listing-row" data-mk-open="'+escH(it.id)+'" style="cursor:pointer"><span>'+(it.icon||'\u2728')+' '+escH(it.title)+' '+_mktPriceTag(it)+'</span><span style="color:var(--mu);font-size:11px">'+(it.sales||0)+' sold \u203a</span></div>').join('')
+    ? theirs.map(it=>'<div class="vrow mkt-listing-row" data-mk-open="'+escH(it.id)+'" style="cursor:pointer"><span>'+(it.icon||'\u2728')+' '+escH(it.title)+' '+_mktPriceTag(it)+'</span><span class="mkt-row-meta"><span class="mkt-st '+(it.status==='sold'?'sold':'active')+'">'+(it.status==='sold'?'Sold':'Active')+'</span><span style="color:var(--mu);font-size:11px">'+(it.sales||0)+' sold</span><span class="mkt-row-arr">\u203a</span></span></div>').join('')
     : '<div style="color:var(--mu);font-size:12.5px">No active listings.</div>';
 
   let reviewBtn='';
