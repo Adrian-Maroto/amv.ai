@@ -6373,3 +6373,25 @@ html,body{height:100%;height:100dvh}
 .mkt-st.active{color:var(--ok,#42b883);background:var(--ok-soft,rgba(66,184,131,.14))}
 .mkt-st.sold{color:var(--mu);background:var(--wait-soft,rgba(125,138,163,.16))}
 .mkt-listing-row:hover{background:var(--s2)!important}
+
+/* ============================================================
+   LAYER A9 — MISSION CONTROL command bar (type anything → it does it)
+   ============================================================ */
+.mc-cmd{margin:0 0 var(--sp-5)}
+.mc-cmd-inner{display:flex;align-items:center;gap:10px;background:var(--s1);border:1px solid var(--bd);border-radius:var(--rp);padding:8px 8px 8px 16px;transition:border-color .18s,box-shadow .18s}
+.mc-cmd-inner:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.mc-cmd-ic{color:var(--accent);flex:none}
+.mc-cmd-input{flex:1;min-width:0;background:none;border:none;outline:none;color:var(--tx);font-family:var(--fn);font-size:15px;padding:8px 0}
+.mc-cmd-input::placeholder{color:var(--dim)}
+.mc-cmd-go{flex:none;background:var(--accent);color:#fff;border:none;border-radius:var(--rc);font-weight:600;font-size:13.5px;padding:10px 20px;cursor:pointer;transition:background .14s}
+.mc-cmd-go:hover{background:var(--accent-d)}
+.mc-cmd-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.mc-cmd-chip{font-size:12.5px;color:var(--mu);background:var(--s1);border:1px solid var(--bd);border-radius:999px;padding:6px 13px;cursor:pointer;transition:border-color .14s,color .14s}
+.mc-cmd-chip:hover{border-color:var(--accent);color:var(--tx)}
+@media(max-width:560px){
+  .mc-cmd-inner{padding-left:12px}
+  .mc-cmd-input{font-size:14px}
+  .mc-cmd-go{padding:10px 15px}
+  .mc-cmd-chip{font-size:12px}
+}
+@media(hover:none){ .mc-cmd-go,.mc-cmd-chip{min-height:40px} }

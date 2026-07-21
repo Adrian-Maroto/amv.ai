@@ -9486,6 +9486,19 @@ function renderCrewView(){
         <button class="mc-pause ${paused?'paused':''}" data-dact="${paused?'resumeAllAutonomous':'pauseAllAutonomous'}">${paused?'▶ Resume autonomy':'⏸ Pause all autonomous'}</button>
       </div>
     </header>
+    <div class="mc-cmd">
+      <div class="mc-cmd-inner">
+        <svg class="mc-cmd-ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/></svg>
+        <input id="mc-cmd-input" class="mc-cmd-input" type="text" placeholder="Tell AMV what to do — “email my team this week’s recap”, “research our competitors and write a brief”…" autocomplete="off">
+        <button class="mc-cmd-go" id="mc-cmd-go">Run</button>
+      </div>
+      <div class="mc-cmd-chips">${[
+        'Email me a summary of my unread emails',
+        'Research the top AI news today and write me a brief',
+        'Draft a reply to my latest email',
+        'Plan my week from my calendar'
+      ].map(c=>`<button class="mc-cmd-chip" data-mccmd="${escH(c)}">${escH(c)}</button>`).join('')}</div>
+    </div>
     ${paused?`<div class="mc-paused-banner"><b>Autonomous work is paused.</b> Scheduled and standing jobs won’t run until you resume. Anything already waiting still needs your approval.</div>`:''}
     <div class="mc-tiles">${tiles.map(t=>`<button class="mc-tile mc-${t[3]}${t[2]?'':' zero'}" data-mcjump="mc-${t[0]}"><span class="mc-tile-n">${t[2]}</span><span class="mc-tile-l">${t[1]}</span></button>`).join('')}</div>
 
@@ -9556,6 +9569,13 @@ function renderCrewView(){
     </div>
   </div></div>`;
   try{ vc.querySelectorAll('[data-mcjump]').forEach(function(b){ on(b,'click',function(){ var el=document.getElementById(b.dataset.mcjump); if(el) el.scrollIntoView({behavior:'smooth',block:'start'}); }); }); }catch(e){}
+  // Command bar: type any goal → the real agent recognizes intent and does it.
+  try{
+    var _mcRun=function(){ var el=$('mc-cmd-input'); var v=el?el.value.trim():''; if(!v){ el&&el.focus(); return; } if(typeof runAutonomousTask==='function'){ runAutonomousTask(v); } else { setTab('chat'); setTimeout(function(){ var ta=$('mta'); if(ta){ ta.value=v; ta.dispatchEvent(new Event('input')); sendMsg&&sendMsg(); } },140); } };
+    on($('mc-cmd-go'),'click',_mcRun);
+    var _ci=$('mc-cmd-input'); if(_ci) on(_ci,'keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); _mcRun(); } });
+    vc.querySelectorAll('[data-mccmd]').forEach(function(c){ on(c,'click',function(){ var el=$('mc-cmd-input'); if(el){ el.value=c.dataset.mccmd; el.focus(); } }); });
+  }catch(e){}
 }
 function _crewQueueHTML(){
   try{
