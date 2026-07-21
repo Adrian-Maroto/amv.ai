@@ -1765,7 +1765,9 @@ function _resetToolState(kind){
     if(kind==='dev'){
       _DEV.log=[]; _DEV.project={}; _DEV.activePath=''; _DEV.curCode=''; _DEV.curLang='';
     } else if(kind==='lab'){
-      _LAB.code="// AMV Lab — real execution.\n// Try a bug; hit Auto-Debug to watch it fix & re-run.\nfunction factorial(n){ return n<=1 ? 1 : n*factorial(n-1) }\nconsole.log('5! =', factorial(5));\n\nlet nums=[3,1,4,1,5,9,2,6];\nconsole.log('sorted', nums.sort((a,b)=>a-b));";
+      // Reset to the normal EMPTY entry screen (paste code / upload / find bugs),
+      // never the old demo code.
+      _LAB.code=''; _LAB.files=[]; _LAB.chat=[]; _LAB.busy=false;
     } else if(kind==='studio'){
       _STUDIO.artifacts=[]; _STUDIO.activeId=''; _STUDIO.prompt=''; _STUDIO.html=''; _STUDIO.history=[];
     }
@@ -2519,8 +2521,13 @@ function setTab(t){
     const prev=S.tab;
     const KIND_TAB={dev:1,lab:1,studio:1};
     if(!_resumingSession && prev && KIND_TAB[prev] && prev!==t){
-      _sessLeave(prev);
-      _resetToolState(prev);
+      // Lab persists across tab switches — leaving and coming back keeps your
+      // code and results. Only the "+" button (new session) or a page refresh
+      // starts fresh. Other tools keep the save-to-Recents-then-reset behavior.
+      if(prev!=='lab'){
+        _sessLeave(prev);
+        _resetToolState(prev);
+      }
     }
   }catch(e){}
   // Auth gate: a logged-out visitor can browse the chat tab, but using any AMV
