@@ -6281,3 +6281,15 @@ body.light .aa-date{color-scheme:light}
   .inp-model-sel{padding:6px 8px!important;gap:5px!important}
   #snd{width:34px!important;height:34px!important;flex:none}
 }
+
+/* ============================================================
+   LAYER A6 — STUDIO (AMV Design): centered hero + larger prompt box
+   Overrides an earlier left-align layer; makes the compose box roomier.
+   ============================================================ */
+.dsn-hero{text-align:center!important;align-items:center!important}
+.dsn-h1,.dsn-lead,.dsn-eyebrow{text-align:center!important;margin-left:auto!important;margin-right:auto!important}
+.dsn-dna-explain{text-align:center}
+.dsn-input-wrap{margin-left:auto!important;margin-right:auto!important;max-width:720px!important;align-items:flex-end}
+.dsn-input-wrap textarea{font-size:17px!important;min-height:66px!important;padding:15px 0!important;line-height:1.5}
+.dsn-hint{text-align:center}
+@media(max-width:560px){ .dsn-input-wrap{max-width:100%!important} .dsn-input-wrap textarea{font-size:16px!important;min-height:58px!important} }

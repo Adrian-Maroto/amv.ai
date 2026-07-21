@@ -118,10 +118,11 @@ ok(lab.hasPaste, 'paste box is present');
 ok(lab.hasChat, 'you can talk to Lab about the code');
 
 /* ────────────────────────────────────────────────────────────────────────
-   BUG: onboarding lived in loginUser(), but signup goes through
-   _completeIntroLogin() — so brand-new users never saw it. Dead code.
+   The first-run onboarding modal was removed per product direction — it read
+   as an intrusive popup on sign-in. A brand-new signup must land straight in
+   the app with NO modal, and must not re-trigger one later.
    ──────────────────────────────────────────────────────────────────────── */
-section('Onboarding: actually fires for a NEW signup');
+section('Onboarding: no intrusive popup on a NEW signup');
 
 const onb = await page.evaluate(async () => {
   S.user = { name: 'New', email: 'brandnew@test.com', ini: 'N' };
@@ -130,12 +131,12 @@ const onb = await page.evaluate(async () => {
   _completeIntroLogin({ name: 'New', email: 'brandnew@test.com', ini: 'N', provider: 'email' });
   await new Promise(r => setTimeout(r, 900));
   const shown = !!document.querySelector('.onb');
-  const paths = [...document.querySelectorAll('[data-onb]')].length;
+  const marked = !!loadStr('amv_onboarded');
   try { closeOvr(); } catch (e) {}
-  return { shown, paths };
+  return { shown, marked };
 });
-ok(onb.shown, 'onboarding modal appears for a new user');
-ok(onb.paths >= 3, 'it offers real starting paths', onb.paths);
+ok(!onb.shown, 'no onboarding modal is shown to a new user');
+ok(onb.marked, 'the user is marked onboarded so nothing re-triggers it');
 
 /* ────────────────────────────────────────────────────────────────────────
    Header auth buttons: visible signed-out, gone signed-in.

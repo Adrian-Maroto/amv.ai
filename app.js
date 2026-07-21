@@ -1848,8 +1848,9 @@ function loginUser(acct) {
     const pm=_pendingMessage; _pendingMessage='';
     setTimeout(()=>{ try{ setTab('chat'); const ta=$('mta'); if(ta){ ta.value=pm; ta.dispatchEvent(new Event('input')); } sendMsg(); }catch(e){} }, 300);
   }
-  // First-run activation: guide a brand-new user to their first success once.
-  try{ if(!loadStr('amv_onboarded')){ setTimeout(()=>{ try{ _startOnboarding(); }catch(e){} }, 350); } }catch(e){}
+  // First-run onboarding popup removed per product direction — it read as an
+  // intrusive modal on sign-in. Mark onboarded so nothing re-triggers it.
+  try{ saveStr('amv_onboarded','1'); }catch(e){}
   // if a backend session exists, pull the user's data from the server and keep it synced
   try{ if(AMVSync.enabled()){ AMVSync.pull().then(pulled=>{ if(pulled){ try{ renderView&&renderView(); updateSbUser&&updateSbUser(); }catch(e){} } }); AMVSync.start(); } }catch(e){}
 }
@@ -6560,6 +6561,14 @@ const AMVMarket = {
     if(!it) throw new Error('Item not found');
     const sellerEmail=(it.authorEmail||'').toLowerCase();
     if(sellerEmail===this._me()) throw new Error('You cannot buy your own listing');
+    // PAYMENT GATE: a paid item can only be completed through real checkout
+    // (the live backend returns a Stripe URL above). On-device there is no
+    // payment processor, so paid items must NOT be handed over for free —
+    // route the buyer to add a payment method. Free items continue instantly.
+    if((it.price||0) > 0){
+      const e=new Error('This item costs $'+it.price+'. Add a payment method to buy it — free items are added instantly.');
+      e.code='needs_payment'; throw e;
+    }
     // one-of-a-kind: a user listing already marked sold is gone
     const isUserListing=/^usr_/.test(id);
     if(isUserListing && it.status==='sold') throw new Error('Sorry — this just sold. Message the seller to ask for another.');
@@ -6962,7 +6971,14 @@ async function _mktDoBuy(it, after){
       }
     }
     after&&after();
-  }catch(e){ toast(e.message||'Could not complete purchase','error',4500); }
+  }catch(e){
+    if(e && e.code==='needs_payment'){
+      toast(e.message,'info',5500);
+      setTimeout(()=>{ try{ closeOvr(); }catch(_){}; try{ setTab('billing'); }catch(_){}; }, 900);
+      return;
+    }
+    toast(e.message||'Could not complete purchase','error',4500);
+  }
 }
 /* Preview / detail modal — shows the listing, preview text, reviews, and the buy/get action. */
 function _mktPreview(it, after){
@@ -13610,11 +13626,8 @@ function _completeIntroLogin(acct){
   setTab('chat');
   // First-run activation. This lives in loginUser(), but signup comes through
   // HERE — so brand-new users (the only people who need it) never saw it.
-  try{
-    if(!loadStr('amv_onboarded')){
-      setTimeout(()=>{ try{ _startOnboarding(); }catch(e){} }, 500);
-    }
-  }catch(e){}
+  // Onboarding popup removed per product direction (looked intrusive on sign-in).
+  try{ saveStr('amv_onboarded','1'); }catch(e){}
   // if they typed a message before signing up, send it now
   if(typeof _pendingMessage!=='undefined' && _pendingMessage){
     const pm=_pendingMessage; _pendingMessage='';
