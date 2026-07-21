@@ -11897,21 +11897,27 @@ function _trustBadge(svg,title,sub){
 
 /* === HELP CENTER === */
 const FAQS=[
-  {q:'How do I start chatting with AMV?',a:'Click "New Chat" in the top navigation bar, or press Ctrl+Shift+O. Type anything in the input box and press Enter. AMV can handle any request - 3D models, essays, code, images, research, and more.'},
-  {q:'How do I create interactive 3D models?',a:'Just ask! Type "create a 3D model of [anything]" - a human heart, solar system, black hole, DNA, tornado, atom. The model renders live in the chat with drag-to-rotate, scroll-to-zoom, and right-click-to-pan controls.'},
-  {q:'How do I generate HD images?',a:'Click Images in the sidebar. Describe your image, choose a style and aspect ratio, and click Generate. No explicit content.'},
-  {q:'How do I upload files for analysis?',a:'Click the paperclip (&#x1F4CE;) button in the chat input, or drag and drop any file. AMV supports PDFs, images, code files, Excel, CSV, Word documents, and most text formats.'},
-  {q:'How does the sleep automation work?',a:'Connect your Google Drive and Canvas LMS in Settings &#x2192; Integrations. Then tell AMV what to complete overnight - assignments, emails, file organization. AMV works through the queue and delivers results to your Drive and email by morning.'},
-  {q:'How do I connect Google Drive and Gmail?',a:'Go to Settings &#x2192; Integrations. Add your Google OAuth Client ID from Google Cloud Console. This enables Drive file access, Gmail reading, Docs analysis, and Calendar management.'},
-  {q:'How does Canvas homework automation work?',a:'Add your Canvas API token in Settings &#x2192; Integrations. AMV reads your assignments, researches each one using your notes and Drive files, writes the answer, and optionally submits it via the Canvas API.'},
-  {q:'How do the plans and limits work?',a:'Free gives you daily usage to explore everything. Pro ($15/month) gives you 5\u00d7 the usage with all models, agents, and priority speed. Elite ($75/month) is built for builders \u2014 20\u00d7 usage, our most capable Apex model first, full-stack app building with one-click deploy, up to 5 agents running in parallel, 4K video, unlimited automations, and priority support. Ultra ($200/month) is the power tier \u2014 50\u00d7 usage, unlimited parallel agents, whole-codebase context, autonomous multi-step projects, deploy and host multiple live apps, team workspaces, and the fastest hardware. Limits are usage-based, so you just work without counting messages.'},
-  {q:'How do I use voice input?',a:'Click the microphone icon in the chat input. Works best in Chrome and Edge. Speak your message and it appears in the text box. Press Enter to send.'},
-  {q:'What is AI Memory?',a:'Memory lets AMV remember facts about you - your job, preferences, study habits, and context. Go to Memory in the sidebar, add facts, and AMV includes them automatically in every conversation.'},
-  {q:'How do I rename, star, or delete chats?',a:'Hover over any chat in the sidebar to see action buttons (&#x2B50; star, &#x270F; rename, &#x00D7; delete). Right-click for the full context menu with additional options like Export and Share.'},
-  {q:'Can I export my conversations?',a:'Yes! Right-click any chat in the sidebar and select "Export as Markdown". Downloads as a .md file you can open in any text editor, Notion, or Obsidian.'},
-  {q:'How do I set up payments?',a:'Go to Settings &#x2192; Platform (admin only). Add your Stripe Payment Links for Pro and Elite plans. Revenue goes directly to your Stripe account. Get links from stripe.com &#x2192; Payments &#x2192; Payment Links.'},
-  {q:'How is my data protected?',a:'All data is stored locally in your browser. Passwords are hashed with SHA-256. Card details go to Stripe only - we never see them. Any self-hosting credentials are stored locally and never transmitted to AMV servers.'},
-];
+  {q:'How do I start with AMV?', a:'Click “New chat” in the top bar and type anything — an essay, code, a 3D model, an image, deep research. AMV figures out what you need and does the work. On mobile, tap the menu icon for the full sidebar.'},
+  {q:'What can AMV actually do?', a:'One place for everything: chat and research, image and video generation, interactive 3D, a design canvas (Studio), an app builder (Dev), and autonomous agents (Crew) that complete multi-step work for you and bring back a finished result to approve.'},
+  {q:'What is Crew and Mission Control?', a:'Crew is AMV working autonomously in the background. Mission Control (the Crew tab) is your overview of everything it’s doing — what needs your approval, what’s running now, what’s scheduled, and what’s finished. Give it an outcome and it plans the steps, does the work, and stops before anything consequential to wait for you.'},
+  {q:'How do approvals work — Preview &amp; Approve?', a:'When AMV finishes something that would send, publish, or change anything, it waits in “Needs your approval.” Press Preview to open the full workspace: the finished result, a timeline of what happened, the agents involved, and a plain-language summary of exactly what will happen. Then Approve, Edit, or Reject.'},
+  {q:'What is Auto Approve?', a:'When you trust a recurring task, turn on Auto Approve while setting it up. AMV then completes and performs the final action on its own — scoped to every run or just the first, capped by risk level, with an optional end date. High-risk actions still stop and ask unless you allow them. You can pause all autonomous work anytime from Mission Control.'},
+  {q:'How do I schedule recurring autonomous work?', a:'Start an autonomous task (Crew → Autonomous task) and pick a schedule — once, daily, weekly, or monthly. Manage everything under Scheduled: next run, last run, approval mode, and per-task pause or cancel. Connect the backend for true 24/7 runs even with AMV closed.'},
+  {q:'How do I generate images and video?', a:'Click Images or Video in the sidebar, describe what you want, choose a style and aspect ratio, and generate. Images render in seconds; video is sent to the engine and returned when ready.'},
+  {q:'How do I create interactive 3D models?', a:'Just ask in chat — e.g. “create a 3D model of a human heart.” It renders live with drag-to-rotate, scroll-to-zoom, and pan controls.'},
+  {q:'What is Studio (AMV Design)?', a:'Studio is a live design canvas. Describe a landing page, UI mockup, poster, or graphic and watch it build, then refine by chatting (“make it darker,” “add a pricing section”). Set a reusable Design DNA once and everything follows your colors, fonts, and style.'},
+  {q:'Can AMV build and run real apps?', a:'Yes — Dev writes the code, runs it in a live sandbox, and shows you the result. Lab lets you paste or upload existing code (any size) to run, find and fix bugs, review, refactor, or add tests. On higher plans you can deploy to a live URL.'},
+  {q:'How do I upload files for analysis?', a:'Click the paperclip in the chat input or drag &amp; drop. AMV reads PDFs, images, code, Excel, CSV, and Word — and can work across a whole folder for autonomous tasks.'},
+  {q:'How do I connect Gmail, Calendar, and files?', a:'Go to Settings → Connectors (or Integrations). Connect Google to let AMV read email, manage your calendar, and work with Drive files. Everything an agent wants to send still waits for your approval first.'},
+  {q:'What is Handoff?', a:'Handoff lets you pass a task — with its full context — to a teammate inside AMV, or receive one from them, so work moves between people without losing the thread.'},
+  {q:'What is the Marketplace?', a:'Browse and install prompts, crews, and integrations — free ones add to your Prompt Library or Crew instantly. Click any seller’s name to see their listings and reviews or message them. You can publish your own and keep 80% of every sale. Paid items always go through secure checkout.'},
+  {q:'How do plans and limits work?', a:'Free gives you daily usage to explore everything. Pro ($15/mo) unlocks autonomous agents, Mission Control, the app builder, connected accounts, and 5× usage. Elite ($75/mo) adds our most capable Apex model first, one-click deploy, and parallel agents at 20× usage. Ultra ($200/mo) is 50× usage with unlimited parallel agents and team workspaces. Custom lets you set your own hard-capped budget. Limits are usage-based — just work without counting messages.'},
+  {q:'What is AI Memory?', a:'Memory lets AMV remember facts about you — your role, preferences, and context — and apply them automatically in every conversation. Add or edit them under Memory in the sidebar.'},
+  {q:'How do I use voice input?', a:'Click the microphone in the chat input (best in Chrome and Edge), speak, and your words appear in the box. Press Enter to send.'},
+  {q:'How do I rename, star, or delete chats?', a:'Hover a chat in the sidebar for quick actions, or right-click for the full menu including Export and Share.'},
+  {q:'Can I export my conversations?', a:'Yes — right-click any chat and choose “Export as Markdown” to download a .md file for Notion, Obsidian, or any editor.'},
+  {q:'How is my data protected?', a:'Your data is stored in your browser and, when you connect the backend, encrypted in transit (256-bit TLS). Passwords are hashed with PBKDF2. Card details go straight to Stripe — AMV never sees them. Export or delete everything anytime.'}
+]
 
 /* A real 404 for unknown routes — instead of silently showing chat, tell the
    user the page wasn't found and give them a clear way back. */
@@ -13045,7 +13051,7 @@ function _renderSetPaneInner(){
 
   } else if(sp==='integrations'){
     pane.innerHTML =
-      '<div class="set-title">Integrations</div>'+
+      '<div class="set-title">Connectors</div>'+
       '<div class="set-sub">Connect AMV to your tools. <b style="color:var(--tx)">Autonomous</b> ones work in the background once connected; <b style="color:var(--tx)">manual</b> ones you trigger or upload to. Click Connect &mdash; you approve in a popup, no keys to paste.</div>'+
       _integrationsCatalogHTML();
     _wireIntegrationCatalog(pane);
