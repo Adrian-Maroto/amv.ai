@@ -9531,8 +9531,23 @@ function _mcSchedRow(t){
   const when = t.sched?((typeof _schedHumanOf==='function')?_schedHumanOf(t.sched):''):((typeof _freqLabel==='function')?_freqLabel(t.freq):'');
   let next='';
   try{ if(t.next) next=new Date(t.next).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }catch(e){}
-  const mode = t.paused ? '<span class="mc-sched-mode req">Paused</span>' : (t.approval==='auto' ? '<span class="mc-sched-mode auto">Auto-approve</span>' : '<span class="mc-sched-mode req">Approval required</span>');
-  return `<div class="mc-sched-row">${mode}<div class="mc-sched-b"><div class="mc-sched-goal">${escH(t.goal||'Scheduled task')}</div><div class="mc-sched-meta">${escH(when)}${next?` · next ${escH(next)}`:''}${t.localOnly?' · runs while AMV is open':''}</div></div><div class="mc-sched-acts"><button class="btn mc-mini ghost" data-dact="_schedEdit" data-darg="${t.id}">Edit</button><button class="btn mc-mini ghost" data-dact="_mcCancelSched" data-darg="${t.id}">Cancel</button></div></div>`;
+  const auto = t.approval==='auto';
+  const mode = t.paused
+    ? '<span class="mc-sched-mode paused">Paused</span>'
+    : (auto ? '<span class="mc-sched-mode auto">Autonomous - sends automatically</span>'
+            : '<span class="mc-sched-mode req">Ask first - you approve each one</span>');
+  return `<div class="mc-sched-row">
+    <div class="mc-sched-b">
+      <div class="mc-sched-goal">${escH(t.goal||'Scheduled job')}</div>
+      <div class="mc-sched-meta">${escH(when)}${next?` · next ${escH(next)}`:''}${t.localOnly?' · runs while AMV is open':''}</div>
+      <div class="mc-sched-mode-row">${mode}</div>
+    </div>
+    <div class="mc-sched-acts">
+      <button class="btn mc-mini ${auto?'ghost':'bp'}" data-dact="_schedToggleApproval" data-darg="${t.id}">${auto?'Make me approve first':'Make autonomous'}</button>
+      <button class="btn mc-mini ghost" data-dact="_schedEdit" data-darg="${t.id}">Edit</button>
+      <button class="btn mc-mini ghost" data-dact="_mcCancelSched" data-darg="${t.id}">Cancel</button>
+    </div>
+  </div>`;
 }
 function _mcCancelSched(id){ try{ _saveSched(_loadSched().filter(t=>t.id!==id)); }catch(e){} toast('Scheduled task cancelled','info'); renderCrewView(); }
 window._mcCancelSched=_mcCancelSched;
@@ -9560,7 +9575,14 @@ function _mcUseCrew(id){
 window._mcUseCrew=_mcUseCrew;
 /* A standing job shown as a row in the unified Scheduled section. */
 function _mcAutonSchedRow(j){
-  return `<div class="mc-sched-row"><span class="mc-sched-mode auto">Standing job</span><div class="mc-sched-b"><div class="mc-sched-goal">${escH(j.title)}</div><div class="mc-sched-meta">${escH(j.desc||'Runs in the background')} · Uses: ${escH(j.needs||'-')}</div></div><button class="btn mc-mini ghost" data-dact="cwToggle" data-darg="${j.id}">Turn off</button></div>`;
+  return `<div class="mc-sched-row">
+    <div class="mc-sched-b">
+      <div class="mc-sched-goal">${escH(j.title)}</div>
+      <div class="mc-sched-meta">${escH(j.desc||'Runs in the background')} · Uses: ${escH(j.needs||'-')}</div>
+      <div class="mc-sched-mode-row"><span class="mc-sched-mode auto">Autonomous - emails you results automatically</span></div>
+    </div>
+    <div class="mc-sched-acts"><button class="btn mc-mini ghost" data-dact="cwToggle" data-darg="${j.id}">Turn off</button></div>
+  </div>`;
 }
 /* Run a typed command INLINE on Mission Control - never leaves Crew. Recognizes
    intent, and if a needed app isn't connected it says so right here; once
@@ -9647,7 +9669,7 @@ function renderCrewView(){
     ['appr','Needs approval',st.appr.length,'wait'],
     ['fail','Action required',st.failed.length,'err'],
     ['active','Active work',st.active.length,'active'],
-    ['sched','Scheduled',st.sched.length,'info'],
+    ['sched','Running jobs',st.sched.length+st.auton.length,'info'],
     ['done','Completed',st.done.length,'muted']
   ];
 
@@ -9681,9 +9703,9 @@ function renderCrewView(){
     <div class="mc-tiles">${tiles.map(t=>`<button class="mc-tile mc-${t[3]}${t[2]?'':' zero'}" data-mcjump="mc-${t[0]}"><span class="mc-tile-n">${t[2]}</span><span class="mc-tile-l">${t[1]}</span></button>`).join('')}</div>
 
     <section id="mc-appr" class="mc-sec">
-      <div class="sec-head"><h3>Needs your approval ${appr.length?`<span class="cw-badge">${appr.length}</span>`:''}</h3></div>
+      <div class="sec-head"><h3>Needs your approval ${appr.length?`<span class="cw-badge">${appr.length}</span>`:''}</h3><span class="sec-sub">One-off drafts waiting for you. Nothing here sends until you approve it. A running job that is set to "ask first" also drops a fresh draft here each time it runs.</span></div>
       ${appr.length ? appr.map(apprCard).join('') :
-        `<div class="mc-empty"><span class="mc-empty-ic">✓</span><div>You’re all caught up. When AMV drafts something that sends or changes anything, it waits here for your decision.</div><button class="mc-empty-cta" data-dact="cwDemo">See an example draft</button></div>`}
+        `<div class="mc-empty"><span class="mc-empty-ic">✓</span><div>You are all caught up. When AMV drafts something that would send or change anything, it waits right here for your review - you can read it, edit every detail, then send or delete it.</div><button class="mc-empty-cta" data-dact="cwDemo">Show me an example</button></div>`}
     </section>
 
     ${st.failed.length?`<section id="mc-fail" class="mc-sec">
@@ -9697,8 +9719,8 @@ function renderCrewView(){
     </section>`:''}
 
     <section id="mc-sched" class="mc-sec">
-      <div class="sec-head"><h3>Scheduled</h3><span class="sec-sub">Everything recurring lives here - standing jobs and scheduled tasks, with their next run times.</span><button class="mc-sec-link" data-dact="openSchedManager">Manage</button></div>
-      ${(st.sched.length||st.auton.length)?`<div class="mc-sched">${st.auton.map(_mcAutonSchedRow).join('')}${st.sched.slice(0,8).map(_mcSchedRow).join('')}</div>`:`<div class="mc-empty-row">Nothing scheduled yet. Start a task above and choose how often it should run.</div>`}
+      <div class="sec-head"><h3>Running jobs</h3><span class="sec-sub">Recurring work AMV runs on a schedule. Each run creates fresh content (a new email, a new summary). For each one you choose: <b>Autonomous</b> sends it for you automatically, or <b>Ask first</b> drops a draft in "Needs your approval" every time so you review before it sends.</span><button class="mc-sec-link" data-dact="openSchedManager">Manage</button></div>
+      ${(st.sched.length||st.auton.length)?`<div class="mc-sched">${st.auton.map(_mcAutonSchedRow).join('')}${st.sched.slice(0,8).map(_mcSchedRow).join('')}</div>`:`<div class="mc-empty-row">No running jobs yet. Start a task above and choose how often it should repeat - it will show up here.</div>`}
     </section>
 
     ${st.done.length?`<section id="mc-done" class="mc-sec">
@@ -10028,11 +10050,12 @@ function apvApprove(id){
   const a=_cwApprovals().find(x=>x.id===id); if(!a){ apvClose(); return; }
   _apvDoApprove(a); apvClose();
 }
+const _APV_PAST={send:'Sent',publish:'Published',schedule:'Scheduled',post:'Posted',submit:'Submitted',update:'Updated',deploy:'Deployed',approve:'Done'};
 function _apvDoApprove(a){
   if(window.AMV_API && AMV_API.live){ AMV_API.actApproval(a.id,'approve').catch(()=>{}); }
   _cwSaveApprovals(_cwApprovals().filter(x=>x.id!==a.id));
   const act=_apvAction(a);
-  toast('Approved - '+(act.verb==='approve'?'done':act.verb.replace(/e?$/,act.verb.endsWith('e')?'ed':'ed')),'success');
+  toast(_APV_PAST[act.verb]||'Done','success');
   renderCrewView();
 }
 function apvReject(id){ apvClose(); cwReject(id); }
@@ -16749,7 +16772,7 @@ setInterval(function(){ try{ if(S.user && S.user.email && !document.hidden) _aut
 /* ============================================================
    AMV AUTONOMOUS RUNNER (Cowork-style) - goal -> plan -> execute -> loop
    ============================================================ */
-const _AMVSYS = "You are AMV - an elite autonomous AI built by AMV.AI. You are the only AI; never mention or imply Claude, Anthropic, OpenAI, ChatGPT, Google or any other provider. Speak as AMV in first person. Produce professional, production-grade, specific, ready-to-use deliverables - never placeholders, never 'here's a template'. When a task can't be physically completed from text alone (e.g. rendering a video file, placing a real trade, sending without approval), produce the complete, excellent work product needed and clearly state the one external step required.";
+const _AMVSYS = "You are AMV - an elite autonomous AI built by AMV.AI. You are the only AI; never mention or imply Claude, Anthropic, OpenAI, ChatGPT, Google or any other provider. Speak as AMV in first person. Produce professional, production-grade, specific, ready-to-use deliverables - never placeholders, never 'here's a template'. When a task can't be physically completed from text alone (e.g. rendering a video file, placing a real trade, sending without approval), produce the complete, excellent work product needed and clearly state the one external step required. CRITICAL: your writing must be flawless - perfect spelling, grammar, capitalization, and punctuation - because it may be sent automatically without a human reviewing it first. Proofread before you finish. Never use em dashes or en dashes; use a plain hyphen (-).";
 const _AUTO = { running:false, steps:[], goal:'', deliverable:'', file:null, fileContent:null, paused:false, awaiting:null };
 
 function _autoLog(html){ const el=$('auto-feed'); if(el){ el.insertAdjacentHTML('beforeend', html); el.scrollTop=el.scrollHeight; } }
@@ -17387,11 +17410,43 @@ async function _runDueAuto(){
       t.lastRun=now; t.next=(t.sched?_schedNext(t.sched,now):_freqNext(t.freq,now)); changed=true;
       if(!canRun) continue;                    // can't run without the engine - just reschedule
       ranAny=true;
-      try{ await runAutonomous(t.goal,{silent:true}); }catch(e){ _logErr('scheduledTask', e); }
+      try{
+        if(t.approval==='auto'){ await runAutonomous(t.goal,{silent:true}); }   // autonomous: runs and (backend) sends
+        else { await _recurMakeApproval(t); }                                    // ask-first: prepare a fresh draft to approve
+      }catch(e){ _logErr('scheduledTask', e); }
     }
   }
-  if(ranAny && typeof toast==='function') toast('Ran a scheduled task','info',2500);
+  if(ranAny && typeof toast==='function') toast('A running job just ran','info',2500);
   if(changed) _saveSched(list);
+}
+/* Short, clean title for a job's generated draft. */
+function _recurTitle(t){ const g=(t.goal||'Task').replace(/\s+/g,' ').trim(); return g.length>60?g.slice(0,60).trim()+'…':g; }
+/* An "ask first" running job just came due: generate the finished content and
+   drop it into "Needs your approval" so the user reviews a fresh draft each run.
+   Nothing is sent until they approve. */
+async function _recurMakeApproval(t){
+  const emailMatch=(t.goal||'').match(/[\w.+-]+@[\w-]+\.[\w.-]+/);
+  const to = emailMatch?emailMatch[0]:'';
+  const sys=_AMVSYS+' Produce the finished result exactly as it should be sent, with flawless spelling, grammar, and punctuation. No placeholders. If it is an email, write only the body (no subject line).';
+  let body='';
+  try{ body=_noDash(await aiComplete((t.goal||'')+'\n\nProduce the finished, ready-to-send result now.', sys, {max_tokens:1500})); }catch(e){ body=''; }
+  if(!body) return;
+  const title=_recurTitle(t);
+  const ap=_cwApprovals();
+  ap.unshift({
+    id:'a'+Date.now(), icon: to?'📧':'📄',
+    title,
+    requesting:'Prepared by your running job. Review, edit anything, then send.',
+    actionType: to?'send':'submit',
+    resultType: to?'email':'doc',
+    destination: to||'', recipients: to?1:null,
+    account:(S.user&&S.user.email)||'', autoApprove:false,
+    readyAt:Date.now(), fromJob:t.id,
+    result: to?{type:'email',from:(S.user&&S.user.email)||'',to,subject:title,body}:{type:'doc',body}
+  });
+  _cwSaveApprovals(ap);
+  if(S.tab==='crew'){ try{ renderCrewView(); }catch(e){} }
+  if(typeof toast==='function') toast('A running job prepared a draft for your approval','info',4200);
 }
 /* ============================================================
    SCHEDULED AUTONOMOUS MANAGEMENT  (Phase 5)
@@ -17400,19 +17455,23 @@ async function _runDueAuto(){
    between "require approval" and "auto-approve" without recreating it.
    All values are real (from the schedule record); nothing is invented.
    ============================================================ */
+/* Refresh whichever surface the job list is showing: the manager modal if it's
+   open, and the Crew page if that's the current tab. Never pops the modal open
+   when it wasn't already. */
+function _schedRefreshViews(){ if($('sm-bg')) openSchedManager(); if(S.tab==='crew'){ try{ renderCrewView(); }catch(e){} } }
 function _schedTogglePause(id){
   const l=_loadSched(); const t=l.find(x=>x.id===id);
-  if(t){ t.paused=!t.paused; _saveSched(l); if(typeof toast==='function') toast(t.paused?'Task paused':'Task resumed','info'); }
-  openSchedManager(); if(S.tab==='crew'){ try{ renderCrewView(); }catch(e){} }
+  if(t){ t.paused=!t.paused; _saveSched(l); if(typeof toast==='function') toast(t.paused?'Job paused':'Job resumed','info'); }
+  _schedRefreshViews();
 }
 function _schedToggleApproval(id){
   const l=_loadSched(); const t=l.find(x=>x.id===id);
-  if(t){ t.approval=(t.approval==='auto')?'require':'auto'; _saveSched(l); if(typeof toast==='function') toast(t.approval==='auto'?'Auto-approve on for this task':'This task now waits for your approval','info',3200); }
-  openSchedManager(); if(S.tab==='crew'){ try{ renderCrewView(); }catch(e){} }
+  if(t){ t.approval=(t.approval==='auto')?'require':'auto'; _saveSched(l); if(typeof toast==='function') toast(t.approval==='auto'?'Now autonomous - AMV sends this automatically, it will not appear in Needs your approval':'Now asks first - AMV will drop a draft in Needs your approval each time','info',4200); }
+  _schedRefreshViews();
 }
 function _schedCancel(id){
-  _saveSched(_loadSched().filter(t=>t.id!==id)); if(typeof toast==='function') toast('Scheduled task cancelled','info');
-  openSchedManager(); if(S.tab==='crew'){ try{ renderCrewView(); }catch(e){} }
+  _saveSched(_loadSched().filter(t=>t.id!==id)); if(typeof toast==='function') toast('Job cancelled','info');
+  _schedRefreshViews();
 }
 window._schedTogglePause=_schedTogglePause; window._schedToggleApproval=_schedToggleApproval; window._schedCancel=_schedCancel;
 
@@ -17491,10 +17550,10 @@ function _smRow(t){
   const lastTxt = t.lastRun ? new Date(t.lastRun).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : 'Not run yet';
   const auto = t.approval==='auto';
   const mode = t.paused
-    ? '<span class="mc-sched-mode req">Paused</span>'
-    : (auto ? '<span class="mc-sched-mode auto">Auto-approve</span>' : '<span class="mc-sched-mode req">Approval required</span>');
+    ? '<span class="mc-sched-mode paused">Paused</span>'
+    : (auto ? '<span class="mc-sched-mode auto">Autonomous - sends automatically</span>' : '<span class="mc-sched-mode req">Ask first - you approve each one</span>');
   return `<div class="smr${t.paused?' paused':''}">
-    <div class="smr-top"><div class="smr-goal">${escH(t.goal||'Scheduled task')}</div>${mode}</div>
+    <div class="smr-top"><div class="smr-goal">${escH(t.goal||'Running job')}</div>${mode}</div>
     <div class="smr-meta">
       <span><b>Runs</b> ${escH(cadence)}</span>
       <span><b>Next</b> ${escH(nextTxt)}</span>
@@ -17504,7 +17563,7 @@ function _smRow(t){
     <div class="smr-act">
       <button class="btn mc-mini ghost" data-dact="_schedEdit" data-darg="${t.id}">Edit</button>
       <button class="btn mc-mini ghost" data-dact="_schedTogglePause" data-darg="${t.id}">${t.paused?'Resume':'Pause'}</button>
-      <button class="btn mc-mini ghost" data-dact="_schedToggleApproval" data-darg="${t.id}">${auto?'Require approval':'Auto-approve'}</button>
+      <button class="btn mc-mini ${auto?'ghost':'bp'}" data-dact="_schedToggleApproval" data-darg="${t.id}">${auto?'Make me approve first':'Make autonomous'}</button>
       <button class="btn mc-mini ghost smr-cancel" data-dact="_schedCancel" data-darg="${t.id}">Cancel</button>
     </div>
   </div>`;
@@ -17515,11 +17574,11 @@ function openSchedManager(){
   const r=$('ovr'); if(!r) return;
   const list=_loadSched();
   const anyPaused = (typeof _autonomyPaused==='function') && _autonomyPaused();
-  const rows = list.length ? list.map(_smRow).join('') : '<div class="lab-placeholder">No scheduled work yet. Start an autonomous task and choose how often it should run.</div>';
+  const rows = list.length ? list.map(_smRow).join('') : '<div class="lab-placeholder">No running jobs yet. Start an autonomous task and choose how often it should repeat.</div>';
   r.innerHTML=`<div class="ov tp-ov" id="sm-bg"><div class="tp-modal">
-    <div class="tp-head"><div><div class="eyebrow">AMV Autonomous</div><h2 class="tp-title">Scheduled work</h2></div><button class="tp-x" id="sm-close" aria-label="Close">\u2715</button></div>
+    <div class="tp-head"><div><div class="eyebrow">AMV Autonomous</div><h2 class="tp-title">Running jobs</h2></div><button class="tp-x" id="sm-close" aria-label="Close">\u2715</button></div>
     <div class="tp-body">
-      <p class="trip-sub">Recurring outcomes AMV runs for you. They run when due while AMV is open and catch up when you return - connect the backend for true 24/7. Pause a task, switch its approval mode, or cancel it anytime.</p>
+      <p class="trip-sub">Recurring work AMV runs for you. Each run makes fresh content. <b>Autonomous</b> jobs send automatically and never appear in Needs your approval; <b>Ask first</b> jobs drop a draft there every time so you review before it sends. They run when due while AMV is open and catch up when you return - connect the backend for true 24/7. Pause, switch the mode, or cancel anytime.</p>
       ${anyPaused?'<div class="mc-paused-banner" style="margin-bottom:14px"><b>All autonomous work is paused.</b> Individual schedules won\u2019t run until you resume from Mission Control.</div>':''}
       <div class="sched-list">${rows}</div>
     </div>

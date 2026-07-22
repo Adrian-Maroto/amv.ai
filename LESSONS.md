@@ -7,6 +7,29 @@ Format: **Mistake → Root cause → Rule going forward.**
 
 ---
 
+## 2026-07-22 (later)
+
+### 7. "sended" — never hand-roll past tense
+- **Mistake:** Built the approve toast as `verb.replace(/e?$/,'ed')`, which turns
+  "send" into "sended" and "submit" into "submited". A user running an autonomous
+  task can't fix wording before it auto-sends, so this is a money risk.
+- **Rule:** Use an explicit past-tense map (send→Sent, submit→Submitted, …). Never
+  derive English inflection with a regex. And for anything AMV may AUTO-SEND, the
+  system prompt must demand flawless spelling/grammar and a proofread pass.
+
+### 8. A row action that re-opens its own manager pops a modal unexpectedly
+- **Mistake:** `_schedToggleApproval` called `openSchedManager()` unconditionally,
+  so toggling a job's mode from the Crew PAGE popped the manager modal open.
+- **Rule:** Refresh only the surface that's actually showing:
+  `if($('sm-bg')) openSchedManager(); if(S.tab==='crew') renderCrewView();`.
+
+### Clarity model that worked (keep it)
+- One-time drafts live in **Needs your approval**. Recurring work lives in
+  **Running jobs**, each with an explicit mode: **Autonomous - sends
+  automatically** (never appears in approvals) vs **Ask first - you approve each
+  one** (drops a fresh draft in approvals every run). One prominent toggle flips
+  between them. This is the mental model users must never be confused about.
+
 ## 2026-07-22
 
 ### 5. `data-dact` buttons are DEAD inside a `stopPropagation` modal
