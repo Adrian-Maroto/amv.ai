@@ -688,7 +688,7 @@ html,body{height:100%;overflow:hidden}
 .btn.bp{border-radius:6px!important}
 
 /* ============================================================
-   LAYER 21 — PREMIUM DESIGN REBUILD (final, authoritative)
+   LAYER 21 - PREMIUM DESIGN REBUILD (final, authoritative)
    Neutralizes boxy base styles; one calm editorial system.
    ============================================================ */
 
@@ -753,7 +753,7 @@ html,body{height:100%;overflow:hidden}
 #vc{background:radial-gradient(1200px 600px at 70% -10%,rgba(63, 118, 245,.05),transparent 60%)!important}
 
 /* ============================================================
-   LAYER 22 — REFINEMENT PASS (de-template, no layout change)
+   LAYER 22 - REFINEMENT PASS (de-template, no layout change)
    Mutes palette, removes glass, tightens rounding, sharpens type.
    ============================================================ */
 
@@ -841,7 +841,7 @@ html,body{height:100%;overflow:hidden}
 /* big calm empty state (not a tiny boxed message) */
 .cw-empty-lg{text-align:center;padding:48px 24px;color:var(--mu);font-size:14px;line-height:1.6;border:1px dashed #2a313b;border-radius:14px;display:flex;flex-direction:column;align-items:center}
 .cw-empty-ic{width:46px;height:46px;border-radius:50%;background:rgba(192,133,82,.14);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:22px;margin-bottom:14px}
-/* narrow side rail — lighter weight, no heavy card */
+/* narrow side rail - lighter weight, no heavy card */
 .crew-aside{position:sticky;top:8px}
 .crew-note h4{font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--mu);margin:0 0 14px;font-weight:600}
 .crew-steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:14px}
@@ -879,7 +879,7 @@ html,body{height:100%;overflow:hidden}
 @media(max-width:760px){.tasks-hero,.tasks-masonry,.tk-cat.wide .tk-list{grid-template-columns:1fr}}
 
 /* ============================================================
-   LAYER 25 — FULL-SITE OVERHAUL (AMV signature, warm, unique)
+   LAYER 25 - FULL-SITE OVERHAUL (AMV signature, warm, unique)
    Editorial serif headings, warm charcoal, coral signature.
    Applies across every view, chrome, and component.
    ============================================================ */
@@ -1243,7 +1243,7 @@ input,textarea,select{font-family:var(--fn);}
 @media(max-width:540px){.tpl-grid,.crew-do .cw-quick{grid-template-columns:1fr!important}}
 
 /* ============================================================
-   DESIGN DNA — full design-system configurator
+   DESIGN DNA - full design-system configurator
    ============================================================ */
 .dna-btn{display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border-radius:11px;border:1px solid var(--bd);background:var(--s1);color:var(--tx);font-family:var(--fn);font-size:13px;font-weight:550;cursor:pointer;transition:all .18s}
 .dna-btn:hover{border-color:var(--accent);background:var(--s2)}
@@ -1314,7 +1314,7 @@ input,textarea,select{font-family:var(--fn);}
 .dna-preview-strip span{flex:1}
 
 /* ════════════════════════════════════════════════════════════════
-   LAYER 27 — EDITORIAL ART DIRECTION (authoritative, loads last)
+   LAYER 27 - EDITORIAL ART DIRECTION (authoritative, loads last)
    Goal: calm, premium, human-designed. Less boxing, fewer borders,
    restrained radius, stronger type hierarchy, more whitespace,
    no glass/glow. Structure & content untouched.
@@ -1353,7 +1353,7 @@ body.light{--hair:rgba(0,0,0,.09);--hair-strong:rgba(0,0,0,.14);--surface:#fffff
   border-color:var(--hair)!important;
   transform:none!important;                        /* drop the bouncy lift */
 }
-/* list rows: no boxes at all — just hover wash + hairline rhythm */
+/* list rows: no boxes at all - just hover wash + hairline rhythm */
 .int-row,.tk-row{background:none!important;border:none!important;border-radius:var(--rad-sm)!important;box-shadow:none}
 .int-row:hover,.tk-row:hover{background:var(--surface)!important;transform:none!important}
 
@@ -1517,7 +1517,7 @@ hr,.mb hr,.plndiv{border-color:var(--hair)!important;background:none!important}
 .sched-cad-b.on,.sched-day.on{background:var(--accent)!important}
 
 /* ════════════════════════════════════════════════════════════════
-   LAYER 28 — SIDEBAR: scroll-anywhere + premium nav system
+   LAYER 28 - SIDEBAR: scroll-anywhere + premium nav system
    The ENTIRE sidebar scrolls regardless of cursor position.
    Nav reads like a designed product, not a list of buttons.
    ════════════════════════════════════════════════════════════════ */
@@ -1533,7 +1533,7 @@ hr,.mb hr,.plndiv{border-color:var(--hair)!important;background:none!important}
 #sb::-webkit-scrollbar-track{background:transparent}
 #sb::-webkit-scrollbar-thumb{background:transparent;border-radius:99px;border:2px solid transparent;background-clip:padding-box}
 #sb:hover::-webkit-scrollbar-thumb{background:var(--hair-strong);background-clip:padding-box}
-/* inner list no longer owns the scroll — it flows with the page */
+/* inner list no longer owns the scroll - it flows with the page */
 #sb #hist{overflow:visible!important;flex:0 0 auto!important;min-height:0!important;max-height:none!important;margin-bottom:8px!important}
 /* footer flows at the natural bottom but stays reachable (sticky so it's always grabbable) */
 #sb .sbfoot{flex:0 0 auto!important;margin-top:auto!important;position:relative!important;background:var(--bg);padding-top:10px!important;margin-top:14px!important;border-top:1px solid var(--hair)!important}
@@ -1927,7 +1927,7 @@ hr,.mb hr,.plndiv{border-color:var(--hair)!important;background:none!important}
 @media(max-width:820px){.lab-term-grid{grid-template-columns:1fr}.lab-term-grid .lab-editor{border-right:none;border-bottom:1px solid var(--hair);min-height:42vh}.lab-term-wrap{height:auto}}
 
 /* ════════════════════════════════════════════════════════════════
-   LAYER 28b — TOP TOOLBAR: premium, deliberate, expensive
+   LAYER 28b - TOP TOOLBAR: premium, deliberate, expensive
    ════════════════════════════════════════════════════════════════ */
 #anav{
   height:58px!important;padding:0 18px!important;gap:14px!important;
@@ -1998,7 +1998,7 @@ hr,.mb hr,.plndiv{border-color:var(--hair)!important;background:none!important}
 @media(max-width:720px){#anav #nav-title{display:none!important}#anav .nav-r{border-left:none!important;padding-left:0!important}}
 
 /* ============================================================
-   MASTER REFINEMENT — applied last, hits every in-app view.
+   MASTER REFINEMENT - applied last, hits every in-app view.
    Goal: kill glass/blur, unify borders into one quiet hairline,
    flatten radius, add air. Editorial restraint.
    ============================================================ */
@@ -2042,7 +2042,7 @@ input,textarea,select,.dev-code,.lab-term-wrap,.dna-paste-box,.dsn-input-wrap{
 /* kill harsh pure-white hairlines where they remain */
 hr,.divider,.hairline{border-color:var(--hair)!important;background:var(--hair)!important}
 /* ============================================================
-   PLANS SECTION — clean, formal, even spacing (Task #4)
+   PLANS SECTION - clean, formal, even spacing (Task #4)
    Authoritative override (loads last). Fixes: cramped 5-up grid,
    oversized uneven feature rows, misaligned prices/buttons.
    ============================================================ */
@@ -2051,7 +2051,7 @@ hr,.divider,.hairline{border-color:var(--hair)!important;background:var(--hair)!
 .vi-plans h2{margin-bottom:2px}
 .vi-plans .vsub{margin-bottom:20px}
 
-/* Responsive, even grid (matches landing) — never cram 5 into a tiny width */
+/* Responsive, even grid (matches landing) - never cram 5 into a tiny width */
 .pg.pg-app{display:grid!important;grid-template-columns:repeat(5,1fr)!important;gap:14px!important;max-width:1140px!important;margin:0 auto!important;align-items:stretch}
 @media(max-width:1080px){.pg.pg-app{grid-template-columns:repeat(3,1fr)!important;max-width:760px!important}}
 @media(max-width:680px){.pg.pg-app{grid-template-columns:1fr!important;max-width:400px!important}}
@@ -2065,7 +2065,7 @@ hr,.divider,.hairline{border-color:var(--hair)!important;background:var(--hair)!
 .pg-app .plnc .plnanchor{margin-top:0!important;margin-bottom:10px!important;min-height:32px;display:flex;align-items:flex-start;line-height:1.35}
 .pg-app .plnc .plndiv{margin:0 0 14px!important}
 
-/* Even, compact, formal feature rows — no oversized padding/min-height */
+/* Even, compact, formal feature rows - no oversized padding/min-height */
 .pg-app .plnc .plnfl{gap:9px!important;margin:0 0 18px!important;flex:1 1 auto}
 .pg-app .plnc .plnfl li{padding:0!important;min-height:0!important;font-size:12px!important;line-height:1.4;gap:9px!important;align-items:flex-start;color:var(--mu)}
 .pg-app .plnc .plnfl li .fck,.pg-app .plnc .plnfl li .fxx{flex:none;margin-top:1px}
@@ -2087,7 +2087,7 @@ hr,.divider,.hairline{border-color:var(--hair)!important;background:var(--hair)!
    #vc starts after the 250px sidebar, so to truly centre the chat
    on screen we shift it left by ~half the sidebar width. We use a
    responsive shift (clamp) so on narrower screens it eases off and
-   always keeps a comfortable gap from the sidebar — never crowding.
+   always keeps a comfortable gap from the sidebar - never crowding.
    ============================================================ */
 /* Chat sits centered in the content area to the right of the sidebar.
    Previous versions shifted it left (translateX -70px) which read as
@@ -2099,7 +2099,7 @@ hr,.divider,.hairline{border-color:var(--hair)!important;background:var(--hair)!
 #abody:has(#sb.cl) #cv, #abody.sb-collapsed #cv{ transform:none!important; }
 
 
-/* Plans refinement (Task #4/7) — custom price size + tighter even rows */
+/* Plans refinement (Task #4/7) - custom price size + tighter even rows */
 .pg-app .plnc .plnprice-sm{font-size:30px!important;line-height:1.05}
 .pg-app .plnc .plnanchor{min-height:30px!important;font-size:12px!important;color:var(--ac,var(--accent))!important;font-weight:600!important;margin-bottom:12px!important}
 .pg-app .plnc .plnfl li{align-items:flex-start;line-height:1.45}
@@ -2118,7 +2118,7 @@ hr,.divider,.hairline{border-color:var(--hair)!important;background:var(--hair)!
 
 
 /* ============================================================
-   USAGE PANEL — rolling window (Task #7)
+   USAGE PANEL - rolling window (Task #7)
    ============================================================ */
 .usage-panel{background:rgba(63, 118, 245,.05);border-color:rgba(63, 118, 245,.18)}
 .usage-head{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;margin-bottom:14px;flex-wrap:wrap}
@@ -2192,11 +2192,11 @@ hr,.divider,.hairline{border-color:var(--hair)!important;background:var(--hair)!
 /* Plans compare link (auditor #14) */
 .plans-compare-row{text-align:center;margin:8px 0 4px}
 
-/* Empty-state CTA button — match AMV's secondary button, not a raw <button> */
+/* Empty-state CTA button - match AMV's secondary button, not a raw <button> */
 .es-btn{display:inline-flex;align-items:center;justify-content:center;margin-top:14px;padding:8px 18px;border-radius:9px;border:1px solid var(--accent-d,#d4d4d4);background:var(--accent,var(--accent));color:#fff;font-family:var(--fn);font-size:12.5px;font-weight:600;cursor:pointer;transition:all .14s var(--ease,ease);line-height:1.4}
 .es-btn:hover{background:var(--accent-d,#d4d4d4);transform:translateY(-1px);box-shadow:0 6px 18px -6px var(--accent-soft,rgba(63, 118, 245,.4))}
 
-/* Font-size selector — clean selectable chips, not raw buttons */
+/* Font-size selector - clean selectable chips, not raw buttons */
 .fs-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
 .fs-opt{display:flex;flex-direction:column;align-items:center;gap:3px;min-width:62px;padding:10px 12px;border-radius:10px;border:1px solid var(--hair,#2a2620);background:var(--surface,#1a1f26);color:var(--tx,#ece8e1);font-family:var(--fn);cursor:pointer;transition:all .14s var(--ease,ease)}
 .fs-opt:hover{border-color:var(--accent,var(--accent));background:rgba(63, 118, 245,.06)}
@@ -2207,7 +2207,7 @@ hr,.divider,.hairline{border-color:var(--hair)!important;background:var(--hair)!
 
 /* ============================================================
    IMPACT / USAGE CARDS, EMPTY STATES, INFO ROWS
-   (these classes were referenced in markup but had no styling —
+   (these classes were referenced in markup but had no styling -
     that's why they rendered as raw stacked text)
    ============================================================ */
 .vhero{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin:8px 0 20px}
@@ -2217,7 +2217,7 @@ hr,.divider,.hairline{border-color:var(--hair)!important;background:var(--hair)!
 .vcard-u{font-size:14px;font-weight:500;color:var(--mu,#9a9085)}
 .vcard-l{font-size:12.5px;color:var(--mu,#9a9085);line-height:1.4}
 
-/* Empty states — a proper centered card, not floating text */
+/* Empty states - a proper centered card, not floating text */
 .empty-state{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;padding:40px 28px;margin:8px 0;background:var(--surface,#1a1f26);border:1px solid var(--hair,#2a2620);border-radius:16px}
 .es-icon{font-size:34px;line-height:1;margin-bottom:6px;opacity:.9}
 .es-title{font-size:17px;font-weight:650;color:var(--tx,#ece8e1)}
@@ -2250,7 +2250,7 @@ hr,.divider,.hairline{border-color:var(--hair)!important;background:var(--hair)!
 .tt-empty{color:var(--dim,#5f574d);font-size:18px;text-align:center;padding:6px 0}
 @media(max-width:720px){.tt-cols{grid-template-columns:1fr}}
 
-/* Marketplace — tabs + price tags */
+/* Marketplace - tabs + price tags */
 .mkt-tabs{display:flex;gap:4px;margin:6px 0 18px;border-bottom:1px solid var(--hair,#2a2620);flex-wrap:wrap}
 .mkt-tab{font-size:13px;font-weight:500;color:var(--mu,#9a9085);background:none;border:none;padding:9px 14px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:color .13s,border-color .13s}
 .mkt-tab:hover{color:var(--tx,#ece8e1)}
@@ -2258,7 +2258,7 @@ hr,.divider,.hairline{border-color:var(--hair)!important;background:var(--hair)!
 .mkt-price{font-size:12px;font-weight:700;color:#3fb950;background:rgba(63,185,80,.12);padding:2px 8px;border-radius:999px}
 .mkt-free{font-size:11px;font-weight:600;color:var(--mu,#9a9085);background:var(--glass-soft,rgba(255,255,255,.05));padding:2px 8px;border-radius:999px}
 
-/* Marketplace — controls, ratings, top sellers, preview, card actions */
+/* Marketplace - controls, ratings, top sellers, preview, card actions */
 .mkt-controls{display:flex;gap:10px;margin:4px 0 14px;flex-wrap:wrap}
 .mkt-search{flex:1;min-width:200px;padding:9px 13px;border-radius:10px;border:1px solid var(--hair,#2a2620);background:var(--glass,#1a1f26);color:var(--tx,#ece8e1);font-size:13px}
 .mkt-sortsel{width:auto;min-width:160px}
@@ -2288,7 +2288,7 @@ hr,.divider,.hairline{border-color:var(--hair)!important;background:var(--hair)!
 .mkt-rate-star.on,.mkt-rate-star:hover{color:var(--accent)}
 
 /* ============================================================
-   INTEGRATIONS — card grid, autonomous/manual badges, legend
+   INTEGRATIONS - card grid, autonomous/manual badges, legend
    (these classes had no CSS, so the page rendered as raw text)
    ============================================================ */
 .ax-legend{display:flex;gap:20px;flex-wrap:wrap;background:var(--glass-soft,rgba(255,255,255,.03));border:1px solid var(--hair,#2a2620);border-radius:12px;padding:14px 16px;margin:6px 0 22px}
@@ -2313,7 +2313,7 @@ hr,.divider,.hairline{border-color:var(--hair)!important;background:var(--hair)!
 .int-disc:hover{border-color:var(--red,#f85149);color:var(--red,#f85149)}
 @media(max-width:560px){.int-list{grid-template-columns:1fr}.int-card{flex-wrap:wrap}.int-act{width:100%}.int-act .btn{width:100%}}
 
-/* Marketplace — seller profiles + reviews */
+/* Marketplace - seller profiles + reviews */
 .mkt-by{cursor:pointer;color:var(--accent,var(--accent));transition:opacity .12s}
 .mkt-by:hover{opacity:.75;text-decoration:underline}
 .mkt-sp-head{display:flex;gap:16px;align-items:center}
@@ -2325,7 +2325,7 @@ hr,.divider,.hairline{border-color:var(--hair)!important;background:var(--hair)!
 .mkt-review-when{margin-left:auto;font-size:11px;color:var(--mu,#9a9085)}
 .mkt-review-text{font-size:12.5px;color:var(--tx,#ece8e1);line-height:1.55;margin-top:8px;padding-left:38px}
 
-/* Marketplace — file uploads, seller dashboard, statuses, downloads */
+/* Marketplace - file uploads, seller dashboard, statuses, downloads */
 .sl-drop{border:1.5px dashed var(--hair,#3a342c);border-radius:11px;padding:20px;text-align:center;font-size:12.5px;color:var(--mu,#9a9085);cursor:pointer;transition:border-color .15s,background .15s}
 .sl-drop:hover,.sl-drop.on{border-color:var(--accent,var(--accent));background:var(--glass-soft,rgba(63, 118, 245,.05))}
 .sl-filelist{display:flex;flex-direction:column;gap:6px;margin-top:8px}
@@ -2359,7 +2359,7 @@ hr,.divider,.hairline{border-color:var(--hair)!important;background:var(--hair)!
 .sl-status-deactivated{background:rgba(154,144,133,.15);color:#9a9085}
 .mkt-priv{font-size:12px;color:var(--mu,#9a9085);margin:0 0 14px}
 
-/* Marketplace — messages, similar items, sold state */
+/* Marketplace - messages, similar items, sold state */
 .mkt-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
 .mkt-msg-btn{position:relative;background:var(--surface,#1a1f26);border:1px solid var(--hair,#2a2620);border-radius:10px;padding:9px 14px;font-size:13px;font-weight:500;color:var(--tx,#ece8e1);cursor:pointer;white-space:nowrap;transition:border-color .15s}
 .mkt-msg-btn:hover{border-color:var(--accent,var(--accent))}
@@ -2403,7 +2403,7 @@ hr,.divider,.hairline{border-color:var(--hair)!important;background:var(--hair)!
 .cw-ws-more{font-size:11px;color:var(--mu,#9a9085);padding:4px 8px}
 .auto-ws-summary{margin:10px 0;font-size:12.5px;color:#3fb950;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 
-/* Dev — multi-file project: file tree + code layout */
+/* Dev - multi-file project: file tree + code layout */
 .dev-code-layout{display:flex;height:100%;min-height:0}
 .dev-tree{width:160px;flex-shrink:0;border-right:1px solid var(--hair,#2a2620);overflow-y:auto;background:var(--glass-soft,rgba(255,255,255,.02))}
 .dev-tree-h{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mu,#9a9085);padding:10px 12px 6px}
@@ -2414,7 +2414,7 @@ hr,.divider,.hairline{border-color:var(--hair)!important;background:var(--hair)!
 .dev-tree-ic{flex-shrink:0}
 .dev-code-main{flex:1;min-width:0;overflow:auto}
 
-/* Studio — multi-artifact project canvas */
+/* Studio - multi-artifact project canvas */
 .studio-arts-h{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mu,#9a9085);margin:14px 0 8px}
 .studio-arts{display:flex;flex-direction:column;gap:5px;max-height:200px;overflow-y:auto;margin-bottom:8px}
 .studio-art{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:9px;cursor:pointer;font-size:12.5px;color:var(--tx,#ece8e1);border:1px solid transparent;transition:background .12s,border-color .12s}
@@ -2434,7 +2434,7 @@ hr,.divider,.hairline{border-color:var(--hair)!important;background:var(--hair)!
 .studio-hrow-t{font-size:13px;font-weight:600;color:var(--tx,#ece8e1)}
 .studio-hrow-d{font-size:11.5px;color:var(--mu,#9a9085);margin-top:2px}
 
-/* Cowork — optional files, beginner-friendly */
+/* Cowork - optional files, beginner-friendly */
 .cw-opt-tag{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;color:var(--mu,#9a9085);background:var(--glass-soft,rgba(255,255,255,.06));padding:2px 7px;border-radius:999px;margin-left:6px;vertical-align:middle}
 .cw-ws-lead{font-size:12.5px;color:var(--mu,#9a9085);line-height:1.6;margin-bottom:10px}
 .cw-ws-lead b{color:var(--tx,#ece8e1)}
@@ -2442,7 +2442,7 @@ hr,.divider,.hairline{border-color:var(--hair)!important;background:var(--hair)!
 .cw-ws-clear{background:none;border:none;color:var(--mu,#9a9085);font-size:11.5px;cursor:pointer;text-decoration:underline;margin-left:8px}
 .cw-ws-clear:hover{color:var(--red,#f85149)}
 
-/* Dev — clear "optional files" explainer */
+/* Dev - clear "optional files" explainer */
 .dev-work-intro{margin:14px 0 8px}
 .dev-work-tag{font-size:12.5px;font-weight:600;color:var(--tx,#ece8e1);display:inline-flex;align-items:center;gap:4px}
 .dev-work-lead{font-size:12px;color:var(--mu,#9a9085);line-height:1.6;margin:6px 0 0}
@@ -2451,12 +2451,12 @@ hr,.divider,.hairline{border-color:var(--hair)!important;background:var(--hair)!
 .dev-conn-help b{color:var(--tx,#ece8e1);font-weight:600}
 
 /* ================================================================
-   AMV DESIGN SYSTEM 2.0 — "WARM NOIR"
+   AMV DESIGN SYSTEM 2.0 - "WARM NOIR"
    One signature, applied with conviction: warm charcoal canvas,
    a single violet accent, editorial serif display type, hairline
    borders, soft ambient depth, spring micro-interactions.
-   This layer NORMALIZES every surface — radii, borders, shadows,
-   type rhythm — so nothing reads as patchwork.
+   This layer NORMALIZES every surface - radii, borders, shadows,
+   type rhythm - so nothing reads as patchwork.
    ================================================================ */
 :root{
   --ds-ease:cubic-bezier(.22,1,.36,1);
@@ -2558,7 +2558,7 @@ input,textarea,select{border-radius:11px!important;border-color:var(--ds-hair2)!
 .dev-conn-btn,.mkt-msg-btn,.lab-chip{border-radius:9px!important;transition:transform .16s var(--ds-spring),border-color .16s,background .16s!important}
 .dev-conn-btn:hover,.mkt-msg-btn:hover,.lab-chip:hover{transform:translateY(-1px);border-color:var(--ds-hair2)!important}
 
-/* Dev — streamlined single toolrow + Add-code dropdown */
+/* Dev - streamlined single toolrow + Add-code dropdown */
 .dev-toolrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px}
 .dev-addwrap{position:relative}
 .dev-add-btn{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:9px;border:1px solid var(--ds-hair2);background:var(--glass-soft);color:var(--tx);font-size:12.5px;font-weight:500;cursor:pointer;transition:transform .16s var(--ds-spring),border-color .16s,background .16s}
@@ -2573,10 +2573,10 @@ body.light .dev-add-menu{background:#fff}
 .dev-sub{font-size:13px!important;color:var(--mu)!important;line-height:1.55;margin-top:2px}
 
 /* ================================================================
-   DS 2.0 — CONTENT LAYOUT (authoritative)
+   DS 2.0 - CONTENT LAYOUT (authoritative)
    Center the content column so no view looks lopsided. A comfortably
    wide column (860px) centered in the content area reads balanced and
-   intentional — never pinned to one side.
+   intentional - never pinned to one side.
    ================================================================ */
 #vc .sv{padding:48px 40px 76px!important;align-items:center!important}
 #vc .vi{max-width:860px!important;margin:0 auto!important;width:100%!important;gap:18px!important}
@@ -2590,12 +2590,12 @@ body.light .dev-add-menu{background:#fff}
 .mkt-head h2{margin-bottom:0!important;margin-top:12px!important}
 .mkt-head .eyebrow{margin-bottom:0!important}
 
-/* Handoff — subtle baton-flow cue */
+/* Handoff - subtle baton-flow cue */
 .ho-flow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 18px;border:1px solid var(--ds-hair);border-radius:14px;background:linear-gradient(180deg,rgba(255,255,255,.028),rgba(255,255,255,.008));margin-bottom:4px}
 .ho-flow-step{font-size:12.5px;color:var(--tx);font-weight:500;padding:5px 12px;border-radius:999px;background:var(--glass-soft);border:1px solid var(--ds-hair)}
 .ho-flow-arrow{color:var(--accent);font-size:15px;opacity:.75}
 
-/* Team — clean feature rows */
+/* Team - clean feature rows */
 .team-feats{display:flex;flex-direction:column;gap:2px}
 .team-feat{display:flex;align-items:flex-start;gap:13px;padding:12px 6px;border-bottom:1px solid var(--ds-hair)}
 .team-feat:last-child{border-bottom:none}
@@ -2603,13 +2603,13 @@ body.light .dev-add-menu{background:#fff}
 .team-feat b{display:block;font-size:13.5px;color:var(--tx);font-weight:600;margin-bottom:1px}
 .team-feat span{font-size:12px;color:var(--mu);line-height:1.5}
 
-/* Line icons replace emoji — muted, refined */
+/* Line icons replace emoji - muted, refined */
 .ce-pill-icon{display:inline-flex;align-items:center;justify-content:center;color:var(--mu)}
 .ce-pill:hover .ce-pill-icon{color:var(--accent)}
 .team-feat-ic{color:var(--accent);opacity:.9;display:inline-flex;align-items:center;margin-top:2px}
 .es-icon svg{color:var(--mu)}
 
-/* AI failure — clean inline card */
+/* AI failure - clean inline card */
 .ai-snag{display:flex;flex-direction:column;gap:10px;padding:14px 16px;border:1px solid var(--ds-hair2);border-radius:14px;background:var(--glass-soft);max-width:520px}
 .ai-snag-row{display:flex;align-items:flex-start;gap:10px}
 .ai-snag-ic{color:var(--mu);flex-shrink:0;margin-top:1px}
@@ -2618,7 +2618,7 @@ body.light .dev-add-menu{background:#fff}
 .ai-snag-retry:hover{transform:translateY(-1px);border-color:var(--accent);background:var(--accent-soft)}
 .ai-snag-retry:active{transform:scale(.97)}
 
-/* Chat "working" presence pill — bottom-right, calm */
+/* Chat "working" presence pill - bottom-right, calm */
 #amv-working{position:fixed;right:22px;bottom:22px;z-index:1400;display:flex;align-items:center;gap:9px;padding:9px 15px 9px 13px;border-radius:999px;background:#151515;border:1px solid var(--ds-hair2);box-shadow:var(--ds-e3);color:var(--tx);font-size:12.5px;font-weight:500;opacity:0;transform:translateY(8px) scale(.97);transition:opacity .22s var(--ds-ease),transform .28s var(--ds-spring);pointer-events:none}
 body.light #amv-working{background:#fff}
 #amv-working.show{opacity:1;transform:none}
@@ -2667,7 +2667,7 @@ body.light #amv-working{background:#fff}
 .adm-badge.off{background:rgba(210,153,34,.14);color:#d29922}
 .adm-actions{display:flex;gap:8px}
 
-/* Onboarding — first-run activation */
+/* Onboarding - first-run activation */
 .ob.onb{max-width:540px;padding:34px 34px 26px;text-align:center}
 .onb-head{margin-bottom:22px}
 .onb-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--accent)}
@@ -2701,7 +2701,7 @@ body.light #amv-working{background:#fff}
 .shp-item{text-align:left;padding:11px 14px;border:1px solid var(--ds-hair2);border-radius:11px;background:var(--glass-soft);color:var(--tx);font-size:13px;cursor:pointer;transition:border-color .15s,background .15s}
 .shp-item:hover{border-color:var(--accent);background:var(--accent-soft)}
 
-/* Admin Command Center — tabs + panels */
+/* Admin Command Center - tabs + panels */
 .adm-tabs{display:flex;gap:4px;flex-wrap:wrap;margin:4px 0 18px;border-bottom:1px solid var(--ds-hair);padding-bottom:0}
 .adm-tab{background:none;border:none;border-bottom:2px solid transparent;color:var(--mu);font-size:13px;font-weight:500;padding:8px 12px;cursor:pointer;transition:color .15s,border-color .15s;margin-bottom:-1px}
 .adm-tab:hover{color:var(--tx)}
@@ -2728,7 +2728,7 @@ body.light #amv-working{background:#fff}
 .adm-logrow span:nth-child(2){flex:1;color:var(--tx)}
 .adm-logtime{color:var(--mu);font-size:11.5px}
 
-/* Voice output — speak button + voice mode */
+/* Voice output - speak button + voice mode */
 .mact[data-action="speak"]{display:inline-flex;align-items:center;justify-content:center;padding:4px 7px}
 .mact[data-action="speak"].speaking{color:var(--accent);background:var(--accent-soft)}
 .mact[data-action="speak"].speaking svg{animation:speakPulse 1s ease-in-out infinite}
@@ -2736,25 +2736,25 @@ body.light #amv-working{background:#fff}
 #voicemode-btn.on{color:var(--accent);background:var(--accent-soft)}
 #voicemode-btn.on svg{animation:speakPulse 1.1s ease-in-out infinite}
 
-/* Pagination — "Show more" button (matches existing button language) */
+/* Pagination - "Show more" button (matches existing button language) */
 .show-more-btn{display:inline-flex;align-items:center;gap:8px;margin:14px auto 4px;padding:9px 18px;border-radius:11px;border:1px solid var(--ds-hair2);background:var(--glass-soft);color:var(--tx);font-size:13px;font-weight:500;cursor:pointer;transition:transform .16s var(--ds-spring),border-color .16s,background .16s}
 .show-more-btn:hover{transform:translateY(-1px);border-color:var(--accent);background:var(--accent-soft)}
 .show-more-count{font-size:11px;color:var(--mu)}
 #mem-list .show-more-btn{align-self:center}
 
-/* Working status — shimmering label before first token */
+/* Working status - shimmering label before first token */
 .ai-working{display:flex;align-items:center;min-height:22px}
 .ai-working-shimmer{font-size:14px;color:var(--mu);background:linear-gradient(90deg,var(--mu) 0%,var(--mu) 35%,var(--tx) 50%,var(--mu) 65%,var(--mu) 100%);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:aiShimmer 1.6s linear infinite}
 @keyframes aiShimmer{0%{background-position:150% 0}100%{background-position:-50% 0}}
 
-/* Smooth streaming — new text fades in as it arrives */
+/* Smooth streaming - new text fades in as it arrives */
 .mb.ai{animation:none}
 .mb.ai.streaming-in > *{animation:tokenFade .28s ease-out}
 @keyframes tokenFade{from{opacity:.35}to{opacity:1}}
 .mb.ai .stream-cursor{display:inline-block;width:7px;height:1.05em;background:var(--accent);border-radius:1px;margin-left:2px;vertical-align:text-bottom;animation:cursorBlink 1s steps(2) infinite;opacity:.8}
 @keyframes cursorBlink{0%,50%{opacity:.8}51%,100%{opacity:0}}
 
-/* Skeleton loaders — shown while offline / waiting on network */
+/* Skeleton loaders - shown while offline / waiting on network */
 .skl{background:linear-gradient(90deg,var(--glass-soft) 25%,rgba(255,255,255,.06) 50%,var(--glass-soft) 75%);background-size:200% 100%;border-radius:8px;animation:sklShimmer 1.4s ease-in-out infinite}
 @keyframes sklShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
 .skl-line{height:13px;margin:8px 0}
@@ -2793,9 +2793,9 @@ body.light #amv-working{background:#fff}
 #sb .sb-usage{display:none!important}  /* hide in collapsed rail */
 
 /* ============================================================
-   AMV IDENTITY — refined, premium, appealing at scale. A warm
+   AMV IDENTITY - refined, premium, appealing at scale. A warm
    neutral system: deep ink backdrop, soft pearl surfaces, calm
-   contrast. No single loud accent — appeal comes from restraint,
+   contrast. No single loud accent - appeal comes from restraint,
    depth, and polish.
    ============================================================ */
 :root{
@@ -2807,11 +2807,11 @@ body.light #amv-working{background:#fff}
 }
 body.light{--bg:#fdfdfc;--s1:#ffffff;--s2:#f1efeb;--s3:#e8e5df;--s4:#dcd8d0;--tx:#22212a;--mu:#6e6c74;--dim:#a5a2aa;--bd:rgba(30,28,35,.09);--hair:rgba(30,28,35,.08);--accent:#3366d4;--accent-d:#2f5bc0;--accent-soft:rgba(51,102,212,.12);--accent-grad:linear-gradient(135deg,#3366d4 0%,#3f74e0 100%);--accent-grad-soft:linear-gradient(135deg,rgba(51,102,212,.14) 0%,rgba(63,116,224,.14) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(51,102,212,.12) 0%,rgba(63,116,224,.07) 40%,transparent 72%);--ink:#22212a;--on-accent:#ffffff}
 
-/* refined depth — soft layered shadows, never harsh */
+/* refined depth - soft layered shadows, never harsh */
 .card,.ss2,.wsc,.dc,.memc,.plnc,.mp-wrap,.onb-card{box-shadow:0 1px 2px rgba(0,0,0,.04),0 8px 24px -12px rgba(0,0,0,.22)!important}
 body.light .card,body.light .ss2,body.light .wsc,body.light .dc,body.light .memc,body.light .plnc,body.light .mp-wrap,body.light .onb-card{box-shadow:0 1px 2px rgba(30,28,35,.04),0 8px 24px -14px rgba(30,28,35,.1)!important}
 
-/* generous, consistent rounding — soft and modern */
+/* generous, consistent rounding - soft and modern */
 .btn,.plnbtn,.gbtn,.ncb,#ncb,input,textarea,select{border-radius:11px!important}
 .card,.ss2,.wsc,.dc,.memc,.adm-stat,.adm-kpi,.mp-wrap,.onb-card,.pane{border-radius:16px!important}
 .pill,.htag,.ce-pill,.int-pill,.hero-pill,.vtk,.cw-badge,.plcat{border-radius:999px!important}
@@ -2821,7 +2821,7 @@ body.light .card,body.light .ss2,body.light .wsc,body.light .dc,body.light .memc
 .amv-av,.sb-av,#sb-av,.mav,.adm-user-av,#pfp-c{border-radius:50%!important;overflow:hidden}
 .mav.ai,.amv-av{background:var(--accent)!important;color:#fff!important}
 
-/* neutral accent surfaces — calm, tasteful, tinted not loud */
+/* neutral accent surfaces - calm, tasteful, tinted not loud */
 .htag,.int-pill,.ce-pill,.hero-pill,.vtk,.cw-badge,.plcat{background:var(--accent-soft)!important;border:1px solid var(--hair)!important;color:var(--mu)!important}
 .snb.on{background:var(--accent-soft)!important;color:var(--tx)!important;border-radius:10px!important;font-weight:600}
 .snb.on svg{color:var(--tx)!important}
@@ -2869,7 +2869,7 @@ input:focus,textarea:focus,select:focus{border-color:var(--accent)!important;out
 .cw-toggle.on .cw-knob{transform:translateX(18px)}
 
 /* ============================================================
-   RTL SUPPORT — flip layout for Arabic & Urdu (dir="rtl")
+   RTL SUPPORT - flip layout for Arabic & Urdu (dir="rtl")
    ============================================================ */
 html[dir="rtl"] body{direction:rtl;text-align:right}
 html[dir="rtl"] #sb{right:0;left:auto;border-right:none;border-left:1px solid var(--hair)}
@@ -2887,7 +2887,7 @@ html[dir="rtl"] .adm-tabs,html[dir="rtl"] .crew-try{flex-direction:row-reverse}
 html[dir="rtl"] .sb-usage-top{flex-direction:row-reverse}
 html[dir="rtl"] .qab,html[dir="rtl"] .dc,html[dir="rtl"] .ss2{text-align:right}
 
-/* Billing — invoice / payment history */
+/* Billing - invoice / payment history */
 .bill-inv-loading,.bill-inv-empty{font-size:12.5px;color:var(--mu);padding:6px 0}
 .bill-inv-list{display:flex;flex-direction:column;gap:2px}
 .bill-inv-row{display:flex;align-items:center;justify-content:space-between;padding:11px 0;border-bottom:1px solid var(--hair)}
@@ -2902,7 +2902,7 @@ html[dir="rtl"] .qab,html[dir="rtl"] .dc,html[dir="rtl"] .ss2{text-align:right}
 .bill-inv-dl{font-size:12px;color:var(--accent);text-decoration:none;font-weight:500}
 .bill-inv-dl:hover{text-decoration:underline}
 
-/* Usage — 14-day activity trend chart */
+/* Usage - 14-day activity trend chart */
 .trend-chart{display:flex;align-items:flex-end;gap:5px;height:110px;padding-top:8px}
 .trend-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;justify-content:flex-end;cursor:default}
 .trend-bar-wrap{width:100%;height:100%;display:flex;align-items:flex-end;justify-content:center}
@@ -3026,7 +3026,7 @@ html[dir="rtl"] .qab,html[dir="rtl"] .dc,html[dir="rtl"] .ss2{text-align:right}
 @media(max-width:920px){.trust-grid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:560px){.trust-grid{grid-template-columns:1fr}}
 
-/* Embeddable widget — the compact chat panel rendered inside the iframe */
+/* Embeddable widget - the compact chat panel rendered inside the iframe */
 :root{--emb-accent:#4f7cff}
 .emb-root{display:flex;flex-direction:column;height:100vh;height:100dvh;width:100%;background:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Roboto,sans-serif;color:#1a1a2e}
 .emb-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;background:var(--emb-accent);color:#fff;flex-shrink:0}
@@ -3082,34 +3082,34 @@ html[dir="rtl"] .qab,html[dir="rtl"] .dc,html[dir="rtl"] .ss2{text-align:right}
 /* Guarantee the large hero mark keeps its intrinsic size even inside a flex
    slideshow slide (where width:auto could otherwise collapse it). */
 .logo-mark-lg.sig-mark-wrap{width:auto!important;height:auto!important;min-width:52px;min-height:52px}
-/* subtle idle breathing on the brand mark — alive, not distracting */
+/* subtle idle breathing on the brand mark - alive, not distracting */
 @media (prefers-reduced-motion:no-preference){
   .logo-g .amv-mark{animation:sigBreathe 6s ease-in-out infinite}
 }
 @keyframes sigBreathe{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-.5px) scale(1.015)}}
 
-/* Signature AURA — a soft radial glow placed behind hero/brand moments.
+/* Signature AURA - a soft radial glow placed behind hero/brand moments.
    Add class "sig-aura" to a positioned container; it paints below content. */
 .sig-aura{position:relative}
 .sig-aura::before{content:'';position:absolute;inset:-30% -10% auto -10%;height:min(520px,60vh);background:var(--aura);pointer-events:none;z-index:0;filter:blur(6px)}
 .sig-aura>*{position:relative;z-index:1}
 
-/* Signature GRAIN — a barely-there texture that reads as "premium print".
+/* Signature GRAIN - a barely-there texture that reads as "premium print".
    Applied to the app + landing body via .sig-grain::after overlay. */
 .sig-grain::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:1;opacity:.025;mix-blend-mode:overlay;
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   background-size:120px 120px}
 
-/* Signature gradient text — for hero headlines & key numbers */
+/* Signature gradient text - for hero headlines & key numbers */
 .sig-grad-text{background:var(--accent-grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent}
-/* Signature gradient hairline — a thin accent rule under section labels */
+/* Signature gradient hairline - a thin accent rule under section labels */
 .sig-rule{height:2px;width:34px;border-radius:2px;background:var(--accent-grad)}
 
 /* Hero headline emphasis wears the signature gradient */
 .hero-rd-em{background:var(--accent-grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent}
 
 /* ============================================================
-   CHAT HOME — redesigned empty state (#chat home)
+   CHAT HOME - redesigned empty state (#chat home)
    Spacious, editorial, capability-card layout. Replaces the flat
    pill row with richer, clearer "what AMV can do" cards.
    ============================================================ */
@@ -3136,7 +3136,7 @@ html[dir="rtl"] .qab,html[dir="rtl"] .dc,html[dir="rtl"] .ss2{text-align:right}
 @media(max-width:560px){.ceh-grid{grid-template-columns:1fr}.ceh{padding-top:28px}}
 
 /* ============================================================
-   CHAT HOME (empty state) — clean & focused
+   CHAT HOME (empty state) - clean & focused
    Centered greeting + input emphasis, subtle text starters.
    ============================================================ */
 #cm.cm-empty{justify-content:center;align-items:center}
@@ -3167,7 +3167,7 @@ html[dir="rtl"] .qab,html[dir="rtl"] .dc,html[dir="rtl"] .ss2{text-align:right}
    A thinking orb before the first token, a soft "materializing"
    fade on streaming text, and a refined typing cursor.
    ============================================================ */
-/* Thinking orb — a small pulsing dot that reads as active thought */
+/* Thinking orb - a small pulsing dot that reads as active thought */
 .ai-think-orb{width:9px;height:9px;border-radius:50%;flex-shrink:0;margin-right:9px;
   background:radial-gradient(circle at 35% 35%,var(--accent),color-mix(in srgb,var(--accent) 55%,#000));
   box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 60%,transparent);
@@ -3186,14 +3186,14 @@ html[dir="rtl"] .qab,html[dir="rtl"] .dc,html[dir="rtl"] .ss2{text-align:right}
     animation:streamSettle .35s ease-out}
 }
 @keyframes streamSettle{from{opacity:.88}to{opacity:1}}
-/* Refined typing cursor — a slim accent bar with a soft pulse */
+/* Refined typing cursor - a slim accent bar with a soft pulse */
 .mb.ai .stream-cursor{display:inline-block;width:2.5px;height:1.05em;background:var(--accent);border-radius:2px;margin-left:2px;vertical-align:text-bottom;
   box-shadow:0 0 6px color-mix(in srgb,var(--accent) 60%,transparent);
   animation:cursorPulse 1.05s ease-in-out infinite}
 @keyframes cursorPulse{0%,100%{opacity:.25}50%{opacity:1}}
 
 /* ============================================================
-   INLINE ARTIFACTS (#3) — cards + side panel
+   INLINE ARTIFACTS (#3) - cards + side panel
    ============================================================ */
 /* Inline card in the chat */
 .art-card{display:flex;align-items:center;gap:11px;width:100%;max-width:440px;text-align:left;
@@ -3242,7 +3242,7 @@ html[dir="rtl"] .qab,html[dir="rtl"] .dc,html[dir="rtl"] .ss2{text-align:right}
 /* ============================================================
    GENERATIVE UI BLOCKS (#4)
    ============================================================ */
-/* stats — key metric cards */
+/* stats - key metric cards */
 .gui-stats{display:flex;flex-wrap:wrap;gap:10px;margin:12px 0}
 .gui-stat{flex:1;min-width:120px;background:var(--s1);border:1px solid var(--bd);border-radius:12px;padding:14px 16px}
 .gui-stat-val{font-family:var(--fdisplay);font-size:24px;font-weight:600;color:var(--tx);letter-spacing:-.5px;display:flex;align-items:baseline;gap:7px}
@@ -3250,7 +3250,7 @@ html[dir="rtl"] .qab,html[dir="rtl"] .dc,html[dir="rtl"] .ss2{text-align:right}
 .gui-stat-trend.up{color:var(--grn)}.gui-stat-trend.down{color:var(--red)}
 .gui-stat-label{font-size:12px;color:var(--mu);margin-top:3px}
 
-/* compare — comparison grid */
+/* compare - comparison grid */
 .gui-cmp{margin:12px 0}
 .gui-cmp-title{font-size:13px;font-weight:600;color:var(--tx);margin-bottom:8px}
 .gui-cmp-grid{border:1px solid var(--bd);border-radius:12px;overflow:hidden}
@@ -3266,7 +3266,7 @@ html[dir="rtl"] .qab,html[dir="rtl"] .dc,html[dir="rtl"] .ss2{text-align:right}
 .gui-cmp-yes{color:var(--grn);font-weight:700;justify-content:center}
 .gui-cmp-no{color:var(--dim);justify-content:center}
 
-/* steps — numbered process */
+/* steps - numbered process */
 .gui-steps{margin:12px 0}
 .gui-steps-title{font-size:13px;font-weight:600;color:var(--tx);margin-bottom:10px}
 .gui-step{display:flex;gap:12px;padding-bottom:14px;position:relative}
@@ -3276,7 +3276,7 @@ html[dir="rtl"] .qab,html[dir="rtl"] .dc,html[dir="rtl"] .ss2{text-align:right}
 .gui-step-title{font-size:14px;font-weight:600;color:var(--tx)}
 .gui-step-detail{font-size:12.5px;color:var(--mu);margin-top:2px;line-height:1.5}
 
-/* choices — tappable option chips */
+/* choices - tappable option chips */
 .gui-choices{margin:12px 0}
 .gui-choices-prompt{font-size:13px;color:var(--mu);margin-bottom:8px}
 .gui-choices-row{display:flex;flex-wrap:wrap;gap:8px}
@@ -3333,7 +3333,7 @@ html[dir="rtl"] .qab,html[dir="rtl"] .dc,html[dir="rtl"] .ss2{text-align:right}
   .ov,.tp-modal,.modal-card{animation:modalIn var(--dur-2) var(--ease-out)}
   @keyframes modalIn{from{opacity:0;transform:translateY(6px) scale(.99)}to{opacity:1;transform:none}}
 
-  /* Toasts already spring in via their own tIn animation — left as-is to avoid
+  /* Toasts already spring in via their own tIn animation - left as-is to avoid
      double-animating. Overlays/modals/nav/press/stagger/view-enter below. */
 }
 
@@ -3382,7 +3382,7 @@ html[dir="rtl"] .qab,html[dir="rtl"] .dc,html[dir="rtl"] .ss2{text-align:right}
 /* ============================================================
    EMPTY STATES WITH PERSONALITY (#8)
    ============================================================ */
-/* SVG icon container — accent-tinted, premium feel */
+/* SVG icon container - accent-tinted, premium feel */
 .es-icon.es-icon-svg{width:56px;height:56px;display:grid;place-items:center;border-radius:16px;
   background:var(--accent-soft);color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 22%,transparent);
   box-shadow:0 4px 18px color-mix(in srgb,var(--accent) 14%,transparent);font-size:0;margin-bottom:16px}
@@ -3455,10 +3455,10 @@ html[dir="rtl"] .qab,html[dir="rtl"] .dc,html[dir="rtl"] .ss2{text-align:right}
 }
 
 /* ============================================================
-   LIVING CHAT HOME — "Jump back in" (#11)
+   LIVING CHAT HOME - "Jump back in" (#11)
    Grounded recent-work cards, only shown when there's activity.
    ============================================================ */
-/* When rich, don't vertically center — let it flow from the top with room */
+/* When rich, don't vertically center - let it flow from the top with room */
 
 .chome-rich{padding-bottom:32px}
 .chome-recent{width:100%;max-width:560px;margin:34px auto 0;text-align:left}
@@ -3509,7 +3509,7 @@ body.light[data-accent="cyan"]{--accent:#0e7490;--accent-d:#0c6178;--accent-soft
    Crisp rendering, proper kerning/ligatures, refined tracking,
    tabular numbers for data, and comfortable reading measure.
    ============================================================ */
-/* Global rendering quality — kerning, contextual ligatures, legibility */
+/* Global rendering quality - kerning, contextual ligatures, legibility */
 body{
   text-rendering:optimizeLegibility;
   -webkit-font-smoothing:antialiased;
@@ -3558,7 +3558,7 @@ code:not(pre code){font-family:var(--mn);font-size:.9em;font-feature-settings:'k
   #vc,#cm,.settings-shell,#mc{padding-bottom:calc(64px + env(safe-area-inset-bottom,0px))}
   /* The chat composer floats above the bottom nav */
   #cia{bottom:calc(58px + env(safe-area-inset-bottom,0px))}
-  /* Hide the redundant top hamburger label spacing tweak on mobile — bottom nav is primary */
+  /* Hide the redundant top hamburger label spacing tweak on mobile - bottom nav is primary */
   #cm.cm-empty{padding-bottom:calc(80px + env(safe-area-inset-bottom,0px))}
 }
 /* Larger tap targets across the app on touch devices */
@@ -3569,7 +3569,7 @@ code:not(pre code){font-family:var(--mn);font-size:.9em;font-feature-settings:'k
 }
 
 /* ============================================================
-   COLLAPSIBLE SIDEBAR — icon rail (#15)
+   COLLAPSIBLE SIDEBAR - icon rail (#15)
    body.sb-rail collapses the desktop sidebar to a slim icon rail
    with hover tooltips. Toggled by a button, remembered in storage.
    ============================================================ */
@@ -3876,7 +3876,7 @@ html.reduce-motion .voice-ring,html.reduce-motion .sb-status-dot.ok::after{anima
 .mkt-rules-sh{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--tx);margin-bottom:5px}
 
 /* ═══════════════════════════════════════════════════════════
-   CHAT HOME — centered, spacious, no scroll (reference layout)
+   CHAT HOME - centered, spacious, no scroll (reference layout)
    Greeting sits above the composer; starter chips sit below it.
    ═══════════════════════════════════════════════════════════ */
 #cv.cv-home{justify-content:center}                 /* center the whole stack */
@@ -3898,7 +3898,7 @@ html.reduce-motion .voice-ring,html.reduce-motion .sb-status-dot.ok::after{anima
   color:var(--tx);margin:0;
 }
 #cv.cv-home .chome-mark{display:flex;align-items:center;flex-shrink:0}
-#cv.cv-home .chome-sub{display:none}                /* keep it clean — greeting only */
+#cv.cv-home .chome-sub{display:none}                /* keep it clean - greeting only */
 
 /* Starter chips BELOW the composer */
 .chome-chips{
@@ -3944,13 +3944,13 @@ html.reduce-motion .voice-ring,html.reduce-motion .sb-status-dot.ok::after{anima
 @media(max-width:640px){.settings-content{padding-right:24px}.set-close{top:8px;right:10px}.set-close-lbl{display:none}}
 
 /* ═══════════════════════════════════════════════════════════
-   DEV / LAB — cleaner, less blocky, more modern
+   DEV / LAB - cleaner, less blocky, more modern
    Compact inline model pill, airy panels, full-bleed preview.
    ═══════════════════════════════════════════════════════════ */
 /* Model row: a slim inline pill instead of a heavy full-width box */
 .sec-model-bar{display:flex;align-items:center;gap:9px;margin:2px 0 16px}
 .sec-model-l{font-size:12px;color:var(--mu);font-weight:500}
-.sec-usage-note{display:none}                       /* redundant — folded into the pill */
+.sec-usage-note{display:none}                       /* redundant - folded into the pill */
 .secmodel-sel{
   width:auto;min-width:0;
   padding:6px 30px 6px 12px;
@@ -4006,7 +4006,7 @@ html.reduce-motion .voice-ring,html.reduce-motion .sb-status-dot.ok::after{anima
 .dev-actions .btn,.lab-actions .btn,
 .sec-model-bar + div .btn{font-size:12px;padding:6px 11px;border-radius:9px}
 
-/* Preview placeholder: no floating card — just quiet centered text */
+/* Preview placeholder: no floating card - just quiet centered text */
 .dev-prev-body > .lab-placeholder,
 .dev-code-main > .lab-placeholder{
   background:none!important;border:none!important;box-shadow:none!important;
@@ -4015,7 +4015,7 @@ html.reduce-motion .voice-ring,html.reduce-motion .sb-status-dot.ok::after{anima
 .cw-empty-lg,.cw-empty{background:none;border:none}
 
 /* ═══════════════════════════════════════════════════════════
-   AMV SIGNATURE — the home screen's own character.
+   AMV SIGNATURE - the home screen's own character.
    The mark blooms from its aura, the greeting rises with an
    accent sweep across the name, and the chips stagger in.
    All of it respects reduced-motion.
@@ -4103,13 +4103,13 @@ html.reduce-motion #cv.cv-home .chome-greet{
 }
 
 /* ═══════════════════════════════════════════════════════════
-   DEV — rebuilt: one clear action, split view only when needed
+   DEV - rebuilt: one clear action, split view only when needed
    ═══════════════════════════════════════════════════════════ */
 .dev-shell{display:flex;height:100%;min-height:0;overflow:hidden}
 .dev-chat-pane{display:flex;flex-direction:column;min-width:0;min-height:0;flex:1;border-right:1px solid var(--bd)}
 .dev-preview{display:flex;flex-direction:column;flex:1.5;min-width:0;min-height:0;background:var(--bg)}
 
-/* BLANK STATE: no split — a single centered "what should we build" */
+/* BLANK STATE: no split - a single centered "what should we build" */
 .dev-shell.dev-blank .dev-preview{display:none}
 .dev-shell.dev-blank .dev-chat-pane{border-right:none;align-items:center;justify-content:center}
 .dev-shell.dev-blank .dev-bar{position:absolute;top:0;left:0;right:0}
@@ -4131,7 +4131,7 @@ html.reduce-motion #cv.cv-home .chome-greet{
 }
 .dev-chip:hover{background:var(--s3);color:var(--tx);border-color:var(--bd);transform:translateY(-1px)}
 
-/* Slim top bar — no marketing block */
+/* Slim top bar - no marketing block */
 .dev-bar{
   display:flex;align-items:center;justify-content:space-between;gap:10px;
   padding:11px 16px;border-bottom:1px solid var(--bd);flex-shrink:0;
@@ -4149,7 +4149,7 @@ html.reduce-motion #cv.cv-home .chome-greet{
 }
 .dev-ico:hover{background:var(--s2);color:var(--tx)}
 
-/* Composer — one rounded field, send button inside */
+/* Composer - one rounded field, send button inside */
 .dev-input{
   display:flex;align-items:flex-end;gap:8px;flex-shrink:0;
   margin:0 16px 16px;padding:11px 11px 11px 15px;
@@ -4207,7 +4207,7 @@ html.reduce-motion #cv.cv-home .chome-greet{
 .dev-send svg{display:block;width:15px;height:15px}
 
 /* ═══════════════════════════════════════════════════════════
-   LAB — rebuilt to match Dev: slim, calm, powerful
+   LAB - rebuilt to match Dev: slim, calm, powerful
    ═══════════════════════════════════════════════════════════ */
 .lab-shell{display:flex;flex-direction:column;height:100%;min-height:0;overflow:hidden}
 .lab-bar{
@@ -4234,7 +4234,7 @@ html.reduce-motion #cv.cv-home .chome-greet{
 .lab-fix-btn:hover{filter:brightness(1.08)}
 .lab-run-btn:active,.lab-fix-btn:active{transform:scale(.97)}
 
-/* Tool chips — quiet, one tidy row */
+/* Tool chips - quiet, one tidy row */
 .lab-tools{
   display:flex;flex-wrap:wrap;gap:7px;padding:12px 16px;
   border-bottom:1px solid var(--bd);flex-shrink:0;
@@ -4337,7 +4337,7 @@ html.reduce-motion #cv.cv-home .chome-greet{
 .lab-editor{display:flex;flex-direction:column;flex:1.15;min-width:0;min-height:0;border-right:1px solid var(--bd)}
 .lab-out{display:flex;flex-direction:column;flex:1;min-width:0;min-height:0;background:var(--s1)}
 
-/* Editor fills its pane — no header bar, no card border */
+/* Editor fills its pane - no header bar, no card border */
 #lab-code{
   flex:1;min-height:0;width:100%;resize:none;border:none!important;outline:none;
   background:transparent!important;color:var(--tx);
@@ -4374,7 +4374,7 @@ html.reduce-motion #cv.cv-home .chome-greet{
   font-family:inherit;line-height:1.65;
 }
 
-/* Live size readout — proof it eats big files */
+/* Live size readout - proof it eats big files */
 .lab-count{font-size:11.5px;color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap}
 .lab-count.lab-count-big{color:var(--accent);font-weight:600}
 
@@ -4404,7 +4404,7 @@ html.reduce-motion #cv.cv-home .chome-greet{
 .dev-gen{font-size:11.5px;color:var(--accent);font-weight:600;font-variant-numeric:tabular-nums}
 
 /* ═══════════════════════════════════════════════════════════
-   LAB — real editor feel: line numbers, syntax colour, depth
+   LAB - real editor feel: line numbers, syntax colour, depth
    ═══════════════════════════════════════════════════════════ */
 .lab-editor{background:var(--bg)}
 .lab-code-wrap{
@@ -4438,7 +4438,7 @@ html.reduce-motion #cv.cv-home .chome-greet{
 #lab-code::selection{background:color-mix(in srgb,var(--accent) 32%,transparent)}
 #lab-code::placeholder{color:var(--dim);-webkit-text-fill-color:var(--dim)}
 
-/* Token colours — calm, high-contrast, not a rainbow */
+/* Token colours - calm, high-contrast, not a rainbow */
 .t-kw{color:#c792ea;font-weight:500}
 .t-str{color:#7fdbab}
 .t-num{color:#f78c6c}
@@ -4465,7 +4465,7 @@ body.light .t-num{color:#b5451b}
 .lab-chip:hover{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);transform:translateY(-1px)}
 
 /* ═══════════════════════════════════════════════════════════
-   DEV — appealing conversation + preview
+   DEV - appealing conversation + preview
    ═══════════════════════════════════════════════════════════ */
 /* Message bubbles: user right in accent, AMV left as clean prose */
 .dev-log{padding:20px 20px 8px;gap:18px}
@@ -4543,7 +4543,7 @@ body.light .t-num{color:#b5451b}
 .ho-paste{padding-top:16px;border-top:1px solid var(--bd)}
 
 /* ═══════════════════════════════════════════════════════════
-   LAB ENTRY — paste on the left, upload on the right, then go
+   LAB ENTRY - paste on the left, upload on the right, then go
    ═══════════════════════════════════════════════════════════ */
 .lab-shell{position:relative}
 .lab-entry{display:none}
@@ -4626,7 +4626,7 @@ html.booted-in #land{display:none!important}
 html.booted-in #app{opacity:1!important;visibility:visible!important}
 
 /* ═══════════════════════════════════════════════════════════
-   CHAT — no ruled lines between messages
+   CHAT - no ruled lines between messages
    Messages breathe with spacing, not borders.
    ═══════════════════════════════════════════════════════════ */
 .mwrap{border-top:none!important;border-bottom:none!important}
@@ -4637,7 +4637,7 @@ html.booted-in #app{opacity:1!important;visibility:visible!important}
 #cm{gap:26px}                       /* space does the separating, not rules */
 
 /* ═══════════════════════════════════════════════════════════
-   SCROLLBARS — thin, subtle, only visible while scrolling
+   SCROLLBARS - thin, subtle, only visible while scrolling
    ═══════════════════════════════════════════════════════════ */
 
 ::-webkit-scrollbar{width:7px;height:7px}
@@ -4717,8 +4717,8 @@ body.light .mb.u{background:var(--s2)!important}
 ::-webkit-scrollbar-thumb{border-radius:99px;min-height:44px}
 
 /* ═══════════════════════════════════════════════════════════
-   SCROLLBAR — a thin thumb hugging the far right.
-   NOTE: `scrollbar-width` must NOT be set — in Chrome it overrides
+   SCROLLBAR - a thin thumb hugging the far right.
+   NOTE: `scrollbar-width` must NOT be set - in Chrome it overrides
    ::-webkit-scrollbar and forces the chunky default bar.
    ═══════════════════════════════════════════════════════════ */
 #cm::-webkit-scrollbar{width:6px}
@@ -4766,7 +4766,7 @@ body.light .mb.u{background:var(--s2)!important}
 }
 #cv.cv-home .chome{width:100%}
 
-/* No reserved scrollbar gutter on the home screen — it shifts the greeting off-centre */
+/* No reserved scrollbar gutter on the home screen - it shifts the greeting off-centre */
 #cv.cv-home #cm{scrollbar-gutter:auto!important;overflow:hidden!important}
 
 /* ── No flash of landing OR intro on refresh when already signed in ── */
@@ -4777,7 +4777,7 @@ html.booted-in #intro{display:none!important;visibility:hidden!important}
    CLAUDE-STYLE SCROLL: the FULL pane scrolls, so the bar rides the
    far right edge of the window. The text is a centred column inside it,
    nowhere near the bar.
-   Previously #cv was capped at 760px and scrolled — which glued the
+   Previously #cv was capped at 760px and scrolled - which glued the
    scrollbar to the text.
    ═══════════════════════════════════════════════════════════ */
 #cv{
@@ -4826,9 +4826,9 @@ html.booted-in #intro{display:none!important;visibility:hidden!important}
 #cv{transform:none!important}
 
 /* ═══════════════════════════════════════════════════════════
-   SCROLLBAR — hairline, short, floating far right
+   SCROLLBAR - hairline, short, floating far right
    • width 12px, but a 5px transparent border clips the *visible*
-     thumb down to ~2px — a hairline, not a block.
+     thumb down to ~2px - a hairline, not a block.
    • the track is inset top & bottom, so the thumb is much SHORTER
      than the pane instead of running edge to edge.
    ═══════════════════════════════════════════════════════════ */
@@ -4842,7 +4842,7 @@ html.booted-in #intro{display:none!important;visibility:hidden!important}
 #cm::-webkit-scrollbar-thumb{
   background-color:color-mix(in srgb,var(--tx) 26%,transparent);
   background-clip:content-box;
-  border:4px solid transparent;   /* 14 - 8 = 6px — small, but clearly visible */
+  border:4px solid transparent;   /* 14 - 8 = 6px - small, but clearly visible */
   border-radius:99px;
   min-height:44px;
   max-height:110px;               /* stays short even on long chats */
@@ -4855,7 +4855,7 @@ html.booted-in #intro{display:none!important;visibility:hidden!important}
 #cm::-webkit-scrollbar-corner{background:transparent}
 
 /* ═══════════════════════════════════════════════════════════
-   CONVERSATION — tight, readable, calm (the part you actually read)
+   CONVERSATION - tight, readable, calm (the part you actually read)
    The old layout had huge dead gaps, a floating avatar, and bare
    code blocks. This tightens the rhythm and gives content real shape.
    ═══════════════════════════════════════════════════════════ */
@@ -4865,7 +4865,7 @@ html.booted-in #intro{display:none!important;visibility:hidden!important}
 #cm > .mr{padding-top:0!important;padding-bottom:0!important;margin-bottom:30px!important}
 #cm > .mr:last-child{margin-bottom:8px!important}
 
-/* Drop the floating avatars — they add noise, not information */
+/* Drop the floating avatars - they add noise, not information */
 .mav{display:none!important}
 
 /* USER: a clean right-aligned bubble */
@@ -5092,15 +5092,15 @@ html.reduce-motion .deploy-dot{animation:none}
 .lab-ask-go:hover{filter:brightness(1.08);transform:translateY(-1px)}
 
 /* ═══════════════════════════════════════════════════════════
-   FONT SIZE — scale the TYPE SCALE, never the container.
+   FONT SIZE - scale the TYPE SCALE, never the container.
 
    Two bugs fixed here:
    1) Font size used to apply `zoom` to #app. But #app is height:100vh, so at
-      "Largest" it became 129vh and the composer fell OFF-SCREEN — you literally
+      "Largest" it became 129vh and the composer fell OFF-SCREEN - you literally
       could not type. Measured: +229px overflow at 800px tall.
    2) The whole app sizes text from design tokens (--t-md etc), many applied with
       !important. Any selector-based override loses to those. So we scale the
-      TOKENS themselves — everything downstream grows for free, and the layout
+      TOKENS themselves - everything downstream grows for free, and the layout
       still fills exactly 100vh, so every control stays reachable.
    ═══════════════════════════════════════════════════════════ */
 html.fs-scaled{
@@ -5129,11 +5129,11 @@ html.fs-scaled #mta{ max-height:34vh; }
 /* Any pane that can grow must SCROLL rather than clip controls away.
    #vc is set to overflow:hidden!important (each view normally manages its own
    scrolling). At larger font sizes that content grows past the edge and becomes
-   physically unreachable — so when a scale is active, let the pane scroll. */
+   physically unreachable - so when a scale is active, let the pane scroll. */
 html.fs-scaled #vc{ overflow-y:auto !important; overflow-x:hidden !important; min-height:0; }
 html.fs-scaled #cv{ overflow:hidden !important; }   /* chat keeps its own scroller */
 
-/* Header auth buttons — signed-out only, sitting to the LEFT of New chat.
+/* Header auth buttons - signed-out only, sitting to the LEFT of New chat.
    #ncb used order:5 + margin-left:auto to sit on the right; wrapping it in a div
    took it out of that flex flow, so the group carries those properties now. */
 .hdr-mid{display:flex;align-items:center;gap:8px;order:5;margin-left:auto}
@@ -5193,7 +5193,7 @@ html.fs-scaled #cv{ overflow:hidden !important; }   /* chat keeps its own scroll
 
 /* ═══════════════════════════════════════════════════════════
    #ovr had NO CSS at all. Modals built as a bare .share-modal inside it
-   rendered in normal document flow — i.e. at the very bottom of the page,
+   rendered in normal document flow - i.e. at the very bottom of the page,
    completely off-screen. That silently broke "Share conversation" (which
    predates this work), plus Deploy, My live sites, and Errors.
 
@@ -5288,7 +5288,7 @@ body.light #ovr.on:has(> .wn-modal){ background:rgba(40,40,50,.55); }
   border-radius:10px 10px 0 0;
 }
 .vstage{font-size:11.5px;color:var(--t2);margin-top:7px;text-align:center;padding:0 10px;line-height:1.5}
-/* An indeterminate bar — because the provider gives us no percentage, and
+/* An indeterminate bar - because the provider gives us no percentage, and
    inventing one is exactly what this feature used to do. */
 .vbar{width:70%;height:3px;border-radius:2px;background:var(--s3);overflow:hidden;margin-top:9px}
 .vbar-run{
@@ -5310,7 +5310,7 @@ body.light #ovr.on:has(> .wn-modal){ background:rgba(40,40,50,.55); }
 /* ═══════════════════════════════════════════════════════════════════════
    MOBILE  (≤760px)
 
-   The workbench tabs — Dev and Lab — put an input pane and an output pane
+   The workbench tabs - Dev and Lab - put an input pane and an output pane
    side by side with flex:1 each. On a 390px phone that's ~195px per pane:
    the code editor collapsed to ~29px tall and Lab pushed controls off-screen.
 
@@ -5401,7 +5401,7 @@ body.light #ovr.on:has(> .wn-modal){ background:rgba(40,40,50,.55); }
     min-width: 40px;
   }
 
-  /* Pill selectors (image style, aspect ratio, etc.) were ~20px tall — far
+  /* Pill selectors (image style, aspect ratio, etc.) were ~20px tall - far
      below a comfortable thumb target. Give them real height on mobile. */
   .stb, .rab, .chip, .seg-btn, .pill-btn {
     min-height: 40px;
@@ -5553,7 +5553,7 @@ body.sb-rail .sb-tools{
 body.sb-rail .sb-tool{
   flex:none; width:44px; height:40px;
 }
-/* the hover label would overflow the 64px rail — show it as a floating tooltip
+/* the hover label would overflow the 64px rail - show it as a floating tooltip
    instead, matching the nav-icon tooltips */
 body.sb-rail .sb-tool .sb-tool-tip{
   left:52px; bottom:auto; top:50%;
@@ -5663,17 +5663,17 @@ body.sb-rail #sb .sb-av{ margin:0 auto!important; }
 .adm-user-flag{font-size:10.5px;color:#e0b341;font-weight:500;margin-left:4px}
 
 /* ════════════════════════════════════════════════════════════════
-   FINAL POLISH (authoritative, loads last) — targeted, safe.
+   FINAL POLISH (authoritative, loads last) - targeted, safe.
    Goal: consistent spacing rhythm + a touch more room, so the app
    reads deliberate rather than templated. Minimal surface area:
    only rhythm + a few generic tells. No structural changes.
    ════════════════════════════════════════════════════════════════ */
 
 /* 1. One consistent gap between stacked section panels everywhere.
-   (Different layers set this to 18/20/24/26/34px — unify to one calm rhythm.) */
+   (Different layers set this to 18/20/24/26/34px - unify to one calm rhythm.) */
 #vc .ss2 + .ss2{margin-top:22px!important}
 
-/* 2. Consistent inner padding on section panels — not cramped, not bloated. */
+/* 2. Consistent inner padding on section panels - not cramped, not bloated. */
 #vc .ss2{padding:24px 26px!important}
 @media(max-width:720px){#vc .ss2{padding:18px 18px!important}}
 
@@ -5689,16 +5689,16 @@ body.sb-rail #sb .sb-av{ margin:0 auto!important; }
 #vc .vsub{margin-bottom:10px!important}
 
 /* 6. Cards get a single consistent hover behaviour (some layers lift, some
-   don't — pick one restrained treatment so it doesn't feel scattered). */
+   don't - pick one restrained treatment so it doesn't feel scattered). */
 .fcrd,.wsc,.dc,.memc,.mk-card,.onb-card,.ceh-card,.chome-card{
   transition:border-color .16s ease, background .16s ease!important;
 }
 .fcrd:hover,.wsc:hover,.dc:hover,.memc:hover,.ceh-card:hover,.chome-card:hover{
-  transform:none!important;   /* drop the scattered bouncy lifts — calmer, more premium */
+  transform:none!important;   /* drop the scattered bouncy lifts - calmer, more premium */
 }
 
 /* ════════════════════════════════════════════════════════════════
-   RESPONSIVE FIT — final pass (authoritative, loads last)
+   RESPONSIVE FIT - final pass (authoritative, loads last)
    Ensures comfortable use on the smallest phones and sensible
    layout on the largest monitors. Pure enhancement, no structure change.
    ════════════════════════════════════════════════════════════════ */
@@ -5724,7 +5724,7 @@ body.sb-rail #sb .sb-av{ margin:0 auto!important; }
 }
 
 /* 3. Large monitors: the chat/reading column stays a comfortable measure and
-   centers — never stretched edge-to-edge on ultrawide displays. The message
+   centers - never stretched edge-to-edge on ultrawide displays. The message
    rows already cap at ~748px; ensure views cap too and sit centered. */
 @media(min-width:1800px){
   #vc .vi{max-width:960px!important}
@@ -5745,7 +5745,7 @@ body.sb-rail #sb .sb-av{ margin:0 auto!important; }
    LIGHT-MODE MENU FIX (authoritative, loads last)
    The account popup, context menus, profile menu and toasts had a
    hardcoded dark background (#15191f !important) with no light-mode
-   override — so they stayed black in light mode. These restore them
+   override - so they stayed black in light mode. These restore them
    to proper light surfaces. Dark mode is unaffected.
    ════════════════════════════════════════════════════════════════ */
 body.light .sb-popup,
@@ -5776,12 +5776,12 @@ body.light .ctxm > *:hover,
 body.light .ctx-menu > *:hover{ background:var(--s2,#f0efec)!important; }
 
 /* ════════════════════════════════════════════════════════════════
-   RESPONSIVE FIT v2 — tablet & large-screen refinements (loads last)
+   RESPONSIVE FIT v2 - tablet & large-screen refinements (loads last)
    The base layout has zero overflow 320px→3440px. These tune the
    in-between sizes so it doesn't just fit, it looks right everywhere.
    ════════════════════════════════════════════════════════════════ */
 
-/* Tablets (721–1000px): the 250px sidebar ate a third of a 768px screen.
+/* Tablets (721-1000px): the 250px sidebar ate a third of a 768px screen.
    Narrow it so content breathes, while keeping the full nav visible. */
 @media(min-width:721px) and (max-width:1000px){
   :root{ --sbw:212px; }
@@ -5808,7 +5808,7 @@ body.light .ctx-menu > *:hover{ background:var(--s2,#f0efec)!important; }
 }
 
 /* ============================================================
-   LAYER 26 — APPROVAL + PREVIEW WORKSPACE  (Mission Control, Phase 1)
+   LAYER 26 - APPROVAL + PREVIEW WORKSPACE  (Mission Control, Phase 1)
    Governed tokens (spacing / radii / status), the approval card,
    and the full-page Preview workspace. Fits phone -> TV: fluid grid,
    capped + centered on ultrawide, full-screen with a sticky Approve
@@ -5959,7 +5959,7 @@ body.light{--wait:#6b7690;--ok:#2f9e6e;--warn:#b7862f;--err:#c4544f;}
 .pvw-hand-art:hover{border-color:var(--accent)}
 .pvw-hand-arrow{color:var(--dim)}
 
-/* footer — the approval surface */
+/* footer - the approval surface */
 .pvw-foot{display:flex;align-items:center;gap:var(--sp-4);padding:var(--sp-3) var(--sp-4);border-top:1px solid var(--bd);background:var(--s1);flex-wrap:wrap}
 .pvw-foot-line{flex:1;min-width:200px;font-size:13.5px;font-weight:600;color:var(--tx);display:flex;align-items:center;gap:8px}
 .pvw-foot-ic{color:var(--accent);font-size:9px}
@@ -5999,7 +5999,7 @@ body.light{--wait:#6b7690;--ok:#2f9e6e;--warn:#b7862f;--err:#c4544f;}
 @media(hover:none){ .apv-approve,.pvw-approve,.apv-preview{min-height:44px} }
 
 /* ============================================================
-   LAYER 27 — MISSION CONTROL  (workforce overview)
+   LAYER 27 - MISSION CONTROL  (workforce overview)
    ============================================================ */
 .mc-head{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--sp-4);margin-bottom:var(--sp-5)}
 .mc-head h2{font-size:clamp(28px,3.4vw,36px)!important;line-height:1.1;font-weight:600!important;letter-spacing:-.01em;color:var(--tx)!important}
@@ -6080,7 +6080,7 @@ body.light{--wait:#6b7690;--ok:#2f9e6e;--warn:#b7862f;--err:#c4544f;}
 @media(hover:none){ .mc-pause,.mc-mini{min-height:40px} }
 
 /* ============================================================
-   LAYER A1 — AUTO APPROVE setup (task creation) (in task creation)
+   LAYER A1 - AUTO APPROVE setup (task creation) (in task creation)
    ============================================================ */
 .aa-panel{margin-top:var(--sp-4);padding-top:var(--sp-4);border-top:1px solid var(--bd)}
 .aa-opts{display:flex;flex-direction:column;gap:var(--sp-2);margin-top:var(--sp-2)}
@@ -6120,7 +6120,7 @@ body.light .aa-date{color-scheme:light}
 .mc-sched-mode.req{color:var(--wait);background:var(--wait-soft)}
 
 /* ============================================================
-   LAYER A2 — CREW LIVE / RUN ROOM (live autonomous execution)
+   LAYER A2 - CREW LIVE / RUN ROOM (live autonomous execution)
    ============================================================ */
 .rr{display:flex;flex-direction:column;gap:var(--sp-4)}
 .rr-top{display:flex;align-items:center;gap:var(--sp-4);flex-wrap:wrap}
@@ -6178,7 +6178,7 @@ body.light .aa-date{color-scheme:light}
 }
 @media(hover:none){ .rr-controls button{min-height:40px} }
 
-/* Run Room — prominent inline approval pause */
+/* Run Room - prominent inline approval pause */
 .rr-approve:empty{display:none}
 .rr-appr{border:1px solid rgba(216,168,78,.4);background:var(--warn-soft);border-radius:var(--rk);padding:var(--sp-4)}
 .rr-appr-h{display:flex;align-items:center;gap:10px;margin-bottom:8px}
@@ -6191,7 +6191,7 @@ body.light .aa-date{color-scheme:light}
 @media(hover:none){ .rr-appr-btns .btn{min-height:44px} }
 
 /* ============================================================
-   LAYER A3 — SCHEDULED AUTONOMOUS MANAGEMENT rows
+   LAYER A3 - SCHEDULED AUTONOMOUS MANAGEMENT rows
    ============================================================ */
 .smr{background:var(--s1);border:1px solid var(--bd);border-radius:var(--rk);padding:var(--sp-4);margin-bottom:var(--sp-3)}
 .smr.paused{opacity:.72}
@@ -6205,7 +6205,7 @@ body.light .aa-date{color-scheme:light}
 @media(max-width:560px){ .smr-act{width:100%} .smr-act .btn{flex:1} }
 
 /* ============================================================
-   LAYER A4 — ULTRAWIDE: cap + center create views so content
+   LAYER A4 - ULTRAWIDE: cap + center create views so content
    never stretches edge-to-edge on large monitors / TVs.
    Only engages >=1500px; normal desktops are untouched.
    ============================================================ */
@@ -6218,13 +6218,13 @@ body.light .aa-date{color-scheme:light}
 }
 
 /* ============================================================
-   LAYER A5 — MOBILE HARDENING (authoritative, last word)
+   LAYER A5 - MOBILE HARDENING (authoritative, last word)
    Fixes real phone breakage: nav items sticking off-screen, a
    translucent "dark" sidebar, an over-tall cookie banner, and a
    clipped composer. Appended last so it wins the cascade.
    ============================================================ */
 /* Cookie banner: the flex-basis was becoming a 320px HEIGHT in the
-   mobile column layout — pin the text to content height. */
+   mobile column layout - pin the text to content height. */
 @media(max-width:640px){
   .cc-banner{left:8px;right:8px;bottom:8px}
   .cc-inner{flex-direction:column;align-items:stretch;gap:12px;padding:14px}
@@ -6239,7 +6239,7 @@ body.light .aa-date{color-scheme:light}
   #anav>*{min-width:0}
   #anav .nav-l,#anav .hdr-mid,#anav .nav-r{min-width:0}
   #anav .logo-wm{font-size:14px!important;white-space:nowrap}
-  /* Keyboard-shortcuts button is useless on touch — reclaim its width */
+  /* Keyboard-shortcuts button is useless on touch - reclaim its width */
   #anav #kb-btn{display:none!important}
   #anav .nav-r{gap:4px!important;border-left:none!important;padding-left:0!important}
   #anav .ib{width:32px!important;height:32px!important;flex:none}
@@ -6283,7 +6283,7 @@ body.light .aa-date{color-scheme:light}
 }
 
 /* ============================================================
-   LAYER A6 — STUDIO (AMV Design): centered hero + larger prompt box
+   LAYER A6 - STUDIO (AMV Design): centered hero + larger prompt box
    Overrides an earlier left-align layer; makes the compose box roomier.
    ============================================================ */
 .dsn-hero{text-align:center!important;align-items:center!important}
@@ -6295,7 +6295,7 @@ body.light .aa-date{color-scheme:light}
 @media(max-width:560px){ .dsn-input-wrap{max-width:100%!important} .dsn-input-wrap textarea{font-size:16px!important;min-height:58px!important} }
 
 /* ============================================================
-   LAYER A7 — PLANS page polish (professional, current, breathable)
+   LAYER A7 - PLANS page polish (professional, current, breathable)
    ============================================================ */
 .plans-head{text-align:center;max-width:680px;margin:0 auto var(--sp-7)}
 .plans-head .eyebrow{color:var(--accent);font-weight:600;letter-spacing:.14em;font-size:12px;margin-bottom:12px}
@@ -6332,14 +6332,14 @@ body.light .aa-date{color-scheme:light}
 }
 
 /* ============================================================
-   LAYER A8 — iOS-ROBUST APP SHELL (fill the VISIBLE viewport)
+   LAYER A8 - iOS-ROBUST APP SHELL (fill the VISIBLE viewport)
    The classic iPhone bug: #app used position:fixed;inset:0 which
    stretches to the LAYOUT viewport (address-bar included), pushing the
    composer and bottom nav off-screen, and the bottom nav was
    viewport-fixed (which iOS Safari mis-measures). Fix: size the shell to
    the DYNAMIC viewport (100dvh) and flow the chrome inside it, so the top
    nav, content, and bottom nav always sit within the visible area on any
-   device — phone, tablet, desktop, or TV. Respects notch/home-indicator
+   device - phone, tablet, desktop, or TV. Respects notch/home-indicator
    safe areas via viewport-fit=cover.
    ============================================================ */
 html,body{height:100%;height:100dvh}
@@ -6352,11 +6352,11 @@ html,body{height:100%;height:100dvh}
 #abody{flex:1 1 auto;min-height:0;overflow:hidden}
 
 @media(max-width:720px){
-  /* Bottom nav is now an in-flow row at the base of the shell — never
-     viewport-fixed — so it's always at the visible bottom. */
+  /* Bottom nav is now an in-flow row at the base of the shell - never
+     viewport-fixed - so it's always at the visible bottom. */
   #bottom-nav{position:static!important;flex:0 0 auto;left:auto;right:auto;bottom:auto;z-index:1;
     box-shadow:0 -4px 20px rgba(0,0,0,.14)}
-  /* Content fills the gap and scrolls internally — no fixed-bar padding. */
+  /* Content fills the gap and scrolls internally - no fixed-bar padding. */
   #vc,#cm,.settings-shell,#mc{padding-bottom:14px!important}
   #cm.cm-empty{padding-bottom:16px!important}
   /* Composer is in-flow at the base of the chat column; clear the home bar. */
@@ -6375,7 +6375,7 @@ html,body{height:100%;height:100dvh}
 .mkt-listing-row:hover{background:var(--s2)!important}
 
 /* ============================================================
-   LAYER A9 — MISSION CONTROL command bar (type anything → it does it)
+   LAYER A9 - MISSION CONTROL command bar (type anything → it does it)
    ============================================================ */
 .mc-cmd{margin:0 0 var(--sp-5)}
 .mc-cmd-inner{display:flex;align-items:center;gap:10px;background:var(--s1);border:1px solid var(--bd);border-radius:var(--rp);padding:8px 8px 8px 16px;transition:border-color .18s,box-shadow .18s}
@@ -6397,7 +6397,7 @@ html,body{height:100%;height:100dvh}
 @media(hover:none){ .mc-cmd-go,.mc-cmd-chip{min-height:40px} }
 
 /* ============================================================
-   LAYER A10 — Crew: bigger command box, inline result, scroll fix
+   LAYER A10 - Crew: bigger command box, inline result, scroll fix
    ============================================================ */
 .mc-cmd-lg{background:var(--s1);border:1px solid var(--bd);border-radius:var(--rp);padding:var(--sp-4);margin-bottom:var(--sp-5)}
 .mc-cmd-label{font-size:13px;font-weight:600;color:var(--tx);margin-bottom:10px}
@@ -6427,7 +6427,7 @@ html,body{height:100%;height:100dvh}
 }
 
 /* ============================================================
-   LAYER A11 — Marketplace payment modal + Billing transactions
+   LAYER A11 - Marketplace payment modal + Billing transactions
    ============================================================ */
 .mkpay-item{display:flex;align-items:center;gap:12px;padding:14px;background:var(--s2);border:1px solid var(--bd);border-radius:var(--rk);margin-bottom:14px}
 .mkpay-ic{font-size:24px}
@@ -6454,7 +6454,7 @@ html,body{height:100%;height:100dvh}
 .bill-txn-st.refunded{color:var(--mu);background:var(--wait-soft,rgba(125,138,163,.16))}
 
 /* ============================================================
-   LAYER A12 — Pricing: 4 clean tiers + slim Custom banner
+   LAYER A12 - Pricing: 4 clean tiers + slim Custom banner
    ============================================================ */
 .pg.pg-app.pg-4{grid-template-columns:repeat(4,1fr)!important;max-width:1100px!important;gap:16px!important}
 /* Cards: aligned heights, buttons pinned bottom, roomier text */
@@ -6486,7 +6486,7 @@ html,body{height:100%;height:100dvh}
 }
 
 /* ============================================================
-   LAYER A13 — Approval/schedule editing, preview scroll fix,
+   LAYER A13 - Approval/schedule editing, preview scroll fix,
    flush current-plan, bigger Crew command box
    ============================================================ */
 
@@ -6564,3 +6564,8 @@ html,body{height:100%;height:100dvh}
   .mc-cmd-lg .mc-cmd-input{font-size:15px;padding:14px 0}
   .mc-cmd-lg .mc-cmd-go{padding:13px 18px}
 }
+
+/* Action toast (Undo / Return) */
+.toast-act{display:flex;align-items:center;gap:10px}
+.toast-act .toast-btn{margin-left:6px;background:var(--accent);color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:12.5px;font-weight:600;cursor:pointer;flex:none}
+.toast-act .toast-btn:hover{filter:brightness(1.08)}

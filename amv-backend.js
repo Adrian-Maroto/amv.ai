@@ -1,20 +1,20 @@
 /* =====================================================================
-   AMV.AI — PRODUCTION BACKEND (Cloudflare Worker)
+   AMV.AI - PRODUCTION BACKEND (Cloudflare Worker)
    The real, fundable backend. Makes every feature WORK and SAFE:
-     • AI proxy (/v1/messages)  — streaming, key hidden server-side
+     • AI proxy (/v1/messages)  - streaming, key hidden server-side
      • Server-side PLAN enforcement (free can't call premium models)
-     • Per-account token QUOTAS (daily + monthly) — real margin control
+     • Per-account token QUOTAS (daily + monthly) - real margin control
      • Per-account + per-IP RATE LIMITS
      • GLOBAL spend cap + KILL SWITCH
      • Usage + cost tracking per user (KV)
      • Image / video metering hooks
-     • Payments (Stripe + PayPal) — from the payments worker
+     • Payments (Stripe + PayPal) - from the payments worker
    ---------------------------------------------------------------------
    This is what converts AMV from "demo" to "live product you can fund."
    Deploy guide at the bottom.
    ===================================================================== */
 
-// CORS — wildcard origin is fine for a token-authenticated public API (the
+// CORS - wildcard origin is fine for a token-authenticated public API (the
 // token, not the origin, is the security boundary). To lock the browser API
 // to ONLY your frontend in production, replace '*' with your domain, e.g.
 // 'https://app.yourdomain.com'. Webhooks are server-to-server and need no CORS.
@@ -31,7 +31,7 @@ const CORS = {
 };
 // Security headers applied to every response. Protects users against clickjacking,
 // MIME-sniffing, protocol downgrade, and referrer leakage. CSP here is API-appropriate
-// (the API returns JSON, not HTML) — the static site sets its own page-level CSP.
+// (the API returns JSON, not HTML) - the static site sets its own page-level CSP.
 const SECURITY_HEADERS = {
   'Strict-Transport-Security': 'max-age=31536000; includeSubDomains; preload',
   'X-Content-Type-Options': 'nosniff',
@@ -79,7 +79,7 @@ let _killCache = { val: false, ts: 0 };
    System-of-record data (accounts, entitlements, teams, per-user data) should
    live in a real database, not KV (which is eventually-consistent and built
    for caching). This layer uses Cloudflare D1 (SQLite) when an env.DB binding
-   is present, and transparently falls back to KV otherwise — so the app keeps
+   is present, and transparently falls back to KV otherwise - so the app keeps
    working today, and turning on D1 is a config change, not a rewrite.
 
    D1 gives: strong consistency (no stale auth reads), real queries (the admin
@@ -140,11 +140,11 @@ const DB = {
 const PLAN_LIMITS = {
   // Token allowances per plan. These are sized to be GENEROUS for real usage
   // (a heavy day of chatting/coding is well under the daily cap) while keeping a
-  // healthy margin at worst case — the plan price is decoupled from raw token
+  // healthy margin at worst case - the plan price is decoupled from raw token
   // cost, exactly like ChatGPT/Claude. The 45% cost backstop below is only an
   // anti-abuse floor that normal users never reach. Blended compute ~$6/Mtok:
   //   pro   $15  -> ~1.8M/mo ≈ $11 worst-case compute (~27% floor, usually far higher margin)
-  //   elite $75  -> ~7M/mo, ultra $200 -> ~18M/mo — all comfortably profitable.
+  //   elite $75  -> ~7M/mo, ultra $200 -> ~18M/mo - all comfortably profitable.
   free:  { dayTokens: 40000,    monthTokens: 250000,    rpm: 8,  imagesDay: 8,   videosMonth: 0 },
   pro:   { dayTokens: 250000,   monthTokens: 1800000,   rpm: 20, imagesDay: 100, videosMonth: 20 },
   elite: { dayTokens: 900000,   monthTokens: 7000000,   rpm: 40, imagesDay: 500, videosMonth: 120 },
@@ -156,7 +156,7 @@ const PLAN_LIMITS = {
    Structured, security-relevant event logging. Goes to:
    - console (captured by Cloudflare Workers Logs / Logpush), and
    - optionally an external sink (AUDIT_WEBHOOK) for anomaly detection.
-   We log auth failures, quota/rate/spend blocks, and forged webhooks —
+   We log auth failures, quota/rate/spend blocks, and forged webhooks -
    the signals you'd watch to spot abuse. PII is minimized (email only).
    ===================================================================== */
 function audit(env, event, detail) {
@@ -189,13 +189,13 @@ const monthKey = () => new Date().toISOString().slice(0, 7);
    attack surface (oversized payloads, malformed roles, junk content).
 
    NOTE on prompt injection: a proxy cannot fully "prevent" prompt
-   injection — that's a model-layer concern. What we CAN do here is
+   injection - that's a model-layer concern. What we CAN do here is
    bound and shape input, reject obviously malformed payloads, and keep
    the system prompt server-controlled (we wrap it with cache_control and
    never let the client overwrite our safety framing). Defense in depth.
    ===================================================================== */
 const MAX_MESSAGES = 200;          // conversation turns per request
-const MAX_TOTAL_CHARS = 600000;    // ~150k tokens of input — generous but bounded
+const MAX_TOTAL_CHARS = 600000;    // ~150k tokens of input - generous but bounded
 const MAX_SYSTEM_CHARS = 100000;
 const VALID_ROLES = new Set(['user', 'assistant']);
 const MAX_BLOCKS_PER_MSG = 64;
@@ -232,7 +232,7 @@ function validateMessagesPayload(body) {
     } else {
       return 'message content must be a string or array';
     }
-    if (totalChars > MAX_TOTAL_CHARS) return 'request too large — please shorten the conversation';
+    if (totalChars > MAX_TOTAL_CHARS) return 'request too large - please shorten the conversation';
   }
   if (body.system != null) {
     if (typeof body.system !== 'string') return 'system must be a string';
@@ -246,7 +246,7 @@ function validateMessagesPayload(body) {
 }
 
 /* =====================================================================
-   ATOMIC COUNTERS — Durable Object
+   ATOMIC COUNTERS - Durable Object
    KV cannot do atomic read-modify-write, so parallel requests can race
    past rate limits and quotas. A Durable Object serializes all ops on a
    given key (one instance per key), giving true atomicity. We shard by
@@ -287,12 +287,12 @@ export class AMVCounter {
       if (body.ttlMs) await this.state.storage.setAlarm(Date.now() + body.ttlMs);
       return json({ value: next });
     }
-    /* ATOMIC TEST-AND-INCREMENT — this is what makes a quota a quota.
+    /* ATOMIC TEST-AND-INCREMENT - this is what makes a quota a quota.
        A separate `get` then `incr` can be interleaved by concurrent requests:
        they all read the same value, all decide they fit, and all proceed. Doing
        the compare and the increment together, inside the DO's serialized
        execution, means only the callers that actually fit under the cap get
-       through — no matter how many arrive at once. */
+       through - no matter how many arrive at once. */
     if (op === 'reserve') {
       const cur = (await this.state.storage.get('v')) || 0;
       const amount = Number(body.amount);
@@ -300,7 +300,7 @@ export class AMVCounter {
       if (!Number.isFinite(amount) || amount < 0) return json({ allowed: false, value: cur });
       const next = cur + amount;
       // Deny when the RESULT would exceed the cap, not merely when the current
-      // value already does — otherwise the final reservation overshoots by up to
+      // value already does - otherwise the final reservation overshoots by up to
       // `amount` (AMV-017). Reserving up to exactly the cap is allowed.
       if (next > body.cap) return json({ allowed: false, value: cur });
       await this.state.storage.put('v', next);
@@ -335,12 +335,12 @@ async function counter(env, name, payload) {
     }
   } catch (e) {
     // AMV-016: the DO was BOUND but the atomic call failed. That is a real
-    // degradation of a security/cost counter to non-atomic KV — do not do it
+    // degradation of a security/cost counter to non-atomic KV - do not do it
     // silently. Alert operators (throttled) so a transient/fault condition that
     // weakens quota enforcement is visible instead of a transparent downgrade.
-    try { if (env.AMV_COUNTER) await alertOnce(env, 'counter_degraded', 'Atomic counter DO failed — falling back to non-atomic KV, quota enforcement is weakened: ' + String((e && e.message) || e), 15); } catch (_) {}
+    try { if (env.AMV_COUNTER) await alertOnce(env, 'counter_degraded', 'Atomic counter DO failed - falling back to non-atomic KV, quota enforcement is weakened: ' + String((e && e.message) || e), 15); } catch (_) {}
   }
-  // ---- KV fallback (best-effort, NOT atomic) — only used if DO unbound ----
+  // ---- KV fallback (best-effort, NOT atomic) - only used if DO unbound ----
   return _counterKVFallback(env, name, payload);
 }
 async function _counterKVFallback(env, name, payload) {
@@ -358,7 +358,7 @@ async function _counterKVFallback(env, name, payload) {
     return { value: next };
   }
   if (op === 'reserve') {
-    // Best-effort only. This IS the race the DO exists to close — without the
+    // Best-effort only. This IS the race the DO exists to close - without the
     // AMV_COUNTER binding a concurrent burst can still overshoot. Bind the
     // Durable Object in wrangler.toml (see the comments there).
     const cur = parseFloat(await env.AMV_KV.get('ctr:' + name) || '0');
@@ -378,10 +378,10 @@ async function _counterKVFallback(env, name, payload) {
 /* Reusable per-actor rate limit + optional daily cap. Use on any endpoint that
    writes data or spends money, so no single account can spam it. Atomic via the
    Durable Object, so parallel requests can't race past the limit.
-     key    — a stable id for the actor+action, e.g. `handoff:${email}`
-     perMin — max calls per rolling minute
-     perDay — optional max calls per day (0 = no daily cap)
-   Returns { ok:true } or { ok:false, code, retry } — caller turns !ok into a 429. */
+     key    - a stable id for the actor+action, e.g. `handoff:${email}`
+     perMin - max calls per rolling minute
+     perDay - optional max calls per day (0 = no daily cap)
+   Returns { ok:true } or { ok:false, code, retry } - caller turns !ok into a 429. */
 async function limitAction(env, key, perMin, perDay = 0) {
   const minName = `act:${key}:${Math.floor(Date.now() / 60000)}`;
   const minRes = await counter(env, minName, { op: 'rateCheck', limit: perMin, windowMs: 60000 });
@@ -406,11 +406,11 @@ async function guardAction(env, key, perMin, perDay, label) {
 }
 
 /* ══════════════════════════════════════════════════════════════
-   BACKGROUND AUTOMATIONS  —  they run whether or not the app is open.
+   BACKGROUND AUTOMATIONS  -  they run whether or not the app is open.
 
    Before this, "scheduled automations" only fired when the user happened to
    open the app (client-side _runDueTasks). That meant a "7am daily brief"
-   only appeared if you opened AMV at 7am — which defeats the point, and the
+   only appeared if you opened AMV at 7am - which defeats the point, and the
    product was being sold on it.
 
    Now: automations live server-side and are executed by a Cloudflare Cron
@@ -553,8 +553,8 @@ async function _autoExecute(env, item){
   const isResearch = item.kind === 'research';
 
   /* Research jobs SEARCH THE LIVE WEB and report what's happening. The prompt is
-     deliberately framed as monitoring and analysis \u2014 "here's what changed,
-     here's what it might mean" \u2014 and explicitly NOT as financial advice. AMV
+     deliberately framed as monitoring and analysis - "here's what changed,
+     here's what it might mean" - and explicitly NOT as financial advice. AMV
      never tells the user to buy, sell, or short. That's both the safe choice and
      the honest one: an unattended model should not be issuing trade signals. */
   const system = isResearch
@@ -564,7 +564,8 @@ async function _autoExecute(env, item){
       + "You must NOT give financial advice. Never tell the user to buy, sell, short, hold, or 'wait for an opening'. Never predict a specific price. "
       + "Describe what is happening and what people are saying; let the user decide. "
       + "Always end with a brief note that this is information, not financial advice."
-    : 'You are AMV running a scheduled automation for the user, unattended. Complete the task fully and return the finished result in markdown. Be specific and useful \u2014 this is what they will read when they come back. Never say you will do it later; do it now.';
+      + " Never use em or en dashes; use a plain hyphen (-) instead."
+    : 'You are AMV running a scheduled automation for the user, unattended. Complete the task fully and return the finished result in markdown. Be specific and useful - this is what they will read when they come back. Never say you will do it later; do it now. Never use em or en dashes; use a plain hyphen (-) instead.';
 
   const body = {
     model: 'claude-sonnet-4-6',
@@ -593,7 +594,7 @@ async function _autoExecute(env, item){
   const data = await r.json();
   const text = (data.content||[]).map(b=>b.text||'').join('').trim();
   // Return usage too so the cron loop can charge automation spend against the
-  // user's monthly cost cap — otherwise scheduled jobs would be a free way to
+  // user's monthly cost cap - otherwise scheduled jobs would be a free way to
   // burn compute (a research watch every 10 min = thousands of calls/month).
   const usage = data.usage || {};
   return { text, usage: { input: usage.input_tokens||0, output: usage.output_tokens||0,
@@ -615,7 +616,7 @@ async function _autoEmailResult(env, email, item, out){
   const label = String(item.detail||'').slice(0, 80);
   const subject = (isResearch ? 'AMV watch: ' : 'AMV update: ') + label;
   // Convert the markdown-ish result to simple HTML paragraphs (no heavy renderer
-  // in the Worker — keep it robust and dependency-free).
+  // in the Worker - keep it robust and dependency-free).
   const esc = (t)=>String(t).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
   const htmlBody = esc(out)
     .replace(/^### (.*)$/gm,'<h3 style="margin:18px 0 6px;font-size:15px">$1</h3>')
@@ -633,7 +634,7 @@ async function _autoEmailResult(env, email, item, out){
   );
   const text = (isResearch ? 'AMV research watch\\n\\n' : 'AMV scheduled update\\n\\n')
     + 'Subject: ' + label + '\\n\\n' + out
-    + '\\n\\n\\u2014 Manage this recurring check in AMV \\u2192 Tasks.';
+    + '\\n\\n\- Manage this recurring check in AMV \\u2192 Tasks.';
   return _sendEmail(env, email, subject, html, text);
 }
 
@@ -651,7 +652,7 @@ async function runDueAutomations(env){
     if(rec.paused) continue;   // user hit "Pause all autonomous"
 
     let changed = false;
-    // The plan's monthly cost ceiling — automations spend real money and must
+    // The plan's monthly cost ceiling - automations spend real money and must
     // count against it, exactly like interactive use. Compute once per user.
     const ent = (await DB.get(env, 'ent', email)) || { plan: 'free' };
     const plan = ent.plan || 'free';
@@ -668,12 +669,12 @@ async function runDueAutomations(env){
       // If this user is already at their monthly spend ceiling, skip the run
       // (don't burn compute they've effectively used up). Free plan (ceiling 0)
       // has no paid budget for automations, so they never execute a paid model
-      // call here — they degrade to nothing rather than costing us money.
+      // call here - they degrade to nothing rather than costing us money.
       if(costCeiling > 0){
         const capNow = await counter(env, costName, { op:'checkCap', cap: costCeiling });
         if(!capNow.allowed){ item.lastError = 'monthly allowance reached'; changed = true; continue; }
       } else {
-        // no paid budget — don't run paid automations for a free/unknown plan
+        // no paid budget - don't run paid automations for a free/unknown plan
         item.lastError = 'automations require a paid plan'; item.active = false; changed = true; continue;
       }
       // AMV-032: LEASE this specific run slot so two overlapping/retried cron
@@ -718,10 +719,10 @@ async function runDueAutomations(env){
 }
 
 /* ══════════════════════════════════════════════════════════════
-   REAL DEPLOYMENT  —  ship a live, public URL.
+   REAL DEPLOYMENT  -  ship a live, public URL.
 
    "Deploy" used to base64 the page into a URL fragment and tell the user
-   "nothing is stored on a server" — which is not a deployment. It broke past
+   "nothing is stored on a server" - which is not a deployment. It broke past
    ~18KB, and the pricing page sells "one-click deploy" and "host multiple
    live apps". So: actually host them.
 
@@ -756,7 +757,7 @@ async function deploySite(request, env){
   const html  = String(body.html||'');
   const title = String(body.title||'App').slice(0,80);
   if(!html.trim())            return json({ error:'nothing to deploy' }, 400);
-  // AMV-030: measure real UTF-8 BYTES, not UTF-16 string length — otherwise
+  // AMV-030: measure real UTF-8 BYTES, not UTF-16 string length - otherwise
   // multibyte content slips past the size cap.
   const htmlBytes = new TextEncoder().encode(html).length;
   if(htmlBytes > SITE_MAX_BYTES)
@@ -838,14 +839,14 @@ async function deployDelete(request, env){
 /* ---- Serve the live page (public, no auth) ----
    Served with CSP `sandbox`, which puts the page in a UNIQUE ORIGIN. It can run
    its own scripts but cannot touch cookies, storage, or any AMV API on this
-   origin — so hosting user code can't be turned into an attack on AMV. */
+   origin - so hosting user code can't be turned into an attack on AMV. */
 async function serveSite(request, env, slug){
   if(!SLUG_RE.test(slug||'')) return new Response('Not found', { status:404 });
   const rec = await DB.get(env, 'site', slug);
   if(!rec || !rec.html) return new Response('Not found', { status:404 });
 
   // AMV-030: count views in an ATOMIC counter instead of rewriting the whole
-  // site record on every read — that was write-amplification on a read-heavy
+  // site record on every read - that was write-amplification on a read-heavy
   // public page AND a lost-update race between concurrent viewers.
   try{ await counter(env, `siteviews:${slug}`, { op:'incr', amount:1, ttlMs: 86400000 * 400 }); }catch(e){}
 
@@ -867,7 +868,7 @@ async function serveSite(request, env, slug){
 }
 
 /* ══════════════════════════════════════════════════════════════
-   ERROR REPORTING  —  so a bug your users hit actually reaches YOU.
+   ERROR REPORTING  -  so a bug your users hit actually reaches YOU.
 
    Before this, errors went into a localStorage ring buffer and died there.
    A paying user hit a crash, saw a toast, and left. You never found out.
@@ -899,7 +900,7 @@ async function _fingerprint(e){
     .replace(/https?:\/\/\S+/g,'<url>')          // urls differ per user
     .replace(/0x[0-9a-f]+/gi,'<hex>')             // addresses
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,'<uuid>')
-    .replace(/\d+(\.\d+)?/g,'<n>')              // ANY number \u2014 note: no \b, so it also catches '3000ms'
+    .replace(/\d+(\.\d+)?/g,'<n>')              // ANY number - note: no \b, so it also catches '3000ms'
     .replace(/'[^']*'|"[^"]*"/g,'<s>')            // quoted values (varying names)
     .replace(/\s+/g,' ')
     .trim()
@@ -907,7 +908,7 @@ async function _fingerprint(e){
   return _errHash(msg + '|' + String(e.where||'') + '|' + String(e.kind||''));
 }
 
-/* POST /errors — the client reports a batch. No auth required (errors can
+/* POST /errors - the client reports a batch. No auth required (errors can
    happen before/without login), but it is strictly bounded and sanitised. */
 async function errorsReport(request, env){
   // AMV-054: this is a PUBLIC (unauthenticated) telemetry sink. Rate-limit per IP
@@ -976,7 +977,7 @@ async function errorsReport(request, env){
   return json({ ok:true, accepted });
 }
 
-/* POST /errors/list — YOUR dashboard. Admin only. */
+/* POST /errors/list - YOUR dashboard. Admin only. */
 async function errorsList(request, env){
   const body = await request.json().catch(()=>({}));
   if(!_adminTokenOK(request, env)) return json({ error:'unauthorized' }, 401);
@@ -993,7 +994,7 @@ async function errorsList(request, env){
   return json({ ok:true, groups, total, distinct:groups.length, active24h:last24.length });
 }
 
-/* POST /errors/resolve — mark a bug fixed (clears it from the board). */
+/* POST /errors/resolve - mark a bug fixed (clears it from the board). */
 async function errorsResolve(request, env){
   const body = await request.json().catch(()=>({}));
   if(!_adminTokenOK(request, env)) return json({ error:'unauthorized' }, 401);
@@ -1004,7 +1005,7 @@ async function errorsResolve(request, env){
   return json({ ok:true, remaining:Object.keys(idx.groups).length });
 }
 
-/* POST /admin/abuse/list — flagged accounts (chargebacks / refund patterns).
+/* POST /admin/abuse/list - flagged accounts (chargebacks / refund patterns).
    Admin-only, so you can see who tried the DoorDash method and clear any false
    positive. */
 async function abuseList(request, env){
@@ -1022,7 +1023,7 @@ async function abuseList(request, env){
   return json({ ok:true, flagged: rows, blockedCount: rows.filter(r=>r.blocked).length });
 }
 
-/* POST /admin/abuse/clear — lift a flag (a genuine refund that got caught).
+/* POST /admin/abuse/clear - lift a flag (a genuine refund that got caught).
    Admin-only. */
 async function abuseClear(request, env){
   const body = await request.json().catch(()=>({}));
@@ -1038,7 +1039,7 @@ async function abuseClear(request, env){
 }
 
 /* ══════════════════════════════════════════════════════════════════════
-   CREW JOBS · APPROVALS · HANDOFF — per-user sync
+   CREW JOBS · APPROVALS · HANDOFF - per-user sync
 
    These features work locally in the browser; these endpoints persist them
    server-side so they sync across a user's devices (and, for handoff, reach
@@ -1090,7 +1091,7 @@ async function handoffList(request, env){
 async function handoffCreate(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
-  // Cross-user write — guard against spamming another user's inbox.
+  // Cross-user write - guard against spamming another user's inbox.
   const blocked = await guardAction(env, `handoff:${user.email}`, 10, 100, 'handoffs');
   if(blocked) return blocked;
   const { title, context, to } = await request.json().catch(()=>({}));
@@ -1123,7 +1124,7 @@ async function handoffAct(request, env){
 }
 
 /* ══════════════════════════════════════════════════════════════════════
-   DATA SAFETY — backup & restore  (auditor #5)
+   DATA SAFETY - backup & restore  (auditor #5)
 
    Every customer's account, subscription, chats, projects, and automations
    live in KV. Without a backup, one bad migration or an accidental namespace
@@ -1132,7 +1133,7 @@ async function handoffAct(request, env){
 
    We back up the DURABLE data (accounts, entitlements, synced data, automations,
    teams, sites, abuse flags, wallets, purchases) and deliberately SKIP ephemeral
-   keys (usage counters, rate-limits, presence, short-lived reset tokens) — those
+   keys (usage counters, rate-limits, presence, short-lived reset tokens) - those
    regenerate and would only bloat the snapshot.
    ══════════════════════════════════════════════════════════════════════ */
 
@@ -1144,7 +1145,7 @@ const BACKUP_PREFIXES = [
 ];
 
 /* AMV-035: admin-token auth. Read the token ONLY from a header (never the
-   request body — bodies get captured by logs, traces and error telemetry),
+   request body - bodies get captured by logs, traces and error telemetry),
    compare in constant time, and FAIL CLOSED when ADMIN_TOKEN is unconfigured. */
 function _adminTokenOK(request, env){
   if(!env.ADMIN_TOKEN) return false;
@@ -1175,7 +1176,7 @@ async function backupExport(request, env){
     } while(cursor);
   }
 
-  // AMV-036: when D1 is the source of truth, KV won't hold these records — pull
+  // AMV-036: when D1 is the source of truth, KV won't hold these records - pull
   // them from D1 too so the export is a COMPLETE recovery artifact, not a
   // silently-empty one.
   if(DB._hasD1(env)){
@@ -1210,8 +1211,8 @@ async function backupExport(request, env){
 
 /* POST /admin/backup/import → restore keys from a snapshot.
    Body: { token, snapshot, mode }
-     mode 'merge'    (default) — write snapshot keys, leave others untouched.
-     mode 'missing'  — only write keys that don't currently exist (safe recovery,
+     mode 'merge'    (default) - write snapshot keys, leave others untouched.
+     mode 'missing'  - only write keys that don't currently exist (safe recovery,
                        never clobbers newer live data).
    We never auto-delete. Restores are additive by design so a restore can't
    itself destroy data. */
@@ -1229,7 +1230,7 @@ async function backupImport(request, env){
   const allowed = (key) => BACKUP_PREFIXES.some(p => key.startsWith(p));
 
   // AMV-036: bound the import so a crafted/accidental snapshot can't exhaust
-  // resources — cap the key count and reject oversized values.
+  // resources - cap the key count and reject oversized values.
   const entries = Object.entries(snap.data);
   const MAX_IMPORT_KEYS = 500000;
   const MAX_VALUE_BYTES = 2 * 1024 * 1024;   // 2MB per value
@@ -1314,7 +1315,7 @@ async function authResetCode(request, env) {
   try { rl = JSON.parse(await env.AMV_KV.get(rlKey) || 'null'); } catch (e) {}
   const nowMs = Date.now();
   if (rl && nowMs - rl.first < RESET_RL_WINDOW_MS && rl.n >= RESET_RL_MAX) {
-    // Still 200 + ok:true — never reveal whether this address is registered.
+    // Still 200 + ok:true - never reveal whether this address is registered.
     audit(env, 'reset_rate_limited', { email });
     return json({ ok: true, sent: false, emailConfigured, rateLimited: true });
   }
@@ -1389,11 +1390,11 @@ async function sendResetCodeEmail(env, to, code) {
     _emailShell('Your reset code',
       '<p style="margin:0 0 18px;font-size:14px;line-height:1.65;color:#555">Enter this code in AMV to set a new password. It expires in <b>15 minutes</b>.</p>' + bigCode,
       null,
-      '<hr style="border:none;border-top:1px solid #eee;margin:0 0 18px"><p style="margin:0;font-size:12px;line-height:1.6;color:#999">If you didn\u2019t request this, you can ignore this email \u2014 your password won\u2019t change.</p>',
+      '<hr style="border:none;border-top:1px solid #eee;margin:0 0 18px"><p style="margin:0;font-size:12px;line-height:1.6;color:#999">If you didn\u2019t request this, you can ignore this email - your password won\u2019t change.</p>',
       'This is an automated security email.'),
     'Your AMV password reset code: ' + code +
     '\n\nEnter it in AMV to set a new password. It expires in 15 minutes.' +
-    '\n\nIf you didn\u2019t request this, you can ignore this email.\n\n\u2014 The AMV team');
+    '\n\nIf you didn\u2019t request this, you can ignore this email.\n\n- The AMV team');
 }
 
 /* Owner escape hatch: set a password directly with the ADMIN_TOKEN.
@@ -1436,7 +1437,7 @@ async function authResetStatus(request, env){
 /* ══════════════════════════════════════════════════════════════
    THE RESET PAGE.
 
-   The reset email links to <worker>/reset?token=... — but that route did not
+   The reset email links to <worker>/reset?token=... - but that route did not
    exist, so the link 404'd. The whole "forgot password" flow was dead end to
    end: no email could send (no provider configured), and even if it had, the
    link went nowhere.
@@ -1565,12 +1566,12 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname.replace(/\/+$/, '');
 
-    // Live deployed sites are PUBLIC — served before any auth/CORS gating.
+    // Live deployed sites are PUBLIC - served before any auth/CORS gating.
     if (request.method === 'GET' && path.startsWith('/s/')) {
       return serveSite(request, env, path.slice(3));
     }
 
-    // The password-reset page must be public too — the whole point is that the
+    // The password-reset page must be public too - the whole point is that the
     // user cannot log in. This is what the reset email links to.
     if (request.method === 'GET' && path === '/reset') {
       return resetPage(request, env);
@@ -1711,7 +1712,7 @@ export default {
           const accept = request.headers.get('Accept') || '';
           if (accept.includes('text/html')) {
             return new Response(
-              `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>404 — Not found</title><style>body{margin:0;height:100vh;display:flex;align-items:center;justify-content:center;background:#0b0e14;color:#e6e6e6;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}.b{text-align:center;padding:24px}.c{font-size:72px;font-weight:800;color:#4c7dff;line-height:1}.t{font-size:22px;margin:12px 0 6px}.s{color:#9aa4b2;margin-bottom:20px}a{display:inline-block;padding:10px 20px;background:#4c7dff;color:#fff;text-decoration:none;border-radius:9px;font-weight:600}</style></head><body><div class="b"><div class="c">404</div><div class="t">Page not found</div><div class="s">This page doesn't exist or may have moved.</div><a href="/">Go home</a></div></body></html>`,
+              `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>404 - Not found</title><style>body{margin:0;height:100vh;display:flex;align-items:center;justify-content:center;background:#0b0e14;color:#e6e6e6;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}.b{text-align:center;padding:24px}.c{font-size:72px;font-weight:800;color:#4c7dff;line-height:1}.t{font-size:22px;margin:12px 0 6px}.s{color:#9aa4b2;margin-bottom:20px}a{display:inline-block;padding:10px 20px;background:#4c7dff;color:#fff;text-decoration:none;border-radius:9px;font-weight:600}</style></head><body><div class="b"><div class="c">404</div><div class="t">Page not found</div><div class="s">This page doesn't exist or may have moved.</div><a href="/">Go home</a></div></body></html>`,
               { status: 404, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
             );
           }
@@ -1740,7 +1741,7 @@ export default {
    devices. Passwords are salted+hashed with PBKDF2-SHA256 at the OWASP-2023
    iteration count. The iteration count is stored ON the account record, so we
    can raise it over time and verify old logins at their original count, then
-   transparently re-hash on next successful login — no lockouts.
+   transparently re-hash on next successful login - no lockouts.
    (Argon2id would be preferable but isn't available in the Workers runtime.)
    ============================================================ */
 const PBKDF2_ITERATIONS = 210000;   // OWASP 2023 recommendation for PBKDF2-SHA256
@@ -1760,7 +1761,7 @@ async function _hashPassword(password, salt, iterations){
   return [...new Uint8Array(bits)].map(b=>b.toString(16).padStart(2,'0')).join('');
 }
 /* Verify a Cloudflare Turnstile token. Returns true if:
-   - Turnstile isn't configured yet (TURNSTILE_SECRET unset) — we don't block
+   - Turnstile isn't configured yet (TURNSTILE_SECRET unset) - we don't block
      real users before you've set it up; the honeypot + rate limits still apply.
    - OR the token validates against Cloudflare.
    Returns false only when Turnstile IS configured and the token is missing/invalid. */
@@ -1793,12 +1794,12 @@ async function authSignup(request, env){
   if (!capOk) return json({ error:'Please complete the verification and try again.', code:'captcha_required' }, 400);
   const em = String(email||'').toLowerCase().trim();
   // Strict format: exactly one @, no whitespace/colons/control chars, sane length.
-  // Emails go into KV key structures and audit logs — keep them clean by construction.
+  // Emails go into KV key structures and audit logs - keep them clean by construction.
   if(!em || em.length > 254 || !/^[^\s@:]{1,64}@[^\s@:]+\.[^\s@:]{2,}$/.test(em)) return json({ error:'valid email required' }, 400);
-  // AMV-051: raise the password baseline — 8+ chars and reject the most common
+  // AMV-051: raise the password baseline - 8+ chars and reject the most common
   // passwords so a leaked hash has meaningfully more offline resistance.
   if(!password || password.length < 8 || password.length > 512) return json({ error:'password must be at least 8 characters' }, 400);
-  if(_isCommonPassword(password)) return json({ error:'that password is too common — please choose a stronger one' }, 400);
+  if(_isCommonPassword(password)) return json({ error:'that password is too common - please choose a stronger one' }, 400);
   const safeName = String(name||'').slice(0, 80);
   const existing = await DB.get(env, 'acct', em);
   if(existing) return json({ error:'account exists' }, 409);
@@ -1812,7 +1813,7 @@ async function authSignup(request, env){
 async function authLogin(request, env) {
   const body = await request.json().catch(()=>({}));
   const { email, name, password, provider } = body;
-  // Honeypot — a hidden field only bots fill.
+  // Honeypot - a hidden field only bots fill.
   if (body.company || body.website) { audit(env,'bot_blocked',{where:'login_honeypot'}); return json({ error:'sign in failed' }, 400); }
   const em = String(email||'').toLowerCase().trim();
   if (!em) return json({ error: 'email required' }, 400);
@@ -1837,13 +1838,13 @@ async function authLogin(request, env) {
   const acct = acct0;
   // FAIL CLOSED: only a real email-password account with a stored password hash
   // may obtain a token here. A federated account (provider !== 'email', or no
-  // pwHash) has no password to check, so it must be rejected — never fall through
+  // pwHash) has no password to check, so it must be rejected - never fall through
   // to issueTokens. This closes both the provider-impersonation bypass and the
   // "any password logs in a federated account" bypass.
   if(acct.provider !== 'email' || !acct.pwHash){
     await _noteAuthFail(env, rlKey);
     audit(env,'auth_fail',{email:em,reason:'wrong_method'});
-    return json({ error:'wrong password' }, 401);   // generic — never reveal the account's provider
+    return json({ error:'wrong password' }, 401);   // generic - never reveal the account's provider
   }
   if(!password) return json({ error:'password required' }, 400);
   // verify using the iteration count the hash was MADE with (default 100k for
@@ -1853,7 +1854,7 @@ async function authLogin(request, env) {
   // constant-time compare to avoid password-timing leaks
   const ok = timingSafeEqual(new TextEncoder().encode(hash), new TextEncoder().encode(acct.pwHash || ''));
   if(!ok){ await _noteAuthFail(env, rlKey); audit(env,'auth_fail',{email:em,reason:'bad_password'}); return json({ error:'wrong password' }, 401); }
-  // success — clear the failure counter
+  // success - clear the failure counter
   try{ await env.AMV_KV.delete(rlKey); }catch(e){}
   // transparent upgrade: if this account is below the current target, re-hash now
   if(usedIter < PBKDF2_ITERATIONS){
@@ -1861,13 +1862,13 @@ async function authLogin(request, env) {
       const newHash = await _hashPassword(password, acct.salt, PBKDF2_ITERATIONS);
       acct.pwHash = newHash; acct.pwIter = PBKDF2_ITERATIONS;
       await DB.put(env, 'acct', em, acct);
-    }catch(e){ /* non-fatal — login still succeeds */ }
+    }catch(e){ /* non-fatal - login still succeeds */ }
   }
   try{ await _markActive(env, em); }catch(e){}
   return json(await issueTokens(env, em, acct.name || name || ''));
 }
 
-/* Operator user list — admin-gated. Returns accounts for the Admin Control
+/* Operator user list - admin-gated. Returns accounts for the Admin Control
    Center. Only a verified admin token may call this. */
 async function adminUsers(request, env) {
   const auth = request.headers.get('Authorization')||'';
@@ -1876,9 +1877,9 @@ async function adminUsers(request, env) {
   if(!claims || !claims.email) return json({ error:'unauthorized' }, 401);
   // must be an admin: either the configured owner email or an account flagged admin
   const acct = await DB.get(env, 'acct', String(claims.email).toLowerCase());
-  // Operator email — from env, falling back to the hard-coded owner. Change both
+  // Operator email - from env, falling back to the hard-coded owner. Change both
   // (this line and OWNER_EMAIL in app.js) when transferring ownership.
-  // AMV-034: owner identity comes ONLY from the configured OWNER_EMAIL secret —
+  // AMV-034: owner identity comes ONLY from the configured OWNER_EMAIL secret -
   // no hardcoded personal-email fallback. If it isn't set, nobody is owner (fail
   // closed) rather than a source-code constant silently granting privilege.
   const ownerEmail = String(env.OWNER_EMAIL || '').toLowerCase();
@@ -1924,8 +1925,8 @@ async function adminUsers(request, env) {
 
 /* Verify a Google ID token (JWT credential) SERVER-SIDE before trusting it.
    This is the production-safe path: the browser sends the credential from Google
-   Identity Services, and here we confirm it with Google — checking the signature,
-   that the audience matches OUR client id, and that it hasn't expired — then mint
+   Identity Services, and here we confirm it with Google - checking the signature,
+   that the audience matches OUR client id, and that it hasn't expired - then mint
    our own session. The frontend never grants privileges on an unverified token. */
 async function authGoogle(request, env) {
   const { credential } = await request.json().catch(()=>({}));
@@ -1936,7 +1937,7 @@ async function authGoogle(request, env) {
     if(!r.ok){ audit(env,'google_verify_fail',{status:r.status}); return json({ error:'invalid google token' }, 401); }
     const claims = await r.json();
     // AMV-052: FAIL CLOSED. Google sign-in requires GOOGLE_CLIENT_ID so we can
-    // pin the audience — without it, a token minted for ANY other Google app
+    // pin the audience - without it, a token minted for ANY other Google app
     // would be accepted (audience confusion). Validate aud, issuer and
     // email_verified unconditionally.
     const expectedAud = env.GOOGLE_CLIENT_ID || '';
@@ -1965,7 +1966,7 @@ async function authRefresh(request, env) {
   if (!data || !data.email) return json({ error: 'invalid or expired refresh token' }, 401);
   // AMV-011: refresh-token ROTATION with reuse detection. Each refresh token may
   // be exchanged exactly once. Claiming its jti is atomic (on D1); if the jti was
-  // already used, the token is being REPLAYED — it was stolen and used twice — so
+  // already used, the token is being REPLAYED - it was stolen and used twice - so
   // we revoke every token for the account (kills both the thief and the victim's
   // session; the victim simply signs in again) instead of quietly issuing more.
   if (data.jti) {
@@ -1989,11 +1990,11 @@ async function authLogout(request, env) {
   return json({ ok: true });
 }
 
-/* DELETE MY ACCOUNT — the "right to erasure" the privacy policy promises.
+/* DELETE MY ACCOUNT - the "right to erasure" the privacy policy promises.
    Purges every piece of the user's data from KV and revokes their tokens. It is
    irreversible, so the client requires an explicit typed confirmation before
    calling this. We delete by the user's own email, so one user can only ever
-   delete THEMSELVES — never anyone else. */
+   delete THEMSELVES - never anyone else. */
 async function authDeleteAccount(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
@@ -2003,7 +2004,7 @@ async function authDeleteAccount(request, env) {
 
   // 1) Remove the user from their team's member list before dropping the pointer,
   //    so team records don't retain a ghost member. (A team-OWNER's team is left
-  //    intact — ownership transfer/teardown is a separate flow.)
+  //    intact - ownership transfer/teardown is a separate flow.)
   try {
     const tid = await env.AMV_KV.get(`userteam:${email}`);
     if (tid) {
@@ -2070,7 +2071,7 @@ async function authDeleteAccount(request, env) {
 
 /* Pull all of a user's synced data (or just keys changed since `since`). */
 /* ============================================================
-   TEAM / WORKSPACE MODE — the B2B tier.
+   TEAM / WORKSPACE MODE - the B2B tier.
    A team has an owner, members with roles, and shared data (projects,
    prompts, memory). Stored in KV: team:{id} and teammember lookups.
    ============================================================ */
@@ -2130,9 +2131,9 @@ function _boundedJson(obj, maxBytes, maxDepth){
    TEAM ROLES & PERMISSIONS (auditor #11)
    Three roles with an explicit capability matrix, so permissions are
    defined in one place instead of scattered ad-hoc checks.
-     • owner  — full control; only one; can't be removed; can delete team
-     • admin  — manage members, change member/admin roles, edit team data
-     • member — use the shared workspace, read members, leave
+     • owner  - full control; only one; can't be removed; can delete team
+     • admin  - manage members, change member/admin roles, edit team data
+     • member - use the shared workspace, read members, leave
    ===================================================================== */
 const TEAM_PERMS = {
   owner:  new Set(['invite','remove','setRole','editData','viewMembers','viewAudit','deleteTeam','rename']),
@@ -2261,7 +2262,7 @@ async function teamData(request, env){
   const team = await _teamOf(env, user.email);
   if(!team) return json({ error:'no team' }, 404);
   if(request.method==='GET') return json({ ok:true, data: team.data||{} });
-  // WRITE — enforce the role model: only owner/admin may edit shared team data.
+  // WRITE - enforce the role model: only owner/admin may edit shared team data.
   if(!_can(team, user.email, 'editData')) return json({ error:'editing team data requires an admin or owner role' }, 403);
   const body = await request.json().catch(()=>({}));
   const patch = body.data || {};
@@ -2321,7 +2322,7 @@ async function teamUnshare(request, env){
 
 /* ---------------- TEAM PRESENCE ----------------
    Poll-based heartbeat: each ping records the member's last-seen time; anyone
-   seen in the last 60s counts as "active now". Cheap, no sockets, and honest —
+   seen in the last 60s counts as "active now". Cheap, no sockets, and honest -
    it reflects real recent activity. */
 async function teamPresence(request, env){
   const user = await requireUser(request, env);
@@ -2389,7 +2390,7 @@ async function teamTaskCreate(request, env){
 }
 
 /* Email a teammate when work lands on them (no-op if email isn't configured,
-   never throws — notification must not break the assignment). */
+   never throws - notification must not break the assignment). */
 async function _notifyAssignee(env, team, assigner, assigneeEmail, task) {
   try {
     const appUrl = (env.APP_URL || '').replace(/\/$/, '');
@@ -2454,7 +2455,7 @@ async function syncPull(request, env){
 /* Push the user's data up (last-write-wins per top-level key, with a merge). */
 const SYNC_ALLOWED_KEYS = new Set([
   'chats','convs','memory','workspaces','prompts','settings','imgs','vids','custom_cfg','plan_since',
-  // Your actual WORK — Dev projects, Lab sessions, and everything in Recents.
+  // Your actual WORK - Dev projects, Lab sessions, and everything in Recents.
   // These used to live only in the browser, so switching device or clearing the
   // cache destroyed them. They are the most valuable thing a user has.
   'sessions','skills','handoffs','profile'
@@ -2470,7 +2471,7 @@ async function syncPush(request, env){
   const body = await request.json().catch(()=>({}));
   const incoming = body.data || {};
   if(typeof incoming !== 'object' || Array.isArray(incoming)) return json({ error:'invalid data' }, 400);
-  // Only persist known keys — a client can't bloat its own server record with
+  // Only persist known keys - a client can't bloat its own server record with
   // arbitrary fields (auditor #3: validate + bound what we store).
   const filtered = {};
   for(const k of Object.keys(incoming)){ if(SYNC_ALLOWED_KEYS.has(k)) filtered[k] = incoming[k]; }
@@ -2501,21 +2502,21 @@ async function requireUser(request, env) {
   return data;
 }
 
-/* Resolve the effective limits for a user — custom plans use their purchased pool. */
+/* Resolve the effective limits for a user - custom plans use their purchased pool. */
 function effectiveLimits(user) {
   if (user.plan === 'custom' && user.customCfg) {
     const c = user.customCfg;
     const price = c.price || 30;
     const monthTokens = c.monthTokens || 300000;
     // Image & video limits scale with the plan size so a bigger custom budget
-    // genuinely buys proportionally more media — not a flat binary. Bounded so
+    // genuinely buys proportionally more media - not a flat binary. Bounded so
     // they never exceed what the price can cover (margin stays protected).
     // ~1 image per 30k tokens of headroom; videos scale per $ above $15.
     const imagesDay = Math.min(5000, Math.max(50, Math.floor(monthTokens / 30000)));
     const videosMonth = price >= 15 ? Math.min(1000, Math.floor((price - 10) * 4)) : 0;
     return {
       dayTokens: c.dayTokens || 50000,
-      monthTokens,                              // HARD CAP — the profit guarantee
+      monthTokens,                              // HARD CAP - the profit guarantee
       rpm: c.rpm || 16,
       imagesDay,
       videosMonth,
@@ -2674,7 +2675,7 @@ async function videoStatus(request, env) {
     }
     if (status === 'failed' && !job.error) {
       job.error = String(d.error || 'The video could not be generated.');
-      // It produced nothing, so it shouldn't count against their plan — but refund
+      // It produced nothing, so it shouldn't count against their plan - but refund
       // EXACTLY ONCE (AMV-024). Concurrent status polls both see a fresh failure;
       // an atomic per-job claim guarantees only the first one gives the quota back
       // (a plain "!job.error" read races and can refund twice / go negative).
@@ -2735,12 +2736,12 @@ async function aiProxy(request, env, ctx) {
 
   const limits = effectiveLimits(user);
 
-  // 1) PLAN ENFORCEMENT — free can't call premium engines (custom plans paid for all models)
+  // 1) PLAN ENFORCEMENT - free can't call premium engines (custom plans paid for all models)
   if (!limits.allModels && PLAN_RANK[user.plan] < PLAN_RANK[eng.minPlan]) {
     return json({ error: `${key} requires the ${eng.minPlan} plan. Upgrade to use it.`, code: 'plan_required', minPlan: eng.minPlan }, 402);
   }
 
-  // 2) RATE LIMIT (per account, per minute) — ATOMIC test-and-increment.
+  // 2) RATE LIMIT (per account, per minute) - ATOMIC test-and-increment.
   //    A Durable Object serializes this op, so parallel requests can't race
   //    past the limit (the bug a plain KV read-then-write would have).
   const rlName = `rl:${user.email}:${Math.floor(Date.now() / 60000)}`;
@@ -2753,7 +2754,7 @@ async function aiProxy(request, env, ctx) {
   //     read used -> compare to cap -> call the model -> add what it cost
   // That races. Twenty parallel requests all read the SAME `used`, all decide
   // they're under the cap, and all call the model. Measured on the free plan:
-  // 8 concurrent requests burned 160,000 tokens against a 50,000/day cap — a
+  // 8 concurrent requests burned 160,000 tokens against a 50,000/day cap - a
   // 3.2x overshoot, trivially triggered from devtools with a fetch loop.
   //
   // So instead we RESERVE an upper bound atomically BEFORE calling the model.
@@ -2777,7 +2778,7 @@ async function aiProxy(request, env, ctx) {
   }
   const mRes = await counter(env, mName, { op: 'reserve', amount: reserve, cap: limits.monthTokens, ttlMs: 86400000 * 70 });
   if (!mRes.allowed) {
-    // give back the daily reservation we just took — this call isn't happening
+    // give back the daily reservation we just took - this call isn't happening
     await counter(env, dName, { op: 'incr', amount: -reserve, ttlMs: 86400000 * 35 });
     const now = new Date();
     const resetAt = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
@@ -2798,7 +2799,7 @@ async function aiProxy(request, env, ctx) {
   const dUsed = dRes.value || 0;
   // (month cap already enforced by the reservation above)
 
-  // 3b) COST BACKSTOP — applies to EVERY paid plan. A user can never cost us
+  // 3b) COST BACKSTOP - applies to EVERY paid plan. A user can never cost us
   //     more than a safe fraction of what they paid, guaranteeing margin even
   //     if they run 100% on the most expensive model. This is the profit lock.
   const PLAN_PRICE = { pro:15, elite:75, ultra:200 };
@@ -2814,20 +2815,20 @@ async function aiProxy(request, env, ctx) {
     }
   }
 
-  // 4) GLOBAL SPEND CAP — hard ceiling across ALL users (atomic read)
+  // 4) GLOBAL SPEND CAP - hard ceiling across ALL users (atomic read)
   const gName = `spend:${todayKey()}`;
   const gCap = parseFloat(env.GLOBAL_DAILY_USD_CAP || '500');
   const gRes = await counter(env, gName, { op: 'checkCap', cap: gCap });
   if (!gRes.allowed) {
     audit(env,'global_cap_hit',{value:gRes.value||0,cap:gCap}); ctx.waitUntil(notify(env, `GLOBAL DAILY SPEND CAP HIT: $${(gRes.value||0).toFixed(2)} >= $${gCap}`));
-    await refundReservation();   // the call never happened — don't eat their quota
+    await refundReservation();   // the call never happened - don't eat their quota
     return json({ error: 'Service is at capacity for today. Please try again tomorrow.', code: 'global_cap' }, 503);
   }
 
   // 5) clamp output tokens to the engine max (cost ceiling per call)
   const maxTokens = Math.min(body.max_tokens || eng.maxOut, eng.maxOut);
 
-  // 6) build the upstream request — inject prompt caching to cut input cost
+  // 6) build the upstream request - inject prompt caching to cut input cost
   const upstreamBody = {
     model: eng.model,
     max_tokens: maxTokens,
@@ -2838,7 +2839,7 @@ async function aiProxy(request, env, ctx) {
     // cache the big system prompt so repeat turns are ~90% cheaper
     upstreamBody.system = [{ type: 'text', text: String(body.system), cache_control: { type: 'ephemeral' } }];
   }
-  // Only forward tools we explicitly support — never pass arbitrary client
+  // Only forward tools we explicitly support - never pass arbitrary client
   // tool definitions straight upstream (auditor #4: bounds attack + cost surface).
   if (body.tools && Array.isArray(body.tools)) {
     const ALLOWED_TOOLS = new Set(['web_search_20250305']);
@@ -2867,15 +2868,15 @@ async function aiProxy(request, env, ctx) {
   });
 
   if (!upstream.ok) {
-    // The model errored, so it produced nothing. Give the reservation back —
+    // The model errored, so it produced nothing. Give the reservation back -
     // otherwise an outage would quietly burn through everyone's daily quota.
     await refundReservation();
     const e = await upstream.json().catch(() => ({}));
     try { await _workerError(env, 'aiProxy:upstream', new Error('upstream ' + upstream.status)); } catch (_) {}
-    // A 401/403 from the model means your API key is bad/expired/over-quota —
+    // A 401/403 from the model means your API key is bad/expired/over-quota -
     // that breaks the ENTIRE product for everyone, so alert loudly and fast.
     if (upstream.status === 401 || upstream.status === 403) {
-      ctx.waitUntil(alertOnce(env, 'model_auth_fail', `🚨 Model API rejected our key (${upstream.status}): ${e?.error?.message || 'auth error'}. AI is DOWN for all users — check ANTHROPIC_API_KEY / billing.`, 10));
+      ctx.waitUntil(alertOnce(env, 'model_auth_fail', `🚨 Model API rejected our key (${upstream.status}): ${e?.error?.message || 'auth error'}. AI is DOWN for all users - check ANTHROPIC_API_KEY / billing.`, 10));
     } else if (upstream.status >= 500) {
       ctx.waitUntil(alertOnce(env, 'model_5xx', `⚠️ Model API erroring (${upstream.status}). AI responses may be failing.`, 15));
     }
@@ -2944,7 +2945,7 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, user, e
         }
       }
     }
-  } catch { /* stream interrupted — we still bill whatever usage we saw */ }
+  } catch { /* stream interrupted - we still bill whatever usage we saw */ }
 
   // Fallback: if we never got usage (parse failure / hard interruption), estimate
   // conservatively from the request so a request is NEVER completely free.
@@ -2966,10 +2967,10 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, user, e
     // searches aren't consumed for free.
     + (webSearches * WEB_SEARCH_COST_USD);
 
-  // total tokens for quota accounting (count cache tokens too — they're real usage)
+  // total tokens for quota accounting (count cache tokens too - they're real usage)
   const total = inTok + cacheRead + cacheWrite + outTok;
 
-  // persist counters ATOMICALLY (DO incr) — no read-modify-write race
+  // persist counters ATOMICALLY (DO incr) - no read-modify-write race
   /* RECONCILE the reservation.
 
      `reserved` tokens were already booked against this user BEFORE the model
@@ -3009,7 +3010,7 @@ function _estimateInputTokens(messages) {
     return Math.max(200, Math.ceil(chars / 4));
   } catch { return 500; }
 }
-/* Reservation estimate for a full request — includes the client-supplied system
+/* Reservation estimate for a full request - includes the client-supplied system
    prompt so it is METERED and reserved rather than sent to the model for free
    (AMV-020). Every token-bearing field must be counted here. */
 function _estimateReserveInput(body) {
@@ -3147,7 +3148,7 @@ function _host(v) {
 }
 
 // Is this request's Origin allowed by the widget's domain allow-list?
-// An empty allow-list means "not yet restricted" — allowed, but we surface a
+// An empty allow-list means "not yet restricted" - allowed, but we surface a
 // warning in the owner UI so they lock it down before going wide.
 function _originAllowed(reqOrigin, allowedList) {
   if (!Array.isArray(allowedList) || allowedList.length === 0) return true;
@@ -3184,7 +3185,7 @@ const WIDGET_DEFAULTS = {
 };
 
 /* PUBLIC: display-only config for the embed panel (title, greeting, accent).
-   Never returns caps, system prompt, origins, or the owner — just what the
+   Never returns caps, system prompt, origins, or the owner - just what the
    visitor-facing UI needs to render. Safe to call with the public site key. */
 async function widgetConfigPublic(request, env) {
   const url = new URL(request.url);
@@ -3272,7 +3273,7 @@ async function widgetChat(request, env, ctx) {
   const vRl = await limitAction(env, `widgetip:${key}:${vip}`, 15, 300);
   if (!vRl.ok) {
     audit(env, 'widget_visitor_throttle', { key });
-    return new Response(JSON.stringify({ error: 'Too many messages — please slow down and try again in a moment.' }), { status: 429, headers: { 'Content-Type': 'application/json', ...wcors } });
+    return new Response(JSON.stringify({ error: 'Too many messages - please slow down and try again in a moment.' }), { status: 429, headers: { 'Content-Type': 'application/json', ...wcors } });
   }
   if (!body || !Array.isArray(body.messages)) {
     return new Response(JSON.stringify({ error: 'Invalid request.' }), { status: 400, headers: { 'Content-Type': 'application/json', ...wcors } });
@@ -3421,7 +3422,7 @@ async function notify(env, msg) {
    recurring failure pages you the FIRST time (when you can still act) without
    burying you in thousands of duplicate messages. Critical money/security
    events use a short window; noisy ones use a long one. Returns quietly if no
-   webhook is configured — alerting is opt-in via ALERT_WEBHOOK. */
+   webhook is configured - alerting is opt-in via ALERT_WEBHOOK. */
 async function alertOnce(env, key, msg, windowMin = 30) {
   if (!env.ALERT_WEBHOOK) return;
   try {
@@ -3433,7 +3434,7 @@ async function alertOnce(env, key, msg, windowMin = 30) {
 }
 
 /* =====================================================================
-   SIGNED TOKENS — hardened HS256 JWT
+   SIGNED TOKENS - hardened HS256 JWT
    - Standards-compliant JWT (header.payload.signature), URL-safe base64
    - Constant-time signature comparison (no timing leak)
    - Short-lived ACCESS tokens (default 1h) + long-lived REFRESH tokens (30d)
@@ -3445,7 +3446,7 @@ const ACCESS_TTL_MS  = 60 * 60 * 1000;          // 1 hour
 const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const TOKEN_VER = 1;                             // bump to invalidate all old tokens
 
-// URL-safe base64 (no '+', '/', '=') — proper JWT encoding
+// URL-safe base64 (no '+', '/', '=') - proper JWT encoding
 function b64urlEncode(bytes) {
   let bin = '';
   const arr = (bytes instanceof Uint8Array) ? bytes : new TextEncoder().encode(bytes);
@@ -3468,7 +3469,7 @@ function b64urlDecodeToBytes(str) {
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   return bytes;
 }
-// Constant-time byte comparison — defeats timing attacks
+// Constant-time byte comparison - defeats timing attacks
 function timingSafeEqual(a, b) {
   if (a.length !== b.length) return false;
   let diff = 0;
@@ -3480,7 +3481,7 @@ async function _hmacKey(secret) {
   // JWT_SECRET must break token signing and verification (no tokens issued, all
   // verification returns null → 401) rather than silently signing with a key an
   // attacker could know and use to forge tokens for any account.
-  if (!secret) throw new Error('JWT_SECRET is not configured — refusing to sign or verify tokens');
+  if (!secret) throw new Error('JWT_SECRET is not configured - refusing to sign or verify tokens');
   return crypto.subtle.importKey(
     'raw', new TextEncoder().encode(secret),
     { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']
@@ -3540,7 +3541,7 @@ async function verifyToken(token, secret, env = null, expectedTyp = 'access') {
     if (parts.length !== 3) return null;
     const [headerB64, payloadB64, sigB64] = parts;
 
-    // Pin the algorithm — reject 'none' / RS256 confusion attempts.
+    // Pin the algorithm - reject 'none' / RS256 confusion attempts.
     const header = JSON.parse(b64urlDecodeToString(headerB64));
     if (!header || header.alg !== JWT_ALG || header.typ !== 'JWT') return null;
 
@@ -3572,9 +3573,9 @@ async function verifyToken(token, secret, env = null, expectedTyp = 'access') {
    2. wrangler kv:namespace create AMV_KV   → put id in wrangler.toml
    3. Secrets:
         wrangler secret put ANTHROPIC_API_KEY
-        wrangler secret put JWT_SECRET           (LONG random string — 32+ chars)
+        wrangler secret put JWT_SECRET           (LONG random string - 32+ chars)
 
-        # OPTIONAL — premium image generation. Set these three and image
+        # OPTIONAL - premium image generation. Set these three and image
         # generation app-wide automatically upgrades from the built-in free
         # generator to your paid provider (key stays server-side, metered
         # against each user's daily image cap). Any OpenAI-images-compatible
@@ -3587,7 +3588,7 @@ async function verifyToken(token, secret, env = null, expectedTyp = 'access') {
         GLOBAL_DAILY_USD_CAP = "500"             (your hard ceiling)
         ALERT_WEBHOOK = "https://hooks.slack..." (optional)
 
-        # Durable Object — ATOMIC rate limits & quotas (no race conditions)
+        # Durable Object - ATOMIC rate limits & quotas (no race conditions)
         [[durable_objects.bindings]]
         name = "AMV_COUNTER"
         class_name = "AMVCounter"
@@ -3600,10 +3601,10 @@ async function verifyToken(token, secret, env = null, expectedTyp = 'access') {
       Now: key is hidden, plans enforced, quotas + spend cap live & atomic.
 
    NOTE: If AMV_COUNTER is not bound, the Worker still runs but falls back
-   to (non-atomic) KV counters. Bind the Durable Object for production —
+   to (non-atomic) KV counters. Bind the Durable Object for production -
    it's what makes rate limits and quotas race-proof under parallel load.
 
-   PAYMENTS (real money) — set these secrets:
+   PAYMENTS (real money) - set these secrets:
      wrangler secret put STRIPE_SECRET_KEY        (sk_live_…)
      wrangler secret put STRIPE_WEBHOOK_SECRET    (whsec_… from the webhook)
      [vars] STRIPE_PRICE_PRO / STRIPE_PRICE_ELITE / STRIPE_PRICE_ULTRA
@@ -3619,7 +3620,7 @@ async function verifyToken(token, secret, env = null, expectedTyp = 'access') {
 
    HOW ACCESS IS GRANTED: the plan is written to ent:<email> ONLY by a
    signature-verified webhook from Stripe/PayPal. The browser can never
-   grant itself a paid plan — requireUser() reads ent:<email> on every call.
+   grant itself a paid plan - requireUser() reads ent:<email> on every call.
 
    FOUNDER ADMIN (your private dashboard):
      wrangler secret put ADMIN_TOKEN   (a long random string only YOU hold)
@@ -3627,7 +3628,7 @@ async function verifyToken(token, secret, env = null, expectedTyp = 'access') {
      paste the token to see platform spend / users / revenue / top spenders,
      flip the kill switch, or override a user's plan. The token is never
      stored in the browser. Endpoints: /v1/admin/stats, /v1/admin/kill,
-     /v1/admin/user — all 403 without the exact ADMIN_TOKEN.
+     /v1/admin/user - all 403 without the exact ADMIN_TOKEN.
 
    KILL SWITCH (instant stop):
      wrangler kv:key put --binding=AMV_KV GLOBAL_KILL 1     (halt)
@@ -3637,7 +3638,7 @@ async function verifyToken(token, secret, env = null, expectedTyp = 'access') {
 /* =====================================================================
    SMS / TEXT-MESSAGE AGENT  (Poke-style "run agents from your phone")
    ---------------------------------------------------------------------
-   Lets users text a phone number and get AI replies — "check project X",
+   Lets users text a phone number and get AI replies - "check project X",
    "summarize my latest task", etc. Profit-safe: SMS users consume the
    same metered, capped credit pool as everyone else.
 
@@ -3655,7 +3656,7 @@ async function verifyToken(token, secret, env = null, expectedTyp = 'access') {
    SECURITY: When TWILIO_AUTH_TOKEN is set, every inbound /sms/incoming
    request is verified against Twilio's X-Twilio-Signature (HMAC-SHA1 over
    URL + params). Forged requests get a 403. ALWAYS set TWILIO_AUTH_TOKEN
-   in production — without it, anyone could POST here and trigger AI spend.
+   in production - without it, anyone could POST here and trigger AI spend.
    Also ensure your webhook URL in the Twilio console EXACTLY matches the
    deployed URL (scheme + host + path), since it's part of the signature.
    ===================================================================== */
@@ -3752,17 +3753,17 @@ async function smsIncoming(request, env, ctx) {
   const e = (await DB.get(env, 'ent', email)) || {};
   const user = { email, plan: e.plan || 'free', customCfg: e.custom || null };
 
-  // rate-limit SMS per number (cheap abuse guard) — atomic test-and-increment
+  // rate-limit SMS per number (cheap abuse guard) - atomic test-and-increment
   const smsRlName = `sms:rl:${from}:${Math.floor(Date.now() / 60000)}`;
   const smsRl = await counter(env, smsRlName, { op: 'rateCheck', limit: 8, windowMs: 60000 });
   if (!smsRl.allowed) return twiml('You\u2019re sending messages too fast. Give it a minute.');
-  // Daily cap per number — SMS costs real money (Twilio). Even at 8/min the
+  // Daily cap per number - SMS costs real money (Twilio). Even at 8/min the
   // per-minute limit alone would allow thousands/day; this bounds the bill.
   const smsDayName = `sms:day:${from}:${todayKey()}`;
   const smsDay = await counter(env, smsDayName, { op: 'reserve', amount: 1, cap: 200, ttlMs: 86400000 * 2 });
   if (!smsDay.allowed) return twiml('You\u2019ve reached today\u2019s message limit. It resets tomorrow.');
 
-  // monthly cost backstop — SMS shares the user's profit-safe ceiling
+  // monthly cost backstop - SMS shares the user's profit-safe ceiling
   const PLAN_PRICE = { pro: 15, elite: 75, ultra: 200 };
   let price = user.plan === 'custom' && user.customCfg ? user.customCfg.price : (PLAN_PRICE[user.plan] || 0);
   if (price > 0) {
@@ -3783,12 +3784,12 @@ async function smsIncoming(request, env, ctx) {
 }
 
 async function runSmsAgent(text, env) {
-  const sys = 'You are AMV over SMS. Reply in plain text, no markdown, concise (a few sentences max, fits in a text message). The user may ask you to check tasks, summarize, draft, or answer questions. Be direct and useful.';
+  const sys = 'You are AMV over SMS. Reply in plain text, no markdown, concise (a few sentences max, fits in a text message). The user may ask you to check tasks, summarize, draft, or answer questions. Be direct and useful. Never use em or en dashes; use a plain hyphen (-) instead.';
   const resp = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
     body: JSON.stringify({
-      model: 'claude-haiku-4-5-20251001', // cheapest capable — SMS is short Q&A
+      model: 'claude-haiku-4-5-20251001', // cheapest capable - SMS is short Q&A
       max_tokens: 400,
       system: sys,
       messages: [{ role: 'user', content: text }],
@@ -3810,7 +3811,7 @@ function normalizePhone(p) {
     // assume US/Canada if 10 digits; if 11 starting with 1, keep as-is
     if (digits.length === 10) digits = '1' + digits;
   }
-  // E.164: 8–15 digits, leading digit 1–9 (no leading zero on country code)
+  // E.164: 8-15 digits, leading digit 1-9 (no leading zero on country code)
   if (digits.length < 8 || digits.length > 15) return '';
   if (!/^[1-9]\d{7,14}$/.test(digits)) return '';
   return '+' + digits;
@@ -3830,7 +3831,7 @@ async function verifyTwilioSignature(authToken, url, params, signature) {
       { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']
     );
     const mac = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(data));
-    // base64 (standard, not url-safe) — matches Twilio's encoding
+    // base64 (standard, not url-safe) - matches Twilio's encoding
     let bin = ''; const bytes = new Uint8Array(mac);
     for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
     const expected = btoa(bin);
@@ -3849,7 +3850,7 @@ function twiml(message) {
   return new Response(xml, { headers: { 'Content-Type': 'text/xml' } });
 }
 
-/* Waitlist — captures interest for not-yet-launched apps (Chrome, iOS, etc.).
+/* Waitlist - captures interest for not-yet-launched apps (Chrome, iOS, etc.).
    Stored in KV so you have a real list to email when each product ships. */
 async function waitlistAdd(request, env) {
   // AMV-060: rate-limit per IP so the public waitlist can't be used to spam
@@ -3866,7 +3867,7 @@ async function waitlistAdd(request, env) {
 }
 
 /* =====================================================================
-   PAYMENTS — real Stripe + PayPal with webhook-driven entitlement sync.
+   PAYMENTS - real Stripe + PayPal with webhook-driven entitlement sync.
 
    The flow that actually grants access:
      1. Frontend calls /v1/stripe/checkout -> we create a Stripe Checkout
@@ -3877,7 +3878,7 @@ async function waitlistAdd(request, env) {
         very next API call. No client-trust: the plan is set ONLY by a
         verified webhook from the payment processor, never by the browser.
 
-   This is the critical link the app was missing — without the webhook,
+   This is the critical link the app was missing - without the webhook,
    a paid user would never actually get upgraded.
    ===================================================================== */
 
@@ -3903,7 +3904,7 @@ const PLAN_FROM_PRICE = (env) => ({
 
    The "DoorDash method": pay, consume the product, then claw the money back
    (chargeback or refund) while keeping what you took. For AMV the product is
-   compute — model calls, video, deep research — which costs real money the
+   compute - model calls, video, deep research - which costs real money the
    moment it's delivered. So a refund/chargeback after heavy use is a direct
    loss, and a repeat pattern is fraud.
 
@@ -3986,7 +3987,7 @@ async function stripeCheckout(request, env) {
   if (!price) return json({ error: 'unknown plan' }, 400);
 
   // AMV-025: the server-configured origin is authoritative for payment redirects.
-  // NEVER reflect the request Origin header when APP_URL is set — a direct caller
+  // NEVER reflect the request Origin header when APP_URL is set - a direct caller
   // could point the post-payment redirect at a phishing site. Origin is only a
   // dev fallback when no APP_URL is configured.
   const origin = (env.APP_URL || env.APP_ORIGIN || request.headers.get('Origin') || '').replace(/\/$/, '');
@@ -4011,7 +4012,7 @@ async function stripeCheckout(request, env) {
     // A customer just tried to PAY and Stripe refused. That's lost revenue you
     // need to know about now, not from a support ticket. Throttled so a Stripe
     // outage doesn't spam you.
-    await alertOnce(env, 'stripe_checkout_fail', `💳 Stripe checkout failing: ${d.error?.message || 'unknown'} — customers may be unable to subscribe.`, 15);
+    await alertOnce(env, 'stripe_checkout_fail', `💳 Stripe checkout failing: ${d.error?.message || 'unknown'} - customers may be unable to subscribe.`, 15);
     return json({ error: d.error?.message || 'stripe error' }, 502);
   }
   return json({ url: d.url, id: d.id });
@@ -4025,7 +4026,7 @@ async function stripePortal(request, env) {
   const custId = await env.AMV_KV.get(`stripecust:${user.email}`);
   if (!custId) return json({ error: 'no subscription found' }, 404);
   // AMV-025: the server-configured origin is authoritative for payment redirects.
-  // NEVER reflect the request Origin header when APP_URL is set — a direct caller
+  // NEVER reflect the request Origin header when APP_URL is set - a direct caller
   // could point the post-payment redirect at a phishing site. Origin is only a
   // dev fallback when no APP_URL is configured.
   const origin = (env.APP_URL || env.APP_ORIGIN || request.headers.get('Origin') || '').replace(/\/$/, '');
@@ -4041,7 +4042,7 @@ async function stripePortal(request, env) {
 }
 
 // ---- Stripe: list this user's invoices (for the in-app billing history) ----
-/* ---- Unified transaction ledger — records a payment from ANY provider
+/* ---- Unified transaction ledger - records a payment from ANY provider
    (Stripe, PayPal, marketplace/wallet) so the admin finance page shows ALL
    money, not just Stripe. Stored as a capped list under 'txn:log'. Each entry:
    {id, ts, provider, email, amount, currency, kind, status, ref}. ---- */
@@ -4071,9 +4072,9 @@ async function _readTxnLog(env, limit = 200) {
   catch { return []; }
 }
 
-/* ---- ADMIN: financial statement — ALL real transactions across every customer.
+/* ---- ADMIN: financial statement - ALL real transactions across every customer.
    Owner-only (admin token). Pulls actual charges from Stripe so you see real
-   money in, refunds, and net — not estimates. Honestly returns empty + a
+   money in, refunds, and net - not estimates. Honestly returns empty + a
    configured:false flag when Stripe isn't set up yet. ---- */
 async function adminFinance(request, env) {
   if (!_requireAdmin(request, env)) { audit(env, 'auth_fail', { reason: 'admin_bad_token' }); return json({ error: 'forbidden' }, 403); }
@@ -4081,7 +4082,7 @@ async function adminFinance(request, env) {
   // Non-Stripe payments (PayPal, marketplace/wallet) come from our own ledger.
   const ledger = await _readTxnLog(env, 300);
   const ledgerTx = ledger.map(t => ({
-    id: t.id, date: t.ts, email: t.email || '\u2014', amount: t.amount, refunded: t.status === 'refunded' ? t.amount : 0,
+    id: t.id, date: t.ts, email: t.email || '-', amount: t.amount, refunded: t.status === 'refunded' ? t.amount : 0,
     currency: t.currency, status: t.status, description: t.kind || '', provider: t.provider, last4: null, receipt: null,
   }));
 
@@ -4091,7 +4092,7 @@ async function adminFinance(request, env) {
     for (const t of ledgerTx) { if (t.status === 'succeeded') gross += t.amount; refunded += t.refunded; }
     return json({ ok: true, configured: ledgerTx.length > 0, transactions: ledgerTx,
       totals: { count: ledgerTx.length, gross: +gross.toFixed(2), refunded: +refunded.toFixed(2), net: +(gross - refunded).toFixed(2), currency: 'USD' },
-      note: ledgerTx.length ? 'Stripe not connected — showing PayPal & marketplace transactions.' : 'Connect Stripe (STRIPE_SECRET_KEY) to see card transactions.' });
+      note: ledgerTx.length ? 'Stripe not connected - showing PayPal & marketplace transactions.' : 'Connect Stripe (STRIPE_SECRET_KEY) to see card transactions.' });
   }
   const url = new URL(request.url);
   const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '100', 10)));
@@ -4107,12 +4108,12 @@ async function adminFinance(request, env) {
   const stripeTx = (d.data || []).map(c => ({
     id: c.id,
     date: (c.created || 0) * 1000,
-    email: c.billing_details?.email || c.receipt_email || (c.metadata && c.metadata.email) || '\u2014',
+    email: c.billing_details?.email || c.receipt_email || (c.metadata && c.metadata.email) || '-',
     amount: (c.amount || 0) / 100,
     refunded: (c.amount_refunded || 0) / 100,
     currency: (c.currency || 'usd').toUpperCase(),
     status: c.refunded ? 'refunded' : (c.disputed ? 'disputed' : c.status),
-    // was this a real captured payment? (true even if later refunded — gross = money that came in)
+    // was this a real captured payment? (true even if later refunded - gross = money that came in)
     _paid: !!(c.paid && (c.status === 'succeeded' || c.captured)),
     description: c.description || (c.metadata && c.metadata.plan) || '',
     provider: 'stripe',
@@ -4171,9 +4172,9 @@ async function stripeInvoices(request, env) {
    Money must never be credited, captured or withdrawn twice. Payment providers
    retry webhooks, and concurrent/duplicate deliveries can race. _claimOnce
    returns true ONLY for the first caller for a given (kind,id); every duplicate
-   or concurrent caller gets false. On D1 this is a hard atomic guarantee — the
+   or concurrent caller gets false. On D1 this is a hard atomic guarantee - the
    PRIMARY KEY (kind,id) makes the second INSERT fail. On KV it is best-effort
-   (KV is eventually consistent — enable D1 for the money paths, see DEPLOY.md).
+   (KV is eventually consistent - enable D1 for the money paths, see DEPLOY.md).
    ttlSec is only honored on the KV path and is used for short-lived locks. */
 async function _claimOnce(env, kind, id, ttlSec){
   if(!id) return true;
@@ -4243,7 +4244,7 @@ async function stripeWebhook(request, env, ctx) {
           ref: obj.subscription || obj.id || '' });
       }
     } else if (type === 'customer.subscription.updated' || type === 'invoice.paid') {
-      // renewal or plan change — re-derive plan from the price
+      // renewal or plan change - re-derive plan from the price
       const email = (obj.metadata?.email || '').toLowerCase() || await _emailFromCustomer(env, obj.customer);
       const priceId = obj.items?.data?.[0]?.price?.id || obj.lines?.data?.[0]?.price?.id;
       const plan = PLAN_FROM_PRICE(env)[priceId];
@@ -4256,11 +4257,11 @@ async function stripeWebhook(request, env, ctx) {
           ref: obj.id || obj.subscription || '' });
       }
     } else if (type === 'customer.subscription.deleted') {
-      // cancellation/expiry — downgrade to free
+      // cancellation/expiry - downgrade to free
       const email = await _emailFromCustomer(env, obj.customer);
       if (email) await setEntitlement(env, email, 'free', { source: 'stripe', canceled: true });
     } else if (type === 'charge.dispute.created') {
-      /* CHARGEBACK — the customer told their bank to reverse the payment. This
+      /* CHARGEBACK - the customer told their bank to reverse the payment. This
          is the DoorDash method: they keep the compute they already used and get
          the money back. Treat it as fraud: revoke access immediately and flag
          the account so they can't just re-subscribe and do it again. */
@@ -4272,7 +4273,7 @@ async function stripeWebhook(request, env, ctx) {
         audit(env, 'chargeback', { email, amount: obj.amount });
       }
     } else if (type === 'charge.refunded' || type === 'refund.created') {
-      /* REFUND — revoke the entitlement that was paid for. A single refund is
+      /* REFUND - revoke the entitlement that was paid for. A single refund is
          fine (support does them); _abuseRecord only blocks on a PATTERN. */
       const charge = obj.charge ? obj : (obj.data?.object || obj);
       const email = await _emailFromCustomer(env, charge.customer)
@@ -4286,7 +4287,7 @@ async function stripeWebhook(request, env, ctx) {
   } catch (e) {
     audit(env, 'webhook_error', { kind: 'stripe', msg: String(e.message).slice(0, 120) });
     // release the exactly-once claim so Stripe's retry can reprocess this event
-    // (it genuinely failed — do NOT swallow it as "already processed"), and
+    // (it genuinely failed - do NOT swallow it as "already processed"), and
     // return 500 so Stripe knows to retry.
     if (evt.id) await _releaseClaim(env, 'stripeevt', evt.id);
     return new Response('processing error', { status: 500 });
@@ -4303,10 +4304,10 @@ async function _emailFromCustomer(env, customerId) {
 }
 
 /* =====================================================================
-   MARKETPLACE (auditor #12) — community template store.
+   MARKETPLACE (auditor #12) - community template store.
    Templates are stored as market:<id>; install counts rank them. Publishing
    requires auth (so submissions are attributable + moderatable). This is the
-   technical substrate for the network effect — it lights up as real users
+   technical substrate for the network effect - it lights up as real users
    publish and install.
    ===================================================================== */
 async function marketList(request, env) {
@@ -4331,14 +4332,14 @@ async function marketList(request, env) {
    Multi-layer automated review that runs server-side on every publish, so it
    cannot be bypassed by modifying the client.
 
-   Layer 1  Normalization  — defeats evasion (leetspeak, spacing, homoglyphs)
-   Layer 2  Prohibited categories — hard block, listing never goes live
-   Layer 3  Regulated categories  — hard block unless verified seller
-   Layer 4  Risk signals — listing published but held for human review
-   Layer 5  Seller strikes — repeat offenders lose selling access
+   Layer 1  Normalization  - defeats evasion (leetspeak, spacing, homoglyphs)
+   Layer 2  Prohibited categories - hard block, listing never goes live
+   Layer 3  Regulated categories  - hard block unless verified seller
+   Layer 4  Risk signals - listing published but held for human review
+   Layer 5  Seller strikes - repeat offenders lose selling access
    ══════════════════════════════════════════════════════════════ */
 
-/* Layer 1 — normalize text so "c0ca1ne", "c o c a i n e", "ⅽocaine" all match. */
+/* Layer 1 - normalize text so "c0ca1ne", "c o c a i n e", "ⅽocaine" all match. */
 function _mktNormalize(str) {
   let t = String(str || '').toLowerCase();
   // strip zero-width / invisible characters used to break up words
@@ -4356,7 +4357,7 @@ function _mktNormalize(str) {
   return { spaced: ' ' + t.replace(/\s+/g, ' ').trim() + ' ', squeezed: t.replace(/\s+/g, '') };
 }
 
-/* Layer 2 — PROHIBITED. Nothing in these categories may ever be listed. */
+/* Layer 2 - PROHIBITED. Nothing in these categories may ever be listed. */
 const MKT_PROHIBITED = {
   'Illegal drugs & controlled substances': [
     'cocaine','heroin','fentanyl','methamphetamine','crystal meth','mdma','ecstasy','lsd','ketamine','pcp','crack cocaine',
@@ -4418,7 +4419,7 @@ const MKT_PROHIBITED = {
   ],
 };
 
-/* Layer 3 — REGULATED. Blocked unless the seller is verified for that category.
+/* Layer 3 - REGULATED. Blocked unless the seller is verified for that category.
    (Verification is an operator action; unverified sellers simply can't list these.) */
 const MKT_REGULATED = {
   'Financial & investment advice': ['investment advice','financial advice','stock picks','trading signals','forex signals','crypto signals','guaranteed returns','portfolio management'],
@@ -4427,7 +4428,7 @@ const MKT_REGULATED = {
   'Adult (18+)': ['adult content','nsfw','erotica','porn'],
 };
 
-/* Layer 4 — RISK SIGNALS. Not blocked, but the listing is held for review. */
+/* Layer 4 - RISK SIGNALS. Not blocked, but the listing is held for review. */
 const MKT_RISK_SIGNALS = [
   'hack','exploit','crack','bypass','scrape','scraper','bot farm','automation bot','mass dm','spam',
   'password','credential','proxy list','vpn crack','account generator','otp bypass','2fa bypass',
@@ -4452,7 +4453,7 @@ function _marketScreen(item, sellerVerifiedFor) {
     return false;
   };
 
-  // Layer 2 — prohibited
+  // Layer 2 - prohibited
   for (const [category, terms] of Object.entries(MKT_PROHIBITED)) {
     for (const term of terms) {
       if (hit(term)) {
@@ -4461,7 +4462,7 @@ function _marketScreen(item, sellerVerifiedFor) {
       }
     }
   }
-  // Layer 3 — regulated
+  // Layer 3 - regulated
   for (const [category, terms] of Object.entries(MKT_REGULATED)) {
     for (const term of terms) {
       if (hit(term)) {
@@ -4473,7 +4474,7 @@ function _marketScreen(item, sellerVerifiedFor) {
       }
     }
   }
-  // Layer 4 — risk signals
+  // Layer 4 - risk signals
   const signals = [];
   for (const term of MKT_RISK_SIGNALS) { if (hit(term)) signals.push(term); }
   if (signals.length) {
@@ -4486,7 +4487,7 @@ function _marketScreen(item, sellerVerifiedFor) {
 async function marketPublish(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'sign in to publish' }, 401);
-  // Guard against listing spam — a handful a minute, a sane cap per day.
+  // Guard against listing spam - a handful a minute, a sane cap per day.
   const blocked = await guardAction(env, `mktpub:${user.email}`, 5, 50, 'listings');
   if (blocked) return blocked;
   const item = await request.json().catch(() => ({}));
@@ -4527,8 +4528,8 @@ async function marketPublish(request, env) {
   const blob = (title + ' ' + (item.desc || '') + ' ' + body).toLowerCase();
   const banned = ['claude', 'anthropic', 'openai', 'chatgpt', 'gpt-4', 'gpt-5', 'gemini', 'copilot', 'grok', 'llama', 'mistral', 'perplexity'];
   const hit = banned.find(b => blob.includes(b));
-  if (hit) return json({ error: 'Listings must be AMV-only — remove references to other AI products (' + hit + ').' }, 400);
-  // File attachments: store metadata + data. NOTE: KV caps values at 25MB — for
+  if (hit) return json({ error: 'Listings must be AMV-only - remove references to other AI products (' + hit + ').' }, 400);
+  // File attachments: store metadata + data. NOTE: KV caps values at 25MB - for
   // large media, production should upload to R2 and store only the URL here.
   // AMV-028: bound inline file payloads by DECODED byte size (not just string
   // length), per-file and in aggregate, so a listing can't smuggle a huge blob or
@@ -4540,10 +4541,10 @@ async function marketPublish(request, env) {
   let filesTotal = 0;
   for (const f of rawFiles) {
     const dlen = (f && typeof f.data === 'string') ? f.data.length : 0;
-    if (dlen > MAX_FILE_B64) return json({ error: 'a file is too large to attach inline — host it and share a download link instead' }, 413);
+    if (dlen > MAX_FILE_B64) return json({ error: 'a file is too large to attach inline - host it and share a download link instead' }, 413);
     filesTotal += dlen;
   }
-  if (filesTotal > MAX_FILES_B64_TOTAL) return json({ error: 'the attached files are too large in total — keep them under ~2MB or link them' }, 413);
+  if (filesTotal > MAX_FILES_B64_TOTAL) return json({ error: 'the attached files are too large in total - keep them under ~2MB or link them' }, 413);
   let files = rawFiles.map(f => ({
     name: String(f.name || 'file').slice(0, 160),
     type: String(f.type || 'application/octet-stream').slice(0, 100),
@@ -4612,7 +4613,7 @@ async function marketInstall(request, env) {
 }
 
 /* =====================================================================
-   MARKETPLACE ECONOMY — paid listings, 80/20 split, seller balance.
+   MARKETPLACE ECONOMY - paid listings, 80/20 split, seller balance.
    ---------------------------------------------------------------------
    Money flow: buyer pays the full price through the SAME Stripe checkout
    used for plans (mode=payment, one-time). On checkout.session.completed
@@ -4663,14 +4664,14 @@ async function marketBuy(request, env) {
   const { id } = await request.json().catch(() => ({}));
   const it = await _getListing(env, id);
   if (!it) return json({ error: 'item not found' }, 404);
-  if (/^usr_/.test(id) && it.status === 'sold') return json({ error: 'Sorry — this just sold. Message the seller to ask for another.' }, 409);
-  if (!it.price || it.price <= 0) return json({ error: 'this item is free — just install it' }, 400);
+  if (/^usr_/.test(id) && it.status === 'sold') return json({ error: 'Sorry - this just sold. Message the seller to ask for another.' }, 409);
+  if (!it.price || it.price <= 0) return json({ error: 'this item is free - just install it' }, 400);
   if (it.authorEmail === user.email) return json({ error: 'you cannot buy your own listing' }, 400);
   if (await _ownsItem(env, user.email, id)) return json({ error: 'you already own this', owned: true }, 400);
   if (!env.STRIPE_SECRET_KEY) return json({ error: 'payments not configured' }, 503);
 
   // AMV-025: the server-configured origin is authoritative for payment redirects.
-  // NEVER reflect the request Origin header when APP_URL is set — a direct caller
+  // NEVER reflect the request Origin header when APP_URL is set - a direct caller
   // could point the post-payment redirect at a phishing site. Origin is only a
   // dev fallback when no APP_URL is configured.
   const origin = (env.APP_URL || env.APP_ORIGIN || request.headers.get('Origin') || '').replace(/\/$/, '');
@@ -4717,7 +4718,7 @@ async function _creditSale(env, { itemId, buyer, seller, amountCents }) {
   purchases.unshift({ id: itemId, title: it ? it.title : itemId, kind: it ? it.kind : 'prompt', price, ts: Date.now() });
   await env.AMV_KV.put(`purchases:${buyer}`, JSON.stringify(purchases.slice(0, 500)));
   // AMV-037: snapshot the deliverable at purchase time. The buyer paid for THIS
-  // content — a later seller edit or delete must never revoke their access.
+  // content - a later seller edit or delete must never revoke their access.
   if (it) { try { await DB.put(env, 'mktsnap', `${buyer}:${itemId}`, { ...it, _boughtAt: Date.now() }); } catch (e) {} }
   // credit the seller 80%
   if (sellerEmail) {
@@ -4754,7 +4755,7 @@ async function marketPurchases(request, env) {
   const list = await _purchasesList(env, user.email);
   const items = [];
   for (const p of list) {
-    // AMV-037: serve the immutable snapshot taken at purchase — the buyer keeps
+    // AMV-037: serve the immutable snapshot taken at purchase - the buyer keeps
     // full access to what they paid for even if the seller later edited or
     // deleted the listing. Fall back to the live listing for legacy purchases.
     const snap = await DB.get(env, 'mktsnap', `${user.email}:${p.id}`);
@@ -4920,7 +4921,7 @@ async function marketReview(request, env) {
   const key = `mkreview:${sellerEmail}`;
   let list = [];
   try { const raw = await env.AMV_KV.get(key); if (raw) list = JSON.parse(raw); } catch {}
-  // Screen review text — user-generated content that displays publicly.
+  // Screen review text - user-generated content that displays publicly.
   const reviewText = String(text || '').slice(0, 1000);
   const rScreen = _marketScreen({ text: reviewText, title: '' });
   if (!rScreen.ok && rScreen.action === 'blocked') {
@@ -4928,7 +4929,7 @@ async function marketReview(request, env) {
     return json({ error: 'Your review contains content that isn\u2019t allowed.', code: 'policy_violation' }, 422);
   }
   // AMV-059: store a PSEUDONYMOUS reviewer id (a non-reversible hash of the
-  // email) for one-review-per-buyer dedup, plus a display name — never the raw
+  // email) for one-review-per-buyer dedup, plus a display name - never the raw
   // email, so a review list can be shown publicly without leaking addresses.
   const byId = await _errHash(user.email.toLowerCase());
   const entry = { byId, byName: (user.name || user.email.split('@')[0]).slice(0, 40), stars: s, text: reviewText, ts: Date.now() };
@@ -4946,7 +4947,7 @@ function _threadId(a, b) { return 'mkthread:' + [String(a || '').toLowerCase(), 
 async function marketMessage(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
-  // Messaging reaches another user — guard against spam/harassment.
+  // Messaging reaches another user - guard against spam/harassment.
   const blocked = await guardAction(env, `mktmsg:${user.email}`, 15, 300, 'messages');
   if (blocked) return blocked;
   const { to, text } = await request.json().catch(() => ({}));
@@ -4954,7 +4955,7 @@ async function marketMessage(request, env) {
   const body = String(text || '').trim().slice(0, 2000);
   if (!other || other === user.email) return json({ error: 'invalid recipient' }, 400);
   if (!body) return json({ error: 'empty message' }, 400);
-  // Screen private messages — block prohibited content (illegal offers, CSAM, etc.)
+  // Screen private messages - block prohibited content (illegal offers, CSAM, etc.)
   const mScreen = _marketScreen({ text: body, title: '' });
   if (!mScreen.ok && mScreen.action === 'blocked') {
     audit(env, 'market_message_blocked', { by: user.email, category: mScreen.category });
@@ -4996,10 +4997,10 @@ async function marketThreads(request, env) {
 }
 
 /* =====================================================================
-   FOUNDER ADMIN — token-gated platform monitoring (auditor #10)
+   FOUNDER ADMIN - token-gated platform monitoring (auditor #10)
    Lets the operator see real platform-wide spend, users, and abuse signals,
    plus flip the kill switch and inspect/adjust a single user. Protected by
-   ADMIN_TOKEN (a secret only you hold) — NOT by user auth, so a normal user
+   ADMIN_TOKEN (a secret only you hold) - NOT by user auth, so a normal user
    token can never reach it.
    ===================================================================== */
 // increment a short-lived failed-login counter (15-min window) for brute-force defense
@@ -5037,7 +5038,7 @@ async function _markActive(env, email){
 /* ── Growth tracking: a tiny per-day counter so the owner can see TRENDS, not
    just a snapshot. One KV key per day (grow:signup:YYYY-MM-DD). 60-day TTL keeps
    it bounded. This is what turns "you have 40 users" into "signups are up 3x
-   week over week" — the number that actually tells you if it's working. ── */
+   week over week" - the number that actually tells you if it's working. ── */
 async function _recordGrowth(env, kind){
   const day = todayKey();
   const key = `grow:${kind}:${day}`;
@@ -5085,11 +5086,11 @@ async function adminStats(request, env) {
     if (plan !== 'free' || cost > 0) users.push({ email, plan, monthCostUSD: +cost.toFixed(3) });
   }
 
-  // top spenders (who costs us most this month) — abuse / margin watch
+  // top spenders (who costs us most this month) - abuse / margin watch
   const topSpenders = [...users].sort((a, b) => b.monthCostUSD - a.monthCostUSD).slice(0, 20);
   const paying = users.filter(u => u.plan !== 'free').length;
 
-  // Growth over time — the numbers that show whether it's WORKING, not just a
+  // Growth over time - the numbers that show whether it's WORKING, not just a
   // snapshot. 30-day signup + active series, plus today's figures.
   const signups30 = await _growthSeries(env, 'signup', 30);
   const active30 = await _growthSeries(env, 'active', 30);
@@ -5337,7 +5338,7 @@ async function verifyPaypalWebhook(env, headers, body) {
 }
 
 
-/* Password reset — emails a secure, time-limited link.
+/* Password reset - emails a secure, time-limited link.
    Needs an email service (e.g. Resend, SendGrid, or AWS SES). Set the
    RESET_EMAIL_FROM secret and EMAIL_API_KEY; wire sendResetEmail() to your
    provider. Until then it stores a token so the flow is ready. */
@@ -5390,9 +5391,9 @@ async function sendResetEmail(env, to, link) {
       { label: 'Reset my password', url: link },
       `<p style="margin:0 0 6px;font-size:12px;line-height:1.6;color:#999">Or paste this link into your browser:</p>`+
       `<p style="margin:0 0 22px;font-size:12px;line-height:1.6;color:#7c6cff;word-break:break-all">${link}</p>`+
-      `<hr style="border:none;border-top:1px solid #eee;margin:0 0 18px"><p style="margin:0;font-size:12px;line-height:1.6;color:#999">If you didn't request this, you can safely ignore this email — your password won't change.</p>`,
+      `<hr style="border:none;border-top:1px solid #eee;margin:0 0 18px"><p style="margin:0;font-size:12px;line-height:1.6;color:#999">If you didn't request this, you can safely ignore this email - your password won't change.</p>`,
       'This is an automated security email.'),
-    `Reset your AMV password\n\nWe received a request to reset your password. Open this link to set a new one (it expires in 1 hour):\n${link}\n\nIf you didn't request this, you can safely ignore this email — your password won't change.\n\n— The AMV team`);
+    `Reset your AMV password\n\nWe received a request to reset your password. Open this link to set a new one (it expires in 1 hour):\n${link}\n\nIf you didn't request this, you can safely ignore this email - your password won't change.\n\n- The AMV team`);
 }
 
 /* Notify a teammate that work was assigned to them. */
@@ -5409,13 +5410,13 @@ async function sendTaskAssignedEmail(env, to, { assignerName, taskTitle, priorit
       link ? { label: 'Open in AMV', url: link } : null,
       `<p style="margin:0;font-size:12px;line-height:1.6;color:#999">You can view, update, and complete this task from the Team page in AMV.</p>`,
       'You received this because you\u2019re a member of this team on AMV.'),
-    `${assignerName||'A teammate'} assigned you a task in ${teamName||'your team'} on AMV:\n\n"${taskTitle||'a task'}"${priority&&priority!=='normal'?' ('+priority+' priority)':''}\n\nOpen AMV to view and update it: ${link}\n\n— The AMV team`);
+    `${assignerName||'A teammate'} assigned you a task in ${teamName||'your team'} on AMV:\n\n"${taskTitle||'a task'}"${priority&&priority!=='normal'?' ('+priority+' priority)':''}\n\nOpen AMV to view and update it: ${link}\n\n- The AMV team`);
 }
 
-/* Generic Resend sender — one place that talks to the email provider. */
+/* Generic Resend sender - one place that talks to the email provider. */
 /* Resend gives every account a sender that needs NO domain verification:
    onboarding@resend.dev. It only delivers to the address that owns the Resend
-   account — which is exactly what you need to recover YOUR OWN login on day one.
+   account - which is exactly what you need to recover YOUR OWN login on day one.
    For real users, set RESET_EMAIL_FROM to an address on a domain you've verified
    in Resend, or their mail will not arrive. */
 const RESET_FROM_DEFAULT = 'AMV <onboarding@resend.dev>';

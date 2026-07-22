@@ -7,6 +7,30 @@ Format: **Mistake → Root cause → Rule going forward.**
 
 ---
 
+## 2026-07-22
+
+### 5. `data-dact` buttons are DEAD inside a `stopPropagation` modal
+- **Mistake:** Built the approval editor, schedule editor, and preview footer
+  using `data-dact` buttons, but those modals put `onclick="event.stopPropagation()"`
+  on the inner container. The global `[data-dact]` click delegation lives on
+  `document`, so stopPropagation killed every button (Back, Delete, Save, Save &
+  send, Ask AMV to revise, Cancel, schedule Edit/Pause). The user hit ALL of them.
+- **Root cause:** Two ways to close-on-backdrop coexist in this codebase. Modals
+  that wire their own buttons with `on()` can use `stopPropagation`. Modals that
+  rely on `data-dact` delegation CANNOT — the event must reach `document`.
+- **Rule:** Inside any modal that uses `data-dact`, do NOT stopPropagation on the
+  container. Instead close only when the backdrop itself is clicked:
+  `on(bg,'click',e=>{ if(e.target===e.currentTarget) close(); })`. Test buttons
+  with a real `.click()` through the delegation, not by calling the handler directly.
+
+### 6. Two dash forms to purge, not one
+- **Mistake:** First em-dash purge only replaced literal `—`/`–` bytes and missed
+  the `—`/`–` **escape sequences** in JS string literals (255 of them in
+  app.js) — which render as em-dashes at runtime.
+- **Rule:** When purging a character from JS source, replace BOTH the literal char
+  and its `\uXXXX` escape. And guard any regex that intentionally matches the char
+  (write it with `\u` escapes so the purge can't neuter it).
+
 ## 2026-07-21
 
 ### 1. "Done" on the feature branch while the live host served old code
