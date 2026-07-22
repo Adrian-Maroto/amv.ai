@@ -12749,7 +12749,7 @@ function planCards(inApp){
         '<li><span class="fck">\u2713</span>Connect Gmail, Calendar &amp; files</li>'+
         '<li><span class="fck">\u2713</span>Scheduled &amp; background automation</li>'+
       '</ul>'+
-      pBtn('Start Pro &mdash; $15/mo','pbp','pro',isLand)+
+      pBtn('Start Pro - $15/mo','pbp','pro',isLand)+
       '<div class="plnreassure">$5 cheaper than ChatGPT &amp; Claude</div>'+
     '</div>',
     '<div class="plnc feat feat-elite">'+
@@ -12768,7 +12768,7 @@ function planCards(inApp){
         '<li><span class="fck">\u2713</span>Multi-file projects, code review &amp; auto-debug</li>'+
         '<li><span class="fck">\u2713</span>Priority speed &amp; 24/7 support</li>'+
       '</ul>'+
-      pBtn('Go Elite &mdash; $75/mo','pbs','elite',isLand)+
+      pBtn('Go Elite - $75/mo','pbs','elite',isLand)+
       '<div class="plnreassure">$25 less than Claude Max &amp; ChatGPT Pro</div>'+
     '</div>',
     '<div class="plnc">'+
@@ -12786,7 +12786,7 @@ function planCards(inApp){
         '<li><span class="fck">\u2713</span>Deploy &amp; host multiple live apps</li>'+
         '<li><span class="fck">\u2713</span>👥 Team workspaces, roles &amp; shared projects</li>'+
       '</ul>'+
-      pBtn('Go Ultra &mdash; $200/mo','pbs','ultra',isLand)+
+      pBtn('Go Ultra - $200/mo','pbs','ultra',isLand)+
       '<div class="plnreassure">Matches Claude Max &amp; ChatGPT Pro</div>'+
     '</div>',
   ].join('');
@@ -13512,6 +13512,8 @@ const AMVMarket = {
     const banned=['claude','anthropic','openai','chatgpt','gpt-4','gpt-5','gemini','copilot','grok','llama','mistral','perplexity'];
     const hit=banned.find(b=>blob.includes(b));
     if(hit) throw new Error('Listings must be AMV-only - remove references to other AI products ('+hit+').');
+    // Deliverable backstop: no empty shells / fake listings.
+    try{ if(typeof _mktDeliverableOK==='function'){ const d=_mktDeliverableOK(item); if(!d.ok) throw new Error(d.reason); } }catch(e){ if(e&&e.message) throw e; }
     // Content screening runs in BOTH modes. On the server it's authoritative and
     // can't be bypassed; here it also guards local/offline mode.
     try{
@@ -13554,10 +13556,16 @@ const AMVMarket = {
     // Everything you get - free or paid - is recorded as OWNED so it shows in
     // Purchases, the one place your items live.
     this._markOwned(item);
-    if(item.kind==='crew'){
+    if(item.kind==='crew' || item.kind==='workflow'){
       const me=this._me();
       const crews=load('amv_saved_crews')||[];
-      crews.unshift({id:'c'+Date.now(),title:item.title,agents:(item.crew||[]).map(a=>({role:a.role,task:_mktPersonalize(a.task,item.authorEmail,me)})),fromMarket:true,seller:item.author||'',ts:Date.now()});
+      // A structured crew (agents) if the listing has one; otherwise build it from
+      // the listing's actual text so a bought crew ALWAYS has something to run.
+      const agents=(item.crew&&item.crew.length)
+        ? item.crew.map(a=>({role:a.role,task:_mktPersonalize(a.task,item.authorEmail,me)}))
+        : [];
+      const goal=_mktPersonalize(item.text||item.desc||'', item.authorEmail, me);
+      crews.unshift({id:'c'+Date.now(),title:item.title,agents,goal,kind:item.kind,fromMarket:true,seller:item.author||'',ts:Date.now()});
       store('amv_saved_crews',crews);
     } else {
       S.prompts.unshift({id:'p'+Date.now(),title:item.title,cat:item.cat||(item.kind==='integration'?'Integrations':item.kind==='workflow'?'Workflows':item.kind==='guide'?'Guides':'Imported'),text:item.text||item.desc||'',custom:true});
@@ -14052,7 +14060,7 @@ function _mktPreview(it, after){
     '</div>';
   }
   let actionBtn;
-  if(it._mine) actionBtn='<button class="btn bs" disabled style="opacity:.7">Your listing</button>';
+  if(it._mine) actionBtn='<button class="btn bd2" id="mkt-pv-remove">Remove listing</button>';
   else if(it._owned) actionBtn='<button class="btn bp" id="mkt-pv-use">\u2713 Owned - add to library</button>';
   else if(it.status==='sold') actionBtn='<button class="btn bp" id="mkt-pv-msg">\uD83D\uDCAC Message seller</button><button class="btn bs" disabled style="opacity:.6">Sold</button>';
   else if(paid) actionBtn='<button class="btn bp" id="mkt-pv-buy">Buy \u00b7 $'+it.price+'</button>';
@@ -14091,6 +14099,11 @@ function _mktPreview(it, after){
   on($('mkt-pv-msg'),'click',()=>{ closeOvr(); _mktChat(it.authorEmail, it.author, 'Hi! I saw "'+it.title+'" just sold - could you make another?'); });
   on($('mkt-pv-get'),'click',async()=>{ try{ await AMVMarket.install(it); after&&after(); _mktAfterInstall(it); }catch(e){ toast(e.message||'Could not add','error'); } });
   on($('mkt-pv-use'),'click',async()=>{ try{ await AMVMarket.install(it); _mktAfterInstall(it); }catch(e){ toast('Could not add','error'); } });
+  on($('mkt-pv-remove'),'click',async()=>{
+    if(!confirm('Remove this listing from the marketplace? Buyers who already own it keep it.')) return;
+    try{ await AMVMarket.unlist(it.id); toast('Listing removed','info'); closeOvr(); if(S.tab==='market'){ try{ renderMarketView(); }catch(e){} } }
+    catch(e){ toast(e.message||'Could not remove','error'); }
+  });
   const rate=$('mkt-pv-rate');
   if(rate) rate.querySelectorAll('[data-stars]').forEach(s=>on(s,'click',async()=>{
     const stars=parseInt(s.dataset.stars,10); await AMVMarket.rate(it.id,stars);
@@ -14308,25 +14321,65 @@ window._mktPersonalize=_mktPersonalize;
 /* Use a purchased item. Routes to the actual page and makes it usable there:
    crews open in Crew (under "From the marketplace"); prompts paste straight
    into chat; workflows/integrations install and open where they live. */
+/* Which tool a purchased item belongs to (so it lands where it actually works). */
+function _mktHome(it){
+  if(it.kind==='crew'||it.kind==='workflow') return 'crew';
+  const t=((it.cat||'')+' '+(it.title||'')+' '+(it.kind||'')+' '+(it.desc||'')).toLowerCase();
+  if(/design|image|art|logo|brand|poster|\bui\b|graphic|thumbnail|creative|flyer|banner|mockup/.test(t)) return 'studio';
+  if(/\bcode\b|\bapp\b|script|\bdev\b|\bapi\b|component|website|html|css|python|javascript|react|\bsql\b|backend|frontend/.test(t)) return 'dev';
+  return 'chat';
+}
 function _mktUsePurchase(it){
   if(!it) return;
   const me=(S.user&&S.user.email)||'';
   try{ closeOvr&&closeOvr(); }catch(e){}
-  if(it.kind==='crew' && (it.crew||it.agents)){
+  const text=_mktPersonalize(it.text||it.preview||it.desc||it.title||'', it.authorEmail, me);
+  const home=_mktHome(it);
+  // crew / workflow → install and run in Crew (real agents from the listing)
+  if(home==='crew'){
     try{ AMVMarket.install(it); }catch(e){}
-    toast('Added to Crew - see “From the marketplace” at the bottom of this page.','success',4500);
+    toast('Added to Crew - see “Marketplace plugins” at the bottom of this page.','success',4500);
     setTab('crew');
     setTimeout(()=>{ const el=document.getElementById('mc-bought'); if(el) el.scrollIntoView({behavior:'smooth',block:'center'}); }, 700);
     return;
   }
-  // prompt / guide / anything text-based → chat + auto-paste (personalized)
-  const text=_mktPersonalize(it.text||it.preview||it.desc||it.title||'', it.authorEmail, me);
   try{ AMVMarket.install(it); }catch(e){}
+  if(home==='studio'){ setTab('studio'); setTimeout(()=>{ const ta=$('dsn-prompt'); if(ta){ ta.value=text; ta.dispatchEvent(new Event('input')); ta.focus(); } },280); toast('Loaded into Studio - tweak it and generate.','success',3800); return; }
+  if(home==='dev'){ setTab('dev'); setTimeout(()=>{ const ta=$('dev-msg'); if(ta){ ta.value=text; ta.dispatchEvent(new Event('input')); ta.focus(); } },280); toast('Loaded into Dev - tweak it and build.','success',3800); return; }
+  // prompt / guide / anything text-based → chat + auto-paste (personalized)
   setTab('chat');
   setTimeout(()=>{ const ta=$('mta'); if(ta){ ta.value=text; ta.dispatchEvent(new Event('input')); ta.focus(); try{ ta.setSelectionRange(ta.value.length, ta.value.length); }catch(e){} } }, 240);
   toast('Pasted into chat - tweak it and send.','success',3800);
 }
 window._mktUsePurchase=_mktUsePurchase;
+window._mktHome=_mktHome;
+
+/* Owned marketplace items (hydrated), read locally. Used to render the
+   "Marketplace plugins" section at the bottom of the relevant tool page. */
+function _ownedMarketItems(){
+  try{
+    const purch=AMVMarket._localPurchases();
+    const all=[...AMVMarket._localListings(), ...MARKET_STARTER];
+    return purch.map(p=>{ const it=all.find(x=>x.id===p.id); return it?{...it,_purchasedAt:p.ts}:null; }).filter(Boolean);
+  }catch(e){ return []; }
+}
+function _ownedForPage(page){ return _ownedMarketItems().filter(it=>_mktHome(it)===page); }
+/* Renders the owned-items block for a tool page (empty string if none owned),
+   so it only appears when the user actually owns something usable there. */
+function _ownedMarketHTML(page){
+  const items=_ownedForPage(page); if(!items.length) return '';
+  const label={studio:'Use in Studio',dev:'Open in Dev',chat:'Try in chat'}[page]||'Use it';
+  return `<div class="mc-sec mc-bought owned-plugins" id="owned-${page}">
+    <div class="sec-head"><h3>Marketplace plugins</h3><span class="sec-sub">Things you bought that work here. Open one to use it - your details are filled in for you.</span></div>
+    <div class="mc-grid">${items.slice(0,8).map(it=>`<div class="mc-card">
+      <div class="mc-card-top"><span class="mc-card-t">${escH(it.title||'Item')}</span><span class="mc-pill ok">Owned</span></div>
+      <div class="mc-card-sub">${escH((it.desc||it.cat||'').slice(0,120))}${it.author?` · by ${escH(it.author)}`:''}</div>
+      <div class="mc-card-act"><button class="btn mc-mini" data-dact="_ownedUse" data-darg="${escH(it.id)}">${label}</button></div>
+    </div>`).join('')}</div>
+  </div>`;
+}
+function _ownedUse(id){ const it=_ownedMarketItems().find(x=>x.id===id); if(!it){ toast('Item not found','error'); return; } _mktUsePurchase(it); }
+window._ownedMarketHTML=_ownedMarketHTML; window._ownedUse=_ownedUse;
 function _mktAfterInstall(it){
   // Everything you get lands in Purchases - the one place your items live.
   try{ closeOvr(); }catch(e){}
@@ -14442,6 +14495,26 @@ function _mktScreen(item, verifiedFor){
 }
 try{ window._mktScreen=_mktScreen; window.MKT_POLICY=MKT_POLICY; }catch(e){}
 
+/* Deliverable check: a listing must contain REAL, usable content for its kind,
+   so a buyer always gets something that works - not an empty shell with big
+   promises. Mirrors intent of the server gate. Returns {ok, reason}. */
+function _mktDeliverableOK(item){
+  const kind=item.kind||'prompt';
+  const text=(item.text||'').trim();
+  const files=item.files||[];
+  const words=text?text.split(/\s+/).length:0;
+  if(kind==='crew'||kind==='workflow'){
+    if(words<8) return {ok:false, reason:'A '+kind+' must include the actual instructions it runs (what each step/agent should do) - at least a couple of sentences. Buyers run this, so an empty or vague listing is not allowed.'};
+  } else if(kind==='prompt'){
+    if(words<4) return {ok:false, reason:'A prompt listing must include the actual prompt text buyers will use. Paste the real prompt, not just a description.'};
+  } else if(kind==='guide'||kind==='integration'){
+    if(!text && !files.length) return {ok:false, reason:'Add the actual guide/setup content (text) or attach the files buyers receive.'};
+  } else { // bundle / other
+    if(!files.length && !text) return {ok:false, reason:'Attach at least one file, or add the text buyers receive.'};
+  }
+  return {ok:true};
+}
+try{ window._mktDeliverableOK=_mktDeliverableOK; }catch(e){}
 // Which regulated categories this seller is verified for (operator-granted).
 function _mktVerifiedFor(){ try{ return load('amv_mkt_verified')||[]; }catch(e){ return []; } }
 try{ window._mktVerifiedFor=_mktVerifiedFor; }catch(e){}
@@ -14624,6 +14697,9 @@ function _mktSell(body){
     };
     if(!item.title){ toast('A title is required','error'); return; }
     if(!item.text && !item.files.length){ toast('Add a deliverable: paste text/links or attach at least one file','error',5000); return; }
+    // It must actually work: real, usable content for its kind.
+    const deliv=_mktDeliverableOK(item);
+    if(!deliv.ok){ _mktBlockedDialog(deliv.reason,'blocked'); return; }
     // Automated content review - mirrors the server-side gate.
     const screen=_mktScreen(item, _mktVerifiedFor());
     if(!screen.ok){ _mktBlockedDialog(screen.reason, screen.action, screen.category); return; }
@@ -16560,19 +16636,22 @@ function _mcBoughtCrewsHTML(){
   let crews=[];
   try{ crews=(load('amv_saved_crews')||[]).filter(c=>c.fromMarket); }catch(e){}
   if(!crews.length) return '';
-  return `<div class="mc-sec mc-bought" id="mc-bought">
-    <div class="sec-head"><h3>From the marketplace</h3><span class="sec-sub">Crews you bought - ready to run as your own.</span></div>
+  return `<div class="mc-sec mc-bought owned-plugins" id="mc-bought">
+    <div class="sec-head"><h3>Marketplace plugins</h3><span class="sec-sub">Crews and workflows you bought, ready to run as your own. Click Run and AMV works it end to end - the seller’s details are swapped for yours automatically.</span></div>
     <div class="mc-grid">${crews.slice(0,8).map(c=>`<div class="mc-card">
       <div class="mc-card-top"><span class="mc-card-t">${escH(c.title||'Crew')}</span><span class="mc-pill ok">Owned</span></div>
-      <div class="mc-card-sub">${(c.agents||[]).slice(0,4).map(a=>escH(a.role)).join(' → ')||'Multi-agent crew'}${c.seller?` · by ${escH(c.seller)}`:''}</div>
-      <div class="mc-card-act"><button class="btn mc-mini" data-dact="_mcUseCrew" data-darg="${escH(c.id)}">Use this crew</button></div>
+      <div class="mc-card-sub">${(c.agents||[]).slice(0,4).map(a=>escH(a.role)).join(' → ')||(c.goal?escH(c.goal.slice(0,90)):'Multi-agent crew')}${c.seller?` · by ${escH(c.seller)}`:''}</div>
+      <div class="mc-card-act"><button class="btn mc-mini" data-dact="_mcUseCrew" data-darg="${escH(c.id)}">Run this</button></div>
     </div>`).join('')}</div>
   </div>`;
 }
 function _mcUseCrew(id){
   let c=null; try{ c=(load('amv_saved_crews')||[]).find(x=>x.id===id); }catch(e){}
   if(!c){ toast('Crew not found','error'); return; }
-  const goal='Run this crew for me:\n\n'+(c.agents||[]).map(a=>'• '+(a.role||'Agent')+': '+(a.task||'')).join('\n');
+  let goal;
+  if(c.agents&&c.agents.length) goal='Run this crew for me:\n\n'+c.agents.map(a=>'• '+(a.role||'Agent')+': '+(a.task||'')).join('\n');
+  else goal=c.goal||c.title||'';
+  if(!goal.trim()){ toast('This crew has no instructions to run','error'); return; }
   if(typeof openCoworkWith==='function') openCoworkWith(goal);
   else { setTab('chat'); setTimeout(()=>{ const ta=$('mta'); if(ta){ ta.value=goal; ta.dispatchEvent(new Event('input')); ta.focus(); } },200); }
 }
@@ -17225,7 +17304,7 @@ function renderDesignView(){
     <section class="dsn-hero">
       <div class="dsn-eyebrow">AMV Design</div>
       <h1 class="dsn-h1">Describe it.<br><span class="dsn-grad">Watch it build.</span></h1>
-      <p class="dsn-lead">Landing pages, UI mockups, posters and graphics &mdash; created on a live canvas and refined just by chatting. &ldquo;Make it darker.&rdquo; &ldquo;Add a pricing section.&rdquo; Export when it&rsquo;s right.</p>
+      <p class="dsn-lead">Landing pages, UI mockups, posters and graphics - created on a live canvas and refined just by chatting. &ldquo;Make it darker.&rdquo; &ldquo;Add a pricing section.&rdquo; Export when it&rsquo;s right.</p>
       <div class="dsn-input-wrap">
         <textarea id="dsn-prompt" rows="1" placeholder="A sleek dark pricing page for an AI startup, three tiers, purple accents&hellip;"></textarea>
         <button class="dsn-go" data-dact="designGo" aria-label="Generate design">
@@ -17251,10 +17330,11 @@ function renderDesignView(){
     <section class="dsn-callout">
       <div class="dsn-callout-text">
         <h3>It&rsquo;s a conversation, not a form</h3>
-        <p>Every design stays editable. Keep chatting and AMV reshapes the canvas live &mdash; tweak copy, swap layouts, change the whole vibe in a sentence.</p>
+        <p>Every design stays editable. Keep chatting and AMV reshapes the canvas live - tweak copy, swap layouts, change the whole vibe in a sentence.</p>
       </div>
       <div class="dsn-callout-orb"></div>
     </section>
+    ${_ownedMarketHTML('studio')}
   </div></div>`;
   // auto-grow the hero textarea
   const ta=$('dsn-prompt');
@@ -17915,6 +17995,7 @@ function renderCodeView(){
           </button>
           <span class="dev-hero-or">to work on code you already have</span>
         </div>
+        ${_ownedMarketHTML('dev')}
       </div>
 
       <div id="dev-log" class="dev-log"></div>
@@ -19344,7 +19425,7 @@ function renderHelpView(){
           supportButton({label:'Email Support',cls:'btn bp',subject:'AMV Support request'})+
           '<button class="btn bs" style="font-size:12px" data-dact="askAmv" data-darg="">Ask AMV directly</button>'+
         '</div>'+
-        (_supportEmail()?'<p style="font-size:11.5px;color:var(--mu);margin-top:10px">Or email us directly at <b style="color:var(--tx)">'+escH(_supportEmail())+'</b> &mdash; we reply within 24 hours.</p>':'')+
+        (_supportEmail()?'<p style="font-size:11.5px;color:var(--mu);margin-top:10px">Or email us directly at <b style="color:var(--tx)">'+escH(_supportEmail())+'</b> - we reply within 24 hours.</p>':'')+
       '</div>'+
     '</div></div>';
   vc.querySelectorAll('.faq-q').forEach(q=>{
@@ -20289,7 +20370,7 @@ function _renderSetPaneInner(){
         '<p style="font-size:11px;color:var(--mu);margin-top:8px">'+(liveBase?('Status: <span style="color:#4ade80">configured</span>'+(tokenSet?' &middot; signed in':' &middot; not signed in')):'Status: local demo mode')+'</p>'+
       '</div>'+
       '<div class="ss2" style="margin-top:14px"><h3>Sign in to backend</h3>'+
-        '<p style="font-size:12px;color:var(--mu);margin:-4px 0 10px">Sign in with your AMV account email and password to sync this device. To use Google, sign in with Google on the main sign-in screen &mdash; it is verified server-side.</p>'+
+        '<p style="font-size:12px;color:var(--mu);margin:-4px 0 10px">Sign in with your AMV account email and password to sync this device. To use Google, sign in with Google on the main sign-in screen - it is verified server-side.</p>'+
         '<div style="display:flex;flex-direction:column;gap:8px"><input type="email" id="be-email" value="'+escH((S.user&&S.user.email)||'')+'" placeholder="you@email.com" style="font-size:12px" autocomplete="username"><div style="display:flex;gap:8px"><input type="password" id="be-pass" placeholder="Your password" style="flex:1;font-size:12px" autocomplete="current-password"><button class="btn bp" style="font-size:12px" onclick="amvBackendLogin()">Connect</button></div></div>'+
       '</div>';
   } else if(sp==='apikeys'){
@@ -20345,14 +20426,14 @@ function _renderSetPaneInner(){
       '<div class="ss2"><h3>Stripe - card, Apple Pay &amp; Google Pay</h3>'+
         '<p style="font-size:12px;color:var(--mu);margin-bottom:11px;line-height:1.6">The startup standard. Create a Payment Link at stripe.com &rarr; Payments &rarr; Payment Links. <b>Apple Pay and Google Pay appear automatically inside Stripe\u2019s checkout</b> - no extra setup. Clicking &ldquo;Card / Apple Pay&rdquo; opens your real Stripe checkout. Revenue goes straight to your Stripe account. Set each link\u2019s success URL to <code>yoursite.com/?paid=pro</code> (or <code>elite</code>) so the plan activates on return.</p>'+
         '<div class="sf">'+
-          '<div><label class="lbl">Pro Plan &mdash; $15/month</label><input type="url" id="s-sp" value="'+escH(S.sp||'')+'" placeholder="https://buy.stripe.com/…"></div>'+
-          '<div><label class="lbl">Elite Plan &mdash; $75/month</label><input type="url" id="s-se" value="'+escH(S.se||'')+'" placeholder="https://buy.stripe.com/…"></div>'+
+          '<div><label class="lbl">Pro Plan - $15/month</label><input type="url" id="s-sp" value="'+escH(S.sp||'')+'" placeholder="https://buy.stripe.com/…"></div>'+
+          '<div><label class="lbl">Elite Plan - $75/month</label><input type="url" id="s-se" value="'+escH(S.se||'')+'" placeholder="https://buy.stripe.com/…"></div>'+
           '<div><label class="lbl">Stripe Customer Portal (subscription management)</label><input type="url" id="s-portal" value="'+escH(loadStr('amv_portal'))+'" placeholder="https://billing.stripe.com/p/…"></div>'+
           '<button class="btn bp" id="save-stripe" style="align-self:flex-start;font-size:12px">Save Stripe Links</button>'+
         '</div>'+
       '</div>'+
       '<div class="ss2"><h3>Support email</h3>'+
-        '<p style="font-size:12px;color:var(--mu);margin-bottom:11px;line-height:1.6">The address your users reach you at. Once set, the <b>&ldquo;Email Support&rdquo;</b> buttons across the app (Help Center, About, legal) open a pre-filled email to this address. Leave blank and those buttons fall back to <b>&ldquo;Ask AMV directly&rdquo;</b> &mdash; never a broken link.</p>'+
+        '<p style="font-size:12px;color:var(--mu);margin-bottom:11px;line-height:1.6">The address your users reach you at. Once set, the <b>&ldquo;Email Support&rdquo;</b> buttons across the app (Help Center, About, legal) open a pre-filled email to this address. Leave blank and those buttons fall back to <b>&ldquo;Ask AMV directly&rdquo;</b> - never a broken link.</p>'+
         '<div class="sf">'+
           '<div><label class="lbl">Support email address</label><input type="email" id="s-support" value="'+escH(_supportEmail())+'" placeholder="support@yourdomain.com" autocomplete="off"></div>'+
           '<button class="btn bp" id="save-support" style="align-self:flex-start;font-size:12px">Save support email</button>'+
@@ -20431,7 +20512,7 @@ function _renderSetPaneInner(){
   } else if(sp==='integrations'){
     pane.innerHTML =
       '<div class="set-title">Connectors</div>'+
-      '<div class="set-sub">Connect AMV to your tools. <b style="color:var(--tx)">Autonomous</b> ones work in the background once connected; <b style="color:var(--tx)">manual</b> ones you trigger or upload to. Click Connect &mdash; you approve in a popup, no keys to paste.</div>'+
+      '<div class="set-sub">Connect AMV to your tools. <b style="color:var(--tx)">Autonomous</b> ones work in the background once connected; <b style="color:var(--tx)">manual</b> ones you trigger or upload to. Click Connect - you approve in a popup, no keys to paste.</div>'+
       _integrationsCatalogHTML();
     _wireIntegrationCatalog(pane);
     _killTokenAutofill();
@@ -20798,10 +20879,10 @@ function openTerms(){
     '<div class="ov" id="terms-bg"><div class="ob wide tall" onclick="event.stopPropagation()">'+
       '<button class="oc" onclick="closeOvr()">&#215;</button>'+
       '<h2>Terms of Service</h2>'+
-      '<p class="ob-sub">Effective '+new Date().toLocaleDateString()+' &mdash; please read carefully.</p>'+
+      '<p class="ob-sub">Effective '+new Date().toLocaleDateString()+' - please read carefully.</p>'+
       '<div class="ts">'+
         '<h4>1. Acceptance</h4>By using AMV.AI you agree to these terms. If you disagree, stop using the platform.'+
-        '<h4>2. Content Policy</h4>Prohibited: explicit sexual/pornographic content; child sexual abuse material (CSAM &mdash; all violations reported to NCMEC and law enforcement); content intended to harass or harm; impersonation for fraud; attempts to generate malware or facilitate illegal activity. We may suspend accounts that violate this policy.'+
+        '<h4>2. Content Policy</h4>Prohibited: explicit sexual/pornographic content; child sexual abuse material (CSAM - all violations reported to NCMEC and law enforcement); content intended to harass or harm; impersonation for fraud; attempts to generate malware or facilitate illegal activity. We may suspend accounts that violate this policy.'+
         '<h4>3. Automation &amp; Connected Tools</h4>By enabling automation or connected features you grant AMV.AI permission to access the accounts and files you configure (e.g. browser, email, calendar), used solely for tasks you request. Revoke access in Settings at any time.'+
         '<h4>4. AI Disclaimer</h4>AI outputs may be inaccurate. Do not rely on AMV.AI for medical, legal, or financial decisions without independent professional verification. AMV.AI does not provide financial advice; scheduled research reports information only.'+
         '<h4>5. Payments &amp; Refunds</h4>Subscriptions are billed monthly by our payment processor and can be cancelled any time; access continues to the end of the paid period. Refunds are handled per our posted policy. Chargeback or refund abuse may result in account suspension.'+
@@ -20825,14 +20906,14 @@ function openPrivacy(){
     '<div class="ov" id="priv-bg"><div class="ob wide tall" onclick="event.stopPropagation()">'+
       '<button class="oc" onclick="closeOvr()">&#215;</button>'+
       '<h2>Privacy Policy</h2>'+
-      '<p class="ob-sub">Effective '+new Date().toLocaleDateString()+' &mdash; how AMV.AI handles your data.</p>'+
+      '<p class="ob-sub">Effective '+new Date().toLocaleDateString()+' - how AMV.AI handles your data.</p>'+
       '<div class="ts">'+
         '<h4>1. What we collect</h4>'+
           '<b>Account:</b> your name and email. '+
           '<b>Content:</b> the chats, projects, memory, and automations you create. '+
           '<b>Usage:</b> counts and timestamps of requests, for limits, billing, and abuse prevention. '+
-          '<b>Payment:</b> handled entirely by our payment processor &mdash; we never see or store your full card number.'+
-        '<h4>2. How we store it</h4>Your account and content are stored on Cloudflare\u2019s infrastructure (KV / D1) in encrypted transit and at rest. Passwords are never stored in plain text &mdash; they are salted and hashed with PBKDF2-SHA256 at current OWASP-recommended strength. Access tokens are short-lived and can be revoked.'+
+          '<b>Payment:</b> handled entirely by our payment processor - we never see or store your full card number.'+
+        '<h4>2. How we store it</h4>Your account and content are stored on Cloudflare\u2019s infrastructure (KV / D1) in encrypted transit and at rest. Passwords are never stored in plain text - they are salted and hashed with PBKDF2-SHA256 at current OWASP-recommended strength. Access tokens are short-lived and can be revoked.'+
         '<h4>3. Who we share it with</h4>We do <b>not</b> sell your data. We share the minimum necessary with the providers that make the service work: '+
           '<b>Anthropic</b> (processes your prompts to generate AI responses), '+
           '<b>Stripe</b> (payments), '+
@@ -21086,7 +21167,7 @@ async function runCanvasAutomation() {
         '<button class="btn bp" id="ca-start" style="font-size:13px">Start Automation</button>'+
         '<button class="btn bs" onclick="closeOvr()" style="font-size:13px">Cancel</button>'+
       '</div>'+
-      '<p style="font-size:10px;color:var(--t3);margin-top:9px">Your computer must stay on and browser open. For overnight automation, deploy a backend server &mdash; see the Help section.</p>'+
+      '<p style="font-size:10px;color:var(--t3);margin-top:9px">Your computer must stay on and browser open. For overnight automation, deploy a backend server - see the Help section.</p>'+
     '</div></div>';
   document.getElementById('ca-bg')?.addEventListener('click',closeOvr);
 
@@ -22260,7 +22341,7 @@ function renderIntegrationsView(){
   vc.innerHTML=
     '<div class="sv fi"><div class="vi">'+
       '<h2>Integrations</h2>'+
-      '<p class="vsub">Connect AMV to your tools. <b style="color:var(--tx)">Autonomous</b> integrations work in the background once connected; <b style="color:var(--tx)">manual</b> ones you trigger or upload to. Click Connect &mdash; you approve in a popup, no keys to paste.</p>'+
+      '<p class="vsub">Connect AMV to your tools. <b style="color:var(--tx)">Autonomous</b> integrations work in the background once connected; <b style="color:var(--tx)">manual</b> ones you trigger or upload to. Click Connect - you approve in a popup, no keys to paste.</p>'+
       '<div id="int-catalog">'+_integrationsCatalogHTML()+'</div>'+
     '</div></div>';
   _wireIntegrationCatalog(vc);
@@ -24295,7 +24376,7 @@ function openCowork(){
         <div class="sched-label">Final action</div>
         <div class="aa-opts">
           <label class="aa-opt on"><input type="radio" name="aa-mode" value="require" checked><span class="aa-radio"></span><span class="aa-opt-b"><b>Require my approval</b><span>AMV does the work, then waits. Nothing sends, publishes, or changes until you approve it.</span></span></label>
-          <label class="aa-opt"><input type="radio" name="aa-mode" value="auto"><span class="aa-radio"></span><span class="aa-opt-b"><b>Auto approve &amp; complete automatically</b><span>AMV finishes and performs the final action itself &mdash; no approval each time.</span></span></label>
+          <label class="aa-opt"><input type="radio" name="aa-mode" value="auto"><span class="aa-radio"></span><span class="aa-opt-b"><b>Auto approve &amp; complete automatically</b><span>AMV finishes and performs the final action itself - no approval each time.</span></span></label>
         </div>
         <div class="aa-config" id="aa-config" style="display:none">
           <div class="aa-permit" id="aa-permit"></div>

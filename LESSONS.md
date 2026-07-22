@@ -7,6 +7,23 @@ Format: **Mistake → Root cause → Rule going forward.**
 
 ---
 
+## 2026-07-22 (marketplace)
+
+### 9. A listing that installs to a field the seller never fills = a dead purchase
+- **Mistake:** `install()` for a crew read `item.crew` (structured agents), but the
+  sell form only captures free-text `item.text`. So every user-listed crew installed
+  with ZERO agents and did nothing when run - the buyer paid for a dead button.
+- **Rule:** Whatever the seller can actually enter must be what "use it" runs. Build
+  the runnable artifact from the fields the form captures (fell back to running the
+  listing's `text` as the goal). And gate publish with a per-kind deliverable check
+  (`_mktDeliverableOK`) so empty/fake listings can't go live.
+
+### 10. There are FOUR dash forms, not two
+- Purged literal `—`/`–`, then `—`/`–` escapes, and this round the
+  **HTML entities** `&mdash;`/`&ndash;` (18 in app.js) which also render as em
+  dashes. **Rule:** when purging a glyph, sweep literal char, `\uXXXX` escape, AND
+  `&entity;` forms.
+
 ## 2026-07-22 (later)
 
 ### 7. "sended" — never hand-roll past tense
