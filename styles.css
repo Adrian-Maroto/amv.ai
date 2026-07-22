@@ -6484,3 +6484,83 @@ html,body{height:100%;height:100dvh}
   .cpb{flex-direction:column;align-items:flex-start;gap:var(--sp-4);padding:var(--sp-5)}
   .cpb-btn{width:100%;justify-content:center}
 }
+
+/* ============================================================
+   LAYER A13 — Approval/schedule editing, preview scroll fix,
+   flush current-plan, bigger Crew command box
+   ============================================================ */
+
+/* ---- Preview workspace: the REAL scroll fix ----
+   The flex child of .pvw is #pvw-mount (which wraps .pvw-body), not
+   .pvw-body itself. Without a bounded height it grew to full content height,
+   so nothing scrolled and the footer/back button got pushed past the viewport.
+   Constrain #pvw-mount and let the inner panels scroll. */
+.pvw #pvw-mount{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.pvw #pvw-mount>.pvw-body{flex:1 1 auto;min-height:0}
+@media(min-width:901px){
+  .pvw #pvw-mount>.pvw-body{overflow:hidden}
+  .pvw-side,.pvw-stage{overflow:auto;min-height:0}
+}
+@media(max-width:900px){
+  .pvw #pvw-mount>.pvw-body{overflow-y:auto!important;-webkit-overflow-scrolling:touch}
+}
+/* iOS: use the visible viewport and clear the notch / home indicator so the
+   Back button and Approve bar are always reachable. */
+@media(max-width:640px){
+  .pvw{height:100vh;height:100dvh;max-height:100dvh}
+  .pvw-top{padding-top:calc(var(--sp-3) + env(safe-area-inset-top))}
+  .pvw-foot{padding-bottom:calc(var(--sp-3) + env(safe-area-inset-bottom))}
+}
+
+/* ---- Billing: current plan flush-left under "Subscription", no card chrome,
+   no icon (specificity beats the id-scoped .ss2 padding rules) ---- */
+#vc .bill-current,#set-pane .bill-current,.vi .bill-current{
+  background:none!important;border:none!important;box-shadow:none!important;
+  padding:0!important;margin-top:6px!important;margin-bottom:22px!important}
+.bill-current .bill-plan{margin-bottom:0}
+.bill-current .bill-plan-l{gap:0}
+
+/* ---- Edit modal (approvals + scheduled work) ---- */
+.ape-ov{position:fixed;inset:0;z-index:1250;background:rgba(8,10,15,.62);backdrop-filter:blur(3px);display:flex;padding:var(--sp-5)}
+.ape{position:relative;margin:auto;width:min(640px,100%);max-height:calc(100vh - var(--sp-8));display:flex;flex-direction:column;background:var(--bg);border:1px solid var(--bd);border-radius:var(--rp);overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.45)}
+.ape-top{display:flex;align-items:center;gap:var(--sp-3);padding:var(--sp-3) var(--sp-4);border-bottom:1px solid var(--bd);background:var(--s1)}
+.ape-top-t{flex:1;min-width:0;font-weight:640;color:var(--tx);font-size:15px}
+.ape-body{flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:var(--sp-5);display:flex;flex-direction:column;gap:var(--sp-4)}
+.ape-f{display:flex;flex-direction:column;gap:6px}
+.ape-f>span{font-size:12px;font-weight:600;color:var(--dim);text-transform:uppercase;letter-spacing:.04em}
+.ape-f input,.ape-f textarea,.ape-f select{width:100%;background:var(--s2);border:1px solid var(--bd);border-radius:var(--rk);color:var(--tx);font:inherit;font-size:14px;padding:11px 13px;outline:none;transition:border-color .15s}
+.ape-f input:focus,.ape-f textarea:focus,.ape-f select:focus{border-color:var(--accent)}
+.ape-f textarea{resize:vertical;line-height:1.6;min-height:120px}
+.ape-days{display:flex;flex-wrap:wrap;gap:10px}
+.ape-day{display:inline-flex;align-items:center;gap:5px;font-size:13px;color:var(--tx);background:var(--s2);border:1px solid var(--bd);border-radius:999px;padding:6px 11px;cursor:pointer}
+.ape-day input{accent-color:var(--accent)}
+.ape-foot{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);padding:var(--sp-3) var(--sp-4);border-top:1px solid var(--bd);background:var(--s1)}
+.ape-foot-r{display:flex;gap:var(--sp-2)}
+.ape-foot .btn{font-size:13.5px;padding:10px 18px;border-radius:var(--rc)}
+.ape-del{background:transparent;border:1px solid transparent;color:var(--mu)}
+.ape-del:hover{color:var(--err);background:var(--err-soft)}
+@media(max-width:640px){
+  .ape-ov{padding:0}
+  .ape{width:100%;height:100vh;height:100dvh;max-height:100dvh;border-radius:0;border:none}
+  .ape-top{padding-top:calc(var(--sp-3) + env(safe-area-inset-top))}
+  .ape-foot{padding-bottom:calc(var(--sp-3) + env(safe-area-inset-bottom));flex-wrap:wrap}
+  .ape-foot-r{flex:1}
+  .ape-foot-r .btn{flex:1;justify-content:center}
+}
+
+/* ---- Crew scheduled row: room for Edit + Cancel ---- */
+.mc-sched-acts{display:flex;gap:6px;flex:none}
+
+/* ---- Crew command box: bigger, warmer, more inviting ---- */
+.mc-cmd-lg{background:linear-gradient(180deg,var(--s2),var(--s1));border:1px solid var(--bd);border-radius:var(--rp);padding:22px 22px 20px;margin-bottom:var(--sp-5);box-shadow:0 1px 2px rgba(0,0,0,.04),0 10px 30px -18px rgba(0,0,0,.5)}
+.mc-cmd-lg .mc-cmd-label{font-size:15px;font-weight:660;margin-bottom:13px;letter-spacing:-.01em}
+.mc-cmd-lg .mc-cmd-inner{padding:8px 8px 8px 18px;border-radius:16px;background:var(--bg);border:1px solid var(--bd);transition:border-color .15s,box-shadow .15s}
+.mc-cmd-lg .mc-cmd-inner:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.mc-cmd-lg .mc-cmd-ic{color:var(--accent);flex:none}
+.mc-cmd-lg .mc-cmd-input{font-size:16px;padding:16px 0}
+.mc-cmd-lg .mc-cmd-go{padding:14px 28px;font-size:15px;font-weight:640;border-radius:12px}
+@media(max-width:560px){
+  .mc-cmd-lg{padding:18px 16px 16px}
+  .mc-cmd-lg .mc-cmd-input{font-size:15px;padding:14px 0}
+  .mc-cmd-lg .mc-cmd-go{padding:13px 18px}
+}

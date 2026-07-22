@@ -8503,9 +8503,9 @@ function renderBillingView(targetEl){
       '<span class="eyebrow">Billing</span>'+
       '<h2>Subscription</h2><p class="vsub">Your plan, billing dates, and the details on file. Payments are processed securely — AMV never stores your full card.</p>'+
       // CURRENT PLAN
-      '<div class="ss2"><h3>Current plan</h3>'+
+      '<div class="ss2 bill-current"><h3>Current plan</h3>'+
         '<div class="bill-plan">'+
-          '<div class="bill-plan-l"><div class="bill-plan-ic">'+ic+'</div>'+
+          '<div class="bill-plan-l">'+
             '<div><div class="bill-plan-n">'+P.name+(plan==='free'?'':' \u00b7 $'+P.price+'/mo')+'</div>'+
             '<div class="bill-plan-d">'+escH(P.blurb||'')+'</div></div></div>'+
           '<span class="badge bg3">Active</span>'+
@@ -9494,7 +9494,7 @@ function _mcSchedRow(t){
   let next='';
   try{ if(t.next) next=new Date(t.next).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }catch(e){}
   const mode = t.paused ? '<span class="mc-sched-mode req">Paused</span>' : (t.approval==='auto' ? '<span class="mc-sched-mode auto">Auto-approve</span>' : '<span class="mc-sched-mode req">Approval required</span>');
-  return `<div class="mc-sched-row">${mode}<div class="mc-sched-b"><div class="mc-sched-goal">${escH(t.goal||'Scheduled task')}</div><div class="mc-sched-meta">${escH(when)}${next?` · next ${escH(next)}`:''}${t.localOnly?' · runs while AMV is open':''}</div></div><button class="btn mc-mini ghost" data-dact="_mcCancelSched" data-darg="${t.id}">Cancel</button></div>`;
+  return `<div class="mc-sched-row">${mode}<div class="mc-sched-b"><div class="mc-sched-goal">${escH(t.goal||'Scheduled task')}</div><div class="mc-sched-meta">${escH(when)}${next?` · next ${escH(next)}`:''}${t.localOnly?' · runs while AMV is open':''}</div></div><div class="mc-sched-acts"><button class="btn mc-mini ghost" data-dact="_schedEdit" data-darg="${t.id}">Edit</button><button class="btn mc-mini ghost" data-dact="_mcCancelSched" data-darg="${t.id}">Cancel</button></div></div>`;
 }
 function _mcCancelSched(id){ try{ _saveSched(_loadSched().filter(t=>t.id!==id)); }catch(e){} toast('Scheduled task cancelled','info'); renderCrewView(); }
 window._mcCancelSched=_mcCancelSched;
@@ -9992,7 +9992,82 @@ function _apvDoApprove(a){
   renderCrewView();
 }
 function apvReject(id){ apvClose(); cwReject(id); }
-function apvEdit(id){ apvClose(); cwEdit(id); }
+/* The body text of an approval, wherever it lives for that result type. */
+function _apvBodyField(a){
+  const r=a.result||{}; const type=r.type||a.resultType||'doc';
+  if(type==='social') return r.text||a.preview||'';
+  return r.body||a.preview||'';
+}
+/* Write an edited body back into the right field for the result type. */
+function _apvSetBody(a,val){
+  a.result=a.result||{}; const type=a.result.type||a.resultType||'doc';
+  if(type==='social') a.result.text=val; else a.result.body=val;
+  a.preview=val;
+}
+/* Full editor: change the message, who it goes to, and when — then save,
+   send, or delete. Edits persist to the approval store (and the backend when
+   connected), so what you approve is exactly what you edited. */
+function apvEdit(id){
+  const a=_cwApprovals().find(x=>x.id===id); if(!a){ toast('That item is no longer waiting','info'); return; }
+  const r=$('ovr'); if(!r) return;
+  const type=(a.result&&a.result.type)||a.resultType||'doc';
+  const isEmail=type==='email';
+  const to=(a.result&&a.result.to)||a.destination||'';
+  const subject=(a.result&&a.result.subject)||a.title||'';
+  const body=_apvBodyField(a);
+  const when=a.scheduledAt||'';
+  const recips=(a.recipients!=null)?a.recipients:'';
+  r.innerHTML=`<div class="ov ape-ov" id="ape-bg"><div class="ape" role="dialog" aria-label="Edit before sending" onclick="event.stopPropagation()">
+    <header class="ape-top">
+      <button class="pvw-back ape-back" data-dact="apvClose" aria-label="Back">← <span>Back</span></button>
+      <div class="ape-top-t">Edit before it sends</div>
+      <span class="pvw-mode ${a.autoApprove?'auto':'wait'}">${a.autoApprove?'Auto-approve on':'Needs approval'}</span>
+    </header>
+    <div class="ape-body">
+      <label class="ape-f"><span>Title</span><input id="ape-title" type="text" value="${escH(a.title||'')}"></label>
+      <label class="ape-f"><span>${isEmail?'To':'To / where it goes'}</span><input id="ape-to" type="text" value="${escH(to)}" placeholder="${isEmail?'who this email goes to':'who or where this goes'}"></label>
+      <label class="ape-f"><span>Number of people</span><input id="ape-recips" type="number" min="0" value="${escH(String(recips))}" placeholder="how many recipients"></label>
+      ${isEmail?`<label class="ape-f"><span>Subject</span><input id="ape-subject" type="text" value="${escH(subject)}"></label>`:''}
+      <label class="ape-f"><span>Message</span><textarea id="ape-body" rows="10">${escH(body)}</textarea></label>
+      <label class="ape-f"><span>When to send</span><input id="ape-when" type="text" value="${escH(when)}" placeholder='e.g. “now” or “Tomorrow 9:00 AM”'></label>
+    </div>
+    <footer class="ape-foot">
+      <button class="btn ape-del" data-dact="_apvEditDelete" data-darg="${a.id}">Delete</button>
+      <div class="ape-foot-r">
+        <button class="btn ape-save" data-dact="_apvEditSave" data-darg="${a.id}">Save changes</button>
+        <button class="btn pvw-approve" data-dact="_apvEditSend" data-darg="${a.id}">Save &amp; send</button>
+      </div>
+    </footer>
+  </div></div>`;
+  on($('ape-bg'),'click',apvClose);
+  setTimeout(()=>{ try{ $('ape-title').focus(); }catch(e){} },30);
+}
+/* Read the form back into the approval object and persist it. Returns the
+   updated approval (or null if it vanished). */
+function _apvCollectEdit(id){
+  const list=_cwApprovals(); const a=list.find(x=>x.id===id); if(!a) return null;
+  const g=k=>{ const el=$(k); return el?el.value:undefined; };
+  const title=g('ape-title'); if(title!=null) a.title=title.trim()||a.title;
+  const to=g('ape-to');
+  if(to!=null){ a.destination=to.trim(); a.result=a.result||{}; if((a.result.type||a.resultType||'doc')==='email') a.result.to=to.trim(); }
+  const rc=g('ape-recips');
+  if(rc!=null){ const n=parseInt(rc,10); a.recipients = (rc.trim()==='' || isNaN(n)) ? null : n; }
+  const subj=g('ape-subject');
+  if(subj!=null){ a.result=a.result||{}; a.result.subject=subj.trim(); }
+  const body=g('ape-body'); if(body!=null) _apvSetBody(a,body);
+  const when=g('ape-when');
+  if(when!=null){ const w=when.trim(); a.scheduledAt = (w && !/^now$/i.test(w)) ? w : ''; if(a.scheduledAt) a.actionType=a.actionType||'schedule'; }
+  _cwSaveApprovals(list);
+  // Persist the edit to the backend when connected, so the real send uses it.
+  if(window.AMV_API && AMV_API.live && typeof AMV_API._fetch==='function'){
+    try{ AMV_API._fetch('/api/approvals/edit',{method:'POST',body:JSON.stringify({id:a.id,patch:{title:a.title,destination:a.destination,recipients:a.recipients,scheduledAt:a.scheduledAt,result:a.result}})}).catch(()=>{}); }catch(e){}
+  }
+  return a;
+}
+function _apvEditSave(id){ const a=_apvCollectEdit(id); if(!a){ apvClose(); return; } apvClose(); toast('Changes saved','success'); if(S.tab==='crew') renderCrewView(); }
+function _apvEditSend(id){ const a=_apvCollectEdit(id); if(!a){ apvClose(); return; } apvClose(); _apvDoApprove(a); }
+function _apvEditDelete(id){ if(!confirm('Delete this — it won’t be sent?')) return; apvClose(); cwReject(id); }
+window._apvEditSave=_apvEditSave; window._apvEditSend=_apvEditSend; window._apvEditDelete=_apvEditDelete;
 function apvRevise(id){
   const item=_cwApprovals().find(x=>x.id===id); apvClose();
   setTab('chat');
@@ -17225,6 +17300,74 @@ function _schedCancel(id){
 }
 window._schedTogglePause=_schedTogglePause; window._schedToggleApproval=_schedToggleApproval; window._schedCancel=_schedCancel;
 
+/* Full editor for a scheduled task: change what it does, how often, when, and
+   its approval mode. Saving recomputes the next run and persists the record
+   (and the backend schedule when connected), so the edit is really in effect. */
+function _schedEdit(id){
+  const l=_loadSched(); const t=l.find(x=>x.id===id); if(!t){ if(typeof toast==='function') toast('That task is no longer scheduled','info'); return; }
+  const r=$('ovr'); if(!r) return;
+  const cad = t.sched ? t.sched.cad : ({daily:'daily',weekdays:'daily',weekly:'weekly',weekly_mon:'weekly',hourly:'hourly'}[t.freq]||'daily');
+  const hour = (t.sched&&t.sched.hour!=null)?t.sched.hour:8;
+  const days = (t.sched&&t.sched.days)?t.sched.days:[1];
+  const dom = (t.sched&&t.sched.dom)||1;
+  const appr = t.approval==='auto'?'auto':'require';
+  const hourOpts = Array.from({length:24},(_,h)=>`<option value="${h}"${h===hour?' selected':''}>${_hourLabel(h)}</option>`).join('');
+  const dayChk = _DOWNAMES.map((d,i)=>`<label class="ape-day"><input type="checkbox" data-schday="${i}"${days.includes(i)?' checked':''}> ${d}</label>`).join('');
+  const domOpts = Array.from({length:28},(_,i)=>`<option value="${i+1}"${(i+1)===dom?' selected':''}>${i+1}</option>`).join('');
+  r.innerHTML=`<div class="ov ape-ov" id="sce-bg"><div class="ape" role="dialog" aria-label="Edit scheduled work" onclick="event.stopPropagation()">
+    <header class="ape-top">
+      <button class="pvw-back ape-back" data-dact="apvClose" aria-label="Back">← <span>Back</span></button>
+      <div class="ape-top-t">Edit scheduled work</div>
+    </header>
+    <div class="ape-body">
+      <label class="ape-f"><span>What AMV should do</span><textarea id="sce-goal" rows="4">${escH(t.goal||'')}</textarea></label>
+      <label class="ape-f"><span>How often</span><select id="sce-cad">
+        <option value="daily"${cad==='daily'?' selected':''}>Every day</option>
+        <option value="weekly"${cad==='weekly'?' selected':''}>Weekly</option>
+        <option value="monthly"${cad==='monthly'?' selected':''}>Monthly</option>
+        <option value="hourly"${cad==='hourly'?' selected':''}>Every hour</option>
+      </select></label>
+      <label class="ape-f" id="sce-hour-f"><span>Time</span><select id="sce-hour">${hourOpts}</select></label>
+      <div class="ape-f" id="sce-days-f"><span>Days</span><div class="ape-days">${dayChk}</div></div>
+      <label class="ape-f" id="sce-dom-f"><span>Day of month</span><select id="sce-dom">${domOpts}</select></label>
+      <label class="ape-f"><span>Approval</span><select id="sce-appr">
+        <option value="require"${appr==='require'?' selected':''}>Wait for my approval</option>
+        <option value="auto"${appr==='auto'?' selected':''}>Auto-approve</option>
+      </select></label>
+    </div>
+    <footer class="ape-foot">
+      <button class="btn ape-del" data-dact="_schedEditDelete" data-darg="${t.id}">Delete</button>
+      <div class="ape-foot-r">
+        <button class="btn pvw-approve ape-save" data-dact="_schedEditSave" data-darg="${t.id}">Save</button>
+      </div>
+    </footer>
+  </div></div>`;
+  on($('sce-bg'),'click',apvClose);
+  const sync=()=>{ const c=$('sce-cad').value; const hf=$('sce-hour-f'),df=$('sce-days-f'),mf=$('sce-dom-f'); if(hf)hf.style.display=(c==='hourly')?'none':'flex'; if(df)df.style.display=(c==='weekly')?'block':'none'; if(mf)mf.style.display=(c==='monthly')?'flex':'none'; };
+  on($('sce-cad'),'change',sync); sync();
+  setTimeout(()=>{ try{ $('sce-goal').focus(); }catch(e){} },30);
+}
+function _schedEditSave(id){
+  const l=_loadSched(); const t=l.find(x=>x.id===id); if(!t){ apvClose(); return; }
+  const goal=$('sce-goal'); if(goal) t.goal=goal.value.trim()||t.goal;
+  const cad=($('sce-cad')||{}).value||'daily';
+  t.approval=($('sce-appr')||{}).value==='auto'?'auto':'require';
+  if(cad==='hourly'){ delete t.sched; t.freq='hourly'; t.next=_freqNext('hourly',Date.now()); }
+  else{
+    const hour=parseInt(($('sce-hour')||{}).value,10)||8;
+    const s={cad,hour};
+    if(cad==='weekly'){ s.days=[...document.querySelectorAll('[data-schday]:checked')].map(x=>+x.dataset.schday); if(!s.days.length) s.days=[1]; }
+    if(cad==='monthly'){ s.dom=parseInt(($('sce-dom')||{}).value,10)||1; }
+    t.sched=s; delete t.freq; t.next=_schedNext(s,Date.now());
+  }
+  _saveSched(l);
+  if(window.AMV_API && AMV_API.live && typeof AMV_API._fetch==='function'){ try{ AMV_API._fetch('/api/schedule/edit',{method:'POST',body:JSON.stringify({id:t.id,goal:t.goal,sched:t.sched,freq:t.freq,approval:t.approval,next:t.next})}).catch(()=>{}); }catch(e){} }
+  apvClose(); if(typeof toast==='function') toast('Schedule updated','success');
+  if(S.tab==='crew'){ try{ renderCrewView(); }catch(e){} }
+}
+function _schedEditDelete(id){ if(!confirm('Delete this scheduled task?')) return; apvClose(); _schedCancel(id); }
+window._schedEdit=_schedEdit; window._schedEditSave=_schedEditSave; window._schedEditDelete=_schedEditDelete;
+
 function _smRow(t){
   const cadence = t.sched ? _schedHumanOf(t.sched) : ((typeof _freqLabel==='function')?_freqLabel(t.freq):'');
   let nextTxt='';
@@ -17243,6 +17386,7 @@ function _smRow(t){
       ${t.localOnly?'<span class="smr-local">Runs while AMV is open</span>':''}
     </div>
     <div class="smr-act">
+      <button class="btn mc-mini ghost" data-dact="_schedEdit" data-darg="${t.id}">Edit</button>
       <button class="btn mc-mini ghost" data-dact="_schedTogglePause" data-darg="${t.id}">${t.paused?'Resume':'Pause'}</button>
       <button class="btn mc-mini ghost" data-dact="_schedToggleApproval" data-darg="${t.id}">${auto?'Require approval':'Auto-approve'}</button>
       <button class="btn mc-mini ghost smr-cancel" data-dact="_schedCancel" data-darg="${t.id}">Cancel</button>
