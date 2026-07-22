@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/auto-push-main.sh",
+            "timeout": 60,
+            "statusMessage": "Auto-syncing to main…"
+          }
+        ]
+      }
+    ]
+  }
+}
