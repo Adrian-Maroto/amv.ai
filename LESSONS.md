@@ -7,6 +7,25 @@ Format: **Mistake → Root cause → Rule going forward.**
 
 ---
 
+## 2026-07-22 (scan & ask)
+
+### 11. Order of checks in an intent handler changes what the user sees
+- **Mistake:** Put the "is the integration connected?" gate before the
+  clarify/recurring checks in `mcRunCommand`, so "email X every morning" hit
+  "connect email" instead of the schedule chooser, and "send an email" (no
+  recipient) hit "connect email" instead of "who to?".
+- **Rule:** Understand the request first. Order: recurring-detection → clarify
+  (ask for missing details) → capability/integration gate → run. Scheduling and
+  clarifying don't need the integration connected yet.
+
+### 12. A global `input{width:100%}` stretches radios/checkboxes too
+- **Mistake:** New radio options rendered with the radio taking the full row
+  width (global input rule), squishing the label into a sliver.
+- **Rule:** For inline radios/checkboxes inside a flex row, set
+  `width:auto!important;flex:0 0 auto` on the input and `flex:1 1 auto` on the
+  label text. Always screenshot new form controls - unit tests pass while the
+  layout is visibly broken.
+
 ## 2026-07-22 (marketplace)
 
 ### 9. A listing that installs to a field the seller never fills = a dead purchase

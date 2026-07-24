@@ -6655,6 +6655,33 @@ html,body{height:100%;height:100dvh}
 .toast-act .toast-btn{margin-left:6px;background:var(--accent);color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:12.5px;font-weight:600;cursor:pointer;flex:none}
 .toast-act .toast-btn:hover{filter:brightness(1.08)}
 
+/* ============================================================
+   LAYER A14 — Mission Control: clarify (scan & ask), job↔approval linkage
+   ============================================================ */
+.mc-cmd-msg.ask{background:var(--s2);border:1px solid var(--bd)}
+.mc-ask-h{font-weight:640;font-size:14px;color:var(--tx)}
+.mc-ask-sub{font-size:12.5px;color:var(--mu);margin-top:2px}
+.mc-ask-qs{margin:4px 0 2px;padding-left:18px;display:flex;flex-direction:column;gap:4px}
+.mc-ask-qs li{font-size:13px;color:var(--tx)}
+.mc-ask-input{width:100%;background:var(--bg);border:1px solid var(--bd);border-radius:var(--rk);color:var(--tx);font:inherit;font-size:14px;padding:10px 12px;resize:vertical;outline:none}
+.mc-ask-input:focus{border-color:var(--accent)}
+.mc-ask-modes{display:flex;flex-direction:column;gap:8px;margin:4px 0 2px}
+.mc-ask-mode{display:flex;gap:9px;align-items:flex-start;font-size:13px;color:var(--tx);background:var(--bg);border:1px solid var(--bd);border-radius:var(--rk);padding:11px 13px;cursor:pointer;line-height:1.45}
+.mc-ask-mode input{width:auto!important;min-width:0;flex:0 0 auto;margin:2px 0 0;accent-color:var(--accent)}
+.mc-ask-mode>span{flex:1 1 auto;min-width:0}
+.mc-ask-mode:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
+
+.apv-fromjob{font-size:12px;color:var(--tx);background:var(--accent-soft);border:1px solid rgba(63,118,245,.24);border-radius:var(--rk,10px);padding:8px 11px;margin:8px 0 0;line-height:1.5}
+.mc-sched-waiting{display:inline-block;margin-left:8px;font-size:11px;font-weight:600;color:var(--wait,#d8a84e);background:var(--wait-soft,rgba(216,168,78,.15));border-radius:999px;padding:2px 9px}
+
+.cw-clarify{background:var(--s2);border:1px solid var(--bd);border-radius:var(--rk);padding:14px 16px;margin-top:12px}
+.cw-clarify-h{font-weight:640;font-size:13.5px;color:var(--tx);margin-bottom:6px}
+.cw-clarify-qs{margin:0 0 8px;padding-left:18px;display:flex;flex-direction:column;gap:4px}
+.cw-clarify-qs li{font-size:13px;color:var(--tx)}
+.cw-clarify textarea{width:100%;background:var(--bg);border:1px solid var(--bd);border-radius:var(--rk);color:var(--tx);font:inherit;font-size:14px;padding:10px 12px;resize:vertical;outline:none}
+.cw-clarify textarea:focus{border-color:var(--accent)}
+.cw-clarify-act{display:flex;justify-content:flex-end;margin-top:10px}
+
 </style>
 <!-- BUILD:CSS:END -->
 <script>
@@ -16612,15 +16639,17 @@ function _mcSchedRow(t){
   let next='';
   try{ if(t.next) next=new Date(t.next).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }catch(e){}
   const auto = t.approval==='auto';
+  let waiting=0; try{ waiting=_cwApprovals().filter(a=>a.fromJob===t.id).length; }catch(e){}
   const mode = t.paused
     ? '<span class="mc-sched-mode paused">Paused</span>'
     : (auto ? '<span class="mc-sched-mode auto">Autonomous - sends automatically</span>'
             : '<span class="mc-sched-mode req">Ask first - you approve each one</span>');
+  const waitChip = (!auto && waiting) ? `<span class="mc-sched-waiting">${waiting} waiting in Needs your approval</span>` : '';
   return `<div class="mc-sched-row">
     <div class="mc-sched-b">
       <div class="mc-sched-goal">${escH(t.goal||'Scheduled job')}</div>
       <div class="mc-sched-meta">${escH(when)}${next?` · next ${escH(next)}`:''}${t.localOnly?' · runs while AMV is open':''}</div>
-      <div class="mc-sched-mode-row">${mode}</div>
+      <div class="mc-sched-mode-row">${mode}${waitChip}</div>
     </div>
     <div class="mc-sched-acts">
       <button class="btn mc-mini ${auto?'ghost':'bp'}" data-dact="_schedToggleApproval" data-darg="${t.id}">${auto?'Make me approve first':'Make autonomous'}</button>
@@ -16670,9 +16699,91 @@ function _mcAutonSchedRow(j){
 /* Run a typed command INLINE on Mission Control - never leaves Crew. Recognizes
    intent, and if a needed app isn't connected it says so right here; once
    connected it actually performs the task on the real account. */
-async function mcRunCommand(instruction){
+/* Fast, offline-safe check for obviously-missing details before running.
+   Returns a list of short questions ([] = good to go). */
+function _clarifyHeuristic(goal){
+  const g=' '+String(goal||'').toLowerCase().trim()+' ';
+  const words=g.trim().split(/\s+/).filter(Boolean);
+  const qs=[];
+  const hasEmail=/[\w.+-]+@[\w-]+\.[\w.-]+/.test(goal);
+  const hasTo=/\bto\s+[a-z0-9@"']/i.test(goal) || /\bme\b|\bmy\b|\bmyself\b/i.test(g);
+  const sendy=/\b(send|email|e-mail|message|text|dm|reply|respond|reach out|notify)\b/.test(g);
+  const posty=/\b(post|publish|tweet|share|upload)\b/.test(g);
+  const platform=/\b(twitter|\bx\b|linkedin|instagram|insta|facebook|fb|slack|youtube|tiktok|reddit|blog|website|discord)\b/.test(g);
+  if(sendy && !hasEmail && !hasTo) qs.push('Who should this go to - a name or email address?');
+  if(posty && !platform) qs.push('Where should this be posted (for example LinkedIn, X, or Instagram)?');
+  if(words.length<4 && !sendy && !posty) qs.push('Can you add a little more detail about what you want AMV to produce?');
+  return qs;
+}
+/* Scan a goal and decide whether AMV has enough to proceed. Uses the heuristic
+   always, and the real model when the engine is connected - so it behaves like
+   an assistant that asks before guessing. Returns {ok, questions}. */
+async function _clarifyCheck(goal){
+  let qs=_clarifyHeuristic(goal);
+  if(!qs.length && typeof _aiBackendReady==='function' && _aiBackendReady()){
+    try{
+      const sys='You decide whether an autonomous task has enough detail to do it WELL without guessing at things the user would care about (who it goes to, exact content, destination, timing). Reply with ONLY JSON: {"ready":true} to proceed, or {"ready":false,"questions":["..."]} with at most 2 short, specific questions. Do not ask about things you can reasonably decide yourself.';
+      const raw=await aiComplete('TASK: '+goal, sys, {max_tokens:220, json:true});
+      const j=JSON.parse(String(raw).replace(/```json|```/g,'').trim());
+      if(j && j.ready===false && Array.isArray(j.questions) && j.questions.length) qs=j.questions.slice(0,2).map(q=>String(q).slice(0,160));
+    }catch(e){}
+  }
+  return { ok: qs.length===0, questions: qs };
+}
+/* Turn a recurring command into a running job, asking how it should run. */
+function _mcAskRecurring(box, instruction, when){
+  box.innerHTML='<div class="mc-cmd-msg ask">'+
+    '<div class="mc-ask-h">This looks like recurring work - '+escH(when.label)+'.</div>'+
+    '<div class="mc-ask-sub">Each run creates fresh content. How should AMV handle it?</div>'+
+    '<div class="mc-ask-modes">'+
+      '<label class="mc-ask-mode"><input type="radio" name="mcmode" value="require" checked><span><b>Ask first</b> - AMV prepares it and drops a draft in Needs your approval each time. Nothing sends until you approve.</span></label>'+
+      '<label class="mc-ask-mode"><input type="radio" name="mcmode" value="auto"><span><b>Autonomous</b> - AMV completes and sends it automatically each time. It will not appear in Needs your approval.</span></label>'+
+    '</div>'+
+    '<div class="mc-cmd-actions"><button class="btn mc-mini bp" id="mc-ask-schedule">Add to Running jobs</button><button class="btn mc-mini ghost" id="mc-ask-cancel">Cancel</button></div>'+
+  '</div>';
+  on($('mc-ask-cancel'),'click',()=>{ box.innerHTML=''; });
+  on($('mc-ask-schedule'),'click',()=>{
+    const mode=(document.querySelector('input[name="mcmode"]:checked')||{}).value||'require';
+    const item={id:'a'+Date.now(), goal:instruction, approval:mode, created:Date.now(), lastRun:null};
+    if(when.sched){ item.sched=when.sched; item.next=_schedNext(when.sched,Date.now()); }
+    else { item.freq=when.freq||'daily'; item.next=_freqNext(item.freq,Date.now()); }
+    const list=_loadSched(); list.push(item); _saveSched(list);
+    if(window.AMV_API && AMV_API.live && typeof AMV_API._fetch==='function'){ try{ AMV_API._fetch('/api/schedule/create',{method:'POST',body:JSON.stringify({goal:instruction,sched:item.sched,freq:item.freq,approval:mode})}).catch(()=>{}); }catch(e){} }
+    toast('Added to Running jobs - '+when.label+(mode==='auto'?' · Autonomous':' · Ask first'),'success',4200);
+    renderCrewView();
+  });
+}
+/* Show clarifying questions in the command bar and re-run once answered. */
+function _mcAskDetails(box, instruction, questions){
+  box.innerHTML='<div class="mc-cmd-msg ask">'+
+    '<div class="mc-ask-h">A couple of quick details so I get this right:</div>'+
+    '<ul class="mc-ask-qs">'+questions.map(q=>'<li>'+escH(q)+'</li>').join('')+'</ul>'+
+    '<textarea id="mc-ask-input" class="mc-ask-input" rows="2" placeholder="Answer here, then Continue"></textarea>'+
+    '<div class="mc-cmd-actions"><button class="btn mc-mini bp" id="mc-ask-go">Continue</button><button class="btn mc-mini ghost" id="mc-ask-skip">Skip, do your best</button></div>'+
+  '</div>';
+  const go=()=>{ const a=($('mc-ask-input')||{}).value||''; const combined=instruction+(a.trim()?('\n\nDetails: '+a.trim()):''); mcRunCommand(combined,{clarified:true}); };
+  on($('mc-ask-go'),'click',go);
+  on($('mc-ask-skip'),'click',()=>mcRunCommand(instruction,{clarified:true}));
+  setTimeout(()=>{ try{ $('mc-ask-input').focus(); }catch(e){} },30);
+}
+async function mcRunCommand(instruction, opts){
+  opts=opts||{};
   const box=document.getElementById('mc-cmd-result'); if(!box) return;
   instruction=(instruction||'').trim(); if(!instruction){ const i=document.getElementById('mc-cmd-input'); i&&i.focus(); return; }
+  // Recurring? Make it a running job and ask how it should run (autonomous vs
+  // approval). This comes first: scheduling doesn't need the app connected yet -
+  // the job runs when it's due, once the integration is linked.
+  if(!opts.clarified && typeof _parseWhen==='function'){
+    const when=_parseWhen(instruction);
+    if(when && when.kind==='recurring'){ _mcAskRecurring(box, instruction, when); return; }
+  }
+  // Scan for missing details and ask BEFORE anything else (like a real
+  // assistant): understand the request first, then check what it needs.
+  if(!opts.clarified){
+    box.innerHTML='<div class="mc-cmd-msg run"><span class="rr-dot"></span> Reading your request…</div>';
+    const c=await _clarifyCheck(instruction);
+    if(!c.ok){ _mcAskDetails(box, instruction, c.questions); return; }
+  }
   const analysis=(typeof analyzeTaskIntent==='function')?analyzeTaskIntent(instruction):{matched:false,ready:false};
   // Needs an integration that isn't connected → explain here, stay in Crew.
   if(analysis.matched && !analysis.ready){
@@ -16736,6 +16847,7 @@ function renderCrewView(){
         </div>
         <span class="apv-status ${a.autoApprove?'auto':'wait'}">${a.autoApprove?'Auto-approve on':'Needs approval'}</span>
       </div>
+      ${a.fromJob?`<div class="apv-fromjob">↻ From your running job${a.jobSchedule?` · ${escH(a.jobSchedule)}`:''}. It keeps running - you'll get a new one to review each time. The job stays in <b>Running jobs</b>.</div>`:''}
       ${meta.length?`<div class="apv-meta">${meta.map(m=>`<span class="apv-mi"><span class="apv-mk">${escH(m[0])}</span>${escH(m[1])}</span>`).join('')}</div>`:''}
       ${a.warning?`<div class="apv-warn">${escH(a.warning)}</div>`:''}
       <div class="apv-act">
@@ -24441,9 +24553,32 @@ function openCowork(){
   on($('cw-files'),'change',async function(){ const before=AMVWorkspace.files.length; await AMVWorkspace.addUploads(this.files); drawWs(); const added=AMVWorkspace.files.length-before; this.value=''; if(added>0) toast('Added '+added+' file'+(added>1?'s':'')+' - AMV will use '+(added>1?'them':'it'),'success',3000); });
   _aaInit();
 }
+let _coworkClarified=false;
+/* Show clarifying questions inside the cowork modal before the run starts. */
+function _cwShowClarify(questions){
+  const host=$('cw-step1'); if(!host) return;
+  let panel=$('cw-clarify');
+  if(!panel){ panel=document.createElement('div'); panel.id='cw-clarify'; panel.className='cw-clarify'; const foot=host.querySelector('.tp-foot'); if(foot) host.insertBefore(panel, foot); else host.appendChild(panel); }
+  panel.innerHTML='<div class="cw-clarify-h">Before I start, a couple of details so I get it right:</div>'+
+    '<ul class="cw-clarify-qs">'+questions.map(q=>'<li>'+escH(q)+'</li>').join('')+'</ul>'+
+    '<textarea id="cw-clarify-input" rows="2" placeholder="Answer here"></textarea>'+
+    '<div class="cw-clarify-act"><button class="btn bp" id="cw-clarify-go">Continue</button></div>';
+  _coworkClarified=true;   // a second Start-working click (or Continue) proceeds
+  on($('cw-clarify-go'),'click',()=>{ const a=($('cw-clarify-input')||{}).value||''; if(a.trim()){ const g=$('cw-goal'); if(g) g.value=(g.value.trim()+'\n\nDetails: '+a.trim()); } panel.remove(); _coworkStart(); });
+  const inp=$('cw-clarify-input'); if(inp) inp.focus();
+}
 async function _coworkStart(){
   const goal=$('cw-goal')?$('cw-goal').value.trim():'';
   if(!goal){ toast('Describe the outcome you want','error'); $('cw-goal')&&$('cw-goal').focus(); return; }
+  // Scan for missing details and ask BEFORE any work starts.
+  if(!_coworkClarified){
+    const goBtn=$('cw-go'); if(goBtn){ goBtn.disabled=true; goBtn.textContent='Reading…'; }
+    let c={ok:true,questions:[]};
+    try{ c=await _clarifyCheck(goal); }catch(e){}
+    if(goBtn){ goBtn.disabled=false; goBtn.textContent='Start working →'; }
+    if(!c.ok){ _cwShowClarify(c.questions); return; }
+  }
+  _coworkClarified=false;   // reset for the next task
   const cad=(_SCHED&&_SCHED.cad)||'once';
   if(cad!=='once'){ _scheduleAuto2(goal, Object.assign({},_SCHED), {approval:(_AUTOAPP&&_AUTOAPP.mode)||'require', scope:_AUTOAPP?{run:_AUTOAPP.run,risk:_AUTOAPP.risk,until:_AUTOAPP.until}:null}); }
   $('cw-step1').style.display='none'; $('cw-step2').style.display='block';
@@ -24517,6 +24652,7 @@ async function _recurMakeApproval(t){
   try{ body=_noDash(await aiComplete((t.goal||'')+'\n\nProduce the finished, ready-to-send result now.', sys, {max_tokens:1500})); }catch(e){ body=''; }
   if(!body) return;
   const title=_recurTitle(t);
+  const schedLabel = t.sched?(typeof _schedHumanOf==='function'?_schedHumanOf(t.sched):''):(typeof _freqLabel==='function'?_freqLabel(t.freq):'');
   const ap=_cwApprovals();
   ap.unshift({
     id:'a'+Date.now(), icon: to?'📧':'📄',
@@ -24526,7 +24662,7 @@ async function _recurMakeApproval(t){
     resultType: to?'email':'doc',
     destination: to||'', recipients: to?1:null,
     account:(S.user&&S.user.email)||'', autoApprove:false,
-    readyAt:Date.now(), fromJob:t.id,
+    readyAt:Date.now(), fromJob:t.id, jobTitle:title, jobSchedule:schedLabel,
     result: to?{type:'email',from:(S.user&&S.user.email)||'',to,subject:title,body}:{type:'doc',body}
   });
   _cwSaveApprovals(ap);
