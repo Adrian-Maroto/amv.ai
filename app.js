@@ -2391,7 +2391,7 @@ function _wireHdrAuth(){
   if(su && !su._wired){ su._wired=1; su.addEventListener('click',()=>{ try{ openAuth('signup'); }catch(e){} }); }
   if(li && !li._wired){ li._wired=1; li.addEventListener('click',()=>{ try{ openAuth('login'); }catch(e){} }); }
 }
-function goApp(){ try{ _wireHdrAuth(); }catch(e){} try{ const cy=document.getElementById('copy-year'); if(cy) cy.textContent=String(new Date().getFullYear()); }catch(e){} document.getElementById('land').classList.add('hidden'); document.getElementById('app').classList.add('on'); updateSbUser(); _initMobileSidebar(); _restoreSidebarState(); try{ _applyReduceMotion(); }catch(e){} setTab(S.tab); _ensureBackendSession(); try{ _applyFontSize(); }catch(e){} try{ _initOfflineWatch(); }catch(e){} try{ _initErrorBoundary(); }catch(e){} try{ syncEntitlement(); _checkUpgradeReturn(); }catch(e){} try{ _checkTeamInvite(); }catch(e){} try{ _initKeyboardNav(); _initA11y(); }catch(e){} try{ _revealAdminNav(); }catch(e){} try{ _initSidebarMore(); }catch(e){} try{ _initBuildGroup(); }catch(e){} try{ _localizePrices(document); }catch(e){} try{ const sbtn=$('sb-status'); if(sbtn) sbtn.addEventListener('click',openStatusPanel); _checkStatus(); }catch(e){} try{ _translateUI(); setTimeout(_translateUI,120); }catch(e){ console.error('Translate UI error in goApp', e); } }
+function goApp(){ try{ _wireHdrAuth(); }catch(e){} try{ const cy=document.getElementById('copy-year'); if(cy) cy.textContent=String(new Date().getFullYear()); }catch(e){} document.getElementById('land').classList.add('hidden'); document.getElementById('app').classList.add('on'); updateSbUser(); _initMobileSidebar(); _restoreSidebarState(); try{ _applyReduceMotion(); }catch(e){} setTab(S.tab); _ensureBackendSession(); try{ _applyFontSize(); }catch(e){} try{ _initOfflineWatch(); }catch(e){} try{ _initErrorBoundary(); }catch(e){} try{ syncEntitlement(); _checkUpgradeReturn(); }catch(e){} try{ _checkTeamInvite(); }catch(e){} try{ _initKeyboardNav(); _initA11y(); }catch(e){} try{ _revealAdminNav(); }catch(e){} try{ _initSidebarMore(); }catch(e){} try{ _initBuildGroup(); }catch(e){} try{ _localizePrices(document); }catch(e){} try{ const sbtn=$('sb-status'); if(sbtn) sbtn.addEventListener('click',openStatusPanel); _checkStatus(); }catch(e){} try{ _initI18nObserver(); }catch(e){} try{ _translateUI(); setTimeout(_translateUI,120); }catch(e){ console.error('Translate UI error in goApp', e); } }
 
 /* The sidebar's advanced tools (Tasks, Integrations, Marketplace) live under a
    collapsible "More" so the default view stays calm - new users were getting
@@ -3169,6 +3169,24 @@ const I18N = {
   'Integrations':{bn:'ইন্টিগ্রেশন',ur:'انٹیگریشنز',ko:'통합',ta:'ஒருங்கிணைப்பு',id:'Integrasi',it:'Integrazioni',tr:'Entegrasyonlar',vi:'Tích hợp',es:'Integraciones',zh:'\u96c6\u6210',hi:'\u090f\u0915\u0940\u0915\u0930\u0923',ar:'\u0627\u0644\u062a\u0643\u0627\u0645\u0644\u0627\u062a',pt:'Integra\u00e7\u00f5es',fr:'Int\u00e9grations',de:'Integrationen',ja:'\u9023\u643a',ru:'\u0418\u043d\u0442\u0435\u0433\u0440\u0430\u0446\u0438\u0438'},
   'Tasks':{bn:'কাজ',ur:'کام',ko:'작업',ta:'பணிகள்',id:'Tugas',it:'Attivit\u00e0',tr:'G\u00f6revler',vi:'Nhi\u1ec7m v\u1ee5',es:'Tareas',zh:'\u4efb\u52a1',hi:'\u0915\u093e\u0930\u094d\u092f',ar:'\u0627\u0644\u0645\u0647\u0627\u0645',pt:'Tarefas',fr:'T\u00e2ches',de:'Aufgaben',ja:'\u30bf\u30b9\u30af',ru:'\u0417\u0430\u0434\u0430\u0447\u0438'},
   'New chat':{bn:'নতুন চ্যাট',ur:'نئی چیٹ',ko:'새 채팅',ta:'புதிய அரட்டை',id:'Obrolan baru',it:'Nuova chat',tr:'Yeni sohbet',vi:'Tr\u00f2 chuy\u1ec7n m\u1edbi',es:'Nuevo chat',zh:'\u65b0\u5bf9\u8bdd',hi:'\u0928\u0908 \u091a\u0948\u091f',ar:'\u0645\u062d\u0627\u062f\u062b\u0629 \u062c\u062f\u064a\u062f\u0629',pt:'Novo chat',fr:'Nouveau chat',de:'Neuer Chat',ja:'\u65b0\u898f\u30c1\u30e3\u30c3\u30c8',ru:'\u041d\u043e\u0432\u044b\u0439 \u0447\u0430\u0442'},
+  // Profile menu (top-right) + Settings sections - so the whole chrome follows
+  // the language instantly from the dictionary, even before any backend key.
+  'Settings':{es:'Configuraci\u00f3n',zh:'\u8bbe\u7f6e',hi:'\u0938\u0947\u091f\u093f\u0902\u0917\u094d\u0938',ar:'\u0627\u0644\u0625\u0639\u062f\u0627\u062f\u0627\u062a',pt:'Configura\u00e7\u00f5es',fr:'Param\u00e8tres',de:'Einstellungen',ja:'\u8a2d\u5b9a',ru:'\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438',id:'Pengaturan',bn:'\u09b8\u09c7\u099f\u09bf\u0982\u09b8',ur:'\u062a\u0631\u062a\u06cc\u0628\u0627\u062a',tr:'Ayarlar',vi:'C\u00e0i \u0111\u1eb7t',it:'Impostazioni',ko:'\uc124\uc815',ta:'\u0b85\u0bae\u0bc8\u0baa\u0bcd\u0baa\u0bc1\u0b95\u0bb3\u0bcd'},
+  'Account':{es:'Cuenta',zh:'\u8d26\u6237',hi:'\u0916\u093e\u0924\u093e',ar:'\u0627\u0644\u062d\u0633\u0627\u0628',pt:'Conta',fr:'Compte',de:'Konto',ja:'\u30a2\u30ab\u30a6\u30f3\u30c8',ru:'\u0410\u043a\u043a\u0430\u0443\u043d\u0442',id:'Akun',bn:'\u0985\u09cd\u09af\u09be\u0995\u09be\u0989\u09a8\u09cd\u099f',ur:'\u0627\u06a9\u0627\u0624\u0646\u0679',tr:'Hesap',vi:'T\u00e0i kho\u1ea3n',it:'Account',ko:'\uacc4\uc815',ta:'\u0b95\u0ba3\u0b95\u0bcd\u0b95\u0bc1'},
+  'Privacy':{es:'Privacidad',zh:'\u9690\u79c1',hi:'\u0917\u094b\u092a\u0928\u0940\u092f\u0924\u093e',ar:'\u0627\u0644\u062e\u0635\u0648\u0635\u064a\u0629',pt:'Privacidade',fr:'Confidentialit\u00e9',de:'Datenschutz',ja:'\u30d7\u30e9\u30a4\u30d0\u30b7\u30fc',ru:'\u041a\u043e\u043d\u0444\u0438\u0434\u0435\u043d\u0446\u0438\u0430\u043b\u044c\u043d\u043e\u0441\u0442\u044c',id:'Privasi',bn:'\u0997\u09cb\u09aa\u09a8\u09c0\u09af\u09bc\u09a4\u09be',ur:'\u0631\u0627\u0632\u062f\u0627\u0631\u06cc',tr:'Gizlilik',vi:'Quy\u1ec1n ri\u00eang t\u01b0',it:'Privacy',ko:'\uac1c\uc778\uc815\ubcf4',ta:'\u0ba4\u0ba9\u0bbf\u0baf\u0bc1\u0bb0\u0bbf\u0bae\u0bc8'},
+  'Security':{es:'Seguridad',zh:'\u5b89\u5168',hi:'\u0938\u0941\u0930\u0915\u094d\u0937\u093e',ar:'\u0627\u0644\u0623\u0645\u0627\u0646',pt:'Seguran\u00e7a',fr:'S\u00e9curit\u00e9',de:'Sicherheit',ja:'\u30bb\u30ad\u30e5\u30ea\u30c6\u30a3',ru:'\u0411\u0435\u0437\u043e\u043f\u0430\u0441\u043d\u043e\u0441\u0442\u044c',id:'Keamanan',bn:'\u09a8\u09bf\u09b0\u09be\u09aa\u09a4\u09cd\u09a4\u09be',ur:'\u0633\u06cc\u06a9\u06cc\u0648\u0631\u0679\u06cc',tr:'G\u00fcvenlik',vi:'B\u1ea3o m\u1eadt',it:'Sicurezza',ko:'\ubcf4\uc548',ta:'\u0baa\u0bbe\u0ba4\u0bc1\u0b95\u0bbe\u0baa\u0bcd\u0baa\u0bc1'},
+  'Billing':{es:'Facturaci\u00f3n',zh:'\u8d26\u5355',hi:'\u092c\u093f\u0932\u093f\u0902\u0917',ar:'\u0627\u0644\u0641\u0648\u062a\u0631\u0629',pt:'Faturamento',fr:'Facturation',de:'Abrechnung',ja:'\u8acb\u6c42',ru:'\u041e\u043f\u043b\u0430\u0442\u0430',id:'Penagihan',bn:'\u09ac\u09bf\u09b2\u09bf\u0982',ur:'\u0628\u0644\u0646\u06af',tr:'Faturaland\u0131rma',vi:'Thanh to\u00e1n',it:'Fatturazione',ko:'\uacb0\uc81c',ta:'\u0baa\u0bbf\u0bb2\u0bcd\u0bb2\u0bbf\u0b99\u0bcd'},
+  'Capabilities':{es:'Capacidades',zh:'\u529f\u80fd',hi:'\u0915\u094d\u0937\u092e\u0924\u093e\u090f\u0902',ar:'\u0627\u0644\u0642\u062f\u0631\u0627\u062a',pt:'Recursos',fr:'Capacit\u00e9s',de:'Funktionen',ja:'\u6a5f\u80fd',ru:'\u0412\u043e\u0437\u043c\u043e\u0436\u043d\u043e\u0441\u0442\u0438',id:'Kemampuan',bn:'\u09b8\u0995\u09cd\u09b7\u09ae\u09a4\u09be',ur:'\u0635\u0644\u0627\u062d\u06cc\u062a\u06cc\u06ba',tr:'Yetenekler',vi:'Kh\u1ea3 n\u0103ng',it:'Funzionalit\u00e0',ko:'\uae30\ub2a5',ta:'\u0ba4\u0bbf\u0bb1\u0ba9\u0bcd\u0b95\u0bb3\u0bcd'},
+  'Appearance':{es:'Apariencia',zh:'\u5916\u89c2',hi:'\u0926\u093f\u0916\u093e\u0935\u091f',ar:'\u0627\u0644\u0645\u0638\u0647\u0631',pt:'Apar\u00eancia',fr:'Apparence',de:'Darstellung',ja:'\u5916\u89b3',ru:'\u0412\u043d\u0435\u0448\u043d\u0438\u0439 \u0432\u0438\u0434',id:'Tampilan',bn:'\u099a\u09c7\u09b9\u09be\u09b0\u09be',ur:'\u0638\u0627\u06c1\u0631\u06cc \u0634\u06a9\u0644',tr:'G\u00f6r\u00fcn\u00fcm',vi:'Giao di\u1ec7n',it:'Aspetto',ko:'\ubaa8\uc591',ta:'\u0ba4\u0bcb\u0bb1\u0bcd\u0bb1\u0bae\u0bcd'},
+  'Language':{es:'Idioma',zh:'\u8bed\u8a00',hi:'\u092d\u093e\u0937\u093e',ar:'\u0627\u0644\u0644\u063a\u0629',pt:'Idioma',fr:'Langue',de:'Sprache',ja:'\u8a00\u8a9e',ru:'\u042f\u0437\u044b\u043a',id:'Bahasa',bn:'\u09ad\u09be\u09b7\u09be',ur:'\u0632\u0628\u0627\u0646',tr:'Dil',vi:'Ng\u00f4n ng\u1eef',it:'Lingua',ko:'\uc5b8\uc5b4',ta:'\u0bae\u0bca\u0bb4\u0bbf'},
+  'Skills':{es:'Habilidades',zh:'\u6280\u80fd',hi:'\u0915\u094c\u0936\u0932',ar:'\u0627\u0644\u0645\u0647\u0627\u0631\u0627\u062a',pt:'Habilidades',fr:'Comp\u00e9tences',de:'F\u00e4higkeiten',ja:'\u30b9\u30ad\u30eb',ru:'\u041d\u0430\u0432\u044b\u043a\u0438',id:'Keterampilan',bn:'\u09a6\u0995\u09cd\u09b7\u09a4\u09be',ur:'\u0645\u06c1\u0627\u0631\u062a\u06cc\u06ba',tr:'Beceriler',vi:'K\u1ef9 n\u0103ng',it:'Competenze',ko:'\uc2a4\ud0ac',ta:'\u0ba4\u0bbf\u0bb1\u0ba9\u0bcd\u0b95\u0bb3\u0bcd'},
+  'Connectors':{es:'Conectores',zh:'\u8fde\u63a5\u5668',hi:'\u0915\u0928\u0947\u0915\u094d\u091f\u0930',ar:'\u0627\u0644\u0645\u0648\u0635\u0644\u0627\u062a',pt:'Conectores',fr:'Connecteurs',de:'Connectors',ja:'\u30b3\u30cd\u30af\u30bf',ru:'\u041a\u043e\u043d\u043d\u0435\u043a\u0442\u043e\u0440\u044b',id:'Konektor',bn:'\u0995\u09be\u09a8\u09c7\u0995\u09cd\u099f\u09b0',ur:'\u06a9\u0646\u06cc\u06a9\u0679\u0631\u0632',tr:'Ba\u011flay\u0131c\u0131lar',vi:'Tr\u00ecnh k\u1ebft n\u1ed1i',it:'Connettori',ko:'\ucee4\ub125\ud130',ta:'\u0b87\u0ba3\u0bc8\u0baa\u0bcd\u0baa\u0bbe\u0ba9\u0bcd\u0b95\u0bb3\u0bcd'},
+  'About':{es:'Acerca de',zh:'\u5173\u4e8e',hi:'\u0915\u0947 \u092c\u093e\u0930\u0947 \u092e\u0947\u0902',ar:'\u062d\u0648\u0644',pt:'Sobre',fr:'\u00c0 propos',de:'\u00dcber',ja:'\u6982\u8981',ru:'\u041e \u043f\u0440\u043e\u0433\u0440\u0430\u043c\u043c\u0435',id:'Tentang',bn:'\u09b8\u09ae\u09cd\u09aa\u09b0\u09cd\u0995\u09c7',ur:'\u0645\u062a\u0639\u0644\u0642',tr:'Hakk\u0131nda',vi:'Gi\u1edbi thi\u1ec7u',it:'Informazioni',ko:'\uc815\ubcf4',ta:'\u0baa\u0bb1\u0bcd\u0bb1\u0bbf'},
+  'Upgrade Plan':{es:'Mejorar plan',zh:'\u5347\u7ea7\u5957\u9910',hi:'\u092a\u094d\u0932\u093e\u0928 \u0905\u092a\u0917\u094d\u0930\u0947\u0921 \u0915\u0930\u0947\u0902',ar:'\u062a\u0631\u0642\u064a\u0629 \u0627\u0644\u062e\u0637\u0629',pt:'Atualizar plano',fr:'Am\u00e9liorer le forfait',de:'Tarif upgraden',ja:'\u30d7\u30e9\u30f3\u3092\u30a2\u30c3\u30d7\u30b0\u30ec\u30fc\u30c9',ru:'\u0423\u043b\u0443\u0447\u0448\u0438\u0442\u044c \u043f\u043b\u0430\u043d',id:'Tingkatkan paket',bn:'\u09aa\u09cd\u09b2\u09cd\u09af\u09be\u09a8 \u0986\u09aa\u0997\u09cd\u09b0\u09c7\u09a1 \u0995\u09b0\u09c1\u09a8',ur:'\u067e\u0644\u0627\u0646 \u0627\u067e \u06af\u0631\u06cc\u0688 \u06a9\u0631\u06cc\u06ba',tr:'Plan\u0131 y\u00fckselt',vi:'N\u00e2ng c\u1ea5p g\u00f3i',it:'Aggiorna piano',ko:'\ud50c\ub79c \uc5c5\uadf8\ub808\uc774\ub4dc',ta:'\u0ba4\u0bbf\u0b9f\u0bcd\u0b9f\u0ba4\u0bcd\u0ba4\u0bc8 \u0bae\u0bc7\u0bae\u0bcd\u0baa\u0b9f\u0bc1\u0ba4\u0bcd\u0ba4\u0bc1'},
+  'Help & Learn More':{es:'Ayuda y m\u00e1s informaci\u00f3n',zh:'\u5e2e\u52a9\u4e0e\u4e86\u89e3\u66f4\u591a',hi:'\u0938\u0939\u093e\u092f\u0924\u093e \u0914\u0930 \u0905\u0927\u093f\u0915 \u091c\u093e\u0928\u0947\u0902',ar:'\u0627\u0644\u0645\u0633\u0627\u0639\u062f\u0629 \u0648\u0645\u0639\u0631\u0641\u0629 \u0627\u0644\u0645\u0632\u064a\u062f',pt:'Ajuda e saiba mais',fr:'Aide et en savoir plus',de:'Hilfe & mehr erfahren',ja:'\u30d8\u30eb\u30d7\u3068\u8a73\u7d30',ru:'\u041f\u043e\u043c\u043e\u0449\u044c \u0438 \u043f\u043e\u0434\u0440\u043e\u0431\u043d\u0435\u0435',id:'Bantuan & pelajari',bn:'\u09b8\u09b9\u09be\u09af\u09bc\u09a4\u09be \u0993 \u0986\u09b0\u0993 \u099c\u09be\u09a8\u09c1\u09a8',ur:'\u0645\u062f\u062f \u0627\u0648\u0631 \u0645\u0632\u06cc\u062f \u062c\u0627\u0646\u06cc\u06ba',tr:'Yard\u0131m ve daha fazlas\u0131',vi:'Tr\u1ee3 gi\u00fap & t\u00ecm hi\u1ec3u th\u00eam',it:'Aiuto e scopri di pi\u00f9',ko:'\ub3c4\uc6c0\ub9d0 \ubc0f \uc790\uc138\ud788',ta:'\u0b89\u0ba4\u0bb5\u0bbf \u0bae\u0bb1\u0bcd\u0bb1\u0bc1\u0bae\u0bcd \u0bae\u0bc7\u0bb2\u0bc1\u0bae\u0bcd \u0b85\u0bb1\u0bbf\u0b95'},
+  'Manage Subscription':{es:'Gestionar suscripci\u00f3n',zh:'\u7ba1\u7406\u8ba2\u9605',hi:'\u0938\u0926\u0938\u094d\u092f\u0924\u093e \u092a\u094d\u0930\u092c\u0902\u0927\u093f\u0924 \u0915\u0930\u0947\u0902',ar:'\u0625\u062f\u0627\u0631\u0629 \u0627\u0644\u0627\u0634\u062a\u0631\u0627\u0643',pt:'Gerenciar assinatura',fr:'G\u00e9rer l\u2019abonnement',de:'Abo verwalten',ja:'\u30b5\u30d6\u30b9\u30af\u30ea\u30d7\u30b7\u30e7\u30f3\u7ba1\u7406',ru:'\u0423\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0438\u0435 \u043f\u043e\u0434\u043f\u0438\u0441\u043a\u043e\u0439',id:'Kelola langganan',bn:'\u09b8\u09be\u09ac\u09b8\u09cd\u0995\u09cd\u09b0\u09bf\u09aa\u09b6\u09a8 \u09aa\u09b0\u09bf\u099a\u09be\u09b2\u09a8\u09be',ur:'\u0633\u0628\u0633\u06a9\u0631\u067e\u0634\u0646 \u06a9\u0627 \u0646\u0638\u0645 \u06a9\u0631\u06cc\u06ba',tr:'Aboneli\u011fi y\u00f6net',vi:'Qu\u1ea3n l\u00fd \u0111\u0103ng k\u00fd',it:'Gestisci abbonamento',ko:'\uad6c\ub3c5 \uad00\ub9ac',ta:'\u0b9a\u0ba8\u0bcd\u0ba4\u0bbe\u0bb5\u0bc8 \u0ba8\u0bbf\u0bb0\u0bcd\u0bb5\u0b95\u0bbf'},
+  'Apps & Extensions':{es:'Apps y extensiones',zh:'\u5e94\u7528\u4e0e\u6269\u5c55',hi:'\u0910\u092a\u094d\u0938 \u0914\u0930 \u090f\u0915\u094d\u0938\u091f\u0947\u0902\u0936\u0928',ar:'\u0627\u0644\u062a\u0637\u0628\u064a\u0642\u0627\u062a \u0648\u0627\u0644\u0625\u0636\u0627\u0641\u0627\u062a',pt:'Apps e extens\u00f5es',fr:'Apps et extensions',de:'Apps & Erweiterungen',ja:'\u30a2\u30d7\u30ea\u3068\u62e1\u5f35\u6a5f\u80fd',ru:'\u041f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u044f \u0438 \u0440\u0430\u0441\u0448\u0438\u0440\u0435\u043d\u0438\u044f',id:'Aplikasi & ekstensi',bn:'\u0985\u09cd\u09af\u09be\u09aa \u0993 \u098f\u0995\u09cd\u09b8\u099f\u09c7\u09a8\u09b6\u09a8',ur:'\u0627\u06cc\u067e\u0633 \u0627\u0648\u0631 \u0627\u06cc\u06a9\u0633\u0679\u06cc\u0646\u0634\u0646\u0632',tr:'Uygulamalar ve uzant\u0131lar',vi:'\u1ee8ng d\u1ee5ng & ti\u1ec7n \u00edch',it:'App ed estensioni',ko:'\uc571 \ubc0f \ud655\uc7a5',ta:'\u0b86\u0baa\u0bcd\u0bb8\u0bcd \u0bae\u0bb1\u0bcd\u0bb1\u0bc1\u0bae\u0bcd \u0ba8\u0bc0\u0b9f\u0bcd\u0b9f\u0bbf\u0baa\u0bcd\u0baa\u0bc1\u0b95\u0bb3\u0bcd'},
+  'Sign Out':{es:'Cerrar sesi\u00f3n',zh:'\u9000\u51fa\u767b\u5f55',hi:'\u0938\u093e\u0907\u0928 \u0906\u0909\u091f',ar:'\u062a\u0633\u062c\u064a\u0644 \u0627\u0644\u062e\u0631\u0648\u062c',pt:'Sair',fr:'Se d\u00e9connecter',de:'Abmelden',ja:'\u30b5\u30a4\u30f3\u30a2\u30a6\u30c8',ru:'\u0412\u044b\u0439\u0442\u0438',id:'Keluar',bn:'\u09b8\u09be\u0987\u09a8 \u0986\u0989\u099f',ur:'\u0633\u0627\u0626\u0646 \u0622\u0624\u0679',tr:'\u00c7\u0131k\u0131\u015f yap',vi:'\u0110\u0103ng xu\u1ea5t',it:'Esci',ko:'\ub85c\uadf8\uc544\uc6c3',ta:'\u0bb5\u0bc6\u0bb3\u0bbf\u0baf\u0bc7\u0bb1\u0bc1'},
   'CREATE':{es:'CREAR',zh:'\u521b\u5efa',hi:'\u092c\u0928\u093e\u090f\u0902',ar:'\u0625\u0646\u0634\u0627\u0621',pt:'CRIAR',fr:'CR\u00c9ER',de:'ERSTELLEN',ja:'\u4f5c\u6210',ru:'\u0421\u041e\u0417\u0414\u0410\u0422\u042c'},
   'AGENTS':{es:'AGENTES',zh:'\u4ee3\u7406',hi:'\u090f\u091c\u0947\u0902\u091f',ar:'\u0627\u0644\u0648\u0643\u0644\u0627\u0621',pt:'AGENTES',fr:'AGENTS',de:'AGENTEN',ja:'\u30a8\u30fc\u30b8\u30a7\u30f3\u30c8',ru:'\u0410\u0413\u0415\u041d\u0422\u042b'},
   'BUILD':{es:'CONSTRUIR',zh:'\u6784\u5efa',hi:'\u092c\u0928\u093e\u090f\u0902',ar:'\u0628\u0646\u0627\u0621',pt:'CONSTRUIR',fr:'CONSTRUIRE',de:'BAUEN',ja:'\u30d3\u30eb\u30c9',ru:'\u0421\u0411\u041e\u0420\u041a\u0410'},
@@ -3227,7 +3245,16 @@ function _applyDir(){ try{ const code=_lang(); document.documentElement.dir=(RTL
      localStorage, so the whole site ends up in the chosen
      language without a hand-written entry for every string.
    ============================================================ */
-let _i18nBusy=false;
+let _i18nBusy=false, _i18nApplying=false, _i18nObserver=null, _i18nRaf=0;
+/* Every surface the UI translator must cover. Popups and the top-right profile
+   menu are appended to document.body (OUTSIDE #app), and modals render into
+   #ovr - so translating only #app left all of them stuck in English. */
+function _i18nRoots(){
+  const out=[];
+  ['app','ovr'].forEach(id=>{ const el=document.getElementById(id); if(el) out.push(el); });
+  document.querySelectorAll('.prof-menu,.ctxm').forEach(el=>{ if(out.indexOf(el)<0) out.push(el); });
+  return out;
+}
 function _i18nCache(){ try{ return load('amv_i18n_cache')||{}; }catch(e){ return {}; } }
 function _i18nSaveCache(c){ try{ store('amv_i18n_cache',c); }catch(e){} }
 function _i18nKey(code,s){ return code+'\u0001'+s; }
@@ -3251,6 +3278,7 @@ function _collectI18nNodes(root){
   return out;
 }
 function _translateUI(){
+  _i18nApplying=true;   // suppress the observer while we mutate, so we never self-loop
   try{
     _applyDir();
     const code=_lang();
@@ -3270,14 +3298,41 @@ function _translateUI(){
     });
     // whole-DOM pass. When switching to English/auto, RESTORE originals so nothing
     // gets stuck in a previous language. Otherwise translate.
-    if(code==='auto'||code==='en'){ _restoreI18nDOM(); return; }
-    _autoTranslateDOM(code);
+    if(code==='auto'||code==='en'){ _i18nRoots().forEach(r=>_restoreI18nDOM(r)); return; }
+    _i18nRoots().forEach(r=>_autoTranslateDOM(code, r));
   }catch(e){ console.warn('_translateUI failed:', e); }
+  finally{ try{ requestAnimationFrame(()=>{ _i18nApplying=false; }); }catch(e){ _i18nApplying=false; } }
 }
+/* Auto-translate anything rendered AFTER a language is chosen - the profile
+   menu (top-right), popups, modals in #ovr, a freshly switched tab - so the
+   WHOLE interface follows the language, not just what existed at switch time.
+   Live chat content (#cm / [data-no-i18n]) is deliberately skipped: the AI
+   already replies in the chosen language, and re-translating a stream is wrong. */
+function _initI18nObserver(){
+  if(_i18nObserver || typeof MutationObserver==='undefined') return;
+  const body=document.body; if(!body) return;
+  _i18nObserver=new MutationObserver((muts)=>{
+    if(_i18nApplying) return;
+    const code=_lang(); if(code==='auto'||code==='en') return;
+    let relevant=false;
+    for(const m of muts){
+      for(const n of m.addedNodes){
+        if(n.nodeType!==1) continue;
+        if(n.closest && n.closest('[data-no-i18n]')) continue;
+        relevant=true; break;
+      }
+      if(relevant) break;
+    }
+    if(!relevant || _i18nRaf) return;
+    _i18nRaf=requestAnimationFrame(()=>{ _i18nRaf=0; try{ _translateUI(); }catch(e){} });
+  });
+  _i18nObserver.observe(body,{childList:true, subtree:true});
+}
+try{ window._initI18nObserver=_initI18nObserver; }catch(e){}
 /* Restore every translated node back to its stored original English text. */
-function _restoreI18nDOM(){
-  const app=document.getElementById('app'); if(!app) return;
-  const nodes=_collectI18nNodes(app);
+function _restoreI18nDOM(root){
+  const base=root||document.getElementById('app'); if(!base) return;
+  const nodes=_collectI18nNodes(base);
   for(const it of nodes){
     try{
       if(it.type==='text'){ if(it.node._i18nSrc!=null) it.node.nodeValue=it.node._i18nSrc; }
@@ -3285,9 +3340,9 @@ function _restoreI18nDOM(){
     }catch(e){}
   }
 }
-async function _autoTranslateDOM(code){
-  const app=document.getElementById('app'); if(!app) return;
-  const nodes=_collectI18nNodes(app);
+async function _autoTranslateDOM(code, root){
+  const base=root||document.getElementById('app'); if(!base) return;
+  const nodes=_collectI18nNodes(base);
   const cache=_i18nCache();
   const need=new Set();
   // apply cached/dict immediately; collect unknowns
@@ -3319,7 +3374,7 @@ async function _autoTranslateDOM(code){
       list.forEach((s,i)=>{ if(arr[i]) c[_i18nKey(code,s)]=String(arr[i]); });
       _i18nSaveCache(c);
       _i18nBusy=false;
-      _autoTranslateDOM(code); // re-apply now that cache is filled
+      _autoTranslateDOM(code, base); // re-apply now that cache is filled
       return;
     }
   }catch(e){}
@@ -4405,7 +4460,7 @@ function renderChatView() {
   const mdl=MODELS[S.model]||MODELS.smart;
   vc.innerHTML=
     '<div id="cv">'+
-      '<div id="cm"></div>'+
+      '<div id="cm" data-no-i18n></div>'+
       '<div id="cia">'+
         '<div id="cib">'+
           '<div id="ab2"><div id="ac"></div></div>'+
@@ -13964,7 +14019,7 @@ function _renderSetPaneInner(){
       saveStr('amv_lang',btn.dataset.lang);
       // re-render the whole app UI, then translate - so nav, top bar, new-chat,
       // and every dynamic label switch language immediately (and revert cleanly).
-      try{ _restoreI18nDOM(); }catch(e){}
+      try{ _i18nRoots().forEach(r=>_restoreI18nDOM(r)); }catch(e){}
       try{ updateSbUser(); }catch(e){}
       try{ setTab(S.tab); }catch(e){}
       _translateUI();

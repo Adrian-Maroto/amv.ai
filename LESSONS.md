@@ -7,6 +7,23 @@ Format: **Mistake → Root cause → Rule going forward.**
 
 ---
 
+## 2026-07-25 (later)
+
+### 17. Whole-UI translation that only walks #app misses every popup
+- **Mistake:** `_translateUI` walked only `#app`, but the top-right profile menu
+  is appended to `document.body` and all modals render into `#ovr` - both
+  OUTSIDE `#app`. So changing language translated the sidebar (dictionary) but
+  left every popup/menu/modal in English. It also only ran at switch time, so
+  anything rendered AFTER (opening a menu, switching tabs) stayed English.
+- **Rule:** UI translation must cover every render surface (`#app`, `#ovr`,
+  body-appended menus) AND re-run for content created later. A MutationObserver
+  on `document.body` (guarded by an "applying" flag + rAF so it never self-loops,
+  and skipping `[data-no-i18n]`) makes the WHOLE interface follow the language,
+  not just what existed at switch time. Exclude live chat (`#cm` -> data-no-i18n):
+  the AI already replies in the user's language; re-translating a stream is wrong.
+  For no-key honest degradation, put the always-visible chrome (profile menu,
+  settings sections) in the instant dictionary, not only the AI-cache path.
+
 ## 2026-07-25
 
 ### 16. A "live scan" list with per-render random ids = dead action buttons
