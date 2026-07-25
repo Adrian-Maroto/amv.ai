@@ -7,6 +7,34 @@ Format: **Mistake → Root cause → Rule going forward.**
 
 ---
 
+## 2026-07-23
+
+### 13. A "smart" prompt heuristic that forces a face onto every object
+- **Mistake:** `_enhanceImgPrompt` prepended "recognizable face, true to life" to any
+  prompt starting with a capital OR any single word, so "Red car", "Eiffel Tower",
+  and "car" all rendered a person. Objects couldn't be generated.
+- **Rule:** Auto-enhancement must fire on a NARROW, unmistakable signal only
+  (here: a single camelCase/handle token like "MrBeast"), never on generic
+  capitalization or single common words. When a heuristic changes model output,
+  test the false-positive cases (objects, places, colors), not just the happy path.
+
+### 14. A modal styled only for named classes renders "in the background"
+- **Mistake:** The out-of-usage nudge used `.nudge-modal`, but the `#ovr` overlay
+  backdrop/centering CSS was a `:has()` list of specific classes that didn't
+  include it. Result: no backdrop, no z-index, no click-out - it appeared behind
+  content and couldn't be dismissed.
+- **Rule:** Any modal dropped into `#ovr` must match the overlay's backdrop rule
+  (add its class to the `:has()` list) AND wire backdrop-click + Esc + an X. Don't
+  rely on a single "Maybe later" button as the only exit.
+
+### 15. Localized pricing must be display-only and USD-pegged (anti-arbitrage)
+- The "Argentina store" exploit works when a region gets a genuinely CHEAPER
+  price. Fix: show local currency as an ESTIMATE converted from the USD price at a
+  fixed FX rate, with NO per-country discount, and say so plainly. A VPN/spoofed
+  locale then changes only the label, never the charge. Infer region from
+  `navigator.languages` (no GPS permission), and localize the whole document so
+  the landing page (rendered before login) updates too - not just the in-app view.
+
 ## 2026-07-22 (scan & ask)
 
 ### 11. Order of checks in an intent handler changes what the user sees

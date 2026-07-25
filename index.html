@@ -6704,6 +6704,13 @@ html,body{height:100%;height:100dvh}
 .hopick-t{font-size:14px;font-weight:600;color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .hopick-p{font-size:12px;color:var(--mu);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
+/* Local-currency estimate (display only; USD-pegged) */
+.plnlocal{font-size:11.5px;color:var(--accent);font-weight:600;margin:-2px 0 6px;min-height:0}
+.plnlocal:empty{display:none}
+.px-note{font-size:12px;color:var(--mu);text-align:center;max-width:660px;margin:14px auto 0;line-height:1.6}
+.cp-local{font-size:12.5px;color:var(--accent);font-weight:600;text-align:center;margin:-4px 0 10px}
+.cp-local:empty{display:none}
+
 </style>
 <!-- BUILD:CSS:END -->
 <script>
@@ -9446,7 +9453,7 @@ function _wireHdrAuth(){
   if(su && !su._wired){ su._wired=1; su.addEventListener('click',()=>{ try{ openAuth('signup'); }catch(e){} }); }
   if(li && !li._wired){ li._wired=1; li.addEventListener('click',()=>{ try{ openAuth('login'); }catch(e){} }); }
 }
-function goApp(){ try{ _wireHdrAuth(); }catch(e){} try{ const cy=document.getElementById('copy-year'); if(cy) cy.textContent=String(new Date().getFullYear()); }catch(e){} document.getElementById('land').classList.add('hidden'); document.getElementById('app').classList.add('on'); updateSbUser(); _initMobileSidebar(); _restoreSidebarState(); try{ _applyReduceMotion(); }catch(e){} setTab(S.tab); _ensureBackendSession(); try{ _applyFontSize(); }catch(e){} try{ _initOfflineWatch(); }catch(e){} try{ _initErrorBoundary(); }catch(e){} try{ syncEntitlement(); _checkUpgradeReturn(); }catch(e){} try{ _checkTeamInvite(); }catch(e){} try{ _initKeyboardNav(); _initA11y(); }catch(e){} try{ _revealAdminNav(); }catch(e){} try{ _initSidebarMore(); }catch(e){} try{ _initBuildGroup(); }catch(e){} try{ const sbtn=$('sb-status'); if(sbtn) sbtn.addEventListener('click',openStatusPanel); _checkStatus(); }catch(e){} try{ _translateUI(); setTimeout(_translateUI,120); }catch(e){ console.error('Translate UI error in goApp', e); } }
+function goApp(){ try{ _wireHdrAuth(); }catch(e){} try{ const cy=document.getElementById('copy-year'); if(cy) cy.textContent=String(new Date().getFullYear()); }catch(e){} document.getElementById('land').classList.add('hidden'); document.getElementById('app').classList.add('on'); updateSbUser(); _initMobileSidebar(); _restoreSidebarState(); try{ _applyReduceMotion(); }catch(e){} setTab(S.tab); _ensureBackendSession(); try{ _applyFontSize(); }catch(e){} try{ _initOfflineWatch(); }catch(e){} try{ _initErrorBoundary(); }catch(e){} try{ syncEntitlement(); _checkUpgradeReturn(); }catch(e){} try{ _checkTeamInvite(); }catch(e){} try{ _initKeyboardNav(); _initA11y(); }catch(e){} try{ _revealAdminNav(); }catch(e){} try{ _initSidebarMore(); }catch(e){} try{ _initBuildGroup(); }catch(e){} try{ _localizePrices(document); }catch(e){} try{ const sbtn=$('sb-status'); if(sbtn) sbtn.addEventListener('click',openStatusPanel); _checkStatus(); }catch(e){} try{ _translateUI(); setTimeout(_translateUI,120); }catch(e){ console.error('Translate UI error in goApp', e); } }
 
 /* The sidebar's advanced tools (Tasks, Integrations, Marketplace) live under a
    collapsible "More" so the default view stays calm - new users were getting
@@ -12787,6 +12794,42 @@ function renderVidGrid(){
 
 
 
+/* ── LOCAL CURRENCY (display only, USD-pegged) ─────────────────────────────
+   Prices are always denominated and CHARGED in US dollars. We show a local-
+   currency ESTIMATE for convenience, computed from the USD price at an
+   indicative FX rate. Crucially there are NO regional/country discounts: the
+   amount is the same real value everywhere, so switching region (VPN, spoofed
+   locale) changes only the label, never what you pay. That removes the
+   "cheap-country storefront" arbitrage (the Argentina-priced-store trick) and
+   keeps billing simple and compliant. Location is inferred from the browser
+   locale only - no GPS permission, no precise-location tracking. */
+const AMVCurrency = {
+  // Indicative USD -> local rates. DISPLAY ONLY.
+  FX:{USD:1,EUR:0.92,GBP:0.79,CAD:1.36,AUD:1.52,INR:83,JPY:157,BRL:5.1,MXN:17,ZAR:18.5,AED:3.67,SGD:1.35,CHF:0.88,SEK:10.5,NOK:10.7,DKK:6.9,PLN:4,TRY:32,NZD:1.64,HKD:7.8,KRW:1350,CNY:7.2,PHP:57,IDR:15800,THB:36,MYR:4.7,VND:25000,NGN:1500,EGP:48,ARS:900,CLP:950,COP:3900,SAR:3.75,ILS:3.7,CZK:23,HUF:360,RON:4.6,UAH:40},
+  CUR_BY_REGION:{AT:'EUR',BE:'EUR',HR:'EUR',CY:'EUR',EE:'EUR',FI:'EUR',FR:'EUR',DE:'EUR',GR:'EUR',IE:'EUR',IT:'EUR',LV:'EUR',LT:'EUR',LU:'EUR',MT:'EUR',NL:'EUR',PT:'EUR',SK:'EUR',SI:'EUR',ES:'EUR',GB:'GBP',CA:'CAD',AU:'AUD',IN:'INR',JP:'JPY',BR:'BRL',MX:'MXN',ZA:'ZAR',AE:'AED',SG:'SGD',CH:'CHF',SE:'SEK',NO:'NOK',DK:'DKK',PL:'PLN',TR:'TRY',NZ:'NZD',HK:'HKD',KR:'KRW',CN:'CNY',PH:'PHP',ID:'IDR',TH:'THB',MY:'MYR',VN:'VND',NG:'NGN',EG:'EGP',AR:'ARS',CL:'CLP',CO:'COP',SA:'SAR',IL:'ILS',CZ:'CZK',HU:'HUF',RO:'RON',UA:'UAH',US:'USD'},
+  region(){ try{ const langs=(navigator.languages&&navigator.languages.length?navigator.languages:[navigator.language||'en-US']); for(const l of langs){ const p=String(l).split('-'); if(p[1]) return p[1].toUpperCase(); } }catch(e){} return ''; },
+  currency(){ try{ const o=loadStr('amv_currency'); if(o&&this.FX[o]) return o; }catch(e){} const c=this.CUR_BY_REGION[this.region()]; return (c&&this.FX[c])?c:'USD'; },
+  isLocal(){ return this.currency()!=='USD'; },
+  fmt(usd){ const c=this.currency(); const amt=usd*(this.FX[c]||1); const zero=['JPY','INR','KRW','IDR','VND','CLP','COP','NGN','HUF','ARS'].includes(c)||amt>=1000; try{ return new Intl.NumberFormat(undefined,{style:'currency',currency:c,maximumFractionDigits:zero?0:2}).format(amt);}catch(e){ return c+' '+(zero?Math.round(amt):amt.toFixed(2)); } }
+};
+try{ window.AMVCurrency=AMVCurrency; }catch(e){}
+/* Fill any [data-usd] element with a local-currency estimate, and show/hide the
+   explanatory note. Safe to call on any freshly rendered subtree. */
+function _localizePrices(root){
+  try{
+    root=root||document;
+    const local=window.AMVCurrency&&AMVCurrency.isLocal();
+    root.querySelectorAll('.px-note').forEach(e=>{ e.style.display=local?'':'none'; });
+    root.querySelectorAll('[data-usd]').forEach(el=>{
+      const usd=parseFloat(el.getAttribute('data-usd'));
+      if(!local || !(usd>0)){ el.textContent=''; el.style.display='none'; return; }
+      el.style.display='';
+      el.textContent='≈ '+AMVCurrency.fmt(usd)+(el.dataset.per?(' /'+el.dataset.per):'')+' in your currency';
+    });
+  }catch(e){}
+}
+try{ window._localizePrices=_localizePrices; }catch(e){}
+
 /* === PLANS === */
 function planCards(inApp){
   function pBtn(label, cls, plan, isLand){
@@ -12827,6 +12870,7 @@ function planCards(inApp){
       '<div class="plntier">Pro</div>'+
       '<div class="plnprice"><sup>$</sup>15</div>'+
       '<div class="plnper">per month &middot; cancel anytime</div>'+
+      '<div class="plnlocal px-local" data-usd="15" data-per="mo"></div>'+
       '<div class="plnanchor">Replaces $60+/mo of separate AI tools</div>'+
       '<div class="plndiv"></div>'+
       '<ul class="plnfl">'+
@@ -12847,6 +12891,7 @@ function planCards(inApp){
       '<div class="plntier">Elite</div>'+
       '<div class="plnprice"><sup>$</sup>75</div>'+
       '<div class="plnper">per month &middot; cancel anytime</div>'+
+      '<div class="plnlocal px-local" data-usd="75" data-per="mo"></div>'+
       '<div class="plnanchor">For founders, builders &amp; power users</div>'+
       '<div class="plndiv"></div>'+
       '<ul class="plnfl">'+
@@ -12865,6 +12910,7 @@ function planCards(inApp){
       '<div class="plntier">Ultra</div>'+
       '<div class="plnprice"><sup>$</sup>200</div>'+
       '<div class="plnper">per month &middot; cancel anytime</div>'+
+      '<div class="plnlocal px-local" data-usd="200" data-per="mo"></div>'+
       '<div class="plnanchor">For serious operators</div>'+
       '<div class="plndiv"></div>'+
       '<ul class="plnfl">'+
@@ -16034,6 +16080,7 @@ function openCustomPlan(){
         '<h2>Pay exactly for what you need</h2>'+
         '<p>Set your monthly budget. You get a guaranteed pool of usage for that price - all models included, hard-capped so there are never surprise charges.</p></div>'+
       '<div class="cp-price-row"><span class="cp-cur">$</span><span class="cp-price" id="cp-price">'+price+'</span><span class="cp-per">/month</span></div>'+
+      '<div class="cp-local" id="cp-local"></div>'+
       '<input type="range" id="cp-slider" min="'+CUSTOM_PLAN.MIN_PRICE+'" max="500" step="5" value="'+price+'" class="cp-range">'+
       '<div class="cp-range-lbls"><span>$'+CUSTOM_PLAN.MIN_PRICE+'</span><span>$500</span></div>'+
       '<div class="cp-grid">'+
@@ -16050,9 +16097,11 @@ function openCustomPlan(){
     '</div></div>';
     const close=()=>{ r.innerHTML=''; };
     on($('cp-bg'),'click',close); on($('cp-x'),'click',close);
+    const _cpLocal=()=>{ const el=$('cp-local'); if(el) el.textContent=(window.AMVCurrency&&AMVCurrency.isLocal())?('≈ '+AMVCurrency.fmt(price)+' /mo in your currency'):''; };
+    _cpLocal();
     const sl=$('cp-slider');
     on(sl,'input',()=>{ price=parseInt(sl.value,10); const ps=_customPlanSummary(price);
-      $('cp-price').textContent=price;
+      $('cp-price').textContent=price; _cpLocal();
       const g=r.querySelectorAll('.cp-stat-n');
       if(g.length>=4){ g[0].textContent=ps.monthlyTokens.toLocaleString(); g[1].textContent=ps.hasApex?ps.apexTokens.toLocaleString():('$'+CUSTOM_PLAN.APEX_MIN_PRICE+'+'); g[2].textContent='~'+ps.approxMessages.toLocaleString(); g[3].textContent=ps.dailyCap.toLocaleString(); }
       const gl=r.querySelectorAll('.cp-stat-l'); if(gl.length>=2) gl[1].textContent=ps.hasApex?'tokens on Apex':'unlocks top models';
@@ -19558,6 +19607,7 @@ function renderPlansView(){
         '<p class="vsub">Chat, images, video, autonomous agents, an app builder and Mission Control - in one place. Start free, upgrade any time, cancel whenever.</p></div>'+
       '<div class="pg pg-app pg-4">'+planCards(true)+'</div>'+
       _customPlanBanner(true)+
+      '<p class="px-note" style="display:none">Prices are in US dollars. Your local-currency amount is an estimate for convenience - you are charged the same value wherever you are, so there are no cheaper prices by country.</p>'+
       '<div class="plans-compare-row"><button class="btn bs" id="plans-compare" style="font-size:12.5px">Compare all plans in detail \u2192</button></div>'+
       '<div class="trust-bar"><div class="trust-badges">'+
         _trustBadge('<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>','Bank-grade encryption','256-bit TLS on every request')+
@@ -19568,6 +19618,7 @@ function renderPlansView(){
       '<p class="plans-foot">Payments secured by Stripe &bull; Cancel any time &bull; 30-day money-back guarantee</p>'+
     '</div></div>';
   on($('plans-compare'),'click',()=>openPlanCompare(loadStr('amv_plan')||'pro'));
+  try{ _localizePrices(document); }catch(e){}
 }
 function _trustBadge(svg,title,sub){
   const ic='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+svg+'</svg>';
@@ -24920,6 +24971,8 @@ window.openCowork=openCowork; window.runAutonomous=runAutonomous;
 
 
 setTimeout(function(){ try{ if(typeof _runDueAuto==="function") _runDueAuto(); }catch(e){} }, 3500);
+// Localize any prices on the landing page for logged-out visitors, too.
+setTimeout(function(){ try{ if(typeof _localizePrices==="function") _localizePrices(document); }catch(e){} }, 400);
 
 let _SCHED={cad:'once', days:[1], dom:1, hour:9};
 function _hourLabel(h){ return ((h%12)||12)+':00 '+(h<12?'AM':'PM'); }
