@@ -15629,20 +15629,31 @@ const AMVFraud = {
     const out=[];
     try{
       const log=(typeof AEGIS!=='undefined'&&AEGIS._loadLog)?AEGIS._loadLog():[];
-      const now=Date.now(); const HOUR=3600000;
+      const now=Date.now(); const HOUR=3600000; const bucket=Math.floor(now/HOUR);
       const recent=log.filter(e=>{ const t=Date.parse(e.ts||0); return t&&(now-t)<HOUR; });
       const fails=recent.filter(e=>e.event==='auth_fail');
       if(fails.length>=5){
-        out.push(this.evaluate({type:'login', subject:(fails[fails.length-1].email)||'-',
-          signals:{auth_fail_burst:true}, entities:{accounts:[(fails[fails.length-1].email)||'-']}}));
+        const subj=(fails[fails.length-1].email)||'-';
+        const a=this.evaluate({type:'login', subject:subj, signals:{auth_fail_burst:true}, entities:{accounts:[subj]}});
+        a.id='scan_ato_'+subj+'_'+bucket; a.scan=true; out.push(a);   // stable id: one flag per subject per hour
       }
       const blocks=recent.filter(e=>e.event==='ratelimit_block');
       if(blocks.length>=4){
-        out.push(this.evaluate({type:'usage', subject:'this device',
-          signals:{purchase_velocity:true}, category:'bot_automation'}));
+        const a=this.evaluate({type:'usage', subject:'this device', signals:{purchase_velocity:true}, category:'bot_automation'});
+        a.id='scan_bot_'+bucket; a.scan=true; out.push(a);
       }
     }catch(e){}
     return out;
+  },
+
+  // Fold live scan flags into the stored log (dedupe by their stable id) so an
+  // operator decision on a scan-detected flag persists like any other, and the
+  // same burst is never listed twice across renders.
+  ingestScan(){
+    const l=this._log(); let changed=false;
+    this.scan().forEach(a=>{ if(!l.some(x=>x.id===a.id)){ l.unshift(a); changed=true; } });
+    if(changed) this._save(l);
+    return l;
   }
 };
 window.AMVFraud=AMVFraud;
@@ -15976,10 +15987,9 @@ function _admRenderTab(tab, backendLive, live){
       _admCard('Moderation &amp; compliance', _admPending('Moderation queue, flagged conversations, spam/abuse detection, user reports, account verification, data export & privacy requests, compliance dashboard'));
   }
   else if(tab==='fraud'){
-    const stored=AMVFraud._log();
-    const scanned=AMVFraud.scan();
-    // merge live scan with stored flags, newest first, de-duped by category+subject within the hour
-    const flags=scanned.concat(stored);
+    // ingestScan folds live scan-detected flags into the stored log with stable
+    // ids, so their action buttons persist and the same burst never doubles up.
+    const flags=AMVFraud.ingestScan();
     const open=flags.filter(f=>!f.resolution);
     const highRisk=flags.filter(f=>f.risk==='high'||f.risk==='critical');
     const needsHuman=open.filter(f=>f.humanReview);

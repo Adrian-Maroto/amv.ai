@@ -7,6 +7,21 @@ Format: **Mistake → Root cause → Rule going forward.**
 
 ---
 
+## 2026-07-25
+
+### 16. A "live scan" list with per-render random ids = dead action buttons
+- **Mistake:** The Fraud Monitor merged live-scanned flags (derived fresh from
+  the audit log each render) with stored flags. Each scanned flag got a NEW
+  random id every render and was never persisted, so clicking its action button
+  called `resolve(id)` against the stored log, found nothing, did nothing - yet
+  still toasted "Recorded." A button that looks like it works but silently
+  no-ops is exactly the fake feature the owner rejects.
+- **Rule:** Anything an operator can ACT on must have a stable identity and be
+  persisted before you render an action for it. For derived/ephemeral items,
+  give them a deterministic id (content + time bucket) and fold them into the
+  real store (dedupe by that id) so decisions stick and nothing duplicates.
+  Never show a working-looking control over data the handler can't reach.
+
 ## 2026-07-23
 
 ### 13. A "smart" prompt heuristic that forces a face onto every object
