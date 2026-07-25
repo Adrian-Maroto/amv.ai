@@ -89,6 +89,32 @@ is heavy for marginal gain over Grep/Read here).
 - Build a coherent design system, not per-page styling. Use design tokens for
   type, color, spacing, radii, borders, shadows, motion, breakpoints. Reuse
   shared components; do not fork a near-duplicate per page.
+
+### Canonical design tokens (use these; do not invent parallel scales)
+A real, adopted token system already exists in `styles.css :root`. Reuse it.
+Do NOT add new `:root` blocks or a parallel scale, and do not hardcode values a
+token already covers. New CSS still goes in a NEW append LAYER, but referencing
+these tokens.
+- **Color (theme-aware, light/dark):** `--bg`, `--s1..--s4` (raised surfaces),
+  `--tx` (text), `--mu` (muted), `--dim`, `--bd`/`--bdl` (borders),
+  `--accent`/`--accent-d`/`--accent-soft`/`--accent-grad` (user-themeable),
+  status `--grn` / `--red` / `--gold`. Deprecated aliases - do not use in new
+  code: `--green`(use `--grn`), `--amber`(use `--gold`), `--pur`/`--indigo`/
+  `--blue`(use `--accent`).
+- **Type scale:** `--t-xs` 11, `--t-sm` 12, `--t-base` 13.5, `--t-md` 14,
+  `--t-lg` 16, `--t-xl` 20, `--t-2xl` 26, `--t-3xl` 34, `--t-hero`. Use these
+  instead of hardcoding `font-size:Npx` in new UI. (~600 legacy inline styles
+  still hardcode px; migrate opportunistically and screenshot-verify - some live
+  in EXPORTED/generated HTML where `:root` vars do not exist, so never blanket
+  find/replace.)
+- **Spacing:** `--sp-1..--sp-8` (already widely adopted). Prefer over raw px gaps.
+- **Radius:** `--r-xs`/`--r-sm`/`--r-md`/`--r-lg`/`--r-xl`/`--r-2xl`/`--r-pill`
+  (a later LAYER sets the effective `--r-sm/md/lg/2xl` a bit smaller via
+  `!important`). Deprecated - do not use or extend: `--r`, `--rad`, `--rad-*`.
+- **Shadow:** `--sh-sm`/`--sh-md`/`--sh-lg`/`--sh-xl`/`--sh-glow`.
+- **Motion:** `--ease`, `--ease-soft`. Respect `prefers-reduced-motion`.
+- **Font family:** `--fn` (Inter body), `--fdisplay` (Space Grotesk display),
+  `--mn` (mono). **Layout:** `--sbw` (sidebar width), `--nav-h`.
 - Strong hierarchy and information density without clutter. Distinctive but restrained.
 - Provide real loading, empty, success, warning, disabled, offline, unauthorized,
   and error states.
