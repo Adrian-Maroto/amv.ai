@@ -67,6 +67,11 @@ npx wrangler secret put JWT_SECRET          # required — any long random strin
 npx wrangler secret put ADMIN_TOKEN        # required to view the error dashboard
 npx wrangler secret put EMAIL_API_KEY      # Resend key — WITHOUT THIS, PASSWORD RESET NEVER SENDS
 # RESET_EMAIL_FROM is optional — see "Password reset" below
+# Optional monitoring - inert until set; the Worker forwards server-side
+# (no client SDK, no CSP change, secret stays here):
+npx wrangler secret put SENTRY_DSN     # optional - forward errors to Sentry
+npx wrangler secret put POSTHOG_KEY    # optional - forward business events to PostHog (pseudonymous ids)
+# POSTHOG_HOST is optional (defaults to https://us.i.posthog.com)
 ```
 
 ## 3. Deploy the Worker

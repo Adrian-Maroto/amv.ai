@@ -172,11 +172,73 @@ function audit(env, event, detail) {
         body: JSON.stringify(rec),
       }).catch(() => {});
     }
+    // Product analytics: mirror every business event to PostHog when configured
+    // (set POSTHOG_KEY as a Worker secret). Inert until then. distinct_id is
+    // pseudonymous - no raw email/IP leaves here - privacy by default.
+    if (env && env.POSTHOG_KEY) {
+      const host = (env.POSTHOG_HOST || 'https://us.i.posthog.com').replace(/\/$/, '');
+      const { by, email, ip, ...safe } = detail || {};
+      fetch(host + '/capture/', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          api_key: env.POSTHOG_KEY,
+          event: 'srv_' + event,
+          distinct_id: _phId(by || email || (detail && detail.user) || 'server'),
+          properties: { ...safe, source: 'amv-worker' },
+          timestamp: rec.t,
+        }),
+      }).catch(() => {});
+    }
   } catch { /* logging must never throw */ }
 }
 function _highSignal(event) {
   return event === 'auth_fail' || event === 'spend_cap_hit' ||
          event === 'forged_webhook' || event === 'global_cap_hit';
+}
+// Pseudonymous, stable id for analytics - masks the raw identifier so no email
+// or IP is sent to PostHog, while the same user still maps to the same id.
+function _phId(s) {
+  s = String(s || 'server');
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+  return 'u_' + h.toString(36);
+}
+// ── Error monitoring: forward to Sentry when SENTRY_DSN is configured ────────
+// Inert until the secret is set. Fire-and-forget, fail-safe (never throws, never
+// blocks the request). Server-side only, so no client SDK and no CSP change.
+function _sentryEndpoint(dsn) {
+  try {
+    const u = new URL(dsn);
+    const project = u.pathname.replace(/^\/+/, '');
+    if (!u.username || !project) return null;
+    return { url: `${u.protocol}//${u.host}/api/${project}/store/`, key: u.username };
+  } catch { return null; }
+}
+function _forwardSentry(env, ctx, e) {
+  try {
+    if (!env || !env.SENTRY_DSN) return;
+    const s = _sentryEndpoint(env.SENTRY_DSN); if (!s) return;
+    const payload = {
+      event_id: (crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '') : String(Date.now()) + Math.random().toString(36).slice(2)),
+      timestamp: new Date().toISOString(),
+      platform: 'javascript',
+      level: 'error',
+      logger: String(e.where || 'amv'),
+      release: e.ver || undefined,
+      message: String(e.msg || 'error').slice(0, 500),
+      tags: { kind: String(e.kind || 'error'), tab: String(e.tab || '') },
+      extra: { where: e.where, stack: e.stack, ua: e.ua },
+    };
+    const p = fetch(s.url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Sentry-Auth': `Sentry sentry_version=7, sentry_client=amv/1.0, sentry_key=${s.key}`,
+      },
+      body: JSON.stringify(payload),
+    }).catch(() => {});
+    if (ctx && ctx.waitUntil) ctx.waitUntil(p);
+  } catch { /* telemetry must never throw */ }
 }
 
 const todayKey = () => new Date().toISOString().slice(0, 10);
@@ -910,7 +972,7 @@ async function _fingerprint(e){
 
 /* POST /errors - the client reports a batch. No auth required (errors can
    happen before/without login), but it is strictly bounded and sanitised. */
-async function errorsReport(request, env){
+async function errorsReport(request, env, ctx){
   // AMV-054: this is a PUBLIC (unauthenticated) telemetry sink. Rate-limit per IP
   // so it can't be flooded to amplify storage or poison the dashboard.
   const eip = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'noip';
@@ -935,6 +997,8 @@ async function errorsReport(request, env){
       at:    Date.now()
     };
     if(!e.msg) continue;
+
+    _forwardSentry(env, ctx, e);   // inert unless SENTRY_DSN is set
 
     const fp = await _fingerprint(e);
     const g = idx.groups[fp] || {
@@ -1258,6 +1322,9 @@ async function _workerError(env, where, err, extra){
     const e = { kind:'worker', msg:String(err&&err.message||err).slice(0,300),
                 where:String(where).slice(0,120), stack:String(err&&err.stack||'').slice(0,1200),
                 tab:'server', ua:'worker', ver:'', at:Date.now(), ...(extra||{}) };
+    _forwardSentry(env, null, e);   // inert unless SENTRY_DSN is set
+
+
     const fp = await _fingerprint(e);
     const g = idx.groups[fp] || { fp, msg:e.msg, where:e.where, kind:'worker',
                                   count:0, users:0, first:Date.now(), last:0, samples:[], userSet:[] };
@@ -1631,7 +1698,7 @@ export default {
         case '/deploy':          return deploySite(request, env);
         case '/deploy/list':     return deployList(request, env);
         case '/deploy/delete':   return deployDelete(request, env);
-        case '/errors':          return errorsReport(request, env);
+        case '/errors':          return errorsReport(request, env, ctx);
         case '/errors/list':     return errorsList(request, env);
         case '/errors/resolve':  return errorsResolve(request, env);
         case '/admin/abuse/list':  return abuseList(request, env);
