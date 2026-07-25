@@ -5170,17 +5170,20 @@ const BLOCKED=['explicit nudity','pornographic','nsfw','erotic','hentai','child 
 function _enhanceImgPrompt(prompt){
   let p=String(prompt||'').trim();
   if(!p) return p;
-  const wordCount=p.split(/\s+/).length;
-  // Heuristics for "this prompt names a specific person/figure":
-  // - Starts with a capitalized name ("Sergio Ramos ...")
-  // - Is a short handle-like token ("iShowSpeed", "Ninja", "MrBeast")
-  // - Already short enough that it's likely just a subject, not a full scene
-  const startsCapName=/^[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3}(?:\s|$)/.test(p);
-  const handleLike=/^[A-Za-z][A-Za-z0-9_.]{2,24}$/.test(p) && wordCount===1;
-  // Avoid enhancing prompts that are clearly scene descriptions
-  const sceneWords=/\b(landscape|scene|background|wallpaper|abstract|pattern|logo|poster|sunset|forest|mountain|city|ocean|galaxy|painting of|drawing of)\b/i.test(p);
-  if((startsCapName || handleLike) && wordCount<=8 && !sceneWords){
-    p='a realistic, high-quality photograph of '+p+', accurate likeness, recognizable face, true to life';
+  const words=p.split(/\s+/);
+  // ONLY add person-likeness phrasing when the prompt is a SINGLE camelCase /
+  // handle-style token (e.g. "iShowSpeed", "MrBeast", "xQc") - an unmistakable
+  // creator/username signal. This deliberately never fires on objects, scenes,
+  // colors, places, or ordinary words, so "red car", "Eiffel Tower", "a bowl of
+  // fruit" and "car" all generate faithfully instead of sprouting a face.
+  if(words.length===1){
+    const w=words[0];
+    const handleLike = /^[A-Za-z][A-Za-z0-9_.]{2,24}$/.test(w)   // one word, name-ish length
+      && /[a-z]/.test(w)                                         // has a lowercase (excludes acronyms like NASA)
+      && /[A-Z0-9]/.test(w.slice(1));                            // internal capital/digit (camelCase handle)
+    if(handleLike){
+      p='a realistic, high-quality photograph of '+p+', accurate likeness, recognizable face, true to life';
+    }
   }
   return p;
 }
@@ -5264,6 +5267,7 @@ function _smartUpgradeNudge(feature, plan, reason){
   const ovr=document.getElementById('ovr'); if(!ovr) { toast(reason+' Upgrade for more.','info',4000); return; }
   ovr.innerHTML=
     '<div class="nudge-modal">'+
+      '<button class="nudge-x" id="nudge-x" aria-label="Close">×</button>'+
       '<div class="nudge-ic"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg></div>'+
       '<div class="nudge-title">Time to level up</div>'+
       '<div class="nudge-reason">'+escH(reason)+'</div>'+
@@ -5274,6 +5278,12 @@ function _smartUpgradeNudge(feature, plan, reason){
   ovr.classList.add('on');
   const up=document.getElementById('nudge-up'); if(up) on(up,'click',()=>{ closeOvr(); setTab('plans'); });
   const later=document.getElementById('nudge-later'); if(later) on(later,'click',closeOvr);
+  const x=document.getElementById('nudge-x'); if(x) on(x,'click',closeOvr);
+  // Click the dimmed backdrop (outside the card) to dismiss.
+  on(ovr,'click',(e)=>{ if(e.target===ovr) closeOvr(); });
+  // Esc closes too.
+  const esc=(e)=>{ if(e.key==='Escape'){ closeOvr(); document.removeEventListener('keydown',esc); } };
+  document.addEventListener('keydown',esc);
 }
 try{ window._smartUpgradeNudge=_smartUpgradeNudge; }catch(e){}
 function renderImgsView(){

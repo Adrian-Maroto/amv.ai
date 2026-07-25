@@ -2911,7 +2911,9 @@ html[dir="rtl"] .qab,html[dir="rtl"] .dc,html[dir="rtl"] .ss2{text-align:right}
 .trend-lbl{font-size:10px;color:var(--mu);font-variant-numeric:tabular-nums}
 
 /* Smart upgrade nudge modal */
-.nudge-modal{max-width:400px;margin:auto;background:var(--s1);border:1px solid var(--hair);border-radius:18px;padding:28px;text-align:center;box-shadow:0 24px 60px -20px rgba(0,0,0,.4)}
+.nudge-modal{position:relative;max-width:400px;margin:auto;background:var(--s1);border:1px solid var(--hair);border-radius:18px;padding:28px;text-align:center;box-shadow:0 24px 60px -20px rgba(0,0,0,.4)}
+.nudge-x{position:absolute;top:12px;right:14px;width:30px;height:30px;border:none;background:transparent;color:var(--mu);font-size:22px;line-height:1;cursor:pointer;border-radius:8px}
+.nudge-x:hover{background:var(--s2);color:var(--tx)}
 .nudge-ic{width:52px;height:52px;border-radius:14px;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;margin:0 auto 16px}
 .nudge-title{font-family:var(--fdisplay);font-size:20px;font-weight:600;color:var(--tx);margin-bottom:8px;letter-spacing:-.02em}
 .nudge-reason{font-size:13.5px;color:var(--tx);line-height:1.55;margin-bottom:6px}
@@ -5203,7 +5205,8 @@ html.fs-scaled #cv{ overflow:hidden !important; }   /* chat keeps its own scroll
    ═══════════════════════════════════════════════════════════ */
 #ovr.on:has(> .share-modal),
 #ovr.on:has(> .rw-modal),
-#ovr.on:has(> .wn-modal){
+#ovr.on:has(> .wn-modal),
+#ovr.on:has(> .nudge-modal){
   position:fixed;
   inset:0;
   z-index:9000;
@@ -5220,7 +5223,8 @@ html.fs-scaled #cv{ overflow:hidden !important; }   /* chat keeps its own scroll
 /* light-mode backdrop for these centered overlays */
 body.light #ovr.on:has(> .share-modal),
 body.light #ovr.on:has(> .rw-modal),
-body.light #ovr.on:has(> .wn-modal){ background:rgba(40,40,50,.55); }
+body.light #ovr.on:has(> .wn-modal),
+body.light #ovr.on:has(> .nudge-modal){ background:rgba(40,40,50,.55); }
 
 /* Auth message shown as success, not an error */
 .ae.ae-ok{
