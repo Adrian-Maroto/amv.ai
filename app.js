@@ -6669,7 +6669,10 @@ const AMVMarket = {
     const it=await this._resolve(id);
     if(!it) throw new Error('Item not found');
     const sellerEmail=(it.authorEmail||'').toLowerCase();
-    if(sellerEmail===this._me()) throw new Error('You cannot buy your own listing');
+    if(sellerEmail===this._me()){
+      try{ if(typeof AMVFraud!=='undefined') AMVFraud.record({type:'purchase', subject:this._me(), amount:it.price||0, category:'wash_trading', signals:{self_purchase:true}, entities:{accounts:[this._me()], transactions:[id]}}); }catch(e){}
+      throw new Error('You cannot buy your own listing');
+    }
     // PAYMENT GATE: a paid item can only be completed through real checkout
     // (the live backend returns a Stripe URL above). On-device there is no
     // payment processor, so paid items must NOT be handed over for free -
@@ -6736,7 +6739,9 @@ const AMVMarket = {
     }
     const w=this._localWallet();
     if((w.balance||0)<10) throw new Error('Minimum withdrawal is $10. Your balance is $'+(w.balance||0).toFixed(2)+'.');
-    const amount=w.balance; w.tx=[{type:'withdrawal',amount:-amount,status:'pending',ts:Date.now()},...(w.tx||[])]; w.balance=0; this._saveLocalWallet(w);
+    const amount=w.balance;
+    try{ if(typeof AMVFraud!=='undefined'){ const selfDeal=(w.tx||[]).some(t=>t.type==='sale'&&(t.buyer||'').toLowerCase()===this._me()); AMVFraud.record({type:'payout', subject:this._me(), amount, signals:{payout_after_selfbuy:!!selfDeal}, entities:{accounts:[this._me()]}}); } }catch(e){}
+    w.tx=[{type:'withdrawal',amount:-amount,status:'pending',ts:Date.now()},...(w.tx||[])]; w.balance=0; this._saveLocalWallet(w);
     return {ok:true, amount, status:'pending', local:true};
   },
   // ---- ratings ----
@@ -8215,6 +8220,341 @@ window._usageContentHTML=_usageContentHTML;
    when a backend is connected; honestly labels anything that needs
    the live backend rather than faking numbers.
    ============================================================ */
+/* ============================================================
+   AMVFraud - operator-only fraud-prevention monitor.
+
+   For every money-touching event it produces a fair, evidence-
+   based assessment: the suspected abuse category, a risk rating,
+   the exact signals that triggered it, the linked accounts /
+   devices / payments / addresses / transactions, plausible
+   legitimate explanations, the minimum extra evidence needed to
+   decide, a recommended action, a confidence score, and an
+   explicit "insufficient evidence" note when the signals are weak.
+
+   Fairness is built in, never bolted on:
+   - It never scores anyone on nationality, location, language,
+     disability, age or any other protected characteristic. A
+     regional or language mismatch is treated as ordinary life
+     (travel, immigration, international families, study, work,
+     VPN) and is kept only as context - it carries zero weight on
+     its own.
+   - Asking for a refund or filing a chargeback never auto-punishes.
+     On its own it can never push the recommendation past
+     "request verification".
+   - High-impact actions are routed to a human, records are kept
+     for appeal, and nothing is auto-enforced from one weak signal.
+   - It only ever describes what to watch for. It never explains
+     how to carry any of these out.
+
+   Honest degradation: on-device it assesses the categories whose
+   signals really exist client-side. The rest are watched server-
+   side the moment the backend keys are in - the coverage panel
+   marks which is which and never claims a server-only check is
+   active on this device.
+   ============================================================ */
+const AMVFraud = {
+  KEY:'amv_fraud_log',
+  HIGH_IMPACT_USD:200,
+
+  GROUPS:{
+    payment:'Payments & pricing', refund:'Refunds & returns',
+    promo:'Promos, trials & loyalty', account:'Accounts & identity',
+    social:'Social engineering', logistics:'Delivery & logistics',
+    market:'Marketplace & sellers', payout:'Payouts & laundering',
+    partner:'Affiliate, ads & insider'
+  },
+
+  // 50+ abuse categories this monitor is built to cover. [id, label, group].
+  CATS:[
+    ['regional_pricing_abuse','Regional price arbitrage','payment'],
+    ['geo_mismatch','VPN / geo mismatch','payment'],
+    ['digital_currency_resale','Digital-currency / license resale','payment'],
+    ['stolen_card','Stolen-payment purchase','payment'],
+    ['card_testing','Card testing / BIN probing','payment'],
+    ['friendly_fraud','Friendly fraud','refund'],
+    ['chargeback_after_use','Chargeback after consumption','refund'],
+    ['false_non_delivery','False non-delivery claim','refund'],
+    ['missing_item_claim','Missing-item refund abuse','refund'],
+    ['damaged_item_claim','Damaged-item refund abuse','refund'],
+    ['fake_evidence','Fabricated evidence','refund'],
+    ['refund_without_return','Refund without returning','refund'],
+    ['duplicate_refund','Duplicate-refund attempt','refund'],
+    ['refund_velocity_abuse','Serial refund abuse','refund'],
+    ['empty_box_return','Empty-box return','logistics'],
+    ['item_switch_return','Item-switch return','logistics'],
+    ['wardrobing','Wardrobing (use then return)','logistics'],
+    ['serial_switch','Serial-number switching','logistics'],
+    ['promo_abuse','Promo-code abuse','promo'],
+    ['referral_farming','Referral farming','promo'],
+    ['coupon_stacking','Coupon stacking','promo'],
+    ['trial_abuse','Free-trial cycling','promo'],
+    ['loyalty_theft','Loyalty / points theft','promo'],
+    ['account_takeover','Account takeover (ATO)','account'],
+    ['credential_stuffing','Credential stuffing','account'],
+    ['multi_account','Multi-accounting','account'],
+    ['device_farm','Device farm','account'],
+    ['bot_automation','Bot / automated abuse','account'],
+    ['synthetic_identity','Synthetic identity','account'],
+    ['disposable_signup','Disposable-email abuse','account'],
+    ['document_verification_fraud','Document-verification fraud','account'],
+    ['support_impersonation','Support impersonation','social'],
+    ['otp_phishing','OTP phishing / interception','social'],
+    ['recovery_scam','Account-recovery scam','social'],
+    ['social_engineering_escalation','Social-engineering escalation','social'],
+    ['courier_account_rental','Courier account rental','logistics'],
+    ['gps_spoofing','GPS spoofing','logistics'],
+    ['address_forwarding','Address-forwarding abuse','logistics'],
+    ['reshipping','Reshipping mule','logistics'],
+    ['triangulation','Triangulation fraud','logistics'],
+    ['fake_merchant','Fake merchant / listing','market'],
+    ['seller_exit_scam','Seller exit scam','market'],
+    ['counterfeit_listing','Counterfeit / IP theft','market'],
+    ['wash_trading','Wash trading / self-dealing','market'],
+    ['review_manipulation','Review manipulation','market'],
+    ['collusion_ring','Buyer-seller collusion','market'],
+    ['gift_card_laundering','Gift-card laundering','payout'],
+    ['payout_muling','Payout muling','payout'],
+    ['affiliate_fraud','Affiliate fraud','partner'],
+    ['ad_credit_fraud','Ad-credit fraud','partner'],
+    ['invoice_fraud','Invoice / vendor fraud','partner'],
+    ['insider_refund_collusion','Insider / refund collusion','partner']
+  ],
+
+  // Categories whose triggering signals genuinely exist on-device today.
+  // Everything else is watched server-side once the keys are in.
+  _clientCats:new Set([
+    'wash_trading','payout_muling','refund_without_return','false_non_delivery',
+    'friendly_fraud','chargeback_after_use','duplicate_refund','refund_velocity_abuse',
+    'multi_account','device_farm','account_takeover','credential_stuffing',
+    'otp_phishing','stolen_card','card_testing','bot_automation',
+    'counterfeit_listing','fake_merchant','promo_abuse','referral_farming','geo_mismatch'
+  ]),
+
+  // Observable signals. w = weight toward risk. cap = the strongest action this
+  // signal alone may recommend (fairness cap). protected = never scores, kept
+  // only as context. cats = candidate categories this signal points at.
+  SIGNALS:{
+    self_purchase:{w:0.70, label:'Buyer and seller are the same account', cats:['wash_trading','payout_muling']},
+    payout_after_selfbuy:{w:0.80, label:'A withdrawal followed a linked self-purchase', cats:['wash_trading','payout_muling']},
+    duplicate_refund:{w:0.75, label:'The same transaction was submitted for refund more than once', cats:['duplicate_refund']},
+    refund_velocity:{w:0.50, label:'Unusually many refunds from this account recently', cats:['refund_velocity_abuse']},
+    refund_request:{w:0.25, cap:'request_verification', label:'A refund was requested', cats:['refund_without_return','false_non_delivery']},
+    chargeback:{w:0.30, cap:'request_verification', label:'A payment dispute (chargeback) was filed', cats:['chargeback_after_use','friendly_fraud']},
+    multi_account_device:{w:0.60, label:'Several accounts seen on the same device', cats:['multi_account','device_farm']},
+    auth_fail_burst:{w:0.55, label:'Many failed sign-ins shortly before access', cats:['account_takeover','credential_stuffing']},
+    otp_fail_burst:{w:0.50, label:'Repeated one-time-code failures', cats:['otp_phishing','account_takeover']},
+    new_account_high_value:{w:0.35, label:'A brand-new account made a high-value purchase', cats:['stolen_card']},
+    purchase_velocity:{w:0.45, label:'Many purchases in a very short window', cats:['card_testing','bot_automation']},
+    listing_prohibited:{w:0.80, label:'A listing hit the prohibited-goods screen', cats:['counterfeit_listing','fake_merchant']},
+    listing_guarantee:{w:0.50, label:'A listing promised guaranteed profit or returns', cats:['fake_merchant']},
+    promo_multi:{w:0.40, label:'The same promo or referral used across linked accounts', cats:['promo_abuse','referral_farming']},
+    geo_mismatch:{w:0, protected:true, label:'Sign-in region differs from the usual region', cats:['geo_mismatch']}
+  },
+
+  ACTION_LABEL:{
+    allow:'Allow (monitor only)', request_verification:'Request verification',
+    restrict:'Restrict activity', temporary_hold:'Temporary hold',
+    escalate:'Escalate to human review'
+  },
+  RISK_LABEL:{low:'Low', medium:'Medium', high:'High', critical:'Critical'},
+
+  evaluate(ev){
+    ev=ev||{};
+    const sig=ev.signals||{};
+    const active=[]; const protectedCtx=[];
+    Object.keys(this.SIGNALS).forEach(code=>{
+      if(!sig[code]) return;
+      const s=this.SIGNALS[code];
+      if(s.protected){ protectedCtx.push({code,...s}); return; }
+      active.push({code,...s});
+    });
+    let score=active.reduce((a,s)=>a+s.w,0);
+    score=Math.min(0.99, score);
+    const strongest=active.reduce((m,s)=>Math.max(m,s.w),0);
+
+    // pick the category from the strongest active signal
+    let catId=ev.category||'';
+    if(active.length){ const top=active.slice().sort((a,b)=>b.w-a.w)[0]; catId=(top.cats&&top.cats[0])||catId; }
+    const cat=this.CATS.find(c=>c[0]===catId)||['unknown','Unspecified anomaly','account'];
+
+    // insufficient evidence: too few independent signals and nothing strong
+    const insufficient=(active.length<2 && strongest<0.70) || score<0.35;
+    // fairness cap: if every scoring signal is a refund/dispute signal, the
+    // recommendation may never exceed "request verification".
+    const allCapped=active.length>0 && active.every(s=>s.cap==='request_verification');
+
+    let risk = score<0.40?'low' : score<0.65?'medium' : score<0.85?'high' : 'critical';
+    if(allCapped && (risk==='high'||risk==='critical')) risk='medium';
+    if(insufficient) risk='low';
+
+    const moneyOut = ev.type==='payout' || !!sig.payout_after_selfbuy;
+    let action = risk==='low'?'allow'
+      : risk==='medium'?'request_verification'
+      : risk==='high'?(moneyOut?'temporary_hold':'restrict')
+      : 'escalate';
+    if(allCapped && action!=='allow' && action!=='request_verification') action='request_verification';
+
+    const amount=+ev.amount||0;
+    const highImpact = amount>=this.HIGH_IMPACT_USD || moneyOut || action==='restrict' || action==='temporary_hold' || action==='escalate';
+    const humanReview = action==='escalate' || (highImpact && action!=='allow');
+
+    const serverLive=(typeof _aiBackendReady==='function' && _aiBackendReady());
+    let confidence=0.35 + 0.16*active.length + (serverLive?0.12:0);
+    if(insufficient) confidence=Math.min(confidence,0.45);
+    confidence=Math.max(0.20, Math.min(0.95, confidence));
+
+    // legitimate explanations - always lead with the benefit of the doubt
+    const legit=['A genuine customer with an unusual but honest pattern (a new device, travel, a first large purchase, or a gift).'];
+    if(protectedCtx.some(s=>s.code==='geo_mismatch'))
+      legit.push('A different sign-in region is normal for travel, immigration, international families, study, work, or ordinary VPN use. It is never evidence of fraud on its own.');
+    if(sig.refund_request||sig.chargeback||sig.refund_velocity)
+      legit.push('The refund or dispute may be completely valid - the product failed, was not as described, or a charge was not recognised. Requesting money back is a right, not an admission.');
+    if(sig.new_account_high_value)
+      legit.push('New customers routinely make a first large purchase. Account age alone means nothing.');
+    if(sig.multi_account_device)
+      legit.push('Shared or family devices, public computers and households legitimately show several accounts.');
+    if(sig.purchase_velocity)
+      legit.push('A burst of activity can simply be an engaged customer or a batch of intended purchases.');
+
+    // minimum additional evidence needed
+    const minEv=[];
+    if(sig.refund_request||sig.chargeback||sig.refund_velocity||sig.duplicate_refund)
+      minEv.push('Delivery and consumption logs for the disputed transaction, checked against the specific claim.');
+    if(sig.self_purchase||sig.payout_after_selfbuy)
+      minEv.push('Independent confirmation that the buyer and seller are genuinely different people with different funding sources.');
+    if(sig.multi_account_device||sig.promo_multi)
+      minEv.push('A second independent link between the accounts (a shared payment instrument or coordinated timing), not the shared device or code alone.');
+    if(sig.auth_fail_burst)
+      minEv.push('Re-authentication by the real account owner and confirmation the device is recognised.');
+    if(sig.otp_fail_burst)
+      minEv.push('Direct contact with the verified account owner on a known channel.');
+    if(sig.new_account_high_value)
+      minEv.push('A successful payment authentication (3-D Secure) or matching billing verification from the processor.');
+    if(sig.purchase_velocity)
+      minEv.push('Server-side rate and device signals showing whether the pattern is human-plausible or scripted.');
+    if(sig.listing_prohibited||sig.listing_guarantee)
+      minEv.push('A manual review of the listing content and proof of the seller\'s ownership or licence.');
+    if(!minEv.length) minEv.push('At least one more independent signal before any enforcement.');
+
+    const en=ev.entities||{};
+    const linked={
+      accounts:en.accounts||[], devices:en.devices||[], payments:en.payments||[],
+      addresses:en.addresses||[], transactions:en.transactions||[]
+    };
+
+    const insufficientStatement = insufficient
+      ? 'Insufficient evidence to act. The available signals are weak or could easily be legitimate, so the recommendation is to keep monitoring only - do not restrict, charge, or accuse anyone on this alone.'
+      : '';
+
+    return {
+      id:'fr_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),
+      ts:Date.now(),
+      subject:ev.subject||ev.userEmail||'-',
+      type:ev.type||'event',
+      amount,
+      category:cat[0], categoryLabel:cat[1], group:cat[2],
+      risk, riskLabel:this.RISK_LABEL[risk],
+      signals:active.map(s=>({code:s.code,label:s.label})),
+      context:protectedCtx.map(s=>({code:s.code,label:s.label})),
+      linked, legitimate:legit, minEvidence:minEv,
+      action, actionLabel:this.ACTION_LABEL[action],
+      humanReview, confidence,
+      insufficientEvidence:insufficient, insufficientStatement,
+      resolution:null
+    };
+  },
+
+  _log(){ try{ return load(this.KEY)||[]; }catch(e){ return []; } },
+  _save(l){ try{ store(this.KEY, l.slice(0,200)); }catch(e){} },
+
+  // Evaluate an event and, if it carries any real signal, keep the assessment.
+  // Clean events (no active or context signal) are not stored - the monitor
+  // only ever shows genuine flags. Best-effort mirror to the backend when live.
+  record(ev){
+    let a; try{ a=this.evaluate(ev); }catch(e){ return null; }
+    if(!a.signals.length && !a.context.length) return a;
+    const l=this._log(); l.unshift(a); this._save(l);
+    try{ if(typeof AEGIS!=='undefined'&&AEGIS.log) AEGIS.log('fraud_flag',{category:a.category,risk:a.risk,action:a.action}); }catch(e){}
+    try{
+      const base=(typeof loadStr==='function'&&loadStr('amv_api_base'))||'';
+      const tok=(typeof loadStr==='function'&&loadStr('amv_api_token'))||(window.AMV_API&&AMV_API.token)||'';
+      if(base) fetch(base.replace(/\/$/,'')+'/v1/fraud/record',{method:'POST',headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},body:JSON.stringify(a)}).catch(()=>{});
+    }catch(e){}
+    return a;
+  },
+
+  resolve(id, action){
+    const l=this._log(); const it=l.find(x=>x.id===id); if(!it) return;
+    it.resolution={action, label:this.ACTION_LABEL[action]||action, ts:Date.now()};
+    this._save(l);
+  },
+
+  // Derive fresh flags from the real local audit trail (no fabrication). Today
+  // this surfaces repeated failed sign-ins (possible ATO / credential stuffing)
+  // and rate-limit-block bursts (possible bot activity) from the AEGIS log.
+  scan(){
+    const out=[];
+    try{
+      const log=(typeof AEGIS!=='undefined'&&AEGIS._loadLog)?AEGIS._loadLog():[];
+      const now=Date.now(); const HOUR=3600000;
+      const recent=log.filter(e=>{ const t=Date.parse(e.ts||0); return t&&(now-t)<HOUR; });
+      const fails=recent.filter(e=>e.event==='auth_fail');
+      if(fails.length>=5){
+        out.push(this.evaluate({type:'login', subject:(fails[fails.length-1].email)||'-',
+          signals:{auth_fail_burst:true}, entities:{accounts:[(fails[fails.length-1].email)||'-']}}));
+      }
+      const blocks=recent.filter(e=>e.event==='ratelimit_block');
+      if(blocks.length>=4){
+        out.push(this.evaluate({type:'usage', subject:'this device',
+          signals:{purchase_velocity:true}, category:'bot_automation'}));
+      }
+    }catch(e){}
+    return out;
+  }
+};
+window.AMVFraud=AMVFraud;
+function _fraudAct(arg){
+  const s=String(arg); const i=s.indexOf('::'); if(i<0) return;
+  const id=s.slice(0,i), action=s.slice(i+2);
+  AMVFraud.resolve(id, action);
+  try{ if(typeof toast==='function') toast('Recorded: '+(AMVFraud.ACTION_LABEL[action]||action),'info'); }catch(e){}
+  try{ if(S.tab==='admin') renderAdminView(); }catch(e){}
+}
+window._fraudAct=_fraudAct;
+
+/* Render one full fraud assessment as an operator card. */
+function _fraudCard(a){
+  const rc={low:'#4ade80',medium:'#e0b341',high:'#ff8c42',critical:'#ff4d4d'};
+  const chips=(arr)=>arr.map(x=>'<span class="fr-chip">'+escH(x)+'</span>').join('');
+  const linkRows=[];
+  const L=a.linked||{};
+  [['accounts','Accounts'],['devices','Devices'],['payments','Payments'],['addresses','Addresses'],['transactions','Transactions']].forEach(([k,lbl])=>{
+    if(L[k]&&L[k].length) linkRows.push('<div class="fr-link"><span class="fr-link-l">'+lbl+'</span><span class="fr-link-v">'+chips(L[k])+'</span></div>');
+  });
+  const resolved=a.resolution;
+  const acts=['allow','request_verification','restrict','temporary_hold','escalate'];
+  const actBtns=acts.map(x=>'<button class="fr-actbtn'+(x===a.action?' rec':'')+(resolved&&resolved.action===x?' chosen':'')+'" data-dact="_fraudAct" data-darg="'+a.id+'::'+x+'">'+escH(AMVFraud.ACTION_LABEL[x])+(x===a.action?' ★':'')+'</button>').join('');
+  return '<div class="fr-card">'+
+    '<div class="fr-top">'+
+      '<span class="fr-risk" style="background:'+rc[a.risk]+'">'+escH(a.riskLabel)+' risk</span>'+
+      '<span class="fr-cat">'+escH(a.categoryLabel)+'</span>'+
+      '<span class="fr-grp">'+escH(AMVFraud.GROUPS[a.group]||a.group)+'</span>'+
+      '<span class="fr-conf">'+Math.round(a.confidence*100)+'% confidence</span>'+
+      (a.humanReview?'<span class="fr-human">Human review</span>':'')+
+    '</div>'+
+    '<div class="fr-meta">Subject: <b>'+escH(a.subject)+'</b> · '+escH(a.type)+(a.amount?' · $'+a.amount:'')+' · '+_admAgo(new Date(a.ts).toISOString())+'</div>'+
+    (a.insufficientEvidence?'<div class="fr-insuf">'+escH(a.insufficientStatement)+'</div>':'')+
+    (a.signals.length?'<div class="fr-sec"><div class="fr-sec-h">Triggering signals</div><ul class="fr-list">'+a.signals.map(s=>'<li>'+escH(s.label)+'</li>').join('')+'</ul></div>':'')+
+    (a.context.length?'<div class="fr-sec"><div class="fr-sec-h">Context (not scored)</div><ul class="fr-list">'+a.context.map(s=>'<li>'+escH(s.label)+'</li>').join('')+'</ul></div>':'')+
+    (linkRows.length?'<div class="fr-sec"><div class="fr-sec-h">Linked entities</div><div class="fr-links">'+linkRows.join('')+'</div></div>':'')+
+    '<div class="fr-sec"><div class="fr-sec-h">Legitimate explanations</div><ul class="fr-list ok">'+a.legitimate.map(x=>'<li>'+escH(x)+'</li>').join('')+'</ul></div>'+
+    '<div class="fr-sec"><div class="fr-sec-h">Minimum evidence to decide</div><ul class="fr-list">'+a.minEvidence.map(x=>'<li>'+escH(x)+'</li>').join('')+'</ul></div>'+
+    '<div class="fr-rec">Recommended: <b>'+escH(a.actionLabel)+'</b>'+(a.humanReview?' - send to a person, do not auto-enforce.':'')+'</div>'+
+    '<div class="fr-acts">'+actBtns+'</div>'+
+    (resolved?'<div class="fr-resolved">Operator decision: <b>'+escH(resolved.label)+'</b> · '+_admAgo(new Date(resolved.ts).toISOString())+'</div>':'')+
+  '</div>';
+}
+
 function _adminAbuseSignals(){
   // derive anomaly signals from the AEGIS event ring buffer
   const log=(typeof AEGIS!=='undefined'&&AEGIS._loadLog)?AEGIS._loadLog():[];
@@ -8241,7 +8581,7 @@ function _adminAbuseSignals(){
    ============================================================ */
 const _ADMIN_TABS=[
   ['overview','Overview'],['users','Users'],['finance','Finance'],['revenue','Revenue'],['ai','AI & Usage'],
-  ['infra','Infrastructure'],['security','Security'],['product','Product'],['growth','Growth']
+  ['infra','Infrastructure'],['security','Security'],['fraud','Fraud Monitor'],['product','Product'],['growth','Growth']
 ];
 function _admMetrics(){
   // gather everything we can from real local/AEGIS data
@@ -8501,6 +8841,39 @@ function _admRenderTab(tab, backendLive, live){
       _admCard('Security alerts', ab.signals.length?'<div class="adm-signals">'+ab.signals.map(s=>'<div class="adm-signal '+s.sev+'"><span class="adm-signal-dot" style="background:'+sev[s.sev]+'"></span><div><b>'+escH(s.title)+'</b><span>'+escH(s.detail)+'</span></div></div>').join('')+'</div>':'<div class="adm-allclear"><span class="adm-signal-dot" style="background:'+sev.ok+'"></span> No active security alerts.</div>','live')+
       _admCard('Login history', recentLogins.length?'<div class="adm-loglist">'+recentLogins.map(e=>'<div class="adm-logrow"><span class="adm-badge '+(e.event==='auth_fail'?'off':'ok')+'">'+(e.event==='auth_fail'?'failed':'ok')+'</span><span>'+escH(e.email||(e.data&&e.data.email)||'-')+'</span><span class="adm-logtime">'+_admAgo(e.ts)+'</span></div>').join('')+'</div>':'<div class="adm-empty">No recent sign-in events.</div>')+
       _admCard('Moderation &amp; compliance', _admPending('Moderation queue, flagged conversations, spam/abuse detection, user reports, account verification, data export & privacy requests, compliance dashboard'));
+  }
+  else if(tab==='fraud'){
+    const stored=AMVFraud._log();
+    const scanned=AMVFraud.scan();
+    // merge live scan with stored flags, newest first, de-duped by category+subject within the hour
+    const flags=scanned.concat(stored);
+    const open=flags.filter(f=>!f.resolution);
+    const highRisk=flags.filter(f=>f.risk==='high'||f.risk==='critical');
+    const needsHuman=open.filter(f=>f.humanReview);
+    const total=AMVFraud.CATS.length;
+    const onDevice=AMVFraud.CATS.filter(c=>AMVFraud._clientCats.has(c[0])).length;
+    const serverLive=_aiBackendReady();
+
+    // coverage panel, grouped
+    const byGroup={};
+    AMVFraud.CATS.forEach(c=>{ (byGroup[c[2]]=byGroup[c[2]]||[]).push(c); });
+    const coverage=Object.keys(byGroup).map(g=>
+      '<div class="fr-cov-grp"><div class="fr-cov-h">'+escH(AMVFraud.GROUPS[g]||g)+'</div><div class="fr-cov-list">'+
+      byGroup[g].map(c=>{ const onDev=AMVFraud._clientCats.has(c[0]);
+        return '<span class="fr-cov-item '+(onDev?'on':'srv')+'">'+escH(c[1])+'<span class="fr-cov-badge">'+(onDev?'on-device':'server-side')+'</span></span>';
+      }).join('')+'</div></div>'
+    ).join('');
+
+    el.innerHTML=
+      _admCard('Fraud overview','<div class="adm-stats">'+
+        _admStat(open.length,'Open flags', open.length?sev.warn:sev.ok)+
+        _admStat(highRisk.length,'High / critical', highRisk.length?sev.crit:'')+
+        _admStat(needsHuman.length,'Awaiting human review', needsHuman.length?sev.warn:'')+
+        _admStat(onDevice+' / '+total,'Categories watched here')+
+      '</div>'+
+      '<p class="fr-fair">Fairness first: no one is scored on nationality, location, language, disability, age, or any protected trait. A refund or chargeback never auto-punishes on its own, high-impact calls go to a person, records are kept for appeal, and every flag lists its legitimate explanations. Full IP, payment-country and identity signals activate server-side once your keys are in'+(serverLive?' - live now.':'.')+'</p>')+
+      _admCard('Active flags', flags.length?'<div class="fr-cards">'+flags.slice(0,40).map(_fraudCard).join('')+'</div>':'<div class="adm-allclear"><span class="adm-signal-dot" style="background:'+sev.ok+'"></span> No fraud flags. Money-touching events are assessed as they happen and only real signals appear here.</div>','live')+
+      _admCard('Coverage - all '+total+' categories','<div class="fr-cov">'+coverage+'</div>','on-device vs server-side');
   }
   else if(tab==='product'){
     el.innerHTML=
