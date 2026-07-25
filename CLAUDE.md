@@ -24,10 +24,22 @@ Companion docs (do not duplicate them here - read them):
 - If a tool or change would make AMV worse, do not use it. Say so instead.
 
 ## Architecture reality (know this before editing)
-- The app is a SINGLE-FILE build. Source of truth: `app.js` (~18k lines) and
-  `styles.css`. `node build.mjs` swaps them into `index.html` between the
-  BUILD:CSS / BUILD:JS markers. The nav/body shell in `index.html` is safe to
-  edit directly; everything else comes from the sources. Always rebuild.
+- The app ships as a SINGLE-FILE build, but the JS SOURCE is MODULAR:
+  `src/app/NN-name.js` files (01-core, 02-state, ... 16-palette-sched) are
+  concatenated IN NAME ORDER to form the bundle. `node build.mjs` concatenates
+  them (regenerating `app.js`) and injects that + `styles.css` into `index.html`
+  between the BUILD:CSS / BUILD:JS markers.
+  - **Edit `src/app/*.js`, NOT `app.js`.** `app.js` is the GENERATED
+    concatenation - the build overwrites it from the modules every run, so any
+    hand-edit to `app.js` is lost. It stays committed only so `check.mjs`,
+    `preflight`, and grep keep working against the whole bundle.
+  - It is still ONE runtime script (shared global scope) - the modules are
+    organization only, concatenated with no wrappers. Order across module
+    boundaries is preserved, so top-level order dependencies still hold.
+  - The nav/body shell in `index.html` is safe to edit directly; everything
+    else comes from the sources. Always rebuild.
+  - `node build.mjs --minify` produces a smaller terser-minified bundle
+    (opt-in; the default stays readable/debuggable).
 - Vanilla JS. There is NO React, Next.js, Vue, Tailwind, or bundler. Do not add
   one. Framework-specific tools and advice do not apply here.
 - Backend: a Cloudflare Worker (`amv-backend.js`) + KV + a Durable Object

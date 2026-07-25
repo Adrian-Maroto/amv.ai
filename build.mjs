@@ -13,15 +13,25 @@
  * (still one index.html, no external requests, global scope + strict mode
  * preserved, DOM fully available when the code runs).
  */
-import { readFileSync, writeFileSync } from 'fs';
+import { readFileSync, writeFileSync, readdirSync } from 'fs';
 import { execSync } from 'child_process';
 
 const args = process.argv.slice(2);
 const cmd = args.find(a => !a.startsWith('--')) || 'build';
 const MINIFY = args.includes('--minify');
 
+// The app SOURCE is modular: src/app/NN-name.js files, concatenated in name
+// order, form the single app bundle. app.js is the GENERATED concatenation of
+// those modules - it stays committed so check.mjs / preflight / grep keep
+// working unchanged. IMPORTANT: do NOT hand-edit app.js; edit the src/app/
+// modules and rebuild (the build overwrites app.js from them).
+const APP_SRC_DIR = 'src/app';
 function assembleJS() {
-  return readFileSync('app.js', 'utf8');
+  const files = readdirSync(APP_SRC_DIR).filter(f => /\.js$/.test(f)).sort();
+  if (!files.length) throw new Error(`no source modules found in ${APP_SRC_DIR}/`);
+  const src = files.map(f => readFileSync(`${APP_SRC_DIR}/${f}`, 'utf8')).join('');
+  writeFileSync('app.js', src);   // regenerate the committed bundle from the modules
+  return src;
 }
 
 // Optionally minify with terser. Kept opt-in (--minify) so the default build

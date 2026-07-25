@@ -7,6 +7,22 @@ Format: **Mistake → Root cause → Rule going forward.**
 
 ---
 
+## 2026-07-25 (architecture)
+
+### 19. Split a working single-file app ONLY as a byte-identical operation
+- **Context:** Splitting the 18k-line `app.js` into `src/app/*.js` modules. A
+  working file that auto-deploys to production must not change behavior during a
+  reorg.
+- **Rule:** Cut only at top-level boundaries (section banners, never mid-
+  declaration), and PROVE the split is safe before wiring anything: the ordered
+  concatenation of the module files must equal the original file byte-for-byte
+  (sha256 match). Then the build reads the modules and the full gate confirms.
+  Keep the concatenated file (`app.js`) committed + generated so `check.mjs` /
+  `preflight` / grep keep working, and document loudly that the modules are the
+  source (hand-edits to the generated file are lost on rebuild). It is still one
+  runtime script - the modules are organization only, so top-level order across
+  boundaries must be preserved (concatenation does this for free).
+
 ## 2026-07-25 (security audit)
 
 ### 18. An unescaped "icon" field is a stored-XSS hole across users

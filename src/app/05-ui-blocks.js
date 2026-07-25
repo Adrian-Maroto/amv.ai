@@ -1,0 +1,2790 @@
+/* ============================================================
+   GENERATIVE UI BLOCKS (#4)
+   The model can emit fenced blocks (stats/compare/steps/choices)
+   that render as real interactive components instead of plain
+   markdown. All values are HTML-escaped - safe by construction.
+   ============================================================ */
+// stats: a row of key-metric cards
+function _guiStats(spec){
+  const items=Array.isArray(spec.items)?spec.items:(Array.isArray(spec)?spec:[]);
+  if(!items.length) return '';
+  const cards=items.slice(0,6).map(it=>{
+    const trend=it.trend?('<span class="gui-stat-trend '+((''+it.trend).trim().startsWith('-')?'down':'up')+'">'+escH(''+it.trend)+'</span>'):'';
+    return '<div class="gui-stat"><div class="gui-stat-val">'+escH(''+(it.value??''))+trend+'</div><div class="gui-stat-label">'+escH(''+(it.label??''))+'</div></div>';
+  }).join('');
+  return '<div class="gui-stats">'+cards+'</div>';
+}
+// compare: side-by-side comparison table with a highlighted "best"/recommended column
+function _guiCompare(spec){
+  const cols=Array.isArray(spec.columns)?spec.columns:[];
+  const rows=Array.isArray(spec.rows)?spec.rows:[];
+  if(!cols.length||!rows.length) return '';
+  const hi = Number.isInteger(spec.highlight)?spec.highlight:-1;
+  const title=spec.title?'<div class="gui-cmp-title">'+escH(spec.title)+'</div>':'';
+  let head='<div class="gui-cmp-row gui-cmp-head"><div class="gui-cmp-c gui-cmp-lbl"></div>'+
+    cols.map((c,i)=>'<div class="gui-cmp-c'+(i===hi?' gui-cmp-hi':'')+'">'+escH(''+c)+(i===hi?'<span class="gui-cmp-badge">Best</span>':'')+'</div>').join('')+'</div>';
+  let bodyRows=rows.map(r=>{
+    const vals=Array.isArray(r.values)?r.values:[];
+    return '<div class="gui-cmp-row"><div class="gui-cmp-c gui-cmp-lbl">'+escH(''+(r.label??''))+'</div>'+
+      cols.map((_,i)=>{
+        let v=vals[i]; let cls='';
+        if(v===true||v==='true'||v==='yes'){ v='✓'; cls=' gui-cmp-yes'; }
+        else if(v===false||v==='false'||v==='no'){ v='✕'; cls=' gui-cmp-no'; }
+        return '<div class="gui-cmp-c'+(i===hi?' gui-cmp-hi':'')+cls+'">'+escH(''+(v??'-'))+'</div>';
+      }).join('')+'</div>';
+  }).join('');
+  return '<div class="gui-cmp">'+title+'<div class="gui-cmp-grid" style="--cmp-cols:'+cols.length+'">'+head+bodyRows+'</div></div>';
+}
+// steps: a vertical numbered process/timeline
+function _guiSteps(spec){
+  const steps=Array.isArray(spec.steps)?spec.steps:(Array.isArray(spec)?spec:[]);
+  if(!steps.length) return '';
+  const title=spec.title?'<div class="gui-steps-title">'+escH(spec.title)+'</div>':'';
+  const items=steps.map((s,i)=>{
+    const st=typeof s==='string'?{title:s}:s;
+    return '<div class="gui-step"><div class="gui-step-num">'+(i+1)+'</div><div class="gui-step-body">'+
+      '<div class="gui-step-title">'+escH(''+(st.title??''))+'</div>'+
+      (st.detail?'<div class="gui-step-detail">'+escH(''+st.detail)+'</div>':'')+'</div></div>';
+  }).join('');
+  return '<div class="gui-steps">'+title+items+'</div>';
+}
+// choices: tappable option chips that send the picked option as a follow-up
+function _guiChoices(spec){
+  const opts=Array.isArray(spec.options)?spec.options:(Array.isArray(spec)?spec:[]);
+  if(!opts.length) return '';
+  const prompt=spec.prompt?'<div class="gui-choices-prompt">'+escH(spec.prompt)+'</div>':'';
+  const chips=opts.slice(0,8).map(o=>{
+    const label=typeof o==='string'?o:(o.label||o.value||'');
+    const send=typeof o==='string'?o:(o.send||o.value||o.label||'');
+    return '<button class="gui-choice" data-guichoice="'+escH(''+send)+'">'+escH(''+label)+'</button>';
+  }).join('');
+  return '<div class="gui-choices">'+prompt+'<div class="gui-choices-row">'+chips+'</div></div>';
+}
+
+function renderChartSVG(spec){
+  const type=(spec.type||'bar').toLowerCase();
+  const data=Array.isArray(spec.data)?spec.data:[];
+  if(!data.length) return '';
+  const title=spec.title?'<div class="cht-title">'+escH(spec.title)+'</div>':'';
+  const W=560, H=300, padL=46, padR=16, padT=16, padB=46;
+  const vals=data.map(d=>+d.value||0);
+  const max=Math.max(...vals, 0), min=Math.min(...vals, 0);
+  const range=(max-min)||1;
+  const iw=W-padL-padR, ih=H-padT-padB;
+  const colors=['#5590ff','#5590ff','#4ade80','#e0b341','#ff4d4d','#5590ff','#ff7eb6'];
+  const x0=padL, y0=H-padB;
+  let svg='<svg viewBox="0 0 '+W+' '+H+'" class="cht-svg" xmlns="http://www.w3.org/2000/svg">';
+  // gridlines + y labels
+  for(let i=0;i<=4;i++){
+    const yy=padT+ih*(i/4);
+    const v=(max-(range*(i/4))).toFixed(range<10?1:0);
+    svg+='<line x1="'+padL+'" y1="'+yy+'" x2="'+(W-padR)+'" y2="'+yy+'" stroke="rgba(255,255,255,.07)"/>';
+    svg+='<text x="'+(padL-8)+'" y="'+(yy+4)+'" text-anchor="end" class="cht-ax">'+v+'</text>';
+  }
+  if(type==='line'){
+    const step=data.length>1?iw/(data.length-1):0;
+    let pts=data.map((d,i)=>{ const x=x0+step*i; const y=padT+ih*(1-((+d.value-min)/range)); return [x,y]; });
+    let path=pts.map((pt,i)=>(i?'L':'M')+pt[0]+' '+pt[1]).join(' ');
+    svg+='<path d="'+path+'" fill="none" stroke="#5590ff" stroke-width="2.5"/>';
+    pts.forEach((pt,i)=>{ svg+='<circle cx="'+pt[0]+'" cy="'+pt[1]+'" r="3.5" fill="#5590ff"/>';
+      svg+='<text x="'+pt[0]+'" y="'+(y0+18)+'" text-anchor="middle" class="cht-ax">'+escH((data[i].label||'')+'')+'</text>'; });
+  } else {
+    const n=data.length, gap=10, bw=(iw/n)-gap;
+    data.forEach((d,i)=>{
+      const h=ih*((+d.value-min)/range);
+      const x=x0+i*(iw/n)+gap/2;
+      const y=y0-h;
+      const col=colors[i%colors.length];
+      svg+='<rect x="'+x+'" y="'+y+'" width="'+Math.max(bw,2)+'" height="'+Math.max(h,0)+'" rx="4" fill="'+col+'"><title>'+escH((d.label||'')+': '+d.value)+'</title></rect>';
+      svg+='<text x="'+(x+bw/2)+'" y="'+(y0+18)+'" text-anchor="middle" class="cht-ax">'+escH((d.label||'')+'')+'</text>';
+      svg+='<text x="'+(x+bw/2)+'" y="'+(y-6)+'" text-anchor="middle" class="cht-val">'+escH(d.value+'')+'</text>';
+    });
+  }
+  svg+='</svg>';
+  return '<div class="cht">'+title+svg+(spec.source?'<div class="cht-src">Source: '+escH(spec.source)+'</div>':'')+'</div>';
+}
+
+/* ============================================================
+   INLINE ARTIFACTS (#3)
+   Substantial AI output (code files, full HTML pages, documents) is
+   captured as an "artifact" and shown in the chat as a compact card.
+   Clicking the card opens a rich side panel with Preview/Code tabs,
+   copy, download, and "Open in Dev". Small snippets stay inline.
+   ============================================================ */
+window._artifacts = window._artifacts || {};
+let _artifactSeq = 0;
+// Human title + friendly type label from the content.
+function _artifactMeta(raw, lang, isHtml){
+  let type, title, icon;
+  if(isHtml){
+    type='Web page'; icon='page';
+    const m=raw.match(/<title[^>]*>([^<]+)<\/title>/i) || raw.match(/<h1[^>]*>([^<]+)<\/h1>/i);
+    title=m?m[1].trim().slice(0,48):'Web page';
+  } else {
+    const L=(lang||'').toLowerCase();
+    const langName={js:'JavaScript',jsx:'React',ts:'TypeScript',tsx:'React',py:'Python',python:'Python',html:'HTML',css:'CSS',json:'JSON',sql:'SQL',sh:'Shell',bash:'Shell',go:'Go',rust:'Rust',rs:'Rust',java:'Java',cpp:'C++',c:'C',rb:'Ruby',php:'PHP',swift:'Swift',kt:'Kotlin'}[L]||(lang?lang.toUpperCase():'Code');
+    type=langName+' file'; icon='code';
+    // try to name it from a function/class/component/def
+    const nm=raw.match(/(?:function|class|const|def|component)\s+([A-Za-z_$][\w$]*)/) || raw.match(/([A-Za-z_$][\w$]*)\s*=\s*\(/);
+    title=nm?nm[1]:(langName+' snippet');
+  }
+  return { type, title, icon };
+}
+// Store an artifact, returning its record. Dedupes identical content within a
+// render pass so re-renders don't multiply artifacts.
+function _artifactStore(raw, lang, isHtml){
+  window._artifacts = window._artifacts || {};
+  // reuse an existing artifact with identical content (stable across re-renders)
+  for(const k in window._artifacts){ if(window._artifacts[k].raw===raw) return window._artifacts[k]; }
+  const id='art'+(++_artifactSeq)+Math.random().toString(36).slice(2,5);
+  const meta=_artifactMeta(raw, lang, isHtml);
+  const lines=raw.split('\n').length;
+  const rec={ id, raw, lang:lang||'', isHtml:!!isHtml, ...meta, lines };
+  window._artifacts[id]=rec;
+  return rec;
+}
+// The compact card shown inline in the chat.
+function _artifactCardHTML(art){
+  const icon = art.isHtml
+    ? '<path d="M3 9h18M3 9l0 10a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V9M3 9V5a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v4"/><circle cx="6" cy="6.5" r=".6" fill="currentColor"/><circle cx="8.2" cy="6.5" r=".6" fill="currentColor"/>'
+    : '<path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/>';
+  const sub = art.isHtml ? (art.type) : (art.type+' · '+art.lines+' lines');
+  return '<button class="art-card" data-artopen="'+art.id+'">'+
+      '<span class="art-card-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+icon+'</svg></span>'+
+      '<span class="art-card-txt"><span class="art-card-title">'+escH(art.title)+'</span><span class="art-card-sub">'+escH(sub)+'</span></span>'+
+      '<span class="art-card-open"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M8 7h9v9"/></svg></span>'+
+    '</button>';
+}
+
+// ── Artifact side panel ───────────────────────────────────────
+// Opens a slide-in panel on the right showing the artifact with Preview/Code
+// tabs (Preview only for HTML), plus copy, download, and Open in Dev.
+let _artifactPanelOpen=false, _artifactActiveTab='code';
+function openArtifact(id){
+  const art=window._artifacts && window._artifacts[id];
+  if(!art) return;
+  let panel=document.getElementById('art-panel');
+  if(!panel){
+    panel=document.createElement('div');
+    panel.id='art-panel';
+    panel.className='art-panel';
+    document.body.appendChild(panel);
+  }
+  _artifactActiveTab = art.isHtml ? 'preview' : 'code';
+  _renderArtifactPanel(art);
+  // allow layout to settle, then slide in + shift chat
+  requestAnimationFrame(()=>{ panel.classList.add('on'); document.body.classList.add('art-open'); });
+  _artifactPanelOpen=true;
+}
+function closeArtifact(){
+  const panel=document.getElementById('art-panel');
+  if(panel) panel.classList.remove('on');
+  document.body.classList.remove('art-open');
+  _artifactPanelOpen=false;
+}
+function _renderArtifactPanel(art){
+  const panel=document.getElementById('art-panel'); if(!panel) return;
+  const tabs = art.isHtml
+    ? '<button class="art-tab'+(_artifactActiveTab==='preview'?' on':'')+'" data-arttab="preview">Preview</button>'+
+      '<button class="art-tab'+(_artifactActiveTab==='code'?' on':'')+'" data-arttab="code">Code</button>'
+    : '';
+  let body;
+  if(art.isHtml && _artifactActiveTab==='preview'){
+    let url='';
+    try{ url=URL.createObjectURL(new Blob([art.raw],{type:'text/html'})); }catch(e){}
+    body='<iframe class="art-frame" src="'+url+'" sandbox="allow-scripts"></iframe>';
+  } else {
+    body='<pre class="art-code"><code>'+escH(art.raw)+'</code></pre>';
+  }
+  panel.innerHTML=
+    '<div class="art-head">'+
+      '<div class="art-head-l">'+
+        '<span class="art-head-ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+(art.isHtml?'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/>':'<path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/>')+'</svg></span>'+
+        '<div class="art-head-txt"><div class="art-head-title">'+escH(art.title)+'</div><div class="art-head-sub">'+escH(art.type+(art.isHtml?'':' · '+art.lines+' lines'))+'</div></div>'+
+      '</div>'+
+      '<button class="art-x" id="art-x" aria-label="Close">'+
+        '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>'+
+      '</button>'+
+    '</div>'+
+    (tabs?'<div class="art-tabs">'+tabs+'</div>':'')+
+    '<div class="art-body">'+body+'</div>'+
+    '<div class="art-foot">'+
+      '<button class="btn" id="art-copy">Copy</button>'+
+      '<button class="btn" id="art-download">Download</button>'+
+      '<button class="btn" id="art-share">Share</button>'+
+      (art.isHtml||/^(js|javascript|jsx|ts|typescript|tsx|html|css|py|python|react)$/i.test(art.lang)?'<button class="btn bp" id="art-dev">Open in Dev</button>':'')+
+    '</div>';
+  // wire controls
+  panel.querySelector('#art-x')?.addEventListener('click', closeArtifact);
+  panel.querySelectorAll('[data-arttab]').forEach(b=>b.addEventListener('click',()=>{ _artifactActiveTab=b.dataset.arttab; _renderArtifactPanel(art); }));
+  panel.querySelector('#art-copy')?.addEventListener('click',()=>{ try{ navigator.clipboard.writeText(art.raw); toast('Copied','success',1500); }catch(e){} });
+  panel.querySelector('#art-download')?.addEventListener('click',()=>_artifactDownload(art));
+  panel.querySelector('#art-share')?.addEventListener('click',()=>_shareArtifact(art));
+  panel.querySelector('#art-dev')?.addEventListener('click',()=>{
+    try{
+      _sessNew('dev');
+      _DEV.log=[]; _DEV.project={}; _DEV.activePath='';
+      const ext = art.isHtml?'html':({js:'js',javascript:'js',jsx:'jsx',ts:'ts',typescript:'ts',tsx:'tsx',py:'py',python:'py',css:'css',json:'json'}[art.lang.toLowerCase()]||'txt');
+      const fname=(art.title.replace(/[^\w.-]+/g,'_')||'file')+'.'+ext;
+      _devSetFile(fname, art.raw, art.lang);
+      _DEV.activePath=fname;
+      closeArtifact();
+      setTab('dev');
+      toast('Opened in Dev','info',2000);
+    }catch(e){}
+  });
+}
+// Share an artifact as a clean, branded page. The artifact is encoded into the
+// link itself (no server storage), and opens a read-only branded view.
+function _shareArtifact(art){
+  const ovr=$('ovr'); if(!ovr) return;
+  let link='';
+  try{
+    const payload={ k:'art', t:art.title||'AMV artifact', l:art.lang||'', h:!!art.isHtml, c:art.raw };
+    const b64=btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+    link=location.origin+location.pathname+'#art='+b64;
+  }catch(e){ link=''; }
+  const tooBig=link.length>18000;
+  ovr.innerHTML=
+    '<div class="share-modal">'+
+      '<div class="share-title">Share this '+(art.isHtml?'page':'artifact')+'</div>'+
+      '<p class="share-sub">Anyone with the link sees a clean, branded '+(art.isHtml?'live preview':'view')+'. It\u2019s encoded in the link - nothing is stored on a server.</p>'+
+      (tooBig?'<div class="share-warn">This artifact is large, so the link is long and may not work in every app. Downloading the file may work better.</div>':'')+
+      '<div class="share-link-row"><input id="art-share-link" class="inp" readonly value="'+escH(link)+'"><button class="btn bp" id="art-share-copy">Copy</button></div>'+
+      '<div class="share-actions">'+
+        '<button class="btn bs" id="art-share-native">Share via\u2026</button>'+
+        '<button class="btn bs" id="art-share-open">Open preview</button>'+
+        '<button class="btn bs" id="art-share-dl">Download file</button>'+
+      '</div>'+
+    '</div>';
+  ovr.classList.add('on');
+  on($('art-share-copy'),'click',()=>{ _copyText(link).then(()=>{ const b=$('art-share-copy'); if(b){b.textContent='Copied!';setTimeout(()=>b.textContent='Copy',1500);} }); });
+  on($('art-share-native'),'click',()=>{ if(navigator.share){ navigator.share({title:art.title||'AMV artifact',url:link}).catch(()=>{}); } else { _copyText(link).then(()=>toast('Link copied','success')); } });
+  on($('art-share-open'),'click',()=>{ try{ window.open(link,'_blank','noopener'); }catch(e){} });
+  on($('art-share-dl'),'click',()=>{ closeOvr(); _artifactDownload(art); });
+}
+// Render a shared artifact as a branded read-only page (from #art=... in the URL).
+function _checkSharedArtifact(){
+  try{
+    const m=(location.hash||'').match(/#art=(.+)$/);
+    if(!m) return false;
+    const data=JSON.parse(decodeURIComponent(escape(atob(m[1]))));
+    _renderSharedArtifact(data);
+    return true;
+  }catch(e){ return false; }
+}
+function _renderSharedArtifact(data){
+  const isHtml=!!data.h;
+  let bodyHTML;
+  if(isHtml){
+    let url='';
+    try{ url=URL.createObjectURL(new Blob([data.c||''],{type:'text/html'})); }catch(e){}
+    bodyHTML='<iframe class="shared-art-frame" src="'+url+'" sandbox="allow-scripts"></iframe>';
+  } else {
+    bodyHTML='<pre class="shared-art-code"><code>'+escH(data.c||'')+'</code></pre>';
+  }
+  document.body.innerHTML=
+    '<div class="shared-view">'+
+      '<div class="shared-head"><div class="shared-brand">'+(typeof amvMark==='function'?amvMark(22):'')+'<span>AMV.AI</span></div>'+
+        '<a class="btn bp" href="'+location.origin+location.pathname+'">Try AMV free \u2192</a></div>'+
+      '<div class="shared-art-container">'+
+        '<h1 class="shared-art-h1">'+escH(data.t||'Shared artifact')+'</h1>'+
+        '<div class="shared-art-meta">'+escH(isHtml?'Web page':((data.l||'code').toUpperCase()+' \u00b7 shared from AMV.AI'))+'</div>'+
+        '<div class="shared-art-body">'+bodyHTML+'</div>'+
+        '<div class="shared-foot">Made with <b>AMV.AI</b> - the AI workforce that does the work. <a href="'+location.origin+location.pathname+'">Start free</a></div>'+
+      '</div>'+
+    '</div>';
+  document.title=(data.t||'Shared artifact')+' - AMV.AI';
+  // clean tokens/CSP-safe: nothing else runs on this view
+}
+try{ window._shareArtifact=_shareArtifact; }catch(e){}
+
+function _artifactDownload(art){  try{
+    const ext = art.isHtml?'html':({js:'js',javascript:'js',jsx:'jsx',ts:'ts',typescript:'ts',tsx:'tsx',py:'py',python:'py',css:'css',json:'json',sql:'sql'}[art.lang.toLowerCase()]||'txt');
+    const fname=(art.title.replace(/[^\w.-]+/g,'_')||'artifact')+'.'+ext;
+    const blob=new Blob([art.raw],{type:'text/plain'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=fname; a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+    toast('Downloaded '+fname,'success',2000);
+  }catch(e){}
+}
+try{ window.openArtifact=openArtifact; window.closeArtifact=closeArtifact; }catch(e){}
+
+/* Escape a value for safe insertion into a double-quoted HTML attribute inside
+   md(). md() has already entity-escaped < > & across the whole string, so here
+   we only neutralize the attribute-delimiter characters that could otherwise
+   terminate a href/src/alt value early and inject an inline event handler
+   (onerror/onmouseover) - the DOM-XSS vector from the security audit (AMV-004). */
+function _mdAttr(s){ return String(s==null?'':s).replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/`/g,'&#96;'); }
+function md(text) {  if(!text) return '';
+  let t = _noDash(text).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+  // Full HTML pages become an artifact (opens in the side panel with a live
+  // Preview + Code tabs), instead of a cramped inline iframe.
+  t = t.replace(/```(?:html)?\n?(&lt;!DOCTYPE html&gt;[\s\S]*?)```/gi, (match, code) => {
+    const html=code.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&');
+    if(typeof _artifactStore==='function'){
+      const art=_artifactStore(html, 'html', true);
+      return _artifactCardHTML(art);
+    }
+    return match;
+  });
+
+  // Chart blocks: ```chart {"type":"bar","title":"..","data":[{"label":"A","value":10}]}```
+  t = t.replace(/```chart\n?([\s\S]*?)```/gi, (match, body) => {
+    try{
+      const raw=body.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').trim();
+      const spec=JSON.parse(raw);
+      return renderChartSVG(spec);
+    }catch(e){ return match; }
+  });
+
+  // ── Generative UI blocks ──────────────────────────────────
+  // Rendered as rich interactive blocks unless the user turned them off in
+  // Settings → Capabilities (then they fall back to plain code blocks).
+  if(typeof loadStr==='function' && loadStr('amv_cap_suggestions')!=='0'){
+  // stats: {"items":[{"value":"$2.4M","label":"Revenue","trend":"+12%"}]}
+  t = t.replace(/```stats\n?([\s\S]*?)```/gi, (match, body) => {
+    try{ return _guiStats(JSON.parse(body.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').trim())); }catch(e){ return match; }
+  });
+  // compare: {"title":"..","columns":["A","B"],"rows":[{"label":"Price","values":["$9","$19"]}]}
+  t = t.replace(/```compare\n?([\s\S]*?)```/gi, (match, body) => {
+    try{ return _guiCompare(JSON.parse(body.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').trim())); }catch(e){ return match; }
+  });
+  // steps: {"title":"..","steps":[{"title":"..","detail":".."}]}
+  t = t.replace(/```steps\n?([\s\S]*?)```/gi, (match, body) => {
+    try{ return _guiSteps(JSON.parse(body.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').trim())); }catch(e){ return match; }
+  });
+  // choices: {"prompt":"Pick one","options":["A","B","C"]} - tappable, sends a follow-up
+  t = t.replace(/```choices\n?([\s\S]*?)```/gi, (match, body) => {
+    try{ return _guiChoices(JSON.parse(body.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').trim())); }catch(e){ return match; }
+  });
+  }
+
+  // Code blocks. Substantial ones (long code, full HTML pages, documents)
+  // become an ARTIFACT CARD that opens in the side panel; short snippets stay
+  // inline so the conversation reads naturally.
+  t = t.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
+    const raw=code.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&');
+    const lines=raw.split('\n').length;
+    const isFullHtml=/^\s*<(!doctype|html)[\s>]/i.test(raw);
+    // Artifact-worthy: full HTML page, or a real code file (>=14 lines or >600
+    // chars). Short snippets, one-liners, and shell commands stay inline.
+    const worthy = isFullHtml || ((lines>=14 || raw.length>600) && lang && lang!=='text' && lang!=='');
+    if(worthy && typeof _artifactStore==='function'){
+      const art=_artifactStore(raw, lang, isFullHtml);
+      return _artifactCardHTML(art);
+    }
+    const id='cc'+Math.random().toString(36).slice(2,8);
+    const lb=lang?'<span>'+escH(lang.toUpperCase())+'</span>':'';
+    window._codeBlocks=window._codeBlocks||{};
+    window._codeBlocks[id]=raw;
+    return '<pre><div class="chdr">'+lb+'<button class="ccopy" data-cid="'+id+'">Copy</button></div><code>'+code+'</code></pre>';
+  });
+
+  // Tables
+  t = t.replace(/(\|.+\|\n)((?:[\s\S]*?\|.+\|(?:\n|$))+)/g, (match) => {
+    const rows=match.trim().split('\n').filter(r=>r.trim()&&!r.match(/^\|[-: |]+\|$/));
+    return '<table>'+rows.map((row,i)=>{
+      const cells=row.split('|').filter((_,ci,a)=>ci>0&&ci<a.length-1);
+      const tag=i===0?'th':'td';
+      return '<tr>'+cells.map(c=>'<'+tag+'>'+c.trim()+'</'+tag+'>').join('')+'</tr>';
+    }).join('')+'</table>';
+  });
+
+  t = t.replace(/\*\*\*(.+?)\*\*\*/g,'<strong><em>$1</em></strong>');
+  t = t.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
+  t = t.replace(/\*([^*\n]+?)\*/g,'<em>$1</em>');
+  t = t.replace(/^#### (.+)$/gm,'<h4>$1</h4>');
+  t = t.replace(/^### (.+)$/gm,'<h3>$1</h3>');
+  t = t.replace(/^## (.+)$/gm,'<h2>$1</h2>');
+  t = t.replace(/^# (.+)$/gm,'<h1>$1</h1>');
+  t = t.replace(/^&gt; (.+)$/gm,'<blockquote>$1</blockquote>');
+  t = t.replace(/^---+$/gm,'<hr>');
+  t = t.replace(/^[\-\*] (.+)$/gm,'<li>$1</li>');
+  t = t.replace(/(<li>.*<\/li>\n?)+/g, m=>'<ul>'+m+'</ul>');
+  t = t.replace(/^\d+\. (.+)$/gm,'<li>$1</li>');
+  t = t.replace(/`([^`\n]+)`/g,'<code>$1</code>');
+  t = t.replace(/!\[([^\]]*)\]\((https?:\/\/[^)]+)\)/g, (m,alt,url)=>'<img src="'+_mdAttr(url)+'" alt="'+_mdAttr(alt)+'" class="chat-img" loading="lazy">');
+  // Link TEXT ($1) is intentionally left as already-rendered inline HTML (bold/
+  // italic/code were applied above); only the href URL is attribute-escaped.
+  t = t.replace(/\[(.+?)\]\((https?:\/\/[^)]+)\)/g, (m,txt,url)=>'<a href="'+_mdAttr(url)+'" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">'+txt+'</a>');
+  t = t.replace(/\n\n/g,'<br><br>').replace(/\n/g,'<br>');
+  // Newline->\<br\> is fine for prose, but it also injects stray breaks INSIDE
+  // block elements (between list items, around headings, around code blocks),
+  // which is invalid HTML and produces huge dead gaps. Strip those.
+  t = t
+    .replace(/(<\/li>)\s*(?:<br>\s*)+/g, '$1')
+    .replace(/(<[uo]l>)\s*(?:<br>\s*)+/g, '$1')
+    .replace(/(?:<br>\s*)+(<\/[uo]l>)/g, '$1')
+    .replace(/(?:<br>\s*)+(<[uo]l>)/g, '<br>$1')
+    .replace(/(<\/[uo]l>)\s*(?:<br>\s*)+/g, '$1')
+    .replace(/(<\/h[1-6]>)\s*(?:<br>\s*)+/g, '$1')
+    .replace(/(?:<br>\s*)+(<h[1-6]>)/g, '$1')
+    .replace(/(<\/pre>)\s*(?:<br>\s*)+/g, '$1')
+    .replace(/(?:<br>\s*)+(<pre)/g, '$1')
+    .replace(/(<\/blockquote>)\s*(?:<br>\s*)+/g, '$1')
+    .replace(/(<\/table>)\s*(?:<br>\s*)+/g, '$1')
+    .replace(/(?:<br>\s*)+(<table)/g, '$1');
+  return t;
+}
+function copyCode(id){
+  const raw=window._codeBlocks?.[id];
+  if(raw) navigator.clipboard?.writeText(raw).then(()=>toast('Code copied','success')).catch(()=>toast('Copy failed','error'));
+}
+
+
+/* ── Unified chat intent router ──────────────────────────────────
+   Lets the user do ANYTHING from the main chat. Detects a confident
+   intent and routes to the right capability (image, video, app/code,
+   scheduled/background task, multi-step autonomous work). Returns true
+   if it handled the message; false to fall through to normal chat.
+   Conservative by design: ambiguous messages just chat normally. */
+async function _routeChatIntent(txt){
+  if(!txt) return false;
+  const t=txt.toLowerCase();
+  const pushUser=()=>{ const m=getMsgs(); m.push({r:'u',c:txt,d:txt}); const cv=getCurConv(); if(cv&&cv.title==='New Conversation') cv.title=txt.slice(0,44)+(txt.length>44?'\u2026':''); return m; };
+
+  // 1) IMAGE - "generate/make an image of…", "a photo of…"
+  if(/\b(generate|create|make|draw|render|show|design|paint)\b[^.!?]{0,60}\b(image|photo|picture|portrait|illustration|logo|art|drawing|wallpaper|poster|icon)\b/i.test(txt)
+     || /\b(image|photo|picture|illustration|portrait)\b[^.!?]{0,40}\bof\b/i.test(txt)){
+    let p=txt
+      .replace(/^\s*(please|hey|can you|could you|i want you to|i'd like|id like|pls)\s+/i,'')
+      .replace(/\b(generate|create|make|draw|render|show me|show|design|paint|give me)\s+(me\s+)?(an?|the|some)?\s*(image|photo|picture|portrait|illustration|logo|art|drawing|wallpaper|poster|icon)\s*(of|showing|with|for)?\s*/i,'')
+      .replace(/\b(an?|the)\s+(image|photo|picture|illustration|portrait)\s+of\s+/i,'')
+      .trim()||txt;
+    const seed=Math.floor(Math.random()*999999);
+    S.imgs.unshift({id:'img'+Date.now(),prompt:p,style:S.imgStyle,ratio:S.imgRatio,seed});
+    const url=imgUrl(p,S.imgStyle,S.imgRatio,seed);
+    const m=pushUser();
+    m.push({r:'a',c:'Here\u2019s what I created:\n\n![generated]('+url+')\n\n*Generated with AMV Vision - open the Images tab to refine, upscale, or download.*',model:S.model});
+    setMsgs(m); renderChatMsgs(); renderHist();
+    return true;
+  }
+
+  // 2) VIDEO - "make/generate a video/clip/animation of…"
+  if(/\b(generate|create|make|produce|animate)\b[^.!?]{0,50}\b(video|clip|animation|short film|movie)\b/i.test(txt)
+     || /\b(video|animation|clip)\b[^.!?]{0,30}\bof\b/i.test(txt)){
+    const p=txt.replace(/\b(please|can you|could you|generate|create|make|produce|animate|an?|the)\s*(video|clip|animation|short film|movie)\s*(of\s*)?/gi,'').trim()||txt;
+    const m=pushUser();
+    m.push({r:'a',c:'Starting a video from your prompt - opening the Video studio so you can watch it render and adjust length, style, and aspect ratio.',model:S.model});
+    setMsgs(m); renderChatMsgs(); renderHist();
+    setTab('video');
+    try{ const vi=$('vp'); if(vi){ vi.value=p; vi.focus(); } }catch(e){}
+    return true;
+  }
+
+  // 3) APP / CODE / WEBSITE - build it in the Dev sandbox
+  if(/\b(build|make|create|code|develop|write)\b[^.!?]{0,40}\b(app|application|website|web ?app|web ?site|landing page|game|tool|component|dashboard|calculator|clone|script|program|api|bot)\b/i.test(txt)){
+    const m=pushUser();
+    m.push({r:'a',c:'This is a build - taking you to **Dev**, where I\u2019ll write it, run it in a live sandbox, and show you the result and the code. You can keep iterating there in plain English.',model:S.model});
+    setMsgs(m); renderChatMsgs(); renderHist();
+    setTab('dev');
+    try{ const dm=$('dev-msg'); if(dm){ dm.value=txt; if(typeof _devSend==='function') _devSend(); } }catch(e){}
+    return true;
+  }
+
+  // 4) SCHEDULED / RECURRING / BACKGROUND - set it up on a schedule
+  if(/\b(every|each)\s+(morning|day|evening|night|week|weekday|monday|tuesday|wednesday|thursday|friday|saturday|sunday|hour)\b/i.test(txt)
+     || /\b(daily|weekly|hourly|recurring|on a schedule|scheduled|automatically)\b/i.test(txt)
+     || /\b(in the background|run.*background|background task)\b/i.test(txt)
+     || /\b(remind me|send me)\b[^.!?]{0,40}\b(every|each|daily|weekly)\b/i.test(txt)){
+    const m=pushUser();
+    if(typeof _scheduleAuto==='function'){
+      // detect frequency from the phrasing
+      let freq='daily';
+      if(/\bhour/i.test(t)) freq='hourly';
+      else if(/\bweekday|every monday|each monday/i.test(t)) freq='weekdays';
+      else if(/\bweek/i.test(t)) freq='weekly';
+      else if(/\bmonday|tuesday|wednesday|thursday|friday|saturday|sunday/i.test(t)) freq='weekly';
+      _scheduleAuto(txt, freq);
+      const ready=_aiBackendReady();
+      m.push({r:'a',c:'Done - scheduled to run **'+_freqLabel(freq).toLowerCase()+'**.'+(ready?' It\u2019ll run automatically and I\u2019ll have the result waiting for you.':' Connect the AMV engine in Settings so it can run when it\u2019s due.')+'\n\nManage or cancel it anytime under **Tasks**.',model:S.model});
+      setMsgs(m); renderChatMsgs(); renderHist();
+      return true;
+    }
+    m.push({r:'a',c:'I\u2019ll set this up as a recurring task - opening **Tasks** where you can confirm the schedule.',model:S.model});
+    setMsgs(m); renderChatMsgs(); renderHist(); setTab('tasks');
+    return true;
+  }
+
+  // 5) MULTI-STEP / AGENTIC - "analyze X and email me", "research X and write a report and save it"
+  const multiStep = /\b(and then|then|after that|,)\b/i.test(txt) &&
+    /\b(email|send|save|download|write|create|analyz|research|summariz|compile|export|publish|post|schedule)\b/i.test(txt);
+  const clearlyAgentic = /\b(analyze|research|compile|gather|organize|plan)\b[^.!?]{0,60}\b(and|then)\b[^.!?]{0,40}\b(email|send|save|report|summary|write|export)\b/i.test(txt);
+  if((multiStep && txt.length>40) || clearlyAgentic){
+    if(typeof runAutonomousTask==='function'){ await runAutonomousTask(txt); return true; }
+  }
+
+  return false; // nothing matched → normal chat
+}
+try{ window._routeChatIntent=_routeChatIntent; }catch(e){}
+
+let _pendingMessage = '';
+let _toolRound = 0;
+async function sendMsg(_opts) {
+  _opts = _opts || {};
+  if(!_opts._continueTools) _toolRound = 0;   // fresh user turn resets the tool budget
+  const ta=$('mta');
+  if(!ta) return;
+  if(S.busy && !_opts._continueTools) return;
+  const txt = _opts._continueTools ? '' : ta.value.trim();
+  const att = _opts._continueTools ? null : S.att;
+  // A tool-continuation has no new user text - it resumes with tool results.
+  if(!_opts._continueTools && !txt && !att) return;
+  // Sign-up gate: you can explore the app freely, but sending a message requires
+  // an account. Preserve what they typed so it sends right after they sign up.
+  if(!S.user || !S.user.email){
+    _pendingMessage = txt;
+    try{ openAuth('signup'); }catch(e){}
+    if(typeof toast==='function') toast('Create a free account to start chatting','info',3500);
+    return;
+  }
+  // Out-of-usage: the chat stops here (Claude-style) - BEFORE any routing or
+  // clearing, so nothing is consumed and the user's text stays in the box.
+  try{
+    if(quotaLocked()){ _renderQuotaNotice(); return; }
+    if(typeof AMVUsage!=='undefined'){
+      const _qst=AMVUsage.status();
+      if(_qst.remaining<=0){
+        quotaLock(_qst.resetsAt);
+        const _qm=getMsgs();
+        if(!_qm.some(m=>m._quota)){ _qm.push({r:'a',c:'',_quota:true,_resetAt:_qst.resetsAt}); setMsgs(_qm); renderChatMsgs(); }
+        return;
+      }
+    }
+  }catch(e){}
+  ta.value=''; ta.style.height='auto'; S.att=null;
+  const ab2=$('ab2'); if(ab2) ab2.style.display='none';
+
+  // ── Unified intent router: do ANYTHING from chat ──
+  // Only routes on a confident match with no attachment; otherwise normal chat.
+  if(!att){
+    const routed=await _routeChatIntent(txt);
+    if(routed) return;
+  }
+
+  let display=txt, apiContent=txt;
+  if(att) {
+    if(att.kind==='img') {
+      const msgs2=getMsgs();
+      msgs2.push({r:'u',c:[{type:'image',source:{type:'base64',media_type:att.mime,data:att.b64}},{type:'text',text:txt||'Analyze this image in detail.'}],d:(txt?txt+' ':'')+'[Image: '+att.name+']'});
+      const cv=getCurConv(); if(cv&&cv.title==='New Conversation'&&txt) cv.title=txt.slice(0,44)+(txt.length>44?'…':'');
+      setMsgs(msgs2); S.busy=true; renderChatMsgs(); renderHist();
+      await _callAI(msgs2); return;
+    } else if(att.kind==='pdf') {
+      const msgs2=getMsgs();
+      msgs2.push({r:'u',c:[{type:'document',source:{type:'base64',media_type:'application/pdf',data:att.b64}},{type:'text',text:txt||'Analyze this PDF thoroughly.'}],d:(txt?txt+' ':'')+'[PDF: '+att.name+']'});
+      const cv=getCurConv(); if(cv&&cv.title==='New Conversation'&&txt) cv.title=txt.slice(0,44)+(txt.length>44?'…':'');
+      setMsgs(msgs2); S.busy=true; renderChatMsgs(); renderHist();
+      await _callAI(msgs2); return;
+    } else {
+      const max=20000, trunc=att.data.length>max;
+      apiContent='[File: "'+att.name+'"\n```\n'+att.data.slice(0,max)+(trunc?'\n...[truncated]':'')+'"\n```\n\nUser: '+(txt||'Please analyze this file thoroughly.');
+      display=(txt?txt+' ':'')+'['+att.name+']';
+    }
+  }
+
+  const msgs=getMsgs();
+  if(!_opts._continueTools) msgs.push({r:'u',c:apiContent,d:display});
+  const cv=getCurConv();
+  if(cv&&cv.title==='New Conversation'&&txt) cv.title=txt.slice(0,44)+(txt.length>44?'…':'');
+  setMsgs(msgs); S.busy=true; renderChatMsgs(); renderHist();
+  await _callAI(msgs, _opts);
+}
+
+/* Stop generating - lets the user halt a streaming response mid-way. Keeps
+   whatever text arrived so far, cleanly, and never leaves the UI stuck busy. */
+let _activeStreamCtrl=null, _userStopped=false;
+function stopGenerating(){
+  _userStopped=true;
+  try{ if(_activeStreamCtrl) _activeStreamCtrl.abort('user-stop'); }catch(e){}
+}
+try{ window.stopGenerating=stopGenerating; }catch(e){}
+
+async function _callAI(msgs, _opts) {
+  _opts = _opts || {};
+  _userStopped=false; _activeStreamCtrl=null;
+  try{
+    if(!loadStr('amv_first_msg_sent')){ saveStr('amv_first_msg_sent','1'); AEGIS.log('first_message',{}); }
+  }catch(e){}
+  if(!_aiBackendReady()) {
+    msgs.push({r:'a',c:'**AMV isn\u2019t connected yet.** The AMV engine needs to be switched on before I can respond. If you\u2019re the workspace owner, enable it in Settings; otherwise reach out to your administrator.'});
+    setMsgs(msgs); S.busy=false; renderChatMsgs(); return;
+  }
+  // A tool-continuation is not a new user send - it must not trip the rate gate.
+  const _gate = _opts._continueTools ? {ok:true} : AEGIS.check();
+  if(!_gate.ok){
+    AEGIS.log('ratelimit_block',{reason:_gate.reason});
+    msgs.push({r:'a',c:'**Hold on.** '+_gate.reason});
+    setMsgs(msgs); S.busy=false; renderChatMsgs();
+    if(typeof toast==='function') toast(_gate.reason,'error',4000);
+    return;
+  }
+  AEGIS.noteSend();
+  // Out-of-usage: the chat stops (Claude-style). Show one quota card with a
+  // live reset countdown, lock the composer, and never stack duplicates.
+  try{
+    if(quotaLocked()){ S.busy=false; _renderQuotaNotice(); return; }
+    if(typeof AMVUsage!=='undefined'){
+      const st=AMVUsage.status();
+      if(st.remaining <= 0){
+        S.busy=false;
+        quotaLock(st.resetsAt);
+        if(!msgs.some(m=>m._quota)){                     // one card only
+          msgs.push({r:'a',c:'',_quota:true,_resetAt:st.resetsAt});
+          setMsgs(msgs); renderChatMsgs();
+        }
+        return;
+      }
+    }
+  }catch(e){}
+  // RULE 7+8: route to the cheapest capable model when on Auto (saves ~5-20x on simple tasks)
+  let _routeKey=S.model;
+  if(S.model==='auto'){ _routeKey=_routeModel(msgs); }
+  AEGIS.log('request',{model:(MODELS[_routeKey]||MODELS.smart).model, msgCount:msgs.length, routed:S.model==='auto'});
+  let _inTok=0,_outTok=0;
+  // Record usage exactly once, no matter how the stream ends (success, error, or
+  // user-stop). Prevents lost usage accounting when a stream is interrupted after
+  // tokens were already consumed. (Grok flagged this fragility - now robust.)
+  let _usageRecorded=false;
+  const _recordUsageOnce=()=>{
+    if(_usageRecorded) return; _usageRecorded=true;
+    if(!_inTok && !_outTok) return; // nothing consumed
+    try{ AEGIS.recordUsage((MODELS[_routeKey]||MODELS.smart).model, _inTok, _outTok); }catch(e){}
+    try{ AMVUsage.record((_inTok||0)+(_outTok||0)); }catch(e){}
+  };
+  const mdl=MODELS[_routeKey]||MODELS.smart;
+  const _mems=(loadStr('amv_cap_memory')!=='0')?_relevantMemories(msgs):[];
+  const _agenticSys = '\n\nYOU CAN ACTUALLY DO THINGS - you are not limited to describing them. You have real tools:\n'+
+    '\u2022 generate_image - when they want a picture, logo, poster, mockup, or any visual, CREATE it.\n'+
+    '\u2022 run_code - when code should be executed, tested, or verified, RUN it and report the real output. Use it to check your own work too.\n'+
+    '\u2022 fix_code - when their code is broken, actually run it, fix it, and re-run until it passes.\n'+
+    '\u2022 build_app - when they ask you to build/make/create something interactive (a page, a game, a dashboard, a tool), BUILD it and show them a live working version.\n'+
+    'Prefer doing over explaining. Don\u2019t say "here is code you could run" - run it. Don\u2019t say "you could generate an image" - generate it. After a tool runs, briefly tell them what you did and what they got.';
+  const sysPrompt=(MODEL_SYSTEMS[_routeKey]||SYS)+_agenticSys+_profileContext()+_skillsContext()+_pluginContext()+_localeContext()+_handoffContext('chat')+_langInstruction()+(_mems&&_mems.length?' Memory about you: '+_mems.join('; '):'')+_integrationStatusPrompt()+(_dnaShouldApply(msgs)?('\n\n'+dnaPromptBlock()+'\nApply this DESIGN DNA to any website, app, UI, HTML, or visual output you produce.'):'');
+
+  // Add streaming placeholder message
+  _streamBubbleReset();
+  msgs.push({r:'a',c:'',streaming:true,model:S.model,_status:'Thinking…'});
+  setMsgs(msgs); renderChatMsgs();
+  const streamIdx=msgs.length-1;
+
+  // Claude-style working status: cycle contextual labels until the first token
+  // arrives, so the user always sees what AMV is doing.
+  const _lastUser=(msgs.filter(m=>m.r==='u').slice(-1)[0]||{});
+  const _uTxt=(typeof _lastUser.c==='string'?_lastUser.c:(_lastUser.d||'')).toLowerCase();
+  const _statusPhases=(()=>{
+    if(/\b(search|latest|news|current|today|who is|what is|find)\b/.test(_uTxt)) return ['Thinking…','Searching the web…','Reading sources…','Writing…'];
+    if(/\b(code|build|function|app|bug|fix|script|debug)\b/.test(_uTxt)) return ['Thinking…','Analyzing the problem…','Writing code…'];
+    if(/\b(analyz|summar|explain|compare|review)\b/.test(_uTxt)) return ['Thinking…','Analyzing…','Organizing thoughts…','Writing…'];
+    if(/\b(image|picture|photo|draw|generate)\b/.test(_uTxt)) return ['Thinking…','Composing the image…'];
+    return ['Thinking…','Working through it…','Writing…'];
+  })();
+  let _phaseIdx=0;
+  const _statusTimer=setInterval(()=>{
+    _phaseIdx++;
+    if(_phaseIdx<_statusPhases.length && msgs[streamIdx] && msgs[streamIdx].streaming && !(msgs[streamIdx].c&&msgs[streamIdx].c.length)){
+      msgs[streamIdx]={...msgs[streamIdx],_status:_statusPhases[_phaseIdx]};
+      setMsgs(msgs); renderChatMsgs();
+    }
+  }, 1400);
+  const _clearStatus=()=>{ try{ clearInterval(_statusTimer); }catch(e){} };
+
+  try {
+    // Build tools array - include web_search for capable models, but only if
+    // the user hasn't turned web search off in Settings (Capabilities / Plugins).
+    const _webAllowed = (loadStr('amv_cap_websearch')!=='0') && (loadStr('amv_plugin_web')!=='0');
+    let tools=[];
+    if(_webAllowed && (S.model==='smart'||S.model==='research'||S._researchDepth)){
+      // max_uses controls how many searches the model may run. Research mode
+      // raises this so it genuinely covers many sources; normal chat keeps it
+      // low so a quick question doesn't spend a fortune searching.
+      const depth = S._researchDepth || (S.model==='research' ? 'deep' : 'normal');
+      const maxUses = depth==='deep' ? 30 : depth==='max' ? 60 : 5;
+      tools.push({ type:'web_search_20250305', name:'web_search', max_uses:maxUses });
+    }
+    // AMV's own tools - chat can actually DO the work, not just describe it.
+    try{ if(Array.isArray(AMV_TOOLS)) tools = tools.concat(AMV_TOOLS); }catch(e){}
+    if(!tools.length) tools = undefined;
+
+    const _endpoint = _aiBase();        // backend-only; never the browser key
+    const _headers = _aiHeaders();
+    const _payload = JSON.stringify({
+        model:mdl.model,
+        max_tokens:mdl.tokens,
+        system:sysPrompt,
+        stream:true,
+        ...(tools?{tools}:{}),
+        messages:(()=>{
+          // Turn our internal messages into Anthropic format. Any turn where AMV
+          // actually used a tool becomes: assistant[text + tool_use] -> user[tool_result].
+          const out=[];
+          msgs.slice(0,streamIdx).slice(-20).forEach(m=>{
+            if(m.r==='a' && m._toolContent && m._toolResults){
+              out.push({ role:'assistant', content:m._toolContent });
+              out.push({ role:'user', content:m._toolResults });
+            } else {
+              out.push({ role:m.r==='u'?'user':'assistant', content:m.c });
+            }
+          });
+          // Anthropic requires the conversation to start with a user turn.
+          while(out.length && out[0].role!=='user') out.shift();
+          return out;
+        })()
+      });
+    // offline guard
+    if(typeof navigator!=='undefined' && navigator.onLine===false){
+      throw new Error('You appear to be offline. Check your connection and retry.');
+    }
+    // fetch with timeout + automatic retry on transient failures (429/5xx/network)
+    let res, _attempt=0, _maxRetries=2;
+    while(true){
+      const _ctrl=new AbortController();
+      _activeStreamCtrl=_ctrl;               // expose so the user can Stop
+      const _to=setTimeout(()=>_ctrl.abort('timeout'), 45000); // 45s timeout
+      try{
+        res=await fetch(_endpoint,{method:'POST',headers:_headers,body:_payload,signal:_ctrl.signal});
+        clearTimeout(_to);
+        if(res.ok) break;
+        // A quota 429 is NOT transient - read the body first. If the server says
+        // we're out of usage, stop the chat with the quota card + live countdown
+        // instead of retrying or showing a generic error.
+        if(res.status===429){
+          const qerr=await res.clone().json().catch(()=>({}));
+          if(qerr && (qerr.code==='quota_day'||qerr.code==='quota_month')){
+            const resetAt=qerr.resetAt||(Date.now()+3600000);
+            quotaLock(resetAt);
+            msgs[streamIdx]={r:'a',c:'',_quota:true,_resetAt:resetAt};
+            setMsgs(msgs); S.busy=false; renderChatMsgs();
+            _recordUsageOnce();
+            return;
+          }
+        }
+        // retry transient server/rate errors
+        if((res.status===429||res.status>=500) && _attempt<_maxRetries){
+          _attempt++;
+          const wait=Math.min(8000, 700*Math.pow(2,_attempt));
+          msgs[streamIdx]={...msgs[streamIdx],c:'',streaming:true,_retrying:'Busy right now - retrying ('+_attempt+'/'+_maxRetries+')…'};
+          setMsgs(msgs); renderChatMsgs();
+          await new Promise(r=>setTimeout(r,wait));
+          continue;
+        }
+        const err=await res.json().catch(()=>({}));
+        const raw=err?.error?.message||'';
+        AEGIS.log('api_error',{status:res.status,raw:raw.slice(0,200)}); AEGIS.recordError();
+        throw new Error(aegisErrorMessage(res.status, raw));
+      }catch(fe){
+        clearTimeout(_to);
+        // network drop / timeout → retry a couple times
+        const transient = fe.name==='AbortError' || /network|failed to fetch|load failed/i.test(fe.message||'');
+        if(transient && _attempt<_maxRetries){
+          _attempt++;
+          const wait=Math.min(8000, 700*Math.pow(2,_attempt));
+          msgs[streamIdx]={...msgs[streamIdx],c:'',streaming:true,_retrying:(fe.name==='AbortError'?'Taking a while - retrying':'Connection hiccup - retrying')+' ('+_attempt+'/'+_maxRetries+')…'};
+          setMsgs(msgs); renderChatMsgs();
+          await new Promise(r=>setTimeout(r,wait));
+          continue;
+        }
+        if(fe.name==='AbortError') throw new Error('The request timed out. The server may be busy - please retry.');
+        throw fe;
+      }
+    }
+
+    // Read the SSE stream
+    const reader=res.body.getReader();
+    const decoder=new TextDecoder();
+    let fullText='';
+    let buffer='';
+
+    const _toolBlocks={}; let _stopReason='';
+    // Live research tracking - real searches and real sources, surfaced as they happen.
+    const _research={ active:false, searches:0, sources:new Map(), done:false };
+    while(true){
+      if(_userStopped){ try{ reader.cancel(); }catch(e){} break; }
+      const {done,value}=await reader.read();
+      if(done) break;
+      buffer+=decoder.decode(value,{stream:true});
+      const lines=buffer.split('\n');
+      buffer=lines.pop()||'';
+      for(const line of lines){
+        if(!line.startsWith('data:')) continue;
+        const data=line.slice(5).trim();
+        if(data==='[DONE]') continue;
+        try{
+          const evt=JSON.parse(data);
+          if(evt.type==='message_start'&&evt.message?.usage){ _inTok=evt.message.usage.input_tokens||0; }
+          if(evt.type==='message_delta'&&evt.usage){ _outTok=evt.usage.output_tokens||_outTok; }
+          // ── Tool use: the model is asking AMV to actually DO something ──
+          if(evt.type==='content_block_start' && evt.content_block?.type==='tool_use'){
+            _toolBlocks[evt.index]={ id:evt.content_block.id, name:evt.content_block.name, json:'' };
+            const t=_toolBlocks[evt.index];
+            if(t.name && !String(t.name).startsWith('web_search')){
+              const _lbl=({generate_image:'Creating your image\u2026',run_code:'Running the code\u2026',fix_code:'Debugging\u2026',build_app:'Building it\u2026'})[t.name] || 'Working\u2026';
+              msgs[streamIdx]={...msgs[streamIdx], _status:_lbl};
+              setMsgs(msgs); renderChatMsgs();
+            }
+          }
+          // ── Web search: Anthropic runs the searches server-side and streams
+          //    back the queries (server_tool_use) and the sources it found
+          //    (web_search_tool_result). We surface that live so the user SEES
+          //    the research happening - real counts, real queries, no faking. ──
+          if(evt.type==='content_block_start' && evt.content_block?.type==='server_tool_use'
+             && String(evt.content_block.name||'').startsWith('web_search')){
+            _research.active=true;
+            _research.searches++;
+            _renderResearch(msgs, streamIdx, _research);
+          }
+          if(evt.type==='content_block_start' && evt.content_block?.type==='web_search_tool_result'){
+            const results = evt.content_block.content;
+            if(Array.isArray(results)){
+              for(const r of results){
+                const url = r && (r.url || r.page_url);
+                if(url && !_research.sources.has(url)){
+                  _research.sources.set(url, { url, title: (r.title||r.page_title||url).slice(0,120) });
+                }
+              }
+            }
+            _renderResearch(msgs, streamIdx, _research);
+          }
+          // capture the query text as it streams, to show what's being searched
+          if(evt.type==='content_block_delta' && evt.delta?.type==='input_json_delta'){
+            const t=_toolBlocks[evt.index];
+            if(t) t.json += (evt.delta.partial_json||'');
+          }
+          if(evt.type==='message_delta' && evt.delta?.stop_reason){ _stopReason=evt.delta.stop_reason; }
+          if(evt.type==='content_block_delta'&&evt.delta?.type==='text_delta'){
+            _clearStatus();
+            fullText+=evt.delta.text;
+            msgs[streamIdx]={...msgs[streamIdx],c:fullText,_status:null};
+            // Fast path: update ONLY the streaming bubble in place rather than
+            // re-rendering the whole conversation on every token. This keeps the
+            // reveal buttery-smooth even on long, fast responses. We fall back to
+            // a full render if the bubble isn't found (e.g. first token).
+            if(!_streamBubbleUpdate(streamIdx, fullText)){
+              setMsgs(msgs); renderChatMsgs();
+            } else {
+              setMsgs(msgs);   // keep state in sync without a full DOM rebuild
+            }
+          }
+        }catch{}
+      }
+    }
+
+    // Finalize
+    _clearStatus();
+    _streamBubbleReset();
+    // Freeze the research panel into its "done" state so it persists with the answer.
+    if(_research.active){
+      _research.done=true;
+      const _finishedPanel=_buildResearchPanel(_research, true);
+      if(msgs[streamIdx]) msgs[streamIdx]={...msgs[streamIdx], _research:_finishedPanel};
+    }
+    if(_userStopped){
+      msgs[streamIdx]={r:'a',c:(fullText||'')+ (fullText?' _(stopped)_':'_(stopped)_'),model:S.model,_stopped:true};
+      _recordUsageOnce();
+      setMsgs(msgs); S.busy=false; renderChatMsgs();
+      return;
+    }
+    // ── The model asked AMV to DO something. Run it, then let the model continue. ──
+    const _pending = Object.values(_toolBlocks).filter(t=>t && t.name && !String(t.name).startsWith('web_search'));
+    if(_pending.length && !_userStopped && _toolRound < 4){
+      const assistantContent=[];
+      if(fullText) assistantContent.push({type:'text', text:fullText});
+      const results=[];
+      let renderedExtras='';
+      for(const t of _pending){
+        let input={};
+        try{ input = t.json ? JSON.parse(t.json) : {}; }catch(e){ input={}; }
+        assistantContent.push({type:'tool_use', id:t.id, name:t.name, input});
+        // AMV-007: a model-requested side-effecting/code-executing tool needs the
+        // user's explicit approval before it runs, so injected instructions can't
+        // silently deploy sites or execute code.
+        let out;
+        if(_toolNeedsConsent(t.name)){
+          const allowed = await _confirmModelTool(t.name, input);
+          if(!allowed){
+            out = { text:'The user DENIED permission to run "'+t.name+'". Do not attempt it again unless they explicitly ask for it. Continue helping without it.', render:null };
+            try{ if(typeof AEGIS!=='undefined') AEGIS.log('tool_denied',{tool:t.name}); }catch(e){}
+          }
+        }
+        if(!out) out = await _amvRunTool(t.name, input, (msg)=>{
+          msgs[streamIdx]={...msgs[streamIdx], c:fullText, _status:msg};
+          setMsgs(msgs); renderChatMsgs();
+        });
+        results.push({type:'tool_result', tool_use_id:t.id, content:String(out.text||'').slice(0,8000)});
+        if(out.render) renderedExtras += out.render;
+      }
+      // Record what actually happened so it survives re-render and reload.
+      msgs[streamIdx]={ r:'a', c:fullText, model:S.model, _status:null,
+                        _toolContent:assistantContent, _toolResults:results, _rendered:renderedExtras };
+      setMsgs(msgs); renderChatMsgs();
+      _recordUsageOnce();
+      S.busy=false;
+      // Continue the conversation with the tool results in hand.
+      _toolRound++;
+      return sendMsg({ _continueTools:true });
+    }
+    if(!fullText) fullText='(no response)';
+    msgs[streamIdx]={r:'a',c:fullText,model:S.model};
+    _recordUsageOnce();
+    // Auto-title chat
+    const cv=getCurConv();
+    if(cv&&cv.title==='New Conversation'&&fullText.length>20){
+      cv.title=fullText.slice(0,44).replace(/[#*`]/g,'').trim()+(fullText.length>44?'…':'');
+      renderHist();
+    }
+
+  } catch(e) {
+    _clearStatus();
+    // a user-initiated stop is not an error - keep whatever streamed
+    if(_userStopped || (e && (e.name==='AbortError' || String(e.message||e).includes('user-stop')))){
+      _recordUsageOnce();
+      setMsgs(msgs); S.busy=false; renderChatMsgs(); _userStopped=false; return;
+    }
+    const friendly=/api error|rejected|forbidden|rate-limit|malformed|too long|server error|network|timed out|offline|busy/i.test(e.message)?e.message:aegisErrorMessage(0,e.message);
+    AEGIS.log('exception',{msg:String(e.message).slice(0,200)}); AEGIS.recordError();
+    _recordUsageOnce();   // record any tokens consumed before the failure
+    _streamBubbleReset();
+    // friendly inline error card with a Retry action
+    msgs[streamIdx]={r:'a',c:'',model:S.model,_error:friendly};
+  }
+  _recordUsageOnce();   // final safety net - never lose usage accounting
+
+  setMsgs(msgs); S.busy=false; renderChatMsgs();
+  // learn durable facts from this exchange (best-effort, runs in background)
+  try{ if(!msgs[streamIdx]||!msgs[streamIdx]._error){ setTimeout(()=>_maybeExtractMemory(msgs),300); AMVValue.record('message'); if(!loadStr('amv_activated')){ saveStr('amv_activated','1'); track('activated_first_message'); } track('message_sent'); } }catch(e){}
+}
+/* Retry the last AI turn after a failure. */
+function retryLastAI(){
+  const msgs=getMsgs();
+  while(msgs.length && msgs[msgs.length-1].r==='a') msgs.pop();
+  if(!msgs.length) return;
+  setMsgs(msgs); S.busy=true; renderChatMsgs();
+  _callAI(msgs);
+}
+window.retryLastAI=retryLastAI;
+
+
+async function regenerateMsg() {
+  const msgs=getMsgs();
+  if(!msgs.length) return;
+  // Remove last AI message
+  while(msgs.length&&msgs[msgs.length-1].r==='a') msgs.pop();
+  if(!msgs.length) return;
+  setMsgs(msgs); S.busy=true; renderChatMsgs();
+  await _callAI(msgs);
+}
+
+async function editMsg(idx) {
+  const msgs=getMsgs();
+  const msg=msgs[idx];
+  if(!msg||msg.r!=='u') return;
+  const text=await showTextPromptAsync('Edit your message:', msg.d||msg.c);
+  if(!text||!text.trim()) return;
+  msgs[idx]={...msg, c:text.trim(), d:text.trim()};
+  // Remove all messages after this
+  msgs.splice(idx+1);
+  setMsgs(msgs); S.busy=true; renderChatMsgs();
+  _callAI(msgs);
+}
+
+function likeMsg(idx, type) {
+  const msgs=getMsgs();
+  if(!msgs[idx]) return;
+  msgs[idx].like=msgs[idx].like===type?null:type;
+  setMsgs(msgs); renderChatMsgs();
+  toast(type==='up'?'Feedback: helpful!':'Feedback: not helpful','success');
+}
+
+function copyMsg(text) {
+  navigator.clipboard?.writeText(text).then(()=>toast('Copied to clipboard','success')).catch(()=>toast('Copy failed','error'));
+}
+
+
+function renderChatView() {
+  const vc=$('vc'); if(!vc) return;
+  // Current model info
+  const mdl=MODELS[S.model]||MODELS.smart;
+  vc.innerHTML=
+    '<div id="cv">'+
+      '<div id="cm" data-no-i18n></div>'+
+      '<div id="cia">'+
+        '<div id="cib">'+
+          '<div id="ab2"><div id="ac"></div></div>'+
+          '<textarea id="mta" data-i18n-ph placeholder="Ask anything - essays, 3D models, code, images, research…" rows="1"></textarea>'+
+          '<div id="itb">'+
+            '<div class="il">'+
+              '<button class="atb" id="att-btn" title="Attach file">'+
+                '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>'+
+              '</button>'+
+              '<button class="atb" id="voice-btn" title="Voice input">'+
+                '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>'+
+              '</button>'+
+              '<button class="atb" id="voicemode-btn" title="Hands-free voice mode">'+
+                '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 10v3M6 6v11M10 3v18M14 8v7M18 5v13M22 10v3"/></svg>'+
+              '</button>'+
+              '<button class="atb atb-research" id="research-btn" title="Research mode - search many sources and write a sourced report">'+
+                '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>'+
+                '<span class="atb-research-lbl">Research</span>'+
+              '</button>'+
+            '</div>'+
+            '<div style="display:flex;align-items:center;gap:7px">'+
+              '<button class="inp-model-sel" id="inp-mdl-btn">'+
+                '<span class="inp-model-dot" style="background:'+mdl.color+'"></span>'+
+                '<span>'+mdl.label+'</span>'+
+                '<svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>'+
+              '</button>'+
+              '<button id="snd">'+
+                '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>'+
+              '</button>'+
+            '</div>'+
+          '</div>'+
+        '</div>'+
+        '<p class="input-hint">Enter to send &bull; Shift+Enter for new line &bull; Drag &amp; drop files</p>'+
+        '<div id="ctx-chat"></div>'+
+      '</div>'+
+      '<div id="chome-chips" class="chome-chips"></div>'+
+    '</div>';
+
+  renderChatMsgs();
+  bindChatEvents();
+  // If the user is out of usage, the lock persists across tab switches/reloads:
+  // re-render the composer notice (and pick up a still-exhausted local window).
+  try{
+    if(quotaLocked()) _renderQuotaNotice();
+    else if(typeof AMVUsage!=='undefined'){ const st=AMVUsage.status(); if(st.remaining<=0) quotaLock(st.resetsAt); }
+  }catch(e){}
+  // Model selector popup
+  on($('inp-mdl-btn'),'click',showModelPicker);
+}
+
+function showModelPicker(){
+  const btn=$('inp-mdl-btn'); if(!btn) return;
+  const rect=btn.getBoundingClientRect();
+  document.querySelectorAll('.model-picker').forEach(m=>m.remove());
+  const menu=document.createElement('div');
+  menu.className='model-picker';
+  menu.style.cssText='bottom:'+(window.innerHeight-rect.top+8)+'px;right:'+Math.max(12,window.innerWidth-rect.right)+'px';
+  const bars=(c)=>{ if(c===0) return '<span class="mp-auto">\u21c6</span>'; let h=''; for(let i=1;i<=4;i++) h+='<span class="mp-bar'+(i<=c?' on':'')+'"></span>'; return h; };
+  menu.innerHTML=
+    '<div class="mp-head">Choose a model</div>'+
+    MODEL_ORDER.map(k=>{ const v=MODELS[k]; const sel=k===S.model;
+      return '<button class="mp-item'+(sel?' sel':'')+'" data-mk="'+k+'">'+
+        '<span class="mp-dot" style="background:'+v.color+'"></span>'+
+        '<span class="mp-body"><span class="mp-name">'+v.label+(sel?'<span class="mp-check">✓</span>':'')+'</span>'+
+        '<span class="mp-desc">'+v.desc+'</span></span>'+
+        '<span class="mp-meta"><span class="mp-bars" title="'+COST_LABEL[v.cost]+'">'+bars(v.cost)+'</span>'+
+        '<span class="mp-cost">'+COST_LABEL[v.cost]+'</span></span>'+
+      '</button>';
+    }).join('')+
+    '<div class="mp-foot">Every AMV model is high quality. Faster models use less of your usage; the most capable use more - upgrade for more room to run them.</div>';
+  document.body.appendChild(menu);
+  menu.querySelectorAll('[data-mk]').forEach(item=>{
+    item.addEventListener('click',()=>{
+      if(!_planAllowsModel(item.dataset.mk)){
+        menu.remove();
+        openUpgradeModal(item.dataset.mk);
+        return;
+      }
+      S.model=item.dataset.mk;
+      menu.remove();
+      const mdlNow=MODELS[S.model];
+      const mdlBtn=$('inp-mdl-btn');
+      if(mdlBtn){
+        const lab=mdlBtn.querySelector('span:last-of-type'); if(lab) lab.textContent=mdlNow.label;
+        const dot=mdlBtn.querySelector('.inp-model-dot'); if(dot) dot.style.background=mdlNow.color;
+      }
+    });
+  });
+  const close=e=>{if(!menu.contains(e.target)){menu.remove();document.removeEventListener('click',close);}};
+  setTimeout(()=>document.addEventListener('click',close),50);
+}
+
+function bindChatEvents() {
+  const ta=$('mta');
+  on(ta,'keydown',e=>{ if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){e.preventDefault();sendMsg();return;} if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();} });
+  on(ta,'input',()=>{ ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,130)+'px'; });
+  on($('snd'),'click',()=>{ if(S.busy) stopGenerating(); else sendMsg(); });
+  // All message action buttons via delegation (avoids inline onclick quote escaping)
+  on($('cm'),'click',e=>{
+    const btn=e.target.closest('[data-action]');
+    if(!btn) {
+      const choice=e.target.closest('[data-guichoice]');
+      if(choice){ const ta=$('mta'); if(ta) ta.value=choice.dataset.guichoice; sendMsg(); return; }
+      const artBtn=e.target.closest('[data-artopen]');
+      if(artBtn){ openArtifact(artBtn.dataset.artopen); return; }
+      const cpbtn=e.target.closest('.ccopy');
+      if(cpbtn&&cpbtn.dataset.cid) copyCode(cpbtn.dataset.cid);
+      return;
+    }
+    const action=btn.dataset.action, idx=parseInt(btn.dataset.idx);
+    const msgs=getMsgs();
+    if(action==='edit') editMsg(idx);
+    else if(action==='copy-u'||action==='copy-a'){
+      const m=msgs[idx];
+      if(m) copyMsg(m.d||(typeof m.c==='string'?m.c:''));
+    }
+    else if(action==='like-up') likeMsg(idx,'up');
+    else if(action==='like-down') likeMsg(idx,'down');
+    else if(action==='react'){ _openReactPicker(idx, btn); }
+    else if(action==='react-toggle'){ _toggleReaction(idx, btn.dataset.emoji); }
+    else if(action==='regen') regenerateMsg();
+    else if(action==='retry-ai') retryLastAI();
+    else if(action==='speak') speakMessage(idx);
+    else if(action==='quota-upgrade'){ setTab('plans'); }
+    else if(action==='quota-later'){ const m2=getMsgs(); if(m2[idx]&&m2[idx]._quota){ m2.splice(idx,1); setMsgs(m2); renderChatMsgs(); } }
+  });
+  on($('att-btn'),'click',()=>$('fi').click());
+  on($('voice-btn'),'click',toggleVoice);
+  on($('voicemode-btn'),'click',toggleVoiceMode);
+  on($('research-btn'),'click',_toggleResearch);
+  try{ _syncResearchBtn(); }catch(e){}
+
+  // Tab clicks
+  $('tabs')?.querySelectorAll('.ctab[data-tid]').forEach(b=>{
+    on(b,'click',e=>{ if(e.target.dataset.tclose) return; loadConv(b.dataset.tid); });
+  });
+  $('tabs')?.querySelectorAll('[data-tclose]').forEach(b=>{
+    on(b,'click',e=>{ e.stopPropagation(); closeTab(b.dataset.tclose); });
+  });
+
+  // Model buttons
+  $('mdl-bar')?.querySelectorAll('.mdlbtn').forEach(b=>{
+    on(b,'click',()=>{
+      S.model=b.dataset.m;
+      if(S.model==='image'){setTab('images');return;}
+      $('mdl-bar').querySelectorAll('.mdlbtn').forEach(x=>x.classList.toggle('on',x===b));
+    });
+  });
+
+  // Drag and drop
+  const cib=$('cib');
+  on(cib,'dragover',e=>{e.preventDefault();cib.style.borderColor='var(--indigo)';});
+  on(cib,'dragleave',()=>{cib.style.borderColor='';});
+  on(cib,'drop',e=>{ e.preventDefault(); cib.style.borderColor=''; if(e.dataTransfer.files.length) handleFiles(e.dataTransfer.files); });
+}
+
+function closeTab(id) {
+  S.openTabs=S.openTabs.filter(t=>t!==id);
+  if(S.cur===id) S.cur=(S.openTabs[0]||S.convs[0]?.id);
+  renderChatView();
+}
+
+/* ---------------- Message reactions ----------------
+   Quick emoji reactions on AI messages. Reactions are stored on the message
+   object (m.reactions = {'👍':1, ...}) so they persist with the conversation
+   via the existing auto-save. Each user toggles their own single reaction per
+   message (this is a single-user client, so a reaction is on/off). */
+const _REACTION_SET = ['👍','❤️','🎉','🔥','😂','🤔','👎'];
+function _reactionsHTML(m, i){
+  const r = m.reactions;
+  if(!r) return '';
+  const chips = Object.keys(r).filter(k=>r[k]>0);
+  if(!chips.length) return '';
+  return '<div class="mreacts">'+chips.map(e=>
+    '<button class="mreact-chip'+((m.myReacts&&m.myReacts[e])?' on':'')+'" data-action="react-toggle" data-emoji="'+escH(e)+'" data-idx="'+i+'">'+e+' <span>'+r[e]+'</span></button>'
+  ).join('')+'</div>';
+}
+function _openReactPicker(idx, anchorBtn){
+  // close any existing picker
+  document.querySelectorAll('.react-picker').forEach(p=>p.remove());
+  const pick=document.createElement('div');
+  pick.className='react-picker';
+  pick.innerHTML=_REACTION_SET.map(e=>'<button class="react-opt" data-emoji="'+escH(e)+'" data-idx="'+idx+'">'+e+'</button>').join('');
+  document.body.appendChild(pick);
+  const rect=anchorBtn.getBoundingClientRect();
+  pick.style.left=Math.max(8,Math.min(rect.left, window.innerWidth-pick.offsetWidth-8))+'px';
+  pick.style.top=(rect.top-pick.offsetHeight-6+window.scrollY)+'px';
+  pick.querySelectorAll('.react-opt').forEach(b=>{
+    b.addEventListener('click',(ev)=>{ ev.stopPropagation(); _toggleReaction(parseInt(b.dataset.idx), b.dataset.emoji); pick.remove(); });
+  });
+  // close on outside click / escape
+  const close=(ev)=>{ if(!pick.contains(ev.target)){ pick.remove(); document.removeEventListener('mousedown',close); document.removeEventListener('keydown',esc); } };
+  const esc=(ev)=>{ if(ev.key==='Escape'){ pick.remove(); document.removeEventListener('mousedown',close); document.removeEventListener('keydown',esc); } };
+  setTimeout(()=>{ document.addEventListener('mousedown',close); document.addEventListener('keydown',esc); },0);
+}
+function _toggleReaction(idx, emoji){
+  const msgs=getMsgs();
+  const m=msgs[idx];
+  if(!m) return;
+  if(!m.reactions) m.reactions={};
+  if(!m.myReacts) m.myReacts={};
+  if(m.myReacts[emoji]){
+    // remove my reaction
+    m.reactions[emoji]=Math.max(0,(m.reactions[emoji]||1)-1);
+    if(m.reactions[emoji]===0) delete m.reactions[emoji];
+    delete m.myReacts[emoji];
+  } else {
+    m.reactions[emoji]=(m.reactions[emoji]||0)+1;
+    m.myReacts[emoji]=1;
+  }
+  setMsgs(msgs);
+  try{ _autoSave&&_autoSave(); }catch(e){}
+  renderChatMsgs();
+}
+
+/* A capability card for the chat home - title, subtitle, and a rich example
+   prompt that fills the composer on click. `icon` is inner SVG path markup. */
+function _cehCard(id, title, sub, prompt, icon){
+  return '<button class="ceh-card" data-c="'+id+'" data-q="'+escH(prompt)+'">'+
+    '<span class="ceh-card-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+icon+'</svg></span>'+
+    '<span class="ceh-card-txt"><span class="ceh-card-title">'+escH(title)+'</span><span class="ceh-card-sub">'+escH(sub)+'</span></span>'+
+    '<span class="ceh-card-arrow"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>'+
+  '</button>';
+}
+// A subtle starter chip for the clean chat home: label the user sees, full
+// prompt inserted into the composer on click.
+// Small pill chip with an icon - sits under the composer on the home screen.
+function _chip(kind, label, prompt){
+  const ic={
+    build:'<path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/>',
+    write:'<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+    create:'<path d="m2 12 5-5 9 9-5 5z"/><circle cx="17" cy="7" r="2"/><path d="M14 4 20 10"/>',
+    research:'<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
+    automate:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'
+  }[kind]||'<circle cx="12" cy="12" r="9"/>';
+  return '<button class="chome-chip" data-q="'+escH(prompt)+'">'+
+    '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+ic+'</svg>'+
+    escH(label)+'</button>';
+}
+function _starterChip(label, prompt){
+  return '<button class="chome-chip" data-q="'+escH(prompt)+'">'+escH(label)+'</button>';
+}
+// A capability card for the home - icon, title, one-line what-it-does. Reads as
+// "pick a job for your AI workforce," not a generic chat suggestion pill.
+function _starterCard(kind, title, sub, prompt){
+  const ic={
+    build:'<path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/>',
+    research:'<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>',
+    image:'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>',
+    automate:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'
+  }[kind]||'<circle cx="12" cy="12" r="9"/>';
+  return '<button class="chome-card-starter" data-q="'+escH(prompt)+'">'+
+    '<span class="csc-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+ic+'</svg></span>'+
+    '<span class="csc-txt"><span class="csc-title">'+escH(title)+'</span><span class="csc-sub">'+sub+'</span></span>'+
+  '</button>';
+}
+// Build a grounded "Jump back in" section for the chat home from the most
+// recent work sessions (Dev/Lab/Studio) and conversations. Returns '' when
+// there's nothing meaningful yet, so new/empty accounts keep the minimal home.
+function _chomeRecentWork(){
+  try{
+    const items=[];
+    (Array.isArray(_SESSIONS)?_SESSIONS:[]).forEach(s=>items.push({kind:'sess',t:s.updated||0,rec:s}));
+    (Array.isArray(S.convs)?S.convs:[]).forEach(c=>{
+      const has=c.msgs&&c.msgs.some(m=>m.r==='u');
+      if(has) items.push({kind:'conv',t:c._t||c.ts||0,rec:c});
+    });
+    if(items.length<1) return '';
+    items.sort((a,b)=>(b.t||0)-(a.t||0));
+    const top=items.slice(0,4);
+    if(!top.length) return '';
+    const timeAgo=(t)=>{ if(!t) return ''; const d=Date.now()-t; const m=Math.floor(d/60000); if(m<1)return 'just now'; if(m<60)return m+'m ago'; const h=Math.floor(m/60); if(h<24)return h+'h ago'; const dy=Math.floor(h/24); return dy+'d ago'; };
+    const kindMeta={
+      dev:{label:'Dev',svg:'<path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/>'},
+      lab:{label:'Lab',svg:'<path d="M10 2h4M12 2v6.5L7 19a1 1 0 0 0 .9 1.5h8.2A1 1 0 0 0 17 19l-5-10.5"/>'},
+      studio:{label:'Studio',svg:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/>'},
+      chat:{label:'Chat',svg:'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>'}
+    };
+    const cards=top.map(it=>{
+      if(it.kind==='sess'){
+        const km=kindMeta[it.rec.kind]||kindMeta.chat;
+        return '<button class="chome-card" data-chome-sess="'+it.rec.id+'">'+
+          '<span class="chome-card-ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+km.svg+'</svg></span>'+
+          '<span class="chome-card-txt"><span class="chome-card-title">'+escH(it.rec.title||km.label)+'</span>'+
+            '<span class="chome-card-meta">'+km.label+(it.t?' \u00b7 '+timeAgo(it.t):'')+'</span></span></button>';
+      }
+      const km=kindMeta.chat;
+      return '<button class="chome-card" data-chome-conv="'+it.rec.id+'">'+
+        '<span class="chome-card-ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+km.svg+'</svg></span>'+
+        '<span class="chome-card-txt"><span class="chome-card-title">'+escH(it.rec.title||'Conversation')+'</span>'+
+          '<span class="chome-card-meta">Chat'+(it.t?' \u00b7 '+timeAgo(it.t):'')+'</span></span></button>';
+    }).join('');
+    return '<div class="chome-recent"><div class="chome-recent-h">Jump back in</div><div class="chome-recent-grid">'+cards+'</div></div>';
+  }catch(e){ return ''; }
+}
+
+// Update ONLY the streaming assistant bubble in place (no full re-render), so
+// token reveal stays smooth on long/fast responses. The streaming bubble is the
+// last .mb.ai in the message list. Returns true if it updated, false if it
+// couldn't find the bubble (caller then does a full render).
+let _streamBubbleEl=null, _streamRAF=null, _streamPending=null;
+/* ── Research mode: pick a depth, then AMV searches broadly and writes a
+   sourced report. Depth maps to how many searches the model may run. Honest
+   labels - "50+ sources" is a realistic range, not a fixed promise. ── */
+const _RESEARCH_TIERS = {
+  quick: { label:'Quick research', sub:'~10-20 sources, under a minute', depth:'normal' },
+  deep:  { label:'Deep research',  sub:'50+ sources, a few minutes',     depth:'deep' },
+  max:   { label:'Exhaustive',     sub:'Hundreds of sources, several minutes', depth:'max' },
+};
+
+function _toggleResearch(){
+  if(S._researchDepth){ S._researchDepth=null; S._researchTier=null; _syncResearchBtn(); return; }
+  _openResearchMenu();
+}
+
+function _openResearchMenu(){
+  document.querySelectorAll('.research-menu').forEach(m=>m.remove());
+  const btn=$('research-btn'); if(!btn) return;
+  const menu=document.createElement('div');
+  menu.className='research-menu';
+  menu.innerHTML=
+    '<div class="rm-title">Research mode</div>'+
+    '<div class="rm-sub">AMV searches many sources and writes a report with citations.</div>'+
+    Object.entries(_RESEARCH_TIERS).map(([k,v])=>
+      '<button class="rm-opt" data-tier="'+k+'">'+
+        '<span class="rm-opt-l">'+escH(v.label)+'</span>'+
+        '<span class="rm-opt-s">'+escH(v.sub)+'</span>'+
+      '</button>'
+    ).join('');
+  document.body.appendChild(menu);
+  const r=btn.getBoundingClientRect();
+  menu.style.left=r.left+'px';
+  menu.style.bottom=(window.innerHeight-r.top+8)+'px';
+  menu.querySelectorAll('[data-tier]').forEach(o=>on(o,'click',(e)=>{
+    e.stopPropagation();
+    S._researchDepth=_RESEARCH_TIERS[o.dataset.tier].depth;
+    S._researchTier=o.dataset.tier;
+    menu.remove();
+    _syncResearchBtn();
+    const ta=$('mta'); if(ta) ta.focus();
+  }));
+  setTimeout(()=>{
+    const close=(e)=>{ if(!menu.contains(e.target) && e.target!==btn && !btn.contains(e.target)){ menu.remove(); document.removeEventListener('click',close); } };
+    document.addEventListener('click',close);
+  },0);
+}
+
+function _syncResearchBtn(){
+  const btn=$('research-btn'); if(!btn) return;
+  const on_=!!S._researchDepth;
+  btn.classList.toggle('on', on_);
+  const lbl=btn.querySelector('.atb-research-lbl');
+  if(lbl){
+    const tier=S._researchTier && _RESEARCH_TIERS[S._researchTier];
+    lbl.textContent = on_ ? (tier?tier.label.replace(' research',''):'Research') : 'Research';
+  }
+}
+try{ window._toggleResearch=_toggleResearch; window._syncResearchBtn=_syncResearchBtn; }catch(e){}
+
+/* Build the live research panel from REAL search activity: the queries the
+   model actually ran and the sources it actually found. Stored on the message
+   as _research so it renders above the answer, Claude-style. */
+function _renderResearch(msgs, streamIdx, state){
+  try{
+    if(!state || !msgs || streamIdx==null) return;
+    if(!state.active) return;
+    msgs[streamIdx] = { ...msgs[streamIdx], _research: _buildResearchPanel(state, !!state.done) };
+    setMsgs(msgs);
+    renderChatMsgs();
+  }catch(e){}
+}
+
+function _buildResearchPanel(state, finished){
+  const n = state.sources.size;
+  const searches = state.searches;
+  const sources = [...state.sources.values()];
+  const host = (u)=>{ try{ return new URL(u).hostname.replace(/^www\./,''); }catch(e){ return u; } };
+
+  // dedupe display hosts, keep first 12 for the chips
+  const shown = sources.slice(0, 12);
+  const chips = shown.map(s=>
+    '<a class="rsrc-chip" href="'+escH(s.url)+'" target="_blank" rel="noopener" title="'+escH(s.title)+'">'+
+      '<span class="rsrc-fav"></span>'+escH(host(s.url))+
+    '</a>'
+  ).join('');
+
+  const head = finished
+    ? '<span class="rsrc-check">\u2713</span> Researched '+n+' source'+(n===1?'':'s')+' across '+searches+' search'+(searches===1?'':'es')
+    : '<span class="rsrc-spin"></span> Researching\u2026 '+searches+' search'+(searches===1?'':'es')+', '+n+' source'+(n===1?'':'s')+' so far';
+
+  return '<div class="rsrc-panel'+(finished?' done':'')+'">'+
+    '<div class="rsrc-head">'+head+'</div>'+
+    (chips?'<div class="rsrc-chips">'+chips+(sources.length>12?'<span class="rsrc-more">+'+(sources.length-12)+' more</span>':'')+'</div>':'')+
+  '</div>';
+}
+
+function _streamBubbleUpdate(streamIdx, text){
+  const cm=$('cm'); if(!cm) return false;
+  // locate (and cache) the streaming bubble - last assistant bubble in the list
+  if(!_streamBubbleEl || !_streamBubbleEl.isConnected){
+    const bubbles=cm.querySelectorAll('.mr:not(.u) .mb.ai');
+    _streamBubbleEl=bubbles.length?bubbles[bubbles.length-1]:null;
+  }
+  if(!_streamBubbleEl) return false;
+  _streamPending=text;
+  // coalesce rapid tokens into one paint per frame
+  if(_streamRAF) return true;
+  _streamRAF=requestAnimationFrame(()=>{
+    _streamRAF=null;
+    const el=_streamBubbleEl;
+    if(!el || !el.isConnected){ _streamBubbleEl=null; return; }
+    if(!el.classList.contains('mb-streaming')) el.classList.add('mb-streaming');
+    el.innerHTML = md(_streamPending) + '<span class="stream-cursor"></span>';
+    // keep pinned to bottom only if the user is already near the bottom
+    const nearBottom = cm.scrollHeight - cm.scrollTop - cm.clientHeight < 120;
+    if(nearBottom) cm.scrollTop=cm.scrollHeight;
+  });
+  return true;
+}
+function _streamBubbleReset(){ _streamBubbleEl=null; if(_streamRAF){cancelAnimationFrame(_streamRAF);_streamRAF=null;} _streamPending=null; }
+
+function renderChatMsgs() {
+  const cm=$('cm');
+  if(!cm) return;
+  const msgs=getMsgs();
+  const ini=S.user?.ini||'?';
+
+  if(!msgs.length) {
+    const fname=S.user?.name?.split(' ')[0]||'';
+    const hour=new Date().getHours();
+    const greet=hour<12?'Good morning':hour<17?'Good afternoon':'Good evening';
+    const title = fname ? (greet+', '+escH(fname)) : 'What should we build?';
+    cm.classList.add('cm-empty');
+    const cv=$('cv'); if(cv) cv.classList.add('cv-home');
+    // Greeting sits above the composer; the starter chips render BELOW it.
+    cm.innerHTML=
+      '<div class="chome">'+
+        '<h1 class="chome-title"><span class="chome-greet">'+title+'</span></h1>'+
+      '</div>';
+    const chips=$('chome-chips');
+    if(chips){
+      chips.innerHTML=
+        _chip('build','Build','Build a full-stack web app with React, a clean UI, and auth. Then run it so I can see it working.')+
+        _chip('write','Write','Write a clear, well-structured article. Ask me what it should be about if you need to.')+
+        _chip('create','Create','Generate a photorealistic hero image for a premium coffee brand - warm morning light, editorial style.')+
+        _chip('research','Research','Research a topic thoroughly and write a sourced report with a clear takeaway.')+
+        _chip('automate','Automate','Every morning at 7am, research overnight news and have a concise brief ready for me.');
+      chips.querySelectorAll('[data-q]').forEach(p=>p.addEventListener('click',()=>{
+        const ta=$('mta');
+        if(ta){ta.value=p.dataset.q;ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,160)+'px';ta.focus();}
+      }));
+      document.querySelectorAll('.chome-recent').forEach(e=>e.remove());
+    }
+    cm.querySelectorAll('[data-chome-sess]').forEach(el=>el.addEventListener('click',()=>{ try{ _sessResume(el.dataset.chomeSess); }catch(e){} }));
+    cm.querySelectorAll('[data-chome-conv]').forEach(el=>el.addEventListener('click',()=>{ try{ loadConv(el.dataset.chomeConv); }catch(e){} }));
+    return;
+  }
+
+  cm.classList.remove('cm-empty');
+  try{ _ctxRenderMeter('ctx-chat','chat'); }catch(e){}
+  const _cv=$('cv'); if(_cv) _cv.classList.remove('cv-home');
+  const _ch=$('chome-chips'); if(_ch) _ch.innerHTML='';
+  document.querySelectorAll('.chome-recent').forEach(e=>e.remove());
+  cm.innerHTML=msgs.map((m,i)=>{
+    const isU=m.r==='u';
+    const rawText=m.d||(typeof m.c==='string'?m.c:'');
+    let content;
+    if(!isU && m._quota){
+      const plan=(loadStr('amv_plan')||'free');
+      const nextPlan=plan==='free'?'Pro':plan==='pro'?'Elite':'Ultra';
+      const resetTxt=_fmtResetIn(Math.max(0,(m._resetAt||_quotaLockUntil||Date.now())-Date.now()));
+      content='<div class="quota-card"><div class="quota-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>'+
+        '<div class="quota-body"><b>You\u2019re out of usage for now.</b>'+
+        '<span>Your usage resets in <b class="quota-reset-live">'+escH(resetTxt)+'</b>. Upgrade to '+nextPlan+' for much higher limits and keep going right now.</span>'+
+        '<div class="quota-actions"><button class="quota-upgrade" data-action="quota-upgrade" data-idx="'+i+'">Upgrade to '+nextPlan+'</button>'+
+        '<button class="quota-later" data-action="quota-later" data-idx="'+i+'">I\u2019ll wait</button></div></div></div>';
+    } else if(!isU && m._error){
+      content='<div class="ai-snag"><div class="ai-snag-row"><span class="ai-snag-ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg></span>'+
+        '<span class="ai-snag-msg">'+escH(_aiFriendly(m._error))+'</span></div>'+
+        '<button class="ai-snag-retry" data-action="retry-ai" type="button">Retry</button></div>';
+    } else if(!isU && m._retrying){
+      content='<div class="ai-retrying"><div class="dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div><span>'+escH(m._retrying)+'</span></div>';
+    } else if(!isU && m.streaming && !(typeof m.c==='string' && m.c.length)){
+      // working - show a live status label (Claude-style) before the first token.
+      // If offline, show a skeleton loader + a clear note instead.
+      if(typeof navigator!=='undefined' && navigator.onLine===false){
+        content='<div class="skl-msg"><div class="skl skl-line w1"></div><div class="skl skl-line w4"></div><div class="skl skl-line w2"></div><div class="skl skl-line w3"></div>'+
+          '<div class="skl-offline-note"><span class="skl-offline-dot"></span>Waiting for your connection\u2026 this will send when you\u2019re back online.</div></div>';
+      } else {
+        content=(m._research?m._research:'')+'<div class="ai-working"><span class="ai-think-orb"></span><span class="ai-working-shimmer">'+escH(m._status||'Working…')+'</span></div>';
+      }
+    } else {
+      content=isU?escH(rawText).replace(/\n/g,'<br>'):((m._research?m._research:'')+md(typeof m.c==='string'?m.c:rawText)+(m._rendered?('<div class="chat-tool-out">'+m._rendered+'</div>'):'')+(m.streaming?'<span class="stream-cursor"></span>':''));
+    }
+    const mdlLabel=!isU&&m.model?'<span style="font-size:10px;color:var(--t2);margin-bottom:3px">'+MODELS[m.model]?.label+' Model</span>':'';
+        const actions=(!isU && (m._error||m._retrying||m._quota))? '' : (isU?
+      '<div class="macts mact-bar">'+
+        '<button class="mact" data-action="edit" data-idx="'+i+'" title="Edit"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>'+
+        '<button class="mact" data-action="copy-u" data-idx="'+i+'" title="Copy"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>'+
+      '</div>':
+      '<div class="macts mact-bar">'+
+        '<button class="mact '+(m.like==='up'?'liked':'')+'" data-action="like-up" data-idx="'+i+'" title="Good response"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v12M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88z"/></svg></button>'+
+        '<button class="mact '+(m.like==='down'?'disliked':'')+'" data-action="like-down" data-idx="'+i+'" title="Bad response"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88z"/></svg></button>'+
+        '<button class="mact" data-action="copy-a" data-idx="'+i+'" title="Copy"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>'+
+        '<button class="mact" data-action="speak" data-idx="'+i+'" title="Read aloud"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14"/></svg></button>'+
+        '<button class="mact mact-react" data-action="react" data-idx="'+i+'" title="React"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg></button>'+
+        (i===msgs.length-1?'<button class="mact" data-action="regen" title="Regenerate"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v5h-5"/></svg></button>':'')+
+      '</div>'+
+      _reactionsHTML(m,i));    return '<div class="mr '+(isU?'u':'')+'"><div class="mav '+(isU?'u':'ai')+'">'+(isU?ini:'A')+'</div>'+
+      '<div class="mwrap">'+(mdlLabel?'<span style="font-size:10px;color:var(--t2)">'+MODELS[m.model||'smart']?.label+' Model</span>':'')+
+      '<div class="mb '+(isU?'u':'ai')+(m.streaming&&typeof m.c==='string'&&m.c.length?' mb-streaming':'')+'">'+content+'</div>'+actions+'</div></div>';
+  }).join('')+
+  (S.busy?'<div class="mr"><div class="mav ai">A</div><div class="mwrap"><div class="mb ai"><div class="dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div></div></div></div>':'');
+
+  cm.scrollTop=cm.scrollHeight;
+  const snd=$('snd'); if(snd) snd.disabled=S.busy;
+}
+
+
+let _voiceRec=null, _isRecording=false;
+function toggleVoice(){
+  const btn=$('voice-btn');
+  if(!('webkitSpeechRecognition' in window)&&!('SpeechRecognition' in window)){
+    toast('Voice input not supported in this browser. Use Chrome.','error'); return;
+  }
+  if(_isRecording){ try{_voiceRec&&_voiceRec.stop();}catch(e){} return; }
+  if(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia){
+    navigator.mediaDevices.getUserMedia({audio:true})
+      .then(s=>{s.getTracks().forEach(t=>t.stop());_amvBeginRec();})
+      .catch(err=>{ if(err&&err.name==='NotAllowedError') toast('Microphone blocked - allow it in your browser address bar','error',5000); else _amvBeginRec(); });
+    return;
+  }
+  _amvBeginRec();
+}
+function _amvBeginRec(){
+  const btn=$('voice-btn');
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  _voiceRec=new SR();
+  _voiceRec.continuous=false; _voiceRec.interimResults=true; _voiceRec.lang='en-US';
+  _voiceRec.onstart=()=>{
+    _isRecording=true;
+    if(btn) btn.classList.add('rec');
+    toast('Listening… speak now','info',5000);
+  };
+  _voiceRec.onresult=e=>{
+    const t=Array.from(e.results).map(r=>r[0].transcript).join('');
+    const ta=$('mta'); if(ta){ ta.value=t; ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,130)+'px'; }
+  };
+  _voiceRec.onend=()=>{
+    _isRecording=false;
+    if(btn) btn.classList.remove('rec');
+  };
+  _voiceRec.onerror=e=>{ _isRecording=false; if(btn) btn.classList.remove('rec'); toast('Voice error: '+e.error,'error'); };
+  _voiceRec.start();
+}
+
+/* ── Voice OUTPUT: read AMV's answers aloud + hands-free voice mode ──
+   Uses the browser's built-in speech synthesis (no backend). Picks the best
+   available natural voice, strips markdown so it reads cleanly, and offers a
+   full hands-free loop: listen → answer → speak → listen again. */
+const AMVSpeech = {
+  speaking:false, _utter:null, _voice:null, _boundIdx:null,
+  supported(){ return typeof window!=='undefined' && 'speechSynthesis' in window; },
+  _pickVoice(){
+    if(this._voice) return this._voice;
+    const vs=speechSynthesis.getVoices()||[];
+    if(!vs.length) return null;
+    // prefer a natural, English voice (Google/Natural/Samantha), else first en, else first
+    const pref=vs.find(v=>/natural|google us english|samantha|aria|jenny/i.test(v.name)&&/^en/i.test(v.lang))
+      || vs.find(v=>/^en-US/i.test(v.lang)) || vs.find(v=>/^en/i.test(v.lang)) || vs[0];
+    this._voice=pref; return pref;
+  },
+  _clean(text){
+    return String(text||'')
+      .replace(/```[\s\S]*?```/g,' (code block) ')      // don't read code char-by-char
+      .replace(/!\[[^\]]*\]\([^)]*\)/g,' ')             // images
+      .replace(/\[([^\]]*)\]\([^)]*\)/g,'$1')           // links → text
+      .replace(/[#>*_`~|]/g,'')                          // md symbols
+      .replace(/\n{2,}/g,'. ').replace(/\n/g,' ')
+      .replace(/\s{2,}/g,' ').trim();
+  },
+  speak(text, opts){
+    if(!this.supported()){ toast('Read-aloud isn\u2019t supported in this browser. Try Chrome.','error'); return false; }
+    this.stop();
+    const clean=this._clean(text); if(!clean) return false;
+    const u=new SpeechSynthesisUtterance(clean);
+    const v=this._pickVoice(); if(v) u.voice=v;
+    u.rate=parseFloat(loadStr('amv_voice_rate'))||1.0; u.pitch=1.0; u.lang=(v&&v.lang)||'en-US';
+    u.onstart=()=>{ this.speaking=true; if(opts&&opts.onstart) opts.onstart(); };
+    u.onend=()=>{ this.speaking=false; this._boundIdx=null; _syncSpeakButtons(); if(opts&&opts.onend) opts.onend(); };
+    u.onerror=()=>{ this.speaking=false; this._boundIdx=null; _syncSpeakButtons(); if(opts&&opts.onerror) opts.onerror(); };
+    this._utter=u; speechSynthesis.speak(u); return true;
+  },
+  stop(){ try{ if(this.supported()){ speechSynthesis.cancel(); } }catch(e){} this.speaking=false; this._boundIdx=null; },
+  toggle(text, idx, opts){
+    if(this.speaking && this._boundIdx===idx){ this.stop(); _syncSpeakButtons(); return false; }
+    this._boundIdx=idx; const ok=this.speak(text, opts); _syncSpeakButtons(); return ok;
+  }
+};
+try{ if(AMVSpeech.supported()){ speechSynthesis.onvoiceschanged=()=>{ AMVSpeech._voice=null; AMVSpeech._pickVoice(); }; } }catch(e){}
+try{ window.AMVSpeech=AMVSpeech; }catch(e){}
+
+// keep every message's speak button in sync with what's actually playing
+function _syncSpeakButtons(){
+  try{
+    document.querySelectorAll('[data-action="speak"]').forEach(b=>{
+      const on=AMVSpeech.speaking && String(AMVSpeech._boundIdx)===b.dataset.idx;
+      b.classList.toggle('speaking', on);
+      b.title = on ? 'Stop' : 'Read aloud';
+    });
+  }catch(e){}
+}
+
+// read a specific chat message aloud (by index)
+function speakMessage(idx){
+  const msgs=getMsgs(); const m=msgs[idx]; if(!m) return;
+  const text=typeof m.c==='string' ? m.c : (Array.isArray(m.c)? m.c.map(x=>x.text||'').join(' ') : '');
+  AMVSpeech.toggle(text, idx);
+}
+
+/* ── Hands-free voice mode: listen → send → speak the reply → listen again ── */
+let _voiceMode=false;
+// ── Voice mode showcase overlay ───────────────────────────────
+// A focused, premium interface shown while hands-free voice mode is active.
+// The orb reflects the current state: listening / thinking / speaking.
+function _voiceOverlay(){
+  let el=document.getElementById('voice-ov');
+  if(!el){
+    el=document.createElement('div');
+    el.id='voice-ov';
+    el.className='voice-ov';
+    el.innerHTML=
+      '<div class="voice-stage">'+
+        '<div class="voice-orb" id="voice-orb">'+
+          '<div class="voice-orb-core"></div>'+
+          '<div class="voice-ring voice-ring-1"></div>'+
+          '<div class="voice-ring voice-ring-2"></div>'+
+          '<div class="voice-ring voice-ring-3"></div>'+
+        '</div>'+
+        '<div class="voice-state" id="voice-state">Listening\u2026</div>'+
+        '<div class="voice-transcript" id="voice-transcript"></div>'+
+        '<button class="voice-exit" id="voice-exit">'+
+          '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>'+
+          '<span>End voice</span>'+
+        '</button>'+
+      '</div>';
+    document.body.appendChild(el);
+    el.querySelector('#voice-exit').addEventListener('click',()=>{ if(_voiceMode) toggleVoiceMode(); });
+  }
+  return el;
+}
+function _voiceSetState(state, transcript){
+  const orb=document.getElementById('voice-orb');
+  const label=document.getElementById('voice-state');
+  const tr=document.getElementById('voice-transcript');
+  if(orb){ orb.classList.remove('is-listening','is-thinking','is-speaking'); orb.classList.add('is-'+state); }
+  if(label){ label.textContent = state==='listening'?'Listening\u2026' : state==='thinking'?'Thinking\u2026' : 'Speaking\u2026'; }
+  if(tr && transcript!=null){ tr.textContent=transcript; }
+}
+function _showVoiceOverlay(){ const el=_voiceOverlay(); requestAnimationFrame(()=>el.classList.add('on')); _voiceSetState('listening',''); }
+function _hideVoiceOverlay(){ const el=document.getElementById('voice-ov'); if(el) el.classList.remove('on'); }
+
+function toggleVoiceMode(){
+  if(!AMVSpeech.supported() || (!('webkitSpeechRecognition' in window)&&!('SpeechRecognition' in window))){
+    toast('Voice mode needs Chrome (speech recognition + synthesis).','error',5000); return;
+  }
+  _voiceMode=!_voiceMode;
+  const btn=$('voicemode-btn'); if(btn) btn.classList.toggle('on',_voiceMode);
+  if(_voiceMode){ _showVoiceOverlay(); _voiceModeListen(); }
+  else { _hideVoiceOverlay(); AMVSpeech.stop(); try{ _voiceRec&&_voiceRec.stop(); }catch(e){} }
+}
+function _voiceModeListen(){
+  if(!_voiceMode) return;
+  _voiceSetState('listening','');
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition; if(!SR) return;
+  try{ _voiceRec&&_voiceRec.stop(); }catch(e){}
+  _voiceRec=new SR(); _voiceRec.continuous=false; _voiceRec.interimResults=true; _voiceRec.lang='en-US';
+  _voiceRec.onresult=e=>{
+    const t=Array.from(e.results).map(r=>r[0].transcript).join('').trim();
+    _voiceSetState('listening', t);   // live transcript feedback
+    const isFinal=Array.from(e.results).some(r=>r.isFinal);
+    if(isFinal && t){ const ta=$('mta'); if(ta){ ta.value=t; } _voiceModeSend(t); }
+  };
+  _voiceRec.onerror=()=>{ if(_voiceMode) setTimeout(_voiceModeListen, 800); };
+  try{ _voiceRec.start(); }catch(e){}
+}
+async function _voiceModeSend(text){
+  _voiceSetState('thinking', text);
+  try{ await sendMsg(); }catch(e){}
+  // wait for the assistant reply to finish, then speak it and resume listening
+  let tries=0;
+  const check=()=>{
+    if(!_voiceMode) return;
+    const msgs=getMsgs(); const last=msgs[msgs.length-1];
+    if(last && last.r==='a' && !last.streaming && last.c && !last._error){
+      _voiceSetState('speaking','');
+      AMVSpeech.speak(typeof last.c==='string'?last.c:'', { onend:()=>{ if(_voiceMode){ _voiceSetState('listening',''); setTimeout(_voiceModeListen, 400); } } });
+    } else if(tries++ < 120){ setTimeout(check, 500); }
+    else if(_voiceMode){ setTimeout(_voiceModeListen, 400); }
+  };
+  setTimeout(check, 600);
+}
+try{ window.speakMessage=speakMessage; window.toggleVoiceMode=toggleVoiceMode; }catch(e){}
+
+
+function handleFiles(files){
+  // Global file limit applies to chat too.
+  if(typeof _ctxFileGuard==='function' && !_ctxFileGuard('chat', files&&files.length||1)) return;
+  try{ for(const f of (files||[])) _ctxFileTrack('chat', f.name); }catch(e){}
+  if(!files||!files.length) return;
+  if(files.length===1){ handleFile(files[0]); return; }
+  // Multiple: combine text files
+  const all=Array.from(files);
+  Promise.all(all.map(f=>new Promise(res=>{
+    const cat=getFileCat(f);
+    const r=new FileReader();
+    if(cat==='image'){r.onload=e=>res({kind:'img',name:f.name,b64:e.target.result.split(',')[1],mime:f.type||'image/jpeg',size:f.size});r.readAsDataURL(f);}
+    else if(cat==='pdf'){r.onload=e=>res({kind:'pdf',name:f.name,b64:e.target.result.split(',')[1],mime:'application/pdf',size:f.size});r.readAsDataURL(f);}
+    else{r.onload=e=>res({kind:'text',name:f.name,data:e.target.result,size:f.size});r.onerror=()=>res({kind:'text',name:f.name,data:'[unreadable]',size:0});r.readAsText(f);}
+  }))).then(results=>{
+    const imgs=results.filter(r=>r.kind==='image');
+    if(imgs.length){ S.att=imgs[0]; }
+    else{
+      const combined=results.map(r=>'=== '+r.name+' ===\n'+(r.data||'[binary]')).join('\n\n');
+      S.att={kind:'text',name:results.map(r=>r.name).join(', '),data:combined,size:0};
+    }
+    showAttChip();
+  });
+}
+function getFileCat(file){
+  const t=file.type;
+  if(t.startsWith('image/')) return 'image';
+  if(t==='application/pdf') return 'pdf';
+  const ext=file.name.split('.').pop().toLowerCase();
+  if(['jpg','jpeg','png','gif','webp','bmp'].includes(ext)) return 'image';
+  if(ext==='pdf') return 'pdf';
+  return 'text';
+}
+function handleFile(file){
+  if(!file) return;
+  const cat=getFileCat(file);
+  const reader=new FileReader();
+  if(cat==='image'){
+    reader.onload=e=>{S.att={kind:'img',name:file.name,size:file.size,b64:e.target.result.split(',')[1],mime:file.type||'image/jpeg'};showAttChip();};
+    reader.readAsDataURL(file);
+  } else if(cat==='pdf'){
+    reader.onload=e=>{S.att={kind:'pdf',name:file.name,size:file.size,b64:e.target.result.split(',')[1],mime:'application/pdf'};showAttChip();};
+    reader.readAsDataURL(file);
+  } else {
+    reader.onload=e=>{S.att={kind:'text',name:file.name,size:file.size,data:e.target.result};showAttChip();};
+    reader.readAsText(file);
+  }
+  reader.onerror=()=>toast('Could not read file: '+file.name,'error');
+}
+function showAttChip(){
+  if(!S.att) return;
+  const ab2=$('ab2'),ac=$('ac');
+  if(!ab2||!ac) return;
+  const icons={img:'🖼',pdf:'📄',text:'📎'};
+  const sz=S.att.size?(' ('+fmtSize(S.att.size)+')'):'';
+  ac.innerHTML='<span>'+(icons[S.att.kind]||'📎')+' <strong>'+escH(S.att.name)+'</strong><span style="color:var(--t3);font-size:10px">'+sz+'</span></span>';
+  const btn=document.createElement('button');
+  btn.textContent='×'; btn.style.cssText='background:none;border:none;color:var(--t2);cursor:pointer;font-size:13px;line-height:1;margin-left:4px';
+  btn.onclick=()=>{S.att=null;ab2.style.display='none';};
+  ac.appendChild(btn);
+  ab2.style.display='flex';
+}
+function fmtSize(b){ if(b<1024) return b+'B'; if(b<1024*1024) return (b/1024).toFixed(1)+'KB'; return (b/(1024*1024)).toFixed(1)+'MB'; }
+
+
+const IMG_STYLES={
+  'Normal':'',   // exact words, no style modifiers - the prompt is passed as typed
+  'Photorealistic':'photorealistic, professional DSLR photography, ultra-detailed, sharp focus, 8k uhd, award winning photography, natural lighting, hyperrealistic',
+  'Cinematic':'cinematic photography, dramatic lighting, shallow depth of field, film grain, anamorphic lens, movie still, blockbuster quality',
+  'Digital Art':'vibrant digital art, highly detailed illustration, concept art, trending on artstation, professional quality',
+  'Oil Painting':'classical oil painting, rich impasto texture, masterful brushwork, fine art gallery quality, museum quality',
+  'Watercolor':'beautiful watercolor painting, soft flowing colors, delicate washes, luminous transparency, professional illustration',
+  'Anime':'high quality anime style, vibrant colors, detailed linework, professional anime production quality',
+  '3D Render':'photorealistic 3D render, global illumination, studio lighting, octane render, ultra detailed, 8k',
+  'Sketch':'detailed pencil sketch, expert draftsmanship, fine linework, cross-hatching, professional illustration',
+  'Vintage':'vintage 35mm film photograph, kodachrome colors, retro aesthetics, nostalgic, film grain',
+  'Fantasy Art':'epic fantasy illustration, intricate magical details, dramatic cinematic lighting, painterly, mythical',
+};
+const BLOCKED=['explicit nudity','pornographic','nsfw','erotic','hentai','child sexual',
+  'nudify','undress','deepfake nude','deepfake porn','deep nude','revenge porn',
+  'non-consensual','nonconsensual','underage','jailbait','loli','shota','cp for'];
+
+/* Light prompt enhancement: when a prompt looks like it names a real person
+   doing something, phrase it so the image model renders a clearer likeness.
+   This does NOT search the web for the person or use reference photos - it
+   only improves the text prompt. Public-figure depiction is allowed for
+   editorial/creative use per the content policy. */
+function _enhanceImgPrompt(prompt){
+  let p=String(prompt||'').trim();
+  if(!p) return p;
+  const words=p.split(/\s+/);
+  // ONLY add person-likeness phrasing when the prompt is a SINGLE camelCase /
+  // handle-style token (e.g. "iShowSpeed", "MrBeast", "xQc") - an unmistakable
+  // creator/username signal. This deliberately never fires on objects, scenes,
+  // colors, places, or ordinary words, so "red car", "Eiffel Tower", "a bowl of
+  // fruit" and "car" all generate faithfully instead of sprouting a face.
+  if(words.length===1){
+    const w=words[0];
+    const handleLike = /^[A-Za-z][A-Za-z0-9_.]{2,24}$/.test(w)   // one word, name-ish length
+      && /[a-z]/.test(w)                                         // has a lowercase (excludes acronyms like NASA)
+      && /[A-Z0-9]/.test(w.slice(1));                            // internal capital/digit (camelCase handle)
+    if(handleLike){
+      p='a realistic, high-quality photograph of '+p+', accurate likeness, recognizable face, true to life';
+    }
+  }
+  return p;
+}
+
+// Build the full generation prompt (shared by the premium and free paths so
+// both follow the user's words identically).
+function _imgFullPrompt(prompt,style){
+  const isNormal = style==='Normal' || IMG_STYLES[style]==='';
+  if(isNormal) return _enhanceImgPrompt(prompt)+_langForGeneration(prompt);
+  return (IMG_STYLES[style]||style)+', '+_enhanceImgPrompt(prompt)+_langForGeneration(prompt)+', masterpiece, best quality, highly detailed';
+}
+// Try the operator-configured premium image provider (via the backend, which
+// keeps the key server-side). Resolves to an image src (url or data URI) on
+// success, or null to fall back to the built-in free generator. Cached per
+// (prompt,style,ratio,seed) so re-renders don't re-bill.
+const _premiumImgCache = {};
+async function _premiumImageSrc(prompt,style,ratio,seed){
+  try{
+    if(!(window.AMV_API && AMV_API.live && AMV_API.token)) return null;
+    if(window.__AMV_NO_PREMIUM_IMG__) return null;   // learned this deploy has no premium provider
+    const sizes={'16:9':[896,504],'9:16':[504,896],'4:3':[768,576],'1:1':[768,768]};
+    const [w,h]=sizes[ratio]||[1024,1024];
+    const key=prompt+'|'+style+'|'+ratio+'|'+seed;
+    if(_premiumImgCache[key]) return _premiumImgCache[key];
+    const full=_imgFullPrompt(prompt,style);
+    const r=await fetch(AMV_API.base.replace(/\/$/,'')+'/v1/image/generate',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+AMV_API.token},
+      body:JSON.stringify({prompt:full,width:w,height:h})
+    });
+    if(!r.ok) return null;
+    const d=await r.json().catch(()=>({}));
+    if(d.configured===false){ window.__AMV_NO_PREMIUM_IMG__=true; return null; }  // remember: skip next time
+    let src=null;
+    if(d.url) src=d.url;
+    else if(d.b64) src='data:image/png;base64,'+d.b64;
+    if(src) _premiumImgCache[key]=src;
+    return src;
+  }catch(e){ return null; }
+}
+
+function imgUrl(prompt,style,ratio,seed){
+  const sizes={'16:9':[896,504],'9:16':[504,896],'4:3':[768,576],'1:1':[768,768]};
+  const [w,h]=sizes[ratio]||[768,768];
+  const isNormal = style==='Normal' || IMG_STYLES[style]==='';
+  const full=_imgFullPrompt(prompt,style);
+  // Normal mode turns the provider's prompt-rewriter OFF so your words are
+  // followed literally; styled mode lets it enhance.
+  const enhance = isNormal ? 'false' : 'true';
+  return 'https://image.pollinations.ai/prompt/'+encodeURIComponent(full)+'?width='+w+'&height='+h+'&nologo=true&seed='+seed+'&model=flux&safe=false&enhance='+enhance;
+}
+function genImg(){
+  const inp=$('img-inp');
+  if(!inp) return;
+  const p=inp.value.trim();
+  if(!p){inp.focus();return;}
+  if(BLOCKED.some(w=>p.toLowerCase().includes(w))){toast('Content Policy: explicit sexual content not permitted.','error');return;}
+  // Smart limit: free plan gets a daily image allowance. Nudge to upgrade when hit.
+  const plan=loadStr('amv_plan')||'free';
+  const imgCap={free:4,pro:60,elite:250,ultra:1000,custom:250}[plan]||4;
+  const todayKey='amv_img_day_'+new Date().toISOString().slice(0,10);
+  const usedToday=parseInt(loadStr(todayKey)||'0',10);
+  if(usedToday>=imgCap){
+    _smartUpgradeNudge('images', plan, 'You\u2019ve used all '+imgCap+' of today\u2019s images on the '+(PLANS[plan]?PLANS[plan].name:'Free')+' plan.');
+    return;
+  }
+  saveStr(todayKey, String(usedToday+1));
+  S.imgs.unshift({id:'img'+Date.now(),prompt:p,style:S.imgStyle,ratio:S.imgRatio,seed:Math.floor(Math.random()*999999)});
+  try{ AMVValue.record('image'); }catch(e){}
+  renderImgGallery();
+}
+/* Smart, contextual upgrade nudge - a friendly modal that names the exact limit
+   the user hit and points them to the right upgrade. Reusable across features. */
+function _smartUpgradeNudge(feature, plan, reason){
+  try{ track('upgrade_nudge_shown', { feature, plan }); }catch(e){}
+  const nextPlan={free:'Pro',pro:'Elite',elite:'Ultra',ultra:'Ultra',custom:'Ultra'}[plan]||'Pro';
+  const perk={images:'up to 60 images a day, every style, and priority speed',
+    video:'longer HD videos and more renders',
+    chat:'much higher message limits and every model',
+    default:'higher limits across everything AMV does'}[feature]||'higher limits';
+  const ovr=document.getElementById('ovr'); if(!ovr) { toast(reason+' Upgrade for more.','info',4000); return; }
+  ovr.innerHTML=
+    '<div class="nudge-modal">'+
+      '<button class="nudge-x" id="nudge-x" aria-label="Close">×</button>'+
+      '<div class="nudge-ic"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg></div>'+
+      '<div class="nudge-title">Time to level up</div>'+
+      '<div class="nudge-reason">'+escH(reason)+'</div>'+
+      '<div class="nudge-perk">Upgrade to <b>'+nextPlan+'</b> for '+perk+'.</div>'+
+      '<div class="nudge-actions"><button class="btn bp" id="nudge-up">Upgrade to '+nextPlan+'</button>'+
+        '<button class="btn bs" id="nudge-later">Maybe later</button></div>'+
+    '</div>';
+  ovr.classList.add('on');
+  const up=document.getElementById('nudge-up'); if(up) on(up,'click',()=>{ closeOvr(); setTab('plans'); });
+  const later=document.getElementById('nudge-later'); if(later) on(later,'click',closeOvr);
+  const x=document.getElementById('nudge-x'); if(x) on(x,'click',closeOvr);
+  // Click the dimmed backdrop (outside the card) to dismiss.
+  on(ovr,'click',(e)=>{ if(e.target===ovr) closeOvr(); });
+  // Esc closes too.
+  const esc=(e)=>{ if(e.key==='Escape'){ closeOvr(); document.removeEventListener('keydown',esc); } };
+  document.addEventListener('keydown',esc);
+}
+try{ window._smartUpgradeNudge=_smartUpgradeNudge; }catch(e){}
+function renderImgsView(){
+  const vc=$('vc');
+  if(!vc) return;
+  const styleHtml=Object.keys(IMG_STYLES).map(s=>'<button class="stb '+(s===S.imgStyle?'on':'')+'" data-s="'+s+'">'+s+'</button>').join('');
+  const ratioHtml=['1:1','16:9','9:16','4:3'].map(r=>'<button class="rab '+(r===S.imgRatio?'on':'')+'" data-r="'+r+'">'+r+'</button>').join('');
+  vc.innerHTML=
+    '<div id="imgv">'+
+      '<div id="imgctrl">'+
+        '<div style="display:flex;gap:8px;margin-bottom:10px">'+
+          '<textarea id="img-inp" placeholder="Describe any image - a scene, product, portrait, or style. Be specific for the best results." rows="2" style="flex:1;border-radius:var(--r-sm);font-size:13px;max-height:66px"></textarea>'+
+          '<button class="btn bp" id="gen-img-btn" style="align-self:flex-end;height:40px;padding:0 16px;font-size:13px">Generate</button>'+
+        '</div>'+
+        '<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px" id="srow">'+styleHtml+'</div>'+
+        '<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">'+
+          '<span style="font-size:10px;color:var(--t2);letter-spacing:.05em;text-transform:uppercase">Ratio</span>'+
+          '<div id="rrow">'+ratioHtml+'</div>'+
+          '<button class="bg2" id="clrimgs" style="margin-left:auto;display:'+(S.imgs.length?'inline-flex':'none')+'">Clear all</button>'+
+        '</div>'+
+        '<div style="font-size:10px;color:var(--t3);margin-top:6px">Ctrl+Enter to generate · HD output · 5-15s · No explicit content</div>'+
+      '</div>'+
+      '<div id="imgg"></div>'+
+    '</div>';
+
+  on($('gen-img-btn'),'click',genImg);
+  on($('img-inp'),'keydown',e=>{if(e.key==='Enter'&&e.ctrlKey)genImg();});
+  on($('clrimgs'),'click',()=>{S.imgs=[];renderImgGallery();});
+  document.querySelectorAll('#srow .stb').forEach(b=>on(b,'click',()=>{S.imgStyle=b.dataset.s;document.querySelectorAll('#srow .stb').forEach(x=>x.classList.toggle('on',x===b));}));
+  document.querySelectorAll('#rrow .rab').forEach(b=>on(b,'click',()=>{S.imgRatio=b.dataset.r;document.querySelectorAll('#rrow .rab').forEach(x=>x.classList.toggle('on',x===b));}));
+  renderImgGallery();
+}
+function renderImgGallery(){
+  const g=$('imgg');
+  if(!g) return;
+  const cb=$('clrimgs');
+  if(cb) cb.style.display=S.imgs.length?'inline-flex':'none';
+  if(!S.imgs.length){
+    g.innerHTML='<div style="grid-column:1/-1">'+emptyState({svg:'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>',title:'No images yet',sub:'Describe anything above - a scene, a product, a portrait - and AMV generates it in seconds.',btn:{label:'Try an example',act:'_tryExampleImage'}})+'</div>';
+    return;
+  }
+  const ar=r=>r==='16:9'?'16/9':r==='9:16'?'9/16':r==='4:3'?'4/3':'1/1';
+  const pg=_paginate('images', S.imgs.length, 24);
+  const visible=S.imgs.slice(0, pg.shown);
+  g.innerHTML=visible.map(img=>
+    '<div class="ic" id="ic-'+img.id+'">'+
+      '<div class="ifr" style="aspect-ratio:'+ar(img.ratio)+'">'+
+        '<img id="ii-'+img.id+'" alt="">'+
+        '<div class="ild" id="il-'+img.id+'"><div class="gen-shimmer"></div><div class="gen-orb"></div><div class="ilt" id="ip-'+img.id+'">Composing\u2026</div></div>'+
+      '</div>'+
+      '<div class="ifoot">'+
+        '<div class="ipr">'+escH(img.prompt)+'</div>'+
+        '<div class="ia">'+
+          '<span style="font-size:10px;color:var(--t2)">'+img.style+'</span>'+
+          '<div style="display:flex;gap:3px">'+
+            '<span class="ial" id="io-'+img.id+'" data-url="">Open</span>'+
+            '<a class="ial" id="id-'+img.id+'" href="" download="amv.jpg">Save</a>'+
+            '<span class="ial" data-rm="'+img.id+'">Remove</span>'+
+          '</div>'+
+        '</div>'+
+      '</div>'+
+    '</div>'
+  ).join('') + (pg.hasMore ? '<div style="grid-column:1/-1">'+_showMoreBtn('images', pg.remaining, 24)+'</div>' : '');
+  g.querySelectorAll('[data-rm]').forEach(b=>on(b,'click',()=>{S.imgs=S.imgs.filter(i=>i.id!==b.dataset.rm);renderImgGallery();}));
+  g.querySelectorAll('[data-url]').forEach(b=>on(b,'click',()=>{if(b.dataset.url)window.open(b.dataset.url,'_blank');}));
+  const gm=g.querySelector('[data-pagemore="images"]');
+  if(gm) gm.addEventListener('click',()=>{ _pageMore('images',24); renderImgGallery(); });
+  visible.forEach(img=>loadImg(img));   // only load what's shown, not all
+}
+function loadImg(img){
+  const el=$('ii-'+img.id),ld=$('il-'+img.id),pg=$('ip-'+img.id);
+  if(!el) return;
+  let tries=0,MAX=5;
+  // Phased status while generating - makes the wait feel active, not stalled.
+  const phases=['Composing\u2026','Rendering\u2026','Adding detail\u2026','Refining light\u2026','Almost there\u2026'];
+  let phaseI=0;
+  const phaseTimer=setInterval(()=>{
+    phaseI=Math.min(phases.length-1, phaseI+1);
+    const t=$('ip-'+img.id); if(t) t.textContent=phases[phaseI];
+    if(phaseI>=phases.length-1) clearInterval(phaseTimer);
+  }, 2600);
+  const _stopPhases=()=>{ try{ clearInterval(phaseTimer); }catch(e){} };
+  // First, try the operator's premium provider (if configured). On success we
+  // use its image directly; otherwise we fall through to the free generator.
+  (async()=>{
+    const psrc=await _premiumImageSrc(img.prompt,img.style,img.ratio,img.seed);
+    if(psrc){
+      const ob=$('io-'+img.id),db=$('id-'+img.id);
+      if(ob) ob.dataset.url=psrc;
+      if(db) db.href=psrc;
+      const pre=new Image();
+      pre.onload=()=>{ el.src=psrc; _stopPhases(); el.classList.add('img-reveal'); if(ld)ld.classList.add('gone'); };
+      pre.onerror=()=>attempt();   // premium failed to load → free fallback
+      pre.src=psrc;
+      return;
+    }
+    attempt();
+  })();
+  function attempt(){
+    const seed=tries===0?img.seed:img.seed+tries*11317;
+    const url=imgUrl(img.prompt,img.style,img.ratio,seed);
+    const ob=$('io-'+img.id),db=$('id-'+img.id);
+    if(ob) ob.dataset.url=url;
+    if(db) db.href=url;
+    const pre=new Image();
+    pre.onload=()=>{el.src=url;};
+    pre.onerror=()=>retry();
+    pre.src=url;
+    el.onload=()=>{el.classList.add('ldd');el.classList.add('img-reveal');_stopPhases();if(ld)ld.classList.add('gone');};
+    el.onerror=()=>retry();
+    const t=setTimeout(()=>{if(!el.classList.contains('ldd'))retry();},35000);
+    el.addEventListener('load',()=>clearTimeout(t),{once:true});
+    el.addEventListener('error',()=>clearTimeout(t),{once:true});
+  }
+  function retry(){
+    tries++;
+    if(tries>MAX){
+      _stopPhases();
+      if(ld) ld.innerHTML='<div class="ilt" style="text-align:center;padding:0 10px">Couldn\u2019t generate this one.<br><span style="font-size:10px;opacity:.6">The image service may be busy - try again in a moment.</span><br><button data-rimgid="'+img.id+'" class="retry-img-btn" style="background:var(--indigo);border:none;color:#fff;border-radius:5px;padding:5px 12px;cursor:pointer;font-family:var(--fn);font-size:11px;margin-top:8px">Retry</button></div>';
+      // Wire retry button
+      const retryBtn=ld.querySelector('.retry-img-btn');
+      if(retryBtn) retryBtn.addEventListener('click',()=>resetImg(retryBtn.dataset.rimgid));
+      return;
+    }
+    if(pg) pg.innerHTML='Retrying ('+tries+'/'+MAX+')\u2026';
+    setTimeout(attempt,3000);
+  }
+  attempt();
+}
+function resetImg(id){
+  const img=S.imgs.find(i=>i.id===id);
+  if(!img) return;
+  img.seed=Math.floor(Math.random()*999999);
+  const ld=$('il-'+id),el=$('ii-'+id);
+  if(ld){ld.classList.remove('gone');ld.innerHTML='<div class="spin"></div><div class="ilt" id="ip-'+id+'">Generating…</div>';}
+  if(el) el.classList.remove('ldd');
+  loadImg(img);
+}
+
+
+/* === VIDEO === */
+const VSTYLES=['Cinematic','Documentary','Animation','Fantasy','Sci-Fi','Horror','Nature','Action','Noir'];
+const VMOODS=['Dramatic','Uplifting','Dark','Peaceful','Intense','Mysterious','Epic','Nostalgic'];
+
+function renderVideoView(){
+  const vc=$('vc'); if(!vc) return;
+  const so=VSTYLES.map(s=>'<option>'+s+'</option>').join('');
+  const mo=VMOODS.map(m=>'<option>'+m+'</option>').join('');
+  vc.innerHTML=
+    '<div id="vidv" class="fi">'+
+      '<div class="card">'+
+        '<h3 style="font-size:14px;font-weight:600;margin-bottom:7px">AI Video Generator</h3>'+
+        '<p style="font-size:12px;color:var(--t2);margin-bottom:12px">Describe a scene and AMV generates it. Style and mood are folded into the prompt; duration and aspect are sent to the engine.</p>'+
+        '<textarea id="vp" placeholder="Describe your scene - include camera movement, lighting, atmosphere, characters, action…" rows="3" style="margin-bottom:11px;font-size:13px"></textarea>'+
+        '<div style="display:flex;gap:7px;flex-wrap:wrap;align-items:flex-end">'+
+          '<div><label class="lbl" style="margin-bottom:3px">Duration</label><select id="vd" aria-label="Duration" style="width:auto;padding:6px 22px 6px 9px;font-size:12px"><option value="5" selected>5s</option><option value="10">10s</option></select></div>'+
+          '<div><label class="lbl" style="margin-bottom:3px">Aspect</label><select id="va" aria-label="Aspect ratio" style="width:auto;padding:6px 22px 6px 9px;font-size:12px"><option value="16:9" selected>16:9</option><option value="9:16">9:16</option><option value="1:1">1:1</option></select></div>'+
+          '<div><label class="lbl" style="margin-bottom:3px">Style</label><select id="vs" aria-label="Style" style="width:auto;padding:6px 22px 6px 9px;font-size:12px">'+so+'</select></div>'+
+          '<div><label class="lbl" style="margin-bottom:3px">Mood</label><select id="vm" aria-label="Mood" style="width:auto;padding:6px 22px 6px 9px;font-size:12px">'+mo+'</select></div>'+
+          '<button class="btn bp" id="gvb" style="font-size:13px">Generate Video</button>'+
+          (S.vids.length?'<button class="bg2" id="clrvids" style="font-size:11px">Clear all</button>':'')+
+        '</div>'+
+        '<div id="vquota" style="font-size:10px;color:var(--t3);margin-top:8px">Ctrl+Enter to generate</div>'+
+      '</div>'+
+      '<div class="vg" id="vgrid"></div>'+
+    '</div>';
+  on($('gvb'),'click',genVid);
+  on($('vp'),'keydown',e=>{if(e.key==='Enter'&&e.ctrlKey)genVid();});
+  on($('clrvids'),'click',()=>{S.vids=[];renderVidGrid();});
+  renderVidGrid();
+}
+/* Video generation is NOT implemented. There is no video engine in AMV - not
+   connected, not anywhere. This used to fake a progress bar through scripted
+   stages ("Rendering motion\u2026", "Encoding\u2026") and then show a play button that
+   never played anything. That is a lie to the user, so it's gone.
+   When a real video engine is wired up, generate here and drop the notice. */
+/* ── VIDEO - real generation, real polling, real playback ─────────────────
+
+   This used to be a lie: a setInterval that ticked a fake progress bar through
+   invented stages ("Rendering motion…", "Encoding…") and then showed a play
+   button that played nothing. No API was ever called.
+
+   Now it creates a real job on the Worker, polls the real provider status, and
+   plays the real file. If no provider is configured, it says so plainly - it
+   does not pretend. */
+
+const _VID = { polls: {} };
+
+async function _vidApi(path, body){
+  if(!(window.AMV_API && AMV_API.live)) throw new Error('__NOT_CONNECTED__');
+  const r = await fetch(AMV_API.base.replace(/\/$/,'') + path, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json',
+              ...(AMV_API.token ? { 'Authorization':'Bearer '+AMV_API.token } : {}) },
+    body: JSON.stringify(body||{})
+  });
+  const d = await r.json().catch(()=>({}));
+  /* Throw ONLY on a real HTTP failure.
+     /v1/video/status returns { ok:true, status:'failed', error:'…' } where
+     `error` DESCRIBES the failed render - it is data, not an exception. Throwing
+     on any `error` field meant a genuinely failed video was swallowed as a
+     transient blip and polled forever, and the user just watched a spinner. */
+  if(!r.ok){
+    const e = new Error(d.error || ('Request failed ('+r.status+')'));
+    e.code = d.code; e.status = r.status;
+    throw e;
+  }
+  return d;
+}
+
+async function genVid(){
+  const el = $('vp');
+  let p = el ? el.value.trim() : '';
+  if(!p){ el && el.focus(); return; }
+
+  const dur    = parseInt(($('vd')?.value||'5'), 10) || 5;
+  const aspect = $('va')?.value || '16:9';
+
+  /* Style and mood are dropdowns, so they have to DO something. The only honest
+     thing they can do is shape the prompt - the provider has no "mood" knob. */
+  const style = $('vs')?.value || '';
+  const mood  = $('vm')?.value || '';
+  const extra = [style, mood].filter(x=>x && !/^none$/i.test(x)).join(', ');
+  if(extra) p = p + '. Style: ' + extra + '.';
+
+  const id = 'local_' + Date.now().toString(36);
+  S.vids.unshift({
+    id, p, dur, aspect,
+    status:'starting', stage:'Sending to the video engine\u2026',
+    url:'', error:'', jobId:''
+  });
+  renderVidGrid();
+  _sessTouch && _sessTouch('video');
+
+  const v = S.vids.find(x=>x.id===id);
+  try{
+    const d = await _vidApi('/v1/video/generate', { prompt:p, seconds:dur, aspect });
+
+    if(d.configured === false){
+      v.status='unavailable';
+      v.error='No video engine is connected to this workspace yet.';
+      renderVidGrid();
+      _vidNotice();
+      return;
+    }
+
+    v.jobId = d.id;
+    v.status = 'processing';
+    v.stage  = 'The engine is generating your video\u2026';
+    renderVidGrid();
+    _vidPoll(id);
+  }catch(e){
+    v.status = 'failed';
+    v.error  = _vidErr(e);
+    renderVidGrid();
+    if(e.message === '__NOT_CONNECTED__') _vidNotice();
+  }
+}
+
+/* Poll the REAL provider status. No invented percentages - we show the actual
+   state the provider reports, and we back off so we don't hammer it. */
+function _vidPoll(localId){
+  const v = S.vids.find(x=>x.id===localId);
+  if(!v || !v.jobId) return;
+
+  let tries = 0;
+  const tick = async () => {
+    const cur = S.vids.find(x=>x.id===localId);
+    if(!cur || cur.status==='succeeded' || cur.status==='failed') return;
+    tries++;
+
+    try{
+      const d = await _vidApi('/v1/video/status', { id: cur.jobId });
+
+      if(d.status === 'succeeded' && d.url){
+        cur.status='succeeded'; cur.url=d.url; cur.stage='';
+        renderVidGrid();
+        _sessTouch && _sessTouch('video');
+        try{ toast('Your video is ready.','success',4000); }catch(e){}
+        return;
+      }
+      if(d.status === 'failed'){
+        cur.status='failed';
+        cur.error = d.error || 'The video could not be generated.';
+        renderVidGrid();
+        return;
+      }
+
+      cur.stage = (d.status==='starting')
+        ? 'Queued at the video engine\u2026'
+        : 'Generating\u2026 this usually takes a minute or two.';
+      renderVidGrid();
+    }catch(e){
+      // a transient poll failure must not kill a job that is still running
+      if(tries > 90){
+        cur.status='failed';
+        cur.error='Lost contact with the video engine.';
+        renderVidGrid();
+        return;
+      }
+    }
+
+    // 2s for the first half-minute, then 5s - video takes a while
+    const wait = tries < 15 ? 2000 : 5000;
+    if(tries < 120) _VID.polls[localId] = setTimeout(tick, wait);
+    else {
+      cur.status='failed';
+      cur.error='This took longer than expected. Try a shorter clip.';
+      renderVidGrid();
+    }
+  };
+  _VID.polls[localId] = setTimeout(tick, 2500);
+}
+
+function _vidErr(e){
+  if(e.message === '__NOT_CONNECTED__')
+    return 'AMV isn\u2019t connected to its engine, so it can\u2019t generate video.';
+  if(e.code === 'plan_required')
+    return 'Video isn\u2019t included in your plan. Upgrade to generate video.';
+  if(e.code === 'video_quota')
+    return 'You\u2019ve used all the video in your plan this month.';
+  return e.message || 'Something went wrong.';
+}
+
+function _vidRetry(localId){
+  const v = S.vids.find(x=>x.id===localId);
+  if(!v) return;
+  const el = $('vp'); if(el) el.value = v.p;
+  S.vids = S.vids.filter(x=>x.id!==localId);
+  genVid();
+}
+try{ window._vidRetry=_vidRetry; window.genVid=genVid; }catch(e){}
+
+function _vidNotice(){
+  const g=$('vgrid'); if(!g) return;
+  g.innerHTML='<div style="grid-column:1/-1">'+
+    '<div class="vid-soon">'+
+      '<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="m22 8-6 4 6 4V8z"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg>'+
+      '<b>Video generation isn\u2019t available yet</b>'+
+      '<span>AMV doesn\u2019t have a video engine connected, so it can\u2019t make a video for you - and we\u2019re not going to pretend it can. '+
+      'Everything else (images, apps, code, automations) is live today.</span>'+
+      '<div class="vid-soon-acts">'+
+        '<button class="btn bp" id="vid-img">Create an image instead</button>'+
+        '<button class="btn bs" id="vid-build">Build something instead</button>'+
+      '</div>'+
+    '</div></div>';
+  on($('vid-img'),'click',()=>setTab('images'));
+  on($('vid-build'),'click',()=>setTab('dev'));
+}
+function renderVidGrid(){
+  const g=$('vgrid'); if(!g) return;
+
+  if(!S.vids.length){
+    g.innerHTML='<div style="grid-column:1/-1">'+emptyState({
+      svg:'<path d="m22 8-6 4 6 4V8z"/><rect x="2" y="6" width="14" height="12" rx="2"/>',
+      title:'No videos yet',
+      sub:'Describe a scene above - a product shot, an animation, a moment - and AMV will generate it.'
+    })+'</div>';
+    return;
+  }
+
+  g.innerHTML = S.vids.map(v=>{
+    let inner;
+
+    if(v.status === 'succeeded' && v.url){
+      /* A REAL video element with the REAL file. Not a play-button graphic. */
+      inner =
+        '<video class="vvid" src="'+escH(v.url)+'" controls playsinline preload="metadata" '+
+          'poster="" '+
+          (v.aspect==='9:16' ? 'style="aspect-ratio:9/16"' : v.aspect==='1:1' ? 'style="aspect-ratio:1/1"' : '')+
+        '></video>';
+    }
+    else if(v.status === 'failed' || v.status === 'unavailable'){
+      inner =
+        '<div class="vpo vfail">'+
+          '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>'+
+          '<div class="vmsg">'+escH(v.error || 'Something went wrong.')+'</div>'+
+          (v.status==='failed'
+            ? '<button class="btn bs vretry" data-retry="'+escH(v.id)+'">Try again</button>'
+            : '')+
+        '</div>';
+    }
+    else {
+      /* Working. We show the REAL state the provider reports - there is no
+         percentage, because the provider doesn't give us one and inventing a
+         number is exactly the lie this feature used to tell. */
+      inner =
+        '<div class="vpo">'+
+          '<div class="spin"></div>'+
+          '<div class="vstage">'+escH(v.stage || 'Working\u2026')+'</div>'+
+          '<div class="vbar"><div class="vbar-run"></div></div>'+
+        '</div>';
+    }
+
+    const tags = [
+      v.dur ? v.dur+'s' : '',
+      v.aspect || '',
+      v.status==='succeeded' ? 'ready' : v.status
+    ].filter(Boolean);
+
+    return '<div class="vc2">'+
+      '<div class="vth'+(v.status==='succeeded'?' has-vid':'')+'">'+inner+'</div>'+
+      '<div class="vft">'+
+        '<div class="vtt">'+escH(v.p.slice(0,46))+(v.p.length>46?'\u2026':'')+'</div>'+
+        '<div class="vtg">'+tags.map(t=>'<span class="vtk">'+escH(t)+'</span>').join('')+
+          (v.status==='succeeded' && v.url
+            ? '<a class="vtk vdl" href="'+escH(v.url)+'" download target="_blank" rel="noopener">Download</a>'
+            : '')+
+        '</div>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+
+  g.querySelectorAll('[data-retry]').forEach(b=>
+    on(b,'click',()=>_vidRetry(b.dataset.retry)));
+}
+
+
+
+/* ── LOCAL CURRENCY (display only, USD-pegged) ─────────────────────────────
+   Prices are always denominated and CHARGED in US dollars. We show a local-
+   currency ESTIMATE for convenience, computed from the USD price at an
+   indicative FX rate. Crucially there are NO regional/country discounts: the
+   amount is the same real value everywhere, so switching region (VPN, spoofed
+   locale) changes only the label, never what you pay. That removes the
+   "cheap-country storefront" arbitrage (the Argentina-priced-store trick) and
+   keeps billing simple and compliant. Location is inferred from the browser
+   locale only - no GPS permission, no precise-location tracking. */
+const AMVCurrency = {
+  // Indicative USD -> local rates. DISPLAY ONLY.
+  FX:{USD:1,EUR:0.92,GBP:0.79,CAD:1.36,AUD:1.52,INR:83,JPY:157,BRL:5.1,MXN:17,ZAR:18.5,AED:3.67,SGD:1.35,CHF:0.88,SEK:10.5,NOK:10.7,DKK:6.9,PLN:4,TRY:32,NZD:1.64,HKD:7.8,KRW:1350,CNY:7.2,PHP:57,IDR:15800,THB:36,MYR:4.7,VND:25000,NGN:1500,EGP:48,ARS:900,CLP:950,COP:3900,SAR:3.75,ILS:3.7,CZK:23,HUF:360,RON:4.6,UAH:40},
+  CUR_BY_REGION:{AT:'EUR',BE:'EUR',HR:'EUR',CY:'EUR',EE:'EUR',FI:'EUR',FR:'EUR',DE:'EUR',GR:'EUR',IE:'EUR',IT:'EUR',LV:'EUR',LT:'EUR',LU:'EUR',MT:'EUR',NL:'EUR',PT:'EUR',SK:'EUR',SI:'EUR',ES:'EUR',GB:'GBP',CA:'CAD',AU:'AUD',IN:'INR',JP:'JPY',BR:'BRL',MX:'MXN',ZA:'ZAR',AE:'AED',SG:'SGD',CH:'CHF',SE:'SEK',NO:'NOK',DK:'DKK',PL:'PLN',TR:'TRY',NZ:'NZD',HK:'HKD',KR:'KRW',CN:'CNY',PH:'PHP',ID:'IDR',TH:'THB',MY:'MYR',VN:'VND',NG:'NGN',EG:'EGP',AR:'ARS',CL:'CLP',CO:'COP',SA:'SAR',IL:'ILS',CZ:'CZK',HU:'HUF',RO:'RON',UA:'UAH',US:'USD'},
+  region(){ try{ const langs=(navigator.languages&&navigator.languages.length?navigator.languages:[navigator.language||'en-US']); for(const l of langs){ const p=String(l).split('-'); if(p[1]) return p[1].toUpperCase(); } }catch(e){} return ''; },
+  currency(){ try{ const o=loadStr('amv_currency'); if(o&&this.FX[o]) return o; }catch(e){} const c=this.CUR_BY_REGION[this.region()]; return (c&&this.FX[c])?c:'USD'; },
+  isLocal(){ return this.currency()!=='USD'; },
+  fmt(usd){ const c=this.currency(); const amt=usd*(this.FX[c]||1); const zero=['JPY','INR','KRW','IDR','VND','CLP','COP','NGN','HUF','ARS'].includes(c)||amt>=1000; try{ return new Intl.NumberFormat(undefined,{style:'currency',currency:c,maximumFractionDigits:zero?0:2}).format(amt);}catch(e){ return c+' '+(zero?Math.round(amt):amt.toFixed(2)); } }
+};
+try{ window.AMVCurrency=AMVCurrency; }catch(e){}
+/* Fill any [data-usd] element with a local-currency estimate, and show/hide the
+   explanatory note. Safe to call on any freshly rendered subtree. */
+function _localizePrices(root){
+  try{
+    root=root||document;
+    const local=window.AMVCurrency&&AMVCurrency.isLocal();
+    root.querySelectorAll('.px-note').forEach(e=>{ e.style.display=local?'':'none'; });
+    root.querySelectorAll('[data-usd]').forEach(el=>{
+      const usd=parseFloat(el.getAttribute('data-usd'));
+      if(!local || !(usd>0)){ el.textContent=''; el.style.display='none'; return; }
+      el.style.display='';
+      el.textContent='≈ '+AMVCurrency.fmt(usd)+(el.dataset.per?(' /'+el.dataset.per):'')+' in your currency';
+    });
+  }catch(e){}
+}
+try{ window._localizePrices=_localizePrices; }catch(e){}
+
+/* === PLANS === */
+function planCards(inApp){
+  function pBtn(label, cls, plan, isLand){
+    if(isLand) return '<button class="plnbtn pbs" onclick="openAuth(\'signup\')">'+label+'</button>';
+    if(plan==='free') return '<button class="plnbtn pbs" onclick="setTab(\'plans\')">'+label+'</button>';
+    if(plan==='pro') {
+      if(S.sp) return '<button class="plnbtn pbp" onclick="window.open(S.sp,\'_blank\')">'+label+'</button>';
+      return '<button class="plnbtn pbp" onclick="openCheckout(\'pro\')">'+label+'</button>';
+    }
+    if(plan==='elite') {
+      if(S.se) return '<button class="plnbtn pbs" onclick="window.open(S.se,\'_blank\')">'+label+'</button>';
+      return '<button class="plnbtn pbs" onclick="openCheckout(\'elite\')">'+label+'</button>';
+    }
+    return '<button class="plnbtn pbs">'+label+'</button>';
+  }
+  const isLand=!inApp;
+  return [
+    '<div class="plnc">'+
+      '<div class="plntier">Free</div>'+
+      '<div class="plnprice"><sup>$</sup>0</div>'+
+      '<div class="plnper">No card required</div>'+
+      '<div class="plnanchor">Everything you need to explore</div>'+
+      '<div class="plndiv"></div>'+
+      '<ul class="plnfl">'+
+        '<li><span class="fck">\u2713</span>Daily usage to explore everything</li>'+
+        '<li><span class="fck">\u2713</span>Chat, images &amp; 3D generation</li>'+
+        '<li><span class="fck">\u2713</span>File analysis - PDF, images, code</li>'+
+        '<li><span class="fck">\u2713</span>Essays, code, math &amp; research</li>'+
+        '<li><span class="fxx">\u2717</span>Autonomous agents &amp; Crew</li>'+
+        '<li><span class="fxx">\u2717</span>Video generation</li>'+
+        '<li><span class="fxx">\u2717</span>Connected accounts (Gmail, Calendar)</li>'+
+      '</ul>'+
+      pBtn('Get started free','pbs','free',isLand)+
+      '<div class="plnreassure">&nbsp;</div>'+
+    '</div>',
+    '<div class="plnc feat">'+
+      '<div class="plnpop">Most Popular</div>'+
+      '<div class="plntier">Pro</div>'+
+      '<div class="plnprice"><sup>$</sup>15</div>'+
+      '<div class="plnper">per month &middot; cancel anytime</div>'+
+      '<div class="plnlocal px-local" data-usd="15" data-per="mo"></div>'+
+      '<div class="plnanchor">Replaces $60+/mo of separate AI tools</div>'+
+      '<div class="plndiv"></div>'+
+      '<ul class="plnfl">'+
+        '<li><span class="fck">\u2713</span><b>5× the usage</b>, all models included</li>'+
+        '<li><span class="fck">\u2713</span>Autonomous agents &amp; Crew, run from <b>Mission Control</b></li>'+
+        '<li><span class="fck">\u2713</span><b>Preview &amp; approve</b> every action before it runs</li>'+
+        '<li><span class="fck">\u2713</span><b>Auto Approve</b> for trusted recurring tasks</li>'+
+        '<li><span class="fck">\u2713</span>HD images, video &amp; interactive 3D</li>'+
+        '<li><span class="fck">\u2713</span>Build &amp; ship real apps in Dev</li>'+
+        '<li><span class="fck">\u2713</span>Connect Gmail, Calendar &amp; files</li>'+
+        '<li><span class="fck">\u2713</span>Scheduled &amp; background automation</li>'+
+      '</ul>'+
+      pBtn('Start Pro - $15/mo','pbp','pro',isLand)+
+      '<div class="plnreassure">$5 cheaper than ChatGPT &amp; Claude</div>'+
+    '</div>',
+    '<div class="plnc feat feat-elite">'+
+      '<div class="plnpop plnpop-elite">Best Value</div>'+
+      '<div class="plntier">Elite</div>'+
+      '<div class="plnprice"><sup>$</sup>75</div>'+
+      '<div class="plnper">per month &middot; cancel anytime</div>'+
+      '<div class="plnlocal px-local" data-usd="75" data-per="mo"></div>'+
+      '<div class="plnanchor">For founders, builders &amp; power users</div>'+
+      '<div class="plndiv"></div>'+
+      '<ul class="plnfl">'+
+        '<li><span class="fck">\u2713</span><b>Everything in Pro</b>, plus:</li>'+
+        '<li><span class="fck">\u2713</span><b>20× the usage</b> - work all day</li>'+
+        '<li><span class="fck">\u2713</span><b>Apex (Fable 5) first</b> - our most capable model</li>'+
+        '<li><span class="fck">\u2713</span><b>Full-stack app builder</b> + one-click deploy</li>'+
+        '<li><span class="fck">\u2713</span>Run up to <b>5 agents in parallel</b></li>'+
+        '<li><span class="fck">\u2713</span>Multi-file projects, code review &amp; auto-debug</li>'+
+        '<li><span class="fck">\u2713</span>Priority speed &amp; 24/7 support</li>'+
+      '</ul>'+
+      pBtn('Go Elite - $75/mo','pbs','elite',isLand)+
+      '<div class="plnreassure">$25 less than Claude Max &amp; ChatGPT Pro</div>'+
+    '</div>',
+    '<div class="plnc">'+
+      '<div class="plntier">Ultra</div>'+
+      '<div class="plnprice"><sup>$</sup>200</div>'+
+      '<div class="plnper">per month &middot; cancel anytime</div>'+
+      '<div class="plnlocal px-local" data-usd="200" data-per="mo"></div>'+
+      '<div class="plnanchor">For serious operators</div>'+
+      '<div class="plndiv"></div>'+
+      '<ul class="plnfl">'+
+        '<li><span class="fck">\u2713</span><b>Everything in Elite</b>, plus:</li>'+
+        '<li><span class="fck">\u2713</span><b>50× the usage</b> - effectively unlimited</li>'+
+        '<li><span class="fck">\u2713</span><b>Unlimited parallel agents</b> - a whole crew at once</li>'+
+        '<li><span class="fck">\u2713</span><b>Longest context</b> - whole codebases at once</li>'+
+        '<li><span class="fck">\u2713</span>Hand off a goal, get a finished result</li>'+
+        '<li><span class="fck">\u2713</span>Deploy &amp; host multiple live apps</li>'+
+        '<li><span class="fck">\u2713</span>👥 Team workspaces, roles &amp; shared projects</li>'+
+      '</ul>'+
+      pBtn('Go Ultra - $200/mo','pbs','ultra',isLand)+
+      '<div class="plnreassure">Matches Claude Max &amp; ChatGPT Pro</div>'+
+    '</div>',
+  ].join('');
+}
+/* Custom plan as a slim full-width banner below the four core tiers. */
+function _customPlanBanner(inApp){
+  const btn = inApp
+    ? '<button class="btn pbp plnbtn cpb-btn" data-dact="openCustomPlan">Build your plan \u2192</button>'
+    : '<button class="btn pbp plnbtn cpb-btn" onclick="openAuth(\'signup\')">Build your plan \u2192</button>';
+  return '<div class="cpb">'+
+    '<div class="cpb-l"><div class="cpb-tier">Custom \u00b7 from $10/mo</div>'+
+      '<div class="cpb-t">Want a plan sized exactly to you?</div>'+
+      '<div class="cpb-d">Pick your budget and pay for what you use - all models including Apex, agents, images, video &amp; 3D. Hard-capped, so it\u2019s never a surprise charge. Resize or cancel anytime.</div></div>'+
+    '<div class="cpb-r">'+btn+'</div>'+
+  '</div>';
+}
+
+
+
+
+/* === SIDEBAR === */
+function renderHist(){
+  const area=$('hist-list')||$('hist'); if(!area) return;
+  const hdr=$('hist-header');
+  const search=($('hist-search')?.value||'').toLowerCase().trim();
+  let convs=Array.isArray(S.convs)?S.convs:[];
+  if(S.starFilter) convs=convs.filter(c=>c.starred);
+  if(search) convs=convs.filter(c=>{
+    const inTitle=(c.title||'').toLowerCase().includes(search);
+    const inMsgs=c.msgs&&c.msgs.some(m=>typeof m.c==='string'&&m.c.toLowerCase().includes(search));
+    return inTitle||inMsgs;
+  });
+  // Work sessions (Dev/Lab/Studio) appear alongside conversations, unless a
+  // star filter is active (sessions aren't starrable).
+  let sessions = (!S.starFilter && Array.isArray(_SESSIONS)) ? _SESSIONS.slice() : [];
+  if(search) sessions = sessions.filter(s=>(s.title||'').toLowerCase().includes(search) || (SESSION_KINDS[s.kind]?.label||'').toLowerCase().includes(search));
+  if(hdr) hdr.style.display=(!search&&!S.starFilter&&!S.convs.length&&!sessions.length)?'none':'flex';
+  if(!convs.length && !sessions.length){
+    area.innerHTML = search
+      ? '<div class="nh">No results for &ldquo;'+escH(search)+'&rdquo;</div>'
+      : S.starFilter
+      ? emptyState({svg:'<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',title:'No starred chats yet',sub:'Star a conversation to keep it close - they\u2019ll gather here for quick access.'})
+      : emptyState({svg:'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',title:'No conversations yet',sub:'Ask AMV anything to get started - your chats and work sessions will show up here.'});
+    return;
+  }
+  // Build a unified, recency-sorted list of rows.
+  const convTime=(c)=>c._t||c.updated||c.ts||0;
+  const rows=[];
+  convs.forEach(c=>rows.push({type:'conv', t:convTime(c), c}));
+  sessions.forEach(s=>rows.push({type:'sess', t:s.updated||0, s}));
+  // conversations without a timestamp keep their existing array order at the top;
+  // if no timestamps exist at all, preserve conv order then sessions.
+  const anyConvT=convs.some(c=>convTime(c)>0);
+  if(anyConvT || sessions.length){
+    rows.sort((a,b)=>(b.t||0)-(a.t||0));
+  }
+
+  const sessItemHTML=(s)=>{
+    const k=SESSION_KINDS[s.kind]||{label:'Session',icon:''};
+    return '<div class="hi hi-sess" data-sid="'+s.id+'">'+
+      '<svg class="hiic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+k.icon+'</svg>'+
+      '<span class="hit">'+escH(s.title||k.label)+'</span>'+
+      '<span class="hi-kind">'+escH(k.label)+'</span>'+
+      '<button class="hidots" title="More" data-sact="menu" data-sid="'+s.id+'" aria-label="Options">'+
+        '<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>'+
+      '</button>'+
+    '</div>';
+  };
+  const itemHTML=(cv)=>
+    '<div class="hi '+(cv.id===S.cur?'on':'')+(cv.starred?' star':'')+'" data-id="'+cv.id+'" data-cid="'+cv.id+'">'+
+      '<svg class="hiic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">'+
+        (cv.starred?'<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>':'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>') +
+      '</svg>'+
+      '<span class="hit">'+escH(cv.title||'New Conversation')+'</span>'+
+      '<button class="hidots" title="More" data-hact="menu" data-hid="'+cv.id+'" aria-label="Options">'+
+        '<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>'+
+      '</button>'+
+    '</div>';
+  const rowHTML=(r)=> r.type==='sess' ? sessItemHTML(r.s) : itemHTML(r.c);
+  const bind=()=>{
+    area.querySelectorAll('.hi').forEach(el=>{
+      if(el._b) return; el._b=1;
+      el.addEventListener('click',e=>{
+        const dots=e.target.closest('.hidots');
+        if(el.dataset.sid){ // work session row
+          if(dots){ e.stopPropagation(); _showSessMenu(dots.getBoundingClientRect(), el.dataset.sid); return; }
+          _sessResume(el.dataset.sid); return;
+        }
+        if(dots){ e.stopPropagation(); const r=dots.getBoundingClientRect(); showConvMenu({preventDefault(){},clientX:r.right,clientY:r.bottom}, dots.dataset.hid); return; }
+        loadConv(el.dataset.id);
+      });
+    });
+  };
+  // Small lists: render all (simple, fast). Large lists: virtualize.
+  const VTHRESH=60, ROW=34;
+  if(rows.length<=VTHRESH){
+    area.innerHTML=rows.map(rowHTML).join('');
+    bind();
+    return;
+  }
+  // For very large lists fall back to conversation-only virtualization plus
+  // sessions rendered inline at top (keeps the fast path unchanged).
+  {
+    area.innerHTML=rows.map(rowHTML).join('');
+    bind();
+    return;
+  }
+}
+
+// Small menu for a work-session row in Recents: resume or delete.
+function _showSessMenu(rect, id){
+  document.querySelectorAll('.ctxm').forEach(m=>m.remove());
+  const menu=document.createElement('div');
+  menu.className='ctxm';
+  menu.style.left=Math.min(rect.right, window.innerWidth-200)+'px';
+  menu.style.top=(rect.bottom)+'px';
+  menu.innerHTML=
+    '<div class="ctxi" id="sm-open">↗ Resume</div>'+
+    '<div class="ctxi ctxi-danger" id="sm-del">🗑 Delete</div>';
+  document.body.appendChild(menu);
+  const close=()=>{ menu.remove(); document.removeEventListener('click',close); };
+  document.getElementById('sm-open').addEventListener('click',()=>{ close(); _sessResume(id); });
+  document.getElementById('sm-del').addEventListener('click',()=>{ close(); _sessDelete(id); toast('Session removed','info'); });
+  setTimeout(()=>document.addEventListener('click',close),30);
+}
+
+function showConvMenu(e,id){
+  e.preventDefault();
+  document.querySelectorAll('.ctxm').forEach(m=>m.remove());
+  const menu=document.createElement('div');
+  menu.className='ctxm';
+  menu.style.left=Math.min(e.clientX,window.innerWidth-200)+'px';
+  menu.style.visibility='hidden';
+  menu.style.top='0px';
+  const c=S.convs.find(x=>x.id===id);
+  menu.innerHTML=
+    '<div class="ctxi" id="cm-open">📂 Open</div>'+
+    '<div class="ctxi" id="cm-rename">✏ Rename</div>'+
+    '<div class="ctxi" id="cm-star">'+(c?.starred?'☆ Unstar':'★ Star')+'</div>'+
+    '<div class="ctxi" id="cm-proj">📁 Add to project</div>'+
+    '<div class="ctxi" id="cm-export">⬇ Export as Markdown</div>'+
+    '<div class="ctxi" id="cm-share">🔗 Share</div>'+
+    '<div class="ctxd"></div>'+
+    '<div class="ctxi danger" id="cm-del">🗑 Delete</div>';
+  document.body.appendChild(menu);
+  (function(){
+    const mh=menu.offsetHeight;
+    let top=e.clientY;
+    if(top+mh > window.innerHeight-8){ top=Math.max(8, e.clientY-mh); }
+    menu.style.top=top+'px';
+    menu.style.visibility='visible';
+  })();
+  on($('cm-open'),'click',()=>{ loadConv(id); menu.remove(); });
+  on($('cm-rename'),'click',()=>{ renameConv(id); menu.remove(); });
+  on($('cm-star'),'click',()=>{ starConv(id); menu.remove(); });
+  on($('cm-proj'),'click',()=>{ addToProject(id); menu.remove(); });
+  on($('cm-export'),'click',()=>{ exportConv(id); menu.remove(); });
+  on($('cm-share'),'click',()=>{ shareConv(id); menu.remove(); });
+  on($('cm-del'),'click',()=>{ deleteConv(id); menu.remove(); });
+  const close=e2=>{ if(!menu.contains(e2.target)){ menu.remove(); document.removeEventListener('click',close); } };
+  setTimeout(()=>document.addEventListener('click',close),50);
+}
+
+
+/* === PROFILE DROPDOWN MENU === */
+function showProfMenu(trigger) {
+  document.querySelectorAll('.prof-menu').forEach(m=>m.remove());
+  const rect=trigger.getBoundingClientRect();
+  const u=S.user||{name:'Guest',email:'',ini:'?'};
+  const pfp=u.email?loadStr('amv_pfp_'+u.email):'';
+  const menu=document.createElement('div');
+  menu.className='prof-menu';
+  menu.style.cssText='top:'+(rect.bottom+8)+'px;right:'+(window.innerWidth-rect.right)+'px';
+  
+  const _pk=loadStr('amv_plan')||'free';
+  const plan=(PLANS[_pk]&&PLANS[_pk].name)||'Free';
+  menu.innerHTML=
+    '<div class="prof-header">'+
+      '<div style="display:flex;align-items:center;gap:9px;margin-bottom:6px">'+
+        '<div style="width:36px;height:36px;border-radius:50%;overflow:hidden;flex-shrink:0">'+
+          _avatarInner(u.email)+
+        '</div>'+
+        '<div>'+
+          '<div class="prof-name">'+escH(u.name||'User')+'</div>'+
+          '<div class="prof-email">'+escH(u.email||'')+'</div>'+
+        '</div>'+
+      '</div>'+
+      '<span class="badge bb prof-plan">'+plan+' Plan</span>'+
+    '</div>'+
+    '<button class="prof-item upgrade" id="pm-upgrade">'+
+      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>'+
+      'Upgrade Plan</button>'+
+    '<button class="prof-item" id="pm-learn">'+
+      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'+
+      'Help &amp; Learn More</button>'+
+    '<button class="prof-item" id="pm-settings">'+
+      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'+
+      'Settings</button>'+
+    '<button class="prof-item" id="pm-billing">'+
+      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>'+
+      'Manage Subscription</button>'+
+    '<button class="prof-item" id="pm-apps">'+
+      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="2" width="9" height="9" rx="1"/><rect x="13" y="2" width="9" height="9" rx="1"/><rect x="2" y="13" width="9" height="9" rx="1"/><rect x="13" y="13" width="9" height="9" rx="1"/></svg>'+
+      'Apps &amp; Extensions</button>'+
+    '<div class="prof-divider"></div>'+
+    '<button class="prof-item danger" id="pm-signout">'+
+      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>'+
+      'Sign Out</button>';
+  document.body.appendChild(menu);
+  
+  // Wire items
+  const close=()=>menu.remove();
+  document.getElementById('pm-upgrade')?.addEventListener('click',()=>{ close(); setTab('plans'); });
+  document.getElementById('pm-learn')?.addEventListener('click',()=>{ close(); setTab('help'); });
+  document.getElementById('pm-settings')?.addEventListener('click',()=>{ close(); S.settingsPane='account'; setTab('settings'); });
+  document.getElementById('pm-billing')?.addEventListener('click',()=>{ close(); setTab('billing'); });
+  document.getElementById('pm-apps')?.addEventListener('click',()=>{ close(); setTab('apps'); });
+  document.getElementById('pm-signout')?.addEventListener('click',()=>{ close(); signOut(); });
+  setTimeout(()=>document.addEventListener('click',function h(e){if(!menu.contains(e.target)){close();document.removeEventListener('click',h);}},50));
+}
+/* Show Sign up / Log in in the header ONLY when signed out.
+   They sit to the left of New chat and disappear the moment you have an account. */
+function _updateHdrAuth(){
+  try{
+    const signedIn = !!(S.user && S.user.email);
+    const su=document.getElementById('hdr-signup');
+    const li=document.getElementById('hdr-login');
+    if(su) su.hidden = signedIn;
+    if(li) li.hidden = signedIn;
+  }catch(e){}
+}
+try{ window._updateHdrAuth=_updateHdrAuth; }catch(e){}
+
+function updateSbUser(){
+  try{ _updateHdrAuth(); }catch(e){}
+  const u=S.user;
+  const pfp=u&&u.email?loadStr('amv_pfp_'+u.email):'';
+  const av=$('sb-av')||$('ir-av-inner'),nav=$('nav-av'),nm=$('sb-name'),em=$('sb-email');
+  const avInner=$('ir-av-inner');
+  if(nm) nm.textContent=u&&u.name?u.name:'Guest';
+  if(em){ const _pk=loadStr('amv_plan')||'free'; const _pn=(PLANS&&PLANS[_pk]&&PLANS[_pk].name)||'Free'; em.textContent=(u&&u.email?u.email:'')+(u&&u.email?'  ·  '+_pn:''); }
+  [av,avInner,nav].filter(Boolean).forEach(el=>{
+    if(!el) return;
+    el.style.background=''; el.style.overflow='hidden';
+    el.innerHTML=_avatarInner(u&&u.email);
+  });
+  // Show/hide hist header
+  const hdr=$('hist-header');
+  if(hdr) hdr.style.display=S.convs&&S.convs.length>0?'flex':'none';
+  renderHist();
+  _renderSbUsage();
+}
+/* Sidebar usage meter - shows how much of the current window is used, so a user
+   sees their limit approaching (and can upgrade before hitting the wall). */
+function _renderSbUsage(){
+  const el=$('sb-usage'); if(!el) return;
+  if(typeof AMVUsage==='undefined'){ el.style.display='none'; return; }
+  let st; try{ st=AMVUsage.status(); }catch(e){ el.style.display='none'; return; }
+  const pct=Math.min(100, Math.round((st.used/st.cap)*100)||0);
+  const plan=(loadStr('amv_plan')||'free');
+  const near=pct>=80, full=pct>=100;
+  el.style.display='';
+  el.innerHTML=
+    '<div class="sb-usage-top"><span>'+(full?'Usage full':near?'Usage running low':'Usage')+'</span><span class="sb-usage-pct">'+pct+'%</span></div>'+
+    '<div class="sb-usage-bar"><div class="sb-usage-fill" style="width:'+pct+'%;background:'+(full?'#ff4d4d':near?'#e0b341':'var(--accent)')+'"></div></div>'+
+    (near&&plan!=='ultra' ? '<button class="sb-usage-upg" data-sb-upgrade="1">Upgrade for more</button>'
+      : '<div class="sb-usage-reset">Resets in '+escH(AMVUsage.resetLabel())+'</div>');
+  const up=el.querySelector('[data-sb-upgrade]');
+  if(up) up.addEventListener('click',()=>{ setTab('plans'); });
+}
+try{ window._renderSbUsage=_renderSbUsage; }catch(e){}
+
+
+/* === DASHBOARD === */
+function renderDashboard(){
+  const vc=$('vc'); if(!vc) return;
+  const mc=getMsgs().length,ic=S.imgs.length,cc=S.convs.length,vc2=S.vids.length;
+  const recent=S.convs.slice(0,5);
+  vc.innerHTML=
+    '<div class="sv fi"><div class="dash-wrap" style="max-width:1000px;margin:0 auto;display:flex;flex-direction:column;gap:22px">'+
+      '<div>'+
+        '<h2 style="font-size:20px;font-weight:700;letter-spacing:-.4px;margin-bottom:3px">Good '+greeting()+', '+escH(S.user?.name?.split(' ')[0]||'there')+'.</h2>'+
+        '<p style="font-size:13px;color:var(--t2)">Here&#39;s what&#39;s happening with your AMV.AI account.</p>'+
+      '</div>'+
+      '<div class="dg">'+
+        '<div class="dc"><div class="dicon" style="background:rgba(85,144,255,.1)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--indigo)" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="dn">'+cc+'</div><div class="dl">Conversations</div></div>'+
+        '<div class="dc"><div class="dicon" style="background:rgba(210,153,34,.1)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e0b341" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div><div class="dn">'+ic+'</div><div class="dl">Images Generated</div></div>'+
+        '<div class="dc"><div class="dicon" style="background:rgba(85,144,255,.1)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5590ff" stroke-width="2" stroke-linecap="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg></div><div class="dn">'+vc2+'</div><div class="dl">Videos Generated</div></div>'+
+        '<div class="dc"><div class="dicon" style="background:rgba(16,185,129,.1)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2" stroke-linecap="round"><path d="M12 2a5 5 0 1 0 5 5H7a5 5 0 0 0 5-5z"/><path d="M12 12v10"/></svg></div><div class="dn">'+S.memory.length+'</div><div class="dl">Memories Saved</div></div>'+
+      '</div>'+
+      '<div class="ss2"><h3>Quick Actions</h3>'+
+        '<div class="qa-g">'+
+          '<button class="qab" data-qa="chat"><div class="qai">💬</div><div class="qat">New Chat</div><div class="qad">Start a conversation</div></button>'+
+          '<button class="qab" data-qa="images"><div class="qai">🖼️</div><div class="qat">Generate Image</div><div class="qad">Create HD images</div></button>'+
+          '<button class="qab" data-qa="video"><div class="qai">🎬</div><div class="qat">Create Video</div><div class="qad">AI video generation</div></button>'+
+          '<button class="qab" data-qa="prompts"><div class="qai">📚</div><div class="qat">Prompt Library</div><div class="qad">Browse saved prompts</div></button>'+
+          '<button class="qab" data-qa="workspaces"><div class="qai">📁</div><div class="qat">Workspaces</div><div class="qad">Organize projects</div></button>'+
+          '<button class="qab" data-qa="memory"><div class="qai">🧠</div><div class="qat">AI Memory</div><div class="qad">View saved facts</div></button>'+
+        '</div>'+
+      '</div>'+
+      (recent.length?
+        '<div class="ss2"><h3>Recent Conversations</h3>'+
+          '<div style="display:flex;flex-direction:column">'+
+                        recent.map(c=>'<div class="ait" style="cursor:pointer" data-lcid="'+c.id+'">'+
+              '<div class="aiic" style="background:rgba(85,144,255,.1)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--indigo)" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>'+
+              '<div><div class="aiit">'+escH(c.title||'New Conversation')+'</div><div class="aitm">'+c.msgs.length+' messages · '+(c.starred?'⭐ Starred · ':'')+new Date(c.created).toLocaleDateString()+'</div></div>'+
+            '</div>').join('')+
+          '</div>'+
+        '</div>':'')+ 
+      (isAdmin()?'<div class="ss2"><h3>Platform Status</h3>'+
+        '<div class="br2"><span style="color:var(--t2)">AI Engine</span><span style="color:'+(_aiBackendReady()?'var(--green)':'var(--red)')+';font-size:12px;font-weight:500">'+(_aiBackendReady()?'✓ Online':'⚠ Backend required')+'</span></div>'+
+        '<div class="br2"><span style="color:var(--t2)">Video</span><span style="color:'+(S.rl?'var(--green)':'var(--dim)')+';font-size:12px">'+(S.rl?'✓ Connected':'Not configured')+'</span></div>'+
+        (isAdmin()&&!_aiBackendReady()?'<button class="btn bs" data-gs="apikeys" style="margin-top:10px;font-size:12px">Connect backend</button>':'')+
+      '</div>':'')+ 
+    '</div></div>';
+  vc.querySelectorAll('.qab[data-qa]').forEach(b=>on(b,'click',()=>{ if(b.dataset.qa==='chat')newChat(); else setTab(b.dataset.qa); }));
+  // Recent conv clicks
+  vc.querySelectorAll('[data-lcid]').forEach(el=>on(el,'click',()=>loadConv(el.dataset.lcid)));
+}
+function greeting(){ const h=new Date().getHours(); return h<12?'morning':h<17?'afternoon':'evening'; }
+
+
