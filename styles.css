@@ -6627,20 +6627,35 @@ html,body{height:100%;height:100dvh}
 .cp-local:empty{display:none}
 
 /* ============================================================
-   LAYER A16 — Mobile Settings: search on top, nav as a scrollable
-   chip row, content fills the screen (was: tall nav column shoved
-   the content off-screen and hid the search)
+   LAYER A16 (rev) - Mobile Settings: a single picker button that
+   opens the full section list as a popup. Tap a section, the popup
+   closes and its pane shows. Fixes "I only see Account": the old
+   chip row read as one item, and the search bar ate the screen.
    ============================================================ */
+.set-picker{display:none}   /* desktop: hidden, the full sidebar shows instead */
+.setpick-list{display:flex;flex-direction:column;gap:2px;max-height:min(60vh,440px);
+  overflow-y:auto;-webkit-overflow-scrolling:touch;margin:0 -4px}
+.setpick-searchwrap{margin:0 0 12px!important}
+.setpick-group{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
+  color:var(--mu);padding:12px 8px 4px}
+.setpick-group:first-child{padding-top:2px}
+.setpick-row{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:transparent;
+  border:none;color:var(--tx);font-size:15px;padding:12px 10px;border-radius:10px;cursor:pointer}
+.setpick-row:hover{background:rgba(127,127,127,.10)}
+.setpick-row.on{color:var(--accent);font-weight:600;background:rgba(127,127,127,.08)}
+.setpick-row svg{flex:0 0 auto;opacity:.85}
+.setpick-row span{flex:1 1 auto}
 @media(max-width:720px){
   .settings-shell{flex-direction:column;height:100%!important}
-  .settings-nav{flex-direction:column!important;flex-wrap:nowrap;width:100%;min-width:0!important;
-    border-right:none!important;border-bottom:1px solid var(--bd);padding:8px 10px 6px!important;
-    max-height:none;overflow:visible!important;flex:0 0 auto}
-  .set-search-wrap{margin:0 0 8px!important;width:auto}
-  .settings-nav-list{flex-direction:row!important;flex-wrap:nowrap;overflow-x:auto;gap:6px;
-    -webkit-overflow-scrolling:touch;padding-bottom:2px}
-  .settings-nav-list .sn-btn{flex:0 0 auto;white-space:nowrap}
-  .settings-nav-list .sn-group,.settings-nav-list .sn-div{display:none!important}
+  .settings-nav{flex-direction:column!important;width:100%;min-width:0!important;
+    border-right:none!important;border-bottom:1px solid var(--bd);padding:10px 52px 10px 12px!important;flex:0 0 auto}
+  .settings-nav .set-search-wrap{display:none!important}   /* search moves into the popup */
+  .settings-nav-list{display:none!important}               /* section list moves into the popup */
+  .set-picker{display:flex;align-items:center;gap:11px;width:100%;
+    background:rgba(127,127,127,.08);border:1px solid var(--bd);border-radius:11px;
+    padding:13px 15px;color:var(--tx);font-size:15px;font-weight:600;cursor:pointer}
+  .set-picker-lbl{flex:1 1 auto;text-align:left}
+  .set-picker-chev{flex:0 0 auto;opacity:.65}
   .settings-content{flex:1 1 auto!important;min-height:0;padding:16px 14px!important;padding-right:14px!important}
   .set-pane{padding:4px 2px!important;max-width:100%!important}
   .set-close{top:8px;right:10px}

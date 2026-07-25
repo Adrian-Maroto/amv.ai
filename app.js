@@ -13111,6 +13111,54 @@ function closeSettings(){
 }
 try{ window.closeSettings=closeSettings; }catch(e){}
 
+/* The mobile settings picker: a single button showing the current section,
+   which opens a popup list. Hidden on desktop (the full sidebar shows there). */
+function _curSetSection(){
+  const admin=isAdmin()?ADMIN_SET_SECTIONS:[];
+  const all=[...USER_SET_SECTIONS,...admin].filter(s=>s.id);
+  return all.find(s=>s.id===S.settingsPane) || all[0];
+}
+function _settingsPickerBtnHTML(){
+  const s=_curSetSection(); if(!s) return '';
+  return '<button class="set-picker" id="set-picker" type="button" aria-haspopup="true">'+
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">'+s.icon+'</svg>'+
+    '<span class="set-picker-lbl">'+escH(T(s.label))+'</span>'+
+    '<svg class="set-picker-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>'+
+  '</button>';
+}
+function _openSettingsPicker(){
+  const r=$('ovr'); if(!r) return;
+  const adminExtra=isAdmin()?[{group:'Operator'},...ADMIN_SET_SECTIONS]:[];
+  const sections=[...USER_SET_SECTIONS,...adminExtra];
+  const rows=sections.map(s=>{
+    if(s.group!==undefined) return s.group?'<div class="setpick-group">'+escH(T(s.group))+'</div>':'';
+    if(s.type==='div') return '';
+    return '<button class="setpick-row '+(s.id===S.settingsPane?'on':'')+'" data-setpick="'+s.id+'" data-lbl="'+escH((s.label||'').toLowerCase())+'">'+
+      '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">'+s.icon+'</svg>'+
+      '<span>'+escH(T(s.label))+'</span></button>';
+  }).join('');
+  r.innerHTML='<div class="ov" id="setpick-bg"><div class="ob setpick-modal" onclick="event.stopPropagation()" style="max-width:460px">'+
+    '<button class="oc" onclick="closeOvr()" aria-label="Close">×</button>'+
+    '<h2 style="margin:0 0 12px;font-size:18px">Settings</h2>'+
+    '<div class="set-search-wrap setpick-searchwrap"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>'+
+      '<input id="setpick-search" class="set-search" type="text" placeholder="Search settings…" autocomplete="off"></div>'+
+    '<div class="setpick-list" id="setpick-list">'+rows+'</div></div></div>';
+  on($('setpick-bg'),'click',(e)=>{ if(e.target===$('setpick-bg')) closeOvr(); });
+  r.querySelectorAll('[data-setpick]').forEach(b=>on(b,'click',()=>{
+    S.settingsPane=b.dataset.setpick; closeOvr(); renderSettingsView();
+    try{ const c=document.querySelector('.settings-content'); if(c) c.scrollTop=0; }catch(e){}
+  }));
+  // Filter as you type. No autofocus - opening straight to the keyboard was the
+  // old complaint; the list is visible first, tap search only if you want it.
+  const si=$('setpick-search');
+  if(si) on(si,'input',()=>{
+    const query=si.value.toLowerCase().trim();
+    r.querySelectorAll('.setpick-row').forEach(row=>{ row.style.display=(!query||(row.dataset.lbl||'').includes(query))?'':'none'; });
+    r.querySelectorAll('.setpick-group').forEach(g=>{ g.style.display=query?'none':''; });
+  });
+}
+window._openSettingsPicker=_openSettingsPicker;
+
 function renderSettingsView(){
   const vc=$('vc'); if(!vc) return;
   const adminExtra=isAdmin()?[{group:'Operator'},...ADMIN_SET_SECTIONS]:[];
@@ -13133,6 +13181,7 @@ function renderSettingsView(){
         '<span class="set-close-lbl">Close</span>'+
       '</button>'+
       '<div class="settings-nav">'+
+        _settingsPickerBtnHTML()+
         '<div class="set-search-wrap"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>'+
           '<input id="set-search" class="set-search" type="text" placeholder="Search settings\u2026" value="'+escH(S._setSearch||'')+'" autocomplete="off">'+
         '</div>'+
@@ -13148,6 +13197,8 @@ function renderSettingsView(){
       renderSetPane();
     });
   });
+  // Mobile: the picker button opens the section list as a popup.
+  on($('set-picker'),'click',_openSettingsPicker);
   // Close settings: X button, Esc, or clicking the empty area outside the panels.
   on($('set-close'),'click',closeSettings);
   const shell=vc.querySelector('.settings-shell');
