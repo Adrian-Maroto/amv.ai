@@ -6686,6 +6686,16 @@ html,body{height:100%;height:100dvh}
 .cw-clarify textarea:focus{border-color:var(--accent)}
 .cw-clarify-act{display:flex;justify-content:flex-end;margin-top:10px}
 
+/* ============================================================
+   LAYER A15 — Sidebar: collapsible "Build" group (Studio/Dev/Lab)
+   ============================================================ */
+.sbl-toggle{display:flex!important;align-items:center;justify-content:space-between;gap:6px;cursor:pointer;user-select:none}
+.sbl-toggle .sbl-chev{transition:transform .18s ease;opacity:.55;flex:none}
+.sbl-toggle.open .sbl-chev{transform:rotate(180deg)}
+.sbl-toggle:hover{color:var(--tx)}
+.sb-group{display:flex;flex-direction:column}
+.sb-group.collapsed{display:none}
+
 </style>
 <!-- BUILD:CSS:END -->
 <script>
@@ -6979,10 +6989,12 @@ html,body{height:100%;height:100dvh}
       <div class="sbl" data-i18n>Agents</div>
       <button class="snb" data-tab="crew"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>Crew</button>
       <button class="snb" data-tab="handoff"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 9l-3 3 3 3"/><path d="M9 5l3-3 3 3"/><path d="M15 19l-3 3-3-3"/><path d="M19 9l3 3-3 3"/><path d="M2 12h7M12 2v7M22 12h-7M12 22v-7"/></svg>Handoff</button>
-      <div class="sbl" data-i18n>Build</div>
+      <div class="sbl sbl-toggle" id="build-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="build-group"><span data-i18n>Build</span><svg class="sbl-chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></div>
+      <div class="sb-group collapsed" id="build-group">
       <button class="snb" data-tab="studio"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996C18.901 15.272 21 13.172 21 10.5 21 5.806 16.97 2 12 2z"/></svg>Studio</button>
       <button class="snb" data-tab="dev"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>Dev</button>
       <button class="snb" data-tab="lab"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6M10 3v6.5L5 18a2 2 0 0 0 1.8 3h10.4A2 2 0 0 0 19 18l-5-8.5V3"/></svg>Lab</button>
+      </div>
       <div class="sbdiv"></div>
       
       
@@ -9426,7 +9438,7 @@ function _wireHdrAuth(){
   if(su && !su._wired){ su._wired=1; su.addEventListener('click',()=>{ try{ openAuth('signup'); }catch(e){} }); }
   if(li && !li._wired){ li._wired=1; li.addEventListener('click',()=>{ try{ openAuth('login'); }catch(e){} }); }
 }
-function goApp(){ try{ _wireHdrAuth(); }catch(e){} try{ const cy=document.getElementById('copy-year'); if(cy) cy.textContent=String(new Date().getFullYear()); }catch(e){} document.getElementById('land').classList.add('hidden'); document.getElementById('app').classList.add('on'); updateSbUser(); _initMobileSidebar(); _restoreSidebarState(); try{ _applyReduceMotion(); }catch(e){} setTab(S.tab); _ensureBackendSession(); try{ _applyFontSize(); }catch(e){} try{ _initOfflineWatch(); }catch(e){} try{ _initErrorBoundary(); }catch(e){} try{ syncEntitlement(); _checkUpgradeReturn(); }catch(e){} try{ _checkTeamInvite(); }catch(e){} try{ _initKeyboardNav(); _initA11y(); }catch(e){} try{ _revealAdminNav(); }catch(e){} try{ _initSidebarMore(); }catch(e){} try{ const sbtn=$('sb-status'); if(sbtn) sbtn.addEventListener('click',openStatusPanel); _checkStatus(); }catch(e){} try{ _translateUI(); setTimeout(_translateUI,120); }catch(e){ console.error('Translate UI error in goApp', e); } }
+function goApp(){ try{ _wireHdrAuth(); }catch(e){} try{ const cy=document.getElementById('copy-year'); if(cy) cy.textContent=String(new Date().getFullYear()); }catch(e){} document.getElementById('land').classList.add('hidden'); document.getElementById('app').classList.add('on'); updateSbUser(); _initMobileSidebar(); _restoreSidebarState(); try{ _applyReduceMotion(); }catch(e){} setTab(S.tab); _ensureBackendSession(); try{ _applyFontSize(); }catch(e){} try{ _initOfflineWatch(); }catch(e){} try{ _initErrorBoundary(); }catch(e){} try{ syncEntitlement(); _checkUpgradeReturn(); }catch(e){} try{ _checkTeamInvite(); }catch(e){} try{ _initKeyboardNav(); _initA11y(); }catch(e){} try{ _revealAdminNav(); }catch(e){} try{ _initSidebarMore(); }catch(e){} try{ _initBuildGroup(); }catch(e){} try{ const sbtn=$('sb-status'); if(sbtn) sbtn.addEventListener('click',openStatusPanel); _checkStatus(); }catch(e){} try{ _translateUI(); setTimeout(_translateUI,120); }catch(e){ console.error('Translate UI error in goApp', e); } }
 
 /* The sidebar's advanced tools (Tasks, Integrations, Marketplace) live under a
    collapsible "More" so the default view stays calm - new users were getting
@@ -9452,6 +9464,34 @@ function _initSidebarMore(){
   setOpen(remembered || MORE_TABS.includes(S.tab));
 }
 try{ window._initSidebarMore=_initSidebarMore; }catch(e){}
+/* "Build" (Studio, Dev, Lab) collapses under one tappable header so the default
+   sidebar stays short and calm - more room for Chat, Images, Video, Crew and
+   Handoff. Collapsed by default; opens if remembered or if you're on a build
+   tab (so the active item is always visible). */
+const _BUILD_TABS=['studio','dev','lab'];
+function _buildGroupSetOpen(open){
+  const grp=document.getElementById('build-group'), tog=document.getElementById('build-toggle');
+  if(!grp||!tog) return;
+  grp.classList.toggle('collapsed', !open);
+  tog.classList.toggle('open', open);
+  tog.setAttribute('aria-expanded', open?'true':'false');
+  try{ saveStr('amv_sb_build', open?'1':'0'); }catch(e){}
+}
+function _initBuildGroup(){
+  const tog=document.getElementById('build-toggle'); if(!tog) return;
+  if(!tog._b){
+    tog._b=1;
+    const toggle=()=>{ const grp=document.getElementById('build-group'); _buildGroupSetOpen(grp?grp.classList.contains('collapsed'):true); };
+    on(tog,'click',toggle);
+    on(tog,'keydown',(e)=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); toggle(); } });
+  }
+  const remembered=(()=>{ try{ return loadStr('amv_sb_build')==='1'; }catch(e){ return false; } })();
+  _buildGroupSetOpen(remembered || _BUILD_TABS.includes(S.tab));
+}
+/* Keep the group open whenever a build tab is active, so the highlighted item
+   is never hidden. Called from setTab. */
+function _buildGroupSync(){ if(_BUILD_TABS.includes(S.tab)) _buildGroupSetOpen(true); }
+try{ window._initBuildGroup=_initBuildGroup; window._buildGroupSync=_buildGroupSync; }catch(e){}
 function _revealAdminNav(){
   try{
     const existing=document.getElementById('nav-admin');
@@ -9595,6 +9635,7 @@ function setTab(t){
   S.tab=t;
   try{ _renderBottomNav(); }catch(e){}
   document.querySelectorAll('.snb, .sb-tool').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));
+  try{ _buildGroupSync(); }catch(e){}   // keep Build open when a build tab is active
   /* (old 'More' section removed - tools now live in the bottom-left row) */
   const _titles={dashboard:'Dashboard',chat:'',images:'Images',video:'Video',prompts:'Prompt Library',workspaces:'Projects',memory:'Memory',usage:'Usage',billing:'Billing',plans:'Plans',settings:'Settings',help:'Help Center',apps:'Apps',tasks:'Tasks',integrations:'Integrations',extensions:'Extensions',crew:'Crew',studio:'Studio',dev:'Dev',handoff:'Handoff',lab:'Lab',market:'Marketplace'};
   const _nt=document.getElementById('nav-title');
