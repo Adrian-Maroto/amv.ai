@@ -12271,7 +12271,9 @@ const IMG_STYLES={
   'Vintage':'vintage 35mm film photograph, kodachrome colors, retro aesthetics, nostalgic, film grain',
   'Fantasy Art':'epic fantasy illustration, intricate magical details, dramatic cinematic lighting, painterly, mythical',
 };
-const BLOCKED=['explicit nudity','pornographic','nsfw','erotic','hentai','child sexual'];
+const BLOCKED=['explicit nudity','pornographic','nsfw','erotic','hentai','child sexual',
+  'nudify','undress','deepfake nude','deepfake porn','deep nude','revenge porn',
+  'non-consensual','nonconsensual','underage','jailbait','loli','shota','cp for'];
 
 /* Light prompt enhancement: when a prompt looks like it names a real person
    doing something, phrase it so the image model renders a clearer likeness.
@@ -13821,6 +13823,10 @@ const AMVMarket = {
   },
   // ---- ratings ----
   async rate(id, stars){
+    // Rating manipulation guard: you can't rate your own listing (the server
+    // enforces this too; this is defense-in-depth on the client).
+    try{ const own=[...this._localListings(), ...MARKET_STARTER].find(x=>x.id===id);
+      if(own && (own.authorEmail||'').toLowerCase()===this._me()){ if(typeof toast==='function') toast('You can’t rate your own listing','info'); return false; } }catch(e){}
     const ratings=this._localRatings(); ratings[id]=stars; this._saveLocalRatings(ratings);
     if(this._live()){ try{ AMV_API._fetch('/v1/market/rate',{method:'POST',body:JSON.stringify({id,stars})}).catch(()=>{}); }catch(e){} }
     return true;
