@@ -12862,10 +12862,10 @@ function renderVideoView(){
         '<p style="font-size:12px;color:var(--t2);margin-bottom:12px">Describe a scene and AMV generates it. Style and mood are folded into the prompt; duration and aspect are sent to the engine.</p>'+
         '<textarea id="vp" placeholder="Describe your scene - include camera movement, lighting, atmosphere, characters, action…" rows="3" style="margin-bottom:11px;font-size:13px"></textarea>'+
         '<div style="display:flex;gap:7px;flex-wrap:wrap;align-items:flex-end">'+
-          '<div><label class="lbl" style="margin-bottom:3px">Duration</label><select id="vd" style="width:auto;padding:6px 22px 6px 9px;font-size:12px"><option value="5" selected>5s</option><option value="10">10s</option></select></div>'+
-          '<div><label class="lbl" style="margin-bottom:3px">Aspect</label><select id="va" style="width:auto;padding:6px 22px 6px 9px;font-size:12px"><option value="16:9" selected>16:9</option><option value="9:16">9:16</option><option value="1:1">1:1</option></select></div>'+
-          '<div><label class="lbl" style="margin-bottom:3px">Style</label><select id="vs" style="width:auto;padding:6px 22px 6px 9px;font-size:12px">'+so+'</select></div>'+
-          '<div><label class="lbl" style="margin-bottom:3px">Mood</label><select id="vm" style="width:auto;padding:6px 22px 6px 9px;font-size:12px">'+mo+'</select></div>'+
+          '<div><label class="lbl" style="margin-bottom:3px">Duration</label><select id="vd" aria-label="Duration" style="width:auto;padding:6px 22px 6px 9px;font-size:12px"><option value="5" selected>5s</option><option value="10">10s</option></select></div>'+
+          '<div><label class="lbl" style="margin-bottom:3px">Aspect</label><select id="va" aria-label="Aspect ratio" style="width:auto;padding:6px 22px 6px 9px;font-size:12px"><option value="16:9" selected>16:9</option><option value="9:16">9:16</option><option value="1:1">1:1</option></select></div>'+
+          '<div><label class="lbl" style="margin-bottom:3px">Style</label><select id="vs" aria-label="Style" style="width:auto;padding:6px 22px 6px 9px;font-size:12px">'+so+'</select></div>'+
+          '<div><label class="lbl" style="margin-bottom:3px">Mood</label><select id="vm" aria-label="Mood" style="width:auto;padding:6px 22px 6px 9px;font-size:12px">'+mo+'</select></div>'+
           '<button class="btn bp" id="gvb" style="font-size:13px">Generate Video</button>'+
           (S.vids.length?'<button class="bg2" id="clrvids" style="font-size:11px">Clear all</button>':'')+
         '</div>'+
@@ -14405,7 +14405,7 @@ function _mktBrowse(body){
     '<div id="mkt-top"></div>'+
     '<div class="mkt-controls">'+
       '<input type="text" id="mkt-search" placeholder="Search items, categories, or sellers\u2026" class="mkt-search">'+
-      '<select id="mkt-sort" class="sel mkt-sortsel">'+Object.entries(_MKT_SORTS).map(([k,v])=>'<option value="'+k+'">'+v+'</option>').join('')+'</select>'+
+      '<select id="mkt-sort" class="sel mkt-sortsel" aria-label="Sort listings">'+Object.entries(_MKT_SORTS).map(([k,v])=>'<option value="'+k+'">'+v+'</option>').join('')+'</select>'+
     '</div>'+
     '<div class="mk-filters" id="mk-filters" style="margin-bottom:14px"></div>'+
     '<div id="mk-grid" class="mk-grid"><div class="fd-loading">Loading marketplace\u2026</div></div>';
@@ -21164,7 +21164,7 @@ function _renderSetPaneInner(){
           '<div><label class="lbl">Full name</label><input type="text" id="s-name" value="'+escH(S.user&&S.user.name?S.user.name:'')+'" placeholder="Your name"></div>'+
           '<div><label class="lbl">What should AMV call you?</label><input type="text" id="s-nick" value="'+escH(loadStr('amv_nickname')||'')+'" placeholder="Nickname"></div>'+
           '<div><label class="lbl">What best describes your work?</label>'+
-            '<select id="s-work" class="sel">'+
+            '<select id="s-work" class="sel" aria-label="What best describes your work">'+
               ['','Software \u0026 engineering','Design \u0026 creative','Marketing \u0026 content','Sales \u0026 business','Research \u0026 academia','Operations \u0026 admin','Finance','Founder \u2044 entrepreneur','Student','Other'].map(o=>{
                 const cur=(loadStr('amv_work')||'');
                 return '<option value="'+escH(o)+'"'+(o===cur?' selected':'')+'>'+(o||'Select\u2026')+'</option>';
