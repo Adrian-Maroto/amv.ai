@@ -9909,7 +9909,7 @@ function addToProject(id){
   const ws=Array.isArray(S.workspaces)?S.workspaces:[];
   const r=$('ovr'); if(!r) return;
   const list = ws.length
-    ? ws.map(w=>'<button class="proj-pick" data-wid="'+w.id+'" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:11px 12px;border:1px solid var(--bd);background:var(--s2);border-radius:10px;color:var(--tx);cursor:pointer;margin-bottom:8px;font-size:14px"><span style="font-size:18px">'+(w.icon||'\uD83D\uDCC1')+'</span>'+escH(w.name||'Project')+'</button>').join('')
+    ? ws.map(w=>'<button class="proj-pick" data-wid="'+w.id+'" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:11px 12px;border:1px solid var(--bd);background:var(--s2);border-radius:10px;color:var(--tx);cursor:pointer;margin-bottom:8px;font-size:14px"><span style="font-size:18px">'+_safeIcon(w.icon||'\uD83D\uDCC1')+'</span>'+escH(w.name||'Project')+'</button>').join('')
     : '<p class="ob-sub">No projects yet. Create one in the Projects tab first.</p>';
   r.innerHTML=
     '<div class="ov" id="ap-bg"><div class="ob" onclick="event.stopPropagation()">'+
@@ -14247,7 +14247,7 @@ function _mktBrowse(body){
       else btn='<button class="btn bp mk-install" data-mk-id="'+escH(it.id)+'" style="font-size:11.5px;flex:1">'+(it._installed?'\u2713 Get again':'Get it free')+'</button>';
       const previewBtn='<button class="btn bs mk-preview" data-mk-id="'+escH(it.id)+'" style="font-size:11.5px">Preview</button>';
       return '<div class="mk-card">'+
-        '<div class="mk-card-top"><span class="mk-icon">'+(it.icon||'\u2728')+'</span>'+
+        '<div class="mk-card-top"><span class="mk-icon">'+_safeIcon(it.icon)+'</span>'+
           '<span style="display:flex;gap:6px;align-items:center"><span class="mk-kind mk-kind-'+it.kind+'">'+it.kind+'</span>'+_mktPriceTag(it)+'</span></div>'+
         '<div class="mk-title">'+escH(it.title)+'</div>'+
         '<div class="mk-rating-row">'+_mktStars(it.rating,it.ratings)+'</div>'+
@@ -14293,7 +14293,7 @@ function _mktPaymentModal(it){
   r.innerHTML='<div class="ov" id="mkpay-bg"><div class="ob mkpay" onclick="event.stopPropagation()" style="max-width:420px">'+
     '<button class="oc" onclick="closeOvr()">\u00d7</button>'+
     '<h2 style="margin-bottom:14px">Complete your purchase</h2>'+
-    '<div class="mkpay-item"><span class="mkpay-ic">'+(it.icon||'\u2728')+'</span><div style="flex:1"><div class="mkpay-t">'+escH(it.title)+'</div><div class="mkpay-k">'+escH(it.kind||'prompt')+' \u00b7 by '+escH(it.author||'community')+'</div></div><div class="mkpay-price">$'+price+'</div></div>'+
+    '<div class="mkpay-item"><span class="mkpay-ic">'+_safeIcon(it.icon)+'</span><div style="flex:1"><div class="mkpay-t">'+escH(it.title)+'</div><div class="mkpay-k">'+escH(it.kind||'prompt')+' \u00b7 by '+escH(it.author||'community')+'</div></div><div class="mkpay-price">$'+price+'</div></div>'+
     '<div class="mkpay-rows"><div class="mkpay-row"><span>Item price</span><span>$'+price+'.00</span></div><div class="mkpay-row total"><span>Total due</span><span>$'+price+'.00</span></div></div>'+
     '<p class="mkpay-note">\ud83d\udd12 Processed securely by Stripe - AMV never sees your card. You get instant access in Purchases the moment payment clears.</p>'+
     '<button class="btn bp" id="mkpay-go" style="width:100%;justify-content:center;margin-top:6px">Add a payment method to continue</button>'+
@@ -14357,7 +14357,7 @@ function _mktPreview(it, after){
   r.innerHTML='<div class="ov" id="mkt-pv-bg"><div class="ob" onclick="event.stopPropagation()" style="max-width:560px">'+
     '<button class="oc" onclick="closeOvr()">\u00d7</button>'+
     '<div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:6px">'+
-      '<div class="mkt-pv-ic">'+(it.icon||'\u2728')+'</div>'+
+      '<div class="mkt-pv-ic">'+_safeIcon(it.icon)+'</div>'+
       '<div style="flex:1"><h2 style="margin:0 0 2px">'+escH(it.title)+'</h2>'+
         '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="mk-kind mk-kind-'+it.kind+'">'+it.kind+'</span>'+_mktPriceTag(it)+_mktStars(it.rating,it.ratings)+'</div></div>'+
     '</div>'+
@@ -14377,7 +14377,7 @@ function _mktPreview(it, after){
     const el=$('mkt-similar'); if(!el||!sims.length) return;
     el.innerHTML='<div class="mkt-sec-h" style="margin-top:20px">Similar items</div>'+
       '<div class="mkt-sim-grid">'+sims.map(s=>'<div class="mkt-sim" data-sim="'+escH(s.id)+'">'+
-        '<div class="mkt-sim-ic">'+(s.icon||'\u2728')+'</div>'+
+        '<div class="mkt-sim-ic">'+_safeIcon(s.icon)+'</div>'+
         '<div class="mkt-sim-b"><div class="mkt-sim-t">'+escH(s.title)+'</div>'+
           '<div class="mkt-sim-m">'+_mktPriceTag(s)+' <span class="mkt-sim-by">'+escH(s.author||'community')+'</span></div></div>'+
       '</div>').join('')+'</div>';
@@ -14413,7 +14413,7 @@ async function _mktSellerProfile(sellerEmail, sellerName){
     const all=await AMVMarket.list();
     const theirs=all.filter(it=>!(it.authorEmail||'') && /^amv$/i.test(it.author||''));
     const listingRows = theirs.length
-      ? theirs.map(it=>'<div class="vrow mkt-listing-row" data-mk-open="'+escH(it.id)+'" style="cursor:pointer"><span>'+(it.icon||'\u2728')+' '+escH(it.title)+' '+_mktPriceTag(it)+'</span><span class="mkt-row-meta"><span class="mkt-st active">Active</span><span style="color:var(--mu);font-size:11px">'+(it.sales||it.installs||0)+(it.sales?' sold':' installs')+'</span><span class="mkt-row-arr">\u203a</span></span></div>').join('')
+      ? theirs.map(it=>'<div class="vrow mkt-listing-row" data-mk-open="'+escH(it.id)+'" style="cursor:pointer"><span>'+_safeIcon(it.icon)+' '+escH(it.title)+' '+_mktPriceTag(it)+'</span><span class="mkt-row-meta"><span class="mkt-st active">Active</span><span style="color:var(--mu);font-size:11px">'+(it.sales||it.installs||0)+(it.sales?' sold':' installs')+'</span><span class="mkt-row-arr">\u203a</span></span></div>').join('')
       : '<div style="color:var(--mu);font-size:12.5px">No active listings.</div>';
     r.innerHTML='<div class="ov" id="mkt-sp-bg"><div class="ob" onclick="event.stopPropagation()" style="max-width:560px">'+
       '<button class="oc" onclick="closeOvr()">\u00d7</button>'+
@@ -14455,7 +14455,7 @@ async function _mktSellerProfile(sellerEmail, sellerName){
     : '<div style="color:var(--mu);font-size:12.5px;padding:6px 0">No reviews yet.</div>';
 
   const listingRows = theirs.length
-    ? theirs.map(it=>'<div class="vrow mkt-listing-row" data-mk-open="'+escH(it.id)+'" style="cursor:pointer"><span>'+(it.icon||'\u2728')+' '+escH(it.title)+' '+_mktPriceTag(it)+'</span><span class="mkt-row-meta"><span class="mkt-st '+(it.status==='sold'?'sold':'active')+'">'+(it.status==='sold'?'Sold':'Active')+'</span><span style="color:var(--mu);font-size:11px">'+(it.sales||0)+' sold</span><span class="mkt-row-arr">\u203a</span></span></div>').join('')
+    ? theirs.map(it=>'<div class="vrow mkt-listing-row" data-mk-open="'+escH(it.id)+'" style="cursor:pointer"><span>'+_safeIcon(it.icon)+' '+escH(it.title)+' '+_mktPriceTag(it)+'</span><span class="mkt-row-meta"><span class="mkt-st '+(it.status==='sold'?'sold':'active')+'">'+(it.status==='sold'?'Sold':'Active')+'</span><span style="color:var(--mu);font-size:11px">'+(it.sales||0)+' sold</span><span class="mkt-row-arr">\u203a</span></span></div>').join('')
     : '<div style="color:var(--mu);font-size:12.5px">No active listings.</div>';
 
   let reviewBtn='';
@@ -14582,7 +14582,7 @@ function _mktPurchases(body){
     body.innerHTML='<p class="mkt-priv">\uD83D\uDD12 Private - only you can see your purchases.</p><div class="mk-grid">'+items.map(it=>{
       const fc=(it.files&&it.files.length)?'<span class="sl-mini">\uD83D\uDCCE '+it.files.length+' file'+(it.files.length>1?'s':'')+'</span>':'';
       return '<div class="mk-card">'+
-        '<div class="mk-card-top"><span class="mk-icon">'+(it.icon||'\u2728')+'</span><span style="display:flex;gap:6px;align-items:center"><span class="mk-kind mk-kind-'+(it.kind||'prompt')+'">'+(it.kind||'prompt')+'</span></span></div>'+
+        '<div class="mk-card-top"><span class="mk-icon">'+_safeIcon(it.icon)+'</span><span style="display:flex;gap:6px;align-items:center"><span class="mk-kind mk-kind-'+(it.kind||'prompt')+'">'+(it.kind||'prompt')+'</span></span></div>'+
         '<div class="mk-title">'+escH(it.title)+'</div>'+
         '<div class="mk-desc">'+escH(it.desc||'')+'</div>'+
         (it._removed?'<div class="mk-meta" style="color:var(--mu)">Seller removed this listing</div>':
@@ -14954,7 +14954,7 @@ function _mktSell(body){
         (st!=='deactivated'?'<button class="btn bs sl-act" data-sl-act="deactivated" data-sl-id="'+escH(it.id)+'">Deactivate</button>':'')+
         '<button class="btn sl-act sl-del" data-sl-del="'+escH(it.id)+'">Remove</button>';
       return '<div class="sl-row">'+
-        '<div class="sl-row-main"><span class="sl-row-ic">'+(it.icon||'\u2728')+'</span>'+
+        '<div class="sl-row-main"><span class="sl-row-ic">'+_safeIcon(it.icon)+'</span>'+
           '<div><div class="sl-row-t">'+escH(it.title)+' '+_mktPriceTag(it)+' '+badge+'</div>'+
             '<div class="sl-row-meta">'+(it.views||0)+' views \u00b7 '+(it.sales||0)+' sold \u00b7 '+escH(it.cat||'Community')+' '+fileCount+'</div></div>'+
         '</div>'+
@@ -15015,6 +15015,28 @@ function _fileIcon(type,name){
   return svg('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>');
 }
 window._fileIcon=_fileIcon; window._fmtBytes=_fmtBytes;
+/* Marketplace/project icons come from listing DATA and are rendered UNescaped
+   (they can legitimately be one of our own file-type SVGs). On the client the
+   field is only ever a trusted _fileIcon SVG or a plain emoji, but a crafted
+   API listing could smuggle arbitrary markup into `icon` and it would execute
+   in another user's browser when they browse. Sanitize on render: allow ONLY
+   our own generated file-type SVGs (exact match) or a plain-text emoji
+   (escaped); anything else falls back to a sparkle. Defense in depth - the
+   server must also constrain this field. */
+let _ICON_SAFE_SET=null;
+function _iconSafeSet(){
+  if(_ICON_SAFE_SET) return _ICON_SAFE_SET;
+  _ICON_SAFE_SET=new Set();
+  try{ ['pdf','video','image','zip','csv','json','audio',''].forEach(t=>_ICON_SAFE_SET.add(_fileIcon(t,''))); }catch(e){}
+  return _ICON_SAFE_SET;
+}
+function _safeIcon(ic){
+  ic=(ic==null?'':String(ic));
+  if(!ic) return '✨';
+  if(ic.indexOf('<')<0) return escH(ic.slice(0,12));   // emoji / text label
+  return _iconSafeSet().has(ic) ? ic : '✨';        // only our own SVGs pass
+}
+window._safeIcon=_safeIcon;
 // Turn a stored file (data URL) back into a real download.
 function _downloadFile(f){
   try{

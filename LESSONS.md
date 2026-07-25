@@ -7,6 +7,22 @@ Format: **Mistake → Root cause → Rule going forward.**
 
 ---
 
+## 2026-07-25 (security audit)
+
+### 18. An unescaped "icon" field is a stored-XSS hole across users
+- **Mistake/risk:** Marketplace/project `icon` fields render UNescaped (they can
+  legitimately hold one of our own file-type SVGs). The client only ever sets
+  `icon` to a trusted `_fileIcon` SVG or an emoji, but the whole listing object
+  (including `icon`) is POSTed to `/v1/market/publish`. A crafted API listing
+  could smuggle `<img onerror=...>` into `icon` and it would execute in ANOTHER
+  user's browser on browse - stored XSS. Escaping blindly would break the legit
+  SVG icons, so the instinct to "just escH it" is wrong here.
+- **Rule:** For a field that legitimately carries trusted markup, sanitize with
+  an ALLOWLIST, not a blanket escape: allow only our own generated markup (exact
+  match against a set we build) or treat it as plain text (escaped); anything
+  else falls back to a safe default. `_safeIcon()` does this. And a client fix is
+  defense-in-depth only - the server must constrain the field too.
+
 ## 2026-07-25 (later)
 
 ### 17. Whole-UI translation that only walks #app misses every popup
