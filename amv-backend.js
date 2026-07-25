@@ -4563,7 +4563,9 @@ async function marketPublish(request, env) {
     text: body,
     crew: Array.isArray(item.crew) ? item.crew.slice(0, 8) : undefined,
     files,
-    icon: String(item.icon || '\u2728').slice(0, 4),
+    // icon is rendered unescaped on the client, so store an emoji/short-text
+    // only - reject any markup outright (never a truncated tag fragment).
+    icon: (function(ic){ ic = String(ic == null ? '\u2728' : ic); return ic.indexOf('<') >= 0 ? '\u2728' : (ic.slice(0, 8) || '\u2728'); })(),
     price,
     author: (user.name || user.email.split('@')[0]).slice(0, 40),
     authorEmail: user.email,
