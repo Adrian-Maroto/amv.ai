@@ -12359,8 +12359,8 @@ function renderHandoffView(){
           <div><label class="lbl" style="font-size:11px;color:var(--mu)">The work itself - paste it here</label>
             <textarea id="ho-ctx" placeholder="Paste the actual content the next person (or the agent) should work on: the draft, the code, the data, the email thread, the brief - plus anything they need to know to continue. This is the baton they pick up." style="width:100%;min-height:220px;background:var(--glass);border:1px solid var(--glass-bd);border-radius:var(--r-md);padding:12px;color:var(--tx);font-family:var(--mn,ui-monospace,monospace);font-size:13px;line-height:1.6;resize:vertical;tab-size:2"></textarea>
             <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
-              <button class="btn bs" data-dact="hoFromChat" style="font-size:11.5px">Pull in my last chat</button>
-              <span style="font-size:11px;color:var(--mu);align-self:center">or just paste anything above</span>
+              <button class="btn bs" data-dact="_hoPickChat" style="font-size:11.5px">Pull in a chat…</button>
+              <span style="font-size:11px;color:var(--mu);align-self:center">pick any conversation, or just paste anything above</span>
             </div></div>
           <div><label class="lbl" style="font-size:11px;color:var(--mu)">Hand off to</label>
             <input id="ho-to" placeholder="teammate@email.com  - or type: crew" style="width:100%;background:var(--glass);border:1px solid var(--glass-bd);border-radius:var(--r-md);padding:12px;color:var(--tx);font-family:var(--fn);font-size:14px"></div>
@@ -12379,6 +12379,39 @@ function renderHandoffView(){
       </div>
     </div></div>`;
 }
+/* Pick ANY of your chats to hand off (not just the last one). Selecting one
+   pulls its content into the handoff and remembers which conversation it is, so
+   whoever opens the handoff continues on that same chat. */
+function _hoConvText(conv){
+  const txt=m=>typeof m.c==='string'?m.c:(Array.isArray(m.c)?(m.c.map(x=>x&&x.text?x.text:'').join(' ')):'');
+  return conv.msgs.slice(-20).map(m=>(m.r==='u'?'You: ':'AMV: ')+txt(m)).join('\n\n');
+}
+function _hoPickChat(){
+  const convs=(S.convs||[]).filter(c=>c&&c.msgs&&c.msgs.length);
+  if(!convs.length){ toast('You have no chats with messages yet','info'); return; }
+  const r=$('ovr'); if(!r) return;
+  const rows=convs.map(c=>{
+    const last=c.msgs[c.msgs.length-1];
+    const prev=(typeof last.c==='string'?last.c:(Array.isArray(last.c)?last.c.map(x=>x&&x.text?x.text:'').join(' '):'')).replace(/\s+/g,' ').trim().slice(0,90);
+    return '<button class="hopick-row" data-hopick="'+escH(c.id)+'"><div class="hopick-t">'+escH(c.title||'Untitled chat')+'</div><div class="hopick-p">'+escH(prev||'(no messages)')+'</div></button>';
+  }).join('');
+  r.innerHTML='<div class="ov" id="hopick-bg"><div class="ob hopick-modal" onclick="event.stopPropagation()" style="max-width:520px">'+
+    '<button class="oc" onclick="closeOvr()">×</button>'+
+    '<h2 style="margin:0 0 4px">Pull in a chat</h2>'+
+    '<p style="font-size:12.5px;color:var(--mu);margin:0 0 14px">Pick any conversation to hand off. Whoever opens it continues on that same chat.</p>'+
+    '<div class="hopick-list">'+rows+'</div></div></div>';
+  on($('hopick-bg'),'click',(e)=>{ if(e.target===$('hopick-bg')) closeOvr(); });
+  r.querySelectorAll('[data-hopick]').forEach(b=>on(b,'click',()=>{ _hoPullConv(b.dataset.hopick); closeOvr(); }));
+}
+function _hoPullConv(convId){
+  const conv=(S.convs||[]).find(c=>c.id===convId); if(!conv){ toast('Chat not found','error'); return; }
+  const text=_hoConvText(conv);
+  const ta=$('ho-ctx'); if(ta){ ta.value=(ta.value?ta.value+'\n\n':'')+text; ta.focus(); }
+  if($('ho-title') && !$('ho-title').value) $('ho-title').value=conv.title||'Continue this conversation';
+  S._hoPulledConv=convId;
+  toast('Pulled in “'+(conv.title||'chat')+'”','success');
+}
+window._hoPickChat=_hoPickChat; window._hoPullConv=_hoPullConv;
 /* Pull the most recent conversation's content into the handoff context, so a
    user can hand off real work - not just retype notes. */
 function hoFromChat(){
@@ -12400,7 +12433,9 @@ function hoSend(){
   if(!t||!t.trim()){ toast('Add a title for the handoff','error'); return; }
   if(!to||!to.trim()){ toast('Who are you handing off to?','error'); return; }
   const rec={ id:'h'+Date.now(), title:t.trim(), context:(ctx||'').trim(), to:to.trim(),
-    from:(S.user&&S.user.email)||'you', when:new Date().toLocaleDateString(), status:'waiting' };
+    from:(S.user&&S.user.email)||'you', when:new Date().toLocaleDateString(), status:'waiting',
+    convId:(S._hoPulledConv||null) };
+  try{ S._hoPulledConv=null; }catch(e){}
   const out=_hoOut(); out.unshift(rec); _hoSaveOut(out);
   if(window.AMV_API && AMV_API.live){ AMV_API.createHandoff({title:rec.title,context:rec.context,to:rec.to}).catch(()=>{}); }
   // If handed to crew, surface it as a crew approval-style item locally
@@ -12412,7 +12447,16 @@ function hoSend(){
   }
   renderHandoffView();
 }
-function hoOpen(id){ const h=_hoIn().find(x=>x.id===id); setTab('chat'); setTimeout(()=>{ const ta=$('mta'); if(ta&&h){ ta.value='Continuing a handoff: '+h.title+'\n\nContext:\n'+(h.context||''); ta.focus(); } },120); }
+function hoOpen(id){
+  const h=_hoIn().find(x=>x.id===id);
+  // If the handoff points at a real conversation you have, continue on that
+  // SAME chat instead of starting a new one.
+  if(h && h.convId && typeof loadConv==='function'){
+    const conv=(S.convs||[]).find(c=>c.id===h.convId);
+    if(conv){ loadConv(h.convId); toast('Continuing on the same chat','success'); return; }
+  }
+  setTab('chat'); setTimeout(()=>{ const ta=$('mta'); if(ta&&h){ ta.value='Continuing a handoff: '+h.title+'\n\nContext:\n'+(h.context||''); ta.focus(); } },120);
+}
 function hoDone(id){ if(window.AMV_API && AMV_API.live){ AMV_API.actHandoff(id,'done').catch(()=>{}); } const a=_hoIn().filter(x=>x.id!==id); _hoSaveIn(a); toast('Marked done','info'); renderHandoffView(); }
 window.hoSend=hoSend;window.hoOpen=hoOpen;window.hoDone=hoDone;
 
