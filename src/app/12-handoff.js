@@ -2022,7 +2022,7 @@ function setupKeyboard(){
     if(e.key==='Escape'){
       // In settings, Esc closes it and returns you to your work.
       if(S.tab==='settings' && !document.querySelector('.ovr.on, #ovr.on')){ e.preventDefault(); try{ closeSettings(); }catch(err){} return; }
-      // While the AI is generating, Esc stops it (like Claude/ChatGPT).
+      // While the AI is generating, Esc stops it (as chat apps do).
       if(S.busy){ e.preventDefault(); try{ stopGenerating(); }catch(err){} return; }
       if(!inInput){ const ta=document.getElementById('mta'); if(ta)ta.focus(); return; }
     }

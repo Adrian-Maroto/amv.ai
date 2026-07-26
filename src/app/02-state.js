@@ -69,7 +69,7 @@ const S = new Proxy(_raw, {
   get(target, key){ return target[key]; },
 });
 
-/* ── Chat "working" presence + completion cue (Claude/ChatGPT-style) ──
+/* ── Chat "working" presence + completion cue (modern-assistant style) ──
    A quiet bottom-right pill shows while AMV is working; a soft two-note
    chime plays when a longer/background reply finishes. Fully self-contained
    (Web Audio, no assets) and respectful - muteable, and silent on quick
@@ -89,7 +89,7 @@ function _onBusyChange(now, was){
     const took=Date.now()-_busyStartedAt;
     _showWorkingPill(false);
     try{ _renderSbUsage(); }catch(e){}   // update the sidebar meter after each response
-    // chime only if it took a moment OR the tab is in the background (like Claude)
+    // chime only if it took a moment OR the tab is in the background
     const backgrounded=(typeof document!=='undefined' && document.hidden);
     if(took>3500 || backgrounded) _playDoneChime();
   }
@@ -297,7 +297,7 @@ function _anonId(){ let id=loadStr('amv_anon_id'); if(!id){ id='a_'+Math.random(
 try{ window.track=track; window._anonId=_anonId; }catch(e){}
 
 /* ============================================================
-   AMVUsage - Claude-style rolling usage window (Task #7)
+   AMVUsage - rolling usage window (Task #7)
    Tracks tokens consumed in a rolling window (default 5 hours).
    When the window expires it resets automatically. The Usage page
    shows how much of your plan you have left and when it refreshes.
@@ -305,7 +305,7 @@ try{ window.track=track; window._anonId=_anonId; }catch(e){}
 const AMVUsage = {
   WINDOW_MS: 5*60*60*1000,           // 5-hour rolling window
   KEY: 'amv_usage_window',
-  // The per-window token allowance for each plan (Claude-style "messages per window").
+  // The per-window token allowance for each plan ("messages per window").
   // Derived from the daily cap so heavier plans get proportionally more.
   _windowCap(){
     try{
@@ -364,7 +364,7 @@ function _fmtResetIn(ms){
 }
 try{ window.AMVUsage = AMVUsage; }catch(e){}
 
-/* ── Out-of-usage lock (Claude-style) ─────────────────────────
+/* ── Out-of-usage lock ─────────────────────────
    When usage runs out (locally-tracked window OR a server quota_day/month),
    the chat stops: sends are blocked, a notice with a LIVE countdown shows in
    the composer, and everything unlocks automatically the moment usage resets. */
@@ -673,7 +673,7 @@ function aegisErrorMessage(status, raw){
   return raw||'Unknown error.';
 }
 
-/* Turn any raw AI error into one short, human sentence - Claude/ChatGPT style.
+/* Turn any raw AI error into one short, human sentence - clean and modern.
    Keeps real actionable info (usage, sign-in, plan) but never dumps stack traces. */
 function _aiFriendly(msg){
   const m=String(msg||'').toLowerCase();

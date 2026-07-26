@@ -864,7 +864,7 @@ const S = new Proxy(_raw, {
   get(target, key){ return target[key]; },
 });
 
-/* ── Chat "working" presence + completion cue (Claude/ChatGPT-style) ──
+/* ── Chat "working" presence + completion cue (modern-assistant style) ──
    A quiet bottom-right pill shows while AMV is working; a soft two-note
    chime plays when a longer/background reply finishes. Fully self-contained
    (Web Audio, no assets) and respectful - muteable, and silent on quick
@@ -884,7 +884,7 @@ function _onBusyChange(now, was){
     const took=Date.now()-_busyStartedAt;
     _showWorkingPill(false);
     try{ _renderSbUsage(); }catch(e){}   // update the sidebar meter after each response
-    // chime only if it took a moment OR the tab is in the background (like Claude)
+    // chime only if it took a moment OR the tab is in the background
     const backgrounded=(typeof document!=='undefined' && document.hidden);
     if(took>3500 || backgrounded) _playDoneChime();
   }
@@ -1092,7 +1092,7 @@ function _anonId(){ let id=loadStr('amv_anon_id'); if(!id){ id='a_'+Math.random(
 try{ window.track=track; window._anonId=_anonId; }catch(e){}
 
 /* ============================================================
-   AMVUsage - Claude-style rolling usage window (Task #7)
+   AMVUsage - rolling usage window (Task #7)
    Tracks tokens consumed in a rolling window (default 5 hours).
    When the window expires it resets automatically. The Usage page
    shows how much of your plan you have left and when it refreshes.
@@ -1100,7 +1100,7 @@ try{ window.track=track; window._anonId=_anonId; }catch(e){}
 const AMVUsage = {
   WINDOW_MS: 5*60*60*1000,           // 5-hour rolling window
   KEY: 'amv_usage_window',
-  // The per-window token allowance for each plan (Claude-style "messages per window").
+  // The per-window token allowance for each plan ("messages per window").
   // Derived from the daily cap so heavier plans get proportionally more.
   _windowCap(){
     try{
@@ -1159,7 +1159,7 @@ function _fmtResetIn(ms){
 }
 try{ window.AMVUsage = AMVUsage; }catch(e){}
 
-/* ── Out-of-usage lock (Claude-style) ─────────────────────────
+/* ── Out-of-usage lock ─────────────────────────
    When usage runs out (locally-tracked window OR a server quota_day/month),
    the chat stops: sends are blocked, a notice with a LIVE countdown shows in
    the composer, and everything unlocks automatically the moment usage resets. */
@@ -1468,7 +1468,7 @@ function aegisErrorMessage(status, raw){
   return raw||'Unknown error.';
 }
 
-/* Turn any raw AI error into one short, human sentence - Claude/ChatGPT style.
+/* Turn any raw AI error into one short, human sentence - clean and modern.
    Keeps real actionable info (usage, sign-in, plan) but never dumps stack traces. */
 function _aiFriendly(msg){
   const m=String(msg||'').toLowerCase();
@@ -2711,7 +2711,7 @@ function _ensureConv(){
   return c;
 }
 function _autoTitle(c){
-  // auto-name from the first user message, like Claude
+  // auto-name from the first user message
   if(c && (!c.title || c.title==='New chat' || c.title==='New Conversation')){
     const first=(c.msgs||[]).find(m=>m.r==='u');
     let t='';
@@ -4181,7 +4181,7 @@ async function sendMsg(_opts) {
     if(typeof toast==='function') toast('Create a free account to start chatting','info',3500);
     return;
   }
-  // Out-of-usage: the chat stops here (Claude-style) - BEFORE any routing or
+  // Out-of-usage: the chat stops here - BEFORE any routing or
   // clearing, so nothing is consumed and the user's text stays in the box.
   try{
     if(quotaLocked()){ _renderQuotaNotice(); return; }
@@ -4263,7 +4263,7 @@ async function _callAI(msgs, _opts) {
     return;
   }
   AEGIS.noteSend();
-  // Out-of-usage: the chat stops (Claude-style). Show one quota card with a
+  // Out-of-usage: the chat stops. Show one quota card with a
   // live reset countdown, lock the composer, and never stack duplicates.
   try{
     if(quotaLocked()){ S.busy=false; _renderQuotaNotice(); return; }
@@ -4311,7 +4311,7 @@ async function _callAI(msgs, _opts) {
   setMsgs(msgs); renderChatMsgs();
   const streamIdx=msgs.length-1;
 
-  // Claude-style working status: cycle contextual labels until the first token
+  // Working status: cycle contextual labels until the first token
   // arrives, so the user always sees what AMV is doing.
   const _lastUser=(msgs.filter(m=>m.r==='u').slice(-1)[0]||{});
   const _uTxt=(typeof _lastUser.c==='string'?_lastUser.c:(_lastUser.d||'')).toLowerCase();
@@ -5011,7 +5011,7 @@ try{ window._toggleResearch=_toggleResearch; window._syncResearchBtn=_syncResear
 
 /* Build the live research panel from REAL search activity: the queries the
    model actually ran and the sources it actually found. Stored on the message
-   as _research so it renders above the answer, Claude-style. */
+   as _research so it renders above the answer. */
 function _renderResearch(msgs, streamIdx, state){
   try{
     if(!state || !msgs || streamIdx==null) return;
@@ -5133,7 +5133,7 @@ function renderChatMsgs() {
     } else if(!isU && m._retrying){
       content='<div class="ai-retrying"><div class="dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div><span>'+escH(m._retrying)+'</span></div>';
     } else if(!isU && m.streaming && !(typeof m.c==='string' && m.c.length)){
-      // working - show a live status label (Claude-style) before the first token.
+      // working - show a live status label before the first token.
       // If offline, show a skeleton loader + a clear note instead.
       if(typeof navigator!=='undefined' && navigator.onLine===false){
         content='<div class="skl-msg"><div class="skl skl-line w1"></div><div class="skl skl-line w4"></div><div class="skl skl-line w2"></div><div class="skl skl-line w3"></div>'+
@@ -8426,7 +8426,7 @@ function _usageContentHTML(){
   const typeLabel={message:'Conversations',image:'Images',video:'Videos',code:'Code tasks',document:'Documents',agent_action:'Autonomous actions',research:'Research',design:'Designs'};
   const breakdown=Object.entries(all.byType).sort((a,b)=>b[1]-a[1]).map(([t,n])=>
     '<div class="vrow"><span>'+(typeLabel[t]||t)+'</span><span class="vrow-n">'+n+'</span></div>').join('')||'<div class="vrow"><span style="color:var(--mu)">Nothing yet - start a chat to see your impact grow.</span></div>';
-  // --- Task #7: rolling usage window (Claude-style) ---
+  // --- Task #7: rolling usage window ---
   const us=AMVUsage.status();
   const planName=(PLANS[loadStr('amv_plan')||'free']&&PLANS[loadStr('amv_plan')||'free'].name)||'Free';
   const barColor = us.pct>=90 ? '#ff4d4d' : (us.pct>=70 ? '#e0b341' : 'var(--accent)');
@@ -11164,7 +11164,7 @@ function designStart(kind){ _studioCreate('A '+String(kind).toLowerCase()); }
 /* ===== STUDIO - standalone multi-artifact design canvas (never touches chat) =====
    A Studio PROJECT holds many designs (pages, screens, slides). Each artifact
    has its own version history you can revert. Export one or the whole project
-   to a real folder (File System Access) or as downloads. Real Claude Design
+   to a real folder (File System Access) or as downloads. Real design-tool
    parity + AMV's Design DNA on top. */
 const _STUDIO = { html:'', prompt:'', history:[],
   artifacts:[],        // [{id,name,type,html,history:[{brief,html,ts}]}]
@@ -12705,7 +12705,7 @@ try{ window.AMV_TOOLS=AMV_TOOLS; window._amvRunTool=_amvRunTool; }catch(e){}
 
 /* ══════════════════════════════════════════════════════════════
    CONTEXT WINDOW MANAGEMENT
-   Like Claude: a conversation has a finite context. We track it, warn as it
+   A conversation has a finite context. We track it, warn as it
    fills, and when it's full you start a new chat - but you can carry a
    COMPRESSED handoff across so nothing is lost and you pick up exactly where
    you left off.
@@ -15029,7 +15029,7 @@ function setupKeyboard(){
     if(e.key==='Escape'){
       // In settings, Esc closes it and returns you to your work.
       if(S.tab==='settings' && !document.querySelector('.ovr.on, #ovr.on')){ e.preventDefault(); try{ closeSettings(); }catch(err){} return; }
-      // While the AI is generating, Esc stops it (like Claude/ChatGPT).
+      // While the AI is generating, Esc stops it (as chat apps do).
       if(S.busy){ e.preventDefault(); try{ stopGenerating(); }catch(err){} return; }
       if(!inInput){ const ta=document.getElementById('mta'); if(ta)ta.focus(); return; }
     }

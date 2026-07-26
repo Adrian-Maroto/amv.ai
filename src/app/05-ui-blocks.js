@@ -540,7 +540,7 @@ async function sendMsg(_opts) {
     if(typeof toast==='function') toast('Create a free account to start chatting','info',3500);
     return;
   }
-  // Out-of-usage: the chat stops here (Claude-style) - BEFORE any routing or
+  // Out-of-usage: the chat stops here - BEFORE any routing or
   // clearing, so nothing is consumed and the user's text stays in the box.
   try{
     if(quotaLocked()){ _renderQuotaNotice(); return; }
@@ -622,7 +622,7 @@ async function _callAI(msgs, _opts) {
     return;
   }
   AEGIS.noteSend();
-  // Out-of-usage: the chat stops (Claude-style). Show one quota card with a
+  // Out-of-usage: the chat stops. Show one quota card with a
   // live reset countdown, lock the composer, and never stack duplicates.
   try{
     if(quotaLocked()){ S.busy=false; _renderQuotaNotice(); return; }
@@ -670,7 +670,7 @@ async function _callAI(msgs, _opts) {
   setMsgs(msgs); renderChatMsgs();
   const streamIdx=msgs.length-1;
 
-  // Claude-style working status: cycle contextual labels until the first token
+  // Working status: cycle contextual labels until the first token
   // arrives, so the user always sees what AMV is doing.
   const _lastUser=(msgs.filter(m=>m.r==='u').slice(-1)[0]||{});
   const _uTxt=(typeof _lastUser.c==='string'?_lastUser.c:(_lastUser.d||'')).toLowerCase();
@@ -1370,7 +1370,7 @@ try{ window._toggleResearch=_toggleResearch; window._syncResearchBtn=_syncResear
 
 /* Build the live research panel from REAL search activity: the queries the
    model actually ran and the sources it actually found. Stored on the message
-   as _research so it renders above the answer, Claude-style. */
+   as _research so it renders above the answer. */
 function _renderResearch(msgs, streamIdx, state){
   try{
     if(!state || !msgs || streamIdx==null) return;
@@ -1492,7 +1492,7 @@ function renderChatMsgs() {
     } else if(!isU && m._retrying){
       content='<div class="ai-retrying"><div class="dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div><span>'+escH(m._retrying)+'</span></div>';
     } else if(!isU && m.streaming && !(typeof m.c==='string' && m.c.length)){
-      // working - show a live status label (Claude-style) before the first token.
+      // working - show a live status label before the first token.
       // If offline, show a skeleton loader + a clear note instead.
       if(typeof navigator!=='undefined' && navigator.onLine===false){
         content='<div class="skl-msg"><div class="skl skl-line w1"></div><div class="skl skl-line w4"></div><div class="skl skl-line w2"></div><div class="skl skl-line w3"></div>'+

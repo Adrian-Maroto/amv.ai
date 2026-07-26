@@ -56,7 +56,7 @@ function designStart(kind){ _studioCreate('A '+String(kind).toLowerCase()); }
 /* ===== STUDIO - standalone multi-artifact design canvas (never touches chat) =====
    A Studio PROJECT holds many designs (pages, screens, slides). Each artifact
    has its own version history you can revert. Export one or the whole project
-   to a real folder (File System Access) or as downloads. Real Claude Design
+   to a real folder (File System Access) or as downloads. Real design-tool
    parity + AMV's Design DNA on top. */
 const _STUDIO = { html:'', prompt:'', history:[],
   artifacts:[],        // [{id,name,type,html,history:[{brief,html,ts}]}]
@@ -1597,7 +1597,7 @@ try{ window.AMV_TOOLS=AMV_TOOLS; window._amvRunTool=_amvRunTool; }catch(e){}
 
 /* ══════════════════════════════════════════════════════════════
    CONTEXT WINDOW MANAGEMENT
-   Like Claude: a conversation has a finite context. We track it, warn as it
+   A conversation has a finite context. We track it, warn as it
    fills, and when it's full you start a new chat - but you can carry a
    COMPRESSED handoff across so nothing is lost and you pick up exactly where
    you left off.

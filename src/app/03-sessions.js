@@ -1055,7 +1055,7 @@ function _ensureConv(){
   return c;
 }
 function _autoTitle(c){
-  // auto-name from the first user message, like Claude
+  // auto-name from the first user message
   if(c && (!c.title || c.title==='New chat' || c.title==='New Conversation')){
     const first=(c.msgs||[]).find(m=>m.r==='u');
     let t='';
