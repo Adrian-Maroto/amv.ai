@@ -7,6 +7,7 @@
 function _cwJobs(){ return load('amv_cw_jobs') || _cwDefaultJobs(); }
 function _cwSaveJobs(j){ store('amv_cw_jobs', j); }
 function _cwDefaultJobs(){ return [
+  { id:'job_hunt', icon:'\uD83D\uDCBC', title:'Job hunt - find, apply, report', desc:'AMV finds roles matched to your resume, tailors an application to each, then (your choice) shows you before applying or applies on its own. Email-apply jobs it submits; portal jobs it fills for one-tap submit. If a posting asks something you have not specified, it asks you first. Emails a morning report.', needs:'Email, Web research', on:false },
   { id:'morning_brief', icon:'\u2600\uFE0F', title:'Morning news & markets brief', desc:'Every morning at 7am, AMV researches overnight news and market movements, then emails you a concise brief on what happened and which stocks to watch today.', needs:'Email, Web research', on:false },
   { id:'inbox_digest', icon:'\uD83D\uDCEC', title:'Daily inbox digest', desc:'AMV summarizes your important emails each evening and drafts replies for the ones that need them - you just approve and send.', needs:'Email', on:false },
   { id:'competitor_watch', icon:'\uD83D\uDD0D', title:'Competitor & industry watch', desc:'Weekly, AMV tracks your competitors and industry news, then emails you a summary of anything that matters.', needs:'Email, Web research', on:false },
@@ -418,7 +419,14 @@ function _crewQueueHTML(){
 }
 function cwToggle(id){
   const jobs=_cwJobs(); const j=jobs.find(x=>x.id===id); if(!j) return;
+  // Job Hunt needs a profile before it can do anything - open setup on first
+  // enable if the required details are missing, instead of silently turning on.
+  if(id==='job_hunt' && !j.on && typeof AMVJobs!=='undefined' && AMVJobs.missingInfo({}, AMVJobs.cfg()).length){
+    if(typeof openJobHunt==='function'){ openJobHunt(); return; }
+  }
   j.on=!j.on; _cwSaveJobs(jobs);
+  // keep the engine's own on-flag in sync so AMVJobs.run() reflects the toggle
+  if(id==='job_hunt' && typeof AMVJobs!=='undefined'){ try{ const c=AMVJobs.cfg(); c.on=j.on; AMVJobs.save(c); }catch(e){} }
   if(window.AMV_API && AMV_API.live){ AMV_API.toggleJob(id,j.on).catch(()=>{}); }
   toast(j.on?('On: '+j.title):('Off: '+j.title), j.on?'info':'info');
   renderCrewView();

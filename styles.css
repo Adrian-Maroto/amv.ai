@@ -6711,3 +6711,12 @@ html,body{height:100%;height:100dvh}
   .fr-link-l{min-width:72px}
   .fr-actbtn{flex:1 1 auto;text-align:center}
 }
+
+/* ============================================================
+   LAYER A18 - Job Hunt setup form (readable labels + fields)
+   ============================================================ */
+.jh-modal .jh-form{margin-top:2px}
+.jh-l{display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:600;color:var(--mu)}
+.jh-l .inp,.jh-l .sel,.jh-l textarea{font-weight:400;color:var(--tx)}
+.jh-l textarea{resize:vertical;min-height:70px;font-family:var(--fn)}
+.jh-modal .btn{font-size:13px}
