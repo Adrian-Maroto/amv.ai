@@ -6720,3 +6720,31 @@ html,body{height:100%;height:100dvh}
 .jh-l .inp,.jh-l .sel,.jh-l textarea{font-weight:400;color:var(--tx)}
 .jh-l textarea{resize:vertical;min-height:70px;font-family:var(--fn)}
 .jh-modal .btn{font-size:13px}
+
+/* ============================================================
+   LAYER A19 - Universal agent live run (real step-by-step state)
+   ============================================================ */
+.uni-plan{display:flex;flex-direction:column;gap:7px;margin-top:10px}
+.uni-h{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--mu)}
+.uni-step{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--bd);border-radius:10px;background:var(--s1)}
+.uni-step .uni-ix{flex:0 0 auto;width:20px;height:20px;border-radius:50%;background:var(--s3);color:var(--tx);font-size:11px;display:flex;align-items:center;justify-content:center}
+.uni-b{flex:1 1 auto;min-width:0}
+.uni-t{font-size:13.5px;font-weight:600}
+.uni-m{display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin-top:3px;font-size:11.5px;color:var(--mu)}
+.uni-tool{background:rgba(127,127,127,.14);padding:1px 7px;border-radius:999px}
+.uni-tag{padding:1px 7px;border-radius:999px;font-weight:600}
+.uni-tag.need{background:rgba(224,179,65,.16);color:var(--gold)}
+.uni-tag.appr{background:rgba(85,144,255,.16);color:var(--accent)}
+.uni-tag.risk{background:rgba(255,77,77,.13);color:var(--red)}
+.uni-how{flex:1 1 100%;color:var(--dim)}
+.uni-out{margin-top:5px;font-size:11.5px;color:var(--mu);font-family:var(--mn);word-break:break-all}
+.uni-step.running{border-color:var(--accent)}
+.uni-step.running .uni-ix{background:var(--accent);color:#fff}
+.uni-step.done .uni-ix{background:var(--grn);color:#06240f}
+.uni-step.blocked{border-color:rgba(224,179,65,.45)}
+.uni-step.error{border-color:var(--red)}
+.uni-sum{margin-top:10px;font-size:12px;color:var(--mu)}
+.uni-needs{margin-top:8px;padding:10px 12px;border:1px solid rgba(224,179,65,.3);background:rgba(224,179,65,.07);border-radius:9px;font-size:12.5px;color:var(--tx)}
+.uni-resume{margin-top:4px;font-size:11.5px;color:var(--mu)}
+.uni-plan.blocked .uni-why{font-size:12.5px;color:var(--tx);padding:10px 12px;border:1px solid rgba(255,77,77,.35);background:rgba(255,77,77,.07);border-radius:9px}
+.uni-deg{color:var(--gold)}

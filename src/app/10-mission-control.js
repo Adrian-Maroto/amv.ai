@@ -225,6 +225,19 @@ async function mcRunCommand(instruction, opts){
     const c=await _clarifyCheck(instruction);
     if(!c.ok){ _mcAskDetails(box, instruction, c.questions); return; }
   }
+  // UNIVERSAL AGENT: plan this request against every connector that exists
+  // right now (not a fixed command list), bind each step to a REAL action, and
+  // run it with everything visible. Steps that cannot run say exactly what is
+  // missing and resume when it is provided. Falls through to the older path
+  // only if the universal core is unavailable.
+  if(typeof AMVUniversal!=='undefined' && typeof uniRun==='function'){
+    box.innerHTML='<div class="mc-cmd-msg run"><span class="rr-dot"></span> Planning against your connected services…</div><div id="uni-live"></div>';
+    try{
+      const r=await uniRun(instruction, {autonomous:!!opts.autonomous});
+      if(r && !r.blocked) return;
+      if(r && r.blocked) return;
+    }catch(e){ /* fall through to the legacy path */ }
+  }
   const analysis=(typeof analyzeTaskIntent==='function')?analyzeTaskIntent(instruction):{matched:false,ready:false};
   // Needs an integration that isn't connected → explain here, stay in Crew.
   if(analysis.matched && !analysis.ready){
