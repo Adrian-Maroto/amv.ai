@@ -21393,7 +21393,7 @@ function _renderSetPaneInner(){
       '<div class="set-title">Founder Dashboard</div>'+
       '<div class="set-sub">Live platform spend, users, revenue, and abuse signals. Operator-only.</div>'+
       '<div id="fd-body"><div class="fd-loading">Loading platform stats\u2026</div></div>'+
-      '<div class="fd-token-row"><input id="fd-token" type="password" placeholder="Admin token" class="inp" style="max-width:240px"/>'+
+      '<div class="fd-token-row"><input id="fd-token" type="password" autocomplete="off" placeholder="Admin token" class="inp" style="max-width:240px"/>'+
         '<button class="btn bp" id="fd-load" style="font-size:12px">Load stats</button></div>'+
       '<div class="fd-note">Your admin token is set as the ADMIN_TOKEN secret on your Worker. It\u2019s never stored - paste it here each session.</div>';
     const loadStats=async()=>{
