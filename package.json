@@ -16,6 +16,9 @@
     "backup": "node backup.mjs export",
     "restore": "node backup.mjs restore"
   },
+  "dependencies": {
+    "@cloudflare/puppeteer": "^0.0.14"
+  },
   "devDependencies": {
     "playwright": "^1.44.0"
   }

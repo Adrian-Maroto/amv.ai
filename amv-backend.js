@@ -1124,8 +1124,15 @@ async function browserRun(request, env, ctx){
   const trace = [];
   let browser = null;
   try{
-    const mod = await import('@cloudflare/puppeteer');
-    const puppeteer = mod.default || mod;
+    let puppeteer;
+    try{
+      const mod = await import('@cloudflare/puppeteer');
+      puppeteer = mod.default || mod;
+    }catch(impErr){
+      // The browser driver is not bundled in this deploy. Say so plainly
+      // rather than surfacing a module-resolution error to the user.
+      return json({ error:'The browser driver is not installed in this deployment. Run npm install and redeploy to enable web automation.', code:'needs_service' }, 503);
+    }
     browser = await puppeteer.launch(env.BROWSER);
     const page = await browser.newPage();
     await page.setViewport({ width:1280, height:900 });
