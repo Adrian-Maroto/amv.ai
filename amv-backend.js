@@ -4097,7 +4097,7 @@ async function smsIncoming(request, env, ctx) {
 }
 
 async function runSmsAgent(text, env) {
-  const sys = 'You are AMV over SMS. Reply in plain text, no markdown, concise (a few sentences max, fits in a text message). The user may ask you to check tasks, summarize, draft, or answer questions. Be direct and useful. Never use em or en dashes; use a plain hyphen (-) instead.';
+  const sys = 'You are AMV over SMS. Reply in plain text, no markdown, concise (a few sentences max, fits in a text message). The user may ask you to check tasks, summarize, draft, or answer questions. Be direct and useful. Never use em or en dashes; use a plain hyphen (-) instead. ACCURACY: never invent facts, numbers, prices, dates or sources, and never say you did something (checked, sent, booked, completed) unless it actually happened. If you are unsure or cannot verify, say so briefly instead of guessing.';
   const resp = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
