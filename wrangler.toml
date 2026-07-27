@@ -32,6 +32,19 @@ class_name = "AMVCounter"
 tag = "v1"
 new_classes = ["AMVCounter"]
 
+# ── THIS is what lets Crew operate websites that have no API ──
+# Browser Rendering gives the Worker a real headless browser, so the web agent
+# (/v1/browser/run) can navigate, fill forms, click and submit as the user - the
+# capability behind "do it on any website".
+#
+# Requires the Workers PAID plan. Uncomment to enable; the Worker feature-detects
+# env.BROWSER, so while this is commented out web automation degrades honestly
+# ("not enabled on this deployment") instead of failing at runtime. Nothing else
+# changes when you turn it on.
+#
+# [browser]
+# binding = "BROWSER"
+
 # Secrets (set with: wrangler secret put NAME)
 #   ANTHROPIC_API_KEY   - required, so the model can be called
 #   JWT_SECRET          - required, to authenticate users

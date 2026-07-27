@@ -26171,18 +26171,30 @@ AMVConnectors.register({
       desc: 'Operate any website that has no API: open, log in, fill forms, click, upload, submit. Args: {url, goal, data?}',
       risk: 'high', riskLabel: 'act on a website as you',
       async run(args){
-        const base = (typeof loadStr === 'function' && loadStr('amv_browser_service')) || '';
+        // The agent runs SERVER-SIDE (a real headless browser the Worker drives).
+        // It can never run in this tab, so the backend URL is the service URL.
+        const base = (typeof loadStr === 'function' && (loadStr('amv_browser_service') || loadStr('amv_api_base'))) || '';
         if(!base){
-          const e = new Error('Web automation needs the browser service. Deploy it and set it in Settings, then this runs automatically.');
+          const e = new Error('Web automation needs the AMV backend. Connect it in Settings and this starts working.');
           e.code = 'needs_service'; throw e;
         }
         const tok = (typeof loadStr === 'function' && loadStr('amv_api_token')) || '';
         const r = await fetch(base.replace(/\/$/, '') + '/v1/browser/run', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok },
-          body: JSON.stringify({ url: args.url, goal: args.goal, data: args.data || {} })
+          body: JSON.stringify({
+            url: args.url, goal: args.goal,
+            data: args.data || {},              // field NAME -> value; secrets stay server-side
+            approved: !!args.approved            // the user's explicit OK for this run
+          })
         });
         const d = await r.json().catch(() => ({}));
+        // Surface the agent's structured stopping points as real blockers so the
+        // UI can say exactly what is needed and resume when it is provided.
+        if(d && d.code){
+          const e = new Error(d.need || d.message || d.error || 'Web automation stopped.');
+          e.code = d.code; e.trace = d.trace; throw e;
+        }
         if(!r.ok || d.error) throw new Error(d.error || 'Web automation failed.');
         return d;
       }
@@ -26301,7 +26313,17 @@ const AMVUniversal = {
         onEvent({ type:'done', i, step:s, result:out });
         results.push({ i, status:'done', result:out });
       }catch(e){
-        const blocker = e && e.code ? { code:e.code, need:e.message, how:e.message } : null;
+        const HOW = {
+          needs_service:'Enable web automation on your deployment (Browser Rendering binding), then this runs automatically.',
+          needs_key:'Add your AI key so the agent can read pages and decide actions.',
+          needs_approval:'Approve this step and I will finish it.',
+          needs_human:'This site showed a captcha - solve it once and I can continue.',
+          needs_info:'Tell me this detail and I will carry on.',
+          needs_auth:'Connect the account this step needs.',
+          blocked_url:'That address is not allowed (internal or unsupported).',
+          step_cap:'The task needed more steps than the safety cap allows - narrow it slightly and rerun.'
+        };
+        const blocker = e && e.code ? { code:e.code, need:e.message, how:HOW[e.code] || e.message } : null;
         onEvent({ type: blocker ? 'blocked' : 'error', i, step:s, error:e.message, blocker });
         results.push({ i, status: blocker ? 'blocked' : 'error', error:e.message, blocker });
       }

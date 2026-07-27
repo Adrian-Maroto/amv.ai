@@ -67,6 +67,14 @@ npx wrangler secret put JWT_SECRET          # required — any long random strin
 npx wrangler secret put ADMIN_TOKEN        # required to view the error dashboard
 npx wrangler secret put EMAIL_API_KEY      # Resend key — WITHOUT THIS, PASSWORD RESET NEVER SENDS
 # RESET_EMAIL_FROM is optional — see "Password reset" below
+# Web automation (lets Crew operate sites that have no API).
+# Requires the Workers PAID plan. Uncomment [browser] in wrangler.toml, redeploy,
+# and it turns on - the Worker feature-detects it, so until then web automation
+# reports "not enabled" instead of failing. Defences are built in: SSRF blocking,
+# untrusted-page handling, approval before anything irreversible, secret
+# redaction, per-user rate limits and step/time caps. See tests/worker/
+# web-agent-security.test.mjs.
+
 # Optional monitoring - inert until set; the Worker forwards server-side
 # (no client SDK, no CSP change, secret stays here):
 npx wrangler secret put SENTRY_DSN     # optional - forward errors to Sentry
