@@ -92,3 +92,63 @@ const AMVVerify = {
   }
 };
 try{ window.AMVVerify = AMVVerify; }catch(e){}
+
+/* ============================================================
+   DEV <-> CHAT BRIDGE
+   Registers the Dev workspace as a real connector so you can ask in
+   chat (or Crew) "give me all my files for the X project" and get the
+   actual files back - the same project the Dev tab is showing, not a
+   regenerated guess. Read-only by design: chat can list and read, but
+   writing code stays in Dev where you can see the diff and preview.
+   ============================================================ */
+try{
+  if(typeof AMVConnectors !== 'undefined'){
+    AMVConnectors.register({
+      id:'dev', name:'Dev workspace', auth:'none', channel:'local',
+      isLive(){ try{ return typeof _DEV !== 'undefined'; }catch(e){ return false; } },
+      actions:{
+        project_info:{
+          desc:'Name of the current Dev project and how many files it has.',
+          async run(){
+            const name=(typeof _devProjectName==='function' && _devProjectName())||'';
+            const files=(typeof _devProjectFiles==='function' && _devProjectFiles())||[];
+            return { project:name||'(unnamed)', fileCount:files.length, files };
+          }
+        },
+        list_files:{
+          desc:'List every file path in the current Dev project. Args: {project?}',
+          async run(args){
+            const name=(typeof _devProjectName==='function' && _devProjectName())||'';
+            if(args && args.project && name && String(args.project).toLowerCase().indexOf(name)<0
+               && name.indexOf(String(args.project).toLowerCase())<0){
+              const e=new Error('The open Dev project is "'+name+'", not "'+args.project+'". Open that project in Dev first.');
+              e.code='needs_info'; throw e;
+            }
+            const files=(typeof _devProjectFiles==='function' && _devProjectFiles())||[];
+            if(!files.length){ const e=new Error('There are no files in Dev yet - build something there first.'); e.code='needs_info'; throw e; }
+            return { project:name||'(unnamed)', files };
+          }
+        },
+        get_file:{
+          desc:'Read one file from the Dev project. Args: {path}',
+          async run(args){
+            const p=String((args&&args.path)||'');
+            const f=(typeof _DEV!=='undefined') && _DEV.project[p];
+            if(!f){ const e=new Error('No file "'+p+'" in the Dev project.'); e.code='needs_info'; throw e; }
+            return { path:p, content:f.content, lang:f.lang };
+          }
+        },
+        get_all_files:{
+          desc:'Return EVERY file in the Dev project with its full contents. Use for "give me all my files".',
+          async run(){
+            const name=(typeof _devProjectName==='function' && _devProjectName())||'';
+            const paths=(typeof _devProjectFiles==='function' && _devProjectFiles())||[];
+            if(!paths.length){ const e=new Error('There are no files in Dev yet - build something there first.'); e.code='needs_info'; throw e; }
+            return { project:name||'(unnamed)', count:paths.length,
+              files:paths.map(p=>({ path:p, lang:_DEV.project[p].lang, content:_DEV.project[p].content })) };
+          }
+        }
+      }
+    });
+  }
+}catch(e){}

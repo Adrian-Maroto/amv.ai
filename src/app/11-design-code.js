@@ -815,7 +815,8 @@ function renderCodeView(){
   on($('dev-files'),'change',async function(){ await ingestFiles(this.files); this.value=''; });
   on($('dev-folderinput'),'change',async function(){ await ingestFiles(this.files); this.value=''; });
   on($('dev-save'),'click',async()=>{
-    if(!AMVWorkspace.dirHandle){ let n=0; _devProjectFiles().forEach(p=>{ try{ const blob=new Blob([_DEV.project[p].content],{type:'text/plain'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=p.split('/').pop(); a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),800); n++; }catch(e){} }); toast('Downloaded '+n+' files','info'); return; }
+    if(!AMVWorkspace.dirHandle){ let n=0; const proj=_devProjectName(); _devProjectFiles().forEach(p=>{ try{ const blob=new Blob([_DEV.project[p].content],{type:'text/plain'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); // name downloads after the project so they are identifiable
+      a.download=(proj?proj+'-':'')+p.split('/').pop(); a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),800); n++; }catch(e){} }); toast('Downloaded '+n+' files'+(proj?' ('+proj+')':''),'info'); return; }
     let n=0; for(const p of _devProjectFiles()){ try{ await AMVWorkspace.writeFile(p, _DEV.project[p].content); n++; }catch(e){} }
     toast('Saved '+n+' files to your folder','success',4000);
   });
@@ -840,9 +841,38 @@ function _devConnectVSCode(){
 }
 const _DEV={ log:[], lang:'js', busy:false, curCode:'', curLang:'', curRun:null,
   // multi-file project: files keyed by path. activePath = file shown in Code pane.
-  project:{}, activePath:'', usingWorkspace:false };
+  project:{}, activePath:'', usingWorkspace:false,
+  name:'' };   // the project's name - exports and saved files are named after it
 // project helpers
 function _devProjectFiles(){ return Object.keys(_DEV.project).sort(); }
+
+/* The project name. Everything AMV exports is named after the project rather
+   than a generic "file1", so a build you come back to is identifiable. */
+function _devProjectName(){
+  if(_DEV.name) return _DEV.name;
+  try{ const s=loadStr('amv_dev_name'); if(s){ _DEV.name=s; return s; } }catch(e){}
+  return '';
+}
+function _devSetName(name){
+  const clean=String(name||'').trim().replace(/[^\w\s-]/g,'').replace(/\s+/g,'-').toLowerCase().slice(0,48);
+  if(!clean) return _DEV.name;
+  _DEV.name=clean;
+  try{ saveStr('amv_dev_name', clean); }catch(e){}
+  try{ const el=$('dev-projname'); if(el) el.textContent=clean; }catch(e){}
+  return clean;
+}
+/* Derive a project name from what the user asked for, the first time they build.
+   "build me a portfolio site for a photographer" -> "portfolio-site". */
+function _devDeriveName(request){
+  if(_devProjectName()) return _DEV.name;
+  const t=String(request||'').toLowerCase()
+    .replace(/^(build|make|create|write|generate|code)\s+(me\s+)?(a|an|the)?\s*/,'')
+    .replace(/\b(app|site|website|page|tool|for|with|that|using|in|please)\b.*$/,'$&');
+  const words=(t.match(/[a-z0-9]+/g)||[]).filter(w=>!/^(a|an|the|me|for|with|that|using|in|please|and|to|of)$/.test(w));
+  const name=words.slice(0,3).join('-')||'project';
+  return _devSetName(name);
+}
+window._devProjectName=_devProjectName; window._devSetName=_devSetName;
 function _devSetFile(path, content, lang){ path=_safePath(path)||('file'+Date.now()); _DEV.project[path]={ content, lang:lang||_devLangFor(path), ts:Date.now() }; if(!_DEV.activePath) _DEV.activePath=path; try{ _sessTouch('dev'); }catch(e){} }
 function _devLangFor(path){ const e=(path.split('.').pop()||'').toLowerCase(); return ({js:'js',mjs:'js',jsx:'js',ts:'js',tsx:'js',py:'python',html:'html',css:'css',json:'json',md:'md'})[e]||'txt'; }
 function _devEntryFile(){
@@ -863,7 +893,7 @@ function _devRenderTree(){
   const el=$('dev-tree'); if(!el) return;
   const files=_devProjectFiles();
   if(!files.length){ el.innerHTML='<div class="dev-tree-empty">No project files yet.<br>Build something, open a folder, or upload files.</div>'; return; }
-  el.innerHTML='<div class="dev-tree-h">Files</div>'+files.map(p=>'<div class="dev-tree-f'+(p===_DEV.activePath?' on':'')+'" data-path="'+encodeURIComponent(p)+'"><span class="dev-tree-ic">'+_fileIcon('',p)+'</span>'+escH(p)+'</div>').join('');
+  el.innerHTML='<div class="dev-tree-h">'+escH(_devProjectName()||'Files')+'<span class="dev-tree-n">'+files.length+' file'+(files.length===1?'':'s')+'</span></div>'+files.map(p=>'<div class="dev-tree-f'+(p===_DEV.activePath?' on':'')+'" data-path="'+encodeURIComponent(p)+'"><span class="dev-tree-ic">'+_fileIcon('',p)+'</span>'+escH(p)+'</div>').join('');
   el.querySelectorAll('[data-path]').forEach(f=>on(f,'click',()=>{ _DEV.activePath=decodeURIComponent(f.dataset.path); _devRenderTree(); _devShowActive(); }));
 }
 // show the active file's code in the Code pane
@@ -1247,6 +1277,7 @@ async function _devSend(){
         'Make the requested change with production quality: complete, correct, secure, performant, well-structured. '+
         'You may create or edit ANY files. For EACH file you write, output a fenced block whose FIRST line is "WRITE_FILE: <path>" followed by the COMPLETE file contents (never fragments/diffs). '+
         'Only include files you actually changed or added. Before the file blocks, give a one or two sentence summary of what you changed. '+
+        'When starting a NEW project, scaffold it as a REAL multi-file project the way a senior engineer would - separate files for markup, styles, scripts, components, config and a README - rather than cramming everything into one file. Use clear, conventional paths (index.html, styles/main.css, scripts/app.js, components/<name>.js). '+
         'If any UI is involved, it must look like a top design agency built it.';
       const _isUI=Object.keys(_DEV.project).some(p=>/\.(html|css|jsx|tsx)$/i.test(p))||/\b(html|css|ui|page|component|design|frontend)\b/i.test(msg);
       const prompt=(_isUI?dnaPromptBlock()+'\n\nApply the DESIGN DNA above to any UI.\n\n':'')+_devProjectContext()+'\n\nCHANGE REQUEST: '+msg;
@@ -1255,6 +1286,7 @@ async function _devSend(){
       const writes=[...resp.matchAll(/```[a-z]*\s*\n?WRITE_FILE:\s*([^\n`]+)\n([\s\S]*?)```/gi)];
       const summary=resp.split('```')[0].trim();
       const changed=[];
+      try{ _devDeriveName(msg); }catch(e){}   // name the project from the first request
       for(const m of writes){ const path=m[1].trim(); const body=m[2].replace(/\n$/,''); _devSetFile(path, body); changed.push(path); }
       if(changed.length){ _DEV.activePath=changed[0]; }
       const entry={role:'ai',text:(summary||'Updated the project.')+(changed.length?('\n\n**Files changed:** '+changed.join(', ')):'')};

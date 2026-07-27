@@ -6759,3 +6759,8 @@ html,body{height:100%;height:100dvh}
 .vfy-chip.ok{border-color:rgba(74,222,128,.4);color:var(--grn)}
 .vfy-chip.warn{border-color:rgba(224,179,65,.45);color:var(--gold)}
 .vfy-chip.run{border-color:var(--accent);color:var(--accent)}
+
+/* LAYER A21 - Dev: project name + file count in the tree header */
+.dev-tree-h{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.dev-tree-n{font-size:10.5px;font-weight:600;color:var(--mu);background:rgba(127,127,127,.14);
+  padding:1px 7px;border-radius:999px;flex:0 0 auto}
