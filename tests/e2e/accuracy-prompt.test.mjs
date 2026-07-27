@@ -49,6 +49,42 @@ section('Final self-check before answering');
 ok(/BEFORE SENDING, silently check/i.test(sys.s), 'requires a pre-send verification pass');
 ok(/Remove any statement you cannot support/i.test(sys.s), 'requires stripping unsupportable claims');
 
+section('The disclaimer is always visible to users');
+const disc = await page.evaluate(() => {
+  const el = document.querySelector('.amv-disclaimer');
+  return el ? { text: el.textContent, visible: getComputedStyle(el).display !== 'none' } : null;
+});
+ok(!!disc, 'a disclaimer is rendered under the composer');
+ok(/AMV is an AI and can make mistakes/i.test(disc.text), 'it says AMV is an AI that can make mistakes', disc.text);
+ok(/check important answers/i.test(disc.text), 'and tells people to check important answers');
+ok(disc.visible, 'and it is actually visible, not hidden');
+
+section('Independent verification layer (measurable accuracy, not just a promise)');
+const v = await page.evaluate(() => {
+  const V = window.AMVVerify;
+  if (!V) return { missing: true };
+  return {
+    missing: false,
+    money: V.shouldVerify('15% tip on $84?', 'That is $12.60'),
+    medical: V.shouldVerify('ibuprofen dosage', '200 mg every 6 hours'),
+    calc: V.shouldVerify('calculate the total', 'the sum is 480'),
+    creative: V.shouldVerify('write me a haiku about rain', 'soft rain falls down'),
+    agreeSame: V.agree('The total is 12.60', 'I get 12.60').agree,
+    agreeDiff: V.agree('The total is 12.60', 'I calculate 15.40').agree,
+    chipOk: V.chipHTML({ status: 'agreed', note: 'x' }),
+    chipConflict: V.chipHTML({ status: 'conflict', note: 'x' }),
+    chipNone: V.chipHTML(null)
+  };
+});
+ok(!v.missing, 'the verification layer is live');
+ok(!!v.money && !!v.medical && !!v.calc, 'money, medical and calculations are flagged for independent re-checking');
+ok(v.creative === null, 'creative writing is NOT re-checked, so normal chat stays fast');
+ok(v.agreeSame === true, 'two independent solves that match are recognised as agreeing');
+ok(v.agreeDiff === false, 'a disagreement between independent solves is caught', v.agreeDiff);
+ok(/Double-checked/.test(v.chipOk), 'agreement shows a "Double-checked" chip');
+ok(/disagreed/i.test(v.chipConflict), 'a conflict is surfaced to the user, never hidden');
+ok(v.chipNone === '', 'no chip is shown when nothing was verified (never a badge we did not earn)');
+
 section('No JavaScript errors');
 ok(errors.length === 0, 'zero uncaught page errors', errors.slice(0, 3));
 

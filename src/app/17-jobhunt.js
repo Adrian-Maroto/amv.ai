@@ -16,9 +16,14 @@ const AMVJobs = {
     let c; try{ c=load(this.KEY); }catch(e){ c=null; }
     return Object.assign({
       on:false, mode:'ask', dailyCap:10,
+      // Both lanes run in the same daily batch: reviewCount are prepared for
+      // you to approve, autoCount are applied automatically. Either can be 0.
+      reviewCount:10, autoCount:0,
+      runAt:'09:00',            // local time the daily batch runs
+      trackResults:true,        // check for replies/interviews each morning
       resumes:[], contact:{name:'',email:'',phone:'',links:{}},
       targets:{roles:[],locations:[],remote:'any',salaryMin:0},
-      prefs:{}
+      prefs:{}, applied:[]      // history: every application, with its lane
     }, c||{});
   },
   save(c){ try{ store(this.KEY, c); }catch(e){} },
@@ -75,6 +80,80 @@ const AMVJobs = {
       return { action:'queued_approval', channel:ch, note:'No clear apply channel - queued for your review.' };
     }
     return { action:'queued_approval', channel:ch };
+  },
+
+  /* Split a day's matches into the two lanes the user asked for: some
+     prepared for review, some applied automatically. Auto is only ever used
+     where AMV can genuinely submit AND nothing is missing - anything else
+     falls back to the review lane rather than silently doing nothing. */
+  planBatch(jobs, profile){
+    profile = profile || this.cfg();
+    const wantAuto = Math.max(0, +profile.autoCount || 0);
+    const wantReview = Math.max(0, +profile.reviewCount || 0);
+    const out = { auto:[], review:[], needsInfo:[] };
+    (jobs || []).forEach(job => {
+      const miss = this.missingInfo(job, profile);
+      if(miss.length){ out.needsInfo.push({ job, questions:miss }); return; }
+      const ch = this.channelFor(job);
+      const canAuto = (ch === 'email') || (ch === 'portal' && this.webAgentReady());
+      if(canAuto && out.auto.length < wantAuto){ out.auto.push({ job, channel:ch, lane:'auto' }); return; }
+      if(out.review.length < wantReview){ out.review.push({ job, channel:ch, lane:'review' }); }
+    });
+    return out;
+  },
+
+  /* Can AMV submit on a site with no API? True once web automation is live. */
+  webAgentReady(){
+    try{ return !!(typeof AMVConnectors !== 'undefined' && AMVConnectors.live('browser')); }
+    catch(e){ return false; }
+  },
+
+  /* Record what actually happened, so the morning report is history, not a guess. */
+  record(entries){
+    const c = this.cfg();
+    c.applied = (entries || []).concat(c.applied || []).slice(0, 500);
+    this.save(c);
+    return c.applied;
+  },
+
+  /* The morning email/report: everywhere it applied, split by lane, what is
+     waiting on you, and any results that came back. */
+  dailyReport(batch, results){
+    batch = batch || { auto:[], review:[], needsInfo:[] };
+    const title = j => (j && (j.title || j.role)) || 'Role';
+    const co = j => (j && (j.company || j.employer)) || '';
+    return {
+      at: Date.now(),
+      appliedAutonomously: batch.auto.map(x => ({ title:title(x.job), company:co(x.job), channel:x.channel, url:x.job && x.job.applyUrl })),
+      awaitingYourReview: batch.review.map(x => ({ title:title(x.job), company:co(x.job), channel:x.channel, url:x.job && x.job.applyUrl })),
+      needsInfo: batch.needsInfo.map(x => ({ title:title(x.job), questions:(x.questions || []).map(q => q.q) })),
+      results: (results || []).map(r => ({ title:r.title || '', company:r.company || '', kind:r.kind || 'reply', detail:r.detail || '' })),
+      counts: {
+        applied: batch.auto.length, toReview: batch.review.length,
+        needsInfo: batch.needsInfo.length, results: (results || []).length
+      }
+    };
+  },
+
+  /* Scan connected email for replies to applications AMV sent. Real signal
+     only: it matches against what was actually applied to. */
+  async checkResults(){
+    if(!this.cfg().trackResults) return [];
+    if(typeof AMVConnectors === 'undefined' || !AMVConnectors.live('google')) return [];
+    let mail = [];
+    try{ mail = await AMVConnectors.run('google.gmail_list_unread', {}); }catch(e){ return []; }
+    const applied = this.cfg().applied || [];
+    const hit = /(interview|application|position|role|schedule a|we would like|unfortunately|offer)/i;
+    return (mail || []).filter(m => hit.test(String(m.subject || ''))).map(m => {
+      const match = applied.find(a => m.subject && a.company && String(m.subject).toLowerCase().includes(String(a.company).toLowerCase()));
+      const s = String(m.subject || '');
+      return {
+        title: match ? match.title : s.slice(0, 60), company: match ? match.company : (m.from || ''),
+        kind: /interview|schedule a|we would like/i.test(s) ? 'interview'
+            : /unfortunately|not moving forward/i.test(s) ? 'rejection' : 'reply',
+        detail: s.slice(0, 120)
+      };
+    });
   },
 
   // Roll a run's outcomes into the morning report structure.

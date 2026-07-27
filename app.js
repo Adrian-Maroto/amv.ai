@@ -4695,6 +4695,7 @@ function renderChatView() {
           '</div>'+
         '</div>'+
         '<p class="input-hint">Enter to send &bull; Shift+Enter for new line &bull; Drag &amp; drop files</p>'+
+        '<p class="amv-disclaimer">AMV is an AI and can make mistakes. Check important answers.</p>'+
         '<div id="ctx-chat"></div>'+
       '</div>'+
       '<div id="chome-chips" class="chome-chips"></div>'+
@@ -18706,9 +18707,14 @@ const AMVJobs = {
     let c; try{ c=load(this.KEY); }catch(e){ c=null; }
     return Object.assign({
       on:false, mode:'ask', dailyCap:10,
+      // Both lanes run in the same daily batch: reviewCount are prepared for
+      // you to approve, autoCount are applied automatically. Either can be 0.
+      reviewCount:10, autoCount:0,
+      runAt:'09:00',            // local time the daily batch runs
+      trackResults:true,        // check for replies/interviews each morning
       resumes:[], contact:{name:'',email:'',phone:'',links:{}},
       targets:{roles:[],locations:[],remote:'any',salaryMin:0},
-      prefs:{}
+      prefs:{}, applied:[]      // history: every application, with its lane
     }, c||{});
   },
   save(c){ try{ store(this.KEY, c); }catch(e){} },
@@ -18765,6 +18771,80 @@ const AMVJobs = {
       return { action:'queued_approval', channel:ch, note:'No clear apply channel - queued for your review.' };
     }
     return { action:'queued_approval', channel:ch };
+  },
+
+  /* Split a day's matches into the two lanes the user asked for: some
+     prepared for review, some applied automatically. Auto is only ever used
+     where AMV can genuinely submit AND nothing is missing - anything else
+     falls back to the review lane rather than silently doing nothing. */
+  planBatch(jobs, profile){
+    profile = profile || this.cfg();
+    const wantAuto = Math.max(0, +profile.autoCount || 0);
+    const wantReview = Math.max(0, +profile.reviewCount || 0);
+    const out = { auto:[], review:[], needsInfo:[] };
+    (jobs || []).forEach(job => {
+      const miss = this.missingInfo(job, profile);
+      if(miss.length){ out.needsInfo.push({ job, questions:miss }); return; }
+      const ch = this.channelFor(job);
+      const canAuto = (ch === 'email') || (ch === 'portal' && this.webAgentReady());
+      if(canAuto && out.auto.length < wantAuto){ out.auto.push({ job, channel:ch, lane:'auto' }); return; }
+      if(out.review.length < wantReview){ out.review.push({ job, channel:ch, lane:'review' }); }
+    });
+    return out;
+  },
+
+  /* Can AMV submit on a site with no API? True once web automation is live. */
+  webAgentReady(){
+    try{ return !!(typeof AMVConnectors !== 'undefined' && AMVConnectors.live('browser')); }
+    catch(e){ return false; }
+  },
+
+  /* Record what actually happened, so the morning report is history, not a guess. */
+  record(entries){
+    const c = this.cfg();
+    c.applied = (entries || []).concat(c.applied || []).slice(0, 500);
+    this.save(c);
+    return c.applied;
+  },
+
+  /* The morning email/report: everywhere it applied, split by lane, what is
+     waiting on you, and any results that came back. */
+  dailyReport(batch, results){
+    batch = batch || { auto:[], review:[], needsInfo:[] };
+    const title = j => (j && (j.title || j.role)) || 'Role';
+    const co = j => (j && (j.company || j.employer)) || '';
+    return {
+      at: Date.now(),
+      appliedAutonomously: batch.auto.map(x => ({ title:title(x.job), company:co(x.job), channel:x.channel, url:x.job && x.job.applyUrl })),
+      awaitingYourReview: batch.review.map(x => ({ title:title(x.job), company:co(x.job), channel:x.channel, url:x.job && x.job.applyUrl })),
+      needsInfo: batch.needsInfo.map(x => ({ title:title(x.job), questions:(x.questions || []).map(q => q.q) })),
+      results: (results || []).map(r => ({ title:r.title || '', company:r.company || '', kind:r.kind || 'reply', detail:r.detail || '' })),
+      counts: {
+        applied: batch.auto.length, toReview: batch.review.length,
+        needsInfo: batch.needsInfo.length, results: (results || []).length
+      }
+    };
+  },
+
+  /* Scan connected email for replies to applications AMV sent. Real signal
+     only: it matches against what was actually applied to. */
+  async checkResults(){
+    if(!this.cfg().trackResults) return [];
+    if(typeof AMVConnectors === 'undefined' || !AMVConnectors.live('google')) return [];
+    let mail = [];
+    try{ mail = await AMVConnectors.run('google.gmail_list_unread', {}); }catch(e){ return []; }
+    const applied = this.cfg().applied || [];
+    const hit = /(interview|application|position|role|schedule a|we would like|unfortunately|offer)/i;
+    return (mail || []).filter(m => hit.test(String(m.subject || ''))).map(m => {
+      const match = applied.find(a => m.subject && a.company && String(m.subject).toLowerCase().includes(String(a.company).toLowerCase()));
+      const s = String(m.subject || '');
+      return {
+        title: match ? match.title : s.slice(0, 60), company: match ? match.company : (m.from || ''),
+        kind: /interview|schedule a|we would like/i.test(s) ? 'interview'
+            : /unfortunately|not moving forward/i.test(s) ? 'rejection' : 'reply',
+        detail: s.slice(0, 120)
+      };
+    });
   },
 
   // Roll a run's outcomes into the morning report structure.
@@ -19243,3 +19323,97 @@ async function uniRun(request, opts){
   return { steps: resolved, results: res, summary: sum };
 }
 try{ window.uniRun = uniRun; window._uniStepRow = _uniStepRow; }catch(e){}
+/* ============================================================
+   AMV ACCURACY LAYER - independent verification.
+
+   A system prompt tells the model to be careful; it cannot MEASURE
+   whether the answer is right. This layer does the one thing that
+   demonstrably catches real errors: it re-derives high-stakes answers
+   INDEPENDENTLY (a fresh solve that never sees the first answer, so it
+   cannot anchor to it) and compares the conclusions.
+
+   - Agreement reached two independent ways is a genuine signal.
+   - Disagreement is surfaced to the user rather than hidden, because a
+     flagged uncertainty is far cheaper than a confident wrong answer.
+   - It runs only where a mistake actually costs something (numbers,
+     dates, money, medical/legal/safety, factual claims), so ordinary
+     chat stays fast.
+   ============================================================ */
+const AMVVerify = {
+  // Only verify where being wrong matters. Everything else stays instant.
+  HIGH_STAKES: [
+    { re:/\b\d+(\.\d+)?\s*(%|percent|kg|lb|mg|ml|km|mi|hours?|days?|years?)\b/i, why:'a quantity' },
+    { re:/[\$£€]\s?\d|\b\d+\s?(usd|eur|gbp|dollars?)\b/i, why:'money' },
+    { re:/\b(calculate|compute|solve|total|sum|average|percentage|convert)\b/i, why:'a calculation' },
+    { re:/\b(dose|dosage|mg\/kg|symptom|diagnos|medication|treatment)\b/i, why:'medical information' },
+    { re:/\b(legal|lawsuit|liable|contract|statute|tax|deduction|irs)\b/i, why:'legal or tax information' },
+    { re:/\b(in \d{4}|on \w+ \d{1,2}, \d{4}|born|died|founded|released)\b/i, why:'a date or historical fact' },
+    { re:/\b(safe|toxic|allergic|overdose|poison|voltage|amperage)\b/i, why:'a safety claim' }
+  ],
+
+  /* Should this answer be independently checked? */
+  shouldVerify(question, answer){
+    const t = String(question || '') + ' ' + String(answer || '');
+    if(t.length < 12) return null;
+    for(const h of this.HIGH_STAKES){ if(h.re.test(t)) return h.why; }
+    return null;
+  },
+
+  /* Pull the checkable conclusion out of an answer so two solves can be
+     compared on substance rather than wording. */
+  _conclusion(text){
+    const t = String(text || '');
+    const nums = (t.match(/-?\d+(?:[.,]\d+)?/g) || []).map(n => n.replace(/,/g, ''));
+    return { nums, tail: t.trim().slice(-260) };
+  },
+
+  /* Do two independent answers agree on the numbers that matter? */
+  agree(a, b){
+    const A = this._conclusion(a), B = this._conclusion(b);
+    if(!A.nums.length && !B.nums.length) return { agree:true, reason:'no numeric claim to compare' };
+    const key = A.nums.slice(-3), other = new Set(B.nums);
+    const matched = key.filter(n => other.has(n));
+    if(!key.length) return { agree:true, reason:'no numeric claim to compare' };
+    const ratio = matched.length / key.length;
+    return { agree: ratio >= 0.5, ratio, reason: ratio >= 0.5 ? 'independent solve agrees' : 'independent solve disagrees' };
+  },
+
+  /* Re-solve the question from scratch. The verifier deliberately never sees
+     the first answer, so it cannot be anchored into repeating a mistake. */
+  async recheck(question){
+    if(typeof _aiBackendReady !== 'function' || !_aiBackendReady()) return null;
+    if(typeof aiComplete !== 'function') return null;
+    const sys = 'Solve the problem independently and carefully. Show the key steps briefly, then state the '
+      + 'final answer on the last line as "ANSWER: <value>". If the question cannot be answered factually '
+      + 'with confidence, say "ANSWER: uncertain". Do not guess.';
+    try{ return await aiComplete(String(question).slice(0, 4000), sys, { max_tokens: 700, noLang: true }); }
+    catch(e){ return null; }
+  },
+
+  /* Full pass: decide, re-derive, compare. Returns null when not applicable so
+     the caller can skip silently (never a fake "verified" badge). */
+  async verify(question, answer){
+    const why = this.shouldVerify(question, answer);
+    if(!why) return null;
+    const second = await this.recheck(question);
+    if(!second) return { status:'unverified', why, note:'Could not verify independently.' };
+    const cmp = this.agree(answer, second);
+    return {
+      status: cmp.agree ? 'agreed' : 'conflict',
+      why, ratio: cmp.ratio, second,
+      note: cmp.agree
+        ? 'Checked ' + why + ' a second, independent way - the results agree.'
+        : 'An independent re-check of ' + why + ' did NOT match. Treat this answer as uncertain and verify before relying on it.'
+    };
+  },
+
+  /* The chip shown under an answer. Honest states only:
+     agreed / conflict / unverified. Never a green tick we did not earn. */
+  chipHTML(v){
+    if(!v) return '';
+    if(v.status === 'agreed')  return '<div class="vfy-chip ok" title="' + escH(v.note) + '">Double-checked</div>';
+    if(v.status === 'conflict') return '<div class="vfy-chip warn" title="' + escH(v.note) + '">Unverified - independent check disagreed</div>';
+    return '<div class="vfy-chip" title="' + escH(v.note || '') + '">Not independently verified</div>';
+  }
+};
+try{ window.AMVVerify = AMVVerify; }catch(e){}

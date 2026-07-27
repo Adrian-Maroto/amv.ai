@@ -1042,6 +1042,7 @@ function renderChatView() {
           '</div>'+
         '</div>'+
         '<p class="input-hint">Enter to send &bull; Shift+Enter for new line &bull; Drag &amp; drop files</p>'+
+        '<p class="amv-disclaimer">AMV is an AI and can make mistakes. Check important answers.</p>'+
         '<div id="ctx-chat"></div>'+
       '</div>'+
       '<div id="chome-chips" class="chome-chips"></div>'+

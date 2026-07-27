@@ -6748,3 +6748,14 @@ html,body{height:100%;height:100dvh}
 .uni-resume{margin-top:4px;font-size:11.5px;color:var(--mu)}
 .uni-plan.blocked .uni-why{font-size:12.5px;color:var(--tx);padding:10px 12px;border:1px solid rgba(255,77,77,.35);background:rgba(255,77,77,.07);border-radius:9px}
 .uni-deg{color:var(--gold)}
+
+/* ============================================================
+   LAYER A20 - Accuracy: always-visible AI disclaimer + verify chip
+   ============================================================ */
+.amv-disclaimer{font-size:11px;color:var(--dim);text-align:center;margin:4px 0 0;opacity:.85}
+@media(max-width:720px){ .amv-disclaimer{font-size:10.5px} }
+.vfy-chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:2px 8px;border-radius:999px;
+  border:1px solid var(--bd);color:var(--mu);margin-top:6px}
+.vfy-chip.ok{border-color:rgba(74,222,128,.4);color:var(--grn)}
+.vfy-chip.warn{border-color:rgba(224,179,65,.45);color:var(--gold)}
+.vfy-chip.run{border-color:var(--accent);color:var(--accent)}
