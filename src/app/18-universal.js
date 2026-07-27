@@ -26,9 +26,23 @@
 const AMVConnectors = {
   _reg: Object.create(null),
 
+  /* Add or extend a connector. Registering an id that already exists MERGES
+     the new actions in rather than replacing the connector wholesale - so a
+     second registration (a plugin, a reload, an id collision) can never
+     silently delete capabilities that were already working. Same-named
+     actions are intentionally overridden; everything else is preserved. */
   register(def){
     if(!def || !def.id) return null;
     def.actions = def.actions || {};
+    const existing = this._reg[def.id];
+    if(existing){
+      existing.actions = Object.assign({}, existing.actions, def.actions);
+      // keep the richer metadata, but let an explicit new value win
+      ['name','auth','tokenKey','channel','isLive','getToken'].forEach(k => {
+        if(def[k] !== undefined) existing[k] = def[k];
+      });
+      return existing;
+    }
     this._reg[def.id] = def;
     return def;
   },

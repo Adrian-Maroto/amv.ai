@@ -84,6 +84,21 @@ section('A click on an irreversible control also requires approval');
 ok(/const target = \(decision && decision\.ref\)/.test(src),
   'the label is resolved from OUR observation, so the model cannot lie about what it is clicking');
 
+// REGRESSION (found in review): pressing Enter in a focused field submits the
+// form on most sites. Ungated, that made the whole approval system bypassable
+// with a single keystroke.
+section('Enter cannot be used to submit around the approval gate');
+['Enter', 'return', 'NumpadEnter'].forEach(k => {
+  const p = W._webValidateAction({ verb: 'press', text: k }, { approved: false });
+  ok(p.ok === false && p.needsApproval === true, `press "${k}" needs approval (it submits forms)`, p.why);
+});
+ok(W._webValidateAction({ verb: 'press' }, { approved: false }).ok === false,
+  'a press with no key defaults to Enter and is still gated');
+ok(W._webValidateAction({ verb: 'press', text: 'Tab' }, { approved: false }).ok === true,
+  'harmless keys (Tab) still flow without approval');
+ok(W._webValidateAction({ verb: 'press', text: 'Enter' }, { approved: true }).ok === true,
+  'with approval, Enter proceeds');
+
 /* ── 4. Credentials ──────────────────────────────────────────────────────── */
 section('Secrets never reach a trace, a log, or the response');
 const red = W._webRedact('logging in with hunter2seKret and token abc123def', ['hunter2seKret', 'abc123def']);

@@ -1009,8 +1009,13 @@ const WEB_CONSEQUENTIAL = ['submit'];
 // are irreversible too. Approval is decided by what the control actually says,
 // not by the verb alone - otherwise the agent could buy or delete without asking.
 const WEB_CONSEQUENTIAL_LABEL = /\b(buy|purchase|order|pay|checkout|subscribe|confirm|submit|send|post|publish|apply|delete|remove|cancel|deactivate|transfer|withdraw|donate|bid|book|reserve|accept|agree|sign)\b/i;
-function _webIsConsequential(verb, label){
+// Enter/Return in a focused field SUBMITS the form on most sites, so it is
+// exactly as irreversible as clicking Submit and must be approved the same way.
+// (Without this, the whole approval gate is bypassable with a keystroke.)
+const WEB_SUBMIT_KEYS = /^(enter|return|numpadenter)$/i;
+function _webIsConsequential(verb, label, text){
   if(WEB_CONSEQUENTIAL.indexOf(verb) >= 0) return true;
+  if(verb === 'press' && WEB_SUBMIT_KEYS.test(String(text || 'Enter'))) return true;
   if((verb === 'click' || verb === 'press') && label && WEB_CONSEQUENTIAL_LABEL.test(String(label))) return true;
   return false;
 }
@@ -1061,7 +1066,7 @@ function _webValidateAction(act, opts){
   // Consequence check uses the verb AND the control's own label, so clicking
   // "Place order" or "Delete account" needs approval just like submit does.
   const label = (opts && opts.label) || act.label || '';
-  if(_webIsConsequential(verb, label) && !(opts && opts.approved))
+  if(_webIsConsequential(verb, label, act.text) && !(opts && opts.approved))
     return { ok:false, needsApproval:true,
       why:'This step would ' + (label ? '"' + String(label).slice(0,40) + '"' : verb) + ' - it needs your approval first.' };
   return { ok:true, verb, act };

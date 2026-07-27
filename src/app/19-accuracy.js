@@ -34,23 +34,44 @@ const AMVVerify = {
     return null;
   },
 
-  /* Pull the checkable conclusion out of an answer so two solves can be
-     compared on substance rather than wording. */
+  /* Pull the checkable CONCLUSION out of an answer. Comparing every number in
+     a reply is wrong: a worked answer ("a 15% tip on $84 is $12.60") contains
+     working (15, 84) that a terse second opinion ("ANSWER: 12.60") never
+     repeats, which would flag two agreeing solves as a conflict. So compare
+     what each one actually CONCLUDED. */
   _conclusion(text){
     const t = String(text || '');
     const nums = (t.match(/-?\d+(?:[.,]\d+)?/g) || []).map(n => n.replace(/,/g, ''));
-    return { nums, tail: t.trim().slice(-260) };
+    // an explicit "ANSWER: x" wins; otherwise the last number stated is the result
+    const tagged = t.match(/ANSWER\s*:\s*\$?\s*(-?\d+(?:[.,]\d+)?)/i);
+    const final = tagged ? tagged[1].replace(/,/g, '') : (nums.length ? nums[nums.length - 1] : null);
+    const uncertain = /ANSWER\s*:\s*uncertain/i.test(t);
+    return { nums, final, uncertain, tail: t.trim().slice(-260) };
   },
 
-  /* Do two independent answers agree on the numbers that matter? */
+  /* Close enough to be the same result (tolerates 12.6 vs 12.60, rounding). */
+  _same(x, y){
+    if(x == null || y == null) return false;
+    if(String(x) === String(y)) return true;
+    const a = parseFloat(x), b = parseFloat(y);
+    if(!isFinite(a) || !isFinite(b)) return false;
+    const scale = Math.max(Math.abs(a), Math.abs(b), 1);
+    return Math.abs(a - b) / scale < 0.005;   // within 0.5%
+  },
+
+  /* Do two independent solves agree on the answer that matters? */
   agree(a, b){
     const A = this._conclusion(a), B = this._conclusion(b);
-    if(!A.nums.length && !B.nums.length) return { agree:true, reason:'no numeric claim to compare' };
-    const key = A.nums.slice(-3), other = new Set(B.nums);
-    const matched = key.filter(n => other.has(n));
-    if(!key.length) return { agree:true, reason:'no numeric claim to compare' };
-    const ratio = matched.length / key.length;
-    return { agree: ratio >= 0.5, ratio, reason: ratio >= 0.5 ? 'independent solve agrees' : 'independent solve disagrees' };
+    // The verifier refusing to guess is NOT a disagreement - it is no signal.
+    if(B.uncertain) return { agree:true, inconclusive:true, reason:'the second opinion declined to guess' };
+    if(A.final == null && B.final == null) return { agree:true, reason:'no numeric claim to compare' };
+    if(A.final == null || B.final == null) return { agree:true, inconclusive:true, reason:'only one solve stated a number' };
+    if(this._same(A.final, B.final)) return { agree:true, ratio:1, reason:'independent solve reached the same result' };
+    // Conclusions differ - but if the primary's result appears anywhere in the
+    // second solve's working, treat it as agreement rather than a false alarm.
+    if(B.nums.some(n => this._same(n, A.final)))
+      return { agree:true, ratio:0.75, reason:'the second solve also arrived at this figure' };
+    return { agree:false, ratio:0, reason:'independent solve reached a different result' };
   },
 
   /* Re-solve the question from scratch. The verifier deliberately never sees

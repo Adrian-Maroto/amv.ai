@@ -52,6 +52,23 @@ ok(r.adoptedExisting, 'existing real capabilities (gmail_send) are adopted, not 
 ok(r.hasBrowserChannel, 'a browser channel exists for sites with no API');
 ok(r.catCount >= 5, 'the planner sees a real live catalog', r.catCount);
 
+// REGRESSION (found in review): re-registering an existing id used to REPLACE
+// the connector, silently deleting every action it already had. With many APIs
+// being added over time, one id collision would quietly break a live feature.
+section('Re-registering a connector extends it - it never wipes existing actions');
+const merged = await page.evaluate(() => {
+  const C = window.AMVConnectors;
+  const before = C.catalog().filter(a => a.connector === 'dev').map(a => a.action).sort();
+  C.register({ id: 'dev', name: 'Dev workspace', auth: 'none', actions: { extra_action: { desc: 'x', run: async () => 1 } } });
+  const after = C.catalog().filter(a => a.connector === 'dev').map(a => a.action).sort();
+  return { before, after };
+});
+ok(merged.before.length >= 4, 'Dev started with its real actions', merged.before);
+ok(merged.after.includes('get_all_files') && merged.after.includes('list_files'),
+  'the original actions SURVIVE a re-registration', merged.after);
+ok(merged.after.includes('extra_action'), 'and the new action is added alongside them');
+ok(merged.after.length === merged.before.length + 1, 'exactly one action was added, none lost', merged.after);
+
 section('Every blocker names the EXACT requirement (never a silent fail)');
 ok(r.blockAcme && r.blockAcme.code === 'needs_auth', 'an unconnected service -> needs_auth', r.blockAcme);
 ok(/Connect Acme/i.test((r.blockAcme || {}).how || ''), 'and tells you exactly how to fix it', (r.blockAcme || {}).how);

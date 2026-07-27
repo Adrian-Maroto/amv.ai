@@ -10291,6 +10291,68 @@ function _cwDefaultJobs(){ return [
   { id:'competitor_watch', icon:'\uD83D\uDD0D', title:'Competitor & industry watch', desc:'Weekly, AMV tracks your competitors and industry news, then emails you a summary of anything that matters.', needs:'Email, Web research', on:false },
   { id:'weekly_report', icon:'\uD83D\uDCCA', title:'Weekly summary report', desc:'Every Friday, AMV compiles your week - tasks done, key metrics, what\u2019s pending - into a clean report and emails it to you or your team.', needs:'Email', on:false },
   { id:'content_calendar', icon:'\u270D\uFE0F', title:'Social content drafts', desc:'AMV drafts a week of social posts based on trends in your space and queues them for your approval.', needs:'Web research', on:false },
+
+  /* ---- The standing services below are what make Crew worth paying for:
+     they run in the background and create value without you remembering to
+     ask. Each carries the concrete instruction the autonomous runner
+     executes, and an honest `needs` so it never pretends to run without the
+     access it requires. ---- */
+
+  { id:'opportunity_radar', icon:'\uD83C\uDFAF', title:'Opportunity radar', needs:'Email, Web research', on:false,
+    desc:'Every morning AMV hunts for things you could actually get - scholarships, grants, internships, jobs, competitions, fellowships, discounts and rebates that match your profile - and emails you only the ones you qualify for, with the deadline and the direct link.',
+    prompt:'Search the live web for opportunities matching the user profile and interests: scholarships, grants, internships, jobs, competitions, fellowships, rebates and tax credits. Only include ones open NOW with a future deadline. For each: name, what it gives, eligibility, deadline, direct application link. Exclude anything they clearly do not qualify for. If you find nothing new, say so plainly.' },
+
+  { id:'change_digest', icon:'\uD83D\uDD14', title:'Did anything change today?', needs:'Web research', on:false,
+    desc:'You tell AMV what to watch - a page, a price, a competitor, a policy, a person, a job board - and each morning it checks every one and reports only what actually changed. No change, no noise.',
+    prompt:'Check each item on the user watch list against its previous state. Report ONLY genuine changes: what changed, the old value, the new value, and why it might matter. If nothing changed, say "nothing changed" rather than padding the report.' },
+
+  { id:'money_leaks', icon:'\uD83D\uDCB8', title:'Money leak detector', needs:'Email', on:false,
+    desc:'AMV reads your receipts and statements for subscriptions you stopped using, duplicate charges, silent price rises, and avoidable fees - then tells you exactly what to cancel and how much you would save.',
+    prompt:'Scan recent receipts, invoices and statement emails. Identify: recurring charges that look unused, duplicate charges, subscription price increases versus previous months, and avoidable fees. For each, give the merchant, the amount, how often, and the annual cost of keeping it. Total the potential saving. Never guess a charge you cannot see evidence for.' },
+
+  { id:'forgot_check', icon:'\uD83E\uDDE0', title:'What did I forget?', needs:'Email, Calendar', on:false,
+    desc:'Each morning AMV re-reads your recent mail and calendar for things you said you would do, questions nobody answered, and commitments with no follow-up - so nothing quietly slips.',
+    prompt:'Review recent emails and calendar entries. List: promises the user made that have no follow-up, messages awaiting their reply, questions they asked that were never answered, and commitments with an approaching date. Be specific - quote the sentence and name the person. Only include real, evidenced items.' },
+
+  { id:'renewal_watchdog', icon:'\uD83D\uDCC4', title:'Contract & renewal watchdog', needs:'Email', on:false,
+    desc:'Finds subscriptions, insurance, leases, warranties, domains and memberships heading for renewal, warns you BEFORE the auto-charge, and prepares the cancel-or-renegotiate message.',
+    prompt:'Find upcoming renewals, expirations and auto-charges in the user mail: subscriptions, insurance, leases, warranties, domains, memberships, licences. For each: what it is, the renewal date, the amount, and whether it auto-renews. Flag anything renewing within 30 days first. Draft a cancellation or renegotiation email for anything that looks poor value.' },
+
+  { id:'followups', icon:'\uD83E\uDD1D', title:'Relationship follow-ups', needs:'Email', on:false,
+    desc:'Tells you who is waiting on you and who you have gone quiet on - clients, recruiters, mentors, friends - with the context of your last exchange and a ready-to-send message.',
+    prompt:'Find people awaiting a reply from the user, and important contacts with no exchange in a while. For each: who, when you last spoke, what it was about, and why now is a good moment. Draft a short, natural follow-up message for each. Never invent a shared history that is not in the thread.' },
+
+  { id:'deal_watch', icon:'\uD83C\uDFF7\uFE0F', title:'Price & deal watcher', needs:'Web research', on:false,
+    desc:'Watches everything on your wish list and tells you when a price is genuinely good by its own history - not just when a site claims a sale.',
+    prompt:'Check the current price of each item on the user wish list. Report the current price, the usual price, and whether this is genuinely a good price by historical standards. Explicitly call out fake or marketing-only discounts. Only flag a real drop.' },
+
+  { id:'travel_guardian', icon:'\u2708\uFE0F', title:'Travel guardian', needs:'Email, Calendar, Web research', on:false,
+    desc:'From your booking confirmations it tracks flight delays, gate changes, weather at both ends, and check-in windows - and warns you early enough to actually do something.',
+    prompt:'From the user booking confirmations, identify upcoming travel. Check flight status, gate and time changes, weather at origin and destination, and check-in windows. Report anything that needs action, with how much time remains to act. State clearly if a booking cannot be verified.' },
+
+  { id:'meeting_prep', icon:'\uD83D\uDCCB', title:'Meeting prep & follow-up', needs:'Calendar, Email, Web research', on:false,
+    desc:'Before each meeting you get a brief on who you are meeting, their company and recent news, and the history of your thread. Afterwards it drafts the follow-up and the action list.',
+    prompt:'For each upcoming meeting: who is attending, their role and company, relevant recent news, the history of prior correspondence, open items from last time, and 3 suggested talking points. After a meeting, draft a follow-up email and a task list. Never fabricate a fact about a person - if you cannot verify it, omit it.' },
+
+  { id:'bills_due', icon:'\uD83E\uDDFE', title:'Bills, payments & paycheck alerts', needs:'Email', on:false,
+    desc:'Tells you what is due and when, flags failed payments and low balances early, and confirms when your pay or a refund actually lands.',
+    prompt:'From receipts, invoices and bank notification emails, report: bills due in the next 14 days with amounts, any failed or declined payments, refunds that have or have not arrived, and expected income that has landed. Do not state a balance you cannot see evidence for.' },
+
+  { id:'site_monitor', icon:'\uD83D\uDC41\uFE0F', title:'Website & application watch', needs:'Web research', on:false,
+    desc:'Watches pages that matter - application portals, government pages, waitlists, admissions, job boards - and tells you the moment something opens or changes.',
+    prompt:'Check each watched page for meaningful change: new postings, opened applications, status changes, updated deadlines or policy edits. Ignore cosmetic changes. Report what changed and the direct link.' },
+
+  { id:'goal_tracker', icon:'\uD83D\uDE80', title:'Goal tracker & weekly plan', needs:'Email', on:false,
+    desc:'Turns a real goal - save an amount, get fit, launch something, get into a school - into a weekly plan, checks your progress, and adapts when you fall behind instead of nagging.',
+    prompt:'For each user goal: assess progress since last check, give the specific next actions for this week, and adapt the plan if they are behind. Be concrete and realistic. Encourage honestly - never claim progress that has not happened.' },
+
+  { id:'deliveries', icon:'\uD83D\uDCE6', title:'Package & delivery tracking', needs:'Email', on:false,
+    desc:'Pulls tracking numbers out of your order confirmations and tells you what is arriving today, what is late, and what never shipped.',
+    prompt:'From order and shipping confirmation emails, list every package in transit: what it is, carrier, tracking number, expected date, and current status. Flag anything late or never shipped. Only report packages you have evidence for.' },
+
+  { id:'life_admin', icon:'\uD83D\uDDD3\uFE0F', title:'Life admin & expiry reminders', needs:'Email, Calendar', on:false,
+    desc:'Passport, licence, insurance, registration, medical checks, home and car maintenance - AMV tracks the dates and reminds you far enough ahead that renewing is easy.',
+    prompt:'Track expiries and recurring life admin: passport, licence, insurance, vehicle registration and inspection, medical and dental checks, home and car maintenance. Report what is due in the next 90 days, how long renewal usually takes, and what to do first.' },
 ]; }
 function _cwApprovals(){ return load('amv_cw_approvals') || []; }
 function _cwSaveApprovals(a){ store('amv_cw_approvals', a); }
@@ -18993,9 +19055,23 @@ try{ window.openJobHunt=openJobHunt; }catch(e){}
 const AMVConnectors = {
   _reg: Object.create(null),
 
+  /* Add or extend a connector. Registering an id that already exists MERGES
+     the new actions in rather than replacing the connector wholesale - so a
+     second registration (a plugin, a reload, an id collision) can never
+     silently delete capabilities that were already working. Same-named
+     actions are intentionally overridden; everything else is preserved. */
   register(def){
     if(!def || !def.id) return null;
     def.actions = def.actions || {};
+    const existing = this._reg[def.id];
+    if(existing){
+      existing.actions = Object.assign({}, existing.actions, def.actions);
+      // keep the richer metadata, but let an explicit new value win
+      ['name','auth','tokenKey','channel','isLive','getToken'].forEach(k => {
+        if(def[k] !== undefined) existing[k] = def[k];
+      });
+      return existing;
+    }
     this._reg[def.id] = def;
     return def;
   },
@@ -19391,23 +19467,44 @@ const AMVVerify = {
     return null;
   },
 
-  /* Pull the checkable conclusion out of an answer so two solves can be
-     compared on substance rather than wording. */
+  /* Pull the checkable CONCLUSION out of an answer. Comparing every number in
+     a reply is wrong: a worked answer ("a 15% tip on $84 is $12.60") contains
+     working (15, 84) that a terse second opinion ("ANSWER: 12.60") never
+     repeats, which would flag two agreeing solves as a conflict. So compare
+     what each one actually CONCLUDED. */
   _conclusion(text){
     const t = String(text || '');
     const nums = (t.match(/-?\d+(?:[.,]\d+)?/g) || []).map(n => n.replace(/,/g, ''));
-    return { nums, tail: t.trim().slice(-260) };
+    // an explicit "ANSWER: x" wins; otherwise the last number stated is the result
+    const tagged = t.match(/ANSWER\s*:\s*\$?\s*(-?\d+(?:[.,]\d+)?)/i);
+    const final = tagged ? tagged[1].replace(/,/g, '') : (nums.length ? nums[nums.length - 1] : null);
+    const uncertain = /ANSWER\s*:\s*uncertain/i.test(t);
+    return { nums, final, uncertain, tail: t.trim().slice(-260) };
   },
 
-  /* Do two independent answers agree on the numbers that matter? */
+  /* Close enough to be the same result (tolerates 12.6 vs 12.60, rounding). */
+  _same(x, y){
+    if(x == null || y == null) return false;
+    if(String(x) === String(y)) return true;
+    const a = parseFloat(x), b = parseFloat(y);
+    if(!isFinite(a) || !isFinite(b)) return false;
+    const scale = Math.max(Math.abs(a), Math.abs(b), 1);
+    return Math.abs(a - b) / scale < 0.005;   // within 0.5%
+  },
+
+  /* Do two independent solves agree on the answer that matters? */
   agree(a, b){
     const A = this._conclusion(a), B = this._conclusion(b);
-    if(!A.nums.length && !B.nums.length) return { agree:true, reason:'no numeric claim to compare' };
-    const key = A.nums.slice(-3), other = new Set(B.nums);
-    const matched = key.filter(n => other.has(n));
-    if(!key.length) return { agree:true, reason:'no numeric claim to compare' };
-    const ratio = matched.length / key.length;
-    return { agree: ratio >= 0.5, ratio, reason: ratio >= 0.5 ? 'independent solve agrees' : 'independent solve disagrees' };
+    // The verifier refusing to guess is NOT a disagreement - it is no signal.
+    if(B.uncertain) return { agree:true, inconclusive:true, reason:'the second opinion declined to guess' };
+    if(A.final == null && B.final == null) return { agree:true, reason:'no numeric claim to compare' };
+    if(A.final == null || B.final == null) return { agree:true, inconclusive:true, reason:'only one solve stated a number' };
+    if(this._same(A.final, B.final)) return { agree:true, ratio:1, reason:'independent solve reached the same result' };
+    // Conclusions differ - but if the primary's result appears anywhere in the
+    // second solve's working, treat it as agreement rather than a false alarm.
+    if(B.nums.some(n => this._same(n, A.final)))
+      return { agree:true, ratio:0.75, reason:'the second solve also arrived at this figure' };
+    return { agree:false, ratio:0, reason:'independent solve reached a different result' };
   },
 
   /* Re-solve the question from scratch. The verifier deliberately never sees

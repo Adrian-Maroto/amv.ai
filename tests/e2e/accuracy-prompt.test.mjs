@@ -81,6 +81,29 @@ ok(!!v.money && !!v.medical && !!v.calc, 'money, medical and calculations are fl
 ok(v.creative === null, 'creative writing is NOT re-checked, so normal chat stays fast');
 ok(v.agreeSame === true, 'two independent solves that match are recognised as agreeing');
 ok(v.agreeDiff === false, 'a disagreement between independent solves is caught', v.agreeDiff);
+
+// REGRESSION (found in review): comparing EVERY number meant a worked answer
+// ("a 15% tip on $84 is $12.60") was scored against a terse second opinion
+// ("ANSWER: 12.60") and flagged as a CONFLICT even though both agree. Marking
+// correct answers as disputed is worse than not checking at all.
+section('The verifier compares conclusions, not working (no false conflicts)');
+const cmp = await page.evaluate(() => {
+  const V = window.AMVVerify;
+  return {
+    prose: V.agree('A 15% tip on $84 is $12.60', 'ANSWER: 12.60').agree,
+    proseWorking: V.agree('84 * 0.15 = 12.60 so the tip is 12.60', 'I worked it out: 12.6').agree,
+    rounding: V.agree('The total is 12.60', 'ANSWER: 12.6').agree,
+    realConflict: V.agree('A 15% tip on $84 is $12.60', 'ANSWER: 15.40').agree,
+    uncertain: V.agree('The answer is 42', 'ANSWER: uncertain').agree,
+    inWorking: V.agree('The tip is 12.60', 'first 84*0.15 = 12.60, so ANSWER: 12.60').agree
+  };
+});
+ok(cmp.prose === true, 'a worked answer vs a terse second opinion is NOT a false conflict');
+ok(cmp.proseWorking === true, 'intermediate working does not create a phantom disagreement');
+ok(cmp.rounding === true, '12.60 and 12.6 are recognised as the same result');
+ok(cmp.realConflict === false, 'a genuine numeric disagreement is still caught');
+ok(cmp.uncertain === true, 'a verifier that declines to guess is treated as no signal, not a conflict');
+ok(cmp.inWorking === true, 'a matching figure inside the second solve counts as agreement');
 ok(/Double-checked/.test(v.chipOk), 'agreement shows a "Double-checked" chip');
 ok(/disagreed/i.test(v.chipConflict), 'a conflict is surfaced to the user, never hidden');
 ok(v.chipNone === '', 'no chip is shown when nothing was verified (never a badge we did not earn)');
