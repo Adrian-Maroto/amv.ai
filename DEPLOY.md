@@ -67,6 +67,15 @@ npx wrangler secret put JWT_SECRET          # required — any long random strin
 npx wrangler secret put ADMIN_TOKEN        # required to view the error dashboard
 npx wrangler secret put EMAIL_API_KEY      # Resend key — WITHOUT THIS, PASSWORD RESET NEVER SENDS
 # RESET_EMAIL_FROM is optional — see "Password reset" below
+# Bank data (live balances, transactions, unusual-charge and low-balance
+# alerts). Sign up with an aggregator (Plaid, Teller, TrueLayer) and set:
+npx wrangler secret put FINANCE_CLIENT_ID   # aggregator client id
+npx wrangler secret put FINANCE_SECRET      # aggregator secret
+# FINANCE_API_URL is optional (defaults to Plaid production).
+# READ-ONLY by design: there is no transfer or payment route, so AMV can see
+# money but never move it. Until these are set, every money feature says so
+# rather than inventing a balance.
+
 # Web automation (lets Crew operate sites that have no API).
 # Requires the Workers PAID plan. Uncomment [browser] in wrangler.toml, redeploy,
 # and it turns on - the Worker feature-detects it, so until then web automation

@@ -151,8 +151,8 @@ function _cwDefaultJobs(){ return [
     prompt:'Work out the current month\u2019s spending pace against the user budget and project the month-end total. If trending over, identify which categories are driving it and what change would bring it back. Use real transactions only.' },
 
   { id:'target_buy', icon:'\uD83D\uDECD\uFE0F', title:'Buy at my target price', needs:'Web research, Web automation', on:false, spend:true,
-    desc:'Watches an item and buys it when it hits your target - within a spending limit you set. Every purchase asks you first unless you explicitly turn that off, and it can never exceed your cap.',
-    prompt:'Monitor the specified item until it reaches the user target price. When it does, verify the total including shipping and tax is within the stated spend limit, then request approval to purchase. NEVER purchase above the limit, never buy a different item than specified, and always report the final total before buying.' },
+    desc:'Watches an item and buys it the moment it hits your target. Small purchases go through instantly with no interruption; anything above your auto-buy limit takes one tap. Your monthly cap can never be crossed.',
+    prompt:'Monitor the specified item until it reaches the user target price. When it does, read the FINAL total including shipping, tax and any pre-ticked extras, and remove anything that was added without being asked for (warranties, protection plans, insurance). Check the total against the user spending limits: below the auto-buy limit, complete the purchase; above it, request one approval. Never exceed the per-purchase or monthly cap, never substitute a different item, size or colour, and always report the exact final total and what was bought.' },
 ]; }
 function _cwApprovals(){ return load('amv_cw_approvals') || []; }
 function _cwSaveApprovals(a){ store('amv_cw_approvals', a); }

@@ -1000,6 +1000,12 @@ async function _fingerprint(e){
    5. ABUSE / COST - authenticated, rate limited, hard step and wall
       clock caps, one browser session per run, every run audited.
    ============================================================ */
+/* An absolute ceiling no user setting can exceed. This is the operator's own
+   protection: unauthorised charges return as chargebacks whatever the terms
+   say, and a high chargeback rate gets a merchant dropped by its processor.
+   A runaway agent spending thousands is an existential risk to the business,
+   so there is a number it simply cannot go past. */
+const WEB_ABSOLUTE_SPEND_CAP = 2000;
 const WEB_MAX_STEPS = 24;
 const WEB_MAX_MS = 90000;
 const WEB_ALLOWED_VERBS = ['goto','click','type','select','press','scroll','extract','submit','done','blocked'];
@@ -1102,6 +1108,115 @@ async function _webAskModel(env, sys, prompt){
   }catch(e){ return null; }
 }
 
+/* ============================================================
+   BANK DATA PROXY  (/v1/finance/*)
+
+   Every call to the aggregator goes through here so the provider
+   secret and the user's access token stay SERVER-SIDE and never
+   reach the browser. Read-only by design: there is deliberately no
+   payment or transfer route, so a compromised client cannot move
+   money. Not configured -> an honest needs_service, never a made-up
+   balance.
+   ============================================================ */
+async function financeRoute(request, env, path){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'sign in to use bank data', code:'needs_auth' }, 401);
+
+  const blocked = await guardAction(env, 'finance:' + user.email, 20, 400, 'bank data requests');
+  if(blocked) return blocked;
+
+  if(!env.FINANCE_CLIENT_ID || !env.FINANCE_SECRET)
+    return json({ error:'Bank data is not enabled on this deployment. Add your aggregator keys (FINANCE_CLIENT_ID, FINANCE_SECRET) and it works with no other change.', code:'needs_service' }, 503);
+
+  // the user's own access token for their linked institution
+  const rec = await DB.get(env, 'fin', user.email);
+  if(!rec || !rec.accessToken)
+    return json({ error:'No bank account is linked to this profile yet.', code:'needs_auth' }, 400);
+
+  const base = (env.FINANCE_API_URL || 'https://production.plaid.com').replace(/\/$/, '');
+  const body = await request.json().catch(() => ({}));
+  const auth = { client_id: env.FINANCE_CLIENT_ID, secret: env.FINANCE_SECRET, access_token: rec.accessToken };
+
+  try{
+    if(path === 'accounts'){
+      const r = await fetch(base + '/accounts/balance/get', {
+        method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(auth) });
+      const d = await r.json();
+      if(!r.ok) return json({ error:d.error_message || 'Could not read your accounts.', code:'provider_error' }, 502);
+      return json({ ok:true, accounts:(d.accounts||[]).map(a => ({
+        id:a.account_id, name:a.name || a.official_name || '', mask:a.mask || '',
+        type:a.subtype || a.type || '', balance:(a.balances && (a.balances.available != null ? a.balances.available : a.balances.current)) || 0,
+        currency:(a.balances && a.balances.iso_currency_code) || 'USD' })) });
+    }
+    if(path === 'transactions'){
+      const days = Math.min(365, Math.max(1, +body.days || 30));
+      const end = new Date(), start = new Date(Date.now() - days*86400000);
+      const iso = d => d.toISOString().slice(0,10);
+      const r = await fetch(base + '/transactions/get', {
+        method:'POST', headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify(Object.assign({}, auth, { start_date:iso(start), end_date:iso(end), options:{ count:250 } })) });
+      const d = await r.json();
+      if(!r.ok) return json({ error:d.error_message || 'Could not read your transactions.', code:'provider_error' }, 502);
+      return json({ ok:true, transactions:(d.transactions||[]).map(t => ({
+        date:t.date, merchant:t.merchant_name || t.name || '', name:t.name || '',
+        amount: -Math.abs(+t.amount) * (t.amount < 0 ? -1 : 1),   // negative = money out
+        category:(t.category && t.category[0]) || '', account:t.account_id, pending:!!t.pending })) });
+    }
+  }catch(e){
+    return json({ error:'Bank data is temporarily unavailable.', code:'provider_error' }, 502);
+  }
+  return json({ error:'unknown finance route' }, 404);
+}
+
+/* ============================================================
+   LINKED ACCOUNT INVITES  (/v1/link/invite)
+
+   Emails the confirmation code to the account being ACCESSED - never
+   to the requester. That is the whole security property: naming an
+   address proves nothing, controlling its inbox does.
+   ============================================================ */
+async function linkInvite(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'sign in first' }, 401);
+
+  // an invite is an email to someone else, so it is rate limited hard
+  const blocked = await guardAction(env, 'linkinv:' + user.email, 3, 20, 'account link invitations');
+  if(blocked) return blocked;
+
+  const body = await request.json().catch(() => ({}));
+  const owner = String(body.owner || '').trim().toLowerCase();
+  const scopes = Array.isArray(body.scopes) ? body.scopes.slice(0, 12).map(String) : [];
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(owner)) return json({ error:'valid email required' }, 400);
+  if(owner === user.email) return json({ error:'that is your own account' }, 400);
+  if(!scopes.length) return json({ error:'at least one permission is required' }, 400);
+
+  // the code is generated HERE and stored server-side - the requester never sees it
+  const code = String(100000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900000));
+  const rec = { id:String(body.id||'').slice(0,40), grantee:user.email, owner, scopes,
+    code, createdAt:Date.now(), expiresAt:Date.now() + 15*60*1000, attempts:0, status:'pending' };
+  await DB.put(env, 'link', owner + '|' + rec.id, rec);
+
+  if(!env.EMAIL_API_KEY)
+    return json({ ok:false, code:'needs_service',
+      error:'Email is not configured, so the confirmation code cannot be delivered. Add EMAIL_API_KEY and invitations work immediately.' }, 503);
+
+  const from = env.RESET_EMAIL_FROM || 'AMV <onboarding@resend.dev>';
+  const list = scopes.join(', ');
+  const sent = await fetch('https://api.resend.com/emails', {
+    method:'POST', headers:{ 'Authorization':'Bearer ' + env.EMAIL_API_KEY, 'Content-Type':'application/json' },
+    body: JSON.stringify({ from, to:[owner],
+      subject:'Approve access to your AMV account',
+      text: user.email + ' is asking to access your AMV account for: ' + list + '.\n\n'
+        + 'Your approval code is ' + code + '. It expires in 15 minutes.\n\n'
+        + 'If you did not expect this, ignore this email - nothing is shared unless you enter the code yourself.' })
+  }).then(r => r.ok).catch(() => false);
+
+  audit(env, 'link_invite', { by:user.email, owner, scopes:list, delivered:sent });
+  return json({ ok:true, delivered:sent, to:owner,
+    message: sent ? 'A confirmation code was emailed to ' + owner + '.'
+                  : 'Could not deliver the code right now - try again shortly.' });
+}
+
 /* The agent loop. Real browser, real actions, full trace. */
 async function browserRun(request, env, ctx){
   const user = await requireUser(request, env);
@@ -1118,6 +1233,24 @@ async function browserRun(request, env, ctx){
 
   const gate = _webHostAllowed(body.url);
   if(!gate.ok) return json({ error:gate.why, code:'blocked_url' }, 400);
+
+  /* SPEND CEILING - enforced HERE, on the server, so it cannot be edited away
+     in the browser. The client shows friendly limits; this is the one that
+     actually binds. A run that declares a spend above the user's own ceiling
+     is refused before a browser is ever launched. */
+  const spendLimit = +body.spendLimit || 0;
+  const declaredSpend = +body.spendAmount || 0;
+  if(declaredSpend > 0){
+    const ent = await getEntitlement(env, user.email).catch(() => null);
+    const hardCap = Math.min(spendLimit > 0 ? spendLimit : Infinity, WEB_ABSOLUTE_SPEND_CAP);
+    if(declaredSpend > hardCap){
+      audit(env, 'web_agent_spend_blocked', { by:user.email, amount:declaredSpend, cap:hardCap });
+      return json({ ok:false, code:'over_limit',
+        need:'This purchase is $' + declaredSpend.toFixed(2) + ', above the $' + (isFinite(hardCap)?hardCap.toFixed(2):'0') + ' limit in force.',
+        message:'Raise your spending limit yourself if you want this to go through.' }, 400);
+    }
+    audit(env, 'web_agent_spend_attempt', { by:user.email, amount:declaredSpend, approved:!!body.approved, plan:(ent&&ent.plan)||'' });
+  }
 
   // Feature-detect so a deploy without the binding degrades honestly.
   if(!env.BROWSER)
@@ -1949,6 +2082,9 @@ export default {
         case '/deploy/list':     return deployList(request, env);
         case '/deploy/delete':   return deployDelete(request, env);
         case '/v1/browser/run':  return browserRun(request, env, ctx);
+        case '/v1/finance/accounts':     return financeRoute(request, env, 'accounts');
+        case '/v1/finance/transactions': return financeRoute(request, env, 'transactions');
+        case '/v1/link/invite':          return linkInvite(request, env);
         case '/errors':          return errorsReport(request, env, ctx);
         case '/errors/list':     return errorsList(request, env);
         case '/errors/resolve':  return errorsResolve(request, env);
