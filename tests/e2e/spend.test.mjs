@@ -95,6 +95,36 @@ ok(actions.includes('limits') && actions.includes('can_i_spend'), 'limits are re
 ok(!actions.some(a => /^(pay|buy|purchase|charge|transfer)$/i.test(a)),
   'there is no direct pay action - money only moves through the gated browser agent', actions);
 
+/* REGRESSION (found in audit): the browser agent can complete a checkout, so
+   routing a purchase through it must not bypass the spend limits or the age
+   gate. Before this fix, browser.do went straight to the network. */
+section('The browser agent cannot be used to bypass the money gates');
+const viaAgent = await page.evaluate(async () => {
+  const C = window.AMVConnectors, Cm = window.AMVCompliance, Sp = window.AMVSpend;
+  const mo = () => new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0');
+  const out = {};
+  // a minor, with generous limits, tries to buy through the agent
+  store('amv_consent', {}); Cm.accept(); Cm.setBirthYear(new Date().getFullYear() - 16);
+  Sp.save(Object.assign(Sp.cfg(), { enabled: true, autoUnder: 100, perPurchase: 500, monthlyCap: 1000, month: mo(), spent: 0 }));
+  try { await C.run('browser.do', { url: 'https://shop.test/x', goal: 'buy the shoes', spendAmount: 20 }); out.minor = 'ALLOWED'; }
+  catch (e) { out.minor = e.code; }
+  // an adult, but above the per-purchase limit
+  store('amv_consent', {}); Cm.accept(); Cm.setBirthYear(new Date().getFullYear() - 30);
+  try { await C.run('browser.do', { url: 'https://shop.test/x', goal: 'buy it', spendAmount: 9999 }); out.over = 'ALLOWED'; }
+  catch (e) { out.over = e.code; }
+  // an adult, in the approval tier, without approval
+  try { await C.run('browser.do', { url: 'https://shop.test/x', goal: 'buy it', spendAmount: 300 }); out.appr = 'ALLOWED'; }
+  catch (e) { out.appr = e.code; }
+  // ordinary browsing must NOT be gated as a purchase
+  try { await C.run('browser.do', { url: 'https://x.test/', goal: 'read the page' }); out.browse = 'ALLOWED'; }
+  catch (e) { out.browse = e.code; }
+  return out;
+});
+ok(viaAgent.minor === 'not_permitted', 'a minor cannot buy through the browser agent', viaAgent.minor);
+ok(viaAgent.over === 'over_limit', 'an over-limit purchase is refused through the agent', viaAgent.over);
+ok(viaAgent.appr === 'needs_approval', 'the approval tier still applies through the agent', viaAgent.appr);
+ok(viaAgent.browse === 'needs_service', 'ordinary browsing is NOT treated as a purchase', viaAgent.browse);
+
 section('No JavaScript errors');
 ok(errors.length === 0, 'zero uncaught page errors', errors.slice(0, 3));
 

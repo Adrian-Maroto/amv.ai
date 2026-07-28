@@ -98,6 +98,25 @@ const AMVFamily = {
       how:'Connect the AMV backend so the confirmation code can be emailed to '+inv.owner+'. Until then the link cannot be approved, because approval must come from that account.' };
   },
 
+  /* Server-authoritative accept. When the backend is connected the code is
+     verified THERE against the server's copy, so a link cannot be forged by
+     editing local state, and both accounts (usually on different devices)
+     genuinely share it. The local path below is the offline mirror. */
+  async acceptRemote(inviteId, code){
+    const base = (typeof loadStr === 'function' && (loadStr('amv_api_base')||'')).replace(/\/$/,'');
+    const tok = (typeof loadStr === 'function' && loadStr('amv_api_token')) || '';
+    if(!base || !tok) return this.accept(inviteId, code);   // offline mirror
+    const r = await fetch(base + '/v1/link/accept', {
+      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
+      body: JSON.stringify({ id:inviteId, code:String(code||'').trim() })
+    });
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok || !d.ok) throw new Error(d.error || 'That code could not be verified.');
+    // mirror locally so the UI matches immediately
+    try{ const all=this._all(); all.links=[d.link, ...(all.links||[])]; this._save(all); }catch(e){}
+    return d.link;
+  },
+
   /* Step 2 - B accepts, proving control of their own inbox with the code.
      Only this creates the link. Wrong codes are counted and burn the invite. */
   accept(inviteId, code){

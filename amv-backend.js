@@ -369,6 +369,25 @@ export class AMVCounter {
       if (body.ttlMs) await this.state.storage.setAlarm(Date.now() + body.ttlMs);
       return json({ allowed: true, value: next });
     }
+    /* ATOMIC CLAIM - a real mutual-exclusion lock.
+       The KV fallback does `get` then `put`, which is a genuine TOCTOU window:
+       two concurrent withdrawals can BOTH pass the check before either writes,
+       producing a double payout. Inside the DO every op is serialized, so the
+       read and the write cannot interleave. This is the correct place for any
+       lock that guards money. */
+    if (op === 'claim') {
+      const now = Date.now();
+      const held = await this.state.storage.get('claim');
+      if (held && held.until > now) return json({ claimed: false, until: held.until });
+      const ttl = Math.max(1000, Number(body.ttlMs) || 30000);
+      await this.state.storage.put('claim', { until: now + ttl });
+      await this.state.storage.setAlarm(now + ttl + 1000);
+      return json({ claimed: true, until: now + ttl });
+    }
+    if (op === 'release') {
+      await this.state.storage.delete('claim');
+      return json({ released: true });
+    }
     if (op === 'get') {
       return json({ value: (await this.state.storage.get('v')) || 0 });
     }
@@ -1192,6 +1211,88 @@ async function fraudRecord(request, env){
     confidence:+a.confidence || 0 }, ...(idx.items||[])].slice(0, 500);
   await DB.put(env, 'fraud', 'index', idx);
   return json({ ok:true, stored:true });
+}
+
+/* Accept a link invitation (/v1/link/accept). The client mirror cannot be the
+   authority here: two different accounts, usually on different devices, must
+   agree, and the caller must not be able to approve their own request by
+   editing local state. So the code is verified HERE against the server copy,
+   and only the account being accessed can redeem it. */
+async function linkAccept(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'sign in first' }, 401);
+  const blocked = await guardAction(env, 'linkacc:' + user.email, 10, 60, 'link approvals');
+  if(blocked) return blocked;
+
+  const body = await request.json().catch(() => ({}));
+  const id = String(body.id || '').slice(0, 40);
+  const code = String(body.code || '').trim();
+  if(!id || !code) return json({ error:'id and code required' }, 400);
+
+  // keyed by OWNER, so only the account being accessed can even find it
+  const key = user.email + '|' + id;
+  const inv = await DB.get(env, 'link', key);
+  if(!inv) return json({ error:'That invitation does not exist for this account.' }, 404);
+  if(inv.status !== 'pending') return json({ error:'That invitation has already been used or blocked.' }, 400);
+  if(Date.now() > inv.expiresAt){
+    inv.status = 'expired'; await DB.put(env, 'link', key, inv);
+    return json({ error:'That code has expired. Ask for a new one.' }, 400);
+  }
+  if(String(inv.code) !== code){
+    inv.attempts = (inv.attempts || 0) + 1;
+    if(inv.attempts >= 5){
+      inv.status = 'blocked'; await DB.put(env, 'link', key, inv);
+      audit(env, 'link_blocked', { owner:user.email, grantee:inv.grantee });
+      return json({ error:'Too many wrong codes. This invitation is blocked.' }, 429);
+    }
+    await DB.put(env, 'link', key, inv);
+    return json({ error:'That code is not right. ' + (5 - inv.attempts) + ' attempts left.' }, 400);
+  }
+
+  inv.status = 'accepted'; inv.acceptedAt = Date.now();
+  await DB.put(env, 'link', key, inv);
+  // the link itself, readable by BOTH sides
+  const link = { id:'lnk_' + Date.now().toString(36), owner:user.email, grantee:inv.grantee,
+    scopes:inv.scopes, active:true, createdAt:Date.now() };
+  const ownerRec = (await DB.get(env, 'links', user.email)) || { items: [] };
+  ownerRec.items = [link, ...(ownerRec.items || [])].slice(0, 50);
+  await DB.put(env, 'links', user.email, ownerRec);
+  const granteeRec = (await DB.get(env, 'links', inv.grantee)) || { items: [] };
+  granteeRec.items = [link, ...(granteeRec.items || [])].slice(0, 50);
+  await DB.put(env, 'links', inv.grantee, granteeRec);
+  audit(env, 'link_accepted', { owner:user.email, grantee:inv.grantee, scopes:(inv.scopes||[]).join(',') });
+  return json({ ok:true, link });
+}
+
+/* List / revoke links (/v1/link/list, /v1/link/revoke). Either side can end a
+   link with no negotiation, and it dies for both immediately. */
+async function linkList(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'sign in first' }, 401);
+  const rec = (await DB.get(env, 'links', user.email)) || { items: [] };
+  const items = (rec.items || []).filter(l => l.active);
+  return json({ ok:true,
+    iCanAccess: items.filter(l => l.grantee === user.email).map(l => ({ id:l.id, account:l.owner, scopes:l.scopes })),
+    canAccessMe: items.filter(l => l.owner === user.email).map(l => ({ id:l.id, account:l.grantee, scopes:l.scopes })) });
+}
+async function linkRevoke(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'sign in first' }, 401);
+  const body = await request.json().catch(() => ({}));
+  const id = String(body.id || '');
+  const rec = (await DB.get(env, 'links', user.email)) || { items: [] };
+  const link = (rec.items || []).find(l => l.id === id);
+  if(!link) return json({ error:'no such link' }, 404);
+  if(link.owner !== user.email && link.grantee !== user.email)
+    return json({ error:'that link is not yours' }, 403);
+  // deactivate on BOTH sides so access really stops
+  for(const who of [link.owner, link.grantee]){
+    const r = (await DB.get(env, 'links', who)) || { items: [] };
+    (r.items || []).forEach(l => { if(l.id === id){ l.active = false; l.revokedAt = Date.now(); l.revokedBy = user.email; } });
+    await DB.put(env, 'links', who, r);
+  }
+  audit(env, 'link_revoked', { by:user.email, link:id });
+  return json({ ok:true, revoked:true });
 }
 
 /* ============================================================
@@ -2204,6 +2305,9 @@ export default {
         case '/v1/finance/accounts':     return financeRoute(request, env, 'accounts');
         case '/v1/finance/transactions': return financeRoute(request, env, 'transactions');
         case '/v1/link/invite':          return linkInvite(request, env);
+        case '/v1/link/accept':          return linkAccept(request, env);
+        case '/v1/link/list':            return linkList(request, env);
+        case '/v1/link/revoke':          return linkRevoke(request, env);
         case '/v1/consent':              return consentRecord(request, env);
         case '/v1/subscribe':            return stripeSubscribe(request, env);
         case '/v1/fraud/record':         return fraudRecord(request, env);
@@ -4754,6 +4858,16 @@ async function stripeInvoices(request, env) {
    ttlSec is only honored on the KV path and is used for short-lived locks. */
 async function _claimOnce(env, kind, id, ttlSec){
   if(!id) return true;
+  /* Prefer the Durable Object: it serializes ops, so the check and the claim
+     cannot interleave. This matters most for money - two simultaneous
+     withdrawals must not both pass. D1 is next (PRIMARY KEY is atomic). The
+     KV path is last and is best-effort ONLY, because get-then-put races. */
+  if(env && env.AMV_COUNTER){
+    try{
+      const r = await counter(env, 'claim:' + kind + ':' + id, { op:'claim', ttlMs:(ttlSec||30)*1000 });
+      if(r && typeof r.claimed === 'boolean') return r.claimed;
+    }catch(e){ /* fall through to the next strategy */ }
+  }
   if(env && env.DB && typeof env.DB.prepare === 'function'){
     try{
       await env.DB.prepare('INSERT INTO kv (kind,id,json,updated_at) VALUES (?,?,?,?)')
@@ -4768,6 +4882,10 @@ async function _claimOnce(env, kind, id, ttlSec){
 }
 async function _releaseClaim(env, kind, id){
   try{
+    // release wherever it was claimed - the DO first, mirroring _claimOnce
+    if(env && env.AMV_COUNTER){
+      try{ await counter(env, 'claim:' + kind + ':' + id, { op:'release' }); }catch(e){}
+    }
     if(env && env.DB && typeof env.DB.prepare === 'function'){
       await env.DB.prepare('DELETE FROM kv WHERE kind=? AND id=?').bind(kind, String(id)).run();
     } else { await env.AMV_KV.delete(`${kind}:${id}`); }

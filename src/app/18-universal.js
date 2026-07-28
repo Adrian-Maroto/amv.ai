@@ -157,6 +157,28 @@ AMVConnectors.register({
       desc: 'Operate any website that has no API: open, log in, fill forms, click, upload, submit. Args: {url, goal, data?}',
       risk: 'high', riskLabel: 'act on a website as you',
       async run(args){
+        /* MONEY GATE. The browser agent can complete a checkout, so it must
+           pass the same age and spending checks as any other purchase -
+           otherwise the limits are trivially bypassed by routing a buy through
+           here instead of through the spend layer. Declared spend is also sent
+           to the server, which enforces its own ceiling independently. */
+        const spend = +(args && args.spendAmount) || 0;
+        const buying = spend > 0 || /\b(buy|purchase|checkout|order|pay|subscribe)\b/i.test(String((args && args.goal) || ''));
+        if(buying){
+          try{
+            if(typeof AMVCompliance !== 'undefined'){
+              const why = AMVCompliance.gate('spend');
+              if(why){ const e = new Error(why); e.code = 'not_permitted'; throw e; }
+            }
+          }catch(e){ if(e && e.code === 'not_permitted') throw e; }
+          if(spend > 0 && typeof AMVSpend !== 'undefined'){
+            const v = AMVSpend.check(spend);
+            if(!v.allow){ const e = new Error(v.reason); e.code = 'over_limit'; throw e; }
+            if(v.needsApproval && !(args && args.approved)){
+              const e = new Error(v.reason); e.code = 'needs_approval'; throw e;
+            }
+          }
+        }
         // The agent runs SERVER-SIDE (a real headless browser the Worker drives).
         // It can never run in this tab, so the backend URL is the service URL.
         const base = (typeof loadStr === 'function' && (loadStr('amv_browser_service') || loadStr('amv_api_base'))) || '';
@@ -171,7 +193,10 @@ AMVConnectors.register({
           body: JSON.stringify({
             url: args.url, goal: args.goal,
             data: args.data || {},              // field NAME -> value; secrets stay server-side
-            approved: !!args.approved            // the user's explicit OK for this run
+            approved: !!args.approved,           // the user's explicit OK for this run
+            // the server enforces its own ceiling on these, independently
+            spendAmount: spend || undefined,
+            spendLimit: (typeof AMVSpend !== 'undefined' ? (AMVSpend.cfg().perPurchase || undefined) : undefined)
           })
         });
         const d = await r.json().catch(() => ({}));
