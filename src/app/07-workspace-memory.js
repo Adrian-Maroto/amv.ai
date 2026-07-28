@@ -216,7 +216,14 @@ function _mktBrowse(body){
     fb.innerHTML=cats.map(c=>'<button class="mk-filter'+(c===activeCat?' on':'')+'" data-mk-cat="'+escH(c)+'">'+escH(c)+'</button>').join('');
     fb.querySelectorAll('[data-mk-cat]').forEach(b=>on(b,'click',()=>{ activeCat=b.dataset.mkCat; drawFilters(); draw(); }));
   };
-  const reload=()=>AMVMarket.list().then(list=>{ items=list; drawTop(); drawFilters(); draw(); });
+  /* A failed load used to leave the grid on its loading state forever, which
+     reads as "the marketplace is empty" rather than "this did not load". */
+  const reload=()=>AMVMarket.list().then(list=>{ items=list; drawTop(); drawFilters(); draw(); })
+    .catch(e=>{
+      const g=$('mk-grid');
+      if(g) g.innerHTML='<div class="adm-empty">Could not load the marketplace. Check your connection, then <button class="btn bs" data-dact="_mktGoBrowse" style="font-size:12px">try again</button>.</div>';
+      try{ _logErr('market.list', e); }catch(_){}
+    });
   reload();
   on($('mkt-search'),'input',()=>{ search=$('mkt-search').value; draw(); });
   on($('mkt-sort'),'change',()=>{ sort=$('mkt-sort').value; draw(); });

@@ -2650,13 +2650,54 @@ function checkOAuthCallback(){
     setTimeout(()=>setTab(ret), 500);
   }
 }
+/* Silently renew the Google access token from the refresh token held on the
+   server. Without this a user who connected once is disconnected an hour
+   later - which quietly breaks every standing job that runs overnight, the
+   exact time nobody is watching. Only possible on the auth-code flow, since
+   the implicit flow never issues a refresh token. */
+let _gRefreshInFlight = null;
+async function refreshGToken(){
+  if(_gRefreshInFlight) return _gRefreshInFlight;
+  const base = (loadStr('amv_api_base')||'').replace(/\/$/,'');
+  const tok = loadStr('amv_api_token')||'';
+  if(!base || !tok) return null;
+  _gRefreshInFlight = (async () => {
+    try{
+      const r = await fetch(base + '/v1/oauth/google/refresh', {
+        method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok}, body:'{}' });
+      const d = await r.json().catch(()=>({}));
+      if(!r.ok || !d.ok || !d.access_token) return null;
+      saveStr('amv_gtoken', d.access_token);
+      saveStr('amv_gtoken_exp', String(Date.now() + ((d.expires_in||3600)-60)*1000));
+      return d.access_token;
+    }catch(e){ return null; }
+    finally{ _gRefreshInFlight = null; }
+  })();
+  return _gRefreshInFlight;
+}
+/* Await a USABLE token - refreshing first if it has expired or is about to.
+   Anything that is going to call Google should use this rather than the
+   synchronous getGToken(). */
+async function ensureGToken(){
+  const tok = loadStr('amv_gtoken');
+  const exp = parseInt(loadStr('amv_gtoken_exp')||'0');
+  // renew a couple of minutes early so a long job never expires mid-run
+  if(tok && exp && Date.now() < exp - 120000) return tok;
+  const fresh = await refreshGToken();
+  if(fresh) return fresh;
+  return getGToken();
+}
 function getGToken(){
   const token = loadStr('amv_gtoken'); if(!token) return null;
   const exp = parseInt(loadStr('amv_gtoken_exp')||'0');
   if(!exp) return token;
   if(Date.now()<exp) return token;
+  // Expired. Try to renew in the background so the NEXT call succeeds instead
+  // of forcing the user to reconnect, but do not hand back a dead token now.
+  try{ refreshGToken(); }catch(e){}
   localStorage.removeItem('amv_gtoken'); localStorage.removeItem('amv_gtoken_exp'); return null;
 }
+try{ window.refreshGToken=refreshGToken; window.ensureGToken=ensureGToken; }catch(e){}
 function disconnectGoogle(){
   localStorage.removeItem('amv_gtoken'); localStorage.removeItem('amv_gtoken_exp');
   toast('Google disconnected','info');

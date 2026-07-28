@@ -8,7 +8,7 @@ const INTEGRATION_ACTIONS = {
   gmail_list_unread: {
     desc:'List the user\u2019s unread emails (sender + subject).', needs:'google',
     async run(){
-      const t=getGToken(); if(!t) throw new Error('Gmail not connected');
+      const t=(typeof ensureGToken==='function'? await ensureGToken() : getGToken()); if(!t) throw new Error('Gmail not connected');
       const r=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10&labelIds=INBOX&q=is:unread',{headers:{'Authorization':'Bearer '+t}});
       const d=await r.json(); if(d.error) throw new Error(d.error.message);
       const msgs=d.messages||[];
@@ -19,7 +19,7 @@ const INTEGRATION_ACTIONS = {
   gmail_send: {
     desc:'Send an email. Args: {to, subject, body}.', needs:'google', risk:'high', riskLabel:'send an email',
     async run(args){
-      const t=getGToken(); if(!t) throw new Error('Gmail not connected');
+      const t=(typeof ensureGToken==='function'? await ensureGToken() : getGToken()); if(!t) throw new Error('Gmail not connected');
       const raw=['To: '+args.to,'Subject: '+(args.subject||''),'Content-Type: text/plain; charset=utf-8','',args.body||''].join('\r\n');
       const b64=btoa(unescape(encodeURIComponent(raw))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
       const r=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send',{method:'POST',headers:{'Authorization':'Bearer '+t,'Content-Type':'application/json'},body:JSON.stringify({raw:b64})});
@@ -30,7 +30,7 @@ const INTEGRATION_ACTIONS = {
   calendar_list: {
     desc:'List upcoming calendar events for the next 7 days.', needs:'google',
     async run(){
-      const t=getGToken(); if(!t) throw new Error('Calendar not connected');
+      const t=(typeof ensureGToken==='function'? await ensureGToken() : getGToken()); if(!t) throw new Error('Calendar not connected');
       const now=new Date(), end=new Date(now.getTime()+7*864e5);
       const r=await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin='+now.toISOString()+'&timeMax='+end.toISOString()+'&singleEvents=true&orderBy=startTime&maxResults=20',{headers:{'Authorization':'Bearer '+t}});
       const d=await r.json(); if(d.error) throw new Error(d.error.message);
@@ -40,7 +40,7 @@ const INTEGRATION_ACTIONS = {
   calendar_create: {
     desc:'Create a calendar event. Args: {title, start (ISO), end (ISO), description?}.', needs:'google', risk:'high', riskLabel:'create a calendar event',
     async run(args){
-      const t=getGToken(); if(!t) throw new Error('Calendar not connected');
+      const t=(typeof ensureGToken==='function'? await ensureGToken() : getGToken()); if(!t) throw new Error('Calendar not connected');
       const body={summary:args.title, description:args.description||'', start:{dateTime:args.start}, end:{dateTime:args.end||args.start}};
       const r=await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events',{method:'POST',headers:{'Authorization':'Bearer '+t,'Content-Type':'application/json'},body:JSON.stringify(body)});
       const d=await r.json(); if(d.error) throw new Error(d.error.message);
@@ -50,7 +50,7 @@ const INTEGRATION_ACTIONS = {
   drive_list: {
     desc:'List recent Google Drive files.', needs:'google',
     async run(){
-      const t=getGToken(); if(!t) throw new Error('Drive not connected');
+      const t=(typeof ensureGToken==='function'? await ensureGToken() : getGToken()); if(!t) throw new Error('Drive not connected');
       const r=await fetch('https://www.googleapis.com/drive/v3/files?pageSize=30&orderBy=modifiedTime desc&fields=files(name,mimeType,modifiedTime)',{headers:{'Authorization':'Bearer '+t}});
       const d=await r.json(); if(d.error) throw new Error(d.error.message);
       return (d.files||[]).map(f=>({name:f.name, type:(f.mimeType||'').split('/').pop(), modified:f.modifiedTime}));
@@ -670,7 +670,21 @@ function tableToCSV(){
 }
 let _sheetData=[];
 function handleSheetFile(file){
-  file.text().then(text=>{ _sheetData=parseCSV(text); openSheetEditor(_sheetData,file.name); });
+  // An unreadable or corrupt file used to do nothing at all, with no error -
+  // the user just saw their upload vanish.
+  file.text().then(text=>{
+    try{
+      _sheetData=parseCSV(text);
+      if(!_sheetData || !_sheetData.length){ toast('That file has no readable rows. Check it is a CSV.','error',4500); return; }
+      openSheetEditor(_sheetData,file.name);
+    }catch(e){
+      toast('That file could not be read as a spreadsheet.','error',4500);
+      try{ _logErr('sheet.parse', e); }catch(_){}
+    }
+  }).catch(e=>{
+    toast('Could not read that file. Try uploading it again.','error',4500);
+    try{ _logErr('sheet.read', e); }catch(_){}
+  });
 }
 function openSheetEditor(data,name){
   const vc=$('vc'); if(!vc) return;

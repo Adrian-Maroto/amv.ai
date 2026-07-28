@@ -6656,7 +6656,14 @@ function _renderTeamManage(vc, team){
       try{ const ns=await AMVTeam.unshare(b.dataset.tsrDel); drawShared(ns); toast('Removed','info'); }catch(e){ toast(e.message||'Could not remove','error'); }
     }));
   };
-  if(AMVTeam.enabled()){ AMVTeam.shared().then(drawShared); } else { drawShared([]); }
+  // A rejected fetch here used to leave the panel blank with no explanation.
+  if(AMVTeam.enabled()){
+    AMVTeam.shared().then(drawShared).catch(e=>{
+      drawShared([]);
+      try{ toast('Could not load shared team items. Check your connection and try again.','error',4500); }catch(_){}
+      try{ _logErr('team.shared', e); }catch(_){}
+    });
+  } else { drawShared([]); }
   const _sharePicker=(kind)=>{
     const items = kind==='prompt' ? (S.prompts||[]) : (S.workspaces||[]);
     if(!items.length){ toast('You have no '+(kind==='prompt'?'prompts':'projects')+' to share yet','info'); return; }
@@ -7332,7 +7339,14 @@ function _mktBrowse(body){
     fb.innerHTML=cats.map(c=>'<button class="mk-filter'+(c===activeCat?' on':'')+'" data-mk-cat="'+escH(c)+'">'+escH(c)+'</button>').join('');
     fb.querySelectorAll('[data-mk-cat]').forEach(b=>on(b,'click',()=>{ activeCat=b.dataset.mkCat; drawFilters(); draw(); }));
   };
-  const reload=()=>AMVMarket.list().then(list=>{ items=list; drawTop(); drawFilters(); draw(); });
+  /* A failed load used to leave the grid on its loading state forever, which
+     reads as "the marketplace is empty" rather than "this did not load". */
+  const reload=()=>AMVMarket.list().then(list=>{ items=list; drawTop(); drawFilters(); draw(); })
+    .catch(e=>{
+      const g=$('mk-grid');
+      if(g) g.innerHTML='<div class="adm-empty">Could not load the marketplace. Check your connection, then <button class="btn bs" data-dact="_mktGoBrowse" style="font-size:12px">try again</button>.</div>';
+      try{ _logErr('market.list', e); }catch(_){}
+    });
   reload();
   on($('mkt-search'),'input',()=>{ search=$('mkt-search').value; draw(); });
   on($('mkt-sort'),'change',()=>{ sort=$('mkt-sort').value; draw(); });
@@ -15889,13 +15903,54 @@ function checkOAuthCallback(){
     setTimeout(()=>setTab(ret), 500);
   }
 }
+/* Silently renew the Google access token from the refresh token held on the
+   server. Without this a user who connected once is disconnected an hour
+   later - which quietly breaks every standing job that runs overnight, the
+   exact time nobody is watching. Only possible on the auth-code flow, since
+   the implicit flow never issues a refresh token. */
+let _gRefreshInFlight = null;
+async function refreshGToken(){
+  if(_gRefreshInFlight) return _gRefreshInFlight;
+  const base = (loadStr('amv_api_base')||'').replace(/\/$/,'');
+  const tok = loadStr('amv_api_token')||'';
+  if(!base || !tok) return null;
+  _gRefreshInFlight = (async () => {
+    try{
+      const r = await fetch(base + '/v1/oauth/google/refresh', {
+        method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok}, body:'{}' });
+      const d = await r.json().catch(()=>({}));
+      if(!r.ok || !d.ok || !d.access_token) return null;
+      saveStr('amv_gtoken', d.access_token);
+      saveStr('amv_gtoken_exp', String(Date.now() + ((d.expires_in||3600)-60)*1000));
+      return d.access_token;
+    }catch(e){ return null; }
+    finally{ _gRefreshInFlight = null; }
+  })();
+  return _gRefreshInFlight;
+}
+/* Await a USABLE token - refreshing first if it has expired or is about to.
+   Anything that is going to call Google should use this rather than the
+   synchronous getGToken(). */
+async function ensureGToken(){
+  const tok = loadStr('amv_gtoken');
+  const exp = parseInt(loadStr('amv_gtoken_exp')||'0');
+  // renew a couple of minutes early so a long job never expires mid-run
+  if(tok && exp && Date.now() < exp - 120000) return tok;
+  const fresh = await refreshGToken();
+  if(fresh) return fresh;
+  return getGToken();
+}
 function getGToken(){
   const token = loadStr('amv_gtoken'); if(!token) return null;
   const exp = parseInt(loadStr('amv_gtoken_exp')||'0');
   if(!exp) return token;
   if(Date.now()<exp) return token;
+  // Expired. Try to renew in the background so the NEXT call succeeds instead
+  // of forcing the user to reconnect, but do not hand back a dead token now.
+  try{ refreshGToken(); }catch(e){}
   localStorage.removeItem('amv_gtoken'); localStorage.removeItem('amv_gtoken_exp'); return null;
 }
+try{ window.refreshGToken=refreshGToken; window.ensureGToken=ensureGToken; }catch(e){}
 function disconnectGoogle(){
   localStorage.removeItem('amv_gtoken'); localStorage.removeItem('amv_gtoken_exp');
   toast('Google disconnected','info');
@@ -15913,7 +15968,7 @@ const INTEGRATION_ACTIONS = {
   gmail_list_unread: {
     desc:'List the user\u2019s unread emails (sender + subject).', needs:'google',
     async run(){
-      const t=getGToken(); if(!t) throw new Error('Gmail not connected');
+      const t=(typeof ensureGToken==='function'? await ensureGToken() : getGToken()); if(!t) throw new Error('Gmail not connected');
       const r=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10&labelIds=INBOX&q=is:unread',{headers:{'Authorization':'Bearer '+t}});
       const d=await r.json(); if(d.error) throw new Error(d.error.message);
       const msgs=d.messages||[];
@@ -15924,7 +15979,7 @@ const INTEGRATION_ACTIONS = {
   gmail_send: {
     desc:'Send an email. Args: {to, subject, body}.', needs:'google', risk:'high', riskLabel:'send an email',
     async run(args){
-      const t=getGToken(); if(!t) throw new Error('Gmail not connected');
+      const t=(typeof ensureGToken==='function'? await ensureGToken() : getGToken()); if(!t) throw new Error('Gmail not connected');
       const raw=['To: '+args.to,'Subject: '+(args.subject||''),'Content-Type: text/plain; charset=utf-8','',args.body||''].join('\r\n');
       const b64=btoa(unescape(encodeURIComponent(raw))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
       const r=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send',{method:'POST',headers:{'Authorization':'Bearer '+t,'Content-Type':'application/json'},body:JSON.stringify({raw:b64})});
@@ -15935,7 +15990,7 @@ const INTEGRATION_ACTIONS = {
   calendar_list: {
     desc:'List upcoming calendar events for the next 7 days.', needs:'google',
     async run(){
-      const t=getGToken(); if(!t) throw new Error('Calendar not connected');
+      const t=(typeof ensureGToken==='function'? await ensureGToken() : getGToken()); if(!t) throw new Error('Calendar not connected');
       const now=new Date(), end=new Date(now.getTime()+7*864e5);
       const r=await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin='+now.toISOString()+'&timeMax='+end.toISOString()+'&singleEvents=true&orderBy=startTime&maxResults=20',{headers:{'Authorization':'Bearer '+t}});
       const d=await r.json(); if(d.error) throw new Error(d.error.message);
@@ -15945,7 +16000,7 @@ const INTEGRATION_ACTIONS = {
   calendar_create: {
     desc:'Create a calendar event. Args: {title, start (ISO), end (ISO), description?}.', needs:'google', risk:'high', riskLabel:'create a calendar event',
     async run(args){
-      const t=getGToken(); if(!t) throw new Error('Calendar not connected');
+      const t=(typeof ensureGToken==='function'? await ensureGToken() : getGToken()); if(!t) throw new Error('Calendar not connected');
       const body={summary:args.title, description:args.description||'', start:{dateTime:args.start}, end:{dateTime:args.end||args.start}};
       const r=await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events',{method:'POST',headers:{'Authorization':'Bearer '+t,'Content-Type':'application/json'},body:JSON.stringify(body)});
       const d=await r.json(); if(d.error) throw new Error(d.error.message);
@@ -15955,7 +16010,7 @@ const INTEGRATION_ACTIONS = {
   drive_list: {
     desc:'List recent Google Drive files.', needs:'google',
     async run(){
-      const t=getGToken(); if(!t) throw new Error('Drive not connected');
+      const t=(typeof ensureGToken==='function'? await ensureGToken() : getGToken()); if(!t) throw new Error('Drive not connected');
       const r=await fetch('https://www.googleapis.com/drive/v3/files?pageSize=30&orderBy=modifiedTime desc&fields=files(name,mimeType,modifiedTime)',{headers:{'Authorization':'Bearer '+t}});
       const d=await r.json(); if(d.error) throw new Error(d.error.message);
       return (d.files||[]).map(f=>({name:f.name, type:(f.mimeType||'').split('/').pop(), modified:f.modifiedTime}));
@@ -16575,7 +16630,21 @@ function tableToCSV(){
 }
 let _sheetData=[];
 function handleSheetFile(file){
-  file.text().then(text=>{ _sheetData=parseCSV(text); openSheetEditor(_sheetData,file.name); });
+  // An unreadable or corrupt file used to do nothing at all, with no error -
+  // the user just saw their upload vanish.
+  file.text().then(text=>{
+    try{
+      _sheetData=parseCSV(text);
+      if(!_sheetData || !_sheetData.length){ toast('That file has no readable rows. Check it is a CSV.','error',4500); return; }
+      openSheetEditor(_sheetData,file.name);
+    }catch(e){
+      toast('That file could not be read as a spreadsheet.','error',4500);
+      try{ _logErr('sheet.parse', e); }catch(_){}
+    }
+  }).catch(e=>{
+    toast('Could not read that file. Try uploading it again.','error',4500);
+    try{ _logErr('sheet.read', e); }catch(_){}
+  });
 }
 function openSheetEditor(data,name){
   const vc=$('vc'); if(!vc) return;

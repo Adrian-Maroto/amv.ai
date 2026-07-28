@@ -206,7 +206,14 @@ function _renderTeamManage(vc, team){
       try{ const ns=await AMVTeam.unshare(b.dataset.tsrDel); drawShared(ns); toast('Removed','info'); }catch(e){ toast(e.message||'Could not remove','error'); }
     }));
   };
-  if(AMVTeam.enabled()){ AMVTeam.shared().then(drawShared); } else { drawShared([]); }
+  // A rejected fetch here used to leave the panel blank with no explanation.
+  if(AMVTeam.enabled()){
+    AMVTeam.shared().then(drawShared).catch(e=>{
+      drawShared([]);
+      try{ toast('Could not load shared team items. Check your connection and try again.','error',4500); }catch(_){}
+      try{ _logErr('team.shared', e); }catch(_){}
+    });
+  } else { drawShared([]); }
   const _sharePicker=(kind)=>{
     const items = kind==='prompt' ? (S.prompts||[]) : (S.workspaces||[]);
     if(!items.length){ toast('You have no '+(kind==='prompt'?'prompts':'projects')+' to share yet','info'); return; }
