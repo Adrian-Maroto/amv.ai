@@ -67,6 +67,13 @@ npx wrangler secret put JWT_SECRET          # required — any long random strin
 npx wrangler secret put ADMIN_TOKEN        # required to view the error dashboard
 npx wrangler secret put EMAIL_API_KEY      # Resend key — WITHOUT THIS, PASSWORD RESET NEVER SENDS
 # RESET_EMAIL_FROM is optional — see "Password reset" below
+# Google sign-in hardening. With this set, AMV uses the auth-code + PKCE flow:
+# the browser only ever holds a single-use code, the exchange happens on the
+# Worker, and the refresh token never reaches the browser. Without it, AMV
+# falls back to the older implicit flow (token in the URL fragment), which
+# still works but is weaker - set this before going live.
+npx wrangler secret put GOOGLE_CLIENT_SECRET
+
 # Bank data (live balances, transactions, unusual-charge and low-balance
 # alerts). Sign up with an aggregator (Plaid, Teller, TrueLayer) and set:
 npx wrangler secret put FINANCE_CLIENT_ID   # aggregator client id

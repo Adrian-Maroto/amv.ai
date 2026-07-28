@@ -22993,17 +22993,79 @@ function _amvStartVoice(btn){
      Worker (auth-code flow) so the token never reaches the browser - see
      SECURITY-HEADERS.md. We scope the token to the minimum needed and
      expire it aggressively. */
-function connectGoogle(){
+async function connectGoogle(){
   const cid = loadStr('amv_gauth');
   if(!cid){ toast('Add Google Client ID in Settings → Integrations first','error',5000); goSettings('integrations'); return; }
   const scopes = 'https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/calendar';
   const redirectUri = window.location.origin + window.location.pathname;
+  saveStr('amv_oauth_return', S.tab||'integrations');
+
+  /* Prefer the AUTH-CODE + PKCE flow: the browser only ever holds a single-use
+     code, the exchange happens on our server where the secret lives, and the
+     refresh token never reaches the browser at all. The implicit flow below is
+     kept only as a fallback for deployments with no backend yet - it puts the
+     access token in the URL fragment, where it lands in history and referrers. */
+  const canExchange = !!(window.AMV_API && AMV_API.live && AMV_API.token);
+  if(canExchange && typeof _pkceChallenge === 'function'){
+    try{
+      const p = await _pkceChallenge('google');
+      const url = 'https://accounts.google.com/o/oauth2/v2/auth'
+        + '?client_id=' + encodeURIComponent(cid)
+        + '&redirect_uri=' + encodeURIComponent(redirectUri)
+        + '&response_type=code'
+        + '&scope=' + encodeURIComponent(scopes)
+        + '&code_challenge=' + encodeURIComponent(p.challenge)
+        + '&code_challenge_method=S256'
+        + '&access_type=offline&prompt=consent'
+        + '&state=' + encodeURIComponent(p.state);
+      window.location.href = url;
+      return;
+    }catch(e){ /* fall through to the legacy flow rather than blocking sign-in */ }
+  }
   const state = _oauthTxStart('google', '');   // AMV-039: provider-bound, per-attempt state
   const url = 'https://accounts.google.com/o/oauth2/v2/auth?client_id='+encodeURIComponent(cid)+'&redirect_uri='+encodeURIComponent(redirectUri)+'&response_type=token&scope='+encodeURIComponent(scopes)+'&prompt=consent&state='+encodeURIComponent(state);
-  saveStr('amv_oauth_return', S.tab||'integrations');
   window.location.href = url;
 }
 function checkOAuthCallback(){
+  /* AUTH-CODE return (?code=...&state=...). The code is single-use and useless
+     without the verifier, which never left this browser. We hand both to our
+     own server, which does the exchange with the client secret. */
+  try{
+    const q = new URLSearchParams(window.location.search || '');
+    if(q.get('code') && q.get('state')){
+      const st = q.get('state');
+      const pk = (typeof _pkceConsume === 'function') ? _pkceConsume(st, 'google') : { ok:false };
+      history.replaceState(null, '', window.location.pathname);
+      if(!pk.ok || !pk.verifier){
+        toast('Sign-in could not be verified. Please try connecting again.','error',5000);
+        return;
+      }
+      const base = (loadStr('amv_api_base')||'').replace(/\/$/,'');
+      const tok = loadStr('amv_api_token')||'';
+      fetch(base + '/v1/oauth/google/exchange', {
+        method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
+        body: JSON.stringify({ code:q.get('code'), verifier:pk.verifier,
+          redirect_uri: window.location.origin + window.location.pathname })
+      }).then(r=>r.json()).then(d=>{
+        if(!d || !d.ok || !d.access_token) throw new Error(d && (d.error||d.need) || 'exchange failed');
+        saveStr('amv_gtoken', d.access_token);
+        saveStr('amv_gtoken_exp', String(Date.now() + ((d.expires_in||3600)-60)*1000));
+        try{ saveStr('amv_google_connected','1'); }catch(e){}
+        toast('Google connected','success');
+        try{ const back=loadStr('amv_oauth_return'); if(back) setTab(back); }catch(e){}
+        try{ if(typeof renderIntegrationsView==='function' && S.tab==='integrations') renderIntegrationsView(); }catch(e){}
+      }).catch(err=>{
+        toast('Google sign-in could not be completed. '+(err&&err.message?String(err.message).slice(0,80):''),'error',5000);
+      });
+      return;
+    }
+    if(q.get('error') && q.get('state')){
+      history.replaceState(null,'',window.location.pathname);
+      toast('Google sign-in was cancelled or failed.','info',4000);
+      return;
+    }
+  }catch(e){}
+
   const hash = window.location.hash;
   if(!hash || hash.indexOf('access_token')<0) return;
   const params = new URLSearchParams(hash.slice(1));

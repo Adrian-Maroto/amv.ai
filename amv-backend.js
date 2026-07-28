@@ -1213,6 +1213,85 @@ async function fraudRecord(request, env){
   return json({ ok:true, stored:true });
 }
 
+/* ============================================================
+   GOOGLE OAUTH CODE EXCHANGE  (/v1/oauth/google/exchange)
+
+   The implicit flow returns the access token in the URL fragment,
+   where it lands in browser history, referrers and any extension that
+   reads the address bar, and it cannot issue a refresh token.
+
+   This is the auth-code + PKCE replacement: the browser only ever
+   holds a single-use code and its verifier, and the exchange happens
+   HERE, where the client secret lives. The refresh token is kept
+   server-side and never reaches the browser at all.
+   ============================================================ */
+async function googleOAuthExchange(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'sign in first' }, 401);
+  const blocked = await guardAction(env, 'oauthx:' + user.email, 10, 60, 'sign-in attempts');
+  if(blocked) return blocked;
+
+  if(!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET)
+    return json({ error:'Google sign-in is not fully configured on this deployment.', code:'needs_service' }, 503);
+
+  const body = await request.json().catch(() => ({}));
+  const code = String(body.code || '');
+  const verifier = String(body.verifier || '');
+  const redirectUri = String(body.redirect_uri || '');
+  if(!code || !verifier || !redirectUri) return json({ error:'code, verifier and redirect_uri are required' }, 400);
+
+  // The redirect_uri must be one WE serve - never echo back an arbitrary one.
+  const allowed = (env.APP_ORIGIN || env.APP_URL || '').replace(/\/$/, '');
+  if(allowed && redirectUri.indexOf(allowed) !== 0)
+    return json({ error:'redirect_uri is not permitted' }, 400);
+
+  try{
+    const r = await fetch('https://oauth2.googleapis.com/token', {
+      method:'POST', headers:{ 'Content-Type':'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code, code_verifier: verifier, redirect_uri: redirectUri,
+        client_id: env.GOOGLE_CLIENT_ID, client_secret: env.GOOGLE_CLIENT_SECRET,
+        grant_type: 'authorization_code'
+      }).toString()
+    });
+    const d = await r.json();
+    if(!r.ok) return json({ error: d.error_description || d.error || 'Sign-in could not be completed.' }, 400);
+
+    // The REFRESH token stays here. The browser gets only a short-lived access
+    // token, so a stolen browser token expires by itself within the hour.
+    if(d.refresh_token){
+      const rec = (await DB.get(env, 'goauth', user.email)) || {};
+      rec.refreshToken = d.refresh_token; rec.scope = d.scope || ''; rec.at = Date.now();
+      await DB.put(env, 'goauth', user.email, rec);
+    }
+    audit(env, 'google_oauth_exchange', { by:user.email, refreshed:!!d.refresh_token });
+    return json({ ok:true, access_token: d.access_token, expires_in: d.expires_in || 3600, scope: d.scope || '' });
+  }catch(e){
+    return json({ error:'Sign-in could not be completed.' }, 502);
+  }
+}
+
+/* Silently mint a new access token from the stored refresh token, so a user
+   who connected once does not have to reconnect every hour. */
+async function googleOAuthRefresh(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'sign in first' }, 401);
+  if(!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET)
+    return json({ error:'not configured', code:'needs_service' }, 503);
+  const rec = await DB.get(env, 'goauth', user.email);
+  if(!rec || !rec.refreshToken) return json({ error:'Google is not connected.', code:'needs_auth' }, 400);
+  try{
+    const r = await fetch('https://oauth2.googleapis.com/token', {
+      method:'POST', headers:{ 'Content-Type':'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ refresh_token: rec.refreshToken, client_id: env.GOOGLE_CLIENT_ID,
+        client_secret: env.GOOGLE_CLIENT_SECRET, grant_type: 'refresh_token' }).toString()
+    });
+    const d = await r.json();
+    if(!r.ok) return json({ error:d.error_description || 'Could not refresh access.', code:'needs_auth' }, 400);
+    return json({ ok:true, access_token:d.access_token, expires_in:d.expires_in || 3600 });
+  }catch(e){ return json({ error:'Could not refresh access.' }, 502); }
+}
+
 /* Accept a link invitation (/v1/link/accept). The client mirror cannot be the
    authority here: two different accounts, usually on different devices, must
    agree, and the caller must not be able to approve their own request by
@@ -2304,6 +2383,8 @@ export default {
         case '/v1/browser/run':  return browserRun(request, env, ctx);
         case '/v1/finance/accounts':     return financeRoute(request, env, 'accounts');
         case '/v1/finance/transactions': return financeRoute(request, env, 'transactions');
+        case '/v1/oauth/google/exchange': return googleOAuthExchange(request, env);
+        case '/v1/oauth/google/refresh':  return googleOAuthRefresh(request, env);
         case '/v1/link/invite':          return linkInvite(request, env);
         case '/v1/link/accept':          return linkAccept(request, env);
         case '/v1/link/list':            return linkList(request, env);
