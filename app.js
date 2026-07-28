@@ -9995,16 +9995,17 @@ function _payRenderMethod(method,plan){
     });
     return;
   }
-  // Last resort (no processor connected): show the form but be honest it needs setup.
+  /* No processor connected. We deliberately do NOT render a card form here.
+     Collecting a raw card number and CVC - even just in the browser - drags
+     the whole business into PCI-DSS scope and creates breach liability for
+     data we have no right to hold. Card details are only ever entered on the
+     processor's own hosted page. So this states what to connect instead. */
   body.innerHTML=
-    '<div class="pay-field"><label>Card number</label><input id="pf-num" inputmode="numeric" autocomplete="cc-number" placeholder="1234 1234 1234 1234" maxlength="19"></div>'+
-    '<div class="pay-row"><div class="pay-field"><label>Expiry</label><input id="pf-exp" inputmode="numeric" autocomplete="cc-exp" placeholder="MM / YY" maxlength="7"></div>'+
-    '<div class="pay-field"><label>CVC</label><input id="pf-cvc" inputmode="numeric" autocomplete="cc-csc" placeholder="CVC" maxlength="4"></div></div>'+
-    '<div class="pay-field"><label>Name on card</label><input id="pf-name" autocomplete="cc-name" placeholder="Full name"></div>'+
-    '<button class="btn bp pay-submit" id="pay-card">Pay $'+price+' / month</button>';
-  const num=$('pf-num'); if(num) on(num,'input',()=>{ let v=num.value.replace(/\D/g,'').slice(0,16); num.value=v.replace(/(.{4})/g,'$1 ').trim(); });
-  const exp=$('pf-exp'); if(exp) on(exp,'input',()=>{ let v=exp.value.replace(/\D/g,'').slice(0,4); if(v.length>=3)v=v.slice(0,2)+' / '+v.slice(2); exp.value=v; });
-  const cvc=$('pf-cvc'); if(cvc) on(cvc,'input',()=>{ cvc.value=cvc.value.replace(/\D/g,'').slice(0,4); });
+    '<div class="pay-setup">'+
+      '<div class="pay-setup-t">Secure checkout is not connected yet</div>'+
+      '<div class="pay-setup-s">Card details are always entered on the payment provider’s own secure page - AMV never handles or stores card numbers. Connect Stripe in Settings → Platform and checkout turns on immediately.</div>'+
+      '<button class="btn bp pay-submit" id="pay-card">Open secure checkout</button>'+
+    '</div>';
   on($('pay-card'),'click',()=>_payCard(plan));
 }
 
@@ -10060,25 +10061,33 @@ function _mountPayPal(plan){
   s.onload=render; s.onerror=()=>showFallback('Could not reach PayPal');
   document.head.appendChild(s);
 }
-function _payCard(plan){
-  const num=($('pf-num')||{}).value||''; const exp=($('pf-exp')||{}).value||''; const cvc=($('pf-cvc')||{}).value||''; const name=($('pf-name')||{}).value||'';
-  const digits=num.replace(/\D/g,'');
-  if(digits.length<13){ toast('Enter a valid card number','error'); return; }
-  if(!/\d{2}\s*\/\s*\d{2}/.test(exp)){ toast('Enter a valid expiry','error'); return; }
-  if(cvc.length<3){ toast('Enter the CVC','error'); return; }
-  if(!name.trim()){ toast('Enter the name on the card','error'); return; }
-  const sb=$('pay-card'); if(sb){ sb.disabled=true; sb.textContent='Processing…'; }
+/* Take a card payment WITHOUT ever touching the card.
+   Raw card numbers must never reach AMV's own servers: receiving a PAN puts
+   the whole business in PCI-DSS scope, and storing a CVC is prohibited
+   outright. So this hands off to the processor's own hosted checkout, where
+   the card is entered on THEIR page. AMV only ever learns that a payment
+   succeeded - which is also what makes chargeback defence possible, because
+   the processor holds the authentication record (3-D Secure). */
+async function _payCard(plan){
+  const sb=$('pay-card');
   const reset=()=>{ if(sb){sb.disabled=false;sb.textContent='Pay $'+PLANS[plan].price+' / month';} };
-  const finish=()=>{ _savePM({type:'card',brand:_cardBrand(digits),last4:digits.slice(-4),exp:exp.replace(/\s/g,'')}); handlePaymentSuccess(plan); };
-  if(window.AMV_API&&AMV_API.live){
-    // Real charge through your backend (which talks to the processor).
-    fetch(AMV_API.base.replace(/\/$/,'')+'/v1/pay/card',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+AMV_API.token},body:JSON.stringify({plan,card:{number:digits,exp,cvc,name}})})
-      .then(r=>{ if(!r.ok) throw new Error(); finish(); })
-      .catch(()=>{ reset(); toast('Payment could not be completed','error'); });
-  } else {
-    // No processor connected yet - do NOT pretend to charge. Tell the user how to go live.
+  if(sb){ sb.disabled=true; sb.textContent='Opening secure checkout…'; }
+
+  if(!(window.AMV_API && AMV_API.live)){
+    // No processor connected - do NOT pretend to charge.
     reset();
     toast('Connect a payment processor in Settings → Platform to take real card payments.','info',5500);
+    return;
+  }
+  try{
+    const email=(S.user&&S.user.email)||'';
+    const url=await AMV_API.stripeCheckout(plan, email);
+    if(!url) throw new Error('no checkout url');
+    // The card is entered on the processor's page, never here.
+    location.href=url;
+  }catch(e){
+    reset();
+    toast('Could not open secure checkout. Please try again.','error',5000);
   }
 }
 function _cardBrand(d){ if(/^4/.test(d))return'visa'; if(/^5[1-5]/.test(d)||/^2[2-7]/.test(d))return'mastercard'; if(/^3[47]/.test(d))return'amex'; if(/^6/.test(d))return'discover'; return'card'; }
@@ -10189,7 +10198,17 @@ function _mountStripe(pk,plan){
         // Send ONLY the token to your backend to create the subscription.
         try{
           if(window.AMV_API&&AMV_API.live){
-            await fetch(AMV_API.base.replace(/\/$/,'')+'/v1/subscribe',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+AMV_API.token},body:JSON.stringify({plan,payment_method:paymentMethod.id})});
+            // The SERVER decides whether the plan is granted. Never assume the
+            // charge worked: an unchecked response here would hand out paid
+            // plans for free whenever the request failed or needed 3-D Secure.
+            const r=await fetch(AMV_API.base.replace(/\/$/,'')+'/v1/subscribe',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+AMV_API.token},body:JSON.stringify({plan,payment_method:paymentMethod.id})});
+            const d=await r.json().catch(()=>({}));
+            if(!r.ok || !d.ok){
+              const el=$('stripe-card-errors');
+              if(el) el.textContent = d.need || d.error || 'Payment was not completed.';
+              sb.disabled=false; sb.textContent='Pay $'+PLANS[plan].price+' / month';
+              return;   // no plan, no payment method saved
+            }
           }
           const c=paymentMethod.card||{};
           _savePM({type:'card',brand:c.brand||'card',last4:c.last4||'',exp:(c.exp_month?String(c.exp_month).padStart(2,'0'):'')+'/'+(c.exp_year?String(c.exp_year).slice(-2):'')});
@@ -20353,6 +20372,145 @@ try{
           async run(){ const h=AMVSpend.history();
             if(!h.length){ const e=new Error('AMV has not made any purchases for you.'); e.code='needs_info'; throw e; }
             return { count:h.length, purchases:h }; } }
+      }
+    });
+  }
+}catch(e){}
+/* ============================================================
+   COMPLIANCE - the two things that actually decide whether you get
+   sued or lose money, built as evidence rather than as promises.
+
+   1. CONSENT RECORD. Linking to terms is worthless in a dispute; the
+      record that THIS user accepted THIS version at THIS time is what
+      wins one. Every acceptance is versioned and timestamped, and a
+      material change re-prompts rather than silently applying.
+
+   2. AGE. Under-13 collection is strict liability under COPPA (fines
+      are per child, per violation) and the equivalent rules in the EU
+      and UK. Minors also cannot form binding contracts, which is
+      exactly why a teenager's purchases come straight back as
+      chargebacks. So age is asked once, stored, and it gates the
+      features that create that exposure - autonomous spending above
+      all. This protects the user AND the payment processing.
+
+   Nothing here is legal advice, and none of it substitutes for real
+   terms drafted by a lawyer. It is the plumbing those terms need.
+   ============================================================ */
+const AMVCompliance = {
+  KEY:'amv_consent',
+  TERMS_VERSION:'2026-07-26',      // bump on any material change to re-prompt
+  MIN_AGE:13,                      // below this we cannot collect data at all
+  ADULT_AGE:18,                    // below this, money features stay off
+
+  _rec(){ try{ return load(this.KEY) || {}; }catch(e){ return {}; } },
+  _save(v){ try{ store(this.KEY, v); }catch(e){} },
+
+  /* --- Consent ------------------------------------------------------- */
+
+  accepted(){
+    const r = this._rec();
+    return !!(r.termsVersion === this.TERMS_VERSION && r.acceptedAt);
+  },
+  /* Record acceptance. Server-side too when connected, because a record that
+     only exists in the user's own browser proves nothing in a dispute. */
+  accept(){
+    const r = this._rec();
+    r.termsVersion = this.TERMS_VERSION;
+    r.acceptedAt = Date.now();
+    r.acceptedUA = (navigator && navigator.userAgent || '').slice(0,180);
+    this._save(r);
+    try{
+      const base = (loadStr('amv_api_base')||'').replace(/\/$/,'');
+      const tok = loadStr('amv_api_token')||'';
+      if(base && tok) fetch(base + '/v1/consent', {
+        method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
+        body: JSON.stringify({ termsVersion:r.termsVersion, acceptedAt:r.acceptedAt })
+      }).catch(()=>{});
+    }catch(e){}
+    return r;
+  },
+  consentRecord(){ const r=this._rec(); return { version:r.termsVersion||null, at:r.acceptedAt||null, current:this.accepted() }; },
+
+  /* --- Age ----------------------------------------------------------- */
+
+  /* Age is stored as a birth YEAR only - enough to gate correctly, and the
+     least personal data that does the job. */
+  setBirthYear(year){
+    const y = parseInt(year, 10);
+    const now = new Date().getFullYear();
+    if(!y || y < 1900 || y > now) throw new Error('Enter the year you were born.');
+    const age = now - y;
+    if(age < this.MIN_AGE){
+      // Do NOT store data for a child. Record only the refusal.
+      const r = this._rec(); r.blockedUnderAge = true; r.blockedAt = Date.now(); delete r.birthYear;
+      this._save(r);
+      const e = new Error('AMV is not available under ' + this.MIN_AGE + '. We are not able to create an account.');
+      e.code = 'under_age'; throw e;
+    }
+    const r = this._rec(); r.birthYear = y; r.ageSetAt = Date.now(); delete r.blockedUnderAge;
+    this._save(r);
+    return { age, adult: age >= this.ADULT_AGE };
+  },
+  age(){ const r=this._rec(); return r.birthYear ? (new Date().getFullYear() - r.birthYear) : null; },
+  isAdult(){ const a=this.age(); return a == null ? false : a >= this.ADULT_AGE; },
+  isBlocked(){ return !!this._rec().blockedUnderAge; },
+  ageKnown(){ return this.age() != null; },
+
+  /* --- The gate every risky capability calls -------------------------- */
+  /* Returns null when allowed, or the reason it is refused. Deny by default:
+     an unknown age is treated as "not verified", never as "adult". */
+  gate(capability){
+    if(this.isBlocked()) return 'This account cannot be used.';
+    if(!this.accepted()) return 'Please accept the terms first.';
+    const MONEY = ['spend','purchase','payout','withdraw','marketplace_sell','bank'];
+    if(MONEY.indexOf(capability) >= 0){
+      if(!this.ageKnown()) return 'Confirm your age before using anything that involves money.';
+      if(!this.isAdult()) return 'Money features are only available to users ' + this.ADULT_AGE + ' and over. Ask an adult to set this up on their own account.';
+    }
+    return null;
+  },
+
+  /* What the user is agreeing to, in plain words. Short on purpose: terms
+     nobody reads protect nobody. */
+  SUMMARY:[
+    'AMV is an AI assistant. It can make mistakes - check anything important before relying on it.',
+    'You are responsible for what you ask AMV to do, and for actions taken from your account, including by anyone else using your device.',
+    'AMV acts on your instructions. It does not guarantee results, prices, availability, delivery, or that an action can be undone.',
+    'Anything involving money stays inside limits you set, and is only available to adults.',
+    'You can export or delete your data at any time.'
+  ]
+};
+try{ window.AMVCompliance = AMVCompliance; }catch(e){}
+
+/* Wire the age gate into spending so it cannot be bypassed by calling the
+   spend layer directly. This is the chargeback protection as much as the
+   legal one: a minor's purchase is reversible by their parent's bank. */
+try{
+  if(typeof AMVSpend !== 'undefined' && !AMVSpend._ageWrapped){
+    const _origCheck = AMVSpend.check.bind(AMVSpend);
+    AMVSpend.check = function(amount, opts){
+      try{
+        const why = AMVCompliance.gate('spend');
+        if(why) return { allow:false, reason:why };
+      }catch(e){}
+      return _origCheck(amount, opts);
+    };
+    AMVSpend._ageWrapped = true;
+  }
+}catch(e){}
+
+try{
+  if(typeof AMVConnectors !== 'undefined'){
+    AMVConnectors.register({
+      id:'compliance', name:'Terms & age', auth:'none', channel:'local',
+      isLive(){ return true; },
+      actions:{
+        status:{ desc:'Whether terms are accepted, which version, and whether age is confirmed.',
+          async run(){ return { consent:AMVCompliance.consentRecord(), ageKnown:AMVCompliance.ageKnown(),
+            adult:AMVCompliance.isAdult(), summary:AMVCompliance.SUMMARY }; } },
+        can_i:{ desc:'Check whether a capability is permitted for this account. Args: {capability}',
+          async run(a){ const why=AMVCompliance.gate((a&&a.capability)||'');
+            return { allowed:!why, reason:why||'Allowed.' }; } }
       }
     });
   }

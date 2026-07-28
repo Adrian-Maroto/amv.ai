@@ -31,6 +31,31 @@ ok(/v1\/finance\//.test(client), 'the client calls the finance route');
 ok(/v1\/link\/invite/.test(client), 'the client calls the link-invite route');
 ok(/v1\/browser\/run/.test(client), 'the client calls the browser route');
 
+// REGRESSION (found in review): three client paths had no worker route at all
+// and would have 404'd forever once keys were added.
+section('Payment and record routes exist');
+['/v1/subscribe', '/v1/consent', '/v1/fraud/record'].forEach(p => {
+  ok(src.includes("case '" + p + "'"), `${p} is routed`, p);
+});
+
+// REGRESSION: the client used to POST raw card numbers and CVCs to a
+// nonexistent /v1/pay/card. Receiving a PAN puts the business in PCI-DSS
+// scope and storing a CVC is prohibited outright.
+section('AMV never handles raw card data');
+ok(!/\/v1\/pay\/card/.test(client), 'the raw-card endpoint is gone from the client');
+ok(!/cc-csc|pf-cvc/.test(client), 'no CVC field is collected anywhere');
+ok(!/card:\s*\{\s*number/.test(client), 'no raw card number is ever sent');
+ok(/stripeCheckout/.test(client), 'card payment goes through the processor’s hosted checkout instead');
+
+// REGRESSION: the subscribe call ignored the response and granted the plan
+// anyway - handing out paid plans free whenever the charge did not complete.
+section('A plan is granted only when the server confirms payment');
+const subBody = src.slice(src.indexOf('async function stripeSubscribe'), src.indexOf('async function stripeSubscribe') + 3400);
+ok(/setEntitlement\(env, user\.email, plan\)/.test(subBody), 'the SERVER grants entitlement, not the client');
+ok(/status !== 'active' && status !== 'trialing'/.test(subBody), 'and only on a confirmed active subscription');
+ok(/requires_action/.test(subBody), '3-D Secure is handled as "not yet paid", never as success');
+ok(/if\(!r\.ok \|\| !d\.ok\)/.test(client), 'the client refuses to grant the plan unless the server said ok');
+
 section('Without keys, features explain themselves instead of crashing');
 const noKeys = await W.financeRoute(req({}), { AMV_KV: KV() }, 'accounts');
 ok(noKeys.status === 401 || noKeys.status === 503, 'finance returns a clean status, never a crash', noKeys.status);

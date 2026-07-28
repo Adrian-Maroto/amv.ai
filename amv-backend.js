@@ -1109,6 +1109,125 @@ async function _webAskModel(env, sys, prompt){
 }
 
 /* ============================================================
+   SUBSCRIBE WITH A TOKENISED CARD  (/v1/subscribe)
+
+   The client uses Stripe Elements, so the card goes browser->Stripe and
+   we only ever receive a PaymentMethod id. This creates the customer,
+   attaches the method and starts the subscription server-side, where
+   the price ids live. Entitlement is granted ONLY on a confirmed
+   active/trialing subscription - never on the client's say-so.
+   ============================================================ */
+async function stripeSubscribe(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'sign in first' }, 401);
+  const blocked = await guardAction(env, 'subscribe:' + user.email, 5, 40, 'subscription attempts');
+  if(blocked) return blocked;
+  if(!env.STRIPE_SECRET_KEY)
+    return json({ error:'Payments are not configured on this deployment.', code:'needs_service' }, 503);
+
+  const body = await request.json().catch(() => ({}));
+  const plan = String(body.plan || '').toLowerCase();
+  const pm = String(body.payment_method || '');
+  const priceId = { pro:env.STRIPE_PRICE_PRO, elite:env.STRIPE_PRICE_ELITE, ultra:env.STRIPE_PRICE_ULTRA }[plan];
+  if(!priceId) return json({ error:'unknown plan or price id not configured', code:'needs_service' }, 400);
+  if(!/^pm_/.test(pm)) return json({ error:'a valid payment method is required' }, 400);
+
+  const sk = { 'Authorization':'Bearer ' + env.STRIPE_SECRET_KEY, 'Content-Type':'application/x-www-form-urlencoded' };
+  const form = o => new URLSearchParams(o).toString();
+  try{
+    // reuse the customer if we already made one for this account
+    const rec = (await DB.get(env, 'billing', user.email)) || {};
+    let customer = rec.customerId;
+    if(!customer){
+      const cr = await fetch('https://api.stripe.com/v1/customers', { method:'POST', headers:sk,
+        body: form({ email:user.email, 'metadata[amv_user]':user.email }) });
+      const cd = await cr.json();
+      if(!cr.ok) return json({ error:cd.error?.message || 'could not create customer' }, 502);
+      customer = cd.id;
+    }
+    // attach the tokenised card and make it the default
+    const at = await fetch('https://api.stripe.com/v1/payment_methods/' + encodeURIComponent(pm) + '/attach',
+      { method:'POST', headers:sk, body: form({ customer }) });
+    if(!at.ok){ const ad = await at.json(); return json({ error:ad.error?.message || 'card could not be attached' }, 402); }
+    await fetch('https://api.stripe.com/v1/customers/' + customer, { method:'POST', headers:sk,
+      body: form({ 'invoice_settings[default_payment_method]':pm }) });
+
+    const sr = await fetch('https://api.stripe.com/v1/subscriptions', { method:'POST', headers:sk,
+      body: form({ customer, 'items[0][price]':priceId, 'expand[0]':'latest_invoice.payment_intent' }) });
+    const sd = await sr.json();
+    if(!sr.ok) return json({ error:sd.error?.message || 'subscription failed' }, 402);
+
+    // The card may need 3-D Secure. Do NOT grant anything until it is done.
+    const status = sd.status;
+    const pi = sd.latest_invoice && sd.latest_invoice.payment_intent;
+    if(status !== 'active' && status !== 'trialing'){
+      await DB.put(env, 'billing', user.email, Object.assign(rec, { customerId:customer, subId:sd.id, status }));
+      audit(env, 'subscribe_pending', { by:user.email, plan, status });
+      return json({ ok:false, code:'requires_action', status,
+        clientSecret: (pi && pi.client_secret) || null,
+        need:'Your bank needs to confirm this payment before the plan starts.' }, 402);
+    }
+    await DB.put(env, 'billing', user.email, Object.assign(rec, { customerId:customer, subId:sd.id, status }));
+    await setEntitlement(env, user.email, plan);   // authoritative: server grants the plan
+    audit(env, 'subscribe_active', { by:user.email, plan, sub:sd.id });
+    return json({ ok:true, plan, status });
+  }catch(e){
+    return json({ error:'Payment could not be completed.' }, 502);
+  }
+}
+
+/* Best-effort fraud mirror (/v1/fraud/record). Accepts an assessment the
+   client already made so the operator has a server-side copy. Never trusted
+   for enforcement - it is a record, not a decision. */
+async function fraudRecord(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'sign in first' }, 401);
+  const blocked = await guardAction(env, 'fraudrec:' + user.email, 30, 500, 'fraud records');
+  if(blocked) return blocked;
+  const a = await request.json().catch(() => ({}));
+  if(!a || !a.category) return json({ ok:true, stored:false });
+  const idx = (await DB.get(env, 'fraud', 'index')) || { items: [] };
+  idx.items = [{ at:Date.now(), by:user.email, category:String(a.category).slice(0,40),
+    risk:String(a.risk||'').slice(0,10), action:String(a.action||'').slice(0,30),
+    confidence:+a.confidence || 0 }, ...(idx.items||[])].slice(0, 500);
+  await DB.put(env, 'fraud', 'index', idx);
+  return json({ ok:true, stored:true });
+}
+
+/* ============================================================
+   CONSENT RECORD  (/v1/consent)
+
+   A record that only exists in the user's own browser proves nothing
+   in a dispute - they can clear it, and you cannot produce it. This
+   stores the accepted terms version, the timestamp, and the request
+   metadata server-side, which is the artifact that actually answers
+   "did this user agree to your terms, and when?".
+   ============================================================ */
+async function consentRecord(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'sign in first' }, 401);
+  const blocked = await guardAction(env, 'consent:' + user.email, 10, 100, 'consent updates');
+  if(blocked) return blocked;
+
+  const body = await request.json().catch(() => ({}));
+  const version = String(body.termsVersion || '').slice(0, 32);
+  if(!version) return json({ error:'termsVersion required' }, 400);
+
+  const prev = (await DB.get(env, 'consent', user.email)) || { history: [] };
+  const entry = {
+    version, at: Date.now(),
+    ip: (request.headers.get('CF-Connecting-IP') || '').slice(0, 45),
+    country: (request.cf && request.cf.country) || '',
+    ua: (request.headers.get('User-Agent') || '').slice(0, 180)
+  };
+  prev.current = entry;
+  prev.history = [entry, ...(prev.history || [])].slice(0, 20);   // every version ever accepted
+  await DB.put(env, 'consent', user.email, prev);
+  audit(env, 'consent_accepted', { by: user.email, version });
+  return json({ ok: true, version, at: entry.at });
+}
+
+/* ============================================================
    BANK DATA PROXY  (/v1/finance/*)
 
    Every call to the aggregator goes through here so the provider
@@ -2085,6 +2204,9 @@ export default {
         case '/v1/finance/accounts':     return financeRoute(request, env, 'accounts');
         case '/v1/finance/transactions': return financeRoute(request, env, 'transactions');
         case '/v1/link/invite':          return linkInvite(request, env);
+        case '/v1/consent':              return consentRecord(request, env);
+        case '/v1/subscribe':            return stripeSubscribe(request, env);
+        case '/v1/fraud/record':         return fraudRecord(request, env);
         case '/errors':          return errorsReport(request, env, ctx);
         case '/errors/list':     return errorsList(request, env);
         case '/errors/resolve':  return errorsResolve(request, env);

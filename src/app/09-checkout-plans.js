@@ -219,16 +219,17 @@ function _payRenderMethod(method,plan){
     });
     return;
   }
-  // Last resort (no processor connected): show the form but be honest it needs setup.
+  /* No processor connected. We deliberately do NOT render a card form here.
+     Collecting a raw card number and CVC - even just in the browser - drags
+     the whole business into PCI-DSS scope and creates breach liability for
+     data we have no right to hold. Card details are only ever entered on the
+     processor's own hosted page. So this states what to connect instead. */
   body.innerHTML=
-    '<div class="pay-field"><label>Card number</label><input id="pf-num" inputmode="numeric" autocomplete="cc-number" placeholder="1234 1234 1234 1234" maxlength="19"></div>'+
-    '<div class="pay-row"><div class="pay-field"><label>Expiry</label><input id="pf-exp" inputmode="numeric" autocomplete="cc-exp" placeholder="MM / YY" maxlength="7"></div>'+
-    '<div class="pay-field"><label>CVC</label><input id="pf-cvc" inputmode="numeric" autocomplete="cc-csc" placeholder="CVC" maxlength="4"></div></div>'+
-    '<div class="pay-field"><label>Name on card</label><input id="pf-name" autocomplete="cc-name" placeholder="Full name"></div>'+
-    '<button class="btn bp pay-submit" id="pay-card">Pay $'+price+' / month</button>';
-  const num=$('pf-num'); if(num) on(num,'input',()=>{ let v=num.value.replace(/\D/g,'').slice(0,16); num.value=v.replace(/(.{4})/g,'$1 ').trim(); });
-  const exp=$('pf-exp'); if(exp) on(exp,'input',()=>{ let v=exp.value.replace(/\D/g,'').slice(0,4); if(v.length>=3)v=v.slice(0,2)+' / '+v.slice(2); exp.value=v; });
-  const cvc=$('pf-cvc'); if(cvc) on(cvc,'input',()=>{ cvc.value=cvc.value.replace(/\D/g,'').slice(0,4); });
+    '<div class="pay-setup">'+
+      '<div class="pay-setup-t">Secure checkout is not connected yet</div>'+
+      '<div class="pay-setup-s">Card details are always entered on the payment provider’s own secure page - AMV never handles or stores card numbers. Connect Stripe in Settings → Platform and checkout turns on immediately.</div>'+
+      '<button class="btn bp pay-submit" id="pay-card">Open secure checkout</button>'+
+    '</div>';
   on($('pay-card'),'click',()=>_payCard(plan));
 }
 
@@ -284,25 +285,33 @@ function _mountPayPal(plan){
   s.onload=render; s.onerror=()=>showFallback('Could not reach PayPal');
   document.head.appendChild(s);
 }
-function _payCard(plan){
-  const num=($('pf-num')||{}).value||''; const exp=($('pf-exp')||{}).value||''; const cvc=($('pf-cvc')||{}).value||''; const name=($('pf-name')||{}).value||'';
-  const digits=num.replace(/\D/g,'');
-  if(digits.length<13){ toast('Enter a valid card number','error'); return; }
-  if(!/\d{2}\s*\/\s*\d{2}/.test(exp)){ toast('Enter a valid expiry','error'); return; }
-  if(cvc.length<3){ toast('Enter the CVC','error'); return; }
-  if(!name.trim()){ toast('Enter the name on the card','error'); return; }
-  const sb=$('pay-card'); if(sb){ sb.disabled=true; sb.textContent='Processing…'; }
+/* Take a card payment WITHOUT ever touching the card.
+   Raw card numbers must never reach AMV's own servers: receiving a PAN puts
+   the whole business in PCI-DSS scope, and storing a CVC is prohibited
+   outright. So this hands off to the processor's own hosted checkout, where
+   the card is entered on THEIR page. AMV only ever learns that a payment
+   succeeded - which is also what makes chargeback defence possible, because
+   the processor holds the authentication record (3-D Secure). */
+async function _payCard(plan){
+  const sb=$('pay-card');
   const reset=()=>{ if(sb){sb.disabled=false;sb.textContent='Pay $'+PLANS[plan].price+' / month';} };
-  const finish=()=>{ _savePM({type:'card',brand:_cardBrand(digits),last4:digits.slice(-4),exp:exp.replace(/\s/g,'')}); handlePaymentSuccess(plan); };
-  if(window.AMV_API&&AMV_API.live){
-    // Real charge through your backend (which talks to the processor).
-    fetch(AMV_API.base.replace(/\/$/,'')+'/v1/pay/card',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+AMV_API.token},body:JSON.stringify({plan,card:{number:digits,exp,cvc,name}})})
-      .then(r=>{ if(!r.ok) throw new Error(); finish(); })
-      .catch(()=>{ reset(); toast('Payment could not be completed','error'); });
-  } else {
-    // No processor connected yet - do NOT pretend to charge. Tell the user how to go live.
+  if(sb){ sb.disabled=true; sb.textContent='Opening secure checkout…'; }
+
+  if(!(window.AMV_API && AMV_API.live)){
+    // No processor connected - do NOT pretend to charge.
     reset();
     toast('Connect a payment processor in Settings → Platform to take real card payments.','info',5500);
+    return;
+  }
+  try{
+    const email=(S.user&&S.user.email)||'';
+    const url=await AMV_API.stripeCheckout(plan, email);
+    if(!url) throw new Error('no checkout url');
+    // The card is entered on the processor's page, never here.
+    location.href=url;
+  }catch(e){
+    reset();
+    toast('Could not open secure checkout. Please try again.','error',5000);
   }
 }
 function _cardBrand(d){ if(/^4/.test(d))return'visa'; if(/^5[1-5]/.test(d)||/^2[2-7]/.test(d))return'mastercard'; if(/^3[47]/.test(d))return'amex'; if(/^6/.test(d))return'discover'; return'card'; }
@@ -413,7 +422,17 @@ function _mountStripe(pk,plan){
         // Send ONLY the token to your backend to create the subscription.
         try{
           if(window.AMV_API&&AMV_API.live){
-            await fetch(AMV_API.base.replace(/\/$/,'')+'/v1/subscribe',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+AMV_API.token},body:JSON.stringify({plan,payment_method:paymentMethod.id})});
+            // The SERVER decides whether the plan is granted. Never assume the
+            // charge worked: an unchecked response here would hand out paid
+            // plans for free whenever the request failed or needed 3-D Secure.
+            const r=await fetch(AMV_API.base.replace(/\/$/,'')+'/v1/subscribe',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+AMV_API.token},body:JSON.stringify({plan,payment_method:paymentMethod.id})});
+            const d=await r.json().catch(()=>({}));
+            if(!r.ok || !d.ok){
+              const el=$('stripe-card-errors');
+              if(el) el.textContent = d.need || d.error || 'Payment was not completed.';
+              sb.disabled=false; sb.textContent='Pay $'+PLANS[plan].price+' / month';
+              return;   // no plan, no payment method saved
+            }
           }
           const c=paymentMethod.card||{};
           _savePM({type:'card',brand:c.brand||'card',last4:c.last4||'',exp:(c.exp_month?String(c.exp_month).padStart(2,'0'):'')+'/'+(c.exp_year?String(c.exp_year).slice(-2):'')});

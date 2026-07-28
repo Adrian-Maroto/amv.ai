@@ -8,8 +8,13 @@ import { ok, section, report, done } from '../lib/assert.mjs';
 const app = await bootApp({ user: { name: 'O', email: 'o@x.com', ini: 'O' } });
 const { page, errors } = app;
 
+/* Spending also passes the compliance gate (terms accepted + adult), so these
+   tests establish that first and then exercise the LIMIT behaviour. The gate
+   itself is covered in compliance.test.mjs, including that a minor is refused
+   even with limits wide open. */
 const setup = (cfg) => page.evaluate((c) => {
-  const S2 = window.AMVSpend;
+  const S2 = window.AMVSpend, C = window.AMVCompliance;
+  try { store('amv_consent', {}); C.accept(); C.setBirthYear(new Date().getFullYear() - 30); } catch (e) {}
   const d = new Date();
   const month = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
   S2.save(Object.assign(S2.cfg(), c, { month, spent: c.spent || 0 }));
