@@ -10412,6 +10412,28 @@ function _cwDefaultJobs(){ return [
     desc:'AMV watches how you actually work and proposes automations you did not think to ask for: the report you rebuild every Monday, the reply you always send, the thing you check daily. You approve the ones you want.',
     prompt:'Look for repeated patterns in the user activity: tasks done on a regular cadence, near-identical emails sent repeatedly, information checked over and over, manual steps repeated weekly. For each, propose a specific automation with what it would do and the time it would save. Only propose patterns that genuinely repeat - never invent one.' },
 
+  /* These read your REAL linked accounts through the bank connection - not
+     receipts guessed from email. Until a bank is linked they say so. */
+  { id:'money_morning', icon:'\uD83C\uDFE6', title:'Morning money summary', needs:'Bank connection', on:false,
+    desc:'Real balances across every account and card, what came in and went out yesterday, what is due next, and what is actually safe to spend today.',
+    prompt:'Report the real balances from the linked accounts, yesterday\u2019s money in and out, upcoming scheduled payments, and the genuinely safe-to-spend figure after commitments. Use only real account data. If an account cannot be read, say which one and why - never estimate a balance.' },
+
+  { id:'unusual_spend', icon:'\uD83D\uDD3A', title:'Unusual transaction alerts', needs:'Bank connection', on:false,
+    desc:'Learns what normal looks like for YOU, then flags charges far outside it - plus duplicate charges and anything from a merchant you have never used.',
+    prompt:'Compare recent transactions against this account\u2019s own normal pattern. Flag charges well outside it, same-day duplicates, and first-time merchants with a large amount. For each: date, merchant, amount, and why it stands out. Do not flag ordinary recurring bills.' },
+
+  { id:'low_balance', icon:'\uD83E\uDEAB', title:'Low balance early warning', needs:'Bank connection', on:false,
+    desc:'Warns you before a balance gets tight - accounting for payments already scheduled - so you move money in time instead of paying an overdraft fee.',
+    prompt:'Project each account balance forward against scheduled payments and known recurring debits. Warn when a projected balance falls below the user floor, with how many days remain and the exact shortfall. Never state a balance you cannot read.' },
+
+  { id:'credit_watch', icon:'\uD83D\uDCC9', title:'Credit score & report changes', needs:'Bank connection', on:false,
+    desc:'Tells you when your score moves and what caused it - a new account, a hard search, changed utilisation - and flags anything on your report you did not do.',
+    prompt:'Report changes to the credit score and report since the last check: the movement, the likely cause, and anything unrecognised such as an unknown account or hard search. Explain what would raise it most. If the score cannot be read, say so plainly.' },
+
+  { id:'budget_trend', icon:'\uD83D\uDCCA', title:'Budget pace & spending review', needs:'Bank connection', on:false,
+    desc:'Not a report after the damage - it tells you mid-month that you are trending over budget while you can still do something, and where the overspend is coming from.',
+    prompt:'Work out the current month\u2019s spending pace against the user budget and project the month-end total. If trending over, identify which categories are driving it and what change would bring it back. Use real transactions only.' },
+
   { id:'target_buy', icon:'\uD83D\uDECD\uFE0F', title:'Buy at my target price', needs:'Web research, Web automation', on:false, spend:true,
     desc:'Watches an item and buys it when it hits your target - within a spending limit you set. Every purchase asks you first unless you explicitly turn that off, and it can never exceed your cap.',
     prompt:'Monitor the specified item until it reaches the user target price. When it does, verify the total including shipping and tax is within the stated spend limit, then request approval to purchase. NEVER purchase above the limit, never buy a different item than specified, and always report the final total before buying.' },
@@ -20041,6 +20063,173 @@ try{
         can_i:{ desc:'Check whether you may do something on another account. Args: {email, scope}',
           async run(a){ const why=AMVFamily.check((a&&a.email)||'', (a&&a.scope)||'');
             return { allowed: !why, reason: why || 'Allowed by an approved link.' }; } }
+      }
+    });
+  }
+}catch(e){}
+/* ============================================================
+   REAL FINANCIAL CONNECTION
+
+   The money automations you asked for - live balances, unusual
+   transaction alerts, low balance alerts, credit score changes,
+   budget trending - need REAL account data, not receipts guessed
+   from email. That means a bank aggregator (Plaid, Teller, TrueLayer,
+   MX...). This layer is that connection, built so:
+
+   - It reads through the aggregator's API, so balances and
+     transactions are the real ones, not inferred.
+   - Credentials NEVER touch AMV. The user authenticates inside the
+     provider's own secure flow; AMV only ever holds an access token,
+     and that token lives SERVER-SIDE. The client holds nothing.
+   - It is READ-ONLY. AMV can see money; it cannot move it. There is
+     deliberately no transfer/payment action here - a compromised
+     agent must not be able to empty an account.
+   - Until a provider is configured every action reports exactly what
+     is missing rather than inventing a balance. A fabricated bank
+     figure is the single most damaging thing this product could do.
+   ============================================================ */
+const AMVFinance = {
+  /* Which aggregator the operator configured. Set server-side. */
+  provider(){ try{ return loadStr('amv_fin_provider') || ''; }catch(e){ return ''; } },
+  linked(){ try{ return !!loadStr('amv_fin_linked'); }catch(e){ return false; } },
+
+  _base(){ try{ return (loadStr('amv_api_base')||'').replace(/\/$/,''); }catch(e){ return ''; } },
+  _tok(){ try{ return loadStr('amv_api_token')||''; }catch(e){ return ''; } },
+
+  /* Every call goes through OUR server, never straight to the bank from the
+     browser - so the provider secret and the access token stay server-side. */
+  async _call(path, body){
+    const base = this._base();
+    if(!base){ const e=new Error('Connect the AMV backend first - bank data is read server-side so your tokens never touch the browser.'); e.code='needs_service'; throw e; }
+    if(!this.linked()){ const e=new Error('No bank account is linked yet. Link one in Settings and these run automatically.'); e.code='needs_auth'; throw e; }
+    const r = await fetch(base + '/v1/finance/' + path, {
+      method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + this._tok() },
+      body: JSON.stringify(body||{})
+    });
+    const d = await r.json().catch(()=>({}));
+    if(d && d.code){ const e=new Error(d.error||d.need||'Bank data unavailable.'); e.code=d.code; throw e; }
+    if(!r.ok) throw new Error(d.error || 'Could not reach your bank data.');
+    return d;
+  },
+
+  /* Live balances across every linked account. */
+  async accounts(){ return this._call('accounts'); },
+
+  /* Real transactions in a window. */
+  async transactions(days){ return this._call('transactions', { days: Math.min(365, Math.max(1, +days||30)) }); },
+
+  /* --- The analysis the automations run on top of real data. --- */
+
+  /* Unusual spending: flags a charge that is far outside this account's own
+     normal pattern, not a fixed threshold that would be wrong for everyone. */
+  unusual(txns, opts){
+    opts = opts || {};
+    const list = (txns||[]).filter(t => t && +t.amount < 0);   // debits
+    if(list.length < 8) return { ready:false, why:'Not enough transaction history yet to know what is normal for you.' };
+    const amts = list.map(t => Math.abs(+t.amount)).sort((a,b)=>a-b);
+    const median = amts[Math.floor(amts.length/2)];
+    const p90 = amts[Math.floor(amts.length*0.9)];
+    const bar = Math.max(p90 * (opts.sensitivity||1.5), median * 6);
+    const flagged = list.filter(t => Math.abs(+t.amount) >= bar).map(t => ({
+      date:t.date, merchant:t.merchant||t.name||'', amount:Math.abs(+t.amount),
+      why:'This is well above your usual spending (typical ' + median.toFixed(0) + ', this ' + Math.abs(+t.amount).toFixed(0) + ').'
+    }));
+    /* Duplicate charges. Naively flagging "same merchant, same amount, same
+       day" is wrong: buying coffee twice in a day is normal, and alerting on
+       it destroys trust in every other alert. So only flag when repeating is
+       ANOMALOUS for that merchant - if they routinely have multiple same-day
+       charges, that is the pattern, not a fault. */
+    const byMerchant = {};
+    list.forEach(t => {
+      const m = (t.merchant||t.name||'').toLowerCase();
+      const day = (t.date||'').slice(0,10);
+      const amt = Math.abs(+t.amount);
+      const rec = byMerchant[m] || (byMerchant[m] = { days:{}, repeatDays:new Set() });
+      const key = day + '|' + amt;
+      rec.days[key] = (rec.days[key]||0) + 1;
+      if(rec.days[key] > 1) rec.repeatDays.add(day);
+    });
+    const dupes = [];
+    Object.keys(byMerchant).forEach(m => {
+      const rec = byMerchant[m];
+      // repeating on 2+ separate days = this merchant just works that way
+      if(rec.repeatDays.size !== 1) return;
+      const day = [...rec.repeatDays][0];
+      Object.keys(rec.days).forEach(key => {
+        const [d, amtStr] = key.split('|');
+        if(d !== day || rec.days[key] < 2) return;
+        const amt = +amtStr;
+        if(amt < median) return;   // trivial amounts are not worth an alert
+        const orig = list.find(t => (t.merchant||t.name||'').toLowerCase() === m
+          && (t.date||'').slice(0,10) === d && Math.abs(+t.amount) === amt);
+        dupes.push({ date:d, merchant:(orig && (orig.merchant||orig.name)) || m, amount:amt,
+          count:rec.days[key],
+          why:'Charged ' + rec.days[key] + ' times on the same day for the same amount, which is unusual for this merchant.' });
+      });
+    });
+    return { ready:true, unusual:flagged, duplicates:dupes, typical:median, bar };
+  },
+
+  /* Low balance: warns BEFORE it bites, using real upcoming commitments. */
+  lowBalance(accounts, upcoming, floor){
+    const out = [];
+    (accounts||[]).forEach(a => {
+      const bal = +a.balance || 0;
+      const due = (upcoming||[]).filter(u => u.account === a.id).reduce((s,u)=>s+(+u.amount||0), 0);
+      const after = bal - due;
+      const limit = floor != null ? +floor : 100;
+      if(after < limit) out.push({ account:a.name||a.id, balance:bal, committed:due, projected:after,
+        why: due > 0
+          ? 'After the payments already scheduled, this drops to ' + after.toFixed(2) + '.'
+          : 'This is below your ' + limit + ' floor.' });
+    });
+    return out;
+  },
+
+  /* Budget trending: is this month's pace going to overshoot? */
+  budgetTrend(txns, monthlyBudget, now){
+    const budget = +monthlyBudget || 0;
+    if(!budget) return { ready:false, why:'Set a monthly budget and I can tell you if you are trending over it.' };
+    const d = now ? new Date(now) : new Date();
+    const day = d.getDate();
+    const daysInMonth = new Date(d.getFullYear(), d.getMonth()+1, 0).getDate();
+    const spent = (txns||[]).filter(t => {
+      if(!t || +t.amount >= 0) return false;
+      const td = new Date(t.date);
+      return td.getMonth() === d.getMonth() && td.getFullYear() === d.getFullYear();
+    }).reduce((s,t)=>s+Math.abs(+t.amount), 0);
+    const pace = day > 0 ? (spent / day) * daysInMonth : 0;
+    const over = pace - budget;
+    return { ready:true, spent, budget, projected:pace, day, daysInMonth,
+      onTrack: pace <= budget,
+      why: pace <= budget
+        ? 'At this pace you finish the month around ' + pace.toFixed(0) + ', inside your ' + budget.toFixed(0) + ' budget.'
+        : 'At this pace you finish around ' + pace.toFixed(0) + ' - about ' + over.toFixed(0) + ' over your ' + budget.toFixed(0) + ' budget.' };
+  }
+};
+try{ window.AMVFinance = AMVFinance; }catch(e){}
+
+/* Expose finance to chat/Crew. READ-ONLY on purpose: AMV can see money and
+   reason about it, but has no action that moves it. */
+try{
+  if(typeof AMVConnectors !== 'undefined'){
+    AMVConnectors.register({
+      id:'finance', name:'Bank & cards', auth:'oauth', channel:'api',
+      isLive(){ try{ return AMVFinance.linked() && !!(loadStr('amv_api_base')); }catch(e){ return false; } },
+      actions:{
+        balances:{ desc:'Live balances across every linked bank account and card.',
+          async run(){ return AMVFinance.accounts(); } },
+        transactions:{ desc:'Real transactions from your linked accounts. Args: {days}',
+          async run(a){ return AMVFinance.transactions((a&&a.days)||30); } },
+        unusual_activity:{ desc:'Charges well outside your own normal pattern, plus same-day duplicates.',
+          async run(a){ const t=await AMVFinance.transactions((a&&a.days)||60);
+            return AMVFinance.unusual(t.transactions||t.items||[], a||{}); } },
+        low_balance:{ desc:'Accounts heading below a safe floor once scheduled payments clear. Args: {floor}',
+          async run(a){ const acc=await AMVFinance.accounts();
+            return AMVFinance.lowBalance(acc.accounts||acc.items||[], acc.upcoming||[], a&&a.floor); } },
+        budget_trend:{ desc:'Whether this month is trending over budget. Args: {budget}',
+          async run(a){ const t=await AMVFinance.transactions(35);
+            return AMVFinance.budgetTrend(t.transactions||t.items||[], a&&a.budget); } }
       }
     });
   }

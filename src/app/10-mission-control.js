@@ -128,6 +128,28 @@ function _cwDefaultJobs(){ return [
     desc:'AMV watches how you actually work and proposes automations you did not think to ask for: the report you rebuild every Monday, the reply you always send, the thing you check daily. You approve the ones you want.',
     prompt:'Look for repeated patterns in the user activity: tasks done on a regular cadence, near-identical emails sent repeatedly, information checked over and over, manual steps repeated weekly. For each, propose a specific automation with what it would do and the time it would save. Only propose patterns that genuinely repeat - never invent one.' },
 
+  /* These read your REAL linked accounts through the bank connection - not
+     receipts guessed from email. Until a bank is linked they say so. */
+  { id:'money_morning', icon:'\uD83C\uDFE6', title:'Morning money summary', needs:'Bank connection', on:false,
+    desc:'Real balances across every account and card, what came in and went out yesterday, what is due next, and what is actually safe to spend today.',
+    prompt:'Report the real balances from the linked accounts, yesterday\u2019s money in and out, upcoming scheduled payments, and the genuinely safe-to-spend figure after commitments. Use only real account data. If an account cannot be read, say which one and why - never estimate a balance.' },
+
+  { id:'unusual_spend', icon:'\uD83D\uDD3A', title:'Unusual transaction alerts', needs:'Bank connection', on:false,
+    desc:'Learns what normal looks like for YOU, then flags charges far outside it - plus duplicate charges and anything from a merchant you have never used.',
+    prompt:'Compare recent transactions against this account\u2019s own normal pattern. Flag charges well outside it, same-day duplicates, and first-time merchants with a large amount. For each: date, merchant, amount, and why it stands out. Do not flag ordinary recurring bills.' },
+
+  { id:'low_balance', icon:'\uD83E\uDEAB', title:'Low balance early warning', needs:'Bank connection', on:false,
+    desc:'Warns you before a balance gets tight - accounting for payments already scheduled - so you move money in time instead of paying an overdraft fee.',
+    prompt:'Project each account balance forward against scheduled payments and known recurring debits. Warn when a projected balance falls below the user floor, with how many days remain and the exact shortfall. Never state a balance you cannot read.' },
+
+  { id:'credit_watch', icon:'\uD83D\uDCC9', title:'Credit score & report changes', needs:'Bank connection', on:false,
+    desc:'Tells you when your score moves and what caused it - a new account, a hard search, changed utilisation - and flags anything on your report you did not do.',
+    prompt:'Report changes to the credit score and report since the last check: the movement, the likely cause, and anything unrecognised such as an unknown account or hard search. Explain what would raise it most. If the score cannot be read, say so plainly.' },
+
+  { id:'budget_trend', icon:'\uD83D\uDCCA', title:'Budget pace & spending review', needs:'Bank connection', on:false,
+    desc:'Not a report after the damage - it tells you mid-month that you are trending over budget while you can still do something, and where the overspend is coming from.',
+    prompt:'Work out the current month\u2019s spending pace against the user budget and project the month-end total. If trending over, identify which categories are driving it and what change would bring it back. Use real transactions only.' },
+
   { id:'target_buy', icon:'\uD83D\uDECD\uFE0F', title:'Buy at my target price', needs:'Web research, Web automation', on:false, spend:true,
     desc:'Watches an item and buys it when it hits your target - within a spending limit you set. Every purchase asks you first unless you explicitly turn that off, and it can never exceed your cap.',
     prompt:'Monitor the specified item until it reaches the user target price. When it does, verify the total including shipping and tax is within the stated spend limit, then request approval to purchase. NEVER purchase above the limit, never buy a different item than specified, and always report the final total before buying.' },
