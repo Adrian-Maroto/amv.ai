@@ -25,7 +25,13 @@ const on = (el, ev, fn) => {
    Every data key is namespaced by the logged-in user's email so accounts
    on the same browser cannot see each other's data. A small allowlist of
    device-level keys (login record, theme, oauth handoff) stays global. */
-const _GLOBAL_KEYS = new Set(['amv_user','amv_theme','amv_accent','amv_sb_rail','amv_nickname','amv_work','amv_instructions','amv_session_started','amv_location_opt','amv_improve_opt','amv_credits','amv_credits_autoreload','amv_cap_websearch','amv_cap_memory','amv_cap_suggestions','amv_skills','amv_active_skills','amv_plugin_web','amv_plugin_code','amv_plugin_canvas','amv_plugin_automations','amv_plugin_vision','amv_reduce_motion','amv_oauth_return','amv_oauth_state','amv_gtoken','amv_gtoken_exp','amv_gauth','amv_api_base','amv_api_token','amv_api_refresh','amv_token_exp','amv_owner','amv_lang','amv_support_email',
+/* NOTE: 'amv_links' (linked/family accounts) is deliberately global rather
+   than per-user. A link is shared data BETWEEN two accounts - the person being
+   asked must be able to see and approve the request from their own session, so
+   it cannot live in the requester's private bucket. It is safe because every
+   read filters by the signed-in identity (AMVFamily.check/mine), and because
+   the server is authoritative for links once the backend is connected. */
+const _GLOBAL_KEYS = new Set(['amv_links','amv_user','amv_theme','amv_accent','amv_sb_rail','amv_nickname','amv_work','amv_instructions','amv_session_started','amv_location_opt','amv_improve_opt','amv_credits','amv_credits_autoreload','amv_cap_websearch','amv_cap_memory','amv_cap_suggestions','amv_skills','amv_active_skills','amv_plugin_web','amv_plugin_code','amv_plugin_canvas','amv_plugin_automations','amv_plugin_vision','amv_reduce_motion','amv_oauth_return','amv_oauth_state','amv_gtoken','amv_gtoken_exp','amv_gauth','amv_api_base','amv_api_token','amv_api_refresh','amv_token_exp','amv_owner','amv_lang','amv_support_email',
   'amv_market_local','amv_market_purchases','amv_market_wallet','amv_market_ratings','amv_market_reviews','amv_market_installed','amv_market_threads',
   'amv_cookie_consent','amv_analytics_id']);
 function _scopeKey(k){

@@ -75,6 +75,62 @@ function _cwDefaultJobs(){ return [
   { id:'life_admin', icon:'\uD83D\uDDD3\uFE0F', title:'Life admin & expiry reminders', needs:'Email, Calendar', on:false,
     desc:'Passport, licence, insurance, registration, medical checks, home and car maintenance - AMV tracks the dates and reminds you far enough ahead that renewing is easy.',
     prompt:'Track expiries and recurring life admin: passport, licence, insurance, vehicle registration and inspection, medical and dental checks, home and car maintenance. Report what is due in the next 90 days, how long renewal usually takes, and what to do first.' },
+
+  { id:'vip_alerts', icon:'\uD83D\uDEA8', title:'Important email alerts', needs:'Email', on:false,
+    desc:'Not a daily digest - AMV pings you the moment something genuinely urgent lands: your boss, a client, an offer, an interview invite, a deadline or anything money-related.',
+    prompt:'Watch incoming mail for genuinely urgent items: named VIP senders, offers, interview invitations, deadlines, legal or money matters, and anything explicitly marked urgent by a real person. Alert immediately with sender, subject and the one line that makes it urgent. Do NOT alert on newsletters, marketing or automated notifications.' },
+
+  { id:'recurring_email', icon:'\uD83D\uDCEE', title:'Recurring emails on a schedule', needs:'Email', on:false,
+    desc:'Send a real email on any schedule - weekly reports to your team, monthly invoices, a check-in every Friday. AMV writes it fresh each time from current information and sends it through your own Gmail.',
+    prompt:'At each scheduled run, compose the recurring email fresh from the latest information (do not resend a stale copy), then send it from the user Gmail account to the specified recipients. Confirm what was sent and to whom. If the recipient or content is unclear, ask instead of sending.' },
+
+  { id:'calendar_brief', icon:'\uD83C\uDF05', title:'Morning calendar briefing', needs:'Calendar', on:false,
+    desc:'Your day in one message before it starts: every meeting, travel time between them, what needs prep, where the free blocks are, and the one thing you should protect time for.',
+    prompt:'Summarise today from the calendar: each event with time and attendees, realistic travel or transition time between them, which need preparation, where the genuine free blocks are, and the single most important thing to protect time for. Flag any day that is overbooked.' },
+
+  { id:'conflict_watch', icon:'\u26A0\uFE0F', title:'Scheduling conflict alerts', needs:'Calendar', on:false,
+    desc:'Catches double-bookings, meetings with no travel time between them, and things scheduled outside your working hours - before they become an awkward cancellation.',
+    prompt:'Scan the calendar for problems: overlapping events, back-to-back meetings in different locations with no travel time, events outside stated working hours, and meetings with no agenda or attendees. Report each conflict and suggest the specific fix.' },
+
+  { id:'meeting_docs', icon:'\uD83D\uDCCE', title:'Prepare documents before meetings', needs:'Calendar, Email, Drive', on:false,
+    desc:'Before a meeting AMV pulls together everything you will need - the last thread, the attached files, the previous notes, the numbers - into one place so you are never scrambling.',
+    prompt:'For each upcoming meeting, gather the relevant material: prior email threads with attendees, attached documents, previous meeting notes and open action items. Produce one prep pack with the key facts and open questions. Only include documents that actually exist.' },
+
+  { id:'project_pulse', icon:'\uD83D\uDCC8', title:'Morning project updates', needs:'Email, Web research', on:false,
+    desc:'A single morning read on everything moving: what progressed, what stalled, what is blocked on someone else, and what needs you today.',
+    prompt:'Report the current state of each active project: what moved since the last update, what stalled, what is blocked and on whom, and what specifically needs the user today. Be concrete and short. Say plainly if a project had no activity.' },
+
+  { id:'overdue_escalation', icon:'\u23F0', title:'Overdue task escalation', needs:'Email, Calendar', on:false,
+    desc:'When something slips past its date AMV escalates it properly - reminds you, drafts the chase message to whoever is holding it up, and keeps raising it until it is actually closed.',
+    prompt:'Find tasks and commitments past their due date. For each: what it is, how overdue, who is holding it up, and the impact of continued delay. Draft a polite chase message for anything waiting on someone else. Escalate the tone gradually the longer it slips.' },
+
+  { id:'forum_watch', icon:'\uD83D\uDCAC', title:'Reddit & forum monitoring', needs:'Web research', on:false,
+    desc:'Watches subreddits, forums and communities for the topics, products or names you care about - and surfaces the threads actually worth reading.',
+    prompt:'Monitor the specified subreddits, forums and communities for the user keywords and topics. Report only genuinely relevant new threads: title, community, why it matters, and the link. Skip low-engagement noise and reposts.' },
+
+  { id:'groceries', icon:'\uD83D\uDED2', title:'Grocery & household restock', needs:'Email', on:false,
+    desc:'Learns what you buy and how often, then reminds you before you run out - and builds the list for you, grouped the way a shop is laid out.',
+    prompt:'From past orders and receipts, work out what the user buys and how often. Predict what is running low now, build a grouped shopping list, and note anything currently cheaper than usual. Only include items with real purchase history.' },
+
+  { id:'chores', icon:'\uD83E\uDDF9', title:'Chore & routine scheduling', needs:'Calendar', on:false,
+    desc:'Keeps the recurring stuff on a sensible rhythm - cleaning, laundry, bins, plants, pets - scheduled around your actual calendar instead of nagging at random.',
+    prompt:'Maintain the recurring chore schedule. Each run, report what is due today and this week, fitted around the real calendar so nothing lands during a meeting or while away. Reschedule anything missed rather than repeating the same reminder.' },
+
+  { id:'coupons', icon:'\uD83C\uDF9F\uFE0F', title:'Coupon & discount finder', needs:'Web research', on:false,
+    desc:'Before you buy, AMV hunts for working codes, cashback, student or member discounts - and tells you the real final price rather than the advertised one.',
+    prompt:'For the specified purchase or retailer, search for currently valid discount codes, cashback offers, student or membership discounts and price-match options. Report the real final price after each. State clearly if you cannot verify a code is still valid.' },
+
+  { id:'hotel_watch', icon:'\uD83C\uDFE8', title:'Hotel & stay price tracking', needs:'Web research', on:false,
+    desc:'Watches the price of the places you actually want to stay for your real dates, and tells you when to book - including when a refundable rate drops so you can rebook cheaper.',
+    prompt:'Track the price of the specified hotels for the specified dates. Report current price, how it compares to recent history, and whether to book now or wait. If an existing booking is refundable and the price has dropped, flag the rebooking saving explicitly.' },
+
+  { id:'ambient', icon:'\u2728', title:'Ambient automation - AMV suggests', needs:'Email, Calendar', on:false,
+    desc:'AMV watches how you actually work and proposes automations you did not think to ask for: the report you rebuild every Monday, the reply you always send, the thing you check daily. You approve the ones you want.',
+    prompt:'Look for repeated patterns in the user activity: tasks done on a regular cadence, near-identical emails sent repeatedly, information checked over and over, manual steps repeated weekly. For each, propose a specific automation with what it would do and the time it would save. Only propose patterns that genuinely repeat - never invent one.' },
+
+  { id:'target_buy', icon:'\uD83D\uDECD\uFE0F', title:'Buy at my target price', needs:'Web research, Web automation', on:false, spend:true,
+    desc:'Watches an item and buys it when it hits your target - within a spending limit you set. Every purchase asks you first unless you explicitly turn that off, and it can never exceed your cap.',
+    prompt:'Monitor the specified item until it reaches the user target price. When it does, verify the total including shipping and tax is within the stated spend limit, then request approval to purchase. NEVER purchase above the limit, never buy a different item than specified, and always report the final total before buying.' },
 ]; }
 function _cwApprovals(){ return load('amv_cw_approvals') || []; }
 function _cwSaveApprovals(a){ store('amv_cw_approvals', a); }
@@ -441,6 +497,7 @@ function renderCrewView(){
 
     <div class="crew-jobs-sec mc-start">
       <div class="sec-head"><h3>Start new work</h3><span class="sec-sub">Turn on a standing job - AMV runs it automatically and emails you results.</span></div>
+      <div class="cw-anything">These are starting points, not the limit. Type <b>anything</b> in the box above and AMV works out which accounts, sites and tools it needs and does it - on a schedule if you ask. If something it needs is not connected yet, it tells you exactly what to add.</div>
       <div class="cw-jobs-grid">${jobs.map(jobCard).join('')}</div>
     </div>
 

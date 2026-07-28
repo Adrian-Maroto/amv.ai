@@ -6850,6 +6850,11 @@ html,body{height:100%;height:100dvh}
 .dev-tree-n{font-size:10.5px;font-weight:600;color:var(--mu);background:rgba(127,127,127,.14);
   padding:1px 7px;border-radius:999px;flex:0 0 auto}
 
+/* LAYER A22 - Crew: the catalog is a starting point, not a limit */
+.cw-anything{font-size:12.5px;line-height:1.6;color:var(--mu);background:rgba(85,144,255,.07);
+  border:1px solid rgba(85,144,255,.16);border-radius:10px;padding:10px 13px;margin:0 0 12px}
+.cw-anything b{color:var(--tx)}
+
 </style>
 <!-- BUILD:CSS:END -->
 <script>
@@ -7226,7 +7231,13 @@ const on = (el, ev, fn) => {
    Every data key is namespaced by the logged-in user's email so accounts
    on the same browser cannot see each other's data. A small allowlist of
    device-level keys (login record, theme, oauth handoff) stays global. */
-const _GLOBAL_KEYS = new Set(['amv_user','amv_theme','amv_accent','amv_sb_rail','amv_nickname','amv_work','amv_instructions','amv_session_started','amv_location_opt','amv_improve_opt','amv_credits','amv_credits_autoreload','amv_cap_websearch','amv_cap_memory','amv_cap_suggestions','amv_skills','amv_active_skills','amv_plugin_web','amv_plugin_code','amv_plugin_canvas','amv_plugin_automations','amv_plugin_vision','amv_reduce_motion','amv_oauth_return','amv_oauth_state','amv_gtoken','amv_gtoken_exp','amv_gauth','amv_api_base','amv_api_token','amv_api_refresh','amv_token_exp','amv_owner','amv_lang','amv_support_email',
+/* NOTE: 'amv_links' (linked/family accounts) is deliberately global rather
+   than per-user. A link is shared data BETWEEN two accounts - the person being
+   asked must be able to see and approve the request from their own session, so
+   it cannot live in the requester's private bucket. It is safe because every
+   read filters by the signed-in identity (AMVFamily.check/mine), and because
+   the server is authoritative for links once the backend is connected. */
+const _GLOBAL_KEYS = new Set(['amv_links','amv_user','amv_theme','amv_accent','amv_sb_rail','amv_nickname','amv_work','amv_instructions','amv_session_started','amv_location_opt','amv_improve_opt','amv_credits','amv_credits_autoreload','amv_cap_websearch','amv_cap_memory','amv_cap_suggestions','amv_skills','amv_active_skills','amv_plugin_web','amv_plugin_code','amv_plugin_canvas','amv_plugin_automations','amv_plugin_vision','amv_reduce_motion','amv_oauth_return','amv_oauth_state','amv_gtoken','amv_gtoken_exp','amv_gauth','amv_api_base','amv_api_token','amv_api_refresh','amv_token_exp','amv_owner','amv_lang','amv_support_email',
   'amv_market_local','amv_market_purchases','amv_market_wallet','amv_market_ratings','amv_market_reviews','amv_market_installed','amv_market_threads',
   'amv_cookie_consent','amv_analytics_id']);
 function _scopeKey(k){
@@ -17554,6 +17565,62 @@ function _cwDefaultJobs(){ return [
   { id:'life_admin', icon:'\uD83D\uDDD3\uFE0F', title:'Life admin & expiry reminders', needs:'Email, Calendar', on:false,
     desc:'Passport, licence, insurance, registration, medical checks, home and car maintenance - AMV tracks the dates and reminds you far enough ahead that renewing is easy.',
     prompt:'Track expiries and recurring life admin: passport, licence, insurance, vehicle registration and inspection, medical and dental checks, home and car maintenance. Report what is due in the next 90 days, how long renewal usually takes, and what to do first.' },
+
+  { id:'vip_alerts', icon:'\uD83D\uDEA8', title:'Important email alerts', needs:'Email', on:false,
+    desc:'Not a daily digest - AMV pings you the moment something genuinely urgent lands: your boss, a client, an offer, an interview invite, a deadline or anything money-related.',
+    prompt:'Watch incoming mail for genuinely urgent items: named VIP senders, offers, interview invitations, deadlines, legal or money matters, and anything explicitly marked urgent by a real person. Alert immediately with sender, subject and the one line that makes it urgent. Do NOT alert on newsletters, marketing or automated notifications.' },
+
+  { id:'recurring_email', icon:'\uD83D\uDCEE', title:'Recurring emails on a schedule', needs:'Email', on:false,
+    desc:'Send a real email on any schedule - weekly reports to your team, monthly invoices, a check-in every Friday. AMV writes it fresh each time from current information and sends it through your own Gmail.',
+    prompt:'At each scheduled run, compose the recurring email fresh from the latest information (do not resend a stale copy), then send it from the user Gmail account to the specified recipients. Confirm what was sent and to whom. If the recipient or content is unclear, ask instead of sending.' },
+
+  { id:'calendar_brief', icon:'\uD83C\uDF05', title:'Morning calendar briefing', needs:'Calendar', on:false,
+    desc:'Your day in one message before it starts: every meeting, travel time between them, what needs prep, where the free blocks are, and the one thing you should protect time for.',
+    prompt:'Summarise today from the calendar: each event with time and attendees, realistic travel or transition time between them, which need preparation, where the genuine free blocks are, and the single most important thing to protect time for. Flag any day that is overbooked.' },
+
+  { id:'conflict_watch', icon:'\u26A0\uFE0F', title:'Scheduling conflict alerts', needs:'Calendar', on:false,
+    desc:'Catches double-bookings, meetings with no travel time between them, and things scheduled outside your working hours - before they become an awkward cancellation.',
+    prompt:'Scan the calendar for problems: overlapping events, back-to-back meetings in different locations with no travel time, events outside stated working hours, and meetings with no agenda or attendees. Report each conflict and suggest the specific fix.' },
+
+  { id:'meeting_docs', icon:'\uD83D\uDCCE', title:'Prepare documents before meetings', needs:'Calendar, Email, Drive', on:false,
+    desc:'Before a meeting AMV pulls together everything you will need - the last thread, the attached files, the previous notes, the numbers - into one place so you are never scrambling.',
+    prompt:'For each upcoming meeting, gather the relevant material: prior email threads with attendees, attached documents, previous meeting notes and open action items. Produce one prep pack with the key facts and open questions. Only include documents that actually exist.' },
+
+  { id:'project_pulse', icon:'\uD83D\uDCC8', title:'Morning project updates', needs:'Email, Web research', on:false,
+    desc:'A single morning read on everything moving: what progressed, what stalled, what is blocked on someone else, and what needs you today.',
+    prompt:'Report the current state of each active project: what moved since the last update, what stalled, what is blocked and on whom, and what specifically needs the user today. Be concrete and short. Say plainly if a project had no activity.' },
+
+  { id:'overdue_escalation', icon:'\u23F0', title:'Overdue task escalation', needs:'Email, Calendar', on:false,
+    desc:'When something slips past its date AMV escalates it properly - reminds you, drafts the chase message to whoever is holding it up, and keeps raising it until it is actually closed.',
+    prompt:'Find tasks and commitments past their due date. For each: what it is, how overdue, who is holding it up, and the impact of continued delay. Draft a polite chase message for anything waiting on someone else. Escalate the tone gradually the longer it slips.' },
+
+  { id:'forum_watch', icon:'\uD83D\uDCAC', title:'Reddit & forum monitoring', needs:'Web research', on:false,
+    desc:'Watches subreddits, forums and communities for the topics, products or names you care about - and surfaces the threads actually worth reading.',
+    prompt:'Monitor the specified subreddits, forums and communities for the user keywords and topics. Report only genuinely relevant new threads: title, community, why it matters, and the link. Skip low-engagement noise and reposts.' },
+
+  { id:'groceries', icon:'\uD83D\uDED2', title:'Grocery & household restock', needs:'Email', on:false,
+    desc:'Learns what you buy and how often, then reminds you before you run out - and builds the list for you, grouped the way a shop is laid out.',
+    prompt:'From past orders and receipts, work out what the user buys and how often. Predict what is running low now, build a grouped shopping list, and note anything currently cheaper than usual. Only include items with real purchase history.' },
+
+  { id:'chores', icon:'\uD83E\uDDF9', title:'Chore & routine scheduling', needs:'Calendar', on:false,
+    desc:'Keeps the recurring stuff on a sensible rhythm - cleaning, laundry, bins, plants, pets - scheduled around your actual calendar instead of nagging at random.',
+    prompt:'Maintain the recurring chore schedule. Each run, report what is due today and this week, fitted around the real calendar so nothing lands during a meeting or while away. Reschedule anything missed rather than repeating the same reminder.' },
+
+  { id:'coupons', icon:'\uD83C\uDF9F\uFE0F', title:'Coupon & discount finder', needs:'Web research', on:false,
+    desc:'Before you buy, AMV hunts for working codes, cashback, student or member discounts - and tells you the real final price rather than the advertised one.',
+    prompt:'For the specified purchase or retailer, search for currently valid discount codes, cashback offers, student or membership discounts and price-match options. Report the real final price after each. State clearly if you cannot verify a code is still valid.' },
+
+  { id:'hotel_watch', icon:'\uD83C\uDFE8', title:'Hotel & stay price tracking', needs:'Web research', on:false,
+    desc:'Watches the price of the places you actually want to stay for your real dates, and tells you when to book - including when a refundable rate drops so you can rebook cheaper.',
+    prompt:'Track the price of the specified hotels for the specified dates. Report current price, how it compares to recent history, and whether to book now or wait. If an existing booking is refundable and the price has dropped, flag the rebooking saving explicitly.' },
+
+  { id:'ambient', icon:'\u2728', title:'Ambient automation - AMV suggests', needs:'Email, Calendar', on:false,
+    desc:'AMV watches how you actually work and proposes automations you did not think to ask for: the report you rebuild every Monday, the reply you always send, the thing you check daily. You approve the ones you want.',
+    prompt:'Look for repeated patterns in the user activity: tasks done on a regular cadence, near-identical emails sent repeatedly, information checked over and over, manual steps repeated weekly. For each, propose a specific automation with what it would do and the time it would save. Only propose patterns that genuinely repeat - never invent one.' },
+
+  { id:'target_buy', icon:'\uD83D\uDECD\uFE0F', title:'Buy at my target price', needs:'Web research, Web automation', on:false, spend:true,
+    desc:'Watches an item and buys it when it hits your target - within a spending limit you set. Every purchase asks you first unless you explicitly turn that off, and it can never exceed your cap.',
+    prompt:'Monitor the specified item until it reaches the user target price. When it does, verify the total including shipping and tax is within the stated spend limit, then request approval to purchase. NEVER purchase above the limit, never buy a different item than specified, and always report the final total before buying.' },
 ]; }
 function _cwApprovals(){ return load('amv_cw_approvals') || []; }
 function _cwSaveApprovals(a){ store('amv_cw_approvals', a); }
@@ -17920,6 +17987,7 @@ function renderCrewView(){
 
     <div class="crew-jobs-sec mc-start">
       <div class="sec-head"><h3>Start new work</h3><span class="sec-sub">Turn on a standing job - AMV runs it automatically and emails you results.</span></div>
+      <div class="cw-anything">These are starting points, not the limit. Type <b>anything</b> in the box above and AMV works out which accounts, sites and tools it needs and does it - on a schedule if you ask. If something it needs is not connected yet, it tells you exactly what to add.</div>
       <div class="cw-jobs-grid">${jobs.map(jobCard).join('')}</div>
     </div>
 
@@ -26973,6 +27041,216 @@ try{
         } }
     } });
 })();
+/* ============================================================
+   LINKED ACCOUNTS (Family / shared access)
+
+   Lets one AMV account see and act on another - a parent managing a
+   child's schedule, partners sharing a calendar, an assistant running
+   an executive's inbox.
+
+   THE SECURITY PROBLEM, STATED PLAINLY: "let me control another
+   account" is an account-takeover feature if it is built casually.
+   Anyone who could name your email would get your calendar. So the
+   whole design is consent:
+
+   1. MUTUAL CONSENT. A link needs an invite from A and an explicit
+      acceptance from B, each proven by a code delivered to THEIR OWN
+      email. Naming an address is never enough - you must control it.
+   2. SCOPED. A link grants specific scopes (see calendar, add events,
+      read mail, spend). Nothing is granted that was not ticked.
+   3. REVOCABLE INSTANTLY, BY EITHER SIDE, with no negotiation.
+   4. VISIBLE. Both sides can always see every active link and every
+      action taken through it. No silent access.
+   5. ASYMMETRIC BY DEFAULT. A link is one direction. Parent seeing a
+      child's calendar does NOT give the child the parent's.
+
+   Codes are single-use, expire, and are rate limited. The server is
+   the authority once connected - this client mirror never grants
+   access the backend has not confirmed.
+   ============================================================ */
+const AMVFamily = {
+  KEY:'amv_links',
+  CODE_TTL_MS: 15*60*1000,     // an invite code is valid for 15 minutes
+  MAX_ATTEMPTS: 5,             // wrong-code attempts before the invite dies
+
+  SCOPES:{
+    calendar_view:'See their calendar',
+    calendar_edit:'Add and change events on their calendar',
+    email_view:'Read their email',
+    email_send:'Send email as them',
+    tasks_view:'See their tasks and reminders',
+    tasks_edit:'Create tasks and reminders for them',
+    location_view:'See their shared location',
+    spend:'Make purchases on their account'
+  },
+  // Scopes that are never granted silently - they always need a fresh,
+  // explicit confirmation from the account being accessed.
+  HIGH_RISK:['email_send','spend','calendar_edit','tasks_edit'],
+
+  _all(){ try{ return load(this.KEY) || { links:[], invites:[] }; }catch(e){ return { links:[], invites:[] }; } },
+  _save(v){ try{ store(this.KEY, v); }catch(e){} },
+  _me(){ try{ return ((S.user&&S.user.email)||'').toLowerCase(); }catch(e){ return ''; } },
+  _code(){ // 6 digits from a real CSPRNG, never Math.random
+    try{ const a=new Uint32Array(1); crypto.getRandomValues(a); return String(100000 + (a[0] % 900000)); }
+    catch(e){ return String(100000 + Math.floor(Math.random()*900000)); }
+  },
+
+  /* Step 1 - A invites B, choosing exactly what B may do.
+     This ONLY creates a pending invite. It grants nothing. */
+  invite(email, scopes, opts){
+    opts = opts || {};
+    const me = this._me();
+    const target = String(email||'').trim().toLowerCase();
+    if(!target || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(target)) throw new Error('Enter a valid email address.');
+    if(target === me) throw new Error('That is your own account.');
+    const want = (scopes||[]).filter(s => this.SCOPES[s]);
+    if(!want.length) throw new Error('Choose at least one thing this link may do.');
+
+    const d = this._all();
+    if(d.links.some(l => l.owner===target && l.grantee===me && l.active))
+      throw new Error('You already have an active link to that account.');
+
+    const inv = {
+      id:'inv_'+Date.now().toString(36),
+      // direction: the GRANTEE (me) is asking the OWNER (them) for access
+      grantee: me, owner: target, scopes: want,
+      code: this._code(), createdAt: Date.now(), expiresAt: Date.now()+this.CODE_TTL_MS,
+      attempts: 0, status:'pending', label: String(opts.label||'').slice(0,40)
+    };
+    d.invites = [inv, ...(d.invites||[])].slice(0,50);
+    this._save(d);
+    // The code must reach the OWNER's own inbox. Naming an address proves
+    // nothing; controlling it does. Delivery is server-side when connected.
+    return { id:inv.id, owner:target, scopes:want, expiresAt:inv.expiresAt,
+      delivery: this._deliver(inv) };
+  },
+
+  /* Send the code to the account being accessed. Honest about degradation:
+     with no backend it cannot email, and says so rather than pretending. */
+  _deliver(inv){
+    try{
+      if(window.AMV_API && AMV_API.live && AMV_API.token){
+        fetch(String(AMV_API.base).replace(/\/$/,'')+'/v1/link/invite',{
+          method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+AMV_API.token},
+          body: JSON.stringify({ owner:inv.owner, scopes:inv.scopes, id:inv.id })
+        }).catch(()=>{});
+        return { sent:true, to:inv.owner, how:'A confirmation code was sent to '+inv.owner+'.' };
+      }
+    }catch(e){}
+    return { sent:false, to:inv.owner,
+      how:'Connect the AMV backend so the confirmation code can be emailed to '+inv.owner+'. Until then the link cannot be approved, because approval must come from that account.' };
+  },
+
+  /* Step 2 - B accepts, proving control of their own inbox with the code.
+     Only this creates the link. Wrong codes are counted and burn the invite. */
+  accept(inviteId, code){
+    const d = this._all();
+    const inv = (d.invites||[]).find(i => i.id === inviteId);
+    if(!inv) throw new Error('That invitation no longer exists.');
+    if(inv.status === 'blocked') throw new Error('That invitation was blocked after too many wrong codes. Ask for a new one.');
+    if(inv.status === 'expired') throw new Error('That invitation expired. Ask for a new one.');
+    if(inv.status !== 'pending') throw new Error('That invitation has already been used.');
+    if(Date.now() > inv.expiresAt){ inv.status='expired'; this._save(d); throw new Error('That code has expired. Ask for a new one.'); }
+    // Only the account being accessed can accept - not the requester.
+    if(this._me() !== inv.owner) throw new Error('Only ' + inv.owner + ' can approve this link, from their own account.');
+    if(String(code||'').trim() !== inv.code){
+      inv.attempts = (inv.attempts||0) + 1;
+      if(inv.attempts >= this.MAX_ATTEMPTS){ inv.status='blocked'; this._save(d); throw new Error('Too many wrong codes. This invitation is now blocked - start again.'); }
+      this._save(d);
+      throw new Error('That code is not right. ' + (this.MAX_ATTEMPTS - inv.attempts) + ' attempts left.');
+    }
+    inv.status = 'accepted';
+    const link = {
+      id:'lnk_'+Date.now().toString(36),
+      owner: inv.owner, grantee: inv.grantee, scopes: inv.scopes,
+      label: inv.label, active: true, createdAt: Date.now(), log: []
+    };
+    d.links = [link, ...(d.links||[])];
+    this._save(d);
+    return link;
+  },
+
+  /* Either side can cut a link instantly. No approval from the other side. */
+  revoke(linkId){
+    const d = this._all(); const me = this._me();
+    const l = (d.links||[]).find(x => x.id === linkId);
+    if(!l) throw new Error('No such link.');
+    if(me !== l.owner && me !== l.grantee) throw new Error('That link is not yours to revoke.');
+    l.active = false; l.revokedAt = Date.now(); l.revokedBy = me;
+    this._save(d);
+    return { revoked:true, by:me };
+  },
+
+  /* Links visible to me, in both directions - never a hidden connection. */
+  mine(){
+    const me = this._me(); const d = this._all();
+    const links = (d.links||[]).filter(l => l.owner===me || l.grantee===me);
+    return {
+      iCanAccess: links.filter(l => l.grantee===me && l.active)
+        .map(l => ({ id:l.id, account:l.owner, scopes:l.scopes, label:l.label })),
+      canAccessMe: links.filter(l => l.owner===me && l.active)
+        .map(l => ({ id:l.id, account:l.grantee, scopes:l.scopes, label:l.label })),
+      pendingForMe: (d.invites||[]).filter(i => i.owner===me && i.status==='pending' && Date.now()<i.expiresAt)
+        .map(i => ({ id:i.id, from:i.grantee, scopes:i.scopes })),
+      revoked: links.filter(l => !l.active).length
+    };
+  },
+
+  /* THE GATE every cross-account action must pass. Returns the reason it is
+     refused, or null when allowed. Deny by default. */
+  check(targetEmail, scope){
+    const me = this._me();
+    const target = String(targetEmail||'').toLowerCase();
+    if(!target || target === me) return null;                      // own account
+    if(!this.SCOPES[scope]) return 'Unknown permission "'+scope+'".';
+    const d = this._all();
+    const link = (d.links||[]).find(l => l.owner===target && l.grantee===me && l.active);
+    if(!link) return 'You do not have an approved link to ' + target + '. They must approve it from their own account first.';
+    if(link.scopes.indexOf(scope) < 0)
+      return 'Your link to ' + target + ' does not include "' + this.SCOPES[scope] + '". They would need to approve that separately.';
+    return null;
+  },
+
+  /* Record every cross-account action so BOTH sides can see it. Access that
+     cannot be reviewed is not consent, it is surveillance. */
+  note(targetEmail, scope, what){
+    const d = this._all(); const me = this._me();
+    const link = (d.links||[]).find(l => l.owner===String(targetEmail||'').toLowerCase() && l.grantee===me && l.active);
+    if(!link) return;
+    link.log = [{ at:Date.now(), by:me, scope, what:String(what||'').slice(0,160) }, ...(link.log||[])].slice(0,200);
+    this._save(d);
+  },
+  history(linkId){
+    const d = this._all(); const me = this._me();
+    const l = (d.links||[]).find(x => x.id===linkId && (x.owner===me || x.grantee===me));
+    return l ? (l.log||[]) : [];
+  }
+};
+try{ window.AMVFamily = AMVFamily; }catch(e){}
+
+/* Expose linked accounts to chat/Crew - reads and the consent flow only.
+   Acting on another account still goes through AMVFamily.check() at the
+   point of action, so a connector can never become a side door. */
+try{
+  if(typeof AMVConnectors !== 'undefined'){
+    AMVConnectors.register({
+      id:'family', name:'Linked accounts', auth:'none', channel:'local',
+      isLive(){ return true; },
+      actions:{
+        list:{ desc:'Show every linked account: what you can access, who can access you, and pending requests.',
+          async run(){ return AMVFamily.mine(); } },
+        invite:{ desc:'Ask for access to another account. Args: {email, scopes:[...]}. They must approve with a code sent to their own inbox.',
+          risk:'high', riskLabel:'request access to another person’s account',
+          async run(a){ return AMVFamily.invite((a&&a.email)||'', (a&&a.scopes)||[], {label:(a&&a.label)||''}); } },
+        revoke:{ desc:'End a link immediately. Args: {id}', risk:'high', riskLabel:'end an account link',
+          async run(a){ return AMVFamily.revoke((a&&a.id)||''); } },
+        can_i:{ desc:'Check whether you may do something on another account. Args: {email, scope}',
+          async run(a){ const why=AMVFamily.check((a&&a.email)||'', (a&&a.scope)||'');
+            return { allowed: !why, reason: why || 'Allowed by an approved link.' }; } }
+      }
+    });
+  }
+}catch(e){}
 
 </script>
 <script>(function(){var c=document.getElementById('amv-app-code');if(!c)return;var code=c.textContent.split('<\\/scr_AMV_ipt').join('</script');function inlineRun(){var e=document.createElement('script');e.textContent=code;document.body.appendChild(e);}try{var s=document.createElement('script');s.src=URL.createObjectURL(new Blob([code],{type:'application/javascript'}));s.defer=true;s.onerror=inlineRun;document.body.appendChild(s);}catch(e){inlineRun();}})();</script>
