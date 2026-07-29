@@ -146,6 +146,20 @@ const AMVFamily = {
     return link;
   },
 
+  /* Say no. Only the account being asked for can refuse, and refusing kills
+     the code immediately - otherwise "no" would only mean "not yet", and a
+     request could sit there waiting to be accepted by mistake later. */
+  refuse(inviteId){
+    const d = this._all();
+    const inv = (d.invites||[]).find(i => i.id === inviteId);
+    if(!inv) throw new Error('That invitation no longer exists.');
+    if(this._me() !== inv.owner) throw new Error('Only ' + inv.owner + ' can refuse this, from their own account.');
+    if(inv.status !== 'pending') throw new Error('That invitation is no longer pending.');
+    inv.status = 'refused'; inv.refusedAt = Date.now();
+    this._save(d);
+    return { refused:true };
+  },
+
   /* Either side can cut a link instantly. No approval from the other side. */
   revoke(linkId){
     const d = this._all(); const me = this._me();

@@ -37,6 +37,8 @@ function _paletteCommands(){
     setNav('set-billing','Settings: Billing','billing','billing invoices credits payment subscription'),
     setNav('set-usage','Settings: Usage','usage','usage limits tokens'),
     setNav('set-capabilities','Settings: Capabilities','capabilities','capabilities web search memory toggles'),
+    setNav('set-spending','Settings: Spending','spending','spending limits money budget purchases cap allowance'),
+    setNav('set-family','Settings: Family & linked accounts','family','family linked accounts parent child share access permissions'),
     setNav('set-appearance','Settings: Appearance','appearance','appearance theme accent font motion'),
     setNav('set-skills','Settings: Skills','skills','skills presets instructions'),
     setNav('set-connectors','Settings: Connectors','integrations','connectors integrations connect apps gmail drive github'),

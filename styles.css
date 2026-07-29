@@ -6813,3 +6813,55 @@ html,body{height:100%;height:100dvh}
   border-radius:var(--r-pill);padding:3px 12px;cursor:pointer}
 .uni-stop:hover:not(:disabled){border-color:var(--red);color:var(--red)}
 .uni-stop:disabled{opacity:.6;cursor:default}
+
+/* ============================================================
+   LAYER A26 - Spending + family panes
+   Reuses the settings pane structure (.ss2, .lbl, .inp, .sw). New here:
+   the limit grid, the month bar, the scope fieldset, and one shared
+   status line style used by every aria-live region in both panes.
+   ============================================================ */
+.mf-gate{border:1px solid var(--bd);border-left:2px solid var(--accent);border-radius:var(--r-md);
+  padding:var(--sp-4) var(--sp-5);margin-bottom:var(--sp-5);background:var(--s1)}
+.mf-gate.warn{border-left-color:var(--gold)}
+.mf-gate h3{margin:0 0 var(--sp-2);font-size:var(--t-lg)}
+.mf-gate p{margin:0 0 var(--sp-3);font-size:var(--t-base);color:var(--mu);line-height:1.6}
+.mf-gate .inp{max-width:200px}
+.mf-gate .btn{margin-top:var(--sp-3)}
+.mf-terms{margin:0 0 var(--sp-3);padding-left:1.15em;font-size:var(--t-base);color:var(--mu);line-height:1.65}
+.mf-terms li{margin-bottom:4px}
+.mf-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:var(--sp-4);margin:var(--sp-4) 0}
+.mf-hint{font-size:var(--t-xs);color:var(--dim);margin-top:4px;line-height:1.45}
+.mf-say{font-size:var(--t-sm);line-height:1.5;margin:var(--sp-2) 0;min-height:1px;color:var(--mu)}
+.mf-say.ok{color:var(--grn)} .mf-say.err{color:var(--red)} .mf-say.warn{color:var(--gold)}
+.mf-bar{height:8px;border-radius:var(--r-pill);background:var(--s3);overflow:hidden}
+.mf-bar>span{display:block;height:100%;background:var(--accent);border-radius:var(--r-pill)}
+.mf-bar-l{font-size:var(--t-sm);color:var(--mu);margin-top:var(--sp-2)}
+.mf-empty{font-size:var(--t-base);color:var(--mu);line-height:1.6;margin:0}
+.mf-legal{font-size:var(--t-sm);color:var(--mu);line-height:1.7;margin:0}
+.mf-tbl{width:100%;border-collapse:collapse;font-size:var(--t-base)}
+.mf-cap{text-align:left;font-size:var(--t-sm);color:var(--dim);padding-bottom:var(--sp-2)}
+.mf-tbl th,.mf-tbl td{text-align:left;padding:7px 10px 7px 0;border-bottom:1px solid var(--bd)}
+.mf-tbl th{font-size:var(--t-xs);text-transform:uppercase;letter-spacing:.04em;color:var(--dim);font-weight:600}
+.mf-scopes{border:1px solid var(--bd);border-radius:var(--r-md);padding:var(--sp-3) var(--sp-4);margin:var(--sp-4) 0}
+.mf-scopes legend{font-size:var(--t-sm);color:var(--mu);padding:0 var(--sp-2)}
+/* min-height keeps the whole row a comfortable tap target - the box itself is
+   16px, but the label is what a finger hits. */
+.mf-scope{display:flex;align-items:flex-start;gap:var(--sp-3);padding:6px 0;min-height:32px;
+  font-size:var(--t-base);cursor:pointer}
+/* A global `input,textarea,select` rule styles every input as a text field,
+   which stretched these checkboxes to the full row width and pushed their
+   labels off the panel. Restore a real checkbox. */
+.mf-scope input[type="checkbox"]{appearance:auto;-webkit-appearance:checkbox;
+  flex:0 0 16px;width:16px;height:16px;min-width:16px;padding:0;margin:3px 0 0;
+  background:none;border:0;border-radius:0;accent-color:var(--accent);cursor:pointer}
+.mf-scope>span{flex:1 1 auto;min-width:0;line-height:1.5}
+.mf-hi{font-style:normal;font-size:var(--t-xs);color:var(--gold)}
+.mf-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:var(--sp-3)}
+.mf-link,.mf-pend{border:1px solid var(--bd);border-radius:var(--r-md);padding:var(--sp-3) var(--sp-4);background:var(--s1)}
+.mf-link{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-4);flex-wrap:wrap}
+.mf-link-a{font-size:var(--t-md);font-weight:600}
+.mf-link-s{font-size:var(--t-sm);color:var(--mu);margin-top:2px;line-height:1.5}
+.mf-codeline{display:flex;gap:var(--sp-3);flex-wrap:wrap;align-items:center;margin-top:var(--sp-2)}
+.mf-codeline .inp{max-width:130px;letter-spacing:.18em;font-family:var(--mn)}
+.mf-gone{opacity:.5}
+@media(max-width:600px){ .mf-grid{grid-template-columns:1fr} .mf-link{align-items:flex-start} }
