@@ -2672,6 +2672,9 @@ function showProfMenu(trigger) {
       '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="2" width="9" height="9" rx="1"/><rect x="13" y="2" width="9" height="9" rx="1"/><rect x="2" y="13" width="9" height="9" rx="1"/><rect x="13" y="13" width="9" height="9" rx="1"/></svg>'+
       'Apps &amp; Extensions</button>'+
     '<div class="prof-divider"></div>'+
+    '<button class="prof-item" id="pm-signout-erase" title="Use this on a shared or public computer">'+
+      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>'+
+      'Sign out &amp; erase this device</button>'+
     '<button class="prof-item danger" id="pm-signout">'+
       '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>'+
       'Sign Out</button>';
@@ -2685,6 +2688,7 @@ function showProfMenu(trigger) {
   document.getElementById('pm-billing')?.addEventListener('click',()=>{ close(); setTab('billing'); });
   document.getElementById('pm-apps')?.addEventListener('click',()=>{ close(); setTab('apps'); });
   document.getElementById('pm-signout')?.addEventListener('click',()=>{ close(); signOut(); });
+  document.getElementById('pm-signout-erase')?.addEventListener('click',()=>{ close(); signOutAndErase(); });
   setTimeout(()=>document.addEventListener('click',function h(e){if(!menu.contains(e.target)){close();document.removeEventListener('click',h);}},50));
 }
 /* Show Sign up / Log in in the header ONLY when signed out.

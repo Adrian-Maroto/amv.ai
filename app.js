@@ -2689,6 +2689,65 @@ function _wipeAccountState(){
 }
 try{ window._wipeAccountState=_wipeAccountState; }catch(e){}
 
+/* Erase everything this device has stored for an account.
+   Ordinary sign-out deliberately KEEPS your data so signing back in restores
+   your work - right for a personal device. But on a shared or public computer
+   (a school library, a family laptop) that leaves chats, memories, purchase
+   history and an uploaded resume readable by whoever sits down next. This is
+   the explicit "this is not my computer" exit.
+
+   It removes every key namespaced to the account, plus the connection tokens
+   that are stored globally. It cannot touch what the SERVER holds - deleting
+   the account itself is a separate, server-side action. */
+function eraseDeviceData(email){
+  const who = String(email || (S.user && S.user.email) || '').toLowerCase();
+  if(!who) return 0;
+  const prefix = 'u:' + who + '|';
+  let removed = 0;
+  try{
+    for(let i = localStorage.length - 1; i >= 0; i--){
+      const k = localStorage.key(i);
+      if(k && k.indexOf(prefix) === 0){ localStorage.removeItem(k); removed++; }
+    }
+  }catch(e){}
+  // global keys that are still personal to whoever was signed in
+  ['amv_gtoken','amv_gtoken_exp','amv_api_token','amv_api_refresh','amv_token_exp',
+   'amv_user','amv_credits','amv_nickname','amv_work','amv_instructions']
+    .forEach(k => { try{ localStorage.removeItem(k); removed++; }catch(e){} });
+  // account-scoped records that are keyed differently
+  try{
+    for(let i = localStorage.length - 1; i >= 0; i--){
+      const k = localStorage.key(i);
+      if(k && (k.indexOf('amv_oauthtx_') === 0 || k.indexOf('amv_pfp_' + who) === 0)){
+        localStorage.removeItem(k); removed++;
+      }
+    }
+  }catch(e){}
+  return removed;
+}
+try{ window.eraseDeviceData = eraseDeviceData; }catch(e){}
+
+/* Sign out AND wipe this device. Confirmed, because it is irreversible for
+   anything that has not synced to the server. */
+function signOutAndErase(){
+  const who = (S.user && S.user.email) || '';
+  const go = () => {
+    const n = eraseDeviceData(who);
+    try{ toast('Signed out and erased ' + n + ' items from this device.','success',5000); }catch(e){}
+    signOut();
+  };
+  try{
+    if(typeof confirmModal === 'function'){
+      confirmModal('Erase AMV data on this device?',
+        'This removes your chats, memories, projects, files and saved details from THIS device only. Anything synced to your account stays safe. Use this on a shared or public computer.',
+        go);
+      return;
+    }
+  }catch(e){}
+  if(typeof confirm !== 'function' || confirm('Erase all AMV data from this device? Your account is not deleted.')) go();
+}
+try{ window.signOutAndErase = signOutAndErase; }catch(e){}
+
 function signOut(){
   // best-effort server-side revocation (fire and forget)
   try{ if(window.AMV_API && AMV_API.live && AMV_API.token){ fetch(AMV_API.base.replace(/\/$/,'')+'/auth/logout',{method:'POST',headers:{'Authorization':'Bearer '+AMV_API.token}}).catch(()=>{}); } }catch(e){}
@@ -6331,6 +6390,9 @@ function showProfMenu(trigger) {
       '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="2" width="9" height="9" rx="1"/><rect x="13" y="2" width="9" height="9" rx="1"/><rect x="2" y="13" width="9" height="9" rx="1"/><rect x="13" y="13" width="9" height="9" rx="1"/></svg>'+
       'Apps &amp; Extensions</button>'+
     '<div class="prof-divider"></div>'+
+    '<button class="prof-item" id="pm-signout-erase" title="Use this on a shared or public computer">'+
+      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>'+
+      'Sign out &amp; erase this device</button>'+
     '<button class="prof-item danger" id="pm-signout">'+
       '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>'+
       'Sign Out</button>';
@@ -6344,6 +6406,7 @@ function showProfMenu(trigger) {
   document.getElementById('pm-billing')?.addEventListener('click',()=>{ close(); setTab('billing'); });
   document.getElementById('pm-apps')?.addEventListener('click',()=>{ close(); setTab('apps'); });
   document.getElementById('pm-signout')?.addEventListener('click',()=>{ close(); signOut(); });
+  document.getElementById('pm-signout-erase')?.addEventListener('click',()=>{ close(); signOutAndErase(); });
   setTimeout(()=>document.addEventListener('click',function h(e){if(!menu.contains(e.target)){close();document.removeEventListener('click',h);}},50));
 }
 /* Show Sign up / Log in in the header ONLY when signed out.
