@@ -75,6 +75,37 @@ const saveStr = (k,v) => { try{ localStorage.setItem(_scopeKey(k),v); }catch(e){
    config, a tricked user, or a future DOM bug), refuse to attach the token so it
    can't be exfiltrated. Re-pointing to a new backend just requires signing in
    again. localhost/127.0.0.1 are allowed for local development. */
+/* AMV-061: fetch() with an actual deadline, for the calls that do not go through
+   AMV_API._fetch (the AI engine, the connection test, third-party APIs).
+   A plain fetch() only rejects when the connection FAILS. A connection that
+   stalls - captive portal, phone switching networks, a dead tunnel whose socket
+   is still open - leaves the promise pending forever, and every caller waiting
+   on it is stuck with a spinner that will never stop. `ms` bounds time to the
+   first byte; the body then gets its own grace so a half-delivered response
+   cannot hang either. Pass stream:true when the caller reads the body itself. */
+async function fetchDeadline(url, init, ms){
+  const o = init || {};
+  const ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  let timedOut = false;
+  const arm = t => setTimeout(() => { timedOut = true; try{ ctrl && ctrl.abort(); }catch(_){} }, t);
+  const timer = ctrl ? arm(ms || 30000) : null;
+  try{
+    const r = await fetch(url, ctrl ? Object.assign({}, o, { signal: ctrl.signal }) : o);
+    clearTimeout(timer);
+    // Deliberately not cleared: harmless once the body is read, and the only
+    // thing standing between a stalled body and an infinite wait.
+    if(ctrl && !o.stream) arm(o.bodyTimeout || 20000);
+    return r;
+  }catch(e){
+    clearTimeout(timer);
+    if(typeof navigator !== 'undefined' && navigator.onLine === false){
+      throw new Error('You appear to be offline. Check your connection and try again.');
+    }
+    if(timedOut) throw new Error('The server did not respond in time. Please try again.');
+    throw e;
+  }
+}
+try{ window.fetchDeadline = fetchDeadline; }catch(e){}
 function _originOf(u){ try{ return new URL(u).origin; }catch(e){ return ''; } }
 function _isSecureApiOrigin(o){ return /^https:\/\/[^/]+$/.test(o) || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(o); }
 const AMV_API = {
@@ -109,14 +140,43 @@ const AMV_API = {
       || /\/(stripe|paypal|pay|subscribe|capture)/.test(path)
       || /\/(team\/(invite|join|remove|setrole|share)|market\/(publish|buy|withdraw|review|install)|deploy|sms\/register|widget\/save)/.test(path);
     const MAX = noRetry ? 0 : 2;        // up to 2 retries (3 total attempts)
+
+    /* AMV-061: a request with no deadline can hang forever.
+       fetch() only REJECTS when the connection fails outright. A stalled
+       connection - a captive portal that swallows packets, a phone moving from
+       wifi to cellular, a tunnel that died with the socket still open - leaves
+       the promise pending indefinitely. The retry loop below never runs, and
+       every caller awaiting it is stuck: the spinner spins, "Saving..." never
+       finishes, and the user has no idea whether it worked.
+       So every attempt gets a hard deadline. headerMs covers time-to-first-byte;
+       once the response arrives we allow a further bodyMs to read it, which also
+       catches a body that stalls halfway. Callers streaming a response pass
+       stream:true and take over the deadline themselves. */
+    const headerMs = ('timeout' in o) ? o.timeout : (/^\/v1\/messages/.test(path) ? 120000 : 20000);
+    const bodyMs = ('bodyTimeout' in o) ? o.bodyTimeout : 20000;
     let attempt = 0, r, lastErr;
     while (true) {
+      const ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      let timedOut = false;
+      const arm = ms => setTimeout(() => { timedOut = true; try{ ctrl && ctrl.abort(); }catch(_){} }, ms);
+      let timer = (ctrl && headerMs > 0) ? arm(headerMs) : null;
       try {
-        r = await fetch(url, o);
+        r = await fetch(url, ctrl ? Object.assign({}, o, { signal: ctrl.signal }) : o);
+        clearTimeout(timer);
+        /* Not cleared on purpose: if the caller reads the body promptly this
+           fires against an already-consumed response and does nothing. If the
+           body stalls, it turns an infinite hang into a real error. */
+        if (ctrl && !o.stream && bodyMs > 0) arm(bodyMs);
       } catch (netErr) {
-        // network-level failure (offline, DNS, reset) - retry if budget left
+        clearTimeout(timer);
         lastErr = netErr;
+        // Offline is not transient-in-the-next-400ms. Say so immediately rather
+        // than making the user watch three silent retries first.
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+          throw new Error('You appear to be offline. Check your connection and try again.');
+        }
         if (attempt < MAX) { await this._backoff(attempt++); continue; }
+        if (timedOut) throw new Error('The server did not respond in time. Please try again.');
         throw new Error('Network error - please check your connection and try again.');
       }
       // retry on transient server errors
@@ -215,7 +275,9 @@ const AMV_API = {
 
   // streaming AI call through the backend (same shape the app already uses)
   async messages(body){
-    return this._fetch('/v1/messages', {method:'POST', body:JSON.stringify(body)});
+    // stream:true - the caller reads the SSE body itself, so _fetch must not
+    // arm a deadline against a response that is meant to arrive slowly.
+    return this._fetch('/v1/messages', {method:'POST', body:JSON.stringify(body), stream:true});
   },
 
   // ---- server-side data sync ----
@@ -725,7 +787,7 @@ async function _errFlush(){
   const events = _ERR_QUEUE.splice(0, 20);
   _errSentCount += events.length;
   try{
-    await fetch(AMV_API.base.replace(/\/$/,'') + '/errors', {
+    await fetchDeadline(AMV_API.base.replace(/\/$/,'') + '/errors', {
       method:'POST',
       headers:{ 'Content-Type':'application/json' },
       body: JSON.stringify({ events }),

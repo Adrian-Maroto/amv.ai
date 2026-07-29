@@ -106,7 +106,7 @@ const AMVFamily = {
     const base = (typeof loadStr === 'function' && (loadStr('amv_api_base')||'')).replace(/\/$/,'');
     const tok = (typeof loadStr === 'function' && loadStr('amv_api_token')) || '';
     if(!base || !tok) return this.accept(inviteId, code);   // offline mirror
-    const r = await fetch(base + '/v1/link/accept', {
+    const r = await fetchDeadline(base + '/v1/link/accept', {
       method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
       body: JSON.stringify({ id:inviteId, code:String(code||'').trim() })
     });

@@ -110,7 +110,9 @@ const AMVConnectors = {
     );
     const init = { method: a.method || 'GET', headers };
     if(init.method !== 'GET' && a.body) init.body = JSON.stringify(typeof a.body === 'function' ? a.body(args || {}, ctx) : a.body);
-    const r = await fetch(url, init);
+    // A connector calling somebody else's API gets a deadline like everything
+    // else - a third-party outage must not freeze the step it belongs to.
+    const r = await fetchDeadline(url, init, 30000);
     let d = null; try{ d = await r.json(); }catch(e){ d = { ok: r.ok }; }
     if(!r.ok) throw new Error((d && (d.error_description || d.message || (d.error && d.error.message))) || ('Request failed (' + r.status + ')'));
     return d;
@@ -187,7 +189,7 @@ AMVConnectors.register({
           e.code = 'needs_service'; throw e;
         }
         const tok = (typeof loadStr === 'function' && loadStr('amv_api_token')) || '';
-        const r = await fetch(base.replace(/\/$/, '') + '/v1/browser/run', {
+        const r = await fetchDeadline(base.replace(/\/$/, '') + '/v1/browser/run', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok },
           body: JSON.stringify({
@@ -198,7 +200,7 @@ AMVConnectors.register({
             spendAmount: spend || undefined,
             spendLimit: (typeof AMVSpend !== 'undefined' ? (AMVSpend.cfg().perPurchase || undefined) : undefined)
           })
-        });
+        }, 240000);   // a real browser session is slow, but it is not infinite
         const d = await r.json().catch(() => ({}));
         // Surface the agent's structured stopping points as real blockers so the
         // UI can say exactly what is needed and resume when it is provided.

@@ -60,7 +60,7 @@ function _renderEmbedView(key){
   // Load this widget's config (title, greeting, accent) - public, safe fields only.
   (async()=>{
     try{
-      const r=await fetch(_embedApiBase()+'/v1/widget/config-public?k='+encodeURIComponent(key)).catch(()=>null);
+      const r=await fetchDeadline(_embedApiBase()+'/v1/widget/config-public?k='+encodeURIComponent(key),{},8000).catch(()=>null);
       // config-public is optional; if it 404s we just use defaults below.
       if(r&&r.ok){ const d=await r.json(); if(d&&d.config){
         if(d.config.title){ document.getElementById('emb-title').textContent=d.config.title; document.title=d.config.title; }
@@ -89,11 +89,12 @@ function _renderEmbedView(key){
     bub.innerHTML='<span class="emb-dots"><i></i><i></i><i></i></span>';
     let acc='';
     try{
-      const res=await fetch(_embedApiBase()+'/v1/widget/chat',{
+      const res=await fetchDeadline(_embedApiBase()+'/v1/widget/chat',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({ key, messages:history.slice(-20) })
-      });
+        body:JSON.stringify({ key, messages:history.slice(-20) }),
+        stream:true
+      },45000);
       if(!res.ok){
         let em='The assistant is unavailable right now.';
         try{ const ed=await res.json(); if(ed&&ed.error) em=ed.error; }catch(e){}

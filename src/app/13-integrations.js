@@ -9,7 +9,7 @@ const INTEGRATION_ACTIONS = {
     desc:'List the user\u2019s unread emails (sender + subject).', needs:'google',
     async run(){
       const t=(typeof ensureGToken==='function'? await ensureGToken() : getGToken()); if(!t) throw new Error('Gmail not connected');
-      const r=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10&labelIds=INBOX&q=is:unread',{headers:{'Authorization':'Bearer '+t}});
+      const r=await fetchDeadline('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10&labelIds=INBOX&q=is:unread',{headers:{'Authorization':'Bearer '+t}});
       const d=await r.json(); if(d.error) throw new Error(d.error.message);
       const msgs=d.messages||[];
       const details=await Promise.all(msgs.slice(0,8).map(m=>fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/'+m.id+'?format=metadata&metadataHeaders=Subject&metadataHeaders=From',{headers:{'Authorization':'Bearer '+t}}).then(r=>r.json())));
@@ -22,7 +22,7 @@ const INTEGRATION_ACTIONS = {
       const t=(typeof ensureGToken==='function'? await ensureGToken() : getGToken()); if(!t) throw new Error('Gmail not connected');
       const raw=['To: '+args.to,'Subject: '+(args.subject||''),'Content-Type: text/plain; charset=utf-8','',args.body||''].join('\r\n');
       const b64=btoa(unescape(encodeURIComponent(raw))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
-      const r=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send',{method:'POST',headers:{'Authorization':'Bearer '+t,'Content-Type':'application/json'},body:JSON.stringify({raw:b64})});
+      const r=await fetchDeadline('https://gmail.googleapis.com/gmail/v1/users/me/messages/send',{method:'POST',headers:{'Authorization':'Bearer '+t,'Content-Type':'application/json'},body:JSON.stringify({raw:b64})});
       const d=await r.json(); if(d.error) throw new Error(d.error.message);
       return {sent:true, id:d.id};
     }
@@ -32,7 +32,7 @@ const INTEGRATION_ACTIONS = {
     async run(){
       const t=(typeof ensureGToken==='function'? await ensureGToken() : getGToken()); if(!t) throw new Error('Calendar not connected');
       const now=new Date(), end=new Date(now.getTime()+7*864e5);
-      const r=await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin='+now.toISOString()+'&timeMax='+end.toISOString()+'&singleEvents=true&orderBy=startTime&maxResults=20',{headers:{'Authorization':'Bearer '+t}});
+      const r=await fetchDeadline('https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin='+now.toISOString()+'&timeMax='+end.toISOString()+'&singleEvents=true&orderBy=startTime&maxResults=20',{headers:{'Authorization':'Bearer '+t}});
       const d=await r.json(); if(d.error) throw new Error(d.error.message);
       return (d.items||[]).map(e=>({when:(e.start&&(e.start.dateTime||e.start.date)), title:e.summary}));
     }
@@ -42,7 +42,7 @@ const INTEGRATION_ACTIONS = {
     async run(args){
       const t=(typeof ensureGToken==='function'? await ensureGToken() : getGToken()); if(!t) throw new Error('Calendar not connected');
       const body={summary:args.title, description:args.description||'', start:{dateTime:args.start}, end:{dateTime:args.end||args.start}};
-      const r=await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events',{method:'POST',headers:{'Authorization':'Bearer '+t,'Content-Type':'application/json'},body:JSON.stringify(body)});
+      const r=await fetchDeadline('https://www.googleapis.com/calendar/v3/calendars/primary/events',{method:'POST',headers:{'Authorization':'Bearer '+t,'Content-Type':'application/json'},body:JSON.stringify(body)});
       const d=await r.json(); if(d.error) throw new Error(d.error.message);
       return {created:true, id:d.id, link:d.htmlLink};
     }
@@ -51,7 +51,7 @@ const INTEGRATION_ACTIONS = {
     desc:'List recent Google Drive files.', needs:'google',
     async run(){
       const t=(typeof ensureGToken==='function'? await ensureGToken() : getGToken()); if(!t) throw new Error('Drive not connected');
-      const r=await fetch('https://www.googleapis.com/drive/v3/files?pageSize=30&orderBy=modifiedTime desc&fields=files(name,mimeType,modifiedTime)',{headers:{'Authorization':'Bearer '+t}});
+      const r=await fetchDeadline('https://www.googleapis.com/drive/v3/files?pageSize=30&orderBy=modifiedTime desc&fields=files(name,mimeType,modifiedTime)',{headers:{'Authorization':'Bearer '+t}});
       const d=await r.json(); if(d.error) throw new Error(d.error.message);
       return (d.files||[]).map(f=>({name:f.name, type:(f.mimeType||'').split('/').pop(), modified:f.modifiedTime}));
     }
@@ -60,7 +60,7 @@ const INTEGRATION_ACTIONS = {
     desc:'List open issues for a repo. Args: {repo: "owner/name"}.', needs:'github',
     async run(args){
       const t=loadStr('amv_github'); if(!t) throw new Error('GitHub not connected');
-      const r=await fetch('https://api.github.com/repos/'+args.repo+'/issues?state=open&per_page=20',{headers:{'Authorization':'Bearer '+t,'Accept':'application/vnd.github+json'}});
+      const r=await fetchDeadline('https://api.github.com/repos/'+args.repo+'/issues?state=open&per_page=20',{headers:{'Authorization':'Bearer '+t,'Accept':'application/vnd.github+json'}});
       const d=await r.json(); if(d.message&&!Array.isArray(d)) throw new Error(d.message);
       return d.map(i=>({number:i.number, title:i.title, url:i.html_url}));
     }
@@ -69,7 +69,7 @@ const INTEGRATION_ACTIONS = {
     desc:'Open a GitHub issue. Args: {repo:"owner/name", title, body}.', needs:'github',
     async run(args){
       const t=loadStr('amv_github'); if(!t) throw new Error('GitHub not connected');
-      const r=await fetch('https://api.github.com/repos/'+args.repo+'/issues',{method:'POST',headers:{'Authorization':'Bearer '+t,'Accept':'application/vnd.github+json','Content-Type':'application/json'},body:JSON.stringify({title:args.title,body:args.body||''})});
+      const r=await fetchDeadline('https://api.github.com/repos/'+args.repo+'/issues',{method:'POST',headers:{'Authorization':'Bearer '+t,'Accept':'application/vnd.github+json','Content-Type':'application/json'},body:JSON.stringify({title:args.title,body:args.body||''})});
       const d=await r.json(); if(!d.number) throw new Error(d.message||'Failed to create issue');
       return {created:true, number:d.number, url:d.html_url};
     }
@@ -78,8 +78,8 @@ const INTEGRATION_ACTIONS = {
     desc:'Post a message to Slack. Args: {channel, text}.', needs:'slack',
     async run(args){
       const t=loadStr('amv_slack'); if(!t) throw new Error('Slack not connected');
-      if(/^https?:\/\//.test(t)){ await fetch(t,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:args.text})}); return {posted:true}; }
-      const r=await fetch('https://slack.com/api/chat.postMessage',{method:'POST',headers:{'Authorization':'Bearer '+t,'Content-Type':'application/json'},body:JSON.stringify({channel:args.channel||'#general',text:args.text})});
+      if(/^https?:\/\//.test(t)){ await fetchDeadline(t,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:args.text})}); return {posted:true}; }
+      const r=await fetchDeadline('https://slack.com/api/chat.postMessage',{method:'POST',headers:{'Authorization':'Bearer '+t,'Content-Type':'application/json'},body:JSON.stringify({channel:args.channel||'#general',text:args.text})});
       const d=await r.json(); if(!d.ok) throw new Error(d.error||'Slack post failed');
       return {posted:true, ts:d.ts};
     }
@@ -332,7 +332,7 @@ async function quickGmail(){
   if(!token){ toast('Connect Gmail first - click Connect in Integrations','error',4000); return; }
   toast('Loading inbox...','info',2000);
   try{
-    const r = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10&labelIds=INBOX&q=is:unread',{headers:{'Authorization':'Bearer '+token}});
+    const r = await fetchDeadline('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10&labelIds=INBOX&q=is:unread',{headers:{'Authorization':'Bearer '+token}});
     const d = await r.json();
     if(d.error){ toast('Gmail: '+d.error.message,'error'); return; }
     const msgs = d.messages||[];
@@ -355,7 +355,7 @@ async function quickCalendar(){
   toast('Loading calendar...','info',2000);
   try{
     const now=new Date(), end=new Date(now.getTime()+7*24*60*60*1000);
-    const r = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin='+now.toISOString()+'&timeMax='+end.toISOString()+'&singleEvents=true&orderBy=startTime&maxResults=20',{headers:{'Authorization':'Bearer '+token}});
+    const r = await fetchDeadline('https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin='+now.toISOString()+'&timeMax='+end.toISOString()+'&singleEvents=true&orderBy=startTime&maxResults=20',{headers:{'Authorization':'Bearer '+token}});
     const d = await r.json();
     if(d.error){ toast('Calendar: '+d.error.message,'error'); return; }
     const events = (d.items||[]).map(e=>(e.start&&(e.start.dateTime||e.start.date))+': '+e.summary).join('\n');
@@ -368,7 +368,7 @@ async function quickDrive(){
   if(!token){ toast('Connect Drive first','error',4000); return; }
   toast('Reading Drive...','info',2000);
   try{
-    const r = await fetch('https://www.googleapis.com/drive/v3/files?pageSize=30&orderBy=modifiedTime desc&fields=files(name,mimeType,modifiedTime)',{headers:{'Authorization':'Bearer '+token}});
+    const r = await fetchDeadline('https://www.googleapis.com/drive/v3/files?pageSize=30&orderBy=modifiedTime desc&fields=files(name,mimeType,modifiedTime)',{headers:{'Authorization':'Bearer '+token}});
     const d = await r.json();
     if(d.error){ toast('Drive: '+d.error.message,'error'); return; }
     const files = (d.files||[]).map(f=>f.name+' ('+(f.mimeType&&f.mimeType.split('/').pop())+')').join('\n');
@@ -795,7 +795,7 @@ async function _bgRunNext(){
       const token=getGToken();
       if(!token){task.status='failed';task.error='Gmail not connected - click Connect in Integrations';_bgQueue.running=false;return;}
       task.progress=30;
-      const r=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10&labelIds=INBOX&q=is:unread',{headers:{'Authorization':'Bearer '+token}});
+      const r=await fetchDeadline('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10&labelIds=INBOX&q=is:unread',{headers:{'Authorization':'Bearer '+token}});
       const d=await r.json();
       if(d.error){task.status='failed';task.error='Gmail: '+d.error.message;_bgQueue.running=false;return;}
       const msgs=d.messages||[];
@@ -811,7 +811,7 @@ async function _bgRunNext(){
       const token=getGToken();
       if(!token){task.status='failed';task.error='Calendar not connected';_bgQueue.running=false;return;}
       const now=new Date(),end=new Date(now.getTime()+7*24*60*60*1000);
-      const r=await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin='+now.toISOString()+'&timeMax='+end.toISOString()+'&singleEvents=true&orderBy=startTime&maxResults=20',{headers:{'Authorization':'Bearer '+token}});
+      const r=await fetchDeadline('https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin='+now.toISOString()+'&timeMax='+end.toISOString()+'&singleEvents=true&orderBy=startTime&maxResults=20',{headers:{'Authorization':'Bearer '+token}});
       const d=await r.json();
       if(d.error){task.status='failed';task.error='Calendar: '+d.error.message;_bgQueue.running=false;return;}
       const events=(d.items||[]).map(e=>(e.start&&(e.start.dateTime||e.start.date))+': '+e.summary).join('\n');

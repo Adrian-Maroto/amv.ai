@@ -1254,7 +1254,7 @@ function _renderSetPaneInner(){
       if(!tok){ body.innerHTML='<div class="fd-empty">Enter your admin token above and press Load stats.</div>'; return; }
       body.innerHTML='<div class="fd-loading">Loading\u2026</div>';
       try{
-        const r=await fetch(base.replace(/\/$/,'')+'/v1/admin/stats',{headers:{'Authorization':'Bearer '+tok}});
+        const r=await fetchDeadline(base.replace(/\/$/,'')+'/v1/admin/stats',{headers:{'Authorization':'Bearer '+tok}},15000);
         if(!r.ok){ body.innerHTML='<div class="fd-empty">'+(r.status===403?'Invalid admin token.':'Could not load stats ('+r.status+').')+'</div>'; return; }
         const d=await r.json();
         body.innerHTML=_founderDashHTML(d);
@@ -1263,7 +1263,7 @@ function _renderSetPaneInner(){
         if(kbtn) on(kbtn,'click',async()=>{
           const turnOn=!d.spend.killed;
           if(!confirm(turnOn?'Pause the ENTIRE service for all users?':'Resume the service?')) return;
-          await fetch(base.replace(/\/$/,'')+'/v1/admin/kill',{method:'POST',headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},body:JSON.stringify({on:turnOn})});
+          await fetchDeadline(base.replace(/\/$/,'')+'/v1/admin/kill',{method:'POST',headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},body:JSON.stringify({on:turnOn})});
           loadStats();
         });
       }catch(e){ body.innerHTML='<div class="fd-empty">Network error loading stats.</div>'; }
@@ -1321,7 +1321,9 @@ function _renderSetPaneInner(){
       if(!v){ toast('Enter a URL to test','error'); return; }
       if(out){ out.className='conn-test testing'; out.textContent='Testing\u2026'; }
       try{
-        const r=await fetch(v+'/v1/health',{method:'GET'});
+        // 10s: a backend that has not answered by then is not "reachable",
+        // and the user is sitting in front of a button that says Testing.
+        const r=await fetchDeadline(v+'/v1/health',{method:'GET'},10000);
         if(r.ok){ const d=await r.json().catch(()=>({})); if(out){out.className='conn-test ok';out.textContent=d.ok?'\u2713 Backend is healthy and reachable.':'\u2713 Reachable.';} saveStr('amv_api_base',v); if(window.AMV_API) AMV_API.base=v; const cs=$('conn-status'); if(cs){cs.className='conn-status ok';cs.innerHTML='<span class="conn-dot"></span>Backend reachable - sign in to activate';} }
         else{ if(out){out.className='conn-test err';out.textContent='\u2717 Backend responded with '+r.status+'. Check the URL.';} }
       }catch(err){ if(out){out.className='conn-test err';out.textContent='\u2717 Could not reach that URL. Check it\u2019s deployed and correct.';} }
@@ -2096,9 +2098,9 @@ async function runCanvasAutomation() {
 
     try{
       // Fetch courses
-      const coursesRes=await fetch(baseUrl+'/api/v1/courses?enrollment_type=student&per_page=20',{
+      const coursesRes=await fetchDeadline(baseUrl+'/api/v1/courses?enrollment_type=student&per_page=20',{
         headers:{'Authorization':'Bearer '+token}
-      });
+      },20000);
       if(!coursesRes.ok) throw new Error('Canvas API error: '+coursesRes.status+' - check your token and URL.');
       const courses=await coursesRes.json();
       log('Found '+courses.length+' active courses.','var(--green)');
@@ -2107,9 +2109,9 @@ async function runCanvasAutomation() {
       for(const course of courses.slice(0,5)){
         log('Checking '+course.name+'...','var(--tx)');
         // Fetch assignments
-        const assignRes=await fetch(baseUrl+'/api/v1/courses/'+course.id+'/assignments?bucket=upcoming&per_page=10',{
+        const assignRes=await fetchDeadline(baseUrl+'/api/v1/courses/'+course.id+'/assignments?bucket=upcoming&per_page=10',{
           headers:{'Authorization':'Bearer '+token}
-        });
+        },20000);
         const assignments=await assignRes.json();
         const pending=assignments.filter(a=>!a.has_submitted_submissions&&a.due_at);
         total+=pending.length;
@@ -2668,7 +2670,7 @@ async function refreshGToken(){
   if(!base || !tok) return null;
   _gRefreshInFlight = (async () => {
     try{
-      const r = await fetch(base + '/v1/oauth/google/refresh', {
+      const r = await fetchDeadline(base + '/v1/oauth/google/refresh', {
         method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok}, body:'{}' });
       const d = await r.json().catch(()=>({}));
       if(!r.ok || !d.ok || !d.access_token) return null;

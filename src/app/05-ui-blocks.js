@@ -800,9 +800,40 @@ async function _callAI(msgs, _opts) {
     const _toolBlocks={}; let _stopReason='';
     // Live research tracking - real searches and real sources, surfaced as they happen.
     const _research={ active:false, searches:0, sources:new Map(), done:false };
+
+    /* AMV-062: a stream can stall without ever ending. The 45s timeout above
+       covers getting the response; once it arrives, reader.read() has no
+       deadline at all. If the connection dies mid-answer - phone leaving wifi,
+       a proxy dropping an idle socket - the socket stays open, no bytes ever
+       arrive, and read() never settles. AMV would sit there with a blinking
+       cursor forever, and whatever it had already written would be stuck in a
+       message that is still "streaming".
+       So: if nothing arrives for IDLE_MS, stop waiting. Anything already
+       written is KEPT and marked as cut off with a Retry, because a partial
+       answer the user can read beats a spinner or an empty error card. */
+    // window.__amvStreamIdleMs exists so the stall path can be exercised in a
+    // test without a 30-second wait. Nothing in the product sets it.
+    const IDLE_MS=(typeof window!=='undefined'&&window.__amvStreamIdleMs)||30000;
+    let _stalled=false;
+    const _readOnce=()=>new Promise((resolve,reject)=>{
+      const t=setTimeout(()=>reject(Object.assign(new Error('stream-stalled'),{_stall:true})),IDLE_MS);
+      reader.read().then(v=>{ clearTimeout(t); resolve(v); },e=>{ clearTimeout(t); reject(e); });
+    });
+
     while(true){
       if(_userStopped){ try{ reader.cancel(); }catch(e){} break; }
-      const {done,value}=await reader.read();
+      let _chunk;
+      try{ _chunk=await _readOnce(); }
+      catch(re){
+        if(!(re&&re._stall)) throw re;
+        try{ reader.cancel(); }catch(e){}
+        try{ _activeStreamCtrl&&_activeStreamCtrl.abort(); }catch(e){}
+        if(fullText){ _stalled=true; break; }
+        throw new Error(navigator.onLine===false
+          ? 'You went offline before AMV could answer. Reconnect and retry.'
+          : 'The connection stalled before AMV could answer. Please retry.');
+      }
+      const {done,value}=_chunk;
       if(done) break;
       buffer+=decoder.decode(value,{stream:true});
       const lines=buffer.split('\n');
@@ -926,7 +957,9 @@ async function _callAI(msgs, _opts) {
       return sendMsg({ _continueTools:true });
     }
     if(!fullText) fullText='(no response)';
-    msgs[streamIdx]={r:'a',c:fullText,model:S.model};
+    msgs[streamIdx]=_stalled
+      ? {r:'a',c:fullText,model:S.model,_interrupted:true}
+      : {r:'a',c:fullText,model:S.model};
     _recordUsageOnce();
     // Auto-title chat
     const cv=getCurConv();
@@ -942,7 +975,9 @@ async function _callAI(msgs, _opts) {
       _recordUsageOnce();
       setMsgs(msgs); S.busy=false; renderChatMsgs(); _userStopped=false; return;
     }
-    const friendly=/api error|rejected|forbidden|rate-limit|malformed|too long|server error|network|timed out|offline|busy/i.test(e.message)?e.message:aegisErrorMessage(0,e.message);
+    // "stalled" is already a plain-English explanation; without it here the
+    // generic handler rewrote it into a wrong guess about ad-blockers and CORS.
+    const friendly=/api error|rejected|forbidden|rate-limit|malformed|too long|server error|network|timed out|stalled|offline|busy/i.test(e.message)?e.message:aegisErrorMessage(0,e.message);
     AEGIS.log('exception',{msg:String(e.message).slice(0,200)}); AEGIS.recordError();
     _recordUsageOnce();   // record any tokens consumed before the failure
     _streamBubbleReset();
@@ -1502,7 +1537,10 @@ function renderChatMsgs() {
         content=(m._research?m._research:'')+'<div class="ai-working"><span class="ai-think-orb"></span><span class="ai-working-shimmer">'+escH(m._status||'Working…')+'</span></div>';
       }
     } else {
-      content=isU?escH(rawText).replace(/\n/g,'<br>'):((m._research?m._research:'')+md(typeof m.c==='string'?m.c:rawText)+(m._rendered?('<div class="chat-tool-out">'+m._rendered+'</div>'):'')+(m.streaming?'<span class="stream-cursor"></span>':''));
+      content=isU?escH(rawText).replace(/\n/g,'<br>'):((m._research?m._research:'')+md(typeof m.c==='string'?m.c:rawText)+(m._rendered?('<div class="chat-tool-out">'+m._rendered+'</div>'):'')+(m.streaming?'<span class="stream-cursor"></span>':'')+
+        // The answer above is real but incomplete - say so rather than letting it
+        // look like AMV simply stopped mid-sentence on purpose.
+        (m._interrupted?'<div class="ai-cut"><span>The connection dropped partway through. What you see above is what arrived.</span><button class="ai-snag-retry" data-action="retry-ai" type="button">Retry</button></div>':''));
     }
     const mdlLabel=!isU&&m.model?'<span style="font-size:10px;color:var(--t2);margin-bottom:3px">'+MODELS[m.model]?.label+' Model</span>':'';
         const actions=(!isU && (m._error||m._retrying||m._quota))? '' : (isU?
@@ -1844,11 +1882,11 @@ async function _premiumImageSrc(prompt,style,ratio,seed){
     const key=prompt+'|'+style+'|'+ratio+'|'+seed;
     if(_premiumImgCache[key]) return _premiumImgCache[key];
     const full=_imgFullPrompt(prompt,style);
-    const r=await fetch(AMV_API.base.replace(/\/$/,'')+'/v1/image/generate',{
+    const r=await fetchDeadline(AMV_API.base.replace(/\/$/,'')+'/v1/image/generate',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+AMV_API.token},
       body:JSON.stringify({prompt:full,width:w,height:h})
-    });
+    }, 180000);   // image generation is genuinely slow; three minutes is the ceiling
     if(!r.ok) return null;
     const d=await r.json().catch(()=>({}));
     if(d.configured===false){ window.__AMV_NO_PREMIUM_IMG__=true; return null; }  // remember: skip next time
@@ -2109,7 +2147,7 @@ const _VID = { polls: {} };
 
 async function _vidApi(path, body){
   if(!(window.AMV_API && AMV_API.live)) throw new Error('__NOT_CONNECTED__');
-  const r = await fetch(AMV_API.base.replace(/\/$/,'') + path, {
+  const r = await fetchDeadline(AMV_API.base.replace(/\/$/,'') + path, {
     method:'POST',
     headers:{ 'Content-Type':'application/json',
               ...(AMV_API.token ? { 'Authorization':'Bearer '+AMV_API.token } : {}) },

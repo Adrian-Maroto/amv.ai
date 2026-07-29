@@ -668,7 +668,7 @@ async function handleGoogleCred(resp) {
 
   if(window.AMV_API && AMV_API.live && AMV_API.base){
     try{
-      const r=await fetch(AMV_API.base.replace(/\/$/,'')+'/auth/google', {
+      const r=await fetchDeadline(AMV_API.base.replace(/\/$/,'')+'/auth/google', {
         method:'POST', headers:{'Content-Type':'application/json'},
         body:JSON.stringify({ credential:resp.credential })   // server verifies this with Google
       });

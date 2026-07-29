@@ -425,7 +425,7 @@ function _mountStripe(pk,plan){
             // The SERVER decides whether the plan is granted. Never assume the
             // charge worked: an unchecked response here would hand out paid
             // plans for free whenever the request failed or needed 3-D Secure.
-            const r=await fetch(AMV_API.base.replace(/\/$/,'')+'/v1/subscribe',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+AMV_API.token},body:JSON.stringify({plan,payment_method:paymentMethod.id})});
+            const r=await fetchDeadline(AMV_API.base.replace(/\/$/,'')+'/v1/subscribe',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+AMV_API.token},body:JSON.stringify({plan,payment_method:paymentMethod.id})});
             const d=await r.json().catch(()=>({}));
             if(!r.ok || !d.ok){
               const el=$('stripe-card-errors');

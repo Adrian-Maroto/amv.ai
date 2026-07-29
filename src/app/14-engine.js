@@ -45,7 +45,7 @@ async function aiCompleteLong(prompt, system, opts){
     if(system) body.system = system + (opts.noLang?'':_langInstruction());
     else if(!opts.noLang) body.system = _langInstruction();
 
-    const res = await fetch(url, {method:'POST', headers, body: JSON.stringify(body)});
+    const res = await fetchDeadline(url, {method:'POST', headers, body: JSON.stringify(body)}, 180000);
     if(!res.ok){ const t=await res.text().catch(()=>''); throw new Error('AI error '+res.status+': '+t.slice(0,200)); }
     const data = await res.json();
     const chunk = (data.content||[]).map(b=>b.text||'').join('');
@@ -85,7 +85,7 @@ async function aiComplete(prompt, system, opts){
   const body = { model: modelStr, max_tokens: maxTok, messages: [{role:'user', content: prompt}] };
   if(system) body.system = system + (opts.noLang?'':_langInstruction());
   else if(!opts.noLang) body.system = _langInstruction();
-  const res = await fetch(url,{method:'POST',headers,body:JSON.stringify(body)});
+  const res = await fetchDeadline(url,{method:'POST',headers,body:JSON.stringify(body)}, 120000);
   if(!res.ok){ const t=await res.text().catch(()=>''); throw new Error('AI error '+res.status+': '+t.slice(0,200)); }
   const data = await res.json();
   const text=_noDash((data.content||[]).map(b=>b.text||'').join('').trim());
@@ -912,7 +912,7 @@ async function crewRun(kind, title, opts){
       up({note:'checking Gmail…'});
       const token=(typeof getGToken==='function')?getGToken():null;
       if(!token){ up({status:'failed', body:'**Gmail not connected.** Go to Integrations and connect Gmail, then run this again.'}); return res; }
-      const r=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10&labelIds=INBOX&q=is:unread',{headers:{'Authorization':'Bearer '+token}});
+      const r=await fetchDeadline('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10&labelIds=INBOX&q=is:unread',{headers:{'Authorization':'Bearer '+token}});
       const d=await r.json();
       if(d.error){ up({status:'failed', body:'Gmail error: '+d.error.message}); return res; }
       const msgs=d.messages||[];
@@ -1131,7 +1131,7 @@ async function _taskRun(mode){
 async function _autoApi(path, body){
   if(!(window.AMV_API && AMV_API.live && AMV_API.token))
     throw new Error('not-connected');
-  const r = await fetch(AMV_API.base.replace(/\/$/,'') + path, {
+  const r = await fetchDeadline(AMV_API.base.replace(/\/$/,'') + path, {
     method:'POST',
     headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+AMV_API.token },
     body: JSON.stringify(body||{})

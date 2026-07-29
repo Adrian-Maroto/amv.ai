@@ -33,7 +33,7 @@ const AMVFinance = {
     const base = this._base();
     if(!base){ const e=new Error('Connect the AMV backend first - bank data is read server-side so your tokens never touch the browser.'); e.code='needs_service'; throw e; }
     if(!this.linked()){ const e=new Error('No bank account is linked yet. Link one in Settings and these run automatically.'); e.code='needs_auth'; throw e; }
-    const r = await fetch(base + '/v1/finance/' + path, {
+    const r = await fetchDeadline(base + '/v1/finance/' + path, {
       method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + this._tok() },
       body: JSON.stringify(body||{})
     });

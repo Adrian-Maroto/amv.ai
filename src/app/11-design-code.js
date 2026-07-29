@@ -952,7 +952,7 @@ function _devDownloadProject(){
    hosts the site and returns a shareable link that works for anyone. */
 async function _deployApi(path, body){
   if(!(window.AMV_API && AMV_API.live && AMV_API.token)) throw new Error('not-connected');
-  const r = await fetch(AMV_API.base.replace(/\/$/,'')+path, {
+  const r = await fetchDeadline(AMV_API.base.replace(/\/$/,'')+path, {
     method:'POST',
     headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+AMV_API.token },
     body: JSON.stringify(body||{})
@@ -1065,7 +1065,7 @@ async function openErrors(){
 
   let data=null;
   try{
-    const r=await fetch(AMV_API.base.replace(/\/$/,'')+'/errors/list',{
+    const r=await fetchDeadline(AMV_API.base.replace(/\/$/,'')+'/errors/list',{
       method:'POST', headers:{'Content-Type':'application/json','X-Admin-Token':token},
       body: JSON.stringify({})
     });
@@ -1119,14 +1119,14 @@ async function openErrors(){
   ovr.querySelectorAll('[data-fix]').forEach(b=>on(b,'click',async()=>{
     b.disabled=true; b.textContent='\u2026';
     try{
-      await fetch(AMV_API.base.replace(/\/$/,'')+'/errors/resolve',{
+      await fetchDeadline(AMV_API.base.replace(/\/$/,'')+'/errors/resolve',{
         method:'POST', headers:{'Content-Type':'application/json','X-Admin-Token':token},
         body: JSON.stringify({ fp:b.dataset.fix })});
       openErrors();
     }catch(e){ b.disabled=false; b.textContent='Resolve'; }
   }));
   on($('er-all'),'click',async()=>{
-    try{ await fetch(AMV_API.base.replace(/\/$/,'')+'/errors/resolve',{
+    try{ await fetchDeadline(AMV_API.base.replace(/\/$/,'')+'/errors/resolve',{
       method:'POST', headers:{'Content-Type':'application/json','X-Admin-Token':token},
       body: JSON.stringify({ all:true })}); openErrors(); }catch(e){}
   });
@@ -1434,9 +1434,9 @@ async function runAgentic(surface, userPrompt, opts){
       ...(tools.length ? { tools } : {})
     };
 
-    const r = await fetch(_aiBase(), {
+    const r = await fetchDeadline(_aiBase(), {
       method:'POST', headers:_aiHeaders(), body:JSON.stringify(body)
-    });
+    }, 120000);
     if(!r.ok){
       const t = await r.text().catch(()=>'');
       throw new Error('AMV request failed ('+r.status+'): '+t.slice(0,160));

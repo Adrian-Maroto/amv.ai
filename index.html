@@ -6871,6 +6871,16 @@ html,body{height:100%;height:100dvh}
 .prof-item.danger .prof-note{color:var(--red);opacity:.72}
 .prof-item.danger:hover{background:rgba(239,68,68,.1)}
 
+/* ============================================================
+   LAYER A24 - Degraded network: an answer that was cut off says so
+   A stalled stream used to leave a blinking cursor forever. Now the
+   partial answer is kept and labelled, with a Retry beside it.
+   ============================================================ */
+.ai-cut{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-3);margin-top:var(--sp-3);
+  padding:var(--sp-3) var(--sp-4);border:1px solid var(--bd);border-left:2px solid var(--gold);
+  border-radius:var(--r-md);background:rgba(224,179,65,.06);font-size:var(--t-sm);color:var(--mu)}
+.ai-cut span{flex:1 1 220px;line-height:1.5}
+
 </style>
 <!-- BUILD:CSS:END -->
 <script>
@@ -7297,6 +7307,37 @@ const saveStr = (k,v) => { try{ localStorage.setItem(_scopeKey(k),v); }catch(e){
    config, a tricked user, or a future DOM bug), refuse to attach the token so it
    can't be exfiltrated. Re-pointing to a new backend just requires signing in
    again. localhost/127.0.0.1 are allowed for local development. */
+/* AMV-061: fetch() with an actual deadline, for the calls that do not go through
+   AMV_API._fetch (the AI engine, the connection test, third-party APIs).
+   A plain fetch() only rejects when the connection FAILS. A connection that
+   stalls - captive portal, phone switching networks, a dead tunnel whose socket
+   is still open - leaves the promise pending forever, and every caller waiting
+   on it is stuck with a spinner that will never stop. `ms` bounds time to the
+   first byte; the body then gets its own grace so a half-delivered response
+   cannot hang either. Pass stream:true when the caller reads the body itself. */
+async function fetchDeadline(url, init, ms){
+  const o = init || {};
+  const ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  let timedOut = false;
+  const arm = t => setTimeout(() => { timedOut = true; try{ ctrl && ctrl.abort(); }catch(_){} }, t);
+  const timer = ctrl ? arm(ms || 30000) : null;
+  try{
+    const r = await fetch(url, ctrl ? Object.assign({}, o, { signal: ctrl.signal }) : o);
+    clearTimeout(timer);
+    // Deliberately not cleared: harmless once the body is read, and the only
+    // thing standing between a stalled body and an infinite wait.
+    if(ctrl && !o.stream) arm(o.bodyTimeout || 20000);
+    return r;
+  }catch(e){
+    clearTimeout(timer);
+    if(typeof navigator !== 'undefined' && navigator.onLine === false){
+      throw new Error('You appear to be offline. Check your connection and try again.');
+    }
+    if(timedOut) throw new Error('The server did not respond in time. Please try again.');
+    throw e;
+  }
+}
+try{ window.fetchDeadline = fetchDeadline; }catch(e){}
 function _originOf(u){ try{ return new URL(u).origin; }catch(e){ return ''; } }
 function _isSecureApiOrigin(o){ return /^https:\/\/[^/]+$/.test(o) || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(o); }
 const AMV_API = {
@@ -7331,14 +7372,43 @@ const AMV_API = {
       || /\/(stripe|paypal|pay|subscribe|capture)/.test(path)
       || /\/(team\/(invite|join|remove|setrole|share)|market\/(publish|buy|withdraw|review|install)|deploy|sms\/register|widget\/save)/.test(path);
     const MAX = noRetry ? 0 : 2;        // up to 2 retries (3 total attempts)
+
+    /* AMV-061: a request with no deadline can hang forever.
+       fetch() only REJECTS when the connection fails outright. A stalled
+       connection - a captive portal that swallows packets, a phone moving from
+       wifi to cellular, a tunnel that died with the socket still open - leaves
+       the promise pending indefinitely. The retry loop below never runs, and
+       every caller awaiting it is stuck: the spinner spins, "Saving..." never
+       finishes, and the user has no idea whether it worked.
+       So every attempt gets a hard deadline. headerMs covers time-to-first-byte;
+       once the response arrives we allow a further bodyMs to read it, which also
+       catches a body that stalls halfway. Callers streaming a response pass
+       stream:true and take over the deadline themselves. */
+    const headerMs = ('timeout' in o) ? o.timeout : (/^\/v1\/messages/.test(path) ? 120000 : 20000);
+    const bodyMs = ('bodyTimeout' in o) ? o.bodyTimeout : 20000;
     let attempt = 0, r, lastErr;
     while (true) {
+      const ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      let timedOut = false;
+      const arm = ms => setTimeout(() => { timedOut = true; try{ ctrl && ctrl.abort(); }catch(_){} }, ms);
+      let timer = (ctrl && headerMs > 0) ? arm(headerMs) : null;
       try {
-        r = await fetch(url, o);
+        r = await fetch(url, ctrl ? Object.assign({}, o, { signal: ctrl.signal }) : o);
+        clearTimeout(timer);
+        /* Not cleared on purpose: if the caller reads the body promptly this
+           fires against an already-consumed response and does nothing. If the
+           body stalls, it turns an infinite hang into a real error. */
+        if (ctrl && !o.stream && bodyMs > 0) arm(bodyMs);
       } catch (netErr) {
-        // network-level failure (offline, DNS, reset) - retry if budget left
+        clearTimeout(timer);
         lastErr = netErr;
+        // Offline is not transient-in-the-next-400ms. Say so immediately rather
+        // than making the user watch three silent retries first.
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+          throw new Error('You appear to be offline. Check your connection and try again.');
+        }
         if (attempt < MAX) { await this._backoff(attempt++); continue; }
+        if (timedOut) throw new Error('The server did not respond in time. Please try again.');
         throw new Error('Network error - please check your connection and try again.');
       }
       // retry on transient server errors
@@ -7437,7 +7507,9 @@ const AMV_API = {
 
   // streaming AI call through the backend (same shape the app already uses)
   async messages(body){
-    return this._fetch('/v1/messages', {method:'POST', body:JSON.stringify(body)});
+    // stream:true - the caller reads the SSE body itself, so _fetch must not
+    // arm a deadline against a response that is meant to arrive slowly.
+    return this._fetch('/v1/messages', {method:'POST', body:JSON.stringify(body), stream:true});
   },
 
   // ---- server-side data sync ----
@@ -7947,7 +8019,7 @@ async function _errFlush(){
   const events = _ERR_QUEUE.splice(0, 20);
   _errSentCount += events.length;
   try{
-    await fetch(AMV_API.base.replace(/\/$/,'') + '/errors', {
+    await fetchDeadline(AMV_API.base.replace(/\/$/,'') + '/errors', {
       method:'POST',
       headers:{ 'Content-Type':'application/json' },
       body: JSON.stringify({ events }),
@@ -9552,7 +9624,7 @@ async function handleGoogleCred(resp) {
 
   if(window.AMV_API && AMV_API.live && AMV_API.base){
     try{
-      const r=await fetch(AMV_API.base.replace(/\/$/,'')+'/auth/google', {
+      const r=await fetchDeadline(AMV_API.base.replace(/\/$/,'')+'/auth/google', {
         method:'POST', headers:{'Content-Type':'application/json'},
         body:JSON.stringify({ credential:resp.credential })   // server verifies this with Google
       });
@@ -10271,7 +10343,7 @@ function _renderEmbedView(key){
   // Load this widget's config (title, greeting, accent) - public, safe fields only.
   (async()=>{
     try{
-      const r=await fetch(_embedApiBase()+'/v1/widget/config-public?k='+encodeURIComponent(key)).catch(()=>null);
+      const r=await fetchDeadline(_embedApiBase()+'/v1/widget/config-public?k='+encodeURIComponent(key),{},8000).catch(()=>null);
       // config-public is optional; if it 404s we just use defaults below.
       if(r&&r.ok){ const d=await r.json(); if(d&&d.config){
         if(d.config.title){ document.getElementById('emb-title').textContent=d.config.title; document.title=d.config.title; }
@@ -10300,11 +10372,12 @@ function _renderEmbedView(key){
     bub.innerHTML='<span class="emb-dots"><i></i><i></i><i></i></span>';
     let acc='';
     try{
-      const res=await fetch(_embedApiBase()+'/v1/widget/chat',{
+      const res=await fetchDeadline(_embedApiBase()+'/v1/widget/chat',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({ key, messages:history.slice(-20) })
-      });
+        body:JSON.stringify({ key, messages:history.slice(-20) }),
+        stream:true
+      },45000);
       if(!res.ok){
         let em='The assistant is unavailable right now.';
         try{ const ed=await res.json(); if(ed&&ed.error) em=ed.error; }catch(e){}
@@ -11771,9 +11844,40 @@ async function _callAI(msgs, _opts) {
     const _toolBlocks={}; let _stopReason='';
     // Live research tracking - real searches and real sources, surfaced as they happen.
     const _research={ active:false, searches:0, sources:new Map(), done:false };
+
+    /* AMV-062: a stream can stall without ever ending. The 45s timeout above
+       covers getting the response; once it arrives, reader.read() has no
+       deadline at all. If the connection dies mid-answer - phone leaving wifi,
+       a proxy dropping an idle socket - the socket stays open, no bytes ever
+       arrive, and read() never settles. AMV would sit there with a blinking
+       cursor forever, and whatever it had already written would be stuck in a
+       message that is still "streaming".
+       So: if nothing arrives for IDLE_MS, stop waiting. Anything already
+       written is KEPT and marked as cut off with a Retry, because a partial
+       answer the user can read beats a spinner or an empty error card. */
+    // window.__amvStreamIdleMs exists so the stall path can be exercised in a
+    // test without a 30-second wait. Nothing in the product sets it.
+    const IDLE_MS=(typeof window!=='undefined'&&window.__amvStreamIdleMs)||30000;
+    let _stalled=false;
+    const _readOnce=()=>new Promise((resolve,reject)=>{
+      const t=setTimeout(()=>reject(Object.assign(new Error('stream-stalled'),{_stall:true})),IDLE_MS);
+      reader.read().then(v=>{ clearTimeout(t); resolve(v); },e=>{ clearTimeout(t); reject(e); });
+    });
+
     while(true){
       if(_userStopped){ try{ reader.cancel(); }catch(e){} break; }
-      const {done,value}=await reader.read();
+      let _chunk;
+      try{ _chunk=await _readOnce(); }
+      catch(re){
+        if(!(re&&re._stall)) throw re;
+        try{ reader.cancel(); }catch(e){}
+        try{ _activeStreamCtrl&&_activeStreamCtrl.abort(); }catch(e){}
+        if(fullText){ _stalled=true; break; }
+        throw new Error(navigator.onLine===false
+          ? 'You went offline before AMV could answer. Reconnect and retry.'
+          : 'The connection stalled before AMV could answer. Please retry.');
+      }
+      const {done,value}=_chunk;
       if(done) break;
       buffer+=decoder.decode(value,{stream:true});
       const lines=buffer.split('\n');
@@ -11897,7 +12001,9 @@ async function _callAI(msgs, _opts) {
       return sendMsg({ _continueTools:true });
     }
     if(!fullText) fullText='(no response)';
-    msgs[streamIdx]={r:'a',c:fullText,model:S.model};
+    msgs[streamIdx]=_stalled
+      ? {r:'a',c:fullText,model:S.model,_interrupted:true}
+      : {r:'a',c:fullText,model:S.model};
     _recordUsageOnce();
     // Auto-title chat
     const cv=getCurConv();
@@ -11913,7 +12019,9 @@ async function _callAI(msgs, _opts) {
       _recordUsageOnce();
       setMsgs(msgs); S.busy=false; renderChatMsgs(); _userStopped=false; return;
     }
-    const friendly=/api error|rejected|forbidden|rate-limit|malformed|too long|server error|network|timed out|offline|busy/i.test(e.message)?e.message:aegisErrorMessage(0,e.message);
+    // "stalled" is already a plain-English explanation; without it here the
+    // generic handler rewrote it into a wrong guess about ad-blockers and CORS.
+    const friendly=/api error|rejected|forbidden|rate-limit|malformed|too long|server error|network|timed out|stalled|offline|busy/i.test(e.message)?e.message:aegisErrorMessage(0,e.message);
     AEGIS.log('exception',{msg:String(e.message).slice(0,200)}); AEGIS.recordError();
     _recordUsageOnce();   // record any tokens consumed before the failure
     _streamBubbleReset();
@@ -12473,7 +12581,10 @@ function renderChatMsgs() {
         content=(m._research?m._research:'')+'<div class="ai-working"><span class="ai-think-orb"></span><span class="ai-working-shimmer">'+escH(m._status||'Working…')+'</span></div>';
       }
     } else {
-      content=isU?escH(rawText).replace(/\n/g,'<br>'):((m._research?m._research:'')+md(typeof m.c==='string'?m.c:rawText)+(m._rendered?('<div class="chat-tool-out">'+m._rendered+'</div>'):'')+(m.streaming?'<span class="stream-cursor"></span>':''));
+      content=isU?escH(rawText).replace(/\n/g,'<br>'):((m._research?m._research:'')+md(typeof m.c==='string'?m.c:rawText)+(m._rendered?('<div class="chat-tool-out">'+m._rendered+'</div>'):'')+(m.streaming?'<span class="stream-cursor"></span>':'')+
+        // The answer above is real but incomplete - say so rather than letting it
+        // look like AMV simply stopped mid-sentence on purpose.
+        (m._interrupted?'<div class="ai-cut"><span>The connection dropped partway through. What you see above is what arrived.</span><button class="ai-snag-retry" data-action="retry-ai" type="button">Retry</button></div>':''));
     }
     const mdlLabel=!isU&&m.model?'<span style="font-size:10px;color:var(--t2);margin-bottom:3px">'+MODELS[m.model]?.label+' Model</span>':'';
         const actions=(!isU && (m._error||m._retrying||m._quota))? '' : (isU?
@@ -12815,11 +12926,11 @@ async function _premiumImageSrc(prompt,style,ratio,seed){
     const key=prompt+'|'+style+'|'+ratio+'|'+seed;
     if(_premiumImgCache[key]) return _premiumImgCache[key];
     const full=_imgFullPrompt(prompt,style);
-    const r=await fetch(AMV_API.base.replace(/\/$/,'')+'/v1/image/generate',{
+    const r=await fetchDeadline(AMV_API.base.replace(/\/$/,'')+'/v1/image/generate',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+AMV_API.token},
       body:JSON.stringify({prompt:full,width:w,height:h})
-    });
+    }, 180000);   // image generation is genuinely slow; three minutes is the ceiling
     if(!r.ok) return null;
     const d=await r.json().catch(()=>({}));
     if(d.configured===false){ window.__AMV_NO_PREMIUM_IMG__=true; return null; }  // remember: skip next time
@@ -13080,7 +13191,7 @@ const _VID = { polls: {} };
 
 async function _vidApi(path, body){
   if(!(window.AMV_API && AMV_API.live)) throw new Error('__NOT_CONNECTED__');
-  const r = await fetch(AMV_API.base.replace(/\/$/,'') + path, {
+  const r = await fetchDeadline(AMV_API.base.replace(/\/$/,'') + path, {
     method:'POST',
     headers:{ 'Content-Type':'application/json',
               ...(AMV_API.token ? { 'Authorization':'Bearer '+AMV_API.token } : {}) },
@@ -16273,7 +16384,7 @@ async function _admFetchStats(){
   S._admStatsLoading=true;
   try{ if(S.tab==='admin') renderAdminView(); }catch(e){}
   try{
-    const r=await fetch(base.replace(/\/$/,'')+'/v1/admin/stats',{headers:{'Authorization':'Bearer '+tok}});
+    const r=await fetchDeadline(base.replace(/\/$/,'')+'/v1/admin/stats',{headers:{'Authorization':'Bearer '+tok}},15000);
     if(r.ok){ S._admStats=await r.json(); }
     else { _logErr('adminStats', new Error('HTTP '+r.status)); }
   }catch(e){ _logErr('adminStats', e); }
@@ -16287,7 +16398,7 @@ async function _admFetchFinance(){
   if(S._admFinanceLoading) return;
   S._admFinanceLoading=true;
   try{
-    const r=await fetch(base.replace(/\/$/,'')+'/v1/admin/finance',{headers:{'Authorization':'Bearer '+tok}});
+    const r=await fetchDeadline(base.replace(/\/$/,'')+'/v1/admin/finance',{headers:{'Authorization':'Bearer '+tok}},15000);
     if(r.ok){ S._admFinance=await r.json(); }
     else { _logErr('adminFinance', new Error('HTTP '+r.status)); S._admFinance={ configured:false, transactions:[], totals:{} }; }
   }catch(e){ _logErr('adminFinance', e); }
@@ -16559,7 +16670,7 @@ async function _adminLoadUsers(backendLive){
   let users=[];
   if(backendLive && window.AMV_API && AMV_API.base){
     try{
-      const r=await fetch(AMV_API.base.replace(/\/$/,'')+'/admin/users',{headers:{'Authorization':'Bearer '+(AMV_API.token||'')}});
+      const r=await fetchDeadline(AMV_API.base.replace(/\/$/,'')+'/admin/users',{headers:{'Authorization':'Bearer '+(AMV_API.token||'')}});
       if(r.ok){ const d=await r.json(); users=d.users||d||[]; }
     }catch(e){}
   }
@@ -16762,7 +16873,7 @@ async function _loadInvoices(){
   const base=loadStr('amv_api_base')||''; const tok=loadStr('amv_api_token')||(window.AMV_API&&AMV_API.token)||'';
   if(!base){ return; }
   try{
-    const r=await fetch(base.replace(/\/$/,'')+'/v1/stripe/invoices',{headers:{'Authorization':'Bearer '+tok}});
+    const r=await fetchDeadline(base.replace(/\/$/,'')+'/v1/stripe/invoices',{headers:{'Authorization':'Bearer '+tok}},15000);
     const d=await r.json();
     if(!el) return;
     const inv=(d&&d.invoices)||[];
@@ -17540,7 +17651,7 @@ function _mountStripe(pk,plan){
             // The SERVER decides whether the plan is granted. Never assume the
             // charge worked: an unchecked response here would hand out paid
             // plans for free whenever the request failed or needed 3-D Secure.
-            const r=await fetch(AMV_API.base.replace(/\/$/,'')+'/v1/subscribe',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+AMV_API.token},body:JSON.stringify({plan,payment_method:paymentMethod.id})});
+            const r=await fetchDeadline(AMV_API.base.replace(/\/$/,'')+'/v1/subscribe',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+AMV_API.token},body:JSON.stringify({plan,payment_method:paymentMethod.id})});
             const d=await r.json().catch(()=>({}));
             if(!r.ok || !d.ok){
               const el=$('stripe-card-errors');
@@ -19599,7 +19710,7 @@ function _devDownloadProject(){
    hosts the site and returns a shareable link that works for anyone. */
 async function _deployApi(path, body){
   if(!(window.AMV_API && AMV_API.live && AMV_API.token)) throw new Error('not-connected');
-  const r = await fetch(AMV_API.base.replace(/\/$/,'')+path, {
+  const r = await fetchDeadline(AMV_API.base.replace(/\/$/,'')+path, {
     method:'POST',
     headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+AMV_API.token },
     body: JSON.stringify(body||{})
@@ -19712,7 +19823,7 @@ async function openErrors(){
 
   let data=null;
   try{
-    const r=await fetch(AMV_API.base.replace(/\/$/,'')+'/errors/list',{
+    const r=await fetchDeadline(AMV_API.base.replace(/\/$/,'')+'/errors/list',{
       method:'POST', headers:{'Content-Type':'application/json','X-Admin-Token':token},
       body: JSON.stringify({})
     });
@@ -19766,14 +19877,14 @@ async function openErrors(){
   ovr.querySelectorAll('[data-fix]').forEach(b=>on(b,'click',async()=>{
     b.disabled=true; b.textContent='\u2026';
     try{
-      await fetch(AMV_API.base.replace(/\/$/,'')+'/errors/resolve',{
+      await fetchDeadline(AMV_API.base.replace(/\/$/,'')+'/errors/resolve',{
         method:'POST', headers:{'Content-Type':'application/json','X-Admin-Token':token},
         body: JSON.stringify({ fp:b.dataset.fix })});
       openErrors();
     }catch(e){ b.disabled=false; b.textContent='Resolve'; }
   }));
   on($('er-all'),'click',async()=>{
-    try{ await fetch(AMV_API.base.replace(/\/$/,'')+'/errors/resolve',{
+    try{ await fetchDeadline(AMV_API.base.replace(/\/$/,'')+'/errors/resolve',{
       method:'POST', headers:{'Content-Type':'application/json','X-Admin-Token':token},
       body: JSON.stringify({ all:true })}); openErrors(); }catch(e){}
   });
@@ -20081,9 +20192,9 @@ async function runAgentic(surface, userPrompt, opts){
       ...(tools.length ? { tools } : {})
     };
 
-    const r = await fetch(_aiBase(), {
+    const r = await fetchDeadline(_aiBase(), {
       method:'POST', headers:_aiHeaders(), body:JSON.stringify(body)
-    });
+    }, 120000);
     if(!r.ok){
       const t = await r.text().catch(()=>'');
       throw new Error('AMV request failed ('+r.status+'): '+t.slice(0,160));
@@ -21832,7 +21943,7 @@ function _renderSetPaneInner(){
       if(!tok){ body.innerHTML='<div class="fd-empty">Enter your admin token above and press Load stats.</div>'; return; }
       body.innerHTML='<div class="fd-loading">Loading\u2026</div>';
       try{
-        const r=await fetch(base.replace(/\/$/,'')+'/v1/admin/stats',{headers:{'Authorization':'Bearer '+tok}});
+        const r=await fetchDeadline(base.replace(/\/$/,'')+'/v1/admin/stats',{headers:{'Authorization':'Bearer '+tok}},15000);
         if(!r.ok){ body.innerHTML='<div class="fd-empty">'+(r.status===403?'Invalid admin token.':'Could not load stats ('+r.status+').')+'</div>'; return; }
         const d=await r.json();
         body.innerHTML=_founderDashHTML(d);
@@ -21841,7 +21952,7 @@ function _renderSetPaneInner(){
         if(kbtn) on(kbtn,'click',async()=>{
           const turnOn=!d.spend.killed;
           if(!confirm(turnOn?'Pause the ENTIRE service for all users?':'Resume the service?')) return;
-          await fetch(base.replace(/\/$/,'')+'/v1/admin/kill',{method:'POST',headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},body:JSON.stringify({on:turnOn})});
+          await fetchDeadline(base.replace(/\/$/,'')+'/v1/admin/kill',{method:'POST',headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},body:JSON.stringify({on:turnOn})});
           loadStats();
         });
       }catch(e){ body.innerHTML='<div class="fd-empty">Network error loading stats.</div>'; }
@@ -21899,7 +22010,9 @@ function _renderSetPaneInner(){
       if(!v){ toast('Enter a URL to test','error'); return; }
       if(out){ out.className='conn-test testing'; out.textContent='Testing\u2026'; }
       try{
-        const r=await fetch(v+'/v1/health',{method:'GET'});
+        // 10s: a backend that has not answered by then is not "reachable",
+        // and the user is sitting in front of a button that says Testing.
+        const r=await fetchDeadline(v+'/v1/health',{method:'GET'},10000);
         if(r.ok){ const d=await r.json().catch(()=>({})); if(out){out.className='conn-test ok';out.textContent=d.ok?'\u2713 Backend is healthy and reachable.':'\u2713 Reachable.';} saveStr('amv_api_base',v); if(window.AMV_API) AMV_API.base=v; const cs=$('conn-status'); if(cs){cs.className='conn-status ok';cs.innerHTML='<span class="conn-dot"></span>Backend reachable - sign in to activate';} }
         else{ if(out){out.className='conn-test err';out.textContent='\u2717 Backend responded with '+r.status+'. Check the URL.';} }
       }catch(err){ if(out){out.className='conn-test err';out.textContent='\u2717 Could not reach that URL. Check it\u2019s deployed and correct.';} }
@@ -22674,9 +22787,9 @@ async function runCanvasAutomation() {
 
     try{
       // Fetch courses
-      const coursesRes=await fetch(baseUrl+'/api/v1/courses?enrollment_type=student&per_page=20',{
+      const coursesRes=await fetchDeadline(baseUrl+'/api/v1/courses?enrollment_type=student&per_page=20',{
         headers:{'Authorization':'Bearer '+token}
-      });
+      },20000);
       if(!coursesRes.ok) throw new Error('Canvas API error: '+coursesRes.status+' - check your token and URL.');
       const courses=await coursesRes.json();
       log('Found '+courses.length+' active courses.','var(--green)');
@@ -22685,9 +22798,9 @@ async function runCanvasAutomation() {
       for(const course of courses.slice(0,5)){
         log('Checking '+course.name+'...','var(--tx)');
         // Fetch assignments
-        const assignRes=await fetch(baseUrl+'/api/v1/courses/'+course.id+'/assignments?bucket=upcoming&per_page=10',{
+        const assignRes=await fetchDeadline(baseUrl+'/api/v1/courses/'+course.id+'/assignments?bucket=upcoming&per_page=10',{
           headers:{'Authorization':'Bearer '+token}
-        });
+        },20000);
         const assignments=await assignRes.json();
         const pending=assignments.filter(a=>!a.has_submitted_submissions&&a.due_at);
         total+=pending.length;
@@ -23246,7 +23359,7 @@ async function refreshGToken(){
   if(!base || !tok) return null;
   _gRefreshInFlight = (async () => {
     try{
-      const r = await fetch(base + '/v1/oauth/google/refresh', {
+      const r = await fetchDeadline(base + '/v1/oauth/google/refresh', {
         method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok}, body:'{}' });
       const d = await r.json().catch(()=>({}));
       if(!r.ok || !d.ok || !d.access_token) return null;
@@ -23299,7 +23412,7 @@ const INTEGRATION_ACTIONS = {
     desc:'List the user\u2019s unread emails (sender + subject).', needs:'google',
     async run(){
       const t=(typeof ensureGToken==='function'? await ensureGToken() : getGToken()); if(!t) throw new Error('Gmail not connected');
-      const r=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10&labelIds=INBOX&q=is:unread',{headers:{'Authorization':'Bearer '+t}});
+      const r=await fetchDeadline('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10&labelIds=INBOX&q=is:unread',{headers:{'Authorization':'Bearer '+t}});
       const d=await r.json(); if(d.error) throw new Error(d.error.message);
       const msgs=d.messages||[];
       const details=await Promise.all(msgs.slice(0,8).map(m=>fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/'+m.id+'?format=metadata&metadataHeaders=Subject&metadataHeaders=From',{headers:{'Authorization':'Bearer '+t}}).then(r=>r.json())));
@@ -23312,7 +23425,7 @@ const INTEGRATION_ACTIONS = {
       const t=(typeof ensureGToken==='function'? await ensureGToken() : getGToken()); if(!t) throw new Error('Gmail not connected');
       const raw=['To: '+args.to,'Subject: '+(args.subject||''),'Content-Type: text/plain; charset=utf-8','',args.body||''].join('\r\n');
       const b64=btoa(unescape(encodeURIComponent(raw))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
-      const r=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send',{method:'POST',headers:{'Authorization':'Bearer '+t,'Content-Type':'application/json'},body:JSON.stringify({raw:b64})});
+      const r=await fetchDeadline('https://gmail.googleapis.com/gmail/v1/users/me/messages/send',{method:'POST',headers:{'Authorization':'Bearer '+t,'Content-Type':'application/json'},body:JSON.stringify({raw:b64})});
       const d=await r.json(); if(d.error) throw new Error(d.error.message);
       return {sent:true, id:d.id};
     }
@@ -23322,7 +23435,7 @@ const INTEGRATION_ACTIONS = {
     async run(){
       const t=(typeof ensureGToken==='function'? await ensureGToken() : getGToken()); if(!t) throw new Error('Calendar not connected');
       const now=new Date(), end=new Date(now.getTime()+7*864e5);
-      const r=await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin='+now.toISOString()+'&timeMax='+end.toISOString()+'&singleEvents=true&orderBy=startTime&maxResults=20',{headers:{'Authorization':'Bearer '+t}});
+      const r=await fetchDeadline('https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin='+now.toISOString()+'&timeMax='+end.toISOString()+'&singleEvents=true&orderBy=startTime&maxResults=20',{headers:{'Authorization':'Bearer '+t}});
       const d=await r.json(); if(d.error) throw new Error(d.error.message);
       return (d.items||[]).map(e=>({when:(e.start&&(e.start.dateTime||e.start.date)), title:e.summary}));
     }
@@ -23332,7 +23445,7 @@ const INTEGRATION_ACTIONS = {
     async run(args){
       const t=(typeof ensureGToken==='function'? await ensureGToken() : getGToken()); if(!t) throw new Error('Calendar not connected');
       const body={summary:args.title, description:args.description||'', start:{dateTime:args.start}, end:{dateTime:args.end||args.start}};
-      const r=await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events',{method:'POST',headers:{'Authorization':'Bearer '+t,'Content-Type':'application/json'},body:JSON.stringify(body)});
+      const r=await fetchDeadline('https://www.googleapis.com/calendar/v3/calendars/primary/events',{method:'POST',headers:{'Authorization':'Bearer '+t,'Content-Type':'application/json'},body:JSON.stringify(body)});
       const d=await r.json(); if(d.error) throw new Error(d.error.message);
       return {created:true, id:d.id, link:d.htmlLink};
     }
@@ -23341,7 +23454,7 @@ const INTEGRATION_ACTIONS = {
     desc:'List recent Google Drive files.', needs:'google',
     async run(){
       const t=(typeof ensureGToken==='function'? await ensureGToken() : getGToken()); if(!t) throw new Error('Drive not connected');
-      const r=await fetch('https://www.googleapis.com/drive/v3/files?pageSize=30&orderBy=modifiedTime desc&fields=files(name,mimeType,modifiedTime)',{headers:{'Authorization':'Bearer '+t}});
+      const r=await fetchDeadline('https://www.googleapis.com/drive/v3/files?pageSize=30&orderBy=modifiedTime desc&fields=files(name,mimeType,modifiedTime)',{headers:{'Authorization':'Bearer '+t}});
       const d=await r.json(); if(d.error) throw new Error(d.error.message);
       return (d.files||[]).map(f=>({name:f.name, type:(f.mimeType||'').split('/').pop(), modified:f.modifiedTime}));
     }
@@ -23350,7 +23463,7 @@ const INTEGRATION_ACTIONS = {
     desc:'List open issues for a repo. Args: {repo: "owner/name"}.', needs:'github',
     async run(args){
       const t=loadStr('amv_github'); if(!t) throw new Error('GitHub not connected');
-      const r=await fetch('https://api.github.com/repos/'+args.repo+'/issues?state=open&per_page=20',{headers:{'Authorization':'Bearer '+t,'Accept':'application/vnd.github+json'}});
+      const r=await fetchDeadline('https://api.github.com/repos/'+args.repo+'/issues?state=open&per_page=20',{headers:{'Authorization':'Bearer '+t,'Accept':'application/vnd.github+json'}});
       const d=await r.json(); if(d.message&&!Array.isArray(d)) throw new Error(d.message);
       return d.map(i=>({number:i.number, title:i.title, url:i.html_url}));
     }
@@ -23359,7 +23472,7 @@ const INTEGRATION_ACTIONS = {
     desc:'Open a GitHub issue. Args: {repo:"owner/name", title, body}.', needs:'github',
     async run(args){
       const t=loadStr('amv_github'); if(!t) throw new Error('GitHub not connected');
-      const r=await fetch('https://api.github.com/repos/'+args.repo+'/issues',{method:'POST',headers:{'Authorization':'Bearer '+t,'Accept':'application/vnd.github+json','Content-Type':'application/json'},body:JSON.stringify({title:args.title,body:args.body||''})});
+      const r=await fetchDeadline('https://api.github.com/repos/'+args.repo+'/issues',{method:'POST',headers:{'Authorization':'Bearer '+t,'Accept':'application/vnd.github+json','Content-Type':'application/json'},body:JSON.stringify({title:args.title,body:args.body||''})});
       const d=await r.json(); if(!d.number) throw new Error(d.message||'Failed to create issue');
       return {created:true, number:d.number, url:d.html_url};
     }
@@ -23368,8 +23481,8 @@ const INTEGRATION_ACTIONS = {
     desc:'Post a message to Slack. Args: {channel, text}.', needs:'slack',
     async run(args){
       const t=loadStr('amv_slack'); if(!t) throw new Error('Slack not connected');
-      if(/^https?:\/\//.test(t)){ await fetch(t,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:args.text})}); return {posted:true}; }
-      const r=await fetch('https://slack.com/api/chat.postMessage',{method:'POST',headers:{'Authorization':'Bearer '+t,'Content-Type':'application/json'},body:JSON.stringify({channel:args.channel||'#general',text:args.text})});
+      if(/^https?:\/\//.test(t)){ await fetchDeadline(t,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:args.text})}); return {posted:true}; }
+      const r=await fetchDeadline('https://slack.com/api/chat.postMessage',{method:'POST',headers:{'Authorization':'Bearer '+t,'Content-Type':'application/json'},body:JSON.stringify({channel:args.channel||'#general',text:args.text})});
       const d=await r.json(); if(!d.ok) throw new Error(d.error||'Slack post failed');
       return {posted:true, ts:d.ts};
     }
@@ -23622,7 +23735,7 @@ async function quickGmail(){
   if(!token){ toast('Connect Gmail first - click Connect in Integrations','error',4000); return; }
   toast('Loading inbox...','info',2000);
   try{
-    const r = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10&labelIds=INBOX&q=is:unread',{headers:{'Authorization':'Bearer '+token}});
+    const r = await fetchDeadline('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10&labelIds=INBOX&q=is:unread',{headers:{'Authorization':'Bearer '+token}});
     const d = await r.json();
     if(d.error){ toast('Gmail: '+d.error.message,'error'); return; }
     const msgs = d.messages||[];
@@ -23645,7 +23758,7 @@ async function quickCalendar(){
   toast('Loading calendar...','info',2000);
   try{
     const now=new Date(), end=new Date(now.getTime()+7*24*60*60*1000);
-    const r = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin='+now.toISOString()+'&timeMax='+end.toISOString()+'&singleEvents=true&orderBy=startTime&maxResults=20',{headers:{'Authorization':'Bearer '+token}});
+    const r = await fetchDeadline('https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin='+now.toISOString()+'&timeMax='+end.toISOString()+'&singleEvents=true&orderBy=startTime&maxResults=20',{headers:{'Authorization':'Bearer '+token}});
     const d = await r.json();
     if(d.error){ toast('Calendar: '+d.error.message,'error'); return; }
     const events = (d.items||[]).map(e=>(e.start&&(e.start.dateTime||e.start.date))+': '+e.summary).join('\n');
@@ -23658,7 +23771,7 @@ async function quickDrive(){
   if(!token){ toast('Connect Drive first','error',4000); return; }
   toast('Reading Drive...','info',2000);
   try{
-    const r = await fetch('https://www.googleapis.com/drive/v3/files?pageSize=30&orderBy=modifiedTime desc&fields=files(name,mimeType,modifiedTime)',{headers:{'Authorization':'Bearer '+token}});
+    const r = await fetchDeadline('https://www.googleapis.com/drive/v3/files?pageSize=30&orderBy=modifiedTime desc&fields=files(name,mimeType,modifiedTime)',{headers:{'Authorization':'Bearer '+token}});
     const d = await r.json();
     if(d.error){ toast('Drive: '+d.error.message,'error'); return; }
     const files = (d.files||[]).map(f=>f.name+' ('+(f.mimeType&&f.mimeType.split('/').pop())+')').join('\n');
@@ -24085,7 +24198,7 @@ async function _bgRunNext(){
       const token=getGToken();
       if(!token){task.status='failed';task.error='Gmail not connected - click Connect in Integrations';_bgQueue.running=false;return;}
       task.progress=30;
-      const r=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10&labelIds=INBOX&q=is:unread',{headers:{'Authorization':'Bearer '+token}});
+      const r=await fetchDeadline('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10&labelIds=INBOX&q=is:unread',{headers:{'Authorization':'Bearer '+token}});
       const d=await r.json();
       if(d.error){task.status='failed';task.error='Gmail: '+d.error.message;_bgQueue.running=false;return;}
       const msgs=d.messages||[];
@@ -24101,7 +24214,7 @@ async function _bgRunNext(){
       const token=getGToken();
       if(!token){task.status='failed';task.error='Calendar not connected';_bgQueue.running=false;return;}
       const now=new Date(),end=new Date(now.getTime()+7*24*60*60*1000);
-      const r=await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin='+now.toISOString()+'&timeMax='+end.toISOString()+'&singleEvents=true&orderBy=startTime&maxResults=20',{headers:{'Authorization':'Bearer '+token}});
+      const r=await fetchDeadline('https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin='+now.toISOString()+'&timeMax='+end.toISOString()+'&singleEvents=true&orderBy=startTime&maxResults=20',{headers:{'Authorization':'Bearer '+token}});
       const d=await r.json();
       if(d.error){task.status='failed';task.error='Calendar: '+d.error.message;_bgQueue.running=false;return;}
       const events=(d.items||[]).map(e=>(e.start&&(e.start.dateTime||e.start.date))+': '+e.summary).join('\n');
@@ -24227,7 +24340,7 @@ async function aiCompleteLong(prompt, system, opts){
     if(system) body.system = system + (opts.noLang?'':_langInstruction());
     else if(!opts.noLang) body.system = _langInstruction();
 
-    const res = await fetch(url, {method:'POST', headers, body: JSON.stringify(body)});
+    const res = await fetchDeadline(url, {method:'POST', headers, body: JSON.stringify(body)}, 180000);
     if(!res.ok){ const t=await res.text().catch(()=>''); throw new Error('AI error '+res.status+': '+t.slice(0,200)); }
     const data = await res.json();
     const chunk = (data.content||[]).map(b=>b.text||'').join('');
@@ -24267,7 +24380,7 @@ async function aiComplete(prompt, system, opts){
   const body = { model: modelStr, max_tokens: maxTok, messages: [{role:'user', content: prompt}] };
   if(system) body.system = system + (opts.noLang?'':_langInstruction());
   else if(!opts.noLang) body.system = _langInstruction();
-  const res = await fetch(url,{method:'POST',headers,body:JSON.stringify(body)});
+  const res = await fetchDeadline(url,{method:'POST',headers,body:JSON.stringify(body)}, 120000);
   if(!res.ok){ const t=await res.text().catch(()=>''); throw new Error('AI error '+res.status+': '+t.slice(0,200)); }
   const data = await res.json();
   const text=_noDash((data.content||[]).map(b=>b.text||'').join('').trim());
@@ -25094,7 +25207,7 @@ async function crewRun(kind, title, opts){
       up({note:'checking Gmail…'});
       const token=(typeof getGToken==='function')?getGToken():null;
       if(!token){ up({status:'failed', body:'**Gmail not connected.** Go to Integrations and connect Gmail, then run this again.'}); return res; }
-      const r=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10&labelIds=INBOX&q=is:unread',{headers:{'Authorization':'Bearer '+token}});
+      const r=await fetchDeadline('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10&labelIds=INBOX&q=is:unread',{headers:{'Authorization':'Bearer '+token}});
       const d=await r.json();
       if(d.error){ up({status:'failed', body:'Gmail error: '+d.error.message}); return res; }
       const msgs=d.messages||[];
@@ -25313,7 +25426,7 @@ async function _taskRun(mode){
 async function _autoApi(path, body){
   if(!(window.AMV_API && AMV_API.live && AMV_API.token))
     throw new Error('not-connected');
-  const r = await fetch(AMV_API.base.replace(/\/$/,'') + path, {
+  const r = await fetchDeadline(AMV_API.base.replace(/\/$/,'') + path, {
     method:'POST',
     headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+AMV_API.token },
     body: JSON.stringify(body||{})
@@ -26704,7 +26817,9 @@ const AMVConnectors = {
     );
     const init = { method: a.method || 'GET', headers };
     if(init.method !== 'GET' && a.body) init.body = JSON.stringify(typeof a.body === 'function' ? a.body(args || {}, ctx) : a.body);
-    const r = await fetch(url, init);
+    // A connector calling somebody else's API gets a deadline like everything
+    // else - a third-party outage must not freeze the step it belongs to.
+    const r = await fetchDeadline(url, init, 30000);
     let d = null; try{ d = await r.json(); }catch(e){ d = { ok: r.ok }; }
     if(!r.ok) throw new Error((d && (d.error_description || d.message || (d.error && d.error.message))) || ('Request failed (' + r.status + ')'));
     return d;
@@ -26781,7 +26896,7 @@ AMVConnectors.register({
           e.code = 'needs_service'; throw e;
         }
         const tok = (typeof loadStr === 'function' && loadStr('amv_api_token')) || '';
-        const r = await fetch(base.replace(/\/$/, '') + '/v1/browser/run', {
+        const r = await fetchDeadline(base.replace(/\/$/, '') + '/v1/browser/run', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok },
           body: JSON.stringify({
@@ -26792,7 +26907,7 @@ AMVConnectors.register({
             spendAmount: spend || undefined,
             spendLimit: (typeof AMVSpend !== 'undefined' ? (AMVSpend.cfg().perPurchase || undefined) : undefined)
           })
-        });
+        }, 240000);   // a real browser session is slow, but it is not infinite
         const d = await r.json().catch(() => ({}));
         // Surface the agent's structured stopping points as real blockers so the
         // UI can say exactly what is needed and resume when it is provided.
@@ -27470,7 +27585,7 @@ const AMVFamily = {
     const base = (typeof loadStr === 'function' && (loadStr('amv_api_base')||'')).replace(/\/$/,'');
     const tok = (typeof loadStr === 'function' && loadStr('amv_api_token')) || '';
     if(!base || !tok) return this.accept(inviteId, code);   // offline mirror
-    const r = await fetch(base + '/v1/link/accept', {
+    const r = await fetchDeadline(base + '/v1/link/accept', {
       method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
       body: JSON.stringify({ id:inviteId, code:String(code||'').trim() })
     });
@@ -27626,7 +27741,7 @@ const AMVFinance = {
     const base = this._base();
     if(!base){ const e=new Error('Connect the AMV backend first - bank data is read server-side so your tokens never touch the browser.'); e.code='needs_service'; throw e; }
     if(!this.linked()){ const e=new Error('No bank account is linked yet. Link one in Settings and these run automatically.'); e.code='needs_auth'; throw e; }
-    const r = await fetch(base + '/v1/finance/' + path, {
+    const r = await fetchDeadline(base + '/v1/finance/' + path, {
       method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + this._tok() },
       body: JSON.stringify(body||{})
     });

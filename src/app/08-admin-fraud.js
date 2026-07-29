@@ -434,7 +434,7 @@ async function _admFetchStats(){
   S._admStatsLoading=true;
   try{ if(S.tab==='admin') renderAdminView(); }catch(e){}
   try{
-    const r=await fetch(base.replace(/\/$/,'')+'/v1/admin/stats',{headers:{'Authorization':'Bearer '+tok}});
+    const r=await fetchDeadline(base.replace(/\/$/,'')+'/v1/admin/stats',{headers:{'Authorization':'Bearer '+tok}},15000);
     if(r.ok){ S._admStats=await r.json(); }
     else { _logErr('adminStats', new Error('HTTP '+r.status)); }
   }catch(e){ _logErr('adminStats', e); }
@@ -448,7 +448,7 @@ async function _admFetchFinance(){
   if(S._admFinanceLoading) return;
   S._admFinanceLoading=true;
   try{
-    const r=await fetch(base.replace(/\/$/,'')+'/v1/admin/finance',{headers:{'Authorization':'Bearer '+tok}});
+    const r=await fetchDeadline(base.replace(/\/$/,'')+'/v1/admin/finance',{headers:{'Authorization':'Bearer '+tok}},15000);
     if(r.ok){ S._admFinance=await r.json(); }
     else { _logErr('adminFinance', new Error('HTTP '+r.status)); S._admFinance={ configured:false, transactions:[], totals:{} }; }
   }catch(e){ _logErr('adminFinance', e); }
@@ -720,7 +720,7 @@ async function _adminLoadUsers(backendLive){
   let users=[];
   if(backendLive && window.AMV_API && AMV_API.base){
     try{
-      const r=await fetch(AMV_API.base.replace(/\/$/,'')+'/admin/users',{headers:{'Authorization':'Bearer '+(AMV_API.token||'')}});
+      const r=await fetchDeadline(AMV_API.base.replace(/\/$/,'')+'/admin/users',{headers:{'Authorization':'Bearer '+(AMV_API.token||'')}});
       if(r.ok){ const d=await r.json(); users=d.users||d||[]; }
     }catch(e){}
   }
@@ -923,7 +923,7 @@ async function _loadInvoices(){
   const base=loadStr('amv_api_base')||''; const tok=loadStr('amv_api_token')||(window.AMV_API&&AMV_API.token)||'';
   if(!base){ return; }
   try{
-    const r=await fetch(base.replace(/\/$/,'')+'/v1/stripe/invoices',{headers:{'Authorization':'Bearer '+tok}});
+    const r=await fetchDeadline(base.replace(/\/$/,'')+'/v1/stripe/invoices',{headers:{'Authorization':'Bearer '+tok}},15000);
     const d=await r.json();
     if(!el) return;
     const inv=(d&&d.invoices)||[];

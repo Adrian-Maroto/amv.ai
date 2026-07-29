@@ -6785,3 +6785,13 @@ html,body{height:100%;height:100dvh}
 .prof-item.danger{color:var(--red)}
 .prof-item.danger .prof-note{color:var(--red);opacity:.72}
 .prof-item.danger:hover{background:rgba(239,68,68,.1)}
+
+/* ============================================================
+   LAYER A24 - Degraded network: an answer that was cut off says so
+   A stalled stream used to leave a blinking cursor forever. Now the
+   partial answer is kept and labelled, with a Retry beside it.
+   ============================================================ */
+.ai-cut{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-3);margin-top:var(--sp-3);
+  padding:var(--sp-3) var(--sp-4);border:1px solid var(--bd);border-left:2px solid var(--gold);
+  border-radius:var(--r-md);background:rgba(224,179,65,.06);font-size:var(--t-sm);color:var(--mu)}
+.ai-cut span{flex:1 1 220px;line-height:1.5}
