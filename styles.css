@@ -6769,3 +6769,19 @@ html,body{height:100%;height:100dvh}
 .cw-anything{font-size:12.5px;line-height:1.6;color:var(--mu);background:rgba(85,144,255,.07);
   border:1px solid rgba(85,144,255,.16);border-radius:10px;padding:10px 13px;margin:0 0 12px}
 .cw-anything b{color:var(--tx)}
+
+/* ============================================================
+   LAYER A23 - Account exits: three doors, told apart at a glance
+   The old menu offered one "Sign Out" styled in red, which made a
+   reversible action look destructive and hid deletion in Settings.
+   Now each exit carries a one-line consequence under its label, and
+   only the irreversible one is red.
+   ============================================================ */
+/* .prof-divider was in the markup but had never been given a rule, so the
+   separations it was meant to draw did not exist. */
+.prof-divider{height:1px;background:var(--bd);margin:6px 4px}
+.prof-item>span{display:flex;flex-direction:column;gap:1px;min-width:0}
+.prof-note{font-size:var(--t-xs);color:var(--dim);font-weight:400;line-height:1.3}
+.prof-item.danger{color:var(--red)}
+.prof-item.danger .prof-note{color:var(--red);opacity:.72}
+.prof-item.danger:hover{background:rgba(239,68,68,.1)}

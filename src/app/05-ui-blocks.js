@@ -2672,12 +2672,20 @@ function showProfMenu(trigger) {
       '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="2" width="9" height="9" rx="1"/><rect x="13" y="2" width="9" height="9" rx="1"/><rect x="2" y="13" width="9" height="9" rx="1"/><rect x="13" y="13" width="9" height="9" rx="1"/></svg>'+
       'Apps &amp; Extensions</button>'+
     '<div class="prof-divider"></div>'+
-    '<button class="prof-item" id="pm-signout-erase" title="Use this on a shared or public computer">'+
-      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>'+
-      'Sign out &amp; erase this device</button>'+
-    '<button class="prof-item danger" id="pm-signout">'+
+    /* Two clearly different exits, plus the shared-computer case in between:
+       - Sign out: reversible, your work is waiting when you return.
+       - Erase this device: for a school or family computer. Account intact.
+       - Delete account: irreversible, removes it from the servers too. */
+    '<button class="prof-item" id="pm-signout" title="You can sign back in any time. Your chats and settings will be waiting.">'+
       '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>'+
-      'Sign Out</button>';
+      '<span>Sign Out<small class="prof-note">You can sign back in</small></span></button>'+
+    '<button class="prof-item" id="pm-signout-erase" title="Leave nothing behind on a shared or public computer. Your account stays.">'+
+      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>'+
+      '<span>Sign out &amp; erase this device<small class="prof-note">For a shared or school computer</small></span></button>'+
+    '<div class="prof-divider"></div>'+
+    '<button class="prof-item danger" id="pm-delete-account" title="Permanently deletes your account. This cannot be undone.">'+
+      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'+
+      '<span>Delete account<small class="prof-note">Permanent. Cannot be undone</small></span></button>';
   document.body.appendChild(menu);
   
   // Wire items
@@ -2689,6 +2697,7 @@ function showProfMenu(trigger) {
   document.getElementById('pm-apps')?.addEventListener('click',()=>{ close(); setTab('apps'); });
   document.getElementById('pm-signout')?.addEventListener('click',()=>{ close(); signOut(); });
   document.getElementById('pm-signout-erase')?.addEventListener('click',()=>{ close(); signOutAndErase(); });
+  document.getElementById('pm-delete-account')?.addEventListener('click',()=>{ close(); _confirmDeleteAccount(); });
   setTimeout(()=>document.addEventListener('click',function h(e){if(!menu.contains(e.target)){close();document.removeEventListener('click',h);}},50));
 }
 /* Show Sign up / Log in in the header ONLY when signed out.

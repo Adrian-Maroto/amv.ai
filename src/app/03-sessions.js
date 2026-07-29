@@ -1048,16 +1048,42 @@ function eraseDeviceData(email){
       if(k && k.indexOf(prefix) === 0){ localStorage.removeItem(k); removed++; }
     }
   }catch(e){}
-  // global keys that are still personal to whoever was signed in
-  ['amv_gtoken','amv_gtoken_exp','amv_api_token','amv_api_refresh','amv_token_exp',
-   'amv_user','amv_credits','amv_nickname','amv_work','amv_instructions']
-    .forEach(k => { try{ localStorage.removeItem(k); removed++; }catch(e){} });
+  // Keys that live OUTSIDE the per-account namespace but are still personal to
+  // whoever was signed in. Device preferences (theme, accent, language, rail,
+  // reduced motion, backend URL, cookie choice) are deliberately NOT here: they
+  // belong to the machine, and wiping them would reset the next person's screen
+  // for no privacy gain.
+  ['amv_gtoken','amv_gtoken_exp','amv_gauth','amv_api_token','amv_api_refresh','amv_token_exp',
+   'amv_user','amv_owner','amv_credits','amv_credits_autoreload','amv_nickname','amv_work',
+   'amv_instructions','amv_location_opt','amv_improve_opt','amv_cap_websearch','amv_cap_memory',
+   'amv_cap_suggestions','amv_skills','amv_active_skills','amv_oauth_return','amv_oauth_state',
+   'amv_analytics_id','amv_market_local','amv_market_purchases','amv_market_wallet',
+   'amv_market_ratings','amv_market_reviews','amv_market_installed','amv_market_threads']
+    .forEach(k => { try{ if(localStorage.getItem(k)!==null){ localStorage.removeItem(k); removed++; } }catch(e){} });
   // account-scoped records that are keyed differently
   try{
     for(let i = localStorage.length - 1; i >= 0; i--){
       const k = localStorage.key(i);
       if(k && (k.indexOf('amv_oauthtx_') === 0 || k.indexOf('amv_pfp_' + who) === 0)){
         localStorage.removeItem(k); removed++;
+      }
+    }
+  }catch(e){}
+  // Family links are one shared store because a link belongs to TWO accounts.
+  // Prune only the rows this person is part of - deleting the whole key would
+  // silently cut the other account's links as collateral damage.
+  try{
+    const raw = localStorage.getItem('amv_links');
+    if(raw){
+      const d = JSON.parse(raw) || {};
+      const keep = o => o && o.owner !== who && o.grantee !== who;
+      const links = (d.links||[]).filter(keep), invites = (d.invites||[]).filter(keep);
+      const dropped = ((d.links||[]).length - links.length) + ((d.invites||[]).length - invites.length);
+      if(dropped > 0){
+        removed += dropped;
+        if(links.length || invites.length){
+          localStorage.setItem('amv_links', JSON.stringify(Object.assign({}, d, { links, invites })));
+        } else { localStorage.removeItem('amv_links'); }
       }
     }
   }catch(e){}

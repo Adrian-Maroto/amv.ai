@@ -2710,16 +2710,42 @@ function eraseDeviceData(email){
       if(k && k.indexOf(prefix) === 0){ localStorage.removeItem(k); removed++; }
     }
   }catch(e){}
-  // global keys that are still personal to whoever was signed in
-  ['amv_gtoken','amv_gtoken_exp','amv_api_token','amv_api_refresh','amv_token_exp',
-   'amv_user','amv_credits','amv_nickname','amv_work','amv_instructions']
-    .forEach(k => { try{ localStorage.removeItem(k); removed++; }catch(e){} });
+  // Keys that live OUTSIDE the per-account namespace but are still personal to
+  // whoever was signed in. Device preferences (theme, accent, language, rail,
+  // reduced motion, backend URL, cookie choice) are deliberately NOT here: they
+  // belong to the machine, and wiping them would reset the next person's screen
+  // for no privacy gain.
+  ['amv_gtoken','amv_gtoken_exp','amv_gauth','amv_api_token','amv_api_refresh','amv_token_exp',
+   'amv_user','amv_owner','amv_credits','amv_credits_autoreload','amv_nickname','amv_work',
+   'amv_instructions','amv_location_opt','amv_improve_opt','amv_cap_websearch','amv_cap_memory',
+   'amv_cap_suggestions','amv_skills','amv_active_skills','amv_oauth_return','amv_oauth_state',
+   'amv_analytics_id','amv_market_local','amv_market_purchases','amv_market_wallet',
+   'amv_market_ratings','amv_market_reviews','amv_market_installed','amv_market_threads']
+    .forEach(k => { try{ if(localStorage.getItem(k)!==null){ localStorage.removeItem(k); removed++; } }catch(e){} });
   // account-scoped records that are keyed differently
   try{
     for(let i = localStorage.length - 1; i >= 0; i--){
       const k = localStorage.key(i);
       if(k && (k.indexOf('amv_oauthtx_') === 0 || k.indexOf('amv_pfp_' + who) === 0)){
         localStorage.removeItem(k); removed++;
+      }
+    }
+  }catch(e){}
+  // Family links are one shared store because a link belongs to TWO accounts.
+  // Prune only the rows this person is part of - deleting the whole key would
+  // silently cut the other account's links as collateral damage.
+  try{
+    const raw = localStorage.getItem('amv_links');
+    if(raw){
+      const d = JSON.parse(raw) || {};
+      const keep = o => o && o.owner !== who && o.grantee !== who;
+      const links = (d.links||[]).filter(keep), invites = (d.invites||[]).filter(keep);
+      const dropped = ((d.links||[]).length - links.length) + ((d.invites||[]).length - invites.length);
+      if(dropped > 0){
+        removed += dropped;
+        if(links.length || invites.length){
+          localStorage.setItem('amv_links', JSON.stringify(Object.assign({}, d, { links, invites })));
+        } else { localStorage.removeItem('amv_links'); }
       }
     }
   }catch(e){}
@@ -3264,6 +3290,11 @@ const I18N = {
   'Manage Subscription':{es:'Gestionar suscripci\u00f3n',zh:'\u7ba1\u7406\u8ba2\u9605',hi:'\u0938\u0926\u0938\u094d\u092f\u0924\u093e \u092a\u094d\u0930\u092c\u0902\u0927\u093f\u0924 \u0915\u0930\u0947\u0902',ar:'\u0625\u062f\u0627\u0631\u0629 \u0627\u0644\u0627\u0634\u062a\u0631\u0627\u0643',pt:'Gerenciar assinatura',fr:'G\u00e9rer l\u2019abonnement',de:'Abo verwalten',ja:'\u30b5\u30d6\u30b9\u30af\u30ea\u30d7\u30b7\u30e7\u30f3\u7ba1\u7406',ru:'\u0423\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0438\u0435 \u043f\u043e\u0434\u043f\u0438\u0441\u043a\u043e\u0439',id:'Kelola langganan',bn:'\u09b8\u09be\u09ac\u09b8\u09cd\u0995\u09cd\u09b0\u09bf\u09aa\u09b6\u09a8 \u09aa\u09b0\u09bf\u099a\u09be\u09b2\u09a8\u09be',ur:'\u0633\u0628\u0633\u06a9\u0631\u067e\u0634\u0646 \u06a9\u0627 \u0646\u0638\u0645 \u06a9\u0631\u06cc\u06ba',tr:'Aboneli\u011fi y\u00f6net',vi:'Qu\u1ea3n l\u00fd \u0111\u0103ng k\u00fd',it:'Gestisci abbonamento',ko:'\uad6c\ub3c5 \uad00\ub9ac',ta:'\u0b9a\u0ba8\u0bcd\u0ba4\u0bbe\u0bb5\u0bc8 \u0ba8\u0bbf\u0bb0\u0bcd\u0bb5\u0b95\u0bbf'},
   'Apps & Extensions':{es:'Apps y extensiones',zh:'\u5e94\u7528\u4e0e\u6269\u5c55',hi:'\u0910\u092a\u094d\u0938 \u0914\u0930 \u090f\u0915\u094d\u0938\u091f\u0947\u0902\u0936\u0928',ar:'\u0627\u0644\u062a\u0637\u0628\u064a\u0642\u0627\u062a \u0648\u0627\u0644\u0625\u0636\u0627\u0641\u0627\u062a',pt:'Apps e extens\u00f5es',fr:'Apps et extensions',de:'Apps & Erweiterungen',ja:'\u30a2\u30d7\u30ea\u3068\u62e1\u5f35\u6a5f\u80fd',ru:'\u041f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u044f \u0438 \u0440\u0430\u0441\u0448\u0438\u0440\u0435\u043d\u0438\u044f',id:'Aplikasi & ekstensi',bn:'\u0985\u09cd\u09af\u09be\u09aa \u0993 \u098f\u0995\u09cd\u09b8\u099f\u09c7\u09a8\u09b6\u09a8',ur:'\u0627\u06cc\u067e\u0633 \u0627\u0648\u0631 \u0627\u06cc\u06a9\u0633\u0679\u06cc\u0646\u0634\u0646\u0632',tr:'Uygulamalar ve uzant\u0131lar',vi:'\u1ee8ng d\u1ee5ng & ti\u1ec7n \u00edch',it:'App ed estensioni',ko:'\uc571 \ubc0f \ud655\uc7a5',ta:'\u0b86\u0baa\u0bcd\u0bb8\u0bcd \u0bae\u0bb1\u0bcd\u0bb1\u0bc1\u0bae\u0bcd \u0ba8\u0bc0\u0b9f\u0bcd\u0b9f\u0bbf\u0baa\u0bcd\u0baa\u0bc1\u0b95\u0bb3\u0bcd'},
   'Sign Out':{es:'Cerrar sesi\u00f3n',zh:'\u9000\u51fa\u767b\u5f55',hi:'\u0938\u093e\u0907\u0928 \u0906\u0909\u091f',ar:'\u062a\u0633\u062c\u064a\u0644 \u0627\u0644\u062e\u0631\u0648\u062c',pt:'Sair',fr:'Se d\u00e9connecter',de:'Abmelden',ja:'\u30b5\u30a4\u30f3\u30a2\u30a6\u30c8',ru:'\u0412\u044b\u0439\u0442\u0438',id:'Keluar',bn:'\u09b8\u09be\u0987\u09a8 \u0986\u0989\u099f',ur:'\u0633\u0627\u0626\u0646 \u0622\u0624\u0679',tr:'\u00c7\u0131k\u0131\u015f yap',vi:'\u0110\u0103ng xu\u1ea5t',it:'Esci',ko:'\ub85c\uadf8\uc544\uc6c3',ta:'\u0bb5\u0bc6\u0bb3\u0bbf\u0baf\u0bc7\u0bb1\u0bc1'},
+  'You can sign back in':{es:'Puedes volver a iniciar sesión',zh:'你可以重新登录',hi:'आप फिर से साइन इन कर सकते हैं',ar:'يمكنك تسجيل الدخول مرة أخرى',pt:'Você pode entrar novamente',fr:'Vous pourrez vous reconnecter',de:'Du kannst dich wieder anmelden',ja:'またサインインできます',ru:'Вы сможете войти снова',id:'Anda bisa masuk kembali',bn:'আপনি আবার সাইন ইন করতে পারবেন',ur:'آپ دوبارہ سائن ان کر سکتے ہیں',tr:'Tekrar giriş yapabilirsiniz',vi:'Bạn có thể đăng nhập lại',it:'Puoi accedere di nuovo',ko:'다시 로그인할 수 있습니다',ta:'நீங்கள் மீண்டும் உள்நுழையலாம்'},
+  'Sign out & erase this device':{es:'Cerrar sesión y borrar este dispositivo',zh:'退出并清除此设备',hi:'साइन आउट करें और यह डिवाइस मिटाएं',ar:'تسجيل الخروج ومسح هذا الجهاز',pt:'Sair e apagar este dispositivo',fr:'Se déconnecter et effacer cet appareil',de:'Abmelden und dieses Gerät löschen',ja:'サインアウトしてこの端末を消去',ru:'Выйти и стереть данные на устройстве',id:'Keluar & hapus perangkat ini',bn:'সাইন আউট করুন ও এই ডিভাইস মুছুন',ur:'سائن آؤٹ کریں اور یہ ڈیوائس صاف کریں',tr:'Çıkış yap ve bu cihazı temizle',vi:'Đăng xuất & xóa thiết bị này',it:'Esci e cancella questo dispositivo',ko:'로그아웃하고 이 기기 지우기',ta:'வெளியேறி இந்த சாதனத்தை அழிக்கவும்'},
+  'For a shared or school computer':{es:'Para un ordenador compartido o escolar',zh:'适用于共用或学校电脑',hi:'साझा या स्कूल कंप्यूटर के लिए',ar:'لجهاز مشترك أو جهاز المدرسة',pt:'Para um computador compartilhado ou escolar',fr:'Pour un ordinateur partagé ou scolaire',de:'Für einen gemeinsam genutzten oder Schulcomputer',ja:'共用・学校のパソコン向け',ru:'Для общего или школьного компьютера',id:'Untuk komputer bersama atau sekolah',bn:'শেয়ার করা বা স্কুলের কম্পিউটারের জন্য',ur:'مشترکہ یا اسکول کے کمپیوٹر کے لیے',tr:'Ortak veya okul bilgisayarı için',vi:'Dành cho máy tính dùng chung hoặc ở trường',it:'Per un computer condiviso o scolastico',ko:'공용 또는 학교 컴퓨터용',ta:'பகிரப்பட்ட அல்லது பள்ளி கணினிக்கு'},
+  'Delete account':{es:'Eliminar cuenta',zh:'删除账户',hi:'खाता हटाएं',ar:'حذف الحساب',pt:'Excluir conta',fr:'Supprimer le compte',de:'Konto löschen',ja:'アカウントを削除',ru:'Удалить аккаунт',id:'Hapus akun',bn:'অ্যাকাউন্ট মুছুন',ur:'اکاؤنٹ حذف کریں',tr:'Hesabı sil',vi:'Xóa tài khoản',it:'Elimina account',ko:'계정 삭제',ta:'கணக்கை நீக்கு'},
+  'Permanent. Cannot be undone':{es:'Permanente. No se puede deshacer',zh:'永久删除，无法撤销',hi:'स्थायी। पूर्ववत नहीं किया जा सकता',ar:'دائم. لا يمكن التراجع عنه',pt:'Permanente. Não pode ser desfeito',fr:'Définitif. Irréversible',de:'Endgültig. Kann nicht rückgängig gemacht werden',ja:'永久的です。取り消せません',ru:'Навсегда. Отменить нельзя',id:'Permanen. Tidak dapat dibatalkan',bn:'স্থায়ী। বাতিল করা যাবে না',ur:'مستقل۔ واپس نہیں کیا جا سکتا',tr:'Kalıcıdır. Geri alınamaz',vi:'Vĩnh viễn. Không thể hoàn tác',it:'Permanente. Non può essere annullato',ko:'영구적입니다. 되돌릴 수 없습니다',ta:'நிரந்தரம். திரும்பப் பெற முடியாது'},
   'CREATE':{es:'CREAR',zh:'\u521b\u5efa',hi:'\u092c\u0928\u093e\u090f\u0902',ar:'\u0625\u0646\u0634\u0627\u0621',pt:'CRIAR',fr:'CR\u00c9ER',de:'ERSTELLEN',ja:'\u4f5c\u6210',ru:'\u0421\u041e\u0417\u0414\u0410\u0422\u042c'},
   'AGENTS':{es:'AGENTES',zh:'\u4ee3\u7406',hi:'\u090f\u091c\u0947\u0902\u091f',ar:'\u0627\u0644\u0648\u0643\u0644\u0627\u0621',pt:'AGENTES',fr:'AGENTS',de:'AGENTEN',ja:'\u30a8\u30fc\u30b8\u30a7\u30f3\u30c8',ru:'\u0410\u0413\u0415\u041d\u0422\u042b'},
   'BUILD':{es:'CONSTRUIR',zh:'\u6784\u5efa',hi:'\u092c\u0928\u093e\u090f\u0902',ar:'\u0628\u0646\u0627\u0621',pt:'CONSTRUIR',fr:'CONSTRUIRE',de:'BAUEN',ja:'\u30d3\u30eb\u30c9',ru:'\u0421\u0411\u041e\u0420\u041a\u0410'},
@@ -6390,12 +6421,20 @@ function showProfMenu(trigger) {
       '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="2" width="9" height="9" rx="1"/><rect x="13" y="2" width="9" height="9" rx="1"/><rect x="2" y="13" width="9" height="9" rx="1"/><rect x="13" y="13" width="9" height="9" rx="1"/></svg>'+
       'Apps &amp; Extensions</button>'+
     '<div class="prof-divider"></div>'+
-    '<button class="prof-item" id="pm-signout-erase" title="Use this on a shared or public computer">'+
-      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>'+
-      'Sign out &amp; erase this device</button>'+
-    '<button class="prof-item danger" id="pm-signout">'+
+    /* Two clearly different exits, plus the shared-computer case in between:
+       - Sign out: reversible, your work is waiting when you return.
+       - Erase this device: for a school or family computer. Account intact.
+       - Delete account: irreversible, removes it from the servers too. */
+    '<button class="prof-item" id="pm-signout" title="You can sign back in any time. Your chats and settings will be waiting.">'+
       '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>'+
-      'Sign Out</button>';
+      '<span>Sign Out<small class="prof-note">You can sign back in</small></span></button>'+
+    '<button class="prof-item" id="pm-signout-erase" title="Leave nothing behind on a shared or public computer. Your account stays.">'+
+      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>'+
+      '<span>Sign out &amp; erase this device<small class="prof-note">For a shared or school computer</small></span></button>'+
+    '<div class="prof-divider"></div>'+
+    '<button class="prof-item danger" id="pm-delete-account" title="Permanently deletes your account. This cannot be undone.">'+
+      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'+
+      '<span>Delete account<small class="prof-note">Permanent. Cannot be undone</small></span></button>';
   document.body.appendChild(menu);
   
   // Wire items
@@ -6407,6 +6446,7 @@ function showProfMenu(trigger) {
   document.getElementById('pm-apps')?.addEventListener('click',()=>{ close(); setTab('apps'); });
   document.getElementById('pm-signout')?.addEventListener('click',()=>{ close(); signOut(); });
   document.getElementById('pm-signout-erase')?.addEventListener('click',()=>{ close(); signOutAndErase(); });
+  document.getElementById('pm-delete-account')?.addEventListener('click',()=>{ close(); _confirmDeleteAccount(); });
   setTimeout(()=>document.addEventListener('click',function h(e){if(!menu.contains(e.target)){close();document.removeEventListener('click',h);}},50));
 }
 /* Show Sign up / Log in in the header ONLY when signed out.
@@ -14068,7 +14108,12 @@ function _confirmDeleteAccount(){
         return;
       }
     }
-    try{ localStorage.clear(); }catch(e){}
+    // Erase THIS account off the device, rather than blanking all of storage.
+    // On a family or school computer, wiping everything would also destroy a
+    // sibling's chats, memories and purchases - not what "delete MY account"
+    // asks for, and not something they consented to.
+    try{ eraseDeviceData((S.user&&S.user.email)||'guest'); }catch(e){}
+    try{ localStorage.removeItem('amv_user'); }catch(e){}
     location.reload();
   });
 }

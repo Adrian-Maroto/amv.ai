@@ -332,10 +332,13 @@ ok(del.enabledOnExact, 'typing DELETE enables it');
 const wired = await page.evaluate(() => {
   // the flow must call the real server endpoint when connected
   const fn = _confirmDeleteAccount.toString();
-  return { callsEndpoint: fn.includes('/auth/delete'), clearsLocal: fn.includes('localStorage.clear') };
+  return { callsEndpoint: fn.includes('/auth/delete'), clearsLocal: fn.includes('eraseDeviceData(') };
 });
 ok(wired.callsEndpoint, 'the flow calls the server /auth/delete endpoint (real purge, not just local)');
-ok(wired.clearsLocal, 'and also clears local browser data');
+/* This used to blank the whole of localStorage. On a family or school computer
+   that also destroyed a sibling's chats and purchases, so it now erases only
+   the account being deleted. See tests/e2e/device-privacy.test.mjs. */
+ok(wired.clearsLocal, 'and also clears this account’s local browser data');
 
 await page.evaluate(() => { try { closeOvr(); } catch (e) {} });
 /* Two reported UI bugs: (1) the settings close control was a bare X that read as

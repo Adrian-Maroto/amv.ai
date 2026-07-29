@@ -752,7 +752,12 @@ function _confirmDeleteAccount(){
         return;
       }
     }
-    try{ localStorage.clear(); }catch(e){}
+    // Erase THIS account off the device, rather than blanking all of storage.
+    // On a family or school computer, wiping everything would also destroy a
+    // sibling's chats, memories and purchases - not what "delete MY account"
+    // asks for, and not something they consented to.
+    try{ eraseDeviceData((S.user&&S.user.email)||'guest'); }catch(e){}
+    try{ localStorage.removeItem('amv_user'); }catch(e){}
     location.reload();
   });
 }
