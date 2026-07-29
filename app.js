@@ -19725,6 +19725,7 @@ const AMVUniversal = {
   async plan(request){
     const gate = _policyCheck(request);
     if(!gate.ok) return { blocked:true, why:gate.why, steps:[] };
+    let _planErr = '';
     const cat = AMVConnectors.catalog();
     if(typeof _aiBackendReady === 'function' && _aiBackendReady() && typeof aiComplete === 'function'){
       const tools = cat.map(a => '- ' + a.id + ' (' + a.connectorName + (a.live ? ', connected' : ', NOT connected') + '): ' + a.desc).join('\n');
@@ -19737,9 +19738,16 @@ const AMVUniversal = {
         const raw = await aiComplete('TOOL CATALOG:\n' + tools + '\n\nREQUEST: ' + request, sys, { max_tokens: 1400 });
         const arr = JSON.parse(raw.slice(raw.indexOf('['), raw.lastIndexOf(']') + 1));
         if(Array.isArray(arr) && arr.length) return { steps: arr.slice(0, this.MAX_STEPS) };
-      }catch(e){}
+        _planErr = 'The planner did not return any steps.';
+      }catch(e){
+        /* Swallowing this used to be dishonest: with the engine connected but
+           the call failing, the user got a mysterious one-step plan and no clue
+           that planning had failed at all. Keep the fallback, name the reason. */
+        _planErr = (e && e.message) || 'Planning failed.';
+      }
     }
     return { steps: [{ title:'Complete the request', tool:null, args:{ goal:request }, needs_approval:true }],
+             planError: _planErr || undefined,
              degraded: !(typeof _aiBackendReady === 'function' && _aiBackendReady()) };
   },
 
@@ -19781,10 +19789,40 @@ const AMVUniversal = {
      the requirement is provided continues automatically. */
   async execute(resolved, opts){
     opts = opts || {};
-    const onEvent = typeof opts.onEvent === 'function' ? opts.onEvent : function(){};
+    /* A throw inside the caller's progress callback used to abort the whole
+       run: a rendering bug would look like the agent failing. */
+    const _emit = typeof opts.onEvent === 'function' ? opts.onEvent : function(){};
+    const onEvent = e => { try{ _emit(e); }catch(_){} };
+    /* No step may run forever. Connector calls have their own network
+       deadlines, but a custom run() (the web agent, a local bridge) could sit
+       there indefinitely and take the whole plan with it. */
+    const stepMs = opts.stepTimeoutMs || 300000;
+    const _withDeadline = (p, s) => new Promise((resolve, reject) => {
+      const t = setTimeout(() => reject(Object.assign(
+        new Error('This step took longer than ' + Math.round(stepMs / 1000) + 's and was stopped.'),
+        { code:'step_timeout' })), stepMs);
+      Promise.resolve(p).then(v => { clearTimeout(t); resolve(v); }, e => { clearTimeout(t); reject(e); });
+    });
     const results = [];
+    /* Stopping rules. A BLOCKED step parks and the run continues, because a
+       missing connection for one step says nothing about the others. An ERROR
+       is different: the plan is sequential, so a later step is very likely
+       working from something the failed step was supposed to produce - and
+       later steps are the ones that send, post, buy and contact people.
+       Running them anyway is how an agent does real damage on bad data. So an
+       error stops the run and the rest are reported as not attempted. */
+    let stopped = null;
     for(let i = 0; i < resolved.length; i++){
       const s = resolved[i];
+      if(opts.signal && opts.signal.aborted && !stopped) stopped = { code:'cancelled', why:'You stopped the run.' };
+      if(stopped){
+        const blocker = { code:stopped.code, need:stopped.why,
+          how: stopped.code === 'cancelled' ? 'Run it again when you are ready.'
+             : 'Fix the step that failed above, then run again - I continue from there.' };
+        onEvent({ type:'skipped', i, step:s, blocker });
+        results.push({ i, status:'skipped', blocker });
+        continue;
+      }
       if(s.status === 'blocked'){
         onEvent({ type:'blocked', i, step:s, blocker:s.blocker });
         results.push({ i, status:'blocked', blocker:s.blocker });
@@ -19797,7 +19835,7 @@ const AMVUniversal = {
       }
       onEvent({ type:'start', i, step:s });
       try{
-        const out = await AMVConnectors.run(s.tool, s.args || {});
+        const out = await _withDeadline(AMVConnectors.run(s.tool, s.args || {}), s);
         onEvent({ type:'done', i, step:s, result:out });
         results.push({ i, status:'done', result:out });
       }catch(e){
@@ -19809,11 +19847,16 @@ const AMVUniversal = {
           needs_info:'Tell me this detail and I will carry on.',
           needs_auth:'Connect the account this step needs.',
           blocked_url:'That address is not allowed (internal or unsupported).',
-          step_cap:'The task needed more steps than the safety cap allows - narrow it slightly and rerun.'
+          step_cap:'The task needed more steps than the safety cap allows - narrow it slightly and rerun.',
+          step_timeout:'The service did not finish in time. Try again, or narrow this step.'
         };
-        const blocker = e && e.code ? { code:e.code, need:e.message, how:HOW[e.code] || e.message } : null;
-        onEvent({ type: blocker ? 'blocked' : 'error', i, step:s, error:e.message, blocker });
+        // step_timeout is a failure, not something the user can simply provide.
+        const parked = e && e.code && e.code !== 'step_timeout';
+        const blocker = parked ? { code:e.code, need:e.message, how:HOW[e.code] || e.message } : null;
+        onEvent({ type: blocker ? 'blocked' : 'error', i, step:s, error:e.message, blocker,
+                  how: blocker ? undefined : (HOW[e && e.code] || undefined) });
         results.push({ i, status: blocker ? 'blocked' : 'error', error:e.message, blocker });
+        if(!blocker) stopped = { code:'earlier_step_failed', why:'An earlier step failed, so this was not attempted.' };
       }
     }
     return results;
@@ -19827,17 +19870,22 @@ const AMVUniversal = {
     const resolved = this.resolve(p.steps, opts);
     if(typeof opts.onPlan === 'function') opts.onPlan(resolved);
     const results = await this.execute(resolved, opts);
-    return { steps:resolved, results, degraded:p.degraded,
+    return { steps:resolved, results, degraded:p.degraded, planError:p.planError,
              summary:this.summarize(resolved, results) };
   },
 
   summarize(resolved, results){
     const n = a => results.filter(r => r.status === a).length;
-    const blockers = results.filter(r => r.blocker).map(r => r.blocker);
+    // "needs" is what the user can supply to unstick the run. A step that was
+    // never attempted is a consequence, not a requirement, so it is counted
+    // but kept out of the ask.
+    const blockers = results.filter(r => r.blocker && r.status !== 'skipped').map(r => r.blocker);
     const seen = {};
+    const failed = results.find(r => r.status === 'error');
     return {
       total: resolved.length, done: n('done'), blocked: n('blocked'),
-      awaitingApproval: n('awaiting_approval'), errors: n('error'),
+      awaitingApproval: n('awaiting_approval'), errors: n('error'), skipped: n('skipped'),
+      failedAt: failed ? failed.i : -1, failedWhy: failed ? failed.error : '',
       needs: blockers.filter(b => seen[b.code + b.need] ? false : (seen[b.code + b.need] = true))
     };
   }
@@ -19880,28 +19928,58 @@ async function uniRun(request, opts){
     return { blocked: true, why: p.why };
   }
   const resolved = AMVUniversal.resolve(p.steps, { autonomous: !!opts.autonomous });
-  paint('<div class="uni-plan"><div class="uni-h">' + resolved.length + ' step' + (resolved.length === 1 ? '' : 's') + '</div>' +
+  /* An agent that is doing real things on the user's behalf must be stoppable.
+     Cancelling takes effect between steps - the one already in flight is not
+     killed halfway, which would be worse than letting it finish - so the
+     button says so rather than implying an instant halt. */
+  const ctrl = opts.signal ? null : ((typeof AbortController !== 'undefined') ? new AbortController() : null);
+  const signal = opts.signal || (ctrl ? ctrl.signal : null);
+  paint('<div class="uni-plan"><div class="uni-h">' + resolved.length + ' step' + (resolved.length === 1 ? '' : 's') +
+        (ctrl ? '<button class="uni-stop" id="uni-stop" type="button">Stop</button>' : '') + '</div>' +
         resolved.map(_uniStepRow).join('') + '</div>');
+  if(ctrl){
+    const sb = document.getElementById('uni-stop');
+    if(sb) sb.addEventListener('click', () => {
+      try{ ctrl.abort(); }catch(e){}
+      sb.disabled = true; sb.textContent = 'Stopping after this step…';
+    });
+  }
 
   const res = await AMVUniversal.execute(resolved, {
-    autonomous: !!opts.autonomous, approved: !!opts.approved,
+    autonomous: !!opts.autonomous, approved: !!opts.approved, signal: signal,
     onEvent: e => {
       if(e.type === 'start') _uniSetStatus(e.i, 'running');
       else if(e.type === 'done') _uniSetStatus(e.i, 'done', typeof e.result === 'object' ? JSON.stringify(e.result).slice(0, 140) : String(e.result || '').slice(0, 140));
       else if(e.type === 'blocked') _uniSetStatus(e.i, 'blocked');
       else if(e.type === 'awaiting_approval') _uniSetStatus(e.i, 'needs_approval');
       else if(e.type === 'error') _uniSetStatus(e.i, 'error', e.error);
+      else if(e.type === 'skipped') _uniSetStatus(e.i, 'skipped', (e.blocker && e.blocker.need) || 'Not attempted');
     }
   });
   const sum = AMVUniversal.summarize(resolved, res);
   const needs = sum.needs.length
     ? '<div class="uni-needs"><b>To finish this I need:</b> ' + sum.needs.map(n => escH(n.how || n.need)).join(' · ') +
       '<div class="uni-resume">Provide it and run again - I continue from here automatically.</div></div>' : '';
+  /* Failures were computed and then never shown: a run where every step threw
+     reported "0 done - 0 blocked - 0 awaiting your OK" and looked like nothing
+     had happened. Say what failed, where, and what it means for the rest. */
+  const failed = sum.errors
+    ? '<div class="uni-failed"><b>Stopped at step ' + (sum.failedAt + 1) + ':</b> ' + escH(sum.failedWhy || 'it failed') +
+      (sum.skipped ? '<div class="uni-resume">' + sum.skipped + ' later step' + (sum.skipped === 1 ? '' : 's') +
+        ' were not attempted, because they would have run on the result of the step that failed.</div>' : '') +
+      '</div>' : '';
+  const planFailed = p.planError
+    ? '<div class="uni-failed"><b>I could not plan this properly:</b> ' + escH(p.planError) +
+      '<div class="uni-resume">What you see is a single fallback step, not a real plan.</div></div>' : '';
+  const _sb = document.getElementById('uni-stop'); if(_sb) _sb.remove();   // the run is over
   const m = document.getElementById('uni-live');
   if(m) m.insertAdjacentHTML('beforeend',
     '<div class="uni-sum">' + sum.done + ' done · ' + sum.blocked + ' blocked · ' + sum.awaitingApproval + ' awaiting your OK' +
-    (p.degraded ? ' · <span class="uni-deg">connect the engine for full planning</span>' : '') + needs + '</div>');
-  return { steps: resolved, results: res, summary: sum };
+    (sum.errors ? ' · <span class="uni-err-n">' + sum.errors + ' failed</span>' : '') +
+    (sum.skipped ? ' · ' + sum.skipped + ' not attempted' : '') +
+    (p.degraded ? ' · <span class="uni-deg">connect the engine for full planning</span>' : '') +
+    planFailed + failed + needs + '</div>');
+  return { steps: resolved, results: res, summary: sum, planError: p.planError };
 }
 try{ window.uniRun = uniRun; window._uniStepRow = _uniStepRow; }catch(e){}
 /* ============================================================

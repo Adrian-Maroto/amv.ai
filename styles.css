@@ -6795,3 +6795,21 @@ html,body{height:100%;height:100dvh}
   padding:var(--sp-3) var(--sp-4);border:1px solid var(--bd);border-left:2px solid var(--gold);
   border-radius:var(--r-md);background:rgba(224,179,65,.06);font-size:var(--t-sm);color:var(--mu)}
 .ai-cut span{flex:1 1 220px;line-height:1.5}
+
+/* ============================================================
+   LAYER A25 - Universal agent: failures are visible
+   A run where every step threw used to render "0 done - 0 blocked"
+   and nothing else. Failed and not-attempted steps now read clearly.
+   ============================================================ */
+.uni-step.error .uni-ix{background:var(--red);color:#fff}
+.uni-step.skipped{opacity:.62;border-style:dashed}
+.uni-step.skipped .uni-ix{background:var(--s2);color:var(--dim)}
+.uni-err-n{color:var(--red);font-weight:600}
+.uni-failed{margin-top:var(--sp-2);padding:var(--sp-3) var(--sp-4);border:1px solid rgba(239,68,68,.32);
+  background:rgba(239,68,68,.07);border-radius:var(--r-md);font-size:var(--t-base);color:var(--tx)}
+.uni-failed .uni-resume{margin-top:var(--sp-1);font-size:var(--t-sm);color:var(--mu)}
+.uni-h{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3)}
+.uni-stop{font-size:var(--t-sm);color:var(--tx);background:var(--s2);border:1px solid var(--bd);
+  border-radius:var(--r-pill);padding:3px 12px;cursor:pointer}
+.uni-stop:hover:not(:disabled){border-color:var(--red);color:var(--red)}
+.uni-stop:disabled{opacity:.6;cursor:default}
