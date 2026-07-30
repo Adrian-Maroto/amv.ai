@@ -280,3 +280,16 @@ after the invited account is a day old AND has really used AMV, rejects
 same-network pairs, caps signups per code per day, and caps active rewards per
 account. The reward is capacity, never money or a plan - so even a defeat of
 every one of those checks cannot be converted into cash.
+
+## 26. A screen that cannot show bad news is not a security screen
+The Security pane rendered one hardcoded row - "This browser - Active now",
+with a green Active badge - reading nothing. It looked identical whether the
+account was healthy or had been signed into from three countries that week.
+Any status display must be able to render the bad state; if it cannot, it is
+decoration and it is worse than nothing, because it reassures.
+
+## 27. Scope a destructive action to what its label promises
+"Sign out of this device" posted to an endpoint that bumped the account's token
+epoch, killing every session everywhere - so signing out of a laptop silently
+ended a session on a phone in someone's pocket. The two scopes are now two
+different requests, and the buttons say which is which.

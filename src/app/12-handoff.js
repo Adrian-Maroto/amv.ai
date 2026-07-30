@@ -1083,10 +1083,17 @@ function _renderSetPaneInner(){
           '<button class="btn bp" id="reset-pw-btn" style="font-size:12px;white-space:nowrap">Send reset link</button></div>'+
           '<div id="pw-msg" style="display:none;font-size:12px;padding:9px 12px;border-radius:8px;margin-top:12px"></div>'+
         '</div>')+
-      '<div class="ss2"><h3>Sessions</h3>'+
-        '<div class="br2"><div><div style="font-size:13px;font-weight:500">This browser</div><div style="font-size:11px;color:var(--t2);margin-top:2px">Current device &bull; Active now</div></div><span class="badge bg3">Active</span></div>'+
+      /* Was a hardcoded "This browser - Active now" row wired to nothing. It is
+         now the account's real event log; see 28-activity.js. */
+      '<div class="ss2"><h3>Account activity</h3>'+
+        '<div class="set-hint">Where and when this account has been used. If something here was not you, change your password and sign out everywhere.</div>'+
+        '<div id="act-block"></div>'+
+      '</div>'+
+      '<div class="ss2"><h3>This device</h3>'+
+        '<div class="br2"><div><div style="font-size:13px;font-weight:500">Signed in on this browser</div><div style="font-size:11px;color:var(--t2);margin-top:2px">Signing out here leaves your other devices signed in.</div></div></div>'+
         '<button class="btn bs" style="font-size:12px;margin-top:12px" onclick="signOut()">Sign out of this device</button>'+
       '</div>';
+    _renderActivityBlock(document.getElementById('act-block'));
     on($('reset-pw-btn'),'click',async()=>{
       const email=(S.user&&S.user.email)||'';
       const msg=$('pw-msg');

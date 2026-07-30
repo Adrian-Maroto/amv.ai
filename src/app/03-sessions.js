@@ -673,7 +673,10 @@ async function handleGoogleCred(resp) {
     try{
       const r=await fetchDeadline(AMV_API.base.replace(/\/$/,'')+'/auth/google', {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({ credential:resp.credential })   // server verifies this with Google
+        // The invite code, if they arrived through one, so a Google sign-up is
+        // attributed the same way an email one is. The server verifies the
+        // credential itself with Google.
+        body:JSON.stringify({ credential:resp.credential, ...((typeof _refPending==='function' && _refPending()) ? { ref:_refPending() } : {}) })
       });
       if(r.ok){
         const data=await r.json();
@@ -1116,8 +1119,11 @@ function signOutAndErase(){
 try{ window.signOutAndErase = signOutAndErase; }catch(e){}
 
 function signOut(){
-  // best-effort server-side revocation (fire and forget)
-  try{ if(window.AMV_API && AMV_API.live && AMV_API.token){ fetch(AMV_API.base.replace(/\/$/,'')+'/auth/logout',{method:'POST',headers:{'Authorization':'Bearer '+AMV_API.token}}).catch(()=>{}); } }catch(e){}
+  /* Retire THIS device's session server-side, and only this one. This used to
+     post to /auth/logout with no body, which revoked every token on the
+     account - so signing out of a laptop silently signed out a phone. The
+     button says this device; now it means it. */
+  try{ if(window.AMV_API && AMV_API.live && AMV_API.token) AMV_API.logout(false); }catch(e){}
   try{ localStorage.removeItem('amv_api_token'); localStorage.removeItem('amv_api_refresh'); localStorage.removeItem('amv_token_exp'); }catch(e){}
   S.user=null; localStorage.removeItem('amv_user');
   _wipeAccountState();                 // clear Recents, Dev project, Lab code, memory - nothing crosses accounts

@@ -2559,6 +2559,7 @@ export default {
         case '/auth/reset/verify':  return authResetVerify(request, env);
         case '/auth/admin-reset':   return authAdminReset(request, env);
         case '/v1/resume':       return resumeAnswer(request, env);
+        case '/v1/activity':     return accountActivity(request, env);
         case '/v1/referral':     return referralStatus(request, env);
         case '/v1/share/create': return shareCreate(request, env);
         case '/v1/share/list':   return shareList(request, env);
@@ -2766,6 +2767,7 @@ async function authSignup(request, env){
   const acct = { email: em, name: safeName, provider:'email', salt, pwHash, pwIter: PBKDF2_ITERATIONS, createdAt: Date.now(), sipHash };
   await DB.put(env, 'acct', em, acct);
   try{ await _recordGrowth(env, 'signup'); }catch(e){}
+  await _userEvent(env, request, em, 'account_created');
   // An invite code, if they arrived through one. Recorded, not yet rewarded.
   try{ await _referralCapture(env, request, em, body.ref); }catch(e){}
   return json(await issueTokens(env, em, safeName));
@@ -2813,7 +2815,27 @@ async function authLogin(request, env) {
   const hash = await _hashPassword(password, acct.salt, usedIter);
   // constant-time compare to avoid password-timing leaks
   const ok = timingSafeEqual(new TextEncoder().encode(hash), new TextEncoder().encode(acct.pwHash || ''));
-  if(!ok){ await _noteAuthFail(env, rlKey); audit(env,'auth_fail',{email:em,reason:'bad_password'}); return json({ error:'wrong password' }, 401); }
+  if(!ok){
+    await _noteAuthFail(env, rlKey);
+    audit(env,'auth_fail',{email:em,reason:'bad_password'});
+    /* Shown to the account owner: a run of these is how someone finds out their
+       password is being guessed, which is the single most useful thing an
+       activity log can tell them. */
+    /* Coalesced to at most one entry per 15 minutes per account. Without that,
+       a distributed guessing run against one address is an unbounded write
+       amplifier on that account's log - the per-IP throttle above does not
+       bound it, because the attacker supplies the IPs. The user still sees a
+       run of entries across the hours an attack lasts, which is the signal
+       that matters; they do not need one line per guess. */
+    try{
+      const seen = `alogfail:${em}`;
+      if(!(await env.AMV_KV.get(seen))){
+        await env.AMV_KV.put(seen, '1', { expirationTtl: 900 });
+        await _userEvent(env, request, em, 'sign_in_failed', { reason: 'wrong password' });
+      }
+    }catch(e){ /* logging must never change the outcome of a sign-in */ }
+    return json({ error:'wrong password' }, 401);
+  }
   // success - clear the failure counter
   try{ await env.AMV_KV.delete(rlKey); }catch(e){}
   // transparent upgrade: if this account is below the current target, re-hash now
@@ -2825,6 +2847,7 @@ async function authLogin(request, env) {
     }catch(e){ /* non-fatal - login still succeeds */ }
   }
   try{ await _markActive(env, em); }catch(e){}
+  await _userEvent(env, request, em, 'signed_in');
   return json(await issueTokens(env, em, acct.name || name || ''));
 }
 
@@ -2916,6 +2939,7 @@ async function authGoogle(request, env) {
       try{ await _recordGrowth(env, 'signup'); }catch(e){}
       try{ await _referralCapture(env, request, em, body.ref); }catch(e){}
     }
+    await _userEvent(env, request, em, 'signed_in', { reason: 'Google' });
     const tokens = await issueTokens(env, em, name);
     return json(Object.assign({ email:em, name, picture:claims.picture||'' }, tokens));
   }catch(e){
@@ -2948,12 +2972,38 @@ async function authRefresh(request, env) {
 }
 
 /* Sign out everywhere: bump the user's token epoch, revoking all tokens. */
+/* Sign out. Two different things, and they had been the same thing:
+   - THIS device: retire the refresh token this device holds, so it can never be
+     exchanged again. The access token it also holds dies on its own within the
+     hour and is deleted locally immediately.
+   - EVERYWHERE: bump the account's token epoch, which invalidates every token
+     ever issued to it. This is the "someone else is in my account" button.
+   Before AMV-076 the plain sign-out did the second one while the button said
+   the first, so signing out of a laptop silently ended the session on a phone
+   in someone's pocket. */
 async function authLogout(request, env) {
   const auth = request.headers.get('Authorization') || '';
   const tok = auth.replace(/^Bearer\s+/i, '');
   const data = await verifyToken(tok, env.JWT_SECRET, env, 'access');
-  if (data && data.email) await revokeUserTokens(env, data.email);
-  return json({ ok: true });
+  const body = await request.json().catch(() => ({}));
+  if (!data || !data.email) return json({ ok: true });   // nothing to revoke; never leak which
+  if (body && body.everywhere) {
+    await revokeUserTokens(env, data.email);
+    await _userEvent(env, request, data.email, 'signed_out_everywhere');
+    return json({ ok: true, scope: 'all' });
+  }
+  /* Retire just this device's refresh token. Claiming its id is exactly what
+     the refresh endpoint does on use, so a retired token is indistinguishable
+     from one already spent - and a replay of it revokes the account, which is
+     the correct response to a stolen token being reused. */
+  if (body && body.refreshToken) {
+    const rt = await verifyToken(String(body.refreshToken), env.JWT_SECRET, env, 'refresh');
+    if (rt && rt.email === data.email && rt.jti) {
+      await _claimOnce(env, 'usedrefresh', rt.jti, Math.floor(REFRESH_TTL_MS / 1000));
+    }
+  }
+  await _userEvent(env, request, data.email, 'signed_out');
+  return json({ ok: true, scope: 'device' });
 }
 
 /* DELETE MY ACCOUNT - the "right to erasure" the privacy policy promises.
@@ -3025,7 +3075,16 @@ async function authDeleteAccount(request, env) {
   for (const kind of perUserKinds) {
     try { await DB.del(env, kind, email); deleted++; } catch {}
   }
-  for (const raw of [`reset:${email}`, `active:${email}:${todayKey()}`]) {
+  /* Loose per-user keys that are not DB `kind` rows. The referral pair must go
+     both ways or the code would keep resolving to an account that no longer
+     exists, and the activity log is a record OF this person - erasure means it
+     goes too. */
+  let myCode = '';
+  try { myCode = await env.AMV_KV.get(`refmine:${email}`) || ''; } catch {}
+  const loose = [`reset:${email}`, `active:${email}:${todayKey()}`,
+                 `alog:${email}`, `alogfail:${email}`, `refmine:${email}`, `refpend:${email}`];
+  if (myCode) loose.push(`refcode:${myCode}`);
+  for (const raw of loose) {
     try { await env.AMV_KV.delete(raw); } catch {}
   }
   // Revoke all tokens so existing sessions die immediately.
@@ -5268,6 +5327,87 @@ const PLAN_FROM_PRICE = (env) => ({
 const ABUSE_DISPUTE_BLOCK = 1;   // a single chargeback is a hard fraud signal → block
 const ABUSE_REFUND_BLOCK  = 3;   // this many refunds shows a pattern → block
 
+/* =====================================================================
+   AMV-076  ACCOUNT ACTIVITY - what happened on YOUR account
+
+   `audit()` writes security events to the operator's logs, which is the right
+   place for them and completely useless to the person whose account it is. The
+   Security screen meanwhile showed a hardcoded "This browser - Active now" row
+   that was not reading anything: a picture of a session list, not a session
+   list. Someone whose password had leaked would have looked straight at it and
+   seen nothing wrong.
+
+   So security events are also written per account, and the account can read
+   them back. What is recorded is deliberately coarse:
+     - WHAT happened, and when
+     - the browser family (Chrome/Safari/...), not the full user-agent string
+     - the country, when the edge knows it, not a city and never an address
+   That is enough to recognise "someone signed in from another country" and not
+   enough to become a tracking record of its own. The log is capped at the last
+   100 events and expires, so it cannot grow into a liability either.
+   ===================================================================== */
+const ACTIVITY_MAX_EVENTS = 100;
+const ACTIVITY_TTL_S      = 400 * 86400;
+
+/* Browser family only. A full user-agent is a fingerprint; "Chrome on Windows"
+   is what actually helps someone recognise their own session. */
+function _deviceLabel(request) {
+  const ua = String((request && request.headers && request.headers.get('User-Agent')) || '');
+  if (!ua) return '';
+  const browser = /Edg\//.test(ua) ? 'Edge'
+    : /OPR\//.test(ua) ? 'Opera'
+    : /Firefox\//.test(ua) ? 'Firefox'
+    : /Chrome\//.test(ua) ? 'Chrome'
+    : /Safari\//.test(ua) ? 'Safari'
+    : '';
+  const os = /iPhone|iPad/.test(ua) ? 'iPhone/iPad'
+    : /Android/.test(ua) ? 'Android'
+    : /Mac OS X|Macintosh/.test(ua) ? 'Mac'
+    : /Windows/.test(ua) ? 'Windows'
+    : /Linux/.test(ua) ? 'Linux'
+    : '';
+  return [browser, os].filter(Boolean).join(' on ') || '';
+}
+
+/* Record one thing that happened to an account. Never throws: an account event
+   is a record OF an action, and must not be able to break the action. */
+async function _userEvent(env, request, email, kind, detail) {
+  try {
+    const em = String(email || '').toLowerCase();
+    if (!em || !kind) return;
+    const cf = (request && request.cf) || {};
+    const ev = { at: Date.now(), kind };
+    const dev = _deviceLabel(request); if (dev) ev.dev = dev;
+    if (cf.country) ev.country = String(cf.country).slice(0, 2);
+    if (detail && typeof detail === 'object') {
+      // Only short, non-identifying extras - this record is shown back to the user.
+      for (const k of ['plan', 'from', 'to', 'reason', 'count']) {
+        if (detail[k] != null) ev[k] = String(detail[k]).slice(0, 40);
+      }
+    }
+    const key = `alog:${em}`;
+    let list = [];
+    try { list = JSON.parse(await env.AMV_KV.get(key) || '[]') || []; } catch (e) { list = []; }
+    list.push(ev);
+    if (list.length > ACTIVITY_MAX_EVENTS) list = list.slice(-ACTIVITY_MAX_EVENTS);
+    await env.AMV_KV.put(key, JSON.stringify(list), { expirationTtl: ACTIVITY_TTL_S });
+  } catch (e) { /* never let logging break the thing being logged */ }
+}
+
+/* GET /v1/activity -> the account's own security history, newest first. */
+async function accountActivity(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  let list = [];
+  try { list = JSON.parse(await env.AMV_KV.get(`alog:${user.email}`) || '[]') || []; } catch (e) { list = []; }
+  return json({
+    ok: true,
+    events: list.slice(-ACTIVITY_MAX_EVENTS).reverse(),
+    kept: ACTIVITY_MAX_EVENTS,
+    retentionDays: Math.round(ACTIVITY_TTL_S / 86400),
+  });
+}
+
 async function _abuseRecord(env, email, kind, detail = {}) {
   email = String(email || '').toLowerCase();
   if (!email) return null;
@@ -5516,6 +5656,11 @@ async function setEntitlement(env, email, plan, extra = {}) {
   const ent = { plan, updatedAt: Date.now(), ...extra };
   await DB.put(env, 'ent', email.toLowerCase(), ent);
   audit(env, 'entitlement_set', { email, plan });
+  /* Also on the account's own activity log. A plan change nobody made is how a
+     compromised account usually announces itself. There is no request here -
+     this runs from a payment webhook and a cron - so the event carries no
+     device or country, which is honest: we do not know one. */
+  await _userEvent(env, null, email, 'plan_changed', { plan });
   return ent;
 }
 
@@ -7144,6 +7289,7 @@ async function authResetConfirm(request, env) {
   await env.AMV_KV.delete(`reset:${token}`);
   try { await revokeUserTokens(env, email); } catch (e) {}
   audit(env, 'password_reset', { email });
+  await _userEvent(env, request, email, 'password_changed');
   return json({ ok: true });
 }
 

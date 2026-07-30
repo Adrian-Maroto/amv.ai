@@ -316,6 +316,25 @@ const AMV_API = {
     throw new Error(d.error || 'Signup failed');
   },
 
+  /* This account's own security history. Read-only, and the server is the only
+     thing that writes it - nothing here can add, edit or hide an entry. */
+  async activity(){
+    if(!this.live || !this.token) return null;
+    const r = await this._fetch('/v1/activity');
+    return await r.json().catch(()=>null);
+  },
+  /* Sign out. `everywhere` kills every session on the account; without it this
+     device's refresh token is retired and the others are left alone. */
+  async logout(everywhere){
+    if(!this.live || !this.token) return false;
+    try{
+      const r = await this._fetch('/auth/logout', {method:'POST',
+        body: JSON.stringify(everywhere ? {everywhere:true} : {refreshToken: this.refreshTok})});
+      const d = await r.json().catch(()=>({}));
+      return !!(d && d.ok);
+    }catch(e){ return false; }
+  },
+
   /* This account's invite link and what it has earned. The server is the only
      source of these numbers - nothing about a referral is decided here. */
   async referral(){
