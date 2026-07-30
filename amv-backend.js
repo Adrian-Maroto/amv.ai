@@ -736,7 +736,7 @@ async function runDueAutomations(env){
     // The plan's monthly cost ceiling - automations spend real money and must
     // count against it, exactly like interactive use. Compute once per user.
     const ent = (await DB.get(env, 'ent', email)) || { plan: 'free' };
-    const plan = ent.plan || 'free';
+    const plan = _planOf(ent);          // background work is charged like any other use
     const PLAN_PRICE = { pro:15, elite:75, ultra:200 };
     let planPrice = 0;
     if (plan === 'custom' && ent && ent.custom && ent.custom.price) planPrice = ent.custom.price;
@@ -1164,6 +1164,10 @@ async function stripeSubscribe(request, env){
       if(!cr.ok) return json({ error:cd.error?.message || 'could not create customer' }, 502);
       customer = cd.id;
     }
+    /* Without this the subscription is invisible to every later webhook, and
+       the customer can neither cancel from the billing portal nor see an
+       invoice. A customer who cannot cancel disputes the charge instead. */
+    await _linkCustomer(env, user.email, customer);
     // attach the tokenised card and make it the default
     const at = await fetch('https://api.stripe.com/v1/payment_methods/' + encodeURIComponent(pm) + '/attach',
       { method:'POST', headers:sk, body: form({ customer }) });
@@ -2665,7 +2669,7 @@ async function adminUsers(request, env) {
       try{ monthTok = (await counter(env, `tok:${email}:${month}`, { op:'get' })).value || 0; }catch(e){}
       let walletBal=0; try{ if(wallet){ walletBal=(JSON.parse(wallet).balance)||0; } }catch(e){}
       let purchaseCount=0; try{ if(purchases){ purchaseCount=(JSON.parse(purchases)||[]).length; } }catch(e){}
-      const plan = (ent && ent.plan) || a.plan || 'free';
+      const plan = (ent && ent.plan) ? _planOf(ent) : (a.plan || 'free');
       return {
         email, name:a.name||'', plan, provider:a.provider||'email',
         createdAt:a.createdAt||null, admin:!!a.admin,
@@ -3258,8 +3262,10 @@ async function requireUser(request, env) {
   if (!data) return null;
   // attach current plan + custom config from entitlement store
   const e = (await DB.get(env, 'ent', data.email)) || {};
-  data.plan = e.plan || 'free';
+  // _planOf, not e.plan: a lapsed subscription must not still buy compute.
+  data.plan = _planOf(e);
   data.customCfg = e.custom || null;   // { price, monthTokens, dayTokens, rpm } set at checkout
+  data.billing = _billingState(e);
   return data;
 }
 
@@ -4512,7 +4518,7 @@ async function smsIncoming(request, env, ctx) {
 
   // load their plan + enforce the SAME limits/caps as the web app
   const e = (await DB.get(env, 'ent', email)) || {};
-  const user = { email, plan: e.plan || 'free', customCfg: e.custom || null };
+  const user = { email, plan: _planOf(e), customCfg: e.custom || null };
 
   // rate-limit SMS per number (cheap abuse guard) - atomic test-and-increment
   const smsRlName = `sms:rl:${from}:${Math.floor(Date.now() / 60000)}`;
@@ -4721,12 +4727,66 @@ async function setEntitlement(env, email, plan, extra = {}) {
   return ent;
 }
 
+/* AMV-064: a renewal that FAILED must not buy another month of service.
+   When a card is declined Stripe retries for up to three weeks. Nothing here
+   listened for that, so the plan stayed fully granted the whole time - free
+   Ultra, repeatable every cycle, for anyone whose card simply stops working.
+   Cutting access the second a payment fails is the other extreme: cards expire
+   for honest reasons and an instant lockout loses a paying customer over a
+   fixable problem. So there is a stated grace period. Inside it the plan works
+   and the app asks them to fix the card; past it the plan is free until a
+   payment succeeds. */
+const PAST_DUE_GRACE_MS = 3 * 24 * 60 * 60 * 1000;   // 3 days
+
+/* The plan as it stands RIGHT NOW, which is not always the plan that was sold.
+   Every read of an entitlement goes through this, so an expired grace period
+   cannot be missed by one caller and honoured by another. */
+function _planOf(ent) {
+  if (!ent || !ent.plan) return 'free';
+  if (ent.pastDueSince && Date.now() > ent.pastDueSince + PAST_DUE_GRACE_MS) return 'free';
+  return ent.plan;
+}
+/* What the app should tell the user about their billing, if anything. */
+function _billingState(ent) {
+  if (!ent || !ent.pastDueSince) return null;
+  const endsAt = ent.pastDueSince + PAST_DUE_GRACE_MS;
+  return Date.now() > endsAt
+    ? { state: 'lapsed', since: ent.pastDueSince,
+        message: 'Your last payment did not go through, so your plan has dropped to Free. Update your card to restore it.' }
+    : { state: 'past_due', since: ent.pastDueSince, graceEndsAt: endsAt,
+        message: 'Your last payment did not go through. Update your card to keep your plan - it stays active until ' +
+                 new Date(endsAt).toUTCString().replace(/ GMT$/, ' UTC') + '.' };
+}
+/* Mark a subscription as unpaid without touching the plan that was sold, so
+   that a later successful payment restores it exactly. */
+async function _markPastDue(env, email, detail) {
+  const em = String(email || '').toLowerCase(); if (!em) return;
+  const ent = (await DB.get(env, 'ent', em)) || { plan: 'free' };
+  if (ent.plan === 'free') return;                       // nothing to lose
+  if (ent.pastDueSince) return;                          // keep the FIRST failure date
+  ent.pastDueSince = Date.now();
+  await DB.put(env, 'ent', em, ent);
+  audit(env, 'payment_failed', Object.assign({ email: em, plan: ent.plan }, detail || {}));
+}
+/* A payment succeeded - the account is current again. */
+async function _clearPastDue(env, email) {
+  const em = String(email || '').toLowerCase(); if (!em) return;
+  const ent = await DB.get(env, 'ent', em);
+  if (!ent || !ent.pastDueSince) return;
+  delete ent.pastDueSince;
+  await DB.put(env, 'ent', em, ent);
+  audit(env, 'payment_recovered', { email: em, plan: ent.plan });
+}
+
 // Read current entitlement (for the app to reflect the real plan).
 async function getEntitlement(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
   const ent = (await DB.get(env, 'ent', user.email)) || { plan: 'free' };
-  return json({ ok: true, entitlement: ent });
+  // The effective plan is what the client must reflect; `sold` and `billing`
+  // explain a mismatch so the app can ask them to fix their card.
+  return json({ ok: true, entitlement: Object.assign({}, ent, { plan: _planOf(ent), sold: ent.plan || 'free' }),
+                billing: _billingState(ent) });
 }
 
 // ---- Stripe: create a Checkout Session (subscription) ----
@@ -5007,10 +5067,7 @@ async function stripeWebhook(request, env, ctx) {
       const plan = obj.metadata?.plan || 'pro';
       if (email) {
         await setEntitlement(env, email, plan, { source: 'stripe', sub: obj.subscription });
-        if (obj.customer) {
-          await env.AMV_KV.put(`stripecust:${email}`, obj.customer);
-          await env.AMV_KV.put(`custemail:${obj.customer}`, email);  // reverse map for renewals
-        }
+        if (obj.customer) await _linkCustomer(env, email, obj.customer);   // both directions
         // Record the initial subscription payment so it shows in admin finance
         // even beyond Stripe's own retention window.
         const amt = (obj.amount_total != null ? obj.amount_total : 0) / 100;
@@ -5018,14 +5075,33 @@ async function stripeWebhook(request, env, ctx) {
           currency: (obj.currency || 'usd').toUpperCase(), kind: plan, status: 'succeeded',
           ref: obj.subscription || obj.id || '' });
       }
+    } else if (type === 'invoice.payment_failed') {
+      /* The renewal was DECLINED. Stripe will keep retrying for weeks; until
+         this existed the plan stayed fully granted for all of it. Mark the
+         account past due (the plan is kept through the grace period, then
+         drops to free by itself) so a broken card cannot buy another month. */
+      const email = (obj.metadata?.email || '').toLowerCase() || await _emailFromCustomer(env, obj.customer);
+      if (email) await _markPastDue(env, email, { invoice: obj.id || '', attempt: obj.attempt_count || 0 });
     } else if (type === 'customer.subscription.updated' || type === 'invoice.paid') {
       // renewal or plan change - re-derive plan from the price
       const email = (obj.metadata?.email || '').toLowerCase() || await _emailFromCustomer(env, obj.customer);
       const priceId = obj.items?.data?.[0]?.price?.id || obj.lines?.data?.[0]?.price?.id;
       const plan = PLAN_FROM_PRICE(env)[priceId];
-      if (email && plan) await setEntitlement(env, email, plan, { source: 'stripe' });
+      /* Stripe's own status is the authority on whether this subscription is
+         paid for. Granting a plan off the price alone re-granted access to
+         subscriptions Stripe had already marked unpaid. */
+      const status = type === 'customer.subscription.updated' ? (obj.status || '') : 'active';
+      const DEAD = ['unpaid', 'canceled', 'incomplete_expired'];
+      if (email && DEAD.indexOf(status) >= 0) {
+        await setEntitlement(env, email, 'free', { source: 'stripe', canceled: true, status });
+      } else if (email && status === 'past_due') {
+        await _markPastDue(env, email, { sub: obj.id || '' });
+      } else if (email && plan) {
+        await setEntitlement(env, email, plan, { source: 'stripe' });   // clears pastDueSince
+      }
       // Record each recurring renewal payment (invoice.paid carries amount_paid).
       if (type === 'invoice.paid' && email) {
+        await _clearPastDue(env, email);                 // a payment landed: current again
         const amt = (obj.amount_paid != null ? obj.amount_paid : 0) / 100;
         if (amt > 0) await _recordTxn(env, { provider: 'stripe', email, amount: amt,
           currency: (obj.currency || 'usd').toUpperCase(), kind: (plan || 'renewal'), status: 'succeeded',
@@ -5070,12 +5146,44 @@ async function stripeWebhook(request, env, ctx) {
   return json({ received: true });
 }
 
+/* AMV-063: bind a Stripe customer to an AMV account, BOTH ways.
+   Every webhook after the first payment (renewal, cancellation, chargeback,
+   refund) identifies the person only by customer id, so without the reverse
+   map they cannot be resolved and NOTHING happens: the cancelled subscriber
+   keeps their plan, the chargeback keeps their access, the refund keeps their
+   access. The forward map is what lets them reach the billing portal and their
+   invoices at all. Both writes must happen wherever a customer id is learned. */
+async function _linkCustomer(env, email, customerId) {
+  const em = String(email || '').toLowerCase();
+  if (!em || !customerId) return;
+  try {
+    await env.AMV_KV.put(`stripecust:${em}`, customerId);
+    await env.AMV_KV.put(`custemail:${customerId}`, em);
+  } catch (e) { /* KV write failure is logged by the caller's audit trail */ }
+}
+
 // resolve email from a Stripe customer id (we store the reverse map at checkout)
 async function _emailFromCustomer(env, customerId) {
   if (!customerId) return '';
   // we stored stripecust:<email> = customerId; do a tiny reverse lookup via a cust->email key
   const e = await env.AMV_KV.get(`custemail:${customerId}`);
-  return e ? e.toLowerCase() : '';
+  if (e) return e.toLowerCase();
+  /* Fall back to asking Stripe. Customers created before the reverse map was
+     written - or if a KV write was lost - would otherwise be unresolvable
+     forever, which means their cancellations and chargebacks silently do
+     nothing. We set metadata.amv_user at creation, so Stripe itself can tell
+     us who this is. Back-fill KV so it is a one-time cost. */
+  if (!env.STRIPE_SECRET_KEY) return '';
+  try {
+    const r = await fetch('https://api.stripe.com/v1/customers/' + encodeURIComponent(customerId), {
+      headers: { 'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}` },
+    });
+    if (!r.ok) return '';
+    const c = await r.json();
+    const em = String((c.metadata && c.metadata.amv_user) || c.email || '').toLowerCase();
+    if (em) { await _linkCustomer(env, em, customerId); audit(env, 'customer_relinked', { email: em }); }
+    return em;
+  } catch (e) { return ''; }
 }
 
 /* =====================================================================
@@ -5849,13 +5957,21 @@ async function adminStats(request, env) {
 
   // list entitlements (paying users) via the durable layer (D1 query or KV scan)
   let users = [], plans = { free: 0, pro: 0, elite: 0, ultra: 0, custom: 0 };
-  let mrr = 0;
+  let mrr = 0, pastDue = 0, atRisk = 0;
   const PRICE = { pro: 15, elite: 75, ultra: 200 };
   const entRows = await DB.list(env, 'ent', 5000);
   for (const row of entRows) {
     const e = row.value || {};
     const email = row.id;
-    const plan = e.plan || 'free';
+    /* The EFFECTIVE plan, not the one that was sold. Counting a subscription
+       whose payment failed as revenue overstates MRR and hides the problem -
+       the owner needs to see money at risk, not money assumed. */
+    const plan = _planOf(e);
+    if (e.pastDueSince) {
+      pastDue++;
+      if (PRICE[e.plan]) atRisk += PRICE[e.plan];
+      else if (e.plan === 'custom' && e.custom?.price) atRisk += e.custom.price;
+    }
     plans[plan] = (plans[plan] || 0) + 1;
     if (PRICE[plan]) mrr += PRICE[plan];
     else if (plan === 'custom' && e.custom?.price) mrr += e.custom.price;
@@ -5887,7 +6003,7 @@ async function adminStats(request, env) {
     spend: { today: +gSpend.toFixed(2), cap: gCap, pctOfCap: +(gSpend / gCap * 100).toFixed(1), killed },
     users: { total: users.length, paying, byPlan: plans, conversionPct, activeToday },
     growth: { signupsToday, signups7, signupsPrev7, wowGrowthPct, signups30, active30 },
-    revenue: { estMRR: mrr, estARR: mrr * 12, arpu },
+    revenue: { estMRR: mrr, estARR: mrr * 12, arpu, pastDueAccounts: pastDue, mrrAtRisk: atRisk },
     margin: { estMonthlyCost: +users.reduce((s, u) => s + u.monthCostUSD, 0).toFixed(2) },
     topSpenders,
   });
@@ -6069,10 +6185,18 @@ async function paypalWebhook(request, env, ctx) {
   if (!verified) { audit(env, 'forged_webhook', { kind: 'paypal' }); return new Response('bad signature', { status: 400 }); }
   let evt; try { evt = JSON.parse(raw); } catch { return new Response('bad json', { status: 400 }); }
   try {
-    if (evt.event_type === 'PAYMENT.CAPTURE.REFUNDED' || evt.event_type === 'BILLING.SUBSCRIPTION.CANCELLED') {
-      const custom = evt.resource?.custom_id || '';
-      const [email] = custom.split('|');
+    const custom = evt.resource?.custom_id || '';
+    const [email] = custom.split('|');
+    if (evt.event_type === 'PAYMENT.CAPTURE.REFUNDED' || evt.event_type === 'BILLING.SUBSCRIPTION.CANCELLED'
+        || evt.event_type === 'BILLING.SUBSCRIPTION.EXPIRED') {
       if (email) await setEntitlement(env, email.toLowerCase(), 'free', { source: 'paypal', canceled: true });
+    } else if (evt.event_type === 'BILLING.SUBSCRIPTION.PAYMENT.FAILED'
+            || evt.event_type === 'BILLING.SUBSCRIPTION.SUSPENDED') {
+      // Same rule as Stripe: a failed payment does not buy another month.
+      if (email) await _markPastDue(env, email.toLowerCase(), { provider: 'paypal', event: evt.event_type });
+    } else if (evt.event_type === 'BILLING.SUBSCRIPTION.ACTIVATED'
+            || evt.event_type === 'PAYMENT.SALE.COMPLETED') {
+      if (email) await _clearPastDue(env, email.toLowerCase());
     }
   } catch (e) { audit(env, 'webhook_error', { kind: 'paypal', msg: String(e.message).slice(0, 120) }); }
   return json({ received: true });

@@ -1000,9 +1000,50 @@ async function syncEntitlement(){
         }
       }
       try{ S._entVerified = { plan:serverPlan, at:Date.now() }; }catch(e){}
+      /* A failed renewal is the one billing problem the user MUST hear about,
+         and the only person who can fix it. Silence here means they lose the
+         plan they wanted to keep and we lose the subscription. */
+      try{ _showBillingNotice(d.billing || null); }catch(e){}
     }
   }catch(e){ /* offline / no backend - keep local plan */ }
 }
+
+/* Persistent, dismissible banner for a payment that did not go through. Not a
+   toast: a toast disappears and this needs to still be there next time they
+   open the app, until they actually fix the card. */
+function _showBillingNotice(billing){
+  const existing = document.getElementById('bill-notice');
+  if(!billing){ if(existing) existing.remove(); return; }
+  // Re-show after a dismissal only if the situation has changed (past_due -> lapsed).
+  const seen = loadStr('amv_bill_seen');
+  if(seen === billing.state + ':' + billing.since) return;
+  if(existing) existing.remove();
+  const bar = document.createElement('div');
+  bar.id = 'bill-notice';
+  bar.className = 'bill-notice' + (billing.state === 'lapsed' ? ' lapsed' : '');
+  bar.setAttribute('role','status');
+  bar.innerHTML =
+    '<span class="bill-notice-t">'+escH(billing.message||'There is a problem with your payment method.')+'</span>'+
+    '<button class="btn bp bill-fix" type="button" id="bill-fix">Update card</button>'+
+    '<button class="bill-x" type="button" id="bill-x" aria-label="Dismiss this notice">&#215;</button>';
+  document.body.appendChild(bar);
+  document.getElementById('bill-fix')?.addEventListener('click',()=>{
+    // Straight to the processor's own billing portal - the only place a card
+    // can actually be changed. Falls back to the billing tab if it is not set up.
+    (async()=>{
+      try{
+        const url = await AMV_API.portal('');
+        if(url){ location.href = url; return; }
+      }catch(e){}
+      try{ setTab('billing'); }catch(e){}
+    })();
+  });
+  document.getElementById('bill-x')?.addEventListener('click',()=>{
+    try{ saveStr('amv_bill_seen', billing.state + ':' + billing.since); }catch(e){}
+    bar.remove();
+  });
+}
+try{ window._showBillingNotice=_showBillingNotice; }catch(e){}
 /* The plan the client is ALLOWED to act on. When a backend is live, only a
    server-verified plan counts - a value sitting in localStorage that the server
    hasn't confirmed is treated as 'free', so console-editing amv_plan grants

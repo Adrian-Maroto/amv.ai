@@ -50,7 +50,10 @@ ok(/stripeCheckout/.test(client), 'card payment goes through the processor’s h
 // REGRESSION: the subscribe call ignored the response and granted the plan
 // anyway - handing out paid plans free whenever the charge did not complete.
 section('A plan is granted only when the server confirms payment');
-const subBody = src.slice(src.indexOf('async function stripeSubscribe'), src.indexOf('async function stripeSubscribe') + 3400);
+// Bound the slice to the function itself rather than a byte count, so adding a
+// line inside it cannot silently move the code being asserted out of view.
+const _subStart = src.indexOf('async function stripeSubscribe');
+const subBody = src.slice(_subStart, src.indexOf('\n}', _subStart));
 ok(/setEntitlement\(env, user\.email, plan\)/.test(subBody), 'the SERVER grants entitlement, not the client');
 ok(/status !== 'active' && status !== 'trialing'/.test(subBody), 'and only on a confirmed active subscription');
 ok(/requires_action/.test(subBody), '3-D Secure is handled as "not yet paid", never as success');

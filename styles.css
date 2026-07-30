@@ -6865,3 +6865,23 @@ html,body{height:100%;height:100dvh}
 .mf-codeline .inp{max-width:130px;letter-spacing:.18em;font-family:var(--mn)}
 .mf-gone{opacity:.5}
 @media(max-width:600px){ .mf-grid{grid-template-columns:1fr} .mf-link{align-items:flex-start} }
+
+/* ============================================================
+   LAYER A27 - Failed payment notice
+   Persistent rather than a toast: it must still be there next time
+   they open the app, because only they can fix the card.
+   ============================================================ */
+.bill-notice{position:fixed;left:50%;transform:translateX(-50%);bottom:var(--sp-5);z-index:900;
+  display:flex;align-items:center;gap:var(--sp-4);max-width:min(680px,calc(100vw - 2*var(--sp-4)));
+  padding:var(--sp-3) var(--sp-4);border-radius:var(--r-lg);border:1px solid rgba(224,179,65,.45);
+  background:var(--s2);box-shadow:var(--sh-lg);font-size:var(--t-base);color:var(--tx)}
+.bill-notice.lapsed{border-color:rgba(239,68,68,.5)}
+.bill-notice-t{flex:1 1 auto;line-height:1.5}
+.bill-fix{flex:0 0 auto;font-size:var(--t-sm);padding:6px 14px}
+.bill-x{flex:0 0 auto;width:26px;height:26px;border:0;background:none;color:var(--mu);
+  font-size:17px;line-height:1;cursor:pointer;border-radius:var(--r-sm)}
+.bill-x:hover{color:var(--tx);background:var(--s3)}
+@media(max-width:600px){
+  .bill-notice{flex-wrap:wrap;bottom:var(--sp-3);gap:var(--sp-3)}
+  .bill-notice-t{flex:1 1 100%}
+}
