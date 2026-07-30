@@ -6947,3 +6947,54 @@ html,body{height:100%;height:100dvh}
 .shr-u{display:block;font-size:var(--t-xs);color:var(--mu);margin-top:2px;word-break:break-all}
 .shr-u:hover{color:var(--accent)}
 @media(max-width:600px){ .shr-item{flex-wrap:wrap} }
+
+/* ==========================================================================
+   LAYER A33 - Invite
+   The referral screen. Built from the same tokens as every other settings
+   pane, so it reads as part of the product rather than a growth bolt-on.
+   `.sr-only` lives here because this pane needed the first real one; it is a
+   general utility, not an invite-specific class.
+   ========================================================================== */
+.sr-only{
+  position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+  clip:rect(0,0,0,0);white-space:nowrap;border:0;
+}
+.ref-load,.ref-off,.ref-empty{
+  font-size:var(--t-sm);color:var(--mu);line-height:1.6;padding:var(--sp-3) 0;
+}
+.ref-linkrow{display:flex;gap:var(--sp-2);align-items:center;flex-wrap:wrap}
+.ref-link{
+  flex:1 1 220px;min-width:0;font-family:var(--mn);font-size:var(--t-sm);
+  padding:9px var(--sp-3);border-radius:var(--r-sm);border:1px solid var(--bd);
+  background:var(--s2);color:var(--tx);
+}
+.ref-link:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.ref-say{font-size:var(--t-xs);color:var(--mu);min-height:15px;margin-top:var(--sp-2)}
+.ref-note{
+  font-size:var(--t-sm);color:var(--mu);line-height:1.65;margin-top:var(--sp-3);
+  padding:var(--sp-3);border-radius:var(--r-sm);background:var(--s2);
+  border:1px solid var(--bd);
+}
+.ref-note b{color:var(--tx)}
+.ref-stats{display:flex;gap:var(--sp-2);flex-wrap:wrap;margin-top:var(--sp-4)}
+.ref-stat{
+  flex:1 1 120px;min-width:0;padding:var(--sp-3);border-radius:var(--r-sm);
+  background:var(--s2);border:1px solid var(--bd);
+}
+.ref-stat-n{font-size:var(--t-xl);font-weight:750;color:var(--tx);letter-spacing:-.4px}
+.ref-stat-l{font-size:var(--t-xs);color:var(--mu);margin-top:2px}
+.ref-rows{display:flex;flex-direction:column}
+.ref-row{
+  display:flex;justify-content:space-between;align-items:baseline;gap:var(--sp-3);
+  font-size:var(--t-sm);color:var(--tx);padding:10px 0;border-bottom:1px solid var(--bd);
+}
+.ref-row:last-child{border-bottom:0}
+.ref-row-v{color:var(--grn);font-weight:650;white-space:nowrap}
+.ref-exp{display:block;color:var(--mu);font-weight:500;font-size:var(--t-xs);text-align:right}
+.ref-cap,.ref-fine{font-size:var(--t-xs);color:var(--mu);line-height:1.6;margin-top:var(--sp-3)}
+.ref-cap{color:var(--gold)}
+@media (max-width:520px){
+  .ref-linkrow{flex-direction:column;align-items:stretch}
+  .ref-linkrow .btn{width:100%}
+  .ref-stat{flex:1 1 100%}
+}

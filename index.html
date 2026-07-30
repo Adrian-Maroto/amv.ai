@@ -7033,6 +7033,57 @@ html,body{height:100%;height:100dvh}
 .shr-u:hover{color:var(--accent)}
 @media(max-width:600px){ .shr-item{flex-wrap:wrap} }
 
+/* ==========================================================================
+   LAYER A33 - Invite
+   The referral screen. Built from the same tokens as every other settings
+   pane, so it reads as part of the product rather than a growth bolt-on.
+   `.sr-only` lives here because this pane needed the first real one; it is a
+   general utility, not an invite-specific class.
+   ========================================================================== */
+.sr-only{
+  position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+  clip:rect(0,0,0,0);white-space:nowrap;border:0;
+}
+.ref-load,.ref-off,.ref-empty{
+  font-size:var(--t-sm);color:var(--mu);line-height:1.6;padding:var(--sp-3) 0;
+}
+.ref-linkrow{display:flex;gap:var(--sp-2);align-items:center;flex-wrap:wrap}
+.ref-link{
+  flex:1 1 220px;min-width:0;font-family:var(--mn);font-size:var(--t-sm);
+  padding:9px var(--sp-3);border-radius:var(--r-sm);border:1px solid var(--bd);
+  background:var(--s2);color:var(--tx);
+}
+.ref-link:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.ref-say{font-size:var(--t-xs);color:var(--mu);min-height:15px;margin-top:var(--sp-2)}
+.ref-note{
+  font-size:var(--t-sm);color:var(--mu);line-height:1.65;margin-top:var(--sp-3);
+  padding:var(--sp-3);border-radius:var(--r-sm);background:var(--s2);
+  border:1px solid var(--bd);
+}
+.ref-note b{color:var(--tx)}
+.ref-stats{display:flex;gap:var(--sp-2);flex-wrap:wrap;margin-top:var(--sp-4)}
+.ref-stat{
+  flex:1 1 120px;min-width:0;padding:var(--sp-3);border-radius:var(--r-sm);
+  background:var(--s2);border:1px solid var(--bd);
+}
+.ref-stat-n{font-size:var(--t-xl);font-weight:750;color:var(--tx);letter-spacing:-.4px}
+.ref-stat-l{font-size:var(--t-xs);color:var(--mu);margin-top:2px}
+.ref-rows{display:flex;flex-direction:column}
+.ref-row{
+  display:flex;justify-content:space-between;align-items:baseline;gap:var(--sp-3);
+  font-size:var(--t-sm);color:var(--tx);padding:10px 0;border-bottom:1px solid var(--bd);
+}
+.ref-row:last-child{border-bottom:0}
+.ref-row-v{color:var(--grn);font-weight:650;white-space:nowrap}
+.ref-exp{display:block;color:var(--mu);font-weight:500;font-size:var(--t-xs);text-align:right}
+.ref-cap,.ref-fine{font-size:var(--t-xs);color:var(--mu);line-height:1.6;margin-top:var(--sp-3)}
+.ref-cap{color:var(--gold)}
+@media (max-width:520px){
+  .ref-linkrow{flex-direction:column;align-items:stretch}
+  .ref-linkrow .btn{width:100%}
+  .ref-stat{flex:1 1 100%}
+}
+
 </style>
 <!-- BUILD:CSS:END -->
 <script>
@@ -7698,6 +7749,14 @@ const AMV_API = {
     const d = await r.json().catch(()=>({}));
     if(d.token){ this._setTokens(d); return d; }
     throw new Error(d.error || 'Signup failed');
+  },
+
+  /* This account's invite link and what it has earned. The server is the only
+     source of these numbers - nothing about a referral is decided here. */
+  async referral(){
+    if(!this.live) return null;
+    const r = await this._fetch('/v1/referral');
+    return await r.json().catch(()=>null);
   },
 
   // jobs / approvals / handoff
@@ -9436,6 +9495,9 @@ try{ window._mountTurnstile=_mountTurnstile; }catch(e){}
    empty for a human) and the Turnstile token if the widget rendered. */
 function _authBotFields(){
   const out = {};
+  /* An invite code, if they arrived through someone's link. The server decides
+     whether it is real, whose it is, and whether it is ever worth anything. */
+  try{ const rc = (typeof _refPending==='function') ? _refPending() : ''; if(rc) out.ref = rc; }catch(e){}
   try{ const hp=$('a-company'); if(hp && hp.value) out.company = hp.value; }catch(e){}
   try{ if(window.turnstile && typeof turnstile.getResponse==='function'){ const t=turnstile.getResponse(); if(t) out.captchaToken=t; } }catch(e){}
   return out;
@@ -16774,6 +16836,11 @@ function _admGrowthBlock(live, backendLive){
       _admKpi('Conversion', (uu.conversionPct!=null?uu.conversionPct+'%':'-'), 'Free → paid')+
       _admKpi('Active today', String(uu.activeToday!=null?uu.activeToday:'-'), 'Signed-in users')+
       _admKpi('ARPU', (live.revenue&&live.revenue.arpu!=null?'$'+live.revenue.arpu:'-'), 'Avg revenue / paying user')+
+      /* The invite loop, measured. A conversion counts only when an invited
+         account has actually started using AMV, so this is activation through
+         referral - not links clicked. */
+      _admKpi('Referrals', String(g.referrals7!=null?g.referrals7:'-'), 'Converted (7d)')+
+      _admKpi('Referral share', (g.referralSharePct!=null?g.referralSharePct+'%':'-'), 'Of this week\u2019s signups')+
     '</div>'+
     '<div class="adm-spark-wrap"><div class="adm-spark-lbl">Signups, last 30 days</div>'+spark+'</div>';
 }
@@ -21421,6 +21488,7 @@ const USER_SET_SECTIONS=[
   {id:'usage',label:'Usage',icon:'<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>'},
   {id:'capabilities',label:'Capabilities',icon:'<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>'},
   {id:'spending',label:'Spending',icon:'<path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>'},
+  {id:'invite',label:'Invite',icon:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/>'},
   {id:'family',label:'Family & linked accounts',icon:'<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'},
   {group:'Customize'},
   {id:'appearance',label:'Appearance',icon:'<circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>'},
@@ -22579,6 +22647,9 @@ function _renderSetPaneInner(){
     _renderSpendingPane(pane);
   } else if(sp==='family'){
     _renderFamilyPane(pane);
+  } else if(sp==='invite'){
+    /* Rendered from 27-referrals.js. */
+    _renderInvitePane(pane);
   } else if(sp==='about'){
     pane.innerHTML=
       '<div class="set-title">About AMV.AI</div>'+
@@ -26302,6 +26373,7 @@ function _paletteCommands(){
     setNav('set-usage','Settings: Usage','usage','usage limits tokens'),
     setNav('set-capabilities','Settings: Capabilities','capabilities','capabilities web search memory toggles'),
     setNav('set-spending','Settings: Spending','spending','spending limits money budget purchases cap allowance'),
+    setNav('set-invite','Settings: Invite','invite','invite referral refer friend share link bonus tokens'),
     setNav('set-family','Settings: Family & linked accounts','family','family linked accounts parent child share access permissions'),
     setNav('set-appearance','Settings: Appearance','appearance','appearance theme accent font motion'),
     setNav('set-skills','Settings: Skills','skills','skills presets instructions'),
@@ -29032,6 +29104,140 @@ function _nextStepHTML(msgs){
   }catch(e){ return ''; }
 }
 try{ window._nextStepHTML=_nextStepHTML; }catch(e){}
+/* ============================================================
+   INVITE - the referral screen, and the code capture that feeds it.
+
+   The server owns every decision that matters here (who owns a code, whether
+   an invite ever converts, how much capacity it is worth). This file does two
+   small honest things: it remembers a code someone arrived with so the signup
+   request can carry it, and it shows the account its own link and what that
+   link has actually earned.
+
+   Two deliberate refusals:
+   - It NEVER counts a reward locally. The number on screen is the server's
+     number or it is absent; a client-side tally would be a promise the ledger
+     might not keep.
+   - It NEVER claims the invite paid out at signup. The copy says what the
+     rules are - real use, one day, then the reward - because that IS the rule,
+     and a user who is told otherwise has been lied to.
+   ============================================================ */
+
+const REF_STORE_KEY = 'amv_ref_code';
+
+/* Capture ?ref= on arrival and take it straight out of the address bar. The
+   code is not a secret, but leaving it in the URL means it rides along in every
+   shared link and screenshot from then on, quietly re-attributing other
+   people's signups to whoever's link was opened first. */
+function _refCapture(){
+  try{
+    const q = new URLSearchParams(location.search || '');
+    const raw = q.get('ref'); if(!raw) return;
+    const code = String(raw).toUpperCase().replace(/[^0-9A-Z]/g,'').slice(0,12);
+    if(code) saveStr(REF_STORE_KEY, code);
+    q.delete('ref');
+    const rest = q.toString();
+    history.replaceState(null, '', location.pathname + (rest ? '?' + rest : '') + (location.hash || ''));
+  }catch(e){ /* a malformed URL must never stop the app booting */ }
+}
+try{ _refCapture(); }catch(e){}
+
+/* The stored code, if any. Consumed at signup and then forgotten - it applies
+   to the account being created, not to every account created on this device. */
+function _refPending(){ try{ return loadStr(REF_STORE_KEY) || ''; }catch(e){ return ''; } }
+function _refClear(){ try{ saveStr(REF_STORE_KEY, ''); }catch(e){} }
+
+function _refTokens(n){
+  n = +n || 0;
+  return n >= 1000 ? Math.round(n/1000) + 'k' : String(n);
+}
+function _refWhen(ts){
+  try{ return new Date(ts).toLocaleDateString(undefined,{month:'short',day:'numeric'}); }
+  catch(e){ return ''; }
+}
+
+/* ---------- INVITE PANE ---------- */
+function _renderInvitePane(pane){
+  pane.innerHTML =
+    '<div class="set-title">Invite</div>'+
+    '<div class="set-sub">Share AMV. When someone you invite actually uses it, you both get extra monthly capacity.</div>'+
+    '<div class="ss2" id="ref-body"><div class="ref-load">Loading your invite link…</div></div>';
+
+  const body = document.getElementById('ref-body');
+  if(!(window.AMV_API && AMV_API.live)){
+    body.innerHTML = '<div class="ref-off">Invites need an AMV account on the server. '+
+      'Sign in and this page will show your link.</div>';
+    return;
+  }
+  AMV_API.referral().then(d=>{
+    if(!d || !d.ok){ body.innerHTML = '<div class="ref-off">Your invite link is unavailable right now. Please try again shortly.</div>'; return; }
+    _refPaint(body, d);
+  }).catch(()=>{
+    body.innerHTML = '<div class="ref-off">Could not reach the server. Your invite link will appear when you are back online.</div>';
+  });
+}
+
+function _refPaint(body, d){
+  const link = d.link || '';
+  const code = d.code || '';
+  const earned = (d.rewards || []).length;
+  const per = _refTokens(d.perReferral);
+  const max = +d.max || 0;
+
+  if(!code){
+    body.innerHTML = '<div class="ref-off">Your invite link is not available on this account yet. It appears once your account is fully set up.</div>';
+    return;
+  }
+
+  const rows = (d.rewards || []).slice().reverse().map(r =>
+    '<div class="ref-row"><span>'+ (r.kind === 'joined' ? 'Joined through an invite' : 'Someone you invited started using AMV') +'</span>'+
+    '<span class="ref-row-v">+'+ _refTokens(r.tokens) +' tokens<span class="ref-exp">until '+ escH(_refWhen(r.expiresAt)) +'</span></span></div>'
+  ).join('');
+
+  body.innerHTML =
+    '<h3>Your link</h3>'+
+    '<div class="ref-linkrow">'+
+      '<label class="sr-only" for="ref-link">Your invite link</label>'+
+      '<input id="ref-link" class="ref-link" readonly value="'+ escH(link || code) +'">'+
+      '<button class="btn bs" id="ref-copy" type="button">Copy</button>'+
+      (navigator.share ? '<button class="btn bs" id="ref-share" type="button">Share</button>' : '')+
+    '</div>'+
+    '<div class="ref-say" id="ref-say" role="status" aria-live="polite"></div>'+
+    '<div class="ref-note">'+
+      'Both of you get <b>'+ escH(per) +' extra tokens a month</b> once they have used AMV for real - at least '+
+      escH(_refTokens(d.qualifyTokens)) +' tokens and '+ escH(String(d.minAgeHours || 24)) +' hours after signing up. '+
+      'That wait is on purpose: it is what stops invite links being farmed, and it is why the reward is worth giving.'+
+    '</div>'+
+    '<div class="ref-stats">'+
+      '<div class="ref-stat"><div class="ref-stat-n">'+ earned +' / '+ max +'</div><div class="ref-stat-l">Active rewards</div></div>'+
+      '<div class="ref-stat"><div class="ref-stat-n">+'+ _refTokens(d.bonusTokens) +'</div><div class="ref-stat-l">Extra tokens this month</div></div>'+
+      '<div class="ref-stat"><div class="ref-stat-n">'+ (+d.windowDays || 90) +' days</div><div class="ref-stat-l">Each reward lasts</div></div>'+
+    '</div>'+
+    (rows ? '<h3 style="margin-top:18px">Rewards</h3><div class="ref-rows">'+rows+'</div>'
+          : '<div class="ref-empty">No rewards yet. Nothing is counted until an invited account genuinely uses AMV.</div>')+
+    (earned >= max && max ? '<div class="ref-cap">You are holding the maximum '+max+' rewards. As older ones expire, new invites can earn again.</div>' : '')+
+    '<div class="ref-fine">Rewards are extra capacity, never money or a plan change. Invites from your own devices do not count.</div>';
+
+  const say = (m)=>{ const el = document.getElementById('ref-say'); if(el) el.textContent = m; };
+  on(document.getElementById('ref-copy'),'click',async ()=>{
+    const val = link || code;
+    try{
+      await navigator.clipboard.writeText(val);
+      say('Link copied.');
+      toast('Invite link copied','success',2000);
+    }catch(e){
+      // Clipboard is blocked in plenty of real browsers. Select the text so it
+      // can still be copied by hand rather than pretending it worked.
+      const f = document.getElementById('ref-link');
+      if(f){ f.focus(); f.select(); }
+      say('Copy was blocked by your browser - the link is selected, press Ctrl+C or Cmd+C.');
+    }
+  });
+  on(document.getElementById('ref-share'),'click',()=>{
+    try{ navigator.share({ title:'AMV', text:'I use AMV - here is my invite link.', url: link || undefined }); }catch(e){}
+  });
+}
+try{ window._renderInvitePane = _renderInvitePane; }catch(e){}
+try{ window._refPending = _refPending; window._refClear = _refClear; }catch(e){}
 
 </script>
 <script>(function(){var c=document.getElementById('amv-app-code');if(!c)return;var code=c.textContent.split('<\\/scr_AMV_ipt').join('</script');function inlineRun(){var e=document.createElement('script');e.textContent=code;document.body.appendChild(e);}try{var s=document.createElement('script');s.src=URL.createObjectURL(new Blob([code],{type:'application/javascript'}));s.defer=true;s.onerror=inlineRun;document.body.appendChild(s);}catch(e){inlineRun();}})();</script>

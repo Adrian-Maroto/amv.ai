@@ -260,6 +260,9 @@ try{ window._mountTurnstile=_mountTurnstile; }catch(e){}
    empty for a human) and the Turnstile token if the widget rendered. */
 function _authBotFields(){
   const out = {};
+  /* An invite code, if they arrived through someone's link. The server decides
+     whether it is real, whose it is, and whether it is ever worth anything. */
+  try{ const rc = (typeof _refPending==='function') ? _refPending() : ''; if(rc) out.ref = rc; }catch(e){}
   try{ const hp=$('a-company'); if(hp && hp.value) out.company = hp.value; }catch(e){}
   try{ if(window.turnstile && typeof turnstile.getResponse==='function'){ const t=turnstile.getResponse(); if(t) out.captchaToken=t; } }catch(e){}
   return out;

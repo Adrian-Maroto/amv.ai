@@ -2559,6 +2559,7 @@ export default {
         case '/auth/reset/verify':  return authResetVerify(request, env);
         case '/auth/admin-reset':   return authAdminReset(request, env);
         case '/v1/resume':       return resumeAnswer(request, env);
+        case '/v1/referral':     return referralStatus(request, env);
         case '/v1/share/create': return shareCreate(request, env);
         case '/v1/share/list':   return shareList(request, env);
         case '/v1/share/revoke': return shareRevoke(request, env);
@@ -2758,9 +2759,15 @@ async function authSignup(request, env){
   if(existing) return json({ error:'account exists' }, 409);
   const salt = crypto.randomUUID();
   const pwHash = await _hashPassword(password, salt, PBKDF2_ITERATIONS);
-  const acct = { email: em, name: safeName, provider:'email', salt, pwHash, pwIter: PBKDF2_ITERATIONS, createdAt: Date.now() };
+  /* AMV-075: a keyed hash of the signup network, never the address itself. It
+     exists for exactly one comparison - "did the inviter and the invited sign up
+     from the same place" - and cannot be reversed back into an IP. */
+  const sipHash = await _ipHash(env, request);
+  const acct = { email: em, name: safeName, provider:'email', salt, pwHash, pwIter: PBKDF2_ITERATIONS, createdAt: Date.now(), sipHash };
   await DB.put(env, 'acct', em, acct);
   try{ await _recordGrowth(env, 'signup'); }catch(e){}
+  // An invite code, if they arrived through one. Recorded, not yet rewarded.
+  try{ await _referralCapture(env, request, em, body.ref); }catch(e){}
   return json(await issueTokens(env, em, safeName));
 }
 async function authLogin(request, env) {
@@ -2882,7 +2889,8 @@ async function adminUsers(request, env) {
    that the audience matches OUR client id, and that it hasn't expired - then mint
    our own session. The frontend never grants privileges on an unverified token. */
 async function authGoogle(request, env) {
-  const { credential } = await request.json().catch(()=>({}));
+  const body = await request.json().catch(()=>({}));
+  const { credential } = body;
   if (!credential) return json({ error: 'credential required' }, 400);
   try{
     // Google's tokeninfo validates signature + expiry for us and returns the claims.
@@ -2902,7 +2910,12 @@ async function authGoogle(request, env) {
     if(!em) return json({ error:'no email in token' }, 401);
     const name = claims.name || em.split('@')[0];
     let acct = await DB.get(env, 'acct', em);
-    if(!acct){ acct = { email:em, name, provider:'google', createdAt:Date.now() }; await DB.put(env, 'acct', em, acct); }
+    if(!acct){
+      acct = { email:em, name, provider:'google', createdAt:Date.now(), sipHash: await _ipHash(env, request) };
+      await DB.put(env, 'acct', em, acct);
+      try{ await _recordGrowth(env, 'signup'); }catch(e){}
+      try{ await _referralCapture(env, request, em, body.ref); }catch(e){}
+    }
     const tokens = await issueTokens(env, em, name);
     return json(Object.assign({ email:em, name, picture:claims.picture||'' }, tokens));
   }catch(e){
@@ -3545,11 +3558,13 @@ async function requireUser(request, env) {
   data.plan = _planOf(e);
   data.customCfg = e.custom || null;   // { price, monthTokens, dayTokens, rpm } set at checkout
   data.billing = _billingState(e);
+  data.bonusTokens = _bonusTokens(e);  // AMV-075 referral capacity, already expiry-filtered
   return data;
 }
 
-/* Resolve the effective limits for a user - custom plans use their purchased pool. */
-function effectiveLimits(user) {
+/* Resolve the effective limits for a user - custom plans use their purchased
+   pool, and any referral bonus is added on top by effectiveLimits() below. */
+function _baseLimits(user) {
   if (user.plan === 'custom' && user.customCfg) {
     const c = user.customCfg;
     const price = c.price || 30;
@@ -3570,6 +3585,19 @@ function effectiveLimits(user) {
     };
   }
   return PLAN_LIMITS[user.plan] || PLAN_LIMITS.free;
+}
+
+/* The limits actually enforced: the plan, plus whatever referral capacity the
+   account is holding. The bonus lands on the MONTHLY pool only - an invite buys
+   more days at full speed and can never become one enormous day of compute -
+   and is clamped to the programme ceiling so a corrupted entitlement record
+   cannot mint unlimited allowance. */
+function effectiveLimits(user) {
+  const base = _baseLimits(user);
+  const cap = REFERRAL_MAX_CONVERSIONS * REFERRAL_REWARD_TOKENS;
+  const bonus = Math.max(0, Math.min(cap, Math.floor(Number((user && user.bonusTokens) || 0)) || 0));
+  if (!bonus) return base;
+  return Object.assign({}, base, { monthTokens: base.monthTokens + bonus, bonusTokens: bonus });
 }
 
 
@@ -4427,7 +4455,9 @@ async function usageReport(request, env) {
   return json({
     plan: user.plan,
     day: { used: dUsed, limit: limits.dayTokens },
-    month: { used: mUsed, limit: limits.monthTokens, costUSD: +mCost.toFixed(4) },
+    // `bonus` is the referral capacity folded into the monthly limit above, sent
+    // separately so the app can say WHERE the extra allowance came from.
+    month: { used: mUsed, limit: limits.monthTokens, costUSD: +mCost.toFixed(4), bonus: limits.bonusTokens || 0 },
   });
 }
 
@@ -5271,6 +5301,217 @@ async function _abuseCheckoutAllowed(env, email) {
   return !s.blocked;
 }
 
+/* =====================================================================
+   AMV-075  REFERRALS - growth that cannot be farmed
+   ---------------------------------------------------------------------
+   A referral programme is the cheapest growth AMV can buy, and the easiest
+   thing in the product to steal from. The fraud register already names
+   `referral_farming`: one person, one laptop, ten throwaway inboxes, and a
+   reward for each. So the defences are the design, not a later patch.
+
+   Four rules make farming unprofitable:
+     1. NOTHING IS PAID FOR A SIGNUP. The reward lands only after the invited
+        account has used AMV for real - a token floor AND a full day of age, so
+        it cannot be satisfied in one sitting with a burner address.
+     2. Same-device signups earn nothing. Signup IP is stored only as a keyed
+        hash (never the address itself), and a referral between two accounts
+        that share one is rejected and recorded against the referrer.
+     3. There is a hard ceiling. Five active rewards per account, each expiring
+        after 90 days, so the maximum any account can ever hold is bounded and
+        the exposure is a known number rather than an open tap.
+     4. The reward is CAPACITY, not money. Bonus monthly tokens - never wallet
+        credit, never a plan upgrade, never anything convertible to cash.
+
+   The reward is added to the MONTHLY allowance and deliberately not to the
+   daily one: an invite buys more days at full speed, and can never turn into a
+   single enormous day of compute.
+   ===================================================================== */
+const REFERRAL_REWARD_TOKENS   = 100000;             // to BOTH sides, on conversion
+const REFERRAL_MAX_CONVERSIONS = 5;                  // active rewards per account
+const REFERRAL_BONUS_TTL_MS    = 90 * 86400000;      // a reward lasts 90 days
+const REFERRAL_QUALIFY_TOKENS  = 25000;              // real usage before anyone is paid
+const REFERRAL_MIN_AGE_MS      = 24 * 60 * 60 * 1000;
+const REFERRAL_PENDING_TTL_S   = 60 * 86400;         // an uninvoked invite expires
+const REFERRAL_DAY_CAP         = 20;                 // signups one code may mint per day
+
+/* A keyed, pseudonymous fingerprint of the signup network. We never store the
+   address: this is a truncated HMAC, so it can be COMPARED but not reversed
+   into an IP, which is what the same-device check actually needs. */
+async function _ipHash(env, request) {
+  try {
+    const ip = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || '';
+    if (!ip || !env.JWT_SECRET) return '';
+    const key = await _hmacKey(env.JWT_SECRET);
+    const mac = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode('ip:' + ip)));
+    return Array.from(mac.slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join('');
+  } catch (e) { return ''; }
+}
+
+/* The code for an email, derived rather than random so it is stable forever and
+   needs no allocation table to mint. Crockford's alphabet minus I/L/O/U, so a
+   code read down a phone line cannot be transcribed into someone else's. */
+async function _referralCode(env, email) {
+  const key = await _hmacKey(env.JWT_SECRET);
+  const mac = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode('referral:' + email)));
+  const AL = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';   // 32 chars, so mac[i] % 32 is uniform
+  let out = '';
+  for (let i = 0; i < 12; i++) out += AL[mac[i] % 32];
+  return out;
+}
+
+/* Resolve (and on first call, claim) this account's code. Derivation alone is
+   not enough: two emails can hash to the same prefix, and the loser of that
+   race must not silently collect the winner's invites. So the claim is written
+   BOTH ways and every conversion re-checks that the pair still agrees. */
+async function _referralEnsure(env, email) {
+  const em = String(email || '').toLowerCase();
+  if (!em || !env.JWT_SECRET) return null;
+  try {
+    const mine = await env.AMV_KV.get(`refmine:${em}`);
+    if (mine) return mine;
+    const base = await _referralCode(env, em);
+    for (const len of [8, 10, 12]) {
+      const cand = base.slice(0, len);
+      const owner = await env.AMV_KV.get(`refcode:${cand}`);
+      if (owner && owner !== em) continue;            // taken - lengthen and retry
+      if (!owner) await env.AMV_KV.put(`refcode:${cand}`, em);
+      await env.AMV_KV.put(`refmine:${em}`, cand);
+      return cand;
+    }
+    return null;   // three collisions in a row: astronomically unlikely, and the
+                   // caller shows "unavailable" rather than a code that isn't ours
+  } catch (e) { return null; }
+}
+
+/* Record an invite at signup. This NEVER blocks the signup itself - a bad or
+   abusive code costs the new user nothing; it simply earns nobody anything. */
+async function _referralCapture(env, request, newEmail, refRaw) {
+  const em = String(newEmail || '').toLowerCase();
+  const code = String(refRaw || '').toUpperCase().replace(/[^0-9A-Z]/g, '').slice(0, 12);
+  if (!em || !code) return;
+  try {
+    const referrer = await env.AMV_KV.get(`refcode:${code}`);
+    if (!referrer) return;
+    if (referrer === em) { audit(env, 'referral_self', { email: em }); return; }
+    /* Velocity. A real person does not invite twenty strangers who all sign up
+       inside one day; a script does. Past the cap the signup still works and the
+       referral simply does not exist, and the referrer is flagged. */
+    const dayKey = `refday:${code}:${todayKey()}`;
+    const n = (parseInt(await env.AMV_KV.get(dayKey) || '0', 10) || 0) + 1;
+    await env.AMV_KV.put(dayKey, String(n), { expirationTtl: 3 * 86400 });
+    if (n > REFERRAL_DAY_CAP) {
+      await _abuseRecord(env, referrer, 'referral_velocity', { signupsToday: n });
+      audit(env, 'referral_velocity_blocked', { referrer, count: n });
+      return;
+    }
+    await env.AMV_KV.put(`refpend:${em}`, JSON.stringify({ code, referrer, at: Date.now() }),
+                         { expirationTtl: REFERRAL_PENDING_TTL_S });
+    audit(env, 'referral_pending', { referrer, email: em });
+  } catch (e) { /* never let growth plumbing break account creation */ }
+}
+
+/* The rewards an account actually holds right now: expired ones fall off, and
+   the list is bounded so the entitlement record cannot grow without limit. */
+function _referralActive(ent) {
+  const now = Date.now();
+  return (((ent && ent.refBonus) || [])
+    .filter(b => b && b.at && (now - b.at) < REFERRAL_BONUS_TTL_MS))
+    .slice(-REFERRAL_MAX_CONVERSIONS);
+}
+function _bonusTokens(ent) {
+  return _referralActive(ent).reduce((sum, b) => sum + (Number(b.tokens) || 0), 0);
+}
+
+/* Grant one reward, honouring the ceiling. Returns whether it was actually
+   granted so the caller can tell the user the truth either way. */
+async function _referralGrant(env, email, kind) {
+  const em = String(email || '').toLowerCase();
+  if (!em) return false;
+  const ent = (await DB.get(env, 'ent', em)) || { plan: 'free' };
+  const active = _referralActive(ent);
+  if (active.length >= REFERRAL_MAX_CONVERSIONS) {
+    audit(env, 'referral_capped', { email: em });
+    return false;
+  }
+  ent.refBonus = active.concat({ at: Date.now(), tokens: REFERRAL_REWARD_TOKENS, kind });
+  await DB.put(env, 'ent', em, ent);
+  audit(env, 'referral_reward', { email: em, tokens: REFERRAL_REWARD_TOKENS, kind });
+  return true;
+}
+
+/* Called when the invited account opens AMV. Everything here is a reason to pay
+   NOBODY; the reward is the last thing that happens, and only once. */
+async function _referralMaybeConvert(env, email) {
+  const em = String(email || '').toLowerCase();
+  if (!em) return null;
+  let pend = null;
+  try { const raw = await env.AMV_KV.get(`refpend:${em}`); if (raw) pend = JSON.parse(raw); } catch (e) { return null; }
+  if (!pend || !pend.referrer || !pend.code) return null;
+
+  const drop = async (reason) => {
+    try { await env.AMV_KV.delete(`refpend:${em}`); } catch (e) {}
+    audit(env, 'referral_rejected', { referrer: pend.referrer, reason });
+    return null;
+  };
+
+  const acct = await DB.get(env, 'acct', em);
+  if (!acct) return null;
+  // Not yet a real user. Not a rejection - just not yet, so we leave the invite
+  // pending and check again next time they open the app.
+  if (Date.now() - (acct.createdAt || 0) < REFERRAL_MIN_AGE_MS) return null;
+  const used = (await counter(env, `usg:${em}:${monthKey()}`, { op: 'get' })).value || 0;
+  if (used < REFERRAL_QUALIFY_TOKENS) return null;
+
+  // The code must STILL belong to the referrer in both directions (collision race).
+  const owner = await env.AMV_KV.get(`refcode:${pend.code}`);
+  const mine  = await env.AMV_KV.get(`refmine:${pend.referrer}`);
+  if (owner !== pend.referrer || mine !== pend.code) return drop('code_reassigned');
+
+  // Same device: the farming case, and the reason this check exists at all.
+  const ref = await DB.get(env, 'acct', pend.referrer);
+  if (!ref) return drop('referrer_gone');
+  if (acct.sipHash && ref.sipHash && acct.sipHash === ref.sipHash) {
+    await _abuseRecord(env, pend.referrer, 'referral_same_device', {});
+    return drop('same_device');
+  }
+  // An account already flagged for abuse earns nothing further.
+  const st = await _abuseStatus(env, pend.referrer);
+  if (st && st.blocked) return drop('referrer_blocked');
+
+  /* Consume the invite BEFORE granting. If a grant then fails, the reward is
+     lost rather than paid twice - the safe direction for anything of value. */
+  try { await env.AMV_KV.delete(`refpend:${em}`); } catch (e) { return null; }
+  const paidReferrer = await _referralGrant(env, pend.referrer, 'invited');
+  const paidJoiner   = await _referralGrant(env, em, 'joined');
+  try { await _recordGrowth(env, 'referral'); } catch (e) {}
+  audit(env, 'referral_converted', { referrer: pend.referrer, email: em, paidReferrer, paidJoiner });
+  return { paidReferrer, paidJoiner, tokens: REFERRAL_REWARD_TOKENS };
+}
+
+/* GET /v1/referral -> this account's invite link and what it has earned.
+   Deliberately does NOT list who joined: the referrer invited them, they did
+   not consent to having their account confirmed back to anyone. */
+async function referralStatus(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  const code = await _referralEnsure(env, user.email);
+  const ent = (await DB.get(env, 'ent', user.email)) || {};
+  const active = _referralActive(ent);
+  const origin = String(env.APP_URL || env.APP_ORIGIN || '').replace(/\/$/, '');
+  return json({
+    ok: true,
+    code: code || '',
+    link: code && origin ? `${origin}/?ref=${code}` : '',
+    rewards: active.map(b => ({ at: b.at, tokens: b.tokens, kind: b.kind || '', expiresAt: b.at + REFERRAL_BONUS_TTL_MS })),
+    bonusTokens: _bonusTokens(ent),
+    perReferral: REFERRAL_REWARD_TOKENS,
+    max: REFERRAL_MAX_CONVERSIONS,
+    windowDays: Math.round(REFERRAL_BONUS_TTL_MS / 86400000),
+    qualifyTokens: REFERRAL_QUALIFY_TOKENS,
+    minAgeHours: Math.round(REFERRAL_MIN_AGE_MS / 3600000),
+  });
+}
+
 async function setEntitlement(env, email, plan, extra = {}) {
   const ent = { plan, updatedAt: Date.now(), ...extra };
   await DB.put(env, 'ent', email.toLowerCase(), ent);
@@ -5333,11 +5574,18 @@ async function _clearPastDue(env, email) {
 async function getEntitlement(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
+  /* AMV-075: the invited account opening the app is the natural moment to check
+     whether it has now earned its referral. Best-effort - a failure here must
+     never stop someone seeing their plan. */
+  let converted = null;
+  try { converted = await _referralMaybeConvert(env, user.email); } catch (e) {}
   const ent = (await DB.get(env, 'ent', user.email)) || { plan: 'free' };
   // The effective plan is what the client must reflect; `sold` and `billing`
   // explain a mismatch so the app can ask them to fix their card.
   return json({ ok: true, entitlement: Object.assign({}, ent, { plan: _planOf(ent), sold: ent.plan || 'free' }),
-                billing: _billingState(ent) });
+                billing: _billingState(ent),
+                bonusTokens: _bonusTokens(ent),
+                referralEarned: converted && converted.paidJoiner ? converted.tokens : 0 });
 }
 
 // ---- Stripe: create a Checkout Session (subscription) ----
@@ -6580,8 +6828,14 @@ async function adminStats(request, env) {
   // snapshot. 30-day signup + active series, plus today's figures.
   const signups30 = await _growthSeries(env, 'signup', 30);
   const active30 = await _growthSeries(env, 'active', 30);
+  /* AMV-075: referral conversions, so the invite loop is a measured channel
+     rather than a feature nobody can tell is working. A conversion is counted
+     when an invited account has genuinely started using AMV - the same bar the
+     reward is paid at - so this series is real activation, not raw signups. */
+  const referrals30 = await _growthSeries(env, 'referral', 30);
   const signupsToday = signups30.length ? signups30[signups30.length - 1].count : 0;
   const activeToday = active30.length ? active30[active30.length - 1].count : 0;
+  const referrals7 = referrals30.slice(-7).reduce((n, d) => n + d.count, 0);
   const signups7 = signups30.slice(-7).reduce((n, d) => n + d.count, 0);
   const signupsPrev7 = signups30.slice(-14, -7).reduce((n, d) => n + d.count, 0);
   const wowGrowthPct = signupsPrev7 > 0 ? +(((signups7 - signupsPrev7) / signupsPrev7) * 100).toFixed(0) : null;
@@ -6595,7 +6849,10 @@ async function adminStats(request, env) {
     generatedAt: Date.now(),
     spend: { today: +gSpend.toFixed(2), cap: gCap, pctOfCap: +(gSpend / gCap * 100).toFixed(1), killed },
     users: { total: users.length, paying, byPlan: plans, conversionPct, activeToday },
-    growth: { signupsToday, signups7, signupsPrev7, wowGrowthPct, signups30, active30 },
+    growth: { signupsToday, signups7, signupsPrev7, wowGrowthPct, signups30, active30,
+              referrals7, referrals30,
+              // What share of the last week's signups came through an invite.
+              referralSharePct: signups7 > 0 ? +((referrals7 / signups7) * 100).toFixed(1) : null },
     revenue: { estMRR: mrr, estARR: mrr * 12, arpu, pastDueAccounts: pastDue, mrrAtRisk: atRisk },
     margin: (() => {
       const totalCost = +users.reduce((s, u) => s + u.monthCostUSD, 0).toFixed(2);

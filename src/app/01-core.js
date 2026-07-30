@@ -316,6 +316,14 @@ const AMV_API = {
     throw new Error(d.error || 'Signup failed');
   },
 
+  /* This account's invite link and what it has earned. The server is the only
+     source of these numbers - nothing about a referral is decided here. */
+  async referral(){
+    if(!this.live) return null;
+    const r = await this._fetch('/v1/referral');
+    return await r.json().catch(()=>null);
+  },
+
   // jobs / approvals / handoff
   async jobs(){ const r=await this._fetch('/api/jobs'); return (await r.json()).jobs||[]; },
   async toggleJob(id,on){ await this._fetch('/api/jobs',{method:'POST',body:JSON.stringify({id,on})}); },

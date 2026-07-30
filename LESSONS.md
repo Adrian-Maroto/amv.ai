@@ -265,3 +265,18 @@ Spending limits, family links and the consent gate all shipped as working,
 tested code with no screen. Worse, the consent gate refused every purchase
 until terms were accepted and an age confirmed - with nowhere to do either.
 Before calling a module done, open the app and try to reach it as a user.
+
+## 24. Assigning to a getter fails silently, and the test passes for the wrong reason
+`AMV_API.live` is a getter over the configured base URL. A test that set
+`AMV_API.live = true` did nothing at all - no error, no warning - so the pane
+under test rendered its "no server" state and the assertions were measuring the
+wrong screen. Before faking a dependency, check whether the property is an
+accessor, and drive the thing it derives from instead.
+
+## 25. A reward that pays on signup is a reward you are paying attackers
+Every incentive attached to account creation is priced by whoever can create
+accounts fastest, not by the value of a customer. The referral loop pays only
+after the invited account is a day old AND has really used AMV, rejects
+same-network pairs, caps signups per code per day, and caps active rewards per
+account. The reward is capacity, never money or a plan - so even a defeat of
+every one of those checks cannot be converted into cash.

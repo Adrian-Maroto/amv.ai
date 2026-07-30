@@ -474,6 +474,11 @@ function _admGrowthBlock(live, backendLive){
       _admKpi('Conversion', (uu.conversionPct!=null?uu.conversionPct+'%':'-'), 'Free → paid')+
       _admKpi('Active today', String(uu.activeToday!=null?uu.activeToday:'-'), 'Signed-in users')+
       _admKpi('ARPU', (live.revenue&&live.revenue.arpu!=null?'$'+live.revenue.arpu:'-'), 'Avg revenue / paying user')+
+      /* The invite loop, measured. A conversion counts only when an invited
+         account has actually started using AMV, so this is activation through
+         referral - not links clicked. */
+      _admKpi('Referrals', String(g.referrals7!=null?g.referrals7:'-'), 'Converted (7d)')+
+      _admKpi('Referral share', (g.referralSharePct!=null?g.referralSharePct+'%':'-'), 'Of this week\u2019s signups')+
     '</div>'+
     '<div class="adm-spark-wrap"><div class="adm-spark-lbl">Signups, last 30 days</div>'+spark+'</div>';
 }
