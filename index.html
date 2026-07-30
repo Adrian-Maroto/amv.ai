@@ -6990,6 +6990,19 @@ html,body{height:100%;height:100dvh}
   padding:var(--sp-2) var(--sp-4);border-left:2px solid var(--grn);border-radius:var(--r-sm);
   background:rgba(74,222,128,.06);font-size:var(--t-sm);color:var(--mu);line-height:1.5}
 
+/* ============================================================
+   LAYER A30 - Unit economics on the founder dashboard
+   ============================================================ */
+.adm-econ{width:100%;border-collapse:collapse;font-size:var(--t-sm)}
+.adm-econ th,.adm-econ td{text-align:left;padding:6px 10px 6px 0;border-bottom:1px solid var(--bd);white-space:nowrap}
+.adm-econ th{font-size:var(--t-xs);text-transform:uppercase;letter-spacing:.04em;color:var(--dim);font-weight:600}
+.adm-econ td{color:var(--tx)}
+.adm-pos{color:var(--grn)}
+.adm-neg{color:var(--red)}
+.adm-econ-note{margin-top:var(--sp-3);font-size:var(--t-sm);color:var(--mu);line-height:1.5}
+.adm-econ-note b{color:var(--tx)}
+@media(max-width:700px){ .adm-econ{display:block;overflow-x:auto} }
+
 </style>
 <!-- BUILD:CSS:END -->
 <script>
@@ -16769,7 +16782,37 @@ function _admRenderTab(tab, backendLive, live){
         _admStat(live?'$'+live.revenue.estARR.toLocaleString():(backendLive?'…':'$0'),'ARR')+
         _admStat(live?'$'+live.margin.estMonthlyCost.toLocaleString():(backendLive?'…':'$0'),'AI cost (mo)')+
         _admStat(live?'$'+Math.max(0,live.revenue.estMRR-live.margin.estMonthlyCost).toLocaleString():(backendLive?'…':'$0'),'Gross margin (mo)')+
+        _admStat(live&&live.margin.grossMarginPct!=null?live.margin.grossMarginPct+'%':(backendLive?'…':'-'),'Gross margin %')+
       '</div>'+(live?'':backendLive?'':_admPending('MRR, ARR, revenue and margin from Stripe')))+
+      /* AMV-071: the numbers you steer on. A blended cost figure cannot tell
+         you whether a tier is profitable, which accounts cost more than they
+         pay, or where the money is actually going. */
+      _admCard('Unit economics by tier', live&&live.margin.byPlan&&live.margin.byPlan.length
+        ? '<table class="adm-econ"><thead><tr><th>Tier</th><th>Users</th><th>Revenue</th><th>AI cost</th><th>Margin</th><th>%</th><th>Cost/user</th></tr></thead><tbody>'+
+          live.margin.byPlan.map(p=>'<tr><td><span class="adm-badge '+(p.plan==='free'?'off':'ok')+'">'+escH(p.plan)+'</span></td>'+
+            '<td>'+p.users+'</td><td>$'+p.revenue.toLocaleString()+'</td><td>$'+p.cost.toLocaleString()+'</td>'+
+            '<td class="'+(p.grossMargin<0?'adm-neg':'adm-pos')+'">$'+p.grossMargin.toLocaleString()+'</td>'+
+            '<td>'+(p.grossMarginPct==null?'-':p.grossMarginPct+'%')+'</td>'+
+            '<td>$'+p.costPerUser+'</td></tr>').join('')+'</tbody></table>'+
+          '<div class="adm-econ-note">Free users cost <b>$'+(live.margin.freeUserCost||0).toLocaleString()+'</b> this month - that is the price of the funnel.</div>'
+        : _admPending('Revenue, AI cost and gross margin for every tier'))+
+      _admCard('Accounts costing more than they pay', live
+        ? (live.margin.unprofitableAccounts&&live.margin.unprofitableAccounts.length
+          ? '<div class="adm-loglist">'+live.margin.unprofitableAccounts.map(u=>'<div class="adm-logrow">'+
+              '<span class="adm-badge warn">'+escH(u.plan)+'</span><span>'+escH(u.email)+'</span>'+
+              '<span class="adm-logtime adm-neg">-$'+u.lossUSD+'</span></div>').join('')+'</div>'
+          : '<div class="adm-empty">None. Every paying account is profitable this month.</div>')
+        : _admPending('Paying accounts whose AI cost exceeds their subscription'))+
+      _admCard('Where the money goes', live
+        ? (Object.keys(live.margin.featureCost||{}).length
+          ? '<div class="adm-barlist">'+(()=>{ const fc=live.margin.featureCost; const max=Math.max(...Object.values(fc));
+              return Object.entries(fc).sort((a,b)=>b[1]-a[1]).map(([k,v])=>
+                '<div class="adm-brow"><span class="adm-brow-l">'+escH(k)+'</span><div class="adm-brow-track">'+
+                '<div class="adm-brow-fill" style="width:'+Math.max(2,(v/max*100))+'%"></div></div>'+
+                '<span class="adm-brow-v">$'+v.toLocaleString()+'</span></div>').join(''); })()+'</div>'+
+            '<div class="adm-econ-note">Prompt caching saved <b>$'+(live.margin.cacheSavedUSD||0).toLocaleString()+'</b> this month.</div>'
+          : '<div class="adm-empty">No spend recorded yet this month.</div>')
+        : _admPending('Cost split by feature, and what caching saved'))+
       _admCard('Subscriptions by tier','<div class="adm-barlist">'+tierBar('Free','free')+tierBar('Pro','pro')+tierBar('Elite','elite')+tierBar('Ultra','ultra')+tierBar('Custom','custom')+'</div>')+
       _admCard('Top spenders (margin watch)', live&&live.topSpenders&&live.topSpenders.length?'<div class="adm-loglist">'+live.topSpenders.slice(0,10).map(u=>'<div class="adm-logrow"><span class="adm-badge '+(u.plan==='free'?'off':'ok')+'">'+escH(u.plan)+'</span><span>'+escH(u.email)+'</span><span class="adm-logtime">$'+u.monthCostUSD+'</span></div>').join('')+'</div>':(live?'<div class="adm-empty">No paying users yet.</div>':_admPending('Who costs the most this month - abuse & margin watch')))+
       _admCard('Financial forecast &amp; investor KPIs', _admPending('Growth-based ARR/MRR projections, CAC/LTV, burn, runway'));

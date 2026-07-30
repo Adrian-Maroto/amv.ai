@@ -6904,3 +6904,16 @@ html,body{height:100%;height:100dvh}
 .ai-recovered{display:flex;align-items:center;gap:var(--sp-3);margin-top:var(--sp-3);
   padding:var(--sp-2) var(--sp-4);border-left:2px solid var(--grn);border-radius:var(--r-sm);
   background:rgba(74,222,128,.06);font-size:var(--t-sm);color:var(--mu);line-height:1.5}
+
+/* ============================================================
+   LAYER A30 - Unit economics on the founder dashboard
+   ============================================================ */
+.adm-econ{width:100%;border-collapse:collapse;font-size:var(--t-sm)}
+.adm-econ th,.adm-econ td{text-align:left;padding:6px 10px 6px 0;border-bottom:1px solid var(--bd);white-space:nowrap}
+.adm-econ th{font-size:var(--t-xs);text-transform:uppercase;letter-spacing:.04em;color:var(--dim);font-weight:600}
+.adm-econ td{color:var(--tx)}
+.adm-pos{color:var(--grn)}
+.adm-neg{color:var(--red)}
+.adm-econ-note{margin-top:var(--sp-3);font-size:var(--t-sm);color:var(--mu);line-height:1.5}
+.adm-econ-note b{color:var(--tx)}
+@media(max-width:700px){ .adm-econ{display:block;overflow-x:auto} }

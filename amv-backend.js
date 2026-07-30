@@ -4014,7 +4014,7 @@ async function resumeAnswer(request, env) {
   return json({ ok: true, text: d.text || '', at: d.at || 0 });
 }
 
-async function meterStream(stream, eng, { dName, mName, gName, costName, user, env, limits, reqMessages, reserved = 0, reqId = '' }) {
+async function meterStream(stream, eng, { dName, mName, gName, costName, user, env, limits, reqMessages, reserved = 0, reqId = '', feature = 'chat' }) {
   const reader = stream.getReader();
   const dec = new TextDecoder();
   let buf = '';
@@ -4110,6 +4110,21 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, user, e
   }
   const gRes = await counter(env, gName, { op: 'incr', amount: cost, ttlMs: 86400000 * 2 });
   await counter(env, costName, { op: 'incr', amount: cost, ttlMs: 86400000 * 70 });
+
+  /* AMV-071: two numbers the owner cannot run this business without.
+
+     WHERE the money goes - a single blended cost figure cannot tell you that
+     images are eating the margin while chat is fine, so spend is split by
+     feature. And WHAT CACHING IS WORTH - a cached input token costs a tenth of
+     a fresh one, so the saving is real money that would otherwise be invisible.
+     Both are month-scoped global counters: two extra increments per request,
+     which is a small price for being able to see the unit economics at all. */
+  try {
+    const mk = monthKey();
+    await counter(env, `featcost:${feature || 'chat'}:${mk}`, { op: 'incr', amount: cost, ttlMs: 86400000 * 70 });
+    const saved = (cacheRead / 1e6) * eng.inCost * 0.90;   // what a cache read did NOT cost
+    if (saved > 0) await counter(env, `cachesave:${mk}`, { op: 'incr', amount: saved, ttlMs: 86400000 * 70 });
+  } catch (e) { /* reporting must never break metering */ }
 
   // alert threshold (80% of global cap)
   const gSpent = gRes.value || 0;
@@ -6331,8 +6346,50 @@ async function adminStats(request, env) {
     if (PRICE[plan]) mrr += PRICE[plan];
     else if (plan === 'custom' && e.custom?.price) mrr += e.custom.price;
     const cost = (await counter(env, `cost:${email}:${month}`, { op: 'get' })).value || 0;
-    if (plan !== 'free' || cost > 0) users.push({ email, plan, monthCostUSD: +cost.toFixed(3) });
+    const revenue = PRICE[plan] || (plan === 'custom' && e.custom?.price) || 0;
+    if (plan !== 'free' || cost > 0) users.push({ email, plan, monthCostUSD: +cost.toFixed(3), revenue });
   }
+
+  /* AMV-071: UNIT ECONOMICS.
+     A single blended cost number cannot answer the questions that decide
+     whether this business works: is each tier profitable, which accounts cost
+     more than they pay, and where is the money actually going. Those are the
+     numbers you steer on, and none of them were here. */
+  const cohorts = {};
+  for (const u of users) {
+    const c = cohorts[u.plan] || (cohorts[u.plan] = { plan: u.plan, users: 0, revenue: 0, cost: 0 });
+    c.users++; c.revenue += u.revenue; c.cost += u.monthCostUSD;
+  }
+  const byPlanEconomics = Object.values(cohorts).map(c => ({
+    plan: c.plan, users: c.users,
+    revenue: +c.revenue.toFixed(2), cost: +c.cost.toFixed(2),
+    grossMargin: +(c.revenue - c.cost).toFixed(2),
+    // A free cohort has no revenue, so a margin PERCENTAGE is meaningless there
+    // - null says "not applicable" instead of printing a fake -100%.
+    grossMarginPct: c.revenue > 0 ? +(((c.revenue - c.cost) / c.revenue) * 100).toFixed(1) : null,
+    costPerUser: +(c.cost / Math.max(1, c.users)).toFixed(3),
+  })).sort((a, b) => b.revenue - a.revenue);
+
+  /* The accounts that quietly destroy an AI business: paying, but costing more
+     than they pay. Worth seeing individually, because the answer is usually a
+     conversation rather than a limit. */
+  const unprofitable = users
+    .filter(u => u.revenue > 0 && u.monthCostUSD > u.revenue)
+    .map(u => ({ email: u.email, plan: u.plan, revenue: u.revenue, cost: u.monthCostUSD,
+                 lossUSD: +(u.monthCostUSD - u.revenue).toFixed(2) }))
+    .sort((a, b) => b.lossUSD - a.lossUSD).slice(0, 20);
+  // Free users cost real money too - that is the price of the funnel, and it
+  // belongs on screen next to what the funnel returns.
+  const freeCost = +(cohorts.free ? cohorts.free.cost : 0).toFixed(2);
+
+  // Where the money went this month, and what caching saved.
+  const features = ['chat', 'image', 'video', 'automation', 'sms', 'widget'];
+  const featureCost = {};
+  for (const feat of features) {
+    const v = (await counter(env, `featcost:${feat}:${month}`, { op: 'get' })).value || 0;
+    if (v > 0) featureCost[feat] = +v.toFixed(2);
+  }
+  const cacheSaved = +((await counter(env, `cachesave:${month}`, { op: 'get' })).value || 0).toFixed(2);
 
   // top spenders (who costs us most this month) - abuse / margin watch
   const topSpenders = [...users].sort((a, b) => b.monthCostUSD - a.monthCostUSD).slice(0, 20);
@@ -6359,7 +6416,20 @@ async function adminStats(request, env) {
     users: { total: users.length, paying, byPlan: plans, conversionPct, activeToday },
     growth: { signupsToday, signups7, signupsPrev7, wowGrowthPct, signups30, active30 },
     revenue: { estMRR: mrr, estARR: mrr * 12, arpu, pastDueAccounts: pastDue, mrrAtRisk: atRisk },
-    margin: { estMonthlyCost: +users.reduce((s, u) => s + u.monthCostUSD, 0).toFixed(2) },
+    margin: (() => {
+      const totalCost = +users.reduce((s, u) => s + u.monthCostUSD, 0).toFixed(2);
+      return {
+        estMonthlyCost: totalCost,
+        grossMargin: +(mrr - totalCost).toFixed(2),
+        grossMarginPct: mrr > 0 ? +(((mrr - totalCost) / mrr) * 100).toFixed(1) : null,
+        costPerPayingUser: paying > 0 ? +(totalCost / paying).toFixed(3) : 0,
+        freeUserCost: freeCost,
+        byPlan: byPlanEconomics,
+        featureCost,
+        cacheSavedUSD: cacheSaved,
+        unprofitableAccounts: unprofitable,
+      };
+    })(),
     topSpenders,
   });
 }
