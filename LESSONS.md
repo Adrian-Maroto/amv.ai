@@ -227,3 +227,41 @@ Format: **Mistake → Root cause → Rule going forward.**
 - Never mention Claude/Anthropic in anything user-facing or pushed to the repo.
 - Verify every change live. Go in order, one at a time. Review before delivering.
 - Usable on **every** device. Hard to lose money. Building to be worth billions.
+
+## 18. A feature the interface promises must exist in the code
+"AMV Auto" was the default model and its description said it picks the right
+model for each task. It was one line in an alias table pointing at a single
+engine. Every claim the UI makes is a promise; grep the code path behind any
+description that sounds like behaviour before believing it.
+
+## 19. A cost table is not documentation, it is enforcement
+Two engines were priced at two to three times their real rate. Nobody was
+overcharged - but the margin backstop spends against those numbers, so paying
+users were cut off after burning a third of the allowance their money covered.
+Wrong constants in a table that only feeds a report are cosmetic; wrong
+constants that feed a limiter are a product defect.
+
+## 20. A limit denominated in a unit that can move is not a fixed limit
+Plan allowances are counted in tokens. Changing the engine changed how many
+tokens the same sentence costs, so a model upgrade silently cut every user's
+real allowance by about a quarter. When a limit is expressed in a derived unit,
+write down what it was calibrated against, and re-derive it when that moves.
+
+## 21. Merge-by-replacement destroys other devices' work
+Sync stored each list with Object.assign, so the last device to push won
+wholesale and a stale phone could erase a laptop's conversations. Any
+multi-device write path needs either item-level merge or a revision check. And
+the merge itself needs a tiebreak that prefers substance, or a payload that was
+trimmed to fit a size cap will overwrite the full copy it was trimmed from.
+
+## 22. Optional tuning must not be able to take the product down
+thinking, effort and cache markers are tuning, not the request. If a model
+stops accepting one, a naked 400 breaks every chat at once. One retry with the
+optional parts stripped keeps the product working, and an alert stops "still
+working" from meaning "silently degraded forever".
+
+## 23. Logic with no way in is not a feature
+Spending limits, family links and the consent gate all shipped as working,
+tested code with no screen. Worse, the consent gate refused every purchase
+until terms were accepted and an age confirmed - with nowhere to do either.
+Before calling a module done, open the app and try to reach it as a user.

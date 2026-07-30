@@ -308,11 +308,26 @@ const PLAN_LIMITS = {
   // anti-abuse floor that normal users never reach. Blended compute ~$6/Mtok:
   //   pro   $15  -> ~1.8M/mo ≈ $11 worst-case compute (~27% floor, usually far higher margin)
   //   elite $75  -> ~7M/mo, ultra $200 -> ~18M/mo - all comfortably profitable.
-  free:  { dayTokens: 40000,    monthTokens: 250000,    rpm: 8,  imagesDay: 8,   videosMonth: 0 },
-  pro:   { dayTokens: 250000,   monthTokens: 1800000,   rpm: 20, imagesDay: 100, videosMonth: 20 },
-  elite: { dayTokens: 900000,   monthTokens: 7000000,   rpm: 40, imagesDay: 500, videosMonth: 120 },
-  ultra: { dayTokens: 2200000,  monthTokens: 18000000,  rpm: 80, imagesDay: 2000, videosMonth: 600 },
+  /* AMV-072: these allowances are counted in TOKENS, but a token is not a fixed
+     amount of work - it depends on the tokenizer. The current-generation engine
+     tokenizes the same English text into roughly 30% more tokens than the one
+     these numbers were calibrated against. Left alone, every user's real
+     allowance would have quietly shrunk by about a quarter for identical work,
+     as a side effect of a model upgrade they never asked for and cannot see.
+     So the caps are scaled by the same ratio: the allowance is denominated in
+     WORK, not in a unit that moved underneath it.
+
+     Margin is unaffected. The real profit guarantee is the dollar backstop
+     (planPrice * 0.45 of model cost), which is enforced separately and is now
+     priced correctly - these token caps are a secondary anti-abuse guard. */
+  free:  { dayTokens: 52000,    monthTokens: 325000,    rpm: 8,  imagesDay: 8,   videosMonth: 0 },
+  pro:   { dayTokens: 325000,   monthTokens: 2340000,   rpm: 20, imagesDay: 100, videosMonth: 20 },
+  elite: { dayTokens: 1170000,  monthTokens: 9100000,   rpm: 40, imagesDay: 500, videosMonth: 120 },
+  ultra: { dayTokens: 2860000,  monthTokens: 23400000,  rpm: 80, imagesDay: 2000, videosMonth: 600 },
 };
+/* The ratio above, named so it is a decision rather than a magic number. If the
+   engine line changes again, re-measure with count_tokens rather than guessing. */
+const TOKENIZER_SCALE = 1.30;
 
 /* =====================================================================
    AUDIT LOGGING (auditor #5)
@@ -3529,7 +3544,7 @@ function effectiveLimits(user) {
   if (user.plan === 'custom' && user.customCfg) {
     const c = user.customCfg;
     const price = c.price || 30;
-    const monthTokens = c.monthTokens || 300000;
+    const monthTokens = c.monthTokens || Math.round(300000 * TOKENIZER_SCALE);
     // Image & video limits scale with the plan size so a bigger custom budget
     // genuinely buys proportionally more media - not a flat binary. Bounded so
     // they never exceed what the price can cover (margin stays protected).
@@ -3537,7 +3552,7 @@ function effectiveLimits(user) {
     const imagesDay = Math.min(5000, Math.max(50, Math.floor(monthTokens / 30000)));
     const videosMonth = price >= 15 ? Math.min(1000, Math.floor((price - 10) * 4)) : 0;
     return {
-      dayTokens: c.dayTokens || 50000,
+      dayTokens: c.dayTokens || Math.round(50000 * TOKENIZER_SCALE),
       monthTokens,                              // HARD CAP - the profit guarantee
       rpm: c.rpm || 16,
       imagesDay,
