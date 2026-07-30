@@ -47,11 +47,14 @@ const SECURITY_HEADERS = {
 const json = (o, s = 200) => new Response(JSON.stringify(o), { status: s, headers: { 'Content-Type': 'application/json', ...CORS, ...SECURITY_HEADERS } });
 
 /* ---- model catalog: maps AMV model -> real engine + cost + min plan ---- */
+/* cacheMin is the smallest prefix the model will actually cache. It is NOT the
+   same across models, and below it a cache_control marker is silently ignored
+   while still costing a write - so the breakpoint is skipped instead. */
 const ENGINES = {
-  'amv-pulse': { model: 'claude-haiku-4-5-20251001', minPlan: 'free',  inCost: 1,  outCost: 5,   maxOut: 4000 },
-  'amv-core':  { model: 'claude-sonnet-4-6',         minPlan: 'free',  inCost: 3,  outCost: 15,  maxOut: 8000 },
-  'amv-forge': { model: 'claude-opus-4-8',           minPlan: 'pro',   inCost: 15, outCost: 75,  maxOut: 16000 },
-  'amv-apex':  { model: 'claude-fable-5',            minPlan: 'elite', inCost: 20, outCost: 100, maxOut: 16000 },
+  'amv-pulse': { model: 'claude-haiku-4-5-20251001', minPlan: 'free',  inCost: 1,  outCost: 5,   maxOut: 4000,  cacheMin: 4096 },
+  'amv-core':  { model: 'claude-sonnet-4-6',         minPlan: 'free',  inCost: 3,  outCost: 15,  maxOut: 8000,  cacheMin: 1024 },
+  'amv-forge': { model: 'claude-opus-4-8',           minPlan: 'pro',   inCost: 15, outCost: 75,  maxOut: 16000, cacheMin: 1024 },
+  'amv-apex':  { model: 'claude-fable-5',            minPlan: 'elite', inCost: 20, outCost: 100, maxOut: 16000, cacheMin: 512 },
 };
 // Map every form the frontend might send -> canonical engine key. The picker
 // sends the real model string today, but we also accept the short keys
@@ -99,6 +102,68 @@ const _RX_HARD      = /\b(refactor|debug|architect|architecture|algorithm|optimi
 const _RX_ANALYSIS  = /\b(analy[sz]e|compare|evaluate|critique|summari[sz]e|explain why|strategy|forecast|plan for|pros and cons|research)\b/i;
 const _RX_TRIVIAL   = /^(hi|hey|hello|yo|thanks|thank you|ta|ok|okay|cool|nice|got it|sure|yes|no|yep|nope|good morning|good night|bye)\b[\s!.?]*$/i;
 const _RX_LOOKUP    = /^(what|who|when|where|which|how many|how much|define|translate|convert|spell)\b/i;
+
+/* =====================================================================
+   AMV-066: CACHE THE CONVERSATION, NOT JUST THE SYSTEM PROMPT.
+
+   Caching is a PREFIX match, and the render order is tools -> system ->
+   messages. The system prompt already carries a breakpoint, which means the
+   tools in front of it are cached too. What was never cached is the part that
+   grows: the conversation itself. By turn fifteen the history dwarfs the
+   system prompt, and every one of those tokens was being re-charged at full
+   price on every single turn - the largest avoidable cost in a chat product.
+
+   Placing a breakpoint on the last block of the newest turn means the next
+   turn reads the whole conversation from cache at a tenth of the price.
+
+   Two constraints that make this correct rather than just present:
+   - A cache write costs 1.25x, so a prefix that will not be read again is a
+     loss. Below the model's minimum cacheable size nothing caches at all and
+     the marker is silently wasted - the minimum differs per model, so it is
+     read from the engine rather than assumed.
+   - A breakpoint only looks back 20 content blocks for an earlier entry. A
+     single turn with many tool calls can exceed that on its own, which
+     silently breaks the chain, so a long turn gets a second breakpoint part
+     way back.
+   ===================================================================== */
+const CACHE_LOOKBACK = 20;          // blocks a breakpoint will search backwards
+function _withCacheBreakpoints(messages, eng) {
+  if (!Array.isArray(messages) || !messages.length) return messages;
+  const min = (eng && eng.cacheMin) || 1024;
+  // Not worth a 1.25x write below the model's minimum - it would not cache.
+  if (_estimateInputTokens(messages) < min) return messages;
+
+  const out = messages.map(m => Object.assign({}, m));
+  const mark = i => {
+    const m = out[i]; if (!m) return false;
+    // cache_control lives on a content BLOCK, so a plain string has to become one.
+    if (typeof m.content === 'string') {
+      if (!m.content) return false;
+      m.content = [{ type: 'text', text: m.content, cache_control: { type: 'ephemeral' } }];
+      return true;
+    }
+    if (Array.isArray(m.content) && m.content.length) {
+      const last = m.content.length - 1;
+      m.content = m.content.map((b, j) =>
+        j === last ? Object.assign({}, b, { cache_control: { type: 'ephemeral' } }) : b);
+      return true;
+    }
+    return false;
+  };
+
+  let placed = 0;
+  if (mark(out.length - 1)) placed++;
+  /* The lookback guard. Walk back counting blocks; if the newest turn alone is
+     wide enough to push the previous turn out of range, anchor an extra
+     breakpoint inside the window so the chain still connects. */
+  let blocks = 0;
+  for (let i = out.length - 1; i >= 0 && placed < 3; i--) {
+    const c = out[i].content;
+    blocks += Array.isArray(c) ? c.length : 1;
+    if (blocks > CACHE_LOOKBACK - 5 && i > 0) { if (mark(i - 1)) placed++; break; }
+  }
+  return out;
+}
 
 /* Returns { key, why }. `why` is shown to the user, so it has to be true. */
 function _autoRoute(body, user, limits) {
@@ -3680,7 +3745,8 @@ async function aiProxy(request, env, ctx) {
     model: eng.model,
     max_tokens: maxTokens,
     stream: true,
-    messages: body.messages || [],
+    // Cache the conversation prefix, not only the system prompt (AMV-066).
+    messages: _withCacheBreakpoints(body.messages || [], eng),
   };
   if (body.system) {
     // cache the big system prompt so repeat turns are ~90% cheaper
@@ -3709,7 +3775,7 @@ async function aiProxy(request, env, ctx) {
       'Content-Type': 'application/json',
       'x-api-key': env.ANTHROPIC_API_KEY,           // KEY HIDDEN SERVER-SIDE
       'anthropic-version': '2023-06-01',
-      'anthropic-beta': 'prompt-caching-2024-07-31',
+      /* Prompt caching is generally available; the old beta header is a no-op. */
     },
     body: JSON.stringify(upstreamBody),
   });
@@ -4181,7 +4247,7 @@ async function widgetChat(request, env, ctx) {
       'Content-Type': 'application/json',
       'x-api-key': env.ANTHROPIC_API_KEY,
       'anthropic-version': '2023-06-01',
-      'anthropic-beta': 'prompt-caching-2024-07-31',
+      /* Prompt caching is generally available; the old beta header is a no-op. */
     },
     body: JSON.stringify(upstreamBody),
   });
