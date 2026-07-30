@@ -6917,3 +6917,22 @@ html,body{height:100%;height:100dvh}
 .adm-econ-note{margin-top:var(--sp-3);font-size:var(--t-sm);color:var(--mu);line-height:1.5}
 .adm-econ-note b{color:var(--tx)}
 @media(max-width:700px){ .adm-econ{display:block;overflow-x:auto} }
+
+/* ============================================================
+   LAYER A31 - The next step
+   One earned line after a complete answer. Quiet by design: it sits
+   below the reply, never over it, and it is dismissible for good.
+   ============================================================ */
+.next-step{display:flex;align-items:center;gap:var(--sp-4);margin:var(--sp-4) 0 var(--sp-2) 46px;
+  padding:var(--sp-3) var(--sp-4);border:1px solid var(--bd);border-left:2px solid var(--accent);
+  border-radius:var(--r-md);background:var(--s1);max-width:640px}
+.next-step-b{display:flex;flex-direction:column;gap:2px;flex:1 1 auto;min-width:0}
+.next-step-b b{font-size:var(--t-base);font-weight:600;color:var(--tx)}
+.next-step-b span{font-size:var(--t-sm);color:var(--mu);line-height:1.45}
+.next-step-go{flex:0 0 auto;font-size:var(--t-sm);font-weight:500;color:#fff;background:var(--accent);
+  border:0;border-radius:var(--r-pill);padding:6px 16px;cursor:pointer;transition:transform .16s var(--ease)}
+.next-step-go:hover{transform:translateY(-1px)}
+.next-step-x{flex:0 0 auto;width:26px;height:26px;border:0;background:none;color:var(--dim);
+  font-size:16px;line-height:1;cursor:pointer;border-radius:var(--r-sm)}
+.next-step-x:hover{color:var(--tx);background:var(--s3)}
+@media(max-width:600px){ .next-step{margin-left:0;flex-wrap:wrap} .next-step-b{flex:1 1 100%} }

@@ -1606,7 +1606,24 @@ function renderChatMsgs() {
       '<div class="mwrap">'+(mdlLabel?mdlLabel:'')+
       '<div class="mb '+(isU?'u':'ai')+(m.streaming&&typeof m.c==='string'&&m.c.length?' mb-streaming':'')+'">'+content+'</div>'+actions+'</div></div>';
   }).join('')+
-  (S.busy?'<div class="mr"><div class="mav ai">A</div><div class="mwrap"><div class="mb ai"><div class="dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div></div></div></div>':'');
+  (S.busy?'<div class="mr"><div class="mav ai">A</div><div class="mwrap"><div class="mb ai"><div class="dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div></div></div></div>':'')+
+  // One earned next step after a complete answer (AMV-073). Usually nothing.
+  (typeof _nextStepHTML==='function'? _nextStepHTML(msgs) : '');
+
+  // Wire it. Both actions do real work; the dismissal is permanent.
+  cm.querySelectorAll('[data-next-go]').forEach(b=>b.addEventListener('click',()=>{
+    const kind=b.dataset.nextGo;
+    try{
+      const conv=getCurConv(); if(conv){ conv._nextShown=(conv._nextShown||[]).concat(kind); }
+      const lastUser=[...getMsgs()].reverse().find(m=>m.r==='u');
+      _nextStepRun(kind, (lastUser&&(lastUser.d||lastUser.c))||'');
+    }catch(e){}
+  }));
+  cm.querySelectorAll('[data-next-off]').forEach(b=>b.addEventListener('click',()=>{
+    try{ saveStr('amv_nextstep_off','1'); }catch(e){}
+    b.closest('.next-step')?.remove();
+    try{ toast('Fine - no more suggestions.','info',2500); }catch(e){}
+  }));
 
   cm.scrollTop=cm.scrollHeight;
   const snd=$('snd'); if(snd) snd.disabled=S.busy;
