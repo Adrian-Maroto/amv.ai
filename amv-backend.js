@@ -22,12 +22,12 @@ const _corsOrigin = (env) => (env && env.ALLOWED_ORIGIN) || '*';
 const corsFor = (env) => ({
   'Access-Control-Allow-Origin': _corsOrigin(env),
   'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-AMV-Request-Id',
 });
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-AMV-Request-Id',
   // The browser cannot read a custom response header cross-origin unless it is
   // exposed. Without this the routed-engine name is invisible to the app.
   'Access-Control-Expose-Headers': 'X-AMV-Engine, X-AMV-Engine-Why',
@@ -2537,6 +2537,7 @@ export default {
         case '/auth/reset/code':    return authResetCode(request, env);
         case '/auth/reset/verify':  return authResetVerify(request, env);
         case '/auth/admin-reset':   return authAdminReset(request, env);
+        case '/v1/resume':       return resumeAnswer(request, env);
         case '/sync/pull':       return syncPull(request, env);
         case '/sync/push':       return syncPush(request, env);
         case '/auto/list':       return autoList(request, env);
@@ -3750,6 +3751,12 @@ async function aiProxy(request, env, ctx) {
   const vErr = validateMessagesPayload(body);
   if (vErr) return json({ error: vErr, code: 'invalid_input' }, 400);
 
+  /* A client-supplied id for this turn, so a dropped connection can ask for the
+     answer back (AMV-070). Validated rather than trusted - it becomes part of a
+     KV key, and it is namespaced by the caller's own email either way. */
+  const _rawId = String(request.headers.get('X-AMV-Request-Id') || '');
+  const _reqId = /^[A-Za-z0-9_-]{6,64}$/.test(_rawId) ? _rawId : '';
+
   // resolve requested engine
   const rawModel = body.model || 'claude-sonnet-5';
   const limits = effectiveLimits(user);
@@ -3944,7 +3951,8 @@ async function aiProxy(request, env, ctx) {
 
   // 7) tee the stream: pass to client AND tally tokens/cost as it flows
   const [toClient, toMeter] = upstream.body.tee();
-  ctx.waitUntil(meterStream(toMeter, eng, { dName, mName, gName, costName, user, env, limits, reqMessages: body.messages || [], reserved: reserve }));
+  ctx.waitUntil(meterStream(toMeter, eng, { dName, mName, gName, costName, user, env, limits,
+    reqMessages: body.messages || [], reserved: reserve, reqId: _reqId }));
 
   return new Response(toClient, {
     status: 200,
@@ -3963,13 +3971,57 @@ async function aiProxy(request, env, ctx) {
      mid-stream still bills what was generated (never a free ride).
    - Handles message_start / message_delta / message_stop usage shapes.
    - Falls back to an output estimate if the stream yields no usage at all. */
-async function meterStream(stream, eng, { dName, mName, gName, costName, user, env, limits, reqMessages, reserved = 0 }) {
+/* =====================================================================
+   AMV-070: A DROPPED CONNECTION SHOULD NOT COST THE ANSWER.
+
+   The meter runs on a tee of the stream inside waitUntil, so when a client
+   disconnects mid-answer the model keeps generating and AMV keeps paying for
+   every output token - and the user gets nothing. They then retry, and pay for
+   the whole thing a second time. On mobile, where connections drop routinely,
+   that is a real double charge on the business and a lost answer for the user.
+
+   The meter is already reading every byte, so it assembles the text as it goes
+   and parks the finished answer for a few minutes. A client that lost its
+   connection asks for it back instead of regenerating.
+
+   Bounded on purpose: only answers long enough to be worth recovering, capped
+   in size, and short-lived. This is a recovery buffer, not storage - the real
+   copy is the conversation the client saves.
+   ===================================================================== */
+const RESUME_TTL_S = 900;                 // 15 minutes
+const RESUME_MIN_CHARS = 200;             // not worth a KV write below this
+const RESUME_MAX_CHARS = 120000;
+async function _parkAnswer(env, email, reqId, text) {
+  try {
+    if (!env || !env.AMV_KV || !reqId || !email) return;
+    const body = String(text || '');
+    if (body.length < RESUME_MIN_CHARS) return;
+    await env.AMV_KV.put('resume:' + email.toLowerCase() + ':' + reqId,
+      JSON.stringify({ text: body.slice(0, RESUME_MAX_CHARS), at: Date.now() }),
+      { expirationTtl: RESUME_TTL_S });
+  } catch (e) { /* recovery is best-effort; never break the response for it */ }
+}
+/* Hand back an answer the client lost. Scoped to the caller's own account, so
+   one user can never read another's recovered response. */
+async function resumeAnswer(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  const id = new URL(request.url).searchParams.get('id') || '';
+  if (!/^[A-Za-z0-9_-]{6,64}$/.test(id)) return json({ error: 'bad id' }, 400);
+  const raw = await env.AMV_KV.get('resume:' + user.email.toLowerCase() + ':' + id);
+  if (!raw) return json({ ok: false, code: 'not_ready' });
+  let d = null; try { d = JSON.parse(raw); } catch (_) { return json({ ok: false, code: 'not_ready' }); }
+  return json({ ok: true, text: d.text || '', at: d.at || 0 });
+}
+
+async function meterStream(stream, eng, { dName, mName, gName, costName, user, env, limits, reqMessages, reserved = 0, reqId = '' }) {
   const reader = stream.getReader();
   const dec = new TextDecoder();
   let buf = '';
   let inTok = 0, cacheRead = 0, cacheWrite = 0, outTok = 0;
   let webSearches = 0;   // AMV-021: separately-billed web-search tool calls
   let sawUsage = false, sawAnyEvent = false;
+  let answer = '';       // assembled so a client that dropped can get it back
   try {
     while (true) {
       const { done, value } = await reader.read();
@@ -3983,6 +4035,9 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, user, e
         if (!payload || payload === '[DONE]') continue;
         let ev; try { ev = JSON.parse(payload); } catch { continue; }
         sawAnyEvent = true;
+        // Text as it streams. Free to collect - the bytes are already here.
+        if (ev.type === 'content_block_delta' && ev.delta && typeof ev.delta.text === 'string'
+            && answer.length < RESUME_MAX_CHARS) answer += ev.delta.text;
         // input + cache token counts arrive in message_start
         if (ev.type === 'message_start' && ev.message && ev.message.usage) {
           const u = ev.message.usage;
@@ -4009,6 +4064,10 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, user, e
       }
     }
   } catch { /* stream interrupted - we still bill whatever usage we saw */ }
+
+  /* Park whatever was produced. This runs whether the client is still there or
+     not, which is the entire point: the answer the user lost is waiting. */
+  if (reqId) await _parkAnswer(env, user && user.email, reqId, answer);
 
   // Fallback: if we never got usage (parse failure / hard interruption), estimate
   // conservatively from the request so a request is NEVER completely free.

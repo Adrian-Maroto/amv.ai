@@ -4593,7 +4593,12 @@ async function _callAI(msgs, _opts) {
     if(!tools.length) tools = undefined;
 
     const _endpoint = _aiBase();        // backend-only; never the browser key
-    const _headers = _aiHeaders();
+    /* An id for this turn. If the connection dies after the model has already
+       produced the answer, the server has it parked under this id and we can
+       fetch it back instead of paying to generate the whole thing again
+       (AMV-070). */
+    const _turnId = 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    const _headers = Object.assign({}, _aiHeaders(), { 'X-AMV-Request-Id': _turnId });
     const _payload = JSON.stringify({
         model:mdl.model,
         max_tokens:mdl.tokens,
@@ -4707,7 +4712,7 @@ async function _callAI(msgs, _opts) {
     // window.__amvStreamIdleMs exists so the stall path can be exercised in a
     // test without a 30-second wait. Nothing in the product sets it.
     const IDLE_MS=(typeof window!=='undefined'&&window.__amvStreamIdleMs)||30000;
-    let _stalled=false;
+    let _stalled=false, _recovered=false;
     const _readOnce=()=>new Promise((resolve,reject)=>{
       const t=setTimeout(()=>reject(Object.assign(new Error('stream-stalled'),{_stall:true})),IDLE_MS);
       reader.read().then(v=>{ clearTimeout(t); resolve(v); },e=>{ clearTimeout(t); reject(e); });
@@ -4721,6 +4726,11 @@ async function _callAI(msgs, _opts) {
         if(!(re&&re._stall)) throw re;
         try{ reader.cancel(); }catch(e){}
         try{ _activeStreamCtrl&&_activeStreamCtrl.abort(); }catch(e){}
+        /* Before treating this as a loss: the model may have finished on the
+           server after our connection died. Those tokens are already paid for,
+           so recovering them costs nothing and saves the user a regeneration. */
+        const _saved = await _recoverAnswer(_turnId);
+        if(_saved && _saved.length > fullText.length){ fullText = _saved; _recovered = true; break; }
         if(fullText){ _stalled=true; break; }
         throw new Error(navigator.onLine===false
           ? 'You went offline before AMV could answer. Reconnect and retry.'
@@ -4852,6 +4862,7 @@ async function _callAI(msgs, _opts) {
     if(!fullText) fullText='(no response)';
     const _base={r:'a',c:fullText,model:S.model};
     if(_ranEngine && S.model==='auto'){ _base._engine=_ranEngine; _base._engineWhy=_ranWhy; }
+    if(_recovered) _base._recovered=true;   // complete, just not delivered live
     msgs[streamIdx]=_stalled ? Object.assign(_base,{_interrupted:true}) : _base;
     _recordUsageOnce();
     // Auto-title chat
@@ -4883,6 +4894,26 @@ async function _callAI(msgs, _opts) {
   // learn durable facts from this exchange (best-effort, runs in background)
   try{ if(!msgs[streamIdx]||!msgs[streamIdx]._error){ setTimeout(()=>_maybeExtractMemory(msgs),300); AMVValue.record('message'); if(!loadStr('amv_activated')){ saveStr('amv_activated','1'); track('activated_first_message'); } track('message_sent'); } }catch(e){}
 }
+/* Ask the server for an answer this device lost. The model may have finished
+   after the connection dropped - those tokens are already paid for, so getting
+   them back costs nothing and saves the user waiting through a regeneration.
+   Polls briefly because the answer is only parked once generation ends. */
+async function _recoverAnswer(turnId){
+  if(!turnId) return '';
+  try{
+    if(!(window.AMV_API && AMV_API.live && AMV_API.token)) return '';
+    for(let attempt=0; attempt<3; attempt++){
+      const r = await AMV_API._fetch('/v1/resume?id='+encodeURIComponent(turnId), { method:'GET', timeout:8000 });
+      const d = await r.json().catch(()=>null);
+      if(d && d.ok && d.text) return d.text;
+      // not finished yet - give it a moment, but do not make the user wait long
+      await new Promise(res=>setTimeout(res, 900));
+    }
+  }catch(e){ /* recovery is a bonus; never turn its failure into the error */ }
+  return '';
+}
+try{ window._recoverAnswer=_recoverAnswer; }catch(e){}
+
 /* Retry the last AI turn after a failure. */
 function retryLastAI(){
   const msgs=getMsgs();
@@ -5433,7 +5464,9 @@ function renderChatMsgs() {
       content=isU?escH(rawText).replace(/\n/g,'<br>'):((m._research?m._research:'')+md(typeof m.c==='string'?m.c:rawText)+(m._rendered?('<div class="chat-tool-out">'+m._rendered+'</div>'):'')+(m.streaming?'<span class="stream-cursor"></span>':'')+
         // The answer above is real but incomplete - say so rather than letting it
         // look like AMV simply stopped mid-sentence on purpose.
-        (m._interrupted?'<div class="ai-cut"><span>The connection dropped partway through. What you see above is what arrived.</span><button class="ai-snag-retry" data-action="retry-ai" type="button">Retry</button></div>':''));
+        (m._interrupted?'<div class="ai-cut"><span>The connection dropped partway through. What you see above is what arrived.</span><button class="ai-snag-retry" data-action="retry-ai" type="button">Retry</button></div>':'')+
+        // A complete answer that simply could not be delivered live.
+        (m._recovered?'<div class="ai-recovered"><span>Your connection dropped, so AMV recovered this answer rather than making you wait for it again.</span></div>':''));
     }
     /* Name the engine that ACTUALLY answered. On Auto, the server routes the
        turn, so "AMV Auto Model" would tell the user nothing about what ran. */

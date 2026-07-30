@@ -6895,3 +6895,12 @@ html,body{height:100%;height:100dvh}
   color:var(--dim);margin-bottom:3px}
 .msg-engine-why{color:var(--dim);opacity:.75}
 .msg-engine-why::before{content:'· '}
+
+/* ============================================================
+   LAYER A29 - A recovered answer
+   The connection dropped but the model had already finished, so the
+   answer is complete - reads as reassurance, not as a failure.
+   ============================================================ */
+.ai-recovered{display:flex;align-items:center;gap:var(--sp-3);margin-top:var(--sp-3);
+  padding:var(--sp-2) var(--sp-4);border-left:2px solid var(--grn);border-radius:var(--r-sm);
+  background:rgba(74,222,128,.06);font-size:var(--t-sm);color:var(--mu);line-height:1.5}
