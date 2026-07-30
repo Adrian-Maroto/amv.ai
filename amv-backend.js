@@ -47,14 +47,34 @@ const SECURITY_HEADERS = {
 const json = (o, s = 200) => new Response(JSON.stringify(o), { status: s, headers: { 'Content-Type': 'application/json', ...CORS, ...SECURITY_HEADERS } });
 
 /* ---- model catalog: maps AMV model -> real engine + cost + min plan ---- */
-/* cacheMin is the smallest prefix the model will actually cache. It is NOT the
-   same across models, and below it a cache_control marker is silently ignored
-   while still costing a write - so the breakpoint is skipped instead. */
+/* ---- model catalog ---------------------------------------------------------
+   AMV-067. Three things live here and each one is load-bearing:
+
+   inCost/outCost are REAL published rates per million tokens. They were not:
+   Forge was priced at 15/75 and Apex at 20/100 against actual rates of 5/25
+   and 10/50. Nothing overcharged a customer, but the margin backstop below
+   spends against these numbers - a Pro plan allows planPrice * 0.45 of model
+   cost per month, so a 3x overstatement meant a paying user was cut off after
+   burning a third of the allowance their money actually covers. Correct
+   numbers mean the same protected margin buys two to three times the usage.
+
+   cacheMin is the smallest prefix the model will actually cache; below it a
+   cache_control marker is silently ignored while still costing a write.
+
+   thinking/effort are explicit ON PURPOSE. On the current generation a request
+   that simply omits `thinking` gets it enabled by default, and max_tokens caps
+   thinking PLUS the answer - so inheriting an output cap sized for text alone
+   truncates replies mid-sentence. Disabling it instead is worse here: with
+   thinking off, a tool call can be written into the visible text and silently
+   never run, which for a product with a live web-search tool means an answer
+   that quietly did no research. So thinking stays on, effort controls the
+   spend, and the output caps are sized to hold both.
+   --------------------------------------------------------------------------- */
 const ENGINES = {
   'amv-pulse': { model: 'claude-haiku-4-5-20251001', minPlan: 'free',  inCost: 1,  outCost: 5,   maxOut: 4000,  cacheMin: 4096 },
-  'amv-core':  { model: 'claude-sonnet-4-6',         minPlan: 'free',  inCost: 3,  outCost: 15,  maxOut: 8000,  cacheMin: 1024 },
-  'amv-forge': { model: 'claude-opus-4-8',           minPlan: 'pro',   inCost: 15, outCost: 75,  maxOut: 16000, cacheMin: 1024 },
-  'amv-apex':  { model: 'claude-fable-5',            minPlan: 'elite', inCost: 20, outCost: 100, maxOut: 16000, cacheMin: 512 },
+  'amv-core':  { model: 'claude-sonnet-5',           minPlan: 'free',  inCost: 3,  outCost: 15,  maxOut: 16000, cacheMin: 1024, thinking: true, effort: 'medium' },
+  'amv-forge': { model: 'claude-opus-5',             minPlan: 'pro',   inCost: 5,  outCost: 25,  maxOut: 32000, cacheMin: 512,  thinking: true, effort: 'high' },
+  'amv-apex':  { model: 'claude-fable-5',            minPlan: 'elite', inCost: 10, outCost: 50,  maxOut: 32000, cacheMin: 512,  thinking: true, effort: 'high' },
 };
 // Map every form the frontend might send -> canonical engine key. The picker
 // sends the real model string today, but we also accept the short keys
@@ -63,10 +83,12 @@ const ENGINES = {
 // silent mis-default. (auditor #6: RAW_TO_KEY/engine resolution consistency)
 const RAW_TO_KEY = {
   // real model strings
-  'claude-haiku-4-5-20251001': 'amv-pulse',
-  'claude-sonnet-4-6': 'amv-core',
-  'claude-opus-4-8': 'amv-forge',
+  'claude-haiku-4-5-20251001': 'amv-pulse', 'claude-haiku-4-5': 'amv-pulse',
+  'claude-sonnet-5': 'amv-core',
+  'claude-opus-5': 'amv-forge',
   'claude-fable-5': 'amv-apex',
+  // Previous-generation ids a cached client build may still send.
+  'claude-sonnet-4-6': 'amv-core', 'claude-opus-4-8': 'amv-forge', 'claude-opus-4-7': 'amv-forge',
   // frontend short keys
   'fast': 'amv-pulse', 'core': 'amv-core', 'coding': 'amv-forge', 'smart': 'amv-apex',
   // amv-friendly aliases
@@ -790,7 +812,7 @@ async function _autoExecute(env, item){
     : 'You are AMV running a scheduled automation for the user, unattended. Complete the task fully and return the finished result in markdown. Be specific and useful - this is what they will read when they come back. Never say you will do it later; do it now. Never use em or en dashes; use a plain hyphen (-) instead.';
 
   const body = {
-    model: 'claude-sonnet-4-6',
+    model: 'claude-sonnet-5',
     max_tokens: isResearch ? 2500 : 3000,
     system,
     messages: [{ role:'user', content: item.detail }]
@@ -3638,7 +3660,7 @@ async function aiProxy(request, env, ctx) {
   if (vErr) return json({ error: vErr, code: 'invalid_input' }, 400);
 
   // resolve requested engine
-  const rawModel = body.model || 'claude-sonnet-4-6';
+  const rawModel = body.model || 'claude-sonnet-5';
   const limits = effectiveLimits(user);
   /* 'auto' is routed for real (AMV-065), not aliased to one engine. The plan
      ceiling is applied inside the router, and the choice is reported back so
@@ -3754,6 +3776,11 @@ async function aiProxy(request, env, ctx) {
   }
   // Only forward tools we explicitly support - never pass arbitrary client
   // tool definitions straight upstream (auditor #4: bounds attack + cost surface).
+  /* Thinking and effort, only for engines that accept them. Sending `effort`
+     to an engine that does not support it is a 400, so it is opt-in per model
+     rather than blanket. */
+  if (eng.thinking) upstreamBody.thinking = { type: 'adaptive' };
+  if (eng.effort)   upstreamBody.output_config = { effort: eng.effort };
   if (body.tools && Array.isArray(body.tools)) {
     const ALLOWED_TOOLS = new Set(['web_search_20250305']);
     const safe = body.tools.filter(t => t && ALLOWED_TOOLS.has(t.type)).map(t => {
@@ -3769,7 +3796,7 @@ async function aiProxy(request, env, ctx) {
     if (safe.length) upstreamBody.tools = safe;
   }
 
-  const upstream = await fetch('https://api.anthropic.com/v1/messages', {
+  const _callUpstream = (payload) => fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -3777,8 +3804,36 @@ async function aiProxy(request, env, ctx) {
       'anthropic-version': '2023-06-01',
       /* Prompt caching is generally available; the old beta header is a no-op. */
     },
-    body: JSON.stringify(upstreamBody),
+    body: JSON.stringify(payload),
   });
+
+  let upstream = await _callUpstream(upstreamBody);
+
+  /* AMV-068: a rejected OPTIONAL parameter must not take AI down for everyone.
+     thinking, output_config and cache_control are tuning, not the request. If a
+     model ever stops accepting one of them, a 400 here would break every chat
+     in the product until someone noticed and shipped a fix. So one retry with
+     the optional parts stripped: the answer is slightly less tuned and the
+     product keeps working. A 400 about the messages themselves is a real
+     client error and is NOT retried. */
+  if (upstream.status === 400) {
+    const raw = await upstream.clone().text().catch(() => '');
+    if (/thinking|output_config|effort|cache_control|unexpected|unsupported|unrecognized/i.test(raw)) {
+      const plain = {
+        model: upstreamBody.model, max_tokens: upstreamBody.max_tokens, stream: true,
+        messages: (body.messages || []),                       // no cache markers
+      };
+      if (body.system) plain.system = String(body.system);      // no cache marker
+      if (upstreamBody.tools) plain.tools = upstreamBody.tools;
+      const retry = await _callUpstream(plain);
+      if (retry.ok) {
+        audit(env, 'upstream_param_fallback', { key, reason: raw.slice(0, 120) });
+        try { await alertOnce(env, 'model_param_reject',
+          'AMV dropped an optional model parameter after a 400 and retried successfully. Chats still work, but tuning (thinking/effort/caching) is off for ' + key + '. Reason: ' + raw.slice(0, 160), 60); } catch (_) {}
+        upstream = retry;
+      }
+    }
+  }
 
   if (!upstream.ok) {
     // The model errored, so it produced nothing. Give the reservation back -

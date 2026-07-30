@@ -1330,8 +1330,8 @@ try{ window.OWNER_EMAIL=OWNER_EMAIL; window._isOwnerEmail=_isOwnerEmail; }catch(
 const MODELS = {
   auto:   { label:'AMV Auto', desc:'Automatically picks the right model for each task', color:'#5590ff', model:'auto', tokens:6000, cost:0, rec:'free' },
   fast:   { label:'AMV Pulse', desc:'Fast and efficient for everyday tasks', color:'#4ade80', model:'claude-haiku-4-5-20251001', tokens:4000, cost:1, rec:'free' },
-  core:   { label:'AMV Core',  desc:'Balanced performance for most work', color:'#5590ff', model:'claude-sonnet-4-6', tokens:8000, cost:2, rec:'free' },
-  coding: { label:'AMV Forge', desc:'Built for complex coding and engineering', color:'#ff4d4d', model:'claude-opus-4-8', tokens:16000, cost:3, rec:'pro' },
+  core:   { label:'AMV Core',  desc:'Balanced performance for most work', color:'#5590ff', model:'claude-sonnet-5', tokens:16000, cost:2, rec:'free' },
+  coding: { label:'AMV Forge', desc:'Built for complex coding and engineering', color:'#ff4d4d', model:'claude-opus-5', tokens:32000, cost:3, rec:'pro' },
   smart:  { label:'AMV Apex',  desc:'The most capable model, for the hardest problems', color:'var(--indigo)', model:'claude-fable-5', tokens:16000, cost:4, rec:'elite' },
   image:  { label:'AMV Vision', desc:'Image generation', color:'#5590ff', model:'image', tokens:0, cost:0, hidden:true },
 };
@@ -1447,12 +1447,17 @@ const AEGIS = {
     minGapMs: 800,         // hard floor between sends
   },
   // ---- approx pricing per model (USD per 1M tokens) for usage view ----
+  /* Real published rates. These were overstated (Forge at 15/75, Apex at
+     20/100) which made the usage view show a cost two to three times what a
+     conversation actually cost. */
   price: {
-    'claude-fable-5':            { in: 20.00, out: 100.00 },
-    'claude-opus-4-8':           { in: 15.00, out: 75.00 },
-    'claude-sonnet-4-6':         { in: 3.00,  out: 15.00 },
+    'claude-fable-5':            { in: 10.00, out: 50.00 },
+    'claude-opus-5':             { in: 5.00,  out: 25.00 },
+    'claude-sonnet-5':           { in: 3.00,  out: 15.00 },
     'claude-haiku-4-5-20251001': { in: 1.00,  out: 5.00 },
-    'claude-sonnet-4-20250514':  { in: 3.00,  out: 15.00 },
+    // previous generation, kept so old stored usage still prices correctly
+    'claude-opus-4-8':           { in: 5.00,  out: 25.00 },
+    'claude-sonnet-4-6':         { in: 3.00,  out: 15.00 },
   },
   _times: [],            // request timestamps (this session)
   _lastSend: 0,

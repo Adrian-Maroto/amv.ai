@@ -2,7 +2,8 @@
    it picks the right model for each task. It did not: 'auto' was aliased to one
    engine, so "thanks" and a 400-line refactor ran on the same thing. That is a
    feature the interface claimed and the code did not deliver, and it is the
-   product's largest cost lever - Core input is 3x Pulse, Forge is 15x.
+   product's largest cost lever - Core input is 3x Pulse, and the deep engine
+   spends far more on thinking.
    These assertions cover: the cheap turns really go cheap, the hard turns
    really go deep, nobody is routed above the plan they pay for, and the user is
    told which engine answered. */
@@ -95,10 +96,17 @@ section('Every route explains itself in words the user can read');
 section('The saving is real, not cosmetic');
 {
   const P = W.ENGINES['amv-pulse'], C = W.ENGINES['amv-core'], F = W.ENGINES['amv-forge'];
-  ok(C.inCost / P.inCost >= 3, 'Core input costs at least 3x Pulse, so routing short turns down matters',
+  ok(C.inCost / P.inCost >= 3, 'Core costs 3x Pulse, so routing short turns down is the big win',
      (C.inCost / P.inCost).toFixed(1) + 'x');
-  ok(F.inCost / C.inCost >= 5, 'and Forge is several times Core, so it must be reserved for work that needs it',
+  /* Forge is only ~1.7x Core on the real published rates, not the 5x the old
+     overstated table implied. The case for reserving it is therefore latency
+     and thinking spend, not raw per-token price - the routing still holds, but
+     for the honest reason. */
+  ok(F.inCost > C.inCost, 'Forge still costs more per token than Core',
      (F.inCost / C.inCost).toFixed(1) + 'x');
+  ok(F.effort === 'high' && C.effort === 'medium',
+     'and it thinks harder, which is where its real cost and latency come from',
+     [C.effort, F.effort]);
 }
 
 section('Auto is wired into the proxy, not just defined');
