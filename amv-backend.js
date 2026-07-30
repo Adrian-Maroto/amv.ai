@@ -2502,6 +2502,12 @@ export default {
       return serveSite(request, env, path.slice(3));
     }
 
+    // A shared conversation is a public page - no auth, and it must be
+    // reachable by a link preview crawler (AMV-074).
+    if (request.method === 'GET' && path.startsWith('/c/')) {
+      return sharePage(request, env, path.slice(3));
+    }
+
     // The password-reset page must be public too - the whole point is that the
     // user cannot log in. This is what the reset email links to.
     if (request.method === 'GET' && path === '/reset') {
@@ -2553,6 +2559,9 @@ export default {
         case '/auth/reset/verify':  return authResetVerify(request, env);
         case '/auth/admin-reset':   return authAdminReset(request, env);
         case '/v1/resume':       return resumeAnswer(request, env);
+        case '/v1/share/create': return shareCreate(request, env);
+        case '/v1/share/list':   return shareList(request, env);
+        case '/v1/share/revoke': return shareRevoke(request, env);
         case '/sync/pull':       return syncPull(request, env);
         case '/sync/push':       return syncPush(request, env);
         case '/auto/list':       return autoList(request, env);
@@ -3986,6 +3995,163 @@ async function aiProxy(request, env, ctx) {
      mid-stream still bills what was generated (never a free ride).
    - Handles message_start / message_delta / message_stop usage shapes.
    - Falls back to an output estimate if the stream yields no usage at all. */
+/* =====================================================================
+   AMV-074: PUBLIC SHARE PAGES.
+
+   Sharing already worked, but it encoded the whole conversation into a URL
+   FRAGMENT. A fragment is never sent to a server, so a shared link pasted into
+   Slack, iMessage or X renders with no title, no description and no preview -
+   it looks like a bare URL, which reads as spam and does not get clicked. For
+   a product whose growth depends on people showing each other what it did,
+   that is the difference between a distribution loop and no loop at all. The
+   fragment also broke past ~8000 characters, which the old code warned about
+   rather than solved.
+
+   A shared conversation is now a real page the server can render, with proper
+   preview tags, and the owner can revoke it - which is what the privacy screen
+   already promised.
+
+   Deliberately NOT indexable. Search engines are told to stay away: people
+   share personal conversations with a colleague, not with the open web, and
+   the alternative is the well-known failure mode of private chats turning up
+   in search results. Link sharing is the loop; indexing is a liability.
+
+   The page ships with NO JavaScript at all and a locked-down policy, because
+   it renders text written by a stranger's model output to anyone who opens it.
+   ===================================================================== */
+const SHARE_MAX_BYTES = 512 * 1024;
+const SHARE_MAX_MSGS = 400;
+const _shareId = () => {
+  const a = new Uint8Array(9); crypto.getRandomValues(a);
+  return [...a].map(b => b.toString(36).padStart(2, '0')).join('').slice(0, 14);
+};
+function _shareEsc(t){
+  return String(t == null ? '' : t)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+async function shareCreate(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'unauthorized' }, 401);
+  const blocked = await guardAction(env, `share:${user.email}`, 10, 100, 'shares');
+  if(blocked) return blocked;
+  const body = await request.json().catch(()=>({}));
+  const title = String(body.title || 'Shared conversation').slice(0, 200);
+  const msgs = Array.isArray(body.msgs) ? body.msgs.slice(0, SHARE_MAX_MSGS) : null;
+  if(!msgs || !msgs.length) return json({ error:'nothing to share' }, 400);
+  const clean = msgs.map(m => ({
+    r: m && m.r === 'u' ? 'u' : 'a',
+    c: String((m && m.c) || '').slice(0, 20000),
+  })).filter(m => m.c);
+  if(!clean.length) return json({ error:'nothing to share' }, 400);
+  const rec = { title, msgs: clean, owner: user.email.toLowerCase(), at: Date.now() };
+  if(JSON.stringify(rec).length > SHARE_MAX_BYTES)
+    return json({ error:'This conversation is too large to share.', code:'share_too_large' }, 413);
+  const id = _shareId();
+  await DB.put(env, 'share', id, rec);
+  // Owner index, so the privacy screen can actually list and revoke them.
+  const mine = (await DB.get(env, 'shares', rec.owner)) || { items: [] };
+  mine.items = [{ id, title, at: rec.at }, ...(mine.items || [])].slice(0, 200);
+  await DB.put(env, 'shares', rec.owner, mine);
+  audit(env, 'share_created', { by: user.email, id });
+  const base = (env.APP_URL || '').replace(/\/$/, '') || new URL(request.url).origin;
+  return json({ ok:true, id, url: base + '/c/' + id });
+}
+async function shareList(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'unauthorized' }, 401);
+  const mine = (await DB.get(env, 'shares', user.email.toLowerCase())) || { items: [] };
+  const base = (env.APP_URL || '').replace(/\/$/, '') || new URL(request.url).origin;
+  return json({ ok:true, items: (mine.items||[]).map(i => ({ ...i, url: base + '/c/' + i.id })) });
+}
+async function shareRevoke(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'unauthorized' }, 401);
+  const { id } = await request.json().catch(()=>({}));
+  if(!/^[a-z0-9]{6,20}$/.test(String(id||''))) return json({ error:'bad id' }, 400);
+  const rec = await DB.get(env, 'share', id);
+  // Only the owner can revoke, and a missing record is not an error worth
+  // leaking - either way the link no longer works for them.
+  if(rec && rec.owner === user.email.toLowerCase()) await DB.del(env, 'share', id);
+  const mine = (await DB.get(env, 'shares', user.email.toLowerCase())) || { items: [] };
+  mine.items = (mine.items||[]).filter(i => i.id !== id);
+  await DB.put(env, 'shares', user.email.toLowerCase(), mine);
+  audit(env, 'share_revoked', { by: user.email, id });
+  return json({ ok:true });
+}
+/* The public page. No auth, no JavaScript, everything escaped. */
+async function sharePage(request, env, id){
+  const notFound = (msg) => new Response(
+    '<!doctype html><meta charset="utf-8"><meta name="robots" content="noindex,nofollow">' +
+    '<title>Not available - AMV.AI</title>' +
+    '<div style="font:15px/1.6 system-ui;padding:60px 24px;max-width:600px;margin:auto;text-align:center">' +
+    '<h1 style="font-size:20px">' + _shareEsc(msg) + '</h1>' +
+    '<p style="color:#666">This link may have been revoked by its owner.</p></div>',
+    { status: 404, headers: { 'Content-Type':'text/html; charset=utf-8', 'X-Robots-Tag':'noindex, nofollow' } });
+
+  if(!/^[a-z0-9]{6,20}$/.test(String(id||''))) return notFound('That link is not valid');
+  const rec = await DB.get(env, 'share', id);
+  if(!rec) return notFound('This conversation is no longer shared');
+
+  const base = (env.APP_URL || '').replace(/\/$/, '') || new URL(request.url).origin;
+  const title = _shareEsc(rec.title || 'Shared conversation');
+  // The preview description is the opening question, which is what makes a
+  // shared link worth clicking.
+  const first = (rec.msgs.find(m => m.r === 'u') || rec.msgs[0] || {}).c || '';
+  const desc = _shareEsc(String(first).replace(/\s+/g, ' ').slice(0, 180));
+  const turns = rec.msgs.map(m =>
+    '<div class="m ' + (m.r === 'u' ? 'u' : 'a') + '">' +
+      '<div class="who">' + (m.r === 'u' ? 'Asked' : 'AMV') + '</div>' +
+      '<div class="t">' + _shareEsc(m.c) + '</div></div>').join('');
+
+  const html = '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width,initial-scale=1">' +
+    '<title>' + title + ' - AMV.AI</title>' +
+    '<meta name="description" content="' + desc + '">' +
+    '<meta name="robots" content="noindex,nofollow">' +
+    // The tags that make a pasted link render as a card instead of a bare URL.
+    '<meta property="og:type" content="article">' +
+    '<meta property="og:site_name" content="AMV.AI">' +
+    '<meta property="og:title" content="' + title + '">' +
+    '<meta property="og:description" content="' + desc + '">' +
+    '<meta property="og:url" content="' + _shareEsc(base + '/c/' + id) + '">' +
+    '<meta name="twitter:card" content="summary_large_image">' +
+    '<meta name="twitter:title" content="' + title + '">' +
+    '<meta name="twitter:description" content="' + desc + '">' +
+    '<style>' +
+    ':root{color-scheme:light dark}' +
+    'body{font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;margin:0;background:#0d0d0f;color:#e8e8ea}' +
+    '@media(prefers-color-scheme:light){body{background:#fbfbfc;color:#18181b}.m.a{background:#fff;border-color:#e6e6ea}.m .who{color:#666}}' +
+    '.wrap{max-width:720px;margin:0 auto;padding:28px 20px 64px}' +
+    '.top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:28px;flex-wrap:wrap}' +
+    '.brand{font-weight:700;letter-spacing:-.02em}' +
+    '.cta{display:inline-block;padding:8px 18px;border-radius:999px;background:#5590ff;color:#fff;text-decoration:none;font-size:14px;font-weight:500}' +
+    'h1{font-size:23px;line-height:1.3;margin:0 0 22px}' +
+    '.m{margin:0 0 14px;padding:13px 16px;border:1px solid #26262b;border-radius:12px;background:#141418}' +
+    '.m.u{background:none;border-style:dashed}' +
+    '.who{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#8a8a92;margin-bottom:6px}' +
+    '.t{white-space:pre-wrap;word-wrap:break-word;overflow-wrap:anywhere}' +
+    '.foot{margin-top:34px;padding-top:20px;border-top:1px solid #26262b;font-size:13.5px;color:#8a8a92}' +
+    '.foot a{color:#5590ff}' +
+    '</style></head><body><div class="wrap">' +
+    '<div class="top"><span class="brand">AMV.AI</span>' +
+    '<a class="cta" href="' + _shareEsc(base) + '">Try AMV free</a></div>' +
+    '<h1>' + title + '</h1>' + turns +
+    '<div class="foot">Shared from <b>AMV.AI</b> - the AI that does the work, not just the talking. ' +
+    '<a href="' + _shareEsc(base) + '">Start free</a></div>' +
+    '</div></body></html>';
+
+  return new Response(html, { status: 200, headers: {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'public, max-age=300',
+    'X-Robots-Tag': 'noindex, nofollow',
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'no-referrer',
+    // No scripts at all: this page renders text AMV produced, to strangers.
+    'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+  }});
+}
+
 /* =====================================================================
    AMV-070: A DROPPED CONNECTION SHOULD NOT COST THE ANSWER.
 

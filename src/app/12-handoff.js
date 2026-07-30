@@ -1158,7 +1158,7 @@ function _renderSetPaneInner(){
     on($('prv-analytics'),'change',function(){ saveStr('amv_analytics_opt_out', this.checked?'':'1'); toast(this.checked?'Analytics on - thank you for helping improve AMV':'Analytics off - no product data will be collected','success'); });
     on($('prv-location'),'change',function(){ saveStr('amv_location_opt', this.checked?'1':'0'); toast(this.checked?'Location metadata on':'Location metadata off','info',2200); });
     on($('prv-improve'),'change',function(){ saveStr('amv_improve_opt', this.checked?'1':'0'); toast(this.checked?'Thanks - your data can help improve AMV\u2019s models':'Off - your chats won\u2019t be used for model training','success'); });
-    on($('prv-shared'),'click',()=>{ if(typeof openSharedChatsManager==='function'){ openSharedChatsManager(); } else { toast('Shared chats you create with a public link will appear here to manage or revoke.','info',4000); } });
+    on($('prv-shared'),'click',()=>{ openSharedChatsManager(); });
     on($('prv-memory'),'click',()=>{ S.settingsPane=null; setTab('memory'); });
     on($('prv-clrall'),'click',()=>{
       _confirmDeleteAccount();

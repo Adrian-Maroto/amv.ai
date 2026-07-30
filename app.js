@@ -3067,14 +3067,34 @@ function _buildShareLink(c){
     return location.origin+location.pathname+'#share='+b64;
   }catch(e){ _logErr('buildShareLink',e); return ''; }
 }
-function _openShareModal(c){
+/* AMV-074: a hosted share link, when the backend is connected.
+
+   The fragment link below still works and is still the honest fallback with no
+   backend - but a fragment is never sent to a server, so a link pasted into
+   Slack or X shows no title and no preview. It reads as a bare URL, which
+   reads as spam. A hosted page previews properly and can be revoked. */
+async function _createHostedShare(c){
+  if(!(window.AMV_API && AMV_API.live && AMV_API.token)) return null;
+  try{
+    const r = await AMV_API._fetch('/v1/share/create', { method:'POST', body: JSON.stringify({
+      title: c.title || 'Shared conversation',
+      msgs: (c.msgs||[]).map(m=>({ r:m.r, c:(typeof m.c==='string'?m.c:(m.d||'[attachment]')) }))
+    })});
+    const d = await r.json().catch(()=>null);
+    return (d && d.ok && d.url) ? d.url : null;
+  }catch(e){ return null; }
+}
+async function _openShareModal(c){
   const ovr=$('ovr'); if(!ovr) return;
-  const link=_buildShareLink(c);
-  const tooBig=link.length>8000;
+  const hosted=await _createHostedShare(c);
+  const link=hosted||_buildShareLink(c);
+  const tooBig=!hosted && link.length>8000;
   ovr.innerHTML=
     '<div class="share-modal">'+
       '<div class="share-title">Share this conversation</div>'+
-      '<p class="share-sub">Anyone with the link can view a read-only copy. The chat is encoded in the link itself - nothing is stored on a server.</p>'+
+      '<p class="share-sub">'+(hosted
+        ? 'Anyone with the link can read this conversation. It is not indexed by search engines, and you can revoke it any time in Settings \u2192 Privacy.'
+        : 'Anyone with the link can view a read-only copy. The chat is encoded in the link itself - nothing is stored on a server.')+'</p>'+
       (tooBig?'<div class="share-warn">This conversation is long, so the link is large and may not work in every app. Exporting as a file may work better.</div>':'')+
       '<div class="share-link-row"><input id="share-link" class="inp" readonly value="'+escH(link)+'"><button class="btn bp" id="share-copy">Copy</button></div>'+
       '<div class="share-actions">'+
@@ -3119,6 +3139,49 @@ function _renderSharedView(data){
     '</div>';
   document.title=(data.t||'Shared conversation')+' - AMV.AI';
 }
+/* Manage and revoke hosted share links. The privacy screen already promised
+   this; until now the button fell back to a toast because nothing was stored
+   anywhere to manage. */
+async function openSharedChatsManager(){
+  const ovr=$('ovr'); if(!ovr) return;
+  const live = !!(window.AMV_API && AMV_API.live && AMV_API.token);
+  ovr.innerHTML='<div class="ov" id="shr-bg"><div class="ob" onclick="event.stopPropagation()">'+
+    '<button class="oc" onclick="closeOvr()">&#215;</button>'+
+    '<h2>Shared conversations</h2>'+
+    '<div id="shr-body"><p class="ob-sub">Loading\u2026</p></div></div></div>';
+  ovr.classList.add('on');
+  document.getElementById('shr-bg')?.addEventListener('click',e=>{ if(e.target===e.currentTarget) closeOvr(); });
+  const body=document.getElementById('shr-body');
+  if(!live){
+    body.innerHTML='<p class="ob-sub">Links you create right now hold the conversation inside the link itself, so there is nothing stored to revoke - deleting the link is enough. Connect the AMV engine in Settings for shareable pages you can revoke later.</p>';
+    return;
+  }
+  let items=[];
+  try{
+    const r=await AMV_API._fetch('/v1/share/list', { method:'POST', body:'{}' });
+    const d=await r.json().catch(()=>null);
+    items=(d&&d.ok&&d.items)||[];
+  }catch(e){
+    body.innerHTML='<p class="ob-sub">Could not load your shared conversations. Check your connection and try again.</p>';
+    return;
+  }
+  if(!items.length){ body.innerHTML='<p class="ob-sub">You have not shared any conversations.</p>'; return; }
+  body.innerHTML='<p class="ob-sub">Anyone with one of these links can read that conversation. Revoking a link stops it working immediately.</p>'+
+    '<ul class="shr-list">'+items.map(i=>
+      '<li class="shr-item"><div><div class="shr-t">'+escH(i.title||'Conversation')+'</div>'+
+      '<a class="shr-u" href="'+escH(i.url)+'" target="_blank" rel="noopener">'+escH(i.url)+'</a></div>'+
+      '<button class="btn bs shr-rev" data-id="'+escH(i.id)+'">Revoke</button></li>').join('')+'</ul>';
+  body.querySelectorAll('.shr-rev').forEach(b=>b.addEventListener('click',async()=>{
+    b.disabled=true; b.textContent='Revoking\u2026';
+    try{
+      await AMV_API._fetch('/v1/share/revoke', { method:'POST', body: JSON.stringify({ id: b.dataset.id }) });
+      b.closest('.shr-item')?.remove();
+      if(!body.querySelector('.shr-item')) body.innerHTML='<p class="ob-sub">You have not shared any conversations.</p>';
+      toast('Link revoked - it no longer works.','success',3000);
+    }catch(e){ b.disabled=false; b.textContent='Revoke'; toast('Could not revoke that link.','error'); }
+  }));
+}
+try{ window.openSharedChatsManager=openSharedChatsManager; }catch(e){}
 try{ window.shareConv=shareConv; }catch(e){}
 
 /* =====================================================================
@@ -14824,7 +14887,7 @@ function _renderSetPaneInner(){
     on($('prv-analytics'),'change',function(){ saveStr('amv_analytics_opt_out', this.checked?'':'1'); toast(this.checked?'Analytics on - thank you for helping improve AMV':'Analytics off - no product data will be collected','success'); });
     on($('prv-location'),'change',function(){ saveStr('amv_location_opt', this.checked?'1':'0'); toast(this.checked?'Location metadata on':'Location metadata off','info',2200); });
     on($('prv-improve'),'change',function(){ saveStr('amv_improve_opt', this.checked?'1':'0'); toast(this.checked?'Thanks - your data can help improve AMV\u2019s models':'Off - your chats won\u2019t be used for model training','success'); });
-    on($('prv-shared'),'click',()=>{ if(typeof openSharedChatsManager==='function'){ openSharedChatsManager(); } else { toast('Shared chats you create with a public link will appear here to manage or revoke.','info',4000); } });
+    on($('prv-shared'),'click',()=>{ openSharedChatsManager(); });
     on($('prv-memory'),'click',()=>{ S.settingsPane=null; setTab('memory'); });
     on($('prv-clrall'),'click',()=>{
       _confirmDeleteAccount();
