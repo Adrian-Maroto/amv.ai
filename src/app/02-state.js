@@ -146,6 +146,36 @@ const _SYNC_KEYS = ['convs','memory','workspaces','prompts','imgs','model','imgS
    the browser: switch device or clear cache and a 10,000-line Dev project was
    simply gone. */
 const _SYNC_EXTRA = ['sessions','skills','handoffs','profile'];
+/* Keys whose values are id-bearing lists, so a pull can merge them item by item
+   instead of replacing the list. `model`/`imgStyle`/`imgRatio` are scalars and
+   deliberately absent - last write genuinely should win on a preference. */
+const _SYNC_MERGEABLE = new Set(['convs','memory','workspaces','prompts','imgs','vids']);
+const _syncStamp = it => (it && (it.updated || it.updatedAt || it.ts || it.added || it.created || it.createdAt)) || 0;
+/* How much substance an item carries - only breaks a tie, and it is what stops
+   an upload that was trimmed to fit the size cap from erasing the full copy. */
+function _syncWeight(it){
+  if(!it || typeof it!=='object') return 0;
+  let w=0;
+  if(Array.isArray(it.msgs)) w += it.msgs.length*10;
+  if(it.state) w += 5;
+  if(typeof it.text==='string') w += Math.min(5, it.text.length/500);
+  return w;
+}
+function _mergeById(localList, remoteList){
+  const byId=new Map(), loose=[];
+  const add=it=>{
+    const id=it && (it.id||it.key||it.name);
+    if(id==null){ loose.push(it); return; }
+    if(!byId.has(id)){ byId.set(id,it); return; }
+    const a=byId.get(id);
+    const sa=_syncStamp(a), sb=_syncStamp(it);
+    if(sa!==sb){ byId.set(id, sa>sb?a:it); return; }
+    byId.set(id, _syncWeight(it)>_syncWeight(a)?it:a);
+  };
+  (localList||[]).forEach(add); (remoteList||[]).forEach(add);
+  return [...byId.values()].sort((x,y)=>_syncStamp(y)-_syncStamp(x)).concat(loose);
+}
+try{ window._mergeById=_mergeById; }catch(e){}
 const SYNC_SOFT_LIMIT = 3.5 * 1024 * 1024;   // stay under the server's 4MB ceiling
 /* Snapshot Recents for upload. Dev projects can be enormous (a 12k-line file is
    ~680KB), and the server caps a sync payload at 4MB - so we upload newest-first
@@ -193,15 +223,28 @@ const AMVSync = {
     try{
       const data = await AMV_API.syncPull();
       if(!data) return false;
-      // hydrate state from server (server wins on login)
-      _SYNC_KEYS.forEach(k=>{ if(data[k]!==undefined){ _raw[k]=data[k]; _persist(k,data[k]); } });
+      /* AMV-069: MERGE, do not overwrite. "Server wins" destroyed anything done
+         on this device since its last push - work done offline, or on a device
+         that had not synced yet, was simply gone the moment the user signed in.
+         Lists are merged by id, newest wins, and on a tie the copy carrying
+         more content wins so a trimmed upload can never erase a full one. */
+      _SYNC_KEYS.forEach(k=>{
+        if(data[k]===undefined) return;
+        const local=_raw[k];
+        const merged=(Array.isArray(data[k]) && Array.isArray(local) && _SYNC_MERGEABLE.has(k))
+          ? _mergeById(local, data[k]) : data[k];
+        _raw[k]=merged; _persist(k,merged);
+      });
 
       // Restore the user's actual WORK into memory, not just into storage -
       // otherwise Recents stays empty until a reload.
       if(Array.isArray(data.sessions)){
         try{
+          // Same rule for Recents: a Dev project that only exists on this
+          // device must survive a pull, not be replaced out of existence.
+          const merged=_mergeById(Array.isArray(_SESSIONS)?_SESSIONS.slice():[], data.sessions);
           _SESSIONS.length = 0;
-          data.sessions.forEach(x=>_SESSIONS.push(x));
+          merged.forEach(x=>_SESSIONS.push(x));
           store(_sessKey(), _SESSIONS);
         }catch(e){ _logErr('sync.sessions', e); }
       }

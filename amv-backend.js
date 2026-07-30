@@ -3378,7 +3378,8 @@ async function syncPull(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
   const data = (await DB.get(env, 'data', user.email)) || {};
-  return json({ ok:true, data, serverTime: Date.now() });
+  // rev is what a client echoes back on push to prove it saw this version.
+  return json({ ok:true, data, rev: data._rev || 0, serverTime: Date.now() });
 }
 /* Push the user's data up (last-write-wins per top-level key, with a merge). */
 const SYNC_ALLOWED_KEYS = new Set([
@@ -3389,6 +3390,86 @@ const SYNC_ALLOWED_KEYS = new Set([
   'sessions','skills','handoffs','profile'
 ]);
 const SYNC_MAX_BYTES = 4 * 1024 * 1024;   // 4MB hard ceiling (well under KV's 25MB, sane for D1)
+
+/* =====================================================================
+   AMV-069: SYNC MUST NOT LOSE CHATS.
+
+   Every list was stored with Object.assign, which REPLACES the whole key. So
+   the last device to push won, wholesale. Two ways that silently destroyed
+   work:
+
+     - A phone with a stale or partial copy pushes its 3 conversations and the
+       laptop's 50 are gone from the server. The laptop then pulls and loses
+       them locally too.
+     - Two devices used in the same session: A saves a new chat, B pushes 20
+       seconds later from a list that predates it, A's chat is erased.
+
+   Conversations are the most valuable thing a user has here, and losing one is
+   the kind of failure a product does not recover its reputation from.
+
+   The fix is ordinary optimistic concurrency plus an item-level merge. The
+   server keeps a revision; a pull hands it out; a push echoes the revision it
+   was working from:
+
+     baseRev === current rev -> that client has seen everything the server has,
+       so its lists are authoritative and DELETIONS are honoured.
+     baseRev stale or absent -> somebody else wrote in between, so lists are
+       merged by id and nothing is dropped. A deleted item can reappear, which
+       is a far better failure than a deleted chat that cannot come back.
+
+   Both fields are additive; a record written before this change simply has no
+   rev and takes the safe merge path.
+   ===================================================================== */
+const SYNC_MERGE_KEYS = new Set(['chats','convs','memory','workspaces','prompts','imgs','vids','sessions','skills','handoffs']);
+const _syncId = it => (it && (it.id || it.key || it.name)) || null;
+/* Best available "when was this touched". Different lists use different names
+   and older records have none at all. */
+const _syncStamp = it => (it && (it.updated || it.updatedAt || it.ts || it.added || it.created || it.createdAt)) || 0;
+/* How much substance an item carries. Used only to break a tie, and it is what
+   stops a TRIMMED upload from erasing a full one: the client sheds the heavy
+   `state` blob off older Dev sessions to fit the 4MB cap, so an item whose body
+   was dropped must never overwrite the copy that still has it. */
+function _syncWeight(it){
+  if(!it || typeof it !== 'object') return 0;
+  let w = 0;
+  if(Array.isArray(it.msgs)) w += it.msgs.length * 10;
+  if(it.state) w += 5;
+  if(typeof it.text === 'string') w += Math.min(5, it.text.length / 500);
+  return w;
+}
+/* Pick the survivor for one id. Newer wins; on a tie the one carrying more
+   content wins, because the alternative is throwing away a user's work. */
+function _syncPick(a, b){
+  const sa = _syncStamp(a), sb = _syncStamp(b);
+  if(sa !== sb) return sa > sb ? a : b;
+  const wa = _syncWeight(a), wb = _syncWeight(b);
+  if(wa !== wb) return wa > wb ? a : b;
+  return b;                                   // same age, same substance: incoming
+}
+function _mergeSyncList(currentList, incomingList){
+  const cur = Array.isArray(currentList) ? currentList : [];
+  const inc = Array.isArray(incomingList) ? incomingList : [];
+  const byId = new Map();
+  const loose = [];                            // items with no id at all
+  const add = it => { const id = _syncId(it); if(id == null){ loose.push(it); return; }
+    byId.set(id, byId.has(id) ? _syncPick(byId.get(id), it) : it); };
+  cur.forEach(add); inc.forEach(add);
+  // Newest first, which is the order every one of these lists is displayed in.
+  const out = [...byId.values()].sort((x, y) => _syncStamp(y) - _syncStamp(x));
+  return out.concat(loose);
+}
+function _mergeSyncRecord(current, incoming, authoritative){
+  const out = Object.assign({}, current);
+  for(const k of Object.keys(incoming)){
+    const inc = incoming[k];
+    if(!authoritative && SYNC_MERGE_KEYS.has(k) && Array.isArray(inc)){
+      out[k] = _mergeSyncList(current[k], inc);
+    } else {
+      out[k] = inc;                            // scalars, and everything when authoritative
+    }
+  }
+  return out;
+}
 async function syncPush(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
@@ -3407,7 +3488,15 @@ async function syncPush(request, env){
   // blow up parse/serialize (the size cap alone doesn't bound depth).
   if(_boundedJson(filtered, SYNC_MAX_BYTES, 24)){ return json({ error:'synced data is too deeply nested', code:'sync_too_deep' }, 413); }
   const current = (await DB.get(env, 'data', user.email)) || {};
-  const merged = Object.assign({}, current, filtered, { _updatedAt: Date.now() });
+  /* Authoritative only when this client demonstrably saw the current version.
+     Anything else merges, so a stale device cannot delete another one's work. */
+  const curRev = +(current._rev || 0);
+  const baseRev = +(body.baseRev || 0);
+  const authoritative = curRev === 0 || baseRev === curRev;
+  const merged = _mergeSyncRecord(current, filtered, authoritative);
+  merged._updatedAt = Date.now();
+  merged._rev = curRev + 1;
+  if(!authoritative) audit(env, 'sync_merged', { email: user.email, baseRev, curRev });
   // Enforce a real size cap (the comment used to promise this but didn't do it).
   const serialized = JSON.stringify(merged);
   if(serialized.length > SYNC_MAX_BYTES){
@@ -3415,7 +3504,9 @@ async function syncPush(request, env){
     return json({ error: 'Your synced data is too large. Some older items may need pruning.', code: 'sync_too_large' }, 413);
   }
   await DB.put(env, 'data', user.email, merged);
-  return json({ ok:true, serverTime: Date.now() });
+  // The client stores rev and echoes it next time, so its next push can be
+  // authoritative and its deletions can stick.
+  return json({ ok:true, rev: merged._rev, merged: !authoritative, serverTime: Date.now() });
 }
 
 async function requireUser(request, env) {

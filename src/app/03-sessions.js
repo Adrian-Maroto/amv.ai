@@ -1152,6 +1152,10 @@ function _autoTitle(c){
 function setMsgs(msgs){
   const c=_ensureConv();
   c.msgs=msgs;
+  /* Stamp every write. Without it the sync merge can only fall back to
+     `created`, so an old chat you just added to would look older than a new
+     empty one and could lose to it. */
+  c.updated=Date.now();
   _autoTitle(c);
   _autoSave();
   renderHist();

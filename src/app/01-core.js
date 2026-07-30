@@ -281,14 +281,30 @@ const AMV_API = {
   },
 
   // ---- server-side data sync ----
+  // The server revision this client last saw. Echoed on push so the server can
+  // tell an up-to-date client (whose deletions should stick) from a stale one
+  // (whose list must be merged, never allowed to delete).
+  get syncRev(){ try{ return +(loadStr('amv_sync_rev')||0) || 0; }catch(e){ return 0; } },
+  set syncRev(v){ try{ saveStr('amv_sync_rev', String(+v||0)); }catch(e){} },
+
   async syncPull(){
     if(!this.live || !this.token) return null;
-    try{ const r = await this._fetch('/sync/pull', {method:'POST', body:'{}'}); const d = await r.json(); return d.ok ? d.data : null; }
+    try{ const r = await this._fetch('/sync/pull', {method:'POST', body:'{}'}); const d = await r.json();
+      if(d && d.ok){ this.syncRev = d.rev || 0; return d.data; }
+      return null; }
     catch(e){ return null; }
   },
   async syncPush(data){
     if(!this.live || !this.token) return false;
-    try{ const r = await this._fetch('/sync/push', {method:'POST', body:JSON.stringify({data})}); const d = await r.json(); return !!(d&&d.ok); }
+    try{ const r = await this._fetch('/sync/push', {method:'POST', body:JSON.stringify({data, baseRev:this.syncRev})}); const d = await r.json();
+      if(d && d.ok){
+        this.syncRev = d.rev || 0;
+        /* The server merged because another device had written. Our in-memory
+           copy is now behind what the server holds, so pull it back rather than
+           carrying on from a stale list and pushing the same conflict again. */
+        if(d.merged && typeof AMVSync !== 'undefined'){ try{ AMVSync.pull(); }catch(e){} }
+      }
+      return !!(d&&d.ok); }
     catch(e){ return false; }
   },
   async signup(email, name, password, extra){
