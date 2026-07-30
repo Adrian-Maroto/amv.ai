@@ -28,6 +28,9 @@ const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  // The browser cannot read a custom response header cross-origin unless it is
+  // exposed. Without this the routed-engine name is invisible to the app.
+  'Access-Control-Expose-Headers': 'X-AMV-Engine, X-AMV-Engine-Why',
 };
 // Security headers applied to every response. Protects users against clickjacking,
 // MIME-sniffing, protocol downgrade, and referrer leakage. CSP here is API-appropriate
@@ -69,6 +72,79 @@ const RAW_TO_KEY = {
   'auto': 'amv-core', '': 'amv-core',
 };
 const PLAN_RANK = { free: 0, pro: 1, elite: 2, ultra: 3 };
+
+/* =====================================================================
+   AMV-065: SMART ROUTING - what "AMV Auto" was supposed to be.
+   Auto is the DEFAULT model and its description promises it "automatically
+   picks the right model for each task". It did not: 'auto' mapped to amv-core
+   and every request, from "thanks" to a 400-line refactor, ran on the same
+   engine. That is a feature the interface claimed and the code did not
+   deliver, and it is also the largest cost lever in the product - Core input
+   is 3x Pulse and Forge is 15x, so answering trivial turns on Core burns
+   margin while hard turns get less engine than they need.
+
+   Routing is done from signals already in the request. It deliberately does
+   NOT ask a model which model to use: that would add a round-trip of latency
+   and cost to every single turn, defeating the point.
+
+   The rule is "cheapest engine that will not visibly do a worse job":
+     - Pulse  short, self-contained, conversational or lookup-shaped turns.
+     - Core   the default. Anything substantial, anything with a document,
+              image or web search, anything with real conversation history.
+     - Forge  work where reasoning depth shows: code, proofs, architecture,
+              multi-part analysis. Only when the plan includes it.
+   ===================================================================== */
+const _RX_CODE      = /```|\bfunction\b|\bclass\b|=>|\bimport\s|\bdef\s|\bSELECT\b.*\bFROM\b|<\/[a-z]+>|\{[\s\S]*\}/i;
+const _RX_HARD      = /\b(refactor|debug|architect|architecture|algorithm|optimi[sz]e|implement|migrat(e|ion)|prove|derive|theorem|integral|regression|complexity|concurrency|race condition|security review|threat model|trade-?offs?|design (a|the) system|step by step|write (me )?(a|an) (program|script|app|api))\b/i;
+const _RX_ANALYSIS  = /\b(analy[sz]e|compare|evaluate|critique|summari[sz]e|explain why|strategy|forecast|plan for|pros and cons|research)\b/i;
+const _RX_TRIVIAL   = /^(hi|hey|hello|yo|thanks|thank you|ta|ok|okay|cool|nice|got it|sure|yes|no|yep|nope|good morning|good night|bye)\b[\s!.?]*$/i;
+const _RX_LOOKUP    = /^(what|who|when|where|which|how many|how much|define|translate|convert|spell)\b/i;
+
+/* Returns { key, why }. `why` is shown to the user, so it has to be true. */
+function _autoRoute(body, user, limits) {
+  const msgs = Array.isArray(body.messages) ? body.messages : [];
+  const last = msgs.length ? msgs[msgs.length - 1] : null;
+  // A turn's content can be a string or a content-block array (text + images).
+  let text = '', hasMedia = false;
+  const c = last && last.content;
+  if (typeof c === 'string') text = c;
+  else if (Array.isArray(c)) {
+    c.forEach(b => {
+      if (!b) return;
+      if (b.type === 'text') text += (b.text || '') + '\n';
+      if (b.type === 'image' || b.type === 'document') hasMedia = true;
+    });
+  }
+  text = String(text).trim();
+  const len = text.length;
+  const turns = msgs.filter(m => m && m.role === 'user').length;
+  const wantsSearch = !!(body.tools && body.tools.length);
+  const bigSystem = String(body.system || '').length > 6000;   // a loaded project context
+
+  const cap = k => {                       // never route above what they pay for
+    if (limits && limits.allModels) return k;
+    const rank = PLAN_RANK[user.plan] || 0;
+    if (rank < PLAN_RANK[ENGINES[k].minPlan]) return rank >= 1 ? 'amv-core' : 'amv-core';
+    return k;
+  };
+
+  // Hardest first: depth is worth paying for, and getting this wrong is the
+  // one failure a user actually notices.
+  if (_RX_CODE.test(text) || _RX_HARD.test(text) || len > 6000 || bigSystem) {
+    const k = cap('amv-forge');
+    return { key: k, why: k === 'amv-forge'
+      ? 'Deep reasoning engine - this needs care'
+      : 'Balanced engine - the deep one is on Pro and above' };
+  }
+  // Cheapest: only for turns where a bigger engine would produce the same answer.
+  if (!hasMedia && !wantsSearch && turns <= 3 && len <= 220 &&
+      (_RX_TRIVIAL.test(text) || (_RX_LOOKUP.test(text) && !_RX_ANALYSIS.test(text)))) {
+    return { key: 'amv-pulse', why: 'Fast engine - a short, direct question' };
+  }
+  if (hasMedia)     return { key: 'amv-core', why: 'Balanced engine - reading what you attached' };
+  if (wantsSearch)  return { key: 'amv-core', why: 'Balanced engine - researching and pulling it together' };
+  return { key: 'amv-core', why: 'Balanced engine' };
+}
 
 // In-isolate cache for the global kill switch (avoids a KV read per request).
 const _KILL_TTL_MS = 5000;
@@ -3498,10 +3574,14 @@ async function aiProxy(request, env, ctx) {
 
   // resolve requested engine
   const rawModel = body.model || 'claude-sonnet-4-6';
-  const key = RAW_TO_KEY[rawModel] || (ENGINES[rawModel] ? rawModel : 'amv-core');
-  const eng = ENGINES[key];
-
   const limits = effectiveLimits(user);
+  /* 'auto' is routed for real (AMV-065), not aliased to one engine. The plan
+     ceiling is applied inside the router, and the choice is reported back so
+     the interface can name the engine that actually answered. */
+  const isAuto = rawModel === 'auto' || rawModel === 'amv-auto';
+  const routed = isAuto ? _autoRoute(body, user, limits) : null;
+  const key = routed ? routed.key : (RAW_TO_KEY[rawModel] || (ENGINES[rawModel] ? rawModel : 'amv-core'));
+  const eng = ENGINES[key];
 
   // 1) PLAN ENFORCEMENT - free can't call premium engines (custom plans paid for all models)
   if (!limits.allModels && PLAN_RANK[user.plan] < PLAN_RANK[eng.minPlan]) {
@@ -3656,7 +3736,11 @@ async function aiProxy(request, env, ctx) {
 
   return new Response(toClient, {
     status: 200,
-    headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', ...CORS, ...SECURITY_HEADERS },
+    headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', ...CORS, ...SECURITY_HEADERS,
+      // Tell the client which engine actually ran. Without this, a routed turn
+      // would be labelled "AMV Auto", which says nothing.
+      'X-AMV-Engine': key,
+      'X-AMV-Engine-Why': routed ? routed.why : '' },
   });
 }
 

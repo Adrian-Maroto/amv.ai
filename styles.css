@@ -6885,3 +6885,13 @@ html,body{height:100%;height:100dvh}
   .bill-notice{flex-wrap:wrap;bottom:var(--sp-3);gap:var(--sp-3)}
   .bill-notice-t{flex:1 1 100%}
 }
+
+/* ============================================================
+   LAYER A28 - Which engine answered
+   AMV Auto routes each turn server-side, so the message footer names
+   the engine that actually ran, with the reason on hover.
+   ============================================================ */
+.msg-engine{display:inline-flex;align-items:baseline;gap:var(--sp-2);font-size:var(--t-xs);
+  color:var(--dim);margin-bottom:3px}
+.msg-engine-why{color:var(--dim);opacity:.75}
+.msg-engine-why::before{content:'· '}

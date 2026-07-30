@@ -791,6 +791,15 @@ async function _callAI(msgs, _opts) {
       }
     }
 
+    /* When the model is AMV Auto the server decides which engine runs, and says
+       which one in a response header. Show THAT, not "Auto" - a label that
+       names no engine tells the user nothing about what answered them. */
+    let _ranEngine='', _ranWhy='';
+    try{
+      _ranEngine=res.headers.get('X-AMV-Engine')||'';
+      _ranWhy=res.headers.get('X-AMV-Engine-Why')||'';
+    }catch(e){}
+
     // Read the SSE stream
     const reader=res.body.getReader();
     const decoder=new TextDecoder();
@@ -957,9 +966,9 @@ async function _callAI(msgs, _opts) {
       return sendMsg({ _continueTools:true });
     }
     if(!fullText) fullText='(no response)';
-    msgs[streamIdx]=_stalled
-      ? {r:'a',c:fullText,model:S.model,_interrupted:true}
-      : {r:'a',c:fullText,model:S.model};
+    const _base={r:'a',c:fullText,model:S.model};
+    if(_ranEngine && S.model==='auto'){ _base._engine=_ranEngine; _base._engineWhy=_ranWhy; }
+    msgs[streamIdx]=_stalled ? Object.assign(_base,{_interrupted:true}) : _base;
     _recordUsageOnce();
     // Auto-title chat
     const cv=getCurConv();
@@ -1542,7 +1551,11 @@ function renderChatMsgs() {
         // look like AMV simply stopped mid-sentence on purpose.
         (m._interrupted?'<div class="ai-cut"><span>The connection dropped partway through. What you see above is what arrived.</span><button class="ai-snag-retry" data-action="retry-ai" type="button">Retry</button></div>':''));
     }
-    const mdlLabel=!isU&&m.model?'<span style="font-size:10px;color:var(--t2);margin-bottom:3px">'+MODELS[m.model]?.label+' Model</span>':'';
+    /* Name the engine that ACTUALLY answered. On Auto, the server routes the
+       turn, so "AMV Auto Model" would tell the user nothing about what ran. */
+    const _engLabel=(!isU && m._engine && ENGINE_LABEL[m._engine]) ? ENGINE_LABEL[m._engine] : (!isU&&m.model?(MODELS[m.model]?.label||''):'');
+    const mdlLabel=!isU&&m.model?'<span class="msg-engine" title="'+escH(m._engineWhy||'')+'">'+escH(_engLabel)+' Model'+
+      (m._engineWhy?'<span class="msg-engine-why">'+escH(m._engineWhy)+'</span>':'')+'</span>':'';
         const actions=(!isU && (m._error||m._retrying||m._quota))? '' : (isU?
       '<div class="macts mact-bar">'+
         '<button class="mact" data-action="edit" data-idx="'+i+'" title="Edit"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>'+
@@ -1557,7 +1570,7 @@ function renderChatMsgs() {
         (i===msgs.length-1?'<button class="mact" data-action="regen" title="Regenerate"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v5h-5"/></svg></button>':'')+
       '</div>'+
       _reactionsHTML(m,i));    return '<div class="mr '+(isU?'u':'')+'"><div class="mav '+(isU?'u':'ai')+'">'+(isU?ini:'A')+'</div>'+
-      '<div class="mwrap">'+(mdlLabel?'<span style="font-size:10px;color:var(--t2)">'+MODELS[m.model||'smart']?.label+' Model</span>':'')+
+      '<div class="mwrap">'+(mdlLabel?mdlLabel:'')+
       '<div class="mb '+(isU?'u':'ai')+(m.streaming&&typeof m.c==='string'&&m.c.length?' mb-streaming':'')+'">'+content+'</div>'+actions+'</div></div>';
   }).join('')+
   (S.busy?'<div class="mr"><div class="mav ai">A</div><div class="mwrap"><div class="mb ai"><div class="dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div></div></div></div>':'');

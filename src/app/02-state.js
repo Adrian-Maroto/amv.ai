@@ -473,6 +473,10 @@ const MODELS = {
   image:  { label:'AMV Vision', desc:'Image generation', color:'#5590ff', model:'image', tokens:0, cost:0, hidden:true },
 };
 const MODEL_ORDER=['auto','fast','core','coding','smart'];
+/* The server's engine keys, in AMV's own names. Used to label a turn that AMV
+   Auto routed, so the user can always see which engine answered them. */
+const ENGINE_LABEL={ 'amv-pulse':'AMV Pulse', 'amv-core':'AMV Core', 'amv-forge':'AMV Forge', 'amv-apex':'AMV Apex' };
+try{ window.ENGINE_LABEL=ENGINE_LABEL; }catch(e){}
 
 /* ===== BUILD-SECTION MODEL PICKER =====
    Lab, Dev, and Studio let the user choose which model runs their work, so they
