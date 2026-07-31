@@ -39,7 +39,7 @@ const xss = await page.evaluate(async (payloads) => {
 ok(xss.xss === 0, 'no payload executed (window.__xss === 0)', xss.xss);
 ok(xss.dialogs === 0, 'no dialogs triggered', xss.dialogs);
 
-/* Lab's syntax highlighter builds HTML from user code — it must escape FIRST. */
+/* Lab's syntax highlighter builds HTML from user code - it must escape FIRST. */
 const labXss = await page.evaluate(() => {
   window.__xss2 = 0;
   const html = _labHL('<img src=x onerror="window.__xss2=1">', 'js');
@@ -111,7 +111,7 @@ ok(consent.wired, 'the agentic dispatch actually consults the consent gate');
 /* ── AMV-006: Python runs in an isolated Worker (no DOM / no localStorage) ──
    Pyodide's js bridge exposes the host globalThis. On the main thread that is
    the page (document, localStorage, tokens). In a Worker it is the worker scope,
-   which has neither — so untrusted Python cannot read tokens or touch the DOM. */
+   which has neither - so untrusted Python cannot read tokens or touch the DOM. */
 section('AMV-006: Python executes in a Worker sandbox, not the page');
 const pyiso = await page.evaluate(async () => {
   const src = (typeof _pyWorkerSource === 'function') ? _pyWorkerSource() : '';
@@ -223,7 +223,7 @@ ok(retry.generic > 1, 'a retryable request still retries on 5xx', retry.generic)
 section('Sandboxing: generated code cannot reach AMV');
 
 const frames = await page.evaluate(async () => {
-  // run_code(html) genuinely renders untrusted HTML — that's the real path.
+  // run_code(html) genuinely renders untrusted HTML - that's the real path.
   const runOut = await _amvRunTool('run_code', { code: '<h1>hi</h1>', lang: 'html' });
 
   // mount it, exactly as chat would
@@ -279,7 +279,7 @@ const iso = await page.evaluate(async () => {
     sessions: (_SESSIONS || []).map(s => s.title)
   };
 
-  // Alice comes back — her work must still be there
+  // Alice comes back - her work must still be there
   S.user = { name: 'Alice', email: 'alice@test.com', ini: 'A' };
   _wipeAccountState();
   _loadSessions();

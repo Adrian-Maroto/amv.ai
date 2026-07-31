@@ -1,4 +1,4 @@
-/* MODEL ECONOMICS — the catalog is where AMV's unit economics live, and two of
+/* MODEL ECONOMICS - the catalog is where AMV's unit economics live, and two of
    its four rows were wrong. Forge was priced at 15/75 and Apex at 20/100
    against real rates of 5/25 and 10/50. No customer was ever overcharged, but
    the margin backstop spends against these numbers: a plan allows
@@ -105,16 +105,28 @@ section('Old model ids a cached browser might still send still resolve');
   ok(W.RAW_TO_KEY['claude-opus-4-8'] === 'amv-forge', 'and a stale Forge id still means Forge');
 }
 
-section('The client agrees with the server about price and model');
+section('The client agrees with the server about price - per ENGINE, by name');
 {
-  ok(/'claude-opus-5':\s+\{ in: 5\.00,\s+out: 25\.00 \}/.test(client),
-     'the usage view prices the deep engine at its real rate');
-  ok(/'claude-fable-5':\s+\{ in: 10\.00, out: 50\.00 \}/.test(client),
-     'and the top engine too - it was showing double');
-  ok(/model:'claude-sonnet-5'/.test(client) && /model:'claude-opus-5'/.test(client),
-     'the picker offers the current generation');
-  ok(/'claude-sonnet-4-6':\s+\{ in: 3\.00,\s+out: 15\.00 \}/.test(client),
-     'previous-generation rates are kept so already-stored usage still prices correctly');
+  /* The browser used to name the underlying models, which made this comparison
+     a string match on model ids. It no longer does: AMV names engines, and what
+     each engine runs on is a server decision. So the agreement is checked where
+     it actually matters - the rate the usage view charges per engine has to be
+     the rate the server pays for that engine, or the cost shown to the user is
+     fiction. */
+  const clientPrices = {};
+  for (const m of client.matchAll(/'(amv-[a-z]+)':\s*\{ in: ([\d.]+),\s*out: ([\d.]+) \}/g)) {
+    clientPrices[m[1]] = { in: +m[2], out: +m[3] };
+  }
+  ok(Object.keys(clientPrices).length === Object.keys(W.ENGINES).length,
+     'every engine the server can run is priced in the client', Object.keys(clientPrices));
+  for (const [key, eng] of Object.entries(W.ENGINES)) {
+    const p = clientPrices[key] || {};
+    ok(p.in === eng.inCost && p.out === eng.outCost,
+       key + ': the usage view charges exactly what the server pays',
+       JSON.stringify(p) + ' vs ' + eng.inCost + '/' + eng.outCost);
+  }
+  ok(!/claude-/.test(client),
+     'and the browser bundle names no underlying model at all - AMV ships engines, not a wrapper');
 }
 
 section('Nothing routes to a model that is not in the catalog');

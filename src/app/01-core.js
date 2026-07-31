@@ -33,7 +33,11 @@ const on = (el, ev, fn) => {
    the server is authoritative for links once the backend is connected. */
 const _GLOBAL_KEYS = new Set(['amv_links','amv_user','amv_theme','amv_accent','amv_sb_rail','amv_nickname','amv_work','amv_instructions','amv_session_started','amv_location_opt','amv_improve_opt','amv_credits','amv_credits_autoreload','amv_cap_websearch','amv_cap_memory','amv_cap_suggestions','amv_skills','amv_active_skills','amv_plugin_web','amv_plugin_code','amv_plugin_canvas','amv_plugin_automations','amv_plugin_vision','amv_reduce_motion','amv_oauth_return','amv_oauth_state','amv_gtoken','amv_gtoken_exp','amv_gauth','amv_api_base','amv_api_token','amv_api_refresh','amv_token_exp','amv_owner','amv_lang','amv_support_email',
   'amv_market_local','amv_market_purchases','amv_market_wallet','amv_market_ratings','amv_market_reviews','amv_market_installed','amv_market_threads',
-  'amv_cookie_consent','amv_analytics_id']);
+  'amv_cookie_consent','amv_analytics_id',
+  /* An invite code is captured before anyone is signed in, and belongs to the
+     visit rather than to an account - scoping it per-user would file it under
+     'guest' and then hide it the moment the account it was meant for existed. */
+  'amv_ref_code']);
 function _scopeKey(k){
   if(_GLOBAL_KEYS.has(k)) return k;
   let who='guest';
@@ -314,6 +318,15 @@ const AMV_API = {
     const d = await r.json().catch(()=>({}));
     if(d.token){ this._setTokens(d); return d; }
     throw new Error(d.error || 'Signup failed');
+  },
+
+  /* The allowance the SERVER actually enforces, which is the only one that can
+     stop a request. Everything the Usage screen showed before this came from
+     device-local counters that the server has never seen. */
+  async usage(){
+    if(!this.live || !this.token) return null;
+    const r = await this._fetch('/v1/usage');
+    return await r.json().catch(()=>null);
   },
 
   /* This account's own security history. Read-only, and the server is the only

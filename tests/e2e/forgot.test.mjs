@@ -1,4 +1,4 @@
-/* FORGOT PASSWORD — the 3-step code flow, from the user's side.
+/* FORGOT PASSWORD - the 3-step code flow, from the user's side.
      email -> 6-digit code -> new password -> signed in
 
    Guards two specific failures that already happened:
@@ -13,7 +13,7 @@ import { ok, section, report, done } from '../lib/assert.mjs';
 const app = await bootApp({ user: null, tab: 'chat' });
 const { page, errors } = app;
 
-/* A faithful Response stub. A bare {ok,json} object is NOT enough — _fetch
+/* A faithful Response stub. A bare {ok,json} object is NOT enough - _fetch
    touches headers, and a lying stub produces false test results. */
 const STUB = `
   window.__calls = [];
@@ -39,7 +39,7 @@ const STUB = `
   };
 `;
 
-section('Step 1 — enter your email');
+section('Step 1 - enter your email');
 
 await page.evaluate((stub) => {
   AMV_API.base = 'https://api.test';
@@ -61,7 +61,7 @@ ok(/reset your password/i.test(s.title || ''), 'the reset modal opens', s.title)
 ok(s.onScreen, 'and it is actually visible on screen');
 ok(s.email === 'v@test.com', 'the email typed on the login screen carries over', s.email);
 
-section('Step 2 — the 6-digit code');
+section('Step 2 - the 6-digit code');
 
 await page.evaluate(() => document.getElementById('fp-send').click());
 await page.waitForTimeout(400);
@@ -84,7 +84,7 @@ const wrong = await page.evaluate(async () => {
 });
 ok(/isn.t right|attempts left/i.test(wrong), 'a wrong code is rejected with a real reason', wrong);
 
-section('Step 3 — set the new password');
+section('Step 3 - set the new password');
 
 await page.evaluate(async () => {
   const c = document.getElementById('fp-code');
@@ -127,7 +127,7 @@ const finished = await page.evaluate(async () => {
   await new Promise(r => setTimeout(r, 1200));
   return {
     modalGone: !document.querySelector('.fp-modal'),
-    // NOTE: `S` is a script-scope const — it is NOT on window. Checking
+    // NOTE: `S` is a script-scope const - it is NOT on window. Checking
     // window.S here produced a false negative for a while.
     signedIn: (typeof S !== 'undefined') && !!(S.user && S.user.email),
     calls: window.__calls
@@ -220,7 +220,7 @@ ok(localReset.sessions.includes('REAL PROJECT'), 'your projects survive too', lo
 
 /* THE SECURITY QUESTION: the device-local reset must switch OFF the moment a
    real server exists. Otherwise a local override could bypass the server's
-   password — which would make the whole email flow pointless. */
+   password - which would make the whole email flow pointless. */
 section('With a Worker connected, the SERVER is the only source of truth');
 
 const serverWins = await page.evaluate(async (stub) => {

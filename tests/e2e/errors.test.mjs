@@ -1,5 +1,5 @@
 /* Error reporting: a bug your users hit must actually reach YOU.
-   Also guards the PRIVACY promise — we must never ship message contents. */
+   Also guards the PRIVACY promise - we must never ship message contents. */
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
 
@@ -78,7 +78,7 @@ const offline = await page.evaluate(async () => {
   try { _logErr('x', new Error('y')); await _errFlush(); } catch (e) { threw = true; }
   return threw;
 });
-ok(offline === false, 'with no backend, errors are dropped silently — not thrown');
+ok(offline === false, 'with no backend, errors are dropped silently - not thrown');
 
 await app.close();
 report();

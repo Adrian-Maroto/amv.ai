@@ -6575,7 +6575,7 @@ html,body{height:100%;height:100dvh}
 .toast-act .toast-btn:hover{filter:brightness(1.08)}
 
 /* ============================================================
-   LAYER A14 — Mission Control: clarify (scan & ask), job↔approval linkage
+   LAYER A14 - Mission Control: clarify (scan & ask), job↔approval linkage
    ============================================================ */
 .mc-cmd-msg.ask{background:var(--s2);border:1px solid var(--bd)}
 .mc-ask-h{font-weight:640;font-size:14px;color:var(--tx)}
@@ -6602,7 +6602,7 @@ html,body{height:100%;height:100dvh}
 .cw-clarify-act{display:flex;justify-content:flex-end;margin-top:10px}
 
 /* ============================================================
-   LAYER A15 — Sidebar: collapsible "Build" group (Studio/Dev/Lab)
+   LAYER A15 - Sidebar: collapsible "Build" group (Studio/Dev/Lab)
    ============================================================ */
 .sbl-toggle{display:flex!important;align-items:center;justify-content:space-between;gap:6px;cursor:pointer;user-select:none}
 .sbl-toggle .sbl-chev{transition:transform .18s ease;opacity:.55;flex:none}
@@ -7031,3 +7031,20 @@ html,body{height:100%;height:100dvh}
   .act-row{flex-direction:column;align-items:flex-start;gap:2px}
   .act-when{text-align:left}
 }
+
+/* ==========================================================================
+   LAYER A35 - Server-truth usage
+   The panel on Usage that shows the allowance AMV's servers actually enforce,
+   as opposed to the device-local tallies beneath it.
+   ========================================================================== */
+.srv-load,.srv-off{font-size:var(--t-sm);color:var(--mu);line-height:1.6;padding:var(--sp-2) 0}
+.srv-sub{font-size:var(--t-xs);color:var(--mu);margin:0 0 var(--sp-3)}
+.srv-row{margin-bottom:var(--sp-3)}
+.srv-lbl{display:flex;justify-content:space-between;font-size:var(--t-sm);color:var(--mu);margin-bottom:5px}
+.srv-lbl span:first-child{color:var(--tx);font-weight:550}
+.srv-bonus{
+  font-size:var(--t-sm);line-height:1.6;color:var(--tx);padding:var(--sp-3);
+  border-radius:var(--r-sm);background:color-mix(in srgb,var(--grn) 9%,transparent);
+  border:1px solid color-mix(in srgb,var(--grn) 30%,transparent);margin-top:var(--sp-3);
+}
+.srv-note{font-size:var(--t-xs);color:var(--mu);line-height:1.6;margin:var(--sp-3) 0 0}

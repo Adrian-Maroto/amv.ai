@@ -1,4 +1,4 @@
-/* SPENDING CONTROLS — the tiered model: small purchases flow, larger ones take
+/* SPENDING CONTROLS - the tiered model: small purchases flow, larger ones take
    one tap, hard caps can never be crossed. These limits are what keep the
    payment processing alive (unauthorised charges return as chargebacks
    whatever the terms say), so they must actually bind. */

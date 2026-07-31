@@ -29,7 +29,7 @@ const bakApp = join(__dir, '.build', 'app.bak.js');
 const bakBackend = join(__dir, '.build', 'backend.bak.js');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 
-/* ── Fail-fast on a syntax error (cheap — dies at step 1, no full suite) ──── */
+/* ── Fail-fast on a syntax error (cheap - dies at step 1, no full suite) ──── */
 section('The gate fails on a syntax error');
 
 copyFileSync(APP, bakApp);

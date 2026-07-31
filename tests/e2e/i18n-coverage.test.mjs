@@ -1,4 +1,4 @@
-/* I18N COVERAGE — the interface must follow the chosen language everywhere,
+/* I18N COVERAGE - the interface must follow the chosen language everywhere,
    including popups rendered AFTER the switch, and the inlined dictionary must
    add coverage without clobbering the hand-tuned inline entries. If this goes
    red, parts of the UI are stuck in English again. */

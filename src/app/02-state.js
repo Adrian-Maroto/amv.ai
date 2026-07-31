@@ -248,8 +248,16 @@ const AMVSync = {
           store(_sessKey(), _SESSIONS);
         }catch(e){ _logErr('sync.sessions', e); }
       }
-      if(Array.isArray(data.skills))   { try{ store('amv_skills', data.skills); }catch(e){} }
-      if(Array.isArray(data.handoffs)) { try{ store('amv_handoffs', data.handoffs); }catch(e){} }
+      /* Skills and handoffs get the same treatment as Recents. The server
+         merges them, so its copy is a union of everything it has SEEN - but a
+         skill written on this device since the last push is not in that union,
+         and storing the server list over the top would delete it. */
+      if(Array.isArray(data.skills)){
+        try{ store('amv_skills', _mergeById(load('amv_skills')||[], data.skills)); }catch(e){ _logErr('sync.skills', e); }
+      }
+      if(Array.isArray(data.handoffs)){
+        try{ store('amv_handoffs', _mergeById(load('amv_handoffs')||[], data.handoffs)); }catch(e){ _logErr('sync.handoffs', e); }
+      }
       if(data.profile)                 { try{ store('amv_profile', data.profile); }catch(e){} }
 
       try{ renderHist && renderHist(); }catch(e){}          // Recents repaint
@@ -509,10 +517,10 @@ try{ window.OWNER_EMAIL=OWNER_EMAIL; window._isOwnerEmail=_isOwnerEmail; }catch(
 // Models
 const MODELS = {
   auto:   { label:'AMV Auto', desc:'Automatically picks the right model for each task', color:'#5590ff', model:'auto', tokens:6000, cost:0, rec:'free' },
-  fast:   { label:'AMV Pulse', desc:'Fast and efficient for everyday tasks', color:'#4ade80', model:'claude-haiku-4-5-20251001', tokens:4000, cost:1, rec:'free' },
-  core:   { label:'AMV Core',  desc:'Balanced performance for most work', color:'#5590ff', model:'claude-sonnet-5', tokens:16000, cost:2, rec:'free' },
-  coding: { label:'AMV Forge', desc:'Built for complex coding and engineering', color:'#ff4d4d', model:'claude-opus-5', tokens:32000, cost:3, rec:'pro' },
-  smart:  { label:'AMV Apex',  desc:'The most capable model, for the hardest problems', color:'var(--indigo)', model:'claude-fable-5', tokens:16000, cost:4, rec:'elite' },
+  fast:   { label:'AMV Pulse', desc:'Fast and efficient for everyday tasks', color:'#4ade80', model:'amv-pulse', tokens:4000, cost:1, rec:'free' },
+  core:   { label:'AMV Core',  desc:'Balanced performance for most work', color:'#5590ff', model:'amv-core', tokens:16000, cost:2, rec:'free' },
+  coding: { label:'AMV Forge', desc:'Built for complex coding and engineering', color:'#ff4d4d', model:'amv-forge', tokens:32000, cost:3, rec:'pro' },
+  smart:  { label:'AMV Apex',  desc:'The most capable model, for the hardest problems', color:'var(--indigo)', model:'amv-apex', tokens:16000, cost:4, rec:'elite' },
   image:  { label:'AMV Vision', desc:'Image generation', color:'#5590ff', model:'image', tokens:0, cost:0, hidden:true },
 };
 const MODEL_ORDER=['auto','fast','core','coding','smart'];
@@ -529,7 +537,7 @@ const _BUILD_MODEL = { dev:'smart', lab:'smart', studio:'smart' };
 try{ const saved=JSON.parse(localStorage.getItem('amv_build_models')||'{}'); Object.assign(_BUILD_MODEL, saved); }catch(e){}
 function _saveBuildModels(){ try{ localStorage.setItem('amv_build_models', JSON.stringify(_BUILD_MODEL)); }catch(e){} }
 // resolve a section's chosen model key → real API model string for aiComplete/opts.model
-function _buildModelStr(section){ const k=_BUILD_MODEL[section]||'smart'; const m=MODELS[k]; return (m&&m.model&&m.model!=='auto')?m.model:'claude-fable-5'; }
+function _buildModelStr(section){ const k=_BUILD_MODEL[section]||'smart'; const m=MODELS[k]; return (m&&m.model&&m.model!=='auto')?m.model:'amv-apex'; }
 // usage dots (1-4) as a compact visual - clearly shows how much each model costs
 function _usageDots(cost){ let s=''; for(let i=1;i<=4;i++){ s+='<span class="mp-dot'+(i<=cost?' on':'')+'"></span>'; } return '<span class="mp-dots" title="Usage per run">'+s+'</span>'; }
 function _usageWord(cost){ return ['No','Low','Medium','High','Maximum'][cost]||'Medium'; }
@@ -630,14 +638,13 @@ const AEGIS = {
   /* Real published rates. These were overstated (Forge at 15/75, Apex at
      20/100) which made the usage view show a cost two to three times what a
      conversation actually cost. */
+  /* Keyed by AMV ENGINE, which is also the only thing the browser ever names
+     or sends. What each engine runs on is a server decision and stays there. */
   price: {
-    'claude-fable-5':            { in: 10.00, out: 50.00 },
-    'claude-opus-5':             { in: 5.00,  out: 25.00 },
-    'claude-sonnet-5':           { in: 3.00,  out: 15.00 },
-    'claude-haiku-4-5-20251001': { in: 1.00,  out: 5.00 },
-    // previous generation, kept so old stored usage still prices correctly
-    'claude-opus-4-8':           { in: 5.00,  out: 25.00 },
-    'claude-sonnet-4-6':         { in: 3.00,  out: 15.00 },
+    'amv-apex':  { in: 10.00, out: 50.00 },
+    'amv-forge': { in: 5.00,  out: 25.00 },
+    'amv-core':  { in: 3.00,  out: 15.00 },
+    'amv-pulse': { in: 1.00,  out: 5.00 },
   },
   _times: [],            // request timestamps (this session)
   _lastSend: 0,

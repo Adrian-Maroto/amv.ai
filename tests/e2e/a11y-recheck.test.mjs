@@ -1,4 +1,4 @@
-/* ACCESSIBILITY RE-CHECK — everything built since the last pass: the Job Hunt
+/* ACCESSIBILITY RE-CHECK - everything built since the last pass: the Job Hunt
    setup form, the Spending pane, the Family pane, the account exits in the
    profile menu, and the universal agent's live run. The checks are the ones
    that actually lock someone out: a control with no name, a field with no

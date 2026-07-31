@@ -1,4 +1,4 @@
-/* SPENDING + FAMILY PANES — the logic for spending limits, age/terms consent
+/* SPENDING + FAMILY PANES - the logic for spending limits, age/terms consent
    and linked accounts all worked and none of it was reachable. Worse, the
    consent gate refuses every purchase until terms are accepted and an age is
    confirmed, and there was no screen to do either: a dead end the user could

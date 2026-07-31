@@ -1,4 +1,4 @@
-/* SYNC — conversations are the most valuable thing a user has here, and the
+/* SYNC - conversations are the most valuable thing a user has here, and the
    sync path could silently destroy them. Every list was stored with
    Object.assign, which REPLACES the whole key, so the last device to push won
    wholesale: a phone with a partial copy pushed 3 conversations and the

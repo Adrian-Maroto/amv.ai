@@ -322,9 +322,15 @@ const AMVUniversal = {
        deadlines, but a custom run() (the web agent, a local bridge) could sit
        there indefinitely and take the whole plan with it. */
     const stepMs = opts.stepTimeoutMs || 300000;
+    /* A deadline here stops the PLAN waiting; it cannot reach into a connector
+       and cancel work already in flight. So the message says that, rather than
+       claiming the step was stopped - if the step was a send or a purchase, it
+       may well still land, and the user needs to check before re-running it
+       rather than being told it definitely did not happen. */
     const _withDeadline = (p, s) => new Promise((resolve, reject) => {
       const t = setTimeout(() => reject(Object.assign(
-        new Error('This step took longer than ' + Math.round(stepMs / 1000) + 's and was stopped.'),
+        new Error('This step took longer than ' + Math.round(stepMs / 1000) + 's, so AMV stopped waiting for it. '
+                + 'It may still finish on its own - if it sends, posts, buys or contacts anyone, check there before running this again.'),
         { code:'step_timeout' })), stepMs);
       Promise.resolve(p).then(v => { clearTimeout(t); resolve(v); }, e => { clearTimeout(t); reject(e); });
     });

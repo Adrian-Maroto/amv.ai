@@ -1,4 +1,4 @@
-/* ICON XSS DEFENCE — the marketplace/project icon field renders UNescaped (it
+/* ICON XSS DEFENCE - the marketplace/project icon field renders UNescaped (it
    can hold one of our own file-type SVGs). _safeIcon() must let legitimate
    icons through while neutralising any smuggled markup, so a crafted listing
    can never run script in another user's browser. If this goes red, a stored

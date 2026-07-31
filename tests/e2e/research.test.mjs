@@ -1,4 +1,4 @@
-/* RESEARCH — the Claude-style deep-research experience.
+/* RESEARCH - the Claude-style deep-research experience.
    AMV searches many sources and shows the work: a live panel with the real
    search count and the real sources found. These tests assert the panel is
    built from REAL data (not faked), the depth selector wires through, and the
@@ -82,7 +82,7 @@ const panel = await page.evaluate(() => {
   const live = _buildResearchPanel(state, false);
   const done = _buildResearchPanel(state, true);
   // Count the DISTINCT hostnames actually shown as chip labels. (The raw HTML
-  // contains each domain twice — once in the href, once as the visible label —
+  // contains each domain twice - once in the href, once as the visible label -
   // so a naive string count is misleading. What matters is that exactly the
   // sources we found are displayed, no more, no fewer.)
   const chipHosts = [...done.matchAll(/<\/span>([a-z0-9.-]+)<\/a>/g)].map(m => m[1]);
@@ -92,7 +92,7 @@ const panel = await page.evaluate(() => {
     doneShowsCheck: done.includes('rsrc-check'),
     doneText: /Researched 3 sources across 4 searches/.test(done),
     hasRealHosts: done.includes('reddit.com') && done.includes('bloomberg.com') && done.includes('reuters.com'),
-    // exactly the three real sources are shown as chips — nothing invented
+    // exactly the three real sources are shown as chips - nothing invented
     honestCount: chipHosts.length === 3 &&
       chipHosts.includes('reddit.com') && chipHosts.includes('bloomberg.com') && chipHosts.includes('reuters.com'),
   };
@@ -102,13 +102,13 @@ ok(panel.liveCount, 'with the running source count');
 ok(panel.doneShowsCheck, 'when done, a checkmark shows');
 ok(panel.doneText, 'with the exact real counts ("Researched N sources across M searches")');
 ok(panel.hasRealHosts, 'and the actual source domains as clickable chips');
-ok(panel.honestCount, 'the displayed sources match what was really found — nothing faked');
+ok(panel.honestCount, 'the displayed sources match what was really found - nothing faked');
 
 section('Source counting dedupes repeated URLs');
 
 const dedupe = await page.evaluate(() => {
   const state = { active: true, searches: 2, done: false, sources: new Map() };
-  // same URL found twice across two searches — must count once
+  // same URL found twice across two searches - must count once
   state.sources.set('https://x.com/a', { url: 'https://x.com/a', title: 'A' });
   state.sources.set('https://x.com/a', { url: 'https://x.com/a', title: 'A' });
   state.sources.set('https://y.com/b', { url: 'https://y.com/b', title: 'B' });
@@ -118,7 +118,7 @@ ok(dedupe.size === 2, 'a URL found in multiple searches is counted once', dedupe
 
 /* ── Autonomous research watch: schedule a recurring, unattended research job.
    It must deliver everything it CAN (in-app + email, short intervals) while
-   staying honest — analysis, never trade advice. ── */
+   staying honest - analysis, never trade advice. ── */
 section('Research watch: the setup modal offers the full range of options');
 
 const modal = await page.evaluate(async () => {
@@ -183,7 +183,7 @@ const notConnected = await page.evaluate(async () => {
   return { toasted };
 });
 ok(/connect/i.test(notConnected.toasted),
-   'without a backend it says to connect the engine — it does not fake success', notConnected.toasted);
+   'without a backend it says to connect the engine - it does not fake success', notConnected.toasted);
 
 section('No JavaScript errors');
 ok(errors.length === 0, 'zero uncaught page errors', errors.slice(0, 3));

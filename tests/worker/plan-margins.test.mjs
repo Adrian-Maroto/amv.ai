@@ -1,4 +1,4 @@
-/* PLAN MARGINS — can a paid plan lose money if the user maxes it out?
+/* PLAN MARGINS - can a paid plan lose money if the user maxes it out?
    This used to be answered by multiplying the monthly token allowance by a
    blended rate. That premise no longer holds, for two reasons: the blended rate
    it used was derived from a cost table that overstated two engines by 2-3x,

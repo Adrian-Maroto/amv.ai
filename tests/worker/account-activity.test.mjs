@@ -206,5 +206,30 @@ section('Logging can never break the thing it is logging');
   ok(!threw, 'a failing store does not throw, so a sign-in still succeeds');
 }
 
+section('A sign-out it cannot scope revokes everything, not nothing');
+{
+  /* A cached older build posts to /auth/logout with no body at all. Given
+     nothing that says WHICH session, the only reading of "sign me out" that can
+     actually be honoured is all of them - the alternative is a request that
+     promised to end a session and ended none. */
+  const env = makeEnv();
+  const laptop = await signup(env, 'old@x.com', { ua: CHROME_MAC });
+  const phone = await (await login(env, 'old@x.com', PW, { ua: CHROME_MAC })).json();
+
+  const r = await (await W.authLogout(authed('/auth/logout', laptop.token, 'POST'), env)).json();
+  ok(r.scope === 'all', 'an unscoped sign-out is reported as everywhere', r.scope);
+  ok(!(await W.requireUser(authed('/v1/x', phone.token), env)), 'and every token really is dead');
+
+  // A refresh token belonging to somebody else is not a scope either.
+  const env2 = makeEnv();
+  const me = await signup(env2, 'me@x.com', { ua: CHROME_MAC });
+  const them = await signup(env2, 'them@x.com', { ua: CHROME_MAC });
+  const r2 = await (await W.authLogout(authed('/auth/logout', me.token, 'POST',
+    { refreshToken: them.refreshToken }), env2)).json();
+  ok(r2.scope === 'all', 'someone else\u2019s token cannot be used to make a sign-out a no-op', r2.scope);
+  ok(!!(await W.requireUser(authed('/v1/x', them.token), env2)),
+     'and it does not sign THEM out either - only the caller loses their sessions');
+}
+
 report('account-activity');
 done();

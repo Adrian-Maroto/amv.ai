@@ -3,7 +3,7 @@
    AMV DEPLOY PREFLIGHT
 
    Runs BEFORE `wrangler deploy`, needs NO keys, and catches the config
-   mistakes that otherwise blow up mid-deploy or — worse — deploy "successfully"
+   mistakes that otherwise blow up mid-deploy or - worse - deploy "successfully"
    but silently broken (quotas that don't hold, a cron that never fires, a
    binding the Worker reads but you forgot to declare).
 
@@ -46,7 +46,7 @@ if (backend) {
       { stdio: 'pipe' });
     ok('amv-backend.js loads as an ES module');
   } catch (e) {
-    if (e.status === 3) err('amv-backend.js has a SYNTAX ERROR — it will not deploy',
+    if (e.status === 3) err('amv-backend.js has a SYNTAX ERROR - it will not deploy',
       'run: node -e "import(\'./amv-backend.js\')" and fix the reported error');
     else ok('amv-backend.js loads as an ES module');
   }
@@ -76,11 +76,11 @@ if (toml) {
     const id = (toml.match(/binding\s*=\s*"AMV_KV"[\s\S]*?id\s*=\s*"([^"]+)"/) || [])[1];
     if (!id) err('AMV_KV has no id', 'run: npx wrangler kv namespace create AMV_KV, then paste the id');
     else if (/REPLACE_WITH|YOUR_KV|placeholder/i.test(id))
-      err('AMV_KV id is still the PLACEHOLDER — deploy will fail or use the wrong store',
+      err('AMV_KV id is still the PLACEHOLDER - deploy will fail or use the wrong store',
         'run: npx wrangler kv namespace create AMV_KV and paste the real id into wrangler.toml');
     else ok('AMV_KV has a real namespace id');
   } else {
-    err('AMV_KV namespace is not bound — nothing will persist',
+    err('AMV_KV namespace is not bound - nothing will persist',
       'add a [[kv_namespaces]] block with binding = "AMV_KV"');
   }
 }
@@ -92,22 +92,22 @@ if (toml && backend) {
   const doExported = /export\s+class\s+AMVCounter/.test(backend);
 
   if (doExported) ok('AMVCounter class is exported from the Worker');
-  else err('AMVCounter is NOT exported from amv-backend.js — the DO binding will fail to deploy',
+  else err('AMVCounter is NOT exported from amv-backend.js - the DO binding will fail to deploy',
     'ensure amv-backend.js has: export class AMVCounter { ... }');
 
   if (doBound) ok('AMV_COUNTER Durable Object is bound');
-  else err('AMV_COUNTER Durable Object is NOT bound — usage limits silently fall back to a NON-ATOMIC counter',
+  else err('AMV_COUNTER Durable Object is NOT bound - usage limits silently fall back to a NON-ATOMIC counter',
     'add [[durable_objects.bindings]] with name="AMV_COUNTER", class_name="AMVCounter"');
 
   if (doMigrated) ok('AMVCounter has a migration entry');
-  else err('AMVCounter has no [[migrations]] entry — first deploy of the DO will be rejected',
+  else err('AMVCounter has no [[migrations]] entry - first deploy of the DO will be rejected',
     'add [[migrations]] with tag and new_classes = ["AMVCounter"]');
 }
 
 /* ── 6. Cron trigger present (automations/research watches depend on it) ──── */
 if (toml) {
   if (/crons\s*=\s*\[[^\]]+\]/.test(toml)) ok('a cron trigger is configured (scheduled jobs will run)');
-  else warn('no cron trigger — scheduled automations & research watches will never fire',
+  else warn('no cron trigger - scheduled automations & research watches will never fire',
     'add [triggers] with crons = ["*/5 * * * *"]');
 }
 
@@ -117,7 +117,7 @@ if (backend && toml) {
   const used = new Set();
   for (const m of backend.matchAll(/env\.([A-Z][A-Z0-9_]+)/g)) used.add(m[1]);
 
-  // things that come from bindings (not secrets) — these MUST be in wrangler.toml
+  // things that come from bindings (not secrets) - these MUST be in wrangler.toml
   const bindingLike = ['AMV_KV', 'AMV_COUNTER'];
   for (const b of bindingLike) {
     if (used.has(b)) {
@@ -127,11 +127,11 @@ if (backend && toml) {
     }
   }
 
-  // Secrets the Worker reads — documented so you don't forget one at deploy.
+  // Secrets the Worker reads - documented so you don't forget one at deploy.
   const KNOWN_SECRETS = ['ANTHROPIC_API_KEY', 'JWT_SECRET', 'ADMIN_TOKEN', 'EMAIL_API_KEY',
     'RESET_EMAIL_FROM', 'GLOBAL_DAILY_USD_CAP', 'STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET',
     'VIDEO_API_URL', 'VIDEO_API_KEY', 'VIDEO_MODEL', 'APP_URL', 'AUDIT_WEBHOOK',
-    // optional integrations — supported but not required to launch
+    // optional integrations - supported but not required to launch
     'ALLOWED_ORIGIN', 'APP_ORIGIN', 'OWNER_EMAIL', 'GOOGLE_CLIENT_ID',
     'IMAGE_API_URL', 'IMAGE_API_KEY', 'IMAGE_API_MODEL', 'ALERT_WEBHOOK',
     'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_FROM_NUMBER',
@@ -160,7 +160,7 @@ if (existsSync(R('index.html')) && existsSync(R('app.js'))) {
     const appHasMarker = /_buildResearchPanel|openResearchWatch|_abuseRecord/.test(read('app.js') || '');
     const htmlHasMarker = /_buildResearchPanel|openResearchWatch/.test(html || '');
     if (appHasMarker && !htmlHasMarker)
-      warn('index.html looks STALE — recent app.js changes are not in the build',
+      warn('index.html looks STALE - recent app.js changes are not in the build',
         'run: node build.mjs   (or: npm run build) before deploying');
     else ok('index.html appears built from current source');
   } catch { /* non-fatal */ }
@@ -187,7 +187,7 @@ if (errors.length) {
 
 console.log('');
 if (errors.length) {
-  console.log(`${B}${RED}NOT ready to deploy${X} — ${errors.length} error(s), ${warns.length} warning(s).\n`);
+  console.log(`${B}${RED}NOT ready to deploy${X} - ${errors.length} error(s), ${warns.length} warning(s).\n`);
   process.exit(1);
 } else {
   console.log(`${B}${G}Ready to deploy${X}${warns.length ? ` (${warns.length} warning(s) to review)` : ''}.`);

@@ -92,7 +92,11 @@ function _nextStepHTML(msgs){
     if(_nextStepOff()) return '';
     if(!Array.isArray(msgs) || msgs.length < 2) return '';
     const last = msgs[msgs.length-1];
-    if(!last || last.r!=='a' || last.streaming || last._error || last._interrupted) return '';
+    /* `_stopped` is the user pressing Stop, and it was missing from this list:
+       a half-written file is exactly the cut-off reply the rule above promises
+       to exclude, and "Open this in Dev" on it would carry the truncation into
+       a project. */
+    if(!last || last.r!=='a' || last.streaming || last._error || last._interrupted || last._stopped) return '';
     if(!last.c || typeof last.c!=='string') return '';
     const lastUser = [...msgs].reverse().find(m=>m.r==='u');
     if(!lastUser) return '';

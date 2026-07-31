@@ -19,7 +19,7 @@ id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
 # all read the same number, all pass the check, and all bill you. A user with
 # devtools could blow straight through their plan.
 #
-# AMVCounter is a Durable Object — a single-threaded actor per counter — so
+# AMVCounter is a Durable Object - a single-threaded actor per counter - so
 # increments are serialised and the cap genuinely holds under concurrency.
 #
 # WITHOUT this binding the Worker silently falls back to the non-atomic KV path.

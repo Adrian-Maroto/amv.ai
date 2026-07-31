@@ -1,4 +1,4 @@
-/* ERROR ALERTING — so you find out prod broke before your customers do.
+/* ERROR ALERTING - so you find out prod broke before your customers do.
    Proves: a new server error alerts, duplicates are throttled (no spam), a
    model-auth failure pages loudly, a Stripe checkout failure alerts, and with
    no ALERT_WEBHOOK configured nothing throws (alerting is opt-in). */

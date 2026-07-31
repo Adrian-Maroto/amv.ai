@@ -1,4 +1,4 @@
-/* AUTONOMY WIRING — proves the Auto Approve backend behaves honestly:
+/* AUTONOMY WIRING - proves the Auto Approve backend behaves honestly:
      - "Pause all autonomous" genuinely stops the cron from running due work.
      - Require-approval scheduled tasks enqueue a real approval item (the
        finished work waits) instead of being delivered.
@@ -47,7 +47,7 @@ ok(!getRec('approvals','victim@x.com'), 'nothing was enqueued for a paused user'
 /* ── Require-approval: finished work waits in the approval queue ──────────── */
 section('Require-approval results enqueue a real approval item');
 const item = { id:'a2', detail:'Weekly customer update', kind:'task', notify:'email', approval:'require' };
-await W._enqueueApproval(env, 'user@x.com', item, 'Hi there — here is the finished update. Thanks!');
+await W._enqueueApproval(env, 'user@x.com', item, 'Hi there - here is the finished update. Thanks!');
 const arec = getRec('approvals','user@x.com');
 ok(arec && arec.items && arec.items.length === 1, 'an approval item was enqueued');
 const ap = arec.items[0];

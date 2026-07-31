@@ -722,7 +722,7 @@ async function _callAI(msgs, _opts) {
         stream:true,
         ...(tools?{tools}:{}),
         messages:(()=>{
-          // Turn our internal messages into Anthropic format. Any turn where AMV
+          // Turn our internal messages into the wire format. Any turn where AMV
           // actually used a tool becomes: assistant[text + tool_use] -> user[tool_result].
           const out=[];
           msgs.slice(0,streamIdx).slice(-20).forEach(m=>{
@@ -733,7 +733,7 @@ async function _callAI(msgs, _opts) {
               out.push({ role:m.r==='u'?'user':'assistant', content:m.c });
             }
           });
-          // Anthropic requires the conversation to start with a user turn.
+          // The conversation has to start with a user turn.
           while(out.length && out[0].role!=='user') out.shift();
           return out;
         })()
@@ -875,7 +875,7 @@ async function _callAI(msgs, _opts) {
               setMsgs(msgs); renderChatMsgs();
             }
           }
-          // ── Web search: Anthropic runs the searches server-side and streams
+          // ── Web search: the searches run server-side, and AMV streams
           //    back the queries (server_tool_use) and the sources it found
           //    (web_search_tool_result). We surface that live so the user SEES
           //    the research happening - real counts, real queries, no faking. ──
@@ -2529,7 +2529,7 @@ function planCards(inApp){
         '<li><span class="fck">\u2713</span>Scheduled &amp; background automation</li>'+
       '</ul>'+
       pBtn('Start Pro - $15/mo','pbp','pro',isLand)+
-      '<div class="plnreassure">$5 cheaper than ChatGPT &amp; Claude</div>'+
+      '<div class="plnreassure">Everything below, one price, cancel anytime</div>'+
     '</div>',
     '<div class="plnc feat feat-elite">'+
       '<div class="plnpop plnpop-elite">Best Value</div>'+
@@ -2549,7 +2549,7 @@ function planCards(inApp){
         '<li><span class="fck">\u2713</span>Priority speed &amp; 24/7 support</li>'+
       '</ul>'+
       pBtn('Go Elite - $75/mo','pbs','elite',isLand)+
-      '<div class="plnreassure">$25 less than Claude Max &amp; ChatGPT Pro</div>'+
+      '<div class="plnreassure">Full-power engines and agents, without a per-seat bill</div>'+
     '</div>',
     '<div class="plnc">'+
       '<div class="plntier">Ultra</div>'+
@@ -2568,7 +2568,7 @@ function planCards(inApp){
         '<li><span class="fck">\u2713</span>👥 Team workspaces, roles &amp; shared projects</li>'+
       '</ul>'+
       pBtn('Go Ultra - $200/mo','pbs','ultra',isLand)+
-      '<div class="plnreassure">Matches Claude Max &amp; ChatGPT Pro</div>'+
+      '<div class="plnreassure">The highest limits AMV offers</div>'+
     '</div>',
   ].join('');
 }

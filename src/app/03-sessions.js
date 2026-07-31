@@ -290,6 +290,9 @@ async function doSignupForm() {
     try{
       const d=await AMV_API.signup(em, nm, pw, _authBotFields());
       if(d&&d.token){
+        // The invite has been spent on this account. Leaving it would attach it
+        // to the next person who signs up on this browser too.
+        try{ if(typeof _refClear==='function') _refClear(); }catch(e){}
         const ini=nm.split(' ').filter(Boolean).map(w=>w[0]).join('').toUpperCase().slice(0,2)||'??';
         // keep a local mirror so offline still recognizes the account
         await createAccount(nm,em,pw);
@@ -680,6 +683,8 @@ async function handleGoogleCred(resp) {
       });
       if(r.ok){
         const data=await r.json();
+        // Spent - see doSignupForm for why it must not carry to the next account.
+        try{ if(typeof _refClear==='function') _refClear(); }catch(e){}
         // server returns the verified profile + a session token
         const acct=saveGoogleAccount((data.name||p.name||p.email.split('@')[0]), (data.email||p.email));
         if(data.token){ try{ AMV_API.token=data.token; saveStr('amv_api_token', data.token); }catch(e){} }

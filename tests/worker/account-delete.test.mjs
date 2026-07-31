@@ -1,4 +1,4 @@
-/* ACCOUNT DELETION — the "right to erasure" the privacy policy promises.
+/* ACCOUNT DELETION - the "right to erasure" the privacy policy promises.
    Proves: deleting an account purges ALL of that user's data across every
    prefix, revokes their tokens, only ever deletes the CALLER (not others), and
    requires auth. A false "delete my data" button is a legal + trust problem, so
@@ -54,7 +54,7 @@ asUser = 'alice@test.com';
 r = await W.authDeleteAccount(req(), env);
 ok((await r.json()).ok, 'the delete succeeds');
 // Everything personal is gone. The only thing intentionally kept is the tiny
-// token-revocation marker (tokepoch) — a bare integer, no personal data — which
+// token-revocation marker (tokepoch) - a bare integer, no personal data - which
 // must survive so any still-circulating tokens stay dead.
 const aliceLeft = [...store.keys()].filter(k => k.includes('alice@test.com'));
 const onlyEpoch = aliceLeft.every(k => k.startsWith('tokepoch:'));
@@ -63,7 +63,7 @@ ok(!store.has('acct:alice@test.com') && !store.has('data:alice@test.com'), 'the 
 
 section('Deleting one account does NOT touch anyone else');
 const bobLeft = [...store.keys()].filter(k => k.includes('bob@test.com'));
-ok(bobLeft.length === 6, "bob's data is fully intact — you can only delete YOURSELF", bobLeft.length);
+ok(bobLeft.length === 6, "bob's data is fully intact - you can only delete YOURSELF", bobLeft.length);
 
 /* ── AMV-015: erasure reaches REFERENCED records, not just top-level rows ── */
 section('AMV-015: deletion also erases referenced records');

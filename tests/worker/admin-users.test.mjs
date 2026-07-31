@@ -1,4 +1,4 @@
-/* ADMIN USER LIST — full account detail, owner-only.
+/* ADMIN USER LIST - full account detail, owner-only.
    Proves: owner-gated, returns every account with the rich fields (plan, spend,
    wallet, purchases, abuse flags, join date), and non-owners are refused. */
 import { readFileSync, writeFileSync, mkdirSync } from 'fs';

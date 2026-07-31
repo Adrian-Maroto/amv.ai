@@ -1,4 +1,4 @@
-/* FAILED PAYMENT NOTICE — a declined renewal is the one billing problem only
+/* FAILED PAYMENT NOTICE - a declined renewal is the one billing problem only
    the user can fix, and they were never told about it. The server now reports
    it; these assertions cover the app actually surfacing it, sending them
    somewhere a card can be changed, and correcting the plan down when the

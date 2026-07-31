@@ -1,4 +1,4 @@
-/* SMART ROUTING — "AMV Auto" is the default model and its description promises
+/* SMART ROUTING - "AMV Auto" is the default model and its description promises
    it picks the right model for each task. It did not: 'auto' was aliased to one
    engine, so "thanks" and a 400-line refactor ran on the same thing. That is a
    feature the interface claimed and the code did not deliver, and it is the

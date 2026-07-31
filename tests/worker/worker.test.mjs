@@ -1,5 +1,5 @@
 /* Worker tests: automations (cron), hosting (deploy), and their security.
-   These run the REAL Worker functions against a mock KV — no network. */
+   These run the REAL Worker functions against a mock KV - no network. */
 import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -90,7 +90,7 @@ const bob = JSON.parse(store.get('auto:bob@test.com'));
 
 ok(calls.length === 1, 'the model was actually called for the due task', calls.length);
 ok(alice.results.length === 1, 'the result was STORED for the user', alice.results.length);
-ok(alice.results[0].read === false, 'it is unread — waiting for them when they return');
+ok(alice.results[0].read === false, 'it is unread - waiting for them when they return');
 ok(alice.items[0].runs === 1, 'run count incremented');
 ok(alice.items[0].next > now, 'it was rescheduled for the next interval');
 ok(alice.items[1].runs === 0, 'a not-due task is skipped');
@@ -99,7 +99,7 @@ ok(bob.results.length === 0, 'other users are unaffected');
 
 /* AMV-032: a run is LEASED per scheduled slot, so an overlapping/retried cron
    can't execute the same due job twice. Rewind alice's task to its ORIGINAL due
-   time (same slot, still leased) and run again — it must NOT run a second time. */
+   time (same slot, still leased) and run again - it must NOT run a second time. */
 section('Automations: overlapping crons cannot double-run the same slot (AMV-032)');
 const beforeRuns = alice.items[0].runs;
 alice.items[0].next = now - 1000;          // put it back to the slot we already ran
@@ -215,13 +215,13 @@ const slug = d.slug;
 const page = await W.serveSite(new Request('https://api.amv.dev/s/' + slug), env, slug);
 const html = await page.text();
 ok(page.status === 200, 'the URL serves HTTP 200');
-ok(html.includes('Roast'), 'it serves the actual page — genuinely hosted');
+ok(html.includes('Roast'), 'it serves the actual page - genuinely hosted');
 
 section('Deploy: hosted pages cannot attack AMV');
 const csp = page.headers.get('Content-Security-Policy') || '';
 ok(/sandbox/.test(csp), 'served with a CSP sandbox', csp);
 ok(!/allow-same-origin/.test(csp),
-   'sandbox does NOT grant same-origin — it cannot touch AMV cookies/storage/API', csp);
+   'sandbox does NOT grant same-origin - it cannot touch AMV cookies/storage/API', csp);
 ok(page.headers.get('X-Content-Type-Options') === 'nosniff', 'nosniff is set');
 
 section('Deploy: ownership is enforced');
@@ -303,7 +303,7 @@ section('Research: web_search max_uses is clamped server-side');
   ok(clamp('abc') === 5, 'garbage falls back to a safe default', clamp('abc'));
 }
 
-/* ═══ OWNER ANALYTICS — the numbers that show if it's working ════════════ */
+/* ═══ OWNER ANALYTICS - the numbers that show if it's working ════════════ */
 section('Analytics: a signup is recorded in the daily growth counter');
 
 globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({}) });
@@ -358,7 +358,7 @@ ok(noAdmin.status === 403, 'without the admin token, stats are forbidden', noAdm
 section('Automations: a FREE-plan user\'s jobs do not run (no paid budget)');
 
 globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: 'x' }], usage: { input_tokens: 100, output_tokens: 100 } }) });
-// free user with a due automation — must NOT call the model
+// free user with a due automation - must NOT call the model
 store.set('ent:free@test.com', JSON.stringify({ plan: 'free' }));
 store.set('auto:free@test.com', JSON.stringify({
   items: [{ id: 'f1', detail: 'watch something', repeat: '10min', interval: W.AUTO_INTERVALS['10min'],

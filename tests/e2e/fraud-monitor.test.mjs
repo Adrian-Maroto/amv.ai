@@ -1,4 +1,4 @@
-/* FRAUD MONITOR FAIRNESS — AMVFraud must catch abuse WITHOUT profiling. These
+/* FRAUD MONITOR FAIRNESS - AMVFraud must catch abuse WITHOUT profiling. These
    assertions encode the owner's non-negotiable fairness rules: no protected
    characteristic ever decides an outcome, a refund/chargeback alone never
    auto-punishes, and high-impact calls go to a human. If one goes red, the

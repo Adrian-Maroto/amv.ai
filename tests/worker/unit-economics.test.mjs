@@ -1,4 +1,4 @@
-/* UNIT ECONOMICS — the dashboard reported one blended AI cost figure, which
+/* UNIT ECONOMICS - the dashboard reported one blended AI cost figure, which
    cannot answer any of the questions that decide whether this business works:
    is each tier profitable, which accounts cost more than they pay, and where
    is the money actually going. Those are the numbers you steer on. */

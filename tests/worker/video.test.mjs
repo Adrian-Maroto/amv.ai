@@ -1,4 +1,4 @@
-/* VIDEO — it must be REAL.
+/* VIDEO - it must be REAL.
    This feature was previously a setInterval that faked a progress bar and
    produced nothing. These tests assert it now calls a real provider, polls real
    status, returns a real file, meters against the plan, and refunds when it
@@ -67,13 +67,13 @@ const post = (path, body) => new Request('https://api.amv.dev' + path, {
 });
 
 /* ═══ Not configured: it must SAY SO, not fake it ═══════════════════════ */
-section('No provider configured: it says so — it does NOT fake a render');
+section('No provider configured: it says so - it does NOT fake a render');
 
 let env = mkEnv();     // no VIDEO_* secrets
 let r = await W.videoGenerate(post('/v1/video/generate', { prompt: 'a cat' }), env);
 let d = await r.json();
 ok(d.configured === false, 'returns configured:false', d);
-ok(!d.id, 'and no job id — nothing was started', d);
+ok(!d.id, 'and no job id - nothing was started', d);
 
 /* ═══ Configured: a REAL job is created at the provider ═════════════════ */
 section('Configured: it really calls the provider');
@@ -97,7 +97,7 @@ ok(providerCalls[0].body.input.prompt === 'a cat surfing', 'with the real prompt
 const jobId = d.id;
 
 /* ═══ Polling reports the REAL provider state ══════════════════════════ */
-section('Polling reflects the provider — no invented progress');
+section('Polling reflects the provider - no invented progress');
 
 r = await W.videoStatus(post('/v1/video/status', { id: jobId }), env);
 d = await r.json();
@@ -181,7 +181,7 @@ globalThis.fetch = async () => new Response(JSON.stringify({
 r = await W.videoStatus(post('/v1/video/status', { id: failJob }), env);
 d = await r.json();
 ok(d.status === 'failed', 'the job reports failed', d.status);
-ok(counters.get(vKey) === 0, 'and the reservation is REFUNDED — you keep your quota', counters.get(vKey));
+ok(counters.get(vKey) === 0, 'and the reservation is REFUNDED - you keep your quota', counters.get(vKey));
 
 section('If the provider refuses the job, nothing is charged');
 

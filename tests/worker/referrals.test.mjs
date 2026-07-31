@@ -20,7 +20,7 @@ export { authSignup, getEntitlement, referralStatus, requireUser, effectiveLimit
          _referralEnsure, _referralCapture, _referralMaybeConvert, _bonusTokens,
          _referralActive, counter, monthKey, DB, issueTokens,
          REFERRAL_REWARD_TOKENS, REFERRAL_MAX_CONVERSIONS, REFERRAL_QUALIFY_TOKENS,
-         REFERRAL_MIN_AGE_MS, REFERRAL_DAY_CAP, PLAN_LIMITS };
+         REFERRAL_MIN_AGE_MS, REFERRAL_DAY_CAP, PLAN_LIMITS, setEntitlement };
 `);
 const W = await import(harness + '?t=' + Date.now());
 
@@ -269,6 +269,32 @@ section('Referrals require a signed-in account');
   const env = makeEnv();
   const r = await W.referralStatus(new Request('https://w/v1/referral'), env);
   ok(r.status === 401, 'an anonymous caller cannot fish for codes', r.status);
+}
+
+section('Subscribing does not confiscate what was earned');
+{
+  /* setEntitlement builds a FRESH record on every plan change, which is what
+     keeps a plan change clean. Anything earned separately therefore has to be
+     carried across on purpose - otherwise the reward for inviting people is
+     destroyed by the act of becoming a paying customer, which is precisely
+     backwards. */
+  const env = makeEnv();
+  const inviter = await signup(env, 'earner@x.com', '1.1.1.1');
+  const code = await codeOf(env, inviter);
+  const joiner = await signup(env, 'friend@x.com', '9.9.9.9', code);
+  await makeReal(env, 'friend@x.com');
+  await openApp(env, joiner);
+  ok((await bonusOf(env, 'earner@x.com')) === W.REFERRAL_REWARD_TOKENS, 'the bonus is earned');
+
+  await W.setEntitlement(env, 'earner@x.com', 'pro', { source: 'stripe' });
+  ok((await bonusOf(env, 'earner@x.com')) === W.REFERRAL_REWARD_TOKENS,
+     'and survives the upgrade that would otherwise wipe it');
+  const ent = await W.DB.get(env, 'ent', 'earner@x.com');
+  ok(ent.plan === 'pro', 'while the plan change itself still applies');
+
+  await W.setEntitlement(env, 'earner@x.com', 'free', { source: 'stripe', canceled: true });
+  ok((await bonusOf(env, 'earner@x.com')) === W.REFERRAL_REWARD_TOKENS,
+     'and a cancellation does not confiscate it either - it was not part of the plan');
 }
 
 report('referrals');

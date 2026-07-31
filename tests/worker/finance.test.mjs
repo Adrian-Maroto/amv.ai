@@ -1,4 +1,4 @@
-/* ADMIN FINANCIAL STATEMENT — real transactions, owner-only.
+/* ADMIN FINANCIAL STATEMENT - real transactions, owner-only.
    Proves: admin-only (403 without token), honest empty state when Stripe isn't
    configured, and correct totals (gross/refunded/net) from real charge data. */
 import { readFileSync, writeFileSync, mkdirSync } from 'fs';
@@ -69,7 +69,7 @@ ok(byId['ch_3'].email === 'c@test.com', 'email is pulled from metadata when bill
 
 globalThis.fetch = origFetch;
 
-section('ALL payment methods appear — not just Stripe');
+section('ALL payment methods appear - not just Stripe');
 // record a PayPal + a marketplace transaction in the ledger
 store.delete('txn:log');
 await W._recordTxn(stripeEnv, { provider: 'paypal', email: 'pp@test.com', amount: 75, currency: 'USD', kind: 'Elite', status: 'succeeded' });
@@ -95,7 +95,7 @@ globalThis.fetch = origFetch;
 
 section('Stripe payments are NOT double-counted (webhook ledger + live pull)');
 // The webhook records Stripe payments to the ledger AND the live pull returns
-// them — the merge must dedup so gross isn't doubled.
+// them - the merge must dedup so gross isn't doubled.
 store.delete('txn:log');
 await W._recordTxn(stripeEnv, { provider: 'stripe', email: 'dup@test.com', amount: 15, currency: 'USD', kind: 'Pro', status: 'succeeded', ref: 'sub_1' });
 globalThis.fetch = async (url) => {

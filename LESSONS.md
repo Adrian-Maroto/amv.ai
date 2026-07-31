@@ -1,4 +1,4 @@
-# AMV — Lessons Log
+# AMV - Lessons Log
 
 A running record of mistakes I made and the rule I take away from each, so I
 don't repeat them. Read this at the start of every session. Newest at top.
@@ -130,14 +130,14 @@ Format: **Mistake → Root cause → Rule going forward.**
   (`_mktDeliverableOK`) so empty/fake listings can't go live.
 
 ### 10. There are FOUR dash forms, not two
-- Purged literal `—`/`–`, then `—`/`–` escapes, and this round the
+- Purged literal `-`/`-`, then `-`/`-` escapes, and this round the
   **HTML entities** `&mdash;`/`&ndash;` (18 in app.js) which also render as em
   dashes. **Rule:** when purging a glyph, sweep literal char, `\uXXXX` escape, AND
   `&entity;` forms.
 
 ## 2026-07-22 (later)
 
-### 7. "sended" — never hand-roll past tense
+### 7. "sended" - never hand-roll past tense
 - **Mistake:** Built the approve toast as `verb.replace(/e?$/,'ed')`, which turns
   "send" into "sended" and "submit" into "submited". A user running an autonomous
   task can't fix wording before it auto-sends, so this is a money risk.
@@ -168,16 +168,16 @@ Format: **Mistake → Root cause → Rule going forward.**
   send, Ask AMV to revise, Cancel, schedule Edit/Pause). The user hit ALL of them.
 - **Root cause:** Two ways to close-on-backdrop coexist in this codebase. Modals
   that wire their own buttons with `on()` can use `stopPropagation`. Modals that
-  rely on `data-dact` delegation CANNOT — the event must reach `document`.
+  rely on `data-dact` delegation CANNOT - the event must reach `document`.
 - **Rule:** Inside any modal that uses `data-dact`, do NOT stopPropagation on the
   container. Instead close only when the backdrop itself is clicked:
   `on(bg,'click',e=>{ if(e.target===e.currentTarget) close(); })`. Test buttons
   with a real `.click()` through the delegation, not by calling the handler directly.
 
 ### 6. Two dash forms to purge, not one
-- **Mistake:** First em-dash purge only replaced literal `—`/`–` bytes and missed
-  the `—`/`–` **escape sequences** in JS string literals (255 of them in
-  app.js) — which render as em-dashes at runtime.
+- **Mistake:** First em-dash purge only replaced literal `-`/`-` bytes and missed
+  the `-`/`-` **escape sequences** in JS string literals (255 of them in
+  app.js) - which render as em-dashes at runtime.
 - **Rule:** When purging a character from JS source, replace BOTH the literal char
   and its `\uXXXX` escape. And guard any regex that intentionally matches the char
   (write it with `\u` escapes so the purge can't neuter it).
@@ -205,10 +205,10 @@ Format: **Mistake → Root cause → Rule going forward.**
   verified and where.
 
 ### 3. Edit tool failed to match unicode-escaped characters
-- **Mistake:** `Edit` calls failed because `old_string` used literal `✓` / `—`
-  but the source stored `✓` / em-dash escapes — no byte match.
+- **Mistake:** `Edit` calls failed because `old_string` used literal `✓` / `-`
+  but the source stored `✓` / em-dash escapes - no byte match.
 - **Root cause:** Assumed on-screen glyph equals stored bytes.
-- **Rule:** For source with unicode escapes, match on exact bytes — use a Python
+- **Rule:** For source with unicode escapes, match on exact bytes - use a Python
   heredoc with index-based splice instead of the Edit tool when glyphs are
   involved.
 
@@ -221,8 +221,8 @@ Format: **Mistake → Root cause → Rule going forward.**
 
 ---
 
-## Standing reminders (owner directives — not mistakes, but never break these)
-- Max quality, **no fake features** — works for real or degrades honestly.
+## Standing reminders (owner directives - not mistakes, but never break these)
+- Max quality, **no fake features** - works for real or degrades honestly.
 - Honest degradation without keys; full power the moment keys are pasted.
 - Never mention Claude/Anthropic in anything user-facing or pushed to the repo.
 - Verify every change live. Go in order, one at a time. Review before delivering.
@@ -293,3 +293,23 @@ decoration and it is worse than nothing, because it reassures.
 epoch, killing every session everywhere - so signing out of a laptop silently
 ended a session on a phone in someone's pocket. The two scopes are now two
 different requests, and the buttons say which is which.
+
+## 28. A fresh record silently drops everything that was not part of it
+setEntitlement rebuilds the entitlement from scratch on every plan change,
+which is what keeps a plan change clean - and it therefore deleted the referral
+capacity an account had earned the moment that account subscribed. Rewarding
+someone and then confiscating it for paying you is the worst possible ordering.
+Any writer that replaces a whole record needs an explicit list of the fields
+that belong to the account rather than to the thing being written.
+
+## 29. When a request cannot be scoped, fail toward MORE revocation
+Scoping sign-out to one device meant a cached older client, which sends no body,
+suddenly revoked nothing at all. A request that promises to end a session must
+never end zero sessions: with nothing identifying which one, the only honourable
+reading of "sign me out" is all of them.
+
+## 30. A cost knob the client can set is a bill the client can raise
+Prompt-cache markers arrived from the browser untouched. A cache write costs
+1.25x, so markers on content that will never be read back are somebody else's
+bill going up - and five of them is a hard upstream error. Anything that changes
+what a request COSTS is a server decision; strip the client's version first.

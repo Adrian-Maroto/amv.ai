@@ -1,4 +1,4 @@
-/* UNIVERSAL AGENT — FAILURE PATHS. The interesting question is not what the
+/* UNIVERSAL AGENT - FAILURE PATHS. The interesting question is not what the
    agent does when everything works, it is what it does when step 3 of 6
    throws. The plan is sequential and the later steps are the ones that send,
    post, buy and contact people, so running them on the result of a step that

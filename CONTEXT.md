@@ -1,14 +1,14 @@
-# AMV / AMV.AI — Complete Project Context
+# AMV / AMV.AI - Complete Project Context
 
 > Paste this to Claude Code (or any assistant) to give full context on AMV.
 > All facts below were verified against the live codebase. Line numbers are
-> starting hints only — they drift as files are edited, so confirm with grep.
+> starting hints only - they drift as files are edited, so confirm with grep.
 
 ---
 
 ## 1. WHAT AMV IS
 
-AMV (branded **AMV.AI**) is a **single-file-deployable AI-workforce web app** — a
+AMV (branded **AMV.AI**) is a **single-file-deployable AI-workforce web app** - a
 ChatGPT/Claude-style product. It bundles: AI chat, image & video generation,
 autonomous agents ("Crew" / "Handoff"), a build suite ("Studio" / "Dev" / "Lab"),
 a creator marketplace, projects, memory, scheduled tasks, and a full plans/billing
@@ -30,7 +30,7 @@ decision is weighed against profitability and scale, not just features.
 - **Never mention Claude / Anthropic in user-facing output.** Brand everything as
   AMV. (Internally the backend calls Anthropic models; users never see that.)
 - **Verify every change.** Reproduce the actual bug before claiming a fix, and
-  confirm the fix live (via Playwright DOM checks / tests) — not "it should work."
+  confirm the fix live (via Playwright DOM checks / tests) - not "it should work."
 - **Go in order, one item at a time.** Each fix tested + shipped; nothing
   half-built left in the deliverables.
 - **Profit-first framing** on any business-model decision (usage limits, pricing,
@@ -47,10 +47,10 @@ Free · Pro **$15** · Elite **$75** · Ultra **$200** · Custom (owner-priced).
 
 ### Usage = own model tiers, NOT dollar passthrough
 Users see **named model tiers** and a **Claude-style "% remaining on your plan"**
-rolling window (5-hour window; `AMVUsage` in app.js ~1059) — **never a dollar
+rolling window (5-hour window; `AMVUsage` in app.js ~1059) - **never a dollar
 balance**. The plan *price* is fully decoupled from raw token cost.
 
-**Model tiers** (`MODELS` object, app.js ~1226) — key → label → real backend model → cost weight:
+**Model tiers** (`MODELS` object, app.js ~1226) - key → label → real backend model → cost weight:
 | key | label | backend model | cost weight | min plan |
 |-----|-------|---------------|-------------|----------|
 | auto | AMV Auto | (auto-picks) | 0 | free |
@@ -63,7 +63,7 @@ balance**. The plan *price* is fully decoupled from raw token cost.
 (When the owner swaps in their own models, map them into this `MODELS` object.)
 
 ### Margin-safe token allowances (verified, in sync client+backend)
-Backend `LIMITS` (amv-backend.js ~148) and client `PLAN_TIERS` (app.js ~8704) —
+Backend `LIMITS` (amv-backend.js ~148) and client `PLAN_TIERS` (app.js ~8704) -
 **must stay in sync**:
 | plan | day tokens | month tokens | rpm | images/day | videos/mo |
 |------|-----------|--------------|-----|-----------|-----------|
@@ -93,21 +93,21 @@ violence, hate, piracy, self-harm) on **BOTH** client (`_mktScreen`) and server
 
 ## 4. ARCHITECTURE (single-file-deployable)
 
-- **Frontend build:** `app.js` (~1.12MB — the SINGLE SOURCE OF TRUTH; the build
+- **Frontend build:** `app.js` (~1.12MB - the SINGLE SOURCE OF TRUTH; the build
   reads ONLY this) + `styles.css` (~410KB) → `node build.mjs` bundles them into
   `index.html` (~1.57MB). `i18n-dict.js` (~48KB) is a 144-term × 17-language
   translation dictionary; its content is inlined + merged into the runtime `I18N`
   object in app.js.
   - ⚠️ Old numbered module files (`00-core-state.js`, `10-chat-engine.js`, …,
-    `70-agents-lab.js`) from an earlier code split are **INERT** — NOT referenced by
+    `70-agents-lab.js`) from an earlier code split are **INERT** - NOT referenced by
     any build tooling. Do not mistake them for source. `app.js` is authoritative.
-- **Backend:** `amv-backend.js` (~262KB) — a **Cloudflare Worker**. Storage via
+- **Backend:** `amv-backend.js` (~262KB) - a **Cloudflare Worker**. Storage via
   Cloudflare **KV / D1**. Auth: PBKDF2-SHA256 password hashing + signed **JWTs**.
 - **Deploy:** create a KV namespace → paste its id into `wrangler.toml` (currently
   the placeholder `REPLACE_WITH_YOUR_KV_NAMESPACE_ID` on line 14) → `npx wrangler
   deploy`. Fully documented in `DEPLOY.md`.
 
-### Secrets (owner sets at deploy — see DEPLOY.md)
+### Secrets (owner sets at deploy - see DEPLOY.md)
 Required: `ANTHROPIC_API_KEY`, `JWT_SECRET`.
 Also: `ADMIN_TOKEN`, `EMAIL_API_KEY`, `GLOBAL_DAILY_USD_CAP` (default $500),
 Stripe (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_*`),
@@ -117,17 +117,17 @@ Twilio, Google (`GOOGLE_CLIENT_ID`), `ALERT_WEBHOOK`,
 
 ---
 
-## 5. SECURITY MODEL (solid — do not weaken)
+## 5. SECURITY MODEL (solid - do not weaken)
 
 - **Server is the absolute source of truth.** Identity comes from a
   cryptographically-signed **JWT** (verified with `JWT_SECRET` in `requireUser` /
   `verifyToken`, amv-backend.js ~2259). The plan is read from the server's own
   entitlement store (`DB.get(env,'ent',email)`), **NEVER** from client input. A user
   editing `localStorage.amv_plan` in the console **cannot** steal real usage or
-  premium models — the server returns 402/403. Proven by
+  premium models - the server returns 402/403. Proven by
   `tests/worker/plan-security.test.mjs`.
 - Client `verifiedPlan()` (app.js ~8438) keeps the UI honest (won't show fake-unlocked
-  state) but is NOT the security boundary — the server is.
+  state) but is NOT the security boundary - the server is.
 - Premium engines gated server-side: `PLAN_RANK[user.plan] < PLAN_RANK[eng.minPlan]`
   → 402.
 - **Admin gating:** client `isAdmin() → isOwnerMode() → _isOwnerEmail(S.user.email)`
@@ -181,27 +181,27 @@ Cleanup lines that call app functions must run inside `page.evaluate()`, not Nod
 
 ---
 
-## 7. RECURRING EDITING LESSONS (each caused a real bug — heed these)
+## 7. RECURRING EDITING LESSONS (each caused a real bug - heed these)
 
-- **`node --check` is NOT enough for the Worker** — always also module-check via
+- **`node --check` is NOT enough for the Worker** - always also module-check via
   `import()` (catches runtime module errors syntax-check misses).
 - Inserting text before a function can accidentally delete the target's signature
-  line — re-check after edits near function boundaries.
+  line - re-check after edits near function boundaries.
 - Many `app.js` string literals use single-backslash unicode; `str_replace` often
-  fails on them — fall back to a Python heredoc:
+  fails on them - fall back to a Python heredoc:
   `assert src.count(ANCHOR)==1` then `src.replace(x, y, 1)`.
-- `getEntitlement(request,env)` is an HTTP handler, NOT a data getter — read
+- `getEntitlement(request,env)` is an HTTP handler, NOT a data getter - read
   entitlement via `DB.get(env,'ent',email)`.
 - **Modals inside `#ovr` render OFF-SCREEN** unless `#ovr.on` gets the centering
-  flexbox — the rule is keyed on `:has(> .share-modal / .rw-modal / .wn-modal)`. When
+  flexbox - the rule is keyed on `:has(> .share-modal / .rw-modal / .wn-modal)`. When
   adding a new modal class, add it to that rule (styles.css) or it falls to the bottom.
-- **`closeOvr()` must remove `.on` AND clear innerHTML** — otherwise an invisible
+- **`closeOvr()` must remove `.on` AND clear innerHTML** - otherwise an invisible
   scrim stays over the page and traps all clicks (app appears frozen). It's shared by
   many modals.
-- **CSS is a patchwork: ~24 stacked override layers + 1,200+ `!important`** — later
+- **CSS is a patchwork: ~24 stacked override layers + 1,200+ `!important`** - later
   layers win. Do NOT add a fighting layer mid-file; append ONE clean authoritative
   layer at the very end. The owner chose targeted polish over a full CSS consolidation
-  — the big refactor is deferred.
+  - the big refactor is deferred.
 - **i18n restore bug pattern:** the DOM-walk collector skipped text nodes with no
   Latin letters, so once text was translated (e.g. to Arabic) it couldn't be restored
   on switch-back. Fix: collect nodes that have Latin letters OR a stored `_i18nSrc`.
@@ -229,7 +229,7 @@ for Arabic/Urdu, keyboard shortcuts, mobile bottom-nav + drawer sidebar, PWA ins
 
 ---
 
-## 9. KEY FILE LOCATIONS (verbatim; confirm with grep — line #s drift)
+## 9. KEY FILE LOCATIONS (verbatim; confirm with grep - line #s drift)
 
 ### app.js
 - `OWNER_EMAIL` ~1209; `isAdmin`/`isOwnerMode`/`_isOwnerEmail` ~1213
@@ -240,10 +240,10 @@ for Arabic/Urdu, keyboard shortcuts, mobile bottom-nav + drawer sidebar, PWA ins
   `_translateUI` / `_collectI18nNodes` / `_restoreI18nDOM` ~3142; `LANGS` (19)
 - Marketplace: `_mktSellerProfile` ~6983 (official-AMV branch has no email → routes
   to Help/support; real sellers → `_mktChat`), `_mktChat` ~7062, `_mktScreen` +
-  `_MKT_PROHIBITED`/`_MKT_REGULATED`/`_MKT_RISK` ~7215–7276, `_mktSell` ~7340
+  `_MKT_PROHIBITED`/`_MKT_REGULATED`/`_MKT_RISK` ~7215-7276, `_mktSell` ~7340
 - `openWhatsNew` + `CHANGELOG` ~12858/12885; `closeOvr` ~325 (removes `.on` + clears)
 - `render404View` / `renderHelpView` ~11276/11472; `openTerms` / `openPrivacy`
-  (separate, accurate — PBKDF2, Cloudflare KV/D1, no-sell/no-train)
+  (separate, accurate - PBKDF2, Cloudflare KV/D1, no-sell/no-train)
 - `goApp` ~2336; `_initMobileSidebar` (720px breakpoint) ~2383; `_renderBottomNav`
 
 ### amv-backend.js
@@ -262,7 +262,7 @@ for Arabic/Urdu, keyboard shortcuts, mobile bottom-nav + drawer sidebar, PWA ins
 `Admin user list: full detail` → `FINAL POLISH` → `RESPONSIVE FIT` →
 `LIGHT-MODE MENU FIX` → `RESPONSIVE FIT v2`.
 Design tokens: `--bg:#1a1b1f`; accent `#5590ff` (periwinkle blue); `--sbw:250px`
-(narrowed to 212px on tablets 721–1000px); body **Inter**, display **Space Grotesk**,
+(narrowed to 212px on tablets 721-1000px); body **Inter**, display **Space Grotesk**,
 mono **JetBrains Mono**. Sidebar `#sb` becomes a drawer + bottom-nav at
 `max-width:720px`.
 
@@ -284,18 +284,18 @@ seller, widget, market, wallet, purchases, stripecust, tokepoch, sms.
 - **Business model:** usage → own model tiers, margin-safe allowances (the $-passthrough
   fix), margin regression test.
 - **Latest six-issue batch (each root-caused, fixed, tested):**
-  1. **Security** — server enforces real plan via signed JWT; console hacks can't
+  1. **Security** - server enforces real plan via signed JWT; console hacks can't
      steal usage/premium (5 tests).
-  2. **Light-mode black menu** — account popup / context menus / toasts had a
+  2. **Light-mode black menu** - account popup / context menus / toasts had a
      hardcoded dark bg with no light override; now theme-aware.
-  3. **Language switching** — full 19-language translation with no API key, RTL, no
+  3. **Language switching** - full 19-language translation with no API key, RTL, no
      text stuck in the old language on switch-back (4 tests).
-  4. **What's New** — was rendering off-screen + trapping clicks; now centered +
+  4. **What's New** - was rendering off-screen + trapping clicks; now centered +
      closes cleanly.
-  5. **Marketplace** — "by AMV" now opens a proper profile with a working contact
+  5. **Marketplace** - "by AMV" now opens a proper profile with a working contact
      button; real sellers messageable; drug/illegal listings blocked client + server
      (16 moderation tests).
-  6. **Responsive fit** — audited 320px→3440px, zero overflow; narrowed the tablet
+  6. **Responsive fit** - audited 320px→3440px, zero overflow; narrowed the tablet
      sidebar (212px) for more content room; ultrawide side-padding; landscape-phone
      trims (regression test covers 9 sizes).
 

@@ -1,4 +1,4 @@
-/* DEVICE PRIVACY — AMV keeps your work on the device so signing back in
+/* DEVICE PRIVACY - AMV keeps your work on the device so signing back in
    restores it. That is right for a personal machine and wrong for a shared
    one: a school library or family laptop would otherwise leave the next
    person your chats, memories and uploaded resume. These assertions cover

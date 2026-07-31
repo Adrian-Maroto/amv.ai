@@ -1,4 +1,4 @@
-/* ACCURACY CONTRACT — AMV's core promise is that it does not make things up.
+/* ACCURACY CONTRACT - AMV's core promise is that it does not make things up.
    These rules live in the system prompt, so they are invisible and easy to
    delete by accident. This suite pins them: if someone strips an accuracy rule,
    this goes red before it reaches users. */

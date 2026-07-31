@@ -1,4 +1,4 @@
-/* REGRESSIONS — every one of these is a bug that actually shipped and was fixed.
+/* REGRESSIONS - every one of these is a bug that actually shipped and was fixed.
    If one goes red, that bug is back. Each test names the original symptom. */
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
@@ -38,7 +38,7 @@ await page.evaluate(() => { saveStr('amv_fs', '14'); _applyFontSize(); });
 
 /* ────────────────────────────────────────────────────────────────────────
    BUG: _sessTouch used ONE shared debounce timer, so touching Studio then
-   Dev within ~900ms cancelled the Studio save — Studio never hit Recents.
+   Dev within ~900ms cancelled the Studio save - Studio never hit Recents.
    ──────────────────────────────────────────────────────────────────────── */
 section('Recents: Dev, Lab AND Studio all persist (shared-timer bug)');
 
@@ -59,7 +59,7 @@ const rec = await page.evaluate(async () => {
 ok(rec.includes('studio'), 'Studio session saved', rec);
 ok(rec.includes('dev'), 'Dev session saved', rec);
 ok(rec.includes('lab'), 'Lab session saved', rec);
-ok(rec.length === 3, 'all three coexist — none cancels another', rec);
+ok(rec.length === 3, 'all three coexist - none cancels another', rec);
 
 /* BUG: Studio only saved AFTER the AI returned HTML, so a failed generation
    left nothing in Recents. */
@@ -118,7 +118,7 @@ ok(lab.hasPaste, 'paste box is present');
 ok(lab.hasChat, 'you can talk to Lab about the code');
 
 /* ────────────────────────────────────────────────────────────────────────
-   The first-run onboarding modal was removed per product direction — it read
+   The first-run onboarding modal was removed per product direction - it read
    as an intrusive popup on sign-in. A brand-new signup must land straight in
    the app with NO modal, and must not re-trigger one later.
    ──────────────────────────────────────────────────────────────────────── */
@@ -159,7 +159,7 @@ ok(hdr.inHidden, 'Sign up disappears once signed in');
 
 /* ────────────────────────────────────────────────────────────────────────
    BUG: #ovr had NO CSS. Modals built as a bare .share-modal inside it rendered
-   in normal document flow — at the very bottom of the page, off-screen. Share
+   in normal document flow - at the very bottom of the page, off-screen. Share
    conversation had never worked; Deploy/My sites/Errors were invisible too.
    ──────────────────────────────────────────────────────────────────────── */
 section('Modals are actually on screen (not rendered below the fold)');
@@ -194,7 +194,7 @@ await page.evaluate(() => { try { closeOvr(); } catch (e) {} });
 /* The sidebar was overwhelming new users. Team was removed, Projects moved into
    Settings, and the secondary tools (Memory, Tasks, Integrations, Marketplace)
    became a compact icon row at the bottom-left. This guards all of it. */
-section('Sidebar is simplified — Team gone, tools in bottom row, Projects in Settings');
+section('Sidebar is simplified - Team gone, tools in bottom row, Projects in Settings');
 
 const sb = await page.evaluate(() => {
   const tools = document.getElementById('sb-tools');
@@ -307,7 +307,7 @@ ok(!/hashed with SHA-256/.test(legal.termsText) && !/data stored locally in your
    'Terms no longer contains the old FALSE security claims');
 
 /* The privacy policy promises users can DELETE their account. The old "Delete
-   everything" button only cleared localStorage — the server account survived,
+   everything" button only cleared localStorage - the server account survived,
    making the promise false once deployed. This guards the real flow: a typed
    confirmation gate, and (when connected) a call to the server delete endpoint. */
 section('Account deletion is real (typed confirmation + server purge)');
@@ -450,7 +450,7 @@ ok(loginFix.routesToSignup, 'the login handler routes an unknown email into the 
 ok(loginFix.noBareDeadEnd, 'it no longer dead-ends with a bare "please sign up" error');
 
 /* Admin financial statement: a real transactions view (all payments, refunds,
-   net) — owner-only. Renders from the /v1/admin/finance payload. */
+   net) - owner-only. Renders from the /v1/admin/finance payload. */
 section('Admin finance tab renders real transactions');
 
 const fin = await page.evaluate(() => {
@@ -509,7 +509,7 @@ ok(touch.small === 0, 'all buttons meet a tappable height on small phones', touc
 await page.setViewportSize({ width: 1280, height: 800 });
 
 /* Language switching must translate the whole UI and fully restore on switch-back
-   (no text stuck in the previous language — the exact bug reported repeatedly). */
+   (no text stuck in the previous language - the exact bug reported repeatedly). */
 section('Language: switching translates nav and restores cleanly');
 
 await page.evaluate(() => { saveStr('amv_lang','ar'); if(typeof _translateUI==='function') _translateUI(); });

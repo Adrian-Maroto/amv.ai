@@ -1,4 +1,4 @@
-/* LINKED ACCOUNTS SECURITY — "let one account control another" is an
+/* LINKED ACCOUNTS SECURITY - "let one account control another" is an
    account-takeover feature if built casually. These assertions prove consent
    is real: naming an email grants nothing, only the account being accessed can
    approve, codes expire and burn out, scopes are honoured, either side can

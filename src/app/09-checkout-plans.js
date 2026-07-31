@@ -36,7 +36,7 @@ const PLAN_RANK={free:0,pro:1,elite:2,ultra:3,custom:2};
      is the most it can ever cost us. PRICE > WORST_COST always.
    ============================================================ */
 const CUSTOM_PLAN = {
-  MIN_PRICE: 15,           // $15 is the floor — matches everything the $15 Pro plan includes
+  MIN_PRICE: 15,           // $15 is the floor - matches everything the $15 Pro plan includes
   APEX_MIN_PRICE: 20,      // the top models (Apex) unlock at $20+
   MAX_PRICE: 5000,
   // Which models a custom plan can use for a given price. Below $20 you get the

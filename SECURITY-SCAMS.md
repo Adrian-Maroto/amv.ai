@@ -1,4 +1,4 @@
-# AMV — Scam & Abuse Defense Register
+# AMV - Scam & Abuse Defense Register
 
 A living list of real-world scams and exploits from recent years that could be
 aimed at a platform like AMV (AI chat/image/video, a marketplace with payouts,
@@ -14,10 +14,10 @@ authority** on money, limits, and content.
 
 ## A. Payments, billing & pricing fraud
 
-1. **Regional price arbitrage — the "Argentina store / cheap V-Bucks" trick.** Buy from a low-priced country via VPN/spoofed locale, resell or just pay less. → **Prices are USD-denominated and charged in USD everywhere; local currency is a display-only estimate at a fixed FX rate with NO per-country discount.** A VPN changes the label, never the charge. `AMVCurrency` + the on-page note. ✅➕
+1. **Regional price arbitrage - the "Argentina store / cheap V-Bucks" trick.** Buy from a low-priced country via VPN/spoofed locale, resell or just pay less. → **Prices are USD-denominated and charged in USD everywhere; local currency is a display-only estimate at a fixed FX rate with NO per-country discount.** A VPN changes the label, never the charge. `AMVCurrency` + the on-page note. ✅➕
 2. **Card testing / BIN attack** (validate stolen cards with tiny charges). → No charge happens on-device; real checkout is Stripe (Radar screens cards); signup/checkout endpoints are rate-limited (429). 🛡️✅
 3. **Chargeback / "friendly fraud"** (use a month, then dispute). → Access is tied to payment status; a dispute/refund revokes plan access. Stripe webhook is the source of truth (`STRIPE_WEBHOOK_SECRET`). 🛡️
-4. **Refund abuse — the "DoorDash refund method"** (claim non-delivery, keep the goods). → Digital delivery is instant and logged; there's nothing to "not receive." Marketplace refunds only apply when a deliverable was misrepresented, decided server-side. 🛡️📋
+4. **Refund abuse - the "DoorDash refund method"** (claim non-delivery, keep the goods). → Digital delivery is instant and logged; there's nothing to "not receive." Marketplace refunds only apply when a deliverable was misrepresented, decided server-side. 🛡️📋
 5. **Free-item payment probing** (use $0 marketplace items to test cards). → Free items move no money and touch no card. ✅
 6. **Paid-item bypass** (get a paid item without paying). → On-device, paid items are **blocked** (no free hand-over) and route to add a payment method; the server gates delivery on a confirmed charge. `AMVMarket.buy` `needs_payment`. ✅🛡️
 7. **Subscription proration / downgrade abuse.** → Plan changes recompute entitlement server-side; upgrades only apply on confirmed payment. 🛡️

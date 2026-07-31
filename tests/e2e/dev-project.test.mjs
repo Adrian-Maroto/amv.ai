@@ -1,4 +1,4 @@
-/* DEV PROJECTS — multi-file builds, named after the project, reachable from
+/* DEV PROJECTS - multi-file builds, named after the project, reachable from
    chat. Proves: a build produces a real file tree (not one blob), files carry
    the project's name, and chat/Crew can pull the ACTUAL files back rather than
    regenerating a guess. */

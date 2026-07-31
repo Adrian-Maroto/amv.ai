@@ -1,4 +1,4 @@
-/* AUTOMATION CATALOG — the standing services that make Crew worth paying for.
+/* AUTOMATION CATALOG - the standing services that make Crew worth paying for.
    Each must be REAL: a concrete instruction the autonomous runner can execute,
    an honest statement of what access it needs, and a working toggle. A pretty
    list that does nothing would be the exact "fake feature" the product forbids. */

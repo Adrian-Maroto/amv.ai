@@ -1,4 +1,4 @@
-/* MOBILE — the workbench must be usable on a phone.
+/* MOBILE - the workbench must be usable on a phone.
 
    On a 390px screen, Dev and Lab used to lay their input and output panes side
    by side (flex:1 each ~195px), which collapsed the code editor to ~29px tall

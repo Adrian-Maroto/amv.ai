@@ -1,4 +1,4 @@
-/* DEGRADED NETWORK — what the user sees when the connection goes bad mid-action.
+/* DEGRADED NETWORK - what the user sees when the connection goes bad mid-action.
    The dangerous case is not an outright failure, which the code already
    handles. It is a connection that STALLS: the socket stays open, no bytes
    arrive, and fetch() never settles. Nothing times out, so the spinner spins

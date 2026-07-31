@@ -1,4 +1,4 @@
-/* RESILIENCE — two failure modes that erode trust quietly:
+/* RESILIENCE - two failure modes that erode trust quietly:
    1. a Google token that silently expires overnight, killing every standing
       job at the one-hour mark with no error anyone sees;
    2. a failed fetch that leaves a panel blank, which reads as "empty" rather

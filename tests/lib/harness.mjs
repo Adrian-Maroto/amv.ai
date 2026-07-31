@@ -13,7 +13,7 @@ let _port = 9100;
 
 export async function serveApp() {
   if (!existsSync(APP)) {
-    throw new Error('index.html not found — run `node build.mjs` first');
+    throw new Error('index.html not found - run `node build.mjs` first');
   }
   const html = readFileSync(APP);
   const port = _port++;
@@ -57,7 +57,7 @@ export async function bootApp(opts = {}) {
     async close() { await browser.close(); server.close(); },
 
     /* Pretend the AMV engine is connected.
-       NOTE: AMV_API.live is a GETTER derived from .base — you cannot just
+       NOTE: AMV_API.live is a GETTER derived from .base - you cannot just
        assign `AMV_API.live = true`, and replacing window.AMV_API does nothing
        because the code closes over the original const. Set base + token. */
     async connect() {

@@ -1,4 +1,4 @@
-/* AUTH HARDENING — attack the token system the way an attacker would.
+/* AUTH HARDENING - attack the token system the way an attacker would.
    Before real users depend on it, prove: a forged token is rejected, the
    'alg:none' trick fails, a token signed with the wrong secret fails, an expired
    token fails, a refresh token can't be used as an access token, tampering with
@@ -83,7 +83,7 @@ const expiredToken = await W.signToken({ email: 'alice@test.com' }, SECRET, { ty
 // forge expiry into the past by re-signing: easiest is to verify a token whose exp we control
 // Build one directly with the real signer, then fast-forward "now" isn't possible, so
 // instead craft-sign a payload with a past exp using the module's own signToken is not exposed
-// for exp override — so we assert via a manually built + correctly-signed token:
+// for exp override - so we assert via a manually built + correctly-signed token:
 const pastPayload = { email: 'alice@test.com', typ: 'access', ver: W.TOKEN_VER, epoch: 0,
   iat: 1000, nbf: 1000, exp: 2000, jti: 'x' };  // exp long in the past
 const encHeader = W.b64urlEncode(new TextEncoder().encode(JSON.stringify({ alg: 'HS256', typ: 'JWT' })));

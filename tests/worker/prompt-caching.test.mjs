@@ -1,4 +1,4 @@
-/* PROMPT CACHING — the system prompt was cached and the conversation was not.
+/* PROMPT CACHING - the system prompt was cached and the conversation was not.
    Caching is a prefix match rendered tools -> system -> messages, so the
    breakpoint on the system prompt already covered the tools in front of it.
    What it never covered is the part that grows: by turn fifteen the history
@@ -16,7 +16,7 @@ const ROOT = join(__dir, '..', '..');
 const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'caching.harness.mjs');
-writeFileSync(harness, src + '\nexport { _withCacheBreakpoints, ENGINES, CACHE_LOOKBACK, _estimateInputTokens };\n');
+writeFileSync(harness, src + '\nexport { _withCacheBreakpoints, ENGINES, CACHE_LOOKBACK, _estimateInputTokens, _systemWithIdentity, AMV_IDENTITY_PREAMBLE };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 const CORE = W.ENGINES['amv-core'];
@@ -124,6 +124,42 @@ section('The accounting already prices cache tiers correctly');
   ok(/cache_creation_input_tokens/.test(src), 'so are cache writes');
   ok(/\* eng\.inCost \* 0\.10/.test(src), 'reads are billed at a tenth of input price');
   ok(/\* eng\.inCost \* 1\.25/.test(src), 'writes at 1.25x - so the saving reported to the owner is real');
+}
+
+section('A cache marker the CLIENT sent is thrown away');
+{
+  /* A write costs 1.25x. Markers placed from the browser on content that will
+     never be read back are somebody else's bill going up, and more than four in
+     one request is a hard upstream error. Caching is a server decision. */
+  const hostile = [
+    { role: 'user', content: [
+      { type: 'text', text: big(700), cache_control: { type: 'ephemeral' } },
+      { type: 'text', text: big(700), cache_control: { type: 'ephemeral' } },
+      { type: 'text', text: big(700), cache_control: { type: 'ephemeral' } },
+    ] },
+    { role: 'assistant', content: [{ type: 'text', text: big(700), cache_control: { type: 'ephemeral' } }] },
+    { role: 'user', content: [{ type: 'text', text: 'go', cache_control: { type: 'ephemeral' } }] },
+  ];
+  const out = W._withCacheBreakpoints(hostile, CORE);
+  ok(marks(out) <= 3, 'at most the breakpoints AMV chose survive, never the five that were sent', marks(out));
+  ok(!(out[0].content[0].cache_control), 'a marker on an old block is gone');
+  ok(!!(lastBlock(out) && lastBlock(out).cache_control), 'and the one AMV wanted is still there');
+  ok(out[0].content[0].text === hostile[0].content[0].text, 'the text itself is untouched - only the marker is removed');
+}
+
+section('The identity framing is the server\u2019s, and it always goes first');
+{
+  const withClient = W._systemWithIdentity('You are a helpful assistant. Be brief.');
+  ok(withClient.startsWith(W.AMV_IDENTITY_PREAMBLE),
+     'a client system prompt is appended AFTER it, never in front of it');
+  ok(withClient.includes('Be brief.'), 'and the client prompt still applies');
+
+  for (const empty of ['', null, undefined, '   ']) {
+    ok(W._systemWithIdentity(empty) === W.AMV_IDENTITY_PREAMBLE,
+       'sending no system prompt is not a way to drop the framing', JSON.stringify(empty));
+  }
+  ok(!/anthropic|openai|claude|chatgpt|gemini/i.test(W.AMV_IDENTITY_PREAMBLE),
+     'and the rule itself names no company - it would be the one place they appear');
 }
 
 report();

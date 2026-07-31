@@ -33,7 +33,11 @@ const on = (el, ev, fn) => {
    the server is authoritative for links once the backend is connected. */
 const _GLOBAL_KEYS = new Set(['amv_links','amv_user','amv_theme','amv_accent','amv_sb_rail','amv_nickname','amv_work','amv_instructions','amv_session_started','amv_location_opt','amv_improve_opt','amv_credits','amv_credits_autoreload','amv_cap_websearch','amv_cap_memory','amv_cap_suggestions','amv_skills','amv_active_skills','amv_plugin_web','amv_plugin_code','amv_plugin_canvas','amv_plugin_automations','amv_plugin_vision','amv_reduce_motion','amv_oauth_return','amv_oauth_state','amv_gtoken','amv_gtoken_exp','amv_gauth','amv_api_base','amv_api_token','amv_api_refresh','amv_token_exp','amv_owner','amv_lang','amv_support_email',
   'amv_market_local','amv_market_purchases','amv_market_wallet','amv_market_ratings','amv_market_reviews','amv_market_installed','amv_market_threads',
-  'amv_cookie_consent','amv_analytics_id']);
+  'amv_cookie_consent','amv_analytics_id',
+  /* An invite code is captured before anyone is signed in, and belongs to the
+     visit rather than to an account - scoping it per-user would file it under
+     'guest' and then hide it the moment the account it was meant for existed. */
+  'amv_ref_code']);
 function _scopeKey(k){
   if(_GLOBAL_KEYS.has(k)) return k;
   let who='guest';
@@ -314,6 +318,15 @@ const AMV_API = {
     const d = await r.json().catch(()=>({}));
     if(d.token){ this._setTokens(d); return d; }
     throw new Error(d.error || 'Signup failed');
+  },
+
+  /* The allowance the SERVER actually enforces, which is the only one that can
+     stop a request. Everything the Usage screen showed before this came from
+     device-local counters that the server has never seen. */
+  async usage(){
+    if(!this.live || !this.token) return null;
+    const r = await this._fetch('/v1/usage');
+    return await r.json().catch(()=>null);
   },
 
   /* This account's own security history. Read-only, and the server is the only
@@ -1154,8 +1167,16 @@ const AMVSync = {
           store(_sessKey(), _SESSIONS);
         }catch(e){ _logErr('sync.sessions', e); }
       }
-      if(Array.isArray(data.skills))   { try{ store('amv_skills', data.skills); }catch(e){} }
-      if(Array.isArray(data.handoffs)) { try{ store('amv_handoffs', data.handoffs); }catch(e){} }
+      /* Skills and handoffs get the same treatment as Recents. The server
+         merges them, so its copy is a union of everything it has SEEN - but a
+         skill written on this device since the last push is not in that union,
+         and storing the server list over the top would delete it. */
+      if(Array.isArray(data.skills)){
+        try{ store('amv_skills', _mergeById(load('amv_skills')||[], data.skills)); }catch(e){ _logErr('sync.skills', e); }
+      }
+      if(Array.isArray(data.handoffs)){
+        try{ store('amv_handoffs', _mergeById(load('amv_handoffs')||[], data.handoffs)); }catch(e){ _logErr('sync.handoffs', e); }
+      }
       if(data.profile)                 { try{ store('amv_profile', data.profile); }catch(e){} }
 
       try{ renderHist && renderHist(); }catch(e){}          // Recents repaint
@@ -1415,10 +1436,10 @@ try{ window.OWNER_EMAIL=OWNER_EMAIL; window._isOwnerEmail=_isOwnerEmail; }catch(
 // Models
 const MODELS = {
   auto:   { label:'AMV Auto', desc:'Automatically picks the right model for each task', color:'#5590ff', model:'auto', tokens:6000, cost:0, rec:'free' },
-  fast:   { label:'AMV Pulse', desc:'Fast and efficient for everyday tasks', color:'#4ade80', model:'claude-haiku-4-5-20251001', tokens:4000, cost:1, rec:'free' },
-  core:   { label:'AMV Core',  desc:'Balanced performance for most work', color:'#5590ff', model:'claude-sonnet-5', tokens:16000, cost:2, rec:'free' },
-  coding: { label:'AMV Forge', desc:'Built for complex coding and engineering', color:'#ff4d4d', model:'claude-opus-5', tokens:32000, cost:3, rec:'pro' },
-  smart:  { label:'AMV Apex',  desc:'The most capable model, for the hardest problems', color:'var(--indigo)', model:'claude-fable-5', tokens:16000, cost:4, rec:'elite' },
+  fast:   { label:'AMV Pulse', desc:'Fast and efficient for everyday tasks', color:'#4ade80', model:'amv-pulse', tokens:4000, cost:1, rec:'free' },
+  core:   { label:'AMV Core',  desc:'Balanced performance for most work', color:'#5590ff', model:'amv-core', tokens:16000, cost:2, rec:'free' },
+  coding: { label:'AMV Forge', desc:'Built for complex coding and engineering', color:'#ff4d4d', model:'amv-forge', tokens:32000, cost:3, rec:'pro' },
+  smart:  { label:'AMV Apex',  desc:'The most capable model, for the hardest problems', color:'var(--indigo)', model:'amv-apex', tokens:16000, cost:4, rec:'elite' },
   image:  { label:'AMV Vision', desc:'Image generation', color:'#5590ff', model:'image', tokens:0, cost:0, hidden:true },
 };
 const MODEL_ORDER=['auto','fast','core','coding','smart'];
@@ -1435,7 +1456,7 @@ const _BUILD_MODEL = { dev:'smart', lab:'smart', studio:'smart' };
 try{ const saved=JSON.parse(localStorage.getItem('amv_build_models')||'{}'); Object.assign(_BUILD_MODEL, saved); }catch(e){}
 function _saveBuildModels(){ try{ localStorage.setItem('amv_build_models', JSON.stringify(_BUILD_MODEL)); }catch(e){} }
 // resolve a section's chosen model key → real API model string for aiComplete/opts.model
-function _buildModelStr(section){ const k=_BUILD_MODEL[section]||'smart'; const m=MODELS[k]; return (m&&m.model&&m.model!=='auto')?m.model:'claude-fable-5'; }
+function _buildModelStr(section){ const k=_BUILD_MODEL[section]||'smart'; const m=MODELS[k]; return (m&&m.model&&m.model!=='auto')?m.model:'amv-apex'; }
 // usage dots (1-4) as a compact visual - clearly shows how much each model costs
 function _usageDots(cost){ let s=''; for(let i=1;i<=4;i++){ s+='<span class="mp-dot'+(i<=cost?' on':'')+'"></span>'; } return '<span class="mp-dots" title="Usage per run">'+s+'</span>'; }
 function _usageWord(cost){ return ['No','Low','Medium','High','Maximum'][cost]||'Medium'; }
@@ -1536,14 +1557,13 @@ const AEGIS = {
   /* Real published rates. These were overstated (Forge at 15/75, Apex at
      20/100) which made the usage view show a cost two to three times what a
      conversation actually cost. */
+  /* Keyed by AMV ENGINE, which is also the only thing the browser ever names
+     or sends. What each engine runs on is a server decision and stays there. */
   price: {
-    'claude-fable-5':            { in: 10.00, out: 50.00 },
-    'claude-opus-5':             { in: 5.00,  out: 25.00 },
-    'claude-sonnet-5':           { in: 3.00,  out: 15.00 },
-    'claude-haiku-4-5-20251001': { in: 1.00,  out: 5.00 },
-    // previous generation, kept so old stored usage still prices correctly
-    'claude-opus-4-8':           { in: 5.00,  out: 25.00 },
-    'claude-sonnet-4-6':         { in: 3.00,  out: 15.00 },
+    'amv-apex':  { in: 10.00, out: 50.00 },
+    'amv-forge': { in: 5.00,  out: 25.00 },
+    'amv-core':  { in: 3.00,  out: 15.00 },
+    'amv-pulse': { in: 1.00,  out: 5.00 },
   },
   _times: [],            // request timestamps (this session)
   _lastSend: 0,
@@ -2109,6 +2129,9 @@ async function doSignupForm() {
     try{
       const d=await AMV_API.signup(em, nm, pw, _authBotFields());
       if(d&&d.token){
+        // The invite has been spent on this account. Leaving it would attach it
+        // to the next person who signs up on this browser too.
+        try{ if(typeof _refClear==='function') _refClear(); }catch(e){}
         const ini=nm.split(' ').filter(Boolean).map(w=>w[0]).join('').toUpperCase().slice(0,2)||'??';
         // keep a local mirror so offline still recognizes the account
         await createAccount(nm,em,pw);
@@ -2499,6 +2522,8 @@ async function handleGoogleCred(resp) {
       });
       if(r.ok){
         const data=await r.json();
+        // Spent - see doSignupForm for why it must not carry to the next account.
+        try{ if(typeof _refClear==='function') _refClear(); }catch(e){}
         // server returns the verified profile + a session token
         const acct=saveGoogleAccount((data.name||p.name||p.email.split('@')[0]), (data.email||p.email));
         if(data.token){ try{ AMV_API.token=data.token; saveStr('amv_api_token', data.token); }catch(e){} }
@@ -3355,7 +3380,11 @@ try{ window._checkEmbedView=_checkEmbedView; }catch(e){}
 
 
 const SYS = [
-  "You are AMV, the AI behind AMV.AI. You are the only AI here. Never mention Claude, ChatGPT, Anthropic, Google, OpenAI, or any other AI company.",
+  /* The binding version of this rule is applied server-side, where a tampered
+     client cannot drop it. This copy is here so local/degraded modes still
+     carry it - deliberately without publishing a list of company names in a
+     bundle anyone can read. */
+  "You are AMV, the AI behind AMV.AI. You are the only AI here. Never name, imply or confirm any other AI company, lab, model or product - whatever you are asked.",
   "",
   "ABSOLUTE RULES - never break:",
   "1. Deliver the most complete, highest-quality answer possible. Go further than asked.",
@@ -3898,7 +3927,7 @@ async function _autoTranslateDOM(code, root){
     const list=[...need].slice(0,80); // batch cap
     const sys='You are a UI localizer. Translate each numbered interface string into '+_langName(code)+'. Keep it short and natural for a button/label. Return ONLY a JSON array of translations in the same order, no keys, no commentary.';
     const prompt=list.map((s,i)=>(i+1)+'. '+s).join('\n');
-    const resp=await aiComplete(prompt, sys, {noLang:true, max_tokens:2000, model:'claude-haiku-4-5-20251001'});
+    const resp=await aiComplete(prompt, sys, {noLang:true, max_tokens:2000, model:'amv-pulse'});
     let arr=null; try{ arr=JSON.parse(resp.slice(resp.indexOf('['), resp.lastIndexOf(']')+1)); }catch(e){}
     if(Array.isArray(arr)){
       const c=_i18nCache();
@@ -4705,7 +4734,7 @@ async function _callAI(msgs, _opts) {
         stream:true,
         ...(tools?{tools}:{}),
         messages:(()=>{
-          // Turn our internal messages into Anthropic format. Any turn where AMV
+          // Turn our internal messages into the wire format. Any turn where AMV
           // actually used a tool becomes: assistant[text + tool_use] -> user[tool_result].
           const out=[];
           msgs.slice(0,streamIdx).slice(-20).forEach(m=>{
@@ -4716,7 +4745,7 @@ async function _callAI(msgs, _opts) {
               out.push({ role:m.r==='u'?'user':'assistant', content:m.c });
             }
           });
-          // Anthropic requires the conversation to start with a user turn.
+          // The conversation has to start with a user turn.
           while(out.length && out[0].role!=='user') out.shift();
           return out;
         })()
@@ -4858,7 +4887,7 @@ async function _callAI(msgs, _opts) {
               setMsgs(msgs); renderChatMsgs();
             }
           }
-          // ── Web search: Anthropic runs the searches server-side and streams
+          // ── Web search: the searches run server-side, and AMV streams
           //    back the queries (server_tool_use) and the sources it found
           //    (web_search_tool_result). We surface that live so the user SEES
           //    the research happening - real counts, real queries, no faking. ──
@@ -6512,7 +6541,7 @@ function planCards(inApp){
         '<li><span class="fck">\u2713</span>Scheduled &amp; background automation</li>'+
       '</ul>'+
       pBtn('Start Pro - $15/mo','pbp','pro',isLand)+
-      '<div class="plnreassure">$5 cheaper than ChatGPT &amp; Claude</div>'+
+      '<div class="plnreassure">Everything below, one price, cancel anytime</div>'+
     '</div>',
     '<div class="plnc feat feat-elite">'+
       '<div class="plnpop plnpop-elite">Best Value</div>'+
@@ -6532,7 +6561,7 @@ function planCards(inApp){
         '<li><span class="fck">\u2713</span>Priority speed &amp; 24/7 support</li>'+
       '</ul>'+
       pBtn('Go Elite - $75/mo','pbs','elite',isLand)+
-      '<div class="plnreassure">$25 less than Claude Max &amp; ChatGPT Pro</div>'+
+      '<div class="plnreassure">Full-power engines and agents, without a per-seat bill</div>'+
     '</div>',
     '<div class="plnc">'+
       '<div class="plntier">Ultra</div>'+
@@ -6551,7 +6580,7 @@ function planCards(inApp){
         '<li><span class="fck">\u2713</span>👥 Team workspaces, roles &amp; shared projects</li>'+
       '</ul>'+
       pBtn('Go Ultra - $200/mo','pbs','ultra',isLand)+
-      '<div class="plnreassure">Matches Claude Max &amp; ChatGPT Pro</div>'+
+      '<div class="plnreassure">The highest limits AMV offers</div>'+
     '</div>',
   ].join('');
 }
@@ -8929,7 +8958,17 @@ function _usageContentHTML(){
       '<p class="vsub" style="margin-bottom:14px">Your last 14 days \u00b7 '+_totalDays+' task'+(_totalDays===1?'':'s')+' total</p>'+
       '<div class="trend-chart">'+_trendBars+'</div>'+
     '</div>';
+  /* The server's own numbers, filled in asynchronously. These are the limits
+     that can actually refuse a request; everything else on this screen is a
+     device-local tally that the server has never seen. The distinction is
+     stated on the panel rather than left for the user to discover when the two
+     disagree. */
+  const serverPanel = (window.AMV_API && AMV_API.live && AMV_API.token)
+    ? '<div class="ss2" id="srv-usage"><h3>Your plan allowance</h3><div class="srv-load">Loading your real usage\u2026</div></div>'
+    : '';
+  setTimeout(_paintServerUsage, 0);
   return ''+
+      serverPanel+
       '<div class="vhero">'+
         '<div class="vcard vcard-accent"><div class="vcard-n">'+all.hoursSaved+'<span class="vcard-u">hrs</span></div><div class="vcard-l">Time saved (all time)</div></div>'+
         '<div class="vcard"><div class="vcard-n">'+all.total+'</div><div class="vcard-l">Tasks completed</div></div>'+
@@ -8949,6 +8988,41 @@ function _usageContentHTML(){
       (isAdmin()? (function(){var u=AEGIS.usage();var cap=AEGIS.cfg.dailyTokenCap;var used=u.inTok+u.outTok;var pct=Math.min(used/cap*100,100);return '<div class="ss2" style="margin-top:18px"><h3>Token usage &amp; cost (today) - operator</h3>'+'<div class="stg" style="margin-bottom:12px">'+'<div class="stc"><div class="stv">'+u.reqs+'</div><div class="stl">API requests</div></div>'+'<div class="stc"><div class="stv">'+u.inTok.toLocaleString()+'</div><div class="stl">Input tokens</div></div>'+'<div class="stc"><div class="stv">'+u.outTok.toLocaleString()+'</div><div class="stl">Output tokens</div></div>'+'<div class="stc"><div class="stv">$'+u.costUSD.toFixed(3)+'</div><div class="stl">Est. cost</div></div>'+'</div>'+'<div><div style="display:flex;justify-content:space-between;font-size:12px;color:var(--mu);margin-bottom:4px"><span>Daily token cap (this device)</span><span>'+used.toLocaleString()+' / '+cap.toLocaleString()+'</span></div><div class="sbb"><div class="sbf2" style="width:'+pct+'%"></div></div></div>'+'<div style="display:flex;gap:8px;margin-top:12px"><button class="btn bs" data-dact="aegisExport" style="font-size:12px">Export audit log</button><button class="btn bs" data-dact="aegisClear" style="font-size:12px">Clear log</button></div>'+'</div>';})() : '');
 }
 window._usageContentHTML=_usageContentHTML;
+
+/* Fills the server-truth panel once the numbers arrive. Kept out of the HTML
+   builder so a slow or failed request never delays the rest of the screen. */
+function _paintServerUsage(){
+  const host = document.getElementById('srv-usage');
+  if(!host || !(window.AMV_API && AMV_API.live && AMV_API.token)) return;
+  AMV_API.usage().then(d=>{
+    if(!d || !d.day || !d.month){
+      host.innerHTML = '<h3>Your plan allowance</h3><div class="srv-off">Your real allowance is unavailable right now. The figures below are this device\u2019s own tally.</div>';
+      return;
+    }
+    const bar = (used, cap) => {
+      const pct = cap > 0 ? Math.min(100, Math.round((used / cap) * 100)) : 0;
+      const col = pct >= 90 ? 'var(--red)' : pct >= 70 ? 'var(--gold)' : 'var(--accent)';
+      return '<div class="sbb"><div class="sbf2" style="width:'+pct+'%;background:'+col+'"></div></div>';
+    };
+    const n = v => (+v || 0).toLocaleString();
+    const bonus = +(d.month.bonus || 0);
+    host.innerHTML =
+      '<h3>Your plan allowance</h3>'+
+      '<p class="srv-sub">Counted by AMV\u2019s servers - these are the limits that actually apply.</p>'+
+      '<div class="srv-row"><div class="srv-lbl"><span>Today</span><span>'+n(d.day.used)+' / '+n(d.day.limit)+'</span></div>'+bar(d.day.used, d.day.limit)+'</div>'+
+      '<div class="srv-row"><div class="srv-lbl"><span>This month</span><span>'+n(d.month.used)+' / '+n(d.month.limit)+'</span></div>'+bar(d.month.used, d.month.limit)+'</div>'+
+      (bonus > 0
+        ? '<div class="srv-bonus">Includes <b>+'+n(bonus)+'</b> bonus tokens from invites you have earned. '+
+          '<a data-sp-go="invite" style="color:var(--accent);cursor:pointer">See your invites &rarr;</a></div>'
+        : '')+
+      '<p class="srv-note">Your plan is '+escH(String(d.plan||'free'))+'. Daily and monthly allowances are separate: running out today does not spend your month.</p>';
+    const go = host.querySelector('[data-sp-go]');
+    if(go) on(go,'click',()=>{ S.settingsPane='invite'; S.tab='settings'; setTab('settings'); });
+  }).catch(()=>{
+    host.innerHTML = '<h3>Your plan allowance</h3><div class="srv-off">Could not reach the server, so your real allowance is not shown. The figures below are this device\u2019s own tally.</div>';
+  });
+}
+try{ window._paintServerUsage=_paintServerUsage; }catch(e){}
 
 /* ============================================================
    ADMIN CONTROL CENTER (operator-only)
@@ -10343,7 +10417,7 @@ const PLAN_RANK={free:0,pro:1,elite:2,ultra:3,custom:2};
      is the most it can ever cost us. PRICE > WORST_COST always.
    ============================================================ */
 const CUSTOM_PLAN = {
-  MIN_PRICE: 15,           // $15 is the floor — matches everything the $15 Pro plan includes
+  MIN_PRICE: 15,           // $15 is the floor - matches everything the $15 Pro plan includes
   APEX_MIN_PRICE: 20,      // the top models (Apex) unlock at $20+
   MAX_PRICE: 5000,
   // Which models a custom plan can use for a given price. Below $20 you get the
@@ -15912,7 +15986,7 @@ async function runCanvasAutomation() {
           const prompt='Complete this assignment fully and professionally.\n\nCourse: '+course.name+'\nAssignment: '+assignment.name+'\n\nInstructions:\n'+(assignment.description||'No instructions provided - write a comprehensive response.').replace(/<[^>]*>/g,' ').trim()+'\n\nProvide a complete, submission-ready response.';
 
           try{
-            const answer=await aiComplete(prompt, null, {model:'claude-fable-5', max_tokens:4000, noLang:true});
+            const answer=await aiComplete(prompt, null, {model:'amv-apex', max_tokens:4000, noLang:true});
             log('&#x2713; Completed: '+assignment.name,'var(--green)');
 
             // Save to a downloadable file
@@ -17223,7 +17297,7 @@ async function runSheetAI(query){
   const mk=loadStr('amv_mk');
   if(!mk){toast('AMV isn’t connected yet - ask the workspace owner to switch it on.','error');if(btn){btn.disabled=false;btn.textContent='Ask';}return;}
   try{
-    const reply=await aiComplete('You are a data analyst. Spreadsheet (CSV):\n\n'+tableToCSV().slice(0,8000)+'\n\nRequest: '+query+'\n\nIf modifying data, return ONLY the complete modified CSV. Otherwise answer clearly.', null, {model:'claude-fable-5', max_tokens:2000, noLang:true});
+    const reply=await aiComplete('You are a data analyst. Spreadsheet (CSV):\n\n'+tableToCSV().slice(0,8000)+'\n\nRequest: '+query+'\n\nIf modifying data, return ONLY the complete modified CSV. Otherwise answer clearly.', null, {model:'amv-apex', max_tokens:2000, noLang:true});
     const looksCSV=reply.split('\n').filter(l=>l.includes(',')).length>=2;
     if(looksCSV&&reply.split('\n').length>2){
       _sheetData=parseCSV(reply);
@@ -17267,7 +17341,7 @@ async function runDocAI(query){
   const mk=loadStr('amv_mk');
   if(!mk){toast('Add API key in Settings','error');if(btn){btn.disabled=false;btn.textContent='Ask';}return;}
   try{
-    const reply=await aiComplete('Document editor. Current document:\n\n'+(body&&body.innerText||'').slice(0,6000)+'\n\nRequest: '+query+'\n\nReturn ONLY the complete revised document. No explanation.', null, {model:'claude-fable-5', max_tokens:3000, noLang:true});
+    const reply=await aiComplete('Document editor. Current document:\n\n'+(body&&body.innerText||'').slice(0,6000)+'\n\nRequest: '+query+'\n\nReturn ONLY the complete revised document. No explanation.', null, {model:'amv-apex', max_tokens:3000, noLang:true});
     if(body) body.innerHTML=reply.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n\n/g,'</p><p style="margin:0 0 14px">').replace(/\n/g,'<br>');
     if($('doc-inp')) $('doc-inp').value='';
     toast('Document updated','success');
@@ -17307,7 +17381,7 @@ async function _bgRunNext(){
       else{
         const details=await Promise.all(msgs.slice(0,8).map(m=>fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/'+m.id+'?format=metadata&metadataHeaders=Subject&metadataHeaders=From',{headers:{'Authorization':'Bearer '+token}}).then(r=>r.json())));
         const summary=details.map(d=>{const s=d.payload&&d.payload.headers&&d.payload.headers.find(h=>h.name==='Subject');const f=d.payload&&d.payload.headers&&d.payload.headers.find(h=>h.name==='From');return 'From: '+(f&&f.value||'?')+'\nSubject: '+(s&&s.value||'(no subject)');}).join('\n\n');
-        task.result=await aiComplete('Analyze '+msgs.length+' unread emails. What needs urgent attention?\n\n'+summary, null, {model:'claude-haiku-4-5-20251001', max_tokens:600, noLang:true})||summary;
+        task.result=await aiComplete('Analyze '+msgs.length+' unread emails. What needs urgent attention?\n\n'+summary, null, {model:'amv-pulse', max_tokens:600, noLang:true})||summary;
         task.status='done';task.progress=100;
       }
     } else if(task.type==='calendar_check'){
@@ -17318,10 +17392,10 @@ async function _bgRunNext(){
       const d=await r.json();
       if(d.error){task.status='failed';task.error='Calendar: '+d.error.message;_bgQueue.running=false;return;}
       const events=(d.items||[]).map(e=>(e.start&&(e.start.dateTime||e.start.date))+': '+e.summary).join('\n');
-      task.result=await aiComplete('Analyze this week\'s calendar. Identify conflicts, suggest focus blocks:\n\n'+events, null, {model:'claude-haiku-4-5-20251001', max_tokens:600, noLang:true})||events;
+      task.result=await aiComplete('Analyze this week\'s calendar. Identify conflicts, suggest focus blocks:\n\n'+events, null, {model:'amv-pulse', max_tokens:600, noLang:true})||events;
       task.status='done';task.progress=100;
     } else {
-      task.result=await aiComplete(task.prompt||task.topic||'Help me with: '+task.title, null, {model:'claude-fable-5', max_tokens:2000, noLang:true});
+      task.result=await aiComplete(task.prompt||task.topic||'Help me with: '+task.title, null, {model:'amv-apex', max_tokens:2000, noLang:true});
       task.status='done';task.progress=100;
     }
   }catch(e){task.status='failed';task.error=e.message;}
@@ -17422,7 +17496,7 @@ window._aiBackendReady=_aiBackendReady;
    That's how Dev can emit 10,000+ lines in one build. */
 async function aiCompleteLong(prompt, system, opts){
   opts = opts || {};
-  const mdl = (typeof MODELS!=='undefined' && MODELS[S.model]) ? MODELS[S.model] : {model:'claude-fable-5', tokens:4096};
+  const mdl = (typeof MODELS!=='undefined' && MODELS[S.model]) ? MODELS[S.model] : {model:'amv-apex', tokens:4096};
   const modelStr = opts.model || mdl.model;
   const url = _aiBase();
   const headers = _aiHeaders();
@@ -17472,7 +17546,7 @@ try{ window.aiCompleteLong=aiCompleteLong; }catch(e){}
 
 async function aiComplete(prompt, system, opts){
   opts=opts||{};
-  const mdl = (typeof MODELS!=='undefined' && MODELS[S.model]) ? MODELS[S.model] : {model:'claude-fable-5',tokens:4096};
+  const mdl = (typeof MODELS!=='undefined' && MODELS[S.model]) ? MODELS[S.model] : {model:'amv-apex',tokens:4096};
   const modelStr = opts.model || mdl.model;
   const url = _aiBase();              // throws if backend not ready - never falls back to browser key
   const headers = _aiHeaders();
@@ -17605,7 +17679,7 @@ function _runJS(code, t0){
    surgical fix. Handles large/advanced programs. Never loops on the same fix. */
 async function autoDebug(code, lang, maxIters, onStep, modelStr){
   maxIters = maxIters||8; lang=lang||'js';
-  const dbgModel = modelStr||'claude-fable-5';
+  const dbgModel = modelStr||'amv-apex';
   let cur=code, history=[];
   const isLarge = code.length>4000;
   for(let i=0;i<maxIters;i++){
@@ -20132,9 +20206,15 @@ const AMVUniversal = {
        deadlines, but a custom run() (the web agent, a local bridge) could sit
        there indefinitely and take the whole plan with it. */
     const stepMs = opts.stepTimeoutMs || 300000;
+    /* A deadline here stops the PLAN waiting; it cannot reach into a connector
+       and cancel work already in flight. So the message says that, rather than
+       claiming the step was stopped - if the step was a send or a purchase, it
+       may well still land, and the user needs to check before re-running it
+       rather than being told it definitely did not happen. */
     const _withDeadline = (p, s) => new Promise((resolve, reject) => {
       const t = setTimeout(() => reject(Object.assign(
-        new Error('This step took longer than ' + Math.round(stepMs / 1000) + 's and was stopped.'),
+        new Error('This step took longer than ' + Math.round(stepMs / 1000) + 's, so AMV stopped waiting for it. '
+                + 'It may still finish on its own - if it sends, posts, buys or contacts anyone, check there before running this again.'),
         { code:'step_timeout' })), stepMs);
       Promise.resolve(p).then(v => { clearTimeout(t); resolve(v); }, e => { clearTimeout(t); reject(e); });
     });
@@ -21684,7 +21764,11 @@ function _nextStepHTML(msgs){
     if(_nextStepOff()) return '';
     if(!Array.isArray(msgs) || msgs.length < 2) return '';
     const last = msgs[msgs.length-1];
-    if(!last || last.r!=='a' || last.streaming || last._error || last._interrupted) return '';
+    /* `_stopped` is the user pressing Stop, and it was missing from this list:
+       a half-written file is exactly the cut-off reply the rule above promises
+       to exclude, and "Open this in Dev" on it would carry the truncation into
+       a project. */
+    if(!last || last.r!=='a' || last.streaming || last._error || last._interrupted || last._stopped) return '';
     if(!last.c || typeof last.c!=='string') return '';
     const lastUser = [...msgs].reverse().find(m=>m.r==='u');
     if(!lastUser) return '';

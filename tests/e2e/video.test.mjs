@@ -11,7 +11,7 @@ section('The fake progress bar is gone for good');
 
 const noFake = await page.evaluate(() => {
   const src = String(window.genVid || '');
-  // NOTE: do NOT scan document.body.innerHTML — app.js is inlined into a <script>
+  // NOTE: do NOT scan document.body.innerHTML - app.js is inlined into a <script>
   // tag, so the source (including comments that DESCRIBE the old bug) is in there.
   // Check the live function and what the user actually sees.
   const visible = document.getElementById('vgrid')?.textContent || '';
@@ -195,7 +195,7 @@ const honest = await page.evaluate(async () => {
 });
 ok(/no video engine|not connected/i.test(honest.text),
    'it tells the model to say so plainly', honest.text);
-ok(!honest.render, 'and renders NOTHING — no fake clip', honest.render);
+ok(!honest.render, 'and renders NOTHING - no fake clip', honest.render);
 
 section('No JavaScript errors');
 ok(errors.length === 0, 'zero uncaught page errors', errors.slice(0, 3));

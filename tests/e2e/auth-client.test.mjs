@@ -1,4 +1,4 @@
-/* CLIENT AUTH RESILIENCE — what users actually experience.
+/* CLIENT AUTH RESILIENCE - what users actually experience.
    An access token expires after an hour. The user must NOT be logged out or lose
    work when that happens mid-session. These tests prove the client silently
    refreshes on a 401, dedupes concurrent refreshes, refreshes proactively on
@@ -60,7 +60,7 @@ const dedupe = await page.evaluate(async () => {
     return { ok: false, status: 401, headers: new Headers(), json: async () => ({ error: 'expired' }) };
   };
 
-  // fire several protected calls at once — they should all 401 and share ONE refresh
+  // fire several protected calls at once - they should all 401 and share ONE refresh
   const results = await Promise.all([
     AMV_API._fetch('/v1/a', { method: 'POST', body: '{}' }),
     AMV_API._fetch('/v1/b', { method: 'POST', body: '{}' }),

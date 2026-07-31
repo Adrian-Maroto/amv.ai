@@ -1,4 +1,4 @@
-/* TOKEN ALLOWANCES vs THE TOKENIZER — plan limits are counted in tokens, but a
+/* TOKEN ALLOWANCES vs THE TOKENIZER - plan limits are counted in tokens, but a
    token is not a fixed amount of work. The current-generation engine tokenizes
    the same English text into roughly 30% more tokens than the one these numbers
    were calibrated against, so a model upgrade would silently have cut every

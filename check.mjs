@@ -1,20 +1,20 @@
 #!/usr/bin/env node
 /* ─────────────────────────────────────────────────────────────────────────
-   AMV HEALTH GATE  —  `npm run check`
+   AMV HEALTH GATE  -  `npm run check`
 
    One command, one answer: is this safe to ship?
 
    It runs the whole gauntlet in fail-fast order (cheapest checks first so a
    syntax slip doesn't wait behind the full test suite):
 
-     1. Syntax        — node --check on both source files
-     2. Worker module — the Worker must load as an ES MODULE, not just parse as
+     1. Syntax        - node --check on both source files
+     2. Worker module - the Worker must load as an ES MODULE, not just parse as
                         a script (node --check passes on a Worker that would
                         fail to deploy; this catches that gap)
-     3. Build         — a fresh build, then verify index.html actually reflects
+     3. Build         - a fresh build, then verify index.html actually reflects
                         current source (the "stale build" trap)
-     4. Tests         — every suite
-     5. Preflight     — the deploy config is valid
+     4. Tests         - every suite
+     5. Preflight     - the deploy config is valid
 
    Exit 0 = green, ship it. Exit 1 = red, with the first failure spelled out.
    No keys required.
@@ -49,7 +49,7 @@ function step(label, fn) {
     console.log(`${RED}✗${X}`);
     console.log(`\n${B}${RED}FAILED:${X} ${label}\n`);
     console.log(`${e.message}\n`);
-    console.log(`${B}${RED}✗ NOT shippable${X} — fix the above, then run ${B}npm run check${X} again.\n`);
+    console.log(`${B}${RED}✗ NOT shippable${X} - fix the above, then run ${B}npm run check${X} again.\n`);
     process.exit(1);
   }
 }
@@ -64,7 +64,7 @@ function sh(cmd) {
   }
 }
 
-console.log(`\n${B}AMV health gate${X} ${DIM}— full shippability check${X}\n`);
+console.log(`\n${B}AMV health gate${X} ${DIM}- full shippability check${X}\n`);
 
 /* ── 1. Syntax ───────────────────────────────────────────────────────────── */
 step('Syntax (app.js + amv-backend.js)', () => {
@@ -92,7 +92,7 @@ step('Build is fresh (index.html reflects source)', () => {
   const markers = ['_admGrowthBlock', 'openResearchWatch', '_abuseRecord'];
   const missing = markers.filter(m => app.includes(m) && !html.includes(m));
   if (missing.length)
-    throw new Error(`index.html is STALE — missing ${missing.join(', ')}. The build did not pick up current app.js.`);
+    throw new Error(`index.html is STALE - missing ${missing.join(', ')}. The build did not pick up current app.js.`);
 });
 
 /* ── 4. All test suites ──────────────────────────────────────────────────── */
@@ -109,7 +109,7 @@ if (!FAST) step('All test suites', () => {
 /* ── 5. Deploy preflight ─────────────────────────────────────────────────── */
 step('Deploy preflight', () => {
   // Preflight exits 1 when the config isn't deployable. In dev the KV id is a
-  // placeholder, which SHOULD flag — so we surface that as a WARNING here rather
+  // placeholder, which SHOULD flag - so we surface that as a WARNING here rather
   // than failing the whole health gate on a known dev-time state.
   try {
     sh('node preflight.mjs');
@@ -133,6 +133,6 @@ if (globalThis.__preflightPlaceholderWarn) {
   console.log(`  ${Y}!${X} preflight: KV namespace id is still the dev placeholder`);
   console.log(`    ${DIM}→ set a real id in wrangler.toml before deploying (expected during development)${X}`);
 }
-console.log(`${B}${G}✓ SHIPPABLE${X} — all checks passed in ${secs}s.`);
+console.log(`${B}${G}✓ SHIPPABLE${X} - all checks passed in ${secs}s.`);
 console.log(`${DIM}  (source valid · worker loads · build fresh · tests green · config checked)${X}\n`);
 process.exit(0);

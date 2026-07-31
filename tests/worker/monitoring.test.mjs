@@ -1,4 +1,4 @@
-/* MONITORING FORWARDING — Sentry (errors) + PostHog (product events) are wired
+/* MONITORING FORWARDING - Sentry (errors) + PostHog (product events) are wired
    server-side and stay INERT until you set a secret. Proves: no secret = no
    outbound call (zero behavior change), a real DSN/key produces a correct POST,
    and PostHog ids are pseudonymous so no raw email/IP ever leaves the Worker. */

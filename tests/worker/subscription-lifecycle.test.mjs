@@ -1,4 +1,4 @@
-/* SUBSCRIPTION LIFECYCLE — everything that happens AFTER the first payment.
+/* SUBSCRIPTION LIFECYCLE - everything that happens AFTER the first payment.
    Getting paid once was covered. Cancellations, failed renewals, chargebacks
    and refunds identify the customer only by Stripe customer id, so all of it
    depends on being able to turn that id back into an AMV account. It could

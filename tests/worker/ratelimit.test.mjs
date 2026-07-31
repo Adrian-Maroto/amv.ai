@@ -1,8 +1,8 @@
-/* RATE LIMITS — money & abuse protection on write/spend endpoints.
+/* RATE LIMITS - money & abuse protection on write/spend endpoints.
    Proves the reusable limiter blocks per-minute floods AND per-day totals, and
    that the endpoints wired to it (handoff, market publish/message, crew jobs,
    sync, widget) actually return 429 when hammered. A limit that isn't enforced
-   is worthless — these enforce. */
+   is worthless - these enforce. */
 import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -41,7 +41,7 @@ section('limitAction enforces a daily cap independent of the minute rate');
 
 store.clear();
 let dayAllowed = 0;
-// generous per-minute (100) but a daily cap of 3 — the day cap must bite
+// generous per-minute (100) but a daily cap of 3 - the day cap must bite
 for (let i = 0; i < 8; i++) {
   const r = await W.limitAction(env, 'daily:user@test.com', 100, 3);
   if (r.ok) dayAllowed++;
@@ -104,7 +104,7 @@ store.clear();
 W.__setRequireUser(async () => ({ email: 'normal@test.com' }));
 let normalOk = true;
 for (let i = 0; i < 3; i++) { const r = await W.handoffCreate(hReq(), env); if (r.status === 429) normalOk = false; }
-ok(normalOk, 'a few handoffs in a row are fine — limits do not punish real use', normalOk);
+ok(normalOk, 'a few handoffs in a row are fine - limits do not punish real use', normalOk);
 
 report();
 done();

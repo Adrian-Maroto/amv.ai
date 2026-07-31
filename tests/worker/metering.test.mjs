@@ -1,4 +1,4 @@
-/* METERING — the profit guarantee.
+/* METERING - the profit guarantee.
    This suite ATTACKS the server the way a user with devtools would. Every test
    here is an attempted bypass. If any of them passes, someone can run up your
    Anthropic bill on a free account. */
@@ -25,7 +25,7 @@ const counters = new Map();
 const env = {
   ANTHROPIC_API_KEY: 'sk-test',
   JWT_SECRET: 'secret',
-  // There is ALSO a global daily spend ceiling across all users (a real feature —
+  // There is ALSO a global daily spend ceiling across all users (a real feature -
   // it stops one bad day becoming a huge bill). Raise it here so it doesn't mask
   // the PER-USER limits we're actually testing.
   GLOBAL_DAILY_USD_CAP: '100000',
@@ -65,10 +65,10 @@ globalThis.__mockCounter = async (env_, name, opts) => {
 };
 
 /* Point the Worker's `counter` at our mock by overriding the DO binding. */
-env.AMV_COUNTER = {                       // the real binding name — not COUNTER
+env.AMV_COUNTER = {                       // the real binding name - not COUNTER
   idFromName: (n) => n,
   get: (id) => ({
-    // The Worker calls stub.fetch(url, init) — NOT fetch(Request). Getting this
+    // The Worker calls stub.fetch(url, init) - NOT fetch(Request). Getting this
     // wrong made the mock throw, which the Worker silently swallows and falls
     // back to KV. The test then "passed" while measuring the wrong code path.
     async fetch(url, init) {
@@ -93,7 +93,7 @@ const setPlan = async (email, plan) => {
 };
 
 /* Cloudflare passes an ExecutionContext. Usage is metered in a background task
-   via ctx.waitUntil() while the response streams to the client — so we must
+   via ctx.waitUntil() while the response streams to the client - so we must
    collect and AWAIT those tasks, or we'd be asserting on counters that haven't
    been written yet and would wrongly conclude metering is broken. */
 const pending = [];
@@ -108,7 +108,7 @@ const msg = (body) => new Request('https://api.amv.dev/v1/messages', {
   body: JSON.stringify(body)
 });
 
-/* max_tokens is the CEILING the model may generate — the real API never exceeds
+/* max_tokens is the CEILING the model may generate - the real API never exceeds
    it, and the reservation relies on that. An earlier version of this stub asked
    for max_tokens:100 and then "returned" 10,000 output tokens, which no real
    model can do. That made the reservation look broken when it was the stub
@@ -126,7 +126,7 @@ const basePayload = (extra = {}) => ({
   ...extra
 });
 
-/* Upstream model call. Must be a REAL Response — the proxy streams the body
+/* Upstream model call. Must be a REAL Response - the proxy streams the body
    with .tee(), so a hand-rolled {json(){}} object is not faithful enough and
    will blow up in a way that has nothing to do with the thing under test. */
 let upstreamCalls = 0;
@@ -134,7 +134,7 @@ globalThis.fetch = async () => {
   upstreamCalls++;
   // The proxy ALWAYS streams and tallies usage by parsing SSE. A plain-JSON
   // mock reports zero usage and makes it look like metering is broken when it
-  // isn't — the stub has to speak the same protocol as the real API.
+  // isn't - the stub has to speak the same protocol as the real API.
   const sse = [
     'event: message_start',
     'data: {"type":"message_start","message":{"usage":{"input_tokens":10000,"output_tokens":0}}}',
@@ -284,7 +284,7 @@ ok(ultraLimits.dayTokens > W.PLAN_LIMITS.free.dayTokens * 10,
    'and it is meaningfully larger than free');
 
 /* The reservation is booked BEFORE the model runs. So every path that bails out
-   after that point has to give it back — otherwise an outage, or hitting the
+   after that point has to give it back - otherwise an outage, or hitting the
    global ceiling, would quietly burn through a user's daily allowance while
    producing nothing for them. */
 section('A failed call REFUNDS the reservation (no quota eaten for nothing)');
@@ -319,7 +319,7 @@ const afterFail = usgOf('refund@test.com');
 
 ok(failResp.status >= 400, 'the failing call errors out', failResp.status);
 ok(afterFail === afterOk,
-   'and the user"s usage is UNCHANGED — the reservation was refunded', { afterOk, afterFail });
+   'and the user"s usage is UNCHANGED - the reservation was refunded', { afterOk, afterFail });
 
 globalThis.fetch = good;
 
@@ -346,7 +346,7 @@ await W.aiProxy(msg({ model: 'claude-sonnet-4-6', max_tokens: 40000, messages: [
 await settle();
 const billed = usgOf('recon@test.com');
 ok(billed < 500,
-   'reserving 40,000 then using 50 bills ~50 — the unused reservation is refunded', billed);
+   'reserving 40,000 then using 50 bills ~50 - the unused reservation is refunded', billed);
 
 globalThis.fetch = good;
 

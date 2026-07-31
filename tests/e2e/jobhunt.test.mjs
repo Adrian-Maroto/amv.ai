@@ -1,4 +1,4 @@
-/* JOB HUNT ENGINE — the deterministic decision core. Proves the honest rules:
+/* JOB HUNT ENGINE - the deterministic decision core. Proves the honest rules:
    ask when the user hasn't specified something the posting needs, apply when
    everything's provided and the channel is submittable, and NEVER claim to have
    submitted a portal job AMV can't actually submit. See JOBS.md. */

@@ -1,4 +1,4 @@
-/* AUTH BYPASS REGRESSIONS — locks the three Critical authentication holes shut.
+/* AUTH BYPASS REGRESSIONS - locks the three Critical authentication holes shut.
 
    Security audit 2026-07-19 reproduced three release-blocking bypasses:
      AMV-001  POST /auth/login with provider:"google" + a victim email issued

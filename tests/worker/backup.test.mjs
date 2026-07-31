@@ -1,9 +1,9 @@
-/* DATA SAFETY — backup & restore.
+/* DATA SAFETY - backup & restore.
    Customer accounts, subscriptions, chats, and automations live in KV. These
    tests prove the snapshot captures the durable data (and skips ephemeral
    counters), that a restore is ADDITIVE and never deletes, that a total wipe can
    be recovered, that a tampered snapshot can't write control keys, and that it's
-   admin-only. This is the insurance — it has to actually work. */
+   admin-only. This is the insurance - it has to actually work. */
 import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -40,14 +40,14 @@ const adminReq = (body) => new Request('https://api.amv.dev/admin/backup/export'
 /* ── Seed realistic durable data + some ephemeral junk ───────────────────── */
 function seed() {
   store = new Map();
-  // durable — must survive
+  // durable - must survive
   store.set('acct:alice@test.com', JSON.stringify({ email: 'alice@test.com', name: 'Alice' }));
   store.set('acct:bob@test.com', JSON.stringify({ email: 'bob@test.com', name: 'Bob' }));
   store.set('ent:alice@test.com', JSON.stringify({ plan: 'pro' }));
   store.set('auto:alice@test.com', JSON.stringify({ items: [{ id: 'a1', detail: 'watch BTC' }] }));
   store.set('data:alice@test.com', JSON.stringify({ chats: ['hello'] }));
   store.set('wallet:alice@test.com', JSON.stringify({ credits: 500 }));
-  // ephemeral — should NOT be in the backup
+  // ephemeral - should NOT be in the backup
   store.set('spend:2026-07-16', '42');
   store.set('active:alice@test.com:2026-07-16', '1');
   store.set('authfail:bob@test.com:1.2.3.4', '3');
@@ -90,7 +90,7 @@ ok(store.get('acct:alice@test.com'), 'Alice\'s account is back');
 ok(JSON.parse(store.get('ent:alice@test.com')).plan === 'pro', 'her subscription is back');
 ok(JSON.parse(store.get('auto:alice@test.com')).items[0].detail === 'watch BTC', 'her automation is back');
 
-/* ── Restore is additive — 'missing' mode never clobbers newer live data ─── */
+/* ── Restore is additive - 'missing' mode never clobbers newer live data ─── */
 section('Missing-mode restore never overwrites newer live data');
 
 seed();  // fresh live data

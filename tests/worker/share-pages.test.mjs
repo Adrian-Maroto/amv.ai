@@ -1,4 +1,4 @@
-/* PUBLIC SHARE PAGES — sharing worked, but it encoded the conversation into a
+/* PUBLIC SHARE PAGES - sharing worked, but it encoded the conversation into a
    URL FRAGMENT. A fragment is never sent to a server, so a shared link pasted
    into Slack or X renders with no title and no preview: a bare URL that reads
    as spam and does not get clicked. For a product whose growth depends on

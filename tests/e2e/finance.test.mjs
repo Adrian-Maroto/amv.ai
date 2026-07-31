@@ -1,4 +1,4 @@
-/* BANK CONNECTION — money is the one place a fabricated number does real
+/* BANK CONNECTION - money is the one place a fabricated number does real
    damage. These assertions prove AMV never invents a balance, never gains a
    way to MOVE money, and that the analysis on top of real data is correct. */
 import { bootApp } from '../lib/harness.mjs';

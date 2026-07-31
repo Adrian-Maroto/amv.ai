@@ -1,4 +1,4 @@
-/* RECOVERY, FROM THE APP'S SIDE — when a stream stalls, the model may already
+/* RECOVERY, FROM THE APP'S SIDE - when a stream stalls, the model may already
    have finished on the server. Those tokens are paid for either way, so the
    app asks for the answer back instead of showing an error and making the user
    regenerate the whole thing. */

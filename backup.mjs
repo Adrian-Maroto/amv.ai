@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /* ─────────────────────────────────────────────────────────────────────────
-   AMV BACKUP  —  local snapshot & restore of all customer data
+   AMV BACKUP  -  local snapshot & restore of all customer data
 
    Your customers' accounts, subscriptions, chats, projects and automations live
    in Cloudflare KV. This pulls a full snapshot to a local file so a bad deploy,
@@ -53,7 +53,7 @@ async function doExport() {
   }
   console.log(`${DIM}Pulling snapshot from ${API}…${X}`);
   const r = await post('/admin/backup/export', {});
-  if (r.status === 401) die('unauthorized — check AMV_ADMIN_TOKEN');
+  if (r.status === 401) die('unauthorized - check AMV_ADMIN_TOKEN');
   if (!r.ok) die(`export failed: HTTP ${r.status}`);
   const snap = await r.json();
   writeFileSync(outPath, JSON.stringify(snap, null, 0));
@@ -90,7 +90,7 @@ async function doRestore() {
   }
 
   const r = await post('/admin/backup/import', { snapshot: snap, mode: missing ? 'missing' : 'merge' });
-  if (r.status === 401) die('unauthorized — check AMV_ADMIN_TOKEN');
+  if (r.status === 401) die('unauthorized - check AMV_ADMIN_TOKEN');
   if (!r.ok) die(`restore failed: HTTP ${r.status}`);
   const res = await r.json();
   console.log(`${G}✓${X} restored ${B}${res.restored}${X} keys` +

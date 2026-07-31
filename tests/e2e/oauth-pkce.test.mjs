@@ -1,4 +1,4 @@
-/* OAUTH HARDENING — the implicit flow returns the access token in the URL
+/* OAUTH HARDENING - the implicit flow returns the access token in the URL
    fragment, where it lands in browser history, referrers, and anything that can
    read the address bar, and it cannot issue a refresh token. These assertions
    prove AMV uses auth-code + PKCE whenever a backend is available, that the

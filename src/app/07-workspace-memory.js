@@ -1368,7 +1368,17 @@ function _usageContentHTML(){
       '<p class="vsub" style="margin-bottom:14px">Your last 14 days \u00b7 '+_totalDays+' task'+(_totalDays===1?'':'s')+' total</p>'+
       '<div class="trend-chart">'+_trendBars+'</div>'+
     '</div>';
+  /* The server's own numbers, filled in asynchronously. These are the limits
+     that can actually refuse a request; everything else on this screen is a
+     device-local tally that the server has never seen. The distinction is
+     stated on the panel rather than left for the user to discover when the two
+     disagree. */
+  const serverPanel = (window.AMV_API && AMV_API.live && AMV_API.token)
+    ? '<div class="ss2" id="srv-usage"><h3>Your plan allowance</h3><div class="srv-load">Loading your real usage\u2026</div></div>'
+    : '';
+  setTimeout(_paintServerUsage, 0);
   return ''+
+      serverPanel+
       '<div class="vhero">'+
         '<div class="vcard vcard-accent"><div class="vcard-n">'+all.hoursSaved+'<span class="vcard-u">hrs</span></div><div class="vcard-l">Time saved (all time)</div></div>'+
         '<div class="vcard"><div class="vcard-n">'+all.total+'</div><div class="vcard-l">Tasks completed</div></div>'+
@@ -1388,4 +1398,39 @@ function _usageContentHTML(){
       (isAdmin()? (function(){var u=AEGIS.usage();var cap=AEGIS.cfg.dailyTokenCap;var used=u.inTok+u.outTok;var pct=Math.min(used/cap*100,100);return '<div class="ss2" style="margin-top:18px"><h3>Token usage &amp; cost (today) - operator</h3>'+'<div class="stg" style="margin-bottom:12px">'+'<div class="stc"><div class="stv">'+u.reqs+'</div><div class="stl">API requests</div></div>'+'<div class="stc"><div class="stv">'+u.inTok.toLocaleString()+'</div><div class="stl">Input tokens</div></div>'+'<div class="stc"><div class="stv">'+u.outTok.toLocaleString()+'</div><div class="stl">Output tokens</div></div>'+'<div class="stc"><div class="stv">$'+u.costUSD.toFixed(3)+'</div><div class="stl">Est. cost</div></div>'+'</div>'+'<div><div style="display:flex;justify-content:space-between;font-size:12px;color:var(--mu);margin-bottom:4px"><span>Daily token cap (this device)</span><span>'+used.toLocaleString()+' / '+cap.toLocaleString()+'</span></div><div class="sbb"><div class="sbf2" style="width:'+pct+'%"></div></div></div>'+'<div style="display:flex;gap:8px;margin-top:12px"><button class="btn bs" data-dact="aegisExport" style="font-size:12px">Export audit log</button><button class="btn bs" data-dact="aegisClear" style="font-size:12px">Clear log</button></div>'+'</div>';})() : '');
 }
 window._usageContentHTML=_usageContentHTML;
+
+/* Fills the server-truth panel once the numbers arrive. Kept out of the HTML
+   builder so a slow or failed request never delays the rest of the screen. */
+function _paintServerUsage(){
+  const host = document.getElementById('srv-usage');
+  if(!host || !(window.AMV_API && AMV_API.live && AMV_API.token)) return;
+  AMV_API.usage().then(d=>{
+    if(!d || !d.day || !d.month){
+      host.innerHTML = '<h3>Your plan allowance</h3><div class="srv-off">Your real allowance is unavailable right now. The figures below are this device\u2019s own tally.</div>';
+      return;
+    }
+    const bar = (used, cap) => {
+      const pct = cap > 0 ? Math.min(100, Math.round((used / cap) * 100)) : 0;
+      const col = pct >= 90 ? 'var(--red)' : pct >= 70 ? 'var(--gold)' : 'var(--accent)';
+      return '<div class="sbb"><div class="sbf2" style="width:'+pct+'%;background:'+col+'"></div></div>';
+    };
+    const n = v => (+v || 0).toLocaleString();
+    const bonus = +(d.month.bonus || 0);
+    host.innerHTML =
+      '<h3>Your plan allowance</h3>'+
+      '<p class="srv-sub">Counted by AMV\u2019s servers - these are the limits that actually apply.</p>'+
+      '<div class="srv-row"><div class="srv-lbl"><span>Today</span><span>'+n(d.day.used)+' / '+n(d.day.limit)+'</span></div>'+bar(d.day.used, d.day.limit)+'</div>'+
+      '<div class="srv-row"><div class="srv-lbl"><span>This month</span><span>'+n(d.month.used)+' / '+n(d.month.limit)+'</span></div>'+bar(d.month.used, d.month.limit)+'</div>'+
+      (bonus > 0
+        ? '<div class="srv-bonus">Includes <b>+'+n(bonus)+'</b> bonus tokens from invites you have earned. '+
+          '<a data-sp-go="invite" style="color:var(--accent);cursor:pointer">See your invites &rarr;</a></div>'
+        : '')+
+      '<p class="srv-note">Your plan is '+escH(String(d.plan||'free'))+'. Daily and monthly allowances are separate: running out today does not spend your month.</p>';
+    const go = host.querySelector('[data-sp-go]');
+    if(go) on(go,'click',()=>{ S.settingsPane='invite'; S.tab='settings'; setTab('settings'); });
+  }).catch(()=>{
+    host.innerHTML = '<h3>Your plan allowance</h3><div class="srv-off">Could not reach the server, so your real allowance is not shown. The figures below are this device\u2019s own tally.</div>';
+  });
+}
+try{ window._paintServerUsage=_paintServerUsage; }catch(e){}
 

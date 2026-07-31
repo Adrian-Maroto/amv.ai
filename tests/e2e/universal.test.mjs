@@ -1,4 +1,4 @@
-/* UNIVERSAL AGENT — Crew must connect to anything and actually do it, never
+/* UNIVERSAL AGENT - Crew must connect to anything and actually do it, never
    fake it. Proves: any new API is addable declaratively, the planner sees the
    live catalog (not a fixed command list), every blocker names the exact
    requirement, consequential actions stop for approval, and the policy gate

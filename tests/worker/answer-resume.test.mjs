@@ -1,4 +1,4 @@
-/* A DROPPED CONNECTION SHOULD NOT COST THE ANSWER — the meter runs on a tee of
+/* A DROPPED CONNECTION SHOULD NOT COST THE ANSWER - the meter runs on a tee of
    the stream inside waitUntil, so when a client disconnects mid-answer the
    model keeps generating and AMV keeps paying for every output token, while
    the user gets nothing and retries, paying for the whole thing twice. On

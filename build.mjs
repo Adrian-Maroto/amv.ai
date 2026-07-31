@@ -1,5 +1,5 @@
 /*
- * AMV build — assembles the single-file index.html from app.js + styles.css.
+ * AMV build - assembles the single-file index.html from app.js + styles.css.
  *
  *   node build.mjs          # rebuild index.html
  *   node build.mjs check    # syntax-check app.js and the assembled JS only
@@ -9,7 +9,7 @@
  * <script type="text/plain"> (the browser does NOT parse/execute inert text),
  * then a tiny bootstrap turns it into a deferred Blob-URL <script>. This lets
  * the static landing HTML + CSS paint immediately (fast first paint) while the
- * ~790KB app parses in the background — without breaking the single-file app
+ * ~790KB app parses in the background - without breaking the single-file app
  * (still one index.html, no external requests, global scope + strict mode
  * preserved, DOM fully available when the code runs).
  */
@@ -64,7 +64,7 @@ async function rebuild() {
   const source = assembleJS();
   const css = readFileSync('styles.css', 'utf8');
 
-  // 1) validate the source JS before doing anything — never ship a broken build
+  // 1) validate the source JS before doing anything - never ship a broken build
   validate(source);
 
   // Optionally minify. The minified code must still parse; validate it too.
@@ -82,7 +82,7 @@ async function rebuild() {
   // are inserted literally and never interpreted as replacement patterns.
   html = html.replace(cssPat, (m, a, _b, c) => a + '\n' + css + '\n' + c);
 
-  // 3) JS between markers — deferred, non-render-blocking pattern.
+  // 3) JS between markers - deferred, non-render-blocking pattern.
   //    The app code goes in an inert <script type="text/plain"> and a tiny
   //    launcher converts it to a deferred Blob script so it never blocks paint.
   //    Defensive: escape any literal </script that would otherwise terminate the
@@ -110,21 +110,21 @@ async function rebuild() {
   // inserted verbatim (a replacement STRING would corrupt them).
   html = html.replace(jsPat, () => jsBlock);
 
-  // 4) validate the assembled code BEFORE writing — a broken build must never
+  // 4) validate the assembled code BEFORE writing - a broken build must never
   //    overwrite a working index.html. Extract the emitted code, un-escape the
   //    sentinel, and syntax-check it. Only write if it passes.
   const m = html.match(/<script id="amv-app-code" type="text\/plain">\n([\s\S]*?)\n<\/script>/);
-  if (!m) throw new Error('assembled app code block not found — aborting write');
+  if (!m) throw new Error('assembled app code block not found - aborting write');
   validate(m[1].split(SCRIPT_SENTINEL).join('</script'));
 
   // Sanity: the embedded code must exactly equal what we intended to embed
-  // (the source, or its minified form) — guards against replacement corruption.
+  // (the source, or its minified form) - guards against replacement corruption.
   if (m[1].split(SCRIPT_SENTINEL).join('</script') !== app) {
-    throw new Error('assembled code does not match intended bundle — aborting write');
+    throw new Error('assembled code does not match intended bundle - aborting write');
   }
 
   writeFileSync('index.html', html);
-  console.log(`Built index.html — deferred non-blocking script${MINIFY ? ', minified' : ''}, validated OK.`);
+  console.log(`Built index.html - deferred non-blocking script${MINIFY ? ', minified' : ''}, validated OK.`);
 }
 
 if (cmd === 'check') {

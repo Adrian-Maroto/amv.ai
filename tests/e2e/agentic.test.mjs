@@ -1,5 +1,5 @@
 /* The agentic layer: chat must actually DO the work, not describe it.
-   Also guards the honesty rule — when the engine is off, we say so rather
+   Also guards the honesty rule - when the engine is off, we say so rather
    than faking a result. */
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
@@ -72,7 +72,7 @@ ok(honest.render === null,
 /* Video USED to be a lie: a setInterval faking a progress bar, producing
    nothing. It is now a real job against a real provider (see video.test.mjs).
    What this guards is that the FAKE never comes back. */
-section('Video is real — and the fake never returns');
+section('Video is real - and the fake never returns');
 
 const video = await page.evaluate(async () => {
   setTab('video');
@@ -87,7 +87,7 @@ const video = await page.evaluate(async () => {
 });
 ok(video.noInterval, 'genVid does NOT run a fake progress interval');
 ok(video.callsRealApi, 'it calls the real video endpoint');
-ok(video.engineFlagGone, 'the "not implemented" placeholder flag is gone — it IS implemented');
+ok(video.engineFlagGone, 'the "not implemented" placeholder flag is gone - it IS implemented');
 
 section('No JavaScript errors');
 ok(errors.length === 0, 'zero uncaught page errors', errors.slice(0, 3));

@@ -1,4 +1,4 @@
-/* THE NEXT STEP — a new user types one thing, gets a good answer, and leaves,
+/* THE NEXT STEP - a new user types one thing, gets a good answer, and leaves,
    never learning that AMV can do the work rather than describe it. Crew, Dev,
    Job Hunt and background automations are invisible from an empty chat box, so
    the product gets judged as a chatbot by people who never saw the rest of it.
@@ -118,8 +118,29 @@ ok(off.staysGone, 'and does not come back in a new conversation');
 ok(off.flag === '1', 'the choice is remembered');
 
 section('No JavaScript errors');
+section('A reply the user cut short earns nothing');
+{
+  /* Stop leaves a truncated answer. Offering to open half a file in Dev would
+     carry the truncation forward into a real project. */
+  // An earlier section turns suggestions off for good; clear that first, or
+  // this would pass for the wrong reason.
+  await page.evaluate(() => { saveStr('amv_nextstep_off', ''); const c = getCurConv(); if (c) c._nextShown = []; });
+  const html = await page.evaluate(() => _nextStepHTML([
+    { r: 'u', c: 'build me a complete todo app with a backend and a database and tests' },
+    { r: 'a', _stopped: true, c: '```js\n' + 'const x = 1;\n'.repeat(90) + '```\n' + 'more '.repeat(200) },
+  ]));
+  ok(html === '', 'a stopped answer offers no next step', JSON.stringify(html).slice(0, 60));
+
+  const finished = await page.evaluate(() => _nextStepHTML([
+    { r: 'u', c: 'build me a complete todo app with a backend and a database and tests' },
+    { r: 'a', c: '```js\n' + 'const x = 1;\n'.repeat(90) + '```\n' + 'more '.repeat(200) },
+  ]));
+  ok(finished.includes('next-step'), 'while the same answer, finished, does', finished.slice(0, 40));
+}
+
 ok(errors.length === 0, 'zero uncaught page errors', errors.slice(0, 3));
 
 await app.close();
+
 report();
 done();

@@ -1,4 +1,4 @@
-/* MARKETPLACE MODERATION — illegal listings (drugs, weapons, malware, etc.)
+/* MARKETPLACE MODERATION - illegal listings (drugs, weapons, malware, etc.)
    must be blocked server-side so they can't be bypassed from the client. */
 import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';

@@ -1,4 +1,4 @@
-/* ANTI-ABUSE — the "DoorDash method" defense.
+/* ANTI-ABUSE - the "DoorDash method" defense.
    The scam: pay, consume the compute (which costs real money the instant it's
    delivered), then claw the money back via chargeback or refund while keeping
    what you took. These tests prove AMV revokes access on a refund/chargeback,
@@ -50,7 +50,7 @@ await W.setEntitlement(env, 'cheat@test.com', 'free', { disputed: true });
 
 const s1 = await W._abuseStatus(env, 'cheat@test.com');
 ok(s1.disputes === 1, 'the chargeback is recorded', s1.disputes);
-ok(s1.blocked === true, 'ONE chargeback is enough to block — it is a fraud signal', s1.blocked);
+ok(s1.blocked === true, 'ONE chargeback is enough to block - it is a fraud signal', s1.blocked);
 ok((await ent('cheat@test.com')).plan === 'free', 'and paid access is revoked', (await ent('cheat@test.com')).plan);
 
 section('A single refund does NOT block (support does legit refunds)');
@@ -85,7 +85,7 @@ W.__setRequireUser(async () => ({ email: 'clean@test.com' }));
 r = await W.stripeCheckout(req({ plan: 'pro' }), env);
 const cd = await r.json().catch(() => ({}));
 // A clean account gets PAST the abuse gate. It may still fail later for missing
-// price config in this test env — what matters is it is NOT account_flagged.
+// price config in this test env - what matters is it is NOT account_flagged.
 ok(r.status !== 403 || cd.code !== 'account_flagged',
    'a clean account is not blocked as flagged', { status: r.status, code: cd.code });
 
@@ -156,7 +156,7 @@ section('A forged webhook is rejected');
 r = await W.stripeWebhook(new Request('https://api.amv.dev/v1/stripe/webhook', {
   method: 'POST', headers: { 'Content-Type': 'application/json', 'Stripe-Signature': 't=1,v1=deadbeef' }, body: evt
 }), env, { waitUntil() {} });
-ok(r.status === 400, 'a bad signature is refused — nobody can forge a refund event', r.status);
+ok(r.status === 400, 'a bad signature is refused - nobody can forge a refund event', r.status);
 
 report();
 done();

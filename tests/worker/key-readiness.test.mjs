@@ -1,4 +1,4 @@
-/* KEY READINESS — the promise is "the moment I paste a key, it works".
+/* KEY READINESS - the promise is "the moment I paste a key, it works".
    That fails silently in two ways: a feature whose endpoint does not exist
    (404 forever), or one that crashes instead of explaining what is missing.
    This suite checks every keyed surface: it degrades honestly WITHOUT the key,

@@ -1,4 +1,4 @@
-/* CREW / HANDOFF sync endpoints — these back the Crew jobs, approvals, and
+/* CREW / HANDOFF sync endpoints - these back the Crew jobs, approvals, and
    Handoff features. They work locally; these routes persist + sync them. Proven
    here: they require auth, they round-trip data, a handoff reaches the RIGHT
    recipient, the sender can't be spoofed, and one user can't tamper another's. */

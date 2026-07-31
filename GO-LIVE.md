@@ -1,11 +1,11 @@
-# AMV — Go Live Checklist
+# AMV - Go Live Checklist
 
 Everything in the app is already wired to run the moment it's connected to a
-live backend. The AI key never touches the browser — it lives as a secret on
+live backend. The AI key never touches the browser - it lives as a secret on
 your Cloudflare Worker, so usage, billing, and limits can't be bypassed. This
 is the exact, ordered list of what to set and where.
 
-Run `node preflight.mjs` at any time — it checks all of this and tells you
+Run `node preflight.mjs` at any time - it checks all of this and tells you
 precisely what's missing. Green = ready to deploy.
 
 ---
@@ -20,17 +20,17 @@ npx wrangler kv namespace create AMV_KV
 
 Copy the printed `id` into `wrangler.toml`, replacing `REPLACE_WITH_YOUR_KV_NAMESPACE_ID`.
 
-> This is the one item the preflight flags as an ERROR until it's done — because
+> This is the one item the preflight flags as an ERROR until it's done - because
 > nothing can persist without it.
 
 ## 2. Set your secrets (this is "putting the APIs")
 
 Set each with `npx wrangler secret put NAME` (it prompts for the value).
 
-### Required — the app won't fully run without these
+### Required - the app won't fully run without these
 | Secret | Unlocks |
 |---|---|
-| `ANTHROPIC_API_KEY` | The AI itself — chat, agents, Crew, research, everything |
+| `ANTHROPIC_API_KEY` | The AI itself - chat, agents, Crew, research, everything |
 | `JWT_SECRET` | Sign-up / login (any long random string, 32+ chars). Auth fails closed without it. |
 
 ### Strongly recommended
@@ -38,7 +38,7 @@ Set each with `npx wrangler secret put NAME` (it prompts for the value).
 |---|---|
 | `ADMIN_TOKEN` | Founder Dashboard + admin tools (any long random string) |
 | `EMAIL_API_KEY` | Password-reset emails **and** delivery of autonomous task results by email (Resend key) |
-| `GLOBAL_DAILY_USD_CAP` | Your daily spend ceiling across all users (defaults to $500) — your runaway-bill protection |
+| `GLOBAL_DAILY_USD_CAP` | Your daily spend ceiling across all users (defaults to $500) - your runaway-bill protection |
 
 ### Turn on paid plans + marketplace purchases (money)
 | Secret | Unlocks |
@@ -48,7 +48,7 @@ Set each with `npx wrangler secret put NAME` (it prompts for the value).
 | `STRIPE_PRICE_PRO`, `STRIPE_PRICE_ELITE`, `STRIPE_PRICE_ULTRA` | The price IDs for each plan |
 
 > Without Stripe configured, paid items are correctly **blocked** (no free
-> purchases) — the app degrades honestly.
+> purchases) - the app degrades honestly.
 
 ### Turn on integrations + more generation (optional, add anytime)
 | Secret | Unlocks |
@@ -59,7 +59,7 @@ Set each with `npx wrangler secret put NAME` (it prompts for the value).
 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` | SMS / phone verification |
 | `TURNSTILE_SECRET` | Cloudflare Turnstile bot protection on sign-up |
 | `PAYPAL_CLIENT_ID`, `PAYPAL_SECRET`, `PAYPAL_MODE`, `PAYPAL_PLAN_*`, `PAYPAL_WEBHOOK_ID` | PayPal as an alternative to Stripe |
-| `APP_URL` | Your live domain — used for secure payment redirects |
+| `APP_URL` | Your live domain - used for secure payment redirects |
 
 ## 3. Deploy the Worker
 
@@ -82,7 +82,7 @@ real backend. (Saved as `amv_api_base`; the app checks `AMV_API.live` everywhere
 ## 5. Verify
 
 ```bash
-npm run check        # full health gate — should say SHIPPABLE
+npm run check        # full health gate - should say SHIPPABLE
 ```
 
 - Sign up a test account → confirm it persists across a refresh (real backend).
@@ -95,4 +95,4 @@ npm run check        # full health gate — should say SHIPPABLE
 
 **What's already done for you:** every feature checks `AMV_API.live` and uses
 the real endpoints when connected, falling back to honest local/demo behavior
-when not. There is no code change needed to go live — only the config above.
+when not. There is no code change needed to go live - only the config above.

@@ -1,4 +1,4 @@
-/* PLAN SECURITY — the server must NEVER trust a client-supplied plan.
+/* PLAN SECURITY - the server must NEVER trust a client-supplied plan.
    A user editing localStorage.amv_plan or sending body.plan='ultra' must still
    be enforced as their real (server-DB) plan. Proves compute can't be stolen. */
 import { readFileSync, writeFileSync, mkdirSync } from 'fs';

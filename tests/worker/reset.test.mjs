@@ -1,8 +1,8 @@
-/* PASSWORD RESET — end to end.
+/* PASSWORD RESET - end to end.
 
    This flow was completely dead:
      1. No email provider was configured, so nothing ever sent.
-     2. The app still said "Reset link sent! Check your inbox." — a lie.
+     2. The app still said "Reset link sent! Check your inbox." - a lie.
      3. The email linked to <worker>/reset?token=... and that route DID NOT
         EXIST, so even a delivered email led to a 404.
 
@@ -68,7 +68,7 @@ section('No email provider: we must NOT claim an email was sent');
 r = await W.authReset(post('/auth/reset', { email: 'amarotovaleria@gmail.com' }), env);
 d = await r.json();
 ok(d.ok === true, 'the request succeeds (never leaks which emails exist)');
-ok(d.sent === false, 'but it reports sent:false — nothing actually went out', d.sent);
+ok(d.sent === false, 'but it reports sent:false - nothing actually went out', d.sent);
 
 const status = await (await W.authResetStatus(post('/auth/reset/status', {}), env)).json();
 ok(status.emailConfigured === false, 'the app can ask whether reset even works');
@@ -85,7 +85,7 @@ globalThis.fetch = async (url, opts) => {
 env = mkEnv({ EMAIL_API_KEY: 'resend-key', RESET_EMAIL_FROM: 'AMV <noreply@amv.ai>' });
 r = await W.authReset(post('/auth/reset', { email: 'amarotovaleria@gmail.com' }), env);
 d = await r.json();
-ok(d.sent === true, 'sent:true — an email genuinely went out', d.sent);
+ok(d.sent === true, 'sent:true - an email genuinely went out', d.sent);
 ok(emails.length === 1, 'the email provider was actually called', emails.length);
 ok(emails[0].body.to?.[0] === 'amarotovaleria@gmail.com', 'addressed to the right person', emails[0].body.to);
 
@@ -103,7 +103,7 @@ ok(!!token, 'a token is present in the link');
 
 const pageResp = await W.resetPage(new Request(link), env);
 const pageHtml = await pageResp.text();
-ok(pageResp.status === 200, 'GET /reset returns 200 — not a 404', pageResp.status);
+ok(pageResp.status === 200, 'GET /reset returns 200 - not a 404', pageResp.status);
 ok(/Set a new password/i.test(pageHtml), 'it serves a real "set a new password" page');
 ok(pageHtml.includes(token), 'the page carries the token through');
 ok(/\/auth\/reset\/confirm/.test(pageHtml), 'and posts to the confirm endpoint');

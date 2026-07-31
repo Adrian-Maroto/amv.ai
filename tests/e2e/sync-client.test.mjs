@@ -1,4 +1,4 @@
-/* SYNC, FROM THE APP'S SIDE — signing in used to overwrite whatever was on the
+/* SYNC, FROM THE APP'S SIDE - signing in used to overwrite whatever was on the
    device with whatever the server held. Anything done offline, or on a device
    that had not pushed yet, was gone the moment the user signed in. These
    assertions drive the real client merge. */
@@ -79,8 +79,32 @@ ok(typeof stamped.after === 'number' && stamped.after > 0, 'writing a message st
 ok(stamped.after >= stamped.before, 'and the stamp moves forward');
 
 section('No JavaScript errors');
+section('A pull cannot delete a skill this device just made');
+{
+  /* Skills and handoffs used to be stored straight over the top of whatever the
+     server sent. The server's copy is a union of everything it has SEEN - which
+     by definition excludes anything written here since the last push. */
+  const r = await page.evaluate(async () => {
+    store('amv_skills', [{ id: 'local-only', name: 'Local only', text: 'made here, never pushed' }]);
+    store('amv_handoffs', [{ id: 'h-local', title: 'Local handoff' }]);
+    AMV_API.syncPull = async () => ({
+      skills: [{ id: 'from-server', name: 'From server', text: 'x' }],
+      handoffs: [{ id: 'h-server', title: 'Server handoff' }],
+    });
+    await AMVSync.pull();
+    return {
+      skills: (load('amv_skills') || []).map(x => x.id).sort(),
+      handoffs: (load('amv_handoffs') || []).map(x => x.id).sort(),
+    };
+  });
+  ok(r.skills.includes('local-only'), 'the skill made on this device survives the pull', r.skills);
+  ok(r.skills.includes('from-server'), 'and the server\u2019s skill arrives', r.skills);
+  ok(r.handoffs.includes('h-local') && r.handoffs.includes('h-server'), 'same for handoffs', r.handoffs);
+}
+
 ok(errors.length === 0, 'zero uncaught page errors', errors.slice(0, 3));
 
 await app.close();
+
 report();
 done();

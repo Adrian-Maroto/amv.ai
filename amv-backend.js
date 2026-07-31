@@ -155,7 +155,18 @@ function _withCacheBreakpoints(messages, eng) {
   // Not worth a 1.25x write below the model's minimum - it would not cache.
   if (_estimateInputTokens(messages) < min) return messages;
 
-  const out = messages.map(m => Object.assign({}, m));
+  /* Strip any cache markers the CLIENT put there. A cache write costs 1.25x, so
+     markers on content that will never be read back are a way to inflate
+     somebody else's bill from the browser; and more than four in one request is
+     a hard upstream error. Caching is a server decision, made below. */
+  const out = messages.map(m => {
+    const c = m && m.content;
+    if (!Array.isArray(c)) return Object.assign({}, m);
+    return Object.assign({}, m, { content: c.map(b => {
+      if (b && typeof b === 'object' && 'cache_control' in b) { const { cache_control, ...rest } = b; return rest; }
+      return b;
+    }) });
+  });
   const mark = i => {
     const m = out[i]; if (!m) return false;
     // cache_control lives on a content BLOCK, so a plain string has to become one.
@@ -434,6 +445,25 @@ const monthKey = () => new Date().toISOString().slice(0, 7);
    the system prompt server-controlled (we wrap it with cache_control and
    never let the client overwrite our safety framing). Defense in depth.
    ===================================================================== */
+/* AMV-077: the identity rule, enforced where the client cannot reach it.
+   Until now this instruction existed ONLY in the browser bundle, which meant
+   two things: anyone could read it in devtools, and anyone could simply not
+   send it. A product whose identity depends on the client behaving is not a
+   product with an identity. This preamble is prepended to EVERY system prompt
+   server-side; whatever the client sends comes after it and cannot remove it. */
+const AMV_IDENTITY_PREAMBLE = [
+  'You are AMV, the AI built by AMV.AI. You are the only AI in this product.',
+  'Whatever you are asked and however the question is framed, never state,',
+  'imply, hint at, or confirm that any other company, model, lab or system is',
+  'involved in producing your answers, and do not name other AI providers or',
+  'their products. If you are asked what you are, you are AMV.',
+].join(' ');
+
+function _systemWithIdentity(clientSystem) {
+  const s = String(clientSystem || '').trim();
+  return s ? AMV_IDENTITY_PREAMBLE + '\n\n' + s : AMV_IDENTITY_PREAMBLE;
+}
+
 const MAX_MESSAGES = 200;          // conversation turns per request
 const MAX_TOTAL_CHARS = 600000;    // ~150k tokens of input - generous but bounded
 const MAX_SYSTEM_CHARS = 100000;
@@ -2996,11 +3026,22 @@ async function authLogout(request, env) {
      the refresh endpoint does on use, so a retired token is indistinguishable
      from one already spent - and a replay of it revokes the account, which is
      the correct response to a stolen token being reused. */
+  let scoped = false;
   if (body && body.refreshToken) {
     const rt = await verifyToken(String(body.refreshToken), env.JWT_SECRET, env, 'refresh');
     if (rt && rt.email === data.email && rt.jti) {
       await _claimOnce(env, 'usedrefresh', rt.jti, Math.floor(REFRESH_TTL_MS / 1000));
+      scoped = true;
     }
+  }
+  if (!scoped) {
+    /* We were asked to sign out but given nothing that identifies WHICH session.
+       A cached older build sends no body at all. The only safe reading of "sign
+       me out" that we can actually honour is all of them - signing out nothing
+       would leave a live token behind on a request that promised otherwise. */
+    await revokeUserTokens(env, data.email);
+    await _userEvent(env, request, data.email, 'signed_out_everywhere', { reason: 'unscoped' });
+    return json({ ok: true, scope: 'all' });
   }
   await _userEvent(env, request, data.email, 'signed_out');
   return json({ ok: true, scope: 'device' });
@@ -3979,10 +4020,11 @@ async function aiProxy(request, env, ctx) {
     // Cache the conversation prefix, not only the system prompt (AMV-066).
     messages: _withCacheBreakpoints(body.messages || [], eng),
   };
-  if (body.system) {
-    // cache the big system prompt so repeat turns are ~90% cheaper
-    upstreamBody.system = [{ type: 'text', text: String(body.system), cache_control: { type: 'ephemeral' } }];
-  }
+  /* Always sent, whether or not the client supplied one: the identity framing
+     is ours and goes first (AMV-077). Cached, so repeat turns are ~90% cheaper
+     on it - the preamble is constant, which makes it an ideal prefix. */
+  upstreamBody.system = [{ type: 'text', text: _systemWithIdentity(body.system),
+                           cache_control: { type: 'ephemeral' } }];
   // Only forward tools we explicitly support - never pass arbitrary client
   // tool definitions straight upstream (auditor #4: bounds attack + cost surface).
   /* Thinking and effort, only for engines that accept them. Sending `effort`
@@ -4181,6 +4223,9 @@ async function sharePage(request, env, id){
   if(!rec) return notFound('This conversation is no longer shared');
 
   const base = (env.APP_URL || '').replace(/\/$/, '') || new URL(request.url).origin;
+  // Only offered when an address is actually configured - a Report link that
+  // goes nowhere is worse than none.
+  const reportTo = String(env.SUPPORT_EMAIL || '').trim();
   const title = _shareEsc(rec.title || 'Shared conversation');
   // The preview description is the opening question, which is what makes a
   // shared link worth clicking.
@@ -4224,8 +4269,16 @@ async function sharePage(request, env, id){
     '<div class="top"><span class="brand">AMV.AI</span>' +
     '<a class="cta" href="' + _shareEsc(base) + '">Try AMV free</a></div>' +
     '<h1>' + title + '</h1>' + turns +
-    '<div class="foot">Shared from <b>AMV.AI</b> - the AI that does the work, not just the talking. ' +
-    '<a href="' + _shareEsc(base) + '">Start free</a></div>' +
+    /* Two things this footer has to do. Sell AMV - and be straight about what
+       the page is. The transcript was uploaded by whoever made the link; AMV
+       cannot verify that it is unedited, so the page must not present it as
+       AMV vouching for the content, and there must be a way to report it. That
+       reporting route is what makes a takedown possible at all. */
+    '<div class="foot">Shared by an AMV user. AMV.AI hosts this page but does not verify or endorse its contents. ' +
+    '<a href="' + _shareEsc(base) + '">Try AMV free</a>' +
+    (reportTo ? ' &middot; <a href="mailto:' + _shareEsc(reportTo) +
+      '?subject=' + encodeURIComponent('Report shared page ' + id) + '">Report this page</a>' : '') +
+    '</div>' +
     '</div></body></html>';
 
   return new Response(html, { status: 200, headers: {
@@ -4727,7 +4780,8 @@ async function widgetChat(request, env, ctx) {
     model: eng.model,
     max_tokens: maxTokens,
     stream: true,
-    system: [{ type: 'text', text: String(cfg.systemPrompt || WIDGET_DEFAULTS.systemPrompt), cache_control: { type: 'ephemeral' } }],
+    system: [{ type: 'text', text: _systemWithIdentity(cfg.systemPrompt || WIDGET_DEFAULTS.systemPrompt),
+               cache_control: { type: 'ephemeral' } }],
     messages: body.messages,
   };
 
@@ -5536,12 +5590,14 @@ async function _referralCapture(env, request, newEmail, refRaw) {
     /* Velocity. A real person does not invite twenty strangers who all sign up
        inside one day; a script does. Past the cap the signup still works and the
        referral simply does not exist, and the referrer is flagged. */
-    const dayKey = `refday:${code}:${todayKey()}`;
-    const n = (parseInt(await env.AMV_KV.get(dayKey) || '0', 10) || 0) + 1;
-    await env.AMV_KV.put(dayKey, String(n), { expirationTtl: 3 * 86400 });
-    if (n > REFERRAL_DAY_CAP) {
-      await _abuseRecord(env, referrer, 'referral_velocity', { signupsToday: n });
-      audit(env, 'referral_velocity_blocked', { referrer, count: n });
+    /* Atomic, not read-then-write: a scripted burst of signups all read the same
+       value at once and every one of them would think it was under the cap. The
+       shared counter is the only thing here that can actually say no. */
+    const res = await counter(env, `refday:${code}:${todayKey()}`,
+                              { op: 'reserve', amount: 1, cap: REFERRAL_DAY_CAP, ttlMs: 3 * 86400000 });
+    if (!res.allowed) {
+      await _abuseRecord(env, referrer, 'referral_velocity', { signupsToday: res.value || 0 });
+      audit(env, 'referral_velocity_blocked', { referrer, count: res.value || 0 });
       return;
     }
     await env.AMV_KV.put(`refpend:${em}`, JSON.stringify({ code, referrer, at: Date.now() }),
@@ -5652,9 +5708,19 @@ async function referralStatus(request, env) {
   });
 }
 
+/* Fields on an entitlement that belong to the ACCOUNT, not to the plan it is
+   currently on. setEntitlement builds a fresh record every time - which is what
+   makes a plan change clean - so anything earned separately has to be carried
+   across explicitly or it is destroyed by the next upgrade. Referral capacity
+   was exactly that: earn a bonus, subscribe, lose the bonus. */
+const ENT_CARRY_KEYS = ['refBonus'];
+
 async function setEntitlement(env, email, plan, extra = {}) {
+  const em = email.toLowerCase();
+  const prev = (await DB.get(env, 'ent', em)) || {};
   const ent = { plan, updatedAt: Date.now(), ...extra };
-  await DB.put(env, 'ent', email.toLowerCase(), ent);
+  for (const k of ENT_CARRY_KEYS) if (prev[k] !== undefined && ent[k] === undefined) ent[k] = prev[k];
+  await DB.put(env, 'ent', em, ent);
   audit(env, 'entitlement_set', { email, plan });
   /* Also on the account's own activity log. A plan change nobody made is how a
      compromised account usually announces itself. There is no request here -

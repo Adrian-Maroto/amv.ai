@@ -1,4 +1,4 @@
-/* BOT PROTECTION on auth — honeypot + optional Turnstile CAPTCHA.
+/* BOT PROTECTION on auth - honeypot + optional Turnstile CAPTCHA.
    Proves: a filled honeypot is rejected (bot), signup/login work normally with
    no captcha configured (honest degradation), and when TURNSTILE_SECRET is set a
    missing/invalid token is rejected while a valid one passes. */

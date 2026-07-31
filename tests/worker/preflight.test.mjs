@@ -1,5 +1,5 @@
 /* PREFLIGHT self-test.
-   A preflight that only passes on a good config is worthless — it has to FAIL
+   A preflight that only passes on a good config is worthless - it has to FAIL
    on a broken one. This runs preflight.mjs against deliberately-broken copies of
    wrangler.toml and asserts it catches each class of problem. */
 import { readFileSync, writeFileSync, mkdirSync, copyFileSync, existsSync } from 'fs';

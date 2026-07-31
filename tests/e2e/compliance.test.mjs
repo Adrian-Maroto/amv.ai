@@ -1,4 +1,4 @@
-/* COMPLIANCE — the two protections that decide whether the business gets sued
+/* COMPLIANCE - the two protections that decide whether the business gets sued
    or loses money: a real consent record, and an age gate on anything involving
    money. A minor's purchase comes straight back as a chargeback, so the age
    gate protects revenue as much as it protects the child. */

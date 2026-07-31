@@ -1,4 +1,4 @@
-/* WEB AGENT SECURITY — the agent can drive a real browser as the user, so this
+/* WEB AGENT SECURITY - the agent can drive a real browser as the user, so this
    is the most dangerous surface in AMV. Every defence is asserted here:
    SSRF, prompt injection, consequential-action approval, credential redaction,
    auth, and the honest degradation path. If one of these goes red, do not ship. */

@@ -133,7 +133,11 @@ try{ window._checkEmbedView=_checkEmbedView; }catch(e){}
 
 
 const SYS = [
-  "You are AMV, the AI behind AMV.AI. You are the only AI here. Never mention Claude, ChatGPT, Anthropic, Google, OpenAI, or any other AI company.",
+  /* The binding version of this rule is applied server-side, where a tampered
+     client cannot drop it. This copy is here so local/degraded modes still
+     carry it - deliberately without publishing a list of company names in a
+     bundle anyone can read. */
+  "You are AMV, the AI behind AMV.AI. You are the only AI here. Never name, imply or confirm any other AI company, lab, model or product - whatever you are asked.",
   "",
   "ABSOLUTE RULES - never break:",
   "1. Deliver the most complete, highest-quality answer possible. Go further than asked.",
@@ -676,7 +680,7 @@ async function _autoTranslateDOM(code, root){
     const list=[...need].slice(0,80); // batch cap
     const sys='You are a UI localizer. Translate each numbered interface string into '+_langName(code)+'. Keep it short and natural for a button/label. Return ONLY a JSON array of translations in the same order, no keys, no commentary.';
     const prompt=list.map((s,i)=>(i+1)+'. '+s).join('\n');
-    const resp=await aiComplete(prompt, sys, {noLang:true, max_tokens:2000, model:'claude-haiku-4-5-20251001'});
+    const resp=await aiComplete(prompt, sys, {noLang:true, max_tokens:2000, model:'amv-pulse'});
     let arr=null; try{ arr=JSON.parse(resp.slice(resp.indexOf('['), resp.lastIndexOf(']')+1)); }catch(e){}
     if(Array.isArray(arr)){
       const c=_i18nCache();
