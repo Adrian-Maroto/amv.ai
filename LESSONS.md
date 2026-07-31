@@ -344,3 +344,20 @@ nobody ever saw - quietly under-reporting the change. Anything that becomes the
 reference point for a future comparison must be written after the thing it is
 supposed to reference has happened, and the attempt must be released so it
 retries rather than being silently lost.
+
+## 35. One secret, one holder
+Three surfaces needed the admin token and all three did something different:
+one asked every session and promised it was never stored, one wrote it to
+localStorage, and one sent the signed-in user's ACCESS token to an endpoint
+gated on the admin secret - a request that could only ever be refused, which
+surfaced to the operator as "network error". A credential used in more than one
+place needs a single holder with a single lifetime, or the weakest treatment
+becomes the real one.
+
+## 36. Work done while the user is away has to be visible when they return
+Automations ran, produced real answers, and stored them - and the only trace
+was a toast that vanished in six seconds and a number on a nav item. The single
+strongest reason to come back to a product was its least visible feature. If
+something happens while the user is gone, the place they land has to show it;
+anything that requires them to go looking will only be found by people who
+already knew.

@@ -7064,3 +7064,60 @@ html,body{height:100%;height:100dvh}
 }
 .fd-digest-out.good{color:var(--grn)}
 .fd-digest-out.bad{color:var(--red)}
+
+/* ==========================================================================
+   LAYER A37 - Command Center admin token prompt
+   Shown inline rather than in a modal, so an operator cannot miss it behind
+   other UI, and so a rejected token can explain itself in place.
+   ========================================================================== */
+.adm-tokwrap{
+  margin:var(--sp-4) 0;padding:var(--sp-4);border-radius:var(--r-md);
+  background:var(--s2);border:1px solid var(--bd);max-width:520px;
+}
+.adm-tokmsg{font-size:var(--t-sm);color:var(--tx);line-height:1.6;margin-bottom:var(--sp-3)}
+.adm-tokrow{display:flex;gap:var(--sp-2);align-items:center;flex-wrap:wrap}
+.adm-tokrow .inp{flex:1 1 200px;min-width:0;font-size:var(--t-sm)}
+.adm-toknote{font-size:var(--t-xs);color:var(--mu);margin-top:var(--sp-2)}
+@media (max-width:520px){
+  .adm-tokrow{flex-direction:column;align-items:stretch}
+  .adm-tokrow .btn{width:100%}
+}
+
+/* ==========================================================================
+   LAYER A38 - While you were away
+   The card that shows work AMV finished on its own. It sits above the
+   conversation because it is the reason the user opened the app; it is quiet
+   enough not to read as an ad for a feature they already own.
+   ========================================================================== */
+.away-card{
+  margin:0 0 var(--sp-5);padding:var(--sp-4);border-radius:var(--r-lg);
+  background:var(--s2);border:1px solid var(--bd);
+}
+.away-top{margin-bottom:var(--sp-3)}
+.away-h{font-size:var(--t-md);font-weight:700;color:var(--tx);letter-spacing:-.2px}
+.away-sub{font-size:var(--t-sm);color:var(--mu);margin-top:2px}
+.away-list{display:flex;flex-direction:column}
+.away-item{border-top:1px solid var(--bd);padding:var(--sp-3) 0}
+.away-item:first-child{border-top:0;padding-top:0}
+.away-head{
+  display:flex;width:100%;gap:var(--sp-3);align-items:baseline;justify-content:space-between;
+  background:none;border:0;padding:0;cursor:pointer;text-align:left;color:inherit;font:inherit;
+}
+.away-head:hover .away-t{color:var(--accent)}
+.away-head:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:var(--r-xs)}
+.away-t{font-size:var(--t-sm);font-weight:600;color:var(--tx);line-height:1.45}
+.away-w{font-size:var(--t-xs);color:var(--mu);white-space:nowrap;flex-shrink:0}
+.away-snip{font-size:var(--t-sm);color:var(--mu);line-height:1.6;margin-top:5px}
+.away-full{font-size:var(--t-sm);color:var(--tx);line-height:1.7;margin-top:var(--sp-3)}
+.away-full p{margin:0 0 10px}
+.away-full pre{overflow-x:auto;max-width:100%}
+.away-empty{color:var(--mu);font-style:italic}
+.away-more{font-size:var(--t-xs);color:var(--mu);margin-top:var(--sp-3)}
+.away-acts{display:flex;gap:var(--sp-2);flex-wrap:wrap;margin-top:var(--sp-4)}
+@media (max-width:520px){
+  .away-card{padding:var(--sp-3);border-radius:var(--r-md)}
+  .away-head{flex-direction:column;gap:2px}
+  .away-w{align-self:flex-start}
+  .away-acts{flex-direction:column;align-items:stretch}
+  .away-acts .btn{width:100%}
+}

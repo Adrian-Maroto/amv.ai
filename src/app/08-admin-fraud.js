@@ -403,6 +403,59 @@ function _admBars(obj, emptyMsg){
   const max=Math.max(...keys.map(k=>obj[k]));
   return '<div class="adm-barlist">'+keys.sort((a,b)=>obj[b]-obj[a]).map(k=>'<div class="adm-brow"><span class="adm-brow-l">'+escH(k)+'</span><div class="adm-brow-track"><div class="adm-brow-fill" style="width:'+Math.max(4,obj[k]/max*100)+'%"></div></div><span class="adm-brow-v">'+obj[k]+'</span></div>').join('')+'</div>';
 }
+/* ══════════════════════════════════════════════════════════════
+   AMV-082  THE ADMIN TOKEN - one place, in memory, never at rest.
+
+   Three surfaces needed it and all three did something different. The Founder
+   Dashboard asked for it every session and promised, in its own copy, that it
+   is "never stored". The Errors dashboard saved it into localStorage, which is
+   exactly storing it - readable by any script that ever gets injected, and
+   still sitting there tomorrow. And the Command Center sent the signed-in
+   user's ACCESS token to an endpoint gated on the admin secret, which can only
+   ever be refused: that panel could not load, and said "network error" when it
+   did not.
+
+   So: one holder, in memory for the session only, shared by all three. It dies
+   with the tab, which is the property the copy already promised.
+   ══════════════════════════════════════════════════════════════ */
+let _ADMIN_TOK = '';
+function _adminToken(){ return _ADMIN_TOK; }
+function _setAdminToken(v){ _ADMIN_TOK = String(v || '').trim(); return _ADMIN_TOK; }
+function _clearAdminToken(){ _ADMIN_TOK = ''; }
+/* Anything a previous build left on disk is a live secret in the wrong place.
+   Remove it once, on load, rather than waiting for someone to notice. */
+try{
+  if(loadStr('amv_admin_token')){ saveStr('amv_admin_token',''); }
+  try{ localStorage.removeItem('amv_admin_token'); }catch(e){}
+}catch(e){}
+try{ window._adminToken=_adminToken; window._setAdminToken=_setAdminToken; window._clearAdminToken=_clearAdminToken; }catch(e){}
+
+/* The prompt the Command Center shows when it has no token yet. Rendered into
+   the page rather than a modal so it cannot be missed behind other UI. */
+function _admTokenPromptHTML(msg){
+  return '<div class="adm-tokwrap">'+
+    '<div class="adm-tokmsg">'+escH(msg || 'Platform-wide figures are gated on your Worker’s ADMIN_TOKEN secret.')+'</div>'+
+    '<div class="adm-tokrow">'+
+      '<label class="sr-only" for="adm-tok">Admin token</label>'+
+      '<input id="adm-tok" type="password" autocomplete="off" class="inp" placeholder="Admin token">'+
+      '<button class="btn bp" id="adm-tok-go" type="button">Load</button>'+
+    '</div>'+
+    '<div class="adm-toknote">Kept in memory for this tab only - never written to this device.</div>'+
+  '</div>';
+}
+function _wireAdmTokenPrompt(root){
+  const go = () => {
+    const v = (document.getElementById('adm-tok') || {}).value || '';
+    if(!v.trim()){ return; }
+    _setAdminToken(v);
+    S._admStatsError = '';
+    _admFetchStats();
+  };
+  const b = (root || document).querySelector('#adm-tok-go'); if(b) on(b,'click',go);
+  const i = (root || document).querySelector('#adm-tok');
+  if(i) on(i,'keydown',(e)=>{ if(e.key==='Enter'){ e.preventDefault(); go(); } });
+}
+
 function renderAdminView(){
   const vc=$('vc'); if(!vc) return;
   if(!isAdmin()){ vc.innerHTML='<div class="sv fi"><div class="vi"><h2>Admin</h2><p class="vsub">This area is for the workspace operator.</p></div></div>'; return; }
@@ -412,7 +465,9 @@ function renderAdminView(){
   // pull real platform-wide stats when backend is live. Re-fetch if stale (>3 min)
   // so the dashboard keeps reflecting current cross-user activity.
   const stale = S._admStats && (Date.now()-(S._admStats.generatedAt||0) > 180000);
-  if(backendLive && (!S._admStats || stale) && !S._admStatsLoading){ _admFetchStats(); }
+  /* Only fetch when there is a token to fetch WITH. Firing without one used to
+     produce a guaranteed 403 that surfaced as "network error". */
+  if((loadStr('amv_api_base')||'') && _adminToken() && (!S._admStats || stale) && !S._admStatsLoading){ _admFetchStats(); }
   vc.innerHTML='<div class="sv fi"><div class="vi">'+
     '<span class="eyebrow">Operator</span>'+
     '<h2>Command Center</h2>'+
@@ -421,30 +476,49 @@ function renderAdminView(){
        backendLive?(S._admStatsLoading?'Loading live platform data…':'<button class="adm-refresh" data-admrefresh="1">Load live platform data</button>'):
        'Local metrics (this device). Connect the backend for platform-wide data.')+'</p>'+
     '<div class="adm-tabs">'+_ADMIN_TABS.map(t=>'<button class="adm-tab'+(t[0]===tab?' on':'')+'" data-atab="'+t[0]+'">'+t[1]+'</button>').join('')+'</div>'+
+    /* Gated on a backend URL, not on being signed in. The admin token is a
+       separate credential from the user session - requiring a session here
+       would hide the prompt from an operator who has one but not the other. */
+    ((loadStr('amv_api_base')||'') && !live && !S._admStatsLoading ? _admTokenPromptHTML(S._admStatsError) : '')+
     '<div id="adm-body"></div>'+
   '</div></div>';
   vc.querySelectorAll('[data-atab]').forEach(b=>on(b,'click',()=>{ S._adminTab=b.dataset.atab; renderAdminView(); }));
-  const rb=vc.querySelector('[data-admrefresh]'); if(rb) on(rb,'click',()=>_admFetchStats());
+  const rb=vc.querySelector('[data-admrefresh]'); if(rb) on(rb,'click',()=>{
+    // No token, no request - ask for one rather than firing a call that cannot pass.
+    if(!_adminToken()){ const i=document.getElementById('adm-tok'); if(i) i.focus(); return; }
+    _admFetchStats();
+  });
+  _wireAdmTokenPrompt(vc);
   _admRenderTab(tab, backendLive, live);
 }
 /* Fetch real cross-user platform stats from the backend and cache them. */
 async function _admFetchStats(){
-  const base=loadStr('amv_api_base')||''; const tok=loadStr('amv_api_token')||AMV_API.token||'';
-  if(!base){ return; }
-  S._admStatsLoading=true;
+  const base=loadStr('amv_api_base')||'';
+  /* The ADMIN token, not the signed-in user's. These endpoints are gated on the
+     Worker's ADMIN_TOKEN secret; sending an access token here was a request
+     that could only ever be refused. */
+  const tok=_adminToken();
+  if(!base || !tok){ S._admStatsError = !base ? 'Connect your backend first (Settings \u2192 Live/Backend).' : ''; return; }
+  S._admStatsLoading=true; S._admStatsError='';
   try{ if(S.tab==='admin') renderAdminView(); }catch(e){}
   try{
     const r=await fetchDeadline(base.replace(/\/$/,'')+'/v1/admin/stats',{headers:{'Authorization':'Bearer '+tok}},15000);
     if(r.ok){ S._admStats=await r.json(); }
-    else { _logErr('adminStats', new Error('HTTP '+r.status)); }
-  }catch(e){ _logErr('adminStats', e); }
+    else if(r.status===403){
+      // A wrong token is a wrong token - say so, and drop it so the next
+      // attempt asks again instead of retrying something already rejected.
+      _clearAdminToken();
+      S._admStatsError='That admin token was rejected.';
+    }
+    else { _logErr('adminStats', new Error('HTTP '+r.status)); S._admStatsError='Could not load platform stats ('+r.status+').'; }
+  }catch(e){ _logErr('adminStats', e); S._admStatsError='Could not reach the backend.'; }
   S._admStatsLoading=false;
   try{ if(S.tab==='admin') renderAdminView(); }catch(e){}
 }
 /* Fetch the real financial statement (all transactions) from the backend. */
 async function _admFetchFinance(){
-  const base=loadStr('amv_api_base')||''; const tok=loadStr('amv_api_token')||AMV_API.token||'';
-  if(!base){ return; }
+  const base=loadStr('amv_api_base')||''; const tok=_adminToken();
+  if(!base || !tok){ return; }
   if(S._admFinanceLoading) return;
   S._admFinanceLoading=true;
   try{

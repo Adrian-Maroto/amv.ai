@@ -344,10 +344,17 @@ function _digestCardHTML(){
     '<div id="fd-digest-out" class="fd-digest-out" role="status" aria-live="polite"></div>'+
   '</div>';
 }
-function _wireDigestCard(base, tok){
+function _wireDigestCard(){
   const out = $('fd-digest-out');
   const say = (t, kind) => { if(out){ out.className = 'fd-digest-out' + (kind ? ' ' + kind : ''); out.textContent = t; } };
+  /* Read at click time, not captured when the card was built - the operator may
+     correct the token after this card exists. */
   const call = async (qs) => {
+    const base = loadStr('amv_api_base')||'';
+    const tok = ($('fd-token') && $('fd-token').value || '').trim()
+      || ((typeof _adminToken==='function') ? _adminToken() : '');
+    if(!base) throw new Error('connect your backend first');
+    if(!tok) throw new Error('enter your admin token above');
     const r = await fetchDeadline(base.replace(/\/$/,'')+'/admin/digest'+qs,
       { headers:{ 'Authorization':'Bearer '+tok } }, 20000);
     const d = await r.json().catch(()=>({}));
@@ -1297,11 +1304,16 @@ function _renderSetPaneInner(){
       '<div class="set-title">Founder Dashboard</div>'+
       '<div class="set-sub">Live platform spend, users, revenue, and abuse signals. Operator-only.</div>'+
       '<div id="fd-body"><div class="fd-loading">Loading platform stats\u2026</div></div>'+
+      '<div id="fd-digest-host"></div>'+
       '<div class="fd-token-row"><input id="fd-token" type="password" autocomplete="off" placeholder="Admin token" class="inp" style="max-width:240px"/>'+
         '<button class="btn bp" id="fd-load" style="font-size:12px">Load stats</button></div>'+
       '<div class="fd-note">Your admin token is set as the ADMIN_TOKEN secret on your Worker. It\u2019s never stored - paste it here each session.</div>';
+    // Pre-fill from the session holder so the operator pastes it once per tab
+    // rather than once per screen. Still never written to this device.
+    try{ const t0=(typeof _adminToken==='function')?_adminToken():''; if(t0 && $('fd-token')) $('fd-token').value=t0; }catch(e){}
     const loadStats=async()=>{
       const tok=($('fd-token')&&$('fd-token').value||'').trim();
+      try{ if(tok && typeof _setAdminToken==='function') _setAdminToken(tok); }catch(e){}
       const base=loadStr('amv_api_base')||'';
       const body=$('fd-body');
       if(!base){ body.innerHTML='<div class="fd-empty">Connect your backend first (Settings \u2192 Live/Backend) to see platform stats.</div>'; return; }
@@ -1311,8 +1323,12 @@ function _renderSetPaneInner(){
         const r=await fetchDeadline(base.replace(/\/$/,'')+'/v1/admin/stats',{headers:{'Authorization':'Bearer '+tok}},15000);
         if(!r.ok){ body.innerHTML='<div class="fd-empty">'+(r.status===403?'Invalid admin token.':'Could not load stats ('+r.status+').')+'</div>'; return; }
         const d=await r.json();
-        body.innerHTML=_founderDashHTML(d)+_digestCardHTML();
-        _wireDigestCard(base, tok);
+        body.innerHTML=_founderDashHTML(d);
+        /* Rendered once, into its own host. It used to be appended to the
+           stats body, so the pane's own delayed reload rebuilt it and wiped a
+           preview the operator was in the middle of reading. */
+        const dh=$('fd-digest-host');
+        if(dh && !dh.firstChild){ dh.innerHTML=_digestCardHTML(); _wireDigestCard(); }
         // wire kill switch
         const kbtn=$('fd-kill');
         if(kbtn) on(kbtn,'click',async()=>{

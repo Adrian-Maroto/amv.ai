@@ -1051,7 +1051,8 @@ try{ window.openMySites=openMySites; }catch(e){}
 /* ── Error dashboard: what is actually breaking for your users ──────────── */
 async function openErrors(){
   const ovr=$('ovr'); if(!ovr) return;
-  const token = loadStr('amv_admin_token') || '';
+  // In memory for this tab only (AMV-082) - it used to be written to disk.
+  const token = (typeof _adminToken==='function') ? _adminToken() : '';
   ovr.innerHTML='<div class="share-modal err-modal"><div class="share-title">Errors</div><p class="share-sub">Loading\u2026</p></div>';
   ovr.classList.add('on');
 
@@ -1072,7 +1073,7 @@ async function openErrors(){
     data = await r.json();
     if(data.error) throw new Error(data.error);
   }catch(e){
-    if(/unauthorized/i.test(e.message||'')){ saveStr('amv_admin_token',''); _errAskToken('That admin token was rejected.'); return; }
+    if(/unauthorized/i.test(e.message||'')){ try{ _clearAdminToken(); }catch(_){} _errAskToken('That admin token was rejected.'); return; }
     ovr.innerHTML='<div class="share-modal err-modal"><div class="share-title">Errors</div>'+
       '<p class="share-sub">Couldn\u2019t load: '+escH(e.message)+'</p>'+
       '<div class="share-actions"><button class="btn bs" id="er-x">Close</button></div></div>';
@@ -1140,6 +1141,7 @@ function _errAskToken(msg){
     '<div class="share-title">Admin access</div>'+
     '<p class="share-sub">'+(msg?escH(msg)+' ':'')+'Enter your ADMIN_TOKEN (the secret you set on the Worker) to see what\u2019s breaking for your users.</p>'+
     '<input id="er-tok" class="inp" type="password" placeholder="ADMIN_TOKEN" autocomplete="off">'+
+    '<p class="share-sub" style="margin-top:8px;font-size:11px">Kept in memory for this tab only - never written to this device.</p>'+
     '<div class="share-actions">'+
       '<button class="btn bp" id="er-go">View errors</button>'+
       '<button class="btn bs" id="er-x">Cancel</button>'+
@@ -1148,7 +1150,9 @@ function _errAskToken(msg){
   on($('er-go'),'click',()=>{
     const v=($('er-tok')||{}).value||'';
     if(!v.trim()) return;
-    saveStr('amv_admin_token', v.trim());
+    // Session memory, not localStorage - a secret at rest is a secret an
+    // injected script can read tomorrow (AMV-082).
+    _setAdminToken(v);
     openErrors();
   });
   on($('er-x'),'click',closeOvr);

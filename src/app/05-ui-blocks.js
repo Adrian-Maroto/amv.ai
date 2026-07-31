@@ -1521,9 +1521,14 @@ function renderChatMsgs() {
     const cv=$('cv'); if(cv) cv.classList.add('cv-home');
     // Greeting sits above the composer; the starter chips render BELOW it.
     cm.innerHTML=
+      /* Work finished in the background goes ABOVE the greeting - it is the
+         reason they opened the app, and it is the one thing a chat box cannot
+         tell them (AMV-083). Usually renders nothing. */
+      (typeof _awayCardHTML==='function' ? _awayCardHTML() : '')+
       '<div class="chome">'+
         '<h1 class="chome-title"><span class="chome-greet">'+title+'</span></h1>'+
       '</div>';
+    try{ if(typeof _wireAwayCard==='function') _wireAwayCard(cm); }catch(e){}
     const chips=$('chome-chips');
     if(chips){
       chips.innerHTML=
@@ -1548,7 +1553,11 @@ function renderChatMsgs() {
   const _cv=$('cv'); if(_cv) _cv.classList.remove('cv-home');
   const _ch=$('chome-chips'); if(_ch) _ch.innerHTML='';
   document.querySelectorAll('.chome-recent').forEach(e=>e.remove());
-  cm.innerHTML=msgs.map((m,i)=>{
+  cm.innerHTML=
+  /* Same card as the home screen, at the top of an open conversation - a
+     returning user is just as likely to land in yesterday's chat. */
+  (typeof _awayCardHTML==='function' ? _awayCardHTML() : '')+
+  msgs.map((m,i)=>{
     const isU=m.r==='u';
     const rawText=m.d||(typeof m.c==='string'?m.c:'');
     let content;
@@ -1624,6 +1633,7 @@ function renderChatMsgs() {
     b.closest('.next-step')?.remove();
     try{ toast('Fine - no more suggestions.','info',2500); }catch(e){}
   }));
+  try{ if(typeof _wireAwayCard==='function') _wireAwayCard(cm); }catch(e){}
 
   cm.scrollTop=cm.scrollHeight;
   const snd=$('snd'); if(snd) snd.disabled=S.busy;

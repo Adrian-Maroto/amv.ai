@@ -127,8 +127,15 @@ section('A failed preview says so instead of showing an empty box');
   await wire({ previewFails: true });
   await openDashboard();
   await page.evaluate(() => document.getElementById('fd-digest-preview').click());
-  await page.waitForFunction(() => /Could not build/.test(document.getElementById('fd-digest-out').textContent), { timeout: 15000 });
-  ok(/metrics unavailable/.test(await out()), 'with the reason from the server', await out());
+  /* Read the text in the SAME evaluate that observes it. Reading twice let the
+     pane's delayed stats reload land in between and clear the box - which was a
+     real defect in the card, now fixed, and a race this assertion should not
+     depend on either way. */
+  const shown = await page.waitForFunction(() => {
+    const t = document.getElementById('fd-digest-out').textContent;
+    return /Could not build/.test(t) ? t : null;
+  }, { timeout: 15000 }).then(h => h.jsonValue());
+  ok(/metrics unavailable/.test(shown), 'with the reason from the server', shown);
 }
 
 section('It reads on a phone');

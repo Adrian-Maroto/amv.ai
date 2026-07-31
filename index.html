@@ -7150,6 +7150,63 @@ html,body{height:100%;height:100dvh}
 .fd-digest-out.good{color:var(--grn)}
 .fd-digest-out.bad{color:var(--red)}
 
+/* ==========================================================================
+   LAYER A37 - Command Center admin token prompt
+   Shown inline rather than in a modal, so an operator cannot miss it behind
+   other UI, and so a rejected token can explain itself in place.
+   ========================================================================== */
+.adm-tokwrap{
+  margin:var(--sp-4) 0;padding:var(--sp-4);border-radius:var(--r-md);
+  background:var(--s2);border:1px solid var(--bd);max-width:520px;
+}
+.adm-tokmsg{font-size:var(--t-sm);color:var(--tx);line-height:1.6;margin-bottom:var(--sp-3)}
+.adm-tokrow{display:flex;gap:var(--sp-2);align-items:center;flex-wrap:wrap}
+.adm-tokrow .inp{flex:1 1 200px;min-width:0;font-size:var(--t-sm)}
+.adm-toknote{font-size:var(--t-xs);color:var(--mu);margin-top:var(--sp-2)}
+@media (max-width:520px){
+  .adm-tokrow{flex-direction:column;align-items:stretch}
+  .adm-tokrow .btn{width:100%}
+}
+
+/* ==========================================================================
+   LAYER A38 - While you were away
+   The card that shows work AMV finished on its own. It sits above the
+   conversation because it is the reason the user opened the app; it is quiet
+   enough not to read as an ad for a feature they already own.
+   ========================================================================== */
+.away-card{
+  margin:0 0 var(--sp-5);padding:var(--sp-4);border-radius:var(--r-lg);
+  background:var(--s2);border:1px solid var(--bd);
+}
+.away-top{margin-bottom:var(--sp-3)}
+.away-h{font-size:var(--t-md);font-weight:700;color:var(--tx);letter-spacing:-.2px}
+.away-sub{font-size:var(--t-sm);color:var(--mu);margin-top:2px}
+.away-list{display:flex;flex-direction:column}
+.away-item{border-top:1px solid var(--bd);padding:var(--sp-3) 0}
+.away-item:first-child{border-top:0;padding-top:0}
+.away-head{
+  display:flex;width:100%;gap:var(--sp-3);align-items:baseline;justify-content:space-between;
+  background:none;border:0;padding:0;cursor:pointer;text-align:left;color:inherit;font:inherit;
+}
+.away-head:hover .away-t{color:var(--accent)}
+.away-head:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:var(--r-xs)}
+.away-t{font-size:var(--t-sm);font-weight:600;color:var(--tx);line-height:1.45}
+.away-w{font-size:var(--t-xs);color:var(--mu);white-space:nowrap;flex-shrink:0}
+.away-snip{font-size:var(--t-sm);color:var(--mu);line-height:1.6;margin-top:5px}
+.away-full{font-size:var(--t-sm);color:var(--tx);line-height:1.7;margin-top:var(--sp-3)}
+.away-full p{margin:0 0 10px}
+.away-full pre{overflow-x:auto;max-width:100%}
+.away-empty{color:var(--mu);font-style:italic}
+.away-more{font-size:var(--t-xs);color:var(--mu);margin-top:var(--sp-3)}
+.away-acts{display:flex;gap:var(--sp-2);flex-wrap:wrap;margin-top:var(--sp-4)}
+@media (max-width:520px){
+  .away-card{padding:var(--sp-3);border-radius:var(--r-md)}
+  .away-head{flex-direction:column;gap:2px}
+  .away-w{align-self:flex-start}
+  .away-acts{flex-direction:column;align-items:stretch}
+  .away-acts .btn{width:100%}
+}
+
 </style>
 <!-- BUILD:CSS:END -->
 <script>
@@ -13043,9 +13100,14 @@ function renderChatMsgs() {
     const cv=$('cv'); if(cv) cv.classList.add('cv-home');
     // Greeting sits above the composer; the starter chips render BELOW it.
     cm.innerHTML=
+      /* Work finished in the background goes ABOVE the greeting - it is the
+         reason they opened the app, and it is the one thing a chat box cannot
+         tell them (AMV-083). Usually renders nothing. */
+      (typeof _awayCardHTML==='function' ? _awayCardHTML() : '')+
       '<div class="chome">'+
         '<h1 class="chome-title"><span class="chome-greet">'+title+'</span></h1>'+
       '</div>';
+    try{ if(typeof _wireAwayCard==='function') _wireAwayCard(cm); }catch(e){}
     const chips=$('chome-chips');
     if(chips){
       chips.innerHTML=
@@ -13070,7 +13132,11 @@ function renderChatMsgs() {
   const _cv=$('cv'); if(_cv) _cv.classList.remove('cv-home');
   const _ch=$('chome-chips'); if(_ch) _ch.innerHTML='';
   document.querySelectorAll('.chome-recent').forEach(e=>e.remove());
-  cm.innerHTML=msgs.map((m,i)=>{
+  cm.innerHTML=
+  /* Same card as the home screen, at the top of an open conversation - a
+     returning user is just as likely to land in yesterday's chat. */
+  (typeof _awayCardHTML==='function' ? _awayCardHTML() : '')+
+  msgs.map((m,i)=>{
     const isU=m.r==='u';
     const rawText=m.d||(typeof m.c==='string'?m.c:'');
     let content;
@@ -13146,6 +13212,7 @@ function renderChatMsgs() {
     b.closest('.next-step')?.remove();
     try{ toast('Fine - no more suggestions.','info',2500); }catch(e){}
   }));
+  try{ if(typeof _wireAwayCard==='function') _wireAwayCard(cm); }catch(e){}
 
   cm.scrollTop=cm.scrollHeight;
   const snd=$('snd'); if(snd) snd.disabled=S.busy;
@@ -16939,6 +17006,59 @@ function _admBars(obj, emptyMsg){
   const max=Math.max(...keys.map(k=>obj[k]));
   return '<div class="adm-barlist">'+keys.sort((a,b)=>obj[b]-obj[a]).map(k=>'<div class="adm-brow"><span class="adm-brow-l">'+escH(k)+'</span><div class="adm-brow-track"><div class="adm-brow-fill" style="width:'+Math.max(4,obj[k]/max*100)+'%"></div></div><span class="adm-brow-v">'+obj[k]+'</span></div>').join('')+'</div>';
 }
+/* ══════════════════════════════════════════════════════════════
+   AMV-082  THE ADMIN TOKEN - one place, in memory, never at rest.
+
+   Three surfaces needed it and all three did something different. The Founder
+   Dashboard asked for it every session and promised, in its own copy, that it
+   is "never stored". The Errors dashboard saved it into localStorage, which is
+   exactly storing it - readable by any script that ever gets injected, and
+   still sitting there tomorrow. And the Command Center sent the signed-in
+   user's ACCESS token to an endpoint gated on the admin secret, which can only
+   ever be refused: that panel could not load, and said "network error" when it
+   did not.
+
+   So: one holder, in memory for the session only, shared by all three. It dies
+   with the tab, which is the property the copy already promised.
+   ══════════════════════════════════════════════════════════════ */
+let _ADMIN_TOK = '';
+function _adminToken(){ return _ADMIN_TOK; }
+function _setAdminToken(v){ _ADMIN_TOK = String(v || '').trim(); return _ADMIN_TOK; }
+function _clearAdminToken(){ _ADMIN_TOK = ''; }
+/* Anything a previous build left on disk is a live secret in the wrong place.
+   Remove it once, on load, rather than waiting for someone to notice. */
+try{
+  if(loadStr('amv_admin_token')){ saveStr('amv_admin_token',''); }
+  try{ localStorage.removeItem('amv_admin_token'); }catch(e){}
+}catch(e){}
+try{ window._adminToken=_adminToken; window._setAdminToken=_setAdminToken; window._clearAdminToken=_clearAdminToken; }catch(e){}
+
+/* The prompt the Command Center shows when it has no token yet. Rendered into
+   the page rather than a modal so it cannot be missed behind other UI. */
+function _admTokenPromptHTML(msg){
+  return '<div class="adm-tokwrap">'+
+    '<div class="adm-tokmsg">'+escH(msg || 'Platform-wide figures are gated on your Worker’s ADMIN_TOKEN secret.')+'</div>'+
+    '<div class="adm-tokrow">'+
+      '<label class="sr-only" for="adm-tok">Admin token</label>'+
+      '<input id="adm-tok" type="password" autocomplete="off" class="inp" placeholder="Admin token">'+
+      '<button class="btn bp" id="adm-tok-go" type="button">Load</button>'+
+    '</div>'+
+    '<div class="adm-toknote">Kept in memory for this tab only - never written to this device.</div>'+
+  '</div>';
+}
+function _wireAdmTokenPrompt(root){
+  const go = () => {
+    const v = (document.getElementById('adm-tok') || {}).value || '';
+    if(!v.trim()){ return; }
+    _setAdminToken(v);
+    S._admStatsError = '';
+    _admFetchStats();
+  };
+  const b = (root || document).querySelector('#adm-tok-go'); if(b) on(b,'click',go);
+  const i = (root || document).querySelector('#adm-tok');
+  if(i) on(i,'keydown',(e)=>{ if(e.key==='Enter'){ e.preventDefault(); go(); } });
+}
+
 function renderAdminView(){
   const vc=$('vc'); if(!vc) return;
   if(!isAdmin()){ vc.innerHTML='<div class="sv fi"><div class="vi"><h2>Admin</h2><p class="vsub">This area is for the workspace operator.</p></div></div>'; return; }
@@ -16948,7 +17068,9 @@ function renderAdminView(){
   // pull real platform-wide stats when backend is live. Re-fetch if stale (>3 min)
   // so the dashboard keeps reflecting current cross-user activity.
   const stale = S._admStats && (Date.now()-(S._admStats.generatedAt||0) > 180000);
-  if(backendLive && (!S._admStats || stale) && !S._admStatsLoading){ _admFetchStats(); }
+  /* Only fetch when there is a token to fetch WITH. Firing without one used to
+     produce a guaranteed 403 that surfaced as "network error". */
+  if((loadStr('amv_api_base')||'') && _adminToken() && (!S._admStats || stale) && !S._admStatsLoading){ _admFetchStats(); }
   vc.innerHTML='<div class="sv fi"><div class="vi">'+
     '<span class="eyebrow">Operator</span>'+
     '<h2>Command Center</h2>'+
@@ -16957,30 +17079,49 @@ function renderAdminView(){
        backendLive?(S._admStatsLoading?'Loading live platform data…':'<button class="adm-refresh" data-admrefresh="1">Load live platform data</button>'):
        'Local metrics (this device). Connect the backend for platform-wide data.')+'</p>'+
     '<div class="adm-tabs">'+_ADMIN_TABS.map(t=>'<button class="adm-tab'+(t[0]===tab?' on':'')+'" data-atab="'+t[0]+'">'+t[1]+'</button>').join('')+'</div>'+
+    /* Gated on a backend URL, not on being signed in. The admin token is a
+       separate credential from the user session - requiring a session here
+       would hide the prompt from an operator who has one but not the other. */
+    ((loadStr('amv_api_base')||'') && !live && !S._admStatsLoading ? _admTokenPromptHTML(S._admStatsError) : '')+
     '<div id="adm-body"></div>'+
   '</div></div>';
   vc.querySelectorAll('[data-atab]').forEach(b=>on(b,'click',()=>{ S._adminTab=b.dataset.atab; renderAdminView(); }));
-  const rb=vc.querySelector('[data-admrefresh]'); if(rb) on(rb,'click',()=>_admFetchStats());
+  const rb=vc.querySelector('[data-admrefresh]'); if(rb) on(rb,'click',()=>{
+    // No token, no request - ask for one rather than firing a call that cannot pass.
+    if(!_adminToken()){ const i=document.getElementById('adm-tok'); if(i) i.focus(); return; }
+    _admFetchStats();
+  });
+  _wireAdmTokenPrompt(vc);
   _admRenderTab(tab, backendLive, live);
 }
 /* Fetch real cross-user platform stats from the backend and cache them. */
 async function _admFetchStats(){
-  const base=loadStr('amv_api_base')||''; const tok=loadStr('amv_api_token')||AMV_API.token||'';
-  if(!base){ return; }
-  S._admStatsLoading=true;
+  const base=loadStr('amv_api_base')||'';
+  /* The ADMIN token, not the signed-in user's. These endpoints are gated on the
+     Worker's ADMIN_TOKEN secret; sending an access token here was a request
+     that could only ever be refused. */
+  const tok=_adminToken();
+  if(!base || !tok){ S._admStatsError = !base ? 'Connect your backend first (Settings \u2192 Live/Backend).' : ''; return; }
+  S._admStatsLoading=true; S._admStatsError='';
   try{ if(S.tab==='admin') renderAdminView(); }catch(e){}
   try{
     const r=await fetchDeadline(base.replace(/\/$/,'')+'/v1/admin/stats',{headers:{'Authorization':'Bearer '+tok}},15000);
     if(r.ok){ S._admStats=await r.json(); }
-    else { _logErr('adminStats', new Error('HTTP '+r.status)); }
-  }catch(e){ _logErr('adminStats', e); }
+    else if(r.status===403){
+      // A wrong token is a wrong token - say so, and drop it so the next
+      // attempt asks again instead of retrying something already rejected.
+      _clearAdminToken();
+      S._admStatsError='That admin token was rejected.';
+    }
+    else { _logErr('adminStats', new Error('HTTP '+r.status)); S._admStatsError='Could not load platform stats ('+r.status+').'; }
+  }catch(e){ _logErr('adminStats', e); S._admStatsError='Could not reach the backend.'; }
   S._admStatsLoading=false;
   try{ if(S.tab==='admin') renderAdminView(); }catch(e){}
 }
 /* Fetch the real financial statement (all transactions) from the backend. */
 async function _admFetchFinance(){
-  const base=loadStr('amv_api_base')||''; const tok=loadStr('amv_api_token')||AMV_API.token||'';
-  if(!base){ return; }
+  const base=loadStr('amv_api_base')||''; const tok=_adminToken();
+  if(!base || !tok){ return; }
   if(S._admFinanceLoading) return;
   S._admFinanceLoading=true;
   try{
@@ -20474,7 +20615,8 @@ try{ window.openMySites=openMySites; }catch(e){}
 /* ── Error dashboard: what is actually breaking for your users ──────────── */
 async function openErrors(){
   const ovr=$('ovr'); if(!ovr) return;
-  const token = loadStr('amv_admin_token') || '';
+  // In memory for this tab only (AMV-082) - it used to be written to disk.
+  const token = (typeof _adminToken==='function') ? _adminToken() : '';
   ovr.innerHTML='<div class="share-modal err-modal"><div class="share-title">Errors</div><p class="share-sub">Loading\u2026</p></div>';
   ovr.classList.add('on');
 
@@ -20495,7 +20637,7 @@ async function openErrors(){
     data = await r.json();
     if(data.error) throw new Error(data.error);
   }catch(e){
-    if(/unauthorized/i.test(e.message||'')){ saveStr('amv_admin_token',''); _errAskToken('That admin token was rejected.'); return; }
+    if(/unauthorized/i.test(e.message||'')){ try{ _clearAdminToken(); }catch(_){} _errAskToken('That admin token was rejected.'); return; }
     ovr.innerHTML='<div class="share-modal err-modal"><div class="share-title">Errors</div>'+
       '<p class="share-sub">Couldn\u2019t load: '+escH(e.message)+'</p>'+
       '<div class="share-actions"><button class="btn bs" id="er-x">Close</button></div></div>';
@@ -20563,6 +20705,7 @@ function _errAskToken(msg){
     '<div class="share-title">Admin access</div>'+
     '<p class="share-sub">'+(msg?escH(msg)+' ':'')+'Enter your ADMIN_TOKEN (the secret you set on the Worker) to see what\u2019s breaking for your users.</p>'+
     '<input id="er-tok" class="inp" type="password" placeholder="ADMIN_TOKEN" autocomplete="off">'+
+    '<p class="share-sub" style="margin-top:8px;font-size:11px">Kept in memory for this tab only - never written to this device.</p>'+
     '<div class="share-actions">'+
       '<button class="btn bp" id="er-go">View errors</button>'+
       '<button class="btn bs" id="er-x">Cancel</button>'+
@@ -20571,7 +20714,9 @@ function _errAskToken(msg){
   on($('er-go'),'click',()=>{
     const v=($('er-tok')||{}).value||'';
     if(!v.trim()) return;
-    saveStr('amv_admin_token', v.trim());
+    // Session memory, not localStorage - a secret at rest is a secret an
+    // injected script can read tomorrow (AMV-082).
+    _setAdminToken(v);
     openErrors();
   });
   on($('er-x'),'click',closeOvr);
@@ -21698,10 +21843,17 @@ function _digestCardHTML(){
     '<div id="fd-digest-out" class="fd-digest-out" role="status" aria-live="polite"></div>'+
   '</div>';
 }
-function _wireDigestCard(base, tok){
+function _wireDigestCard(){
   const out = $('fd-digest-out');
   const say = (t, kind) => { if(out){ out.className = 'fd-digest-out' + (kind ? ' ' + kind : ''); out.textContent = t; } };
+  /* Read at click time, not captured when the card was built - the operator may
+     correct the token after this card exists. */
   const call = async (qs) => {
+    const base = loadStr('amv_api_base')||'';
+    const tok = ($('fd-token') && $('fd-token').value || '').trim()
+      || ((typeof _adminToken==='function') ? _adminToken() : '');
+    if(!base) throw new Error('connect your backend first');
+    if(!tok) throw new Error('enter your admin token above');
     const r = await fetchDeadline(base.replace(/\/$/,'')+'/admin/digest'+qs,
       { headers:{ 'Authorization':'Bearer '+tok } }, 20000);
     const d = await r.json().catch(()=>({}));
@@ -22651,11 +22803,16 @@ function _renderSetPaneInner(){
       '<div class="set-title">Founder Dashboard</div>'+
       '<div class="set-sub">Live platform spend, users, revenue, and abuse signals. Operator-only.</div>'+
       '<div id="fd-body"><div class="fd-loading">Loading platform stats\u2026</div></div>'+
+      '<div id="fd-digest-host"></div>'+
       '<div class="fd-token-row"><input id="fd-token" type="password" autocomplete="off" placeholder="Admin token" class="inp" style="max-width:240px"/>'+
         '<button class="btn bp" id="fd-load" style="font-size:12px">Load stats</button></div>'+
       '<div class="fd-note">Your admin token is set as the ADMIN_TOKEN secret on your Worker. It\u2019s never stored - paste it here each session.</div>';
+    // Pre-fill from the session holder so the operator pastes it once per tab
+    // rather than once per screen. Still never written to this device.
+    try{ const t0=(typeof _adminToken==='function')?_adminToken():''; if(t0 && $('fd-token')) $('fd-token').value=t0; }catch(e){}
     const loadStats=async()=>{
       const tok=($('fd-token')&&$('fd-token').value||'').trim();
+      try{ if(tok && typeof _setAdminToken==='function') _setAdminToken(tok); }catch(e){}
       const base=loadStr('amv_api_base')||'';
       const body=$('fd-body');
       if(!base){ body.innerHTML='<div class="fd-empty">Connect your backend first (Settings \u2192 Live/Backend) to see platform stats.</div>'; return; }
@@ -22665,8 +22822,12 @@ function _renderSetPaneInner(){
         const r=await fetchDeadline(base.replace(/\/$/,'')+'/v1/admin/stats',{headers:{'Authorization':'Bearer '+tok}},15000);
         if(!r.ok){ body.innerHTML='<div class="fd-empty">'+(r.status===403?'Invalid admin token.':'Could not load stats ('+r.status+').')+'</div>'; return; }
         const d=await r.json();
-        body.innerHTML=_founderDashHTML(d)+_digestCardHTML();
-        _wireDigestCard(base, tok);
+        body.innerHTML=_founderDashHTML(d);
+        /* Rendered once, into its own host. It used to be appended to the
+           stats body, so the pane's own delayed reload rebuilt it and wiped a
+           preview the operator was in the middle of reading. */
+        const dh=$('fd-digest-host');
+        if(dh && !dh.firstChild){ dh.innerHTML=_digestCardHTML(); _wireDigestCard(); }
         // wire kill switch
         const kbtn=$('fd-kill');
         if(kbtn) on(kbtn,'click',async()=>{
@@ -29658,6 +29819,149 @@ function _actSignOutEverywhere(){
   go();
 }
 try{ window._renderActivityBlock = _renderActivityBlock; window._actSignOutEverywhere = _actSignOutEverywhere; }catch(e){}
+/* ============================================================
+   AMV-083  WHILE YOU WERE AWAY.
+
+   The background half of AMV already worked. Automations ran on the server on
+   their own schedule, produced real answers, and stored them. What happened
+   next was a toast that vanished in six seconds and a small number on a nav
+   item. So the one thing that makes a product worth returning to - it did
+   something for you while you were gone - was the least visible thing in it.
+
+   That asymmetry is the whole retention problem. A user who opens AMV and sees
+   work already done comes back tomorrow. A user who opens AMV, sees an empty
+   chat box, and has to go looking in a tab called Tasks to discover there was
+   a reason to come back, does not.
+
+   So the results are put where the user already is, with the answer readable
+   in place. No navigation, no hunting.
+
+   What it refuses to do:
+     - It never marks anything read just by rendering. Something that
+       disappears because it scrolled past was never delivered.
+     - It never appears when there is nothing unread, and never fabricates a
+       count. No results, no card.
+     - It never appears when the results could not be loaded - a card that says
+       "nothing new" because the network failed is a lie.
+     - Dismissing says exactly what it does, because it marks every listed
+       result read, not only the one that was opened.
+   ============================================================ */
+
+/* Dismissed batches, so a card the user has closed does not come back on the
+   next render. Keyed by the newest result in the batch: a genuinely NEW result
+   makes a new batch, which should appear. */
+const AWAY_DISMISS_KEY = 'amv_away_seen';
+function _awayDismissed(){ try{ return loadStr(AWAY_DISMISS_KEY) || ''; }catch(e){ return ''; } }
+function _awayBatchId(unread){
+  return unread.length ? String(unread[unread.length - 1].id || unread[unread.length - 1].at || '') : '';
+}
+
+function _awayUnread(){
+  try{
+    if(!Array.isArray(_AUTO_RESULTS)) return [];
+    return _AUTO_RESULTS.filter(r => r && !r.read).sort((a, b) => (a.at || 0) - (b.at || 0));
+  }catch(e){ return []; }
+}
+
+function _awayWhen(ts){
+  const diff = Date.now() - (+ts || 0);
+  if(diff < 3600000) return Math.max(1, Math.floor(diff / 60000)) + ' min ago';
+  if(diff < 86400000) return Math.floor(diff / 3600000) + 'h ago';
+  try{ return new Date(ts).toLocaleString(undefined, { weekday:'short', hour:'numeric', minute:'2-digit' }); }
+  catch(e){ return ''; }
+}
+
+/* The opening of the answer, enough to know whether it is worth reading now.
+   Markdown markers are stripped rather than rendered - this is a preview line,
+   not a document. */
+function _awaySnippet(text, n){
+  return String(text || '')
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/[#*_>`]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, n || 150);
+}
+
+function _awayCardHTML(){
+  const unread = _awayUnread();
+  if(!unread.length) return '';
+  if(_awayDismissed() === _awayBatchId(unread)) return '';
+
+  const items = unread.slice(-5).reverse().map(r => {
+    const title = _awaySnippet(r.detail, 70) || 'Scheduled task';
+    const body = _awaySnippet(r.out, 150);
+    return '<div class="away-item" data-away-id="'+escH(String(r.id||''))+'">'+
+      '<button class="away-head" type="button" data-away-open="'+escH(String(r.id||''))+'" aria-expanded="false">'+
+        '<span class="away-t">'+escH(title)+'</span>'+
+        '<span class="away-w">'+escH(_awayWhen(r.at))+'</span>'+
+      '</button>'+
+      (body ? '<div class="away-snip">'+escH(body)+(String(r.out||'').length > 150 ? '…' : '')+'</div>' : '')+
+      '<div class="away-full" hidden></div>'+
+    '</div>';
+  }).join('');
+
+  const n = unread.length;
+  return '<div class="away-card" role="region" aria-label="Work completed while you were away">'+
+    '<div class="away-top">'+
+      '<div class="away-h">While you were away</div>'+
+      '<div class="away-sub">AMV finished '+n+' scheduled '+(n === 1 ? 'task' : 'tasks')+' on its own.</div>'+
+    '</div>'+
+    '<div class="away-list">'+items+'</div>'+
+    (unread.length > 5 ? '<div class="away-more">'+(unread.length - 5)+' more in Tasks.</div>' : '')+
+    '<div class="away-acts">'+
+      '<button class="btn bs" type="button" data-away-tasks="1">Open Tasks</button>'+
+      '<button class="btn bs" type="button" data-away-dismiss="1">Mark all as read</button>'+
+    '</div>'+
+  '</div>';
+}
+
+/* Wire a rendered card. Called with the container the card was rendered into,
+   so it works from the empty home screen and from a conversation alike. */
+function _wireAwayCard(root){
+  const el = root || document;
+
+  el.querySelectorAll('[data-away-open]').forEach(btn => btn.addEventListener('click', () => {
+    const id = btn.dataset.awayOpen;
+    const item = btn.closest('.away-item');
+    const full = item && item.querySelector('.away-full');
+    const snip = item && item.querySelector('.away-snip');
+    if(!full) return;
+    const open = !full.hidden;
+    if(open){
+      full.hidden = true; full.innerHTML = '';
+      if(snip) snip.hidden = false;
+      btn.setAttribute('aria-expanded', 'false');
+      return;
+    }
+    const rec = (Array.isArray(_AUTO_RESULTS) ? _AUTO_RESULTS : []).find(r => String(r.id) === String(id));
+    /* Render through the same markdown path as a chat answer, so a scheduled
+       result reads exactly like one AMV just wrote. */
+    const out = (rec && rec.out) || '';
+    full.innerHTML = out
+      ? (typeof md === 'function' ? md(out) : '<p>' + escH(out) + '</p>')
+      : '<p class="away-empty">This run produced no output.</p>';
+    full.hidden = false;
+    if(snip) snip.hidden = true;
+    btn.setAttribute('aria-expanded', 'true');
+  }));
+
+  el.querySelectorAll('[data-away-tasks]').forEach(b => b.addEventListener('click', () => {
+    try{ S.tab = 'tasks'; setTab('tasks'); }catch(e){
+      try{ S.tab = 'automation'; setTab('automation'); }catch(_){}
+    }
+  }));
+
+  el.querySelectorAll('[data-away-dismiss]').forEach(b => b.addEventListener('click', async () => {
+    /* Remember the batch locally FIRST, so the card goes away immediately even
+       if the server call fails - and mark it read on the server, which is what
+       makes it stay gone on the user's other devices. */
+    try{ saveStr(AWAY_DISMISS_KEY, _awayBatchId(_awayUnread())); }catch(e){}
+    const card = b.closest('.away-card'); if(card) card.remove();
+    try{ if(typeof _autoMarkRead === 'function') await _autoMarkRead(); }catch(e){}
+  }));
+}
+try{ window._awayCardHTML=_awayCardHTML; window._wireAwayCard=_wireAwayCard; window._awayUnread=_awayUnread; }catch(e){}
 
 </script>
 <script>(function(){var c=document.getElementById('amv-app-code');if(!c)return;var code=c.textContent.split('<\\/scr_AMV_ipt').join('</script');function inlineRun(){var e=document.createElement('script');e.textContent=code;document.body.appendChild(e);}try{var s=document.createElement('script');s.src=URL.createObjectURL(new Blob([code],{type:'application/javascript'}));s.defer=true;s.onerror=inlineRun;document.body.appendChild(s);}catch(e){inlineRun();}})();</script>
