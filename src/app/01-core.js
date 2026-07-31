@@ -298,7 +298,7 @@ const AMV_API = {
       return null; }
     catch(e){ return null; }
   },
-  async syncPush(data){
+  async syncPush(data, _retried){
     if(!this.live || !this.token) return false;
     try{ const r = await this._fetch('/sync/push', {method:'POST', body:JSON.stringify({data, baseRev:this.syncRev})}); const d = await r.json();
       if(d && d.ok){
@@ -307,8 +307,17 @@ const AMV_API = {
            copy is now behind what the server holds, so pull it back rather than
            carrying on from a stale list and pushing the same conflict again. */
         if(d.merged && typeof AMVSync !== 'undefined'){ try{ AMVSync.pull(); }catch(e){} }
+        return true;
       }
-      return !!(d&&d.ok); }
+      /* AMV-078: the server refused to write over a version it had not shown us
+         - another device landed a push mid-flight. Pull what actually won, then
+         push once more on top of it. One retry only: past that the honest
+         answer is that this attempt did not save, and the next autosave will. */
+      if(d && d.code === 'sync_busy' && !_retried && typeof AMVSync !== 'undefined'){
+        try{ await AMVSync.pull(); }catch(e){}
+        try{ return await this.syncPush(AMVSync.collect(), true); }catch(e){ return false; }
+      }
+      return false; }
     catch(e){ return false; }
   },
   async signup(email, name, password, extra){

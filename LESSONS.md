@@ -313,3 +313,26 @@ Prompt-cache markers arrived from the browser untouched. A cache write costs
 1.25x, so markers on content that will never be read back are somebody else's
 bill going up - and five of them is a hard upstream error. Anything that changes
 what a request COSTS is a server decision; strip the client's version first.
+
+## 31. A `let` at the top of the bundle is not on `window`
+Top-level `function` declarations in a classic script become properties of the
+global object; `let` and `const` do not. A test that assigned
+`window._AUTO_EMAIL_READY` created a second, unrelated variable and passed
+while proving nothing. Drive private state through the code path that sets it,
+never by poking at it - and if that is impossible, the state probably wants an
+accessor.
+
+## 32. Enforce the rule where the user can still act on it
+Automations were charged against a monthly ceiling that a free account does not
+have, so the cron deactivated them on their first due run - silently. The user
+had already been told "Scheduled - it'll run in the background". The same rule
+applied at creation time costs nothing and turns a broken promise into an
+upgrade prompt. Validate at the moment of the request, not at the moment of
+the consequence.
+
+## 33. Deliver where the promise said it would arrive
+"Have it ready every morning, even with AMV closed" is only true if it reaches
+somewhere the user looks while AMV is closed. Results defaulted to in-app, so
+the only way to discover there had been a reason to come back was to come back.
+A background feature that cannot reach the user is a feature they will never
+know ran.

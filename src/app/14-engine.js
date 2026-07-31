@@ -1137,7 +1137,15 @@ async function _autoApi(path, body){
     body: JSON.stringify(body||{})
   });
   const d = await r.json().catch(()=>({}));
-  if(!r.ok || d.error) throw new Error(d.error || ('request failed ('+r.status+')'));
+  if(!r.ok || d.error){
+    // Carry the machine-readable code across too. Callers need to tell "this
+    // needs a paid plan" from "the network failed", and matching on prose is
+    // how that goes wrong the first time the wording changes.
+    const err = new Error(d.error || ('request failed ('+r.status+')'));
+    if(d.code) err.code = d.code;
+    err.status = r.status;
+    throw err;
+  }
   return d;
 }
 
@@ -1207,22 +1215,50 @@ function openResearchWatch(){
 try{ window.openResearchWatch=openResearchWatch; }catch(e){}
 
 // Create an automation that genuinely runs in the background.
+/* Whether background work can reach an inbox on this deployment, and whether
+   this account's plan can run it at all. Both come from the server - the app
+   must never promise delivery it cannot perform. Unknown until the first
+   /auto/list, and unknown means we do not claim it. */
+let _AUTO_EMAIL_READY = false;
+let _AUTO_CAN_SCHEDULE = null;
+
 async function _scheduleTask(t){
   try{
+    // Ask for email when the deployment can send it - "have it ready when I get
+    // up" is only true if it arrives somewhere the user looks when AMV is shut.
+    const wantEmail = t.notify === 'email' || (t.notify !== 'app' && _AUTO_EMAIL_READY);
     const d = await _autoApi('/auto/create', {
       detail: t.detail,
       repeat: t.repeat || 'daily',
       kind: t.kind || 'task',
-      notify: t.notify || 'app',
+      notify: wantEmail ? 'email' : 'app',
       firstRunAt: t.firstRunAt || null,
       approval: t.approval || 'require',
       scope: t.scope || null
     });
+    if(typeof d.emailReady === 'boolean') _AUTO_EMAIL_READY = d.emailReady;
     _AUTOS = d.item ? (_AUTOS||[]).concat(d.item) : _AUTOS;
-    if(typeof toast==='function')
-      toast('Scheduled - it\u2019ll run in the background, even with AMV closed.','success',4500);
+    _AUTO_CAN_SCHEDULE = true;
+    /* Say which of the two things actually happens, because they are different
+       promises. Emailed means they never have to come back to find out; in-app
+       means it is waiting in Tasks and they do. */
+    if(typeof toast==='function'){
+      const emailed = d.item && d.item.notify === 'email';
+      toast(emailed
+        ? 'Scheduled - it runs on its own and the result is emailed to you.'
+        : 'Scheduled - it runs on its own, and the result will be waiting in Tasks.',
+        'success', 4500);
+    }
     return d.item;
   }catch(e){
+    /* A plan that cannot run background work is not an error to swallow - it is
+       the one case where the user can fix it, so it points at the fix. */
+    if(e.code === 'plan_required' || /paid plan/i.test(e.message||'')){
+      _AUTO_CAN_SCHEDULE = false;
+      if(typeof toast==='function') toast(e.message || 'Background automations need a paid plan.','info',7000);
+      try{ if(typeof setTab==='function'){ S.tab='plans'; setTab('plans'); } }catch(_){}
+      return null;
+    }
     if(e.message === 'not-connected'){
       if(typeof toast==='function')
         toast('Connect the AMV engine in Settings so automations can run in the background.','error',6000);
@@ -1241,6 +1277,8 @@ async function _autoRefresh(){
     const d = await _autoApi('/auto/list', {});
     _AUTOS = d.items || [];
     _AUTO_RESULTS = d.results || [];
+    if(typeof d.emailReady === 'boolean') _AUTO_EMAIL_READY = d.emailReady;
+    if(typeof d.canSchedule === 'boolean') _AUTO_CAN_SCHEDULE = d.canSchedule;
     const unread = _AUTO_RESULTS.filter(r=>!r.read);
     if(unread.length && typeof toast==='function'){
       toast(unread.length + ' automation result' + (unread.length>1?'s':'') + ' ready while you were away.','success',6000);

@@ -146,5 +146,99 @@ section('The client merges on pull instead of overwriting');
   ok(/c\.updated=Date\.now\(\)/.test(client), 'conversations are stamped on write so the merge has a real clock');
 }
 
+/* ---- the write itself, when two devices land at the same instant ---- */
+
+/* A small stand-in for D1: enough SQL to run the statements the DB layer
+   actually issues, backed by a Map. `onRead` fires once, which is how a
+   competing write is made to land in the window between our read and our
+   write - the window the guard exists to close. */
+function makeD1Env(){
+  const rows = new Map();                     // "kind\u0000id" -> json
+  const env = makeEnv();
+  let onRead = null;
+  env._setOnRead = fn => { onRead = fn; };
+  const key = (k, i) => k + '\u0000' + i;
+  env.DB = {
+    prepare(sql){
+      return { bind(...a){ return {
+        async first(){
+          if (/SELECT json FROM kv/.test(sql)) {
+            const [kind, id] = a;
+            const j = rows.get(key(kind, id)) || null;
+            if (kind === 'data' && onRead) { const f = onRead; onRead = null; await f(); }
+            return j ? { json: j } : null;
+          }
+          return null;
+        },
+        async run(){
+          if (/^UPDATE kv SET json/.test(sql)) {
+            const [j, , kind, id, expected] = a;
+            const cur = rows.get(key(kind, id));
+            let rev = null;
+            try { rev = cur ? JSON.parse(cur)._rev : null; } catch (e) {}
+            if (cur && String(rev) === String(expected)) { rows.set(key(kind, id), j); return { meta: { changes: 1 } }; }
+            return { meta: { changes: 0 } };
+          }
+          if (/^INSERT INTO kv \(kind,id,json,updated_at\) SELECT/.test(sql)) {
+            const [kind, id, j] = a;
+            if (rows.has(key(kind, id))) return { meta: { changes: 0 } };
+            rows.set(key(kind, id), j); return { meta: { changes: 1 } };
+          }
+          if (/^INSERT INTO kv/.test(sql)) {           // put(): upsert
+            const [kind, id, j] = a;
+            rows.set(key(kind, id), j); return { meta: { changes: 1 } };
+          }
+          if (/^DELETE FROM kv/.test(sql)) { const [kind, id] = a; rows.delete(key(kind, id)); return { meta: { changes: 1 } }; }
+          return { meta: { changes: 0 } };
+        },
+        async all(){ return { results: [] }; },
+      }; } };
+    },
+  };
+  return env;
+}
+
+section('A write that lands mid-flight cannot be erased');
+{
+  /* The failure this closes: two devices both read revision N, both believe
+     they are current, both write N+1, and the second silently destroys the
+     first. What is lost is the user's work, which makes it the worst bug in
+     the product. */
+  const env = makeD1Env();
+  const token = await W.signToken({ email: 'alice@x.com' }, env.JWT_SECRET, 3600, env, 'access');
+
+  await push(env, token, { convs: [chat('a', 2, 100)] }, 0);
+  const rev1 = (await (await pull(env, token)).json()).rev;
+
+  // The phone lands its push in the gap between the laptop's read and write.
+  let fired = false;
+  env._setOnRead(async () => {
+    if (fired) return; fired = true;
+    await push(env, token, { convs: [chat('a', 2, 100), chat('phone', 1, 500)] }, rev1);
+  });
+  const r = await push(env, token, { convs: [chat('a', 2, 100), chat('laptop', 1, 400)] }, rev1);
+  const d = await r.json();
+  ok(d.ok === true, 'the laptop still saves', d);
+  ok(d.guarded === true, 'and the write was guarded, not hopeful', d.guarded);
+
+  const final = (await (await pull(env, token)).json()).data;
+  const got = ids(final.convs);
+  ok(got.includes('phone'), 'the push that landed mid-flight survives', got);
+  ok(got.includes('laptop'), 'and so does the one that raced it', got);
+  ok(got.includes('a'), 'along with what was already there', got);
+}
+
+section('Without a conditional write, it says so rather than pretending');
+{
+  /* KV has no compare-and-set. The product still works, and the response
+     reports which guarantee it actually had - the alternative is claiming one
+     that the storage cannot provide. */
+  const env = makeEnv();
+  const token = await W.signToken({ email: 'bob@x.com' }, env.JWT_SECRET, 3600, env, 'access');
+  const d = await (await push(env, token, { convs: [chat('a', 1, 1)] }, 0)).json();
+  ok(d.ok === true, 'the push succeeds');
+  ok(d.guarded === false, 'and is honest that the write was not guarded', d.guarded);
+}
+
 report();
 done();

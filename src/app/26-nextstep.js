@@ -76,8 +76,13 @@ async function _nextStepRun(kind, userText){
     }
     if(kind==='daily'){
       if(typeof _scheduleTask!=='function'){ toast('Automations need the AMV engine connected.','info',5000); return; }
+      /* Deliberately NOT notify:'app'. The offer says the answer will be
+         waiting "even with AMV closed" - which is only true if it reaches them
+         somewhere they look while AMV is closed. _scheduleTask asks for email
+         when the deployment can send it and falls back honestly when it
+         cannot, adjusting what it tells the user either way. */
       const item = await _scheduleTask({
-        detail: userText, repeat: 'daily', kind: 'research', notify: 'app', approval: 'auto'
+        detail: userText, repeat: 'daily', kind: 'research', approval: 'auto'
       });
       // _scheduleTask already reports success or the precise reason it could not.
       if(item) setTab('tasks');

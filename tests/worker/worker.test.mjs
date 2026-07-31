@@ -165,11 +165,26 @@ ok(W.AUTO_MIN_INTERVAL >= 600000, 'there is a floor so nothing runs faster than 
 W.__setRequireUser(async () => ({ email: 'dave@test.com' }));
 store.delete('auto:dave@test.com');
 globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ content: [] }) });
+
+/* AMV-079: background work is charged against the plan's monthly ceiling, and
+   an account with no paid budget has a ceiling of zero. That is now refused at
+   creation instead of being accepted and silently deactivated by the cron on
+   its first due run - so this account needs a plan before it can schedule. */
+const crFree = await W.autoCreate(req({ detail: 'Watch ETH', repeat: '10min', kind: 'research' }, 'dave', 'https://api.amv.dev/auto/create'), env);
+ok(crFree.status === 402, 'an account with no paid budget is refused up front', crFree.status);
+ok((await crFree.json()).code === 'plan_required', 'with a code the app can act on');
+
+await W.setEntitlement(env, 'dave@test.com', 'pro');
 const cr = await W.autoCreate(req({ detail: 'Watch ETH', repeat: '10min', kind: 'research', notify: 'email' }, 'dave', 'https://api.amv.dev/auto/create'), env);
 const crd = await cr.json();
 ok(crd.ok && crd.item, 'autoCreate accepts a research job', crd);
 ok(crd.item.kind === 'research', 'the kind is stored', crd.item.kind);
-ok(crd.item.notify === 'email', 'the notify channel is stored', crd.item.notify);
+/* This env has no email provider, so asking for email delivery gets in-app
+   delivery and an explicit flag saying so - rather than an automation that
+   claims it will email someone and then cannot (AMV-079). */
+ok(crd.item.notify === 'app', 'without a provider, email delivery is downgraded to in-app', crd.item.notify);
+ok(crd.deliveryDowngraded === true, 'and the downgrade is reported, so the app does not promise an email');
+ok(crd.emailReady === false, 'along with why');
 ok(crd.item.interval >= W.AUTO_MIN_INTERVAL, 'the interval is floored to the minimum', crd.item.interval);
 
 section('Research watch: email delivery is attempted when requested & configured');

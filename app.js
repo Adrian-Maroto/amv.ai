@@ -298,7 +298,7 @@ const AMV_API = {
       return null; }
     catch(e){ return null; }
   },
-  async syncPush(data){
+  async syncPush(data, _retried){
     if(!this.live || !this.token) return false;
     try{ const r = await this._fetch('/sync/push', {method:'POST', body:JSON.stringify({data, baseRev:this.syncRev})}); const d = await r.json();
       if(d && d.ok){
@@ -307,8 +307,17 @@ const AMV_API = {
            copy is now behind what the server holds, so pull it back rather than
            carrying on from a stale list and pushing the same conflict again. */
         if(d.merged && typeof AMVSync !== 'undefined'){ try{ AMVSync.pull(); }catch(e){} }
+        return true;
       }
-      return !!(d&&d.ok); }
+      /* AMV-078: the server refused to write over a version it had not shown us
+         - another device landed a push mid-flight. Pull what actually won, then
+         push once more on top of it. One retry only: past that the honest
+         answer is that this attempt did not save, and the next autosave will. */
+      if(d && d.code === 'sync_busy' && !_retried && typeof AMVSync !== 'undefined'){
+        try{ await AMVSync.pull(); }catch(e){}
+        try{ return await this.syncPush(AMVSync.collect(), true); }catch(e){ return false; }
+      }
+      return false; }
     catch(e){ return false; }
   },
   async signup(email, name, password, extra){
@@ -18606,7 +18615,15 @@ async function _autoApi(path, body){
     body: JSON.stringify(body||{})
   });
   const d = await r.json().catch(()=>({}));
-  if(!r.ok || d.error) throw new Error(d.error || ('request failed ('+r.status+')'));
+  if(!r.ok || d.error){
+    // Carry the machine-readable code across too. Callers need to tell "this
+    // needs a paid plan" from "the network failed", and matching on prose is
+    // how that goes wrong the first time the wording changes.
+    const err = new Error(d.error || ('request failed ('+r.status+')'));
+    if(d.code) err.code = d.code;
+    err.status = r.status;
+    throw err;
+  }
   return d;
 }
 
@@ -18676,22 +18693,50 @@ function openResearchWatch(){
 try{ window.openResearchWatch=openResearchWatch; }catch(e){}
 
 // Create an automation that genuinely runs in the background.
+/* Whether background work can reach an inbox on this deployment, and whether
+   this account's plan can run it at all. Both come from the server - the app
+   must never promise delivery it cannot perform. Unknown until the first
+   /auto/list, and unknown means we do not claim it. */
+let _AUTO_EMAIL_READY = false;
+let _AUTO_CAN_SCHEDULE = null;
+
 async function _scheduleTask(t){
   try{
+    // Ask for email when the deployment can send it - "have it ready when I get
+    // up" is only true if it arrives somewhere the user looks when AMV is shut.
+    const wantEmail = t.notify === 'email' || (t.notify !== 'app' && _AUTO_EMAIL_READY);
     const d = await _autoApi('/auto/create', {
       detail: t.detail,
       repeat: t.repeat || 'daily',
       kind: t.kind || 'task',
-      notify: t.notify || 'app',
+      notify: wantEmail ? 'email' : 'app',
       firstRunAt: t.firstRunAt || null,
       approval: t.approval || 'require',
       scope: t.scope || null
     });
+    if(typeof d.emailReady === 'boolean') _AUTO_EMAIL_READY = d.emailReady;
     _AUTOS = d.item ? (_AUTOS||[]).concat(d.item) : _AUTOS;
-    if(typeof toast==='function')
-      toast('Scheduled - it\u2019ll run in the background, even with AMV closed.','success',4500);
+    _AUTO_CAN_SCHEDULE = true;
+    /* Say which of the two things actually happens, because they are different
+       promises. Emailed means they never have to come back to find out; in-app
+       means it is waiting in Tasks and they do. */
+    if(typeof toast==='function'){
+      const emailed = d.item && d.item.notify === 'email';
+      toast(emailed
+        ? 'Scheduled - it runs on its own and the result is emailed to you.'
+        : 'Scheduled - it runs on its own, and the result will be waiting in Tasks.',
+        'success', 4500);
+    }
     return d.item;
   }catch(e){
+    /* A plan that cannot run background work is not an error to swallow - it is
+       the one case where the user can fix it, so it points at the fix. */
+    if(e.code === 'plan_required' || /paid plan/i.test(e.message||'')){
+      _AUTO_CAN_SCHEDULE = false;
+      if(typeof toast==='function') toast(e.message || 'Background automations need a paid plan.','info',7000);
+      try{ if(typeof setTab==='function'){ S.tab='plans'; setTab('plans'); } }catch(_){}
+      return null;
+    }
     if(e.message === 'not-connected'){
       if(typeof toast==='function')
         toast('Connect the AMV engine in Settings so automations can run in the background.','error',6000);
@@ -18710,6 +18755,8 @@ async function _autoRefresh(){
     const d = await _autoApi('/auto/list', {});
     _AUTOS = d.items || [];
     _AUTO_RESULTS = d.results || [];
+    if(typeof d.emailReady === 'boolean') _AUTO_EMAIL_READY = d.emailReady;
+    if(typeof d.canSchedule === 'boolean') _AUTO_CAN_SCHEDULE = d.canSchedule;
     const unread = _AUTO_RESULTS.filter(r=>!r.read);
     if(unread.length && typeof toast==='function'){
       toast(unread.length + ' automation result' + (unread.length>1?'s':'') + ' ready while you were away.','success',6000);
@@ -21748,8 +21795,13 @@ async function _nextStepRun(kind, userText){
     }
     if(kind==='daily'){
       if(typeof _scheduleTask!=='function'){ toast('Automations need the AMV engine connected.','info',5000); return; }
+      /* Deliberately NOT notify:'app'. The offer says the answer will be
+         waiting "even with AMV closed" - which is only true if it reaches them
+         somewhere they look while AMV is closed. _scheduleTask asks for email
+         when the deployment can send it and falls back honestly when it
+         cannot, adjusting what it tells the user either way. */
       const item = await _scheduleTask({
-        detail: userText, repeat: 'daily', kind: 'research', notify: 'app', approval: 'auto'
+        detail: userText, repeat: 'daily', kind: 'research', approval: 'auto'
       });
       // _scheduleTask already reports success or the precise reason it could not.
       if(item) setTab('tasks');

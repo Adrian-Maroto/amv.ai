@@ -290,6 +290,37 @@ const DB = {
     if(this._hasD1(env)){ await env.DB.prepare('DELETE FROM kv WHERE kind=? AND id=?').bind(kind, id).run(); return; }
     await env.AMV_KV.delete(`${kind}:${id}`);
   },
+  /* AMV-078: compare-and-set for a record that carries its own `_rev`.
+
+     Read-merge-write is not atomic. Two devices that both read revision 5 in
+     the same instant both believe they are up to date, both write revision 6,
+     and the second one silently erases the first. The merge in syncPush
+     narrows that to true simultaneity, but "narrow" is not "closed", and what
+     is lost is the user's work.
+
+     On D1 this is one conditional statement: the write lands only if the
+     revision is still what we read. KV has no conditional write at all, so it
+     degrades to a plain put and SAYS SO in `guarded` - the caller can then be
+     honest about which guarantee it actually has, rather than assuming one it
+     does not. */
+  async putIfRev(env, kind, id, obj, expectedRev){
+    const j = JSON.stringify(obj);
+    if(this._hasD1(env)){
+      const now = Date.now();
+      // No previous revision means this must be the FIRST row, not an update -
+      // otherwise a stale client with no rev could overwrite a live record.
+      const stmt = expectedRev
+        ? env.DB.prepare("UPDATE kv SET json=?, updated_at=? WHERE kind=? AND id=? AND json_extract(json,'$._rev')=?")
+            .bind(j, now, kind, id, expectedRev)
+        : env.DB.prepare('INSERT INTO kv (kind,id,json,updated_at) SELECT ?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM kv WHERE kind=? AND id=?)')
+            .bind(kind, id, j, now, kind, id);
+      const r = await stmt.run();
+      const changed = (r && r.meta && typeof r.meta.changes === 'number') ? r.meta.changes : 1;
+      return { ok: changed > 0, guarded: true };
+    }
+    await env.AMV_KV.put(`${kind}:${id}`, j);
+    return { ok: true, guarded: false };
+  },
   async list(env, kind, limit){
     const out = [];
     if(this._hasD1(env)){
@@ -724,7 +755,32 @@ async function autoList(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
   const rec = (await DB.get(env, 'auto', _autoKey(user.email))) || { items:[], results:[] };
-  return json({ ok:true, items: rec.items||[], results: (rec.results||[]).slice(-AUTO_MAX_RESULTS) });
+  /* What this account can actually DO with an automation, so the app promises
+     that and nothing more: whether results can reach an inbox, and whether the
+     plan can run background work at all. */
+  const budget = _autoBudget((await DB.get(env, 'ent', user.email)) || { plan: 'free' });
+  return json({ ok:true, items: rec.items||[], results: (rec.results||[]).slice(-AUTO_MAX_RESULTS),
+                emailReady: !!env.EMAIL_API_KEY, canSchedule: budget.ceiling > 0, plan: budget.plan });
+}
+
+/* AMV-079: whether an account can run background work AT ALL.
+
+   Automations spend real money on a schedule with nobody watching, so they are
+   charged against the same monthly ceiling as interactive use - and an account
+   with no paid budget has a ceiling of zero. The cron already knew that and
+   deactivated such automations on their first due run. What it did not do was
+   tell anybody: the user scheduled a daily brief, saw "Scheduled - it'll run in
+   the background", and it silently never ran. That is a feature that exists
+   only as a message, which is the one thing AMV does not ship.
+
+   So the same rule is applied at CREATION, where it can be explained. */
+function _autoBudget(ent){
+  const plan = _planOf(ent || {});
+  const PLAN_PRICE = { pro: 15, elite: 75, ultra: 200 };
+  let planPrice = 0;
+  if (plan === 'custom' && ent && ent.custom && ent.custom.price) planPrice = ent.custom.price;
+  else if (PLAN_PRICE[plan]) planPrice = PLAN_PRICE[plan];
+  return { plan, ceiling: planPrice > 0 ? planPrice * 0.45 : 0 };
 }
 
 /* ---- create an automation ---- */
@@ -742,6 +798,21 @@ async function autoCreate(request, env){
   if(detail.length > 2000) return json({ error:'detail too long' }, 400);
   if(!AUTO_INTERVALS[repeat]) return json({ error:'invalid repeat interval' }, 400);
 
+  /* Refuse here rather than accepting it and letting the cron quietly kill it
+     on the first due run. Same rule, said out loud, at the moment the user can
+     do something about it. */
+  const budget = _autoBudget((await DB.get(env, 'ent', user.email)) || { plan: 'free' });
+  if(budget.ceiling <= 0){
+    return json({ error: 'Background automations run on AMV\u2019s servers while you are away, so they need a paid plan. Upgrade and this will run on schedule.',
+                  code: 'plan_required' }, 402);
+  }
+  /* Email delivery is the whole point of "have it ready when I wake up", and it
+     only works if an email provider is configured. Rather than accepting the
+     request and delivering nowhere, we downgrade to in-app and SAY which one
+     the user is getting. */
+  const emailReady = !!env.EMAIL_API_KEY;
+  const effectiveNotify = (notify === 'email' && !emailReady) ? 'app' : notify;
+
   const key = _autoKey(user.email);
   const rec = (await DB.get(env, 'auto', key)) || { items:[], results:[] };
   if((rec.items||[]).length >= AUTO_MAX_PER_USER)
@@ -756,12 +827,14 @@ async function autoCreate(request, env){
   }
   const item = {
     id: 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2,7),
-    detail, repeat, interval, next, kind, notify, approval, scope,
+    detail, repeat, interval, next, kind, notify: effectiveNotify, approval, scope,
     created: Date.now(), runs: 0, lastError: null, active: true
   };
   rec.items = (rec.items||[]).concat(item);
   await DB.put(env, 'auto', key, rec);
-  return json({ ok:true, item });
+  return json({ ok:true, item, emailReady,
+                // true only when they asked for email and cannot have it
+                deliveryDowngraded: notify === 'email' && !emailReady });
 }
 
 /* ---- delete / pause an automation ---- */
@@ -907,23 +980,39 @@ async function _autoEmailResult(env, email, item, out){
   // Convert the markdown-ish result to simple HTML paragraphs (no heavy renderer
   // in the Worker - keep it robust and dependency-free).
   const esc = (t)=>String(t).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  /* AMV-080. These four patterns were written with doubled backslashes, which
+     changed what every one of them meant. An escaped backslash followed by a
+     star is "zero or more backslashes", not a literal star - so the bold
+     pattern was four such groups around one lazy character, which matches EVERY
+     character and wrapped the entire email in bold tags. The two newline
+     patterns matched the literal two-character sequence backslash-n, which
+     never appears in a model's output, so no paragraph break and no line break
+     was ever inserted and the whole result arrived as one unbroken blob.
+
+     This is the artifact a paying customer receives on a schedule, which makes
+     it the last place in the product that should have been rendering wrong. */
   const htmlBody = esc(out)
     .replace(/^### (.*)$/gm,'<h3 style="margin:18px 0 6px;font-size:15px">$1</h3>')
     .replace(/^## (.*)$/gm,'<h2 style="margin:20px 0 8px;font-size:17px">$1</h2>')
-    .replace(/\\*\\*(.+?)\\*\\*/g,'<b>$1</b>')
-    .replace(/\\n\\n/g,'</p><p style="margin:0 0 12px;line-height:1.6;color:#333">')
-    .replace(/\\n/g,'<br>');
+    .replace(/\*\*(.+?)\*\*/g,'<b>$1</b>')
+    .replace(/\n\n/g,'</p><p style="margin:0 0 12px;line-height:1.6;color:#333">')
+    .replace(/\n/g,'<br>');
+  /* A link back. Without it this email is a dead end: it tells someone their
+     background work finished and gives them nowhere to go, which is the exact
+     moment they were most likely to return. */
+  const appUrl = String(env.APP_URL || env.APP_ORIGIN || '').replace(/\/$/, '');
   const html = _emailShell(
     isResearch ? 'Your research watch' : 'Your scheduled update',
     '<p style="margin:0 0 12px;font-size:13px;color:#777">You asked AMV to check on: <b>'+esc(label)+'</b></p>'+
     '<div style="font-size:14px"><p style="margin:0 0 12px;line-height:1.6;color:#333">'+htmlBody+'</p></div>',
-    null,
+    appUrl ? { label: 'Open in AMV', url: appUrl } : null,
     '<hr style="border:none;border-top:1px solid #eee;margin:16px 0"><p style="margin:0;font-size:11px;color:#999">You set up this recurring check in AMV. Manage or stop it anytime in the Tasks tab.</p>',
     'Automated update from AMV.'
   );
-  const text = (isResearch ? 'AMV research watch\\n\\n' : 'AMV scheduled update\\n\\n')
-    + 'Subject: ' + label + '\\n\\n' + out
-    + '\\n\\n\- Manage this recurring check in AMV \\u2192 Tasks.';
+  const text = (isResearch ? 'AMV research watch\n\n' : 'AMV scheduled update\n\n')
+    + 'Subject: ' + label + '\n\n' + out
+    + '\n\nManage this recurring check in AMV -> Tasks.'
+    + (appUrl ? '\n' + appUrl : '');
   return _sendEmail(env, email, subject, html, text);
 }
 
@@ -3625,26 +3714,50 @@ async function syncPush(request, env){
   // AMV-056: bound nesting depth so a pathological deeply-nested structure can't
   // blow up parse/serialize (the size cap alone doesn't bound depth).
   if(_boundedJson(filtered, SYNC_MAX_BYTES, 24)){ return json({ error:'synced data is too deeply nested', code:'sync_too_deep' }, 413); }
-  const current = (await DB.get(env, 'data', user.email)) || {};
-  /* Authoritative only when this client demonstrably saw the current version.
-     Anything else merges, so a stale device cannot delete another one's work. */
-  const curRev = +(current._rev || 0);
   const baseRev = +(body.baseRev || 0);
-  const authoritative = curRev === 0 || baseRev === curRev;
-  const merged = _mergeSyncRecord(current, filtered, authoritative);
-  merged._updatedAt = Date.now();
-  merged._rev = curRev + 1;
-  if(!authoritative) audit(env, 'sync_merged', { email: user.email, baseRev, curRev });
-  // Enforce a real size cap (the comment used to promise this but didn't do it).
-  const serialized = JSON.stringify(merged);
-  if(serialized.length > SYNC_MAX_BYTES){
-    audit(env, 'sync_oversize', { email: user.email, bytes: serialized.length });
-    return json({ error: 'Your synced data is too large. Some older items may need pruning.', code: 'sync_too_large' }, 413);
+
+  /* AMV-078: read, merge, then write ONLY IF nothing changed underneath us.
+     Another device can land a push between our read and our write, and without
+     the guard that device's work is gone. On a miss we go round again against
+     the record that actually won - never more than a couple of times, because
+     each attempt starts from newer data. */
+  let merged = null, curRev = 0, authoritative = false, guarded = true;
+  for(let attempt = 0; attempt < 3; attempt++){
+    const current = (await DB.get(env, 'data', user.email)) || {};
+    curRev = +(current._rev || 0);
+    /* Authoritative only when this client demonstrably saw the current version.
+       Anything else merges, so a stale device cannot delete another one's work.
+       A retry is by definition no longer authoritative: we are now writing on
+       top of a version this client has never seen. */
+    authoritative = attempt === 0 && (curRev === 0 || baseRev === curRev);
+    merged = _mergeSyncRecord(current, filtered, authoritative);
+    merged._updatedAt = Date.now();
+    merged._rev = curRev + 1;
+
+    // Enforce a real size cap (the comment used to promise this but didn't do it).
+    const serialized = JSON.stringify(merged);
+    if(serialized.length > SYNC_MAX_BYTES){
+      audit(env, 'sync_oversize', { email: user.email, bytes: serialized.length });
+      return json({ error: 'Your synced data is too large. Some older items may need pruning.', code: 'sync_too_large' }, 413);
+    }
+
+    const res = await DB.putIfRev(env, 'data', user.email, merged, curRev);
+    guarded = res.guarded;
+    if(res.ok) break;
+    audit(env, 'sync_cas_retry', { email: user.email, attempt, curRev });
+    if(attempt === 2){
+      /* Three losses in a row means something is writing continuously. Better
+         to tell this client to pull and try again than to force a write over
+         work we have not seen. */
+      audit(env, 'sync_cas_gaveup', { email: user.email });
+      return json({ error: 'Another device is syncing right now. Your changes are safe here - please try again in a moment.',
+                    code: 'sync_busy' }, 409);
+    }
   }
-  await DB.put(env, 'data', user.email, merged);
+  if(!authoritative) audit(env, 'sync_merged', { email: user.email, baseRev, curRev });
   // The client stores rev and echoes it next time, so its next push can be
   // authoritative and its deletions can stick.
-  return json({ ok:true, rev: merged._rev, merged: !authoritative, serverTime: Date.now() });
+  return json({ ok:true, rev: merged._rev, merged: !authoritative, guarded, serverTime: Date.now() });
 }
 
 async function requireUser(request, env) {
@@ -4283,7 +4396,11 @@ async function sharePage(request, env, id){
 
   return new Response(html, { status: 200, headers: {
     'Content-Type': 'text/html; charset=utf-8',
-    'Cache-Control': 'public, max-age=300',
+    /* Short, and revalidated. A shared page is revoked from the privacy screen
+       the moment someone changes their mind, and a five-minute public cache
+       meant the link kept working after the app had told them it was dead.
+       Sixty seconds still absorbs the burst a link gets when it is posted. */
+    'Cache-Control': 'public, max-age=60, must-revalidate',
     'X-Robots-Tag': 'noindex, nofollow',
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'no-referrer',
@@ -5602,6 +5719,13 @@ async function _referralCapture(env, request, newEmail, refRaw) {
     }
     await env.AMV_KV.put(`refpend:${em}`, JSON.stringify({ code, referrer, at: Date.now() }),
                          { expirationTtl: REFERRAL_PENDING_TTL_S });
+    /* A marker on the entitlement, which every app load already reads. Without
+       it, checking for a pending invite would mean an extra lookup on every
+       load for every account forever - a permanent cost paid by the whole user
+       base for a state that only a few accounts are ever in. */
+    const ent = (await DB.get(env, 'ent', em)) || { plan: 'free' };
+    ent.refPending = true;
+    await DB.put(env, 'ent', em, ent);
     audit(env, 'referral_pending', { referrer, email: em });
   } catch (e) { /* never let growth plumbing break account creation */ }
 }
@@ -5637,15 +5761,28 @@ async function _referralGrant(env, email, kind) {
 
 /* Called when the invited account opens AMV. Everything here is a reason to pay
    NOBODY; the reward is the last thing that happens, and only once. */
+/* Take the marker off the entitlement. Called wherever an invite stops being
+   pending, for any reason - otherwise the flag outlives the invite and every
+   app load pays for a lookup that can never find anything. */
+async function _referralClearPending(env, em) {
+  try {
+    const ent = await DB.get(env, 'ent', em);
+    if (ent && ent.refPending) { delete ent.refPending; await DB.put(env, 'ent', em, ent); }
+  } catch (e) { /* the flag is an optimisation; never fail a request over it */ }
+}
+
 async function _referralMaybeConvert(env, email) {
   const em = String(email || '').toLowerCase();
   if (!em) return null;
   let pend = null;
   try { const raw = await env.AMV_KV.get(`refpend:${em}`); if (raw) pend = JSON.parse(raw); } catch (e) { return null; }
-  if (!pend || !pend.referrer || !pend.code) return null;
+  // The invite expired without ever qualifying. Clear the marker so this
+  // account stops paying for the lookup.
+  if (!pend || !pend.referrer || !pend.code) { await _referralClearPending(env, em); return null; }
 
   const drop = async (reason) => {
     try { await env.AMV_KV.delete(`refpend:${em}`); } catch (e) {}
+    await _referralClearPending(env, em);
     audit(env, 'referral_rejected', { referrer: pend.referrer, reason });
     return null;
   };
@@ -5677,6 +5814,7 @@ async function _referralMaybeConvert(env, email) {
   /* Consume the invite BEFORE granting. If a grant then fails, the reward is
      lost rather than paid twice - the safe direction for anything of value. */
   try { await env.AMV_KV.delete(`refpend:${em}`); } catch (e) { return null; }
+  await _referralClearPending(env, em);
   const paidReferrer = await _referralGrant(env, pend.referrer, 'invited');
   const paidJoiner   = await _referralGrant(env, em, 'joined');
   try { await _recordGrowth(env, 'referral'); } catch (e) {}
@@ -5786,11 +5924,14 @@ async function getEntitlement(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
   /* AMV-075: the invited account opening the app is the natural moment to check
-     whether it has now earned its referral. Best-effort - a failure here must
-     never stop someone seeing their plan. */
+     whether it has now earned its referral. Gated on a marker that is already
+     in the record requireUser just read, so an account that was never invited -
+     which is almost all of them - does no extra work at all. Best-effort: a
+     failure here must never stop someone seeing their plan. */
   let converted = null;
-  try { converted = await _referralMaybeConvert(env, user.email); } catch (e) {}
-  const ent = (await DB.get(env, 'ent', user.email)) || { plan: 'free' };
+  const ent0 = (await DB.get(env, 'ent', user.email)) || { plan: 'free' };
+  if (ent0.refPending) { try { converted = await _referralMaybeConvert(env, user.email); } catch (e) {} }
+  const ent = converted ? ((await DB.get(env, 'ent', user.email)) || { plan: 'free' }) : ent0;
   // The effective plan is what the client must reflect; `sold` and `billing`
   // explain a mismatch so the app can ask them to fix their card.
   return json({ ok: true, entitlement: Object.assign({}, ent, { plan: _planOf(ent), sold: ent.plan || 'free' }),
