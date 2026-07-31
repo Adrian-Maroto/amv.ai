@@ -640,12 +640,66 @@ function _paintWidgetForm(body, cfg, base){
   });
 }
 
-function _goLiveRow(done, label, how){
-  return '<div class="gl-row '+(done?'gl-done':'')+'">'+
-    '<span class="gl-ic">'+(done?'\u2713':'\u25CB')+'</span>'+
-    '<div class="gl-body"><div class="gl-label">'+label+(done?' <span class="gl-tag">live</span>':' <span class="gl-tag off">not set up</span>')+'</div>'+
-    (done?'':'<div class="gl-how">'+how+'</div>')+'</div></div>';
+/* Ask the server what is configured. Needs the admin token, because the shape
+   of a deployment is operator information. */
+async function _loadReadiness(){
+  const host = $('golive-body'); if(!host) return;
+  const base = loadStr('amv_api_base')||'';
+  const tok = ($('fd-token') && $('fd-token').value || '').trim()
+    || ((typeof _adminToken==='function') ? _adminToken() : '');
+  if(!base){ host.innerHTML = '<div class="gl-note">Connect your backend first (Settings \u2192 Live / Backend) and this reads your real configuration.</div>'; return; }
+  if(!tok){
+    /* Ask right here rather than sending the operator to another screen. This
+       is the page they are on at the exact moment they are pasting secrets. */
+    host.innerHTML =
+      '<div class="gl-note">Your admin token reads this from the Worker. It is kept in memory for this tab only.</div>'+
+      '<div class="adm-tokrow" style="margin-top:10px">'+
+        '<label class="sr-only" for="gl-tok">Admin token</label>'+
+        '<input id="gl-tok" type="password" autocomplete="off" class="inp" placeholder="Admin token">'+
+        '<button class="btn bp" id="gl-tok-go" type="button">Check</button>'+
+      '</div>';
+    const go = () => {
+      const v = ($('gl-tok') && $('gl-tok').value || '').trim();
+      if(!v) return;
+      try{ if(typeof _setAdminToken==='function') _setAdminToken(v); }catch(e){}
+      _loadReadiness();
+    };
+    on($('gl-tok-go'),'click',go);
+    on($('gl-tok'),'keydown',(e)=>{ if(e.key==='Enter'){ e.preventDefault(); go(); } });
+    return;
+  }
+  try{
+    const r = await fetchDeadline(base.replace(/\/$/,'')+'/admin/readiness', { headers:{ 'Authorization':'Bearer '+tok } }, 15000);
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok || !d.ok){ host.innerHTML = '<div class="gl-note">'+(r.status===403?'That admin token was rejected.':escH(d.error||'Could not read your configuration.'))+'</div>'; return; }
+    host.innerHTML = _readinessHTML(d);
+  }catch(e){
+    host.innerHTML = '<div class="gl-note">Could not reach your Worker, so this would be out of date. It will load when you are back online.</div>';
+  }
 }
+try{ window._loadReadiness=_loadReadiness; }catch(e){}
+
+function _readinessHTML(d){
+  const rows = (list) => (list||[]).map(i =>
+    '<div class="gl-row '+(i.on?'gl-done':(i.blocking?'gl-block':''))+'">'+
+      '<span class="gl-ic">'+(i.on?'\u2713':'\u25CB')+'</span>'+
+      '<div class="gl-body">'+
+        '<div class="gl-label">'+escH(i.name)+
+          (i.on?' <span class="gl-tag">live</span>'
+              :' <span class="gl-tag '+(i.blocking?'req':'off')+'">'+(i.blocking?'required':'not set up')+'</span>')+
+        '</div>'+
+        '<div class="gl-how">'+escH(i.turnsOn)+'</div>'+
+        (i.on?'':'<code class="gl-cmd">'+escH(i.how)+'</code>')+
+      '</div>'+
+    '</div>').join('');
+  const s = d.summary || {};
+  return '<div class="gl-verdict '+(s.blockingMissing?'bad':'good')+'">'+escH(s.verdict||'')+
+           ' <span class="gl-count">'+(s.on||0)+' of '+(s.total||0)+' configured</span></div>'+
+         rows(d.items)+
+         '<div class="gl-sec">Storage bindings</div>'+
+         rows(d.storage);
+}
+
 /* === INTEGRATIONS: real Connect flow (OAuth-style, no key pasting) ===
    Each integration's Connect button starts the provider's own approval flow.
    The user approves in a popup and comes back connected. For this to run live,
@@ -1440,18 +1494,16 @@ function _renderSetPaneInner(){
           '<button class="btn bp" id="save-wallets" style="align-self:flex-start;font-size:12px">Save PayPal / Venmo</button>'+
         '</div>'+
       '</div>'+
-      '<div class="ss2" style="background:rgba(35,209,139,.04);border-color:rgba(35,209,139,.15)"><h3 style="color:var(--green)">\uD83D\uDE80 Go-Live Status - turn every feature on</h3>'+
-        '<p style="font-size:12px;color:var(--mu);margin:-4px 0 14px;line-height:1.6">Each item below is real, working code. It switches from \u201cnot set up\u201d to \u201clive\u201d the moment you add the account it needs. Green = working for your users right now.</p>'+
-        '<div class="golive">'+
-          _goLiveRow(!!(window.AMV_API&&AMV_API.live), 'AI engine (all chat, agents, Studio, Dev, documents)', 'Connect your AMV backend in Settings \u2192 AI Connection. The Anthropic key is a Worker secret, never in the browser.')+
-          _goLiveRow(!!(loadStr('amv_api_base')), 'Backend (multi-user, secure key, usage limits)', 'Deploy amv-backend.js to Cloudflare Workers, paste its URL in Settings \u2192 Live / Backend.')+
-          _goLiveRow(!!(S.sp||S.se), 'Payments (collect real revenue)', 'Create payment links at <a href="https://stripe.com" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">stripe.com</a> and paste them above. Money goes straight to your Stripe.')+
-          _goLiveRow(!!loadStr('amv_gauth'), 'Google sign-in + Gmail/Calendar autonomy', 'Create an OAuth Client ID at <a href="https://console.cloud.google.com" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">console.cloud.google.com</a>, add it in Settings \u2192 Integrations.')+
-          _goLiveRow(false, 'Text messages (run AMV from any phone)', 'Create a <a href="https://twilio.com" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">Twilio</a> account + number, add 3 secrets to your backend, point its SMS webhook at /sms/incoming.')+
-          _goLiveRow(false, 'Voice input', 'Just deploy to any HTTPS host (Netlify/Vercel). Voice works automatically on https:// - browsers block it on file://.')+
-          _goLiveRow(false, 'Deploy the site', 'Drag index.html to <a href="https://netlify.com" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">netlify.com</a>, then add your custom domain. Free.')+
-        '</div>'+
+      /* AMV-084: this list used to be assembled in the browser, which cannot
+         see a single Worker secret - three rows were hardcoded to "not set up"
+         and the AI row reported whether THIS BROWSER had a session, which says
+         nothing about whether the server holds a key. It is now read from the
+         server, which is the only thing that knows. */
+      '<div class="ss2" style="background:rgba(35,209,139,.04);border-color:rgba(35,209,139,.15)"><h3 style="color:var(--green)">Go-Live status - what is actually switched on</h3>'+
+        '<p style="font-size:12px;color:var(--mu);margin:-4px 0 14px;line-height:1.6">Read from your Worker, not guessed here. Each line says what it turns on and how to set it. Values are never shown - only whether a secret exists.</p>'+
+        '<div class="golive" id="golive-body"><div class="fd-loading">Checking your deployment\u2026</div></div>'+
       '</div>';
+    setTimeout(_loadReadiness, 0);
     on($('save-stripe'),'click',()=>{
       const sp=$('s-sp')?.value.trim(),se=$('s-se')?.value.trim(),portal=$('s-portal')?.value.trim();
       if(sp!==undefined){S.sp=sp;saveStr('amv_sp',sp);}if(se!==undefined){S.se=se;saveStr('amv_se',se);}

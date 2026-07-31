@@ -361,3 +361,15 @@ strongest reason to come back to a product was its least visible feature. If
 something happens while the user is gone, the place they land has to show it;
 anything that requires them to go looking will only be found by people who
 already knew.
+
+## 37. A status screen that cannot see the thing it reports on is decoration
+The Go-Live list was assembled in the browser, which cannot see a single Worker
+secret. Three of its rows were hardcoded to "not set up" whatever the truth
+was, and the row for the AI engine reported whether THAT BROWSER had a session
+- which says nothing about whether the server holds a key. The screen whose
+entire job was to answer "is this real yet" answered confidently and could not
+possibly know. Readiness has to be reported by the thing that holds the state.
+
+## 38. Report that a secret exists, never anything about its value
+Not a prefix, not a length, not a masked sample. A readiness screen that leaks
+the shape of a key is worse than one that guesses, because it is trusted.

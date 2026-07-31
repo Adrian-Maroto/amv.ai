@@ -2721,6 +2721,7 @@ export default {
         case '/errors/resolve':  return errorsResolve(request, env);
         case '/admin/abuse/list':  return abuseList(request, env);
         case '/admin/abuse/clear': return abuseClear(request, env);
+        case '/admin/readiness':     return adminReadiness(request, env);
         case '/admin/digest':        return adminDigest(request, env);
         case '/admin/backup/export': return backupExport(request, env);
         case '/admin/backup/import': return backupImport(request, env);
@@ -7234,6 +7235,111 @@ async function adminStats(request, env) {
     })(),
     topSpenders,
   });
+}
+
+/* =====================================================================
+   AMV-084  GO-LIVE READINESS - what is actually switched on
+
+   The Go-Live screen was a list of guesses made in the browser. Three of its
+   rows were hardcoded to "not set up" whatever the truth was, and the row for
+   the AI engine reported whether THIS BROWSER had a session - which says
+   nothing at all about whether the Worker holds an API key. So the one screen
+   whose entire job is to tell the owner whether the product is real could not
+   see a single server secret, and confidently said so.
+
+   This reports the truth from the only place that knows it. It returns
+   whether each secret EXISTS - never a value, never a prefix, never a length,
+   because a screen that leaks the shape of a key is worse than one that
+   guesses. Each entry also carries what it turns on and the exact command to
+   set it, so "not set up" is a next action rather than a verdict.
+   ===================================================================== */
+
+/* Present and non-empty. A secret set to the empty string is not configured,
+   and treating it as configured is how a deploy silently half-works. */
+function _has(env, name) { return !!String((env && env[name]) || '').trim(); }
+
+function _readinessReport(env) {
+  const put = n => 'wrangler secret put ' + n;
+  /* `blocking` means the product does not do its core job without it.
+     Everything else is a real feature that degrades honestly. */
+  const items = [
+    { id: 'ai', name: 'AI engine', blocking: true, on: _has(env, 'ANTHROPIC_API_KEY'),
+      turnsOn: 'Every answer, agent, build, document and scheduled task.',
+      how: put('ANTHROPIC_API_KEY') },
+    { id: 'auth', name: 'Accounts and sessions', blocking: true, on: _has(env, 'JWT_SECRET'),
+      turnsOn: 'Sign-in, sync and every authenticated route. Without it no token can be issued or verified.',
+      how: put('JWT_SECRET') },
+    { id: 'admin', name: 'Operator access', blocking: false, on: _has(env, 'ADMIN_TOKEN'),
+      turnsOn: 'The founder dashboard, platform stats, the kill switch and the weekly digest.',
+      how: put('ADMIN_TOKEN') },
+    { id: 'ownerEmail', name: 'Owner address', blocking: false, on: _has(env, 'OWNER_EMAIL'),
+      turnsOn: 'The weekly digest, and operator privileges for that account.',
+      how: put('OWNER_EMAIL') },
+    { id: 'email', name: 'Email delivery', blocking: false, on: _has(env, 'EMAIL_API_KEY'),
+      turnsOn: 'Password resets, the weekly digest, and automation results reaching an inbox instead of only the app.',
+      how: put('EMAIL_API_KEY') },
+    { id: 'appUrl', name: 'App address', blocking: false, on: _has(env, 'APP_URL'),
+      turnsOn: 'Correct links in every email, invite links, and shared conversation URLs.',
+      how: put('APP_URL') },
+    { id: 'payments', name: 'Payments', blocking: false, on: _has(env, 'STRIPE_SECRET_KEY'),
+      turnsOn: 'Checkout, subscriptions and the billing portal. Nobody can pay you without it.',
+      how: put('STRIPE_SECRET_KEY') },
+    { id: 'paymentsHook', name: 'Payment webhooks', blocking: false, on: _has(env, 'STRIPE_WEBHOOK_SECRET'),
+      turnsOn: 'Plans granted on payment, and revoked on cancellation, refund or chargeback. Without it a payment never reaches the account that made it.',
+      how: put('STRIPE_WEBHOOK_SECRET') },
+    { id: 'captcha', name: 'Signup verification', blocking: false, on: _has(env, 'TURNSTILE_SECRET'),
+      turnsOn: 'Bot protection on signup and sign-in. Until it is set, only the honeypot and rate limits apply.',
+      how: put('TURNSTILE_SECRET') },
+    { id: 'googleAuth', name: 'Google sign-in', blocking: false, on: _has(env, 'GOOGLE_CLIENT_ID'),
+      turnsOn: 'Sign in with Google. It fails closed until set, rather than trusting an unverified token.',
+      how: put('GOOGLE_CLIENT_ID') },
+    { id: 'images', name: 'Premium images', blocking: false, on: _has(env, 'IMAGE_API_URL') && _has(env, 'IMAGE_API_KEY'),
+      turnsOn: 'Photoreal image generation. Without it the app falls back to its built-in generator and says so.',
+      how: put('IMAGE_API_URL') + ' and ' + put('IMAGE_API_KEY') },
+    { id: 'video', name: 'Video generation', blocking: false, on: _videoConfigured(env),
+      turnsOn: 'Real video rendering. Without it the app reports that video is unavailable rather than faking a progress bar.',
+      how: put('VIDEO_API_URL') + ', ' + put('VIDEO_API_KEY') + ' and ' + put('VIDEO_MODEL') },
+    { id: 'alerts', name: 'Operator alerts', blocking: false, on: _has(env, 'ALERT_WEBHOOK'),
+      turnsOn: 'Being paged when spend caps are hit, checkout breaks, or the model rejects a request.',
+      how: put('ALERT_WEBHOOK') },
+  ];
+
+  /* Storage is bound, not pasted, so it is reported separately - and what each
+     binding buys is a correctness property, not a feature. */
+  const storage = [
+    { id: 'kv', name: 'KV namespace', on: !!(env && env.AMV_KV),
+      turnsOn: 'All persistence. Nothing works without it.', how: 'Bind AMV_KV in wrangler.toml', blocking: true },
+    { id: 'd1', name: 'D1 database', on: !!(env && env.DB && typeof env.DB.prepare === 'function'),
+      turnsOn: 'Guaranteed sync writes: without it two devices saving at the same instant cannot be arbitrated, only merged.',
+      how: 'Bind DB in wrangler.toml', blocking: false },
+    { id: 'counter', name: 'Atomic counter', on: !!(env && env.AMV_COUNTER),
+      turnsOn: 'Race-free usage limits, spend caps and one-time claims.',
+      how: 'Bind AMV_COUNTER (the AMVCounter Durable Object) in wrangler.toml', blocking: false },
+  ];
+
+  const all = items.concat(storage);
+  const missingBlocking = all.filter(i => i.blocking && !i.on);
+  const missingOptional = all.filter(i => !i.blocking && !i.on);
+  return {
+    items, storage,
+    summary: {
+      on: all.filter(i => i.on).length,
+      total: all.length,
+      blockingMissing: missingBlocking.length,
+      // The single sentence that answers "can I launch".
+      verdict: missingBlocking.length
+        ? 'Not ready: ' + missingBlocking.map(i => i.name).join(', ') + ' still missing.'
+        : (missingOptional.length
+            ? 'Core product is live. ' + missingOptional.length + ' optional capabilit' + (missingOptional.length === 1 ? 'y is' : 'ies are') + ' still off.'
+            : 'Everything is configured.'),
+    },
+  };
+}
+
+/* GET /admin/readiness - admin-gated, and it never returns a secret value. */
+async function adminReadiness(request, env) {
+  if (!_requireAdmin(request, env)) return json({ error: 'forbidden' }, 403);
+  return json(Object.assign({ ok: true, checkedAt: Date.now() }, _readinessReport(env)));
 }
 
 /* =====================================================================

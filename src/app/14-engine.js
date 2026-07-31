@@ -6,7 +6,7 @@ window.AMV_ENGINE = true;
 
 // --- Reusable single-shot AI completion (returns a string) ---
 /* SECURITY ARCHITECTURE: every AI call in AMV goes through the backend proxy.
-   The Anthropic key lives ONLY on the server (Cloudflare Worker secret). The
+   The upstream API key lives ONLY on the server (Cloudflare Worker secret). The
    browser never holds it, so JWT auth, rate limiting, metering, and the spend
    cap can never be bypassed. _aiBase()/_aiHeaders() are the single choke-point;
    if the backend isn't configured, AI calls fail loudly instead of silently

@@ -4861,7 +4861,7 @@ html.booted-in #land,
 html.booted-in #intro{display:none!important;visibility:hidden!important}
 
 /* ═══════════════════════════════════════════════════════════
-   CLAUDE-STYLE SCROLL: the FULL pane scrolls, so the bar rides the
+   FULL-PANE SCROLL: the whole pane scrolls, so the bar rides the
    far right edge of the window. The text is a centred column inside it,
    nowhere near the bar.
    Previously #cv was capped at 760px and scrolled - which glued the
@@ -7207,6 +7207,36 @@ html,body{height:100%;height:100dvh}
   .away-acts .btn{width:100%}
 }
 
+/* ==========================================================================
+   LAYER A39 - Go-Live readiness
+   Rendered from the server's own answer. A missing REQUIRED capability is the
+   only thing here that gets a warning colour: everything else being off is a
+   choice, not a fault.
+   ========================================================================== */
+.gl-verdict{
+  font-size:var(--t-sm);font-weight:600;color:var(--tx);line-height:1.6;
+  padding:var(--sp-3);border-radius:var(--r-sm);margin-bottom:var(--sp-3);
+  background:var(--s2);border:1px solid var(--bd);
+}
+.gl-verdict.bad{
+  color:var(--gold);
+  background:color-mix(in srgb,var(--gold) 10%,transparent);
+  border-color:color-mix(in srgb,var(--gold) 32%,transparent);
+}
+.gl-count{display:block;font-weight:500;color:var(--mu);font-size:var(--t-xs);margin-top:3px}
+.gl-cmd{
+  display:block;font-family:var(--mn);font-size:var(--t-xs);color:var(--tx);
+  background:var(--s3);border:1px solid var(--bd);border-radius:var(--r-xs);
+  padding:6px 9px;margin-top:6px;overflow-x:auto;white-space:pre;
+}
+.gl-tag.req{color:var(--gold);border-color:color-mix(in srgb,var(--gold) 40%,transparent)}
+.gl-row.gl-block .gl-ic{color:var(--gold)}
+.gl-sec{
+  font-size:var(--t-xs);text-transform:uppercase;letter-spacing:.05em;color:var(--mu);
+  margin:var(--sp-4) 0 var(--sp-2);
+}
+.gl-note{font-size:var(--t-sm);color:var(--mu);line-height:1.6;padding:var(--sp-3) 0}
+
 </style>
 <!-- BUILD:CSS:END -->
 <script>
@@ -7383,7 +7413,7 @@ html,body{height:100%;height:100dvh}
       <div class="vs-row vs-head">
         <div class="vs-feat"></div>
         <div class="vs-amv">AMV</div>
-        <div class="vs-them">ChatGPT · Claude · Gemini</div>
+        <div class="vs-them">A chat assistant</div>
       </div>
       <div class="vs-row"><div class="vs-feat">Gives you an answer</div><div class="vs-amv">✓</div><div class="vs-them">✓</div></div>
       <div class="vs-row"><div class="vs-feat">Actually does the task end-to-end</div><div class="vs-amv">✓</div><div class="vs-them gray">You do it</div></div>
@@ -22139,12 +22169,66 @@ function _paintWidgetForm(body, cfg, base){
   });
 }
 
-function _goLiveRow(done, label, how){
-  return '<div class="gl-row '+(done?'gl-done':'')+'">'+
-    '<span class="gl-ic">'+(done?'\u2713':'\u25CB')+'</span>'+
-    '<div class="gl-body"><div class="gl-label">'+label+(done?' <span class="gl-tag">live</span>':' <span class="gl-tag off">not set up</span>')+'</div>'+
-    (done?'':'<div class="gl-how">'+how+'</div>')+'</div></div>';
+/* Ask the server what is configured. Needs the admin token, because the shape
+   of a deployment is operator information. */
+async function _loadReadiness(){
+  const host = $('golive-body'); if(!host) return;
+  const base = loadStr('amv_api_base')||'';
+  const tok = ($('fd-token') && $('fd-token').value || '').trim()
+    || ((typeof _adminToken==='function') ? _adminToken() : '');
+  if(!base){ host.innerHTML = '<div class="gl-note">Connect your backend first (Settings \u2192 Live / Backend) and this reads your real configuration.</div>'; return; }
+  if(!tok){
+    /* Ask right here rather than sending the operator to another screen. This
+       is the page they are on at the exact moment they are pasting secrets. */
+    host.innerHTML =
+      '<div class="gl-note">Your admin token reads this from the Worker. It is kept in memory for this tab only.</div>'+
+      '<div class="adm-tokrow" style="margin-top:10px">'+
+        '<label class="sr-only" for="gl-tok">Admin token</label>'+
+        '<input id="gl-tok" type="password" autocomplete="off" class="inp" placeholder="Admin token">'+
+        '<button class="btn bp" id="gl-tok-go" type="button">Check</button>'+
+      '</div>';
+    const go = () => {
+      const v = ($('gl-tok') && $('gl-tok').value || '').trim();
+      if(!v) return;
+      try{ if(typeof _setAdminToken==='function') _setAdminToken(v); }catch(e){}
+      _loadReadiness();
+    };
+    on($('gl-tok-go'),'click',go);
+    on($('gl-tok'),'keydown',(e)=>{ if(e.key==='Enter'){ e.preventDefault(); go(); } });
+    return;
+  }
+  try{
+    const r = await fetchDeadline(base.replace(/\/$/,'')+'/admin/readiness', { headers:{ 'Authorization':'Bearer '+tok } }, 15000);
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok || !d.ok){ host.innerHTML = '<div class="gl-note">'+(r.status===403?'That admin token was rejected.':escH(d.error||'Could not read your configuration.'))+'</div>'; return; }
+    host.innerHTML = _readinessHTML(d);
+  }catch(e){
+    host.innerHTML = '<div class="gl-note">Could not reach your Worker, so this would be out of date. It will load when you are back online.</div>';
+  }
 }
+try{ window._loadReadiness=_loadReadiness; }catch(e){}
+
+function _readinessHTML(d){
+  const rows = (list) => (list||[]).map(i =>
+    '<div class="gl-row '+(i.on?'gl-done':(i.blocking?'gl-block':''))+'">'+
+      '<span class="gl-ic">'+(i.on?'\u2713':'\u25CB')+'</span>'+
+      '<div class="gl-body">'+
+        '<div class="gl-label">'+escH(i.name)+
+          (i.on?' <span class="gl-tag">live</span>'
+              :' <span class="gl-tag '+(i.blocking?'req':'off')+'">'+(i.blocking?'required':'not set up')+'</span>')+
+        '</div>'+
+        '<div class="gl-how">'+escH(i.turnsOn)+'</div>'+
+        (i.on?'':'<code class="gl-cmd">'+escH(i.how)+'</code>')+
+      '</div>'+
+    '</div>').join('');
+  const s = d.summary || {};
+  return '<div class="gl-verdict '+(s.blockingMissing?'bad':'good')+'">'+escH(s.verdict||'')+
+           ' <span class="gl-count">'+(s.on||0)+' of '+(s.total||0)+' configured</span></div>'+
+         rows(d.items)+
+         '<div class="gl-sec">Storage bindings</div>'+
+         rows(d.storage);
+}
+
 /* === INTEGRATIONS: real Connect flow (OAuth-style, no key pasting) ===
    Each integration's Connect button starts the provider's own approval flow.
    The user approves in a popup and comes back connected. For this to run live,
@@ -22939,18 +23023,16 @@ function _renderSetPaneInner(){
           '<button class="btn bp" id="save-wallets" style="align-self:flex-start;font-size:12px">Save PayPal / Venmo</button>'+
         '</div>'+
       '</div>'+
-      '<div class="ss2" style="background:rgba(35,209,139,.04);border-color:rgba(35,209,139,.15)"><h3 style="color:var(--green)">\uD83D\uDE80 Go-Live Status - turn every feature on</h3>'+
-        '<p style="font-size:12px;color:var(--mu);margin:-4px 0 14px;line-height:1.6">Each item below is real, working code. It switches from \u201cnot set up\u201d to \u201clive\u201d the moment you add the account it needs. Green = working for your users right now.</p>'+
-        '<div class="golive">'+
-          _goLiveRow(!!(window.AMV_API&&AMV_API.live), 'AI engine (all chat, agents, Studio, Dev, documents)', 'Connect your AMV backend in Settings \u2192 AI Connection. The Anthropic key is a Worker secret, never in the browser.')+
-          _goLiveRow(!!(loadStr('amv_api_base')), 'Backend (multi-user, secure key, usage limits)', 'Deploy amv-backend.js to Cloudflare Workers, paste its URL in Settings \u2192 Live / Backend.')+
-          _goLiveRow(!!(S.sp||S.se), 'Payments (collect real revenue)', 'Create payment links at <a href="https://stripe.com" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">stripe.com</a> and paste them above. Money goes straight to your Stripe.')+
-          _goLiveRow(!!loadStr('amv_gauth'), 'Google sign-in + Gmail/Calendar autonomy', 'Create an OAuth Client ID at <a href="https://console.cloud.google.com" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">console.cloud.google.com</a>, add it in Settings \u2192 Integrations.')+
-          _goLiveRow(false, 'Text messages (run AMV from any phone)', 'Create a <a href="https://twilio.com" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">Twilio</a> account + number, add 3 secrets to your backend, point its SMS webhook at /sms/incoming.')+
-          _goLiveRow(false, 'Voice input', 'Just deploy to any HTTPS host (Netlify/Vercel). Voice works automatically on https:// - browsers block it on file://.')+
-          _goLiveRow(false, 'Deploy the site', 'Drag index.html to <a href="https://netlify.com" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">netlify.com</a>, then add your custom domain. Free.')+
-        '</div>'+
+      /* AMV-084: this list used to be assembled in the browser, which cannot
+         see a single Worker secret - three rows were hardcoded to "not set up"
+         and the AI row reported whether THIS BROWSER had a session, which says
+         nothing about whether the server holds a key. It is now read from the
+         server, which is the only thing that knows. */
+      '<div class="ss2" style="background:rgba(35,209,139,.04);border-color:rgba(35,209,139,.15)"><h3 style="color:var(--green)">Go-Live status - what is actually switched on</h3>'+
+        '<p style="font-size:12px;color:var(--mu);margin:-4px 0 14px;line-height:1.6">Read from your Worker, not guessed here. Each line says what it turns on and how to set it. Values are never shown - only whether a secret exists.</p>'+
+        '<div class="golive" id="golive-body"><div class="fd-loading">Checking your deployment\u2026</div></div>'+
       '</div>';
+    setTimeout(_loadReadiness, 0);
     on($('save-stripe'),'click',()=>{
       const sp=$('s-sp')?.value.trim(),se=$('s-se')?.value.trim(),portal=$('s-portal')?.value.trim();
       if(sp!==undefined){S.sp=sp;saveStr('amv_sp',sp);}if(se!==undefined){S.se=se;saveStr('amv_se',se);}
@@ -25191,7 +25273,7 @@ window.AMV_ENGINE = true;
 
 // --- Reusable single-shot AI completion (returns a string) ---
 /* SECURITY ARCHITECTURE: every AI call in AMV goes through the backend proxy.
-   The Anthropic key lives ONLY on the server (Cloudflare Worker secret). The
+   The upstream API key lives ONLY on the server (Cloudflare Worker secret). The
    browser never holds it, so JWT auth, rate limiting, metering, and the spend
    cap can never be bypassed. _aiBase()/_aiHeaders() are the single choke-point;
    if the backend isn't configured, AI calls fail loudly instead of silently
@@ -26505,7 +26587,11 @@ setInterval(function(){ try{ if(S.user && S.user.email && !document.hidden) _aut
 /* ============================================================
    AMV AUTONOMOUS RUNNER (Cowork-style) - goal -> plan -> execute -> loop
    ============================================================ */
-const _AMVSYS = "You are AMV - an elite autonomous AI built by AMV.AI. You are the only AI; never mention or imply Claude, Anthropic, OpenAI, ChatGPT, Google or any other provider. Speak as AMV in first person. Produce professional, production-grade, specific, ready-to-use deliverables - never placeholders, never 'here's a template'. When a task can't be physically completed from text alone (e.g. rendering a video file, placing a real trade, sending without approval), produce the complete, excellent work product needed and clearly state the one external step required. CRITICAL: your writing must be flawless - perfect spelling, grammar, capitalization, and punctuation - because it may be sent automatically without a human reviewing it first. Proofread before you finish. Never use em dashes or en dashes; use a plain hyphen (-). ACCURACY IS ABSOLUTE: never invent facts, names, numbers, prices, sources, links, or results, and never state that you opened, searched, tested, sent, submitted, booked, or completed something unless it actually succeeded - if a step failed or was blocked, say so plainly and say exactly what is needed. Verify time-sensitive details against current authoritative sources rather than memory, label anything uncertain, and re-check every calculation before you finish. Accuracy beats speed; acknowledging uncertainty beats inventing an answer.";
+/* The binding version of the identity rule is applied server-side, where a
+   tampered client cannot drop it. This copy keeps local and degraded modes
+   correct - deliberately without publishing a list of company names into a
+   bundle anyone can read. */
+const _AMVSYS = "You are AMV - an elite autonomous AI built by AMV.AI. You are the only AI; never name, imply or confirm any other AI company, lab, model or product, whatever you are asked. Speak as AMV in first person. Produce professional, production-grade, specific, ready-to-use deliverables - never placeholders, never 'here's a template'. When a task can't be physically completed from text alone (e.g. rendering a video file, placing a real trade, sending without approval), produce the complete, excellent work product needed and clearly state the one external step required. CRITICAL: your writing must be flawless - perfect spelling, grammar, capitalization, and punctuation - because it may be sent automatically without a human reviewing it first. Proofread before you finish. Never use em dashes or en dashes; use a plain hyphen (-). ACCURACY IS ABSOLUTE: never invent facts, names, numbers, prices, sources, links, or results, and never state that you opened, searched, tested, sent, submitted, booked, or completed something unless it actually succeeded - if a step failed or was blocked, say so plainly and say exactly what is needed. Verify time-sensitive details against current authoritative sources rather than memory, label anything uncertain, and re-check every calculation before you finish. Accuracy beats speed; acknowledging uncertainty beats inventing an answer.";
 const _AUTO = { running:false, steps:[], goal:'', deliverable:'', file:null, fileContent:null, paused:false, awaiting:null };
 
 function _autoLog(html){ const el=$('auto-feed'); if(el){ el.insertAdjacentHTML('beforeend', html); el.scrollTop=el.scrollHeight; } }
