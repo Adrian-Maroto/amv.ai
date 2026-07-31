@@ -18,7 +18,7 @@ mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'sublife.harness.mjs');
 writeFileSync(harness, src +
   '\nexport { _linkCustomer, _emailFromCustomer, _planOf, _billingState, _markPastDue, _clearPastDue,' +
-  ' setEntitlement, requireUser, stripeWebhook, paypalWebhook, PAST_DUE_GRACE_MS, DB, signToken };\n');
+  ' setEntitlement, requireUser, stripeWebhook, paypalWebhook, PAST_DUE_GRACE_MS, PAST_DUE_RECOVER_MS, DB, signToken };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 /* ---- a KV + env good enough for these paths ---- */
@@ -131,9 +131,19 @@ section('A FAILED renewal does not buy another month');
   const lapsed = Object.assign({}, e, { pastDueSince: Date.now() - W.PAST_DUE_GRACE_MS - 1000 });
   ok(W._planOf(lapsed) === 'free', 'once the grace period is over the plan is free again', W._planOf(lapsed));
 
-  const state = W._billingState(e), gone = W._billingState(lapsed);
+  /* Three states, because they ask for three different things (AMV-085). While
+     the plan still works, say by when. Once it has stopped but the card is
+     still being retried, say it comes straight back - that is the window where
+     cards actually get fixed, and "your plan has dropped" reads as final and
+     stops people fixing it. Only once the processor has given up is it over. */
+  const dead = Object.assign({}, e, { pastDueSince: Date.now() - W.PAST_DUE_RECOVER_MS - 1000 });
+  const state = W._billingState(e), paused = W._billingState(lapsed), gone = W._billingState(dead);
   ok(state.state === 'past_due' && /card/i.test(state.message), 'the user is told to update their card', state.message);
-  ok(gone.state === 'lapsed' && /Free/.test(gone.message), 'and told plainly when it has lapsed', gone.message);
+  ok(paused.state === 'paused' && /comes back immediately/.test(paused.message),
+     'past the grace window it is paused, not written off', paused.message);
+  ok(W._planOf(lapsed) === 'free', 'and paused really does mean Free limits, not a warning with no teeth');
+  ok(gone.state === 'lapsed' && /Free/.test(gone.message), 'and told plainly once it is genuinely over', gone.message);
+  ok(/data is untouched/i.test(gone.message), 'with the one reassurance that matters at that point', gone.message);
 }
 
 section('A later successful payment restores it exactly');

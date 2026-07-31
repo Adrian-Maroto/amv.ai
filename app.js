@@ -3151,20 +3151,40 @@ async function _createHostedShare(c){
       msgs: (c.msgs||[]).map(m=>({ r:m.r, c:(typeof m.c==='string'?m.c:(m.d||'[attachment]')) }))
     })});
     const d = await r.json().catch(()=>null);
-    return (d && d.ok && d.url) ? d.url : null;
+    return (d && d.ok && d.url) ? { url: d.url, id: d.id } : null;
   }catch(e){ return null; }
 }
+/* Put a shared page into search results, or take it back out. The server owns
+   the decision; this only carries it. */
+async function _setShareListed(id, listed){
+  if(!(window.AMV_API && AMV_API.live && AMV_API.token)) return false;
+  try{
+    const r = await AMV_API._fetch('/v1/share/visibility', { method:'POST', body: JSON.stringify({ id, listed:!!listed }) });
+    const d = await r.json().catch(()=>null);
+    return !!(d && d.ok);
+  }catch(e){ return false; }
+}
+try{ window._setShareListed=_setShareListed; }catch(e){}
 async function _openShareModal(c){
   const ovr=$('ovr'); if(!ovr) return;
   const hosted=await _createHostedShare(c);
-  const link=hosted||_buildShareLink(c);
+  const link=(hosted && hosted.url)||_buildShareLink(c);
   const tooBig=!hosted && link.length>8000;
   ovr.innerHTML=
     '<div class="share-modal">'+
       '<div class="share-title">Share this conversation</div>'+
       '<p class="share-sub">'+(hosted
-        ? 'Anyone with the link can read this conversation. It is not indexed by search engines, and you can revoke it any time in Settings \u2192 Privacy.'
+        ? 'Anyone with the link can read this conversation. Search engines are kept out unless you choose otherwise below, and you can revoke it any time in Settings \u2192 Privacy.'
         : 'Anyone with the link can view a read-only copy. The chat is encoded in the link itself - nothing is stored on a server.')+'</p>'+
+      /* Off by default, and the copy says the part that matters: a link can be
+         revoked, a search result cannot be un-seen. Anyone who wants the reach
+         opts in knowing that; everyone else gets what they assumed. */
+      (hosted
+        ? '<label class="share-listed"><input type="checkbox" id="share-listed">'+
+            '<span><b>Let this page show up in search results</b>'+
+            '<em>Off by default. Turning it on can bring people to AMV - but once a page is indexed, revoking the link later does not remove it from search.</em></span>'+
+          '</label><div class="share-say" id="share-listed-say" role="status" aria-live="polite"></div>'
+        : '')+
       (tooBig?'<div class="share-warn">This conversation is long, so the link is large and may not work in every app. Exporting as a file may work better.</div>':'')+
       '<div class="share-link-row"><input id="share-link" class="inp" readonly value="'+escH(link)+'"><button class="btn bp" id="share-copy">Copy</button></div>'+
       '<div class="share-actions">'+
@@ -3174,6 +3194,21 @@ async function _openShareModal(c){
     '</div>';
   ovr.classList.add('on');
   on($('share-copy'),'click',()=>{ _copyText(link).then(()=>{ const b=$('share-copy'); if(b){b.textContent='Copied!';setTimeout(()=>b.textContent='Copy',1500);} }); });
+  /* The checkbox reflects what the SERVER accepted, not what was clicked - if
+     the call fails it goes back, because a tick that did not take is a lie. */
+  on($('share-listed'),'change',async function(){
+    const say=$('share-listed-say'); const want=this.checked;
+    if(say) say.textContent = want ? 'Adding to search\u2026' : 'Removing from search\u2026';
+    const ok = hosted && hosted.id ? await _setShareListed(hosted.id, want) : false;
+    if(!ok){
+      this.checked = !want;
+      if(say) say.textContent = 'Could not change that just now - nothing was altered.';
+      return;
+    }
+    if(say) say.textContent = want
+      ? 'This page can now appear in search results.'
+      : 'This page is hidden from search results again.';
+  });
   on($('share-native'),'click',()=>{ if(navigator.share){ navigator.share({title:c.title||'AMV.AI chat',url:link}).catch(()=>{}); } else { _copyText(link).then(()=>toast('Link copied','success')); } });
   on($('share-md'),'click',()=>{ closeOvr(); _exportConvMarkdown(c); });
 }

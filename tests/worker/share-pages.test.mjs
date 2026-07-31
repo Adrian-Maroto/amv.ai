@@ -14,7 +14,7 @@ const ROOT = join(__dir, '..', '..');
 const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'share.harness.mjs');
-writeFileSync(harness, src + '\nexport { shareCreate, shareList, shareRevoke, sharePage, signToken, DB };\n');
+writeFileSync(harness, src + '\nexport { shareCreate, shareList, shareRevoke, sharePage, signToken, DB, shareVisibility };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 function makeEnv() {
@@ -26,6 +26,10 @@ function makeEnv() {
 }
 const create = (env, token, body) => W.shareCreate(new Request('https://w/v1/share/create',
   { method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: JSON.stringify(body) }), env);
+const tokenFor = (env, email) => W.signToken({ email }, env.JWT_SECRET, 3600, env, 'access');
+const post = (env, token, body) => new Request('https://w/v1/share/visibility',
+  { method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: JSON.stringify(body) });
+const qRobots = (res) => res.headers.get('X-Robots-Tag') === 'noindex, nofollow';
 const CONVO = { title: 'How to price a SaaS', msgs: [
   { r: 'u', c: 'How should I price my SaaS product?' },
   { r: 'a', c: 'Start from the value delivered rather than your costs.' }] };
@@ -153,11 +157,70 @@ section('The app uses the hosted link when it can, and says what it is');
 {
   const client = readFileSync(join(ROOT, 'app.js'), 'utf8');
   ok(/_createHostedShare/.test(client), 'the app asks for a hosted link');
-  ok(/const link=hosted\|\|_buildShareLink\(c\)/.test(client),
+  /* The hosted result is now an object (it carries the share id, so visibility
+     can be changed), which is why this reads `hosted && hosted.url`. */
+  ok(/const link=\(hosted && hosted\.url\)\|\|_buildShareLink\(c\)/.test(client),
      'and falls back to the self-contained link with no backend, rather than failing');
+  ok(/_setShareListed/.test(client), 'and the search-visibility choice is carried to the server, not decided locally');
   ok(/revoke it any time in Settings/.test(client), 'the hosted case explains revocation');
   ok(/nothing is stored on a server/.test(client), 'and the fallback still tells the truth about itself');
   ok(/openSharedChatsManager/.test(client), 'the privacy screen promise is now backed by something');
+}
+
+section('Search engines are kept out unless the person sharing says otherwise');
+{
+  /* A shared page that gets indexed is a real acquisition channel. It is also
+     permanent in a way a link is not: revoking a link does not remove a snippet
+     someone already saw in a search result, and most people sharing with one
+     person do not expect a search result. So the reach is opt-in. */
+  const env = makeEnv();
+  const token = await tokenFor(env, 'alice@x.com');
+
+  const quiet = await (await create(env, token, { title: 'Private thing', msgs: [{ r:'u', c:'hello' }] })).json();
+  ok(quiet.listed === false, 'the default is not listed', quiet.listed);
+  const qPage = await (await W.sharePage(new Request('https://w/c/' + quiet.id), env, quiet.id)).text();
+  ok(/noindex/.test(qPage), 'and the page tells crawlers to stay out');
+
+  const loud = await (await create(env, token, { title: 'Public thing', msgs: [{ r:'u', c:'hello' }], listed: true })).json();
+  ok(loud.listed === true, 'an explicit opt-in is honoured', loud.listed);
+  const lRes = await W.sharePage(new Request('https://w/c/' + loud.id), env, loud.id);
+  const lPage = await lRes.text();
+  ok(!/noindex/.test(lPage), 'and that page carries no noindex tag');
+  ok(!lRes.headers.get('X-Robots-Tag'), 'nor the header, which would override the tag anyway', lRes.headers.get('X-Robots-Tag'));
+  ok(qRobots(await W.sharePage(new Request('https://w/c/' + quiet.id), env, quiet.id)), 'while the quiet one still sends the header');
+}
+
+section('Anything shared before the choice existed keeps the promise it was made under');
+{
+  const env = makeEnv();
+  const token = await tokenFor(env, 'alice@x.com');
+  const d = await (await create(env, token, { title: 'Old', msgs: [{ r:'u', c:'hi' }] })).json();
+  // A record written by an older build has no `listed` field at all.
+  const rec = await W.DB.get(env, 'share', d.id);
+  delete rec.listed;
+  await W.DB.put(env, 'share', d.id, rec);
+  const page = await (await W.sharePage(new Request('https://w/c/' + d.id), env, d.id)).text();
+  ok(/noindex/.test(page), 'a missing choice is not consent - it stays out of search');
+}
+
+section('The decision is reversible, and only by its owner');
+{
+  const env = makeEnv();
+  const mine = await tokenFor(env, 'alice@x.com');
+  const theirs = await tokenFor(env, 'mallory@x.com');
+  const d = await (await create(env, mine, { title: 'Mine', msgs: [{ r:'u', c:'hi' }] })).json();
+
+  const on = await (await W.shareVisibility(post(env, mine, { id: d.id, listed: true }), env)).json();
+  ok(on.listed === true, 'the owner can put it into search');
+  ok(!/noindex/.test(await (await W.sharePage(new Request('https://w/c/'+d.id), env, d.id)).text()), 'and the page changes');
+
+  const off = await (await W.shareVisibility(post(env, mine, { id: d.id, listed: false }), env)).json();
+  ok(off.listed === false, 'and take it back out - a choice that cannot be undone is not a choice');
+  ok(/noindex/.test(await (await W.sharePage(new Request('https://w/c/'+d.id), env, d.id)).text()), 'the page changes back');
+
+  const bad = await W.shareVisibility(post(env, theirs, { id: d.id, listed: true }), env);
+  ok(bad.status === 404, 'nobody else can publish someone else\u2019s conversation to the open web', bad.status);
+  ok(/noindex/.test(await (await W.sharePage(new Request('https://w/c/'+d.id), env, d.id)).text()), 'and the attempt changed nothing');
 }
 
 report();

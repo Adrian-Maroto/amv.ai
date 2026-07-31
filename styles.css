@@ -7151,3 +7151,21 @@ html,body{height:100%;height:100dvh}
   margin:var(--sp-4) 0 var(--sp-2);
 }
 .gl-note{font-size:var(--t-sm);color:var(--mu);line-height:1.6;padding:var(--sp-3) 0}
+
+/* ==========================================================================
+   LAYER A40 - Share visibility opt-in
+   A real choice, off by default, with the consequence stated next to it rather
+   than buried in a policy page.
+   ========================================================================== */
+.share-listed{
+  display:flex;gap:10px;align-items:flex-start;margin:var(--sp-3) 0 0;
+  padding:var(--sp-3);border-radius:var(--r-sm);background:var(--s2);
+  border:1px solid var(--bd);cursor:pointer;
+}
+.share-listed input[type="checkbox"]{
+  appearance:auto;-webkit-appearance:checkbox;width:16px;height:16px;
+  margin:1px 0 0;flex:0 0 auto;cursor:pointer;
+}
+.share-listed span{display:block;font-size:var(--t-sm);color:var(--tx);line-height:1.5}
+.share-listed em{display:block;font-style:normal;font-size:var(--t-xs);color:var(--mu);margin-top:4px;line-height:1.55}
+.share-say{font-size:var(--t-xs);color:var(--mu);min-height:14px;margin-top:6px}

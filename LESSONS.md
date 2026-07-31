@@ -373,3 +373,19 @@ possibly know. Readiness has to be reported by the thing that holds the state.
 ## 38. Report that a secret exists, never anything about its value
 Not a prefix, not a length, not a masked sample. A readiness screen that leaks
 the shape of a key is worse than one that guesses, because it is trusted.
+
+## 39. Cutting a customer off before the retry that would have paid you
+The past-due grace was three days. The payment processor retries a failed card
+for about three weeks, and most recoveries land inside the first. Ending the
+subscription on day three loses revenue to an expired card or a bank's fraud
+hold - not to anyone deciding to leave. Grace windows should be set from the
+recovery curve, not from a round number, and the message during them should
+read as recoverable rather than final.
+
+## 40. Reach is opt-in when the cost of being wrong is permanent
+A shared page that search engines index is a real acquisition channel and an
+irreversible act: revoking a link does not remove a snippet somebody already
+saw. Someone sharing a conversation with one person does not expect a search
+result. So the growth is offered, with the permanence stated next to the
+control, and never taken by default - including for anything created before the
+choice existed, where silence is not consent.

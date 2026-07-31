@@ -2694,6 +2694,7 @@ export default {
         case '/v1/share/create': return shareCreate(request, env);
         case '/v1/share/list':   return shareList(request, env);
         case '/v1/share/revoke': return shareRevoke(request, env);
+        case '/v1/share/visibility': return shareVisibility(request, env);
         case '/sync/pull':       return syncPull(request, env);
         case '/sync/push':       return syncPush(request, env);
         case '/auto/list':       return autoList(request, env);
@@ -4299,18 +4300,29 @@ async function shareCreate(request, env){
     c: String((m && m.c) || '').slice(0, 20000),
   })).filter(m => m.c);
   if(!clean.length) return json({ error:'nothing to share' }, 400);
-  const rec = { title, msgs: clean, owner: user.email.toLowerCase(), at: Date.now() };
+  /* AMV-086: whether this page may appear in search results.
+
+     A shared conversation that search engines index is a real acquisition
+     channel - it is how link-sharing turns into traffic. It is also permanent
+     in a way a link is not: once a page is in an index, revoking it does not
+     un-publish the snippet someone already saw, and most people sharing a link
+     with one person do not expect it to become a search result.
+
+     So the growth is opt-in, never a default. The person who wants reach says
+     so; everyone else gets a link that works exactly as they assumed. */
+  const listed = body.listed === true;
+  const rec = { title, msgs: clean, owner: user.email.toLowerCase(), at: Date.now(), listed };
   if(JSON.stringify(rec).length > SHARE_MAX_BYTES)
     return json({ error:'This conversation is too large to share.', code:'share_too_large' }, 413);
   const id = _shareId();
   await DB.put(env, 'share', id, rec);
   // Owner index, so the privacy screen can actually list and revoke them.
   const mine = (await DB.get(env, 'shares', rec.owner)) || { items: [] };
-  mine.items = [{ id, title, at: rec.at }, ...(mine.items || [])].slice(0, 200);
+  mine.items = [{ id, title, at: rec.at, listed }, ...(mine.items || [])].slice(0, 200);
   await DB.put(env, 'shares', rec.owner, mine);
-  audit(env, 'share_created', { by: user.email, id });
+  audit(env, 'share_created', { by: user.email, id, listed });
   const base = (env.APP_URL || '').replace(/\/$/, '') || new URL(request.url).origin;
-  return json({ ok:true, id, url: base + '/c/' + id });
+  return json({ ok:true, id, listed, url: base + '/c/' + id });
 }
 async function shareList(request, env){
   const user = await requireUser(request, env);
@@ -4319,6 +4331,29 @@ async function shareList(request, env){
   const base = (env.APP_URL || '').replace(/\/$/, '') || new URL(request.url).origin;
   return json({ ok:true, items: (mine.items||[]).map(i => ({ ...i, url: base + '/c/' + i.id })) });
 }
+/* POST /v1/share/list already reports `listed`. This lets an owner take a page
+   back OUT of search without deleting it - the decision has to be reversible or
+   it is not really a choice. Putting it back IN is the same call the other way.
+   Note what this cannot do: un-publish something already indexed. The copy at
+   the point of choosing says so, because that is when it matters. */
+async function shareVisibility(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'unauthorized' }, 401);
+  const body = await request.json().catch(()=>({}));
+  const id = String(body.id||'');
+  if(!/^[a-z0-9]{6,20}$/.test(id)) return json({ error:'bad id' }, 400);
+  const rec = await DB.get(env, 'share', id);
+  if(!rec || rec.owner !== user.email.toLowerCase()) return json({ error:'not found' }, 404);
+  const listed = body.listed === true;
+  rec.listed = listed;
+  await DB.put(env, 'share', id, rec);
+  const mine = (await DB.get(env, 'shares', user.email.toLowerCase())) || { items: [] };
+  mine.items = (mine.items||[]).map(i => i.id === id ? Object.assign({}, i, { listed }) : i);
+  await DB.put(env, 'shares', user.email.toLowerCase(), mine);
+  audit(env, 'share_visibility', { by: user.email, id, listed });
+  return json({ ok:true, id, listed });
+}
+
 async function shareRevoke(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
@@ -4347,6 +4382,9 @@ async function sharePage(request, env, id){
   if(!/^[a-z0-9]{6,20}$/.test(String(id||''))) return notFound('That link is not valid');
   const rec = await DB.get(env, 'share', id);
   if(!rec) return notFound('This conversation is no longer shared');
+  /* Anything created before this choice existed was created under a promise of
+     "not indexed". It keeps that promise: only an explicit true opts in. */
+  const listed = rec.listed === true;
 
   const base = (env.APP_URL || '').replace(/\/$/, '') || new URL(request.url).origin;
   // Only offered when an address is actually configured - a Report link that
@@ -4366,7 +4404,7 @@ async function sharePage(request, env, id){
     '<meta name="viewport" content="width=device-width,initial-scale=1">' +
     '<title>' + title + ' - AMV.AI</title>' +
     '<meta name="description" content="' + desc + '">' +
-    '<meta name="robots" content="noindex,nofollow">' +
+    (listed ? '' : '<meta name="robots" content="noindex,nofollow">') +
     // The tags that make a pasted link render as a card instead of a bare URL.
     '<meta property="og:type" content="article">' +
     '<meta property="og:site_name" content="AMV.AI">' +
@@ -4414,7 +4452,7 @@ async function sharePage(request, env, id){
        meant the link kept working after the app had told them it was dead.
        Sixty seconds still absorbs the burst a link gets when it is posted. */
     'Cache-Control': 'public, max-age=60, must-revalidate',
-    'X-Robots-Tag': 'noindex, nofollow',
+    ...(listed ? {} : { 'X-Robots-Tag': 'noindex, nofollow' }),
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'no-referrer',
     // No scripts at all: this page renders text AMV produced, to strangers.
@@ -5890,7 +5928,28 @@ async function setEntitlement(env, email, plan, extra = {}) {
    fixable problem. So there is a stated grace period. Inside it the plan works
    and the app asks them to fix the card; past it the plan is free until a
    payment succeeds. */
-const PAST_DUE_GRACE_MS = 3 * 24 * 60 * 60 * 1000;   // 3 days
+/* AMV-085: three days was too short, and it was costing real money.
+
+   When a card fails at renewal the payment processor keeps retrying for about
+   three weeks - most recoveries land inside the first week. Cutting a paying
+   customer off on day three ends the subscription while the retry that would
+   have succeeded has not happened yet. That is involuntary churn: revenue lost
+   to an expired card or a bank's fraud hold, not to anyone deciding to leave.
+   It is the cheapest revenue there is to keep.
+
+   Seven days of full access covers the common causes without giving away much.
+   The exposure is bounded either way: the monthly cost ceiling
+   (planPrice * 0.45) applies during grace exactly as it does at any other
+   time, so a lapsed account cannot spend more than the plan was already sized
+   to allow. Four extra days of that is worth far less than the subscription it
+   saves. */
+const PAST_DUE_GRACE_MS = 7 * 24 * 60 * 60 * 1000;   // full access while the card is retried
+
+/* How long the processor keeps trying before giving up. Past the grace window
+   the plan drops to Free limits, but the subscription is not dead yet - and
+   telling someone their plan "has dropped" when a retry could still succeed
+   reads as final and stops them fixing the card. */
+const PAST_DUE_RECOVER_MS = 21 * 24 * 60 * 60 * 1000;
 
 /* The plan as it stands RIGHT NOW, which is not always the plan that was sold.
    Every read of an entitlement goes through this, so an expired grace period
@@ -5900,16 +5959,32 @@ function _planOf(ent) {
   if (ent.pastDueSince && Date.now() > ent.pastDueSince + PAST_DUE_GRACE_MS) return 'free';
   return ent.plan;
 }
-/* What the app should tell the user about their billing, if anything. */
+/* What the app should tell the user about their billing, if anything.
+
+   Three states, because they call for three different things from the user.
+   While the plan still works, say by when. Once it has stopped working but the
+   card is still being retried, say it comes straight back - that is the window
+   where most cards actually get fixed. Only after the processor has given up
+   is it over, and only then should the message read that way. */
 function _billingState(ent) {
   if (!ent || !ent.pastDueSince) return null;
-  const endsAt = ent.pastDueSince + PAST_DUE_GRACE_MS;
-  return Date.now() > endsAt
-    ? { state: 'lapsed', since: ent.pastDueSince,
-        message: 'Your last payment did not go through, so your plan has dropped to Free. Update your card to restore it.' }
-    : { state: 'past_due', since: ent.pastDueSince, graceEndsAt: endsAt,
-        message: 'Your last payment did not go through. Update your card to keep your plan - it stays active until ' +
-                 new Date(endsAt).toUTCString().replace(/ GMT$/, ' UTC') + '.' };
+  const since = ent.pastDueSince;
+  const graceEndsAt = since + PAST_DUE_GRACE_MS;
+  const recoverEndsAt = since + PAST_DUE_RECOVER_MS;
+  const now = Date.now();
+  if (now <= graceEndsAt) {
+    return { state: 'past_due', since, graceEndsAt,
+      message: 'Your last payment did not go through. Update your card to keep your plan - it stays active until ' +
+               new Date(graceEndsAt).toUTCString().replace(/ GMT$/, ' UTC') + '.' };
+  }
+  if (now <= recoverEndsAt) {
+    return { state: 'paused', since, graceEndsAt, recoverEndsAt,
+      message: 'Your plan is paused because the payment did not go through. We are still trying your card - '
+             + 'update it and your plan comes back immediately, with nothing lost.' };
+  }
+  return { state: 'lapsed', since, graceEndsAt, recoverEndsAt,
+    message: 'Your last payment could not be collected, so your plan has ended and your account is on Free. '
+           + 'Your data is untouched - subscribe again any time to pick up where you left off.' };
 }
 /* Mark a subscription as unpaid without touching the plan that was sold, so
    that a later successful payment restores it exactly. */
