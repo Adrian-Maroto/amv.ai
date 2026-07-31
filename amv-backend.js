@@ -2609,6 +2609,17 @@ export default {
         console.error('[cron] failed', e && e.message);
         try{ await _workerError(env, 'cron', e); }catch(_){}
       }
+      /* AMV-081: the weekly owner digest, in its own try. It is a report about
+         the business; it must never be able to stop the tick that runs every
+         customer's background work. Claimed once per week internally, so
+         calling it on every 5-minute tick is correct and cheap. */
+      try{
+        const d = await runWeeklyDigest(env);
+        if(d && d.sent) console.log('[cron] weekly digest sent', JSON.stringify(d));
+      }catch(e){
+        console.error('[cron] digest failed', e && e.message);
+        try{ await _workerError(env, 'cron.digest', e); }catch(_){}
+      }
     })());
   },
 
@@ -2710,6 +2721,7 @@ export default {
         case '/errors/resolve':  return errorsResolve(request, env);
         case '/admin/abuse/list':  return abuseList(request, env);
         case '/admin/abuse/clear': return abuseClear(request, env);
+        case '/admin/digest':        return adminDigest(request, env);
         case '/admin/backup/export': return backupExport(request, env);
         case '/admin/backup/import': return backupImport(request, env);
         case '/api/jobs':            return crewJobs(request, env);
@@ -7222,6 +7234,226 @@ async function adminStats(request, env) {
     })(),
     topSpenders,
   });
+}
+
+/* =====================================================================
+   AMV-081  THE WEEKLY OWNER DIGEST
+
+   Every number below already existed. Signups, activation, referral
+   conversions, per-plan margin, cost per paying user, money at risk - all of
+   it computed, all of it correct, and all of it sitting on a dashboard that
+   only reports what is true at the instant somebody remembers to open it.
+
+   A dashboard tells you the state. A digest tells you the CHANGE, on a
+   schedule, without being asked - which is the difference between having
+   metrics and being run by them. So this stores a snapshot each week and
+   reports the delta against the last one, in the order the questions actually
+   get asked: is it growing, does it make money, and what is on fire.
+
+   Rules it keeps:
+     - It never invents a comparison. The first week says "no previous week",
+       because that is what is true.
+     - It sends at most once per week, claimed atomically, so a cron that fires
+       twice does not mail twice.
+     - With nothing configured it does nothing and says why in the log, rather
+       than failing the cron tick that also runs everyone's automations.
+   ===================================================================== */
+
+/* Monday-anchored week key, so a digest belongs to a week rather than to
+   whenever the cron happened to fire. */
+function _weekKey(ts) {
+  const d = new Date(ts || Date.now());
+  const day = (d.getUTCDay() + 6) % 7;                 // Monday = 0
+  const monday = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - day);
+  return new Date(monday).toISOString().slice(0, 10);
+}
+
+/* The owner's numbers, read through the same admin endpoint the dashboard uses
+   so the digest and the screen can never drift apart. Returns null when there
+   is no admin token configured - with no admin surface there is nothing to
+   report, and inventing a second path into these numbers would be a second
+   thing to secure. */
+async function _ownerMetrics(env) {
+  if (!env.ADMIN_TOKEN) return null;
+  const r = await adminStats(new Request('https://internal/v1/admin/stats', {
+    headers: { Authorization: 'Bearer ' + env.ADMIN_TOKEN },
+  }), env);
+  if (!r || r.status !== 200) return null;
+  return await r.json().catch(() => null);
+}
+
+/* The handful of figures worth carrying week to week. Deliberately small: a
+   snapshot that stores everything becomes a second source of truth to keep
+   correct, and nobody compares forty numbers. */
+function _digestSnapshot(m) {
+  const g = m.growth || {}, rev = m.revenue || {}, mar = m.margin || {}, u = m.users || {};
+  return {
+    at: Date.now(),
+    signups7: +g.signups7 || 0,
+    referrals7: +g.referrals7 || 0,
+    activeToday: +u.activeToday || 0,
+    paying: +u.paying || 0,
+    totalUsers: +u.total || 0,
+    mrr: +rev.estMRR || 0,
+    mrrAtRisk: +rev.mrrAtRisk || 0,
+    grossMargin: +mar.grossMargin || 0,
+    grossMarginPct: mar.grossMarginPct === null ? null : +mar.grossMarginPct,
+    costPerPayingUser: +mar.costPerPayingUser || 0,
+    freeUserCost: +mar.freeUserCost || 0,
+    monthlyCost: +mar.estMonthlyCost || 0,
+    unprofitable: (mar.unprofitableAccounts || []).length,
+  };
+}
+
+/* "12 (+3)" - and nothing at all when there is no previous week, because an
+   invented baseline is worse than no baseline. */
+function _delta(now, before, opts) {
+  const o = opts || {};
+  const fmt = v => (o.money ? '$' + (+v).toFixed(o.dp == null ? 2 : o.dp)
+                            : (o.pct ? (+v).toFixed(1) + '%' : String(Math.round(v))));
+  if (before == null || !Number.isFinite(before)) return fmt(now);
+  const d = now - before;
+  if (Math.abs(d) < 1e-9) return fmt(now) + ' (no change)';
+  return fmt(now) + ' (' + (d > 0 ? '+' : '-') + fmt(Math.abs(d)) + ')';
+}
+
+/* Build the digest. Returns { subject, html, text, snapshot, previous } so it
+   can be previewed without being sent - the same content either way, which is
+   the only way a preview is worth anything. */
+function _buildDigest(m, prev) {
+  const snap = _digestSnapshot(m);
+  const g = m.growth || {}, mar = m.margin || {};
+  const p = prev || null;
+  const pv = k => (p ? p[k] : null);
+
+  const rows = [
+    ['Signups this week',      _delta(snap.signups7, pv('signups7'))],
+    ['Of those, from invites', (snap.referrals7 || 0) + (g.referralSharePct != null ? ' (' + g.referralSharePct + '% of signups)' : '')],
+    ['Active today',           _delta(snap.activeToday, pv('activeToday'))],
+    ['Paying accounts',        _delta(snap.paying, pv('paying'))],
+    ['MRR',                    _delta(snap.mrr, pv('mrr'), { money: true })],
+    ['MRR at risk',            _delta(snap.mrrAtRisk, pv('mrrAtRisk'), { money: true })],
+    ['Gross margin',           _delta(snap.grossMargin, pv('grossMargin'), { money: true })
+                               + (snap.grossMarginPct != null ? ' (' + snap.grossMarginPct + '%)' : '')],
+    ['Cost per paying user',   _delta(snap.costPerPayingUser, pv('costPerPayingUser'), { money: true, dp: 3 })],
+    ['Cost of the free tier',  _delta(snap.freeUserCost, pv('freeUserCost'), { money: true })],
+  ];
+
+  /* What to actually DO. Only stated when the numbers say it - a digest that
+     ends with advice every week is a digest nobody finishes reading. */
+  const flags = [];
+  if (snap.mrrAtRisk > 0)
+    flags.push('$' + snap.mrrAtRisk.toFixed(2) + ' of MRR is on cards that failed. Those accounts drop to Free when their grace period ends.');
+  if (snap.unprofitable > 0)
+    flags.push(snap.unprofitable + ' account' + (snap.unprofitable > 1 ? 's cost' : ' costs') + ' more than it pays. They are named on the dashboard.');
+  if (snap.grossMarginPct != null && snap.grossMarginPct < 50)
+    flags.push('Gross margin is ' + snap.grossMarginPct + '%. Below 50% the plan pricing or the model routing needs a look.');
+  if (p && snap.signups7 < pv('signups7'))
+    flags.push('Signups fell from ' + pv('signups7') + ' to ' + snap.signups7 + ' week on week.');
+  if (snap.paying === 0 && snap.totalUsers > 0)
+    flags.push('No paying accounts yet against ' + snap.totalUsers + ' signups. Every cost below is being carried by nothing.');
+  if (m.spend && m.spend.killed)
+    flags.push('The global kill switch is ON. Nobody can use AMV right now.');
+
+  const esc = t => String(t).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  const appUrl = String(_digestAppUrl(m) || '').replace(/\/$/, '');
+  const week = _weekKey();
+  const subject = 'AMV weekly: ' + snap.signups7 + ' signups, $' + snap.mrr.toFixed(0) + ' MRR';
+
+  const rowsHtml = rows.map(([k, v]) =>
+    '<tr><td style="padding:7px 0;font-size:13px;color:#666">' + esc(k) + '</td>' +
+    '<td style="padding:7px 0;font-size:13px;color:#111;text-align:right;font-weight:600">' + esc(v) + '</td></tr>').join('');
+  const flagsHtml = flags.length
+    ? '<div style="margin-top:22px;padding:14px;border-radius:10px;background:#fff8e6;border:1px solid #f0dca8">' +
+      '<div style="font-size:12px;font-weight:700;color:#8a6d1f;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Needs a decision</div>' +
+      flags.map(f => '<div style="font-size:13px;line-height:1.6;color:#5c4a14;margin-bottom:6px">' + esc(f) + '</div>').join('') +
+      '</div>'
+    : '<p style="margin:22px 0 0;font-size:13px;color:#777">Nothing needs a decision this week.</p>';
+
+  const html = _emailShell(
+    'Week of ' + week,
+    (p ? '<p style="margin:0 0 16px;font-size:13px;color:#777">Compared with the week before.</p>'
+       : '<p style="margin:0 0 16px;font-size:13px;color:#777">First digest, so there is nothing to compare against yet.</p>') +
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0">' + rowsHtml + '</table>' + flagsHtml,
+    appUrl ? { label: 'Open the dashboard', url: appUrl } : null,
+    '<hr style="border:none;border-top:1px solid #eee;margin:18px 0"><p style="margin:0;font-size:11px;color:#999">Sent once a week to the AMV owner. These are the same figures as the founder dashboard.</p>',
+    'AMV weekly digest.'
+  );
+
+  const text = 'AMV weekly - week of ' + week + '\n\n'
+    + rows.map(([k, v]) => k + ': ' + v).join('\n')
+    + (flags.length ? '\n\nNeeds a decision:\n' + flags.map(f => '- ' + f).join('\n') : '\n\nNothing needs a decision this week.')
+    + (appUrl ? '\n\n' + appUrl : '');
+
+  return { subject, html, text, snapshot: snap, previous: p, flags, week };
+}
+/* The dashboard payload does not carry the app URL, and threading env through
+   the builder purely for one link would make it harder to test. This keeps the
+   builder pure and lets the caller attach it to the metrics it passes in. */
+function _digestAppUrl(m) { return (m && m._appUrl) || ''; }
+
+/* Run it. Claimed once per week so a doubled cron cannot mail twice. */
+async function runWeeklyDigest(env) {
+  const week = _weekKey();
+  const to = String(env.OWNER_EMAIL || '').toLowerCase().trim();
+  if (!to || !env.EMAIL_API_KEY || !env.ADMIN_TOKEN) {
+    return { sent: false, reason: !to ? 'no OWNER_EMAIL' : (!env.EMAIL_API_KEY ? 'no email provider' : 'no ADMIN_TOKEN') };
+  }
+  // Atomic, so two overlapping cron invocations cannot both send.
+  if (!(await _claimOnce(env, 'digest', week, 40 * 86400))) return { sent: false, reason: 'already sent this week' };
+
+  const m = await _ownerMetrics(env);
+  if (!m) { return { sent: false, reason: 'metrics unavailable' }; }
+  m._appUrl = env.APP_URL || env.APP_ORIGIN || '';
+
+  let prev = null;
+  try { prev = JSON.parse(await env.AMV_KV.get('digestsnap') || 'null'); } catch (e) { prev = null; }
+
+  const d = _buildDigest(m, prev);
+  const ok = await _sendEmail(env, to, d.subject, d.html, d.text);
+  if (!ok) {
+    /* Nothing was delivered, so two things must not happen: this snapshot must
+       not become the baseline for a week the owner never saw - that would
+       quietly under-report the next change - and the week must not stay
+       claimed, or one provider hiccup silently costs a whole digest. Give the
+       week back and the next tick tries again. */
+    await _releaseClaim(env, 'digest', week);
+    audit(env, 'digest_failed', { week });
+    await alertOnce(env, 'digest_fail', 'Weekly owner digest could not be delivered - the email provider rejected it.', 720);
+    return { sent: false, reason: 'delivery failed', week };
+  }
+  // Stored only after a delivery that actually happened.
+  await env.AMV_KV.put('digestsnap', JSON.stringify(d.snapshot), { expirationTtl: 120 * 86400 });
+  audit(env, 'digest_sent', { week, signups7: d.snapshot.signups7, mrr: d.snapshot.mrr });
+  return { sent: true, week, flags: d.flags.length };
+}
+
+/* GET/POST /admin/digest - preview it now, or send it now.
+
+   Preview is the default and changes nothing. Sending is an outward-facing
+   action, so it takes an explicit flag rather than happening because someone
+   opened a URL. */
+async function adminDigest(request, env) {
+  if (!_requireAdmin(request, env)) return json({ error: 'forbidden' }, 403);
+  const url = new URL(request.url);
+  const send = url.searchParams.get('send') === '1';
+  if (send) {
+    /* Release this week's claim so an explicit request is honoured rather than
+       silently swallowed by the once-a-week guard. Through the helper, because
+       the claim lives in the Durable Object, D1 or KV depending on what is
+       configured - deleting one KV key would miss it in two of three cases. */
+    await _releaseClaim(env, 'digest', _weekKey());
+    const r = await runWeeklyDigest(env);
+    return json({ ok: !!r.sent, ...r });
+  }
+  const m = await _ownerMetrics(env);
+  if (!m) return json({ error: 'metrics unavailable' }, 503);
+  m._appUrl = env.APP_URL || env.APP_ORIGIN || '';
+  let prev = null;
+  try { prev = JSON.parse(await env.AMV_KV.get('digestsnap') || 'null'); } catch (e) {}
+  const d = _buildDigest(m, prev);
+  return json({ ok: true, preview: true, week: d.week, subject: d.subject,
+                snapshot: d.snapshot, previous: d.previous, flags: d.flags, text: d.text });
 }
 
 // flip the global kill switch on/off

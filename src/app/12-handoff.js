@@ -329,6 +329,50 @@ const ADMIN_SET_SECTIONS=[
   {id:'platform',label:'Platform',icon:'<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>'},
 ];
 
+/* AMV-081: the weekly digest, on the one screen that already holds the admin
+   token. Preview shows exactly what would be sent; sending is a separate,
+   explicit action because it puts a message in someone's inbox. */
+function _digestCardHTML(){
+  return '<div class="ss2" style="margin-top:16px"><h3>Weekly digest</h3>'+
+    '<p style="font-size:12px;color:var(--mu);line-height:1.6;margin:-4px 0 12px">'+
+      'These figures are emailed to the owner once a week, with the change since the week before. '+
+      'It needs OWNER_EMAIL and an email provider configured on the Worker.</p>'+
+    '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
+      '<button class="btn bs" id="fd-digest-preview" type="button" style="font-size:12px">Preview this week</button>'+
+      '<button class="btn bs" id="fd-digest-send" type="button" style="font-size:12px">Send it now</button>'+
+    '</div>'+
+    '<div id="fd-digest-out" class="fd-digest-out" role="status" aria-live="polite"></div>'+
+  '</div>';
+}
+function _wireDigestCard(base, tok){
+  const out = $('fd-digest-out');
+  const say = (t, kind) => { if(out){ out.className = 'fd-digest-out' + (kind ? ' ' + kind : ''); out.textContent = t; } };
+  const call = async (qs) => {
+    const r = await fetchDeadline(base.replace(/\/$/,'')+'/admin/digest'+qs,
+      { headers:{ 'Authorization':'Bearer '+tok } }, 20000);
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(d.error || ('failed ('+r.status+')'));
+    return d;
+  };
+  on($('fd-digest-preview'),'click', async ()=>{
+    say('Loading\u2026');
+    try{
+      const d = await call('');
+      // The plain-text version IS what gets sent, so showing it is not a mock-up.
+      if(out){ out.className='fd-digest-out'; out.textContent = d.subject + '\n\n' + d.text; }
+    }catch(e){ say('Could not build the digest: ' + e.message, 'bad'); }
+  });
+  on($('fd-digest-send'),'click', async ()=>{
+    /* Outward-facing: it puts mail in someone's inbox, so it is confirmed. */
+    if(typeof confirm === 'function' && !confirm('Email this week\u2019s digest to the owner now?')) return;
+    say('Sending\u2026');
+    try{
+      const d = await call('?send=1');
+      say(d.sent ? 'Sent to the owner.' : ('Not sent: ' + (d.reason || 'unknown')), d.sent ? 'good' : 'bad');
+    }catch(e){ say('Could not send: ' + e.message, 'bad'); }
+  });
+}
+
 /* Render the founder dashboard from the /v1/admin/stats payload. */
 function _founderDashHTML(d){
   const fmt=n=>(n||0).toLocaleString();
@@ -1267,7 +1311,8 @@ function _renderSetPaneInner(){
         const r=await fetchDeadline(base.replace(/\/$/,'')+'/v1/admin/stats',{headers:{'Authorization':'Bearer '+tok}},15000);
         if(!r.ok){ body.innerHTML='<div class="fd-empty">'+(r.status===403?'Invalid admin token.':'Could not load stats ('+r.status+').')+'</div>'; return; }
         const d=await r.json();
-        body.innerHTML=_founderDashHTML(d);
+        body.innerHTML=_founderDashHTML(d)+_digestCardHTML();
+        _wireDigestCard(base, tok);
         // wire kill switch
         const kbtn=$('fd-kill');
         if(kbtn) on(kbtn,'click',async()=>{

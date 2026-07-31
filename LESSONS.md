@@ -336,3 +336,11 @@ somewhere the user looks while AMV is closed. Results defaulted to in-app, so
 the only way to discover there had been a reason to come back was to come back.
 A background feature that cannot reach the user is a feature they will never
 know ran.
+
+## 34. Store the baseline only after the delivery that made it real
+The weekly digest wrote its snapshot whether or not the email actually went
+out, so a provider outage would have made the next week compare against a week
+nobody ever saw - quietly under-reporting the change. Anything that becomes the
+reference point for a future comparison must be written after the thing it is
+supposed to reference has happened, and the attempt must be released so it
+retries rather than being silently lost.
