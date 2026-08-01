@@ -329,6 +329,27 @@ const AMV_API = {
     throw new Error(d.error || 'Signup failed');
   },
 
+  /* Programmatic access to this account. The key is returned exactly once, at
+     creation - the server never stores it and cannot show it again. */
+  async keysList(){
+    if(!this.live || !this.token) return null;
+    const r = await this._fetch('/v1/keys/list', {method:'POST', body:'{}'});
+    return await r.json().catch(()=>null);
+  },
+  async keyCreate(name){
+    if(!this.live || !this.token) return null;
+    const r = await this._fetch('/v1/keys/create', {method:'POST', body:JSON.stringify({name})});
+    const d = await r.json().catch(()=>null);
+    if(!r.ok || !d || !d.ok){ const e=new Error((d&&d.error)||'could not create a key'); if(d&&d.code) e.code=d.code; throw e; }
+    return d;
+  },
+  async keyRevoke(id){
+    if(!this.live || !this.token) return false;
+    const r = await this._fetch('/v1/keys/revoke', {method:'POST', body:JSON.stringify({id})});
+    const d = await r.json().catch(()=>null);
+    return !!(d && d.ok);
+  },
+
   /* The allowance the SERVER actually enforces, which is the only one that can
      stop a request. Everything the Usage screen showed before this came from
      device-local counters that the server has never seen. */

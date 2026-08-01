@@ -1292,13 +1292,49 @@ function _reportAnswerRating(m, emoji, on){
     const down = /\u{1F44E}/u.test(emoji);
     if(!up && !down) return;                         // only the two that mean good/bad
     if(!(window.AMV_API && AMV_API.live && AMV_API.token)) return;
+    const engine = m._engine || (typeof MODELS!=='undefined' && MODELS[m.model] ? MODELS[m.model].model : '');
     AMV_API._fetch('/v1/feedback', { method:'POST', body: JSON.stringify({
       rating: up ? 'up' : 'down',
-      engine: m._engine || (typeof MODELS!=='undefined' && MODELS[m.model] ? MODELS[m.model].model : ''),
-      feature: 'chat',
+      engine, feature: 'chat',
     })}).catch(()=>{});
+    /* A thumbs-down says an answer was bad and nothing about WHY, which is the
+       half that lets it be fixed. One optional tap, never a required form -
+       most people will not answer, and the rating already counted without it. */
+    if(down) _askWhyBad(engine);
   }catch(e){ /* a rating must never break the message it is on */ }
 }
+
+/* The reason chips. Shown once, dismissed by answering or by ignoring - they
+   disappear on the next render either way, because a nag after a complaint is
+   its own complaint. */
+function _askWhyBad(engine){
+  try{
+    const host = document.getElementById('cm'); if(!host) return;
+    document.querySelectorAll('.whybad').forEach(x=>x.remove());
+    const REASONS = [['wrong','Wrong'],['incomplete','Incomplete'],
+                     ['ignored_instructions','Ignored what I asked'],['too_slow','Too slow']];
+    const box = document.createElement('div');
+    box.className = 'whybad';
+    box.setAttribute('data-i18n','');
+    box.innerHTML = '<span class="whybad-q">Thanks - what was wrong with it?</span>'+
+      REASONS.map(([v,l])=>'<button class="whybad-b" type="button" data-why="'+v+'">'+escH(l)+'</button>').join('')+
+      '<button class="whybad-x" type="button" aria-label="Dismiss">&#215;</button>';
+    host.appendChild(box);
+    host.scrollTop = host.scrollHeight;
+    const send = (reason) => {
+      try{
+        if(reason && window.AMV_API && AMV_API.live && AMV_API.token){
+          AMV_API._fetch('/v1/feedback', { method:'POST', body: JSON.stringify({
+            rating:'down', engine, feature:'chat', reason })}).catch(()=>{});
+        }
+      }catch(e){}
+      box.remove();
+    };
+    box.querySelectorAll('[data-why]').forEach(b=>b.addEventListener('click',()=>send(b.dataset.why)));
+    box.querySelector('.whybad-x').addEventListener('click',()=>send(''));
+  }catch(e){ /* never let feedback break the conversation */ }
+}
+try{ window._askWhyBad=_askWhyBad; }catch(e){}
 
 function _toggleReaction(idx, emoji){
   const msgs=getMsgs();
@@ -1548,8 +1584,11 @@ function renderChatMsgs() {
       (typeof _awayCardHTML==='function' ? _awayCardHTML() : '')+
       '<div class="chome">'+
         '<h1 class="chome-title"><span class="chome-greet">'+title+'</span></h1>'+
-      '</div>';
+      '</div>'+
+      /* One card, once, for a brand new account (AMV-099). Usually nothing. */
+      (typeof _firstRunHTML==='function' ? _firstRunHTML() : '');
     try{ if(typeof _wireAwayCard==='function') _wireAwayCard(cm); }catch(e){}
+    try{ if(typeof _wireFirstRun==='function') _wireFirstRun(cm); }catch(e){}
     const chips=$('chome-chips');
     if(chips){
       chips.innerHTML=

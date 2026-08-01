@@ -24,7 +24,7 @@ const TABS = ['chat', 'images', 'video', 'workspaces', 'memory', 'usage', 'billi
 
 /* Every settings pane a normal (non-operator) user can open. */
 const PANES = ['account', 'privacy', 'security', 'billing', 'usage', 'capabilities', 'spending',
-               'invite', 'family', 'appearance', 'language', 'skills', 'integrations',
+               'api', 'invite', 'family', 'appearance', 'language', 'skills', 'integrations',
                'projects', 'about'];
 
 async function measure() {

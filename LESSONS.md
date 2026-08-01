@@ -459,3 +459,27 @@ so a routing or prompt change could make AMV materially worse with every
 dashboard staying green. Measuring it must not mean storing conversations: the
 engine, the direction and a coarse reason answer the question without keeping
 anything worth stealing.
+
+## 51. A revoke that only marks the record is not a revoke
+The first version of API key revocation set `revoked` on the item and left the
+hash-to-account lookup in place, so the key kept working. A revoke button that
+does nothing is worse than none, because it is believed. Whatever the request
+path actually reads is the thing that has to be removed.
+
+## 52. Validate a URL where it enters, not where it is used
+A listing could store any string as a file URL. Nothing renders it as a link
+today, so it was not a live hole - but trusting every future renderer not to
+make it an href is how stored XSS arrives by way of an unrelated change months
+later. Scheme-check at the door.
+
+## 53. A number that can be manufactured is not a ranking signal
+Marketplace installs drove ranking and were unauthenticated, limited only per
+IP. A rented address pool could rank anything to the top. An install now costs
+an account and counts once per account per listing.
+
+## 54. Speed is the thing users feel and the thing nobody was measuring
+Cost and quality were instrumented; latency was not. A routing change that
+halved the bill and doubled the wait would have looked like a pure win on every
+screen. Time to the first token is bucketed rather than logged - the shape is
+the useful part, and a per-request log of who asked what and when is only a
+liability.

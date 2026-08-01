@@ -329,6 +329,27 @@ const AMV_API = {
     throw new Error(d.error || 'Signup failed');
   },
 
+  /* Programmatic access to this account. The key is returned exactly once, at
+     creation - the server never stores it and cannot show it again. */
+  async keysList(){
+    if(!this.live || !this.token) return null;
+    const r = await this._fetch('/v1/keys/list', {method:'POST', body:'{}'});
+    return await r.json().catch(()=>null);
+  },
+  async keyCreate(name){
+    if(!this.live || !this.token) return null;
+    const r = await this._fetch('/v1/keys/create', {method:'POST', body:JSON.stringify({name})});
+    const d = await r.json().catch(()=>null);
+    if(!r.ok || !d || !d.ok){ const e=new Error((d&&d.error)||'could not create a key'); if(d&&d.code) e.code=d.code; throw e; }
+    return d;
+  },
+  async keyRevoke(id){
+    if(!this.live || !this.token) return false;
+    const r = await this._fetch('/v1/keys/revoke', {method:'POST', body:JSON.stringify({id})});
+    const d = await r.json().catch(()=>null);
+    return !!(d && d.ok);
+  },
+
   /* The allowance the SERVER actually enforces, which is the only one that can
      stop a request. Everything the Usage screen showed before this came from
      device-local counters that the server has never seen. */
@@ -5379,13 +5400,49 @@ function _reportAnswerRating(m, emoji, on){
     const down = /\u{1F44E}/u.test(emoji);
     if(!up && !down) return;                         // only the two that mean good/bad
     if(!(window.AMV_API && AMV_API.live && AMV_API.token)) return;
+    const engine = m._engine || (typeof MODELS!=='undefined' && MODELS[m.model] ? MODELS[m.model].model : '');
     AMV_API._fetch('/v1/feedback', { method:'POST', body: JSON.stringify({
       rating: up ? 'up' : 'down',
-      engine: m._engine || (typeof MODELS!=='undefined' && MODELS[m.model] ? MODELS[m.model].model : ''),
-      feature: 'chat',
+      engine, feature: 'chat',
     })}).catch(()=>{});
+    /* A thumbs-down says an answer was bad and nothing about WHY, which is the
+       half that lets it be fixed. One optional tap, never a required form -
+       most people will not answer, and the rating already counted without it. */
+    if(down) _askWhyBad(engine);
   }catch(e){ /* a rating must never break the message it is on */ }
 }
+
+/* The reason chips. Shown once, dismissed by answering or by ignoring - they
+   disappear on the next render either way, because a nag after a complaint is
+   its own complaint. */
+function _askWhyBad(engine){
+  try{
+    const host = document.getElementById('cm'); if(!host) return;
+    document.querySelectorAll('.whybad').forEach(x=>x.remove());
+    const REASONS = [['wrong','Wrong'],['incomplete','Incomplete'],
+                     ['ignored_instructions','Ignored what I asked'],['too_slow','Too slow']];
+    const box = document.createElement('div');
+    box.className = 'whybad';
+    box.setAttribute('data-i18n','');
+    box.innerHTML = '<span class="whybad-q">Thanks - what was wrong with it?</span>'+
+      REASONS.map(([v,l])=>'<button class="whybad-b" type="button" data-why="'+v+'">'+escH(l)+'</button>').join('')+
+      '<button class="whybad-x" type="button" aria-label="Dismiss">&#215;</button>';
+    host.appendChild(box);
+    host.scrollTop = host.scrollHeight;
+    const send = (reason) => {
+      try{
+        if(reason && window.AMV_API && AMV_API.live && AMV_API.token){
+          AMV_API._fetch('/v1/feedback', { method:'POST', body: JSON.stringify({
+            rating:'down', engine, feature:'chat', reason })}).catch(()=>{});
+        }
+      }catch(e){}
+      box.remove();
+    };
+    box.querySelectorAll('[data-why]').forEach(b=>b.addEventListener('click',()=>send(b.dataset.why)));
+    box.querySelector('.whybad-x').addEventListener('click',()=>send(''));
+  }catch(e){ /* never let feedback break the conversation */ }
+}
+try{ window._askWhyBad=_askWhyBad; }catch(e){}
 
 function _toggleReaction(idx, emoji){
   const msgs=getMsgs();
@@ -5635,8 +5692,11 @@ function renderChatMsgs() {
       (typeof _awayCardHTML==='function' ? _awayCardHTML() : '')+
       '<div class="chome">'+
         '<h1 class="chome-title"><span class="chome-greet">'+title+'</span></h1>'+
-      '</div>';
+      '</div>'+
+      /* One card, once, for a brand new account (AMV-099). Usually nothing. */
+      (typeof _firstRunHTML==='function' ? _firstRunHTML() : '');
     try{ if(typeof _wireAwayCard==='function') _wireAwayCard(cm); }catch(e){}
+    try{ if(typeof _wireFirstRun==='function') _wireFirstRun(cm); }catch(e){}
     const chips=$('chome-chips');
     if(chips){
       chips.innerHTML=
@@ -14362,6 +14422,7 @@ const USER_SET_SECTIONS=[
   {id:'usage',label:'Usage',icon:'<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>'},
   {id:'capabilities',label:'Capabilities',icon:'<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>'},
   {id:'spending',label:'Spending',icon:'<path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>'},
+  {id:'api',label:'API keys',icon:'<path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>'},
   {id:'invite',label:'Invite',icon:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/>'},
   {id:'family',label:'Family & linked accounts',icon:'<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'},
   {group:'Customize'},
@@ -15713,6 +15774,9 @@ function _renderSetPaneInner(){
     _renderSpendingPane(pane);
   } else if(sp==='family'){
     _renderFamilyPane(pane);
+  } else if(sp==='api'){
+    /* Rendered from 30-api-keys.js. */
+    _renderApiKeysPane(pane);
   } else if(sp==='invite'){
     /* Rendered from 27-referrals.js. */
     _renderInvitePane(pane);
@@ -19487,6 +19551,7 @@ function _paletteCommands(){
     setNav('set-usage','Settings: Usage','usage','usage limits tokens'),
     setNav('set-capabilities','Settings: Capabilities','capabilities','capabilities web search memory toggles'),
     setNav('set-spending','Settings: Spending','spending','spending limits money budget purchases cap allowance'),
+    setNav('set-api','Settings: API keys','api','api key developer integration programmatic token'),
     setNav('set-invite','Settings: Invite','invite','invite referral refer friend share link bonus tokens'),
     setNav('set-family','Settings: Family & linked accounts','family','family linked accounts parent child share access permissions'),
     setNav('set-appearance','Settings: Appearance','appearance','appearance theme accent font motion'),
@@ -22687,3 +22752,248 @@ function _wireAwayCard(root){
   }));
 }
 try{ window._awayCardHTML=_awayCardHTML; window._wireAwayCard=_wireAwayCard; window._awayUnread=_awayUnread; }catch(e){}
+/* ============================================================
+   AMV-097  API KEYS - the screen.
+
+   The whole design rests on one property: the key exists exactly once, in the
+   response to the request that created it. The server stores only a hash and
+   genuinely cannot show it again. That makes this screen's job unusual - it has
+   to make sure the user copies the value NOW, and it must never imply the key
+   can be retrieved later, because it cannot.
+
+   So the new key is shown once, in full, with the copy control next to it and
+   a plain sentence saying it will not be shown again. Everything after that is
+   the last four characters, which is enough to recognise a key and useless to
+   anyone who steals the list.
+   ============================================================ */
+
+function _apiWhen(ts){
+  if(!ts) return 'never';
+  const diff = Date.now() - ts;
+  if(diff < 3600000) return Math.max(1, Math.floor(diff/60000)) + ' min ago';
+  if(diff < 86400000) return Math.floor(diff/3600000) + 'h ago';
+  try{ return new Date(ts).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); }
+  catch(e){ return ''; }
+}
+
+function _renderApiKeysPane(pane){
+  pane.innerHTML =
+    '<div class="set-title">API keys</div>'+
+    '<div class="set-sub">Use AMV from your own code. A key spends this account\u2019s plan - the same limits, '+
+      'the same monthly ceiling, the same protections. Nothing separate to watch.</div>'+
+    '<div class="ss2" id="api-body"><div class="ak-load">Loading your keys\u2026</div></div>'+
+    _apiDocsHTML();
+
+  const body = document.getElementById('api-body');
+  if(!(window.AMV_API && AMV_API.live && AMV_API.token)){
+    body.innerHTML = '<div class="ak-off">API keys live on your AMV account. Sign in and they appear here.</div>';
+    return;
+  }
+  _apiLoad();
+}
+
+async function _apiLoad(){
+  const body = document.getElementById('api-body'); if(!body) return;
+  try{
+    const d = await AMV_API.keysList();
+    if(!d || !d.ok){ body.innerHTML = '<div class="ak-off">Could not load your keys just now.</div>'; return; }
+    _apiPaint(body, d);
+  }catch(e){
+    body.innerHTML = '<div class="ak-off">Could not reach the server, so this would be out of date.</div>';
+  }
+}
+
+function _apiPaint(host, d){
+  const live = (d.keys||[]).filter(k=>!k.revoked);
+  const rows = (d.keys||[]).map(k=>
+    '<div class="ak-row'+(k.revoked?' ak-dead':'')+'">'+
+      '<div class="ak-main">'+
+        '<div class="ak-name">'+escH(k.name||'API key')+(k.revoked?' <span class="ak-tag">revoked</span>':'')+'</div>'+
+        '<div class="ak-meta">'+escH('amv_sk_' + '\u2026' + (k.last4||'????'))+
+          ' · created '+escH(_apiWhen(k.created))+
+          ' · last used '+escH(_apiWhen(k.lastUsed))+'</div>'+
+      '</div>'+
+      (k.revoked?'':'<button class="btn bs" type="button" data-ak-rev="'+escH(k.id)+'">Revoke</button>')+
+    '</div>').join('');
+
+  host.innerHTML =
+    '<h3>Your keys</h3>'+
+    (rows || '<div class="ak-off">No keys yet.</div>')+
+    '<div class="ak-new">'+
+      '<label class="sr-only" for="ak-name">Name for the new key</label>'+
+      '<input id="ak-name" class="inp" placeholder="What is it for? e.g. production" maxlength="60">'+
+      '<button class="btn bp" id="ak-create" type="button">Create key</button>'+
+    '</div>'+
+    '<div class="ak-say" id="ak-say" role="status" aria-live="polite"></div>'+
+    '<div class="ak-fine">'+live.length+' of '+(d.max||10)+' active. A key is shown once when it is created - '+
+      'AMV stores only a hash of it and cannot show it again.</div>';
+
+  const say = (t, kind) => { const el=document.getElementById('ak-say'); if(el){ el.className='ak-say'+(kind?' '+kind:''); el.textContent=t; } };
+
+  on(document.getElementById('ak-create'),'click', async ()=>{
+    const name = (document.getElementById('ak-name')||{}).value || '';
+    say('Creating\u2026');
+    try{
+      const d2 = await AMV_API.keyCreate(name);
+      _apiShowOnce(d2.key);
+      await _apiLoad();
+    }catch(e){
+      if(e.code === 'plan_required'){
+        say(e.message, 'bad');
+        try{ S.tab='plans'; setTab('plans'); }catch(_){}
+        return;
+      }
+      say(e.message || 'Could not create a key.', 'bad');
+    }
+  });
+
+  host.querySelectorAll('[data-ak-rev]').forEach(b=>on(b,'click', async ()=>{
+    /* Revoking is immediate and cannot be undone - anything using this key
+       stops working the moment it is confirmed, so it says that. */
+    if(typeof confirm==='function' &&
+       !confirm('Revoke this key? Anything using it stops working immediately, and it cannot be restored.')) return;
+    say('Revoking\u2026');
+    const ok2 = await AMV_API.keyRevoke(b.dataset.akRev);
+    say(ok2 ? 'Revoked.' : 'Could not revoke that key - nothing was changed.', ok2 ? '' : 'bad');
+    if(ok2) _apiLoad();
+  }));
+}
+
+/* The one moment the key exists outside the server's memory. Modal, explicit,
+   and it does not close by accident. */
+function _apiShowOnce(key){
+  const ovr = document.getElementById('ovr'); if(!ovr) return;
+  ovr.innerHTML =
+    '<div class="share-modal">'+
+      '<div class="share-title">Your new API key</div>'+
+      '<p class="share-sub">Copy it now. AMV stores only a hash of this key and <b>cannot show it again</b> - '+
+        'if you lose it, revoke it and make another.</p>'+
+      '<div class="share-link-row"><input id="ak-val" class="inp" readonly value="'+escH(key)+'">'+
+        '<button class="btn bp" id="ak-copy">Copy</button></div>'+
+      '<div class="ak-say" id="ak-modal-say" role="status" aria-live="polite"></div>'+
+      '<div class="share-actions"><button class="btn bs" id="ak-done">I have copied it</button></div>'+
+    '</div>';
+  ovr.classList.add('on');
+  const say = t => { const el=document.getElementById('ak-modal-say'); if(el) el.textContent=t; };
+  on(document.getElementById('ak-copy'),'click', async ()=>{
+    try{ await navigator.clipboard.writeText(key); say('Copied.'); }
+    catch(e){
+      const f=document.getElementById('ak-val'); if(f){ f.focus(); f.select(); }
+      say('Copy was blocked by your browser - the key is selected, press Ctrl+C or Cmd+C.');
+    }
+  });
+  on(document.getElementById('ak-done'),'click',()=>{ try{ closeOvr(); }catch(e){} });
+}
+
+/* Enough to make the first call without leaving the page. */
+function _apiDocsHTML(){
+  const base = (loadStr('amv_api_base')||'https://your-worker.workers.dev').replace(/\/$/,'');
+  const curl =
+    'curl ' + base + '/v1/messages \\\n' +
+    '  -H "Authorization: Bearer amv_sk_..." \\\n' +
+    '  -H "Content-Type: application/json" \\\n' +
+    '  -d \'{"model":"amv-core","max_tokens":1024,\n' +
+    '       "messages":[{"role":"user","content":"Hello"}]}\'';
+  return '<div class="ss2"><h3>Making a call</h3>'+
+    '<p class="ak-doc">The same endpoint the app uses. Your key goes in the Authorization header - '+
+      'never in a query string, where it would end up in logs and browser history.</p>'+
+    '<pre class="ak-code"><code>'+escH(curl)+'</code></pre>'+
+    '<p class="ak-doc">Engines: <code>amv-pulse</code> (fastest), <code>amv-core</code> (balanced), '+
+      '<code>amv-forge</code> (deep work), <code>amv-apex</code> (hardest problems), or '+
+      '<code>auto</code> to let AMV choose. Responses stream by default.</p>'+
+    '<p class="ak-doc">Usage counts against this account\u2019s plan, so the limits in '+
+      '<b>Settings -> Usage</b> are the limits your integration has.</p>'+
+  '</div>';
+}
+try{ window._renderApiKeysPane=_renderApiKeysPane; window._apiLoad=_apiLoad; }catch(e){}
+/* ============================================================
+   AMV-099  THE FIRST SCREEN.
+
+   A new account lands on an empty chat box. Everything that makes AMV
+   different from a chat window - work that runs while you are away, agents
+   that do the task rather than describe it, builds that actually run - is
+   invisible from there. So AMV gets judged as a chatbot by people who never
+   saw the rest of it, and the judgement is fair, because a chat box is all
+   they were shown.
+
+   The intrusive first-run modal was removed from this product on purpose, and
+   this does not bring it back. It is one card, on the home screen, that a new
+   account sees once. It states what AMV can do that a chat box cannot, and
+   each line is a real starting point rather than a description - tapping one
+   fills the composer with a prompt that produces the thing being described.
+
+   Rules:
+     - Shown to a NEW account only, and never after it has been used or
+       dismissed. Nothing that reappears is a welcome.
+     - It disappears the moment there is a conversation. Someone who has
+       already started does not need to be told where to start.
+     - Every line does the thing it claims. None of them open a tour.
+   ============================================================ */
+
+const FIRSTRUN_KEY = 'amv_firstrun_done';
+function _firstRunDone(){ try{ return loadStr(FIRSTRUN_KEY)==='1'; }catch(e){ return true; } }
+function _firstRunFinish(){ try{ saveStr(FIRSTRUN_KEY,'1'); }catch(e){} }
+try{ window._firstRunDone=_firstRunDone; window._firstRunFinish=_firstRunFinish; }catch(e){}
+
+/* Each entry is a real prompt, chosen so the answer demonstrates the capability
+   rather than talking about it. */
+const _FIRSTRUN_STARTS = [
+  { t:'Have it work while you are away',
+    d:'Set something up once and AMV runs it on its own, with the answer waiting when you come back.',
+    p:'Keep me up to date on what is changing in my industry. Ask me which industry first, then give me a short brief I could read over coffee.' },
+  { t:'Give it a job, not a question',
+    d:'Multi-step work AMV plans and carries out, showing you exactly what it did.',
+    p:'Research the three best options for something I need to buy, compare them on price and quality, and tell me which you would pick and why. Ask me what I am buying first.' },
+  { t:'Have it build and run something',
+    d:'Real software, written and running in a live sandbox, not a code sample.',
+    p:'Build me a small working web app I can actually use, run it, and show me the result. Ask me what it should do first.' },
+];
+
+function _firstRunHTML(){
+  try{
+    if(_firstRunDone()) return '';
+    // Someone already talking to AMV does not need to be told where to start.
+    if(typeof getMsgs==='function' && (getMsgs()||[]).length) return '';
+    if(typeof S!=='undefined' && Array.isArray(S.convs)
+       && S.convs.some(c => (c.msgs||[]).length)) return '';
+
+    return '<div class="fr-card" data-i18n role="region" aria-label="What AMV can do">'+
+      '<div class="fr-top">'+
+        '<div class="fr-h">AMV does the work, not just the talking</div>'+
+        '<button class="fr-x" type="button" data-fr-skip="1" aria-label="Dismiss">&#215;</button>'+
+      '</div>'+
+      '<div class="fr-list">'+
+        _FIRSTRUN_STARTS.map((s,i)=>
+          '<button class="fr-item" type="button" data-fr-go="'+i+'">'+
+            '<span class="fr-t">'+escH(s.t)+'</span>'+
+            '<span class="fr-d">'+escH(s.d)+'</span>'+
+          '</button>').join('')+
+      '</div>'+
+      '<div class="fr-foot">Or just ask it anything.</div>'+
+    '</div>';
+  }catch(e){ return ''; }
+}
+
+function _wireFirstRun(root){
+  const el = root || document;
+  el.querySelectorAll('[data-fr-go]').forEach(b=>b.addEventListener('click',()=>{
+    const s = _FIRSTRUN_STARTS[+b.dataset.frGo]; if(!s) return;
+    /* Retired the moment it is used. It has done its job, and a welcome that
+       comes back is not a welcome. */
+    _firstRunFinish();
+    try{
+      const ta = document.getElementById('mta');
+      if(ta){
+        ta.value = s.p;
+        ta.dispatchEvent(new Event('input'));
+        ta.focus();
+      }
+      const card = b.closest('.fr-card'); if(card) card.remove();
+    }catch(e){}
+  }));
+  el.querySelectorAll('[data-fr-skip]').forEach(b=>b.addEventListener('click',()=>{
+    _firstRunFinish();
+    const card = b.closest('.fr-card'); if(card) card.remove();
+  }));
+}
+try{ window._firstRunHTML=_firstRunHTML; window._wireFirstRun=_wireFirstRun; }catch(e){}

@@ -38,6 +38,7 @@ function _paletteCommands(){
     setNav('set-usage','Settings: Usage','usage','usage limits tokens'),
     setNav('set-capabilities','Settings: Capabilities','capabilities','capabilities web search memory toggles'),
     setNav('set-spending','Settings: Spending','spending','spending limits money budget purchases cap allowance'),
+    setNav('set-api','Settings: API keys','api','api key developer integration programmatic token'),
     setNav('set-invite','Settings: Invite','invite','invite referral refer friend share link bonus tokens'),
     setNav('set-family','Settings: Family & linked accounts','family','family linked accounts parent child share access permissions'),
     setNav('set-appearance','Settings: Appearance','appearance','appearance theme accent font motion'),

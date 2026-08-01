@@ -7222,3 +7222,97 @@ html,body{height:100%;height:100dvh}
 @media (max-width:420px){
   .dev-bar-r{flex:1 1 100%;justify-content:flex-start}
 }
+
+/* ==========================================================================
+   LAYER A44 - "What was wrong with it?"
+   One optional tap after a thumbs-down. Quiet, inline, and gone on the next
+   render whether or not it is answered.
+   ========================================================================== */
+.whybad{
+  display:flex;align-items:center;gap:var(--sp-2);flex-wrap:wrap;
+  margin:var(--sp-3) 0 0;padding:var(--sp-3);border-radius:var(--r-md);
+  background:var(--s2);border:1px solid var(--bd);
+}
+.whybad-q{font-size:var(--t-sm);color:var(--mu);margin-right:2px}
+.whybad-b{
+  font-size:var(--t-xs);color:var(--tx);background:var(--s3);
+  border:1px solid var(--bd);border-radius:var(--r-pill);
+  padding:6px 12px;min-height:24px;cursor:pointer;
+}
+.whybad-b:hover{border-color:var(--accent);color:var(--accent)}
+.whybad-b:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.whybad-x{
+  margin-left:auto;background:none;border:0;color:var(--mu);cursor:pointer;
+  font-size:16px;line-height:1;min-width:24px;min-height:24px;
+}
+.whybad-x:hover{color:var(--tx)}
+@media (max-width:520px){ .whybad-x{margin-left:0} }
+
+/* ==========================================================================
+   LAYER A45 - API keys
+   The list shows only the last four characters, because that is enough to
+   recognise a key and useless to anyone who steals the screen.
+   ========================================================================== */
+.ak-load,.ak-off{font-size:var(--t-sm);color:var(--mu);line-height:1.6;padding:var(--sp-3) 0}
+.ak-row{
+  display:flex;gap:var(--sp-3);align-items:center;flex-wrap:wrap;
+  padding:var(--sp-3) 0;border-bottom:1px solid var(--bd);
+}
+.ak-row:last-of-type{border-bottom:0}
+.ak-main{flex:1 1 220px;min-width:0}
+.ak-name{font-size:var(--t-sm);font-weight:600;color:var(--tx)}
+.ak-meta{font-family:var(--mn);font-size:var(--t-xs);color:var(--mu);margin-top:3px;overflow-wrap:anywhere}
+.ak-dead .ak-name,.ak-dead .ak-meta{opacity:.55}
+.ak-tag{
+  font-size:var(--t-xs);font-weight:600;color:var(--red);
+  border:1px solid color-mix(in srgb,var(--red) 40%,transparent);
+  border-radius:var(--r-pill);padding:1px 7px;margin-left:6px;
+}
+.ak-new{display:flex;gap:var(--sp-2);flex-wrap:wrap;margin-top:var(--sp-4)}
+.ak-new .inp{flex:1 1 220px;min-width:0;font-size:var(--t-sm)}
+.ak-say{font-size:var(--t-xs);color:var(--mu);min-height:14px;margin-top:var(--sp-2)}
+.ak-say.bad{color:var(--red)}
+.ak-fine{font-size:var(--t-xs);color:var(--mu);line-height:1.6;margin-top:var(--sp-3)}
+.ak-doc{font-size:var(--t-sm);color:var(--mu);line-height:1.65;margin:0 0 var(--sp-3)}
+.ak-doc code{font-family:var(--mn);font-size:var(--t-xs);color:var(--tx);background:var(--s3);
+  border:1px solid var(--bd);border-radius:var(--r-xs);padding:1px 5px}
+.ak-code{
+  font-family:var(--mn);font-size:var(--t-xs);line-height:1.65;color:var(--tx);
+  background:var(--s3);border:1px solid var(--bd);border-radius:var(--r-sm);
+  padding:var(--sp-3);overflow-x:auto;margin:0 0 var(--sp-3);
+}
+@media (max-width:520px){
+  .ak-new{flex-direction:column;align-items:stretch}
+  .ak-new .btn{width:100%}
+  .ak-row .btn{width:100%}
+}
+
+/* ==========================================================================
+   LAYER A46 - First screen
+   One card, once, on an empty home. Deliberately not a modal: the intrusive
+   first-run popup was removed from this product on purpose and this does not
+   bring it back.
+   ========================================================================== */
+.fr-card{
+  max-width:640px;margin:var(--sp-5) auto 0;padding:var(--sp-4);
+  border-radius:var(--r-lg);background:var(--s2);border:1px solid var(--bd);
+}
+.fr-top{display:flex;align-items:flex-start;gap:var(--sp-3);margin-bottom:var(--sp-3)}
+.fr-h{flex:1;font-size:var(--t-md);font-weight:700;color:var(--tx);letter-spacing:-.2px;line-height:1.4}
+.fr-x{
+  background:none;border:0;color:var(--mu);cursor:pointer;font-size:17px;line-height:1;
+  min-width:26px;min-height:26px;flex-shrink:0;
+}
+.fr-x:hover{color:var(--tx)}
+.fr-list{display:flex;flex-direction:column;gap:var(--sp-2)}
+.fr-item{
+  display:block;width:100%;text-align:left;cursor:pointer;font:inherit;color:inherit;
+  padding:var(--sp-3);border-radius:var(--r-md);background:var(--s3);
+  border:1px solid var(--bd);transition:border-color .15s var(--ease);
+}
+.fr-item:hover{border-color:var(--accent)}
+.fr-item:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.fr-t{display:block;font-size:var(--t-sm);font-weight:650;color:var(--tx)}
+.fr-d{display:block;font-size:var(--t-xs);color:var(--mu);margin-top:3px;line-height:1.55}
+.fr-foot{font-size:var(--t-xs);color:var(--mu);margin-top:var(--sp-3);text-align:center}
+@media (max-width:520px){ .fr-card{margin-top:var(--sp-4);padding:var(--sp-3)} }

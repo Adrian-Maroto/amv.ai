@@ -2721,6 +2721,9 @@ export default {
         case '/auth/admin-reset':   return authAdminReset(request, env);
         case '/v1/resume':       return resumeAnswer(request, env);
         case '/v1/activity':     return accountActivity(request, env);
+        case '/v1/keys/create':  return apiKeyCreate(request, env);
+        case '/v1/keys/list':    return apiKeyList(request, env);
+        case '/v1/keys/revoke':  return apiKeyRevoke(request, env);
         case '/v1/feedback':     return feedbackRecord(request, env);
         case '/v1/referral':     return referralStatus(request, env);
         case '/v1/share/create': return shareCreate(request, env);
@@ -3811,6 +3814,13 @@ async function syncPush(request, env){
 async function requireUser(request, env) {
   const auth = request.headers.get('Authorization') || '';
   const token = auth.replace(/^Bearer\s+/i, '');
+  /* AMV-097: an API key is a credential for the same account, so it resolves
+     HERE - which means every quota, cost ceiling, plan check and abuse control
+     downstream applies to an API call exactly as it does to a browser one,
+     with no second path to keep in step. */
+  if (token.startsWith(API_KEY_PREFIX) || request.headers.get('X-AMV-Key')) {
+    return await _userFromApiKey(request, env);
+  }
   const data = await verifyToken(token, env.JWT_SECRET, env, 'access');
   if (!data) return null;
   // attach current plan + custom config from entitlement store
@@ -4079,7 +4089,9 @@ async function aiProxy(request, env, ctx) {
   const isAuto = rawModel === 'auto' || rawModel === 'amv-auto';
   const routed = isAuto ? _autoRoute(body, user, limits) : null;
   const key = routed ? routed.key : (RAW_TO_KEY[rawModel] || (ENGINES[rawModel] ? rawModel : 'amv-core'));
-  const eng = ENGINES[key];
+  // Carry the engine's own name with it, so metering can bucket by engine
+  // without re-deriving it from the model string.
+  const eng = Object.assign({ key }, ENGINES[key]);
 
   // 1) PLAN ENFORCEMENT - free can't call premium engines (custom plans paid for all models)
   if (!limits.allModels && PLAN_RANK[user.plan] < PLAN_RANK[eng.minPlan]) {
@@ -4538,6 +4550,14 @@ async function resumeAnswer(request, env) {
 }
 
 async function meterStream(stream, eng, { dName, mName, gName, costName, user, env, limits, reqMessages, reserved = 0, reqId = '', feature = 'chat' }) {
+  /* AMV-098: how long the user waited. Cost and quality are measured; speed is
+     not, and it is the thing people feel most - a routing change that halves
+     the bill and doubles the wait would have looked like a pure win on every
+     screen. Two numbers: time to the FIRST token, which is what reads as
+     "fast", and the total. Both are bucketed rather than stored per request,
+     so this is a histogram, not a log of who asked what and when. */
+  const _t0 = Date.now();
+  let _firstByteAt = 0;
   const reader = stream.getReader();
   const dec = new TextDecoder();
   let buf = '';
@@ -4559,8 +4579,10 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, user, e
         let ev; try { ev = JSON.parse(payload); } catch { continue; }
         sawAnyEvent = true;
         // Text as it streams. Free to collect - the bytes are already here.
-        if (ev.type === 'content_block_delta' && ev.delta && typeof ev.delta.text === 'string'
-            && answer.length < RESUME_MAX_CHARS) answer += ev.delta.text;
+        if (ev.type === 'content_block_delta' && ev.delta && typeof ev.delta.text === 'string') {
+          if (!_firstByteAt) _firstByteAt = Date.now();
+          if (answer.length < RESUME_MAX_CHARS) answer += ev.delta.text;
+        }
         // input + cache token counts arrive in message_start
         if (ev.type === 'message_start' && ev.message && ev.message.usage) {
           const u = ev.message.usage;
@@ -4650,6 +4672,20 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, user, e
     await counter(env, `featcost:${feature || 'chat'}:${mk}`, { op: 'incr', amount: cost, ttlMs: 86400000 * 70 });
     const saved = (cacheRead / 1e6) * eng.inCost * 0.90;   // what a cache read did NOT cost
     if (saved > 0) await counter(env, `cachesave:${mk}`, { op: 'incr', amount: saved, ttlMs: 86400000 * 70 });
+    /* Latency, as a histogram rather than a log. Buckets mean the owner can see
+       "most answers start inside a second" without AMV keeping a record of who
+       asked what and when - the shape is the useful part, the individual
+       request is only a liability. */
+    try {
+      const ttfb = _firstByteAt ? _firstByteAt - _t0 : 0;
+      if (ttfb > 0) {
+        const b = ttfb < 500 ? 'p500' : ttfb < 1000 ? 'p1000' : ttfb < 2500 ? 'p2500'
+                : ttfb < 5000 ? 'p5000' : 'slow';
+        await counter(env, `ttfb:${eng.key || 'unknown'}:${b}:${mk}`, { op: 'incr', amount: 1, ttlMs: 86400000 * 70 });
+        await counter(env, `ttfbsum:${mk}`, { op: 'incr', amount: ttfb, ttlMs: 86400000 * 70 });
+        await counter(env, `ttfbn:${mk}`, { op: 'incr', amount: 1, ttlMs: 86400000 * 70 });
+      }
+    } catch (e) { /* a measurement must never break the response it measured */ }
   } catch (e) { /* reporting must never break metering */ }
 
   // alert threshold (80% of global cap)
@@ -6688,6 +6724,18 @@ function _marketScreen(item, sellerVerifiedFor) {
   return { ok: true, action: 'approved' };
 }
 
+/* http(s) only, and short. Anything else - javascript:, data:, vbscript: - is
+   dropped rather than stored. */
+function _safeHttpUrl(u) {
+  const raw = String(u == null ? '' : u).trim().slice(0, 500);
+  if (!raw) return undefined;
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return undefined;
+    return parsed.toString().slice(0, 500);
+  } catch (e) { return undefined; }
+}
+
 async function marketPublish(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'sign in to publish' }, 401);
@@ -6754,7 +6802,12 @@ async function marketPublish(request, env) {
     type: String(f.type || 'application/octet-stream').slice(0, 100),
     size: Math.max(0, Number(f.size) || 0),
     data: typeof f.data === 'string' ? f.data : '',
-    url: f.url ? String(f.url).slice(0, 500) : undefined,
+    /* AMV-096: scheme-checked at the door. Nothing renders this as a link
+       today, so it is not a live hole - but storing an attacker-chosen URL and
+       trusting a future renderer not to make it an href is how stored XSS gets
+       introduced by an unrelated change months later. Validate where it enters,
+       not where it is used. */
+    url: _safeHttpUrl(f.url),
   }));
   if (!body && !files.length && !(Array.isArray(item.crew) && item.crew.length)) {
     return json({ error: 'add a deliverable: text, a crew, or at least one file' }, 400);
@@ -6799,14 +6852,21 @@ function _publicListing(it) {
 }
 
 async function marketInstall(request, env) {
-  // AMV-057: rate-limit per IP so the public install counter can't be spammed to
-  // manipulate ranking / write-amplify the listing record.
+  /* AMV-096: installs drive ranking, so an install has to cost something. It
+     used to be unauthenticated and limited only per IP, which means a rented
+     address pool could rank anything to the top of the marketplace. Now it
+     takes an account, and counts ONCE per account per listing - a number that
+     can be manufactured is not a ranking signal, it is an advertisement. */
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'sign in to install' }, 401);
   const iip = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'noip';
   const irl = await limitAction(env, `mktinstall:${iip}`, 30, 300);
   if (!irl.ok) return json({ ok: true, throttled: true });
-  // bump the install counter (atomic) so popular templates rank up
   const { id } = await request.json().catch(() => ({}));
   if (!id || !/^[a-z0-9_]+$/i.test(id)) return json({ error: 'bad id' }, 400);
+  // Second and later installs by the same account are honoured, but not counted.
+  const first = await _claimOnce(env, 'mktinst', `${user.email}:${id}`, 400 * 86400);
+  if (!first) return json({ ok: true, counted: false });
   const raw = await env.AMV_KV.get(`market:${id}`);
   if (raw) {
     try {
@@ -6815,7 +6875,7 @@ async function marketInstall(request, env) {
       await env.AMV_KV.put(`market:${id}`, JSON.stringify(it));
     } catch {}
   }
-  return json({ ok: true });
+  return json({ ok: true, counted: true });
 }
 
 /* =====================================================================
@@ -7514,6 +7574,23 @@ async function adminStats(request, env) {
   /* AMV-095: whether the answers are any good - the one number that decides
      whether anyone stays, and the only one that was never measured. */
   const quality = await _qualityReport(env);
+  /* AMV-098: how long people waited. The average is the headline; the buckets
+     are what tell you whether it is one bad engine or all of them. */
+  const speed = await (async () => {
+    const sum = (await counter(env, `ttfbsum:${month}`, { op: 'get' })).value || 0;
+    const n = (await counter(env, `ttfbn:${month}`, { op: 'get' })).value || 0;
+    const buckets = {};
+    for (const b of ['p500', 'p1000', 'p2500', 'p5000', 'slow']) {
+      let total = 0;
+      for (const k of Object.keys(ENGINES)) {
+        total += (await counter(env, `ttfb:${k}:${b}:${month}`, { op: 'get' })).value || 0;
+      }
+      buckets[b] = total;
+    }
+    const fast = buckets.p500 + buckets.p1000;
+    return { samples: n, avgFirstTokenMs: n ? Math.round(sum / n) : null, buckets,
+             underOneSecondPct: n ? +((fast / n) * 100).toFixed(1) : null };
+  })();
   const pop = await _planPopulation(env);
   const popTotal = Object.values(pop).reduce((a, b) => a + b, 0);
   const PRICE_POP = { pro: 15, elite: 75, ultra: 200 };
@@ -7585,8 +7662,150 @@ async function adminStats(request, env) {
       };
     })(),
     quality,
+    speed,
     topSpenders,
   });
+}
+
+/* =====================================================================
+   AMV-097  THE API - selling AMV to programs, not only to people
+
+   Everything an API needs already existed: metering, per-plan quotas, the
+   monthly cost backstop, atomic reservation, abuse controls, engine routing.
+   What was missing was a way for a customer to reach any of it without a
+   browser session, which is the difference between a $20 seat and a line item
+   in someone's infrastructure budget.
+
+   The design is deliberately boring, because the interesting parts are already
+   solved:
+     - A key is a credential for an ACCOUNT. It spends that account's quota and
+       counts against that account's cost ceiling. There is no second budget to
+       reason about, and no way for a leaked key to cost more than the plan.
+     - Only the HASH is stored. A key is shown once, at creation, and can never
+       be read back - because a store that can show you your key can show it to
+       whoever reads the store.
+     - A key can be scoped and revoked, and its last use is recorded, so a
+       customer can tell a live key from a forgotten one.
+   ===================================================================== */
+
+const API_KEY_MAX_PER_USER = 10;
+const API_KEY_PREFIX = 'amv_sk_';
+
+function _newApiKey() {
+  return API_KEY_PREFIX + crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '').slice(0, 16);
+}
+/* SHA-256 of the key. Not a password - it is 48 random hex characters, so there
+   is nothing to brute force and no salt to add; the hash exists so the store
+   never holds the credential itself. */
+async function _apiKeyHash(key) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(key)));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+/* What a customer can see about their own key: enough to recognise it, never
+   enough to use it. */
+function _apiKeyPublic(k) {
+  return { id: k.id, name: k.name, last4: k.last4, created: k.created,
+           lastUsed: k.lastUsed || null, revoked: !!k.revoked, calls: k.calls || 0 };
+}
+
+/* POST /v1/keys/create { name } -> the key, ONCE */
+async function apiKeyCreate(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  /* An API key is how an account is spent without anyone watching, so a lapsed
+     or free account does not get one - the same rule the rest of the paid
+     surface uses, applied where it can be explained. */
+  const budget = _autoBudget((await DB.get(env, 'ent', user.email)) || { plan: 'free' });
+  if (budget.free) {
+    return json({ error: 'API keys are part of a paid plan. Upgrade and you can create one straight away.',
+                  code: 'plan_required' }, 402);
+  }
+  const blocked = await guardAction(env, `keycreate:${user.email}`, 5, 20, 'API keys');
+  if (blocked) return blocked;
+
+  const body = await request.json().catch(() => ({}));
+  const name = String(body.name || 'API key').slice(0, 60).trim() || 'API key';
+  const rec = (await DB.get(env, 'apikeys', user.email)) || { items: [] };
+  const live = (rec.items || []).filter(k => !k.revoked);
+  if (live.length >= API_KEY_MAX_PER_USER) {
+    return json({ error: 'You can have up to ' + API_KEY_MAX_PER_USER + ' active keys. Revoke one to create another.' }, 429);
+  }
+
+  const key = _newApiKey();
+  const hash = await _apiKeyHash(key);
+  /* The hash is kept on the record too, and it has to be: revoking marks this
+     item AND deletes the lookup the request path reads. Without the hash here
+     there would be nothing to delete, so a "revoked" key would keep working -
+     which is the worst possible way for a revoke button to fail. It is a hash,
+     not the key, and _apiKeyPublic never returns it. */
+  const item = { id: 'k_' + crypto.randomUUID().slice(0, 12), name, hash,
+                 last4: key.slice(-4), created: Date.now(), calls: 0 };
+  rec.items = (rec.items || []).concat(item);
+  await DB.put(env, 'apikeys', user.email, rec);
+  // The lookup the request path uses: hash -> which account, which key.
+  await env.AMV_KV.put(`apikey:${hash}`, JSON.stringify({ email: user.email, id: item.id }));
+  audit(env, 'apikey_created', { email: user.email, id: item.id });
+  await _userEvent(env, request, user.email, 'api_key_created');
+  /* The only time this value exists anywhere outside the caller's memory. */
+  return json({ ok: true, key, item: _apiKeyPublic(item),
+                note: 'Copy this now. It is not stored and cannot be shown again.' });
+}
+
+/* POST /v1/keys/list */
+async function apiKeyList(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  const rec = (await DB.get(env, 'apikeys', user.email)) || { items: [] };
+  return json({ ok: true, keys: (rec.items || []).map(_apiKeyPublic), max: API_KEY_MAX_PER_USER });
+}
+
+/* POST /v1/keys/revoke { id } */
+async function apiKeyRevoke(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  const { id } = await request.json().catch(() => ({}));
+  const rec = (await DB.get(env, 'apikeys', user.email)) || { items: [] };
+  const item = (rec.items || []).find(k => k.id === id);
+  if (!item) return json({ error: 'not found' }, 404);
+  if (!item.revoked) {
+    item.revoked = Date.now();
+    await DB.put(env, 'apikeys', user.email, rec);
+    /* Delete the lookup too. Marking the record revoked without removing what
+       the request path reads would leave the key working. */
+    if (item.hash) { try { await env.AMV_KV.delete(`apikey:${item.hash}`); } catch (e) {} }
+    audit(env, 'apikey_revoked', { email: user.email, id });
+    await _userEvent(env, request, user.email, 'api_key_revoked');
+  }
+  return json({ ok: true, id, revoked: true });
+}
+
+/* Resolve `Authorization: Bearer amv_sk_...` to the account it belongs to, in
+   the same shape requireUser returns - so every quota, cost cap and plan check
+   downstream applies to an API call exactly as it does to a browser one. */
+async function _userFromApiKey(request, env) {
+  const raw = (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '')
+           || request.headers.get('X-AMV-Key') || '';
+  if (!raw.startsWith(API_KEY_PREFIX)) return null;
+  let ref = null;
+  try { ref = JSON.parse(await env.AMV_KV.get(`apikey:${await _apiKeyHash(raw)}`) || 'null'); } catch (e) {}
+  if (!ref || !ref.email) return null;
+
+  const rec = (await DB.get(env, 'apikeys', ref.email)) || { items: [] };
+  const item = (rec.items || []).find(k => k.id === ref.id);
+  if (!item || item.revoked) return null;
+
+  // Last use, so a customer can tell a live key from a forgotten one. Written
+  // at most once a minute: this is on the hot path of every API request.
+  const now = Date.now();
+  if (!item.lastUsed || now - item.lastUsed > 60000) {
+    item.lastUsed = now;
+    item.calls = (item.calls || 0) + 1;
+    try { await DB.put(env, 'apikeys', ref.email, rec); } catch (e) {}
+  }
+
+  const e = (await DB.get(env, 'ent', ref.email)) || {};
+  return { email: ref.email, plan: _planOf(e), customCfg: e.custom || null,
+           billing: _billingState(e), bonusTokens: _bonusTokens(e), via: 'apikey', keyId: ref.id };
 }
 
 /* =====================================================================
@@ -7839,6 +8058,7 @@ function _digestSnapshot(m) {
     unprofitable: (mar.unprofitableAccounts || []).length,
     approvalPct: (m.quality && m.quality.approvalPct != null) ? m.quality.approvalPct : null,
     qualityVotes: (m.quality && m.quality.votes) || 0,
+    avgFirstTokenMs: (m.speed && m.speed.avgFirstTokenMs != null) ? m.speed.avgFirstTokenMs : null,
   };
 }
 
@@ -7874,6 +8094,9 @@ function _buildDigest(m, prev) {
                                + (snap.grossMarginPct != null ? ' (' + snap.grossMarginPct + '%)' : '')],
     ['Cost per paying user',   _delta(snap.costPerPayingUser, pv('costPerPayingUser'), { money: true, dp: 3 })],
     ['Cost of the free tier',  _delta(snap.freeUserCost, pv('freeUserCost'), { money: true })],
+    ['Wait for the first word', snap.avgFirstTokenMs == null
+                                 ? 'not measured yet'
+                                 : _delta(snap.avgFirstTokenMs, pv('avgFirstTokenMs')) + ' ms'],
     ['Answers rated good',     snap.approvalPct == null
                                  ? 'not enough ratings yet'
                                  : _delta(snap.approvalPct, pv('approvalPct'), { pct: true })
@@ -7897,6 +8120,11 @@ function _buildDigest(m, prev) {
     flags.push('The global kill switch is ON. Nobody can use AMV right now.');
   /* A quality drop is the one thing that will not show up anywhere else until
      it shows up as churn, by which point it is months old. */
+  if (snap.avgFirstTokenMs != null && snap.avgFirstTokenMs > 3000)
+    flags.push('The average wait for the first word is ' + snap.avgFirstTokenMs + 'ms. Past about three seconds people assume it is broken.');
+  if (p && pv('avgFirstTokenMs') != null && snap.avgFirstTokenMs != null
+      && snap.avgFirstTokenMs > pv('avgFirstTokenMs') * 1.5)
+    flags.push('AMV got noticeably slower to start: ' + pv('avgFirstTokenMs') + 'ms to ' + snap.avgFirstTokenMs + 'ms.');
   if (snap.approvalPct != null && snap.approvalPct < 70)
     flags.push('Only ' + snap.approvalPct + '% of rated answers were rated good. Something in routing or prompting is worth looking at.');
   if (p && pv('approvalPct') != null && snap.approvalPct != null && snap.approvalPct < pv('approvalPct') - 5)
