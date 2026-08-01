@@ -573,8 +573,14 @@ function _integrationsCatalogHTML(){
     const badge=o.auto
       ? '<span class="ax-badge ax-auto"><span class="ax-dot"></span>Autonomous</span>'
       : '<span class="ax-badge ax-manual">Manual</span>';
+    /* A connected integration that can DO something needs a way to run it. The
+       Canvas automation had a working implementation and no button anywhere -
+       its entry point was removed with an old toolbar and the function was left
+       behind, reachable by nothing. Connecting it here means the run control
+       lives next to the connection it depends on. */
     const action=connected
-      ? '<button class="btn int-disc" data-int-disc="'+o.id+'" style="font-size:12px">Disconnect</button>'
+      ? ((o.run?'<button class="btn bp" data-int-run="'+o.run+'" style="font-size:12px">'+escH(o.runLabel||'Run')+'</button>':'')+
+         '<button class="btn int-disc" data-int-disc="'+o.id+'" style="font-size:12px">Disconnect</button>')
       : (o.auto
           ? '<button class="btn bp" data-int-conn="'+o.id+'" style="font-size:12px">Connect</button>'
           : '<button class="btn bs" data-int-use="'+(o.use||'chat')+'" style="font-size:12px">'+(o.useLabel||'Open in chat')+'</button>');
@@ -609,7 +615,7 @@ function _integrationsCatalogHTML(){
     )+
     cat('Productivity',
       intRow({id:'notion',name:'Notion',desc:'Reads and writes pages, builds docs in your workspace.',auto:true,connected:isConn('amv_notion'),icon:'\uD83D\uDCDD',bg:'rgba(255,255,255,.08)'})+
-      intRow({id:'canvas',name:'Canvas LMS',desc:'Reads assignments and drafts answers from your notes. Works overnight.',auto:true,connected:isConn('amv_canvas'),icon:'\uD83C\uDF93',bg:'rgba(230,70,70,.14)'})
+      intRow({id:'canvas',name:'Canvas LMS',desc:'Reads assignments and drafts answers from your notes. Works overnight.',auto:true,connected:isConn('amv_canvas'),run:'runCanvasAutomation',runLabel:'Run now',icon:'\uD83C\uDF93',bg:'rgba(230,70,70,.14)'})
     )+
     cat('Office files',
       intRow({id:'excel',name:'Excel & CSV',desc:'Upload a sheet - AMV runs formulas, builds pivots and charts, then you download.',auto:false,connected:false,icon:'\uD83D\uDCCA',bg:'rgba(33,115,70,.14)'})+
@@ -623,6 +629,11 @@ function _wireIntegrationCatalog(root){
   root=root||document;
   root.querySelectorAll('[data-int-conn]').forEach(btn=>on(btn,'click',()=>connectIntegration(btn.dataset.intConn)));
   root.querySelectorAll('[data-int-disc]').forEach(btn=>on(btn,'click',()=>disconnectIntegration(btn.dataset.intDisc)));
+  root.querySelectorAll('[data-int-run]').forEach(btn=>on(btn,'click',()=>{
+    const fn=window[btn.dataset.intRun];
+    if(typeof fn==='function') fn();
+    else toast('That automation is not available in this build.','error');
+  }));
   root.querySelectorAll('[data-int-use]').forEach(btn=>on(btn,'click',()=>{ setTab(btn.dataset.intUse||'chat'); toast('Upload your file with the \uD83D\uDCCE button, or just describe what you need.','info',4500); }));
 }
 window._wireIntegrationCatalog=_wireIntegrationCatalog;

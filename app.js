@@ -5299,22 +5299,11 @@ function bindChatEvents() {
   on($('research-btn'),'click',_toggleResearch);
   try{ _syncResearchBtn(); }catch(e){}
 
-  // Tab clicks
-  $('tabs')?.querySelectorAll('.ctab[data-tid]').forEach(b=>{
-    on(b,'click',e=>{ if(e.target.dataset.tclose) return; loadConv(b.dataset.tid); });
-  });
-  $('tabs')?.querySelectorAll('[data-tclose]').forEach(b=>{
-    on(b,'click',e=>{ e.stopPropagation(); closeTab(b.dataset.tclose); });
-  });
-
-  // Model buttons
-  $('mdl-bar')?.querySelectorAll('.mdlbtn').forEach(b=>{
-    on(b,'click',()=>{
-      S.model=b.dataset.m;
-      if(S.model==='image'){setTab('images');return;}
-      $('mdl-bar').querySelectorAll('.mdlbtn').forEach(x=>x.classList.toggle('on',x===b));
-    });
-  });
+  /* The conversation-tab strip (#tabs) and the model bar (#mdl-bar) were
+     replaced by the sidebar history and the composer's model picker. Their
+     handlers stayed, bound to elements and attributes that nothing renders -
+     the same silent shape that made the Admin tab unreachable. Removed rather
+     than left as no-ops that read like live wiring. */
 
   // Drag and drop
   const cib=$('cib');
@@ -6727,6 +6716,31 @@ function planCards(inApp){
   ].join('');
 }
 /* Custom plan as a slim full-width banner below the four core tiers. */
+/* Teams on the pricing page.
+
+   The per-seat plan is not a step on the four-card ladder - it has no single
+   price, because the total depends on how many people are on it - so it gets a
+   banner of its own, the same shape Custom uses for the same reason. Without
+   this the product had exactly one entry point, on a tab most people never open,
+   which is a strange place to keep the thing that makes a company pay you ten
+   times as much. */
+function _teamPlanBanner(inApp){
+  const P=(typeof PLANS!=='undefined'&&PLANS.team)||{price:20};
+  const min=(typeof TEAM_SEAT_MIN!=='undefined')?TEAM_SEAT_MIN:3;
+  const btn = inApp
+    ? '<button class="btn pbp plnbtn cpb-btn" data-stab="team">Set up Teams \u2192</button>'
+    : '<button class="btn pbp plnbtn cpb-btn" data-auth="signup">Set up Teams \u2192</button>';
+  return '<div class="cpb">'+
+    '<div class="cpb-l"><div class="cpb-tier">Teams \u00b7 $'+P.price+' per person / mo</div>'+
+      '<div class="cpb-t">Working with other people?</div>'+
+      '<div class="cpb-d">Every seat brings its own full allowance into one shared pool, plus Apex for everyone, '+
+        'shared projects, a prompt library and roles. Ten people get ten plans\u2019 worth of capacity and one bill - '+
+        'not one plan split ten ways. From '+min+' seats, prorated by the day when you add or remove somebody.</div></div>'+
+    '<div class="cpb-r">'+btn+'</div>'+
+  '</div>';
+}
+try{ window._teamPlanBanner=_teamPlanBanner; }catch(e){}
+
 function _customPlanBanner(inApp){
   const btn = inApp
     ? '<button class="btn pbp plnbtn cpb-btn" data-dact="openCustomPlan">Build your plan \u2192</button>'
@@ -10333,9 +10347,14 @@ function renderBillingView(targetEl){
   const fmt=(d)=>d?d.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'}):'-';
   const ic={free:'⚡',pro:'✦',elite:'★',ultra:'◆',custom:'⚙'}[plan]||'⚡';
   const email=(S.user&&S.user.email)||'-';
-  // upgrade targets = plans ranked above current
-  const upTargets=Object.keys(PLANS).filter(k=>k!=='custom'&&PLAN_RANK[k]>PLAN_RANK[plan]);
-  const downTargets=Object.keys(PLANS).filter(k=>k!=='custom'&&PLAN_RANK[k]<PLAN_RANK[plan]);
+  /* Teams is priced per seat, so it is not a step on this ladder - it has no
+     single price to put on a button, and buying it means choosing how many
+     people are on it. Excluded here and sold from its own screen, exactly as
+     Custom is. Listing it with "$20/mo" on it would be a lie the moment anybody
+     clicked it. */
+  const LADDER=k=>k!=='custom'&&k!=='team';
+  const upTargets=Object.keys(PLANS).filter(k=>LADDER(k)&&PLAN_RANK[k]>PLAN_RANK[plan]);
+  const downTargets=Object.keys(PLANS).filter(k=>LADDER(k)&&PLAN_RANK[k]<PLAN_RANK[plan]);
 
   vc.innerHTML=
     '<div class="sv fi"><div class="vi">'+
@@ -10376,6 +10395,37 @@ function renderBillingView(targetEl){
         '<p class="bill-acts-s">Change your card, download receipts, or cancel. '+
           'Cancelling keeps your plan until the end of the period you have paid for.</p>'+
       '</div>':'')+
+      /* These two lists were computed on every render and shown nowhere, and the
+         click handler below bound to buttons that never existed - so the billing
+         screen told a paying customer what they had and gave them no way to
+         change it. Teams and Custom are deliberately absent: neither has a
+         single price to put on a button. */
+      ((upTargets.length||downTargets.length)?
+      '<div class="ss2"><h3>Change plan</h3>'+
+        '<div class="bill-swap">'+
+          upTargets.map(k=>'<button class="btn bp" data-pay="'+escH(k)+'">Upgrade to '+escH(PLANS[k].name)+' \u00b7 $'+PLANS[k].price+'/mo</button>').join('')+
+          downTargets.filter(k=>k!=='free').map(k=>'<button class="btn bs" data-pay="'+escH(k)+'">Switch to '+escH(PLANS[k].name)+' \u00b7 $'+PLANS[k].price+'/mo</button>').join('')+
+        '</div>'+
+        '<p class="bill-acts-s">Changes take effect immediately and are prorated. '+
+          'Working with other people? <a data-stab="team" style="color:var(--accent);cursor:pointer">Teams is priced per person</a>.</p>'+
+      '</div>':'')+
+      /* Cancelling. The pricing page promises "cancel with one click" and there
+         was no control anywhere that did it, which is a claim the product did
+         not keep.
+
+         It has to go through the processor. `_switchPlan('free')` only changes
+         the plan in THIS browser - with a live subscription that is a cancel
+         button that does not cancel, and the customer finds out when the next
+         charge lands. Worse than no button. So when there is a real backend
+         this opens the processor's own portal, which is the only place a
+         subscription actually ends. */
+      (plan!=='free'?
+      '<div class="ss2"><h3>Cancel</h3>'+
+        '<p style="font-size:12.5px;color:var(--mu);line-height:1.6;margin:0 0 10px">'+
+          'You keep '+escH(P.name)+' until the end of the period you have already paid for, and nothing you have made is deleted.</p>'+
+        '<button class="btn bs" id="bill-cancel" style="font-size:12px;color:var(--red);border-color:var(--red)">Cancel subscription</button>'+
+        '<div class="seat-say" id="bill-cancel-say" role="status" aria-live="polite"></div>'+
+      '</div>':'')+
       // INVOICES
       (plan!=='free'?'<div class="ss2"><h3>Invoices</h3>'+
         '<div id="bill-invoices">'+(liveBackend?'<div class="bill-inv-loading">Loading your invoices\u2026</div>':_invoiceTableHTML(plan,P,sinceDate))+'</div>'+
@@ -10408,8 +10458,26 @@ function renderBillingView(targetEl){
     toast('Billing portal activates once your backend is connected','info',4000);
   };
   const pb=$('portal-open-btn'); if(pb) on(pb,'click',openPortal);
+  on($('bill-cancel'),'click',async()=>{
+    const say=t=>{ const el=$('bill-cancel-say'); if(el) el.textContent=t||''; };
+    if(liveBackend){
+      /* The processor is the only thing that can actually stop the billing, so
+         that is where this goes. Never a local flag pretending it worked. */
+      say('Opening your billing to cancel\u2026');
+      try{
+        const url=await AMV_API.portal(loadStr('amv_stripe_customer')||email);
+        window.open(url,'_blank','noopener');
+        say('Cancel it in the window that just opened. Nothing has changed yet.');
+      }catch(e){
+        say('Could not open billing, so nothing was cancelled. Try again, or email support and we will do it for you.');
+      }
+      return;
+    }
+    /* No backend: there is no subscription to cancel, so switching locally is
+       the whole truth rather than a pretence. */
+    _switchPlan('free');
+  });
   vc.querySelectorAll('[data-pay]').forEach(b=>on(b,'click',()=>openCheckout(b.dataset.pay)));
-  vc.querySelectorAll('[data-switch]').forEach(b=>on(b,'click',()=>_switchPlan(b.dataset.switch)));
   vc.querySelectorAll('[data-simpay]').forEach(b=>on(b,'click',()=>{
     const pl=b.dataset.simpay;
     if(pl==='free'){ _setPlan('free'); renderBillingView(); toast('Test: reset to Free plan','info'); }
@@ -10958,6 +11026,14 @@ function openCheckout(plan, customPrice){
     store('amv_custom_cfg',{price, ts:Date.now()});
     PLANS.custom.price=price; PLANS.custom.mult=''; PLANS.custom.blurb='Your custom plan - '+_customPlanSummary(price).monthlyTokens.toLocaleString()+' tokens/mo';
     openPaymentSheet('custom');
+    return;
+  }
+  if(plan==='team'){
+    /* A per-seat plan has no single price to put on a payment sheet - the total
+       depends on how many people are on it. So it goes to the screen that asks
+       that question, rather than a sheet that would show one seat's price as if
+       it were the bill. */
+    try{ S.tab='team'; setTab('team'); }catch(e){}
     return;
   }
   const p=PLANS[plan]; if(!p) return;
@@ -14501,6 +14577,7 @@ function renderPlansView(){
         '<h2>One subscription. Every AI tool you need.</h2>'+
         '<p class="vsub">Chat, images, video, autonomous agents, an app builder and Mission Control - in one place. Start free, upgrade any time, cancel whenever.</p></div>'+
       '<div class="pg pg-app pg-4">'+planCards(true)+'</div>'+
+      _teamPlanBanner(true)+
       _customPlanBanner(true)+
       '<p class="px-note" style="display:none">Prices are in US dollars. Your local-currency amount is an estimate for convenience - you are charged the same value wherever you are, so there are no cheaper prices by country.</p>'+
       '<div class="plans-compare-row"><button class="btn bs" id="plans-compare" style="font-size:12.5px">Compare all plans in detail \u2192</button></div>'+
@@ -16069,7 +16146,11 @@ function setupLanding(){
   on($('ft-btn'),'click',openTerms);
   on($('fc-btn'),'click',openTerms);
   // Fill landing pricing
-  const lp=$('land-pricing'); if(lp){ lp.classList.add('pg-4'); lp.innerHTML=planCards(false); if(lp.parentNode && !lp.parentNode.querySelector('.cpb')){ lp.insertAdjacentHTML('afterend', _customPlanBanner(false)); } }
+  /* The landing page is where most pricing decisions actually get made, so
+     Teams belongs here too - it was only on a tab you have to sign in to
+     reach, which is a strange place to keep the plan worth ten times the
+     others. Guarded on .cpb so a re-render does not stack duplicates. */
+  const lp=$('land-pricing'); if(lp){ lp.classList.add('pg-4'); lp.innerHTML=planCards(false); if(lp.parentNode && !lp.parentNode.querySelector('.cpb')){ lp.insertAdjacentHTML('afterend', _teamPlanBanner(false) + _customPlanBanner(false)); } }
   // Hero tags
   const tags=[
     ['Research my competitors','Research my top 5 competitors and build a comparison table with pricing, positioning, and weaknesses'],
@@ -16146,8 +16227,6 @@ function setupApp(){
     if(da) { e.stopPropagation(); const fn=da.dataset.dact,arg=da.dataset.darg; if(fn==='askAmv')askAmv(); else if(fn==='toastInfo')toastInfo(arg); else if(window[fn])window[fn](arg); return; }
     const st=e.target.closest('[data-stab]');
     if(st) { e.stopPropagation(); setTab(st.dataset.stab); return; }
-    const co=e.target.closest('[data-checkout]');
-    if(co) { e.stopPropagation(); openCheckout(co.dataset.checkout); return; }
     const au=e.target.closest('[data-auth]');
     if(au) { e.stopPropagation(); openAuth(au.dataset.auth); return; }
   });
@@ -16575,14 +16654,14 @@ async function runCanvasAutomation() {
       '<button class="oc" onclick="closeOvr()">&#215;</button>'+
       '<h2>&#x1F4DA; Canvas Automation</h2>'+
       '<p class="ob-sub">AMV will read your assignments, complete them, and save results to your Google Drive or download them.</p>'+
-      '<div id="ca-status" style="min-height:120px;background:rgba(0,0,0,.2);border:1px solid var(--bd);border-radius:var(--r);padding:13px;font-size:12px;color:var(--t2);font-family:var(--mn);overflow-y:auto;max-height:280px;line-height:1.8">'+
+      '<div id="ca-status" style="min-height:120px;background:rgba(0,0,0,.2);border:1px solid var(--bd);border-radius:var(--r-md);padding:13px;font-size:12px;color:var(--mu);font-family:var(--mn);overflow-y:auto;max-height:280px;line-height:1.8">'+
         'Connecting to Canvas API...<br>'+
       '</div>'+
       '<div style="margin-top:13px;display:flex;gap:8px">'+
         '<button class="btn bp" id="ca-start" style="font-size:13px">Start Automation</button>'+
         '<button class="btn bs" onclick="closeOvr()" style="font-size:13px">Cancel</button>'+
       '</div>'+
-      '<p style="font-size:10px;color:var(--t3);margin-top:9px">Your computer must stay on and browser open. For overnight automation, deploy a backend server - see the Help section.</p>'+
+      '<p style="font-size:10px;color:var(--dim);margin-top:9px">Your computer must stay on and browser open. For overnight automation, deploy a backend server - see the Help section.</p>'+
     '</div></div>';
   document.getElementById('ca-bg')?.addEventListener('click',closeOvr);
 
@@ -16595,7 +16674,7 @@ async function runCanvasAutomation() {
   document.getElementById('ca-start')?.addEventListener('click',async()=>{
     const btn=document.getElementById('ca-start');
     if(btn){btn.disabled=true;btn.textContent='Running…';}
-    log('Fetching courses from Canvas...','var(--indigo)');
+    log('Fetching courses from Canvas...','var(--accent)');
 
     try{
       // Fetch courses
@@ -16604,7 +16683,7 @@ async function runCanvasAutomation() {
       },20000);
       if(!coursesRes.ok) throw new Error('Canvas API error: '+coursesRes.status+' - check your token and URL.');
       const courses=await coursesRes.json();
-      log('Found '+courses.length+' active courses.','var(--green)');
+      log('Found '+courses.length+' active courses.','var(--grn)');
 
       let completed=0, total=0;
       for(const course of courses.slice(0,5)){
@@ -16619,13 +16698,13 @@ async function runCanvasAutomation() {
         log(pending.length+' pending assignments in '+course.name,'var(--mu)');
 
         for(const assignment of pending.slice(0,3)){
-          log('Working on: '+assignment.name,'var(--amber)');
+          log('Working on: '+assignment.name,'var(--gold)');
           // Use AMV AI to complete it
           const prompt='Complete this assignment fully and professionally.\n\nCourse: '+course.name+'\nAssignment: '+assignment.name+'\n\nInstructions:\n'+(assignment.description||'No instructions provided - write a comprehensive response.').replace(/<[^>]*>/g,' ').trim()+'\n\nProvide a complete, submission-ready response.';
 
           try{
             const answer=await aiComplete(prompt, null, {model:'amv-apex', max_tokens:4000, noLang:true});
-            log('&#x2713; Completed: '+assignment.name,'var(--green)');
+            log('&#x2713; Completed: '+assignment.name,'var(--grn)');
 
             // Save to a downloadable file
             const blob=new Blob(['Assignment: '+assignment.name+'\nCourse: '+course.name+'\n\n'+answer],{type:'text/plain'});
@@ -16641,15 +16720,16 @@ async function runCanvasAutomation() {
           await new Promise(res=>setTimeout(res,1500));
         }
       }
-      log('&#x2713; Automation complete! '+completed+'/'+total+' assignments processed.','var(--green)');
+      log('&#x2713; Automation complete! '+completed+'/'+total+' assignments processed.','var(--grn)');
       log('Files downloaded to your computer. Review before submitting.','var(--mu)');
-      if(btn){btn.textContent='Done!';btn.style.background='var(--green)';}
+      if(btn){btn.textContent='Done!';btn.style.background='var(--grn)';}
     } catch(err){
       log('Error: '+err.message,'var(--red)');
       if(btn){btn.disabled=false;btn.textContent='Retry';}
     }
   });
 }
+try{ window.runCanvasAutomation=runCanvasAutomation; }catch(e){}
 
 /* Canvas overnight queue (requires backend for true overnight - shows instructions) */
 function openOvernightQueue(){
@@ -17788,8 +17868,14 @@ function _integrationsCatalogHTML(){
     const badge=o.auto
       ? '<span class="ax-badge ax-auto"><span class="ax-dot"></span>Autonomous</span>'
       : '<span class="ax-badge ax-manual">Manual</span>';
+    /* A connected integration that can DO something needs a way to run it. The
+       Canvas automation had a working implementation and no button anywhere -
+       its entry point was removed with an old toolbar and the function was left
+       behind, reachable by nothing. Connecting it here means the run control
+       lives next to the connection it depends on. */
     const action=connected
-      ? '<button class="btn int-disc" data-int-disc="'+o.id+'" style="font-size:12px">Disconnect</button>'
+      ? ((o.run?'<button class="btn bp" data-int-run="'+o.run+'" style="font-size:12px">'+escH(o.runLabel||'Run')+'</button>':'')+
+         '<button class="btn int-disc" data-int-disc="'+o.id+'" style="font-size:12px">Disconnect</button>')
       : (o.auto
           ? '<button class="btn bp" data-int-conn="'+o.id+'" style="font-size:12px">Connect</button>'
           : '<button class="btn bs" data-int-use="'+(o.use||'chat')+'" style="font-size:12px">'+(o.useLabel||'Open in chat')+'</button>');
@@ -17824,7 +17910,7 @@ function _integrationsCatalogHTML(){
     )+
     cat('Productivity',
       intRow({id:'notion',name:'Notion',desc:'Reads and writes pages, builds docs in your workspace.',auto:true,connected:isConn('amv_notion'),icon:'\uD83D\uDCDD',bg:'rgba(255,255,255,.08)'})+
-      intRow({id:'canvas',name:'Canvas LMS',desc:'Reads assignments and drafts answers from your notes. Works overnight.',auto:true,connected:isConn('amv_canvas'),icon:'\uD83C\uDF93',bg:'rgba(230,70,70,.14)'})
+      intRow({id:'canvas',name:'Canvas LMS',desc:'Reads assignments and drafts answers from your notes. Works overnight.',auto:true,connected:isConn('amv_canvas'),run:'runCanvasAutomation',runLabel:'Run now',icon:'\uD83C\uDF93',bg:'rgba(230,70,70,.14)'})
     )+
     cat('Office files',
       intRow({id:'excel',name:'Excel & CSV',desc:'Upload a sheet - AMV runs formulas, builds pivots and charts, then you download.',auto:false,connected:false,icon:'\uD83D\uDCCA',bg:'rgba(33,115,70,.14)'})+
@@ -17838,6 +17924,11 @@ function _wireIntegrationCatalog(root){
   root=root||document;
   root.querySelectorAll('[data-int-conn]').forEach(btn=>on(btn,'click',()=>connectIntegration(btn.dataset.intConn)));
   root.querySelectorAll('[data-int-disc]').forEach(btn=>on(btn,'click',()=>disconnectIntegration(btn.dataset.intDisc)));
+  root.querySelectorAll('[data-int-run]').forEach(btn=>on(btn,'click',()=>{
+    const fn=window[btn.dataset.intRun];
+    if(typeof fn==='function') fn();
+    else toast('That automation is not available in this build.','error');
+  }));
   root.querySelectorAll('[data-int-use]').forEach(btn=>on(btn,'click',()=>{ setTab(btn.dataset.intUse||'chat'); toast('Upload your file with the \uD83D\uDCCE button, or just describe what you need.','info',4500); }));
 }
 window._wireIntegrationCatalog=_wireIntegrationCatalog;

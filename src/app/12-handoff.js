@@ -192,6 +192,7 @@ function renderPlansView(){
         '<h2>One subscription. Every AI tool you need.</h2>'+
         '<p class="vsub">Chat, images, video, autonomous agents, an app builder and Mission Control - in one place. Start free, upgrade any time, cancel whenever.</p></div>'+
       '<div class="pg pg-app pg-4">'+planCards(true)+'</div>'+
+      _teamPlanBanner(true)+
       _customPlanBanner(true)+
       '<p class="px-note" style="display:none">Prices are in US dollars. Your local-currency amount is an estimate for convenience - you are charged the same value wherever you are, so there are no cheaper prices by country.</p>'+
       '<div class="plans-compare-row"><button class="btn bs" id="plans-compare" style="font-size:12.5px">Compare all plans in detail \u2192</button></div>'+
@@ -1760,7 +1761,11 @@ function setupLanding(){
   on($('ft-btn'),'click',openTerms);
   on($('fc-btn'),'click',openTerms);
   // Fill landing pricing
-  const lp=$('land-pricing'); if(lp){ lp.classList.add('pg-4'); lp.innerHTML=planCards(false); if(lp.parentNode && !lp.parentNode.querySelector('.cpb')){ lp.insertAdjacentHTML('afterend', _customPlanBanner(false)); } }
+  /* The landing page is where most pricing decisions actually get made, so
+     Teams belongs here too - it was only on a tab you have to sign in to
+     reach, which is a strange place to keep the plan worth ten times the
+     others. Guarded on .cpb so a re-render does not stack duplicates. */
+  const lp=$('land-pricing'); if(lp){ lp.classList.add('pg-4'); lp.innerHTML=planCards(false); if(lp.parentNode && !lp.parentNode.querySelector('.cpb')){ lp.insertAdjacentHTML('afterend', _teamPlanBanner(false) + _customPlanBanner(false)); } }
   // Hero tags
   const tags=[
     ['Research my competitors','Research my top 5 competitors and build a comparison table with pricing, positioning, and weaknesses'],
@@ -1837,8 +1842,6 @@ function setupApp(){
     if(da) { e.stopPropagation(); const fn=da.dataset.dact,arg=da.dataset.darg; if(fn==='askAmv')askAmv(); else if(fn==='toastInfo')toastInfo(arg); else if(window[fn])window[fn](arg); return; }
     const st=e.target.closest('[data-stab]');
     if(st) { e.stopPropagation(); setTab(st.dataset.stab); return; }
-    const co=e.target.closest('[data-checkout]');
-    if(co) { e.stopPropagation(); openCheckout(co.dataset.checkout); return; }
     const au=e.target.closest('[data-auth]');
     if(au) { e.stopPropagation(); openAuth(au.dataset.auth); return; }
   });
@@ -2266,14 +2269,14 @@ async function runCanvasAutomation() {
       '<button class="oc" onclick="closeOvr()">&#215;</button>'+
       '<h2>&#x1F4DA; Canvas Automation</h2>'+
       '<p class="ob-sub">AMV will read your assignments, complete them, and save results to your Google Drive or download them.</p>'+
-      '<div id="ca-status" style="min-height:120px;background:rgba(0,0,0,.2);border:1px solid var(--bd);border-radius:var(--r);padding:13px;font-size:12px;color:var(--t2);font-family:var(--mn);overflow-y:auto;max-height:280px;line-height:1.8">'+
+      '<div id="ca-status" style="min-height:120px;background:rgba(0,0,0,.2);border:1px solid var(--bd);border-radius:var(--r-md);padding:13px;font-size:12px;color:var(--mu);font-family:var(--mn);overflow-y:auto;max-height:280px;line-height:1.8">'+
         'Connecting to Canvas API...<br>'+
       '</div>'+
       '<div style="margin-top:13px;display:flex;gap:8px">'+
         '<button class="btn bp" id="ca-start" style="font-size:13px">Start Automation</button>'+
         '<button class="btn bs" onclick="closeOvr()" style="font-size:13px">Cancel</button>'+
       '</div>'+
-      '<p style="font-size:10px;color:var(--t3);margin-top:9px">Your computer must stay on and browser open. For overnight automation, deploy a backend server - see the Help section.</p>'+
+      '<p style="font-size:10px;color:var(--dim);margin-top:9px">Your computer must stay on and browser open. For overnight automation, deploy a backend server - see the Help section.</p>'+
     '</div></div>';
   document.getElementById('ca-bg')?.addEventListener('click',closeOvr);
 
@@ -2286,7 +2289,7 @@ async function runCanvasAutomation() {
   document.getElementById('ca-start')?.addEventListener('click',async()=>{
     const btn=document.getElementById('ca-start');
     if(btn){btn.disabled=true;btn.textContent='Running…';}
-    log('Fetching courses from Canvas...','var(--indigo)');
+    log('Fetching courses from Canvas...','var(--accent)');
 
     try{
       // Fetch courses
@@ -2295,7 +2298,7 @@ async function runCanvasAutomation() {
       },20000);
       if(!coursesRes.ok) throw new Error('Canvas API error: '+coursesRes.status+' - check your token and URL.');
       const courses=await coursesRes.json();
-      log('Found '+courses.length+' active courses.','var(--green)');
+      log('Found '+courses.length+' active courses.','var(--grn)');
 
       let completed=0, total=0;
       for(const course of courses.slice(0,5)){
@@ -2310,13 +2313,13 @@ async function runCanvasAutomation() {
         log(pending.length+' pending assignments in '+course.name,'var(--mu)');
 
         for(const assignment of pending.slice(0,3)){
-          log('Working on: '+assignment.name,'var(--amber)');
+          log('Working on: '+assignment.name,'var(--gold)');
           // Use AMV AI to complete it
           const prompt='Complete this assignment fully and professionally.\n\nCourse: '+course.name+'\nAssignment: '+assignment.name+'\n\nInstructions:\n'+(assignment.description||'No instructions provided - write a comprehensive response.').replace(/<[^>]*>/g,' ').trim()+'\n\nProvide a complete, submission-ready response.';
 
           try{
             const answer=await aiComplete(prompt, null, {model:'amv-apex', max_tokens:4000, noLang:true});
-            log('&#x2713; Completed: '+assignment.name,'var(--green)');
+            log('&#x2713; Completed: '+assignment.name,'var(--grn)');
 
             // Save to a downloadable file
             const blob=new Blob(['Assignment: '+assignment.name+'\nCourse: '+course.name+'\n\n'+answer],{type:'text/plain'});
@@ -2332,15 +2335,16 @@ async function runCanvasAutomation() {
           await new Promise(res=>setTimeout(res,1500));
         }
       }
-      log('&#x2713; Automation complete! '+completed+'/'+total+' assignments processed.','var(--green)');
+      log('&#x2713; Automation complete! '+completed+'/'+total+' assignments processed.','var(--grn)');
       log('Files downloaded to your computer. Review before submitting.','var(--mu)');
-      if(btn){btn.textContent='Done!';btn.style.background='var(--green)';}
+      if(btn){btn.textContent='Done!';btn.style.background='var(--grn)';}
     } catch(err){
       log('Error: '+err.message,'var(--red)');
       if(btn){btn.disabled=false;btn.textContent='Retry';}
     }
   });
 }
+try{ window.runCanvasAutomation=runCanvasAutomation; }catch(e){}
 
 /* Canvas overnight queue (requires backend for true overnight - shows instructions) */
 function openOvernightQueue(){

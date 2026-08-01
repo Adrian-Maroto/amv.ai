@@ -1217,22 +1217,11 @@ function bindChatEvents() {
   on($('research-btn'),'click',_toggleResearch);
   try{ _syncResearchBtn(); }catch(e){}
 
-  // Tab clicks
-  $('tabs')?.querySelectorAll('.ctab[data-tid]').forEach(b=>{
-    on(b,'click',e=>{ if(e.target.dataset.tclose) return; loadConv(b.dataset.tid); });
-  });
-  $('tabs')?.querySelectorAll('[data-tclose]').forEach(b=>{
-    on(b,'click',e=>{ e.stopPropagation(); closeTab(b.dataset.tclose); });
-  });
-
-  // Model buttons
-  $('mdl-bar')?.querySelectorAll('.mdlbtn').forEach(b=>{
-    on(b,'click',()=>{
-      S.model=b.dataset.m;
-      if(S.model==='image'){setTab('images');return;}
-      $('mdl-bar').querySelectorAll('.mdlbtn').forEach(x=>x.classList.toggle('on',x===b));
-    });
-  });
+  /* The conversation-tab strip (#tabs) and the model bar (#mdl-bar) were
+     replaced by the sidebar history and the composer's model picker. Their
+     handlers stayed, bound to elements and attributes that nothing renders -
+     the same silent shape that made the Admin tab unreachable. Removed rather
+     than left as no-ops that read like live wiring. */
 
   // Drag and drop
   const cib=$('cib');
@@ -2645,6 +2634,31 @@ function planCards(inApp){
   ].join('');
 }
 /* Custom plan as a slim full-width banner below the four core tiers. */
+/* Teams on the pricing page.
+
+   The per-seat plan is not a step on the four-card ladder - it has no single
+   price, because the total depends on how many people are on it - so it gets a
+   banner of its own, the same shape Custom uses for the same reason. Without
+   this the product had exactly one entry point, on a tab most people never open,
+   which is a strange place to keep the thing that makes a company pay you ten
+   times as much. */
+function _teamPlanBanner(inApp){
+  const P=(typeof PLANS!=='undefined'&&PLANS.team)||{price:20};
+  const min=(typeof TEAM_SEAT_MIN!=='undefined')?TEAM_SEAT_MIN:3;
+  const btn = inApp
+    ? '<button class="btn pbp plnbtn cpb-btn" data-stab="team">Set up Teams \u2192</button>'
+    : '<button class="btn pbp plnbtn cpb-btn" data-auth="signup">Set up Teams \u2192</button>';
+  return '<div class="cpb">'+
+    '<div class="cpb-l"><div class="cpb-tier">Teams \u00b7 $'+P.price+' per person / mo</div>'+
+      '<div class="cpb-t">Working with other people?</div>'+
+      '<div class="cpb-d">Every seat brings its own full allowance into one shared pool, plus Apex for everyone, '+
+        'shared projects, a prompt library and roles. Ten people get ten plans\u2019 worth of capacity and one bill - '+
+        'not one plan split ten ways. From '+min+' seats, prorated by the day when you add or remove somebody.</div></div>'+
+    '<div class="cpb-r">'+btn+'</div>'+
+  '</div>';
+}
+try{ window._teamPlanBanner=_teamPlanBanner; }catch(e){}
+
 function _customPlanBanner(inApp){
   const btn = inApp
     ? '<button class="btn pbp plnbtn cpb-btn" data-dact="openCustomPlan">Build your plan \u2192</button>'

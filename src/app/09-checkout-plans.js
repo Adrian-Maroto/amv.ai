@@ -123,6 +123,14 @@ function openCheckout(plan, customPrice){
     openPaymentSheet('custom');
     return;
   }
+  if(plan==='team'){
+    /* A per-seat plan has no single price to put on a payment sheet - the total
+       depends on how many people are on it. So it goes to the screen that asks
+       that question, rather than a sheet that would show one seat's price as if
+       it were the bill. */
+    try{ S.tab='team'; setTab('team'); }catch(e){}
+    return;
+  }
   const p=PLANS[plan]; if(!p) return;
   openPaymentSheet(plan);
 }

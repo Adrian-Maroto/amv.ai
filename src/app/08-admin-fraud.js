@@ -972,9 +972,14 @@ function renderBillingView(targetEl){
   const fmt=(d)=>d?d.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'}):'-';
   const ic={free:'⚡',pro:'✦',elite:'★',ultra:'◆',custom:'⚙'}[plan]||'⚡';
   const email=(S.user&&S.user.email)||'-';
-  // upgrade targets = plans ranked above current
-  const upTargets=Object.keys(PLANS).filter(k=>k!=='custom'&&PLAN_RANK[k]>PLAN_RANK[plan]);
-  const downTargets=Object.keys(PLANS).filter(k=>k!=='custom'&&PLAN_RANK[k]<PLAN_RANK[plan]);
+  /* Teams is priced per seat, so it is not a step on this ladder - it has no
+     single price to put on a button, and buying it means choosing how many
+     people are on it. Excluded here and sold from its own screen, exactly as
+     Custom is. Listing it with "$20/mo" on it would be a lie the moment anybody
+     clicked it. */
+  const LADDER=k=>k!=='custom'&&k!=='team';
+  const upTargets=Object.keys(PLANS).filter(k=>LADDER(k)&&PLAN_RANK[k]>PLAN_RANK[plan]);
+  const downTargets=Object.keys(PLANS).filter(k=>LADDER(k)&&PLAN_RANK[k]<PLAN_RANK[plan]);
 
   vc.innerHTML=
     '<div class="sv fi"><div class="vi">'+
@@ -1015,6 +1020,37 @@ function renderBillingView(targetEl){
         '<p class="bill-acts-s">Change your card, download receipts, or cancel. '+
           'Cancelling keeps your plan until the end of the period you have paid for.</p>'+
       '</div>':'')+
+      /* These two lists were computed on every render and shown nowhere, and the
+         click handler below bound to buttons that never existed - so the billing
+         screen told a paying customer what they had and gave them no way to
+         change it. Teams and Custom are deliberately absent: neither has a
+         single price to put on a button. */
+      ((upTargets.length||downTargets.length)?
+      '<div class="ss2"><h3>Change plan</h3>'+
+        '<div class="bill-swap">'+
+          upTargets.map(k=>'<button class="btn bp" data-pay="'+escH(k)+'">Upgrade to '+escH(PLANS[k].name)+' \u00b7 $'+PLANS[k].price+'/mo</button>').join('')+
+          downTargets.filter(k=>k!=='free').map(k=>'<button class="btn bs" data-pay="'+escH(k)+'">Switch to '+escH(PLANS[k].name)+' \u00b7 $'+PLANS[k].price+'/mo</button>').join('')+
+        '</div>'+
+        '<p class="bill-acts-s">Changes take effect immediately and are prorated. '+
+          'Working with other people? <a data-stab="team" style="color:var(--accent);cursor:pointer">Teams is priced per person</a>.</p>'+
+      '</div>':'')+
+      /* Cancelling. The pricing page promises "cancel with one click" and there
+         was no control anywhere that did it, which is a claim the product did
+         not keep.
+
+         It has to go through the processor. `_switchPlan('free')` only changes
+         the plan in THIS browser - with a live subscription that is a cancel
+         button that does not cancel, and the customer finds out when the next
+         charge lands. Worse than no button. So when there is a real backend
+         this opens the processor's own portal, which is the only place a
+         subscription actually ends. */
+      (plan!=='free'?
+      '<div class="ss2"><h3>Cancel</h3>'+
+        '<p style="font-size:12.5px;color:var(--mu);line-height:1.6;margin:0 0 10px">'+
+          'You keep '+escH(P.name)+' until the end of the period you have already paid for, and nothing you have made is deleted.</p>'+
+        '<button class="btn bs" id="bill-cancel" style="font-size:12px;color:var(--red);border-color:var(--red)">Cancel subscription</button>'+
+        '<div class="seat-say" id="bill-cancel-say" role="status" aria-live="polite"></div>'+
+      '</div>':'')+
       // INVOICES
       (plan!=='free'?'<div class="ss2"><h3>Invoices</h3>'+
         '<div id="bill-invoices">'+(liveBackend?'<div class="bill-inv-loading">Loading your invoices\u2026</div>':_invoiceTableHTML(plan,P,sinceDate))+'</div>'+
@@ -1047,8 +1083,26 @@ function renderBillingView(targetEl){
     toast('Billing portal activates once your backend is connected','info',4000);
   };
   const pb=$('portal-open-btn'); if(pb) on(pb,'click',openPortal);
+  on($('bill-cancel'),'click',async()=>{
+    const say=t=>{ const el=$('bill-cancel-say'); if(el) el.textContent=t||''; };
+    if(liveBackend){
+      /* The processor is the only thing that can actually stop the billing, so
+         that is where this goes. Never a local flag pretending it worked. */
+      say('Opening your billing to cancel\u2026');
+      try{
+        const url=await AMV_API.portal(loadStr('amv_stripe_customer')||email);
+        window.open(url,'_blank','noopener');
+        say('Cancel it in the window that just opened. Nothing has changed yet.');
+      }catch(e){
+        say('Could not open billing, so nothing was cancelled. Try again, or email support and we will do it for you.');
+      }
+      return;
+    }
+    /* No backend: there is no subscription to cancel, so switching locally is
+       the whole truth rather than a pretence. */
+    _switchPlan('free');
+  });
   vc.querySelectorAll('[data-pay]').forEach(b=>on(b,'click',()=>openCheckout(b.dataset.pay)));
-  vc.querySelectorAll('[data-switch]').forEach(b=>on(b,'click',()=>_switchPlan(b.dataset.switch)));
   vc.querySelectorAll('[data-simpay]').forEach(b=>on(b,'click',()=>{
     const pl=b.dataset.simpay;
     if(pl==='free'){ _setPlan('free'); renderBillingView(); toast('Test: reset to Free plan','info'); }

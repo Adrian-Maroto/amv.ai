@@ -227,6 +227,118 @@ section('The entry points exist, because a screen nobody can reach is not shippe
   ok(gone, 'and it is absent from the DOM entirely for everybody else');
 }
 
+section('A per-seat plan is never shown as a fixed price');
+{
+  /* Adding `team` to PLANS put it in every generic "plans ranked above yours"
+     list, where it rendered as a $20/month button. Clicking it would have opened
+     a payment sheet showing one seat's price as if it were the bill. It is not a
+     step on that ladder - it has no single price - so it is excluded from it and
+     sold from the screen that asks how many people are on it. */
+  const billing = await page.evaluate(() => {
+    saveStr('amv_plan', 'pro');
+    S.tab = 'billing'; setTab('billing');
+    return [...document.querySelectorAll('[data-pay]')].map(b => b.dataset.pay);
+  });
+  ok(!billing.includes('team'), 'Teams is not a one-click upgrade button', billing);
+  ok(!billing.includes('custom'), 'for the same reason Custom is not', billing);
+  ok(billing.includes('elite') || billing.includes('ultra'),
+     'while the fixed-price plans still are', billing);
+
+  const routed = await page.evaluate(() => { openCheckout('team'); return S.tab; });
+  ok(routed === 'team',
+     'and asking to buy it goes to the seat picker, not a fixed-price sheet', routed);
+  const sheet = await page.evaluate(() => !!document.querySelector('#ovr .pay-sheet, #ovr .ob'));
+  ok(!sheet, 'with no payment sheet quoting one seat as the total');
+}
+
+section('A paying customer can reach their own billing');
+{
+  /* The Manage billing button did not exist while its handler did, so there was
+     no way to change a card or cancel from inside AMV. And the upgrade list was
+     computed on every render and shown nowhere. Both are money surfaces where
+     "you cannot do this here" turns into a support ticket or a chargeback. */
+  const paid = await page.evaluate(() => {
+    saveStr('amv_plan', 'pro');
+    S.tab = 'billing'; setTab('billing');
+    const vc = document.getElementById('vc');
+    return {
+      manage: !!document.getElementById('portal-open-btn'),
+      cancelText: /cancel/i.test(vc.textContent),
+      swaps: [...vc.querySelectorAll('[data-pay]')].map(b => b.dataset.pay),
+    };
+  });
+  ok(paid.manage, 'the button that opens billing exists, not just its handler');
+  ok(paid.cancelText, 'and says cancelling is possible, which people look for before they buy');
+  ok(paid.swaps.includes('elite') && paid.swaps.includes('ultra'),
+     'the plans above are offered', paid.swaps);
+  ok(!paid.swaps.includes('team') && !paid.swaps.includes('custom'),
+     'while the two without a single price are not', paid.swaps);
+  ok(!paid.swaps.includes('free'),
+     'and "switch to Free" is not sold as a plan change - that is cancelling', paid.swaps);
+
+  /* The pricing page promises "cancel with one click". Nothing anywhere did it,
+     and the one function that looked like it only flipped a flag in this
+     browser - a cancel button that does not cancel is worse than none, because
+     the customer finds out when the next charge lands. */
+  const cancel = await page.evaluate(async () => {
+    saveStr('amv_plan', 'pro');
+    // a live backend means there is a real subscription behind this button
+    Object.defineProperty(window.AMV_API, 'live', { get: () => true, configurable: true });
+    S.tab = 'billing'; setTab('billing');
+    const btn = document.getElementById('bill-cancel');
+    if (!btn) return { there: false };
+    let openedPortal = false;
+    window.AMV_API.portal = async () => { openedPortal = true; return 'https://billing.test/x'; };
+    const realOpen = window.open; window.open = () => {};
+    btn.click();
+    await new Promise(r => setTimeout(r, 60));
+    window.open = realOpen;
+    return { there: true, openedPortal, plan: loadStr('amv_plan'),
+             say: (document.getElementById('bill-cancel-say') || {}).textContent || '' };
+  });
+  ok(cancel.there, 'there is a cancel control at all');
+  ok(cancel.plan === 'pro',
+     'clicking it does NOT quietly flip the local plan while the card keeps being charged', cancel.plan);
+  ok(cancel.openedPortal,
+     'it goes to the processor, the only place a subscription actually ends', cancel);
+  ok(/nothing has changed yet/i.test(cancel.say),
+     'and it says plainly that nothing has been cancelled yet', cancel.say);
+
+  const free = await page.evaluate(() => {
+    saveStr('amv_plan', 'free');
+    S.tab = 'billing'; setTab('billing');
+    return {
+      manage: !!document.getElementById('portal-open-btn'),
+      swaps: [...document.querySelectorAll('[data-pay]')].map(b => b.dataset.pay),
+    };
+  });
+  ok(!free.manage, 'a free account is not offered billing it does not have');
+  ok(!(await page.evaluate(() => !!document.getElementById('bill-cancel'))),
+     'nor a cancel button for a subscription it does not have');
+  ok(free.swaps.length > 0, 'but is still offered the plans it could buy', free.swaps);
+}
+
+section('Teams is on the pricing page, not only behind a tab');
+{
+  const plans = await page.evaluate(() => {
+    S.tab = 'plans'; setTab('plans');
+    const vc = document.getElementById('vc');
+    return { text: vc.textContent, banners: vc.querySelectorAll('.cpb').length };
+  });
+  ok(/per person/.test(plans.text), 'the price is stated per person', /per person/.test(plans.text));
+  ok(/ten plans/i.test(plans.text) || /shared pool/i.test(plans.text),
+     'with what the money actually buys', plans.text.slice(0, 0));
+  ok(plans.banners >= 2, 'alongside Custom rather than replacing it', plans.banners);
+
+  const goes = await page.evaluate(() => {
+    const b = [...document.querySelectorAll('.cpb [data-stab="team"]')][0];
+    if (!b) return 'no button';
+    b.click();
+    return S.tab;
+  });
+  ok(goes === 'team', 'and it leads somewhere that can actually sell it', goes);
+}
+
 ok(errors.length === 0, 'no console errors along the way', errors.slice(0, 3));
 
 await app.close();

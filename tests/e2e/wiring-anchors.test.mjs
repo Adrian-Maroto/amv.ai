@@ -130,6 +130,33 @@ section('Nothing in the bundle waits on an element that was removed');
      'no element lookup targets an id nothing anywhere creates', dead.slice(0, 12));
 }
 
+section('No handler is bound to a data-attribute nothing renders');
+{
+  /* The same failure one level along, and the id sweep cannot see it. The
+     billing screen computed a list of plans the customer could switch to,
+     bound a click handler to `[data-pay]`, and rendered no such button - so a
+     paying customer had no upgrade path and no cancel control, on the one page
+     that exists to change what they pay.
+
+     An attribute is "rendered" if it appears anywhere in the shipped bundle or
+     markup followed by `=` (a value) or by a quote, space or `>` (a bare
+     attribute like `data-i18n`). Bound but never written is dead wiring. */
+  const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
+  const all = src + html;
+  const bound = new Set();
+  for (const m of src.matchAll(/querySelectorAll?\(\s*['"]\[(data-[a-z0-9-]+)\][^'"]*['"]/g)) bound.add(m[1]);
+  for (const m of src.matchAll(/closest\(\s*['"]\[(data-[a-z0-9-]+)\]['"]\s*\)/g)) bound.add(m[1]);
+  ok(bound.size > 5, 'the sweep found delegated handlers to check', bound.size);
+
+  const dead = [];
+  for (const attr of bound) {
+    const esc = attr.replace(/-/g, '[-]');
+    const rendered = (all.match(new RegExp(esc + '(=|\\\\?["\'> ])', 'g')) || []).length;
+    if (rendered === 0) dead.push(attr);
+  }
+  ok(dead.length === 0, 'every delegated handler has markup that can trigger it', dead);
+}
+
 section('Structural selectors in the wiring code still match the markup');
 {
   /* querySelector with a structural selector is the exact failure the Admin
