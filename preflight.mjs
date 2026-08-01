@@ -128,7 +128,7 @@ if (backend && toml) {
   }
 
   // Secrets the Worker reads - documented so you don't forget one at deploy.
-  const KNOWN_SECRETS = ['AMV_MODEL_KEY', 'ANTHROPIC_API_KEY', 'JWT_SECRET', 'ADMIN_TOKEN', 'EMAIL_API_KEY',
+  const KNOWN_SECRETS = ['AMV_MODEL_KEY', 'ANTHROPIC_API_KEY', 'JWT_SECRET', 'STRIPE_PRICE_TEAM_SEAT', 'MODEL_API_URL', 'MODEL_API_FALLBACK_URL', 'ADMIN_TOKEN', 'EMAIL_API_KEY',
     'RESET_EMAIL_FROM', 'GLOBAL_DAILY_USD_CAP', 'STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET',
     'VIDEO_API_URL', 'VIDEO_API_KEY', 'VIDEO_MODEL', 'APP_URL', 'AUDIT_WEBHOOK',
     // optional integrations - supported but not required to launch

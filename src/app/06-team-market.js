@@ -58,6 +58,33 @@ function renderTeamView(){
       '<div class="team-feat"><span class="team-feat-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg></span><div><b>Seats on one subscription</b><span>Elite includes 10, Ultra 25. Everyone shares the plan\u2019s allowance - one bill, not one per person.</span></div></div>'+
     '</div></div>';
 
+  /* The buy box. Teams is the per-seat plan, and a seat picker that shows the
+     real monthly total as it moves is the difference between a price list and
+     something somebody can decide about. It never pretends to work: with no
+     seat price configured the server says so and this says the same thing. */
+  const seatBuyCard=(function(){
+    const P=(typeof PLANS!=='undefined'&&PLANS.team)||{price:20,name:'Teams'};
+    const min=(typeof TEAM_SEAT_MIN!=='undefined')?TEAM_SEAT_MIN:3;
+    const n=Math.max(min,+(loadStr('amv_seat_pick')||min)||min);
+    return '<div class="ss2 seat-buy">'+
+      '<h3>Teams - $'+P.price+' per person, per month</h3>'+
+      '<p class="seat-why">Every seat brings its own full Pro allowance into one shared pool, plus '+
+        'AMV Apex for everyone. Ten people get ten plans\u2019 worth of capacity and one bill, '+
+        'instead of one plan\u2019s worth split ten ways.</p>'+
+      '<div class="seat-pick">'+
+        '<button class="btn bs seat-step" type="button" data-seat="-1" aria-label="One fewer seat">\u2212</button>'+
+        '<label class="sr-only" for="seat-n">Number of seats</label>'+
+        '<input id="seat-n" class="inp seat-n" type="number" inputmode="numeric" min="'+min+'" max="500" value="'+n+'">'+
+        '<button class="btn bs seat-step" type="button" data-seat="1" aria-label="One more seat">+</button>'+
+        '<span class="seat-total" id="seat-total"></span>'+
+      '</div>'+
+      '<div class="seat-say" id="seat-say" role="status" aria-live="polite"></div>'+
+      '<button class="btn bp" id="seat-buy" style="font-size:12px">Get Teams</button>'+
+      '<p class="seat-fine">Minimum '+min+' seats. Change the number any time - billing is prorated by the day, '+
+        'so adding somebody mid-month costs the part of the month they are there for.</p>'+
+    '</div>';
+  })();
+
   // The clear plan answer - shown whenever the user can't yet use Teams
   const planRequirementCard=
     '<div class="ss2" style="background:rgba(85,144,255,.06);border-color:rgba(85,144,255,.22)">'+
@@ -103,9 +130,11 @@ function renderTeamView(){
         '<span class="eyebrow">Collaboration</span>'+
         '<h2>Team workspaces</h2>'+
         '<p class="vsub">Shared projects, prompts, memory, and roles - for your whole team.</p>'+
+        seatBuyCard+
         teamExplainer+
         planRequirementCard+
       '</div></div>';
+      _wireSeatBuy();
       return;
     }
     _renderTeamCreate(vc);
@@ -118,6 +147,47 @@ function renderTeamView(){
     '</div></div>';
   });
 }
+/* Live total, a bounded stepper, and a checkout that reports the one failure
+   that is not the user's fault: the seat price is not configured yet. */
+function _wireSeatBuy(){
+  const el=$('seat-n'); if(!el) return;
+  const P=(typeof PLANS!=='undefined'&&PLANS.team)||{price:20};
+  const min=(typeof TEAM_SEAT_MIN!=='undefined')?TEAM_SEAT_MIN:3;
+  const max=(typeof TEAM_SEAT_MAX!=='undefined')?TEAM_SEAT_MAX:500;
+  const clamp=v=>Math.max(min,Math.min(max,Math.floor(+v||0)||min));
+  const paint=()=>{
+    const n=clamp(el.value);
+    el.value=String(n);
+    try{ saveStr('amv_seat_pick',String(n)); }catch(e){}
+    const t=$('seat-total');
+    if(t) t.textContent='$'+(n*P.price)+'/month for '+n+' people';
+  };
+  on(el,'input',paint); on(el,'change',paint); paint();
+  document.querySelectorAll('.seat-step').forEach(b=>on(b,'click',()=>{
+    el.value=String(clamp(+el.value + (+b.dataset.seat||0))); paint();
+  }));
+  on($('seat-buy'),'click',async()=>{
+    const n=clamp(el.value);
+    const say=t=>{ const s2=$('seat-say'); if(s2) s2.textContent=t||''; };
+    if(!(window.AMV_API&&AMV_API.live&&AMV_API.token)){
+      say('Sign in first and this takes you straight to checkout.');
+      try{ openAuth('signup'); }catch(e){}
+      return;
+    }
+    const btn=$('seat-buy'); if(btn){ btn.disabled=true; btn.textContent='Opening\u2026'; }
+    say('');
+    try{
+      const url=await AMV_API.stripeCheckout('team',(S.user&&S.user.email)||'',n);
+      _openExternalPay(url,'team','card');
+    }catch(e){
+      say(e&&e.code==='not_configured'
+        ? 'Teams billing is not switched on for this deployment yet, so nothing was charged. Elite and Ultra include team seats in the meantime.'
+        : (e&&e.message)||'Could not open checkout. Nothing was charged.');
+    }finally{ if(btn){ btn.disabled=false; btn.textContent='Get Teams'; } }
+  });
+}
+try{ window._wireSeatBuy=_wireSeatBuy; }catch(e){}
+
 function _renderTeamCreate(vc){
   vc.innerHTML='<div class="sv fi"><div class="vi">'+
     '<span class="eyebrow">Collaboration</span><h2>Create your team</h2>'+
@@ -145,10 +215,37 @@ function _renderTeamManage(vc, team){
      here rather than discovered when somebody's work stops working. */
   const seats=team.seats||null;
   const over=seats?seats.over:0;
+  const onSeatPlan=(team.plan||'')==='team';
+  const seatPrice=((typeof PLANS!=='undefined'&&PLANS.team)||{price:20}).price;
   const seatNote=seats
     ? '<p class="vsub">'+seats.used+' of '+seats.limit+' seat'+(seats.limit===1?'':'s')+' used'+
       (over>0?' \u00b7 <b style="color:var(--gold)">'+over+' over your plan</b>':'')+
-      ' \u00b7 everyone shares one allowance.</p>'
+      ' \u00b7 '+(onSeatPlan
+        ? 'every seat adds its own allowance to the shared pool.'
+        : 'everyone shares one allowance.')+'</p>'
+    : '';
+  /* Seat changes go through Stripe's own portal rather than a second billing
+     path in AMV. Stripe prorates the change to the day and the webhook writes
+     the new count back, so the number of seats AMV honours is always the number
+     being billed - there is no place for the two to disagree. */
+  const seatManage=(isOwner&&seats)
+    ? '<div class="ss2"><h3>Seats and billing</h3>'+
+      '<div class="seat-now">'+
+        (onSeatPlan
+          ? '<b>$'+(seats.limit*seatPrice)+'/month</b><span>'+seats.limit+' seats at $'+seatPrice+' each</span>'
+          : '<b>'+seats.limit+' seats</b><span>included with '+escH(String(team.plan||'your plan'))+'</span>')+
+      '</div>'+
+      (onSeatPlan
+        ? '<p style="font-size:12.5px;color:var(--mu);line-height:1.6;margin:0 0 10px">'+
+          'Changing the number is prorated by the day, so adding somebody mid-month costs '+
+          'the part of the month they are there for.</p>'+
+          '<button class="btn bs" id="seat-manage" style="font-size:12px">Change seats</button>'
+        : '<p style="font-size:12.5px;color:var(--mu);line-height:1.6;margin:0 0 10px">'+
+          'Need a different number? Teams is priced per person at $'+seatPrice+'/month, '+
+          'and every seat brings its own allowance rather than dividing this one.</p>'+
+          '<button class="btn bs" data-stab="plans" style="font-size:12px">See Teams pricing</button>')+
+      '<div class="seat-say" id="seat-manage-say" role="status" aria-live="polite"></div>'+
+      '</div>'
     : '';
   const overBanner=over>0
     ? '<div class="ss2" style="border-color:var(--gold);background:rgba(245,158,11,.07)">'+
@@ -174,6 +271,7 @@ function _renderTeamManage(vc, team){
     '<p class="vsub">'+(team.members||[]).length+' member'+((team.members||[]).length===1?'':'s')+' \u00b7 you\u2019re '+(role==='owner'?'the owner':'a '+role)+'.</p>'+
     seatNote+
     overBanner+
+    seatManage+
     '<div class="team-presence" id="team-presence"></div>'+
     '<div class="ss2"><h3>Shared library <span style="font-weight:400;color:var(--mu);font-size:11px">(projects &amp; prompts everyone can use)</span></h3>'+
       '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'+
@@ -233,6 +331,16 @@ function _renderTeamManage(vc, team){
       }
       toast(e.message||'Invite failed','error');
     }
+  });
+  on($('seat-manage'),'click',async()=>{
+    const say=t=>{ const s2=$('seat-manage-say'); if(s2) s2.textContent=t||''; };
+    const btn=$('seat-manage'); if(btn){ btn.disabled=true; btn.textContent='Opening\u2026'; }
+    try{
+      const url=await AMV_API.portal((S.user&&S.user.email)||'');
+      if(url) window.open(url,'_blank','noopener');
+      else say('Could not open billing just now. Nothing was changed.');
+    }catch(e){ say((e&&e.message)||'Could not open billing just now. Nothing was changed.'); }
+    finally{ if(btn){ btn.disabled=false; btn.textContent='Change seats'; } }
   });
   on($('team-leave'),'click',async()=>{
     if(typeof confirm==='function' &&

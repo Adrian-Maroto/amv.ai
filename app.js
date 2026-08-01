@@ -397,12 +397,12 @@ const AMV_API = {
   async actHandoff(id,action){ await this._fetch('/api/handoff/act',{method:'POST',body:JSON.stringify({id,action})}); },
 
   // ---- PAYMENTS (secure backend) ----
-  async stripeCheckout(plan,email){ const r=await this._fetch('/v1/stripe/checkout',{method:'POST',body:JSON.stringify({plan,email})}); const d=await r.json(); if(!r.ok||!d.url) throw new Error(d.error||'checkout failed'); return d.url; },
+  async stripeCheckout(plan,email,seats){ const r=await this._fetch('/v1/stripe/checkout',{method:'POST',body:JSON.stringify({plan,email,seats})}); const d=await r.json(); if(!r.ok||!d.url){ const e=new Error(d.error||'checkout failed'); e.code=d.code; throw e; } return d.url; },
   async paypalCreate(plan){ const r=await this._fetch('/v1/paypal/create',{method:'POST',body:JSON.stringify({plan})}); const d=await r.json(); if(!r.ok||!d.id) throw new Error(d.error||'paypal create failed'); return d.id; },
   async paypalSubscribe(plan,email){ const r=await this._fetch('/v1/paypal/subscribe',{method:'POST',body:JSON.stringify({plan,email})}); const d=await r.json(); if(!r.ok||!d.url) throw new Error(d.error||'subscribe failed'); return d.url; },
   async paypalCapture(orderId,email){ const r=await this._fetch('/v1/paypal/capture',{method:'POST',body:JSON.stringify({orderId,email})}); const d=await r.json(); if(!r.ok||!d.ok) throw new Error(d.error||'capture failed'); return d; },
   async entitlement(email){ const r=await this._fetch('/v1/entitlement?email='+encodeURIComponent(email||'')); return await r.json(); },
-  async portal(customer){ const r=await this._fetch('/v1/stripe/portal',{method:'POST',body:JSON.stringify({customer})}); const d=await r.json(); return d.url||''; },
+  async portal(customer){ const r=await this._fetch('/v1/stripe/portal',{method:'POST',body:JSON.stringify({customer})}); const d=await r.json(); if(!r.ok||!d.url) throw new Error(d.error||'Could not open billing.'); return d.url; },
 };
 window.AMV_API = AMV_API;
 function amvSaveBackend(){ var v=(document.getElementById('be-url')||{}).value||''; AMV_API.base=v.trim(); toast(v.trim()?'Backend URL saved':'Cleared - local mode','info'); if(typeof renderSetPane==='function') renderSetPane(); }
@@ -2615,60 +2615,13 @@ function _wireHdrAuth(){
   if(su && !su._wired){ su._wired=1; su.addEventListener('click',()=>{ try{ openAuth('signup'); }catch(e){} }); }
   if(li && !li._wired){ li._wired=1; li.addEventListener('click',()=>{ try{ openAuth('login'); }catch(e){} }); }
 }
-function goApp(){ try{ _wireHdrAuth(); }catch(e){} try{ const cy=document.getElementById('copy-year'); if(cy) cy.textContent=String(new Date().getFullYear()); }catch(e){} document.getElementById('land').classList.add('hidden'); document.getElementById('app').classList.add('on'); updateSbUser(); _initMobileSidebar(); _restoreSidebarState(); try{ _applyReduceMotion(); }catch(e){} setTab(S.tab); _ensureBackendSession(); try{ _applyFontSize(); }catch(e){} try{ _initOfflineWatch(); }catch(e){} try{ _initErrorBoundary(); }catch(e){} try{ syncEntitlement(); _checkUpgradeReturn(); }catch(e){} try{ _checkTeamInvite(); }catch(e){} try{ _initKeyboardNav(); _initA11y(); }catch(e){} try{ _revealAdminNav(); }catch(e){} try{ _revealTeamNav(); }catch(e){} try{ _initSidebarMore(); }catch(e){} try{ _initBuildGroup(); }catch(e){} try{ _localizePrices(document); }catch(e){} try{ const sbtn=$('sb-status'); if(sbtn) sbtn.addEventListener('click',openStatusPanel); _checkStatus(); }catch(e){} try{ _initI18nObserver(); }catch(e){} try{ _translateUI(); setTimeout(_translateUI,120); }catch(e){ console.error('Translate UI error in goApp', e); } }
+function goApp(){ try{ _wireHdrAuth(); }catch(e){} try{ const cy=document.getElementById('copy-year'); if(cy) cy.textContent=String(new Date().getFullYear()); }catch(e){} document.getElementById('land').classList.add('hidden'); document.getElementById('app').classList.add('on'); updateSbUser(); _initMobileSidebar(); _restoreSidebarState(); try{ _applyReduceMotion(); }catch(e){} setTab(S.tab); _ensureBackendSession(); try{ _applyFontSize(); }catch(e){} try{ _initOfflineWatch(); }catch(e){} try{ _initErrorBoundary(); }catch(e){} try{ syncEntitlement(); _checkUpgradeReturn(); }catch(e){} try{ _checkTeamInvite(); }catch(e){} try{ _initKeyboardNav(); _initA11y(); }catch(e){} try{ _revealAdminNav(); }catch(e){} try{ _revealTeamNav(); }catch(e){} try{ _initBuildGroup(); }catch(e){} try{ _localizePrices(document); }catch(e){} try{ const sbtn=$('sb-status'); if(sbtn) sbtn.addEventListener('click',openStatusPanel); _checkStatus(); }catch(e){} try{ _initI18nObserver(); }catch(e){} try{ _translateUI(); setTimeout(_translateUI,120); }catch(e){ console.error('Translate UI error in goApp', e); } }
 
-/* The sidebar's advanced tools (Tasks, Integrations, Marketplace) live under a
-   collapsible "More" so the default view stays calm - new users were getting
-   lost in a long flat list. If the user is currently ON one of those tabs, we
-   auto-expand so the active item is always visible. */
-function _initSidebarMore(){
-  const toggle=document.getElementById('snb-more-toggle');
-  const more=document.getElementById('snb-more');
-  if(!toggle||!more) return;
-  const MORE_TABS=['tasks','integrations','market'];
-  const setOpen=(open)=>{
-    more.hidden=!open;
-    toggle.setAttribute('aria-expanded', open?'true':'false');
-    toggle.classList.toggle('open', open);
-    try{ saveStr('amv_sb_more', open?'1':'0'); }catch(e){}
-  };
-  if(!toggle._b){
-    toggle._b=1;
-    on(toggle,'click',()=> setOpen(more.hidden));
-  }
-  // open if remembered, or if the current tab lives inside More
-  const remembered = (()=>{ try{ return loadStr('amv_sb_more')==='1'; }catch(e){ return false; } })();
-  setOpen(remembered || MORE_TABS.includes(S.tab));
-}
-try{ window._initSidebarMore=_initSidebarMore; }catch(e){}
-/* "Build" (Studio, Dev, Lab) collapses under one tappable header so the default
-   sidebar stays short and calm - more room for Chat, Images, Video, Crew and
-   Handoff. Collapsed by default; opens if remembered or if you're on a build
-   tab (so the active item is always visible). */
-const _BUILD_TABS=['studio','dev','lab'];
-function _buildGroupSetOpen(open){
-  const grp=document.getElementById('build-group'), tog=document.getElementById('build-toggle');
-  if(!grp||!tog) return;
-  grp.classList.toggle('collapsed', !open);
-  tog.classList.toggle('open', open);
-  tog.setAttribute('aria-expanded', open?'true':'false');
-  try{ saveStr('amv_sb_build', open?'1':'0'); }catch(e){}
-}
-function _initBuildGroup(){
-  const tog=document.getElementById('build-toggle'); if(!tog) return;
-  if(!tog._b){
-    tog._b=1;
-    const toggle=()=>{ const grp=document.getElementById('build-group'); _buildGroupSetOpen(grp?grp.classList.contains('collapsed'):true); };
-    on(tog,'click',toggle);
-    on(tog,'keydown',(e)=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); toggle(); } });
-  }
-  const remembered=(()=>{ try{ return loadStr('amv_sb_build')==='1'; }catch(e){ return false; } })();
-  _buildGroupSetOpen(remembered || _BUILD_TABS.includes(S.tab));
-}
-/* Keep the group open whenever a build tab is active, so the highlighted item
-   is never hidden. Called from setTab. */
-function _buildGroupSync(){ if(_BUILD_TABS.includes(S.tab)) _buildGroupSetOpen(true); }
-try{ window._initBuildGroup=_initBuildGroup; window._buildGroupSync=_buildGroupSync; }catch(e){}
+/* The sidebar's "More" group was replaced by the tool rail in #sb-tools, so
+   the collapsible it managed no longer exists. The function stayed behind,
+   returning early on a missing element every time it was called - the same
+   silent shape that made the Admin tab unreachable. Removed rather than left
+   as a no-op that reads like working code. */
 function _revealAdminNav(){
   try{
     const existing=document.getElementById('nav-admin');
@@ -6791,7 +6744,7 @@ function _customPlanBanner(inApp){
 
 /* === SIDEBAR === */
 function renderHist(){
-  const area=$('hist-list')||$('hist'); if(!area) return;
+  const area=$('hist'); if(!area) return;
   const hdr=$('hist-header');
   const search=($('hist-search')?.value||'').toLowerCase().trim();
   let convs=Array.isArray(S.convs)?S.convs:[];
@@ -7164,6 +7117,33 @@ function renderTeamView(){
       '<div class="team-feat"><span class="team-feat-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg></span><div><b>Seats on one subscription</b><span>Elite includes 10, Ultra 25. Everyone shares the plan\u2019s allowance - one bill, not one per person.</span></div></div>'+
     '</div></div>';
 
+  /* The buy box. Teams is the per-seat plan, and a seat picker that shows the
+     real monthly total as it moves is the difference between a price list and
+     something somebody can decide about. It never pretends to work: with no
+     seat price configured the server says so and this says the same thing. */
+  const seatBuyCard=(function(){
+    const P=(typeof PLANS!=='undefined'&&PLANS.team)||{price:20,name:'Teams'};
+    const min=(typeof TEAM_SEAT_MIN!=='undefined')?TEAM_SEAT_MIN:3;
+    const n=Math.max(min,+(loadStr('amv_seat_pick')||min)||min);
+    return '<div class="ss2 seat-buy">'+
+      '<h3>Teams - $'+P.price+' per person, per month</h3>'+
+      '<p class="seat-why">Every seat brings its own full Pro allowance into one shared pool, plus '+
+        'AMV Apex for everyone. Ten people get ten plans\u2019 worth of capacity and one bill, '+
+        'instead of one plan\u2019s worth split ten ways.</p>'+
+      '<div class="seat-pick">'+
+        '<button class="btn bs seat-step" type="button" data-seat="-1" aria-label="One fewer seat">\u2212</button>'+
+        '<label class="sr-only" for="seat-n">Number of seats</label>'+
+        '<input id="seat-n" class="inp seat-n" type="number" inputmode="numeric" min="'+min+'" max="500" value="'+n+'">'+
+        '<button class="btn bs seat-step" type="button" data-seat="1" aria-label="One more seat">+</button>'+
+        '<span class="seat-total" id="seat-total"></span>'+
+      '</div>'+
+      '<div class="seat-say" id="seat-say" role="status" aria-live="polite"></div>'+
+      '<button class="btn bp" id="seat-buy" style="font-size:12px">Get Teams</button>'+
+      '<p class="seat-fine">Minimum '+min+' seats. Change the number any time - billing is prorated by the day, '+
+        'so adding somebody mid-month costs the part of the month they are there for.</p>'+
+    '</div>';
+  })();
+
   // The clear plan answer - shown whenever the user can't yet use Teams
   const planRequirementCard=
     '<div class="ss2" style="background:rgba(85,144,255,.06);border-color:rgba(85,144,255,.22)">'+
@@ -7209,9 +7189,11 @@ function renderTeamView(){
         '<span class="eyebrow">Collaboration</span>'+
         '<h2>Team workspaces</h2>'+
         '<p class="vsub">Shared projects, prompts, memory, and roles - for your whole team.</p>'+
+        seatBuyCard+
         teamExplainer+
         planRequirementCard+
       '</div></div>';
+      _wireSeatBuy();
       return;
     }
     _renderTeamCreate(vc);
@@ -7224,6 +7206,47 @@ function renderTeamView(){
     '</div></div>';
   });
 }
+/* Live total, a bounded stepper, and a checkout that reports the one failure
+   that is not the user's fault: the seat price is not configured yet. */
+function _wireSeatBuy(){
+  const el=$('seat-n'); if(!el) return;
+  const P=(typeof PLANS!=='undefined'&&PLANS.team)||{price:20};
+  const min=(typeof TEAM_SEAT_MIN!=='undefined')?TEAM_SEAT_MIN:3;
+  const max=(typeof TEAM_SEAT_MAX!=='undefined')?TEAM_SEAT_MAX:500;
+  const clamp=v=>Math.max(min,Math.min(max,Math.floor(+v||0)||min));
+  const paint=()=>{
+    const n=clamp(el.value);
+    el.value=String(n);
+    try{ saveStr('amv_seat_pick',String(n)); }catch(e){}
+    const t=$('seat-total');
+    if(t) t.textContent='$'+(n*P.price)+'/month for '+n+' people';
+  };
+  on(el,'input',paint); on(el,'change',paint); paint();
+  document.querySelectorAll('.seat-step').forEach(b=>on(b,'click',()=>{
+    el.value=String(clamp(+el.value + (+b.dataset.seat||0))); paint();
+  }));
+  on($('seat-buy'),'click',async()=>{
+    const n=clamp(el.value);
+    const say=t=>{ const s2=$('seat-say'); if(s2) s2.textContent=t||''; };
+    if(!(window.AMV_API&&AMV_API.live&&AMV_API.token)){
+      say('Sign in first and this takes you straight to checkout.');
+      try{ openAuth('signup'); }catch(e){}
+      return;
+    }
+    const btn=$('seat-buy'); if(btn){ btn.disabled=true; btn.textContent='Opening\u2026'; }
+    say('');
+    try{
+      const url=await AMV_API.stripeCheckout('team',(S.user&&S.user.email)||'',n);
+      _openExternalPay(url,'team','card');
+    }catch(e){
+      say(e&&e.code==='not_configured'
+        ? 'Teams billing is not switched on for this deployment yet, so nothing was charged. Elite and Ultra include team seats in the meantime.'
+        : (e&&e.message)||'Could not open checkout. Nothing was charged.');
+    }finally{ if(btn){ btn.disabled=false; btn.textContent='Get Teams'; } }
+  });
+}
+try{ window._wireSeatBuy=_wireSeatBuy; }catch(e){}
+
 function _renderTeamCreate(vc){
   vc.innerHTML='<div class="sv fi"><div class="vi">'+
     '<span class="eyebrow">Collaboration</span><h2>Create your team</h2>'+
@@ -7251,10 +7274,37 @@ function _renderTeamManage(vc, team){
      here rather than discovered when somebody's work stops working. */
   const seats=team.seats||null;
   const over=seats?seats.over:0;
+  const onSeatPlan=(team.plan||'')==='team';
+  const seatPrice=((typeof PLANS!=='undefined'&&PLANS.team)||{price:20}).price;
   const seatNote=seats
     ? '<p class="vsub">'+seats.used+' of '+seats.limit+' seat'+(seats.limit===1?'':'s')+' used'+
       (over>0?' \u00b7 <b style="color:var(--gold)">'+over+' over your plan</b>':'')+
-      ' \u00b7 everyone shares one allowance.</p>'
+      ' \u00b7 '+(onSeatPlan
+        ? 'every seat adds its own allowance to the shared pool.'
+        : 'everyone shares one allowance.')+'</p>'
+    : '';
+  /* Seat changes go through Stripe's own portal rather than a second billing
+     path in AMV. Stripe prorates the change to the day and the webhook writes
+     the new count back, so the number of seats AMV honours is always the number
+     being billed - there is no place for the two to disagree. */
+  const seatManage=(isOwner&&seats)
+    ? '<div class="ss2"><h3>Seats and billing</h3>'+
+      '<div class="seat-now">'+
+        (onSeatPlan
+          ? '<b>$'+(seats.limit*seatPrice)+'/month</b><span>'+seats.limit+' seats at $'+seatPrice+' each</span>'
+          : '<b>'+seats.limit+' seats</b><span>included with '+escH(String(team.plan||'your plan'))+'</span>')+
+      '</div>'+
+      (onSeatPlan
+        ? '<p style="font-size:12.5px;color:var(--mu);line-height:1.6;margin:0 0 10px">'+
+          'Changing the number is prorated by the day, so adding somebody mid-month costs '+
+          'the part of the month they are there for.</p>'+
+          '<button class="btn bs" id="seat-manage" style="font-size:12px">Change seats</button>'
+        : '<p style="font-size:12.5px;color:var(--mu);line-height:1.6;margin:0 0 10px">'+
+          'Need a different number? Teams is priced per person at $'+seatPrice+'/month, '+
+          'and every seat brings its own allowance rather than dividing this one.</p>'+
+          '<button class="btn bs" data-stab="plans" style="font-size:12px">See Teams pricing</button>')+
+      '<div class="seat-say" id="seat-manage-say" role="status" aria-live="polite"></div>'+
+      '</div>'
     : '';
   const overBanner=over>0
     ? '<div class="ss2" style="border-color:var(--gold);background:rgba(245,158,11,.07)">'+
@@ -7280,6 +7330,7 @@ function _renderTeamManage(vc, team){
     '<p class="vsub">'+(team.members||[]).length+' member'+((team.members||[]).length===1?'':'s')+' \u00b7 you\u2019re '+(role==='owner'?'the owner':'a '+role)+'.</p>'+
     seatNote+
     overBanner+
+    seatManage+
     '<div class="team-presence" id="team-presence"></div>'+
     '<div class="ss2"><h3>Shared library <span style="font-weight:400;color:var(--mu);font-size:11px">(projects &amp; prompts everyone can use)</span></h3>'+
       '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'+
@@ -7339,6 +7390,16 @@ function _renderTeamManage(vc, team){
       }
       toast(e.message||'Invite failed','error');
     }
+  });
+  on($('seat-manage'),'click',async()=>{
+    const say=t=>{ const s2=$('seat-manage-say'); if(s2) s2.textContent=t||''; };
+    const btn=$('seat-manage'); if(btn){ btn.disabled=true; btn.textContent='Opening\u2026'; }
+    try{
+      const url=await AMV_API.portal((S.user&&S.user.email)||'');
+      if(url) window.open(url,'_blank','noopener');
+      else say('Could not open billing just now. Nothing was changed.');
+    }catch(e){ say((e&&e.message)||'Could not open billing just now. Nothing was changed.'); }
+    finally{ if(btn){ btn.disabled=false; btn.textContent='Change seats'; } }
   });
   on($('team-leave'),'click',async()=>{
     if(typeof confirm==='function' &&
@@ -10303,7 +10364,17 @@ function renderBillingView(targetEl){
           _drow('Billing email',escH(email))+
           (pm?_drow('Payment method',_pmBrandIcon(pm.brand)+' \u00b7\u00b7\u00b7\u00b7 '+escH(pm.last4)+(pm.exp?'  (exp '+escH(pm.exp)+')':'')):'')+
         '</div>'+
-        (plan==='custom'?'<button class="btn bp" id="bill-resize" style="margin-top:12px">Resize my plan</button>':'')+
+        /* The billing portal is the only place a card can be changed or a
+           subscription cancelled. The handler for this button already existed
+           and had done nothing for as long as the button did not: a paying
+           customer could not reach their own billing, which is a support ticket
+           at best and a complaint to their bank at worst. */
+        '<div class="bill-acts">'+
+          '<button class="btn bp" id="portal-open-btn">Manage billing</button>'+
+          (plan==='custom'?'<button class="btn bs" id="bill-resize">Resize my plan</button>':'')+
+        '</div>'+
+        '<p class="bill-acts-s">Change your card, download receipts, or cancel. '+
+          'Cancelling keeps your plan until the end of the period you have paid for.</p>'+
       '</div>':'')+
       // INVOICES
       (plan!=='free'?'<div class="ss2"><h3>Invoices</h3>'+
@@ -10345,7 +10416,6 @@ function renderBillingView(targetEl){
     else handlePaymentSuccess(pl,{simulated:true});
   }));
   const rz=$('bill-resize'); if(rz) on(rz,'click',openCustomPlan);
-  const bc=$('bill-custom'); if(bc) on(bc,'click',openCustomPlan);
   vc.querySelectorAll('.inv-view').forEach(b=>on(b,'click',()=>toast('Invoice PDFs open through the billing portal once your account is connected to a payment processor.','info',4000)));
   // load real invoice history when the backend is connected
   if(plan!=='free' && liveBackend){ _loadInvoices(); }
@@ -10779,9 +10849,15 @@ const PLANS={
   pro:{name:'Pro',price:15,blurb:'5\u00d7 the usage, all models, agents, and priority speed',mult:'5\u00d7'},
   elite:{name:'Elite',price:75,blurb:'20\u00d7 usage, full-stack builds, one-click deploy, 5 parallel agents, Apex first',mult:'20\u00d7'},
   ultra:{name:'Ultra',price:200,blurb:'50\u00d7 usage, unlimited parallel agents, whole-codebase context, autonomous projects, team workspaces',mult:'50\u00d7'},
+  /* Priced PER SEAT, so `price` here is the price of one seat and the card that
+     sells it multiplies. Every seat adds its own allowance to a shared pool
+     rather than dividing a fixed one, which is why adding a teammate is worth
+     paying for instead of something to ration. */
+  team:{name:'Teams',price:20,perSeat:true,blurb:'Apex and a full Pro allowance for every person, pooled and shared',mult:''},
   custom:{name:'Custom',price:0,blurb:'A plan sized exactly to your usage',mult:''},
 };
-const PLAN_RANK={free:0,pro:1,elite:2,ultra:3,custom:2};
+const TEAM_SEAT_MIN=3, TEAM_SEAT_MAX=500;
+const PLAN_RANK={free:0,pro:1,elite:2,ultra:3,custom:2,team:2};
 
 /* ============================================================
    CUSTOM PLAN - pay-for-what-you-need, guaranteed profitable.
@@ -13157,7 +13233,6 @@ function _devSetName(name){
   if(!clean) return _DEV.name;
   _DEV.name=clean;
   try{ saveStr('amv_dev_name', clean); }catch(e){}
-  try{ const el=$('dev-projname'); if(el) el.textContent=clean; }catch(e){}
   return clean;
 }
 /* Derive a project name from what the user asked for, the first time they build.
@@ -16045,33 +16120,16 @@ function setupApp(){
   on($('smi-switch'),'click',()=>{ $('sb-popup').classList.remove('on'); openAuth('login'); });
   on($('smi-signout'),'click',()=>{ $('sb-popup').classList.remove('on'); signOut(); });
 
-  // History drawer toggle
-  on($('ir-history-btn'),'click',function(){
-    const drawer=$('hist-drawer');
-    if(!drawer) return;
-    const isOpen=drawer.classList.contains('open');
-    drawer.classList.toggle('open');
-    this.classList.toggle('active');
-    document.body.classList.toggle('drawer-open', drawer.classList.contains('open'));
-    if(!isOpen) renderHist();
-  });
-  on($('hd-close'),'click',function(){
-    $('hist-drawer')?.classList.remove('open');
-    $('ir-history-btn')?.classList.remove('active');
-    document.body.classList.remove('drawer-open');
-  });
-
-  // Canvas automation button
-  on($('ir-canvas'),'click',runCanvasAutomation);
-
-  // Keyboard shortcut: Ctrl+B toggles history drawer
-  // (removed old sidebar toggle - no longer needed)
+  /* The history drawer and the canvas button were replaced by the sidebar and
+     the composer toolbar. Their handlers stayed, binding to elements that no
+     longer exist - silently, which is exactly how the Admin tab became
+     unreachable and went unnoticed for months. Removed rather than kept as
+     no-ops that read like live wiring. */
   on($('kb-btn'),'click',()=>openShortcuts());
   // Sidebar user popup
   on($('sb-user-btn'),'click',function(e){ e.stopPropagation(); showProfMenu(this); });
   // Profile actions handled via showProfMenu dropdown
   // Star filter
-  on($('star-filter'),'click',()=>{ S.starFilter=!S.starFilter; $('star-filter').style.color=S.starFilter?'var(--amber)':''; renderHist(); });
   // Sidebar nav tabs
   document.querySelectorAll('.snb[data-tab]').forEach(btn=>{
     on(btn,'click',()=>{ if(btn.dataset.tab) setTab(btn.dataset.tab); });
@@ -16080,7 +16138,6 @@ function setupApp(){
   on($('hist-search'),'input',renderHist);
   // File input
   on($('fi'),'change',function(){ if(this.files.length) handleFiles(this.files); this.value=''; });
-  on($('canvas-btn'),'click',runCanvasAutomation);
   // Global delegation for data-gs (go to settings pane) buttons
   document.addEventListener('click',e=>{
     const gs=e.target.closest('[data-gs]');
@@ -16478,8 +16535,10 @@ function setupKeyboard(){
     if(e.ctrlKey&&e.shiftKey&&e.key==='O'){e.preventDefault();newChat();return;}
     if(e.ctrlKey&&!e.shiftKey&&e.key==='b'&&!inInput){
       e.preventDefault();
-      const drawer=$('hist-drawer');
-      if(drawer){ drawer.classList.toggle('open'); $('ir-history-btn')?.classList.toggle('active'); if(drawer.classList.contains('open'))renderHist(); }
+      /* Ctrl+B toggled a history drawer that the sidebar replaced, so the
+         shortcut had quietly done nothing. It toggles the sidebar, which is
+         where the history actually is now. */
+      try{ toggleSb(); }catch(_){}
       return;
     }
     if(e.ctrlKey&&e.shiftKey&&e.key==='L'){e.preventDefault();document.body.classList.toggle('light');saveStr('amv_theme',document.body.classList.contains('light')?'light':'dark');return;}
@@ -19660,7 +19719,7 @@ function _paletteCommands(){
     nav('go-tasks','Tasks','tasks','tasks todo schedule automation'),
     nav('go-projects','Projects','workspaces','projects workspace files'),
     nav('go-memory','Memory','memory','memory remember facts'),
-    /* Team removed from the product */
+    nav('go-team','Team','team','team seats members invite colleagues shared workspace collaborate'),
     nav('go-marketplace','Marketplace','market','marketplace agents store'),
     nav('go-plans','Plans','plans','plans pricing upgrade subscription'),
     nav('go-help','Help','help','help support docs guide'),

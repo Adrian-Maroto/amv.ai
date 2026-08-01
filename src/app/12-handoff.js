@@ -1811,33 +1811,16 @@ function setupApp(){
   on($('smi-switch'),'click',()=>{ $('sb-popup').classList.remove('on'); openAuth('login'); });
   on($('smi-signout'),'click',()=>{ $('sb-popup').classList.remove('on'); signOut(); });
 
-  // History drawer toggle
-  on($('ir-history-btn'),'click',function(){
-    const drawer=$('hist-drawer');
-    if(!drawer) return;
-    const isOpen=drawer.classList.contains('open');
-    drawer.classList.toggle('open');
-    this.classList.toggle('active');
-    document.body.classList.toggle('drawer-open', drawer.classList.contains('open'));
-    if(!isOpen) renderHist();
-  });
-  on($('hd-close'),'click',function(){
-    $('hist-drawer')?.classList.remove('open');
-    $('ir-history-btn')?.classList.remove('active');
-    document.body.classList.remove('drawer-open');
-  });
-
-  // Canvas automation button
-  on($('ir-canvas'),'click',runCanvasAutomation);
-
-  // Keyboard shortcut: Ctrl+B toggles history drawer
-  // (removed old sidebar toggle - no longer needed)
+  /* The history drawer and the canvas button were replaced by the sidebar and
+     the composer toolbar. Their handlers stayed, binding to elements that no
+     longer exist - silently, which is exactly how the Admin tab became
+     unreachable and went unnoticed for months. Removed rather than kept as
+     no-ops that read like live wiring. */
   on($('kb-btn'),'click',()=>openShortcuts());
   // Sidebar user popup
   on($('sb-user-btn'),'click',function(e){ e.stopPropagation(); showProfMenu(this); });
   // Profile actions handled via showProfMenu dropdown
   // Star filter
-  on($('star-filter'),'click',()=>{ S.starFilter=!S.starFilter; $('star-filter').style.color=S.starFilter?'var(--amber)':''; renderHist(); });
   // Sidebar nav tabs
   document.querySelectorAll('.snb[data-tab]').forEach(btn=>{
     on(btn,'click',()=>{ if(btn.dataset.tab) setTab(btn.dataset.tab); });
@@ -1846,7 +1829,6 @@ function setupApp(){
   on($('hist-search'),'input',renderHist);
   // File input
   on($('fi'),'change',function(){ if(this.files.length) handleFiles(this.files); this.value=''; });
-  on($('canvas-btn'),'click',runCanvasAutomation);
   // Global delegation for data-gs (go to settings pane) buttons
   document.addEventListener('click',e=>{
     const gs=e.target.closest('[data-gs]');
@@ -2244,8 +2226,10 @@ function setupKeyboard(){
     if(e.ctrlKey&&e.shiftKey&&e.key==='O'){e.preventDefault();newChat();return;}
     if(e.ctrlKey&&!e.shiftKey&&e.key==='b'&&!inInput){
       e.preventDefault();
-      const drawer=$('hist-drawer');
-      if(drawer){ drawer.classList.toggle('open'); $('ir-history-btn')?.classList.toggle('active'); if(drawer.classList.contains('open'))renderHist(); }
+      /* Ctrl+B toggled a history drawer that the sidebar replaced, so the
+         shortcut had quietly done nothing. It toggles the sidebar, which is
+         where the history actually is now. */
+      try{ toggleSb(); }catch(_){}
       return;
     }
     if(e.ctrlKey&&e.shiftKey&&e.key==='L'){e.preventDefault();document.body.classList.toggle('light');saveStr('amv_theme',document.body.classList.contains('light')?'light':'dark');return;}

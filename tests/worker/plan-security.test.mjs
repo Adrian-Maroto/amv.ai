@@ -11,7 +11,7 @@ const ROOT = join(__dir, '..', '..');
 const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'plansec.harness.mjs');
-writeFileSync(harness, src + '\nexport { requireUser, issueTokens, setEntitlement };\n');
+writeFileSync(harness, src + '\nexport { requireUser, issueTokens, setEntitlement, _planRankOf };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 const store = new Map();
@@ -43,7 +43,15 @@ const user2 = await W.requireUser(req, env);   // same forged request
 ok(user2.plan === 'ultra', 'now that the SERVER granted ultra, it reads ultra', user2.plan);
 
 section('The code path enforces plan rank on premium engines');
-ok(/PLAN_RANK\[user\.plan\]\s*<\s*PLAN_RANK\[eng\.minPlan\]/.test(src), 'premium engines are gated by server-side plan rank');
+/* _planRankOf, not a raw PLAN_RANK lookup: `custom` and `team` have no entry in
+   that table, so a direct read ranked them 0 and would cap a paying customer to
+   the cheapest engine. The guarantee is the same, one function along. */
+ok(/_planRankOf\(user\.plan, user\.customCfg\)\s*<\s*PLAN_RANK\[eng\.minPlan\]/.test(src),
+   'premium engines are gated by server-side plan rank');
+ok(W._planRankOf('team') >= W._planRankOf('elite'),
+   'and a per-seat plan ranks where its price says, not at zero', W._planRankOf('team'));
+ok(W._planRankOf('custom', { price: 300 }) > W._planRankOf('custom', { price: 20 }),
+   'as does a custom plan, by what was actually paid');
 ok(/requireUser/.test(src) && /verifyToken/.test(src), 'identity comes from a verified token, not client input');
 
 report();

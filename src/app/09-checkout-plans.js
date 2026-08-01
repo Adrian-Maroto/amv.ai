@@ -12,9 +12,15 @@ const PLANS={
   pro:{name:'Pro',price:15,blurb:'5\u00d7 the usage, all models, agents, and priority speed',mult:'5\u00d7'},
   elite:{name:'Elite',price:75,blurb:'20\u00d7 usage, full-stack builds, one-click deploy, 5 parallel agents, Apex first',mult:'20\u00d7'},
   ultra:{name:'Ultra',price:200,blurb:'50\u00d7 usage, unlimited parallel agents, whole-codebase context, autonomous projects, team workspaces',mult:'50\u00d7'},
+  /* Priced PER SEAT, so `price` here is the price of one seat and the card that
+     sells it multiplies. Every seat adds its own allowance to a shared pool
+     rather than dividing a fixed one, which is why adding a teammate is worth
+     paying for instead of something to ration. */
+  team:{name:'Teams',price:20,perSeat:true,blurb:'Apex and a full Pro allowance for every person, pooled and shared',mult:''},
   custom:{name:'Custom',price:0,blurb:'A plan sized exactly to your usage',mult:''},
 };
-const PLAN_RANK={free:0,pro:1,elite:2,ultra:3,custom:2};
+const TEAM_SEAT_MIN=3, TEAM_SEAT_MAX=500;
+const PLAN_RANK={free:0,pro:1,elite:2,ultra:3,custom:2,team:2};
 
 /* ============================================================
    CUSTOM PLAN - pay-for-what-you-need, guaranteed profitable.

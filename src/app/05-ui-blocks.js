@@ -2662,7 +2662,7 @@ function _customPlanBanner(inApp){
 
 /* === SIDEBAR === */
 function renderHist(){
-  const area=$('hist-list')||$('hist'); if(!area) return;
+  const area=$('hist'); if(!area) return;
   const hdr=$('hist-header');
   const search=($('hist-search')?.value||'').toLowerCase().trim();
   let convs=Array.isArray(S.convs)?S.convs:[];

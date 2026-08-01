@@ -746,60 +746,13 @@ function _wireHdrAuth(){
   if(su && !su._wired){ su._wired=1; su.addEventListener('click',()=>{ try{ openAuth('signup'); }catch(e){} }); }
   if(li && !li._wired){ li._wired=1; li.addEventListener('click',()=>{ try{ openAuth('login'); }catch(e){} }); }
 }
-function goApp(){ try{ _wireHdrAuth(); }catch(e){} try{ const cy=document.getElementById('copy-year'); if(cy) cy.textContent=String(new Date().getFullYear()); }catch(e){} document.getElementById('land').classList.add('hidden'); document.getElementById('app').classList.add('on'); updateSbUser(); _initMobileSidebar(); _restoreSidebarState(); try{ _applyReduceMotion(); }catch(e){} setTab(S.tab); _ensureBackendSession(); try{ _applyFontSize(); }catch(e){} try{ _initOfflineWatch(); }catch(e){} try{ _initErrorBoundary(); }catch(e){} try{ syncEntitlement(); _checkUpgradeReturn(); }catch(e){} try{ _checkTeamInvite(); }catch(e){} try{ _initKeyboardNav(); _initA11y(); }catch(e){} try{ _revealAdminNav(); }catch(e){} try{ _revealTeamNav(); }catch(e){} try{ _initSidebarMore(); }catch(e){} try{ _initBuildGroup(); }catch(e){} try{ _localizePrices(document); }catch(e){} try{ const sbtn=$('sb-status'); if(sbtn) sbtn.addEventListener('click',openStatusPanel); _checkStatus(); }catch(e){} try{ _initI18nObserver(); }catch(e){} try{ _translateUI(); setTimeout(_translateUI,120); }catch(e){ console.error('Translate UI error in goApp', e); } }
+function goApp(){ try{ _wireHdrAuth(); }catch(e){} try{ const cy=document.getElementById('copy-year'); if(cy) cy.textContent=String(new Date().getFullYear()); }catch(e){} document.getElementById('land').classList.add('hidden'); document.getElementById('app').classList.add('on'); updateSbUser(); _initMobileSidebar(); _restoreSidebarState(); try{ _applyReduceMotion(); }catch(e){} setTab(S.tab); _ensureBackendSession(); try{ _applyFontSize(); }catch(e){} try{ _initOfflineWatch(); }catch(e){} try{ _initErrorBoundary(); }catch(e){} try{ syncEntitlement(); _checkUpgradeReturn(); }catch(e){} try{ _checkTeamInvite(); }catch(e){} try{ _initKeyboardNav(); _initA11y(); }catch(e){} try{ _revealAdminNav(); }catch(e){} try{ _revealTeamNav(); }catch(e){} try{ _initBuildGroup(); }catch(e){} try{ _localizePrices(document); }catch(e){} try{ const sbtn=$('sb-status'); if(sbtn) sbtn.addEventListener('click',openStatusPanel); _checkStatus(); }catch(e){} try{ _initI18nObserver(); }catch(e){} try{ _translateUI(); setTimeout(_translateUI,120); }catch(e){ console.error('Translate UI error in goApp', e); } }
 
-/* The sidebar's advanced tools (Tasks, Integrations, Marketplace) live under a
-   collapsible "More" so the default view stays calm - new users were getting
-   lost in a long flat list. If the user is currently ON one of those tabs, we
-   auto-expand so the active item is always visible. */
-function _initSidebarMore(){
-  const toggle=document.getElementById('snb-more-toggle');
-  const more=document.getElementById('snb-more');
-  if(!toggle||!more) return;
-  const MORE_TABS=['tasks','integrations','market'];
-  const setOpen=(open)=>{
-    more.hidden=!open;
-    toggle.setAttribute('aria-expanded', open?'true':'false');
-    toggle.classList.toggle('open', open);
-    try{ saveStr('amv_sb_more', open?'1':'0'); }catch(e){}
-  };
-  if(!toggle._b){
-    toggle._b=1;
-    on(toggle,'click',()=> setOpen(more.hidden));
-  }
-  // open if remembered, or if the current tab lives inside More
-  const remembered = (()=>{ try{ return loadStr('amv_sb_more')==='1'; }catch(e){ return false; } })();
-  setOpen(remembered || MORE_TABS.includes(S.tab));
-}
-try{ window._initSidebarMore=_initSidebarMore; }catch(e){}
-/* "Build" (Studio, Dev, Lab) collapses under one tappable header so the default
-   sidebar stays short and calm - more room for Chat, Images, Video, Crew and
-   Handoff. Collapsed by default; opens if remembered or if you're on a build
-   tab (so the active item is always visible). */
-const _BUILD_TABS=['studio','dev','lab'];
-function _buildGroupSetOpen(open){
-  const grp=document.getElementById('build-group'), tog=document.getElementById('build-toggle');
-  if(!grp||!tog) return;
-  grp.classList.toggle('collapsed', !open);
-  tog.classList.toggle('open', open);
-  tog.setAttribute('aria-expanded', open?'true':'false');
-  try{ saveStr('amv_sb_build', open?'1':'0'); }catch(e){}
-}
-function _initBuildGroup(){
-  const tog=document.getElementById('build-toggle'); if(!tog) return;
-  if(!tog._b){
-    tog._b=1;
-    const toggle=()=>{ const grp=document.getElementById('build-group'); _buildGroupSetOpen(grp?grp.classList.contains('collapsed'):true); };
-    on(tog,'click',toggle);
-    on(tog,'keydown',(e)=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); toggle(); } });
-  }
-  const remembered=(()=>{ try{ return loadStr('amv_sb_build')==='1'; }catch(e){ return false; } })();
-  _buildGroupSetOpen(remembered || _BUILD_TABS.includes(S.tab));
-}
-/* Keep the group open whenever a build tab is active, so the highlighted item
-   is never hidden. Called from setTab. */
-function _buildGroupSync(){ if(_BUILD_TABS.includes(S.tab)) _buildGroupSetOpen(true); }
-try{ window._initBuildGroup=_initBuildGroup; window._buildGroupSync=_buildGroupSync; }catch(e){}
+/* The sidebar's "More" group was replaced by the tool rail in #sb-tools, so
+   the collapsible it managed no longer exists. The function stayed behind,
+   returning early on a missing element every time it was called - the same
+   silent shape that made the Admin tab unreachable. Removed rather than left
+   as a no-op that reads like working code. */
 function _revealAdminNav(){
   try{
     const existing=document.getElementById('nav-admin');

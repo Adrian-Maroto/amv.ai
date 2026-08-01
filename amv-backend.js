@@ -108,6 +108,79 @@ function _modelKey(env){
   return (env && (env.AMV_MODEL_KEY || env.ANTHROPIC_API_KEY)) || '';
 }
 
+/* ── THE MODEL TRANSPORT ───────────────────────────────────────────────────
+   One place that knows where the model lives and how to talk to it.
+
+   The endpoint, the auth header and the protocol version were copied into six
+   call sites. That is not only duplication - it is why AMV had no answer to its
+   provider having a bad hour. Changing where a request goes meant finding and
+   editing six places correctly, so nobody was ever going to do it during an
+   outage, which is the only time it matters.
+
+   Now the destination is configuration. MODEL_API_URL points AMV at any
+   endpoint speaking the same protocol - a gateway, a proxy, a second region -
+   and MODEL_API_FALLBACK_URL is tried when the primary cannot answer.
+
+   The fallback deliberately does NOT cover streaming. A stream that failed
+   halfway has already delivered words to the user, and starting again on
+   another endpoint would repeat them - a duplicated answer is a worse failure
+   than an honest error. So it retries only requests that have produced nothing
+   yet, and only for the failures that are worth retrying: a transport error, or
+   a 5xx. A 400 means the request is wrong and sending it somewhere else makes
+   the same wrong request twice. */
+const MODEL_API_DEFAULT = 'https://api.anthropic.com';
+const MODEL_API_VERSION = '2023-06-01';
+
+function _modelBase(env, which){
+  const raw = which === 'fallback'
+    ? (env && env.MODEL_API_FALLBACK_URL)
+    : (env && env.MODEL_API_URL) || MODEL_API_DEFAULT;
+  return String(raw || '').replace(/\/+$/, '');
+}
+
+function _modelHeaders(env, extra){
+  return Object.assign({
+    'Content-Type': 'application/json',
+    'x-api-key': _modelKey(env),          // the key never leaves the server
+    'anthropic-version': MODEL_API_VERSION,
+  }, extra || {});
+}
+
+/* One request to the model. `stream` marks a call whose response is handed
+   straight to the user, which is what makes it ineligible for a retry. */
+async function _modelFetch(env, payload, opts){
+  const o = opts || {};
+  const init = {
+    method: 'POST',
+    headers: _modelHeaders(env, o.headers),
+    body: typeof payload === 'string' ? payload : JSON.stringify(payload),
+  };
+  if(o.signal) init.signal = o.signal;
+
+  const primary = _modelBase(env);
+  let r, err = null;
+  try{ r = await fetch(primary + '/v1/messages', init); }
+  catch(e){ err = e; }
+
+  const worthRetrying = err || (r && r.status >= 500);
+  const alt = _modelBase(env, 'fallback');
+  if(worthRetrying && alt && alt !== primary && !o.stream){
+    try{
+      const r2 = await fetch(alt + '/v1/messages', init);
+      /* Only report the failover when it actually rescued the request. Saying
+         "we failed over" and then returning the same error is noise. */
+      if(r2 && r2.ok){
+        try{ await alertOnce(env, 'model_failover',
+          '\u26a0\ufe0f The primary model endpoint failed and AMV fell back to the secondary. Requests are being served, but check the primary.', 30); }catch(_){}
+        return r2;
+      }
+      if(!r) return r2;
+    }catch(e2){ /* the fallback is a best effort; report the primary failure */ }
+  }
+  if(err) throw err;
+  return r;
+}
+
 /* =====================================================================
    AMV-065: SMART ROUTING - what "AMV Auto" was supposed to be.
    Auto is the DEFAULT model and its description promises it "automatically
@@ -231,8 +304,12 @@ function _autoRoute(body, user, limits) {
 
   const cap = k => {                       // never route above what they pay for
     if (limits && limits.allModels) return k;
-    const rank = PLAN_RANK[user.plan] || 0;
-    if (rank < PLAN_RANK[ENGINES[k].minPlan]) return rank >= 1 ? 'amv-core' : 'amv-core';
+    /* _planRankOf, not a raw PLAN_RANK lookup: `custom` and `team` have no entry
+       in that table and would silently rank 0, capping a paying customer to the
+       cheapest engine. Both are guarded by allModels above today - this makes
+       the next plan that is not guarded safe by default rather than by luck. */
+    const rank = _planRankOf(user.plan, user.customCfg);
+    if (rank < PLAN_RANK[ENGINES[k].minPlan]) return 'amv-core';
     return k;
   };
 
@@ -818,10 +895,7 @@ async function _budgetFor(env, user){
 
 function _autoBudget(ent){
   const plan = _planOf(ent || {});
-  const PLAN_PRICE = { pro: 15, elite: 75, ultra: 200 };
-  let planPrice = 0;
-  if (plan === 'custom' && ent && ent.custom && ent.custom.price) planPrice = ent.custom.price;
-  else if (PLAN_PRICE[plan]) planPrice = PLAN_PRICE[plan];
+  const planPrice = _planPriceUSD(plan, ent && ent.custom);
   if (planPrice > 0) return { plan, ceiling: planPrice * 0.45, free: false, max: AUTO_MAX_PER_USER };
   return { plan, ceiling: FREE_AUTO_CEILING_USD, free: true, max: FREE_AUTO_MAX };
 }
@@ -996,15 +1070,7 @@ async function _autoExecute(env, item, budget){
     body.tools = [{ type:'web_search_20250305', name:'web_search', max_uses: 8 }];
   }
 
-  const r = await fetch('https://api.anthropic.com/v1/messages', {
-    method:'POST',
-    headers:{
-      'Content-Type':'application/json',
-      'x-api-key': _modelKey(env),
-      'anthropic-version':'2023-06-01'
-    },
-    body: JSON.stringify(body)
-  });
+  const r = await _modelFetch(env, body);
   if(!r.ok){
     const t = await r.text().catch(()=>'');
     throw new Error('model error ' + r.status + ': ' + t.slice(0,180));
@@ -1470,12 +1536,8 @@ const _WEB_OBSERVE = "(() => {" +
 /* Ask the model for exactly one next action - a single auditable decision point. */
 async function _webAskModel(env, sys, prompt){
   try{
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
-      method:'POST',
-      headers:{ 'Content-Type':'application/json', 'x-api-key': _modelKey(env), 'anthropic-version':'2023-06-01' },
-      body: JSON.stringify({ model:'claude-haiku-4-5-20251001', max_tokens:400, system:sys,
-        messages:[{ role:'user', content:prompt }] })
-    });
+    const r = await _modelFetch(env, { model:'claude-haiku-4-5-20251001', max_tokens:400, system:sys,
+      messages:[{ role:'user', content:prompt }] });
     const d = await r.json();
     const txt = (d && d.content && d.content[0] && d.content[0].text) || '';
     return JSON.parse(txt.slice(txt.indexOf('{'), txt.lastIndexOf('}') + 1));
@@ -2964,7 +3026,7 @@ async function authSignup(request, env){
   const sipHash = await _ipHash(env, request);
   const acct = { email: em, name: safeName, provider:'email', salt, pwHash, pwIter: PBKDF2_ITERATIONS, createdAt: Date.now(), sipHash };
   await DB.put(env, 'acct', em, acct);
-  try{ await _recordGrowth(env, 'signup'); }catch(e){}
+  try{ await _recordGrowth(env, 'signup'); await _funnelMark(env, email, 'signup'); }catch(e){}
   await _userEvent(env, request, em, 'account_created');
   // An invite code, if they arrived through one. Recorded, not yet rewarded.
   try{ await _referralCapture(env, request, em, body.ref); }catch(e){}
@@ -3134,7 +3196,7 @@ async function authGoogle(request, env) {
     if(!acct){
       acct = { email:em, name, provider:'google', createdAt:Date.now(), sipHash: await _ipHash(env, request) };
       await DB.put(env, 'acct', em, acct);
-      try{ await _recordGrowth(env, 'signup'); }catch(e){}
+      try{ await _recordGrowth(env, 'signup'); await _funnelMark(env, email, 'signup'); }catch(e){}
       try{ await _referralCapture(env, request, em, body.ref); }catch(e){}
     }
     await _userEvent(env, request, em, 'signed_in', { reason: 'Google' });
@@ -3291,7 +3353,13 @@ async function authDeleteAccount(request, env) {
   let myCode = '';
   try { myCode = await env.AMV_KV.get(`refmine:${email}`) || ''; } catch {}
   const loose = [`reset:${email}`, `active:${email}:${todayKey()}`,
-                 `alog:${email}`, `alogfail:${email}`, `refmine:${email}`, `refpend:${email}`];
+                 `alog:${email}`, `alogfail:${email}`, `refmine:${email}`, `refpend:${email}`,
+                 /* The funnel markers are a record that THIS person signed up,
+                    got an answer, came back and paid. The aggregate counters
+                    carry no identity and stay; these name someone, so erasure
+                    means them too (AMV-101). */
+                 `factive:${email}`,
+                 ...FUNNEL_STEPS.map(step => `fstep:${email}:${step}`)];
   if (myCode) loose.push(`refcode:${myCode}`);
   for (const raw of loose) {
     try { await env.AMV_KV.delete(raw); } catch {}
@@ -3328,12 +3396,52 @@ async function authDeleteAccount(request, env) {
    not their own - one plan, one ceiling, one allowance, however many people
    are drawing on it. That is what a shared plan already means to the person
    paying for it, and it is the only version that cannot be farmed. */
-/* Seats by plan. Teams is packaged as an Elite capability and the plans page
-   says so, so Free and Pro get exactly one seat - themselves - which is the same
-   thing as not having a team. Enforced on the SERVER as well as in the app,
-   because a gate that only exists in the browser is not a gate. */
+/* Seats by plan.
+
+   Two ways to have a team, and they answer different questions.
+
+   Elite and Ultra include seats because a company that has already bought the
+   top plan should be able to put its people on it: 10 and 25 seats sharing that
+   one plan's allowance. That is the upgrade path, not the product.
+
+   `team` is the product. It is priced PER SEAT, and every seat adds its own
+   allowance to the shared pool rather than dividing a fixed one - which is the
+   only version where growing the team is worth more to the customer AND worth
+   more to AMV. Ten people on Elite is 75 dollars for one plan's compute; ten
+   people on Teams is 200 dollars for ten plans' worth of compute, with Apex
+   included. Both sides are better off, which is why the number goes up.
+
+   Below Elite there is exactly one seat, which is the same thing as not having
+   a team. Enforced on the SERVER as well as in the app, because a gate that
+   only exists in the browser is not a gate. */
 const TEAM_MIN_PLAN = 'elite';
 const TEAM_SEATS = { free: 1, pro: 1, elite: 10, ultra: 25 };
+
+/* The per-seat plan. One number to change if the price moves; everything
+   downstream - the ceiling, the pool, the checkout, the copy - derives from it. */
+const TEAM_SEAT_PRICE_USD = 20;
+const TEAM_SEAT_MIN = 3;      // below this, Pro or Elite is the better buy and we say so
+const TEAM_SEAT_MAX = 500;
+function _teamSeatCount(cfg){
+  const n = Math.floor(+((cfg && cfg.seats) || 0)) || 0;
+  return Math.max(TEAM_SEAT_MIN, Math.min(TEAM_SEAT_MAX, n || TEAM_SEAT_MIN));
+}
+function _teamPlanPrice(cfg){ return _teamSeatCount(cfg) * TEAM_SEAT_PRICE_USD; }
+
+/* What this plan costs per month, in dollars. ONE definition.
+
+   There were three copies of `{pro:15, elite:75, ultra:200}` - the chat cost
+   backstop, the SMS backstop and the automation budget - each with its own
+   handling of a custom plan. Three copies of a price table is three chances for
+   one of them to be a month out of date while still looking authoritative, and
+   the number they compute is the profit guarantee. A per-seat plan would have
+   had to be added to all three, correctly, forever. */
+const PLAN_PRICE_USD = { pro: 15, elite: 75, ultra: 200 };
+function _planPriceUSD(plan, cfg){
+  if(plan === 'team') return _teamPlanPrice(cfg);
+  if(plan === 'custom') return (cfg && +cfg.price) || 0;
+  return PLAN_PRICE_USD[plan] || 0;
+}
 /* Where a custom plan sits against the named tiers.
 
    `custom` is a price, not a rank, so it cannot be looked up in PLAN_RANK. It
@@ -3377,6 +3485,9 @@ async function _refreshTeamPlan(env, email, ent){
 }
 
 function _teamSeatLimit(plan, customCfg){
+  /* The per-seat plan's limit IS what was bought - it comes from the Stripe
+     subscription quantity, not from a table. */
+  if(plan === 'team') return _teamSeatCount(customCfg);
   if(plan === 'custom'){
     /* An explicit seat count if one was negotiated, otherwise the seats of the
        tier the price actually reaches. Returning 1 here - which is what an
@@ -3664,7 +3775,13 @@ async function teamData(request, env){
   const patch = body.data || {};
   const bad = _boundedJson(patch, 64*1024, 6);
   if(bad) return json({ error: bad }, 413);
-  team.data = Object.assign({}, team.data, patch);
+  /* Bounding the PATCH is not bounding the record: repeated 64KB writes under
+     different keys grow team.data without limit, and that record is read on
+     every request the team makes. The total is what has to hold. */
+  const next = Object.assign({}, team, { data: Object.assign({}, team.data, patch) });
+  const full = _teamRecordTooBig(next);
+  if(full) return json({ error: full, code: 'team_full' }, 413);
+  team.data = next.data;
   await DB.put(env, 'team', team.id, team);
   return json({ ok:true, data: team.data });
 }
@@ -3672,6 +3789,27 @@ async function teamData(request, env){
 /* ---------------- SHARED TEAM LIBRARY ----------------
    Any member can share a project or prompt into the team's shared library;
    every member sees it. Stored on the team record; audited. */
+/* The team record is read on EVERY authenticated request from a member -
+   _teamOf for permissions and _billingSubjectOf for billing both load it - so
+   its size is not a storage question, it is the latency and the cost of every
+   request the whole team makes. Two hundred shared items at thirty-two kilobytes
+   each is a six megabyte record being fetched on every keystroke.
+
+   So there is one ceiling on the assembled record, checked after the change is
+   applied rather than on the incoming piece, because it is the total that gets
+   read back. */
+const TEAM_RECORD_MAX = 256 * 1024;
+const TEAM_SHARE_MAX = 60;            // entries in the shared library
+const TEAM_SHARE_PER_MEMBER = 20;     // so one person cannot evict everyone else's
+const TEAM_TASK_MAX = 500;            // the board is fetched whole every time it opens
+function _teamRecordTooBig(team){
+  let n = 0;
+  try{ n = JSON.stringify(team).length; }catch(e){ return 'this could not be stored'; }
+  if(n <= TEAM_RECORD_MAX) return null;
+  return 'Your team\u2019s shared data is full (' + Math.round(n/1024) + 'KB of ' +
+         Math.round(TEAM_RECORD_MAX/1024) + 'KB). Remove something from the shared library to make room.';
+}
+
 async function teamShare(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
@@ -3682,12 +3820,23 @@ async function teamShare(request, env){
   const tooBig = _boundedJson(item, 32*1024, 6);
   if(tooBig) return json({ error: tooBig }, 413);
   const shared = Array.isArray(team.data && team.data.shared) ? team.data.shared : [];
+  /* A per-member quota, not just a global one. With a single FIFO list, one
+     member sharing sixty things silently deletes everything their colleagues
+     shared - which looks exactly like the product losing their work. */
+  const mine = shared.filter(x => x && x.by === user.email).length;
+  if(mine >= TEAM_SHARE_PER_MEMBER){
+    return json({ error: 'You have shared ' + TEAM_SHARE_PER_MEMBER + ' items, which is the most one person can keep in the team library. Remove one of yours to add another.',
+                  code: 'share_limit' }, 429);
+  }
   const entry = { id:'shr_'+crypto.randomUUID().replace(/-/g,''), kind:String(kind).slice(0,24),
     title:String(item.title||item.name||'Untitled').slice(0,120), item,
     by:user.email, byName:user.name||user.email.split('@')[0], at:Date.now() };
   shared.unshift(entry);
-  if(shared.length>200) shared.length=200;
-  team.data = Object.assign({}, team.data, { shared });
+  if(shared.length>TEAM_SHARE_MAX) shared.length=TEAM_SHARE_MAX;
+  const next = Object.assign({}, team, { data: Object.assign({}, team.data, { shared }) });
+  const full = _teamRecordTooBig(next);
+  if(full) return json({ error: full, code: 'team_full' }, 413);
+  team.data = next.data;
   await DB.put(env, 'team', team.id, team);
   await _teamAudit(env, team, user.email, 'item_shared', { kind:entry.kind, title:entry.title });
   return json({ ok:true, shared });
@@ -3767,6 +3916,14 @@ async function teamTaskCreate(request, env){
   const asg = (assignee||'').toLowerCase().trim();
   if(asg && !(team.members||[]).some(m=>m.email===asg)) return json({ error:'assignee is not a team member' }, 400);
   const tasks = await _teamTasks(env, team.id);
+  /* Bounded for the same reason the team record is: this list is fetched whole
+     every time anybody opens the board. Refused rather than silently trimmed,
+     because a task board that quietly drops the oldest item is a task board
+     that loses work without saying so. */
+  if(tasks.length >= TEAM_TASK_MAX){
+    return json({ error: 'This team has ' + TEAM_TASK_MAX + ' tasks, which is the most a board holds. Close or delete some to add more.',
+                  code: 'task_limit' }, 429);
+  }
   const task = {
     id: 't'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),
     title: String(title).trim().slice(0, 300),
@@ -4034,6 +4191,23 @@ async function requireUser(request, env) {
 /* Resolve the effective limits for a user - custom plans use their purchased
    pool, and any referral bonus is added on top by effectiveLimits() below. */
 function _baseLimits(user) {
+  /* The per-seat plan's allowance is Pro's, per seat, pooled. Not a fixed pool
+     divided among however many people turned up - that version gets worse for
+     the customer with every teammate they add, which is the opposite of what a
+     seat is supposed to buy. Margin is unaffected because both the pool and the
+     dollar ceiling scale with the same seat count. */
+  if (user.plan === 'team') {
+    const seats = _teamSeatCount(user.customCfg);
+    const per = PLAN_LIMITS.pro;
+    return {
+      dayTokens: per.dayTokens * seats,
+      monthTokens: per.monthTokens * seats,
+      rpm: per.rpm,                       // per person: this is a burst control, not a pool
+      imagesDay: per.imagesDay * seats,
+      videosMonth: per.videosMonth * seats,
+      allModels: true,                    // Apex included - it is what the seat price buys
+    };
+  }
   if (user.plan === 'custom' && user.customCfg) {
     const c = user.customCfg;
     const price = c.price || 30;
@@ -4292,7 +4466,7 @@ async function aiProxy(request, env, ctx) {
   const eng = Object.assign({ key }, ENGINES[key]);
 
   // 1) PLAN ENFORCEMENT - free can't call premium engines (custom plans paid for all models)
-  if (!limits.allModels && PLAN_RANK[user.plan] < PLAN_RANK[eng.minPlan]) {
+  if (!limits.allModels && _planRankOf(user.plan, user.customCfg) < PLAN_RANK[eng.minPlan]) {
     return json({ error: `${key} requires the ${eng.minPlan} plan. Upgrade to use it.`, code: 'plan_required', minPlan: eng.minPlan }, 402);
   }
 
@@ -4366,10 +4540,7 @@ async function aiProxy(request, env, ctx) {
   // 3b) COST BACKSTOP - applies to EVERY paid plan. A user can never cost us
   //     more than a safe fraction of what they paid, guaranteeing margin even
   //     if they run 100% on the most expensive model. This is the profit lock.
-  const PLAN_PRICE = { pro:15, elite:75, ultra:200 };
-  let priceForBackstop = 0;
-  if (user.plan === 'custom' && user.customCfg && user.customCfg.price) priceForBackstop = user.customCfg.price;
-  else if (PLAN_PRICE[user.plan]) priceForBackstop = PLAN_PRICE[user.plan];
+  const priceForBackstop = _planPriceUSD(user.plan, user.customCfg);
   const costName = `cost:${user.billingSubject || user.email}:${monthKey()}`;
   if (priceForBackstop > 0) {
     const costCeiling = priceForBackstop * 0.45;   // keep >=55% margin on every plan, worst case
@@ -4427,16 +4598,9 @@ async function aiProxy(request, env, ctx) {
     if (safe.length) upstreamBody.tools = safe;
   }
 
-  const _callUpstream = (payload) => fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': _modelKey(env),           // KEY HIDDEN SERVER-SIDE
-      'anthropic-version': '2023-06-01',
-      /* Prompt caching is generally available; the old beta header is a no-op. */
-    },
-    body: JSON.stringify(payload),
-  });
+  /* stream:true - this response goes straight to the user, so it must never be
+     retried on another endpoint: words already delivered would be repeated. */
+  const _callUpstream = (payload) => _modelFetch(env, payload, { stream: true });
 
   let upstream = await _callUpstream(upstreamBody);
 
@@ -4866,6 +5030,12 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, user, e
      adding up every account (AMV-088). */
   await counter(env, `costtotal:${monthKey()}`, { op: 'incr', amount: cost, ttlMs: 86400000 * 70 });
 
+  /* ACTIVATED, at the only moment that actually proves it: AMV finished writing
+     something for this person. Not "opened the app", not "typed into the box" -
+     a real answer, delivered. Marked once per account, ever, and never allowed
+     to fail the request it is measuring. */
+  try { if (total > 0 && user && user.email) await _funnelMark(env, user.email, 'activated'); } catch (e) {}
+
   /* AMV-071: two numbers the owner cannot run this business without.
 
      WHERE the money goes - a single blended cost figure cannot tell you that
@@ -5242,16 +5412,8 @@ async function widgetChat(request, env, ctx) {
     messages: body.messages,
   };
 
-  const upstream = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': _modelKey(env),
-      'anthropic-version': '2023-06-01',
-      /* Prompt caching is generally available; the old beta header is a no-op. */
-    },
-    body: JSON.stringify(upstreamBody),
-  });
+  // stream:true - the widget streams this straight through to the visitor.
+  const upstream = await _modelFetch(env, upstreamBody, { stream: true });
 
   if (!upstream.ok) {
     const e = await upstream.json().catch(() => ({}));
@@ -5695,8 +5857,7 @@ async function smsIncoming(request, env, ctx) {
      Keyed by the billing subject so a team's messages come out of the team's
      budget (AMV-100), which is also the only reading under which the seat the
      team paid for is the thing being spent. */
-  const PLAN_PRICE = { pro: 15, elite: 75, ultra: 200 };
-  let price = user.plan === 'custom' && user.customCfg ? user.customCfg.price : (PLAN_PRICE[user.plan] || 0);
+  const price = _planPriceUSD(user.plan, user.customCfg);
   {
     const cap = price > 0 ? price * 0.45 : FREE_AUTO_CEILING_USD;
     const capRes = await counter(env, `cost:${user.billingSubject}:${monthKey()}`, { op: 'checkCap', cap });
@@ -5719,15 +5880,11 @@ async function smsIncoming(request, env, ctx) {
 
 async function runSmsAgent(text, env) {
   const sys = 'You are AMV over SMS. Reply in plain text, no markdown, concise (a few sentences max, fits in a text message). The user may ask you to check tasks, summarize, draft, or answer questions. Be direct and useful. Never use em or en dashes; use a plain hyphen (-) instead. ACCURACY: never invent facts, numbers, prices, dates or sources, and never say you did something (checked, sent, booked, completed) unless it actually happened. If you are unsure or cannot verify, say so briefly instead of guessing.';
-  const resp = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': _modelKey(env), 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({
-      model: 'claude-haiku-4-5-20251001', // cheapest capable - SMS is short Q&A
-      max_tokens: 400,
-      system: sys,
-      messages: [{ role: 'user', content: text }],
-    }),
+  const resp = await _modelFetch(env, {
+    model: 'claude-haiku-4-5-20251001', // cheapest capable - SMS is short Q&A
+    max_tokens: 400,
+    system: sys,
+    messages: [{ role: 'user', content: text }],
   });
   const data = await resp.json();
   return (data.content || []).map(b => b.text || '').join('').trim() || 'No response.';
@@ -5822,14 +5979,31 @@ function _stripePriceId(env, plan) {
     pro:   env.STRIPE_PRICE_PRO,
     elite: env.STRIPE_PRICE_ELITE,
     ultra: env.STRIPE_PRICE_ULTRA,
+    /* A per-UNIT recurring price in Stripe. The seat count is the subscription
+       quantity, which means Stripe handles proration on every change and the
+       number of seats AMV honours is by definition the number being billed. */
+    team:  env.STRIPE_PRICE_TEAM_SEAT,
   };
   return map[plan] || null;
 }
-const PLAN_FROM_PRICE = (env) => ({
-  [env.STRIPE_PRICE_PRO]: 'pro',
-  [env.STRIPE_PRICE_ELITE]: 'elite',
-  [env.STRIPE_PRICE_ULTRA]: 'ultra',
-});
+/* Price id -> plan, skipping the ones that are not configured.
+
+   The object-literal version of this had a hole that was invisible until a
+   fourth plan was added: an unset env var becomes the KEY "undefined", so every
+   unconfigured price collapsed onto the same entry and whichever plan was
+   written last won it. A webhook quoting a price id AMV does not know - or an
+   event with no price on it at all, which is most invoice events - then resolved
+   to a real plan and granted it. Nothing here may match unless it was actually
+   set, and an unknown price must resolve to nothing. */
+const PLAN_FROM_PRICE = (env) => {
+  const out = {};
+  const add = (id, plan) => { const k = String(id || '').trim(); if (k) out[k] = plan; };
+  add(env.STRIPE_PRICE_PRO, 'pro');
+  add(env.STRIPE_PRICE_ELITE, 'elite');
+  add(env.STRIPE_PRICE_ULTRA, 'ultra');
+  add(env.STRIPE_PRICE_TEAM_SEAT, 'team');
+  return out;
+};
 
 // Write a user's entitlement. This is the ONLY way a plan gets set on the
 // server, and it's only ever called from a verified webhook.
@@ -6227,8 +6401,13 @@ const ENT_CARRY_KEYS = ['refBonus', 'teamId'];
    per plan change - so headline revenue is exact at any size and costs nothing
    to read. The per-account detail below still needs per-account data, so it
    stays a bounded scan that SAYS it is bounded. */
-async function _planPopShift(env, fromPlan, toPlan){
+async function _planPopShift(env, fromPlan, toPlan, fromSeats, toSeats){
   try{
+    /* Seats move even when the plan does not - somebody going from 5 seats to 20
+       is the same plan and four times the revenue, and a population counter that
+       only counted heads would report both as one Teams customer. */
+    const df = (+toSeats || 0) - (+fromSeats || 0);
+    if(df) await counter(env, 'seatcount:team', { op:'incr', amount: df });
     if(fromPlan === toPlan) return;
     if(fromPlan) await counter(env, `plancount:${fromPlan}`, { op:'incr', amount: -1 });
     if(toPlan)   await counter(env, `plancount:${toPlan}`,   { op:'incr', amount: 1 });
@@ -6236,11 +6415,16 @@ async function _planPopShift(env, fromPlan, toPlan){
 }
 async function _planPopulation(env){
   const out = {};
-  for(const plan of ['free','pro','elite','ultra','custom']){
+  for(const plan of ['free','pro','elite','ultra','custom','team']){
     try{ out[plan] = Math.max(0, (await counter(env, `plancount:${plan}`, { op:'get' })).value || 0); }
     catch(e){ out[plan] = 0; }
   }
   return out;
+}
+/* Total seats sold on the per-seat plan. Revenue there is seats, not accounts. */
+async function _teamSeatsSold(env){
+  try{ return Math.max(0, (await counter(env, 'seatcount:team', { op:'get' })).value || 0); }
+  catch(e){ return 0; }
 }
 
 /* The team marker lives on the entitlement record, because requireUser already
@@ -6267,7 +6451,14 @@ async function _setUserTeam(env, email, teamId){
    than the team's. Joining a Pro team must never take away the Ultra they are
    paying for on their own card, so they keep their plan and their own counters
    and cost the team nothing. */
-function _planRankOf(plan, cfg){ return plan === 'custom' ? _customRank(cfg) : (PLAN_RANK[plan] || 0); }
+function _planRankOf(plan, cfg){
+  if(plan === 'custom') return _customRank(cfg);
+  /* A Teams seat carries Elite-grade capability - Apex included - because that
+     is the thing being sold. Ranked here rather than in PLAN_RANK so the seat
+     price and the capability it buys stay in one place. */
+  if(plan === 'team') return PLAN_RANK.elite;
+  return PLAN_RANK[plan] || 0;
+}
 
 /* Which members the current plan actually pays for.
 
@@ -6321,11 +6512,21 @@ async function setEntitlement(env, email, plan, extra = {}) {
   for (const k of ENT_CARRY_KEYS) if (prev[k] !== undefined && ent[k] === undefined) ent[k] = prev[k];
   await DB.put(env, 'ent', em, ent);
   // Keep the population counters true at the one place a plan can change.
-  await _planPopShift(env, prev.plan ? _planOf(prev) : null, _planOf(ent));
+  await _planPopShift(env, prev.plan ? _planOf(prev) : null, _planOf(ent),
+    _planOf(prev) === 'team' ? _teamSeatCount(prev.custom) : 0,
+    _planOf(ent)  === 'team' ? _teamSeatCount(ent.custom)  : 0);
   /* If this account owns a team, the team's cached plan follows it - otherwise
      an upgrade would not reach the seats it just paid for, and a downgrade
      would leave them on a plan nobody is paying for (AMV-100). */
   await _refreshTeamPlan(env, em, Object.assign({}, ent, { teamId: ent.teamId || prev.teamId }));
+  /* PAID, counted at the one place a plan can be granted and only on the way UP
+     from not paying - so a renewal, a seat change or a downgrade-and-back does
+     not count the same customer twice. */
+  try {
+    if (_planPriceUSD(_planOf(ent), ent.custom) > 0 && _planPriceUSD(_planOf(prev), prev.custom) === 0) {
+      await _funnelMark(env, em, 'paid');
+    }
+  } catch (e) {}
   audit(env, 'entitlement_set', { email, plan });
   /* Also on the account's own activity log. A plan change nobody made is how a
      compromised account usually announces itself. There is no request here -
@@ -6463,9 +6664,21 @@ async function stripeCheckout(request, env) {
     return json({ error: 'This account can\u2019t start a new subscription. Please contact support.', code: 'account_flagged' }, 403);
   }
 
-  const { plan } = await request.json().catch(() => ({}));
+  const body = await request.json().catch(() => ({}));
+  const plan = body.plan;
   const price = _stripePriceId(env, plan);
-  if (!price) return json({ error: 'unknown plan' }, 400);
+  if (!price) {
+    /* Named separately from "unknown plan" because they are different problems
+       with different fixes: one is a bad request, the other is a real plan that
+       has no price configured yet, and telling the customer "unknown plan" for
+       the second would send them looking for a mistake they did not make. */
+    if (plan === 'team') return json({ error: 'Teams checkout is not switched on yet. Set STRIPE_PRICE_TEAM_SEAT to a per-seat recurring price and it starts working with no other change.', code: 'not_configured' }, 503);
+    return json({ error: 'unknown plan' }, 400);
+  }
+  /* Seats are only meaningful for the per-seat plan, and the server decides the
+     number - a client that asks for 1 seat at the 3-seat minimum gets 3, and one
+     that asks for a million gets the cap. */
+  const seats = plan === 'team' ? _teamSeatCount({ seats: body.seats }) : 1;
 
   // AMV-025: the server-configured origin is authoritative for payment redirects.
   // NEVER reflect the request Origin header when APP_URL is set - a direct caller
@@ -6475,13 +6688,19 @@ async function stripeCheckout(request, env) {
   const form = new URLSearchParams();
   form.set('mode', 'subscription');
   form.set('line_items[0][price]', price);
-  form.set('line_items[0][quantity]', '1');
+  form.set('line_items[0][quantity]', String(seats));
   form.set('customer_email', user.email);
   form.set('client_reference_id', user.email);       // so the webhook knows who paid
   form.set('success_url', `${origin}?upgraded=1`);
   form.set('cancel_url', `${origin}?canceled=1`);
   form.set('metadata[email]', user.email);
   form.set('metadata[plan]', plan);
+  if (plan === 'team') {
+    form.set('metadata[seats]', String(seats));
+    // let the customer change the seat count from Stripe's own portal too
+    form.set('subscription_data[metadata][email]', user.email);
+    form.set('subscription_data[metadata][plan]', 'team');
+  }
 
   const r = await fetch('https://api.stripe.com/v1/checkout/sessions', {
     method: 'POST',
@@ -6728,7 +6947,14 @@ async function stripeWebhook(request, env, ctx) {
       const email = (obj.metadata?.email || obj.client_reference_id || obj.customer_email || '').toLowerCase();
       const plan = obj.metadata?.plan || 'pro';
       if (email) {
-        await setEntitlement(env, email, plan, { source: 'stripe', sub: obj.subscription });
+        /* This metadata was written by AMV when it created the session, not by
+           the browser, so the seat count here is ours. It grants immediately so
+           somebody who just paid is not left waiting on a second event - and
+           the subscription event that follows reads the real quantity off
+           Stripe and corrects this if they ever diverge. */
+        const first = { source: 'stripe', sub: obj.subscription };
+        if (plan === 'team') first.custom = { seats: _teamSeatCount({ seats: obj.metadata?.seats }) };
+        await setEntitlement(env, email, plan, first);
         if (obj.customer) await _linkCustomer(env, email, obj.customer);   // both directions
         // Record the initial subscription payment so it shows in admin finance
         // even beyond Stripe's own retention window.
@@ -6748,7 +6974,7 @@ async function stripeWebhook(request, env, ctx) {
       // renewal or plan change - re-derive plan from the price
       const email = (obj.metadata?.email || '').toLowerCase() || await _emailFromCustomer(env, obj.customer);
       const priceId = obj.items?.data?.[0]?.price?.id || obj.lines?.data?.[0]?.price?.id;
-      const plan = PLAN_FROM_PRICE(env)[priceId];
+      const plan = priceId ? PLAN_FROM_PRICE(env)[String(priceId)] : undefined;
       /* Stripe's own status is the authority on whether this subscription is
          paid for. Granting a plan off the price alone re-granted access to
          subscriptions Stripe had already marked unpaid. */
@@ -6759,7 +6985,17 @@ async function stripeWebhook(request, env, ctx) {
       } else if (email && status === 'past_due') {
         await _markPastDue(env, email, { sub: obj.id || '' });
       } else if (email && plan) {
-        await setEntitlement(env, email, plan, { source: 'stripe' });   // clears pastDueSince
+        /* For the per-seat plan the QUANTITY is the entitlement. Stripe is the
+           only thing that knows how many seats are actually being paid for, so
+           it is read off the subscription item rather than trusted from a
+           client, a metadata field, or a number we stored at checkout and hoped
+           stayed true through a seat change. */
+        const extra = { source: 'stripe' };
+        if (plan === 'team') {
+          const qty = obj.items?.data?.[0]?.quantity ?? obj.lines?.data?.[0]?.quantity;
+          extra.custom = { seats: _teamSeatCount({ seats: qty }) };
+        }
+        await setEntitlement(env, email, plan, extra);   // clears pastDueSince
       }
       // Record each recurring renewal payment (invoice.paid carries amount_paid).
       if (type === 'invoice.paid' && email) {
@@ -7774,6 +8010,14 @@ async function _markActive(env, email){
     const key = `grow:active:${day}`;
     const cur = parseInt(await env.AMV_KV.get(key) || '0', 10) || 0;
     await env.AMV_KV.put(key, String(cur + 1), { expirationTtl: 60 * 86400 });
+    /* Coming back is a SECOND distinct day, not a second session - somebody who
+       opens AMV twice in one afternoon has not come back yet. The first active
+       day is remembered for as long as the funnel counts, so this stays true
+       for somebody who returns after a month. */
+    const firstKey = `factive:${email}`;
+    const first = await env.AMV_KV.get(firstKey);
+    if(!first) await env.AMV_KV.put(firstKey, day, { expirationTtl: FUNNEL_TTL_S });
+    else if(first !== day) await _funnelMark(env, email, 'returned');
   }catch(e){ /* best-effort */ }
 }
 
@@ -7788,6 +8032,74 @@ async function _recordGrowth(env, kind){
     const cur = parseInt(await env.AMV_KV.get(key) || '0', 10) || 0;
     await env.AMV_KV.put(key, String(cur + 1), { expirationTtl: 60 * 86400 });
   }catch(e){ /* growth stats are best-effort, never block signup */ }
+}
+
+/* ── THE FUNNEL ────────────────────────────────────────────────────────────
+   Plan population answers "who is paying now". It cannot answer the question
+   that decides whether any of the product work is landing: of the people who
+   signed up, how many ever got value, how many came back, and how many paid.
+
+   Without it, first-run screens, activation nudges and onboarding copy are all
+   judged on feel. With it they are judged on a number.
+
+   Each step is marked ONCE PER USER, ever, and increments a cumulative counter -
+   the same approach as the plan population, and for the same reason: the ratios
+   stay exact at forty accounts and at four hundred thousand, with no scan.
+
+   No step is inferred. `activated` is a real answer AMV produced for them,
+   `returned` is a second distinct day, `paid` is a verified payment. A funnel
+   made of proxies tells you a story rather than the truth. */
+const FUNNEL_STEPS = ['signup', 'activated', 'returned', 'paid'];
+const FUNNEL_TTL_S = 400 * 86400;
+
+async function _funnelMark(env, email, step){
+  try{
+    const em = String(email || '').toLowerCase();
+    if(!em || FUNNEL_STEPS.indexOf(step) < 0) return false;
+    const k = `fstep:${em}:${step}`;
+    if(await env.AMV_KV.get(k)) return false;            // already counted, ever
+    await env.AMV_KV.put(k, String(Date.now()), { expirationTtl: FUNNEL_TTL_S });
+    await counter(env, `funnel:${step}`, { op: 'incr', amount: 1 });
+    if(step !== 'signup') await _recordGrowth(env, step);
+    /* How long it took them to pay, accumulated rather than stored per user, so
+       the average is available without reading every account. */
+    if(step === 'paid'){
+      const acct = await DB.get(env, 'acct', em);
+      const age = acct && acct.createdAt ? Date.now() - acct.createdAt : 0;
+      if(age > 0){
+        await counter(env, 'funnelttpsum', { op: 'incr', amount: age / 86400000 });
+        await counter(env, 'funnelttpn', { op: 'incr', amount: 1 });
+      }
+    }
+    return true;
+  }catch(e){ return false; }   // a funnel stat must never fail a real action
+}
+
+async function _funnelReport(env){
+  const out = {};
+  for(const step of FUNNEL_STEPS){
+    try{ out[step] = Math.max(0, (await counter(env, `funnel:${step}`, { op: 'get' })).value || 0); }
+    catch(e){ out[step] = 0; }
+  }
+  const n = out.signup || 0;
+  const pct = v => (n > 0 ? +((v / n) * 100).toFixed(1) : null);
+  let days = null;
+  try{
+    const sum = (await counter(env, 'funnelttpsum', { op: 'get' })).value || 0;
+    const cnt = (await counter(env, 'funnelttpn', { op: 'get' })).value || 0;
+    if(cnt > 0) days = +(sum / cnt).toFixed(1);
+  }catch(e){}
+  return {
+    ...out,
+    activatedPct: pct(out.activated),
+    returnedPct: pct(out.returned),
+    paidPct: pct(out.paid),
+    avgDaysToPay: days,
+    /* Counting started when this shipped, so accounts that existed before it
+       are not in the denominator. Said out loud rather than left for somebody
+       to discover when the numbers do not match the user count. */
+    note: 'Counted from when funnel tracking was switched on, so accounts older than that are not included.',
+  };
 }
 
 /* Read the last N days of a growth series as [{date, count}], oldest first. */
@@ -7813,9 +8125,9 @@ async function adminStats(request, env) {
   const killed = (await env.AMV_KV.get('GLOBAL_KILL')) === '1';
 
   // list entitlements (paying users) via the durable layer (D1 query or KV scan)
-  let users = [], plans = { free: 0, pro: 0, elite: 0, ultra: 0, custom: 0 };
+  let users = [], plans = { free: 0, pro: 0, elite: 0, ultra: 0, custom: 0, team: 0 };
   let mrr = 0, pastDue = 0, atRisk = 0;
-  const PRICE = { pro: 15, elite: 75, ultra: 200 };
+
   /* Bounded on purpose, and reported. Past this many accounts the per-account
      lists below are a sample - the headline money comes from the maintained
      counters instead, which are exact at any size. */
@@ -7829,16 +8141,17 @@ async function adminStats(request, env) {
        whose payment failed as revenue overstates MRR and hides the problem -
        the owner needs to see money at risk, not money assumed. */
     const plan = _planOf(e);
+    /* _planPriceUSD, not a local table: a per-seat plan's revenue is its seat
+       count times the seat price, and a table keyed by plan name reports every
+       Teams customer - however large - as zero. */
     if (e.pastDueSince) {
       pastDue++;
-      if (PRICE[e.plan]) atRisk += PRICE[e.plan];
-      else if (e.plan === 'custom' && e.custom?.price) atRisk += e.custom.price;
+      atRisk += _planPriceUSD(e.plan, e.custom);
     }
     plans[plan] = (plans[plan] || 0) + 1;
-    if (PRICE[plan]) mrr += PRICE[plan];
-    else if (plan === 'custom' && e.custom?.price) mrr += e.custom.price;
+    const revenue = _planPriceUSD(plan, e.custom);
+    mrr += revenue;
     const cost = (await counter(env, `cost:${email}:${month}`, { op: 'get' })).value || 0;
-    const revenue = PRICE[plan] || (plan === 'custom' && e.custom?.price) || 0;
     if (plan !== 'free' || cost > 0) users.push({ email, plan, monthCostUSD: +cost.toFixed(3), revenue });
   }
 
@@ -7911,9 +8224,16 @@ async function adminStats(request, env) {
   })();
   const pop = await _planPopulation(env);
   const popTotal = Object.values(pop).reduce((a, b) => a + b, 0);
-  const PRICE_POP = { pro: 15, elite: 75, ultra: 200 };
-  let popMrr = 0;
-  for (const [plan, n] of Object.entries(pop)) if (PRICE_POP[plan]) popMrr += PRICE_POP[plan] * n;
+  /* Revenue on the per-seat plan is seats, not accounts, so it comes from the
+     seat counter rather than from multiplying a head count by a price that does
+     not exist for that plan. A custom plan's price is per account and unknown
+     here, so the scan above is what carries it - reported, not guessed. */
+  const seatsSold = await _teamSeatsSold(env);
+  let popMrr = seatsSold * TEAM_SEAT_PRICE_USD;
+  for (const [plan, n] of Object.entries(pop)) {
+    if (plan === 'team' || plan === 'custom') continue;
+    popMrr += _planPriceUSD(plan) * n;
+  }
   const totalCost0 = (await counter(env, `costtotal:${month}`, { op: 'get' })).value || 0;
 
   if (truncated) {
@@ -7960,7 +8280,12 @@ async function adminStats(request, env) {
               referrals7, referrals30,
               // What share of the last week's signups came through an invite.
               referralSharePct: signups7 > 0 ? +((referrals7 / signups7) * 100).toFixed(1) : null },
-    revenue: { estMRR: mrr, estARR: mrr * 12, arpu, pastDueAccounts: pastDue, mrrAtRisk: atRisk },
+    /* Signup -> activated -> returned -> paid. The question every piece of
+       onboarding work is trying to move, and the only one that says whether it
+       did (AMV-101). */
+    funnel: await _funnelReport(env),
+    revenue: { estMRR: mrr, estARR: mrr * 12, arpu, pastDueAccounts: pastDue, mrrAtRisk: atRisk,
+               teamSeatsSold: seatsSold, teamSeatMRR: seatsSold * TEAM_SEAT_PRICE_USD },
     margin: (() => {
       const scanCost = +users.reduce((s, u) => s + u.monthCostUSD, 0).toFixed(2);
       /* The maintained total is exact; the scanned sum is only exact when the
@@ -8253,6 +8578,12 @@ function _readinessReport(env) {
     { id: 'paymentsHook', name: 'Payment webhooks', blocking: false, on: _has(env, 'STRIPE_WEBHOOK_SECRET'),
       turnsOn: 'Plans granted on payment, and revoked on cancellation, refund or chargeback. Without it a payment never reaches the account that made it.',
       how: put('STRIPE_WEBHOOK_SECRET') },
+    { id: 'modelFallback', name: 'Model failover', blocking: false, on: _has(env, 'MODEL_API_FALLBACK_URL'),
+      turnsOn: 'A second endpoint AMV falls back to when the primary cannot answer. Non-streaming requests are retried there; a stream that already sent words is never retried, because repeating them is worse than an honest error.',
+      how: put('MODEL_API_FALLBACK_URL') },
+    { id: 'teamSeats', name: 'Teams (per-seat billing)', blocking: false, on: _has(env, 'STRIPE_PRICE_TEAM_SEAT'),
+      turnsOn: 'Selling Teams by the seat at $' + TEAM_SEAT_PRICE_USD + '/seat/month. Without it Teams is still usable on Elite and Ultra, and the per-seat plan says it is not switched on rather than failing at checkout.',
+      how: put('STRIPE_PRICE_TEAM_SEAT') },
     { id: 'captcha', name: 'Signup verification', blocking: false, on: _has(env, 'TURNSTILE_SECRET'),
       turnsOn: 'Bot protection on signup and sign-in. Until it is set, only the honeypot and rate limits apply.',
       how: put('TURNSTILE_SECRET') },
@@ -8377,6 +8708,11 @@ function _digestSnapshot(m) {
     approvalPct: (m.quality && m.quality.approvalPct != null) ? m.quality.approvalPct : null,
     qualityVotes: (m.quality && m.quality.votes) || 0,
     avgFirstTokenMs: (m.speed && m.speed.avgFirstTokenMs != null) ? m.speed.avgFirstTokenMs : null,
+    activatedPct: (m.funnel && m.funnel.activatedPct != null) ? m.funnel.activatedPct : null,
+    returnedPct: (m.funnel && m.funnel.returnedPct != null) ? m.funnel.returnedPct : null,
+    paidPct: (m.funnel && m.funnel.paidPct != null) ? m.funnel.paidPct : null,
+    avgDaysToPay: (m.funnel && m.funnel.avgDaysToPay != null) ? m.funnel.avgDaysToPay : null,
+    teamSeatsSold: (m.revenue && m.revenue.teamSeatsSold) || 0,
   };
 }
 
@@ -8405,7 +8741,19 @@ function _buildDigest(m, prev) {
     ['Signups this week',      _delta(snap.signups7, pv('signups7'))],
     ['Of those, from invites', (snap.referrals7 || 0) + (g.referralSharePct != null ? ' (' + g.referralSharePct + '% of signups)' : '')],
     ['Active today',           _delta(snap.activeToday, pv('activeToday'))],
+    /* The funnel, in the order somebody moves through it. These four lines are
+       the only ones on this page that say whether the product WORK is landing -
+       everything else says how the business is doing today (AMV-101). */
+    ['Got a real answer',      snap.activatedPct == null ? 'not enough signups yet'
+                                 : _delta(snap.activatedPct, pv('activatedPct'), { pct: true }) + ' of signups'],
+    ['Came back another day',  snap.returnedPct == null ? 'not enough signups yet'
+                                 : _delta(snap.returnedPct, pv('returnedPct'), { pct: true }) + ' of signups'],
+    ['Went on to pay',         snap.paidPct == null ? 'not enough signups yet'
+                                 : _delta(snap.paidPct, pv('paidPct'), { pct: true }) + ' of signups'],
+    ['Time from signup to pay', snap.avgDaysToPay == null ? 'nobody has paid yet'
+                                 : _delta(snap.avgDaysToPay, pv('avgDaysToPay')) + ' days on average'],
     ['Paying accounts',        _delta(snap.paying, pv('paying'))],
+    ['Team seats sold',        _delta(snap.teamSeatsSold, pv('teamSeatsSold'))],
     ['MRR',                    _delta(snap.mrr, pv('mrr'), { money: true })],
     ['MRR at risk',            _delta(snap.mrrAtRisk, pv('mrrAtRisk'), { money: true })],
     ['Gross margin',           _delta(snap.grossMargin, pv('grossMargin'), { money: true })
@@ -8445,6 +8793,14 @@ function _buildDigest(m, prev) {
     flags.push('AMV got noticeably slower to start: ' + pv('avgFirstTokenMs') + 'ms to ' + snap.avgFirstTokenMs + 'ms.');
   if (snap.approvalPct != null && snap.approvalPct < 70)
     flags.push('Only ' + snap.approvalPct + '% of rated answers were rated good. Something in routing or prompting is worth looking at.');
+  /* Each of these points at a different problem, which is the whole reason for
+     measuring the steps separately rather than only counting conversions. */
+  if (snap.activatedPct != null && snap.activatedPct < 50)
+    flags.push('Only ' + snap.activatedPct + '% of signups ever got a real answer out of AMV. That is a first-screen problem, not a pricing one.');
+  else if (snap.returnedPct != null && snap.returnedPct < 25)
+    flags.push('Only ' + snap.returnedPct + '% of signups came back on a second day. People are getting an answer and not finding a reason to return.');
+  else if (snap.paidPct != null && snap.paidPct < 2 && snap.activatedPct != null && snap.activatedPct > 50)
+    flags.push('People are using AMV (' + snap.activatedPct + '% activated) but only ' + snap.paidPct + '% pay. The limits or the upgrade moment are worth a look, not the onboarding.');
   if (p && pv('approvalPct') != null && snap.approvalPct != null && snap.approvalPct < pv('approvalPct') - 5)
     flags.push('Answer quality fell from ' + pv('approvalPct') + '% to ' + snap.approvalPct + '% week on week.');
   const worstReason = (m.quality && (m.quality.reasons || [])[0]);

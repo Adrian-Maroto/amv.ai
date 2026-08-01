@@ -1003,7 +1003,17 @@ function renderBillingView(targetEl){
           _drow('Billing email',escH(email))+
           (pm?_drow('Payment method',_pmBrandIcon(pm.brand)+' \u00b7\u00b7\u00b7\u00b7 '+escH(pm.last4)+(pm.exp?'  (exp '+escH(pm.exp)+')':'')):'')+
         '</div>'+
-        (plan==='custom'?'<button class="btn bp" id="bill-resize" style="margin-top:12px">Resize my plan</button>':'')+
+        /* The billing portal is the only place a card can be changed or a
+           subscription cancelled. The handler for this button already existed
+           and had done nothing for as long as the button did not: a paying
+           customer could not reach their own billing, which is a support ticket
+           at best and a complaint to their bank at worst. */
+        '<div class="bill-acts">'+
+          '<button class="btn bp" id="portal-open-btn">Manage billing</button>'+
+          (plan==='custom'?'<button class="btn bs" id="bill-resize">Resize my plan</button>':'')+
+        '</div>'+
+        '<p class="bill-acts-s">Change your card, download receipts, or cancel. '+
+          'Cancelling keeps your plan until the end of the period you have paid for.</p>'+
       '</div>':'')+
       // INVOICES
       (plan!=='free'?'<div class="ss2"><h3>Invoices</h3>'+
@@ -1045,7 +1055,6 @@ function renderBillingView(targetEl){
     else handlePaymentSuccess(pl,{simulated:true});
   }));
   const rz=$('bill-resize'); if(rz) on(rz,'click',openCustomPlan);
-  const bc=$('bill-custom'); if(bc) on(bc,'click',openCustomPlan);
   vc.querySelectorAll('.inv-view').forEach(b=>on(b,'click',()=>toast('Invoice PDFs open through the billing portal once your account is connected to a payment processor.','info',4000)));
   // load real invoice history when the backend is connected
   if(plan!=='free' && liveBackend){ _loadInvoices(); }

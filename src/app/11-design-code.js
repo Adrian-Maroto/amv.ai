@@ -858,7 +858,6 @@ function _devSetName(name){
   if(!clean) return _DEV.name;
   _DEV.name=clean;
   try{ saveStr('amv_dev_name', clean); }catch(e){}
-  try{ const el=$('dev-projname'); if(el) el.textContent=clean; }catch(e){}
   return clean;
 }
 /* Derive a project name from what the user asked for, the first time they build.

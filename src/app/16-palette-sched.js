@@ -27,7 +27,7 @@ function _paletteCommands(){
     nav('go-tasks','Tasks','tasks','tasks todo schedule automation'),
     nav('go-projects','Projects','workspaces','projects workspace files'),
     nav('go-memory','Memory','memory','memory remember facts'),
-    /* Team removed from the product */
+    nav('go-team','Team','team','team seats members invite colleagues shared workspace collaborate'),
     nav('go-marketplace','Marketplace','market','marketplace agents store'),
     nav('go-plans','Plans','plans','plans pricing upgrade subscription'),
     nav('go-help','Help','help','help support docs guide'),

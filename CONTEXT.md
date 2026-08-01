@@ -108,6 +108,37 @@ app names them individually. Somebody with a personally better plan is never
 pooled or downgraded. `teamId` lives on the entitlement record and must stay in
 `ENT_CARRY_KEYS`.
 
+### Teams pricing (AMV-101)
+Two shapes. **Elite/Ultra include seats** (10/25) sharing that one plan's
+allowance - the upgrade path. **`team` is the product**: priced PER SEAT at
+`TEAM_SEAT_PRICE_USD` ($20), minimum `TEAM_SEAT_MIN` (3), and every seat adds a
+full Pro allowance to the shared pool plus Apex for everyone. Ten people = ten
+plans' worth of capacity, one bill. Margin holds by construction because the
+pool AND the `price * 0.45` ceiling both scale with the same seat count.
+
+The seat count is the **Stripe subscription quantity** - read off the
+subscription item in the webhook, never from a request body, clamped on both
+sides. Stripe prorates seat changes; the billing portal is the change surface.
+Without `STRIPE_PRICE_TEAM_SEAT` the plan says it is not switched on (503
+`not_configured`) instead of failing at the till.
+
+`_planPriceUSD(plan, cfg)` is the ONE definition of what a plan costs - the chat
+backstop, the SMS backstop, the automation budget and MRR all read it.
+
+### The funnel (AMV-101)
+`signup -> activated -> returned -> paid`, as cumulative counters
+(`funnel:<step>`) marked once per user by `_funnelMark`, off the event that
+proves the step: a finished answer, a second distinct DAY, a verified payment on
+the way up from not paying. Exact at any scale with no scan. Reported in
+`adminStats.funnel` and in the weekly digest, with `avgDaysToPay` from
+`funnelttpsum`/`funnelttpn`.
+
+### Model transport
+`_modelFetch(env, payload, {stream})` is the only way out to the model.
+`MODEL_API_URL` overrides the endpoint; `MODEL_API_FALLBACK_URL` is tried on a
+transport error or 5xx. **Streams are never retried** - words already delivered
+would be repeated.
+
 ### No ads. Revenue = subscriptions + 20% marketplace fees.
 
 ---

@@ -524,3 +524,39 @@ and a test that clicks the entry point catches it when it does.
 refused every custom plan the copy promised teams to; on the server it had been
 hardcoded to 3, so a twenty dollar custom plan outranked Elite. Anything that
 compares plans has to rank a custom plan by what was actually paid.
+
+## 61. An unset config value becomes the key "undefined"
+`PLAN_FROM_PRICE` was an object literal keyed on env vars. Every unconfigured
+price collapsed onto the same `undefined` entry, and whichever plan was written
+last won it - so a webhook quoting an unknown price, or an invoice event with no
+price at all, resolved to a real plan and granted it. Three plans hid it; adding
+a fourth exposed it. Build lookup maps by inserting only what is actually set.
+
+## 62. A silent lookup is a feature that can disappear without a trace
+`getElementById` returning null throws nothing and logs nothing, and nearly
+every one of those lookups is wrapped in the `if (!el) return` that makes the
+silence permanent. That is how the Admin tab became unreachable, how the billing
+portal button stopped existing while its handler stayed, and how Ctrl+B kept
+toggling a drawer that had been removed. `tests/e2e/wiring-anchors.test.mjs`
+now fails the build when the bundle looks up an id nothing anywhere creates.
+
+## 63. Copying a destination into six call sites removes the ability to change it
+The model endpoint, auth header and protocol version were duplicated across six
+`fetch` calls. The duplication was the small problem; the real one was that
+switching endpoints during an outage meant editing six places correctly under
+pressure, so it was never going to happen. One transport function made failover
+a config value. It does NOT retry streams: words already delivered would be
+repeated, and a duplicated answer is worse than an honest error.
+
+## 64. A price table copied three times is three chances to be wrong about money
+`{pro:15, elite:75, ultra:200}` lived in the chat backstop, the SMS backstop and
+the automation budget, each with its own handling of a custom plan - and the
+number they compute IS the margin guarantee. Adding a per-seat plan would have
+had to be done in all three, correctly, forever. One `_planPriceUSD`.
+
+## 65. Plan population cannot tell you whether the product is working
+Every dashboard number described the business today. None answered "of the
+people who signed up, how many ever got value, came back, and paid" - so first
+screens, activation nudges and onboarding copy were all judged on feel. The
+funnel is four cumulative counters, each marked once per user off the event that
+actually proves the step, so the ratios stay exact with no scan.
