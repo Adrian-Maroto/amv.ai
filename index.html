@@ -7542,6 +7542,55 @@ html,body{height:100%;height:100dvh}
   color:var(--accent);background:var(--accent-soft);border-radius:var(--r-xs);
   padding:1px 6px;margin-right:var(--sp-2);vertical-align:1px}
 
+/* ============================================================
+   LAYER A53 - Tappable on a phone
+
+   Measured, not guessed: at 390px the Crew screen had 39 job
+   toggles, and chat, Lab, Dev and Video their selects and chips,
+   all under 32px tall. A control you miss is a control that does
+   not work, and "usable on EVERY device" is not satisfied by a
+   screen that merely fits.
+
+   Applied on a coarse pointer OR a phone-width screen. Pointer
+   alone is the more precise signal, but it is not the safer one:
+   if the query is wrong the failure modes are "a narrow desktop
+   window gets slightly roomier buttons" versus "a phone keeps
+   controls nobody can hit". Only one of those is acceptable.
+
+   44px is the figure both major platforms settled on. Applied to
+   the CONTROL, using min-height rather than height, so nothing
+   that is already taller gets shrunk and text still wraps.
+   ============================================================ */
+@media (pointer: coarse), (max-width: 560px){
+  .cw-toggle,
+  .mc-cmd-chip,
+  .mc-empty-cta,
+  .chome-chip,
+  .lab-run-btn,
+  .lab-fix-btn,
+  .dev-upload-btn,
+  .fr-x,
+  .seat-step{
+    min-height:44px;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+  }
+  /* Selects are the worst offenders: a native picker under 32px on
+     a phone is close to unhittable, and every one of them opens a
+     list the user then has to aim at. */
+  select,
+  .sel,
+  .lab-lang-sel,
+  .inp-model-sel{
+    min-height:44px;
+  }
+  /* A chip row that now has taller chips needs the room to breathe
+     rather than colliding. */
+  .mc-cmd-chips,
+  .chome-chips{ gap:var(--sp-2); }
+}
+
 </style>
 <!-- BUILD:CSS:END -->
 <script>
@@ -7835,7 +7884,7 @@ html,body{height:100%;height:100dvh}
       <div class="sbl" data-i18n>Agents</div>
       <button class="snb" data-tab="crew"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>Crew</button>
       <button class="snb" data-tab="handoff"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 9l-3 3 3 3"/><path d="M9 5l3-3 3 3"/><path d="M15 19l-3 3-3-3"/><path d="M19 9l3 3-3 3"/><path d="M2 12h7M12 2v7M22 12h-7M12 22v-7"/></svg>Handoff</button>
-      <div class="sbl sbl-toggle" id="build-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="build-group"><span data-i18n>Build</span><svg class="sbl-chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></div>
+      <div class="sbl sbl-toggle" id="build-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="build-group"><span data-i18n>Design &amp; code</span><svg class="sbl-chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></div>
       <div class="sb-group collapsed" id="build-group">
       <button class="snb" data-tab="studio"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996C18.901 15.272 21 13.172 21 10.5 21 5.806 16.97 2 12 2z"/></svg>Studio</button>
       <button class="snb" data-tab="dev"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>Dev</button>

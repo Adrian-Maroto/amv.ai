@@ -1907,6 +1907,102 @@ async function consentRecord(request, env){
    money. Not configured -> an honest needs_service, never a made-up
    balance.
    ============================================================ */
+/* ── THE INVESTING CHECK-IN ────────────────────────────────────────────────
+
+   "Tell me how my money is doing" is one question, and answering it needs one
+   thing the balance endpoint cannot give on its own: what it was LAST time.
+   A balance is a number; a check-in is a change.
+
+   So a check-in stores a snapshot each time it runs and reports the difference
+   from the previous one. The first one honestly has nothing to compare against
+   and says so rather than reporting 0% as though the market stood still.
+
+   It reads investment accounts only - a current account swinging with rent and
+   payday is noise in a question about investments. And it stays read-only, like
+   everything else here: this can tell you that you are down four percent and it
+   cannot do anything about it, which is the correct set of powers for something
+   running unattended on a schedule.
+
+   Money figures are never invented. If the provider cannot be reached the
+   check-in fails and says so; a made-up balance is the single most damaging
+   thing this product could produce. */
+const INVEST_TYPES = ['investment','brokerage','ira','401k','roth','403b','529','hsa','retirement','mutual fund','stock plan'];
+function _isInvestAccount(a){
+  const t = String((a && a.type) || '').toLowerCase();
+  return INVEST_TYPES.some(k => t.includes(k));
+}
+
+/* One snapshot per account, plus the total. Kept small and kept per user. */
+function _investShape(accounts){
+  const inv = (accounts || []).filter(_isInvestAccount);
+  const total = inv.reduce((n, a) => n + (+a.balance || 0), 0);
+  return { at: Date.now(), total: Math.round(total * 100) / 100,
+           currency: (inv[0] && inv[0].currency) || 'USD',
+           accounts: inv.map(a => ({ id: a.id, name: a.name, balance: Math.round((+a.balance || 0) * 100) / 100 })) };
+}
+
+function _investDelta(now, prev){
+  if(!prev || !prev.at) return { first: true };
+  const abs = Math.round((now.total - prev.total) * 100) / 100;
+  /* A percentage off a zero starting balance is not a percentage. Reported as
+     null rather than as Infinity or a confident-looking zero. */
+  const pct = prev.total > 0 ? +(((now.total - prev.total) / prev.total) * 100).toFixed(2) : null;
+  const byAccount = (now.accounts || []).map(a => {
+    const was = ((prev.accounts || []).find(x => x.id === a.id) || {}).balance;
+    if(was == null) return { name: a.name, balance: a.balance, isNew: true };
+    return { name: a.name, balance: a.balance, change: Math.round((a.balance - was) * 100) / 100 };
+  });
+  return { first: false, since: prev.at, changeUSD: abs, changePct: pct,
+           direction: abs > 0 ? 'up' : abs < 0 ? 'down' : 'flat', byAccount };
+}
+
+/* Runs the check-in for one account. Shared by the endpoint and the cron, so a
+   scheduled check-in and a manual one cannot drift apart. */
+async function _investCheckin(env, email, opts){
+  const o = opts || {};
+  const rec = await DB.get(env, 'fin', email);
+  if(!rec || !rec.accessToken) return { ok:false, code:'needs_auth', error:'No investment account is linked yet.' };
+  if(!env.FINANCE_CLIENT_ID || !env.FINANCE_SECRET)
+    return { ok:false, code:'needs_service', error:'Bank data is not switched on for this deployment.' };
+
+  const base = (env.FINANCE_API_URL || 'https://production.plaid.com').replace(/\/$/, '');
+  let accounts = [];
+  try{
+    const r = await fetch(base + '/accounts/balance/get', {
+      method:'POST', headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({ client_id: env.FINANCE_CLIENT_ID, secret: env.FINANCE_SECRET, access_token: rec.accessToken }) });
+    const d = await r.json();
+    if(!r.ok) return { ok:false, code:'provider_error', error: d.error_message || 'Could not reach your accounts.' };
+    accounts = (d.accounts || []).map(a => ({
+      id:a.account_id, name:a.name || a.official_name || '', type:a.subtype || a.type || '',
+      balance:(a.balances && (a.balances.current != null ? a.balances.current : a.balances.available)) || 0,
+      currency:(a.balances && a.balances.iso_currency_code) || 'USD' }));
+  }catch(e){
+    return { ok:false, code:'provider_error', error:'Could not reach your accounts just now.' };
+  }
+
+  const now = _investShape(accounts);
+  if(!now.accounts.length)
+    return { ok:false, code:'no_investments', error:'No investment accounts were found on the institution you linked.' };
+
+  const prev = await DB.get(env, 'invsnap', email);
+  const delta = _investDelta(now, prev);
+  /* Stored only on a successful read, so a failed check-in never becomes the
+     baseline the next one measures against. */
+  if(o.store !== false) await DB.put(env, 'invsnap', email, now);
+  return { ok:true, total: now.total, currency: now.currency, at: now.at, ...delta };
+}
+
+async function financeCheckin(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'sign in first', code:'needs_auth' }, 401);
+  const blocked = await guardAction(env, 'invchk:' + user.email, 10, 120, 'investment check-ins');
+  if(blocked) return blocked;
+  const body = await request.json().catch(()=>({}));
+  const r = await _investCheckin(env, user.email, { store: body.peek !== true });
+  return json(r, r.ok ? 200 : (r.code === 'needs_auth' ? 400 : 503));
+}
+
 async function financeRoute(request, env, path){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'sign in to use bank data', code:'needs_auth' }, 401);
@@ -2967,6 +3063,7 @@ export default {
         case '/v1/finance/transactions': return financeRoute(request, env, 'transactions');
         case '/v1/oauth/google/exchange': return googleOAuthExchange(request, env);
         case '/v1/oauth/google/refresh':  return googleOAuthRefresh(request, env);
+        case '/v1/finance/checkin':      return financeCheckin(request, env);
         case '/v1/family/get':           return familyGet(request, env);
         case '/v1/family/limits':        return familySetLimits(request, env);
         case '/v1/family/remove':        return familyRemove(request, env);

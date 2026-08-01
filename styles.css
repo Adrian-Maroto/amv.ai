@@ -7456,3 +7456,52 @@ html,body{height:100%;height:100dvh}
 .hopick-kind{display:inline-block;font-size:var(--t-xs);font-weight:600;
   color:var(--accent);background:var(--accent-soft);border-radius:var(--r-xs);
   padding:1px 6px;margin-right:var(--sp-2);vertical-align:1px}
+
+/* ============================================================
+   LAYER A53 - Tappable on a phone
+
+   Measured, not guessed: at 390px the Crew screen had 39 job
+   toggles, and chat, Lab, Dev and Video their selects and chips,
+   all under 32px tall. A control you miss is a control that does
+   not work, and "usable on EVERY device" is not satisfied by a
+   screen that merely fits.
+
+   Applied on a coarse pointer OR a phone-width screen. Pointer
+   alone is the more precise signal, but it is not the safer one:
+   if the query is wrong the failure modes are "a narrow desktop
+   window gets slightly roomier buttons" versus "a phone keeps
+   controls nobody can hit". Only one of those is acceptable.
+
+   44px is the figure both major platforms settled on. Applied to
+   the CONTROL, using min-height rather than height, so nothing
+   that is already taller gets shrunk and text still wraps.
+   ============================================================ */
+@media (pointer: coarse), (max-width: 560px){
+  .cw-toggle,
+  .mc-cmd-chip,
+  .mc-empty-cta,
+  .chome-chip,
+  .lab-run-btn,
+  .lab-fix-btn,
+  .dev-upload-btn,
+  .fr-x,
+  .seat-step{
+    min-height:44px;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+  }
+  /* Selects are the worst offenders: a native picker under 32px on
+     a phone is close to unhittable, and every one of them opens a
+     list the user then has to aim at. */
+  select,
+  .sel,
+  .lab-lang-sel,
+  .inp-model-sel{
+    min-height:44px;
+  }
+  /* A chip row that now has taller chips needs the room to breathe
+     rather than colliding. */
+  .mc-cmd-chips,
+  .chome-chips{ gap:var(--sp-2); }
+}

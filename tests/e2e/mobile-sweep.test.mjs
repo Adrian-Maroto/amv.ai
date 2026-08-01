@@ -162,6 +162,47 @@ section('The composer stays reachable with the keyboard up');
   await page.setViewportSize(PHONE);
 }
 
+section('Every control on a phone is big enough to hit');
+{
+  /* Measured, not assumed. At 390px the Crew screen alone had 39 job toggles
+     under 32px tall, plus the selects and chips on chat, Lab, Dev and Video. A
+     control you miss is a control that does not work, and a screen that merely
+     FITS on a phone is not the same as one you can use on a phone.
+
+     44px is the figure both major platforms settled on. Anything shorter than
+     32 is well past arguable. */
+  await page.setViewportSize({ width: 390, height: 844 });
+  const bad = await page.evaluate(async () => {
+    saveStr('amv_plan', 'ultra');
+    const out = [];
+    for (const t of ['crew', 'chat', 'lab', 'video', 'dev', 'studio', 'market', 'plans', 'settings']) {
+      S.tab = t; try { setTab(t); } catch (e) {}
+      await new Promise(r => setTimeout(r, 110));
+      const small = [];
+      document.querySelectorAll('#vc button,#vc a[href],#vc input,#vc select').forEach(el => {
+        const b = el.getBoundingClientRect();
+        if (b.width > 0 && b.height > 0 && b.height < 32) {
+          small.push(t + ':' + (String(el.className).split(' ')[0] || el.tagName) + '@' + Math.round(b.height));
+        }
+      });
+      if (small.length) out.push({ tab: t, count: small.length, first: small.slice(0, 3) });
+    }
+    return out;
+  });
+  ok(bad.length === 0, 'no control on any screen is under 32px tall at 390px', bad);
+
+  /* And raising them must not have pushed anything off the side. */
+  const over = await page.evaluate(() => {
+    const w = window.innerWidth; let worst = 0;
+    document.querySelectorAll('#vc *').forEach(el => {
+      const b = el.getBoundingClientRect();
+      if (b.right > w + 1) worst = Math.max(worst, Math.round(b.right - w));
+    });
+    return worst;
+  });
+  ok(over === 0, 'and nothing overflows as a result', over);
+}
+
 ok(errors.length === 0, 'and none of it threw', errors.slice(0, 3));
 report('mobile-sweep');
 done();
