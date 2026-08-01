@@ -30,7 +30,7 @@ Set each with `npx wrangler secret put NAME` (it prompts for the value).
 ### Required - the app won't fully run without these
 | Secret | Unlocks |
 |---|---|
-| `ANTHROPIC_API_KEY` | The AI itself - chat, agents, Crew, research, everything |
+| `AMV_MODEL_KEY` | The AI itself - chat, agents, Crew, research, everything |
 | `JWT_SECRET` | Sign-up / login (any long random string, 32+ chars). Auth fails closed without it. |
 
 ### Strongly recommended

@@ -1425,9 +1425,15 @@ function _paintServerUsage(){
         ? '<div class="srv-bonus">Includes <b>+'+n(bonus)+'</b> bonus tokens from invites you have earned. '+
           '<a data-sp-go="invite" style="color:var(--accent);cursor:pointer">See your invites &rarr;</a></div>'
         : '')+
+      (d.shared && d.shared.team
+        ? '<div class="srv-bonus">These numbers are your <b>whole team</b>, not just you - one subscription is one allowance, '+
+          'however many people are on it. <a data-sp-team="1" style="color:var(--accent);cursor:pointer">Open Team &rarr;</a></div>'
+        : '')+
       '<p class="srv-note">Your plan is '+escH(String(d.plan||'free'))+'. Daily and monthly allowances are separate: running out today does not spend your month.</p>';
     const go = host.querySelector('[data-sp-go]');
     if(go) on(go,'click',()=>{ S.settingsPane='invite'; S.tab='settings'; setTab('settings'); });
+    const tm = host.querySelector('[data-sp-team]');
+    if(tm) on(tm,'click',()=>{ S.tab='team'; setTab('team'); });
   }).catch(()=>{
     host.innerHTML = '<h3>Your plan allowance</h3><div class="srv-off">Could not reach the server, so your real allowance is not shown. The figures below are this device\u2019s own tally.</div>';
   });

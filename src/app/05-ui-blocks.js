@@ -2614,7 +2614,7 @@ function planCards(inApp){
       '<ul class="plnfl">'+
         '<li><span class="fck">\u2713</span><b>Everything in Pro</b>, plus:</li>'+
         '<li><span class="fck">\u2713</span><b>20× the usage</b> - work all day</li>'+
-        '<li><span class="fck">\u2713</span><b>Apex (Fable 5) first</b> - our most capable model</li>'+
+        '<li><span class="fck">\u2713</span><b>AMV Apex first</b> - our most capable engine</li>'+
         '<li><span class="fck">\u2713</span><b>Full-stack app builder</b> + one-click deploy</li>'+
         '<li><span class="fck">\u2713</span>Run up to <b>5 agents in parallel</b></li>'+
         '<li><span class="fck">\u2713</span>Multi-file projects, code review &amp; auto-debug</li>'+

@@ -1109,6 +1109,8 @@ function _setPlan(plan){
   // if the user's selected model isn't allowed on this plan, drop to an allowed one
   try{ const allowed=t.models; if(allowed.indexOf(S.model)<0){ S.model=allowed[allowed.length-1]; } }catch(e){}
   updateSbUser&&updateSbUser();
+  // Teams is packaged with Elite and above, so its entry point follows the plan.
+  try{ if(typeof _revealTeamNav==='function') _revealTeamNav(); }catch(e){}
   try{ if(typeof renderView==='function' && S.tab) renderView(); }catch(e){}
 }
 function _planAllowsModel(mk){ if(mk==='auto') return true; const plan=loadStr('amv_plan')||'free'; if(plan==='custom') return true; const t=PLAN_TIERS[plan]||PLAN_TIERS.free; return t.models.indexOf(mk)>=0; }
@@ -1219,10 +1221,22 @@ window._setPlan=_setPlan;
    the top tier (enterprise buyers want teams early). Free/Pro cannot create or
    join a team; Elite, Ultra, and equivalent Custom plans can. */
 const TEAM_REQUIRED_PLAN = 'elite';
+/* A custom plan is a price, not a tier, so PLAN_RANK has no entry for it. The
+   lookup returned undefined and every custom plan was refused - including the
+   enterprise ones the copy on this very screen promises teams to. Ranked by
+   what was paid, matching the server, which is the side that decides. */
+const _CUSTOM_TIERS=[[200,3],[75,2],[15,1]];
+function _customRank(){
+  let price=0;
+  try{ price=+((load('amv_custom_cfg')||{}).price)||0; }catch(e){}
+  for(const t of _CUSTOM_TIERS) if(price>=t[0]) return t[1];
+  return 0;
+}
 function _planAllowsTeams(){
   const plan=loadStr('amv_plan')||'free';
-  if(plan==='custom') return (PLAN_RANK['custom']||0) >= (PLAN_RANK[TEAM_REQUIRED_PLAN]||3);
-  return (PLAN_RANK[plan]||0) >= (PLAN_RANK[TEAM_REQUIRED_PLAN]||3);
+  const need=PLAN_RANK[TEAM_REQUIRED_PLAN]||2;
+  if(plan==='custom') return _customRank() >= need;
+  return (PLAN_RANK[plan]||0) >= need;
 }
 window._planAllowsTeams=_planAllowsTeams;
 
@@ -1306,8 +1320,8 @@ function openUpgradeModal(lockedModel){
 function _planDetails(k){
   const D={
     pro:['All models, including AMV Forge for coding','5\u00d7 the usage of the Free plan','Autonomous agents and Crew for multi-step work','Image, video, and 3D generation','Build and run apps in the sandbox','Connect Gmail, calendar, and files','Scheduled and background automation','Faster generation'],
-    elite:['Everything in Pro, dialed up','20\u00d7 the usage','AMV Apex (Fable 5) first - our most capable model','Full-stack app builder with one-click deploy','Up to 5 agents running in parallel','4K video & premium image quality','Unlimited scheduled automations','Early access + 24/7 priority support'],
-    ultra:['Everything in Elite, maxed out','50\u00d7 the usage','Unlimited parallel agents - a whole crew at once','Whole-codebase context & autonomous projects','Export & download full multi-file projects','Deploy & host multiple live apps','Team workspaces, roles & shared projects','Fastest hardware + dedicated support'],
+    elite:['Everything in Pro, dialed up','20\u00d7 the usage','AMV Apex first - our most capable engine','Full-stack app builder with one-click deploy','Up to 5 agents running in parallel','4K video & premium image quality','Unlimited scheduled automations','Team workspaces - 10 seats on one subscription','Early access + 24/7 priority support'],
+    ultra:['Everything in Elite, maxed out','50\u00d7 the usage','Unlimited parallel agents - a whole crew at once','Whole-codebase context & autonomous projects','Export & download full multi-file projects','Deploy & host multiple live apps','Team workspaces - 25 seats, roles & shared projects','Fastest hardware + dedicated support'],
   };
   return D[k]||['More usage','All models'];
 }

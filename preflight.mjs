@@ -128,7 +128,7 @@ if (backend && toml) {
   }
 
   // Secrets the Worker reads - documented so you don't forget one at deploy.
-  const KNOWN_SECRETS = ['ANTHROPIC_API_KEY', 'JWT_SECRET', 'ADMIN_TOKEN', 'EMAIL_API_KEY',
+  const KNOWN_SECRETS = ['AMV_MODEL_KEY', 'ANTHROPIC_API_KEY', 'JWT_SECRET', 'ADMIN_TOKEN', 'EMAIL_API_KEY',
     'RESET_EMAIL_FROM', 'GLOBAL_DAILY_USD_CAP', 'STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET',
     'VIDEO_API_URL', 'VIDEO_API_KEY', 'VIDEO_MODEL', 'APP_URL', 'AUDIT_WEBHOOK',
     // optional integrations - supported but not required to launch
@@ -139,7 +139,7 @@ if (backend && toml) {
     'PAYPAL_CLIENT_ID', 'PAYPAL_SECRET', 'PAYPAL_MODE', 'PAYPAL_WEBHOOK_ID',
     'PAYPAL_PLAN_PRO', 'PAYPAL_PLAN_ELITE', 'PAYPAL_PLAN_ULTRA', 'TURNSTILE_SECRET'];
   const usedSecrets = [...used].filter(u => KNOWN_SECRETS.includes(u)).sort();
-  const REQUIRED = ['ANTHROPIC_API_KEY', 'JWT_SECRET'];
+  const REQUIRED = ['AMV_MODEL_KEY', 'JWT_SECRET'];
   for (const r of REQUIRED) {
     if (used.has(r)) ok(`required secret ${r} is read by the Worker (set it with: wrangler secret put ${r})`);
   }

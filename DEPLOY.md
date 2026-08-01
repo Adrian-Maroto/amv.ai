@@ -62,7 +62,7 @@ Copy the `id` it prints into `wrangler.toml`, replacing `REPLACE_WITH_YOUR_KV_NA
 ## 2. Set your secrets
 
 ```bash
-npx wrangler secret put ANTHROPIC_API_KEY   # required - automations call the model with this
+npx wrangler secret put AMV_MODEL_KEY   # required - automations call the model with this
 npx wrangler secret put JWT_SECRET          # required - any long random string
 npx wrangler secret put ADMIN_TOKEN        # required to view the error dashboard
 npx wrangler secret put EMAIL_API_KEY      # Resend key - WITHOUT THIS, PASSWORD RESET NEVER SENDS
@@ -333,7 +333,7 @@ something important breaks - before customers complain:
 - Any unhandled server exception (first occurrence of each distinct error; recurring
   ones re-alert at 25x and 250x, throttled so you are never spammed).
 - Model API rejecting your key (401/403) - loud, because AI is then down for everyone;
-  check ANTHROPIC_API_KEY / billing. Model 5xx errors alert too.
+  check AMV_MODEL_KEY / billing. Model 5xx errors alert too.
 - Stripe checkout failing - customers can’t subscribe = lost revenue.
 - Global daily spend cap hit (and an 80%-of-cap early warning).
 Alerts are throttled per problem (short window for money/security, longer for noise) and
@@ -406,7 +406,7 @@ As it works, a live panel shows the REAL search count and the REAL sources found
 summary with the answer.
 
 max_uses is clamped server-side (ceiling 60) so a tampered client cannot request
-thousands of searches to run up the bill. Research needs ANTHROPIC_API_KEY like
+thousands of searches to run up the bill. Research needs AMV_MODEL_KEY like
 any other model call; with no key it degrades honestly.
 
 ## Mobile

@@ -483,3 +483,44 @@ halved the bill and doubled the wait would have looked like a pure win on every
 screen. Time to the first token is bucketed rather than logged - the shape is
 the useful part, and a per-request log of who asked what and when is only a
 liability.
+
+## 55. A gate that only exists in the browser is not a gate
+Teams was gated on the Elite plan in `renderTeamView` and nowhere else. The
+server's `teamCreate` happily created a team for anybody who called it. Every
+"this plan includes X" check has to be answered by the side that also does the
+work, or the plan is a suggestion the app makes to itself.
+
+## 56. Inheriting a plan without pooling the counters multiplies the bill
+Team members drawing on the owner's Elite plan while keeping their own `usg:`
+and `cost:` keys is not a shared subscription, it is twenty-five subscriptions
+for the price of one. The plan and the counters have to travel together, which
+is what `billingSubject` is for. And the seat count has to be re-derived on
+every request, not only at invite time - otherwise upgrade, fill every seat,
+downgrade is a way to buy Ultra for the price of Pro.
+
+## 57. Anything not in ENT_CARRY_KEYS is destroyed by the next plan change
+`setEntitlement` rebuilds the entitlement record from scratch. `teamId` was
+being written to it and would have been wiped by the first upgrade, downgrade,
+admin override or Stripe webhook - silently ejecting a member from the team
+whose plan they were on, with nothing anywhere explaining why. The same trap
+already ate referral bonuses once.
+
+## 58. A failed request is not an empty result
+`AMVTeam.get()` caught its own errors and returned `null`, which the caller
+reads as "you have no team". One dropped request put an owner in front of a
+create-a-team form for a team that already existed, and a member in front of an
+upgrade wall for a team they were already in. Load failures need their own
+branch and their own words.
+
+## 59. A nav item built at runtime can silently fail to appear
+The Admin tab's only entry point injected itself after `.snb[data-tab="tasks"]`
+- a selector the sidebar stopped matching when Tasks moved into the tool rail.
+The injection found nothing, threw nothing, and the operator view became
+unreachable from the app. Static markup that gets unhidden cannot fail this way,
+and a test that clicks the entry point catches it when it does.
+
+## 60. "custom" is a price, not a tier
+`PLAN_RANK['custom']` is undefined. On the client that read as rank 0 and
+refused every custom plan the copy promised teams to; on the server it had been
+hardcoded to 3, so a twenty dollar custom plan outranked Elite. Anything that
+compares plans has to rank a custom plan by what was actually paid.

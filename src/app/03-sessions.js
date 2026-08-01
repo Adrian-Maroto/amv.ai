@@ -746,7 +746,7 @@ function _wireHdrAuth(){
   if(su && !su._wired){ su._wired=1; su.addEventListener('click',()=>{ try{ openAuth('signup'); }catch(e){} }); }
   if(li && !li._wired){ li._wired=1; li.addEventListener('click',()=>{ try{ openAuth('login'); }catch(e){} }); }
 }
-function goApp(){ try{ _wireHdrAuth(); }catch(e){} try{ const cy=document.getElementById('copy-year'); if(cy) cy.textContent=String(new Date().getFullYear()); }catch(e){} document.getElementById('land').classList.add('hidden'); document.getElementById('app').classList.add('on'); updateSbUser(); _initMobileSidebar(); _restoreSidebarState(); try{ _applyReduceMotion(); }catch(e){} setTab(S.tab); _ensureBackendSession(); try{ _applyFontSize(); }catch(e){} try{ _initOfflineWatch(); }catch(e){} try{ _initErrorBoundary(); }catch(e){} try{ syncEntitlement(); _checkUpgradeReturn(); }catch(e){} try{ _checkTeamInvite(); }catch(e){} try{ _initKeyboardNav(); _initA11y(); }catch(e){} try{ _revealAdminNav(); }catch(e){} try{ _initSidebarMore(); }catch(e){} try{ _initBuildGroup(); }catch(e){} try{ _localizePrices(document); }catch(e){} try{ const sbtn=$('sb-status'); if(sbtn) sbtn.addEventListener('click',openStatusPanel); _checkStatus(); }catch(e){} try{ _initI18nObserver(); }catch(e){} try{ _translateUI(); setTimeout(_translateUI,120); }catch(e){ console.error('Translate UI error in goApp', e); } }
+function goApp(){ try{ _wireHdrAuth(); }catch(e){} try{ const cy=document.getElementById('copy-year'); if(cy) cy.textContent=String(new Date().getFullYear()); }catch(e){} document.getElementById('land').classList.add('hidden'); document.getElementById('app').classList.add('on'); updateSbUser(); _initMobileSidebar(); _restoreSidebarState(); try{ _applyReduceMotion(); }catch(e){} setTab(S.tab); _ensureBackendSession(); try{ _applyFontSize(); }catch(e){} try{ _initOfflineWatch(); }catch(e){} try{ _initErrorBoundary(); }catch(e){} try{ syncEntitlement(); _checkUpgradeReturn(); }catch(e){} try{ _checkTeamInvite(); }catch(e){} try{ _initKeyboardNav(); _initA11y(); }catch(e){} try{ _revealAdminNav(); }catch(e){} try{ _revealTeamNav(); }catch(e){} try{ _initSidebarMore(); }catch(e){} try{ _initBuildGroup(); }catch(e){} try{ _localizePrices(document); }catch(e){} try{ const sbtn=$('sb-status'); if(sbtn) sbtn.addEventListener('click',openStatusPanel); _checkStatus(); }catch(e){} try{ _initI18nObserver(); }catch(e){} try{ _translateUI(); setTimeout(_translateUI,120); }catch(e){ console.error('Translate UI error in goApp', e); } }
 
 /* The sidebar's advanced tools (Tasks, Integrations, Marketplace) live under a
    collapsible "More" so the default view stays calm - new users were getting
@@ -805,20 +805,41 @@ function _revealAdminNav(){
     const existing=document.getElementById('nav-admin');
     if(isAdmin()){
       if(existing) return;   // already present
-      // find the Tasks nav button and inject Admin right after it
-      const tasksBtn=document.querySelector('.snb[data-tab="tasks"]');
-      if(!tasksBtn||!tasksBtn.parentNode) return;
+      /* Anchored to the tool rail, which is where Tasks actually lives. This
+         used to look for `.snb[data-tab="tasks"]` - a selector the sidebar
+         stopped matching when Tasks moved into the rail - so the injection
+         silently found nothing and the Admin tab, whose ONLY entry point this
+         is, could not be reached from the app at all. */
+      const rail=document.getElementById('sb-tools');
+      if(!rail) return;
       const b=document.createElement('button');
-      b.className='snb'; b.setAttribute('data-tab','admin'); b.id='nav-admin';
-      b.innerHTML='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Admin';
+      b.className='sb-tool'; b.setAttribute('data-tab','admin'); b.id='nav-admin';
+      b.title='Admin'; b.setAttribute('aria-label','Admin');
+      b.innerHTML='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><span class="sb-tool-tip">Admin</span>';
       b.addEventListener('click',()=>setTab('admin'));
-      tasksBtn.parentNode.insertBefore(b, tasksBtn.nextSibling);
+      rail.appendChild(b);
     } else {
       // not the owner - the element must not exist in the DOM at all
       if(existing) existing.remove();
     }
   }catch(e){}
 }
+
+/* Teams is packaged with Elite and above, so the entry point appears for the
+   people who have it - and for anyone who was invited onto a team, whatever
+   they are on themselves, because the team is paying for their seat. Hidden
+   rather than injected: a nav item that has to be built at runtime is a nav
+   item that can silently fail to appear, which is what happened to Admin. */
+function _revealTeamNav(){
+  try{
+    const btn=document.getElementById('nav-team');
+    if(!btn) return;
+    const allowed=(typeof _planAllowsTeams==='function' && _planAllowsTeams())
+      || !!(window.AMVTeam && AMVTeam._cache);
+    btn.hidden=!allowed;
+  }catch(e){}
+}
+try{ window._revealTeamNav=_revealTeamNav; }catch(e){}
 /* On mobile the sidebar is a fixed overlay - start it collapsed so it
    never covers the content on load. On desktop it stays open. */
 function _initMobileSidebar(){

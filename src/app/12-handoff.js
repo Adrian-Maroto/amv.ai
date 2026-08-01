@@ -161,7 +161,7 @@ function renderView(){
     case 'prompts': renderPromptsView(); break;
     case 'workspaces': goSettings('projects'); return;
     case 'memory': renderMemoryView(); break;
-    case 'team': setTab('chat'); return;   // Team removed from the product - redirect anything that still points here
+    case 'team': renderTeamView(); break;
     case 'usage': renderUsageView(); break;
     case 'billing': renderBillingView(); break;
     case 'plans': renderPlansView(); break;
@@ -1502,7 +1502,7 @@ function _renderSetPaneInner(){
       '</div>'+
       '<div class="ss2"><h3>Where does the AI key go?</h3>'+
         '<p style="font-size:12.5px;color:var(--mu);line-height:1.6;margin:0">Set your Anthropic key as a secret on the Worker - it never touches the browser:</p>'+
-        '<pre style="background:var(--surface);border:1px solid var(--hair);border-radius:8px;padding:10px;font-size:11.5px;overflow:auto;margin:8px 0 0"><code>wrangler secret put ANTHROPIC_API_KEY</code></pre>'+
+        '<pre style="background:var(--surface);border:1px solid var(--hair);border-radius:8px;padding:10px;font-size:11.5px;overflow:auto;margin:8px 0 0"><code>wrangler secret put AMV_MODEL_KEY</code></pre>'+
         '<a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" class="conn-link">Get an Anthropic key \u2192</a>'+
       '</div>';
     on($('save-base'),'click',()=>{

@@ -27,7 +27,7 @@ const W = await import(harness + '?t=' + Date.now());
 /* ── Mock Cloudflare KV ─────────────────────────────────────────────────── */
 const store = new Map();
 const env = {
-  ANTHROPIC_API_KEY: 'test-key',
+  AMV_MODEL_KEY: 'test-key',
   JWT_SECRET: 'test-secret',
   AMV_KV: {
     async get(k) { return store.has(k) ? store.get(k) : null; },

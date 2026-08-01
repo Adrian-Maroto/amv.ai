@@ -235,11 +235,16 @@ const projectsPane = await page.evaluate(async () => {
 ok(projectsPane.tab === 'settings', 'Projects opens inside Settings', projectsPane.tab);
 ok(projectsPane.hasProjectsPane, 'and renders the projects grid there');
 
-const teamGone = await page.evaluate(() => {
+/* Teams is back (AMV-100), with seats and a shared allowance behind it, so the
+   tab routes to the team screen instead of bouncing to chat. The behaviour that
+   still matters is that it renders SOMETHING rather than leaving an empty view
+   - the redirect existed because there was no screen to show. */
+const teamTab = await page.evaluate(() => {
   setTab('team');
-  return S.tab;
+  return { tab: S.tab, filled: (document.getElementById('vc').textContent || '').trim().length > 40 };
 });
-ok(teamGone === 'chat', 'navigating to the removed Team tab redirects to chat', teamGone);
+ok(teamTab.tab === 'team', 'the Team tab routes to the team screen', teamTab.tab);
+ok(teamTab.filled, 'and renders content rather than an empty view', teamTab);
 
 /* The owner analytics dashboard once shipped broken: an edit dropped the
    `const el=$('adm-body')` line and _admRenderTab threw "el is not defined".

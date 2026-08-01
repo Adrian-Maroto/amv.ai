@@ -212,8 +212,14 @@ section('Every read of the plan honours the lapse - not just some of them');
      plan inline, so the guarantee moved one function along - and _autoBudget
      itself reads the EFFECTIVE plan, which is the thing that must never be
      skipped. Both halves are checked, so neither can quietly stop happening. */
-  ok(/const budget = _autoBudget\(ent\)/.test(src),
+  ok(/const budget = await _budgetFor\(env, user\)/.test(src) &&
+     /const budget = _autoBudget\(\{ plan: sub\.plan, custom: sub\.customCfg \}\)/.test(src),
      'the cron that runs automations takes its budget from one place');
+  /* And that one place resolves the billing subject first (AMV-100), so a team
+     member's scheduled work spends the TEAM's budget rather than opening a
+     second private one per seat. */
+  ok(/const sub = await _billingSubjectOf\(env, email, ent\)/.test(src),
+     'and resolves whose budget it is before spending any of it');
   ok(/function _autoBudget\(ent\)\{\s*\n\s*const plan = _planOf\(ent \|\| \{\}\)/.test(src),
      'and that budget reads the effective plan, so a lapsed card cannot keep spending');
   ok(/plan: _planOf\(e\)/.test(src), 'and the SMS path, which also costs per message');

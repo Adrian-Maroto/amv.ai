@@ -206,7 +206,7 @@ function _runJS(code, t0){
 
 
 /* ===== AUTONOMOUS DEBUG LOOP (analyze -> fix -> re-run -> repeat), REAL =====
-   Fable-5 quality: each iteration first does a root-cause analysis, then a
+   Apex-grade quality: each iteration first does a root-cause analysis, then a
    surgical fix. Handles large/advanced programs. Never loops on the same fix. */
 async function autoDebug(code, lang, maxIters, onStep, modelStr){
   maxIters = maxIters||8; lang=lang||'js';

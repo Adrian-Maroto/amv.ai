@@ -13,7 +13,7 @@ const ROOT = join(__dir, '..', '..');
 const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'sms-security.harness.mjs');
-writeFileSync(harness, src + '\nexport { smsRegister, smsIncoming, issueTokens };\n');
+writeFileSync(harness, src + '\nexport { smsRegister, smsIncoming, issueTokens, setEntitlement, counter, monthKey, FREE_AUTO_CEILING_USD };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 const store = new Map();
@@ -79,6 +79,42 @@ section('AMV-033: inbound SMS webhook fails closed');
   // token set but no/invalid signature -> reject
   r = await W.smsIncoming(smsReq(), mkEnv(twilio));
   ok(r.status === 403, 'an inbound webhook with an invalid signature is rejected', r.status);
+}
+
+/* A free account still spends real money on every inbound message: each one
+   runs an agent turn. The ceiling was skipped entirely when the plan price was
+   zero, which is precisely the case that had no other dollar bound - only 200
+   messages a day per number, each of them a model call. */
+section('Texting has a dollar ceiling on every plan, including the free one');
+{
+  store.clear();
+  const env = mkEnv(twilio);
+  await W.setEntitlement(env, 'freebie@x.com', 'free');
+  await env.AMV_KV.put('sms:phone:+15559990000', 'freebie@x.com');
+
+  /* Push the account past what the free plan covers, then send. A signed
+     request is not needed to prove the ceiling holds - it is needed to get
+     past the signature check - so this drives the counter directly and
+     asserts the guard reads it. */
+  await W.counter(env, `cost:freebie@x.com:${W.monthKey()}`,
+    { op: 'incr', amount: W.FREE_AUTO_CEILING_USD * 4, ttlMs: 86400000 });
+  const spent = (await W.counter(env, `cost:freebie@x.com:${W.monthKey()}`, { op: 'get' })).value;
+  ok(spent > W.FREE_AUTO_CEILING_USD, 'the free account is over what its plan covers', spent);
+
+  const cap = await W.counter(env, `cost:freebie@x.com:${W.monthKey()}`,
+    { op: 'checkCap', cap: W.FREE_AUTO_CEILING_USD });
+  ok(cap.allowed === false, 'so the ceiling the handler checks refuses it', cap);
+
+  ok(W.FREE_AUTO_CEILING_USD > 0,
+     'and a free ceiling is a real number rather than zero, so one text still works', W.FREE_AUTO_CEILING_USD);
+
+  const srcTxt = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
+  ok(!/if \(price > 0\) \{\s*\n\s*const capRes/.test(srcTxt),
+     'the handler no longer skips the check when the plan price is zero');
+  ok(/cap = price > 0 \? price \* 0\.45 : FREE_AUTO_CEILING_USD/.test(srcTxt),
+     'it picks a ceiling for every plan instead');
+  ok(/cost:\$\{user\.billingSubject\}/.test(srcTxt),
+     'and charges it to the account or team that is actually paying');
 }
 
 if (report() > 0) process.exitCode = 1;

@@ -73,7 +73,7 @@ const gates = [
   ['EMAIL_API_KEY', /if\(!env\.EMAIL_API_KEY\)/, 'link invitations'],
   ['SENTRY_DSN', /if\s*\(\s*!env\s*\|\|\s*!env\.SENTRY_DSN\s*\)/, 'error monitoring'],
   ['POSTHOG_KEY', /if\s*\(\s*env\s*&&\s*env\.POSTHOG_KEY\s*\)/, 'product analytics'],
-  ['ANTHROPIC_API_KEY', /if\(!env\.ANTHROPIC_API_KEY\)/, 'the web agent model call']
+  ['AMV_MODEL_KEY', /if\(!_modelKey\(env\)\)/, 'the web agent model call']
 ];
 gates.forEach(([key, re, what]) => {
   ok(re.test(src), `${what} checks for ${key} before using it`, key);

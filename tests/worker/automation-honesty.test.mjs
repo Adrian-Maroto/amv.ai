@@ -96,7 +96,7 @@ section('The free tier costs cents, by construction');
   const real = globalThis.fetch;
   globalThis.fetch = async (url, init) => { sent = JSON.parse(init.body); return new Response(JSON.stringify({ content: [{ type:'text', text:'ok' }], usage:{} }), { status: 200 }); };
   try {
-    await W._autoExecute(Object.assign(makeEnv(), { ANTHROPIC_API_KEY: 'k' }),
+    await W._autoExecute(Object.assign(makeEnv(), { AMV_MODEL_KEY: 'k' }),
       { kind: 'research', detail: 'watch the market', tier: 'free' }, b);
   } finally { globalThis.fetch = real; }
   ok(sent.model === W.ENGINES['amv-pulse'].model, 'the cheapest engine runs it', sent.model);

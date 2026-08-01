@@ -142,7 +142,7 @@ const AMV_API = {
     // state-creating endpoints. Metered/idempotent POSTs (AI proxy, sync) still retry.
     const noRetry = o.noRetry || /^\/auth\//.test(path)
       || /\/(stripe|paypal|pay|subscribe|capture)/.test(path)
-      || /\/(team\/(invite|join|remove|setrole|share)|market\/(publish|buy|withdraw|review|install)|deploy|sms\/register|widget\/save)/.test(path);
+      || /\/(team\/(invite|join|remove|leave|role|share|unshare|data|task\/(create|update))|market\/(publish|buy|withdraw|review|install)|deploy|sms\/register|widget\/save)/.test(path);
     const MAX = noRetry ? 0 : 2;        // up to 2 retries (3 total attempts)
 
     /* AMV-061: a request with no deadline can hang forever.

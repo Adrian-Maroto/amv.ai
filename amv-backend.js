@@ -98,6 +98,16 @@ const RAW_TO_KEY = {
 };
 const PLAN_RANK = { free: 0, pro: 1, elite: 2, ultra: 3 };
 
+/* The model provider's key, under an AMV name.
+
+   AMV_MODEL_KEY is the name to set. The legacy name is still accepted so an
+   existing deployment does not stop answering the moment this ships - it is a
+   fallback, not a second supported setting, and every message, doc and readiness
+   check names AMV_MODEL_KEY only. */
+function _modelKey(env){
+  return (env && (env.AMV_MODEL_KEY || env.ANTHROPIC_API_KEY)) || '';
+}
+
 /* =====================================================================
    AMV-065: SMART ROUTING - what "AMV Auto" was supposed to be.
    Auto is the DEFAULT model and its description promises it "automatically
@@ -758,7 +768,7 @@ async function autoList(request, env){
   /* What this account can actually DO with an automation, so the app promises
      that and nothing more: whether results can reach an inbox, and whether the
      plan can run background work at all. */
-  const budget = _autoBudget((await DB.get(env, 'ent', user.email)) || { plan: 'free' });
+  const budget = await _budgetFor(env, user);
   return json({ ok:true, items: rec.items||[], results: (rec.results||[]).slice(-AUTO_MAX_RESULTS),
                 emailReady: !!env.EMAIL_API_KEY, canSchedule: budget.ceiling > 0, plan: budget.plan,
                 // What this account may have, so the app offers exactly that.
@@ -794,6 +804,18 @@ const FREE_AUTO_REPEAT       = 'weekly';
 const FREE_AUTO_CEILING_USD  = 0.10;      // hard monthly cap for a free account
 const FREE_AUTO_MAX_TOKENS   = 1200;
 
+/* The budget for a REQUEST, as opposed to for an entitlement record.
+
+   requireUser has already resolved the effective plan, including a team's
+   (AMV-100), so re-reading the entitlement here would cost a read and miss the
+   team plan entirely. The fallback is not decoration: treating a missing plan
+   as free would silently shape a paying customer's automation down to one
+   weekly job, and they would have no way to tell why. */
+async function _budgetFor(env, user){
+  if(user && user.plan) return _autoBudget({ plan: user.plan, custom: user.customCfg });
+  return _autoBudget((await DB.get(env, 'ent', (user && user.email) || '')) || { plan: 'free' });
+}
+
 function _autoBudget(ent){
   const plan = _planOf(ent || {});
   const PLAN_PRICE = { pro: 15, elite: 75, ultra: 200 };
@@ -822,7 +844,7 @@ async function autoCreate(request, env){
   /* Every account can schedule background work; what differs is how much.
      A free account gets one, weekly, without web search - and is told exactly
      that at the moment it matters, rather than finding out from a cron. */
-  const budget = _autoBudget((await DB.get(env, 'ent', user.email)) || { plan: 'free' });
+  const budget = await _budgetFor(env, user);
   /* Email delivery is the whole point of "have it ready when I wake up", and it
      only works if an email provider is configured. Rather than accepting the
      request and delivering nowhere, we downgrade to in-app and SAY which one
@@ -978,7 +1000,7 @@ async function _autoExecute(env, item, budget){
     method:'POST',
     headers:{
       'Content-Type':'application/json',
-      'x-api-key': env.ANTHROPIC_API_KEY,
+      'x-api-key': _modelKey(env),
       'anthropic-version':'2023-06-01'
     },
     body: JSON.stringify(body)
@@ -1070,9 +1092,14 @@ async function runDueAutomations(env){
        compute its own and they could drift. A free account now has a small real
        ceiling rather than zero, which is what lets its one weekly job run. */
     const ent = (await DB.get(env, 'ent', email)) || { plan: 'free' };
-    const budget = _autoBudget(ent);
+    /* AMV-100: the cron runs outside requireUser, so it resolves the same
+       subject by hand. Without this a team member's scheduled work would spend
+       against a private ceiling the team is not paying for - the seat would
+       come with its own second budget. */
+    const sub = await _billingSubjectOf(env, email, ent);
+    const budget = _autoBudget({ plan: sub.plan, custom: sub.customCfg });
     const costCeiling = budget.ceiling;
-    const costName = `cost:${email}:${monthKey()}`;
+    const costName = `cost:${sub.subject}:${monthKey()}`;
 
     for(const item of rec.items){
       scanned++;
@@ -1445,7 +1472,7 @@ async function _webAskModel(env, sys, prompt){
   try{
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method:'POST',
-      headers:{ 'Content-Type':'application/json', 'x-api-key':env.ANTHROPIC_API_KEY, 'anthropic-version':'2023-06-01' },
+      headers:{ 'Content-Type':'application/json', 'x-api-key': _modelKey(env), 'anthropic-version':'2023-06-01' },
       body: JSON.stringify({ model:'claude-haiku-4-5-20251001', max_tokens:400, system:sys,
         messages:[{ role:'user', content:prompt }] })
     });
@@ -1886,7 +1913,7 @@ async function browserRun(request, env, ctx){
   // Feature-detect so a deploy without the binding degrades honestly.
   if(!env.BROWSER)
     return json({ error:'Web automation is not enabled on this deployment. Add the Browser Rendering binding (see DEPLOY.md) and it starts working with no other change.', code:'needs_service' }, 503);
-  if(!env.ANTHROPIC_API_KEY)
+  if(!_modelKey(env))
     return json({ error:'Web automation needs the AI key to read pages and decide actions.', code:'needs_key' }, 503);
 
   const started = Date.now();
@@ -2774,6 +2801,7 @@ export default {
         case '/team/join':       return teamJoin(request, env);
         case '/team/members':    return teamMembers(request, env);
         case '/team/remove':     return teamRemove(request, env);
+        case '/team/leave':      return teamLeave(request, env);
         case '/team/role':       return teamSetRole(request, env);
         case '/team/audit':      return teamAuditLog(request, env);
         case '/team/data':       return teamData(request, env);
@@ -3281,27 +3309,133 @@ async function authDeleteAccount(request, env) {
    A team has an owner, members with roles, and shared data (projects,
    prompts, memory). Stored in KV: team:{id} and teammember lookups.
    ============================================================ */
+/* =====================================================================
+   AMV-100  SEATS - a team is one plan, shared
+
+   The team machinery existed and was sound: invites bound to a recipient,
+   redeemed atomically, roles enforced server-side, everything audited. Two
+   things stopped it being a product.
+
+   There was no seat limit, and joining a team gave you shared data but not the
+   plan - so a team was a filing cabinet, not a subscription.
+
+   Making members inherit the plan is the obvious fix and the dangerous one:
+   the cost ceiling and every quota are keyed by EMAIL, so fifty members on one
+   Pro plan would have been fifty times the compute for fifteen dollars. A
+   shared plan has to mean a shared budget or it is a hole with a login screen.
+
+   So the billing SUBJECT moves. A member of a team spends the team's counters,
+   not their own - one plan, one ceiling, one allowance, however many people
+   are drawing on it. That is what a shared plan already means to the person
+   paying for it, and it is the only version that cannot be farmed. */
+/* Seats by plan. Teams is packaged as an Elite capability and the plans page
+   says so, so Free and Pro get exactly one seat - themselves - which is the same
+   thing as not having a team. Enforced on the SERVER as well as in the app,
+   because a gate that only exists in the browser is not a gate. */
+const TEAM_MIN_PLAN = 'elite';
+const TEAM_SEATS = { free: 1, pro: 1, elite: 10, ultra: 25 };
+/* Where a custom plan sits against the named tiers.
+
+   `custom` is a price, not a rank, so it cannot be looked up in PLAN_RANK. It
+   was being treated as top-tier, which meant a twenty dollar custom plan
+   cleared the Elite-and-above gate and would have had team rights costing more
+   than the plan. Ranking it by what was actually paid is the only version that
+   does not sell Elite for less than Elite. */
+const PLAN_PRICE_TIERS = [[200, 3], [75, 2], [15, 1]];
+function _customRank(cfg){
+  const price = (cfg && +cfg.price) || 0;
+  for(const [at, rank] of PLAN_PRICE_TIERS) if(price >= at) return rank;
+  return 0;
+}
+
+/* The team's plan, with the owner's lapse honoured.
+
+   `team.plan` is a CACHE of the owner's plan, and `_planOf` is time-based: the
+   grace window closes with no write happening anywhere. Reading the cache
+   directly would keep a whole team on Elite indefinitely after the card that
+   paid for it stopped working - the exact shape of "one code path uses ent.plan
+   and hands out compute nobody paid for", one level of indirection along. */
+function _teamPlan(team){
+  if(!team) return 'free';
+  return _planOf({ plan: team.plan, pastDueSince: team.pastDueSince });
+}
+
+/* Keep the cached copy current at every point the owner's billing can change.
+   setEntitlement is not enough on its own: a failed payment writes the
+   entitlement record directly, and never went near the team. */
+async function _refreshTeamPlan(env, email, ent){
+  try{
+    const tid = (ent && ent.teamId) || null;
+    if(!tid) return;
+    const team = await DB.get(env, 'team', tid);
+    if(!team || team.ownerEmail !== String(email||'').toLowerCase()) return;
+    team.plan = (ent && ent.plan) || 'free';   /* sold: paired with pastDueSince below */
+    if(ent && ent.pastDueSince) team.pastDueSince = ent.pastDueSince; else delete team.pastDueSince;
+    team.customCfg = (ent && ent.custom) || null;
+    await DB.put(env, 'team', tid, team);
+  }catch(e){ /* the cache refreshes on the next write; never fail a billing event */ }
+}
+
+function _teamSeatLimit(plan, customCfg){
+  if(plan === 'custom'){
+    /* An explicit seat count if one was negotiated, otherwise the seats of the
+       tier the price actually reaches. Returning 1 here - which is what an
+       unset field used to do - handed a custom Elite-tier customer a team they
+       could not put anybody in, while the app told them they had one. */
+    if(customCfg && customCfg.seats) return Math.max(1, Math.min(500, +customCfg.seats || 1));
+    const rank = _customRank(customCfg);
+    return rank >= 3 ? TEAM_SEATS.ultra : rank >= 2 ? TEAM_SEATS.elite : 1;
+  }
+  return TEAM_SEATS[plan] || 1;
+}
+
 async function teamCreate(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
   const { name } = await request.json().catch(()=>({}));
+  /* Creating a team requires the plan that includes it. JOINING one does not -
+     the whole point of a seat is that the team pays for the person filling it,
+     so a free account invited to an Elite team gets in without buying anything. */
+  if(_planRankOf(user.plan, user.customCfg) < _planRankOf(TEAM_MIN_PLAN)){
+    return json({ error: 'Team workspaces are included with Elite and above. Upgrade to create one.',
+                  code: 'plan_required', requires: TEAM_MIN_PLAN }, 402);
+  }
   const id = 'team_' + crypto.randomUUID().replace(/-/g,'');
   const team = {
     id, name: name||'My Team', ownerEmail: user.email,
     members: [{ email:user.email, role:'owner', joinedAt:Date.now() }],
     createdAt: Date.now(), data:{}
   };
+  /* The owner's plan is cached on the team so a member's request costs ONE
+     extra read rather than two. Every billing event refreshes it, and the
+     lapse marker rides along so `_teamPlan` can honour a grace window that
+     expires with no write at all. */
+  const ownerEnt = (await DB.get(env, 'ent', user.email)) || { plan: 'free' };
+  team.plan = ownerEnt.plan || 'free';   /* sold: the lapse rides alongside and _teamPlan applies it at read */
+  if(ownerEnt.pastDueSince) team.pastDueSince = ownerEnt.pastDueSince;
+  team.customCfg = ownerEnt.custom || null;
   await DB.put(env, 'team', id, team);
   await env.AMV_KV.put(`userteam:${user.email}`, id);
+  await _setUserTeam(env, user.email, id);
   await _teamAudit(env, team, user.email, 'team_created', { name: team.name });
-  return json({ ok:true, team });
+  return json({ ok:true, team, seats: { used: 1, limit: _teamSeatLimit(_teamPlan(team), team.customCfg) } });
 }
 async function teamGet(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
   const tid = await env.AMV_KV.get(`userteam:${user.email}`);
   if(!tid) return json({ ok:true, team:null });
-  return json({ ok:true, team: await DB.get(env, 'team', tid) });
+  const team = await DB.get(env, 'team', tid);
+  if(!team || !_role(team, user.email)) return json({ ok:true, team:null });
+  /* Seats travel with the team record so the app never has to guess which
+     members the plan is currently covering (AMV-100). */
+  const limit = _teamSeatLimit(_teamPlan(team), team.customCfg);
+  const seated = new Set(_teamSeated(team).map(m => m.email));
+  const out = Object.assign({}, team, {
+    members: (team.members||[]).map(m => Object.assign({}, m, { seated: seated.has(m.email) })),
+    seats: { used: (team.members||[]).length, limit, over: Math.max(0, (team.members||[]).length - limit) },
+  });
+  return json({ ok:true, team: out });
 }
 async function _teamOf(env, email){
   const tid = await env.AMV_KV.get(`userteam:${email}`);
@@ -3372,6 +3506,14 @@ async function teamInvite(request, env){
   if(!_can(team, user.email, 'invite')) return json({ error:'you don\u2019t have permission to invite' }, 403);
   const invitee = String(email||'').toLowerCase().trim();
   if(!invitee) return json({ error:'email required' }, 400);
+  /* Seats are what a team plan sells. Checked here so the person inviting finds
+     out now, and again at join, because the plan can shrink in between. */
+  const limit = _teamSeatLimit(_teamPlan(team), team.customCfg);
+  if((team.members||[]).length >= limit && !(team.members||[]).some(m=>m.email===invitee)){
+    return json({ error: 'Your plan includes ' + limit + ' seat' + (limit===1?'':'s') +
+                         '. Upgrade to add more people, or remove someone first.',
+                  code: 'seat_limit', seats: { used: team.members.length, limit } }, 402);
+  }
   // can't grant a role higher than allowed; only owner/admin roles are 'admin'/'member'
   const inviteRole = (role==='admin') ? 'admin' : 'member';
   // create a high-entropy invite token (256 bits) bound to THIS recipient email
@@ -3397,11 +3539,20 @@ async function teamJoin(request, env){
   if(!team0) return json({ error:'team gone' }, 404);
   const team = team0;
   if(!team.members.find(m=>m.email===user.email)){
+    /* Re-checked at redemption: the invite may have been sent when there was
+       room and redeemed after the plan was downgraded. Letting it through would
+       hand out a seat nobody is paying for. */
+    const limit = _teamSeatLimit(_teamPlan(team), team.customCfg);
+    if((team.members||[]).length >= limit){
+      return json({ error: 'This team has no free seats right now. Ask the owner to upgrade or free one up.',
+                    code: 'seat_limit' }, 402);
+    }
     team.members.push({ email:user.email, role:inv.role||'member', joinedAt:Date.now() });
     await DB.put(env, 'team', team.id, team);
     await _teamAudit(env, team, user.email, 'member_joined', { role: inv.role||'member' });
   }
   await env.AMV_KV.put(`userteam:${user.email}`, team.id);
+  await _setUserTeam(env, user.email, team.id);
   await env.AMV_KV.delete(`invite:${token}`);
   return json({ ok:true, team });
 }
@@ -3410,7 +3561,15 @@ async function teamMembers(request, env){
   if(!user) return json({ error:'unauthorized' }, 401);
   const team = await _teamOf(env, user.email);
   if(!team) return json({ ok:true, members:[] });
-  return json({ ok:true, members: team.members });
+  /* Say which seats the plan is actually paying for. A downgrade silently
+     stops covering the people who joined last, and the owner is the only one
+     who can fix it - so they have to be able to see it. */
+  const limit = _teamSeatLimit(_teamPlan(team), team.customCfg);
+  const seated = new Set(_teamSeated(team).map(m => m.email));
+  return json({ ok:true,
+    members: team.members.map(m => Object.assign({}, m, { seated: seated.has(m.email) })),
+    plan: _teamPlan(team),
+    seats: { used: (team.members||[]).length, limit, over: Math.max(0, (team.members||[]).length - limit) } });
 }
 async function teamRemove(request, env){
   const user = await requireUser(request, env);
@@ -3426,8 +3585,39 @@ async function teamRemove(request, env){
   team.members = team.members.filter(m=>m.email!==target || m.role==='owner');
   await DB.put(env, 'team', team.id, team);
   await env.AMV_KV.delete(`userteam:${target}`);
+  // Off the team means back on their own plan and their own counters.
+  await _setUserTeam(env, target, null);
   await _teamAudit(env, team, user.email, 'member_removed', { target });
   return json({ ok:true, members:team.members });
+}
+
+/* Leave a team you are on.
+
+   Removal was the only way off a team, which meant the only person who could
+   end somebody's membership was the person whose plan they were on. That is the
+   wrong way round: joining is the member's decision, so leaving has to be too -
+   and while they are on it their usage is pooled with the team's, which is not
+   something anybody should need permission to stop.
+
+   The owner is the exception, and deliberately: their subscription IS the team,
+   so walking away would leave everyone else holding a plan nobody pays for.
+   They are told to hand it over or cancel instead of being quietly refused. */
+async function teamLeave(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'unauthorized' }, 401);
+  const team = await _teamOf(env, user.email);
+  if(!team) return json({ error:'no team' }, 404);
+  if(_role(team, user.email) === 'owner'){
+    return json({ error: 'You own this team, so leaving it would leave everyone else on a plan nobody is paying for. Transfer ownership first, or remove the other members.',
+                  code: 'owner_cannot_leave' }, 400);
+  }
+  team.members = team.members.filter(m => m.email !== user.email);
+  await DB.put(env, 'team', team.id, team);
+  await env.AMV_KV.delete(`userteam:${user.email}`);
+  await _setUserTeam(env, user.email, null);
+  await _teamAudit(env, team, user.email, 'member_left', {});
+  await _userEvent(env, request, user.email, 'team_left', { team: team.id });
+  return json({ ok:true, left: team.id });
 }
 
 /* Change a member's role (promote to admin / demote to member). */
@@ -3830,6 +4020,14 @@ async function requireUser(request, env) {
   data.customCfg = e.custom || null;   // { price, monthTokens, dayTokens, rpm } set at checkout
   data.billing = _billingState(e);
   data.bonusTokens = _bonusTokens(e);  // AMV-075 referral capacity, already expiry-filtered
+  /* AMV-100: a team member draws on the TEAM's plan and the TEAM's counters.
+     `billingSubject` is what every quota is keyed by from here - see
+     _billingSubjectOf for why the plan and the counters must move together. */
+  const sub = await _billingSubjectOf(env, data.email, e);
+  data.billingSubject = sub.subject;
+  data.plan = sub.plan;
+  data.customCfg = sub.customCfg;
+  if (sub.teamId) { data.teamId = sub.teamId; data.teamRole = sub.teamRole; data.teamSeated = sub.seated; }
   return data;
 }
 
@@ -3921,7 +4119,7 @@ async function videoGenerate(request, env) {
   /* Reserve one video against the monthly cap ATOMICALLY, before we spend a
      cent at the provider. Same reasoning as the token quota: a plain
      read-then-check lets a burst of parallel requests all pass. */
-  const vName = `vid:${user.email}:${monthKey()}`;
+  const vName = `vid:${user.billingSubject || user.email}:${monthKey()}`;
   const res = await counter(env, vName, {
     op: 'reserve', amount: 1, cap: limits.videosMonth, ttlMs: 86400000 * 70
   });
@@ -4027,7 +4225,7 @@ async function videoStatus(request, env) {
       const limits = effectiveLimits(user);
       if (limits.videosMonth && await _claimOnce(env, 'vidrefund', id)) {
         try {
-          await counter(env, `vid:${user.email}:${monthKey()}`,
+          await counter(env, `vid:${user.billingSubject || user.email}:${monthKey()}`,
             { op: 'incr', amount: -1, ttlMs: 86400000 * 70 });
         } catch (e) {}
       }
@@ -4051,7 +4249,7 @@ async function videoList(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'Please sign in again.' }, 401);
   const limits = effectiveLimits(user);
-  const used = (await counter(env, `vid:${user.email}:${monthKey()}`, { op: 'get' })).value || 0;
+  const used = (await counter(env, `vid:${user.billingSubject || user.email}:${monthKey()}`, { op: 'get' })).value || 0;
   return json({
     ok: true,
     configured: _videoConfigured(env),
@@ -4101,6 +4299,11 @@ async function aiProxy(request, env, ctx) {
   // 2) RATE LIMIT (per account, per minute) - ATOMIC test-and-increment.
   //    A Durable Object serializes this op, so parallel requests can't race
   //    past the limit (the bug a plain KV read-then-write would have).
+  //
+  //    Deliberately per EMAIL, not per billing subject: tokens and cost are a
+  //    budget and a team shares one, but requests-per-minute is a burst control
+  //    on one human at one keyboard. Pooling it would have ten teammates
+  //    throttling each other for typing at the same time (AMV-100).
   const rlName = `rl:${user.email}:${Math.floor(Date.now() / 60000)}`;
   const rlRes = await counter(env, rlName, { op: 'rateCheck', limit: limits.rpm, windowMs: 60000 });
   if (!rlRes.allowed) { audit(env,'rate_block',{email:user.email}); return json({ error: 'Rate limit reached. Slow down a moment.', code: 'rate_limited' }, 429); }
@@ -4119,8 +4322,12 @@ async function aiProxy(request, env, ctx) {
   // requests that actually fit under the cap get through. meterStream() then
   // reconciles the reservation against what the call really cost (refunding the
   // difference), so nobody is over-billed for reserving conservatively.
-  const dName = `usg:${user.email}:${todayKey()}`;
-  const mName = `usg:${user.email}:${monthKey()}`;
+  /* Keyed by the billing SUBJECT, not the email: a team shares one plan, so it
+     shares one allowance. Keying by email would multiply the plan by the number
+     of people on it (AMV-100). */
+  const subject = user.billingSubject || user.email;
+  const dName = `usg:${subject}:${todayKey()}`;
+  const mName = `usg:${subject}:${monthKey()}`;
 
   // Upper bound for this call: what we're sending + the most it can generate.
   const estIn  = _estimateReserveInput(body);
@@ -4163,7 +4370,7 @@ async function aiProxy(request, env, ctx) {
   let priceForBackstop = 0;
   if (user.plan === 'custom' && user.customCfg && user.customCfg.price) priceForBackstop = user.customCfg.price;
   else if (PLAN_PRICE[user.plan]) priceForBackstop = PLAN_PRICE[user.plan];
-  const costName = `cost:${user.email}:${monthKey()}`;
+  const costName = `cost:${user.billingSubject || user.email}:${monthKey()}`;
   if (priceForBackstop > 0) {
     const costCeiling = priceForBackstop * 0.45;   // keep >=55% margin on every plan, worst case
     const capRes = await counter(env, costName, { op: 'checkCap', cap: costCeiling });
@@ -4224,7 +4431,7 @@ async function aiProxy(request, env, ctx) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-api-key': env.ANTHROPIC_API_KEY,           // KEY HIDDEN SERVER-SIDE
+      'x-api-key': _modelKey(env),           // KEY HIDDEN SERVER-SIDE
       'anthropic-version': '2023-06-01',
       /* Prompt caching is generally available; the old beta header is a no-op. */
     },
@@ -4268,7 +4475,7 @@ async function aiProxy(request, env, ctx) {
     // A 401/403 from the model means your API key is bad/expired/over-quota -
     // that breaks the ENTIRE product for everyone, so alert loudly and fast.
     if (upstream.status === 401 || upstream.status === 403) {
-      ctx.waitUntil(alertOnce(env, 'model_auth_fail', `🚨 Model API rejected our key (${upstream.status}): ${e?.error?.message || 'auth error'}. AI is DOWN for all users - check ANTHROPIC_API_KEY / billing.`, 10));
+      ctx.waitUntil(alertOnce(env, 'model_auth_fail', `🚨 Model API rejected our key (${upstream.status}): ${e?.error?.message || 'auth error'}. AI is DOWN for all users - check AMV_MODEL_KEY / billing.`, 10));
     } else if (upstream.status >= 500) {
       ctx.waitUntil(alertOnce(env, 'model_5xx', `⚠️ Model API erroring (${upstream.status}). AI responses may be failing.`, 15));
     }
@@ -4802,15 +5009,24 @@ async function usageReport(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'sign in' }, 401);
   const limits = effectiveLimits(user);
-  const dUsed = (await counter(env, `usg:${user.email}:${todayKey()}`, { op: 'get' })).value || 0;
-  const mUsed = (await counter(env, `usg:${user.email}:${monthKey()}`, { op: 'get' })).value || 0;
-  const mCost = (await counter(env, `cost:${user.email}:${monthKey()}`, { op: 'get' })).value || 0;
+  /* The same subject the limits are enforced against, or the screen would show
+     one number while the server refused on another (AMV-100). */
+  const subject = user.billingSubject || user.email;
+  const dUsed = (await counter(env, `usg:${subject}:${todayKey()}`, { op: 'get' })).value || 0;
+  const mUsed = (await counter(env, `usg:${subject}:${monthKey()}`, { op: 'get' })).value || 0;
+  const mCost = (await counter(env, `cost:${subject}:${monthKey()}`, { op: 'get' })).value || 0;
   return json({
     plan: user.plan,
     day: { used: dUsed, limit: limits.dayTokens },
     // `bonus` is the referral capacity folded into the monthly limit above, sent
     // separately so the app can say WHERE the extra allowance came from.
     month: { used: mUsed, limit: limits.monthTokens, costUSD: +mCost.toFixed(4), bonus: limits.bonusTokens || 0 },
+    // Said plainly, because "used" meaning the whole team is a surprise otherwise.
+    /* Only when the counters really are pooled. Somebody on a team who kept
+       their own better plan is NOT sharing, and telling them they are would
+       have them chasing a teammate for usage that is entirely their own. */
+    shared: (user.billingSubject && user.billingSubject !== user.email)
+      ? { team: true, note: 'This allowance is shared with your team.' } : null,
   });
 }
 
@@ -5030,7 +5246,7 @@ async function widgetChat(request, env, ctx) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-api-key': env.ANTHROPIC_API_KEY,
+      'x-api-key': _modelKey(env),
       'anthropic-version': '2023-06-01',
       /* Prompt caching is generally available; the old beta header is a no-op. */
     },
@@ -5274,7 +5490,7 @@ async function verifyToken(token, secret, env = null, expectedTyp = 'access') {
    1. npm i -g wrangler && wrangler login
    2. wrangler kv:namespace create AMV_KV   → put id in wrangler.toml
    3. Secrets:
-        wrangler secret put ANTHROPIC_API_KEY
+        wrangler secret put AMV_MODEL_KEY
         wrangler secret put JWT_SECRET           (LONG random string - 32+ chars)
 
         # OPTIONAL - premium image generation. Set these three and image
@@ -5453,7 +5669,10 @@ async function smsIncoming(request, env, ctx) {
 
   // load their plan + enforce the SAME limits/caps as the web app
   const e = (await DB.get(env, 'ent', email)) || {};
-  const user = { email, plan: _planOf(e), customCfg: e.custom || null };
+  /* Same resolution requireUser does, by hand, because this arrives from Twilio
+     rather than from a signed-in browser (AMV-100). */
+  const sub = await _billingSubjectOf(env, email, e);
+  const user = { email, plan: sub.plan, customCfg: sub.customCfg, billingSubject: sub.subject };
 
   // rate-limit SMS per number (cheap abuse guard) - atomic test-and-increment
   const smsRlName = `sms:rl:${from}:${Math.floor(Date.now() / 60000)}`;
@@ -5465,12 +5684,25 @@ async function smsIncoming(request, env, ctx) {
   const smsDay = await counter(env, smsDayName, { op: 'reserve', amount: 1, cap: 200, ttlMs: 86400000 * 2 });
   if (!smsDay.allowed) return twiml('You\u2019ve reached today\u2019s message limit. It resets tomorrow.');
 
-  // monthly cost backstop - SMS shares the user's profit-safe ceiling
+  /* Monthly cost backstop - SMS shares the account's profit-safe ceiling.
+
+     This used to be skipped entirely when the price was zero, which is exactly
+     the case that needed it: a FREE account could run an agent turn per inbound
+     message with no dollar ceiling at all, bounded only by 200 messages a day
+     per number. Every plan gets a ceiling now, and a free one gets the same
+     small real budget its automations get rather than an unlimited one.
+
+     Keyed by the billing subject so a team's messages come out of the team's
+     budget (AMV-100), which is also the only reading under which the seat the
+     team paid for is the thing being spent. */
   const PLAN_PRICE = { pro: 15, elite: 75, ultra: 200 };
   let price = user.plan === 'custom' && user.customCfg ? user.customCfg.price : (PLAN_PRICE[user.plan] || 0);
-  if (price > 0) {
-    const capRes = await counter(env, `cost:${email}:${monthKey()}`, { op: 'checkCap', cap: price * 0.45 });
-    if (!capRes.allowed) return twiml('You\u2019ve used your plan\u2019s allowance for this cycle. It resets next month.');
+  {
+    const cap = price > 0 ? price * 0.45 : FREE_AUTO_CEILING_USD;
+    const capRes = await counter(env, `cost:${user.billingSubject}:${monthKey()}`, { op: 'checkCap', cap });
+    if (!capRes.allowed) return twiml(price > 0
+      ? 'You\u2019ve used your plan\u2019s allowance for this cycle. It resets next month.'
+      : 'You\u2019ve used what the free plan covers for texting this month. Upgrade for more, or it resets next month.');
   }
 
   // run the agent on the cheapest capable model (SMS replies are short)
@@ -5489,7 +5721,7 @@ async function runSmsAgent(text, env) {
   const sys = 'You are AMV over SMS. Reply in plain text, no markdown, concise (a few sentences max, fits in a text message). The user may ask you to check tasks, summarize, draft, or answer questions. Be direct and useful. Never use em or en dashes; use a plain hyphen (-) instead. ACCURACY: never invent facts, numbers, prices, dates or sources, and never say you did something (checked, sent, booked, completed) unless it actually happened. If you are unsure or cannot verify, say so briefly instead of guessing.';
   const resp = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+    headers: { 'Content-Type': 'application/json', 'x-api-key': _modelKey(env), 'anthropic-version': '2023-06-01' },
     body: JSON.stringify({
       model: 'claude-haiku-4-5-20251001', // cheapest capable - SMS is short Q&A
       max_tokens: 400,
@@ -5975,7 +6207,13 @@ async function referralStatus(request, env) {
    makes a plan change clean - so anything earned separately has to be carried
    across explicitly or it is destroyed by the next upgrade. Referral capacity
    was exactly that: earn a bonus, subscribe, lose the bonus. */
-const ENT_CARRY_KEYS = ['refBonus'];
+/* Fields that survive a plan change. setEntitlement rebuilds the record from
+   scratch, so anything not listed here is destroyed by an upgrade, a downgrade,
+   a Stripe webhook or an admin override. `teamId` belongs here for the same
+   reason `refBonus` does: losing it would silently eject somebody from their
+   team's plan and counters on the next billing event, and the cause would be
+   invisible from the outside. */
+const ENT_CARRY_KEYS = ['refBonus', 'teamId'];
 
 /* AMV-088: aggregates that do not require reading every account.
 
@@ -6005,6 +6243,77 @@ async function _planPopulation(env){
   return out;
 }
 
+/* The team marker lives on the entitlement record, because requireUser already
+   reads that - putting it anywhere else would add a lookup to every single
+   authenticated request for the sake of the few accounts in a team. */
+async function _setUserTeam(env, email, teamId){
+  const em = String(email||'').toLowerCase(); if(!em) return;
+  const ent = (await DB.get(env, 'ent', em)) || { plan: 'free' };
+  if(teamId) ent.teamId = teamId; else delete ent.teamId;
+  await DB.put(env, 'ent', em, ent);
+}
+
+/* AMV-100: the single answer to "whose allowance is this request spending".
+
+   Both halves have to travel together. A member who inherits the team's plan
+   but keeps their own counters is fifty people's compute for one subscription -
+   the cost ceiling, the daily tokens and the monthly tokens are all keyed by
+   subject, so a shared plan has to mean a shared budget or it is a hole with a
+   login screen. Equally, a member whose counters are shared but who does not
+   inherit the plan is paying nothing and getting nothing, which is just a
+   filing cabinet.
+
+   The one case that is NOT pooled: somebody who already pays for a plan better
+   than the team's. Joining a Pro team must never take away the Ultra they are
+   paying for on their own card, so they keep their plan and their own counters
+   and cost the team nothing. */
+function _planRankOf(plan, cfg){ return plan === 'custom' ? _customRank(cfg) : (PLAN_RANK[plan] || 0); }
+
+/* Which members the current plan actually pays for.
+
+   Invite and join both refuse a seat past the limit, but neither of them runs
+   when the OWNER downgrades. Without this, a ten-person Elite team could drop to
+   Pro and keep handing ten people an Elite plan for fifteen dollars - the seat
+   check would be a formality anyone could walk around by upgrading, filling the
+   team and downgrading again.
+
+   The order is fixed rather than arbitrary so the same people keep their seats
+   on every request: the owner first, because it is their subscription, then by
+   join date. A downgrade takes the seat from whoever joined last, which is the
+   only ordering a user would predict. */
+function _teamSeated(team){
+  const limit = _teamSeatLimit(_teamPlan(team), team.customCfg);
+  const ms = (team.members || []).slice().sort((a, b) => {
+    const ao = a.role === 'owner', bo = b.role === 'owner';
+    if(ao !== bo) return ao ? -1 : 1;
+    return (a.joinedAt || 0) - (b.joinedAt || 0);
+  });
+  return ms.slice(0, limit);
+}
+
+async function _billingSubjectOf(env, email, ent){
+  const em = String(email || '').toLowerCase();
+  const e = ent || (await DB.get(env, 'ent', em)) || {};
+  const out = { subject: em, plan: _planOf(e), customCfg: e.custom || null,
+                teamId: null, teamRole: null, seated: false };
+  if(!e.teamId) return out;
+  const team = await DB.get(env, 'team', e.teamId);
+  /* Membership is the source of truth, exactly as in _teamOf - a stale pointer
+     left on an entitlement record must not keep buying compute after removal. */
+  const m = team && (team.members || []).find(x => x.email === em);
+  if(!m) return out;
+  out.teamId = team.id;
+  out.teamRole = m.role || 'member';
+  out.seated = _teamSeated(team).some(x => x.email === em);
+  const teamPlan = _teamPlan(team);
+  if(out.seated && _planRankOf(teamPlan, team.customCfg) >= _planRankOf(out.plan, out.customCfg)){
+    out.plan = teamPlan;
+    out.customCfg = team.customCfg || null;
+    out.subject = 'team:' + team.id;
+  }
+  return out;
+}
+
 async function setEntitlement(env, email, plan, extra = {}) {
   const em = email.toLowerCase();
   const prev = (await DB.get(env, 'ent', em)) || {};
@@ -6013,6 +6322,10 @@ async function setEntitlement(env, email, plan, extra = {}) {
   await DB.put(env, 'ent', em, ent);
   // Keep the population counters true at the one place a plan can change.
   await _planPopShift(env, prev.plan ? _planOf(prev) : null, _planOf(ent));
+  /* If this account owns a team, the team's cached plan follows it - otherwise
+     an upgrade would not reach the seats it just paid for, and a downgrade
+     would leave them on a plan nobody is paying for (AMV-100). */
+  await _refreshTeamPlan(env, em, Object.assign({}, ent, { teamId: ent.teamId || prev.teamId }));
   audit(env, 'entitlement_set', { email, plan });
   /* Also on the account's own activity log. A plan change nobody made is how a
      compromised account usually announces itself. There is no request here -
@@ -6098,6 +6411,10 @@ async function _markPastDue(env, email, detail) {
   if (ent.pastDueSince) return;                          // keep the FIRST failure date
   ent.pastDueSince = Date.now();
   await DB.put(env, 'ent', em, ent);
+  /* A failed payment never touched the team, so a team whose owner stopped
+     paying kept its plan until something else happened to write the record -
+     and the grace window expires on a clock, not on a write (AMV-100). */
+  await _refreshTeamPlan(env, em, ent);
   audit(env, 'payment_failed', Object.assign({ email: em, plan: ent.plan }, detail || {}));
 }
 /* A payment succeeded - the account is current again. */
@@ -6107,6 +6424,7 @@ async function _clearPastDue(env, email) {
   if (!ent || !ent.pastDueSince) return;
   delete ent.pastDueSince;
   await DB.put(env, 'ent', em, ent);
+  await _refreshTeamPlan(env, em, ent);
   audit(env, 'payment_recovered', { email: em, plan: ent.plan });
 }
 
@@ -7715,7 +8033,7 @@ async function apiKeyCreate(request, env) {
   /* An API key is how an account is spent without anyone watching, so a lapsed
      or free account does not get one - the same rule the rest of the paid
      surface uses, applied where it can be explained. */
-  const budget = _autoBudget((await DB.get(env, 'ent', user.email)) || { plan: 'free' });
+  const budget = await _budgetFor(env, user);
   if (budget.free) {
     return json({ error: 'API keys are part of a paid plan. Upgrade and you can create one straight away.',
                   code: 'plan_required' }, 402);
@@ -7911,9 +8229,9 @@ function _readinessReport(env) {
   /* `blocking` means the product does not do its core job without it.
      Everything else is a real feature that degrades honestly. */
   const items = [
-    { id: 'ai', name: 'AI engine', blocking: true, on: _has(env, 'ANTHROPIC_API_KEY'),
+    { id: 'ai', name: 'AI engine', blocking: true, on: !!_modelKey(env),
       turnsOn: 'Every answer, agent, build, document and scheduled task.',
-      how: put('ANTHROPIC_API_KEY') },
+      how: put('AMV_MODEL_KEY') },
     { id: 'auth', name: 'Accounts and sessions', blocking: true, on: _has(env, 'JWT_SECRET'),
       turnsOn: 'Sign-in, sync and every authenticated route. Without it no token can be issued or verified.',
       how: put('JWT_SECRET') },
@@ -8264,13 +8582,19 @@ async function adminUser(request, env) {
   }
   // default: inspect
   const ent = await DB.get(env, 'ent', email);
-  const monthCost = (await counter(env, `cost:${email}:${month}`, { op: 'get' })).value || 0;
-  const monthTok = (await counter(env, `usg:${email}:${month}`, { op: 'get' })).value || 0;
-  const dayTok = (await counter(env, `usg:${email}:${today}`, { op: 'get' })).value || 0;
+  /* Read the counters this account actually spends against. A team member's own
+     key is empty by design, and showing an operator three zeros for somebody who
+     is using the product every day would be worse than showing nothing. */
+  const sub = await _billingSubjectOf(env, email, ent);
+  const monthCost = (await counter(env, `cost:${sub.subject}:${month}`, { op: 'get' })).value || 0;
+  const monthTok = (await counter(env, `usg:${sub.subject}:${month}`, { op: 'get' })).value || 0;
+  const dayTok = (await counter(env, `usg:${sub.subject}:${today}`, { op: 'get' })).value || 0;
   return json({
     ok: true, email,
     entitlement: ent || { plan: 'free' },
-    usage: { dayTokens: dayTok, monthTokens: monthTok, monthCostUSD: +monthCost.toFixed(3) },
+    team: sub.teamId ? { id: sub.teamId, role: sub.teamRole, plan: sub.plan, shared: sub.subject !== email } : null,
+    usage: { dayTokens: dayTok, monthTokens: monthTok, monthCostUSD: +monthCost.toFixed(3),
+             subject: sub.subject, shared: sub.subject !== email },
   });
 }
 

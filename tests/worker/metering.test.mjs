@@ -23,7 +23,7 @@ const kv = new Map();
 const counters = new Map();
 
 const env = {
-  ANTHROPIC_API_KEY: 'sk-test',
+  AMV_MODEL_KEY: 'sk-test',
   JWT_SECRET: 'secret',
   // There is ALSO a global daily spend ceiling across all users (a real feature -
   // it stops one bad day becoming a huge bill). Raise it here so it doesn't mask

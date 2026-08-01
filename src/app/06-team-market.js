@@ -7,11 +7,15 @@
 const AMVTeam = {
   _cache:null,
   enabled(){ try{ return !!(window.AMV_API && AMV_API.live && AMV_API.token); }catch(e){ return false; } },
-  async get(){ if(!this.enabled()) return null; try{ const r=await AMV_API._fetch('/team/get',{method:'POST',body:'{}'}); const d=await r.json(); this._cache=d.team; return d.team; }catch(e){ return null; } },
+  /* Throws rather than returning null on failure. A network error is NOT "you
+     have no team" - answering it that way showed an existing team's owner a
+     create-a-team form, and a member an upgrade wall, for a team that exists. */
+  async get(){ if(!this.enabled()) return null; const r=await AMV_API._fetch('/team/get',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error) throw new Error(d.error); this._cache=d.team; return d.team; },
   async create(name){ const r=await AMV_API._fetch('/team/create',{method:'POST',body:JSON.stringify({name})}); const d=await r.json(); if(d.error) throw new Error(d.error); this._cache=d.team; return d.team; },
-  async invite(email,role){ const r=await AMV_API._fetch('/team/invite',{method:'POST',body:JSON.stringify({email,role})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
+  async invite(email,role){ const r=await AMV_API._fetch('/team/invite',{method:'POST',body:JSON.stringify({email,role})}); const d=await r.json(); if(d.error){ const e=new Error(d.error); e.code=d.code; e.seats=d.seats; throw e; } return d; },
   async join(token){ const r=await AMV_API._fetch('/team/join',{method:'POST',body:JSON.stringify({token})}); const d=await r.json(); if(d.error) throw new Error(d.error); this._cache=d.team; return d.team; },
   async remove(email){ const r=await AMV_API._fetch('/team/remove',{method:'POST',body:JSON.stringify({email})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d.members; },
+  async leave(){ const r=await AMV_API._fetch('/team/leave',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error){ const e=new Error(d.error); e.code=d.code; throw e; } this._cache=null; return true; },
   async setRole(email,role){ const r=await AMV_API._fetch('/team/role',{method:'POST',body:JSON.stringify({email,role})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d.members; },
   async audit(){ try{ const r=await AMV_API._fetch('/team/audit',{method:'POST',body:'{}'}); const d=await r.json(); return d.log||[]; }catch(e){ return []; } },
   myRole(team){ if(!team||!S.user) return null; const m=(team.members||[]).find(x=>x.email===(S.user.email||'').toLowerCase()); return m?m.role:null; },
@@ -51,7 +55,7 @@ function renderTeamView(){
       '<div class="team-feat"><span class="team-feat-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3"/></svg></span><div><b>Roles &amp; permissions</b><span>Owner, admin, and member - you control access</span></div></div>'+
       '<div class="team-feat"><span class="team-feat-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3 3 3 0 0 0-3 3 3 3 0 0 0 0 6 3 3 0 0 0 3 3 3 3 0 0 0 6 0 3 3 0 0 0 3-3 3 3 0 0 0 0-6 3 3 0 0 0-3-3 3 3 0 0 0-3-3z"/></svg></span><div><b>Shared team memory</b><span>AMV remembers context across the whole team</span></div></div>'+
       '<div class="team-feat"><span class="team-feat-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg></span><div><b>Invite by email</b><span>Add teammates in seconds</span></div></div>'+
-      '<div class="team-feat"><span class="team-feat-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg></span><div><b>Team-grade limits</b><span>Higher usage and more jobs at once</span></div></div>'+
+      '<div class="team-feat"><span class="team-feat-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg></span><div><b>Seats on one subscription</b><span>Elite includes 10, Ultra 25. Everyone shares the plan\u2019s allowance - one bill, not one per person.</span></div></div>'+
     '</div></div>';
 
   // The clear plan answer - shown whenever the user can't yet use Teams
@@ -85,21 +89,33 @@ function renderTeamView(){
     return;
   }
 
-  // Backend is live but the user's plan doesn't include Teams → gate clearly
-  if(!hasTeamPlan){
-    vc.innerHTML='<div class="sv fi"><div class="vi">'+
-      '<span class="eyebrow">Collaboration</span>'+
-      '<h2>Team workspaces</h2>'+
-      '<p class="vsub">Shared projects, prompts, memory, and roles - for your whole team.</p>'+
-      teamExplainer+
-      planRequirementCard+
-    '</div></div>';
-    return;
-  }
-
+  /* Membership comes BEFORE the plan gate. A seat is the team paying for the
+     person filling it, so somebody invited onto an Elite team is a full member
+     on whatever plan they personally hold - showing them an upgrade wall for a
+     team they are already in would be simply wrong. Only CREATING a team needs
+     the plan, which is the same rule the server enforces. */
   AMVTeam.get().then(team=>{
-    if(!team){ _renderTeamCreate(vc); return; }
-    _renderTeamManage(vc, team);
+    // a member on any plan has a team, so the nav item follows membership too
+    try{ if(typeof _revealTeamNav==='function') _revealTeamNav(); }catch(e){}
+    if(team){ _renderTeamManage(vc, team); return; }
+    if(!hasTeamPlan){
+      vc.innerHTML='<div class="sv fi"><div class="vi">'+
+        '<span class="eyebrow">Collaboration</span>'+
+        '<h2>Team workspaces</h2>'+
+        '<p class="vsub">Shared projects, prompts, memory, and roles - for your whole team.</p>'+
+        teamExplainer+
+        planRequirementCard+
+      '</div></div>';
+      return;
+    }
+    _renderTeamCreate(vc);
+  }).catch(()=>{
+    vc.innerHTML='<div class="sv fi"><div class="vi">'+
+      '<span class="eyebrow">Collaboration</span><h2>Team workspaces</h2>'+
+      '<p class="vsub">AMV could not reach the server, so this would be out of date. '+
+      'Check your connection and try again.</p>'+
+      '<button class="btn bs" data-dact="renderTeamView" style="font-size:12px">Retry</button>'+
+    '</div></div>';
   });
 }
 function _renderTeamCreate(vc){
@@ -123,8 +139,31 @@ function _renderTeamManage(vc, team){
   const canManage=role==='owner'||role==='admin';
   const isOwner=role==='owner';
   const myEmail=(S.user?.email||'').toLowerCase();
+  /* Seats come from the server, which is the only thing that knows what the
+     plan currently pays for. A downgrade quietly stops covering whoever joined
+     last, and the owner is the only person who can fix it - so it is named
+     here rather than discovered when somebody's work stops working. */
+  const seats=team.seats||null;
+  const over=seats?seats.over:0;
+  const seatNote=seats
+    ? '<p class="vsub">'+seats.used+' of '+seats.limit+' seat'+(seats.limit===1?'':'s')+' used'+
+      (over>0?' \u00b7 <b style="color:var(--gold)">'+over+' over your plan</b>':'')+
+      ' \u00b7 everyone shares one allowance.</p>'
+    : '';
+  const overBanner=over>0
+    ? '<div class="ss2" style="border-color:var(--gold);background:rgba(245,158,11,.07)">'+
+      '<h3>'+over+' '+(over===1?'person is':'people are')+' not covered by your plan</h3>'+
+      '<p style="font-size:13px;color:var(--tx);line-height:1.6;margin:0 0 10px">'+
+      'Your plan includes '+seats.limit+' seat'+(seats.limit===1?'':'s')+' and the team has '+seats.used+' member'+(seats.used===1?'':'s')+'. '+
+      'The '+(over===1?'member':'members')+' marked below are using their own plan instead of the team\u2019s, '+
+      'so they have their own limits and lose the shared allowance. Upgrade to cover them, or remove them.</p>'+
+      (isOwner?'<button class="btn bp" data-stab="plans" style="font-size:12px">See plans &rarr;</button>':
+       '<p style="font-size:12px;color:var(--mu);margin:0">Only the owner can change the plan.</p>')+
+      '</div>'
+    : '';
   const memberRows=(team.members||[]).map(m=>
-    '<div class="vrow"><span>'+escH(m.email)+(m.email===myEmail?' <span style="color:var(--mu)">(you)</span>':'')+'</span>'+
+    '<div class="vrow"><span>'+escH(m.email)+(m.email===myEmail?' <span style="color:var(--mu)">(you)</span>':'')+
+    (m.seated===false?' <span class="team-role" style="background:rgba(245,158,11,.14);color:var(--gold)">no seat</span>':'')+'</span>'+
     '<span style="display:flex;align-items:center;gap:10px"><span class="team-role team-role-'+m.role+'">'+m.role+'</span>'+
     // owner can promote/demote anyone who isn't the owner
     (isOwner&&m.role!=='owner'?'<button class="btn bs team-role-btn" data-team-setrole="'+escH(m.email)+'" data-team-newrole="'+(m.role==='admin'?'member':'admin')+'" style="font-size:10.5px;padding:3px 8px">'+(m.role==='admin'?'Make member':'Make admin')+'</button>':'')+
@@ -133,6 +172,8 @@ function _renderTeamManage(vc, team){
   vc.innerHTML='<div class="sv fi"><div class="vi">'+
     '<span class="eyebrow">Collaboration</span><h2>'+escH(team.name)+'</h2>'+
     '<p class="vsub">'+(team.members||[]).length+' member'+((team.members||[]).length===1?'':'s')+' \u00b7 you\u2019re '+(role==='owner'?'the owner':'a '+role)+'.</p>'+
+    seatNote+
+    overBanner+
     '<div class="team-presence" id="team-presence"></div>'+
     '<div class="ss2"><h3>Shared library <span style="font-weight:400;color:var(--mu);font-size:11px">(projects &amp; prompts everyone can use)</span></h3>'+
       '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'+
@@ -151,6 +192,10 @@ function _renderTeamManage(vc, team){
       '</div></div>'+
       '<div id="tt-board"><div style="color:var(--mu);font-size:12px;padding:8px 0">Loading tasks\u2026</div></div>'+
     '</div>'+
+    (isOwner?'':'<div class="ss2"><h3>Leave this team</h3>'+
+      '<p style="font-size:12.5px;color:var(--mu);line-height:1.6;margin:0 0 10px">'+
+      'You go back to your own plan and your own allowance. Anything you shared with the team stays with the team.</p>'+
+      '<button class="btn bs" id="team-leave" style="font-size:12px;color:var(--red);border-color:var(--red)">Leave team</button></div>')+
     (canManage?'<div class="ss2"><h3>Activity log <span style="font-weight:400;color:var(--mu);font-size:11px">(who did what)</span></h3><div id="team-audit"><div style="color:var(--mu);font-size:12px;padding:8px 0">Loading\u2026</div></div></div>':'')+
   '</div></div>';
   on($('team-invite-btn'),'click',async()=>{
@@ -161,10 +206,40 @@ function _renderTeamManage(vc, team){
       const d=await AMVTeam.invite(email,r);
       const link=location.origin+location.pathname+(d.inviteLink||'');
       const res=$('team-invite-result');
-      if(res) res.innerHTML='<div class="team-invite-link">Invite link for '+escH(email)+':<br><code>'+escH(link)+'</code><button class="btn bs" style="font-size:11px;margin-top:8px" onclick="navigator.clipboard.writeText(\''+link.replace(/'/g,"\\'")+'\');toast(\'Link copied\',\'success\')">Copy link</button></div>';
+      /* The link is passed to the handler through a closure rather than
+         interpolated into an inline onclick. The old version built a JS string
+         literal out of location.pathname, which is attacker-influenced, and
+         relied on one quote-escape to stay safe. */
+      if(res){
+        res.innerHTML='<div class="team-invite-link">Invite link for '+escH(email)+':<br><code>'+escH(link)+'</code>'+
+          '<button class="btn bs" id="team-invite-copy" style="font-size:11px;margin-top:8px">Copy link</button></div>';
+        on($('team-invite-copy'),'click',async()=>{
+          try{ await navigator.clipboard.writeText(link); toast('Link copied','success'); }
+          catch(_){ toast('Copy was blocked by your browser - select the link above and copy it.','info',6000); }
+        });
+      }
       if(btn){btn.disabled=false;btn.textContent='Invite';}
       if($('team-invite-email')) $('team-invite-email').value='';
-    }catch(e){ if(btn){btn.disabled=false;btn.textContent='Invite';} toast(e.message||'Invite failed','error'); }
+    }catch(e){
+      if(btn){btn.disabled=false;btn.textContent='Invite';}
+      /* Running out of seats is not an error the user did something wrong to
+         cause, and a toast that disappears cannot be acted on. It gets the
+         inline slot, with the one control that resolves it. */
+      const res=$('team-invite-result');
+      if(e.code==='seat_limit'&&res){
+        res.innerHTML='<div class="team-invite-link" style="border-color:var(--gold)">'+escH(e.message)+
+          (isOwner?'<br><button class="btn bp" data-stab="plans" style="font-size:11px;margin-top:8px">See plans</button>':'')+'</div>';
+        return;
+      }
+      toast(e.message||'Invite failed','error');
+    }
+  });
+  on($('team-leave'),'click',async()=>{
+    if(typeof confirm==='function' &&
+       !confirm('Leave '+team.name+'? You go back to your own plan and lose access to the shared library.')) return;
+    const btn=$('team-leave'); if(btn){ btn.disabled=true; btn.textContent='Leaving\u2026'; }
+    try{ await AMVTeam.leave(); toast('You have left the team','info'); renderTeamView(); }
+    catch(e){ if(btn){ btn.disabled=false; btn.textContent='Leave team'; } toast(e.message||'Could not leave the team','error',6000); }
   });
   vc.querySelectorAll('[data-team-remove]').forEach(b=>on(b,'click',async()=>{
     if(!confirm('Remove '+b.dataset.teamRemove+' from the team?')) return;
@@ -315,7 +390,11 @@ function _checkTeamInvite(){
     const t=new URLSearchParams(location.search).get('invite');
     if(!t) return;
     if(!AMVTeam.enabled()){ saveStr('amv_pending_invite', t); return; }
-    AMVTeam.join(t).then(()=>{ toast('You\u2019ve joined the team!','success'); setTab('team'); }).catch(()=>{});
+    /* A failed join is exactly the moment the user needs to be told. Silence
+       here left somebody staring at an app that looked identical to before,
+       with no idea the invite had expired or was sent to another address. */
+    AMVTeam.join(t).then(()=>{ toast('You\u2019ve joined the team!','success'); setTab('team'); })
+      .catch(e=>{ toast(e&&e.message?e.message:'That invite could not be used. Ask for a new one.','error',6000); });
   }catch(e){}
 }
 window.renderTeamView=renderTeamView;

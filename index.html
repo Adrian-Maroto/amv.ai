@@ -7717,6 +7717,7 @@ html,body{height:100%;height:100dvh}
           <button class="sb-tool" data-tab="memory" title="Memory" aria-label="Memory"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/></svg><span class="sb-tool-tip">Memory</span></button>
           <button class="sb-tool" data-tab="tasks" title="Tasks" aria-label="Tasks"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg><span class="sb-tool-tip">Tasks</span></button>
           <button class="sb-tool" data-tab="integrations" title="Integrations" aria-label="Integrations"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4v7a4 4 0 0 1-4 4H6"/></svg><span class="sb-tool-tip">Integrations</span></button>
+          <button class="sb-tool" data-tab="team" id="nav-team" hidden title="Team" aria-label="Team"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg><span class="sb-tool-tip">Team</span></button>
           <button class="sb-tool" data-tab="market" title="Marketplace" aria-label="Marketplace"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 9l1.5-5h15L21 9"/><path d="M3 9h18v2a3 3 0 0 1-6 0 3 3 0 0 1-6 0 3 3 0 0 1-6 0z"/><path d="M5 11v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8"/></svg><span class="sb-tool-tip">Marketplace</span></button>
         </div>
         <div class="sb-popup" id="sb-popup">
@@ -7895,7 +7896,7 @@ const AMV_API = {
     // state-creating endpoints. Metered/idempotent POSTs (AI proxy, sync) still retry.
     const noRetry = o.noRetry || /^\/auth\//.test(path)
       || /\/(stripe|paypal|pay|subscribe|capture)/.test(path)
-      || /\/(team\/(invite|join|remove|setrole|share)|market\/(publish|buy|withdraw|review|install)|deploy|sms\/register|widget\/save)/.test(path);
+      || /\/(team\/(invite|join|remove|leave|role|share|unshare|data|task\/(create|update))|market\/(publish|buy|withdraw|review|install)|deploy|sms\/register|widget\/save)/.test(path);
     const MAX = noRetry ? 0 : 2;        // up to 2 retries (3 total attempts)
 
     /* AMV-061: a request with no deadline can hang forever.
@@ -10368,7 +10369,7 @@ function _wireHdrAuth(){
   if(su && !su._wired){ su._wired=1; su.addEventListener('click',()=>{ try{ openAuth('signup'); }catch(e){} }); }
   if(li && !li._wired){ li._wired=1; li.addEventListener('click',()=>{ try{ openAuth('login'); }catch(e){} }); }
 }
-function goApp(){ try{ _wireHdrAuth(); }catch(e){} try{ const cy=document.getElementById('copy-year'); if(cy) cy.textContent=String(new Date().getFullYear()); }catch(e){} document.getElementById('land').classList.add('hidden'); document.getElementById('app').classList.add('on'); updateSbUser(); _initMobileSidebar(); _restoreSidebarState(); try{ _applyReduceMotion(); }catch(e){} setTab(S.tab); _ensureBackendSession(); try{ _applyFontSize(); }catch(e){} try{ _initOfflineWatch(); }catch(e){} try{ _initErrorBoundary(); }catch(e){} try{ syncEntitlement(); _checkUpgradeReturn(); }catch(e){} try{ _checkTeamInvite(); }catch(e){} try{ _initKeyboardNav(); _initA11y(); }catch(e){} try{ _revealAdminNav(); }catch(e){} try{ _initSidebarMore(); }catch(e){} try{ _initBuildGroup(); }catch(e){} try{ _localizePrices(document); }catch(e){} try{ const sbtn=$('sb-status'); if(sbtn) sbtn.addEventListener('click',openStatusPanel); _checkStatus(); }catch(e){} try{ _initI18nObserver(); }catch(e){} try{ _translateUI(); setTimeout(_translateUI,120); }catch(e){ console.error('Translate UI error in goApp', e); } }
+function goApp(){ try{ _wireHdrAuth(); }catch(e){} try{ const cy=document.getElementById('copy-year'); if(cy) cy.textContent=String(new Date().getFullYear()); }catch(e){} document.getElementById('land').classList.add('hidden'); document.getElementById('app').classList.add('on'); updateSbUser(); _initMobileSidebar(); _restoreSidebarState(); try{ _applyReduceMotion(); }catch(e){} setTab(S.tab); _ensureBackendSession(); try{ _applyFontSize(); }catch(e){} try{ _initOfflineWatch(); }catch(e){} try{ _initErrorBoundary(); }catch(e){} try{ syncEntitlement(); _checkUpgradeReturn(); }catch(e){} try{ _checkTeamInvite(); }catch(e){} try{ _initKeyboardNav(); _initA11y(); }catch(e){} try{ _revealAdminNav(); }catch(e){} try{ _revealTeamNav(); }catch(e){} try{ _initSidebarMore(); }catch(e){} try{ _initBuildGroup(); }catch(e){} try{ _localizePrices(document); }catch(e){} try{ const sbtn=$('sb-status'); if(sbtn) sbtn.addEventListener('click',openStatusPanel); _checkStatus(); }catch(e){} try{ _initI18nObserver(); }catch(e){} try{ _translateUI(); setTimeout(_translateUI,120); }catch(e){ console.error('Translate UI error in goApp', e); } }
 
 /* The sidebar's advanced tools (Tasks, Integrations, Marketplace) live under a
    collapsible "More" so the default view stays calm - new users were getting
@@ -10427,20 +10428,41 @@ function _revealAdminNav(){
     const existing=document.getElementById('nav-admin');
     if(isAdmin()){
       if(existing) return;   // already present
-      // find the Tasks nav button and inject Admin right after it
-      const tasksBtn=document.querySelector('.snb[data-tab="tasks"]');
-      if(!tasksBtn||!tasksBtn.parentNode) return;
+      /* Anchored to the tool rail, which is where Tasks actually lives. This
+         used to look for `.snb[data-tab="tasks"]` - a selector the sidebar
+         stopped matching when Tasks moved into the rail - so the injection
+         silently found nothing and the Admin tab, whose ONLY entry point this
+         is, could not be reached from the app at all. */
+      const rail=document.getElementById('sb-tools');
+      if(!rail) return;
       const b=document.createElement('button');
-      b.className='snb'; b.setAttribute('data-tab','admin'); b.id='nav-admin';
-      b.innerHTML='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Admin';
+      b.className='sb-tool'; b.setAttribute('data-tab','admin'); b.id='nav-admin';
+      b.title='Admin'; b.setAttribute('aria-label','Admin');
+      b.innerHTML='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><span class="sb-tool-tip">Admin</span>';
       b.addEventListener('click',()=>setTab('admin'));
-      tasksBtn.parentNode.insertBefore(b, tasksBtn.nextSibling);
+      rail.appendChild(b);
     } else {
       // not the owner - the element must not exist in the DOM at all
       if(existing) existing.remove();
     }
   }catch(e){}
 }
+
+/* Teams is packaged with Elite and above, so the entry point appears for the
+   people who have it - and for anyone who was invited onto a team, whatever
+   they are on themselves, because the team is paying for their seat. Hidden
+   rather than injected: a nav item that has to be built at runtime is a nav
+   item that can silently fail to appear, which is what happened to Admin. */
+function _revealTeamNav(){
+  try{
+    const btn=document.getElementById('nav-team');
+    if(!btn) return;
+    const allowed=(typeof _planAllowsTeams==='function' && _planAllowsTeams())
+      || !!(window.AMVTeam && AMVTeam._cache);
+    btn.hidden=!allowed;
+  }catch(e){}
+}
+try{ window._revealTeamNav=_revealTeamNav; }catch(e){}
 /* On mobile the sidebar is a fixed overlay - start it collapsed so it
    never covers the content on load. On desktop it stays open. */
 function _initMobileSidebar(){
@@ -14475,7 +14497,7 @@ function planCards(inApp){
       '<ul class="plnfl">'+
         '<li><span class="fck">\u2713</span><b>Everything in Pro</b>, plus:</li>'+
         '<li><span class="fck">\u2713</span><b>20× the usage</b> - work all day</li>'+
-        '<li><span class="fck">\u2713</span><b>Apex (Fable 5) first</b> - our most capable model</li>'+
+        '<li><span class="fck">\u2713</span><b>AMV Apex first</b> - our most capable engine</li>'+
         '<li><span class="fck">\u2713</span><b>Full-stack app builder</b> + one-click deploy</li>'+
         '<li><span class="fck">\u2713</span>Run up to <b>5 agents in parallel</b></li>'+
         '<li><span class="fck">\u2713</span>Multi-file projects, code review &amp; auto-debug</li>'+
@@ -14845,11 +14867,15 @@ function greeting(){ const h=new Date().getHours(); return h<12?'morning':h<17?'
 const AMVTeam = {
   _cache:null,
   enabled(){ try{ return !!(window.AMV_API && AMV_API.live && AMV_API.token); }catch(e){ return false; } },
-  async get(){ if(!this.enabled()) return null; try{ const r=await AMV_API._fetch('/team/get',{method:'POST',body:'{}'}); const d=await r.json(); this._cache=d.team; return d.team; }catch(e){ return null; } },
+  /* Throws rather than returning null on failure. A network error is NOT "you
+     have no team" - answering it that way showed an existing team's owner a
+     create-a-team form, and a member an upgrade wall, for a team that exists. */
+  async get(){ if(!this.enabled()) return null; const r=await AMV_API._fetch('/team/get',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error) throw new Error(d.error); this._cache=d.team; return d.team; },
   async create(name){ const r=await AMV_API._fetch('/team/create',{method:'POST',body:JSON.stringify({name})}); const d=await r.json(); if(d.error) throw new Error(d.error); this._cache=d.team; return d.team; },
-  async invite(email,role){ const r=await AMV_API._fetch('/team/invite',{method:'POST',body:JSON.stringify({email,role})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
+  async invite(email,role){ const r=await AMV_API._fetch('/team/invite',{method:'POST',body:JSON.stringify({email,role})}); const d=await r.json(); if(d.error){ const e=new Error(d.error); e.code=d.code; e.seats=d.seats; throw e; } return d; },
   async join(token){ const r=await AMV_API._fetch('/team/join',{method:'POST',body:JSON.stringify({token})}); const d=await r.json(); if(d.error) throw new Error(d.error); this._cache=d.team; return d.team; },
   async remove(email){ const r=await AMV_API._fetch('/team/remove',{method:'POST',body:JSON.stringify({email})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d.members; },
+  async leave(){ const r=await AMV_API._fetch('/team/leave',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error){ const e=new Error(d.error); e.code=d.code; throw e; } this._cache=null; return true; },
   async setRole(email,role){ const r=await AMV_API._fetch('/team/role',{method:'POST',body:JSON.stringify({email,role})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d.members; },
   async audit(){ try{ const r=await AMV_API._fetch('/team/audit',{method:'POST',body:'{}'}); const d=await r.json(); return d.log||[]; }catch(e){ return []; } },
   myRole(team){ if(!team||!S.user) return null; const m=(team.members||[]).find(x=>x.email===(S.user.email||'').toLowerCase()); return m?m.role:null; },
@@ -14889,7 +14915,7 @@ function renderTeamView(){
       '<div class="team-feat"><span class="team-feat-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3"/></svg></span><div><b>Roles &amp; permissions</b><span>Owner, admin, and member - you control access</span></div></div>'+
       '<div class="team-feat"><span class="team-feat-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3 3 3 0 0 0-3 3 3 3 0 0 0 0 6 3 3 0 0 0 3 3 3 3 0 0 0 6 0 3 3 0 0 0 3-3 3 3 0 0 0 0-6 3 3 0 0 0-3-3 3 3 0 0 0-3-3z"/></svg></span><div><b>Shared team memory</b><span>AMV remembers context across the whole team</span></div></div>'+
       '<div class="team-feat"><span class="team-feat-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg></span><div><b>Invite by email</b><span>Add teammates in seconds</span></div></div>'+
-      '<div class="team-feat"><span class="team-feat-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg></span><div><b>Team-grade limits</b><span>Higher usage and more jobs at once</span></div></div>'+
+      '<div class="team-feat"><span class="team-feat-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg></span><div><b>Seats on one subscription</b><span>Elite includes 10, Ultra 25. Everyone shares the plan\u2019s allowance - one bill, not one per person.</span></div></div>'+
     '</div></div>';
 
   // The clear plan answer - shown whenever the user can't yet use Teams
@@ -14923,21 +14949,33 @@ function renderTeamView(){
     return;
   }
 
-  // Backend is live but the user's plan doesn't include Teams → gate clearly
-  if(!hasTeamPlan){
-    vc.innerHTML='<div class="sv fi"><div class="vi">'+
-      '<span class="eyebrow">Collaboration</span>'+
-      '<h2>Team workspaces</h2>'+
-      '<p class="vsub">Shared projects, prompts, memory, and roles - for your whole team.</p>'+
-      teamExplainer+
-      planRequirementCard+
-    '</div></div>';
-    return;
-  }
-
+  /* Membership comes BEFORE the plan gate. A seat is the team paying for the
+     person filling it, so somebody invited onto an Elite team is a full member
+     on whatever plan they personally hold - showing them an upgrade wall for a
+     team they are already in would be simply wrong. Only CREATING a team needs
+     the plan, which is the same rule the server enforces. */
   AMVTeam.get().then(team=>{
-    if(!team){ _renderTeamCreate(vc); return; }
-    _renderTeamManage(vc, team);
+    // a member on any plan has a team, so the nav item follows membership too
+    try{ if(typeof _revealTeamNav==='function') _revealTeamNav(); }catch(e){}
+    if(team){ _renderTeamManage(vc, team); return; }
+    if(!hasTeamPlan){
+      vc.innerHTML='<div class="sv fi"><div class="vi">'+
+        '<span class="eyebrow">Collaboration</span>'+
+        '<h2>Team workspaces</h2>'+
+        '<p class="vsub">Shared projects, prompts, memory, and roles - for your whole team.</p>'+
+        teamExplainer+
+        planRequirementCard+
+      '</div></div>';
+      return;
+    }
+    _renderTeamCreate(vc);
+  }).catch(()=>{
+    vc.innerHTML='<div class="sv fi"><div class="vi">'+
+      '<span class="eyebrow">Collaboration</span><h2>Team workspaces</h2>'+
+      '<p class="vsub">AMV could not reach the server, so this would be out of date. '+
+      'Check your connection and try again.</p>'+
+      '<button class="btn bs" data-dact="renderTeamView" style="font-size:12px">Retry</button>'+
+    '</div></div>';
   });
 }
 function _renderTeamCreate(vc){
@@ -14961,8 +14999,31 @@ function _renderTeamManage(vc, team){
   const canManage=role==='owner'||role==='admin';
   const isOwner=role==='owner';
   const myEmail=(S.user?.email||'').toLowerCase();
+  /* Seats come from the server, which is the only thing that knows what the
+     plan currently pays for. A downgrade quietly stops covering whoever joined
+     last, and the owner is the only person who can fix it - so it is named
+     here rather than discovered when somebody's work stops working. */
+  const seats=team.seats||null;
+  const over=seats?seats.over:0;
+  const seatNote=seats
+    ? '<p class="vsub">'+seats.used+' of '+seats.limit+' seat'+(seats.limit===1?'':'s')+' used'+
+      (over>0?' \u00b7 <b style="color:var(--gold)">'+over+' over your plan</b>':'')+
+      ' \u00b7 everyone shares one allowance.</p>'
+    : '';
+  const overBanner=over>0
+    ? '<div class="ss2" style="border-color:var(--gold);background:rgba(245,158,11,.07)">'+
+      '<h3>'+over+' '+(over===1?'person is':'people are')+' not covered by your plan</h3>'+
+      '<p style="font-size:13px;color:var(--tx);line-height:1.6;margin:0 0 10px">'+
+      'Your plan includes '+seats.limit+' seat'+(seats.limit===1?'':'s')+' and the team has '+seats.used+' member'+(seats.used===1?'':'s')+'. '+
+      'The '+(over===1?'member':'members')+' marked below are using their own plan instead of the team\u2019s, '+
+      'so they have their own limits and lose the shared allowance. Upgrade to cover them, or remove them.</p>'+
+      (isOwner?'<button class="btn bp" data-stab="plans" style="font-size:12px">See plans &rarr;</button>':
+       '<p style="font-size:12px;color:var(--mu);margin:0">Only the owner can change the plan.</p>')+
+      '</div>'
+    : '';
   const memberRows=(team.members||[]).map(m=>
-    '<div class="vrow"><span>'+escH(m.email)+(m.email===myEmail?' <span style="color:var(--mu)">(you)</span>':'')+'</span>'+
+    '<div class="vrow"><span>'+escH(m.email)+(m.email===myEmail?' <span style="color:var(--mu)">(you)</span>':'')+
+    (m.seated===false?' <span class="team-role" style="background:rgba(245,158,11,.14);color:var(--gold)">no seat</span>':'')+'</span>'+
     '<span style="display:flex;align-items:center;gap:10px"><span class="team-role team-role-'+m.role+'">'+m.role+'</span>'+
     // owner can promote/demote anyone who isn't the owner
     (isOwner&&m.role!=='owner'?'<button class="btn bs team-role-btn" data-team-setrole="'+escH(m.email)+'" data-team-newrole="'+(m.role==='admin'?'member':'admin')+'" style="font-size:10.5px;padding:3px 8px">'+(m.role==='admin'?'Make member':'Make admin')+'</button>':'')+
@@ -14971,6 +15032,8 @@ function _renderTeamManage(vc, team){
   vc.innerHTML='<div class="sv fi"><div class="vi">'+
     '<span class="eyebrow">Collaboration</span><h2>'+escH(team.name)+'</h2>'+
     '<p class="vsub">'+(team.members||[]).length+' member'+((team.members||[]).length===1?'':'s')+' \u00b7 you\u2019re '+(role==='owner'?'the owner':'a '+role)+'.</p>'+
+    seatNote+
+    overBanner+
     '<div class="team-presence" id="team-presence"></div>'+
     '<div class="ss2"><h3>Shared library <span style="font-weight:400;color:var(--mu);font-size:11px">(projects &amp; prompts everyone can use)</span></h3>'+
       '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'+
@@ -14989,6 +15052,10 @@ function _renderTeamManage(vc, team){
       '</div></div>'+
       '<div id="tt-board"><div style="color:var(--mu);font-size:12px;padding:8px 0">Loading tasks\u2026</div></div>'+
     '</div>'+
+    (isOwner?'':'<div class="ss2"><h3>Leave this team</h3>'+
+      '<p style="font-size:12.5px;color:var(--mu);line-height:1.6;margin:0 0 10px">'+
+      'You go back to your own plan and your own allowance. Anything you shared with the team stays with the team.</p>'+
+      '<button class="btn bs" id="team-leave" style="font-size:12px;color:var(--red);border-color:var(--red)">Leave team</button></div>')+
     (canManage?'<div class="ss2"><h3>Activity log <span style="font-weight:400;color:var(--mu);font-size:11px">(who did what)</span></h3><div id="team-audit"><div style="color:var(--mu);font-size:12px;padding:8px 0">Loading\u2026</div></div></div>':'')+
   '</div></div>';
   on($('team-invite-btn'),'click',async()=>{
@@ -14999,10 +15066,40 @@ function _renderTeamManage(vc, team){
       const d=await AMVTeam.invite(email,r);
       const link=location.origin+location.pathname+(d.inviteLink||'');
       const res=$('team-invite-result');
-      if(res) res.innerHTML='<div class="team-invite-link">Invite link for '+escH(email)+':<br><code>'+escH(link)+'</code><button class="btn bs" style="font-size:11px;margin-top:8px" onclick="navigator.clipboard.writeText(\''+link.replace(/'/g,"\\'")+'\');toast(\'Link copied\',\'success\')">Copy link</button></div>';
+      /* The link is passed to the handler through a closure rather than
+         interpolated into an inline onclick. The old version built a JS string
+         literal out of location.pathname, which is attacker-influenced, and
+         relied on one quote-escape to stay safe. */
+      if(res){
+        res.innerHTML='<div class="team-invite-link">Invite link for '+escH(email)+':<br><code>'+escH(link)+'</code>'+
+          '<button class="btn bs" id="team-invite-copy" style="font-size:11px;margin-top:8px">Copy link</button></div>';
+        on($('team-invite-copy'),'click',async()=>{
+          try{ await navigator.clipboard.writeText(link); toast('Link copied','success'); }
+          catch(_){ toast('Copy was blocked by your browser - select the link above and copy it.','info',6000); }
+        });
+      }
       if(btn){btn.disabled=false;btn.textContent='Invite';}
       if($('team-invite-email')) $('team-invite-email').value='';
-    }catch(e){ if(btn){btn.disabled=false;btn.textContent='Invite';} toast(e.message||'Invite failed','error'); }
+    }catch(e){
+      if(btn){btn.disabled=false;btn.textContent='Invite';}
+      /* Running out of seats is not an error the user did something wrong to
+         cause, and a toast that disappears cannot be acted on. It gets the
+         inline slot, with the one control that resolves it. */
+      const res=$('team-invite-result');
+      if(e.code==='seat_limit'&&res){
+        res.innerHTML='<div class="team-invite-link" style="border-color:var(--gold)">'+escH(e.message)+
+          (isOwner?'<br><button class="btn bp" data-stab="plans" style="font-size:11px;margin-top:8px">See plans</button>':'')+'</div>';
+        return;
+      }
+      toast(e.message||'Invite failed','error');
+    }
+  });
+  on($('team-leave'),'click',async()=>{
+    if(typeof confirm==='function' &&
+       !confirm('Leave '+team.name+'? You go back to your own plan and lose access to the shared library.')) return;
+    const btn=$('team-leave'); if(btn){ btn.disabled=true; btn.textContent='Leaving\u2026'; }
+    try{ await AMVTeam.leave(); toast('You have left the team','info'); renderTeamView(); }
+    catch(e){ if(btn){ btn.disabled=false; btn.textContent='Leave team'; } toast(e.message||'Could not leave the team','error',6000); }
   });
   vc.querySelectorAll('[data-team-remove]').forEach(b=>on(b,'click',async()=>{
     if(!confirm('Remove '+b.dataset.teamRemove+' from the team?')) return;
@@ -15153,7 +15250,11 @@ function _checkTeamInvite(){
     const t=new URLSearchParams(location.search).get('invite');
     if(!t) return;
     if(!AMVTeam.enabled()){ saveStr('amv_pending_invite', t); return; }
-    AMVTeam.join(t).then(()=>{ toast('You\u2019ve joined the team!','success'); setTab('team'); }).catch(()=>{});
+    /* A failed join is exactly the moment the user needs to be told. Silence
+       here left somebody staring at an app that looked identical to before,
+       with no idea the invite had expired or was sent to another address. */
+    AMVTeam.join(t).then(()=>{ toast('You\u2019ve joined the team!','success'); setTab('team'); })
+      .catch(e=>{ toast(e&&e.message?e.message:'That invite could not be used. Ask for a new one.','error',6000); });
   }catch(e){}
 }
 window.renderTeamView=renderTeamView;
@@ -16936,9 +17037,15 @@ function _paintServerUsage(){
         ? '<div class="srv-bonus">Includes <b>+'+n(bonus)+'</b> bonus tokens from invites you have earned. '+
           '<a data-sp-go="invite" style="color:var(--accent);cursor:pointer">See your invites &rarr;</a></div>'
         : '')+
+      (d.shared && d.shared.team
+        ? '<div class="srv-bonus">These numbers are your <b>whole team</b>, not just you - one subscription is one allowance, '+
+          'however many people are on it. <a data-sp-team="1" style="color:var(--accent);cursor:pointer">Open Team &rarr;</a></div>'
+        : '')+
       '<p class="srv-note">Your plan is '+escH(String(d.plan||'free'))+'. Daily and monthly allowances are separate: running out today does not spend your month.</p>';
     const go = host.querySelector('[data-sp-go]');
     if(go) on(go,'click',()=>{ S.settingsPane='invite'; S.tab='settings'; setTab('settings'); });
+    const tm = host.querySelector('[data-sp-team]');
+    if(tm) on(tm,'click',()=>{ S.tab='team'; setTab('team'); });
   }).catch(()=>{
     host.innerHTML = '<h3>Your plan allowance</h3><div class="srv-off">Could not reach the server, so your real allowance is not shown. The figures below are this device\u2019s own tally.</div>';
   });
@@ -18056,6 +18163,8 @@ function _setPlan(plan){
   // if the user's selected model isn't allowed on this plan, drop to an allowed one
   try{ const allowed=t.models; if(allowed.indexOf(S.model)<0){ S.model=allowed[allowed.length-1]; } }catch(e){}
   updateSbUser&&updateSbUser();
+  // Teams is packaged with Elite and above, so its entry point follows the plan.
+  try{ if(typeof _revealTeamNav==='function') _revealTeamNav(); }catch(e){}
   try{ if(typeof renderView==='function' && S.tab) renderView(); }catch(e){}
 }
 function _planAllowsModel(mk){ if(mk==='auto') return true; const plan=loadStr('amv_plan')||'free'; if(plan==='custom') return true; const t=PLAN_TIERS[plan]||PLAN_TIERS.free; return t.models.indexOf(mk)>=0; }
@@ -18166,10 +18275,22 @@ window._setPlan=_setPlan;
    the top tier (enterprise buyers want teams early). Free/Pro cannot create or
    join a team; Elite, Ultra, and equivalent Custom plans can. */
 const TEAM_REQUIRED_PLAN = 'elite';
+/* A custom plan is a price, not a tier, so PLAN_RANK has no entry for it. The
+   lookup returned undefined and every custom plan was refused - including the
+   enterprise ones the copy on this very screen promises teams to. Ranked by
+   what was paid, matching the server, which is the side that decides. */
+const _CUSTOM_TIERS=[[200,3],[75,2],[15,1]];
+function _customRank(){
+  let price=0;
+  try{ price=+((load('amv_custom_cfg')||{}).price)||0; }catch(e){}
+  for(const t of _CUSTOM_TIERS) if(price>=t[0]) return t[1];
+  return 0;
+}
 function _planAllowsTeams(){
   const plan=loadStr('amv_plan')||'free';
-  if(plan==='custom') return (PLAN_RANK['custom']||0) >= (PLAN_RANK[TEAM_REQUIRED_PLAN]||3);
-  return (PLAN_RANK[plan]||0) >= (PLAN_RANK[TEAM_REQUIRED_PLAN]||3);
+  const need=PLAN_RANK[TEAM_REQUIRED_PLAN]||2;
+  if(plan==='custom') return _customRank() >= need;
+  return (PLAN_RANK[plan]||0) >= need;
 }
 window._planAllowsTeams=_planAllowsTeams;
 
@@ -18253,8 +18374,8 @@ function openUpgradeModal(lockedModel){
 function _planDetails(k){
   const D={
     pro:['All models, including AMV Forge for coding','5\u00d7 the usage of the Free plan','Autonomous agents and Crew for multi-step work','Image, video, and 3D generation','Build and run apps in the sandbox','Connect Gmail, calendar, and files','Scheduled and background automation','Faster generation'],
-    elite:['Everything in Pro, dialed up','20\u00d7 the usage','AMV Apex (Fable 5) first - our most capable model','Full-stack app builder with one-click deploy','Up to 5 agents running in parallel','4K video & premium image quality','Unlimited scheduled automations','Early access + 24/7 priority support'],
-    ultra:['Everything in Elite, maxed out','50\u00d7 the usage','Unlimited parallel agents - a whole crew at once','Whole-codebase context & autonomous projects','Export & download full multi-file projects','Deploy & host multiple live apps','Team workspaces, roles & shared projects','Fastest hardware + dedicated support'],
+    elite:['Everything in Pro, dialed up','20\u00d7 the usage','AMV Apex first - our most capable engine','Full-stack app builder with one-click deploy','Up to 5 agents running in parallel','4K video & premium image quality','Unlimited scheduled automations','Team workspaces - 10 seats on one subscription','Early access + 24/7 priority support'],
+    ultra:['Everything in Elite, maxed out','50\u00d7 the usage','Unlimited parallel agents - a whole crew at once','Whole-codebase context & autonomous projects','Export & download full multi-file projects','Deploy & host multiple live apps','Team workspaces - 25 seats, roles & shared projects','Fastest hardware + dedicated support'],
   };
   return D[k]||['More usage','All models'];
 }
@@ -22028,7 +22149,7 @@ function renderView(){
     case 'prompts': renderPromptsView(); break;
     case 'workspaces': goSettings('projects'); return;
     case 'memory': renderMemoryView(); break;
-    case 'team': setTab('chat'); return;   // Team removed from the product - redirect anything that still points here
+    case 'team': renderTeamView(); break;
     case 'usage': renderUsageView(); break;
     case 'billing': renderBillingView(); break;
     case 'plans': renderPlansView(); break;
@@ -23369,7 +23490,7 @@ function _renderSetPaneInner(){
       '</div>'+
       '<div class="ss2"><h3>Where does the AI key go?</h3>'+
         '<p style="font-size:12.5px;color:var(--mu);line-height:1.6;margin:0">Set your Anthropic key as a secret on the Worker - it never touches the browser:</p>'+
-        '<pre style="background:var(--surface);border:1px solid var(--hair);border-radius:8px;padding:10px;font-size:11.5px;overflow:auto;margin:8px 0 0"><code>wrangler secret put ANTHROPIC_API_KEY</code></pre>'+
+        '<pre style="background:var(--surface);border:1px solid var(--hair);border-radius:8px;padding:10px;font-size:11.5px;overflow:auto;margin:8px 0 0"><code>wrangler secret put AMV_MODEL_KEY</code></pre>'+
         '<a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" class="conn-link">Get an Anthropic key \u2192</a>'+
       '</div>';
     on($('save-base'),'click',()=>{
@@ -25887,7 +26008,7 @@ function _runJS(code, t0){
 
 
 /* ===== AUTONOMOUS DEBUG LOOP (analyze -> fix -> re-run -> repeat), REAL =====
-   Fable-5 quality: each iteration first does a root-cause analysis, then a
+   Apex-grade quality: each iteration first does a root-cause analysis, then a
    surgical fix. Handles large/advanced programs. Never loops on the same fix. */
 async function autoDebug(code, lang, maxIters, onStep, modelStr){
   maxIters = maxIters||8; lang=lang||'js';

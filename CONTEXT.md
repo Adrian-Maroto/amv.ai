@@ -87,6 +87,27 @@ listings (drugs incl. cannabis/slang, weapons, malware, fraud, stolen data, CSAM
 violence, hate, piracy, self-harm) on **BOTH** client (`_mktScreen`) and server
 (`_marketScreen`, can't be bypassed), with a **3-strike seller suspension**.
 
+### Teams and seats (AMV-100)
+Teams is packaged with **Elite and above** and the gate is enforced on the
+server (`TEAM_MIN_PLAN`), not only in the app. Seats: free 1, pro 1, **elite 10,
+ultra 25**; a custom plan is ranked and seated by its PRICE (`_customRank`),
+since `custom` has no entry in `PLAN_RANK`.
+
+One subscription is **one allowance**. `requireUser` resolves a
+`billingSubject` (`_billingSubjectOf`) which is `team:<id>` for a seated member
+and the email otherwise; `usg:` (day + month), `cost:` and `vid:` are all keyed
+by it, so a team shares a budget instead of multiplying it. The automation cron
+resolves the same subject by hand because it runs outside `requireUser`.
+Requests-per-minute stays keyed by EMAIL on purpose - it is a burst control on
+one human, not a budget.
+
+Seats are re-derived on **every** request (`_teamSeated`, owner first then join
+date), so upgrade-fill-downgrade cannot keep a plan nobody is paying for. A
+member who loses their seat falls back to their own plan and counters, and the
+app names them individually. Somebody with a personally better plan is never
+pooled or downgraded. `teamId` lives on the entitlement record and must stay in
+`ENT_CARRY_KEYS`.
+
 ### No ads. Revenue = subscriptions + 20% marketplace fees.
 
 ---

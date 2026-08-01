@@ -35,7 +35,7 @@ section('It reports what the server knows, not what the browser guessed');
   ok(find(off, 'payments').on === false, 'and payments');
 
   const on = await get(Object.assign(bare(), {
-    ANTHROPIC_API_KEY: 'sk-ant-real', EMAIL_API_KEY: 'em', STRIPE_SECRET_KEY: 'sk_live',
+    AMV_MODEL_KEY: 'amv-real', EMAIL_API_KEY: 'em', STRIPE_SECRET_KEY: 'sk_live',
   }));
   ok(find(on, 'ai').on === true, 'and with a key it is reported on');
   ok(find(on, 'email').on === true, 'along with email');
@@ -45,7 +45,7 @@ section('It reports what the server knows, not what the browser guessed');
 section('It NEVER returns a secret, in any form');
 {
   const env = Object.assign(bare(), {
-    ANTHROPIC_API_KEY: 'sk-ant-SUPERSECRET1234', JWT_SECRET: 'jwt-SUPERSECRET',
+    AMV_MODEL_KEY: 'amv-SUPERSECRET1234', JWT_SECRET: 'jwt-SUPERSECRET',
     EMAIL_API_KEY: 'em-SUPERSECRET', STRIPE_SECRET_KEY: 'sk_live_SUPERSECRET',
     STRIPE_WEBHOOK_SECRET: 'whsec_SUPERSECRET', TURNSTILE_SECRET: 'ts-SUPERSECRET',
     GOOGLE_CLIENT_ID: 'gid-SUPERSECRET', IMAGE_API_KEY: 'img-SUPERSECRET',
@@ -60,7 +60,7 @@ section('It NEVER returns a secret, in any form');
   ok(!body.includes('SUPERSECRET'), 'no secret value appears anywhere in the response');
   ok(!/sk-ant-|sk_live_|whsec_/.test(body), 'not even a recognisable prefix', body.slice(0, 80));
   ok(!/"len"|length/.test(body), 'and no length, which would narrow a guess');
-  ok(body.includes('ANTHROPIC_API_KEY'), 'the NAME is there, because that is the thing to set');
+  ok(body.includes('AMV_MODEL_KEY'), 'the NAME is there, because that is the thing to set');
 
   const d = JSON.parse(body);
   ok(d.summary.blockingMissing === 0, 'a fully configured deployment has nothing blocking', d.summary);
@@ -71,7 +71,7 @@ section('An empty secret is not a configured secret');
 {
   /* A deploy that sets a variable to "" half-works silently. Treating that as
      configured is how the failure hides. */
-  const d = await get(Object.assign(bare(), { ANTHROPIC_API_KEY: '', EMAIL_API_KEY: '   ' }));
+  const d = await get(Object.assign(bare(), { AMV_MODEL_KEY: '', EMAIL_API_KEY: '   ' }));
   ok(find(d, 'ai').on === false, 'an empty string is off', find(d, 'ai').on);
   ok(find(d, 'email').on === false, 'and so is whitespace');
   ok(W._has({ X: 'v' }, 'X') === true && W._has({ X: '' }, 'X') === false, 'the check itself is the strict one');
@@ -84,7 +84,7 @@ section('The verdict answers "can I launch" in one line');
   ok(/AI engine/.test(noKey.summary.verdict), 'and names what is missing', noKey.summary.verdict);
   ok(noKey.summary.blockingMissing >= 2, 'counting each blocker', noKey.summary.blockingMissing);
 
-  const core = await get(Object.assign(bare(), { ANTHROPIC_API_KEY: 'k', JWT_SECRET: 'j' }));
+  const core = await get(Object.assign(bare(), { AMV_MODEL_KEY: 'k', JWT_SECRET: 'j' }));
   ok(/Core product is live/.test(core.summary.verdict), 'with the essentials in, it says the core is live', core.summary.verdict);
   ok(core.summary.blockingMissing === 0, 'and nothing is blocking', core.summary.blockingMissing);
 }
