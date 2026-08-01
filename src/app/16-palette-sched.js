@@ -357,12 +357,13 @@ async function _coworkStart(){
   }
   _coworkClarified=false;   // reset for the next task
   const cad=(_SCHED&&_SCHED.cad)||'once';
-  if(cad!=='once'){ _scheduleAuto2(goal, Object.assign({},_SCHED), {approval:(_AUTOAPP&&_AUTOAPP.mode)||'require', scope:_AUTOAPP?{run:_AUTOAPP.run,risk:_AUTOAPP.risk,until:_AUTOAPP.until}:null}); }
+  let _schedId=null;
+  if(cad!=='once'){ _schedId=_scheduleAuto2(goal, Object.assign({},_SCHED), {approval:(_AUTOAPP&&_AUTOAPP.mode)||'require', scope:_AUTOAPP?{run:_AUTOAPP.run,risk:_AUTOAPP.risk,until:_AUTOAPP.until}:null}); }
   $('cw-step1').style.display='none'; $('cw-step2').style.display='block';
   if(cad!=='once'){ _autoLog('<div class="auto-ev plan"><b>Scheduled</b><div>'+_schedHuman()+'. Running the first one now. AMV runs this automatically when due (and catches up when you return). Connect the backend for true 24/7.</div></div>'); }
   const ws=AMVWorkspace.files.length?AMVWorkspace:null;
   if(ws){ _autoLog('<div class="auto-ev plan"><b>Workspace</b><div>Working across '+ws.files.length+' file'+(ws.files.length>1?'s':'')+(ws.dirHandle?' in your connected folder. Results will be written back to disk.':'. Results will be offered as downloads.')+'</div></div>'); }
-  runAutonomous(goal, ws?{ workspace:ws, fileContent:ws.contextText() }:{});
+  runAutonomous(goal, Object.assign({ schedId:_schedId }, ws?{ workspace:ws, fileContent:ws.contextText() }:{}));
 }
 function _freqLabel(f){ return {daily:'Every day',weekdays:'Every weekday',weekly_mon:'Every Monday morning',weekly:'Every week',hourly:'Every hour'}[f]||f; }
 function _freqNext(f, from){
@@ -615,10 +616,16 @@ function _schedNext(s, from){
 function _scheduleAuto2(goal, s, appr){
   appr=appr||{};
   const list=_loadSched();
-  list.push({id:'a'+Date.now(), goal, sched:s, next:_schedNext(s, Date.now()), created:Date.now(), lastRun:null, approval:appr.approval||'require', scope:appr.scope||null});
+  const id='a'+Date.now();
+  list.push({id, goal, sched:s, next:_schedNext(s, Date.now()), created:Date.now(), lastRun:null, approval:appr.approval||'require', scope:appr.scope||null});
   _saveSched(list);
   const modeTxt=(appr.approval==='auto')?' · Auto-approve':'';
   if(typeof toast==='function') toast('Scheduled - '+_schedHumanOf(s)+modeTxt,'success');
+  /* Returned so the run that starts immediately afterwards can be TAGGED with
+     the job it belongs to. Without that link a finished run looks exactly like
+     a finished job, which is how a daily 9am check ended up filed under
+     "Completed" while it was still running every morning. */
+  return id;
 }
 function _schedHumanOf(s){
   const t='at '+_hourLabel(s.hour);

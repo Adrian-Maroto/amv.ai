@@ -130,6 +130,51 @@ section('Nothing in the bundle waits on an element that was removed');
      'no element lookup targets an id nothing anywhere creates', dead.slice(0, 12));
 }
 
+section('Nothing is called that does not exist');
+{
+  /* The Build group stopped opening because `_initBuildGroup` was CALLED and
+     never defined - it had been deleted along with a genuinely dead neighbour.
+     goApp wraps each startup call in its own try/catch so one broken feature
+     cannot take the whole app down, which is right, and which also means a
+     missing function throws into a swallow and the feature is simply gone.
+
+     The id sweeps above cannot see this: the failure is a name, not an element.
+     So every function goApp and setTab call at startup has to actually be a
+     function on the page. */
+  const startup = new Set();
+  const goApp = src.slice(src.indexOf('function goApp()'), src.indexOf('function goApp()') + 4000);
+  for (const m of goApp.matchAll(/try\{\s*(?:const [^;]+;\s*)?(_[A-Za-z0-9_]+)\(/g)) startup.add(m[1]);
+  for (const m of goApp.matchAll(/\b(_[A-Za-z0-9_]+)\(\)/g)) startup.add(m[1]);
+  ok(startup.size > 8, 'the sweep found startup calls to check', startup.size);
+
+  const undef = await page.evaluate(names => names.filter(n => typeof window[n] !== 'function'), [...startup]);
+  ok(undef.length === 0,
+     'every function the app calls on startup is actually defined', undef);
+
+  /* And the one that broke, end to end: the group opens, reveals what is inside
+     it, and closes again. */
+  const build = await page.evaluate(() => {
+    const grp = document.getElementById('build-group'), tog = document.getElementById('build-toggle');
+    if (!grp || !tog) return { there: false };
+    /* An earlier section visited every tab, and the group auto-opens on a build
+       tab by design - so start from a known closed state rather than whatever
+       the last navigation left behind. */
+    _buildGroupSetOpen(false);
+    const closed0 = grp.classList.contains('collapsed');
+    tog.click();
+    const opened = !grp.classList.contains('collapsed');
+    const inside = [...grp.querySelectorAll('[data-tab]')].map(b => b.dataset.tab);
+    tog.click();
+    return { there: true, closed0, opened, inside, closedAgain: grp.classList.contains('collapsed') };
+  });
+  ok(build.there, 'the Build group exists');
+  ok(build.closed0, 'it can be closed', build);
+  ok(build.opened, 'clicking it opens the group', build);
+  ok(build.inside.includes('dev') && build.inside.includes('lab'),
+     'revealing Dev and Lab, which is the whole point of it', build.inside);
+  ok(build.closedAgain, 'and clicking again closes it');
+}
+
 section('No handler is bound to a data-attribute nothing renders');
 {
   /* The same failure one level along, and the id sweep cannot see it. The

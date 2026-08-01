@@ -753,6 +753,34 @@ function goApp(){ try{ _wireHdrAuth(); }catch(e){} try{ const cy=document.getEle
    returning early on a missing element every time it was called - the same
    silent shape that made the Admin tab unreachable. Removed rather than left
    as a no-op that reads like working code. */
+/* "Build" (Studio, Dev, Lab) collapses under one tappable header so the default
+   sidebar stays short and calm - more room for Chat, Images, Video, Crew and
+   Handoff. Collapsed by default; opens if remembered or if you're on a build
+   tab (so the active item is always visible). */
+const _BUILD_TABS=['studio','dev','lab'];
+function _buildGroupSetOpen(open){
+  const grp=document.getElementById('build-group'), tog=document.getElementById('build-toggle');
+  if(!grp||!tog) return;
+  grp.classList.toggle('collapsed', !open);
+  tog.classList.toggle('open', open);
+  tog.setAttribute('aria-expanded', open?'true':'false');
+  try{ saveStr('amv_sb_build', open?'1':'0'); }catch(e){}
+}
+function _initBuildGroup(){
+  const tog=document.getElementById('build-toggle'); if(!tog) return;
+  if(!tog._b){
+    tog._b=1;
+    const toggle=()=>{ const grp=document.getElementById('build-group'); _buildGroupSetOpen(grp?grp.classList.contains('collapsed'):true); };
+    on(tog,'click',toggle);
+    on(tog,'keydown',(e)=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); toggle(); } });
+  }
+  const remembered=(()=>{ try{ return loadStr('amv_sb_build')==='1'; }catch(e){ return false; } })();
+  _buildGroupSetOpen(remembered || _BUILD_TABS.includes(S.tab));
+}
+/* Keep the group open whenever a build tab is active, so the highlighted item
+   is never hidden. Called from setTab. */
+function _buildGroupSync(){ if(_BUILD_TABS.includes(S.tab)) _buildGroupSetOpen(true); }
+try{ window._initBuildGroup=_initBuildGroup; window._buildGroupSync=_buildGroupSync; }catch(e){}
 function _revealAdminNav(){
   try{
     const existing=document.getElementById('nav-admin');

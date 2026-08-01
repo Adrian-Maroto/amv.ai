@@ -2622,6 +2622,34 @@ function goApp(){ try{ _wireHdrAuth(); }catch(e){} try{ const cy=document.getEle
    returning early on a missing element every time it was called - the same
    silent shape that made the Admin tab unreachable. Removed rather than left
    as a no-op that reads like working code. */
+/* "Build" (Studio, Dev, Lab) collapses under one tappable header so the default
+   sidebar stays short and calm - more room for Chat, Images, Video, Crew and
+   Handoff. Collapsed by default; opens if remembered or if you're on a build
+   tab (so the active item is always visible). */
+const _BUILD_TABS=['studio','dev','lab'];
+function _buildGroupSetOpen(open){
+  const grp=document.getElementById('build-group'), tog=document.getElementById('build-toggle');
+  if(!grp||!tog) return;
+  grp.classList.toggle('collapsed', !open);
+  tog.classList.toggle('open', open);
+  tog.setAttribute('aria-expanded', open?'true':'false');
+  try{ saveStr('amv_sb_build', open?'1':'0'); }catch(e){}
+}
+function _initBuildGroup(){
+  const tog=document.getElementById('build-toggle'); if(!tog) return;
+  if(!tog._b){
+    tog._b=1;
+    const toggle=()=>{ const grp=document.getElementById('build-group'); _buildGroupSetOpen(grp?grp.classList.contains('collapsed'):true); };
+    on(tog,'click',toggle);
+    on(tog,'keydown',(e)=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); toggle(); } });
+  }
+  const remembered=(()=>{ try{ return loadStr('amv_sb_build')==='1'; }catch(e){ return false; } })();
+  _buildGroupSetOpen(remembered || _BUILD_TABS.includes(S.tab));
+}
+/* Keep the group open whenever a build tab is active, so the highlighted item
+   is never hidden. Called from setTab. */
+function _buildGroupSync(){ if(_BUILD_TABS.includes(S.tab)) _buildGroupSetOpen(true); }
+try{ window._initBuildGroup=_initBuildGroup; window._buildGroupSync=_buildGroupSync; }catch(e){}
 function _revealAdminNav(){
   try{
     const existing=document.getElementById('nav-admin');
@@ -11632,14 +11660,36 @@ function _mcState(){
   const jobs=_cwJobs();
   const sched=(typeof _loadSched==='function')?_loadSched():[];
   const bg=(typeof _bgQueue!=='undefined'&&_bgQueue.tasks)?_bgQueue.tasks:[];
+  /* A finished RUN is not a finished JOB.
+
+     Every run marked itself `done` and dropped into the Completed pile, so a
+     job scheduled for 9am every day showed as "Completed" after its first
+     morning - while it kept running every morning after that. The schedule and
+     the run lived in two separate lists and nothing joined them, so nothing
+     could tell the difference.
+
+     A run carries the id of the job it belongs to now. If that job is still
+     scheduled, the run is history for a job that is very much alive, and it
+     belongs with the job rather than in Completed. Only work that has genuinely
+     finished for good lands there. */
+  const liveJobIds=new Set(sched.map(t=>t.id));
+  const isRunOfLiveJob=t=>!!(t.schedId && liveJobIds.has(t.schedId));
   return {
     appr,
     active: bg.filter(t=>t.status==='running'||t.status==='queued'),
     failed: bg.filter(t=>t.status==='failed'),
-    done: bg.filter(t=>t.status==='done'),
+    done: bg.filter(t=>t.status==='done' && !isRunOfLiveJob(t)),
+    runsOfJobs: bg.filter(t=>t.status==='done' && isRunOfLiveJob(t)),
     auton: jobs.filter(j=>j.on),
     sched
   };
+}
+/* When a recurring job last produced something, so the card can say "ran this
+   morning, runs again tomorrow" rather than implying it has never run. */
+function _mcLastRunOf(st, jobId){
+  const runs=(st.runsOfJobs||[]).filter(t=>t.schedId===jobId);
+  if(!runs.length) return null;
+  return runs.reduce((a,b)=>((b.created||0)>(a.created||0)?b:a));
 }
 function _mcActiveCard(t){
   const running=t.status==='running';
@@ -11661,10 +11711,18 @@ window._mcRetry=_mcRetry;
 function _mcAutonCard(j){
   return `<div class="mc-card"><div class="mc-card-top"><span class="mc-card-t">${escH(j.title)}</span><span class="mc-pill ok">On</span></div><div class="mc-card-sub">${escH(j.desc||'')}</div><div class="mc-card-act"><span class="mc-card-uses">Uses: ${escH(j.needs||'-')}</span><button class="btn mc-mini ghost" data-dact="cwToggle" data-darg="${j.id}">Turn off</button></div></div>`;
 }
-function _mcSchedRow(t){
+function _mcSchedRow(t, st){
   const when = t.sched?((typeof _schedHumanOf==='function')?_schedHumanOf(t.sched):''):((typeof _freqLabel==='function')?_freqLabel(t.freq):'');
   let next='';
   try{ if(t.next) next=new Date(t.next).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }catch(e){}
+  /* "Ran this morning, runs again tomorrow" is the sentence that tells somebody
+     the job is alive. Its absence is why a running job read as a finished one. */
+  let ran='';
+  try{
+    const last=st?_mcLastRunOf(st,t.id):null;
+    const at=(last&&last.created)||t.lastRun;
+    if(at) ran=new Date(at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+  }catch(e){}
   const auto = t.approval==='auto';
   let waiting=0; try{ waiting=_cwApprovals().filter(a=>a.fromJob===t.id).length; }catch(e){}
   const mode = t.paused
@@ -11675,7 +11733,7 @@ function _mcSchedRow(t){
   return `<div class="mc-sched-row">
     <div class="mc-sched-b">
       <div class="mc-sched-goal">${escH(t.goal||'Scheduled job')}</div>
-      <div class="mc-sched-meta">${escH(when)}${next?` · next ${escH(next)}`:''}${t.localOnly?' · runs while AMV is open':''}</div>
+      <div class="mc-sched-meta">${escH(when)}${ran?` · last ran ${escH(ran)}`:''}${next?` · next ${escH(next)}`:''}${t.localOnly?' · runs while AMV is open':''}</div>
       <div class="mc-sched-mode-row">${mode}${waitChip}</div>
     </div>
     <div class="mc-sched-acts">
@@ -12000,7 +12058,7 @@ function renderCrewView(){
 
     <section id="mc-sched" class="mc-sec">
       <div class="sec-head"><h3>Running jobs</h3><span class="sec-sub">Recurring work AMV runs on a schedule. Each run creates fresh content (a new email, a new summary). For each one you choose: <b>Autonomous</b> sends it for you automatically, or <b>Ask first</b> drops a draft in "Needs your approval" every time so you review before it sends.</span><button class="mc-sec-link" data-dact="openSchedManager">Manage</button></div>
-      ${(st.sched.length||st.auton.length)?`<div class="mc-sched">${st.auton.map(_mcAutonSchedRow).join('')}${st.sched.slice(0,8).map(_mcSchedRow).join('')}</div>`:`<div class="mc-empty-row">No running jobs yet. Start a task above and choose how often it should repeat - it will show up here.</div>`}
+      ${(st.sched.length||st.auton.length)?`<div class="mc-sched">${st.auton.map(_mcAutonSchedRow).join('')}${st.sched.slice(0,8).map(t=>_mcSchedRow(t,st)).join('')}</div>`:`<div class="mc-empty-row">No running jobs yet. Start a task above and choose how often it should repeat - it will show up here.</div>`}
     </section>
 
     ${st.done.length?`<section id="mc-done" class="mc-sec">
@@ -19659,7 +19717,7 @@ async function runAutonomous(goal, opts){
   // while it runs and moves to "Recently completed" when done - so a task you
   // start is never invisible.
   let _mcVisTask=null;
-  try{ _mcVisTask={id:'bg'+Date.now(),type:'autonomous',title:(goal||'Autonomous task').replace(/\s+/g,' ').trim().slice(0,90),status:'running',created:Date.now(),progress:0}; _bgQueue.tasks.push(_mcVisTask); if(S.tab==='crew'){ try{ renderCrewView(); }catch(e){} } }catch(e){}
+  try{ _mcVisTask={id:'bg'+Date.now(),type:'autonomous',title:(goal||'Autonomous task').replace(/\s+/g,' ').trim().slice(0,90),status:'running',created:Date.now(),progress:0,schedId:(opts&&opts.schedId)||null}; _bgQueue.tasks.push(_mcVisTask); if(S.tab==='crew'){ try{ renderCrewView(); }catch(e){} } }catch(e){}
 
   _autoLog('<div class="auto-ev plan"><b>Goal</b><div>'+escH(goal)+'</div></div>');
   _autoSetStatus('Planning…');
@@ -20185,12 +20243,13 @@ async function _coworkStart(){
   }
   _coworkClarified=false;   // reset for the next task
   const cad=(_SCHED&&_SCHED.cad)||'once';
-  if(cad!=='once'){ _scheduleAuto2(goal, Object.assign({},_SCHED), {approval:(_AUTOAPP&&_AUTOAPP.mode)||'require', scope:_AUTOAPP?{run:_AUTOAPP.run,risk:_AUTOAPP.risk,until:_AUTOAPP.until}:null}); }
+  let _schedId=null;
+  if(cad!=='once'){ _schedId=_scheduleAuto2(goal, Object.assign({},_SCHED), {approval:(_AUTOAPP&&_AUTOAPP.mode)||'require', scope:_AUTOAPP?{run:_AUTOAPP.run,risk:_AUTOAPP.risk,until:_AUTOAPP.until}:null}); }
   $('cw-step1').style.display='none'; $('cw-step2').style.display='block';
   if(cad!=='once'){ _autoLog('<div class="auto-ev plan"><b>Scheduled</b><div>'+_schedHuman()+'. Running the first one now. AMV runs this automatically when due (and catches up when you return). Connect the backend for true 24/7.</div></div>'); }
   const ws=AMVWorkspace.files.length?AMVWorkspace:null;
   if(ws){ _autoLog('<div class="auto-ev plan"><b>Workspace</b><div>Working across '+ws.files.length+' file'+(ws.files.length>1?'s':'')+(ws.dirHandle?' in your connected folder. Results will be written back to disk.':'. Results will be offered as downloads.')+'</div></div>'); }
-  runAutonomous(goal, ws?{ workspace:ws, fileContent:ws.contextText() }:{});
+  runAutonomous(goal, Object.assign({ schedId:_schedId }, ws?{ workspace:ws, fileContent:ws.contextText() }:{}));
 }
 function _freqLabel(f){ return {daily:'Every day',weekdays:'Every weekday',weekly_mon:'Every Monday morning',weekly:'Every week',hourly:'Every hour'}[f]||f; }
 function _freqNext(f, from){
@@ -20443,10 +20502,16 @@ function _schedNext(s, from){
 function _scheduleAuto2(goal, s, appr){
   appr=appr||{};
   const list=_loadSched();
-  list.push({id:'a'+Date.now(), goal, sched:s, next:_schedNext(s, Date.now()), created:Date.now(), lastRun:null, approval:appr.approval||'require', scope:appr.scope||null});
+  const id='a'+Date.now();
+  list.push({id, goal, sched:s, next:_schedNext(s, Date.now()), created:Date.now(), lastRun:null, approval:appr.approval||'require', scope:appr.scope||null});
   _saveSched(list);
   const modeTxt=(appr.approval==='auto')?' · Auto-approve':'';
   if(typeof toast==='function') toast('Scheduled - '+_schedHumanOf(s)+modeTxt,'success');
+  /* Returned so the run that starts immediately afterwards can be TAGGED with
+     the job it belongs to. Without that link a finished run looks exactly like
+     a finished job, which is how a daily 9am check ended up filed under
+     "Completed" while it was still running every morning. */
+  return id;
 }
 function _schedHumanOf(s){
   const t='at '+_hourLabel(s.hour);

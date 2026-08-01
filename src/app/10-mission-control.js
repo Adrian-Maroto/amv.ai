@@ -186,14 +186,36 @@ function _mcState(){
   const jobs=_cwJobs();
   const sched=(typeof _loadSched==='function')?_loadSched():[];
   const bg=(typeof _bgQueue!=='undefined'&&_bgQueue.tasks)?_bgQueue.tasks:[];
+  /* A finished RUN is not a finished JOB.
+
+     Every run marked itself `done` and dropped into the Completed pile, so a
+     job scheduled for 9am every day showed as "Completed" after its first
+     morning - while it kept running every morning after that. The schedule and
+     the run lived in two separate lists and nothing joined them, so nothing
+     could tell the difference.
+
+     A run carries the id of the job it belongs to now. If that job is still
+     scheduled, the run is history for a job that is very much alive, and it
+     belongs with the job rather than in Completed. Only work that has genuinely
+     finished for good lands there. */
+  const liveJobIds=new Set(sched.map(t=>t.id));
+  const isRunOfLiveJob=t=>!!(t.schedId && liveJobIds.has(t.schedId));
   return {
     appr,
     active: bg.filter(t=>t.status==='running'||t.status==='queued'),
     failed: bg.filter(t=>t.status==='failed'),
-    done: bg.filter(t=>t.status==='done'),
+    done: bg.filter(t=>t.status==='done' && !isRunOfLiveJob(t)),
+    runsOfJobs: bg.filter(t=>t.status==='done' && isRunOfLiveJob(t)),
     auton: jobs.filter(j=>j.on),
     sched
   };
+}
+/* When a recurring job last produced something, so the card can say "ran this
+   morning, runs again tomorrow" rather than implying it has never run. */
+function _mcLastRunOf(st, jobId){
+  const runs=(st.runsOfJobs||[]).filter(t=>t.schedId===jobId);
+  if(!runs.length) return null;
+  return runs.reduce((a,b)=>((b.created||0)>(a.created||0)?b:a));
 }
 function _mcActiveCard(t){
   const running=t.status==='running';
@@ -215,10 +237,18 @@ window._mcRetry=_mcRetry;
 function _mcAutonCard(j){
   return `<div class="mc-card"><div class="mc-card-top"><span class="mc-card-t">${escH(j.title)}</span><span class="mc-pill ok">On</span></div><div class="mc-card-sub">${escH(j.desc||'')}</div><div class="mc-card-act"><span class="mc-card-uses">Uses: ${escH(j.needs||'-')}</span><button class="btn mc-mini ghost" data-dact="cwToggle" data-darg="${j.id}">Turn off</button></div></div>`;
 }
-function _mcSchedRow(t){
+function _mcSchedRow(t, st){
   const when = t.sched?((typeof _schedHumanOf==='function')?_schedHumanOf(t.sched):''):((typeof _freqLabel==='function')?_freqLabel(t.freq):'');
   let next='';
   try{ if(t.next) next=new Date(t.next).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }catch(e){}
+  /* "Ran this morning, runs again tomorrow" is the sentence that tells somebody
+     the job is alive. Its absence is why a running job read as a finished one. */
+  let ran='';
+  try{
+    const last=st?_mcLastRunOf(st,t.id):null;
+    const at=(last&&last.created)||t.lastRun;
+    if(at) ran=new Date(at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+  }catch(e){}
   const auto = t.approval==='auto';
   let waiting=0; try{ waiting=_cwApprovals().filter(a=>a.fromJob===t.id).length; }catch(e){}
   const mode = t.paused
@@ -229,7 +259,7 @@ function _mcSchedRow(t){
   return `<div class="mc-sched-row">
     <div class="mc-sched-b">
       <div class="mc-sched-goal">${escH(t.goal||'Scheduled job')}</div>
-      <div class="mc-sched-meta">${escH(when)}${next?` · next ${escH(next)}`:''}${t.localOnly?' · runs while AMV is open':''}</div>
+      <div class="mc-sched-meta">${escH(when)}${ran?` · last ran ${escH(ran)}`:''}${next?` · next ${escH(next)}`:''}${t.localOnly?' · runs while AMV is open':''}</div>
       <div class="mc-sched-mode-row">${mode}${waitChip}</div>
     </div>
     <div class="mc-sched-acts">
@@ -554,7 +584,7 @@ function renderCrewView(){
 
     <section id="mc-sched" class="mc-sec">
       <div class="sec-head"><h3>Running jobs</h3><span class="sec-sub">Recurring work AMV runs on a schedule. Each run creates fresh content (a new email, a new summary). For each one you choose: <b>Autonomous</b> sends it for you automatically, or <b>Ask first</b> drops a draft in "Needs your approval" every time so you review before it sends.</span><button class="mc-sec-link" data-dact="openSchedManager">Manage</button></div>
-      ${(st.sched.length||st.auton.length)?`<div class="mc-sched">${st.auton.map(_mcAutonSchedRow).join('')}${st.sched.slice(0,8).map(_mcSchedRow).join('')}</div>`:`<div class="mc-empty-row">No running jobs yet. Start a task above and choose how often it should repeat - it will show up here.</div>`}
+      ${(st.sched.length||st.auton.length)?`<div class="mc-sched">${st.auton.map(_mcAutonSchedRow).join('')}${st.sched.slice(0,8).map(t=>_mcSchedRow(t,st)).join('')}</div>`:`<div class="mc-empty-row">No running jobs yet. Start a task above and choose how often it should repeat - it will show up here.</div>`}
     </section>
 
     ${st.done.length?`<section id="mc-done" class="mc-sec">

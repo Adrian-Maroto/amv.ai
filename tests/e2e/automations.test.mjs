@@ -75,6 +75,46 @@ section('Autonomy is a paid capability, said once and calmly');
   ok(paid.jobs > 0, 'and gets the actual tool', paid.jobs);
 }
 
+section('A job that runs every day does not read as finished');
+{
+  /* The bug: every RUN marked itself done and fell into the Completed pile, so
+     a 9am daily check showed as "Completed" after its first morning while it
+     kept running every morning after that. The schedule and the run lived in
+     two separate lists and nothing joined them. */
+  const r = await page.evaluate(() => {
+    saveStr('amv_plan', 'pro');
+    localStorage.setItem('amv_autosched', JSON.stringify([
+      { id: 'a1', goal: 'Check my bank balance', sched: { cad: 'daily', hour: 9 },
+        next: Date.now() + 86400000, created: Date.now() - 172800000 },
+    ]));
+    _bgQueue.tasks.length = 0;
+    _bgQueue.tasks.push({ id: 'bg1', title: 'Check my bank balance', status: 'done',
+                          created: Date.now() - 3600000, schedId: 'a1' });
+    _bgQueue.tasks.push({ id: 'bg2', title: 'A one-off thing', status: 'done',
+                          created: Date.now() - 7200000, schedId: null });
+    const st = _mcState();
+    renderCrewView();
+    const t = document.getElementById('vc').textContent;
+    return { done: st.done.length, runs: st.runsOfJobs.length, sched: st.sched.length,
+             lastRan: /last ran/.test(t), next: /next /.test(t), goal: /Check my bank balance/.test(t) };
+  });
+  ok(r.done === 1, 'only the genuinely finished one-off is in Completed', r.done);
+  ok(r.runs === 1, 'the daily run is filed against its job instead', r.runs);
+  ok(r.sched === 1, 'and the job itself is still a running job', r.sched);
+  ok(r.goal, 'named on screen');
+  ok(r.lastRan, 'saying when it last ran, so it is visibly alive');
+  ok(r.next, 'and when it runs next');
+
+  /* Cancel the schedule and the run becomes what it now is: history. */
+  const after = await page.evaluate(() => {
+    localStorage.setItem('amv_autosched', '[]');
+    const st = _mcState();
+    return { done: st.done.length, runs: st.runsOfJobs.length };
+  });
+  ok(after.done === 2, 'once the job is cancelled its runs are history like anything else', after.done);
+  ok(after.runs === 0, 'and nothing is left pointing at a job that no longer exists', after.runs);
+}
+
 section('Each one is honest about what it needs');
 ok(r.missingNeeds.length === 0, 'every automation states the access it requires', r.missingNeeds);
 ok(/Email|Calendar|Web research/.test(r.radar.needs), 'requirements name real integrations', r.radar.needs);

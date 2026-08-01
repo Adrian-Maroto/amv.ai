@@ -91,7 +91,7 @@ async function runAutonomous(goal, opts){
   // while it runs and moves to "Recently completed" when done - so a task you
   // start is never invisible.
   let _mcVisTask=null;
-  try{ _mcVisTask={id:'bg'+Date.now(),type:'autonomous',title:(goal||'Autonomous task').replace(/\s+/g,' ').trim().slice(0,90),status:'running',created:Date.now(),progress:0}; _bgQueue.tasks.push(_mcVisTask); if(S.tab==='crew'){ try{ renderCrewView(); }catch(e){} } }catch(e){}
+  try{ _mcVisTask={id:'bg'+Date.now(),type:'autonomous',title:(goal||'Autonomous task').replace(/\s+/g,' ').trim().slice(0,90),status:'running',created:Date.now(),progress:0,schedId:(opts&&opts.schedId)||null}; _bgQueue.tasks.push(_mcVisTask); if(S.tab==='crew'){ try{ renderCrewView(); }catch(e){} } }catch(e){}
 
   _autoLog('<div class="auto-ev plan"><b>Goal</b><div>'+escH(goal)+'</div></div>');
   _autoSetStatus('Planning…');
