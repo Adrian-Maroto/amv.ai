@@ -7373,3 +7373,22 @@ html,body{height:100%;height:100dvh}
 .mc-allow{font-size:var(--t-sm);color:var(--mu);margin:0 0 var(--sp-3);
   font-variant-numeric:tabular-nums}
 .mc-allow span{color:var(--dim)}
+
+/* ============================================================
+   LAYER A50 - Explaining what a screen is
+
+   The spending pane opened straight into three number fields.
+   These are the blocks that say what a thing IS before what it
+   is set to - money and teams both had controls and no answer
+   to "what is this".
+   ============================================================ */
+.mf-what p{font-size:var(--t-base);color:var(--tx);line-height:1.7;margin:0 0 var(--sp-3)}
+.mf-what-l{margin:0;padding-left:var(--sp-5);display:flex;flex-direction:column;gap:var(--sp-2)}
+.mf-what-l li{font-size:var(--t-sm);color:var(--mu);line-height:1.65}
+.mf-what-l b{color:var(--tx)}
+.set-what p{font-size:var(--t-base);color:var(--tx);line-height:1.7;margin:0 0 var(--sp-3)}
+.set-facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:var(--sp-3);margin:var(--sp-4) 0 0}
+.set-fact{background:var(--s2);border:1px solid var(--bd);border-radius:var(--r-md);padding:var(--sp-3)}
+.set-fact-k{font-size:var(--t-xs);color:var(--mu);text-transform:uppercase;letter-spacing:.04em}
+.set-fact-v{font-size:var(--t-lg);color:var(--tx);font-weight:600;margin-top:2px;font-variant-numeric:tabular-nums}
+.set-fact-s{font-size:var(--t-xs);color:var(--dim);line-height:1.5;margin-top:3px}

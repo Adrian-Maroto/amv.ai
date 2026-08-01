@@ -164,6 +164,60 @@ section('A member has their own way off the team');
   await page.setViewportSize({ width: 1280, height: 900 });
 }
 
+section('Settings answers "what is a team", with numbers');
+{
+  /* The product could not answer it anywhere. The Team tab showed either a tool
+     or an upgrade wall, and neither said how many people fit, what a seat gets
+     them, or what happens to the allowance when somebody joins. */
+  let fetches = 0;
+  const r = await page.evaluate(async () => {
+    window.__f = 0;
+    window.AMVTeam.enabled = () => true;
+    window.AMVTeam._cache = null;
+    window.AMV_API._fetch = async () => { window.__f++; return { json: async () => ({ ok: true, team: {
+      id: 't1', name: 'Acme', members: [{ email: 'owner@x.com', role: 'owner' }],
+      seats: { used: 1, limit: 10, over: 0 } } }) }; };
+    S.settingsPane = 'teamset'; S.tab = 'settings'; setTab('settings');
+    await new Promise(r => setTimeout(r, 500));
+    return { text: document.getElementById('vc').textContent, fetches: window.__f };
+  });
+  ok(/What a team is/.test(r.text), 'it says what a team is');
+  ok(/Elite/.test(r.text) && /10/.test(r.text), 'how many people fit on each plan', /Elite/.test(r.text));
+  ok(/per person/.test(r.text), 'and what the per-seat plan costs');
+  ok(/own allowance/i.test(r.text),
+     'and the difference that actually matters - divided versus its own allowance');
+  ok(/never what anybody types into chat|keeps their own conversations/i.test(r.text),
+     'while making clear a team does not share conversations');
+
+  /* The pane re-draws once when the team arrives. Re-drawing unconditionally
+     would fetch, re-render, fetch, for ever. */
+  ok(r.fetches === 1, 'the team is fetched once, not in a loop', r.fetches);
+}
+
+section('Settings answers "what is spending", before asking for numbers');
+{
+  const r = await page.evaluate(async () => {
+    S.settingsPane = 'spending'; S.tab = 'settings'; setTab('settings');
+    await new Promise(r => setTimeout(r, 300));
+    return document.getElementById('vc').textContent;
+  });
+  /* And it is ABOVE the terms gate. Somebody deciding whether to accept is
+     exactly the person who needs the explanation, and it used to render only
+     after they had already accepted. */
+  ok(/What this is/.test(r), 'the pane says what it is before what it is set to');
+  ok(r.indexOf('What this is') < r.indexOf('Before AMV can spend anything'),
+     'and says it before asking them to accept anything');
+  ok(/off until you turn it on/i.test(r), 'that it is off by default');
+  /* "API key" also appears in the settings nav, so match on something only this
+     pane says - an assertion that passes off the navigation is not an
+     assertion. */
+  ok(/stock photo/i.test(r) && /paid data source/i.test(r),
+     'what would actually get bought', /stock photo/i.test(r));
+  ok(/never a subscription/i.test(r), 'and what it will never do');
+  ok(/would not mind losing/i.test(r),
+     'with the monthly ceiling explained as the most you can lose');
+}
+
 section('The entry points exist, because a screen nobody can reach is not shipped');
 {
   await page.setViewportSize({ width: 1280, height: 900 });

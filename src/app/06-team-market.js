@@ -188,6 +188,77 @@ function _wireSeatBuy(){
 }
 try{ window._wireSeatBuy=_wireSeatBuy; }catch(e){}
 
+/* Settings -> Team. The question this answers is "what IS this", which the
+   product could not answer anywhere: the Team tab showed either a tool or an
+   upgrade wall, and neither said how many people fit, what a seat gets them, or
+   what happens to the allowance when somebody joins. */
+function _renderTeamSettingsPane(pane){
+  const P=(typeof PLANS!=='undefined'&&PLANS.team)||{price:20};
+  const min=(typeof TEAM_SEAT_MIN!=='undefined')?TEAM_SEAT_MIN:3;
+  const team=(window.AMVTeam&&AMVTeam._cache)||null;
+  const seats=team&&team.seats;
+
+  pane.innerHTML=
+    '<div class="set-title">Team</div>'+
+    '<div class="set-sub">Sharing AMV with the people you work with.</div>'+
+    '<div class="ss2 set-what"><h3>What a team is</h3>'+
+      '<p>One AMV subscription that several people sign into with their own accounts. '+
+      'They share a project library, a prompt library, a task board and AMV\u2019s memory of your '+
+      'work - and you get one bill instead of one per person.</p>'+
+      '<p>Everyone keeps their own conversations. A team shares what you put in the shared '+
+      'library, never what anybody types into chat.</p>'+
+    '</div>'+
+    '<div class="ss2"><h3>How many people</h3>'+
+      '<div class="set-facts">'+
+        '<div class="set-fact"><div class="set-fact-k">Free / Pro</div><div class="set-fact-v">1</div>'+
+          '<div class="set-fact-s">Just you - these are individual plans</div></div>'+
+        '<div class="set-fact"><div class="set-fact-k">Elite</div><div class="set-fact-v">10</div>'+
+          '<div class="set-fact-s">Ten people sharing that one plan\u2019s allowance</div></div>'+
+        '<div class="set-fact"><div class="set-fact-k">Ultra</div><div class="set-fact-v">25</div>'+
+          '<div class="set-fact-s">Same idea, twenty-five of them</div></div>'+
+        '<div class="set-fact"><div class="set-fact-k">Teams</div><div class="set-fact-v">$'+P.price+'/person</div>'+
+          '<div class="set-fact-s">From '+min+' people. Every seat adds its OWN allowance to the shared pool</div></div>'+
+      '</div>'+
+      '<p class="set-fact-s" style="margin-top:12px">The difference that matters: on Elite and Ultra a bigger '+
+      'team divides one allowance, so each person gets less as you grow. On Teams each seat brings its own, '+
+      'so ten people have ten plans\u2019 worth of capacity. That is why Teams is the one to buy if you are '+
+      'actually a team.</p>'+
+    '</div>'+
+    (seats?
+    '<div class="ss2"><h3>Your team right now</h3>'+
+      '<div class="set-facts">'+
+        '<div class="set-fact"><div class="set-fact-k">Members</div><div class="set-fact-v">'+seats.used+'</div></div>'+
+        '<div class="set-fact"><div class="set-fact-k">Seats</div><div class="set-fact-v">'+seats.limit+'</div></div>'+
+        '<div class="set-fact"><div class="set-fact-k">Free seats</div><div class="set-fact-v">'+Math.max(0,seats.limit-seats.used)+'</div>'+
+          (seats.over>0?'<div class="set-fact-s" style="color:var(--gold)">'+seats.over+' over your plan</div>':'')+'</div>'+
+      '</div>'+
+      '<button class="btn bs" data-stab="team" style="font-size:12px;margin-top:14px">Manage the team \u2192</button>'+
+    '</div>'
+    :'<div class="ss2"><h3>You are not in a team</h3>'+
+      '<p style="font-size:13px;color:var(--mu);line-height:1.65;margin:0 0 12px">'+
+      'Anyone can be invited into one on any plan - the team pays for your seat, not you. '+
+      'To start one yourself you need a plan that includes seats.</p>'+
+      '<button class="btn bp" data-stab="team" style="font-size:12px">Open Team \u2192</button></div>')+
+    '<div class="ss2"><h3>What a seat costs the team</h3>'+
+      '<p style="font-size:13px;color:var(--mu);line-height:1.65;margin:0">'+
+      'Everyone on a team draws on the same monthly allowance, so one person having a heavy week '+
+      'is felt by everybody. You can see how much is left in <b>Settings \u2192 Usage</b> at any time. '+
+      'Nobody can be charged individually - there is one subscription and one bill.</p>'+
+    '</div>';
+  /* Fetch the team ONCE if we do not have it, then draw again with the real
+     numbers. Guarded on the cache being empty: re-rendering unconditionally
+     would call this function, which would fetch, which would re-render, for
+     ever. */
+  if(!team){
+    try{
+      if(window.AMVTeam&&AMVTeam.enabled()){
+        AMVTeam.get().then(t=>{ if(t) _renderTeamSettingsPane(pane); }).catch(()=>{});
+      }
+    }catch(e){}
+  }
+}
+try{ window._renderTeamSettingsPane=_renderTeamSettingsPane; }catch(e){}
+
 function _renderTeamCreate(vc){
   vc.innerHTML='<div class="sv fi"><div class="vi">'+
     '<span class="eyebrow">Collaboration</span><h2>Create your team</h2>'+

@@ -70,6 +70,31 @@ function _renderSpendingPane(pane){
   pane.innerHTML =
     '<div class="set-title">Spending</div>'+
     '<div class="set-sub">What AMV is allowed to spend for you, and what it has actually spent. Nothing is bought outside these limits.</div>'+
+    /* What this IS, before what it is set to.
+
+       The pane opened straight into three number fields. Somebody who has never
+       heard of AMV spending money on their behalf met "Buy without asking,
+       under" with no idea what would be bought, by what, or why they would want
+       it - which is the worst possible first impression for the one screen
+       about money. */
+    '<div class="ss2 mf-what"><h3>What this is</h3>'+
+      '<p>When AMV is doing a job for you and that job needs something bought - a domain for a site '+
+      'it is deploying, an API key, a stock photo, a paid data source - this is what decides whether '+
+      'it may buy it, and how much it may spend without stopping to ask you.</p>'+
+      '<p><b>It is off until you turn it on.</b> With it off, AMV will never pay for anything, however '+
+      'it is asked - it stops and tells you what it needs instead.</p>'+
+      '<ul class="mf-what-l">'+
+        '<li><b>What it buys</b> - only things a job you started actually needs. Never a subscription, '+
+          'never anything recurring, and never on a site you have not approved.</li>'+
+        '<li><b>What it never does</b> - it does not move money between your accounts, does not send '+
+          'money to people, and cannot spend anything after you switch this off.</li>'+
+        '<li><b>Why the limits matter</b> - the three numbers below are hard stops, checked before '+
+          'every purchase. The monthly ceiling is the one that decides the most you can lose in a bad '+
+          'month, so set it to a number you would not mind losing.</li>'+
+        '<li><b>Everything is written down</b> - every purchase appears below with what it was, where, '+
+          'and how much, and it is only visible to you.</li>'+
+      '</ul>'+
+    '</div>'+
     gate +
     (canConfigure ?
     '<div class="ss2"><h3>Limits</h3>'+

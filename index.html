@@ -7459,6 +7459,25 @@ html,body{height:100%;height:100dvh}
   font-variant-numeric:tabular-nums}
 .mc-allow span{color:var(--dim)}
 
+/* ============================================================
+   LAYER A50 - Explaining what a screen is
+
+   The spending pane opened straight into three number fields.
+   These are the blocks that say what a thing IS before what it
+   is set to - money and teams both had controls and no answer
+   to "what is this".
+   ============================================================ */
+.mf-what p{font-size:var(--t-base);color:var(--tx);line-height:1.7;margin:0 0 var(--sp-3)}
+.mf-what-l{margin:0;padding-left:var(--sp-5);display:flex;flex-direction:column;gap:var(--sp-2)}
+.mf-what-l li{font-size:var(--t-sm);color:var(--mu);line-height:1.65}
+.mf-what-l b{color:var(--tx)}
+.set-what p{font-size:var(--t-base);color:var(--tx);line-height:1.7;margin:0 0 var(--sp-3)}
+.set-facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:var(--sp-3);margin:var(--sp-4) 0 0}
+.set-fact{background:var(--s2);border:1px solid var(--bd);border-radius:var(--r-md);padding:var(--sp-3)}
+.set-fact-k{font-size:var(--t-xs);color:var(--mu);text-transform:uppercase;letter-spacing:.04em}
+.set-fact-v{font-size:var(--t-lg);color:var(--tx);font-weight:600;margin-top:2px;font-variant-numeric:tabular-nums}
+.set-fact-s{font-size:var(--t-xs);color:var(--dim);line-height:1.5;margin-top:3px}
+
 </style>
 <!-- BUILD:CSS:END -->
 <script>
@@ -15100,6 +15119,77 @@ function _wireSeatBuy(){
 }
 try{ window._wireSeatBuy=_wireSeatBuy; }catch(e){}
 
+/* Settings -> Team. The question this answers is "what IS this", which the
+   product could not answer anywhere: the Team tab showed either a tool or an
+   upgrade wall, and neither said how many people fit, what a seat gets them, or
+   what happens to the allowance when somebody joins. */
+function _renderTeamSettingsPane(pane){
+  const P=(typeof PLANS!=='undefined'&&PLANS.team)||{price:20};
+  const min=(typeof TEAM_SEAT_MIN!=='undefined')?TEAM_SEAT_MIN:3;
+  const team=(window.AMVTeam&&AMVTeam._cache)||null;
+  const seats=team&&team.seats;
+
+  pane.innerHTML=
+    '<div class="set-title">Team</div>'+
+    '<div class="set-sub">Sharing AMV with the people you work with.</div>'+
+    '<div class="ss2 set-what"><h3>What a team is</h3>'+
+      '<p>One AMV subscription that several people sign into with their own accounts. '+
+      'They share a project library, a prompt library, a task board and AMV\u2019s memory of your '+
+      'work - and you get one bill instead of one per person.</p>'+
+      '<p>Everyone keeps their own conversations. A team shares what you put in the shared '+
+      'library, never what anybody types into chat.</p>'+
+    '</div>'+
+    '<div class="ss2"><h3>How many people</h3>'+
+      '<div class="set-facts">'+
+        '<div class="set-fact"><div class="set-fact-k">Free / Pro</div><div class="set-fact-v">1</div>'+
+          '<div class="set-fact-s">Just you - these are individual plans</div></div>'+
+        '<div class="set-fact"><div class="set-fact-k">Elite</div><div class="set-fact-v">10</div>'+
+          '<div class="set-fact-s">Ten people sharing that one plan\u2019s allowance</div></div>'+
+        '<div class="set-fact"><div class="set-fact-k">Ultra</div><div class="set-fact-v">25</div>'+
+          '<div class="set-fact-s">Same idea, twenty-five of them</div></div>'+
+        '<div class="set-fact"><div class="set-fact-k">Teams</div><div class="set-fact-v">$'+P.price+'/person</div>'+
+          '<div class="set-fact-s">From '+min+' people. Every seat adds its OWN allowance to the shared pool</div></div>'+
+      '</div>'+
+      '<p class="set-fact-s" style="margin-top:12px">The difference that matters: on Elite and Ultra a bigger '+
+      'team divides one allowance, so each person gets less as you grow. On Teams each seat brings its own, '+
+      'so ten people have ten plans\u2019 worth of capacity. That is why Teams is the one to buy if you are '+
+      'actually a team.</p>'+
+    '</div>'+
+    (seats?
+    '<div class="ss2"><h3>Your team right now</h3>'+
+      '<div class="set-facts">'+
+        '<div class="set-fact"><div class="set-fact-k">Members</div><div class="set-fact-v">'+seats.used+'</div></div>'+
+        '<div class="set-fact"><div class="set-fact-k">Seats</div><div class="set-fact-v">'+seats.limit+'</div></div>'+
+        '<div class="set-fact"><div class="set-fact-k">Free seats</div><div class="set-fact-v">'+Math.max(0,seats.limit-seats.used)+'</div>'+
+          (seats.over>0?'<div class="set-fact-s" style="color:var(--gold)">'+seats.over+' over your plan</div>':'')+'</div>'+
+      '</div>'+
+      '<button class="btn bs" data-stab="team" style="font-size:12px;margin-top:14px">Manage the team \u2192</button>'+
+    '</div>'
+    :'<div class="ss2"><h3>You are not in a team</h3>'+
+      '<p style="font-size:13px;color:var(--mu);line-height:1.65;margin:0 0 12px">'+
+      'Anyone can be invited into one on any plan - the team pays for your seat, not you. '+
+      'To start one yourself you need a plan that includes seats.</p>'+
+      '<button class="btn bp" data-stab="team" style="font-size:12px">Open Team \u2192</button></div>')+
+    '<div class="ss2"><h3>What a seat costs the team</h3>'+
+      '<p style="font-size:13px;color:var(--mu);line-height:1.65;margin:0">'+
+      'Everyone on a team draws on the same monthly allowance, so one person having a heavy week '+
+      'is felt by everybody. You can see how much is left in <b>Settings \u2192 Usage</b> at any time. '+
+      'Nobody can be charged individually - there is one subscription and one bill.</p>'+
+    '</div>';
+  /* Fetch the team ONCE if we do not have it, then draw again with the real
+     numbers. Guarded on the cache being empty: re-rendering unconditionally
+     would call this function, which would fetch, which would re-render, for
+     ever. */
+  if(!team){
+    try{
+      if(window.AMVTeam&&AMVTeam.enabled()){
+        AMVTeam.get().then(t=>{ if(t) _renderTeamSettingsPane(pane); }).catch(()=>{});
+      }
+    }catch(e){}
+  }
+}
+try{ window._renderTeamSettingsPane=_renderTeamSettingsPane; }catch(e){}
+
 function _renderTeamCreate(vc){
   vc.innerHTML='<div class="sv fi"><div class="vi">'+
     '<span class="eyebrow">Collaboration</span><h2>Create your team</h2>'+
@@ -22608,6 +22698,7 @@ const USER_SET_SECTIONS=[
   {id:'usage',label:'Usage',icon:'<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>'},
   {id:'capabilities',label:'Capabilities',icon:'<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>'},
   {id:'spending',label:'Spending',icon:'<path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>'},
+  {id:'teamset',label:'Team',icon:'<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/>'},
   {id:'api',label:'API keys',icon:'<path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>'},
   {id:'invite',label:'Invite',icon:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/>'},
   {id:'family',label:'Family & linked accounts',icon:'<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'},
@@ -23958,6 +24049,8 @@ function _renderSetPaneInner(){
     /* Rendered from 25-money-family-ui.js - see there for why these two panes
        exist at all (the logic shipped with no way for anyone to reach it). */
     _renderSpendingPane(pane);
+  } else if(sp==='teamset'){
+    _renderTeamSettingsPane(pane);
   } else if(sp==='family'){
     _renderFamilyPane(pane);
   } else if(sp==='api'){
@@ -30178,6 +30271,31 @@ function _renderSpendingPane(pane){
   pane.innerHTML =
     '<div class="set-title">Spending</div>'+
     '<div class="set-sub">What AMV is allowed to spend for you, and what it has actually spent. Nothing is bought outside these limits.</div>'+
+    /* What this IS, before what it is set to.
+
+       The pane opened straight into three number fields. Somebody who has never
+       heard of AMV spending money on their behalf met "Buy without asking,
+       under" with no idea what would be bought, by what, or why they would want
+       it - which is the worst possible first impression for the one screen
+       about money. */
+    '<div class="ss2 mf-what"><h3>What this is</h3>'+
+      '<p>When AMV is doing a job for you and that job needs something bought - a domain for a site '+
+      'it is deploying, an API key, a stock photo, a paid data source - this is what decides whether '+
+      'it may buy it, and how much it may spend without stopping to ask you.</p>'+
+      '<p><b>It is off until you turn it on.</b> With it off, AMV will never pay for anything, however '+
+      'it is asked - it stops and tells you what it needs instead.</p>'+
+      '<ul class="mf-what-l">'+
+        '<li><b>What it buys</b> - only things a job you started actually needs. Never a subscription, '+
+          'never anything recurring, and never on a site you have not approved.</li>'+
+        '<li><b>What it never does</b> - it does not move money between your accounts, does not send '+
+          'money to people, and cannot spend anything after you switch this off.</li>'+
+        '<li><b>Why the limits matter</b> - the three numbers below are hard stops, checked before '+
+          'every purchase. The monthly ceiling is the one that decides the most you can lose in a bad '+
+          'month, so set it to a number you would not mind losing.</li>'+
+        '<li><b>Everything is written down</b> - every purchase appears below with what it was, where, '+
+          'and how much, and it is only visible to you.</li>'+
+      '</ul>'+
+    '</div>'+
     gate +
     (canConfigure ?
     '<div class="ss2"><h3>Limits</h3>'+
