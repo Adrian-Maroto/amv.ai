@@ -611,3 +611,32 @@ for as long as the light theme had. Nothing failed and no test covers colour, so
 it survived until a screenshot was taken in both themes. The token was already
 correct in both. Screenshot BOTH themes for any screen touched; a value a token
 already covers must never be written literally.
+
+## 71. Seventy switches attached to nothing
+Crew's standing jobs looked like the reason to buy a plan: toggle one on and AMV
+works in the background. The toggle wrote `{key, on_flag}` into a `crewjobs` KV
+record, and grep for that key finds exactly three places - the endpoint that
+writes it, the same endpoint reading it back to redraw the switch, and account
+deletion. The cron walks `auto` records and has never read `crewjobs` at all. So
+every standing job on the screen was a switch attached to nothing: it looked on,
+it reported on, and no work was ever scheduled anywhere. Nothing failed, because
+nothing ran. Before adding to a catalogue, follow ONE entry all the way to the
+thing that executes it; a feature can be complete at every layer except the join
+between them, and the join is the only part with no UI to notice.
+
+## 72. Declaring a requirement is not checking one
+Every preset carried a `needs` field - 'Email', 'Bank connection' - rendered
+under each card as "Uses: ...". Nothing ever read it. Switching on a job needing
+a mailbox that was never connected produced an active-looking card that could
+not work. Displaying a requirement and enforcing it look identical in a
+screenshot and are opposite in behaviour.
+
+## 73. The runner's powers decide what a catalogue may promise
+The server runner can search the web and write. The Gmail and Calendar tokens
+live in the browser tab and the server never sees them, so a job needing a
+mailbox genuinely cannot run with AMV closed - and half the catalogue needed
+one. Presenting both kinds as the same "background job" promised something the
+architecture cannot do. They are now two honest states: web-research jobs create
+a real server automation, tab-bound ones go on the local schedule and say they
+need AMV open. Write down what the executor can actually reach BEFORE writing
+the copy that sells it.

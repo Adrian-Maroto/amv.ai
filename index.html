@@ -7686,6 +7686,50 @@ html,body{height:100%;height:100dvh}
    already the right colour in both themes. */
 .sec-head h3{color:var(--tx)}
 
+/* ==========================================================================
+   LAYER A57 - Seventy standing jobs, browsable
+
+   The Crew job list grew from a handful to seventy. A flat grid of seventy
+   cards reads as a wall rather than as range, so they are grouped under
+   category headings with a filter row. And a card now says when the account a
+   job declares it needs is not connected, because switching one on used to
+   flip a flag and nothing else.
+   ========================================================================== */
+.cw-chips{display:flex;flex-wrap:wrap;gap:var(--sp-2);margin:var(--sp-4) 0 var(--sp-5)}
+.cw-chip{display:inline-flex;align-items:center;gap:var(--sp-2);
+  font-size:var(--t-sm);font-weight:600;color:var(--mu);
+  background:var(--s2);border:1px solid var(--bd);border-radius:var(--r-pill);
+  padding:var(--sp-2) var(--sp-3);min-height:36px;cursor:pointer;
+  transition:color .15s var(--ease),border-color .15s var(--ease),background .15s var(--ease)}
+.cw-chip:hover{color:var(--tx);border-color:var(--bdl)}
+.cw-chip.on{color:var(--on-accent,#fff);background:var(--accent);border-color:var(--accent)}
+.cw-chip-n{font-size:var(--t-xs);opacity:.75;font-variant-numeric:tabular-nums}
+.cw-chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.cw-cat{margin-bottom:var(--sp-6)}
+.cw-cat-h{display:flex;align-items:baseline;gap:var(--sp-2);
+  font-size:var(--t-sm);font-weight:700;color:var(--tx);
+  text-transform:uppercase;letter-spacing:.06em;margin-bottom:var(--sp-3)}
+.cw-cat-n{font-size:var(--t-xs);font-weight:600;color:var(--mu);
+  font-variant-numeric:tabular-nums;letter-spacing:0}
+
+/* A job whose account is not connected is dimmed rather than hidden - it is
+   still worth wanting, it just cannot run yet, and the card says which. */
+.cw-job.blocked .cw-job-ic{opacity:.55}
+.cw-job-miss{font-size:var(--t-xs);color:var(--gold);margin-top:var(--sp-2);
+  display:flex;align-items:center;gap:var(--sp-2);flex-wrap:wrap}
+.cw-job-fix{font:inherit;color:var(--accent);background:none;border:0;padding:0;
+  font-weight:700;cursor:pointer;text-decoration:underline;min-height:32px}
+.cw-job-fix:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* Where a job actually runs. The unattended runner searches the web and writes;
+   it has no mailbox, calendar or browser session, because those live in the tab
+   behind a token the server never sees. Both used to be the same switch. */
+.cw-job-where{display:inline-block;margin-left:var(--sp-2);font-size:var(--t-xs);
+  font-weight:600;border-radius:var(--r-pill);padding:1px var(--sp-2);white-space:nowrap}
+.cw-job-where.bg{color:var(--grn);background:color-mix(in srgb,var(--grn) 14%,transparent)}
+.cw-job-where.open{color:var(--mu);background:var(--s3)}
+
 </style>
 <!-- BUILD:CSS:END -->
 <script>
@@ -19632,12 +19676,12 @@ window.setTabBtn=setTabBtn;
 function _cwJobs(){ return load('amv_cw_jobs') || _cwDefaultJobs(); }
 function _cwSaveJobs(j){ store('amv_cw_jobs', j); }
 function _cwDefaultJobs(){ return [
-  { id:'job_hunt', icon:'\uD83D\uDCBC', title:'Job hunt - find, apply, report', desc:'AMV finds roles matched to your resume, tailors an application to each, then (your choice) shows you before applying or applies on its own. Email-apply jobs it submits; portal jobs it fills for one-tap submit. If a posting asks something you have not specified, it asks you first. Emails a morning report.', needs:'Email, Web research', on:false },
-  { id:'morning_brief', icon:'\u2600\uFE0F', title:'Morning news & markets brief', desc:'Every morning at 7am, AMV researches overnight news and market movements, then emails you a concise brief on what happened and which stocks to watch today.', needs:'Email, Web research', on:false },
-  { id:'inbox_digest', icon:'\uD83D\uDCEC', title:'Daily inbox digest', desc:'AMV summarizes your important emails each evening and drafts replies for the ones that need them - you just approve and send.', needs:'Email', on:false },
-  { id:'competitor_watch', icon:'\uD83D\uDD0D', title:'Competitor & industry watch', desc:'Weekly, AMV tracks your competitors and industry news, then emails you a summary of anything that matters.', needs:'Email, Web research', on:false },
-  { id:'weekly_report', icon:'\uD83D\uDCCA', title:'Weekly summary report', desc:'Every Friday, AMV compiles your week - tasks done, key metrics, what\u2019s pending - into a clean report and emails it to you or your team.', needs:'Email', on:false },
-  { id:'content_calendar', icon:'\u270D\uFE0F', title:'Social content drafts', desc:'AMV drafts a week of social posts based on trends in your space and queues them for your approval.', needs:'Web research', on:false },
+  { id:'job_hunt', cat:'Work & career', icon:'\uD83D\uDCBC', title:'Job hunt - find, apply, report', desc:'AMV finds roles matched to your resume, tailors an application to each, then (your choice) shows you before applying or applies on its own. Email-apply jobs it submits; portal jobs it fills for one-tap submit. If a posting asks something you have not specified, it asks you first. Emails a morning report.', needs:'Email, Web research', on:false },
+  { id:'morning_brief', cat:'Watching the world', icon:'\u2600\uFE0F', title:'Morning news & markets brief', desc:'Every morning at 7am, AMV researches overnight news and market movements, then emails you a concise brief on what happened and which stocks to watch today.', needs:'Email, Web research', on:false },
+  { id:'inbox_digest', cat:'Inbox & calendar', icon:'\uD83D\uDCEC', title:'Daily inbox digest', desc:'AMV summarizes your important emails each evening and drafts replies for the ones that need them - you just approve and send.', needs:'Email', on:false },
+  { id:'competitor_watch', cat:'Growing a business', icon:'\uD83D\uDD0D', title:'Competitor & industry watch', desc:'Weekly, AMV tracks your competitors and industry news, then emails you a summary of anything that matters.', needs:'Email, Web research', on:false },
+  { id:'weekly_report', cat:'Inbox & calendar', icon:'\uD83D\uDCCA', title:'Weekly summary report', desc:'Every Friday, AMV compiles your week - tasks done, key metrics, what\u2019s pending - into a clean report and emails it to you or your team.', needs:'Email', on:false },
+  { id:'content_calendar', every:'weekly', cat:'Growing a business', icon:'\u270D\uFE0F', title:'Social content drafts', desc:'AMV drafts a week of social posts based on trends in your space and queues them for your approval.', needs:'Web research', on:false },
 
   /* ---- The standing services below are what make Crew worth paying for:
      they run in the background and create value without you remembering to
@@ -19645,140 +19689,371 @@ function _cwDefaultJobs(){ return [
      executes, and an honest `needs` so it never pretends to run without the
      access it requires. ---- */
 
-  { id:'opportunity_radar', icon:'\uD83C\uDFAF', title:'Opportunity radar', needs:'Email, Web research', on:false,
+  { id:'opportunity_radar', cat:'Work & career', icon:'\uD83C\uDFAF', title:'Opportunity radar', needs:'Email, Web research', on:false,
     desc:'Every morning AMV hunts for things you could actually get - scholarships, grants, internships, jobs, competitions, fellowships, discounts and rebates that match your profile - and emails you only the ones you qualify for, with the deadline and the direct link.',
     prompt:'Search the live web for opportunities matching the user profile and interests: scholarships, grants, internships, jobs, competitions, fellowships, rebates and tax credits. Only include ones open NOW with a future deadline. For each: name, what it gives, eligibility, deadline, direct application link. Exclude anything they clearly do not qualify for. If you find nothing new, say so plainly.' },
 
-  { id:'change_digest', icon:'\uD83D\uDD14', title:'Did anything change today?', needs:'Web research', on:false,
+  { id:'change_digest', cat:'Watching the world', icon:'\uD83D\uDD14', title:'Did anything change today?', needs:'Web research', on:false,
     desc:'You tell AMV what to watch - a page, a price, a competitor, a policy, a person, a job board - and each morning it checks every one and reports only what actually changed. No change, no noise.',
     prompt:'Check each item on the user watch list against its previous state. Report ONLY genuine changes: what changed, the old value, the new value, and why it might matter. If nothing changed, say "nothing changed" rather than padding the report.' },
 
-  { id:'money_leaks', icon:'\uD83D\uDCB8', title:'Money leak detector', needs:'Email', on:false,
+  { id:'money_leaks', cat:'Money', icon:'\uD83D\uDCB8', title:'Money leak detector', needs:'Email', on:false,
     desc:'AMV reads your receipts and statements for subscriptions you stopped using, duplicate charges, silent price rises, and avoidable fees - then tells you exactly what to cancel and how much you would save.',
     prompt:'Scan recent receipts, invoices and statement emails. Identify: recurring charges that look unused, duplicate charges, subscription price increases versus previous months, and avoidable fees. For each, give the merchant, the amount, how often, and the annual cost of keeping it. Total the potential saving. Never guess a charge you cannot see evidence for.' },
 
-  { id:'forgot_check', icon:'\uD83E\uDDE0', title:'What did I forget?', needs:'Email, Calendar', on:false,
+  { id:'forgot_check', cat:'Inbox & calendar', icon:'\uD83E\uDDE0', title:'What did I forget?', needs:'Email, Calendar', on:false,
     desc:'Each morning AMV re-reads your recent mail and calendar for things you said you would do, questions nobody answered, and commitments with no follow-up - so nothing quietly slips.',
     prompt:'Review recent emails and calendar entries. List: promises the user made that have no follow-up, messages awaiting their reply, questions they asked that were never answered, and commitments with an approaching date. Be specific - quote the sentence and name the person. Only include real, evidenced items.' },
 
-  { id:'renewal_watchdog', icon:'\uD83D\uDCC4', title:'Contract & renewal watchdog', needs:'Email', on:false,
+  { id:'renewal_watchdog', cat:'Money', icon:'\uD83D\uDCC4', title:'Contract & renewal watchdog', needs:'Email', on:false,
     desc:'Finds subscriptions, insurance, leases, warranties, domains and memberships heading for renewal, warns you BEFORE the auto-charge, and prepares the cancel-or-renegotiate message.',
     prompt:'Find upcoming renewals, expirations and auto-charges in the user mail: subscriptions, insurance, leases, warranties, domains, memberships, licences. For each: what it is, the renewal date, the amount, and whether it auto-renews. Flag anything renewing within 30 days first. Draft a cancellation or renegotiation email for anything that looks poor value.' },
 
-  { id:'followups', icon:'\uD83E\uDD1D', title:'Relationship follow-ups', needs:'Email', on:false,
+  { id:'followups', cat:'Inbox & calendar', icon:'\uD83E\uDD1D', title:'Relationship follow-ups', needs:'Email', on:false,
     desc:'Tells you who is waiting on you and who you have gone quiet on - clients, recruiters, mentors, friends - with the context of your last exchange and a ready-to-send message.',
     prompt:'Find people awaiting a reply from the user, and important contacts with no exchange in a while. For each: who, when you last spoke, what it was about, and why now is a good moment. Draft a short, natural follow-up message for each. Never invent a shared history that is not in the thread.' },
 
-  { id:'deal_watch', icon:'\uD83C\uDFF7\uFE0F', title:'Price & deal watcher', needs:'Web research', on:false,
+  { id:'deal_watch', cat:'Money', icon:'\uD83C\uDFF7\uFE0F', title:'Price & deal watcher', needs:'Web research', on:false,
     desc:'Watches everything on your wish list and tells you when a price is genuinely good by its own history - not just when a site claims a sale.',
     prompt:'Check the current price of each item on the user wish list. Report the current price, the usual price, and whether this is genuinely a good price by historical standards. Explicitly call out fake or marketing-only discounts. Only flag a real drop.' },
 
-  { id:'travel_guardian', icon:'\u2708\uFE0F', title:'Travel guardian', needs:'Email, Calendar, Web research', on:false,
+  { id:'travel_guardian', cat:'Home & life', icon:'\u2708\uFE0F', title:'Travel guardian', needs:'Email, Calendar, Web research', on:false,
     desc:'From your booking confirmations it tracks flight delays, gate changes, weather at both ends, and check-in windows - and warns you early enough to actually do something.',
     prompt:'From the user booking confirmations, identify upcoming travel. Check flight status, gate and time changes, weather at origin and destination, and check-in windows. Report anything that needs action, with how much time remains to act. State clearly if a booking cannot be verified.' },
 
-  { id:'meeting_prep', icon:'\uD83D\uDCCB', title:'Meeting prep & follow-up', needs:'Calendar, Email, Web research', on:false,
+  { id:'meeting_prep', cat:'Inbox & calendar', icon:'\uD83D\uDCCB', title:'Meeting prep & follow-up', needs:'Calendar, Email, Web research', on:false,
     desc:'Before each meeting you get a brief on who you are meeting, their company and recent news, and the history of your thread. Afterwards it drafts the follow-up and the action list.',
     prompt:'For each upcoming meeting: who is attending, their role and company, relevant recent news, the history of prior correspondence, open items from last time, and 3 suggested talking points. After a meeting, draft a follow-up email and a task list. Never fabricate a fact about a person - if you cannot verify it, omit it.' },
 
-  { id:'bills_due', icon:'\uD83E\uDDFE', title:'Bills, payments & paycheck alerts', needs:'Email', on:false,
+  { id:'bills_due', cat:'Money', icon:'\uD83E\uDDFE', title:'Bills, payments & paycheck alerts', needs:'Email', on:false,
     desc:'Tells you what is due and when, flags failed payments and low balances early, and confirms when your pay or a refund actually lands.',
     prompt:'From receipts, invoices and bank notification emails, report: bills due in the next 14 days with amounts, any failed or declined payments, refunds that have or have not arrived, and expected income that has landed. Do not state a balance you cannot see evidence for.' },
 
-  { id:'site_monitor', icon:'\uD83D\uDC41\uFE0F', title:'Website & application watch', needs:'Web research', on:false,
+  { id:'site_monitor', cat:'Watching the world', icon:'\uD83D\uDC41\uFE0F', title:'Website & application watch', needs:'Web research', on:false,
     desc:'Watches pages that matter - application portals, government pages, waitlists, admissions, job boards - and tells you the moment something opens or changes.',
     prompt:'Check each watched page for meaningful change: new postings, opened applications, status changes, updated deadlines or policy edits. Ignore cosmetic changes. Report what changed and the direct link.' },
 
-  { id:'goal_tracker', icon:'\uD83D\uDE80', title:'Goal tracker & weekly plan', needs:'Email', on:false,
+  { id:'goal_tracker', cat:'Home & life', icon:'\uD83D\uDE80', title:'Goal tracker & weekly plan', needs:'Email', on:false,
     desc:'Turns a real goal - save an amount, get fit, launch something, get into a school - into a weekly plan, checks your progress, and adapts when you fall behind instead of nagging.',
     prompt:'For each user goal: assess progress since last check, give the specific next actions for this week, and adapt the plan if they are behind. Be concrete and realistic. Encourage honestly - never claim progress that has not happened.' },
 
-  { id:'deliveries', icon:'\uD83D\uDCE6', title:'Package & delivery tracking', needs:'Email', on:false,
+  { id:'deliveries', cat:'Home & life', icon:'\uD83D\uDCE6', title:'Package & delivery tracking', needs:'Email', on:false,
     desc:'Pulls tracking numbers out of your order confirmations and tells you what is arriving today, what is late, and what never shipped.',
     prompt:'From order and shipping confirmation emails, list every package in transit: what it is, carrier, tracking number, expected date, and current status. Flag anything late or never shipped. Only report packages you have evidence for.' },
 
-  { id:'life_admin', icon:'\uD83D\uDDD3\uFE0F', title:'Life admin & expiry reminders', needs:'Email, Calendar', on:false,
+  { id:'life_admin', cat:'Home & life', icon:'\uD83D\uDDD3\uFE0F', title:'Life admin & expiry reminders', needs:'Email, Calendar', on:false,
     desc:'Passport, licence, insurance, registration, medical checks, home and car maintenance - AMV tracks the dates and reminds you far enough ahead that renewing is easy.',
     prompt:'Track expiries and recurring life admin: passport, licence, insurance, vehicle registration and inspection, medical and dental checks, home and car maintenance. Report what is due in the next 90 days, how long renewal usually takes, and what to do first.' },
 
-  { id:'vip_alerts', icon:'\uD83D\uDEA8', title:'Important email alerts', needs:'Email', on:false,
+  { id:'vip_alerts', cat:'Inbox & calendar', icon:'\uD83D\uDEA8', title:'Important email alerts', needs:'Email', on:false,
     desc:'Not a daily digest - AMV pings you the moment something genuinely urgent lands: your boss, a client, an offer, an interview invite, a deadline or anything money-related.',
     prompt:'Watch incoming mail for genuinely urgent items: named VIP senders, offers, interview invitations, deadlines, legal or money matters, and anything explicitly marked urgent by a real person. Alert immediately with sender, subject and the one line that makes it urgent. Do NOT alert on newsletters, marketing or automated notifications.' },
 
-  { id:'recurring_email', icon:'\uD83D\uDCEE', title:'Recurring emails on a schedule', needs:'Email', on:false,
+  { id:'recurring_email', cat:'Inbox & calendar', icon:'\uD83D\uDCEE', title:'Recurring emails on a schedule', needs:'Email', on:false,
     desc:'Send a real email on any schedule - weekly reports to your team, monthly invoices, a check-in every Friday. AMV writes it fresh each time from current information and sends it through your own Gmail.',
     prompt:'At each scheduled run, compose the recurring email fresh from the latest information (do not resend a stale copy), then send it from the user Gmail account to the specified recipients. Confirm what was sent and to whom. If the recipient or content is unclear, ask instead of sending.' },
 
-  { id:'calendar_brief', icon:'\uD83C\uDF05', title:'Morning calendar briefing', needs:'Calendar', on:false,
+  { id:'calendar_brief', cat:'Inbox & calendar', icon:'\uD83C\uDF05', title:'Morning calendar briefing', needs:'Calendar', on:false,
     desc:'Your day in one message before it starts: every meeting, travel time between them, what needs prep, where the free blocks are, and the one thing you should protect time for.',
     prompt:'Summarise today from the calendar: each event with time and attendees, realistic travel or transition time between them, which need preparation, where the genuine free blocks are, and the single most important thing to protect time for. Flag any day that is overbooked.' },
 
-  { id:'conflict_watch', icon:'\u26A0\uFE0F', title:'Scheduling conflict alerts', needs:'Calendar', on:false,
+  { id:'conflict_watch', cat:'Inbox & calendar', icon:'\u26A0\uFE0F', title:'Scheduling conflict alerts', needs:'Calendar', on:false,
     desc:'Catches double-bookings, meetings with no travel time between them, and things scheduled outside your working hours - before they become an awkward cancellation.',
     prompt:'Scan the calendar for problems: overlapping events, back-to-back meetings in different locations with no travel time, events outside stated working hours, and meetings with no agenda or attendees. Report each conflict and suggest the specific fix.' },
 
-  { id:'meeting_docs', icon:'\uD83D\uDCCE', title:'Prepare documents before meetings', needs:'Calendar, Email, Drive', on:false,
+  { id:'meeting_docs', cat:'Inbox & calendar', icon:'\uD83D\uDCCE', title:'Prepare documents before meetings', needs:'Calendar, Email, Drive', on:false,
     desc:'Before a meeting AMV pulls together everything you will need - the last thread, the attached files, the previous notes, the numbers - into one place so you are never scrambling.',
     prompt:'For each upcoming meeting, gather the relevant material: prior email threads with attendees, attached documents, previous meeting notes and open action items. Produce one prep pack with the key facts and open questions. Only include documents that actually exist.' },
 
-  { id:'project_pulse', icon:'\uD83D\uDCC8', title:'Morning project updates', needs:'Email, Web research', on:false,
+  { id:'project_pulse', cat:'Work & career', icon:'\uD83D\uDCC8', title:'Morning project updates', needs:'Email, Web research', on:false,
     desc:'A single morning read on everything moving: what progressed, what stalled, what is blocked on someone else, and what needs you today.',
     prompt:'Report the current state of each active project: what moved since the last update, what stalled, what is blocked and on whom, and what specifically needs the user today. Be concrete and short. Say plainly if a project had no activity.' },
 
-  { id:'overdue_escalation', icon:'\u23F0', title:'Overdue task escalation', needs:'Email, Calendar', on:false,
+  { id:'overdue_escalation', cat:'Work & career', icon:'\u23F0', title:'Overdue task escalation', needs:'Email, Calendar', on:false,
     desc:'When something slips past its date AMV escalates it properly - reminds you, drafts the chase message to whoever is holding it up, and keeps raising it until it is actually closed.',
     prompt:'Find tasks and commitments past their due date. For each: what it is, how overdue, who is holding it up, and the impact of continued delay. Draft a polite chase message for anything waiting on someone else. Escalate the tone gradually the longer it slips.' },
 
-  { id:'forum_watch', icon:'\uD83D\uDCAC', title:'Reddit & forum monitoring', needs:'Web research', on:false,
+  { id:'forum_watch', cat:'Watching the world', icon:'\uD83D\uDCAC', title:'Reddit & forum monitoring', needs:'Web research', on:false,
     desc:'Watches subreddits, forums and communities for the topics, products or names you care about - and surfaces the threads actually worth reading.',
     prompt:'Monitor the specified subreddits, forums and communities for the user keywords and topics. Report only genuinely relevant new threads: title, community, why it matters, and the link. Skip low-engagement noise and reposts.' },
 
-  { id:'groceries', icon:'\uD83D\uDED2', title:'Grocery & household restock', needs:'Email', on:false,
+  { id:'groceries', cat:'Home & life', icon:'\uD83D\uDED2', title:'Grocery & household restock', needs:'Email', on:false,
     desc:'Learns what you buy and how often, then reminds you before you run out - and builds the list for you, grouped the way a shop is laid out.',
     prompt:'From past orders and receipts, work out what the user buys and how often. Predict what is running low now, build a grouped shopping list, and note anything currently cheaper than usual. Only include items with real purchase history.' },
 
-  { id:'chores', icon:'\uD83E\uDDF9', title:'Chore & routine scheduling', needs:'Calendar', on:false,
+  { id:'chores', cat:'Home & life', icon:'\uD83E\uDDF9', title:'Chore & routine scheduling', needs:'Calendar', on:false,
     desc:'Keeps the recurring stuff on a sensible rhythm - cleaning, laundry, bins, plants, pets - scheduled around your actual calendar instead of nagging at random.',
     prompt:'Maintain the recurring chore schedule. Each run, report what is due today and this week, fitted around the real calendar so nothing lands during a meeting or while away. Reschedule anything missed rather than repeating the same reminder.' },
 
-  { id:'coupons', icon:'\uD83C\uDF9F\uFE0F', title:'Coupon & discount finder', needs:'Web research', on:false,
+  { id:'coupons', cat:'Money', icon:'\uD83C\uDF9F\uFE0F', title:'Coupon & discount finder', needs:'Web research', on:false,
     desc:'Before you buy, AMV hunts for working codes, cashback, student or member discounts - and tells you the real final price rather than the advertised one.',
     prompt:'For the specified purchase or retailer, search for currently valid discount codes, cashback offers, student or membership discounts and price-match options. Report the real final price after each. State clearly if you cannot verify a code is still valid.' },
 
-  { id:'hotel_watch', icon:'\uD83C\uDFE8', title:'Hotel & stay price tracking', needs:'Web research', on:false,
+  { id:'hotel_watch', cat:'Home & life', icon:'\uD83C\uDFE8', title:'Hotel & stay price tracking', needs:'Web research', on:false,
     desc:'Watches the price of the places you actually want to stay for your real dates, and tells you when to book - including when a refundable rate drops so you can rebook cheaper.',
     prompt:'Track the price of the specified hotels for the specified dates. Report current price, how it compares to recent history, and whether to book now or wait. If an existing booking is refundable and the price has dropped, flag the rebooking saving explicitly.' },
 
-  { id:'ambient', icon:'\u2728', title:'Ambient automation - AMV suggests', needs:'Email, Calendar', on:false,
+  { id:'ambient', cat:'Work & career', icon:'\u2728', title:'Ambient automation - AMV suggests', needs:'Email, Calendar', on:false,
     desc:'AMV watches how you actually work and proposes automations you did not think to ask for: the report you rebuild every Monday, the reply you always send, the thing you check daily. You approve the ones you want.',
     prompt:'Look for repeated patterns in the user activity: tasks done on a regular cadence, near-identical emails sent repeatedly, information checked over and over, manual steps repeated weekly. For each, propose a specific automation with what it would do and the time it would save. Only propose patterns that genuinely repeat - never invent one.' },
 
   /* These read your REAL linked accounts through the bank connection - not
      receipts guessed from email. Until a bank is linked they say so. */
-  { id:'money_morning', icon:'\uD83C\uDFE6', title:'Morning money summary', needs:'Bank connection', on:false,
+  { id:'money_morning', cat:'Money', icon:'\uD83C\uDFE6', title:'Morning money summary', needs:'Bank connection', on:false,
     desc:'Real balances across every account and card, what came in and went out yesterday, what is due next, and what is actually safe to spend today.',
     prompt:'Report the real balances from the linked accounts, yesterday\u2019s money in and out, upcoming scheduled payments, and the genuinely safe-to-spend figure after commitments. Use only real account data. If an account cannot be read, say which one and why - never estimate a balance.' },
 
-  { id:'unusual_spend', icon:'\uD83D\uDD3A', title:'Unusual transaction alerts', needs:'Bank connection', on:false,
+  { id:'unusual_spend', cat:'Money', icon:'\uD83D\uDD3A', title:'Unusual transaction alerts', needs:'Bank connection', on:false,
     desc:'Learns what normal looks like for YOU, then flags charges far outside it - plus duplicate charges and anything from a merchant you have never used.',
     prompt:'Compare recent transactions against this account\u2019s own normal pattern. Flag charges well outside it, same-day duplicates, and first-time merchants with a large amount. For each: date, merchant, amount, and why it stands out. Do not flag ordinary recurring bills.' },
 
-  { id:'low_balance', icon:'\uD83E\uDEAB', title:'Low balance early warning', needs:'Bank connection', on:false,
+  { id:'low_balance', cat:'Money', icon:'\uD83E\uDEAB', title:'Low balance early warning', needs:'Bank connection', on:false,
     desc:'Warns you before a balance gets tight - accounting for payments already scheduled - so you move money in time instead of paying an overdraft fee.',
     prompt:'Project each account balance forward against scheduled payments and known recurring debits. Warn when a projected balance falls below the user floor, with how many days remain and the exact shortfall. Never state a balance you cannot read.' },
 
-  { id:'credit_watch', icon:'\uD83D\uDCC9', title:'Credit score & report changes', needs:'Bank connection', on:false,
+  { id:'credit_watch', cat:'Money', icon:'\uD83D\uDCC9', title:'Credit score & report changes', needs:'Bank connection', on:false,
     desc:'Tells you when your score moves and what caused it - a new account, a hard search, changed utilisation - and flags anything on your report you did not do.',
     prompt:'Report changes to the credit score and report since the last check: the movement, the likely cause, and anything unrecognised such as an unknown account or hard search. Explain what would raise it most. If the score cannot be read, say so plainly.' },
 
-  { id:'budget_trend', icon:'\uD83D\uDCCA', title:'Budget pace & spending review', needs:'Bank connection', on:false,
+  { id:'budget_trend', cat:'Money', icon:'\uD83D\uDCCA', title:'Budget pace & spending review', needs:'Bank connection', on:false,
     desc:'Not a report after the damage - it tells you mid-month that you are trending over budget while you can still do something, and where the overspend is coming from.',
     prompt:'Work out the current month\u2019s spending pace against the user budget and project the month-end total. If trending over, identify which categories are driving it and what change would bring it back. Use real transactions only.' },
 
-  { id:'target_buy', icon:'\uD83D\uDECD\uFE0F', title:'Buy at my target price', needs:'Web research, Web automation', on:false, spend:true,
+  { id:'target_buy', cat:'Money', icon:'\uD83D\uDECD\uFE0F', title:'Buy at my target price', needs:'Web research, Web automation', on:false, spend:true,
     desc:'Watches an item and buys it the moment it hits your target. Small purchases go through instantly with no interruption; anything above your auto-buy limit takes one tap. Your monthly cap can never be crossed.',
     prompt:'Monitor the specified item until it reaches the user target price. When it does, read the FINAL total including shipping, tax and any pre-ticked extras, and remove anything that was added without being asked for (warranties, protection plans, insurance). Check the total against the user spending limits: below the auto-buy limit, complete the purchase; above it, request one approval. Never exceed the per-purchase or monthly cap, never substitute a different item, size or colour, and always report the exact final total and what was bought.' },
+
+  /* ---- More standing work. Each one is here because somebody would genuinely
+     pay to stop doing it by hand, and each carries the concrete instruction the
+     runner executes. Nothing here claims an action the runner cannot take: it
+     researches, watches, compares and drafts. Where a job needs a connected
+     account to be true, `needs` says so and the card refuses to pretend. ---- */
+
+  { id:'price_protect', cat:'Money', icon:'💳', title:'Refund chaser & price protection', needs:'Email, Web research', on:false,
+    desc:'Most shops quietly refund the difference if the price drops within a window of your purchase, and almost nobody claims it. AMV re-checks what you bought, finds the drops that are still claimable, and writes the claim.',
+    prompt:'From recent order confirmation emails, list what the user bought, the price paid, and the purchase date. Check the current price of each item at the same retailer. Where the price is now lower AND the retailer’s price-protection or return window is still open, report the item, the amount recoverable, the exact deadline, and draft the claim message. Ignore items outside the window. Never claim a refund is available without checking the retailer’s stated policy.' },
+
+  { id:'bill_negotiate', cat:'Money', icon:'📞', title:'Bill negotiation prep', needs:'Email, Web research', on:false,
+    desc:'Finds the bills where you are paying above the going rate - broadband, mobile, insurance, streaming - looks up what new customers are offered right now, and writes the script that actually gets the discount.',
+    prompt:'Identify the user’s recurring bills and the amount paid for each. Research the current new-customer and retention pricing for the same service and comparable providers. For each bill where the user is paying materially above market: state what they pay, what is available now, the annual saving, and write the exact script to use with retentions, including the competing offer to cite. Only include bills you have real evidence of.' },
+
+  { id:'tax_catch', cat:'Money', icon:'🧾', title:'Deductible expense catcher', needs:'Email', on:false,
+    desc:'Deductions get lost because nobody tags them in January. AMV watches receipts all year, files the ones that count, and hands you an organised list instead of a shoebox in April.',
+    prompt:'Review receipts and invoices since the last run. Identify expenses that are plausibly deductible for the user’s stated situation: work equipment, software, professional subscriptions, mileage, home office, education, charitable giving. For each: date, merchant, amount, and which category it likely falls under. Keep a running annual total. State clearly that this is organisation, not tax advice, and never assert an expense is deductible when the rules depend on facts you do not have.' },
+
+  { id:'rate_watch', every:'weekly', cat:'Money', icon:'🏦', title:'Savings rate & refinance watch', needs:'Web research', on:false,
+    desc:'Your savings sit at a rate the bank quietly cut, and your mortgage or loan may now be beatable. AMV tracks both against the live market and tells you the moment moving is worth the paperwork.',
+    prompt:'Compare the user’s stated savings rate and loan or mortgage rate against current market rates from real providers. Report: the rate they hold, the best comparable rate available now, the annual difference in money, and whether the switching cost is worth it. Flag it only when the gap is genuinely material. Name the providers and the date the rate was checked.' },
+
+  { id:'insurance_reshop', cat:'Money', icon:'🛡️', title:'Insurance re-shop before renewal', needs:'Email, Web research', on:false,
+    desc:'Insurers price-walk loyal customers every year. Before each renewal lands, AMV checks what the same cover costs elsewhere and gives you the number to quote back.',
+    prompt:'Find upcoming insurance renewals in the user’s mail with the renewal date and premium. Research the current market price for equivalent cover. Report: the renewal quote, the best comparable price found, the saving, and the date by which they must act. Note any difference in cover so a cheaper price is not mistaken for a like-for-like one.' },
+
+  { id:'salary_bench', every:'weekly', cat:'Work & career', icon:'📈', title:'Salary benchmark & timing', needs:'Web research', on:false,
+    desc:'Tells you what your role pays in your market right now, whether you have fallen behind, and when the evidence is strong enough to ask - with the numbers to bring.',
+    prompt:'Research current pay for the user’s role, level, industry and location using real posted ranges and published surveys. Report the range, the midpoint, where the user sits against it, and how it has moved since the last check. If they are below market, assemble the specific evidence to use in a conversation. Cite where each figure came from and its date. Never invent a figure.' },
+
+  { id:'recruiter_triage', cat:'Work & career', icon:'🎯', title:'Recruiter inbound triage', needs:'Email, Web research', on:false,
+    desc:'Most recruiter mail is noise and one message a year is life-changing. AMV reads every one, researches the company behind it, and surfaces only the ones actually worth a reply - with the reply written.',
+    prompt:'Review recruiter and hiring outreach received since the last run. For each: the company, the role, the stated or researched pay range, funding and stability signals, and how well it matches the user’s stated goals. Rank them and recommend which deserve a reply. Draft a short reply for the ones worth answering and a polite decline for the rest. Say plainly when a range is not stated rather than guessing one.' },
+
+  { id:'employer_health', every:'weekly', cat:'Work & career', icon:'🩺', title:'Employer & industry health watch', needs:'Web research', on:false,
+    desc:'The signals before a bad quarter are public - hiring freezes, funding news, exec departures, layoff reports, customer losses. AMV watches them for your employer and your industry so you are early rather than surprised.',
+    prompt:'Monitor public signals for the user’s employer and industry: funding and earnings news, hiring or freeze signals, layoff reports, leadership departures, notable customer wins or losses, analyst and press coverage. Report what changed and what it plausibly indicates, separating confirmed facts from interpretation. Do not speculate about individuals. If nothing meaningful changed, say so.' },
+
+  { id:'interview_pack', cat:'Work & career', icon:'🎓', title:'Interview prep pack', needs:'Calendar, Email, Web research', on:false,
+    desc:'Before each interview: the company’s real position, who is interviewing you and what they work on, the questions this company actually asks, and answers built from your own history.',
+    prompt:'For each upcoming interview found in the calendar or mail: research the company’s business, recent news, products and competitors; identify the interviewer’s role and public professional background only; gather commonly reported interview questions for this company and role. Draft answers grounded in the user’s real experience, and list strong questions for them to ask. Never fabricate a fact about an interviewer and never use non-professional personal information.' },
+
+  { id:'portfolio_fresh', cat:'Work & career', icon:'✒️', title:'Keep my CV and profile current', needs:'Email, Calendar', on:false,
+    desc:'Your best work disappears because you update your CV once every three years. AMV notices what you actually shipped and drafts the line for it while you still remember the numbers.',
+    prompt:'From recent activity, identify accomplishments worth recording: projects completed, things shipped, measurable results, new responsibilities, tools learned, recognition received. For each, draft one strong CV or profile line in the user’s voice with the concrete result. Maintain the running list between runs. Only include achievements with real evidence.' },
+
+  { id:'churn_signals', cat:'Growing a business', icon:'📉', title:'Customer churn early warning', needs:'Email', on:false,
+    desc:'Customers rarely announce they are leaving - they go quiet, complain twice, then cancel. AMV spots the pattern in your own mail while there is still time to save the account.',
+    prompt:'Review customer correspondence for churn risk signals: unanswered complaints, repeated issues, negative sentiment shift, reduced contact frequency, questions about cancellation, contract or billing disputes. For each at-risk account: who, the evidence, the risk level, and a specific recommended intervention. Draft the outreach message. Only flag accounts with real evidence in the thread.' },
+
+  { id:'review_watch', cat:'Growing a business', icon:'⭐', title:'Review & reputation monitoring', needs:'Web research', on:false,
+    desc:'Watches every place people rate you - app stores, Google, Trustpilot, forums - and tells you the moment something needs a response, with the response drafted.',
+    prompt:'Check public review and rating sources for the user’s business or product. Report new reviews since the last run: rating, platform, what the reviewer actually said, and whether it needs a response. Identify recurring themes across reviews rather than listing them one by one. Draft a specific, non-generic reply for anything negative or unfair. Report the rating trend honestly, including when it is falling.' },
+
+  { id:'lead_triage', cat:'Growing a business', icon:'📥', title:'Inbound lead triage & first reply', needs:'Email, Web research', on:false,
+    desc:'Speed of first reply decides who wins the deal. AMV qualifies every inbound enquiry, researches who is asking, and has the reply written before you have opened the message.',
+    prompt:'Review inbound enquiries since the last run. For each: who they are, the company and its size or funding where publicly known, what they are asking for, and how well it fits the user’s stated ideal customer. Rank by likely value. Draft a specific first reply for each that answers their actual question and proposes a clear next step. Do not invent details about a company you could not verify.' },
+
+  { id:'rank_watch', every:'weekly', cat:'Growing a business', icon:'🔎', title:'Search ranking & visibility watch', needs:'Web research', on:false,
+    desc:'Tells you when you move up or down for the searches that bring you customers, and who overtook you - so a slow slide gets caught in a week rather than a quarter.',
+    prompt:'Check the user’s current search visibility for their specified keywords. Report position changes since the last run, which competitors moved, and what visibly changed on the pages that overtook them. Focus on the keywords that matter commercially rather than vanity terms. State the date and method of the check, and be explicit about the limits of what a single check can show.' },
+
+  { id:'pricing_diff', every:'weekly', cat:'Growing a business', icon:'🏷️', title:'Competitor pricing page diff', needs:'Web research', on:false,
+    desc:'A competitor changing price, adding a tier, or quietly removing a limit is the single most useful thing to know in your market - and it is never announced.',
+    prompt:'Check each competitor pricing page against its previous state. Report only real changes: price moves, new or removed tiers, changed limits or included features, new trial or discount terms, and altered positioning language. Quote the before and after. If a page could not be read, say which one and why rather than reporting no change.' },
+
+  { id:'ad_waste', cat:'Growing a business', icon:'🔥', title:'Ad spend waste check', needs:'Email', on:false,
+    desc:'Campaigns keep spending long after they stop working. AMV reads your own reporting mail and tells you what to switch off and what to move the money to.',
+    prompt:'From advertising reports and billing emails, summarise spend and results per campaign since the last run. Identify what is spending without returning, what is improving, and where cost per result has risen. Recommend specific pauses or budget shifts with the money involved. Use only figures present in the reports - never estimate performance.' },
+
+  { id:'regulation_watch', every:'weekly', cat:'Watching the world', icon:'⚖️', title:'Rule & regulation change watch', needs:'Web research', on:false,
+    desc:'A rule change in your industry, your visa category, your profession or your tax situation is expensive to learn late. AMV watches the sources that publish them and translates what it means for you.',
+    prompt:'Monitor official and regulatory sources relevant to the user’s stated situation and industry for genuine changes: new rules, amendments, consultations, enforcement dates and guidance updates. For each: what changed, the date it takes effect, who it applies to, and the practical implication for the user. Link the official source. Distinguish clearly between a proposal and something in force, and state that this is information, not legal advice.' },
+
+  { id:'breach_watch', cat:'Watching the world', icon:'🔐', title:'Breach & exposure watch', needs:'Web research', on:false,
+    desc:'When a service you use is breached, you usually find out from the news months later. AMV watches for reported breaches at the companies you actually have accounts with and tells you exactly what to change.',
+    prompt:'Check for newly reported data breaches and security incidents at the services the user has accounts with. For each: the service, the date reported, what data was reportedly exposed, and the specific action to take now such as changing a password or enabling two-factor. Rely only on publicly reported, attributed incidents and say when a report is unconfirmed. Never ask for or handle the user’s passwords.' },
+
+  { id:'tool_advisories', every:'weekly', cat:'Watching the world', icon:'🛠️', title:'Updates & advisories for your tools', needs:'Web research', on:false,
+    desc:'Breaking changes, deprecations, price changes and security advisories for the software you depend on - filtered to the versions you actually run.',
+    prompt:'Monitor release notes, changelogs, advisories and status pages for the tools and services the user depends on. Report only what affects them: breaking changes, deprecations with deadlines, security advisories, pricing or plan changes, and outages with a pattern. Give the version affected and the action required. Skip routine minor releases with no impact.' },
+
+  { id:'person_watch', cat:'Watching the world', icon:'👤', title:'Follow what someone publishes', needs:'Web research', on:false,
+    desc:'Track the public output of the people who move your field - founders, researchers, investors, analysts - so you read the important post the day it lands rather than a month later.',
+    prompt:'Monitor the public professional output of the named people: posts, articles, talks, papers, interviews and public announcements. Report only genuinely new items: who, what, why it matters to the user, and the link. Use public professional sources only - never track private activity, location, or personal life, and decline any name where the request is clearly personal rather than professional.' },
+
+  { id:'brand_watch', cat:'Watching the world', icon:'📣', title:'Mentions & impersonation watch', needs:'Web research', on:false,
+    desc:'Finds where your name or brand is being discussed, and catches fake accounts, copied sites and lookalike domains trading on it.',
+    prompt:'Search for new public mentions of the user’s name, brand or product across the web, news, forums and social platforms. Separate genuine discussion from impersonation: fake profiles, copied content, lookalike domains, misuse of the name. For real mentions, report sentiment and whether a response is warranted. For suspected impersonation, report the evidence and the reporting route for that platform.' },
+
+  { id:'paper_digest', every:'weekly', cat:'Learning', icon:'📚', title:'New research in my field', needs:'Web research', on:false,
+    desc:'The handful of genuinely new papers, releases and findings in your field each week, explained in plain language, with why each one matters and whether it is worth your time.',
+    prompt:'Find genuinely new publications, preprints and significant releases in the user’s stated field since the last run. For each: the title, who published it, what is actually new about it in plain language, why it matters, and whether it is worth reading in full. Prioritise substance over popularity. If the week was quiet, report the two best things rather than padding the list.' },
+
+  { id:'deadline_radar', cat:'Learning', icon:'📅', title:'Assignment & deadline radar', needs:'Email, Calendar', on:false,
+    desc:'Every due date pulled out of syllabi, portals and mail into one honest picture - what is due, how long each will really take, and what to start today to not be up at 3am.',
+    prompt:'Collect every upcoming deadline from mail and calendar: assignments, exams, applications, submissions and their weightings where stated. Build a single ordered list with dates. Estimate realistic effort for each, identify what must start now to be finished on time, and flag any week where the load is genuinely not achievable. Only include deadlines you have evidence for.' },
+
+  { id:'study_drill', cat:'Learning', icon:'🧠', title:'Spaced revision on a schedule', needs:'Email', on:false,
+    desc:'Sends you the right questions at the right interval on whatever you are learning, harder on the things you keep getting wrong - the method that actually makes things stick.',
+    prompt:'Maintain a spaced repetition schedule over the user’s stated study material. Each run, produce the set of questions due now, weighted toward material they have previously answered incorrectly or not seen recently. Include the answers separately so they can self-test first. Track which items are due next and adjust the interval based on reported performance.' },
+
+  { id:'reading_queue', cat:'Learning', icon:'📖', title:'Turn my saved links into a briefing', needs:'Email', on:false,
+    desc:'The articles you saved and never read, condensed into one briefing with the actual argument of each - so the reading list stops being a guilt pile.',
+    prompt:'Take the user’s saved or emailed links since the last run. For each: the core argument or finding in a few sentences, what is genuinely useful in it, and whether the full piece is worth reading. Group related items and note where two sources disagree. If a link cannot be read, say which one rather than summarising from the title.' },
+
+  { id:'health_admin', cat:'Health', icon:'🩺', title:'Prescriptions, appointments and screenings', needs:'Email, Calendar', on:false,
+    desc:'Refills before you run out, appointments you meant to book, and the routine screenings that quietly slip by years - tracked so none of it depends on remembering.',
+    prompt:'Track health admin from mail and calendar: prescription refill timing, upcoming and overdue appointments, referrals not yet booked, and routine screenings due based on stated intervals. Report what needs booking now and what is coming. Include the practice or pharmacy contact where it appears in the correspondence. This is scheduling and organisation only - never give medical advice, never interpret a symptom or result, and say clearly that clinical questions go to their clinician.' },
+
+  { id:'appt_prep', cat:'Health', icon:'📋', title:'Appointment prep notes', needs:'Calendar, Email', on:false,
+    desc:'Walks you into an appointment with the timeline written down and the questions you meant to ask - because you always remember them in the car afterwards.',
+    prompt:'Before an upcoming medical or professional appointment, assemble what the user has already recorded: the timeline of what they noted and when, previous correspondence, current medications or arrangements they have mentioned, and outstanding questions from last time. Produce a one page prep note and a list of questions to ask. Record only what the user has stated - never infer, diagnose, interpret results, or suggest treatment.' },
+
+  { id:'habit_pulse', cat:'Health', icon:'🏃', title:'Training plan that adapts', needs:'Email', on:false,
+    desc:'Adjusts the plan to the week you actually had rather than the one you intended - so missing two sessions changes the plan instead of ending it.',
+    prompt:'Review the user’s reported activity since the last run against their stated goal. Report what actually happened, adjust the coming week to fit their real availability and recent load, and progress or ease the plan accordingly. Be honest when a goal has drifted out of reach on the current trajectory and say what would bring it back. Never give medical advice or interpret pain or injury - direct those to a professional.' },
+
+  { id:'home_seasonal', cat:'Home & life', icon:'🏠', title:'Home maintenance by season', needs:'Calendar', on:false,
+    desc:'The jobs that cost thousands when skipped - boiler, gutters, filters, damp checks, roof, drains - scheduled at the right time of year for where you actually live.',
+    prompt:'Maintain a seasonal home maintenance schedule for the user’s property type and climate. Each run, report what is due now, why it matters, roughly what it costs to do versus what neglecting it costs, and whether it is a job for them or a trade. Track what has already been done so nothing repeats needlessly.' },
+
+  { id:'car_admin', cat:'Home & life', icon:'🚗', title:'Vehicle service, tax and inspection', needs:'Email, Calendar', on:false,
+    desc:'Service intervals, inspection and tax dates, warranty expiry and open recalls for your actual vehicle - with enough warning to book rather than scramble.',
+    prompt:'Track vehicle admin: service intervals against mileage or date, inspection and tax renewal dates, insurance renewal, warranty expiry, and any open safety recalls for the specific make, model and year. Report what is due in the next 90 days and what needs booking now. Check recalls against official sources only.' },
+
+  { id:'flight_watch', cat:'Home & life', icon:'✈️', title:'Flight price watch for a real trip', needs:'Web research', on:false,
+    desc:'Watches your actual route and dates, learns what a normal fare looks like, and tells you when a price is genuinely good - including when to rebook a refundable fare cheaper.',
+    prompt:'Track fares for the user’s specified routes and date ranges. Report the current best fare, the airline, how it compares to what has been seen since watching began, and whether to book now or wait. Include nearby dates or airports when they are materially cheaper. If the user already holds a refundable booking and the fare has dropped, state the rebooking saving explicitly. Never present a fare you have not actually seen.' },
+
+  { id:'move_watch', every:'weekly', cat:'Home & life', icon:'📍', title:'Rent, property and neighbourhood watch', needs:'Web research', on:false,
+    desc:'Watches what places like yours actually rent and sell for, and what is happening where you live or want to live - so a lease renewal or an offer is a decision made with numbers.',
+    prompt:'Track the local market for the user’s stated area and property type: current asking and achieved prices or rents for comparable places, how they have moved, time on market, and relevant local developments such as transport, planning or school changes. Report what it means for a renewal, a purchase or a sale decision. Use real listings and cite the date checked.' },
+
+  { id:'gift_radar', cat:'Home & life', icon:'🎁', title:'Birthdays, occasions and gift ideas', needs:'Calendar, Email, Web research', on:false,
+    desc:'Warns you far enough ahead to do something good rather than something panicked, with ideas built from what that person has actually said they like, and the delivery cut-off.',
+    prompt:'Track upcoming birthdays, anniversaries and occasions from the calendar and correspondence. For each, warn far enough ahead to act, and suggest specific ideas grounded in things that person has actually mentioned or shown interest in, within the user’s stated budget. Include current price, where to get it, and the delivery cut-off date to arrive in time. Never invent a preference the user has no record of.' },
+
+  { id:'doc_expiry', cat:'Home & life', icon:'🛂', title:'Passport, visa and travel eligibility', needs:'Email, Calendar, Web research', on:false,
+    desc:'Catches the trap that ruins trips: a passport too close to expiry for the country you booked, a visa or permit needing renewal, an entry rule that changed since you last flew.',
+    prompt:'Check the user’s travel documents against their planned travel: passport expiry versus each destination’s validity requirement, visa or permit status and renewal timing, and current entry requirements for those destinations. Report anything that would block travel, how long the fix takes, and the latest date to start it. Verify entry rules against official government sources and give the date checked, since these change without notice.' },
 ]; }
+/* ── WHAT A JOB NEEDS, AGAINST WHAT IS ACTUALLY CONNECTED ────────────────────
+
+   Every preset already declared its requirements in `needs`, and nothing ever
+   checked them. Turning on "Morning money summary" with no bank linked flipped
+   a switch, showed an active card, and did nothing - forever, silently. With
+   seventy jobs on the page that stops being an edge case and becomes the
+   default experience, so the requirement is now read rather than displayed.
+
+   Web research and web automation run server-side and need nothing from the
+   user, which is why they are absent here. */
+const CW_NEEDS_CHECK = {
+  'Email':           { label:'Gmail',            has:()=>_cwHasGoogle() },
+  'Calendar':        { label:'Google Calendar',  has:()=>_cwHasGoogle() },
+  'Drive':           { label:'Google Drive',     has:()=>_cwHasGoogle() },
+  'Bank connection': { label:'a bank connection',has:()=>{ try{ return !!loadStr('amv_fin_linked'); }catch(e){ return false; } } },
+};
+function _cwHasGoogle(){ try{ return typeof getGToken==='function' && !!getGToken(); }catch(e){ return false; } }
+
+/* ── WHERE A JOB CAN ACTUALLY RUN ────────────────────────────────────────────
+
+   The unattended runner on the server can search the live web and write. It has
+   no mailbox, no calendar and no browser session - those live in THIS tab,
+   behind a Google token the server never sees.
+
+   So a job needing only web research genuinely runs with AMV closed, and one
+   needing Gmail genuinely does not. Both used to be the same switch, and that
+   switch wrote a boolean nothing ever read: turning on a standing job created
+   no scheduled work anywhere. A web-research job now creates a real automation
+   on the server, and a job that needs this tab says so on its face rather than
+   implying an inbox it will never reach. */
+/* Jobs whose scheduled work is being created right now. Counted against the
+   plan allowance so a fast hand cannot switch on more than it sells. */
+const _cwPending = new Set();
+function _cwRunsUnattended(j){
+  const needs=String((j&&j.needs)||'').split(',').map(s=>s.trim()).filter(Boolean);
+  return needs.length>0 && needs.every(n=>n==='Web research');
+}
+function _cwWhereLabel(j){
+  return _cwRunsUnattended(j) ? 'Runs with AMV closed' : 'Runs while AMV is open';
+}
+function _cwNeedsMissing(j){
+  const out=[];
+  String((j&&j.needs)||'').split(',').map(s=>s.trim()).filter(Boolean).forEach(n=>{
+    const c=CW_NEEDS_CHECK[n];
+    if(c && !c.has() && out.indexOf(c.label)<0) out.push(c.label);
+  });
+  return out;
+}
+function cwConnect(){ try{ S.tab='integrations'; setTab('integrations'); }catch(e){} }
+try{ window.cwConnect=cwConnect; }catch(e){}
+
+/* ── BROWSING SEVENTY JOBS ────────────────────────────────────────────────────
+   A flat grid of seventy cards is a wall, and a wall reads as less capable than
+   a shelf, not more. Grouped under headings with a filter, the same list reads
+   as range. Order is deliberate: the categories people feel most keenly first. */
+const CW_CATS = ['Money','Work & career','Growing a business','Inbox & calendar',
+                 'Watching the world','Home & life','Learning','Health'];
+let _cwCat = 'all';
+function cwCat(c){ _cwCat = c || 'all'; renderCrewView(); }
+try{ window.cwCat=cwCat; }catch(e){}
+
+function _cwCatChips(jobs){
+  const count=c=>jobs.filter(j=>j.cat===c).length;
+  const chip=(k,label,n)=>`<button class="cw-chip${_cwCat===k?' on':''}" data-dact="cwCat" data-darg="${escH(k)}">${escH(label)}<span class="cw-chip-n">${n}</span></button>`;
+  return `<div class="cw-chips" role="group" aria-label="Filter jobs by category">`
+    + chip('all','All',jobs.length)
+    + CW_CATS.filter(c=>count(c)).map(c=>chip(c,c,count(c))).join('')
+    + `</div>`;
+}
+
+function _cwJobsBody(jobs, jobCard){
+  if(_cwCat!=='all'){
+    const sel=jobs.filter(j=>j.cat===_cwCat);
+    return `<div class="cw-jobs-grid">${sel.map(jobCard).join('')}</div>`;
+  }
+  /* Anything without a known category still has to appear - a job that exists
+     but renders nowhere is the failure this whole screen keeps having. */
+  const known=CW_CATS.filter(c=>jobs.some(j=>j.cat===c));
+  const rest=jobs.filter(j=>CW_CATS.indexOf(j.cat)<0);
+  return known.map(c=>`<div class="cw-cat">
+      <div class="cw-cat-h">${escH(c)}<span class="cw-cat-n">${jobs.filter(j=>j.cat===c).length}</span></div>
+      <div class="cw-jobs-grid">${jobs.filter(j=>j.cat===c).map(jobCard).join('')}</div>
+    </div>`).join('')
+    + (rest.length?`<div class="cw-cat">
+      <div class="cw-cat-h">More<span class="cw-cat-n">${rest.length}</span></div>
+      <div class="cw-jobs-grid">${rest.map(jobCard).join('')}</div>
+    </div>`:'');
+}
+
 function _cwApprovals(){ return load('amv_cw_approvals') || []; }
 function _cwSaveApprovals(a){ store('amv_cw_approvals', a); }
 
@@ -20109,15 +20384,28 @@ function renderCrewView(){
     return;
   }
   const jobs=_cwJobs(); const appr=_cwApprovals();
-  const jobCard=j=>`<div class="cw-job ${j.on?'on':''}">
+  const jobCard=j=>{
+    /* What this job declares it needs, against what is actually connected.
+       Switching a job on used to flip a flag and nothing else, so a job needing
+       a bank or a mailbox that was never linked sat there looking active and
+       quietly did nothing forever. The card says which it is. */
+    const miss=_cwNeedsMissing(j);
+    const note=miss.length
+      ? `<div class="cw-job-miss">${j.on?'Cannot run yet':'Needs'}: ${escH(miss.join(', '))} not connected. <button class="cw-job-fix" data-dact="cwConnect">Connect</button></div>`
+      : '';
+    return `<div class="cw-job ${j.on?'on':''}${miss.length?' blocked':''}">
       <div class="cw-job-ic">${j.icon}</div>
       <div style="flex:1;min-width:0">
         <div class="cw-job-t">${escH(j.title)}</div>
         <div class="cw-job-d">${escH(j.desc)}</div>
-        <div class="cw-job-need">Uses: ${escH(j.needs)}</div>
+        <div class="cw-job-need">Uses: ${escH(j.needs)}
+          <span class="cw-job-where ${_cwRunsUnattended(j)?'bg':'open'}">${escH(_cwWhereLabel(j))}</span>
+        </div>
+        ${note}
       </div>
       <button class="cw-toggle ${j.on?'on':''}" data-dact="cwToggle" data-darg="${j.id}" aria-label="toggle"><span class="cw-knob"></span></button>
     </div>`;
+  };
   const apprCard=a=>{
     const act=_apvAction(a);
     const meta=[
@@ -20220,7 +20508,8 @@ function renderCrewView(){
     <div class="crew-jobs-sec mc-start">
       <div class="sec-head"><h3>Start new work</h3><span class="sec-sub">Turn on a standing job - AMV runs it automatically and emails you results.</span></div>
       <div class="cw-anything">These are starting points, not the limit. Type <b>anything</b> in the box above and AMV works out which accounts, sites and tools it needs and does it - on a schedule if you ask. If something it needs is not connected yet, it tells you exactly what to add.</div>
-      <div class="cw-jobs-grid">${jobs.map(jobCard).join('')}</div>
+      ${_cwCatChips(jobs)}
+      ${_cwJobsBody(jobs, jobCard)}
     </div>
 
     <div class="crew-split-even">
@@ -20278,11 +20567,106 @@ function cwToggle(id){
   if(id==='job_hunt' && !j.on && typeof AMVJobs!=='undefined' && AMVJobs.missingInfo({}, AMVJobs.cfg()).length){
     if(typeof openJobHunt==='function'){ openJobHunt(); return; }
   }
+  /* The header says "X of N background jobs in use" and the plans page sells N.
+     Nothing enforced it, so all seventy could be switched on under a plan that
+     runs five - and the spend ceiling, not the plan, would have decided which
+     ones actually ran. Refuse at the point of the promise, naming the number. */
+  if(!j.on){
+    const allow=_crewJobAllowance();
+    /* Jobs still being created count too. Setting one up is a round trip, and
+       without counting the ones in flight a fast hand switches on six while all
+       six still read the same "none are on yet". */
+    const used=jobs.filter(x=>x.on).length + _cwPending.size;
+    if(allow && used>=allow){
+      toast('Your plan runs '+allow+' background job'+(allow===1?'':'s')+' at once. Turn one off, or upgrade to run more.','info',7000);
+      return;
+    }
+  }
+  /* A job that CAN run unattended now creates real scheduled work on the server
+     rather than setting a boolean. Switching one on used to write a flag into a
+     record nothing in the cron has ever read, so every standing job on this
+     screen was a switch attached to nothing. */
+  if(_cwRunsUnattended(j)) return _cwToggleReal(jobs, j);
+
+  /* Everything else needs this tab, because the mailbox and calendar tokens
+     live here and the server never sees them. So it goes on the LOCAL schedule,
+     which really does run these while AMV is open. Without this the switch was
+     decorative for the other fifty jobs too - a card reading "runs while AMV is
+     open" while nothing anywhere was scheduled. */
+  _cwSyncLocalSched(j, !j.on);
+
   j.on=!j.on; _cwSaveJobs(jobs);
   // keep the engine's own on-flag in sync so AMVJobs.run() reflects the toggle
   if(id==='job_hunt' && typeof AMVJobs!=='undefined'){ try{ const c=AMVJobs.cfg(); c.on=j.on; AMVJobs.save(c); }catch(e){} }
   if(window.AMV_API && AMV_API.live){ AMV_API.toggleJob(id,j.on).catch(()=>{}); }
-  toast(j.on?('On: '+j.title):('Off: '+j.title), j.on?'info':'info');
+  /* Turning it on is kept - the intent is real and it starts the moment the
+     account is linked. What is not kept is the impression that it is running.
+     A job that needs a mailbox nobody connected will produce nothing, and being
+     told that now beats discovering it from an empty inbox in a fortnight. */
+  const miss=j.on?_cwNeedsMissing(j):[];
+  if(miss.length){
+    toast('Saved, but "'+j.title+'" cannot run until you connect '+miss.join(' and ')+'.','info',7000);
+  } else if(j.on){
+    toast('On: '+j.title+' - it runs while AMV is open.','info',5000);
+  } else {
+    toast('Off: '+j.title,'info');
+  }
+  renderCrewView();
+}
+
+/* A job needing this tab's accounts, put on (or taken off) the local schedule
+   that `_runDueAuto` actually walks. Ask-first by default: these reach a real
+   mailbox, and work that touches somebody's contacts should be seen before it
+   goes anywhere. */
+function _cwSyncLocalSched(j, turningOn){
+  try{
+    if(typeof _loadSched!=='function' || typeof _saveSched!=='function') return;
+    const key='cw_'+j.id;
+    let list=_loadSched().filter(t=>t.id!==key);
+    if(turningOn){
+      const freq=j.every||'daily';
+      list.push({ id:key, goal:(j.prompt||j.desc||j.title), freq,
+                  next:(typeof _freqNext==='function'?_freqNext(freq,Date.now()):Date.now()+864e5),
+                  created:Date.now(), lastRun:null, localOnly:true, approval:'require',
+                  fromCrewJob:j.id });
+    }
+    _saveSched(list);
+  }catch(e){}
+}
+
+/* Turning a background job on and off for real. The switch only moves once the
+   server has agreed, so a failure leaves the screen showing what is actually
+   true rather than an on-looking card with nothing behind it. */
+async function _cwToggleReal(jobs, j){
+  const turningOn=!j.on;
+  if(turningOn){
+    if(typeof _scheduleTask!=='function'){ toast('Connect the AMV engine in Settings so jobs can run in the background.','error',6000); return; }
+    if(_cwPending.has(j.id)) return;         // already being set up
+    toast('Setting up "'+j.title+'"…','info',2500);
+    let item=null;
+    _cwPending.add(j.id);
+    try{
+      item=await _scheduleTask({ detail:(j.prompt||j.desc||j.title), repeat:(j.every||'daily'),
+                                 kind:'research', notify:'app', approval:'auto' });
+    }catch(e){ item=null; }
+    finally{ _cwPending.delete(j.id); }
+    /* _scheduleTask reports the reason itself - a plan limit sends them to the
+       plans page. Adding a second message here would just talk over it. */
+    if(!item) return;
+    j.on=true; j.autoId=item.id;
+  } else {
+    if(j.autoId && typeof _autoAction==='function'){
+      const done=await _autoAction(j.autoId,'delete');
+      /* Still scheduled on the server, so the switch must stay on. */
+      if(!done){ toast('Could not stop "'+j.title+'" - it is still running.','error',6000); return; }
+    }
+    j.on=false; j.autoId=null;
+  }
+  _cwSaveJobs(jobs);
+  if(window.AMV_API && AMV_API.live){ AMV_API.toggleJob(j.id,j.on).catch(()=>{}); }
+  toast(j.on?('On: '+j.title+' - it runs even with AMV closed. Results land in Tasks.')
+            :('Off: '+j.title),'info',j.on?6000:3000);
+  try{ if(typeof _autoRefresh==='function') _autoRefresh(); }catch(e){}
   renderCrewView();
 }
 function cwDemo(){
