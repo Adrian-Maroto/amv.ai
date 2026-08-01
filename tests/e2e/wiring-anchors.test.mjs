@@ -219,6 +219,68 @@ section('Structural selectors in the wiring code still match the markup');
      'every class-and-attribute selector the wiring uses matches a real element', broken);
 }
 
+section('Handoff can hand over the work, not just a chat about it');
+{
+  /* The feature's whole premise is "do not describe the work, hand over the
+     work" - and it could only reach conversations. A design, a project or a
+     script had to be copied out by hand and pasted back in, which is exactly
+     the retyping it exists to avoid. */
+  const setup = await page.evaluate(async () => {
+    _SESSIONS.length = 0;
+    _SESSIONS.push({ id: 's1', kind: 'studio', title: 'Coffee poster', updated: Date.now(),
+      state: { prompt: 'a coffee shop poster', activeId: 'a1',
+               artifacts: [{ id: 'a1', brief: 'Warm, minimal', html: '<h1>Beans</h1>' }] } });
+    _SESSIONS.push({ id: 's2', kind: 'dev', title: 'Todo app', updated: Date.now() - 1000,
+      state: { log: [{ role: 'user', text: 'build a todo app' }], project: { 'app.js': { content: 'const x=1' } } } });
+    _SESSIONS.push({ id: 's3', kind: 'lab', title: 'Parser', updated: Date.now() - 2000,
+      state: { lang: 'python', code: 'print(1)', chat: [{ role: 'user', text: 'fix this' }] } });
+    S.tab = 'handoff'; setTab('handoff');
+    _hoPickChat();
+    await new Promise(r => setTimeout(r, 120));
+    return { rows: document.querySelectorAll('[data-hosess]').length,
+             text: document.getElementById('ovr').textContent };
+  });
+  ok(setup.rows === 3, 'a design, a project and some code are all offered', setup.rows);
+  ok(/Design/.test(setup.text) && /Project/.test(setup.text) && /Code/.test(setup.text),
+     'each labelled by what it is');
+
+  /* The content itself has to travel, or this is the same retyping with extra
+     steps. */
+  const design = await page.evaluate(async () => {
+    document.querySelector('[data-hosess="s1"]').click();
+    await new Promise(r => setTimeout(r, 80));
+    return { ctx: document.getElementById('ho-ctx').value, title: document.getElementById('ho-title').value };
+  });
+  ok(/Warm, minimal/.test(design.ctx), 'a design brings its brief');
+  ok(/Beans/.test(design.ctx), 'and its actual markup');
+  ok(design.title === 'Coffee poster', 'and names itself so the handoff is not "Untitled"', design.title);
+
+  const dev = await page.evaluate(async () => {
+    document.getElementById('ho-ctx').value = '';
+    _hoPullSession('s2');
+    await new Promise(r => setTimeout(r, 60));
+    return document.getElementById('ho-ctx').value;
+  });
+  ok(/app\.js/.test(dev), 'a project brings its file list');
+  ok(/const x=1/.test(dev), 'and the contents of those files');
+  ok(/build a todo app/.test(dev), 'and what was asked for in the first place');
+
+  const lab = await page.evaluate(async () => {
+    document.getElementById('ho-ctx').value = '';
+    _hoPullSession('s3');
+    await new Promise(r => setTimeout(r, 60));
+    return document.getElementById('ho-ctx').value;
+  });
+  ok(/print\(1\)/.test(lab), 'code comes across as code');
+  ok(/python/.test(lab), 'saying what language it is');
+
+  /* A session is not a conversation. Arming the "continue on that same chat"
+     path would send whoever opens it to a chat that has nothing to do with the
+     design they were handed. */
+  const armed = await page.evaluate(() => S._hoPulledConv);
+  ok(!armed, 'and pulling one does not point the handoff at an unrelated chat', armed);
+}
+
 ok(errors.length === 0, 'and none of it logged an error', errors.slice(0, 3));
 
 await app.close();

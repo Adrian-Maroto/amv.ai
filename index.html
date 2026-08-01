@@ -7528,6 +7528,20 @@ html,body{height:100%;height:100dvh}
   .fam-kid-act .btn{flex:1 1 100%}
 }
 
+/* ============================================================
+   LAYER A52 - Handing off more than a chat
+
+   The picker now groups conversations separately from designs,
+   projects and code, so a list that used to be one kind of thing
+   stays readable when it is four.
+   ============================================================ */
+.hopick-h{font-size:var(--t-xs);text-transform:uppercase;letter-spacing:.04em;
+  color:var(--mu);font-weight:600;margin:var(--sp-3) 0 var(--sp-2)}
+.hopick-h:first-of-type{margin-top:0}
+.hopick-kind{display:inline-block;font-size:var(--t-xs);font-weight:600;
+  color:var(--accent);background:var(--accent-soft);border-radius:var(--r-xs);
+  padding:1px 6px;margin-right:var(--sp-2);vertical-align:1px}
+
 </style>
 <!-- BUILD:CSS:END -->
 <script>
@@ -22482,7 +22496,7 @@ function renderHandoffView(){
   vc.innerHTML=`<div class="sv fi"><div class="vi">
       <span class="eyebrow">Collaboration</span>
       <h2>Handoff</h2>
-      <p class="vsub">Don\u2019t describe the work - hand over the work itself. Paste the actual draft, code, data, or brief; your teammate or a Crew agent picks it up <b>inside AMV</b> with full context, makes the change, and hands it back.</p>
+      <p class="vsub">Don\u2019t describe the work - hand over the work itself. Pull in a conversation, a Studio design, a Dev project or Lab code, or paste anything at all; your teammate or a Crew agent picks it up <b>inside AMV</b> with full context, makes the change, and hands it back.</p>
       <div class="ho-flow"><span class="ho-flow-step">You paste the work</span><span class="ho-flow-arrow">\u2192</span><span class="ho-flow-step">They pick up the baton</span><span class="ho-flow-arrow">\u2192</span><span class="ho-flow-step">Handed back</span></div>
 
       <div class="ss2">
@@ -22493,8 +22507,8 @@ function renderHandoffView(){
           <div><label class="lbl" style="font-size:11px;color:var(--mu)">The work itself - paste it here</label>
             <textarea id="ho-ctx" placeholder="Paste the actual content the next person (or the agent) should work on: the draft, the code, the data, the email thread, the brief - plus anything they need to know to continue. This is the baton they pick up." style="width:100%;min-height:220px;background:var(--glass);border:1px solid var(--glass-bd);border-radius:var(--r-md);padding:12px;color:var(--tx);font-family:var(--mn,ui-monospace,monospace);font-size:13px;line-height:1.6;resize:vertical;tab-size:2"></textarea>
             <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
-              <button class="btn bs" data-dact="_hoPickChat" style="font-size:11.5px">Pull in a chat…</button>
-              <span style="font-size:11px;color:var(--mu);align-self:center">pick any conversation, or just paste anything above</span>
+              <button class="btn bs" data-dact="_hoPickChat" style="font-size:11.5px">Pull in your work…</button>
+              <span style="font-size:11px;color:var(--mu);align-self:center">a conversation, a design, a project or some code - or just paste anything above</span>
             </div></div>
           <div><label class="lbl" style="font-size:11px;color:var(--mu)">Hand off to</label>
             <input id="ho-to" placeholder="teammate@email.com  - or type: crew" style="width:100%;background:var(--glass);border:1px solid var(--glass-bd);border-radius:var(--r-md);padding:12px;color:var(--tx);font-family:var(--fn);font-size:14px"></div>
@@ -22520,23 +22534,105 @@ function _hoConvText(conv){
   const txt=m=>typeof m.c==='string'?m.c:(Array.isArray(m.c)?(m.c.map(x=>x&&x.text?x.text:'').join(' ')):'');
   return conv.msgs.slice(-20).map(m=>(m.r==='u'?'You: ':'AMV: ')+txt(m)).join('\n\n');
 }
+/* ============================================================
+   AMV-103  HAND OFF THE ACTUAL WORK.
+
+   Handoff's whole premise is "do not describe the work, hand over the work" -
+   and it could only reach conversations. A design in Studio, a project in Dev, a
+   script in Lab: all of it had to be copied out by hand and pasted back in,
+   which is exactly the retyping the feature exists to avoid.
+
+   Everything AMV saves as a session is now pullable, and each kind is turned
+   into text the person on the other end can actually use: a design comes with
+   its brief and its markup, a project with its file list and their contents, a
+   script with the code and what was said about it.
+   ============================================================ */
+function _hoSessText(rec){
+  const st=(rec&&rec.state)||{};
+  const cap=(v,n)=>String(v||'').slice(0,n);
+  if(rec.kind==='studio'){
+    const arts=(st.artifacts||[]).filter(a=>a&&(a.html||a.brief));
+    const a=arts.find(x=>x.id===st.activeId)||arts[0];
+    if(!a) return '';
+    return '[Studio design]\n'+
+      (st.prompt?('What was asked for:\n'+cap(st.prompt,600)+'\n\n'):'')+
+      (a.brief?('Brief:\n'+cap(a.brief,800)+'\n\n'):'')+
+      (a.html?('Markup:\n'+cap(a.html,12000)):'');
+  }
+  if(rec.kind==='dev'){
+    const files=Object.keys(st.project||{});
+    const asked=(st.log||[]).filter(l=>l&&l.role==='user').slice(-4).map(l=>'- '+cap(l.text,200)).join('\n');
+    const body=files.slice(0,12).map(f=>{
+      const c=(st.project[f]&&st.project[f].content)||'';
+      return '--- '+f+' ---\n'+cap(c,4000);
+    }).join('\n\n');
+    return '[Dev project]\n'+
+      (asked?('What was asked for:\n'+asked+'\n\n'):'')+
+      (files.length?('Files ('+files.length+'):\n'+files.join(', ')+'\n\n'+body):cap(st.curCode,8000));
+  }
+  if(rec.kind==='lab'){
+    const said=(st.chat||[]).slice(-4).map(m=>(m.role==='user'?'You: ':'AMV: ')+cap(m.text||m.content,200)).join('\n');
+    return '[Lab '+(st.lang||'code')+']\n'+
+      (said?('What was discussed:\n'+said+'\n\n'):'')+
+      'Code:\n'+cap(st.code,12000);
+  }
+  return '';
+}
+
 function _hoPickChat(){
+  /* One picker for everything handable, grouped by what it is. Separate buttons
+     per kind would have meant four buttons that are empty most of the time. */
   const convs=(S.convs||[]).filter(c=>c&&c.msgs&&c.msgs.length);
-  if(!convs.length){ toast('You have no chats with messages yet','info'); return; }
+  const sess=((typeof _SESSIONS!=='undefined'&&_SESSIONS)||[])
+    .filter(x=>x&&['studio','dev','lab'].indexOf(x.kind)>=0 && _hoSessText(x))
+    .slice().sort((a,b)=>(b.updated||0)-(a.updated||0));
+
+  if(!convs.length && !sess.length){
+    toast('Nothing to hand off yet - start a chat, a design, a project or some code first','info',4500);
+    return;
+  }
   const r=$('ovr'); if(!r) return;
-  const rows=convs.map(c=>{
+
+  const KIND={studio:'Design',dev:'Project',lab:'Code'};
+  const chatRows=convs.map(c=>{
     const last=c.msgs[c.msgs.length-1];
     const prev=(typeof last.c==='string'?last.c:(Array.isArray(last.c)?last.c.map(x=>x&&x.text?x.text:'').join(' '):'')).replace(/\s+/g,' ').trim().slice(0,90);
     return '<button class="hopick-row" data-hopick="'+escH(c.id)+'"><div class="hopick-t">'+escH(c.title||'Untitled chat')+'</div><div class="hopick-p">'+escH(prev||'(no messages)')+'</div></button>';
   }).join('');
+  const sessRows=sess.map(x=>{
+    const prev=_hoSessText(x).replace(/\s+/g,' ').replace(/^\[[^\]]*\]\s*/,'').trim().slice(0,90);
+    return '<button class="hopick-row" data-hosess="'+escH(x.id)+'">'+
+      '<div class="hopick-t"><span class="hopick-kind">'+escH(KIND[x.kind]||x.kind)+'</span>'+escH(x.title||'Untitled')+'</div>'+
+      '<div class="hopick-p">'+escH(prev||'(empty)')+'</div></button>';
+  }).join('');
+
   r.innerHTML='<div class="ov" id="hopick-bg"><div class="ob hopick-modal" onclick="event.stopPropagation()" style="max-width:520px">'+
     '<button class="oc" onclick="closeOvr()">×</button>'+
-    '<h2 style="margin:0 0 4px">Pull in a chat</h2>'+
-    '<p style="font-size:12.5px;color:var(--mu);margin:0 0 14px">Pick any conversation to hand off. Whoever opens it continues on that same chat.</p>'+
-    '<div class="hopick-list">'+rows+'</div></div></div>';
+    '<h2 style="margin:0 0 4px">Pull in your work</h2>'+
+    '<p style="font-size:12.5px;color:var(--mu);margin:0 0 14px">A conversation, a design, a project or some code. '+
+      'The actual content comes across, not a description of it.</p>'+
+    (sessRows?'<div class="hopick-h">Designs, projects and code</div><div class="hopick-list">'+sessRows+'</div>':'')+
+    (chatRows?'<div class="hopick-h">Conversations</div><div class="hopick-list">'+chatRows+'</div>':'')+
+    '</div></div>';
   on($('hopick-bg'),'click',(e)=>{ if(e.target===$('hopick-bg')) closeOvr(); });
   r.querySelectorAll('[data-hopick]').forEach(b=>on(b,'click',()=>{ _hoPullConv(b.dataset.hopick); closeOvr(); }));
+  r.querySelectorAll('[data-hosess]').forEach(b=>on(b,'click',()=>{ _hoPullSession(b.dataset.hosess); closeOvr(); }));
 }
+
+function _hoPullSession(id){
+  const rec=((typeof _SESSIONS!=='undefined'&&_SESSIONS)||[]).find(x=>x&&x.id===id);
+  if(!rec){ toast('That work could not be found','error'); return; }
+  const text=_hoSessText(rec);
+  if(!text){ toast('There is nothing in that yet','info'); return; }
+  const ta=$('ho-ctx'); if(ta){ ta.value=(ta.value?ta.value+'\n\n':'')+text; ta.focus(); }
+  if($('ho-title') && !$('ho-title').value) $('ho-title').value=rec.title||'Continue this work';
+  /* A session is not a conversation, so the "continue on that same chat" path
+     must not be armed - it would send whoever opens it to a chat that has
+     nothing to do with the design they were handed. */
+  try{ S._hoPulledConv=null; }catch(e){}
+  toast('Pulled in \u201c'+(rec.title||'your work')+'\u201d','success');
+}
+try{ window._hoPullSession=_hoPullSession; window._hoSessText=_hoSessText; }catch(e){}
 function _hoPullConv(convId){
   const conv=(S.convs||[]).find(c=>c.id===convId); if(!conv){ toast('Chat not found','error'); return; }
   const text=_hoConvText(conv);
