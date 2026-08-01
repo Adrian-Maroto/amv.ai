@@ -218,7 +218,21 @@ function _mktBrowse(body){
   };
   /* A failed load used to leave the grid on its loading state forever, which
      reads as "the marketplace is empty" rather than "this did not load". */
-  const reload=()=>AMVMarket.list().then(list=>{ items=list; drawTop(); drawFilters(); draw(); })
+  const reload=()=>AMVMarket.list().then(list=>{
+      items=list; drawTop(); drawFilters(); draw();
+      /* The list resolving is not the same as the catalogue loading. When the
+         server call fails, AMVMarket falls back to the listings that ship with
+         AMV - which renders a shop that looks whole and is not: everything
+         other people published is missing, and nothing here can be bought
+         because checkout needs the same server that just refused. */
+      const g=$('mk-grid');
+      if(g && AMVMarket._remoteFailed){
+        g.insertAdjacentHTML('afterbegin',
+          '<div class="mk-partial">Showing only the listings built into AMV - the rest of the marketplace '+
+          'could not be reached, and nothing can be bought until it is. '+
+          '<button class="btn bs" data-dact="_mktGoBrowse" style="font-size:12px">Try again</button></div>');
+      }
+    })
     .catch(e=>{
       const g=$('mk-grid');
       if(g) g.innerHTML='<div class="adm-empty">Could not load the marketplace. Check your connection, then <button class="btn bs" data-dact="_mktGoBrowse" style="font-size:12px">try again</button>.</div>';

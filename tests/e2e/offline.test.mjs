@@ -149,6 +149,41 @@ const raw = bundle.split('\n')
 ok(raw.length === 0, 'every network call has a deadline or its own abort controller',
    raw.slice(0, 5).map(x => x.n + ': ' + x.l.trim().slice(0, 70)));
 
+section('A half-loaded marketplace does not pretend to be a whole one');
+{
+  /* Found by probing every screen with the backend fully down. The catalogue
+     fetch failed, the failure was swallowed, and the listings that ship with
+     AMV rendered on their own - a shop that looks complete and is not.
+     Everything other people published is missing, and nothing on screen can be
+     bought, because checkout needs the same server that just refused. */
+  const r = await page.evaluate(async () => {
+    Object.defineProperty(window.AMV_API, 'live', { get: () => true, configurable: true });
+    window.AMV_API.token = 't';
+    window.AMV_API._fetch = async () => { throw new Error('down'); };
+    S.tab = 'market'; setTab('market');
+    await new Promise(r => setTimeout(r, 400));
+    const t = document.getElementById('vc').textContent;
+    return { cards: document.querySelectorAll('.mk-card').length,
+             admits: /could not be reached/.test(t),
+             buyable: /nothing can be bought/.test(t),
+             retry: !!document.querySelector('.mk-partial [data-dact]') };
+  });
+  ok(r.cards > 0, 'the built-in listings still show, which is right', r.cards);
+  ok(r.admits, 'but the screen says the rest of the marketplace is missing');
+  ok(r.buyable, 'and that nothing can be bought until it is back');
+  ok(r.retry, 'with a way to try again rather than a dead end');
+
+  /* And when it loads normally there is no scary banner on a working shop. */
+  const good = await page.evaluate(async () => {
+    window.AMV_API._fetch = async () => ({ ok: true, json: async () => ({ items: [] }) });
+    S.tab = 'chat'; setTab('chat');
+    S.tab = 'market'; setTab('market');
+    await new Promise(r => setTimeout(r, 400));
+    return !!document.querySelector('.mk-partial');
+  });
+  ok(!good, 'a marketplace that loaded says nothing about failing');
+}
+
 section('No JavaScript errors');
 ok(errors.length === 0, 'zero uncaught page errors', errors.slice(0, 3));
 

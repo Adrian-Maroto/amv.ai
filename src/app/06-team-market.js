@@ -637,8 +637,21 @@ const AMVMarket = {
 
   async list(){
     let remote=[];
+    /* Whether the community half of the catalogue actually loaded.
+
+       This used to swallow the failure and return the built-in listings alone,
+       which renders a marketplace that looks complete and is not: everything
+       other people published is missing, and nothing on screen can be bought
+       because checkout needs the same server that just refused. Silently
+       showing a partial shop as a whole one is the shape of dishonesty this
+       product is not allowed to have, so the failure is recorded and said. */
+    this._remoteFailed=false;
     if(this._live()){
-      try{ const r=await AMV_API._fetch('/v1/market/list',{method:'GET'}); const d=await r.json().catch(()=>null); if(d&&Array.isArray(d.items)) remote=d.items; }catch(e){}
+      try{
+        const r=await AMV_API._fetch('/v1/market/list',{method:'GET'});
+        const d=await r.json().catch(()=>null);
+        if(d&&Array.isArray(d.items)) remote=d.items; else this._remoteFailed=true;
+      }catch(e){ this._remoteFailed=true; }
     }
     const installed=load('amv_market_installed')||{};
     const localPub=this._localListings();

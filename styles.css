@@ -7505,3 +7505,15 @@ html,body{height:100%;height:100dvh}
   .mc-cmd-chips,
   .chome-chips{ gap:var(--sp-2); }
 }
+
+/* ============================================================
+   LAYER A54 - A partial marketplace says so
+
+   A failed catalogue load fell back to the built-in listings and
+   rendered a shop that looked complete. This is the line that
+   admits half of it is missing and that nothing is buyable.
+   ============================================================ */
+.mk-partial{grid-column:1/-1;background:color-mix(in srgb,var(--gold) 10%,transparent);
+  border:1px solid var(--gold);border-radius:var(--r-md);padding:var(--sp-3);
+  font-size:var(--t-sm);color:var(--tx);line-height:1.6;
+  display:flex;align-items:center;gap:var(--sp-3);flex-wrap:wrap}
