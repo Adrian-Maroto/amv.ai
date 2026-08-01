@@ -169,11 +169,14 @@ globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ co
 /* AMV-087: a free account gets one weekly job rather than nothing. What it
    asked for here - ten-minute research - is shaped down rather than refused,
    and the difference is reported instead of being applied silently. */
+/* Autonomy is a paid capability now: a job runs on a schedule with nobody
+   watching, which is the one thing a free tier cannot carry. The refusal has to
+   name the plan rather than fail silently. */
 const crFree = await W.autoCreate(req({ detail: 'Watch ETH', repeat: '10min', kind: 'research' }, 'dave', 'https://api.amv.dev/auto/create'), env);
 const freeJson = await crFree.json();
-ok(crFree.status === 200, 'a free account can schedule one', crFree.status);
-ok(freeJson.item.repeat === W.FREE_AUTO_REPEAT, 'shaped to weekly, not the ten minutes asked for', freeJson.item.repeat);
-ok(freeJson.shaped === true, 'and told that it was shaped');
+ok(crFree.status === 402, 'a free account cannot schedule background work', crFree.status);
+ok(freeJson.code === 'plan_required' && freeJson.requires === 'pro',
+   'and is told exactly which plan runs it', freeJson.code + '/' + freeJson.requires);
 
 store.delete('auto:dave@test.com');
 await W.setEntitlement(env, 'dave@test.com', 'pro');

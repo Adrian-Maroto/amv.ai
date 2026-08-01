@@ -7448,6 +7448,17 @@ html,body{height:100%;height:100dvh}
   .bill-acts .btn,.bill-swap .btn{flex:1 1 100%;justify-content:center}
 }
 
+/* ============================================================
+   LAYER A49 - Crew allowance
+
+   The job limit stated before it is reached. A limit somebody
+   discovers by bumping into it reads as a fault; the same number
+   shown up front reads as a plan.
+   ============================================================ */
+.mc-allow{font-size:var(--t-sm);color:var(--mu);margin:0 0 var(--sp-3);
+  font-variant-numeric:tabular-nums}
+.mc-allow span{color:var(--dim)}
+
 </style>
 <!-- BUILD:CSS:END -->
 <script>
@@ -19656,8 +19667,49 @@ function _mcDoneCard(t){
   return `<div class="mc-card done"><div class="mc-card-top"><span class="mc-card-t">${escH(t.title||'Task')}</span><span class="mc-pill ok">Done</span></div>${snip?`<div class="mc-card-sub">${escH(snip.slice(0,140))}${snip.length>140?'…':''}</div>`:''}</div>`;
 }
 
+/* Which plan runs autonomous work, matching what the server enforces. Reading
+   the same rule in both places is the point - a gate that only exists in the
+   browser is not a gate, and one that only exists on the server is a dead end
+   the user hits with no explanation. */
+const CREW_REQUIRED_PLAN='pro';
+const CREW_JOBS_BY_PLAN={free:0,pro:5,elite:25,ultra:100};
+function _planAllowsCrew(){
+  const plan=loadStr('amv_plan')||'free';
+  const need=PLAN_RANK[CREW_REQUIRED_PLAN]||1;
+  if(plan==='team') return true;
+  if(plan==='custom') return (typeof _customRank==='function'?_customRank():0)>=need;
+  return (PLAN_RANK[plan]||0)>=need;
+}
+function _crewJobAllowance(){
+  const plan=loadStr('amv_plan')||'free';
+  if(plan==='team'||plan==='custom') return null;   // depends on seats or price
+  return CREW_JOBS_BY_PLAN[plan]||0;
+}
+try{ window._planAllowsCrew=_planAllowsCrew; }catch(e){}
+
 function renderCrewView(){
   const vc=$('vc'); if(!vc) return;
+  /* Say the one thing that is true and nothing else. No risk warnings, no
+     half-working tool - what this does, which plan runs it, and the button. */
+  if(!_planAllowsCrew()){
+    const P=(typeof PLANS!=='undefined'&&PLANS[CREW_REQUIRED_PLAN])||{name:'Pro',price:15};
+    vc.innerHTML='<div class="sv fi"><div class="vi">'+
+      '<span class="eyebrow">Crew \u00b7 Autonomous work</span>'+
+      '<h2>AMV working while you are not</h2>'+
+      '<p class="vsub">Give it an outcome and it plans the steps, does the work across your connected apps, '+
+        'and brings back something finished. On a schedule, if you want - every morning, every week, '+
+        'whatever you set.</p>'+
+      '<div class="ss2"><h3>Included with '+escH(P.name)+' \u00b7 $'+P.price+'/month</h3>'+
+        '<p style="font-size:13.5px;color:var(--tx);line-height:1.7;margin:0 0 6px">'+
+          escH(P.name)+' runs <b>'+CREW_JOBS_BY_PLAN.pro+' jobs</b> in the background, as often as every ten minutes. '+
+          'Elite runs '+CREW_JOBS_BY_PLAN.elite+' and Ultra runs '+CREW_JOBS_BY_PLAN.ultra+'.</p>'+
+        '<p style="font-size:12.5px;color:var(--mu);line-height:1.6;margin:0 0 14px">'+
+          'A job keeps running whether or not AMV is open, which is why it is part of a paid plan.</p>'+
+        '<button class="btn bp" data-stab="plans" style="font-size:12px">See plans \u2192</button>'+
+      '</div>'+
+    '</div></div>';
+    return;
+  }
   const jobs=_cwJobs(); const appr=_cwApprovals();
   const jobCard=j=>`<div class="cw-job ${j.on?'on':''}">
       <div class="cw-job-ic">${j.icon}</div>
@@ -19719,6 +19771,10 @@ function renderCrewView(){
         <button class="mc-pause ${paused?'paused':''}" data-dact="${paused?'resumeAllAutonomous':'pauseAllAutonomous'}">${paused?'▶ Resume autonomy':'⏸ Pause all autonomous'}</button>
       </div>
     </header>
+    ${(()=>{ const n=_crewJobAllowance(); const used=st.sched.length+st.auton.length;
+      /* The number, before they hit it. A limit discovered by bumping into it
+         reads as a fault; the same limit stated up front reads as a plan. */
+      return n?`<div class="mc-allow">${used} of ${n} background job${n===1?'':'s'} in use <span>\u00b7 your plan runs ${n}</span></div>`:''; })()}
     <div class="mc-cmd mc-cmd-lg">
       <div class="mc-cmd-label">Tell AMV what to do <span>- it recognizes what you mean and does it, right here</span></div>
       <div class="mc-cmd-inner">
@@ -27763,49 +27819,48 @@ try{ window.openShortcutSheet=openShortcutSheet; }catch(e){}
    always stated explicitly; high-risk actions still stop and ask unless
    the risk cap is set to "Any".
    ============================================================ */
-let _AUTOAPP={mode:'require', run:'every', risk:'low', until:null};
-function _aaRiskOfGoal(g){
-  g=(g||'').toLowerCase();
-  if(/(\bbuy\b|\bpurchase\b|\bpay\b|\bspend\b|\border\b|\bwire\b|\btransfer\b|\bcharge\b|\binvoice\b|\$)/.test(g)) return {level:'high', kind:'spend money'};
-  if(/(\bdelete\b|\bremove\b|\bwipe\b|\berase\b|\bdrop\b)/.test(g)) return {level:'high', kind:'delete information'};
-  if(/(\bpublish\b|\bgo live\b|\blaunch\b|\bdeploy\b|\btweet\b|\bpost publicly\b)/.test(g)) return {level:'high', kind:'publish publicly'};
-  if(/(\bsend\b|\bemail\b|\bmessage\b|\breply\b|\bpost\b|\bdm\b)/.test(g)) return {level:'medium', kind:'send messages on your behalf'};
-  return {level:'low', kind:''};
-}
+/* The risk cap is no longer something the user sets.
+
+   It used to be three buttons - Low / Medium / Any - with warnings underneath
+   like "this task could spend money". That reads as a threat at exactly the
+   moment somebody is deciding to trust the product, and it asked them to make a
+   safety decision they have no way to evaluate. It also let them choose "Any",
+   which is the one setting that could actually cost them money.
+
+   The rule is now fixed and simply true: anything that spends money, deletes
+   information, publishes, or sends on your behalf ALWAYS stops and asks. There
+   is nothing to configure, so there is nothing to warn about, and no way to
+   turn the protection off by accident. */
+const AUTO_APPROVE_RISK_CAP = 'low';
+let _AUTOAPP={mode:'require', run:'every', risk:AUTO_APPROVE_RISK_CAP, until:null};
+/* The goal-text risk classifier lived here and only ever fed the warning
+   banners. The real protection was never this regex - it is the approval gate
+   on the server, which stops on the ACTION being taken rather than on a guess
+   about what the user typed. Guessing from the wording produced both false
+   alarms and false calm, so it is gone rather than kept as a second, weaker
+   opinion sitting next to the real one. */
 function _aaRefresh(){
   const cfg=document.getElementById('aa-config'); if(!cfg) return;
   const on=_AUTOAPP.mode==='auto';
   cfg.style.display=on?'block':'none';
   if(!on) return;
-  const permit=document.getElementById('aa-permit'), warn=document.getElementById('aa-warn');
-  const goal=(document.getElementById('cw-goal')||{}).value||'';
+  const permit=document.getElementById('aa-permit');
   const when = (typeof _SCHED!=='undefined' && _SCHED.cad!=='once') ? _schedHuman().toLowerCase() : 'each time it runs';
   const runTxt=_AUTOAPP.run==='once'?'the first run only':'every run';
-  const riskTxt=_AUTOAPP.risk==='any'?'any action':(_AUTOAPP.risk==='medium'?'low and medium-risk actions':'low-risk actions only');
   const untilTxt=_AUTOAPP.until?(' until '+new Date(_AUTOAPP.until+'T00:00:00').toLocaleDateString()):'';
-  if(permit) permit.innerHTML='<b>Auto Approve enabled.</b> AMV may complete this '+escH(when)+' and perform the final action on its own - for '+runTxt+', '+riskTxt+untilTxt+'. You can pause or turn this off anytime from Mission Control.';
-  const risk=_aaRiskOfGoal(goal), capBlocksHigh=_AUTOAPP.risk!=='any';
-  if(warn){
-    if(risk.level==='high' && capBlocksHigh){
-      warn.style.display='block'; warn.className='aa-warn soft';
-      warn.innerHTML='This task could <b>'+escH(risk.kind)+'</b>. With this risk limit, AMV still stops and asks you before any high-risk action - only lower-risk steps complete automatically.';
-    } else if(risk.level==='high'){
-      warn.style.display='block'; warn.className='aa-warn hard';
-      warn.innerHTML='⚠ This lets AMV <b>'+escH(risk.kind)+'</b> automatically, without checking with you first. Enable only if you fully trust this recurring task.';
-    } else if(risk.level==='medium' && _AUTOAPP.risk==='low'){
-      warn.style.display='block'; warn.className='aa-warn soft';
-      warn.innerHTML='This task may <b>'+escH(risk.kind)+'</b>. At this risk limit those still wait for your approval.';
-    } else { warn.style.display='none'; }
-  }
+  /* One calm sentence about what will happen, and one about what will not.
+     No warnings that change as the user types - a box that starts flashing at
+     the word "buy" makes the product feel dangerous rather than careful. */
+  if(permit) permit.innerHTML='<b>Auto Approve enabled.</b> AMV may finish this '+escH(when)+
+    ' on its own - for '+runTxt+untilTxt+'. Anything that spends money, deletes, publishes or sends '+
+    'on your behalf still comes to you first. Turn this off anytime in Mission Control.';
 }
 function _aaInit(){
-  _AUTOAPP={mode:'require', run:'every', risk:'low', until:null};
+  _AUTOAPP={mode:'require', run:'every', risk:AUTO_APPROVE_RISK_CAP, until:null};
   document.querySelectorAll('input[name="aa-mode"]').forEach(r=>on(r,'change',()=>{ _AUTOAPP.mode=r.value; document.querySelectorAll('.aa-opt').forEach(o=>o.classList.remove('on')); const l=r.closest('.aa-opt'); if(l) l.classList.add('on'); _aaRefresh(); }));
   document.querySelectorAll('#aa-run button').forEach(b=>on(b,'click',()=>{ document.querySelectorAll('#aa-run button').forEach(x=>x.classList.remove('on')); b.classList.add('on'); _AUTOAPP.run=b.dataset.aarun; _aaRefresh(); }));
-  document.querySelectorAll('#aa-risk button').forEach(b=>on(b,'click',()=>{ document.querySelectorAll('#aa-risk button').forEach(x=>x.classList.remove('on')); b.classList.add('on'); _AUTOAPP.risk=b.dataset.aarisk; _aaRefresh(); }));
   const u=document.getElementById('aa-until'); if(u) on(u,'change',()=>{ _AUTOAPP.until=u.value||null; _aaRefresh(); });
   const uc=document.getElementById('aa-until-clear'); if(uc) on(uc,'click',()=>{ _AUTOAPP.until=null; if(u) u.value=''; _aaRefresh(); });
-  const g=document.getElementById('cw-goal'); if(g) on(g,'input',()=>{ if(_AUTOAPP.mode==='auto') _aaRefresh(); });
   _aaRefresh();
 }
 
@@ -27855,10 +27910,8 @@ function openCowork(){
         </div>
         <div class="aa-config" id="aa-config" style="display:none">
           <div class="aa-permit" id="aa-permit"></div>
-          <div class="aa-warn" id="aa-warn" style="display:none"></div>
           <div class="aa-scope">
             <div class="aa-scope-row"><span class="aa-scope-k">Applies to</span><div class="aa-seg" id="aa-run"><button type="button" data-aarun="every" class="on">Every run</button><button type="button" data-aarun="once">First run only</button></div></div>
-            <div class="aa-scope-row"><span class="aa-scope-k">Only actions up to</span><div class="aa-seg" id="aa-risk"><button type="button" data-aarisk="low" class="on">Low risk</button><button type="button" data-aarisk="medium">Medium</button><button type="button" data-aarisk="any">Any</button></div></div>
             <div class="aa-scope-row"><span class="aa-scope-k">Until</span><input type="date" id="aa-until" class="aa-date"><button type="button" class="aa-clear" id="aa-until-clear">No end date</button></div>
           </div>
         </div>

@@ -7362,3 +7362,14 @@ html,body{height:100%;height:100dvh}
 @media (max-width:520px){
   .bill-acts .btn,.bill-swap .btn{flex:1 1 100%;justify-content:center}
 }
+
+/* ============================================================
+   LAYER A49 - Crew allowance
+
+   The job limit stated before it is reached. A limit somebody
+   discovers by bumping into it reads as a fault; the same number
+   shown up front reads as a plan.
+   ============================================================ */
+.mc-allow{font-size:var(--t-sm);color:var(--mu);margin:0 0 var(--sp-3);
+  font-variant-numeric:tabular-nums}
+.mc-allow span{color:var(--dim)}

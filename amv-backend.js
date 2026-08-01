@@ -828,7 +828,26 @@ async function guardAction(env, key, perMin, perDay, label) {
      crons = ["EVERY_5_MIN"]   // use the 5-minute cron expression here
    ══════════════════════════════════════════════════════════════ */
 
-const AUTO_MAX_PER_USER = 25;                    // hard cap: no runaway fan-out
+/* How many scheduled jobs a plan includes.
+
+   It used to be a flat 25 for every paid plan, which answered neither of the
+   two questions a customer actually has: what do I get, and what does paying
+   more get me. Now it scales, and the number is stated on screen rather than
+   discovered by hitting it.
+
+   Autonomous work is the most expensive thing AMV does - a job runs whether or
+   not anybody is watching - so the free tier gets exactly one weekly job. That
+   is enough to see it genuinely work, and not enough to run a business on. */
+const AUTO_MAX_BY_PLAN = { free: 0, pro: 5, elite: 25, ultra: 100 };
+const AUTO_MAX_PER_USER = 100;                   // hard cap: no runaway fan-out
+/* Crew and scheduled autonomy need a paid plan. The plans page has always said
+   so ("Autonomous agents and Crew" is listed under Pro); nothing enforced it. */
+const AUTO_MIN_PLAN = 'pro';
+function _autoMaxFor(plan, cfg){
+  if(plan === 'team') return Math.min(AUTO_MAX_PER_USER, 5 * _teamSeatCount(cfg));
+  if(plan === 'custom') { const r = _customRank(cfg); return r >= 3 ? 100 : r >= 2 ? 25 : r >= 1 ? 5 : 1; }
+  return AUTO_MAX_BY_PLAN[plan] || 1;
+}
 const AUTO_INTERVALS = { '10min': 600e3, '30min': 1800e3, hourly: 3600e3, daily: 86400e3, weekly: 604800e3 };
 const AUTO_MAX_RESULTS = 50;
 // The cron fires every 5 minutes, so the shortest meaningful interval is ~10min.
@@ -896,8 +915,9 @@ async function _budgetFor(env, user){
 function _autoBudget(ent){
   const plan = _planOf(ent || {});
   const planPrice = _planPriceUSD(plan, ent && ent.custom);
-  if (planPrice > 0) return { plan, ceiling: planPrice * 0.45, free: false, max: AUTO_MAX_PER_USER };
-  return { plan, ceiling: FREE_AUTO_CEILING_USD, free: true, max: FREE_AUTO_MAX };
+  const max = _autoMaxFor(plan, ent && ent.custom);
+  if (planPrice > 0) return { plan, ceiling: planPrice * 0.45, free: false, max };
+  return { plan, ceiling: FREE_AUTO_CEILING_USD, free: true, max };
 }
 
 /* ---- create an automation ---- */
@@ -919,6 +939,23 @@ async function autoCreate(request, env){
      A free account gets one, weekly, without web search - and is told exactly
      that at the moment it matters, rather than finding out from a cron. */
   const budget = await _budgetFor(env, user);
+  /* Autonomous work needs a paid plan, and this is where that is decided.
+
+     A job runs on a schedule whether or not anybody is watching, which makes it
+     the most expensive thing AMV does and the one thing a free tier cannot
+     carry. The free plan used to get one shaped weekly job; the owner's call is
+     that autonomy is a paid capability, and the plans page has always listed it
+     under Pro. Said plainly and once, with the plan named - not a silent
+     failure, and not a warning about risk. */
+  /* budget.plan, not user.plan: _budgetFor already resolved the effective plan
+     - including a team's, and including a fallback read when the caller handed
+       us a user object without one. Reading the raw field here would refuse a
+     paying customer whenever it happened to be missing. */
+  if(_planRankOf(budget.plan, user.customCfg) < _planRankOf(AUTO_MIN_PLAN)){
+    return json({ error: 'Running work on a schedule is part of Pro. Upgrade and AMV starts doing this on its own.',
+                  code: 'plan_required', requires: AUTO_MIN_PLAN,
+                  jobs: AUTO_MAX_BY_PLAN[AUTO_MIN_PLAN] }, 402);
+  }
   /* Email delivery is the whole point of "have it ready when I wake up", and it
      only works if an email provider is configured. Rather than accepting the
      request and delivering nowhere, we downgrade to in-app and SAY which one
@@ -929,10 +966,16 @@ async function autoCreate(request, env){
   const key = _autoKey(user.email);
   const rec = (await DB.get(env, 'auto', key)) || { items:[], results:[] };
   if((rec.items||[]).length >= budget.max){
+    /* Name the number they have and the number the next plan gives, because
+       "you have reached your limit" without either is an error a customer
+       cannot act on. */
     return budget.free
-      ? json({ error:'Free accounts get one automation running in the background. Upgrade to run up to '+AUTO_MAX_PER_USER+', as often as every ten minutes.',
-               code:'plan_limit' }, 402)
-      : json({ error:'You can have up to '+AUTO_MAX_PER_USER+' automations.' }, 429);
+      ? json({ error:'The free plan runs one job in the background, weekly. Pro runs '+AUTO_MAX_BY_PLAN.pro+
+                     ', as often as every ten minutes.',
+               code:'plan_limit', have: budget.max, next: AUTO_MAX_BY_PLAN.pro }, 402)
+      : json({ error:'Your plan runs '+budget.max+' background job'+(budget.max===1?'':'s')+
+                     '. Remove one to add another, or upgrade for more.',
+               code:'job_limit', have: budget.max }, 429);
   }
   /* Shaped, not refused. The free tier runs weekly and does not search the web,
      because searching is the expensive part - and it is told so rather than

@@ -8,7 +8,14 @@ import { ok, section, report, done } from '../lib/assert.mjs';
 const app = await bootApp({ tab: 'crew', user: { name: 'Owner', email: 'owner@amv.dev', ini: 'O' } });
 const { page, errors } = app;
 
-await page.evaluate(() => { try { localStorage.removeItem('u:owner@amv.dev|amv_cw_jobs'); } catch (e) {} renderCrewView(); });
+/* Crew is a paid capability - a job runs on a schedule whether or not anybody
+   is watching, which is the one thing a free tier cannot carry. Everything
+   below is about what the tool DOES, so it runs on a plan that has it. */
+await page.evaluate(() => {
+  try { localStorage.removeItem('u:owner@amv.dev|amv_cw_jobs'); } catch (e) {}
+  saveStr('amv_plan', 'pro');
+  renderCrewView();
+});
 await page.waitForTimeout(350);
 
 const r = await page.evaluate(() => {
@@ -30,6 +37,43 @@ section('A deep catalog of standing services');
 ok(r.count >= 20, `there are ${r.count} automations to choose from`, r.count);
 ok(r.dupes.length === 0, 'no duplicate ids (a collision would break toggling)', r.dupes);
 ok(r.missingCopy.length === 0, 'every automation explains what it does', r.missingCopy);
+
+section('Autonomy is a paid capability, said once and calmly');
+{
+  /* Two things the owner asked for together. The risk chooser - Low / Medium /
+     Any, with warnings like "this task could spend money" - is gone: it asked
+     people to make a safety decision they cannot evaluate, at the exact moment
+     they are deciding whether to trust the product, and its "Any" setting was
+     the one thing that could actually cost them money. The protection did not
+     go with it; it is fixed now, so there is nothing to configure and nothing
+     to warn about.
+
+     And a free account is told which plan runs this, rather than being shown a
+     tool that will refuse it. */
+  const free = await page.evaluate(() => {
+    saveStr('amv_plan', 'free');
+    renderCrewView();
+    const t = document.getElementById('vc').textContent;
+    return { text: t, jobs: document.querySelectorAll('.cw-job').length,
+             cta: !!document.querySelector('[data-stab="plans"]') };
+  });
+  ok(!/\brisk\b/i.test(free.text), 'no talk of risk anywhere on the screen');
+  ok(/Pro/.test(free.text), 'the plan that runs it is named', /Pro/.test(free.text));
+  ok(/\b5 jobs\b/.test(free.text), 'along with how many jobs that plan runs', free.text.slice(0, 0));
+  ok(free.jobs === 0, 'and no half-working tool underneath it', free.jobs);
+  ok(free.cta, 'with the one control that resolves it');
+
+  const paid = await page.evaluate(() => {
+    saveStr('amv_plan', 'pro');
+    renderCrewView();
+    const t = document.getElementById('vc').textContent;
+    return { risk: /\brisk\b/i.test(t), allowance: /of 5 background jobs/.test(t),
+             jobs: document.querySelectorAll('.cw-job').length };
+  });
+  ok(!paid.risk, 'and an entitled account is not warned about risk either');
+  ok(paid.allowance, 'it is told how many jobs it has, before it hits the limit');
+  ok(paid.jobs > 0, 'and gets the actual tool', paid.jobs);
+}
 
 section('Each one is honest about what it needs');
 ok(r.missingNeeds.length === 0, 'every automation states the access it requires', r.missingNeeds);

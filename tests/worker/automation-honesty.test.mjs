@@ -23,7 +23,7 @@ const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'autohonesty.harness.mjs');
 writeFileSync(harness, src + `
-export { autoCreate, autoList, _autoBudget, setEntitlement, signToken, DB, AUTO_MAX_PER_USER,
+export { autoCreate, autoList, AUTO_MAX_BY_PLAN, _autoBudget, setEntitlement, signToken, DB, AUTO_MAX_PER_USER,
          _autoEmailResult, _autoExecute, FREE_AUTO_MAX, FREE_AUTO_REPEAT, FREE_AUTO_CEILING_USD, ENGINES };
 `);
 const W = await import(harness + '?t=' + Date.now());
@@ -49,38 +49,57 @@ const list = (env, token) => W.autoList(new Request('https://w/auto/list', {
 
 const DAILY = { detail: 'Brief me on the semiconductor market', repeat: 'daily', kind: 'research' };
 
-section('A free account gets one automation, shaped rather than refused');
+section('Autonomy is a paid capability, and a free account is told which plan');
 {
-  /* AMV-087: background work is the strongest reason anyone comes back, and it
-     used to be entirely behind the paywall - so the people most likely to churn
-     were the only ones who never saw it. You cannot convert someone who never
-     found out what they were converting to. */
+  /* AMV-087 gave the free tier one shaped weekly job, on the reasoning that
+     background work is the strongest reason anyone comes back and you cannot
+     convert somebody who never saw it. The owner's call is the other way: a job
+     runs on a schedule whether or not anybody is watching, which makes it the
+     most expensive thing AMV does and the one thing a free tier cannot carry.
+     The plans page has always listed it under Pro.
+
+     What matters either way is that the refusal is USEFUL: it names the plan,
+     names what that plan gives, and never fails silently. */
   const env = makeEnv();
   const token = await tokenFor(env, 'free@x.com');
-  const d = await (await create(env, token, DAILY)).json();
-  ok(d.ok === true, 'a free account really can schedule one', d.ok);
-  ok(d.free === true, 'and is told which tier it is on');
-  ok(d.item.repeat === W.FREE_AUTO_REPEAT, 'it runs weekly, not daily as asked', d.item.repeat);
-  ok(d.item.kind === 'task', 'and without live research, which is the expensive part', d.item.kind);
-  ok(d.shaped === true, 'the difference from what was asked is reported, not slipped through');
-  ok(/without live web search/i.test(d.shapedWhy), 'in words, with the upgrade that removes it', d.shapedWhy);
+  const r = await create(env, token, DAILY);
+  const d = await r.json();
+  ok(r.status === 402, 'a free account cannot schedule background work', r.status);
+  ok(d.code === 'plan_required', 'with a code the app can branch on', d.code);
+  ok(d.requires === 'pro', 'naming the plan it needs', d.requires);
+  ok(d.jobs > 0, 'and how many jobs that plan actually runs', d.jobs);
+  ok(/Pro/.test(d.error), 'in a sentence a person can read', d.error);
+  ok(!/risk/i.test(d.error), 'and with no talk of risk, which is not what they asked about');
 
   const after = await (await list(env, token)).json();
-  ok((after.items || []).length === 1, 'and it is really there');
-  ok(after.canSchedule === true, 'a free account is no longer told it cannot schedule at all');
+  ok((after.items || []).length === 0, 'nothing was created behind the refusal');
 }
 
-section('The second one is where the upgrade is asked for');
+section('A paid plan says how many jobs it runs, and holds that number');
 {
+  /* A limit nobody can see is a limit they discover by hitting it. */
   const env = makeEnv();
-  const token = await tokenFor(env, 'free@x.com');
-  await create(env, token, DAILY);
-  const r = await create(env, token, { detail: 'Another one', repeat: 'daily' });
-  const d = await r.json();
-  ok(r.status === 402, 'a second automation is refused', r.status);
-  ok(d.code === 'plan_limit', 'with a code the app can act on', d.code);
-  ok(/one automation/i.test(d.error) && /Upgrade/.test(d.error), 'and an offer, not just a no', d.error);
-  ok((await (await list(env, token)).json()).items.length === 1, 'nothing extra is left behind');
+  const token = await tokenFor(env, 'pro@x.com');
+  await W.setEntitlement(env, 'pro@x.com', 'pro');
+
+  const shown = await (await list(env, token)).json();
+  ok(shown.maxAutomations === W.AUTO_MAX_BY_PLAN.pro,
+     'the allowance is reported before anything is created', shown.maxAutomations);
+  ok(shown.canSchedule === true, 'and a paid account can schedule');
+
+  for (let i = 0; i < W.AUTO_MAX_BY_PLAN.pro; i++) {
+    const ok2 = await create(env, token, { detail: 'Job ' + i, repeat: 'daily' });
+    ok(ok2.status === 200, 'job ' + (i + 1) + ' is accepted', ok2.status);
+  }
+  const over = await create(env, token, { detail: 'One too many', repeat: 'daily' });
+  const od = await over.json();
+  ok(over.status === 429, 'and the one past the plan is refused', over.status);
+  ok(od.code === 'job_limit', 'with a code, not a bare message', od.code);
+  ok(od.have === W.AUTO_MAX_BY_PLAN.pro, 'that names the number they have', od.have);
+
+  ok(W.AUTO_MAX_BY_PLAN.elite > W.AUTO_MAX_BY_PLAN.pro &&
+     W.AUTO_MAX_BY_PLAN.ultra > W.AUTO_MAX_BY_PLAN.elite,
+     'and paying more genuinely runs more', W.AUTO_MAX_BY_PLAN);
 }
 
 section('The free tier costs cents, by construction');
@@ -130,9 +149,15 @@ section('A lapsed subscription drops to the free allowance, not the paid one');
   ok(b.free === true, 'the budget follows the effective plan, not the sold one', b);
   ok(b.ceiling === W.FREE_AUTO_CEILING_USD, 'so it spends cents, not a paid ceiling', b.ceiling);
 
+  /* And the same gate a never-paid account hits. A subscription that stopped
+     paying must not keep buying scheduled compute through the grace window's
+     far side - it is on the free plan now, and the free plan does not run
+     background work at all. */
   const token = await tokenFor(env, 'lapsed@x.com');
-  const d = await (await create(env, token, DAILY)).json();
-  ok(d.item.repeat === W.FREE_AUTO_REPEAT, 'and anything new is shaped to the free tier', d.item.repeat);
+  const r = await create(env, token, DAILY);
+  const d = await r.json();
+  ok(r.status === 402, 'a lapsed account cannot schedule new work', r.status);
+  ok(d.code === 'plan_required', 'and is pointed at the plan that would restore it', d.code);
 }
 
 section('Email delivery is offered only where it can actually happen');

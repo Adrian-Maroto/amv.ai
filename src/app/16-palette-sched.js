@@ -180,49 +180,48 @@ try{ window.openShortcutSheet=openShortcutSheet; }catch(e){}
    always stated explicitly; high-risk actions still stop and ask unless
    the risk cap is set to "Any".
    ============================================================ */
-let _AUTOAPP={mode:'require', run:'every', risk:'low', until:null};
-function _aaRiskOfGoal(g){
-  g=(g||'').toLowerCase();
-  if(/(\bbuy\b|\bpurchase\b|\bpay\b|\bspend\b|\border\b|\bwire\b|\btransfer\b|\bcharge\b|\binvoice\b|\$)/.test(g)) return {level:'high', kind:'spend money'};
-  if(/(\bdelete\b|\bremove\b|\bwipe\b|\berase\b|\bdrop\b)/.test(g)) return {level:'high', kind:'delete information'};
-  if(/(\bpublish\b|\bgo live\b|\blaunch\b|\bdeploy\b|\btweet\b|\bpost publicly\b)/.test(g)) return {level:'high', kind:'publish publicly'};
-  if(/(\bsend\b|\bemail\b|\bmessage\b|\breply\b|\bpost\b|\bdm\b)/.test(g)) return {level:'medium', kind:'send messages on your behalf'};
-  return {level:'low', kind:''};
-}
+/* The risk cap is no longer something the user sets.
+
+   It used to be three buttons - Low / Medium / Any - with warnings underneath
+   like "this task could spend money". That reads as a threat at exactly the
+   moment somebody is deciding to trust the product, and it asked them to make a
+   safety decision they have no way to evaluate. It also let them choose "Any",
+   which is the one setting that could actually cost them money.
+
+   The rule is now fixed and simply true: anything that spends money, deletes
+   information, publishes, or sends on your behalf ALWAYS stops and asks. There
+   is nothing to configure, so there is nothing to warn about, and no way to
+   turn the protection off by accident. */
+const AUTO_APPROVE_RISK_CAP = 'low';
+let _AUTOAPP={mode:'require', run:'every', risk:AUTO_APPROVE_RISK_CAP, until:null};
+/* The goal-text risk classifier lived here and only ever fed the warning
+   banners. The real protection was never this regex - it is the approval gate
+   on the server, which stops on the ACTION being taken rather than on a guess
+   about what the user typed. Guessing from the wording produced both false
+   alarms and false calm, so it is gone rather than kept as a second, weaker
+   opinion sitting next to the real one. */
 function _aaRefresh(){
   const cfg=document.getElementById('aa-config'); if(!cfg) return;
   const on=_AUTOAPP.mode==='auto';
   cfg.style.display=on?'block':'none';
   if(!on) return;
-  const permit=document.getElementById('aa-permit'), warn=document.getElementById('aa-warn');
-  const goal=(document.getElementById('cw-goal')||{}).value||'';
+  const permit=document.getElementById('aa-permit');
   const when = (typeof _SCHED!=='undefined' && _SCHED.cad!=='once') ? _schedHuman().toLowerCase() : 'each time it runs';
   const runTxt=_AUTOAPP.run==='once'?'the first run only':'every run';
-  const riskTxt=_AUTOAPP.risk==='any'?'any action':(_AUTOAPP.risk==='medium'?'low and medium-risk actions':'low-risk actions only');
   const untilTxt=_AUTOAPP.until?(' until '+new Date(_AUTOAPP.until+'T00:00:00').toLocaleDateString()):'';
-  if(permit) permit.innerHTML='<b>Auto Approve enabled.</b> AMV may complete this '+escH(when)+' and perform the final action on its own - for '+runTxt+', '+riskTxt+untilTxt+'. You can pause or turn this off anytime from Mission Control.';
-  const risk=_aaRiskOfGoal(goal), capBlocksHigh=_AUTOAPP.risk!=='any';
-  if(warn){
-    if(risk.level==='high' && capBlocksHigh){
-      warn.style.display='block'; warn.className='aa-warn soft';
-      warn.innerHTML='This task could <b>'+escH(risk.kind)+'</b>. With this risk limit, AMV still stops and asks you before any high-risk action - only lower-risk steps complete automatically.';
-    } else if(risk.level==='high'){
-      warn.style.display='block'; warn.className='aa-warn hard';
-      warn.innerHTML='⚠ This lets AMV <b>'+escH(risk.kind)+'</b> automatically, without checking with you first. Enable only if you fully trust this recurring task.';
-    } else if(risk.level==='medium' && _AUTOAPP.risk==='low'){
-      warn.style.display='block'; warn.className='aa-warn soft';
-      warn.innerHTML='This task may <b>'+escH(risk.kind)+'</b>. At this risk limit those still wait for your approval.';
-    } else { warn.style.display='none'; }
-  }
+  /* One calm sentence about what will happen, and one about what will not.
+     No warnings that change as the user types - a box that starts flashing at
+     the word "buy" makes the product feel dangerous rather than careful. */
+  if(permit) permit.innerHTML='<b>Auto Approve enabled.</b> AMV may finish this '+escH(when)+
+    ' on its own - for '+runTxt+untilTxt+'. Anything that spends money, deletes, publishes or sends '+
+    'on your behalf still comes to you first. Turn this off anytime in Mission Control.';
 }
 function _aaInit(){
-  _AUTOAPP={mode:'require', run:'every', risk:'low', until:null};
+  _AUTOAPP={mode:'require', run:'every', risk:AUTO_APPROVE_RISK_CAP, until:null};
   document.querySelectorAll('input[name="aa-mode"]').forEach(r=>on(r,'change',()=>{ _AUTOAPP.mode=r.value; document.querySelectorAll('.aa-opt').forEach(o=>o.classList.remove('on')); const l=r.closest('.aa-opt'); if(l) l.classList.add('on'); _aaRefresh(); }));
   document.querySelectorAll('#aa-run button').forEach(b=>on(b,'click',()=>{ document.querySelectorAll('#aa-run button').forEach(x=>x.classList.remove('on')); b.classList.add('on'); _AUTOAPP.run=b.dataset.aarun; _aaRefresh(); }));
-  document.querySelectorAll('#aa-risk button').forEach(b=>on(b,'click',()=>{ document.querySelectorAll('#aa-risk button').forEach(x=>x.classList.remove('on')); b.classList.add('on'); _AUTOAPP.risk=b.dataset.aarisk; _aaRefresh(); }));
   const u=document.getElementById('aa-until'); if(u) on(u,'change',()=>{ _AUTOAPP.until=u.value||null; _aaRefresh(); });
   const uc=document.getElementById('aa-until-clear'); if(uc) on(uc,'click',()=>{ _AUTOAPP.until=null; if(u) u.value=''; _aaRefresh(); });
-  const g=document.getElementById('cw-goal'); if(g) on(g,'input',()=>{ if(_AUTOAPP.mode==='auto') _aaRefresh(); });
   _aaRefresh();
 }
 
@@ -272,10 +271,8 @@ function openCowork(){
         </div>
         <div class="aa-config" id="aa-config" style="display:none">
           <div class="aa-permit" id="aa-permit"></div>
-          <div class="aa-warn" id="aa-warn" style="display:none"></div>
           <div class="aa-scope">
             <div class="aa-scope-row"><span class="aa-scope-k">Applies to</span><div class="aa-seg" id="aa-run"><button type="button" data-aarun="every" class="on">Every run</button><button type="button" data-aarun="once">First run only</button></div></div>
-            <div class="aa-scope-row"><span class="aa-scope-k">Only actions up to</span><div class="aa-seg" id="aa-risk"><button type="button" data-aarisk="low" class="on">Low risk</button><button type="button" data-aarisk="medium">Medium</button><button type="button" data-aarisk="any">Any</button></div></div>
             <div class="aa-scope-row"><span class="aa-scope-k">Until</span><input type="date" id="aa-until" class="aa-date"><button type="button" class="aa-clear" id="aa-until-clear">No end date</button></div>
           </div>
         </div>

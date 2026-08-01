@@ -410,8 +410,49 @@ function _mcDoneCard(t){
   return `<div class="mc-card done"><div class="mc-card-top"><span class="mc-card-t">${escH(t.title||'Task')}</span><span class="mc-pill ok">Done</span></div>${snip?`<div class="mc-card-sub">${escH(snip.slice(0,140))}${snip.length>140?'…':''}</div>`:''}</div>`;
 }
 
+/* Which plan runs autonomous work, matching what the server enforces. Reading
+   the same rule in both places is the point - a gate that only exists in the
+   browser is not a gate, and one that only exists on the server is a dead end
+   the user hits with no explanation. */
+const CREW_REQUIRED_PLAN='pro';
+const CREW_JOBS_BY_PLAN={free:0,pro:5,elite:25,ultra:100};
+function _planAllowsCrew(){
+  const plan=loadStr('amv_plan')||'free';
+  const need=PLAN_RANK[CREW_REQUIRED_PLAN]||1;
+  if(plan==='team') return true;
+  if(plan==='custom') return (typeof _customRank==='function'?_customRank():0)>=need;
+  return (PLAN_RANK[plan]||0)>=need;
+}
+function _crewJobAllowance(){
+  const plan=loadStr('amv_plan')||'free';
+  if(plan==='team'||plan==='custom') return null;   // depends on seats or price
+  return CREW_JOBS_BY_PLAN[plan]||0;
+}
+try{ window._planAllowsCrew=_planAllowsCrew; }catch(e){}
+
 function renderCrewView(){
   const vc=$('vc'); if(!vc) return;
+  /* Say the one thing that is true and nothing else. No risk warnings, no
+     half-working tool - what this does, which plan runs it, and the button. */
+  if(!_planAllowsCrew()){
+    const P=(typeof PLANS!=='undefined'&&PLANS[CREW_REQUIRED_PLAN])||{name:'Pro',price:15};
+    vc.innerHTML='<div class="sv fi"><div class="vi">'+
+      '<span class="eyebrow">Crew \u00b7 Autonomous work</span>'+
+      '<h2>AMV working while you are not</h2>'+
+      '<p class="vsub">Give it an outcome and it plans the steps, does the work across your connected apps, '+
+        'and brings back something finished. On a schedule, if you want - every morning, every week, '+
+        'whatever you set.</p>'+
+      '<div class="ss2"><h3>Included with '+escH(P.name)+' \u00b7 $'+P.price+'/month</h3>'+
+        '<p style="font-size:13.5px;color:var(--tx);line-height:1.7;margin:0 0 6px">'+
+          escH(P.name)+' runs <b>'+CREW_JOBS_BY_PLAN.pro+' jobs</b> in the background, as often as every ten minutes. '+
+          'Elite runs '+CREW_JOBS_BY_PLAN.elite+' and Ultra runs '+CREW_JOBS_BY_PLAN.ultra+'.</p>'+
+        '<p style="font-size:12.5px;color:var(--mu);line-height:1.6;margin:0 0 14px">'+
+          'A job keeps running whether or not AMV is open, which is why it is part of a paid plan.</p>'+
+        '<button class="btn bp" data-stab="plans" style="font-size:12px">See plans \u2192</button>'+
+      '</div>'+
+    '</div></div>';
+    return;
+  }
   const jobs=_cwJobs(); const appr=_cwApprovals();
   const jobCard=j=>`<div class="cw-job ${j.on?'on':''}">
       <div class="cw-job-ic">${j.icon}</div>
@@ -473,6 +514,10 @@ function renderCrewView(){
         <button class="mc-pause ${paused?'paused':''}" data-dact="${paused?'resumeAllAutonomous':'pauseAllAutonomous'}">${paused?'▶ Resume autonomy':'⏸ Pause all autonomous'}</button>
       </div>
     </header>
+    ${(()=>{ const n=_crewJobAllowance(); const used=st.sched.length+st.auton.length;
+      /* The number, before they hit it. A limit discovered by bumping into it
+         reads as a fault; the same limit stated up front reads as a plan. */
+      return n?`<div class="mc-allow">${used} of ${n} background job${n===1?'':'s'} in use <span>\u00b7 your plan runs ${n}</span></div>`:''; })()}
     <div class="mc-cmd mc-cmd-lg">
       <div class="mc-cmd-label">Tell AMV what to do <span>- it recognizes what you mean and does it, right here</span></div>
       <div class="mc-cmd-inner">
