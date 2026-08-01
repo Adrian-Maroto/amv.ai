@@ -83,6 +83,60 @@ section('AMV\u2019s own words in the chat area follow the language too');
   }
 }
 
+section('Translating twice does not translate twice');
+{
+  /* The bug this guards is expensive rather than visible. The lookup key was
+     read from the node's CURRENT value, so the moment a string was translated
+     the next pass saw Spanish, missed the dictionary, missed the cache (which
+     is keyed by the English), and sent it to the model to be translated again -
+     producing a different string, which the pass after that would send again.
+
+     The observer runs this on every DOM mutation. With an engine key configured
+     that is an unbounded translation loop billed by the token, and the text
+     drifts further from the original on every lap. It has to converge. */
+  const r = await page.evaluate(async () => {
+    saveStr('amv_lang', 'es');
+    saveStr('amv_plan', 'ultra');
+    window._aiBackendReady = () => true;
+    let batches = 0;
+    window.aiComplete = async (prompt) => {
+      batches++;
+      const lines = prompt.split('\n').filter(Boolean);
+      return JSON.stringify(lines.map(l => 'ES ' + l.replace(/^\d+\.\s*/, '')));
+    };
+    S.tab = 'crew'; setTab('crew');
+    await new Promise(r => setTimeout(r, 150));
+    _translateUI();
+    await new Promise(r => setTimeout(r, 900));
+    const first = batches;
+
+    /* Settled. Asking again must cost nothing. */
+    _translateUI(); await new Promise(r => setTimeout(r, 300));
+    _translateUI(); await new Promise(r => setTimeout(r, 300));
+
+    const nodes = _collectI18nNodes(document.getElementById('vc'));
+    let eng = 0, tot = 0;
+    for (const it of nodes) {
+      if (it.type !== 'text') continue;
+      const v = (it.node.nodeValue || '').trim();
+      if (v.length < 4 || !/[A-Za-z]/.test(v)) continue;
+      tot++;
+      if (!/^ES /.test(v)) eng++;
+    }
+    return { first, total: batches, tot, eng };
+  });
+
+  ok(r.first > 0, 'the first pass really did translate', r.first);
+  ok(r.total === r.first,
+     'and running it again asks the model for nothing more', { first: r.first, after: r.total });
+  ok(r.tot > 50, 'on a screen with real content to translate', r.tot);
+  ok(r.eng / r.tot < 0.05,
+     'which leaves almost nothing in English once a key is configured',
+     Math.round((r.eng / r.tot) * 100) + '% english');
+
+  await page.evaluate(() => { saveStr('amv_lang', 'en'); _translateUI(); });
+}
+
 ok(errors.length === 0, 'zero uncaught page errors', errors.slice(0, 3));
 
 await app.close();

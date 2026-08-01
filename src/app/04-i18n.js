@@ -692,11 +692,20 @@ async function _autoTranslateDOM(code, root){
   // apply cached/dict immediately; collect unknowns
   for(const it of nodes){
     const src=(it.type==='text'?it.node.nodeValue:it.node.getAttribute('placeholder'))||'';
-    const key=src.trim(); if(!key) continue;
     // permanently remember the ORIGINAL english text so we can always restore it
     if(it.type==='text'){ if(it.node._i18nSrc==null) it.node._i18nSrc=it.node.nodeValue; }
     else { if(it.node._i18nPhSrc==null) it.node._i18nPhSrc=it.node.getAttribute('placeholder'); }
-    if(!it.node._i18nKey) it.node._i18nKey=key;
+    if(!it.node._i18nKey) it.node._i18nKey=src.trim();
+    /* Look up by the REMEMBERED original, never by what the node says now.
+
+       Reading the current value meant that the moment a string was translated,
+       the next pass saw Spanish, missed the dictionary, missed the cache (which
+       is keyed by the English), and sent it to the model to be "translated"
+       again - producing a different string, which the pass after that would
+       send again. The observer runs this on every DOM mutation, so with a key
+       configured that is an unbounded translation loop billed by the token, and
+       the text drifts further from what it started as on every lap. */
+    const key=it.node._i18nKey; if(!key) continue;
     const dict=T(key);
     if(dict!==key){ _applyI18n(it,dict); continue; }
     const cached=cache[_i18nKey(code,key)];

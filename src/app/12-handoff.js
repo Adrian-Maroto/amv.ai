@@ -1477,6 +1477,18 @@ function _renderSetPaneInner(){
     pane.innerHTML=
       '<div class="set-title">Language</div>'+
       '<div class="set-sub">Choose the language for AMV\u2019s responses and the content it generates - chat replies, images, video, and 3D models will all use it. You can still ask for any other language inside a message.</div>'+
+      /* The app's own text is translated too, but that half needs the engine.
+         Without it a handful of common labels come from a built-in dictionary
+         and the rest stays English - which is what somebody switching language
+         actually sees, so it is said here rather than discovered. */
+      (_aiBackendReady()
+        ? '<div class="ss2"><h3>The app itself</h3><p style="font-size:13px;color:var(--mu);line-height:1.65;margin:0">'+
+          'Every screen - chat, images, video, Studio, Dev, Lab, the marketplace, settings - switches with it. '+
+          'The first screen you open in a new language takes a moment to come across, then it is remembered.</p></div>'
+        : '<div class="ss2"><h3>The app itself</h3><p style="font-size:13px;color:var(--mu);line-height:1.65;margin:0">'+
+          'AMV\u2019s replies will be in your language straight away. Translating <b>the app\u2019s own screens</b> '+
+          'needs the AMV engine connected - until then the common labels change and the rest stays in English '+
+          'rather than being half-translated into something confusing.</p></div>')+
       '<div class="ss2"><h3>Response language</h3>'+
         '<div class="lang-grid">'+
           Object.entries(LANGS).map(([code,l])=>

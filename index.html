@@ -11905,11 +11905,20 @@ async function _autoTranslateDOM(code, root){
   // apply cached/dict immediately; collect unknowns
   for(const it of nodes){
     const src=(it.type==='text'?it.node.nodeValue:it.node.getAttribute('placeholder'))||'';
-    const key=src.trim(); if(!key) continue;
     // permanently remember the ORIGINAL english text so we can always restore it
     if(it.type==='text'){ if(it.node._i18nSrc==null) it.node._i18nSrc=it.node.nodeValue; }
     else { if(it.node._i18nPhSrc==null) it.node._i18nPhSrc=it.node.getAttribute('placeholder'); }
-    if(!it.node._i18nKey) it.node._i18nKey=key;
+    if(!it.node._i18nKey) it.node._i18nKey=src.trim();
+    /* Look up by the REMEMBERED original, never by what the node says now.
+
+       Reading the current value meant that the moment a string was translated,
+       the next pass saw Spanish, missed the dictionary, missed the cache (which
+       is keyed by the English), and sent it to the model to be "translated"
+       again - producing a different string, which the pass after that would
+       send again. The observer runs this on every DOM mutation, so with a key
+       configured that is an unbounded translation loop billed by the token, and
+       the text drifts further from what it started as on every lap. */
+    const key=it.node._i18nKey; if(!key) continue;
     const dict=T(key);
     if(dict!==key){ _applyI18n(it,dict); continue; }
     const cached=cache[_i18nKey(code,key)];
@@ -23935,6 +23944,18 @@ function _renderSetPaneInner(){
     pane.innerHTML=
       '<div class="set-title">Language</div>'+
       '<div class="set-sub">Choose the language for AMV\u2019s responses and the content it generates - chat replies, images, video, and 3D models will all use it. You can still ask for any other language inside a message.</div>'+
+      /* The app's own text is translated too, but that half needs the engine.
+         Without it a handful of common labels come from a built-in dictionary
+         and the rest stays English - which is what somebody switching language
+         actually sees, so it is said here rather than discovered. */
+      (_aiBackendReady()
+        ? '<div class="ss2"><h3>The app itself</h3><p style="font-size:13px;color:var(--mu);line-height:1.65;margin:0">'+
+          'Every screen - chat, images, video, Studio, Dev, Lab, the marketplace, settings - switches with it. '+
+          'The first screen you open in a new language takes a moment to come across, then it is remembered.</p></div>'
+        : '<div class="ss2"><h3>The app itself</h3><p style="font-size:13px;color:var(--mu);line-height:1.65;margin:0">'+
+          'AMV\u2019s replies will be in your language straight away. Translating <b>the app\u2019s own screens</b> '+
+          'needs the AMV engine connected - until then the common labels change and the rest stays in English '+
+          'rather than being half-translated into something confusing.</p></div>')+
       '<div class="ss2"><h3>Response language</h3>'+
         '<div class="lang-grid">'+
           Object.entries(LANGS).map(([code,l])=>
