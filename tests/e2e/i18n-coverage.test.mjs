@@ -52,8 +52,40 @@ const back = await page.evaluate(() => {
 ok(/Sign Out/.test(back), 'English is restored (Sign Out is back)');
 
 section('No JavaScript errors');
+section('AMV\u2019s own words in the chat area follow the language too');
+{
+  /* `data-no-i18n` protects live model output, which is right. But it covers
+     the whole chat area, so AMV's own labels in there stayed English forever -
+     on the one screen people spend all their time on, in a product that ships
+     forty languages everywhere else. `data-i18n` opts a subtree back in. */
+  const v = await page.evaluate(() => {
+    const cm = document.getElementById('cm');
+    cm.innerHTML =
+      '<div class="away-card" data-i18n><div class="away-h">While you were away</div>' +
+        '<div class="away-snip" data-no-i18n>MODEL OUTPUT SENTENCE</div></div>' +
+      '<div class="mb ai">ANOTHER MODEL SENTENCE</div>';
+    // Collect what the translator considers translatable, the way it does.
+    const nodes = (typeof _collectI18nNodes === 'function') ? _collectI18nNodes(document.body) : null;
+    if (!nodes) return { unsupported: true };
+    const texts = nodes.filter(n => n.type === 'text').map(n => n.node.nodeValue.trim());
+    return {
+      chrome: texts.includes('While you were away'),
+      snippet: texts.includes('MODEL OUTPUT SENTENCE'),
+      message: texts.includes('ANOTHER MODEL SENTENCE'),
+    };
+  });
+  if (v.unsupported) {
+    ok(true, 'collector not exported in this build - skipped');
+  } else {
+    ok(v.chrome === true, 'AMV\u2019s own label is translatable', v.chrome);
+    ok(v.snippet === false, 'but model output inside the same card is NOT', v.snippet);
+    ok(v.message === false, 'and neither is an ordinary answer', v.message);
+  }
+}
+
 ok(errors.length === 0, 'zero uncaught page errors', errors.slice(0, 3));
 
 await app.close();
+
 report();
 done();

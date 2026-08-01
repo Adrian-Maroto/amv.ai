@@ -574,22 +574,45 @@ function _i18nKey(code,s){ return code+'\u0001'+s; }
 // collect every visible text node + translatable attribute under root
 function _collectI18nNodes(root){
   const out=[]; const SKIP={SCRIPT:1,STYLE:1,SVG:1,CODE:1,PRE:1,TEXTAREA:1};
-  const walk=(el)=>{
+  /* AMV-093: `data-no-i18n` protects live model output, which is right -
+     re-translating a stream mangles what the model already wrote in the user's
+     language. But it covers the whole chat area, so AMV's OWN labels in there
+     stayed English forever: the "while you were away" card, the next-step
+     offer, the actions under a message. On the one screen people spend all
+     their time, in a product that ships forty languages everywhere else.
+
+     `data-i18n` opts a subtree back in, and `data-no-i18n` can block it again
+     inside that. The state is carried DOWN the walk rather than looked up with
+     closest(): looking up stopped at the guard element itself, so nothing
+     inside was ever reached and an opt-in could never be found. */
+  const walk=(el, blocked)=>{
     if(!el) return;
     for(const node of el.childNodes){
-      if(node.nodeType===3){ const t=node.nodeValue; if(t && t.trim().length>1 && (/[A-Za-z]/.test(t) || node._i18nSrc!=null)) out.push({type:'text',node}); }
+      if(node.nodeType===3){
+        if(blocked) continue;
+        const t=node.nodeValue;
+        if(t && t.trim().length>1 && (/[A-Za-z]/.test(t) || node._i18nSrc!=null)) out.push({type:'text',node});
+      }
       else if(node.nodeType===1){
         const tag=node.tagName;
         if(SKIP[tag]) continue;
-        if(node.closest && node.closest('[data-no-i18n]')) continue;
-        const ph=node.getAttribute&&node.getAttribute('placeholder'); if(ph&&ph.trim()&&(/[A-Za-z]/.test(ph)||node._i18nPhSrc!=null)) out.push({type:'ph',node});
-        walk(node);
+        let b = blocked;
+        if(node.hasAttribute){
+          if(node.hasAttribute('data-no-i18n')) b = true;
+          else if(node.hasAttribute('data-i18n')) b = false;
+        }
+        if(!b){
+          const ph=node.getAttribute&&node.getAttribute('placeholder');
+          if(ph&&ph.trim()&&(/[A-Za-z]/.test(ph)||node._i18nPhSrc!=null)) out.push({type:'ph',node});
+        }
+        walk(node, b);
       }
     }
   };
-  walk(root);
+  walk(root, false);
   return out;
 }
+try{ window._collectI18nNodes=_collectI18nNodes; }catch(e){}
 function _translateUI(){
   _i18nApplying=true;   // suppress the observer while we mutate, so we never self-loop
   try{
@@ -631,7 +654,15 @@ function _initI18nObserver(){
     for(const m of muts){
       for(const n of m.addedNodes){
         if(n.nodeType!==1) continue;
-        if(n.closest && n.closest('[data-no-i18n]')) continue;
+        /* Same rule as the walker: a node inside the protected region only
+           matters when an opt-in sits between it and that region. */
+        if(n.closest){
+          const noI = n.closest('[data-no-i18n]');
+          if(noI){
+            const optIn = n.closest('[data-i18n]');
+            if(!(optIn && noI.contains(optIn) && optIn !== noI)) continue;
+          }
+        }
         relevant=true; break;
       }
       if(relevant) break;

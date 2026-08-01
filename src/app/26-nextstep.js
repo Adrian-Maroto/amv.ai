@@ -26,6 +26,13 @@
 const _NEXT_DISMISS_KEY = 'amv_nextstep_off';
 function _nextStepOff(){ try{ return loadStr(_NEXT_DISMISS_KEY)==='1'; }catch(e){ return false; } }
 
+/* The one-time welcome offer. Recorded per account the moment it is acted on
+   or dismissed, so nobody is asked twice. */
+const _NEXT_FIRST_KEY = 'amv_nextstep_first';
+function _nextStepFirstDone(){ try{ return loadStr(_NEXT_FIRST_KEY)==='1'; }catch(e){ return false; } }
+function _nextStepFirstSeen(){ try{ saveStr(_NEXT_FIRST_KEY,'1'); }catch(e){} }
+try{ window._nextStepFirstDone=_nextStepFirstDone; window._nextStepFirstSeen=_nextStepFirstSeen; }catch(e){}
+
 /* Which next step, if any, this exchange has earned. Returns null far more
    often than not, and that is the point. */
 function _nextStepFor(userText, answerText){
@@ -59,6 +66,22 @@ function _nextStepFor(userText, answerText){
     return { kind:'crew', label:'Hand this to Crew',
       why:'Crew works through it step by step and shows you exactly what it did.' };
   }
+
+  /* AMV-092: a first session that ends with nothing standing usually ends the
+     relationship - the user leaves with a chat box and no reason to reopen it.
+     The matchers above each need the question to look like a particular shape,
+     and a lot of good first questions do not.
+
+     But this only widens the net over subjects that actually CHANGE. Offering
+     to re-run "what is the capital of France" every week would be a feature
+     that does nothing, which is worse than offering nothing at all. So it is
+     the same idea as the daily brief with a broader vocabulary, placed last so
+     a better-matching offer always wins, and made once per account. */
+  if(!_nextStepFirstDone() && a.length > 700
+     && /\b(track|monitor|watch|keep an eye|trend|trends|changes|updates?|compare|best|top \d|who is|how is|status|progress|weekly|every week|every day)\b/.test(u)){
+    return { kind:'first', label:'Have AMV keep this up to date for you',
+      why:'It re-runs on its own and has a fresh answer waiting, without you asking again.' };
+  }
   return null;
 }
 
@@ -72,6 +95,15 @@ async function _nextStepRun(kind, userText){
       setTab('crew');
       // Carry the goal across so they do not retype it.
       setTimeout(()=>{ const box=document.getElementById('mc-cmd-input'); if(box){ box.value=userText; box.focus(); } }, 300);
+      return;
+    }
+    if(kind==='first'){
+      /* The same machinery as a daily brief, at the cadence a free account can
+         actually have - _scheduleTask shapes it and reports what it got, so the
+         promise made here is the one that is kept. */
+      _nextStepFirstSeen();
+      const item = await _scheduleTask({ detail: userText, repeat: 'weekly', kind: 'task', approval: 'auto' });
+      if(item) setTab('tasks');
       return;
     }
     if(kind==='daily'){
@@ -110,7 +142,8 @@ function _nextStepHTML(msgs){
     // Once per kind per conversation - a repeated offer is nagging.
     const conv = (typeof getCurConv==='function' && getCurConv()) || {};
     if(conv._nextShown && conv._nextShown.indexOf(step.kind)>=0) return '';
-    return '<div class="next-step" data-next-kind="'+escH(step.kind)+'">'+
+    // AMV's own copy, so it follows the user's language (AMV-093).
+    return '<div class="next-step" data-i18n data-next-kind="'+escH(step.kind)+'">'+
       '<div class="next-step-b"><b>'+escH(step.label)+'</b><span>'+escH(step.why)+'</span></div>'+
       '<button class="next-step-go" type="button" data-next-go="'+escH(step.kind)+'">Do it</button>'+
       '<button class="next-step-x" type="button" data-next-off="1" aria-label="Do not suggest next steps">&#215;</button>'+

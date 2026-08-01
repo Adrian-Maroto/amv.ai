@@ -75,13 +75,16 @@ function _awayCardHTML(){
         '<span class="away-t">'+escH(title)+'</span>'+
         '<span class="away-w">'+escH(_awayWhen(r.at))+'</span>'+
       '</button>'+
-      (body ? '<div class="away-snip">'+escH(body)+(String(r.out||'').length > 150 ? '…' : '')+'</div>' : '')+
-      '<div class="away-full" hidden></div>'+
+      (body ? '<div class="away-snip" data-no-i18n>'+escH(body)+(String(r.out||'').length > 150 ? '…' : '')+'</div>' : '')+
+      '<div class="away-full" data-no-i18n hidden></div>'+
     '</div>';
   }).join('');
 
   const n = unread.length;
-  return '<div class="away-card" role="region" aria-label="Work completed while you were away">'+
+  /* AMV's own words, so they follow the user's language even though they sit
+     inside the chat area's translation guard (AMV-093). The result bodies below
+     are NOT marked - those are model output and stay exactly as written. */
+  return '<div class="away-card" data-i18n role="region" aria-label="Work completed while you were away">'+
     '<div class="away-top">'+
       '<div class="away-h">While you were away</div>'+
       '<div class="away-sub">AMV finished '+n+' scheduled '+(n === 1 ? 'task' : 'tasks')+' on its own.</div>'+

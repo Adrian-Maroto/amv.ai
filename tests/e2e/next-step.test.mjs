@@ -138,6 +138,55 @@ section('A reply the user cut short earns nothing');
   ok(finished.includes('next-step'), 'while the same answer, finished, does', finished.slice(0, 40));
 }
 
+section('A first good answer about something that CHANGES earns a standing job');
+{
+  /* A first session that ends with nothing standing usually ends the
+     relationship. But this only widens the net over subjects that actually
+     change - offering to re-run "the capital of France" weekly would be a
+     feature that does nothing, which is worse than offering nothing. */
+  const v = await page.evaluate((long) => {
+    saveStr('amv_nextstep_off', '');
+    saveStr('amv_nextstep_first', '');
+    const c = getCurConv(); if (c) c._nextShown = [];
+    return {
+      tracked: (_nextStepFor('how is my competitor doing and how has their pricing changed', long) || {}).kind,
+      compare: (_nextStepFor('compare the best project management tools', long) || {}).kind,
+      fact:    _nextStepFor('explain how photosynthesis works in detail', long),
+      short:   _nextStepFor('how is the weather trending', 'Fine.'),
+    };
+  }, 'x '.repeat(400));
+  ok(v.tracked === 'first', 'a question about something that moves earns the offer', v.tracked);
+  ok(v.compare === 'first', 'so does a comparison worth re-running', v.compare);
+  ok(v.fact === null, 'but a settled fact does not - re-running it would do nothing', v.fact);
+  ok(v.short === null, 'and a thin answer never earns anything', v.short);
+}
+
+section('A better-matching offer always wins over the welcome one');
+{
+  const v = await page.evaluate((long) => {
+    saveStr('amv_nextstep_first', '');
+    return {
+      news: (_nextStepFor('what is the latest news on chip export rules', long) || {}).kind,
+      jobs: (_nextStepFor('help me track down a job and write a cover letter', long) || {}).kind,
+    };
+  }, 'x '.repeat(400));
+  ok(v.news === 'daily', 'a daily-shaped question still offers the daily brief', v.news);
+  ok(v.jobs === 'jobs', 'and a job hunt still offers Job Hunt', v.jobs);
+}
+
+section('It is asked once, not every session');
+{
+  const v = await page.evaluate((long) => {
+    saveStr('amv_nextstep_first', '');
+    const before = (_nextStepFor('how is my competitor doing and how has their pricing changed', long) || {}).kind;
+    _nextStepFirstSeen();
+    const after = _nextStepFor('how is my competitor doing and how has their pricing changed', long);
+    return { before, after };
+  }, 'x '.repeat(400));
+  ok(v.before === 'first', 'offered the first time');
+  ok(v.after === null, 'and never again once it has been answered either way', v.after);
+}
+
 ok(errors.length === 0, 'zero uncaught page errors', errors.slice(0, 3));
 
 await app.close();

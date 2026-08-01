@@ -11524,22 +11524,45 @@ function _i18nKey(code,s){ return code+'\u0001'+s; }
 // collect every visible text node + translatable attribute under root
 function _collectI18nNodes(root){
   const out=[]; const SKIP={SCRIPT:1,STYLE:1,SVG:1,CODE:1,PRE:1,TEXTAREA:1};
-  const walk=(el)=>{
+  /* AMV-093: `data-no-i18n` protects live model output, which is right -
+     re-translating a stream mangles what the model already wrote in the user's
+     language. But it covers the whole chat area, so AMV's OWN labels in there
+     stayed English forever: the "while you were away" card, the next-step
+     offer, the actions under a message. On the one screen people spend all
+     their time, in a product that ships forty languages everywhere else.
+
+     `data-i18n` opts a subtree back in, and `data-no-i18n` can block it again
+     inside that. The state is carried DOWN the walk rather than looked up with
+     closest(): looking up stopped at the guard element itself, so nothing
+     inside was ever reached and an opt-in could never be found. */
+  const walk=(el, blocked)=>{
     if(!el) return;
     for(const node of el.childNodes){
-      if(node.nodeType===3){ const t=node.nodeValue; if(t && t.trim().length>1 && (/[A-Za-z]/.test(t) || node._i18nSrc!=null)) out.push({type:'text',node}); }
+      if(node.nodeType===3){
+        if(blocked) continue;
+        const t=node.nodeValue;
+        if(t && t.trim().length>1 && (/[A-Za-z]/.test(t) || node._i18nSrc!=null)) out.push({type:'text',node});
+      }
       else if(node.nodeType===1){
         const tag=node.tagName;
         if(SKIP[tag]) continue;
-        if(node.closest && node.closest('[data-no-i18n]')) continue;
-        const ph=node.getAttribute&&node.getAttribute('placeholder'); if(ph&&ph.trim()&&(/[A-Za-z]/.test(ph)||node._i18nPhSrc!=null)) out.push({type:'ph',node});
-        walk(node);
+        let b = blocked;
+        if(node.hasAttribute){
+          if(node.hasAttribute('data-no-i18n')) b = true;
+          else if(node.hasAttribute('data-i18n')) b = false;
+        }
+        if(!b){
+          const ph=node.getAttribute&&node.getAttribute('placeholder');
+          if(ph&&ph.trim()&&(/[A-Za-z]/.test(ph)||node._i18nPhSrc!=null)) out.push({type:'ph',node});
+        }
+        walk(node, b);
       }
     }
   };
-  walk(root);
+  walk(root, false);
   return out;
 }
+try{ window._collectI18nNodes=_collectI18nNodes; }catch(e){}
 function _translateUI(){
   _i18nApplying=true;   // suppress the observer while we mutate, so we never self-loop
   try{
@@ -11581,7 +11604,15 @@ function _initI18nObserver(){
     for(const m of muts){
       for(const n of m.addedNodes){
         if(n.nodeType!==1) continue;
-        if(n.closest && n.closest('[data-no-i18n]')) continue;
+        /* Same rule as the walker: a node inside the protected region only
+           matters when an opt-in sits between it and that region. */
+        if(n.closest){
+          const noI = n.closest('[data-no-i18n]');
+          if(noI){
+            const optIn = n.closest('[data-i18n]');
+            if(!(optIn && noI.contains(optIn) && optIn !== noI)) continue;
+          }
+        }
         relevant=true; break;
       }
       if(relevant) break;
@@ -12995,6 +13026,26 @@ function _openReactPicker(idx, anchorBtn){
   const esc=(ev)=>{ if(ev.key==='Escape'){ pick.remove(); document.removeEventListener('mousedown',close); document.removeEventListener('keydown',esc); } };
   setTimeout(()=>{ document.addEventListener('mousedown',close); document.addEventListener('keydown',esc); },0);
 }
+/* AMV-095: a thumb on an answer is the only quality signal AMV has, and it was
+   only ever stored on the message. Report the SIGNAL to the server - engine,
+   feature, direction - and nothing else. No prompt, no answer, not a snippet:
+   storing conversations to measure quality trades the thing being measured for
+   the measurement. */
+function _reportAnswerRating(m, emoji, on){
+  try{
+    if(!on) return;                                  // removing a reaction says nothing
+    const up = /\u{1F44D}|\u{2764}|\u{1F525}|\u{1F389}/u.test(emoji);
+    const down = /\u{1F44E}/u.test(emoji);
+    if(!up && !down) return;                         // only the two that mean good/bad
+    if(!(window.AMV_API && AMV_API.live && AMV_API.token)) return;
+    AMV_API._fetch('/v1/feedback', { method:'POST', body: JSON.stringify({
+      rating: up ? 'up' : 'down',
+      engine: m._engine || (typeof MODELS!=='undefined' && MODELS[m.model] ? MODELS[m.model].model : ''),
+      feature: 'chat',
+    })}).catch(()=>{});
+  }catch(e){ /* a rating must never break the message it is on */ }
+}
+
 function _toggleReaction(idx, emoji){
   const msgs=getMsgs();
   const m=msgs[idx];
@@ -13009,6 +13060,7 @@ function _toggleReaction(idx, emoji){
   } else {
     m.reactions[emoji]=(m.reactions[emoji]||0)+1;
     m.myReacts[emoji]=1;
+    _reportAnswerRating(m, emoji, true);
   }
   setMsgs(msgs);
   try{ _autoSave&&_autoSave(); }catch(e){}
@@ -13345,6 +13397,8 @@ function renderChatMsgs() {
   }));
   cm.querySelectorAll('[data-next-off]').forEach(b=>b.addEventListener('click',()=>{
     try{ saveStr('amv_nextstep_off','1'); }catch(e){}
+    // Dismissing the welcome offer also retires it, so it is asked once.
+    try{ if(typeof _nextStepFirstSeen==='function') _nextStepFirstSeen(); }catch(e){}
     b.closest('.next-step')?.remove();
     try{ toast('Fine - no more suggestions.','info',2500); }catch(e){}
   }));
@@ -29746,6 +29800,13 @@ try{ window._renderFamilyPane = _renderFamilyPane; }catch(e){}
 const _NEXT_DISMISS_KEY = 'amv_nextstep_off';
 function _nextStepOff(){ try{ return loadStr(_NEXT_DISMISS_KEY)==='1'; }catch(e){ return false; } }
 
+/* The one-time welcome offer. Recorded per account the moment it is acted on
+   or dismissed, so nobody is asked twice. */
+const _NEXT_FIRST_KEY = 'amv_nextstep_first';
+function _nextStepFirstDone(){ try{ return loadStr(_NEXT_FIRST_KEY)==='1'; }catch(e){ return false; } }
+function _nextStepFirstSeen(){ try{ saveStr(_NEXT_FIRST_KEY,'1'); }catch(e){} }
+try{ window._nextStepFirstDone=_nextStepFirstDone; window._nextStepFirstSeen=_nextStepFirstSeen; }catch(e){}
+
 /* Which next step, if any, this exchange has earned. Returns null far more
    often than not, and that is the point. */
 function _nextStepFor(userText, answerText){
@@ -29779,6 +29840,22 @@ function _nextStepFor(userText, answerText){
     return { kind:'crew', label:'Hand this to Crew',
       why:'Crew works through it step by step and shows you exactly what it did.' };
   }
+
+  /* AMV-092: a first session that ends with nothing standing usually ends the
+     relationship - the user leaves with a chat box and no reason to reopen it.
+     The matchers above each need the question to look like a particular shape,
+     and a lot of good first questions do not.
+
+     But this only widens the net over subjects that actually CHANGE. Offering
+     to re-run "what is the capital of France" every week would be a feature
+     that does nothing, which is worse than offering nothing at all. So it is
+     the same idea as the daily brief with a broader vocabulary, placed last so
+     a better-matching offer always wins, and made once per account. */
+  if(!_nextStepFirstDone() && a.length > 700
+     && /\b(track|monitor|watch|keep an eye|trend|trends|changes|updates?|compare|best|top \d|who is|how is|status|progress|weekly|every week|every day)\b/.test(u)){
+    return { kind:'first', label:'Have AMV keep this up to date for you',
+      why:'It re-runs on its own and has a fresh answer waiting, without you asking again.' };
+  }
   return null;
 }
 
@@ -29792,6 +29869,15 @@ async function _nextStepRun(kind, userText){
       setTab('crew');
       // Carry the goal across so they do not retype it.
       setTimeout(()=>{ const box=document.getElementById('mc-cmd-input'); if(box){ box.value=userText; box.focus(); } }, 300);
+      return;
+    }
+    if(kind==='first'){
+      /* The same machinery as a daily brief, at the cadence a free account can
+         actually have - _scheduleTask shapes it and reports what it got, so the
+         promise made here is the one that is kept. */
+      _nextStepFirstSeen();
+      const item = await _scheduleTask({ detail: userText, repeat: 'weekly', kind: 'task', approval: 'auto' });
+      if(item) setTab('tasks');
       return;
     }
     if(kind==='daily'){
@@ -29830,7 +29916,8 @@ function _nextStepHTML(msgs){
     // Once per kind per conversation - a repeated offer is nagging.
     const conv = (typeof getCurConv==='function' && getCurConv()) || {};
     if(conv._nextShown && conv._nextShown.indexOf(step.kind)>=0) return '';
-    return '<div class="next-step" data-next-kind="'+escH(step.kind)+'">'+
+    // AMV's own copy, so it follows the user's language (AMV-093).
+    return '<div class="next-step" data-i18n data-next-kind="'+escH(step.kind)+'">'+
       '<div class="next-step-b"><b>'+escH(step.label)+'</b><span>'+escH(step.why)+'</span></div>'+
       '<button class="next-step-go" type="button" data-next-go="'+escH(step.kind)+'">Do it</button>'+
       '<button class="next-step-x" type="button" data-next-off="1" aria-label="Do not suggest next steps">&#215;</button>'+
@@ -30190,13 +30277,16 @@ function _awayCardHTML(){
         '<span class="away-t">'+escH(title)+'</span>'+
         '<span class="away-w">'+escH(_awayWhen(r.at))+'</span>'+
       '</button>'+
-      (body ? '<div class="away-snip">'+escH(body)+(String(r.out||'').length > 150 ? '…' : '')+'</div>' : '')+
-      '<div class="away-full" hidden></div>'+
+      (body ? '<div class="away-snip" data-no-i18n>'+escH(body)+(String(r.out||'').length > 150 ? '…' : '')+'</div>' : '')+
+      '<div class="away-full" data-no-i18n hidden></div>'+
     '</div>';
   }).join('');
 
   const n = unread.length;
-  return '<div class="away-card" role="region" aria-label="Work completed while you were away">'+
+  /* AMV's own words, so they follow the user's language even though they sit
+     inside the chat area's translation guard (AMV-093). The result bodies below
+     are NOT marked - those are model output and stay exactly as written. */
+  return '<div class="away-card" data-i18n role="region" aria-label="Work completed while you were away">'+
     '<div class="away-top">'+
       '<div class="away-h">While you were away</div>'+
       '<div class="away-sub">AMV finished '+n+' scheduled '+(n === 1 ? 'task' : 'tasks')+' on its own.</div>'+

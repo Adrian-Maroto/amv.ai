@@ -2721,6 +2721,7 @@ export default {
         case '/auth/admin-reset':   return authAdminReset(request, env);
         case '/v1/resume':       return resumeAnswer(request, env);
         case '/v1/activity':     return accountActivity(request, env);
+        case '/v1/feedback':     return feedbackRecord(request, env);
         case '/v1/referral':     return referralStatus(request, env);
         case '/v1/share/create': return shareCreate(request, env);
         case '/v1/share/list':   return shareList(request, env);
@@ -6365,6 +6366,8 @@ async function stripeWebhook(request, env, ctx) {
           buyer: (obj.metadata.buyer || obj.customer_email || '').toLowerCase(),
           seller: (obj.metadata.seller || '').toLowerCase(),
           amountCents: obj.amount_total,
+          // What a later refund or dispute will arrive quoting.
+          ref: obj.payment_intent || obj.id,
         });
         return new Response('ok', { status: 200 });
       }
@@ -6421,23 +6424,36 @@ async function stripeWebhook(request, env, ctx) {
          is the DoorDash method: they keep the compute they already used and get
          the money back. Treat it as fraud: revoke access immediately and flag
          the account so they can't just re-subscribe and do it again. */
-      const email = await _emailFromCustomer(env, obj.customer)
-                 || (obj.metadata?.email || '').toLowerCase();
-      if (email) {
-        await setEntitlement(env, email, 'free', { source: 'stripe', disputed: true });
-        await _abuseRecord(env, email, 'dispute', { chargeId: obj.charge || obj.id, amount: obj.amount });
-        audit(env, 'chargeback', { email, amount: obj.amount });
+      /* A dispute on a MARKETPLACE purchase is a different thing from a
+         dispute on a subscription, and treating them the same was wrong in both
+         directions (AMV-091): the marketplace sale was never undone, and a
+         paying subscriber who charged back a $9 listing had their whole
+         subscription revoked for it. */
+      const mkRef = obj.payment_intent || obj.charge || obj.id;
+      const reversed = await _reverseSale(env, mkRef, 'dispute');
+      if (!reversed) {
+        const email = await _emailFromCustomer(env, obj.customer)
+                   || (obj.metadata?.email || '').toLowerCase();
+        if (email) {
+          await setEntitlement(env, email, 'free', { source: 'stripe', disputed: true });
+          await _abuseRecord(env, email, 'dispute', { chargeId: obj.charge || obj.id, amount: obj.amount });
+          audit(env, 'chargeback', { email, amount: obj.amount });
+        }
       }
     } else if (type === 'charge.refunded' || type === 'refund.created') {
       /* REFUND - revoke the entitlement that was paid for. A single refund is
          fine (support does them); _abuseRecord only blocks on a PATTERN. */
       const charge = obj.charge ? obj : (obj.data?.object || obj);
-      const email = await _emailFromCustomer(env, charge.customer)
-                 || (charge.metadata?.email || '').toLowerCase();
-      if (email) {
-        await setEntitlement(env, email, 'free', { source: 'stripe', refunded: true });
-        await _abuseRecord(env, email, 'refund', { chargeId: charge.id, amount: charge.amount_refunded || charge.amount });
-        audit(env, 'refund', { email, amount: charge.amount_refunded || charge.amount });
+      // Same split as a dispute: undo the sale, or fall through to the plan.
+      const reversedR = await _reverseSale(env, charge.payment_intent || charge.id, 'refund');
+      if (!reversedR) {
+        const email = await _emailFromCustomer(env, charge.customer)
+                   || (charge.metadata?.email || '').toLowerCase();
+        if (email) {
+          await setEntitlement(env, email, 'free', { source: 'stripe', refunded: true });
+          await _abuseRecord(env, email, 'refund', { chargeId: charge.id, amount: charge.amount_refunded || charge.amount });
+          audit(env, 'refund', { email, amount: charge.amount_refunded || charge.amount });
+        }
       }
     }
   } catch (e) {
@@ -6892,7 +6908,7 @@ async function marketBuy(request, env) {
 
 /* Called from the Stripe webhook when a market_purchase session completes.
    Grants the item to the buyer and credits the seller their 80% share. */
-async function _creditSale(env, { itemId, buyer, seller, amountCents }) {
+async function _creditSale(env, { itemId, buyer, seller, amountCents, ref }) {
   if (!itemId || !buyer) return;
   // Exactly-once: atomically claim this (buyer,item) sale. A buyer can never own
   // the same item twice (marketBuy blocks re-purchase), so this is a stable key.
@@ -6930,7 +6946,75 @@ async function _creditSale(env, { itemId, buyer, seller, amountCents }) {
     if (/^usr_/.test(itemId)) it.status = 'sold';
     await env.AMV_KV.put(`market:${itemId}`, JSON.stringify(it));
   }
+  /* AMV-091: a reverse index from the payment to what it bought. Without it a
+     refund or chargeback arrives as a charge id we cannot connect to anything,
+     which is exactly why nothing was ever undone. */
+  if (ref) {
+    try {
+      await env.AMV_KV.put(`saleref:${ref}`, JSON.stringify({
+        itemId, buyer, seller: sellerEmail, price,
+        sellerShare: sellerEmail ? +(price * (1 - MARKET_PLATFORM_FEE)).toFixed(2) : 0,
+        at: Date.now(),
+      }), { expirationTtl: 400 * 86400 });
+    } catch (e) {}
+  }
   audit(env, 'market_sale', { item: itemId, buyer, seller: sellerEmail, price });
+}
+
+/* Undo a marketplace sale that was refunded or charged back.
+
+   Before this, none of it happened. The buyer kept the item, the seller kept
+   the credit and could withdraw it, and the platform ate the whole charge -
+   which makes "buy the expensive listing, charge it back" a way to take money
+   out of AMV. The fraud register already had a signal for exactly this pattern;
+   what it did not have was anything on the server that acted on it. */
+async function _reverseSale(env, ref, reason) {
+  if (!ref) return null;
+  let rec = null;
+  try { rec = JSON.parse(await env.AMV_KV.get(`saleref:${ref}`) || 'null'); } catch (e) {}
+  if (!rec || !rec.itemId || !rec.buyer) return null;
+  // Once. A refund followed by a dispute on the same charge must not claw twice.
+  if (!(await _claimOnce(env, 'salerev', ref, 400 * 86400))) return null;
+
+  // 1. The buyer does not keep what they did not pay for.
+  try { await env.AMV_KV.delete(`entitleitem:${rec.buyer}:${rec.itemId}`); } catch (e) {}
+  try { await DB.del(env, 'mktsnap', `${rec.buyer}:${rec.itemId}`); } catch (e) {}
+  try {
+    const list = await _purchasesList(env, rec.buyer);
+    await env.AMV_KV.put(`purchases:${rec.buyer}`,
+      JSON.stringify(list.filter(p => p.id !== rec.itemId)));
+  } catch (e) {}
+
+  /* 2. The seller does not keep the money. The balance is allowed to go
+     NEGATIVE: a seller who already withdrew must not be able to outrun the
+     reversal by being fast, and withdrawals are gated on a positive balance, so
+     the debt is paid down by their next sales. */
+  if (rec.seller && rec.sellerShare > 0) {
+    const w = await _wallet(env, rec.seller);
+    w.balance = +((+w.balance || 0) - rec.sellerShare).toFixed(2);
+    w.lifetime = +Math.max(0, (+w.lifetime || 0) - rec.sellerShare).toFixed(2);
+    await _saveWallet(env, rec.seller, w);
+    await _pushWalletTx(env, rec.seller, { type: 'sale_reversed', amount: -rec.sellerShare,
+      item: rec.itemId, buyer: rec.buyer, reason, ts: Date.now() });
+  }
+
+  // 3. A one-of-a-kind listing goes back on sale rather than staying "sold".
+  try {
+    const it = await _getListing(env, rec.itemId);
+    if (it) {
+      it.sales = Math.max(0, (it.sales || 1) - 1);
+      if (/^usr_/.test(rec.itemId) && it.status === 'sold') it.status = 'active';
+      await env.AMV_KV.put(`market:${rec.itemId}`, JSON.stringify(it));
+    }
+  } catch (e) {}
+
+  // 4. The buyer is recorded, because doing this repeatedly is the attack.
+  await _abuseRecord(env, rec.buyer, reason === 'dispute' ? 'dispute' : 'refund',
+                     { marketItem: rec.itemId, amount: rec.price });
+  audit(env, 'market_sale_reversed', { item: rec.itemId, buyer: rec.buyer, seller: rec.seller,
+                                       price: rec.price, reason });
+  await notify(env, `Marketplace ${reason}: $${(+rec.price || 0).toFixed(2)} on ${rec.itemId}. Buyer access revoked, seller credit clawed back.`);
+  return rec;
 }
 async function _purchasesList(env, email) {
   const raw = await env.AMV_KV.get(`purchases:${email}`);
@@ -7427,6 +7511,9 @@ async function adminStats(request, env) {
      counters are checked against it. When it did not, the counters are the only
      thing that can be right - and the response says which happened, so nobody
      reads a sample as a total. */
+  /* AMV-095: whether the answers are any good - the one number that decides
+     whether anyone stays, and the only one that was never measured. */
+  const quality = await _qualityReport(env);
   const pop = await _planPopulation(env);
   const popTotal = Object.values(pop).reduce((a, b) => a + b, 0);
   const PRICE_POP = { pro: 15, elite: 75, ultra: 200 };
@@ -7497,8 +7584,86 @@ async function adminStats(request, env) {
         unprofitableAccounts: unprofitable,
       };
     })(),
+    quality,
     topSpenders,
   });
+}
+
+/* =====================================================================
+   AMV-095  IS IT ANY GOOD?
+
+   Cost, latency, margin, abuse and growth are all instrumented. Answer
+   QUALITY is not measured anywhere at all - which means a routing change, a
+   prompt edit or a model swap could make AMV materially worse and every
+   dashboard would stay green. The one number that decides whether people stay
+   is the one nobody can see.
+
+   So a rating on an answer is counted, per engine, per month. What is NOT
+   stored is the important part: no message text, no prompt, no answer, not a
+   snippet. Storing conversations to measure quality would trade the thing
+   being measured for the measurement. Engine, feature, a coarse reason and a
+   timestamp is enough to answer "did that change make it worse", and is not
+   worth stealing.
+   ===================================================================== */
+
+const FEEDBACK_REASONS = new Set(['wrong', 'incomplete', 'ignored_instructions', 'too_slow', 'other']);
+
+async function feedbackRecord(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  // Cheap to send and easy to spam, so it is bounded like anything else.
+  const blocked = await guardAction(env, `fb:${user.email}`, 30, 300, 'ratings');
+  if (blocked) return blocked;
+
+  const body = await request.json().catch(() => ({}));
+  const rating = body.rating === 'up' ? 'up' : (body.rating === 'down' ? 'down' : null);
+  if (!rating) return json({ error: 'rating must be up or down' }, 400);
+  const engine = ENGINES[body.engine] ? body.engine : (RAW_TO_KEY[body.engine] || 'unknown');
+  const feature = String(body.feature || 'chat').replace(/[^a-z_]/gi, '').slice(0, 24) || 'chat';
+  const reason = FEEDBACK_REASONS.has(body.reason) ? body.reason : '';
+
+  const mk = monthKey();
+  await counter(env, `qual:${engine}:${rating}:${mk}`, { op: 'incr', amount: 1, ttlMs: 86400000 * 400 });
+  await counter(env, `qualfeat:${feature}:${rating}:${mk}`, { op: 'incr', amount: 1, ttlMs: 86400000 * 400 });
+  if (rating === 'down' && reason) {
+    await counter(env, `qualwhy:${reason}:${mk}`, { op: 'incr', amount: 1, ttlMs: 86400000 * 400 });
+  }
+  /* Deliberately not audited with any content. The event itself is the record. */
+  return json({ ok: true });
+}
+
+/* Approval rate per engine, for the dashboard and the weekly digest. A rate
+   with almost no votes behind it is noise, so the count travels with it and
+   the rate is null until there is enough to mean anything. */
+async function _qualityReport(env) {
+  const mk = monthKey();
+  const MIN_VOTES = 10;
+  const out = { engines: [], features: [], reasons: [], month: mk };
+  for (const key of Object.keys(ENGINES)) {
+    const up = (await counter(env, `qual:${key}:up:${mk}`, { op: 'get' })).value || 0;
+    const down = (await counter(env, `qual:${key}:down:${mk}`, { op: 'get' })).value || 0;
+    const total = up + down;
+    out.engines.push({ engine: key, up, down, votes: total,
+      approvalPct: total >= MIN_VOTES ? +((up / total) * 100).toFixed(1) : null });
+  }
+  for (const feat of ['chat', 'research', 'code', 'agent', 'automation']) {
+    const up = (await counter(env, `qualfeat:${feat}:up:${mk}`, { op: 'get' })).value || 0;
+    const down = (await counter(env, `qualfeat:${feat}:down:${mk}`, { op: 'get' })).value || 0;
+    const total = up + down;
+    if (total) out.features.push({ feature: feat, up, down, votes: total,
+      approvalPct: total >= MIN_VOTES ? +((up / total) * 100).toFixed(1) : null });
+  }
+  for (const why of FEEDBACK_REASONS) {
+    const n = (await counter(env, `qualwhy:${why}:${mk}`, { op: 'get' })).value || 0;
+    if (n) out.reasons.push({ reason: why, count: n });
+  }
+  out.reasons.sort((a, b) => b.count - a.count);
+  const allUp = out.engines.reduce((n, e) => n + e.up, 0);
+  const allDown = out.engines.reduce((n, e) => n + e.down, 0);
+  out.votes = allUp + allDown;
+  out.approvalPct = out.votes >= MIN_VOTES ? +((allUp / out.votes) * 100).toFixed(1) : null;
+  out.minVotes = MIN_VOTES;
+  return out;
 }
 
 /* =====================================================================
@@ -7672,6 +7837,8 @@ function _digestSnapshot(m) {
     freeUserCost: +mar.freeUserCost || 0,
     monthlyCost: +mar.estMonthlyCost || 0,
     unprofitable: (mar.unprofitableAccounts || []).length,
+    approvalPct: (m.quality && m.quality.approvalPct != null) ? m.quality.approvalPct : null,
+    qualityVotes: (m.quality && m.quality.votes) || 0,
   };
 }
 
@@ -7707,6 +7874,10 @@ function _buildDigest(m, prev) {
                                + (snap.grossMarginPct != null ? ' (' + snap.grossMarginPct + '%)' : '')],
     ['Cost per paying user',   _delta(snap.costPerPayingUser, pv('costPerPayingUser'), { money: true, dp: 3 })],
     ['Cost of the free tier',  _delta(snap.freeUserCost, pv('freeUserCost'), { money: true })],
+    ['Answers rated good',     snap.approvalPct == null
+                                 ? 'not enough ratings yet'
+                                 : _delta(snap.approvalPct, pv('approvalPct'), { pct: true })
+                                   + ' (' + snap.qualityVotes + ' rating' + (snap.qualityVotes === 1 ? '' : 's') + ')'],
   ];
 
   /* What to actually DO. Only stated when the numbers say it - a digest that
@@ -7724,6 +7895,15 @@ function _buildDigest(m, prev) {
     flags.push('No paying accounts yet against ' + snap.totalUsers + ' signups. Every cost below is being carried by nothing.');
   if (m.spend && m.spend.killed)
     flags.push('The global kill switch is ON. Nobody can use AMV right now.');
+  /* A quality drop is the one thing that will not show up anywhere else until
+     it shows up as churn, by which point it is months old. */
+  if (snap.approvalPct != null && snap.approvalPct < 70)
+    flags.push('Only ' + snap.approvalPct + '% of rated answers were rated good. Something in routing or prompting is worth looking at.');
+  if (p && pv('approvalPct') != null && snap.approvalPct != null && snap.approvalPct < pv('approvalPct') - 5)
+    flags.push('Answer quality fell from ' + pv('approvalPct') + '% to ' + snap.approvalPct + '% week on week.');
+  const worstReason = (m.quality && (m.quality.reasons || [])[0]);
+  if (worstReason && worstReason.count >= 5)
+    flags.push('The most common complaint was "' + worstReason.reason.replace(/_/g, ' ') + '" (' + worstReason.count + ' times).');
 
   const esc = t => String(t).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
   const appUrl = String(_digestAppUrl(m) || '').replace(/\/$/, '');

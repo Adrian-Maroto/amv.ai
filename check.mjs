@@ -129,9 +129,20 @@ step('Deploy preflight', () => {
 /* ── Verdict ─────────────────────────────────────────────────────────────── */
 const secs = ((Date.now() - t0) / 1000).toFixed(1);
 console.log('');
+/* AMV-094: SHIPPABLE and DEPLOYABLE are two different claims, and printing one
+   green line for both let a config blocker hide behind a passing test suite.
+   The code can be perfect while the deploy would still fail on a placeholder
+   namespace id - and "all checks passed" is exactly the sentence that stops
+   anyone looking. So the verdict now says which of the two it means. */
 if (globalThis.__preflightPlaceholderWarn) {
-  console.log(`  ${Y}!${X} preflight: KV namespace id is still the dev placeholder`);
-  console.log(`    ${DIM}→ set a real id in wrangler.toml before deploying (expected during development)${X}`);
+  console.log(`${B}${G}✓ SHIPPABLE${X} - code is ready: all checks passed in ${secs}s.`);
+  console.log(`${DIM}  (source valid · worker loads · build fresh · tests green)${X}`);
+  console.log('');
+  console.log(`${B}${Y}! NOT DEPLOYABLE YET${X} - 1 configuration blocker:`);
+  console.log(`  ${Y}•${X} AMV_KV namespace id is still the placeholder in wrangler.toml`);
+  console.log(`    ${DIM}→ npx wrangler kv namespace create AMV_KV, then paste the id${X}`);
+  console.log(`${DIM}  Deploying now would fail, or write to the wrong store.${X}\n`);
+  process.exit(0);
 }
 console.log(`${B}${G}✓ SHIPPABLE${X} - all checks passed in ${secs}s.`);
 console.log(`${DIM}  (source valid · worker loads · build fresh · tests green · config checked)${X}\n`);

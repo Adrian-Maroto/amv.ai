@@ -1280,6 +1280,26 @@ function _openReactPicker(idx, anchorBtn){
   const esc=(ev)=>{ if(ev.key==='Escape'){ pick.remove(); document.removeEventListener('mousedown',close); document.removeEventListener('keydown',esc); } };
   setTimeout(()=>{ document.addEventListener('mousedown',close); document.addEventListener('keydown',esc); },0);
 }
+/* AMV-095: a thumb on an answer is the only quality signal AMV has, and it was
+   only ever stored on the message. Report the SIGNAL to the server - engine,
+   feature, direction - and nothing else. No prompt, no answer, not a snippet:
+   storing conversations to measure quality trades the thing being measured for
+   the measurement. */
+function _reportAnswerRating(m, emoji, on){
+  try{
+    if(!on) return;                                  // removing a reaction says nothing
+    const up = /\u{1F44D}|\u{2764}|\u{1F525}|\u{1F389}/u.test(emoji);
+    const down = /\u{1F44E}/u.test(emoji);
+    if(!up && !down) return;                         // only the two that mean good/bad
+    if(!(window.AMV_API && AMV_API.live && AMV_API.token)) return;
+    AMV_API._fetch('/v1/feedback', { method:'POST', body: JSON.stringify({
+      rating: up ? 'up' : 'down',
+      engine: m._engine || (typeof MODELS!=='undefined' && MODELS[m.model] ? MODELS[m.model].model : ''),
+      feature: 'chat',
+    })}).catch(()=>{});
+  }catch(e){ /* a rating must never break the message it is on */ }
+}
+
 function _toggleReaction(idx, emoji){
   const msgs=getMsgs();
   const m=msgs[idx];
@@ -1294,6 +1314,7 @@ function _toggleReaction(idx, emoji){
   } else {
     m.reactions[emoji]=(m.reactions[emoji]||0)+1;
     m.myReacts[emoji]=1;
+    _reportAnswerRating(m, emoji, true);
   }
   setMsgs(msgs);
   try{ _autoSave&&_autoSave(); }catch(e){}
@@ -1630,6 +1651,8 @@ function renderChatMsgs() {
   }));
   cm.querySelectorAll('[data-next-off]').forEach(b=>b.addEventListener('click',()=>{
     try{ saveStr('amv_nextstep_off','1'); }catch(e){}
+    // Dismissing the welcome offer also retires it, so it is asked once.
+    try{ if(typeof _nextStepFirstSeen==='function') _nextStepFirstSeen(); }catch(e){}
     b.closest('.next-step')?.remove();
     try{ toast('Fine - no more suggestions.','info',2500); }catch(e){}
   }));

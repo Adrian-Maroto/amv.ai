@@ -419,3 +419,43 @@ behind the paywall, so the users most likely to churn were the only ones who
 never saw one. You cannot convert someone who never found out what they were
 converting to. One free weekly job on the cheapest engine, with a hard
 ceiling of cents, is a marketing budget rather than a leak.
+
+## 45. Money must be reversible in both directions
+A marketplace purchase granted the item and credited the seller. A refund or a
+chargeback on that same payment did none of the reverse - the buyer kept the
+item, the seller kept the money and could withdraw it, and the platform ate the
+charge. "Buy the expensive listing and charge it back" was a way to take money
+out. Any credit needs its debit written in the same change, keyed to something
+the reversal will actually arrive quoting, and the balance has to be allowed to
+go negative or being fast is rewarded.
+
+## 46. One refund is not one kind of refund
+Every Stripe refund called setEntitlement(free), so a paying subscriber who
+refunded a nine dollar listing lost the plan they were still paying for.
+Payments for different things need telling apart before anything is revoked.
+
+## 47. Do not offer a standing job for a settled fact
+Widening the activation offer to any long answer would have proposed re-running
+"what is the capital of France" every week - a feature that does nothing, which
+is worse than offering nothing. Activation only counts when the thing offered
+is genuinely useful for that question.
+
+## 48. A guard that stops at its own boundary hides everything inside it
+The translator skipped any node inside `[data-no-i18n]`, checked with
+closest() - which matched the boundary element itself, so the walk never
+descended and no opt-in inside could ever be found. Carrying the state down the
+walk instead of looking it up made both directions expressible: protect model
+output, translate AMV's own words sitting next to it.
+
+## 49. SHIPPABLE and DEPLOYABLE are different claims
+The gate printed one green line for both, so a config blocker hid behind a
+passing test suite. Code can be perfect while the deploy would fail on a
+placeholder namespace id, and "all checks passed" is exactly the sentence that
+stops anyone looking further.
+
+## 50. Nothing measured whether the answers were good
+Cost, latency, margin, abuse and growth were all instrumented. Quality was not,
+so a routing or prompt change could make AMV materially worse with every
+dashboard staying green. Measuring it must not mean storing conversations: the
+engine, the direction and a coarse reason answer the question without keeping
+anything worth stealing.
