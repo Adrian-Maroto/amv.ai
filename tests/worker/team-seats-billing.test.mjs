@@ -184,7 +184,7 @@ section('One definition of what a plan costs');
      profit guarantee is three chances for one to be quietly out of date. */
   const copies = (src.match(/= ?\{ ?pro: ?15, ?elite: ?75, ?ultra: ?200 ?\}/g) || []).length;   // assignments, not the comment describing them
   ok(copies === 1, 'the plan price table exists exactly once', copies);
-  ok(/const priceForBackstop = _planPriceUSD\(user\.plan, user\.customCfg\)/.test(src),
+  ok(/priceForBackstop = _planPriceUSD\(user\.plan, user\.customCfg\)/.test(src),
      'the chat cost backstop reads it');
   ok(/const price = _planPriceUSD\(user\.plan, user\.customCfg\)/.test(src),
      'the SMS backstop reads the same one');

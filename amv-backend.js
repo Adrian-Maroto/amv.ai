@@ -1804,6 +1804,32 @@ async function linkAccept(request, env){
   granteeRec.items = [link, ...(granteeRec.items || [])].slice(0, 50);
   await DB.put(env, 'links', inv.grantee, granteeRec);
   audit(env, 'link_accepted', { owner:user.email, grantee:inv.grantee, scopes:(inv.scopes||[]).join(',') });
+
+  /* A FAMILY invitation is the same consent flow with a different consequence.
+
+     The code is generated on the server and emailed to the account being added,
+     and only that account can redeem it - so a parent cannot put somebody in
+     their family by typing an address. The child confirms, in their own inbox,
+     before a single limit applies to them. That property is why this reuses
+     the link flow rather than growing a second one beside it (AMV-102). */
+  if((inv.scopes||[]).includes('family')){
+    const parent = inv.grantee;                       // the one who sent the invitation
+    const fam = (await DB.get(env, 'fam', parent)) || { id:'fam_'+crypto.randomUUID().replace(/-/g,''), parentEmail: parent, members:[{ email: parent, role:'parent', joinedAt: Date.now() }], createdAt: Date.now() };
+    const kids = (fam.members||[]).filter(m=>m.role==='child');
+    if(kids.length >= FAMILY_MAX_CHILDREN){
+      return json({ error:'That family is full (' + FAMILY_MAX_CHILDREN + ' accounts).', code:'family_full' }, 402);
+    }
+    if(!(fam.members||[]).some(m=>m.email===user.email)){
+      fam.members.push({ email:user.email, role:'child', joinedAt:Date.now(), limits: Object.assign({}, FAMILY_DEFAULTS) });
+    }
+    await DB.put(env, 'fam', parent, fam);
+    const ent = (await DB.get(env, 'ent', user.email)) || { plan:'free' };
+    ent.familyOf = parent;
+    await DB.put(env, 'ent', user.email, ent);
+    await _userEvent(env, request, user.email, 'family_joined', { parent });
+    audit(env, 'family_joined', { parent, child:user.email });
+    return json({ ok:true, link, family:{ parent, limits: FAMILY_DEFAULTS } });
+  }
   return json({ ok:true, link });
 }
 
@@ -1938,6 +1964,70 @@ async function financeRoute(request, env, path){
    to the requester. That is the whole security property: naming an
    address proves nothing, controlling its inbox does.
    ============================================================ */
+/* The parent's side. Everything here is about money and safety; there is no
+   endpoint that returns a child's conversations, because that is not a feature
+   this product has. */
+async function familyGet(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'unauthorized' }, 401);
+  const own = await DB.get(env, 'fam', user.email);
+  /* Two different answers, because a parent and a child need different things.
+     A parent gets the panel. A child gets the truth about what is visible to
+     whom - stated by the server, so it cannot drift from what is enforced. */
+  return json({ ok:true,
+    parentOf: own ? { id: own.id, members: (own.members||[]).filter(m=>m.role==='child'), max: FAMILY_MAX_CHILDREN } : null,
+    childOf: user.family ? {
+      parent: user.family.parent,
+      limits: user.family.limits,
+      /* Written once, here, and shown verbatim. */
+      canSee: ['How much of the monthly limit you have used', 'Which limits they have set'],
+      cannotSee: ['Your conversations', 'What you ask AMV', 'Anything AMV writes for you'],
+    } : null });
+}
+
+async function familySetLimits(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'unauthorized' }, 401);
+  const { child, limits } = await request.json().catch(()=>({}));
+  const em = String(child||'').toLowerCase().trim();
+  const fam = await DB.get(env, 'fam', user.email);
+  if(!fam) return json({ error:'You do not manage a family.' }, 404);
+  const m = (fam.members||[]).find(x => x.email === em && x.role === 'child');
+  if(!m) return json({ error:'That account is not in your family.' }, 404);
+  const L = limits || {};
+  m.limits = {
+    monthlyUSD: Math.max(0, Math.min(500, +L.monthlyUSD || 0)),
+    marketplace: !!L.marketplace,
+    payouts: !!L.payouts,
+  };
+  await DB.put(env, 'fam', user.email, fam);
+  /* On the CHILD's own activity log, not just the parent's. Somebody whose
+     limits changed is entitled to see that it happened and when. */
+  await _userEvent(env, request, em, 'family_limits_changed', { by: user.email, limits: m.limits });
+  audit(env, 'family_limits', { parent: user.email, child: em });
+  return json({ ok:true, child: em, limits: m.limits });
+}
+
+async function familyRemove(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'unauthorized' }, 401);
+  const { child } = await request.json().catch(()=>({}));
+  const em = String(child||'').toLowerCase().trim();
+  const fam = await DB.get(env, 'fam', user.email);
+  if(!fam) return json({ error:'You do not manage a family.' }, 404);
+  fam.members = (fam.members||[]).filter(x => x.email !== em);
+  await DB.put(env, 'fam', user.email, fam);
+  /* The marker on their entitlement is what every check reads, so it goes at
+     the same time - a limit that outlives the family is a limit nobody can
+     lift. */
+  const ent = (await DB.get(env, 'ent', em)) || {};
+  delete ent.familyOf;
+  await DB.put(env, 'ent', em, ent);
+  await _userEvent(env, request, em, 'family_left', { parent: user.email });
+  audit(env, 'family_remove', { parent: user.email, child: em });
+  return json({ ok:true, members: fam.members });
+}
+
 async function linkInvite(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'sign in first' }, 401);
@@ -2877,6 +2967,9 @@ export default {
         case '/v1/finance/transactions': return financeRoute(request, env, 'transactions');
         case '/v1/oauth/google/exchange': return googleOAuthExchange(request, env);
         case '/v1/oauth/google/refresh':  return googleOAuthRefresh(request, env);
+        case '/v1/family/get':           return familyGet(request, env);
+        case '/v1/family/limits':        return familySetLimits(request, env);
+        case '/v1/family/remove':        return familyRemove(request, env);
         case '/v1/link/invite':          return linkInvite(request, env);
         case '/v1/link/accept':          return linkAccept(request, env);
         case '/v1/link/list':            return linkList(request, env);
@@ -4228,6 +4321,9 @@ async function requireUser(request, env) {
   data.plan = sub.plan;
   data.customCfg = sub.customCfg;
   if (sub.teamId) { data.teamId = sub.teamId; data.teamRole = sub.teamRole; data.teamSeated = sub.seated; }
+  /* Resolved here so every check downstream reads the same answer, and none of
+     them go to storage on their own (AMV-102). */
+  data.family = await _familyOf(env, data.email, e);
   return data;
 }
 
@@ -4583,13 +4679,34 @@ async function aiProxy(request, env, ctx) {
   // 3b) COST BACKSTOP - applies to EVERY paid plan. A user can never cost us
   //     more than a safe fraction of what they paid, guaranteeing margin even
   //     if they run 100% on the most expensive model. This is the profit lock.
-  const priceForBackstop = _planPriceUSD(user.plan, user.customCfg);
+  let priceForBackstop = _planPriceUSD(user.plan, user.customCfg);
+  /* A child's cap is a ceiling on top of the plan's, never a raise. The parent
+     can spend less on them than the plan allows; they can never spend more,
+     whatever the plan is or who pays for it. */
+  let familyCapUSD = null;
+  if (user.family && user.family.limits && user.family.limits.monthlyUSD != null) {
+    familyCapUSD = Math.max(0, +user.family.limits.monthlyUSD || 0);
+  }
   const costName = `cost:${user.billingSubject || user.email}:${monthKey()}`;
-  if (priceForBackstop > 0) {
-    const costCeiling = priceForBackstop * 0.45;   // keep >=55% margin on every plan, worst case
+  const planCeiling = priceForBackstop > 0 ? priceForBackstop * 0.45 : 0;
+  if (planCeiling > 0 || familyCapUSD != null) {
+    /* The lower of the two always wins. A cap of zero really is zero - a parent
+       who sets it there has switched off paid compute for that child, and that
+       has to mean it. */
+    const costCeiling = familyCapUSD == null ? planCeiling
+                      : (planCeiling > 0 ? Math.min(planCeiling, familyCapUSD) : familyCapUSD);
     const capRes = await counter(env, costName, { op: 'checkCap', cap: costCeiling });
     if (!capRes.allowed) {
-      audit(env,'spend_cap_hit',{email:user.email,plan:user.plan}); await refundReservation(); return json({ error: 'You\u2019ve used your full plan allowance for this billing cycle. It resets next month, or upgrade for more.', code: 'quota_month' }, 429);
+      audit(env,'spend_cap_hit',{email:user.email,plan:user.plan,family:!!(user.family)}); await refundReservation();
+      /* "Upgrade for more" is not an action a child can take. Tell them the
+         true one: the person who set the limit is the person who can change
+         it. */
+      const hitFamilyCap = familyCapUSD != null && (planCeiling === 0 || familyCapUSD <= planCeiling);
+      return json(hitFamilyCap
+        ? { error: 'You have used the monthly limit set for your account. It resets next month, or whoever manages your family can raise it.',
+            code: 'family_cap' }
+        : { error: 'You\u2019ve used your full plan allowance for this billing cycle. It resets next month, or upgrade for more.',
+            code: 'quota_month' }, 429);
     }
   }
 
@@ -6430,7 +6547,49 @@ async function referralStatus(request, env) {
    reason `refBonus` does: losing it would silently eject somebody from their
    team's plan and counters on the next billing event, and the cause would be
    invisible from the outside. */
-const ENT_CARRY_KEYS = ['refBonus', 'teamId'];
+const ENT_CARRY_KEYS = ['refBonus', 'teamId', 'familyOf'];
+
+/* ── FAMILY ────────────────────────────────────────────────────────────────
+   A parent's account carries a child's, the way a phone plan does.
+
+   What existed before was a consent flow: an account could ask another account
+   for named permissions, a code was emailed, and the grant was recorded. All of
+   that was real and none of it was CONSULTED - no endpoint anywhere read a link
+   record before allowing anything. Permissions that nothing checks are text.
+
+   So this is deliberately small and entirely enforced. Three controls, each
+   wired to the code path that can actually spend or expose something:
+
+     - a monthly dollar cap, checked in the same backstop that protects the plan
+     - buying in the marketplace, refused at the purchase
+     - taking money out, refused at the withdrawal
+
+   And one thing it deliberately does NOT do: a parent cannot read their child's
+   conversations. Not "we do not show it in the UI" - there is no endpoint, no
+   scope and no record that would let them. A control panel that quietly becomes
+   surveillance is a different product from the one a family is buying, and the
+   child is told in plain words exactly where the line is. */
+const FAMILY_MAX_CHILDREN = 5;
+const FAMILY_DEFAULTS = { monthlyUSD: 5, marketplace: false, payouts: false };
+
+function _familyLimitsOf(fam, childEmail){
+  const m = fam && (fam.members || []).find(x => x.email === childEmail && x.role === 'child');
+  if(!m) return null;
+  return Object.assign({}, FAMILY_DEFAULTS, m.limits || {});
+}
+
+/* Resolved once per request, next to the plan, because every check below needs
+   it and none of them should be reaching into storage on their own. */
+async function _familyOf(env, email, ent){
+  const em = String(email || '').toLowerCase();
+  const e = ent || (await DB.get(env, 'ent', em)) || {};
+  if(!e.familyOf) return null;
+  const fam = await DB.get(env, 'fam', e.familyOf);
+  const limits = _familyLimitsOf(fam, em);
+  if(!fam || !limits) return null;        // membership is the source of truth
+  return { id: fam.id, parent: fam.parentEmail, limits };
+}
+
 
 /* AMV-088: aggregates that do not require reading every account.
 
@@ -7531,6 +7690,12 @@ async function marketBuy(request, env) {
   if (!it.price || it.price <= 0) return json({ error: 'this item is free - just install it' }, 400);
   if (it.authorEmail === user.email) return json({ error: 'you cannot buy your own listing' }, 400);
   if (await _ownsItem(env, user.email, id)) return json({ error: 'you already own this', owned: true }, 400);
+  /* A parent switching off marketplace purchases has to mean it at the point
+     money would move, not in a settings screen nobody consults (AMV-102). */
+  if (user.family && user.family.limits && !user.family.limits.marketplace) {
+    return json({ error: 'Buying from the marketplace is turned off for your account. Whoever manages your family can turn it on.',
+                  code: 'family_blocked' }, 403);
+  }
   if (!env.STRIPE_SECRET_KEY) return json({ error: 'payments not configured' }, 503);
 
   // AMV-025: the server-configured origin is authoritative for payment redirects.
@@ -7744,6 +7909,11 @@ async function marketWithdraw(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
   const { destination } = await request.json().catch(() => ({}));
+  /* Taking money OUT is the one a parent most needs to be able to stop. */
+  if (user.family && user.family.limits && !user.family.limits.payouts) {
+    return json({ error: 'Withdrawing money is turned off for your account. Whoever manages your family can turn it on.',
+                  code: 'family_blocked' }, 403);
+  }
   // Serialize withdrawals per seller so two concurrent requests can't both read
   // the same balance and each create a payout for it (double withdrawal). The
   // lock is atomic on D1; on KV it is a best-effort short-TTL guard. Balance is
