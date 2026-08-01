@@ -7603,6 +7603,41 @@ html,body{height:100%;height:100dvh}
   font-size:var(--t-sm);color:var(--tx);line-height:1.6;
   display:flex;align-items:center;gap:var(--sp-3);flex-wrap:wrap}
 
+/* ============================================================
+   LAYER A55 - The investing check-in
+
+   A change, not a dashboard. The total is the headline, the
+   movement sits under it in a colour that means something, and
+   each account carries its own delta. Numbers are tabular so a
+   column of them lines up.
+   ============================================================ */
+.inv-res{margin:0 0 var(--sp-4)}
+.inv-total{font-size:var(--t-3xl);font-weight:700;color:var(--tx);
+  font-variant-numeric:tabular-nums;line-height:1.15}
+.inv-change{font-size:var(--t-md);font-weight:600;margin-top:var(--sp-1);
+  font-variant-numeric:tabular-nums}
+.inv-change.up{color:var(--grn)}
+.inv-change.down{color:var(--red)}
+.inv-change.flat{color:var(--mu)}
+.inv-since{font-weight:400;color:var(--mu);font-size:var(--t-sm)}
+.inv-sub{font-size:var(--t-sm);color:var(--mu);line-height:1.6;margin-top:var(--sp-2)}
+.inv-rows{margin-top:var(--sp-4);display:flex;flex-direction:column;gap:var(--sp-2)}
+.inv-row{display:flex;align-items:baseline;gap:var(--sp-3);
+  padding-bottom:var(--sp-2);border-bottom:1px solid var(--bd)}
+.inv-row:last-child{border-bottom:0;padding-bottom:0}
+.inv-row-n{flex:1 1 auto;min-width:0;font-size:var(--t-sm);color:var(--tx);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.inv-row-b{font-size:var(--t-sm);color:var(--tx);font-variant-numeric:tabular-nums}
+.inv-row-c{font-size:var(--t-xs);font-variant-numeric:tabular-nums;min-width:72px;text-align:right}
+.inv-row-c.up{color:var(--grn)}
+.inv-row-c.down{color:var(--red)}
+.inv-row-c.new{color:var(--mu)}
+.inv-when{display:flex;gap:var(--sp-2);flex-wrap:wrap}
+@media (max-width:520px){ .inv-when-b{flex:1 1 45%} }
+/* A figure kept on screen after a failed refresh has to say so. */
+.inv-stale{font-size:var(--t-xs);color:var(--gold);font-weight:600;
+  margin-bottom:var(--sp-2)}
+
 </style>
 <!-- BUILD:CSS:END -->
 <script>
@@ -22946,6 +22981,7 @@ const USER_SET_SECTIONS=[
   {id:'usage',label:'Usage',icon:'<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>'},
   {id:'capabilities',label:'Capabilities',icon:'<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>'},
   {id:'spending',label:'Spending',icon:'<path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>'},
+  {id:'investing',label:'Investing',icon:'<path d="M3 17l6-6 4 4 8-8"/><path d="M21 7h-6M21 7v6"/>'},
   {id:'teamset',label:'Team',icon:'<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/>'},
   {id:'api',label:'API keys',icon:'<path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>'},
   {id:'invite',label:'Invite',icon:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/>'},
@@ -24309,6 +24345,8 @@ function _renderSetPaneInner(){
     /* Rendered from 25-money-family-ui.js - see there for why these two panes
        exist at all (the logic shipped with no way for anyone to reach it). */
     _renderSpendingPane(pane);
+  } else if(sp==='investing'){
+    _renderInvestPane(pane);
   } else if(sp==='teamset'){
     _renderTeamSettingsPane(pane);
   } else if(sp==='family'){
@@ -30078,6 +30116,11 @@ const AMVFinance = {
   /* Live balances across every linked account. */
   async accounts(){ return this._call('accounts'); },
 
+  /* The check-in: where the investments stand and what changed since last time.
+     Server-side, because the comparison needs the previous snapshot and that
+     lives with the account, not in this browser. */
+  async checkin(){ return this._call('checkin'); },
+
   /* Real transactions in a window. */
   async transactions(days){ return this._call('transactions', { days: Math.min(365, Math.max(1, +days||30)) }); },
 
@@ -30171,6 +30214,168 @@ const AMVFinance = {
   }
 };
 try{ window.AMVFinance = AMVFinance; }catch(e){}
+
+/* ============================================================
+   AMV-104  THE INVESTING CHECK-IN, ON SCREEN.
+
+   The finance layer has been complete and read-only for a while and had no
+   screen at all - nothing in the app referenced it, so the only way to reach it
+   was to ask AMV in chat. This is the surface: link an account, see how the
+   money is doing, and set how often you want to be told.
+
+   It is written to be unable to lie. Every figure comes from the server call
+   that just ran; nothing is remembered and re-displayed as though it were
+   current, and if the provider cannot be reached the screen says that rather
+   than showing the last number it saw. On a screen about somebody's savings a
+   stale figure presented as live is the same as a false one.
+   ============================================================ */
+const INVEST_WHEN = [
+  { k:'daily',    label:'Every morning',  detail:'each morning' },
+  { k:'evening',  label:'Every evening',  detail:'each evening' },
+  { k:'weekly',   label:'Once a week',    detail:'once a week' },
+  { k:'monthly',  label:'Once a month',   detail:'once a month' },
+];
+function _invWhen(){ try{ return loadStr('amv_inv_when')||''; }catch(e){ return ''; } }
+function _invMoney(n, cur){
+  const v=Math.round((+n||0)*100)/100;
+  try{ return new Intl.NumberFormat(undefined,{style:'currency',currency:cur||'USD'}).format(v); }
+  catch(e){ return '$'+v.toFixed(2); }
+}
+
+function _invResultHTML(d){
+  if(!d) return '';
+  if(d.first){
+    /* The honest first answer. Reporting 0% here would be a claim about the
+       market rather than a statement about what AMV knows. */
+    return '<div class="inv-res"><div class="inv-total">'+escH(_invMoney(d.total,d.currency))+'</div>'+
+      '<div class="inv-sub">This is the first check-in, so there is nothing to compare it against yet. '+
+      'The next one will tell you what changed.</div></div>';
+  }
+  const up=d.direction==='up', flat=d.direction==='flat';
+  const cls=flat?'flat':(up?'up':'down');
+  const sign=up?'+':'';
+  const pct=(d.changePct==null)?'':(' \u00b7 '+sign+d.changePct+'%');
+  const rows=(d.byAccount||[]).map(a=>
+    '<div class="inv-row"><span class="inv-row-n">'+escH(a.name||'Account')+'</span>'+
+    '<span class="inv-row-b">'+escH(_invMoney(a.balance,d.currency))+'</span>'+
+    (a.isNew
+      ? '<span class="inv-row-c new">new</span>'
+      : '<span class="inv-row-c '+((a.change||0)>=0?'up':'down')+'">'+((a.change||0)>=0?'+':'')+escH(_invMoney(a.change,d.currency))+'</span>')+
+    '</div>').join('');
+  return '<div class="inv-res">'+
+    '<div class="inv-total">'+escH(_invMoney(d.total,d.currency))+'</div>'+
+    '<div class="inv-change '+cls+'">'+(flat?'No change':(sign+_invMoney(d.changeUSD,d.currency)+pct))+
+      '<span class="inv-since"> since your last check-in</span></div>'+
+    (rows?'<div class="inv-rows">'+rows+'</div>':'')+
+  '</div>';
+}
+
+function _renderInvestPane(pane){
+  const linked=(typeof AMVFinance!=='undefined') && AMVFinance.linked();
+  const backend=(()=>{ try{ return !!loadStr('amv_api_base'); }catch(e){ return false; } })();
+  const when=_invWhen();
+
+  pane.innerHTML=
+    '<div class="set-title">Investing</div>'+
+    '<div class="set-sub">Link an investment account and AMV tells you how it is doing, as often as you like.</div>'+
+    '<div class="ss2 set-what"><h3>What this is</h3>'+
+      '<p>A check-in, not a dashboard. Each one records where your investments stand and tells you what '+
+      'changed since the last one - the amount and the percentage, broken down by account.</p>'+
+      '<ul class="mf-what-l">'+
+        '<li><b>It can only look.</b> AMV reads balances. It cannot buy, sell, or move anything, and there '+
+          'is no setting that would let it.</li>'+
+        '<li><b>Your login never touches AMV.</b> You sign in with your institution through their own flow; '+
+          'AMV only ever holds a read token, and it stays on the server.</li>'+
+        '<li><b>Investment accounts only.</b> A current account swinging with payday and rent is noise in '+
+          'the question of how your investments are doing.</li>'+
+        '<li><b>No number is ever guessed.</b> If your institution cannot be reached, this says so instead '+
+          'of showing you the last figure it happened to have.</li>'+
+      '</ul>'+
+    '</div>'+
+    (!backend
+      ? '<div class="ss2"><h3>Not connected yet</h3><p class="fam-p fam-quiet">Bank data is read through your '+
+        'AMV backend so your tokens never reach the browser. Connect it and this starts working.</p></div>'
+      : !linked
+      ? '<div class="ss2"><h3>Link an account</h3>'+
+        '<p class="fam-p fam-quiet">You will sign in with your institution directly. AMV never sees your '+
+        'username or password.</p>'+
+        '<button class="btn bp" id="inv-link" style="font-size:12px">Link an investment account</button>'+
+        '<div class="fam-say" id="inv-link-say" role="status" aria-live="polite"></div></div>'
+      : '<div class="ss2"><h3>How it is doing</h3>'+
+        '<div id="inv-out"><p class="fam-p fam-quiet">Check now to see where you stand.</p></div>'+
+        '<button class="btn bp" id="inv-now" style="font-size:12px">Check now</button>'+
+        '<div class="fam-say" id="inv-say" role="status" aria-live="polite"></div></div>'+
+        '<div class="ss2"><h3>Tell me automatically</h3>'+
+          '<p class="fam-p fam-quiet">AMV runs the check on its own and brings you the answer. '+
+          'You can change or stop this at any time.</p>'+
+          '<div class="inv-when">'+
+            INVEST_WHEN.map(w=>'<button class="btn '+(when===w.k?'bp':'bs')+' inv-when-b" data-inv-when="'+w.k+'">'+
+              escH(w.label)+'</button>').join('')+
+            (when?'<button class="btn bs inv-when-b" data-inv-when="" style="color:var(--red);border-color:var(--red)">Stop</button>':'')+
+          '</div>'+
+          '<div class="fam-say" id="inv-when-say" role="status" aria-live="polite">'+
+            (when?escH('AMV checks '+((INVEST_WHEN.find(w=>w.k===when)||{}).detail||when)+' and tells you.'):'')+
+          '</div>'+
+        '</div>');
+
+  on($('inv-link'),'click',()=>{
+    const say=$('inv-link-say');
+    /* Honest rather than a button that appears to work. Linking runs through
+       the aggregator's own flow, which only exists once the operator has
+       configured one. */
+    if(say) say.textContent='Linking opens your institution\u2019s own secure sign-in. That flow is not switched on for this deployment yet, so nothing was started.';
+  });
+
+  on($('inv-now'),'click',async()=>{
+    const btn=$('inv-now'), say=$('inv-say'), out=$('inv-out');
+    if(btn){ btn.disabled=true; btn.textContent='Checking\u2026'; }
+    if(say) say.textContent='';
+    try{
+      const d=await AMVFinance.checkin();
+      if(out) out.innerHTML=_invResultHTML(d);
+    }catch(e){
+      if(say) say.textContent=(e&&e.message)||'Could not reach your institution, so there is nothing to show.';
+      /* Figures already on screen are from an earlier check, and leaving them
+         sitting there unlabelled next to an error makes them indistinguishable
+         from current ones - which on a screen about somebody's savings is the
+         same as showing a wrong number. They stay, because losing them helps
+         nobody, but they are stamped with when they were actually taken. */
+      const res=out&&out.querySelector('.inv-res');
+      if(res && !res.querySelector('.inv-stale')){
+        let when=''; try{ when=new Date().toLocaleString(undefined,{hour:'numeric',minute:'2-digit'}); }catch(_){}
+        res.insertAdjacentHTML('afterbegin',
+          '<div class="inv-stale">Last successful check'+(when?', earlier today':'')+
+          ' - these figures are not current.</div>');
+      }
+    }finally{ if(btn){ btn.disabled=false; btn.textContent='Check again'; } }
+  });
+
+  pane.querySelectorAll('[data-inv-when]').forEach(b=>on(b,'click',async()=>{
+    const k=b.dataset.invWhen;
+    const say=$('inv-when-say');
+    try{ saveStr('amv_inv_when',k); }catch(e){}
+    if(!k){ if(say) say.textContent='Stopped. AMV will not check on its own.'; _renderInvestPane(pane); return; }
+    const w=INVEST_WHEN.find(x=>x.k===k)||{};
+    if(say) say.textContent='Setting this up\u2026';
+    try{
+      /* A real scheduled job on the server, so it runs whether or not AMV is
+         open - the whole point of being told automatically. */
+      await AMV_API._fetch('/auto/create',{method:'POST',body:JSON.stringify({
+        detail:'Check my investment accounts and tell me how they are doing since the last check - the amount and the percentage, per account. If the accounts cannot be read, say so plainly and do not estimate.',
+        repeat:(k==='weekly'||k==='monthly')?'weekly':'daily', kind:'task', notify:'app' })});
+      if(say) say.textContent='Done. AMV checks '+w.detail+' and tells you.';
+    }catch(e){
+      /* Clear the remembered choice, redraw so the buttons show the truth, and
+         write the message AFTER - the redraw replaces the element the message
+         would have been in, so setting it first said nothing at all. */
+      try{ saveStr('amv_inv_when',''); }catch(_){ }
+      _renderInvestPane(pane);
+      const s2=$('inv-when-say');
+      if(s2) s2.textContent=((e&&e.message)?e.message+' ':'')+'Nothing is scheduled.';
+    }
+  }));
+}
+try{ window._renderInvestPane=_renderInvestPane; }catch(e){}
 
 /* Expose finance to chat/Crew. READ-ONLY on purpose: AMV can see money and
    reason about it, but has no action that moves it. */

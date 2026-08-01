@@ -7517,3 +7517,38 @@ html,body{height:100%;height:100dvh}
   border:1px solid var(--gold);border-radius:var(--r-md);padding:var(--sp-3);
   font-size:var(--t-sm);color:var(--tx);line-height:1.6;
   display:flex;align-items:center;gap:var(--sp-3);flex-wrap:wrap}
+
+/* ============================================================
+   LAYER A55 - The investing check-in
+
+   A change, not a dashboard. The total is the headline, the
+   movement sits under it in a colour that means something, and
+   each account carries its own delta. Numbers are tabular so a
+   column of them lines up.
+   ============================================================ */
+.inv-res{margin:0 0 var(--sp-4)}
+.inv-total{font-size:var(--t-3xl);font-weight:700;color:var(--tx);
+  font-variant-numeric:tabular-nums;line-height:1.15}
+.inv-change{font-size:var(--t-md);font-weight:600;margin-top:var(--sp-1);
+  font-variant-numeric:tabular-nums}
+.inv-change.up{color:var(--grn)}
+.inv-change.down{color:var(--red)}
+.inv-change.flat{color:var(--mu)}
+.inv-since{font-weight:400;color:var(--mu);font-size:var(--t-sm)}
+.inv-sub{font-size:var(--t-sm);color:var(--mu);line-height:1.6;margin-top:var(--sp-2)}
+.inv-rows{margin-top:var(--sp-4);display:flex;flex-direction:column;gap:var(--sp-2)}
+.inv-row{display:flex;align-items:baseline;gap:var(--sp-3);
+  padding-bottom:var(--sp-2);border-bottom:1px solid var(--bd)}
+.inv-row:last-child{border-bottom:0;padding-bottom:0}
+.inv-row-n{flex:1 1 auto;min-width:0;font-size:var(--t-sm);color:var(--tx);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.inv-row-b{font-size:var(--t-sm);color:var(--tx);font-variant-numeric:tabular-nums}
+.inv-row-c{font-size:var(--t-xs);font-variant-numeric:tabular-nums;min-width:72px;text-align:right}
+.inv-row-c.up{color:var(--grn)}
+.inv-row-c.down{color:var(--red)}
+.inv-row-c.new{color:var(--mu)}
+.inv-when{display:flex;gap:var(--sp-2);flex-wrap:wrap}
+@media (max-width:520px){ .inv-when-b{flex:1 1 45%} }
+/* A figure kept on screen after a failed refresh has to say so. */
+.inv-stale{font-size:var(--t-xs);color:var(--gold);font-weight:600;
+  margin-bottom:var(--sp-2)}
