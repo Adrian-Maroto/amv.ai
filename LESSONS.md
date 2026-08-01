@@ -640,3 +640,15 @@ architecture cannot do. They are now two honest states: web-research jobs create
 a real server automation, tab-bound ones go on the local schedule and say they
 need AMV open. Write down what the executor can actually reach BEFORE writing
 the copy that sells it.
+
+## 74. A test that recognises only one code path fails on the other one working
+`i18n-coverage` measured translation by counting strings carrying the mock's
+"ES " prefix, which only the MODEL route adds. The instant dictionary route -
+the common chrome, Connect, All, Run - correctly translated strings without it,
+so the dictionary working counted as English. Adding fifty Connect buttons to
+one screen pushed the ratio past the threshold and the gate reported an i18n
+regression for a screen that translates fine. The honest measure was already in
+the DOM: `_i18nSrc` is the original the replacement remembered, so a node
+carrying one that differs from what is on screen has been translated by
+whichever route did it. Measure the OUTCOME, not the signature of one
+implementation of it.

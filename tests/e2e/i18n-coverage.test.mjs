@@ -115,15 +115,23 @@ section('Translating twice does not translate twice');
     _translateUI(); await new Promise(r => setTimeout(r, 300));
 
     const nodes = _collectI18nNodes(document.getElementById('vc'));
-    let eng = 0, tot = 0;
+    let eng = 0, tot = 0; const left = [];
     for (const it of nodes) {
       if (it.type !== 'text') continue;
       const v = (it.node.nodeValue || '').trim();
       if (v.length < 4 || !/[A-Za-z]/.test(v)) continue;
       tot++;
-      if (!/^ES /.test(v)) eng++;
+      /* Translated means the pipeline actually replaced this node, by EITHER
+         route. Checking for the mock's "ES " prefix only recognised the model
+         route, so every string the instant dictionary already covers - Connect,
+         All, Run - counted as English and the number got worse the more
+         dictionary-covered chrome a screen had. `_i18nSrc` is the original the
+         replacement remembered, so a node carrying one that differs from what
+         is on screen has genuinely been translated. */
+      const src = it.node._i18nSrc;
+      if (src == null || String(src).trim() === v) { eng++; if (left.length < 12) left.push(v.slice(0, 60)); }
     }
-    return { first, total: batches, tot, eng };
+    return { first, total: batches, tot, eng, left };
   });
 
   ok(r.first > 0, 'the first pass really did translate', r.first);
@@ -131,8 +139,8 @@ section('Translating twice does not translate twice');
      'and running it again asks the model for nothing more', { first: r.first, after: r.total });
   ok(r.tot > 50, 'on a screen with real content to translate', r.tot);
   ok(r.eng / r.tot < 0.05,
-     'which leaves almost nothing in English once a key is configured',
-     Math.round((r.eng / r.tot) * 100) + '% english');
+     'which leaves almost nothing untranslated once a key is configured',
+     Math.round((r.eng / r.tot) * 100) + '% untranslated: ' + JSON.stringify(r.left));
 
   await page.evaluate(() => { saveStr('amv_lang', 'en'); _translateUI(); });
 }
