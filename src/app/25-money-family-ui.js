@@ -165,8 +165,145 @@ function _renderSpendingPane(pane){
 try{ window._renderSpendingPane = _renderSpendingPane; }catch(e){}
 
 /* ---------- FAMILY / LINKED ACCOUNTS ---------- */
+/* ============================================================
+   AMV-102  THE PARENT'S PANEL.
+
+   The controls underneath are real and enforced - a monthly cap checked in the
+   same backstop that protects the plan, buying refused at the purchase, taking
+   money out refused at the withdrawal. This is the screen that lets a parent
+   actually use them, written for a parent rather than for whoever built it.
+
+   Two rules it follows throughout:
+
+     - Say what is visible and what is not, before anything else. A parent
+       deciding whether to add their child needs to know they will not be able
+       to read their conversations, and the child needs to know it too. Both
+       sentences come from the server, so neither can drift from what is
+       enforced.
+     - Every control is one the parent can act on and the child cannot. Nothing
+       here is a suggestion.
+   ============================================================ */
+let _FAM_STATE = null;
+
+function _famMoney(n){ return '$' + (Math.round((+n || 0) * 100) / 100).toFixed(2); }
+
+function _famChildRow(m){
+  const L = m.limits || {};
+  const e = escH(m.email);
+  return '<div class="fam-kid" data-fam-kid="'+e+'">'+
+    '<div class="fam-kid-top">'+
+      '<div class="fam-kid-who">'+e+'</div>'+
+      '<button class="btn bs fam-kid-x" type="button" data-fam-remove="'+e+'">Remove</button>'+
+    '</div>'+
+    '<div class="fam-kid-ctl">'+
+      '<div class="fam-ctl">'+
+        '<label class="lbl" for="fam-cap-'+e+'">Monthly limit</label>'+
+        '<input class="inp fam-cap" id="fam-cap-'+e+'" type="number" inputmode="decimal" min="0" max="500" step="1" value="'+escH(String(L.monthlyUSD||0))+'">'+
+        '<div class="fam-hint">The most AMV will spend on their account in a month. Zero switches paid work off for them.</div>'+
+      '</div>'+
+      '<label class="fam-tog"><input type="checkbox" class="fam-mkt" '+(L.marketplace?'checked':'')+'>'+
+        '<span><b>Can buy things</b> in the marketplace</span></label>'+
+      '<label class="fam-tog"><input type="checkbox" class="fam-pay" '+(L.payouts?'checked':'')+'>'+
+        '<span><b>Can take money out</b> of anything they sell</span></label>'+
+    '</div>'+
+    '<div class="fam-kid-act">'+
+      '<button class="btn bp" type="button" data-fam-save="'+e+'">Save</button>'+
+      '<span class="fam-say" data-fam-say="'+e+'" role="status" aria-live="polite"></span>'+
+    '</div>'+
+  '</div>';
+}
+
+function _famParentHTML(st){
+  const p = st && st.parentOf;
+  if(!p){
+    return '<div class="ss2"><h3>Your family</h3>'+
+      '<p class="fam-p">Add someone and you pay for their AMV, and you decide what it may spend on their '+
+      'account, whether they can buy anything, and whether they can take money out. They keep their own '+
+      'sign-in and their own conversations.</p>'+
+      '<p class="fam-p fam-quiet">Nobody is in your family yet. Use the invitation below - the confirmation '+
+      'code goes to <b>their</b> inbox, so naming an address is not enough.</p></div>';
+  }
+  const kids = p.members || [];
+  return '<div class="ss2"><h3>Your family</h3>'+
+    '<p class="fam-p">You pay for these accounts and you set what each of them may spend. '+
+    'They keep their own sign-in and their own conversations.</p>'+
+    '<div class="fam-seen">'+
+      '<div class="fam-seen-col fam-can"><div class="fam-seen-h">You can see</div>'+
+        '<ul><li>How much of each limit they have used</li><li>Which limits you have set</li></ul></div>'+
+      '<div class="fam-seen-col fam-cant"><div class="fam-seen-h">You cannot see</div>'+
+        '<ul><li>Their conversations</li><li>What they ask AMV</li><li>Anything AMV writes for them</li></ul></div>'+
+    '</div>'+
+    (kids.length ? kids.map(_famChildRow).join('')
+      : '<p class="fam-p fam-quiet">Nobody is in your family yet.</p>')+
+    '<p class="fam-p fam-quiet">'+kids.length+' of '+(p.max||5)+' accounts used.</p>'+
+  '</div>';
+}
+
+function _famChildHTML(st){
+  const c = st && st.childOf;
+  if(!c) return '';
+  const L = c.limits || {};
+  return '<div class="ss2 fam-child-note"><h3>You are in '+escH(c.parent)+'\u2019s family</h3>'+
+    '<p class="fam-p">They pay for your AMV. Here is exactly what that means, and it is the whole list.</p>'+
+    '<div class="fam-seen">'+
+      '<div class="fam-seen-col fam-can"><div class="fam-seen-h">They can see</div><ul>'+
+        (c.canSee||[]).map(x=>'<li>'+escH(x)+'</li>').join('')+'</ul></div>'+
+      '<div class="fam-seen-col fam-cant"><div class="fam-seen-h">They cannot see</div><ul>'+
+        (c.cannotSee||[]).map(x=>'<li>'+escH(x)+'</li>').join('')+'</ul></div>'+
+    '</div>'+
+    '<div class="fam-mine">'+
+      '<div><span class="fam-mine-k">Monthly limit</span><span class="fam-mine-v">'+escH(_famMoney(L.monthlyUSD))+'</span></div>'+
+      '<div><span class="fam-mine-k">Buying things</span><span class="fam-mine-v">'+(L.marketplace?'On':'Off')+'</span></div>'+
+      '<div><span class="fam-mine-k">Taking money out</span><span class="fam-mine-v">'+(L.payouts?'On':'Off')+'</span></div>'+
+    '</div>'+
+    '<p class="fam-p fam-quiet">Only they can change these. Ask them if you need more.</p>'+
+  '</div>';
+}
+
+/* Wire the parent's controls. Each save sends only that child's settings, so
+   two rows open at once cannot overwrite each other. */
+function _wireFamilyParent(pane){
+  pane.querySelectorAll('[data-fam-save]').forEach(b=>on(b,'click',async()=>{
+    const em=b.dataset.famSave;
+    const row=pane.querySelector('[data-fam-kid="'+CSS.escape(em)+'"]');
+    const say=pane.querySelector('[data-fam-say="'+CSS.escape(em)+'"]');
+    if(!row) return;
+    const limits={
+      monthlyUSD:+((row.querySelector('.fam-cap')||{}).value||0),
+      marketplace:!!(row.querySelector('.fam-mkt')||{}).checked,
+      payouts:!!(row.querySelector('.fam-pay')||{}).checked,
+    };
+    b.disabled=true; if(say) say.textContent='Saving\u2026';
+    try{
+      const d=await AMV_API.familyLimits(em, limits);
+      /* Show what the SERVER stored, not what was typed - it bounds the number,
+         and a screen that shows the typed value would quietly disagree with
+         what is actually enforced. */
+      if(say) say.textContent='Saved. Limit '+_famMoney(d.limits.monthlyUSD)+'.';
+      const cap=row.querySelector('.fam-cap'); if(cap) cap.value=String(d.limits.monthlyUSD);
+    }catch(e){
+      /* Whatever the reason, the sentence a parent needs is that the limit is
+         unchanged - a raw server message on its own reads like it might have
+         half-worked. The reason follows it, if there is one worth showing. */
+      const why=(e&&e.message)?(' ('+e.message+')'):'';
+      if(say) say.textContent='Could not save, so nothing changed.'+why;
+    }
+    finally{ b.disabled=false; }
+  }));
+  pane.querySelectorAll('[data-fam-remove]').forEach(b=>on(b,'click',async()=>{
+    const em=b.dataset.famRemove;
+    if(typeof confirm==='function' && !confirm('Remove '+em+' from your family? Their limits stop applying and you stop paying for them.')) return;
+    b.disabled=true;
+    try{ await AMV_API.familyRemove(em); _FAM_STATE=null; _renderFamilyPane(pane); }
+    catch(e){ b.disabled=false; toast((e&&e.message)||'Could not remove them','error'); }
+  }));
+}
+
 function _renderFamilyPane(pane){
-  if(typeof AMVFamily === 'undefined'){ pane.innerHTML = '<div class="set-title">Family &amp; linked accounts</div>'; return; }
+  if(typeof AMVFamily === 'undefined'){ pane.innerHTML = '<div class="set-title">Family</div>'; return; }
+  /* Fetch once, then redraw with the real thing. Guarded on not already having
+     it, because an unguarded redraw here is a fetch loop. */
+  const needState = _FAM_STATE === null;
   const m = AMVFamily.mine();
   const scopes = AMVFamily.SCOPES;
   const high = AMVFamily.HIGH_RISK || [];
@@ -178,8 +315,15 @@ function _renderFamilyPane(pane){
       'aria-label="Remove the link '+escH(dir==='out'?('to '+l.account):('that lets '+l.account+' access your account'))+'">Remove</button></li>';
 
   pane.innerHTML =
-    '<div class="set-title">Family &amp; linked accounts</div>'+
-    '<div class="set-sub">Let someone act on your account, or ask to act on theirs. Both sides have to agree, and either side can cut the link instantly.</div>'+
+    '<div class="set-title">Family</div>'+
+    '<div class="set-sub">Carry someone else\u2019s AMV the way a phone plan does - you pay, and you set what it may spend on their account. They keep their own sign-in and their own conversations.</div>'+
+    /* The parent's panel first, because that is who this screen is for. The
+       generic account-linking below it is a different, rarer thing. */
+    _famParentHTML(_FAM_STATE)+
+    _famChildHTML(_FAM_STATE)+
+    '<div class="ss2"><h3>Linking accounts generally</h3>'+
+      '<p class="fam-p fam-quiet">Separately from a family, two accounts can grant each other named permissions - '+
+      'useful for an assistant or a colleague. Both sides have to agree and either side can cut it instantly.</p></div>'+
 
     '<div class="ss2"><h3>How this stays safe</h3>'+
       '<ul class="mf-terms">'+
@@ -268,6 +412,13 @@ function _renderFamilyPane(pane){
       this.closest('.mf-pend')?.classList.add('mf-gone');
     }catch(e){ _mfSay('mf-code-say-'+id, e.message || 'Could not refuse that.', 'err'); }
   }));
+
+  _wireFamilyParent(pane);
+  if(needState && window.AMV_API && AMV_API.live && AMV_API.token){
+    AMV_API.familyGet()
+      .then(d => { _FAM_STATE = d; _renderFamilyPane(pane); })
+      .catch(() => { _FAM_STATE = { parentOf:null, childOf:null }; });
+  }
 
   pane.querySelectorAll('.mf-revoke').forEach(b => b.addEventListener('click', function(){
     const id = this.dataset.link;

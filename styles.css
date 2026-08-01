@@ -7392,3 +7392,53 @@ html,body{height:100%;height:100dvh}
 .set-fact-k{font-size:var(--t-xs);color:var(--mu);text-transform:uppercase;letter-spacing:.04em}
 .set-fact-v{font-size:var(--t-lg);color:var(--tx);font-weight:600;margin-top:2px;font-variant-numeric:tabular-nums}
 .set-fact-s{font-size:var(--t-xs);color:var(--dim);line-height:1.5;margin-top:3px}
+
+/* ============================================================
+   LAYER A51 - The parent's family panel
+
+   Two columns that have to be read together: what a parent can
+   see, and what they cannot. They stack on a phone rather than
+   shrinking, because the "cannot" column losing its legibility
+   is the one thing that must not happen on this screen.
+   ============================================================ */
+.fam-p{font-size:var(--t-base);color:var(--tx);line-height:1.7;margin:0 0 var(--sp-3)}
+.fam-quiet{font-size:var(--t-sm);color:var(--mu)}
+.fam-seen{display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-3);margin:0 0 var(--sp-4)}
+.fam-seen-col{border:1px solid var(--bd);border-radius:var(--r-md);padding:var(--sp-3);background:var(--s2)}
+.fam-seen-col ul{margin:0;padding-left:var(--sp-4);display:flex;flex-direction:column;gap:4px}
+.fam-seen-col li{font-size:var(--t-sm);color:var(--mu);line-height:1.55}
+.fam-seen-h{font-size:var(--t-xs);text-transform:uppercase;letter-spacing:.04em;
+  font-weight:600;margin-bottom:var(--sp-2)}
+.fam-can{border-color:var(--bd)}
+.fam-can .fam-seen-h{color:var(--mu)}
+.fam-cant{border-color:var(--grn);background:color-mix(in srgb,var(--grn) 7%,transparent)}
+.fam-cant .fam-seen-h{color:var(--grn)}
+.fam-kid{border:1px solid var(--bd);border-radius:var(--r-md);padding:var(--sp-3);
+  margin-bottom:var(--sp-3);background:var(--s2)}
+.fam-kid-top{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-2);
+  margin-bottom:var(--sp-3)}
+.fam-kid-who{font-size:var(--t-md);color:var(--tx);font-weight:600;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.fam-kid-x{flex:0 0 auto;font-size:var(--t-xs);color:var(--red);border-color:var(--red)}
+.fam-kid-ctl{display:flex;flex-direction:column;gap:var(--sp-3)}
+.fam-ctl .fam-cap{max-width:150px}
+.fam-hint{font-size:var(--t-xs);color:var(--mu);line-height:1.5;margin-top:4px}
+.fam-tog{display:flex;align-items:flex-start;gap:var(--sp-2);font-size:var(--t-sm);
+  color:var(--mu);line-height:1.55;cursor:pointer}
+.fam-tog b{color:var(--tx)}
+.fam-tog input{margin-top:2px;flex:0 0 auto}
+/* The label text is a flex item, and a flex item will not shrink below its
+   content width without this - so a long line pushed the whole page sideways
+   on a phone instead of wrapping. */
+.fam-tog>span{min-width:0;flex:1 1 auto}
+.fam-kid-act{display:flex;align-items:center;gap:var(--sp-3);flex-wrap:wrap;margin-top:var(--sp-3)}
+.fam-say{font-size:var(--t-xs);color:var(--mu)}
+.fam-mine{display:flex;gap:var(--sp-4);flex-wrap:wrap;margin:0 0 var(--sp-3)}
+.fam-mine>div{display:flex;flex-direction:column}
+.fam-mine-k{font-size:var(--t-xs);color:var(--mu)}
+.fam-mine-v{font-size:var(--t-md);color:var(--tx);font-weight:600;font-variant-numeric:tabular-nums}
+.fam-child-note{border-color:var(--accent)}
+@media (max-width:560px){
+  .fam-seen{grid-template-columns:1fr}
+  .fam-kid-act .btn{flex:1 1 100%}
+}
