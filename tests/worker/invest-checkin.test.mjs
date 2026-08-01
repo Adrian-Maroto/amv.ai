@@ -22,7 +22,7 @@ mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'invest.harness.mjs');
 writeFileSync(harness, src + `
 export { _investCheckin, _investShape, _investDelta, _isInvestAccount, financeCheckin,
-         issueTokens, DB };
+         _investText, _autoExecute, issueTokens, DB };
 `);
 const W = await import(harness + '?t=' + Date.now());
 
@@ -194,6 +194,81 @@ section('It can only look');
   ok(!/transfer|payment|\/payments|move.*money/i.test(block),
      'the check-in has no path that could move money');
   ok(/accounts\/balance\/get/.test(block), 'it reads balances and nothing else');
+}
+
+section('The scheduled one reads the accounts rather than asking a model');
+{
+  /* This is the part that runs while nobody is watching, and it was the real
+     hole: the job was filed as a plain task, so the cron handed the wording
+     "tell me how my investments are doing" to a model with no way to read an
+     account. It would have had to either apologise every morning or invent a
+     figure about somebody's retirement. */
+  store.clear();
+  const env = mkEnv();
+  await W.DB.put(env, 'fin', 'd@x.com', { accessToken: 'tok' });
+
+  let modelCalls = 0;
+  globalThis.fetch = async (url) => {
+    if (String(url).includes('/accounts/balance/get'))
+      return { ok: true, json: async () => ({ accounts: [acct('1', 'Brokerage', 'brokerage', 10000)] }) };
+    modelCalls++;
+    return { ok: true, json: async () => ({ content: [{ text: 'invented' }], usage: {} }) };
+  };
+
+  const first = await W._autoExecute(env, { kind: 'invest', detail: 'check my investments' }, {}, 'd@x.com');
+  ok(modelCalls === 0, 'no model is asked anything at all', modelCalls);
+  ok(/10,000\.00/.test(first.text), 'the institution\'s own total is reported', first.text.slice(0, 80));
+  ok(/nothing to compare it against/.test(first.text),
+     'and a first run says so instead of claiming the market stood still');
+  ok(first.usage.input === 0 && first.usage.output === 0,
+     'it costs no tokens, so a daily check-in cannot eat a monthly allowance', first.usage);
+
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ accounts: [acct('1', 'Brokerage', 'brokerage', 8000)] }) });
+  const second = await W._autoExecute(env, { kind: 'invest' }, {}, 'd@x.com');
+  ok(/Down/.test(second.text), 'a loss is named as a loss', second.text.slice(0, 120));
+  ok(/-\$2,000\.00/.test(second.text), 'with the exact money figure', second.text);
+  ok(/-20%/.test(second.text), 'and the percentage a person would work out');
+  ok(/not financial advice/.test(second.text), 'and it does not pretend to be advice');
+}
+
+section('A bank having a bad week does not switch the check-in off');
+{
+  const env = mkEnv();
+  serveBalances([], { fail: true });
+  const bad = await W._autoExecute(env, { kind: 'invest' }, {}, 'd@x.com');
+  ok(/institution down|could not/i.test(bad.text), 'the run says what went wrong', bad.text.slice(0, 120));
+  ok(!/\$\s*[\d,]/.test(bad.text),
+     'and shows no money figure at all rather than yesterday\'s dressed as today\'s', bad.text);
+  ok(/nothing here is estimated/i.test(bad.text), 'saying outright that nothing was guessed');
+  ok(bad.soft === 'provider_error',
+     'it is flagged soft, so the cron records it without counting toward giving up', bad.soft);
+
+  const none = await W._autoExecute(mkEnv(), { kind: 'invest' }, {}, 'nobody@x.com');
+  ok(none.soft === 'needs_auth', 'nothing linked is the same shape of answer', none.soft);
+  ok(/link/i.test(none.text), 'and it says what to do about it', none.text.slice(0, 120));
+}
+
+section('A busy month in chat does not switch the check-in off');
+{
+  /* The cron skips a due job when the account is at its monthly SPEND ceiling.
+     This one spends nothing, so that gate is about a different resource - and
+     applying it anyway would silently stop the savings check-in of somebody
+     whose only sin was using chat a lot. */
+  const loop = src.slice(src.indexOf('async function runDueAutomations'), src.indexOf('async function runDueAutomations') + 4000);
+  ok(/item\.kind !== 'invest'/.test(loop),
+     'the ceiling check deliberately does not apply to it');
+  ok(loop.indexOf("item.kind !== 'invest'") < loop.indexOf('monthly allowance reached'),
+     'and it is the check that is skipped, not the job');
+}
+
+section('The check-in survives creation as itself');
+{
+  /* The free-tier reshaping turns an unaffordable job into a plain task. Doing
+     that to this one would convert "read my accounts" into "have a model guess
+     at my accounts", which is the exact failure this whole file is about. */
+  const create = src.slice(src.indexOf('async function autoCreate'), src.indexOf('async function autoUpdate'));
+  ok(/body\.kind === 'invest'/.test(create), 'the kind is accepted rather than flattened to a task');
+  ok(/kind !== 'invest'/.test(create), 'and reshaping deliberately leaves it alone');
 }
 
 globalThis.fetch = realFetch;

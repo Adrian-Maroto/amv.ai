@@ -7638,6 +7638,54 @@ html,body{height:100%;height:100dvh}
 .inv-stale{font-size:var(--t-xs);color:var(--gold);font-weight:600;
   margin-bottom:var(--sp-2)}
 
+/* ==========================================================================
+   LAYER A56 - The jobs that run while AMV is shut
+
+   The Tasks screen counted background results in a badge and pointed every
+   scheduling confirmation at itself, then rendered a queue held in this
+   browser and nothing else. This is the section that makes those three
+   statements true. Built on tokens rather than the hardcoded dark rgba the
+   old (unreachable) automation view used, so it is readable in both themes.
+   ========================================================================== */
+.asrv{margin:0 0 var(--sp-6)}
+.asrv-head{display:flex;align-items:center;justify-content:space-between;
+  gap:var(--sp-3);flex-wrap:wrap;margin-bottom:var(--sp-1)}
+.asrv-sub{margin:0 0 var(--sp-4)}
+.asrv-b{font-size:var(--t-xs);padding:var(--sp-2) var(--sp-3);min-height:36px}
+.asrv-none{font-size:var(--t-sm);color:var(--mu);margin-bottom:var(--sp-2)}
+.asrv-lbl{font-size:var(--t-xs);font-weight:600;color:var(--mu);
+  text-transform:uppercase;letter-spacing:.05em;margin:var(--sp-5) 0 var(--sp-2)}
+
+.asrv-job,.asrv-res{background:var(--s2);border:1px solid var(--bd);
+  border-radius:var(--r-md);padding:var(--sp-3);margin-bottom:var(--sp-2)}
+.asrv-res.unread{border-color:var(--accent)}
+.asrv-top{display:flex;align-items:center;gap:var(--sp-2);flex-wrap:wrap}
+.asrv-name{font-size:var(--t-base);font-weight:600;color:var(--tx);
+  flex:1 1 180px;min-width:0;overflow-wrap:anywhere}
+.asrv-when{font-size:var(--t-xs);color:var(--dim);flex:0 0 auto}
+.asrv-dot{width:7px;height:7px;border-radius:50%;background:var(--accent);flex:0 0 auto}
+.asrv-tag{font-size:var(--t-xs);color:var(--mu);background:var(--s3);
+  border-radius:var(--r-pill);padding:2px var(--sp-2);flex:0 0 auto}
+.asrv-tag.on{color:var(--grn)}
+.asrv-meta{font-size:var(--t-xs);color:var(--mu);margin-top:var(--sp-1)}
+/* A job that ran and could not finish is a warning, not an error - it is still
+   scheduled and will try again. */
+.asrv-err{font-size:var(--t-xs);color:var(--gold);margin-top:var(--sp-1)}
+.asrv-acts{display:flex;gap:var(--sp-2);margin-top:var(--sp-2);flex-wrap:wrap}
+
+/* The answer itself, readable in place. Long output scrolls inside its own box
+   rather than pushing the page sideways on a phone. */
+.asrv-out{font-size:var(--t-sm);color:var(--tx);background:var(--s1);
+  border-radius:var(--r-sm);padding:var(--sp-3);margin-top:var(--sp-2);
+  max-height:240px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;
+  line-height:1.65}
+
+/* `.sec-head h3` hardcoded #e6edf3 - a near-white chosen when there was only a
+   dark theme. On the light theme every section heading in the product rendered
+   as pale grey on white, including "Only on AMV" and this one. The token is
+   already the right colour in both themes. */
+.sec-head h3{color:var(--tx)}
+
 </style>
 <!-- BUILD:CSS:END -->
 <script>
@@ -8132,7 +8180,7 @@ const AMV_API = {
     // state-creating endpoints. Metered/idempotent POSTs (AI proxy, sync) still retry.
     const noRetry = o.noRetry || /^\/auth\//.test(path)
       || /\/(stripe|paypal|pay|subscribe|capture)/.test(path)
-      || /\/(family\/(limits|remove)|team\/(invite|join|remove|leave|role|share|unshare|data|task\/(create|update))|market\/(publish|buy|withdraw|review|install)|deploy|sms\/register|widget\/save)/.test(path);
+      || /\/(family\/(limits|remove|leave)|team\/(invite|join|remove|leave|role|share|unshare|data|task\/(create|update))|market\/(publish|buy|withdraw|review|install)|deploy|sms\/register|widget\/save)/.test(path);
     const MAX = noRetry ? 0 : 2;        // up to 2 retries (3 total attempts)
 
     /* AMV-061: a request with no deadline can hang forever.
@@ -8396,6 +8444,7 @@ const AMV_API = {
      here for reading a child's conversations, because no such route exists. */
   async familyGet(){ const r=await this._fetch('/v1/family/get',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
   async familyLimits(child,limits){ const r=await this._fetch('/v1/family/limits',{method:'POST',body:JSON.stringify({child,limits})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
+  async familyLeave(){ const r=await this._fetch('/v1/family/leave',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
   async familyRemove(child){ const r=await this._fetch('/v1/family/remove',{method:'POST',body:JSON.stringify({child})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
   async portal(customer){ const r=await this._fetch('/v1/stripe/portal',{method:'POST',body:JSON.stringify({customer})}); const d=await r.json(); if(!r.ok||!d.url) throw new Error(d.error||'Could not open billing.'); return d.url; },
 };
@@ -26061,6 +26110,7 @@ function renderTasksView(){
         <p class="vsub">Start with something only AMV can do - or grab a ready-made task that opens a chat set up to deliver.</p>
       </div>
     </header>
+    ${_autoServerHTML()}
     <section class="uniq-sec">
       <div class="sec-head"><h3>Only on AMV</h3><span class="sec-sub">Capabilities a plain chatbot doesn't have</span></div>
       <div class="uniq-grid">${unique.map(ucard).join('')}</div>
@@ -26072,6 +26122,7 @@ function renderTasksView(){
       </section>`).join('')}
     </div>
   </div></div>`;
+  try{ _wireAutoServer(vc); }catch(e){}
 }
 function launchUnique(kind){
   const map={crew:'crew',dev:'dev',studio:'studio',lab:'lab',handoff:'handoff'};
@@ -26471,6 +26522,106 @@ function renderAutomationView(){
 ${taskList}
 </div>
 </div></div>`;
+}
+
+/* ── THE JOBS THAT ACTUALLY RUN ON THE SERVER ─────────────────────────────────
+
+   This screen used to render one thing: a queue held in this browser. The jobs
+   that run unattended on the server, and the results they produce while AMV is
+   shut, were fetched into `_AUTOS` / `_AUTO_RESULTS` and then displayed
+   nowhere - while the unread badge was pinned to THIS tab and the scheduling
+   confirmations said the result would be waiting here. So the product counted
+   results, pointed at this screen, and this screen did not have them.
+
+   They are rendered here, where the badge already sends people. */
+function _autoJobsNow(){ try{ return Array.isArray(_AUTOS) ? _AUTOS : []; }catch(e){ return []; } }
+function _autoResultsNow(){ try{ return Array.isArray(_AUTO_RESULTS) ? _AUTO_RESULTS : []; }catch(e){ return []; } }
+
+function _autoWhenLabel(it){
+  const every = { hourly:'every hour', daily:'every day', weekly:'every week',
+                  '10min':'every 10 minutes' }[it.repeat] || ('every ' + (it.repeat || 'day'));
+  let next = '';
+  try{ if(it.next) next = new Date(it.next).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }catch(e){}
+  return every + (next ? ' · next ' + next : '');
+}
+
+function _autoServerHTML(){
+  const jobs = _autoJobsNow(), results = _autoResultsNow();
+  /* No section at all when there is nothing. An empty "Running on the server"
+     box reads as "set up and idle", which is a different state from "you have
+     never scheduled anything" and would be a quiet lie about the former. */
+  if(!jobs.length && !results.length) return '';
+
+  const jobRows = jobs.map(it=>{
+    /* An investing check-in reads accounts directly. Calling that "writes a
+       result" would misdescribe the one job whose provenance matters most. */
+    const tag = it.kind === 'invest' ? 'Reads your accounts'
+              : it.kind === 'research' ? 'Searches the web' : 'Writes a result';
+    /* A recorded problem is shown as one. "It ran and could not read your bank"
+       is a different thing from "it is broken", and different again from the
+       silence that used to stand for both. */
+    const err = it.lastError
+      ? '<div class="asrv-err">Last run: '+escH(String(it.lastError))+'</div>' : '';
+    const runs = +it.runs||0;
+    return '<div class="asrv-job">'
+      +'<div class="asrv-top">'
+      +'<span class="asrv-name">'+escH(it.detail||'Scheduled job')+'</span>'
+      +'<span class="asrv-tag">'+escH(tag)+'</span>'
+      +'<span class="asrv-tag '+(it.active?'on':'off')+'">'+(it.active?'Active':'Paused')+'</span>'
+      +'</div>'
+      +'<div class="asrv-meta">'+escH(_autoWhenLabel(it))+' · run '+runs+' time'+(runs===1?'':'s')+'</div>'
+      + err
+      +'<div class="asrv-acts">'
+      +'<button class="btn bs asrv-b" data-auto-act="'+(it.active?'pause':'resume')+'" data-auto-id="'+escH(String(it.id))+'">'+(it.active?'Pause':'Resume')+'</button>'
+      +'<button class="btn bs asrv-b" data-auto-act="delete" data-auto-id="'+escH(String(it.id))+'">Delete</button>'
+      +'</div></div>';
+  }).join('');
+
+  const unread = results.filter(r=>!r.read).length;
+  const resRows = results.slice().sort((a,b)=>(b.at||0)-(a.at||0)).slice(0,20).map(r=>{
+    let when=''; try{ when=new Date(r.at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }catch(e){}
+    const body = String(r.out||'');
+    return '<div class="asrv-res'+(r.read?'':' unread')+'">'
+      +'<div class="asrv-top">'
+      +(r.read?'':'<span class="asrv-dot" aria-label="Unread"></span>')
+      +'<span class="asrv-name">'+escH(r.detail||'Scheduled job')+'</span>'
+      +'<span class="asrv-when">'+escH(when)+'</span></div>'
+      +'<div class="asrv-out" data-no-i18n>'
+      + escH(body.slice(0,2000)) + (body.length>2000?'\n...(truncated)':'')
+      +'</div></div>';
+  }).join('');
+
+  return '<section class="asrv">'
+    +'<div class="sec-head asrv-head"><h3>Running on the server</h3>'
+    +(unread?'<button class="btn bs asrv-b" data-auto-act="markread">Mark '+unread+' read</button>':'')
+    +'</div>'
+    +'<p class="vsub asrv-sub">These run whether or not AMV is open. Results appear here when each one finishes.</p>'
+    +(jobRows||'<div class="asrv-none">No scheduled jobs yet.</div>')
+    +(resRows?'<div class="asrv-lbl">Results</div>'+resRows:'')
+    +'</section>';
+}
+
+function _wireAutoServer(root){
+  root.querySelectorAll('[data-auto-act]').forEach(b=>{
+    b.addEventListener('click', async ()=>{
+      const act=b.dataset.autoAct, id=b.dataset.autoId;
+      b.disabled=true;
+      try{
+        if(act==='markread'){ await _autoMarkRead(); }
+        else if(act==='delete'){
+          /* Deleting a running job is not undoable from here, so it is asked
+             about rather than done on a single tap. */
+          if(typeof confirm==='function' && !confirm('Delete this scheduled job? It will stop running.')){ b.disabled=false; return; }
+          await _autoAction(id,'delete');
+        }
+        else await _autoAction(id, act);
+        renderTasksView();
+      }catch(e){
+        b.disabled=false;
+        if(typeof toast==='function') toast('Could not update that job: '+((e&&e.message)||'try again'),'error',4500);
+      }
+    });
+  });
 }
 
 /* 8. CUSTOM TASK MODAL - dark background guaranteed */
@@ -27793,7 +27944,10 @@ async function _autoRefresh(){
       toast(unread.length + ' automation result' + (unread.length>1?'s':'') + ' ready while you were away.','success',6000);
     }
     _autoBadge(unread.length);
-    try{ if(S.tab==='automation') renderAutomationView(); }catch(e){}
+    /* The Tasks tab is 'tasks'; there has never been an 'automation' tab, so this
+       redraw never once fired and freshly-arrived results sat behind a badge on a
+       screen that was not repainted. */
+    try{ if(S.tab==='tasks') renderTasksView(); }catch(e){}
     return d;
   }catch(e){ return null; }
 }
@@ -27811,7 +27965,10 @@ async function _autoAction(id, action){
   try{
     const d = await _autoApi('/auto/update', { id, action });
     _AUTOS = d.items || _AUTOS;
-    try{ if(S.tab==='automation') renderAutomationView(); }catch(e){}
+    /* The Tasks tab is 'tasks'; there has never been an 'automation' tab, so this
+       redraw never once fired and freshly-arrived results sat behind a badge on a
+       screen that was not repainted. */
+    try{ if(S.tab==='tasks') renderTasksView(); }catch(e){}
     return true;
   }catch(e){ if(typeof toast==='function') toast('Failed: '+e.message,'error',4000); return false; }
 }
@@ -30353,25 +30510,71 @@ function _renderInvestPane(pane){
   pane.querySelectorAll('[data-inv-when]').forEach(b=>on(b,'click',async()=>{
     const k=b.dataset.invWhen;
     const say=$('inv-when-say');
-    try{ saveStr('amv_inv_when',k); }catch(e){}
-    if(!k){ if(say) say.textContent='Stopped. AMV will not check on its own.'; _renderInvestPane(pane); return; }
+    /* The job that is already running, if any. Without this, picking a new
+       frequency left the old one running and you got two check-ins, and "Stop"
+       cleared a setting on this device while the server kept checking - the
+       screen would have said stopped and been wrong. */
+    const prev=loadStr('amv_inv_auto')||'';
+    let stillRunning=!!prev;
+    const dropPrev=async()=>{
+      if(!prev) return;
+      await AMV_API._fetch('/auto/update',{method:'POST',
+        body:JSON.stringify({id:prev,action:'delete'})});
+      stillRunning=false;
+      try{ saveStr('amv_inv_auto',''); }catch(e){}
+    };
+
+    if(!k){
+      if(say) say.textContent='Stopping\u2026';
+      try{
+        await dropPrev();
+        try{ saveStr('amv_inv_when',''); }catch(e){}
+        _renderInvestPane(pane);
+        const s0=$('inv-when-say');
+        if(s0) s0.textContent='Stopped. AMV will not check on its own.';
+      }catch(e){
+        /* Still scheduled, so the screen must keep saying so. */
+        _renderInvestPane(pane);
+        const s0=$('inv-when-say');
+        if(s0) s0.textContent=((e&&e.message)?e.message+' ':'')+'It is still scheduled - try again.';
+      }
+      return;
+    }
+
     const w=INVEST_WHEN.find(x=>x.k===k)||{};
     if(say) say.textContent='Setting this up\u2026';
     try{
+      /* Replace rather than add, so the buttons show one choice and one job
+         exists to match it. */
+      await dropPrev();
       /* A real scheduled job on the server, so it runs whether or not AMV is
-         open - the whole point of being told automatically. */
-      await AMV_API._fetch('/auto/create',{method:'POST',body:JSON.stringify({
-        detail:'Check my investment accounts and tell me how they are doing since the last check - the amount and the percentage, per account. If the accounts cannot be read, say so plainly and do not estimate.',
-        repeat:(k==='weekly'||k==='monthly')?'weekly':'daily', kind:'task', notify:'app' })});
-      if(say) say.textContent='Done. AMV checks '+w.detail+' and tells you.';
+         open - the whole point of being told automatically.
+
+         kind:'invest' is what makes this real. The server runs the check-in
+         itself and reports the institution's own numbers; it does not hand the
+         wording below to a model, which could not read an account and would
+         have to guess. The text is the job's description in the list. */
+      const r=await AMV_API._fetch('/auto/create',{method:'POST',body:JSON.stringify({
+        detail:'Check my investment accounts and report how they changed since the last check - the amount and the percentage, per account.',
+        repeat:(k==='weekly'||k==='monthly')?'weekly':'daily', kind:'invest', notify:'app' })});
+      const d=await r.json().catch(()=>({}));
+      /* Without the id there is nothing to delete later, so a following change
+         of frequency would leave this one running alongside the new one. */
+      const item=(d&&d.item)||null;
+      try{ saveStr('amv_inv_when',k); saveStr('amv_inv_auto',(item&&item.id)||''); }catch(e){}
+      if(say) say.textContent='Done. AMV checks '+w.detail+', and the result waits for you in Tasks.';
     }catch(e){
       /* Clear the remembered choice, redraw so the buttons show the truth, and
          write the message AFTER - the redraw replaces the element the message
          would have been in, so setting it first said nothing at all. */
-      try{ saveStr('amv_inv_when',''); }catch(_){ }
+      /* Only claim nothing is scheduled when nothing is. If removing the
+         previous job is what failed, that one is still running and saying
+         otherwise would be the same lie in the opposite direction. */
+      try{ saveStr('amv_inv_when', stillRunning?(loadStr('amv_inv_when')||''):''); }catch(_){ }
       _renderInvestPane(pane);
       const s2=$('inv-when-say');
-      if(s2) s2.textContent=((e&&e.message)?e.message+' ':'')+'Nothing is scheduled.';
+      if(s2) s2.textContent=((e&&e.message)?e.message+' ':'')
+        +(stillRunning?'Your existing check-in is still running and was not changed.':'Nothing is scheduled.');
     }
   }));
 }
@@ -30923,11 +31126,30 @@ function _famChildHTML(st){
       '<div><span class="fam-mine-k">Taking money out</span><span class="fam-mine-v">'+(L.payouts?'On':'Off')+'</span></div>'+
     '</div>'+
     '<p class="fam-p fam-quiet">Only they can change these. Ask them if you need more.</p>'+
+    /* The way out. Without it, accepting an invitation once meant somebody else
+       controlled this account's spending permanently - and AMV cannot tell a
+       parent from a stranger who talked you into it. */
+    '<button class="btn bs" id="fam-leave" style="font-size:12px;color:var(--red);border-color:var(--red)">Leave this family</button>'+
+    '<div class="fam-say" id="fam-leave-say" role="status" aria-live="polite"></div>'+
   '</div>';
 }
 
 /* Wire the parent's controls. Each save sends only that child's settings, so
    two rows open at once cannot overwrite each other. */
+function _wireFamilyChild(pane){
+  on($('fam-leave'),'click',async()=>{
+    const say=$('fam-leave-say');
+    if(typeof confirm==='function' &&
+       !confirm('Leave this family? Their limits stop applying to you, and they stop paying for your AMV.')) return;
+    const b=$('fam-leave'); if(b){ b.disabled=true; b.textContent='Leaving\u2026'; }
+    try{ await AMV_API.familyLeave(); _FAM_STATE=null; _renderFamilyPane(pane); }
+    catch(e){
+      if(b){ b.disabled=false; b.textContent='Leave this family'; }
+      if(say) say.textContent=((e&&e.message)?e.message+' ':'')+'You are still in the family.';
+    }
+  });
+}
+
 function _wireFamilyParent(pane){
   pane.querySelectorAll('[data-fam-save]').forEach(b=>on(b,'click',async()=>{
     const em=b.dataset.famSave;
@@ -31080,6 +31302,7 @@ function _renderFamilyPane(pane){
   }));
 
   _wireFamilyParent(pane);
+  _wireFamilyChild(pane);
   if(needState && window.AMV_API && AMV_API.live && AMV_API.token){
     AMV_API.familyGet()
       .then(d => { _FAM_STATE = d; _renderFamilyPane(pane); })

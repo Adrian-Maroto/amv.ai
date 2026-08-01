@@ -927,7 +927,7 @@ async function autoCreate(request, env){
   const body = await request.json().catch(()=>({}));
   const detail = String(body.detail||'').trim();
   const repeat = String(body.repeat||'daily').toLowerCase();
-  const kind = (body.kind === 'research') ? 'research' : 'task';
+  const kind = (body.kind === 'research' || body.kind === 'invest') ? body.kind : 'task';
   const notify = (body.notify === 'email') ? 'email' : 'app';
   const approval = (body.approval === 'auto') ? 'auto' : 'require';
   const scope = (body.scope && typeof body.scope === 'object') ? body.scope : null;
@@ -981,8 +981,12 @@ async function autoCreate(request, env){
      because searching is the expensive part - and it is told so rather than
      silently getting something other than what it asked for. */
   const shapedRepeat = budget.free ? FREE_AUTO_REPEAT : repeat;
-  const shapedKind   = budget.free ? 'task' : kind;
-  const shaped = budget.free && (repeat !== FREE_AUTO_REPEAT || kind !== 'task');
+  /* An investing check-in is never reshaped into a plain task: a "task" version
+     of it would be a model guessing at balances, which is the one outcome this
+     must not have. It costs no model tokens either, so there is nothing to
+     shape. */
+  const shapedKind   = (budget.free && kind !== 'invest') ? 'task' : kind;
+  const shaped = budget.free && kind !== 'invest' && (repeat !== FREE_AUTO_REPEAT || kind !== 'task');
 
   // Honour the user's requested first-run time if given, else one interval out.
   const interval = Math.max(AUTO_MIN_INTERVAL, AUTO_INTERVALS[shapedRepeat]);
@@ -1080,7 +1084,63 @@ async function _enqueueApproval(env, email, item, out){
 }
 
 /* ---- Execute ONE automation against the real model ---- */
-async function _autoExecute(env, item, budget){
+/* An investing check-in's words, built from the provider's numbers.
+
+   Deliberately not written by a model. A scheduled check-in reports on somebody
+   else's savings while they are asleep, and a model handed the goal text has no
+   way to read an account - so it would either apologise every morning or make a
+   figure up, and a made-up figure about someone's retirement is the worst thing
+   this product could send. Every number below came from the institution or is
+   absent. */
+function _investText(r){
+  if(!r || !r.ok){
+    const why = (r && r.error) || 'Your accounts could not be read.';
+    return 'Investment check-in\n\n' + why
+      + '\n\nNo figures are shown because none could be read. Nothing here is estimated.';
+  }
+  const cur = r.currency || 'USD';
+  /* Grouped by hand rather than through Intl: this runs on the edge, where
+     locale data is not something to bet a money figure on, and a formatter that
+     throws here would take the whole check-in down. */
+  const money = (n) => {
+    const neg = n < 0;
+    const [whole, frac] = Math.abs(n).toFixed(2).split('.');
+    return (neg ? '-' : '') + '$' + whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + '.' + frac;
+  };
+  let out = 'Investment check-in\n\nTotal: ' + money(r.total) + ' ' + cur + '\n';
+  if(r.first){
+    out += '\nThis is the first check-in, so there is nothing to compare it against yet. '
+         + 'The next one will show what changed.\n';
+  }else{
+    const dir = r.direction === 'up' ? 'Up' : r.direction === 'down' ? 'Down' : 'Flat';
+    out += '\n' + dir + ' ' + money(r.changeUSD)
+         + (r.changePct == null ? '' : ' (' + r.changePct + '%)')
+         + ' since the last check-in.\n';
+    if(r.changePct == null && r.direction !== 'flat')
+      out += 'No percentage is shown because the previous total was zero, and a percentage of zero is not a number.\n';
+  }
+  if((r.byAccount || []).length){
+    out += '\nBy account:\n';
+    for(const a of r.byAccount){
+      out += '  - ' + a.name + ': ' + money(a.balance)
+           + (a.isNew ? ' (new since the last check-in, so no change is shown)'
+                      : ' (' + (a.change > 0 ? '+' : '') + money(a.change) + ')') + '\n';
+    }
+  }
+  return out + '\nThis is information about your accounts, not financial advice. '
+             + 'AMV can only read these accounts; it cannot buy, sell, or move anything.';
+}
+
+async function _autoExecute(env, item, budget, email){
+  /* An investing check-in does not go to a model at all - it reads the accounts
+     and states the arithmetic. So it costs nothing, cannot drift, and cannot
+     invent a balance. */
+  if(item.kind === 'invest'){
+    const r = await _investCheckin(env, email);
+    return { text: _investText(r), usage: { input:0, output:0, webSearches:0 },
+             soft: r && r.ok ? null : ((r && r.code) || 'provider_error') };
+  }
+
   /* A free tier job runs on the cheapest engine, writes less, and never
      searches - a web search costs about a cent each and is where an unattended
      job's money actually goes. Paid work is unchanged. */
@@ -1100,7 +1160,17 @@ async function _autoExecute(env, item, budget){
       + "Describe what is happening and what people are saying; let the user decide. "
       + "Always end with a brief note that this is information, not financial advice."
       + " Never use em or en dashes; use a plain hyphen (-) instead."
-    : 'You are AMV running a scheduled automation for the user, unattended. Complete the task fully and return the finished result in markdown. Be specific and useful - this is what they will read when they come back. Never say you will do it later; do it now. Never use em or en dashes; use a plain hyphen (-) instead.';
+    /* The runner can WRITE. It cannot send an email, open a browser, buy
+       anything, or touch an account - so a job phrased as "apply to these roles"
+       or "email the client" must come back as the finished draft, clearly
+       labelled, rather than as a report of something that never happened. An
+       unattended job is read hours later by somebody with no way to check, which
+       is exactly when a fabricated action does the most damage. */
+    : 'You are AMV running a scheduled automation for the user, unattended. Complete the task fully and return the finished result in markdown. Be specific and useful - this is what they will read when they come back. Never say you will do it later; do it now. '
+      + 'You can only produce text. You cannot send email, browse, buy, book, post, or touch any account or file. '
+      + 'If the task asks for an action like that, produce the finished thing ready to use (the email, the message, the filled-in application) and say plainly at the top that it is ready to send and has NOT been sent. '
+      + 'Never state or imply that you have taken an action you cannot take, and never invent a result, a number, or a confirmation. '
+      + 'Never use em or en dashes; use a plain hyphen (-) instead.';
 
   const body = {
     model: free ? ENGINES['amv-pulse'].model : ENGINES['amv-core'].model,
@@ -1217,7 +1287,11 @@ async function runDueAutomations(env){
       // (don't burn compute they've effectively used up). Free plan (ceiling 0)
       // has no paid budget for automations, so they never execute a paid model
       // call here - they degrade to nothing rather than costing us money.
-      {
+      /* An investing check-in makes no model call, so a spend ceiling has
+         nothing to protect against here. Blocking it would stop somebody's
+         savings check-in because they used AMV a lot in chat - two unrelated
+         things, and the one that gets switched off is the one about money. */
+      if(item.kind !== 'invest'){
         const capNow = await counter(env, costName, { op:'checkCap', cap: costCeiling });
         if(!capNow.allowed){ item.lastError = 'monthly allowance reached'; changed = true; continue; }
       }
@@ -1226,7 +1300,7 @@ async function runDueAutomations(env){
       // email). The key is unique to this item's scheduled time; atomic on D1.
       if(!(await _claimOnce(env, 'autorun', `${email}:${item.id}:${item.next}`, 3*86400))) continue;
       try{
-        const exec = await _autoExecute(env, item, budget);
+        const exec = await _autoExecute(env, item, budget, email);
         const out = (exec && exec.text) || '';
         // record the real cost of this run against the monthly cap
         try{ const c = _autoCostUSD(exec && exec.usage || {});
@@ -1238,7 +1312,11 @@ async function runDueAutomations(env){
           autoId: item.id, detail: item.detail, out, at: Date.now(), read: false, kind: item.kind||'task'
         }).slice(-AUTO_MAX_RESULTS);
         item.runs = (item.runs||0) + 1;
-        item.lastError = null;
+        /* A soft failure ran fine and DELIVERED the reason - an institution that
+           was down, or nothing linked yet. It is recorded so the job's row shows
+           it, but it does not count toward the give-up counter: a bank having a
+           bad week must not quietly switch off somebody's check-in. */
+        item.lastError = (exec && exec.soft) ? exec.soft : null;
         ran++;
         // Deliver by approval mode. Auto-approve tasks complete on their
         // own (emailed if requested). Require-approval tasks stop before
@@ -2104,6 +2182,43 @@ async function familySetLimits(request, env){
   return json({ ok:true, child: em, limits: m.limits });
 }
 
+/* Leaving a family, from the inside.
+
+   Only the parent could end a membership, which is a defensible rule for an
+   actual parent and a dangerous one for AMV, because AMV cannot tell a parent
+   from a stranger. The consent step is one word in an email. Somebody who
+   accepted an invitation they did not fully understand was then capped, blocked
+   from buying, and blocked from withdrawing money they had EARNED - with no way
+   out that did not involve abandoning the account.
+
+   So the account holder can always end it. That is not a hole in parental
+   control: a minor who wants out can open a new account in a minute, so the
+   lock was never really holding anyone. All it did was make the abuse case
+   unfixable. The parent is told on their own activity log, rather than finding
+   out from a number that stopped moving. */
+async function familyLeave(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'unauthorized' }, 401);
+  const fam = user.family;
+  if(!fam) return json({ error:'You are not in a family.' }, 404);
+
+  const rec = await DB.get(env, 'fam', fam.parent);
+  if(rec){
+    rec.members = (rec.members||[]).filter(x => x.email !== user.email);
+    await DB.put(env, 'fam', fam.parent, rec);
+  }
+  const ent = (await DB.get(env, 'ent', user.email)) || {};
+  delete ent.familyOf;
+  await DB.put(env, 'ent', user.email, ent);
+
+  await _userEvent(env, request, user.email, 'family_left', { parent: fam.parent });
+  /* On the parent's log too - somebody leaving is exactly the kind of change
+     they need to see, and a record only one side can read is worth little. */
+  await _userEvent(env, null, fam.parent, 'family_member_left', { member: user.email });
+  audit(env, 'family_leave', { parent: fam.parent, member: user.email });
+  return json({ ok:true, left: fam.parent });
+}
+
 async function familyRemove(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
@@ -2151,13 +2266,30 @@ async function linkInvite(request, env){
 
   const from = env.RESET_EMAIL_FROM || 'AMV <onboarding@resend.dev>';
   const list = scopes.join(', ');
+  /* A family invitation is not a permission grant, it is somebody taking
+     control of what this account may spend - and "family" as a scope name says
+     none of that. Whoever is reading this email is deciding whether to hand
+     over their money settings, so the email has to say so in those words.
+     Consent to a thing you were not told about is not consent. */
+  const isFamily = scopes.includes('family');
+  const familyBody = user.email + ' wants to add you to their AMV family.\n\n'
+    + 'If you accept, they pay for your AMV - and they decide:\n'
+    + '  - how much AMV may spend on your account each month\n'
+    + '  - whether you can buy anything in the marketplace\n'
+    + '  - whether you can withdraw money you earn\n\n'
+    + 'They CANNOT read your conversations, see what you ask AMV, or see anything AMV writes for you.\n\n'
+    + 'You can leave at any time from Settings, and everything goes back to normal.\n\n'
+    + 'Your approval code is ' + code + '. It expires in 15 minutes.\n\n'
+    + 'If you were not expecting this, ignore this email - nothing changes unless you enter the code yourself.';
   const sent = await fetch('https://api.resend.com/emails', {
     method:'POST', headers:{ 'Authorization':'Bearer ' + env.EMAIL_API_KEY, 'Content-Type':'application/json' },
     body: JSON.stringify({ from, to:[owner],
-      subject:'Approve access to your AMV account',
-      text: user.email + ' is asking to access your AMV account for: ' + list + '.\n\n'
+      subject: isFamily ? (user.email + ' wants to manage what your AMV account can spend')
+                        : 'Approve access to your AMV account',
+      text: isFamily ? familyBody
+        : (user.email + ' is asking to access your AMV account for: ' + list + '.\n\n'
         + 'Your approval code is ' + code + '. It expires in 15 minutes.\n\n'
-        + 'If you did not expect this, ignore this email - nothing is shared unless you enter the code yourself.' })
+        + 'If you did not expect this, ignore this email - nothing is shared unless you enter the code yourself.') })
   }).then(r => r.ok).catch(() => false);
 
   audit(env, 'link_invite', { by:user.email, owner, scopes:list, delivered:sent });
@@ -3067,6 +3199,7 @@ export default {
         case '/v1/family/get':           return familyGet(request, env);
         case '/v1/family/limits':        return familySetLimits(request, env);
         case '/v1/family/remove':        return familyRemove(request, env);
+        case '/v1/family/leave':         return familyLeave(request, env);
         case '/v1/link/invite':          return linkInvite(request, env);
         case '/v1/link/accept':          return linkAccept(request, env);
         case '/v1/link/list':            return linkList(request, env);

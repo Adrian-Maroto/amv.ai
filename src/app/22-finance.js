@@ -283,25 +283,71 @@ function _renderInvestPane(pane){
   pane.querySelectorAll('[data-inv-when]').forEach(b=>on(b,'click',async()=>{
     const k=b.dataset.invWhen;
     const say=$('inv-when-say');
-    try{ saveStr('amv_inv_when',k); }catch(e){}
-    if(!k){ if(say) say.textContent='Stopped. AMV will not check on its own.'; _renderInvestPane(pane); return; }
+    /* The job that is already running, if any. Without this, picking a new
+       frequency left the old one running and you got two check-ins, and "Stop"
+       cleared a setting on this device while the server kept checking - the
+       screen would have said stopped and been wrong. */
+    const prev=loadStr('amv_inv_auto')||'';
+    let stillRunning=!!prev;
+    const dropPrev=async()=>{
+      if(!prev) return;
+      await AMV_API._fetch('/auto/update',{method:'POST',
+        body:JSON.stringify({id:prev,action:'delete'})});
+      stillRunning=false;
+      try{ saveStr('amv_inv_auto',''); }catch(e){}
+    };
+
+    if(!k){
+      if(say) say.textContent='Stopping\u2026';
+      try{
+        await dropPrev();
+        try{ saveStr('amv_inv_when',''); }catch(e){}
+        _renderInvestPane(pane);
+        const s0=$('inv-when-say');
+        if(s0) s0.textContent='Stopped. AMV will not check on its own.';
+      }catch(e){
+        /* Still scheduled, so the screen must keep saying so. */
+        _renderInvestPane(pane);
+        const s0=$('inv-when-say');
+        if(s0) s0.textContent=((e&&e.message)?e.message+' ':'')+'It is still scheduled - try again.';
+      }
+      return;
+    }
+
     const w=INVEST_WHEN.find(x=>x.k===k)||{};
     if(say) say.textContent='Setting this up\u2026';
     try{
+      /* Replace rather than add, so the buttons show one choice and one job
+         exists to match it. */
+      await dropPrev();
       /* A real scheduled job on the server, so it runs whether or not AMV is
-         open - the whole point of being told automatically. */
-      await AMV_API._fetch('/auto/create',{method:'POST',body:JSON.stringify({
-        detail:'Check my investment accounts and tell me how they are doing since the last check - the amount and the percentage, per account. If the accounts cannot be read, say so plainly and do not estimate.',
-        repeat:(k==='weekly'||k==='monthly')?'weekly':'daily', kind:'task', notify:'app' })});
-      if(say) say.textContent='Done. AMV checks '+w.detail+' and tells you.';
+         open - the whole point of being told automatically.
+
+         kind:'invest' is what makes this real. The server runs the check-in
+         itself and reports the institution's own numbers; it does not hand the
+         wording below to a model, which could not read an account and would
+         have to guess. The text is the job's description in the list. */
+      const r=await AMV_API._fetch('/auto/create',{method:'POST',body:JSON.stringify({
+        detail:'Check my investment accounts and report how they changed since the last check - the amount and the percentage, per account.',
+        repeat:(k==='weekly'||k==='monthly')?'weekly':'daily', kind:'invest', notify:'app' })});
+      const d=await r.json().catch(()=>({}));
+      /* Without the id there is nothing to delete later, so a following change
+         of frequency would leave this one running alongside the new one. */
+      const item=(d&&d.item)||null;
+      try{ saveStr('amv_inv_when',k); saveStr('amv_inv_auto',(item&&item.id)||''); }catch(e){}
+      if(say) say.textContent='Done. AMV checks '+w.detail+', and the result waits for you in Tasks.';
     }catch(e){
       /* Clear the remembered choice, redraw so the buttons show the truth, and
          write the message AFTER - the redraw replaces the element the message
          would have been in, so setting it first said nothing at all. */
-      try{ saveStr('amv_inv_when',''); }catch(_){ }
+      /* Only claim nothing is scheduled when nothing is. If removing the
+         previous job is what failed, that one is still running and saying
+         otherwise would be the same lie in the opposite direction. */
+      try{ saveStr('amv_inv_when', stillRunning?(loadStr('amv_inv_when')||''):''); }catch(_){ }
       _renderInvestPane(pane);
       const s2=$('inv-when-say');
-      if(s2) s2.textContent=((e&&e.message)?e.message+' ':'')+'Nothing is scheduled.';
+      if(s2) s2.textContent=((e&&e.message)?e.message+' ':'')
+        +(stillRunning?'Your existing check-in is still running and was not changed.':'Nothing is scheduled.');
     }
   }));
 }

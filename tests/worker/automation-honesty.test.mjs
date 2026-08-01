@@ -245,5 +245,31 @@ section('With no app URL configured, no broken link is invented');
   ok(!/href="(\s|")*"/.test(sent), 'with no empty link stub in it');
 }
 
+section('An unattended job cannot claim to have done what it cannot do');
+{
+  /* The runner writes text. It has no email, no browser, no card, no account
+     access - so "apply to these roles overnight" comes back as the finished
+     application, not as a report that it was submitted. The result is read hours
+     later by somebody with no way to check, which is precisely when a made-up
+     confirmation does the most damage. */
+  let prompt = '';
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (_url, init) => {
+    prompt = JSON.parse(init.body).system || '';
+    return { ok: true, json: async () => ({ content: [{ text: 'ok' }], usage: {} }) };
+  };
+  try {
+    await W._autoExecute({ AMV_MODEL_KEY: 'k' }, { kind: 'task', detail: 'apply to these roles' }, {}, 'p@x.com');
+  } finally { globalThis.fetch = realFetch; }
+
+  ok(/only produce text/i.test(prompt), 'it is told what it actually is', prompt.slice(0, 60));
+  ok(/cannot send email/i.test(prompt) && /browse/i.test(prompt),
+     'and named the things it cannot do rather than left to infer them');
+  ok(/has NOT been sent/i.test(prompt),
+     'so an action-shaped job returns the finished draft, labelled unsent');
+  ok(/[Nn]ever invent a result, a number, or a confirmation/.test(prompt),
+     'and inventing a confirmation is ruled out in those words');
+}
+
 report('automation-honesty');
 done();

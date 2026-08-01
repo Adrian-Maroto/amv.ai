@@ -99,6 +99,36 @@ section('Both sides are told what a parent cannot see');
   ok(!canEdit, 'a child is given no control that would not work if they used it', canEdit);
 }
 
+section('The account holder has a way out');
+{
+  /* Only the parent could end a membership. AMV cannot tell a parent from a
+     stranger, and the consent step is one word in an email - so somebody who
+     accepted an invitation they did not fully understand was capped, blocked
+     from buying and blocked from withdrawing money they had earned, with no way
+     out that did not mean abandoning the account. */
+  await serve(CHILD);
+  await settle();
+  const there = await page.evaluate(() => !!document.getElementById('fam-leave'));
+  ok(there, 'a member is shown how to leave');
+
+  const t = await view();
+  ok(/Leave this family/.test(t), 'in plain words');
+
+  /* A failure must not look like it worked - somebody who believes they have
+     left and has not is worse off than before they tried. */
+  const failed = await page.evaluate(async () => {
+    window.AMV_API.familyLeave = async () => { throw new Error('engine down'); };
+    window.confirm = () => true;
+    document.getElementById('fam-leave').click();
+    await new Promise(r => setTimeout(r, 200));
+    return { say: document.getElementById('fam-leave-say').textContent,
+             stillThere: !!document.getElementById('fam-leave') };
+  });
+  ok(/still in the family/i.test(failed.say),
+     'a failed attempt says so rather than looking like it worked', failed.say);
+  ok(failed.stillThere, 'and the control is still there to try again');
+}
+
 section('Saving shows what the server stored, not what was typed');
 {
   /* The server bounds the cap. A screen that echoed the typed number would

@@ -1290,7 +1290,10 @@ async function _autoRefresh(){
       toast(unread.length + ' automation result' + (unread.length>1?'s':'') + ' ready while you were away.','success',6000);
     }
     _autoBadge(unread.length);
-    try{ if(S.tab==='automation') renderAutomationView(); }catch(e){}
+    /* The Tasks tab is 'tasks'; there has never been an 'automation' tab, so this
+       redraw never once fired and freshly-arrived results sat behind a badge on a
+       screen that was not repainted. */
+    try{ if(S.tab==='tasks') renderTasksView(); }catch(e){}
     return d;
   }catch(e){ return null; }
 }
@@ -1308,7 +1311,10 @@ async function _autoAction(id, action){
   try{
     const d = await _autoApi('/auto/update', { id, action });
     _AUTOS = d.items || _AUTOS;
-    try{ if(S.tab==='automation') renderAutomationView(); }catch(e){}
+    /* The Tasks tab is 'tasks'; there has never been an 'automation' tab, so this
+       redraw never once fired and freshly-arrived results sat behind a badge on a
+       screen that was not repainted. */
+    try{ if(S.tab==='tasks') renderTasksView(); }catch(e){}
     return true;
   }catch(e){ if(typeof toast==='function') toast('Failed: '+e.message,'error',4000); return false; }
 }

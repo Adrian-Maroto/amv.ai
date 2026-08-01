@@ -461,6 +461,7 @@ function renderTasksView(){
         <p class="vsub">Start with something only AMV can do - or grab a ready-made task that opens a chat set up to deliver.</p>
       </div>
     </header>
+    ${_autoServerHTML()}
     <section class="uniq-sec">
       <div class="sec-head"><h3>Only on AMV</h3><span class="sec-sub">Capabilities a plain chatbot doesn't have</span></div>
       <div class="uniq-grid">${unique.map(ucard).join('')}</div>
@@ -472,6 +473,7 @@ function renderTasksView(){
       </section>`).join('')}
     </div>
   </div></div>`;
+  try{ _wireAutoServer(vc); }catch(e){}
 }
 function launchUnique(kind){
   const map={crew:'crew',dev:'dev',studio:'studio',lab:'lab',handoff:'handoff'};
@@ -871,6 +873,106 @@ function renderAutomationView(){
 ${taskList}
 </div>
 </div></div>`;
+}
+
+/* ── THE JOBS THAT ACTUALLY RUN ON THE SERVER ─────────────────────────────────
+
+   This screen used to render one thing: a queue held in this browser. The jobs
+   that run unattended on the server, and the results they produce while AMV is
+   shut, were fetched into `_AUTOS` / `_AUTO_RESULTS` and then displayed
+   nowhere - while the unread badge was pinned to THIS tab and the scheduling
+   confirmations said the result would be waiting here. So the product counted
+   results, pointed at this screen, and this screen did not have them.
+
+   They are rendered here, where the badge already sends people. */
+function _autoJobsNow(){ try{ return Array.isArray(_AUTOS) ? _AUTOS : []; }catch(e){ return []; } }
+function _autoResultsNow(){ try{ return Array.isArray(_AUTO_RESULTS) ? _AUTO_RESULTS : []; }catch(e){ return []; } }
+
+function _autoWhenLabel(it){
+  const every = { hourly:'every hour', daily:'every day', weekly:'every week',
+                  '10min':'every 10 minutes' }[it.repeat] || ('every ' + (it.repeat || 'day'));
+  let next = '';
+  try{ if(it.next) next = new Date(it.next).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }catch(e){}
+  return every + (next ? ' · next ' + next : '');
+}
+
+function _autoServerHTML(){
+  const jobs = _autoJobsNow(), results = _autoResultsNow();
+  /* No section at all when there is nothing. An empty "Running on the server"
+     box reads as "set up and idle", which is a different state from "you have
+     never scheduled anything" and would be a quiet lie about the former. */
+  if(!jobs.length && !results.length) return '';
+
+  const jobRows = jobs.map(it=>{
+    /* An investing check-in reads accounts directly. Calling that "writes a
+       result" would misdescribe the one job whose provenance matters most. */
+    const tag = it.kind === 'invest' ? 'Reads your accounts'
+              : it.kind === 'research' ? 'Searches the web' : 'Writes a result';
+    /* A recorded problem is shown as one. "It ran and could not read your bank"
+       is a different thing from "it is broken", and different again from the
+       silence that used to stand for both. */
+    const err = it.lastError
+      ? '<div class="asrv-err">Last run: '+escH(String(it.lastError))+'</div>' : '';
+    const runs = +it.runs||0;
+    return '<div class="asrv-job">'
+      +'<div class="asrv-top">'
+      +'<span class="asrv-name">'+escH(it.detail||'Scheduled job')+'</span>'
+      +'<span class="asrv-tag">'+escH(tag)+'</span>'
+      +'<span class="asrv-tag '+(it.active?'on':'off')+'">'+(it.active?'Active':'Paused')+'</span>'
+      +'</div>'
+      +'<div class="asrv-meta">'+escH(_autoWhenLabel(it))+' · run '+runs+' time'+(runs===1?'':'s')+'</div>'
+      + err
+      +'<div class="asrv-acts">'
+      +'<button class="btn bs asrv-b" data-auto-act="'+(it.active?'pause':'resume')+'" data-auto-id="'+escH(String(it.id))+'">'+(it.active?'Pause':'Resume')+'</button>'
+      +'<button class="btn bs asrv-b" data-auto-act="delete" data-auto-id="'+escH(String(it.id))+'">Delete</button>'
+      +'</div></div>';
+  }).join('');
+
+  const unread = results.filter(r=>!r.read).length;
+  const resRows = results.slice().sort((a,b)=>(b.at||0)-(a.at||0)).slice(0,20).map(r=>{
+    let when=''; try{ when=new Date(r.at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }catch(e){}
+    const body = String(r.out||'');
+    return '<div class="asrv-res'+(r.read?'':' unread')+'">'
+      +'<div class="asrv-top">'
+      +(r.read?'':'<span class="asrv-dot" aria-label="Unread"></span>')
+      +'<span class="asrv-name">'+escH(r.detail||'Scheduled job')+'</span>'
+      +'<span class="asrv-when">'+escH(when)+'</span></div>'
+      +'<div class="asrv-out" data-no-i18n>'
+      + escH(body.slice(0,2000)) + (body.length>2000?'\n...(truncated)':'')
+      +'</div></div>';
+  }).join('');
+
+  return '<section class="asrv">'
+    +'<div class="sec-head asrv-head"><h3>Running on the server</h3>'
+    +(unread?'<button class="btn bs asrv-b" data-auto-act="markread">Mark '+unread+' read</button>':'')
+    +'</div>'
+    +'<p class="vsub asrv-sub">These run whether or not AMV is open. Results appear here when each one finishes.</p>'
+    +(jobRows||'<div class="asrv-none">No scheduled jobs yet.</div>')
+    +(resRows?'<div class="asrv-lbl">Results</div>'+resRows:'')
+    +'</section>';
+}
+
+function _wireAutoServer(root){
+  root.querySelectorAll('[data-auto-act]').forEach(b=>{
+    b.addEventListener('click', async ()=>{
+      const act=b.dataset.autoAct, id=b.dataset.autoId;
+      b.disabled=true;
+      try{
+        if(act==='markread'){ await _autoMarkRead(); }
+        else if(act==='delete'){
+          /* Deleting a running job is not undoable from here, so it is asked
+             about rather than done on a single tap. */
+          if(typeof confirm==='function' && !confirm('Delete this scheduled job? It will stop running.')){ b.disabled=false; return; }
+          await _autoAction(id,'delete');
+        }
+        else await _autoAction(id, act);
+        renderTasksView();
+      }catch(e){
+        b.disabled=false;
+        if(typeof toast==='function') toast('Could not update that job: '+((e&&e.message)||'try again'),'error',4500);
+      }
+    });
+  });
 }
 
 /* 8. CUSTOM TASK MODAL - dark background guaranteed */

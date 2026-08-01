@@ -142,7 +142,7 @@ const AMV_API = {
     // state-creating endpoints. Metered/idempotent POSTs (AI proxy, sync) still retry.
     const noRetry = o.noRetry || /^\/auth\//.test(path)
       || /\/(stripe|paypal|pay|subscribe|capture)/.test(path)
-      || /\/(family\/(limits|remove)|team\/(invite|join|remove|leave|role|share|unshare|data|task\/(create|update))|market\/(publish|buy|withdraw|review|install)|deploy|sms\/register|widget\/save)/.test(path);
+      || /\/(family\/(limits|remove|leave)|team\/(invite|join|remove|leave|role|share|unshare|data|task\/(create|update))|market\/(publish|buy|withdraw|review|install)|deploy|sms\/register|widget\/save)/.test(path);
     const MAX = noRetry ? 0 : 2;        // up to 2 retries (3 total attempts)
 
     /* AMV-061: a request with no deadline can hang forever.
@@ -406,6 +406,7 @@ const AMV_API = {
      here for reading a child's conversations, because no such route exists. */
   async familyGet(){ const r=await this._fetch('/v1/family/get',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
   async familyLimits(child,limits){ const r=await this._fetch('/v1/family/limits',{method:'POST',body:JSON.stringify({child,limits})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
+  async familyLeave(){ const r=await this._fetch('/v1/family/leave',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
   async familyRemove(child){ const r=await this._fetch('/v1/family/remove',{method:'POST',body:JSON.stringify({child})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
   async portal(customer){ const r=await this._fetch('/v1/stripe/portal',{method:'POST',body:JSON.stringify({customer})}); const d=await r.json(); if(!r.ok||!d.url) throw new Error(d.error||'Could not open billing.'); return d.url; },
 };

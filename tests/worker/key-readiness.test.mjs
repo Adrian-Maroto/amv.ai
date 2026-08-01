@@ -16,6 +16,18 @@ const harness = join(__dir, '.build', 'keys.harness.mjs');
 writeFileSync(harness, src + '\nexport { financeRoute, linkInvite, browserRun };\n');
 const W = await import(harness + '?t=' + Date.now());
 
+/* Slice a whole function, bounded by the NEXT top-level declaration rather than
+   a character count. A fixed window silently stops covering the tail of a
+   function the moment somebody lengthens a string inside it, and then reports
+   the missing tail as a security regression - which is exactly the wrong alarm
+   to cry wolf on. */
+const fnBody = (name) => {
+  const at = src.indexOf('async function ' + name);
+  if (at < 0) return '';
+  const next = src.slice(at + 1).search(/\n(?:async )?function [A-Za-z_$]/);
+  return next < 0 ? src.slice(at) : src.slice(at, at + 1 + next);
+};
+
 const KV = () => ({ get: async () => null, put: async () => {}, delete: async () => {}, list: async () => ({ keys: [] }) });
 const req = (body) => new Request('https://x/v1/test', { method: 'POST', body: JSON.stringify(body || {}) });
 
@@ -92,13 +104,14 @@ ok(!/\/transfer|\/payments\/create|payment_initiation/.test(src),
 
 section('Sensitive routes require auth and are rate limited');
 [['financeRoute', 'finance:'], ['linkInvite', 'linkinv:'], ['browserRun', 'webagent:']].forEach(([fn, key]) => {
-  const body = src.slice(src.indexOf('async function ' + fn), src.indexOf('async function ' + fn) + 1400);
+  const body = fnBody(fn);
   ok(/requireUser\(request, env\)/.test(body), `${fn} requires a signed-in user`, fn);
   ok(body.includes("guardAction(env, '" + key), `${fn} is rate limited`, key);
 });
 
 section('The link code goes to the account being accessed, never the requester');
-const linkBody = src.slice(src.indexOf('async function linkInvite'), src.indexOf('async function linkInvite') + 2600);
+const linkBody = fnBody('linkInvite');
+ok(linkBody.includes('api.resend.com'), 'the slice actually reaches the send itself', linkBody.length);
 ok(/to:\[owner\]/.test(linkBody), 'the confirmation email is addressed to the OWNER');
 ok(!/to:\[user\.email\]/.test(linkBody), 'never to the person requesting access');
 ok(/crypto\.getRandomValues/.test(linkBody), 'the code uses a real CSPRNG, not Math.random');

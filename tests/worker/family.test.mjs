@@ -26,7 +26,7 @@ const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'family.harness.mjs');
 writeFileSync(harness, src + `
-export { familyGet, familySetLimits, familyRemove, linkInvite, linkAccept,
+export { familyGet, familySetLimits, familyRemove, familyLeave, linkInvite, linkAccept,
          marketBuy, marketWithdraw, requireUser, setEntitlement, issueTokens,
          _familyOf, _familyLimitsOf, DB, FAMILY_DEFAULTS, FAMILY_MAX_CHILDREN };
 `);
@@ -157,6 +157,55 @@ section('A parent cannot read their child’s conversations');
   /* The strongest form of the promise: no route exists that would serve it. */
   ok(!/family\/(convs|messages|chats|transcripts)/.test(src),
      'there is no route that would return a child’s conversations');
+}
+
+section('The account holder can always get out');
+{
+  /* Only the parent could end a membership. That is defensible for an actual
+     parent and dangerous for AMV, which cannot tell a parent from a stranger -
+     the consent step is one word in an email. Somebody who accepted an
+     invitation they did not fully understand was capped, blocked from buying
+     and blocked from withdrawing money they had EARNED, permanently.
+
+     It is not a hole in parental control either: a minor who wants out can open
+     a new account in a minute, so the lock was never holding anyone. All it did
+     was make the abuse case unfixable. */
+  const inv = await W.linkInvite(req({ owner: 'trapped@x.com', id: 'i9', scopes: ['family'] }, parentTok), env);
+  const rec = await W.DB.get(env, 'link', 'trapped@x.com|i9');
+  const trappedTok = await tok('trapped@x.com');
+  await W.linkAccept(req({ id: 'i9', code: rec.code }, trappedTok), env);
+  ok(!!(await W._familyOf(env, 'trapped@x.com')), 'they are in the family');
+
+  const out = await W.familyLeave(req({}, trappedTok), env);
+  ok(out.status === 200, 'and they can leave on their own', out.status);
+  ok((await W._familyOf(env, 'trapped@x.com')) === null, 'so they are out');
+
+  const ent = await W.DB.get(env, 'ent', 'trapped@x.com');
+  ok(!ent.familyOf, 'with the marker every check reads gone, so the limits stop applying');
+
+  const fam = await W.DB.get(env, 'fam', 'parent@x.com');
+  ok(!(fam.members || []).some(m => m.email === 'trapped@x.com'),
+     'and the family no longer lists them');
+
+  const again = await W.familyLeave(req({}, trappedTok), env);
+  ok(again.status === 404, 'leaving twice is not an error worth inventing state for', again.status);
+
+  const solo = await W.familyLeave(req({}, await tok('nobody2@x.com')), env);
+  ok(solo.status === 404, 'and somebody in no family is told so plainly', solo.status);
+}
+
+section('The invitation says what it actually does');
+{
+  /* "is asking to access your AMV account for: family" tells the reader
+     nothing about what they are agreeing to. They are deciding whether to hand
+     somebody control of their money settings, so the email says that. */
+  ok(/wants to add you to their AMV family/.test(src), 'it names what is being asked');
+  ok(/how much AMV may spend on your account each month/.test(src), 'and the spending control');
+  ok(/whether you can withdraw money you earn/.test(src), 'and the one that touches money they earned');
+  ok(/CANNOT read your conversations/.test(src), 'along with the limit on what they get to see');
+  ok(/You can leave at any time/.test(src), 'and that it is reversible, which is the thing that makes it safe to accept');
+  ok(/wants to manage what your AMV account can spend/.test(src),
+     'and the subject line says it before the email is even opened');
 }
 
 section('Removing a child lifts the limits with them');

@@ -560,3 +560,54 @@ people who signed up, how many ever got value, came back, and paid" - so first
 screens, activation nudges and onboarding copy were all judged on feel. The
 funnel is four cumulative counters, each marked once per user off the event that
 actually proves the step, so the ratios stay exact with no scan.
+
+## 66. Scheduling a job is not the same as being able to do it
+The investing check-in created a real server automation, the tests proved the
+job existed, and the screen said it would run every morning. But the cron hands
+`item.detail` to a model whose only tool is web search - it cannot read a
+brokerage account. So the one thing the feature promised was the one thing it
+could not do, and its two available outcomes were an apology every morning or an
+invented figure about somebody's retirement. A check-in is now `kind:'invest'`
+and the cron runs the real read itself, so the numbers come from the institution
+or are absent. The general rule: when scheduling something, check what the
+RUNNER can do, not just that the job was accepted. "The job exists" is the
+easiest thing to test and the least of what was promised.
+
+## 67. A fixed-width source slice is a test that eventually cries wolf
+`key-readiness` asserted the link email is addressed to the owner by slicing
+2600 characters from the start of `linkInvite`. Lengthening a string inside that
+function pushed `to:[owner]` past the window, and the gate reported a security
+regression in an unchanged line. A test that fails for the wrong reason is worse
+than no test: the next real failure looks like the same false alarm. Slice
+functions by their next declaration, and assert the slice reached the thing
+being checked.
+
+## 68. Two of the three states of a schedule were lies
+The investing pane wrote the chosen frequency to localStorage and posted a new
+server job. Choosing daily and then weekly created two jobs and deleted neither,
+so the buttons showed one schedule while two ran. "Stop" cleared the local key
+and said "AMV will not check on its own" while the server kept checking. Any
+control over remote state has to remember the id of what it created, delete it
+before replacing it, and say what happened only AFTER the server agrees -
+including the case where the delete fails and the old job is still running.
+
+## 69. Three things pointed at a screen that did not have them
+Server automations ran, produced answers, and were fetched into `_AUTOS` and
+`_AUTO_RESULTS`. The unread badge was pinned to the Tasks nav item, and every
+scheduling confirmation said the result would be waiting in Tasks. The Tasks
+screen rendered a queue held in localStorage and nothing else. The only screen
+that DID render those results guarded on `S.tab==='automation'` - a tab value
+that has never existed, so `renderAutomationView` was unreachable and its two
+refresh hooks never fired once. Nothing threw; a badge simply led nowhere. When
+a count, a badge, and a confirmation all name a destination, open that
+destination and read it - the pointer is cheap to write and no test asserts the
+thing pointed at is there.
+
+## 70. A hardcoded colour is a second theme waiting to be wrong
+`.sec-head h3` was `color:#e6edf3`, picked when AMV had only a dark theme. Every
+section heading in the product - "Only on AMV" included - rendered as pale grey
+on white the moment the light theme existed, and it had presumably been that way
+for as long as the light theme had. Nothing failed and no test covers colour, so
+it survived until a screenshot was taken in both themes. The token was already
+correct in both. Screenshot BOTH themes for any screen touched; a value a token
+already covers must never be written literally.

@@ -7552,3 +7552,51 @@ html,body{height:100%;height:100dvh}
 /* A figure kept on screen after a failed refresh has to say so. */
 .inv-stale{font-size:var(--t-xs);color:var(--gold);font-weight:600;
   margin-bottom:var(--sp-2)}
+
+/* ==========================================================================
+   LAYER A56 - The jobs that run while AMV is shut
+
+   The Tasks screen counted background results in a badge and pointed every
+   scheduling confirmation at itself, then rendered a queue held in this
+   browser and nothing else. This is the section that makes those three
+   statements true. Built on tokens rather than the hardcoded dark rgba the
+   old (unreachable) automation view used, so it is readable in both themes.
+   ========================================================================== */
+.asrv{margin:0 0 var(--sp-6)}
+.asrv-head{display:flex;align-items:center;justify-content:space-between;
+  gap:var(--sp-3);flex-wrap:wrap;margin-bottom:var(--sp-1)}
+.asrv-sub{margin:0 0 var(--sp-4)}
+.asrv-b{font-size:var(--t-xs);padding:var(--sp-2) var(--sp-3);min-height:36px}
+.asrv-none{font-size:var(--t-sm);color:var(--mu);margin-bottom:var(--sp-2)}
+.asrv-lbl{font-size:var(--t-xs);font-weight:600;color:var(--mu);
+  text-transform:uppercase;letter-spacing:.05em;margin:var(--sp-5) 0 var(--sp-2)}
+
+.asrv-job,.asrv-res{background:var(--s2);border:1px solid var(--bd);
+  border-radius:var(--r-md);padding:var(--sp-3);margin-bottom:var(--sp-2)}
+.asrv-res.unread{border-color:var(--accent)}
+.asrv-top{display:flex;align-items:center;gap:var(--sp-2);flex-wrap:wrap}
+.asrv-name{font-size:var(--t-base);font-weight:600;color:var(--tx);
+  flex:1 1 180px;min-width:0;overflow-wrap:anywhere}
+.asrv-when{font-size:var(--t-xs);color:var(--dim);flex:0 0 auto}
+.asrv-dot{width:7px;height:7px;border-radius:50%;background:var(--accent);flex:0 0 auto}
+.asrv-tag{font-size:var(--t-xs);color:var(--mu);background:var(--s3);
+  border-radius:var(--r-pill);padding:2px var(--sp-2);flex:0 0 auto}
+.asrv-tag.on{color:var(--grn)}
+.asrv-meta{font-size:var(--t-xs);color:var(--mu);margin-top:var(--sp-1)}
+/* A job that ran and could not finish is a warning, not an error - it is still
+   scheduled and will try again. */
+.asrv-err{font-size:var(--t-xs);color:var(--gold);margin-top:var(--sp-1)}
+.asrv-acts{display:flex;gap:var(--sp-2);margin-top:var(--sp-2);flex-wrap:wrap}
+
+/* The answer itself, readable in place. Long output scrolls inside its own box
+   rather than pushing the page sideways on a phone. */
+.asrv-out{font-size:var(--t-sm);color:var(--tx);background:var(--s1);
+  border-radius:var(--r-sm);padding:var(--sp-3);margin-top:var(--sp-2);
+  max-height:240px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;
+  line-height:1.65}
+
+/* `.sec-head h3` hardcoded #e6edf3 - a near-white chosen when there was only a
+   dark theme. On the light theme every section heading in the product rendered
+   as pale grey on white, including "Only on AMV" and this one. The token is
+   already the right colour in both themes. */
+.sec-head h3{color:var(--tx)}

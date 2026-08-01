@@ -257,11 +257,30 @@ function _famChildHTML(st){
       '<div><span class="fam-mine-k">Taking money out</span><span class="fam-mine-v">'+(L.payouts?'On':'Off')+'</span></div>'+
     '</div>'+
     '<p class="fam-p fam-quiet">Only they can change these. Ask them if you need more.</p>'+
+    /* The way out. Without it, accepting an invitation once meant somebody else
+       controlled this account's spending permanently - and AMV cannot tell a
+       parent from a stranger who talked you into it. */
+    '<button class="btn bs" id="fam-leave" style="font-size:12px;color:var(--red);border-color:var(--red)">Leave this family</button>'+
+    '<div class="fam-say" id="fam-leave-say" role="status" aria-live="polite"></div>'+
   '</div>';
 }
 
 /* Wire the parent's controls. Each save sends only that child's settings, so
    two rows open at once cannot overwrite each other. */
+function _wireFamilyChild(pane){
+  on($('fam-leave'),'click',async()=>{
+    const say=$('fam-leave-say');
+    if(typeof confirm==='function' &&
+       !confirm('Leave this family? Their limits stop applying to you, and they stop paying for your AMV.')) return;
+    const b=$('fam-leave'); if(b){ b.disabled=true; b.textContent='Leaving\u2026'; }
+    try{ await AMV_API.familyLeave(); _FAM_STATE=null; _renderFamilyPane(pane); }
+    catch(e){
+      if(b){ b.disabled=false; b.textContent='Leave this family'; }
+      if(say) say.textContent=((e&&e.message)?e.message+' ':'')+'You are still in the family.';
+    }
+  });
+}
+
 function _wireFamilyParent(pane){
   pane.querySelectorAll('[data-fam-save]').forEach(b=>on(b,'click',async()=>{
     const em=b.dataset.famSave;
@@ -414,6 +433,7 @@ function _renderFamilyPane(pane){
   }));
 
   _wireFamilyParent(pane);
+  _wireFamilyChild(pane);
   if(needState && window.AMV_API && AMV_API.live && AMV_API.token){
     AMV_API.familyGet()
       .then(d => { _FAM_STATE = d; _renderFamilyPane(pane); })
