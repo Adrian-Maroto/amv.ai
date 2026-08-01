@@ -1239,6 +1239,12 @@ async function _scheduleTask(t){
     if(typeof d.emailReady === 'boolean') _AUTO_EMAIL_READY = d.emailReady;
     _AUTOS = d.item ? (_AUTOS||[]).concat(d.item) : _AUTOS;
     _AUTO_CAN_SCHEDULE = true;
+    /* A free account gets one weekly job without live research. Say what it
+       actually got, and what removes the limit - a silently different result is
+       the thing this whole path exists to avoid. */
+    if(d.shaped && d.shapedWhy && typeof toast==='function'){
+      toast(d.shapedWhy, 'info', 8000);
+    }
     /* Say which of the two things actually happens, because they are different
        promises. Emailed means they never have to come back to find out; in-app
        means it is waiting in Tasks and they do. */
@@ -1253,7 +1259,7 @@ async function _scheduleTask(t){
   }catch(e){
     /* A plan that cannot run background work is not an error to swallow - it is
        the one case where the user can fix it, so it points at the fix. */
-    if(e.code === 'plan_required' || /paid plan/i.test(e.message||'')){
+    if(e.code === 'plan_required' || e.code === 'plan_limit' || /paid plan/i.test(e.message||'')){
       _AUTO_CAN_SCHEDULE = false;
       if(typeof toast==='function') toast(e.message || 'Background automations need a paid plan.','info',7000);
       try{ if(typeof setTab==='function'){ S.tab='plans'; setTab('plans'); } }catch(_){}

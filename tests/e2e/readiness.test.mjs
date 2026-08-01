@@ -7,6 +7,7 @@
    secret and answered confidently anyway. */
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { overflowingElement } from '../lib/layout.mjs';
 
 const app = await bootApp({ tab: 'settings' });
 const { page, errors } = app;
@@ -148,10 +149,9 @@ section('It reads on a phone');
   await openPlatform();
   await page.waitForFunction(() => /AI engine/.test(document.getElementById('golive-body').textContent), { timeout: 15000 });
   const m = await page.evaluate(() => ({
-    overflow: document.documentElement.scrollWidth <= window.innerWidth + 1,
-    cmdScrolls: getComputedStyle(document.querySelector('.gl-cmd')).overflowX,
+        cmdScrolls: getComputedStyle(document.querySelector('.gl-cmd')).overflowX,
   }));
-  ok(m.overflow, 'the page does not scroll sideways');
+  ok((await overflowingElement(page)) === null, 'nothing overflows the screen', await overflowingElement(page));
   ok(m.cmdScrolls === 'auto', 'a long command scrolls inside its own box instead of stretching the page', m.cmdScrolls);
   await page.setViewportSize({ width: 1280, height: 900 });
 }

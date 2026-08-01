@@ -10,6 +10,7 @@
    The panel could not load. That is the bug these assertions pin. */
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { overflowingElement } from '../lib/layout.mjs';
 
 const app = await bootApp({ tab: 'settings' });
 const { page, errors } = app;
@@ -129,14 +130,13 @@ section('It works on a phone');
     const r = i.getBoundingClientRect();
     return {
       fits: r.right <= window.innerWidth + 1 && r.width > 100,
-      overflow: document.documentElement.scrollWidth <= window.innerWidth + 1,
-      labelled: !!document.querySelector('label[for="adm-tok"]'),
+            labelled: !!document.querySelector('label[for="adm-tok"]'),
       masked: i.type === 'password',
       noAutofill: i.getAttribute('autocomplete') === 'off',
     };
   });
   ok(m.fits, 'the field fits the screen');
-  ok(m.overflow, 'and the page does not scroll sideways');
+  ok((await overflowingElement(page)) === null, 'and nothing overflows the screen', await overflowingElement(page));
   ok(m.labelled, 'it has a real label for screen readers');
   ok(m.masked, 'the secret is masked');
   ok(m.noAutofill, 'and browsers are told not to save it');

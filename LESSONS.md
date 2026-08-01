@@ -389,3 +389,33 @@ saw. Someone sharing a conversation with one person does not expect a search
 result. So the growth is offered, with the permanence stated next to the
 control, and never taken by default - including for anything created before the
 choice existed, where silence is not consent.
+
+## 41. A test that cannot fail is worse than no test
+Every mobile assertion in this session used
+`documentElement.scrollWidth <= window.innerWidth`. Both `html` and `body`
+carry `overflow-x: hidden`, so the document can never report a scroll width
+wider than the viewport - a 900px element on a 390px phone measures as zero
+overflow. Six suites were asserting nothing at all, confidently. Before
+trusting a new assertion, break the thing on purpose and watch it go red;
+if it does not, the assertion is decoration. Measuring from element geometry
+found a real 43px clipped toolbar within a minute of being fixed.
+
+## 42. Clipped overflow is worse than scrolling overflow
+Because the page hides horizontal overflow rather than scrolling it, anything
+past the right edge is not awkward - it is unreachable. That makes width
+regressions silent for users as well as for tests.
+
+## 43. Writing a payout record nothing ever reads destroys the money
+A seller could withdraw: the balance was zeroed, a debit was logged, and the
+request was written to a key with no reader anywhere in the product. No
+endpoint, no screen, no way to mark it paid. The money left the seller and
+arrived nowhere, and the operator had no idea they owed anyone. Any write that
+represents an obligation needs a reader and a settlement path shipped in the
+same change, and refusing one has to return what was taken.
+
+## 44. Charging for the thing that creates the habit
+Background automations - the strongest reason anyone returns - were entirely
+behind the paywall, so the users most likely to churn were the only ones who
+never saw one. You cannot convert someone who never found out what they were
+converting to. One free weekly job on the cheapest engine, with a hard
+ceiling of cents, is a marketing budget rather than a leak.

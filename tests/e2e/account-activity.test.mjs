@@ -8,6 +8,7 @@
    rather than showing a reassuring blank. */
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { overflowingElement } from '../lib/layout.mjs';
 
 const app = await bootApp({ tab: 'settings', user: { name: 'Alice', email: 'alice@x.com', ini: 'A' } });
 const { page, errors } = app;
@@ -150,12 +151,11 @@ section('It works on a phone');
   await openSecurity();
   await page.waitForSelector('.act-row', { timeout: 4000 });
   const m = await page.evaluate(() => ({
-    overflow: document.documentElement.scrollWidth <= window.innerWidth + 1,
-    btn: document.getElementById('act-signout-all').getBoundingClientRect().width,
+        btn: document.getElementById('act-signout-all').getBoundingClientRect().width,
     live: document.getElementById('act-say').getAttribute('aria-live'),
     alert: document.querySelector('.act-alert')?.getAttribute('role'),
   }));
-  ok(m.overflow, 'the page does not scroll sideways');
+  ok((await overflowingElement(page)) === null, 'nothing overflows the screen', await overflowingElement(page));
   ok(m.btn > 200, 'the sign-out button is a full-width target, not a tap-sized sliver', Math.round(m.btn));
   ok(m.live === 'polite', 'results are announced to screen readers');
   ok(m.alert === 'alert', 'and the failed-sign-in warning is announced as one');

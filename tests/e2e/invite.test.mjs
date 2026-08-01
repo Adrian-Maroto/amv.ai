@@ -7,6 +7,7 @@
    instant payout, and that it degrades honestly when there is no server. */
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { overflowingElement } from '../lib/layout.mjs';
 
 const app = await bootApp({ tab: 'settings', user: { name: 'Alice', email: 'alice@x.com', ini: 'A' } });
 const { page, errors } = app;
@@ -141,14 +142,13 @@ section('It works on a phone, and by keyboard');
     const label = document.querySelector('label[for="ref-link"]');
     return {
       inView: r.right <= window.innerWidth + 1 && r.width > 100,
-      overflow: document.documentElement.scrollWidth <= window.innerWidth + 1,
-      labelled: !!label && label.textContent.length > 0,
+            labelled: !!label && label.textContent.length > 0,
       readonly: f.readOnly,
       live: document.getElementById('ref-say').getAttribute('aria-live'),
     };
   });
   ok(m.inView, 'the link field fits the screen');
-  ok(m.overflow, 'and the page does not scroll sideways');
+  ok((await overflowingElement(page)) === null, 'and nothing overflows the screen', await overflowingElement(page));
   ok(m.labelled, 'the field has a real label for screen readers');
   ok(m.readonly, 'and cannot be edited into something misleading');
   ok(m.live === 'polite', 'the copy result is announced, not only shown');

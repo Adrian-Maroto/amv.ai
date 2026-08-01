@@ -11,6 +11,7 @@
    something read just because it rendered. */
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { overflowingElement } from '../lib/layout.mjs';
 
 const app = await bootApp({ tab: 'chat', user: { name: 'Alice', email: 'alice@x.com', ini: 'A' } });
 const { page, errors } = app;
@@ -160,13 +161,12 @@ section('It reads on a phone');
     const btn = document.querySelector('[data-away-dismiss]').getBoundingClientRect();
     return {
       fits: r.right <= window.innerWidth + 1,
-      overflow: document.documentElement.scrollWidth <= window.innerWidth + 1,
-      tap: btn.height,
+            tap: btn.height,
       labelled: c.getAttribute('aria-label'),
     };
   });
   ok(m.fits, 'the card fits the screen');
-  ok(m.overflow, 'and the page does not scroll sideways');
+  ok((await overflowingElement(page)) === null, 'and nothing overflows the screen', await overflowingElement(page));
   ok(m.tap >= 22, 'the actions are real tap targets', Math.round(m.tap));
   ok(/away/i.test(m.labelled || ''), 'the region is named for screen readers', m.labelled);
   await page.setViewportSize({ width: 1280, height: 900 });

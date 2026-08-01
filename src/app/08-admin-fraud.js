@@ -375,9 +375,18 @@ function _adminAbuseSignals(){
    backend-fed panels where production infra is required (clearly
    labeled - never fabricated numbers).
    ============================================================ */
+/* AMV-090: the operator had two homes. Money owed to sellers, the weekly
+   digest and go-live readiness lived only under Settings; everything else lived
+   here. Nothing said which screen to use, so half the operator's job was
+   somewhere they had no reason to look.
+
+   Rather than deleting either surface, the three that were stranded are
+   rendered HERE too, from the same functions - so there is one place to run the
+   business, and Settings keeps working for anyone already using it. */
 const _ADMIN_TABS=[
-  ['overview','Overview'],['users','Users'],['finance','Finance'],['revenue','Revenue'],['ai','AI & Usage'],
-  ['infra','Infrastructure'],['security','Security'],['fraud','Fraud Monitor'],['product','Product'],['growth','Growth']
+  ['overview','Overview'],['business','Business'],['users','Users'],['finance','Finance'],['revenue','Revenue'],
+  ['ai','AI & Usage'],['infra','Infrastructure'],['security','Security'],['fraud','Fraud Monitor'],
+  ['product','Product'],['growth','Growth']
 ];
 function _admMetrics(){
   // gather everything we can from real local/AEGIS data
@@ -583,6 +592,21 @@ function _admRenderTab(tab, backendLive, live){
   const cap=(typeof AEGIS!=='undefined'&&AEGIS.cfg)?AEGIS.cfg.dailyTokenCap:2000000;
   const used=u.inTok+u.outTok; const pct=Math.min(used/cap*100,100);
   const errRate=u.reqs?((u.errors/u.reqs)*100):0;
+
+  if(tab==='business'){
+    /* The three operator jobs that used to live only in Settings. Same
+       functions, so they can never drift apart from the other screen. */
+    el.innerHTML =
+      '<div id="fd-payouts"><div class="fd-loading">Checking what is owed\u2026</div></div>'+
+      (typeof _digestCardHTML==='function' ? _digestCardHTML() : '')+
+      '<div class="ss2"><h3>Go-live status</h3>'+
+        '<div class="golive" id="golive-body"><div class="fd-loading">Checking your deployment\u2026</div></div>'+
+      '</div>';
+    try{ if(typeof _wireDigestCard==='function') _wireDigestCard(); }catch(e){}
+    try{ if(typeof _loadPayouts==='function') _loadPayouts(); }catch(e){}
+    try{ if(typeof _loadReadiness==='function') _loadReadiness(); }catch(e){}
+    return;
+  }
 
   if(tab==='overview'){
     const ab=_adminAbuseSignals();

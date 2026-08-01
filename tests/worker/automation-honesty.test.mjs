@@ -23,7 +23,8 @@ const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'autohonesty.harness.mjs');
 writeFileSync(harness, src + `
-export { autoCreate, autoList, _autoBudget, setEntitlement, signToken, DB, AUTO_MAX_PER_USER, _autoEmailResult };
+export { autoCreate, autoList, _autoBudget, setEntitlement, signToken, DB, AUTO_MAX_PER_USER,
+         _autoEmailResult, _autoExecute, FREE_AUTO_MAX, FREE_AUTO_REPEAT, FREE_AUTO_CEILING_USD, ENGINES };
 `);
 const W = await import(harness + '?t=' + Date.now());
 
@@ -48,18 +49,59 @@ const list = (env, token) => W.autoList(new Request('https://w/auto/list', {
 
 const DAILY = { detail: 'Brief me on the semiconductor market', repeat: 'daily', kind: 'research' };
 
-section('An account that cannot run background work is told, at the moment it asks');
+section('A free account gets one automation, shaped rather than refused');
+{
+  /* AMV-087: background work is the strongest reason anyone comes back, and it
+     used to be entirely behind the paywall - so the people most likely to churn
+     were the only ones who never saw it. You cannot convert someone who never
+     found out what they were converting to. */
+  const env = makeEnv();
+  const token = await tokenFor(env, 'free@x.com');
+  const d = await (await create(env, token, DAILY)).json();
+  ok(d.ok === true, 'a free account really can schedule one', d.ok);
+  ok(d.free === true, 'and is told which tier it is on');
+  ok(d.item.repeat === W.FREE_AUTO_REPEAT, 'it runs weekly, not daily as asked', d.item.repeat);
+  ok(d.item.kind === 'task', 'and without live research, which is the expensive part', d.item.kind);
+  ok(d.shaped === true, 'the difference from what was asked is reported, not slipped through');
+  ok(/without live web search/i.test(d.shapedWhy), 'in words, with the upgrade that removes it', d.shapedWhy);
+
+  const after = await (await list(env, token)).json();
+  ok((after.items || []).length === 1, 'and it is really there');
+  ok(after.canSchedule === true, 'a free account is no longer told it cannot schedule at all');
+}
+
+section('The second one is where the upgrade is asked for');
 {
   const env = makeEnv();
   const token = await tokenFor(env, 'free@x.com');
-  const r = await create(env, token, DAILY);
+  await create(env, token, DAILY);
+  const r = await create(env, token, { detail: 'Another one', repeat: 'daily' });
   const d = await r.json();
-  ok(r.status === 402, 'the request is refused rather than accepted and quietly killed later', r.status);
-  ok(d.code === 'plan_required', 'with a code the app can act on, not prose it has to match', d.code);
-  ok(/paid plan/i.test(d.error), 'and a reason a person can read', d.error);
+  ok(r.status === 402, 'a second automation is refused', r.status);
+  ok(d.code === 'plan_limit', 'with a code the app can act on', d.code);
+  ok(/one automation/i.test(d.error) && /Upgrade/.test(d.error), 'and an offer, not just a no', d.error);
+  ok((await (await list(env, token)).json()).items.length === 1, 'nothing extra is left behind');
+}
 
-  const after = await (await list(env, token)).json();
-  ok((after.items || []).length === 0, 'and nothing is left behind pretending to be scheduled');
+section('The free tier costs cents, by construction');
+{
+  const env = makeEnv();
+  const b = W._autoBudget({ plan: 'free' });
+  ok(b.free === true && b.max === W.FREE_AUTO_MAX, 'one automation', b);
+  ok(b.ceiling === W.FREE_AUTO_CEILING_USD && b.ceiling <= 0.25,
+     'against a hard monthly ceiling of a few cents - a marketing budget, not a leak', b.ceiling);
+
+  /* And it runs on the cheapest engine, which is the other half of the cost. */
+  let sent = null;
+  const real = globalThis.fetch;
+  globalThis.fetch = async (url, init) => { sent = JSON.parse(init.body); return new Response(JSON.stringify({ content: [{ type:'text', text:'ok' }], usage:{} }), { status: 200 }); };
+  try {
+    await W._autoExecute(Object.assign(makeEnv(), { ANTHROPIC_API_KEY: 'k' }),
+      { kind: 'research', detail: 'watch the market', tier: 'free' }, b);
+  } finally { globalThis.fetch = real; }
+  ok(sent.model === W.ENGINES['amv-pulse'].model, 'the cheapest engine runs it', sent.model);
+  ok(!sent.tools, 'and it never searches the web, even if the job was created as research', sent.tools);
+  ok(sent.max_tokens <= 1200, 'writing a bounded amount', sent.max_tokens);
 }
 
 section('A paying account schedules normally');
@@ -73,20 +115,24 @@ section('A paying account schedules normally');
   ok(d.item.repeat === 'daily', 'on the schedule that was asked for', d.item.repeat);
 }
 
-section('A lapsed subscription cannot keep scheduling new background work');
+section('A lapsed subscription drops to the free allowance, not the paid one');
 {
   /* _planOf drops a plan to free once the grace period is past. The budget has
-     to read the plan as it stands now, not the one that was sold. */
+     to read the plan as it stands now, not the one that was sold - otherwise a
+     dead card keeps buying daily background work for three weeks. */
   const env = makeEnv();
   await W.setEntitlement(env, 'lapsed@x.com', 'pro');
   const ent = await W.DB.get(env, 'ent', 'lapsed@x.com');
-  ent.pastDueSince = Date.now() - 30 * 86400000;
+  ent.pastDueSince = Date.now() - 60 * 86400000;
   await W.DB.put(env, 'ent', 'lapsed@x.com', ent);
 
+  const b = W._autoBudget(ent);
+  ok(b.free === true, 'the budget follows the effective plan, not the sold one', b);
+  ok(b.ceiling === W.FREE_AUTO_CEILING_USD, 'so it spends cents, not a paid ceiling', b.ceiling);
+
   const token = await tokenFor(env, 'lapsed@x.com');
-  const r = await create(env, token, DAILY);
-  ok(r.status === 402, 'a long-lapsed account is refused like any other unpaid one', r.status);
-  ok(W._autoBudget(ent).ceiling === 0, 'because the budget follows the effective plan', W._autoBudget(ent));
+  const d = await (await create(env, token, DAILY)).json();
+  ok(d.item.repeat === W.FREE_AUTO_REPEAT, 'and anything new is shaped to the free tier', d.item.repeat);
 }
 
 section('Email delivery is offered only where it can actually happen');
@@ -117,8 +163,8 @@ section('The app is told what it may promise before it promises anything');
   ok(paid.emailReady === true, 'and results can reach an inbox');
 
   const free = await (await list(env, await tokenFor(env, 'free2@x.com'))).json();
-  ok(free.canSchedule === false, 'a free account is told up front that it cannot', free.canSchedule);
-  ok(free.plan === 'free', 'along with the plan that decided it', free.plan);
+  ok(free.canSchedule === true, 'a free account CAN schedule now - one, weekly', free.canSchedule);
+  ok(free.plan === 'free', 'along with the plan that decided the allowance', free.plan);
 }
 
 section('The capability report leaks nothing');

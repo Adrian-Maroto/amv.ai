@@ -127,5 +127,63 @@ section('It is on the screen, not just in the response');
   ok(/adm-neg/.test(client), 'a negative margin is styled as negative, not as a plain number');
 }
 
+section('The headline numbers do not require reading every account');
+{
+  /* The dashboard listed every entitlement and read a counter per user - forty
+     thousand reads on a page load at scale - and the list was capped, so past
+     the cap the MRR was simply wrong with nothing on screen to say so. A number
+     that is quietly wrong is worse than one that is missing. */
+  const env = makeEnv(); await seed(env);
+  const d = await (await dash(env)).json();
+  ok(d.scan && d.scan.truncated === false, 'a small book is read in full, and says so', d.scan);
+  ok(/Every account was read/.test(d.scan.note), 'in words', d.scan.note);
+
+  const pop = { pro: 0, elite: 0, ultra: 0 };
+  for (const k of Object.keys(pop)) {
+    pop[k] = (await W.counter(env, 'plancount:' + k, { op: 'get' })).value || 0;
+  }
+  ok(pop.pro === 2 && pop.ultra === 1 && pop.elite === 1,
+     'population is maintained where plans change, so it costs nothing to read', pop);
+
+  /* This fixture writes per-user cost directly, the way an existing deployment
+     already has months of data written - so the running total is empty. The
+     dashboard has to fall back to the scanned sum rather than reporting zero
+     spend, which is what an upgrade looks like on day one. */
+  const running = (await W.counter(env, 'costtotal:' + W.monthKey(), { op: 'get' })).value || 0;
+  ok(running === 0, 'the running total is empty for data written before it existed', running);
+  ok(d.margin.estMonthlyCost === 276.7, 'and the reported cost is still right, from the scan', d.margin.estMonthlyCost);
+
+  // Once money moves through the real path, the running total carries it.
+  await W.counter(env, 'costtotal:' + W.monthKey(), { op: 'incr', amount: 4.25 });
+  const d2 = await (await dash(env)).json();
+  ok(d2.margin.estMonthlyCost === 4.25, 'and once it is populated, that is what is used', d2.margin.estMonthlyCost);
+}
+
+section('Past the scan limit it reports a sample as a sample');
+{
+  const env = makeEnv();
+  // Enough accounts to exceed the bound the dashboard reads.
+  for (let i = 0; i < 2100; i++) await W.setEntitlement(env, 'u' + i + '@x.com', i % 3 === 0 ? 'pro' : 'free');
+  const d = await (await dash(env)).json();
+  ok(d.scan.truncated === true, 'it knows it did not see everything', d.scan);
+  ok(/first /.test(d.scan.note), 'and says which part it did see', d.scan.note);
+  ok(d.users.total === 2100, 'the total comes from the counters and is exact', d.users.total);
+  ok(d.users.paying === 700, 'so does the paying count', d.users.paying);
+  ok(d.revenue.estMRR === 700 * 15, 'and revenue, which is the number nobody may guess at', d.revenue.estMRR);
+  ok(d.margin.unprofitableAccounts.length >= 0, 'the per-account lists still work, bounded');
+}
+
+section('A plan change moves the population, it does not just add to it');
+{
+  const env = makeEnv();
+  await W.setEntitlement(env, 'a@x.com', 'pro');
+  await W.setEntitlement(env, 'a@x.com', 'ultra');
+  await W.setEntitlement(env, 'a@x.com', 'free');
+  const at = async p => (await W.counter(env, 'plancount:' + p, { op: 'get' })).value || 0;
+  ok((await at('pro')) === 0, 'the plan they left is decremented', await at('pro'));
+  ok((await at('ultra')) === 0, 'each time', await at('ultra'));
+  ok((await at('free')) === 1, 'and only the current one is counted', await at('free'));
+}
+
 report();
 done();

@@ -18,7 +18,7 @@ mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'worker.harness.mjs');
 writeFileSync(harness,
   src +
-  '\nexport { runDueAutomations, AUTO_INTERVALS, AUTO_MIN_INTERVAL, _autoExecute, autoCreate, _autoEmailResult, deploySite, serveSite, deployList, deployDelete, errorsReport, errorsList, errorsResolve, stripeWebhook, stripeCheckout, abuseList, abuseClear, _abuseRecord, _abuseStatus, setEntitlement, getEntitlement, adminStats, authSignup, _recordGrowth, _growthSeries, _markActive };' +
+  '\nexport { runDueAutomations, AUTO_INTERVALS, AUTO_MIN_INTERVAL, _autoExecute, autoCreate, _autoEmailResult, deploySite, serveSite, deployList, deployDelete, errorsReport, errorsList, errorsResolve, stripeWebhook, stripeCheckout, abuseList, abuseClear, _abuseRecord, _abuseStatus, setEntitlement, getEntitlement, adminStats, authSignup, _recordGrowth, _growthSeries, _markActive, ENGINES, FREE_AUTO_REPEAT };' +
   '\nexport function __setRequireUser(fn){ requireUser = fn; }\n'
 );
 
@@ -166,14 +166,16 @@ W.__setRequireUser(async () => ({ email: 'dave@test.com' }));
 store.delete('auto:dave@test.com');
 globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ content: [] }) });
 
-/* AMV-079: background work is charged against the plan's monthly ceiling, and
-   an account with no paid budget has a ceiling of zero. That is now refused at
-   creation instead of being accepted and silently deactivated by the cron on
-   its first due run - so this account needs a plan before it can schedule. */
+/* AMV-087: a free account gets one weekly job rather than nothing. What it
+   asked for here - ten-minute research - is shaped down rather than refused,
+   and the difference is reported instead of being applied silently. */
 const crFree = await W.autoCreate(req({ detail: 'Watch ETH', repeat: '10min', kind: 'research' }, 'dave', 'https://api.amv.dev/auto/create'), env);
-ok(crFree.status === 402, 'an account with no paid budget is refused up front', crFree.status);
-ok((await crFree.json()).code === 'plan_required', 'with a code the app can act on');
+const freeJson = await crFree.json();
+ok(crFree.status === 200, 'a free account can schedule one', crFree.status);
+ok(freeJson.item.repeat === W.FREE_AUTO_REPEAT, 'shaped to weekly, not the ten minutes asked for', freeJson.item.repeat);
+ok(freeJson.shaped === true, 'and told that it was shaped');
 
+store.delete('auto:dave@test.com');
 await W.setEntitlement(env, 'dave@test.com', 'pro');
 const cr = await W.autoCreate(req({ detail: 'Watch ETH', repeat: '10min', kind: 'research', notify: 'email' }, 'dave', 'https://api.amv.dev/auto/create'), env);
 const crd = await cr.json();
@@ -370,7 +372,12 @@ const noAdmin = await W.adminStats(new Request('https://api.amv.dev/v1/admin/sta
 ok(noAdmin.status === 403, 'without the admin token, stats are forbidden', noAdmin.status);
 
 /* ═══ AUTOMATIONS MUST NOT LEAK MONEY ════════════════════════════════════ */
-section('Automations: a FREE-plan user\'s jobs do not run (no paid budget)');
+/* AMV-087: a free account now DOES get one weekly job - background work is the
+   strongest reason anyone returns, and keeping it entirely behind the paywall
+   meant the users most likely to churn were the only ones who never saw it.
+   What must still hold is the bound: cheapest engine, no web search, and a hard
+   monthly ceiling of cents. */
+section('Automations: a FREE-plan job runs, but only cheaply');
 
 globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: 'x' }], usage: { input_tokens: 100, output_tokens: 100 } }) });
 // free user with a due automation - must NOT call the model
@@ -380,13 +387,23 @@ store.set('auto:free@test.com', JSON.stringify({
             kind: 'research', notify: 'app', next: Date.now() - 1, created: Date.now(), runs: 0, active: true }],
   results: []
 }));
-let modelCalls = 0;
+let modelCalls = 0, freeBody = null;
 const prevFetch = globalThis.fetch;
-globalThis.fetch = async (...a) => { modelCalls++; return prevFetch(...a); };
+globalThis.fetch = async (...a) => {
+  modelCalls++;
+  try { freeBody = JSON.parse(a[1].body); } catch (e) {}
+  return prevFetch(...a);
+};
 await W.runDueAutomations(env);
 const freeRec = JSON.parse(store.get('auto:free@test.com'));
-ok(modelCalls === 0, 'a free user\'s automation never calls the paid model', modelCalls);
-ok(freeRec.items[0].active === false, 'and it is disabled with a clear reason', freeRec.items[0].lastError);
+ok(modelCalls === 1, 'a free user\'s automation does run', modelCalls);
+ok(freeBody && freeBody.model === W.ENGINES['amv-pulse'].model,
+   'on the cheapest engine', freeBody && freeBody.model);
+ok(freeBody && !freeBody.tools,
+   'and never with web search, which is where an unattended job spends money', freeBody && freeBody.tools);
+ok(freeBody && freeBody.max_tokens <= 1200, 'writing a bounded amount', freeBody && freeBody.max_tokens);
+ok(freeRec.items[0].active !== false, 'and it stays active rather than being quietly killed', freeRec.items[0].lastError);
+ok((freeRec.results || []).length === 1, 'with a result waiting for them', (freeRec.results || []).length);
 
 section('Automations: a user already at their spend cap is skipped');
 

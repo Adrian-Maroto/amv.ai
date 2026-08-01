@@ -760,7 +760,10 @@ async function autoList(request, env){
      plan can run background work at all. */
   const budget = _autoBudget((await DB.get(env, 'ent', user.email)) || { plan: 'free' });
   return json({ ok:true, items: rec.items||[], results: (rec.results||[]).slice(-AUTO_MAX_RESULTS),
-                emailReady: !!env.EMAIL_API_KEY, canSchedule: budget.ceiling > 0, plan: budget.plan });
+                emailReady: !!env.EMAIL_API_KEY, canSchedule: budget.ceiling > 0, plan: budget.plan,
+                // What this account may have, so the app offers exactly that.
+                free: budget.free, maxAutomations: budget.max,
+                minRepeat: budget.free ? FREE_AUTO_REPEAT : null });
 }
 
 /* AMV-079: whether an account can run background work AT ALL.
@@ -774,13 +777,31 @@ async function autoList(request, env){
    only as a message, which is the one thing AMV does not ship.
 
    So the same rule is applied at CREATION, where it can be explained. */
+/* AMV-087: one free automation, on purpose.
+
+   Background work is the strongest reason anyone comes back to AMV, and it was
+   behind the paywall - so the people most likely to churn were the only ones
+   who never saw it. Charging for the thing that creates the habit is the wrong
+   way round: you cannot convert someone who never found out what they were
+   converting to.
+
+   So a free account gets exactly ONE, weekly, on the cheapest engine, with no
+   web search - because searching is where the money goes - and its own hard
+   ceiling. Worst case is a few cents a month, and only for free users who set
+   one up at all. That is a marketing budget, not a leak. */
+const FREE_AUTO_MAX          = 1;
+const FREE_AUTO_REPEAT       = 'weekly';
+const FREE_AUTO_CEILING_USD  = 0.10;      // hard monthly cap for a free account
+const FREE_AUTO_MAX_TOKENS   = 1200;
+
 function _autoBudget(ent){
   const plan = _planOf(ent || {});
   const PLAN_PRICE = { pro: 15, elite: 75, ultra: 200 };
   let planPrice = 0;
   if (plan === 'custom' && ent && ent.custom && ent.custom.price) planPrice = ent.custom.price;
   else if (PLAN_PRICE[plan]) planPrice = PLAN_PRICE[plan];
-  return { plan, ceiling: planPrice > 0 ? planPrice * 0.45 : 0 };
+  if (planPrice > 0) return { plan, ceiling: planPrice * 0.45, free: false, max: AUTO_MAX_PER_USER };
+  return { plan, ceiling: FREE_AUTO_CEILING_USD, free: true, max: FREE_AUTO_MAX };
 }
 
 /* ---- create an automation ---- */
@@ -798,14 +819,10 @@ async function autoCreate(request, env){
   if(detail.length > 2000) return json({ error:'detail too long' }, 400);
   if(!AUTO_INTERVALS[repeat]) return json({ error:'invalid repeat interval' }, 400);
 
-  /* Refuse here rather than accepting it and letting the cron quietly kill it
-     on the first due run. Same rule, said out loud, at the moment the user can
-     do something about it. */
+  /* Every account can schedule background work; what differs is how much.
+     A free account gets one, weekly, without web search - and is told exactly
+     that at the moment it matters, rather than finding out from a cron. */
   const budget = _autoBudget((await DB.get(env, 'ent', user.email)) || { plan: 'free' });
-  if(budget.ceiling <= 0){
-    return json({ error: 'Background automations run on AMV\u2019s servers while you are away, so they need a paid plan. Upgrade and this will run on schedule.',
-                  code: 'plan_required' }, 402);
-  }
   /* Email delivery is the whole point of "have it ready when I wake up", and it
      only works if an email provider is configured. Rather than accepting the
      request and delivering nowhere, we downgrade to in-app and SAY which one
@@ -815,11 +832,21 @@ async function autoCreate(request, env){
 
   const key = _autoKey(user.email);
   const rec = (await DB.get(env, 'auto', key)) || { items:[], results:[] };
-  if((rec.items||[]).length >= AUTO_MAX_PER_USER)
-    return json({ error:'You can have up to '+AUTO_MAX_PER_USER+' automations.' }, 429);
+  if((rec.items||[]).length >= budget.max){
+    return budget.free
+      ? json({ error:'Free accounts get one automation running in the background. Upgrade to run up to '+AUTO_MAX_PER_USER+', as often as every ten minutes.',
+               code:'plan_limit' }, 402)
+      : json({ error:'You can have up to '+AUTO_MAX_PER_USER+' automations.' }, 429);
+  }
+  /* Shaped, not refused. The free tier runs weekly and does not search the web,
+     because searching is the expensive part - and it is told so rather than
+     silently getting something other than what it asked for. */
+  const shapedRepeat = budget.free ? FREE_AUTO_REPEAT : repeat;
+  const shapedKind   = budget.free ? 'task' : kind;
+  const shaped = budget.free && (repeat !== FREE_AUTO_REPEAT || kind !== 'task');
 
   // Honour the user's requested first-run time if given, else one interval out.
-  const interval = Math.max(AUTO_MIN_INTERVAL, AUTO_INTERVALS[repeat]);
+  const interval = Math.max(AUTO_MIN_INTERVAL, AUTO_INTERVALS[shapedRepeat]);
   let next = Date.now() + interval;
   if(body.firstRunAt && Number.isFinite(+body.firstRunAt)){
     const t = +body.firstRunAt;
@@ -827,14 +854,17 @@ async function autoCreate(request, env){
   }
   const item = {
     id: 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2,7),
-    detail, repeat, interval, next, kind, notify: effectiveNotify, approval, scope,
+    detail, repeat: shapedRepeat, interval, next, kind: shapedKind, notify: effectiveNotify, approval, scope,
+    tier: budget.free ? 'free' : 'paid',
     created: Date.now(), runs: 0, lastError: null, active: true
   };
   rec.items = (rec.items||[]).concat(item);
   await DB.put(env, 'auto', key, rec);
   return json({ ok:true, item, emailReady,
                 // true only when they asked for email and cannot have it
-                deliveryDowngraded: notify === 'email' && !emailReady });
+                deliveryDowngraded: notify === 'email' && !emailReady,
+                free: budget.free, shaped,
+                shapedWhy: shaped ? 'Free accounts run one automation a week, without live web search. Upgrade for daily or ten-minute runs and live research.' : '' });
 }
 
 /* ---- delete / pause an automation ---- */
@@ -911,8 +941,12 @@ async function _enqueueApproval(env, email, item, out){
 }
 
 /* ---- Execute ONE automation against the real model ---- */
-async function _autoExecute(env, item){
-  const isResearch = item.kind === 'research';
+async function _autoExecute(env, item, budget){
+  /* A free tier job runs on the cheapest engine, writes less, and never
+     searches - a web search costs about a cent each and is where an unattended
+     job's money actually goes. Paid work is unchanged. */
+  const free = !!(budget && budget.free) || item.tier === 'free';
+  const isResearch = item.kind === 'research' && !free;
 
   /* Research jobs SEARCH THE LIVE WEB and report what's happening. The prompt is
      deliberately framed as monitoring and analysis - "here's what changed,
@@ -930,8 +964,8 @@ async function _autoExecute(env, item){
     : 'You are AMV running a scheduled automation for the user, unattended. Complete the task fully and return the finished result in markdown. Be specific and useful - this is what they will read when they come back. Never say you will do it later; do it now. Never use em or en dashes; use a plain hyphen (-) instead.';
 
   const body = {
-    model: 'claude-sonnet-5',
-    max_tokens: isResearch ? 2500 : 3000,
+    model: free ? ENGINES['amv-pulse'].model : ENGINES['amv-core'].model,
+    max_tokens: free ? FREE_AUTO_MAX_TOKENS : (isResearch ? 2500 : 3000),
     system,
     messages: [{ role:'user', content: item.detail }]
   };
@@ -1032,13 +1066,12 @@ async function runDueAutomations(env){
     let changed = false;
     // The plan's monthly cost ceiling - automations spend real money and must
     // count against it, exactly like interactive use. Compute once per user.
+    /* One definition of the budget, shared with autoCreate - the cron used to
+       compute its own and they could drift. A free account now has a small real
+       ceiling rather than zero, which is what lets its one weekly job run. */
     const ent = (await DB.get(env, 'ent', email)) || { plan: 'free' };
-    const plan = _planOf(ent);          // background work is charged like any other use
-    const PLAN_PRICE = { pro:15, elite:75, ultra:200 };
-    let planPrice = 0;
-    if (plan === 'custom' && ent && ent.custom && ent.custom.price) planPrice = ent.custom.price;
-    else if (PLAN_PRICE[plan]) planPrice = PLAN_PRICE[plan];
-    const costCeiling = planPrice > 0 ? planPrice * 0.45 : 0;
+    const budget = _autoBudget(ent);
+    const costCeiling = budget.ceiling;
     const costName = `cost:${email}:${monthKey()}`;
 
     for(const item of rec.items){
@@ -1048,23 +1081,21 @@ async function runDueAutomations(env){
       // (don't burn compute they've effectively used up). Free plan (ceiling 0)
       // has no paid budget for automations, so they never execute a paid model
       // call here - they degrade to nothing rather than costing us money.
-      if(costCeiling > 0){
+      {
         const capNow = await counter(env, costName, { op:'checkCap', cap: costCeiling });
         if(!capNow.allowed){ item.lastError = 'monthly allowance reached'; changed = true; continue; }
-      } else {
-        // no paid budget - don't run paid automations for a free/unknown plan
-        item.lastError = 'automations require a paid plan'; item.active = false; changed = true; continue;
       }
       // AMV-032: LEASE this specific run slot so two overlapping/retried cron
       // invocations can't both execute the same due job (duplicate model call or
       // email). The key is unique to this item's scheduled time; atomic on D1.
       if(!(await _claimOnce(env, 'autorun', `${email}:${item.id}:${item.next}`, 3*86400))) continue;
       try{
-        const exec = await _autoExecute(env, item);
+        const exec = await _autoExecute(env, item, budget);
         const out = (exec && exec.text) || '';
         // record the real cost of this run against the monthly cap
         try{ const c = _autoCostUSD(exec && exec.usage || {});
           if(c>0){ await counter(env, costName, { op:'incr', amount:c, ttlMs: 86400000*70 });
+                   await counter(env, `costtotal:${monthKey()}`, { op:'incr', amount:c, ttlMs: 86400000*70 });
                    await counter(env, `spend:${todayKey()}`, { op:'incr', amount:c, ttlMs: 86400000*2 }); } }catch(e){}
         rec.results = (rec.results||[]).concat({
           id: 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2,6),
@@ -2722,6 +2753,8 @@ export default {
         case '/errors/resolve':  return errorsResolve(request, env);
         case '/admin/abuse/list':  return abuseList(request, env);
         case '/admin/abuse/clear': return abuseClear(request, env);
+        case '/admin/payouts':       return adminPayouts(request, env);
+        case '/admin/payouts/mark':  return adminPayoutMark(request, env);
         case '/admin/readiness':     return adminReadiness(request, env);
         case '/admin/digest':        return adminDigest(request, env);
         case '/admin/backup/export': return backupExport(request, env);
@@ -4599,6 +4632,9 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, user, e
   }
   const gRes = await counter(env, gName, { op: 'incr', amount: cost, ttlMs: 86400000 * 2 });
   await counter(env, costName, { op: 'incr', amount: cost, ttlMs: 86400000 * 70 });
+  /* The same money, totalled once - so the dashboard can report spend without
+     adding up every account (AMV-088). */
+  await counter(env, `costtotal:${monthKey()}`, { op: 'incr', amount: cost, ttlMs: 86400000 * 70 });
 
   /* AMV-071: two numbers the owner cannot run this business without.
 
@@ -5904,12 +5940,42 @@ async function referralStatus(request, env) {
    was exactly that: earn a bonus, subscribe, lose the bonus. */
 const ENT_CARRY_KEYS = ['refBonus'];
 
+/* AMV-088: aggregates that do not require reading every account.
+
+   The founder dashboard listed every entitlement and then read a counter per
+   user. At forty accounts that is fine; at forty thousand it is forty thousand
+   reads on every page load - and the list was capped at 5000, so past that the
+   MRR was simply WRONG with nothing on screen to say so. A number that is
+   quietly wrong is worse than one that is missing.
+
+   Population is maintained where it changes - one increment and one decrement
+   per plan change - so headline revenue is exact at any size and costs nothing
+   to read. The per-account detail below still needs per-account data, so it
+   stays a bounded scan that SAYS it is bounded. */
+async function _planPopShift(env, fromPlan, toPlan){
+  try{
+    if(fromPlan === toPlan) return;
+    if(fromPlan) await counter(env, `plancount:${fromPlan}`, { op:'incr', amount: -1 });
+    if(toPlan)   await counter(env, `plancount:${toPlan}`,   { op:'incr', amount: 1 });
+  }catch(e){ /* the scan is still the fallback; never fail a write over a stat */ }
+}
+async function _planPopulation(env){
+  const out = {};
+  for(const plan of ['free','pro','elite','ultra','custom']){
+    try{ out[plan] = Math.max(0, (await counter(env, `plancount:${plan}`, { op:'get' })).value || 0); }
+    catch(e){ out[plan] = 0; }
+  }
+  return out;
+}
+
 async function setEntitlement(env, email, plan, extra = {}) {
   const em = email.toLowerCase();
   const prev = (await DB.get(env, 'ent', em)) || {};
   const ent = { plan, updatedAt: Date.now(), ...extra };
   for (const k of ENT_CARRY_KEYS) if (prev[k] !== undefined && ent[k] === undefined) ent[k] = prev[k];
   await DB.put(env, 'ent', em, ent);
+  // Keep the population counters true at the one place a plan can change.
+  await _planPopShift(env, prev.plan ? _planOf(prev) : null, _planOf(ent));
   audit(env, 'entitlement_set', { email, plan });
   /* Also on the account's own activity log. A plan change nobody made is how a
      compromised account usually announces itself. There is no request here -
@@ -6958,10 +7024,100 @@ async function marketWithdraw(request, env) {
     await _saveWallet(env, user.email, w);
     await _pushWalletTx(env, user.email, { type: 'withdrawal', amount: -amount, status: 'pending', id: wid, ts: Date.now() });
     audit(env, 'market_withdraw', { seller: user.email, amount, id: wid });
+    /* Somebody is owed money now. An operator cannot fulfil what they never
+       hear about, and this used to be silent (AMV-089). */
+    await notify(env, `Payout requested: $${amount.toFixed(2)} to ${user.email}. Settle it in the founder dashboard.`);
     return json({ ok: true, amount, id: wid, status: 'pending' });
   } finally {
     await _releaseClaim(env, 'wdlock', user.email);
   }
+}
+
+/* =====================================================================
+   AMV-089  PAYOUTS - the money had nowhere to go
+
+   A seller could request a withdrawal. Their balance was zeroed, a debit was
+   written to their transaction log, and a record was stored under
+   `withdraw:<id>` - which nothing in the entire product ever read. No endpoint
+   listed it, no screen showed it, and there was no way to mark one paid.
+
+   So the seller's money left their balance and arrived nowhere, the operator
+   had no idea they owed anybody anything, and the only trace was a KV key with
+   no reader. That is destroyed user funds and an undisclosed liability at the
+   same time, which makes it the worst defect in the product.
+
+   Below: the operator can see what is owed, mark it paid, or reject it - and a
+   rejection puts the money BACK, because a payout that cannot be fulfilled must
+   return the balance rather than swallow it a second time.
+   ===================================================================== */
+
+const PAYOUT_STATES = new Set(['pending', 'paid', 'rejected']);
+
+/* GET /admin/payouts - what is owed, and to whom. */
+async function adminPayouts(request, env) {
+  if (!_requireAdmin(request, env)) return json({ error: 'forbidden' }, 403);
+  const out = [];
+  let cursor;
+  do {
+    const page = await env.AMV_KV.list({ prefix: 'withdraw:', cursor, limit: 1000 });
+    for (const k of (page.keys || [])) {
+      const raw = await env.AMV_KV.get(k.name);
+      if (!raw) continue;
+      try { out.push(JSON.parse(raw)); } catch (e) {}
+    }
+    cursor = page.list_complete ? undefined : page.cursor;
+  } while (cursor && out.length < 5000);
+
+  out.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  const pending = out.filter(w => (w.status || 'pending') === 'pending');
+  return json({
+    ok: true,
+    payouts: out.slice(0, 500),
+    /* The number that matters: money taken out of sellers' balances that has
+       not yet reached them. It is a liability until it is paid. */
+    owed: +pending.reduce((n, w) => n + (+w.amount || 0), 0).toFixed(2),
+    pendingCount: pending.length,
+    paidTotal: +out.filter(w => w.status === 'paid').reduce((n, w) => n + (+w.amount || 0), 0).toFixed(2),
+  });
+}
+
+/* POST /admin/payouts/mark { id, status, note } */
+async function adminPayoutMark(request, env) {
+  if (!_requireAdmin(request, env)) return json({ error: 'forbidden' }, 403);
+  const body = await request.json().catch(() => ({}));
+  const id = String(body.id || '');
+  const status = String(body.status || '');
+  if (!/^wd_[A-Za-z0-9-]{4,40}$/.test(id)) return json({ error: 'bad id' }, 400);
+  if (!PAYOUT_STATES.has(status) || status === 'pending') return json({ error: 'status must be paid or rejected' }, 400);
+
+  const raw = await env.AMV_KV.get(`withdraw:${id}`);
+  if (!raw) return json({ error: 'not found' }, 404);
+  let rec = null; try { rec = JSON.parse(raw); } catch (e) { return json({ error: 'not found' }, 404); }
+  if ((rec.status || 'pending') !== 'pending') {
+    // Settling twice would either pay twice or refund twice. It is money.
+    return json({ error: 'This payout was already ' + rec.status + '.', code: 'already_settled' }, 409);
+  }
+
+  rec.status = status;
+  rec.settledAt = Date.now();
+  rec.note = String(body.note || '').slice(0, 200);
+  await env.AMV_KV.put(`withdraw:${id}`, JSON.stringify(rec));
+
+  if (status === 'rejected') {
+    /* Give it back. The balance was debited when the request was made; a
+       payout that will never be sent has to return it, or rejecting is just a
+       second way to destroy the same money. */
+    const w = await _wallet(env, rec.seller);
+    w.balance = +((+w.balance || 0) + (+rec.amount || 0)).toFixed(2);
+    await _saveWallet(env, rec.seller, w);
+    await _pushWalletTx(env, rec.seller, { type: 'withdrawal_returned', amount: +rec.amount || 0,
+                                           status: 'rejected', id, ts: Date.now() });
+  } else {
+    // Mark the pending debit settled so the seller's log is not left ambiguous.
+    await _pushWalletTx(env, rec.seller, { type: 'withdrawal_paid', amount: 0, status: 'paid', id, ts: Date.now() });
+  }
+  audit(env, 'payout_settled', { id, seller: rec.seller, amount: rec.amount, status });
+  return json({ ok: true, id, status });
 }
 
 /* Seller changes a listing's status: active | sold | deactivated. Owner only. */
@@ -7198,7 +7354,12 @@ async function adminStats(request, env) {
   let users = [], plans = { free: 0, pro: 0, elite: 0, ultra: 0, custom: 0 };
   let mrr = 0, pastDue = 0, atRisk = 0;
   const PRICE = { pro: 15, elite: 75, ultra: 200 };
-  const entRows = await DB.list(env, 'ent', 5000);
+  /* Bounded on purpose, and reported. Past this many accounts the per-account
+     lists below are a sample - the headline money comes from the maintained
+     counters instead, which are exact at any size. */
+  const SCAN_LIMIT = 2000;
+  const entRows = await DB.list(env, 'ent', SCAN_LIMIT);
+  const truncated = entRows.length >= SCAN_LIMIT;
   for (const row of entRows) {
     const e = row.value || {};
     const email = row.id;
@@ -7262,7 +7423,25 @@ async function adminStats(request, env) {
 
   // top spenders (who costs us most this month) - abuse / margin watch
   const topSpenders = [...users].sort((a, b) => b.monthCostUSD - a.monthCostUSD).slice(0, 20);
-  const paying = users.filter(u => u.plan !== 'free').length;
+  /* AMV-088: when the scan saw everything, the scan IS the truth and the
+     counters are checked against it. When it did not, the counters are the only
+     thing that can be right - and the response says which happened, so nobody
+     reads a sample as a total. */
+  const pop = await _planPopulation(env);
+  const popTotal = Object.values(pop).reduce((a, b) => a + b, 0);
+  const PRICE_POP = { pro: 15, elite: 75, ultra: 200 };
+  let popMrr = 0;
+  for (const [plan, n] of Object.entries(pop)) if (PRICE_POP[plan]) popMrr += PRICE_POP[plan] * n;
+  const totalCost0 = (await counter(env, `costtotal:${month}`, { op: 'get' })).value || 0;
+
+  if (truncated) {
+    // The scan is a sample; take population and revenue from the counters.
+    plans = pop;
+    mrr = popMrr;
+  }
+  const paying = truncated
+    ? Object.entries(pop).filter(([p]) => p !== 'free').reduce((n, [, v]) => n + v, 0)
+    : users.filter(u => u.plan !== 'free').length;
 
   // Growth over time - the numbers that show whether it's WORKING, not just a
   // snapshot. 30-day signup + active series, plus today's figures.
@@ -7288,14 +7467,24 @@ async function adminStats(request, env) {
     ok: true,
     generatedAt: Date.now(),
     spend: { today: +gSpend.toFixed(2), cap: gCap, pctOfCap: +(gSpend / gCap * 100).toFixed(1), killed },
-    users: { total: users.length, paying, byPlan: plans, conversionPct, activeToday },
+    users: { total: truncated ? popTotal : users.length, paying, byPlan: plans, conversionPct, activeToday },
+    /* Say plainly whether the per-account lists below are everything or a
+       sample. The alternative is a number that is quietly wrong. */
+    scan: { rows: entRows.length, limit: SCAN_LIMIT, truncated,
+            note: truncated
+              ? 'More accounts than one page can read. Revenue and population come from maintained counters and are exact; the per-account lists are the first ' + entRows.length + '.'
+              : 'Every account was read.' },
     growth: { signupsToday, signups7, signupsPrev7, wowGrowthPct, signups30, active30,
               referrals7, referrals30,
               // What share of the last week's signups came through an invite.
               referralSharePct: signups7 > 0 ? +((referrals7 / signups7) * 100).toFixed(1) : null },
     revenue: { estMRR: mrr, estARR: mrr * 12, arpu, pastDueAccounts: pastDue, mrrAtRisk: atRisk },
     margin: (() => {
-      const totalCost = +users.reduce((s, u) => s + u.monthCostUSD, 0).toFixed(2);
+      const scanCost = +users.reduce((s, u) => s + u.monthCostUSD, 0).toFixed(2);
+      /* The maintained total is exact; the scanned sum is only exact when the
+         scan saw everything. Prefer the counter, and fall back to the sum if it
+         has not been populated yet (an existing deployment before this shipped). */
+      const totalCost = +(totalCost0 > 0 ? totalCost0 : scanCost).toFixed(2);
       return {
         estMonthlyCost: totalCost,
         grossMargin: +(mrr - totalCost).toFixed(2),

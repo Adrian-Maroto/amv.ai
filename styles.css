@@ -7169,3 +7169,56 @@ html,body{height:100%;height:100dvh}
 .share-listed span{display:block;font-size:var(--t-sm);color:var(--tx);line-height:1.5}
 .share-listed em{display:block;font-style:normal;font-size:var(--t-xs);color:var(--mu);margin-top:4px;line-height:1.55}
 .share-say{font-size:var(--t-xs);color:var(--mu);min-height:14px;margin-top:6px}
+
+/* ==========================================================================
+   LAYER A41 - Sampled dashboard notice
+   Shown only when the per-account lists are a sample rather than everything.
+   ========================================================================== */
+.fd-scan{
+  font-size:var(--t-sm);line-height:1.6;color:var(--tx);margin-bottom:var(--sp-3);
+  padding:var(--sp-3);border-radius:var(--r-sm);
+  background:color-mix(in srgb,var(--gold) 10%,transparent);
+  border:1px solid color-mix(in srgb,var(--gold) 32%,transparent);
+}
+
+/* ==========================================================================
+   LAYER A42 - Payouts owed
+   Money taken out of a seller's balance that has not reached them yet. It is a
+   liability, so the total is stated first and coloured only when it is real.
+   ========================================================================== */
+.po-total{
+  font-size:var(--t-xl);font-weight:750;color:var(--tx);letter-spacing:-.3px;margin-bottom:var(--sp-3);
+}
+.po-total.owe{color:var(--gold)}
+.po-sub{display:block;font-size:var(--t-xs);font-weight:500;color:var(--mu);margin-top:2px}
+.po-row{
+  display:flex;gap:var(--sp-3);align-items:center;flex-wrap:wrap;
+  padding:var(--sp-3) 0;border-top:1px solid var(--bd);
+}
+.po-main{flex:1 1 200px;min-width:0}
+.po-who{font-size:var(--t-sm);color:var(--tx);font-weight:600;overflow-wrap:anywhere}
+.po-dest{font-size:var(--t-xs);color:var(--mu);margin-top:2px;overflow-wrap:anywhere}
+.po-amt{font-size:var(--t-md);font-weight:700;color:var(--tx);white-space:nowrap}
+.po-acts{display:flex;gap:var(--sp-2);flex-wrap:wrap}
+.po-say{font-size:var(--t-xs);color:var(--mu);min-height:14px;margin-top:var(--sp-3)}
+.po-fine{font-size:var(--t-xs);color:var(--mu);line-height:1.6;margin-top:var(--sp-2)}
+@media (max-width:560px){
+  .po-row{align-items:flex-start}
+  .po-acts{width:100%}
+  .po-acts .btn{flex:1 1 0}
+}
+
+/* ==========================================================================
+   LAYER A43 - Dev toolbar on a narrow phone
+   The Dev bar is two fixed rows of controls. At 320px the right-hand group ran
+   43px past the edge - and because the page clips horizontal overflow rather
+   than scrolling it, those controls were not merely awkward, they were
+   unreachable. The bar wraps now, and the groups shrink rather than push.
+   ========================================================================== */
+.dev-bar{flex-wrap:wrap;row-gap:6px}
+.dev-bar-l,.dev-bar-r{min-width:0;flex-wrap:wrap}
+.dev-bar-l{flex:1 1 auto}
+.dev-bar-r{flex:0 1 auto;justify-content:flex-end}
+@media (max-width:420px){
+  .dev-bar-r{flex:1 1 100%;justify-content:flex-start}
+}

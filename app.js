@@ -9455,9 +9455,18 @@ function _adminAbuseSignals(){
    backend-fed panels where production infra is required (clearly
    labeled - never fabricated numbers).
    ============================================================ */
+/* AMV-090: the operator had two homes. Money owed to sellers, the weekly
+   digest and go-live readiness lived only under Settings; everything else lived
+   here. Nothing said which screen to use, so half the operator's job was
+   somewhere they had no reason to look.
+
+   Rather than deleting either surface, the three that were stranded are
+   rendered HERE too, from the same functions - so there is one place to run the
+   business, and Settings keeps working for anyone already using it. */
 const _ADMIN_TABS=[
-  ['overview','Overview'],['users','Users'],['finance','Finance'],['revenue','Revenue'],['ai','AI & Usage'],
-  ['infra','Infrastructure'],['security','Security'],['fraud','Fraud Monitor'],['product','Product'],['growth','Growth']
+  ['overview','Overview'],['business','Business'],['users','Users'],['finance','Finance'],['revenue','Revenue'],
+  ['ai','AI & Usage'],['infra','Infrastructure'],['security','Security'],['fraud','Fraud Monitor'],
+  ['product','Product'],['growth','Growth']
 ];
 function _admMetrics(){
   // gather everything we can from real local/AEGIS data
@@ -9663,6 +9672,21 @@ function _admRenderTab(tab, backendLive, live){
   const cap=(typeof AEGIS!=='undefined'&&AEGIS.cfg)?AEGIS.cfg.dailyTokenCap:2000000;
   const used=u.inTok+u.outTok; const pct=Math.min(used/cap*100,100);
   const errRate=u.reqs?((u.errors/u.reqs)*100):0;
+
+  if(tab==='business'){
+    /* The three operator jobs that used to live only in Settings. Same
+       functions, so they can never drift apart from the other screen. */
+    el.innerHTML =
+      '<div id="fd-payouts"><div class="fd-loading">Checking what is owed\u2026</div></div>'+
+      (typeof _digestCardHTML==='function' ? _digestCardHTML() : '')+
+      '<div class="ss2"><h3>Go-live status</h3>'+
+        '<div class="golive" id="golive-body"><div class="fd-loading">Checking your deployment\u2026</div></div>'+
+      '</div>';
+    try{ if(typeof _wireDigestCard==='function') _wireDigestCard(); }catch(e){}
+    try{ if(typeof _loadPayouts==='function') _loadPayouts(); }catch(e){}
+    try{ if(typeof _loadReadiness==='function') _loadReadiness(); }catch(e){}
+    return;
+  }
 
   if(tab==='overview'){
     const ab=_adminAbuseSignals();
@@ -14305,6 +14329,69 @@ const ADMIN_SET_SECTIONS=[
   {id:'platform',label:'Platform',icon:'<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>'},
 ];
 
+/* AMV-089: money owed to sellers. A withdrawal used to zero a seller's balance
+   and write a record nothing ever read - so this is the first screen that can
+   see it, and the only place it can be settled. It leads the dashboard because
+   an unpaid payout is a liability, not a statistic. */
+function _payoutCardHTML(){
+  return '<div class="ss2" id="fd-payouts"><h3>Payouts owed</h3>'+
+    '<div class="fd-loading">Checking what is owed\u2026</div></div>';
+}
+async function _loadPayouts(){
+  const host=$('fd-payouts'); if(!host) return;
+  const base=loadStr('amv_api_base')||'';
+  const tok=($('fd-token')&&$('fd-token').value||'').trim()||((typeof _adminToken==='function')?_adminToken():'');
+  if(!base||!tok){ host.innerHTML='<h3>Payouts owed</h3><div class="fd-empty">Enter your admin token to see money owed to sellers.</div>'; return; }
+  try{
+    const r=await fetchDeadline(base.replace(/\/$/,'')+'/admin/payouts',{headers:{'Authorization':'Bearer '+tok}},15000);
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok||!d.ok){ host.innerHTML='<h3>Payouts owed</h3><div class="fd-empty">'+(r.status===403?'That admin token was rejected.':'Could not load payouts.')+'</div>'; return; }
+    _payoutsPaint(host, d);
+  }catch(e){ host.innerHTML='<h3>Payouts owed</h3><div class="fd-empty">Could not reach the backend, so this would be out of date.</div>'; }
+}
+function _payoutsPaint(host, d){
+  const money=n=>'$'+(+n||0).toFixed(2);
+  const pending=(d.payouts||[]).filter(p=>(p.status||'pending')==='pending');
+  const rows=pending.map(p=>
+    '<div class="po-row" data-po="'+escH(p.id)+'">'+
+      '<div class="po-main"><div class="po-who">'+escH(p.seller||'')+'</div>'+
+        '<div class="po-dest">'+escH(p.destination||'no destination given')+'</div></div>'+
+      '<div class="po-amt">'+money(p.amount)+'</div>'+
+      '<div class="po-acts">'+
+        '<button class="btn bs" type="button" data-po-paid="'+escH(p.id)+'">Mark paid</button>'+
+        '<button class="btn bs" type="button" data-po-rej="'+escH(p.id)+'">Reject</button>'+
+      '</div>'+
+    '</div>').join('');
+  host.innerHTML='<h3>Payouts owed</h3>'+
+    '<div class="po-total'+(d.owed>0?' owe':'')+'">'+money(d.owed)+' owed to '+pending.length+' seller'+(pending.length===1?'':'s')+
+      '<span class="po-sub">'+money(d.paidTotal)+' paid out so far</span></div>'+
+    (rows||'<div class="fd-empty">Nothing owed right now.</div>')+
+    '<div class="po-say" id="po-say" role="status" aria-live="polite"></div>'+
+    '<div class="po-fine">Rejecting returns the money to the seller\u2019s balance. Marking paid does not send anything - do that with your payment provider first.</div>';
+  const settle=async(id,status)=>{
+    const say=$('po-say');
+    const what = status==='paid'
+      ? 'Mark this payout as already sent? It does not transfer anything - confirm you have paid it.'
+      : 'Reject this payout and return the money to the seller\u2019s balance?';
+    if(typeof confirm==='function' && !confirm(what)) return;
+    if(say) say.textContent='Working\u2026';
+    const base=loadStr('amv_api_base')||'';
+    const tok=($('fd-token')&&$('fd-token').value||'').trim()||((typeof _adminToken==='function')?_adminToken():'');
+    try{
+      const r=await fetchDeadline(base.replace(/\/$/,'')+'/admin/payouts/mark',{
+        method:'POST', headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},
+        body:JSON.stringify({ id, status })},15000);
+      const d2=await r.json().catch(()=>({}));
+      if(!r.ok||!d2.ok){ if(say) say.textContent = d2.error || 'That did not go through - nothing was changed.'; return; }
+      if(say) say.textContent = status==='paid' ? 'Marked paid.' : 'Rejected, and the money is back with the seller.';
+      _loadPayouts();
+    }catch(e){ if(say) say.textContent='Could not reach the backend - nothing was changed.'; }
+  };
+  host.querySelectorAll('[data-po-paid]').forEach(b=>on(b,'click',()=>settle(b.dataset.poPaid,'paid')));
+  host.querySelectorAll('[data-po-rej]').forEach(b=>on(b,'click',()=>settle(b.dataset.poRej,'rejected')));
+}
+try{ window._loadPayouts=_loadPayouts; }catch(e){}
+
 /* AMV-081: the weekly digest, on the one screen that already holds the admin
    token. Preview shows exactly what would be sent; sending is a separate,
    explicit action because it puts a message in someone's inbox. */
@@ -14356,6 +14443,14 @@ function _wireDigestCard(){
   });
 }
 
+/* AMV-088: say when the per-account lists below are a sample. Reading them as
+   totals is the mistake this exists to prevent. */
+function _scanNoteHTML(d){
+  const sc = d && d.scan;
+  if(!sc || !sc.truncated) return '';
+  return '<div class="fd-scan">'+escH(sc.note||'')+'</div>';
+}
+
 /* Render the founder dashboard from the /v1/admin/stats payload. */
 function _founderDashHTML(d){
   const fmt=n=>(n||0).toLocaleString();
@@ -14369,6 +14464,7 @@ function _founderDashHTML(d){
     || '<div class="fd-row"><span style="color:var(--mu)">No usage yet.</span></div>';
   const estProfit=(rev.estMRR||0)-(mg.estMonthlyCost||0);
   return ''+
+    _scanNoteHTML(d)+
     // hero metrics
     '<div class="fd-grid">'+
       '<div class="fd-card"><div class="fd-n">'+money(rev.estMRR)+'</div><div class="fd-l">Est. MRR</div><div class="fd-sub">'+money(rev.estARR)+' ARR</div></div>'+
@@ -15358,7 +15454,7 @@ function _renderSetPaneInner(){
            stats body, so the pane's own delayed reload rebuilt it and wiped a
            preview the operator was in the middle of reading. */
         const dh=$('fd-digest-host');
-        if(dh && !dh.firstChild){ dh.innerHTML=_digestCardHTML(); _wireDigestCard(); }
+        if(dh && !dh.firstChild){ dh.innerHTML=_payoutCardHTML()+_digestCardHTML(); _wireDigestCard(); _loadPayouts(); }
         // wire kill switch
         const kbtn=$('fd-kill');
         if(kbtn) on(kbtn,'click',async()=>{
@@ -18953,6 +19049,12 @@ async function _scheduleTask(t){
     if(typeof d.emailReady === 'boolean') _AUTO_EMAIL_READY = d.emailReady;
     _AUTOS = d.item ? (_AUTOS||[]).concat(d.item) : _AUTOS;
     _AUTO_CAN_SCHEDULE = true;
+    /* A free account gets one weekly job without live research. Say what it
+       actually got, and what removes the limit - a silently different result is
+       the thing this whole path exists to avoid. */
+    if(d.shaped && d.shapedWhy && typeof toast==='function'){
+      toast(d.shapedWhy, 'info', 8000);
+    }
     /* Say which of the two things actually happens, because they are different
        promises. Emailed means they never have to come back to find out; in-app
        means it is waiting in Tasks and they do. */
@@ -18967,7 +19069,7 @@ async function _scheduleTask(t){
   }catch(e){
     /* A plan that cannot run background work is not an error to swallow - it is
        the one case where the user can fix it, so it points at the fix. */
-    if(e.code === 'plan_required' || /paid plan/i.test(e.message||'')){
+    if(e.code === 'plan_required' || e.code === 'plan_limit' || /paid plan/i.test(e.message||'')){
       _AUTO_CAN_SCHEDULE = false;
       if(typeof toast==='function') toast(e.message || 'Background automations need a paid plan.','info',7000);
       try{ if(typeof setTab==='function'){ S.tab='plans'; setTab('plans'); } }catch(_){}

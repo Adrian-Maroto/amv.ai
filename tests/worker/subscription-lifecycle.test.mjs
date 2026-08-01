@@ -208,7 +208,14 @@ section('Every read of the plan honours the lapse - not just some of them');
   ok(raw.length === 0, 'no code path falls back to the sold plan without checking the lapse',
      raw.map(l => l.trim().slice(0, 70)));
   ok(/data\.plan = _planOf\(e\)/.test(src), 'requireUser - so every authenticated request is covered');
-  ok(/const plan = _planOf\(ent\)/.test(src), 'the cron that runs automations, which spends real money');
+  /* The cron now takes its budget from _autoBudget rather than computing the
+     plan inline, so the guarantee moved one function along - and _autoBudget
+     itself reads the EFFECTIVE plan, which is the thing that must never be
+     skipped. Both halves are checked, so neither can quietly stop happening. */
+  ok(/const budget = _autoBudget\(ent\)/.test(src),
+     'the cron that runs automations takes its budget from one place');
+  ok(/function _autoBudget\(ent\)\{\s*\n\s*const plan = _planOf\(ent \|\| \{\}\)/.test(src),
+     'and that budget reads the effective plan, so a lapsed card cannot keep spending');
   ok(/plan: _planOf\(e\)/.test(src), 'and the SMS path, which also costs per message');
   ok(/const plan = _planOf\(e\);/.test(src),
      'and the founder dashboard, so MRR is not inflated by subscriptions that stopped paying');

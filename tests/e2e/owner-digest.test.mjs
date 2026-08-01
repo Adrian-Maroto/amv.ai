@@ -7,6 +7,7 @@
    action rather than something a page load does. */
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { overflowingElement } from '../lib/layout.mjs';
 
 /* The Founder Dashboard is operator-only, and the operator is decided by
    email - so the test signs in as that account rather than trying to set an
@@ -150,10 +151,9 @@ section('It reads on a phone');
   await page.evaluate(() => document.getElementById('fd-digest-preview').click());
   await page.waitForFunction(() => /MRR/.test(document.getElementById('fd-digest-out').textContent), { timeout: 15000 });
   const m = await page.evaluate(() => ({
-    overflow: document.documentElement.scrollWidth <= window.innerWidth + 1,
-    live: document.getElementById('fd-digest-out').getAttribute('aria-live'),
+        live: document.getElementById('fd-digest-out').getAttribute('aria-live'),
   }));
-  ok(m.overflow, 'the page does not scroll sideways with a long digest on it');
+  ok((await overflowingElement(page)) === null, 'nothing overflows the screen with a long digest on it', await overflowingElement(page));
   ok(m.live === 'polite', 'and the result is announced, not only shown');
   await page.setViewportSize({ width: 1280, height: 900 });
 }
