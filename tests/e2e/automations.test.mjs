@@ -83,10 +83,13 @@ section('A job that runs every day does not read as finished');
      two separate lists and nothing joined them. */
   const r = await page.evaluate(() => {
     saveStr('amv_plan', 'pro');
-    localStorage.setItem('amv_autosched', JSON.stringify([
+    /* Through _saveSched, which scopes to the signed-in account. Writing the
+       raw key put it where nothing reads any more - and real code has always
+       gone through this helper. */
+    _saveSched([
       { id: 'a1', goal: 'Check my bank balance', sched: { cad: 'daily', hour: 9 },
         next: Date.now() + 86400000, created: Date.now() - 172800000 },
-    ]));
+    ]);
     _bgQueue.tasks.length = 0;
     _bgQueue.tasks.push({ id: 'bg1', title: 'Check my bank balance', status: 'done',
                           created: Date.now() - 3600000, schedId: 'a1' });
@@ -107,7 +110,7 @@ section('A job that runs every day does not read as finished');
 
   /* Cancel the schedule and the run becomes what it now is: history. */
   const after = await page.evaluate(() => {
-    localStorage.setItem('amv_autosched', '[]');
+    _saveSched([]);
     const st = _mcState();
     return { done: st.done.length, runs: st.runsOfJobs.length };
   });

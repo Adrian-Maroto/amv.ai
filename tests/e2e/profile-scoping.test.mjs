@@ -10,7 +10,11 @@
    Custom instructions are exactly where somebody writes the thing they would
    not say twice. This suite is about that text never following an account it
    does not belong to. */
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 import { bootApp } from '../lib/harness.mjs';
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 import { ok, section, report, done } from '../lib/assert.mjs';
 
 const app = await bootApp({ tab: 'chat', user: { name: 'A', email: 'a@x.com', ini: 'A' } });
@@ -173,6 +177,33 @@ section('A schedule written before the change is carried over');
   ok(r.mine === 1, 'an existing schedule is not lost', r.mine);
   ok(r.stillGlobal === null, 'the shared copy is removed', r.stillGlobal);
   ok(r.other === 0, 'so the next account starts empty', r.other);
+}
+
+section('A returning session migrates too, not only a fresh sign-in');
+{
+  /* The session is restored straight from storage at boot and never calls
+     loginUser. Migrating only there meant every existing user would have loaded
+     to an empty profile, no custom instructions and no scheduled jobs - the data
+     still on disk under the old key with nothing looking there. */
+  const bundle = readFileSync(join(ROOT, 'app.js'), 'utf8');
+  const at = bundle.indexOf('const S = new Proxy(_raw');
+  const before = bundle.slice(Math.max(0, at - 900), at);
+  ok(/_migrateScopedKeys\(_raw\.user\.email\)/.test(before),
+     'the migration runs at boot, before anything reads a scoped key', true);
+
+  /* And it is idempotent, because it now runs in two places. */
+  const r = await page.evaluate(() => {
+    localStorage.clear();
+    localStorage.setItem('amv_instructions', 'carried over');
+    loginUser({ name: 'E', email: 'e@x.com', ini: 'E' });
+    const first = loadStr('amv_instructions');
+    saveStr('amv_instructions', 'edited since');
+    _migrateScopedKeys('e@x.com');            // a second run must not undo that
+    return { first, after: loadStr('amv_instructions') };
+  });
+  ok(r.first === 'carried over', 'the old value is adopted once', r.first);
+  ok(r.after === 'edited since',
+     'and running it again does not overwrite what the account has since written', r.after);
 }
 
 ok(errors.length === 0, 'no console errors along the way', errors.slice(0, 3));

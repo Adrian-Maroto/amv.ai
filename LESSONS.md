@@ -817,3 +817,18 @@ again, is not a safety control.
 Nothing about the calls looks wrong at the call site; they are ordinary and they
 work. Grep for raw localStorage whenever a scoping helper exists, because the
 helper only helps where it is used.
+
+## 90. A migration that only runs at sign-in never runs for anyone signed in
+Re-scoping the profile keys was correct, and the migration that moved existing
+values into the account was correct, and it was called from loginUser() - which
+a returning user never reaches. The session is restored straight from storage at
+boot. So every existing user would have loaded to an empty profile, no custom
+instructions, no scheduled jobs and no autonomy pause, with all of it still on
+disk under the old key and nothing looking there.
+
+The failing test that exposed it was failing for a different reason entirely (a
+fixture writing the raw key), which is the part worth remembering: the gate did
+not tell me about this. It told me something near it was wrong, and the bug was
+found by asking why rather than by making the assertion pass. Ask where the code
+path STARTS for the people who already exist, not only for the ones created
+after the change.

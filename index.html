@@ -9143,6 +9143,14 @@ const _raw = {
   starFilter: false,
   settingsPane: 'account',
 };
+/* Move the previously-unscoped keys into this account BEFORE anything reads
+   them. Doing it only in loginUser() was wrong: a returning session is restored
+   straight from storage above and never calls loginUser, so every existing user
+   would have loaded to an empty profile, no custom instructions, and no
+   scheduled jobs - the data still on disk under the old key and nothing looking
+   there. It is idempotent, so running it here and at sign-in is safe. */
+try{ if(_raw.user && _raw.user.email) _migrateScopedKeys(_raw.user.email); }catch(e){}
+
 const S = new Proxy(_raw, {
   set(target, key, val){
     const prev=target[key];
