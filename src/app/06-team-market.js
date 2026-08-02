@@ -760,8 +760,20 @@ const AMVMarket = {
   // ---- paid marketplace ----
   async buy(id){
     if(this._live()){
-      const r=await AMV_API._fetch('/v1/market/buy',{method:'POST',body:JSON.stringify({id})});
-      const d=await r.json(); if(d.error) throw new Error(d.error); return d;   // {url} → external checkout
+      let r=await AMV_API._fetch('/v1/market/buy',{method:'POST',body:JSON.stringify({id})});
+      let d=await r.json();
+      /* The server refuses money until it knows the buyer is an adult, and for
+         everybody who signed up before that existed the answer is simply
+         missing. That is a question, not a refusal - so it gets asked HERE, at
+         the moment it matters, rather than leaving somebody to discover a
+         settings pane they had no reason to open. Asked once, ever. */
+      if(d && d.code==='age_required'){
+        const got = await _askBirthYear();
+        if(!got) throw new Error('AMV needs your year of birth before it can buy anything.');
+        r=await AMV_API._fetch('/v1/market/buy',{method:'POST',body:JSON.stringify({id})});
+        d=await r.json();
+      }
+      if(d.error) throw new Error(d.error); return d;   // {url} → external checkout
     }
     // local/demo mode: complete the purchase on-device, credit the seller 80%
     const it=await this._resolve(id);

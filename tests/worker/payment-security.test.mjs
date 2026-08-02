@@ -17,8 +17,16 @@ const ROOT = join(__dir, '..', '..');
 const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'payment-security.harness.mjs');
-writeFileSync(harness, src + '\nexport { marketBuy, paypalCapture, marketPublish, issueTokens };\n');
+writeFileSync(harness, src + '\nexport { DB, marketBuy, paypalCapture, marketPublish, issueTokens };\n');
 const W = await import(harness + '?t=' + Date.now());
+
+/* Money endpoints now require a recorded adult age - an account that has never
+   been asked is refused with age_required, which is a prompt rather than a
+   verdict. Production accounts answer it once; fixtures have to say it too. */
+async function _adult(env, email){
+  await W.DB.put(env, 'consent', String(email).toLowerCase(),
+    { birthYear: new Date().getUTCFullYear() - 30, ageSetAt: Date.now(), history: [] });
+}
 
 const store = new Map();
 const mkEnv = (extra = {}) => ({
@@ -44,6 +52,7 @@ section('AMV-025: checkout redirect ignores a spoofed Origin');
   const env = mkEnv({ STRIPE_SECRET_KEY: 'sk_test', APP_URL: 'https://app.amv.example' });
   store.set('market:usr_seed1', JSON.stringify({ id: 'usr_seed1', authorEmail: 'seller@x.com', price: 5, title: 'Thing', status: 'active' }));
   const buyerTok = await tok(env, 'buyer@x.com');
+  await _adult(env, 'buyer@x.com');
   const realFetch = globalThis.fetch;
   let capturedBody = '';
   globalThis.fetch = async (url, opts) => { capturedBody = (opts && opts.body) || ''; return { ok: true, status: 200, json: async () => ({ url: 'https://checkout.stripe', id: 'cs_1' }) }; };

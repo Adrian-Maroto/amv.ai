@@ -26,6 +26,14 @@ export { _creditSale, _reverseSale, _wallet, _saveWallet, _walletTx, _purchasesL
 `);
 const W = await import(harness + '?t=' + Date.now());
 
+/* Money endpoints now require a recorded adult age - an account that has never
+   been asked is refused with age_required, which is a prompt rather than a
+   verdict. Production accounts answer it once; fixtures have to say it too. */
+async function _adult(env, email){
+  await W.DB.put(env, 'consent', String(email).toLowerCase(),
+    { birthYear: new Date().getUTCFullYear() - 30, ageSetAt: Date.now(), history: [] });
+}
+
 function makeEnv() {
   const kv = new Map();
   return { _kv: kv, JWT_SECRET: 'test-secret-abcdefghijklmnop',
@@ -94,6 +102,7 @@ section('A seller who already withdrew still owes it');
   ok((await balance(env, 'seller@x.com')) === -160,
      'the balance goes negative rather than being written off', await balance(env, 'seller@x.com'));
 
+  await _adult(env, 'seller@x.com');
   const token = await W.signToken({ email: 'seller@x.com' }, env.JWT_SECRET, 3600, env, 'access');
   const r = await W.marketWithdraw(new Request('https://w/v1/market/withdraw',
     { method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: '{}' }), env);

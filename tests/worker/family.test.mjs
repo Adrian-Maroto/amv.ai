@@ -32,6 +32,14 @@ export { familyGet, familySetLimits, familyRemove, familyLeave, linkInvite, link
 `);
 const W = await import(harness + '?t=' + Date.now());
 
+/* Money endpoints now require a recorded adult age - an account that has never
+   been asked is refused with age_required, which is a prompt rather than a
+   verdict. Production accounts answer it once; fixtures have to say it too. */
+async function _adult(env, email){
+  await W.DB.put(env, 'consent', String(email).toLowerCase(),
+    { birthYear: new Date().getUTCFullYear() - 30, ageSetAt: Date.now(), history: [] });
+}
+
 const store = new Map();
 const env = {
   JWT_SECRET: 'x'.repeat(40), EMAIL_API_KEY: 'em', STRIPE_SECRET_KEY: 'sk_test',
@@ -54,6 +62,9 @@ globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ id
 
 const parentTok = await tok('parent@x.com');
 const kidTok = await tok('kid@x.com');
+/* Age is answered once by everybody who touches money; these suites are about
+   the FAMILY rules, so the age question is settled up front and out of the way. */
+for(const who of ['kid@x.com','solo@x.com','parent@x.com']) await _adult(env, who);
 await W.setEntitlement(env, 'parent@x.com', 'elite');
 
 section('A child joins only by confirming in their own inbox');

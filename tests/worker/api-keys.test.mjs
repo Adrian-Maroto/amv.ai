@@ -37,6 +37,10 @@ const withKey = (key) => new Request('https://w/v1/messages', { headers: { Autho
 
 async function paidUser(env, email) {
   await W.setEntitlement(env, email, 'pro');
+  /* A real account always has an `acct` row - signup writes one - and the key
+     path now requires it, so that a key surviving an erased account cannot keep
+     authenticating. The fixture has to be as real as production here. */
+  await W.DB.put(env, 'acct', email, { email });
   return tokenFor(env, email);
 }
 
@@ -54,6 +58,14 @@ section('A key belongs to an account, and spends that account');
 
   const lim = W.effectiveLimits(u);
   ok(lim.monthTokens > 0 && lim.dayTokens > 0, 'the same limits a browser session gets', lim.monthTokens);
+
+  /* And it stops working the moment the account behind it is gone. A key that
+     authenticates on the strength of its own lookup row is one orphaned record
+     away from being a credential belonging to nobody. */
+  await W.DB.del(env, 'acct', 'dev@x.com');
+  const orphan = await W.requireUser(withKey(d.key), env);
+  ok(orphan === null, 'a key whose account no longer exists is refused', orphan);
+  await W.DB.put(env, 'acct', 'dev@x.com', { email: 'dev@x.com' });
 }
 
 section('The store cannot show anyone the key');

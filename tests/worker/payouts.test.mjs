@@ -19,10 +19,18 @@ const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'payouts.harness.mjs');
 writeFileSync(harness, src + `
-export { marketWithdraw, marketEarnings, adminPayouts, adminPayoutMark,
+export { DB, marketWithdraw, marketEarnings, adminPayouts, adminPayoutMark,
          _wallet, _saveWallet, _walletTx, signToken, MARKET_MIN_WITHDRAW };
 `);
 const W = await import(harness + '?t=' + Date.now());
+
+/* Money endpoints now require a recorded adult age - an account that has never
+   been asked is refused with age_required, which is a prompt rather than a
+   verdict. Production accounts answer it once; fixtures have to say it too. */
+async function _adult(env, email){
+  await W.DB.put(env, 'consent', String(email).toLowerCase(),
+    { birthYear: new Date().getUTCFullYear() - 30, ageSetAt: Date.now(), history: [] });
+}
 
 function makeEnv() {
   const kv = new Map();
@@ -50,6 +58,9 @@ async function fund(env, email, amount) {
   const w = await W._wallet(env, email);
   w.balance = amount; w.lifetime = amount;
   await W._saveWallet(env, email, w);
+  /* Somebody with a balance to withdraw is somebody who has used the product,
+     so they have answered the age question. Seeded with the money. */
+  await _adult(env, email);
 }
 
 section('A requested payout is visible to the operator, with what is owed');

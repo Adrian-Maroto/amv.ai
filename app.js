@@ -7938,8 +7938,20 @@ const AMVMarket = {
   // ---- paid marketplace ----
   async buy(id){
     if(this._live()){
-      const r=await AMV_API._fetch('/v1/market/buy',{method:'POST',body:JSON.stringify({id})});
-      const d=await r.json(); if(d.error) throw new Error(d.error); return d;   // {url} → external checkout
+      let r=await AMV_API._fetch('/v1/market/buy',{method:'POST',body:JSON.stringify({id})});
+      let d=await r.json();
+      /* The server refuses money until it knows the buyer is an adult, and for
+         everybody who signed up before that existed the answer is simply
+         missing. That is a question, not a refusal - so it gets asked HERE, at
+         the moment it matters, rather than leaving somebody to discover a
+         settings pane they had no reason to open. Asked once, ever. */
+      if(d && d.code==='age_required'){
+        const got = await _askBirthYear();
+        if(!got) throw new Error('AMV needs your year of birth before it can buy anything.');
+        r=await AMV_API._fetch('/v1/market/buy',{method:'POST',body:JSON.stringify({id})});
+        d=await r.json();
+      }
+      if(d.error) throw new Error(d.error); return d;   // {url} → external checkout
     }
     // local/demo mode: complete the purchase on-device, credit the seller 80%
     const it=await this._resolve(id);
@@ -23303,7 +23315,10 @@ const AMVCompliance = {
       const tok = loadStr('amv_api_token')||'';
       if(base && tok) fetch(base + '/v1/consent', {
         method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
-        body: JSON.stringify({ termsVersion:r.termsVersion, acceptedAt:r.acceptedAt })
+        /* The birth year goes with it. The gate that matters is the server's -
+           this one lives in localStorage and a cleared key walked through it. */
+        body: JSON.stringify({ termsVersion:r.termsVersion, acceptedAt:r.acceptedAt,
+                               birthYear: r.birthYear || undefined })
       }).catch(()=>{});
     }catch(e){}
     return r;
@@ -23328,6 +23343,16 @@ const AMVCompliance = {
     }
     const r = this._rec(); r.birthYear = y; r.ageSetAt = Date.now(); delete r.blockedUnderAge;
     this._save(r);
+    /* Sent now as well as at acceptance, because age is usually confirmed after
+       the terms - and the server refuses money until it has this. */
+    try{
+      const base = (loadStr('amv_api_base')||'').replace(/\/$/,'');
+      const tok = loadStr('amv_api_token')||'';
+      if(base && tok && r.termsVersion) fetch(base + '/v1/consent', {
+        method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
+        body: JSON.stringify({ termsVersion:r.termsVersion, birthYear:y })
+      }).catch(()=>{});
+    }catch(e){}
     return { age, adult: age >= this.ADULT_AGE };
   },
   age(){ const r=this._rec(); return r.birthYear ? (new Date().getFullYear() - r.birthYear) : null; },
@@ -23360,6 +23385,41 @@ const AMVCompliance = {
   ]
 };
 try{ window.AMVCompliance = AMVCompliance; }catch(e){}
+
+/* Ask for the year of birth, right where it is needed.
+
+   The server refuses anything involving money until it knows, and for every
+   account created before that check existed the answer is simply absent. Sending
+   those people to hunt for a settings pane would read as the purchase being
+   broken. Returns true once the answer is recorded. */
+async function _askBirthYear(){
+  try{
+    if(AMVCompliance.ageKnown()) return true;
+    if(typeof _showModalAsync !== 'function') return false;
+    const v = await _showModalAsync({
+      title:'What year were you born?',
+      body:'Anything involving money is for over-18s only, so AMV has to ask once. Only the year is stored.',
+      okText:'Confirm', cancelText:'Not now', placeholder:'e.g. 1994'
+    });
+    if(!v) return false;
+    try{
+      AMVCompliance.setBirthYear(v);
+    }catch(e){
+      if(typeof toast==='function') toast((e&&e.message)||'That did not look like a year.','error',6000);
+      return false;
+    }
+    if(!AMVCompliance.isAdult()){
+      if(typeof toast==='function')
+        toast('Anything involving money is only available to people 18 and over.','info',7000);
+      return false;
+    }
+    /* setBirthYear posts it to the server; give that a moment to land before the
+       call that is about to depend on it is retried. */
+    await new Promise(r=>setTimeout(r,400));
+    return true;
+  }catch(e){ return false; }
+}
+try{ window._askBirthYear = _askBirthYear; }catch(e){}
 
 /* Wire the age gate into spending so it cannot be bypassed by calling the
    spend layer directly. This is the chargeback protection as much as the

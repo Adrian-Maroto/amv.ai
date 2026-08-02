@@ -1962,6 +1962,25 @@ async function linkRevoke(request, env){
   return json({ ok:true, revoked:true });
 }
 
+const ADULT_AGE = 18;
+
+/* Whether this account may touch money. Deny by default: an age nobody has
+   recorded is "not known", never "adult" - the whole point is that the absence
+   of an answer is not a yes.
+
+   Returns null when allowed, or a {error, code} the caller can return as-is.
+   `age_required` is deliberately distinct from a refusal, because an existing
+   customer who has simply never been asked needs a prompt, not a wall. */
+async function _moneyAgeGate(env, email){
+  const rec = await DB.get(env, 'consent', String(email || '').toLowerCase());
+  const y = rec && +rec.birthYear;
+  if(!y) return { error:'Confirm your age before using anything that involves money.', code:'age_required' };
+  const age = new Date().getUTCFullYear() - y;
+  if(age < ADULT_AGE)
+    return { error:'Anything involving money is only available to people ' + ADULT_AGE + ' and over.', code:'age_blocked' };
+  return null;
+}
+
 /* ============================================================
    CONSENT RECORD  (/v1/consent)
 
@@ -1982,6 +2001,24 @@ async function consentRecord(request, env){
   if(!version) return json({ error:'termsVersion required' }, 400);
 
   const prev = (await DB.get(env, 'consent', user.email)) || { history: [] };
+  /* Age, recorded HERE and not only in the browser. The client has always had
+     an age gate and it lives in localStorage, so clearing one key - or calling
+     the API directly with a key - walked straight through it. Under-13 handling
+     is strict liability and a minor's purchase comes back as a chargeback, so
+     the one place it has to hold is the side the money runs on.
+
+     A birth YEAR only: enough to gate correctly and the least personal thing
+     that does the job. Recorded once and not editable afterwards, because a
+     limit anyone can raise by retyping it is not a limit. */
+  if(body.birthYear != null && !prev.birthYear){
+    const y = Math.floor(+body.birthYear) || 0;
+    const nowY = new Date().getUTCFullYear();
+    if(y >= 1900 && y <= nowY){
+      prev.birthYear = y;
+      prev.ageSetAt = Date.now();
+      audit(env, 'age_recorded', { by: user.email, adult: (nowY - y) >= ADULT_AGE });
+    }
+  }
   const entry = {
     version, at: Date.now(),
     ip: (request.headers.get('CF-Connecting-IP') || '').slice(0, 45),
@@ -8291,6 +8328,10 @@ async function _ownsItem(env, email, id) {
 async function marketBuy(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'sign in to buy' }, 401);
+  /* Money out of a card. A minor cannot form a binding contract, which is
+     exactly why their purchases come back as chargebacks. */
+  const ageBad = await _moneyAgeGate(env, user.email);
+  if (ageBad) return json(ageBad, ageBad.code === 'age_required' ? 428 : 403);
   const { id } = await request.json().catch(() => ({}));
   const it = await _getListing(env, id);
   if (!it) return json({ error: 'item not found' }, 404);
@@ -8516,6 +8557,8 @@ async function marketEarnings(request, env) {
 async function marketWithdraw(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
+  const ageBadW = await _moneyAgeGate(env, user.email);
+  if (ageBadW) return json(ageBadW, ageBadW.code === 'age_required' ? 428 : 403);
   const { destination } = await request.json().catch(() => ({}));
   /* Taking money OUT is the one a parent most needs to be able to stop. */
   if (user.family && user.family.limits && !user.family.limits.payouts) {

@@ -728,3 +728,18 @@ where people write the thing they would not say twice. Before making a key
 global, ask whether two accounts on one machine should see the same value - and
 if the answer is no, re-scoping alone is not enough, because it makes existing
 data appear to vanish; it needs a migration that moves it.
+
+## 82. The gate that mattered was on the side that could be cleared
+`24-compliance.js` carries a careful essay on why age matters - under-13 is
+strict liability, a minor cannot form a binding contract, which is exactly why
+their purchases return as chargebacks - and then implements the gate entirely in
+localStorage. The word "age" did not appear anywhere in the worker except in a
+cache header. So the protection the file claimed to provide existed only where
+it could not be enforced: clear one key, or call the API with a key at all, and
+it was gone. It is now recorded server-side and checked where money moves.
+
+Adding it broke four suites and would have broken every existing customer, none
+of whom has ever been asked - which is the other half of the lesson. A new
+precondition on an existing money path needs the question asked at the point it
+is needed, not a wall and a settings pane nobody had a reason to open. "Not
+asked" and "too young" are different answers and need different codes.
