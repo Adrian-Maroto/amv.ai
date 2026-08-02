@@ -511,7 +511,9 @@ function isOwnerMode(){
   return _isOwnerEmail(S.user && S.user.email);
 }
 function isAdmin(){ return isOwnerMode(); }
-// The ?owner=1 flag only ARMS owner mode; it still requires being logged in as OWNER_EMAIL.
+/* Recorded for support only - nothing reads it, and nothing should. isOwnerMode
+   above is the single gate and it is email-only, so a flag anybody can set by
+   typing ?owner=1 grants exactly nothing. Do not wire this into a check. */
 try{ if(typeof location!=='undefined' && /[?&]owner=1\b/.test(location.search)){ saveStr('amv_owner','1'); } }catch(e){}
 try{ window.OWNER_EMAIL=OWNER_EMAIL; window._isOwnerEmail=_isOwnerEmail; }catch(e){}
 // Models

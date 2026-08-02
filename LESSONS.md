@@ -652,3 +652,15 @@ the DOM: `_i18nSrc` is the original the replacement remembered, so a node
 carrying one that differs from what is on screen has been translated by
 whichever route did it. Measure the OUTCOME, not the signature of one
 implementation of it.
+
+## 75. Sweep for state that is written and never read
+Grepping every `store`/`saveStr`/`setItem` key against every `load`/`loadStr`/
+`getItem` took one command and found three real defects, because a write with no
+reader throws nothing and runs fine forever. Every conversation save wrote a
+second FULL copy - attachments included - to `amv_convs`, which no code path
+reads, while the real per-account save deliberately slims attachments and keeps
+the last 40 messages to fit the quota; the copy nobody could read was the only
+one ignoring the budget. A team invite clicked before Teams was available was
+stored for later and never picked up, so the link was spent and the person
+joined nothing. Run this sweep periodically - the same query also catches the
+opposite shape, a setting read from a key nothing ever writes.

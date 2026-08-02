@@ -9548,7 +9548,9 @@ function isOwnerMode(){
   return _isOwnerEmail(S.user && S.user.email);
 }
 function isAdmin(){ return isOwnerMode(); }
-// The ?owner=1 flag only ARMS owner mode; it still requires being logged in as OWNER_EMAIL.
+/* Recorded for support only - nothing reads it, and nothing should. isOwnerMode
+   above is the single gate and it is email-only, so a flag anybody can set by
+   typing ?owner=1 grants exactly nothing. Do not wire this into a check. */
 try{ if(typeof location!=='undefined' && /[?&]owner=1\b/.test(location.search)){ saveStr('amv_owner','1'); } }catch(e){}
 try{ window.OWNER_EMAIL=OWNER_EMAIL; window._isOwnerEmail=_isOwnerEmail; }catch(e){}
 // Models
@@ -11134,13 +11136,25 @@ function setMsgs(msgs){
   renderHist();
 }
 function _autoSave(){
+  /* Conversations are read back by ONE path: loadUserConvs(email), keyed per
+     account. This used to write a second copy to 'amv_convs' as well, and
+     nothing has ever read that key.
+
+     It was not merely wasted. It wrote the full, uncapped S.convs including
+     every attachment, while saveUserConvs deliberately slims attachments and
+     keeps only the last 40 messages precisely to stay inside the quota. So the
+     one thing that ignored the budget was the copy nobody could read, and it is
+     what pushed a heavy account into a full localStorage - at which point the
+     real save fails too. Removing it is the difference between fitting and not. */
   try{
-    store('amv_convs',S.convs);
     if(S.user&&S.user.email) saveUserConvs(S.user.email,S.convs);
-    // Also update hist header visibility
+  }catch(e){ console.warn('AutoSave error:',e); }
+  /* Kept apart on purpose: a save that fails must not also stop the history
+     list from reflecting what is on screen. */
+  try{
     const hdr=$('hist-header');
     if(hdr) hdr.style.display=S.convs.length?'flex':'none';
-  }catch(e){ console.warn('AutoSave error:',e); }
+  }catch(e){}
 }
 function newChat(){
   const c=newConvObj();
@@ -15764,9 +15778,16 @@ async function _loadTeamTasks(team, role, myEmail){
 /* Auto-redeem a team invite from ?invite=token */
 function _checkTeamInvite(){
   try{
-    const t=new URLSearchParams(location.search).get('invite');
+    /* An invite arriving before Teams is available was written to
+       'amv_pending_invite' and never read by anything, so it was simply lost:
+       the link had been used up, the person was in no team, and nothing said
+       why. It is picked up here on the next run, once Teams is available. */
+    const t=new URLSearchParams(location.search).get('invite')||loadStr('amv_pending_invite')||'';
     if(!t) return;
     if(!AMVTeam.enabled()){ saveStr('amv_pending_invite', t); return; }
+    /* Consumed before the attempt, so a token that turns out to be expired
+       cannot sit here being retried on every load forever. */
+    try{ saveStr('amv_pending_invite',''); }catch(e){}
     /* A failed join is exactly the moment the user needs to be told. Silence
        here left somebody staring at an app that looked identical to before,
        with no idea the invite had expired or was sent to another address. */

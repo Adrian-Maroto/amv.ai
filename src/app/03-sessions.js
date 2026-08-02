@@ -1177,13 +1177,25 @@ function setMsgs(msgs){
   renderHist();
 }
 function _autoSave(){
+  /* Conversations are read back by ONE path: loadUserConvs(email), keyed per
+     account. This used to write a second copy to 'amv_convs' as well, and
+     nothing has ever read that key.
+
+     It was not merely wasted. It wrote the full, uncapped S.convs including
+     every attachment, while saveUserConvs deliberately slims attachments and
+     keeps only the last 40 messages precisely to stay inside the quota. So the
+     one thing that ignored the budget was the copy nobody could read, and it is
+     what pushed a heavy account into a full localStorage - at which point the
+     real save fails too. Removing it is the difference between fitting and not. */
   try{
-    store('amv_convs',S.convs);
     if(S.user&&S.user.email) saveUserConvs(S.user.email,S.convs);
-    // Also update hist header visibility
+  }catch(e){ console.warn('AutoSave error:',e); }
+  /* Kept apart on purpose: a save that fails must not also stop the history
+     list from reflecting what is on screen. */
+  try{
     const hdr=$('hist-header');
     if(hdr) hdr.style.display=S.convs.length?'flex':'none';
-  }catch(e){ console.warn('AutoSave error:',e); }
+  }catch(e){}
 }
 function newChat(){
   const c=newConvObj();

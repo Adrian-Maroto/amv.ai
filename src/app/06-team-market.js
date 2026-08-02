@@ -566,9 +566,16 @@ async function _loadTeamTasks(team, role, myEmail){
 /* Auto-redeem a team invite from ?invite=token */
 function _checkTeamInvite(){
   try{
-    const t=new URLSearchParams(location.search).get('invite');
+    /* An invite arriving before Teams is available was written to
+       'amv_pending_invite' and never read by anything, so it was simply lost:
+       the link had been used up, the person was in no team, and nothing said
+       why. It is picked up here on the next run, once Teams is available. */
+    const t=new URLSearchParams(location.search).get('invite')||loadStr('amv_pending_invite')||'';
     if(!t) return;
     if(!AMVTeam.enabled()){ saveStr('amv_pending_invite', t); return; }
+    /* Consumed before the attempt, so a token that turns out to be expired
+       cannot sit here being retried on every load forever. */
+    try{ saveStr('amv_pending_invite',''); }catch(e){}
     /* A failed join is exactly the moment the user needs to be told. Silence
        here left somebody staring at an app that looked identical to before,
        with no idea the invite had expired or was sent to another address. */
