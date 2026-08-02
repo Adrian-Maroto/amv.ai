@@ -283,6 +283,25 @@ section('Handoff can hand over the work, not just a chat about it');
 
 ok(errors.length === 0, 'and none of it logged an error', errors.slice(0, 3));
 
+section('Every event the server records has a label on the activity screen');
+{
+  /* The Security screen exists so a compromised account is visible - its own
+     header says a hardcoded "Active now" row would have reassured somebody
+     whose password had leaked. Its fallback renders an unknown kind as an
+     ordinary untoned row, which is the one presentation a security event must
+     not get. Nine of the sixteen kinds the worker records had no label, among
+     them a bank being linked and an API key being minted: exactly what an
+     attacker does after taking an account. */
+  const worker = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
+  const bundle = readFileSync(join(ROOT, 'app.js'), 'utf8');
+  const kinds = [...new Set([...worker.matchAll(/_userEvent\(env,[^,]*,[^,]*,\s*'([a-z_]+)'/g)].map(m => m[1]))];
+  const at = bundle.indexOf('const ACT_LABEL');
+  const blk = bundle.slice(at, at + 2000);
+  const missing = kinds.filter(k => blk.indexOf(k + ':') < 0);
+  ok(kinds.length > 10, 'the worker really does record a lot of them', kinds.length);
+  ok(missing.length === 0, 'and every one is labelled rather than falling through', missing);
+}
+
 await app.close();
 if (report('wiring-anchors') > 0) process.exitCode = 1;
 done();

@@ -787,3 +787,15 @@ Giving job_hunt a prompt silently moved the test onto it - and job_hunt is the
 one job whose toggle opens a setup modal instead of scheduling, so the test
 failed for a reason that had nothing to do with the change. Pick the subject
 deterministically, or exclude the special case by name and say why.
+
+## 88. A security screen that renders security events as ordinary rows
+28-activity.js opens by explaining why it exists: the old screen showed one
+hardcoded "Active now" row, so somebody whose password had leaked would have
+been reassured by a picture. It then labelled 7 of the 16 event kinds the worker
+records. The 9 unlabelled ones fell through to a fallback that renders the raw
+word untoned - and they included a bank account being linked, an API key being
+created, and the account joining a family. That is the exact list of what an
+attacker does after taking an account: connect to the money, mint a credential
+that survives a password change, attach the account to something they control.
+A lookup table with a graceful fallback hides its own gaps, so the gap needs a
+test: every kind the server can record must have a label.

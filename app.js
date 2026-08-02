@@ -24389,6 +24389,21 @@ const ACT_LABEL = {
   account_created:        ['Account created', ''],
   password_changed:       ['Password changed', 'warn'],
   plan_changed:           ['Plan changed', ''],
+  /* The rest of what the server actually records. These were absent, so they
+     fell through to the raw-word fallback and rendered as ordinary, untoned
+     rows - and they are precisely the events somebody checks this screen to
+     find. If an account is taken over, the attacker connects a bank, mints a
+     key to keep access after a password change, or attaches the account to a
+     "family" they control. Each of those is marked. */
+  finance_linked:         ['A bank account was linked', 'warn'],
+  finance_unlinked:       ['A bank account was disconnected', 'warn'],
+  api_key_created:        ['An API key was created', 'warn'],
+  api_key_revoked:        ['An API key was revoked', ''],
+  family_joined:          ['This account joined a family', 'warn'],
+  family_left:            ['This account left a family', ''],
+  family_member_left:     ['Someone left your family', ''],
+  family_limits_changed:  ['Family spending limits changed', 'warn'],
+  team_left:              ['Left a team', ''],
 };
 function _actLabel(ev){
   const m = ACT_LABEL[ev.kind];
