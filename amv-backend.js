@@ -2741,6 +2741,57 @@ async function crewApprovals(request, env){
   return json({ ok:true, approvals: rec.items || [] });
 }
 
+/* Editing a pending approval before you approve it.
+
+   The client has always sent this - fire and forget, `.catch(()=>{})` - and no
+   route existed, so every edit 404'd silently and lived only in the browser
+   that made it. Approving from a second device then sent the ORIGINAL.
+
+   The patch is whitelisted rather than merged. An approval is a pending action
+   against somebody's real accounts, so a caller must not be able to reach in
+   and set fields the UI never offers - most of all anything that could make it
+   approve itself. */
+const APPROVAL_PATCH_KEYS = ['title', 'destination', 'recipients', 'scheduledAt', 'recurrence', 'from', 'result'];
+const APPROVAL_ITEM_MAX = 64 * 1024;
+
+async function crewApprovalEdit(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'unauthorized' }, 401);
+  const blocked = await guardAction(env, 'apvedit:' + user.email, 60, 300, 'approval edits');
+  if(blocked) return blocked;
+
+  const body = await request.json().catch(()=>({}));
+  const id = String(body.id || '');
+  const patch = (body.patch && typeof body.patch === 'object') ? body.patch : null;
+  if(!id) return json({ error:'id required' }, 400);
+  if(!patch) return json({ error:'patch required' }, 400);
+
+  const rec = (await DB.get(env, 'approvals', user.email)) || { items:[] };
+  const item = (rec.items || []).find(a => a.id === id);
+  /* Only your own queue is ever read, so there is no id here that could belong
+     to somebody else - a wrong one is simply absent. */
+  if(!item) return json({ error:'no such approval' }, 404);
+
+  const next = Object.assign({}, item);
+  for(const k of APPROVAL_PATCH_KEYS){
+    if(!(k in patch)) continue;
+    const v = patch[k];
+    if(k === 'recipients'){ next[k] = Math.max(0, Math.min(100000, Math.floor(+v) || 0)); continue; }
+    if(k === 'scheduledAt'){ next[k] = v ? String(v).slice(0, 40) : null; continue; }
+    if(typeof v === 'string'){ next[k] = v.slice(0, 4000); continue; }
+    next[k] = v;
+  }
+  /* A single approval must not be able to fill the record. Checked on the
+     ASSEMBLED item, because the patch being small says nothing about the
+     result of applying it. */
+  if(JSON.stringify(next).length > APPROVAL_ITEM_MAX)
+    return json({ error:'That edit is too large to save.', code:'too_big' }, 413);
+
+  rec.items = (rec.items || []).map(a => a.id === id ? next : a);
+  await DB.put(env, 'approvals', user.email, rec);
+  return json({ ok:true, approval: next });
+}
+
 async function crewApprovalAct(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
@@ -3368,6 +3419,7 @@ export default {
         case '/api/jobs':            return crewJobs(request, env);
         case '/api/approvals':       return crewApprovals(request, env);
         case '/api/approvals/act':   return crewApprovalAct(request, env);
+        case '/api/approvals/edit':  return crewApprovalEdit(request, env);
         case '/api/handoff':         return request.method === 'POST' ? handoffCreate(request, env) : handoffList(request, env);
         case '/api/handoff/act':     return handoffAct(request, env);
         case '/team/create':     return teamCreate(request, env);
