@@ -96,7 +96,11 @@ const AMVFamily = {
 
            `settled` resolves with the truth; `how` is only what to say while
            waiting for it. */
-        const settled = fetch(String(AMV_API.base).replace(/\/$/,'')+'/v1/link/invite',{
+        /* fetchDeadline, not fetch: the screen now WAITS on this answer, so a
+           request that hangs would leave "Sending..." on it forever - which is
+           the failure the deadline rule exists for, made worse by depending on
+           the reply. */
+        const settled = fetchDeadline(String(AMV_API.base).replace(/\/$/,'')+'/v1/link/invite',{
           method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+AMV_API.token},
           body: JSON.stringify({ owner:inv.owner, scopes:inv.scopes, id:inv.id })
         }).then(async r => {
