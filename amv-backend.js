@@ -2521,6 +2521,22 @@ async function browserRun(request, env, ctx){
      is refused before a browser is ever launched. */
   const spendLimit = +body.spendLimit || 0;
   const declaredSpend = +body.spendAmount || 0;
+
+  /* AGE, HERE TOO. The browser agent can complete a checkout, so a purchase
+     routed through it would otherwise skip the check that marketBuy makes -
+     which is precisely the bypass 18-universal.js warns about in its own
+     comment, and the client-side gate it relies on is the clearable one.
+
+     Purchase-shaped is judged the same way the client judges it, because a
+     spend does not have to be declared to happen. */
+  if(declaredSpend > 0 || /\b(buy|purchase|checkout|order|pay|subscribe)\b/i.test(goal)){
+    const ageBad = await _moneyAgeGate(env, user.email);
+    if(ageBad){
+      audit(env, 'web_agent_age_blocked', { by:user.email, code:ageBad.code });
+      return json(ageBad, ageBad.code === 'age_required' ? 428 : 403);
+    }
+  }
+
   if(declaredSpend > 0){
     const ent = await getEntitlement(env, user.email).catch(() => null);
     const hardCap = Math.min(spendLimit > 0 ? spendLimit : Infinity, WEB_ABSOLUTE_SPEND_CAP);

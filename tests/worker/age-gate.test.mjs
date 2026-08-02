@@ -24,7 +24,7 @@ const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'agegate.harness.mjs');
 writeFileSync(harness, src + `
-export { _moneyAgeGate, consentRecord, ADULT_AGE, DB };
+export { _moneyAgeGate, consentRecord, ADULT_AGE, DB, browserRun };
 export function __setRequireUser(fn){ requireUser = fn; }
 `);
 const W = await import(harness + '?t=' + Date.now());
@@ -121,6 +121,26 @@ section('The gate is actually wired into the money routes');
     ok(b.indexOf('_moneyAgeGate') < b.indexOf('_getListing') || n !== 'marketBuy',
        'and checks it before reading the listing', n);
   });
+}
+
+section('The browser agent cannot be used to walk around it');
+{
+  /* It can complete a checkout, so a purchase routed through it would skip the
+     check marketBuy makes. 18-universal.js warns about exactly this bypass, and
+     the gate it relies on is the client-side one that can be cleared. */
+  const fn = (name) => {
+    const at = src.indexOf('async function ' + name);
+    const rest = src.slice(at + 1);
+    const ends = [rest.indexOf('\nasync function '), rest.indexOf('\nfunction ')].filter(x => x >= 0);
+    return ends.length ? src.slice(at, at + 1 + Math.min(...ends)) : src.slice(at);
+  };
+  const b = fn('browserRun');
+  ok(/_moneyAgeGate\(env, user\.email\)/.test(b), 'browserRun checks the age', true);
+  /* A spend does not have to be DECLARED to happen, so the goal itself is read. */
+  ok(/buy\|purchase\|checkout\|order\|pay\|subscribe/.test(b),
+     'and treats a purchase-shaped goal as a purchase even with no amount declared', true);
+  ok(b.indexOf('_moneyAgeGate') < b.indexOf('WEB_ABSOLUTE_SPEND_CAP'),
+     'before the spend cap, so an underage run is refused rather than merely capped', true);
 }
 
 if (report('age-gate') > 0) process.exitCode = 1;
