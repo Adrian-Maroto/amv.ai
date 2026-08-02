@@ -426,10 +426,16 @@ function _renderFamilyPane(pane){
     const label = ($('mf-inv-label')||{}).value || '';
     try{
       const r = AMVFamily.invite(email, want, { label });
-      // Honest about delivery: with no backend the code cannot be emailed, and
-      // the link genuinely cannot be approved. Say that instead of implying it
-      // was sent.
-      _mfSay('mf-inv-say', r.delivery.how, r.delivery.sent ? 'ok' : 'warn');
+      /* Honest about delivery: with no backend the code cannot be emailed, and
+         the link genuinely cannot be approved. `sent === null` means the answer
+         has not come back yet - the claim is corrected once it does, rather
+         than announced before it is known. */
+      _mfSay('mf-inv-say', r.delivery.how, r.delivery.sent === false ? 'warn' : 'info');
+      if(r.delivery.settled){
+        r.delivery.settled.then(d => {
+          _mfSay('mf-inv-say', d.how, d.sent ? 'ok' : 'err');
+        }).catch(()=>{});
+      }
     }catch(e){
       _mfSay('mf-inv-say', e.message || 'That did not work.', 'err');
       $('mf-inv-email')?.focus();

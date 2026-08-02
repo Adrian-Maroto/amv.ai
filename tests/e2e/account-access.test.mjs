@@ -138,6 +138,48 @@ section('Asking again does not fetch forever');
   ok(n === 1, 'the failed list is asked for once, not on every redraw', n);
 }
 
+section('An invite claims delivery only once the server confirms it');
+{
+  /* This used to fire the request with a swallowed catch and announce "a
+     confirmation code was sent" immediately. The server can answer that email
+     is not configured at all, so the person waited for a message that was never
+     coming and the link could never be approved. */
+  const r = await page.evaluate(async () => {
+    window.AMV_API.live = true; window.AMV_API.token = 't'; window.AMV_API.base = 'https://x.test';
+    window.fetch = async () => ({ ok: false, json: async () => ({ code: 'needs_service', error: 'no email' }) });
+    const res = AMVFamily.invite('them@x.com', ['calendar_view'], {});
+    const during = res.delivery;
+    const after = await res.delivery.settled;
+    return { during: { sent: during.sent, how: during.how }, after };
+  });
+  ok(r.during.sent === null, 'nothing is claimed while the request is in flight', r.during);
+  ok(/Sending/.test(r.during.how), 'it says it is sending, not that it sent', r.during.how);
+  ok(r.after.sent === false, 'and the answer is that it was not sent', r.after);
+  ok(/not switched on/.test(r.after.how), 'naming why, so the wait is not silent', r.after.how);
+}
+
+section('A delivered invite says so, once');
+{
+  const r = await page.evaluate(async () => {
+    window.fetch = async () => ({ ok: true, json: async () => ({ ok: true, delivered: true, message: 'A confirmation code was emailed to them@x.com.' }) });
+    const res = AMVFamily.invite('them2@x.com', ['calendar_view'], {});
+    return await res.delivery.settled;
+  });
+  ok(r.sent === true, 'a real delivery reports success', r);
+  ok(/emailed to/.test(r.how), 'in the server\'s own words', r.how);
+}
+
+section('A send that fails is not dressed up as a send');
+{
+  const r = await page.evaluate(async () => {
+    window.fetch = async () => ({ ok: true, json: async () => ({ ok: true, delivered: false, message: 'Could not deliver the code right now - try again shortly.' }) });
+    const res = AMVFamily.invite('them3@x.com', ['calendar_view'], {});
+    return await res.delivery.settled;
+  });
+  ok(r.sent === false, 'delivered:false is a failure', r);
+  ok(/Could not deliver/.test(r.how), 'and says so', r.how);
+}
+
 section('It fits on a phone');
 {
   await page.setViewportSize({ width: 390, height: 844 });

@@ -87,14 +87,36 @@ const AMVFamily = {
   _deliver(inv){
     try{
       if(window.AMV_API && AMV_API.live && AMV_API.token){
-        fetch(String(AMV_API.base).replace(/\/$/,'')+'/v1/link/invite',{
+        /* The reply is what decides whether a code was actually sent, so it is
+           read rather than discarded. This used to fire the request with a
+           swallowed catch and announce "a confirmation code was sent" - while
+           the server may have answered that email is not configured at all, or
+           that delivery failed. The person then waited for a message that was
+           never coming, and the link could never be approved.
+
+           `settled` resolves with the truth; `how` is only what to say while
+           waiting for it. */
+        const settled = fetch(String(AMV_API.base).replace(/\/$/,'')+'/v1/link/invite',{
           method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+AMV_API.token},
           body: JSON.stringify({ owner:inv.owner, scopes:inv.scopes, id:inv.id })
-        }).catch(()=>{});
-        return { sent:true, to:inv.owner, how:'A confirmation code was sent to '+inv.owner+'.' };
+        }).then(async r => {
+          const d = await r.json().catch(()=>({}));
+          if(d && d.code === 'needs_service')
+            return { sent:false, to:inv.owner,
+              how:'Email is not switched on for this deployment, so the code could not be sent. The link cannot be approved until it is.' };
+          if(!r.ok || !d || d.delivered === false)
+            return { sent:false, to:inv.owner,
+              how:(d && (d.error || d.message)) || ('The code could not be sent to '+inv.owner+' just now. Nothing was granted - try again shortly.') };
+          return { sent:true, to:inv.owner,
+            how:(d && d.message) || ('A confirmation code was emailed to '+inv.owner+'.') };
+        }).catch(() => ({ sent:false, to:inv.owner,
+          how:'The code could not be sent just now. Nothing was granted - try again shortly.' }));
+
+        return { sent:null, to:inv.owner, settled,
+          how:'Sending a confirmation code to '+inv.owner+'\u2026' };
       }
     }catch(e){}
-    return { sent:false, to:inv.owner,
+    return { sent:false, to:inv.owner, settled:null,
       how:'Connect the AMV backend so the confirmation code can be emailed to '+inv.owner+'. Until then the link cannot be approved, because approval must come from that account.' };
   },
 
