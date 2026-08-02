@@ -832,3 +832,12 @@ not tell me about this. It told me something near it was wrong, and the bug was
 found by asking why rather than by making the assertion pass. Ask where the code
 path STARTS for the people who already exist, not only for the ones created
 after the change.
+
+## 91. A control exactly on the threshold is a control that sometimes fails it
+`.dev-send` was 32px square against a 32px minimum tap target, so sub-pixel
+layout decided the outcome: it passed when run alone and failed inside the full
+gate, where font timing differs. The tempting reading of an intermittent failure
+is "flake, re-run it". The correct reading was that the element really is too
+small - a value that lands on the boundary is under it half the time, and a
+control you miss is a control that does not work. Fix the thing, not the
+threshold.

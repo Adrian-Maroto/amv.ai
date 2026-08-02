@@ -7730,6 +7730,14 @@ html,body{height:100%;height:100dvh}
 .cw-job-where.bg{color:var(--grn);background:color-mix(in srgb,var(--grn) 14%,transparent)}
 .cw-job-where.open{color:var(--mu);background:var(--s3)}
 
+/* `.dev-send` is 32px square - exactly the minimum, so sub-pixel layout puts it
+   under and the tap-target sweep failed intermittently rather than always. A
+   control sitting precisely on the boundary is a control that is sometimes too
+   small, which is the same thing as too small. */
+@media (pointer: coarse), (max-width: 560px){
+  .dev-send{ width:38px; height:38px; }
+}
+
 </style>
 <!-- BUILD:CSS:END -->
 <script>
