@@ -103,10 +103,13 @@ async function runAutonomous(goal, opts){
     let fileNote='';
     if(_AUTO.fileContent){ fileNote='\n\nThe user provided files. Plan using their ACTUAL contents below (do not ask for them again):\n'+String(_AUTO.fileContent).slice(0,10000); }
     else if(_AUTO.file){ fileNote='\nThe user attached a file: '+_AUTO.file.name+'.'; }
-    const planResp=await aiComplete(
+    /* The plan decides the quality of everything after it, so this is where the
+       good engine earns its cost - and where a malformed answer used to collapse
+       the whole run into a single generic step without saying so. */
+    const planRes=await qRun('plan',
       _AMVSYS+' Break this goal into an ordered list of concrete steps you will execute yourself. Each step is one action. Return ONLY a JSON array of objects: [{"step":"short title","action":"what you will do","needs_approval":true|false}]. Mark needs_approval true ONLY for steps that send/share/delete/publish something externally.'+fileNote+'\n\nGOAL: '+goal,
-      'Output strictly valid JSON, no prose, no code fences.');
-    plan=JSON.parse(planResp.replace(/^```json?|```$/g,'').trim());
+      'Output strictly valid JSON, no prose, no code fences.', { json:true });
+    plan=JSON.parse(String(planRes.text).replace(/^```json?|```$/g,'').trim());
   }catch(e){
     plan=[{step:'Complete the task',action:goal,needs_approval:false}];
   }
@@ -139,9 +142,16 @@ async function runAutonomous(goal, opts){
     let result='';
     try{
       const wsNote=_AUTO.workspace?'\n\nYou have a WORKSPACE of real files. To create or edit a file, reply with ONLY a fenced block that starts with a line "WRITE_FILE: <path>" then the full file contents. Use this to actually produce deliverables on disk.':'';
-      const decide=await aiComplete(
+      /* One bounded piece of work, so it runs on the cheap tier with a
+         self-check rather than on whichever engine the model dropdown says.
+         A run is a plan plus N of these plus a delivery; billing every one at
+         the price of the hardest thing AMV can do is what makes an agent
+         expensive out of all proportion to what it did. */
+      const stepRes=await qRun('step',
         'Step: '+s.action+'\n\nIf this step is best done by running code (computation, data parsing, transformation), reply with ONLY a fenced code block (js or python). Otherwise reply with the completed written result for this step.'+wsNote+' Context so far:\n'+(context.slice(-3000)||'(none)')+(_AUTO.fileContent?('\n\nWorkspace / file contents:\n'+String(_AUTO.fileContent).slice(0,12000)):''),
-        _AMVSYS+' Execute this one step and produce the actual, finished output for it - production quality.');
+        _AMVSYS+' Execute this one step and produce the actual, finished output for it - production quality.',
+        { refine:true, prose:true });
+      const decide=stepRes.text;
       // file write?
       const fileWrite=decide.match(/WRITE_FILE:\s*([^\n`]+)\n([\s\S]*?)(?:```|$)/);
       if(_AUTO.workspace && fileWrite){
@@ -174,9 +184,13 @@ async function runAutonomous(goal, opts){
   if(_AUTO.running){
     _autoSetStatus('Compiling deliverable…');
     try{
-      const deliv=await aiComplete(
+      /* The last thing the user actually reads. This one gets the best engine
+         the account can reach, and is checked before it is shown. */
+      const delivRes=await qRun('final',
         'Goal: '+goal+'\n\nWork log:\n'+context.slice(-8000)+'\n\nProduce the final, polished deliverable the user asked for. Markdown.',
-        _AMVSYS+' Output only the finished, polished deliverable - ready to use as-is.');
+        _AMVSYS+' Output only the finished, polished deliverable - ready to use as-is.',
+        { prose:true, minLen:80 });
+      const deliv=delivRes.text;
       _AUTO.deliverable=deliv;
       _autoLog('<div class="auto-ev done"><b>✓ Done</b></div>');
       try{ _rrComplete(); }catch(e){}

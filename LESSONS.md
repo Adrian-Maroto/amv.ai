@@ -743,3 +743,28 @@ of whom has ever been asked - which is the other half of the lesson. A new
 precondition on an existing money path needs the question asked at the point it
 is needed, not a wall and a settings pane nobody had a reason to open. "Not
 asked" and "too young" are different answers and need different codes.
+
+## 83. An agent run is priced by its cheapest step, not its hardest
+Crew ran the plan, every step, and the delivery on whichever engine the model
+dropdown was set to. So "pull the three numbers out of this" was billed at the
+price of the hardest thing the product can do, multiplied by the number of
+steps. Route by what the work IS: machinery (routing, titles, summaries,
+extraction, translation) on the cheapest engine, one bounded piece of real work
+in the middle, and planning plus the final review - where the whole run's
+quality is actually decided - on the best one the account can reach.
+
+## 84. A cheap model is not worse at everything, it is worse at catching itself
+Which is fixable for far less than the price difference. A specific instruction
+helps a small engine more than a large one; one focused self-check pass on the
+SAME engine catches most of what is left, at a fraction of a premium call; and
+the rest - refusals, placeholders, truncation, JSON that is not JSON - is
+detectable with no model at all. Only THAT is worth escalating a tier for, once,
+never in a chain. The floor is set by validation rather than by price.
+
+## 85. Two of my own bugs in the validator that checks for bugs
+`\b(...)\b` around an alternation whose branches begin with `[` or `<` can never
+match, so every bracketed placeholder pattern - the most common shape there is -
+was silently dead. And `xxx+` matched redactions, hashes and ordinary prose. The
+test that caught it then failed for its own reason: it anchored on
+`indexOf('async function runAutonomous')`, which finds `runAutonomousTask`
+first. A prefix is not an anchor.
