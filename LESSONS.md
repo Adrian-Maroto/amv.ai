@@ -841,3 +841,21 @@ is "flake, re-run it". The correct reading was that the element really is too
 small - a value that lands on the boundary is under it half the time, and a
 control you miss is a control that does not work. Fix the thing, not the
 threshold.
+
+## 92. Compute instead of recall is the largest quality lever there is
+A small model doing arithmetic in its head is guessing at a calculation. The same
+model writing two lines of JavaScript and running them is exactly as correct as
+any model in the world, because the computer does the sum. runCode had been sitting
+in the codebase the whole time. Numbers are also where a wrong answer is most
+visible and least forgivable, so this buys more perceived quality per unit of cost
+than anything else available - one cheap call plus local execution.
+
+Second lever: sample the same question a few times and keep what recurs. A small
+model's errors scatter and its correct answers cluster, so three cheap samples
+remove most one-off slips for a fraction of one top-tier call. Third: when the
+samples do NOT converge, that is the signal the question is beyond the cheap tier,
+and the only honest moment to spend real money.
+
+What none of this does is raise the ceiling on a problem the model cannot
+represent. It makes the cheap tier reliable, not brilliant - and most of what
+reads as "cheap" is unreliability, not lack of brilliance.

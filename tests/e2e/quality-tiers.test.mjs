@@ -229,6 +229,89 @@ section('A worked answer is not flagged as a conflict for its own working');
   ok(r.real.agree === false, 'while a genuine difference is still a conflict', r.real);
 }
 
+section('A number is computed, not recalled');
+{
+  /* The single largest win available. A small engine doing arithmetic in its
+     head is guessing at a calculation; the same engine writing two lines and
+     running them is exactly as correct as any model in the world, because the
+     computer does the sum. */
+  const r = await page.evaluate(async () => {
+    const seen = [];
+    window.runCode = async (code) => { seen.push(code); return { output: String(eval(code.replace(/console\.log/g, 'String'))) }; };
+    window.aiComplete = async (p, s, o) => {
+      seen.push((o || {}).model);
+      if (/only runnable JavaScript/i.test(s || '')) return 'console.log(84 * 0.15)';
+      return 'A 15% tip on $84 is $12.60.';
+    };
+    const out = await qAccurate('step', 'what is a 15% tip on $84', 'sys');
+    return { out, cheapest: seen.indexOf('amv-pulse') >= 0 };
+  });
+  ok(r.out.grounded === true, 'the answer is grounded in a real computation', r.out);
+  ok(r.out.value === '12.6', 'and the computed value is the exact one', r.out.value);
+  ok(/12\.60/.test(r.out.text), 'which is what the wording is built around', r.out.text);
+  ok(r.cheapest, 'the code itself is written by the cheapest engine, because it is machinery', r.cheapest);
+}
+
+section('When it cannot be computed, it falls back rather than inventing one');
+{
+  const r = await page.evaluate(async () => {
+    window.runCode = async () => ({ output: '' });
+    window.aiComplete = async (p, s) => {
+      if (/only runnable JavaScript/i.test(s || '')) return 'NOT_COMPUTABLE';
+      return 'A considered answer that is complete and ends properly.';
+    };
+    const out = await qAccurate('step', 'why did the roman empire fall', 'sys');
+    return out;
+  });
+  ok(r.grounded === false, 'nothing is claimed to be computed', r.grounded);
+  ok(/considered answer/.test(r.text), 'and the normal path still answers', r.text);
+}
+
+section('Asking more than once removes a one-off slip');
+{
+  /* A small model's errors scatter; its correct answers cluster. */
+  const r = await page.evaluate(async () => {
+    let n = 0;
+    window.runCode = async () => ({ output: '' });
+    window.aiComplete = async (p, s) => {
+      if (/only runnable JavaScript/i.test(s || '')) return 'NOT_COMPUTABLE';
+      n++;
+      /* One sample slips; two agree. */
+      return n === 2 ? 'The total is 41 units in the end.' : 'The total is 37 units in the end.';
+    };
+    const out = await qAccurate('step', 'work out the total', 'sys', { samples: 3 });
+    return out;
+  });
+  ok(r.agreed === true, 'the recurring answer wins', r);
+  ok(/37/.test(r.text), 'and it is the one two samples reached, not the odd one out', r.text);
+  ok(!r.escalated, 'with no need to pay for a bigger engine', !!r.escalated);
+}
+
+section('Real disagreement is what buys the expensive engine');
+{
+  /* Paying on every call against the possibility of being wrong is how a cost
+     control becomes a cost multiplier. Paying when the samples do not converge
+     is spending exactly where the cheap tier ran out. */
+  const r = await page.evaluate(async () => {
+    saveStr('amv_plan', 'elite');
+    let n = 0; const models = [];
+    window.runCode = async () => ({ output: '' });
+    window.aiComplete = async (p, s, o) => {
+      if (/only runnable JavaScript/i.test(s || '')) return 'NOT_COMPUTABLE';
+      models.push((o || {}).model); n++;
+      if (n <= 3) return 'The total is ' + (n * 11) + ' units in the end.';
+      return 'The settled total is 33 units in the end.';
+    };
+    const out = await qAccurate('step', 'work out the total', 'sys', { samples: 3 });
+    return { out, models };
+  });
+  ok(r.out.agreed === false, 'three different answers is not agreement', r.out.agreed);
+  ok(r.out.escalated === true, 'so it escalates', r.out.escalated);
+  ok(r.models[r.models.length - 1] === 'amv-apex', 'to the best engine available', r.models);
+  ok(Array.isArray(r.out.split) && r.out.split.length > 1,
+     'and it records what they disagreed about', r.out.split);
+}
+
 ok(errors.length === 0, 'no console errors along the way', errors.slice(0, 3));
 
 await app.close();

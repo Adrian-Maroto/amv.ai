@@ -25115,3 +25115,142 @@ try{
   window.TASK_TIER = TASK_TIER; window.qModel = qModel;
   window.qBad = qBad; window.qRun = qRun; window._bestEngineKey = _bestEngineKey;
 }catch(e){}
+
+
+/* ── CLOSING THE REST OF THE GAP ─────────────────────────────────────────────
+
+   The tiering above routes work by kind and repairs sloppiness. This is the
+   part that goes after ACCURACY, which is the other half of why an expensive
+   model feels expensive.
+
+   Three levers, in the order of how much they actually buy:
+
+   1. COMPUTE INSTEAD OF RECALL. A small model doing arithmetic in its head is
+      guessing at a calculation; the same model writing two lines of code and
+      running them is exactly as correct as any model in the world, because the
+      computer does the sum. Numbers are also where a wrong answer is most
+      visible and least forgivable, so this is the single largest win available
+      and it costs one cheap call plus local execution.
+
+   2. ASK MORE THAN ONCE. Sampling the same question a few times and keeping
+      the answer that recurs removes most one-off reasoning slips - a small
+      model's errors are scattered, its correct answers cluster. Three cheap
+      samples still cost a fraction of one top-tier call.
+
+   3. DISAGREEMENT IS THE SIGNAL TO SPEND. When the samples do not converge,
+      the question is genuinely beyond the cheap tier, and THAT is the moment
+      to pay for the better engine - rather than paying on every call against
+      the possibility.
+
+   What this does not do, and no amount of scaffolding will: raise the ceiling
+   on a problem the small model cannot represent at all. It makes the cheap tier
+   reliable, not brilliant. Most of what reads as "cheap" is unreliability. */
+
+/* Pull the conclusion out of an answer so two samples can be compared. Reuses
+   the accuracy layer's parser, which already knows that a worked answer's
+   WORKING is not its conclusion. */
+function _qFinal(text){
+  try{
+    if(typeof AMVVerify !== 'undefined' && AMVVerify._conclusion)
+      return AMVVerify._conclusion(text).final;
+  }catch(e){}
+  const m = String(text||'').match(/-?\d+(?:[.,]\d+)?/g);
+  return m ? m[m.length-1].replace(/,/g,'') : null;
+}
+function _qAgree(a, b){
+  try{
+    if(typeof AMVVerify !== 'undefined' && AMVVerify._same) return AMVVerify._same(a, b);
+  }catch(e){}
+  return String(a) === String(b);
+}
+
+/* Ask the cheap engine for the CALCULATION rather than the answer, then run it.
+   Returns null when the task is not actually computable, so the caller falls
+   back rather than inventing a number - the one outcome that would be worse
+   than not trying. */
+async function qCompute(question, opts){
+  const o = opts || {};
+  if(typeof runCode !== 'function' || typeof aiComplete !== 'function') return null;
+  let code = '';
+  try{
+    code = await aiComplete(
+      'Write JavaScript that computes the answer to this and prints ONLY the final value with console.log. '
+      + 'No explanation, no comments, no formatting - just the code. If it cannot be computed exactly, '
+      + 'output exactly: NOT_COMPUTABLE\n\n' + String(question).slice(0, 2000),
+      'You output only runnable JavaScript, or the single token NOT_COMPUTABLE.',
+      Object.assign({}, o, { model: qModel('extract'), max_tokens: 500, noLang: true }));
+  }catch(e){ return null; }
+  const clean = String(code || '').replace(/^```(?:js|javascript)?|```$/gm, '').trim();
+  if(!clean || /NOT_COMPUTABLE/.test(clean)) return null;
+  try{
+    const r = await runCode(clean, 'js');
+    const out = String((r && (r.output || r.result || r.logs)) || '').trim();
+    if(!out || /error/i.test((r && r.error) || '')) return null;
+    const last = out.split('\n').filter(Boolean).pop();
+    return (last && last.trim()) || null;
+  }catch(e){ return null; }
+}
+
+/* Sample a few times and keep what recurs. */
+async function qConsensus(task, prompt, system, opts){
+  const o = opts || {};
+  const n = Math.max(2, Math.min(5, o.samples || 3));
+  const model = o.model || qModel(task);
+  const runs = [];
+  for(let i = 0; i < n; i++){
+    try{ runs.push(await aiComplete(prompt, system, Object.assign({}, o, { model }))); }
+    catch(e){ runs.push(''); }
+  }
+  const usable = runs.filter(t => !qBad(t, { prose:o.prose, json:o.json, minLen:o.minLen }));
+  if(!usable.length) return { text:'', model, agreed:false, samples:n };
+
+  /* Group by the conclusion each sample reached. */
+  const groups = [];
+  usable.forEach(t => {
+    const f = _qFinal(t);
+    const g = groups.find(x => _qAgree(x.final, f));
+    if(g) g.items.push(t); else groups.push({ final:f, items:[t] });
+  });
+  groups.sort((a, b) => b.items.length - a.items.length);
+  const top = groups[0];
+  const agreed = top.items.length > 1 && top.items.length >= Math.ceil(usable.length / 2);
+  return { text: top.items[0], model, agreed, samples:n,
+           split: groups.length > 1 ? groups.map(g => g.final) : null };
+}
+
+/* The whole ladder, for work where being WRONG is the failure that matters:
+   compute it if it can be computed, otherwise agree with itself, and escalate
+   only when it cannot. */
+async function qAccurate(task, prompt, system, opts){
+  const o = opts || {};
+
+  if(o.numeric !== false){
+    const computed = await qCompute(prompt, o);
+    if(computed != null){
+      /* The number is now a fact rather than a recollection. The engine is only
+         asked to put it into words, which is the part it is good at. */
+      const said = await qRun(task, prompt + '\n\nThe correct computed answer is: ' + computed
+        + '\nUse exactly this value. Explain it clearly.', system, Object.assign({}, o, { refine:false }));
+      return { text: said.text, model: said.model, grounded:true, value: computed };
+    }
+  }
+
+  const c = await qConsensus(task, prompt, system, o);
+  if(c.agreed) return { text: c.text, model: c.model, grounded:false, agreed:true, samples:c.samples };
+
+  /* They did not converge, so the question is beyond this tier. This is the
+     moment the better engine is worth its price. */
+  const up = _nextTierModel(task);
+  if(up !== c.model){
+    try{
+      const better = await aiComplete(prompt, system, Object.assign({}, o, { model: up }));
+      if(better && !qBad(better, { prose:o.prose, json:o.json, minLen:o.minLen }))
+        return { text: better, model: up, grounded:false, agreed:false, escalated:true, split:c.split };
+    }catch(e){}
+  }
+  return { text: c.text || '', model: c.model, grounded:false, agreed:false, split:c.split };
+}
+
+try{
+  window.qCompute = qCompute; window.qConsensus = qConsensus; window.qAccurate = qAccurate;
+}catch(e){}
