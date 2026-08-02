@@ -112,6 +112,69 @@ section('The shared marketplace records still resolve per person');
   ok(r.bBalance === 99, 'and the other account finds its own, from the same record', r.bBalance);
 }
 
+section('Scheduled work does not follow you into somebody else\'s account');
+{
+  /* _loadSched/_saveSched used raw localStorage, which skips scoping entirely,
+     so the scheduled-jobs list was shared by every account on the device.
+     Signing in as somebody else showed their jobs - goal text often carries
+     personal detail - and _runDueAuto then executed them under whoever was
+     signed in, spending their quota on another person's work. */
+  const r = await page.evaluate(async () => {
+    localStorage.clear();
+    loginUser({ name: 'A', email: 'a@x.com', ini: 'A' });
+    _saveSched([{ id: 's1', goal: 'Email my oncologist about the biopsy results', freq: 'daily', next: Date.now() + 1000 }]);
+    const mine = _loadSched();
+
+    loginUser({ name: 'B', email: 'b@x.com', ini: 'B' });
+    const theirs = _loadSched();
+
+    loginUser({ name: 'A', email: 'a@x.com', ini: 'A' });
+    const backAgain = _loadSched();
+    return { mine: mine.length, theirs: theirs.length, backAgain: backAgain.length,
+             raw: localStorage.getItem('amv_autosched') };
+  });
+  ok(r.mine === 1, 'the account that scheduled it has it', r.mine);
+  ok(r.theirs === 0, 'a different account on the same device does not', r.theirs);
+  ok(r.backAgain === 1, 'and it is still there when the owner returns', r.backAgain);
+  ok(r.raw === null, 'with nothing left at the unscoped key for the next person', r.raw);
+}
+
+section('Pausing autonomy pauses YOUR autonomy');
+{
+  /* Device-wide, this meant one account could stop another account's jobs -
+     and, worse, resume them again. A safety control somebody else can toggle
+     for you is not a safety control. */
+  const r = await page.evaluate(() => {
+    localStorage.clear();
+    loginUser({ name: 'A', email: 'a@x.com', ini: 'A' });
+    _setAutonomyPaused(true);
+    const a = _autonomyPaused();
+    loginUser({ name: 'B', email: 'b@x.com', ini: 'B' });
+    const b = _autonomyPaused();
+    loginUser({ name: 'A', email: 'a@x.com', ini: 'A' });
+    return { a, b, backAgain: _autonomyPaused() };
+  });
+  ok(r.a === true, 'the account that paused is paused', r.a);
+  ok(r.b === false, 'another account on the device is not', r.b);
+  ok(r.backAgain === true, 'and the pause survives for whoever set it', r.backAgain);
+}
+
+section('A schedule written before the change is carried over');
+{
+  const r = await page.evaluate(() => {
+    localStorage.clear();
+    localStorage.setItem('amv_autosched', JSON.stringify([{ id: 'old', goal: 'legacy job', freq: 'daily' }]));
+    loginUser({ name: 'C', email: 'c@x.com', ini: 'C' });
+    const mine = _loadSched();
+    const stillGlobal = localStorage.getItem('amv_autosched');
+    loginUser({ name: 'D', email: 'd@x.com', ini: 'D' });
+    return { mine: mine.length, stillGlobal, other: _loadSched().length };
+  });
+  ok(r.mine === 1, 'an existing schedule is not lost', r.mine);
+  ok(r.stillGlobal === null, 'the shared copy is removed', r.stillGlobal);
+  ok(r.other === 0, 'so the next account starts empty', r.other);
+}
+
 ok(errors.length === 0, 'no console errors along the way', errors.slice(0, 3));
 
 await app.close();

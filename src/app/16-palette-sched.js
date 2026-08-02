@@ -392,8 +392,13 @@ function _scheduleAuto(goal, freq){
     })
     .catch(()=>{});
 }
-function _loadSched(){ try{ return JSON.parse(localStorage.getItem('amv_autosched')||'[]'); }catch(e){ return []; } }
-function _saveSched(l){ try{ localStorage.setItem('amv_autosched', JSON.stringify(l)); }catch(e){} }
+/* load/store, not raw localStorage: raw bypasses _scopeKey, so this list was
+   shared by every account on the device. Signing in as somebody else showed
+   their scheduled jobs - goals that often carry personal detail - and
+   _runDueAuto then executed them under whoever happened to be signed in,
+   spending their quota on another person's work. */
+function _loadSched(){ try{ const v = load('amv_autosched'); return Array.isArray(v) ? v : []; }catch(e){ return []; } }
+function _saveSched(l){ try{ store('amv_autosched', l); }catch(e){} }
 async function _runDueAuto(){
   if(typeof _autonomyPaused==='function' && _autonomyPaused()) return;
   const list=_loadSched(); if(!list.length) return;

@@ -799,3 +799,21 @@ attacker does after taking an account: connect to the money, mint a credential
 that survives a password change, attach the account to something they control.
 A lookup table with a graceful fallback hides its own gaps, so the gap needs a
 test: every kind the server can record must have a label.
+
+## 89. Raw localStorage is an unscoped write
+`store`/`load`/`saveStr`/`loadStr` route through `_scopeKey`, which files a value
+under the signed-in account. `localStorage.setItem` does not, and three places
+used it directly: the scheduled-jobs list, "Pause all autonomous", and the
+per-section model choice. All three were therefore shared by every account on
+the device.
+
+The scheduled-jobs one is the serious case. Signing in as somebody else showed
+their jobs - goal text carries whatever personal detail the task involved - and
+`_runDueAuto` then EXECUTED them under whoever happened to be signed in,
+spending their quota on another person's work. The autonomy pause is the
+sharpest: a safety control that another account can toggle for you, and resume
+again, is not a safety control.
+
+Nothing about the calls looks wrong at the call site; they are ordinary and they
+work. Grep for raw localStorage whenever a scoping helper exists, because the
+helper only helps where it is used.

@@ -536,8 +536,9 @@ try{ window.ENGINE_LABEL=ENGINE_LABEL; }catch(e){}
    control how much usage they spend. The choice is REAL - it's passed straight to
    aiComplete/runCode paths. Persisted per section. */
 const _BUILD_MODEL = { dev:'smart', lab:'smart', studio:'smart' };
-try{ const saved=JSON.parse(localStorage.getItem('amv_build_models')||'{}'); Object.assign(_BUILD_MODEL, saved); }catch(e){}
-function _saveBuildModels(){ try{ localStorage.setItem('amv_build_models', JSON.stringify(_BUILD_MODEL)); }catch(e){} }
+/* Scoped like every other preference - raw localStorage skips _scopeKey. */
+try{ const saved=load('amv_build_models'); if(saved && typeof saved==='object') Object.assign(_BUILD_MODEL, saved); }catch(e){}
+function _saveBuildModels(){ try{ store('amv_build_models', _BUILD_MODEL); }catch(e){} }
 // resolve a section's chosen model key → real API model string for aiComplete/opts.model
 function _buildModelStr(section){ const k=_BUILD_MODEL[section]||'smart'; const m=MODELS[k]; return (m&&m.model&&m.model!=='auto')?m.model:'amv-apex'; }
 // usage dots (1-4) as a compact visual - clearly shows how much each model costs

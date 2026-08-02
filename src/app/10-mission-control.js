@@ -438,8 +438,12 @@ async function _crewSyncLive(){
    finished, and what's blocked. Reads only real stores; empty groups
    collapse to a quiet line instead of fabricating activity.
    ============================================================ */
-function _autonomyPaused(){ try{ return localStorage.getItem('amv_autonomy_paused')==='1'; }catch(e){ return false; } }
-function _setAutonomyPaused(v){ try{ localStorage.setItem('amv_autonomy_paused', v?'1':'0'); }catch(e){} }
+/* Per account. Raw localStorage skips _scopeKey, so "Pause all autonomous" was
+   device-wide: one account pausing stopped another account's jobs, and the
+   first account resuming silently restarted them. A safety control that one
+   person can toggle for somebody else is not one. */
+function _autonomyPaused(){ try{ return loadStr('amv_autonomy_paused')==='1'; }catch(e){ return false; } }
+function _setAutonomyPaused(v){ try{ saveStr('amv_autonomy_paused', v?'1':'0'); }catch(e){} }
 function pauseAllAutonomous(){ _setAutonomyPaused(true); if(window.AMV_API && AMV_API.live && AMV_API.pauseAutonomy) AMV_API.pauseAutonomy(true).catch(()=>{}); toast('All autonomous work paused - nothing runs until you resume.','info',3800); renderCrewView(); }
 function resumeAllAutonomous(){ _setAutonomyPaused(false); if(window.AMV_API && AMV_API.live && AMV_API.pauseAutonomy) AMV_API.pauseAutonomy(false).catch(()=>{}); toast('Autonomous work resumed.','success'); renderCrewView(); }
 window.pauseAllAutonomous=pauseAllAutonomous; window.resumeAllAutonomous=resumeAllAutonomous;

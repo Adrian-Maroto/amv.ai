@@ -8134,7 +8134,12 @@ const _GLOBAL_KEYS = new Set(['amv_links','amv_user','amv_theme','amv_accent','a
 const _MIGRATE_TO_USER = ['amv_nickname','amv_work','amv_instructions',
   'amv_location_opt','amv_improve_opt','amv_cap_websearch','amv_cap_memory',
   'amv_cap_suggestions','amv_skills','amv_active_skills','amv_plugin_web',
-  'amv_plugin_code','amv_plugin_canvas','amv_plugin_automations','amv_plugin_vision'];
+  'amv_plugin_code','amv_plugin_canvas','amv_plugin_automations','amv_plugin_vision',
+  /* These three were written through raw localStorage, which skips scoping
+     entirely - so they were shared by every account on the device. The
+     scheduled-jobs list is the serious one: it carries goal text and was
+     executed under whoever was signed in. */
+  'amv_autosched','amv_autonomy_paused','amv_build_models'];
 
 function _migrateScopedKeys(email){
   try{
@@ -9617,8 +9622,9 @@ try{ window.ENGINE_LABEL=ENGINE_LABEL; }catch(e){}
    control how much usage they spend. The choice is REAL - it's passed straight to
    aiComplete/runCode paths. Persisted per section. */
 const _BUILD_MODEL = { dev:'smart', lab:'smart', studio:'smart' };
-try{ const saved=JSON.parse(localStorage.getItem('amv_build_models')||'{}'); Object.assign(_BUILD_MODEL, saved); }catch(e){}
-function _saveBuildModels(){ try{ localStorage.setItem('amv_build_models', JSON.stringify(_BUILD_MODEL)); }catch(e){} }
+/* Scoped like every other preference - raw localStorage skips _scopeKey. */
+try{ const saved=load('amv_build_models'); if(saved && typeof saved==='object') Object.assign(_BUILD_MODEL, saved); }catch(e){}
+function _saveBuildModels(){ try{ store('amv_build_models', _BUILD_MODEL); }catch(e){} }
 // resolve a section's chosen model key → real API model string for aiComplete/opts.model
 function _buildModelStr(section){ const k=_BUILD_MODEL[section]||'smart'; const m=MODELS[k]; return (m&&m.model&&m.model!=='auto')?m.model:'amv-apex'; }
 // usage dots (1-4) as a compact visual - clearly shows how much each model costs
@@ -20188,8 +20194,12 @@ async function _crewSyncLive(){
    finished, and what's blocked. Reads only real stores; empty groups
    collapse to a quiet line instead of fabricating activity.
    ============================================================ */
-function _autonomyPaused(){ try{ return localStorage.getItem('amv_autonomy_paused')==='1'; }catch(e){ return false; } }
-function _setAutonomyPaused(v){ try{ localStorage.setItem('amv_autonomy_paused', v?'1':'0'); }catch(e){} }
+/* Per account. Raw localStorage skips _scopeKey, so "Pause all autonomous" was
+   device-wide: one account pausing stopped another account's jobs, and the
+   first account resuming silently restarted them. A safety control that one
+   person can toggle for somebody else is not one. */
+function _autonomyPaused(){ try{ return loadStr('amv_autonomy_paused')==='1'; }catch(e){ return false; } }
+function _setAutonomyPaused(v){ try{ saveStr('amv_autonomy_paused', v?'1':'0'); }catch(e){} }
 function pauseAllAutonomous(){ _setAutonomyPaused(true); if(window.AMV_API && AMV_API.live && AMV_API.pauseAutonomy) AMV_API.pauseAutonomy(true).catch(()=>{}); toast('All autonomous work paused - nothing runs until you resume.','info',3800); renderCrewView(); }
 function resumeAllAutonomous(){ _setAutonomyPaused(false); if(window.AMV_API && AMV_API.live && AMV_API.pauseAutonomy) AMV_API.pauseAutonomy(false).catch(()=>{}); toast('Autonomous work resumed.','success'); renderCrewView(); }
 window.pauseAllAutonomous=pauseAllAutonomous; window.resumeAllAutonomous=resumeAllAutonomous;
@@ -29148,8 +29158,13 @@ function _scheduleAuto(goal, freq){
     })
     .catch(()=>{});
 }
-function _loadSched(){ try{ return JSON.parse(localStorage.getItem('amv_autosched')||'[]'); }catch(e){ return []; } }
-function _saveSched(l){ try{ localStorage.setItem('amv_autosched', JSON.stringify(l)); }catch(e){} }
+/* load/store, not raw localStorage: raw bypasses _scopeKey, so this list was
+   shared by every account on the device. Signing in as somebody else showed
+   their scheduled jobs - goals that often carry personal detail - and
+   _runDueAuto then executed them under whoever happened to be signed in,
+   spending their quota on another person's work. */
+function _loadSched(){ try{ const v = load('amv_autosched'); return Array.isArray(v) ? v : []; }catch(e){ return []; } }
+function _saveSched(l){ try{ store('amv_autosched', l); }catch(e){} }
 async function _runDueAuto(){
   if(typeof _autonomyPaused==='function' && _autonomyPaused()) return;
   const list=_loadSched(); if(!list.length) return;

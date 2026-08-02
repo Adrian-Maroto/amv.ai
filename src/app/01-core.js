@@ -52,7 +52,12 @@ const _GLOBAL_KEYS = new Set(['amv_links','amv_user','amv_theme','amv_accent','a
 const _MIGRATE_TO_USER = ['amv_nickname','amv_work','amv_instructions',
   'amv_location_opt','amv_improve_opt','amv_cap_websearch','amv_cap_memory',
   'amv_cap_suggestions','amv_skills','amv_active_skills','amv_plugin_web',
-  'amv_plugin_code','amv_plugin_canvas','amv_plugin_automations','amv_plugin_vision'];
+  'amv_plugin_code','amv_plugin_canvas','amv_plugin_automations','amv_plugin_vision',
+  /* These three were written through raw localStorage, which skips scoping
+     entirely - so they were shared by every account on the device. The
+     scheduled-jobs list is the serious one: it carries goal text and was
+     executed under whoever was signed in. */
+  'amv_autosched','amv_autonomy_paused','amv_build_models'];
 
 function _migrateScopedKeys(email){
   try{
