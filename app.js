@@ -23520,6 +23520,12 @@ try{ window._renderSpendingPane = _renderSpendingPane; }catch(e){}
 let _FAM_STATE = null;
 /* The server's list of who can reach this account. null = not asked yet. */
 let _LINK_STATE = null;
+/* In flight, as distinct from not yet asked. This pane now makes TWO
+   independent requests, and each one's reply re-renders - so a guard that only
+   asks "is the state still null" re-issues the other request every time its
+   sibling lands, and the count grows with each redraw. Nothing loops forever,
+   which is exactly why it would have gone unnoticed. */
+let _FAM_BUSY = false, _LINK_BUSY = false;
 
 function _famMoney(n){ return '$' + (Math.round((+n || 0) * 100) / 100).toFixed(2); }
 
@@ -23789,20 +23795,22 @@ function _renderFamilyPane(pane){
 
   _wireFamilyParent(pane);
   _wireFamilyChild(pane);
-  if(needState && window.AMV_API && AMV_API.live && AMV_API.token){
+  if(needState && !_FAM_BUSY && window.AMV_API && AMV_API.live && AMV_API.token){
+    _FAM_BUSY = true;
     AMV_API.familyGet()
-      .then(d => { _FAM_STATE = d; _renderFamilyPane(pane); })
-      .catch(() => { _FAM_STATE = { parentOf:null, childOf:null }; });
+      .then(d => { _FAM_BUSY = false; _FAM_STATE = d; _renderFamilyPane(pane); })
+      .catch(() => { _FAM_BUSY = false; _FAM_STATE = { parentOf:null, childOf:null }; });
   }
   /* Same shape, same trap: set on BOTH paths so a failure cannot leave this
      null and re-fetch on every redraw forever. */
-  if(needLinks && window.AMV_API && AMV_API.live && AMV_API.token){
+  if(needLinks && !_LINK_BUSY && window.AMV_API && AMV_API.live && AMV_API.token){
+    _LINK_BUSY = true;
     AMV_API.linkList()
-      .then(d => { _LINK_STATE = d; _renderFamilyPane(pane); })
+      .then(d => { _LINK_BUSY = false; _LINK_STATE = d; _renderFamilyPane(pane); })
       /* Redrawn on failure too. Recording it without redrawing left the screen
          showing the empty local fallback, which reads as "nobody has access" -
          the one reassurance this pane must not give on a failed request. */
-      .catch(() => { _LINK_STATE = { iCanAccess:[], canAccessMe:[], _failed:true }; _renderFamilyPane(pane); });
+      .catch(() => { _LINK_BUSY = false; _LINK_STATE = { iCanAccess:[], canAccessMe:[], _failed:true }; _renderFamilyPane(pane); });
   }
 
   pane.querySelectorAll('.mf-revoke').forEach(b => b.addEventListener('click', function(){

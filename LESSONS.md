@@ -685,3 +685,14 @@ the failed fetch without re-rendering left the pane showing its empty local
 fallback, which reads as "nobody has access" - reassurance built on a request
 that failed. Update a cache in place when you already know the new value, and
 set state AND redraw on the failure path, not just the success one.
+
+## 78. "Is the state still null" is not "is a request already running"
+Adding a second independent fetch to the family pane made both of them
+self-multiply. Each reply re-renders, and on that render the OTHER request was
+still in flight with its state still null, so the guard re-issued it - one call
+became three. It converges, so nothing hangs and nothing looks wrong; the only
+symptom is extra requests. A guard on the RESULT is not a guard on the REQUEST.
+Track in-flight separately whenever a render can be triggered by something other
+than the fetch it owns. The test caught it only because it counted calls - and
+then had to be sharpened to count per endpoint, because a total cannot tell two
+different fetches from one fetch happening twice.

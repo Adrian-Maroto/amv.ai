@@ -72,8 +72,19 @@ section('A parent sees who they carry, and what they can spend');
   ok(/Can take money out/.test(t), 'and taking money out');
   ok(/1 of 5 accounts used/.test(t), 'and how many places are left', t.match(/\d of \d accounts/));
 
-  const calls = await page.evaluate(() => window.__calls.length);
-  ok(calls === 1, 'the family is fetched once, not in a loop', calls);
+  /* Counted PER endpoint. The pane makes two independent requests now - the
+     family, and who can reach this account - and each reply re-renders, so a
+     total count cannot tell "two different things were fetched" from "one thing
+     was fetched twice". Per endpoint is the property that actually matters and
+     is stricter than the total ever was: it caught a real re-issue where each
+     reply restarted its sibling's request. */
+  const byPath = await page.evaluate(() => {
+    const n = {};
+    window.__calls.forEach(c => { n[c.path] = (n[c.path] || 0) + 1; });
+    return n;
+  });
+  ok(byPath['/v1/family/get'] === 1, 'the family is fetched once, not in a loop', byPath);
+  ok(!Object.values(byPath).some(v => v > 1), 'and nothing else is either', byPath);
 }
 
 section('Both sides are told what a parent cannot see');
