@@ -397,8 +397,34 @@ async function _crewSyncLive(){
   try{
     const jobs=await AMV_API.jobs();
     const appr=await AMV_API.approvals();
-    // map backend rows -> local shape
-    if(jobs && jobs.length){ store('amv_cw_jobs', jobs.map(j=>({id:j.key,icon:(_cwDefaultJobs().find(d=>d.id===j.key)||{}).icon||'⚙️',title:j.title,desc:(_cwDefaultJobs().find(d=>d.id===j.key)||{}).desc||'',needs:j.needs,on:!!j.on_flag}))); }
+    /* MERGED into the catalogue, not substituted for it.
+
+       The server holds a row only for jobs that have ever been switched on.
+       Replacing the list with those rows therefore threw away every job the
+       user had not touched - the catalogue collapsed from seventy-odd to the
+       handful they had used, on the next sync. It also dropped every field the
+       mapping did not mention: the category (so the grouping fell apart), the
+       instruction (so switching one on would have scheduled its TITLE), and the
+       id of the automation it created (so switching it off could no longer stop
+       it).
+
+       The definitions are the source of truth for what a job IS. The server is
+       the source of truth for whether it is ON. */
+    if(Array.isArray(jobs)){
+      const onByKey = {};
+      jobs.forEach(j => { if(j && j.key) onByKey[j.key] = !!j.on_flag; });
+      const byId = {};
+      _cwJobs().forEach(j => { byId[j.id] = j; });
+      store('amv_cw_jobs', _cwDefaultJobs().map(def => {
+        const cur = byId[def.id] || {};
+        return Object.assign({}, def, {
+          on: (def.id in onByKey) ? onByKey[def.id] : !!cur.on,
+          /* Local only - it is the handle on the scheduled work this device
+             created, and the server's job row does not carry it. */
+          autoId: cur.autoId || null,
+        });
+      }));
+    }
     if(appr){ store('amv_cw_approvals', appr.map(a=>({id:a.id,icon:a.icon,title:a.title,preview:a.preview}))); }
     renderCrewView();
   }catch(e){}

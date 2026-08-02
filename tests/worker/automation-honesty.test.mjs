@@ -23,7 +23,7 @@ const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'autohonesty.harness.mjs');
 writeFileSync(harness, src + `
-export { autoCreate, autoList, AUTO_MAX_BY_PLAN, _autoBudget, setEntitlement, signToken, DB, AUTO_MAX_PER_USER,
+export { autoCreate, autoList, AUTO_MAX_BY_PLAN, runDueAutomations, _autoBudget, setEntitlement, signToken, DB, AUTO_MAX_PER_USER,
          _autoEmailResult, _autoExecute, FREE_AUTO_MAX, FREE_AUTO_REPEAT, FREE_AUTO_CEILING_USD, ENGINES };
 `);
 const W = await import(harness + '?t=' + Date.now());
@@ -269,6 +269,45 @@ section('An unattended job cannot claim to have done what it cannot do');
      'so an action-shaped job returns the finished draft, labelled unsent');
   ok(/[Nn]ever invent a result, a number, or a confirmation/.test(prompt),
      'and inventing a confirmation is ruled out in those words');
+}
+
+section('Downgrading actually reduces what runs');
+{
+  /* Creation was gated by the plan's job limit and running never was. Somebody
+     on Elite with twenty-five jobs who dropped to Pro kept all twenty-five - the
+     only thing between them and five times the work they pay for was the
+     monthly spend ceiling, which is a different promise entirely. */
+  const store2 = new Map();
+  const env2 = {
+    JWT_SECRET: 'x'.repeat(40), AMV_MODEL_KEY: 'k',
+    AMV_KV: {
+      async get(k){ return store2.has(k) ? store2.get(k) : null; },
+      async put(k, v){ store2.set(k, String(v)); },
+      async delete(k){ store2.delete(k); },
+      async list({ prefix }){ return { keys:[...store2.keys()].filter(k=>k.startsWith(prefix||'')).map(name=>({name})), list_complete:true }; },
+    },
+  };
+  const due = Date.now() - 1000;
+  const items = [];
+  for (let i = 0; i < 9; i++) items.push({ id:'j'+i, detail:'do a thing', repeat:'daily',
+    interval: 86400000, next: due, kind:'task', active:true, runs:0, tier:'paid' });
+  await W.DB.put(env2, 'auto', 'x@x.com', { items, results: [] });
+  await W.DB.put(env2, 'ent', 'x@x.com', { plan:'pro' });
+
+  let ran = 0;
+  const realFetch2 = globalThis.fetch;
+  globalThis.fetch = async () => { ran++; return { ok:true, json: async () => ({ content:[{ text:'ok' }], usage:{} }) }; };
+  try { await W.runDueAutomations(env2); } finally { globalThis.fetch = realFetch2; }
+
+  const allow = W.AUTO_MAX_BY_PLAN.pro;
+  ok(ran === allow, 'only the number the plan sells actually runs', { ran, allow });
+
+  const after = await W.DB.get(env2, 'auto', 'x@x.com');
+  const skipped = after.items.filter(i => /job limit/.test(i.lastError || ''));
+  ok(skipped.length === 9 - allow, 'the rest are skipped', skipped.length);
+  ok(skipped.every(i => i.active), 'and left switched on, because a downgrade is often temporary', true);
+  ok(after.items.slice(0, allow).every(i => i.runs === 1),
+     'the oldest jobs are the ones kept, matching what the app tells you', after.items.slice(0, allow).map(i => i.runs));
 }
 
 report('automation-honesty');

@@ -291,6 +291,40 @@ section('The fix is one tap from the card');
   ok(went === 'integrations', 'Connect goes to where the account is linked', went);
 }
 
+section('Syncing with the server does not eat the catalogue');
+{
+  /* The server holds a row only for jobs that have ever been switched on, and
+     the sync REPLACED the list with those rows. So the catalogue collapsed from
+     seventy-odd to the handful the user had touched, and every field the mapping
+     did not name went with it: the category, the instruction, and the id of the
+     automation the job had created. */
+  const r = await page.evaluate(async () => {
+    const jobs = _cwJobs();
+    const web = _cwDefaultJobs().find(j => j.needs === 'Web research' && j.prompt);
+    const row = jobs.find(j => j.id === web.id);
+    row.on = true; row.autoId = 'auto7'; _cwSaveJobs(jobs);
+
+    window.AMV_API.live = true;
+    window.AMV_API.jobs = async () => ([{ key: web.id, title: web.title, needs: web.needs, on_flag: true }]);
+    window.AMV_API.approvals = async () => ([]);
+    await _crewSyncLive();
+    await new Promise(r => setTimeout(r, 200));
+
+    const after = _cwJobs();
+    const mine = after.find(j => j.id === web.id);
+    return { count: after.length, defined: _cwDefaultJobs().length,
+             on: mine && mine.on, autoId: mine && mine.autoId,
+             cat: mine && mine.cat, prompt: (mine && mine.prompt || '').length,
+             withCat: after.filter(j => j.cat).length };
+  });
+  ok(r.count === r.defined, 'the whole catalogue survives the sync', r);
+  ok(r.withCat === r.defined, 'every job keeps its category, so the grouping still works', r.withCat);
+  ok(r.prompt > 60, 'and its real instruction, not just a title', r.prompt);
+  ok(r.autoId === 'auto7',
+     'the handle on the scheduled work is kept, so it can still be switched off', r.autoId);
+  ok(r.on === true, 'while the server remains the authority on what is ON', r.on);
+}
+
 section('It fits on a phone');
 {
   await page.setViewportSize({ width: 390, height: 844 });

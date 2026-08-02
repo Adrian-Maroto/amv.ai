@@ -188,6 +188,10 @@ function clearFails(email) { delete _fails[email.toLowerCase()]; }
 function loginUser(acct) {
   S.user = { name:acct.name, email:acct.email, ini:acct.ini, provider:acct.provider||'email' };
   store('amv_user', S.user);
+  /* Before anything reads a profile key. These used to be device-wide, so on a
+     shared machine the second account inherited the first person's nickname,
+     job and custom instructions - and those go into the system prompt. */
+  try{ _migrateScopedKeys(acct.email); }catch(e){}
   clearFails(acct.email);
   const uc = loadUserConvs(acct.email);
   if (uc && uc.length) {

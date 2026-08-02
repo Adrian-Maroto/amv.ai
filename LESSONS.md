@@ -696,3 +696,35 @@ Track in-flight separately whenever a render can be triggered by something other
 than the fetch it owns. The test caught it only because it counted calls - and
 then had to be sharpened to count per endpoint, because a total cannot tell two
 different fetches from one fetch happening twice.
+
+## 79. Erasure is where a miss is invisible
+Deleting an account left behind a live bank access token, the record of somebody's
+real balances, grants letting other accounts act, and a spend cap that would have
+gone on applying to children with nobody left able to lift it. It also never
+cancelled the Stripe subscription - the card kept being charged monthly for an
+account that no longer existed, and because the customer reverse-map WAS deleted,
+the webhook for those charges could no longer resolve to anybody. API keys kept
+authenticating. Public shared conversations stayed on the internet. A team kept
+its paid plan with nobody paying for it. Nothing surfaces any of this, because
+the account is gone from every screen. Erasure needs a list derived from what is
+WRITTEN, not from memory - and it has to reach outside the worker, to the payment
+processor and the data aggregator, or it is not erasure.
+
+## 80. Replacing a list with the server's rows deletes everything the server does not know
+`_crewSyncLive` rebuilt the Crew catalogue from the rows the backend returns. The
+backend stores a row only for jobs that have ever been switched on, so the first
+sync collapsed seventy-odd jobs to the handful the user had touched - and dropped
+every field the mapping did not name, including each job's category, its actual
+instruction, and the id of the automation it had created. Definitions are the
+source of truth for what a thing IS; the server is the source of truth for its
+STATE. Merge state onto definitions, never the reverse.
+
+## 81. A shared device shares more than the screen
+The nickname AMV calls you, what you do, and your custom instructions were stored
+device-wide, and all three go into the system prompt. On a family laptop the
+second account to sign in was greeted by the first person's name, assumed to do
+their job, and answered according to their instructions. Custom instructions are
+where people write the thing they would not say twice. Before making a key
+global, ask whether two accounts on one machine should see the same value - and
+if the answer is no, re-scoping alone is not enough, because it makes existing
+data appear to vanish; it needs a migration that moves it.

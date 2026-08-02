@@ -31,13 +31,45 @@ const on = (el, ev, fn) => {
    it cannot live in the requester's private bucket. It is safe because every
    read filters by the signed-in identity (AMVFamily.check/mine), and because
    the server is authoritative for links once the backend is connected. */
-const _GLOBAL_KEYS = new Set(['amv_links','amv_user','amv_theme','amv_accent','amv_sb_rail','amv_nickname','amv_work','amv_instructions','amv_session_started','amv_location_opt','amv_improve_opt','amv_credits','amv_credits_autoreload','amv_cap_websearch','amv_cap_memory','amv_cap_suggestions','amv_skills','amv_active_skills','amv_plugin_web','amv_plugin_code','amv_plugin_canvas','amv_plugin_automations','amv_plugin_vision','amv_reduce_motion','amv_oauth_return','amv_oauth_state','amv_gtoken','amv_gtoken_exp','amv_gauth','amv_api_base','amv_api_token','amv_api_refresh','amv_token_exp','amv_owner','amv_lang','amv_support_email',
+const _GLOBAL_KEYS = new Set(['amv_links','amv_user','amv_theme','amv_accent','amv_sb_rail','amv_session_started','amv_credits','amv_credits_autoreload','amv_reduce_motion','amv_oauth_return','amv_oauth_state','amv_gtoken','amv_gtoken_exp','amv_gauth','amv_api_base','amv_api_token','amv_api_refresh','amv_token_exp','amv_owner','amv_lang','amv_support_email',
   'amv_market_local','amv_market_purchases','amv_market_wallet','amv_market_ratings','amv_market_reviews','amv_market_installed','amv_market_threads',
   'amv_cookie_consent','amv_analytics_id',
   /* An invite code is captured before anyone is signed in, and belongs to the
      visit rather than to an account - scoping it per-user would file it under
      'guest' and then hide it the moment the account it was meant for existed. */
   'amv_ref_code']);
+/* These were global, and should never have been. They are one person's
+   profile and choices - the nickname AMV calls you, what you do, and the custom
+   instructions that go into the system prompt - so on a shared device the
+   second account to sign in was greeted by the first person's name, assumed to
+   do their job, and answered according to their instructions. Custom
+   instructions are exactly where people write things they would not say twice.
+
+   Moved on sign-in rather than simply re-scoped, because re-scoping alone would
+   make an existing user's profile appear to vanish. The move is one-off per
+   device: whoever signs in first inherits what was already visible to everyone,
+   and nobody after them sees it. */
+const _MIGRATE_TO_USER = ['amv_nickname','amv_work','amv_instructions',
+  'amv_location_opt','amv_improve_opt','amv_cap_websearch','amv_cap_memory',
+  'amv_cap_suggestions','amv_skills','amv_active_skills','amv_plugin_web',
+  'amv_plugin_code','amv_plugin_canvas','amv_plugin_automations','amv_plugin_vision'];
+
+function _migrateScopedKeys(email){
+  try{
+    const who = String(email||'').toLowerCase(); if(!who) return;
+    for(const k of _MIGRATE_TO_USER){
+      const scoped = 'u:'+who+'|'+k;
+      if(localStorage.getItem(scoped) !== null) continue;   // already theirs
+      const old = localStorage.getItem(k);
+      if(old === null) continue;
+      localStorage.setItem(scoped, old);
+      /* Removed, not copied. Leaving it is the leak. */
+      localStorage.removeItem(k);
+    }
+  }catch(e){}
+}
+try{ window._migrateScopedKeys=_migrateScopedKeys; }catch(e){}
+
 function _scopeKey(k){
   if(_GLOBAL_KEYS.has(k)) return k;
   let who='guest';

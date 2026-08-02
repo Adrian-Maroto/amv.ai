@@ -31,13 +31,45 @@ const on = (el, ev, fn) => {
    it cannot live in the requester's private bucket. It is safe because every
    read filters by the signed-in identity (AMVFamily.check/mine), and because
    the server is authoritative for links once the backend is connected. */
-const _GLOBAL_KEYS = new Set(['amv_links','amv_user','amv_theme','amv_accent','amv_sb_rail','amv_nickname','amv_work','amv_instructions','amv_session_started','amv_location_opt','amv_improve_opt','amv_credits','amv_credits_autoreload','amv_cap_websearch','amv_cap_memory','amv_cap_suggestions','amv_skills','amv_active_skills','amv_plugin_web','amv_plugin_code','amv_plugin_canvas','amv_plugin_automations','amv_plugin_vision','amv_reduce_motion','amv_oauth_return','amv_oauth_state','amv_gtoken','amv_gtoken_exp','amv_gauth','amv_api_base','amv_api_token','amv_api_refresh','amv_token_exp','amv_owner','amv_lang','amv_support_email',
+const _GLOBAL_KEYS = new Set(['amv_links','amv_user','amv_theme','amv_accent','amv_sb_rail','amv_session_started','amv_credits','amv_credits_autoreload','amv_reduce_motion','amv_oauth_return','amv_oauth_state','amv_gtoken','amv_gtoken_exp','amv_gauth','amv_api_base','amv_api_token','amv_api_refresh','amv_token_exp','amv_owner','amv_lang','amv_support_email',
   'amv_market_local','amv_market_purchases','amv_market_wallet','amv_market_ratings','amv_market_reviews','amv_market_installed','amv_market_threads',
   'amv_cookie_consent','amv_analytics_id',
   /* An invite code is captured before anyone is signed in, and belongs to the
      visit rather than to an account - scoping it per-user would file it under
      'guest' and then hide it the moment the account it was meant for existed. */
   'amv_ref_code']);
+/* These were global, and should never have been. They are one person's
+   profile and choices - the nickname AMV calls you, what you do, and the custom
+   instructions that go into the system prompt - so on a shared device the
+   second account to sign in was greeted by the first person's name, assumed to
+   do their job, and answered according to their instructions. Custom
+   instructions are exactly where people write things they would not say twice.
+
+   Moved on sign-in rather than simply re-scoped, because re-scoping alone would
+   make an existing user's profile appear to vanish. The move is one-off per
+   device: whoever signs in first inherits what was already visible to everyone,
+   and nobody after them sees it. */
+const _MIGRATE_TO_USER = ['amv_nickname','amv_work','amv_instructions',
+  'amv_location_opt','amv_improve_opt','amv_cap_websearch','amv_cap_memory',
+  'amv_cap_suggestions','amv_skills','amv_active_skills','amv_plugin_web',
+  'amv_plugin_code','amv_plugin_canvas','amv_plugin_automations','amv_plugin_vision'];
+
+function _migrateScopedKeys(email){
+  try{
+    const who = String(email||'').toLowerCase(); if(!who) return;
+    for(const k of _MIGRATE_TO_USER){
+      const scoped = 'u:'+who+'|'+k;
+      if(localStorage.getItem(scoped) !== null) continue;   // already theirs
+      const old = localStorage.getItem(k);
+      if(old === null) continue;
+      localStorage.setItem(scoped, old);
+      /* Removed, not copied. Leaving it is the leak. */
+      localStorage.removeItem(k);
+    }
+  }catch(e){}
+}
+try{ window._migrateScopedKeys=_migrateScopedKeys; }catch(e){}
+
 function _scopeKey(k){
   if(_GLOBAL_KEYS.has(k)) return k;
   let who='guest';
@@ -2077,6 +2109,10 @@ function clearFails(email) { delete _fails[email.toLowerCase()]; }
 function loginUser(acct) {
   S.user = { name:acct.name, email:acct.email, ini:acct.ini, provider:acct.provider||'email' };
   store('amv_user', S.user);
+  /* Before anything reads a profile key. These used to be device-wide, so on a
+     shared machine the second account inherited the first person's nickname,
+     job and custom instructions - and those go into the system prompt. */
+  try{ _migrateScopedKeys(acct.email); }catch(e){}
   clearFails(acct.email);
   const uc = loadUserConvs(acct.email);
   if (uc && uc.length) {
@@ -12017,8 +12053,34 @@ async function _crewSyncLive(){
   try{
     const jobs=await AMV_API.jobs();
     const appr=await AMV_API.approvals();
-    // map backend rows -> local shape
-    if(jobs && jobs.length){ store('amv_cw_jobs', jobs.map(j=>({id:j.key,icon:(_cwDefaultJobs().find(d=>d.id===j.key)||{}).icon||'⚙️',title:j.title,desc:(_cwDefaultJobs().find(d=>d.id===j.key)||{}).desc||'',needs:j.needs,on:!!j.on_flag}))); }
+    /* MERGED into the catalogue, not substituted for it.
+
+       The server holds a row only for jobs that have ever been switched on.
+       Replacing the list with those rows therefore threw away every job the
+       user had not touched - the catalogue collapsed from seventy-odd to the
+       handful they had used, on the next sync. It also dropped every field the
+       mapping did not mention: the category (so the grouping fell apart), the
+       instruction (so switching one on would have scheduled its TITLE), and the
+       id of the automation it created (so switching it off could no longer stop
+       it).
+
+       The definitions are the source of truth for what a job IS. The server is
+       the source of truth for whether it is ON. */
+    if(Array.isArray(jobs)){
+      const onByKey = {};
+      jobs.forEach(j => { if(j && j.key) onByKey[j.key] = !!j.on_flag; });
+      const byId = {};
+      _cwJobs().forEach(j => { byId[j.id] = j; });
+      store('amv_cw_jobs', _cwDefaultJobs().map(def => {
+        const cur = byId[def.id] || {};
+        return Object.assign({}, def, {
+          on: (def.id in onByKey) ? onByKey[def.id] : !!cur.on,
+          /* Local only - it is the handle on the scheduled work this device
+             created, and the server's job row does not carry it. */
+          autoId: cur.autoId || null,
+        });
+      }));
+    }
     if(appr){ store('amv_cw_approvals', appr.map(a=>({id:a.id,icon:a.icon,title:a.title,preview:a.preview}))); }
     renderCrewView();
   }catch(e){}

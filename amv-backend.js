@@ -1280,7 +1280,27 @@ async function runDueAutomations(env){
     const costCeiling = budget.ceiling;
     const costName = `cost:${sub.subject}:${monthKey()}`;
 
+    /* The plan's JOB limit, honoured here and not only at the moment one is
+       created. Somebody on Elite with twenty-five running jobs who drops to Pro
+       used to keep all twenty-five: creation was gated, running never was, so
+       the only thing standing between them and five times the work they pay for
+       was the monthly spend ceiling.
+
+       The oldest active jobs win, which matches what the app says when the
+       limit is hit - remove one to add another - and is stable between ticks
+       rather than depending on which happened to come due first. Nothing is
+       deactivated: a downgrade is often temporary, and switching somebody's
+       work off permanently is not ours to do. */
+    const allowedIds = new Set(
+      (rec.items || []).filter(x => x.active).slice(0, budget.max).map(x => x.id));
+
     for(const item of rec.items){
+      if(item.active && !allowedIds.has(item.id)){
+        if(item.lastError !== 'above your plan\u2019s job limit'){
+          item.lastError = 'above your plan\u2019s job limit'; changed = true;
+        }
+        continue;
+      }
       scanned++;
       if(!item.active || item.next > now) continue;
       // If this user is already at their monthly spend ceiling, skip the run
@@ -2860,11 +2880,28 @@ async function handoffAct(request, env){
    ══════════════════════════════════════════════════════════════════════ */
 
 // Prefixes worth preserving. Everything else in KV is ephemeral/regenerable.
+/* What a restore has to be able to put back.
+
+   The test is "would losing this hurt, and can it be re-derived?". `consent` is
+   the record that somebody accepted the terms - not re-derivable and the exact
+   thing you need years later. `apikeys` breaks every integration a customer
+   built. `fam` and `links` are relationships between accounts that nobody can
+   reconstruct from memory. Those were all absent.
+
+   Bank credentials are absent ON PURPOSE and must stay that way: `fin` holds a
+   live access token to somebody's financial institution, and an admin-exported
+   JSON file is the last place that should live. A restore leaves those accounts
+   unlinked, which is a minor inconvenience and the correct trade. `invsnap` goes
+   with them, being a record of real balances. */
 const BACKUP_PREFIXES = [
   'acct:', 'ent:', 'entitleitem:', 'data:', 'auto:', 'team:', 'userteam:',
   'teamtasks:', 'sites:', 'site:', 'abuse:', 'seller:', 'widget:', 'market:',
-  'wallet:', 'purchases:', 'stripecust:', 'tokepoch:', 'sms:'
+  'wallet:', 'purchases:', 'stripecust:', 'tokepoch:', 'sms:',
+  'consent:', 'apikeys:', 'billing:', 'fam:', 'links:', 'approvals:',
+  'handoff:', 'crewjobs:', 'share:', 'shares:', 'widget_owner:'
 ];
+/* Never exported. Listed so the omission reads as a decision, not an oversight. */
+const BACKUP_NEVER = ['fin:', 'finlink:', 'invsnap:'];
 
 /* AMV-035: admin-token auth. Read the token ONLY from a header (never the
    request body - bodies get captured by logs, traces and error telemetry),
@@ -3865,6 +3902,22 @@ async function authDeleteAccount(request, env) {
         const before = team.members.length;
         team.members = team.members.filter(m => m.email !== email);
         if (team.members.length !== before) await DB.put(env, 'team', tid, team);
+      } else if (team && team.ownerEmail === email) {
+        /* The OWNER is the one who pays. A team's plan is a cached copy of their
+           entitlement, so deleting the owner used to leave `plan:'elite'` sitting
+           on the record with no lapse marker and nobody being billed - every
+           member kept a paid plan, free, permanently.
+
+           The team is NOT deleted: other people's shared projects and library
+           live in it, and destroying those is not a consequence anybody agreed
+           to by one person closing their own account. It simply stops being a
+           paid team, which is the true statement now that nobody is paying, and
+           members fall back to their own plans. */
+        team.plan = 'free';
+        team.ownerGone = Date.now();
+        team.members = (team.members || []).filter(m => m.email !== email);
+        await DB.put(env, 'team', tid, team);
+        audit(env, 'team_owner_deleted', { team: tid, was: email });
       }
     }
   } catch {}
@@ -3873,6 +3926,18 @@ async function authDeleteAccount(request, env) {
   try {
     const idx = await DB.get(env, 'sites', email);
     for (const slug of (idx && idx.slugs) || []) { try { await DB.del(env, 'site', slug); } catch {} }
+  } catch {}
+
+  /* Publicly shared conversations. `sites` was handled this way and `share` was
+     not, so a deleted account's chats stayed readable at their public URL
+     forever - the account was gone from every screen and the content was still
+     on the internet. */
+  try {
+    const mine = await DB.get(env, 'shares', email);
+    for (const it of ((mine && mine.items) || [])) {
+      const sid = it && (it.id || it.slug);
+      if (sid) { try { await DB.del(env, 'share', sid); } catch {} }
+    }
   } catch {}
 
   // 3) Delete the user's marketplace listings and their purchased-item snapshots.
@@ -3894,19 +3959,133 @@ async function authDeleteAccount(request, env) {
     await env.AMV_KV.delete(`sms:email:${email}`);
   } catch {}
 
-  // 5) Delete the Stripe customer reverse-map (custemail:{customerId}).
+  /* 5) END THE SUBSCRIPTION BEFORE ERASING WHAT MAKES IT FINDABLE.
+
+     Deleting the account used to drop the customer maps and stop there, so the
+     card kept being charged every month for a product the person no longer had
+     - and because the reverse-map was gone, the webhook for those charges could
+     no longer resolve to anybody, so nothing here even noticed. The customer's
+     only remaining move is a chargeback.
+
+     Cancelled immediately rather than at period end: they asked for the account
+     to stop existing, so continuing to bill to the end of a cycle they cannot
+     use is not a defensible reading of that. */
+  let cancelled = 0, cancelFailed = 0;
   try {
     const custId = await env.AMV_KV.get(`stripecust:${email}`);
+    if (custId && env.STRIPE_SECRET_KEY) {
+      const sk = { 'Authorization': 'Bearer ' + env.STRIPE_SECRET_KEY,
+                   'Content-Type': 'application/x-www-form-urlencoded' };
+      const ls = await fetch('https://api.stripe.com/v1/subscriptions?status=active&limit=100&customer=' +
+        encodeURIComponent(custId), { headers: sk });
+      const ld = await ls.json().catch(() => ({}));
+      for (const sub of ((ld && ld.data) || [])) {
+        try {
+          const dr = await fetch('https://api.stripe.com/v1/subscriptions/' + encodeURIComponent(sub.id),
+            { method: 'DELETE', headers: sk });
+          if (dr.ok) cancelled++; else cancelFailed++;
+        } catch { cancelFailed++; }
+      }
+    }
     if (custId) await env.AMV_KV.delete(`custemail:${custId}`);
-  } catch {}
+  } catch { cancelFailed++; }
+
+  /* A card still being charged after erasure is the one failure here that costs
+     a real person real money, and the account row is about to go - so if the
+     cancellation did not land, it has to reach a human who can finish it. */
+  if (cancelFailed) {
+    try {
+      await alertOnce(env, 'delete_cancel_fail_' + email,
+        'Account deleted but a subscription could not be cancelled for ' + email +
+        '. Cancel it in Stripe now - this card is still being charged.', 1);
+    } catch {}
+  }
+  audit(env, 'account_delete_billing', { email, cancelled, cancelFailed });
 
   // 6) Per-user records keyed by email. DB.del handles both D1 and KV so the
   //    erasure is complete under either storage backend (AMV-014). We intentionally
   //    KEEP `tokepoch` (a bare revocation integer, no personal data) so any tokens
   //    still in circulation stay dead after the account row is gone.
+  /* Disconnect the bank at the PROVIDER before dropping our copy. Deleting the
+     record alone leaves a live connection to somebody's financial data standing
+     at a third party, against an account that no longer exists - and, on a
+     metered aggregator, still being billed for. Erasure has to reach outside
+     this worker or it is not erasure. */
+  try {
+    const fin = await DB.get(env, 'fin', email);
+    if (fin && fin.accessToken && _finReady(env)) {
+      await _finCall(env, '/item/remove', { access_token: fin.accessToken });
+    }
+  } catch {}
+
+  /* Links this account is part of, in BOTH directions. A link lives under each
+     side's own row, so deleting only this one would leave the other party
+     holding an active grant pointing at an account that is gone. */
+  try {
+    const rec = await DB.get(env, 'links', email);
+    for (const l of ((rec && rec.items) || [])) {
+      const other = l.owner === email ? l.grantee : l.owner;
+      if (!other || other === email) continue;
+      const r = await DB.get(env, 'links', other);
+      if (!r || !Array.isArray(r.items)) continue;
+      const before = r.items.length;
+      r.items = r.items.filter(x => x.id !== l.id);
+      if (r.items.length !== before) await DB.put(env, 'links', other, r);
+    }
+  } catch {}
+
+  /* If this person was carried in someone's family, their membership row is
+     held in the PARENT's record and would otherwise outlive them. */
+  try {
+    const ent = await DB.get(env, 'ent', email);
+    if (ent && ent.familyOf) {
+      const fam = await DB.get(env, 'fam', ent.familyOf);
+      if (fam && Array.isArray(fam.members)) {
+        const before = fam.members.length;
+        fam.members = fam.members.filter(m => m.email !== email);
+        if (fam.members.length !== before) await DB.put(env, 'fam', ent.familyOf, fam);
+      }
+    }
+  } catch {}
+
+  /* And if they were the parent, the children must stop being limited by an
+     account that no longer exists - otherwise a spend cap set by a deleted
+     parent would apply forever with nobody able to lift it. */
+  try {
+    const mine = await DB.get(env, 'fam', email);
+    for (const m of ((mine && mine.members) || [])) {
+      if (!m || !m.email) continue;
+      const ce = await DB.get(env, 'ent', m.email);
+      if (ce && ce.familyOf === email) { delete ce.familyOf; await DB.put(env, 'ent', m.email, ce); }
+    }
+  } catch {}
+
+  /* API KEYS OUTLIVING THE ACCOUNT.
+
+     A key is resolved by `apikey:<hash>` -> {email, id}, and the request path
+     never checks that the account still exists. Neither the key records nor
+     those lookups were deleted, so every key a person had carried on
+     authenticating after they closed their account - live credentials into the
+     product, spending against quota, belonging to nobody. Revoking one deletes
+     its lookup for exactly this reason; erasure has to do the same for all of
+     them, which is what the stored hash is there for. */
+  try {
+    const keys = await DB.get(env, 'apikeys', email);
+    for (const k of ((keys && keys.items) || [])) {
+      if (k && k.hash) { try { await env.AMV_KV.delete(`apikey:${k.hash}`); } catch {} }
+    }
+  } catch {}
+
+  /* `fin` is a live credential and `invsnap` is a record of somebody's account
+     balances - both are exactly what erasure is for, and neither was listed. */
   const perUserKinds = ['acct', 'ent', 'entitleitem', 'data', 'auto', 'crewjobs',
     'approvals', 'handoff', 'abuse', 'seller', 'widget', 'wallet', 'wallet_tx',
-    'purchases', 'stripecust', 'userteam', 'sites'];
+    'purchases', 'stripecust', 'userteam', 'sites',
+    'fin', 'finlink', 'invsnap', 'links', 'fam', 'apikeys', 'consent', 'widget_owner', 'shares', 'presence'];
+  /* `billing` is deliberately NOT in that list. Invoices and payment records
+     carry retention obligations that erasure does not override, and deciding
+     otherwise is a legal call rather than an engineering one. It stays until
+     somebody with the authority to say so decides how long. */
   let deleted = 0;
   for (const kind of perUserKinds) {
     try { await DB.del(env, kind, email); deleted++; } catch {}
@@ -9078,6 +9257,13 @@ async function _userFromApiKey(request, env) {
   const rec = (await DB.get(env, 'apikeys', ref.email)) || { items: [] };
   const item = (rec.items || []).find(k => k.id === ref.id);
   if (!item || item.revoked) return null;
+
+  /* The account still has to exist. Erasure now clears these, but a key that
+     authenticates on the strength of a lookup row alone is one orphaned record
+     away from being a credential belonging to nobody - and this is the check
+     that makes that impossible rather than merely tidy. */
+  const acct = await DB.get(env, 'acct', ref.email);
+  if (!acct) return null;
 
   // Last use, so a customer can tell a live key from a forgotten one. Written
   // at most once a minute: this is on the hot path of every API request.
