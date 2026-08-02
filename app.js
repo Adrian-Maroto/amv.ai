@@ -142,7 +142,12 @@ const AMV_API = {
     // state-creating endpoints. Metered/idempotent POSTs (AI proxy, sync) still retry.
     const noRetry = o.noRetry || /^\/auth\//.test(path)
       || /\/(stripe|paypal|pay|subscribe|capture)/.test(path)
-      || /\/(family\/(limits|remove|leave)|team\/(invite|join|remove|leave|role|share|unshare|data|task\/(create|update))|market\/(publish|buy|withdraw|review|install)|deploy|sms\/register|widget\/save)/.test(path);
+      /* link/invite emails a confirmation code and finance/link/finish spends a
+         one-time token at the provider; replaying either sends a second email
+         or fails a second exchange confusingly. Revoke and unlink are
+         idempotent but are listed too - withdrawing access should happen once,
+         deliberately, not as a side effect of a flaky connection. */
+      || /\/(family\/(limits|remove|leave)|link\/(invite|revoke)|finance\/(link\/(start|finish)|unlink)|team\/(invite|join|remove|leave|role|share|unshare|data|task\/(create|update))|market\/(publish|buy|withdraw|review|install)|deploy|sms\/register|widget\/save)/.test(path);
     const MAX = noRetry ? 0 : 2;        // up to 2 retries (3 total attempts)
 
     /* AMV-061: a request with no deadline can hang forever.
@@ -408,6 +413,13 @@ const AMV_API = {
   async familyLimits(child,limits){ const r=await this._fetch('/v1/family/limits',{method:'POST',body:JSON.stringify({child,limits})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
   async familyLeave(){ const r=await this._fetch('/v1/family/leave',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
   async familyRemove(child){ const r=await this._fetch('/v1/family/remove',{method:'POST',body:JSON.stringify({child})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
+  /* Who can reach this account, and taking it back. Both routes existed and
+     were careful - revoking deactivates the link on BOTH sides - and no client
+     code had ever called either, so access could be granted and never seen
+     again, let alone withdrawn. */
+  async linkList(){ const r=await this._fetch('/v1/link/list',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
+  async linkRevoke(id){ const r=await this._fetch('/v1/link/revoke',{method:'POST',body:JSON.stringify({id})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
+
   async portal(customer){ const r=await this._fetch('/v1/stripe/portal',{method:'POST',body:JSON.stringify({customer})}); const d=await r.json(); if(!r.ok||!d.url) throw new Error(d.error||'Could not open billing.'); return d.url; },
 };
 window.AMV_API = AMV_API;
@@ -2623,7 +2635,7 @@ function _wireHdrAuth(){
   if(su && !su._wired){ su._wired=1; su.addEventListener('click',()=>{ try{ openAuth('signup'); }catch(e){} }); }
   if(li && !li._wired){ li._wired=1; li.addEventListener('click',()=>{ try{ openAuth('login'); }catch(e){} }); }
 }
-function goApp(){ try{ _wireHdrAuth(); }catch(e){} try{ const cy=document.getElementById('copy-year'); if(cy) cy.textContent=String(new Date().getFullYear()); }catch(e){} document.getElementById('land').classList.add('hidden'); document.getElementById('app').classList.add('on'); updateSbUser(); _initMobileSidebar(); _restoreSidebarState(); try{ _applyReduceMotion(); }catch(e){} setTab(S.tab); _ensureBackendSession(); try{ _applyFontSize(); }catch(e){} try{ _initOfflineWatch(); }catch(e){} try{ _initErrorBoundary(); }catch(e){} try{ syncEntitlement(); _checkUpgradeReturn(); }catch(e){} try{ _checkTeamInvite(); }catch(e){} try{ _initKeyboardNav(); _initA11y(); }catch(e){} try{ _revealAdminNav(); }catch(e){} try{ _revealTeamNav(); }catch(e){} try{ _initBuildGroup(); }catch(e){} try{ _localizePrices(document); }catch(e){} try{ const sbtn=$('sb-status'); if(sbtn) sbtn.addEventListener('click',openStatusPanel); _checkStatus(); }catch(e){} try{ _initI18nObserver(); }catch(e){} try{ _translateUI(); setTimeout(_translateUI,120); }catch(e){ console.error('Translate UI error in goApp', e); } }
+function goApp(){ try{ _wireHdrAuth(); }catch(e){} try{ const cy=document.getElementById('copy-year'); if(cy) cy.textContent=String(new Date().getFullYear()); }catch(e){} document.getElementById('land').classList.add('hidden'); document.getElementById('app').classList.add('on'); updateSbUser(); _initMobileSidebar(); _restoreSidebarState(); try{ _applyReduceMotion(); }catch(e){} setTab(S.tab); _ensureBackendSession(); try{ _applyFontSize(); }catch(e){} try{ _initOfflineWatch(); }catch(e){} try{ _initErrorBoundary(); }catch(e){} try{ syncEntitlement(); _checkUpgradeReturn(); }catch(e){} /* Whether a bank account is linked is the server's answer, and three different screens read it. Refreshed once on start so Crew and the chat tool are not left showing 'not connected' on a device that simply has an empty cache. */ try{ if(typeof AMVFinance!=='undefined') AMVFinance.refresh(); }catch(e){} try{ _checkTeamInvite(); }catch(e){} try{ _initKeyboardNav(); _initA11y(); }catch(e){} try{ _revealAdminNav(); }catch(e){} try{ _revealTeamNav(); }catch(e){} try{ _initBuildGroup(); }catch(e){} try{ _localizePrices(document); }catch(e){} try{ const sbtn=$('sb-status'); if(sbtn) sbtn.addEventListener('click',openStatusPanel); _checkStatus(); }catch(e){} try{ _initI18nObserver(); }catch(e){} try{ _translateUI(); setTimeout(_translateUI,120); }catch(e){ console.error('Translate UI error in goApp', e); } }
 
 /* The sidebar's "More" group was replaced by the tool rail in #sb-tools, so
    the collapsible it managed no longer exists. The function stayed behind,
@@ -11918,7 +11930,11 @@ const CW_NEEDS_CHECK = {
   'Email':           { label:'Gmail',            has:()=>_cwHasGoogle() },
   'Calendar':        { label:'Google Calendar',  has:()=>_cwHasGoogle() },
   'Drive':           { label:'Google Drive',     has:()=>_cwHasGoogle() },
-  'Bank connection': { label:'a bank connection',has:()=>{ try{ return !!loadStr('amv_fin_linked'); }catch(e){ return false; } } },
+  /* Through the one accessor, so "is an account linked" has a single definition
+     that the server refresh keeps current. Reading the key directly here meant
+     this screen and the investing pane could disagree. */
+  'Bank connection': { label:'a bank connection',
+    has:()=>{ try{ return typeof AMVFinance!=='undefined' && AMVFinance.linked(); }catch(e){ return false; } } },
 };
 function _cwHasGoogle(){ try{ return typeof getGToken==='function' && !!getGToken(); }catch(e){ return false; } }
 
@@ -23502,6 +23518,8 @@ try{ window._renderSpendingPane = _renderSpendingPane; }catch(e){}
        here is a suggestion.
    ============================================================ */
 let _FAM_STATE = null;
+/* The server's list of who can reach this account. null = not asked yet. */
+let _LINK_STATE = null;
 
 function _famMoney(n){ return '$' + (Math.round((+n || 0) * 100) / 100).toFixed(2); }
 
@@ -23641,7 +23659,21 @@ function _renderFamilyPane(pane){
   /* Fetch once, then redraw with the real thing. Guarded on not already having
      it, because an unguarded redraw here is a fetch loop. */
   const needState = _FAM_STATE === null;
-  const m = AMVFamily.mine();
+  const needLinks = _LINK_STATE === null;
+  const local = AMVFamily.mine();
+  /* The SERVER's answer about who can reach this account, with the local store
+     as a fallback only when there is no backend to ask.
+
+     This screen used to read the local store alone, which meant a second device
+     showed nobody at all - and, far worse, "Remove" wrote `active:false` into
+     localStorage and never told the server, while the server is the thing that
+     actually authorises a linked account. So the one control that exists to cut
+     somebody off reported "that access stopped immediately" and stopped
+     nothing. */
+  const m = _LINK_STATE
+    ? { iCanAccess:_LINK_STATE.iCanAccess||[], canAccessMe:_LINK_STATE.canAccessMe||[],
+        pendingForMe:local.pendingForMe, revoked:local.revoked }
+    : local;
   const scopes = AMVFamily.SCOPES;
   const high = AMVFamily.HIGH_RISK || [];
 
@@ -23706,8 +23738,13 @@ function _renderFamilyPane(pane){
     '</div>'+
 
     '<div class="ss2"><h3>People who can act on yours</h3>'+
+      /* "Nobody can touch your account" is a strong claim. It is only made when
+         the server actually answered - if the list could not be loaded, saying
+         it would be reassurance based on a failed request. */
       (m.canAccessMe.length ? '<ul class="mf-list">'+ m.canAccessMe.map(l => linkRow(l,'in')).join('') +'</ul>'
-        : '<p class="mf-empty">Nobody else can touch your account.</p>')+
+        : (_LINK_STATE && _LINK_STATE._failed)
+          ? '<p class="mf-empty">Could not check who has access just now. This list is not complete - try again in a moment.</p>'
+          : '<p class="mf-empty">Nobody else can touch your account.</p>')+
       '<div class="mf-say" id="mf-links-say" role="status" aria-live="polite"></div>'+
     '</div>';
 
@@ -23757,14 +23794,54 @@ function _renderFamilyPane(pane){
       .then(d => { _FAM_STATE = d; _renderFamilyPane(pane); })
       .catch(() => { _FAM_STATE = { parentOf:null, childOf:null }; });
   }
+  /* Same shape, same trap: set on BOTH paths so a failure cannot leave this
+     null and re-fetch on every redraw forever. */
+  if(needLinks && window.AMV_API && AMV_API.live && AMV_API.token){
+    AMV_API.linkList()
+      .then(d => { _LINK_STATE = d; _renderFamilyPane(pane); })
+      /* Redrawn on failure too. Recording it without redrawing left the screen
+         showing the empty local fallback, which reads as "nobody has access" -
+         the one reassurance this pane must not give on a failed request. */
+      .catch(() => { _LINK_STATE = { iCanAccess:[], canAccessMe:[], _failed:true }; _renderFamilyPane(pane); });
+  }
 
   pane.querySelectorAll('.mf-revoke').forEach(b => b.addEventListener('click', function(){
     const id = this.dataset.link;
-    const go = () => {
-      // Re-render FIRST, then speak: saying it before the redraw wiped the
-      // confirmation off the screen the instant it appeared.
-      try{ AMVFamily.revoke(id); renderSetPane(); _mfSay('mf-links-say','Link removed. That access stopped immediately.','ok'); }
-      catch(e){ _mfSay('mf-links-say', e.message || 'Could not remove that link.', 'err'); }
+    const go = async () => {
+      /* The SERVER decides whether that account can still act. Revoking used to
+         write active:false into localStorage and say "that access stopped
+         immediately" - which was false, because nothing had told the authority
+         that enforces it. So the server goes first, and nothing is claimed
+         unless it agreed. */
+      const online = !!(window.AMV_API && AMV_API.live && AMV_API.token);
+      if(online){
+        this.disabled = true;
+        try{
+          await AMV_API.linkRevoke(id);
+        }catch(e){
+          this.disabled = false;
+          _mfSay('mf-links-say', ((e&&e.message)||'Could not remove that link.')+
+                 ' That account can still act - nothing was changed.', 'err');
+          return;
+        }
+        /* Dropped from the cached list rather than re-fetched. Nulling it makes
+           the redraw below fire a fresh request, whose late reply redraws again
+           and wipes the confirmation off the screen - the same trap as writing
+           a message before a re-render. */
+        if(_LINK_STATE){
+          _LINK_STATE = {
+            iCanAccess:(_LINK_STATE.iCanAccess||[]).filter(l => l.id !== id),
+            canAccessMe:(_LINK_STATE.canAccessMe||[]).filter(l => l.id !== id),
+          };
+        }
+      }
+      // Keep the local mirror in step, then re-render FIRST and speak after:
+      // saying it before the redraw wiped the confirmation off the screen.
+      try{ AMVFamily.revoke(id); }catch(e){}
+      renderSetPane();
+      _mfSay('mf-links-say', online
+        ? 'Link removed. That access stopped immediately.'
+        : 'Removed on this device. Connect AMV and it will stop on the server too.', online?'ok':'err');
     };
     if(typeof confirmModal === 'function'){
       confirmModal('Remove this link?','Access stops straight away. You can always set it up again later.', go);

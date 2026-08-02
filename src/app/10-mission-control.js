@@ -310,7 +310,11 @@ const CW_NEEDS_CHECK = {
   'Email':           { label:'Gmail',            has:()=>_cwHasGoogle() },
   'Calendar':        { label:'Google Calendar',  has:()=>_cwHasGoogle() },
   'Drive':           { label:'Google Drive',     has:()=>_cwHasGoogle() },
-  'Bank connection': { label:'a bank connection',has:()=>{ try{ return !!loadStr('amv_fin_linked'); }catch(e){ return false; } } },
+  /* Through the one accessor, so "is an account linked" has a single definition
+     that the server refresh keeps current. Reading the key directly here meant
+     this screen and the investing pane could disagree. */
+  'Bank connection': { label:'a bank connection',
+    has:()=>{ try{ return typeof AMVFinance!=='undefined' && AMVFinance.linked(); }catch(e){ return false; } } },
 };
 function _cwHasGoogle(){ try{ return typeof getGToken==='function' && !!getGToken(); }catch(e){ return false; } }
 

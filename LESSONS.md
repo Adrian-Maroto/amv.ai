@@ -664,3 +664,24 @@ one ignoring the budget. A team invite clicked before Teams was available was
 stored for later and never picked up, so the link was spent and the person
 joined nothing. Run this sweep periodically - the same query also catches the
 opposite shape, a setting read from a key nothing ever writes.
+
+## 76. A security control that reports success and does nothing
+`linkList` and `linkRevoke` were complete, careful server endpoints - revoke
+deactivates the link on BOTH sides and checks the caller is one of them - and no
+client code had ever called either. The screen instead read the LOCAL store, so
+a second device showed nobody with access at all; and "Remove" wrote
+`active:false` into localStorage, told the server nothing, and said "that access
+stopped immediately". The server is what authorises a linked account, so access
+continued. This is worse than having no button: a missing control makes you go
+and check, a lying one talks you out of it. Any control over who can reach an
+account must go to the authority that enforces it FIRST, and say nothing until
+that call returned.
+
+## 77. Two bugs hid behind the same reflex
+Fixing the above, both mistakes I have made before came back at once. Nulling
+the cached list before re-rendering made the redraw fire a fresh request whose
+late reply redrew again and wiped the confirmation off the screen. And recording
+the failed fetch without re-rendering left the pane showing its empty local
+fallback, which reads as "nobody has access" - reassurance built on a request
+that failed. Update a cache in place when you already know the new value, and
+set state AND redraw on the failure path, not just the success one.
