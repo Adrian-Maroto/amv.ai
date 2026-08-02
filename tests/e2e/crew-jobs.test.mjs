@@ -222,7 +222,11 @@ section('A job needing this tab is really scheduled here');
      nothing scheduled anywhere. */
   const r = await page.evaluate(async () => {
     _saveSched([]);
-    const j = _cwDefaultJobs().find(x => /Email/.test(x.needs) && x.prompt);
+    /* Not job_hunt: it has its own setup flow and the toggle opens that first
+       when the profile is incomplete, so it is the one job that does not
+       schedule on a single click. Picking "the first match" quietly selected it
+       the moment it gained a prompt. */
+    const j = _cwDefaultJobs().find(x => /Email/.test(x.needs) && x.prompt && x.id !== 'job_hunt');
     const jobs = _cwJobs(); jobs.forEach(x => x.on = false); _cwSaveJobs(jobs);
     cwToggle(j.id);
     await new Promise(r => setTimeout(r, 250));
@@ -323,6 +327,38 @@ section('Syncing with the server does not eat the catalogue');
   ok(r.autoId === 'auto7',
      'the handle on the scheduled work is kept, so it can still be switched off', r.autoId);
   ok(r.on === true, 'while the server remains the authority on what is ON', r.on);
+}
+
+section('Job Hunt promises only what it does');
+{
+  /* Nothing anywhere calls AMVJobs.run(), planBatch() or dailyReport(), and
+     run() returned {ok:true, staged:true} having done nothing - no search, no
+     draft, no send. Meanwhile it was the first card in the catalogue, promised
+     to apply and email a morning report, and the setup modal collected a resume
+     and work authorisation to do it with. ok:true on a no-op is the worst
+     available answer, because every caller reads it as "it ran". */
+  const r = await page.evaluate(async () => {
+    const c = AMVJobs.cfg();
+    c.on = true; c.contact = { name: 'A', email: 'a@x.com' };
+    c.targets = { roles: ['Designer'], locations: [], remote: 'any', salaryMin: 0 };
+    c.resumes = [{ id: 'r1', name: 'R', text: 'resume text' }];
+    AMVJobs.save(c);
+    window._aiBackendReady = () => true;
+    const out = await AMVJobs.run();
+    const card = _cwDefaultJobs().find(j => j.id === 'job_hunt');
+    return { out, desc: card.desc, title: card.title, prompt: card.prompt || '' };
+  });
+  ok(r.out.ok === false, 'a fully configured run does not report success it did not have', r.out);
+  ok(r.out.code === 'not_wired', 'with a code rather than a cheerful sentence', r.out.code);
+  ok(/not switched on/.test(r.out.reason), 'saying plainly what is not available', r.out.reason);
+  ok(/prepares|review/i.test(r.out.reason), 'and what genuinely is', r.out.reason);
+
+  ok(!/applies on its own|it submits/i.test(r.desc),
+     'the card no longer claims it applies by itself', r.desc);
+  ok(/without you|review/i.test(r.desc), 'and says nothing reaches an employer without you', r.desc);
+  ok(r.prompt.length > 80, 'and it carries a real instruction, so scheduling it does the research half',
+     r.prompt.length);
+  ok(/[Dd]o not submit/.test(r.prompt), 'which is explicitly told not to submit anything', true);
 }
 
 section('It fits on a phone');

@@ -184,10 +184,24 @@ const AMVJobs = {
       return { ok:false, reason:'Connect the AMV engine (add your key) so I can find and tailor applications.' };
     const miss=this.missingInfo({}, c);
     if(miss.length) return { ok:false, reason:'I need a few details first.', questions:miss };
-    // With AI connected, this is where find(web research) + draft(AI) + apply
-    // (gmail_send for email jobs) run per job, then buildReport() emails you.
-    // Wired behind these interfaces so it activates the moment keys are in.
-    return { ok:true, staged:true, reason:'Ready. Finding and tailoring runs on the connected engine.' };
+    /* THE HONEST ANSWER, WHICH THIS USED TO GET WRONG.
+
+       This returned {ok:true, staged:true, reason:'Ready.'} having done
+       nothing at all - no search, no draft, no send - and nothing anywhere
+       calls run(), planBatch() or dailyReport() either. So the decision engine
+       below is complete and correct and has never once been executed, while the
+       card in Crew promised to find roles, apply, and email a morning report,
+       and the setup modal collected somebody's resume and work authorisation to
+       do it with.
+
+       ok:true on a no-op is the worst available answer, because every caller
+       treats it as "it ran". Until finding, drafting and sending are actually
+       wired end to end, this says so. The profile is not wasted - it is what
+       the scheduled research job uses to prepare applications for review. */
+    return { ok:false, code:'not_wired',
+      reason:'Applying on its own is not switched on yet. What runs today is the research half: '
+        + 'AMV finds roles matching your profile and prepares each application for you to review. '
+        + 'Nothing is submitted without you.' };
   }
 };
 try{ window.AMVJobs=AMVJobs; }catch(e){}
@@ -200,7 +214,7 @@ function openJobHunt(){
   r.innerHTML='<div class="ov" id="jh-bg"><div class="ob jh-modal" onclick="event.stopPropagation()" style="max-width:560px">'+
     '<button class="oc" onclick="closeOvr()" aria-label="Close">×</button>'+
     '<h2 style="margin:0 0 4px">Job Hunt</h2>'+
-    '<p style="font-size:12.5px;color:var(--mu);margin:0 0 14px">I find roles, tailor an application to each, and either ask you first or apply. I only auto-submit where a job accepts applications by email; portal jobs I fill completely and hand you a one-tap submit.</p>'+
+    '<p style="font-size:12.5px;color:var(--mu);margin:0 0 14px">I find roles that match your profile and prepare a tailored application for each one, ready for you to review and send. Submitting on my own is not switched on yet - nothing goes to an employer without you.</p>'+
     '<div class="jh-form" style="display:flex;flex-direction:column;gap:11px">'+
       '<label class="jh-l">Roles to target<input id="jh-roles" class="inp" placeholder="e.g. Product Designer, UX Lead" value="'+val((c.targets.roles||[]).join(', '))+'"></label>'+
       '<label class="jh-l">Locations<input id="jh-loc" class="inp" placeholder="e.g. Remote, London, NYC" value="'+val((c.targets.locations||[]).join(', '))+'"></label>'+
@@ -219,7 +233,8 @@ function openJobHunt(){
       '</label>'+
       '<label class="jh-l">Resume (paste text for now)<textarea id="jh-resume" class="inp" rows="4" placeholder="Paste your resume text">'+val((c.resumes[0]||{}).text)+'</textarea></label>'+
       '<label class="jh-l">Mode'+
-        '<select id="jh-mode" class="sel" aria-label="Apply mode"><option value="ask"'+(c.mode==='ask'?' selected':'')+'>Ask first - show me each before applying</option><option value="auto"'+(c.mode==='auto'?' selected':'')+'>Autonomous - apply where you can, ask only if info is missing</option></select></label>'+
+        '<select id="jh-mode" class="sel" aria-label="Apply mode"><option value="ask"'+(c.mode==='ask'?' selected':'')+'>Show me each one before it is sent</option><option value="auto"'+(c.mode==='auto'?' selected':'')+'>Prepare as many as possible for one-tap sending</option></select>'+
+      '<span style="font-size:11.5px;color:var(--mu);display:block;margin-top:5px">Either way, nothing reaches an employer until you send it.</span></label>'+
     '</div>'+
     '<div style="display:flex;gap:9px;margin-top:16px"><button class="btn bp" id="jh-save" style="flex:1">Save</button><button class="btn bs" onclick="closeOvr()">Cancel</button></div>'+
   '</div></div>';

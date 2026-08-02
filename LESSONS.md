@@ -768,3 +768,22 @@ was silently dead. And `xxx+` matched redactions, hashes and ordinary prose. The
 test that caught it then failed for its own reason: it anchored on
 `indexOf('async function runAutonomous')`, which finds `runAutonomousTask`
 first. A prefix is not an anchor.
+
+## 86. The most complete feature in the file had never run
+17-jobhunt.js has a decision engine, a two-lane batch planner, a channel
+detector, a daily report builder and a setup modal that collects somebody's
+resume, contact details and work authorisation. Nothing anywhere calls run(),
+planBatch() or dailyReport(), and run() itself returned {ok:true, staged:true}
+having done no search, no draft and no send. It was the FIRST card in the Crew
+catalogue and promised to apply to jobs and email a morning report.
+
+ok:true on a no-op is the worst answer available, because every caller reads it
+as "it ran". Completeness of the parts says nothing about whether the whole is
+reachable - and the more finished the parts look, the less anybody checks.
+
+## 87. "First match" is not a selector
+A test picked its subject with `find(x => /Email/.test(x.needs) && x.prompt)`.
+Giving job_hunt a prompt silently moved the test onto it - and job_hunt is the
+one job whose toggle opens a setup modal instead of scheduling, so the test
+failed for a reason that had nothing to do with the change. Pick the subject
+deterministically, or exclude the special case by name and say why.
