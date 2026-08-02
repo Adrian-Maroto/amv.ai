@@ -30654,7 +30654,66 @@ try{
 const AMVFinance = {
   /* Which aggregator the operator configured. Set server-side. */
   provider(){ try{ return loadStr('amv_fin_provider') || ''; }catch(e){ return ''; } },
-  linked(){ try{ return !!loadStr('amv_fin_linked'); }catch(e){ return false; } },
+
+  /* A cache of the server's answer, nothing more. This flag used to be the
+     ONLY definition of "linked" and no code anywhere wrote it, so it was
+     permanently false and the whole finance surface was unreachable however
+     many accounts you had connected. `refresh()` fills it from the server,
+     which is the only thing that actually knows. */
+  linked(){ try{ return loadStr('amv_fin_linked')==='1'; }catch(e){ return false; } },
+  ready(){ try{ return loadStr('amv_fin_ready')==='1'; }catch(e){ return false; } },
+
+  async refresh(){
+    const base=this._base();
+    if(!base) return { ready:false, linked:false };
+    try{
+      const r = await fetchDeadline(base + '/v1/finance/status', {
+        method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + this._tok() },
+        body:'{}' });
+      const d = await r.json().catch(()=>({}));
+      if(!r.ok) return { ready:this.ready(), linked:this.linked() };
+      try{ saveStr('amv_fin_linked', d.linked?'1':''); saveStr('amv_fin_ready', d.ready?'1':''); }catch(e){}
+      return { ready:!!d.ready, linked:!!d.linked, linkedAt:d.linkedAt||null };
+    }catch(e){ return { ready:this.ready(), linked:this.linked() }; }
+  },
+
+  /* Start the hosted flow. The sign-in happens on the provider's own page, so
+     no third-party script is loaded here and the strict CSP is untouched. */
+  async linkStart(){
+    const base=this._base();
+    if(!base){ const e=new Error('Connect the AMV backend first.'); e.code='needs_service'; throw e; }
+    const r = await fetchDeadline(base + '/v1/finance/link/start', {
+      method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + this._tok() },
+      body:'{}' });
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok || !d.url){ const e=new Error(d.error||'Could not start the link.'); e.code=d.code||'provider_error'; throw e; }
+    return d.url;
+  },
+
+  /* Called on the way back. `not_finished` is a normal outcome - somebody
+     closed the window - and is reported as itself rather than as a failure. */
+  async linkFinish(){
+    const base=this._base();
+    if(!base) return { ok:false, code:'needs_service' };
+    const r = await fetchDeadline(base + '/v1/finance/link/finish', {
+      method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + this._tok() },
+      body:'{}' });
+    const d = await r.json().catch(()=>({}));
+    if(d && d.ok){ try{ saveStr('amv_fin_linked','1'); }catch(e){} return { ok:true }; }
+    return { ok:false, code:(d&&d.code)||'provider_error', error:(d&&d.error)||'Could not finish the link.' };
+  },
+
+  async unlink(){
+    const base=this._base();
+    if(!base){ const e=new Error('Connect the AMV backend first.'); e.code='needs_service'; throw e; }
+    const r = await fetchDeadline(base + '/v1/finance/unlink', {
+      method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + this._tok() },
+      body:'{}' });
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok){ const e=new Error(d.error||'Could not disconnect.'); e.code=d.code||'provider_error'; throw e; }
+    try{ saveStr('amv_fin_linked',''); }catch(e){}
+    return true;
+  },
 
   _base(){ try{ return (loadStr('amv_api_base')||'').replace(/\/$/,''); }catch(e){ return ''; } },
   _tok(){ try{ return loadStr('amv_api_token')||''; }catch(e){ return ''; } },
@@ -30832,9 +30891,44 @@ function _invResultHTML(d){
   '</div>';
 }
 
+/* Coming back from the provider. The server is asked whether a session actually
+   completed - the browser cannot know, and must not guess, because "linked"
+   decides whether AMV starts reading somebody's accounts. */
+function _wireInvDone(pane){
+  on($('inv-link-done'),'click',async()=>{
+    const say=$('inv-link-say');
+    const btn=$('inv-link-done'); if(btn) btn.disabled=true;
+    if(say) say.textContent='Checking…';
+    const r=await AMVFinance.linkFinish();
+    if(btn) btn.disabled=false;
+    if(r.ok){
+      try{ saveStr('amv_fin_pending',''); }catch(e){}
+      _renderInvestPane(pane);
+      const s=$('inv-say'); if(s) s.textContent='Linked. Check now to see where you stand.';
+      return;
+    }
+    if(say) say.textContent = r.code==='not_finished'
+      ? 'That link was not completed, so nothing was connected. Start it again when you are ready.'
+      : (r.error||'Could not finish the link.')+' Nothing was connected.';
+  });
+}
+
 function _renderInvestPane(pane){
   const linked=(typeof AMVFinance!=='undefined') && AMVFinance.linked();
   const backend=(()=>{ try{ return !!loadStr('amv_api_base'); }catch(e){ return false; } })();
+  /* Ask the server what is actually true, then redraw only if it disagrees with
+     what was just drawn. Without this the pane would keep showing whatever the
+     last cached answer was - including on another device, where the cache is
+     empty and a linked account would look unlinked. Guarded on a change so this
+     cannot become a render loop. */
+  try{
+    if(backend && typeof AMVFinance!=='undefined' && !pane._invChecked){
+      pane._invChecked=1;
+      AMVFinance.refresh().then(st=>{
+        if(!!st.linked !== !!linked) _renderInvestPane(pane);
+      }).catch(()=>{});
+    }
+  }catch(e){}
   const when=_invWhen();
 
   pane.innerHTML=
@@ -30865,7 +30959,9 @@ function _renderInvestPane(pane){
         '<div class="fam-say" id="inv-link-say" role="status" aria-live="polite"></div></div>'
       : '<div class="ss2"><h3>How it is doing</h3>'+
         '<div id="inv-out"><p class="fam-p fam-quiet">Check now to see where you stand.</p></div>'+
-        '<button class="btn bp" id="inv-now" style="font-size:12px">Check now</button>'+
+        '<button class="btn bp" id="inv-now" style="font-size:12px">Check now</button> '+
+        /* Connecting a bank must be as easy to undo as it was to do. */
+        '<button class="btn bs" id="inv-unlink" style="font-size:12px">Disconnect</button>'+
         '<div class="fam-say" id="inv-say" role="status" aria-live="polite"></div></div>'+
         '<div class="ss2"><h3>Tell me automatically</h3>'+
           '<p class="fam-p fam-quiet">AMV runs the check on its own and brings you the answer. '+
@@ -30880,12 +30976,42 @@ function _renderInvestPane(pane){
           '</div>'+
         '</div>');
 
-  on($('inv-link'),'click',()=>{
+  on($('inv-link'),'click',async()=>{
     const say=$('inv-link-say');
-    /* Honest rather than a button that appears to work. Linking runs through
-       the aggregator's own flow, which only exists once the operator has
-       configured one. */
-    if(say) say.textContent='Linking opens your institution\u2019s own secure sign-in. That flow is not switched on for this deployment yet, so nothing was started.';
+    const btn=$('inv-link');
+    if(btn) btn.disabled=true;
+    if(say) say.textContent='Opening your institution\u2019s secure sign-in\u2026';
+    try{
+      const url=await AMVFinance.linkStart();
+      /* Remembered so the return can be recognised even if they come back in a
+         new tab, or the redirect drops the query string. */
+      try{ saveStr('amv_fin_pending','1'); }catch(e){}
+      if(say) say.textContent='Continue in the window that opened. Come back here when you are done.';
+      window.open(url,'_blank','noopener');
+      if(btn){ btn.disabled=false; btn.textContent='I have finished linking'; btn.id='inv-link-done'; }
+      _wireInvDone(pane);
+    }catch(e){
+      if(btn) btn.disabled=false;
+      /* needs_service is the operator not having switched it on, which is a
+         different thing from a failure and is said as itself. */
+      if(say) say.textContent = (e&&e.code==='needs_service')
+        ? 'Account linking is not switched on for this deployment yet, so nothing was started.'
+        : ((e&&e.message)||'Could not start the link.')+' Nothing was linked.';
+    }
+  });
+  _wireInvDone(pane);
+
+  on($('inv-unlink'),'click',async()=>{
+    const say=$('inv-say');
+    if(typeof confirm==='function' &&
+       !confirm('Disconnect this account? AMV stops reading it, and the history it compares against is deleted.')) return;
+    try{
+      await AMVFinance.unlink();
+      _renderInvestPane(pane);
+      const s=$('inv-link-say'); if(s) s.textContent='Disconnected. AMV can no longer read that account.';
+    }catch(e){
+      if(say) say.textContent=((e&&e.message)||'Could not disconnect.')+' The account is still connected.';
+    }
   });
 
   on($('inv-now'),'click',async()=>{

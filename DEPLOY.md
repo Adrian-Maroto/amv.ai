@@ -79,6 +79,16 @@ npx wrangler secret put GOOGLE_CLIENT_SECRET
 npx wrangler secret put FINANCE_CLIENT_ID   # aggregator client id
 npx wrangler secret put FINANCE_SECRET      # aggregator secret
 # FINANCE_API_URL is optional (defaults to Plaid production).
+# APP_URL should be set too - it is where the provider sends the user back
+# after they finish linking. Without it the link still works, they just land
+# on the provider's own completion page instead of back in AMV.
+#
+# Linking uses the provider's HOSTED flow: the user signs in on the provider's
+# page and returns. That means no third-party script in the app and no change
+# to the strict CSP, and AMV never sees a bank username or password. The access
+# token is stored server-side only - it is never returned by any endpoint, put
+# in a log, or written to an audit line.
+#
 # READ-ONLY by design: there is no transfer or payment route, so AMV can see
 # money but never move it. Until these are set, every money feature says so
 # rather than inventing a balance.

@@ -241,6 +241,124 @@ section('If scheduling fails, nothing is claimed');
   ok(r.saved === '', 'and the setting is not left looking as though it took', r.saved);
 }
 
+section('Linking sends you to the institution, not to a form in our page');
+{
+  /* The sign-in happens on the provider's own page. That is what keeps the
+     strict CSP intact and what makes "AMV never sees your username or
+     password" true rather than a claim. */
+  const r = await page.evaluate(async () => {
+    saveStr('amv_api_base', 'https://x.test'); saveStr('amv_api_token', 't');
+    saveStr('amv_fin_linked', '');
+    const calls = []; let opened = '';
+    window.fetchDeadline = async (url, init) => {
+      calls.push(String(url));
+      if (/link\/start/.test(url)) return { ok: true, json: async () => ({ ok: true, url: 'https://provider/hl/x' }) };
+      return { ok: true, json: async () => ({ ok: true, ready: true, linked: false }) };
+    };
+    window.open = (u) => { opened = u; return null; };
+    _renderInvestPane(document.getElementById('set-pane') || document.getElementById('vc'));
+    await new Promise(r => setTimeout(r, 150));
+    document.getElementById('inv-link').click();
+    await new Promise(r => setTimeout(r, 250));
+    return { calls, opened, said: document.getElementById('inv-link-say').textContent,
+             done: !!document.getElementById('inv-link-done') };
+  });
+  ok(r.calls.some(u => /\/v1\/finance\/link\/start/.test(u)), 'the server is asked to start a link', r.calls);
+  ok(r.opened === 'https://provider/hl/x', 'and the provider\'s page is opened', r.opened);
+  ok(r.done, 'with a way to say you have finished', r.done);
+  ok(!/linked/i.test(r.said) || /Continue/.test(r.said),
+     'while nothing yet claims an account is connected', r.said);
+}
+
+section('Coming back is confirmed by the server, never assumed');
+{
+  /* The browser cannot know whether a session completed, and must not guess:
+     this flag decides whether AMV starts reading somebody's accounts. */
+  const r = await page.evaluate(async () => {
+    window.fetchDeadline = async (url) => {
+      if (/link\/finish/.test(url)) return { ok: false, json: async () => ({ ok: false, code: 'not_finished', error: 'x' }) };
+      return { ok: true, json: async () => ({ ok: true, ready: true, linked: false }) };
+    };
+    document.getElementById('inv-link-done').click();
+    await new Promise(r => setTimeout(r, 250));
+    return { said: document.getElementById('inv-link-say').textContent, flag: loadStr('amv_fin_linked') };
+  });
+  ok(/not completed/.test(r.said), 'an abandoned link says exactly that', r.said);
+  ok(!/^1$/.test(r.flag || ''), 'and nothing is marked as linked', r.flag);
+}
+
+section('A completed link is what turns the screen on');
+{
+  const r = await page.evaluate(async () => {
+    window.fetchDeadline = async (url) => {
+      if (/link\/finish/.test(url)) return { ok: true, json: async () => ({ ok: true, linked: true }) };
+      return { ok: true, json: async () => ({ ok: true, ready: true, linked: true }) };
+    };
+    document.getElementById('inv-link-done').click();
+    await new Promise(r => setTimeout(r, 300));
+    return { flag: loadStr('amv_fin_linked'), text: document.getElementById('vc').textContent,
+             hasCheck: !!document.getElementById('inv-now') };
+  });
+  ok(r.flag === '1', 'the account is recorded as linked', r.flag);
+  ok(r.hasCheck, 'and the pane now offers the check itself', r.hasCheck);
+}
+
+section('Disconnecting is as easy as connecting was');
+{
+  const r = await page.evaluate(async () => {
+    const calls = [];
+    window.confirm = () => true;
+    window.fetchDeadline = async (url) => {
+      calls.push(String(url));
+      if (/unlink/.test(url)) return { ok: true, json: async () => ({ ok: true, unlinked: true }) };
+      return { ok: true, json: async () => ({ ok: true, ready: true, linked: false }) };
+    };
+    document.getElementById('inv-unlink').click();
+    await new Promise(r => setTimeout(r, 300));
+    return { calls, flag: loadStr('amv_fin_linked'), link: !!document.getElementById('inv-link') };
+  });
+  ok(r.calls.some(u => /\/v1\/finance\/unlink/.test(u)), 'the server is told to disconnect', r.calls);
+  ok(r.flag !== '1', 'the account is no longer treated as linked', r.flag);
+  ok(r.link, 'and the pane offers to link one again', r.link);
+}
+
+section('A failed disconnect does not say it disconnected');
+{
+  const r = await page.evaluate(async () => {
+    saveStr('amv_fin_linked', '1');
+    window.confirm = () => true;
+    window.fetchDeadline = async (url) => {
+      if (/unlink/.test(url)) return { ok: false, json: async () => ({ error: 'engine down' }) };
+      return { ok: true, json: async () => ({ ok: true, ready: true, linked: true }) };
+    };
+    _renderInvestPane(document.getElementById('set-pane') || document.getElementById('vc'));
+    await new Promise(r => setTimeout(r, 200));
+    document.getElementById('inv-unlink').click();
+    await new Promise(r => setTimeout(r, 300));
+    return { said: document.getElementById('inv-say').textContent, flag: loadStr('amv_fin_linked') };
+  });
+  ok(/still connected/.test(r.said), 'it says the account is still connected', r.said);
+  ok(r.flag === '1', 'and the screen keeps showing what is actually true', r.flag);
+}
+
+section('Not switched on is said as itself, not as a failure');
+{
+  const r = await page.evaluate(async () => {
+    saveStr('amv_fin_linked', '');
+    window.fetchDeadline = async (url) => {
+      if (/link\/start/.test(url)) return { ok: false, json: async () => ({ code: 'needs_service', error: 'not on' }) };
+      return { ok: true, json: async () => ({ ok: true, ready: false, linked: false }) };
+    };
+    _renderInvestPane(document.getElementById('set-pane') || document.getElementById('vc'));
+    await new Promise(r => setTimeout(r, 200));
+    document.getElementById('inv-link').click();
+    await new Promise(r => setTimeout(r, 250));
+    return document.getElementById('inv-link-say').textContent;
+  });
+  ok(/not switched on/.test(r), 'the operator not having configured it is its own message', r);
+  ok(/nothing was started/i.test(r), 'and nothing is claimed to have happened', r);
+}
+
 section('It fits on a phone');
 {
   await page.setViewportSize({ width: 390, height: 844 });

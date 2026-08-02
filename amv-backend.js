@@ -2131,6 +2131,149 @@ async function financeRoute(request, env, path){
   return json({ error:'unknown finance route' }, 404);
 }
 
+/* ── LINKING AN ACCOUNT ──────────────────────────────────────────────────────
+
+   Everything above needs one thing: a `fin` record holding an access token for
+   the user's institution. Nothing in this worker has ever created one - there
+   was no link route and no `DB.put(env,'fin',...)` anywhere - so the balance
+   reads, the transaction reads and the scheduled investing check-in were all
+   complete, correct, and unreachable. This is the missing half.
+
+   It uses the aggregator's HOSTED link flow on purpose: the user completes the
+   sign-in on the provider's own page and comes back. That means no third-party
+   script in our page and no change to the strict CSP, and AMV never sees the
+   bank username or password - which is also the honest answer to the only
+   question anybody actually asks about this feature.
+
+   The access token never leaves the server. It is not returned by any endpoint,
+   not logged, and not put in an audit line. */
+const FINANCE_PRODUCTS = ['investments', 'transactions'];
+const FINANCE_COUNTRIES = ['US'];
+
+function _finReady(env){ return !!(env && env.FINANCE_CLIENT_ID && env.FINANCE_SECRET); }
+function _finBase(env){ return String((env && env.FINANCE_API_URL) || 'https://production.plaid.com').replace(/\/$/, ''); }
+
+async function _finCall(env, path, body){
+  try{
+    const r = await fetch(_finBase(env) + path, {
+      method:'POST', headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify(Object.assign({ client_id: env.FINANCE_CLIENT_ID, secret: env.FINANCE_SECRET }, body || {})) });
+    const d = await r.json().catch(()=>({}));
+    return { ok: r.ok, data: d, error: d.error_message || d.error_code || '' };
+  }catch(e){
+    return { ok:false, data:{}, error:'Could not reach the account provider.' };
+  }
+}
+
+/* The provider is given a stable pseudonymous id, never the email address.
+   There is no reason for a third party to hold the user's address in order to
+   tell us a balance. */
+async function _finUserId(env, email){
+  const d = await crypto.subtle.digest('SHA-256',
+    new TextEncoder().encode(String(email).toLowerCase() + '|' + String(env.JWT_SECRET || '')));
+  return [...new Uint8Array(d)].slice(0,16).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+async function financeStatus(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'sign in first', code:'needs_auth' }, 401);
+  const rec = await DB.get(env, 'fin', user.email);
+  /* The server is the authority on whether an account is linked. The client
+     used to decide this from a localStorage flag that nothing ever wrote, so
+     the answer was permanently "no" however many accounts you had linked. */
+  return json({ ok:true, ready:_finReady(env), linked: !!(rec && rec.accessToken),
+                linkedAt: (rec && rec.linkedAt) || null });
+}
+
+async function financeLinkStart(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'sign in first', code:'needs_auth' }, 401);
+  const blocked = await guardAction(env, 'finlink:' + user.email, 10, 900, 'account link attempts');
+  if(blocked) return blocked;
+  if(!_finReady(env))
+    return json({ error:'Bank linking is not switched on for this deployment. Add FINANCE_CLIENT_ID and FINANCE_SECRET and it works with no other change.', code:'needs_service' }, 503);
+
+  const appUrl = String(env.APP_URL || '').replace(/\/$/, '');
+  const body = {
+    client_name: 'AMV', language: 'en', country_codes: FINANCE_COUNTRIES,
+    products: FINANCE_PRODUCTS,
+    user: { client_user_id: await _finUserId(env, user.email) },
+    hosted_link: appUrl ? { completion_redirect_uri: appUrl + '/?finlink=done' } : {},
+  };
+  const r = await _finCall(env, '/link/token/create', body);
+  if(!r.ok || !r.data.hosted_link_url)
+    return json({ error: r.error || 'Could not start the link just now.', code:'provider_error' }, 502);
+
+  /* Held so the finish step can read the session result. Short-lived: an
+     abandoned link should not leave a usable handle lying about. */
+  await DB.put(env, 'finlink', user.email,
+    { token: r.data.link_token, at: Date.now() }, { expirationTtl: 6*3600 });
+  audit(env, 'finance_link_start', { by: user.email });
+  return json({ ok:true, url: r.data.hosted_link_url, expires: r.data.expiration || null });
+}
+
+async function financeLinkFinish(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'sign in first', code:'needs_auth' }, 401);
+  const blocked = await guardAction(env, 'finfin:' + user.email, 20, 900, 'link completions');
+  if(blocked) return blocked;
+  if(!_finReady(env)) return json({ error:'Bank linking is not switched on.', code:'needs_service' }, 503);
+
+  const rec = await DB.get(env, 'finlink', user.email);
+  if(!rec || !rec.token)
+    return json({ error:'Start the link first.', code:'no_session' }, 400);
+
+  const g = await _finCall(env, '/link/token/get', { link_token: rec.token });
+  if(!g.ok) return json({ error: g.error || 'Could not read the link session.', code:'provider_error' }, 502);
+
+  /* The public token appears on a COMPLETED session. An abandoned one simply
+     has none, which is a different answer from a failure and is told apart
+     here - otherwise closing the window would read as the provider being down. */
+  let publicToken = '';
+  for(const sess of (g.data.link_sessions || [])){
+    for(const add of ((sess.results && sess.results.item_add_results) || [])){
+      if(add && add.public_token) publicToken = add.public_token;
+    }
+  }
+  if(!publicToken)
+    return json({ ok:false, code:'not_finished', error:'That link was not completed. Start it again when you are ready.' }, 409);
+
+  const x = await _finCall(env, '/item/public_token/exchange', { public_token: publicToken });
+  if(!x.ok || !x.data.access_token)
+    return json({ error: x.error || 'Could not finish the link.', code:'provider_error' }, 502);
+
+  await DB.put(env, 'fin', user.email,
+    { accessToken: x.data.access_token, itemId: x.data.item_id || '', linkedAt: Date.now() });
+  await DB.del(env, 'finlink', user.email);          // one use only
+  await _userEvent(env, request, user.email, 'finance_linked', {});
+  audit(env, 'finance_linked', { by: user.email }); // never the token
+  return json({ ok:true, linked:true });
+}
+
+async function financeUnlink(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'sign in first', code:'needs_auth' }, 401);
+  const blocked = await guardAction(env, 'finunlink:' + user.email, 10, 900, 'account unlinks');
+  if(blocked) return blocked;
+
+  const rec = await DB.get(env, 'fin', user.email);
+  /* Told to the provider as well, so consent ends where the user ended it
+     rather than only in our copy of the record. Best effort: our record goes
+     either way, because a user who disconnects must not stay connected here
+     because a third party was unreachable. */
+  if(rec && rec.accessToken && _finReady(env)){
+    try{ await _finCall(env, '/item/remove', { access_token: rec.accessToken }); }catch(e){}
+  }
+  await DB.del(env, 'fin', user.email);
+  await DB.del(env, 'finlink', user.email);
+  /* The snapshot is derived from that account, so it goes too - otherwise
+     relinking later would compare today against a stranger's balance. */
+  await DB.del(env, 'invsnap', user.email);
+  await _userEvent(env, request, user.email, 'finance_unlinked', {});
+  audit(env, 'finance_unlinked', { by: user.email });
+  return json({ ok:true, unlinked:true });
+}
+
 /* ============================================================
    LINKED ACCOUNT INVITES  (/v1/link/invite)
 
@@ -3196,6 +3339,10 @@ export default {
         case '/v1/oauth/google/exchange': return googleOAuthExchange(request, env);
         case '/v1/oauth/google/refresh':  return googleOAuthRefresh(request, env);
         case '/v1/finance/checkin':      return financeCheckin(request, env);
+        case '/v1/finance/status':       return financeStatus(request, env);
+        case '/v1/finance/link/start':   return financeLinkStart(request, env);
+        case '/v1/finance/link/finish':  return financeLinkFinish(request, env);
+        case '/v1/finance/unlink':       return financeUnlink(request, env);
         case '/v1/family/get':           return familyGet(request, env);
         case '/v1/family/limits':        return familySetLimits(request, env);
         case '/v1/family/remove':        return familyRemove(request, env);
