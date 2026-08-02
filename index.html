@@ -30219,22 +30219,56 @@ const AMVVerify = {
     if(A.final == null && B.final == null) return { agree:true, reason:'no numeric claim to compare' };
     if(A.final == null || B.final == null) return { agree:true, inconclusive:true, reason:'only one solve stated a number' };
     if(this._same(A.final, B.final)) return { agree:true, ratio:1, reason:'independent solve reached the same result' };
-    // Conclusions differ - but if the primary's result appears anywhere in the
-    // second solve's working, treat it as agreement rather than a false alarm.
+    /* Conclusions differ. Before calling that a conflict, check BOTH ways.
+
+       The primary answer has no "ANSWER:" line, so its conclusion is taken as
+       the last number in the text - and a reply that ends "...let me know if
+       you want the 20% figure too" concludes with 20. Comparing only A's guessed
+       conclusion against B produced false conflicts on correct answers, and a
+       warning that cries wolf is worse than no warning: it teaches people to
+       ignore the one that matters. */
     if(B.nums.some(n => this._same(n, A.final)))
       return { agree:true, ratio:0.75, reason:'the second solve also arrived at this figure' };
+    if(B.final != null && A.nums.some(n => this._same(n, B.final)))
+      return { agree:true, ratio:0.75, reason:'the answer contains the figure the second solve reached' };
     return { agree:false, ratio:0, reason:'independent solve reached a different result' };
   },
 
   /* Re-solve the question from scratch. The verifier deliberately never sees
      the first answer, so it cannot be anchored into repeating a mistake. */
+  /* A DIFFERENT engine, not just a fresh context.
+
+     This used to call the model with no engine specified, which meant the
+     "independent" check ran on the same one that produced the answer. Hiding
+     the first answer prevents anchoring, but an identical model given an
+     identical question reproduces its own systematic errors - so two agreeing
+     draws from one distribution were being shown to the user as "double-
+     checked". Agreement between two DIFFERENT engines is a real signal;
+     agreement with itself is mostly a measure of its own consistency.
+
+     This only ever runs on money, medical, legal, safety and numeric claims, so
+     it is the one place where paying for the better engine is obviously right. */
+  _verifierModel(){
+    try{
+      const primary = (MODELS[S.model] || {}).model || '';
+      const best = (typeof qModel === 'function') ? qModel('review') : 'amv-core';
+      if(best && best !== primary) return best;
+      /* The answer already came from the best engine available, so a second
+         opinion from it would not be a second opinion. Step sideways. */
+      const alt = (MODELS.coding || {}).model;
+      if(alt && alt !== primary) return alt;
+      return (MODELS.core || {}).model || 'amv-core';
+    }catch(e){ return 'amv-core'; }
+  },
+
   async recheck(question){
     if(typeof _aiBackendReady !== 'function' || !_aiBackendReady()) return null;
     if(typeof aiComplete !== 'function') return null;
     const sys = 'Solve the problem independently and carefully. Show the key steps briefly, then state the '
       + 'final answer on the last line as "ANSWER: <value>". If the question cannot be answered factually '
       + 'with confidence, say "ANSWER: uncertain". Do not guess.';
-    try{ return await aiComplete(String(question).slice(0, 4000), sys, { max_tokens: 700, noLang: true }); }
+    try{ return await aiComplete(String(question).slice(0, 4000), sys,
+      { max_tokens: 700, noLang: true, model: this._verifierModel() }); }
     catch(e){ return null; }
   },
 
@@ -30249,8 +30283,9 @@ const AMVVerify = {
     return {
       status: cmp.agree ? 'agreed' : 'conflict',
       why, ratio: cmp.ratio, second,
+      engine: cmp.agree ? undefined : this._verifierModel(),
       note: cmp.agree
-        ? 'Checked ' + why + ' a second, independent way - the results agree.'
+        ? 'Checked ' + why + ' on a second, different engine - the results agree.'
         : 'An independent re-check of ' + why + ' did NOT match. Treat this answer as uncertain and verify before relying on it.'
     };
   },

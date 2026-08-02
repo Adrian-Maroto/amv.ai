@@ -184,6 +184,51 @@ section('Crew spends the money where the quality is decided');
      'the repeated step is the one that gets the self-check pass', true);
 }
 
+section('The independent check is actually independent');
+{
+  /* The verifier used to run with no engine specified, so it ran on whichever
+     one produced the answer. Hiding the first answer stops anchoring, but an
+     identical model on an identical question repeats its own systematic errors -
+     and the user was shown "double-checked" for what was really one engine
+     agreeing with itself. */
+  const r = await page.evaluate(async () => {
+    saveStr('amv_plan', 'elite');
+    const used = [];
+    window._aiBackendReady = () => true;
+    window.aiComplete = async (p, s, o) => { used.push((o || {}).model); return 'ANSWER: 12.60'; };
+
+    S.model = 'smart';                       // answered on the best engine
+    await AMVVerify.recheck('what is 15% of 84');
+    const whenBest = used.slice();
+
+    used.length = 0;
+    S.model = 'core';                        // answered on the middle engine
+    await AMVVerify.recheck('what is 15% of 84');
+    return { whenBest, whenCore: used.slice(), primaryBest: MODELS.smart.model };
+  });
+  ok(r.whenCore[0] !== 'amv-core', 'it does not re-ask the engine that just answered', r.whenCore);
+  ok(r.whenBest[0] !== r.primaryBest,
+     'and steps sideways when the answer already came from the best one', r.whenBest);
+}
+
+section('A worked answer is not flagged as a conflict for its own working');
+{
+  /* The primary reply has no ANSWER: line, so its conclusion is guessed as the
+     last number - and "...let me know if you want the 20% figure" concludes
+     with 20. A warning that cries wolf teaches people to ignore the real one. */
+  const r = await page.evaluate(() => ({
+    trailing: AMVVerify.agree(
+      'A 15% tip on $84 is $12.60. Let me know if you want the 20% figure too.',
+      'Working: 84 * 0.15 = 12.6\nANSWER: 12.60'),
+    real: AMVVerify.agree(
+      'The total comes to $91.40.',
+      'Working: 84 * 1.15 = 96.6\nANSWER: 96.60'),
+  }));
+  ok(r.trailing.agree === true,
+     'the figure the check reached is found in the answer, so it agrees', r.trailing);
+  ok(r.real.agree === false, 'while a genuine difference is still a conflict', r.real);
+}
+
 ok(errors.length === 0, 'no console errors along the way', errors.slice(0, 3));
 
 await app.close();
