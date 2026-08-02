@@ -312,6 +312,106 @@ section('Real disagreement is what buys the expensive engine');
      'and it records what they disagreed about', r.out.split);
 }
 
+section('A problem too big for one pass is split into parts that are not');
+{
+  /* The one technique that extends reasoning depth rather than tidying output.
+     A model that cannot hold a five-part problem can usually hold each part. */
+  const r = await page.evaluate(async () => {
+    const asked = [];
+    window.runCode = async () => ({ output: '' });
+    window.aiComplete = async (p, s, o) => {
+      asked.push({ model: (o || {}).model, p: String(p).slice(0, 40) });
+      if (/JSON array of strings, or the single token ATOMIC/.test(s || ''))
+        return '["What is the tax rate?","What is the base amount?"]';
+      if (/only runnable JavaScript/i.test(s || '')) return 'NOT_COMPUTABLE';
+      if (/already been worked out/.test(p)) return 'The full answer, built from both parts, complete.';
+      return 'A part answer that is complete and ends properly.';
+    };
+    const out = await qDecompose('final', 'work out the total tax owed', 'sys');
+    return { out, asked };
+  });
+  ok(r.out.decomposed === true, 'it splits', r.out);
+  ok(r.out.parts === 2, 'into the parts it found', r.out.parts);
+  ok(/built from both parts/.test(r.out.text), 'and composes them into one answer', r.out.text);
+  /* Composition is the only step that sees the whole thing. */
+  ok(r.asked[r.asked.length - 1].model === 'amv-apex' || r.asked[r.asked.length - 1].model === 'amv-core',
+     'with the composing pass on the answer tier', r.asked[r.asked.length - 1]);
+}
+
+section('Something atomic is not forced apart');
+{
+  /* Splitting a problem that does not split makes it worse. */
+  const r = await page.evaluate(async () => {
+    window.runCode = async () => ({ output: '' });
+    window.aiComplete = async (p, s) => {
+      if (/JSON array of strings, or the single token ATOMIC/.test(s || '')) return 'ATOMIC';
+      if (/only runnable JavaScript/i.test(s || '')) return 'NOT_COMPUTABLE';
+      return 'A single considered answer, complete and ending properly.';
+    };
+    return await qDecompose('final', 'what rhymes with orange', 'sys');
+  });
+  ok(!r.decomposed, 'it does not claim to have decomposed', !!r.decomposed);
+  ok(/single considered answer/.test(r.text), 'and answers directly', r.text);
+}
+
+section('Code is judged by running it, not by how confident it sounds');
+{
+  const r = await page.evaluate(async () => {
+    let n = 0;
+    window.runCode = async (code) => {
+      /* First attempt genuinely throws; the fix runs. */
+      if (/BROKEN/.test(code)) return { error: 'ReferenceError: x is not defined' };
+      return { output: '42' };
+    };
+    window.aiComplete = async (p) => {
+      n++;
+      if (/THE ACTUAL ERROR/.test(p)) return 'console.log(42)';
+      return 'BROKEN; console.log(x)';
+    };
+    return await qCode('print the answer', 'js');
+  });
+  ok(r.ok === true, 'it keeps going until the code actually runs', r);
+  ok(r.attempts === 2, 'taking as many attempts as it needed', r.attempts);
+  ok(r.output === '42', 'and returns what it really produced', r.output);
+  ok(!/BROKEN/.test(r.code), 'with the fixed code, not the first draft', r.code);
+}
+
+section('The real error is what gets fed back, not a guess at it');
+{
+  const r = await page.evaluate(async () => {
+    let sawError = '';
+    window.runCode = async () => ({ error: 'TypeError: cannot read properties of undefined' });
+    window.aiComplete = async (p) => {
+      if (/THE ACTUAL ERROR/.test(p)) sawError = p.split('THE ACTUAL ERROR:')[1].trim();
+      return 'console.log(1)';
+    };
+    const out = await qCode('do a thing', 'js', { tries: 2 });
+    return { sawError, out };
+  });
+  ok(/TypeError: cannot read properties/.test(r.sawError),
+     'the fix is given the actual runtime error', r.sawError);
+  ok(r.out.ok === false, 'and code that never runs is not called working', r.out.ok);
+  ok(!!r.out.code && !!r.out.error, 'while the work and the error are both kept', !!r.out.code);
+}
+
+section('The ladder is reachable, not another unused engine');
+{
+  /* Every quality mechanism in this file is worthless if nothing calls it -
+     which is the failure this codebase has had repeatedly. Read from the built
+     bundle, at the call sites users actually reach. */
+  const bundle = readFileSync(join(ROOT, 'app.js'), 'utf8');
+  const at = bundle.indexOf('async function runAutonomous(goal');
+  const loop = bundle.slice(at, at + 9000);
+  ok(/qAccurate\('step'/.test(loop),
+     'a Crew step whose answer is a number goes through the accuracy ladder', true);
+  ok(/shouldVerify|calculat\|comput/.test(loop),
+     'chosen by whether the step is actually numeric, not applied to everything', true);
+  ok(/qRun\('step'/.test(loop), 'while ordinary steps stay on the cheap path', true);
+
+  ok(/qCode\(prompt, lang/.test(bundle),
+     'and the Lab debug loop runs the code rather than reasoning about it', true);
+}
+
 ok(errors.length === 0, 'no console errors along the way', errors.slice(0, 3));
 
 await app.close();

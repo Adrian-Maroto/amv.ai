@@ -27418,7 +27418,14 @@ async function autoDebug(code, lang, maxIters, onStep, modelStr){
       '\n\nGive the ROOT CAUSE line, then the complete corrected program.';
     let fixed, rootCause='';
     try{
-      const resp=await aiComplete(prompt, sys, {max_tokens: isLarge?16000:10000, model:_sectionModel('debug')});
+      /* The Lab's auto-debug now runs the code rather than reasoning about it: the
+         compiler decides whether a fix worked, and it is never wrong about that.
+         A cheap engine inside a working loop produces code well above its
+         one-shot ability. */
+      const fixed0 = (typeof qCode==='function') ? await qCode(prompt, lang, { tries:2 }) : null;
+      const resp = (fixed0 && fixed0.ok && fixed0.code)
+        ? ('ROOT CAUSE: verified by running it\n```'+(lang||'js')+'\n'+fixed0.code+'\n```')
+        : await aiComplete(prompt, sys, {max_tokens: isLarge?16000:10000, model:_sectionModel('debug')});
       const rc=resp.match(/ROOT CAUSE:\s*(.+)/i); rootCause=rc?rc[1].trim():'';
       fixed=extractCode(resp, lang)||extractCode(resp);
     }
@@ -28655,10 +28662,18 @@ async function runAutonomous(goal, opts){
          A run is a plan plus N of these plus a delivery; billing every one at
          the price of the hardest thing AMV can do is what makes an agent
          expensive out of all proportion to what it did. */
-      const stepRes=await qRun('step',
-        'Step: '+s.action+'\n\nIf this step is best done by running code (computation, data parsing, transformation), reply with ONLY a fenced code block (js or python). Otherwise reply with the completed written result for this step.'+wsNote+' Context so far:\n'+(context.slice(-3000)||'(none)')+(_AUTO.fileContent?('\n\nWorkspace / file contents:\n'+String(_AUTO.fileContent).slice(0,12000)):''),
-        _AMVSYS+' Execute this one step and produce the actual, finished output for it - production quality.',
-        { refine:true, prose:true });
+      /* A step whose answer is a NUMBER goes through the accuracy ladder rather
+         than the ordinary one: computed where it can be computed, agreed with
+         itself where it cannot, and escalated only when the samples disagree.
+         Arithmetic is where a wrong answer is most visible, and it is the one
+         kind of wrong that costs nothing to eliminate. */
+      const stepPrompt='Step: '+s.action+'\n\nIf this step is best done by running code (computation, data parsing, transformation), reply with ONLY a fenced code block (js or python). Otherwise reply with the completed written result for this step.'+wsNote+' Context so far:\n'+(context.slice(-3000)||'(none)')+(_AUTO.fileContent?('\n\nWorkspace / file contents:\n'+String(_AUTO.fileContent).slice(0,12000)):'');
+      const stepSys=_AMVSYS+' Execute this one step and produce the actual, finished output for it - production quality.';
+      const numeric=(typeof AMVVerify!=='undefined' && AMVVerify.shouldVerify)
+        ? !!AMVVerify.shouldVerify(s.action, '') : /\b(calculat|comput|total|sum|average|percent|convert|how much|how many)\b/i.test(String(s.action||''));
+      const stepRes = numeric
+        ? await qAccurate('step', stepPrompt, stepSys, { prose:true, samples:2 })
+        : await qRun('step', stepPrompt, stepSys, { refine:true, prose:true });
       const decide=stepRes.text;
       // file write?
       const fileWrite=decide.match(/WRITE_FILE:\s*([^\n`]+)\n([\s\S]*?)(?:```|$)/);
@@ -33344,6 +33359,105 @@ async function qAccurate(task, prompt, system, opts){
 try{
   window.qCompute = qCompute; window.qConsensus = qConsensus; window.qAccurate = qAccurate;
 }catch(e){}
+
+
+/* ── THE TWO THAT RAISE THE CEILING RATHER THAN THE FLOOR ────────────────────
+
+   Everything above makes the cheap tier reliable. These two make it capable of
+   things it cannot do in one pass, which is a different claim and a stronger
+   one.
+
+   DECOMPOSITION. A model that cannot hold a five-part problem can usually hold
+   each part. Splitting the problem, solving the parts separately - each with
+   computation and consensus behind it - and composing the results produces
+   answers a single pass on the same engine could not reach. This is the one
+   technique that genuinely extends reasoning depth rather than tidying output.
+
+   EXECUTION. For code, correctness is not a matter of opinion. Generate, RUN,
+   feed the real error back, run again. A cheap engine inside a working loop
+   produces code far above its one-shot ability, because the compiler is doing
+   the judging and the compiler is never wrong about whether something runs. */
+
+/* Split, solve, compose. Falls back to a single accurate pass when the problem
+   does not decompose - forcing a split on something atomic makes it worse. */
+async function qDecompose(task, prompt, system, opts){
+  const o = opts || {};
+  let parts = [];
+  try{
+    const raw = await aiComplete(
+      'Break this into the smallest set of INDEPENDENT sub-questions that must each be answered '
+      + 'to answer it fully. Two to five. Each must stand alone - no sub-question may depend on '
+      + 'another\'s answer. If it does not split that way, return exactly: ATOMIC\n\n'
+      + String(prompt).slice(0, 3000),
+      'Return only a JSON array of strings, or the single token ATOMIC.',
+      Object.assign({}, o, { model: qModel('plan'), max_tokens: 700, noLang: true }));
+    const clean = String(raw || '').replace(/^```(?:json)?|```$/gm, '').trim();
+    if(!/ATOMIC/.test(clean)) parts = JSON.parse(clean);
+  }catch(e){ parts = []; }
+
+  if(!Array.isArray(parts) || parts.length < 2 || parts.length > 5)
+    return await qAccurate(task, prompt, system, o);
+
+  /* Each part gets the full accuracy ladder - computed where it can be
+     computed, agreed with itself where it cannot. */
+  const solved = [];
+  for(const part of parts.slice(0, 5)){
+    const r = await qAccurate('step', String(part), system, Object.assign({}, o, { samples: o.samples || 2 }));
+    solved.push({ q: String(part), a: (r && r.text) || '', grounded: !!(r && r.grounded) });
+  }
+
+  /* Composition is the one step that sees the whole thing, so it gets the good
+     engine - and it is told to use the answers rather than re-derive them. */
+  const composed = await qRun('final',
+    'Question:\n' + prompt + '\n\nEach part has already been worked out:\n\n'
+    + solved.map((s, i) => (i+1) + '. ' + s.q + '\n   -> ' + s.a).join('\n\n')
+    + '\n\nWrite the complete answer using these results. Do not re-derive them and do not contradict them.',
+    system, Object.assign({}, o, { refine: false, prose: true }));
+
+  return { text: composed.text, model: composed.model, decomposed: true,
+           parts: solved.length, grounded: solved.some(s => s.grounded) };
+}
+
+/* Generate code, run it, and keep fixing it with the REAL error until it works.
+   Correctness here is decided by execution rather than by the engine's
+   confidence, which is why a cheap engine does well at it. */
+async function qCode(request, lang, opts){
+  const o = opts || {};
+  const language = (lang || 'js').toLowerCase();
+  const maxTries = Math.max(1, Math.min(5, o.tries || 3));
+  if(typeof runCode !== 'function' || typeof aiComplete !== 'function')
+    return { ok:false, reason:'Code execution is not available here.' };
+
+  let code = '', lastErr = '', attempts = 0;
+  for(let i = 0; i < maxTries; i++){
+    attempts++;
+    const ask = i === 0
+      ? 'Write ' + language + ' that does this. Output ONLY the code.\n\n' + String(request).slice(0, 4000)
+      : 'This ' + language + ' failed. Fix it and output ONLY the corrected code.\n\nCODE:\n' + code
+        + '\n\nTHE ACTUAL ERROR:\n' + lastErr;
+    let out = '';
+    try{
+      out = await aiComplete(ask, 'You output only runnable ' + language + ', with no commentary.',
+        Object.assign({}, o, { model: i === 0 ? qModel('step') : _nextTierModel('step'), max_tokens: 1800 }));
+    }catch(e){ lastErr = String(e && e.message || e); continue; }
+
+    code = String(out || '').replace(/^```(?:[a-z]+)?|```$/gm, '').trim();
+    if(!code){ lastErr = 'no code was produced'; continue; }
+
+    try{
+      const r = await runCode(code, language);
+      const err = (r && r.error) || '';
+      if(!err) return { ok:true, code, output:String((r && (r.output || r.result)) || '').trim(), attempts };
+      lastErr = String(err).slice(0, 600);
+    }catch(e){ lastErr = String(e && e.message || e).slice(0, 600); }
+  }
+  /* Honest failure: the code is returned so the work is not lost, but it is NOT
+     called working. */
+  return { ok:false, code, error:lastErr, attempts,
+           reason:'This did not run cleanly after ' + attempts + ' attempts. The last error is included.' };
+}
+
+try{ window.qDecompose = qDecompose; window.qCode = qCode; }catch(e){}
 
 </script>
 <script>(function(){var c=document.getElementById('amv-app-code');if(!c)return;var code=c.textContent.split('<\\/scr_AMV_ipt').join('</script');function inlineRun(){var e=document.createElement('script');e.textContent=code;document.body.appendChild(e);}try{var s=document.createElement('script');s.src=URL.createObjectURL(new Blob([code],{type:'application/javascript'}));s.defer=true;s.onerror=inlineRun;document.body.appendChild(s);}catch(e){inlineRun();}})();</script>

@@ -147,10 +147,18 @@ async function runAutonomous(goal, opts){
          A run is a plan plus N of these plus a delivery; billing every one at
          the price of the hardest thing AMV can do is what makes an agent
          expensive out of all proportion to what it did. */
-      const stepRes=await qRun('step',
-        'Step: '+s.action+'\n\nIf this step is best done by running code (computation, data parsing, transformation), reply with ONLY a fenced code block (js or python). Otherwise reply with the completed written result for this step.'+wsNote+' Context so far:\n'+(context.slice(-3000)||'(none)')+(_AUTO.fileContent?('\n\nWorkspace / file contents:\n'+String(_AUTO.fileContent).slice(0,12000)):''),
-        _AMVSYS+' Execute this one step and produce the actual, finished output for it - production quality.',
-        { refine:true, prose:true });
+      /* A step whose answer is a NUMBER goes through the accuracy ladder rather
+         than the ordinary one: computed where it can be computed, agreed with
+         itself where it cannot, and escalated only when the samples disagree.
+         Arithmetic is where a wrong answer is most visible, and it is the one
+         kind of wrong that costs nothing to eliminate. */
+      const stepPrompt='Step: '+s.action+'\n\nIf this step is best done by running code (computation, data parsing, transformation), reply with ONLY a fenced code block (js or python). Otherwise reply with the completed written result for this step.'+wsNote+' Context so far:\n'+(context.slice(-3000)||'(none)')+(_AUTO.fileContent?('\n\nWorkspace / file contents:\n'+String(_AUTO.fileContent).slice(0,12000)):'');
+      const stepSys=_AMVSYS+' Execute this one step and produce the actual, finished output for it - production quality.';
+      const numeric=(typeof AMVVerify!=='undefined' && AMVVerify.shouldVerify)
+        ? !!AMVVerify.shouldVerify(s.action, '') : /\b(calculat|comput|total|sum|average|percent|convert|how much|how many)\b/i.test(String(s.action||''));
+      const stepRes = numeric
+        ? await qAccurate('step', stepPrompt, stepSys, { prose:true, samples:2 })
+        : await qRun('step', stepPrompt, stepSys, { refine:true, prose:true });
       const decide=stepRes.text;
       // file write?
       const fileWrite=decide.match(/WRITE_FILE:\s*([^\n`]+)\n([\s\S]*?)(?:```|$)/);

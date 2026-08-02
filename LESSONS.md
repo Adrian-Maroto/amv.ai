@@ -859,3 +859,23 @@ and the only honest moment to spend real money.
 What none of this does is raise the ceiling on a problem the model cannot
 represent. It makes the cheap tier reliable, not brilliant - and most of what
 reads as "cheap" is unreliability, not lack of brilliance.
+
+## 93. Decomposition and execution raise the ceiling; everything else raises the floor
+Repair passes, validation and escalation make a cheap engine RELIABLE. Two things
+make it CAPABLE of work it cannot do in one pass:
+
+Decomposition. A model that cannot hold a five-part problem can usually hold each
+part. Splitting it, solving each part with computation and consensus behind it,
+then composing on the answer tier, reaches answers a single pass on the same
+engine could not. Forcing a split on something atomic makes it worse, so the
+split is allowed to return ATOMIC and fall back.
+
+Execution. For code, correctness is not an opinion. Generate, run, feed the REAL
+error back, run again. The compiler does the judging and is never wrong about
+whether something runs, so a cheap engine inside that loop produces code far
+above its one-shot ability - and code that never runs is reported as failed
+rather than returned with confidence.
+
+Both were wired into the paths users actually reach, and asserted from the built
+bundle, because an unreachable quality engine is the exact failure this codebase
+keeps having.

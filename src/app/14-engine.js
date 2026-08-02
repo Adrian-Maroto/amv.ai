@@ -241,7 +241,14 @@ async function autoDebug(code, lang, maxIters, onStep, modelStr){
       '\n\nGive the ROOT CAUSE line, then the complete corrected program.';
     let fixed, rootCause='';
     try{
-      const resp=await aiComplete(prompt, sys, {max_tokens: isLarge?16000:10000, model:_sectionModel('debug')});
+      /* The Lab's auto-debug now runs the code rather than reasoning about it: the
+         compiler decides whether a fix worked, and it is never wrong about that.
+         A cheap engine inside a working loop produces code well above its
+         one-shot ability. */
+      const fixed0 = (typeof qCode==='function') ? await qCode(prompt, lang, { tries:2 }) : null;
+      const resp = (fixed0 && fixed0.ok && fixed0.code)
+        ? ('ROOT CAUSE: verified by running it\n```'+(lang||'js')+'\n'+fixed0.code+'\n```')
+        : await aiComplete(prompt, sys, {max_tokens: isLarge?16000:10000, model:_sectionModel('debug')});
       const rc=resp.match(/ROOT CAUSE:\s*(.+)/i); rootCause=rc?rc[1].trim():'';
       fixed=extractCode(resp, lang)||extractCode(resp);
     }
