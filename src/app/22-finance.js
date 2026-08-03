@@ -39,10 +39,12 @@ const AMVFinance = {
         method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + this._tok() },
         body:'{}' });
       const d = await r.json().catch(()=>({}));
-      if(!r.ok) return { ready:this.ready(), linked:this.linked() };
+      /* ok:false marks these as the LAST KNOWN values rather than a fresh
+         answer, so a caller cannot mistake a failed refresh for a current one. */
+      if(!r.ok) return { ok:false, stale:true, ready:this.ready(), linked:this.linked() };
       try{ saveStr('amv_fin_linked', d.linked?'1':''); saveStr('amv_fin_ready', d.ready?'1':''); }catch(e){}
-      return { ready:!!d.ready, linked:!!d.linked, linkedAt:d.linkedAt||null };
-    }catch(e){ return { ready:this.ready(), linked:this.linked() }; }
+      return { ok:true, ready:!!d.ready, linked:!!d.linked, linkedAt:d.linkedAt||null };
+    }catch(e){ return { ok:false, stale:true, ready:this.ready(), linked:this.linked() }; }
   },
 
   /* Start the hosted flow. The sign-in happens on the provider's own page, so
