@@ -3015,9 +3015,49 @@ async function crewApprovalAct(request, env){
   const { id, action } = await request.json().catch(()=>({}));
   if(!id) return json({ error:'id required' }, 400);
   const rec = (await DB.get(env, 'approvals', user.email)) || { items:[] };
+  const item = (rec.items || []).find(a => a.id === id);
+
+  /* Not every approval on somebody's screen came from the server - some flows
+     create one locally and never enqueue it. Nothing to resolve here is not an
+     error, or the client would be told its own local item had failed. */
+  if(!item) return json({ ok:true, action: action || 'resolved', found:false, delivered:null });
+
+  /* Approving a held result is what DELIVERS it. This used to remove the item
+     and return ok:true for approve and reject alike, so the screen said "Sent"
+     and nothing was ever sent - the whole require-approval flow is "the
+     finished work waits until you say go", and nothing was behind the go.
+     Only an item the job asked to be EMAILED has anything to deliver; a
+     review-only one is genuinely resolved by being read. */
+  let delivered = null;
+  if(action === 'approve' && item.actionType === 'send'){
+    if(!env.EMAIL_API_KEY){
+      delivered = false;                     // approved, but there is no way to send it
+    } else {
+      try{
+        /* _sendEmail answers with a BOOLEAN, not a throw - a refused send comes
+           back as false. Awaiting it and assuming success is the very defect
+           this function is being fixed for, one layer down. */
+        const wentOut = await _autoEmailResult(env, user.email,
+          { kind:'task', detail: item.title, notify:'email' },
+          (item.result && item.result.body) || item.preview || '');
+        if(!wentOut){
+          return json({ error:'The email provider would not accept it, so nothing was sent.',
+                        code:'send_failed' }, 502);
+        }
+        delivered = true;
+      }catch(e){
+        /* The item STAYS. Losing the finished work and reporting a failure at
+           the same time would leave nothing to retry. */
+        return json({ error:'Could not send it: ' + String((e && e.message) || e).slice(0,200),
+                      code:'send_failed' }, 502);
+      }
+    }
+  }
+
   rec.items = (rec.items || []).filter(a => a.id !== id);   // approve/reject both resolve it
   await DB.put(env, 'approvals', user.email, rec);
-  return json({ ok:true, action: action || 'resolved' });
+  audit(env, 'approval_act', { by:user.email, action: action || 'resolved', delivered });
+  return json({ ok:true, action: action || 'resolved', found:true, delivered });
 }
 
 async function handoffList(request, env){

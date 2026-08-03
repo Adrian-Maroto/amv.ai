@@ -432,7 +432,16 @@ const AMV_API = {
   async jobs(){ const r=await this._fetch('/api/jobs'); return (await r.json()).jobs||[]; },
   async toggleJob(id,on){ await this._fetch('/api/jobs',{method:'POST',body:JSON.stringify({id,on})}); },
   async approvals(){ const r=await this._fetch('/api/approvals'); return (await r.json()).approvals||[]; },
-  async actApproval(id,action){ await this._fetch('/api/approvals/act',{method:'POST',body:JSON.stringify({id,action})}); },
+  /* Checks the answer. It used to await the request and ignore what came back,
+     so a 502 from a send that failed read exactly like a success - which is how
+     "Sent" survived on top of a server that never sent anything. Returns the
+     body so the caller can tell delivered from merely resolved. */
+  async actApproval(id,action){
+    const r = await this._fetch('/api/approvals/act',{method:'POST',body:JSON.stringify({id,action})});
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok || d.error){ const e=new Error(d.error||'That could not be completed.'); e.code=d.code||'failed'; throw e; }
+    return d;
+  },
   async pauseAutonomy(paused){ await this._fetch('/auto/pause',{method:'POST',body:JSON.stringify({paused:!!paused})}); },
   async createHandoff(h){ await this._fetch('/api/handoff',{method:'POST',body:JSON.stringify(h)}); },
   async listHandoff(){ const r=await this._fetch('/api/handoff'); return await r.json(); },
@@ -13268,8 +13277,9 @@ async function _apvDoApprove(a){
     renderCrewView();
     return { ok:false, code:'needs_service' };
   }
+  let d;
   try{
-    await AMV_API.actApproval(a.id,'approve');
+    d = await AMV_API.actApproval(a.id,'approve');
   }catch(e){
     toast('That was NOT '+String(past).toLowerCase()+(e&&e.message?' ('+e.message+')':'')+
           '. It is still in your approvals - try again.','error',7000);
@@ -13277,9 +13287,15 @@ async function _apvDoApprove(a){
     return { ok:false, code:'failed', error:(e&&e.message)||'' };
   }
   _cwSaveApprovals(_cwApprovals().filter(x=>x.id!==a.id));
-  toast(past,'success');
+  /* "Sent" only when the server actually sent it. An item that was approved but
+     has no email provider behind it is APPROVED, which is a different word. */
+  if(d && d.delivered === false){
+    toast('Approved, but not emailed - no email provider is connected to this deployment, so nothing left AMV.','info',7000);
+  } else {
+    toast(past,'success');
+  }
   renderCrewView();
-  return { ok:true };
+  return { ok:true, delivered: d ? d.delivered : null };
 }
 function apvReject(id){ apvClose(); cwReject(id); }
 /* The body text of an approval, wherever it lives for that result type. */

@@ -432,7 +432,16 @@ const AMV_API = {
   async jobs(){ const r=await this._fetch('/api/jobs'); return (await r.json()).jobs||[]; },
   async toggleJob(id,on){ await this._fetch('/api/jobs',{method:'POST',body:JSON.stringify({id,on})}); },
   async approvals(){ const r=await this._fetch('/api/approvals'); return (await r.json()).approvals||[]; },
-  async actApproval(id,action){ await this._fetch('/api/approvals/act',{method:'POST',body:JSON.stringify({id,action})}); },
+  /* Checks the answer. It used to await the request and ignore what came back,
+     so a 502 from a send that failed read exactly like a success - which is how
+     "Sent" survived on top of a server that never sent anything. Returns the
+     body so the caller can tell delivered from merely resolved. */
+  async actApproval(id,action){
+    const r = await this._fetch('/api/approvals/act',{method:'POST',body:JSON.stringify({id,action})});
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok || d.error){ const e=new Error(d.error||'That could not be completed.'); e.code=d.code||'failed'; throw e; }
+    return d;
+  },
   async pauseAutonomy(paused){ await this._fetch('/auto/pause',{method:'POST',body:JSON.stringify({paused:!!paused})}); },
   async createHandoff(h){ await this._fetch('/api/handoff',{method:'POST',body:JSON.stringify(h)}); },
   async listHandoff(){ const r=await this._fetch('/api/handoff'); return await r.json(); },
