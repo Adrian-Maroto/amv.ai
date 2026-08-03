@@ -444,8 +444,42 @@ async function _crewSyncLive(){
    person can toggle for somebody else is not one. */
 function _autonomyPaused(){ try{ return loadStr('amv_autonomy_paused')==='1'; }catch(e){ return false; } }
 function _setAutonomyPaused(v){ try{ saveStr('amv_autonomy_paused', v?'1':'0'); }catch(e){} }
-function pauseAllAutonomous(){ _setAutonomyPaused(true); if(window.AMV_API && AMV_API.live && AMV_API.pauseAutonomy) AMV_API.pauseAutonomy(true).catch(()=>{}); toast('All autonomous work paused - nothing runs until you resume.','info',3800); renderCrewView(); }
-function resumeAllAutonomous(){ _setAutonomyPaused(false); if(window.AMV_API && AMV_API.live && AMV_API.pauseAutonomy) AMV_API.pauseAutonomy(false).catch(()=>{}); toast('Autonomous work resumed.','success'); renderCrewView(); }
+/* The emergency stop. _setAutonomyPaused only halts the schedule THIS browser
+   walks; server-side jobs run on the worker's cron and keep going until the
+   server is told. The call was fired and forgotten and the message went out
+   regardless, so a failed request left somebody reading "nothing runs until you
+   resume" while their autonomous jobs carried on doing things.
+
+   A safety control is the last place to report an outcome it did not wait for,
+   so this waits, and says plainly what is still running if it could not. */
+async function _setAutonomyEverywhere(paused){
+  _setAutonomyPaused(paused);              // local first: this half always works
+  if(!(window.AMV_API && AMV_API.live && AMV_API.pauseAutonomy))
+    return { ok:false, code:'needs_service' };
+  try{ await AMV_API.pauseAutonomy(paused); return { ok:true }; }
+  catch(e){ return { ok:false, code:'failed', error:(e&&e.message)||'' }; }
+}
+async function pauseAllAutonomous(){
+  const res = await _setAutonomyEverywhere(true);
+  renderCrewView();
+  if(res.ok){ toast('All autonomous work paused - nothing runs until you resume.','info',3800); return; }
+  toast(res.code === 'needs_service'
+    ? 'Paused on this device. AMV is not connected to a backend, so there is no server-side work to stop.'
+    : 'Paused on this device, but the server was NOT told'+(res.error?' ('+res.error+')':'')+
+      ' - anything scheduled to run in the background is STILL RUNNING. Try again.',
+    res.code === 'needs_service' ? 'info' : 'error', 8000);
+}
+async function resumeAllAutonomous(){
+  const res = await _setAutonomyEverywhere(false);
+  renderCrewView();
+  if(res.ok){ toast('Autonomous work resumed.','success'); return; }
+  toast(res.code === 'needs_service'
+    ? 'Resumed on this device.'
+    : 'Resumed on this device, but the server was NOT told'+(res.error?' ('+res.error+')':'')+
+      ' - background work stays paused until it is. Try again.',
+    res.code === 'needs_service' ? 'success' : 'error', 8000);
+}
+try{ window._setAutonomyEverywhere=_setAutonomyEverywhere; }catch(e){}
 window.pauseAllAutonomous=pauseAllAutonomous; window.resumeAllAutonomous=resumeAllAutonomous;
 
 function _mcState(){

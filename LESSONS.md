@@ -969,3 +969,38 @@ The same applies to the greps used to FIND defects, not only the ones left
 behind to guard them. The sweep that found six instances of rule 94 searched
 `catch(e){ return <value> }`; it would not have found the same fabrication
 written as `.then(x => x || [])`.
+
+## 98. Changing what a function RETURNS is a change to every caller
+Making `_apvRegisterRecur` async so its result could be reported honestly turned
+a boolean return into a promise. Three callers read it, and one tested it for
+truthiness - and a promise is truthy every time. That caller would have claimed
+every job was scheduled, including when there was nothing recurring to schedule
+and the function had returned the equivalent of false.
+
+Nothing caught it. The suites passed before and after, because none covered that
+third path; the build was fine, because it is valid JavaScript. It was found by
+grepping the callers after changing the signature, which is now the rule:
+
+**When a return type changes - sync to async, boolean to object, value to
+throwing - list every caller before running anything.** The dangerous ones are
+the callers that never mention the new shape, because they are the ones still
+reading the old one.
+
+This is the same lesson the erasure work taught in reverse (rule 94's
+corollary: making a read THROW is not free either). A signature is a contract
+with places you are not looking at.
+
+The safe shape when a function has several callers and one of them is a plain
+`if(fn())`: return an object with an explicit outcome field, never a bare
+boolean, so a caller that forgets to unwrap it fails loudly rather than reading
+truthy and carrying on.
+
+## 99. Never restore sabotage-tested code with `git checkout`
+Twice now, verifying a standing check by breaking the code and watching it fail
+ended with `git checkout <file>` to restore - which reverts to HEAD, and the FIX
+being tested was not committed yet. Both times the suite failed afterwards for a
+real reason, and both times the temptation was to read that failure as a flake.
+
+Copy the file aside and copy it back, or re-apply the patch deliberately. And
+when a suite fails right after a restore, assume the restore is what is wrong
+before assuming the test is.

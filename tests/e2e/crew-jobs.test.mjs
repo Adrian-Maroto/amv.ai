@@ -427,6 +427,63 @@ section('Turning an approval into a recurring job answers the same question');
      'and nothing recurring is reported as nothing, not as scheduled', r);
 }
 
+section('The emergency stop does not claim a stop it never made');
+{
+  /* Pausing sets a local flag, which halts the schedule THIS browser walks.
+     Server-side jobs run on the worker's cron and keep going until the server
+     is told. The request was fired and forgotten and "nothing runs until you
+     resume" went out regardless - so a failed call left somebody believing
+     their autonomous work had stopped while it carried on doing things.
+
+     A safety control is the last place to report an outcome it did not wait
+     for. */
+  const r = await page.evaluate(async () => {
+    const said = [];
+    const realToast = window.toast; window.toast = (m, kind) => said.push({ m: String(m), kind });
+    const realBase = AMV_API.base, realTok = AMV_API.token, realPause = AMV_API.pauseAutonomy;
+    const out = {};
+
+    AMV_API.base = 'https://api.test'; AMV_API.token = 't';
+    AMV_API.pauseAutonomy = async () => { throw new Error('server unreachable'); };
+    said.length = 0;
+    await pauseAllAutonomous();
+    out.failed = said.slice();
+    out.localPaused = _autonomyPaused();
+
+    AMV_API.pauseAutonomy = async () => true;
+    said.length = 0;
+    await pauseAllAutonomous();
+    out.worked = said.slice();
+
+    AMV_API.base = ''; 
+    said.length = 0;
+    await pauseAllAutonomous();
+    out.noBackend = said.slice();
+
+    AMV_API.base = realBase; AMV_API.token = realTok; AMV_API.pauseAutonomy = realPause;
+    window.toast = realToast;
+    return out;
+  });
+
+  const failedMsg = (r.failed[0] || {}).m || '';
+  ok(!/nothing runs until you resume/i.test(failedMsg),
+     'a failed pause never claims nothing is running', failedMsg);
+  ok(/STILL RUNNING/.test(failedMsg),
+     'it says what is still running, in those words', failedMsg);
+  ok(/server unreachable/.test(failedMsg), 'with the reason', failedMsg);
+  ok((r.failed[0] || {}).kind === 'error', 'and it is an error, not a confirmation', r.failed[0]);
+  ok(r.localPaused === true,
+     'while this device really is paused, because that half always works', r.localPaused);
+
+  ok(/nothing runs until you resume/i.test((r.worked[0] || {}).m || ''),
+     'a pause that reached the server says so plainly', r.worked[0]);
+
+  const nb = (r.noBackend[0] || {}).m || '';
+  ok(/not connected to a backend/i.test(nb),
+     'and with no backend it says there is no server-side work to stop', nb);
+  ok(!/STILL RUNNING/.test(nb), 'rather than inventing an alarm', nb);
+}
+
 await app.close();
 if (report('crew-jobs') > 0) process.exitCode = 1;
 done();
