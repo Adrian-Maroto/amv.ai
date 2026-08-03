@@ -1004,3 +1004,35 @@ real reason, and both times the temptation was to read that failure as a flake.
 Copy the file aside and copy it back, or re-apply the patch deliberately. And
 when a suite fails right after a restore, assume the restore is what is wrong
 before assuming the test is.
+
+## 100. When the same defect appears a third time, stop fixing instances
+Two classes accounted for twenty-three defects in one review pass:
+
+- A control reporting an outcome it never waited for (nine instances).
+- A read answering failure with a plausible value (fourteen).
+
+Each was written by somebody being careful about something else, in a different
+file, at a different time. There was no shared author to teach and no shared
+module to fix. Reading found them one at a time and would have kept finding them
+one at a time for as long as anybody kept reading.
+
+Both are now standing checks over the built bundle, and each one found instances
+that reading had missed - two apiece, immediately. That is the argument for the
+approach in a sentence: the check is not a record of what was fixed, it is
+better at the search than the person who wrote it.
+
+What made them usable rather than noisy:
+
+- **Encode the RULE, not the instances.** "Anything that runs code or publishes
+  must be in the consent map", not a list of three tool names.
+- **Allow the legitimate version explicitly.** A view counter should stay
+  fire-and-forget; a `{ok:false}` result is the recommended shape, not the
+  forbidden one. A check that cannot tell those apart gets disabled within a
+  month.
+- **Fail when the pattern matches NOTHING.** A regex that has drifted into
+  matching zero lines passes silently forever. Assert the population is
+  non-empty before asserting it is clean.
+- **Sabotage-test every spelling it claims to cover** (rules 97, 99).
+
+The cost is real - each check took about as long as three of the fixes - and it
+is worth paying the moment a class reaches three instances.

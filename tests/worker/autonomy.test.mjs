@@ -13,7 +13,10 @@ const ROOT = join(__dir, '..', '..');
 const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'autonomy.harness.mjs');
-writeFileSync(harness, src + '\nexport { runDueAutomations, _enqueueApproval };\n');
+writeFileSync(harness, src + `
+export { runDueAutomations, _enqueueApproval, autoPause, _autoKey };
+export function __setRequireUser(fn){ requireUser = fn; }
+`);
 const W = await import(harness + '?t=' + Date.now());
 
 const store = new Map();
@@ -61,6 +64,41 @@ ok(!!ap.readyAt && !!ap.startedAt, 'it carries ready/started timestamps for the 
 await W._enqueueApproval(env, 'user2@x.com', { detail:'Research watch', kind:'research', notify:'app', approval:'require' }, 'findings');
 const ap2 = getRec('approvals','user2@x.com').items[0];
 ok(ap2.actionType === 'review', 'an app-only task maps to "review", not "send"');
+
+section('The pause BUTTON writes where the cron reads');
+{
+  /* The cron's guard is tested by seeding paused:true directly, which proves
+     the guard and nothing about the route that sets it. If the endpoint ever
+     wrote under a different key - a different case, a prefix, a per-device
+     scope - the guard would keep passing while the button did nothing, and the
+     screen would confidently say all autonomous work had stopped.
+
+     This is the emergency stop. Its chain has to be checked end to end. */
+  store.clear();
+  W.__setRequireUser(async () => ({ email: 'Owner@X.com' }));
+
+  const due = { id:'j1', active:true, next: Date.now() - 1000, interval: 86400000,
+                detail:'do a thing', kind:'task', approval:'auto' };
+  /* Stored the way the product stores it: under the normalised key. */
+  await putRec('auto', W._autoKey('Owner@X.com'), { items:[due], results:[] });
+
+  const res = await W.autoPause(new Request('https://w/auto/pause',
+    { method:'POST', body: JSON.stringify({ paused:true }) }), env);
+  const body = await res.json();
+  ok(body.ok === true && body.paused === true, 'the route reports it paused', body);
+
+  await W.runDueAutomations(env);
+  const rec = getRec('auto', W._autoKey('Owner@X.com'));
+  ok(rec.paused === true, 'the flag landed on the record the cron reads', rec.paused);
+  ok(rec.items[0].runs === undefined || rec.items[0].runs === 0,
+     'and the overdue job really did not run', rec.items[0].runs);
+
+  /* And unpausing lets it through again, so the control is not one-way. */
+  await W.autoPause(new Request('https://w/auto/pause',
+    { method:'POST', body: JSON.stringify({ paused:false }) }), env);
+  const after = getRec('auto', W._autoKey('Owner@X.com'));
+  ok(after.paused === false, 'resuming clears it on the same record', after.paused);
+}
 
 if (report() > 0) process.exitCode = 1;
 done();
