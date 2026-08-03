@@ -13120,7 +13120,7 @@ function _apvFrame(a){
     const src=r.html?` srcdoc="${escH(r.html)}"`:'';
     const note=r.html?'':`<div class="pvw-web-note">Live preview appears here after the site is generated.</div>`;
     return `<div class="pvw-frame web"><div class="pvw-web-tabs"><button class="pvw-web-tab on" data-apvweb="desk">Desktop</button><button class="pvw-web-tab" data-apvweb="mob">Mobile</button><span class="pvw-web-url">${escH(r.url||a.destination||'')}</span></div>
-      <div class="pvw-web-stage desk"><div class="pvw-web-frame">${r.html?`<iframe class="pvw-web-if" title="Website preview"${src}></iframe>`:note}</div></div></div>`;
+      <div class="pvw-web-stage desk"><div class="pvw-web-frame">${r.html?`<iframe class="pvw-web-if" title="Website preview" sandbox="allow-scripts"${src}></iframe>`:note}</div></div></div>`;
   }
   if(type==='data'){
     const rows=(r.rows||[]);
