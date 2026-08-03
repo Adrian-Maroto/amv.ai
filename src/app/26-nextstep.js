@@ -33,6 +33,32 @@ function _nextStepFirstDone(){ try{ return loadStr(_NEXT_FIRST_KEY)==='1'; }catc
 function _nextStepFirstSeen(){ try{ saveStr(_NEXT_FIRST_KEY,'1'); }catch(e){} }
 try{ window._nextStepFirstDone=_nextStepFirstDone; window._nextStepFirstSeen=_nextStepFirstSeen; }catch(e){}
 
+/* `stats`, `compare`, `steps`, `choices` and `chart` are fenced blocks that
+   render as interactive components, not code. Counting them as code offered to
+   "open this in Dev" on a comparison table, and would then have written that
+   table into a project as a source file. */
+const _NEXT_NOT_CODE = ['stats','compare','steps','choices','chart','text',''];
+const _NEXT_EXT = { js:'js', javascript:'js', jsx:'jsx', ts:'ts', typescript:'ts', tsx:'tsx',
+  py:'py', python:'py', html:'html', css:'css', json:'json', sh:'sh', bash:'sh', shell:'sh',
+  sql:'sql', md:'md', markdown:'md', java:'java', go:'go', rs:'rs', rust:'rs',
+  c:'c', cpp:'cpp', cs:'cs', rb:'rb', ruby:'rb', php:'php', swift:'swift', kt:'kt', yaml:'yml', yml:'yml' };
+
+/* The real code blocks in an answer, in order. */
+function _nextStepBlocks(answerText){
+  const out = [];
+  const re = /```([^\n`]*)\n([\s\S]*?)```/g;
+  let m;
+  while((m = re.exec(String(answerText||'')))){
+    const lang = (m[1]||'').trim().toLowerCase().split(/\s+/)[0];
+    const code = m[2];
+    if(_NEXT_NOT_CODE.indexOf(lang) >= 0) continue;
+    if(!code || !code.trim()) continue;
+    out.push({ lang, code });
+  }
+  return out;
+}
+try{ window._nextStepBlocks=_nextStepBlocks; }catch(e){}
+
 /* Which next step, if any, this exchange has earned. Returns null far more
    often than not, and that is the point. */
 function _nextStepFor(userText, answerText){
@@ -41,8 +67,7 @@ function _nextStepFor(userText, answerText){
   if(a.length < 400) return null;                 // a one-liner has not earned a follow-up
 
   // Code that exists, rather than a conversation about code.
-  const fence = a.match(/```(\w+)?/g);
-  if(fence && fence.length >= 2 && a.length > 800){
+  if(_nextStepBlocks(a).length >= 1 && a.length > 800){
     return { kind:'dev', label:'Open this in Dev',
       why:'Dev keeps the files, runs them, and lets you keep building on them.' };
   }
@@ -85,11 +110,45 @@ function _nextStepFor(userText, answerText){
   return null;
 }
 
+/* A name for a block that does not overwrite anything already in the project.
+   Adding files to somebody's open project must never silently replace a file
+   they are working on. */
+function _nextStepDevName(lang, i, taken){
+  const ext = _NEXT_EXT[String(lang||'').toLowerCase()] || 'txt';
+  const base = (ext === 'html') ? 'index' : 'main';
+  let name = (i === 0) ? base + '.' + ext : base + '-' + (i+1) + '.' + ext;
+  let n = 2;
+  while(taken.indexOf(name) >= 0){ name = base + '-' + (n++) + '.' + ext; }
+  return name;
+}
+
 /* Perform it. Each branch does real work - none of these open a modal that
    only describes the feature. */
-async function _nextStepRun(kind, userText){
+async function _nextStepRun(kind, userText, answerText){
   try{
-    if(kind==='dev'){ setTab('dev'); return; }
+    if(kind==='dev'){
+      /* It used to switch tabs and nothing else, so somebody who accepted "Open
+         this in Dev - Dev keeps the files, runs them, and lets you keep
+         building on them" arrived at an empty Dev with none of their code in
+         it. The offer is only worth making if it carries the work across. */
+      const blocks = _nextStepBlocks(answerText);
+      if(!blocks.length || typeof _devSetFile !== 'function'){
+        setTab('dev');
+        if(!blocks.length) try{ toast('There was no code in that answer to open, so Dev is as you left it.','info',4000); }catch(e){}
+        return;
+      }
+      const taken = (typeof _devProjectFiles === 'function') ? _devProjectFiles().slice() : [];
+      const added = [];
+      blocks.forEach((b, i) => {
+        const name = _nextStepDevName(b.lang, i, taken);
+        try{ _devSetFile(name, b.code); taken.push(name); added.push(name); }catch(e){}
+      });
+      setTab('dev');
+      if(!added.length){ try{ toast('Could not open that in Dev.','error',4000); }catch(e){} return; }
+      try{ toast(added.length === 1 ? 'Opened in Dev as ' + added[0]
+                                    : 'Opened in Dev as ' + added.length + ' files', 'success', 4000); }catch(e){}
+      return;
+    }
     if(kind==='jobs'){ if(typeof openJobHunt==='function') openJobHunt(); else setTab('crew'); return; }
     if(kind==='crew'){
       setTab('crew');

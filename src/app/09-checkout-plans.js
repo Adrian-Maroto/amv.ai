@@ -392,7 +392,17 @@ function _checkPayReturn(){
             setTimeout(()=>_verifyEntitlement(),4000);
             toast('Confirming your payment…','info',4000);
           }
-        }).catch(()=>{ _savePM({type:pm,brand:pm,last4:'••'}); _setPlan(paid); if(S.tab==='billing') renderBillingView(); });
+        }).catch(()=>{
+          /* A failed check is not a confirmed payment. This used to fall back to
+             the plan named in the URL, so `?paid=elite` with the entitlement
+             call blocked granted the plan outright - the exact faked unlock the
+             server check exists to stop. Nothing is granted; it is retried, and
+             the screen says what is happening. */
+          _savePM({type:pm,brand:pm,last4:'••'});
+          setTimeout(()=>_verifyEntitlement(), 4000);
+          try{ toast('Confirming your payment… this can take a moment.','info',4500); }catch(e){}
+          if(S.tab==='billing') renderBillingView();
+        });
         return;
       }
       // No backend: this is local/demo mode only. A redirect param can't be

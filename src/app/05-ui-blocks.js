@@ -1673,8 +1673,12 @@ function renderChatMsgs() {
     const kind=b.dataset.nextGo;
     try{
       const conv=getCurConv(); if(conv){ conv._nextShown=(conv._nextShown||[]).concat(kind); }
-      const lastUser=[...getMsgs()].reverse().find(m=>m.r==='u');
-      _nextStepRun(kind, (lastUser&&(lastUser.d||lastUser.c))||'');
+      const all=getMsgs();
+      const lastUser=[...all].reverse().find(m=>m.r==='u');
+      /* The answer travels with it - "Open this in Dev" has to carry THIS code,
+         and the run function cannot reach it otherwise. */
+      const lastAns=[...all].reverse().find(m=>m.r==='a' && typeof m.c==='string');
+      _nextStepRun(kind, (lastUser&&(lastUser.d||lastUser.c))||'', (lastAns&&lastAns.c)||'');
     }catch(e){}
   }));
   cm.querySelectorAll('[data-next-off]').forEach(b=>b.addEventListener('click',()=>{

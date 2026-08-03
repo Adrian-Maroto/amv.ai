@@ -59,12 +59,59 @@ ok(suppressed.streaming === false, 'and not while it is still being written');
 section('Accepting it does real work, not a description of the work');
 const ran = await page.evaluate((code) => {
   newChat();
+  // Start from an empty project so what arrives is unambiguous.
+  Object.keys(_DEV.project).forEach(p => delete _DEV.project[p]);
+  _DEV.activePath = '';
   setMsgs([{ r: 'u', c: 'write me a rate limiter' }, { r: 'a', c: code }]);
   renderChatMsgs();
   document.querySelector('[data-next-go]').click();
-  return { tab: S.tab };
+  const files = _devProjectFiles();
+  return { tab: S.tab, files, body: files.length ? _DEV.project[files[0]].content : '' };
 }, CODE);
 ok(ran.tab === 'dev', 'the Dev offer actually opens Dev', ran.tab);
+/* It used to do ONLY that, and the offer says Dev "keeps the files, runs them,
+   and lets you keep building on them" - so somebody who accepted it arrived at
+   an empty Dev with none of their code in it. Switching tabs is not the work. */
+ok(ran.files.length === 1, 'and the code from the answer is really there', ran.files);
+ok(/main\.js$/.test(ran.files[0] || ''), 'named for what it is', ran.files[0]);
+ok(/const x = 1;/.test(ran.body), 'with the actual contents, not a placeholder', ran.body.slice(0, 40));
+
+section('Opening in Dev never overwrites a file already in the project');
+{
+  /* Adding to somebody's open project must not silently replace what they are
+     working on - the worst possible outcome for a convenience button. */
+  const r = await page.evaluate((code) => {
+    /* Back to chat and into a fresh conversation FIRST - leaving the Dev tab
+       reloads the project, so seeding it before the switch would be undone. */
+    setTab('chat');
+    newChat();
+    Object.keys(_DEV.project).forEach(p => delete _DEV.project[p]);
+    _devSetFile('main.js', 'MY OWN WORK');
+    setMsgs([{ r: 'u', c: 'write me a rate limiter' }, { r: 'a', c: code }]);
+    renderChatMsgs();
+    document.querySelector('[data-next-go]').click();
+    return { files: _devProjectFiles(), mine: (_DEV.project['main.js'] || {}).content };
+  }, CODE);
+  ok(r.mine === 'MY OWN WORK', 'the existing file is untouched', r.mine);
+  ok(r.files.length === 2, 'and the new code lands beside it', r.files);
+}
+
+section('A table is not code, and is not offered as code');
+{
+  /* stats/compare/steps/choices are fenced blocks that render as interactive
+     components. Counting them as code offered "Open this in Dev" on a
+     comparison table, and would then have written that table into a project as
+     a source file. */
+  const r = await page.evaluate(() => {
+    const tbl = 'Here is how they compare.\n\n```compare\n' +
+      JSON.stringify({ columns: ['A', 'B'], rows: [{ label: 'Price', values: ['$9', '$19'] }] }) +
+      '\n```\n\n' + 'Some more explanation. '.repeat(50);
+    return { offer: _nextStepFor('compare these two plans for me', tbl),
+             blocks: _nextStepBlocks(tbl).length };
+  });
+  ok(r.blocks === 0, 'a rendered block is not counted as code', r.blocks);
+  ok(!r.offer || r.offer.kind !== 'dev', 'so no Dev offer is made for it', r.offer);
+}
 
 section('The daily offer creates a genuine background automation');
 const scheduled = await page.evaluate(async (long) => {

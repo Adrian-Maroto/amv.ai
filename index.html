@@ -13969,8 +13969,12 @@ function renderChatMsgs() {
     const kind=b.dataset.nextGo;
     try{
       const conv=getCurConv(); if(conv){ conv._nextShown=(conv._nextShown||[]).concat(kind); }
-      const lastUser=[...getMsgs()].reverse().find(m=>m.r==='u');
-      _nextStepRun(kind, (lastUser&&(lastUser.d||lastUser.c))||'');
+      const all=getMsgs();
+      const lastUser=[...all].reverse().find(m=>m.r==='u');
+      /* The answer travels with it - "Open this in Dev" has to carry THIS code,
+         and the run function cannot reach it otherwise. */
+      const lastAns=[...all].reverse().find(m=>m.r==='a' && typeof m.c==='string');
+      _nextStepRun(kind, (lastUser&&(lastUser.d||lastUser.c))||'', (lastAns&&lastAns.c)||'');
     }catch(e){}
   }));
   cm.querySelectorAll('[data-next-off]').forEach(b=>b.addEventListener('click',()=>{
@@ -19628,7 +19632,17 @@ function _checkPayReturn(){
             setTimeout(()=>_verifyEntitlement(),4000);
             toast('Confirming your payment…','info',4000);
           }
-        }).catch(()=>{ _savePM({type:pm,brand:pm,last4:'••'}); _setPlan(paid); if(S.tab==='billing') renderBillingView(); });
+        }).catch(()=>{
+          /* A failed check is not a confirmed payment. This used to fall back to
+             the plan named in the URL, so `?paid=elite` with the entitlement
+             call blocked granted the plan outright - the exact faked unlock the
+             server check exists to stop. Nothing is granted; it is retried, and
+             the screen says what is happening. */
+          _savePM({type:pm,brand:pm,last4:'••'});
+          setTimeout(()=>_verifyEntitlement(), 4000);
+          try{ toast('Confirming your payment… this can take a moment.','info',4500); }catch(e){}
+          if(S.tab==='billing') renderBillingView();
+        });
         return;
       }
       // No backend: this is local/demo mode only. A redirect param can't be
@@ -31041,7 +31055,11 @@ const AMVFinance = {
       const bal = +a.balance || 0;
       const due = (upcoming||[]).filter(u => u.account === a.id).reduce((s,u)=>s+(+u.amount||0), 0);
       const after = bal - due;
-      const limit = floor != null ? +floor : 100;
+      /* An unreadable floor becomes the default, not NaN. `after < NaN` is
+         false, so a floor of "one hundred" - which a model calling this can
+         easily pass - silently switched the warning off, and an account heading
+         into an overdraft would simply never have been mentioned. */
+      const limit = isFinite(+floor) ? +floor : 100;
       if(after < limit) out.push({ account:a.name||a.id, balance:bal, committed:due, projected:after,
         why: due > 0
           ? 'After the payments already scheduled, this drops to ' + after.toFixed(2) + '.'
@@ -31094,6 +31112,9 @@ const INVEST_WHEN = [
   { k:'monthly',  label:'Once a month',   detail:'once a month' },
 ];
 function _invWhen(){ try{ return loadStr('amv_inv_when')||''; }catch(e){ return ''; } }
+/* When the figures on screen were actually taken, so a failed check can label
+   them honestly instead of implying they are current. */
+let _INV_LAST_OK = 0;
 function _invMoney(n, cur){
   const v=Math.round((+n||0)*100)/100;
   try{ return new Intl.NumberFormat(undefined,{style:'currency',currency:cur||'USD'}).format(v); }
@@ -31225,7 +31246,16 @@ function _renderInvestPane(pane){
       try{ saveStr('amv_fin_pending','1'); }catch(e){}
       if(say) say.textContent='Continue in the window that opened. Come back here when you are done.';
       window.open(url,'_blank','noopener');
-      if(btn){ btn.disabled=false; btn.textContent='I have finished linking'; btn.id='inv-link-done'; }
+      /* Replaced rather than renamed. Changing the id left THIS handler still
+         bound to the same element, so the next click - the one labelled "I have
+         finished linking" - started a second link and opened another sign-in
+         window at the institution, on top of finishing the first. A fresh node
+         carries no listeners. */
+      if(btn && btn.parentNode){
+        const done=btn.cloneNode(false);
+        done.disabled=false; done.textContent='I have finished linking'; done.id='inv-link-done';
+        btn.parentNode.replaceChild(done, btn);
+      }
       _wireInvDone(pane);
     }catch(e){
       if(btn) btn.disabled=false;
@@ -31258,6 +31288,7 @@ function _renderInvestPane(pane){
     try{
       const d=await AMVFinance.checkin();
       if(out) out.innerHTML=_invResultHTML(d);
+      _INV_LAST_OK=Date.now();
     }catch(e){
       if(say) say.textContent=(e&&e.message)||'Could not reach your institution, so there is nothing to show.';
       /* Figures already on screen are from an earlier check, and leaving them
@@ -31267,10 +31298,17 @@ function _renderInvestPane(pane){
          nobody, but they are stamped with when they were actually taken. */
       const res=out&&out.querySelector('.inv-res');
       if(res && !res.querySelector('.inv-stale')){
-        let when=''; try{ when=new Date().toLocaleString(undefined,{hour:'numeric',minute:'2-digit'}); }catch(_){}
+        /* Stamped with when the figures were actually taken, not with now. It
+           used to format the CURRENT time and then say "earlier today", so a
+           check-in from three days ago was labelled as today's - a false
+           statement about somebody's savings, which is the one thing the top of
+           this file says it will not do. */
+        let when='';
+        try{ if(_INV_LAST_OK) when=new Date(_INV_LAST_OK).toLocaleString(undefined,
+          { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }); }catch(_){}
         res.insertAdjacentHTML('afterbegin',
-          '<div class="inv-stale">Last successful check'+(when?', earlier today':'')+
-          ' - these figures are not current.</div>');
+          '<div class="inv-stale">These figures are from the last successful check'+
+          (when?' on '+escH(when):'')+', not from now.</div>');
       }
     }finally{ if(btn){ btn.disabled=false; btn.textContent='Check again'; } }
   });
@@ -32362,6 +32400,32 @@ function _nextStepFirstDone(){ try{ return loadStr(_NEXT_FIRST_KEY)==='1'; }catc
 function _nextStepFirstSeen(){ try{ saveStr(_NEXT_FIRST_KEY,'1'); }catch(e){} }
 try{ window._nextStepFirstDone=_nextStepFirstDone; window._nextStepFirstSeen=_nextStepFirstSeen; }catch(e){}
 
+/* `stats`, `compare`, `steps`, `choices` and `chart` are fenced blocks that
+   render as interactive components, not code. Counting them as code offered to
+   "open this in Dev" on a comparison table, and would then have written that
+   table into a project as a source file. */
+const _NEXT_NOT_CODE = ['stats','compare','steps','choices','chart','text',''];
+const _NEXT_EXT = { js:'js', javascript:'js', jsx:'jsx', ts:'ts', typescript:'ts', tsx:'tsx',
+  py:'py', python:'py', html:'html', css:'css', json:'json', sh:'sh', bash:'sh', shell:'sh',
+  sql:'sql', md:'md', markdown:'md', java:'java', go:'go', rs:'rs', rust:'rs',
+  c:'c', cpp:'cpp', cs:'cs', rb:'rb', ruby:'rb', php:'php', swift:'swift', kt:'kt', yaml:'yml', yml:'yml' };
+
+/* The real code blocks in an answer, in order. */
+function _nextStepBlocks(answerText){
+  const out = [];
+  const re = /```([^\n`]*)\n([\s\S]*?)```/g;
+  let m;
+  while((m = re.exec(String(answerText||'')))){
+    const lang = (m[1]||'').trim().toLowerCase().split(/\s+/)[0];
+    const code = m[2];
+    if(_NEXT_NOT_CODE.indexOf(lang) >= 0) continue;
+    if(!code || !code.trim()) continue;
+    out.push({ lang, code });
+  }
+  return out;
+}
+try{ window._nextStepBlocks=_nextStepBlocks; }catch(e){}
+
 /* Which next step, if any, this exchange has earned. Returns null far more
    often than not, and that is the point. */
 function _nextStepFor(userText, answerText){
@@ -32370,8 +32434,7 @@ function _nextStepFor(userText, answerText){
   if(a.length < 400) return null;                 // a one-liner has not earned a follow-up
 
   // Code that exists, rather than a conversation about code.
-  const fence = a.match(/```(\w+)?/g);
-  if(fence && fence.length >= 2 && a.length > 800){
+  if(_nextStepBlocks(a).length >= 1 && a.length > 800){
     return { kind:'dev', label:'Open this in Dev',
       why:'Dev keeps the files, runs them, and lets you keep building on them.' };
   }
@@ -32414,11 +32477,45 @@ function _nextStepFor(userText, answerText){
   return null;
 }
 
+/* A name for a block that does not overwrite anything already in the project.
+   Adding files to somebody's open project must never silently replace a file
+   they are working on. */
+function _nextStepDevName(lang, i, taken){
+  const ext = _NEXT_EXT[String(lang||'').toLowerCase()] || 'txt';
+  const base = (ext === 'html') ? 'index' : 'main';
+  let name = (i === 0) ? base + '.' + ext : base + '-' + (i+1) + '.' + ext;
+  let n = 2;
+  while(taken.indexOf(name) >= 0){ name = base + '-' + (n++) + '.' + ext; }
+  return name;
+}
+
 /* Perform it. Each branch does real work - none of these open a modal that
    only describes the feature. */
-async function _nextStepRun(kind, userText){
+async function _nextStepRun(kind, userText, answerText){
   try{
-    if(kind==='dev'){ setTab('dev'); return; }
+    if(kind==='dev'){
+      /* It used to switch tabs and nothing else, so somebody who accepted "Open
+         this in Dev - Dev keeps the files, runs them, and lets you keep
+         building on them" arrived at an empty Dev with none of their code in
+         it. The offer is only worth making if it carries the work across. */
+      const blocks = _nextStepBlocks(answerText);
+      if(!blocks.length || typeof _devSetFile !== 'function'){
+        setTab('dev');
+        if(!blocks.length) try{ toast('There was no code in that answer to open, so Dev is as you left it.','info',4000); }catch(e){}
+        return;
+      }
+      const taken = (typeof _devProjectFiles === 'function') ? _devProjectFiles().slice() : [];
+      const added = [];
+      blocks.forEach((b, i) => {
+        const name = _nextStepDevName(b.lang, i, taken);
+        try{ _devSetFile(name, b.code); taken.push(name); added.push(name); }catch(e){}
+      });
+      setTab('dev');
+      if(!added.length){ try{ toast('Could not open that in Dev.','error',4000); }catch(e){} return; }
+      try{ toast(added.length === 1 ? 'Opened in Dev as ' + added[0]
+                                    : 'Opened in Dev as ' + added.length + ' files', 'success', 4000); }catch(e){}
+      return;
+    }
     if(kind==='jobs'){ if(typeof openJobHunt==='function') openJobHunt(); else setTab('crew'); return; }
     if(kind==='crew'){
       setTab('crew');
@@ -32840,7 +32937,12 @@ function _awaySnippet(text, n){
 function _awayCardHTML(){
   const unread = _awayUnread();
   if(!unread.length) return '';
-  if(_awayDismissed() === _awayBatchId(unread)) return '';
+  /* A batch with no id to key on is NOT the same batch as "never dismissed",
+     even though both are the empty string. Comparing them directly hid the card
+     outright for results that arrived without an id or a timestamp - work that
+     really was done, silently never shown. An unkeyable batch shows. */
+  const batch = _awayBatchId(unread);
+  if(batch && _awayDismissed() === batch) return '';
 
   const items = unread.slice(-5).reverse().map(r => {
     const title = _awaySnippet(r.detail, 70) || 'Scheduled task';

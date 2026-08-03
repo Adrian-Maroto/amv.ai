@@ -172,7 +172,11 @@ const AMVFinance = {
       const bal = +a.balance || 0;
       const due = (upcoming||[]).filter(u => u.account === a.id).reduce((s,u)=>s+(+u.amount||0), 0);
       const after = bal - due;
-      const limit = floor != null ? +floor : 100;
+      /* An unreadable floor becomes the default, not NaN. `after < NaN` is
+         false, so a floor of "one hundred" - which a model calling this can
+         easily pass - silently switched the warning off, and an account heading
+         into an overdraft would simply never have been mentioned. */
+      const limit = isFinite(+floor) ? +floor : 100;
       if(after < limit) out.push({ account:a.name||a.id, balance:bal, committed:due, projected:after,
         why: due > 0
           ? 'After the payments already scheduled, this drops to ' + after.toFixed(2) + '.'
@@ -225,6 +229,9 @@ const INVEST_WHEN = [
   { k:'monthly',  label:'Once a month',   detail:'once a month' },
 ];
 function _invWhen(){ try{ return loadStr('amv_inv_when')||''; }catch(e){ return ''; } }
+/* When the figures on screen were actually taken, so a failed check can label
+   them honestly instead of implying they are current. */
+let _INV_LAST_OK = 0;
 function _invMoney(n, cur){
   const v=Math.round((+n||0)*100)/100;
   try{ return new Intl.NumberFormat(undefined,{style:'currency',currency:cur||'USD'}).format(v); }
@@ -356,7 +363,16 @@ function _renderInvestPane(pane){
       try{ saveStr('amv_fin_pending','1'); }catch(e){}
       if(say) say.textContent='Continue in the window that opened. Come back here when you are done.';
       window.open(url,'_blank','noopener');
-      if(btn){ btn.disabled=false; btn.textContent='I have finished linking'; btn.id='inv-link-done'; }
+      /* Replaced rather than renamed. Changing the id left THIS handler still
+         bound to the same element, so the next click - the one labelled "I have
+         finished linking" - started a second link and opened another sign-in
+         window at the institution, on top of finishing the first. A fresh node
+         carries no listeners. */
+      if(btn && btn.parentNode){
+        const done=btn.cloneNode(false);
+        done.disabled=false; done.textContent='I have finished linking'; done.id='inv-link-done';
+        btn.parentNode.replaceChild(done, btn);
+      }
       _wireInvDone(pane);
     }catch(e){
       if(btn) btn.disabled=false;
@@ -389,6 +405,7 @@ function _renderInvestPane(pane){
     try{
       const d=await AMVFinance.checkin();
       if(out) out.innerHTML=_invResultHTML(d);
+      _INV_LAST_OK=Date.now();
     }catch(e){
       if(say) say.textContent=(e&&e.message)||'Could not reach your institution, so there is nothing to show.';
       /* Figures already on screen are from an earlier check, and leaving them
@@ -398,10 +415,17 @@ function _renderInvestPane(pane){
          nobody, but they are stamped with when they were actually taken. */
       const res=out&&out.querySelector('.inv-res');
       if(res && !res.querySelector('.inv-stale')){
-        let when=''; try{ when=new Date().toLocaleString(undefined,{hour:'numeric',minute:'2-digit'}); }catch(_){}
+        /* Stamped with when the figures were actually taken, not with now. It
+           used to format the CURRENT time and then say "earlier today", so a
+           check-in from three days ago was labelled as today's - a false
+           statement about somebody's savings, which is the one thing the top of
+           this file says it will not do. */
+        let when='';
+        try{ if(_INV_LAST_OK) when=new Date(_INV_LAST_OK).toLocaleString(undefined,
+          { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }); }catch(_){}
         res.insertAdjacentHTML('afterbegin',
-          '<div class="inv-stale">Last successful check'+(when?', earlier today':'')+
-          ' - these figures are not current.</div>');
+          '<div class="inv-stale">These figures are from the last successful check'+
+          (when?' on '+escH(when):'')+', not from now.</div>');
       }
     }finally{ if(btn){ btn.disabled=false; btn.textContent='Check again'; } }
   });

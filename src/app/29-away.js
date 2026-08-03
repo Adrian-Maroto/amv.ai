@@ -65,7 +65,12 @@ function _awaySnippet(text, n){
 function _awayCardHTML(){
   const unread = _awayUnread();
   if(!unread.length) return '';
-  if(_awayDismissed() === _awayBatchId(unread)) return '';
+  /* A batch with no id to key on is NOT the same batch as "never dismissed",
+     even though both are the empty string. Comparing them directly hid the card
+     outright for results that arrived without an id or a timestamp - work that
+     really was done, silently never shown. An unkeyable batch shows. */
+  const batch = _awayBatchId(unread);
+  if(batch && _awayDismissed() === batch) return '';
 
   const items = unread.slice(-5).reverse().map(r => {
     const title = _awaySnippet(r.detail, 70) || 'Scheduled task';

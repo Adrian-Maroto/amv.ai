@@ -118,7 +118,13 @@ section('A failure never falls back to the last number');
   });
   ok(stamped.stillThere, 'the last known figures are not thrown away');
   ok(stamped.marked, 'but they are stamped rather than left looking current', stamped);
-  ok(/not current/i.test(stamped.text), 'in words that say exactly that', stamped.text);
+  ok(/not from now/i.test(stamped.text), 'in words that say exactly that', stamped.text);
+  /* The stamp used to format the CURRENT time and call it "earlier today", so
+     figures taken three days ago were labelled as today's. It must name when
+     they were really taken. */
+  ok(!/earlier today/i.test(stamped.text),
+     'and does not describe when they were taken by reading the clock now', stamped.text);
+  ok(/last successful check/i.test(stamped.text), 'saying which check they came from', stamped.text);
 
   const once = await page.evaluate(() => document.querySelectorAll('.inv-stale').length);
   ok(once === 1, 'and a second failure does not stack another stamp on top', once);
