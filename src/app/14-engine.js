@@ -27,7 +27,12 @@ window._aiBackendReady=_aiBackendReady;
    That's how Dev can emit 10,000+ lines in one build. */
 async function aiCompleteLong(prompt, system, opts){
   opts = opts || {};
-  const mdl = (typeof MODELS!=='undefined' && MODELS[S.model]) ? MODELS[S.model] : {model:'amv-apex', tokens:4096};
+  /* An unrecognised engine falls back to the BALANCED tier, not the dearest
+     one. Defaulting to apex meant any state AMV did not recognise - a stale
+     saved preference, a cleared key - silently routed to the $10/$50 engine,
+     and this function can run up to maxRounds continuations in a single call.
+     The server makes the same choice for an empty engine string. */
+  const mdl = (typeof MODELS!=='undefined' && MODELS[S.model]) ? MODELS[S.model] : {model:'amv-core', tokens:4096};
   const modelStr = opts.model || mdl.model;
   const url = _aiBase();
   const headers = _aiHeaders();
@@ -77,7 +82,7 @@ try{ window.aiCompleteLong=aiCompleteLong; }catch(e){}
 
 async function aiComplete(prompt, system, opts){
   opts=opts||{};
-  const mdl = (typeof MODELS!=='undefined' && MODELS[S.model]) ? MODELS[S.model] : {model:'amv-apex',tokens:4096};
+  const mdl = (typeof MODELS!=='undefined' && MODELS[S.model]) ? MODELS[S.model] : {model:'amv-core',tokens:4096};
   const modelStr = opts.model || mdl.model;
   const url = _aiBase();              // throws if backend not ready - never falls back to browser key
   const headers = _aiHeaders();
@@ -210,7 +215,9 @@ function _runJS(code, t0){
    surgical fix. Handles large/advanced programs. Never loops on the same fix. */
 async function autoDebug(code, lang, maxIters, onStep, modelStr){
   maxIters = maxIters||8; lang=lang||'js';
-  const dbgModel = modelStr||'amv-apex';
+  /* Debugging IS worth the best engine, but through the tier layer so it is
+     capped to what the account can actually reach rather than pinned. */
+  const dbgModel = modelStr || (typeof qModel==='function' ? qModel('debug') : 'amv-core');
   let cur=code, history=[];
   const isLarge = code.length>4000;
   for(let i=0;i<maxIters;i++){

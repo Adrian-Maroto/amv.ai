@@ -1557,7 +1557,7 @@ const _BUILD_MODEL = { dev:'smart', lab:'smart', studio:'smart' };
 try{ const saved=load('amv_build_models'); if(saved && typeof saved==='object') Object.assign(_BUILD_MODEL, saved); }catch(e){}
 function _saveBuildModels(){ try{ store('amv_build_models', _BUILD_MODEL); }catch(e){} }
 // resolve a section's chosen model key → real API model string for aiComplete/opts.model
-function _buildModelStr(section){ const k=_BUILD_MODEL[section]||'smart'; const m=MODELS[k]; return (m&&m.model&&m.model!=='auto')?m.model:'amv-apex'; }
+function _buildModelStr(section){ const k=_BUILD_MODEL[section]||'smart'; const m=MODELS[k]; return (m&&m.model&&m.model!=='auto')?m.model:'amv-core'; }
 // usage dots (1-4) as a compact visual - clearly shows how much each model costs
 function _usageDots(cost){ let s=''; for(let i=1;i<=4;i++){ s+='<span class="mp-dot'+(i<=cost?' on':'')+'"></span>'; } return '<span class="mp-dots" title="Usage per run">'+s+'</span>'; }
 function _usageWord(cost){ return ['No','Low','Medium','High','Maximum'][cost]||'Medium'; }
@@ -17708,7 +17708,7 @@ async function runCanvasAutomation() {
           const prompt='Complete this assignment fully and professionally.\n\nCourse: '+course.name+'\nAssignment: '+assignment.name+'\n\nInstructions:\n'+(assignment.description||'No instructions provided - write a comprehensive response.').replace(/<[^>]*>/g,' ').trim()+'\n\nProvide a complete, submission-ready response.';
 
           try{
-            const answer=await aiComplete(prompt, null, {model:'amv-apex', max_tokens:4000, noLang:true});
+            const answer=await aiComplete(prompt, null, {model:(typeof qModel==='function'?qModel('draft'):'amv-core'), max_tokens:4000, noLang:true});
             log('&#x2713; Completed: '+assignment.name,'var(--grn)');
 
             // Save to a downloadable file
@@ -19033,7 +19033,7 @@ async function runSheetAI(query){
   const mk=loadStr('amv_mk');
   if(!mk){toast('AMV isn’t connected yet - ask the workspace owner to switch it on.','error');if(btn){btn.disabled=false;btn.textContent='Ask';}return;}
   try{
-    const reply=await aiComplete('You are a data analyst. Spreadsheet (CSV):\n\n'+tableToCSV().slice(0,8000)+'\n\nRequest: '+query+'\n\nIf modifying data, return ONLY the complete modified CSV. Otherwise answer clearly.', null, {model:'amv-apex', max_tokens:2000, noLang:true});
+    const reply=await aiComplete('You are a data analyst. Spreadsheet (CSV):\n\n'+tableToCSV().slice(0,8000)+'\n\nRequest: '+query+'\n\nIf modifying data, return ONLY the complete modified CSV. Otherwise answer clearly.', null, {model:(typeof qModel==='function'?qModel('explain'):'amv-core'), max_tokens:2000, noLang:true});
     const looksCSV=reply.split('\n').filter(l=>l.includes(',')).length>=2;
     if(looksCSV&&reply.split('\n').length>2){
       _sheetData=parseCSV(reply);
@@ -19077,7 +19077,7 @@ async function runDocAI(query){
   const mk=loadStr('amv_mk');
   if(!mk){toast('Add API key in Settings','error');if(btn){btn.disabled=false;btn.textContent='Ask';}return;}
   try{
-    const reply=await aiComplete('Document editor. Current document:\n\n'+(body&&body.innerText||'').slice(0,6000)+'\n\nRequest: '+query+'\n\nReturn ONLY the complete revised document. No explanation.', null, {model:'amv-apex', max_tokens:3000, noLang:true});
+    const reply=await aiComplete('Document editor. Current document:\n\n'+(body&&body.innerText||'').slice(0,6000)+'\n\nRequest: '+query+'\n\nReturn ONLY the complete revised document. No explanation.', null, {model:(typeof qModel==='function'?qModel('rewrite'):'amv-core'), max_tokens:3000, noLang:true});
     if(body) body.innerHTML=reply.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n\n/g,'</p><p style="margin:0 0 14px">').replace(/\n/g,'<br>');
     if($('doc-inp')) $('doc-inp').value='';
     toast('Document updated','success');
@@ -19131,7 +19131,7 @@ async function _bgRunNext(){
       task.result=await aiComplete('Analyze this week\'s calendar. Identify conflicts, suggest focus blocks:\n\n'+events, null, {model:'amv-pulse', max_tokens:600, noLang:true})||events;
       task.status='done';task.progress=100;
     } else {
-      task.result=await aiComplete(task.prompt||task.topic||'Help me with: '+task.title, null, {model:'amv-apex', max_tokens:2000, noLang:true});
+      task.result=await aiComplete(task.prompt||task.topic||'Help me with: '+task.title, null, {model:(typeof qModel==='function'?qModel('step'):'amv-core'), max_tokens:2000, noLang:true});
       task.status='done';task.progress=100;
     }
   }catch(e){task.status='failed';task.error=e.message;}
@@ -19332,7 +19332,12 @@ window._aiBackendReady=_aiBackendReady;
    That's how Dev can emit 10,000+ lines in one build. */
 async function aiCompleteLong(prompt, system, opts){
   opts = opts || {};
-  const mdl = (typeof MODELS!=='undefined' && MODELS[S.model]) ? MODELS[S.model] : {model:'amv-apex', tokens:4096};
+  /* An unrecognised engine falls back to the BALANCED tier, not the dearest
+     one. Defaulting to apex meant any state AMV did not recognise - a stale
+     saved preference, a cleared key - silently routed to the $10/$50 engine,
+     and this function can run up to maxRounds continuations in a single call.
+     The server makes the same choice for an empty engine string. */
+  const mdl = (typeof MODELS!=='undefined' && MODELS[S.model]) ? MODELS[S.model] : {model:'amv-core', tokens:4096};
   const modelStr = opts.model || mdl.model;
   const url = _aiBase();
   const headers = _aiHeaders();
@@ -19382,7 +19387,7 @@ try{ window.aiCompleteLong=aiCompleteLong; }catch(e){}
 
 async function aiComplete(prompt, system, opts){
   opts=opts||{};
-  const mdl = (typeof MODELS!=='undefined' && MODELS[S.model]) ? MODELS[S.model] : {model:'amv-apex',tokens:4096};
+  const mdl = (typeof MODELS!=='undefined' && MODELS[S.model]) ? MODELS[S.model] : {model:'amv-core',tokens:4096};
   const modelStr = opts.model || mdl.model;
   const url = _aiBase();              // throws if backend not ready - never falls back to browser key
   const headers = _aiHeaders();
@@ -19515,7 +19520,9 @@ function _runJS(code, t0){
    surgical fix. Handles large/advanced programs. Never loops on the same fix. */
 async function autoDebug(code, lang, maxIters, onStep, modelStr){
   maxIters = maxIters||8; lang=lang||'js';
-  const dbgModel = modelStr||'amv-apex';
+  /* Debugging IS worth the best engine, but through the tier layer so it is
+     capped to what the account can actually reach rather than pinned. */
+  const dbgModel = modelStr || (typeof qModel==='function' ? qModel('debug') : 'amv-core');
   let cur=code, history=[];
   const isLarge = code.length>4000;
   for(let i=0;i<maxIters;i++){

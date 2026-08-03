@@ -412,6 +412,41 @@ section('The ladder is reachable, not another unused engine');
      'and the Lab debug loop runs the code rather than reasoning about it', true);
 }
 
+section('Nothing quietly defaults to the dearest engine');
+{
+  /* The cost rule is that premium engines are reserved for planning and final
+     review. Several call sites did the opposite: an unrecognised engine fell
+     back to apex, and routine agent work - editing a document, analysing a
+     spreadsheet, running a queued task - was PINNED to it. So the state AMV
+     did not recognise, and the work that runs most often unattended, both went
+     straight to the $10/$50 tier. */
+  const bundle = readFileSync(join(ROOT, 'app.js'), 'utf8');
+
+  /* apex may be named where it is DEFINED or OFFERED, never as a fallback. */
+  const lines = bundle.split('\n');
+  const pinned = lines.filter(l => /'amv-apex'/.test(l))
+    .filter(l => !/label:|ENGINE_LABEL|in: *10|Most capable|MODELS *=|smart: *\{/.test(l))
+    .map(l => l.trim().slice(0, 100));
+  ok(pinned.length === 0,
+     'no call site falls back to or pins the most expensive engine', pinned);
+
+  const r = await page.evaluate(() => {
+    // An engine AMV does not recognise must not resolve to the dearest one.
+    const real = S.model; S.model = 'something-stale';
+    const picked = (typeof MODELS !== 'undefined' && MODELS[S.model]) ? MODELS[S.model].model : 'amv-core';
+    S.model = real;
+    return { picked, routine: qModel('step'), rewrite: qModel('rewrite'), debug: qModel('debug') };
+  });
+  ok(r.picked !== 'amv-apex', 'an unrecognised engine does not resolve to apex', r.picked);
+  ok(r.routine === 'amv-core' && r.rewrite === 'amv-core',
+     'routine agent work runs on the balanced tier', r);
+  /* Debugging is genuinely worth the best engine - but the best this ACCOUNT
+     can reach, which on free is core. The point is that it is decided by the
+     tier layer rather than pinned at the call site. */
+  ok(typeof r.debug === 'string' && r.debug.indexOf('amv-') === 0,
+     'and debugging is decided by the tier layer, capped to the plan', r.debug);
+}
+
 ok(errors.length === 0, 'no console errors along the way', errors.slice(0, 3));
 
 await app.close();

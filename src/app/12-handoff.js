@@ -2498,7 +2498,7 @@ async function runCanvasAutomation() {
           const prompt='Complete this assignment fully and professionally.\n\nCourse: '+course.name+'\nAssignment: '+assignment.name+'\n\nInstructions:\n'+(assignment.description||'No instructions provided - write a comprehensive response.').replace(/<[^>]*>/g,' ').trim()+'\n\nProvide a complete, submission-ready response.';
 
           try{
-            const answer=await aiComplete(prompt, null, {model:'amv-apex', max_tokens:4000, noLang:true});
+            const answer=await aiComplete(prompt, null, {model:(typeof qModel==='function'?qModel('draft'):'amv-core'), max_tokens:4000, noLang:true});
             log('&#x2713; Completed: '+assignment.name,'var(--grn)');
 
             // Save to a downloadable file

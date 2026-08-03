@@ -733,7 +733,7 @@ async function runSheetAI(query){
   const mk=loadStr('amv_mk');
   if(!mk){toast('AMV isn’t connected yet - ask the workspace owner to switch it on.','error');if(btn){btn.disabled=false;btn.textContent='Ask';}return;}
   try{
-    const reply=await aiComplete('You are a data analyst. Spreadsheet (CSV):\n\n'+tableToCSV().slice(0,8000)+'\n\nRequest: '+query+'\n\nIf modifying data, return ONLY the complete modified CSV. Otherwise answer clearly.', null, {model:'amv-apex', max_tokens:2000, noLang:true});
+    const reply=await aiComplete('You are a data analyst. Spreadsheet (CSV):\n\n'+tableToCSV().slice(0,8000)+'\n\nRequest: '+query+'\n\nIf modifying data, return ONLY the complete modified CSV. Otherwise answer clearly.', null, {model:(typeof qModel==='function'?qModel('explain'):'amv-core'), max_tokens:2000, noLang:true});
     const looksCSV=reply.split('\n').filter(l=>l.includes(',')).length>=2;
     if(looksCSV&&reply.split('\n').length>2){
       _sheetData=parseCSV(reply);
@@ -777,7 +777,7 @@ async function runDocAI(query){
   const mk=loadStr('amv_mk');
   if(!mk){toast('Add API key in Settings','error');if(btn){btn.disabled=false;btn.textContent='Ask';}return;}
   try{
-    const reply=await aiComplete('Document editor. Current document:\n\n'+(body&&body.innerText||'').slice(0,6000)+'\n\nRequest: '+query+'\n\nReturn ONLY the complete revised document. No explanation.', null, {model:'amv-apex', max_tokens:3000, noLang:true});
+    const reply=await aiComplete('Document editor. Current document:\n\n'+(body&&body.innerText||'').slice(0,6000)+'\n\nRequest: '+query+'\n\nReturn ONLY the complete revised document. No explanation.', null, {model:(typeof qModel==='function'?qModel('rewrite'):'amv-core'), max_tokens:3000, noLang:true});
     if(body) body.innerHTML=reply.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n\n/g,'</p><p style="margin:0 0 14px">').replace(/\n/g,'<br>');
     if($('doc-inp')) $('doc-inp').value='';
     toast('Document updated','success');
@@ -831,7 +831,7 @@ async function _bgRunNext(){
       task.result=await aiComplete('Analyze this week\'s calendar. Identify conflicts, suggest focus blocks:\n\n'+events, null, {model:'amv-pulse', max_tokens:600, noLang:true})||events;
       task.status='done';task.progress=100;
     } else {
-      task.result=await aiComplete(task.prompt||task.topic||'Help me with: '+task.title, null, {model:'amv-apex', max_tokens:2000, noLang:true});
+      task.result=await aiComplete(task.prompt||task.topic||'Help me with: '+task.title, null, {model:(typeof qModel==='function'?qModel('step'):'amv-core'), max_tokens:2000, noLang:true});
       task.status='done';task.progress=100;
     }
   }catch(e){task.status='failed';task.error=e.message;}
