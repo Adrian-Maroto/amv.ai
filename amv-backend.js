@@ -1987,6 +1987,11 @@ async function googleOAuthExchange(request, env){
 async function googleOAuthRefresh(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'sign in first' }, 401);
+  /* Each call mints a fresh token at Google. An access token lasts an hour, so
+     nothing legitimate needs this often - and hammering it is how an OAuth
+     client gets throttled for everybody. */
+  const gr = await guardAction(env, `goauthref:${user.email}`, 20, 500, 'Google token refreshes');
+  if(gr) return gr;
   if(!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET)
     return json({ error:'not configured', code:'needs_service' }, 503);
   const rec = await DB.get(env, 'goauth', user.email);
@@ -7818,6 +7823,13 @@ async function getEntitlement(request, env) {
 async function stripeCheckout(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
+  /* Every call creates a Checkout Session at Stripe. Unbounded, one signed-in
+     account can burn the whole platform's Stripe API rate limit and take
+     checkout down for every real customer - so the damage is to revenue, not to
+     the person doing it. Generous enough that a human clicking Upgrade a few
+     times never sees it. */
+  const sc = await guardAction(env, `stripeco:${user.email}`, 10, 100, 'checkout attempts');
+  if (sc) return sc;
   if (!env.STRIPE_SECRET_KEY) return json({ error: 'payments not configured' }, 503);
 
   /* An account flagged for chargeback/refund abuse cannot start a new paid plan.
@@ -7886,6 +7898,8 @@ async function stripeCheckout(request, env) {
 async function stripePortal(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
+  const sp = await guardAction(env, `stripepo:${user.email}`, 10, 100, 'billing portal sessions');
+  if (sp) return sp;
   if (!env.STRIPE_SECRET_KEY) return json({ error: 'payments not configured' }, 503);
   const custId = await env.AMV_KV.get(`stripecust:${user.email}`);
   if (!custId) return json({ error: 'no subscription found' }, 404);
@@ -8649,6 +8663,10 @@ async function marketBuy(request, env) {
      exactly why their purchases come back as chargebacks. */
   const ageBad = await _moneyAgeGate(env, user.email);
   if (ageBad) return json(ageBad, ageBad.code === 'age_required' ? 428 : 403);
+  /* A purchase creates a Stripe session too, so it carries the same bound as
+     the plan checkout for the same reason. */
+  const bg = await guardAction(env, `mktbuy:${user.email}`, 10, 100, 'purchases');
+  if (bg) return bg;
   const { id } = await request.json().catch(() => ({}));
   const it = await _getListing(env, id);
   if (!it) return json({ error: 'item not found' }, 404);
