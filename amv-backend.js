@@ -2575,12 +2575,29 @@ async function familyRemove(request, env){
   const em = String(child||'').toLowerCase().trim();
   const fam = await DB.get(env, 'fam', user.email);
   if(!fam) return json({ error:'You do not manage a family.' }, 404);
+
+  /* This account has to actually be in YOUR family. Without the check, the
+     caller only had to manage SOME family to name any address and have its
+     familyOf marker deleted - and that marker is what every parental limit
+     reads. Anybody could create a family and then free another parent's child
+     from their spending controls, while writing a "left the family" line into
+     that person's own security log.
+
+     Authorised from EITHER side of the same relationship: their row in your
+     family, or their entitlement pointing back at you. One side missing is a
+     record to repair, not a reason to refuse the parent - but neither side is
+     not your family. */
+  const ent = (await DB.get(env, 'ent', em)) || {};
+  const listed = (fam.members||[]).some(x => x && x.email === em);
+  const pointsAtMe = String(ent.familyOf||'').toLowerCase() === String(user.email).toLowerCase();
+  if(!listed && !pointsAtMe)
+    return json({ error:'That account is not in your family.', code:'not_in_family' }, 404);
+
   fam.members = (fam.members||[]).filter(x => x.email !== em);
   await DB.put(env, 'fam', user.email, fam);
   /* The marker on their entitlement is what every check reads, so it goes at
      the same time - a limit that outlives the family is a limit nobody can
      lift. */
-  const ent = (await DB.get(env, 'ent', em)) || {};
   delete ent.familyOf;
   await DB.put(env, 'ent', em, ent);
   await _userEvent(env, request, em, 'family_left', { parent: user.email });

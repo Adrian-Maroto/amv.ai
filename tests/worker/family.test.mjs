@@ -263,5 +263,50 @@ section('The numbers a parent sets are bounded');
 }
 
 globalThis.fetch = realFetch;
+section('A family you do not manage is not yours to break up');
+{
+  /* familyRemove loaded the CALLER's family, filtered the named address out of
+     it - harmless if they were never in it - and then unconditionally deleted
+     familyOf from that person's entitlement. That marker is what every parental
+     limit reads.
+
+     So anybody willing to create a family of their own could name somebody
+     else's child and free them from their parent's spending controls, and write
+     a "left the family" line into that person's security log on the way past.
+     The one screen built for parents, undone by naming an email. */
+  store.clear();
+  await W.DB.put(env, 'fam', 'parent@x.com', { members:[{ email:'kid@x.com', limits:{ payouts:false } }] });
+  await W.DB.put(env, 'ent', 'kid@x.com', { plan:'free', familyOf:'parent@x.com' });
+  await W.DB.put(env, 'fam', 'stranger@x.com', { members:[] });   // also manages A family
+
+  const r = await W.familyRemove(req({ child:'kid@x.com' }, await tok('stranger@x.com')), env);
+  ok(r.status === 404, 'a stranger cannot remove somebody else\'s child', r.status);
+  ok((await jget(r)).code === 'not_in_family', 'and is told why', true);
+
+  const stillTied = await W.DB.get(env, 'ent', 'kid@x.com');
+  ok(stillTied.familyOf === 'parent@x.com', 'the child is still tied to their real parent', stillTied.familyOf);
+  ok(((await W.DB.get(env, 'fam', 'parent@x.com')).members || []).length === 1,
+     'and still in their family', true);
+
+  /* The actual parent can still do it, which is the point of the feature. */
+  const r2 = await W.familyRemove(req({ child:'kid@x.com' }, await tok('parent@x.com')), env);
+  ok(r2.status === 200, 'the real parent still can', r2.status);
+  ok(!(await W.DB.get(env, 'ent', 'kid@x.com')).familyOf,
+     'and the marker is cleared, so the limits lift', true);
+}
+
+section('A half-broken family record can still be repaired by its parent');
+{
+  /* Authorised from EITHER side: their row in your family, or their entitlement
+     pointing back at you. Refusing when one side is missing would leave a parent
+     unable to lift a limit nobody else can. */
+  store.clear();
+  await W.DB.put(env, 'fam', 'parent@x.com', { members:[] });          // row lost
+  await W.DB.put(env, 'ent', 'kid@x.com', { plan:'free', familyOf:'parent@x.com' });
+  const r = await W.familyRemove(req({ child:'kid@x.com' }, await tok('parent@x.com')), env);
+  ok(r.status === 200, 'the parent the marker names can still remove them', r.status);
+  ok(!(await W.DB.get(env, 'ent', 'kid@x.com')).familyOf, 'and the limit lifts', true);
+}
+
 if (report('family') > 0) process.exitCode = 1;
 done();
