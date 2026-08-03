@@ -31,6 +31,61 @@ const AMVSpend = {
   },
   save(c){ try{ store(this.KEY, c); }catch(e){} },
 
+  /* A limit that cannot be read is ZERO, never "no limit".
+     `amt > +c.perPurchase` is FALSE when perPurchase is undefined, empty, or a
+     leftover string - so a config damaged by a half-finished write, an older
+     shape, or a hand-edited storage key passed every ceiling AND came back
+     needsApproval:false, which is the one combination that must never occur.
+     Deny by default means a broken number blocks, it does not wave through. */
+  _n(v){ const n = Math.floor(+v); return (isFinite(n) && n > 0) ? n : 0; },
+
+  /* Whether these limits are the ones the server will actually enforce.
+     Without a backend the local numbers are all there is, and the screen says
+     so rather than implying a ceiling nobody is holding. */
+  serverBacked(){ try{ return !!(AMV_API.base && AMV_API.token); }catch(e){ return false; } },
+
+  /* The server is the authority - the browser copy is the editable one. */
+  async pull(){
+    if(!this.serverBacked()) return { ok:false, code:'local_only' };
+    const d = await AMV_API.spendLimits();
+    const c = this.cfg();
+    c.autoUnder = this._n(d.limits.autoUnder);
+    c.perPurchase = this._n(d.limits.perPurchase);
+    c.monthlyCap = this._n(d.limits.monthlyCap);
+    /* Including the master switch. If the account says spending is off, the
+       toggle on this screen says off, because the account is what decides. */
+    c.enabled = !!d.limits.enabled;
+    c.month = this._month();
+    c.spent = +d.spentThisMonth || 0;      // counted where it cannot be edited
+    this.save(c);
+    return { ok:true, limits:d.limits, absoluteCap:d.absoluteCap, remaining:d.remaining };
+  },
+  /* Writes go to the server FIRST and the local mirror adopts whatever comes
+     back, so what the screen shows afterwards is what is really enforced -
+     including the server pulling a number down. */
+  async push(limits){
+    const cur = this.cfg();
+    /* The switch travels with the numbers. Sending the limits without it would
+       let the server's copy of "spending is on" drift from the toggle. */
+    const body = { autoUnder:limits.autoUnder, perPurchase:limits.perPurchase,
+                   monthlyCap:limits.monthlyCap,
+                   enabled: (limits.enabled === undefined ? !!cur.enabled : !!limits.enabled) };
+    if(!this.serverBacked()){
+      cur.autoUnder = this._n(body.autoUnder); cur.perPurchase = this._n(body.perPurchase);
+      cur.monthlyCap = this._n(body.monthlyCap); cur.enabled = body.enabled; this.save(cur);
+      return { ok:true, code:'local_only', limits:{ autoUnder:cur.autoUnder, perPurchase:cur.perPurchase,
+                                                    monthlyCap:cur.monthlyCap, enabled:cur.enabled } };
+    }
+    const d = await AMV_API.spendSet(body);
+    const c = this.cfg();
+    c.autoUnder = this._n(d.limits.autoUnder);
+    c.perPurchase = this._n(d.limits.perPurchase);
+    c.monthlyCap = this._n(d.limits.monthlyCap);
+    c.enabled = !!d.limits.enabled;
+    this.save(c);
+    return { ok:true, limits:d.limits };
+  },
+
   _month(){ const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'); },
 
   /* Roll the monthly counter when the month genuinely changes.
@@ -54,19 +109,24 @@ const AMVSpend = {
     opts = opts || {};
     const c = this._sync(this.cfg());
     const amt = +amount;
+    /* Read through _n, so an unreadable limit is a closed door rather than an
+       open one. Reconciled in the same order the server uses: a single purchase
+       cannot exceed the month, and auto-buy cannot exceed a single purchase. */
+    const cap = this._n(c.monthlyCap);
+    const per = Math.min(this._n(c.perPurchase), cap);
 
     if(!isFinite(amt) || amt <= 0)
       return { allow:false, reason:'I could not read a valid amount for this purchase, so I will not pay.' };
     if(!c.enabled)
       return { allow:false, reason:'Spending is switched off. Turn it on in Settings and set your limits.' };
-    if(amt > +c.perPurchase)
-      return { allow:false, reason:'This is ' + this._m(amt) + ', over your ' + this._m(c.perPurchase) + ' single-purchase limit. Raise the limit yourself if you want it.' };
+    if(amt > per)
+      return { allow:false, reason:'This is ' + this._m(amt) + ', over your ' + this._m(per) + ' single-purchase limit. Raise the limit yourself if you want it.' };
 
-    const left = Math.max(0, (+c.monthlyCap||0) - (+c.spent||0));
+    const left = Math.max(0, cap - (+c.spent||0));
     if(amt > left)
-      return { allow:false, reason:'This would take you past your ' + this._m(c.monthlyCap) + ' monthly cap - ' + this._m(left) + ' is left this month.' };
+      return { allow:false, reason:'This would take you past your ' + this._m(cap) + ' monthly cap - ' + this._m(left) + ' is left this month.' };
 
-    const bar = +c.requireApprovalOver > 0 ? +c.requireApprovalOver : +c.autoUnder;
+    const bar = Math.min(this._n(c.requireApprovalOver) || this._n(c.autoUnder), per);
     if(amt > bar)
       return { allow:true, needsApproval:true,
         reason:'This is ' + this._m(amt) + ', above your ' + this._m(bar) + ' auto-buy limit, so it needs one tap from you.' };

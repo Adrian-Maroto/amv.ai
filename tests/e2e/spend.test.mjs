@@ -125,6 +125,87 @@ ok(viaAgent.over === 'over_limit', 'an over-limit purchase is refused through th
 ok(viaAgent.appr === 'needs_approval', 'the approval tier still applies through the agent', viaAgent.appr);
 ok(viaAgent.browse === 'needs_service', 'ordinary browsing is NOT treated as a purchase', viaAgent.browse);
 
+section('A limit that cannot be read is a closed door, not an open one');
+{
+  /* `amt > +c.perPurchase` is FALSE when perPurchase is undefined, empty or a
+     leftover string. A config damaged by a half-finished write or an older
+     shape therefore passed every ceiling AND came back needsApproval:false -
+     the one combination that must never happen, since it spends without even
+     stopping to ask. */
+  const r = await page.evaluate(() => {
+    const S2 = window.AMVSpend, out = {};
+    const base = { enabled: true, month: S2._month(), spent: 0 };
+    S2.save(Object.assign(S2.cfg(), base, { autoUnder: undefined, perPurchase: undefined, monthlyCap: undefined }));
+    out.missing = S2.check(9999);
+    S2.save(Object.assign(S2.cfg(), base, { autoUnder: 'abc', perPurchase: 'abc', monthlyCap: 'abc' }));
+    out.text = S2.check(9999);
+    S2.save(Object.assign(S2.cfg(), base, { autoUnder: -1, perPurchase: -1, monthlyCap: -1 }));
+    out.negative = S2.check(50);
+    return out;
+  });
+  ok(r.missing.allow === false, 'a missing limit refuses instead of permitting', r.missing.reason);
+  ok(r.missing.needsApproval !== true || r.missing.allow === false,
+     'and never lands on allowed-without-asking', r.missing);
+  ok(r.text.allow === false, 'so does an unreadable one', r.text.reason);
+  ok(r.negative.allow === false, 'and a negative one', r.negative.reason);
+}
+
+section('Contradictory limits are reconciled the same way the server does');
+{
+  /* Otherwise the screen shows one ceiling and the account enforces another,
+     and the number somebody trusted is not the number that binds. */
+  const r = await page.evaluate(() => {
+    const S2 = window.AMVSpend;
+    S2.save(Object.assign(S2.cfg(), { enabled: true, month: S2._month(), spent: 0,
+      autoUnder: 900, perPurchase: 400, monthlyCap: 100 }));
+    return { at120: S2.check(120), at80: S2.check(80) };
+  });
+  ok(r.at120.allow === false, 'a purchase over the monthly ceiling is refused even though perPurchase allows it', r.at120.reason);
+  ok(r.at80.allow === true, 'while one inside every limit goes through', r.at80.reason);
+  /* The number in the sentence is the one that binds. Quoting the $900 that was
+     typed would tell somebody they have headroom that does not exist. */
+  ok(/\$100\.00/.test(r.at80.reason) && !/\$900/.test(r.at80.reason),
+     'and the limit it names is the one that really applies, not the one that was typed', r.at80.reason);
+}
+
+section('Limits are saved where they cannot be edited');
+{
+  /* They lived only in localStorage, which is the copy the person being
+     protected can rewrite. The screen now writes to the account and shows back
+     whatever the account stored. */
+  const r = await page.evaluate(async () => {
+    const S2 = window.AMVSpend, sent = [];
+    const realBase = AMV_API.base, realTok = AMV_API.token, realFetch = AMV_API._fetch;
+    AMV_API.base = 'https://api.test'; AMV_API.token = 't';
+    AMV_API._fetch = async (path, opts) => {
+      sent.push({ path, body: JSON.parse((opts && opts.body) || '{}') });
+      // The account pulls the monthly ceiling down to its own maximum.
+      return { ok: true, json: async () => ({ ok: true, limits: { enabled: true, autoUnder: 10, perPurchase: 60, monthlyCap: 60 } }) };
+    };
+    const res = await S2.push({ autoUnder: 10, perPurchase: 60, monthlyCap: 90000, enabled: true });
+    const after = S2.cfg();
+    AMV_API.base = realBase; AMV_API.token = realTok; AMV_API._fetch = realFetch;
+    return { sent, res, after: { cap: after.monthlyCap, per: after.perPurchase, on: after.enabled } };
+  });
+  ok(r.sent.length === 1 && r.sent[0].path === '/v1/spend/set',
+     'saving reaches the account rather than only this browser', r.sent[0] && r.sent[0].path);
+  ok(r.sent[0].body.limits.enabled === true,
+     'and carries the on/off switch, so the account knows spending is permitted at all', r.sent[0].body.limits);
+  ok(r.after.cap === 60,
+     'what the account stored is what the browser then holds, even when it is lower than what was asked for', r.after.cap);
+}
+
+section('With no backend, it says so rather than implying a ceiling');
+{
+  const r = await page.evaluate(() => {
+    const realBase = AMV_API.base; AMV_API.base = '';
+    const backed = window.AMVSpend.serverBacked();
+    AMV_API.base = realBase;
+    return backed;
+  });
+  ok(r === false, 'unconnected is reported as unconnected, not as protected', r);
+}
+
 section('No JavaScript errors');
 ok(errors.length === 0, 'zero uncaught page errors', errors.slice(0, 3));
 

@@ -457,6 +457,11 @@ const AMV_API = {
   async linkList(){ const r=await this._fetch('/v1/link/list',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
   async linkRevoke(id){ const r=await this._fetch('/v1/link/revoke',{method:'POST',body:JSON.stringify({id})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
 
+  /* Spending limits live on the server, because the browser copy is the
+     editable one. These are the only way the screen should read or write them. */
+  async spendLimits(){ const r=await this._fetch('/v1/spend/limits',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
+  async spendSet(limits){ const r=await this._fetch('/v1/spend/set',{method:'POST',body:JSON.stringify({limits})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
+
   async portal(customer){ const r=await this._fetch('/v1/stripe/portal',{method:'POST',body:JSON.stringify({customer})}); const d=await r.json(); if(!r.ok||!d.url) throw new Error(d.error||'Could not open billing.'); return d.url; },
 };
 window.AMV_API = AMV_API;
@@ -22369,11 +22374,15 @@ try{
             language:(typeof _lang==='function' && _lang())||'auto',
             backendConnected:!!(window.AMV_API && AMV_API.base) };
         } },
-      set_theme:{ desc:'Switch the theme. Args: {theme:"dark"|"light"}', risk:'high', riskLabel:'change your theme',
+      /* Not high risk. Approvals exist for things that are hard to undo or that
+         reach outside the account; making the screen light is neither, and
+         stopping to ask about it teaches people to click through the prompts
+         that matter. Same reasoning that took the risk chooser out of Crew. */
+      set_theme:{ desc:'Switch the theme. Args: {theme:"dark"|"light"}',
         async run(a){ const t=(a&&a.theme)==='light'?'light':'dark';
           try{ saveStr('amv_theme',t); if(typeof applyTheme==='function') applyTheme(t); }catch(e){}
           return { theme:t }; } },
-      set_language:{ desc:'Change the interface language. Args: {code}', risk:'high', riskLabel:'change your language',
+      set_language:{ desc:'Change the interface language. Args: {code}',
         async run(a){ const c=String((a&&a.code)||'').trim();
           if(!c || (typeof LANGS!=='undefined' && !LANGS[c])) nothing('That language is not one of the supported codes.');
           try{ saveStr('amv_lang',c); if(typeof _translateUI==='function') _translateUI(); }catch(e){}
@@ -23307,6 +23316,61 @@ const AMVSpend = {
   },
   save(c){ try{ store(this.KEY, c); }catch(e){} },
 
+  /* A limit that cannot be read is ZERO, never "no limit".
+     `amt > +c.perPurchase` is FALSE when perPurchase is undefined, empty, or a
+     leftover string - so a config damaged by a half-finished write, an older
+     shape, or a hand-edited storage key passed every ceiling AND came back
+     needsApproval:false, which is the one combination that must never occur.
+     Deny by default means a broken number blocks, it does not wave through. */
+  _n(v){ const n = Math.floor(+v); return (isFinite(n) && n > 0) ? n : 0; },
+
+  /* Whether these limits are the ones the server will actually enforce.
+     Without a backend the local numbers are all there is, and the screen says
+     so rather than implying a ceiling nobody is holding. */
+  serverBacked(){ try{ return !!(AMV_API.base && AMV_API.token); }catch(e){ return false; } },
+
+  /* The server is the authority - the browser copy is the editable one. */
+  async pull(){
+    if(!this.serverBacked()) return { ok:false, code:'local_only' };
+    const d = await AMV_API.spendLimits();
+    const c = this.cfg();
+    c.autoUnder = this._n(d.limits.autoUnder);
+    c.perPurchase = this._n(d.limits.perPurchase);
+    c.monthlyCap = this._n(d.limits.monthlyCap);
+    /* Including the master switch. If the account says spending is off, the
+       toggle on this screen says off, because the account is what decides. */
+    c.enabled = !!d.limits.enabled;
+    c.month = this._month();
+    c.spent = +d.spentThisMonth || 0;      // counted where it cannot be edited
+    this.save(c);
+    return { ok:true, limits:d.limits, absoluteCap:d.absoluteCap, remaining:d.remaining };
+  },
+  /* Writes go to the server FIRST and the local mirror adopts whatever comes
+     back, so what the screen shows afterwards is what is really enforced -
+     including the server pulling a number down. */
+  async push(limits){
+    const cur = this.cfg();
+    /* The switch travels with the numbers. Sending the limits without it would
+       let the server's copy of "spending is on" drift from the toggle. */
+    const body = { autoUnder:limits.autoUnder, perPurchase:limits.perPurchase,
+                   monthlyCap:limits.monthlyCap,
+                   enabled: (limits.enabled === undefined ? !!cur.enabled : !!limits.enabled) };
+    if(!this.serverBacked()){
+      cur.autoUnder = this._n(body.autoUnder); cur.perPurchase = this._n(body.perPurchase);
+      cur.monthlyCap = this._n(body.monthlyCap); cur.enabled = body.enabled; this.save(cur);
+      return { ok:true, code:'local_only', limits:{ autoUnder:cur.autoUnder, perPurchase:cur.perPurchase,
+                                                    monthlyCap:cur.monthlyCap, enabled:cur.enabled } };
+    }
+    const d = await AMV_API.spendSet(body);
+    const c = this.cfg();
+    c.autoUnder = this._n(d.limits.autoUnder);
+    c.perPurchase = this._n(d.limits.perPurchase);
+    c.monthlyCap = this._n(d.limits.monthlyCap);
+    c.enabled = !!d.limits.enabled;
+    this.save(c);
+    return { ok:true, limits:d.limits };
+  },
+
   _month(){ const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'); },
 
   /* Roll the monthly counter when the month genuinely changes.
@@ -23330,19 +23394,24 @@ const AMVSpend = {
     opts = opts || {};
     const c = this._sync(this.cfg());
     const amt = +amount;
+    /* Read through _n, so an unreadable limit is a closed door rather than an
+       open one. Reconciled in the same order the server uses: a single purchase
+       cannot exceed the month, and auto-buy cannot exceed a single purchase. */
+    const cap = this._n(c.monthlyCap);
+    const per = Math.min(this._n(c.perPurchase), cap);
 
     if(!isFinite(amt) || amt <= 0)
       return { allow:false, reason:'I could not read a valid amount for this purchase, so I will not pay.' };
     if(!c.enabled)
       return { allow:false, reason:'Spending is switched off. Turn it on in Settings and set your limits.' };
-    if(amt > +c.perPurchase)
-      return { allow:false, reason:'This is ' + this._m(amt) + ', over your ' + this._m(c.perPurchase) + ' single-purchase limit. Raise the limit yourself if you want it.' };
+    if(amt > per)
+      return { allow:false, reason:'This is ' + this._m(amt) + ', over your ' + this._m(per) + ' single-purchase limit. Raise the limit yourself if you want it.' };
 
-    const left = Math.max(0, (+c.monthlyCap||0) - (+c.spent||0));
+    const left = Math.max(0, cap - (+c.spent||0));
     if(amt > left)
-      return { allow:false, reason:'This would take you past your ' + this._m(c.monthlyCap) + ' monthly cap - ' + this._m(left) + ' is left this month.' };
+      return { allow:false, reason:'This would take you past your ' + this._m(cap) + ' monthly cap - ' + this._m(left) + ' is left this month.' };
 
-    const bar = +c.requireApprovalOver > 0 ? +c.requireApprovalOver : +c.autoUnder;
+    const bar = Math.min(this._n(c.requireApprovalOver) || this._n(c.autoUnder), per);
     if(amt > bar)
       return { allow:true, needsApproval:true,
         reason:'This is ' + this._m(amt) + ', above your ' + this._m(bar) + ' auto-buy limit, so it needs one tap from you.' };
@@ -23613,6 +23682,11 @@ function _mfSay(id, msg, kind){
 }
 
 /* ---------- SPENDING ---------- */
+/* The limits shown here must be the ones the server will enforce, not the
+   browser's copy of them. Pulled once per visit; the guard is on the REQUEST,
+   not on the result, because the reply re-renders this pane and a result-only
+   guard re-issues the fetch every redraw. */
+let _SPEND_PULLED = false, _SPEND_BUSY = false;
 function _renderSpendingPane(pane){
   if(typeof AMVSpend === 'undefined'){ pane.innerHTML = '<div class="set-title">Spending</div>'; return; }
   const c = AMVSpend.cfg();
@@ -23701,6 +23775,12 @@ function _renderSpendingPane(pane){
       '</div>'+
       '<div class="mf-say" id="mf-limits-say" role="status" aria-live="polite"></div>'+
       '<button class="btn bp" id="mf-save-limits" type="button">Save limits</button>'+
+      /* Where the ceiling is actually held. Without a backend these numbers are
+         a preference on this device, and saying otherwise would be the exact
+         false reassurance this screen exists to avoid. */
+      '<p class="mf-hint mf-where">'+ (AMVSpend.serverBacked()
+        ? 'These limits are held on your account, so they apply on every device and cannot be raised from this browser.'
+        : 'AMV is not connected to a backend yet, so these limits are kept on this device only. Once it is connected they move to your account and apply everywhere.') +'</p>'+
     '</div>'+
     '<div class="ss2"><h3>This month</h3>'+
       '<div class="mf-bar" role="img" aria-label="'+escH(_mfMoney(spent))+' spent of '+escH(_mfMoney(cap))+'">'+
@@ -23729,11 +23809,22 @@ function _renderSpendingPane(pane){
       toast('Thanks - that is saved','success',2500); renderSetPane();
     }catch(e){ _mfSay('mf-age-say', e.message || 'That year does not look right.', 'err'); $('mf-birth')?.focus(); }
   });
-  on($('mf-enabled'),'change',function(){
-    const cur = AMVSpend.cfg(); cur.enabled = this.checked; AMVSpend.save(cur);
-    _mfSay('mf-limits-say', this.checked ? 'AMV can now spend within your limits.' : 'Spending is off. AMV will not pay for anything.', 'ok');
+  on($('mf-enabled'),'change',async function(){
+    const want = this.checked, box = this;
+    box.disabled = true;
+    try{
+      const cur = AMVSpend.cfg();
+      await AMVSpend.push({ autoUnder:cur.autoUnder, perPurchase:cur.perPurchase,
+                            monthlyCap:cur.monthlyCap, enabled:want });
+      _mfSay('mf-limits-say', want ? 'AMV can now spend within your limits.' : 'Spending is off. AMV will not pay for anything.', 'ok');
+    }catch(e){
+      /* Leaving the switch showing "off" while the account still allows spending
+         is the one outcome worth reverting the control for. */
+      box.checked = !want;
+      _mfSay('mf-limits-say', (e && e.message) || 'Could not change that on your account. It is unchanged.', 'err');
+    }finally{ box.disabled = false; }
   });
-  on($('mf-save-limits'),'click',function(){
+  on($('mf-save-limits'),'click',async function(){
     const auto = +($('mf-auto')||{}).value, per = +($('mf-per')||{}).value, capv = +($('mf-cap')||{}).value;
     // Limits that contradict each other are worse than no limits, because the
     // user believes they are protected by a number that can never apply.
@@ -23742,11 +23833,42 @@ function _renderSpendingPane(pane){
     }
     if(auto > per){ _mfSay('mf-limits-say','The auto-buy limit cannot be higher than your single-purchase limit.','err'); $('mf-auto')?.focus(); return; }
     if(per > capv){ _mfSay('mf-limits-say','A single purchase cannot be larger than your whole monthly ceiling.','err'); $('mf-per')?.focus(); return; }
-    const cur = AMVSpend.cfg();
-    cur.autoUnder = auto; cur.perPurchase = per; cur.monthlyCap = capv;
-    AMVSpend.save(cur);
-    _mfSay('mf-limits-say','Saved. AMV buys under '+_mfMoney(auto)+' on its own, asks up to '+_mfMoney(per)+', and never passes '+_mfMoney(capv)+' a month.','ok');
+    const btn = this;
+    btn.disabled = true; _mfSay('mf-limits-say','Saving to your account...','');
+    try{
+      /* What the server stored is what gets read back - it may have pulled a
+         number down to its own ceiling, and the confirmation has to say the
+         number that will really apply, not the one that was typed. */
+      const r = await AMVSpend.push({ autoUnder:auto, perPurchase:per, monthlyCap:capv });
+      const L = r.limits;
+      if($('mf-auto')) $('mf-auto').value = String(L.autoUnder);
+      if($('mf-per')) $('mf-per').value = String(L.perPurchase);
+      if($('mf-cap')) $('mf-cap').value = String(L.monthlyCap);
+      const changed = (L.autoUnder !== auto || L.perPurchase !== per || L.monthlyCap !== capv);
+      _mfSay('mf-limits-say',
+        (changed ? 'Saved, adjusted to the highest AMV allows. ' : 'Saved. ')+
+        'AMV buys under '+_mfMoney(L.autoUnder)+' on its own, asks up to '+_mfMoney(L.perPurchase)+
+        ', and never passes '+_mfMoney(L.monthlyCap)+' a month.', 'ok');
+    }catch(e){
+      /* Saying "Saved" when the write failed would leave somebody believing a
+         lower ceiling is in force while the old, higher one still is. */
+      _mfSay('mf-limits-say', (e && e.message) || 'Could not save those limits. Your previous limits are still in force.', 'err');
+    }finally{ btn.disabled = false; }
   });
+
+  /* Adopt the server's numbers, then redraw once. */
+  if(canConfigure && AMVSpend.serverBacked() && !_SPEND_PULLED && !_SPEND_BUSY){
+    _SPEND_BUSY = true;
+    AMVSpend.pull().then(function(){
+      _SPEND_PULLED = true; _SPEND_BUSY = false;
+      try{ if(document.getElementById('mf-save-limits')) renderSetPane(); }catch(e){}
+    }).catch(function(){
+      /* Not fatal - the local mirror still renders. Marked pulled so a failed
+         read does not retry on every redraw. */
+      _SPEND_PULLED = true; _SPEND_BUSY = false;
+      _mfSay('mf-limits-say','Could not check these against your account just now. These are this device\'s copy.','err');
+    });
+  }
 }
 try{ window._renderSpendingPane = _renderSpendingPane; }catch(e){}
 
@@ -24442,6 +24564,9 @@ const ACT_LABEL = {
   family_member_left:     ['Someone left your family', ''],
   family_limits_changed:  ['Family spending limits changed', 'warn'],
   team_left:              ['Left a team', ''],
+  /* Raising a spending limit is the quiet half of taking money out: the
+     withdrawal is loud, the permission that allowed it is not. Marked. */
+  spend_limits_changed:   ['Spending limits changed', 'warn'],
 };
 function _actLabel(ev){
   const m = ACT_LABEL[ev.kind];

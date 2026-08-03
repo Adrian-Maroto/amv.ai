@@ -1587,6 +1587,112 @@ async function _fingerprint(e){
    A runaway agent spending thousands is an existential risk to the business,
    so there is a number it simply cannot go past. */
 const WEB_ABSOLUTE_SPEND_CAP = 2000;
+
+/* ── SPENDING LIMITS, HELD WHERE THEY CANNOT BE EDITED ───────────────────────
+
+   The limits a person sets - buy under this without asking, never more than
+   this at once, never more than this a month - lived entirely in localStorage,
+   and the browser agent enforced whatever `spendLimit` the client sent. So the
+   ceiling was advisory: it protected the user from AMV misbehaving, and not at
+   all from a tampered or simply buggy client. The only real bound was one
+   global absolute cap shared by everybody.
+
+   They are now stored per account and read from here. The client copy stays as
+   the thing the settings screen edits; this is the thing that decides. Where
+   the two disagree, the LOWER wins, because a limit is a maximum and the
+   cautious reading of a disagreement is the safe one. */
+const SPEND_DEFAULTS = { autoUnder: 50, perPurchase: 250, monthlyCap: 500 };
+const SPEND_FIELD_MAX = { autoUnder: 2000, perPurchase: 2000, monthlyCap: 20000 };
+
+function _spendClean(raw){
+  const out = Object.assign({}, SPEND_DEFAULTS);
+  for(const k of Object.keys(SPEND_DEFAULTS)){
+    const v = Math.floor(+((raw && raw[k])) || 0);
+    /* A non-finite or negative value becomes ZERO, never "no limit" - the whole
+       failure this replaces is a bad value reading as permission. */
+    out[k] = (isFinite(v) && v > 0) ? Math.min(v, SPEND_FIELD_MAX[k]) : 0;
+  }
+  /* Limits that contradict each other are worse than none, because somebody
+     believes they are protected by a number that can never apply.
+     Order matters: pull the per-purchase limit down to the month FIRST, then the
+     auto-buy limit down to whatever per-purchase actually ended up being.
+     Reconciling upwards left auto-buy sitting above the number that binds. */
+  out.perPurchase = Math.min(out.perPurchase, out.monthlyCap);
+  out.autoUnder = Math.min(out.autoUnder, out.perPurchase);
+  /* The master switch belongs on this side too. It lived only in the browser,
+     so an account whose owner had switched spending OFF was still permitted to
+     spend by the server - the one control somebody uses when they specifically
+     do not trust this, and it was the easiest of all of them to defeat.
+     Absent means off: nobody is opted in to spending by silence. */
+  out.enabled = !!(raw && raw.enabled);
+  return out;
+}
+
+async function _spendLimits(env, email){
+  const rec = await DB.get(env, 'spend', String(email || '').toLowerCase());
+  return _spendClean(rec || SPEND_DEFAULTS);
+}
+
+async function spendGet(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'sign in first' }, 401);
+  const limits = await _spendLimits(env, user.email);
+  const spent = (await counter(env, `spendmo:${user.email}:${monthKey()}`, { op:'get' })).value || 0;
+  return json({ ok:true, limits, spentThisMonth: Math.round(spent * 100) / 100,
+                remaining: Math.max(0, limits.monthlyCap - spent), absoluteCap: WEB_ABSOLUTE_SPEND_CAP });
+}
+
+async function spendSet(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'sign in first' }, 401);
+  const blocked = await guardAction(env, 'spendset:' + user.email, 20, 300, 'spending limit changes');
+  if(blocked) return blocked;
+  const body = await request.json().catch(() => ({}));
+  const limits = _spendClean(body.limits || body);
+  await DB.put(env, 'spend', user.email, limits);
+  audit(env, 'spend_limits_set', { by:user.email, limits });
+  await _userEvent(env, request, user.email, 'spend_limits_changed', {});
+  return json({ ok:true, limits });
+}
+
+/* The decision, made server-side. Returns null when allowed, or the refusal. */
+async function _spendAllowed(env, email, amount, clientLimit){
+  const amt = +amount || 0;
+  if(!(amt > 0)) return null;
+  const L = await _spendLimits(env, email);
+  if(!L.enabled)
+    return { code:'spending_off',
+      need:'Spending is switched off on your account, so AMV will not pay for anything.',
+      message:'Turn it on in Settings, under Spending, and set your limits first.' };
+
+  /* The lower of what the server holds and what the client claims. A client
+     that sends a smaller number is being MORE careful and is honoured; one that
+     sends a larger number is ignored. */
+  const perPurchase = Math.min(L.perPurchase || 0,
+    (+clientLimit > 0 ? +clientLimit : Infinity), WEB_ABSOLUTE_SPEND_CAP);
+  if(amt > perPurchase)
+    return { code:'over_limit',
+      need:'This purchase is $' + amt.toFixed(2) + ', above the $' + perPurchase.toFixed(2) + ' single-purchase limit on your account.',
+      message:'Raise the limit in Settings if you want this to go through.' };
+
+  const name = `spendmo:${email}:${monthKey()}`;
+  const spent = (await counter(env, name, { op:'get' })).value || 0;
+  if(spent + amt > (L.monthlyCap || 0))
+    return { code:'over_monthly',
+      need:'This would take you past your $' + (L.monthlyCap||0).toFixed(2) + ' monthly limit - $'
+        + Math.max(0, (L.monthlyCap||0) - spent).toFixed(2) + ' is left this month.',
+      message:'The month resets on the 1st, or you can raise the limit in Settings.' };
+  return null;
+}
+
+/* Counted only once a purchase has actually been attempted, so a refused one
+   never eats somebody's month. */
+async function _spendRecord(env, email, amount){
+  const amt = +amount || 0;
+  if(!(amt > 0)) return;
+  try{ await counter(env, `spendmo:${email}:${monthKey()}`, { op:'incr', amount: amt, ttlMs: 86400000 * 70 }); }catch(e){}
+}
+
 const WEB_MAX_STEPS = 24;
 const WEB_MAX_MS = 90000;
 const WEB_ALLOWED_VERBS = ['goto','click','type','select','press','scroll','extract','submit','done','blocked'];
@@ -2539,13 +2645,16 @@ async function browserRun(request, env, ctx){
 
   if(declaredSpend > 0){
     const ent = await getEntitlement(env, user.email).catch(() => null);
-    const hardCap = Math.min(spendLimit > 0 ? spendLimit : Infinity, WEB_ABSOLUTE_SPEND_CAP);
-    if(declaredSpend > hardCap){
-      audit(env, 'web_agent_spend_blocked', { by:user.email, amount:declaredSpend, cap:hardCap });
-      return json({ ok:false, code:'over_limit',
-        need:'This purchase is $' + declaredSpend.toFixed(2) + ', above the $' + (isFinite(hardCap)?hardCap.toFixed(2):'0') + ' limit in force.',
-        message:'Raise your spending limit yourself if you want this to go through.' }, 400);
+    /* Against the limits stored on the ACCOUNT, not against whatever the client
+       sent. body.spendLimit is still honoured when it is SMALLER - a client
+       being more careful than the account requires is fine; one claiming a
+       bigger allowance than the account holds is not. */
+    const refused = await _spendAllowed(env, user.email, declaredSpend, spendLimit);
+    if(refused){
+      audit(env, 'web_agent_spend_blocked', { by:user.email, amount:declaredSpend, why:refused.code });
+      return json(Object.assign({ ok:false }, refused), 400);
     }
+    await _spendRecord(env, user.email, declaredSpend);
     audit(env, 'web_agent_spend_attempt', { by:user.email, amount:declaredSpend, approved:!!body.approved, plan:(ent&&ent.plan)||'' });
   }
 
@@ -3484,6 +3593,8 @@ export default {
         case '/v1/finance/link/start':   return financeLinkStart(request, env);
         case '/v1/finance/link/finish':  return financeLinkFinish(request, env);
         case '/v1/finance/unlink':       return financeUnlink(request, env);
+        case '/v1/spend/limits':         return spendGet(request, env);
+        case '/v1/spend/set':            return spendSet(request, env);
         case '/v1/family/get':           return familyGet(request, env);
         case '/v1/family/limits':        return familySetLimits(request, env);
         case '/v1/family/remove':        return familyRemove(request, env);

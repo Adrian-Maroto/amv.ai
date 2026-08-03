@@ -27,6 +27,11 @@ function _mfSay(id, msg, kind){
 }
 
 /* ---------- SPENDING ---------- */
+/* The limits shown here must be the ones the server will enforce, not the
+   browser's copy of them. Pulled once per visit; the guard is on the REQUEST,
+   not on the result, because the reply re-renders this pane and a result-only
+   guard re-issues the fetch every redraw. */
+let _SPEND_PULLED = false, _SPEND_BUSY = false;
 function _renderSpendingPane(pane){
   if(typeof AMVSpend === 'undefined'){ pane.innerHTML = '<div class="set-title">Spending</div>'; return; }
   const c = AMVSpend.cfg();
@@ -115,6 +120,12 @@ function _renderSpendingPane(pane){
       '</div>'+
       '<div class="mf-say" id="mf-limits-say" role="status" aria-live="polite"></div>'+
       '<button class="btn bp" id="mf-save-limits" type="button">Save limits</button>'+
+      /* Where the ceiling is actually held. Without a backend these numbers are
+         a preference on this device, and saying otherwise would be the exact
+         false reassurance this screen exists to avoid. */
+      '<p class="mf-hint mf-where">'+ (AMVSpend.serverBacked()
+        ? 'These limits are held on your account, so they apply on every device and cannot be raised from this browser.'
+        : 'AMV is not connected to a backend yet, so these limits are kept on this device only. Once it is connected they move to your account and apply everywhere.') +'</p>'+
     '</div>'+
     '<div class="ss2"><h3>This month</h3>'+
       '<div class="mf-bar" role="img" aria-label="'+escH(_mfMoney(spent))+' spent of '+escH(_mfMoney(cap))+'">'+
@@ -143,11 +154,22 @@ function _renderSpendingPane(pane){
       toast('Thanks - that is saved','success',2500); renderSetPane();
     }catch(e){ _mfSay('mf-age-say', e.message || 'That year does not look right.', 'err'); $('mf-birth')?.focus(); }
   });
-  on($('mf-enabled'),'change',function(){
-    const cur = AMVSpend.cfg(); cur.enabled = this.checked; AMVSpend.save(cur);
-    _mfSay('mf-limits-say', this.checked ? 'AMV can now spend within your limits.' : 'Spending is off. AMV will not pay for anything.', 'ok');
+  on($('mf-enabled'),'change',async function(){
+    const want = this.checked, box = this;
+    box.disabled = true;
+    try{
+      const cur = AMVSpend.cfg();
+      await AMVSpend.push({ autoUnder:cur.autoUnder, perPurchase:cur.perPurchase,
+                            monthlyCap:cur.monthlyCap, enabled:want });
+      _mfSay('mf-limits-say', want ? 'AMV can now spend within your limits.' : 'Spending is off. AMV will not pay for anything.', 'ok');
+    }catch(e){
+      /* Leaving the switch showing "off" while the account still allows spending
+         is the one outcome worth reverting the control for. */
+      box.checked = !want;
+      _mfSay('mf-limits-say', (e && e.message) || 'Could not change that on your account. It is unchanged.', 'err');
+    }finally{ box.disabled = false; }
   });
-  on($('mf-save-limits'),'click',function(){
+  on($('mf-save-limits'),'click',async function(){
     const auto = +($('mf-auto')||{}).value, per = +($('mf-per')||{}).value, capv = +($('mf-cap')||{}).value;
     // Limits that contradict each other are worse than no limits, because the
     // user believes they are protected by a number that can never apply.
@@ -156,11 +178,42 @@ function _renderSpendingPane(pane){
     }
     if(auto > per){ _mfSay('mf-limits-say','The auto-buy limit cannot be higher than your single-purchase limit.','err'); $('mf-auto')?.focus(); return; }
     if(per > capv){ _mfSay('mf-limits-say','A single purchase cannot be larger than your whole monthly ceiling.','err'); $('mf-per')?.focus(); return; }
-    const cur = AMVSpend.cfg();
-    cur.autoUnder = auto; cur.perPurchase = per; cur.monthlyCap = capv;
-    AMVSpend.save(cur);
-    _mfSay('mf-limits-say','Saved. AMV buys under '+_mfMoney(auto)+' on its own, asks up to '+_mfMoney(per)+', and never passes '+_mfMoney(capv)+' a month.','ok');
+    const btn = this;
+    btn.disabled = true; _mfSay('mf-limits-say','Saving to your account...','');
+    try{
+      /* What the server stored is what gets read back - it may have pulled a
+         number down to its own ceiling, and the confirmation has to say the
+         number that will really apply, not the one that was typed. */
+      const r = await AMVSpend.push({ autoUnder:auto, perPurchase:per, monthlyCap:capv });
+      const L = r.limits;
+      if($('mf-auto')) $('mf-auto').value = String(L.autoUnder);
+      if($('mf-per')) $('mf-per').value = String(L.perPurchase);
+      if($('mf-cap')) $('mf-cap').value = String(L.monthlyCap);
+      const changed = (L.autoUnder !== auto || L.perPurchase !== per || L.monthlyCap !== capv);
+      _mfSay('mf-limits-say',
+        (changed ? 'Saved, adjusted to the highest AMV allows. ' : 'Saved. ')+
+        'AMV buys under '+_mfMoney(L.autoUnder)+' on its own, asks up to '+_mfMoney(L.perPurchase)+
+        ', and never passes '+_mfMoney(L.monthlyCap)+' a month.', 'ok');
+    }catch(e){
+      /* Saying "Saved" when the write failed would leave somebody believing a
+         lower ceiling is in force while the old, higher one still is. */
+      _mfSay('mf-limits-say', (e && e.message) || 'Could not save those limits. Your previous limits are still in force.', 'err');
+    }finally{ btn.disabled = false; }
   });
+
+  /* Adopt the server's numbers, then redraw once. */
+  if(canConfigure && AMVSpend.serverBacked() && !_SPEND_PULLED && !_SPEND_BUSY){
+    _SPEND_BUSY = true;
+    AMVSpend.pull().then(function(){
+      _SPEND_PULLED = true; _SPEND_BUSY = false;
+      try{ if(document.getElementById('mf-save-limits')) renderSetPane(); }catch(e){}
+    }).catch(function(){
+      /* Not fatal - the local mirror still renders. Marked pulled so a failed
+         read does not retry on every redraw. */
+      _SPEND_PULLED = true; _SPEND_BUSY = false;
+      _mfSay('mf-limits-say','Could not check these against your account just now. These are this device\'s copy.','err');
+    });
+  }
 }
 try{ window._renderSpendingPane = _renderSpendingPane; }catch(e){}
 

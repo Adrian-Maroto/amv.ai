@@ -34,11 +34,15 @@
             language:(typeof _lang==='function' && _lang())||'auto',
             backendConnected:!!(window.AMV_API && AMV_API.base) };
         } },
-      set_theme:{ desc:'Switch the theme. Args: {theme:"dark"|"light"}', risk:'high', riskLabel:'change your theme',
+      /* Not high risk. Approvals exist for things that are hard to undo or that
+         reach outside the account; making the screen light is neither, and
+         stopping to ask about it teaches people to click through the prompts
+         that matter. Same reasoning that took the risk chooser out of Crew. */
+      set_theme:{ desc:'Switch the theme. Args: {theme:"dark"|"light"}',
         async run(a){ const t=(a&&a.theme)==='light'?'light':'dark';
           try{ saveStr('amv_theme',t); if(typeof applyTheme==='function') applyTheme(t); }catch(e){}
           return { theme:t }; } },
-      set_language:{ desc:'Change the interface language. Args: {code}', risk:'high', riskLabel:'change your language',
+      set_language:{ desc:'Change the interface language. Args: {code}',
         async run(a){ const c=String((a&&a.code)||'').trim();
           if(!c || (typeof LANGS!=='undefined' && !LANGS[c])) nothing('That language is not one of the supported codes.');
           try{ saveStr('amv_lang',c); if(typeof _translateUI==='function') _translateUI(); }catch(e){}

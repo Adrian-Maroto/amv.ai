@@ -38,6 +38,9 @@ const ACT_LABEL = {
   family_member_left:     ['Someone left your family', ''],
   family_limits_changed:  ['Family spending limits changed', 'warn'],
   team_left:              ['Left a team', ''],
+  /* Raising a spending limit is the quiet half of taking money out: the
+     withdrawal is loud, the permission that allowed it is not. Marked. */
+  spend_limits_changed:   ['Spending limits changed', 'warn'],
 };
 function _actLabel(ev){
   const m = ACT_LABEL[ev.kind];
