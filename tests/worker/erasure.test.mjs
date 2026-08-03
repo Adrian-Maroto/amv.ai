@@ -257,7 +257,13 @@ section('A backup never carries a bank credential');
   ok(p.indexOf('fin:') < 0, 'the access token is not exported', true);
   ok(p.indexOf('finlink:') < 0, 'nor a pending link session', true);
   ok(p.indexOf('invsnap:') < 0, 'nor a record of real balances', true);
-  ok(Array.isArray(W.BACKUP_NEVER) && W.BACKUP_NEVER.length === 3,
+  /* Membership, not a magic count. Asserting the length made every FUTURE
+     deliberate exclusion fail this test, which would push the next person to
+     leave one out rather than write it down - the opposite of the point. The
+     stronger property, that every durable kind is in exactly one of the two
+     lists, is enforced in backup-covers-everything. */
+  ok(Array.isArray(W.BACKUP_NEVER)
+     && ['fin:','finlink:','invsnap:'].every(k => W.BACKUP_NEVER.indexOf(k) >= 0),
      'and the omission is written down as a decision rather than left to look like an oversight',
      W.BACKUP_NEVER);
   W.BACKUP_NEVER.forEach(k => ok(p.indexOf(k) < 0, k + ' really is excluded', k));
