@@ -17,9 +17,15 @@ const AMVTeam = {
   async remove(email){ const r=await AMV_API._fetch('/team/remove',{method:'POST',body:JSON.stringify({email})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d.members; },
   async leave(){ const r=await AMV_API._fetch('/team/leave',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error){ const e=new Error(d.error); e.code=d.code; throw e; } this._cache=null; return true; },
   async setRole(email,role){ const r=await AMV_API._fetch('/team/role',{method:'POST',body:JSON.stringify({email,role})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d.members; },
-  async audit(){ try{ const r=await AMV_API._fetch('/team/audit',{method:'POST',body:'{}'}); const d=await r.json(); return d.log||[]; }catch(e){ return []; } },
+  /* The audit log is the team's security record. "No activity yet" because the
+     read failed would tell an owner checking who removed a member that nobody
+     did anything. */
+  async audit(){ const r=await AMV_API._fetch('/team/audit',{method:'POST',body:'{}'}); const d=await r.json().catch(()=>null); if(!d||d.error||!Array.isArray(d.log)) throw new Error((d&&d.error)||'Could not load the team activity log.'); return d.log; },
   myRole(team){ if(!team||!S.user) return null; const m=(team.members||[]).find(x=>x.email===(S.user.email||'').toLowerCase()); return m?m.role:null; },
-  async tasks(){ try{ const r=await AMV_API._fetch('/team/tasks',{method:'POST',body:'{}'}); const d=await r.json(); return d.error?{tasks:[],members:[]}:d; }catch(e){ return {tasks:[],members:[]}; } },
+  /* Throws rather than answering an empty board. "No tasks yet - assign the
+     first one above" to a team that HAS tasks is how two people end up doing
+     the same piece of work. */
+  async tasks(){ const r=await AMV_API._fetch('/team/tasks',{method:'POST',body:'{}'}); const d=await r.json().catch(()=>null); if(!d||d.error||!Array.isArray(d.tasks)) throw new Error((d&&d.error)||'Could not load the team board.'); return d; },
   async taskCreate(title,assignee,notes,priority){ const r=await AMV_API._fetch('/team/task/create',{method:'POST',body:JSON.stringify({title,assignee,notes,priority})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d.tasks; },
   async taskUpdate(id,patch){ const r=await AMV_API._fetch('/team/task/update',{method:'POST',body:JSON.stringify(Object.assign({id},patch))}); const d=await r.json(); if(d.error) throw new Error(d.error); return d.tasks; },
   // ── Shared library: push a project/prompt into the team's shared data ──
@@ -27,7 +33,10 @@ const AMVTeam = {
     const r=await AMV_API._fetch('/team/share',{method:'POST',body:JSON.stringify({kind,item})});
     const d=await r.json(); if(d.error) throw new Error(d.error); return d.shared||[];
   },
-  async shared(){ try{ const r=await AMV_API._fetch('/team/shared',{method:'POST',body:'{}'}); const d=await r.json(); return d.shared||[]; }catch(e){ return []; } },
+  /* Throws, so the handler written for this failure can actually run. It used
+     to swallow the error and return [], which made that handler unreachable and
+     left the panel quietly claiming the team had shared nothing. */
+  async shared(){ const r=await AMV_API._fetch('/team/shared',{method:'POST',body:'{}'}); const d=await r.json().catch(()=>null); if(!d||d.error||!Array.isArray(d.shared)) throw new Error((d&&d.error)||'Could not load the shared library.'); return d.shared; },
   async unshare(id){ const r=await AMV_API._fetch('/team/unshare',{method:'POST',body:JSON.stringify({id})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d.shared||[]; },
   // ── Presence: lightweight heartbeat so teammates see who's active now ──
   async heartbeat(){ try{ const r=await AMV_API._fetch('/team/presence',{method:'POST',body:JSON.stringify({ping:Date.now()})}); const d=await r.json(); return d.present||[]; }catch(e){ return []; } },
@@ -463,8 +472,14 @@ function _renderTeamManage(vc, team){
   // A rejected fetch here used to leave the panel blank with no explanation.
   if(AMVTeam.enabled()){
     AMVTeam.shared().then(drawShared).catch(e=>{
-      drawShared([]);
-      try{ toast('Could not load shared team items. Check your connection and try again.','error',4500); }catch(_){}
+      /* A toast fades and leaves the panel saying the team has shared nothing,
+         which is the same false statement with a delay on it. The panel keeps
+         the message. */
+      const el=$('team-shared');
+      if(el) el.innerHTML='<div style="color:var(--mu);font-size:12px;padding:8px 0;line-height:1.6">'+
+        escH((e&&e.message)||'Could not load the shared library.')+
+        ' Everything the team shared is still there - <button class="tt-mini" id="tsr-retry">try again</button></div>';
+      on($('tsr-retry'),'click',()=>{ AMVTeam.shared().then(drawShared).catch(()=>{}); });
       try{ _logErr('team.shared', e); }catch(_){}
     });
   } else { drawShared([]); }
@@ -494,7 +509,17 @@ const _PRIO_C={high:'var(--red,#ff4d4d)',normal:'var(--mu,#9a9085)',low:'var(--d
 async function _loadTeamTasks(team, role, myEmail){
   const canManage = role==='owner'||role==='admin';
   const board=$('tt-board'); if(!board) return;
-  let data; try{ data=await AMVTeam.tasks(); }catch(e){ data={tasks:[]}; }
+  let data;
+  try{ data=await AMVTeam.tasks(); }
+  catch(e){
+    /* An empty board is a statement about the team's work. If it could not be
+       read, the board says that instead of claiming there is nothing on it. */
+    board.innerHTML='<div class="tt-failed" style="color:var(--mu);font-size:12px;padding:8px 0;line-height:1.6">'+
+      escH((e&&e.message)||'Could not load the team board.')+
+      ' Nothing has changed - <button class="tt-mini" id="tt-retry">try again</button></div>';
+    on($('tt-retry'),'click',()=>_loadTeamTasks(team, role, myEmail));
+    return;
+  }
   const tasks=data.tasks||[];
   const render=()=>{
     const el=$('tt-board'); if(!el) return;
@@ -560,6 +585,15 @@ async function _loadTeamTasks(team, role, myEmail){
         if(e.from&&e.to) what+=' ('+e.from+' \u2192 '+e.to+')';
         return '<div class="team-log-row"><span class="team-log-who">'+escH(e.actor||'')+'</span> <span class="team-log-what">'+what+'</span> <span class="team-log-when">'+when+'</span></div>';
       }).join('')+'</div>';
+    }).catch(err=>{
+      /* This is the record an owner checks after something unexpected happened
+         to the team. "No activity yet" for a log that could not be read is the
+         one answer it must never give. */
+      const el=$('team-audit'); if(!el) return;
+      el.innerHTML='<div style="color:var(--mu);font-size:12px;padding:8px 0;line-height:1.6">'+
+        escH((err&&err.message)||'Could not load the team activity log.')+
+        ' This is not a record of nothing happening - <button class="tt-mini" id="tal-retry">try again</button></div>';
+      on($('tal-retry'),'click',()=>_renderTeamManage(vc, team));
     });
   }
 }
