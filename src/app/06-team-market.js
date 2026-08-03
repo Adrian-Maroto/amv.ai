@@ -911,8 +911,19 @@ const AMVMarket = {
     try{ const own=[...this._localListings(), ...MARKET_STARTER].find(x=>x.id===id);
       if(own && (own.authorEmail||'').toLowerCase()===this._me()){ if(typeof toast==='function') toast('You can’t rate your own listing','info'); return false; } }catch(e){}
     const ratings=this._localRatings(); ratings[id]=stars; this._saveLocalRatings(ratings);
-    if(this._live()){ try{ AMV_API._fetch('/v1/market/rate',{method:'POST',body:JSON.stringify({id,stars})}).catch(()=>{}); }catch(e){} }
-    return true;
+    /* A rating nobody else can see is not a rating. This was fired and
+       forgotten, so a failed call left the star lit on this device and the
+       listing's public score unchanged - the buyer believes they have rated it
+       and the next buyer sees nothing. */
+    if(this._live()){
+      try{
+        const r=await AMV_API._fetch('/v1/market/rate',{method:'POST',body:JSON.stringify({id,stars})});
+        const d=await r.json().catch(()=>({}));
+        if(!r.ok || d.error) return { ok:false, local:true, error:d.error||'That rating was not recorded.' };
+      }catch(e){ return { ok:false, local:true, error:(e&&e.message)||'That rating was not recorded.' }; }
+      return { ok:true };
+    }
+    return { ok:false, local:true, code:'needs_service' };
   },
   // ---- seller reviews (rate the PERSON you bought from, 1-5 + written review) ----
   _allReviews(){ return load('amv_market_reviews')||{}; },   // { sellerEmail: [ {by,byName,stars,text,ts} ] }
@@ -952,7 +963,13 @@ const AMVMarket = {
     const entry={ by:this._me(), byName:this._meName(), stars:Math.max(1,Math.min(5,stars||0)), text:String(text||'').slice(0,1000), ts:Date.now() };
     if(mine){ Object.assign(mine, entry); } else { list.unshift(entry); }
     all[sellerEmail]=list; this._saveAllReviews(all);
-    if(this._live()){ try{ AMV_API._fetch('/v1/market/review',{method:'POST',body:JSON.stringify({seller:sellerEmail,stars:entry.stars,text:entry.text})}).catch(()=>{}); }catch(e){} }
+    /* Same rule as a rating, and it matters more: a written review the buyer
+       was thanked for, that the seller never receives and no other buyer ever
+       sees, is a reputation system quietly not working. */
+    if(!this._live()){ const e=new Error('AMV is not connected to a backend, so your review was saved on this device only - nobody else can see it yet.'); e.code='needs_service'; e.entry=entry; throw e; }
+    const rr=await AMV_API._fetch('/v1/market/review',{method:'POST',body:JSON.stringify({seller:sellerEmail,stars:entry.stars,text:entry.text})});
+    const dd=await rr.json().catch(()=>({}));
+    if(!rr.ok || dd.error){ const e=new Error((dd.error||'Your review could not be posted')+' - it is saved here, try again.'); e.code='failed'; e.entry=entry; throw e; }
     return entry;
   },
   // ---- similar items (same category + close price) ----

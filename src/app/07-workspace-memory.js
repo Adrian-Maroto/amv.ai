@@ -374,9 +374,15 @@ function _mktPreview(it, after){
   });
   const rate=$('mkt-pv-rate');
   if(rate) rate.querySelectorAll('[data-stars]').forEach(s=>on(s,'click',async()=>{
-    const stars=parseInt(s.dataset.stars,10); await AMVMarket.rate(it.id,stars);
+    const stars=parseInt(s.dataset.stars,10);
+    const res=await AMVMarket.rate(it.id,stars);
     rate.querySelectorAll('[data-stars]').forEach(x=>x.classList.toggle('on',parseInt(x.dataset.stars,10)<=stars));
-    toast('Thanks for rating!','success'); after&&after();
+    /* The star stays lit either way - it IS their rating - but the message says
+       whether anybody else can see it. */
+    if(res && res.ok) toast('Thanks for rating!','success');
+    else if(res && res.code==='needs_service') toast('Saved on this device. It becomes public once AMV is connected to a backend.','info',5000);
+    else toast((res&&res.error)||'That rating was not recorded publicly.','error',5000);
+    after&&after();
   }));
 }
 window._mktPreview=_mktPreview;

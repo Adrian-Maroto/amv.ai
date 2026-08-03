@@ -100,6 +100,70 @@ section('And a working server still renders the real numbers');
   ok(/\$108\.00/.test(r.text), 'and lifetime earnings', r.text.slice(0, 100));
 }
 
+section('A rating nobody else can see is not reported as a rating');
+{
+  /* Rating fired the request and forgot it, so a failed call left the star lit
+     on this device and the listing's public score unchanged - the buyer
+     believes they have rated it, and the next buyer sees nothing. */
+  const r = await page.evaluate(async () => {
+    const realBase = AMV_API.base, realTok = AMV_API.token, realFetch = AMV_API._fetch;
+    const out = {};
+
+    AMV_API.base = ''; 
+    out.noBackend = await AMVMarket.rate('mk_seo', 5);
+
+    AMV_API.base = 'https://api.test'; AMV_API.token = 't';
+    AMV_API._fetch = async () => ({ ok: false, json: async () => ({ error: 'rating service down' }) });
+    out.failed = await AMVMarket.rate('mk_seo', 4);
+
+    AMV_API._fetch = async () => ({ ok: true, json: async () => ({ ok: true }) });
+    out.worked = await AMVMarket.rate('mk_seo', 3);
+
+    AMV_API.base = realBase; AMV_API.token = realTok; AMV_API._fetch = realFetch;
+    return out;
+  });
+  ok(r.noBackend.ok === false && r.noBackend.code === 'needs_service',
+     'with no backend it is local only, and says so', r.noBackend);
+  ok(r.failed.ok === false && /rating service down/.test(r.failed.error || ''),
+     'a refused rating reports the refusal', r.failed);
+  ok(r.worked.ok === true, 'and one that really landed is a success', r.worked);
+}
+
+section('A review the seller never receives is not "posted"');
+{
+  /* Worse than a rating: the buyer is thanked for writing something nobody
+     else will ever read. */
+  const r = await page.evaluate(async () => {
+    const realBase = AMV_API.base, realTok = AMV_API.token, realFetch = AMV_API._fetch;
+    const realPurch = AMVMarket.purchases;
+    // They really did buy from this seller, so the only question is delivery.
+    AMVMarket.purchases = async () => ([{ id: 'x1', authorEmail: 'seller@x.com' }]);
+    const out = {};
+
+    AMV_API.base = '';
+    try { await AMVMarket.reviewSeller('seller@x.com', 5, 'great'); out.noBackend = 'CLAIMED POSTED'; }
+    catch (e) { out.noBackend = e.message; out.noBackendCode = e.code; }
+
+    AMV_API.base = 'https://api.test'; AMV_API.token = 't';
+    AMV_API._fetch = async () => ({ ok: false, json: async () => ({ error: 'review rejected' }) });
+    try { await AMVMarket.reviewSeller('seller@x.com', 5, 'great'); out.failed = 'CLAIMED POSTED'; }
+    catch (e) { out.failed = e.message; }
+
+    AMV_API._fetch = async () => ({ ok: true, json: async () => ({ ok: true }) });
+    try { const e = await AMVMarket.reviewSeller('seller@x.com', 5, 'great'); out.worked = e.stars; }
+    catch (e) { out.worked = 'THREW: ' + e.message; }
+
+    AMV_API.base = realBase; AMV_API.token = realTok; AMV_API._fetch = realFetch;
+    AMVMarket.purchases = realPurch;
+    return out;
+  });
+  ok(r.noBackend !== 'CLAIMED POSTED', 'with no backend it does not claim to be posted', r.noBackend);
+  ok(/nobody else can see it/i.test(r.noBackend), 'saying exactly that', r.noBackend);
+  ok(r.failed !== 'CLAIMED POSTED', 'a refused review is not posted either', r.failed);
+  ok(/saved here, try again/i.test(r.failed), 'and the words say it was kept', r.failed);
+  ok(r.worked === 5, 'while a real one goes through and returns the entry', r.worked);
+}
+
 section('No JavaScript errors');
 ok(errors.length === 0, 'zero uncaught page errors', errors.slice(0, 3));
 
