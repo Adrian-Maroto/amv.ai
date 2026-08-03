@@ -9982,19 +9982,35 @@ async function adminUser(request, env) {
 async function verifyStripeSignature(secret, payload, sigHeader) {
   try {
     if (!secret || !sigHeader) return false;
-    const parts = Object.fromEntries(sigHeader.split(',').map(kv => kv.split('=')));
-    const t = parts.t, v1 = parts.v1;
-    if (!t || !v1) return false;
+    /* Stripe sends EVERY valid signature, and during a webhook-secret rotation
+       that is more than one v1. Object.fromEntries keeps only the last, so if
+       the configured secret produced the first one, verification failed and
+       real events were rejected as forged - sales uncredited, at exactly the
+       moment somebody is rotating a secret. All of them are considered. */
+    let t = '';
+    const v1s = [];
+    for (const kv of sigHeader.split(',')) {
+      const eq = kv.indexOf('=');
+      if (eq < 0) continue;
+      const k = kv.slice(0, eq).trim(), v = kv.slice(eq + 1).trim();
+      if (k === 't') t = v;
+      else if (k === 'v1') v1s.push(v);
+    }
+    if (!t || !v1s.length) return false;
     // reject very old timestamps (replay protection, 5 min tolerance)
     if (Math.abs(Date.now() / 1000 - parseInt(t, 10)) > 300) return false;
     const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
     const mac = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${t}.${payload}`));
     const expected = Array.from(new Uint8Array(mac)).map(b => b.toString(16).padStart(2, '0')).join('');
-    // constant-time compare
-    if (expected.length !== v1.length) return false;
-    let diff = 0;
-    for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ v1.charCodeAt(i);
-    return diff === 0;
+    // constant-time compare against each offered signature
+    let matched = false;
+    for (const v1 of v1s) {
+      if (expected.length !== v1.length) continue;
+      let diff = 0;
+      for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ v1.charCodeAt(i);
+      if (diff === 0) matched = true;
+    }
+    return matched;
   } catch { return false; }
 }
 
