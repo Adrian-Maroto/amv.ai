@@ -770,6 +770,7 @@ async function _callAI(msgs, _opts) {
           }
         }
         // retry transient server/rate errors
+        if(_userStopped) break;          // Stop means stop, not "try again"
         if((res.status===429||res.status>=500) && _attempt<_maxRetries){
           _attempt++;
           const wait=Math.min(8000, 700*Math.pow(2,_attempt));
@@ -784,6 +785,13 @@ async function _callAI(msgs, _opts) {
         throw new Error(aegisErrorMessage(res.status, raw));
       }catch(fe){
         clearTimeout(_to);
+        /* The user pressing Stop aborts this same controller, so an AbortError
+           is EITHER a timeout or a deliberate stop - and they were treated
+           identically. Pressing Stop therefore showed "Taking a while -
+           retrying" and issued the request again, up to the retry limit,
+           spending tokens on answers nobody was waiting for. Checked first,
+           because a Stop that does not stop is worse than no Stop button. */
+        if(_userStopped || fe === 'user-stop' || String((fe && fe.message) || fe).includes('user-stop')) throw fe;
         // network drop / timeout → retry a couple times
         const transient = fe.name==='AbortError' || /network|failed to fetch|load failed/i.test(fe.message||'');
         if(transient && _attempt<_maxRetries){
