@@ -559,6 +559,15 @@ function _mktPurchases(body){
       _mktUsePurchase(it);
     }));
     body.querySelectorAll('.mk-view').forEach(b=>on(b,'click',()=>{ const it=items.find(x=>x.id===b.dataset.mkId); if(it){ it._owned=true; _mktPreview(it); } }));
+  }).catch(e=>{
+    /* "No purchases yet" for somebody who has paid for things is the worst
+       available answer, so a failed read says it failed. */
+    body.innerHTML='<div class="ss2"><h3>Could not load your purchases</h3>'+
+      '<p style="font-size:13px;color:var(--mu);line-height:1.65;margin:0 0 12px">'+
+      escH((e&&e.message)||'AMV could not reach the server.')+
+      ' Everything you have bought is still yours.</p>'+
+      '<button class="btn bs" id="mkt-pur-retry" style="font-size:12px">Try again</button></div>';
+    on($('mkt-pur-retry'),'click',()=>_mktPurchases(body));
   });
 }
 /* After adding a marketplace item to the user's library, take them straight
@@ -934,6 +943,15 @@ function _mktSell(body){
       if(!confirm('Remove this listing permanently? Buyers who already own it keep it.')) return;
       try{ await AMVMarket.unlist(b.dataset.slDel); toast('Listing removed','info'); loadMine(); }catch(e){ toast(e.message||'Could not remove','error'); }
     }));
+  }).catch(e=>{
+    /* "No listings yet. Create one above." to a seller whose listings simply
+       could not be fetched invites them to publish a duplicate. */
+    const el=$('sl-mine'); if(!el) return;
+    const sum=$('sl-summary'); if(sum) sum.innerHTML='';
+    el.innerHTML='<div style="color:var(--mu);font-size:12px;line-height:1.6">'+
+      escH((e&&e.message)||'Could not load your listings.')+
+      ' They are still there. <button class="btn bs" id="sl-mine-retry" style="font-size:11.5px;margin-left:6px">Try again</button></div>';
+    on($('sl-mine-retry'),'click',loadMine);
   }); };
   loadMine();
 
@@ -1041,6 +1059,15 @@ function _mktEarnings(body){
       try{ const r=await AMVMarket.withdraw(dest); toast('Withdrawal of $'+r.amount.toFixed(2)+' requested - it\u2019s now processing.','success',5000); _mktEarnings(body); }
       catch(e){ if(btn){btn.disabled=false;btn.textContent='Withdraw';} toast(e.message||'Could not withdraw','error',5000); }
     });
+  }).catch(e=>{
+    /* Never a fabricated zero. The screen says it could not read the balance,
+       which is a different statement from "you are owed nothing". */
+    body.innerHTML='<div class="ss2"><h3>Could not load your earnings</h3>'+
+      '<p style="font-size:13px;color:var(--mu);line-height:1.65;margin:0 0 12px">'+
+      escH((e&&e.message)||'AMV could not reach the server.')+
+      ' Nothing has changed - your balance is whatever it was.</p>'+
+      '<button class="btn bs" id="mkt-earn-retry" style="font-size:12px">Try again</button></div>';
+    on($('mkt-earn-retry'),'click',()=>_mktEarnings(body));
   });
 }
 

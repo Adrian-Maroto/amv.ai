@@ -816,7 +816,13 @@ const AMVMarket = {
   },
   async purchases(){
     if(this._live()){
-      try{ const r=await AMV_API._fetch('/v1/market/purchases',{method:'POST',body:'{}'}); const d=await r.json(); return d.items||[]; }catch(e){ return []; }
+      /* A failed request is not "you have bought nothing". Answering it that way
+         showed somebody an empty Purchases screen for things they had paid for,
+         and _resolve then treated a paid item they own as unowned. */
+      const r=await AMV_API._fetch('/v1/market/purchases',{method:'POST',body:'{}'});
+      const d=await r.json().catch(()=>null);
+      if(!d || d.error || !Array.isArray(d.items)) throw new Error((d&&d.error)||'Could not load your purchases.');
+      return d.items;
     }
     // local: hydrate each purchase with its full deliverable
     const purch=this._localPurchases();
@@ -825,7 +831,10 @@ const AMVMarket = {
   },
   async myListings(){
     if(this._live()){
-      try{ const r=await AMV_API._fetch('/v1/market/mylistings',{method:'POST',body:'{}'}); const d=await r.json(); return d.items||[]; }catch(e){ return []; }
+      const r=await AMV_API._fetch('/v1/market/mylistings',{method:'POST',body:'{}'});
+      const d=await r.json().catch(()=>null);
+      if(!d || d.error || !Array.isArray(d.items)) throw new Error((d&&d.error)||'Could not load your listings.');
+      return d.items;
     }
     const me=this._me();
     return this._localListings().filter(it=>(it.authorEmail||'').toLowerCase()===me);
@@ -838,7 +847,14 @@ const AMVMarket = {
   },
   async earnings(){
     if(this._live()){
-      try{ const r=await AMV_API._fetch('/v1/market/earnings',{method:'POST',body:'{}'}); return await r.json(); }catch(e){ return {balance:0,lifetime:0,tx:[],sellerPct:80,minWithdraw:10}; }
+      /* This used to answer a failed request with a balance of ZERO, so a seller
+         with money in the account was shown $0 owed to them, indistinguishable
+         from having earned nothing. A wrong number on a payout screen is worse
+         than no screen at all. */
+      const r=await AMV_API._fetch('/v1/market/earnings',{method:'POST',body:'{}'});
+      const d=await r.json().catch(()=>null);
+      if(!d || d.error || typeof d.balance !== 'number') throw new Error((d&&d.error)||'Could not load your earnings.');
+      return d;
     }
     const w=this._localWallet();
     return {ok:true, balance:w.balance||0, lifetime:w.lifetime||0, sellerPct:80, minWithdraw:10, tx:w.tx||[], local:true};
@@ -876,16 +892,27 @@ const AMVMarket = {
   },
   myReviewFor(sellerEmail){ return this.sellerReviews(sellerEmail).find(r=>(r.by||'').toLowerCase()===this._me()); },
   // did the current user buy anything from this seller? (gates who can review)
-  async boughtFrom(sellerEmail){
+  _boughtFrom(sellerEmail, purch){
     sellerEmail=(sellerEmail||'').toLowerCase();
-    const purch=await this.purchases();
     const all=[...this._localListings(), ...MARKET_STARTER];
-    return purch.some(p=>{ const it=p.authorEmail?p:all.find(x=>x.id===p.id); return it&&(it.authorEmail||'').toLowerCase()===sellerEmail; });
+    return (purch||[]).some(p=>{ const it=p.authorEmail?p:all.find(x=>x.id===p.id); return it&&(it.authorEmail||'').toLowerCase()===sellerEmail; });
+  },
+  /* Used to decorate a seller's profile, so a purchases read that fails must
+     not stop the profile opening. Unknown answers FALSE - it is also the gate
+     on reviewing a seller, and there the safe reading of "we could not check"
+     is "no", never "yes". */
+  async boughtFrom(sellerEmail){
+    try{ return this._boughtFrom(sellerEmail, await this.purchases()); }
+    catch(e){ return false; }
   },
   async reviewSeller(sellerEmail, stars, text){
     sellerEmail=(sellerEmail||'').toLowerCase();
     if(sellerEmail===this._me()) throw new Error('You can\u2019t review yourself.');
-    if(!(await this.boughtFrom(sellerEmail))) throw new Error('You can only review sellers you\u2019ve bought from.');
+    /* Read directly rather than through boughtFrom, so a request that FAILED is
+       reported as a failure instead of as "you never bought from them" - which
+       would accuse somebody of something untrue about their own account. */
+    if(!this._boughtFrom(sellerEmail, await this.purchases()))
+      throw new Error('You can only review sellers you\u2019ve bought from.');
     const all=this._allReviews(); const list=all[sellerEmail]||[];
     const mine=list.find(r=>(r.by||'').toLowerCase()===this._me());
     const entry={ by:this._me(), byName:this._meName(), stars:Math.max(1,Math.min(5,stars||0)), text:String(text||'').slice(0,1000), ts:Date.now() };

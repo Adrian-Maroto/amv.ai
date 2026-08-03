@@ -16107,7 +16107,13 @@ const AMVMarket = {
   },
   async purchases(){
     if(this._live()){
-      try{ const r=await AMV_API._fetch('/v1/market/purchases',{method:'POST',body:'{}'}); const d=await r.json(); return d.items||[]; }catch(e){ return []; }
+      /* A failed request is not "you have bought nothing". Answering it that way
+         showed somebody an empty Purchases screen for things they had paid for,
+         and _resolve then treated a paid item they own as unowned. */
+      const r=await AMV_API._fetch('/v1/market/purchases',{method:'POST',body:'{}'});
+      const d=await r.json().catch(()=>null);
+      if(!d || d.error || !Array.isArray(d.items)) throw new Error((d&&d.error)||'Could not load your purchases.');
+      return d.items;
     }
     // local: hydrate each purchase with its full deliverable
     const purch=this._localPurchases();
@@ -16116,7 +16122,10 @@ const AMVMarket = {
   },
   async myListings(){
     if(this._live()){
-      try{ const r=await AMV_API._fetch('/v1/market/mylistings',{method:'POST',body:'{}'}); const d=await r.json(); return d.items||[]; }catch(e){ return []; }
+      const r=await AMV_API._fetch('/v1/market/mylistings',{method:'POST',body:'{}'});
+      const d=await r.json().catch(()=>null);
+      if(!d || d.error || !Array.isArray(d.items)) throw new Error((d&&d.error)||'Could not load your listings.');
+      return d.items;
     }
     const me=this._me();
     return this._localListings().filter(it=>(it.authorEmail||'').toLowerCase()===me);
@@ -16129,7 +16138,14 @@ const AMVMarket = {
   },
   async earnings(){
     if(this._live()){
-      try{ const r=await AMV_API._fetch('/v1/market/earnings',{method:'POST',body:'{}'}); return await r.json(); }catch(e){ return {balance:0,lifetime:0,tx:[],sellerPct:80,minWithdraw:10}; }
+      /* This used to answer a failed request with a balance of ZERO, so a seller
+         with money in the account was shown $0 owed to them, indistinguishable
+         from having earned nothing. A wrong number on a payout screen is worse
+         than no screen at all. */
+      const r=await AMV_API._fetch('/v1/market/earnings',{method:'POST',body:'{}'});
+      const d=await r.json().catch(()=>null);
+      if(!d || d.error || typeof d.balance !== 'number') throw new Error((d&&d.error)||'Could not load your earnings.');
+      return d;
     }
     const w=this._localWallet();
     return {ok:true, balance:w.balance||0, lifetime:w.lifetime||0, sellerPct:80, minWithdraw:10, tx:w.tx||[], local:true};
@@ -16167,16 +16183,27 @@ const AMVMarket = {
   },
   myReviewFor(sellerEmail){ return this.sellerReviews(sellerEmail).find(r=>(r.by||'').toLowerCase()===this._me()); },
   // did the current user buy anything from this seller? (gates who can review)
-  async boughtFrom(sellerEmail){
+  _boughtFrom(sellerEmail, purch){
     sellerEmail=(sellerEmail||'').toLowerCase();
-    const purch=await this.purchases();
     const all=[...this._localListings(), ...MARKET_STARTER];
-    return purch.some(p=>{ const it=p.authorEmail?p:all.find(x=>x.id===p.id); return it&&(it.authorEmail||'').toLowerCase()===sellerEmail; });
+    return (purch||[]).some(p=>{ const it=p.authorEmail?p:all.find(x=>x.id===p.id); return it&&(it.authorEmail||'').toLowerCase()===sellerEmail; });
+  },
+  /* Used to decorate a seller's profile, so a purchases read that fails must
+     not stop the profile opening. Unknown answers FALSE - it is also the gate
+     on reviewing a seller, and there the safe reading of "we could not check"
+     is "no", never "yes". */
+  async boughtFrom(sellerEmail){
+    try{ return this._boughtFrom(sellerEmail, await this.purchases()); }
+    catch(e){ return false; }
   },
   async reviewSeller(sellerEmail, stars, text){
     sellerEmail=(sellerEmail||'').toLowerCase();
     if(sellerEmail===this._me()) throw new Error('You can\u2019t review yourself.');
-    if(!(await this.boughtFrom(sellerEmail))) throw new Error('You can only review sellers you\u2019ve bought from.');
+    /* Read directly rather than through boughtFrom, so a request that FAILED is
+       reported as a failure instead of as "you never bought from them" - which
+       would accuse somebody of something untrue about their own account. */
+    if(!this._boughtFrom(sellerEmail, await this.purchases()))
+      throw new Error('You can only review sellers you\u2019ve bought from.');
     const all=this._allReviews(); const list=all[sellerEmail]||[];
     const mine=list.find(r=>(r.by||'').toLowerCase()===this._me());
     const entry={ by:this._me(), byName:this._meName(), stars:Math.max(1,Math.min(5,stars||0)), text:String(text||'').slice(0,1000), ts:Date.now() };
@@ -16813,6 +16840,15 @@ function _mktPurchases(body){
       _mktUsePurchase(it);
     }));
     body.querySelectorAll('.mk-view').forEach(b=>on(b,'click',()=>{ const it=items.find(x=>x.id===b.dataset.mkId); if(it){ it._owned=true; _mktPreview(it); } }));
+  }).catch(e=>{
+    /* "No purchases yet" for somebody who has paid for things is the worst
+       available answer, so a failed read says it failed. */
+    body.innerHTML='<div class="ss2"><h3>Could not load your purchases</h3>'+
+      '<p style="font-size:13px;color:var(--mu);line-height:1.65;margin:0 0 12px">'+
+      escH((e&&e.message)||'AMV could not reach the server.')+
+      ' Everything you have bought is still yours.</p>'+
+      '<button class="btn bs" id="mkt-pur-retry" style="font-size:12px">Try again</button></div>';
+    on($('mkt-pur-retry'),'click',()=>_mktPurchases(body));
   });
 }
 /* After adding a marketplace item to the user's library, take them straight
@@ -17188,6 +17224,15 @@ function _mktSell(body){
       if(!confirm('Remove this listing permanently? Buyers who already own it keep it.')) return;
       try{ await AMVMarket.unlist(b.dataset.slDel); toast('Listing removed','info'); loadMine(); }catch(e){ toast(e.message||'Could not remove','error'); }
     }));
+  }).catch(e=>{
+    /* "No listings yet. Create one above." to a seller whose listings simply
+       could not be fetched invites them to publish a duplicate. */
+    const el=$('sl-mine'); if(!el) return;
+    const sum=$('sl-summary'); if(sum) sum.innerHTML='';
+    el.innerHTML='<div style="color:var(--mu);font-size:12px;line-height:1.6">'+
+      escH((e&&e.message)||'Could not load your listings.')+
+      ' They are still there. <button class="btn bs" id="sl-mine-retry" style="font-size:11.5px;margin-left:6px">Try again</button></div>';
+    on($('sl-mine-retry'),'click',loadMine);
   }); };
   loadMine();
 
@@ -17295,6 +17340,15 @@ function _mktEarnings(body){
       try{ const r=await AMVMarket.withdraw(dest); toast('Withdrawal of $'+r.amount.toFixed(2)+' requested - it\u2019s now processing.','success',5000); _mktEarnings(body); }
       catch(e){ if(btn){btn.disabled=false;btn.textContent='Withdraw';} toast(e.message||'Could not withdraw','error',5000); }
     });
+  }).catch(e=>{
+    /* Never a fabricated zero. The screen says it could not read the balance,
+       which is a different statement from "you are owed nothing". */
+    body.innerHTML='<div class="ss2"><h3>Could not load your earnings</h3>'+
+      '<p style="font-size:13px;color:var(--mu);line-height:1.65;margin:0 0 12px">'+
+      escH((e&&e.message)||'AMV could not reach the server.')+
+      ' Nothing has changed - your balance is whatever it was.</p>'+
+      '<button class="btn bs" id="mkt-earn-retry" style="font-size:12px">Try again</button></div>';
+    on($('mkt-earn-retry'),'click',()=>_mktEarnings(body));
   });
 }
 

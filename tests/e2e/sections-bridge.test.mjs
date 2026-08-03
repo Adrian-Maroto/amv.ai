@@ -61,9 +61,16 @@ section('Empty is reported as empty - never invented');
 });
 
 section('Anything that CHANGES something stops for approval');
-['settings.set_theme', 'settings.set_language', 'memory.add'].forEach(id => {
+/* Changing the theme or the language is not one of those things. Both are
+   instantly visible, instantly reversible, and cost nothing - and asking
+   permission for them trains somebody to approve without reading, which is
+   exactly what makes the prompts that DO matter stop working. Only what is
+   costly or hard to undo asks. */
+['memory.add'].forEach(id => {
   ok(r.risky.includes(id), `${id} is marked high-risk (needs approval)`, r.risky);
 });
+ok(!r.risky.includes('settings.set_theme') && !r.risky.includes('settings.set_language'),
+   'and trivia does not, so the prompts that matter keep their weight', r.risky);
 ok(!r.risky.includes('settings.get') && !r.risky.includes('usage.status'), 'plain reads are NOT gated, so chat stays fast');
 ok(r.lowRiskReads >= 10, 'most of the surface is free, safe reads', r.lowRiskReads);
 
