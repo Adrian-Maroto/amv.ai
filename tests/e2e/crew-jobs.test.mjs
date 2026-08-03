@@ -372,6 +372,61 @@ section('It fits on a phone');
 
 ok(errors.length === 0, 'no console errors along the way', errors.slice(0, 3));
 
+section('A job says where it will actually run');
+{
+  /* "Added to Running jobs - Autonomous" is a promise that AMV completes and
+     sends it on its own each time. That is only true once the SERVER knows
+     about it: the local schedule is walked by _runDueAuto in this browser, so a
+     job that never reached the server runs when AMV happens to be open and not
+     otherwise. The registration was fired and forgotten and the success message
+     went out either way. */
+  const r = await page.evaluate(async () => {
+    const realBase = AMV_API.base, realTok = AMV_API.token, realFetch = AMV_API._fetch;
+    const out = {};
+
+    // 1. No backend at all: nothing was registered anywhere.
+    AMV_API.base = '';
+    out.noBackend = _mcWhereItRuns(await _mcScheduleServer({ goal: 'x', freq: 'daily' }));
+
+    // 2. Backend present but refusing.
+    AMV_API.base = 'https://api.test'; AMV_API.token = 't';
+    AMV_API._fetch = async () => ({ ok: false, json: async () => ({ error: 'scheduler off' }) });
+    out.refused = _mcWhereItRuns(await _mcScheduleServer({ goal: 'x', freq: 'daily' }));
+
+    // 3. Registered for real.
+    AMV_API._fetch = async () => ({ ok: true, json: async () => ({ ok: true }) });
+    const good = await _mcScheduleServer({ goal: 'x', freq: 'daily' });
+    out.okRes = good.ok; out.okText = _mcWhereItRuns(good);
+
+    AMV_API.base = realBase; AMV_API.token = realTok; AMV_API._fetch = realFetch;
+    return out;
+  });
+
+  ok(/only while AMV is open/i.test(r.noBackend),
+     'with no engine connected, it says the job runs only while AMV is open', r.noBackend);
+  ok(/not connected/i.test(r.noBackend), 'and why', r.noBackend);
+  ok(/could NOT be registered/i.test(r.refused),
+     'a refused registration is stated, not swallowed', r.refused);
+  ok(/scheduler off/.test(r.refused), 'with the reason the server gave', r.refused);
+  ok(r.okRes === true && r.okText === '',
+     'and a job that really registered adds no caveat at all', r);
+}
+
+section('Turning an approval into a recurring job answers the same question');
+{
+  /* Three callers read _apvRegisterRecur, and one checked it for truthiness.
+     Once it became async, a bare promise would be truthy every time - so every
+     caller would have claimed the job was scheduled, including when there was
+     nothing recurring to schedule. */
+  const r = await page.evaluate(async () => {
+    const none = await _apvRegisterRecur({ title: 'no recurrence here' });
+    return { ok: none.ok, code: none.code, isObject: typeof none === 'object' };
+  });
+  ok(r.isObject === true, 'it always answers with a result, never a bare boolean', r);
+  ok(r.ok === false && r.code === 'none',
+     'and nothing recurring is reported as nothing, not as scheduled', r);
+}
+
 await app.close();
 if (report('crew-jobs') > 0) process.exitCode = 1;
 done();

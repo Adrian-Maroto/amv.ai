@@ -20571,6 +20571,32 @@ async function _clarifyCheck(goal){
   return { ok: qs.length===0, questions: qs };
 }
 /* Turn a recurring command into a running job, asking how it should run. */
+/* Register a scheduled job on the SERVER, which is the only thing that makes it
+   run while AMV is closed. The local schedule is walked by _runDueAuto in this
+   browser, so a job that never reached the server runs only when the app
+   happens to be open - which is not what "Running jobs" or "Autonomous" mean.
+   It used to be fired and forgotten, and the success message went out either
+   way. Returns what actually happened so the caller can say it. */
+async function _mcScheduleServer(payload){
+  if(!(window.AMV_API && AMV_API.live && typeof AMV_API._fetch==='function'))
+    return { ok:false, code:'needs_service' };
+  try{
+    const r = await AMV_API._fetch('/api/schedule/create',{ method:'POST', body:JSON.stringify(payload) });
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok || d.error) return { ok:false, code:d.code||'failed', error:d.error||'' };
+    return { ok:true };
+  }catch(e){ return { ok:false, code:'failed', error:(e&&e.message)||'' }; }
+}
+/* One sentence for where a just-created job will actually run. */
+function _mcWhereItRuns(res){
+  if(res.ok) return '';
+  return res.code === 'needs_service'
+    ? ' It runs only while AMV is open, because the AMV engine is not connected yet.'
+    : ' It could NOT be registered to run in the background' + (res.error ? ' (' + res.error + ')' : '')
+      + ', so for now it runs only while AMV is open.';
+}
+try{ window._mcScheduleServer=_mcScheduleServer; window._mcWhereItRuns=_mcWhereItRuns; }catch(e){}
+
 function _mcAskRecurring(box, instruction, when){
   box.innerHTML='<div class="mc-cmd-msg ask">'+
     '<div class="mc-ask-h">This looks like recurring work - '+escH(when.label)+'.</div>'+
@@ -20582,14 +20608,16 @@ function _mcAskRecurring(box, instruction, when){
     '<div class="mc-cmd-actions"><button class="btn mc-mini bp" id="mc-ask-schedule">Add to Running jobs</button><button class="btn mc-mini ghost" id="mc-ask-cancel">Cancel</button></div>'+
   '</div>';
   on($('mc-ask-cancel'),'click',()=>{ box.innerHTML=''; });
-  on($('mc-ask-schedule'),'click',()=>{
+  on($('mc-ask-schedule'),'click',async()=>{
     const mode=(document.querySelector('input[name="mcmode"]:checked')||{}).value||'require';
     const item={id:'a'+Date.now(), goal:instruction, approval:mode, created:Date.now(), lastRun:null};
     if(when.sched){ item.sched=when.sched; item.next=_schedNext(when.sched,Date.now()); }
     else { item.freq=when.freq||'daily'; item.next=_freqNext(item.freq,Date.now()); }
     const list=_loadSched(); list.push(item); _saveSched(list);
-    if(window.AMV_API && AMV_API.live && typeof AMV_API._fetch==='function'){ try{ AMV_API._fetch('/api/schedule/create',{method:'POST',body:JSON.stringify({goal:instruction,sched:item.sched,freq:item.freq,approval:mode})}).catch(()=>{}); }catch(e){} }
-    toast('Added to Running jobs - '+when.label+(mode==='auto'?' · Autonomous':' · Ask first'),'success',4200);
+    const btn=$('mc-ask-schedule'); if(btn){ btn.disabled=true; btn.textContent='Adding…'; }
+    const res = await _mcScheduleServer({ goal:instruction, sched:item.sched, freq:item.freq, approval:mode });
+    toast('Added to Running jobs - '+when.label+(mode==='auto'?' · Autonomous':' · Ask first')+_mcWhereItRuns(res),
+          res.ok?'success':'info', res.ok?4200:7000);
     renderCrewView();
   });
 }
@@ -21382,8 +21410,13 @@ function _apvCollectEdit(id){
 /* If the edit set a recurring "when", register it as scheduled work so it shows
    in Scheduled and actually recurs (backend when connected). Returns true if it
    became a schedule. */
-function _apvRegisterRecur(a){
-  if(!a._recur) return false;
+/* Always returns a result OBJECT, never a bare boolean - three callers read
+   this, and one of them was checking it for truthiness. Once it became async a
+   bare promise would have been truthy every time, so every caller would have
+   claimed the job was scheduled. `code:'none'` means there was nothing
+   recurring to register at all. */
+async function _apvRegisterRecur(a){
+  if(!a._recur) return { ok:false, code:'none' };
   const list=_loadSched();
   const isEmail=(a.result&&a.result.type)==='email';
   const desc=isEmail?('Send email “'+(a.result.subject||a.title||'')+'” to '+(a.destination||a.result.to||'recipients')):('Do: '+(a.title||'task'));
@@ -21391,18 +21424,33 @@ function _apvRegisterRecur(a){
   if(a._recur.sched){ item.sched=a._recur.sched; item.next=_schedNext(a._recur.sched,Date.now()); }
   else { item.freq=a._recur.freq||'daily'; item.next=_freqNext(item.freq,Date.now()); }
   list.push(item); _saveSched(list);
-  if(window.AMV_API && AMV_API.live && typeof AMV_API._fetch==='function'){ try{ AMV_API._fetch('/api/schedule/create',{method:'POST',body:JSON.stringify({goal:desc,sched:item.sched,freq:item.freq,approval:item.approval,payload:isEmail?{type:'email',result:a.result,to:a.destination,from:a.account}:null})}).catch(()=>{}); }catch(e){} }
-  return true;
+  /* Registered on the server, and the caller is told whether that worked -
+     a recurring job that only exists in this browser runs when AMV is open and
+     not otherwise, which is the opposite of what scheduling one means. */
+  return _mcScheduleServer({ goal:desc, sched:item.sched, freq:item.freq, approval:item.approval,
+    payload:isEmail?{type:'email',result:a.result,to:a.destination,from:a.account}:null });
 }
-function _apvEditSave(id){
+async function _apvEditSave(id){
   const a=_apvCollectEdit(id); if(!a){ apvClose(); return; } apvClose();
-  if(a._recur && _apvRegisterRecur(a)){ _cwSaveApprovals(_cwApprovals().filter(x=>x.id!==a.id)); toast('Scheduled - '+(a.scheduledAt||'recurring'),'success'); }
+  if(a._recur){
+    const res = await _apvRegisterRecur(a);
+    _cwSaveApprovals(_cwApprovals().filter(x=>x.id!==a.id));
+    toast('Scheduled - '+(a.scheduledAt||'recurring')+_mcWhereItRuns(res),
+          res.ok?'success':'info', res.ok?3500:7000);
+  }
   else toast('Changes saved','success');
   if(S.tab==='crew') renderCrewView();
 }
-function _apvEditSend(id){
+async function _apvEditSend(id){
   const a=_apvCollectEdit(id); if(!a){ apvClose(); return; } apvClose();
-  if(a._recur && _apvRegisterRecur(a)){ _cwSaveApprovals(_cwApprovals().filter(x=>x.id!==a.id)); toast('Scheduled - '+(a.scheduledAt||'recurring'),'success'); if(S.tab==='crew') renderCrewView(); return; }
+  if(a._recur){
+    const res = await _apvRegisterRecur(a);
+    _cwSaveApprovals(_cwApprovals().filter(x=>x.id!==a.id));
+    toast('Scheduled - '+(a.scheduledAt||'recurring')+_mcWhereItRuns(res),
+          res.ok?'success':'info', res.ok?3500:7000);
+    if(S.tab==='crew') renderCrewView();
+    return;
+  }
   _apvDoApprove(a);
 }
 function _apvEditDelete(id){ if(!confirm('Delete this - it won’t be sent?')) return; apvClose(); cwReject(id); }
