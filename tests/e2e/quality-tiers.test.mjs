@@ -430,6 +430,13 @@ section('Nothing quietly defaults to the dearest engine');
   ok(pinned.length === 0,
      'no call site falls back to or pins the most expensive engine', pinned);
 
+  /* The same default wearing a different name. MODELS.smart IS apex, so
+     `MODELS[x] || MODELS.smart` is the identical bug and the literal check
+     above sails straight past it - which it did, until this was added. */
+  const bySmart = lines.filter(l => /\|\|\s*MODELS\.smart/.test(l)).map(l => l.trim().slice(0, 100));
+  ok(bySmart.length === 0,
+     'and none reaches it through MODELS.smart either', bySmart);
+
   const r = await page.evaluate(() => {
     // An engine AMV does not recognise must not resolve to the dearest one.
     const real = S.model; S.model = 'something-stale';

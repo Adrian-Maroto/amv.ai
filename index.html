@@ -12960,7 +12960,7 @@ async function _callAI(msgs, _opts) {
   // RULE 7+8: route to the cheapest capable model when on Auto (saves ~5-20x on simple tasks)
   let _routeKey=S.model;
   if(S.model==='auto'){ _routeKey=_routeModel(msgs); }
-  AEGIS.log('request',{model:(MODELS[_routeKey]||MODELS.smart).model, msgCount:msgs.length, routed:S.model==='auto'});
+  AEGIS.log('request',{model:(MODELS[_routeKey]||MODELS.core).model, msgCount:msgs.length, routed:S.model==='auto'});
   let _inTok=0,_outTok=0;
   // Record usage exactly once, no matter how the stream ends (success, error, or
   // user-stop). Prevents lost usage accounting when a stream is interrupted after
@@ -12969,10 +12969,13 @@ async function _callAI(msgs, _opts) {
   const _recordUsageOnce=()=>{
     if(_usageRecorded) return; _usageRecorded=true;
     if(!_inTok && !_outTok) return; // nothing consumed
-    try{ AEGIS.recordUsage((MODELS[_routeKey]||MODELS.smart).model, _inTok, _outTok); }catch(e){}
+    /* The same fallback the REQUEST uses, so what is billed matches what ran.
+       Both used to fall back to smart, which is apex - so an unrecognised route
+       both sent the dearest engine and then priced the turn at its rate. */
+    try{ AEGIS.recordUsage((MODELS[_routeKey]||MODELS.core).model, _inTok, _outTok); }catch(e){}
     try{ AMVUsage.record((_inTok||0)+(_outTok||0)); }catch(e){}
   };
-  const mdl=MODELS[_routeKey]||MODELS.smart;
+  const mdl=MODELS[_routeKey]||MODELS.core;
   const _mems=(loadStr('amv_cap_memory')!=='0')?_relevantMemories(msgs):[];
   const _agenticSys = '\n\nYOU CAN ACTUALLY DO THINGS - you are not limited to describing them. You have real tools:\n'+
     '\u2022 generate_image - when they want a picture, logo, poster, mockup, or any visual, CREATE it.\n'+
@@ -13398,7 +13401,7 @@ function copyMsg(text) {
 function renderChatView() {
   const vc=$('vc'); if(!vc) return;
   // Current model info
-  const mdl=MODELS[S.model]||MODELS.smart;
+  const mdl=MODELS[S.model]||MODELS.core;
   vc.innerHTML=
     '<div id="cv">'+
       '<div id="cm" data-no-i18n></div>'+
