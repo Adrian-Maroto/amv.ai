@@ -55,6 +55,36 @@ section('Anything that executes or publishes is gated');
      'no tool runs code or publishes without asking first', ungated);
 }
 
+section('And every tool has been classified either way');
+{
+  /* The rule above only catches a tool that calls one of three known-dangerous
+     things. A new tool that reaches a third party some other way - sending
+     mail, moving money, posting somewhere - would sail past it, because the
+     rule describes today's hazards rather than requiring a decision.
+
+     So this is the stronger, exhaustive form used elsewhere in this suite:
+     every declared tool is either in the consent map or named here as safe,
+     with the reason. Adding a tool means adding a line, which means somebody
+     thought about whether it needs permission. */
+  const SAFE_WITHOUT_ASKING = {
+    generate_image: 'produces a picture shown to the person who asked; nothing leaves AMV',
+    generate_video: 'the same, metered by the plan allowance',
+    build_app:      'writes a page into the conversation, and publishing it is a separate gated tool',
+  };
+  const unclassified = toolNames
+    .filter(n => !consented.has(n) && !(n in SAFE_WITHOUT_ASKING))
+    .sort();
+  ok(unclassified.length === 0,
+     'no tool is added without deciding whether it needs permission', unclassified);
+
+  /* And the safe list cannot quietly cover something that has since become
+     dangerous. */
+  const nowDangerous = Object.keys(SAFE_WITHOUT_ASKING)
+    .filter(n => /runCode\(|autoDebug\(|_deployApi\(/.test(toolBody(n)));
+  ok(nowDangerous.length === 0,
+     'and nothing excused as safe has since started executing or publishing', nowDangerous);
+}
+
 section('And the three known ones have not quietly left the map');
 {
   ['deploy_site', 'run_code', 'fix_code'].forEach(n => {
