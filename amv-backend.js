@@ -1505,7 +1505,11 @@ async function deployDelete(request, env){
   const rec  = await DB.get(env, 'site', slug);
   if(!rec || rec.owner !== owner) return json({ error:'not found' }, 404);
 
-  await env.AMV_KV.delete('site:' + slug);
+  /* Through DB, not straight at KV. serveSite READS through DB, so on a
+     deployment backed by D1 this deleted a KV key that was never there and left
+     the D1 row untouched - the page carried on serving, publicly, after its
+     owner took it down. Undoing a publish has to actually unpublish. */
+  await DB.del(env, 'site', slug);
   const idx = (await DB.get(env, 'sites', owner)) || { slugs: [] };
   idx.slugs = (idx.slugs||[]).filter(x=>x!==slug);
   await DB.put(env, 'sites', owner, idx);
@@ -2920,7 +2924,9 @@ async function abuseClear(request, env){
   if(!email) return json({ error:'email required' }, 400);
   const rec = await DB.get(env, 'abuse', email);
   if(!rec) return json({ error:'not found' }, 404);
-  if(body.remove){ await env.AMV_KV.delete('abuse:'+email); }
+  /* Same mismatch: abuse records are written through DB, so clearing one has to
+     go through DB or the flag survives on D1 and the account stays marked. */
+  if(body.remove){ await DB.del(env, 'abuse', email); }
   else { rec.blocked = false; rec.clearedAt = Date.now(); await DB.put(env, 'abuse', email, rec); }
   audit(env, 'abuse_cleared', { email, removed: !!body.remove });
   return json({ ok:true });
