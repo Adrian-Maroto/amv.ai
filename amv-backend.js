@@ -76,6 +76,16 @@ const ENGINES = {
   'amv-forge': { model: 'claude-opus-5',             minPlan: 'pro',   inCost: 5,  outCost: 25,  maxOut: 32000, cacheMin: 512,  thinking: true, effort: 'high' },
   'amv-apex':  { model: 'claude-fable-5',            minPlan: 'elite', inCost: 10, outCost: 50,  maxOut: 32000, cacheMin: 512,  thinking: true, effort: 'high' },
 };
+/* The model behind a tier, read from the one place that defines it.
+   Three worker paths hardcoded a model id instead - the browser agent's
+   per-step decision (up to WEB_MAX_STEPS calls per run), the SMS agent, and the
+   chat default. Retuning ENGINES therefore missed exactly the paths that fire
+   most often, which is the opposite of what a tier table is for: switching to a
+   cheaper provider has to be one edit, not a hunt for literals. */
+function engineModel(key){
+  const e = ENGINES[key] || ENGINES['amv-core'];
+  return e.model;
+}
 // Map every form the frontend might send -> canonical engine key. The picker
 // sends the real model string today, but we also accept the short keys
 // (fast/core/coding/smart), the amv-* names, and 'auto' (smart routing ->
@@ -1783,7 +1793,9 @@ const _WEB_OBSERVE = "(() => {" +
 /* Ask the model for exactly one next action - a single auditable decision point. */
 async function _webAskModel(env, sys, prompt){
   try{
-    const r = await _modelFetch(env, { model:'claude-haiku-4-5-20251001', max_tokens:400, system:sys,
+    /* The cheapest tier by design: this is a routing decision, not the answer.
+       Read from ENGINES so it moves with the tier table. */
+    const r = await _modelFetch(env, { model: engineModel('amv-pulse'), max_tokens:400, system:sys,
       messages:[{ role:'user', content:prompt }] });
     const d = await r.json();
     const txt = (d && d.content && d.content[0] && d.content[0].text) || '';
@@ -5364,7 +5376,7 @@ async function aiProxy(request, env, ctx) {
   const _reqId = /^[A-Za-z0-9_-]{6,64}$/.test(_rawId) ? _rawId : '';
 
   // resolve requested engine
-  const rawModel = body.model || 'claude-sonnet-5';
+  const rawModel = body.model || 'amv-core';
   const limits = effectiveLimits(user);
   /* 'auto' is routed for real (AMV-065), not aliased to one engine. The plan
      ceiling is applied inside the router, and the choice is reported back so
@@ -6813,7 +6825,7 @@ async function smsIncoming(request, env, ctx) {
 async function runSmsAgent(text, env) {
   const sys = 'You are AMV over SMS. Reply in plain text, no markdown, concise (a few sentences max, fits in a text message). The user may ask you to check tasks, summarize, draft, or answer questions. Be direct and useful. Never use em or en dashes; use a plain hyphen (-) instead. ACCURACY: never invent facts, numbers, prices, dates or sources, and never say you did something (checked, sent, booked, completed) unless it actually happened. If you are unsure or cannot verify, say so briefly instead of guessing.';
   const resp = await _modelFetch(env, {
-    model: 'claude-haiku-4-5-20251001', // cheapest capable - SMS is short Q&A
+    model: engineModel('amv-pulse'), // cheapest tier - SMS is short Q&A
     max_tokens: 400,
     system: sys,
     messages: [{ role: 'user', content: text }],
