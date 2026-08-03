@@ -942,8 +942,20 @@ function _billingTxnsHTML(){
     '<div class="bill-txn-list">'+txns.slice(0,60).map(t=>{
       let d=''; try{ d=new Date(t.ts).toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'}); }catch(e){}
       const kind=t.type==='subscription'?'Subscription':t.type==='marketplace'?'Marketplace':'Payment';
-      const st=t.status==='pending'?'<span class="bill-txn-st pending">Pending</span>':t.status==='refunded'?'<span class="bill-txn-st refunded">Refunded</span>':'<span class="bill-txn-st paid">Paid</span>';
-      return '<div class="bill-txn-row"><div class="bill-txn-b"><div class="bill-txn-t">'+escH(t.title||kind)+'</div><div class="bill-txn-m">'+kind+' · '+escH(d)+'</div></div><div class="bill-txn-amt">'+money(t.amount)+'</div>'+st+'</div>';
+      /* A checkout that was opened and never came back stayed "Pending" for
+         ever, so an abandoned purchase looked like a charge in flight - on the
+         one screen somebody checks to find out what they have been billed.
+         After a few hours it is no longer pending anything; it is unconfirmed,
+         and the honest thing is to say that AMV cannot tell from here and point
+         at the list that does know. */
+      const STALE=6*3600000;
+      const stale=t.status==='pending' && (Date.now()-(+t.ts||0))>STALE;
+      const st=stale?'<span class="bill-txn-st unconfirmed">Not confirmed</span>'
+        :t.status==='pending'?'<span class="bill-txn-st pending">Pending</span>'
+        :t.status==='refunded'?'<span class="bill-txn-st refunded">Refunded</span>'
+        :'<span class="bill-txn-st paid">Paid</span>';
+      const note=stale?'<div class="bill-txn-note">Checkout was opened but never confirmed here. If it went through, the item is in your Purchases - nothing is charged twice.</div>':'';
+      return '<div class="bill-txn-row"><div class="bill-txn-b"><div class="bill-txn-t">'+escH(t.title||kind)+'</div><div class="bill-txn-m">'+kind+' · '+escH(d)+'</div>'+note+'</div><div class="bill-txn-amt">'+money(t.amount)+'</div>'+st+'</div>';
     }).join('')+'</div></div>';
 }
 window._billingTxnsHTML=_billingTxnsHTML;

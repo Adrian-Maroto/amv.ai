@@ -7652,3 +7652,25 @@ html,body{height:100%;height:100dvh}
 @media (pointer: coarse), (max-width: 560px){
   .dev-send{ width:38px; height:38px; }
 }
+
+/* ============================================================
+   LAYER A58 - A checkout that never came back
+
+   An external checkout recorded a pending transaction and nothing ever
+   settled it, so a purchase that COMPLETED read "Pending" for ever, and an
+   abandoned one looked like a charge still in flight. The completed case is
+   now settled on return; this is the other one - said plainly, on the screen
+   somebody checks to find out what they have been billed.
+   ============================================================ */
+.bill-txn-st.unconfirmed{
+  color: var(--mu);
+  background: var(--wait-soft, rgba(125,138,163,.16));
+  border: 1px solid var(--bdl);
+}
+.bill-txn-note{
+  font-size: var(--t-xs);
+  color: var(--mu);
+  line-height: 1.5;
+  margin-top: var(--sp-1);
+  max-width: 46ch;
+}

@@ -8439,6 +8439,21 @@ function _mktBrowse(body){
 function _txnKey(){ return ((S.user&&S.user.email)||'you@amv.local').toLowerCase(); }
 function _loadTxns(){ try{ const m=load('amv_txns')||{}; return m[_txnKey()]||[]; }catch(e){ return []; } }
 function _recordTxn(t){ try{ const m=load('amv_txns')||{}; const arr=m[_txnKey()]||[]; arr.unshift(Object.assign({id:'tx'+Date.now().toString(36), ts:Date.now(), status:'paid', method:'card'}, t)); m[_txnKey()]=arr.slice(0,200); store('amv_txns',m); }catch(e){} }
+/* Settle the marketplace purchase that is waiting on an external checkout.
+   Nothing did this, so a purchase that COMPLETED still read "Pending" in the
+   transaction list for ever - a screen about what somebody has been charged,
+   permanently wrong about a charge that went through. */
+function _settleMarketTxn(status){
+  try{
+    const m=load('amv_txns')||{}; const arr=m[_txnKey()]||[];
+    const t=arr.find(x=>x && x.type==='marketplace' && x.status==='pending');
+    if(!t) return false;
+    t.status=status||'paid'; t.settledAt=Date.now();
+    m[_txnKey()]=arr; store('amv_txns',m);
+    return true;
+  }catch(e){ return false; }
+}
+try{ window._settleMarketTxn=_settleMarketTxn; }catch(e){}
 window._recordTxn=_recordTxn;
 
 /* A clear payment screen for a paid marketplace item - shows exactly what
@@ -10616,8 +10631,20 @@ function _billingTxnsHTML(){
     '<div class="bill-txn-list">'+txns.slice(0,60).map(t=>{
       let d=''; try{ d=new Date(t.ts).toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'}); }catch(e){}
       const kind=t.type==='subscription'?'Subscription':t.type==='marketplace'?'Marketplace':'Payment';
-      const st=t.status==='pending'?'<span class="bill-txn-st pending">Pending</span>':t.status==='refunded'?'<span class="bill-txn-st refunded">Refunded</span>':'<span class="bill-txn-st paid">Paid</span>';
-      return '<div class="bill-txn-row"><div class="bill-txn-b"><div class="bill-txn-t">'+escH(t.title||kind)+'</div><div class="bill-txn-m">'+kind+' · '+escH(d)+'</div></div><div class="bill-txn-amt">'+money(t.amount)+'</div>'+st+'</div>';
+      /* A checkout that was opened and never came back stayed "Pending" for
+         ever, so an abandoned purchase looked like a charge in flight - on the
+         one screen somebody checks to find out what they have been billed.
+         After a few hours it is no longer pending anything; it is unconfirmed,
+         and the honest thing is to say that AMV cannot tell from here and point
+         at the list that does know. */
+      const STALE=6*3600000;
+      const stale=t.status==='pending' && (Date.now()-(+t.ts||0))>STALE;
+      const st=stale?'<span class="bill-txn-st unconfirmed">Not confirmed</span>'
+        :t.status==='pending'?'<span class="bill-txn-st pending">Pending</span>'
+        :t.status==='refunded'?'<span class="bill-txn-st refunded">Refunded</span>'
+        :'<span class="bill-txn-st paid">Paid</span>';
+      const note=stale?'<div class="bill-txn-note">Checkout was opened but never confirmed here. If it went through, the item is in your Purchases - nothing is charged twice.</div>':'';
+      return '<div class="bill-txn-row"><div class="bill-txn-b"><div class="bill-txn-t">'+escH(t.title||kind)+'</div><div class="bill-txn-m">'+kind+' · '+escH(d)+'</div>'+note+'</div><div class="bill-txn-amt">'+money(t.amount)+'</div>'+st+'</div>';
     }).join('')+'</div></div>';
 }
 window._billingTxnsHTML=_billingTxnsHTML;
@@ -11564,6 +11591,10 @@ function _checkPayReturn(){
     const bought=q.get('bought');
     if(bought){
       history.replaceState(null,'',window.location.pathname);
+      /* The purchase that was left "pending" when checkout opened has now
+         completed, so the transaction list is told. Without this a successful
+         marketplace purchase read as Pending for ever. */
+      try{ if(typeof _settleMarketTxn==='function') _settleMarketTxn('paid'); }catch(e){}
       S._mktTab='purchases'; setTab('market');
       toast('Purchase complete - it\u2019s in your purchases, ready to use.','success',5000);
       // entitlement is granted by the webhook; give it a moment then refresh

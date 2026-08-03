@@ -360,6 +360,10 @@ function _checkPayReturn(){
     const bought=q.get('bought');
     if(bought){
       history.replaceState(null,'',window.location.pathname);
+      /* The purchase that was left "pending" when checkout opened has now
+         completed, so the transaction list is told. Without this a successful
+         marketplace purchase read as Pending for ever. */
+      try{ if(typeof _settleMarketTxn==='function') _settleMarketTxn('paid'); }catch(e){}
       S._mktTab='purchases'; setTab('market');
       toast('Purchase complete - it\u2019s in your purchases, ready to use.','success',5000);
       // entitlement is granted by the webhook; give it a moment then refresh

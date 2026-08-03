@@ -248,6 +248,21 @@ function _mktBrowse(body){
 function _txnKey(){ return ((S.user&&S.user.email)||'you@amv.local').toLowerCase(); }
 function _loadTxns(){ try{ const m=load('amv_txns')||{}; return m[_txnKey()]||[]; }catch(e){ return []; } }
 function _recordTxn(t){ try{ const m=load('amv_txns')||{}; const arr=m[_txnKey()]||[]; arr.unshift(Object.assign({id:'tx'+Date.now().toString(36), ts:Date.now(), status:'paid', method:'card'}, t)); m[_txnKey()]=arr.slice(0,200); store('amv_txns',m); }catch(e){} }
+/* Settle the marketplace purchase that is waiting on an external checkout.
+   Nothing did this, so a purchase that COMPLETED still read "Pending" in the
+   transaction list for ever - a screen about what somebody has been charged,
+   permanently wrong about a charge that went through. */
+function _settleMarketTxn(status){
+  try{
+    const m=load('amv_txns')||{}; const arr=m[_txnKey()]||[];
+    const t=arr.find(x=>x && x.type==='marketplace' && x.status==='pending');
+    if(!t) return false;
+    t.status=status||'paid'; t.settledAt=Date.now();
+    m[_txnKey()]=arr; store('amv_txns',m);
+    return true;
+  }catch(e){ return false; }
+}
+try{ window._settleMarketTxn=_settleMarketTxn; }catch(e){}
 window._recordTxn=_recordTxn;
 
 /* A clear payment screen for a paid marketplace item - shows exactly what
