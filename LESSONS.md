@@ -942,3 +942,30 @@ points at the list that does know.
 Whenever a flow leaves the app and is meant to come back, ask what writes the
 final state - and if the answer is "the return path", check the return path
 actually does it.
+
+## 97. A check that knows one spelling of a defect is not coverage of the defect
+A standing check was added asserting that no call site falls back to the most
+expensive engine. It greps the built bundle for the apex literal. It passed.
+
+Four instances of exactly that defect were in the file it reads, spelled
+`MODELS[x] || MODELS.smart` - and `MODELS.smart` IS apex. Three of them decided
+what a chat turn actually sent, so an unrecognised route ran on the dearest
+engine; the fourth priced the turn for the usage screen with the same fallback,
+so the accounting agreed with the request and both were wrong together.
+
+The check was not wrong about what it tested. It was wrong about what it
+implied, which is the more dangerous kind of wrong, because a passing check
+ends the search. Two rules follow:
+
+- Before trusting a new check, ask how ELSE the defect could be written, and
+  test that spelling too. Identifiers, aliases, indirection through a constant,
+  and the same value reached from a different map are all the same bug.
+- Sabotage-test every standing check in each spelling it claims to cover. This
+  file already records three checks that could never fail; this is the next
+  category along - checks that CAN fail, but only for the one phrasing their
+  author happened to picture.
+
+The same applies to the greps used to FIND defects, not only the ones left
+behind to guard them. The sweep that found six instances of rule 94 searched
+`catch(e){ return <value> }`; it would not have found the same fabrication
+written as `.then(x => x || [])`.

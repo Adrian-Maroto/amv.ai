@@ -153,6 +153,53 @@ section('It fits on a phone');
 
 ok(errors.length === 0, 'no console errors along the way', errors.slice(0, 3));
 
+section('"Could not check" is not the same nothing as "you have none"');
+{
+  /* The panel renders nothing when there is nothing, deliberately - an empty
+     "Running on the server" box reads as set-up-and-idle. But a failed READ
+     produced that identical nothing, so somebody with jobs running was shown
+     the same blank as somebody who had never scheduled one, and the obvious
+     next move is to schedule a duplicate. */
+  const r = await page.evaluate(async () => {
+    const realBase = AMV_API.base, realTok = AMV_API.token, realFetch = window.fetch;
+    AMV_API.base = 'https://api.test'; AMV_API.token = 't';
+    window.fetch = async () => { throw new Error('network down'); };
+    _AUTOS = []; _AUTO_RESULTS = [];
+    await _autoRefresh();
+    window.fetch = realFetch;
+    const st = _autoLoadState();
+    const html = _autoServerHTML();
+    AMV_API.base = realBase; AMV_API.token = realTok;
+    return { err: st.error, html };
+  });
+  ok(!!r.err, 'a failed read is recorded as a failure', r.err);
+  ok(r.html.length > 0, 'and the panel is not silently absent', r.html.length);
+  ok(/could not check/i.test(r.html), 'it says AMV could not check', r.html.slice(0, 160));
+  ok(/still running/i.test(r.html),
+     'and that anything already scheduled is unaffected', r.html.slice(0, 220));
+  ok(/not a list of nothing/i.test(r.html),
+     'making the distinction explicit rather than leaving it to be inferred', true);
+  ok(/data-asrv-retry/.test(r.html), 'with a retry, so it is a control not a sentence', true);
+}
+
+section('Never scheduling anything still shows nothing at all');
+{
+  /* The fix must not invent a problem for the ordinary case. */
+  const r = await page.evaluate(async () => {
+    const realBase = AMV_API.base, realTok = AMV_API.token, realFetch = window.fetch;
+    AMV_API.base = 'https://api.test'; AMV_API.token = 't';
+    window.fetch = async () => ({ ok: true, status: 200, headers: new Headers(),
+      json: async () => ({ ok: true, items: [], results: [] }) });
+    await _autoRefresh();
+    window.fetch = realFetch;
+    const out = { err: _autoLoadState().error, html: _autoServerHTML() };
+    AMV_API.base = realBase; AMV_API.token = realTok;
+    return out;
+  });
+  ok(!r.err, 'a successful empty read is not an error', r.err);
+  ok(r.html === '', 'and renders no section at all, as before', r.html.slice(0, 80));
+}
+
 await app.close();
 if (report('tasks-server-jobs') > 0) process.exitCode = 1;
 done();

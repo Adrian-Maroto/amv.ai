@@ -1292,11 +1292,17 @@ async function _scheduleTask(t){
 // Pull the user's automations + any results that ran while they were away.
 let _AUTOS = [];
 let _AUTO_RESULTS = [];
+/* Whether the list on screen reflects a successful read. Without this, a
+   refresh that FAILED is indistinguishable from an account that has never
+   scheduled anything - the screen shows the same nothing for both, and somebody
+   with jobs running is invited to set them up again. */
+let _AUTO_LOADED = false, _AUTO_LOAD_ERR = '';
 async function _autoRefresh(){
   try{
     const d = await _autoApi('/auto/list', {});
     _AUTOS = d.items || [];
     _AUTO_RESULTS = d.results || [];
+    _AUTO_LOADED = true; _AUTO_LOAD_ERR = '';
     if(typeof d.emailReady === 'boolean') _AUTO_EMAIL_READY = d.emailReady;
     if(typeof d.canSchedule === 'boolean') _AUTO_CAN_SCHEDULE = d.canSchedule;
     const unread = _AUTO_RESULTS.filter(r=>!r.read);
@@ -1309,8 +1315,15 @@ async function _autoRefresh(){
        screen that was not repainted. */
     try{ if(S.tab==='tasks') renderTasksView(); }catch(e){}
     return d;
-  }catch(e){ return null; }
+  }catch(e){
+    /* Not connected yet is not a failed read - there is genuinely nothing to
+       show, and saying "could not check" would invent a problem. */
+    if(!(e && e.message === 'not-connected')) _AUTO_LOAD_ERR = (e && e.message) || 'could not be reached';
+    try{ if(S.tab==='tasks') renderTasksView(); }catch(_){}
+    return null;
+  }
 }
+try{ window._autoLoadState = () => ({ loaded:_AUTO_LOADED, error:_AUTO_LOAD_ERR }); }catch(e){}
 function _autoBadge(n){
   try{
     const nav=document.querySelector('[data-tab="automation"], [data-tab="tasks"]');

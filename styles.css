@@ -7674,3 +7674,22 @@ html,body{height:100%;height:100dvh}
   margin-top: var(--sp-1);
   max-width: 46ch;
 }
+
+/* ============================================================
+   LAYER A59 - "could not check" is not "you have none"
+
+   The server-jobs panel correctly renders nothing when there is nothing,
+   because an empty box reads as "set up and idle". But a failed READ produced
+   the same nothing, which tells somebody with jobs running that they have
+   none - and invites them to schedule a duplicate.
+   ============================================================ */
+.asrv-failed{
+  font-size: var(--t-sm);
+  color: var(--mu);
+  line-height: 1.6;
+  padding: var(--sp-3);
+  border: 1px solid var(--bdl);
+  border-radius: var(--r-md);
+  background: var(--s2);
+}
+.asrv-failed .btn{ margin-left: var(--sp-2); }

@@ -901,7 +901,17 @@ function _autoServerHTML(){
   /* No section at all when there is nothing. An empty "Running on the server"
      box reads as "set up and idle", which is a different state from "you have
      never scheduled anything" and would be a quiet lie about the former. */
-  if(!jobs.length && !results.length) return '';
+  if(!jobs.length && !results.length){
+    /* Except when the read FAILED. Then the same nothing means something
+       different, and showing it silently tells somebody with jobs running that
+       they have none - which is how they end up scheduling a duplicate. */
+    const st = (typeof _autoLoadState === 'function') ? _autoLoadState() : { error:'' };
+    if(!st.error) return '';
+    return '<section class="uniq-sec asrv"><div class="sec-head"><h3>Running on the server</h3></div>'
+      +'<div class="asrv-failed">AMV could not check what is scheduled ('+escH(String(st.error))+'). '
+      +'Anything already running is still running - this is not a list of nothing. '
+      +'<button class="btn bs" data-asrv-retry="1" style="font-size:11.5px">Try again</button></div></section>';
+  }
 
   const jobRows = jobs.map(it=>{
     /* An investing check-in reads accounts directly. Calling that "writes a
@@ -953,6 +963,15 @@ function _autoServerHTML(){
 }
 
 function _wireAutoServer(root){
+  /* The retry on the "could not check" state, so it is a control and not a
+     sentence about one. */
+  root.querySelectorAll('[data-asrv-retry]').forEach(b=>{
+    b.addEventListener('click', async ()=>{
+      b.disabled=true; b.textContent='Checking\u2026';
+      try{ await _autoRefresh(); }catch(e){}
+      try{ renderTasksView(); }catch(e){}
+    });
+  });
   root.querySelectorAll('[data-auto-act]').forEach(b=>{
     b.addEventListener('click', async ()=>{
       const act=b.dataset.autoAct, id=b.dataset.autoId;
