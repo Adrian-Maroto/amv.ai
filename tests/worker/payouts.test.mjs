@@ -125,7 +125,7 @@ section('Two withdrawals at once cannot both take the same balance');
   const env = makeEnv();
   await fund(env, 'seller@x.com', 100);
   const token = await tokenFor(env, 'seller@x.com');
-  const [a, b] = await Promise.all([withdraw(env, token, 'x'), withdraw(env, token, 'x')]);
+  const [a, b] = await Promise.all([withdraw(env, token, 'paypal: seller@x.com'), withdraw(env, token, 'paypal: seller@x.com')]);
   const ja = await a.json(), jb = await b.json();
   const okCount = [ja, jb].filter(x => x.ok).length;
   ok(okCount === 1, 'exactly one succeeds', [ja, jb]);
@@ -138,7 +138,7 @@ section('Below the minimum, nothing moves');
 {
   const env = makeEnv();
   await fund(env, 'small@x.com', 1);
-  const r = await withdraw(env, await tokenFor(env, 'small@x.com'), 'x');
+  const r = await withdraw(env, await tokenFor(env, 'small@x.com'), 'paypal: small@x.com');
   ok(r.status === 400, 'a tiny balance cannot be withdrawn', r.status);
   ok((await balanceOf(env, 'small@x.com')) === 1, 'and the balance is untouched by the refusal');
   ok((await (await adminGet(env)).json()).payouts.length === 0, 'with no phantom payout created');
@@ -148,7 +148,7 @@ section('Only the operator can see or settle payouts');
 {
   const env = makeEnv();
   await fund(env, 'seller@x.com', 50);
-  const d = await (await withdraw(env, await tokenFor(env, 'seller@x.com'), 'x')).json();
+  const d = await (await withdraw(env, await tokenFor(env, 'seller@x.com'), 'paypal: seller@x.com')).json();
 
   const anon = await W.adminPayouts(new Request('https://w/admin/payouts'), env);
   ok(anon.status === 403, 'who is owed what is not public', anon.status);
@@ -163,11 +163,41 @@ section('A settlement has to name a real state');
 {
   const env = makeEnv();
   await fund(env, 'seller@x.com', 40);
-  const d = await (await withdraw(env, await tokenFor(env, 'seller@x.com'), 'x')).json();
+  const d = await (await withdraw(env, await tokenFor(env, 'seller@x.com'), 'paypal: seller@x.com')).json();
   ok((await mark(env, { id: d.id, status: 'pending' })).status === 400, 'pending is not a settlement');
   ok((await mark(env, { id: d.id, status: 'whatever' })).status === 400, 'nor is anything invented');
   ok((await mark(env, { id: 'wd_nope', status: 'paid' })).status === 404, 'and an unknown id is not found');
   ok((await (await adminGet(env)).json()).owed === 40, 'none of which changed the money', (await (await adminGet(env)).json()).owed);
+}
+
+section('Money cannot be sent nowhere');
+{
+  /* Where the payout should GO was checked only in the browser. A request
+     without it zeroed the seller's balance and wrote a pending payout the
+     operator had no way to fulfil - the money left the balance and arrived
+     nowhere, which is precisely the failure this endpoint was rewritten to end.
+     The check has to be here, before anything is debited. */
+  const env = makeEnv();
+  await fund(env, 'seller@x.com', 200);
+  const token = await tokenFor(env, 'seller@x.com');
+
+  for (const [label, dest] of [['a missing destination', undefined], ['an empty one', ''],
+                              ['whitespace only', '   '], ['a single character', 'x']]) {
+    const r = await withdraw(env, token, dest);
+    const j = await r.json();
+    ok(r.status === 400 && j.code === 'destination_required',
+       label + ' is refused', { label, status: r.status, code: j.code });
+  }
+
+  ok((await balanceOf(env, 'seller@x.com')) === 200,
+     'and the balance is untouched by every one of those refusals',
+     await balanceOf(env, 'seller@x.com'));
+  const list = await (await adminGet(env)).json();
+  ok(list.payouts.length === 0, 'with no unfulfillable payout created', list.payouts.length);
+  ok(list.owed === 0, 'and nothing recorded as owed', list.owed);
+
+  const good = await (await withdraw(env, token, 'paypal: seller@x.com')).json();
+  ok(good.ok === true && good.amount === 200, 'a real destination goes through as before', good);
 }
 
 report('payouts');

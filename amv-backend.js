@@ -8704,6 +8704,18 @@ async function marketWithdraw(request, env) {
     return json({ error: 'Withdrawing money is turned off for your account. Whoever manages your family can turn it on.',
                   code: 'family_blocked' }, 403);
   }
+  /* Where the money is meant to GO. Only the browser checked this, so a request
+     without it zeroed the seller's balance and wrote a pending payout the
+     operator had no way to fulfil - the money left the balance and arrived
+     nowhere, which is the same failure AMV-089 was written to end. Checked
+     BEFORE anything is debited, and AFTER the family block: somebody who may
+     not withdraw at all is told that, rather than being asked to fill in a
+     destination for a withdrawal that was never going to be allowed. */
+  const dest = String(destination == null ? '' : destination).trim().slice(0, 200);
+  if (dest.length < 3) {
+    return json({ error: 'Tell AMV where to send the money - a PayPal email or a bank reference. Nothing has been withdrawn.',
+                  code: 'destination_required' }, 400);
+  }
   // Serialize withdrawals per seller so two concurrent requests can't both read
   // the same balance and each create a payout for it (double withdrawal). The
   // lock is atomic on D1; on KV it is a best-effort short-TTL guard. Balance is
@@ -8717,7 +8729,7 @@ async function marketWithdraw(request, env) {
     const amount = w.balance;
     const wid = 'wd_' + crypto.randomUUID().slice(0, 12);
     await env.AMV_KV.put(`withdraw:${wid}`, JSON.stringify({
-      id: wid, seller: user.email, amount, destination: String(destination || '').slice(0, 200),
+      id: wid, seller: user.email, amount, destination: dest,
       status: 'pending', ts: Date.now(),
     }));
     // zero the balance and log the debit
