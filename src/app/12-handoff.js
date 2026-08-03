@@ -5,6 +5,20 @@
    (Live cross-user delivery activates with the server backend; this
    is the full UX + local record.)
    ============================================================ */
+/* What the sender is told about each one. A raw status token told them nothing,
+   and "waiting" for something that never left the device was the wrong word
+   entirely - waiting implies it is with the other person. */
+const _HO_STATUS = {
+  sending:  'Sending…',
+  waiting:  'Waiting on them',
+  not_sent: 'Not delivered - no backend connected',
+  failed:   'Not delivered',
+  crew:     'With your Crew',
+  done:     'Done',
+};
+/* The states where the work is still sitting here, and a retry is meaningful. */
+const _HO_UNSENT = ['not_sent','failed'];
+
 function _hoOut(){ return load('amv_handoffs_out') || []; }
 function _hoIn(){ return load('amv_handoffs_in') || []; }
 function _hoSaveOut(a){ store('amv_handoffs_out', a); }
@@ -14,7 +28,17 @@ async function _handoffSyncLive(){
   if(!(window.AMV_API && AMV_API.live)) return;
   try{ const d=await AMV_API.listHandoff();
     if(d.incoming) store('amv_handoffs_in', d.incoming.map(h=>({id:h.id,from:h.from_email,title:h.title,context:h.context,when:''})));
-    if(d.sent) store('amv_handoffs_out', d.sent.map(h=>({id:h.id,to:h.to_email,title:h.title,status:h.status,when:''})));
+    if(d.sent){
+      /* Merged, not replaced. A handoff that never reached the server is not IN
+         the server's list, so overwriting wholesale deleted the undelivered
+         ones - taking the pasted work with them, and leaving nothing to retry
+         and no sign anything had been lost. Those are kept; everything the
+         server knows about is its version. */
+      const keep=_hoOut().filter(h=>h && (_HO_UNSENT.indexOf(h.status)>=0 || h.status==='crew'));
+      const fromServer=d.sent.map(h=>({id:h.id,to:h.to_email,title:h.title,status:h.status,when:''}));
+      const seen=new Set(fromServer.map(h=>h.id));
+      store('amv_handoffs_out', fromServer.concat(keep.filter(h=>!seen.has(h.id))));
+    }
     renderHandoffView();
   }catch(e){}
 }
@@ -32,7 +56,9 @@ function renderHandoffView(){
       <div class="ho-act">
         ${dir==='in'
           ? `<button class="btn bp" data-dact="hoOpen" data-darg="${h.id}">Open & continue</button><button class="btn bs" data-dact="hoDone" data-darg="${h.id}">Mark done</button>`
-          : `<span class="ho-status">${escH(h.status||'waiting')}</span>`}
+          : `<span class="ho-status ho-status-${escH(h.status||'waiting')}">${escH(_HO_STATUS[h.status]||_HO_STATUS.waiting)}</span>`+
+            (_HO_UNSENT.indexOf(h.status)>=0
+              ? `<button class="btn bs" data-dact="hoResend" data-darg="${h.id}">Send again</button>` : '')}
       </div>
     </div>`;
   vc.innerHTML=`<div class="sv fi"><div class="vi">
@@ -200,25 +226,79 @@ function hoFromChat(){
   }catch(e){ toast('Could not pull chat','error'); }
 }
 window.hoFromChat=hoFromChat;
-function hoSend(){
+/* Update one sent handoff in place. */
+function _hoSetStatus(id, status){
+  const out=_hoOut(); const rec=out.find(x=>x.id===id);
+  if(rec){ rec.status=status; _hoSaveOut(out); }
+  return rec;
+}
+/* The delivery itself. Returns the status the record should now carry, so the
+   caller never has to guess whether it arrived. */
+async function _hoDeliver(rec){
+  if(!(window.AMV_API && AMV_API.live)) return { status:'not_sent', code:'needs_service' };
+  try{
+    await AMV_API.createHandoff({ title:rec.title, context:rec.context, to:rec.to });
+    return { status:'waiting' };
+  }catch(e){ return { status:'failed', error:(e&&e.message)||'' }; }
+}
+
+/* One send at a time. The button stays on screen while the request is in
+   flight, and a second click would hand the same work over twice. */
+let _HO_SENDING=false;
+async function hoSend(){
+  if(_HO_SENDING) return;
   const t=($('ho-title')||{}).value, ctx=($('ho-ctx')||{}).value, to=($('ho-to')||{}).value;
   if(!t||!t.trim()){ toast('Add a title for the handoff','error'); return; }
   if(!to||!to.trim()){ toast('Who are you handing off to?','error'); return; }
   const rec={ id:'h'+Date.now(), title:t.trim(), context:(ctx||'').trim(), to:to.trim(),
-    from:(S.user&&S.user.email)||'you', when:new Date().toLocaleDateString(), status:'waiting',
+    from:(S.user&&S.user.email)||'you', when:new Date().toLocaleDateString(), status:'sending',
     convId:(S._hoPulledConv||null) };
   try{ S._hoPulledConv=null; }catch(e){}
-  const out=_hoOut(); out.unshift(rec); _hoSaveOut(out);
-  if(window.AMV_API && AMV_API.live){ AMV_API.createHandoff({title:rec.title,context:rec.context,to:rec.to}).catch(()=>{}); }
-  // If handed to crew, surface it as a crew approval-style item locally
+
+  // Handing to Crew is local by design - it lands in your OWN approvals queue,
+  // so there is nothing to deliver and nothing that can fail to arrive.
   if(to.trim().toLowerCase()==='crew'){
+    rec.status='crew';
+    const out=_hoOut(); out.unshift(rec); _hoSaveOut(out);
     const ap=_cwApprovals(); ap.unshift({id:'a'+Date.now(),icon:'\u{1F91D}',title:'Handoff: '+rec.title,preview:rec.context||'(no notes)'}); _cwSaveApprovals(ap);
     toast('Handed off to your Crew agent','info');
-  } else {
-    toast('Handoff sent to '+rec.to,'info');
+    renderHandoffView();
+    return;
   }
+
+  /* Saved BEFORE the attempt, so the work somebody just pasted survives a
+     failure, and updated after with what actually happened. It used to say
+     "Handoff sent to <person>" unconditionally - with the server call fired and
+     forgotten, and with no backend connected nothing was delivered at all. The
+     one thing a handoff must never do is tell you the baton was passed when
+     nobody has it. */
+  const out=_hoOut(); out.unshift(rec); _hoSaveOut(out);
   renderHandoffView();
+
+  _HO_SENDING=true;
+  let r;
+  try{ r=await _hoDeliver(rec); }finally{ _HO_SENDING=false; }
+  _hoSetStatus(rec.id, r.status);
+  renderHandoffView();
+
+  if(r.status==='waiting'){ toast('Handoff sent to '+rec.to,'success'); }
+  else if(r.code==='needs_service'){
+    toast('Saved here, but not delivered - handing work to another person needs the AMV backend connected. Nothing was sent to '+rec.to+'.','info',7000);
+  } else {
+    toast((r.error?r.error+' ':'')+'That handoff was NOT delivered. It is saved here - use Send again when you are back online.','error',7000);
+  }
 }
+/* Retry a handoff that never left. */
+async function hoResend(id){
+  const rec=_hoOut().find(x=>x.id===id); if(!rec) return;
+  _hoSetStatus(id,'sending'); renderHandoffView();
+  const r=await _hoDeliver(rec);
+  _hoSetStatus(id, r.status); renderHandoffView();
+  if(r.status==='waiting') toast('Handoff sent to '+rec.to,'success');
+  else if(r.code==='needs_service') toast('Still not connected to the AMV backend, so nothing was sent.','info',5000);
+  else toast((r.error?r.error+' ':'')+'Still not delivered.','error',5000);
+}
+window.hoResend=hoResend;
 function hoOpen(id){
   const h=_hoIn().find(x=>x.id===id);
   // If the handoff points at a real conversation you have, continue on that
