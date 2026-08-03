@@ -1036,6 +1036,29 @@ async function autoUpdate(request, env){
   else if(body.action === 'pause')  items[i].active = false;
   else if(body.action === 'resume'){ items[i].active = true; items[i].next = Date.now() + items[i].interval; }
   else if(body.action === 'approval'){ items[i].approval = (items[i].approval === 'auto') ? 'require' : 'auto'; }
+  /* Change what a job does or how often. Without this there was no way to edit
+     a running job at all: the screen offered it, posted to a route that did not
+     exist, and the server carried on with the old schedule. Deleting and
+     recreating would lose the run history and the claim keys that stop a job
+     double-firing, so it is edited in place. */
+  else if(body.action === 'edit'){
+    if(typeof body.detail === 'string'){
+      const detail = body.detail.trim();
+      if(!detail) return json({ error:'detail required' }, 400);
+      if(detail.length > 2000) return json({ error:'detail too long' }, 400);
+      items[i].detail = detail;
+    }
+    if(body.repeat != null){
+      const repeat = String(body.repeat).toLowerCase();
+      if(!AUTO_INTERVALS[repeat]) return json({ error:'invalid repeat interval' }, 400);
+      items[i].repeat = repeat;
+      items[i].interval = AUTO_INTERVALS[repeat];
+      /* Next run moves with the new interval rather than keeping a time the old
+         cadence chose - otherwise "change it to weekly" still fires tomorrow. */
+      items[i].next = Date.now() + items[i].interval;
+    }
+    if(body.approval === 'auto' || body.approval === 'require') items[i].approval = body.approval;
+  }
   else return json({ error:'unknown action' }, 400);
 
   rec.items = items;

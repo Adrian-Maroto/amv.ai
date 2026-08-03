@@ -14,7 +14,7 @@ const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'autonomy.harness.mjs');
 writeFileSync(harness, src + `
-export { runDueAutomations, _enqueueApproval, autoPause, _autoKey };
+export { runDueAutomations, _enqueueApproval, autoPause, _autoKey, autoUpdate, AUTO_INTERVALS };
 export function __setRequireUser(fn){ requireUser = fn; }
 `);
 const W = await import(harness + '?t=' + Date.now());
@@ -98,6 +98,50 @@ section('The pause BUTTON writes where the cron reads');
     { method:'POST', body: JSON.stringify({ paused:false }) }), env);
   const after = getRec('auto', W._autoKey('Owner@X.com'));
   ok(after.paused === false, 'resuming clears it on the same record', after.paused);
+}
+
+section('A running job can actually be changed');
+{
+  /* The screen offered editing a scheduled job and posted to /api/schedule/edit
+     - a route the worker has never had. So the edit was accepted locally, the
+       server carried on with the old schedule, and nothing said so.
+
+     autoUpdate could delete, pause, resume and flip approval, but had no way to
+     change what a job does or how often. Deleting and recreating would lose the
+     run history and the claim keys that stop a job double-firing, so it edits
+     in place. */
+  store.clear();
+  W.__setRequireUser(async () => ({ email: 'o@x.com' }));
+  const key = W._autoKey('o@x.com');
+  await putRec('auto', key, { items:[{ id:'j1', active:true, detail:'old goal',
+    repeat:'daily', interval: W.AUTO_INTERVALS.daily, next: Date.now() + 1000, approval:'require' }], results:[] });
+
+  const edit = (body) => W.autoUpdate(new Request('https://w/auto/update',
+    { method:'POST', body: JSON.stringify(Object.assign({ id:'j1', action:'edit' }, body)) }), env);
+
+  const r = await (await edit({ detail:'new goal', repeat:'weekly', approval:'auto' })).json();
+  ok(r.ok === true, 'the edit is accepted', r);
+  const it = getRec('auto', key).items[0];
+  ok(it.detail === 'new goal', 'what it does really changed', it.detail);
+  ok(it.interval === W.AUTO_INTERVALS.weekly, 'and how often', it.interval);
+  ok(it.approval === 'auto', 'and whether it asks first', it.approval);
+  /* Changing to weekly must move the next run, or "make it weekly" still fires
+     tomorrow on the time the old cadence picked. */
+  ok(it.next > Date.now() + W.AUTO_INTERVALS.daily,
+     'and the next run moves with the new interval', it.next - Date.now());
+
+  const bad = await edit({ repeat:'every-other-tuesday' });
+  ok(bad.status === 400, 'an interval the scheduler cannot run is refused', bad.status);
+  ok(getRec('auto', key).items[0].interval === W.AUTO_INTERVALS.weekly,
+     'and the job is left as it was', getRec('auto', key).items[0].interval);
+
+  const empty = await edit({ detail:'   ' });
+  ok(empty.status === 400, 'and so is emptying what it does', empty.status);
+  ok(getRec('auto', key).items[0].detail === 'new goal', 'leaving the goal intact');
+
+  const gone = await W.autoUpdate(new Request('https://w/auto/update',
+    { method:'POST', body: JSON.stringify({ id:'nope', action:'edit', detail:'x' }) }), env);
+  ok(gone.status === 404, 'a job that does not exist cannot be edited', gone.status);
 }
 
 if (report() > 0) process.exitCode = 1;

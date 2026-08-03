@@ -12508,23 +12508,49 @@ async function _clarifyCheck(goal){
    happens to be open - which is not what "Running jobs" or "Autonomous" mean.
    It used to be fired and forgotten, and the success message went out either
    way. Returns what actually happened so the caller can say it. */
+/* The interval the SERVER understands. Its scheduler works in repeat buckets,
+   not in the client's cadence objects, and anything outside the set is refused
+   with "invalid repeat interval". A monthly cadence has no server bucket, so it
+   is registered weekly rather than not at all - the job still runs unattended,
+   and the local schedule keeps the exact day. */
+function _mcRepeatFor(payload){
+  const cad = (payload.sched && payload.sched.cad) || payload.freq || 'daily';
+  const map = { '10min':'10min', '30min':'30min', hourly:'hourly', daily:'daily',
+                weekly:'weekly', monthly:'weekly' };
+  return map[String(cad).toLowerCase()] || 'daily';
+}
 async function _mcScheduleServer(payload){
   if(!(window.AMV_API && AMV_API.live && typeof AMV_API._fetch==='function'))
     return { ok:false, code:'needs_service' };
   try{
-    const r = await AMV_API._fetch('/api/schedule/create',{ method:'POST', body:JSON.stringify(payload) });
+    /* /auto/create, which is the scheduler the cron actually runs. This used to
+       post to /api/schedule/create - a route the worker has never had - so every
+       job created from Crew was registered nowhere and ran only while AMV was
+       open. Nothing said so, because the call was fired and forgotten.
+
+       There is no reason to build a second scheduler beside this one: it already
+       has the plan gating, the monthly budget, the job limit and the pause flag,
+       and the cron already walks it. */
+    const r = await AMV_API._fetch('/auto/create',{ method:'POST', body:JSON.stringify({
+      detail: payload.goal, repeat: _mcRepeatFor(payload),
+      kind: payload.kind || 'task', approval: payload.approval === 'auto' ? 'auto' : 'require',
+      notify: payload.notify || 'app' }) });
     const d = await r.json().catch(()=>({}));
     if(!r.ok || d.error) return { ok:false, code:d.code||'failed', error:d.error||'' };
-    return { ok:true };
+    return { ok:true, id:(d.item&&d.item.id)||'' };
   }catch(e){ return { ok:false, code:'failed', error:(e&&e.message)||'' }; }
 }
 /* One sentence for where a just-created job will actually run. */
 function _mcWhereItRuns(res){
   if(res.ok) return '';
-  return res.code === 'needs_service'
-    ? ' It runs only while AMV is open, because the AMV engine is not connected yet.'
-    : ' It could NOT be registered to run in the background' + (res.error ? ' (' + res.error + ')' : '')
-      + ', so for now it runs only while AMV is open.';
+  if(res.code === 'needs_service')
+    return ' It runs only while AMV is open, because the AMV engine is not connected yet.';
+  /* A plan limit is not a failure - it is the answer, and it has somewhere to go. */
+  if(res.code === 'plan_required' || res.code === 'plan_limit')
+    return ' ' + (res.error || 'Running work in the background is part of a paid plan.') +
+           ' For now it runs only while AMV is open.';
+  return ' It could NOT be registered to run in the background' + (res.error ? ' (' + res.error + ')' : '')
+    + ', so for now it runs only while AMV is open.';
 }
 try{ window._mcScheduleServer=_mcScheduleServer; window._mcWhereItRuns=_mcWhereItRuns; }catch(e){}
 
@@ -12547,6 +12573,9 @@ function _mcAskRecurring(box, instruction, when){
     const list=_loadSched(); list.push(item); _saveSched(list);
     const btn=$('mc-ask-schedule'); if(btn){ btn.disabled=true; btn.textContent='Adding…'; }
     const res = await _mcScheduleServer({ goal:instruction, sched:item.sched, freq:item.freq, approval:mode });
+    /* The server's id for this job, kept so a later edit can target it. Without
+       it an edit has nothing to name and can only report that it failed. */
+    if(res.id){ const l2=_loadSched(); const me=l2.find(x=>x.id===item.id); if(me){ me.autoId=res.id; _saveSched(l2); } }
     toast('Added to Running jobs - '+when.label+(mode==='auto'?' · Autonomous':' · Ask first')+_mcWhereItRuns(res),
           res.ok?'success':'info', res.ok?4200:7000);
     renderCrewView();
@@ -13383,8 +13412,10 @@ async function _apvRegisterRecur(a){
   /* Registered on the server, and the caller is told whether that worked -
      a recurring job that only exists in this browser runs when AMV is open and
      not otherwise, which is the opposite of what scheduling one means. */
-  return _mcScheduleServer({ goal:desc, sched:item.sched, freq:item.freq, approval:item.approval,
+  const res = await _mcScheduleServer({ goal:desc, sched:item.sched, freq:item.freq, approval:item.approval,
     payload:isEmail?{type:'email',result:a.result,to:a.destination,from:a.account}:null });
+  if(res.id){ const l2=_loadSched(); const me=l2.find(x=>x.id===item.id); if(me){ me.autoId=res.id; _saveSched(l2); } }
+  return res;
 }
 async function _apvEditSave(id){
   const a=_apvCollectEdit(id); if(!a){ apvClose(); return; } apvClose();
@@ -21677,16 +21708,26 @@ function _schedEditSave(id){
   (async()=>{
     let res = { ok:false, code:'needs_service' };
     if(window.AMV_API && AMV_API.live && typeof AMV_API._fetch==='function'){
-      try{
-        const r = await AMV_API._fetch('/api/schedule/edit',{method:'POST',
-          body:JSON.stringify({id:t.id,goal:t.goal,sched:t.sched,freq:t.freq,approval:t.approval,next:t.next})});
-        const d = await r.json().catch(()=>({}));
-        res = (!r.ok || d.error) ? { ok:false, code:'failed', error:d.error||'' } : { ok:true };
-      }catch(e){ res = { ok:false, code:'failed', error:(e&&e.message)||'' }; }
+      /* A job only exists on the server if it was registered there, and the id
+         it was given is the only way to name it. Without one there is nothing
+         to edit remotely, and saying "updated" would be a claim about a job the
+         server has never heard of. */
+      if(!t.autoId){ res = { ok:false, code:'local_only' }; }
+      else{
+        try{
+          const r = await AMV_API._fetch('/auto/update',{method:'POST',
+            body:JSON.stringify({ id:t.autoId, action:'edit', detail:t.goal,
+              repeat:(typeof _mcRepeatFor==='function'?_mcRepeatFor(t):'daily'),
+              approval:t.approval })});
+          const d = await r.json().catch(()=>({}));
+          res = (!r.ok || d.error) ? { ok:false, code:'failed', error:d.error||'' } : { ok:true };
+        }catch(e){ res = { ok:false, code:'failed', error:(e&&e.message)||'' }; }
+      }
     }
     if(typeof toast!=='function') return;
     if(res.ok){ toast('Schedule updated','success'); return; }
     if(res.code==='needs_service'){ toast('Updated on this device. It applies to background runs once AMV is connected to a backend.','info',6000); return; }
+    if(res.code==='local_only'){ toast('Updated. This job only ever ran while AMV is open, so there is nothing on the server to change.','info',6000); return; }
     toast('Updated here, but the server was NOT told'+(res.error?' ('+res.error+')':'')+
           ' - it is still running on the old schedule. Try again.','error',7000);
   })();

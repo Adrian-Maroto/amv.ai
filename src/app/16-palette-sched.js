@@ -548,16 +548,26 @@ function _schedEditSave(id){
   (async()=>{
     let res = { ok:false, code:'needs_service' };
     if(window.AMV_API && AMV_API.live && typeof AMV_API._fetch==='function'){
-      try{
-        const r = await AMV_API._fetch('/api/schedule/edit',{method:'POST',
-          body:JSON.stringify({id:t.id,goal:t.goal,sched:t.sched,freq:t.freq,approval:t.approval,next:t.next})});
-        const d = await r.json().catch(()=>({}));
-        res = (!r.ok || d.error) ? { ok:false, code:'failed', error:d.error||'' } : { ok:true };
-      }catch(e){ res = { ok:false, code:'failed', error:(e&&e.message)||'' }; }
+      /* A job only exists on the server if it was registered there, and the id
+         it was given is the only way to name it. Without one there is nothing
+         to edit remotely, and saying "updated" would be a claim about a job the
+         server has never heard of. */
+      if(!t.autoId){ res = { ok:false, code:'local_only' }; }
+      else{
+        try{
+          const r = await AMV_API._fetch('/auto/update',{method:'POST',
+            body:JSON.stringify({ id:t.autoId, action:'edit', detail:t.goal,
+              repeat:(typeof _mcRepeatFor==='function'?_mcRepeatFor(t):'daily'),
+              approval:t.approval })});
+          const d = await r.json().catch(()=>({}));
+          res = (!r.ok || d.error) ? { ok:false, code:'failed', error:d.error||'' } : { ok:true };
+        }catch(e){ res = { ok:false, code:'failed', error:(e&&e.message)||'' }; }
+      }
     }
     if(typeof toast!=='function') return;
     if(res.ok){ toast('Schedule updated','success'); return; }
     if(res.code==='needs_service'){ toast('Updated on this device. It applies to background runs once AMV is connected to a backend.','info',6000); return; }
+    if(res.code==='local_only'){ toast('Updated. This job only ever ran while AMV is open, so there is nothing on the server to change.','info',6000); return; }
     toast('Updated here, but the server was NOT told'+(res.error?' ('+res.error+')':'')+
           ' - it is still running on the old schedule. Try again.','error',7000);
   })();
