@@ -1036,3 +1036,33 @@ What made them usable rather than noisy:
 
 The cost is real - each check took about as long as three of the fixes - and it
 is worth paying the moment a class reaches three instances.
+
+## 101. Compute the answer instead of reading for it
+Six defects in three commits came from the same move: a property that could be
+expressed as a set operation over the source was computed rather than looked
+for.
+
+  every kind written through DB   minus   every kind deleted around it
+  every durable kind              minus   backed up  minus  deliberately excluded
+  every kind keyed by email       minus   erased     minus  retained on purpose
+
+Each took about a minute and returned a handful of names with no false
+positives. Reading for the same thing would have taken hours and found some of
+them, because the mismatched halves are hundreds of lines apart and each looks
+correct where it sits. Nobody reviews a delete by opening the write.
+
+What they found: a published site that kept serving after its owner took it
+down, purchase snapshots and marketplace listings surviving account erasure, an
+admin abuse screen that would be permanently empty, seven durable record kinds
+no backup would capture, and a long-lived Google refresh token outliving the
+account that granted it.
+
+The tell that a property is computable: it is a claim about ALL of something,
+and both sides are already written down somewhere. Route tables, prefix lists,
+switch cases, exported names, kind strings. When both halves exist as data, the
+question "do they agree" is a script, not a reading task.
+
+Then leave the computation behind as the check (rule 100), and make the lists
+EXHAUSTIVE rather than illustrative - every kind in exactly one of backed-up or
+never-backed-up, erased or retained-on-purpose. An exhaustive pair forces the
+next person to make a decision; a single list lets them forget.

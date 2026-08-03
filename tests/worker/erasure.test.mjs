@@ -270,5 +270,55 @@ section('A backup never carries a bank credential');
 }
 
 globalThis.fetch = realFetch;
+section('A connected Google account does not outlive the account');
+{
+  /* Connecting Google leaves a LONG-LIVED refresh token on the server - the
+     browser only ever gets a short one, deliberately. Nothing erased it, so
+     closing an account left a standing grant to somebody's mail and calendar
+     belonging to a user who no longer exists, revocable by nobody.
+
+     Erasure already reaches outside this worker to disconnect the bank. The
+     same has to be true here or it is not erasure. */
+  /* This suite shares one store and one env; the section clears what it needs
+     rather than building a second fixture that could drift from the real one. */
+  store.clear();
+  const env2 = env;
+  const revoked = [];
+  const priorFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => {
+    revoked.push({ url: String(url), body: String((opts && opts.body) || '') });
+    return new Response('{}', { status: 200 });
+  };
+
+  await W.DB.put(env2, 'acct', 'gone@x.com', { email:'gone@x.com' });
+  await W.DB.put(env2, 'goauth', 'gone@x.com', { refreshToken:'1//long-lived-refresh', scope:'gmail' });
+
+  W.__setRequireUser(async () => ({ email:'gone@x.com' }));
+  await W.authDeleteAccount(new Request('https://w/auth/delete',
+    { method:'POST', body: JSON.stringify({ confirm:'DELETE' }) }), env2);
+
+  globalThis.fetch = priorFetch;
+
+  const hit = revoked.find(r => /oauth2\.googleapis\.com\/revoke/.test(r.url));
+  ok(!!hit, 'the refresh token is revoked at Google, not just dropped here', revoked.map(r=>r.url));
+  ok(hit && /1%2F%2Flong-lived-refresh|1\/\/long-lived-refresh/.test(hit.body),
+     'and it is THAT account\'s token being revoked', hit && hit.body);
+  ok(!(await W.DB.get(env2, 'goauth', 'gone@x.com')),
+     'and our copy is gone too', await W.DB.get(env2, 'goauth', 'gone@x.com'));
+}
+
+section('Spending limits do not outlive the account either');
+{
+  store.clear();
+  const env3 = env;
+  await W.DB.put(env3, 'acct', 'gone2@x.com', { email:'gone2@x.com' });
+  await W.DB.put(env3, 'spendlimits', 'gone2@x.com', { enabled:true, perPurchase:100 });
+  W.__setRequireUser(async () => ({ email:'gone2@x.com' }));
+  await W.authDeleteAccount(new Request('https://w/auth/delete',
+    { method:'POST', body: JSON.stringify({ confirm:'DELETE' }) }), env3);
+  ok(!(await W.DB.get(env3, 'spendlimits', 'gone2@x.com')),
+     'the limits record is erased with everything else', true);
+}
+
 if (report('erasure') > 0) process.exitCode = 1;
 done();

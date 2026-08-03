@@ -4334,6 +4334,27 @@ async function authDeleteAccount(request, env) {
     }
   } catch {}
 
+  /* The same reasoning, and the same reach outside this worker, for Google.
+     A connected account leaves a LONG-LIVED refresh token here - the browser
+     only ever holds a short one - and nothing erased it. So closing an account
+     left a standing grant to somebody's mail and calendar, revocable by nobody,
+     against a user who no longer exists. Revoked at Google first, then the
+     record goes either way: a third party being unreachable must not keep
+     somebody connected to a service they have left. */
+  try {
+    const g = await DB.get(env, 'goauth', email);
+    if (g && g.refreshToken) {
+      try {
+        await fetch('https://oauth2.googleapis.com/revoke', {
+          method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ token: g.refreshToken }).toString(),
+        });
+      } catch {}
+      audit(env, 'google_revoked_on_erasure', { by: email });
+    }
+    await DB.del(env, 'goauth', email);
+  } catch {}
+
   /* Links this account is part of, in BOTH directions. A link lives under each
      side's own row, so deleting only this one would leave the other party
      holding an active grant pointing at an account that is gone. */
@@ -4396,7 +4417,7 @@ async function authDeleteAccount(request, env) {
      balances - both are exactly what erasure is for, and neither was listed. */
   const perUserKinds = ['acct', 'ent', 'entitleitem', 'data', 'auto', 'crewjobs',
     'approvals', 'handoff', 'abuse', 'seller', 'widget', 'wallet', 'wallet_tx',
-    'purchases', 'stripecust', 'userteam', 'sites',
+    'purchases', 'stripecust', 'userteam', 'sites', 'spendlimits',
     'fin', 'finlink', 'invsnap', 'links', 'fam', 'apikeys', 'consent', 'widget_owner', 'shares', 'presence'];
   /* `billing` is deliberately NOT in that list. Invoices and payment records
      carry retention obligations that erasure does not override, and deciding
