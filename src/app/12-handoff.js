@@ -309,7 +309,26 @@ function hoOpen(id){
   }
   setTab('chat'); setTimeout(()=>{ const ta=$('mta'); if(ta&&h){ ta.value='Continuing a handoff: '+h.title+'\n\nContext:\n'+(h.context||''); ta.focus(); } },120);
 }
-function hoDone(id){ if(window.AMV_API && AMV_API.live){ AMV_API.actHandoff(id,'done').catch(()=>{}); } const a=_hoIn().filter(x=>x.id!==id); _hoSaveIn(a); toast('Marked done','info'); renderHandoffView(); }
+/* Marking one done tells the SENDER it is finished. Fired and forgotten, a
+   failed call left it gone from this inbox and still showing as waiting on the
+   other person's screen, with nothing to say so. */
+async function hoDone(id){
+  let res = { ok:false, code:'needs_service' };
+  if(window.AMV_API && AMV_API.live){
+    try{ await AMV_API.actHandoff(id,'done'); res = { ok:true }; }
+    catch(e){ res = { ok:false, code:'failed', error:(e&&e.message)||'' }; }
+  }
+  if(!res.ok && res.code==='failed'){
+    toast('That was NOT marked done'+(res.error?' ('+res.error+')':'')+
+          ' - whoever sent it still sees it as waiting. Try again.','error',7000);
+    return;
+  }
+  const a=_hoIn().filter(x=>x.id!==id); _hoSaveIn(a);
+  toast(res.ok ? 'Marked done'
+              : 'Marked done here. Whoever sent it will see that once AMV is connected to a backend.',
+        'info', res.ok?2500:6000);
+  renderHandoffView();
+}
 window.hoSend=hoSend;window.hoOpen=hoOpen;window.hoDone=hoDone;
 
 /* === RENDER VIEW ROUTER === */

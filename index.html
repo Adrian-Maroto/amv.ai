@@ -23791,7 +23791,26 @@ function hoOpen(id){
   }
   setTab('chat'); setTimeout(()=>{ const ta=$('mta'); if(ta&&h){ ta.value='Continuing a handoff: '+h.title+'\n\nContext:\n'+(h.context||''); ta.focus(); } },120);
 }
-function hoDone(id){ if(window.AMV_API && AMV_API.live){ AMV_API.actHandoff(id,'done').catch(()=>{}); } const a=_hoIn().filter(x=>x.id!==id); _hoSaveIn(a); toast('Marked done','info'); renderHandoffView(); }
+/* Marking one done tells the SENDER it is finished. Fired and forgotten, a
+   failed call left it gone from this inbox and still showing as waiting on the
+   other person's screen, with nothing to say so. */
+async function hoDone(id){
+  let res = { ok:false, code:'needs_service' };
+  if(window.AMV_API && AMV_API.live){
+    try{ await AMV_API.actHandoff(id,'done'); res = { ok:true }; }
+    catch(e){ res = { ok:false, code:'failed', error:(e&&e.message)||'' }; }
+  }
+  if(!res.ok && res.code==='failed'){
+    toast('That was NOT marked done'+(res.error?' ('+res.error+')':'')+
+          ' - whoever sent it still sees it as waiting. Try again.','error',7000);
+    return;
+  }
+  const a=_hoIn().filter(x=>x.id!==id); _hoSaveIn(a);
+  toast(res.ok ? 'Marked done'
+              : 'Marked done here. Whoever sent it will see that once AMV is connected to a backend.',
+        'info', res.ok?2500:6000);
+  renderHandoffView();
+}
 window.hoSend=hoSend;window.hoOpen=hoOpen;window.hoDone=hoDone;
 
 /* === RENDER VIEW ROUTER === */
@@ -29776,8 +29795,27 @@ function _schedEditSave(id){
     t.sched=s; delete t.freq; t.next=_schedNext(s,Date.now());
   }
   _saveSched(l);
-  if(window.AMV_API && AMV_API.live && typeof AMV_API._fetch==='function'){ try{ AMV_API._fetch('/api/schedule/edit',{method:'POST',body:JSON.stringify({id:t.id,goal:t.goal,sched:t.sched,freq:t.freq,approval:t.approval,next:t.next})}).catch(()=>{}); }catch(e){} }
-  apvClose(); if(typeof toast==='function') toast('Schedule updated','success');
+  apvClose();
+  /* The server keeps its own copy and runs from it. This edit was sent and
+     forgotten, and "Schedule updated" went out regardless - so somebody who
+     moved a daily job to weekly, or changed the hour it runs, was told it had
+     changed while the server carried on with the old one. */
+  (async()=>{
+    let res = { ok:false, code:'needs_service' };
+    if(window.AMV_API && AMV_API.live && typeof AMV_API._fetch==='function'){
+      try{
+        const r = await AMV_API._fetch('/api/schedule/edit',{method:'POST',
+          body:JSON.stringify({id:t.id,goal:t.goal,sched:t.sched,freq:t.freq,approval:t.approval,next:t.next})});
+        const d = await r.json().catch(()=>({}));
+        res = (!r.ok || d.error) ? { ok:false, code:'failed', error:d.error||'' } : { ok:true };
+      }catch(e){ res = { ok:false, code:'failed', error:(e&&e.message)||'' }; }
+    }
+    if(typeof toast!=='function') return;
+    if(res.ok){ toast('Schedule updated','success'); return; }
+    if(res.code==='needs_service'){ toast('Updated on this device. It applies to background runs once AMV is connected to a backend.','info',6000); return; }
+    toast('Updated here, but the server was NOT told'+(res.error?' ('+res.error+')':'')+
+          ' - it is still running on the old schedule. Try again.','error',7000);
+  })();
   if(S.tab==='crew'){ try{ renderCrewView(); }catch(e){} }
 }
 function _schedEditDelete(id){ if(!confirm('Delete this scheduled task?')) return; apvClose(); _schedCancel(id); }
