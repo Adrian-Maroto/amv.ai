@@ -879,3 +879,66 @@ rather than returned with confidence.
 Both were wired into the paths users actually reach, and asserted from the built
 bundle, because an unreachable quality engine is the exact failure this codebase
 keeps having.
+
+## 94. A failed read must never be rendered as a fact about the account
+Six separate places answered a request that FAILED with a plausible-looking
+value, and every one of them was on a screen about money or ownership:
+
+- `earnings()` returned `balance: 0`, so a seller with money owed saw $0.00.
+- `purchases()` returned `[]`, so somebody who had paid was told "No purchases yet".
+- `myListings()` returned `[]`, so a seller was invited to publish a duplicate.
+- `_checkPayReturn` fell back to the plan named in the URL, so `?paid=elite`
+  with one call blocked was a free upgrade.
+- `lowBalance` let a non-numeric floor become NaN, and `after < NaN` is false, so
+  the overdraft warning silently switched off.
+- The investing screen stamped stale figures with the CURRENT clock and said
+  "earlier today", so a three-day-old check-in was labelled as today's.
+
+The shape is always the same: `catch(e){ return <something that looks like an
+answer> }`. It is invisible in review because the fallback is syntactically
+tidy and the failure is rare. The rule is that a read either succeeds or says
+it failed - never a third thing that looks like success. A wrong number on a
+payout screen is worse than no screen at all.
+
+The corollary, learned twice while fixing it: making a read throw is not free.
+`boughtFrom` propagated the new throw into a seller profile where it only
+decorates a line, and broke the screen. Anything that consumes a now-throwing
+read has to be checked, and each caller decides for itself whether unknown
+degrades (a decoration) or fails closed (a permission gate).
+
+## 95. "Sent", "saved" and "stopped" are claims, and each one needs a witness
+`hoSend` fired the server call, forgot it (`.catch(()=>{})`), and said "Handoff
+sent to <person>" unconditionally - and with no backend connected it never even
+tried, because cross-user delivery needs the server. The record then sat in Sent
+marked "waiting", which reads as waiting on the OTHER PERSON for something that
+never left the device.
+
+That is the same defect as the family invite that said a code was sent, the Crew
+toggle that said "Stopped" while the job stayed scheduled, and the link revoke
+that said "That access stopped immediately" without telling the server. Four
+instances, four different authors' worth of code, one rule:
+
+**A control may only report an outcome it waited for.** If it cannot wait, it
+reports what it actually did ("saved here, not delivered") and offers the retry.
+The status word must describe where the work IS, not where it was aimed.
+
+And a sync that replaces a local list wholesale will delete exactly the records
+that never reached the server - the undelivered ones, with the work still in
+them. Merge, keeping anything the server cannot know about.
+
+## 96. Nothing settles a pending record unless something is told to
+A marketplace purchase wrote a `pending` transaction and opened the processor's
+checkout. Nothing ever settled it, so the transaction list was wrong in both
+directions at once: a purchase that COMPLETED read "Pending" for ever, and one
+abandoned at the payment page read "Pending" for ever too.
+
+Worth separating, because the two halves have different answers. The completed
+case is knowable - the return says so - so it is settled. The abandoned case is
+NOT knowable from the browser, because a redirect can be lost on a payment that
+went through; calling it failed would be a guess of exactly the kind rule 94
+forbids. So it stops claiming to be pending, says AMV cannot tell from here, and
+points at the list that does know.
+
+Whenever a flow leaves the app and is meant to come back, ask what writes the
+final state - and if the answer is "the return path", check the return path
+actually does it.
