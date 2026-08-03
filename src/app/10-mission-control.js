@@ -1350,23 +1350,48 @@ function _apvInspectArtifact(art){
   toast((art.name||'Artifact')+(art.note?(' - '+art.note):': intermediate work handed between agents'),'info',4200);
 }
 /* Approve straight from a card (no preview) with a confirm on the consequence. */
-function apvQuickApprove(id){
+async function apvQuickApprove(id){
   const a=_cwApprovals().find(x=>x.id===id); if(!a){ renderCrewView(); return; }
   const act=_apvAction(a);
   if(!confirm(act.line)) return;
-  _apvDoApprove(a);
+  await _apvDoApprove(a);
 }
-function apvApprove(id){
+async function apvApprove(id){
   const a=_cwApprovals().find(x=>x.id===id); if(!a){ apvClose(); return; }
-  _apvDoApprove(a); apvClose();
+  apvClose();
+  await _apvDoApprove(a);
 }
 const _APV_PAST={send:'Sent',publish:'Published',schedule:'Scheduled',post:'Posted',submit:'Submitted',update:'Updated',deploy:'Deployed',approve:'Done'};
-function _apvDoApprove(a){
-  if(window.AMV_API && AMV_API.live){ AMV_API.actApproval(a.id,'approve').catch(()=>{}); }
-  _cwSaveApprovals(_cwApprovals().filter(x=>x.id!==a.id));
+/* Approving is what actually SENDS the thing. This fired the request, forgot
+   it, removed the item from the queue, and said "Sent" - so a failed call meant
+   nothing went out, the draft was gone, and the person believed their email had
+   been sent. With no engine connected nothing was even attempted, and it still
+   said "Sent". An email that was never sent, reported as sent, is the kind of
+   mistake somebody loses a client over.
+
+   It now waits, and on failure the approval STAYS in the queue, because the one
+   thing worse than not sending is not sending and losing the draft too. */
+async function _apvDoApprove(a){
   const act=_apvAction(a);
-  toast(_APV_PAST[act.verb]||'Done','success');
+  const past=_APV_PAST[act.verb]||'Done';
+  if(!(window.AMV_API && AMV_API.live)){
+    toast('Nothing was '+String(past).toLowerCase()+' - AMV is not connected to a backend, so it has nowhere to send this. '+
+          'It is still waiting for you.','error',7000);
+    renderCrewView();
+    return { ok:false, code:'needs_service' };
+  }
+  try{
+    await AMV_API.actApproval(a.id,'approve');
+  }catch(e){
+    toast('That was NOT '+String(past).toLowerCase()+(e&&e.message?' ('+e.message+')':'')+
+          '. It is still in your approvals - try again.','error',7000);
+    renderCrewView();
+    return { ok:false, code:'failed', error:(e&&e.message)||'' };
+  }
+  _cwSaveApprovals(_cwApprovals().filter(x=>x.id!==a.id));
+  toast(past,'success');
   renderCrewView();
+  return { ok:true };
 }
 function apvReject(id){ apvClose(); cwReject(id); }
 /* The body text of an approval, wherever it lives for that result type. */
@@ -1523,7 +1548,7 @@ async function _apvEditSend(id){
     if(S.tab==='crew') renderCrewView();
     return;
   }
-  _apvDoApprove(a);
+  await _apvDoApprove(a);
 }
 function _apvEditDelete(id){ if(!confirm('Delete this - it won’t be sent?')) return; apvClose(); cwReject(id); }
 window._apvEditSave=_apvEditSave; window._apvEditSend=_apvEditSend; window._apvEditDelete=_apvEditDelete;

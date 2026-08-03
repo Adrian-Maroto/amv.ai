@@ -484,6 +484,71 @@ section('The emergency stop does not claim a stop it never made');
   ok(!/STILL RUNNING/.test(nb), 'rather than inventing an alarm', nb);
 }
 
+section('Approving says "Sent" only when something was sent');
+{
+  /* Approving is what actually sends the thing. It fired the request, forgot
+     it, removed the draft from the queue and said "Sent" - so a failed call
+     meant nothing went out, the draft was gone, and the person believed their
+     email had been sent. With no engine connected nothing was even attempted,
+     and it still said "Sent". */
+  const r = await page.evaluate(async () => {
+    const said = [];
+    const realToast = window.toast; window.toast = (m, kind) => said.push({ m: String(m), kind });
+    const realBase = AMV_API.base, realTok = AMV_API.token, realAct = AMV_API.actApproval;
+    const out = {};
+    const seed = () => _cwSaveApprovals([{ id: 'ap1', title: 'Email the client', preview: 'the draft',
+                                           result: { type: 'email', subject: 'Hi', to: 'c@x.com' } }]);
+
+    // 1. Nothing connected: nothing can be sent.
+    AMV_API.base = ''; seed(); said.length = 0;
+    out.noBackend = await _apvDoApprove(_cwApprovals()[0]);
+    out.noBackendSaid = (said[0] || {}).m || '';
+    out.noBackendKept = _cwApprovals().length;
+
+    // 2. Connected but the send fails.
+    AMV_API.base = 'https://api.test'; AMV_API.token = 't';
+    AMV_API.actApproval = async () => { throw new Error('mail server refused'); };
+    seed(); said.length = 0;
+    out.failed = await _apvDoApprove(_cwApprovals()[0]);
+    out.failedSaid = (said[0] || {}).m || '';
+    out.failedKind = (said[0] || {}).kind;
+    out.failedKept = _cwApprovals().length;
+
+    // 3. It really sends. The confirmation is the past tense of THIS item's
+    //    action, so the expected word is computed the same way the code does.
+    AMV_API.actApproval = async () => ({ ok: true });
+    seed(); said.length = 0;
+    const item = _cwApprovals()[0];
+    out.expected = _APV_PAST[_apvAction(item).verb] || 'Done';
+    out.okRes = await _apvDoApprove(item);
+    out.okSaid = (said[0] || {}).m || '';
+    out.okKind = (said[0] || {}).kind;
+    out.okKept = _cwApprovals().length;
+
+    AMV_API.base = realBase; AMV_API.token = realTok; AMV_API.actApproval = realAct;
+    window.toast = realToast;
+    return out;
+  });
+
+  ok(r.noBackend.ok === false, 'with no backend, approving does not report success', r.noBackend);
+  ok(/nowhere to send/i.test(r.noBackendSaid), 'it says there is nowhere to send it', r.noBackendSaid);
+  ok(r.noBackendKept === 1, 'and the draft is still waiting', r.noBackendKept);
+
+  ok(r.failed.ok === false, 'a refused send is a failure', r.failed);
+  ok(/was NOT/.test(r.failedSaid), 'said in those words', r.failedSaid);
+  ok(/mail server refused/.test(r.failedSaid), 'with the reason', r.failedSaid);
+  ok(r.failedKind === 'error', 'as an error, not a confirmation', r.failedKind);
+  /* The one thing worse than not sending is not sending and losing the draft. */
+  ok(r.failedKept === 1, 'and the draft is KEPT, so it can be retried', r.failedKept);
+
+  ok(r.okRes.ok === true, 'a real send succeeds', r.okRes);
+  ok(r.okSaid === r.expected && r.okKind === 'success',
+     'and confirms in the past tense of what it did, as a success',
+     { said: r.okSaid, expected: r.expected, kind: r.okKind });
+  ok(!/NOT|nowhere/i.test(r.okSaid), 'with none of the failure wording', r.okSaid);
+  ok(r.okKept === 0, 'and only then does it leave the queue', r.okKept);
+}
+
 await app.close();
 if (report('crew-jobs') > 0) process.exitCode = 1;
 done();
