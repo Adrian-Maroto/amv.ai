@@ -32730,8 +32730,26 @@ function _renderFamilyPane(pane){
         '<li>A link needs a request from one account and an approval from the other.</li>'+
         '<li>The approval code is sent to the inbox of the account being accessed, so naming an address is not enough - you have to control it.</li>'+
         '<li>You choose exactly what the link covers. Sending email, buying things and editing a calendar are never granted quietly.</li>'+
-        '<li>Every cross-account action is written to a log both of you can read.</li>'+
+        '<li>Approving and revoking are both recorded, and either of you can revoke at any time.</li>'+
       '</ul></div>'+
+
+    /* The truth about what a link does TODAY. It records an agreed permission
+       between two accounts - the invitation, the emailed code, the approval and
+       the revoke are all real - but nothing in AMV acts on somebody else's
+       account yet. Letting one account send email or buy things as another is
+       the most dangerous capability this product could have, and it is not
+       being switched on quietly as a side effect of a settings screen.
+
+       Saying so here is the difference between a permission ledger and a
+       promise nobody is keeping. Somebody who ticks "make purchases on their
+       account" must not walk away believing they can. */
+    '<div class="mf-gate warn" role="note"><h3>What a link does today</h3>'+
+      '<p>AMV <b>records</b> these permissions. It does not yet act on anyone else\u2019s account - '+
+      'nothing here lets AMV read their email, change their calendar or spend their money on your behalf. '+
+      'One account acting as another is the most dangerous thing this product could do, so it is not '+
+      'being switched on as a side effect of a settings screen.</p>'+
+      '<p>The invitation, the code sent to their inbox, the approval and the revoke are all real, and the '+
+      'permission you agree now is the one that will apply the moment AMV can act on it.</p></div>'+
 
     '<div class="ss2"><h3>Ask for access to someone’s account</h3>'+
       '<label class="lbl" for="mf-inv-email">Their email address</label>'+
