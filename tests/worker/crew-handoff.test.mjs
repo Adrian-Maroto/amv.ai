@@ -63,15 +63,39 @@ asUser = 'alice@test.com';
 r = await W.handoffList(req(undefined,'GET'), env); d = await r.json();
 ok(d.sent.length === 1, 'alice has it in her sent list', d.sent.length);
 
-section('Handoff act only touches your own data');
+section('Marking one done reaches the person who sent it, and reaches nothing else');
+/* This used to assert that bob's action never touched alice's records at all.
+   That kept the two copies isolated and left the SENDER's view permanently
+   wrong: alice went on seeing "waiting on them" for ever, including after the
+   work was finished. A handoff is a thing between two people, and marking it
+   done on one side only is the half the sender is not watching.
+
+   So the rule is not "never touch the other record" - handoffCreate already
+   writes into the recipient's inbox, bounded and rate limited. The rule is that
+   the write is BOUNDED: a status, from a fixed set, on an entry that is in the
+   actor's own inbox, belonging to the sender recorded on that entry. */
 asUser = 'bob@test.com';
 const hid = JSON.parse(store.get('handoff:bob@test.com')).incoming[0].id;
+const beforeAlice = JSON.parse(store.get('handoff:alice@test.com'));
 await W.handoffAct(req({ id:hid, action:'done' }), env);
+
 d = JSON.parse(store.get('handoff:bob@test.com'));
 ok(d.incoming[0].status === 'done', 'bob can mark his own handoff done', d.incoming[0].status);
-// alice's copy (sent) is independent and untouched by bob's action
-d = JSON.parse(store.get('handoff:alice@test.com'));
-ok(d.sent[0].status === 'pending', "bob's action did not reach into alice's records", d.sent[0].status);
+
+const afterAlice = JSON.parse(store.get('handoff:alice@test.com'));
+ok(afterAlice.sent[0].status === 'done', 'and alice sees that it is done', afterAlice.sent[0].status);
+/* Nothing else about her record moved. */
+ok(afterAlice.sent.length === beforeAlice.sent.length, 'no entry was added to her record', afterAlice.sent.length);
+ok(afterAlice.sent[0].title === beforeAlice.sent[0].title, 'the title is untouched', afterAlice.sent[0].title);
+ok(afterAlice.sent[0].context === beforeAlice.sent[0].context, 'and the content', true);
+ok(afterAlice.sent[0].to_email === beforeAlice.sent[0].to_email, 'and who it was for', afterAlice.sent[0].to_email);
+ok((afterAlice.incoming || []).length === (beforeAlice.incoming || []).length,
+   'and her own inbox is not written to at all', (afterAlice.incoming||[]).length);
+
+/* An id the actor was never handed cannot be acted on, so nobody can reach a
+   record by guessing one. */
+const forged = await W.handoffAct(req({ id:'h-not-mine', action:'done' }), env);
+ok(forged.status === 404, 'an id that is not in your own inbox is refused', forged.status);
 
 section('Input validation');
 asUser = 'alice@test.com';

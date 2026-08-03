@@ -3094,12 +3094,38 @@ async function handoffCreate(request, env){
 async function handoffAct(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
+  /* This writes a status onto the SENDER's record too, so it is rate limited
+     exactly like handoffCreate, which is the other bounded cross-user write in
+     this feature. */
+  const blockedAct = await guardAction(env, `handoffact:${user.email}`, 30, 100, 'handoff updates');
+  if(blockedAct) return blockedAct;
   const { id, action } = await request.json().catch(()=>({}));
   if(!id) return json({ error:'id required' }, 400);
   const mine = (await DB.get(env, 'handoff', user.email)) || { incoming:[], sent:[] };
-  mine.incoming = (mine.incoming || []).map(h => h.id === id ? { ...h, status: action === 'done' ? 'done' : 'seen' } : h);
+  const entry = (mine.incoming || []).find(h => h.id === id);
+  if(!entry) return json({ error:'not found' }, 404);
+  const status = action === 'done' ? 'done' : 'seen';
+  mine.incoming = (mine.incoming || []).map(h => h.id === id ? { ...h, status } : h);
   await DB.put(env, 'handoff', user.email, mine);
-  return json({ ok:true });
+
+  /* And on the SENDER's copy. Only the recipient's own record was updated, so
+     the person who handed the work over went on seeing "waiting on them" for
+     ever - including after it was finished. A handoff is a thing between two
+     people; marking it done on one side only is half a feature, and the half
+     that is missing is the half the sender is watching. */
+  const from = String(entry.from_email || '').toLowerCase();
+  if(from && from !== user.email){
+    try{
+      const theirs = (await DB.get(env, 'handoff', from)) || { incoming:[], sent:[] };
+      let touched = false;
+      theirs.sent = (theirs.sent || []).map(h => {
+        if(h.id !== id) return h;
+        touched = true; return { ...h, status };
+      });
+      if(touched) await DB.put(env, 'handoff', from, theirs);
+    }catch(e){ /* the recipient's own record is already correct */ }
+  }
+  return json({ ok:true, status });
 }
 
 /* ══════════════════════════════════════════════════════════════════════

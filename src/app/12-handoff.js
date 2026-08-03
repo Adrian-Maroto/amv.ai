@@ -14,6 +14,7 @@ const _HO_STATUS = {
   not_sent: 'Not delivered - no backend connected',
   failed:   'Not delivered',
   crew:     'With your Crew',
+  seen:     'They have opened it',
   done:     'Done',
 };
 /* The states where the work is still sitting here, and a retry is meaningful. */
