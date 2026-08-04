@@ -1334,3 +1334,28 @@ bank token, an API key hash, a pending verification code - all held, all named i
 the response as withheld, none returned. Otherwise the feature built for a
 data-access right becomes a way to read a key back out, which is a worse hole
 than the one being closed.
+
+## 112. A default that names a tier is a promise the plan has to be able to keep
+Dev, Lab and Studio each defaulted to Apex, which requires Elite. The worker
+enforces `minPlan` on every request and returns 402, correctly. So a free
+account opened Dev, read "Apex . heaviest" on the chip, typed a request, and got
+a plan error - three whole surfaces dead on the tier with the most people on it.
+
+Nothing failed a test, because every piece was right on its own: the default was
+a real engine, the picker rendered it faithfully, and the server refused it
+exactly as designed. The defect only exists in the relationship between a
+client-side default and a server-side floor, and it was visible in one second on
+a screenshot as a chip naming an engine the account beside it cannot run.
+
+Two things generalise.
+
+There were TWO defaults, `_BUILD_MODEL` for the panel pickers and
+`_SECTION_DEFAULTS` for the chip and for what the agentic runner is handed.
+Fixing one would have moved the failure rather than ended it - the chip would
+have read Core while the request still went out as Apex, which is the same lie
+pointed the other way. When a value has two sources, both are the bug.
+
+And the clamp has to go to the BEST engine the plan allows, not the cheapest
+legal one. "Make it work" and "make it work as well as they paid for" are
+different fixes, and the cheap one is invisible until somebody wonders why their
+Elite account writes worse code than it used to.

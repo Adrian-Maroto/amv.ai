@@ -1602,14 +1602,43 @@ const _BUILD_MODEL = { dev:'smart', lab:'smart', studio:'smart' };
 /* Scoped like every other preference - raw localStorage skips _scopeKey. */
 try{ const saved=load('amv_build_models'); if(saved && typeof saved==='object') Object.assign(_BUILD_MODEL, saved); }catch(e){}
 function _saveBuildModels(){ try{ store('amv_build_models', _BUILD_MODEL); }catch(e){} }
+/* The best engine this plan can actually run, at or below the one chosen.
+
+   Dev, Lab and Studio all defaulted to `smart` - Apex, which needs Elite. A
+   free account opening Dev saw "Apex . heaviest" on the chip and got a 402
+   plan_required on its first message, because the server enforces minPlan and
+   is right to. Three whole surfaces dead on the free tier, with the cause
+   printed at the top of the screen in a colour nobody reads as an error.
+
+   The picker still offers everything; a tier above the plan just runs on the
+   best one below it rather than failing. Chat has always done this through
+   _routeModel - the build sections bypassed it by keeping their own default. */
+const _BUILD_FALLBACK = ['smart', 'coding', 'core', 'fast'];
+/* Clamp any model key to the best one this plan can actually run. */
+function _planAllowedModel(want){
+  want = want || 'smart';
+  try{
+    const plan = loadStr('amv_plan') || 'free';
+    if(plan === 'custom') return want;
+    const tier = (typeof PLAN_TIERS !== 'undefined' && PLAN_TIERS[plan]) || null;
+    if(!tier || !Array.isArray(tier.models)) return want;
+    if(tier.models.indexOf(want) >= 0) return want;
+    const from = Math.max(0, _BUILD_FALLBACK.indexOf(want));
+    for(const k of _BUILD_FALLBACK.slice(from)){ if(tier.models.indexOf(k) >= 0) return k; }
+    return 'core';
+  }catch(e){ return want; }
+}
+function _buildModelAllowed(section){ return _planAllowedModel(_BUILD_MODEL[section] || 'smart'); }
 // resolve a section's chosen model key → real API model string for aiComplete/opts.model
-function _buildModelStr(section){ const k=_BUILD_MODEL[section]||'smart'; const m=MODELS[k]; return (m&&m.model&&m.model!=='auto')?m.model:'amv-core'; }
+function _buildModelStr(section){ const k=_buildModelAllowed(section); const m=MODELS[k]; return (m&&m.model&&m.model!=='auto')?m.model:'amv-core'; }
 // usage dots (1-4) as a compact visual - clearly shows how much each model costs
 function _usageDots(cost){ let s=''; for(let i=1;i<=4;i++){ s+='<span class="mp-dot'+(i<=cost?' on':'')+'"></span>'; } return '<span class="mp-dots" title="Usage per run">'+s+'</span>'; }
 function _usageWord(cost){ return ['No','Low','Medium','High','Maximum'][cost]||'Medium'; }
 // build a model picker for a section
 function _modelPickerHTML(section){
-  const cur=_BUILD_MODEL[section]||'smart';
+  /* Show what will RUN, not what was stored - a chip naming an engine the plan
+     cannot reach is the thing that made this look like it worked. */
+  const cur=_buildModelAllowed(section);
   const opts=MODEL_ORDER.filter(k=>k!=='auto'||section==='studio').map(k=>{ const m=MODELS[k]; return '<option value="'+k+'"'+(k===cur?' selected':'')+'>'+m.label+' \u00b7 '+_usageWord(m.cost).toLowerCase()+' usage</option>'; }).join('');
   const m=MODELS[cur];
   return '<div class="mp-wrap"><label class="mp-label">Model</label>'+
@@ -1635,9 +1664,14 @@ function _wireModelPicker(root){
    _sectionModel(section) instead of hardcoding a model string.
    ============================================================ */
 const _SECTION_DEFAULTS = { code:'smart', debug:'smart', design:'smart' };
+/* There are two of these - _BUILD_MODEL for the pickers in the panels, and
+   this one for the chip and for _sectionModel, which is what aiCompleteLong
+   and the agentic runner are handed. Both defaulted to Apex, so both needed
+   the same clamp; fixing one would have moved the failure rather than ended
+   it. */
 function _sectionModelKey(section){
   const k=loadStr('amv_secmodel_'+section);
-  return (k && MODELS[k]) ? k : (_SECTION_DEFAULTS[section]||'smart');
+  return _planAllowedModel((k && MODELS[k]) ? k : (_SECTION_DEFAULTS[section]||'smart'));
 }
 function _sectionModel(section){ return MODELS[_sectionModelKey(section)].model; }
 function _setSectionModel(section, key){ if(MODELS[key]) saveStr('amv_secmodel_'+section, key); }
