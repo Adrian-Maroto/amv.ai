@@ -3,9 +3,13 @@
    it; these assertions cover the app actually surfacing it, sending them
    somewhere a card can be changed, and correcting the plan down when the
    grace period is over. */
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
 
+const BROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const app = await bootApp({ tab: 'chat', user: { name: 'Alice', email: 'alice@x.com', ini: 'A' } });
 const { page, errors } = app;
 
@@ -40,11 +44,19 @@ section('It points at the only place a card can actually be changed');
    cannot be exercised in-page without destroying the context, so it is checked
    by reading the wiring. The branch that CAN go wrong - no portal configured -
    is exercised for real. */
-const portalWiring = await page.evaluate(() => ({
-  asksPortal: /AMV_API\.portal\(/.test(String(window._showBillingNotice)),
-  navigates: /location\.href = url/.test(String(window._showBillingNotice)),
-  fallsBack: /setTab\('billing'\)/.test(String(window._showBillingNotice))
-}));
+/* From app.js rather than the live function: the shipped page is minified, so
+   whitespace and quote style there belong to the minifier. The behavioural
+   assertions below still drive the real page. */
+const billSrc = (() => {
+  const src = readFileSync(join(BROOT, 'app.js'), 'utf8');
+  const at = src.indexOf('function _showBillingNotice');
+  return at < 0 ? '' : src.slice(at, src.indexOf('\nfunction ', at + 10));
+})();
+const portalWiring = {
+  asksPortal: /AMV_API\.portal\(/.test(billSrc),
+  navigates: /location\.href\s*=\s*url/.test(billSrc),
+  fallsBack: /setTab\((['"])billing\1\)/.test(billSrc),
+};
 ok(portalWiring.asksPortal, 'the button asks the server for a billing portal session');
 ok(portalWiring.navigates, 'and sends the user to the processor’s own page, where the card lives');
 ok(portalWiring.fallsBack, 'with a fallback if no portal is configured');

@@ -4,9 +4,13 @@
    prove AMV uses auth-code + PKCE whenever a backend is available, that the
    verifier never leaves the browser except to our own server, and that the
    CSRF/state protections still hold. */
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
 
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const app = await bootApp({ user: { name: 'O', email: 'o@x.com', ini: 'O' } });
 const { page, errors } = app;
 
@@ -50,7 +54,16 @@ ok(expired === null, 'an expired OAuth transaction cannot be consumed');
    redefinable), so the authorisation URL is asserted from what connectGoogle
    actually constructs, and the branch condition is checked explicitly. */
 section('With a backend, the auth-code flow is used - no token in the URL');
-const fn = await page.evaluate(() => String(window.connectGoogle));
+/* Read from app.js, not from String(window.connectGoogle). The shipped page
+   is minified, so a local name like `canExchange` is gone and a quote style is
+   the minifier's to choose - the live function is the wrong place to ask a
+   question about how the source is written. app.js is written unminified
+   beside index.html for exactly this, and the rest of the suite already reads
+   it. The BEHAVIOUR assertions above and below still run against the real
+   page. */
+const bundleSrc = readFileSync(join(ROOT, 'app.js'), 'utf8');
+const fnAt = bundleSrc.indexOf('function connectGoogle');
+const fn = bundleSrc.slice(fnAt, bundleSrc.indexOf('\nfunction ', fnAt + 10));
 ok(/response_type=code/.test(fn), 'the auth-code flow is built', 'response_type=code');
 ok(/code_challenge=/.test(fn) && /code_challenge_method=S256/.test(fn), 'with a PKCE challenge attached');
 ok(/access_type=offline/.test(fn), 'and offline access, so a refresh token can be issued');

@@ -20,9 +20,13 @@
       screen cannot outrun what was sent.
 
    The second is what makes the first honest when it says no. */
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
 
+const SROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const app = await bootApp({ tab: 'chat', user: { name: 'A', email: 'a@x.com', ini: 'A' } });
 const { page, errors } = app;
 
@@ -165,15 +169,20 @@ section('The words on screen come from the same decision as the tool');
 {
   /* Read it from the bundle too: the label branch and the tools branch must be
      driven by one variable, or they will drift apart again. */
-  const src = await page.evaluate(() => {
-    const fn = String(_callAI);
+  /* app.js, not String(_callAI): the shipped page is minified, so a local like
+     _webSearchOn has no name there. This section asks how the source is
+     written - whether the label and the tool come off ONE decision - and the
+     unminified bundle is where that question has an answer. Every assertion
+     above drives the real page. */
+  const fn = readFileSync(join(SROOT, 'app.js'), 'utf8');
+  const src = await page.evaluate((fn) => {
     return {
       one: /_webSearchOn\s*=/.test(fn),
       labelsGuarded: /_webSearchOn[\s\S]{0,200}Searching the web/.test(fn),
       toolsGuarded: /if\(_webSearchOn\)\s*tools\.push/.test(fn),
       noPickerCheck: !/S\.model===['"]smart['"]/.test(fn),
     };
-  });
+  }, fn);
   ok(src.one, 'there is a single named decision', src);
   ok(src.labelsGuarded, 'the "Searching the web" label sits behind it', src.labelsGuarded);
   ok(src.toolsGuarded, 'and so does the tool', src.toolsGuarded);
