@@ -132,6 +132,41 @@ section('The main surfaces hold up too');
   ok(thin.length === 0, 'no main surface is squeezed either', thin);
 }
 
+section('The pricing CTAs sit on one line');
+{
+  /* The row where somebody compares four things and decides to pay. The cards
+     are the same height, so the buttons drifted apart only because the
+     reassurance note under them wraps to two lines on the middle two - fifteen
+     pixels, which reads as sloppiness rather than as a bug, and is worse for
+     it. Checked per ROW, since the grid wraps below 1200. */
+  for (const width of [1440, 1280]) {
+    const page = await browser.newPage({ viewport: { width, height: 1600 } });
+    await page.goto(`http://localhost:${PORT}`, { waitUntil: 'load' });
+    await page.waitForTimeout(650);
+    await page.evaluate(() => {
+      localStorage.setItem('amv_cookie_consent', JSON.stringify({ essential: true }));
+      S.user = { name: 'A', email: 'a@x.com', ini: 'A' }; goApp(); setTab('plans');
+    });
+    await page.waitForTimeout(700);
+    const rows = await page.evaluate(() => {
+      const btns = [...document.querySelectorAll('.plnc .plnbtn')]
+        .filter(b => b.getBoundingClientRect().top > 100)
+        .map(b => Math.round(b.getBoundingClientRect().top));
+      /* Group by row: anything within 40px of each other is the same row. */
+      const groups = [];
+      btns.sort((a, b) => a - b).forEach(y => {
+        const g = groups.find(g => Math.abs(g[0] - y) < 40);
+        if (g) g.push(y); else groups.push([y]);
+      });
+      return groups.map(g => Math.max(...g) - Math.min(...g));
+    });
+    await page.close();
+    ok(rows.length > 0, `the plan buttons were found at ${width}px`, rows);
+    ok(rows.every(spread => spread === 0),
+       `and every row of them is level at ${width}px`, rows);
+  }
+}
+
 await browser.close();
 server.close();
 if (report('nothing-is-too-narrow') > 0) process.exitCode = 1;

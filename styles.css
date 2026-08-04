@@ -7760,3 +7760,22 @@ html,body{height:100%;height:100dvh}
   .settings-content{flex:1 1 auto!important;min-height:0;padding:18px 20px!important;padding-right:20px!important}
   .set-pane{max-width:100%!important}
 }
+
+/* ==========================================================================
+   LAYER A62 - the four pricing buttons sit on one line
+
+   The cards are all 710px tall and the feature list already flexes, so the
+   buttons should have aligned. They did not: 911, 911, 926, 926. The culprit
+   is the reassurance line UNDER each button - "Everything below, one price,
+   cancel anytime" wraps to two lines on the two middle cards and one on the
+   others, and the difference pushes their buttons up by exactly one line.
+
+   Fifteen pixels is small enough to read as sloppiness rather than as a bug,
+   which is worse, because this is the row where somebody is comparing four
+   things and deciding to pay.
+
+   Reserving two lines for that note equalises it without changing a word.
+   ========================================================================== */
+.plnc{display:flex;flex-direction:column}
+.plnc .plnfl{flex:1 1 auto}
+.pg-app .plnc .plnreassure{min-height:31px!important}
