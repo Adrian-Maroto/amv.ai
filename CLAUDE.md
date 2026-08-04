@@ -38,8 +38,13 @@ Companion docs (do not duplicate them here - read them):
     boundaries is preserved, so top-level order dependencies still hold.
   - The nav/body shell in `index.html` is safe to edit directly; everything
     else comes from the sources. Always rebuild.
-  - `node build.mjs --minify` produces a smaller terser-minified bundle
-    (opt-in; the default stays readable/debuggable).
+  - `node build.mjs` MINIFIES by default, because `index.html` is the artifact
+    every visitor downloads (1.8MB minified, ~505KB over the wire; 2.3MB and
+    ~690KB without). `app.js` is written unminified beside it either way, and
+    that is the copy `check.mjs`, `preflight` and grep read - so the readable
+    artifact is kept where it is actually used. `--no-minify` opts out.
+    `npm run check` has a gzipped ceiling on `index.html`, so it can only grow
+    by somebody raising it on purpose.
 - Vanilla JS. There is NO React, Next.js, Vue, Tailwind, or bundler. Do not add
   one. Framework-specific tools and advice do not apply here.
 - Backend: a Cloudflare Worker (`amv-backend.js`) + KV + a Durable Object

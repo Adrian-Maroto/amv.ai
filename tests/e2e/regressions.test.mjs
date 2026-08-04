@@ -446,8 +446,11 @@ const loginFix = await page.evaluate(() => {
   const noLocal = (typeof findAccount === 'function') && findAccount(unknownEmail) === null;
   const src = doLoginForm.toString();
   // the no-account branch must route into signup and carry the email, not dead-end
-  const routesToSignup = /openAuth\('signup'\)/.test(src);
-  const noBareDeadEnd = !/Please sign up\.'\);return;\}/.test(src.replace(/\s/g, ''));
+  /* Quote-agnostic: the shipped bundle is minified, and a minifier is free to
+     rewrite 'signup' as "signup". Pinning one quote style tested the build
+     tool, not the behaviour. */
+  const routesToSignup = /openAuth\(\s*(['"])signup\1\s*\)/.test(src);
+  const noBareDeadEnd = !/Please sign up\.["']\);return;\}/.test(src.replace(/\s/g, ''));
   return { noLocal, routesToSignup, noBareDeadEnd };
 });
 ok(loginFix.noLocal, 'an unknown email has no local account (the trigger case)');

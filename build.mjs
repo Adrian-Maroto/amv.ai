@@ -18,7 +18,12 @@ import { execSync } from 'child_process';
 
 const args = process.argv.slice(2);
 const cmd = args.find(a => !a.startsWith('--')) || 'build';
-const MINIFY = args.includes('--minify');
+/* Minified by DEFAULT. index.html is the artifact users download - 2.3MB
+   plain, 1.8MB minified, 690KB vs 516KB over the wire - and app.js is written
+   unminified beside it either way, which is what check, preflight and grep
+   read. So the readable copy is kept where it is actually used, and the copy
+   that crosses the network is the small one. --no-minify opts out. */
+const MINIFY = !args.includes('--no-minify');
 
 // The app SOURCE is modular: src/app/NN-name.js files, concatenated in name
 // order, form the single app bundle. app.js is the GENERATED concatenation of

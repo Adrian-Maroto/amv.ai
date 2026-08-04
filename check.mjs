@@ -19,6 +19,7 @@
    Exit 0 = green, ship it. Exit 1 = red, with the first failure spelled out.
    No keys required.
    ───────────────────────────────────────────────────────────────────────── */
+import { gzipSync } from 'zlib';
 import { execSync } from 'child_process';
 import { readFileSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -104,6 +105,21 @@ if (!FAST) step('All test suites', () => {
     const tail = out.split('\n').slice(-12).join('\n');
     throw new Error(`the suite did not report a clean pass:\n${tail}`);
   }
+});
+
+/* ── 4b. Page weight ──────────────────────────────────────────────────────
+   index.html is one file and every visitor downloads all of it before the app
+   exists. Nothing measured it, so it could only grow - and it had, to 2.3MB
+   plain. The ceiling is set a little above where the build lands today so a
+   real regression fails here rather than on somebody's phone. */
+step('Page weight is under control', () => {
+  const buf = readFileSync(R('index.html'));
+  const wire = gzipSync(buf).length;
+  const KB = (n) => Math.round(n / 1024) + 'KB';
+  const CEILING = 620 * 1024;   // gzipped, which is what actually crosses the network
+  if (wire > CEILING)
+    throw new Error(`index.html is ${KB(wire)} gzipped (${KB(buf.length)} raw) - over the ${KB(CEILING)} ceiling. `
+      + 'Trim it, or raise the ceiling deliberately and say why.');
 });
 
 /* ── 5. Deploy preflight ─────────────────────────────────────────────────── */
