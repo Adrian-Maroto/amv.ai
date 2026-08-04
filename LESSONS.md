@@ -1133,3 +1133,26 @@ The tool door deserves naming separately. That prompt is written by the model,
 which may have been steered by a page it read. It is the entrance least likely
 to have a person behind it and therefore the one most in need of the check, not
 least.
+
+## 105. Escaping asks whether a value can break out; it never asks what it does
+Every URL in this app went through `escH` before reaching an attribute, and that
+was the wrong question answered carefully. `escH` stops a value terminating the
+attribute early. `javascript:alert(1)` contains no quote, no angle bracket, no
+ampersand - nothing it touches - so it arrived intact and ran on click. The CSP
+carries `unsafe-inline` for script-src, so nothing downstream caught it either.
+
+The reason it mattered is which URLs those were: a research chip's href is a web
+search result, an image src is whatever the provider CDN answered with, a shared
+artifact came from a link a stranger sent, a checkout target came back over the
+wire. Every one is a string from outside becoming a thing that executes.
+
+The fix is a scheme ALLOWLIST in one function, not a blocklist. A blocklist is a
+list of the schemes somebody thought of, and the sabotage run showed exactly how
+that fails: replacing the allowlist with `if(/^javascript:/) return ''` still
+passed `javascript:` and let through `data:text/html`, `vbscript:`, and
+`//evil.com` - which reads as a path and is a host.
+
+The generalisation, which is the point: a sanitiser is defined by what it lets
+through, so it can only be trusted where its allowlist matches the sink. `escH`
+is right for text and wrong for a URL, `_mdAttr` is right for an attribute
+delimiter and wrong for a scheme. Ask what the value will BE, not where it goes.

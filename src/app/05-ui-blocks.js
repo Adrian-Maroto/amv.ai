@@ -1643,7 +1643,7 @@ function _buildResearchPanel(state, finished){
   // dedupe display hosts, keep first 12 for the chips
   const shown = sources.slice(0, 12);
   const chips = shown.map(s=>
-    '<a class="rsrc-chip" href="'+escH(s.url)+'" target="_blank" rel="noopener" title="'+escH(s.title)+'">'+
+    '<a class="rsrc-chip" href="'+escH(safeUrl(s.url))+'" target="_blank" rel="noopener" title="'+escH(s.title)+'">'+
       '<span class="rsrc-fav"></span>'+escH(host(s.url))+
     '</a>'
   ).join('');
@@ -2334,7 +2334,7 @@ function renderImgGallery(){
     '</div>'
   ).join('') + (pg.hasMore ? '<div style="grid-column:1/-1">'+_showMoreBtn('images', pg.remaining, 24)+'</div>' : '');
   g.querySelectorAll('[data-rm]').forEach(b=>on(b,'click',()=>{S.imgs=S.imgs.filter(i=>i.id!==b.dataset.rm);renderImgGallery();}));
-  g.querySelectorAll('[data-url]').forEach(b=>on(b,'click',()=>{if(b.dataset.url)window.open(b.dataset.url,'_blank');}));
+  g.querySelectorAll('[data-url]').forEach(b=>on(b,'click',()=>{ const u=safeMediaSrc(b.dataset.url); if(u) window.open(u,'_blank','noopener'); }));
   const gm=g.querySelector('[data-pagemore="images"]');
   if(gm) gm.addEventListener('click',()=>{ _pageMore('images',24); renderImgGallery(); });
   visible.forEach(img=>loadImg(img));   // only load what's shown, not all
@@ -2355,7 +2355,9 @@ function loadImg(img){
   // First, try the operator's premium provider (if configured). On success we
   // use its image directly; otherwise we fall through to the free generator.
   (async()=>{
-    const psrc=await _premiumImageSrc(img.prompt,img.style,img.ratio,img.seed);
+    /* The provider answers with a link or with base64 bytes, and either way it
+       is a string from outside this app going into an href and an <img src>. */
+    const psrc=safeMediaSrc(await _premiumImageSrc(img.prompt,img.style,img.ratio,img.seed));
     if(psrc){
       const ob=$('io-'+img.id),db=$('id-'+img.id);
       if(ob) ob.dataset.url=psrc;
@@ -2641,7 +2643,7 @@ function renderVidGrid(){
     if(v.status === 'succeeded' && v.url){
       /* A REAL video element with the REAL file. Not a play-button graphic. */
       inner =
-        '<video class="vvid" src="'+escH(v.url)+'" controls playsinline preload="metadata" '+
+        '<video class="vvid" src="'+escH(safeMediaSrc(v.url))+'" controls playsinline preload="metadata" '+
           'poster="" '+
           (v.aspect==='9:16' ? 'style="aspect-ratio:9/16"' : v.aspect==='1:1' ? 'style="aspect-ratio:1/1"' : '')+
         '></video>';
@@ -2680,7 +2682,7 @@ function renderVidGrid(){
         '<div class="vtt">'+escH(v.p.slice(0,46))+(v.p.length>46?'\u2026':'')+'</div>'+
         '<div class="vtg">'+tags.map(t=>'<span class="vtk">'+escH(t)+'</span>').join('')+
           (v.status==='succeeded' && v.url
-            ? '<a class="vtk vdl" href="'+escH(v.url)+'" download target="_blank" rel="noopener">Download</a>'
+            ? '<a class="vtk vdl" href="'+escH(safeMediaSrc(v.url))+'" download target="_blank" rel="noopener">Download</a>'
             : '')+
         '</div>'+
       '</div>'+

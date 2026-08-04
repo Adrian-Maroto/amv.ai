@@ -488,6 +488,43 @@ function escH(t) {
 function _noDash(t){ return (t==null?'':String(t)).replace(/[\u2014\u2013]/g,'-'); }
 
 /* ============================================================
+   A URL THAT CAME FROM SOMEWHERE ELSE, ON ITS WAY INTO A LINK
+
+   escH stops a value from breaking OUT of an attribute. It says nothing about
+   whether the value is safe INSIDE one, and those are different questions.
+   `javascript:alert(1)` contains not one character escH touches, so it passes
+   through untouched and runs when the link is clicked - and script-src carries
+   'unsafe-inline', so nothing downstream stops it either.
+
+   The URLs that reach an href, a src, or window.open in this app are not all
+   ours. They come from web search results, an image or video provider's CDN,
+   an artifact somebody shared by link, a payment processor's redirect. Each of
+   those is a place where a wrong string becomes an executable one.
+
+   So a scheme allowlist, in one place: only what fetches. Everything else
+   returns empty, which renders as a dead link instead of a live hazard, and a
+   dead link is a bug somebody reports rather than an account somebody loses.
+   ============================================================ */
+function safeUrl(u){
+  const s = String(u == null ? '' : u).trim();
+  if(!s) return '';
+  if(/^https?:\/\//i.test(s)) return s;
+  if(/^\/(?!\/)/.test(s)) return s;        // same-origin path, but not //evil.com
+  if(/^mailto:[^\s<>"']+$/i.test(s)) return s;
+  return '';
+}
+/* Images and video may additionally be a base64 data URL, because a provider
+   can answer with the bytes rather than a link. Held to an exact shape - a
+   known media type and a base64 payload - rather than "starts with data:",
+   which would also admit data:text/html. */
+function safeMediaSrc(u){
+  const s = String(u == null ? '' : u).trim();
+  if(/^data:(image\/(png|jpeg|jpg|gif|webp|avif)|video\/(mp4|webm));base64,[A-Za-z0-9+/=]+$/i.test(s)) return s;
+  return safeUrl(s);
+}
+try{ window.safeUrl=safeUrl; window.safeMediaSrc=safeMediaSrc; }catch(e){}
+
+/* ============================================================
    AVATARS - one shared source of truth so the default is identical
    everywhere. If a user hasn't set a photo, they get the generic AMV
    avatar (a branded SVG mark on the brand gradient). They can change

@@ -1444,7 +1444,7 @@ async function openSharedChatsManager(){
   body.innerHTML='<p class="ob-sub">Anyone with one of these links can read that conversation. Revoking a link stops it working immediately.</p>'+
     '<ul class="shr-list">'+items.map(i=>
       '<li class="shr-item"><div><div class="shr-t">'+escH(i.title||'Conversation')+'</div>'+
-      '<a class="shr-u" href="'+escH(i.url)+'" target="_blank" rel="noopener">'+escH(i.url)+'</a></div>'+
+      '<a class="shr-u" href="'+escH(safeUrl(i.url))+'" target="_blank" rel="noopener">'+escH(i.url)+'</a></div>'+
       '<button class="btn bs shr-rev" data-id="'+escH(i.id)+'">Revoke</button></li>').join('')+'</ul>';
   body.querySelectorAll('.shr-rev').forEach(b=>b.addEventListener('click',async()=>{
     b.disabled=true; b.textContent='Revoking\u2026';

@@ -1027,7 +1027,7 @@ async function openMySites(){
   const rows = sites.length
     ? sites.map(s=>'<div class="site-row">'+
         '<div class="site-l"><div class="site-t">'+escH(s.title||s.slug)+'</div>'+
-          '<a class="site-u" href="'+escH(s.url)+'" target="_blank" rel="noopener">'+escH(s.url.replace(/^https?:\/\//,''))+'</a>'+
+          '<a class="site-u" href="'+escH(safeUrl(s.url))+'" target="_blank" rel="noopener">'+escH(String(s.url||'').replace(/^https?:\/\//,''))+'</a>'+
           '<div class="site-m">'+(s.views||0)+' view'+((s.views||0)===1?'':'s')+' \u00b7 '+Math.max(1,Math.round((s.bytes||0)/1024))+'KB</div></div>'+
         '<div class="site-r">'+
           '<button class="btn bs" data-open="'+escH(s.url)+'">Open</button>'+
@@ -1037,7 +1037,7 @@ async function openMySites(){
   ovr.innerHTML='<div class="share-modal"><div class="share-title">My live sites</div>'+
     '<div class="site-list">'+rows+'</div>'+
     '<div class="share-actions"><button class="btn bs" id="ms-close">Close</button></div></div>';
-  ovr.querySelectorAll('[data-open]').forEach(b=>on(b,'click',()=>window.open(b.dataset.open,'_blank','noopener')));
+  ovr.querySelectorAll('[data-open]').forEach(b=>on(b,'click',()=>{ const u=safeUrl(b.dataset.open); if(u) window.open(u,'_blank','noopener'); }));
   ovr.querySelectorAll('[data-del]').forEach(b=>on(b,'click',async()=>{
     b.disabled=true; b.textContent='\u2026';
     try{ await _deployApi('/deploy/delete',{slug:b.dataset.del}); toast('Site taken down.','success',3000); openMySites(); }
@@ -1526,7 +1526,7 @@ async function _amvRunTool(name, input, onStatus){
       if(!src) return { text:'Image generation needs the AMV engine connected. Tell the user to enable it in Settings.', render:null };
       return {
         text:'Image generated successfully and shown to the user.',
-        render:'<img src="'+escH(src)+'" alt="'+escH(input.prompt)+'" class="chat-img" loading="lazy">'
+        render:'<img src="'+escH(safeMediaSrc(src))+'" alt="'+escH(input.prompt)+'" class="chat-img" loading="lazy">'
       };
     }
 
@@ -1562,7 +1562,7 @@ async function _amvRunTool(name, input, onStatus){
             }catch(e){}
             return {
               text:'The video was generated and is shown to the user.',
-              render:'<video src="'+escH(st.url)+'" class="chat-vid" controls playsinline preload="metadata"></video>'
+              render:'<video src="'+escH(safeMediaSrc(st.url))+'" class="chat-vid" controls playsinline preload="metadata"></video>'
             };
           }
           if(st.status==='failed')
@@ -1621,7 +1621,7 @@ async function _amvRunTool(name, input, onStatus){
         return {
           text:'Published successfully. It is LIVE at: '+d.url+' - give the user this exact URL.',
           render:'<div class="chat-deployed"><span class="deploy-dot"></span><div><b>Live now</b>'+
-                 '<a href="'+escH(d.url)+'" target="_blank" rel="noopener">'+escH(d.url)+'</a></div></div>'
+                 '<a href="'+escH(safeUrl(d.url))+'" target="_blank" rel="noopener">'+escH(d.url)+'</a></div></div>'
         };
       }catch(e){ return { text:'Deploy failed: '+(e.message||e), render:null }; }
     }

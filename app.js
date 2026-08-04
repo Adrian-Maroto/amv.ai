@@ -488,6 +488,43 @@ function escH(t) {
 function _noDash(t){ return (t==null?'':String(t)).replace(/[\u2014\u2013]/g,'-'); }
 
 /* ============================================================
+   A URL THAT CAME FROM SOMEWHERE ELSE, ON ITS WAY INTO A LINK
+
+   escH stops a value from breaking OUT of an attribute. It says nothing about
+   whether the value is safe INSIDE one, and those are different questions.
+   `javascript:alert(1)` contains not one character escH touches, so it passes
+   through untouched and runs when the link is clicked - and script-src carries
+   'unsafe-inline', so nothing downstream stops it either.
+
+   The URLs that reach an href, a src, or window.open in this app are not all
+   ours. They come from web search results, an image or video provider's CDN,
+   an artifact somebody shared by link, a payment processor's redirect. Each of
+   those is a place where a wrong string becomes an executable one.
+
+   So a scheme allowlist, in one place: only what fetches. Everything else
+   returns empty, which renders as a dead link instead of a live hazard, and a
+   dead link is a bug somebody reports rather than an account somebody loses.
+   ============================================================ */
+function safeUrl(u){
+  const s = String(u == null ? '' : u).trim();
+  if(!s) return '';
+  if(/^https?:\/\//i.test(s)) return s;
+  if(/^\/(?!\/)/.test(s)) return s;        // same-origin path, but not //evil.com
+  if(/^mailto:[^\s<>"']+$/i.test(s)) return s;
+  return '';
+}
+/* Images and video may additionally be a base64 data URL, because a provider
+   can answer with the bytes rather than a link. Held to an exact shape - a
+   known media type and a base64 payload - rather than "starts with data:",
+   which would also admit data:text/html. */
+function safeMediaSrc(u){
+  const s = String(u == null ? '' : u).trim();
+  if(/^data:(image\/(png|jpeg|jpg|gif|webp|avif)|video\/(mp4|webm));base64,[A-Za-z0-9+/=]+$/i.test(s)) return s;
+  return safeUrl(s);
+}
+try{ window.safeUrl=safeUrl; window.safeMediaSrc=safeMediaSrc; }catch(e){}
+
+/* ============================================================
    AVATARS - one shared source of truth so the default is identical
    everywhere. If a user hasn't set a photo, they get the generic AMV
    avatar (a branded SVG mark on the brand gradient). They can change
@@ -3393,7 +3430,7 @@ async function openSharedChatsManager(){
   body.innerHTML='<p class="ob-sub">Anyone with one of these links can read that conversation. Revoking a link stops it working immediately.</p>'+
     '<ul class="shr-list">'+items.map(i=>
       '<li class="shr-item"><div><div class="shr-t">'+escH(i.title||'Conversation')+'</div>'+
-      '<a class="shr-u" href="'+escH(i.url)+'" target="_blank" rel="noopener">'+escH(i.url)+'</a></div>'+
+      '<a class="shr-u" href="'+escH(safeUrl(i.url))+'" target="_blank" rel="noopener">'+escH(i.url)+'</a></div>'+
       '<button class="btn bs shr-rev" data-id="'+escH(i.id)+'">Revoke</button></li>').join('')+'</ul>';
   body.querySelectorAll('.shr-rev').forEach(b=>b.addEventListener('click',async()=>{
     b.disabled=true; b.textContent='Revoking\u2026';
@@ -5858,7 +5895,7 @@ function _buildResearchPanel(state, finished){
   // dedupe display hosts, keep first 12 for the chips
   const shown = sources.slice(0, 12);
   const chips = shown.map(s=>
-    '<a class="rsrc-chip" href="'+escH(s.url)+'" target="_blank" rel="noopener" title="'+escH(s.title)+'">'+
+    '<a class="rsrc-chip" href="'+escH(safeUrl(s.url))+'" target="_blank" rel="noopener" title="'+escH(s.title)+'">'+
       '<span class="rsrc-fav"></span>'+escH(host(s.url))+
     '</a>'
   ).join('');
@@ -6549,7 +6586,7 @@ function renderImgGallery(){
     '</div>'
   ).join('') + (pg.hasMore ? '<div style="grid-column:1/-1">'+_showMoreBtn('images', pg.remaining, 24)+'</div>' : '');
   g.querySelectorAll('[data-rm]').forEach(b=>on(b,'click',()=>{S.imgs=S.imgs.filter(i=>i.id!==b.dataset.rm);renderImgGallery();}));
-  g.querySelectorAll('[data-url]').forEach(b=>on(b,'click',()=>{if(b.dataset.url)window.open(b.dataset.url,'_blank');}));
+  g.querySelectorAll('[data-url]').forEach(b=>on(b,'click',()=>{ const u=safeMediaSrc(b.dataset.url); if(u) window.open(u,'_blank','noopener'); }));
   const gm=g.querySelector('[data-pagemore="images"]');
   if(gm) gm.addEventListener('click',()=>{ _pageMore('images',24); renderImgGallery(); });
   visible.forEach(img=>loadImg(img));   // only load what's shown, not all
@@ -6570,7 +6607,9 @@ function loadImg(img){
   // First, try the operator's premium provider (if configured). On success we
   // use its image directly; otherwise we fall through to the free generator.
   (async()=>{
-    const psrc=await _premiumImageSrc(img.prompt,img.style,img.ratio,img.seed);
+    /* The provider answers with a link or with base64 bytes, and either way it
+       is a string from outside this app going into an href and an <img src>. */
+    const psrc=safeMediaSrc(await _premiumImageSrc(img.prompt,img.style,img.ratio,img.seed));
     if(psrc){
       const ob=$('io-'+img.id),db=$('id-'+img.id);
       if(ob) ob.dataset.url=psrc;
@@ -6856,7 +6895,7 @@ function renderVidGrid(){
     if(v.status === 'succeeded' && v.url){
       /* A REAL video element with the REAL file. Not a play-button graphic. */
       inner =
-        '<video class="vvid" src="'+escH(v.url)+'" controls playsinline preload="metadata" '+
+        '<video class="vvid" src="'+escH(safeMediaSrc(v.url))+'" controls playsinline preload="metadata" '+
           'poster="" '+
           (v.aspect==='9:16' ? 'style="aspect-ratio:9/16"' : v.aspect==='1:1' ? 'style="aspect-ratio:1/1"' : '')+
         '></video>';
@@ -6895,7 +6934,7 @@ function renderVidGrid(){
         '<div class="vtt">'+escH(v.p.slice(0,46))+(v.p.length>46?'\u2026':'')+'</div>'+
         '<div class="vtg">'+tags.map(t=>'<span class="vtk">'+escH(t)+'</span>').join('')+
           (v.status==='succeeded' && v.url
-            ? '<a class="vtk vdl" href="'+escH(v.url)+'" download target="_blank" rel="noopener">Download</a>'
+            ? '<a class="vtk vdl" href="'+escH(safeMediaSrc(v.url))+'" download target="_blank" rel="noopener">Download</a>'
             : '')+
         '</div>'+
       '</div>'+
@@ -10613,7 +10652,7 @@ function _admRenderTab(tab, backendLive, live){
           '<td class="adm-fin-amt">$'+(tx.amount||0).toFixed(2)+(tx.refunded>0?' <span class="adm-fin-ref">-$'+tx.refunded.toFixed(2)+'</span>':'')+'</td>'+
           '<td><span class="adm-fin-status s-'+escH(tx.status||'')+'">'+escH(tx.status||'')+'</span></td>'+
           '<td>'+(tx.last4?('\u2022\u2022\u2022\u2022 '+escH(tx.last4)):'-')+'</td>'+
-          '<td>'+(tx.receipt?'<a href="'+escH(tx.receipt)+'" target="_blank" rel="noopener" class="adm-fin-rc">Receipt</a>':'')+'</td>'+
+          '<td>'+(safeUrl(tx.receipt)?'<a href="'+escH(safeUrl(tx.receipt))+'" target="_blank" rel="noopener" class="adm-fin-rc">Receipt</a>':'')+'</td>'+
         '</tr>').join('')+
       '</tbody></table></div>'+
       (f.hasMore?'<div class="adm-fin-more">Showing the most recent '+f.transactions.length+' transactions.</div>':'');
@@ -11095,7 +11134,7 @@ async function _loadInvoices(){
         '<div class="bill-inv-main"><span class="bill-inv-num">'+escH(v.number)+'</span><span class="bill-inv-date">'+dt+'</span></div>'+
         '<div class="bill-inv-right"><span class="bill-inv-amt">'+v.currency+' '+v.amount.toFixed(2)+'</span>'+
         '<span class="bill-inv-status '+(paid?'ok':'')+'">'+escH(v.status)+'</span>'+
-        (v.pdf?'<a class="bill-inv-dl" href="'+escH(v.pdf)+'" target="_blank" rel="noopener">Download</a>':'')+
+        (safeUrl(v.pdf)?'<a class="bill-inv-dl" href="'+escH(safeUrl(v.pdf))+'" target="_blank" rel="noopener">Download</a>':'')+
         '</div></div>';
     }).join('')+'</div>';
   }catch(e){ if(el) el.innerHTML='<div class="bill-inv-empty">Couldn\u2019t load invoices right now.</div>'; _logErr('loadInvoices',e); }
@@ -11197,7 +11236,10 @@ function _showBillingNotice(billing){
     // can actually be changed. Falls back to the billing tab if it is not set up.
     (async()=>{
       try{
-        const url = await AMV_API.portal('');
+        /* A navigation target that came back over the wire. Held to the
+           same scheme allowlist as any other outside URL - a javascript: here
+           would run in this origin, with the session in it. */
+        const url = safeUrl(await AMV_API.portal(''));
         if(url){ location.href = url; return; }
       }catch(e){}
       try{ setTab('billing'); }catch(e){}
@@ -11752,7 +11794,9 @@ function _payRenderMethod(method,plan){
 /* Opens the real external payment page. On success your checkout
    redirects back to ?paid=PLAN and the app activates the plan. */
 function _openExternalPay(url, plan, kind){
-  const w=window.open(url,'_blank');
+  const safe=safeUrl(url);
+  if(!safe){ toast('That payment link is not valid. Please try again.','error',5000); return; }
+  const w=window.open(safe,'_blank','noopener');
   if(!w){ toast('Allow pop-ups to open the secure checkout.','error',5000); return; }
   toast('Complete your payment in the new tab - your plan updates once it succeeds.','info',6000);
 }
@@ -11813,7 +11857,7 @@ async function _payCard(plan){
   }
   try{
     const email=(S.user&&S.user.email)||'';
-    const url=await AMV_API.stripeCheckout(plan, email);
+    const url=safeUrl(await AMV_API.stripeCheckout(plan, email));
     if(!url) throw new Error('no checkout url');
     // The card is entered on the processor's page, never here.
     location.href=url;
@@ -14677,7 +14721,7 @@ async function openMySites(){
   const rows = sites.length
     ? sites.map(s=>'<div class="site-row">'+
         '<div class="site-l"><div class="site-t">'+escH(s.title||s.slug)+'</div>'+
-          '<a class="site-u" href="'+escH(s.url)+'" target="_blank" rel="noopener">'+escH(s.url.replace(/^https?:\/\//,''))+'</a>'+
+          '<a class="site-u" href="'+escH(safeUrl(s.url))+'" target="_blank" rel="noopener">'+escH(String(s.url||'').replace(/^https?:\/\//,''))+'</a>'+
           '<div class="site-m">'+(s.views||0)+' view'+((s.views||0)===1?'':'s')+' \u00b7 '+Math.max(1,Math.round((s.bytes||0)/1024))+'KB</div></div>'+
         '<div class="site-r">'+
           '<button class="btn bs" data-open="'+escH(s.url)+'">Open</button>'+
@@ -14687,7 +14731,7 @@ async function openMySites(){
   ovr.innerHTML='<div class="share-modal"><div class="share-title">My live sites</div>'+
     '<div class="site-list">'+rows+'</div>'+
     '<div class="share-actions"><button class="btn bs" id="ms-close">Close</button></div></div>';
-  ovr.querySelectorAll('[data-open]').forEach(b=>on(b,'click',()=>window.open(b.dataset.open,'_blank','noopener')));
+  ovr.querySelectorAll('[data-open]').forEach(b=>on(b,'click',()=>{ const u=safeUrl(b.dataset.open); if(u) window.open(u,'_blank','noopener'); }));
   ovr.querySelectorAll('[data-del]').forEach(b=>on(b,'click',async()=>{
     b.disabled=true; b.textContent='\u2026';
     try{ await _deployApi('/deploy/delete',{slug:b.dataset.del}); toast('Site taken down.','success',3000); openMySites(); }
@@ -15176,7 +15220,7 @@ async function _amvRunTool(name, input, onStatus){
       if(!src) return { text:'Image generation needs the AMV engine connected. Tell the user to enable it in Settings.', render:null };
       return {
         text:'Image generated successfully and shown to the user.',
-        render:'<img src="'+escH(src)+'" alt="'+escH(input.prompt)+'" class="chat-img" loading="lazy">'
+        render:'<img src="'+escH(safeMediaSrc(src))+'" alt="'+escH(input.prompt)+'" class="chat-img" loading="lazy">'
       };
     }
 
@@ -15212,7 +15256,7 @@ async function _amvRunTool(name, input, onStatus){
             }catch(e){}
             return {
               text:'The video was generated and is shown to the user.',
-              render:'<video src="'+escH(st.url)+'" class="chat-vid" controls playsinline preload="metadata"></video>'
+              render:'<video src="'+escH(safeMediaSrc(st.url))+'" class="chat-vid" controls playsinline preload="metadata"></video>'
             };
           }
           if(st.status==='failed')
@@ -15271,7 +15315,7 @@ async function _amvRunTool(name, input, onStatus){
         return {
           text:'Published successfully. It is LIVE at: '+d.url+' - give the user this exact URL.',
           render:'<div class="chat-deployed"><span class="deploy-dot"></span><div><b>Live now</b>'+
-                 '<a href="'+escH(d.url)+'" target="_blank" rel="noopener">'+escH(d.url)+'</a></div></div>'
+                 '<a href="'+escH(safeUrl(d.url))+'" target="_blank" rel="noopener">'+escH(d.url)+'</a></div></div>'
         };
       }catch(e){ return { text:'Deploy failed: '+(e.message||e), render:null }; }
     }

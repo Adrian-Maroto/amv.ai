@@ -258,7 +258,9 @@ function _payRenderMethod(method,plan){
 /* Opens the real external payment page. On success your checkout
    redirects back to ?paid=PLAN and the app activates the plan. */
 function _openExternalPay(url, plan, kind){
-  const w=window.open(url,'_blank');
+  const safe=safeUrl(url);
+  if(!safe){ toast('That payment link is not valid. Please try again.','error',5000); return; }
+  const w=window.open(safe,'_blank','noopener');
   if(!w){ toast('Allow pop-ups to open the secure checkout.','error',5000); return; }
   toast('Complete your payment in the new tab - your plan updates once it succeeds.','info',6000);
 }
@@ -319,7 +321,7 @@ async function _payCard(plan){
   }
   try{
     const email=(S.user&&S.user.email)||'';
-    const url=await AMV_API.stripeCheckout(plan, email);
+    const url=safeUrl(await AMV_API.stripeCheckout(plan, email));
     if(!url) throw new Error('no checkout url');
     // The card is entered on the processor's page, never here.
     location.href=url;
