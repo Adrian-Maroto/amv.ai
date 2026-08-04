@@ -137,9 +137,30 @@ if (backend && toml) {
     'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_FROM_NUMBER',
     'STRIPE_PRICE_PRO', 'STRIPE_PRICE_ELITE', 'STRIPE_PRICE_ULTRA',
     'PAYPAL_CLIENT_ID', 'PAYPAL_SECRET', 'PAYPAL_MODE', 'PAYPAL_WEBHOOK_ID',
-    'PAYPAL_PLAN_PRO', 'PAYPAL_PLAN_ELITE', 'PAYPAL_PLAN_ULTRA', 'TURNSTILE_SECRET'];
+    'PAYPAL_PLAN_PRO', 'PAYPAL_PLAN_ELITE', 'PAYPAL_PLAN_ULTRA', 'TURNSTILE_SECRET',
+    /* These were read by the Worker and missing from this list, so the deploy
+       checklist did not mention them. GOOGLE_CLIENT_SECRET is the one that
+       matters: without it the auth-code exchange cannot happen, and Google
+       sign-in fails at the last step with the client id correctly set - which
+       is the hardest kind of misconfiguration to diagnose, because everything
+       up to the redirect works. */
+    'GOOGLE_CLIENT_SECRET',
+    'FINANCE_CLIENT_ID', 'FINANCE_SECRET', 'FINANCE_API_URL',
+    'SENTRY_DSN', 'POSTHOG_KEY', 'POSTHOG_HOST', 'SUPPORT_EMAIL', 'BROWSER'];
   const usedSecrets = [...used].filter(u => KNOWN_SECRETS.includes(u)).sort();
   const REQUIRED = ['AMV_MODEL_KEY', 'JWT_SECRET'];
+  /* Secrets that are optional to HAVE, but not optional once their partner is
+     set. A client id with no client secret is a half-configured integration
+     that fails at the moment somebody tries to use it. */
+  const PAIRED = [['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET'],
+                  ['FINANCE_CLIENT_ID', 'FINANCE_SECRET'],
+                  ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET']];
+  for (const [a, b] of PAIRED) {
+    if (used.has(a) && !used.has(b)) {
+      warn(`${a} is read but ${b} is not - that integration cannot complete`,
+           `set ${b} too, or neither`);
+    }
+  }
   for (const r of REQUIRED) {
     if (used.has(r)) ok(`required secret ${r} is read by the Worker (set it with: wrangler secret put ${r})`);
   }
