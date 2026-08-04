@@ -15585,7 +15585,11 @@ const AMVTeam = {
      have no team" - answering it that way showed an existing team's owner a
      create-a-team form, and a member an upgrade wall, for a team that exists. */
   async get(){ if(!this.enabled()) return null; const r=await AMV_API._fetch('/team/get',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error) throw new Error(d.error); this._cache=d.team; return d.team; },
-  async create(name){ const r=await AMV_API._fetch('/team/create',{method:'POST',body:JSON.stringify({name})}); const d=await r.json(); if(d.error) throw new Error(d.error); this._cache=d.team; return d.team; },
+  /* Returns { team, existing }. The server answers a second create with the
+     team the account already owns rather than making another one, so the
+     caller has to be able to tell the difference - "Team created!" over a team
+     that was already there is a claim about something that did not happen. */
+  async create(name){ const r=await AMV_API._fetch('/team/create',{method:'POST',body:JSON.stringify({name})}); const d=await r.json(); if(d.error) throw new Error(d.error); this._cache=d.team; return { team:d.team, existing:!!d.existing }; },
   async invite(email,role){ const r=await AMV_API._fetch('/team/invite',{method:'POST',body:JSON.stringify({email,role})}); const d=await r.json(); if(d.error){ const e=new Error(d.error); e.code=d.code; e.seats=d.seats; throw e; } return d; },
   async join(token){ const r=await AMV_API._fetch('/team/join',{method:'POST',body:JSON.stringify({token})}); const d=await r.json(); if(d.error) throw new Error(d.error); this._cache=d.team; return d.team; },
   async remove(email){ const r=await AMV_API._fetch('/team/remove',{method:'POST',body:JSON.stringify({email})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d.members; },
@@ -15859,7 +15863,11 @@ function _renderTeamCreate(vc){
   on($('team-create-btn'),'click',async()=>{
     const name=$('team-name')?.value.trim()||'My Team';
     const btn=$('team-create-btn'); if(btn){btn.disabled=true;btn.textContent='Creating\u2026';}
-    try{ await AMVTeam.create(name); toast('Team created!','success'); renderTeamView(); }
+    try{
+      const res=await AMVTeam.create(name);
+      toast(res.existing?'You already have a team - opening it.':'Team created!','success');
+      renderTeamView();
+    }
     catch(e){ if(btn){btn.disabled=false;btn.textContent='Create team';} toast(e.message||'Could not create team','error'); }
   });
 }

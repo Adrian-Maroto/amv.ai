@@ -4614,6 +4614,39 @@ async function teamCreate(request, env){
     return json({ error: 'Team workspaces are included with Elite and above. Upgrade to create one.',
                   code: 'plan_required', requires: TEAM_MIN_PLAN }, 402);
   }
+  /* One team per account, because the data model has always assumed one and
+     nothing enforced it. `ent.teamId` and `userteam:<email>` are both single
+     valued, so a second /team/create repointed them and ABANDONED the first
+     team - which kept every member and its cached owner plan.
+
+     That cached plan is the hole. `_refreshTeamPlan` only ever visits the team
+     the owner currently points at, so an abandoned team is never refreshed
+     again: cancel the subscription, and everyone still in the first team keeps
+     an Elite allowance that nobody is paying for, permanently. Creating a
+     second team is an ordinary thing to click, so this did not need anybody to
+     be trying.
+
+     The other direction is a billing hole too. Somebody who was a MEMBER of a
+     team and created their own stopped pointing at the old one while remaining
+     in its members array - so its owner went on paying for a seat its holder
+     could no longer reach. That is refused rather than papered over: leave the
+     team first, which is a route that exists and does the accounting. */
+  const priorId = await env.AMV_KV.get(`userteam:${user.email}`);
+  if(priorId){
+    const prior = await DB.get(env, 'team', priorId);
+    if(prior && _role(prior, user.email)){
+      if(String(prior.ownerEmail||'').toLowerCase() === String(user.email||'').toLowerCase()){
+        return json({ ok:true, existing:true, team: prior,
+                      seats:{ used:(prior.members||[]).length,
+                              limit:_teamSeatLimit(_teamPlan(prior), prior.customCfg) } });
+      }
+      return json({ error:'You are already in a team. Leave it before creating your own.',
+                    code:'already_in_team' }, 409);
+    }
+    /* A pointer to a team that is gone, or one they are no longer in, is stale
+       and safe to replace. */
+  }
+
   const id = 'team_' + crypto.randomUUID().replace(/-/g,'');
   const team = {
     id, name: name||'My Team', ownerEmail: user.email,

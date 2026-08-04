@@ -1183,3 +1183,31 @@ wrote to disk was erased only under the CURRENT account's prefix, so a token
 written while somebody else was signed in stayed there indefinitely. A secret in
 the wrong place is not less of one because the person who put it there has since
 logged out.
+
+## 107. A model that assumes one of something has to say so somewhere
+`ent.teamId` holds one team id. `userteam:<email>` holds one team id. Every path
+that asks which team somebody is in reads one of those two. The model has always
+been one team per account, and nothing anywhere enforced it - so a second
+`/team/create` repointed both and left the first team behind, with its members
+and its cached owner plan intact.
+
+The cached plan is where it costs money. `_refreshTeamPlan` visits the team the
+owner CURRENTLY points at, so an abandoned team is never refreshed again: cancel
+the subscription and everyone still in the first team keeps an Elite allowance
+that nobody pays for, permanently. Clicking "create a team" twice is an ordinary
+thing to do, so this needed no ill intent at all.
+
+The mirror case was a hole in the other direction. A MEMBER of a team who
+created their own stopped pointing at the old one while remaining in its members
+array, so its owner went on paying for a seat whose holder could not reach it.
+
+The rule this suggests, and the reason it is worth writing down: wherever a
+pointer is single-valued, something must refuse the second write, and the refusal
+belongs on the server. A cardinality that lives only in the shape of the data is
+an assumption, and an assumption is what a caller violates by accident. The way
+to find more of these is to look for a `put` whose key is a single-valued pointer
+and ask what happens to whatever it was pointing at before.
+
+Found by computing, not reading: every route that writes a record, minus every
+route with a visible bound on how many. Twenty-four came back, twenty-three were
+updates to a record keyed by the caller's own identity, and one created.
