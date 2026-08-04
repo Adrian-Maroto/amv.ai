@@ -75,7 +75,9 @@ const sliceBetween = (start, end) => {
 const stripComments = (t) => t.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|\s)\/\/[^\n]*/g, ' ');
 const erasureBody = stripComments(bodyOf('authDeleteAccount'));
 const looseBlock = sliceBetween('const loose = [', 'for (const raw of loose)');
-const kindsBlock = sliceBetween('const perUserKinds = [', '];');
+/* The kinds list moved to module scope so the data export could be built from
+   the same one erasure walks. */
+const kindsBlock = sliceBetween('const PER_USER_KINDS = [', '];');
 
 /* Everything the erasure path deletes, however it spells it: the loose array,
    the kinds array, and any prefix scan or explicit delete in the function. */

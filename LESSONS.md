@@ -1310,3 +1310,27 @@ read as throttled, and sixteen assertions failed for a reason that had nothing t
 do with the code under test. A fake that silently answers "no" to an unknown
 question fails the test rather than the product, which wastes the run - but a
 fake that silently answers "yes" would have passed it, which wastes the check.
+
+## 111. Two lists that must agree should be one list
+"Export my data" collected what lived in the browser and said so. Honest about
+its scope, and not the answer somebody is asking for when they press it next to
+"Delete account": automations, approvals, handoffs, purchases, the wallet,
+listings and the activity log are all held on the server, and none of them were
+in the file.
+
+The fix worth having was not "add an endpoint". It was "add an endpoint that
+cannot drift from the truth". Erasure already maintains the authoritative list of
+everything held for one account, because it has to delete all of it, so the
+export iterates that same constant. The two can now only disagree by somebody
+editing the list, which moves both at once, in the right direction.
+
+The direction matters. If the two were separate, the drift that goes unnoticed is
+the export shrinking - it still returns a plausible file, and nobody can tell
+from the outside that a record was left out. An erasure that shrinks leaves data
+behind and eventually somebody notices; an export that shrinks lies quietly.
+
+One limit belongs on it: a live credential is not somebody's data to download. A
+bank token, an API key hash, a pending verification code - all held, all named in
+the response as withheld, none returned. Otherwise the feature built for a
+data-access right becomes a way to read a key back out, which is a worse hole
+than the one being closed.

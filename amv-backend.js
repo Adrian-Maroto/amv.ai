@@ -3811,6 +3811,7 @@ export default {
         case '/v1/paypal/capture':  return paypalCapture(request, env);
         case '/v1/paypal/webhook':  return paypalWebhook(request, env, ctx);
         case '/v1/entitlement':     return getEntitlement(request, env);
+        case '/v1/account/export':  return accountExport(request, env);
         // --- MARKETPLACE (community templates) ---
         case '/v1/market/list':     return marketList(request, env);
         case '/v1/market/publish':  return marketPublish(request, env);
@@ -4199,6 +4200,88 @@ async function authLogout(request, env) {
    irreversible, so the client requires an explicit typed confirmation before
    calling this. We delete by the user's own email, so one user can only ever
    delete THEMSELVES - never anyone else. */
+/* Everything AMV holds that belongs to one account.
+
+   ONE list, used twice and in opposite directions: erasure deletes it, and the
+   data export returns it. Two lists would drift, and the way they would drift
+   is the dangerous way round - an export that omits a record the product is
+   still holding tells somebody they have everything when they do not, which is
+   the question a data-access request is actually asking. */
+const PER_USER_KINDS = ['acct', 'ent', 'entitleitem', 'data', 'auto', 'crewjobs',
+  'approvals', 'handoff', 'abuse', 'seller', 'widget', 'wallet', 'wallet_tx',
+  'purchases', 'stripecust', 'userteam', 'sites', 'spendlimits',
+  'fin', 'finlink', 'invsnap', 'links', 'fam', 'apikeys', 'consent', 'widget_owner', 'shares', 'presence'];
+
+/* Kinds that are HELD but must never be handed back verbatim: a live
+   credential is not somebody's data to download, and returning it would turn
+   an export into a key-exfiltration route. The fact that the record exists is
+   disclosed; its contents are not. */
+const EXPORT_REDACTED = { fin: 'bank connection credential', finlink: 'bank link token',
+  apikeys: 'API key hashes', stripecust: 'payment processor customer id' };
+
+/* GET /v1/account/export - everything the server holds about the caller.
+
+   The in-app "Export my data" button collected what lived in the BROWSER and
+   said so, which was honest and was not the whole answer: automations,
+   approvals, handoffs, purchases, the wallet, listings, teams and the activity
+   log are all held server-side, and none of them were in the file somebody
+   downloaded before deleting their account.
+
+   Built from PER_USER_KINDS - the same list erasure walks - so the export
+   cannot quietly cover less than the product holds. Anything on that list which
+   is a live credential is reported as present and withheld rather than handed
+   over: a data export is not a way to read a key back out. */
+async function accountExport(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  const guard = await guardAction(env, `acctexport:${user.email}`, 3, 20, 'data exports');
+  if (guard) return guard;
+
+  const email = String(user.email || '').toLowerCase();
+  const records = {}, withheld = {};
+  for (const kind of PER_USER_KINDS) {
+    if (kind in EXPORT_REDACTED) {
+      let present = false;
+      try { present = !!(await DB.get(env, kind, email)); } catch (e) {}
+      if (present) withheld[kind] = EXPORT_REDACTED[kind];
+      continue;
+    }
+    try { const v = await DB.get(env, kind, email); if (v != null) records[kind] = v; } catch (e) {}
+  }
+
+  /* The loose keys, in the same shapes erasure removes them. */
+  const loose = {};
+  const add = async (k, label) => { try { const v = await env.AMV_KV.get(k); if (v != null) loose[label || k] = v; } catch (e) {} };
+  await add(`alog:${email}`, 'activity_log');
+  await add(`refmine:${email}`, 'referral_code');
+  await add(`refpend:${email}`, 'referral_pending');
+  for (const prefix of [`resume:${email}:`, `smsverify:${email}:`]) {
+    try {
+      let cursor;
+      do {
+        const page = await env.AMV_KV.list({ prefix, cursor, limit: 1000 });
+        for (const k of (page.keys || [])) {
+          /* A pending verification CODE is a credential; that one is named, not
+             returned. */
+          if (prefix.startsWith('smsverify')) { withheld[k.name] = 'pending verification code'; continue; }
+          await add(k.name);
+        }
+        cursor = page.list_complete ? undefined : page.cursor;
+      } while (cursor);
+    } catch (e) {}
+  }
+
+  audit(env, 'account_exported', { email, kinds: Object.keys(records).length });
+  return json({
+    ok: true,
+    generatedAt: new Date().toISOString(),
+    account: email,
+    note: 'Everything AMV holds on the server for this account. Records that are live credentials are listed under `withheld` by name only - AMV will not hand a key back through an export.',
+    records, loose, withheld,
+    alsoRetained: { billing: 'invoices and payment records are kept to meet retention obligations and are available on request' },
+  });
+}
+
 async function authDeleteAccount(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
@@ -4437,10 +4520,7 @@ async function authDeleteAccount(request, env) {
 
   /* `fin` is a live credential and `invsnap` is a record of somebody's account
      balances - both are exactly what erasure is for, and neither was listed. */
-  const perUserKinds = ['acct', 'ent', 'entitleitem', 'data', 'auto', 'crewjobs',
-    'approvals', 'handoff', 'abuse', 'seller', 'widget', 'wallet', 'wallet_tx',
-    'purchases', 'stripecust', 'userteam', 'sites', 'spendlimits',
-    'fin', 'finlink', 'invsnap', 'links', 'fam', 'apikeys', 'consent', 'widget_owner', 'shares', 'presence'];
+  const perUserKinds = PER_USER_KINDS;
   /* `billing` is deliberately NOT in that list. Invoices and payment records
      carry retention obligations that erasure does not override, and deciding
      otherwise is a legal call rather than an engineering one. It stays until

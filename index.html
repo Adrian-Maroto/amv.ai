@@ -24904,7 +24904,7 @@ function _confirmDeleteAccount(){
   document.getElementById('del-bg')?.addEventListener('click',closeOvr);
   const inp=$('del-confirm'), go=$('del-go');
   on(inp,'input',()=>{ if(go) go.disabled = (inp.value.trim().toUpperCase()!=='DELETE'); });
-  on($('del-export'),'click',()=>{ try{ _exportUserData(); }catch(e){} });
+  on($('del-export'),'click',()=>{ try{ _exportUserData(); }catch(e){} });   // async; its own errors are reported inside
   on(go,'click',async()=>{
     if(inp.value.trim().toUpperCase()!=='DELETE') return;
     go.disabled=true; go.textContent='Deleting\u2026';
@@ -24930,17 +24930,35 @@ function _confirmDeleteAccount(){
 }
 try{ window._confirmDeleteAccount=_confirmDeleteAccount; }catch(e){}
 
-function _exportUserData(){
+async function _exportUserData(){
   try{
     const u=S.user||{};
+    /* What the SERVER holds, which is most of it. This file used to contain
+       only what lived in this browser and said so - honest about its scope, and
+       not the answer somebody is asking for when they press this next to
+       "Delete account". Automations, approvals, handoffs, purchases, the
+       wallet, listings and the activity log all live on the server. */
+    let server=null, serverError='';
+    if(window.AMV_API && AMV_API.live && AMV_API.token){
+      try{
+        const r=await AMV_API._fetch('/v1/account/export', { method:'GET' });
+        const d=await r.json().catch(()=>null);
+        if(r.ok && d && d.ok) server=d;
+        else serverError=(d && d.error) || ('the server answered '+r.status);
+      }catch(e){ serverError=e.message||'the server could not be reached'; }
+    }
     const collect=(k)=>{ try{ return loadStr(k); }catch(e){ return null; } };
     const data={
       export_info:{
         product:'AMV.AI',
         generated_at:new Date().toISOString(),
         account:u.email||'(not signed in)',
-        note:'This file contains all data AMV stores for you in this browser. AMV never stores your payment card details or self-hosting credentials.'
+        scope: server ? 'Everything AMV holds for you: what is stored in this browser, and what is stored on the server.'
+             : serverError ? 'This browser only. AMV could not reach the server for the rest ('+serverError+') - try again to get the complete file.'
+             : 'This browser only, because this device is not connected to an AMV server. Nothing else is stored anywhere.',
+        note:'AMV never stores your payment card details or self-hosting credentials. Live credentials AMV does hold are listed by name under server.withheld rather than included - an export is not a way to read a key back out.'
       },
+      server: server || (serverError ? { error: serverError } : null),
       profile:{
         name:u.name||'', email:u.email||'', provider:u.provider||'email',
         nickname:collect('amv_nickname')||'', work:collect('amv_work')||'',
@@ -24968,8 +24986,14 @@ function _exportUserData(){
     a.href=url; a.download='amv-my-data-'+stamp+'.json';
     document.body.appendChild(a); a.click();
     setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); },100);
+    /* Say which file they actually got. Reporting a complete export over a
+       partial one is the failure this whole change exists to stop. */
     const conv=(S.convs||[]).length, mem=(S.memory||[]).length;
-    if(typeof toast==='function') toast('Your data was exported - '+conv+' chats, '+mem+' memories included.','success',3500);
+    if(typeof toast==='function'){
+      if(server) toast('Exported everything AMV holds for you - '+conv+' chats, '+mem+' memories, plus your server records.','success',4000);
+      else if(serverError) toast('Exported what is on this device only - the server could not be reached. Try again for the complete file.','info',5000);
+      else toast('Your data was exported - '+conv+' chats, '+mem+' memories included.','success',3500);
+    }
   }catch(e){ _logErr('exportData',e); if(typeof toast==='function') toast('Couldn\u2019t export right now. Please try again.','error'); }
 }
 try{ window._exportUserData=_exportUserData; }catch(e){}
