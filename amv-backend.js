@@ -6614,13 +6614,35 @@ async function widgetChat(request, env, ctx) {
   const key2 = RAW_TO_KEY[cfg.model] || (ENGINES[cfg.model] ? cfg.model : 'amv-core');
   const eng = ENGINES[key2];
 
-  // Per-widget DAILY MESSAGE cap (atomic test-and-increment).
+  /* Per-widget DAILY MESSAGE cap, reserved atomically.
+
+     This said "atomic test-and-increment" and was a read, a comparison, and an
+     increment forty lines apart. Requests arriving together all read the same
+     value, all pass, and all increment - so the cap is exceeded by however many
+     were in flight, which on a public endpoint is however many a caller cares
+     to send at once. The per-IP throttle bounds one caller; it does nothing
+     about a distributed burst, which is the case a cap on a PUBLIC endpoint
+     exists for.
+
+     `reserve` is the operation the counter already has for this, and it is what
+     the image and video quotas use. A cap of 0 means unlimited, so that case
+     counts without a ceiling rather than reserving against zero and refusing
+     everything. */
   const msgName = `wmsg:${key}:${todayKey()}`;
-  const msgUsed = (await counter(env, msgName, { op: 'get' })).value || 0;
-  if (cfg.dailyMsgCap > 0 && msgUsed >= cfg.dailyMsgCap) {
+  const msgCap = cfg.dailyMsgCap > 0 ? cfg.dailyMsgCap : 0;
+  const msgRes = msgCap
+    ? await counter(env, msgName, { op: 'reserve', amount: 1, cap: msgCap, ttlMs: 86400000 * 2 })
+    : { allowed: true };
+  if (!msgRes.allowed) {
     audit(env, 'widget_msg_cap', { key });
     return new Response(JSON.stringify({ error: 'This assistant has reached its daily message limit. Please try again tomorrow.' }), { status: 429, headers: { 'Content-Type': 'application/json', ...wcors } });
   }
+  /* Reserved above, so every path from here that does NOT reach the model has
+     to give it back or a rejected request permanently costs the owner one. */
+  const refundMsg = async () => {
+    if (!msgCap) return;
+    try { await counter(env, msgName, { op: 'incr', amount: -1, ttlMs: 86400000 * 2 }); } catch (e) {}
+  };
 
   // Per-widget DAILY SPEND cap (hard margin protection for the owner).
   const wSpendName = `wspend:${key}:${todayKey()}`;
@@ -6628,6 +6650,7 @@ async function widgetChat(request, env, ctx) {
     const capRes = await counter(env, wSpendName, { op: 'checkCap', cap: cfg.dailySpendCapUSD });
     if (!capRes.allowed) {
       audit(env, 'widget_spend_cap', { key });
+      await refundMsg();
       return new Response(JSON.stringify({ error: 'This assistant is unavailable right now. Please try again later.' }), { status: 429, headers: { 'Content-Type': 'application/json', ...wcors } });
     }
   }
@@ -6637,11 +6660,9 @@ async function widgetChat(request, env, ctx) {
   const gCap = parseFloat(env.GLOBAL_DAILY_USD_CAP || '500');
   const gRes = await counter(env, gName, { op: 'checkCap', cap: gCap });
   if (!gRes.allowed) {
+    await refundMsg();
     return new Response(JSON.stringify({ error: 'Service is at capacity. Please try again later.' }), { status: 503, headers: { 'Content-Type': 'application/json', ...wcors } });
   }
-
-  // count the message now (before the model call) so a burst can't slip the cap
-  await counter(env, msgName, { op: 'incr', amount: 1, ttlMs: 86400000 * 2 });
 
   const maxTokens = Math.min(cfg.maxOut || eng.maxOut, eng.maxOut);
   const upstreamBody = {
@@ -6658,6 +6679,7 @@ async function widgetChat(request, env, ctx) {
 
   if (!upstream.ok) {
     const e = await upstream.json().catch(() => ({}));
+    await refundMsg();   // nothing was generated, so nothing was used
     return new Response(JSON.stringify({ error: e?.error?.message || 'The assistant is unavailable.' }), { status: 502, headers: { 'Content-Type': 'application/json', ...wcors } });
   }
 

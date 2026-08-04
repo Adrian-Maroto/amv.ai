@@ -1279,3 +1279,34 @@ the person, or by an opaque id.
 And the extractor read a COMMENT as code. The erasure function explains the
 phantom key it used to carry, in backticks, and that explanation was counted as
 coverage. A check that quotes a comment back as evidence is worse than no check.
+
+## 110. A comment claiming atomicity is not atomicity
+The widget's daily message cap read the counter, compared it, and incremented it
+forty lines later, under a comment reading "atomic test-and-increment" and a
+second one reading "count the message now so a burst can't slip the cap". Both
+described the intent. Neither described the code. Requests arriving together all
+read the same value, all pass, and all increment.
+
+It matters here more than most places because `/v1/widget/chat` is PUBLIC and
+every call spends the operator's model budget. The per-IP throttle is the thing
+usually offered as the answer and is not one: it bounds a single caller, while a
+cap on a public endpoint exists for the case where the callers are many - which
+is exactly when the read-then-check window is widest.
+
+The operation that does this correctly already existed in the same file and was
+already used by the image and video quotas. So this was not a missing capability,
+it was a place that did not reach for it, with a comment that made it look like
+it had.
+
+Two habits follow. When a comment asserts a concurrency property, read the code
+for the property rather than the claim - `get` then `if` then `incr` is never
+atomic no matter what sits above it. And once anything reserves up front, every
+path that does not reach the work has to give it back, or a rejected request
+permanently costs the owner one; the refund is half the change, not a detail.
+
+The test's own first run is worth recording too: the counter stub did not
+implement the rate limiter's `rateCheck` op, so it returned `{}`, every request
+read as throttled, and sixteen assertions failed for a reason that had nothing to
+do with the code under test. A fake that silently answers "no" to an unknown
+question fails the test rather than the product, which wastes the run - but a
+fake that silently answers "yes" would have passed it, which wastes the check.
