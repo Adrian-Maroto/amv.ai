@@ -1066,3 +1066,32 @@ Then leave the computation behind as the check (rule 100), and make the lists
 EXHAUSTIVE rather than illustrative - every kind in exactly one of backed-up or
 never-backed-up, erased or retained-on-purpose. An exhaustive pair forces the
 next person to make a decision; a single list lets them forget.
+
+## 102. Computing and reading find different defects; neither replaces the other
+Six set-comparisons over the source found six real defects in three commits,
+including the two worst in the product - a published page that kept serving
+after deletion, and cross-family tampering that undid parental controls. None of
+those were findable by reading, because the two halves sit hundreds of lines
+apart and each looks correct where it sits.
+
+Then reading 05-ui-blocks found the single most severe one: an iframe rendering
+model-written HTML with no sandbox attribute at all, same-origin with the page,
+on the screen where somebody reviews AI output BEFORE it is sent. Prompt
+injection to token theft in one hop.
+
+That was not computable from any property anybody had thought to express. It
+came from opening the file and asking "what else here renders content we did not
+write". The question that finds a defect is often not the question a check
+encodes - a check tests a property you already suspect, and reading is how you
+come to suspect one.
+
+The practical rule: compute what is expressible, read what is not, and after
+reading, ask whether the thing just found is itself a computable class. The
+sandbox defect became a check within the hour. So did the chart one below it.
+
+And the corollary that keeps costing time: reading also finds things in your own
+work. Two fixes in this pass were wrong on the first attempt and the TEST caught
+them - `_sendEmail` answers with a boolean rather than throwing, so a refused
+send reported delivered; and `+null` is 0, so a chart drew a missing value as a
+real zero while claiming to have dropped it. Both were the exact defect being
+fixed, one layer down.

@@ -12409,11 +12409,29 @@ function _guiChoices(spec){
 
 function renderChartSVG(spec){
   const type=(spec.type||'bar').toLowerCase();
-  const data=Array.isArray(spec.data)?spec.data:[];
+  const all=Array.isArray(spec.data)?spec.data:[];
+  /* A point whose value is not a number produces NaN coordinates, and an SVG
+     element with NaN geometry simply does not draw. The chart then showed four
+     of five bars with nothing to say one was missing - a picture of the data
+     that is quietly wrong, which is worse than refusing to draw it.
+
+     Non-numeric points are dropped ON PURPOSE and counted, and the count is
+     shown under the chart. */
+  /* Not `isFinite(+v)`: `+null`, `+''` and `+false` are all 0, so a MISSING
+     value was drawn as a real zero - a gap in the data shown as a measurement,
+     which is the same lie this is meant to stop, pointing the other way. Only
+     an actual number, or a string that is one, counts. */
+  const _num = (v) => {
+    if(v === null || v === undefined || v === '' || typeof v === 'boolean') return null;
+    const n = +v;
+    return isFinite(n) ? n : null;
+  };
+  const data=all.filter(d => d && _num(d.value) !== null);
+  const dropped=all.length-data.length;
   if(!data.length) return '';
   const title=spec.title?'<div class="cht-title">'+escH(spec.title)+'</div>':'';
   const W=560, H=300, padL=46, padR=16, padT=16, padB=46;
-  const vals=data.map(d=>+d.value||0);
+  const vals=data.map(d=>+d.value);
   const max=Math.max(...vals, 0), min=Math.min(...vals, 0);
   const range=(max-min)||1;
   const iw=W-padL-padR, ih=H-padT-padB;
@@ -12447,7 +12465,9 @@ function renderChartSVG(spec){
     });
   }
   svg+='</svg>';
-  return '<div class="cht">'+title+svg+(spec.source?'<div class="cht-src">Source: '+escH(spec.source)+'</div>':'')+'</div>';
+  const note=dropped?'<div class="cht-src">'+dropped+' point'+(dropped===1?'':'s')+
+    ' could not be read as a number and '+(dropped===1?'is':'are')+' not shown.</div>':'';
+  return '<div class="cht">'+title+svg+note+(spec.source?'<div class="cht-src">Source: '+escH(spec.source)+'</div>':'')+'</div>';
 }
 
 /* ============================================================
