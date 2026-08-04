@@ -497,10 +497,22 @@ async function _routeChatIntent(txt){
       .replace(/\b(generate|create|make|draw|render|show me|show|design|paint|give me)\s+(me\s+)?(an?|the|some)?\s*(image|photo|picture|portrait|illustration|logo|art|drawing|wallpaper|poster|icon)\s*(of|showing|with|for)?\s*/i,'')
       .replace(/\b(an?|the)\s+(image|photo|picture|illustration|portrait)\s+of\s+/i,'')
       .trim()||txt;
-    const seed=Math.floor(Math.random()*999999);
-    S.imgs.unshift({id:'img'+Date.now(),prompt:p,style:S.imgStyle,ratio:S.imgRatio,seed});
-    const url=imgUrl(p,S.imgStyle,S.imgRatio,seed);
+    /* Same door as the Images tab, so the content policy and the daily
+       allowance apply to a request phrased as a sentence too. */
+    const res=_imageRequest(p);
     const m=pushUser();
+    if(!res.ok){
+      /* The message box was already cleared, so the refusal has to land in the
+         conversation - a toast that fades leaves the person staring at a chat
+         where what they typed simply vanished. */
+      m.push({r:'a',c:res.code==='quota'
+        ? res.message+'\n\nIt resets tomorrow. **Plans** has the next tier if you need more today.'
+        : res.message,model:S.model});
+      setMsgs(m); renderChatMsgs(); renderHist();
+      if(res.code==='quota') _smartUpgradeNudge('images', res.plan, res.message);
+      return true;
+    }
+    const url=imgUrl(res.rec.prompt,res.rec.style,res.rec.ratio,res.rec.seed);
     m.push({r:'a',c:'Here\u2019s what I created:\n\n![generated]('+url+')\n\n*Generated with AMV Vision - open the Images tab to refine, upscale, or download.*',model:S.model});
     setMsgs(m); renderChatMsgs(); renderHist();
     return true;
@@ -511,7 +523,11 @@ async function _routeChatIntent(txt){
      || /\b(video|animation|clip)\b[^.!?]{0,30}\bof\b/i.test(txt)){
     const p=txt.replace(/\b(please|can you|could you|generate|create|make|produce|animate|an?|the)\s*(video|clip|animation|short film|movie)\s*(of\s*)?/gi,'').trim()||txt;
     const m=pushUser();
-    m.push({r:'a',c:'Starting a video from your prompt - opening the Video studio so you can watch it render and adjust length, style, and aspect ratio.',model:S.model});
+    /* This opens the studio with the prompt filled in; it does NOT start a
+       render. Saying "starting" would be a claim about something that has not
+       happened, and a video spends a monthly allowance, so beginning one off a
+       loose phrase match is not ours to decide. */
+    m.push({r:'a',c:'Opening the **Video** studio with your prompt ready. Set the length, style, and aspect ratio, then press Generate to render it.',model:S.model});
     setMsgs(m); renderChatMsgs(); renderHist();
     setTab('video');
     try{ const vi=$('vp'); if(vi){ vi.value=p; vi.focus(); } }catch(e){}
@@ -2091,24 +2107,78 @@ function imgUrl(prompt,style,ratio,seed){
   const enhance = isNormal ? 'false' : 'true';
   return 'https://image.pollinations.ai/prompt/'+encodeURIComponent(full)+'?width='+w+'&height='+h+'&nologo=true&seed='+seed+'&model=flux&safe=false&enhance='+enhance;
 }
+/* The daily image allowance, as a nudge before the server's real one.
+
+   The server is the authority: /v1/image/generate reserves against
+   limits.imagesDay atomically and refunds on failure, so money cannot be spent
+   past the cap no matter what the client believes. This map exists only to tell
+   somebody they are out BEFORE they wait for a render, and to point them at the
+   right plan.
+
+   Which means it must never be STRICTER than the server, or a paying customer
+   is refused something they are entitled to, by their own browser, with no
+   appeal. The numbers below match PLAN_LIMITS in the worker. Plans whose real
+   allowance the client cannot compute - Teams scales with seats, Custom is
+   sized per account - are left uncapped here and decided by the server.
+   `no-client-throttle` asserts both halves against the worker source. */
+const IMG_DAY_CAP={free:8,pro:100,elite:500,ultra:2000,team:Infinity,custom:Infinity};
+
+/* The content policy, as one predicate. Every way of asking for an image has to
+   pass it, including the one where the MODEL asks - a tool call can be steered
+   by a page the model read rather than by anything the person typed. */
+const IMG_POLICY_REFUSAL='Content Policy: explicit sexual content not permitted.';
+function _imagePolicyBlocked(prompt){
+  const s=String(prompt==null?'':prompt).toLowerCase();
+  return BLOCKED.some(w=>s.includes(w));
+}
+try{ window._imagePolicyBlocked=_imagePolicyBlocked; }catch(e){}
+
+/* ONE DOOR for asking AMV to make an image.
+
+   The Images tab checked the content policy and the daily allowance before
+   generating. Asking for a picture in chat did neither - it went straight to
+   the provider - so both were bypassed by phrasing the same request a
+   different way. The block list was the one that mattered: `safe=false` is on
+   the free provider URL, and the tab's refusal was the only thing standing in
+   front of it.
+
+   Returns { ok:true, rec } with the image queued and the day counted, or
+   { ok:false, code, message } so each entry point can say no in its own idiom.
+   Adding a third way to ask for an image means calling this, not remembering
+   two checks. */
+function _imageRequest(prompt, opts){
+  opts=opts||{};
+  const p=String(prompt==null?'':prompt).trim();
+  if(!p) return { ok:false, code:'empty', message:'Describe the image you want.' };
+  if(_imagePolicyBlocked(p))
+    return { ok:false, code:'policy', message:IMG_POLICY_REFUSAL };
+  const plan=loadStr('amv_plan')||'free';
+  const cap=(plan in IMG_DAY_CAP)?IMG_DAY_CAP[plan]:IMG_DAY_CAP.free;
+  const dayKey='amv_img_day_'+new Date().toISOString().slice(0,10);
+  const used=parseInt(loadStr(dayKey)||'0',10)||0;
+  if(used>=cap) return { ok:false, code:'quota', plan, cap,
+    message:'You\u2019ve used all '+cap+' of today\u2019s images on the '+((PLANS[plan]&&PLANS[plan].name)||'Free')+' plan.' };
+  saveStr(dayKey, String(used+1));
+  const rec={ id:'img'+Date.now(), prompt:p,
+    style:opts.style||S.imgStyle, ratio:opts.ratio||S.imgRatio,
+    seed:(opts.seed==null?Math.floor(Math.random()*999999):opts.seed) };
+  S.imgs.unshift(rec);
+  try{ AMVValue.record('image'); }catch(e){}
+  return { ok:true, rec };
+}
+try{ window._imageRequest=_imageRequest; }catch(e){}
+
 function genImg(){
   const inp=$('img-inp');
   if(!inp) return;
   const p=inp.value.trim();
   if(!p){inp.focus();return;}
-  if(BLOCKED.some(w=>p.toLowerCase().includes(w))){toast('Content Policy: explicit sexual content not permitted.','error');return;}
-  // Smart limit: free plan gets a daily image allowance. Nudge to upgrade when hit.
-  const plan=loadStr('amv_plan')||'free';
-  const imgCap={free:4,pro:60,elite:250,ultra:1000,custom:250}[plan]||4;
-  const todayKey='amv_img_day_'+new Date().toISOString().slice(0,10);
-  const usedToday=parseInt(loadStr(todayKey)||'0',10);
-  if(usedToday>=imgCap){
-    _smartUpgradeNudge('images', plan, 'You\u2019ve used all '+imgCap+' of today\u2019s images on the '+(PLANS[plan]?PLANS[plan].name:'Free')+' plan.');
+  const res=_imageRequest(p);
+  if(!res.ok){
+    if(res.code==='quota') _smartUpgradeNudge('images', res.plan, res.message);
+    else toast(res.message,'error');
     return;
   }
-  saveStr(todayKey, String(usedToday+1));
-  S.imgs.unshift({id:'img'+Date.now(),prompt:p,style:S.imgStyle,ratio:S.imgRatio,seed:Math.floor(Math.random()*999999)});
-  try{ AMVValue.record('image'); }catch(e){}
   renderImgGallery();
 }
 /* Smart, contextual upgrade nudge - a friendly modal that names the exact limit
@@ -2354,6 +2424,10 @@ async function genVid(){
   const el = $('vp');
   let p = el ? el.value.trim() : '';
   if(!p){ el && el.focus(); return; }
+  /* The same content policy images have. The server refuses this too and is the
+     authority; refusing here as well means the person gets a straight answer
+     instead of a failed job card. */
+  if(_imagePolicyBlocked(p)){ toast(IMG_POLICY_REFUSAL,'error'); return; }
 
   const dur    = parseInt(($('vd')?.value||'5'), 10) || 5;
   const aspect = $('va')?.value || '16:9';

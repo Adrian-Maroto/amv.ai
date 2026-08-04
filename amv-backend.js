@@ -5384,6 +5384,8 @@ async function videoGenerate(request, env) {
   const body = await request.json().catch(() => ({}));
   const prompt = String(body.prompt || '').trim().slice(0, 2000);
   if (!prompt) return json({ error: 'Describe the video you want.' }, 400);
+  const refused = await mediaPolicyRefusal(env, user, prompt, 'video');
+  if (refused) return refused;
 
   const seconds = Math.min(VIDEO_MAX_SECONDS, Math.max(1, parseInt(body.seconds) || 5));
   const aspect  = ['16:9', '9:16', '1:1'].includes(body.aspect) ? body.aspect : '16:9';
@@ -6235,6 +6237,41 @@ async function imageMeter(request, env) {
   return json({ ok: true, remaining: Math.max(0, limits.imagesDay - (res.value || 0)) });
 }
 
+/* ---------------- MEDIA CONTENT POLICY ------------------------------
+   The app has always shown "No explicit content" under the image box and
+   refused a prompt matching this list. That refusal lived entirely in the
+   browser, which means it was decoration: /v1/image/generate and
+   /v1/video/generate accept any prompt from anybody holding a valid session
+   token, and a request made with curl never loads the page that would have
+   said no.
+
+   So the block list moves to where it can actually block. Both media endpoints
+   check it before reserving quota and long before a provider is paid, and a
+   refusal is recorded against the account - not as a dispute or a refund, which
+   gate purchases, but as an event, so a pattern of attempts is visible instead
+   of being silently absorbed one 400 at a time.
+
+   The prompt itself is never stored. The matched term is enough to know what
+   happened and does not put the text back in our own logs. */
+const MEDIA_BLOCKED = ['explicit nudity', 'pornographic', 'nsfw', 'erotic', 'hentai', 'child sexual',
+  'nudify', 'undress', 'deepfake nude', 'deepfake porn', 'deep nude', 'revenge porn',
+  'non-consensual', 'nonconsensual', 'underage', 'jailbait', 'loli', 'shota', 'cp for'];
+const MEDIA_POLICY_REFUSAL = 'Content Policy: explicit sexual content is not permitted.';
+
+function mediaPolicyMatch(prompt) {
+  const s = String(prompt == null ? '' : prompt).toLowerCase();
+  return MEDIA_BLOCKED.find(w => s.indexOf(w) >= 0) || '';
+}
+
+/* Returns a Response to send back, or null when the prompt is allowed. */
+async function mediaPolicyRefusal(env, user, prompt, surface) {
+  const term = mediaPolicyMatch(prompt);
+  if (!term) return null;
+  try { await _abuseRecord(env, user && user.email, 'content_policy', { surface, term }); } catch (e) {}
+  try { audit(env, 'content_policy_refused', { email: user && user.email, surface, term }); } catch (e) {}
+  return json({ error: MEDIA_POLICY_REFUSAL, code: 'content_policy' }, 400);
+}
+
 /* ---------------- PREMIUM IMAGE GENERATION (operator-configured) ------
    When the operator sets a premium image provider (IMAGE_API_URL +
    IMAGE_API_KEY as Worker secrets), image generation is proxied here so the
@@ -6259,6 +6296,8 @@ async function imageGenerate(request, env) {
   try { body = await request.json(); } catch (e) { return json({ error: 'bad request' }, 400); }
   const prompt = String(body.prompt || '').slice(0, 4000);
   if (!prompt) return json({ error: 'prompt required' }, 400);
+  const refused = await mediaPolicyRefusal(env, user, prompt, 'image');
+  if (refused) return refused;
   const width = Math.min(2048, Math.max(256, parseInt(body.width) || 1024));
   const height = Math.min(2048, Math.max(256, parseInt(body.height) || 1024));
   const size = `${width}x${height}`;

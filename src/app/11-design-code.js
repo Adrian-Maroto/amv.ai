@@ -1500,6 +1500,13 @@ async function _confirmModelTool(name, input){
 async function _amvRunTool(name, input, onStatus){
   try{
     if(name==='generate_image'){
+      /* The same content policy the Images tab enforces. The prompt here was
+         written by the MODEL, which may have been steered by a page it read, so
+         this is the door most in need of the check rather than least. Quota is
+         not re-counted: /v1/image/generate reserves against the plan atomically
+         and is the authority on it. */
+      if(_imagePolicyBlocked(input.prompt))
+        return { text:'Refused: '+IMG_POLICY_REFUSAL+' Tell the user plainly that AMV will not generate this.', render:null };
       onStatus && onStatus('Generating your image\u2026');
       const src = await _premiumImageSrc(input.prompt, input.style||'', input.ratio||'1:1', Math.floor(Math.random()*1e6));
       if(!src) return { text:'Image generation needs the AMV engine connected. Tell the user to enable it in Settings.', render:null };
@@ -1513,6 +1520,8 @@ async function _amvRunTool(name, input, onStatus){
       /* Video is a JOB, not a request - it takes a minute or two. The tool call
          waits for the real provider to finish and then hands back the real file.
          It never invents progress and never returns a video that isn't there. */
+      if(_imagePolicyBlocked(input.prompt))
+        return { text:'Refused: '+IMG_POLICY_REFUSAL+' Tell the user plainly that AMV will not generate this.', render:null };
       onStatus && onStatus('Starting the video\u2026');
       try{
         const d = await _vidApi('/v1/video/generate', {
