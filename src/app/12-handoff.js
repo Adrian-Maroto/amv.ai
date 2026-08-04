@@ -1129,6 +1129,18 @@ function _confirmDeleteAccount(){
 }
 try{ window._confirmDeleteAccount=_confirmDeleteAccount; }catch(e){}
 
+/* Local-storage reads, kept OUT of the export function.
+
+   An empty list here means "none saved", which is the honest answer for a
+   local read that cannot fail any other way. Inside _exportUserData it stopped
+   being obviously that: the function now also reads over the NETWORK, where an
+   empty list would mean "the request failed and we are pretending it did not",
+   and reads-cannot-fabricate is right to refuse to distinguish them by eye. */
+function _exportSkills(){
+  const readList=(k)=>{ try{ return load(k)||[]; }catch(e){ return []; } };
+  return { custom: readList('amv_skills'), active: readList('amv_active_skills') };
+}
+
 async function _exportUserData(){
   try{
     const u=S.user||{};
@@ -1169,7 +1181,7 @@ async function _exportUserData(){
       videos:S.vids||[],
       prompts:S.prompts||[],
       workspaces:S.workspaces||[],
-      skills:{ custom:(function(){try{return load('amv_skills')||[];}catch(e){return[];}})(), active:(function(){try{return load('amv_active_skills')||[];}catch(e){return[];}})() },
+      skills:_exportSkills(),
       settings:{
         theme:collect('amv_theme'), accent:collect('amv_accent'), language:collect('amv_lang'),
         plan:collect('amv_plan'), fontSize:collect('amv_font_size'),
