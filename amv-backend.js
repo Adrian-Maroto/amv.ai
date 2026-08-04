@@ -7937,7 +7937,20 @@ async function stripeCheckout(request, env) {
   form.set('mode', 'subscription');
   form.set('line_items[0][price]', price);
   form.set('line_items[0][quantity]', String(seats));
-  form.set('customer_email', user.email);
+  /* Reuse the Stripe customer this account is already bound to.
+
+     With `customer_email` and no `customer`, Stripe creates a NEW Customer for
+     every completed session. So upgrading a plan - the most ordinary paid
+     action there is after signing up - produced a second customer carrying a
+     second subscription, and _linkCustomer then repointed us at it. The first
+     subscription went on billing forever on a customer the billing portal no
+     longer opened, so there was no way to stop it from inside AMV.
+
+     Stripe rejects a session that carries both fields, so it is one or the
+     other. */
+  const knownCust = await env.AMV_KV.get(`stripecust:${user.email}`);
+  if (knownCust) form.set('customer', knownCust);
+  else form.set('customer_email', user.email);
   form.set('client_reference_id', user.email);       // so the webhook knows who paid
   form.set('success_url', `${origin}?upgraded=1`);
   form.set('cancel_url', `${origin}?canceled=1`);
@@ -8205,7 +8218,13 @@ async function stripeWebhook(request, env, ctx) {
         const first = { source: 'stripe', sub: obj.subscription };
         if (plan === 'team') first.custom = { seats: _teamSeatCount({ seats: obj.metadata?.seats }) };
         await setEntitlement(env, email, plan, first);
-        if (obj.customer) await _linkCustomer(env, email, obj.customer);   // both directions
+        if (obj.customer) {
+          await _linkCustomer(env, email, obj.customer);   // both directions
+          /* The plan they just bought replaces the one they had. Stripe does
+             not know that - a Checkout upgrade is a second subscription, not an
+             edit - so the old one has to be stopped here or they pay twice. */
+          await _cancelSupersededSubs(env, obj.customer, obj.subscription, email);
+        }
         // Record the initial subscription payment so it shows in admin finance
         // even beyond Stripe's own retention window.
         const amt = (obj.amount_total != null ? obj.amount_total : 0) / 100;
@@ -8314,6 +8333,54 @@ async function stripeWebhook(request, env, ctx) {
    keeps their plan, the chargeback keeps their access, the refund keeps their
    access. The forward map is what lets them reach the billing portal and their
    invoices at all. Both writes must happen wherever a customer id is learned. */
+/* One account holds one plan, so one customer holds one subscription.
+
+   An upgrade is a NEW subscription at Stripe, not an edit of the old one. With
+   nothing cancelling the old one, the customer paid for both - $15 and $75 at
+   the same time - and only the newest was reachable from the billing portal, so
+   there was no way to stop the other from inside AMV. The person's remedy was a
+   chargeback, which then flags THEIR account for abuse.
+
+   Cancelled rather than left to expire: they are already paying for the plan
+   that replaced it. Only subscriptions on the same customer, only ones still
+   capable of charging, and never the one that was just created. Every
+   cancellation is audited, and a failure raises an alert, because a card still
+   being charged is the failure here that costs a real person real money. */
+const _SUB_STILL_BILLS = ['active', 'trialing', 'past_due', 'unpaid'];
+async function _cancelSupersededSubs(env, customerId, keepSubId, email) {
+  if (!customerId || !env.STRIPE_SECRET_KEY) return { cancelled: 0, failed: 0 };
+  const sk = { 'Authorization': 'Bearer ' + env.STRIPE_SECRET_KEY,
+               'Content-Type': 'application/x-www-form-urlencoded' };
+  let cancelled = 0, failed = 0;
+  try {
+    const ls = await fetch('https://api.stripe.com/v1/subscriptions?status=all&limit=100&customer=' +
+      encodeURIComponent(customerId), { headers: sk });
+    const ld = await ls.json().catch(() => ({}));
+    for (const sub of ((ld && ld.data) || [])) {
+      if (!sub || !sub.id || sub.id === keepSubId) continue;
+      if (_SUB_STILL_BILLS.indexOf(String(sub.status || '')) < 0) continue;
+      try {
+        const dr = await fetch('https://api.stripe.com/v1/subscriptions/' + encodeURIComponent(sub.id),
+          { method: 'DELETE', headers: sk });
+        if (dr.ok) { cancelled++; audit(env, 'stripe_superseded_cancelled', { email, sub: sub.id, kept: keepSubId || '' }); }
+        else failed++;
+      } catch { failed++; }
+    }
+  } catch { failed++; }
+  if (failed) {
+    /* Audited as well as alerted: alertOnce is a no-op when no ALERT_WEBHOOK is
+       configured, and a card still being charged has to leave a trace either
+       way. */
+    audit(env, 'stripe_supersede_cancel_failed', { email, customer: customerId, failed });
+    try {
+      await alertOnce(env, 'supersede_cancel_fail_' + email,
+        'A superseded subscription could not be cancelled for ' + email +
+        '. Cancel it in Stripe now - this customer is being charged for two plans.', 1);
+    } catch {}
+  }
+  return { cancelled, failed };
+}
+
 async function _linkCustomer(env, email, customerId) {
   const em = String(email || '').toLowerCase();
   if (!em || !customerId) return;

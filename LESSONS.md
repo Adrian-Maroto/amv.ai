@@ -1211,3 +1211,35 @@ and ask what happens to whatever it was pointing at before.
 Found by computing, not reading: every route that writes a record, minus every
 route with a visible bound on how many. Twenty-four came back, twenty-three were
 updates to a record keyed by the caller's own identity, and one created.
+
+## 108. Read the payment provider's semantics, not the field name
+Checkout sessions were created with `customer_email` and no `customer`. The
+field name reads like "this is the customer", and it is not - Stripe treats it
+as "prefill this address on a NEW Customer", every time. So pressing Upgrade
+made a second customer with a second subscription, `_linkCustomer` repointed the
+account at it, and the first subscription went on billing forever on a customer
+the billing portal no longer opened. $15 and $75 at the same time, with no way
+to stop half of it from inside the product.
+
+The second-order harm is what makes it worth a lesson. The only remedy left to
+the customer is a chargeback, and a chargeback trips the abuse flag on THEIR
+account - so the bug's second act is to punish the person it overcharged. When
+you find a billing defect, follow it one step past the money and ask what the
+victim's only available response does to them.
+
+Two ideas that were both wrong here and are worth naming:
+
+An upgrade is not an edit. From the provider's side a Checkout upgrade is a new
+subscription; nothing cancels the old one because nothing has been told the old
+one was replaced. Any model where an account holds exactly one plan has to close
+that loop itself.
+
+And a cardinality that lives only in the data shape is an assumption. This is the
+same defect as the team one directly above it - `ent.teamId` holds one id,
+`stripecust:<email>` holds one customer - and in both cases the second write
+orphaned whatever the pointer used to name. The way to find the rest is to list
+every single-valued pointer and ask what happens to its previous value.
+
+Also: `alertOnce` is a no-op with no ALERT_WEBHOOK configured, so a failure that
+only alerts is silent on a deployment that has not set one. Anything that costs a
+real person real money needs an audit line as well.
