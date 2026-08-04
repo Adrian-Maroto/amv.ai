@@ -3451,7 +3451,7 @@ async function authResetVerify(request, env) {
   // correct - burn the code, issue a single-use token for the final step
   await env.AMV_KV.delete('resetcode:' + email);
   const token = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '');
-  await env.AMV_KV.put('reset:' + token, email, { expirationTtl: RESET_CODE_TTL });
+  await env.AMV_KV.put('reset:' + token, JSON.stringify({ email, at: Date.now() }), { expirationTtl: RESET_CODE_TTL });
   audit(env, 'reset_code_ok', { email });
   return json({ ok: true, token });
 }
@@ -4455,7 +4455,13 @@ async function authDeleteAccount(request, env) {
      goes too. */
   let myCode = '';
   try { myCode = await env.AMV_KV.get(`refmine:${email}`) || ''; } catch {}
-  const loose = [`reset:${email}`, `active:${email}:${todayKey()}`,
+  /* `reset:${email}` used to be on this list and never existed: reset tokens
+     are keyed by the TOKEN, not by the address, so deleting it deleted nothing
+     and a pending reset link outlived the account. It cannot be reached from
+     here at all, so authResetConfirm refuses a link older than the account it
+     names instead. `resetcode:` CAN be reached - it is keyed by the address -
+     and is a live credential, so it goes. */
+  const loose = [`resetcode:${email}`, `active:${email}:${todayKey()}`,
                  `alog:${email}`, `alogfail:${email}`, `refmine:${email}`, `refpend:${email}`,
                  /* The funnel markers are a record that THIS person signed up,
                     got an answer, came back and paid. The aggregate counters
@@ -4467,6 +4473,42 @@ async function authDeleteAccount(request, env) {
   for (const raw of loose) {
     try { await env.AMV_KV.delete(raw); } catch {}
   }
+
+  /* Keys that carry the address inside a compound key rather than as the whole
+     of it. Each one was missed because the loose list above can only name a key
+     it can spell exactly, and these need a scan.
+
+     `resume:` is a parked answer - the person's own model output, held server
+     side so a dropped connection does not cost them a regeneration.
+     `smsverify:` is a live verification code AND their phone number, in the
+     key itself. Both are exactly what erasure is for. */
+  for (const prefix of [`resume:${email}:`, `smsverify:${email}:`]) {
+    try {
+      let cursor;
+      do {
+        const page = await env.AMV_KV.list({ prefix, cursor, limit: 1000 });
+        for (const k of (page.keys || [])) { try { await env.AMV_KV.delete(k.name); deleted++; } catch {} }
+        cursor = page.list_complete ? undefined : page.cursor;
+      } while (cursor);
+    } catch {}
+  }
+
+  /* The waitlist puts the address at the END of the key (waitlist:<product>:
+     <email>), so there is no prefix that finds it - it takes a scan of the
+     whole list. Erasure is rare and this is somebody asking not to be on a
+     mailing list any more, which is the request it would be worst to ignore. */
+  try {
+    let cursor;
+    const suffix = ':' + email;
+    do {
+      const page = await env.AMV_KV.list({ prefix: 'waitlist:', cursor, limit: 1000 });
+      for (const k of (page.keys || [])) {
+        if (k.name.endsWith(suffix)) { try { await env.AMV_KV.delete(k.name); deleted++; } catch {} }
+      }
+      cursor = page.list_complete ? undefined : page.cursor;
+    } while (cursor);
+  } catch {}
+
   // Revoke all tokens so existing sessions die immediately.
   try { await revokeUserTokens(env, email); } catch {}
 
@@ -10527,7 +10569,7 @@ async function authReset(request, env) {
   if (!email || !email.includes('@')) return json({ error: 'invalid email' }, 400);
   // generate a one-time, 1-hour token
   const token = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '');
-  await env.AMV_KV.put(`reset:${token}`, email, { expirationTtl: 3600 });
+  await env.AMV_KV.put(`reset:${token}`, JSON.stringify({ email, at: Date.now() }), { expirationTtl: 3600 });
   const link = `${new URL(request.url).origin.replace(/\/$/, '')}/reset?token=${token}`;
   // send the email if a provider is configured; otherwise the flow is ready but no email goes out
   let sent = false;
@@ -10545,10 +10587,25 @@ async function authResetConfirm(request, env) {
   const password = String(body.password || '');
   if (!token) return json({ error: 'missing token' }, 400);
   if (password.length < 8) return json({ error: 'Password must be at least 8 characters.' }, 400);
-  const email = await env.AMV_KV.get(`reset:${token}`);
+  const stored = await env.AMV_KV.get(`reset:${token}`);
+  if (!stored) return json({ error: 'This reset link is invalid or has expired. Please request a new one.' }, 400);
+  /* Stored as {email, at}. The timestamp exists because erasure cannot reach
+     this record - it is keyed by the token, and nothing maps an address back to
+     the tokens issued for it. So a link outlives the account it was issued for,
+     and if that address is registered again inside the hour, the link would
+     name a DIFFERENT person's account. Refusing anything issued before the
+     account existed closes that without needing to find the token. */
+  let email = '', issuedAt = 0;
+  try { const p = JSON.parse(stored); email = String(p.email || ''); issuedAt = +p.at || 0; }
+  catch { email = String(stored || ''); }
   if (!email) return json({ error: 'This reset link is invalid or has expired. Please request a new one.' }, 400);
   const acct = await DB.get(env, 'acct', email);
   if (!acct) return json({ error: 'account not found' }, 404);
+  if (issuedAt && acct.createdAt && acct.createdAt > issuedAt) {
+    await env.AMV_KV.delete(`reset:${token}`);
+    audit(env, 'reset_token_predates_account', { email });
+    return json({ error: 'This reset link is invalid or has expired. Please request a new one.' }, 400);
+  }
   // hash the new password with a fresh salt
   const salt = crypto.randomUUID().replace(/-/g, '');
   acct.pwHash = await _hashPassword(password, salt, PBKDF2_ITERATIONS);

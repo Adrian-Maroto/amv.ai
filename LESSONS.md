@@ -1243,3 +1243,39 @@ every single-valued pointer and ask what happens to its previous value.
 Also: `alertOnce` is a no-op with no ALERT_WEBHOOK configured, so a failure that
 only alerts is silent on a deployment that has not set one. Anything that costs a
 real person real money needs an audit line as well.
+
+## 109. A cleanup list cannot know what it leaves out
+Account erasure walks two hand-written lists: the DB kinds and a `loose` array
+of raw KV keys. Both were correct about what they contained. Neither had any way
+of knowing what was missing, so four records outlived the people they belonged
+to: a live password-reset code, a live SMS verification code with the phone
+number in the key, the person's own parked model output, and their row on a
+mailing list they had asked to leave.
+
+One line was worse than a missing one. `reset:${email}` was ON the list and is
+not a key anything writes - reset tokens are keyed by the TOKEN - so it deleted
+nothing while reading exactly like the working lines around it. A wrong entry in
+a coverage list is more dangerous than an absent one, because it answers the
+question "is this handled" with yes.
+
+The general rule: any hand-maintained list of things to handle needs a computed
+counterpart that derives the full set independently and asserts the difference is
+empty or named. This is the sixth exhaustive pair in this codebase and it found
+four defects on its first run.
+
+Three things went wrong writing the check itself, and all three are the same
+mistake - trusting a cheap approximation of the source:
+
+Slicing the "erasure body" from the function name to the next occurrence of a
+string ran hundreds of lines past the function and swept in deletes belonging to
+other handlers, reporting a key as erased that erasure never touches. Brace
+matching, not string search.
+
+Matching on namespace alone could not have caught the original bug, because
+`reset:` IS a real namespace - written with a token. The defect was the SHAPE,
+`reset:<email>`, so the comparison has to include what fills the key: keyed by
+the person, or by an opaque id.
+
+And the extractor read a COMMENT as code. The erasure function explains the
+phantom key it used to carry, in backticks, and that explanation was counted as
+coverage. A check that quotes a comment back as evidence is worse than no check.
