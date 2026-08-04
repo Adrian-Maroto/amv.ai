@@ -7693,3 +7693,37 @@ html,body{height:100%;height:100dvh}
   background: var(--s2);
 }
 .asrv-failed .btn{ margin-left: var(--sp-2); }
+
+/* ==========================================================================
+   LAYER A60 - the welcome card gets its column back
+
+   The home screen keeps the greeting centred with a blanket rule:
+
+     #cv.cv-home #cm > * { max-width:none!important; padding-left:0!important; ... }
+
+   Two ids and a class, all important. It was written for the message list,
+   where full-bleed IS the layout. The first-run card was added later, is a
+   bounded CARD rather than a column of text, and inherits it - so A46's
+   640px and its padding were beaten before they were read. The card ran the
+   full width of the pane with its heading hard against the left edge, while
+   the composer directly beneath it sat properly inset. On a phone the heading
+   touched the screen edge.
+
+   Matched at the same specificity and placed after, which is the only thing
+   that reaches it. Scoped to this one child so the rule above keeps doing its
+   job for everything else.
+   ========================================================================== */
+#cv.cv-home #cm > .fr-card{
+  max-width:640px!important;
+  width:100%;
+  box-sizing:border-box;
+  padding-left:var(--sp-4)!important;
+  padding-right:var(--sp-4)!important;
+}
+@media (max-width:520px){
+  #cv.cv-home #cm > .fr-card{
+    max-width:calc(100% - var(--sp-6))!important;
+    padding-left:var(--sp-3)!important;
+    padding-right:var(--sp-3)!important;
+  }
+}

@@ -3,3 +3,6 @@ tests/worker/.build/
 /tmp/
 *.log
 .DS_Store
+
+# Screenshots from tests/lib/shots.mjs - look at them, do not commit them
+.shots/
