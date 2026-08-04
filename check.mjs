@@ -36,7 +36,7 @@ const FAST = process.argv.includes('--fast');
 
 const t0 = Date.now();
 let stepNum = 0;
-const TOTAL = FAST ? 4 : 5;
+const TOTAL = FAST ? 4 : 6;   // syntax, worker, build, suites, page weight, preflight
 
 /* Run a step. `fn` should throw (with a helpful message) on failure. */
 function step(label, fn) {

@@ -7727,3 +7727,36 @@ html,body{height:100%;height:100dvh}
     padding-right:var(--sp-3)!important;
   }
 }
+
+/* ==========================================================================
+   LAYER A61 - Settings stops being three columns on a tablet
+
+   The settings screen collapses to a picker + full-width pane at 720px. The
+   main sidebar stays docked until 700. Between those two numbers - which is
+   iPad portrait at 768, and every small laptop window up to about 1000 - the
+   screen is THREE columns: app rail, settings nav, and whatever is left.
+
+   Whatever is left was 191px at 768. Every field label wrapped to three lines,
+   the instructions textarea showed about ten characters per line, and the body
+   copy broke every four words. It is the right screen at an unusable width.
+
+   The collapse moves to 1000px, so the picker takes over while the rail is
+   still docked. Losing a visible section list is a real cost; a 191px column
+   is a bigger one, and the picker is the pattern this screen already uses when
+   space is short.
+   ========================================================================== */
+@media(min-width:721px) and (max-width:1000px){
+  .settings-shell{flex-direction:column;height:100%!important}
+  .settings-nav{flex-direction:column!important;width:100%;min-width:0!important;
+    border-right:none!important;border-bottom:1px solid var(--bd);
+    padding:10px 52px 10px 12px!important;flex:0 0 auto}
+  .settings-nav .set-search-wrap{display:none!important}
+  .settings-nav-list{display:none!important}
+  .set-picker{display:flex;align-items:center;gap:11px;width:100%;
+    background:rgba(127,127,127,.08);border:1px solid var(--bd);border-radius:11px;
+    padding:13px 15px;color:var(--tx);font-size:15px;font-weight:600;cursor:pointer}
+  .set-picker-lbl{flex:1 1 auto;text-align:left}
+  .set-picker-chev{flex:0 0 auto;opacity:.65}
+  .settings-content{flex:1 1 auto!important;min-height:0;padding:18px 20px!important;padding-right:20px!important}
+  .set-pane{max-width:100%!important}
+}

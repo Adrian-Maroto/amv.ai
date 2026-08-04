@@ -1359,3 +1359,27 @@ And the clamp has to go to the BEST engine the plan allows, not the cheapest
 legal one. "Make it work" and "make it work as well as they paid for" are
 different fixes, and the cheap one is invisible until somebody wonders why their
 Elite account writes worse code than it used to.
+
+## 113. Too narrow is not the same as broken, and no check was asking
+The mobile sweep asks whether anything overflows sideways and whether tap
+targets are big enough. Settings on an iPad passed both and was unusable: app
+rail, settings nav, and 191 pixels of content. Every field label wrapped to
+three lines, the instructions box showed about ten characters per line, and the
+body copy broke every four words.
+
+Nothing overflowed. Nothing was too small to tap. The screen was the wrong SHAPE
+at that width, and the suite had no opinion about shape.
+
+The cause was a gap between two breakpoints that were each sensible alone - the
+app rail undocks at 700, the settings screen collapses to a picker at 720 - so
+every width in between got three columns. That is the whole tablet range and
+most laptop half-screens: the sizes nobody develops at and plenty of people use.
+
+The check that closes it measures the CONTENT column across nine real widths,
+because that single number decides whether a screen can be used. It is a
+different question from "does it fit", and it needed asking separately.
+
+Both halves of a responsive fix need pinning: that the narrow case collapses,
+AND that the wide case still gets the layout worth having. Removing the fix
+fails three assertions; a fix that simply deleted the two-column desktop layout
+would fail two others.
