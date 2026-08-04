@@ -57,13 +57,24 @@ export async function shoot({ tabs, themes = ['dark'], sizes = ['phone', 'deskto
       page.on('pageerror', e => errors.push(e.message));
       await page.goto(`http://localhost:${PORT}`, { waitUntil: 'load' });
       await page.waitForTimeout(700);
+      /* Theme and consent are read once, during boot. Setting them after the
+         app has started leaves the page in whatever state it loaded in - which
+         is how a "light" run first produced four dark screenshots. Set them,
+         then reload so the app boots into them the way a returning visitor
+         does. */
       await page.evaluate((t) => {
-        localStorage.setItem('amv_cookie_consent', JSON.stringify({ essential: true }));
-        saveStr('amv_theme', t);
+        localStorage.setItem('amv_cookie_consent', JSON.stringify({ essential: true, analytics: false, ts: Date.now() }));
+        localStorage.setItem('amv_theme', t);
+        try { saveStr('amv_theme', t); } catch (e) {}
+      }, theme);
+      await page.reload({ waitUntil: 'load' });
+      await page.waitForTimeout(700);
+      await page.evaluate(() => {
         S.user = { name: 'Alex Rivera', email: 'alex@example.com', ini: 'AR' };
         goApp();
         document.getElementById('ck')?.remove();
-      }, theme);
+        document.getElementById('cookie-consent-banner')?.remove();
+      });
       await page.waitForTimeout(400);
 
       for (const tab of tabs) {
