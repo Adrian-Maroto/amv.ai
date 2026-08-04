@@ -12526,6 +12526,17 @@ function _artifactCardHTML(art){
 // Opens a slide-in panel on the right showing the artifact with Preview/Code
 // tabs (Preview only for HTML), plus copy, download, and Open in Dev.
 let _artifactPanelOpen=false, _artifactActiveTab='code';
+/* The blob URL currently behind the preview frame. Each render made a new one
+   and none were ever released, so every tab switch and every reopen left
+   another full HTML document pinned in memory for the life of the page. Held so
+   the PREVIOUS one can be released - never the current one, which the frame is
+   still displaying. */
+let _artFrameUrl='';
+function _artReleaseFrameUrl(){
+  if(!_artFrameUrl) return;
+  try{ URL.revokeObjectURL(_artFrameUrl); }catch(e){}
+  _artFrameUrl='';
+}
 function openArtifact(id){
   const art=window._artifacts && window._artifacts[id];
   if(!art) return;
@@ -12542,11 +12553,22 @@ function openArtifact(id){
   requestAnimationFrame(()=>{ panel.classList.add('on'); document.body.classList.add('art-open'); });
   _artifactPanelOpen=true;
 }
+let _artCloseSeq=0;
 function closeArtifact(){
   const panel=document.getElementById('art-panel');
+  /* The frame is leaving and its document has already loaded, so the URL can be
+     released now. The markup stays until the slide-out finishes, or the panel
+     would blank out mid-animation instead of sliding away with its content. */
+  _artReleaseFrameUrl();
   if(panel) panel.classList.remove('on');
   document.body.classList.remove('art-open');
   _artifactPanelOpen=false;
+  const seq=++_artCloseSeq;
+  setTimeout(()=>{
+    if(seq!==_artCloseSeq || _artifactPanelOpen) return;   // reopened while it was sliding out
+    const p=document.getElementById('art-panel');
+    if(p) p.innerHTML='';
+  }, 400);   // the .34s transform transition, plus a margin
 }
 function _renderArtifactPanel(art){
   const panel=document.getElementById('art-panel'); if(!panel) return;
@@ -12557,9 +12579,11 @@ function _renderArtifactPanel(art){
   let body;
   if(art.isHtml && _artifactActiveTab==='preview'){
     let url='';
-    try{ url=URL.createObjectURL(new Blob([art.raw],{type:'text/html'})); }catch(e){}
+    _artReleaseFrameUrl();          // the frame that held the last one is about to be replaced
+    try{ url=URL.createObjectURL(new Blob([art.raw],{type:'text/html'})); _artFrameUrl=url; }catch(e){}
     body='<iframe class="art-frame" src="'+url+'" sandbox="allow-scripts"></iframe>';
   } else {
+    _artReleaseFrameUrl();          // switching to the code tab drops the preview entirely
     body='<pre class="art-code"><code>'+escH(art.raw)+'</code></pre>';
   }
   panel.innerHTML=
