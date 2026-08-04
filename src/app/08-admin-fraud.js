@@ -434,8 +434,17 @@ function _clearAdminToken(){ _ADMIN_TOK = ''; }
 /* Anything a previous build left on disk is a live secret in the wrong place.
    Remove it once, on load, rather than waiting for someone to notice. */
 try{
-  if(loadStr('amv_admin_token')){ saveStr('amv_admin_token',''); }
+  /* Both spellings, and every account's. saveStr files under the CURRENT
+     account, so clearing only that one left a token an older build wrote while
+     somebody else was signed in sitting on the disk indefinitely. A secret in
+     the wrong place is not less of one because the person who put it there has
+     since logged out. */
   try{ localStorage.removeItem('amv_admin_token'); }catch(e){}
+  try{
+    Object.keys(localStorage)
+      .filter(k => k === 'amv_admin_token' || k.endsWith('|amv_admin_token'))
+      .forEach(k => { try{ localStorage.removeItem(k); }catch(e){} });
+  }catch(e){}
 }catch(e){}
 try{ window._adminToken=_adminToken; window._setAdminToken=_setAdminToken; window._clearAdminToken=_clearAdminToken; }catch(e){}
 

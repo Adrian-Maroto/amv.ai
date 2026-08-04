@@ -10811,8 +10811,11 @@ async function handleGoogleCred(resp) {
         if(data.token){ try{ AMV_API.token=data.token; saveStr('amv_api_token', data.token); }catch(e){} }
         const pic=data.picture||p.picture;
         if(pic&&acct.email){ fetch(pic).then(x=>x.blob()).then(b=>{const rd=new FileReader();rd.onload=e=>{saveStr('amv_pfp_'+acct.email,e.target.result);updateSbUser();};rd.readAsDataURL(b);}).catch(()=>{}); }
-        closeOvr(); hideIntro(); saveStr('amv_ck','1'); S.ck=true;
-        const ck=$('ck');if(ck)ck.remove(); document.getElementById('land')?.classList.add('hidden');
+        /* accCk, not saveStr: cookie consent is per DEVICE, so it lives in the
+           unscoped bucket. saveStr would file it under this account, where the
+           banner - which reads the raw key - can never find it again. */
+        closeOvr(); hideIntro(); accCk(); S.ck=true;
+        document.getElementById('land')?.classList.add('hidden');
         loginUser(acct); return;
       }
       // server rejected the token - do NOT fall back to trusting it locally
@@ -10828,8 +10831,7 @@ async function handleGoogleCred(resp) {
     fetch(p.picture).then(r=>r.blob()).then(b=>{const rd=new FileReader();rd.onload=e=>{saveStr('amv_pfp_'+acct.email,e.target.result);updateSbUser();};rd.readAsDataURL(b);}).catch(()=>{});
   }
   closeOvr(); hideIntro();
-  saveStr('amv_ck','1'); S.ck=true;
-  const ck=$('ck');if(ck)ck.remove();
+  accCk(); S.ck=true;   // per device, through the same door the banner reads
   document.getElementById('land')?.classList.add('hidden');
   loginUser(acct);
 }
@@ -18556,8 +18558,17 @@ function _clearAdminToken(){ _ADMIN_TOK = ''; }
 /* Anything a previous build left on disk is a live secret in the wrong place.
    Remove it once, on load, rather than waiting for someone to notice. */
 try{
-  if(loadStr('amv_admin_token')){ saveStr('amv_admin_token',''); }
+  /* Both spellings, and every account's. saveStr files under the CURRENT
+     account, so clearing only that one left a token an older build wrote while
+     somebody else was signed in sitting on the disk indefinitely. A secret in
+     the wrong place is not less of one because the person who put it there has
+     since logged out. */
   try{ localStorage.removeItem('amv_admin_token'); }catch(e){}
+  try{
+    Object.keys(localStorage)
+      .filter(k => k === 'amv_admin_token' || k.endsWith('|amv_admin_token'))
+      .forEach(k => { try{ localStorage.removeItem(k); }catch(e){} });
+  }catch(e){}
 }catch(e){}
 try{ window._adminToken=_adminToken; window._setAdminToken=_setAdminToken; window._clearAdminToken=_clearAdminToken; }catch(e){}
 

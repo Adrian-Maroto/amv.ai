@@ -694,8 +694,11 @@ async function handleGoogleCred(resp) {
         if(data.token){ try{ AMV_API.token=data.token; saveStr('amv_api_token', data.token); }catch(e){} }
         const pic=data.picture||p.picture;
         if(pic&&acct.email){ fetch(pic).then(x=>x.blob()).then(b=>{const rd=new FileReader();rd.onload=e=>{saveStr('amv_pfp_'+acct.email,e.target.result);updateSbUser();};rd.readAsDataURL(b);}).catch(()=>{}); }
-        closeOvr(); hideIntro(); saveStr('amv_ck','1'); S.ck=true;
-        const ck=$('ck');if(ck)ck.remove(); document.getElementById('land')?.classList.add('hidden');
+        /* accCk, not saveStr: cookie consent is per DEVICE, so it lives in the
+           unscoped bucket. saveStr would file it under this account, where the
+           banner - which reads the raw key - can never find it again. */
+        closeOvr(); hideIntro(); accCk(); S.ck=true;
+        document.getElementById('land')?.classList.add('hidden');
         loginUser(acct); return;
       }
       // server rejected the token - do NOT fall back to trusting it locally
@@ -711,8 +714,7 @@ async function handleGoogleCred(resp) {
     fetch(p.picture).then(r=>r.blob()).then(b=>{const rd=new FileReader();rd.onload=e=>{saveStr('amv_pfp_'+acct.email,e.target.result);updateSbUser();};rd.readAsDataURL(b);}).catch(()=>{});
   }
   closeOvr(); hideIntro();
-  saveStr('amv_ck','1'); S.ck=true;
-  const ck=$('ck');if(ck)ck.remove();
+  accCk(); S.ck=true;   // per device, through the same door the banner reads
   document.getElementById('land')?.classList.add('hidden');
   loginUser(acct);
 }

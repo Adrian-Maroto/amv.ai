@@ -1156,3 +1156,30 @@ The generalisation, which is the point: a sanitiser is defined by what it lets
 through, so it can only be trusted where its allowlist matches the sink. `escH`
 is right for text and wrong for a URL, `_mdAttr` is right for an attribute
 delimiter and wrong for a scheme. Ask what the value will BE, not where it goes.
+
+## 106. Two doors to the same shelf is a data loss with no error
+`saveStr`/`loadStr` prefix a key with the signed-in account so two people on one
+machine cannot read each other's settings. Raw `localStorage` does not. A key
+written through one door and read through the other is a value that simply
+vanishes - no exception, no console warning, and both halves are correct where
+they sit. Cookie consent was written scoped by the Google sign-in paths and read
+unscoped by the banner, so the write went to a shelf nothing looked at.
+
+The wider version, computed the same way: a key written and never read is a
+toggle that does nothing, and a key read and never written is a feature that
+never turns on. Sweeping all 120 keys found seven of the first kind. All seven
+turned out to be residue from removed flows rather than live bugs - which is a
+result worth stating plainly rather than dressing up as seven fixes.
+
+Two things the sweep taught about writing this kind of check:
+
+Deleting a key is neither reading nor writing it. Counting `removeItem` as a
+read made the admin-token cleanup look like a phantom reader; it needed its own
+category. And a literal ending in `_` is a prefix being concatenated with an id,
+not a key - counting `amv_pfp_` as one produced a false report on the first run.
+
+The one real finding was in the cleanup itself. An admin token an older build
+wrote to disk was erased only under the CURRENT account's prefix, so a token
+written while somebody else was signed in stayed there indefinitely. A secret in
+the wrong place is not less of one because the person who put it there has since
+logged out.
