@@ -581,10 +581,13 @@ async function _routeChatIntent(txt){
 try{ window._routeChatIntent=_routeChatIntent; }catch(e){}
 
 let _pendingMessage = '';
+/* How many times AMV will run tools and hand the results back to the model
+   within one user message. Named so the limit and the sentence that explains
+   hitting it cannot drift apart. */
+const _TOOL_ROUND_MAX = 4;
 let _toolRound = 0;
 async function sendMsg(_opts) {
   _opts = _opts || {};
-  if(!_opts._continueTools) _toolRound = 0;   // fresh user turn resets the tool budget
   const ta=$('mta');
   if(!ta) return;
   if(S.busy && !_opts._continueTools) return;
@@ -664,6 +667,11 @@ try{ window.stopGenerating=stopGenerating; }catch(e){}
 
 async function _callAI(msgs, _opts) {
   _opts = _opts || {};
+  /* The tool budget resets here rather than in sendMsg, because Regenerate,
+     Retry, and editing a message all call _callAI directly. Resetting only in
+     sendMsg meant a turn that had spent its four rounds carried the spent
+     counter into the next one, so regenerating it could not use tools at all. */
+  if(!_opts._continueTools) _toolRound = 0;
   _userStopped=false; _activeStreamCtrl=null;
   try{
     if(!loadStr('amv_first_msg_sent')){ saveStr('amv_first_msg_sent','1'); AEGIS.log('first_message',{}); }
@@ -733,12 +741,40 @@ async function _callAI(msgs, _opts) {
   setMsgs(msgs); renderChatMsgs();
   const streamIdx=msgs.length-1;
 
+  /* Whether this turn can actually search the web, decided BEFORE the status
+     labels, because one of those labels claims it is happening.
+
+     This used to read S.model - the model in the picker - and only the Apex
+     entry matched. The default picker value is Auto, so the default
+     configuration never searched at all, while still showing "Searching the
+     web…" and "Reading sources…" to anybody who asked about today. A stale
+     answer presented as a fresh one is the worst thing this product can do,
+     and it was the out-of-the-box behaviour.
+
+     It now reads the engine that actually RUNS the turn, so Auto behaves like
+     whatever it picked, and search is offered on every tier the toggle in
+     Settings promises it on - with the number of searches scaled to the tier,
+     so a quick question on the cheap engine cannot spend like a research run.
+     The searches themselves are metered into the spend ledger server-side and
+     sit under the same per-plan dollar backstop as tokens. */
+  const _webAllowed = (loadStr('amv_cap_websearch')!=='0') && (loadStr('amv_plugin_web')!=='0');
+  const _searchBudget = { fast:2, core:3, coding:5, smart:5 };
+  const _researchBudget = { normal:5, deep:30, max:60 };
+  /* Research mode is an explicit request for depth, so its budget comes from the
+     tier the person chose rather than from whichever engine got routed. */
+  const _webMaxUses = S._researchDepth ? (_researchBudget[S._researchDepth] || 5)
+                                       : (_searchBudget[_routeKey] || 0);
+  const _webSearchOn = _webAllowed && _webMaxUses > 0;
+
   // Working status: cycle contextual labels until the first token
   // arrives, so the user always sees what AMV is doing.
   const _lastUser=(msgs.filter(m=>m.r==='u').slice(-1)[0]||{});
   const _uTxt=(typeof _lastUser.c==='string'?_lastUser.c:(_lastUser.d||'')).toLowerCase();
   const _statusPhases=(()=>{
-    if(/\b(search|latest|news|current|today|who is|what is|find)\b/.test(_uTxt)) return ['Thinking…','Searching the web…','Reading sources…','Writing…'];
+    if(/\b(search|latest|news|current|today|who is|what is|find)\b/.test(_uTxt))
+      return _webSearchOn
+        ? ['Thinking…','Searching the web…','Reading sources…','Writing…']
+        : ['Thinking…','Working through it…','Writing…'];   // no search this turn, so do not say there is one
     if(/\b(code|build|function|app|bug|fix|script|debug)\b/.test(_uTxt)) return ['Thinking…','Analyzing the problem…','Writing code…'];
     if(/\b(analyz|summar|explain|compare|review)\b/.test(_uTxt)) return ['Thinking…','Analyzing…','Organizing thoughts…','Writing…'];
     if(/\b(image|picture|photo|draw|generate)\b/.test(_uTxt)) return ['Thinking…','Composing the image…'];
@@ -755,18 +791,9 @@ async function _callAI(msgs, _opts) {
   const _clearStatus=()=>{ try{ clearInterval(_statusTimer); }catch(e){} };
 
   try {
-    // Build tools array - include web_search for capable models, but only if
-    // the user hasn't turned web search off in Settings (Capabilities / Plugins).
-    const _webAllowed = (loadStr('amv_cap_websearch')!=='0') && (loadStr('amv_plugin_web')!=='0');
+    // Web search, decided above from the engine that actually runs this turn.
     let tools=[];
-    if(_webAllowed && (S.model==='smart'||S.model==='research'||S._researchDepth)){
-      // max_uses controls how many searches the model may run. Research mode
-      // raises this so it genuinely covers many sources; normal chat keeps it
-      // low so a quick question doesn't spend a fortune searching.
-      const depth = S._researchDepth || (S.model==='research' ? 'deep' : 'normal');
-      const maxUses = depth==='deep' ? 30 : depth==='max' ? 60 : 5;
-      tools.push({ type:'web_search_20250305', name:'web_search', max_uses:maxUses });
-    }
+    if(_webSearchOn) tools.push({ type:'web_search_20250305', name:'web_search', max_uses:_webMaxUses });
     // AMV's own tools - chat can actually DO the work, not just describe it.
     try{ if(Array.isArray(AMV_TOOLS)) tools = tools.concat(AMV_TOOLS); }catch(e){}
     if(!tools.length) tools = undefined;
@@ -1002,14 +1029,19 @@ async function _callAI(msgs, _opts) {
       if(msgs[streamIdx]) msgs[streamIdx]={...msgs[streamIdx], _research:_finishedPanel};
     }
     if(_userStopped){
-      msgs[streamIdx]={r:'a',c:(fullText||'')+ (fullText?' _(stopped)_':'_(stopped)_'),model:S.model,_stopped:true};
+      /* Spread rather than replace: the frozen research panel was just written
+         onto this message and a wholesale replacement threw away the sources
+         AMV had already found and shown. streaming/_status are cleared
+         explicitly, since spreading would otherwise keep the bubble spinning. */
+      msgs[streamIdx]={...msgs[streamIdx],r:'a',c:(fullText||'')+ (fullText?' _(stopped)_':'_(stopped)_'),
+                       model:S.model,streaming:false,_status:null,_retrying:null,_stopped:true};
       _recordUsageOnce();
       setMsgs(msgs); S.busy=false; renderChatMsgs();
       return;
     }
     // ── The model asked AMV to DO something. Run it, then let the model continue. ──
     const _pending = Object.values(_toolBlocks).filter(t=>t && t.name && !String(t.name).startsWith('web_search'));
-    if(_pending.length && !_userStopped && _toolRound < 4){
+    if(_pending.length && !_userStopped && _toolRound < _TOOL_ROUND_MAX){
       const assistantContent=[];
       if(fullText) assistantContent.push({type:'text', text:fullText});
       const results=[];
@@ -1046,6 +1078,15 @@ async function _callAI(msgs, _opts) {
       _toolRound++;
       return sendMsg({ _continueTools:true });
     }
+    /* The model asked for another tool and the per-turn budget is spent. The
+       branch above simply did not run, so the request vanished: the person got
+       whatever text preceded it, or "(no response)", with nothing to say a
+       limit had been reached. Silently doing less than was asked is the failure
+       this codebase keeps finding; say it instead. */
+    if(_pending.length && !_userStopped && _toolRound >= _TOOL_ROUND_MAX){
+      fullText = (fullText ? fullText + '\n\n' : '') +
+        '_I stopped here after '+_TOOL_ROUND_MAX+' rounds of tool use on this message, so it could not loop. Say "keep going" if there is more to do._';
+    }
     if(!fullText) fullText='(no response)';
     const _base={r:'a',c:fullText,model:S.model};
     if(_ranEngine && S.model==='auto'){ _base._engine=_ranEngine; _base._engineWhy=_ranWhy; }
@@ -1063,6 +1104,25 @@ async function _callAI(msgs, _opts) {
     _clearStatus();
     // a user-initiated stop is not an error - keep whatever streamed
     if(_userStopped || (e && (e.name==='AbortError' || String(e.message||e).includes('user-stop')))){
+      /* Stop lands here, not on the clean path above, whenever the connection
+         was idle at the moment it was pressed: the abort rejects the read that
+         was waiting and throws instead of letting the loop break. This branch
+         only re-rendered, so the message kept streaming:true and its bubble
+         span with a blinking cursor for the rest of the session - a Stop button
+         that visibly did not stop. Finalize it the same way the other path
+         does, spreading so the research panel survives. */
+      _streamBubbleReset();
+      const _m=msgs[streamIdx];
+      if(_m && _m.streaming){
+        const _t=typeof _m.c==='string'?_m.c:'';
+        msgs[streamIdx]= _userStopped
+          ? {..._m, r:'a', c:_t+(_t?' _(stopped)_':'_(stopped)_'), model:S.model,
+             streaming:false, _status:null, _retrying:null, _stopped:true}
+          /* Aborted without anybody pressing Stop: say the connection went, and
+             do not put words in their mouth about having stopped it. */
+          : {..._m, r:'a', c:_t, model:S.model, streaming:false, _status:null,
+             _retrying:null, _interrupted:true};
+      }
       _recordUsageOnce();
       setMsgs(msgs); S.busy=false; renderChatMsgs(); _userStopped=false; return;
     }
@@ -2671,18 +2731,28 @@ try{ window._localizePrices=_localizePrices; }catch(e){}
 
 /* === PLANS === */
 function planCards(inApp){
+  /* Every tier has to end up with a button that does something.
+
+     `ultra` had no branch, so it fell to the last line - a <button> with no
+     handler of any kind. The $200 plan's only in-app buy button did nothing
+     when clicked, silently, and it looked identical to the ones that worked.
+     The default now routes to checkout, so a tier added later cannot be dead
+     by omission; the named branches only exist for the two operator-configured
+     payment links. */
   function pBtn(label, cls, plan, isLand){
     if(isLand) return '<button class="plnbtn pbs" onclick="openAuth(\'signup\')">'+label+'</button>';
-    if(plan==='free') return '<button class="plnbtn pbs" onclick="setTab(\'plans\')">'+label+'</button>';
-    if(plan==='pro') {
-      if(S.sp) return '<button class="plnbtn pbp" onclick="window.open(S.sp,\'_blank\')">'+label+'</button>';
-      return '<button class="plnbtn pbp" onclick="openCheckout(\'pro\')">'+label+'</button>';
+    if(plan==='free'){
+      /* Nothing to buy. Saying so beats a button that appears to sell the plan
+         they are already on - and beats calling openCheckout('free'), which
+         would quietly downgrade a paying customer on a single click. */
+      const onFree=(loadStr('amv_plan')||'free')==='free';
+      return onFree
+        ? '<button class="plnbtn pbs" disabled aria-disabled="true">Your current plan</button>'
+        : '<button class="plnbtn pbs" data-gs="billing">Manage plan</button>';
     }
-    if(plan==='elite') {
-      if(S.se) return '<button class="plnbtn pbs" onclick="window.open(S.se,\'_blank\')">'+label+'</button>';
-      return '<button class="plnbtn pbs" onclick="openCheckout(\'elite\')">'+label+'</button>';
-    }
-    return '<button class="plnbtn pbs">'+label+'</button>';
+    if(plan==='pro' && S.sp) return '<button class="plnbtn pbp" onclick="window.open(S.sp,\'_blank\',\'noopener\')">'+label+'</button>';
+    if(plan==='elite' && S.se) return '<button class="plnbtn pbs" onclick="window.open(S.se,\'_blank\',\'noopener\')">'+label+'</button>';
+    return '<button class="plnbtn '+(plan==='pro'?'pbp':'pbs')+'" onclick="openCheckout(\''+plan+'\')">'+label+'</button>';
   }
   const isLand=!inApp;
   return [
@@ -2880,20 +2950,13 @@ function renderHist(){
       });
     });
   };
-  // Small lists: render all (simple, fast). Large lists: virtualize.
-  const VTHRESH=60, ROW=34;
-  if(rows.length<=VTHRESH){
-    area.innerHTML=rows.map(rowHTML).join('');
-    bind();
-    return;
-  }
-  // For very large lists fall back to conversation-only virtualization plus
-  // sessions rendered inline at top (keeps the fast path unchanged).
-  {
-    area.innerHTML=rows.map(rowHTML).join('');
-    bind();
-    return;
-  }
+  /* Every row is rendered. There used to be a threshold here and a second
+     branch commented as virtualization for long lists - both branches did the
+     same thing, so the only working part was the claim. Saying what the code
+     does is worth more than a note describing what it does not: if this ever
+     needs windowing, it needs writing, not selecting. */
+  area.innerHTML=rows.map(rowHTML).join('');
+  bind();
 }
 
 // Small menu for a work-session row in Recents: resume or delete.

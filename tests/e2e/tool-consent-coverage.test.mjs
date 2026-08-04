@@ -111,6 +111,48 @@ section('The gate is on the model-driven path, not inside the runner');
      'and a denial stops the tool rather than only being logged', true);
 }
 
+section('EVERY dispatch path asks, not just the one that was written first');
+{
+  /* The gap this section exists for: the check above proved the chat streaming
+     loop asks. It never asked how many loops there are. A second one -
+     runAgentic, the shared runner for Dev, Lab and Crew - was added later,
+     dispatched tool names the MODEL chose, and called the runner directly. It
+     could execute code and publish a public page with no prompt.
+
+     So the rule is expressed over call sites rather than over the one path
+     somebody remembered. A call to _amvRunTool either passes a name the model
+     chose - and must be preceded by the consent gate - or passes a literal
+     name, which means a person pressed something specific. There is no third
+     kind. */
+  const calls = [...bundle.matchAll(/_amvRunTool\(([^,]+),/g)]
+    .filter(m => !/function/.test(bundle.slice(m.index - 30, m.index)));
+  ok(calls.length >= 3, 'the dispatch sites were found', calls.map(c => c[1].trim()));
+
+  const modelChosen = calls.filter(c => !/^'[a-z_]+'$/.test(c[1].trim()));
+  ok(modelChosen.length >= 2, 'and at least two of them run whatever the model named',
+     modelChosen.map(c => c[1].trim()));
+
+  /* Each model-driven site must have the gate in the code just above it. */
+  const ungated = modelChosen.filter(c => {
+    const before = bundle.slice(Math.max(0, c.index - 900), c.index);
+    return !/_toolNeedsConsent\(/.test(before) || !/_confirmModelTool\(/.test(before);
+  }).map(c => c[1].trim());
+  ok(ungated.length === 0,
+     'no loop runs a model-chosen tool without asking first', ungated);
+
+  /* And the literal ones are named, so "it is a literal" cannot become a way to
+     smuggle a dangerous tool past the gate without anybody deciding. */
+  const USER_INITIATED = {
+    "'generate_image'": 'Dev: the person typed a request for a picture; the tool needs no permission anyway',
+    "'deploy_site'":    'Lab: the person pressed Publish, with the code in their own editor - the press IS the intent',
+  };
+  const unexplained = calls
+    .filter(c => /^'[a-z_]+'$/.test(c[1].trim()) && !(c[1].trim() in USER_INITIATED))
+    .map(c => c[1].trim());
+  ok(unexplained.length === 0,
+     'every direct call names the button behind it', unexplained);
+}
+
 section('The consent prompt says where the request may have come from');
 {
   const at = bundle.indexOf('async function _confirmModelTool');

@@ -772,13 +772,22 @@ async function _labDeploy(){
   _labBusy(true); _labStat('Publishing\u2026');
   try{
     const out=await _amvRunTool('deploy_site',{ html:code, title:'Lab page' },(m)=>_labStat(m));
+    /* deploy_site answers a failure with text rather than by throwing, so this
+       used to print "Published" and a green "live" tick over the sentence
+       explaining that nothing had been published. A URL coming back is the only
+       evidence the page exists. */
     const m=String(out.text||'').match(/https?:\/\/\S+/);
     const url=m?m[0]:'';
+    if(!url){
+      _labStat('\u2717 not published','err');
+      _labOut('<div class="lab-sec err"><div class="lab-sec-h">Not published</div>'+
+        '<div class="lab-md">'+escH(out.text||'Publishing did not complete, and no address came back.')+'</div></div>');
+      _labBusy(false);
+      return;
+    }
     _labStat('\u2713 live','ok');
     _labOut('<div class="lab-sec"><div class="lab-sec-h">Published</div>'+
-      '<div class="lab-md">'+(url
-        ? 'It\u2019s live at <a href="'+escH(url)+'" target="_blank" rel="noopener" style="color:var(--accent)">'+escH(url)+'</a> - anyone with the link can open it.'
-        : escH(out.text))+'</div></div>');
+      '<div class="lab-md">It\u2019s live at <a href="'+escH(url)+'" target="_blank" rel="noopener" style="color:var(--accent)">'+escH(url)+'</a> - anyone with the link can open it.</div></div>');
   }catch(e){
     _labStat('\u2717 '+e.message,'err');
     _labOut('<div class="lab-sec err"><pre class="lab-pre">'+_esc(e.message)+'</pre></div>');

@@ -1095,3 +1095,41 @@ them - `_sendEmail` answers with a boolean rather than throwing, so a refused
 send reported delivered; and `+null` is 0, so a chart drew a missing value as a
 real zero while claiming to have dropped it. Both were the exact defect being
 fixed, one layer down.
+
+## 103. A rule enforced in the browser is a label, not a lock
+The image box said "No explicit content" and the Images tab refused a prompt
+that matched a block list. `/v1/image/generate` and `/v1/video/generate`
+accepted anything from anybody with a session token. The refusal ran entirely in
+JavaScript the requester controls, on a page a direct request never loads.
+
+The test for whether a rule is real is not "does the code exist" but "what
+happens to somebody who does not run it". Content policy, plan limits, price,
+ownership, and approval all fail that test in the client by construction. The
+client's version of any of them is a courtesy - a fast answer so nobody waits
+for a render they were never going to get - and it must be written as one.
+
+Which produces the rule that had been backwards here: a client-side limit may be
+LOOSER than the server's but never TIGHTER. The client's image cap was half the
+server's on every plan and missing Teams entirely, so the most expensive
+customers AMV has were throttled to the free tier by their own browser, with
+nothing to appeal to. A too-loose client check costs a round trip. A too-strict
+one refuses a paying customer something they bought.
+
+## 104. Count the doors before trusting the guard on one of them
+Image generation had three entrances: the Images tab, a sentence typed in chat,
+and a tool the model calls. The tab checked the content policy and the daily
+allowance. The other two checked nothing, so the same account got a different
+answer depending on which box they typed into, and the phrasing that skipped
+every check was the most natural way to ask.
+
+This is the same shape as the storage-door and route-auth defects: a rule
+attached to the entrance somebody remembered instead of to the thing being
+guarded. The fix is always the same - one function that decides, every entrance
+calling it - and the check that keeps it fixed is the exhaustive kind: find
+every door in the source, assert each one goes through the gate, so the fourth
+door fails a test rather than shipping quietly.
+
+The tool door deserves naming separately. That prompt is written by the model,
+which may have been steered by a page it read. It is the entrance least likely
+to have a person behind it and therefore the one most in need of the check, not
+least.

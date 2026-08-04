@@ -93,6 +93,76 @@ section('The dispatcher still resolves by name');
      'with the two specially-cased actions still handled ahead of it', true);
 }
 
+section('Every other dispatch attribute resolves too');
+{
+  /* data-dact is one of five. The others name a settings pane, a tab, or an
+     auth screen, and a wrong value in any of them is just as silent. */
+  const gs   = new Set([...all.matchAll(/data-gs="([A-Za-z_-]+)"/g)].map(m => m[1]));
+  const stab = new Set([...all.matchAll(/data-stab="([A-Za-z_-]+)"/g)].map(m => m[1]));
+  ok(gs.size > 0 && stab.size > 0, 'the pane and tab controls were parsed', { gs: gs.size, stab: stab.size });
+
+  /* A settings pane exists if the pane router handles it or the command palette
+     registers it. */
+  const panes = new Set([
+    ...[...bundle.matchAll(/sp===['"]([A-Za-z_-]+)['"]/g)].map(m => m[1]),
+    ...[...bundle.matchAll(/setNav\('set-[\w-]+',\s*'[^']*',\s*'([A-Za-z_-]+)'/g)].map(m => m[1]),
+  ]);
+  const deadPanes = [...gs].filter(p => !panes.has(p)).sort();
+  ok(deadPanes.length === 0, 'no button opens a settings pane that does not exist', deadPanes);
+
+  /* A tab exists if setTab knows how to render it. */
+  const tabs = new Set([
+    ...[...bundle.matchAll(/S\.tab===['"]([a-z-]+)['"]/g)].map(m => m[1]),
+    ...[...bundle.matchAll(/t===['"]([a-z-]+)['"]/g)].map(m => m[1]),
+    ...[...bundle.matchAll(/case\s*['"]([a-z-]+)['"]\s*:/g)].map(m => m[1]),
+  ]);
+  const deadTabs = [...stab].filter(t => !tabs.has(t)).sort();
+  ok(deadTabs.length === 0, 'and no button opens a tab that does not exist', deadTabs);
+}
+
+section('And an inline onclick names a function that exists');
+{
+  /* The plan cards do not use delegation - they carry inline handlers - which
+     is how the Ultra tier shipped a $200 buy button with no handler at all
+     while looking identical to the three that worked. A misspelled name here is
+     the same silence, one layer down. */
+  const calls = new Set();
+  for(const m of all.matchAll(/onclick="([A-Za-z_$][\w$.]*)\s*\(/g)) calls.add(m[1]);
+  for(const m of all.matchAll(/onclick=\\"([A-Za-z_$][\w$.]*)\s*\(/g)) calls.add(m[1]);
+  ok(calls.size > 3, 'the inline handlers were parsed', [...calls].slice(0, 12));
+  const dead = [...calls]
+    .filter(n => n.indexOf('.') < 0)        // window.foo() / S.x() resolve elsewhere
+    .filter(n => !defined.has(n))
+    .sort();
+  ok(dead.length === 0, 'each one calls something that is defined', dead);
+}
+
+section('Every plan on the pricing page can actually be bought');
+{
+  /* The specific failure: `ultra` had no branch in the button builder and fell
+     through to a plain <button> with nothing bound. Expressed as the rule
+     rather than the instance - every tier the cards offer reaches checkout. */
+  const at = bundle.indexOf('function planCards');
+  const cards = bundle.slice(at, bundle.indexOf('\n}', bundle.indexOf('].join(\'\')', at)));
+  const offered = [...cards.matchAll(/pBtn\('[^']*','[a-z]+','([a-z]+)'/g)].map(m => m[1]);
+  ok(offered.length >= 4, 'the tiers on the cards were found', offered);
+
+  const builder = bundle.slice(at, at + 1600);
+  const paid = offered.filter(p => p !== 'free');
+  const unreachable = paid.filter(p => {
+    /* Either named explicitly, or covered by the default that routes to
+       checkout. The default is what makes the next tier safe. */
+    const named = new RegExp("plan==='" + p + "'").test(builder);
+    const byDefault = /return '<button class="plnbtn '[\s\S]{0,120}openCheckout\(\\'"?\+plan/.test(builder)
+                   || /openCheckout\(\\''\+plan\+'\\'\)/.test(builder);
+    return !named && !byDefault;
+  });
+  ok(unreachable.length === 0, 'no paid tier has a button that does nothing', unreachable);
+
+  ok(!/return '<button class="plnbtn pbs">'/.test(builder),
+     'and there is no handler-less fallback left to fall into', true);
+}
+
 section('A control inside a stopPropagation modal is not dispatched this way');
 {
   /* LESSONS #5: a modal that stops propagation kills delegation for everything

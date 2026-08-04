@@ -1458,7 +1458,21 @@ async function runAgentic(surface, userPrompt, opts){
     // Run every tool the model asked for, feed the REAL results back.
     const results = [];
     for(const tu of toolUses){
-      const out = await _amvRunTool(tu.name, tu.input || {}, onStatus);
+      /* Every name here was chosen by the MODEL, which is exactly the condition
+         AMV-007 describes: the request can come from content the model read
+         rather than from anything the person asked for. Chat's streaming loop
+         has always asked first. This runner was written later and did not, so a
+         second dispatch path could execute code on the device and publish a
+         public page with no prompt at all. Same gate, same reasons. */
+      let out;
+      if(_toolNeedsConsent(tu.name)){
+        const allowed = await _confirmModelTool(tu.name, tu.input || {});
+        if(!allowed){
+          out = { text:'The user DENIED permission to run "'+tu.name+'". Do not attempt it again unless they explicitly ask for it. Continue helping without it.', render:null };
+          try{ if(typeof AEGIS!=='undefined') AEGIS.log('tool_denied',{tool:tu.name,surface}); }catch(e){}
+        }
+      }
+      if(!out) out = await _amvRunTool(tu.name, tu.input || {}, onStatus);
       results.push({ type:'tool_result', tool_use_id: tu.id, content: String(out.text||'').slice(0,8000) });
       if(out.render) rendered += out.render;
     }
