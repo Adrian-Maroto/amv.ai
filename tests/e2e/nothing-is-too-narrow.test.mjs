@@ -167,6 +167,43 @@ section('The pricing CTAs sit on one line');
   }
 }
 
+section('Nothing runs off the side of a tablet either');
+{
+  /* The mobile sweep asks this at phone widths. Between phone and desktop
+     nobody was asking, and that is where the Lab toolbar hung 36px past the
+     edge of the screen and took the horizontal scrollbar with it - a flex row
+     with space-between and no wrap, comfortable on a desktop and not at 768. */
+  const spills = [];
+  const TABS = ['chat', 'images', 'video', 'crew', 'handoff', 'studio', 'dev', 'lab', 'tasks', 'market', 'plans', 'settings'];
+  for (const width of [768, 900]) {
+    const page = await browser.newPage({ viewport: { width, height: 1000 } });
+    await page.goto(`http://localhost:${PORT}`, { waitUntil: 'load' });
+    await page.waitForTimeout(700);
+    await page.evaluate(() => {
+      localStorage.setItem('amv_cookie_consent', JSON.stringify({ essential: true }));
+      S.user = { name: 'Alex Rivera', email: 'alex@example.com', ini: 'A' }; goApp();
+    });
+    for (const tab of TABS) {
+      await page.evaluate((t) => setTab(t), tab);
+      await page.waitForTimeout(360);
+      const worst = await page.evaluate(() => {
+        let over = 0, sel = '';
+        document.querySelectorAll('#vc *, #cv *').forEach((e) => {
+          const b = e.getBoundingClientRect();
+          if (b.width > 0 && b.right > window.innerWidth + 2 && b.right - window.innerWidth > over) {
+            over = Math.round(b.right - window.innerWidth);
+            sel = (e.className || e.tagName).toString().slice(0, 24);
+          }
+        });
+        return { over, sel };
+      });
+      if (worst.over > 0) spills.push(`${tab} at ${width}px: ${worst.over}px past the edge (${worst.sel})`);
+    }
+    await page.close();
+  }
+  ok(spills.length === 0, 'no surface overflows sideways between phone and desktop', spills);
+}
+
 await browser.close();
 server.close();
 if (report('nothing-is-too-narrow') > 0) process.exitCode = 1;

@@ -1383,3 +1383,25 @@ Both halves of a responsive fix need pinning: that the narrow case collapses,
 AND that the wide case still gets the layout worth having. Removing the fix
 fails three assertions; a fix that simply deleted the two-column desktop layout
 would fail two others.
+
+## 114. Between the phone and the desktop is where nothing was looking
+Two of the four visual defects found in this pass live at widths nobody develops
+at and plenty of people use. Settings was three columns and 191px of content at
+iPad portrait; the Lab toolbar hung 36 pixels off the right edge at the same
+width and took the horizontal scrollbar with it.
+
+The mobile sweep asks both questions - is anything too narrow, does anything
+overflow - and asks them at phone widths. The desktop is where the work is done
+and looks right by construction. The band between 700 and 1100 had no coverage
+at all, and it is exactly where two independent breakpoints can leave a gap
+between them.
+
+A second rule came out of fixing the Lab bar. The obvious fix - wrap the row and
+both its groups - eliminated the overflow and made the DESKTOP worse: with
+space-between, each group gets a constrained width, so they broke onto extra
+rows even at 1440 and the bar grew from 53px to 119px. Wrapping only the outer
+row fixed 768 and left every desktop width untouched.
+
+Measure the fix at BOTH ends. A responsive change that is only checked where it
+was failing will happily trade one screen for another, and the screen it trades
+away is usually the one most people are on.
