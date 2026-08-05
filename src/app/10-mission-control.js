@@ -1056,7 +1056,11 @@ function cwToggle(id){
   j.on=!j.on; _cwSaveJobs(jobs);
   // keep the engine's own on-flag in sync so AMVJobs.run() reflects the toggle
   if(id==='job_hunt' && typeof AMVJobs!=='undefined'){ try{ const c=AMVJobs.cfg(); c.on=j.on; AMVJobs.save(c); }catch(e){} }
-  if(window.AMV_API && AMV_API.live){ AMV_API.toggleJob(id,j.on).catch(()=>{}); }
+  /* Swallowed on purpose, and only here: the schedule this switch really drives
+     is the local one, already written above. `/api/jobs` is the copy your OTHER
+     devices read, so a refusal means they show a stale switch - worth recording,
+     not worth talking over the message below. */
+  if(window.AMV_API && AMV_API.live){ AMV_API.toggleJob(id,j.on).catch(e=>_jobSyncFailed(j,e)); }
   /* Turning it on is kept - the intent is real and it starts the moment the
      account is linked. What is not kept is the impression that it is running.
      A job that needs a mailbox nobody connected will produce nothing, and being
@@ -1070,6 +1074,15 @@ function cwToggle(id){
     toast('Off: '+j.title,'info');
   }
   renderCrewView();
+}
+
+/* A switch that moved here but not on the server. Recorded rather than shown,
+   because on this device the job really is in the state the card says - it is
+   the other devices that will be wrong until the next sync. An empty catch made
+   that indistinguishable from a clean save. */
+function _jobSyncFailed(j, e){
+  try{ AEGIS.log('job_toggle_unsynced',{ id:(j&&j.id)||'', on:!!(j&&j.on),
+       why:String((e&&e.message)||'').slice(0,120) }); }catch(_){}
 }
 
 /* A job needing this tab's accounts, put on (or taken off) the local schedule
@@ -1121,7 +1134,10 @@ async function _cwToggleReal(jobs, j){
     j.on=false; j.autoId=null;
   }
   _cwSaveJobs(jobs);
-  if(window.AMV_API && AMV_API.live){ AMV_API.toggleJob(j.id,j.on).catch(()=>{}); }
+  /* Same as above: the real work was already created or deleted on the server
+     by _scheduleTask / _autoAction, and refused to move the switch if that
+     failed. This call only mirrors the flag across devices. */
+  if(window.AMV_API && AMV_API.live){ AMV_API.toggleJob(j.id,j.on).catch(e=>_jobSyncFailed(j,e)); }
   toast(j.on?('On: '+j.title+' - it runs even with AMV closed. Results land in Tasks.')
             :('Off: '+j.title),'info',j.on?6000:3000);
   try{ if(typeof _autoRefresh==='function') _autoRefresh(); }catch(e){}

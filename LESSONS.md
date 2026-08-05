@@ -1405,3 +1405,23 @@ row fixed 768 and left every desktop width untouched.
 Measure the fix at BOTH ends. A responsive change that is only checked where it
 was failing will happily trade one screen for another, and the screen it trades
 away is usually the one most people are on.
+
+## 115. Awaiting a request is not reading its answer
+
+`AMV_API._fetch` resolves with the Response for every status except 401, on
+purpose, because callers need the status. That makes a bare
+`await this._fetch(path, {...})` succeed identically on a 429, a 403, a 400 or a
+500 that outlived its retries. Four writes were written that way, and each then
+told somebody the thing had happened.
+
+The worst was the autonomy kill switch. Its caller was already careful - it
+waits, it has a failure branch, and that branch says "anything scheduled to run
+in the background is STILL RUNNING." The branch could only ever fire on a
+dropped connection. A server that answered "no" resolved like a success and the
+emergency stop reported "nothing runs until you resume" over jobs that were
+still running.
+
+**Rule:** when a helper deliberately does not throw on an HTTP error, deciding
+what the answer means belongs in ONE place that every write goes through. A
+careful caller cannot compensate for a promise that resolves on a refusal, and
+a per-method fix leaves the next method free to forget.

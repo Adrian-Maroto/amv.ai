@@ -184,7 +184,12 @@ const AMV_API = {
          or fails a second exchange confusingly. Revoke and unlink are
          idempotent but are listed too - withdrawing access should happen once,
          deliberately, not as a side effect of a flaky connection. */
-      || /\/(family\/(limits|remove|leave)|link\/(invite|revoke)|finance\/(link\/(start|finish)|unlink)|team\/(invite|join|remove|leave|role|share|unshare|data|task\/(create|update))|market\/(publish|buy|withdraw|review|install)|deploy|sms\/register|widget\/save)/.test(path);
+      /* A handoff is a create, and it lands in somebody ELSE's inbox. A 5xx
+         raised after the write went through would, on retry, hand the same work
+         over twice - to a person who then has to work out which of two
+         identical batons is the live one. Toggles and the pause flag are not
+         listed: they set a value, so doing it twice is doing it once. */
+      || /\/(family\/(limits|remove|leave)|link\/(invite|revoke)|finance\/(link\/(start|finish)|unlink)|team\/(invite|join|remove|leave|role|share|unshare|data|task\/(create|update))|market\/(publish|buy|withdraw|review|install)|api\/handoff|deploy|sms\/register|widget\/save)/.test(path);
     const MAX = noRetry ? 0 : 2;        // up to 2 retries (3 total attempts)
 
     /* AMV-061: a request with no deadline can hang forever.
@@ -428,24 +433,44 @@ const AMV_API = {
     return await r.json().catch(()=>null);
   },
 
-  // jobs / approvals / handoff
-  async jobs(){ const r=await this._fetch('/api/jobs'); return (await r.json()).jobs||[]; },
-  async toggleJob(id,on){ await this._fetch('/api/jobs',{method:'POST',body:JSON.stringify({id,on})}); },
-  async approvals(){ const r=await this._fetch('/api/approvals'); return (await r.json()).approvals||[]; },
-  /* Checks the answer. It used to await the request and ignore what came back,
-     so a 502 from a send that failed read exactly like a success - which is how
-     "Sent" survived on top of a server that never sent anything. Returns the
-     body so the caller can tell delivered from merely resolved. */
-  async actApproval(id,action){
-    const r = await this._fetch('/api/approvals/act',{method:'POST',body:JSON.stringify({id,action})});
+  /* THE ANSWER HAS TO BE READ, NOT JUST WAITED FOR.
+
+     `_fetch` resolves with the Response for every status except 401 - that is
+     deliberate, because callers need the status. The cost is that `await
+     this._fetch(...)` on its own succeeds just as happily on a 429, a 403, a
+     400 or a 500 that outlived its retries as it does on a 200. Four writes
+     were written that way, and each one then told somebody it had happened.
+
+     The worst of them was the autonomy kill switch, whose caller was already
+     careful: it waits, it has a failure branch, and that branch says "anything
+     scheduled to run in the background is STILL RUNNING." It could only ever
+     fire on a dropped connection. A server that answered "no" resolved, and the
+     emergency stop reported "nothing runs until you resume" over jobs that were
+     still running.
+
+     One place decides what an answer means, so a write cannot be added later
+     that forgets to look. */
+  async _wrote(path, body, what){
+    const r = await this._fetch(path, {method:'POST', body:JSON.stringify(body)});
     const d = await r.json().catch(()=>({}));
-    if(!r.ok || d.error){ const e=new Error(d.error||'That could not be completed.'); e.code=d.code||'failed'; throw e; }
+    if(!r.ok || d.error){
+      const e = new Error(d.error || what || 'That could not be completed.');
+      e.code = d.code || (r.status===429 ? 'rate_limited' : 'failed');
+      e.status = r.status;
+      throw e;
+    }
     return d;
   },
-  async pauseAutonomy(paused){ await this._fetch('/auto/pause',{method:'POST',body:JSON.stringify({paused:!!paused})}); },
-  async createHandoff(h){ await this._fetch('/api/handoff',{method:'POST',body:JSON.stringify(h)}); },
+
+  // jobs / approvals / handoff
+  async jobs(){ const r=await this._fetch('/api/jobs'); return (await r.json()).jobs||[]; },
+  async toggleJob(id,on){ return this._wrote('/api/jobs',{id,on},'That switch could not be saved.'); },
+  async approvals(){ const r=await this._fetch('/api/approvals'); return (await r.json()).approvals||[]; },
+  async actApproval(id,action){ return this._wrote('/api/approvals/act',{id,action}); },
+  async pauseAutonomy(paused){ return this._wrote('/auto/pause',{paused:!!paused},'The server did not accept that.'); },
+  async createHandoff(h){ return this._wrote('/api/handoff',h,'That handoff was not accepted.'); },
   async listHandoff(){ const r=await this._fetch('/api/handoff'); return await r.json(); },
-  async actHandoff(id,action){ await this._fetch('/api/handoff/act',{method:'POST',body:JSON.stringify({id,action})}); },
+  async actHandoff(id,action){ return this._wrote('/api/handoff/act',{id,action},'That could not be updated.'); },
 
   // ---- PAYMENTS (secure backend) ----
   async stripeCheckout(plan,email,seats){ const r=await this._fetch('/v1/stripe/checkout',{method:'POST',body:JSON.stringify({plan,email,seats})}); const d=await r.json(); if(!r.ok||!d.url){ const e=new Error(d.error||'checkout failed'); e.code=d.code; throw e; } return d.url; },
@@ -13222,7 +13247,11 @@ function cwToggle(id){
   j.on=!j.on; _cwSaveJobs(jobs);
   // keep the engine's own on-flag in sync so AMVJobs.run() reflects the toggle
   if(id==='job_hunt' && typeof AMVJobs!=='undefined'){ try{ const c=AMVJobs.cfg(); c.on=j.on; AMVJobs.save(c); }catch(e){} }
-  if(window.AMV_API && AMV_API.live){ AMV_API.toggleJob(id,j.on).catch(()=>{}); }
+  /* Swallowed on purpose, and only here: the schedule this switch really drives
+     is the local one, already written above. `/api/jobs` is the copy your OTHER
+     devices read, so a refusal means they show a stale switch - worth recording,
+     not worth talking over the message below. */
+  if(window.AMV_API && AMV_API.live){ AMV_API.toggleJob(id,j.on).catch(e=>_jobSyncFailed(j,e)); }
   /* Turning it on is kept - the intent is real and it starts the moment the
      account is linked. What is not kept is the impression that it is running.
      A job that needs a mailbox nobody connected will produce nothing, and being
@@ -13236,6 +13265,15 @@ function cwToggle(id){
     toast('Off: '+j.title,'info');
   }
   renderCrewView();
+}
+
+/* A switch that moved here but not on the server. Recorded rather than shown,
+   because on this device the job really is in the state the card says - it is
+   the other devices that will be wrong until the next sync. An empty catch made
+   that indistinguishable from a clean save. */
+function _jobSyncFailed(j, e){
+  try{ AEGIS.log('job_toggle_unsynced',{ id:(j&&j.id)||'', on:!!(j&&j.on),
+       why:String((e&&e.message)||'').slice(0,120) }); }catch(_){}
 }
 
 /* A job needing this tab's accounts, put on (or taken off) the local schedule
@@ -13287,7 +13325,10 @@ async function _cwToggleReal(jobs, j){
     j.on=false; j.autoId=null;
   }
   _cwSaveJobs(jobs);
-  if(window.AMV_API && AMV_API.live){ AMV_API.toggleJob(j.id,j.on).catch(()=>{}); }
+  /* Same as above: the real work was already created or deleted on the server
+     by _scheduleTask / _autoAction, and refused to move the switch if that
+     failed. This call only mirrors the flag across devices. */
+  if(window.AMV_API && AMV_API.live){ AMV_API.toggleJob(j.id,j.on).catch(e=>_jobSyncFailed(j,e)); }
   toast(j.on?('On: '+j.title+' - it runs even with AMV closed. Results land in Tasks.')
             :('Off: '+j.title),'info',j.on?6000:3000);
   try{ if(typeof _autoRefresh==='function') _autoRefresh(); }catch(e){}
