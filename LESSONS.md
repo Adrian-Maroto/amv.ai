@@ -1448,3 +1448,23 @@ one anyway, or AMV has decided something on their behalf and not said so.
 
 **Rule:** put the check on the boundary the data crosses, not on the first
 caller you happen to be looking at - then say out loud that it fired.
+
+## 117. A price written out is a price that can disagree with itself
+
+Every plan price existed as literal text in the pricing card three times over -
+the headline, the local-currency figure, and the button beneath them - again in
+the Help Center answer to "how do plans and limits work", again in the Teams
+copy, and again on the admin screen. None came from PLANS, which is what
+checkout uses. Changing one number would have put two different prices on the
+same card, one of them on the Buy button.
+
+The server keeps its own copy for a different job - PLAN_PRICE_USD is the spend
+backstop, PLAN_PRICE_TIERS ranks a custom plan against the same three numbers -
+and the worker's own comment says it consolidated three copies of that table to
+avoid exactly this. It was still one copy away from the client, and a backstop
+computed against a price nobody pays is not a backstop.
+
+**Rule:** a number a customer is charged gets one definition. Where a second
+copy has to exist because it lives in another process, do not trust memory to
+keep them equal - read one from the other in a standing check, so divergence
+fails the gate instead of reaching a Buy button.

@@ -7112,9 +7112,9 @@ function planCards(inApp){
     '<div class="plnc feat">'+
       '<div class="plnpop">Most Popular</div>'+
       '<div class="plntier">Pro</div>'+
-      '<div class="plnprice"><sup>$</sup>15</div>'+
+      '<div class="plnprice"><sup>$</sup>'+PLANS.pro.price+'</div>'+
       '<div class="plnper">per month &middot; cancel anytime</div>'+
-      '<div class="plnlocal px-local" data-usd="15" data-per="mo"></div>'+
+      '<div class="plnlocal px-local" data-usd="'+PLANS.pro.price+'" data-per="mo"></div>'+
       '<div class="plnanchor">Replaces $60+/mo of separate AI tools</div>'+
       '<div class="plndiv"></div>'+
       '<ul class="plnfl">'+
@@ -7127,15 +7127,15 @@ function planCards(inApp){
         '<li><span class="fck">\u2713</span>Connect Gmail, Calendar &amp; files</li>'+
         '<li><span class="fck">\u2713</span>Scheduled &amp; background automation</li>'+
       '</ul>'+
-      pBtn('Start Pro - $15/mo','pbp','pro',isLand)+
+      pBtn('Start Pro - $'+PLANS.pro.price+'/mo','pbp','pro',isLand)+
       '<div class="plnreassure">Everything below, one price, cancel anytime</div>'+
     '</div>',
     '<div class="plnc feat feat-elite">'+
       '<div class="plnpop plnpop-elite">Best Value</div>'+
       '<div class="plntier">Elite</div>'+
-      '<div class="plnprice"><sup>$</sup>75</div>'+
+      '<div class="plnprice"><sup>$</sup>'+PLANS.elite.price+'</div>'+
       '<div class="plnper">per month &middot; cancel anytime</div>'+
-      '<div class="plnlocal px-local" data-usd="75" data-per="mo"></div>'+
+      '<div class="plnlocal px-local" data-usd="'+PLANS.elite.price+'" data-per="mo"></div>'+
       '<div class="plnanchor">For founders, builders &amp; power users</div>'+
       '<div class="plndiv"></div>'+
       '<ul class="plnfl">'+
@@ -7147,14 +7147,14 @@ function planCards(inApp){
         '<li><span class="fck">\u2713</span>Multi-file projects, code review &amp; auto-debug</li>'+
         '<li><span class="fck">\u2713</span>Priority speed &amp; 24/7 support</li>'+
       '</ul>'+
-      pBtn('Go Elite - $75/mo','pbs','elite',isLand)+
+      pBtn('Go Elite - $'+PLANS.elite.price+'/mo','pbs','elite',isLand)+
       '<div class="plnreassure">Full-power engines and agents, without a per-seat bill</div>'+
     '</div>',
     '<div class="plnc">'+
       '<div class="plntier">Ultra</div>'+
-      '<div class="plnprice"><sup>$</sup>200</div>'+
+      '<div class="plnprice"><sup>$</sup>'+PLANS.ultra.price+'</div>'+
       '<div class="plnper">per month &middot; cancel anytime</div>'+
-      '<div class="plnlocal px-local" data-usd="200" data-per="mo"></div>'+
+      '<div class="plnlocal px-local" data-usd="'+PLANS.ultra.price+'" data-per="mo"></div>'+
       '<div class="plnanchor">For serious operators</div>'+
       '<div class="plndiv"></div>'+
       '<ul class="plnfl">'+
@@ -7166,7 +7166,7 @@ function planCards(inApp){
         '<li><span class="fck">\u2713</span>Deploy &amp; host multiple live apps</li>'+
         '<li><span class="fck">\u2713</span>👥 Team workspaces, roles &amp; shared projects</li>'+
       '</ul>'+
-      pBtn('Go Ultra - $200/mo','pbs','ultra',isLand)+
+      pBtn('Go Ultra - $'+PLANS.ultra.price+'/mo','pbs','ultra',isLand)+
       '<div class="plnreassure">The highest limits AMV offers</div>'+
     '</div>',
   ].join('');
@@ -7635,7 +7635,7 @@ function renderTeamView(){
         'A <b>Custom plan</b> sized at the Elite tier or above also unlocks Teams.'+
       '</p>'+
       '<p style="font-size:12.5px;color:var(--mu);line-height:1.6;margin:8px 0 12px">'+
-        'Free and Pro ($15) are individual plans - they don\u2019t include team workspaces. '+
+        'Free and Pro ($'+PLANS.pro.price+') are individual plans - they don\u2019t include team workspaces. '+
         'You\u2019re currently on <b style="color:var(--tx)">'+planName+'</b>.'+
       '</p>'+
       (hasTeamPlan
@@ -16259,7 +16259,11 @@ const FAQS=[
   {q:'How do I connect Gmail, Calendar, and files?', a:'Go to Settings → Connectors (or Integrations). Connect Google to let AMV read email, manage your calendar, and work with Drive files. Everything an agent wants to send still waits for your approval first.'},
   {q:'What is Handoff?', a:'Handoff lets you pass a task - with its full context - to a teammate inside AMV, or receive one from them, so work moves between people without losing the thread.'},
   {q:'What is the Marketplace?', a:'Browse and install prompts, crews, and integrations - free ones add to your Prompt Library or Crew instantly. Click any seller’s name to see their listings and reviews or message them. You can publish your own and keep 80% of every sale. Paid items always go through secure checkout.'},
-  {q:'How do plans and limits work?', a:'Free gives you daily usage to explore everything. Pro ($15/mo) unlocks autonomous agents, Mission Control, the app builder, connected accounts, and 5× usage. Elite ($75/mo) adds our most capable Apex model first, one-click deploy, and parallel agents at 20× usage. Ultra ($200/mo) is 50× usage with unlimited parallel agents and team workspaces. Custom lets you set your own hard-capped budget. Limits are usage-based - just work without counting messages.'},
+  /* Priced from PLANS. Written out, this answer quoted three figures that
+     nothing kept in step with the cards or with checkout, so changing a price
+     left the Help Center stating the old one to the person who came here to
+     ask what it costs. */
+  {q:'How do plans and limits work?', a:'Free gives you daily usage to explore everything. Pro ($'+PLANS.pro.price+'/mo) unlocks autonomous agents, Mission Control, the app builder, connected accounts, and '+PLANS.pro.mult+' usage. Elite ($'+PLANS.elite.price+'/mo) adds our most capable Apex model first, one-click deploy, and parallel agents at '+PLANS.elite.mult+' usage. Ultra ($'+PLANS.ultra.price+'/mo) is '+PLANS.ultra.mult+' usage with unlimited parallel agents and team workspaces. Custom lets you set your own hard-capped budget. Limits are usage-based - just work without counting messages.'},
   {q:'What is AI Memory?', a:'Memory lets AMV remember facts about you - your role, preferences, and context - and apply them automatically in every conversation. Add or edit them under Memory in the sidebar.'},
   {q:'How do I use voice input?', a:'Click the microphone in the chat input (best in Chrome and Edge), speak, and your words appear in the box. Press Enter to send.'},
   {q:'How do I rename, star, or delete chats?', a:'Hover a chat in the sidebar for quick actions, or right-click for the full menu including Export and Share.'},
@@ -17620,8 +17624,8 @@ function _renderSetPaneInner(){
       '<div class="ss2"><h3>Stripe - card, Apple Pay &amp; Google Pay</h3>'+
         '<p style="font-size:12px;color:var(--mu);margin-bottom:11px;line-height:1.6">The startup standard. Create a Payment Link at stripe.com &rarr; Payments &rarr; Payment Links. <b>Apple Pay and Google Pay appear automatically inside Stripe\u2019s checkout</b> - no extra setup. Clicking &ldquo;Card / Apple Pay&rdquo; opens your real Stripe checkout. Revenue goes straight to your Stripe account. Set each link\u2019s success URL to <code>yoursite.com/?paid=pro</code> (or <code>elite</code>) so the plan activates on return.</p>'+
         '<div class="sf">'+
-          '<div><label class="lbl">Pro Plan - $15/month</label><input type="url" id="s-sp" value="'+escH(S.sp||'')+'" placeholder="https://buy.stripe.com/…"></div>'+
-          '<div><label class="lbl">Elite Plan - $75/month</label><input type="url" id="s-se" value="'+escH(S.se||'')+'" placeholder="https://buy.stripe.com/…"></div>'+
+          '<div><label class="lbl">Pro Plan - $'+PLANS.pro.price+'/month</label><input type="url" id="s-sp" value="'+escH(S.sp||'')+'" placeholder="https://buy.stripe.com/…"></div>'+
+          '<div><label class="lbl">Elite Plan - $'+PLANS.elite.price+'/month</label><input type="url" id="s-se" value="'+escH(S.se||'')+'" placeholder="https://buy.stripe.com/…"></div>'+
           '<div><label class="lbl">Stripe Customer Portal (subscription management)</label><input type="url" id="s-portal" value="'+escH(loadStr('amv_portal'))+'" placeholder="https://billing.stripe.com/p/…"></div>'+
           '<button class="btn bp" id="save-stripe" style="align-self:flex-start;font-size:12px">Save Stripe Links</button>'+
         '</div>'+

@@ -113,7 +113,7 @@ function renderTeamView(){
         'A <b>Custom plan</b> sized at the Elite tier or above also unlocks Teams.'+
       '</p>'+
       '<p style="font-size:12.5px;color:var(--mu);line-height:1.6;margin:8px 0 12px">'+
-        'Free and Pro ($15) are individual plans - they don\u2019t include team workspaces. '+
+        'Free and Pro ($'+PLANS.pro.price+') are individual plans - they don\u2019t include team workspaces. '+
         'You\u2019re currently on <b style="color:var(--tx)">'+planName+'</b>.'+
       '</p>'+
       (hasTeamPlan

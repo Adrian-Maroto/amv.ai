@@ -2799,9 +2799,9 @@ function planCards(inApp){
     '<div class="plnc feat">'+
       '<div class="plnpop">Most Popular</div>'+
       '<div class="plntier">Pro</div>'+
-      '<div class="plnprice"><sup>$</sup>15</div>'+
+      '<div class="plnprice"><sup>$</sup>'+PLANS.pro.price+'</div>'+
       '<div class="plnper">per month &middot; cancel anytime</div>'+
-      '<div class="plnlocal px-local" data-usd="15" data-per="mo"></div>'+
+      '<div class="plnlocal px-local" data-usd="'+PLANS.pro.price+'" data-per="mo"></div>'+
       '<div class="plnanchor">Replaces $60+/mo of separate AI tools</div>'+
       '<div class="plndiv"></div>'+
       '<ul class="plnfl">'+
@@ -2814,15 +2814,15 @@ function planCards(inApp){
         '<li><span class="fck">\u2713</span>Connect Gmail, Calendar &amp; files</li>'+
         '<li><span class="fck">\u2713</span>Scheduled &amp; background automation</li>'+
       '</ul>'+
-      pBtn('Start Pro - $15/mo','pbp','pro',isLand)+
+      pBtn('Start Pro - $'+PLANS.pro.price+'/mo','pbp','pro',isLand)+
       '<div class="plnreassure">Everything below, one price, cancel anytime</div>'+
     '</div>',
     '<div class="plnc feat feat-elite">'+
       '<div class="plnpop plnpop-elite">Best Value</div>'+
       '<div class="plntier">Elite</div>'+
-      '<div class="plnprice"><sup>$</sup>75</div>'+
+      '<div class="plnprice"><sup>$</sup>'+PLANS.elite.price+'</div>'+
       '<div class="plnper">per month &middot; cancel anytime</div>'+
-      '<div class="plnlocal px-local" data-usd="75" data-per="mo"></div>'+
+      '<div class="plnlocal px-local" data-usd="'+PLANS.elite.price+'" data-per="mo"></div>'+
       '<div class="plnanchor">For founders, builders &amp; power users</div>'+
       '<div class="plndiv"></div>'+
       '<ul class="plnfl">'+
@@ -2834,14 +2834,14 @@ function planCards(inApp){
         '<li><span class="fck">\u2713</span>Multi-file projects, code review &amp; auto-debug</li>'+
         '<li><span class="fck">\u2713</span>Priority speed &amp; 24/7 support</li>'+
       '</ul>'+
-      pBtn('Go Elite - $75/mo','pbs','elite',isLand)+
+      pBtn('Go Elite - $'+PLANS.elite.price+'/mo','pbs','elite',isLand)+
       '<div class="plnreassure">Full-power engines and agents, without a per-seat bill</div>'+
     '</div>',
     '<div class="plnc">'+
       '<div class="plntier">Ultra</div>'+
-      '<div class="plnprice"><sup>$</sup>200</div>'+
+      '<div class="plnprice"><sup>$</sup>'+PLANS.ultra.price+'</div>'+
       '<div class="plnper">per month &middot; cancel anytime</div>'+
-      '<div class="plnlocal px-local" data-usd="200" data-per="mo"></div>'+
+      '<div class="plnlocal px-local" data-usd="'+PLANS.ultra.price+'" data-per="mo"></div>'+
       '<div class="plnanchor">For serious operators</div>'+
       '<div class="plndiv"></div>'+
       '<ul class="plnfl">'+
@@ -2853,7 +2853,7 @@ function planCards(inApp){
         '<li><span class="fck">\u2713</span>Deploy &amp; host multiple live apps</li>'+
         '<li><span class="fck">\u2713</span>👥 Team workspaces, roles &amp; shared projects</li>'+
       '</ul>'+
-      pBtn('Go Ultra - $200/mo','pbs','ultra',isLand)+
+      pBtn('Go Ultra - $'+PLANS.ultra.price+'/mo','pbs','ultra',isLand)+
       '<div class="plnreassure">The highest limits AMV offers</div>'+
     '</div>',
   ].join('');
