@@ -76,7 +76,12 @@ section('Signing out everywhere is confirmed, and honest about failing');
     window.confirmModal = (t, b, go) => { window.__confirmBody = b; go(); };
   });
   await page.evaluate(() => document.getElementById('act-signout-all').click());
-  await page.waitForFunction(() => /Could not reach/.test(document.getElementById('act-say').textContent), { timeout: 4000 });
+  /* Waits on the substance, not one phrasing. The message used to open "Could
+     not reach the server" for EVERY failure, including a server that was
+     reached and refused - the same wrong-cause naming that was fixed in the
+     chat error path. It now says what is true in all of those cases: nothing
+     was signed out. */
+  await page.waitForFunction(() => /nothing was signed out/i.test(document.getElementById('act-say').textContent), { timeout: 4000 });
   const v = await page.evaluate(() => ({
     said: document.getElementById('act-say').textContent,
     out: window.__signedOut, arg: window.__logoutArg, body: window.__confirmBody,

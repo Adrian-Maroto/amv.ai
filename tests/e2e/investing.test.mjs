@@ -139,7 +139,7 @@ section('Scheduling it creates real background work');
     const calls = [];
     window.AMV_API._fetch = async (path, init) => {
       calls.push({ path, body: init && init.body });
-      return { json: async () => ({ ok: true, item: { id: 'a1' } }) };
+      return { ok: true, status: 200, json: async () => ({ ok: true, item: { id: 'a1' } }) };
     };
     document.querySelector('[data-inv-when="daily"]').click();
     await new Promise(r => setTimeout(r, 200));
@@ -169,7 +169,7 @@ section('Changing your mind replaces the job rather than adding one');
     const calls = [];
     window.AMV_API._fetch = async (path, init) => {
       calls.push({ path, body: init && init.body });
-      return { json: async () => ({ ok: true, item: { id: 'a2' } }) };
+      return { ok: true, status: 200, json: async () => ({ ok: true, item: { id: 'a2' } }) };
     };
     /* Redraw so the buttons reflect the schedule that now exists - that is also
        what puts the Stop button on screen. */
@@ -198,7 +198,7 @@ section('Stop actually stops it on the server');
     const calls = [];
     window.AMV_API._fetch = async (path, init) => {
       calls.push({ path, body: init && init.body });
-      return { json: async () => ({ ok: true }) };
+      return { ok: true, status: 200, json: async () => ({ ok: true }) };
     };
     _renderInvestPane(document.getElementById('set-pane') || document.getElementById('vc'));
     await new Promise(r => setTimeout(r, 120));

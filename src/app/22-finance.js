@@ -443,8 +443,16 @@ function _renderInvestPane(pane){
     let stillRunning=!!prev;
     const dropPrev=async()=>{
       if(!prev) return;
-      await AMV_API._fetch('/auto/update',{method:'POST',
+      /* Read the answer before declaring it stopped. `_fetch` resolves for
+         every status except 401, so awaiting and moving on set stillRunning to
+         false over a refusal - and the comment above is precisely about not
+         doing that: the server would have carried on checking somebody's bank
+         account while the screen said it had stopped. Throwing here is what
+         the caller's catch is already written for. */
+      const r=await AMV_API._fetch('/auto/update',{method:'POST',
         body:JSON.stringify({id:prev,action:'delete'})});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok || d.error) throw new Error(d.error||'the server would not stop it');
       stillRunning=false;
       try{ saveStr('amv_inv_auto',''); }catch(e){}
     };

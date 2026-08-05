@@ -1323,8 +1323,24 @@ function _profileContext(){
 }
 try{ window._profileContext=_profileContext; }catch(e){}
 
-// Active sessions: this browser plus any other stored sessions for the account.
-// Real data - derived from the current session and the auth token's issued-at.
+/* THIS DEVICE, AND THE CONTROL THAT REVOKES THE REST.
+
+   Two things were wrong here, and both were in the Security pane - the screen
+   somebody opens when they think their account is compromised.
+
+   The heading said "Active sessions - Devices currently signed in to your
+   account" above a single row built from navigator.userAgent. There is no
+   endpoint that enumerates an account's sessions, so that list was one row of
+   local guesswork presented as an account-wide fact, and it can never show the
+   session a worried person is actually looking for.
+
+   And "Sign out of all other sessions" wrote a timestamp into localStorage and
+   said "Signed out of all other sessions." Nothing was sent anywhere. The
+   comment beside it admitted as much - "on a real backend this also revokes
+   other tokens" - while /auth/logout {everywhere:true} has existed the whole
+   time and revokes every refresh token on the account. A security control that
+   reports success without acting is worse than no control: it ends the search
+   for the one that works. */
 function _activeSessionsHTML(){
   try{
     const ua=navigator.userAgent||'';
@@ -1333,14 +1349,19 @@ function _activeSessionsHTML(){
     const started=loadStr('amv_session_started')||Date.now();
     if(!loadStr('amv_session_started')) saveStr('amv_session_started',String(started));
     const when=new Date(Number(started)).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
-    return '<div class="ss2"><h3>Active sessions</h3>'+
-      '<div class="set-sub" style="margin-top:-2px;margin-bottom:12px">Devices currently signed in to your account.</div>'+
+    const live=!!(window.AMV_API && AMV_API.live && AMV_API.token);
+    return '<div class="ss2"><h3>This device</h3>'+
+      '<div class="set-sub" style="margin-top:-2px;margin-bottom:12px">AMV cannot list your other devices - nothing on the server records which browsers hold a session. What it can do is end every one of them at once.</div>'+
       '<div class="sess-row sess-current">'+
         '<span class="sess-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>'+
         '<div class="sess-txt"><div class="sess-name">'+escH(browser+(os?' on '+os:''))+' <span class="sess-badge">This device</span></div>'+
           '<div class="sess-meta">Signed in \u00b7 since '+escH(when)+'</div></div>'+
       '</div>'+
-      '<button class="btn bs" id="signout-others" style="margin-top:12px;font-size:12px">Sign out of all other sessions</button>'+
+      '<button class="btn bs" id="signout-others" style="margin-top:12px;font-size:12px"'+(live?'':' disabled')+'>Sign out everywhere</button>'+
+      '<div class="set-sub" style="margin-top:8px">'+(live
+        ? 'Ends every session on your account, including this one. You will be asked to sign in again.'
+        : 'Needs the AMV backend connected. Without it there are no server sessions to end, so this would do nothing.')+'</div>'+
+      '<div id="sess-msg" class="set-sub" role="status" aria-live="polite" style="margin-top:8px"></div>'+
     '</div>';
   }catch(e){ return ''; }
 }
@@ -1524,11 +1545,21 @@ function _renderSetPaneInner(){
       r.readAsDataURL(file); this.value='';
     });
     on($('rm-pfp'),'click',()=>{if(S.user&&S.user.email)localStorage.removeItem('amv_pfp_'+S.user.email);updateSbUser();renderSetPane();});
+    /* Straight to the one that already works.
+
+       This was the second control for the same thing, and the fake one:
+       _actSignOutEverywhere in 28-activity.js has always confirmed, called
+       /auth/logout {everywhere:true}, checked the answer and signed the user
+       out - while this button wrote a timestamp into localStorage and said
+       "Signed out of all other sessions." Writing a second correct
+       implementation here would leave two to keep in step; there is one. */
     on($('signout-others'),'click',()=>{
-      // Rotate the local session marker; on a real backend this also revokes other tokens.
-      try{ saveStr('amv_session_started',String(Date.now())); }catch(e){}
-      toast('Signed out of all other sessions.','success',3000);
-      renderSetPane();
+      const msg=$('sess-msg');
+      if(!(window.AMV_API && AMV_API.live && AMV_API.token)){
+        if(msg) msg.textContent='Not connected to the AMV backend, so there are no server sessions to end. Nothing was changed.';
+        return;
+      }
+      _actSignOutEverywhere('sess-msg');
     });
     on($('save-profile'),'click',async()=>{
       const nm=$('s-name')?.value.trim();
@@ -1564,7 +1595,10 @@ function _renderSetPaneInner(){
       /* Was a hardcoded "This browser - Active now" row wired to nothing. It is
          now the account's real event log; see 28-activity.js. */
       '<div class="ss2"><h3>Account activity</h3>'+
-        '<div class="set-hint">Where and when this account has been used. If something here was not you, change your password and sign out everywhere.</div>'+
+        /* Naming the screen the control is on. "Sign out everywhere" lives in
+           Account, and telling somebody to do it without saying where is how a
+           worried person ends up hunting for it. */
+        '<div class="set-hint">Where and when this account has been used. If something here was not you: send yourself a reset link above, then use <b>Sign out everywhere</b> under Settings &rarr; Account to end every session.</div>'+
         '<div id="act-block"></div>'+
       '</div>'+
       '<div class="ss2"><h3>This device</h3>'+
@@ -1871,9 +1905,30 @@ function _renderSetPaneInner(){
       if(!v){ toast('Enter a URL to test','error'); return; }
       if(out){ out.className='conn-test testing'; out.textContent='Testing\u2026'; }
       try{
-        // 10s: a backend that has not answered by then is not "reachable",
-        // and the user is sitting in front of a button that says Testing.
-        const r=await fetchDeadline(v+'/v1/health',{method:'GET'},10000);
+        /* A request this page is not ALLOWED to make fails the same way one
+           that times out does, and "check it's deployed and correct" then
+           sends the operator to debug a Worker that is working.
+
+           connect-src permits 'self' and *.workers.dev. The documented deploy
+           is a workers.dev URL, so the normal path is fine - but putting the
+           Worker behind a custom domain, which is the obvious next step for
+           anybody who owns one, is blocked by the page's own policy. That is
+           not something you would ever guess from "could not reach". So the
+           violation is listened for and named. */
+        let _csp=null;
+        const _onCsp=(e)=>{ try{ if(String(e.blockedURI||'').indexOf(_originOf(v))===0) _csp=e; }catch(_){ _csp=e; } };
+        document.addEventListener('securitypolicyviolation',_onCsp);
+        let r;
+        try{
+          // 10s: a backend that has not answered by then is not "reachable",
+          // and the user is sitting in front of a button that says Testing.
+          r=await fetchDeadline(v+'/v1/health',{method:'GET'},10000);
+        } finally { document.removeEventListener('securitypolicyviolation',_onCsp); }
+        if(_csp){
+          if(out){ out.className='conn-test err';
+            out.textContent='\u2717 This page is not allowed to call that address. Its Content-Security-Policy permits your own origin and *.workers.dev - a Worker on a custom domain has to be added to connect-src in index.html before the browser will let AMV reach it. The Worker itself may be perfectly fine.'; }
+          return;
+        }
         if(r.ok){ const d=await r.json().catch(()=>({})); if(out){out.className='conn-test ok';out.textContent=d.ok?'\u2713 Backend is healthy and reachable.':'\u2713 Reachable.';} saveStr('amv_api_base',v); if(window.AMV_API) AMV_API.base=v; const cs=$('conn-status'); if(cs){cs.className='conn-status ok';cs.innerHTML='<span class="conn-dot"></span>Backend reachable - sign in to activate';} }
         else{ if(out){out.className='conn-test err';out.textContent='\u2717 Backend responded with '+r.status+'. Check the URL.';} }
       }catch(err){ if(out){out.className='conn-test err';out.textContent='\u2717 Could not reach that URL. Check it\u2019s deployed and correct.';} }
@@ -1946,8 +2001,17 @@ function _renderSetPaneInner(){
     });
     on($('save-pk'),'click',()=>{
       const pk=$('s-pk')?.value.trim()||'';
+      /* The secret-key case is checked FIRST because it was unreachable: an
+         sk_ key is also "not a pk_ key", so the generic message returned above
+         it every time and the one warning that matters never appeared. Being
+         told "it must start with pk_" reads as "find a different key"; being
+         told you have just pasted a secret reads as "go and rotate it". */
+      if(/^sk_/.test(pk)){
+        toast('That is a SECRET key (sk_). Never paste one anywhere in a browser - treat it as exposed and roll it in your Stripe dashboard. Use the publishable key (pk_) here.','error',9000);
+        const el=$('s-pk'); if(el) el.value='';
+        return;
+      }
       if(pk && !/^pk_(test|live)_/.test(pk)){ toast('That is not a publishable key. It must start with pk_','error',4000); return; }
-      if(/^sk_/.test(pk)){ toast('Never paste a SECRET key (sk_). Use the publishable key (pk_).','error',5000); return; }
       saveStr('amv_stripe_pk',pk);
       const b=$('save-pk');if(b){b.textContent='Saved!';b.style.background='var(--green)';setTimeout(()=>{b.textContent='Save key';b.style.background='';},1500);}
       toast(pk?'Secure card field enabled':'Key cleared','success');
@@ -2029,7 +2093,11 @@ function _renderSetPaneInner(){
       '<div class="ss2">'+
         '<div style="display:flex;align-items:center;gap:14px;margin-bottom:16px">'+
           '<div class="logo-mark-lg ce-mark-sig" style="width:50px;height:50px;border-radius:var(--r-md);flex-shrink:0">'+amvMark(34)+'</div>'+
-          '<div><div style="font-size:17px;font-weight:800;letter-spacing:-.4px">AMV<span style="color:var(--accent)">.</span>AI</div><div style="font-size:11px;color:var(--t2);margin-top:2px">Version 2.0 &bull; 2025</div></div>'+
+          /* Read from CHANGELOG, which is what What's New already shows. Written
+             out, this said "Version 2.0 - 2025" while the release notes one
+             screen away listed 2.4, and the year had been wrong since January.
+             A version number in two places is two version numbers. */
+          '<div><div style="font-size:17px;font-weight:800;letter-spacing:-.4px">AMV<span style="color:var(--accent)">.</span>AI</div><div style="font-size:11px;color:var(--t2);margin-top:2px">Version '+escH(_latestVersion()||'2.0')+' &bull; '+new Date().getFullYear()+'</div></div>'+
         '</div>'+
         '<p style="font-size:12px;color:var(--t2);line-height:1.65;margin-bottom:13px">Your AI workforce - it does the work, not just answers it. Chat, agents, builds, images, video, and automation in one place.</p>'+
         '<div style="display:flex;gap:8px;flex-wrap:wrap">'+

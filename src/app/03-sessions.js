@@ -1456,11 +1456,22 @@ async function openSharedChatsManager(){
   body.querySelectorAll('.shr-rev').forEach(b=>b.addEventListener('click',async()=>{
     b.disabled=true; b.textContent='Revoking\u2026';
     try{
-      await AMV_API._fetch('/v1/share/revoke', { method:'POST', body: JSON.stringify({ id: b.dataset.id }) });
+      /* The answer decides. `_fetch` resolves for every status except 401, so
+         awaiting it and moving on reported "it no longer works" over a 403, a
+         404 or a 500 - and the link is public, so somebody who shared a
+         conversation they now want private walks away believing they took it
+         back. */
+      const r=await AMV_API._fetch('/v1/share/revoke', { method:'POST', body: JSON.stringify({ id: b.dataset.id }) });
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok || d.error){
+        b.disabled=false; b.textContent='Revoke';
+        toast((d.error?d.error+' ':'')+'That link is STILL WORKING. Please try again.','error',7000);
+        return;
+      }
       b.closest('.shr-item')?.remove();
       if(!body.querySelector('.shr-item')) body.innerHTML='<p class="ob-sub">You have not shared any conversations.</p>';
       toast('Link revoked - it no longer works.','success',3000);
-    }catch(e){ b.disabled=false; b.textContent='Revoke'; toast('Could not revoke that link.','error'); }
+    }catch(e){ b.disabled=false; b.textContent='Revoke'; toast('Could not revoke that link, so it is still working.','error',6000); }
   }));
 }
 try{ window.openSharedChatsManager=openSharedChatsManager; }catch(e){}

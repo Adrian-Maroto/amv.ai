@@ -132,14 +132,19 @@ function _actPaint(host, d){
 /* End every session on the account. Confirmed, because it signs the user out
    of their own phone too - and that IS the point, so the confirmation says so
    rather than being a reflex "are you sure". */
-function _actSignOutEverywhere(){
+/* `sayId` names where to write progress. It defaults to this screen's own
+   status line, and the Account pane passes its own - one implementation, two
+   places that need it, rather than a second copy that drifts. (The Account
+   pane's copy was the one that drifted: it wrote a localStorage timestamp and
+   claimed every other session had ended.) */
+function _actSignOutEverywhere(sayId){
   const go = async ()=>{
-    const say = document.getElementById('act-say');
+    const say = document.getElementById(sayId || 'act-say');
     if(say) say.textContent = 'Ending all sessions…';
     let ok = false;
     try{ ok = await AMV_API.logout(true); }catch(e){}
     if(!ok){
-      if(say) say.textContent = 'Could not reach the server, so nothing was signed out. Please try again.';
+      if(say) say.textContent = 'Nothing was signed out - your other sessions are STILL SIGNED IN. Please try again.';
       try{ toast('Sign out everywhere failed - nothing was changed','error',5000); }catch(e){}
       return;
     }

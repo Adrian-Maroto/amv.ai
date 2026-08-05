@@ -1503,3 +1503,32 @@ produce it.
 **Rule:** any handler that moves money takes the lock, not just the one where
 the race was first noticed - and the UI disables the control while the request
 is in flight, because the common case is not an attack, it is a second click.
+
+## 120. A control that reports success without acting is worse than no control
+
+"Sign out of all other sessions", in the Security area, wrote a timestamp into
+localStorage and said "Signed out of all other sessions." Nothing was sent
+anywhere. `/auth/logout {everywhere:true}` had existed the whole time, and a
+correct implementation of it was already in the file next door.
+
+Somebody presses that button because they think their account is compromised.
+Telling them it worked ends the search for the control that does work.
+
+**Rule:** a security or privacy control is a claim about the world. Before
+shipping one, drive the failure path and check the words on screen. And when
+the same capability appears twice, delete one - the duplicate is where the
+theatre survives.
+
+## 121. An incomplete stub changes what is under test
+
+`dropPrev` started checking `r.ok` before declaring a scheduled job stopped.
+Five assertions in `investing` then failed - not because the fix was wrong, but
+because the suite's `_fetch` stub returned `{ json: async () => ... }` with no
+`ok` on the Response-like object. A real Response always has it. The stub had
+been adequate only for as long as nobody looked at the status.
+
+The temptation is to relax the production check so the test passes.
+
+**Rule:** when a test fails after a fix, ask which of the two is the unrealistic
+one. A fake that omits a field the real object always has is the bug, and every
+caller that starts reading that field will "fail" against it.
