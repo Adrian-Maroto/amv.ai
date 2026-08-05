@@ -8593,6 +8593,50 @@ function _safePath(path){
 }
 try{ window._safePath=_safePath; }catch(e){}
 
+/* A CONNECTED FOLDER IS SOMEBODY'S PROJECT FOLDER, AND PROJECT FOLDERS HAVE
+   CREDENTIALS IN THEM.
+
+   Grant a folder and AMV reads every text file in it, four levels deep, and
+   hands the contents to the engine as task context. `.env` is skipped only
+   because it begins with a dot; `prod.env`, `staging.env`, `credentials.json`,
+   `secrets.yaml` and a stray `.pem` are read like any other file and sent.
+
+   Nobody connecting a project folder is thinking about the keys sitting in it,
+   and the file list they are shown is forty names in a small box.
+
+   So a file that looks like credentials is held back from what leaves the
+   device. It is NOT hidden: it stays in the workspace, it is still listed, the
+   model is told the file exists and was withheld so it does not invent the
+   contents, and the person can include it deliberately if the task really is
+   "fix my env file". */
+const _WS_SECRET_NAME = /(^|\/)(\.?env$|.*\.env$|.*\.pem$|.*\.key$|.*\.p12$|.*\.pfx$|id_rsa.*|.*\.ppk$|credentials?(\.[a-z0-9]+)?$|secrets?(\.[a-z0-9]+)?$|.*\.tfvars$|\.?npmrc$|\.?netrc$|.*service[-_]account.*\.json$|.*\.kdbx$)/i;
+/* Shapes that are a credential wherever they appear, not merely a word that
+   sounds like one - so an article ABOUT api keys is not held back. */
+const _WS_SECRET_BODY = [
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
+  /\bAKIA[0-9A-Z]{16}\b/,
+  /\bsk-[A-Za-z0-9_-]{20,}/,
+  /\bxox[baprs]-[A-Za-z0-9-]{10,}/,
+  /\bgh[pousr]_[A-Za-z0-9]{30,}/,
+  /\bAIza[0-9A-Za-z_-]{35}\b/,
+  /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/,
+];
+/* Two or more assignments of a long opaque value. One is a placeholder in a
+   README; a file full of them is a credentials file whatever it is called. */
+function _wsAssignedSecrets(text){
+  const m = String(text||'').match(/^[ \t]*(?:export[ \t]+)?[A-Z][A-Z0-9_]{2,}[ \t]*=[ \t]*["']?[A-Za-z0-9_\-+/.=]{16,}["']?[ \t]*$/gm);
+  return m ? m.length : 0;
+}
+function _wsLooksSecret(name, text){
+  if(_WS_SECRET_NAME.test(String(name||''))) return 'name';
+  const t = String(text||'');
+  if(!t) return '';
+  for(const re of _WS_SECRET_BODY){ if(re.test(t)) return 'contents'; }
+  if(_wsAssignedSecrets(t) >= 2) return 'contents';
+  return '';
+}
+try{ window._wsLooksSecret=_wsLooksSecret; }catch(e){}
+
 const AMVWorkspace = {
   dirHandle:null,          // FileSystemDirectoryHandle (granted folder)
   files:[],                // [{name,path,handle?,text?,type,size,dirty}]
@@ -8620,7 +8664,9 @@ const AMVWorkspace = {
       if(handle.kind==='file'){
         const f=await handle.getFile();
         const isText=/\.(txt|md|csv|tsv|json|js|ts|jsx|tsx|html|css|py|java|c|cpp|go|rs|rb|php|sql|sh|xml|yml|yaml|env|log)$/i.test(name)||f.type.startsWith('text');
-        this.files.push({ name, path, handle, type:f.type, size:f.size, isText, text:isText&&f.size<500000?await f.text():null, dirty:false });
+        const text=isText&&f.size<500000?await f.text():null;
+        this.files.push({ name, path, handle, type:f.type, size:f.size, isText, text, dirty:false,
+                          secret:_wsLooksSecret(path, text) });
       } else if(handle.kind==='directory'){
         await this._readDir(handle, path, depth+1);
       }
@@ -8631,7 +8677,8 @@ const AMVWorkspace = {
     for(const file of Array.from(fileList||[])){
       const isText=/\.(txt|md|csv|tsv|json|js|ts|jsx|tsx|html|css|py|java|c|cpp|go|rs|rb|php|sql|sh|xml|yml|yaml)$/i.test(file.name)||file.type.startsWith('text');
       const text=isText&&file.size<500000?await file.text():null;
-      this.files.push({ name:file.name, path:file.name, handle:null, type:file.type, size:file.size, isText, text, dirty:false, uploaded:true });
+      this.files.push({ name:file.name, path:file.name, handle:null, type:file.type, size:file.size, isText, text, dirty:false, uploaded:true,
+                        secret:_wsLooksSecret(file.name, text) });
     }
     return this.files;
   },
@@ -8646,13 +8693,16 @@ const AMVWorkspace = {
       for(const p of parts){ dir=await dir.getDirectoryHandle(p,{create:true}); }
       const fh=await dir.getFileHandle(fname,{create:true});
       const w=await fh.createWritable(); await w.write(contents); await w.close();
-      if(f){ f.text=contents; f.handle=fh; f.dirty=false; f.size=contents.length; }
-      else { this.files.push({name:fname,path,handle:fh,type:'text/plain',size:contents.length,isText:true,text:contents,dirty:false}); }
+      /* Re-tested on write: a file the agent creates or rewrites can become a
+         credentials file, and the flag has to follow the contents rather than
+         whatever it was when the folder opened. */
+      if(f){ f.text=contents; f.handle=fh; f.dirty=false; f.size=contents.length; f.secret=_wsLooksSecret(path,contents); }
+      else { this.files.push({name:fname,path,handle:fh,type:'text/plain',size:contents.length,isText:true,text:contents,dirty:false,secret:_wsLooksSecret(path,contents)}); }
       return {written:true, toDisk:true, path};
     }
     // no folder: keep in memory + flag as a downloadable output
-    if(f){ f.text=contents; f.dirty=true; f.size=contents.length; }
-    else { this.files.push({name:path.split('/').pop(),path,handle:null,type:'text/plain',size:contents.length,isText:true,text:contents,dirty:true,output:true}); }
+    if(f){ f.text=contents; f.dirty=true; f.size=contents.length; f.secret=_wsLooksSecret(path,contents); }
+    else { this.files.push({name:path.split('/').pop(),path,handle:null,type:'text/plain',size:contents.length,isText:true,text:contents,dirty:true,output:true,secret:_wsLooksSecret(path,contents)}); }
     return {written:true, toDisk:false, path};
   },
   async readFile(path){
@@ -8661,14 +8711,36 @@ const AMVWorkspace = {
     if(f.handle){ const file=await f.handle.getFile(); return await file.text(); }
     return null;
   },
+  /* Whether this file's CONTENTS may leave the device. Held back by default
+     when it looks like credentials; the person can override it per file. */
+  sends(f){ return !!f && f.isText && f.text!=null && (!f.secret || f.secretOk===true); },
+  withheld(){ return this.files.filter(f=>f.secret && f.secretOk!==true); },
+  /* Deliberately include one that was held back. Nothing here decides this on
+     the user's behalf, in either direction. */
+  allowSecret(path, on){
+    const f=this.files.find(x=>x.path===path); if(!f) return false;
+    f.secretOk = on!==false; return true;
+  },
   // A compact context string of the workspace for the model.
   contextText(maxChars){
     maxChars=maxChars||24000;
     let out='WORKSPACE FILES ('+this.files.length+'):\n';
-    for(const f of this.files){ out+='- '+f.path+' ('+_fmtBytes(f.size||0)+(f.isText?'':' [binary]')+')\n'; }
+    for(const f of this.files){
+      out+='- '+f.path+' ('+_fmtBytes(f.size||0)+(f.isText?'':' [binary]')
+         +(f.secret&&f.secretOk!==true?' [contents withheld - looks like credentials]':'')+')\n';
+    }
+    const held=this.withheld();
+    if(held.length){
+      /* Said out loud rather than silently dropped: a model that is not told a
+         file was withheld will either invent its contents or report work as
+         complete that it could not do. */
+      out+='\nNOTE: '+held.length+' file'+(held.length>1?'s':'')+' listed above look'
+         +(held.length>1?'':'s')+' like credentials, so the contents were NOT sent.'
+         +' Work around them, and say plainly if a step needs one. Do not guess at what is in them.\n';
+    }
     out+='\nFILE CONTENTS:\n';
     for(const f of this.files){
-      if(!f.isText||f.text==null) continue;
+      if(!this.sends(f)) continue;
       const chunk='\n===== '+f.path+' =====\n'+f.text+'\n';
       if(out.length+chunk.length>maxChars){ out+='\n[...more files omitted for length...]'; break; }
       out+=chunk;
@@ -14577,10 +14649,22 @@ function renderCodeView(){
     try{
       await AMVWorkspace.connectFolder();
       _DEV.usingWorkspace=true; _DEV.project={}; _DEV.activePath='';
-      AMVWorkspace.files.forEach(f=>{ if(f.isText&&f.text!=null) _devSetFile(f.path, f.text); });
+      /* The second door onto the same folder. A Dev project is sent to the
+         engine on every build, so pulling every file in here would post the
+         credentials the workspace itself holds back - the guard has to be on
+         what leaves, not on one route to it. AMVWorkspace.sends is that test. */
+      const held=[];
+      AMVWorkspace.files.forEach(f=>{
+        if(!f.isText||f.text==null) return;
+        if(!AMVWorkspace.sends(f)){ held.push(f.path); return; }
+        _devSetFile(f.path, f.text);
+      });
       _DEV.activePath=_devEntryFile(); _devRenderTree(); _devShowActive(); const sv=$('dev-save'); if(sv) sv.style.display='';
-      _devPushSys('Project connected - '+_devProjectFiles().length+' files. I can edit any of them and save straight back.'); _devRenderLog();
-      toast('Connected - '+_devProjectFiles().length+' files','success',4000);
+      _devPushSys('Project connected - '+_devProjectFiles().length+' files. I can edit any of them and save straight back.'
+        +(held.length?(' '+held.length+' file'+(held.length>1?'s were':' was')+' left out because '+(held.length>1?'they look':'it looks')+' like credentials: '+held.join(', ')+'.'):'')); _devRenderLog();
+      toast(held.length
+        ? ('Connected - '+_devProjectFiles().length+' files. '+held.length+' left out as credentials.')
+        : ('Connected - '+_devProjectFiles().length+' files'),'success',held.length?6000:4000);
     }catch(e){ if(e.message==='cancelled') return; toast('Couldn’t open that folder. Try Files or Folder instead.','error',5000); }
   };
   const ingestFiles=async(fileList)=>{
@@ -21899,9 +21983,23 @@ function openCowork(){
     const el=$('cw-ws-list'); const note=$('cw-ws-note'); if(!el) return;
     if(!AMVWorkspace.files.length){ el.innerHTML=''; if(note) note.innerHTML=''; return; }
     const n=AMVWorkspace.files.length;
-    if(note) note.innerHTML='<span class="cw-ws-ok">✓ AMV can see '+n+' file'+(n>1?'s':'')+' - it’ll use '+(n>1?'them':'it')+' for this task.</span> <button type="button" class="cw-ws-clear" id="cw-ws-clear">Remove all</button>';
-    el.innerHTML=AMVWorkspace.files.slice(0,40).map(f=>'<div class="cw-ws-file"><span class="sl-file-ic">'+_fileIcon(f.type,f.name)+'</span><span class="sl-file-n">'+escH(f.path)+'</span><span class="sl-file-sz">'+_fmtBytes(f.size||0)+'</span></div>').join('')+
+    const held=AMVWorkspace.withheld().length;
+    if(note) note.innerHTML='<span class="cw-ws-ok">✓ AMV can see '+n+' file'+(n>1?'s':'')+' - it’ll use '+(n>1?'them':'it')+' for this task.</span> <button type="button" class="cw-ws-clear" id="cw-ws-clear">Remove all</button>'+
+      /* Shown rather than assumed. Holding a file back quietly would be the same
+         kind of dishonesty as sending it quietly. */
+      (held?'<div class="cw-ws-held">'+held+' file'+(held>1?'s':'')+' look'+(held>1?'':'s')+' like credentials, so '+(held>1?'their':'its')+' contents stay on this device. Tap “Send anyway” on one if the task needs it.</div>':'');
+    el.innerHTML=AMVWorkspace.files.slice(0,40).map(f=>{
+      const hold=f.secret&&f.secretOk!==true;
+      return '<div class="cw-ws-file'+(hold?' held':'')+'"><span class="sl-file-ic">'+_fileIcon(f.type,f.name)+'</span>'+
+        '<span class="sl-file-n">'+escH(f.path)+'</span>'+
+        (f.secret?('<button type="button" class="cw-ws-hold" data-ws-allow="'+escH(f.path)+'" title="'+(hold?'Its contents are not being sent':'Its contents will be sent')+'">'+(hold?'Held back · Send anyway':'Being sent · Hold back')+'</button>'):'')+
+        '<span class="sl-file-sz">'+_fmtBytes(f.size||0)+'</span></div>';
+    }).join('')+
       (n>40?'<div class="cw-ws-more">+'+(n-40)+' more</div>':'');
+    el.querySelectorAll('[data-ws-allow]').forEach(b=>on(b,'click',()=>{
+      const p=b.dataset.wsAllow, f=AMVWorkspace.files.find(x=>x.path===p);
+      AMVWorkspace.allowSecret(p, !(f&&f.secretOk===true)); drawWs();
+    }));
     const clr=$('cw-ws-clear'); if(clr) on(clr,'click',()=>{ AMVWorkspace.clear(); drawWs(); });
   };
   on($('cw-folder'),'click',async()=>{

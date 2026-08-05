@@ -1425,3 +1425,26 @@ still running.
 what the answer means belongs in ONE place that every write goes through. A
 careful caller cannot compensate for a promise that resolves on a refusal, and
 a per-method fix leaves the next method free to forget.
+
+## 116. A guard belongs on what leaves, not on one route to it
+
+AMV reads every text file in a connected folder and sends the contents to the
+engine as task context. `.env` was skipped only because the reader skips names
+that begin with a dot, so `prod.env`, `credentials.json`, `secrets.yaml` and a
+stray `.pem` went out like any other file. `env` was on the readable-extensions
+list explicitly and absent from the equivalent list for uploads, which is what
+an unconsidered line looks like.
+
+Two things mattered in the fix. The first: the same folder reaches the engine
+through a second door - Dev pulls every workspace file into a project, and a
+project is sent on every build - so a check placed on `contextText` alone would
+have moved the hole rather than closed it. The test is `AMVWorkspace.sends(f)`,
+and every route asks it.
+
+The second: holding a file back QUIETLY is the same category of dishonesty as
+sending it quietly. The model is told the file exists and was withheld, or it
+invents the contents; the person is shown which files and given one tap to send
+one anyway, or AMV has decided something on their behalf and not said so.
+
+**Rule:** put the check on the boundary the data crosses, not on the first
+caller you happen to be looking at - then say out loud that it fired.

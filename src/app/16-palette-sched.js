@@ -315,9 +315,23 @@ function openCowork(){
     const el=$('cw-ws-list'); const note=$('cw-ws-note'); if(!el) return;
     if(!AMVWorkspace.files.length){ el.innerHTML=''; if(note) note.innerHTML=''; return; }
     const n=AMVWorkspace.files.length;
-    if(note) note.innerHTML='<span class="cw-ws-ok">✓ AMV can see '+n+' file'+(n>1?'s':'')+' - it’ll use '+(n>1?'them':'it')+' for this task.</span> <button type="button" class="cw-ws-clear" id="cw-ws-clear">Remove all</button>';
-    el.innerHTML=AMVWorkspace.files.slice(0,40).map(f=>'<div class="cw-ws-file"><span class="sl-file-ic">'+_fileIcon(f.type,f.name)+'</span><span class="sl-file-n">'+escH(f.path)+'</span><span class="sl-file-sz">'+_fmtBytes(f.size||0)+'</span></div>').join('')+
+    const held=AMVWorkspace.withheld().length;
+    if(note) note.innerHTML='<span class="cw-ws-ok">✓ AMV can see '+n+' file'+(n>1?'s':'')+' - it’ll use '+(n>1?'them':'it')+' for this task.</span> <button type="button" class="cw-ws-clear" id="cw-ws-clear">Remove all</button>'+
+      /* Shown rather than assumed. Holding a file back quietly would be the same
+         kind of dishonesty as sending it quietly. */
+      (held?'<div class="cw-ws-held">'+held+' file'+(held>1?'s':'')+' look'+(held>1?'':'s')+' like credentials, so '+(held>1?'their':'its')+' contents stay on this device. Tap “Send anyway” on one if the task needs it.</div>':'');
+    el.innerHTML=AMVWorkspace.files.slice(0,40).map(f=>{
+      const hold=f.secret&&f.secretOk!==true;
+      return '<div class="cw-ws-file'+(hold?' held':'')+'"><span class="sl-file-ic">'+_fileIcon(f.type,f.name)+'</span>'+
+        '<span class="sl-file-n">'+escH(f.path)+'</span>'+
+        (f.secret?('<button type="button" class="cw-ws-hold" data-ws-allow="'+escH(f.path)+'" title="'+(hold?'Its contents are not being sent':'Its contents will be sent')+'">'+(hold?'Held back · Send anyway':'Being sent · Hold back')+'</button>'):'')+
+        '<span class="sl-file-sz">'+_fmtBytes(f.size||0)+'</span></div>';
+    }).join('')+
       (n>40?'<div class="cw-ws-more">+'+(n-40)+' more</div>':'');
+    el.querySelectorAll('[data-ws-allow]').forEach(b=>on(b,'click',()=>{
+      const p=b.dataset.wsAllow, f=AMVWorkspace.files.find(x=>x.path===p);
+      AMVWorkspace.allowSecret(p, !(f&&f.secretOk===true)); drawWs();
+    }));
     const clr=$('cw-ws-clear'); if(clr) on(clr,'click',()=>{ AMVWorkspace.clear(); drawWs(); });
   };
   on($('cw-folder'),'click',async()=>{

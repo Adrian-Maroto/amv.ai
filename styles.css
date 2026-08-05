@@ -7803,3 +7803,52 @@ html,body{height:100%;height:100dvh}
    elsewhere and are unchanged.
    ========================================================================== */
 .lab-bar{flex-wrap:wrap;row-gap:8px}
+
+/* ==========================================================================
+   LAYER A64 - a file that looks like credentials says so
+
+   A connected folder is somebody's project folder, and project folders have
+   keys in them. AMV reads every text file four levels deep and sends the
+   contents to the engine as task context: `.env` was skipped only because it
+   starts with a dot, so `prod.env`, `credentials.json` and a stray `.pem` went
+   out like any other file.
+
+   Those are held back now, and this is the half that makes it honest rather
+   than merely quiet: the row says which file, the note above says how many,
+   and the button says which way it is currently going. Withheld is a state the
+   person can see and change, not a decision taken behind them.
+
+   The row already has an ellipsised name at flex:1, so the control sits
+   between the name and the size and never grows.
+   ========================================================================== */
+.cw-ws-held{
+  font-size:var(--t-xs);color:var(--gold);line-height:1.45;margin-top:6px;
+  padding:6px 8px;border:1px solid color-mix(in srgb,var(--gold) 30%,transparent);
+  border-radius:var(--r-sm);background:color-mix(in srgb,var(--gold) 8%,transparent);
+}
+.cw-ws-file.held{
+  border:1px solid color-mix(in srgb,var(--gold) 30%,transparent);
+  background:color-mix(in srgb,var(--gold) 7%,transparent);
+}
+.cw-ws-file.held .sl-file-n{color:var(--gold)}
+.cw-ws-hold{
+  flex:none;font:inherit;font-size:var(--t-xs);line-height:1;cursor:pointer;
+  padding:4px 8px;border-radius:var(--r-pill);white-space:nowrap;
+  border:1px solid var(--bd);background:transparent;color:var(--mu);
+  transition:border-color .15s var(--ease),color .15s var(--ease);
+}
+.cw-ws-file.held .cw-ws-hold{
+  border-color:color-mix(in srgb,var(--gold) 45%,transparent);color:var(--gold);
+}
+.cw-ws-hold:hover{border-color:var(--accent);color:var(--tx)}
+.cw-ws-hold:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* Phone: the name and the size share a line, the control drops under them
+   rather than squeezing the name to nothing - and becomes a real tap target
+   rather than a 21px strip of text. */
+@media (max-width:520px){
+  .cw-ws-file{flex-wrap:wrap;row-gap:6px}
+  .cw-ws-hold{
+    order:3;width:100%;text-align:center;
+    min-height:38px;padding:10px 8px;font-size:var(--t-sm);
+  }
+}

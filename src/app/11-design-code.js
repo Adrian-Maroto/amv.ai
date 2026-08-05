@@ -769,10 +769,22 @@ function renderCodeView(){
     try{
       await AMVWorkspace.connectFolder();
       _DEV.usingWorkspace=true; _DEV.project={}; _DEV.activePath='';
-      AMVWorkspace.files.forEach(f=>{ if(f.isText&&f.text!=null) _devSetFile(f.path, f.text); });
+      /* The second door onto the same folder. A Dev project is sent to the
+         engine on every build, so pulling every file in here would post the
+         credentials the workspace itself holds back - the guard has to be on
+         what leaves, not on one route to it. AMVWorkspace.sends is that test. */
+      const held=[];
+      AMVWorkspace.files.forEach(f=>{
+        if(!f.isText||f.text==null) return;
+        if(!AMVWorkspace.sends(f)){ held.push(f.path); return; }
+        _devSetFile(f.path, f.text);
+      });
       _DEV.activePath=_devEntryFile(); _devRenderTree(); _devShowActive(); const sv=$('dev-save'); if(sv) sv.style.display='';
-      _devPushSys('Project connected - '+_devProjectFiles().length+' files. I can edit any of them and save straight back.'); _devRenderLog();
-      toast('Connected - '+_devProjectFiles().length+' files','success',4000);
+      _devPushSys('Project connected - '+_devProjectFiles().length+' files. I can edit any of them and save straight back.'
+        +(held.length?(' '+held.length+' file'+(held.length>1?'s were':' was')+' left out because '+(held.length>1?'they look':'it looks')+' like credentials: '+held.join(', ')+'.'):'')); _devRenderLog();
+      toast(held.length
+        ? ('Connected - '+_devProjectFiles().length+' files. '+held.length+' left out as credentials.')
+        : ('Connected - '+_devProjectFiles().length+' files'),'success',held.length?6000:4000);
     }catch(e){ if(e.message==='cancelled') return; toast('Couldn’t open that folder. Try Files or Folder instead.','error',5000); }
   };
   const ingestFiles=async(fileList)=>{

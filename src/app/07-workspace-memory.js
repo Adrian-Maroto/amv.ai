@@ -17,6 +17,50 @@ function _safePath(path){
 }
 try{ window._safePath=_safePath; }catch(e){}
 
+/* A CONNECTED FOLDER IS SOMEBODY'S PROJECT FOLDER, AND PROJECT FOLDERS HAVE
+   CREDENTIALS IN THEM.
+
+   Grant a folder and AMV reads every text file in it, four levels deep, and
+   hands the contents to the engine as task context. `.env` is skipped only
+   because it begins with a dot; `prod.env`, `staging.env`, `credentials.json`,
+   `secrets.yaml` and a stray `.pem` are read like any other file and sent.
+
+   Nobody connecting a project folder is thinking about the keys sitting in it,
+   and the file list they are shown is forty names in a small box.
+
+   So a file that looks like credentials is held back from what leaves the
+   device. It is NOT hidden: it stays in the workspace, it is still listed, the
+   model is told the file exists and was withheld so it does not invent the
+   contents, and the person can include it deliberately if the task really is
+   "fix my env file". */
+const _WS_SECRET_NAME = /(^|\/)(\.?env$|.*\.env$|.*\.pem$|.*\.key$|.*\.p12$|.*\.pfx$|id_rsa.*|.*\.ppk$|credentials?(\.[a-z0-9]+)?$|secrets?(\.[a-z0-9]+)?$|.*\.tfvars$|\.?npmrc$|\.?netrc$|.*service[-_]account.*\.json$|.*\.kdbx$)/i;
+/* Shapes that are a credential wherever they appear, not merely a word that
+   sounds like one - so an article ABOUT api keys is not held back. */
+const _WS_SECRET_BODY = [
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
+  /\bAKIA[0-9A-Z]{16}\b/,
+  /\bsk-[A-Za-z0-9_-]{20,}/,
+  /\bxox[baprs]-[A-Za-z0-9-]{10,}/,
+  /\bgh[pousr]_[A-Za-z0-9]{30,}/,
+  /\bAIza[0-9A-Za-z_-]{35}\b/,
+  /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/,
+];
+/* Two or more assignments of a long opaque value. One is a placeholder in a
+   README; a file full of them is a credentials file whatever it is called. */
+function _wsAssignedSecrets(text){
+  const m = String(text||'').match(/^[ \t]*(?:export[ \t]+)?[A-Z][A-Z0-9_]{2,}[ \t]*=[ \t]*["']?[A-Za-z0-9_\-+/.=]{16,}["']?[ \t]*$/gm);
+  return m ? m.length : 0;
+}
+function _wsLooksSecret(name, text){
+  if(_WS_SECRET_NAME.test(String(name||''))) return 'name';
+  const t = String(text||'');
+  if(!t) return '';
+  for(const re of _WS_SECRET_BODY){ if(re.test(t)) return 'contents'; }
+  if(_wsAssignedSecrets(t) >= 2) return 'contents';
+  return '';
+}
+try{ window._wsLooksSecret=_wsLooksSecret; }catch(e){}
+
 const AMVWorkspace = {
   dirHandle:null,          // FileSystemDirectoryHandle (granted folder)
   files:[],                // [{name,path,handle?,text?,type,size,dirty}]
@@ -44,7 +88,9 @@ const AMVWorkspace = {
       if(handle.kind==='file'){
         const f=await handle.getFile();
         const isText=/\.(txt|md|csv|tsv|json|js|ts|jsx|tsx|html|css|py|java|c|cpp|go|rs|rb|php|sql|sh|xml|yml|yaml|env|log)$/i.test(name)||f.type.startsWith('text');
-        this.files.push({ name, path, handle, type:f.type, size:f.size, isText, text:isText&&f.size<500000?await f.text():null, dirty:false });
+        const text=isText&&f.size<500000?await f.text():null;
+        this.files.push({ name, path, handle, type:f.type, size:f.size, isText, text, dirty:false,
+                          secret:_wsLooksSecret(path, text) });
       } else if(handle.kind==='directory'){
         await this._readDir(handle, path, depth+1);
       }
@@ -55,7 +101,8 @@ const AMVWorkspace = {
     for(const file of Array.from(fileList||[])){
       const isText=/\.(txt|md|csv|tsv|json|js|ts|jsx|tsx|html|css|py|java|c|cpp|go|rs|rb|php|sql|sh|xml|yml|yaml)$/i.test(file.name)||file.type.startsWith('text');
       const text=isText&&file.size<500000?await file.text():null;
-      this.files.push({ name:file.name, path:file.name, handle:null, type:file.type, size:file.size, isText, text, dirty:false, uploaded:true });
+      this.files.push({ name:file.name, path:file.name, handle:null, type:file.type, size:file.size, isText, text, dirty:false, uploaded:true,
+                        secret:_wsLooksSecret(file.name, text) });
     }
     return this.files;
   },
@@ -70,13 +117,16 @@ const AMVWorkspace = {
       for(const p of parts){ dir=await dir.getDirectoryHandle(p,{create:true}); }
       const fh=await dir.getFileHandle(fname,{create:true});
       const w=await fh.createWritable(); await w.write(contents); await w.close();
-      if(f){ f.text=contents; f.handle=fh; f.dirty=false; f.size=contents.length; }
-      else { this.files.push({name:fname,path,handle:fh,type:'text/plain',size:contents.length,isText:true,text:contents,dirty:false}); }
+      /* Re-tested on write: a file the agent creates or rewrites can become a
+         credentials file, and the flag has to follow the contents rather than
+         whatever it was when the folder opened. */
+      if(f){ f.text=contents; f.handle=fh; f.dirty=false; f.size=contents.length; f.secret=_wsLooksSecret(path,contents); }
+      else { this.files.push({name:fname,path,handle:fh,type:'text/plain',size:contents.length,isText:true,text:contents,dirty:false,secret:_wsLooksSecret(path,contents)}); }
       return {written:true, toDisk:true, path};
     }
     // no folder: keep in memory + flag as a downloadable output
-    if(f){ f.text=contents; f.dirty=true; f.size=contents.length; }
-    else { this.files.push({name:path.split('/').pop(),path,handle:null,type:'text/plain',size:contents.length,isText:true,text:contents,dirty:true,output:true}); }
+    if(f){ f.text=contents; f.dirty=true; f.size=contents.length; f.secret=_wsLooksSecret(path,contents); }
+    else { this.files.push({name:path.split('/').pop(),path,handle:null,type:'text/plain',size:contents.length,isText:true,text:contents,dirty:true,output:true,secret:_wsLooksSecret(path,contents)}); }
     return {written:true, toDisk:false, path};
   },
   async readFile(path){
@@ -85,14 +135,36 @@ const AMVWorkspace = {
     if(f.handle){ const file=await f.handle.getFile(); return await file.text(); }
     return null;
   },
+  /* Whether this file's CONTENTS may leave the device. Held back by default
+     when it looks like credentials; the person can override it per file. */
+  sends(f){ return !!f && f.isText && f.text!=null && (!f.secret || f.secretOk===true); },
+  withheld(){ return this.files.filter(f=>f.secret && f.secretOk!==true); },
+  /* Deliberately include one that was held back. Nothing here decides this on
+     the user's behalf, in either direction. */
+  allowSecret(path, on){
+    const f=this.files.find(x=>x.path===path); if(!f) return false;
+    f.secretOk = on!==false; return true;
+  },
   // A compact context string of the workspace for the model.
   contextText(maxChars){
     maxChars=maxChars||24000;
     let out='WORKSPACE FILES ('+this.files.length+'):\n';
-    for(const f of this.files){ out+='- '+f.path+' ('+_fmtBytes(f.size||0)+(f.isText?'':' [binary]')+')\n'; }
+    for(const f of this.files){
+      out+='- '+f.path+' ('+_fmtBytes(f.size||0)+(f.isText?'':' [binary]')
+         +(f.secret&&f.secretOk!==true?' [contents withheld - looks like credentials]':'')+')\n';
+    }
+    const held=this.withheld();
+    if(held.length){
+      /* Said out loud rather than silently dropped: a model that is not told a
+         file was withheld will either invent its contents or report work as
+         complete that it could not do. */
+      out+='\nNOTE: '+held.length+' file'+(held.length>1?'s':'')+' listed above look'
+         +(held.length>1?'':'s')+' like credentials, so the contents were NOT sent.'
+         +' Work around them, and say plainly if a step needs one. Do not guess at what is in them.\n';
+    }
     out+='\nFILE CONTENTS:\n';
     for(const f of this.files){
-      if(!f.isText||f.text==null) continue;
+      if(!this.sends(f)) continue;
       const chunk='\n===== '+f.path+' =====\n'+f.text+'\n';
       if(out.length+chunk.length>maxChars){ out+='\n[...more files omitted for length...]'; break; }
       out+=chunk;
