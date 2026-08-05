@@ -327,15 +327,20 @@ async function sendPasswordReset(email){
   if(window.AMV_API && AMV_API.live){
     try{
       const r=await AMV_API._fetch('/auth/reset',{method:'POST',body:JSON.stringify({email:em})});
-      // The server always returns ok:true so it can't be used to discover which
-      // emails exist. `sent` is what tells us an email ACTUALLY went out - if we
-      // ignore it we tell the user "check your inbox" when nothing was sent.
-      if(!r || r.ok===false) return { ok:false, sent:false };
-      return { ok:true, sent: r.sent === true };
+      /* The server always returns ok:true so this cannot be used to discover
+         which emails exist. `sent` is what says an email ACTUALLY went out.
+
+         It is in the BODY, and this used to read it off the Response - `r.sent`
+         on a Response is undefined, so `r.sent === true` was false on every
+         call including the ones that really did send. The body was never
+         parsed at all. */
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok || d.error) return { ok:false, sent:false, error:d.error||('the server answered '+r.status) };
+      return { ok:true, sent: d.sent === true };
     }
-    catch(e){ return { ok:false, sent:false }; }
+    catch(e){ return { ok:false, sent:false, error:(e&&e.message)||'' }; }
   }
-  return { ok:false, sent:false }; // no backend = nothing can send
+  return { ok:false, sent:false, error:'no backend connected' }; // nothing can send
 }
 /* ══════════════════════════════════════════════════════════════
    FORGOT PASSWORD  -  email, then a 6-digit code, then a new password.

@@ -7852,3 +7852,29 @@ html,body{height:100%;height:100dvh}
     min-height:38px;padding:10px 8px;font-size:var(--t-sm);
   }
 }
+
+/* ==========================================================================
+   LAYER A65 - a money control that reads as the opposite of what it does
+
+   The widget's two cost ceilings treat 0 as "no limit" - `dailyMsgCap > 0` and
+   `dailySpendCapUSD > 0` are what gate the counters server-side. The fields
+   said "Max messages per day" with a minimum of 0 and nothing else, so the
+   obvious reading of typing 0 is "none", and what it does is remove the only
+   per-widget limit on the owner's bill.
+
+   The hint sits in the label and the warning appears live underneath, in the
+   same amber the workspace uses for "held back" - the house colour for "this
+   is fine, but know what it means".
+   ========================================================================== */
+.wg-hint{
+  font-weight:400;color:var(--mu);font-size:var(--t-xs);
+  margin-left:6px;letter-spacing:.01em;
+}
+.wg-capwarn{display:none}
+.wg-capwarn.on{
+  display:block;margin-top:10px;padding:9px 11px;
+  font-size:var(--t-xs);line-height:1.55;color:var(--gold);
+  border:1px solid color-mix(in srgb,var(--gold) 30%,transparent);
+  border-radius:var(--r-sm);
+  background:color-mix(in srgb,var(--gold) 8%,transparent);
+}

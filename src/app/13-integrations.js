@@ -78,7 +78,21 @@ const INTEGRATION_ACTIONS = {
     desc:'Post a message to Slack. Args: {channel, text}.', needs:'slack',
     async run(args){
       const t=loadStr('amv_slack'); if(!t) throw new Error('Slack not connected');
-      if(/^https?:\/\//.test(t)){ await fetchDeadline(t,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:args.text})}); return {posted:true}; }
+      if(/^https?:\/\//.test(t)){
+        /* The webhook branch used to discard the answer and return
+           {posted:true} regardless. A revoked or deleted webhook answers 404
+           `no_service`, an unpaid workspace 403 - and the agent reported the
+           message as posted either way, to a person who then believed their
+           team had been told. The token branch below already checked; this one
+           did not, which is the whole difference between the two.
+
+           A webhook answers with the literal body "ok". */
+        const wr=await fetchDeadline(t,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:args.text})});
+        const wt=(await wr.text().catch(()=>'')).trim();
+        if(!wr.ok || (wt && wt.toLowerCase()!=='ok'))
+          throw new Error('Slack refused the message'+(wt?' ('+wt.slice(0,80)+')':' (HTTP '+wr.status+')')+'. Nothing was posted.');
+        return {posted:true, via:'webhook'};
+      }
       const r=await fetchDeadline('https://slack.com/api/chat.postMessage',{method:'POST',headers:{'Authorization':'Bearer '+t,'Content-Type':'application/json'},body:JSON.stringify({channel:args.channel||'#general',text:args.text})});
       const d=await r.json(); if(!d.ok) throw new Error(d.error||'Slack post failed');
       return {posted:true, ts:d.ts};

@@ -558,12 +558,22 @@ function _payoutsPaint(host, d){
     (rows||'<div class="fd-empty">Nothing owed right now.</div>')+
     '<div class="po-say" id="po-say" role="status" aria-live="polite"></div>'+
     '<div class="po-fine">Rejecting returns the money to the seller\u2019s balance. Marking paid does not send anything - do that with your payment provider first.</div>';
+  /* Rejecting CREDITS the seller's wallet, so sending it twice pays the same
+     money out twice. The buttons stayed live for the whole round trip, which
+     makes a double-click the ordinary way to do it by accident rather than an
+     exotic race. Locked here AND on the server - this only stops the accident,
+     the server is what makes it impossible. */
+  let _poBusy=false;
   const settle=async(id,status)=>{
+    if(_poBusy) return;
     const say=$('po-say');
     const what = status==='paid'
       ? 'Mark this payout as already sent? It does not transfer anything - confirm you have paid it.'
       : 'Reject this payout and return the money to the seller\u2019s balance?';
     if(typeof confirm==='function' && !confirm(what)) return;
+    _poBusy=true;
+    const btns=[...host.querySelectorAll('[data-po-paid],[data-po-rej]')];
+    btns.forEach(b=>{ b.disabled=true; });
     if(say) say.textContent='Working\u2026';
     const base=loadStr('amv_api_base')||'';
     const tok=($('fd-token')&&$('fd-token').value||'').trim()||((typeof _adminToken==='function')?_adminToken():'');
@@ -576,6 +586,12 @@ function _payoutsPaint(host, d){
       if(say) say.textContent = status==='paid' ? 'Marked paid.' : 'Rejected, and the money is back with the seller.';
       _loadPayouts();
     }catch(e){ if(say) say.textContent='Could not reach the backend - nothing was changed.'; }
+    finally{
+      _poBusy=false;
+      /* Re-enable only the ones still on screen: a successful settle repaints
+         the card, and these nodes are gone. */
+      btns.forEach(b=>{ if(b.isConnected) b.disabled=false; });
+    }
   };
   host.querySelectorAll('[data-po-paid]').forEach(b=>on(b,'click',()=>settle(b.dataset.poPaid,'paid')));
   host.querySelectorAll('[data-po-rej]').forEach(b=>on(b,'click',()=>settle(b.dataset.poRej,'rejected')));
@@ -859,18 +875,51 @@ function _paintWidgetForm(body, cfg, base){
       '<p style="font-size:12px;color:var(--mu);margin-bottom:10px;line-height:1.6">Lock the widget to your own sites so nobody can embed it elsewhere and use your quota. One domain per line (e.g. <code>example.com</code>). Leave empty to allow any site '+(!(cfg.origins&&cfg.origins.length)?'- <b style="color:var(--red)">currently unrestricted</b>':'')+'.</p>'+
       '<textarea id="wg-origins" rows="3" style="font-family:var(--mn);font-size:12px" placeholder="example.com&#10;www.example.com">'+escH((cfg.origins||[]).join('\n'))+'</textarea>'+
     '</div>'+
+    /* ZERO MEANS UNLIMITED, AND THE LABELS SAID "MAX".
+       The server reads 0 on either of these as "no ceiling" - `dailyMsgCap > 0`
+       and `dailySpendCapUSD > 0` are what gate the counters. The fields said
+       "Max messages per day" with a minimum of 0 and nothing else, so the
+       obvious reading of typing 0 is "none", and what it actually does is
+       remove the only per-widget limit on the owner's bill. Said plainly here,
+       and warned about live, because a money control that means the opposite of
+       how it reads is not a control. */
     '<div class="ss2"><h3>Safety limits <span style="font-weight:400;color:var(--mu);font-size:11px">(protect your costs)</span></h3>'+
       '<div class="sf">'+
-        '<div><label class="lbl">Max messages per day</label><input type="number" id="wg-msgcap" value="'+(cfg.dailyMsgCap||0)+'" min="0" max="100000"></div>'+
-        '<div><label class="lbl">Max spend per day (USD)</label><input type="number" id="wg-spendcap" value="'+(cfg.dailySpendCapUSD||0)+'" min="0" max="1000" step="0.5"></div>'+
+        '<div><label class="lbl">Max messages per day <span class="wg-hint">0 = no limit</span></label><input type="number" id="wg-msgcap" value="'+(cfg.dailyMsgCap||0)+'" min="0" max="100000"></div>'+
+        '<div><label class="lbl">Max spend per day (USD) <span class="wg-hint">0 = no limit</span></label><input type="number" id="wg-spendcap" value="'+(cfg.dailySpendCapUSD||0)+'" min="0" max="1000" step="0.5"></div>'+
         '<div><label class="lbl">Max reply length (tokens)</label><input type="number" id="wg-maxout" value="'+(cfg.maxOut||1024)+'" min="128" max="4000" step="128"></div>'+
       '</div>'+
+      '<div class="wg-capwarn" id="wg-capwarn" role="status" aria-live="polite"></div>'+
     '</div>'+
     '<div class="ss2"><div style="display:flex;align-items:center;justify-content:space-between">'+
         '<div><div style="font-size:13px;font-weight:600">Widget enabled</div><div style="font-size:11px;color:var(--t2)">Turn the widget on or off across all your sites instantly.</div></div>'+
         '<label class="sw"><input type="checkbox" id="wg-enabled" '+(cfg.enabled?'checked':'')+'><span class="sw-sl"></span></label>'+
       '</div></div>'+
     '<div style="display:flex;gap:8px"><button class="btn bp" id="wg-save" style="font-size:13px">Save changes</button><span id="wg-saved" style="font-size:12px;color:var(--green);align-self:center"></span></div>';
+
+  /* What the current settings actually expose, recomputed as they are typed
+     rather than discovered on a bill. An uncapped widget on an unrestricted
+     origin list is the combination that costs real money: anybody who reads the
+     site key out of the page can embed it on their own site and spend against
+     the owner's account until the platform-wide ceiling stops it. */
+  const capWarn=()=>{
+    const el=$('wg-capwarn'); if(!el) return;
+    const msgs=parseInt(($('wg-msgcap')||{}).value||'0',10);
+    const spend=parseFloat(($('wg-spendcap')||{}).value||'0');
+    const origins=(($('wg-origins')||{}).value||'').split('\n').map(s=>s.trim()).filter(Boolean);
+    const open=[];
+    if(!(msgs>0)) open.push('no daily message limit');
+    if(!(spend>0)) open.push('no daily spend limit');
+    if(!open.length){ el.className='wg-capwarn'; el.textContent=''; return; }
+    el.className='wg-capwarn on';
+    el.textContent='This widget has '+open.join(' and ')+'. '+
+      (origins.length
+        ? 'It is locked to your own domains, so only your sites can spend against it - but a busy day still has no ceiling.'
+        : 'It is also not locked to any domain, so anybody who reads the site key out of your page can embed it on their own site and spend against your account.')+
+      ' Only the platform-wide daily cap would stop it.';
+  };
+  ['wg-msgcap','wg-spendcap','wg-origins'].forEach(id=>on($(id),'input',capWarn));
+  capWarn();
 
   on($('wg-copy'),'click',()=>{
     const s=_widgetSnippet(_WIDGET_CFG, base);
@@ -1011,12 +1060,38 @@ async function connectIntegration(id){
   // Generic OAuth providers: open the provider's approval window if configured
   const clientId = m.oauth ? loadStr(m.oauth) : '';
   if(clientId){
+    /* AND ONLY IF AMV CAN FINISH IT. See _OAUTH_COMPLETABLE below - every one
+       of these redirects to /oauth/<id>, and only Google has anything waiting
+       there. Sending somebody to approve real scopes on their GitHub or Notion
+       account and then dropping them on a page that cannot exchange the code
+       leaves them having granted access AMV never receives and they have no
+       reason to think they need to revoke. Worse than a button that does
+       nothing, because it changes something outside AMV. */
+    if(!_OAUTH_COMPLETABLE.has(id)){
+      toast(m.name+' sign-in is not finished yet, so AMV will not send you to approve it. '+
+            'Approving would grant '+m.name+' access that AMV has nowhere to receive - you would be giving away permissions for nothing.','info',8000);
+      return;
+    }
     const url = await _oauthUrl(id, clientId);
     if(url){ _openOAuthPopup(url, id); return; }
   }
   // Not configured by the operator yet - honest message, no fake "connected"
   toast(m.name+' isn\u2019t connected yet. It needs its API key added by the operator in Settings first - once that\u2019s done, Connect opens '+m.name+'\u2019s secure approval popup (nothing for you to paste).','info',6000);
 }
+/* The providers whose approval AMV can actually complete: there is a callback
+   that exchanges the code, and a token the tools can then use.
+
+   Everything in _oauthUrl below builds a redirect to `/oauth/<id>`. The worker
+   serves exactly one exchange route, /v1/oauth/google/exchange, and nothing
+   client-side or server-side answers /oauth/github, /oauth/notion, or the rest.
+   The rest of the product already knows this - 13-integrations.js files Notion,
+   Linear, Discord and Outlook under PLANNED_CAPABILITIES, "no executable
+   backend yet" - and this file was the one place that disagreed and would have
+   launched the flow anyway the moment an operator pasted a client id.
+
+   Add a provider here when its callback exists, not before. */
+const _OAUTH_COMPLETABLE = new Set(['google']);
+try{ window._OAUTH_COMPLETABLE=_OAUTH_COMPLETABLE; }catch(e){}
 async function _oauthUrl(id, clientId){
   const redirect = encodeURIComponent(location.origin + '/oauth/' + id);
   // PKCE + state on every provider that supports the auth-code flow (AMV-039:
@@ -1502,10 +1577,24 @@ function _renderSetPaneInner(){
       const msg=$('pw-msg');
       const sm=(t,ok)=>{if(msg){msg.textContent=t;msg.style.display='block';msg.style.background=ok?'rgba(35,209,139,.07)':'rgba(255,95,87,.07)';msg.style.border='1px solid '+(ok?'rgba(35,209,139,.2)':'rgba(255,95,87,.2)');msg.style.color=ok?'var(--green)':'var(--red)';}};
       const btn=$('reset-pw-btn'); if(btn){ btn.disabled=true; btn.textContent='Sending…'; }
-      const ok=await sendPasswordReset(email);
+      /* `if(ok)` on the RESULT OBJECT was true for every outcome this function
+         has - including {ok:false} from the catch and from having no backend at
+         all - so the failure message below was unreachable and the button said
+         "check your inbox" whatever happened. Somebody locked out of their
+         account waits for an email that was never sent. Three real outcomes,
+         told apart. */
+      const res=await sendPasswordReset(email) || { ok:false, sent:false };
       if(btn){ btn.disabled=false; btn.textContent='Send reset link'; }
-      if(ok) sm('Reset link sent to '+email+'. Check your inbox and follow the link to set a new password.',true);
-      else sm('Couldn\u2019t send the reset email right now. Password reset email requires the backend email service to be connected.',false);
+      if(res.ok && res.sent){
+        sm('Reset link sent to '+email+'. Check your inbox and follow the link to set a new password.',true);
+      } else if(res.ok){
+        /* The server accepted it and sent nothing, which is what it does with no
+           email provider configured. Saying "check your inbox" here is the same
+           lie with extra steps. */
+        sm('No email was sent - this deployment has no email provider connected, so AMV has no way to deliver the link. Nothing is wrong with your account.',false);
+      } else {
+        sm('Couldn\u2019t send the reset email'+(res.error?' ('+res.error+')':'')+'. Nothing was sent - please try again.',false);
+      }
     });
 
   } else if(sp==='privacy'){
@@ -1695,10 +1784,36 @@ function _renderSetPaneInner(){
         if(dh && !dh.firstChild){ dh.innerHTML=_payoutCardHTML()+_digestCardHTML(); _wireDigestCard(); _loadPayouts(); }
         // wire kill switch
         const kbtn=$('fd-kill');
+        /* THE PLATFORM KILL SWITCH, and its answer was thrown away.
+
+           A rejected admin token, or any error, resolved exactly like a
+           success: nothing was said, loadStats() repainted the button in its
+           old state, and the operator - who has just been asked "Pause the
+           ENTIRE service for all users?" and said yes - is looking at a screen
+           that reports the service is still live with no indication that is
+           because their instruction did not land. The one control you press
+           during a spend emergency is the last one that may report an outcome
+           it did not check. */
         if(kbtn) on(kbtn,'click',async()=>{
           const turnOn=!d.spend.killed;
           if(!confirm(turnOn?'Pause the ENTIRE service for all users?':'Resume the service?')) return;
-          await fetchDeadline(base.replace(/\/$/,'')+'/v1/admin/kill',{method:'POST',headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},body:JSON.stringify({on:turnOn})});
+          const wasLabel=kbtn.textContent;
+          kbtn.disabled=true; kbtn.textContent=turnOn?'Pausing…':'Resuming…';
+          try{
+            const kr=await fetchDeadline(base.replace(/\/$/,'')+'/v1/admin/kill',{method:'POST',headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},body:JSON.stringify({on:turnOn})},15000);
+            const kd=await kr.json().catch(()=>({}));
+            if(!kr.ok || kd.error){
+              toast((kr.status===403?'That admin token was rejected. ':(kd.error?kd.error+' ':''))+
+                    (turnOn?'The service is STILL RUNNING and still spending.':'The service is still paused.'),'error',9000);
+              kbtn.disabled=false; kbtn.textContent=wasLabel; return;
+            }
+            toast(turnOn?'Service paused for all users.':'Service resumed.','success',4000);
+          }catch(e){
+            toast('Could not reach the backend, so nothing changed. '+
+                  (turnOn?'The service is STILL RUNNING and still spending.':'The service is still paused.'),'error',9000);
+            kbtn.disabled=false; kbtn.textContent=wasLabel; return;
+          }
+          kbtn.disabled=false;
           loadStats();
         });
       }catch(e){ body.innerHTML='<div class="fd-empty">Network error loading stats.</div>'; }

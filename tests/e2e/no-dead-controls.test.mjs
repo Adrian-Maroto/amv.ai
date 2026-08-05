@@ -144,7 +144,13 @@ section('Every plan on the pricing page can actually be bought');
      rather than the instance - every tier the cards offer reaches checkout. */
   const at = bundle.indexOf('function planCards');
   const cards = bundle.slice(at, bundle.indexOf('\n}', bundle.indexOf('].join(\'\')', at)));
-  const offered = [...cards.matchAll(/pBtn\('[^']*','[a-z]+','([a-z]+)'/g)].map(m => m[1]);
+  /* Read off the PLAN argument, which is the third one and always sits
+     immediately before isLand. The label used to be a plain string and was
+     matched as one; it is now built from PLANS so the price cannot drift from
+     checkout, and a matcher anchored on the label stopped seeing three of the
+     four tiers - silently, which is the failure mode this whole file exists to
+     catch. The plan argument is what the assertion is actually about. */
+  const offered = [...cards.matchAll(/,'([a-z]+)',isLand\)/g)].map(m => m[1]);
   ok(offered.length >= 4, 'the tiers on the cards were found', offered);
 
   const builder = bundle.slice(at, at + 1600);

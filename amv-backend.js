@@ -9282,34 +9282,58 @@ async function adminPayoutMark(request, env) {
   if (!/^wd_[A-Za-z0-9-]{4,40}$/.test(id)) return json({ error: 'bad id' }, 400);
   if (!PAYOUT_STATES.has(status) || status === 'pending') return json({ error: 'status must be paid or rejected' }, 400);
 
-  const raw = await env.AMV_KV.get(`withdraw:${id}`);
-  if (!raw) return json({ error: 'not found' }, 404);
-  let rec = null; try { rec = JSON.parse(raw); } catch (e) { return json({ error: 'not found' }, 404); }
-  if ((rec.status || 'pending') !== 'pending') {
-    // Settling twice would either pay twice or refund twice. It is money.
-    return json({ error: 'This payout was already ' + rec.status + '.', code: 'already_settled' }, 409);
-  }
+  /* SERIALIZED, because rejecting CREDITS a wallet.
 
-  rec.status = status;
-  rec.settledAt = Date.now();
-  rec.note = String(body.note || '').slice(0, 200);
-  await env.AMV_KV.put(`withdraw:${id}`, JSON.stringify(rec));
+     The already-settled check below is a read followed by a decision, which two
+     concurrent requests both pass: each reads 'pending', each writes the new
+     status, and each adds the amount back to the seller's balance. One rejected
+     payout, paid back twice, out of nothing.
 
-  if (status === 'rejected') {
-    /* Give it back. The balance was debited when the request was made; a
-       payout that will never be sent has to return it, or rejecting is just a
-       second way to destroy the same money. */
-    const w = await _wallet(env, rec.seller);
-    w.balance = +((+w.balance || 0) + (+rec.amount || 0)).toFixed(2);
-    await _saveWallet(env, rec.seller, w);
-    await _pushWalletTx(env, rec.seller, { type: 'withdrawal_returned', amount: +rec.amount || 0,
-                                           status: 'rejected', id, ts: Date.now() });
-  } else {
-    // Mark the pending debit settled so the seller's log is not left ambiguous.
-    await _pushWalletTx(env, rec.seller, { type: 'withdrawal_paid', amount: 0, status: 'paid', id, ts: Date.now() });
+     It does not need a hostile caller. The founder dashboard left both buttons
+     live for the whole round trip, so a double-click was the ordinary way to
+     produce it. marketWithdraw, one function above, already takes this lock for
+     exactly this reason - this was the settle side of the same money with
+     nothing holding it. */
+  if (!(await _claimOnce(env, 'polock', id, 30))) {
+    return json({ error: 'This payout is already being settled. Give it a moment.', code: 'in_progress' }, 409);
   }
-  audit(env, 'payout_settled', { id, seller: rec.seller, amount: rec.amount, status });
-  return json({ ok: true, id, status });
+  try {
+    // Re-read INSIDE the lock: whoever held it before us may have settled it.
+    const raw = await env.AMV_KV.get(`withdraw:${id}`);
+    if (!raw) return json({ error: 'not found' }, 404);
+    let rec = null; try { rec = JSON.parse(raw); } catch (e) { return json({ error: 'not found' }, 404); }
+    if ((rec.status || 'pending') !== 'pending') {
+      // Settling twice would either pay twice or refund twice. It is money.
+      return json({ error: 'This payout was already ' + rec.status + '.', code: 'already_settled' }, 409);
+    }
+
+    /* The status lands BEFORE the money moves. If the credit below fails, the
+       payout is marked settled and the seller is not paid twice - the safe
+       direction, and recoverable by hand. The other order risks crediting and
+       then leaving the record settleable again. */
+    rec.status = status;
+    rec.settledAt = Date.now();
+    rec.note = String(body.note || '').slice(0, 200);
+    await env.AMV_KV.put(`withdraw:${id}`, JSON.stringify(rec));
+
+    if (status === 'rejected') {
+      /* Give it back. The balance was debited when the request was made; a
+         payout that will never be sent has to return it, or rejecting is just a
+         second way to destroy the same money. */
+      const w = await _wallet(env, rec.seller);
+      w.balance = +((+w.balance || 0) + (+rec.amount || 0)).toFixed(2);
+      await _saveWallet(env, rec.seller, w);
+      await _pushWalletTx(env, rec.seller, { type: 'withdrawal_returned', amount: +rec.amount || 0,
+                                             status: 'rejected', id, ts: Date.now() });
+    } else {
+      // Mark the pending debit settled so the seller's log is not left ambiguous.
+      await _pushWalletTx(env, rec.seller, { type: 'withdrawal_paid', amount: 0, status: 'paid', id, ts: Date.now() });
+    }
+    audit(env, 'payout_settled', { id, seller: rec.seller, amount: rec.amount, status });
+    return json({ ok: true, id, status });
+  } finally {
+    await _releaseClaim(env, 'polock', id);
+  }
 }
 
 /* Seller changes a listing's status: active | sold | deactivated. Owner only. */

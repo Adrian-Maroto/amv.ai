@@ -1468,3 +1468,38 @@ computed against a price nobody pays is not a backstop.
 copy has to exist because it lives in another process, do not trust memory to
 keep them equal - read one from the other in a standing check, so divergence
 fails the gate instead of reaching a Buy button.
+
+## 118. `cmd | tail` throws away the exit code
+
+The shippability gate was run as `npm run check 2>&1 | tail -25`. A pipeline's
+exit status is the LAST command's, and `tail` succeeds whatever `check.mjs` did,
+so the run was reported as exit code 0 while a suite inside it had failed. The
+output that would have shown the failure was also the part `tail` had not
+flushed yet when the process group was cleaned up.
+
+The failing suite was `no-dead-controls`, broken by the price-consolidation
+commit two changes earlier: its extractor matched `pBtn('<literal label>',...)`
+and the label had become an expression, so it silently found one tier instead
+of four. That is the exact failure mode the file exists to catch, and it was
+caught - by the gate, whose verdict I had discarded.
+
+**Rule:** never read a gate's result through a pipe. Run it unpiped, or check
+`${PIPESTATUS[0]}`. And when a change alters the SHAPE of code that standing
+checks parse, go and look at the checks that parse it - a matcher that stops
+matching does not fail, it just stops asserting.
+
+## 119. A double-click is a race condition
+
+Settling a marketplace payout as `rejected` credits the seller's wallet. The
+guard was a read, a decision, and a write - which two concurrent requests both
+pass. `marketWithdraw`, the function directly above it, had taken an atomic
+lock for exactly this reason since it was written; the settle side of the same
+money had nothing.
+
+It needed no attacker: the founder dashboard left both buttons live for the
+whole round trip, so an operator double-clicking Reject was the ordinary way to
+produce it.
+
+**Rule:** any handler that moves money takes the lock, not just the one where
+the race was first noticed - and the UI disables the control while the request
+is in flight, because the common case is not an attack, it is a second click.
