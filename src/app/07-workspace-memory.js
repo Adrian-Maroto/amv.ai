@@ -357,9 +357,14 @@ function _mktPaymentModal(it){
 window._mktPaymentModal=_mktPaymentModal;
 
 async function _mktDoBuy(it, after){
+  /* The checkout tab is opened here, on the click, because awaiting the buy
+     call first spends the user activation and the browser then refuses the
+     pop-up - see _preopenPay. */
+  const pre=(typeof _preopenPay==='function')?_preopenPay():null;
   try{
     const d=await AMVMarket.buy(it.id);
-    if(d.url){ _recordTxn({type:'marketplace', title:it.title, amount:it.price||0, status:'pending'}); _openExternalPay(d.url,null,'market'); return; }
+    if(d.url){ _recordTxn({type:'marketplace', title:it.title, amount:it.price||0, status:'pending'}); _openExternalPay(d.url,null,'market',pre); return; }
+    try{ if(typeof _closePay==='function') _closePay(pre); }catch(_){}
     if(d.owned){ toast('You already own this','info'); }
     else {
       if((it.price||0)>0) _recordTxn({type:'marketplace', title:it.title, amount:it.price||0, status:'paid'});
@@ -372,6 +377,9 @@ async function _mktDoBuy(it, after){
     }
     after&&after();
   }catch(e){
+    /* A placeholder left open after a failure sits on "Opening secure
+       checkout…" for ever, which reads as a hung purchase. */
+    try{ if(typeof _closePay==='function') _closePay(pre); }catch(_){}
     if(e && e.code==='needs_payment'){ _mktPaymentModal(it); return; }
     toast(e.message||'Could not complete purchase','error',4500);
   }

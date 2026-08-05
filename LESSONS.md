@@ -1608,3 +1608,27 @@ that no screen could ever set.
 **Rule:** an allowlist entry is a claim, and claims get checked. Write the
 reason as something falsifiable ("Settings -> Appearance -> Sound writes it"),
 and when you add one, go and look at the screen you just named.
+
+## 126. Open the tab on the click, not after the await
+
+Every payment button in AMV was written:
+
+    onclick -> await AMV_API.stripeCheckout(...) -> window.open(url)
+
+A browser only allows `window.open` while the page still holds transient user
+activation from the click. Awaiting a network round trip spends it. Safari
+refuses the result outright, Firefox refuses it by default, and Chrome refuses
+it once the request is slow enough. So the person who pressed Pay waited, then
+read "Allow pop-ups to open the secure checkout." Card, Stripe, PayPal, Venmo,
+team seats and marketplace purchases were all written the same way: every route
+by which AMV takes money.
+
+Nothing in the test suite could have caught it, because in a headless run
+`window.open` always succeeds - the bug only exists where a real browser
+enforces the activation rule.
+
+**Rule:** anything that opens a window, starts a download, enters fullscreen,
+reads the clipboard or asks for a device permission must be reached
+SYNCHRONOUSLY from the user's gesture. If a URL has to be fetched first, open
+the tab empty on the click and navigate it when the answer arrives - and close
+it again if the answer never comes.

@@ -194,10 +194,15 @@ function _wireSeatBuy(){
     }
     const btn=$('seat-buy'); if(btn){ btn.disabled=true; btn.textContent='Opening\u2026'; }
     say('');
+    /* Opened on the click, before the await spends the user activation - see
+       _preopenPay. Team seats are the largest single sale AMV makes, so this is
+       the last button that should be losing itself to a pop-up blocker. */
+    const pre=(typeof _preopenPay==='function')?_preopenPay():null;
     try{
       const url=await AMV_API.stripeCheckout('team',(S.user&&S.user.email)||'',n);
-      _openExternalPay(url,'team','card');
+      _openExternalPay(url,'team','card',pre);
     }catch(e){
+      try{ if(typeof _closePay==='function') _closePay(pre); }catch(_){}
       say(e&&e.code==='not_configured'
         ? 'Teams billing is not switched on for this deployment yet, so nothing was charged. Elite and Ultra include team seats in the meantime.'
         : (e&&e.message)||'Could not open checkout. Nothing was charged.');

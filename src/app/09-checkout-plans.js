@@ -169,7 +169,7 @@ function _payRenderMethod(method,plan){
         '<button class="pay-wallet-b paypal" id="pay-pp-sub">Subscribe with PayPal →</button>'+
         '<button class="pay-wallet-b venmo" id="pay-vm-sub">Subscribe with Venmo →</button>'+
         '<p class="pay-note">Sets up a real monthly subscription through PayPal or Venmo. Opens securely, then brings you back.</p></div>';
-      const go=async ()=>{ try{ const u=await AMV_API.paypalSubscribe(plan,(S.user&&S.user.email)||''); _openExternalPay(u,plan,'paypal'); }catch(e){ toast('PayPal: '+(e.message||'could not start'),'error',4500); } };
+      const go=async ()=>{ const pre=_preopenPay(); try{ const u=await AMV_API.paypalSubscribe(plan,(S.user&&S.user.email)||''); _openExternalPay(u,plan,'paypal',pre); }catch(e){ _closePay(pre); toast('PayPal: '+(e.message||'could not start'),'error',4500); } };
       on($('pay-pp-sub'),'click',go); on($('pay-vm-sub'),'click',go);
       return;
     }
@@ -195,9 +195,10 @@ function _payRenderMethod(method,plan){
       const sb=$('pay-stripe-go');
       // Preferred: backend creates a real subscription Checkout session
       if(liveBackend){
+        const pre=_preopenPay();
         if(sb){ sb.disabled=true; sb.textContent='Opening…'; }
-        try{ const u=await AMV_API.stripeCheckout(plan, (S.user&&S.user.email)||''); _openExternalPay(u,plan,'stripe'); }
-        catch(e){ toast('Stripe: '+(e.message||'could not start'),'error',4500); }
+        try{ const u=await AMV_API.stripeCheckout(plan, (S.user&&S.user.email)||''); _openExternalPay(u,plan,'stripe',pre); }
+        catch(e){ _closePay(pre); toast('Stripe: '+(e.message||'could not start'),'error',4500); }
         finally{ if(sb){ sb.disabled=false; sb.textContent='Pay with Stripe →'; } }
         return;
       }
@@ -228,7 +229,7 @@ function _payRenderMethod(method,plan){
       '<p class="pay-note">Opens a secure card checkout. Your plan unlocks once payment is confirmed.</p></div>';
     on($('pay-card-go'),'click',async ()=>{
       const sb=$('pay-card-go');
-      if(liveBackend){ if(sb){sb.disabled=true;sb.textContent='Opening…';} try{ const u=await AMV_API.stripeCheckout(plan,(S.user&&S.user.email)||''); _openExternalPay(u,plan,'card'); }catch(e){ toast('Card: '+(e.message||'failed'),'error',4500);} finally{ if(sb){sb.disabled=false;sb.textContent='Pay by card →';} } return; }
+      if(liveBackend){ const pre=_preopenPay(); if(sb){sb.disabled=true;sb.textContent='Opening…';} try{ const u=await AMV_API.stripeCheckout(plan,(S.user&&S.user.email)||''); _openExternalPay(u,plan,'card',pre); }catch(e){ _closePay(pre); toast('Card: '+(e.message||'failed'),'error',4500);} finally{ if(sb){sb.disabled=false;sb.textContent='Pay by card →';} } return; }
       if(link){ _openExternalPay(link,plan,'card'); }
     });
     return;
@@ -255,15 +256,59 @@ function _payRenderMethod(method,plan){
    own backend creates the session). It opens the REAL payment page.
 */
 
+/* THE CHECKOUT TAB HAS TO BE OPENED ON THE CLICK, NOT AFTER THE AWAIT.
+
+   Every payment button did this:
+
+       onclick -> await AMV_API.stripeCheckout(...) -> window.open(url)
+
+   A browser only allows window.open while the page still has "transient user
+   activation" from the click. Awaiting a network round trip spends it. Safari
+   blocks the result outright, Firefox blocks it by default, and Chrome blocks
+   it once the request is slow enough - so the person who pressed Pay waits,
+   then reads "Allow pop-ups to open the secure checkout." on the one screen
+   where hesitation costs the sale.
+
+   So the tab is opened EMPTY during the click, while the activation is still
+   valid, and pointed at the real URL when it arrives. If the request fails the
+   placeholder is closed again rather than left sitting there. */
+function _preopenPay(){
+  try{
+    const w=window.open('','_blank');
+    if(w){
+      /* The opener reference is the reason 'noopener' exists, and a window we
+         navigate ourselves cannot use that flag - so it is cut by hand. */
+      try{ w.opener=null; }catch(e){}
+      try{ w.document.write('<!doctype html><meta charset="utf-8"><title>Opening secure checkout…</title>'+
+        '<body style="margin:0;font:15px/1.6 system-ui,-apple-system,Segoe UI,sans-serif;color:#111;background:#fff;display:flex;align-items:center;justify-content:center;height:100vh">'+
+        '<div style="text-align:center"><div style="font-weight:600;margin-bottom:6px">Opening secure checkout…</div>'+
+        '<div style="opacity:.65;font-size:13px">One moment - do not close this tab.</div></div>'); }catch(e){}
+    }
+    return w||null;
+  }catch(e){ return null; }
+}
 /* Opens the real external payment page. On success your checkout
-   redirects back to ?paid=PLAN and the app activates the plan. */
-function _openExternalPay(url, plan, kind){
+   redirects back to ?paid=PLAN and the app activates the plan.
+   `pre` is the tab opened during the click, if there was one. */
+function _openExternalPay(url, plan, kind, pre){
   const safe=safeUrl(url);
-  if(!safe){ toast('That payment link is not valid. Please try again.','error',5000); return; }
+  if(!safe){
+    _closePay(pre);
+    toast('That payment link is not valid. Please try again.','error',5000);
+    return;
+  }
+  if(pre && !pre.closed){
+    try{ pre.location.replace(safe); toast('Complete your payment in the new tab - your plan updates once it succeeds.','info',6000); return; }
+    catch(e){ /* fall through to a fresh window */ }
+  }
   const w=window.open(safe,'_blank','noopener');
   if(!w){ toast('Allow pop-ups to open the secure checkout.','error',5000); return; }
   toast('Complete your payment in the new tab - your plan updates once it succeeds.','info',6000);
 }
+/* A placeholder left open after a failure is worse than none - it sits on
+   "Opening secure checkout…" for ever. */
+function _closePay(pre){ try{ if(pre && !pre.closed) pre.close(); }catch(e){} }
+try{ window._preopenPay=_preopenPay; window._closePay=_closePay; }catch(e){}
 
 /* ---------- REAL PayPal / Venmo (PayPal JS SDK) ---------- */
 function _mountPayPal(plan){
