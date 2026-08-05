@@ -135,6 +135,28 @@ section('And an inline onclick names a function that exists');
     .filter(n => !defined.has(n))
     .sort();
   ok(dead.length === 0, 'each one calls something that is defined', dead);
+
+  /* AND THE RECEIVER HAS TO BE REACHABLE FROM GLOBAL SCOPE.
+
+     Skipping every dotted call let a real dead control through: the overnight
+     queue's delete button was `onclick="queue.splice(i,1);...renderQ()"`, and
+     `queue` and `renderQ` are LOCAL to the function that wrote the markup. An
+     inline handler attribute is compiled in the GLOBAL scope, so every click
+     threw ReferenceError and the row never went away.
+
+     So the object being called on is checked too - it has to be something the
+     bundle actually declares at the top level, or a browser global. */
+  const GLOBALS = new Set(['window', 'document', 'location', 'navigator', 'console',
+                           'localStorage', 'sessionStorage', 'history', 'event', 'this',
+                           'JSON', 'Math', 'Object', 'Array', 'String', 'Number', 'Date']);
+  const receivers = new Set();
+  for(const m of all.matchAll(/onclick=\\?"([A-Za-z_$][\w$]*)\./g)) receivers.add(m[1]);
+  const unreachable = [...receivers]
+    .filter(n => !GLOBALS.has(n))
+    .filter(n => !defined.has(n))
+    .sort();
+  ok(unreachable.length === 0,
+     'and the object it calls on is reachable from global scope', unreachable);
 }
 
 section('Every plan on the pricing page can actually be bought');

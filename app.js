@@ -6645,7 +6645,7 @@ function renderImgsView(){
     '</div>';
 
   on($('gen-img-btn'),'click',genImg);
-  on($('img-inp'),'keydown',e=>{if(e.key==='Enter'&&e.ctrlKey)genImg();});
+  on($('img-inp'),'keydown',e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey))genImg();});
   on($('clrimgs'),'click',()=>{S.imgs=[];renderImgGallery();});
   document.querySelectorAll('#srow .stb').forEach(b=>on(b,'click',()=>{S.imgStyle=b.dataset.s;document.querySelectorAll('#srow .stb').forEach(x=>x.classList.toggle('on',x===b));}));
   document.querySelectorAll('#rrow .rab').forEach(b=>on(b,'click',()=>{S.imgRatio=b.dataset.r;document.querySelectorAll('#rrow .rab').forEach(x=>x.classList.toggle('on',x===b));}));
@@ -6788,7 +6788,7 @@ function renderVideoView(){
       '<div class="vg" id="vgrid"></div>'+
     '</div>';
   on($('gvb'),'click',genVid);
-  on($('vp'),'keydown',e=>{if(e.key==='Enter'&&e.ctrlKey)genVid();});
+  on($('vp'),'keydown',e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey))genVid();});
   on($('clrvids'),'click',()=>{S.vids=[];renderVidGrid();});
   renderVidGrid();
 }
@@ -17128,7 +17128,11 @@ async function _exportUserData(){
       skills:_exportSkills(),
       settings:{
         theme:collect('amv_theme'), accent:collect('amv_accent'), language:collect('amv_lang'),
-        plan:collect('amv_plan'), fontSize:collect('amv_font_size'),
+        /* `amv_font_size` is a key nothing has ever written - setFontSize
+           stores `amv_fs` - so this field exported null for every user who had
+           ever changed their text size. A data export that quietly omits a
+           setting is the same class of wrong as one that invents a value. */
+        plan:collect('amv_plan'), fontSize:collect('amv_fs'),
         privacy:{ locationMetadata:collect('amv_location_opt')==='1', helpImproveModels:collect('amv_improve_opt')==='1', analyticsOptOut:collect('amv_analytics_opt_out')==='1' },
         capabilities:{ webSearch:collect('amv_cap_websearch')!=='0', memory:collect('amv_cap_memory')!=='0', interactiveBlocks:collect('amv_cap_suggestions')!=='0' }
       }
@@ -17525,7 +17529,18 @@ function _renderSetPaneInner(){
       '<div class="ss2"><h3>Analytics provider <span style="font-weight:400;color:var(--mu);font-size:11px">(operator setup)</span></h3>'+
         '<div style="font-size:12px;color:var(--t2);line-height:1.7;margin-bottom:12px">Connect Google Analytics (GA4) or Plausible to measure real traffic. Enter your GA4 Measurement ID (starts with <code>G-</code>) or your Plausible site domain. Analytics only fire for visitors who accept analytics cookies.</div>'+
         '<div style="display:flex;gap:8px;align-items:center"><input class="inp" id="prv-ga-id" placeholder="G-XXXXXXX  or  yoursite.com" value="'+escH(_analyticsId())+'" style="flex:1"><button class="btn bp" id="prv-ga-save" style="font-size:12px">Save</button></div>'+
-        '<div style="font-size:11px;color:var(--t2);margin-top:8px">Status: '+(_analyticsId()?('<span style="color:var(--green)">configured</span> \u00b7 '+(/^G-/i.test(_analyticsId())?'Google Analytics':'Plausible')):'<span style="color:var(--mu)">not set</span>')+'</div>'+
+        /* "configured" was the whole status, and configured is not the same as
+           running. The provider script is a third-party <script> and this page's
+           Content-Security-Policy script-src allows neither of the two hosts, so
+           an ID that is saved and consented to still measures nothing. Saying
+           "configured" over that is the same failure as any other control that
+           reports an outcome it did not check. */
+        '<div style="font-size:11px;color:var(--t2);margin-top:8px">Status: '+(_analyticsId()?('<span style="color:var(--grn)">configured</span> \u00b7 '+(/^G-/i.test(_analyticsId())?'Google Analytics':'Plausible')):'<span style="color:var(--mu)">not set</span>')+'</div>'+
+        (_analyticsId()&&_analyticsBlocked()
+          ? '<div class="wg-capwarn on" style="margin-top:8px">Saved, but <b>nothing is being measured</b>. The provider\u2019s script was blocked before it loaded - this page\u2019s Content-Security-Policy does not list '+
+            (/^G-/i.test(_analyticsId())?'googletagmanager.com':'plausible.io')+
+            ', and an ad-blocker would do the same. Add the host to <code>script-src</code> (and its beacon host to <code>connect-src</code>) in index.html to switch it on, or leave analytics off.</div>'
+          : '')+
       '</div>'+
       (function(){ const f=_funnel(); const step=(l,n)=>'<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0"><span style="font-size:12.5px;color:var(--t2)">'+l+'</span><span style="font-size:14px;font-weight:600">'+(n||0)+'</span></div>';
         const conv=(a,b)=>b?Math.round((a/b)*100):0;
@@ -17971,14 +17986,12 @@ function _renderSetPaneInner(){
           supportButton({label:'Contact Support',cls:'btn bs',subject:'AMV Support request'})+
         '</div>'+
       '</div>'+
+      /* The third copy, and the one that was hardest to notice was stale: it
+         listed six of the twelve bindings and printed Ctrl on a Mac. Rendered
+         from _SHORTCUTS, so it cannot fall behind the keys that actually work. */
       '<div class="ss2"><h3>Keyboard Shortcuts</h3>'+
         '<div style="display:flex;flex-direction:column;gap:0">'+
-          '<div class="kbsr"><span>New chat</span><div><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd></div></div>'+
-          '<div class="kbsr"><span>Send message</span><div><kbd>Enter</kbd></div></div>'+
-          '<div class="kbsr"><span>New line</span><div><kbd>Shift</kbd>+<kbd>Enter</kbd></div></div>'+
-          '<div class="kbsr"><span>Toggle sidebar</span><div><kbd>Ctrl</kbd>+<kbd>B</kbd></div></div>'+
-          '<div class="kbsr"><span>Dark / light mode</span><div><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd></div></div>'+
-          '<div class="kbsr"><span>Settings</span><div><kbd>Ctrl</kbd>+<kbd>,</kbd></div></div>'+
+          _shortcutRowsHTML()+
         '</div>'+
       '</div>'+
       (S.user?'<div class="ss2" style="border-color:rgba(255,95,87,.2)"><h3 style="color:var(--red)">Sign Out</h3><p style="font-size:12px;color:var(--t2);margin-bottom:12px">Your data remains saved and will be restored on next sign in.</p><button class="btn bd2" onclick="signOut()" style="font-size:12px">Sign out</button></div>':'');
@@ -18021,19 +18034,19 @@ function _applyZoom(scale){
   }
 }
 function _applyFontSize(){ const px=parseInt(loadStr('amv_fs')||'14',10); if(px&&px!==14){ _applyZoom(px/14); } }
+/* THERE WERE THREE LISTS OF KEYBOARD SHORTCUTS AND NO TWO AGREED.
+
+   This one was hand-written and wrong in two ways that matter. It said
+   "Search chats - Ctrl K", and Ctrl/Cmd+K opens the COMMAND PALETTE, which is
+   a different thing; and it printed Ctrl on a Mac, where every one of these is
+   Cmd. It also missed Ctrl+/, ?, Ctrl+Shift+D and Ctrl+Shift+V, all of which
+   are bound.
+
+   _SHORTCUTS in 16-palette-sched.js is the real list - grouped, complete, and
+   platform-aware. This opens that, so the button in the sidebar and the ? key
+   show the same thing, and there is one place to edit when a binding changes. */
 function openShortcuts(){
-  const r=$('ovr'); if(!r) return;
-  const rows=[
-    ['New chat','Ctrl Shift O'],['Send message','Enter'],['New line','Shift Enter'],
-    ['Toggle sidebar','Ctrl B'],['Dark / light mode','Ctrl Shift L'],['Settings','Ctrl ,'],
-    ['Search chats','Ctrl K'],['Close dialog','Esc'],
-  ];
-  r.innerHTML='<div class="sc-ov" id="sc-bg"><div class="sc-modal" onclick="event.stopPropagation()">'+
-    '<div class="sc-head"><div class="sc-title">Keyboard shortcuts</div><button class="dna-x" id="sc-x">✕</button></div>'+
-    '<div class="sc-list">'+rows.map(k=>'<div class="sc-row"><span>'+k[0]+'</span><span class="sc-keys">'+k[1].split(' ').map(x=>'<kbd>'+x+'</kbd>').join('')+'</span></div>').join('')+'</div>'+
-    '</div></div>';
-  const close=()=>{ r.innerHTML=''; };
-  on($('sc-bg'),'click',close); on($('sc-x'),'click',close);
+  try{ return openShortcutSheet(); }catch(e){}
 }
 window.openShortcuts=openShortcuts;
 
@@ -18529,7 +18542,22 @@ function _completeIntroLogin(acct){
   }
 }
 
-/* -- Keyboard shortcuts -- */
+/* -- Keyboard shortcuts --
+
+   THE CHEAT SHEET PROMISED ⌘ AND ONLY Ctrl WAS LISTENED FOR.
+
+   Every branch below tested `e.ctrlKey` alone. On a Mac that is the Control
+   key, which nobody presses for an application shortcut - so ⌘⇧O, ⌘⇧L, ⌘B,
+   ⌘, ⌘/ ⌘⇧D and ⌘⇧V all did nothing, while the shortcut sheet rendered them
+   with ⌘ symbols because it detects the platform. Every shortcut in the
+   product except the command palette was dead on macOS, and the one screen
+   that documents them told Mac users exactly which dead key to press.
+
+   The palette had it right already - 01-core tests `(e.metaKey||e.ctrlKey)`.
+   `_mod` is that test, used everywhere, so Windows and Linux are unchanged and
+   the Mac keys are the ones the sheet shows. */
+function _mod(e){ return !!(e && (e.metaKey || e.ctrlKey)); }
+try{ window._mod=_mod; }catch(e){}
 function setupKeyboard(){
   document.addEventListener('keydown',e=>{
     const tag=document.activeElement?.tagName;
@@ -18541,8 +18569,8 @@ function setupKeyboard(){
       if(S.busy){ e.preventDefault(); try{ stopGenerating(); }catch(err){} return; }
       if(!inInput){ const ta=document.getElementById('mta'); if(ta)ta.focus(); return; }
     }
-    if(e.ctrlKey&&e.shiftKey&&e.key==='O'){e.preventDefault();newChat();return;}
-    if(e.ctrlKey&&!e.shiftKey&&e.key==='b'&&!inInput){
+    if(_mod(e)&&e.shiftKey&&(e.key==='O'||e.key==='o')){e.preventDefault();newChat();return;}
+    if(_mod(e)&&!e.shiftKey&&(e.key==='b'||e.key==='B')&&!inInput){
       e.preventDefault();
       /* Ctrl+B toggled a history drawer that the sidebar replaced, so the
          shortcut had quietly done nothing. It toggles the sidebar, which is
@@ -18550,15 +18578,15 @@ function setupKeyboard(){
       try{ toggleSb(); }catch(_){}
       return;
     }
-    if(e.ctrlKey&&e.shiftKey&&e.key==='L'){e.preventDefault();document.body.classList.toggle('light');saveStr('amv_theme',document.body.classList.contains('light')?'light':'dark');return;}
-    if(e.ctrlKey&&e.key===','){e.preventDefault();S.settingsPane='account';setTab('settings');return;}
-    if(e.ctrlKey&&e.key==='/'){e.preventDefault();setTab('help');return;}
+    if(_mod(e)&&e.shiftKey&&(e.key==='L'||e.key==='l')){e.preventDefault();document.body.classList.toggle('light');saveStr('amv_theme',document.body.classList.contains('light')?'light':'dark');return;}
+    if(_mod(e)&&e.key===','){e.preventDefault();S.settingsPane='account';setTab('settings');return;}
+    if(_mod(e)&&e.key==='/'){e.preventDefault();setTab('help');return;}
     // "?" (Shift+/) opens the keyboard shortcut cheat sheet
     if(e.key==='?'&&!inInput){ e.preventDefault(); try{ openShortcutSheet(); }catch(err){} return; }
     // Ctrl+Shift+V toggles hands-free voice mode
-    if(e.ctrlKey&&e.shiftKey&&(e.key==='V'||e.key==='v')){ e.preventDefault(); try{ toggleVoiceMode(); }catch(err){} return; }
+    if(_mod(e)&&e.shiftKey&&(e.key==='V'||e.key==='v')){ e.preventDefault(); try{ toggleVoiceMode(); }catch(err){} return; }
     // Ctrl+Shift+D collapses / expands the sidebar
-    if(e.ctrlKey&&e.shiftKey&&(e.key==='D'||e.key==='d')){ e.preventDefault(); try{ toggleSb(); }catch(err){} return; }
+    if(_mod(e)&&e.shiftKey&&(e.key==='D'||e.key==='d')){ e.preventDefault(); try{ toggleSb(); }catch(err){} return; }
   });
 }
 
@@ -18622,7 +18650,13 @@ async function runCanvasAutomation() {
         const assignRes=await fetchDeadline(baseUrl+'/api/v1/courses/'+course.id+'/assignments?bucket=upcoming&per_page=10',{
           headers:{'Authorization':'Bearer '+token}
         },20000);
+        /* The courses call above checks its status; this one did not, so a 401
+           or a 403 here returned an error OBJECT, `.filter` was not a function,
+           and the run died with a TypeError instead of "check your token" -
+           the same failure, reported as a bug in AMV. */
+        if(!assignRes.ok){ log('Canvas refused the assignment list for '+course.name+' ('+assignRes.status+') - skipping it.','var(--red)'); continue; }
         const assignments=await assignRes.json();
+        if(!Array.isArray(assignments)){ log('Canvas sent an unexpected answer for '+course.name+' - skipping it.','var(--red)'); continue; }
         const pending=assignments.filter(a=>!a.has_submitted_submissions&&a.due_at);
         total+=pending.length;
         log(pending.length+' pending assignments in '+course.name,'var(--mu)');
@@ -18682,16 +18716,32 @@ function openOvernightQueue(){
     '</div></div>';
   document.getElementById('oq-bg')?.addEventListener('click',closeOvr);
 
-  const queue=JSON.parse(localStorage.getItem(CANVAS_QUEUE_KEY)||'[]');
+  let queue=[];
+  try{ queue=JSON.parse(localStorage.getItem(CANVAS_QUEUE_KEY)||'[]'); }catch(e){ queue=[]; }
+  if(!Array.isArray(queue)) queue=[];
   const renderQ=()=>{
     const list=document.getElementById('oq-list');
     if(!list) return;
     list.innerHTML=queue.length?queue.map((t,i)=>
       '<div style="display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.04);border:1px solid var(--bd);border-radius:7px;padding:9px 12px;font-size:12px;">'+
         '<span style="flex:1">'+escH(t)+'</span>'+
-        '<button onclick="queue.splice('+i+',1);localStorage.setItem(CANVAS_QUEUE_KEY,JSON.stringify(queue));renderQ()" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px">&#215;</button>'+
+        /* Was an inline onclick calling queue.splice(...) and renderQ(). Both
+           are LOCAL to this function, and an inline handler attribute runs in
+           the global scope - so every click threw ReferenceError: queue is not
+           defined and the row stayed. no-dead-controls did not catch it because
+           its inline-handler check skips any call containing a dot, and this
+           one began "queue.splice(". Bound properly instead, like the rest of
+           the file. */
+        '<button type="button" class="oq-del" data-oq="'+i+'" aria-label="Remove this task" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px">&#215;</button>'+
       '</div>'
     ).join(''):'<div style="font-size:12px;color:var(--t3);font-style:italic">No tasks queued.</div>';
+    list.querySelectorAll('[data-oq]').forEach(b=>on(b,'click',()=>{
+      const i=parseInt(b.dataset.oq,10);
+      if(!(i>=0)) return;
+      queue.splice(i,1);
+      try{ localStorage.setItem(CANVAS_QUEUE_KEY,JSON.stringify(queue)); }catch(e){}
+      renderQ();
+    }));
   };
   renderQ();
 
@@ -18917,7 +18967,20 @@ function _initCookieConsent(){
   document.body.appendChild(wrap);
   on($('cc-accept'),'click',()=>_setCookieConsent({analytics:true}));
   on($('cc-decline'),'click',()=>_setCookieConsent({analytics:false}));
-  on($('cc-manage'),'click',()=>{ _setCookieConsent({analytics:false}); try{ S.tab='settings'; goApp&&goApp(); render&&render(); toast&&toast('Manage cookie preferences below','info'); }catch(e){} });
+  /* `render` is not a function anywhere in the bundle, so `render&&render()` on
+     a bare undeclared identifier threw ReferenceError - inside a try, which
+     swallowed it along with the toast on the line after. Somebody pressing
+     Manage landed on Settings with no idea why. Sent to the Privacy pane, which
+     is where the control actually is. */
+  on($('cc-manage'),'click',()=>{
+    _setCookieConsent({analytics:false});
+    try{
+      S.tab='settings'; S.settingsPane='privacy';
+      if(typeof goApp==='function') goApp();
+      if(typeof setTab==='function') setTab('settings');
+      if(typeof toast==='function') toast('Analytics are off for now - turn them on here whenever you like.','info',5000);
+    }catch(e){}
+  });
 }
 window._cookieConsent = _cookieConsent;
 window._initCookieConsent = _initCookieConsent;
@@ -18937,13 +19000,37 @@ function _analyticsAllowed(){
   return !!(c && c.analytics && _analyticsId());
 }
 let _analyticsLoaded=false;
+/* WHETHER THE PROVIDER SCRIPT ACTUALLY LOADED.
+
+   Both providers are injected as third-party <script> tags, and the page's
+   Content-Security-Policy `script-src` allows neither googletagmanager.com nor
+   plausible.io. So pasting a tracking ID and consenting to analytics did
+   nothing at all, silently: the browser blocked the script, no error surfaced,
+   and Settings went on showing analytics as configured.
+
+   Widening the CSP is not something to do quietly - a third-party script gets
+   the same reach over this page as AMV's own code, and adding analytics is on
+   the list of changes that need the owner's say-so. So the block is DETECTED
+   and reported instead, and the Privacy screen says the truth: configured, and
+   not running, and why. */
+function _analyticsBlocked(){ try{ return loadStr('amv_analytics_blocked')==='1'; }catch(e){ return false; } }
+function _analyticsMarkBlocked(on){ try{ saveStr('amv_analytics_blocked', on?'1':''); }catch(e){} }
+try{ window._analyticsBlocked=_analyticsBlocked; }catch(e){}
 function _analyticsInit(){
   if(_analyticsLoaded || !_analyticsAllowed()) return;
   const id=_analyticsId();
+  const watch=(s)=>{
+    /* A CSP-blocked script fires `error` on the element. So does a network
+       failure or an ad-blocker - all three mean the same thing here, which is
+       that nothing is being measured. */
+    s.addEventListener('error',()=>{ _analyticsLoaded=false; _analyticsMarkBlocked(true); });
+    s.addEventListener('load',()=>{ _analyticsMarkBlocked(false); });
+  };
   try{
     if(/^G-/i.test(id)){
       const s=document.createElement('script');
       s.async=true; s.src='https://www.googletagmanager.com/gtag/js?id='+encodeURIComponent(id);
+      watch(s);
       document.head.appendChild(s);
       window.dataLayer = window.dataLayer||[];
       window.gtag = function(){ window.dataLayer.push(arguments); };
@@ -18952,6 +19039,7 @@ function _analyticsInit(){
     } else {
       const s=document.createElement('script');
       s.defer=true; s.dataset.domain=id; s.src='https://plausible.io/js/script.js';
+      watch(s);
       document.head.appendChild(s);
     }
     _analyticsLoaded=true;
@@ -22046,6 +22134,10 @@ const _SHORTCUTS=[
   { group:'Actions', items:[
     { keys:['⌘','⇧','O'], alt:['Ctrl','⇧','O'], label:'New chat' },
     { keys:['⌘','⇧','L'], alt:['Ctrl','⇧','L'], label:'Toggle light / dark theme' },
+    /* Bound in setupKeyboard and absent from this list, so the sheet that is
+       meant to BE the list did not mention a shortcut that works. Two keys do
+       the same thing; both are documented rather than one quietly omitted. */
+    { keys:['⌘','B'], alt:['Ctrl','B'], label:'Collapse / expand sidebar' },
     { keys:['⌘','⇧','D'], alt:['Ctrl','⇧','D'], label:'Collapse / expand sidebar' },
     { keys:['⌘','⇧','V'], alt:['Ctrl','⇧','V'], label:'Toggle voice mode' },
   ]},
@@ -22056,6 +22148,18 @@ const _SHORTCUTS=[
   ]},
 ];
 function _isMac(){ try{ return /Mac|iPhone|iPad/.test(navigator.platform)||/Mac/.test(navigator.userAgent); }catch(e){ return false; } }
+/* The same list as flat rows, for the About screen - which had its own
+   hand-written copy of six of these, with Ctrl printed on Macs. One list, two
+   presentations, so a binding cannot be documented two different ways. */
+function _shortcutRowsHTML(){
+  const mac=_isMac();
+  return _SHORTCUTS.map(sec=>sec.items.map(it=>{
+    const keys=(!mac && it.alt) ? it.alt : it.keys;
+    return '<div class="kbsr"><span>'+escH(it.label)+'</span><div>'+
+      keys.map(k=>'<kbd>'+escH(k)+'</kbd>').join('+')+'</div></div>';
+  }).join('')).join('');
+}
+try{ window._shortcutRowsHTML=_shortcutRowsHTML; }catch(e){}
 function openShortcutSheet(){
   const r=$('ovr'); if(!r) return;
   if($('ksheet-bg')) { closeShortcutSheet(); return; }

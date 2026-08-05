@@ -1555,3 +1555,34 @@ screen is not user-facing output.
 
 **Rule:** when two standing rules pull against each other, find the form that
 satisfies both and say which one you bent - do not silently drop either.
+
+## 123. Every keyboard shortcut was dead on macOS, and the cheat sheet said ⌘
+
+The shortcut sheet detects the platform and renders ⌘ symbols on a Mac. Every
+handler tested `e.ctrlKey` alone - which on a Mac is the Control key, not
+Command - so ⌘⇧O, ⌘⇧L, ⌘B, ⌘, ⌘/ ⌘⇧D and ⌘⇧V did nothing at all. The command
+palette was the only one that worked, because one file happened to write
+`(e.metaKey || e.ctrlKey)`.
+
+The screen that documents the shortcuts told Mac users exactly which dead key
+to press. There were also THREE lists of them and no two agreed - one of them
+labelled ⌘K "Search chats" when it opens the command palette.
+
+**Rule:** a shortcut sheet is a claim that those keys work. Render it from the
+same list the handlers are written against, and press the keys in a test - a
+binding nobody has fired is a binding nobody knows is bound.
+
+## 124. An assertion that fails on unrelated correct code is worse than none
+
+Three assertions in the new suite failed against a correct fix: one searched
+the whole bundle for "Search chats" and matched the sidebar's own search
+placeholder; one took `indexOf('Keyboard Shortcuts')` and landed in the i18n
+dictionary thousands of lines before the markup; one scanned for `ctrlKey` and
+flagged the block comment explaining the fix.
+
+Each would have been "passed" by loosening it. All three were wrong in the same
+way - matching text that happens to look like the thing, instead of the thing.
+
+**Rule:** anchor a source assertion on something structural (the markup, the
+function body, the declaration) and strip comments before scanning code. If a
+check fires on correct code even once, it is not yet a check.

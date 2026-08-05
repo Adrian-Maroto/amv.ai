@@ -2316,7 +2316,7 @@ function renderImgsView(){
     '</div>';
 
   on($('gen-img-btn'),'click',genImg);
-  on($('img-inp'),'keydown',e=>{if(e.key==='Enter'&&e.ctrlKey)genImg();});
+  on($('img-inp'),'keydown',e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey))genImg();});
   on($('clrimgs'),'click',()=>{S.imgs=[];renderImgGallery();});
   document.querySelectorAll('#srow .stb').forEach(b=>on(b,'click',()=>{S.imgStyle=b.dataset.s;document.querySelectorAll('#srow .stb').forEach(x=>x.classList.toggle('on',x===b));}));
   document.querySelectorAll('#rrow .rab').forEach(b=>on(b,'click',()=>{S.imgRatio=b.dataset.r;document.querySelectorAll('#rrow .rab').forEach(x=>x.classList.toggle('on',x===b));}));
@@ -2459,7 +2459,7 @@ function renderVideoView(){
       '<div class="vg" id="vgrid"></div>'+
     '</div>';
   on($('gvb'),'click',genVid);
-  on($('vp'),'keydown',e=>{if(e.key==='Enter'&&e.ctrlKey)genVid();});
+  on($('vp'),'keydown',e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey))genVid();});
   on($('clrvids'),'click',()=>{S.vids=[];renderVidGrid();});
   renderVidGrid();
 }

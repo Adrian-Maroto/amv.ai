@@ -134,6 +134,10 @@ const _SHORTCUTS=[
   { group:'Actions', items:[
     { keys:['⌘','⇧','O'], alt:['Ctrl','⇧','O'], label:'New chat' },
     { keys:['⌘','⇧','L'], alt:['Ctrl','⇧','L'], label:'Toggle light / dark theme' },
+    /* Bound in setupKeyboard and absent from this list, so the sheet that is
+       meant to BE the list did not mention a shortcut that works. Two keys do
+       the same thing; both are documented rather than one quietly omitted. */
+    { keys:['⌘','B'], alt:['Ctrl','B'], label:'Collapse / expand sidebar' },
     { keys:['⌘','⇧','D'], alt:['Ctrl','⇧','D'], label:'Collapse / expand sidebar' },
     { keys:['⌘','⇧','V'], alt:['Ctrl','⇧','V'], label:'Toggle voice mode' },
   ]},
@@ -144,6 +148,18 @@ const _SHORTCUTS=[
   ]},
 ];
 function _isMac(){ try{ return /Mac|iPhone|iPad/.test(navigator.platform)||/Mac/.test(navigator.userAgent); }catch(e){ return false; } }
+/* The same list as flat rows, for the About screen - which had its own
+   hand-written copy of six of these, with Ctrl printed on Macs. One list, two
+   presentations, so a binding cannot be documented two different ways. */
+function _shortcutRowsHTML(){
+  const mac=_isMac();
+  return _SHORTCUTS.map(sec=>sec.items.map(it=>{
+    const keys=(!mac && it.alt) ? it.alt : it.keys;
+    return '<div class="kbsr"><span>'+escH(it.label)+'</span><div>'+
+      keys.map(k=>'<kbd>'+escH(k)+'</kbd>').join('+')+'</div></div>';
+  }).join('')).join('');
+}
+try{ window._shortcutRowsHTML=_shortcutRowsHTML; }catch(e){}
 function openShortcutSheet(){
   const r=$('ovr'); if(!r) return;
   if($('ksheet-bg')) { closeShortcutSheet(); return; }
