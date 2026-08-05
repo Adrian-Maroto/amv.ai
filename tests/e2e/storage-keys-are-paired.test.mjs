@@ -113,8 +113,18 @@ section('Every key is both written and read, or is named here with the reason');
     amv_github:             'a GitHub token pasted by the person connecting it',
     amv_slack:              'a Slack webhook, likewise',
     amv_currency:           'a currency override; the geo lookup fills it otherwise',
-    amv_mute_chime:         'set from the settings UI through a computed key',
-    amv_voice_rate:         'speech rate, set from the voice panel',
+    /* amv_mute_chime was excused here as "set from the settings UI through a
+       computed key". That was not true of anything: no screen wrote it, so
+       _playDoneChime's mute check could never fire and the sound could not be
+       turned off - while its own comment called it "respectful - muteable".
+       The excuse was where the defect hid. There is a real switch now, in
+       Settings -> Appearance -> Sound, so the entry is gone and the pairing
+       check covers it like any other preference. */
+    /* amv_voice_rate was excused as "set from the voice panel". There was no
+       voice panel and no control of any kind, so read-aloud was locked at 1.0x
+       for everybody - and speaking speed is the first thing somebody using
+       read-aloud wants to change. Like the chime above it, the excuse was
+       doing the hiding. Settings -> Appearance -> Sound sets it now. */
     amv_plugin_web:         'per-plugin off switch; absent means on, which is the default',
     amv_stripe_customer:    'cached by the checkout return path when the processor sends one',
     amv_mkt_verified:       'set by the marketplace seller verification flow',

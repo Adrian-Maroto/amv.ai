@@ -761,7 +761,12 @@ async function _callAI(msgs, _opts) {
      so a quick question on the cheap engine cannot spend like a research run.
      The searches themselves are metered into the spend ledger server-side and
      sit under the same per-plan dollar backstop as tokens. */
-  const _webAllowed = (loadStr('amv_cap_websearch')!=='0') && (loadStr('amv_plugin_web')!=='0');
+  /* One gate, not two. This used to be ANDed with `loadStr('amv_plugin_web')
+     !== '0'`, and no screen in the product has ever written amv_plugin_web -
+     so that half was permanently true and looked like a second control that
+     somebody might go and switch. Settings -> Capabilities -> Web search is
+     the switch, and it writes amv_cap_websearch. */
+  const _webAllowed = (loadStr('amv_cap_websearch')!=='0');
   const _searchBudget = { fast:2, core:3, coding:5, smart:5 };
   const _researchBudget = { normal:5, deep:30, max:60 };
   /* Research mode is an explicit request for depth, so its budget comes from the

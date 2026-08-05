@@ -1586,3 +1586,25 @@ way - matching text that happens to look like the thing, instead of the thing.
 **Rule:** anchor a source assertion on something structural (the markup, the
 function body, the declaration) and strip comments before scanning code. If a
 check fires on correct code even once, it is not yet a check.
+
+## 125. The excuse list is where the defect hides
+
+`storage-keys-are-paired` allows a key to be read-but-never-written if it is
+named with a reason. Two of those reasons were simply false:
+
+  amv_mute_chime:  'set from the settings UI through a computed key'
+  amv_voice_rate:  'speech rate, set from the voice panel'
+
+There was no such settings UI and no voice panel. So the completion chime could
+not be turned off - while `_playDoneChime`'s own comment called it "respectful -
+muteable" - and read-aloud was locked at 1.0x for everyone. I wrote both excuses
+myself, and each one converted a real missing control into a line of prose that
+made the check go quiet.
+
+The same read found "your feedback was sent to the team" over a report that only
+ever reached localStorage, and a second web-search gate ANDed into the first
+that no screen could ever set.
+
+**Rule:** an allowlist entry is a claim, and claims get checked. Write the
+reason as something falsifiable ("Settings -> Appearance -> Sound writes it"),
+and when you add one, go and look at the screen you just named.

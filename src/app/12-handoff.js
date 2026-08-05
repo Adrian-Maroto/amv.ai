@@ -1742,8 +1742,41 @@ function _renderSetPaneInner(){
         '<div class="br2"><div><div class="opt-name">Reduce animation</div><div class="opt-desc">Minimize motion in streaming responses and interface elements.</div></div>'+
           '<label class="sw"><input type="checkbox" id="motion-sw" '+(loadStr('amv_reduce_motion')==='1'?'checked':'')+'><span class="sw-sl"></span></label>'+
         '</div>'+
+      '</div>'+
+      /* THE CHIME SAID IT WAS MUTEABLE AND NOTHING COULD MUTE IT.
+         _playDoneChime checks `amv_mute_chime === '1'` and its own comment
+         calls the sound "respectful - muteable", but no screen anywhere ever
+         wrote that key, so the check could never be true. A sound the person
+         cannot switch off is not respectful, and the code claiming otherwise
+         is the reason nobody noticed. Here is the switch. */
+      '<div class="ss2"><h3>Sound</h3>'+
+        '<div class="br2"><div><div class="opt-name">Completion chime</div><div class="opt-desc">A soft two-note sound when a long reply finishes, or when one finishes while you are in another tab.</div></div>'+
+          '<label class="sw"><input type="checkbox" id="chime-sw" '+(loadStr('amv_mute_chime')==='1'?'':'checked')+'><span class="sw-sl"></span></label>'+
+        '</div>'+
+        /* Read-aloud already read `amv_voice_rate` and nothing could write it,
+           so every voice was locked to 1.0x. Speaking speed is the setting
+           people using read-aloud change first. */
+        '<div class="br2" style="margin-top:12px"><div><div class="opt-name">Read-aloud speed</div><div class="opt-desc">How fast AMV speaks when you use read-aloud.</div></div>'+
+          '<select class="sel" id="voice-rate-sel" style="max-width:150px">'+
+            [['0.75','Slower'],['1','Normal'],['1.25','Faster'],['1.5','Fastest']]
+              .map(o=>'<option value="'+o[0]+'"'+((loadStr('amv_voice_rate')||'1')===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+
+          '</select>'+
+        '</div>'+
       '</div>';
     on($('motion-sw'),'change',function(){ saveStr('amv_reduce_motion',this.checked?'1':'0'); _applyReduceMotion(); toast(this.checked?'Reduced motion on':'Reduced motion off','info',2000); });
+    /* Checked means the chime is ON, so the stored key is the inverse - it is
+       named for muting because that is what the player already reads. */
+    on($('chime-sw'),'change',function(){
+      saveStr('amv_mute_chime',this.checked?'0':'1');
+      if(this.checked){ try{ _playDoneChime(); }catch(e){} }
+      toast(this.checked?'Completion chime on':'Completion chime off','info',2000);
+    });
+    on($('voice-rate-sel'),'change',function(){
+      saveStr('amv_voice_rate', this.value);
+      /* Spoken back at the new speed, because a number in a dropdown means
+         nothing until you hear it. */
+      try{ if(typeof AMVSpeech!=='undefined' && AMVSpeech.speak) AMVSpeech.speak('Reading at this speed.'); }catch(e){}
+    });
     on($('dark-sw'),'change',function(){ document.body.classList.toggle('light',!this.checked); saveStr('amv_theme',this.checked?'dark':'light'); });
     pane.querySelectorAll('[data-accent]').forEach(sw=>on(sw,'click',()=>{
       applyAccent(sw.dataset.accent);
@@ -2335,12 +2368,31 @@ function openFeedback(kind){
   on($('fb-send'),'click',()=>{
     const text=($('fb-text')?$('fb-text').value:'').trim();
     if(!text){ $('fb-text')&&$('fb-text').focus(); return; }
-    _submitFeedback(curKind, text, ($('fb-email')?$('fb-email').value.trim():''));
+    const res=_submitFeedback(curKind, text, ($('fb-email')?$('fb-email').value.trim():''));
     closeOvr();
-    toast('Thank you - your feedback was sent to the team.','success',3500);
+    /* IT SAID "SENT TO THE TEAM" AND NOTHING LEFT THE DEVICE.
+
+       _submitFeedback writes to localStorage and only transmits if
+       `amv_feedback_endpoint` is set - a key no screen in the product can
+       write. There is no server route for this either: /v1/feedback is the
+       thumbs up/down counter and deliberately stores no content, so it would
+       refuse a bug report. Somebody reporting a bug was thanked, told the team
+       had it, and their report sat in their own browser for ever.
+
+       So: say what happened, and point at the channel that does reach a human. */
+    if(res && res.delivered){
+      toast('Thank you - your feedback was sent to the team.','success',3500);
+    } else if(_supportEmail()){
+      toast('Saved. Nothing is transmitted from here, so to reach a person use Email Support in the Help Center - it opens a message to '+_supportEmail()+'.','info',9000);
+    } else {
+      toast('Saved on this device. AMV has no channel configured to send it on, so nobody will see it until the operator sets a support address - ask them to.','info',9000);
+    }
   });
 }
+/* Returns what actually happened, so the caller cannot thank somebody for a
+   delivery that did not occur. */
 function _submitFeedback(kind, text, email){
+  const out={ stored:false, delivered:false };
   try{
     const entry={ id:'fb'+Date.now(), kind, text, email, ts:Date.now(),
       context:{ tab:S.tab, plan:loadStr('amv_plan')||'free', lang:_lang(), ua:navigator.userAgent.slice(0,120) } };
@@ -2348,11 +2400,15 @@ function _submitFeedback(kind, text, email){
     let list=[]; try{ list=JSON.parse(loadStr('amv_feedback')||'[]'); }catch(e){}
     list.unshift(entry); if(list.length>200) list.length=200;
     saveStr('amv_feedback', JSON.stringify(list));
+    out.stored=true;
     try{ track('feedback_submitted',{kind}); }catch(e){}
-    // send to support email / endpoint if the operator configured one
+    // send to the operator's endpoint if there is one. sendBeacon returns
+    // false when the browser refuses to queue it, which is the only signal
+    // available here - and it is more than was being read before.
     const ep=loadStr('amv_feedback_endpoint');
-    if(ep){ try{ navigator.sendBeacon(ep, JSON.stringify(entry)); }catch(e){} }
+    if(ep){ try{ out.delivered=!!navigator.sendBeacon(ep, JSON.stringify(entry)); }catch(e){} }
   }catch(e){ _logErr('submitFeedback',e); }
+  return out;
 }
 try{ window.openFeedback=openFeedback; }catch(e){}
 /* Changelog / What's New - transparent product updates. Newest first. */
