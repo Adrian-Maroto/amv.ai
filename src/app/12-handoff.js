@@ -2402,6 +2402,25 @@ function renderCk(){
   document.getElementById('ck-nec')?.addEventListener('click',accCk);
 }
 
+/* WHEN THESE DOCUMENTS TOOK EFFECT.
+
+   Both said `Effective ' + new Date().toLocaleDateString()`, so the date was
+   whatever day you happened to open them. That is not a formatting nicety: the
+   Privacy Policy's own section 9 promises "material changes will be noted with
+   a new effective date", and a date that moves every day makes that promise
+   impossible to keep or to check. Somebody trying to work out whether the terms
+   changed since they agreed has nothing to compare.
+
+   A constant, bumped by hand when the text below materially changes - which is
+   the only thing an effective date can honestly mean. */
+const LEGAL_EFFECTIVE = '2026-08-05';
+function _legalEffective(){
+  try{ return new Date(LEGAL_EFFECTIVE + 'T00:00:00').toLocaleDateString(undefined,
+        { year:'numeric', month:'long', day:'numeric' }); }
+  catch(e){ return LEGAL_EFFECTIVE; }
+}
+try{ window._legalEffective=_legalEffective; }catch(e){}
+
 /* -- Terms & Privacy modal -- */
 function openTerms(){
   const r=document.getElementById('ovr'); if(!r) return;
@@ -2409,7 +2428,7 @@ function openTerms(){
     '<div class="ov" id="terms-bg"><div class="ob wide tall" onclick="event.stopPropagation()">'+
       '<button class="oc" onclick="closeOvr()">&#215;</button>'+
       '<h2>Terms of Service</h2>'+
-      '<p class="ob-sub">Effective '+new Date().toLocaleDateString()+' - please read carefully.</p>'+
+      '<p class="ob-sub">Effective '+escH(_legalEffective())+' - please read carefully.</p>'+
       '<div class="ts">'+
         '<h4>1. Acceptance</h4>By using AMV.AI you agree to these terms. If you disagree, stop using the platform.'+
         '<h4>2. Content Policy</h4>Prohibited: explicit sexual/pornographic content; child sexual abuse material (CSAM - all violations reported to NCMEC and law enforcement); content intended to harass or harm; impersonation for fraud; attempts to generate malware or facilitate illegal activity. We may suspend accounts that violate this policy.'+
@@ -2436,7 +2455,7 @@ function openPrivacy(){
     '<div class="ov" id="priv-bg"><div class="ob wide tall" onclick="event.stopPropagation()">'+
       '<button class="oc" onclick="closeOvr()">&#215;</button>'+
       '<h2>Privacy Policy</h2>'+
-      '<p class="ob-sub">Effective '+new Date().toLocaleDateString()+' - how AMV.AI handles your data.</p>'+
+      '<p class="ob-sub">Effective '+escH(_legalEffective())+' - how AMV.AI handles your data.</p>'+
       '<div class="ts">'+
         '<h4>1. What we collect</h4>'+
           '<b>Account:</b> your name and email. '+
@@ -2444,12 +2463,20 @@ function openPrivacy(){
           '<b>Usage:</b> counts and timestamps of requests, for limits, billing, and abuse prevention. '+
           '<b>Payment:</b> handled entirely by our payment processor - we never see or store your full card number.'+
         '<h4>2. How we store it</h4>Your account and content are stored on Cloudflare\u2019s infrastructure (KV / D1) in encrypted transit and at rest. Passwords are never stored in plain text - they are salted and hashed with PBKDF2-SHA256 at current OWASP-recommended strength. Access tokens are short-lived and can be revoked.'+
+        /* CATEGORIES, not the vendor's name. AMV is branded as AMV throughout,
+           and naming the model provider in copy every visitor can open is the
+           one place that leaked. GDPR Art. 13(1)(e) asks for "the recipients or
+           categories of recipients" - categories are sufficient on their own,
+           and the current list is offered on request, which is how a
+           subprocessor list is normally maintained. Nothing is hidden: what
+           leaves, why, and to what kind of company is all still stated. */
         '<h4>3. Who we share it with</h4>We do <b>not</b> sell your data. We share the minimum necessary with the providers that make the service work: '+
-          '<b>Anthropic</b> (processes your prompts to generate AI responses), '+
+          'our <b>AI model provider</b> (processes your prompts to generate AI responses), '+
           '<b>Stripe</b> (payments), '+
           '<b>Resend</b> (transactional email such as password resets), and '+
           '<b>Twilio</b> (only if you enable text messaging). '+
-          'If you sign in with Google, Google authenticates you. Each provider handles data under its own privacy terms.'+
+          'If you sign in with Google, Google authenticates you. Each provider handles data under its own privacy terms. '+
+          'For the current list of the specific companies in each category, contact us at '+contact+'.'+
         '<h4>4. What we do NOT do</h4>We do not sell or rent your data, do not show third-party ads, and do not use your private chats to train models.'+
         '<h4>5. Your rights</h4>You can access, export, or delete your data. Deleting your account removes your account record, content, and automations from our storage. To exercise these rights, use the controls in Settings or contact us at '+contact+'.'+
         '<h4>6. Data retention</h4>We keep your data while your account is active. Usage counters expire automatically. When you delete your account, your data is removed from active storage; residual copies in routine backups age out on their normal cycle.'+

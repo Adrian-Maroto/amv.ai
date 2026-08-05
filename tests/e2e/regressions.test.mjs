@@ -304,8 +304,22 @@ ok(legal.privH2 === 'Privacy Policy' && legal.termsH2 === 'Terms of Service',
    'privacy and terms are SEPARATE documents', { p: legal.privH2, t: legal.termsH2 });
 ok(/PBKDF2/.test(legal.privText) && /Cloudflare/.test(legal.privText),
    'it accurately describes storage & password hashing (PBKDF2, Cloudflare)');
-ok(/Anthropic/.test(legal.privText) && /Stripe/.test(legal.privText),
+/* Recipients still have to be disclosed - that is what this assertion has
+   always been for. What changed is HOW the model provider is disclosed: naming
+   an AI company in copy every visitor can open is the one thing AMV's branding
+   rule forbids, and GDPR Art. 13(1)(e) asks for "the recipients OR categories
+   of recipients", so a category plus a route to the specific list is sufficient
+   on its own. The weak move here would be to delete the assertion; instead it
+   now checks all four parts. */
+ok(/Stripe/.test(legal.privText) && /Resend/.test(legal.privText),
    'it names the real third parties that receive data');
+ok(/AI model provider/i.test(legal.privText),
+   'and discloses that prompts go to a model provider', /AI model provider/i.test(legal.privText));
+ok(/current list of the specific companies/i.test(legal.privText),
+   'with a way to get the specific names on request', /current list/i.test(legal.privText));
+ok(!/Anthropic|OpenAI|Gemini/.test(legal.privText),
+   'without naming an AI company in user-facing copy',
+   (legal.privText.match(/Anthropic|OpenAI|Gemini/) || [])[0]);
 ok(/access, export, or delete/i.test(legal.privText) && /do not sell/i.test(legal.privText),
    'it includes the required rights + "do not sell" language');
 ok(!/hashed with SHA-256/.test(legal.termsText) && !/data stored locally in your browser/.test(legal.termsText),

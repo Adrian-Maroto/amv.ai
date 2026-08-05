@@ -1532,3 +1532,26 @@ The temptation is to relax the production check so the test passes.
 **Rule:** when a test fails after a fix, ask which of the two is the unrealistic
 one. A fake that omits a field the real object always has is the bug, and every
 caller that starts reading that field will "fail" against it.
+
+## 122. A legal document dated "today" cannot keep its own promise
+
+Both the Terms and the Privacy Policy rendered `Effective ` +
+`new Date().toLocaleDateString()`, so the date was whatever day you opened
+them. The Privacy Policy's own section 9 promises "material changes will be
+noted with a new effective date" - a date that moves every day makes that
+promise impossible to keep and impossible to check. Somebody working out
+whether the terms changed since they agreed had nothing to compare.
+
+It is a constant now, bumped by hand when the text materially changes, which is
+the only thing an effective date can honestly mean.
+
+The same document also named the AI model vendor, in copy every visitor can
+open, against a standing branding directive. The resolution was not to delete
+the disclosure: GDPR Art. 13(1)(e) asks for "the recipients OR categories of
+recipients", so it names the category and offers the specific list on request.
+The operator-only setup pane still names the vendor, because that is where the
+owner is told which console issues their key, and an owner-only configuration
+screen is not user-facing output.
+
+**Rule:** when two standing rules pull against each other, find the form that
+satisfies both and say which one you bent - do not silently drop either.
