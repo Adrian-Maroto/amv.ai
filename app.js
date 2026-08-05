@@ -7976,11 +7976,14 @@ function _renderTeamManage(vc, team){
   on($('seat-manage'),'click',async()=>{
     const say=t=>{ const s2=$('seat-manage-say'); if(s2) s2.textContent=t||''; };
     const btn=$('seat-manage'); if(btn){ btn.disabled=true; btn.textContent='Opening\u2026'; }
+    /* Opened on the click - awaiting the portal call first spends the user
+       activation and the browser refuses the window. See _preopenPay. */
+    const pre=(typeof _preopenPay==='function')?_preopenPay():null;
     try{
       const url=await AMV_API.portal((S.user&&S.user.email)||'');
-      if(url) window.open(url,'_blank','noopener');
-      else say('Could not open billing just now. Nothing was changed.');
-    }catch(e){ say((e&&e.message)||'Could not open billing just now. Nothing was changed.'); }
+      if(url) _openExternalPay(url,null,'portal',pre);
+      else { if(typeof _closePay==='function') _closePay(pre); say('Could not open billing just now. Nothing was changed.'); }
+    }catch(e){ if(typeof _closePay==='function') _closePay(pre); say((e&&e.message)||'Could not open billing just now. Nothing was changed.'); }
     finally{ if(btn){ btn.disabled=false; btn.textContent='Change seats'; } }
   });
   on($('team-leave'),'click',async()=>{
@@ -11284,9 +11287,20 @@ function renderBillingView(targetEl){
       ):'')+
     '</div></div>';
 
+  /* The billing portal is where a paying customer changes their card or
+     cancels. It was opened AFTER awaiting the session call, which spends the
+     click's user activation - so Safari and Firefox blocked it and the
+     customer's only route to their own billing was a pop-up warning. Somebody
+     who cannot cancel from inside the product asks their bank instead, and a
+     chargeback costs far more than the subscription. Opened on the click now. */
   const openPortal=async ()=>{
-    if(liveBackend){ const cust=loadStr('amv_stripe_customer'); try{ const u=await AMV_API.portal(cust||email); if(u){ window.open(u,'_blank','noopener'); return; } }catch(e){} }
-    if(portal){ window.open(portal,'_blank','noopener'); return; }
+    const pre=(typeof _preopenPay==='function')?_preopenPay():null;
+    if(liveBackend){
+      const cust=loadStr('amv_stripe_customer');
+      try{ const u=await AMV_API.portal(cust||email); if(u){ _openExternalPay(u,null,'portal',pre); return; } }catch(e){}
+    }
+    if(portal){ _openExternalPay(portal,null,'portal',pre); return; }
+    if(typeof _closePay==='function') _closePay(pre);
     toast('Billing portal activates once your backend is connected','info',4000);
   };
   const pb=$('portal-open-btn'); if(pb) on(pb,'click',openPortal);
@@ -11296,11 +11310,15 @@ function renderBillingView(targetEl){
       /* The processor is the only thing that can actually stop the billing, so
          that is where this goes. Never a local flag pretending it worked. */
       say('Opening your billing to cancel\u2026');
+      /* Same activation rule as Manage billing above. A cancel button the
+         browser blocks is the shortest path to a chargeback. */
+      const pre=(typeof _preopenPay==='function')?_preopenPay():null;
       try{
         const url=await AMV_API.portal(loadStr('amv_stripe_customer')||email);
-        window.open(url,'_blank','noopener');
+        _openExternalPay(url,null,'portal',pre);
         say('Cancel it in the window that just opened. Nothing has changed yet.');
       }catch(e){
+        if(typeof _closePay==='function') _closePay(pre);
         say('Could not open billing, so nothing was cancelled. Try again, or email support and we will do it for you.');
       }
       return;
@@ -24603,13 +24621,17 @@ function _renderInvestPane(pane){
     const btn=$('inv-link');
     if(btn) btn.disabled=true;
     if(say) say.textContent='Opening your institution\u2019s secure sign-in\u2026';
+    /* Opened during the click. Awaiting linkStart first spends the user
+       activation, and a blocked window here means somebody cannot connect a
+       bank account at all - see _preopenPay. */
+    const pre=(typeof _preopenPay==='function')?_preopenPay():null;
     try{
       const url=await AMVFinance.linkStart();
       /* Remembered so the return can be recognised even if they come back in a
          new tab, or the redirect drops the query string. */
       try{ saveStr('amv_fin_pending','1'); }catch(e){}
       if(say) say.textContent='Continue in the window that opened. Come back here when you are done.';
-      window.open(url,'_blank','noopener');
+      _openExternalPay(url,null,'finance',pre);
       /* Replaced rather than renamed. Changing the id left THIS handler still
          bound to the same element, so the next click - the one labelled "I have
          finished linking" - started a second link and opened another sign-in
@@ -24622,6 +24644,7 @@ function _renderInvestPane(pane){
       }
       _wireInvDone(pane);
     }catch(e){
+      if(typeof _closePay==='function') _closePay(pre);
       if(btn) btn.disabled=false;
       /* needs_service is the operator not having switched it on, which is a
          different thing from a failure and is said as itself. */

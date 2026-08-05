@@ -433,11 +433,14 @@ function _renderTeamManage(vc, team){
   on($('seat-manage'),'click',async()=>{
     const say=t=>{ const s2=$('seat-manage-say'); if(s2) s2.textContent=t||''; };
     const btn=$('seat-manage'); if(btn){ btn.disabled=true; btn.textContent='Opening\u2026'; }
+    /* Opened on the click - awaiting the portal call first spends the user
+       activation and the browser refuses the window. See _preopenPay. */
+    const pre=(typeof _preopenPay==='function')?_preopenPay():null;
     try{
       const url=await AMV_API.portal((S.user&&S.user.email)||'');
-      if(url) window.open(url,'_blank','noopener');
-      else say('Could not open billing just now. Nothing was changed.');
-    }catch(e){ say((e&&e.message)||'Could not open billing just now. Nothing was changed.'); }
+      if(url) _openExternalPay(url,null,'portal',pre);
+      else { if(typeof _closePay==='function') _closePay(pre); say('Could not open billing just now. Nothing was changed.'); }
+    }catch(e){ if(typeof _closePay==='function') _closePay(pre); say((e&&e.message)||'Could not open billing just now. Nothing was changed.'); }
     finally{ if(btn){ btn.disabled=false; btn.textContent='Change seats'; } }
   });
   on($('team-leave'),'click',async()=>{

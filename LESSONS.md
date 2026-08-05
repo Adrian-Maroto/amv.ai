@@ -1632,3 +1632,23 @@ reads the clipboard or asks for a device permission must be reached
 SYNCHRONOUSLY from the user's gesture. If a URL has to be fetched first, open
 the tab empty on the click and navigate it when the answer arrives - and close
 it again if the answer never comes.
+
+## 127. A detector that stops at the nearest block finds nothing
+
+The activation sweep from lesson 126 was extended to cover the billing portal
+and bank linking. The first version of the standing check walked backwards from
+each `window.open(` to the nearest enclosing `{` and looked for an `await`.
+
+It passed a deliberately broken billing portal. The open sits inside an `if`,
+and the await is a level or two above it, so "nearest block" contained no await
+and the check was silent - on the exact line the sweep had just fixed.
+
+Three things had to be right before it caught anything: walk out to the
+enclosing FUNCTION rather than the nearest block; strip comments first, because
+the note explaining the rule quotes the call it is looking for; and handler
+shape does not help - `on(btn,'click',openPortal)` with `const openPortal=async
+()=>{}` matches no inline-handler pattern at all.
+
+**Rule:** after writing a detector, break the thing it detects and watch it
+fail. A sweep that reports "clean" without ever having been shown a dirty tree
+has told you nothing.

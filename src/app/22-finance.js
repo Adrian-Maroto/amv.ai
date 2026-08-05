@@ -358,13 +358,17 @@ function _renderInvestPane(pane){
     const btn=$('inv-link');
     if(btn) btn.disabled=true;
     if(say) say.textContent='Opening your institution\u2019s secure sign-in\u2026';
+    /* Opened during the click. Awaiting linkStart first spends the user
+       activation, and a blocked window here means somebody cannot connect a
+       bank account at all - see _preopenPay. */
+    const pre=(typeof _preopenPay==='function')?_preopenPay():null;
     try{
       const url=await AMVFinance.linkStart();
       /* Remembered so the return can be recognised even if they come back in a
          new tab, or the redirect drops the query string. */
       try{ saveStr('amv_fin_pending','1'); }catch(e){}
       if(say) say.textContent='Continue in the window that opened. Come back here when you are done.';
-      window.open(url,'_blank','noopener');
+      _openExternalPay(url,null,'finance',pre);
       /* Replaced rather than renamed. Changing the id left THIS handler still
          bound to the same element, so the next click - the one labelled "I have
          finished linking" - started a second link and opened another sign-in
@@ -377,6 +381,7 @@ function _renderInvestPane(pane){
       }
       _wireInvDone(pane);
     }catch(e){
+      if(typeof _closePay==='function') _closePay(pre);
       if(btn) btn.disabled=false;
       /* needs_service is the operator not having switched it on, which is a
          different thing from a failure and is said as itself. */

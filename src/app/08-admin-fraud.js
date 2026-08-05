@@ -1098,9 +1098,20 @@ function renderBillingView(targetEl){
       ):'')+
     '</div></div>';
 
+  /* The billing portal is where a paying customer changes their card or
+     cancels. It was opened AFTER awaiting the session call, which spends the
+     click's user activation - so Safari and Firefox blocked it and the
+     customer's only route to their own billing was a pop-up warning. Somebody
+     who cannot cancel from inside the product asks their bank instead, and a
+     chargeback costs far more than the subscription. Opened on the click now. */
   const openPortal=async ()=>{
-    if(liveBackend){ const cust=loadStr('amv_stripe_customer'); try{ const u=await AMV_API.portal(cust||email); if(u){ window.open(u,'_blank','noopener'); return; } }catch(e){} }
-    if(portal){ window.open(portal,'_blank','noopener'); return; }
+    const pre=(typeof _preopenPay==='function')?_preopenPay():null;
+    if(liveBackend){
+      const cust=loadStr('amv_stripe_customer');
+      try{ const u=await AMV_API.portal(cust||email); if(u){ _openExternalPay(u,null,'portal',pre); return; } }catch(e){}
+    }
+    if(portal){ _openExternalPay(portal,null,'portal',pre); return; }
+    if(typeof _closePay==='function') _closePay(pre);
     toast('Billing portal activates once your backend is connected','info',4000);
   };
   const pb=$('portal-open-btn'); if(pb) on(pb,'click',openPortal);
@@ -1110,11 +1121,15 @@ function renderBillingView(targetEl){
       /* The processor is the only thing that can actually stop the billing, so
          that is where this goes. Never a local flag pretending it worked. */
       say('Opening your billing to cancel\u2026');
+      /* Same activation rule as Manage billing above. A cancel button the
+         browser blocks is the shortest path to a chargeback. */
+      const pre=(typeof _preopenPay==='function')?_preopenPay():null;
       try{
         const url=await AMV_API.portal(loadStr('amv_stripe_customer')||email);
-        window.open(url,'_blank','noopener');
+        _openExternalPay(url,null,'portal',pre);
         say('Cancel it in the window that just opened. Nothing has changed yet.');
       }catch(e){
+        if(typeof _closePay==='function') _closePay(pre);
         say('Could not open billing, so nothing was cancelled. Try again, or email support and we will do it for you.');
       }
       return;

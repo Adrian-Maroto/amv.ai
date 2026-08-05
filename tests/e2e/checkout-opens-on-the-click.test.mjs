@@ -155,7 +155,8 @@ section('Every money button pre-opens, not just the ones tested above');
   /* The property. Team seats and marketplace purchases go through the same
      shape and were affected identically - a check on three buttons would leave
      the largest sale AMV makes uncovered. */
-  const files = ['09-checkout-plans.js', '06-team-market.js', '07-workspace-memory.js'];
+  const files = ['09-checkout-plans.js', '06-team-market.js', '07-workspace-memory.js',
+                 '08-admin-fraud.js', '22-finance.js'];
   const bad = [];
   for (const f of files) {
     const s = readFileSync(join(ROOT, 'src', 'app', f), 'utf8');
@@ -171,6 +172,55 @@ section('Every money button pre-opens, not just the ones tested above');
   }
   ok(bad.length === 0,
      'no payment opened after an await goes without a pre-opened tab', bad);
+}
+
+section('And nothing else opens a window after an await');
+{
+  /* The property beyond payments. The same rule governs the billing portal -
+     where a paying customer changes their card or cancels - and connecting a
+     bank. A blocked cancel button is the shortest path there is to a
+     chargeback, which costs more than the subscription it ends.
+
+     Finding the enclosing FUNCTION matters, and getting it wrong is why the
+     first version of this check passed over a deliberately broken billing
+     portal: the open sits inside an `if`, and the await is a level or two
+     above it, so stopping at the nearest block finds nothing. Comments are
+     stripped first, because the note explaining all this quotes the very call
+     it is looking for. */
+  const strip = (x) => x.replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' '))
+                        .replace(/(^|[^:])\/\/[^\n]*/g, (m, p) => p);
+  const lateOpens = (raw) => {
+    const src = strip(raw); const out = [];
+    let i = -1;
+    while ((i = src.indexOf('window.open(', i + 1)) >= 0) {
+      let k = i, guard = 0, found = false;
+      while (k > 0 && guard++ < 40) {
+        let d = 0, j = k;
+        while (j > 0) {
+          const c = src[j];
+          if (c === '}') d++;
+          else if (c === '{') { if (d === 0) break; d--; }
+          j--;
+        }
+        if (j <= 0) break;
+        if (/\bawait\s/.test(src.slice(j, i))) { found = true; break; }
+        const head = src.slice(Math.max(0, j - 60), j);
+        if (/=>\s*$|function[^{]*\)\s*$|\)\s*$/.test(head) && /=>|function/.test(head)) break;
+        k = j - 1;
+      }
+      if (found) out.push(src.slice(0, i).split('\n').length);
+    }
+    return out;
+  };
+  const bad = [];
+  for (const f of ['06-team-market.js', '08-admin-fraud.js', '22-finance.js',
+                   '09-checkout-plans.js', '07-workspace-memory.js', '03-sessions.js',
+                   '12-handoff.js', '11-design-code.js']) {
+    const lines = lateOpens(readFileSync(join(ROOT, 'src', 'app', f), 'utf8'));
+    lines.forEach(n => bad.push(`${f}:${n}`));
+  }
+  ok(bad.length === 0,
+     'every window opened from a handler is opened before its await', bad);
 }
 
 section('The pre-opened tab cannot reach back into AMV');
