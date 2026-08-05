@@ -665,6 +665,10 @@ function stopGenerating(){
 }
 try{ window.stopGenerating=stopGenerating; }catch(e){}
 
+/* Mark an Error whose message was written for a person to read, so nothing
+   downstream tries to improve it. */
+function _saidPlainly(err){ try{ err._saidPlainly = true; }catch(e){} return err; }
+
 async function _callAI(msgs, _opts) {
   _opts = _opts || {};
   /* The tool budget resets here rather than in sendMsg, because Regenerate,
@@ -830,7 +834,7 @@ async function _callAI(msgs, _opts) {
       });
     // offline guard
     if(typeof navigator!=='undefined' && navigator.onLine===false){
-      throw new Error('You appear to be offline. Check your connection and retry.');
+      throw _saidPlainly(new Error('You appear to be offline. Check your connection and retry.'));
     }
     // fetch with timeout + automatic retry on transient failures (429/5xx/network)
     let res, _attempt=0, _maxRetries=2;
@@ -869,7 +873,10 @@ async function _callAI(msgs, _opts) {
         const err=await res.json().catch(()=>({}));
         const raw=err?.error?.message||'';
         AEGIS.log('api_error',{status:res.status,raw:raw.slice(0,200)}); AEGIS.recordError();
-        throw new Error(aegisErrorMessage(res.status, raw));
+        /* Already turned into a sentence for a human, from the REAL status.
+           Tagged so the handler below does not run it through the guesser a
+           second time - see the comment there. */
+        throw _saidPlainly(new Error(aegisErrorMessage(res.status, raw)));
       }catch(fe){
         clearTimeout(_to);
         /* The user pressing Stop aborts this same controller, so an AbortError
@@ -889,7 +896,7 @@ async function _callAI(msgs, _opts) {
           await new Promise(r=>setTimeout(r,wait));
           continue;
         }
-        if(fe.name==='AbortError') throw new Error('The request timed out. The server may be busy - please retry.');
+        if(fe.name==='AbortError') throw _saidPlainly(new Error('The request timed out. The server may be busy - please retry.'));
         throw fe;
       }
     }
@@ -946,9 +953,9 @@ async function _callAI(msgs, _opts) {
         const _saved = await _recoverAnswer(_turnId);
         if(_saved && _saved.length > fullText.length){ fullText = _saved; _recovered = true; break; }
         if(fullText){ _stalled=true; break; }
-        throw new Error(navigator.onLine===false
+        throw _saidPlainly(new Error(navigator.onLine===false
           ? 'You went offline before AMV could answer. Reconnect and retry.'
-          : 'The connection stalled before AMV could answer. Please retry.');
+          : 'The connection stalled before AMV could answer. Please retry.'));
       }
       const {done,value}=_chunk;
       if(done) break;
@@ -1126,9 +1133,22 @@ async function _callAI(msgs, _opts) {
       _recordUsageOnce();
       setMsgs(msgs); S.busy=false; renderChatMsgs(); _userStopped=false; return;
     }
-    // "stalled" is already a plain-English explanation; without it here the
-    // generic handler rewrote it into a wrong guess about ad-blockers and CORS.
-    const friendly=/api error|rejected|forbidden|rate-limit|malformed|too long|server error|network|timed out|stalled|offline|busy/i.test(e.message)?e.message:aegisErrorMessage(0,e.message);
+    /* A message that was ALREADY written for a human is used as it stands.
+
+       This used to decide by looking for certain words in the prose, and the
+       words did not cover what aegisErrorMessage actually writes. A 500 came
+       back as "The AI service had a temporary error (500)", matched none of
+       them, and was rewritten by the fallback - which is called with status 0
+       and therefore always produces "Network error - could not reach the API.
+       Check your connection, ad-blockers, or CORS/extension interference."
+
+       So a server that was reached, and answered, sent the person off to
+       debug their own browser. The tag says which errors already know what
+       they are; the word list stays only as a guess for the ones that do
+       not. */
+    const friendly = (e && e._saidPlainly) ? e.message
+      : (/api error|rejected|forbidden|rate-limit|malformed|too long|server error|network|timed out|stalled|offline|busy/i.test(e.message)
+          ? e.message : aegisErrorMessage(0, e.message));
     AEGIS.log('exception',{msg:String(e.message).slice(0,200)}); AEGIS.recordError();
     _recordUsageOnce();   // record any tokens consumed before the failure
     _streamBubbleReset();
