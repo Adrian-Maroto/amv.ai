@@ -53,7 +53,7 @@ Set each with `npx wrangler secret put NAME` (it prompts for the value).
 ### Turn on integrations + more generation (optional, add anytime)
 | Secret | Unlocks |
 |---|---|
-| `GOOGLE_CLIENT_ID` | Google sign-in **and** the agent's real Gmail / Calendar / Drive actions |
+| `GOOGLE_CLIENT_ID` | Google sign-in **and** the agent's real Gmail / Calendar / Drive actions. Served to every visitor's browser automatically via `/v1/public-config` - you do not paste it anywhere in the app. |
 | `VIDEO_API_URL`, `VIDEO_API_KEY`, `VIDEO_MODEL` | Real video generation |
 | `IMAGE_API_URL`, `IMAGE_API_KEY`, `IMAGE_API_MODEL` | Higher-tier image generation |
 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` | SMS / phone verification |

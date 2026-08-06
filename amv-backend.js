@@ -3700,6 +3700,7 @@ export default {
 
       switch (path) {
         case '/v1/health':       return json({ ok: true, ts: Date.now() });
+        case '/v1/public-config': return publicConfig(request, env);
         case '/auth/signup':     return authSignup(request, env);
         case '/auth/login':      return authLogin(request, env);
         case '/auth/google':     return authGoogle(request, env);
@@ -9994,6 +9995,50 @@ async function _userFromApiKey(request, env) {
    ===================================================================== */
 
 const FEEDBACK_REASONS = new Set(['wrong', 'incomplete', 'ignored_instructions', 'too_slow', 'other']);
+
+/* ══════════════════════════════════════════════════════════════════════
+   PUBLIC CONFIG - the handful of values a VISITOR's browser needs.
+
+   The Worker holds GOOGLE_CLIENT_ID, and the browser did not - so "Continue
+   with Google", the first button on the sign-up sheet, was dead for everybody
+   except the owner, who had pasted the id into their own Settings. Same shape
+   as the backend URL: configuration that lived in one person's localStorage
+   while every visitor needed it.
+
+   ONLY values that are public by design go in here. A Google client id, a
+   PayPal client id and a support address all appear in plain sight in ordinary
+   use - in the OAuth URL, in the PayPal SDK tag, on the contact page. Nothing
+   that could sign, spend or authenticate is served: not STRIPE_SECRET_KEY, not
+   TURNSTILE_SECRET, not GOOGLE_CLIENT_SECRET, not JWT_SECRET. A missing value
+   is simply absent, so this also cannot be used to enumerate which secrets a
+   deployment has - that is the admin readiness endpoint's job, behind a token.
+   ══════════════════════════════════════════════════════════════════════ */
+const PUBLIC_CONFIG_KEYS = [
+  ['googleClientId',  'GOOGLE_CLIENT_ID'],
+  ['paypalClientId',  'PAYPAL_CLIENT_ID'],
+  ['supportEmail',    'SUPPORT_EMAIL'],
+];
+async function publicConfig(request, env) {
+  /* Unauthenticated by necessity - it is read before anybody has an account -
+     so it is bounded per IP like the other open endpoints. */
+  const ip = request.headers.get('CF-Connecting-IP') || 'anon';
+  const blocked = await guardAction(env, `pubcfg:${ip}`, 30, 2000, 'config reads');
+  if (blocked) return blocked;
+
+  const out = { ok: true };
+  for (const [field, secret] of PUBLIC_CONFIG_KEYS) {
+    const v = String((env && env[secret]) || '').trim();
+    if (v) out[field] = v;
+  }
+  /* Built directly rather than through json(), which takes only a body and a
+     status - a third argument would have been silently ignored and the cache
+     header would never have been sent. Five minutes is long enough to spare
+     the Worker a request per page load and short enough that rotating a client
+     id takes effect while you are still watching. */
+  return new Response(JSON.stringify(out), { status: 200, headers: {
+    'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=300',
+    ...CORS, ...SECURITY_HEADERS } });
+}
 
 async function feedbackRecord(request, env) {
   const user = await requireUser(request, env);

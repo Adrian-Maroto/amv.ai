@@ -3070,6 +3070,13 @@ try{ _applyFontSize&&_applyFontSize(); }catch(e){}
 window.addEventListener('load',()=>{ setTimeout(initGAuth,500); });
 // Init PWA (installable app + offline shell)
 try{ _initPWA(); }catch(e){}
+/* The public settings a visitor needs - the Google client id above all, since
+   "Continue with Google" is the first button on the sign-up sheet and was dead
+   for everybody who had not typed the id into their own Settings. Fired at
+   boot, not on demand, so the id is usually there before anybody reaches the
+   button; if it is not, the button still says plainly that it is unavailable
+   rather than failing silently. */
+try{ _loadPublicConfig(); }catch(e){}
 // Show a "new" dot on What's New if there are unseen updates
 try{ setTimeout(()=>{ try{ _checkWhatsNew(); }catch(e){} }, 800); }catch(e){}
 

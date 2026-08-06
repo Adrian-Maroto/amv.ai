@@ -1673,3 +1673,29 @@ who typed the URL in.
 configuration, it is a local workaround. Anything a visitor needs must travel
 in the artifact they download. Test the first visit in a private window, from
 empty storage - that is the only session that resembles a customer's.
+
+## 129. Public config belongs on the server, not in one person's browser
+
+The Worker has always held `GOOGLE_CLIENT_ID`. The browser read `amv_gauth`
+from localStorage, which only the owner had ever filled in from their own
+Settings screen. So "Continue with Google" - the first button on the sign-up
+sheet - worked on exactly one machine and told everybody else it was not
+switched on.
+
+The same shape as the backend URL one lesson earlier, and worth stating as its
+own rule because the fix is different: the address had to be baked into the
+artifact, but a client id should be FETCHED, so rotating it does not need a
+rebuild.
+
+`/v1/public-config` serves only values that are public by design - a Google
+client id, a PayPal client id, a support address, each of which appears in
+plain sight in ordinary use. It is unauthenticated, so the assertions that
+matter are the negative ones: no secret of any kind, no field outside the
+allowed three, and an unset value is ABSENT rather than reported as unset -
+otherwise it becomes a way for anyone to inventory which secrets a deployment
+holds.
+
+**Rule:** if a visitor's browser needs a value, the visitor's browser must be
+able to obtain it. Splitting public config from secrets, and serving only the
+public half, is the difference between a product that works for its author and
+one that works for customers.

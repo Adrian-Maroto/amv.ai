@@ -123,6 +123,86 @@ section('An insecure address is refused, not silently used');
   ok(r.live === false, 'and the app says it is not live', r.live);
 }
 
+section('And the public settings a visitor needs arrive from the backend');
+{
+  /* The Google client id lived in the owner's localStorage, so "Continue with
+     Google" - the first button on the sign-up sheet - was dead for everybody
+     else. The Worker has always had it; the browser was never told. */
+  META = 'https://amv-backend.example.workers.dev';
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  await page.goto(`http://localhost:${PORT}`, { waitUntil: 'load' });
+  await page.waitForTimeout(700);
+  const r = await page.evaluate(async () => {
+    const before = loadStr('amv_gauth') || '';
+    const realFetch = window.fetchDeadline;
+    let asked = '';
+    window.fetchDeadline = async (u) => {
+      asked = String(u);
+      return { ok: true, status: 200, json: async () => ({
+        ok: true, googleClientId: '123-abc.apps.googleusercontent.com',
+        paypalClientId: 'AYclient', supportEmail: 'help@amv.test' }) };
+    };
+    /* Cleared because boot already ran once in this context. */
+    _publicConfigDone = false;
+    await _loadPublicConfig();
+    window.fetchDeadline = realFetch;
+    return { before, asked,
+             google: loadStr('amv_gauth') || '',
+             paypal: loadStr('amv_paypal_client') || '',
+             support: loadStr('amv_support_email') || '' };
+  });
+  await ctx.close();
+  ok(r.before === '', 'the visitor started with no Google id', r.before);
+  ok(/\/v1\/public-config$/.test(r.asked), 'the backend is asked for it', r.asked);
+  ok(r.google === '123-abc.apps.googleusercontent.com',
+     'and Continue with Google now has an id to use', r.google);
+  ok(r.paypal === 'AYclient', 'PayPal too', r.paypal);
+  ok(r.support === 'help@amv.test', 'and the support address', r.support);
+}
+
+section('A value the owner set locally is never overwritten');
+{
+  META = 'https://amv-backend.example.workers.dev';
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  await page.goto(`http://localhost:${PORT}`, { waitUntil: 'load' });
+  await page.waitForTimeout(700);
+  const r = await page.evaluate(async () => {
+    saveStr('amv_gauth', 'my-own-staging-project.apps.googleusercontent.com');
+    const realFetch = window.fetchDeadline;
+    window.fetchDeadline = async () => ({ ok: true, status: 200, json: async () => ({
+      ok: true, googleClientId: 'the-production-one' }) });
+    _publicConfigDone = false;
+    await _loadPublicConfig();
+    window.fetchDeadline = realFetch;
+    return loadStr('amv_gauth') || '';
+  });
+  await ctx.close();
+  ok(r === 'my-own-staging-project.apps.googleusercontent.com',
+     'a deliberate local choice survives the fetch', r);
+}
+
+section('With no backend there is nothing to ask, and it does not try');
+{
+  META = '';
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  await page.goto(`http://localhost:${PORT}`, { waitUntil: 'load' });
+  await page.waitForTimeout(700);
+  const r = await page.evaluate(async () => {
+    let asked = false;
+    const realFetch = window.fetchDeadline;
+    window.fetchDeadline = async () => { asked = true; return { ok: false, status: 404, json: async () => ({}) }; };
+    _publicConfigDone = false;
+    await _loadPublicConfig();
+    window.fetchDeadline = realFetch;
+    return asked;
+  });
+  await ctx.close();
+  ok(r === false, 'no request is made when there is nowhere to send it', r);
+}
+
 section('The build writes the address in');
 {
   const b = readFileSync(join(ROOT, 'build.mjs'), 'utf8');

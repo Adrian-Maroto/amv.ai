@@ -175,6 +175,50 @@ function _defaultApiBase(){
   return _apiBaseDefault;
 }
 try{ window._defaultApiBase=_defaultApiBase; }catch(e){}
+
+/* THE PUBLIC SETTINGS A VISITOR NEEDS, FROM THE BACKEND THAT HAS THEM.
+
+   The Worker holds GOOGLE_CLIENT_ID. The browser did not - so "Continue with
+   Google", the first button on the sign-up sheet, was dead for everybody
+   except the owner, who had pasted the id into their own Settings once. The
+   same shape as the backend URL: config living in one person's localStorage
+   that every visitor needs.
+
+   Fetched once on boot and written into the keys the app already reads, so
+   nothing downstream changes. A value the owner has set LOCALLY is never
+   overwritten - a device pointed at staging keeps its own ids. Only values
+   that are public by design are served; see publicConfig in the Worker. */
+const _PUBLIC_CONFIG_MAP = {
+  googleClientId: 'amv_gauth',
+  paypalClientId: 'amv_paypal_client',
+  supportEmail:   'amv_support_email',
+};
+let _publicConfigDone=false;
+async function _loadPublicConfig(){
+  if(_publicConfigDone) return;
+  _publicConfigDone=true;
+  const base=(AMV_API && AMV_API.base) || '';
+  if(!base) return;
+  try{
+    const r=await fetchDeadline(base.replace(/\/$/,'')+'/v1/public-config',{method:'GET'},8000);
+    if(!r.ok) return;
+    const d=await r.json().catch(()=>null);
+    if(!d || !d.ok) return;
+    Object.keys(_PUBLIC_CONFIG_MAP).forEach(k=>{
+      const key=_PUBLIC_CONFIG_MAP[k];
+      const val=String(d[k]||'').trim();
+      if(!val) return;
+      /* Local wins. Somebody testing against a different Google project has
+         typed that id in deliberately. */
+      let have=''; try{ have=loadStr(key)||''; }catch(e){}
+      if(!have){ try{ saveStr(key, val); }catch(e){} }
+    });
+    /* Google's library is initialised at load with whatever id existed then,
+       which was nothing on a first visit. Re-run it now one has arrived. */
+    try{ if(typeof initGAuth==='function') initGAuth(); }catch(e){}
+  }catch(e){ /* the sign-in button says plainly when it is not configured */ }
+}
+try{ window._loadPublicConfig=_loadPublicConfig; }catch(e){}
 const AMV_API = {
   /* A URL saved in Settings wins, so one device can be pointed at a staging
      Worker without rebuilding. Clearing it falls back to what shipped. */
