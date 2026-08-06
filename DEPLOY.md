@@ -281,11 +281,19 @@ deployed + ADMIN_TOKEN; degrades to local metrics otherwise.
 Two layers stop bots from hammering auth:
 - Honeypot: a hidden form field real users never see. Bots fill it → rejected. Works
   with ZERO config, active now.
-- Cloudflare Turnstile (free CAPTCHA): set TURNSTILE_SECRET (Worker secret) and
-  window.__AMV_TURNSTILE_SITE_KEY__ (client, injected at deploy). When set, signup and
-  password login require a valid token; the widget renders automatically. Until set, the
-  box stays hidden and auth relies on the honeypot + the existing brute-force throttle
-  (8 failed attempts / 15 min per email+IP). Get keys at Cloudflare dashboard → Turnstile.
+- Cloudflare Turnstile (free CAPTCHA): set BOTH Worker secrets, TURNSTILE_SITE_KEY and
+  TURNSTILE_SECRET. They are two halves of one thing: the site key renders the widget in
+  the browser, the secret verifies the token it produces. The browser gets the site key
+  from /v1/public-config - nothing is injected at build time and nothing is pasted into
+  the app. When both are set, signup and password login require a valid token and the
+  widget renders automatically. Until they are, the box stays hidden and auth relies on
+  the honeypot + the existing brute-force throttle (8 failed attempts / 15 min per
+  email+IP). Get both keys at Cloudflare dashboard → Turnstile.
+
+  Setting ONLY the secret is the dangerous half-state: no browser can render a widget, so
+  no token exists, and a naive check would refuse every sign-up and sign-in on the site.
+  AMV skips the captcha in that state instead, records a captcha_misconfigured audit
+  event, pages ALERT_WEBHOOK once, and reports "HALF SET UP" in admin readiness.
 Covered by tests/worker/captcha.test.mjs.
 
 ## Auth & sessions (hardened + tested)

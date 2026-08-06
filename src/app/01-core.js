@@ -192,6 +192,11 @@ const _PUBLIC_CONFIG_MAP = {
   googleClientId: 'amv_gauth',
   paypalClientId: 'amv_paypal_client',
   supportEmail:   'amv_support_email',
+  /* The half of Turnstile that is public by design - it appears in the widget's
+     own markup. Without a route to the browser the widget can never render, and
+     a Worker that has TURNSTILE_SECRET would refuse every sign-up on the site
+     for want of a token nobody could produce. */
+  turnstileSiteKey: 'amv_turnstile_site',
 };
 let _publicConfigDone=false;
 async function _loadPublicConfig(){
@@ -216,6 +221,9 @@ async function _loadPublicConfig(){
     /* Google's library is initialised at load with whatever id existed then,
        which was nothing on a first visit. Re-run it now one has arrived. */
     try{ if(typeof initGAuth==='function') initGAuth(); }catch(e){}
+    /* Same for the captcha - if the sign-up sheet is already open it was drawn
+       before the site key existed, and the box hid itself. */
+    try{ if(typeof _mountTurnstile==='function') _mountTurnstile(); }catch(e){}
   }catch(e){ /* the sign-in button says plainly when it is not configured */ }
 }
 try{ window._loadPublicConfig=_loadPublicConfig; }catch(e){}

@@ -57,6 +57,16 @@ for(const s of Object.values(src)){
 const persistBlock = all.slice(all.indexOf('const _PERSIST'), all.indexOf('};', all.indexOf('const _PERSIST')));
 for(const m of persistBlock.matchAll(/'(amv_[a-z0-9_]+)'/g)) scopedW.add(m[1]);
 
+/* Keys _loadPublicConfig fills from the backend. It writes through a computed
+   key - saveStr(_PUBLIC_CONFIG_MAP[k], val) - so no literal appears at the call
+   site, exactly like _PERSIST above. Reading the table is the difference
+   between "the app fills this on first load" and "somebody has to type it into
+   a console", and getting that backwards is what left amv_gauth excused here as
+   operator-set long after the app had started writing it. */
+const pubBlock = all.slice(all.indexOf('const _PUBLIC_CONFIG_MAP'),
+                           all.indexOf('};', all.indexOf('const _PUBLIC_CONFIG_MAP')));
+for(const m of pubBlock.matchAll(/'(amv_[a-z0-9_]+)'/g)) scopedW.add(m[1]);
+
 /* Keys _scopeKey leaves alone, so both doors reach the same place for them. */
 const globalBlock = all.slice(all.indexOf('const _GLOBAL_KEYS'), all.indexOf(']);', all.indexOf('const _GLOBAL_KEYS')));
 const GLOBAL = new Set([...globalBlock.matchAll(/'(amv_[a-z0-9_]+)'/g)].map(m => m[1]));
@@ -109,7 +119,12 @@ section('Every key is both written and read, or is named here with the reason');
     amv_fin_provider:       'which bank aggregator this deployment uses',
     amv_canvas:             'an external canvas host',
     amv_canvas_url:         'and its address',
-    amv_gauth:              'the Google OAuth client id for this deployment',
+    /* amv_gauth was excused here as "the Google OAuth client id for this
+       deployment" - operator-set, type it in yourself. That was the whole
+       defect: every visitor who was not the operator got a "Continue with
+       Google" button with no client id behind it. The Worker has always known
+       the id; nothing told the browser. /v1/public-config does now, so the key
+       is written by the app like any other and is checked like any other. */
     amv_github:             'a GitHub token pasted by the person connecting it',
     amv_slack:              'a Slack webhook, likewise',
     amv_currency:           'a currency override; the geo lookup fills it otherwise',

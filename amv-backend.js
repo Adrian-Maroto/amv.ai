@@ -3897,10 +3897,31 @@ async function _hashPassword(password, salt, iterations){
 /* Verify a Cloudflare Turnstile token. Returns true if:
    - Turnstile isn't configured yet (TURNSTILE_SECRET unset) - we don't block
      real users before you've set it up; the honeypot + rate limits still apply.
+   - OR Turnstile is only HALF set up (secret without site key), because no
+     browser on earth can produce a token in that state - see below.
    - OR the token validates against Cloudflare.
-   Returns false only when Turnstile IS configured and the token is missing/invalid. */
+   Returns false only when Turnstile IS fully configured and the token is
+   missing or invalid.
+
+   The half-configured case is the one that mattered. The site key is what
+   renders the widget; the secret is what checks its answer. Setting only the
+   secret - which the go-live checklist invited, calling Turnstile "optional,
+   add anytime" - meant every sign-up and every sign-in on the entire site
+   started answering "Please complete the verification" about a checkbox that
+   was not on the screen and could not be. It reads as a user problem and is
+   entirely a configuration one, so it is allowed through and shouted about
+   instead: a silent security downgrade is its own failure. */
 async function _verifyCaptcha(env, token, request){
   if (!env.TURNSTILE_SECRET) return true;           // not set up yet → don't block
+  if (!env.TURNSTILE_SITE_KEY) {
+    /* Half-configured. The browser cannot possibly have produced a token, so
+       blocking everybody would be self-inflicted. Allowed, and shouted about,
+       because a silent security downgrade is its own failure. */
+    audit(env, 'captcha_misconfigured', { why: 'TURNSTILE_SECRET set without TURNSTILE_SITE_KEY' });
+    try { await alertOnce(env, 'turnstile_halfset',
+      'Turnstile is half-configured: TURNSTILE_SECRET is set but TURNSTILE_SITE_KEY is not, so no browser can produce a token. Captcha is being SKIPPED. Set TURNSTILE_SITE_KEY to switch it on.'); } catch (e) {}
+    return true;
+  }
   if (!token) return false;
   try{
     const ip = request.headers.get('CF-Connecting-IP') || '';
@@ -10017,6 +10038,12 @@ const PUBLIC_CONFIG_KEYS = [
   ['googleClientId',  'GOOGLE_CLIENT_ID'],
   ['paypalClientId',  'PAYPAL_CLIENT_ID'],
   ['supportEmail',    'SUPPORT_EMAIL'],
+  /* A Turnstile SITE key is public by design - it sits in the HTML of every
+     site that uses one. The SECRET is the other half and never leaves here.
+     Without this the widget cannot render, no token is produced, and
+     _verifyCaptcha refuses every sign-up and sign-in the moment
+     TURNSTILE_SECRET is set. */
+  ['turnstileSiteKey','TURNSTILE_SITE_KEY'],
 ];
 async function publicConfig(request, env) {
   /* Unauthenticated by necessity - it is read before anybody has an account -
@@ -10154,9 +10181,18 @@ function _readinessReport(env) {
     { id: 'teamSeats', name: 'Teams (per-seat billing)', blocking: false, on: _has(env, 'STRIPE_PRICE_TEAM_SEAT'),
       turnsOn: 'Selling Teams by the seat at $' + TEAM_SEAT_PRICE_USD + '/seat/month. Without it Teams is still usable on Elite and Ultra, and the per-seat plan says it is not switched on rather than failing at checkout.',
       how: put('STRIPE_PRICE_TEAM_SEAT') },
-    { id: 'captcha', name: 'Signup verification', blocking: false, on: _has(env, 'TURNSTILE_SECRET'),
-      turnsOn: 'Bot protection on signup and sign-in. Until it is set, only the honeypot and rate limits apply.',
-      how: put('TURNSTILE_SECRET') },
+    /* BOTH halves, deliberately. This line used to read TURNSTILE_SECRET alone
+       and report "on", which is the one answer that is never true: the secret
+       verifies a token, the SITE KEY is what renders the widget that produces
+       one. With only the secret set, no browser can produce a token, so the
+       captcha is skipped rather than refusing every sign-up - and this line is
+       how an operator finds out it is skipped. */
+    { id: 'captcha', name: 'Signup verification (Turnstile)', blocking: false,
+      on: _has(env, 'TURNSTILE_SECRET') && _has(env, 'TURNSTILE_SITE_KEY'),
+      turnsOn: _has(env, 'TURNSTILE_SECRET') && !_has(env, 'TURNSTILE_SITE_KEY')
+        ? 'HALF SET UP - the secret is set but the site key is not, so no browser can produce a token. The captcha is being SKIPPED rather than blocking every sign-up; only the honeypot and rate limits apply. Set TURNSTILE_SITE_KEY to switch it on.'
+        : 'Bot protection on signup and sign-in. Needs BOTH halves: the secret verifies here, the site key renders the widget in the browser. Until they are set, only the honeypot and rate limits apply.',
+      how: put('TURNSTILE_SITE_KEY') + ' and ' + put('TURNSTILE_SECRET') },
     { id: 'googleAuth', name: 'Google sign-in', blocking: false, on: _has(env, 'GOOGLE_CLIENT_ID'),
       turnsOn: 'Sign in with Google. It fails closed until set, rather than trusting an unverified token.',
       how: put('GOOGLE_CLIENT_ID') },

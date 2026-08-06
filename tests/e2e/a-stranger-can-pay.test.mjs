@@ -183,6 +183,55 @@ section('A value the owner set locally is never overwritten');
      'a deliberate local choice survives the fetch', r);
 }
 
+section('The captcha box can actually appear, which decides whether anyone can sign up');
+{
+  /* Turnstile is two halves. TURNSTILE_SECRET verifies a token; the SITE KEY
+     renders the widget that produces one. The site key had no route to the
+     browser at all - `window.__AMV_TURNSTILE_SITE_KEY__` was set by no build
+     step and no script - so the box hid itself on every page load.
+
+     That was invisible while the secret was unset. The moment an operator set
+     it, which GO-LIVE listed under "optional, add anytime", the Worker started
+     demanding a token that no visitor's browser could produce: every sign-up
+     and every sign-in on the entire site, refused, with a message about a
+     checkbox that was not on the screen.
+
+     So this drives the real sign-up sheet rather than checking a variable. */
+  META = 'https://amv-backend.example.workers.dev';
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  await page.goto(`http://localhost:${PORT}`, { waitUntil: 'load' });
+  await page.waitForTimeout(700);
+  const r = await page.evaluate(async () => {
+    openAuth('signup');
+    const box = () => document.getElementById('a-turnstile');
+    const hiddenBefore = box() ? box().style.display : 'no-box';
+
+    const realFetch = window.fetchDeadline;
+    window.fetchDeadline = async () => ({ ok: true, status: 200, json: async () => ({
+      ok: true, turnstileSiteKey: '0x4AAAAAAAsiteKey' }) });
+    _publicConfigDone = false;
+    await _loadPublicConfig();
+    window.fetchDeadline = realFetch;
+
+    return {
+      hiddenBefore,
+      stored: loadStr('amv_turnstile_site') || '',
+      display: box() ? box().style.display : 'no-box',
+      sitekey: box() ? (box().getAttribute('data-sitekey') || '') : '',
+    };
+  });
+  await ctx.close();
+  ok(r.hiddenBefore === 'none',
+     'with no key the box hides itself rather than showing an empty frame', r.hiddenBefore);
+  ok(r.stored === '0x4AAAAAAAsiteKey',
+     'the site key reaches the browser from the backend', r.stored);
+  ok(r.display !== 'none' && r.display !== 'no-box',
+     'the captcha box is now shown on the open sign-up sheet', r.display);
+  ok(r.sitekey === '0x4AAAAAAAsiteKey',
+     'carrying the key the widget needs, so a token can be produced', r.sitekey);
+}
+
 section('With no backend there is nothing to ask, and it does not try');
 {
   META = '';

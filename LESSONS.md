@@ -1699,3 +1699,59 @@ holds.
 able to obtain it. Splitting public config from secrets, and serving only the
 public half, is the difference between a product that works for its author and
 one that works for customers.
+
+## 130. A safety feature with one half missing is an outage, not a safety feature
+
+Turnstile has two halves. `TURNSTILE_SITE_KEY` renders the widget in the
+browser; `TURNSTILE_SECRET` verifies the token that widget produces. The Worker
+had the second and enforced on it. The browser was supposed to get the first
+from `window.__AMV_TURNSTILE_SITE_KEY__` - a global that no build step, no
+script, no deploy path and no line of code anywhere ever set.
+
+So the captcha box hid itself on every page load, and no browser ever produced
+a token. Harmless, silently, for as long as the secret was unset.
+
+GO-LIVE listed `TURNSTILE_SECRET` on its own, under "optional, add anytime".
+The moment an operator followed that line, `_verifyCaptcha` began refusing every
+sign-up and every sign-in on the entire site - with "Please complete the
+verification", about a checkbox that was not on the screen and could not be.
+The message sends the operator to look at their users. The fault is one missing
+environment variable, and nothing anywhere would have said so.
+
+Three things were wrong at once, and each alone was enough: the site key had no
+route to the browser, the CSP allowed neither `challenges.cloudflare.com` in
+`script-src` nor its iframe in `frame-src`, and readiness reported the captcha
+as ON when only the secret was set - so the one state needing attention was the
+one the dashboard called ready.
+
+The fix refuses to enforce a control the deployment cannot possibly satisfy:
+secret without site key now SKIPS the captcha, records `captcha_misconfigured`,
+pages `ALERT_WEBHOOK` once, and says "HALF SET UP" in readiness. Allowing
+everybody through is a downgrade, so it is loud. Locking everybody out is worse
+and would have looked, from the outside, exactly like the product being broken.
+
+The suite made this harder to see rather than easier. `captcha.test.mjs` set
+only the secret and asserted that a missing token was refused - which reads as
+proof of enforcement and was a description of the outage. A test can encode the
+bug as the expected result.
+
+**Rule:** when a control needs two pieces of configuration, treat one-of-two as
+its own state and name it - in the code, in readiness, and in the deploy doc.
+Never fail closed against a requirement the deployment is incapable of meeting;
+fail open, and shout. And when a test configures a feature, configure it the
+way an operator would, not the minimum that makes the assertion pass.
+
+## 131. `git checkout <file>` on uncommitted work is a delete
+
+Twice in one hour, while sabotage-testing, I reverted a file with
+`git checkout <path>` to undo a sabotage - and took the actual fix with it,
+because the fix was not committed either. The second time the test kept failing
+and I went looking for a bug in the code that was no longer there.
+
+Sabotage-testing means deliberately breaking a file I have just edited. `git`
+cannot tell the deliberate break from the real work; both are the same
+uncommitted diff.
+
+**Rule:** back the file up to the scratchpad and restore with `cp`. Never use
+`git checkout`, `git restore` or `git stash` to undo a sabotage - they revert
+to HEAD, which is not where the work is.

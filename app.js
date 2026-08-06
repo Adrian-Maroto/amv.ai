@@ -192,6 +192,11 @@ const _PUBLIC_CONFIG_MAP = {
   googleClientId: 'amv_gauth',
   paypalClientId: 'amv_paypal_client',
   supportEmail:   'amv_support_email',
+  /* The half of Turnstile that is public by design - it appears in the widget's
+     own markup. Without a route to the browser the widget can never render, and
+     a Worker that has TURNSTILE_SECRET would refuse every sign-up on the site
+     for want of a token nobody could produce. */
+  turnstileSiteKey: 'amv_turnstile_site',
 };
 let _publicConfigDone=false;
 async function _loadPublicConfig(){
@@ -216,6 +221,9 @@ async function _loadPublicConfig(){
     /* Google's library is initialised at load with whatever id existed then,
        which was nothing on a first visit. Re-run it now one has arrived. */
     try{ if(typeof initGAuth==='function') initGAuth(); }catch(e){}
+    /* Same for the captcha - if the sign-up sheet is already open it was drawn
+       before the site key existed, and the box hid itself. */
+    try{ if(typeof _mountTurnstile==='function') _mountTurnstile(); }catch(e){}
   }catch(e){ /* the sign-in button says plainly when it is not configured */ }
 }
 try{ window._loadPublicConfig=_loadPublicConfig; }catch(e){}
@@ -2351,11 +2359,26 @@ function showAuthErr(msg, kind){
 }
 
 /* Mount the Cloudflare Turnstile CAPTCHA widget - ONLY when a site key is
-   configured at deploy (window.__AMV_TURNSTILE_SITE_KEY__). Until then the
-   container stays empty and auth relies on the honeypot + rate limits, so we
-   never show a broken/blank captcha box to real users. */
+   configured. Until then the container stays empty and auth relies on the
+   honeypot + rate limits, so we never show a broken or blank captcha box to
+   real users.
+
+   The key arrives from /v1/public-config, which reads TURNSTILE_SITE_KEY from
+   the Worker. That is deliberate: the site key is the half of Turnstile that
+   is public by design (it appears in the rendered widget's own markup), and
+   the Worker is the only place that knows whether this deployment has one.
+
+   It used to come from `window.__AMV_TURNSTILE_SITE_KEY__` alone, which no
+   build step, no script and no deploy path ever set - so the box hid itself on
+   every page load and no browser ever produced a token. That was harmless
+   while TURNSTILE_SECRET was unset, and a site-wide outage the moment an
+   operator set it: _verifyCaptcha would refuse every sign-up and every sign-in
+   for want of a token that could not exist. The global is still honoured as a
+   deploy-time override for anyone injecting it by hand. */
 function _mountTurnstile(){
-  const siteKey = (typeof window!=='undefined' && window.__AMV_TURNSTILE_SITE_KEY__) || '';
+  let siteKey='';
+  try{ siteKey=loadStr('amv_turnstile_site')||''; }catch(e){}
+  if(!siteKey && typeof window!=='undefined') siteKey=window.__AMV_TURNSTILE_SITE_KEY__||'';
   const box = document.getElementById('a-turnstile');
   if(!box) return;
   if(!siteKey){ box.style.display='none'; return; }   // not set up → hide the empty box
