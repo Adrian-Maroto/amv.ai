@@ -1756,8 +1756,12 @@ function _renderSetPaneInner(){
         /* Read-aloud already read `amv_voice_rate` and nothing could write it,
            so every voice was locked to 1.0x. Speaking speed is the setting
            people using read-aloud change first. */
-        '<div class="br2" style="margin-top:12px"><div><div class="opt-name">Read-aloud speed</div><div class="opt-desc">How fast AMV speaks when you use read-aloud.</div></div>'+
-          '<select class="sel" id="voice-rate-sel" style="max-width:150px">'+
+        /* `for` on a real <label>, not a styled div. A select whose only
+           visible name is a sibling div has no accessible name at all - a
+           screen reader announces it as "combo box", and the mobile sweep is
+           right to fail on it. */
+        '<div class="br2" style="margin-top:12px"><div><label class="opt-name" for="voice-rate-sel">Read-aloud speed</label><div class="opt-desc" id="voice-rate-desc">How fast AMV speaks when you use read-aloud.</div></div>'+
+          '<select class="sel" id="voice-rate-sel" aria-describedby="voice-rate-desc" style="max-width:150px">'+
             [['0.75','Slower'],['1','Normal'],['1.25','Faster'],['1.5','Fastest']]
               .map(o=>'<option value="'+o[0]+'"'+((loadStr('amv_voice_rate')||'1')===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+
           '</select>'+

@@ -56,6 +56,13 @@ const PUBLIC = {
   '/v1/widget/chat':     'the same widget, gated by its own key and rate limits',
   '/widget.js':          'the loader script itself',
   '/errors':             'a telemetry sink from browsers that may have no session',
+  /* Read before anybody has an account - it is what tells a first-time
+     visitor's browser that Google sign-in exists at all. It serves ONLY values
+     that are public by design (a Google client id, a PayPal client id, a
+     support address), an unset one is absent rather than reported as unset so
+     it cannot be used to inventory secrets, and public-config.test.mjs asserts
+     all of that against an env deliberately stuffed with twelve real secrets. */
+  '/v1/public-config':   'the values a visitor needs before they can sign in',
 };
 
 function bodyOf(fn){
