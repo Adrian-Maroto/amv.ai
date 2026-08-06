@@ -115,6 +115,29 @@ async function rebuild() {
   // inserted verbatim (a replacement STRING would corrupt them).
   html = html.replace(jsPat, () => jsBlock);
 
+  /* THE BACKEND ADDRESS THE SHIPPED ARTIFACT TALKS TO.
+
+     Without this the app reads amv_api_base from localStorage and finds
+     nothing, so every visitor who is not the owner gets the local demo: no
+     engine, no server account, and no way to pay. Pass it at build time -
+
+         AMV_API_BASE=https://amv-backend.you.workers.dev node build.mjs
+
+     - or write it straight into the meta tag in index.html. An https origin
+     only, because the token is bound to the origin that issued it and the app
+     refuses to attach it to anything else. */
+  const apiBase = (process.env.AMV_API_BASE || '').trim().replace(/\/+$/, '');
+  if (apiBase) {
+    if (!/^https:\/\/[^\s"'<>]+$/.test(apiBase)) {
+      throw new Error('AMV_API_BASE must be an https:// URL - got: ' + apiBase);
+    }
+    const metaPat = /<meta name="amv-api-base" content="[^"]*"><!-- BUILD:APIBASE -->/;
+    if (!metaPat.test(html)) throw new Error('amv-api-base meta marker not found');
+    html = html.replace(metaPat,
+      () => '<meta name="amv-api-base" content="' + apiBase + '"><!-- BUILD:APIBASE -->');
+    console.log('Backend baked in: ' + apiBase);
+  }
+
   // 4) validate the assembled code BEFORE writing - a broken build must never
   //    overwrite a working index.html. Extract the emitted code, un-escape the
   //    sentinel, and syntax-check it. Only write if it passes.

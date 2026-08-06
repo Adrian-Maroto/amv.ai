@@ -149,8 +149,36 @@ async function fetchDeadline(url, init, ms){
 try{ window.fetchDeadline = fetchDeadline; }catch(e){}
 function _originOf(u){ try{ return new URL(u).origin; }catch(e){ return ''; } }
 function _isSecureApiOrigin(o){ return /^https:\/\/[^/]+$/.test(o) || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(o); }
+/* THE BACKEND THIS BUILD SHIPS WITH.
+
+   `base` read localStorage and nothing else, so it was empty for anybody who
+   had not typed a Worker URL in themselves. The owner does that once in
+   Settings and their own browser is fully live - which is precisely why it
+   survived: on the only machine anyone tested, everything worked. For every
+   other visitor the app fell back to its local demo permanently. No engine, no
+   server account, no checkout. AMV could not take money from a stranger.
+
+   The address now travels with the artifact, in a meta tag written either by
+   hand or by `AMV_API_BASE=... node build.mjs`. Read once and cached, and held
+   to the same secure-origin rule as a typed one - the access token is bound to
+   the origin that issued it, so an http or cross-origin default would simply
+   have its Authorization header stripped and fail in a confusing way. */
+let _apiBaseDefault=null;
+function _defaultApiBase(){
+  if(_apiBaseDefault!==null) return _apiBaseDefault;
+  _apiBaseDefault='';
+  try{
+    const m=document.querySelector('meta[name="amv-api-base"]');
+    const v=((m&&m.getAttribute('content'))||'').trim().replace(/\/+$/,'');
+    if(v && _isSecureApiOrigin(_originOf(v))) _apiBaseDefault=v;
+  }catch(e){}
+  return _apiBaseDefault;
+}
+try{ window._defaultApiBase=_defaultApiBase; }catch(e){}
 const AMV_API = {
-  get base(){ try{ return loadStr('amv_api_base')||''; }catch(e){ return ''; } },
+  /* A URL saved in Settings wins, so one device can be pointed at a staging
+     Worker without rebuilding. Clearing it falls back to what shipped. */
+  get base(){ try{ return loadStr('amv_api_base')||_defaultApiBase(); }catch(e){ return _defaultApiBase(); } },
   set base(v){ try{ const val=(v||'').trim(); if(val && !_isSecureApiOrigin(_originOf(val))){ try{ toast('Backend URL must be a valid https:// address','error'); }catch(e){} return; } saveStr('amv_api_base', val); }catch(e){} },
   get token(){ try{ return loadStr('amv_api_token')||''; }catch(e){ return ''; } },
   set token(v){ try{ saveStr('amv_api_token', v||''); }catch(e){} },

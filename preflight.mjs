@@ -187,6 +187,30 @@ if (existsSync(R('index.html')) && existsSync(R('app.js'))) {
   } catch { /* non-fatal */ }
 }
 
+/* ── 8b. the shipped artifact knows where its backend is ──────────────────
+   Without this, AMV_API.base is whatever the visitor typed into Settings -
+   which for everybody except the owner is nothing. The app then falls back to
+   its local demo permanently: no engine, no server account, no checkout. The
+   owner's own browser works, because they pasted the URL once, so nothing on
+   their machine ever shows the problem. This is the difference between a
+   deployment that can take money and one that cannot. */
+try {
+  const html = readFileSync('index.html', 'utf8');
+  const m = html.match(/<meta name="amv-api-base" content="([^"]*)"/);
+  if (!m) {
+    warn('index.html has no amv-api-base meta tag',
+      'rebuild with: node build.mjs   (the tag is part of the shell)');
+  } else if (!m[1].trim()) {
+    warn('the built app has NO backend address, so every visitor gets the local demo',
+      'build with: AMV_API_BASE=https://your-worker.workers.dev node build.mjs');
+  } else if (!/^https:\/\//.test(m[1].trim())) {
+    err(`the built app points at "${m[1]}", which is not https`,
+      'the auth token is bound to its origin and will not be sent - use an https:// URL');
+  } else {
+    ok(`the built app points at ${m[1].trim()}`);
+  }
+} catch { /* non-fatal */ }
+
 /* ── 9. package.json has a deploy script ─────────────────────────────────── */
 if (pkg) {
   if (/"deploy"\s*:\s*"wrangler deploy"/.test(pkg)) ok('npm run deploy is wired to wrangler');

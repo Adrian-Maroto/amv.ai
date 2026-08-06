@@ -1652,3 +1652,24 @@ shape does not help - `on(btn,'click',openPortal)` with `const openPortal=async
 **Rule:** after writing a detector, break the thing it detects and watch it
 fail. A sweep that reports "clean" without ever having been shown a dirty tree
 has told you nothing.
+
+## 128. The product worked on exactly one machine
+
+`AMV_API.base` read `amv_api_base` from localStorage and nothing else. The
+owner pastes their Worker URL once in Settings and their browser goes fully
+live - engine, real accounts, checkout, all of it. Every screen works.
+
+For everybody else `base` was empty, so `AMV_API.live` was false, so sign-up
+wrote a local-only account, chat had no engine, and every payment path checked
+`liveBackend` and correctly refused. The app degraded honestly to its demo,
+permanently, for the entire internet. AMV could not take money from a stranger.
+
+No test could have caught it: every suite boots the app and configures a
+backend, which is the owner's situation and not a visitor's. And no amount of
+using the product would reveal it, because the person using it is the person
+who typed the URL in.
+
+**Rule:** configuration that lives in the developer's own browser is not
+configuration, it is a local workaround. Anything a visitor needs must travel
+in the artifact they download. Test the first visit in a private window, from
+empty storage - that is the only session that resembles a customer's.

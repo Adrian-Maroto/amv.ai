@@ -70,14 +70,29 @@ npm run deploy       # wrangler deploy
 
 Copy the deployed URL (e.g. `https://amv-backend.yourname.workers.dev`).
 
-## 4. Point the app at your backend
+## 4. Bake that URL into the app - THE STEP THAT LETS STRANGERS PAY YOU
 
-In the app: **Settings → AI Connection** → paste your Worker URL → **Save &
-connect** → **Test connection**. Then sign in with your account.
+```bash
+AMV_API_BASE=https://amv-backend.yourname.workers.dev node build.mjs
+git commit -am "point the build at the live backend" && git push
+```
 
-That single URL flips the whole app from local demo to live: chat, agents,
+This writes the address into `index.html`, so every visitor's browser knows
+where the backend is the moment the page loads.
+
+> **Do not skip this.** Typing the URL into Settings configures ONLY the browser
+> you typed it in. Your own machine will look perfectly live while every other
+> visitor gets the local demo - no engine, no real account, and no way to pay.
+> `node preflight.mjs` warns when the built artifact has no address in it.
+
+You can still override it per device in **Settings → AI Connection** (useful for
+pointing one browser at a staging Worker); clearing that field falls back to
+whatever the build shipped with.
+
+That address flips the whole app from local demo to live: chat, agents,
 approvals, autonomous scheduling, marketplace, and payments all start using the
-real backend. (Saved as `amv_api_base`; the app checks `AMV_API.live` everywhere.)
+real backend. (Read from the `amv-api-base` meta tag, overridable via
+`amv_api_base`; the app checks `AMV_API.live` everywhere.)
 
 ## 5. Verify
 
@@ -85,6 +100,9 @@ real backend. (Saved as `amv_api_base`; the app checks `AMV_API.live` everywhere
 npm run check        # full health gate - should say SHIPPABLE
 ```
 
+- Open the live site in a PRIVATE WINDOW - the one place the "works on my
+  machine" version of this fails. Sign up, send a chat, and open the upgrade
+  sheet. If any of those degrade to demo behaviour, step 4 was missed.
 - Sign up a test account → confirm it persists across a refresh (real backend).
 - Send a chat → confirm a real AI reply.
 - Connect Google in Settings → Connectors, then type a task in Mission Control's
