@@ -1831,3 +1831,42 @@ clock, not trusted from one delivery. And when an automated action has two
 possible causes, one of which is your own fault, find the signal that separates
 them before you act on the customer. The default has to be that your bug costs
 you money, never that it costs them their service.
+
+## 134. A stub can only confirm what somebody already thought to check
+
+Eighty e2e files, every one of them stubbing the network and booting the app
+with a backend already configured. That is the right shape for testing a
+screen, and it is the reason three separate defects shipped that made AMV
+unusable for everybody who was not the owner: the API base living only in the
+owner's localStorage, the Google client id doing the same, and the captcha site
+key having no route to the browser at all.
+
+A stub answers what the test expects. It cannot notice that the app does not
+know where its backend is, because it does not care where the request went. And
+none of the three was findable by using the product either, because the person
+using it is the person who typed the configuration in.
+
+So amv-backend.js now runs behind a real Chromium, over real cross-origin
+requests, with real CORS, real tokens and real handlers on an in-memory KV.
+Only the genuinely-outside world is stubbed - Stripe, the model endpoint, an
+email provider - and each of those is named, so a case can say what the outside
+did and assert on what AMV then believed.
+
+It found one on its first run, before a single assertion was written. The
+status indicator fetched `/health`; the Worker serves `/v1/health`. Every
+healthy deployment answered 404, so the one indicator whose entire job is to
+say whether the backend is fine sat permanently on "Some services degraded".
+Settings had always used the right path, which is why two screens disagreed and
+neither was chased. The state mapping was inverted on top of that: an
+unreachable backend mapped to "All systems operational" and only an
+answering-but-unhappy one counted as degraded.
+
+The most valuable case in the file is the last one. Sign in on a SECOND browser
+context that shares nothing with the first except the server, and see whether
+the plan is there. A plan the client granted itself is indistinguishable from
+one the server granted until exactly that moment.
+
+**Rule:** at least one test has to use the real thing, end to end, as a
+stranger. Not because unit stubs are wrong, but because the defects that reach
+customers are the ones living in the space between the parts each stub was
+written to represent.

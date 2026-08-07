@@ -860,13 +860,24 @@ async function _checkStatus(){
   try{
     if(window.AMV_API && AMV_API.base){
       const ctrl=new AbortController(); const to=setTimeout(()=>ctrl.abort(),4000);
-      const r=await fetch(AMV_API.base.replace(/\/$/,'')+'/health',{signal:ctrl.signal}).catch(()=>null);
+      /* /v1/health, which is the route the Worker actually serves. This asked
+         for /health and got a 404 from every healthy deployment there has ever
+         been, so `r.ok` was false, so the indicator whose entire job is to say
+         whether the backend is fine sat permanently on "Some services
+         degraded". Settings has always used the right path, which is why the
+         two screens disagreed and nobody chased it. */
+      const r=await fetch(AMV_API.base.replace(/\/$/,'')+'/v1/health',{signal:ctrl.signal}).catch(()=>null);
       clearTimeout(to);
       backend = (r && r.ok) ? 'ok' : (r ? 'degraded' : 'unreachable');
     }
   }catch(e){ backend='unreachable'; }
-  // Direct mode (no backend configured) is still fully operational.
-  const state = (backend==='degraded') ? 'degraded' : 'ok';
+  /* A backend that cannot be reached at all used to map to "All systems
+     operational" - only an answering-but-unhappy one counted as degraded. So
+     the two states were the wrong way round: a Worker that was up and
+     answering read as broken, and a Worker that was gone read as perfect.
+     Direct mode, where no backend is CONFIGURED, is genuinely operational and
+     is the 'unknown' case below. */
+  const state = (backend==='degraded' || backend==='unreachable') ? 'degraded' : 'ok';
   _setStatusIndicator(state);
   return { net:true, backend };
 }
