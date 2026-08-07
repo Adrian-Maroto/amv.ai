@@ -84,6 +84,31 @@ ok(lapsed.plan === 'free', 'the client follows the server down to free - it does
 ok(lapsed.lapsed === true, 'and the notice is styled as the harder state');
 ok(/dropped to Free/.test(lapsed.text), 'saying plainly what has happened', lapsed.text.slice(0, 90));
 
+section('An UNCONFIRMED renewal does not accuse them of a failed payment');
+{
+  /* A second way to land in past due, added with the renewal sweep: nothing
+     from the processor said a payment failed - we simply have not seen a
+     renewal, which can equally mean OUR webhook stopped arriving. The message
+     and the button both have to change, because "Update card" is the wrong
+     thing to press when the card is fine, and pressing it is how a paying
+     customer ends up in their billing portal cancelling a working
+     subscription over our bug. */
+  const un = await sync('elite', {
+    state: 'unconfirmed', since: Date.now(), graceEndsAt: Date.now() + 5 * 86400000,
+    message: 'We have not been able to confirm your latest renewal. Your plan stays active until Fri, 01 Aug 2026 00:00:00 UTC. If your payments are going through normally, contact support rather than changing anything.'
+  });
+  ok(un.shown === true, 'the notice appears', un.shown);
+  ok(!/did not go through/.test(un.text),
+     'it does not tell them a payment failed', un.text.slice(0, 100));
+  ok(un.plan === 'elite', 'and they keep what they are paying for', un.plan);
+  const label = await page.evaluate(() => {
+    const b = document.getElementById('bill-fix'); return b ? b.textContent : '';
+  });
+  ok(/support/i.test(label),
+     'the button sends them to a human, not to their card', label);
+  ok(!/card/i.test(label), 'it does not say Update card', label);
+}
+
 section('Dismissing it sticks for that situation, but not for the next one');
 const dismiss = await page.evaluate(async () => {
   document.getElementById('bill-x').click();

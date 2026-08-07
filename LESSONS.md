@@ -1790,3 +1790,44 @@ screen cannot reach the thing that takes the money, it does not render as a
 checkout - it says what is missing. And when a capability is removed, follow
 its configuration out: the switch that used to turn it on is now a lie, and the
 pairing checks will tell you where it went if you let them.
+
+## 133. Grants are loud, revocations are silent, so only one of them gets noticed
+
+Every path that took a plan away was a webhook: `invoice.payment_failed`,
+`customer.subscription.updated`, `BILLING.SUBSCRIPTION.CANCELLED`. Grants were
+webhooks too, and that asymmetry is the whole problem. A grant that never
+arrives is discovered within the hour, because the customer paid and is
+shouting. A revocation that never arrives makes no sound at all: the
+subscription ends, nothing tells AMV, and the account keeps Ultra for ever.
+
+If `STRIPE_WEBHOOK_SECRET` is unset, or the endpoint is deleted, or Stripe
+disables it after enough failures, that is not one account. It is every paid
+account at once, and nothing in the product would have reported it. Readiness
+called the webhook optional.
+
+An entitlement now has to be RE-CONFIRMED: `renewedAt` is stamped whenever a
+processor says money is behind the plan, and a daily sweep looks for plans
+nobody has confirmed in forty days.
+
+The hard part was not detecting it. It was deciding what to do, because "no
+renewal seen" has two causes that call for opposite actions: their subscription
+really ended, or our webhook is broken and they are paying perfectly well.
+Revoking is right for the first and is cancelling a paying customer's service
+over our own bug for the second.
+
+They are told apart by how many at once. Cards fail one at a time; plumbing
+fails for the whole deployment simultaneously. Past a quarter of paid accounts
+going stale together, the sweep touches nobody and pages the operator instead.
+
+And the message had to change with it. The existing one says "your last payment
+did not go through", which for this case we do not know and probably is not
+true. Somebody whose payments are fine being told that goes and cancels a
+working card. It says we could not CONFIRM the renewal, and the banner button
+becomes Contact support rather than Update card - because there is nothing in a
+billing portal for a customer whose card is working.
+
+**Rule:** anything granted by an external event must be re-confirmed on a
+clock, not trusted from one delivery. And when an automated action has two
+possible causes, one of which is your own fault, find the signal that separates
+them before you act on the customer. The default has to be that your bug costs
+you money, never that it costs them their service.

@@ -1257,13 +1257,37 @@ function _showBillingNotice(billing){
   if(existing) existing.remove();
   const bar = document.createElement('div');
   bar.id = 'bill-notice';
-  bar.className = 'bill-notice' + (billing.state === 'lapsed' ? ' lapsed' : '');
+  /* The two "it has actually stopped" states look the same to the user, so
+     they carry the same weight here, whichever of them got us there. */
+  const over = billing.state === 'lapsed' || billing.state === 'unconfirmed_lapsed';
+  bar.className = 'bill-notice' + (over ? ' lapsed' : '');
   bar.setAttribute('role','status');
+  /* "Update card" is the right thing to press when a card was declined and
+     exactly the wrong thing when the server merely could not CONFIRM a
+     renewal - that state can equally mean our own webhook stopped arriving,
+     and sending somebody whose payments are fine to their billing portal to
+     fix a working card is how a paying customer ends up cancelling. */
+  const unconfirmed = billing.state === 'unconfirmed' || billing.state === 'unconfirmed_lapsed';
+  const action = unconfirmed ? 'Contact support' : 'Update card';
   bar.innerHTML =
     '<span class="bill-notice-t">'+escH(billing.message||'There is a problem with your payment method.')+'</span>'+
-    '<button class="btn bp bill-fix" type="button" id="bill-fix">Update card</button>'+
+    '<button class="btn bp bill-fix" type="button" id="bill-fix">'+escH(action)+'</button>'+
     '<button class="bill-x" type="button" id="bill-x" aria-label="Dismiss this notice">&#215;</button>';
   document.body.appendChild(bar);
+  if(unconfirmed){
+    document.getElementById('bill-fix')?.addEventListener('click',()=>{
+      /* The Help Center, which carries the support address and the Email
+         Support button. Not the billing portal: there is nothing there for
+         somebody whose card is working. */
+      try{ setTab('help'); return; }catch(e){}
+      try{ setTab('billing'); }catch(e){}
+    });
+    document.getElementById('bill-x')?.addEventListener('click',()=>{
+      try{ saveStr('amv_bill_seen', billing.state + ':' + billing.since); }catch(e){}
+      bar.remove();
+    });
+    return;
+  }
   document.getElementById('bill-fix')?.addEventListener('click',()=>{
     // Straight to the processor's own billing portal - the only place a card
     // can actually be changed. Falls back to the billing tab if it is not set up.

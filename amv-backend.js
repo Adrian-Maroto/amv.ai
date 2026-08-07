@@ -3645,6 +3645,18 @@ export default {
         console.error('[cron] digest failed', e && e.message);
         try{ await _workerError(env, 'cron.digest', e); }catch(_){}
       }
+      /* AMV-133: the renewal sweep, in its own try for the same reason as the
+         digest. Claimed once per day internally, so running it on every
+         5-minute tick is correct and costs one KV read. It is the only thing
+         that revokes a plan without a webhook, so it must not be able to be
+         taken out by an unrelated failure earlier in the tick. */
+      try{
+        const s = await runRenewalSweep(env);
+        if(s && s.ran && s.stale) console.log('[cron] renewal sweep', JSON.stringify(s));
+      }catch(e){
+        console.error('[cron] renewal sweep failed', e && e.message);
+        try{ await _workerError(env, 'cron.renewals', e); }catch(_){}
+      }
     })());
   },
 
@@ -3807,9 +3819,15 @@ export default {
         case '/v1/stripe/portal':   return stripePortal(request, env);
         case '/v1/stripe/invoices': return stripeInvoices(request, env);
         case '/v1/stripe/webhook':  return stripeWebhook(request, env, ctx);
-        case '/v1/paypal/create':   return paypalCreate(request, env);
+        /* There is no /v1/paypal/create or /v1/paypal/capture. They backed a
+           ONE-TIME PayPal order, and a one-time order cannot pay for a monthly
+           plan: the capture granted an entitlement with no renewal to expire
+           it, no subscription behind it, and no event that would ever revoke
+           it. Fifteen dollars once bought Pro for ever, and any signed-in
+           account could do it with two curl calls long after the browser flow
+           that used them was removed. AMV sells subscriptions; that is what
+           the route below is for. */
         case '/v1/paypal/subscribe': return paypalSubscribe(request, env);
-        case '/v1/paypal/capture':  return paypalCapture(request, env);
         case '/v1/paypal/webhook':  return paypalWebhook(request, env, ctx);
         case '/v1/entitlement':     return getEntitlement(request, env);
         case '/v1/account/export':  return accountExport(request, env);
@@ -7752,7 +7770,12 @@ async function referralStatus(request, env) {
    reason `refBonus` does: losing it would silently eject somebody from their
    team's plan and counters on the next billing event, and the cause would be
    invisible from the outside. */
-const ENT_CARRY_KEYS = ['refBonus', 'teamId', 'familyOf'];
+/* Carried across a rewrite of the entitlement record. renewedAt is here on
+   purpose: losing it would make a live subscription look like one nobody has
+   paid for in months, and the sweep below would act on that. The asymmetry
+   decides it - failing to notice a lapse costs one month's revenue, wrongly
+   cancelling somebody who is paying costs the customer. */
+const ENT_CARRY_KEYS = ['refBonus', 'teamId', 'familyOf', 'renewedAt'];
 
 /* ── FAMILY ────────────────────────────────────────────────────────────────
    A parent's account carries a child's, the way a phone plan does.
@@ -7917,6 +7940,15 @@ async function setEntitlement(env, email, plan, extra = {}) {
   const prev = (await DB.get(env, 'ent', em)) || {};
   const ent = { plan, updatedAt: Date.now(), ...extra };
   for (const k of ENT_CARRY_KEYS) if (prev[k] !== undefined && ent[k] === undefined) ent[k] = prev[k];
+  /* When a PROCESSOR is the reason for this write, money is behind it - a
+     checkout, a renewal, a live subscription re-read. That is the only signal
+     that says "this plan is still being paid for", and without recording it
+     the only thing that can ever revoke a plan is a webhook arriving. See
+     runRenewalSweep. `updatedAt` is not a substitute: an admin edit or a team
+     seat change moves it without a penny changing hands. */
+  if ((extra.source === 'stripe' || extra.source === 'paypal') && _planPriceUSD(plan, ent.custom) > 0) {
+    ent.renewedAt = Date.now();
+  }
   await DB.put(env, 'ent', em, ent);
   // Keep the population counters true at the one place a plan can change.
   await _planPopShift(env, prev.plan ? _planOf(prev) : null, _planOf(ent),
@@ -7996,6 +8028,21 @@ function _billingState(ent) {
   const graceEndsAt = since + PAST_DUE_GRACE_MS;
   const recoverEndsAt = since + PAST_DUE_RECOVER_MS;
   const now = Date.now();
+  /* Flagged by the renewal sweep rather than by a processor telling us a
+     payment failed. We do NOT know their card failed - we know we have not
+     seen a renewal, which can equally mean our own webhook stopped arriving.
+     Saying "your payment did not go through" to somebody whose payments are
+     going through is a lie that costs them their subscription. */
+  if (ent.pastDueReason === 'no_renewal_seen') {
+    const over = now > graceEndsAt;
+    return { state: over ? 'unconfirmed_lapsed' : 'unconfirmed', since, graceEndsAt, recoverEndsAt,
+      message: over
+        ? 'We could not confirm your subscription renewed, so your account is on Free for now. If you are still being '
+        + 'charged, nothing is wrong on your side and we want to fix it - contact support and we will restore your plan.'
+        : 'We have not been able to confirm your latest renewal. Your plan stays active until '
+        + new Date(graceEndsAt).toUTCString().replace(/ GMT$/, ' UTC')
+        + '. If your payments are going through normally, contact support rather than changing anything.' };
+  }
   if (now <= graceEndsAt) {
     return { state: 'past_due', since, graceEndsAt,
       message: 'Your last payment did not go through. Update your card to keep your plan - it stays active until ' +
@@ -8018,6 +8065,11 @@ async function _markPastDue(env, email, detail) {
   if (ent.plan === 'free') return;                       // nothing to lose
   if (ent.pastDueSince) return;                          // keep the FIRST failure date
   ent.pastDueSince = Date.now();
+  /* WHY, kept on the record, because the honest sentence differs. A declined
+     card is the customer's to fix. A renewal we never saw might be nothing but
+     our own webhook being broken, and telling somebody who is paying that
+     their payment failed sends them to cancel a card that works. */
+  if (detail && detail.reason) ent.pastDueReason = String(detail.reason).slice(0, 40);
   await DB.put(env, 'ent', em, ent);
   /* A failed payment never touched the team, so a team whose owner stopped
      paying kept its plan until something else happened to write the record -
@@ -8025,6 +8077,104 @@ async function _markPastDue(env, email, detail) {
   await _refreshTeamPlan(env, em, ent);
   audit(env, 'payment_failed', Object.assign({ email: em, plan: ent.plan }, detail || {}));
 }
+/* ══════════════════════════════════════════════════════════════════════
+   THE RENEWAL SWEEP - so a plan cannot outlive the money paying for it.
+
+   Everything that revokes a plan is a webhook: invoice.payment_failed,
+   customer.subscription.updated, BILLING.SUBSCRIPTION.CANCELLED. Grants are
+   webhooks too, but a grant that never arrives is visible immediately - the
+   customer pays and shouts. A REVOCATION that never arrives is silent: the
+   subscription ends, nothing tells us, and the account keeps a paid plan for
+   ever. If STRIPE_WEBHOOK_SECRET is unset, or the endpoint is deleted, or
+   Stripe disables it after enough failures, that is the state of every account
+   at once and nothing in the product would say so.
+
+   So an entitlement has to be RE-CONFIRMED, not just granted. renewedAt is
+   stamped whenever a processor tells us money is behind the plan; past
+   RENEWAL_MAX_AGE_MS with no such word, the plan is no longer known to be paid
+   for.
+
+   The dangerous half is what to do about it. "No renewal seen" has two causes
+   and they call for opposite actions:
+
+     - their subscription really ended and we missed the event  -> revoke
+     - OUR webhook is broken and they are paying fine           -> revoking is
+       cancelling a paying customer's service over our own bug
+
+   The two are told apart by how many at once. Cards fail one at a time;
+   plumbing fails for everybody simultaneously. So when a large share of paid
+   accounts go stale together, the sweep touches NOBODY, and pages the operator
+   instead - loudly, because that state is also silently un-revoking every
+   cancellation in the meantime.
+
+   When it is isolated, the account is marked past due rather than dropped:
+   that is the existing pipeline, and it gives seven days of full access and a
+   message that says we could not CONFIRM the renewal, which is the only thing
+   we actually know. */
+const RENEWAL_MAX_AGE_MS = 40 * 24 * 60 * 60 * 1000;   // a month, plus retries, plus room
+const SWEEP_SYSTEMIC_FRACTION = 0.25;                  // this much at once is not coincidence
+const SWEEP_SYSTEMIC_MIN = 3;                          // and below this there is no pattern to see
+const SWEEP_SCAN_LIMIT = 2000;
+
+async function runRenewalSweep(env, now = Date.now()) {
+  const day = todayKey();
+  /* Once a day, atomically, so overlapping 5-minute ticks cannot double-mark
+     or double-page. */
+  if (!(await _claimOnce(env, 'renewsweep', day, 3 * 86400))) return { ran: false, reason: 'already swept today' };
+
+  const rows = await DB.list(env, 'ent', SWEEP_SCAN_LIMIT);
+  const truncated = rows.length >= SWEEP_SCAN_LIMIT;
+  let paid = 0;
+  const stale = [];
+  for (const row of rows) {
+    const e = row.value || {};
+    if (_planPriceUSD(e.plan, e.custom) <= 0) continue;   // nothing is being paid for
+    /* Comped, negotiated and owner accounts are granted by a person, not by a
+       subscription, so there is no renewal to wait for and never will be. */
+    if (e.source === 'admin') continue;
+    paid++;
+    if (e.pastDueSince) continue;                         // already in the pipeline
+    /* updatedAt as the fallback so records written before renewedAt existed
+       are covered rather than silently exempt - an exemption is exactly where
+       this class of defect hides. */
+    const lastSeen = e.renewedAt || e.updatedAt || 0;
+    if (!lastSeen) continue;                              // cannot judge; do not guess
+    if (now - lastSeen > RENEWAL_MAX_AGE_MS) stale.push({ email: row.id, plan: e.plan, lastSeen });
+  }
+
+  if (!stale.length) return { ran: true, paid, stale: 0, truncated };
+
+  const share = paid ? stale.length / paid : 1;
+  if (stale.length >= SWEEP_SYSTEMIC_MIN && share >= SWEEP_SYSTEMIC_FRACTION) {
+    /* Everybody at once. That is us, not them. Touch nothing. */
+    audit(env, 'renewal_sweep_systemic', { stale: stale.length, paid, share: +share.toFixed(2) });
+    try {
+      await alertOnce(env, 'renewal_systemic:' + day,
+        'RENEWALS ARE NOT ARRIVING. ' + stale.length + ' of ' + paid + ' paid accounts have had no renewal '
+        + 'confirmed in over ' + Math.round(RENEWAL_MAX_AGE_MS / 86400000) + ' days. That is almost certainly the '
+        + 'payment webhook, not that many cards failing at once - so NO account has been touched. While this lasts, '
+        + 'cancellations and failed payments are also not reaching AMV, so plans are not being revoked either. '
+        + 'Check STRIPE_WEBHOOK_SECRET and the endpoint in the Stripe dashboard (and PAYPAL_WEBHOOK_ID).',
+        6 * 60);
+    } catch (e) {}
+    return { ran: true, paid, stale: stale.length, systemic: true, marked: 0, truncated };
+  }
+
+  for (const s of stale) {
+    await _markPastDue(env, s.email, { reason: 'no_renewal_seen', lastSeen: s.lastSeen, plan: s.plan });
+  }
+  audit(env, 'renewal_sweep', { marked: stale.length, paid });
+  try {
+    await alertOnce(env, 'renewal_stale:' + day,
+      stale.length + ' subscription(s) have had no renewal confirmed in over '
+      + Math.round(RENEWAL_MAX_AGE_MS / 86400000) + ' days and are now past due: '
+      + stale.map(s => s.email).slice(0, 10).join(', ')
+      + '. They keep full access for the grace period and are told we could not confirm the renewal, not that their '
+      + 'card failed - because we do not know that.', 12 * 60);
+  } catch (e) {}
+  return { ran: true, paid, stale: stale.length, marked: stale.length, truncated };
+}
+
 /* A payment succeeded - the account is current again. */
 async function _clearPastDue(env, email) {
   const em = String(email || '').toLowerCase(); if (!em) return;
@@ -10174,8 +10324,19 @@ function _readinessReport(env) {
     { id: 'payments', name: 'Payments', blocking: false, on: _has(env, 'STRIPE_SECRET_KEY'),
       turnsOn: 'Checkout, subscriptions and the billing portal. Nobody can pay you without it.',
       how: put('STRIPE_SECRET_KEY') },
-    { id: 'paymentsHook', name: 'Payment webhooks', blocking: false, on: _has(env, 'STRIPE_WEBHOOK_SECRET'),
-      turnsOn: 'Plans granted on payment, and revoked on cancellation, refund or chargeback. Without it a payment never reaches the account that made it.',
+    /* BLOCKING once payments are switched on, and only then. A deployment not
+       selling anything yet does not need a webhook; one that IS selling and
+       has no webhook is the worse half of a broken pair. Nothing else grants a
+       plan on payment, and nothing else revokes one on cancellation, refund or
+       chargeback - so money arrives and nobody gets what they bought, while
+       anybody who ever did get a plan keeps it for ever. Taking payments with
+       no way to end what they bought is the one configuration that can put a
+       deployment in front of a customer's bank. */
+    { id: 'paymentsHook', name: 'Payment webhooks', blocking: _has(env, 'STRIPE_SECRET_KEY'),
+      on: _has(env, 'STRIPE_WEBHOOK_SECRET'),
+      turnsOn: _has(env, 'STRIPE_SECRET_KEY') && !_has(env, 'STRIPE_WEBHOOK_SECRET')
+        ? 'REQUIRED NOW - you are taking payments without it. Nothing grants a plan when somebody pays, and nothing revokes one when they cancel, are refunded, or charge back. The daily renewal sweep is a backstop, not a substitute.'
+        : 'Plans granted on payment, and revoked on cancellation, refund or chargeback. Without it a payment never reaches the account that made it.',
       how: put('STRIPE_WEBHOOK_SECRET') },
     { id: 'modelFallback', name: 'Model failover', blocking: false, on: _has(env, 'MODEL_API_FALLBACK_URL'),
       turnsOn: 'A second endpoint AMV falls back to when the primary cannot answer. Non-streaming requests are retried there; a stream that already sent words is never retried, because repeating them is worse than an honest error.',
@@ -10600,32 +10761,14 @@ async function verifyStripeSignature(secret, payload, sigHeader) {
   } catch { return false; }
 }
 
-// ---- PayPal: create an order (one-time) or subscription approval link ----
-async function paypalCreate(request, env) {
-  const user = await requireUser(request, env);
-  if (!user) return json({ error: 'unauthorized' }, 401);
-  if (!env.PAYPAL_CLIENT_ID || !env.PAYPAL_SECRET) return json({ error: 'paypal not configured' }, 503);
-  const { plan } = await request.json().catch(() => ({}));
-  const PRICES = { pro: '15.00', elite: '75.00', ultra: '200.00' };
-  const amount = PRICES[plan];
-  if (!amount) return json({ error: 'unknown plan' }, 400);
+/* ---- PayPal: create a recurring SUBSCRIPTION (needs billing plan IDs) ----
 
-  const token = await _paypalToken(env);
-  if (!token) return json({ error: 'paypal auth failed' }, 502);
-  const r = await fetch(`${_paypalBase(env)}/v2/checkout/orders`, {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      intent: 'CAPTURE',
-      purchase_units: [{ amount: { currency_code: 'USD', value: amount }, custom_id: `${user.email}|${plan}` }],
-    }),
-  });
-  const d = await r.json();
-  if (!r.ok) return json({ error: 'paypal create failed' }, 502);
-  return json({ id: d.id });
-}
-
-// ---- PayPal: create a recurring SUBSCRIPTION (needs billing plan IDs) ----
+   The only PayPal purchase route there is. A one-time ORDER pair used to sit
+   here too (create + capture) and had to go: an order has no renewal, so the
+   entitlement it granted had nothing that would ever expire or revoke it. One
+   $15 payment bought Pro permanently, callable directly by any signed-in
+   account. A subscription is the thing that keeps paying, and the webhook is
+   what grants and revokes against it. */
 async function paypalSubscribe(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
@@ -10665,47 +10808,6 @@ async function paypalSubscribe(request, env) {
 }
 
 // ---- PayPal: capture an approved order, then grant entitlement ----
-async function paypalCapture(request, env) {
-  const user = await requireUser(request, env);
-  if (!user) return json({ error: 'unauthorized' }, 401);
-  const { orderId } = await request.json().catch(() => ({}));
-  if (!orderId) return json({ error: 'orderId required' }, 400);
-  const token = await _paypalToken(env);
-  if (!token) return json({ error: 'paypal auth failed' }, 502);
-  const r = await fetch(`${_paypalBase(env)}/v2/checkout/orders/${orderId}/capture`, {
-    method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-  });
-  const d = await r.json();
-  if (!r.ok || d.status !== 'COMPLETED') return json({ error: 'capture failed' }, 502);
-  // grant from the verified capture (custom_id carries email|plan)
-  const custom = d.purchase_units?.[0]?.payments?.captures?.[0]?.custom_id
-              || d.purchase_units?.[0]?.custom_id || '';
-  const [email, plan] = custom.split('|');
-  // AMV-027: bind the capture to the authenticated caller. The provider response
-  // proves an order was captured, NOT that THIS user is entitled to the grant.
-  // The order's custom_id was set by us to the buyer's email at create time;
-  // require it to match the caller so a stale or attacker-supplied order id can't
-  // grant a plan to a chosen account.
-  if (email && email.toLowerCase() !== user.email) {
-    audit(env, 'paypal_capture_mismatch', { caller: user.email, order: orderId });
-    return json({ error: 'this order does not belong to your account' }, 403);
-  }
-  if (email && plan) {
-    const cap = d.purchase_units?.[0]?.payments?.captures?.[0];
-    const capId = cap?.id || d.id || orderId;
-    // Exactly-once: a replayed or concurrent capture of the same order must not
-    // grant twice or double-record the payment. Atomic on D1.
-    if (!(await _claimOnce(env, 'ppcapture', capId))) return json({ ok: true, plan, duplicate: true });
-    await setEntitlement(env, email.toLowerCase(), plan, { source: 'paypal' });
-    // log it so it shows in the admin finance page alongside Stripe
-    const amt = parseFloat(cap?.amount?.value || '0') || 0;
-    const cur = cap?.amount?.currency_code || 'USD';
-    await _recordTxn(env, { provider: 'paypal', email: email.toLowerCase(), amount: amt, currency: cur,
-      kind: plan, status: 'succeeded', ref: d.id || cap?.id || '' });
-  }
-  return json({ ok: true, plan });
-}
-
 // ---- PayPal: webhook (for renewals/disputes/refunds) ----
 async function paypalWebhook(request, env, ctx) {
   const raw = await request.text();

@@ -4,7 +4,9 @@
             direct caller point a victim's post-payment redirect at a phishing
             site. The server-configured APP_URL is now authoritative.
    AMV-027  PayPal capture trusted the order's custom_id email as the grant
-            target; it must match the authenticated caller.
+            target. It was hardened to require a match with the authenticated
+            caller, and the route was later removed outright for a reason the
+            hardening could not fix: see the section below.
    AMV-028  marketplace listings accepted unbounded base64 file payloads
             (storage amplification / decompression bombs). Now size-bounded. */
 import { readFileSync, writeFileSync, mkdirSync } from 'fs';
@@ -17,7 +19,7 @@ const ROOT = join(__dir, '..', '..');
 const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'payment-security.harness.mjs');
-writeFileSync(harness, src + '\nexport { DB, marketBuy, paypalCapture, marketPublish, issueTokens };\n');
+writeFileSync(harness, src + '\nexport { DB, marketBuy, marketPublish, issueTokens };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 /* Money endpoints now require a recorded adult age - an account that has never
@@ -65,26 +67,38 @@ section('AMV-025: checkout redirect ignores a spoofed Origin');
   ok(!successUrl.includes('attacker.example'), 'the spoofed Origin is NOT reflected into the redirect', successUrl);
 }
 
-/* ── AMV-027: PayPal capture must belong to the caller ──────────────────── */
-section('AMV-027: PayPal capture is bound to the authenticated caller');
+/* ── AMV-027: the one-time PayPal order routes are gone ─────────────────── */
+section('AMV-027: a one-time payment cannot buy a recurring plan');
 {
-  store.clear();
-  const env = mkEnv({ PAYPAL_CLIENT_ID: 'id', PAYPAL_SECRET: 'sec', PAYPAL_MODE: 'sandbox' });
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = async (url) => {
-    const u = String(url);
-    if (u.includes('oauth2/token')) return { ok: true, json: async () => ({ access_token: 'ppt' }) };
-    if (u.includes('/capture')) return { ok: true, json: async () => ({ id: 'ORDER1', status: 'COMPLETED', purchase_units: [{ payments: { captures: [{ id: 'CAP1', custom_id: 'victim@x.com|pro', amount: { value: '75.00', currency_code: 'USD' } }] } }] }) };
-    return { ok: true, json: async () => ({}) };
-  };
-  const attackerTok = await tok(env, 'attacker@x.com');
-  let r = await W.paypalCapture(req({ orderId: 'ORDER1' }, attackerTok), env);
-  ok(r.status === 403, 'an order whose custom_id is another user is rejected (403)', r.status);
-  const victimTok = await tok(env, 'victim@x.com');
-  r = await W.paypalCapture(req({ orderId: 'ORDER1' }, victimTok), env);
-  const d = await jget(r);
-  globalThis.fetch = realFetch;
-  ok(r.status === 200 && d.plan === 'pro', 'the legitimate buyer CAN capture their own order', { status: r.status, d });
+  /* This section used to prove that paypalCapture bound the grant to the
+     authenticated caller, which it did. The binding was correct and the route
+     was still wrong.
+
+     A one-time PayPal ORDER has no renewal. paypalCapture called
+     setEntitlement, which writes no expiry, so nothing downstream would ever
+     revoke the plan: no invoice.payment_failed, no subscription.cancelled, no
+     period end. Fifteen dollars, once, bought Pro for ever. And the browser
+     flow that used the pair was removed for separate reasons, leaving two
+     authenticated routes that any signed-in account could still drive with
+     curl, long after nothing in the product pointed at them.
+
+     Hardening could not fix that. The shape was wrong: AMV sells
+     subscriptions, and only a subscription keeps paying. So the assertion is
+     that the routes do not exist - a deleted route cannot regress. */
+  ok(!/case '\/v1\/paypal\/create'/.test(src),
+     'there is no one-time order route', true);
+  ok(!/case '\/v1\/paypal\/capture'/.test(src),
+     'and no route that grants a plan from capturing one', true);
+  ok(!/function paypalCapture/.test(src),
+     'the handler is gone too, not merely unrouted', true);
+
+  /* The subscription route IS still here, because that is the one that keeps
+     paying and that the webhook can revoke. Losing it by accident during the
+     deletion would take PayPal off the product entirely. */
+  ok(/case '\/v1\/paypal\/subscribe'/.test(src),
+     'PayPal is still sellable, as a subscription', true);
+  ok(/case '\/v1\/paypal\/webhook'/.test(src),
+     'and its webhook still grants and revokes against that subscription', true);
 }
 
 /* ── AMV-028: marketplace listing file payloads are size-bounded ────────── */
