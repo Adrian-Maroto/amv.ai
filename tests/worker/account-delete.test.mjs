@@ -92,6 +92,38 @@ const teamAfter = JSON.parse(store.get('team:team_x'));
 ok(!teamAfter.members.find(m => m.email === 'dana@test.com'), 'the user is removed from their team roster');
 ok(!!teamAfter.members.find(m => m.email === 'owner@test.com'), 'the team and its owner remain intact');
 
+section('A live invitation code does not survive the account it belongs to');
+{
+  /* `link:<owner>|<id>` records hold a working six-digit confirmation code,
+     the permissions somebody asked for over this account, and the address of
+     whoever asked. Nothing erased them, because PER_USER_KINDS carries `links`
+     and this kind is `link` - one letter apart, and no list mentioned it.
+
+     They were invisible to the coverage check too: it derived per-person
+     namespaces only from raw AMV_KV.put('kind:${email}') calls, and almost
+     everything here is written through DB.put(env,'kind',email,...). Teaching
+     it the shape the codebase actually uses is what surfaced this. */
+  store.clear();
+  store.set('acct:erin@test.com', JSON.stringify({ email: 'erin@test.com' }));
+  store.set('link:erin@test.com|inv1', JSON.stringify({
+    id: 'inv1', owner: 'erin@test.com', grantee: 'asker@test.com',
+    scopes: ['read_chats'], code: '482913', status: 'pending' }));
+  store.set('link:someone@test.com|inv2', JSON.stringify({
+    id: 'inv2', owner: 'someone@test.com', grantee: 'erin@test.com',
+    scopes: ['read_chats'], code: '771002', status: 'pending' }));
+  store.set('link:other@test.com|inv3', JSON.stringify({
+    id: 'inv3', owner: 'other@test.com', grantee: 'third@test.com',
+    scopes: ['read_chats'], code: '999111', status: 'pending' }));
+  asUser = 'erin@test.com';
+  await W.authDeleteAccount(req(), env);
+  ok(!store.has('link:erin@test.com|inv1'),
+     'an invitation over their account is gone, code and all');
+  ok(!store.has('link:someone@test.com|inv2'),
+     'and so is one they had sent to somebody else');
+  ok(store.has('link:other@test.com|inv3'),
+     'while two strangers\' invitation to each other is untouched');
+}
+
 section('After deletion, the account record is truly gone');
 ok(!store.has('acct:alice@test.com'), 'the account record is removed');
 ok(!store.has('ent:alice@test.com'), 'the subscription record is removed');

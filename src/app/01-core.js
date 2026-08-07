@@ -566,6 +566,17 @@ const AMV_API = {
      paypalSubscribe below is how: PayPal states the price from the plan the
      server registered, and the webhook is what grants anything. */
   async paypalSubscribe(plan,email){ const r=await this._fetch('/v1/paypal/subscribe',{method:'POST',body:JSON.stringify({plan,email})}); const d=await r.json(); if(!r.ok||!d.url) throw new Error(d.error||'subscribe failed'); return d.url; },
+  /* A bug report that reaches a person. Returns what really happened - `ok`
+     that it is stored server-side, and `notified` separately, because those
+     are different promises and only one of them is always true. */
+  async support(kind, text, ctx){
+    if(!this.live) throw new Error('AMV is not connected to a backend on this device.');
+    const r = await this._fetch('/v1/support', {method:'POST',
+      body: JSON.stringify(Object.assign({ kind, text }, ctx||{}))});
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok || !d.ok) throw new Error(d.error || 'That could not be sent.');
+    return d;
+  },
   async entitlement(email){ const r=await this._fetch('/v1/entitlement?email='+encodeURIComponent(email||'')); return await r.json(); },
   /* Family (AMV-102). The parent's controls; there is deliberately no method
      here for reading a child's conversations, because no such route exists. */

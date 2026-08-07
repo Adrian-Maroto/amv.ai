@@ -566,6 +566,17 @@ const AMV_API = {
      paypalSubscribe below is how: PayPal states the price from the plan the
      server registered, and the webhook is what grants anything. */
   async paypalSubscribe(plan,email){ const r=await this._fetch('/v1/paypal/subscribe',{method:'POST',body:JSON.stringify({plan,email})}); const d=await r.json(); if(!r.ok||!d.url) throw new Error(d.error||'subscribe failed'); return d.url; },
+  /* A bug report that reaches a person. Returns what really happened - `ok`
+     that it is stored server-side, and `notified` separately, because those
+     are different promises and only one of them is always true. */
+  async support(kind, text, ctx){
+    if(!this.live) throw new Error('AMV is not connected to a backend on this device.');
+    const r = await this._fetch('/v1/support', {method:'POST',
+      body: JSON.stringify(Object.assign({ kind, text }, ctx||{}))});
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok || !d.ok) throw new Error(d.error || 'That could not be sent.');
+    return d;
+  },
   async entitlement(email){ const r=await this._fetch('/v1/entitlement?email='+encodeURIComponent(email||'')); return await r.json(); },
   /* Family (AMV-102). The parent's controls; there is deliberately no method
      here for reading a child's conversations, because no such route exists. */
@@ -18488,28 +18499,44 @@ function openFeedback(kind){
   let curKind=kind;
   ovr.querySelectorAll('[data-fbk]').forEach(b=>on(b,'click',()=>{ curKind=b.dataset.fbk; ovr.querySelectorAll('.fb-type').forEach(x=>x.classList.remove('on')); b.classList.add('on'); }));
   on($('fb-cancel'),'click',closeOvr);
-  on($('fb-send'),'click',()=>{
+  on($('fb-send'),'click',async ()=>{
     const text=($('fb-text')?$('fb-text').value:'').trim();
     if(!text){ $('fb-text')&&$('fb-text').focus(); return; }
+    const btn=$('fb-send');
+    if(btn){ btn.disabled=true; btn.textContent='Sending\u2026'; }
     const res=_submitFeedback(curKind, text, ($('fb-email')?$('fb-email').value.trim():''));
-    closeOvr();
+
     /* IT SAID "SENT TO THE TEAM" AND NOTHING LEFT THE DEVICE.
 
-       _submitFeedback writes to localStorage and only transmits if
-       `amv_feedback_endpoint` is set - a key no screen in the product can
-       write. There is no server route for this either: /v1/feedback is the
-       thumbs up/down counter and deliberately stores no content, so it would
-       refuse a bug report. Somebody reporting a bug was thanked, told the team
-       had it, and their report sat in their own browser for ever.
+       _submitFeedback wrote to localStorage and only transmitted if
+       `amv_feedback_endpoint` was set - a key no screen in the product could
+       write. /v1/feedback is the thumbs up/down counter, which deliberately
+       stores no content and would have refused a sentence. So somebody
+       reporting a broken payment was thanked, told the team had it, and their
+       report sat in their own browser for ever.
 
-       So: say what happened, and point at the channel that does reach a human. */
-    if(res && res.delivered){
-      toast('Thank you - your feedback was sent to the team.','success',3500);
+       Saying so instead of lying was the first fix and left the real problem:
+       a product taking money with no way to be told it is broken. /v1/support
+       is that way. It answers what actually happened - stored, and separately
+       whether it reached a person - so this can still only claim what is
+       true. */
+    let sent=null;
+    try{ sent = await AMV_API.support(curKind, text, { plan: loadStr('amv_plan')||'free', tab: S.tab }); }
+    catch(e){ sent = { error: e && e.message }; }
+    closeOvr();
+
+    if(sent && sent.ok && sent.notified){
+      toast('Thank you - your report is with the team.','success',4000);
+    } else if(sent && sent.ok){
+      /* It IS on the server and an operator will see it in the inbox; what we
+         cannot promise is that anybody was paged about it tonight. */
+      toast('Thank you - your report was received.'+(_supportEmail()?' If it is urgent, email '+_supportEmail()+' as well.':''),'success',6000);
     } else if(_supportEmail()){
-      toast('Saved. Nothing is transmitted from here, so to reach a person use Email Support in the Help Center - it opens a message to '+_supportEmail()+'.','info',9000);
+      toast('That could not be sent'+(sent&&sent.error?' ('+sent.error+')':'')+'. It is saved on this device - to reach a person now, email '+_supportEmail()+'.','info',9000);
     } else {
-      toast('Saved on this device. AMV has no channel configured to send it on, so nobody will see it until the operator sets a support address - ask them to.','info',9000);
+      toast('That could not be sent, so it is saved on this device only and nobody has seen it. AMV has no support address configured - ask the operator to set one.','info',9000);
     }
+    void res;
   });
 }
 /* Returns what actually happened, so the caller cannot thank somebody for a

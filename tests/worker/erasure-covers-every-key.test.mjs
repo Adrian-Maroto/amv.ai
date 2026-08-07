@@ -42,13 +42,35 @@ const W = await import(harness + '?t=' + Date.now());
 
 /* ── The computed half: which namespaces name a person, and which are erased ── */
 
+/* Names this codebase uses for "the person whose record this is". */
+const PERSONISH = /\bemail\b|\bem\b|user\.email|\btarget\b|\bbuyer\b|\bto\b|\bowner\b|\bseller\b/;
+
 /* A KV key template built from a variable that holds somebody's address. */
 const KEYED_BY_PERSON = new Set();
 const keyPat = /AMV_KV\.(?:put|get|delete)\(\s*[`']([a-z_]+):(?:\$\{|'\s*\+\s*)([^`')]{0,40})/g;
 for (const m of src.matchAll(keyPat)) {
-  const expr = m[2];
-  if (/\bemail\b|\bem\b|user\.email|\btarget\b|\bbuyer\b|\bto\b/.test(expr)) KEYED_BY_PERSON.add(m[1]);
+  if (PERSONISH.test(m[2])) KEYED_BY_PERSON.add(m[1]);
 }
+
+/* AND the same thing written the way this codebase actually writes it.
+
+   Almost nothing calls AMV_KV directly any more - records go through
+   DB.put(env, 'kind', email, ...), which becomes the key `kind:email` and is
+   every bit as much a namespace naming a person. The pattern above cannot see
+   those at all, so the dominant storage shape in the worker was invisible to
+   this check, and every future per-user kind would have been added without
+   anybody being asked whether erasure covers it.
+
+   Proven rather than assumed. With only the KV pattern, this file passed with
+   `support` off PER_USER_KINDS - leaving a deleted customer's own support
+   messages on the server - and passed again with `link:<owner>|<id>` erased by
+   nothing at all, which is a live six-digit invitation code and the scopes
+   somebody asked for over an account that no longer exists. */
+const DB_KINDS_BY_PERSON = new Set();
+for (const m of src.matchAll(/\bDB\.(?:put|get|del)\(\s*env\s*,\s*'([a-z_]+)'\s*,\s*([^,)]{0,50})/g)) {
+  if (PERSONISH.test(m[2])) DB_KINDS_BY_PERSON.add(m[1]);
+}
+for (const k of DB_KINDS_BY_PERSON) KEYED_BY_PERSON.add(k);
 
 /* Brace-matched, because slicing to the next occurrence of some string ran the
    "erasure body" hundreds of lines past the end of the function and swept in
@@ -89,12 +111,22 @@ const ERASED = new Set([
      written slightly differently from the ones before it. The function only
      names a key in order to remove it, so naming is the signal. */
   ...[...erasureBody.matchAll(/[`'"]([a-z_]+):/g)].map(m => m[1]),
+  /* And the DB shape, for the same reason the person-keyed scan above had to
+     learn it: mktsnap is erased by DB.list + DB.del with no `kind:` literal
+     anywhere, so reading only key literals reported a kind as unerased while
+     the loop that erases it sat three lines above. */
+  ...[...erasureBody.matchAll(/\bDB\.(?:del|list)\(\s*env\s*,\s*'([a-z_]+)'/g)].map(m => m[1]),
 ]);
 
 section('Both sides were actually read');
 {
   ok(KEYED_BY_PERSON.size >= 10, 'KV namespaces keyed by a person', [...KEYED_BY_PERSON].sort());
   ok(ERASED.size >= 20, 'and what erasure deletes', ERASED.size);
+  /* If this stops finding DB kinds the check narrows back to the shape almost
+     nothing uses, and starts passing for the wrong reason. */
+  ok(DB_KINDS_BY_PERSON.size >= 15,
+     'including the DB kinds, which is how records are actually written here',
+     DB_KINDS_BY_PERSON.size);
 }
 
 section('Every key naming a person is erased, or retained for a stated reason');

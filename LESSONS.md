@@ -1870,3 +1870,45 @@ one the server granted until exactly that moment.
 stranger. Not because unit stubs are wrong, but because the defects that reach
 customers are the ones living in the space between the parts each stub was
 written to represent.
+
+## 135. A coverage check that cannot see the common case is worse than none
+
+`erasure-covers-every-key` is an exhaustive check: every KV namespace whose key
+names a person is erased with the account, or listed with the reason it is
+kept. It has caught real leaks. It derived that list from
+`AMV_KV.put('kind:${email}')`.
+
+Almost nothing in the worker writes that way any more. Records go through
+`DB.put(env, 'kind', email, ...)`, which produces exactly the same
+`kind:email` key and was completely invisible to the pattern. So the dominant
+storage shape in the codebase had no coverage at all, while a green check said
+otherwise every run.
+
+It was proven, not assumed. Taking `support` off `PER_USER_KINDS` - which
+leaves a deleted customer's own support messages on the server - left the file
+passing. Teaching it `DB.put` found `link` on the first run: `link:<owner>|<id>`
+records hold a live six-digit confirmation code, the permissions somebody asked
+for over that account, and the address of whoever asked. Nothing erased them,
+because `PER_USER_KINDS` carries `links` and this kind is `link`. One letter
+apart, and no list mentioned it.
+
+The same blindness ran the other way round. `mktsnap` IS erased, by
+`DB.list` + `DB.del` with no `kind:` literal anywhere, so the half of the check
+that reads what erasure deletes reported it as missed. A false positive in a
+privacy check is how the check gets disabled.
+
+**Rule:** a check is only as wide as the pattern it greps for, and patterns
+rot the moment the codebase adopts a helper. When you write one, go and break
+the thing it guards to confirm it fails - and when a codebase gains a storage
+helper, every check that reads storage needs to learn it that day.
+
+## 136. I did it again: `git checkout` on uncommitted work
+
+LESSONS 131 says never use `git checkout <file>` to undo a sabotage, because it
+reverts to HEAD and the fix is not committed either. I wrote that rule this
+session and then did exactly that again two hours later, losing the whole
+DB-kinds improvement to the erasure check and having to rewrite it.
+
+Knowing a rule is not the same as having a habit. The habit is: back up to the
+scratchpad with `cp` BEFORE the first sabotage, and restore with `cp`, every
+time, without deciding each time whether this one is small enough to be safe.

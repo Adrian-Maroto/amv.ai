@@ -3203,7 +3203,8 @@ const BACKUP_PREFIXES = [
   'mktsnap:',   // what a buyer PAID for, snapshotted so a seller edit cannot revoke it
   'spendlimits:', // a restore without them resets everybody to the defaults, which is
                   // the permissive direction and the wrong way to be wrong
-  'fraud:'      // the abuse assessments an operator would need after an incident
+  'fraud:',     // the abuse assessments an operator would need after an incident
+  'support:'    // open tickets; losing them loses the customers waiting on a reply
 ];
 /* Never exported. Listed so the omission reads as a decision, not an oversight.
    Two reasons appear here: it is a CREDENTIAL and must not sit in a snapshot
@@ -3732,6 +3733,8 @@ export default {
         case '/v1/keys/list':    return apiKeyList(request, env);
         case '/v1/keys/revoke':  return apiKeyRevoke(request, env);
         case '/v1/feedback':     return feedbackRecord(request, env);
+        case '/v1/support':      return supportSubmit(request, env);
+        case '/v1/admin/support': return supportInbox(request, env);
         case '/v1/referral':     return referralStatus(request, env);
         case '/v1/share/create': return shareCreate(request, env);
         case '/v1/share/list':   return shareList(request, env);
@@ -4250,7 +4253,12 @@ async function authLogout(request, env) {
 const PER_USER_KINDS = ['acct', 'ent', 'entitleitem', 'data', 'auto', 'crewjobs',
   'approvals', 'handoff', 'abuse', 'seller', 'widget', 'wallet', 'wallet_tx',
   'purchases', 'stripecust', 'userteam', 'sites', 'spendlimits',
-  'fin', 'finlink', 'invsnap', 'links', 'fam', 'apikeys', 'consent', 'widget_owner', 'shares', 'presence'];
+  'fin', 'finlink', 'invsnap', 'links', 'fam', 'apikeys', 'consent', 'widget_owner', 'shares', 'presence',
+  /* Support tickets are keyed by the reporter's email precisely so they land
+     here: a support inbox is one of the easiest places for somebody's words
+     about their own account to outlive them. Erased with the account, and in
+     their export, like everything else the server holds. */
+  'support'];
 
 /* Kinds that are HELD but must never be handed back verbatim: a live
    credential is not somebody's data to download, and returning it would turn
@@ -4409,6 +4417,29 @@ async function authDeleteAccount(request, env) {
     for (const s of snaps) {
       if (!s || typeof s.id !== 'string' || !s.id.startsWith(email + ':')) continue;
       try { await DB.del(env, 'mktsnap', s.id); } catch {}
+    }
+  } catch {}
+
+  /* Account-link invitations, keyed `link:<owner>|<id>` - the same compound
+     shape as the snapshots above, and missed for the same reason: `links` is
+     on PER_USER_KINDS and `link` is a different kind entirely, one letter
+     apart. Each record holds a live six-digit confirmation code, the scopes
+     somebody asked for over this account, and the address of whoever asked.
+     Left behind, that is a working credential against an account that no
+     longer exists, naming a person who asked to stop existing here.
+
+     Both directions: invitations ABOUT this account, and invitations this
+     account sent to somebody else. */
+  try {
+    const invites = await DB.list(env, 'link', 20000);
+    for (const l of invites) {
+      const id = l && typeof l.id === 'string' ? l.id : '';
+      const rec = (l && l.value) || {};
+      const mine = id.startsWith(email + '|')
+        || String(rec.grantee || '').toLowerCase() === email
+        || String(rec.owner || '').toLowerCase() === email;
+      if (!mine) continue;
+      try { await DB.del(env, 'link', id); } catch {}
     }
   } catch {}
 
@@ -10241,6 +10272,88 @@ async function feedbackRecord(request, env) {
   }
   /* Deliberately not audited with any content. The event itself is the record. */
   return json({ ok: true });
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   SUPPORT - a bug report that reaches a person.
+
+   There was nowhere for one to go. The in-app report wrote to localStorage and
+   only transmitted if `amv_feedback_endpoint` was set, a key no screen in the
+   product could write, and /v1/feedback is the thumbs up/down counter above,
+   which deliberately stores no content and would have refused a sentence. So
+   somebody reporting a broken payment was thanked and their report sat in
+   their own browser for ever.
+
+   The screen at least stopped claiming otherwise. It still left a product that
+   takes money with no way to be told it is broken, which is a refund and a
+   chargeback for every problem that could have been a reply.
+
+   Stored under the reporter's own email, which is not incidental: it is what
+   puts support tickets on PER_USER_KINDS, so they are erased with the account
+   and included in a data export like everything else the server holds. A
+   support inbox is one of the easiest places to accumulate personal data that
+   outlives the person who wrote it. */
+const SUPPORT_MAX_LEN = 4000;
+const SUPPORT_KEEP = 20;              // per account, newest first
+const SUPPORT_KINDS = new Set(['bug', 'idea', 'billing', 'account', 'other']);
+
+async function supportSubmit(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'sign in first, or email support directly' }, 401);
+  /* Reaching a human is worth spending real money on, so it is worth abusing.
+     Generous for a person with a bad day, useless as an amplifier. */
+  const blocked = await guardAction(env, `support:${user.email}`, 5, 20, 'support messages');
+  if (blocked) return blocked;
+
+  const body = await request.json().catch(() => ({}));
+  const text = String(body.text || '').trim().slice(0, SUPPORT_MAX_LEN);
+  if (text.length < 5) return json({ error: 'please describe what happened' }, 400);
+  const kind = SUPPORT_KINDS.has(body.kind) ? body.kind : 'other';
+  /* Context the reporter did not have to think to include, and nothing more.
+     No conversation content: somebody reporting that chat is broken has not
+     agreed to send us what they were chatting about. */
+  const ticket = {
+    id: 'sup_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+    kind, text, at: Date.now(),
+    plan: String(body.plan || '').slice(0, 16),
+    tab: String(body.tab || '').replace(/[^a-z_-]/gi, '').slice(0, 24),
+    app: String(body.app || '').slice(0, 24),
+    status: 'open',
+  };
+
+  const prev = (await DB.get(env, 'support', user.email)) || { tickets: [] };
+  const tickets = [ticket].concat(Array.isArray(prev.tickets) ? prev.tickets : []).slice(0, SUPPORT_KEEP);
+  await DB.put(env, 'support', user.email, { tickets, updatedAt: Date.now() });
+
+  /* Told to the operator NOW. A ticket that only exists until somebody thinks
+     to open an admin page is barely better than one in a browser. Not
+     alertOnce: every report is a different person, and collapsing them is how
+     the second one is never seen. */
+  let notified = false;
+  try {
+    await notify(env, `📮 ${kind} report from ${user.email}` + (ticket.plan ? ` (${ticket.plan})` : '')
+      + `:\n${text.slice(0, 500)}`);
+    notified = !!env.ALERT_WEBHOOK;
+  } catch (e) {}
+  audit(env, 'support_submitted', { email: user.email, kind, id: ticket.id });
+
+  /* What actually happened, so the screen cannot thank somebody for a delivery
+     that did not occur. Stored is true either way; reaching a person is not. */
+  return json({ ok: true, id: ticket.id, stored: true, notified,
+                support: env.SUPPORT_EMAIL || '' });
+}
+
+/* The operator's inbox. Behind the admin token like every other operator
+   surface - it contains other people's words about their own accounts. */
+async function supportInbox(request, env) {
+  if (!_requireAdmin(request, env)) { audit(env, 'auth_fail', { reason: 'admin_bad_token' }); return json({ error: 'forbidden' }, 403); }
+  const rows = await DB.list(env, 'support', 500);
+  const out = [];
+  for (const row of rows) {
+    for (const t of ((row.value || {}).tickets || [])) out.push(Object.assign({ email: row.id }, t));
+  }
+  out.sort((a, b) => (b.at || 0) - (a.at || 0));
+  return json({ ok: true, tickets: out.slice(0, 200), accounts: rows.length });
 }
 
 /* Approval rate per engine, for the dashboard and the weekly digest. A rate
