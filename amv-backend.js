@@ -10027,8 +10027,11 @@ const FEEDBACK_REASONS = new Set(['wrong', 'incomplete', 'ignored_instructions',
    while every visitor needed it.
 
    ONLY values that are public by design go in here. A Google client id, a
-   PayPal client id and a support address all appear in plain sight in ordinary
-   use - in the OAuth URL, in the PayPal SDK tag, on the contact page. Nothing
+   Turnstile SITE key and a support address all appear in plain sight in
+   ordinary use - in the OAuth URL, in the captcha widget's own markup, on the
+   contact page. And only values a browser actually USES: the PayPal client id
+   was served here until the browser-side PayPal SDK was removed, and an
+   unused public value is still surface for nothing. Nothing
    that could sign, spend or authenticate is served: not STRIPE_SECRET_KEY, not
    TURNSTILE_SECRET, not GOOGLE_CLIENT_SECRET, not JWT_SECRET. A missing value
    is simply absent, so this also cannot be used to enumerate which secrets a
@@ -10036,7 +10039,6 @@ const FEEDBACK_REASONS = new Set(['wrong', 'incomplete', 'ignored_instructions',
    ══════════════════════════════════════════════════════════════════════ */
 const PUBLIC_CONFIG_KEYS = [
   ['googleClientId',  'GOOGLE_CLIENT_ID'],
-  ['paypalClientId',  'PAYPAL_CLIENT_ID'],
   ['supportEmail',    'SUPPORT_EMAIL'],
   /* A Turnstile SITE key is public by design - it sits in the HTML of every
      site that uses one. The SECRET is the other half and never leaves here.

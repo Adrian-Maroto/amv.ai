@@ -190,7 +190,11 @@ try{ window._defaultApiBase=_defaultApiBase; }catch(e){}
    that are public by design are served; see publicConfig in the Worker. */
 const _PUBLIC_CONFIG_MAP = {
   googleClientId: 'amv_gauth',
-  paypalClientId: 'amv_paypal_client',
+  /* No paypalClientId. It was here for a browser-side PayPal SDK that built
+     and captured its own orders, which had to go - the browser stated the
+     price and confirmed the capture. PayPal is server-side now, so the client
+     id has no consumer in a browser and serving it would be surface with no
+     purpose. */
   supportEmail:   'amv_support_email',
   /* The half of Turnstile that is public by design - it appears in the widget's
      own markup. Without a route to the browser the widget can never render, and
@@ -554,9 +558,14 @@ const AMV_API = {
 
   // ---- PAYMENTS (secure backend) ----
   async stripeCheckout(plan,email,seats){ const r=await this._fetch('/v1/stripe/checkout',{method:'POST',body:JSON.stringify({plan,email,seats})}); const d=await r.json(); if(!r.ok||!d.url){ const e=new Error(d.error||'checkout failed'); e.code=d.code; throw e; } return d.url; },
-  async paypalCreate(plan){ const r=await this._fetch('/v1/paypal/create',{method:'POST',body:JSON.stringify({plan})}); const d=await r.json(); if(!r.ok||!d.id) throw new Error(d.error||'paypal create failed'); return d.id; },
+  /* There is deliberately no paypalCreate/paypalCapture here. Those routes
+     back a one-time ORDER, and the browser flow that used them built the order
+     with a client-stated amount and captured it client-side - so a plan could
+     be bought for a price the payer chose, and a payment AMV's server never
+     confirmed still unlocked a monthly plan. AMV sells subscriptions, and
+     paypalSubscribe below is how: PayPal states the price from the plan the
+     server registered, and the webhook is what grants anything. */
   async paypalSubscribe(plan,email){ const r=await this._fetch('/v1/paypal/subscribe',{method:'POST',body:JSON.stringify({plan,email})}); const d=await r.json(); if(!r.ok||!d.url) throw new Error(d.error||'subscribe failed'); return d.url; },
-  async paypalCapture(orderId,email){ const r=await this._fetch('/v1/paypal/capture',{method:'POST',body:JSON.stringify({orderId,email})}); const d=await r.json(); if(!r.ok||!d.ok) throw new Error(d.error||'capture failed'); return d; },
   async entitlement(email){ const r=await this._fetch('/v1/entitlement?email='+encodeURIComponent(email||'')); return await r.json(); },
   /* Family (AMV-102). The parent's controls; there is deliberately no method
      here for reading a child's conversations, because no such route exists. */

@@ -47,7 +47,13 @@ section('It NEVER returns a secret, in any form');
   const env = Object.assign(bare(), {
     AMV_MODEL_KEY: 'amv-SUPERSECRET1234', JWT_SECRET: 'jwt-SUPERSECRET',
     EMAIL_API_KEY: 'em-SUPERSECRET', STRIPE_SECRET_KEY: 'sk_live_SUPERSECRET',
-    STRIPE_WEBHOOK_SECRET: 'whsec_SUPERSECRET', TURNSTILE_SECRET: 'ts-SUPERSECRET',
+    STRIPE_WEBHOOK_SECRET: 'whsec_SUPERSECRET',
+    /* BOTH halves of Turnstile, because one of them is not a configured
+       captcha. The secret verifies a token; TURNSTILE_SITE_KEY is what renders
+       the widget that produces one. This env used to set the secret alone and
+       call the deployment fully configured - encoding the exact half-state
+       that took every sign-up and sign-in on the site down. */
+    TURNSTILE_SECRET: 'ts-SUPERSECRET', TURNSTILE_SITE_KEY: '0x4AAAsite-SUPERSECRET',
     GOOGLE_CLIENT_ID: 'gid-SUPERSECRET', IMAGE_API_KEY: 'img-SUPERSECRET',
     IMAGE_API_URL: 'https://img.example', ALERT_WEBHOOK: 'https://hooks.example/SUPERSECRET',
     OWNER_EMAIL: 'owner@example.com', APP_URL: 'https://amv.example',

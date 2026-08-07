@@ -141,7 +141,7 @@ section('And the public settings a visitor needs arrive from the backend');
       asked = String(u);
       return { ok: true, status: 200, json: async () => ({
         ok: true, googleClientId: '123-abc.apps.googleusercontent.com',
-        paypalClientId: 'AYclient', supportEmail: 'help@amv.test' }) };
+        turnstileSiteKey: '0x4AAAsite', supportEmail: 'help@amv.test' }) };
     };
     /* Cleared because boot already ran once in this context. */
     _publicConfigDone = false;
@@ -149,7 +149,7 @@ section('And the public settings a visitor needs arrive from the backend');
     window.fetchDeadline = realFetch;
     return { before, asked,
              google: loadStr('amv_gauth') || '',
-             paypal: loadStr('amv_paypal_client') || '',
+             captcha: loadStr('amv_turnstile_site') || '',
              support: loadStr('amv_support_email') || '' };
   });
   await ctx.close();
@@ -157,7 +157,7 @@ section('And the public settings a visitor needs arrive from the backend');
   ok(/\/v1\/public-config$/.test(r.asked), 'the backend is asked for it', r.asked);
   ok(r.google === '123-abc.apps.googleusercontent.com',
      'and Continue with Google now has an id to use', r.google);
-  ok(r.paypal === 'AYclient', 'PayPal too', r.paypal);
+  ok(r.captcha === '0x4AAAsite', 'the captcha site key too', r.captcha);
   ok(r.support === 'help@amv.test', 'and the support address', r.support);
 }
 

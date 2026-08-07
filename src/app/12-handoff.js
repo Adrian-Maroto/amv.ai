@@ -2018,9 +2018,15 @@ function _renderSetPaneInner(){
         '</div>'+
       '</div>'+
       '<div class="ss2"><h3>PayPal &amp; Venmo</h3>'+
-        '<p style="font-size:12px;color:var(--mu);margin-bottom:11px;line-height:1.6">Paste your PayPal <b>client ID</b> (from developer.paypal.com) to turn on the real PayPal buttons - <b>Venmo is enabled automatically</b>. Clicking &ldquo;PayPal / Venmo&rdquo; opens the real PayPal checkout. Or drop in a hosted PayPal/Venmo link as a simple fallback.</p>'+
+        /* There was a "PayPal client ID" box here, and pasting a real one into
+           it did nothing at all. PayPal runs on the SERVER - the Worker holds
+           PAYPAL_CLIENT_ID and PAYPAL_SECRET and creates the subscription
+           itself, because a browser cannot be trusted to state a price or
+           confirm a capture. The box was left over from a browser-side SDK
+           flow that had to be removed for exactly that reason, and it read as
+           the switch that turns PayPal on. */
+        '<p style="font-size:12px;color:var(--mu);margin-bottom:11px;line-height:1.6">PayPal and Venmo subscriptions are switched on with Worker secrets, not here: set <b>PAYPAL_CLIENT_ID</b>, <b>PAYPAL_SECRET</b> and <b>PAYPAL_WEBHOOK_ID</b> on your backend and the real PayPal checkout turns on for everyone. The links below are an optional fallback for a deployment with no backend connected - a hosted PayPal or Venmo page that takes the payment instead.</p>'+
         '<div class="sf">'+
-          '<div><label class="lbl">PayPal client ID</label><input type="text" id="s-ppc" value="'+escH((_payCfg().paypalClientId)||'')+'" placeholder="AYxxxx… (live client ID)" style="font-family:var(--mn);font-size:12px"></div>'+
           '<div><label class="lbl">PayPal hosted link (optional fallback)</label><input type="url" id="s-ppl" value="'+escH((_payCfg().paypalLink)||'')+'" placeholder="https://www.paypal.com/…"></div>'+
           '<div><label class="lbl">Venmo hosted link (optional fallback)</label><input type="url" id="s-vml" value="'+escH((_payCfg().venmoLink)||'')+'" placeholder="https://venmo.com/…"></div>'+
           '<button class="btn bp" id="save-wallets" style="align-self:flex-start;font-size:12px">Save PayPal / Venmo</button>'+
@@ -2070,11 +2076,12 @@ function _renderSetPaneInner(){
     });
     on($('save-wallets'),'click',()=>{
       const cfg=_payCfg();
-      cfg.paypalClientId=$('s-ppc')?.value.trim()||'';
       cfg.paypalLink=$('s-ppl')?.value.trim()||'';
       cfg.venmoLink=$('s-vml')?.value.trim()||'';
+      /* A client id stored here from an older build would keep being read back
+         into a field that no longer exists, so it goes with the field. */
+      delete cfg.paypalClientId;
       store('amv_pay_cfg',cfg);
-      saveStr('amv_paypal_client',cfg.paypalClientId);
       const b=$('save-wallets');if(b){b.textContent='Saved!';b.style.background='var(--green)';setTimeout(()=>{b.textContent='Save PayPal / Venmo';b.style.background='';},1500);}
       toast('PayPal & Venmo saved','success');
     });

@@ -7878,3 +7878,30 @@ html,body{height:100%;height:100dvh}
   border-radius:var(--r-sm);
   background:color-mix(in srgb,var(--gold) 8%,transparent);
 }
+
+/* ==========================================================================
+   LAYER A66 - a payment button that cannot take a payment
+
+   The PayPal tab, with no backend connected, has two buttons and possibly no
+   hosted link behind either. Hiding them leaves an empty panel that explains
+   nothing; leaving them at full strength promises a checkout that does not
+   exist. So they stay legible, stay reachable by keyboard, and say what is
+   missing when pressed - dimmed enough to read as "not available here" before
+   anyone clicks, which is the same language the rest of the product uses for a
+   control that is present but not switched on.
+
+   Not `disabled`: a disabled button cannot be focused or activated, so the one
+   explanation of why the tab is empty would be unreachable to a keyboard or a
+   screen reader. aria-disabled says the state without removing the answer.
+   ========================================================================== */
+.pay-wallet-b[aria-disabled="true"]{
+  opacity:.55;
+  cursor:default;
+  box-shadow:none;
+}
+.pay-wallet-b[aria-disabled="true"]:hover{ opacity:.7; }
+.pay-wallet-b[aria-disabled="true"]:focus-visible{
+  outline:2px solid var(--accent);
+  outline-offset:2px;
+  opacity:.85;
+}

@@ -1755,3 +1755,38 @@ uncommitted diff.
 **Rule:** back the file up to the scratchpad and restore with `cp`. Never use
 `git checkout`, `git restore` or `git stash` to undo a sabotage - they revert
 to HEAD, which is not where the work is.
+
+## 132. A payment path that cannot reach a server must not look like a checkout
+
+Three money surfaces, one rule, and only one of them was following it.
+
+`_payCard` had it right and said so: "No processor connected - do NOT pretend
+to charge." Forty lines above it, the card tab mounted Stripe Elements on the
+publishable key ALONE. A publishable key tokenises a card; it cannot charge
+one. The charge is at `/v1/subscribe`, on the server. So with a key and no
+backend, AMV rendered a full card form, took a real card number, tokenised it
+against real Stripe, skipped the server call because `AMV_API.live` was false,
+and finished with `_setPlan(plan)` and "You're now on Pro!" - plus a line in
+their billing history marked `status:'paid'`. A receipt for a charge that never
+happened.
+
+The PayPal tab was worse, because there the money was real. With no backend it
+loaded the PayPal SDK, built the order in the BROWSER with the amount read out
+of `PLANS`, captured it in the browser, swallowed any capture failure, and
+granted the plan either way. A customer who really paid had no receipt and no
+entitlement on any other device. Somebody who edited the amount got the plan
+for pennies. And a one-time capture unlocked a MONTHLY plan for ever. The
+comment above it read "still gets you paid".
+
+Removing that path made a second thing fall out on its own: the standing
+storage-key check reported `amv_paypal_client` as written-but-never-read. The
+PayPal client id had no consumer in a browser any more - and Settings still had
+a box saying "paste your PayPal client ID to turn on the real PayPal buttons",
+which now turned on nothing. One deletion, three surfaces: the input, the
+public-config entry, and the client API methods behind it.
+
+**Rule:** money paths fail closed on the server being absent, never open. If a
+screen cannot reach the thing that takes the money, it does not render as a
+checkout - it says what is missing. And when a capability is removed, follow
+its configuration out: the switch that used to turn it on is now a lie, and the
+pairing checks will tell you where it went if you let them.

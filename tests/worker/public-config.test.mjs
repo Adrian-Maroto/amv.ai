@@ -59,14 +59,15 @@ section('A fully configured deployment tells a visitor what it can use');
   counters.clear();
   const r = await W.publicConfig(req(), envWith({
     GOOGLE_CLIENT_ID: '123-abc.apps.googleusercontent.com',
-    PAYPAL_CLIENT_ID: 'AYpaypalclientid',
+    TURNSTILE_SITE_KEY: '0x4AAAAAAAsiteKey',
     SUPPORT_EMAIL: 'help@amv.test',
   }));
   const d = await r.json();
   ok(r.status === 200 && d.ok === true, 'it answers', d);
   ok(d.googleClientId === '123-abc.apps.googleusercontent.com',
      'the Google client id is served, so sign-in works for everybody', d.googleClientId);
-  ok(d.paypalClientId === 'AYpaypalclientid', 'and the PayPal client id', d.paypalClientId);
+  ok(d.turnstileSiteKey === '0x4AAAAAAAsiteKey',
+     'and the captcha site key, without which the widget can never render', d.turnstileSiteKey);
   ok(d.supportEmail === 'help@amv.test', 'and the support address', d.supportEmail);
 }
 
@@ -75,6 +76,8 @@ section('It never serves anything that can sign, spend or authenticate');
   counters.clear();
   const r = await W.publicConfig(req(), envWith({
     GOOGLE_CLIENT_ID: 'pub-id',
+    /* Set, so the assertion below that it is NOT served means something. */
+    PAYPAL_CLIENT_ID: 'AYpaypalclientid',
     GOOGLE_CLIENT_SECRET: 'SHOULD-NEVER-APPEAR',
     STRIPE_SECRET_KEY: 'sk_live_SHOULD-NEVER-APPEAR',
     STRIPE_WEBHOOK_SECRET: 'whsec_SHOULD-NEVER-APPEAR',
@@ -92,9 +95,16 @@ section('It never serves anything that can sign, spend or authenticate');
      'not one secret reaches the response', body.slice(0, 200));
   ok(!/sk_live|whsec_/.test(body), 'no key material of any shape', body.slice(0, 200));
   const d = JSON.parse(body);
-  const allowed = new Set(['ok', 'googleClientId', 'paypalClientId', 'supportEmail']);
+  const allowed = new Set(['ok', 'googleClientId', 'supportEmail', 'turnstileSiteKey']);
   const extra = Object.keys(d).filter(k => !allowed.has(k));
   ok(extra.length === 0, 'and no field beyond the three it is allowed to serve', extra);
+
+  /* The PayPal client id used to be served here. It stopped being served when
+     the browser-side PayPal SDK was removed - the browser no longer has any
+     use for it, and a public value with no consumer is surface for nothing.
+     PAYPAL_CLIENT_ID stays a Worker secret and PayPal runs server-side. */
+  ok(!('paypalClientId' in d),
+     'a value no browser uses is not served just because it is harmless', Object.keys(d));
 }
 
 section('An unset value is absent, not reported as unset');
@@ -106,7 +116,7 @@ section('An unset value is absent, not reported as unset');
   const r = await W.publicConfig(req(), envWith({ SUPPORT_EMAIL: 'help@amv.test' }));
   const d = await r.json();
   ok(!('googleClientId' in d), 'a missing Google id is simply not there', Object.keys(d));
-  ok(!('paypalClientId' in d), 'nor a missing PayPal id', Object.keys(d));
+  ok(!('turnstileSiteKey' in d), 'nor a missing captcha site key', Object.keys(d));
   ok(d.supportEmail === 'help@amv.test', 'while what is set is served', d.supportEmail);
 }
 

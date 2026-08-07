@@ -190,7 +190,11 @@ try{ window._defaultApiBase=_defaultApiBase; }catch(e){}
    that are public by design are served; see publicConfig in the Worker. */
 const _PUBLIC_CONFIG_MAP = {
   googleClientId: 'amv_gauth',
-  paypalClientId: 'amv_paypal_client',
+  /* No paypalClientId. It was here for a browser-side PayPal SDK that built
+     and captured its own orders, which had to go - the browser stated the
+     price and confirmed the capture. PayPal is server-side now, so the client
+     id has no consumer in a browser and serving it would be surface with no
+     purpose. */
   supportEmail:   'amv_support_email',
   /* The half of Turnstile that is public by design - it appears in the widget's
      own markup. Without a route to the browser the widget can never render, and
@@ -554,9 +558,14 @@ const AMV_API = {
 
   // ---- PAYMENTS (secure backend) ----
   async stripeCheckout(plan,email,seats){ const r=await this._fetch('/v1/stripe/checkout',{method:'POST',body:JSON.stringify({plan,email,seats})}); const d=await r.json(); if(!r.ok||!d.url){ const e=new Error(d.error||'checkout failed'); e.code=d.code; throw e; } return d.url; },
-  async paypalCreate(plan){ const r=await this._fetch('/v1/paypal/create',{method:'POST',body:JSON.stringify({plan})}); const d=await r.json(); if(!r.ok||!d.id) throw new Error(d.error||'paypal create failed'); return d.id; },
+  /* There is deliberately no paypalCreate/paypalCapture here. Those routes
+     back a one-time ORDER, and the browser flow that used them built the order
+     with a client-stated amount and captured it client-side - so a plan could
+     be bought for a price the payer chose, and a payment AMV's server never
+     confirmed still unlocked a monthly plan. AMV sells subscriptions, and
+     paypalSubscribe below is how: PayPal states the price from the plan the
+     server registered, and the webhook is what grants anything. */
   async paypalSubscribe(plan,email){ const r=await this._fetch('/v1/paypal/subscribe',{method:'POST',body:JSON.stringify({plan,email})}); const d=await r.json(); if(!r.ok||!d.url) throw new Error(d.error||'subscribe failed'); return d.url; },
-  async paypalCapture(orderId,email){ const r=await this._fetch('/v1/paypal/capture',{method:'POST',body:JSON.stringify({orderId,email})}); const d=await r.json(); if(!r.ok||!d.ok) throw new Error(d.error||'capture failed'); return d; },
   async entitlement(email){ const r=await this._fetch('/v1/entitlement?email='+encodeURIComponent(email||'')); return await r.json(); },
   /* Family (AMV-102). The parent's controls; there is deliberately no method
      here for reading a child's conversations, because no such route exists. */
@@ -12026,12 +12035,25 @@ function _payRenderMethod(method,plan){
       on($('pay-pp-sub'),'click',go); on($('pay-vm-sub'),'click',go);
       return;
     }
-    // No backend: PayPal JS SDK one-time capture (still gets you paid)
-    body.innerHTML='<div class="pay-wallet"><div id="paypal-buttons" class="pay-paypal-host"></div>'+
-      '<div id="paypal-fallback" style="display:none"><button class="pay-wallet-b paypal" id="pay-pp">Pay with PayPal →</button>'+
+    /* No backend. This used to load the PayPal JS SDK and take a one-time
+       capture entirely in the browser - the comment beside it read "still gets
+       you paid", and it did the opposite.
+
+       The order was built here, with the amount read out of PLANS, which the
+       payer can edit. The capture ran here. A capture that failed was swallowed
+       and the plan granted anyway. And AMV's server never heard about any of
+       it, so a customer who really paid had no receipt, no entitlement on any
+       other device, and every reason to call their bank. A one-time capture was
+       also unlocking a MONTHLY plan, permanently, for a single payment.
+
+       The operator's own hosted PayPal link is a real page taking a real
+       payment, so that stays. Everything else here says plainly that no
+       payment can be taken, which is the truth. */
+    body.innerHTML='<div class="pay-wallet">'+
+      '<div id="paypal-fallback"><button class="pay-wallet-b paypal" id="pay-pp">Pay with PayPal →</button>'+
       '<button class="pay-wallet-b venmo" id="pay-vm">Pay with Venmo →</button></div>'+
-      '<p class="pay-note">Opens PayPal or Venmo to confirm, then brings you back.</p></div>';
-    _mountPayPal(plan);
+      '<p class="pay-note" id="pay-pp-note">Opens PayPal or Venmo to confirm, then brings you back.</p></div>';
+    _payPalNoServer(plan);
     return;
   }
 
@@ -12065,8 +12087,17 @@ function _payRenderMethod(method,plan){
   // ---- CARD - secure card entry ----
   const pk=_stripePK();
   const liveBackend=window.AMV_API&&AMV_API.live;
-  // Best path: Stripe Elements iframe (card never touches AMV) when publishable key is set.
-  if(pk){
+  /* Best path: Stripe Elements iframe (card never touches AMV) when a
+     publishable key is set AND there is a server to confirm the charge.
+
+     The second half used to be missing. A publishable key only TOKENISES a
+     card - it cannot charge one. The charge happens at /v1/subscribe, on the
+     server. With a key and no backend, this rendered a full card form, took a
+     real card number, tokenised it against real Stripe, charged nothing at
+     all, and then said "You're now on Pro!". _payCard, forty lines down, has
+     always refused to do exactly that: "No processor connected - do NOT
+     pretend to charge." The rule is the same here. */
+  if(pk && liveBackend){
     body.innerHTML='<div id="stripe-card-element" class="pay-stripe-el"></div><div id="stripe-card-errors" class="pay-err"></div>'+
       '<button class="btn bp pay-submit" id="pay-submit">Pay $'+price+' / month</button>';
     _mountStripe(pk,plan);
@@ -12163,41 +12194,36 @@ function _openExternalPay(url, plan, kind, pre){
 function _closePay(pre){ try{ if(pre && !pre.closed) pre.close(); }catch(e){} }
 try{ window._preopenPay=_preopenPay; window._closePay=_closePay; }catch(e){}
 
-/* ---------- REAL PayPal / Venmo (PayPal JS SDK) ---------- */
-function _mountPayPal(plan){
+/* ---------- PayPal / Venmo with no backend connected ----------
+
+   The only caller is the no-backend branch of the PayPal tab; when a server IS
+   live, that tab creates a real PayPal SUBSCRIPTION through it instead and
+   never comes here.
+
+   This used to load the PayPal JS SDK and take a one-time capture in the
+   browser. See the call site for why that had to go. What is left is the one
+   honest option: the operator's own hosted PayPal or Venmo link, which is a
+   real page taking a real payment, and a plain statement when there is not
+   even that. */
+function _payPalNoServer(plan){
   const cfg=_payCfg();
-  const clientId=cfg.paypalClientId||loadStr('amv_paypal_client');
-  const showFallback=(msg)=>{ const fb=$('paypal-fallback'); if(fb) fb.style.display='block'; const host=$('paypal-buttons'); if(host) host.style.display='none'; const pp=$('pay-pp'); if(pp) on(pp,'click',()=>{ const l=cfg.paypalLink; if(l){_openExternalPay(l,plan,'paypal');} else toast(msg||'Add your PayPal client ID in Settings → Platform','info',4500); }); const vm=$('pay-vm'); if(vm) on(vm,'click',()=>{ const l=cfg.venmoLink||cfg.paypalLink; if(l){_openExternalPay(l,plan,'venmo');} else toast('Add your PayPal client ID (or a Venmo link) in Settings → Platform','info',4500); }); };
-  if(!clientId){ showFallback(); return; }
-  const render=()=>{
-    if(!window.paypal||!window.paypal.Buttons){ showFallback('PayPal SDK did not load'); return; }
-    try{
-      const host=$('paypal-buttons'); if(host){ host.style.display='block'; host.innerHTML=''; }
-      const liveBackend=window.AMV_API&&AMV_API.live;
-      window.paypal.Buttons({
-        style:{ layout:'vertical', color:'blue', shape:'rect', label:'pay' },
-        createOrder:async (data,actions)=>{
-          // Server-side order creation when backend is live (more secure + reliable)
-          if(liveBackend){ try{ return await AMV_API.paypalCreate(plan); }catch(e){} }
-          return actions.order.create({ purchase_units:[{ amount:{ value:String(PLANS[plan].price) }, description:'AMV '+PLANS[plan].name+' (monthly)' }] });
-        },
-        onApprove:async (data,actions)=>{
-          // Server-side capture verifies the money landed before unlocking
-          if(liveBackend && data.orderID){
-            try{ const res=await AMV_API.paypalCapture(data.orderID,(S.user&&S.user.email)||''); if(res&&res.token){ saveStr('amv_ent_token',res.token); } _payActivate('paypal',res.plan||plan); return; }catch(e){ toast('PayPal: '+(e.message||'capture failed'),'error',4500); return; }
-          }
-          try{ await actions.order.capture(); }catch(e){}
-          _payActivate('paypal',plan);
-        },
-        onError:()=>{ showFallback('PayPal error - try again'); }
-      }).render('#paypal-buttons');
-    }catch(e){ showFallback(); }
+  const none='PayPal is not connected on this deployment, so no payment can be taken here and nothing has been charged. Ask the operator to connect a backend or add a PayPal link.';
+  const wire=(id, link, kind)=>{
+    const b=$(id); if(!b) return;
+    if(!link){
+      /* Not hidden. A button that vanishes leaves somebody staring at a tab
+         with nothing in it and no idea why; one that says what is missing can
+         be repeated to whoever can fix it. */
+      b.setAttribute('aria-disabled','true');
+    }
+    on(b,'click',()=>{ if(link){ _openExternalPay(link,plan,kind); } else { toast(none,'info',7000); } });
   };
-  if(window.paypal&&window.paypal.Buttons){ render(); return; }
-  const s=document.createElement('script');
-  s.src='https://www.paypal.com/sdk/js?client-id='+encodeURIComponent(clientId)+'&currency=USD&enable-funding=venmo';
-  s.onload=render; s.onerror=()=>showFallback('Could not reach PayPal');
-  document.head.appendChild(s);
+  wire('pay-pp', cfg.paypalLink||'', 'paypal');
+  wire('pay-vm', cfg.venmoLink||cfg.paypalLink||'', 'venmo');
+  const note=$('pay-pp-note');
+  if(note && !cfg.paypalLink && !cfg.venmoLink){
+    note.textContent='PayPal is not connected on this deployment yet, so no payment can be taken here.';
+  }
 }
 /* Take a card payment WITHOUT ever touching the card.
    Raw card numbers must never reach AMV's own servers: receiving a PAN puts
@@ -12349,18 +12375,28 @@ function _mountStripe(pk,plan){
         if(error){ const el=$('stripe-card-errors'); if(el) el.textContent=error.message; sb.disabled=false; sb.textContent='Pay $'+PLANS[plan].price+' / month'; return; }
         // Send ONLY the token to your backend to create the subscription.
         try{
-          if(window.AMV_API&&AMV_API.live){
-            // The SERVER decides whether the plan is granted. Never assume the
-            // charge worked: an unchecked response here would hand out paid
-            // plans for free whenever the request failed or needed 3-D Secure.
-            const r=await fetchDeadline(AMV_API.base.replace(/\/$/,'')+'/v1/subscribe',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+AMV_API.token},body:JSON.stringify({plan,payment_method:paymentMethod.id})});
-            const d=await r.json().catch(()=>({}));
-            if(!r.ok || !d.ok){
-              const el=$('stripe-card-errors');
-              if(el) el.textContent = d.need || d.error || 'Payment was not completed.';
-              sb.disabled=false; sb.textContent='Pay $'+PLANS[plan].price+' / month';
-              return;   // no plan, no payment method saved
-            }
+          /* The server is what charges the card. Without one the token is
+             worth nothing and no money has moved, so there is nothing to
+             celebrate and no plan to grant. openPaymentSheet no longer mounts
+             this form without a backend; this is the second lock, because the
+             failure it prevents is telling somebody they have paid when they
+             have not. */
+          if(!(window.AMV_API&&AMV_API.live)){
+            const el=$('stripe-card-errors');
+            if(el) el.textContent='Payments are not connected on this deployment, so your card has NOT been charged. Nothing was taken.';
+            sb.disabled=false; sb.textContent='Pay $'+PLANS[plan].price+' / month';
+            return;
+          }
+          // The SERVER decides whether the plan is granted. Never assume the
+          // charge worked: an unchecked response here would hand out paid
+          // plans for free whenever the request failed or needed 3-D Secure.
+          const r=await fetchDeadline(AMV_API.base.replace(/\/$/,'')+'/v1/subscribe',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+AMV_API.token},body:JSON.stringify({plan,payment_method:paymentMethod.id})});
+          const d=await r.json().catch(()=>({}));
+          if(!r.ok || !d.ok){
+            const el=$('stripe-card-errors');
+            if(el) el.textContent = d.need || d.error || 'Payment was not completed.';
+            sb.disabled=false; sb.textContent='Pay $'+PLANS[plan].price+' / month';
+            return;   // no plan, no payment method saved
           }
           const c=paymentMethod.card||{};
           _savePM({type:'card',brand:c.brand||'card',last4:c.last4||'',exp:(c.exp_month?String(c.exp_month).padStart(2,'0'):'')+'/'+(c.exp_year?String(c.exp_year).slice(-2):'')});
@@ -18059,9 +18095,15 @@ function _renderSetPaneInner(){
         '</div>'+
       '</div>'+
       '<div class="ss2"><h3>PayPal &amp; Venmo</h3>'+
-        '<p style="font-size:12px;color:var(--mu);margin-bottom:11px;line-height:1.6">Paste your PayPal <b>client ID</b> (from developer.paypal.com) to turn on the real PayPal buttons - <b>Venmo is enabled automatically</b>. Clicking &ldquo;PayPal / Venmo&rdquo; opens the real PayPal checkout. Or drop in a hosted PayPal/Venmo link as a simple fallback.</p>'+
+        /* There was a "PayPal client ID" box here, and pasting a real one into
+           it did nothing at all. PayPal runs on the SERVER - the Worker holds
+           PAYPAL_CLIENT_ID and PAYPAL_SECRET and creates the subscription
+           itself, because a browser cannot be trusted to state a price or
+           confirm a capture. The box was left over from a browser-side SDK
+           flow that had to be removed for exactly that reason, and it read as
+           the switch that turns PayPal on. */
+        '<p style="font-size:12px;color:var(--mu);margin-bottom:11px;line-height:1.6">PayPal and Venmo subscriptions are switched on with Worker secrets, not here: set <b>PAYPAL_CLIENT_ID</b>, <b>PAYPAL_SECRET</b> and <b>PAYPAL_WEBHOOK_ID</b> on your backend and the real PayPal checkout turns on for everyone. The links below are an optional fallback for a deployment with no backend connected - a hosted PayPal or Venmo page that takes the payment instead.</p>'+
         '<div class="sf">'+
-          '<div><label class="lbl">PayPal client ID</label><input type="text" id="s-ppc" value="'+escH((_payCfg().paypalClientId)||'')+'" placeholder="AYxxxx… (live client ID)" style="font-family:var(--mn);font-size:12px"></div>'+
           '<div><label class="lbl">PayPal hosted link (optional fallback)</label><input type="url" id="s-ppl" value="'+escH((_payCfg().paypalLink)||'')+'" placeholder="https://www.paypal.com/…"></div>'+
           '<div><label class="lbl">Venmo hosted link (optional fallback)</label><input type="url" id="s-vml" value="'+escH((_payCfg().venmoLink)||'')+'" placeholder="https://venmo.com/…"></div>'+
           '<button class="btn bp" id="save-wallets" style="align-self:flex-start;font-size:12px">Save PayPal / Venmo</button>'+
@@ -18111,11 +18153,12 @@ function _renderSetPaneInner(){
     });
     on($('save-wallets'),'click',()=>{
       const cfg=_payCfg();
-      cfg.paypalClientId=$('s-ppc')?.value.trim()||'';
       cfg.paypalLink=$('s-ppl')?.value.trim()||'';
       cfg.venmoLink=$('s-vml')?.value.trim()||'';
+      /* A client id stored here from an older build would keep being read back
+         into a field that no longer exists, so it goes with the field. */
+      delete cfg.paypalClientId;
       store('amv_pay_cfg',cfg);
-      saveStr('amv_paypal_client',cfg.paypalClientId);
       const b=$('save-wallets');if(b){b.textContent='Saved!';b.style.background='var(--green)';setTimeout(()=>{b.textContent='Save PayPal / Venmo';b.style.background='';},1500);}
       toast('PayPal & Venmo saved','success');
     });

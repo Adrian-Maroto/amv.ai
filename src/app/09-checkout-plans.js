@@ -173,12 +173,25 @@ function _payRenderMethod(method,plan){
       on($('pay-pp-sub'),'click',go); on($('pay-vm-sub'),'click',go);
       return;
     }
-    // No backend: PayPal JS SDK one-time capture (still gets you paid)
-    body.innerHTML='<div class="pay-wallet"><div id="paypal-buttons" class="pay-paypal-host"></div>'+
-      '<div id="paypal-fallback" style="display:none"><button class="pay-wallet-b paypal" id="pay-pp">Pay with PayPal →</button>'+
+    /* No backend. This used to load the PayPal JS SDK and take a one-time
+       capture entirely in the browser - the comment beside it read "still gets
+       you paid", and it did the opposite.
+
+       The order was built here, with the amount read out of PLANS, which the
+       payer can edit. The capture ran here. A capture that failed was swallowed
+       and the plan granted anyway. And AMV's server never heard about any of
+       it, so a customer who really paid had no receipt, no entitlement on any
+       other device, and every reason to call their bank. A one-time capture was
+       also unlocking a MONTHLY plan, permanently, for a single payment.
+
+       The operator's own hosted PayPal link is a real page taking a real
+       payment, so that stays. Everything else here says plainly that no
+       payment can be taken, which is the truth. */
+    body.innerHTML='<div class="pay-wallet">'+
+      '<div id="paypal-fallback"><button class="pay-wallet-b paypal" id="pay-pp">Pay with PayPal →</button>'+
       '<button class="pay-wallet-b venmo" id="pay-vm">Pay with Venmo →</button></div>'+
-      '<p class="pay-note">Opens PayPal or Venmo to confirm, then brings you back.</p></div>';
-    _mountPayPal(plan);
+      '<p class="pay-note" id="pay-pp-note">Opens PayPal or Venmo to confirm, then brings you back.</p></div>';
+    _payPalNoServer(plan);
     return;
   }
 
@@ -212,8 +225,17 @@ function _payRenderMethod(method,plan){
   // ---- CARD - secure card entry ----
   const pk=_stripePK();
   const liveBackend=window.AMV_API&&AMV_API.live;
-  // Best path: Stripe Elements iframe (card never touches AMV) when publishable key is set.
-  if(pk){
+  /* Best path: Stripe Elements iframe (card never touches AMV) when a
+     publishable key is set AND there is a server to confirm the charge.
+
+     The second half used to be missing. A publishable key only TOKENISES a
+     card - it cannot charge one. The charge happens at /v1/subscribe, on the
+     server. With a key and no backend, this rendered a full card form, took a
+     real card number, tokenised it against real Stripe, charged nothing at
+     all, and then said "You're now on Pro!". _payCard, forty lines down, has
+     always refused to do exactly that: "No processor connected - do NOT
+     pretend to charge." The rule is the same here. */
+  if(pk && liveBackend){
     body.innerHTML='<div id="stripe-card-element" class="pay-stripe-el"></div><div id="stripe-card-errors" class="pay-err"></div>'+
       '<button class="btn bp pay-submit" id="pay-submit">Pay $'+price+' / month</button>';
     _mountStripe(pk,plan);
@@ -310,41 +332,36 @@ function _openExternalPay(url, plan, kind, pre){
 function _closePay(pre){ try{ if(pre && !pre.closed) pre.close(); }catch(e){} }
 try{ window._preopenPay=_preopenPay; window._closePay=_closePay; }catch(e){}
 
-/* ---------- REAL PayPal / Venmo (PayPal JS SDK) ---------- */
-function _mountPayPal(plan){
+/* ---------- PayPal / Venmo with no backend connected ----------
+
+   The only caller is the no-backend branch of the PayPal tab; when a server IS
+   live, that tab creates a real PayPal SUBSCRIPTION through it instead and
+   never comes here.
+
+   This used to load the PayPal JS SDK and take a one-time capture in the
+   browser. See the call site for why that had to go. What is left is the one
+   honest option: the operator's own hosted PayPal or Venmo link, which is a
+   real page taking a real payment, and a plain statement when there is not
+   even that. */
+function _payPalNoServer(plan){
   const cfg=_payCfg();
-  const clientId=cfg.paypalClientId||loadStr('amv_paypal_client');
-  const showFallback=(msg)=>{ const fb=$('paypal-fallback'); if(fb) fb.style.display='block'; const host=$('paypal-buttons'); if(host) host.style.display='none'; const pp=$('pay-pp'); if(pp) on(pp,'click',()=>{ const l=cfg.paypalLink; if(l){_openExternalPay(l,plan,'paypal');} else toast(msg||'Add your PayPal client ID in Settings → Platform','info',4500); }); const vm=$('pay-vm'); if(vm) on(vm,'click',()=>{ const l=cfg.venmoLink||cfg.paypalLink; if(l){_openExternalPay(l,plan,'venmo');} else toast('Add your PayPal client ID (or a Venmo link) in Settings → Platform','info',4500); }); };
-  if(!clientId){ showFallback(); return; }
-  const render=()=>{
-    if(!window.paypal||!window.paypal.Buttons){ showFallback('PayPal SDK did not load'); return; }
-    try{
-      const host=$('paypal-buttons'); if(host){ host.style.display='block'; host.innerHTML=''; }
-      const liveBackend=window.AMV_API&&AMV_API.live;
-      window.paypal.Buttons({
-        style:{ layout:'vertical', color:'blue', shape:'rect', label:'pay' },
-        createOrder:async (data,actions)=>{
-          // Server-side order creation when backend is live (more secure + reliable)
-          if(liveBackend){ try{ return await AMV_API.paypalCreate(plan); }catch(e){} }
-          return actions.order.create({ purchase_units:[{ amount:{ value:String(PLANS[plan].price) }, description:'AMV '+PLANS[plan].name+' (monthly)' }] });
-        },
-        onApprove:async (data,actions)=>{
-          // Server-side capture verifies the money landed before unlocking
-          if(liveBackend && data.orderID){
-            try{ const res=await AMV_API.paypalCapture(data.orderID,(S.user&&S.user.email)||''); if(res&&res.token){ saveStr('amv_ent_token',res.token); } _payActivate('paypal',res.plan||plan); return; }catch(e){ toast('PayPal: '+(e.message||'capture failed'),'error',4500); return; }
-          }
-          try{ await actions.order.capture(); }catch(e){}
-          _payActivate('paypal',plan);
-        },
-        onError:()=>{ showFallback('PayPal error - try again'); }
-      }).render('#paypal-buttons');
-    }catch(e){ showFallback(); }
+  const none='PayPal is not connected on this deployment, so no payment can be taken here and nothing has been charged. Ask the operator to connect a backend or add a PayPal link.';
+  const wire=(id, link, kind)=>{
+    const b=$(id); if(!b) return;
+    if(!link){
+      /* Not hidden. A button that vanishes leaves somebody staring at a tab
+         with nothing in it and no idea why; one that says what is missing can
+         be repeated to whoever can fix it. */
+      b.setAttribute('aria-disabled','true');
+    }
+    on(b,'click',()=>{ if(link){ _openExternalPay(link,plan,kind); } else { toast(none,'info',7000); } });
   };
-  if(window.paypal&&window.paypal.Buttons){ render(); return; }
-  const s=document.createElement('script');
-  s.src='https://www.paypal.com/sdk/js?client-id='+encodeURIComponent(clientId)+'&currency=USD&enable-funding=venmo';
-  s.onload=render; s.onerror=()=>showFallback('Could not reach PayPal');
-  document.head.appendChild(s);
+  wire('pay-pp', cfg.paypalLink||'', 'paypal');
+  wire('pay-vm', cfg.venmoLink||cfg.paypalLink||'', 'venmo');
+  const note=$('pay-pp-note');
+  if(note && !cfg.paypalLink && !cfg.venmoLink){
+    note.textContent='PayPal is not connected on this deployment yet, so no payment can be taken here.';
+  }
 }
 /* Take a card payment WITHOUT ever touching the card.
    Raw card numbers must never reach AMV's own servers: receiving a PAN puts
@@ -496,18 +513,28 @@ function _mountStripe(pk,plan){
         if(error){ const el=$('stripe-card-errors'); if(el) el.textContent=error.message; sb.disabled=false; sb.textContent='Pay $'+PLANS[plan].price+' / month'; return; }
         // Send ONLY the token to your backend to create the subscription.
         try{
-          if(window.AMV_API&&AMV_API.live){
-            // The SERVER decides whether the plan is granted. Never assume the
-            // charge worked: an unchecked response here would hand out paid
-            // plans for free whenever the request failed or needed 3-D Secure.
-            const r=await fetchDeadline(AMV_API.base.replace(/\/$/,'')+'/v1/subscribe',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+AMV_API.token},body:JSON.stringify({plan,payment_method:paymentMethod.id})});
-            const d=await r.json().catch(()=>({}));
-            if(!r.ok || !d.ok){
-              const el=$('stripe-card-errors');
-              if(el) el.textContent = d.need || d.error || 'Payment was not completed.';
-              sb.disabled=false; sb.textContent='Pay $'+PLANS[plan].price+' / month';
-              return;   // no plan, no payment method saved
-            }
+          /* The server is what charges the card. Without one the token is
+             worth nothing and no money has moved, so there is nothing to
+             celebrate and no plan to grant. openPaymentSheet no longer mounts
+             this form without a backend; this is the second lock, because the
+             failure it prevents is telling somebody they have paid when they
+             have not. */
+          if(!(window.AMV_API&&AMV_API.live)){
+            const el=$('stripe-card-errors');
+            if(el) el.textContent='Payments are not connected on this deployment, so your card has NOT been charged. Nothing was taken.';
+            sb.disabled=false; sb.textContent='Pay $'+PLANS[plan].price+' / month';
+            return;
+          }
+          // The SERVER decides whether the plan is granted. Never assume the
+          // charge worked: an unchecked response here would hand out paid
+          // plans for free whenever the request failed or needed 3-D Secure.
+          const r=await fetchDeadline(AMV_API.base.replace(/\/$/,'')+'/v1/subscribe',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+AMV_API.token},body:JSON.stringify({plan,payment_method:paymentMethod.id})});
+          const d=await r.json().catch(()=>({}));
+          if(!r.ok || !d.ok){
+            const el=$('stripe-card-errors');
+            if(el) el.textContent = d.need || d.error || 'Payment was not completed.';
+            sb.disabled=false; sb.textContent='Pay $'+PLANS[plan].price+' / month';
+            return;   // no plan, no payment method saved
           }
           const c=paymentMethod.card||{};
           _savePM({type:'card',brand:c.brand||'card',last4:c.last4||'',exp:(c.exp_month?String(c.exp_month).padStart(2,'0'):'')+'/'+(c.exp_year?String(c.exp_year).slice(-2):'')});
