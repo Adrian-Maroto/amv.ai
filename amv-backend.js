@@ -1565,6 +1565,21 @@ const ERR_MAX_GROUPS   = 500;      // distinct bugs tracked
 const ERR_MAX_SAMPLES  = 5;        // sample occurrences kept per bug
 const ERR_MAX_BATCH    = 20;       // events accepted per request
 const ERR_RETENTION_MS = 30 * 86400e3;
+/* WHEN A BUG IS AN OUTAGE.
+
+   Errors were collected and nothing ever said a word about them. A release
+   that breaks checkout for every visitor filled this index silently, and the
+   first anybody heard was a customer email - or nothing at all, because the
+   people it breaks for cannot use the product enough to complain.
+
+   The signal is DISTINCT PEOPLE in a short window, not raw count. One person
+   in a retry loop can produce a thousand events and is not an outage; five
+   different people hitting the same fingerprint inside a quarter of an hour
+   almost always is. Counting occurrences instead would page on the loop and
+   stay quiet on the outage - exactly backwards. */
+const ERR_BURST_MS     = 15 * 60e3;   // the window that counts as "at once"
+const ERR_BURST_PEOPLE = 5;           // this many different people is not a coincidence
+const ERR_BURST_KEEP   = 40;          // bounded: a burst list is not a user list
 
 async function _errHash(s){
   const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(s)));
@@ -2837,6 +2852,7 @@ async function errorsReport(request, env, ctx){
   if(!events.length) return json({ ok:true, accepted:0 });
 
   const idx = (await DB.get(env, 'errors', 'index')) || { groups:{} };
+  const now0 = Date.now();
   let accepted = 0;
 
   for(const raw of events){
@@ -2874,6 +2890,34 @@ async function errorsReport(request, env, ctx){
     }
     if(g.samples.length < ERR_MAX_SAMPLES) g.samples.push(e);
     else g.samples[ERR_MAX_SAMPLES-1] = e;   // always keep the most recent
+
+    /* IS THIS HAPPENING TO EVERYBODY, RIGHT NOW?
+
+       A rolling window of who has hit this exact fingerprint recently. The
+       identifier is the same one-way hash used above - or the caller's address
+       when there is no account, because the people a broken landing page or a
+       broken checkout fails are frequently not signed in, and leaving them out
+       would make the worst outage the quietest one. Neither is stored in a
+       form that names anybody, and the window is bounded. */
+    const whoRaw = raw.uid ? String(raw.uid) : ('ip:' + eip);
+    const who = await _errHash(whoRaw);
+    g.burst = Array.isArray(g.burst) ? g.burst : [];
+    g.burst = g.burst.filter(b => now0 - b.t < ERR_BURST_MS);
+    if(!g.burst.some(b => b.w === who)) g.burst.push({ w: who, t: now0 });
+    if(g.burst.length > ERR_BURST_KEEP) g.burst = g.burst.slice(-ERR_BURST_KEEP);
+
+    if(g.burst.length >= ERR_BURST_PEOPLE){
+      /* Once an hour per fingerprint. A real outage produces thousands of
+         these a minute, and a pager that fires thousands of times is one
+         somebody mutes - which is the same as not having one. */
+      try{ await alertOnce(env, 'errburst:' + fp,
+        'AMV is failing for ' + g.burst.length + ' different people in the last '
+        + Math.round(ERR_BURST_MS / 60000) + ' minutes'
+        + (e.ver ? ' on build ' + e.ver : '') + '.\n'
+        + (e.where ? e.where + ': ' : '') + e.msg
+        + '\nSeen ' + g.count + ' times in total. Admin -> Errors for the stack.', 60); }catch(err){}
+      audit(env, 'error_burst', { fp, people: g.burst.length, where: e.where, ver: e.ver });
+    }
 
     idx.groups[fp] = g;
     accepted++;

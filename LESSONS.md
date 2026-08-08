@@ -2162,3 +2162,46 @@ does not actually reach the state the assertion is about.
 
 **Rule:** for any "it gives X back" test, assert that X was TAKEN first. If the
 before-value is already the answer, the case proves nothing.
+
+## 148. Count people, not events, or the pager is backwards
+
+Browser errors were collected into a well-built index and nothing ever said a
+word about them. A release that breaks checkout for every visitor filled it
+silently, and frequently there is no customer email either - the people a
+broken sign-up fails cannot get far enough into the product to have an account,
+a support route, or a reason to persist. The worst outages are the quietest.
+
+The design decision that matters is what counts as "an outage". Raw event
+count is the obvious choice and is exactly wrong in both directions: one person
+in a retry loop produces a thousand events and pages you at 3am for nothing,
+while five different people hitting the same fingerprint - which is what an
+outage looks like at the start - produces five. Counting DISTINCT PEOPLE gets
+both right, and sabotaging it to count events fails precisely the retry-loop
+case and no other.
+
+The second decision is who counts as a person. Signed-out visitors have to,
+because they are who a broken landing page or a broken checkout fails, and
+counting only known users would make the largest failures invisible. The
+identifier falls back to a hash of the address - which then needs the mirror
+case, that one address retrying is still one person.
+
+**Rule:** an alerting threshold is a product decision, not a number. Ask what
+the quiet failure looks like and what the noisy non-failure looks like, and
+pick the quantity that separates them.
+
+## 149. A test harness that lies about content types hides a real bug class
+
+The shared e2e harness answered every path with index.html as `text/html`. That
+is invisible until something the page loads is not the page: a service worker
+served as text/html is refused by the browser for its MIME type, so the PWA
+registration failed inside the harness for a reason that existed only in the
+harness.
+
+It had been failing silently there for as long as the registration swallowed
+its errors. The moment that failure was reported properly, it surfaced as the
+first error in every error test - which looked like my bug and was the
+harness's.
+
+**Rule:** a test server should serve files the way the real one does, including
+content types. Fidelity in the harness is not pedantry; it is the difference
+between a test that can see a class of bug and one that cannot.

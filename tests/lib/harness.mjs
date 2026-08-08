@@ -17,7 +17,32 @@ export async function serveApp() {
   }
   const html = readFileSync(APP);
   const port = _port++;
+  /* Real sibling files, with real content types.
+
+     This answered EVERY path with index.html as text/html, which is fine until
+     something the page loads is not the page. A service worker served as
+     text/html is refused by the browser for its MIME type - so the app's own
+     PWA registration failed here for a reason that exists only in this
+     harness, and once that failure was reported rather than swallowed it
+     became the first error every error test saw.
+
+     Anything that is not a real file still falls back to index.html, because
+     the app is a single page and every route inside it is index.html. */
+  const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript',
+                  '.css': 'text/css', '.json': 'application/json', '.png': 'image/png',
+                  '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
+                  '.webmanifest': 'application/manifest+json' };
   const server = createServer((req, res) => {
+    const rel = decodeURIComponent((req.url || '/').split('?')[0]).replace(/^\/+/, '');
+    const ext = rel.slice(rel.lastIndexOf('.'));
+    if (rel && TYPES[ext] && !rel.includes('..')) {
+      const abs = join(dirname(APP), rel);
+      if (existsSync(abs)) {
+        res.writeHead(200, { 'Content-Type': TYPES[ext] });
+        res.end(readFileSync(abs));
+        return;
+      }
+    }
     res.writeHead(200, { 'Content-Type': 'text/html' });
     res.end(html);
   });
