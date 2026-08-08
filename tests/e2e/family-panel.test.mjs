@@ -33,10 +33,13 @@ const serve = (payload, opts = {}) => page.evaluate(([d, o]) => {
       /* The server bounds the number. The screen must show what was STORED, not
          what was typed. */
       const stored = Math.max(0, Math.min(500, +sent.limits.monthlyUSD || 0));
-      return { json: async () => ({ ok: true, child: sent.child, limits: { ...sent.limits, monthlyUSD: stored } }) };
+      return { ok: true, status: 200, json: async () => ({ ok: true, child: sent.child, limits: { ...sent.limits, monthlyUSD: stored } }) };
     }
-    if (path === '/v1/family/remove') return { json: async () => ({ ok: true, members: [] }) };
-    return { json: async () => d };
+    if (path === '/v1/family/remove') return { ok: true, status: 200, json: async () => ({ ok: true, members: [] }) };
+    /* Transport status included, like a real Response. Without it r.ok is
+       undefined and a success stub reads as a failure to any caller that
+       checks it. */
+    return { ok: true, status: 200, json: async () => d };
   };
   window.__FAM_RESET && window.__FAM_RESET();
   _FAM_STATE = null;

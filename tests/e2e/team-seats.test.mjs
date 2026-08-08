@@ -30,9 +30,9 @@ const serve = (team, opts = {}) => page.evaluate(([t, o]) => {
   window.AMV_API._fetch = async (path, init) => {
     window.__teamCalls.push(path);
     if (o.fail) throw new Error('network down');
-    if (path === '/team/get') return { json: async () => ({ ok: true, team: t }) };
-    if (path === '/team/invite') return { json: async () => o.invite || { ok: true, inviteToken: 'x', inviteLink: '?invite=x' } };
-    return { json: async () => ({ ok: true }) };
+    if (path === '/team/get') return { ok: true, status: 200, json: async () => ({ ok: true, team: t }) };
+    if (path === '/team/invite') return { ok: true, status: 200, json: async () => o.invite || { ok: true, inviteToken: 'x', inviteLink: '?invite=x' } };
+    return { ok: true, status: 200, json: async () => ({ ok: true }) };
   };
   saveStr('amv_plan', o.plan || 'elite');
   S.tab = 'team';
@@ -174,7 +174,7 @@ section('Settings answers "what is a team", with numbers');
     window.__f = 0;
     window.AMVTeam.enabled = () => true;
     window.AMVTeam._cache = null;
-    window.AMV_API._fetch = async () => { window.__f++; return { json: async () => ({ ok: true, team: {
+    window.AMV_API._fetch = async () => { window.__f++; return { ok: true, status: 200, json: async () => ({ ok: true, team: {
       id: 't1', name: 'Acme', members: [{ email: 'owner@x.com', role: 'owner' }],
       seats: { used: 1, limit: 10, over: 0 } } }) }; };
     S.settingsPane = 'teamset'; S.tab = 'settings'; setTab('settings');

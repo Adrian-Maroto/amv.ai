@@ -1989,3 +1989,31 @@ outage.
 
 **Rule:** every limit needs a case proving the legitimate user still gets
 through. A defence with no such case will be tuned in one direction for ever.
+
+## 141. A detector that reads the whole line reads the wrong thing
+
+Sixteen test stubs returned `{ json: async () => ... }` with no `ok`. A real
+Response carries one, so `r.ok` was undefined - falsy - and any `if (!r.ok)` in
+the code under test took the FAILURE branch on what the stub meant as a
+success. Those tests passed while exercising the opposite path from the one
+their names describe, and a regression on the success path could not have
+failed them.
+
+I wrote a check for it and it found five. Then I sabotaged the check by putting
+one of the fixed stubs back, and it passed - because the line it was scanning
+was:
+
+    return { json: async () => ({ ok: true, members: [] }) };
+
+and my regex asked "does this LINE contain `ok:`". It does. Inside the response
+BODY. Every stub with a plausible-looking payload excused itself, which is
+exactly the ones most likely to be wrong.
+
+Reading only the Response's own properties - the text between `return {` and
+`json:` - found eleven more in two files the first version had called clean.
+
+**Rule:** when a check greps for the absence of something, name precisely which
+scope it must be absent from. A regex over a whole line will find the string
+somewhere and go quiet. And the only way I found out was sabotaging a check
+that was already passing - the check being green told me nothing about the
+check.

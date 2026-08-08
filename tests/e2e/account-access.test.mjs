@@ -26,7 +26,11 @@ const openPane = (serve) => page.evaluate(async (serveSrc) => {
   window.AMV_API._fetch = async (path, init) => {
     window.__calls.push({ path, body: init && init.body });
     const fn = eval('(' + serveSrc + ')');
-    return { json: async () => fn(path) };
+    /* A REAL Response reports its transport status. Returning only `json`
+       leaves r.ok undefined, so `if(!r.ok)` in the code under test takes the
+       failure branch on what this stub means as a success - the test then
+       passes by exercising the opposite path from the one it names. */
+    return { ok: true, status: 200, json: async () => fn(path) };
   };
   _LINK_STATE = null; _FAM_STATE = null;
   S.settingsPane = 'family'; S.tab = 'settings'; setTab('settings');
@@ -58,9 +62,9 @@ section('Removing access tells the server, and only then says so');
     window.__calls = [];
     window.AMV_API._fetch = async (path, init) => {
       window.__calls.push({ path, body: init && init.body });
-      if (/link\/revoke/.test(path)) return { json: async () => ({ ok: true, revoked: true }) };
-      if (/link\/list/.test(path)) return { json: async () => ({ ok: true, iCanAccess: [], canAccessMe: [] }) };
-      return { json: async () => ({ ok: true, parentOf: null, childOf: null }) };
+      if (/link\/revoke/.test(path)) return { ok: true, status: 200, json: async () => ({ ok: true, revoked: true }) };
+      if (/link\/list/.test(path)) return { ok: true, status: 200, json: async () => ({ ok: true, iCanAccess: [], canAccessMe: [] }) };
+      return { ok: true, status: 200, json: async () => ({ ok: true, parentOf: null, childOf: null }) };
     };
     document.querySelector('.mf-revoke[data-link="L2"]').click();
     await new Promise(r => setTimeout(r, 500));
@@ -82,10 +86,10 @@ section('A revoke the server refuses does NOT claim access stopped');
     _LINK_STATE = null;
     window.confirmModal = (a, b, go) => go();
     window.AMV_API._fetch = async (path) => {
-      if (/link\/revoke/.test(path)) return { json: async () => ({ error: 'engine down' }) };
-      if (/link\/list/.test(path)) return { json: async () => ({ ok: true, iCanAccess: [],
+      if (/link\/revoke/.test(path)) return { ok: false, status: 502, json: async () => ({ error: 'engine down' }) };
+      if (/link\/list/.test(path)) return { ok: true, status: 200, json: async () => ({ ok: true, iCanAccess: [],
         canAccessMe: [{ id: 'L9', account: 'helper@x.com', scopes: ['email'] }] }) };
-      return { json: async () => ({ ok: true, parentOf: null, childOf: null }) };
+      return { ok: true, status: 200, json: async () => ({ ok: true, parentOf: null, childOf: null }) };
     };
     _renderFamilyPane(document.getElementById('set-pane') || document.getElementById('vc'));
     await new Promise(r => setTimeout(r, 400));
@@ -106,8 +110,8 @@ section('A list that could not load does not reassure you');
   const t = await page.evaluate(async () => {
     _LINK_STATE = null; _FAM_STATE = null;
     window.AMV_API._fetch = async (path) => {
-      if (/link\/list/.test(path)) return { json: async () => ({ error: 'offline' }) };
-      return { json: async () => ({ ok: true, parentOf: null, childOf: null }) };
+      if (/link\/list/.test(path)) return { ok: false, status: 503, json: async () => ({ error: 'offline' }) };
+      return { ok: true, status: 200, json: async () => ({ ok: true, parentOf: null, childOf: null }) };
     };
     _renderFamilyPane(document.getElementById('set-pane') || document.getElementById('vc'));
     await new Promise(r => setTimeout(r, 400));
@@ -125,8 +129,8 @@ section('Asking again does not fetch forever');
   const n = await page.evaluate(async () => {
     let count = 0;
     window.AMV_API._fetch = async (path) => {
-      if (/link\/list/.test(path)) { count++; return { json: async () => ({ error: 'offline' }) }; }
-      return { json: async () => ({ ok: true, parentOf: null, childOf: null }) };
+      if (/link\/list/.test(path)) { count++; return { ok: false, status: 503, json: async () => ({ error: 'offline' }) }; }
+      return { ok: true, status: 200, json: async () => ({ ok: true, parentOf: null, childOf: null }) };
     };
     _LINK_STATE = null;
     _renderFamilyPane(document.getElementById('set-pane') || document.getElementById('vc'));

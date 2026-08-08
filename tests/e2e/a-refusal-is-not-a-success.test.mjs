@@ -194,6 +194,41 @@ section('A handoff is never replayed onto somebody else');
   ok(!isNoRetry.pause, 'while setting a flag, which is the same done twice, still retries', isNoRetry);
 }
 
+section('And a stub that cannot fail cannot test a refusal');
+{
+  /* This whole file is about code that treats a refusal as a success. The same
+     mistake is available to the TESTS, one layer down, and is harder to see.
+
+     A real Response carries `ok`. A stub written as `{ json: async () => ... }`
+     reports `ok` as undefined - which is falsy - so `if (!r.ok) throw` in the
+     code under test takes the FAILURE branch on what the stub means as a
+     success. The test then passes while exercising the opposite path from the
+     one its name describes, and a regression on the success path cannot make
+     it fail. Five of them were doing this across account-access and
+     family-panel.
+
+     So: every stubbed Response in the suite states its transport status, the
+     way a real one does. */
+  const { readdirSync: rd, readFileSync: rf } = await import('fs');
+  const bad = [];
+  for (const dir of ['tests/e2e', 'tests/worker']) {
+    for (const f of rd(join(ROOT, dir)).filter(x => x.endsWith('.test.mjs'))) {
+      rf(join(ROOT, dir, f), 'utf8').split('\n').forEach((line, i) => {
+        const m = line.match(/return\s*\{([^]*?)json\s*:/);
+        if (!m) return;
+        /* Only the Response's OWN properties, up to `json`. Testing the whole
+           line matched the `ok: true` inside the response BODY, so a stub with
+           a plausible-looking payload excused itself - which is how eleven of
+           these hid behind the five the first version found. */
+        if (/\bok\s*:/.test(m[1]) || /\bstatus\s*:/.test(m[1])) return;
+        bad.push(dir + '/' + f + ':' + (i + 1));
+      });
+    }
+  }
+  ok(bad.length === 0,
+     'no stubbed response hides whether it succeeded or failed', bad);
+}
+
 section('No JavaScript errors');
 ok(errors.length === 0, 'zero uncaught page errors', errors.slice(0, 3));
 
