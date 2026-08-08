@@ -272,8 +272,13 @@ const AMV_API = {
          raised after the write went through would, on retry, hand the same work
          over twice - to a person who then has to work out which of two
          identical batons is the live one. Toggles and the pause flag are not
-         listed: they set a value, so doing it twice is doing it once. */
-      || /\/(family\/(limits|remove|leave)|link\/(invite|revoke)|finance\/(link\/(start|finish)|unlink)|team\/(invite|join|remove|leave|role|share|unshare|data|task\/(create|update))|market\/(publish|buy|withdraw|review|install)|api\/handoff|deploy|sms\/register|widget\/save)/.test(path);
+         listed: they set a value, so doing it twice is doing it once.
+
+         A support report is the same shape and was missed when the route was
+         added: it creates a ticket AND pages the operator, so a retry files the
+         same bug three times, pages three times, and spends a rate limit that
+         exists precisely because reaching a human is worth abusing. */
+      || /\/(family\/(limits|remove|leave)|link\/(invite|revoke)|finance\/(link\/(start|finish)|unlink)|team\/(invite|join|remove|leave|role|share|unshare|data|task\/(create|update))|market\/(publish|buy|withdraw|review|install)|api\/handoff|v1\/support|deploy|sms\/register|widget\/save)/.test(path);
     const MAX = noRetry ? 0 : 2;        // up to 2 retries (3 total attempts)
 
     /* AMV-061: a request with no deadline can hang forever.

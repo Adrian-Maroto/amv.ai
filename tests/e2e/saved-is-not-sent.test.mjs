@@ -14,6 +14,13 @@
    Somebody reporting a bug was thanked, told the team had it, and their report
    sat in their own browser for ever.
 
+   Saying so honestly was the first fix and left the real gap: a product taking
+   money with no way to be told it is broken. /v1/support is that way now, and
+   it answers `stored` and `notified` SEPARATELY, because those are different
+   promises. So the cases below are no longer "sent or not" but four states,
+   and the invariant this file exists for is unchanged: nothing claims a
+   delivery it did not make.
+
    And while looking: _playDoneChime tests `amv_mute_chime === '1'`, and its own
    comment calls the sound "respectful - muteable". Nothing in the product could
    ever write that key, so the check could not be true and the chime could not
@@ -29,66 +36,101 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const app = await bootApp({ tab: 'chat', user: { name: 'A', email: 'a@x.com', ini: 'A' } });
 const { page, errors } = app;
 
-/* Open the feedback modal, type something, send, and collect what was said. */
-async function sendFeedback({ supportEmail = '', endpoint = '', beaconOk = true }) {
-  return page.evaluate(async ({ supportEmail, endpoint, beaconOk }) => {
+/* Open the feedback modal, type something, send, and collect what was said.
+
+   `server` is what /v1/support answers, or null for a device with no backend
+   at all - which is a real state (the local demo) and the one where claiming a
+   delivery would be most obviously false. */
+async function sendFeedback({ supportEmail = '', server = null }) {
+  return page.evaluate(async ({ supportEmail, server }) => {
     const said = [];
-    const realToast = window.toast, realBeacon = navigator.sendBeacon;
+    const realToast = window.toast, realFetch = window.fetch;
     window.toast = (m) => said.push(String(m));
     saveStr('amv_support_email', supportEmail);
-    saveStr('amv_feedback_endpoint', endpoint);
     saveStr('amv_feedback', '[]');
-    let beaconedTo = null;
-    try {
-      Object.defineProperty(navigator, 'sendBeacon',
-        { value: (u) => { beaconedTo = u; return beaconOk; }, configurable: true });
-    } catch (e) {}
+
+    let postedTo = null, postedBody = '';
+    if (server) {
+      AMV_API.base = 'https://api.test'; AMV_API.token = 'tok';
+      window.fetch = async (u, o) => {
+        postedTo = String(u); postedBody = String((o && o.body) || '');
+        return { ok: server.status < 400, status: server.status, headers: new Headers(),
+                 json: async () => server.body };
+      };
+    } else {
+      /* No backend configured: AMV_API.support refuses before any request. */
+      saveStr('amv_api_base', ''); AMV_API.base = '';
+    }
+
     openFeedback('bug');
     await new Promise(r => setTimeout(r, 200));
     document.getElementById('fb-text').value = 'The thing broke when I clicked it.';
     document.getElementById('fb-send').click();
-    await new Promise(r => setTimeout(r, 250));
+    await new Promise(r => setTimeout(r, 400));
     let stored = [];
     try { stored = JSON.parse(loadStr('amv_feedback') || '[]'); } catch (e) {}
-    window.toast = realToast;
-    try { Object.defineProperty(navigator, 'sendBeacon', { value: realBeacon, configurable: true }); } catch (e) {}
-    return { said, stored: stored.length, text: (stored[0] || {}).text || '', beaconedTo };
-  }, { supportEmail, endpoint, beaconOk });
+    window.toast = realToast; window.fetch = realFetch;
+    return { said, stored: stored.length, text: (stored[0] || {}).text || '', postedTo, postedBody };
+  }, { supportEmail, server });
 }
 
-section('With nowhere to send it, it does not say it was sent');
+section('With no backend at all, it does not say it was sent');
 {
   const r = await sendFeedback({});
-  ok(r.stored === 1, 'the report is kept', r.stored);
+  ok(r.stored === 1, 'the report is kept on the device', r.stored);
   ok(/broke when I clicked/.test(r.text), 'with what was written', r.text.slice(0, 50));
-  ok(!r.said.some(m => /sent to the team/i.test(m)),
+  ok(!r.said.some(m => /with the team|sent to the team/i.test(m)),
      'and nobody is told the team has it', r.said);
-  ok(r.said.some(m => /nobody will see it|no channel/i.test(m)),
+  ok(r.said.some(m => /nobody has seen it|could not be sent/i.test(m)),
      'it says plainly that it is going no further', r.said);
 }
 
 section('With a support address, it points at the route that works');
 {
   const r = await sendFeedback({ supportEmail: 'help@amv.test' });
-  ok(!r.said.some(m => /sent to the team/i.test(m)), 'still not claimed as sent', r.said);
+  ok(!r.said.some(m => /with the team/i.test(m)), 'still not claimed as delivered', r.said);
   ok(r.said.some(m => /help@amv\.test/.test(m)),
      'and the address that reaches a person is named', r.said);
 }
 
-section('With a real endpoint, it is sent and says so');
+section('When the server takes it AND pages somebody, that is said');
 {
-  const r = await sendFeedback({ endpoint: 'https://hooks.amv.test/fb' });
-  ok(r.beaconedTo === 'https://hooks.amv.test/fb', 'it really goes out', r.beaconedTo);
-  ok(r.said.some(m => /sent to the team/i.test(m)), 'and only then is that said', r.said);
+  const r = await sendFeedback({ server: { status: 200, body: { ok: true, stored: true, notified: true } } });
+  ok(/\/v1\/support$/.test(r.postedTo || ''), 'it really goes to the support route', r.postedTo);
+  ok(/broke when I clicked/.test(r.postedBody), 'carrying the report', true);
+  ok(r.said.some(m => /with the team/i.test(m)),
+     'and only then is a person promised', r.said);
 }
 
-section('A refused beacon is not a delivery');
+section('When the server takes it but pages NOBODY, it says less');
 {
-  /* sendBeacon returns false when the browser will not queue it. That boolean
-     was being discarded, which is the same defect one layer down. */
-  const r = await sendFeedback({ endpoint: 'https://hooks.amv.test/fb', beaconOk: false });
-  ok(!r.said.some(m => /sent to the team/i.test(m)),
-     'a refused queue does not count as sent', r.said);
+  /* The distinction the route exists to make. It is genuinely stored and an
+     operator will find it; what cannot be promised is that anybody was told
+     tonight. Collapsing these two into one cheerful sentence is the original
+     defect wearing a server. */
+  const r = await sendFeedback({ supportEmail: 'help@amv.test',
+    server: { status: 200, body: { ok: true, stored: true, notified: false } } });
+  ok(r.said.some(m => /received/i.test(m)), 'it confirms receipt', r.said);
+  ok(!r.said.some(m => /with the team/i.test(m)),
+     'without claiming a person has it', r.said);
+  ok(r.said.some(m => /help@amv\.test/.test(m)),
+     'and offers the address for anything urgent', r.said);
+}
+
+section('A server that refuses it is not a delivery');
+{
+  /* 429 on purpose. A support report is a create that lands in somebody else's
+     inbox, so it must not be auto-retried - three deliveries of the same bug
+     report, three pages, and the rate limit that exists because reaching a
+     human is worth abusing spent on one person clicking once. This case is
+     what caught that /v1/support was missing from the noRetry list. */
+  const r = await sendFeedback({ supportEmail: 'help@amv.test',
+    server: { status: 429, body: { error: 'too many support messages' } } });
+  ok(!r.said.some(m => /with the team|received/i.test(m)),
+     'a refusal does not count as sent', r.said);
+  ok(r.said.some(m => /could not be sent/i.test(m)), 'it says so', r.said);
+  ok(r.said.some(m => /help@amv\.test/.test(m)),
+     'and names the way that still works', r.said);
   ok(r.stored === 1, 'while the report is still kept', r.stored);
 }
 

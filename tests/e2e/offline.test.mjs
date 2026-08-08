@@ -138,7 +138,12 @@ const OWN_CONTROLLER = [
   "await fetch(url, ctrl ? Object.assign",            // inside _fetch
   "await fetch(url, ctrl ? Object.assign({}, o, { signal: ctrl.signal }) : o)", // inside fetchDeadline
   "/auth/refresh'",                                   // _doRefresh - 12s timeout of its own
-  "'/health',{signal:ctrl.signal}",                   // reachability probe - 4s of its own
+  /* The reachability probe - 4s of its own. It asked for '/health' until that
+     was found to be a path the Worker has never served (it serves /v1/health),
+     so every healthy deployment 404'd and the status indicator read "Some
+     services degraded" for ever. Pinned to the exact call site on purpose:
+     matching loosely here is how a raw fetch sneaks in beside it. */
+  "'/v1/health',{signal:ctrl.signal}",
   "res=await fetch(_endpoint,",                       // chat stream - 45s + idle guard
 ];
 const raw = bundle.split('\n')

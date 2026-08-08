@@ -1912,3 +1912,43 @@ DB-kinds improvement to the erasure check and having to rewrite it.
 Knowing a rule is not the same as having a habit. The habit is: back up to the
 scratchpad with `cp` BEFORE the first sabotage, and restore with `cp`, every
 time, without deciding each time whether this one is small enough to be safe.
+
+## 137. Two correct halves in two runtimes still make a broken product
+
+The app asked its backend for `/health`. The worker serves `/v1/health`. Each
+file was perfectly correct about its own half, the mismatch lived only in the
+space between them, and a 404 from a fetch whose status nobody reads is
+completely silent. It shipped for the life of the product, and the one
+indicator whose job is to report backend health sat on "Some services degraded"
+the entire time.
+
+Nothing could have caught it, because nothing compared the two lists. So now
+something does: every path the shipped bundle asks its own backend for is a
+route in the worker's table, or is named as belonging to somebody else's API.
+Including the computed ones - `base + '/v1/finance/' + path` - because a path
+assembled from pieces is exactly where a spelling drifts and neither piece
+looks wrong alone.
+
+**Rule:** wherever two independently-correct components have to agree on a
+string, the agreement itself is a thing that needs a test. Route paths, storage
+keys, event names, env var names. Nobody reviews an agreement; they review each
+side.
+
+## 138. "Does the next one work" is not the same as "did this one cost them"
+
+The chat handler reserves quota before calling the model and refunds it if the
+model fails, so an outage does not bill everybody for words they never
+received. I wrote a test for it that asked whether the NEXT turn still worked.
+
+It passed with the refund deleted. Of course it did - one lost reservation
+never exhausts a fresh account's daily allowance. The test was measuring
+something real and adjacent, and would have gone on passing through an entire
+outage silently eating every customer's quota.
+
+Reading the usage counter either side of the failed turn catches it instantly:
+92 before, 548 after.
+
+**Rule:** assert on the quantity that actually changes, not on a downstream
+symptom big enough to be visible. If sabotaging the code does not fail the
+test, the test is about something else - and finding that out is the only
+reason to sabotage.

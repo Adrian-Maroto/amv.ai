@@ -5771,6 +5771,22 @@ async function aiProxy(request, env, ctx) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'Please sign in again.' }, 401);
 
+  /* No model key, no request. This used to fall straight through: quota was
+     reserved, a rate-limit slot spent, and an outbound call made with
+     `x-api-key: ''` - which the provider refuses, so the person waited for a
+     network round trip to be told something that was knowable before the
+     request left. Every other integration here refuses up front and says which
+     secret is missing (payments, SMS, Google, video); this is that, for the
+     one that matters most. The 401 path below still exists, because a key that
+     is SET and rejected is a different failure and pages the operator. */
+  if (!_modelKey(env)) {
+    audit(env, 'ai_unconfigured', { by: user.email });
+    try { await alertOnce(env, 'model_key_missing',
+      'AMV has no model key, so chat is refused for everyone. Set AMV_MODEL_KEY.', 60); } catch (e) {}
+    return json({ error: 'AMV is not connected to a model on this deployment yet, so it cannot answer. Nothing has been charged or counted against your allowance.',
+                  code: 'needs_service' }, 503);
+  }
+
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== 'object') return json({ error: 'Invalid request body.' }, 400);
 
