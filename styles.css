@@ -8011,3 +8011,164 @@ html,body{height:100%;height:100dvh}
   .mc-sched-acts{ width:100%; margin-top:var(--sp-2); }
   .mc-sched-acts .btn{ flex:1 1 auto; min-height:36px; }
 }
+
+/* ============================================================
+   LAYER A69 - the catalogue sells the product, so it has to be openable
+
+   A card could previously only be switched on, which meant the only way to
+   find out what a job did was to start it. The body is now a button that opens
+   a panel with a specimen of the output and the exact instruction the
+   unattended runner is given - and the same panel is what somebody who has not
+   paid sees, because a description of a product is a weak substitute for the
+   product when the question is whether to pay for it.
+   ============================================================ */
+.cw-job-body{
+  flex:1;
+  min-width:0;
+  display:block;
+  text-align:left;
+  background:none;
+  border:0;
+  padding:0;
+  margin:0;
+  font:inherit;
+  color:inherit;
+  cursor:pointer;
+  border-radius:var(--r-sm);
+}
+.cw-job-body > span{ display:block; }
+.cw-job-body:focus-visible{ outline:2px solid var(--accent); outline-offset:3px; }
+.cw-job-see{
+  margin-top:var(--sp-2);
+  font-size:var(--t-xs);
+  font-weight:600;
+  color:var(--accent);
+  opacity:0;
+  transform:translateX(-3px);
+  transition:opacity .16s var(--ease), transform .16s var(--ease);
+}
+.cw-job:hover .cw-job-see,
+.cw-job-body:focus-visible .cw-job-see{ opacity:1; transform:none; }
+/* Touch has no hover, and this is the affordance that says the card opens. */
+@media (hover:none){ .cw-job-see{ opacity:1; transform:none; } }
+@media (prefers-reduced-motion:reduce){ .cw-job-see{ transition:none; } }
+
+/* The panel. */
+.cwp{
+  position:relative;
+  width:min(680px, 94vw);
+  max-height:88vh;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  background:var(--s1);
+  border:1px solid var(--bd);
+  border-radius:var(--r-xl);
+  box-shadow:var(--sh-xl);
+  padding:var(--sp-6);
+  cursor:auto;
+}
+.cwp-x{
+  position:absolute; top:12px; right:12px;
+  width:32px; height:32px;
+  display:flex; align-items:center; justify-content:center;
+  background:var(--s2); color:var(--mu);
+  border:1px solid var(--bd); border-radius:var(--r-pill);
+  cursor:pointer; font-size:13px; line-height:1;
+}
+.cwp-x:hover{ color:var(--tx); }
+.cwp-head{ display:flex; gap:var(--sp-3); align-items:flex-start; padding-right:40px; }
+.cwp-ic{
+  font-size:24px; width:52px; height:52px; flex:0 0 52px;
+  display:flex; align-items:center; justify-content:center;
+  background:var(--s2); border:1px solid var(--bd); border-radius:var(--r-lg);
+}
+.cwp-t{ font-family:var(--fdisplay); font-size:var(--t-xl); line-height:1.25; margin:0 0 var(--sp-2); color:var(--tx); }
+.cwp-meta{ display:flex; flex-wrap:wrap; gap:var(--sp-2); }
+.cwp-pill{
+  font-size:var(--t-xs); padding:3px 9px; border-radius:var(--r-pill);
+  background:var(--s2); border:1px solid var(--bd); color:var(--mu);
+}
+.cwp-pill.bg{ color:var(--grn); border-color:color-mix(in srgb, var(--grn) 40%, var(--bd)); }
+.cwp-pill.open{ color:var(--gold); border-color:color-mix(in srgb, var(--gold) 40%, var(--bd)); }
+.cwp-pill.quiet{ color:var(--dim); }
+.cwp-desc{ margin:var(--sp-4) 0 0; font-size:var(--t-md); line-height:1.65; color:var(--tx); }
+.cwp-sec{ margin-top:var(--sp-5); }
+.cwp-sec-h{
+  font-size:var(--t-xs); font-weight:700; letter-spacing:.08em; text-transform:uppercase;
+  color:var(--dim); margin-bottom:var(--sp-2);
+}
+/* The specimen. Deliberately styled as a document rather than as a chat
+   bubble - it is what arrives, not what AMV says. */
+.cwp-sample{
+  background:var(--bg);
+  border:1px solid var(--bd);
+  border-left:3px solid var(--accent);
+  border-radius:var(--r-md);
+  padding:var(--sp-3) var(--sp-4);
+}
+.cwp-line{ font-size:var(--t-base); line-height:1.6; color:var(--tx); padding:3px 0; }
+.cwp-line + .cwp-line{ border-top:1px solid color-mix(in srgb, var(--bd) 55%, transparent); }
+.cwp-prompt{
+  margin:0;
+  font-family:var(--mn);
+  font-size:var(--t-sm);
+  line-height:1.6;
+  color:var(--mu);
+  background:var(--bg);
+  border:1px solid var(--bd);
+  border-radius:var(--r-md);
+  padding:var(--sp-3);
+  white-space:pre-wrap;
+  word-break:break-word;
+  max-height:220px;
+  overflow-y:auto;
+}
+.cwp-note{ margin-top:var(--sp-2); font-size:var(--t-xs); line-height:1.5; color:var(--dim); }
+.cwp-warn{
+  margin-top:var(--sp-4);
+  padding:var(--sp-3);
+  font-size:var(--t-sm); line-height:1.55;
+  color:var(--tx);
+  background:color-mix(in srgb, var(--gold) 10%, var(--s2));
+  border:1px solid color-mix(in srgb, var(--gold) 35%, var(--bd));
+  border-radius:var(--r-md);
+}
+.cwp-warn.quiet{ background:var(--s2); border-color:var(--bd); color:var(--mu); }
+.cwp-act{ margin-top:var(--sp-5); display:flex; gap:var(--sp-2); flex-wrap:wrap; }
+.cwp-buy{
+  width:100%;
+  padding:var(--sp-4);
+  background:var(--s2);
+  border:1px solid var(--bd);
+  border-radius:var(--r-lg);
+}
+.cwp-buy-t{ font-size:var(--t-md); font-weight:650; color:var(--tx); }
+.cwp-buy-s{ margin:var(--sp-2) 0 var(--sp-3); font-size:var(--t-sm); line-height:1.6; color:var(--mu); }
+.cwp-buy .btn{ margin-right:var(--sp-2); }
+
+/* The band above the catalogue for somebody who has not paid. */
+.cw-lock-band{
+  display:flex; flex-wrap:wrap; gap:var(--sp-4);
+  align-items:center; justify-content:space-between;
+  margin-top:var(--sp-5); padding:var(--sp-4);
+  background:var(--s1); border:1px solid var(--bd); border-radius:var(--r-lg);
+}
+.cw-lock-figs{ display:flex; flex-wrap:wrap; gap:var(--sp-5); }
+.cw-lock-fig{ display:flex; flex-direction:column; font-size:var(--t-sm); color:var(--mu); }
+.cw-lock-fig b{ font-family:var(--fdisplay); font-size:var(--t-2xl); line-height:1.1; color:var(--tx); }
+.cw-lock-buy{ display:flex; flex-direction:column; gap:var(--sp-2); align-items:flex-start; }
+.cw-lock-price{ font-size:var(--t-sm); font-weight:650; color:var(--tx); }
+.cw-lock-note{ margin-top:var(--sp-3); font-size:var(--t-sm); line-height:1.6; color:var(--dim); }
+.cw-locked{ margin-top:var(--sp-6); }
+.cw-job.locked{ cursor:pointer; }
+
+@media (max-width:560px){
+  .cwp{ padding:var(--sp-4); width:96vw; max-height:92vh; }
+  .cwp-head{ padding-right:36px; }
+  .cwp-ic{ width:44px; height:44px; flex-basis:44px; font-size:20px; }
+  .cwp-act .btn, .cwp-buy .btn{ width:100%; margin:0 0 var(--sp-2); }
+  .cw-lock-band{ flex-direction:column; align-items:stretch; }
+  .cw-lock-figs{ gap:var(--sp-4); justify-content:space-between; }
+  .cw-lock-buy{ align-items:stretch; }
+  .cw-lock-buy .btn{ width:100%; }
+}

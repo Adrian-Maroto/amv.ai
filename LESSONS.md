@@ -2501,3 +2501,31 @@ now says so, instead of being displayed identically to background work.
 **Rule:** render state from the authority that acts on it. A cache that can
 disagree with the executor will, and the disagreement always favours the version
 that makes somebody stop watching.
+
+## 162. The catalogue was hidden from the only person who needed to see it
+
+Crew is the reason somebody buys a plan. A visitor on the free tier saw three
+sentences and a price; the catalogue - eighty-nine real jobs, each carrying the
+exact instruction it runs - was behind the paywall, visible only to people who
+had already paid and therefore no longer needed convincing.
+
+That is backwards, and it is also a much weaker pitch than the truth. "AMV works
+while you are not" is what every AI product claims. "Here are eighty-nine jobs,
+here is the literal instruction each one is given, here is the shape of what
+lands in your inbox" is a claim only a product that actually does it can make.
+
+Two things had to be true before showing it was worth anything. A card could
+only be switched ON - the sole interactive element was the toggle - so the only
+way to find out what a job did was to start it. And auditing the list to write
+this found five jobs with no instruction at all: a title, a description, and
+nothing behind them. Those are exactly the cards a browsing visitor clicks,
+because they are the ones with the most intriguing titles.
+
+A test now asserts that every job carries a real instruction, that no two share
+an id (the toggle writes by id and the lookup returns the first match, so a
+duplicate silently starts the wrong job), and that all eighty-nine panels open
+without a placeholder leaking through.
+
+**Rule:** if a feature is the reason to buy, the person who has not bought is
+the one who must be able to see it. And an example that does not work is worse
+than no example: it is the one they will pick.

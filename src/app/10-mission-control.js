@@ -10,11 +10,26 @@ function _cwDefaultJobs(){ return [
   { id:'job_hunt', cat:'Work & career', icon:'\uD83D\uDCBC', title:'Job hunt - find and prepare applications', needs:'Email, Web research', on:false,
     desc:'AMV finds roles matched to your resume and prepares a tailored application for each one, ready for you to review and send. If a posting asks something you have not specified, it asks you first. Submitting on its own is not switched on - nothing reaches an employer without you.',
     prompt:'Find current job openings matching the roles, locations and salary floor in my Job Hunt profile. For each one: the title, company, location, pay if stated, why it fits me, and the direct link. Then draft a tailored application for the strongest matches, using my resume and stated preferences. Do not submit anything - present each as a finished draft for me to review. If a posting asks for something my profile does not answer, list the question instead of inventing an answer.' },
-  { id:'morning_brief', cat:'Watching the world', icon:'\u2600\uFE0F', title:'Morning news & markets brief', desc:'Every morning at 7am, AMV researches overnight news and market movements, then emails you a concise brief on what happened and which stocks to watch today.', needs:'Email, Web research', on:false },
-  { id:'inbox_digest', cat:'Inbox & calendar', icon:'\uD83D\uDCEC', title:'Daily inbox digest', desc:'AMV summarizes your important emails each evening and drafts replies for the ones that need them - you just approve and send.', needs:'Email', on:false },
-  { id:'competitor_watch', cat:'Growing a business', icon:'\uD83D\uDD0D', title:'Competitor & industry watch', desc:'Weekly, AMV tracks your competitors and industry news, then emails you a summary of anything that matters.', needs:'Email, Web research', on:false },
-  { id:'weekly_report', cat:'Inbox & calendar', icon:'\uD83D\uDCCA', title:'Weekly summary report', desc:'Every Friday, AMV compiles your week - tasks done, key metrics, what\u2019s pending - into a clean report and emails it to you or your team.', needs:'Email', on:false },
-  { id:'content_calendar', every:'weekly', cat:'Growing a business', icon:'\u270D\uFE0F', title:'Social content drafts', desc:'AMV drafts a week of social posts based on trends in your space and queues them for your approval.', needs:'Web research', on:false },
+  { id:'morning_brief', cat:'Watching the world', icon:'\u2600\uFE0F', title:'Morning news & markets brief', needs:'Email, Web research', on:false,
+    desc:'Every morning, AMV researches what happened overnight and emails you a short brief on the moves that matter and why - facts and figures, never a recommendation.',
+    sample:['OVERNIGHT: three things moved, one matters to what you follow.','Chip index down 2.1% after an earnings miss in Asia. The miss was guidance, not revenue.','Energy flat despite the headline - the market had already priced it.','ON YOUR LIST: the two names you watch closed 0.4% and 1.8% down, in line with the sector rather than company news.','Information, not financial advice.'],
+    prompt:'Search the live web now and report what happened overnight in news and markets relevant to what the user follows. Give the specific moves with numbers and the reason attributed to each, distinguishing a real cause from a headline the market had already priced. Cover the user\u2019s named interests explicitly, and say when nothing relevant happened rather than padding. You must NOT give financial advice: never tell the user to buy, sell, hold or wait, and never predict a price. End by stating this is information, not financial advice.' },
+  { id:'inbox_digest', cat:'Inbox & calendar', icon:'\uD83D\uDCEC', title:'Daily inbox digest', needs:'Email', on:false,
+    desc:'Each evening, the few emails that actually need you - summarised, with a ready-to-send reply drafted for each. Nothing goes out without you pressing send.',
+    sample:['6 needed you today. 58 did not.','Client asking to move Thursday to Friday - reply drafted, says yes and proposes 2pm.','Invoice query from accounts - reply drafted, needs the PO number you have not given me.','Recruiter, second follow-up - drafted a short no, since you have not replied twice.','Every draft is ready to send and has NOT been sent.'],
+    prompt:'Summarise the user\u2019s recent mail into the messages that genuinely need them and the count of those that do not. For each that needs action: who, what they want, and what is at stake if it waits. Draft a ready-to-send reply for each, in the user\u2019s own register. Where a reply needs information only the user has, say exactly what is missing rather than inventing it. State plainly on every draft that it is ready and has NOT been sent. Never describe an email you cannot actually see.' },
+  { id:'competitor_watch', every:'weekly', cat:'Growing a business', icon:'\uD83D\uDD0D', title:'Competitor & industry watch', needs:'Email, Web research', on:false,
+    desc:'Watches the companies you compete with and tells you what actually changed - pricing, launches, hiring, positioning - and what it means for you, not just that it happened.',
+    sample:['2 real changes this week out of 40 things published.','Competitor A cut their entry tier from 29 to 19 and removed the seat limit. That is the first price move in 14 months.','WHAT IT MEANS: your 25 tier is now the expensive middle option rather than the cheap one.','Competitor B is hiring 3 enterprise salespeople. They are moving upmarket, away from your customers.','Everything else was marketing.'],
+    prompt:'Track the competitors and market the user has named. Report only genuine changes: pricing, product launches, positioning, funding, notable hiring patterns and public statements - with the date and source for each. For every change, say what it means for the user specifically, not just that it happened. Explicitly separate substance from marketing, and say how much you discarded so the summary is trusted as filtered. Never report a change you cannot evidence from a real source.' },
+  { id:'weekly_report', every:'weekly', cat:'Inbox & calendar', icon:'\uD83D\uDCCA', title:'Weekly summary report', needs:'Email', on:false,
+    desc:'Every Friday, your week written up properly: what got finished, what moved, what is still open and who it is waiting on - ready to send to a team or keep for yourself.',
+    sample:['WEEK OF 3 MARCH','FINISHED: onboarding rewrite, two client calls, the pricing page.','MOVED BUT NOT DONE: migration plan - blocked on the data export since Tuesday.','WAITING ON OTHERS: legal review (4 days), supplier quote (6 days). The supplier one is now the longest-running item you have.','NEXT WEEK: nothing new is scheduled, so this is the week to clear the two blocked items.'],
+    prompt:'Compile the user\u2019s week from what they and their correspondence record: what was completed, what progressed without finishing and what is blocking it, what is waiting on other people and for how long, and what is scheduled next. Name the single longest-outstanding item explicitly - it is the one that gets forgotten. Write it so it can be sent to a colleague without editing. Never claim something was finished unless there is evidence for it.' },
+  { id:'content_calendar', every:'weekly', cat:'Growing a business', icon:'\u270D\uFE0F', title:'Social content drafts', needs:'Web research', on:false,
+    desc:'A week of posts written for you from what is actually being talked about in your field this week - full copy, ready to publish, waiting for your approval rather than going out on their own.',
+    sample:['5 posts for next week, built from 3 things genuinely being discussed in your field.','MON - the pricing debate everybody is having. Full copy, 78 words, opinionated.','WED - a short how-to on the question you keep getting asked. 4 lines plus a list.','FRI - the contrarian one. This is the riskiest of the five and the most likely to travel.','Nothing is scheduled or posted. These wait for you.'],
+    prompt:'Research what is genuinely being discussed in the user\u2019s field this week and draft a week of posts from it. For each: the day, the full ready-to-publish copy, and one line on why this angle now. Vary the shape - not five of the same post. Say which one is the riskiest and why, so the user can decide rather than discover. Ground every post in something real you found, and name it. Nothing is posted or scheduled: say plainly that these are drafts awaiting approval.' },
 
   /* ---- The standing services below are what make Crew worth paying for:
      they run in the background and create value without you remembering to
@@ -24,38 +39,47 @@ function _cwDefaultJobs(){ return [
 
   { id:'opportunity_radar', cat:'Work & career', icon:'\uD83C\uDFAF', title:'Opportunity radar', needs:'Email, Web research', on:false,
     desc:'Every morning AMV hunts for things you could actually get - scholarships, grants, internships, jobs, competitions, fellowships, discounts and rebates that match your profile - and emails you only the ones you qualify for, with the deadline and the direct link.',
+    sample:['6 open now that you actually qualify for. 2 close inside a fortnight.','Regional innovation grant - up to 5,000, closes in 11 days, needs a one-page plan you already have most of.','Industry fellowship - paid, closes in 6 weeks, needs two references. Ask this week, not that week.','Discarded 23: wrong region, wrong stage, or already closed. No point showing you those.'],
     prompt:'Search the live web for opportunities matching the user profile and interests: scholarships, grants, internships, jobs, competitions, fellowships, rebates and tax credits. Only include ones open NOW with a future deadline. For each: name, what it gives, eligibility, deadline, direct application link. Exclude anything they clearly do not qualify for. If you find nothing new, say so plainly.' },
 
   { id:'change_digest', cat:'Watching the world', icon:'\uD83D\uDD14', title:'Did anything change today?', needs:'Web research', on:false,
     desc:'You tell AMV what to watch - a page, a price, a competitor, a policy, a person, a job board - and each morning it checks every one and reports only what actually changed. No change, no noise.',
+    sample:['4 things on your watch list. 1 changed.','The supplier page: lead time went from 3 weeks to 6. Changed some time in the last 24 hours.','WHY IT MATTERS: your quote to the client assumed 3.','The other three are unchanged. Prices, the policy page, the job board - all identical to yesterday.'],
     prompt:'Check each item on the user watch list against its previous state. Report ONLY genuine changes: what changed, the old value, the new value, and why it might matter. If nothing changed, say "nothing changed" rather than padding the report.' },
 
   { id:'money_leaks', cat:'Money', icon:'\uD83D\uDCB8', title:'Money leak detector', needs:'Email', on:false,
     desc:'AMV reads your receipts and statements for subscriptions you stopped using, duplicate charges, silent price rises, and avoidable fees - then tells you exactly what to cancel and how much you would save.',
+    sample:['Found 4 things. Together they cost you 631 a year.','Design tool - 34/month, no login recorded in 5 months. 408/year.','Two charges from the same streaming service on the 3rd and the 17th. One is a duplicate.','Cloud storage went from 8 to 12 in January without an email about it. 48/year, quietly.','Every one of these is from a receipt I can point at. Nothing here is a guess.'],
     prompt:'Scan recent receipts, invoices and statement emails. Identify: recurring charges that look unused, duplicate charges, subscription price increases versus previous months, and avoidable fees. For each, give the merchant, the amount, how often, and the annual cost of keeping it. Total the potential saving. Never guess a charge you cannot see evidence for.' },
 
   { id:'forgot_check', cat:'Inbox & calendar', icon:'\uD83E\uDDE0', title:'What did I forget?', needs:'Email, Calendar', on:false,
     desc:'Each morning AMV re-reads your recent mail and calendar for things you said you would do, questions nobody answered, and commitments with no follow-up - so nothing quietly slips.',
+    sample:['3 things you said you would do and have not.','You told Priya on the 4th you would send the revised figures \'tomorrow\'. That was 9 days ago.','Two people are waiting on a reply: the landlord (6 days) and the accountant (3 days).','You asked the supplier a question on the 8th and never got an answer. Worth chasing before the order.'],
     prompt:'Review recent emails and calendar entries. List: promises the user made that have no follow-up, messages awaiting their reply, questions they asked that were never answered, and commitments with an approaching date. Be specific - quote the sentence and name the person. Only include real, evidenced items.' },
 
   { id:'renewal_watchdog', cat:'Money', icon:'\uD83D\uDCC4', title:'Contract & renewal watchdog', needs:'Email', on:false,
     desc:'Finds subscriptions, insurance, leases, warranties, domains and memberships heading for renewal, warns you BEFORE the auto-charge, and prepares the cancel-or-renegotiate message.',
+    sample:['3 renewals inside 30 days. One of them is bad value.','Insurance auto-renews on the 22nd at 840 - up from 690 last year, for the same cover.','Domain renews on the 30th, 14. Fine, leave it.','Gym renews on the 2nd, 45/month. You have been twice since November.','Cancellation email for the gym and a renegotiation email for the insurance, both drafted and NOT sent.'],
     prompt:'Find upcoming renewals, expirations and auto-charges in the user mail: subscriptions, insurance, leases, warranties, domains, memberships, licences. For each: what it is, the renewal date, the amount, and whether it auto-renews. Flag anything renewing within 30 days first. Draft a cancellation or renegotiation email for anything that looks poor value.' },
 
   { id:'followups', cat:'Inbox & calendar', icon:'\uD83E\uDD1D', title:'Relationship follow-ups', needs:'Email', on:false,
     desc:'Tells you who is waiting on you and who you have gone quiet on - clients, recruiters, mentors, friends - with the context of your last exchange and a ready-to-send message.',
+    sample:['2 people are waiting on you, and 1 you have gone quiet on.','The recruiter asked a direct question 8 days ago. That is long enough to look like a no.','Client asked for the timeline on Tuesday - a one-line answer would do it.','You have not spoken to your old manager since March, and they moved to a company you were curious about. Short note drafted.','All three drafts are ready and none of them has been sent.'],
     prompt:'Find people awaiting a reply from the user, and important contacts with no exchange in a while. For each: who, when you last spoke, what it was about, and why now is a good moment. Draft a short, natural follow-up message for each. Never invent a shared history that is not in the thread.' },
 
   { id:'deal_watch', cat:'Money', icon:'\uD83C\uDFF7\uFE0F', title:'Price & deal watcher', needs:'Web research', on:false,
     desc:'Watches everything on your wish list and tells you when a price is genuinely good by its own history - not just when a site claims a sale.',
+    sample:['6 things on your list. 1 is genuinely cheap right now.','The headphones: 179, against a 12-month usual of 219 and a lowest-ever of 169. This is a real drop, not a sale banner.','The jacket says \'40% off\' and is 4 more than it was in October. That discount is against a price it never sold at.','Nothing else has moved enough to mention.'],
     prompt:'Check the current price of each item on the user wish list. Report the current price, the usual price, and whether this is genuinely a good price by historical standards. Explicitly call out fake or marketing-only discounts. Only flag a real drop.' },
 
   { id:'travel_guardian', cat:'Home & life', icon:'\u2708\uFE0F', title:'Travel guardian', needs:'Email, Calendar, Web research', on:false,
     desc:'From your booking confirmations it tracks flight delays, gate changes, weather at both ends, and check-in windows - and warns you early enough to actually do something.',
+    sample:['Flight in 2 days. Two things need you.','Your outbound is now 40 minutes earlier. The airline emailed at 3am and it is easy to miss.','Check-in opens tomorrow at 07:00 and the seats you wanted are on a 6-hour leg.','Weather at the far end: heavy rain the day you land, clear after. Worth knowing before you pack.','Return leg unchanged.'],
     prompt:'From the user booking confirmations, identify upcoming travel. Check flight status, gate and time changes, weather at origin and destination, and check-in windows. Report anything that needs action, with how much time remains to act. State clearly if a booking cannot be verified.' },
 
   { id:'meeting_prep', cat:'Inbox & calendar', icon:'\uD83D\uDCCB', title:'Meeting prep & follow-up', needs:'Calendar, Email, Web research', on:false,
     desc:'Before each meeting you get a brief on who you are meeting, their company and recent news, and the history of your thread. Afterwards it drafts the follow-up and the action list.',
+    sample:['Meeting at 2pm with Daniel Okafor, Head of Ops at Kestrel.','They announced a warehouse move 3 weeks ago - relevant, because your last thread was about delivery times.','LAST TIME: you agreed to send pricing for the larger tier. You did, on the 12th. They never replied to it.','OPEN ITEM: that unanswered pricing question is the whole meeting. Lead with it.','3 talking points, and a follow-up email drafted for after.'],
     prompt:'For each upcoming meeting: who is attending, their role and company, relevant recent news, the history of prior correspondence, open items from last time, and 3 suggested talking points. After a meeting, draft a follow-up email and a task list. Never fabricate a fact about a person - if you cannot verify it, omit it.' },
 
   { id:'bills_due', cat:'Money', icon:'\uD83E\uDDFE', title:'Bills, payments & paycheck alerts', needs:'Email', on:false,
@@ -284,6 +308,7 @@ function _cwDefaultJobs(){ return [
 
   { id:'flight_watch', cat:'Home & life', icon:'✈️', title:'Flight price watch for a real trip', needs:'Web research', on:false,
     desc:'Watches your actual route and dates, learns what a normal fare looks like, and tells you when a price is genuinely good - including when to rebook a refundable fare cheaper.',
+    sample:['Your route, your dates. Watching for 3 weeks now.','Best right now: 214 return, direct. The usual since watching began has been 260-290.','This is the lowest it has been. Not by a little - by 46.','Flying out a day earlier saves another 31, if that works.','You already hold a refundable fare at 268. Rebooking now saves 54.'],
     prompt:'Track fares for the user’s specified routes and date ranges. Report the current best fare, the airline, how it compares to what has been seen since watching began, and whether to book now or wait. Include nearby dates or airports when they are materially cheaper. If the user already holds a refundable booking and the fare has dropped, state the rebooking saving explicitly. Never present a fare you have not actually seen.' },
 
   { id:'move_watch', every:'weekly', cat:'Home & life', icon:'📍', title:'Rent, property and neighbourhood watch', needs:'Web research', on:false,
@@ -292,11 +317,109 @@ function _cwDefaultJobs(){ return [
 
   { id:'gift_radar', cat:'Home & life', icon:'🎁', title:'Birthdays, occasions and gift ideas', needs:'Calendar, Email, Web research', on:false,
     desc:'Warns you far enough ahead to do something good rather than something panicked, with ideas built from what that person has actually said they like, and the delivery cut-off.',
+    sample:['Your sister\'s birthday is in 3 weeks. Long enough to do something good.','She mentioned twice in messages that her camera strap is falling apart.','A good replacement is 38 and ships in 4 days, so the last safe order date is the 19th.','Two other ideas grounded in things she has actually said, both under your 50.','Nothing here is invented - each one traces back to something she wrote.'],
     prompt:'Track upcoming birthdays, anniversaries and occasions from the calendar and correspondence. For each, warn far enough ahead to act, and suggest specific ideas grounded in things that person has actually mentioned or shown interest in, within the user’s stated budget. Include current price, where to get it, and the delivery cut-off date to arrive in time. Never invent a preference the user has no record of.' },
 
   { id:'doc_expiry', cat:'Home & life', icon:'🛂', title:'Passport, visa and travel eligibility', needs:'Email, Calendar, Web research', on:false,
     desc:'Catches the trap that ruins trips: a passport too close to expiry for the country you booked, a visa or permit needing renewal, an entry rule that changed since you last flew.',
+    sample:['You have a flight booked. Your passport is a problem.','It expires in 4 months. Spain requires 3 months\' validity beyond your return date - you clear it by 11 days.','That is too close. A delayed return or a date change breaks it.','A renewal takes about 3 weeks at the moment, so start before the 8th.','Entry rules checked against the government source today. These change without notice.'],
     prompt:'Check the user’s travel documents against their planned travel: passport expiry versus each destination’s validity requirement, visa or permit status and renewal timing, and current entry requirements for those destinations. Report anything that would block travel, how long the fix takes, and the latest date to start it. Verify entry rules against official government sources and give the date checked, since these change without notice.' },
+
+  /* ---- SCHOOL ------------------------------------------------------------
+
+     Written for the person who has six subjects, four deadlines, a part-time
+     job and no system - which is most students, and the audience with the most
+     to gain from work that happens while they sleep.
+
+     One rule shapes every prompt below, and it is not negotiable: AMV prepares,
+     checks, explains and drafts. It never submits anything, never sits an
+     assessment, and never hands over work to be passed off as the student's
+     own. A tool that does somebody's homework gets the student expelled and
+     gets AMV blocked by every school district that notices - so the jobs that
+     touch coursework produce a plan, a critique, or a study aid, and say so on
+     their face. That is also the more useful product: a graded-quality draft
+     they did not write teaches nothing and is detectable; a list of exactly
+     what is weak in the draft they DID write is worth more than the grade. */
+
+  { id:'school_week', every:'weekly', cat:'Learning', icon:'📅', title:'Plan my whole school week', needs:'Web research', on:false,
+    desc:'Every Sunday, turns everything due into an actual plan: what to do on which day, how long each piece really takes, and what to start early so nothing lands on top of everything else.',
+    sample:['MON - Bio lab writeup (~50 min). Start now, it is the only thing due Wed.','TUE - History essay: outline + find 3 sources (~40 min). Do NOT start writing yet.','WED - History essay draft (~90 min). This is the big one this week.','THU - Light day. Catch up if Wednesday slipped.','Heads up: your history essay and chemistry test are both Friday. Move the essay draft to Wednesday or you will be doing both on Thursday night.'],
+    prompt:'Build the user a plan for the coming week from the assignments, tests and commitments they have listed. For each piece of work: which day to do it, roughly how long it takes, and what has to happen first. Put heavier work earlier than its deadline and say why. Explicitly flag any day where two significant things collide, and propose the specific move that fixes it. Be realistic about time - a plan they cannot follow is worse than none. Never invent a deadline they have not given you.' },
+
+  { id:'deadline_rescue', cat:'Learning', icon:'🚨', title:'Catch a deadline before it catches me', needs:'Web research', on:false,
+    desc:'Checks every day for work that is due soon and has not been started, and tells you the last realistic moment to begin it - while there is still time to do it properly.',
+    sample:['DUE IN 2 DAYS - English essay, not started. Start tonight: this one needs about 3 hours and you have 2 evenings.','DUE IN 5 DAYS - Physics problem set. Fine to leave until Wednesday.','You have nothing due tomorrow. This is the best night this week to get ahead on the essay.'],
+    prompt:'Review the user’s upcoming deadlines against what they have said is done. For anything not started, work out the last realistic day to begin it given how long that kind of work takes them, and say so plainly. Rank by urgency, not by due date - a big piece due in a week can be more urgent than a small one due tomorrow. Say clearly when there is nothing urgent, rather than manufacturing pressure. Never guess at a deadline you were not told about.' },
+
+  { id:'work_check', cat:'Learning', icon:'🔎', title:'Check my work before I hand it in', needs:'Web research', on:false,
+    desc:'You paste in what you wrote; AMV marks it the way your teacher would - what is weak, what is missing against the rubric, what would lose marks - and explains each one so the next piece is better.',
+    sample:['Against the rubric you gave me, this is around a B.','WHAT COSTS YOU MARKS: paragraphs 2 and 4 make a claim with no evidence. The rubric weights evidence at 30%.','MISSING: the question asks you to evaluate, and you have described. Add a sentence to each paragraph saying which side is stronger and why.','STRONG: your introduction sets up the argument clearly - keep doing that.','Fix the two evidence gaps and this moves up a band.'],
+    prompt:'The user will give you their own finished work and, where they have it, the rubric or task description. Assess it the way their marker would: what it currently earns and why, what specifically costs marks, what the task asks for that is missing, and what is genuinely good. Quote the exact sentence for every point so they can find it. Explain the reason behind each correction so the next piece improves. Do NOT rewrite their work for them and do NOT produce a version to hand in - the point is that they fix it themselves and understand why. If they ask you to write it for them, say plainly that you will not and offer the critique instead.' },
+
+  { id:'study_coach', every:'daily', cat:'Learning', icon:'🧠', title:'Study coach that knows what I keep getting wrong', needs:'Web research', on:false,
+    desc:'Tracks the questions you keep missing and builds each session around exactly those - with practice questions, worked answers, and a plain explanation of the thing you actually misunderstood.',
+    sample:['You have now missed 4 questions on the same idea: which reactant runs out first.','THE MISUNDERSTANDING: you are comparing the amounts you started with, not the amounts the equation needs.','5 practice questions on exactly that, hardest last.','Worked answer to number 3, since that is the shape you got wrong twice.','You have not missed a mole-ratio question in two weeks. That one is done - dropping it.'],
+    prompt:'Track which topics and question types the user keeps getting wrong across sessions. Build today’s session around the ones that are actually still weak, not the ones they are already good at. For each: name the specific misunderstanding rather than the topic, explain it plainly, then give practice questions with worked answers, hardest last. Drop topics they have consistently got right and say you are dropping them. Never claim they are improving unless the record shows it.' },
+
+  { id:'exam_prep', cat:'Learning', icon:'📚', title:'Get me ready for this specific test', needs:'Web research', on:false,
+    desc:'Works backwards from the test date: what to revise on which day, what is most likely to come up, and a practice set each session that gets harder as the date gets closer.',
+    sample:['9 days until the test. Working backwards:','DAYS 9-7: the three topics you are weakest on. Learning, not revising.','DAYS 6-3: full practice questions under time. This is where marks are actually won.','DAYS 2-1: only what you got wrong in practice. No new material.','Most likely to appear, based on the syllabus weighting you gave me: titration calculations and reaction rates.'],
+    prompt:'Build a revision plan working backwards from the user’s test date. Front-load the topics they are weakest on and leave the last days for practice and correction only, never new material. Say which topics are most likely to be assessed and on what basis - syllabus weighting or past papers they have given you - and be explicit that it is a judgement, not a prediction. Include a practice set for each session, increasing in difficulty as the date approaches. Never claim to know what is on a specific test.' },
+
+  { id:'morning_brief_student', every:'daily', cat:'Learning', icon:'☀️', title:'Morning briefing before school', needs:'Web research', on:false,
+    desc:'One short thing to read before you leave: what is due today, what you need to bring, what is on later, and the single most useful thing you could do with your free period.',
+    sample:['TODAY: history essay due period 4. It is in your drive, finished.','BRING: PE kit, calculator.','LATER: football 4pm - you will not get work done tonight, so use your free.','FREE PERIOD (p2): start the chemistry questions due Thursday. About 30 minutes of it.','Nothing else is urgent today.'],
+    prompt:'Produce a short briefing the user reads before their day starts: what is due today, what they need to bring or prepare, what is scheduled later that will eat their evening, and the single most useful thing they could do with any free time they have. Keep it under 100 words - this is read walking out of the door. Say plainly when the day is light rather than filling space. Never invent a commitment they have not told you about.' },
+
+  { id:'evening_brief_student', every:'daily', cat:'Learning', icon:'🌙', title:'Evening wrap-up and tomorrow', needs:'Web research', on:false,
+    desc:'At the end of the day: what got done, what slipped, what tomorrow actually looks like, and the one thing worth doing tonight if you only do one thing.',
+    sample:['DONE TODAY: chemistry questions, history reading.','SLIPPED: the maths problem set. It is now due in 2 days and untouched.','TOMORROW: double free in the afternoon - that is enough for the whole maths set.','IF YOU DO ONE THING TONIGHT: read the essay question so it is in your head. 5 minutes.'],
+    prompt:'Close out the user’s day: what they finished, what slipped and what that now means for its deadline, what tomorrow looks like, and the single highest-value thing they could do tonight - including "nothing, go to bed" when that is the honest answer. Be brief and specific. Never guilt them about what slipped; state the consequence and the fix.' },
+
+  { id:'application_help', cat:'Learning', icon:'🎓', title:'University and job applications, tracked', needs:'Web research', on:false,
+    desc:'Keeps every application in one place with its real deadline, what each one still needs from you, and honest feedback on your personal statement - written by you, made better by you.',
+    sample:['4 applications open. Nearest deadline: 12 days.','NEEDS FROM YOU: reference request not sent (this is the one that will bite - ask this week).','PERSONAL STATEMENT: paragraph 3 is the strongest thing in it. Paragraph 1 says what you want, not what you have done - it is the weakest opening and it is the first thing they read.','2 of the 4 ask for the same essay with a different word count. Write the long one, cut it down.'],
+    prompt:'Track each of the user’s applications: the real deadline, what has been submitted, and what is still outstanding - especially items that depend on other people, such as references, which need the most warning. Where they share their own drafted statement, give specific feedback: which paragraph is strongest, which is weakest and exactly why, and what a reader sees first. Point out where one piece of writing can be reused across applications. Do NOT write their statement for them - it has to be theirs, and admissions readers can tell. Say so if they ask.' },
+
+  { id:'group_project', cat:'Learning', icon:'👥', title:'Keep a group project from falling apart', needs:'Web research', on:false,
+    desc:'Tracks who agreed to do what and by when, notices what has gone quiet, and drafts the message that chases it without starting an argument.',
+    sample:['4 parts, 3 people. Due in 6 days.','ON TRACK: your section, Maya’s research.','GONE QUIET: Sam’s slides - agreed 5 days ago, nothing since, and the presentation cannot be assembled without them.','DRAFT MESSAGE TO SAM: short, no blame, asks for a yes/no on Thursday so there is still time to cover it.','If Sam cannot, the fastest fix is Maya takes 2 slides and you take 1.'],
+    prompt:'Track a group project: who agreed to what, by when, and what has actually been delivered. Identify what has gone quiet and what it blocks. Draft a short, friendly chase message for anything overdue - no blame, and asking for a clear yes or no by a specific day so there is time to react. Where something looks likely to fail, propose the concrete redistribution that saves the deadline. Never accuse anyone of anything you cannot evidence from what the user has told you.' },
+
+  { id:'reading_digest', cat:'Learning', icon:'📖', title:'Make sense of a long reading', needs:'Web research', on:false,
+    desc:'Turns a long chapter, paper or set text into the argument, the evidence and the bits that will actually be examined - plus the questions to test whether you understood it.',
+    sample:['THE ARGUMENT: the author claims the revolution was economic before it was political.','THE EVIDENCE THEY USE: grain prices, tax records, three contemporary letters.','THE WEAK POINT: the letters are all from one city, which they acknowledge in a footnote and then ignore.','LIKELY EXAM ANGLE: "to what extent" questions want you to weigh this against the political reading.','5 questions to check you actually understood it - answers below, do not look first.'],
+    prompt:'Take a long text the user has to read and give them: the central argument in one sentence, the evidence used to support it, the weakest part of that argument, and which aspects are most likely to be examined and how. Then give comprehension questions with answers held separately, so they can test themselves honestly. This is a companion to the reading, not a replacement for it - say so, and do not summarise so completely that reading it becomes pointless.' },
+
+  { id:'life_admin_student', every:'weekly', cat:'Home & life', icon:'📎', title:'The boring admin nobody reminds you about', needs:'Web research', on:false,
+    desc:'The forms, renewals, sign-ups and appointments that have no deadline until suddenly they do - tracked, with the one that matters this week at the top.',
+    sample:['THIS WEEK: driving theory test slots for your area open Thursday and go within a day.','SOON: student finance opens in 3 weeks. It takes about an hour and needs your parents’ income details - ask now, not then.','NOT URGENT: passport has 14 months left. Renew before the 9-month mark for the trip you mentioned.'],
+    prompt:'Track the administrative tasks the user has told you about: renewals, applications, registrations, appointments and forms. Surface the one or two that genuinely need action this week and say exactly what to do. For anything requiring other people or documents, warn early enough that gathering them is possible. Be explicit about what is NOT urgent, so the list stays trustworthy. Never invent a deadline - if you are unsure of a date, say you are unsure and how to check.' },
+
+  { id:'wellbeing_check', every:'weekly', cat:'Health', icon:'🌱', title:'Notice when the week is too much', needs:'Web research', on:false,
+    desc:'Looks at the shape of your week - deadlines, commitments, sleep you said you got - and says plainly when it is too much, and which single thing to move.',
+    sample:['This week has 3 deadlines, 2 evening commitments and you have said you are getting under 6 hours.','That is not a sustainable week, and Thursday is the day it breaks.','THE ONE THING TO MOVE: the history reading. It is due Friday but nothing depends on it - do it Saturday.','Nothing else here is optional, so moving one thing is the whole fix.','This is an observation about your schedule, not health advice - if you are struggling, talk to someone you trust.'],
+    prompt:'Look at the shape of the user’s week - deadlines, commitments, and anything they have told you about sleep or energy - and say plainly whether it is realistic. Name the specific day it becomes too much and why. Recommend moving exactly ONE thing, chosen because nothing else depends on it, rather than producing a list of lifestyle suggestions. Be direct and kind. You are commenting on a schedule, not giving medical or mental health advice: never diagnose, never suggest treatment, and always close by pointing to a real person if they say they are struggling.' },
+
+  { id:'money_student', every:'weekly', cat:'Money', icon:'💰', title:'Where my money actually went', needs:'Web research', on:false,
+    desc:'The honest weekly number: what you spent, what it was mostly on, what is coming out next week, and whether that leaves enough.',
+    sample:['SPENT THIS WEEK: 47. Most of it - 31 - was food out across 6 days.','COMING OUT NEXT WEEK: phone (12) and the gym (20).','That leaves you short for the concert ticket on the 14th unless something changes.','The 6 days of food out is the whole gap. That is the number, not a judgement.'],
+    prompt:'Report what the user spent over the period from what they have recorded: the total, the largest category with the actual number, and what regular payments are due next. State plainly whether what remains covers what is coming. Give the numbers and the arithmetic without moralising about the spending. Never estimate a figure you have not been given - say what is missing instead.' },
+
+  { id:'opportunity_student', every:'weekly', cat:'Learning', icon:'🎯', title:'Things I could actually get', needs:'Web research', on:false,
+    desc:'Hunts for scholarships, competitions, summer programmes, internships and free courses you genuinely qualify for - with the deadline and the direct link, and nothing you cannot enter.',
+    sample:['4 open now that you qualify for. 2 close within a month.','Regional essay competition - 500 prize, closes in 18 days, needs 1500 words on a set theme. You have written on this before.','Summer research programme - free, closes in 5 weeks, needs a teacher reference. Ask now.','Dropped 11 others: age, region or grade requirements you do not meet. No point showing you those.'],
+    prompt:'Search the live web for opportunities the user genuinely qualifies for given their age, location, year group and interests: scholarships, competitions, summer programmes, internships, bursaries and free courses. Only include ones open now with a future deadline. For each: what it is, what it gives, what it requires, the deadline, and the direct link. Explicitly say how many you excluded and why, so they trust that the list is filtered rather than padded. Flag anything needing a reference or a document early, since those depend on other people.' },
+
+  { id:'inbox_cleanup', every:'daily', cat:'Inbox & calendar', icon:'🧹', title:'Clear the noise out of my inbox', needs:'Email', on:false,
+    desc:'Separates the handful of messages that actually need you from the pile that does not, drafts the replies, and never sends anything without you.',
+    sample:['3 need you today. 41 do not.','1. Teacher asking to reschedule Thursday - needs a yes or no. Draft ready.','2. Application portal: reference outstanding. Draft chaser to Mr Ahmed ready.','3. Bank: card expiring. 2 minutes, do it on your phone.','The other 41 are newsletters, receipts and notifications. Nothing in them needs a reply.'],
+    prompt:'Sort the user’s recent mail into the few messages that genuinely need them and everything that does not, and say both counts. For each that needs action: who it is from, what they want, and how long it will take. Draft a ready-to-send reply for each one. Nothing is sent - say plainly at the top of each draft that it is ready and has NOT been sent. Never describe a message you cannot actually see.' },
+
+  { id:'social_plan', cat:'Home & life', icon:'🎉', title:'Actually make the plan happen', needs:'Calendar, Web research', on:false,
+    desc:'Takes the group chat that has said "we should do something" for three weeks and turns it into a date that works for everyone, with the thing booked or the tickets found.',
+    sample:['5 people, 3 weeks of nobody picking a date.','Only 2 evenings work for everyone: Friday 14th and Saturday 22nd.','The 14th is 3 days before your test. The 22nd is clear.','Tickets for the 22nd: 3 left at 18, going up at the door.','Draft message with one date and one link, so it needs a yes rather than a discussion.'],
+    prompt:'Turn a stalled plan into a decision. From the availability the user gives you, find the dates that genuinely work for everyone and say how few there are. Rule out any that collide with their own commitments and say why. Research the specific option - venue, tickets, cost, availability - with real current prices and links. Draft a message that proposes ONE date and ONE option, because a group answers a yes/no and does not answer an open question. Never claim to have booked anything.' },
 ]; }
 /* ── WHAT A JOB NEEDS, AGAINST WHAT IS ACTUALLY CONNECTED ────────────────────
 
@@ -701,6 +824,113 @@ try{
   });
 }catch(e){}
 
+/* ── WHAT THIS JOB ACTUALLY PRODUCES ─────────────────────────────────────────
+
+   The catalogue is the reason anybody pays for Crew, and a card in a grid can
+   only say what a job is ABOUT. "Study coach that knows what you keep getting
+   wrong" is a nice sentence and it is also what every AI product on the
+   internet says about itself. Nobody buys a subscription off a sentence.
+
+   So a card opens, and shows three things a sentence cannot:
+
+   - A specimen of what lands in front of them. Labelled as a specimen, in so
+     many words, because the one thing worse than a vague promise is a made-up
+     result that reads like theirs.
+   - The EXACT instruction the unattended runner is given. Nothing else in this
+     product is as convincing as showing the machinery, and it costs nothing to
+     show: it is not a secret, it is the thing they are buying.
+   - Where it runs and what it needs, honestly - including "this one needs your
+     mailbox and cannot run with AMV closed", which loses a sale occasionally
+     and prevents every refund that starts with "it never did anything".
+
+   A free visitor gets all of it. They are the person deciding whether this is
+   worth money, and showing them a paywall instead of the product is how you
+   lose somebody who would have paid. */
+/* The same card, for somebody who has not paid: it opens, it shows everything,
+   and where the switch would be it says what unlocks it. A dead toggle that
+   silently does nothing would teach them the product is broken, which is a
+   worse outcome than not selling to them. */
+function _cwLockedCard(j){
+  return `<div class="cw-job locked">
+    <div class="cw-job-ic" aria-hidden="true">${j.icon}</div>
+    <button class="cw-job-body" data-dact="cwPeek" data-darg="${j.id}"
+            aria-label="See what ${escH(j.title)} does">
+      <span class="cw-job-t">${escH(j.title)}</span>
+      <span class="cw-job-d">${escH(j.desc)}</span>
+      <span class="cw-job-need">Uses: ${escH(j.needs)}
+        <span class="cw-job-where ${_cwRunsUnattended(j)?'bg':'open'}">${escH(_cwWhereLabel(j))}</span>
+      </span>
+      <span class="cw-job-see">${Array.isArray(j.sample)&&j.sample.length?'See an example →':'See what it does →'}</span>
+    </button>
+  </div>`;
+}
+
+function cwPeek(id){
+  const j = (_cwJobs()||[]).find(x=>x.id===id); if(!j) return;
+  const r = $('ovr'); if(!r) return;
+  const miss = _cwNeedsMissing(j);
+  const bg = _cwRunsUnattended(j);
+  const allowed = _planAllowsCrew();
+  const every = j.every ? (_CREW_EVERY_UI[j.every] || j.every) : 'every day';
+  const P = (typeof PLANS!=='undefined' && PLANS[CREW_REQUIRED_PLAN]) || { name:'Pro', price:15 };
+
+  r.innerHTML = `<div class="ov" id="cwp-bg"><div class="cwp" role="dialog" aria-modal="true" aria-labelledby="cwp-t">
+    <button class="cwp-x" id="cwp-close" aria-label="Close">✕</button>
+    <div class="cwp-head">
+      <span class="cwp-ic" aria-hidden="true">${j.icon||'✨'}</span>
+      <div>
+        <h2 class="cwp-t" id="cwp-t">${escH(j.title)}</h2>
+        <div class="cwp-meta">
+          <span class="cwp-pill">Runs ${escH(every)}</span>
+          <span class="cwp-pill ${bg?'bg':'open'}">${bg?'Runs with AMV closed':'Runs while AMV is open'}</span>
+          ${j.needs?`<span class="cwp-pill quiet">Uses ${escH(j.needs)}</span>`:''}
+        </div>
+      </div>
+    </div>
+    <p class="cwp-desc">${escH(j.desc)}</p>
+
+    ${Array.isArray(j.sample)&&j.sample.length?`<div class="cwp-sec">
+      <div class="cwp-sec-h">What you get</div>
+      <div class="cwp-sample" aria-label="Example of what this job produces">
+        ${j.sample.map(l=>`<div class="cwp-line">${escH(l)}</div>`).join('')}
+      </div>
+      <div class="cwp-note">An example of the shape and the level of detail. Your version is built from your own information, so the specifics will be yours, not these.</div>
+    </div>`:''}
+
+    ${j.prompt?`<div class="cwp-sec">
+      <div class="cwp-sec-h">The exact instruction AMV follows</div>
+      <pre class="cwp-prompt">${escH(j.prompt)}</pre>
+      <div class="cwp-note">This is the real instruction, not a summary of it. You can change it after you turn the job on.</div>
+    </div>`:''}
+
+    ${miss.length?`<div class="cwp-warn"><b>Not ready yet.</b> This one needs ${escH(miss.join(', '))}, which ${miss.length>1?'are':'is'} not connected. It will not run until ${miss.length>1?'they are':'it is'} - AMV will not pretend otherwise.</div>`:''}
+    ${!bg?`<div class="cwp-warn quiet">This job needs things that live in this browser, so it runs while AMV is open rather than on AMV's servers.</div>`:''}
+
+    <div class="cwp-act">
+      ${allowed
+        ? `<button class="btn bp" id="cwp-go">${j.on?'Turn it off':'Turn it on'}</button>
+           <button class="btn bs" id="cwp-cancel">Close</button>`
+        : `<div class="cwp-buy">
+             <div class="cwp-buy-t">Included with ${escH(P.name)} · $${P.price}/month</div>
+             <div class="cwp-buy-s">${escH(P.name)} runs ${CREW_JOBS_BY_PLAN.pro} jobs like this in the background at once. Every one of them is real - this is the instruction it runs and the shape of what it sends back.</div>
+             <button class="btn bp" id="cwp-plans">See plans →</button>
+             <button class="btn bs" id="cwp-cancel">Close</button>
+           </div>`}
+    </div>
+  </div></div>`;
+  r.classList.add('on');
+
+  /* Guarded by target===currentTarget rather than stopPropagation on the panel:
+     a panel that stops propagation kills the delegated click handler for every
+     button inside it. */
+  on($('cwp-bg'),'click',(e)=>{ if(e.target===e.currentTarget) closeOvr(); });
+  on($('cwp-close'),'click',closeOvr);
+  on($('cwp-cancel'),'click',closeOvr);
+  on($('cwp-plans'),'click',()=>{ closeOvr(); setTab('plans'); });
+  on($('cwp-go'),'click',()=>{ closeOvr(); try{ cwToggle(j.id); }catch(e){} });
+}
+try{ window.cwPeek = cwPeek; }catch(e){}
+
 /* A job the SERVER is running, shown with the controls that reach the server.
 
    Every button here posts to the same /auto/update the chat tools use, so the
@@ -993,23 +1223,45 @@ function renderCrewView(){
   const vc=$('vc'); if(!vc) return;
   /* Say the one thing that is true and nothing else. No risk warnings, no
      half-working tool - what this does, which plan runs it, and the button. */
+  /* WHAT SOMEBODY WHO HAS NOT PAID SEES.
+
+     This used to be the whole screen for them: three paragraphs and a price.
+     That is a description of a product shown to the one person whose entire
+     decision is whether the product is worth money - and the catalogue sitting
+     behind it, ninety real jobs with the exact instructions they run, is far
+     more persuasive than any sentence anybody could write about it.
+
+     So they get the catalogue. Every job, browsable, openable, with the
+     specimen output and the real instruction. The toggles do not work for them
+     and say so instead of failing silently, and every card leads to the price.
+     Nothing here is a teaser version of a job that does not exist. */
   if(!_planAllowsCrew()){
     const P=(typeof PLANS!=='undefined'&&PLANS[CREW_REQUIRED_PLAN])||{name:'Pro',price:15};
-    vc.innerHTML='<div class="sv fi"><div class="vi">'+
-      '<span class="eyebrow">Crew \u00b7 Autonomous work</span>'+
-      '<h2>AMV working while you are not</h2>'+
-      '<p class="vsub">Give it an outcome and it plans the steps, does the work across your connected apps, '+
-        'and brings back something finished. On a schedule, if you want - every morning, every week, '+
-        'whatever you set.</p>'+
-      '<div class="ss2"><h3>Included with '+escH(P.name)+' \u00b7 $'+P.price+'/month</h3>'+
-        '<p style="font-size:13.5px;color:var(--tx);line-height:1.7;margin:0 0 6px">'+
-          escH(P.name)+' runs <b>'+CREW_JOBS_BY_PLAN.pro+' jobs</b> in the background, as often as every ten minutes. '+
-          'Elite runs '+CREW_JOBS_BY_PLAN.elite+' and Ultra runs '+CREW_JOBS_BY_PLAN.ultra+'.</p>'+
-        '<p style="font-size:12.5px;color:var(--mu);line-height:1.6;margin:0 0 14px">'+
-          'A job keeps running whether or not AMV is open, which is why it is part of a paid plan.</p>'+
-        '<button class="btn bp" data-stab="plans" style="font-size:12px">See plans \u2192</button>'+
-      '</div>'+
-    '</div></div>';
+    const jobs=_cwJobs();
+    const bgJobs=jobs.filter(j=>_cwRunsUnattended(j)).length;
+    vc.innerHTML=`<div class="sv fi"><div class="vi">
+      <span class="eyebrow">Crew \u00b7 Autonomous work</span>
+      <h2>AMV working while you are not</h2>
+      <p class="vsub">Give it an outcome and it plans the steps, does the work, and brings back something finished -
+        every morning, every week, whatever you set. Here is every job it can run. Open any of them to see the
+        exact instruction it follows and the shape of what it sends back.</p>
+      <div class="cw-lock-band">
+        <div class="cw-lock-figs">
+          <span class="cw-lock-fig"><b>${jobs.length}</b>jobs ready to run</span>
+          <span class="cw-lock-fig"><b>${bgJobs}</b>run with AMV closed</span>
+          <span class="cw-lock-fig"><b>${CREW_JOBS_BY_PLAN.pro}</b>at once on ${escH(P.name)}</span>
+        </div>
+        <div class="cw-lock-buy">
+          <span class="cw-lock-price">Included with ${escH(P.name)} \u00b7 $${P.price}/month</span>
+          <button class="btn bp" data-stab="plans">See plans \u2192</button>
+        </div>
+      </div>
+      <div class="cw-lock-note">Elite runs ${CREW_JOBS_BY_PLAN.elite} at once and Ultra runs ${CREW_JOBS_BY_PLAN.ultra}. A job keeps running whether or not AMV is open, which is the part that costs money to provide.</div>
+    </div>
+    <div class="crew-jobs-sec cw-locked">
+      ${_cwCatChips(jobs)}
+      ${_cwJobsBody(jobs, _cwLockedCard)}
+    </div></div>`;
     return;
   }
   const jobs=_cwJobs(); const appr=_cwApprovals();
@@ -1022,17 +1274,23 @@ function renderCrewView(){
     const note=miss.length
       ? `<div class="cw-job-miss">${j.on?'Cannot run yet':'Needs'}: ${escH(miss.join(', '))} not connected. <button class="cw-job-fix" data-dact="cwConnect">Connect</button></div>`
       : '';
+    /* The body is a real button, so the card opens with a keyboard and reads
+       as something you can press. It was a div: the only interactive thing on
+       a card was the toggle, which meant the only way to find out what a job
+       did was to switch it on. */
     return `<div class="cw-job ${j.on?'on':''}${miss.length?' blocked':''}">
-      <div class="cw-job-ic">${j.icon}</div>
-      <div style="flex:1;min-width:0">
-        <div class="cw-job-t">${escH(j.title)}</div>
-        <div class="cw-job-d">${escH(j.desc)}</div>
-        <div class="cw-job-need">Uses: ${escH(j.needs)}
+      <div class="cw-job-ic" aria-hidden="true">${j.icon}</div>
+      <button class="cw-job-body" data-dact="cwPeek" data-darg="${j.id}"
+              aria-label="See what ${escH(j.title)} does">
+        <span class="cw-job-t">${escH(j.title)}</span>
+        <span class="cw-job-d">${escH(j.desc)}</span>
+        <span class="cw-job-need">Uses: ${escH(j.needs)}
           <span class="cw-job-where ${_cwRunsUnattended(j)?'bg':'open'}">${escH(_cwWhereLabel(j))}</span>
-        </div>
-        ${note}
-      </div>
-      <button class="cw-toggle ${j.on?'on':''}" data-dact="cwToggle" data-darg="${j.id}" aria-label="toggle"><span class="cw-knob"></span></button>
+        </span>
+        <span class="cw-job-see">${Array.isArray(j.sample)&&j.sample.length?'See an example →':'See what it does →'}</span>
+      </button>
+      ${note}
+      <button class="cw-toggle ${j.on?'on':''}" data-dact="cwToggle" data-darg="${j.id}" aria-label="Turn ${escH(j.title)} ${j.on?'off':'on'}"><span class="cw-knob"></span></button>
     </div>`;
   };
   const apprCard=a=>{
