@@ -2588,3 +2588,37 @@ second is what somebody is actually asking.
 
 **Rule:** if a thing can fail while nobody is watching, the failure is part of
 the record. A history of only the successes is not a history.
+
+## 166. A memory is a small permanent prompt, so it is the worst place for a secret
+
+"Remember my wifi password" is a completely natural sentence, and every memory
+AMV holds is replayed into every future request. That makes the memory store the
+single worst place in the product to put a credential - and the person asking
+has not thought about that, which is the whole reason it has to be refused
+rather than stored.
+
+The refusal is deliberately narrow: it matches what is unmistakably a credential
+rather than trying to classify. A false positive here means declining to
+remember something ordinary and sounding broken, which is its own kind of
+damage.
+
+Writing one also asks first, for the same reason the standing instruction does:
+it is a small permanent instruction, and the person should see the exact words
+before they become part of every conversation.
+
+**Rule:** anything that gets replayed into future model input is prompt surface.
+Treat writing to it like editing a prompt, not like saving a note.
+
+## 167. A prefix whitelist inside a drift check is a hole in the drift check
+
+The test that stops the tool allowlist drifting from the shipped tools extracted
+client tool names with a filter for known prefixes. Adding tools under a new
+prefix made them invisible to the forward direction - a backend that dropped
+them would have passed - and made the existing entries look like orphans in the
+reverse one.
+
+A check that has to be maintained in step with the thing it watches is not
+watching it. It now takes every tool name in the block.
+
+**Rule:** a consistency check must not carry its own list of what to look at.
+The list is the thing most likely to go stale, and it goes stale silently.

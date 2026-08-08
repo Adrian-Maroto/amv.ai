@@ -55,8 +55,14 @@ section('Every tool the app ships is one the backend will forward');
      retyped here would agree with itself for ever. */
   const app = readFileSync(join(ROOT, 'app.js'), 'utf8');
   const block = app.slice(app.indexOf('const AMV_TOOLS'), app.indexOf('function _toolsFor'));
-  const clientNames = [...new Set([...block.matchAll(/name\s*:\s*'([a-z_]+)'/g)].map(m => m[1]))]
-    .filter(n => /^(generate|run|fix|build|deploy|crew)_/.test(n));
+  /* Every tool name in the block, not the ones matching a list of prefixes.
+
+     The prefix filter was a quiet bug in this check: tools added later under a
+     new prefix were invisible to the forward direction (so a backend that
+     dropped them would have passed) and looked like orphans to the reverse one.
+     A whitelist of prefixes has to be maintained in step with the thing it is
+     supposed to be watching, which is the failure mode this file exists for. */
+  const clientNames = [...new Set([...block.matchAll(/\bname\s*:\s*'([a-z][a-z0-9_]*)'/g)].map(m => m[1]))];
 
   ok(clientNames.length >= 10, 'the app really defines a set of tools', clientNames.length);
   const dropped = clientNames.filter(n => !W.AMV_CLIENT_TOOLS.has(n));

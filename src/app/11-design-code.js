@@ -1418,6 +1418,48 @@ const AMV_TOOLS = [
 
      Reading is free. Anything that starts spending money on a schedule, or
      destroys work, asks the person first - see _TOOL_CONSENT below. */
+  /* ---- The rest of the product, from chat -------------------------------
+     Same rule as the Crew tools: each one calls what the section itself calls,
+     so there is one copy of every fact. Reading is free; anything that
+     persists, deletes, or sends asks first. */
+  {
+    name:'memory_list',
+    description:'List what AMV has been told to remember about this person. Use before adding, so you do not store the same fact twice, and to answer "what do you know about me".',
+    input_schema:{ type:'object', properties:{} }
+  },
+  {
+    name:'memory_add',
+    description:'Remember a durable fact about the person - their work, preferences, constraints, how they want to be answered. Use when they say "remember that..." or state something clearly meant to persist. NOT for one-off details of the current task, and never for a password, card number, or anything else secret.',
+    input_schema:{ type:'object', properties:{
+      text:{type:'string', description:'The fact, in one clear sentence, written so it still makes sense read on its own in six months.'}
+    }, required:['text'] }
+  },
+  {
+    name:'memory_forget',
+    description:'Remove something AMV remembers. Call memory_list first and pass the id. Use for "forget that", "that is not true any more".',
+    input_schema:{ type:'object', properties:{
+      id:{type:'string', description:'The id from memory_list.'},
+      match:{type:'string', description:'Only if you have no id: words from the memory. Ambiguous matches are refused rather than guessed.'}
+    }, required:[] }
+  },
+  {
+    name:'approvals_list',
+    description:'List the finished work waiting for this person to approve - drafts produced by background jobs and by anything else that stops before sending. Use for "what is waiting for me", "anything need me", and before acting on one.',
+    input_schema:{ type:'object', properties:{} }
+  },
+  {
+    name:'approval_act',
+    description:'Approve or reject a piece of waiting work. APPROVING IS WHAT SENDS IT - for an item that was going to be emailed, approving delivers it. Call approvals_list first, read the person the summary of what it will do, and only act when they have clearly said which one and which way.',
+    input_schema:{ type:'object', properties:{
+      id:{type:'string', description:'The id from approvals_list.'},
+      action:{type:'string', enum:['approve','reject'], description:'"approve" delivers it. "reject" discards it.'}
+    }, required:['id','action'] }
+  },
+  {
+    name:'account_status',
+    description:'What plan this person is on, what they have used this period, and what their background work has cost. Read-only. Use for "what plan am I on", "how much have I used", "am I near my limit" - never guess these from memory.',
+    input_schema:{ type:'object', properties:{} }
+  },
   {
     name:'crew_list',
     description:'List the person\'s background (Crew) jobs: what each one does, how often it runs, whether it is active or paused, and their standing instructions. ALWAYS call this before changing or removing a job, so you act on a real id rather than a guess. Also use it to answer any question about what AMV is running for them.',
@@ -1591,7 +1633,13 @@ try{ window.runAgentic = runAgentic; }catch(e){}
    that" is the one place a confirmation makes things worse. */
 const _TOOL_CONSENT = { deploy_site:true, run_code:true, fix_code:true,
                         crew_add:true, crew_update:true, crew_resume:true,
-                        crew_remove:true, crew_standing:true, crew_ceiling:true };
+                        crew_remove:true, crew_standing:true, crew_ceiling:true,
+                        /* A memory is appended to EVERY future request, so writing
+                           one is writing a small permanent instruction - the same
+                           shape of risk as the standing instruction, and worth the
+                           same question. Forgetting destroys something of theirs.
+                           And approving is what SENDS. */
+                        memory_add:true, memory_forget:true, approval_act:true };
 function _toolNeedsConsent(name){ return !!_TOOL_CONSENT[name]; }
 /* How often a job runs, in the words a person uses. */
 const _CREW_EVERY = { '10min':'every 10 minutes', '30min':'every 30 minutes',
@@ -1607,7 +1655,10 @@ async function _confirmModelTool(name, input){
     crew_resume:'start one of your background jobs running again',
     crew_remove:'permanently delete one of your background jobs',
     crew_standing:'change the instructions every background job follows',
-    crew_ceiling:'change how far ALL of your background jobs may go without asking you'
+    crew_ceiling:'change how far ALL of your background jobs may go without asking you',
+    memory_add:'remember something about you permanently',
+    memory_forget:'permanently forget something it knows about you',
+    approval_act:(input.action === 'reject' ? 'discard a piece of finished work' : 'APPROVE and send a piece of finished work')
   })[name] || ('run the "'+name+'" action');
   let detail='';
   if(name==='deploy_site') detail='Page title: '+String(input.title||'App');
@@ -1626,6 +1677,13 @@ async function _confirmModelTool(name, input){
     detail = [ input.detail ? 'New instruction:\n' + String(input.detail).slice(0,500) : '',
                input.repeat ? 'New frequency: ' + (_CREW_EVERY[String(input.repeat)]||input.repeat) : ''
              ].filter(Boolean).join('\n\n');
+  else if(name==='memory_add')
+    detail = 'It will be added to what AMV knows about you, and included in every future conversation:\n\n'
+           + String(input.text||'').slice(0,500);
+  else if(name==='approval_act')
+    detail = input.action === 'reject'
+      ? 'The waiting item will be discarded. This cannot be undone.'
+      : 'Approving is what SENDS it. If it was prepared to be emailed, it goes out now.';
   else if(name==='crew_ceiling')
     detail = ({
       suggest:'From now on, no background job runs on its own. AMV will tell you when one is due and wait to be asked. Nothing is spent.',
@@ -1780,6 +1838,8 @@ async function _amvRunTool(name, input, onStatus){
     }
 
     if(name.slice(0,5) === 'crew_') return await _crewTool(name, input);
+    if(name.slice(0,7) === 'memory_' || name.slice(0,8) === 'approval' || name === 'account_status')
+      return await _sectionTool(name, input);
   }catch(e){
     return { text:'Tool "'+name+'" failed: '+(e.message||e), render:null };
   }
@@ -2004,7 +2064,190 @@ async function _crewTool(name, input){
   return { text:'Unknown crew action: ' + name, render:null };
 }
 
-try{ window.AMV_TOOLS=AMV_TOOLS; window._amvRunTool=_amvRunTool; window._crewTool=_crewTool; }catch(e){}
+
+/* ══════════════════════════════════════════════════════════════
+   THE REST OF THE PRODUCT, FROM CHAT
+
+   Memory, the approvals queue, and what the account has actually used. Same
+   discipline as the Crew tools: each one goes through what the section itself
+   uses, so a fact has one home; nothing is guessed when it is ambiguous; and
+   every failure comes back as an instruction to say so rather than as silence
+   the model will paper over.
+
+   The two that deserve more care than they look like they need:
+
+   - A MEMORY IS APPENDED TO EVERY FUTURE REQUEST. Writing one is writing a
+     small permanent instruction, which is the same shape of risk as the
+     standing instruction and gets the same treatment: the person is shown the
+     exact words and asked, and secrets are refused outright rather than stored
+     in something designed to be repeated back.
+   - APPROVING IS WHAT SENDS. The approvals queue exists because something
+     stopped short of acting; approving is the act. So the dialog says that in
+     those words, and the model is told to read the person the summary before
+     it asks.
+   ══════════════════════════════════════════════════════════════ */
+
+/* Things that must never end up in a store designed to be replayed into every
+   future request. Deliberately narrow: this refuses what is unmistakably a
+   credential rather than trying to be a classifier, because a false positive
+   here means refusing to remember something ordinary and sounding broken. */
+const _MEM_SECRET = /\b(password|passcode|pin\s*(?:code|number)|api[\s_-]?key|secret\s*key|private\s*key|seed\s*phrase|recovery\s*phrase|cvv|social\s*security|routing\s*number)\b/i;
+const _MEM_CARDISH = /\b(?:\d[ -]*?){13,19}\b/;
+const _MEM_MAX = 400;
+
+function _memList(){
+  try{ return (typeof S!=='undefined' && Array.isArray(S.memory)) ? S.memory : []; }catch(e){ return []; }
+}
+function _memRepaint(){
+  try{ if(typeof S!=='undefined' && S.tab==='memory' && typeof renderMemoryView==='function') renderMemoryView(); }catch(e){}
+}
+/* One memory, or an explanation - never a best guess, because forgetting the
+   wrong thing is silent and they only discover it when AMV stops knowing
+   something it should. */
+function _memFind(input){
+  const list = _memList();
+  const id = String((input && input.id) || '').trim();
+  if(id){
+    const hit = list.find(m => m.id === id);
+    if(hit) return { item: hit };
+    return { error:'There is no memory with that id. Call memory_list for the real ones and tell the user if the thing they meant is not there.' };
+  }
+  const q = String((input && input.match) || '').trim().toLowerCase();
+  if(!q) return { error:'Which memory? Call memory_list and pass the id of the one they mean.' };
+  const words = q.split(/\s+/).filter(w => w.length > 2);
+  const hits = list.filter(m => {
+    const hay = String(m.text||'').toLowerCase();
+    return hay.includes(q) || (words.length > 0 && words.every(w => hay.includes(w)));
+  });
+  if(hits.length === 1) return { item: hits[0] };
+  if(hits.length === 0)
+    return { error: list.length
+      ? 'Nothing remembered matches that. What AMV remembers is: '
+        + list.map(m => m.id + ' - ' + String(m.text||'').slice(0,70)).join(' | ')
+        + '. Ask the user which they meant.'
+      : 'AMV does not remember anything about them yet, so there is nothing to forget. Say so.' };
+  return { error:'That matches ' + hits.length + ' memories, so it is not clear which: '
+                 + hits.map(m => m.id + ' - ' + String(m.text||'').slice(0,70)).join(' | ')
+                 + '. Ask the user which one before removing anything.' };
+}
+
+function _sectionErr(e){
+  const msg = (e && e.message) || 'the server did not accept it';
+  if(msg === 'not-connected' || /not-connected/.test(msg))
+    return 'AMV is not connected to its engine, so that could not be done. Tell the user plainly and do NOT say it worked.';
+  return 'That did not work: ' + msg + '. Tell the user plainly - do NOT say it worked.';
+}
+
+async function _sectionTool(name, input){
+  input = input || {};
+
+  /* ---- Memory ---- */
+  if(name === 'memory_list'){
+    const list = _memList();
+    if(!list.length) return { text:'AMV does not remember anything about them yet.', render:null };
+    return { text:'What AMV remembers about them (' + list.length + '):\n'
+      + list.map(m => '- [' + m.id + '] ' + String(m.text||'').slice(0,200)).join('\n')
+      + '\n\nAll of these are included in every conversation.', render:null };
+  }
+
+  if(name === 'memory_add'){
+    const text = String(input.text||'').trim().slice(0, _MEM_MAX);
+    if(text.length < 3) return { text:'That is not enough to remember. Ask the user what exactly they want AMV to know.', render:null };
+    /* Refused rather than stored. A memory is replayed into every future
+       request, which makes it the worst possible place for a credential -
+       and the person asking has almost certainly not thought about that. */
+    if(_MEM_SECRET.test(text) || _MEM_CARDISH.test(text))
+      return { text:'Refused: that looks like a password, key, card number or other secret. AMV includes every memory in every future conversation, so it will not store one. Tell the user plainly why, and offer to remember something that is not the secret itself.', render:null };
+    if(_memList().some(m => String(m.text||'').trim().toLowerCase() === text.toLowerCase()))
+      return { text:'AMV already remembers exactly that. Nothing to do - say so rather than confirming a second save.', render:null };
+    try{
+      S.memory = [{ id:'m'+Date.now()+Math.random().toString(36).slice(2,5), text, added: Date.now() }].concat(_memList());
+    }catch(e){ return { text:_sectionErr(e), render:null }; }
+    _memRepaint();
+    return { text:'Remembered, and it is in the Memory tab where they can edit or delete it. From now on it is included in every conversation.', render:null };
+  }
+
+  if(name === 'memory_forget'){
+    const found = _memFind(input);
+    if(found.error) return { text: found.error, render:null };
+    const what = String(found.item.text||'').slice(0,90);
+    try{
+      S.memory = _memList().filter(m => m.id !== found.item.id);
+    }catch(e){ return { text:_sectionErr(e), render:null }; }
+    _memRepaint();
+    return { text:'Forgotten: "' + what + '". It will not be included in future conversations.', render:null };
+  }
+
+  /* ---- The approvals queue ---- */
+  if(name === 'approvals_list'){
+    let items = [];
+    try{
+      items = (window.AMV_API && AMV_API.live && typeof AMV_API.approvals==='function')
+        ? await AMV_API.approvals()
+        : (typeof _cwApprovals==='function' ? _cwApprovals() : []);
+    }catch(e){ return { text:_sectionErr(e), render:null }; }
+    if(!items.length) return { text:'Nothing is waiting for them. Say they are all caught up.', render:null };
+    return { text:'Waiting for their approval (' + items.length + '):\n'
+      + items.map(a => '- [' + a.id + '] ' + String(a.title||'Untitled').slice(0,120)
+          + (a.actionType === 'send' ? ' - APPROVING THIS SENDS IT' : ' - review only')
+          + (a.preview ? '\n    ' + String(a.preview).replace(/\s+/g,' ').slice(0,200) : '')).join('\n')
+      + '\n\nNothing here has been sent. Read them the summary of the one they care about before doing anything with it.', render:null };
+  }
+
+  if(name === 'approval_act'){
+    const id = String(input.id||'').trim();
+    const action = input.action === 'reject' ? 'reject' : 'approve';
+    if(!id) return { text:'Which one? Call approvals_list and pass the id.', render:null };
+    let d;
+    try{
+      if(!(window.AMV_API && AMV_API.live && typeof AMV_API.actApproval==='function')) throw new Error('not-connected');
+      d = await AMV_API.actApproval(id, action);
+    }catch(e){ return { text:_sectionErr(e), render:null }; }
+    try{ if(typeof S!=='undefined' && S.tab==='crew' && typeof renderCrewView==='function') renderCrewView(); }catch(e){}
+    if(action === 'reject') return { text:'Rejected and discarded. It will not be sent.', render:null };
+    /* The server says whether approving actually DELIVERED it. Reporting
+       "sent" when there was no way to send is the exact failure the approve
+       path was rebuilt to stop, so it is repeated honestly here. */
+    if(d && d.delivered === false)
+      return { text:'Approved - but it could NOT be delivered, because this deployment has no email provider connected. Tell the user it is approved and still undelivered, and that connecting email in Settings is what fixes it. Do not say it was sent.', render:null };
+    if(d && d.delivered === true) return { text:'Approved and sent.', render:null };
+    return { text:'Approved. It was a review-only item, so there was nothing to send - it is simply resolved.', render:null };
+  }
+
+  /* ---- What the account has actually used ---- */
+  if(name === 'account_status'){
+    const plan = (()=>{ try{ return loadStr('amv_plan') || 'free'; }catch(e){ return 'free'; } })();
+    let usage = null;
+    try{ usage = (typeof AMVUsage!=='undefined') ? AMVUsage.status() : null; }catch(e){}
+    let auto = null;
+    try{ auto = await _autoApi('/auto/list', {}); }catch(e){ /* background work is optional context */ }
+
+    const lines = ['Plan: ' + plan + '.'];
+    if(usage && typeof usage.remaining === 'number'){
+      lines.push('Usage this period: ' + usage.used + ' of ' + usage.cap
+        + ' (' + usage.remaining + ' left'
+        + (usage.resetsInMs ? ', resets in about ' + Math.max(1, Math.round(usage.resetsInMs/3600000)) + 'h' : '') + ').');
+    }
+    if(auto){
+      const items = auto.items || [];
+      const spent = (auto.results||[]).reduce((t,r)=>t + (Number(r.costUSD)||0), 0);
+      lines.push('Background jobs: ' + items.length
+        + (typeof auto.maxAutomations === 'number' ? ' of ' + auto.maxAutomations + ' allowed' : '')
+        + ', ' + items.filter(x=>x.active!==false).length + ' running.');
+      lines.push('Spent on background work in the visible record: $' + spent.toFixed(2) + '.');
+      if(auto.ceiling && auto.ceiling !== 'auto')
+        lines.push('Their account holds background work at "' + auto.ceiling + '", so jobs set further are held back.');
+    } else {
+      lines.push('Background work could not be read, so do not state anything about their jobs.');
+    }
+    return { text: lines.join(' ') + ' These are the real numbers - never estimate them.', render:null };
+  }
+
+  return { text:'Unknown action: ' + name, render:null };
+}
+try{ window._sectionTool = _sectionTool; }catch(e){}
+
+try{ window.AMV_TOOLS=AMV_TOOLS; window._amvRunTool=_amvRunTool; window._crewTool=_crewTool; window._sectionTool=_sectionTool; }catch(e){}
 
 /* ══════════════════════════════════════════════════════════════
    CONTEXT WINDOW MANAGEMENT

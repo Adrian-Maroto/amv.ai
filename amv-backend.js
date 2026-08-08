@@ -6079,6 +6079,8 @@ const AMV_CLIENT_TOOLS = new Set([
   'generate_image', 'generate_video', 'run_code', 'fix_code', 'build_app', 'deploy_site',
   'crew_list', 'crew_add', 'crew_update', 'crew_pause', 'crew_resume', 'crew_remove', 'crew_standing',
   'crew_ceiling',
+  'memory_list', 'memory_add', 'memory_forget',
+  'approvals_list', 'approval_act', 'account_status',
 ]);
 const TOOLS_MAX          = 24;      // more than AMV has, far less than an attack
 const TOOL_DESC_MAX      = 1200;    // a description, not a second prompt
