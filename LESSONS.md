@@ -2881,3 +2881,25 @@ not read the audit log. A test wrong about its own fixture is the easiest way to
 
 **Rule:** verify the sabotage landed before believing what the test says about
 it. An edit that matched nothing is not evidence of anything.
+
+## 177. An empty body is not a cross-account test
+
+Checking that one account cannot read another's bank balance, the case called
+the route with somebody else's token and an EMPTY body. It passed. Then a
+sabotage that made the route read `body.email || user.email` also passed - a
+textbook IDOR, where the server prefers an identifier the attacker supplied over
+the one their token proves.
+
+Of course it passed. With an empty body the sabotaged route falls back to the
+caller's own account and behaves identically. The case tested that the route
+works, not that it cannot be redirected.
+
+The attack on any route that operates on "the caller's" record is to name
+somebody else in the request and see whether the server takes the hint. That has
+to be attempted explicitly, with the field names an implementation would
+plausibly read - email, user, account - because the one it reads is the one
+nobody thought about.
+
+**Rule:** to test an authorization boundary, try to cross it. Calling the route
+as the wrong person and getting nothing back can mean the boundary holds, or it
+can mean you did not ask for anything.
