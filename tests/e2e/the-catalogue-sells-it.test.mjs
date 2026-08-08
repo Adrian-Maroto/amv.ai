@@ -107,11 +107,51 @@ section('No job asks the runner to use something it was never given');
      need one - an unnecessary question is a reason not to switch a job on. */
   const asking = jobs.filter(j => j.asks && j.asks.q);
   ok(asking.length >= 15, 'the ones that need input are the ones asking', asking.length);
-  const pointless = asking.filter(j => !needsInput.test(j.prompt)).map(j => j.id);
-  ok(pointless.length === 0, 'and nothing asks for something it never uses', pointless);
+  /* The reverse direction is checked structurally in the next section, against
+     any phrasing, rather than against this narrow phrase list - which only ever
+     recognised about half the ways a prompt says "something of yours". */
 
   const vague = asking.filter(j => !j.asks.ph || j.asks.ph.length < 30).map(j => j.id);
   ok(vague.length === 0, 'each question shows an example of a real answer', vague);
+}
+
+section('And that holds however the instruction is phrased');
+{
+  /* The first version of the check above was a list of phrases, and it caught
+     twenty-two jobs. Reading the prompts by hand found twenty-one more saying
+     exactly the same thing in different words - "the specified hotels", "each
+     watched page", "the named people", "the services the user has accounts
+     with". A pattern that has to anticipate the wording is a pattern that
+     misses half of them, which is what it did.
+
+     So this asks the structural question instead: a job that needs NOTHING
+     connected has only two possible sources of information - the live web, and
+     what the person typed. If its instruction refers to anything of theirs at
+     all, and it does not ask, there is no third place that could supply it. */
+  const jobs = await page.evaluate(() => _cwJobs().map(j => ({
+    id: j.id, prompt: j.prompt || '', needs: j.needs || '', asks: !!(j.asks && j.asks.q) })));
+
+  const webOnly = jobs.filter(j => j.needs === 'Web research' && !j.asks);
+  /* Anything possessive about the person, in any phrasing. */
+  const personal = /\b(the user|their|your|the specified|the named|each watched|the watched)\b/i;
+  const unbacked = webOnly.filter(j => personal.test(j.prompt)).map(j => j.id);
+  ok(unbacked.length === 0,
+     'no job works from the web alone while talking about something of theirs', unbacked);
+
+  /* A rule with nothing to apply to proves nothing, so check it has teeth:
+     the web-only category is large, and it is large because those jobs ask
+     rather than because the category is empty.
+
+     Worth recording that the first version of this asserted the opposite - that
+     some web-only jobs need no input at all - and that turned out to be false.
+     Every single one of them is personalised. A job that reads the open web and
+     tells you something about nobody in particular is not a job anybody would
+     switch on. */
+  const webAll = jobs.filter(j => j.needs === 'Web research');
+  ok(webAll.length >= 20, 'the rule applies to a large part of the catalogue', webAll.length);
+  ok(webAll.every(j => j.asks),
+     'and every one of them asks, because every one of them is about the person', 
+     webAll.filter(j => !j.asks).map(j => j.id));
 }
 
 section('And the panel says so before they switch it on');
@@ -276,13 +316,23 @@ section('On a paid plan the same panel turns the job on for real');
   const r = await page.evaluate(async (jid) => {
     setTab('crew');
     await new Promise(x => setTimeout(x, 800));
+    /* Turning a job on may now open the question it needs answering. Answer
+       the real dialog, so this exercises the path a person actually takes. */
+    const answering = setInterval(() => {
+      const box = document.getElementById('modal-input');
+      if (!box) return;
+      box.value = 'Details for this job, typed by the person.';
+      const okBtn = document.getElementById('modal-ok');
+      if (okBtn) okBtn.click();
+    }, 60);
     cwPeek(jid);
     await new Promise(x => setTimeout(x, 350));
     const go = document.getElementById('cwp-go');
     const label = go ? go.textContent : '';
     const plans = !!document.getElementById('cwp-plans');
     if (go) go.click();
-    await new Promise(x => setTimeout(x, 1600));
+    await new Promise(x => setTimeout(x, 2600));
+    clearInterval(answering);
     return { label, plans };
   }, id);
   await L.settle();

@@ -12671,6 +12671,7 @@ function _cwDefaultJobs(){ return [
   { id:'content_calendar', every:'weekly', cat:'Growing a business', icon:'\u270D\uFE0F', title:'Social content drafts', needs:'Web research', on:false,
     desc:'A week of posts written for you from what is actually being talked about in your field this week - full copy, ready to publish, waiting for your approval rather than going out on their own.',
     sample:['5 posts for next week, built from 3 things genuinely being discussed in your field.','MON - the pricing debate everybody is having. Full copy, 78 words, opinionated.','WED - a short how-to on the question you keep getting asked. 4 lines plus a list.','FRI - the contrarian one. This is the riskiest of the five and the most likely to travel.','Nothing is scheduled or posted. These wait for you.'],
+    asks:{ q:'What is your field, and who are you talking to?', ph:'e.g. "B2B SaaS for dental practices, posting on LinkedIn to practice owners"' },
     prompt:'Research what is genuinely being discussed in the user\u2019s field this week and draft a week of posts from it. For each: the day, the full ready-to-publish copy, and one line on why this angle now. Vary the shape - not five of the same post. Say which one is the riskiest and why, so the user can decide rather than discover. Ground every post in something real you found, and name it. Nothing is posted or scheduled: say plainly that these are drafts awaiting approval.' },
 
   /* ---- The standing services below are what make Crew worth paying for:
@@ -12733,6 +12734,7 @@ function _cwDefaultJobs(){ return [
 
   { id:'site_monitor', cat:'Watching the world', icon:'\uD83D\uDC41\uFE0F', title:'Website & application watch', needs:'Web research', on:false,
     desc:'Watches pages that matter - application portals, government pages, waitlists, admissions, job boards - and tells you the moment something opens or changes.',
+    asks:{ q:'Which pages should I watch?', ph:'One URL per line, and what counts as a meaningful change on each' },
     prompt:'Check each watched page for meaningful change: new postings, opened applications, status changes, updated deadlines or policy edits. Ignore cosmetic changes. Report what changed and the direct link.' },
 
   { id:'goal_tracker', cat:'Home & life', icon:'\uD83D\uDE80', title:'Goal tracker & weekly plan', needs:'Email', on:false,
@@ -12777,6 +12779,7 @@ function _cwDefaultJobs(){ return [
 
   { id:'forum_watch', cat:'Watching the world', icon:'\uD83D\uDCAC', title:'Reddit & forum monitoring', needs:'Web research', on:false,
     desc:'Watches subreddits, forums and communities for the topics, products or names you care about - and surfaces the threads actually worth reading.',
+    asks:{ q:'Which communities, and what topics?', ph:'Subreddits, forums or communities on one line each, then the keywords that matter to you' },
     prompt:'Monitor the specified subreddits, forums and communities for the user keywords and topics. Report only genuinely relevant new threads: title, community, why it matters, and the link. Skip low-engagement noise and reposts.' },
 
   { id:'groceries', cat:'Home & life', icon:'\uD83D\uDED2', title:'Grocery & household restock', needs:'Email', on:false,
@@ -12789,10 +12792,12 @@ function _cwDefaultJobs(){ return [
 
   { id:'coupons', cat:'Money', icon:'\uD83C\uDF9F\uFE0F', title:'Coupon & discount finder', needs:'Web research', on:false,
     desc:'Before you buy, AMV hunts for working codes, cashback, student or member discounts - and tells you the real final price rather than the advertised one.',
+    asks:{ q:'What are you buying, and where?', ph:'The item or retailer, roughly what it costs, and any membership or student status you have' },
     prompt:'For the specified purchase or retailer, search for currently valid discount codes, cashback offers, student or membership discounts and price-match options. Report the real final price after each. State clearly if you cannot verify a code is still valid.' },
 
   { id:'hotel_watch', cat:'Home & life', icon:'\uD83C\uDFE8', title:'Hotel & stay price tracking', needs:'Web research', on:false,
     desc:'Watches the price of the places you actually want to stay for your real dates, and tells you when to book - including when a refundable rate drops so you can rebook cheaper.',
+    asks:{ q:'Which hotels, and which dates?', ph:'e.g. "Hotel Borges and Casa do Bairro, Lisbon, 14-18 June, 2 adults"' },
     prompt:'Track the price of the specified hotels for the specified dates. Report current price, how it compares to recent history, and whether to book now or wait. If an existing booking is refundable and the price has dropped, flag the rebooking saving explicitly.' },
 
   { id:'ambient', cat:'Work & career', icon:'\u2728', title:'Ambient automation - AMV suggests', needs:'Email, Calendar', on:false,
@@ -12856,6 +12861,7 @@ function _cwDefaultJobs(){ return [
 
   { id:'salary_bench', every:'weekly', cat:'Work & career', icon:'📈', title:'Salary benchmark & timing', needs:'Web research', on:false,
     desc:'Tells you what your role pays in your market right now, whether you have fallen behind, and when the evidence is strong enough to ask - with the numbers to bring.',
+    asks:{ q:'What is your role?', ph:'Job title, level, industry and location - e.g. "backend engineer, senior, fintech, Manchester UK"' },
     prompt:'Research current pay for the user’s role, level, industry and location using real posted ranges and published surveys. Report the range, the midpoint, where the user sits against it, and how it has moved since the last check. If they are below market, assemble the specific evidence to use in a conversation. Cite where each figure came from and its date. Never invent a figure.' },
 
   { id:'recruiter_triage', cat:'Work & career', icon:'🎯', title:'Recruiter inbound triage', needs:'Email, Web research', on:false,
@@ -12865,6 +12871,7 @@ function _cwDefaultJobs(){ return [
 
   { id:'employer_health', every:'weekly', cat:'Work & career', icon:'🩺', title:'Employer & industry health watch', needs:'Web research', on:false,
     desc:'The signals before a bad quarter are public - hiring freezes, funding news, exec departures, layoff reports, customer losses. AMV watches them for your employer and your industry so you are early rather than surprised.',
+    asks:{ q:'Which employer and industry?', ph:'The company name and the sector it operates in' },
     prompt:'Monitor public signals for the user’s employer and industry: funding and earnings news, hiring or freeze signals, layoff reports, leadership departures, notable customer wins or losses, analyst and press coverage. Report what changed and what it plausibly indicates, separating confirmed facts from interpretation. Do not speculate about individuals. If nothing meaningful changed, say so.' },
 
   { id:'interview_pack', cat:'Work & career', icon:'🎓', title:'Interview prep pack', needs:'Calendar, Email, Web research', on:false,
@@ -12881,6 +12888,7 @@ function _cwDefaultJobs(){ return [
 
   { id:'review_watch', cat:'Growing a business', icon:'⭐', title:'Review & reputation monitoring', needs:'Web research', on:false,
     desc:'Watches every place people rate you - app stores, Google, Trustpilot, forums - and tells you the moment something needs a response, with the response drafted.',
+    asks:{ q:'Which business or product?', ph:'The name as it appears publicly, and where it is reviewed - Google, Trustpilot, an app store' },
     prompt:'Check public review and rating sources for the user’s business or product. Report new reviews since the last run: rating, platform, what the reviewer actually said, and whether it needs a response. Identify recurring themes across reviews rather than listing them one by one. Draft a specific, non-generic reply for anything negative or unfair. Report the rating trend honestly, including when it is falling.' },
 
   { id:'lead_triage', cat:'Growing a business', icon:'📥', title:'Inbound lead triage & first reply', needs:'Email, Web research', on:false,
@@ -12890,10 +12898,12 @@ function _cwDefaultJobs(){ return [
 
   { id:'rank_watch', every:'weekly', cat:'Growing a business', icon:'🔎', title:'Search ranking & visibility watch', needs:'Web research', on:false,
     desc:'Tells you when you move up or down for the searches that bring you customers, and who overtook you - so a slow slide gets caught in a week rather than a quarter.',
+    asks:{ q:'Which site and which keywords?', ph:'Your domain, then the search terms you want to rank for, one per line' },
     prompt:'Check the user’s current search visibility for their specified keywords. Report position changes since the last run, which competitors moved, and what visibly changed on the pages that overtook them. Focus on the keywords that matter commercially rather than vanity terms. State the date and method of the check, and be explicit about the limits of what a single check can show.' },
 
   { id:'pricing_diff', every:'weekly', cat:'Growing a business', icon:'🏷️', title:'Competitor pricing page diff', needs:'Web research', on:false,
     desc:'A competitor changing price, adding a tier, or quietly removing a limit is the single most useful thing to know in your market - and it is never announced.',
+    asks:{ q:'Whose pricing pages?', ph:'One competitor pricing page URL per line' },
     prompt:'Check each competitor pricing page against its previous state. Report only real changes: price moves, new or removed tiers, changed limits or included features, new trial or discount terms, and altered positioning language. Quote the before and after. If a page could not be read, say which one and why rather than reporting no change.' },
 
   { id:'ad_waste', cat:'Growing a business', icon:'🔥', title:'Ad spend waste check', needs:'Email', on:false,
@@ -12907,18 +12917,22 @@ function _cwDefaultJobs(){ return [
 
   { id:'breach_watch', cat:'Watching the world', icon:'🔐', title:'Breach & exposure watch', needs:'Web research', on:false,
     desc:'When a service you use is breached, you usually find out from the news months later. AMV watches for reported breaches at the companies you actually have accounts with and tells you exactly what to change.',
+    asks:{ q:'Which services do you have accounts with?', ph:'One per line - just the service names, never your passwords. e.g. "Dropbox, LinkedIn, my bank"' },
     prompt:'Check for newly reported data breaches and security incidents at the services the user has accounts with. For each: the service, the date reported, what data was reportedly exposed, and the specific action to take now such as changing a password or enabling two-factor. Rely only on publicly reported, attributed incidents and say when a report is unconfirmed. Never ask for or handle the user’s passwords.' },
 
   { id:'tool_advisories', every:'weekly', cat:'Watching the world', icon:'🛠️', title:'Updates & advisories for your tools', needs:'Web research', on:false,
     desc:'Breaking changes, deprecations, price changes and security advisories for the software you depend on - filtered to the versions you actually run.',
+    asks:{ q:'Which tools do you depend on?', ph:'One per line, with versions where you know them - e.g. "Node 20, Postgres 15, Cloudflare Workers"' },
     prompt:'Monitor release notes, changelogs, advisories and status pages for the tools and services the user depends on. Report only what affects them: breaking changes, deprecations with deadlines, security advisories, pricing or plan changes, and outages with a pattern. Give the version affected and the action required. Skip routine minor releases with no impact.' },
 
   { id:'person_watch', cat:'Watching the world', icon:'👤', title:'Follow what someone publishes', needs:'Web research', on:false,
     desc:'Track the public output of the people who move your field - founders, researchers, investors, analysts - so you read the important post the day it lands rather than a month later.',
+    asks:{ q:'Whose public work should I follow?', ph:'Names, one per line, with where they publish if you know it' },
     prompt:'Monitor the public professional output of the named people: posts, articles, talks, papers, interviews and public announcements. Report only genuinely new items: who, what, why it matters to the user, and the link. Use public professional sources only - never track private activity, location, or personal life, and decline any name where the request is clearly personal rather than professional.' },
 
   { id:'brand_watch', cat:'Watching the world', icon:'📣', title:'Mentions & impersonation watch', needs:'Web research', on:false,
     desc:'Finds where your name or brand is being discussed, and catches fake accounts, copied sites and lookalike domains trading on it.',
+    asks:{ q:'What name should I search for?', ph:'Your name, brand or product exactly as people write it, plus any spellings to include' },
     prompt:'Search for new public mentions of the user’s name, brand or product across the web, news, forums and social platforms. Separate genuine discussion from impersonation: fake profiles, copied content, lookalike domains, misuse of the name. For real mentions, report sentiment and whether a response is warranted. For suspected impersonation, report the evidence and the reporting route for that platform.' },
 
   { id:'paper_digest', every:'weekly', cat:'Learning', icon:'📚', title:'New research in my field', needs:'Web research', on:false,
@@ -13013,11 +13027,13 @@ function _cwDefaultJobs(){ return [
   { id:'work_check', cat:'Learning', icon:'🔎', title:'Check my work before I hand it in', needs:'Web research', on:false,
     desc:'You paste in what you wrote; AMV marks it the way your teacher would - what is weak, what is missing against the rubric, what would lose marks - and explains each one so the next piece is better.',
     sample:['Against the rubric you gave me, this is around a B.','WHAT COSTS YOU MARKS: paragraphs 2 and 4 make a claim with no evidence. The rubric weights evidence at 30%.','MISSING: the question asks you to evaluate, and you have described. Add a sentence to each paragraph saying which side is stronger and why.','STRONG: your introduction sets up the argument clearly - keep doing that.','Fix the two evidence gaps and this moves up a band.'],
+    asks:{ q:'What are you working on, and what is it marked against?', ph:'Paste the task or question and the rubric or mark scheme. Paste your own draft here too when you have one.' },
     prompt:'The user will give you their own finished work and, where they have it, the rubric or task description. Assess it the way their marker would: what it currently earns and why, what specifically costs marks, what the task asks for that is missing, and what is genuinely good. Quote the exact sentence for every point so they can find it. Explain the reason behind each correction so the next piece improves. Do NOT rewrite their work for them and do NOT produce a version to hand in - the point is that they fix it themselves and understand why. If they ask you to write it for them, say plainly that you will not and offer the critique instead.' },
 
   { id:'study_coach', every:'daily', cat:'Learning', icon:'🧠', title:'Study coach that knows what I keep getting wrong', needs:'Web research', on:false,
     desc:'Tracks the questions you keep missing and builds each session around exactly those - with practice questions, worked answers, and a plain explanation of the thing you actually misunderstood.',
     sample:['You have now missed 4 questions on the same idea: which reactant runs out first.','THE MISUNDERSTANDING: you are comparing the amounts you started with, not the amounts the equation needs.','5 practice questions on exactly that, hardest last.','Worked answer to number 3, since that is the shape you got wrong twice.','You have not missed a mole-ratio question in two weeks. That one is done - dropping it.'],
+    asks:{ q:'What are you studying, and what keeps going wrong?', ph:'Subject and level, then the topics or question types you keep losing marks on' },
     prompt:'Track which topics and question types the user keeps getting wrong across sessions. Build today’s session around the ones that are actually still weak, not the ones they are already good at. For each: name the specific misunderstanding rather than the topic, explain it plainly, then give practice questions with worked answers, hardest last. Drop topics they have consistently got right and say you are dropping them. Never claim they are improving unless the record shows it.' },
 
   { id:'exam_prep', cat:'Learning', icon:'📚', title:'Get me ready for this specific test', needs:'Web research', on:false,
@@ -13029,16 +13045,19 @@ function _cwDefaultJobs(){ return [
   { id:'morning_brief_student', every:'daily', cat:'Learning', icon:'☀️', title:'Morning briefing before school', needs:'Web research', on:false,
     desc:'One short thing to read before you leave: what is due today, what you need to bring, what is on later, and the single most useful thing you could do with your free period.',
     sample:['TODAY: history essay due period 4. It is in your drive, finished.','BRING: PE kit, calculator.','LATER: football 4pm - you will not get work done tonight, so use your free.','FREE PERIOD (p2): start the chemistry questions due Thursday. About 30 minutes of it.','Nothing else is urgent today.'],
+    asks:{ q:'What does your week look like?', ph:'What is due and when, your timetable, and anything regular - clubs, work, training' },
     prompt:'Produce a short briefing the user reads before their day starts: what is due today, what they need to bring or prepare, what is scheduled later that will eat their evening, and the single most useful thing they could do with any free time they have. Keep it under 100 words - this is read walking out of the door. Say plainly when the day is light rather than filling space. Never invent a commitment they have not told you about.' },
 
   { id:'evening_brief_student', every:'daily', cat:'Learning', icon:'🌙', title:'Evening wrap-up and tomorrow', needs:'Web research', on:false,
     desc:'At the end of the day: what got done, what slipped, what tomorrow actually looks like, and the one thing worth doing tonight if you only do one thing.',
     sample:['DONE TODAY: chemistry questions, history reading.','SLIPPED: the maths problem set. It is now due in 2 days and untouched.','TOMORROW: double free in the afternoon - that is enough for the whole maths set.','IF YOU DO ONE THING TONIGHT: read the essay question so it is in your head. 5 minutes.'],
+    asks:{ q:'What does your week look like?', ph:'What is due and when, your timetable, and anything regular that eats your evenings' },
     prompt:'Close out the user’s day: what they finished, what slipped and what that now means for its deadline, what tomorrow looks like, and the single highest-value thing they could do tonight - including "nothing, go to bed" when that is the honest answer. Be brief and specific. Never guilt them about what slipped; state the consequence and the fix.' },
 
   { id:'application_help', cat:'Learning', icon:'🎓', title:'University and job applications, tracked', needs:'Web research', on:false,
     desc:'Keeps every application in one place with its real deadline, what each one still needs from you, and honest feedback on your personal statement - written by you, made better by you.',
     sample:['4 applications open. Nearest deadline: 12 days.','NEEDS FROM YOU: reference request not sent (this is the one that will bite - ask this week).','PERSONAL STATEMENT: paragraph 3 is the strongest thing in it. Paragraph 1 says what you want, not what you have done - it is the weakest opening and it is the first thing they read.','2 of the 4 ask for the same essay with a different word count. Write the long one, cut it down.'],
+    asks:{ q:'What are you applying to?', ph:'One per line: where, the deadline, and what it still needs from you' },
     prompt:'Track each of the user’s applications: the real deadline, what has been submitted, and what is still outstanding - especially items that depend on other people, such as references, which need the most warning. Where they share their own drafted statement, give specific feedback: which paragraph is strongest, which is weakest and exactly why, and what a reader sees first. Point out where one piece of writing can be reused across applications. Do NOT write their statement for them - it has to be theirs, and admissions readers can tell. Say so if they ask.' },
 
   { id:'group_project', cat:'Learning', icon:'👥', title:'Keep a group project from falling apart', needs:'Web research', on:false,
@@ -13050,6 +13069,7 @@ function _cwDefaultJobs(){ return [
   { id:'reading_digest', cat:'Learning', icon:'📖', title:'Make sense of a long reading', needs:'Web research', on:false,
     desc:'Turns a long chapter, paper or set text into the argument, the evidence and the bits that will actually be examined - plus the questions to test whether you understood it.',
     sample:['THE ARGUMENT: the author claims the revolution was economic before it was political.','THE EVIDENCE THEY USE: grain prices, tax records, three contemporary letters.','THE WEAK POINT: the letters are all from one city, which they acknowledge in a footnote and then ignore.','LIKELY EXAM ANGLE: "to what extent" questions want you to weigh this against the political reading.','5 questions to check you actually understood it - answers below, do not look first.'],
+    asks:{ q:'What do you have to read?', ph:'Paste the text, or give the title, author and chapter - plus the question you are reading it for' },
     prompt:'Take a long text the user has to read and give them: the central argument in one sentence, the evidence used to support it, the weakest part of that argument, and which aspects are most likely to be examined and how. Then give comprehension questions with answers held separately, so they can test themselves honestly. This is a companion to the reading, not a replacement for it - say so, and do not summarise so completely that reading it becomes pointless.' },
 
   { id:'life_admin_student', every:'weekly', cat:'Home & life', icon:'📎', title:'The boring admin nobody reminds you about', needs:'Web research', on:false,
@@ -13073,6 +13093,7 @@ function _cwDefaultJobs(){ return [
   { id:'opportunity_student', every:'weekly', cat:'Learning', icon:'🎯', title:'Things I could actually get', needs:'Web research', on:false,
     desc:'Hunts for scholarships, competitions, summer programmes, internships and free courses you genuinely qualify for - with the deadline and the direct link, and nothing you cannot enter.',
     sample:['4 open now that you qualify for. 2 close within a month.','Regional essay competition - 500 prize, closes in 18 days, needs 1500 words on a set theme. You have written on this before.','Summer research programme - free, closes in 5 weeks, needs a teacher reference. Ask now.','Dropped 11 others: age, region or grade requirements you do not meet. No point showing you those.'],
+    asks:{ q:'Who are you, for eligibility?', ph:'Age, country and region, year group or level, what you study, and the kinds of things you want' },
     prompt:'Search the live web for opportunities the user genuinely qualifies for given their age, location, year group and interests: scholarships, competitions, summer programmes, internships, bursaries and free courses. Only include ones open now with a future deadline. For each: what it is, what it gives, what it requires, the deadline, and the direct link. Explicitly say how many you excluded and why, so they trust that the list is filtered rather than padded. Flag anything needing a reference or a document early, since those depend on other people.' },
 
   { id:'inbox_cleanup', every:'daily', cat:'Inbox & calendar', icon:'🧹', title:'Clear the noise out of my inbox', needs:'Email', on:false,

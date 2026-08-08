@@ -2763,3 +2763,29 @@ the first line that implements it.
 **Rule:** an instruction that references data is a promise that the data will be
 there. Trace the path from where it is typed to where it is read, or the
 instruction is fiction that happens to be well written.
+
+## 173. The phrase list found half of them
+
+The check written for #172 listed the ways a prompt says "something of yours" -
+"the user's watch list", "they have listed", "user profile" - and it found
+twenty-two jobs. Reading the prompts by hand afterwards found twenty-one MORE
+saying exactly the same thing in words the list did not contain: "the specified
+hotels", "each watched page", "the named people", "the services the user has
+accounts with".
+
+Forty-three of eighty-nine, not twenty-two. The check had confirmed what I
+thought to look for, which is the failure this whole session keeps circling.
+
+The version that holds asks a STRUCTURAL question instead of a lexical one: a
+job needing nothing connected has exactly two possible sources - the live web,
+and what the person typed. If its instruction refers to anything of theirs and
+it does not ask, there is no third place the information could come from. That
+needs no list of phrases and cannot be evaded by rewording.
+
+It also corrected something I had assumed. My first version asserted that some
+web-only jobs legitimately need no input. That is false - every single one of
+the thirty-five is about the person. A job that reads the open web and tells you
+something about nobody in particular is not a job anybody switches on.
+
+**Rule:** when a check needs a list of the ways something can be phrased, it is
+the wrong check. Ask what must be structurally true instead.

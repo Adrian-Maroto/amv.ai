@@ -139,17 +139,34 @@ section('Turning on a background job creates REAL scheduled work');
     window.toast = (m) => { said = m; };
     window._scheduleTask = async (t) => { asked.push(t); return { id: 'auto1' }; };
     const j = _cwDefaultJobs().find(x => x.needs === 'Web research' && x.prompt);
+    /* A job that works from what the person told it now asks for that first,
+       so switching one on is no longer fire-and-forget. Answer the real
+       dialog. */
+    const answering = setInterval(() => {
+      const box = document.getElementById('modal-input');
+      if (!box) return;
+      box.value = 'MY-OWN-DETAILS';
+      const okBtn = document.getElementById('modal-ok');
+      if (okBtn) okBtn.click();
+    }, 50);
     cwToggle(j.id);
-    await new Promise(r => setTimeout(r, 400));
+    await new Promise(r => setTimeout(r, 1400));
+    clearInterval(answering);
     return { asked, said, saved: (_cwJobs().find(x => x.id === j.id) || {}),
-             prompt: j.prompt || '' };
+             prompt: j.prompt || '', asks: !!(j.asks && j.asks.q) };
   });
   ok(r.asked.length === 1, 'a real automation is asked for', r.asked);
-  ok(r.asked[0].kind === 'research',
-     'as a research job, so it actually gets to search the live web', r.asked[0].kind);
-  ok(r.asked[0].detail === r.prompt && r.prompt.length > 60,
-     'carrying the job\'s real instruction rather than just its title', r.asked[0].detail);
-  ok(/^(daily|weekly|hourly)$/.test(r.asked[0].repeat), 'on a real cadence', r.asked[0].repeat);
+  /* Defensive: with nothing scheduled this used to throw and take the file
+     down, so a real regression exited without reporting a single failure. */
+  const first = r.asked[0] || {};
+  ok(first.kind === 'research',
+     'as a research job, so it actually gets to search the live web', first.kind);
+  ok(String(first.detail || '').startsWith(r.prompt) && r.prompt.length > 60,
+     'carrying the job\'s real instruction rather than just its title', String(first.detail || '').slice(0, 80));
+  ok(!r.asks || /MY-OWN-DETAILS/.test(String(first.detail || '')),
+     'and what the person typed, because that is the only thing telling it about them',
+     String(first.detail || '').slice(-90));
+  ok(/^(daily|weekly|hourly)$/.test(first.repeat), 'on a real cadence', first.repeat);
   ok(r.saved.autoId === 'auto1',
      'and the id is kept, which is the only way it can ever be switched off again', r.saved.autoId);
   ok(r.saved.on === true, 'the switch moves once the server has agreed', r.saved.on);
