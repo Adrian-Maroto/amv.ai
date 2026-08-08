@@ -2299,3 +2299,45 @@ two named failures pointing straight at the missing prefix.
 
 **Rule:** in a test, read the thing you are asserting about as though it might
 be missing, because the bug you are hunting is usually "it is missing".
+
+## 154. A kill switch that only stops requests does not stop spending
+
+GLOBAL_KILL was checked in exactly one place: the fetch router, for /v1/ paths.
+That halts everything a PERSON does and nothing about the cron, which fires
+every five minutes, runs everybody's automations, and calls the model with
+nobody present.
+
+So an operator watching the bill run away could hit the switch, watch user
+traffic drop to zero, and go on paying indefinitely for automated work. The one
+control whose entire purpose is "stop spending now" did not reach the spender
+that needs no one there.
+
+It is read directly in the cron rather than through the in-isolate cache: the
+cache exists to keep a hot request path off KV, and this runs once every five
+minutes, where a stale answer is five more minutes of exactly the spend
+somebody is trying to stop. The renewal sweep still runs while paused,
+deliberately - it is the one piece of cron work that REDUCES exposure.
+
+**Rule:** for any control that stops something, enumerate everything that does
+that thing. Requests are the obvious one and the timer is the one that keeps
+going after you have stopped watching.
+
+## 155. A fixture with the wrong field names tests nothing, twice
+
+My first version of the cron case wrote an automation as
+`{ list: [{ enabled, nextRun }] }`. The cron reads `{ items: [{ active, next }] }`.
+Nothing was ever due, so the model was called zero times - which is exactly
+what the assertion wanted, and it passed identically with the kill check
+deleted AND with it forced permanently on.
+
+Two opposite sabotages, both green. That is the signature of a test that is not
+touching the code at all.
+
+The fix is a control case in the same section: the SAME fixture, not paused,
+must really call the model. With that present, one sabotage fails the pause
+assertion and the other fails the control - in opposite directions, which is
+the only shape that proves both.
+
+**Rule:** when a test asserts that something did NOT happen, it needs a
+neighbour asserting the same setup DOES make it happen. Absence is the easiest
+result in the world to achieve by accident.

@@ -3672,25 +3672,59 @@ export default {
   */
   async scheduled(event, env, ctx) {
     ctx.waitUntil((async()=>{
-      try{
-        const r = await runDueAutomations(env);
-        if(r.ran || r.failed) console.log('[cron] automations', JSON.stringify(r));
-      }catch(e){
-        console.error('[cron] failed', e && e.message);
-        try{ await _workerError(env, 'cron', e); }catch(_){}
+      /* THE KILL SWITCH HAS TO REACH THE CRON, OR IT DOES NOT STOP SPENDING.
+
+         GLOBAL_KILL was checked in one place: the fetch router, for /v1/
+         paths. That stops every request a person makes and does nothing at all
+         about the thing that runs when nobody is there. So an operator
+         watching the bill run away could hit the switch, watch user traffic
+         stop, and have automations go on firing every five minutes - calling
+         the model, spending money - because the cron never asked.
+
+         The one control whose entire purpose is "stop spending NOW" did not
+         stop the spender that needs no one present.
+
+         Read directly rather than through _killCache: the cache exists to keep
+         a hot request path off KV, and this runs once every five minutes. A
+         stale answer here would be five more minutes of the exact spend the
+         operator is trying to stop. */
+      let killed = false;
+      try{ killed = (await env.AMV_KV.get('GLOBAL_KILL')) === '1'; }catch(e){}
+
+      if(killed){
+        console.log('[cron] paused by GLOBAL_KILL - automations skipped');
+        audit(env, 'cron_paused', { by: 'GLOBAL_KILL' });
+      } else {
+        try{
+          const r = await runDueAutomations(env);
+          if(r.ran || r.failed) console.log('[cron] automations', JSON.stringify(r));
+        }catch(e){
+          console.error('[cron] failed', e && e.message);
+          try{ await _workerError(env, 'cron', e); }catch(_){}
+        }
       }
       /* AMV-081: the weekly owner digest, in its own try. It is a report about
          the business; it must never be able to stop the tick that runs every
          customer's background work. Claimed once per week internally, so
          calling it on every 5-minute tick is correct and cheap. */
-      try{
-        const d = await runWeeklyDigest(env);
-        if(d && d.sent) console.log('[cron] weekly digest sent', JSON.stringify(d));
-      }catch(e){
-        console.error('[cron] digest failed', e && e.message);
-        try{ await _workerError(env, 'cron.digest', e); }catch(_){}
+      /* Skipped while paused: it is a report, it costs an email, and a
+         business summary sent from a deployment somebody has deliberately
+         halted is noise at the worst possible moment. */
+      if(!killed){
+        try{
+          const d = await runWeeklyDigest(env);
+          if(d && d.sent) console.log('[cron] weekly digest sent', JSON.stringify(d));
+        }catch(e){
+          console.error('[cron] digest failed', e && e.message);
+          try{ await _workerError(env, 'cron.digest', e); }catch(_){}
+        }
       }
-      /* AMV-133: the renewal sweep, in its own try for the same reason as the
+      /* Runs even while paused, deliberately: it is the one piece of cron work
+         that REDUCES exposure rather than creating it - marking subscriptions
+         nobody has confirmed - and a halted deployment is exactly when you
+         want that still true.
+
+         AMV-133: the renewal sweep, in its own try for the same reason as the
          digest. Claimed once per day internally, so running it on every
          5-minute tick is correct and costs one KV read. It is the only thing
          that revokes a plan without a webhook, so it must not be able to be
