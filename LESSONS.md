@@ -2903,3 +2903,32 @@ nobody thought about.
 **Rule:** to test an authorization boundary, try to cross it. Calling the route
 as the wrong person and getting nothing back can mean the boundary holds, or it
 can mean you did not ask for anything.
+
+## 178. The same blind spot, three times, so it is not a slip
+
+Three separate authorization tests this session passed against a deliberately
+broken server, all for the identical reason: they called the route as the wrong
+person WITHOUT naming the thing they were trying to reach.
+
+  - the bank check-in, rewritten to read `body.email || user.email`
+  - the link invitation, rewritten to look up `body.owner || user.email`
+  - and the first version of the finance cross-account case
+
+With no identifier in the request, every one of those broken servers falls back
+to the caller's own record and behaves exactly like a correct one. The test
+proves the route works. It proves nothing about whether it can be redirected,
+which is the actual attack on any route that operates on "the caller's" record.
+
+Crossing a boundary has to be attempted, with the field names an implementation
+would plausibly read - email, owner, user, account - because the one it reads is
+the one nobody thought about.
+
+A fourth sabotage passed for a different reason worth its own note: deleting a
+published page via KV instead of DB is invisible on a KV-backed test env, and
+only breaks on D1 - which is exactly the deployment where the original bug left
+pages serving after deletion. A test env that cannot express the failing
+configuration cannot catch the failure. That case now runs against a D1 stub.
+
+**Rule:** an authorization test that does not name the target is a smoke test.
+And a test environment simpler than production can only find the bugs that do
+not depend on production being different.
