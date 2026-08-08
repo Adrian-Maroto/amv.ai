@@ -11444,7 +11444,7 @@ async function paypalWebhook(request, env, ctx) {
   let evt; try { evt = JSON.parse(raw); } catch { return new Response('bad json', { status: 400 }); }
   try {
     const custom = evt.resource?.custom_id || '';
-    const [email] = custom.split('|');
+    const [email, claimedPlan] = custom.split('|');
     if (evt.event_type === 'PAYMENT.CAPTURE.REFUNDED' || evt.event_type === 'BILLING.SUBSCRIPTION.CANCELLED'
         || evt.event_type === 'BILLING.SUBSCRIPTION.EXPIRED') {
       if (email) await setEntitlement(env, email.toLowerCase(), 'free', { source: 'paypal', canceled: true });
@@ -11453,11 +11453,79 @@ async function paypalWebhook(request, env, ctx) {
       // Same rule as Stripe: a failed payment does not buy another month.
       if (email) await _markPastDue(env, email.toLowerCase(), { provider: 'paypal', event: evt.event_type });
     } else if (evt.event_type === 'BILLING.SUBSCRIPTION.ACTIVATED'
+            || evt.event_type === 'BILLING.SUBSCRIPTION.RE-ACTIVATED'
             || evt.event_type === 'PAYMENT.SALE.COMPLETED') {
-      if (email) await _clearPastDue(env, email.toLowerCase());
+      /* THE PLAN THEY PAID FOR, WHICH NOTHING HERE USED TO GRANT.
+
+         This branch called _clearPastDue and stopped. _clearPastDue returns
+         immediately when there is no pastDueSince - which is the state every
+         NEW subscriber is in - so activation did nothing at all. The only
+         setEntitlement on this whole path set the plan to 'free', on
+         cancellation. custom_id has carried the tier since the day it was
+         written and the line above discarded it.
+
+         So PayPal took a recurring payment, every month, and the customer
+         stayed on the free plan. Nothing errored, nothing was logged, and the
+         one thing that would have caught it - somebody paying by PayPal - is
+         not something the tests did. It is the worst shape a defect can have
+         in this product: money in, nothing out, silently.
+
+         The tier is taken from the plan PayPal is ACTUALLY billing wherever
+         that is knowable, and only falls back to the echoed custom_id. Both
+         arrive inside a signature-verified webhook, but one of them is what
+         the customer is being charged for and the other is what a client
+         claimed at checkout time - and if they ever disagree, the charge is
+         the truth. */
+      const em = String(email || '').toLowerCase();
+      if (em) {
+        const tier = _paypalTierOf(env, evt.resource?.plan_id, claimedPlan);
+        if (tier) {
+          const cur = await DB.get(env, 'ent', em);
+          /* renewedAt moves on every successful payment, so the renewal sweep
+             sees a live subscription rather than revoking one that is being
+             paid for. */
+          if (!cur || cur.plan !== tier || cur.pastDueSince) {
+            await setEntitlement(env, em, tier, { source: 'paypal' });
+          } else {
+            cur.renewedAt = Date.now();
+            delete cur.pastDueSince;
+            await DB.put(env, 'ent', em, cur);
+          }
+          audit(env, 'paypal_grant', { email: em, plan: tier, event: evt.event_type });
+        } else {
+          /* Paid, and AMV cannot tell what for. Never guess a tier - guessing
+             high gives away product and guessing low shortchanges somebody who
+             paid. It is a real failure and it needs a human. */
+          audit(env, 'paypal_unmapped_plan', { email: em, planId: evt.resource?.plan_id || '', claimed: claimedPlan || '' });
+          try { await alertOnce(env, 'paypal_unmapped',
+            'A PayPal payment arrived for a plan AMV cannot map to a tier (plan_id: '
+            + (evt.resource?.plan_id || 'none') + '). The customer has PAID and has NOT been granted anything. '
+            + 'Check PAYPAL_PLAN_PRO / _ELITE / _ULTRA match the billing plans in PayPal.', 5); } catch (_) {}
+        }
+        await _clearPastDue(env, em);
+      }
     }
   } catch (e) { audit(env, 'webhook_error', { kind: 'paypal', msg: String(e.message).slice(0, 120) }); }
   return json({ received: true });
+}
+
+/* Which AMV tier a PayPal billing plan corresponds to.
+
+   Prefers the plan id PayPal is really charging against, because that is what
+   the customer's money is buying. The tier echoed back in custom_id is a
+   fallback for events that do not carry a plan id, and is validated against the
+   known tiers rather than trusted as a string - it round-trips through the
+   client, and a tier is an entitlement. */
+function _paypalTierOf(env, planId, claimed) {
+  const byId = {
+    [env.PAYPAL_PLAN_PRO || '\u0000none-pro']: 'pro',
+    [env.PAYPAL_PLAN_ELITE || '\u0000none-elite']: 'elite',
+    [env.PAYPAL_PLAN_ULTRA || '\u0000none-ultra']: 'ultra',
+  };
+  const fromId = planId ? byId[String(planId)] : null;
+  if (fromId) return fromId;
+  const c = String(claimed || '').toLowerCase();
+  return (c === 'pro' || c === 'elite' || c === 'ultra') ? c : null;
 }
 
 function _paypalBase(env) { return env.PAYPAL_MODE === 'live' ? 'https://api-m.paypal.com' : 'https://api-m.sandbox.paypal.com'; }

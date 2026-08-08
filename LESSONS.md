@@ -2789,3 +2789,35 @@ something about nobody in particular is not a job anybody switches on.
 
 **Rule:** when a check needs a list of the ways something can be phrased, it is
 the wrong check. Ask what must be structurally true instead.
+
+## 174. Money in, nothing out, and every part of it looked correct
+
+PayPal subscriptions took a real recurring payment and granted nothing. The
+customer was billed every month and stayed on the free plan.
+
+What makes it worth writing down is that no individual piece was wrong. The
+signature verification was real and failed closed. The refund path worked. The
+cancellation path worked. The failed-payment path worked. `custom_id` had
+carried the tier since the day it was written. The subscribe route correctly
+granted nothing, because payment had not happened yet.
+
+Only the success path was missing - it called a helper that returns immediately
+unless the account is already past due, which is every new subscriber - and a
+success path that does nothing is invisible from every direction except the
+customer's. No error, no log, no alert, no failing test, because nothing tested
+it at all.
+
+Two rules from it.
+
+A payment provider is not integrated until something asserts what plan the
+account holds AFTER the events. Every check I could have written about the
+individual handlers would have passed.
+
+And the tier is now taken from the plan the provider is actually billing, not
+from the value echoed back through the client. Both arrive inside a verified
+webhook, but one is what the customer is being charged for and the other is
+what a client claimed at checkout. When they disagree the charge is the truth.
+
+**Rule:** for anything that takes money, test the outcome the customer
+experiences, not the handlers. "Was this event processed" and "did they get what
+they paid for" are different questions, and only the second one is the product.
