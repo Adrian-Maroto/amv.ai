@@ -797,6 +797,7 @@ function _mcCeilingHTML(){
     <div class="mc-lv" role="radiogroup" aria-label="How far AMV may go on its own">
       ${MC_LEVELS.map(l=>`
         <button class="mc-lv-opt${cur===l.id?' on':''}" role="radio" aria-checked="${cur===l.id?'true':'false'}"
+                tabindex="${cur===l.id?'0':'-1'}"
                 data-dact="mcSetCeiling" data-darg="${l.id}">
           <span class="mc-lv-dot" aria-hidden="true"></span>
           <span class="mc-lv-b">
@@ -832,6 +833,43 @@ async function mcSetCeiling(level){
   }
 }
 try{ window.mcSetCeiling = mcSetCeiling; }catch(e){}
+/* ARROW KEYS, BECAUSE THESE SAY THEY ARE RADIO BUTTONS.
+
+   role="radio" inside role="radiogroup" is a promise about behaviour, not a
+   label: a screen reader announces "1 of 3" and the person reaches for the
+   arrow keys. Three buttons that all sit in the tab order and ignore arrows
+   announce themselves as one thing and behave as another, which is worse than
+   plain buttons would have been.
+
+   So: one stop in the tab order (the selected option), arrows and Home/End move
+   between them, and moving SELECTS - which is what a radio group does, and what
+   makes it usable without a mouse at all. Delegated, so it survives the
+   re-render that follows every change. */
+try{
+  document.addEventListener('keydown', (e)=>{
+    const opt = e.target && e.target.closest && e.target.closest('.mc-lv-opt');
+    if(!opt) return;
+    const keys = ['ArrowRight','ArrowDown','ArrowLeft','ArrowUp','Home','End'];
+    if(keys.indexOf(e.key) < 0) return;
+    const opts = [...document.querySelectorAll('.mc-lv-opt')];
+    const i = opts.indexOf(opt);
+    if(i < 0) return;
+    e.preventDefault();
+    let n = i;
+    if(e.key === 'ArrowRight' || e.key === 'ArrowDown') n = (i + 1) % opts.length;
+    else if(e.key === 'ArrowLeft' || e.key === 'ArrowUp') n = (i - 1 + opts.length) % opts.length;
+    else if(e.key === 'Home') n = 0;
+    else if(e.key === 'End') n = opts.length - 1;
+    const next = opts[n];
+    if(!next || next === opt) return;
+    /* Focus first so the person hears where they are even if the save is
+       slow, then select - the render that follows keeps focus because the
+       newly-selected option is the one carrying tabindex 0. */
+    try{ next.focus(); }catch(_){}
+    const lvl = next.dataset && next.dataset.darg;
+    if(lvl) mcSetCeiling(lvl);
+  });
+}catch(e){}
 
 function _mcStandingHTML(){
   const cur = (typeof window._autoStandingText==='function' ? window._autoStandingText() : '') || '';
@@ -1416,9 +1454,9 @@ function renderCrewView(){
         exact instruction it follows and the shape of what it sends back.</p>
       <div class="cw-lock-band">
         <div class="cw-lock-figs">
-          <span class="cw-lock-fig"><b>${jobs.length}</b>jobs ready to run</span>
-          <span class="cw-lock-fig"><b>${bgJobs}</b>run with AMV closed</span>
-          <span class="cw-lock-fig"><b>${CREW_JOBS_BY_PLAN.pro}</b>at once on ${escH(P.name)}</span>
+          <span class="cw-lock-fig"><b>${jobs.length}</b> jobs ready to run</span>
+          <span class="cw-lock-fig"><b>${bgJobs}</b> run with AMV closed</span>
+          <span class="cw-lock-fig"><b>${CREW_JOBS_BY_PLAN.pro} jobs</b> at once on ${escH(P.name)}</span>
         </div>
         <div class="cw-lock-buy">
           <span class="cw-lock-price">Included with ${escH(P.name)} \u00b7 $${P.price}/month</span>

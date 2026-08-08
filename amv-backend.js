@@ -893,7 +893,17 @@ function _autoApprovalOf(v, fallback) {
    ceiling restores what each job was already set to instead of having flattened
    them all permanently. */
 function _autoEffective(item, rec) {
-  const want = _autoApprovalOf(item && item.approval, 'require');
+  /* A job with NO approval field at all is one created before the field
+     existed, and it has always delivered. Defaulting it to 'require' here reads
+     as the careful choice and is actually a silent behaviour change: every
+     one of those jobs would stop emailing, and the person would experience
+     that as the product breaking rather than as a new safety feature.
+
+     So the default for a MISSING field is what it has always done, and the
+     default for a field somebody is SETTING is the careful one - which is why
+     this is not the same as _autoApprovalOf's fallback. New jobs get 'require'
+     from autoCreate; old jobs keep what they had. */
+  const want = (item && AUTO_APPROVALS.includes(item.approval)) ? item.approval : 'auto';
   const cap = _autoApprovalOf(rec && rec.ceiling, 'auto');
   return AUTO_APPROVAL_RANK[want] <= AUTO_APPROVAL_RANK[cap] ? want : cap;
 }

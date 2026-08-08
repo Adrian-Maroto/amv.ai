@@ -38,7 +38,18 @@ function bodyOf(fn){
 /* Calls that cost money or consume somebody else's rate limit. */
 const SPENDS = /_modelFetch\(|_finCall\(|api\.resend\.com|api\.stripe\.com|oauth2\.googleapis|api\.twilio|_vidCall\(/;
 /* Anything that bounds how often, whether by rate limit or by allowance. */
-const BOUNDED = /guardAction\(|limitAction\(|counter\(env|checkCap|_spendAllowed\(|_budgetFor\(|effectiveLimits\(/;
+/* What counts as a bound.
+
+   `counter(env` was on this list and matched ANY counter call - including the
+   plain population tally in account deletion, which counts how many accounts
+   exist and limits nothing. That made a route look bounded because it happened
+   to count something, which is the opposite of what this file is for, and it
+   fired as a false positive against an exemption that was still perfectly
+   honest.
+
+   A counter is a bound when it is used as one: rateCheck refuses, reserve
+   holds budget. Counting is not limiting. */
+const BOUNDED = /guardAction\(|limitAction\(|checkCap|_spendAllowed\(|_budgetFor\(|effectiveLimits\(|op:\s*'rateCheck'|op:\s*'reserve'/;
 
 /* Spends, but does not need its own bound - each with the reason. */
 const EXEMPT = {

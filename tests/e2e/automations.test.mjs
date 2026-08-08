@@ -48,19 +48,31 @@ section('Autonomy is a paid capability, said once and calmly');
      go with it; it is fixed now, so there is nothing to configure and nothing
      to warn about.
 
-     And a free account is told which plan runs this, rather than being shown a
-     tool that will refuse it. */
+     And a free account is not shown a control that would refuse it.
+
+     That used to mean showing them no jobs at all. It now means showing them
+     the whole catalogue with no switches on it - because the person deciding
+     whether to pay is exactly the person who needs to see what they would be
+     paying for, and a paragraph describing eighty-nine jobs is a far weaker
+     pitch than the eighty-nine jobs. The property that mattered is unchanged
+     and is still asserted: nothing on that screen is a control that does
+     nothing when pressed. */
   const free = await page.evaluate(() => {
     saveStr('amv_plan', 'free');
     renderCrewView();
     const t = document.getElementById('vc').textContent;
     return { text: t, jobs: document.querySelectorAll('.cw-job').length,
+             toggles: document.querySelectorAll('.cw-toggle').length,
+             openable: document.querySelectorAll('[data-dact="cwPeek"]').length,
              cta: !!document.querySelector('[data-stab="plans"]') };
   });
   ok(!/\brisk\b/i.test(free.text), 'no talk of risk anywhere on the screen');
   ok(/Pro/.test(free.text), 'the plan that runs it is named', /Pro/.test(free.text));
   ok(/\b5 jobs\b/.test(free.text), 'along with how many jobs that plan runs', free.text.slice(0, 0));
-  ok(free.jobs === 0, 'and no half-working tool underneath it', free.jobs);
+  ok(free.toggles === 0, 'and no switch underneath it that would refuse them', free.toggles);
+  ok(free.jobs > 50 && free.openable === free.jobs,
+     'while every job is there to be opened and read, which is what they are deciding about',
+     { jobs: free.jobs, openable: free.openable });
   ok(free.cta, 'with the one control that resolves it');
 
   const paid = await page.evaluate(() => {

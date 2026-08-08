@@ -2622,3 +2622,55 @@ watching it. It now takes every tool name in the block.
 
 **Rule:** a consistency check must not carry its own list of what to look at.
 The list is the thing most likely to go stale, and it goes stale silently.
+
+## 168. The gate found four things, and one of them would have shipped
+
+The first full gate after a batch of work came back NOT shippable. Three were
+checks that had gone stale against changes made on purpose. One was a real
+regression I would have shipped, and it is the interesting one.
+
+Jobs created before `approval` existed have no such field. The new code read a
+missing field as "ask first" - which looks like the careful choice and is
+actually a silent behaviour change: every one of those jobs would have stopped
+emailing, and the person would have experienced that as the product breaking
+rather than as a new safety feature.
+
+The rule that came out of it: the default for a field somebody is SETTING and
+the default for a field that is ABSENT are different questions. Setting one
+without saying should be careful. Finding one missing should be what it has
+always done. Collapsing the two into one fallback is how a safety improvement
+turns into an outage for existing users.
+
+The three stale checks are worth naming too, because they are all the same
+shape - a check that carries its own assumption about the code's layout:
+  - the consent map was read to the end of the FIRST LINE, so growing it to two
+    lines hid eleven tools that do ask for permission
+  - the consent prompt was read as the first 1400 characters of a function, so
+    adding branches pushed the wording out of the window
+  - "is this route bounded" matched any `counter(env`, including a population
+    tally that limits nothing
+
+**Rule:** a check that encodes where something sits, rather than what it does,
+fails the day the code is edited - and it fails in whichever direction the edit
+happened to push it, which is not correlated with whether anything is wrong.
+
+## 169. role="radio" is a promise about behaviour, not a label
+
+Three buttons carrying role="radio" inside a role="radiogroup" announce
+themselves to a screen reader as "1 of 3", and the person reaches for the arrow
+keys. They were three separate tab stops that ignored arrows entirely - which is
+worse than plain buttons would have been, because plain buttons would at least
+have behaved the way they were announced.
+
+One tab stop, arrows and Home/End move and select, and the tab stop follows the
+selection.
+
+The first version of that check CRASHED rather than failing when sabotaged:
+with no tab stop at all, `tabbable[0].focus()` threw inside the page and took
+the whole file down, so a real regression exited without reporting one failure.
+Same lesson as #153 and it still caught me.
+
+**Rule:** an ARIA role you cannot implement the keyboard behaviour for is a role
+you should not claim. And every assertion that indexes into a collection has to
+survive that collection being empty, because empty is exactly what a regression
+looks like.

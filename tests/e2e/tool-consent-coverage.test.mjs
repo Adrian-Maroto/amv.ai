@@ -24,7 +24,14 @@ const bundle = readFileSync(join(ROOT, 'app.js'), 'utf8');
 /* The declared tools, and the consent map, as they ship. */
 const toolNames = [...bundle.matchAll(/\n\s*name:'([a-z_]+)',\n\s*description:'/g)].map(m => m[1]);
 const consentAt = bundle.indexOf('const _TOOL_CONSENT');
-const consentSrc = bundle.slice(consentAt, bundle.indexOf('\n', consentAt));
+/* The WHOLE declaration, not its first line.
+
+   This used to slice to the next newline, which worked only while the map fit
+   on one line. The moment it grew a second line every entry below the first was
+   invisible here - so eleven tools that DO ask for permission were reported as
+   unclassified, and the same slice would just as happily have reported a tool
+   that needs consent as having it. Read to the closing brace. */
+const consentSrc = bundle.slice(consentAt, bundle.indexOf('};', consentAt) + 2);
 const consented = new Set([...consentSrc.matchAll(/([a-z_]+)\s*:\s*true/g)].map(m => m[1]));
 
 /* The body of each tool's branch inside the dispatcher, so what it DOES can be
@@ -70,6 +77,17 @@ section('And every tool has been classified either way');
     generate_image: 'produces a picture shown to the person who asked; nothing leaves AMV',
     generate_video: 'the same, metered by the plan allowance',
     build_app:      'writes a page into the conversation, and publishing it is a separate gated tool',
+    /* Reading their own data. Nothing leaves AMV, nothing is spent, nothing is
+       changed - and putting a dialog in front of "what is running for me"
+       trains people to click through dialogs, which is how the ones that
+       matter stop being read. */
+    crew_list:      'reads their own background jobs; no change, no spend',
+    approvals_list: 'reads their own approval queue; nothing is sent by looking',
+    memory_list:    'reads what AMV already remembers about them',
+    account_status: 'reads their own plan and usage',
+    /* Pausing is the safe direction. A confirmation in front of "stop doing
+       that" is the one place a dialog makes things worse. */
+    crew_pause:     'stops a job running, which reduces what AMV does and what it spends',
   };
   const unclassified = toolNames
     .filter(n => !consented.has(n) && !(n in SAFE_WITHOUT_ASKING))
@@ -156,7 +174,17 @@ section('EVERY dispatch path asks, not just the one that was written first');
 section('The consent prompt says where the request may have come from');
 {
   const at = bundle.indexOf('async function _confirmModelTool');
-  const body = bundle.slice(at, at + 1400);
+  /* To the end of the function, not to a fixed byte count.
+
+     This read the first 1400 characters, so adding branches to the dialog for
+     new tools pushed the wording being checked out of the window and the check
+     failed on a function that still says exactly what it should. The same
+     mistake as reading the first 2000 characters of aiProxy - a byte budget is
+     not a scope. */
+  const nextFn = bundle.indexOf('\nasync function ', at + 10);
+  const nextFn2 = bundle.indexOf('\nfunction ', at + 10);
+  const end = Math.min(...[nextFn, nextFn2].filter(i => i > 0));
+  const body = bundle.slice(at, Number.isFinite(end) ? end : at + 6000);
   ok(/triggered by content it read/i.test(body),
      'because a tool call can be injected by a page, not asked for by the person', true);
   ok(/Allow once/.test(body), 'and permission is for one call, not forever', true);

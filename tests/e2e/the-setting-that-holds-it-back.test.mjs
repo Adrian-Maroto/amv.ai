@@ -273,14 +273,40 @@ section('A setting that could not be saved never looks saved');
 
 section('It works on a phone and without a mouse');
 {
+  /* role="radio" is a promise about behaviour, not a label. A screen reader
+     announces "1 of 3" and the person reaches for the arrow keys; three
+     buttons that all sit in the tab order and ignore arrows announce
+     themselves as one thing and behave as another. */
   const kb = await page.evaluate(async () => {
     setTab('crew');
-    await new Promise(x => setTimeout(x, 800));
-    const opt = document.querySelector('.mc-lv-opt[data-darg="require"]');
-    opt.focus();
-    return { focusable: document.activeElement === opt };
+    await new Promise(x => setTimeout(x, 900));
+    const opts = [...document.querySelectorAll('.mc-lv-opt')];
+    const tabbable = opts.filter(o => o.getAttribute('tabindex') === '0');
+    const selected = opts.filter(o => o.getAttribute('aria-checked') === 'true');
+    /* Defensive: with no tab stop at all this used to throw inside evaluate and
+       take the whole file down, so a real regression exited without reporting a
+       single failure. A missing tab stop has to FAIL, loudly, not crash. */
+    const start = tabbable[0] || opts[0];
+    if (!start) return { focusable: false, tabbable: 0, wasSelected: [], after: [], stops: 0 };
+    start.focus();
+    const focusable = document.activeElement === start;
+
+    /* Arrow to the next one and let it settle - moving selects, which is what
+       a radio group does and what makes this usable with no mouse at all. */
+    document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    await new Promise(x => setTimeout(x, 1200));
+    const after = [...document.querySelectorAll('.mc-lv-opt')]
+      .filter(o => o.getAttribute('aria-checked') === 'true').map(o => o.dataset.darg);
+    const stops = [...document.querySelectorAll('.mc-lv-opt')]
+      .filter(o => o.getAttribute('tabindex') === '0').length;
+    return { focusable, tabbable: tabbable.length, wasSelected: selected.map(o => o.dataset.darg), after, stops };
   });
   ok(kb.focusable, 'a level takes keyboard focus', kb);
+  ok(kb.tabbable === 1,
+     'and the group is ONE tab stop, not three, as a radio group must be', kb.tabbable);
+  ok(kb.after.length === 1 && kb.after[0] !== kb.wasSelected[0],
+     'an arrow key moves the choice, which is what role=radio promises', kb);
+  ok(kb.stops === 1, 'and the single tab stop follows the selection', kb.stops);
 
   await page.setViewportSize({ width: 390, height: 780 });
   await page.waitForTimeout(300);
