@@ -2853,3 +2853,31 @@ argued into place is evidence the protection exists.
 **Rule:** for anything with a producer and a consumer, test both ends and the
 wire. Green on the consumer alone means the feature works in the test and does
 nothing in production.
+
+## 176. A sabotage that does not apply looks exactly like a test that works
+
+Checking the team rules, one sabotage "passed": removing the guard that stops
+the owner's role being changed broke nothing. I nearly recorded that as a gap in
+the test and moved on.
+
+The sabotage had not applied. The line contains `’` as a literal escape in
+the source, my replacement string had it as a real character, and the substitution
+silently matched nothing. The file was unchanged, so of course every assertion
+still passed.
+
+This is the same failure as everything else in this session, aimed at the tool
+rather than the product: I asked "did the test go green" instead of "did the
+thing I meant to break actually break". A no-op edit and a working guard produce
+identical output.
+
+Every sabotage now asserts that it applied - the substitution has to find its
+target or the script stops. Where I had done that, the sabotages were honest;
+this was the one place I had not.
+
+Separately: writing that same file, one case failed and the code was right - I
+had promoted the member to admin two lines above and then asserted they could
+not read the audit log. A test wrong about its own fixture is the easiest way to
+"find" a bug that does not exist, and it costs the same time as a real one.
+
+**Rule:** verify the sabotage landed before believing what the test says about
+it. An edit that matched nothing is not evidence of anything.
