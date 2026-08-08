@@ -2116,3 +2116,49 @@ the line it cares about.
 a declaration - never to a character count. The count is right until the day
 somebody adds a line, and then it is wrong in the direction that wastes an
 afternoon.
+
+## 146. A synthetic user is an unmetered hole
+
+The embeddable widget - the only part of AMV that runs on somebody else's
+website - was metered against an invented account:
+
+    user: { email: 'widget:' + key, plan: 'widget' },
+    limits: { dayTokens: Infinity, monthTokens: Infinity },
+
+which reads like bookkeeping and is a decision: this spend belongs to nobody.
+The only ceilings left were the ones the widget's OWNER sets, and those default
+to $5/day, can be set to 0 meaning no limit, and keep applying long after the
+owner stops paying. Cancel your subscription and your embedded widget goes on
+answering visitors on AMV's model budget for ever. There is no plan gate on
+creating one either, so a Free account that never paid anything had the same
+deal.
+
+The fix is not a new rule. It is reading the owner's real entitlement and
+reserving against their actual allowance, the way a turn typed in their own
+browser already does - so a lapsed subscription bounds the widget on exactly
+the same clock as everything else the account has, with nothing separate to
+remember.
+
+The reservation is the part that matters. Metering after the fact records a
+cost; only a reservation taken BEFORE the model is called prevents one.
+
+**Rule:** when a code path invents a user, ask whose money it is spending. A
+stand-in account with infinite limits is not a placeholder, it is an
+unaccounted budget, and it will be discovered by whoever is paying for it.
+
+## 147. Refund tests must exercise a path that had something to refund
+
+I tested that a refused widget turn gives its reservation back by tripping the
+widget's own spend cap - and deleting the refund entirely did not fail it. That
+cap is checked BEFORE the reservation is taken, so nothing had been reserved
+and the assertion was true no matter what.
+
+Using the GLOBAL spend cap instead - which is checked after - fails instantly:
+the owner's counter reads 1212 where it should read 500.
+
+This is the third time in two days that a test of mine measured something real
+and adjacent to the thing it named. The pattern is always the same: the setup
+does not actually reach the state the assertion is about.
+
+**Rule:** for any "it gives X back" test, assert that X was TAKEN first. If the
+before-value is already the answer, the case proves nothing.

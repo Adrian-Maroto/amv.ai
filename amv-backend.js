@@ -6779,6 +6779,46 @@ async function widgetChat(request, env, ctx) {
   const vErr = validateMessagesPayload({ messages: body.messages, system: cfg.systemPrompt, max_tokens: cfg.maxOut });
   if (vErr) return new Response(JSON.stringify({ error: vErr }), { status: 400, headers: { 'Content-Type': 'application/json', ...wcors } });
 
+  /* NO MODEL KEY, NO REQUEST. The same guard aiProxy carries, and it was
+     missing here: with AMV_MODEL_KEY unset this reserved the widget's caps and
+     then called out with `x-api-key: ''`, so a visitor on somebody else's
+     website waited for a round trip that could not succeed. A widget failing
+     is worse than a chat failing - it is on a customer's own site, in front of
+     their customers. */
+  if (!_modelKey(env)) {
+    audit(env, 'widget_unconfigured', { key });
+    try { await alertOnce(env, 'model_key_missing_widget',
+      'A website widget was used but AMV has no model key, so it answered nobody. Set AMV_MODEL_KEY.', 60); } catch (e) {}
+    return new Response(JSON.stringify({ error: 'This assistant is not available right now.' }),
+      { status: 503, headers: { 'Content-Type': 'application/json', ...wcors } });
+  }
+
+  /* WHOSE ALLOWANCE THIS COMES OUT OF.
+
+     It came out of nobody's. The meter below was handed a synthetic user
+     (`widget:<key}`, plan `widget`) with limits of Infinity, so a widget's
+     spend was bounded only by the caps its OWNER sets - and those default to
+     $5/day, can be set to 0 meaning no limit, and keep applying long after the
+     owner stops paying. Cancel your subscription and your embedded widget goes
+     on serving visitors and spending AMV's model budget for ever.
+
+     There is no plan gate on creating a widget either, so the same was true of
+     a Free account that never paid anything.
+
+     So the owner's real entitlement is read on every turn and the usage is
+     reserved against THEIR allowance, the way a chat turn in their browser
+     would be. A paying customer notices nothing. Somebody who has stopped
+     paying gets their widget bounded by the free allowance, which is the
+     honest answer to "what does a free account get". _planOf is what applies a
+     lapsed subscription, so a past-due account degrades on the same clock as
+     everything else rather than needing its own rule. */
+  const ownerEmail = String(cfg.owner || '').toLowerCase();
+  const ownerEnt = ownerEmail ? ((await DB.get(env, 'ent', ownerEmail)) || {}) : {};
+  const ownerUser = { email: ownerEmail || ('widget:' + key), plan: _planOf(ownerEnt),
+                      customCfg: ownerEnt.custom || null, bonusTokens: ownerEnt.bonusTokens || 0 };
+  const ownerLimits = effectiveLimits(ownerUser);
+  const ownerSubject = ownerEnt.teamId ? ('team:' + ownerEnt.teamId) : (ownerEmail || ('widget:' + key));
+
   const key2 = RAW_TO_KEY[cfg.model] || (ENGINES[cfg.model] ? cfg.model : 'amv-core');
   const eng = ENGINES[key2];
 
@@ -6823,12 +6863,46 @@ async function widgetChat(request, env, ctx) {
     }
   }
 
+  /* THE OWNER'S OWN ALLOWANCE, reserved before the model is called.
+
+     Metering after the fact records a cost; it does not stop one. This is what
+     actually bounds a widget belonging to somebody who has stopped paying: the
+     turn is reserved against their daily and monthly plan allowance exactly as
+     a turn typed in their own browser would be, and refused when it is gone.
+
+     Refused politely, and without telling a stranger on somebody else's
+     website anything about that person's billing. */
+  const wReserve = _estimateReserveInput({ messages: body.messages })
+                 + Math.max(1, Math.min(cfg.maxOut || 1024, 200000));
+  const ownerDayName = `usg:${ownerSubject}:${todayKey()}`;
+  const ownerMonthName = `usg:${ownerSubject}:${monthKey()}`;
+  const oDay = await counter(env, ownerDayName, { op: 'reserve', amount: wReserve, cap: ownerLimits.dayTokens, ttlMs: 86400000 * 35 });
+  if (!oDay.allowed) {
+    audit(env, 'widget_owner_quota', { key, owner: ownerEmail, scope: 'day' });
+    await refundMsg();
+    return new Response(JSON.stringify({ error: 'This assistant has reached its limit for today. Please try again tomorrow.' }),
+      { status: 429, headers: { 'Content-Type': 'application/json', ...wcors } });
+  }
+  const oMonth = await counter(env, ownerMonthName, { op: 'reserve', amount: wReserve, cap: ownerLimits.monthTokens, ttlMs: 86400000 * 70 });
+  if (!oMonth.allowed) {
+    audit(env, 'widget_owner_quota', { key, owner: ownerEmail, scope: 'month' });
+    try { await counter(env, ownerDayName, { op: 'incr', amount: -wReserve, ttlMs: 86400000 * 35 }); } catch (e) {}
+    await refundMsg();
+    return new Response(JSON.stringify({ error: 'This assistant is unavailable right now. Please try again later.' }),
+      { status: 429, headers: { 'Content-Type': 'application/json', ...wcors } });
+  }
+  /* Every path from here that does not reach the model gives both back. */
+  const refundOwner = async () => {
+    try { await counter(env, ownerDayName, { op: 'incr', amount: -wReserve, ttlMs: 86400000 * 35 }); } catch (e) {}
+    try { await counter(env, ownerMonthName, { op: 'incr', amount: -wReserve, ttlMs: 86400000 * 70 }); } catch (e) {}
+  };
+
   // GLOBAL daily spend cap (shared safety net across the whole platform).
   const gName = `spend:${todayKey()}`;
   const gCap = parseFloat(env.GLOBAL_DAILY_USD_CAP || '500');
   const gRes = await counter(env, gName, { op: 'checkCap', cap: gCap });
   if (!gRes.allowed) {
-    await refundMsg();
+    await refundMsg(); await refundOwner();
     return new Response(JSON.stringify({ error: 'Service is at capacity. Please try again later.' }), { status: 503, headers: { 'Content-Type': 'application/json', ...wcors } });
   }
 
@@ -6847,20 +6921,30 @@ async function widgetChat(request, env, ctx) {
 
   if (!upstream.ok) {
     const e = await upstream.json().catch(() => ({}));
-    await refundMsg();   // nothing was generated, so nothing was used
+    await refundMsg(); await refundOwner();   // nothing was generated, so nothing was used
     return new Response(JSON.stringify({ error: e?.error?.message || 'The assistant is unavailable.' }), { status: 502, headers: { 'Content-Type': 'application/json', ...wcors } });
   }
 
   // tee: stream to the visitor AND meter cost into this widget's + global counters
   const [toClient, toMeter] = upstream.body.tee();
   ctx.waitUntil(meterStream(toMeter, eng, {
-    dName: `wtok:${key}:${todayKey()}`,      // per-widget token tally (informational)
-    mName: `wtok:${key}:${monthKey()}`,
+    /* The OWNER's allowance counters - the ones the reservation above was
+       taken from. meterStream reconciles `reserved` against dName/mName, so
+       these have to be the same pair or the reservation is never given back
+       and a widget permanently over-charges its owner for the difference
+       between what a turn might cost and what it did.
+
+       These used to be `wtok:<key>` informational tallies that nothing in the
+       product ever read, beside a synthetic user with limits of Infinity. */
+    dName: ownerDayName,
+    mName: ownerMonthName,
+    reserved: wReserve,
     gName,                                    // shares the global spend cap
     costName: wSpendName,                     // per-widget spend counter (the hard cap above)
-    user: { email: 'widget:' + key, plan: 'widget' },
-    env, limits: { dayTokens: Infinity, monthTokens: Infinity },
+    user: ownerUser,
+    env, limits: ownerLimits,
     reqMessages: body.messages,
+    feature: 'widget',
   }));
 
   return new Response(toClient, {
