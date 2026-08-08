@@ -2017,3 +2017,26 @@ scope it must be absent from. A regex over a whole line will find the string
 somewhere and go quiet. And the only way I found out was sabotaging a check
 that was already passing - the check being green told me nothing about the
 check.
+
+## 142. A layout test that only asks "does the element exist" tests nothing
+
+The money path at 390px fails in ways that throw no error and break no
+selector: a fixed banner sits on top of the pay button, a sheet is taller than
+the screen and does not scroll, a tap target is 22px, an input's text is under
+16px so iOS zooms the whole page in and the careful layout is the wrong width
+for ever. Every one of those is somebody who wanted to pay and could not.
+
+Asking whether `#pay-submit` is in the DOM catches none of them. What catches
+them is asking the browser what is actually at the centre of that element -
+`document.elementFromPoint` - and comparing it to the element itself. That is
+the difference between "it is rendered" and "a thumb can hit it".
+
+Proven the only way it can be: covering the button with a fixed overlay makes
+the check fail and name what is on top; shrinking it to 22px fails the tap-size
+case; dropping the inputs to 13px fails the zoom case. A first sabotage - a bar
+across the bottom 220px - did NOT fail, because the button was not down there,
+and that was worth knowing too.
+
+**Rule:** for anything a person has to touch, assert reachability, not
+presence. And when a visual sabotage passes, find out whether the check is weak
+or your assumption about the layout was.
