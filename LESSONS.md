@@ -2728,3 +2728,38 @@ memory feature that remembers nothing - looks exactly like success.
 **Rule:** when a rule can be reached by more than one path, test the paths, not
 the rule. And every guard needs a case proving it still lets the ordinary thing
 through, or the safest implementation is the broken one.
+
+## 172. A quarter of the catalogue told the runner to use something it never had
+
+The unattended runner receives exactly two things: the rules, and the job's own
+text. No memory, no profile, no list - and nothing had ever said so out loud.
+
+Twenty-two of the eighty-nine catalogue presets instructed it to work from "the
+user's watch list", "the deadlines they have listed", "their specified routes
+and dates". There was no path by which any of that could reach the runner.
+Switching one on posted the preset's prompt verbatim. So those jobs ran every
+morning against nothing, and a model handed an instruction it cannot satisfy
+either apologises forever or invents - and inventing is the worse of the two,
+because it looks like the product working.
+
+Seven of the twenty-two were mine, added this session. I wrote them in the same
+style as the fifteen that were already there, which is exactly how a defect
+becomes a convention.
+
+The fix is to ask, once, when the job is switched on, and put the answer in the
+detail - because the detail IS what the runner receives. Cancelling creates no
+job, because a job created with the question skipped is precisely the broken one.
+
+The check that keeps it fixed pairs the two properties: a prompt written in that
+style must have a question attached, AND a question must not be attached to a
+prompt that never uses one. Either half alone drifts.
+
+Sabotaging it also caught something worth keeping: removing the "they cancelled"
+guard did NOT fail, because a second guard on the empty answer still caught it.
+Defence in depth is good; a sabotage that only removes one of two layers proving
+nothing is a reminder that the sabotage has to remove the whole behaviour, not
+the first line that implements it.
+
+**Rule:** an instruction that references data is a promise that the data will be
+there. Trace the path from where it is typed to where it is read, or the
+instruction is fiction that happens to be well written.

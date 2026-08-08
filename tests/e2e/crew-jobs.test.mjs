@@ -275,9 +275,21 @@ section('The plan\'s job number is enforced, not just displayed');
     window.toast = (m) => { said = m; };
     let n = 0;
     window._scheduleTask = async () => ({ id: 'a' + (++n) });
+    /* Jobs that work from what the person told them now ask for it before
+       they are created, so switching one on is no longer fire-and-forget.
+       Answer the real dialog rather than avoiding those jobs - the property
+       under test is the plan limit, and it has to hold on the real path. */
+    const answering = setInterval(() => {
+      const box = document.getElementById('modal-input');
+      if (!box) return;
+      box.value = 'Test details for this job.';
+      const okBtn = document.getElementById('modal-ok');
+      if (okBtn) okBtn.click();
+    }, 40);
     /* One at a time, one more than the plan allows. */
-    for (const id of free.slice(0, allow + 1)) { cwToggle(id); await new Promise(r => setTimeout(r, 60)); }
-    await new Promise(r => setTimeout(r, 300));
+    for (const id of free.slice(0, allow + 1)) { cwToggle(id); await new Promise(r => setTimeout(r, 220)); }
+    await new Promise(r => setTimeout(r, 500));
+    clearInterval(answering);
     return { allow, on: _cwJobs().filter(j => j.on).length, said };
   });
   ok(r.on === r.allow, 'it stops at exactly the number the plan sells', r);

@@ -76,6 +76,60 @@ section('Every example in the catalogue has something real behind it');
   ok(noNeeds.length === 0, 'and declares what it needs, so none of them can pretend', noNeeds);
 }
 
+section('No job asks the runner to use something it was never given');
+{
+  /* The gap this section exists for, and it was live for a quarter of the
+     catalogue.
+
+     The unattended runner receives exactly two things: the rules, and the
+     job's own text. It has no memory, no profile, and no list. So a preset
+     instructing it to work from "the user's watch list" or "the deadlines they
+     have listed" ran every morning against nothing - and a model given an
+     instruction it cannot satisfy either apologises or invents, and inventing
+     is worse.
+
+     Every such job now asks for what it needs when it is switched on, and the
+     answer goes into the detail, which IS what the runner is given. This check
+     pairs the two so a new preset written in the same style cannot be added
+     without a question to go with it. */
+  const jobs = await page.evaluate(() => _cwJobs().map(j => ({
+    id: j.id, prompt: j.prompt || '', asks: j.asks || null })));
+
+  const needsInput = /user[’']?s? (watch|wish|stated|specified|listed|profile|test date|area|budget)|they have (listed|given|told|said|recorded)|the user has (listed|stated|told|given|specified)|user (profile|wish list|watch list)|has told you|have given you/i;
+
+  const silent = jobs
+    .filter(j => needsInput.test(j.prompt) && !(j.asks && j.asks.q))
+    .map(j => j.id);
+  ok(silent.length === 0,
+     'every job that works from what the person told it actually asks them for it', silent);
+
+  /* And the reverse, so the questions do not accumulate on jobs that do not
+     need one - an unnecessary question is a reason not to switch a job on. */
+  const asking = jobs.filter(j => j.asks && j.asks.q);
+  ok(asking.length >= 15, 'the ones that need input are the ones asking', asking.length);
+  const pointless = asking.filter(j => !needsInput.test(j.prompt)).map(j => j.id);
+  ok(pointless.length === 0, 'and nothing asks for something it never uses', pointless);
+
+  const vague = asking.filter(j => !j.asks.ph || j.asks.ph.length < 30).map(j => j.id);
+  ok(vague.length === 0, 'each question shows an example of a real answer', vague);
+}
+
+section('And the panel says so before they switch it on');
+{
+  const id = await page.evaluate(() => (_cwJobs().find(j => j.asks && j.asks.q) || {}).id);
+  ok(!!id, 'there is a job that needs input', id);
+  const r = await page.evaluate(async (jid) => {
+    cwPeek(jid);
+    await new Promise(x => setTimeout(x, 350));
+    const p = document.querySelector('.cwp');
+    const t = p ? (p.textContent || '').replace(/\s+/g, ' ').trim() : '';
+    closeOvr();
+    return { asks: /It will ask you for/i.test(t), why: /running on nothing/i.test(t) };
+  }, id);
+  ok(r.asks, 'the panel says it will ask', r);
+  ok(r.why, 'and why - so the question is not a surprise on the way in', r);
+}
+
 section('And no two of them are secretly the same job');
 {
   /* A duplicate id is not cosmetic: the toggle writes by id, and the lookup
@@ -246,6 +300,73 @@ section('On a paid plan the same panel turns the job on for real');
   const jobData = jobs.find(x => x.id === id);
   ok(items.some(it => String(it.detail || '').slice(0, 60) === String(jobData.prompt || '').slice(0, 60)),
      'carrying the same instruction the panel showed them', String(items[0] && items[0].detail || '').slice(0, 70));
+}
+
+section('What they type reaches the job the server actually runs');
+{
+  /* The assertion the whole fix stands on. Asking a good question and then
+     dropping the answer would be the same defect wearing a nicer coat: the
+     runner still gets a preset that works from nothing, and now the person has
+     been made to type for it. */
+  const id = await page.evaluate(() => {
+    const j = _cwJobs().find(x => x.asks && x.asks.q && _cwRunsUnattended(x) && !x.on);
+    return j ? j.id : null;
+  });
+  ok(!!id, 'there is a job that asks and runs unattended', id);
+
+  const ANSWER = 'Chemistry test on the 14th, and the history essay due Friday.';
+  const r = await page.evaluate(async ([jid, answer]) => {
+    /* Answer the real dialog by typing into it and pressing its own button,
+       so a change that broke the dialog breaks this too. */
+    const watch = setInterval(() => {
+      const box = document.getElementById('modal-input');
+      if (!box) return;
+      box.value = answer;
+      const okBtn = document.getElementById('modal-ok');
+      if (okBtn) okBtn.click();
+    }, 100);
+    cwToggle(jid);
+    await new Promise(x => setTimeout(x, 2500));
+    clearInterval(watch);
+    return { on: !!(_cwJobs().find(j => j.id === jid) || {}).on };
+  }, [id, ANSWER]);
+  await L.settle();
+
+  ok(r.on, 'the job switched on', r);
+  const rec = JSON.parse((await KV.get('auto:' + EMAIL)) || '{}');
+  const made = (rec.items || []).filter(it => String(it.detail || '').includes(ANSWER));
+  ok(made.length === 1, 'and what they typed is in the job the SERVER holds', made.length);
+  ok(/only information you have about them/i.test(made[0].detail),
+     'framed so the runner uses it and invents nothing beyond it', made[0].detail.slice(-160));
+}
+
+section('Backing out of the question creates nothing');
+{
+  /* A job created with the question skipped is precisely the broken one this
+     fix exists to prevent, so cancelling has to mean no job - not a job that
+     runs every morning on nothing. */
+  const id = await page.evaluate(() => {
+    const j = _cwJobs().find(x => x.asks && x.asks.q && _cwRunsUnattended(x) && !x.on);
+    return j ? j.id : null;
+  });
+  ok(!!id, 'another job that asks', id);
+
+  const before = ((JSON.parse((await KV.get('auto:' + EMAIL)) || '{}')).items || []).length;
+  const r = await page.evaluate(async (jid) => {
+    const watch = setInterval(() => {
+      const cancel = document.getElementById('modal-cancel') || document.getElementById('modal-close');
+      if (cancel) cancel.click();
+    }, 100);
+    cwToggle(jid);
+    await new Promise(x => setTimeout(x, 2000));
+    clearInterval(watch);
+    return { on: !!(_cwJobs().find(j => j.id === jid) || {}).on };
+  }, id);
+  await L.settle();
+
+  ok(r.on === false, 'the switch stays off', r);
+  const after = ((JSON.parse((await KV.get('auto:' + EMAIL)) || '{}')).items || []).length;
+  ok(after === before, 'and nothing was created on the server', { before, after });
 }
 
 section('And it works on a phone, which is where it will be read');

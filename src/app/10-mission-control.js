@@ -40,11 +40,13 @@ function _cwDefaultJobs(){ return [
   { id:'opportunity_radar', cat:'Work & career', icon:'\uD83C\uDFAF', title:'Opportunity radar', needs:'Email, Web research', on:false,
     desc:'Every morning AMV hunts for things you could actually get - scholarships, grants, internships, jobs, competitions, fellowships, discounts and rebates that match your profile - and emails you only the ones you qualify for, with the deadline and the direct link.',
     sample:['6 open now that you actually qualify for. 2 close inside a fortnight.','Regional innovation grant - up to 5,000, closes in 11 days, needs a one-page plan you already have most of.','Industry fellowship - paid, closes in 6 weeks, needs two references. Ask this week, not that week.','Discarded 23: wrong region, wrong stage, or already closed. No point showing you those.'],
+    asks:{ q:'What should I match against?', ph:'Your age, where you live, what you study or do, and the kinds of things you want - e.g. "17, Manchester UK, studying chemistry and maths, want scholarships and summer research"' },
     prompt:'Search the live web for opportunities matching the user profile and interests: scholarships, grants, internships, jobs, competitions, fellowships, rebates and tax credits. Only include ones open NOW with a future deadline. For each: name, what it gives, eligibility, deadline, direct application link. Exclude anything they clearly do not qualify for. If you find nothing new, say so plainly.' },
 
   { id:'change_digest', cat:'Watching the world', icon:'\uD83D\uDD14', title:'Did anything change today?', needs:'Web research', on:false,
     desc:'You tell AMV what to watch - a page, a price, a competitor, a policy, a person, a job board - and each morning it checks every one and reports only what actually changed. No change, no noise.',
     sample:['4 things on your watch list. 1 changed.','The supplier page: lead time went from 3 weeks to 6. Changed some time in the last 24 hours.','WHY IT MATTERS: your quote to the client assumed 3.','The other three are unchanged. Prices, the policy page, the job board - all identical to yesterday.'],
+    asks:{ q:'What should I watch?', ph:'One per line: a page, a price, a competitor, a policy, a job board. Paste links where you have them.' },
     prompt:'Check each item on the user watch list against its previous state. Report ONLY genuine changes: what changed, the old value, the new value, and why it might matter. If nothing changed, say "nothing changed" rather than padding the report.' },
 
   { id:'money_leaks', cat:'Money', icon:'\uD83D\uDCB8', title:'Money leak detector', needs:'Email', on:false,
@@ -70,6 +72,7 @@ function _cwDefaultJobs(){ return [
   { id:'deal_watch', cat:'Money', icon:'\uD83C\uDFF7\uFE0F', title:'Price & deal watcher', needs:'Web research', on:false,
     desc:'Watches everything on your wish list and tells you when a price is genuinely good by its own history - not just when a site claims a sale.',
     sample:['6 things on your list. 1 is genuinely cheap right now.','The headphones: 179, against a 12-month usual of 219 and a lowest-ever of 169. This is a real drop, not a sale banner.','The jacket says \'40% off\' and is 4 more than it was in October. That discount is against a price it never sold at.','Nothing else has moved enough to mention.'],
+    asks:{ q:'What is on your wish list?', ph:'One per line, with a link if you have one - e.g. "Sony WH-1000XM5 headphones"' },
     prompt:'Check the current price of each item on the user wish list. Report the current price, the usual price, and whether this is genuinely a good price by historical standards. Explicitly call out fake or marketing-only discounts. Only flag a real drop.' },
 
   { id:'travel_guardian', cat:'Home & life', icon:'\u2708\uFE0F', title:'Travel guardian', needs:'Email, Calendar, Web research', on:false,
@@ -174,6 +177,7 @@ function _cwDefaultJobs(){ return [
 
   { id:'budget_trend', cat:'Money', icon:'\uD83D\uDCCA', title:'Budget pace & spending review', needs:'Bank connection', on:false,
     desc:'Not a report after the damage - it tells you mid-month that you are trending over budget while you can still do something, and where the overspend is coming from.',
+    asks:{ q:'What is your budget?', ph:'What you expect to spend on what, and the number that matters - e.g. "about 400 a month on food, and I must not go over 1200 total"' },
     prompt:'Work out the current month\u2019s spending pace against the user budget and project the month-end total. If trending over, identify which categories are driving it and what change would bring it back. Use real transactions only.' },
 
   { id:'target_buy', cat:'Money', icon:'\uD83D\uDECD\uFE0F', title:'Buy at my target price', needs:'Web research, Web automation', on:false, spend:true,
@@ -196,10 +200,12 @@ function _cwDefaultJobs(){ return [
 
   { id:'tax_catch', cat:'Money', icon:'🧾', title:'Deductible expense catcher', needs:'Email', on:false,
     desc:'Deductions get lost because nobody tags them in January. AMV watches receipts all year, files the ones that count, and hands you an organised list instead of a shoebox in April.',
+    asks:{ q:'What is your tax situation?', ph:'Country, whether employed or self-employed, and anything relevant - e.g. "UK, self-employed, work from home two days a week"' },
     prompt:'Review receipts and invoices since the last run. Identify expenses that are plausibly deductible for the user’s stated situation: work equipment, software, professional subscriptions, mileage, home office, education, charitable giving. For each: date, merchant, amount, and which category it likely falls under. Keep a running annual total. State clearly that this is organisation, not tax advice, and never assert an expense is deductible when the rules depend on facts you do not have.' },
 
   { id:'rate_watch', every:'weekly', cat:'Money', icon:'🏦', title:'Savings rate & refinance watch', needs:'Web research', on:false,
     desc:'Your savings sit at a rate the bank quietly cut, and your mortgage or loan may now be beatable. AMV tracks both against the live market and tells you the moment moving is worth the paperwork.',
+    asks:{ q:'What rates should I track?', ph:'What you hold or are looking at - e.g. "5-year fixed mortgage, UK, and my savings account paying 3.1%"' },
     prompt:'Compare the user’s stated savings rate and loan or mortgage rate against current market rates from real providers. Report: the rate they hold, the best comparable rate available now, the annual difference in money, and whether the switching cost is worth it. Flag it only when the gap is genuinely material. Name the providers and the date the rate was checked.' },
 
   { id:'insurance_reshop', cat:'Money', icon:'🛡️', title:'Insurance re-shop before renewal', needs:'Email, Web research', on:false,
@@ -212,6 +218,7 @@ function _cwDefaultJobs(){ return [
 
   { id:'recruiter_triage', cat:'Work & career', icon:'🎯', title:'Recruiter inbound triage', needs:'Email, Web research', on:false,
     desc:'Most recruiter mail is noise and one message a year is life-changing. AMV reads every one, researches the company behind it, and surfaces only the ones actually worth a reply - with the reply written.',
+    asks:{ q:'What are you looking for?', ph:'Role, level, location, salary floor, and what you would refuse - e.g. "backend, senior, remote UK, 80k+, no on-call"' },
     prompt:'Review recruiter and hiring outreach received since the last run. For each: the company, the role, the stated or researched pay range, funding and stability signals, and how well it matches the user’s stated goals. Rank them and recommend which deserve a reply. Draft a short reply for the ones worth answering and a polite decline for the rest. Say plainly when a range is not stated rather than guessing one.' },
 
   { id:'employer_health', every:'weekly', cat:'Work & career', icon:'🩺', title:'Employer & industry health watch', needs:'Web research', on:false,
@@ -236,6 +243,7 @@ function _cwDefaultJobs(){ return [
 
   { id:'lead_triage', cat:'Growing a business', icon:'📥', title:'Inbound lead triage & first reply', needs:'Email, Web research', on:false,
     desc:'Speed of first reply decides who wins the deal. AMV qualifies every inbound enquiry, researches who is asking, and has the reply written before you have opened the message.',
+    asks:{ q:'Who is a good lead for you?', ph:'What you sell, to whom, deal size, and what disqualifies one' },
     prompt:'Review inbound enquiries since the last run. For each: who they are, the company and its size or funding where publicly known, what they are asking for, and how well it fits the user’s stated ideal customer. Rank by likely value. Draft a specific first reply for each that answers their actual question and proposes a clear next step. Do not invent details about a company you could not verify.' },
 
   { id:'rank_watch', every:'weekly', cat:'Growing a business', icon:'🔎', title:'Search ranking & visibility watch', needs:'Web research', on:false,
@@ -252,6 +260,7 @@ function _cwDefaultJobs(){ return [
 
   { id:'regulation_watch', every:'weekly', cat:'Watching the world', icon:'⚖️', title:'Rule & regulation change watch', needs:'Web research', on:false,
     desc:'A rule change in your industry, your visa category, your profession or your tax situation is expensive to learn late. AMV watches the sources that publish them and translates what it means for you.',
+    asks:{ q:'What rules affect you?', ph:'Your industry, where you operate, and which regulators or rules you care about' },
     prompt:'Monitor official and regulatory sources relevant to the user’s stated situation and industry for genuine changes: new rules, amendments, consultations, enforcement dates and guidance updates. For each: what changed, the date it takes effect, who it applies to, and the practical implication for the user. Link the official source. Distinguish clearly between a proposal and something in force, and state that this is information, not legal advice.' },
 
   { id:'breach_watch', cat:'Watching the world', icon:'🔐', title:'Breach & exposure watch', needs:'Web research', on:false,
@@ -272,6 +281,7 @@ function _cwDefaultJobs(){ return [
 
   { id:'paper_digest', every:'weekly', cat:'Learning', icon:'📚', title:'New research in my field', needs:'Web research', on:false,
     desc:'The handful of genuinely new papers, releases and findings in your field each week, explained in plain language, with why each one matters and whether it is worth your time.',
+    asks:{ q:'What field should I follow?', ph:'The subject, and any specific journals, authors or topics' },
     prompt:'Find genuinely new publications, preprints and significant releases in the user’s stated field since the last run. For each: the title, who published it, what is actually new about it in plain language, why it matters, and whether it is worth reading in full. Prioritise substance over popularity. If the week was quiet, report the two best things rather than padding the list.' },
 
   { id:'deadline_radar', cat:'Learning', icon:'📅', title:'Assignment & deadline radar', needs:'Email, Calendar', on:false,
@@ -280,6 +290,7 @@ function _cwDefaultJobs(){ return [
 
   { id:'study_drill', cat:'Learning', icon:'🧠', title:'Spaced revision on a schedule', needs:'Email', on:false,
     desc:'Sends you the right questions at the right interval on whatever you are learning, harder on the things you keep getting wrong - the method that actually makes things stick.',
+    asks:{ q:'What are you studying?', ph:'Subject, level, and the topics you keep getting wrong' },
     prompt:'Maintain a spaced repetition schedule over the user’s stated study material. Each run, produce the set of questions due now, weighted toward material they have previously answered incorrectly or not seen recently. Include the answers separately so they can self-test first. Track which items are due next and adjust the interval based on reported performance.' },
 
   { id:'reading_queue', cat:'Learning', icon:'📖', title:'Turn my saved links into a briefing', needs:'Email', on:false,
@@ -292,6 +303,7 @@ function _cwDefaultJobs(){ return [
 
   { id:'appt_prep', cat:'Health', icon:'📋', title:'Appointment prep notes', needs:'Calendar, Email', on:false,
     desc:'Walks you into an appointment with the timeline written down and the questions you meant to ask - because you always remember them in the car afterwards.',
+    asks:{ q:'What is the appointment?', ph:'What kind, when, and what you want out of it. Only what you are happy for AMV to hold.' },
     prompt:'Before an upcoming medical or professional appointment, assemble what the user has already recorded: the timeline of what they noted and when, previous correspondence, current medications or arrangements they have mentioned, and outstanding questions from last time. Produce a one page prep note and a list of questions to ask. Record only what the user has stated - never infer, diagnose, interpret results, or suggest treatment.' },
 
   { id:'habit_pulse', cat:'Health', icon:'🏃', title:'Training plan that adapts', needs:'Email', on:false,
@@ -309,15 +321,18 @@ function _cwDefaultJobs(){ return [
   { id:'flight_watch', cat:'Home & life', icon:'✈️', title:'Flight price watch for a real trip', needs:'Web research', on:false,
     desc:'Watches your actual route and dates, learns what a normal fare looks like, and tells you when a price is genuinely good - including when to rebook a refundable fare cheaper.',
     sample:['Your route, your dates. Watching for 3 weeks now.','Best right now: 214 return, direct. The usual since watching began has been 260-290.','This is the lowest it has been. Not by a little - by 46.','Flying out a day earlier saves another 31, if that works.','You already hold a refundable fare at 268. Rebooking now saves 54.'],
+    asks:{ q:'Which trip?', ph:'Route and dates - e.g. "Manchester to Lisbon, leaving 14-16 June, back 21-23 June"' },
     prompt:'Track fares for the user’s specified routes and date ranges. Report the current best fare, the airline, how it compares to what has been seen since watching began, and whether to book now or wait. Include nearby dates or airports when they are materially cheaper. If the user already holds a refundable booking and the fare has dropped, state the rebooking saving explicitly. Never present a fare you have not actually seen.' },
 
   { id:'move_watch', every:'weekly', cat:'Home & life', icon:'📍', title:'Rent, property and neighbourhood watch', needs:'Web research', on:false,
     desc:'Watches what places like yours actually rent and sell for, and what is happening where you live or want to live - so a lease renewal or an offer is a decision made with numbers.',
+    asks:{ q:'Which area and what kind of place?', ph:'e.g. "2-bed flat, Chorlton Manchester, renting"' },
     prompt:'Track the local market for the user’s stated area and property type: current asking and achieved prices or rents for comparable places, how they have moved, time on market, and relevant local developments such as transport, planning or school changes. Report what it means for a renewal, a purchase or a sale decision. Use real listings and cite the date checked.' },
 
   { id:'gift_radar', cat:'Home & life', icon:'🎁', title:'Birthdays, occasions and gift ideas', needs:'Calendar, Email, Web research', on:false,
     desc:'Warns you far enough ahead to do something good rather than something panicked, with ideas built from what that person has actually said they like, and the delivery cut-off.',
     sample:['Your sister\'s birthday is in 3 weeks. Long enough to do something good.','She mentioned twice in messages that her camera strap is falling apart.','A good replacement is 38 and ships in 4 days, so the last safe order date is the 19th.','Two other ideas grounded in things she has actually said, both under your 50.','Nothing here is invented - each one traces back to something she wrote.'],
+    asks:{ q:'Who and when?', ph:'Names, dates, roughly what you would spend, and anything they have said they like' },
     prompt:'Track upcoming birthdays, anniversaries and occasions from the calendar and correspondence. For each, warn far enough ahead to act, and suggest specific ideas grounded in things that person has actually mentioned or shown interest in, within the user’s stated budget. Include current price, where to get it, and the delivery cut-off date to arrive in time. Never invent a preference the user has no record of.' },
 
   { id:'doc_expiry', cat:'Home & life', icon:'🛂', title:'Passport, visa and travel eligibility', needs:'Email, Calendar, Web research', on:false,
@@ -344,11 +359,13 @@ function _cwDefaultJobs(){ return [
   { id:'school_week', every:'weekly', cat:'Learning', icon:'📅', title:'Plan my whole school week', needs:'Web research', on:false,
     desc:'Every Sunday, turns everything due into an actual plan: what to do on which day, how long each piece really takes, and what to start early so nothing lands on top of everything else.',
     sample:['MON - Bio lab writeup (~50 min). Start now, it is the only thing due Wed.','TUE - History essay: outline + find 3 sources (~40 min). Do NOT start writing yet.','WED - History essay draft (~90 min). This is the big one this week.','THU - Light day. Catch up if Wednesday slipped.','Heads up: your history essay and chemistry test are both Friday. Move the essay draft to Wednesday or you will be doing both on Thursday night.'],
+    asks:{ q:'What is due, and when?', ph:'One per line: what it is, which subject, when it is due - e.g. "History essay, Friday 14th". Include anything else that eats your week.' },
     prompt:'Build the user a plan for the coming week from the assignments, tests and commitments they have listed. For each piece of work: which day to do it, roughly how long it takes, and what has to happen first. Put heavier work earlier than its deadline and say why. Explicitly flag any day where two significant things collide, and propose the specific move that fixes it. Be realistic about time - a plan they cannot follow is worse than none. Never invent a deadline they have not given you.' },
 
   { id:'deadline_rescue', cat:'Learning', icon:'🚨', title:'Catch a deadline before it catches me', needs:'Web research', on:false,
     desc:'Checks every day for work that is due soon and has not been started, and tells you the last realistic moment to begin it - while there is still time to do it properly.',
     sample:['DUE IN 2 DAYS - English essay, not started. Start tonight: this one needs about 3 hours and you have 2 evenings.','DUE IN 5 DAYS - Physics problem set. Fine to leave until Wednesday.','You have nothing due tomorrow. This is the best night this week to get ahead on the essay.'],
+    asks:{ q:'What is due, and what have you started?', ph:'One per line: what it is, when it is due, and whether you have started it' },
     prompt:'Review the user’s upcoming deadlines against what they have said is done. For anything not started, work out the last realistic day to begin it given how long that kind of work takes them, and say so plainly. Rank by urgency, not by due date - a big piece due in a week can be more urgent than a small one due tomorrow. Say clearly when there is nothing urgent, rather than manufacturing pressure. Never guess at a deadline you were not told about.' },
 
   { id:'work_check', cat:'Learning', icon:'🔎', title:'Check my work before I hand it in', needs:'Web research', on:false,
@@ -364,6 +381,7 @@ function _cwDefaultJobs(){ return [
   { id:'exam_prep', cat:'Learning', icon:'📚', title:'Get me ready for this specific test', needs:'Web research', on:false,
     desc:'Works backwards from the test date: what to revise on which day, what is most likely to come up, and a practice set each session that gets harder as the date gets closer.',
     sample:['9 days until the test. Working backwards:','DAYS 9-7: the three topics you are weakest on. Learning, not revising.','DAYS 6-3: full practice questions under time. This is where marks are actually won.','DAYS 2-1: only what you got wrong in practice. No new material.','Most likely to appear, based on the syllabus weighting you gave me: titration calculations and reaction rates.'],
+    asks:{ q:'Which test, and when?', ph:'Subject, date, what is on it, and which topics you are weakest on' },
     prompt:'Build a revision plan working backwards from the user’s test date. Front-load the topics they are weakest on and leave the last days for practice and correction only, never new material. Say which topics are most likely to be assessed and on what basis - syllabus weighting or past papers they have given you - and be explicit that it is a judgement, not a prediction. Include a practice set for each session, increasing in difficulty as the date approaches. Never claim to know what is on a specific test.' },
 
   { id:'morning_brief_student', every:'daily', cat:'Learning', icon:'☀️', title:'Morning briefing before school', needs:'Web research', on:false,
@@ -384,6 +402,7 @@ function _cwDefaultJobs(){ return [
   { id:'group_project', cat:'Learning', icon:'👥', title:'Keep a group project from falling apart', needs:'Web research', on:false,
     desc:'Tracks who agreed to do what and by when, notices what has gone quiet, and drafts the message that chases it without starting an argument.',
     sample:['4 parts, 3 people. Due in 6 days.','ON TRACK: your section, Maya’s research.','GONE QUIET: Sam’s slides - agreed 5 days ago, nothing since, and the presentation cannot be assembled without them.','DRAFT MESSAGE TO SAM: short, no blame, asks for a yes/no on Thursday so there is still time to cover it.','If Sam cannot, the fastest fix is Maya takes 2 slides and you take 1.'],
+    asks:{ q:'Who is doing what, by when?', ph:'One per line: person, their part, the date they agreed - and when the whole thing is due' },
     prompt:'Track a group project: who agreed to what, by when, and what has actually been delivered. Identify what has gone quiet and what it blocks. Draft a short, friendly chase message for anything overdue - no blame, and asking for a clear yes or no by a specific day so there is time to react. Where something looks likely to fail, propose the concrete redistribution that saves the deadline. Never accuse anyone of anything you cannot evidence from what the user has told you.' },
 
   { id:'reading_digest', cat:'Learning', icon:'📖', title:'Make sense of a long reading', needs:'Web research', on:false,
@@ -394,16 +413,19 @@ function _cwDefaultJobs(){ return [
   { id:'life_admin_student', every:'weekly', cat:'Home & life', icon:'📎', title:'The boring admin nobody reminds you about', needs:'Web research', on:false,
     desc:'The forms, renewals, sign-ups and appointments that have no deadline until suddenly they do - tracked, with the one that matters this week at the top.',
     sample:['THIS WEEK: driving theory test slots for your area open Thursday and go within a day.','SOON: student finance opens in 3 weeks. It takes about an hour and needs your parents’ income details - ask now, not then.','NOT URGENT: passport has 14 months left. Renew before the 9-month mark for the trip you mentioned.'],
+    asks:{ q:'What do you need to keep on top of?', ph:'Renewals, forms, applications, appointments - with dates where you know them' },
     prompt:'Track the administrative tasks the user has told you about: renewals, applications, registrations, appointments and forms. Surface the one or two that genuinely need action this week and say exactly what to do. For anything requiring other people or documents, warn early enough that gathering them is possible. Be explicit about what is NOT urgent, so the list stays trustworthy. Never invent a deadline - if you are unsure of a date, say you are unsure and how to check.' },
 
   { id:'wellbeing_check', every:'weekly', cat:'Health', icon:'🌱', title:'Notice when the week is too much', needs:'Web research', on:false,
     desc:'Looks at the shape of your week - deadlines, commitments, sleep you said you got - and says plainly when it is too much, and which single thing to move.',
     sample:['This week has 3 deadlines, 2 evening commitments and you have said you are getting under 6 hours.','That is not a sustainable week, and Thursday is the day it breaks.','THE ONE THING TO MOVE: the history reading. It is due Friday but nothing depends on it - do it Saturday.','Nothing else here is optional, so moving one thing is the whole fix.','This is an observation about your schedule, not health advice - if you are struggling, talk to someone you trust.'],
+    asks:{ q:'What does a normal week look like?', ph:'Your commitments, roughly what sleep you get, and anything that is currently too much' },
     prompt:'Look at the shape of the user’s week - deadlines, commitments, and anything they have told you about sleep or energy - and say plainly whether it is realistic. Name the specific day it becomes too much and why. Recommend moving exactly ONE thing, chosen because nothing else depends on it, rather than producing a list of lifestyle suggestions. Be direct and kind. You are commenting on a schedule, not giving medical or mental health advice: never diagnose, never suggest treatment, and always close by pointing to a real person if they say they are struggling.' },
 
   { id:'money_student', every:'weekly', cat:'Money', icon:'💰', title:'Where my money actually went', needs:'Web research', on:false,
     desc:'The honest weekly number: what you spent, what it was mostly on, what is coming out next week, and whether that leaves enough.',
     sample:['SPENT THIS WEEK: 47. Most of it - 31 - was food out across 6 days.','COMING OUT NEXT WEEK: phone (12) and the gym (20).','That leaves you short for the concert ticket on the 14th unless something changes.','The 6 days of food out is the whole gap. That is the number, not a judgement.'],
+    asks:{ q:'What comes in and what goes out?', ph:'Regular income, regular payments, and what you are saving for' },
     prompt:'Report what the user spent over the period from what they have recorded: the total, the largest category with the actual number, and what regular payments are due next. State plainly whether what remains covers what is coming. Give the numbers and the arithmetic without moralising about the spending. Never estimate a figure you have not been given - say what is missing instead.' },
 
   { id:'opportunity_student', every:'weekly', cat:'Learning', icon:'🎯', title:'Things I could actually get', needs:'Web research', on:false,
@@ -1098,6 +1120,12 @@ function cwPeek(id){
       <div class="cwp-note">This is the real instruction, not a summary of it. You can change it after you turn the job on.</div>
     </div>`:''}
 
+    ${j.asks&&j.asks.q?`<div class="cwp-sec">
+      <div class="cwp-sec-h">It will ask you for</div>
+      <div class="cwp-asks"><b>${escH(j.asks.q)}</b><span>${escH(j.asks.ph||'')}</span></div>
+      <div class="cwp-note">This job works from what you tell it. Without it there is nothing for it to look at, so AMV asks once when you switch it on rather than running on nothing.</div>
+    </div>`:''}
+
     ${miss.length?`<div class="cwp-warn"><b>Not ready yet.</b> This one needs ${escH(miss.join(', '))}, which ${miss.length>1?'are':'is'} not connected. It will not run until ${miss.length>1?'they are':'it is'} - AMV will not pretend otherwise.</div>`:''}
     ${!bg?`<div class="cwp-warn quiet">This job needs things that live in this browser, so it runs while AMV is open rather than on AMV's servers.</div>`:''}
 
@@ -1776,11 +1804,42 @@ async function _cwToggleReal(jobs, j){
   if(turningOn){
     if(typeof _scheduleTask!=='function'){ toast('Connect the AMV engine in Settings so jobs can run in the background.','error',6000); return; }
     if(_cwPending.has(j.id)) return;         // already being set up
+
+    /* ASK FOR WHAT THE JOB ACTUALLY NEEDS, BEFORE IT RUNS ON NOTHING.
+
+       A quarter of the catalogue tells the runner to work from something the
+       person supposedly said - their watch list, their deadlines, their route
+       and dates. The unattended runner receives exactly two things: the rules,
+       and this job's own text. It has never had access to a list, a profile or
+       a memory. So those jobs ran every morning against nothing and could only
+       apologise or invent, and inventing is worse.
+
+       That is the same failure this whole session has been about: a feature
+       that is fully working from every angle except the one that matters. The
+       answer goes into the job's detail, which IS what the runner is given, so
+       what the person types is what the model reads.
+
+       Cancelling means no job. A job created with the question skipped is
+       precisely the broken one. */
+    let extra = '';
+    if(j.asks && j.asks.q){
+      const said = await showTextPromptAsync(j.asks.q + '\n\n' + (j.asks.ph||''), j.answer || '');
+      if(said === null) return;                 // they backed out; nothing is created
+      extra = String(said||'').trim();
+      if(!extra){
+        toast('"'+j.title+'" needs that to work - without it, it would run every day on nothing. Nothing was set up.','info',7000);
+        return;
+      }
+      j.answer = extra.slice(0, 1500);
+    }
+
     toast('Setting up "'+j.title+'"…','info',2500);
     let item=null;
     _cwPending.add(j.id);
     try{
-      item=await _scheduleTask({ detail:(j.prompt||j.desc||j.title), repeat:(j.every||'daily'),
+      const detail = (j.prompt||j.desc||j.title)
+        + (extra ? '\n\nWhat the user has told you, which is the only information you have about them - use it and do not invent anything beyond it:\n' + j.answer : '');
+      item=await _scheduleTask({ detail, repeat:(j.every||'daily'),
                                  kind:'research', notify:'app', approval:'auto' });
     }catch(e){ item=null; }
     finally{ _cwPending.delete(j.id); }
