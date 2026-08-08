@@ -597,6 +597,86 @@ function _mcUseCrew(id){
   else { setTab('chat'); setTimeout(()=>{ const ta=$('mta'); if(ta){ ta.value=goal; ta.dispatchEvent(new Event('input')); ta.focus(); } },200); }
 }
 window._mcUseCrew=_mcUseCrew;
+
+/* HOW the crew works, as opposed to WHAT it works on.
+
+   Every job on this screen says what to do. None of them says how much care to
+   take, what to prefer, or what to leave out - and those are account-wide
+   preferences, not per-job ones. Somebody who wants "always check two sources"
+   should say it once and have it hold for the job they set up next month.
+
+   The server appends this to the system prompt of every unattended run, so
+   editing it here genuinely changes the next result. It is not a note kept for
+   the user's own reference, and the screen must not imply that it is.
+
+   Two things it deliberately is not. It is not permission: the limits an
+   unattended run operates under sit above this text on the server and cannot be
+   edited from a textarea. And it is not unbounded - it rides along on every
+   single run, so it is capped, and the box says so rather than truncating in
+   silence. */
+const MC_STANDING_MAX = 1200;
+function _mcStandingHTML(){
+  const cur = (typeof window._autoStandingText==='function' ? window._autoStandingText() : '') || '';
+  return `<section id="mc-standing" class="mc-sec mc-standing">
+    <div class="sec-head">
+      <h3>How the crew should work</h3>
+      <span class="sec-sub">Applies to every background job you have now and every one you add later. AMV reads this before each run.</span>
+    </div>
+    <textarea id="mc-standing-box" class="mc-standing-box" rows="3" maxlength="${MC_STANDING_MAX}"
+      placeholder="e.g. Think carefully before answering, check at least two sources, and keep it under five bullets. Skip anything I have already seen this week."
+      aria-describedby="mc-standing-note">${escH(cur)}</textarea>
+    <div class="mc-standing-foot">
+      <span id="mc-standing-note" class="mc-standing-note">This changes how the work is done, not what AMV is allowed to do. Background runs still never send, buy, or post anything without your approval.</span>
+      <span class="mc-standing-right">
+        <span id="mc-standing-count" class="mc-standing-count">${cur.length}/${MC_STANDING_MAX}</span>
+        <button class="btn mc-mini" id="mc-standing-save" data-dact="mcSaveStanding">Save</button>
+      </span>
+    </div>
+  </section>`;
+}
+async function mcSaveStanding(){
+  const box = $('mc-standing-box'), btn = $('mc-standing-save');
+  if(!box) return;
+  const text = box.value.trim();
+  if(btn){ btn.disabled = true; btn.textContent = 'Saving...'; }
+  try{
+    if(typeof window._autoStanding !== 'function') throw new Error('not-connected');
+    const d = await window._autoStanding(text);
+    /* Say how far it reaches, because "saved" alone leaves them wondering
+       whether the jobs already running picked it up. They did. */
+    const n = typeof d.appliesTo === 'number' ? d.appliesTo : 0;
+    if(typeof toast==='function'){
+      toast(!text
+        ? 'Cleared. Background jobs go back to running the standard way.'
+        : (n ? 'Saved. Your next run of all ' + n + ' background job' + (n>1?'s':'') + ' follows this.'
+             : 'Saved. Every background job you add will follow this.'),
+        'success', 5000);
+    }
+    if(btn){ btn.textContent = 'Saved'; setTimeout(()=>{ if(btn) btn.textContent='Save'; }, 1800); }
+  }catch(e){
+    /* Never leave the box looking saved when it is not - this is the one
+       failure that silently makes the whole feature a lie. */
+    if(typeof toast==='function'){
+      toast(e && e.message === 'not-connected'
+        ? 'Connect the AMV engine in Settings before setting standing instructions.'
+        : 'Could not save that: ' + ((e && e.message) || 'the server did not accept it'),
+        'error', 6000);
+    }
+    if(btn) btn.textContent = 'Save';
+  }finally{ if(btn) btn.disabled = false; }
+}
+try{ window.mcSaveStanding = mcSaveStanding; }catch(e){}
+/* Delegated, so it survives every re-render of the Crew screen rather than
+   being re-bound (or forgotten) each time the section is rebuilt. */
+try{
+  document.addEventListener('input', (e)=>{
+    const t = e.target;
+    if(!t || t.id !== 'mc-standing-box') return;
+    const c = document.getElementById('mc-standing-count');
+    if(c) c.textContent = t.value.length + '/' + MC_STANDING_MAX;
+  });
+}catch(e){}
+
 /* A standing job shown as a row in the unified Scheduled section. */
 function _mcAutonSchedRow(j){
   return `<div class="mc-sched-row">
@@ -936,6 +1016,8 @@ function renderCrewView(){
     </div>
     ${paused?`<div class="mc-paused-banner"><b>Autonomous work is paused.</b> Scheduled and standing jobs won’t run until you resume. Anything already waiting still needs your approval.</div>`:''}
     <div class="mc-tiles">${tiles.map(t=>`<button class="mc-tile mc-${t[3]}${t[2]?'':' zero'}" data-mcjump="mc-${t[0]}"><span class="mc-tile-n">${t[2]}</span><span class="mc-tile-l">${t[1]}</span></button>`).join('')}</div>
+
+    ${_mcStandingHTML()}
 
     <section id="mc-appr" class="mc-sec">
       <div class="sec-head"><h3>Needs your approval ${appr.length?`<span class="cw-badge">${appr.length}</span>`:''}</h3><span class="sec-sub">One-off drafts waiting for you. Nothing here sends until you approve it. A running job that is set to "ask first" also drops a fresh draft here each time it runs.</span></div>

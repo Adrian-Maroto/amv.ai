@@ -876,6 +876,10 @@ async function autoList(request, env){
      plan can run background work at all. */
   const budget = await _budgetFor(env, user);
   return json({ ok:true, items: rec.items||[], results: (rec.results||[]).slice(-AUTO_MAX_RESULTS),
+                /* Read back what the account has told its background work to do,
+                   so the screen and the chat show the same standing instruction
+                   rather than each remembering its own. */
+                standing: rec.standing || '',
                 emailReady: !!env.EMAIL_API_KEY, canSchedule: budget.ceiling > 0, plan: budget.plan,
                 // What this account may have, so the app offers exactly that.
                 free: budget.free, maxAutomations: budget.max,
@@ -1021,6 +1025,10 @@ async function autoCreate(request, env){
 }
 
 /* ---- delete / pause an automation ---- */
+/* Long enough for a real standing instruction, short enough that it cannot
+   become a second prompt smuggled into every unattended run. */
+const AUTO_STANDING_MAX = 1200;
+
 async function autoUpdate(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
@@ -1029,6 +1037,29 @@ async function autoUpdate(request, env){
   const key = _autoKey(user.email);
   const rec = (await DB.get(env, 'auto', key)) || { items:[], results:[] };
   const items = rec.items||[];
+
+  /* STANDING INSTRUCTIONS - how this person wants ALL their background work
+     done, as opposed to what any one job is.
+
+     "Make my crew think harder and research more before answering" is a
+     sentence about every job, present and future, and there was nowhere to put
+     it. Storing it per job would mean editing each one and would not reach the
+     next one they create.
+
+     Handled before the id lookup because it belongs to the person, not to an
+     item - and it is only worth anything because runDueAutomations reads it
+     into the system prompt. Without that it is a string in a database that
+     changes nothing, which is exactly the shape of a feature that looks like
+     it works. */
+  if(body.action === 'standing'){
+    const text = String(body.standing == null ? '' : body.standing).trim().slice(0, AUTO_STANDING_MAX);
+    rec.standing = text;
+    rec.standingAt = Date.now();
+    await DB.put(env, 'auto', key, rec);
+    audit(env, 'auto_standing_set', { by: user.email, len: text.length });
+    return json({ ok:true, standing: text, appliesTo: items.length });
+  }
+
   const i = items.findIndex(x=>x.id===id);
   if(i < 0) return json({ error:'not found' }, 404);
 
@@ -1164,7 +1195,7 @@ function _investText(r){
              + 'AMV can only read these accounts; it cannot buy, sell, or move anything.';
 }
 
-async function _autoExecute(env, item, budget, email){
+async function _autoExecute(env, item, budget, email, standing){
   /* An investing check-in does not go to a model at all - it reads the accounts
      and states the arithmetic. So it costs nothing, cannot drift, and cannot
      invent a balance. */
@@ -1205,10 +1236,27 @@ async function _autoExecute(env, item, budget, email){
       + 'Never state or imply that you have taken an action you cannot take, and never invent a result, a number, or a confirmation. '
       + 'Never use em or en dashes; use a plain hyphen (-) instead.';
 
+  /* HOW THIS PERSON WANTS THEIR BACKGROUND WORK DONE.
+
+     Set from chat ("think harder before answering", "always check two sources",
+     "keep it to five bullets") and stored once for the account, so it reaches
+     every job including the ones they have not created yet.
+
+     Appended AFTER the rules above, never before, so it can shape the work and
+     cannot argue with the parts that matter: an unattended run still may not
+     claim an action it cannot take, and still may not invent a result. A
+     standing instruction is about effort and style, not about permission. */
+  const standingText = String(standing || '').trim().slice(0, AUTO_STANDING_MAX);
+  const systemFull = standingText
+    ? system + '\n\nStanding instructions from the user, which apply to all of their background work: '
+             + standingText
+             + '\nFollow them wherever they do not conflict with the rules above. They never widen what you are allowed to do.'
+    : system;
+
   const body = {
     model: free ? ENGINES['amv-pulse'].model : ENGINES['amv-core'].model,
     max_tokens: free ? FREE_AUTO_MAX_TOKENS : (isResearch ? 2500 : 3000),
-    system,
+    system: systemFull,
     messages: [{ role:'user', content: item.detail }]
   };
   // Research jobs get the web_search tool so they actually pull live information.
@@ -1353,7 +1401,7 @@ async function runDueAutomations(env){
       // email). The key is unique to this item's scheduled time; atomic on D1.
       if(!(await _claimOnce(env, 'autorun', `${email}:${item.id}:${item.next}`, 3*86400))) continue;
       try{
-        const exec = await _autoExecute(env, item, budget, email);
+        const exec = await _autoExecute(env, item, budget, email, rec.standing || '');
         const out = (exec && exec.text) || '';
         // record the real cost of this run against the monthly cap
         try{ const c = _autoCostUSD(exec && exec.usage || {});

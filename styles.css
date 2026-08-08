@@ -7905,3 +7905,80 @@ html,body{height:100%;height:100dvh}
   outline-offset:2px;
   opacity:.85;
 }
+
+/* ============================================================
+   LAYER A67 - the box that changes how every background job runs
+
+   It sits high on the Crew screen because it governs everything below it, but
+   it is a preference rather than an action, so it must not compete with the
+   command bar for attention. Quieter surface, no accent fill, and the sentence
+   about what it does NOT change is given the same weight as the control - that
+   line is the difference between a person writing a style note and a person
+   writing a permission they will not get.
+   ============================================================ */
+.mc-standing{
+  background:var(--s1);
+  border:1px solid var(--bd);
+  border-radius:var(--r-lg);
+  padding:var(--sp-4);
+}
+.mc-standing .sec-head{ margin-bottom:var(--sp-3); }
+.mc-standing-box{
+  width:100%;
+  box-sizing:border-box;
+  min-height:76px;
+  resize:vertical;
+  padding:var(--sp-3);
+  font:inherit;
+  font-size:var(--t-base);
+  line-height:1.5;
+  color:var(--tx);
+  background:var(--bg);
+  border:1px solid var(--bd);
+  border-radius:var(--r-md);
+  transition:border-color .16s var(--ease);
+}
+.mc-standing-box::placeholder{ color:var(--dim); }
+.mc-standing-box:focus{
+  outline:none;
+  border-color:var(--accent);
+  box-shadow:0 0 0 3px var(--accent-soft);
+}
+.mc-standing-box:focus-visible{ outline:2px solid transparent; }
+.mc-standing-foot{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:var(--sp-3);
+  margin-top:var(--sp-2);
+  flex-wrap:wrap;
+}
+.mc-standing-note{
+  flex:1 1 260px;
+  min-width:0;
+  font-size:var(--t-sm);
+  line-height:1.45;
+  color:var(--mu);
+}
+.mc-standing-right{
+  display:flex;
+  align-items:center;
+  gap:var(--sp-2);
+  flex:0 0 auto;
+}
+.mc-standing-count{
+  font-family:var(--mn);
+  font-size:var(--t-xs);
+  color:var(--dim);
+  font-variant-numeric:tabular-nums;
+}
+/* On a phone the note and the button stack, and the button goes full width so
+   it is reachable with a thumb rather than pinned to a corner. */
+@media (max-width:560px){
+  .mc-standing-foot{ flex-direction:column; align-items:stretch; }
+  .mc-standing-right{ justify-content:space-between; }
+  .mc-standing-right .btn{ flex:1 1 auto; margin-left:var(--sp-3); }
+}
+@media (prefers-reduced-motion:reduce){
+  .mc-standing-box{ transition:none; }
+}

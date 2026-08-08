@@ -1311,6 +1311,7 @@ async function _autoRefresh(){
     const d = await _autoApi('/auto/list', {});
     _AUTOS = d.items || [];
     _AUTO_RESULTS = d.results || [];
+    if(typeof d.standing === 'string') _AUTO_STANDING = d.standing;
     _AUTO_LOADED = true; _AUTO_LOAD_ERR = '';
     if(typeof d.emailReady === 'boolean') _AUTO_EMAIL_READY = d.emailReady;
     if(typeof d.canSchedule === 'boolean') _AUTO_CAN_SCHEDULE = d.canSchedule;
@@ -1357,7 +1358,27 @@ async function _autoAction(id, action){
 async function _autoMarkRead(){
   try{ await _autoApi('/auto/read',{}); _AUTO_RESULTS.forEach(r=>r.read=true); _autoBadge(0); }catch(e){}
 }
-try{ window._autoRefresh=_autoRefresh; window._autoAction=_autoAction; window._autoMarkRead=_autoMarkRead; }catch(e){}
+
+/* HOW the background work should be done, as opposed to WHAT it should do.
+
+   "Think harder and check two sources" is a sentence about every job, present
+   and future, so it belongs to the account rather than to any one of them. The
+   server appends it to the system prompt of every unattended run - which is the
+   only reason saying it changes anything. It is deliberately a plain string
+   with no parsing: the model reads it, the same way the person wrote it.
+
+   It is never permission. The rules an unattended runner operates under sit
+   ABOVE this text and are not editable from here. */
+let _AUTO_STANDING = '';
+async function _autoStanding(text){
+  const d = await _autoApi('/auto/update', { action:'standing', standing: String(text==null?'':text) });
+  _AUTO_STANDING = typeof d.standing === 'string' ? d.standing : String(text||'');
+  return d;
+}
+try{
+  window._autoRefresh=_autoRefresh; window._autoAction=_autoAction; window._autoMarkRead=_autoMarkRead;
+  window._autoStanding=_autoStanding; window._autoStandingText=()=>_AUTO_STANDING;
+}catch(e){}
 window.openTaskPanel=openTaskPanel; window.amvOpenFile=amvOpenFile;
 // On open: pull anything that ran in the background while you were away.
 setTimeout(function(){ try{ if(S.user && S.user.email) _autoRefresh(); }catch(e){} }, 2000);
