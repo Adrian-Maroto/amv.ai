@@ -748,7 +748,61 @@ function toastAction(msg, actionLabel, fn, dur=6000){
 }
 window.toastAction=toastAction;
 
-function closeOvr() { try{ if(typeof _AUTO!=='undefined' && _AUTO.running && typeof stopAutonomous==='function') stopAutonomous(); }catch(e){} const r=$('ovr'); if(r){ r.classList.remove('on'); r.innerHTML=''; } }
+/* Everything in an overlay that a keyboard can actually land on.
+
+   Not just "focusable": the sign-up sheet carries a honeypot input that is
+   aria-hidden and tabindex="-1" precisely so no human ever reaches it, and
+   handing focus to it would put a keyboard user in an invisible field with no
+   way to know why. Anything hidden from assistive technology is hidden from
+   this list too. */
+function _ovrFocusables(root){
+  if(!root) return [];
+  const sel = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]';
+  return [...root.querySelectorAll(sel)].filter(el=>{
+    if(el.getAttribute('tabindex')==='-1') return false;
+    if(el.closest('[aria-hidden="true"]')) return false;
+    if(el.hidden) return false;
+    const r = el.getBoundingClientRect();
+    return r.width > 0 || r.height > 0;
+  });
+}
+
+/* WHERE A KEYBOARD USER WAS BEFORE THE MODAL OPENED.
+
+   Nothing moved focus into an overlay when it opened, and nothing put it back
+   when it closed. There is a Tab trap, but a trap only helps once focus is
+   ALREADY inside - before that a keyboard user tabs through the page behind
+   the modal, filling in a form they cannot see. And closing dropped them
+   wherever the app happened to focus next, which measured as the chat box: not
+   an error, just no way back to what they were doing.
+
+   Handled centrally rather than in each of the dozens of functions that write
+   into #ovr, because the one that gets forgotten is the one that matters. */
+let _ovrReturnFocus = null;
+function _initOverlayFocus(){
+  try{
+    const ovr=$('ovr'); if(!ovr || typeof MutationObserver==='undefined') return;
+    new MutationObserver(()=>{
+      if(!ovr.children.length) return;
+      if(ovr.contains(document.activeElement)) return;   // it already has focus
+      const cur=document.activeElement;
+      if(!_ovrReturnFocus && cur && cur!==document.body) _ovrReturnFocus=cur;
+      const f=_ovrFocusables(ovr)[0];
+      if(f){ try{ f.focus(); }catch(e){} }
+    }).observe(ovr,{childList:true,subtree:true});
+  }catch(e){}
+}
+
+function closeOvr() {
+  try{ if(typeof _AUTO!=='undefined' && _AUTO.running && typeof stopAutonomous==='function') stopAutonomous(); }catch(e){}
+  const r=$('ovr'); if(r){ r.classList.remove('on'); r.innerHTML=''; }
+  /* Put them back. Deferred by a tick because closing often triggers a render
+     that focuses something of its own, and the last write wins. */
+  const back=_ovrReturnFocus; _ovrReturnFocus=null;
+  if(back && back.isConnected){
+    setTimeout(()=>{ try{ back.focus(); }catch(e){} },0);
+  }
+}
 
 /* Reusable polished empty state: icon + title + subtitle + optional action.
    emptyState({icon,title,sub,btn:{label,act,arg}}) -> HTML string */
@@ -836,7 +890,10 @@ function _initKeyboardNav(){
     document.addEventListener('keydown',(e)=>{
       if(e.key!=='Tab') return;
       const ovr=$('ovr'); if(!ovr||!ovr.children.length) return;
-      const f=ovr.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select,textarea,[tabindex]:not([tabindex="-1"])');
+      /* The same list the opener uses, so the trap and the entry point cannot
+         disagree about what is reachable - and neither can land on a honeypot
+         that exists to be invisible. */
+      const f=_ovrFocusables(ovr);
       if(!f.length) return;
       const first=f[0], last=f[f.length-1];
       if(e.shiftKey && document.activeElement===first){ e.preventDefault(); last.focus(); }
@@ -2931,7 +2988,7 @@ function _wireHdrAuth(){
   if(su && !su._wired){ su._wired=1; su.addEventListener('click',()=>{ try{ openAuth('signup'); }catch(e){} }); }
   if(li && !li._wired){ li._wired=1; li.addEventListener('click',()=>{ try{ openAuth('login'); }catch(e){} }); }
 }
-function goApp(){ try{ _wireHdrAuth(); }catch(e){} try{ const cy=document.getElementById('copy-year'); if(cy) cy.textContent=String(new Date().getFullYear()); }catch(e){} document.getElementById('land').classList.add('hidden'); document.getElementById('app').classList.add('on'); updateSbUser(); _initMobileSidebar(); _restoreSidebarState(); try{ _applyReduceMotion(); }catch(e){} setTab(S.tab); _ensureBackendSession(); try{ _applyFontSize(); }catch(e){} try{ _initOfflineWatch(); }catch(e){} try{ _initErrorBoundary(); }catch(e){} try{ syncEntitlement(); _checkUpgradeReturn(); }catch(e){} /* Whether a bank account is linked is the server's answer, and three different screens read it. Refreshed once on start so Crew and the chat tool are not left showing 'not connected' on a device that simply has an empty cache. */ try{ if(typeof AMVFinance!=='undefined') AMVFinance.refresh(); }catch(e){} try{ _checkTeamInvite(); }catch(e){} try{ _initKeyboardNav(); _initA11y(); }catch(e){} try{ _revealAdminNav(); }catch(e){} try{ _revealTeamNav(); }catch(e){} try{ _initBuildGroup(); }catch(e){} try{ _localizePrices(document); }catch(e){} try{ const sbtn=$('sb-status'); if(sbtn) sbtn.addEventListener('click',openStatusPanel); _checkStatus(); }catch(e){} try{ _initI18nObserver(); }catch(e){} try{ _translateUI(); setTimeout(_translateUI,120); }catch(e){ console.error('Translate UI error in goApp', e); } }
+function goApp(){ try{ _wireHdrAuth(); }catch(e){} try{ const cy=document.getElementById('copy-year'); if(cy) cy.textContent=String(new Date().getFullYear()); }catch(e){} document.getElementById('land').classList.add('hidden'); document.getElementById('app').classList.add('on'); updateSbUser(); _initMobileSidebar(); _restoreSidebarState(); try{ _applyReduceMotion(); }catch(e){} setTab(S.tab); _ensureBackendSession(); try{ _applyFontSize(); }catch(e){} try{ _initOfflineWatch(); }catch(e){} try{ _initErrorBoundary(); }catch(e){} try{ syncEntitlement(); _checkUpgradeReturn(); }catch(e){} /* Whether a bank account is linked is the server's answer, and three different screens read it. Refreshed once on start so Crew and the chat tool are not left showing 'not connected' on a device that simply has an empty cache. */ try{ if(typeof AMVFinance!=='undefined') AMVFinance.refresh(); }catch(e){} try{ _checkTeamInvite(); }catch(e){} try{ _initKeyboardNav(); _initOverlayFocus(); _initA11y(); }catch(e){} try{ _revealAdminNav(); }catch(e){} try{ _revealTeamNav(); }catch(e){} try{ _initBuildGroup(); }catch(e){} try{ _localizePrices(document); }catch(e){} try{ const sbtn=$('sb-status'); if(sbtn) sbtn.addEventListener('click',openStatusPanel); _checkStatus(); }catch(e){} try{ _initI18nObserver(); }catch(e){} try{ _translateUI(); setTimeout(_translateUI,120); }catch(e){ console.error('Translate UI error in goApp', e); } }
 
 /* The sidebar's "More" group was replaced by the tool rail in #sb-tools, so
    the collapsible it managed no longer exists. The function stayed behind,

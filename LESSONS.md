@@ -2231,3 +2231,31 @@ stranger on somebody else's website is not owed any of it.
 **Rule:** for any allowlist, write the too-strict case and the too-loose case
 together. And on an unauthenticated endpoint, treat the error text as an output
 channel an attacker gets for free.
+
+## 151. A focus trap without an entry point traps nobody
+
+There was real keyboard machinery here: Escape closes an overlay, Tab cycles
+inside one. Both correct. And the money path was still unusable without a
+mouse, because nothing moved focus INTO a modal when it opened.
+
+A trap only helps once focus is already inside. Before that, opening the
+sign-up sheet left `document.activeElement` on `BODY`, so a keyboard user
+tabbed through the page behind the modal - filling in a form they could not
+see, on a screen dimmed by a backdrop.
+
+Closing had the mirror problem. Focus was not restored, so it landed wherever
+the app happened to focus next, which measured as the chat box: not an error,
+just no way back to whatever they had been doing.
+
+Both are fixed centrally - a MutationObserver on the overlay root, not an edit
+to each of the dozens of functions that write into it, because the one that
+gets forgotten is the one that matters.
+
+The check I wrote for accessible names also flagged the sign-up honeypot, which
+is `aria-hidden` and `tabindex="-1"` precisely so no human reaches it. That was
+the check being wrong, and it pointed at a real thing: the existing Tab trap
+did NOT exclude it, so a keyboard user could have been dropped into an
+invisible field. Both now use one list of what is genuinely reachable.
+
+**Rule:** for a dialog, the three things are entry, containment and return.
+Containment is the one everybody implements and the least useful on its own.
