@@ -11007,6 +11007,31 @@ async function authReset(request, env) {
   const body = await request.json().catch(() => ({}));
   const email = String(body.email || '').toLowerCase().trim();
   if (!email || !email.includes('@')) return json({ error: 'invalid email' }, 400);
+
+  /* Bounded, and it was not. This route needs no credential of any kind and it
+     causes an email to whatever address is typed into it - which is a mail
+     bomber with AMV's return address on it, aimed at somebody who never signed
+     up here, spending AMV's sending reputation and per-message cost on every
+     shot. It also mints a KV record per call.
+
+     Two limits, because they stop different things. Per ADDRESS stops one
+     person being buried; per IP stops one caller working through a list. The
+     per-address one is deliberately the tighter of the two: a real human who
+     has lost their password asks once, maybe twice, and the second request is
+     usually because the first email was slow.
+
+     Both are counted BEFORE the token is minted and before anything is sent,
+     and a refusal is the same shape as everywhere else - which also means it
+     cannot be used to tell a real address from an unknown one, since the limit
+     applies either way. */
+  const perAddress = await guardAction(env, `reset:${email}`, 2, 6, 'password reset emails');
+  if (perAddress) return perAddress;
+  const ip = request.headers.get('CF-Connecting-IP') || '';
+  if (ip) {
+    const perIp = await guardAction(env, `resetip:${ip}`, 5, 30, 'password reset requests');
+    if (perIp) return perIp;
+  }
+
   // generate a one-time, 1-hour token
   const token = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '');
   await env.AMV_KV.put(`reset:${token}`, JSON.stringify({ email, at: Date.now() }), { expirationTtl: 3600 });

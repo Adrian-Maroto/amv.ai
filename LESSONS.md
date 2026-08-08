@@ -1952,3 +1952,40 @@ Reading the usage counter either side of the failed turn catches it instantly:
 symptom big enough to be visible. If sabotaging the code does not fail the
 test, the test is about something else - and finding that out is the only
 reason to sabotage.
+
+## 139. One assertion cannot prove two defences
+
+`/auth/reset` had no rate limit at all: an unauthenticated route that sends an
+email to whatever address is typed into it, spending AMV's sending reputation
+and per-message cost on somebody who never signed up. I added two limits, one
+per address and one per IP, and one test that fired 25 requests at one address
+from one IP and checked that some were refused.
+
+Deleting the per-address limit left that test passing, because the per-IP limit
+caught the same flood. The test proved "at least one of these exists", which is
+not what either of them is for.
+
+They stop different attacks and the test has to look like each attack: burying
+ONE person needs requests from a spread of addresses, so only the per-email
+limit can stop it; working through a LIST of strangers comes from one caller,
+so only the per-IP limit can. Written that way, each sabotage fails its own
+assertion and nothing else.
+
+**Rule:** when you add two defences, write the case each one alone is the
+answer to. A test that passes with either present is a test for neither.
+
+## 140. Prove the guard does not break the thing it guards
+
+The same rate limit, tightened enough, locks out the exact person it exists to
+help: somebody whose first reset email was slow asks again, and a real office
+or phone network is many people behind one address. Both are the normal case,
+and both would have read as an attack.
+
+So the limit carries its own counter-cases: asking twice in a minute still
+works, and four colleagues on one connection all get through. Those are as much
+a part of the fix as the refusals, and without them the safe direction to move
+a limit is always tighter, which is how a security control quietly becomes an
+outage.
+
+**Rule:** every limit needs a case proving the legitimate user still gets
+through. A defence with no such case will be tuned in one direction for ever.
