@@ -2932,3 +2932,43 @@ configuration cannot catch the failure. That case now runs against a D1 stub.
 **Rule:** an authorization test that does not name the target is a smoke test.
 And a test environment simpler than production can only find the bugs that do
 not depend on production being different.
+
+## 179. Read-only by scope, not by instruction
+
+AMV can now read what a student has been set in Google Classroom. The obvious
+way to make "it never submits anything" true is a line in the prompt. That is
+the weakest available version: a prompt is a sentence, and a sentence can be
+argued with by a page the model read or a person insisting.
+
+The permission to turn work in was simply never requested. AMV holds
+`classroom.coursework.me.readonly` and not `classroom.coursework.me`, so Google
+refuses the call regardless of what anybody types. The guarantee moved from
+something AMV promises to something AMV is incapable of, and - the part that
+matters for a minor's school record - a parent, a reviewer or a district can
+verify it themselves by reading the consent screen.
+
+The test asserts on the scopes in the shipped bundle for the same reason.
+
+Its first version failed against a correct implementation: it matched every
+occurrence of "classroom." in the file, which included the API hostname and the
+comment naming the scope that is deliberately NOT requested. A check that cannot
+tell a scope from a sentence about a scope will block the right answer, and I
+would have "fixed" working code to satisfy it.
+
+**Rule:** when a limit can be expressed as a permission never granted, express
+it there. Anything enforced only by instruction is a request, not a limit.
+
+## 180. Deriving a check from the product, not from a copy of it
+
+A crew test counted the jobs needing a connected account with a hardcoded
+`/Email|Calendar|Drive|Bank/`. Adding a job that needs Classroom made it count
+53 where the screen blocked 54, and the failure was in the test.
+
+The product already keeps that list - CW_NEEDS_CHECK is what it consults to
+decide whether a job can run. The check now reads that, so a new requirement
+cannot make it stale. This is the third time this session a check carried its
+own copy of something the product defines: the tool-name prefixes, the
+phrase-list for jobs needing input, and now this.
+
+**Rule:** a check should read the same source the product reads. A copy is a
+second definition, and second definitions drift silently.

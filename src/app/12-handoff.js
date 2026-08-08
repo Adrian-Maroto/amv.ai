@@ -3410,7 +3410,20 @@ function _amvStartVoice(btn){
 async function connectGoogle(){
   const cid = loadStr('amv_gauth');
   if(!cid){ toast('Add Google Client ID in Settings → Integrations first','error',5000); goSettings('integrations'); return; }
-  const scopes = 'https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/calendar';
+  /* Classroom is asked for READ-ONLY, and that is the whole safety argument.
+
+     AMV can see what a student has been set and when it is due. It cannot turn
+     anything in, because the scope to do that (classroom.coursework.me, without
+     .readonly) is not requested and Google will refuse the call. That is a much
+     better guarantee than a rule in a prompt: a prompt can be argued with, and
+     a token that was never granted the permission cannot.
+
+     It matters because this is a minor's school record. The narrowest scope
+     that does the job is the only defensible one to ask for, and "read what is
+     due" is the whole job. */
+  const scopes = 'https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/calendar'
+    + ' https://www.googleapis.com/auth/classroom.courses.readonly'
+    + ' https://www.googleapis.com/auth/classroom.coursework.me.readonly';
   const redirectUri = window.location.origin + window.location.pathname;
   saveStr('amv_oauth_return', S.tab||'integrations');
 

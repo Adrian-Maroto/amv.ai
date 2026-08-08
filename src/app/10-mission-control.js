@@ -493,6 +493,12 @@ function _cwDefaultJobs(){ return [
     asks:{ q:'What have you already made?', ph:'Describe or paste the piece - and say which platforms you are on' },
     sample:['One 8-minute video is at least 5 more things.','1. The 40-second section at 3:12 stands alone completely. That is the short.','2. The question you answer at 5:30 is a text post on its own - here it is written out.','3. Three stills worth posting, with captions.','4. The thing you said offhand at 6:04 is better than your title. Use it as the title next time.','Nothing here is new work - it is all already in what you made.'],
     prompt:'Take something the user has already made and find everything else it can become across the platforms they use. Be specific: which section, which timestamp or paragraph, and what shape it takes on each platform. Write out the captions and text posts in full rather than describing them. Point out anything in the piece that is stronger than how it was framed - a line better than the title, a moment better than the thumbnail. Do not propose new work: the whole point is that this already exists. Ground the platform advice in what actually performs there now, and say when you are unsure.' },
+
+  { id:'school_auto', every:'daily', cat:'Learning', icon:'🎒', title:'Know what is due without telling me', needs:'Classroom', on:false,
+    desc:'Reads what you have actually been set in Google Classroom - every class, every due date - and plans your week around it. Nothing to type in and nothing to keep updated.',
+    asks:{ q:'Anything AMV should know beyond your classes?', ph:'Things Classroom does not have - a job, training, a test that was announced in class - or leave it blank and it works from Classroom alone' },
+    sample:['Read from Classroom: 6 classes, 9 pieces of work still ahead.','DUE IN 2 DAYS - History essay (worth 40 points, the biggest thing this fortnight). Not mentioned since it was set.','DUE FRIDAY - Chemistry problem set, and the biology reading.','NO DUE DATE - the art portfolio. It has been open 3 weeks, which is usually how those end up done in one night.','THE COLLISION: history and chemistry both land Friday. Do the essay Wednesday or you are doing both on Thursday.','AMV reads Classroom. It cannot submit anything, and it is not able to - it was never given permission to.'],
+    prompt:'You are given the user’s real coursework from Google Classroom: each piece, its class, its due date and what it is worth. Build them a plan around it. Lead with what is due soonest and what is worth most, name any day where two significant things collide and give the specific move that fixes it, and call out anything with no due date that has been open a long time, because that is what gets done badly at the last minute. Use the points to say which piece actually matters. If they have told you anything Classroom does not know about, fold it in. Be brief - this is read before school. Never invent a piece of work or a due date: everything you list must be in what you were given. State plainly that you can read their coursework and cannot submit anything.' },
 ]; }
 /* ── WHAT A JOB NEEDS, AGAINST WHAT IS ACTUALLY CONNECTED ────────────────────
 
@@ -508,6 +514,11 @@ const CW_NEEDS_CHECK = {
   'Email':           { label:'Gmail',            has:()=>_cwHasGoogle() },
   'Calendar':        { label:'Google Calendar',  has:()=>_cwHasGoogle() },
   'Drive':           { label:'Google Drive',     has:()=>_cwHasGoogle() },
+  /* Read-only, and on the same Google connection - so a student who has linked
+     Google for their mail already has this. A job needing it that runs with
+     nothing connected would switch on and do nothing for ever, which is the
+     failure this whole table exists to prevent. */
+  'Classroom':       { label:'Google Classroom', has:()=>_cwHasGoogle() },
   /* Through the one accessor, so "is an account linked" has a single definition
      that the server refresh keeps current. Reading the key directly here meant
      this screen and the investing pane could disagree. */

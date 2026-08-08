@@ -84,7 +84,14 @@ section('A job that cannot run says so rather than looking active');
   /* Nothing is connected in this session, so everything needing Gmail or a bank
      is genuinely unable to run. That is the state the card has to admit to. */
   const r = await page.evaluate(() => {
-    const needsAcct = _cwDefaultJobs().filter(j => /Email|Calendar|Drive|Bank/.test(j.needs));
+    /* Derived from CW_NEEDS_CHECK, which is what the product actually consults,
+       rather than from a list of requirement names retyped here. The retyped
+       version went stale the moment a job needed something new - it counted 53
+       where the screen blocked 54 - and a check that has to be maintained in
+       step with the thing it watches is not watching it. */
+    const known = Object.keys(CW_NEEDS_CHECK);
+    const needsAcct = _cwDefaultJobs().filter(j =>
+      String(j.needs || '').split(',').map(x => x.trim()).some(n => known.includes(n)));
     return { needsAcct: needsAcct.length,
              blocked: document.querySelectorAll('.cw-job.blocked').length,
              text: document.body.textContent };

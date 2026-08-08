@@ -5,6 +5,66 @@
    execute the calls against the provider APIs with the user's token.
    ============================================================ */
 const INTEGRATION_ACTIONS = {
+  /* ---- SCHOOL --------------------------------------------------------------
+
+     What a student has been set, and when it is due, read from Google
+     Classroom. This is the piece that turns "tell AMV your deadlines every
+     week" into "AMV already knows", which is the difference between a planner
+     somebody maintains and one that maintains itself.
+
+     Read-only, by scope rather than by rule: AMV was never granted permission
+     to turn anything in, so it cannot, and no instruction can talk it into
+     doing so. Deliberately so - this is a minor's school record, and the
+     narrowest access that does the job is the only one worth asking for.
+
+     It reads from THIS BROWSER, like the mailbox and the calendar, because the
+     Google token lives here and the server never sees it. So a job built on it
+     runs while AMV is open and says so, rather than implying an overnight run
+     it cannot perform. */
+  classroom_due: {
+    desc:'List what the user has been set at school and when it is due, from Google Classroom. Read-only.',
+    needs:'google',
+    async run(){
+      const t=(typeof ensureGToken==='function'? await ensureGToken() : getGToken());
+      if(!t) throw new Error('Google Classroom is not connected');
+      const cr=await fetchDeadline('https://classroom.googleapis.com/v1/courses?studentId=me&courseStates=ACTIVE&pageSize=20',{headers:{'Authorization':'Bearer '+t}});
+      const cd=await cr.json();
+      if(cd.error) throw new Error(cd.error.message);
+      const courses=(cd.courses||[]).slice(0,12);
+      if(!courses.length) return { courses:0, items:[] };
+
+      const now=Date.now();
+      const per=await Promise.all(courses.map(async c=>{
+        try{
+          const r=await fetchDeadline('https://classroom.googleapis.com/v1/courses/'+encodeURIComponent(c.id)
+            +'/courseWork?pageSize=30&orderBy=dueDate%20asc',{headers:{'Authorization':'Bearer '+t}});
+          const d=await r.json();
+          if(d.error) return [];
+          return (d.courseWork||[]).map(w=>{
+            /* Google gives the date and time separately, and either may be
+               absent. A piece of work with no due date is real and common -
+               reported as having none rather than given an invented one. */
+            let due=null;
+            if(w.dueDate && w.dueDate.year){
+              const tm=w.dueTime||{};
+              due=Date.UTC(w.dueDate.year,(w.dueDate.month||1)-1,w.dueDate.day||1,
+                           tm.hours||23,tm.minutes||59);
+            }
+            return { course:c.name||'', title:w.title||'', due,
+                     dueText: due ? new Date(due).toISOString().slice(0,10) : 'no due date',
+                     link:w.alternateLink||'', points:w.maxPoints||null };
+          });
+        }catch(e){ return []; }
+      }));
+      const items=per.flat()
+        /* Only what is still ahead of them. A planner listing last term's work
+           is noise, and noise is what stops somebody reading it. */
+        .filter(x=>x.due===null || x.due>=now-86400000)
+        .sort((a,b)=>(a.due||Infinity)-(b.due||Infinity))
+        .slice(0,40);
+      return { courses:courses.length, items };
+    }
+  },
   gmail_list_unread: {
     desc:'List the user\u2019s unread emails (sender + subject).', needs:'google',
     async run(){
