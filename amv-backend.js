@@ -4066,6 +4066,15 @@ async function authSignup(request, env){
   const sipHash = await _ipHash(env, request);
   const acct = { email: em, name: safeName, provider:'email', salt, pwHash, pwIter: PBKDF2_ITERATIONS, createdAt: Date.now(), sipHash };
   await DB.put(env, 'acct', em, acct);
+  /* THE DENOMINATOR. Conversion was computed against the number of ENTITLEMENT
+     rows, and a free signup never creates one - so the denominator was, near
+     enough, "people who have already paid" and the dashboard reported ~100%
+     conversion for ever. Measured on a fixture of twenty free accounts and one
+     payer it read 100% against a true 4.8%.
+
+     Counted here, at the one place an account comes into existence, so it is
+     exact at any size and costs one increment. */
+  try{ await counter(env, 'popaccounts', { op: 'incr', amount: 1 }); }catch(e){}
   try{ await _recordGrowth(env, 'signup'); await _funnelMark(env, email, 'signup'); }catch(e){}
   await _userEvent(env, request, em, 'account_created');
   // An invite code, if they arrived through one. Recorded, not yet rewarded.
@@ -4679,6 +4688,10 @@ async function authDeleteAccount(request, env) {
   for (const kind of perUserKinds) {
     try { await DB.del(env, kind, email); deleted++; } catch {}
   }
+  /* Uncounted, so the conversion denominator follows reality. A counter that
+     only ever goes up would make the funnel look worse every time somebody
+     leaves, which is its own kind of wrong number. */
+  try{ await counter(env, 'popaccounts', { op: 'incr', amount: -1 }); }catch(e){}
   /* Loose per-user keys that are not DB `kind` rows. The referral pair must go
      both ways or the code would keep resolving to an account that no longer
      exists, and the activity log is a record OF this person - erasure means it
@@ -10166,15 +10179,32 @@ async function adminStats(request, env) {
   const signupsPrev7 = signups30.slice(-14, -7).reduce((n, d) => n + d.count, 0);
   const wowGrowthPct = signupsPrev7 > 0 ? +(((signups7 - signupsPrev7) / signupsPrev7) * 100).toFixed(0) : null;
 
-  const totalAccounts = entRows.length;
-  const conversionPct = totalAccounts > 0 ? +((paying / totalAccounts) * 100).toFixed(1) : 0;
+  /* EVERY account, not every entitlement row.
+
+     This read `entRows.length`, and a free signup creates no entitlement row -
+     so the denominator was essentially the set of people who had already paid,
+     and conversion reported ~100% no matter what the funnel was really doing.
+     On a fixture of twenty free accounts and one payer it said 100% where the
+     truth was 4.8%: the single most decision-corrupting number the dashboard
+     could produce, because it says the funnel is perfect and there is nothing
+     to fix.
+
+     The maintained counter is exact at any size. It falls back to the scan on
+     a deployment that predates it, where the old wrong answer is still better
+     than none - and `basis` says which one this is, because a number whose
+     meaning changes silently is how the first version of this got believed. */
+  const popAccounts = (await counter(env, 'popaccounts', { op: 'get' })).value || 0;
+  const countedAccounts = popAccounts > 0 ? popAccounts : entRows.length;
+  const conversionBasis = popAccounts > 0 ? 'accounts' : 'entitlements';
+  const conversionPct = countedAccounts > 0 ? +((paying / countedAccounts) * 100).toFixed(1) : 0;
   const arpu = paying > 0 ? +(mrr / paying).toFixed(2) : 0;
 
   return json({
     ok: true,
     generatedAt: Date.now(),
     spend: { today: +gSpend.toFixed(2), cap: gCap, pctOfCap: +(gSpend / gCap * 100).toFixed(1), killed },
-    users: { total: truncated ? popTotal : users.length, paying, byPlan: plans, conversionPct, activeToday },
+    users: { total: truncated ? popTotal : users.length, paying, byPlan: plans,
+             conversionPct, conversionBasis, accounts: countedAccounts, activeToday },
     /* Say plainly whether the per-account lists below are everything or a
        sample. The alternative is a number that is quietly wrong. */
     scan: { rows: entRows.length, limit: SCAN_LIMIT, truncated,

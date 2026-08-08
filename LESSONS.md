@@ -2341,3 +2341,31 @@ the only shape that proves both.
 **Rule:** when a test asserts that something did NOT happen, it needs a
 neighbour asserting the same setup DOES make it happen. Absence is the easiest
 result in the world to achieve by accident.
+
+## 156. The most expensive bug says you have already solved your worst problem
+
+The owner's dashboard reported conversion as `paying / entRows.length`. A free
+signup creates no entitlement row, so the denominator was, near enough, the set
+of people who had already paid - and the answer was ~100% regardless of what
+the funnel was really doing. Measured on twenty free accounts and one payer it
+read 100 against a true 4.8.
+
+Nothing about that looks wrong. It is a plausible number in a plausible place,
+and it fails in the one direction that is never questioned: it says the thing
+you are worst at is the thing you have already solved. An outage announces
+itself; this quietly redirects a month of work.
+
+The fix is a counter incremented where an account comes into existence and
+decremented where one is erased - exact at any size, one write each - plus a
+`conversionBasis` field saying which denominator produced the number, because a
+figure whose meaning changes silently is how the first version got believed.
+
+The other half of the fix is in the test: every number is asserted against
+arithmetic done in the test, and each has a case checking it MOVES the right
+way and by the right amount. A constant, or a formula that happens to be close
+on one fixture, passes a single-value assertion and fails "one in ten is 10%,
+then two in ten is 20%".
+
+**Rule:** for any reported metric, write down the true answer by construction
+first, then check the code against it - and check that it moves. A number you
+only ever compare to itself is not being tested.
