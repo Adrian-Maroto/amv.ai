@@ -2369,3 +2369,32 @@ then two in ten is 20%".
 **Rule:** for any reported metric, write down the true answer by construction
 first, then check the code against it - and check that it moves. A number you
 only ever compare to itself is not being tested.
+
+## 157. A list of error WORDS misses the best-composed failure of all
+
+The first-session suite scanned every screen a new account sees for text that
+means "something went wrong" - undefined, NaN, failed to load, [object Object].
+Then I sabotaged a real nav tab to render the 404 view, and the suite passed
+without a murmur.
+
+Of course it did. The 404 page contains none of those strings. It is a
+perfectly written, calmly worded page saying the thing does not exist - and it
+is the single worst thing a new customer can see, because they clicked
+something the product itself put in the sidebar.
+
+"Reads as broken" and "contains an error word" are not the same set, and the
+gap between them is exactly where the polished failures live.
+
+Three of my own assertions in this file were wrong before it was right, all the
+same shape - a pattern matching more than it meant:
+  - `/NaN/i` matched "Fi(nan)ce" in the marketplace categories
+  - the tab list came from grepping `data-tab="..."` out of index.html, which
+    matched a selector string inside the minified bundle and put a tab on the
+    list that no button anywhere renders
+  - "offers a next step" required words like "create", and called Crew a
+    failure for saying "Give it an outcome ... Included with Pro, $15/month",
+    which is a better first visit than an empty list
+
+**Rule:** when checking that a screen is not broken, ask what a broken screen
+LOOKS like to a person, not which strings it contains. And read the navigation
+from the rendered page, never from a grep of the source.
