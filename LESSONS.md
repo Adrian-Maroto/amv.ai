@@ -2067,3 +2067,52 @@ else.
 **Rule:** before collecting data about people, work out the smallest thing that
 answers the actual question. Very often it is a number, and a number has no
 privacy surface, no third party, and no way to become a breach.
+
+## 144. The comment explained exactly why the feature could not work
+
+The PWA setup said, in its own header:
+
+    Built entirely from Blobs so the single-file app needs no extra files
+    on the server.
+
+That sentence is the bug. A service worker script may not be a blob: URL -
+every browser refuses the registration outright - and a blob manifest is not
+installable. The constraint the comment was proud of satisfying is precisely
+the one that makes a PWA impossible.
+
+It survived because the registration ended in `.catch(()=>{})`. A call that can
+never succeed, with its failure discarded, is indistinguishable from one that
+always works. And the visible symptom was an absence: `beforeinstallprompt`
+needs a real manifest and a real worker, so it never fired, so the install chip
+never appeared, so nothing looked wrong. Meanwhile the changelog advertised
+"Install AMV as an app on your phone or desktop (PWA)".
+
+Verifying it took one line in a real browser - register a blob worker and read
+the error - which is a thing nobody thought to do for a feature whose failure
+mode is silence.
+
+The replacement is network-first, deliberately. Cache-first over a single-file
+app means every returning visitor runs the PREVIOUS build, so the deploy that
+fixes a broken checkout does not reach the person hitting it, and a bad cached
+page survives redeploying - the one property a bug must never have.
+
+**Rule:** when a comment explains a clever way around a constraint, check that
+the constraint is not the thing that makes the feature work. And a swallowed
+error on a capability call is a claim you have never once verified.
+
+## 145. A fixed-length slice is a check with an expiry date
+
+worker/auto-routing read the first 2000 characters of aiProxy and looked for a
+line in them. Adding a guard at the top of that function pushed the line to
+2200 and the check failed - on correct code, for a reason that has nothing to
+do with what it tests.
+
+That is the same failure as LESSONS 141's whole-line regex: the check was
+looking at an arbitrary window rather than the actual thing. It now slices to
+the next function declaration, so it reads the function whatever happens above
+the line it cares about.
+
+**Rule:** scope a source check to a real boundary - a function body, a block,
+a declaration - never to a character count. The count is right until the day
+somebody adds a line, and then it is wrong in the direction that wastes an
+afternoon.

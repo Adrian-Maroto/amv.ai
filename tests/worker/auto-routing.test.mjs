@@ -116,7 +116,14 @@ ok(/'X-AMV-Engine': key/.test(src), 'the engine that ran is returned to the clie
 ok(/Access-Control-Expose-Headers/.test(src), 'and exposed, or the browser could not read it');
 {
   // The old alias must not still silently win over the router.
-  const proxy = src.slice(src.indexOf('async function aiProxy'), src.indexOf('async function aiProxy') + 2000);
+  /* The WHOLE function, not its first N characters. This read the first 2000
+     and broke the day a guard was added at the top of aiProxy - the line it
+     looks for was still there, two hundred characters further down. A fixed
+     window silently becomes a false negative as soon as anything above it
+     grows, and a check that cries wolf is one somebody deletes. */
+  const at = src.indexOf('async function aiProxy');
+  const next = src.indexOf('\nasync function ', at + 10);
+  const proxy = src.slice(at, next > at ? next : src.length);
   ok(/routed \? routed\.key :/.test(proxy), 'the routed choice takes precedence over the alias table', true);
 }
 

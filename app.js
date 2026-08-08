@@ -958,51 +958,49 @@ function _initOfflineWatch(){  const show=()=>{ try{ _setStatusIndicator('offlin
   }catch(e){}
 }
 
-/* PWA: register a web manifest + service worker at runtime so AMV is installable
-   as an app (home screen / desktop) and loads instantly offline. Built entirely
-   from Blobs so the single-file app needs no extra files on the server. */
+/* PWA: a real manifest and a real service worker, both served as files.
+
+   THIS NEVER WORKED, AND SAID SO IN ITS OWN COMMENT. The previous version built
+   both out of Blobs, explaining that it was done that way "so the single-file
+   app needs no extra files on the server". A service worker script cannot be a
+   blob: URL - every browser refuses it outright:
+
+       Failed to register a ServiceWorker: The URL protocol of the script
+       ('blob:https://...') is not supported.
+
+   and the registration ended in `.catch(()=>{})`, so the refusal was swallowed
+   on every page load since the feature was written. A blob manifest is not
+   installable either. So there was no offline support and no install prompt -
+   `beforeinstallprompt` needs both halves and therefore never fired, which is
+   why the install chip nobody ever saw was not obviously broken. The changelog
+   advertised "Install AMV as an app on your phone or desktop (PWA)".
+
+   The build emits `sw.js` and `manifest.webmanifest` beside index.html now,
+   because that is the only shape a PWA can have.
+
+   The service worker is deliberately NETWORK-FIRST for the page itself. A
+   cache-first worker over a single-file app means every returning visitor runs
+   the previous build - so the deploy that fixes a broken checkout does not
+   reach the person hitting it - and a bad cache is the one bug that survives
+   redeploying. Network first, cache as the fallback, gives real offline with
+   none of that. */
 function _initPWA(){
   try{
-    // 1) inject a manifest generated on the fly
-    const icon='data:image/svg+xml;base64,'+btoa('<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512"><rect width="512" height="512" rx="112" fill="#4478e8"/><text x="256" y="340" font-family="Arial,sans-serif" font-size="300" font-weight="800" fill="#fff" text-anchor="middle">A</text></svg>');
-    const manifest={
-      name:'AMV.AI', short_name:'AMV', description:'The AI workforce that does the work, not just answers it.',
-      start_url:'.', scope:'.', display:'standalone', orientation:'any',
-      background_color:'#232429', theme_color:'#4478e8',
-      icons:[
-        {src:icon,sizes:'192x192',type:'image/svg+xml',purpose:'any maskable'},
-        {src:icon,sizes:'512x512',type:'image/svg+xml',purpose:'any maskable'}
-      ]
-    };
-    const mBlob=new Blob([JSON.stringify(manifest)],{type:'application/manifest+json'});
-    const mLink=document.createElement('link'); mLink.rel='manifest'; mLink.href=URL.createObjectURL(mBlob);
+    const mLink=document.createElement('link');
+    mLink.rel='manifest'; mLink.href='/manifest.webmanifest';
     document.head.appendChild(mLink);
-    const aicon=document.createElement('link'); aicon.rel='apple-touch-icon'; aicon.href=icon; document.head.appendChild(aicon);
+    const aicon=document.createElement('link');
+    aicon.rel='apple-touch-icon'; aicon.href='/icon-192.png';
+    document.head.appendChild(aicon);
 
-    // 2) register a minimal service worker (offline-first shell cache)
-    if('serviceWorker' in navigator && location.protocol==='https:'){
-      const swCode=`
-        const CACHE='amv-v1';
-        self.addEventListener('install',e=>{ self.skipWaiting(); });
-        self.addEventListener('activate',e=>{ e.waitUntil(self.clients.claim()); });
-        self.addEventListener('fetch',e=>{
-          const req=e.request;
-          if(req.method!=='GET'){ return; }
-          const url=new URL(req.url);
-          // network-first for API, cache-first for the app shell & assets
-          if(url.pathname.includes('/v1/')||url.hostname.includes('api.')){ return; }
-          e.respondWith(
-            caches.open(CACHE).then(cache=>cache.match(req).then(hit=>{
-              const net=fetch(req).then(res=>{ try{ if(res&&res.status===200) cache.put(req,res.clone()); }catch(_){} return res; }).catch(()=>hit);
-              return hit||net;
-            }))
-          );
-        });`;
-      const swUrl=URL.createObjectURL(new Blob([swCode],{type:'text/javascript'}));
-      navigator.serviceWorker.register(swUrl).catch(()=>{});
+    if('serviceWorker' in navigator && (location.protocol==='https:' || location.hostname==='localhost')){
+      /* A failure is REPORTED, not swallowed. Silence is what let a feature
+         that could never work look like one that did. */
+      navigator.serviceWorker.register('/sw.js').catch(e=>{
+        try{ _logErr('serviceWorker.register', e); }catch(_){}
+      });
     }
 
-    // 3) capture the install prompt and expose an "Install app" affordance
     window.addEventListener('beforeinstallprompt',(e)=>{ e.preventDefault(); window._amvInstallEvt=e; _showInstallHint(); });
     window.addEventListener('appinstalled',()=>{ window._amvInstallEvt=null; try{ toast('AMV installed - launch it from your home screen anytime','success'); }catch(_){} });
   }catch(e){ _logErr('initPWA',e); }
