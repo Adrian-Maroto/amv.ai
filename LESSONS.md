@@ -2821,3 +2821,35 @@ what a client claimed at checkout. When they disagree the charge is the truth.
 **Rule:** for anything that takes money, test the outcome the customer
 experiences, not the handlers. "Was this event processed" and "did they get what
 they paid for" are different questions, and only the second one is the product.
+
+## 175. Two sabotages passed, and both were the same shape
+
+The reconciliation sweep passed twenty-three assertions first time. Sabotaging
+it caught four of five - and the one that survived was "nothing is ever
+remembered when a payment starts", because every case wrote the pending record
+itself instead of going through the routes that take money. The sweep would have
+had nothing to find, for ever, in production, and the file would still have been
+green.
+
+Adding the real-route cases caught a second: a webhook that completes normally
+but does not clear the record. Not corruption - the exactly-once claim holds -
+but the sweep would then fire "a payment had to be rescued" on EVERY successful
+payment, and an operator who is alerted every day learns to ignore the one
+message that means their webhook is broken. An alert that cries wolf is worse
+than no alert.
+
+Both are the same shape as the defects this session keeps finding in the
+product: the thing under test was exercised directly, so the wiring that makes
+it real was never asserted. A test that calls the function is testing the
+function. Whether anything CALLS it is a separate question and needs its own
+case - for the sweep that meant the cron, and one level earlier it meant the
+checkout routes.
+
+Writing the fixtures also took three attempts, and each failure was informative
+rather than annoying: the age gate, the listing key, and the webhook signature
+all rejected my setup because they are real gates. A fixture that has to be
+argued into place is evidence the protection exists.
+
+**Rule:** for anything with a producer and a consumer, test both ends and the
+wire. Green on the consumer alone means the feature works in the test and does
+nothing in production.

@@ -3898,6 +3898,12 @@ export default {
         console.log('[cron] paused by GLOBAL_KILL - automations skipped');
         audit(env, 'cron_paused', { by: 'GLOBAL_KILL' });
       } else {
+        /* Payments that succeeded and were never applied. Cheap when there is
+           nothing pending, and the one thing standing between a dropped webhook
+           and a customer who paid for nothing. */
+        try{ await reconcilePayments(env); }
+        catch(e){ try{ await _workerError(env, 'cron.reconcile', e); }catch(_){} }
+
         try{
           const r = await runDueAutomations(env);
           if(r.ran || r.failed) console.log('[cron] automations', JSON.stringify(r));
@@ -6124,6 +6130,106 @@ function _safeTools(list) {
     out.push({ name, description: String(t.description || '').slice(0, TOOL_DESC_MAX), input_schema: schema });
   }
   return out;
+}
+
+/* ---- PAYMENTS THAT SUCCEEDED AND WERE NEVER FINISHED --------------------
+
+   Granting a plan depends on one webhook arriving. Revocation was made not to
+   depend on that, because an unrevoked plan costs AMV money - but the mirror
+   case costs a CUSTOMER money, and nothing was watching it at all. A dropped
+   delivery, a deploy during the retry window, a misconfigured endpoint, and
+   somebody has paid and has nothing. They do not file a bug; they charge it
+   back and leave.
+
+   So every payment that is started writes a small pending record, every
+   webhook that completes one deletes it, and anything still sitting here after
+   a few minutes gets asked about DIRECTLY at the provider. Paid means finish
+   it; not paid means drop it. Either way somebody is told when a payment had to
+   be rescued, because that is a signal the webhook path is broken and the next
+   one will need rescuing too.
+
+   All three ways money enters AMV are covered - a plan by card, a marketplace
+   purchase, and a PayPal subscription. Covering one of them would leave exactly
+   the same hole with a different name on it. */
+const PEND_KIND = 'paypending';
+const PEND_GRACE_MS = 10 * 60 * 1000;      // give the webhook a fair chance first
+const PEND_GIVEUP_MS = 24 * 60 * 60 * 1000; // an unpaid session is never coming back
+
+async function _pendStart(env, id, data) {
+  if (!id) return;
+  try { await DB.put(env, PEND_KIND, String(id), Object.assign({ at: Date.now() }, data || {})); } catch (e) {}
+}
+async function _pendDone(env, id) {
+  if (!id) return;
+  try { await DB.del(env, PEND_KIND, String(id)); } catch (e) {}
+}
+
+async function reconcilePayments(env) {
+  let checked = 0, rescued = 0, dropped = 0;
+  let rows = [];
+  try { rows = await DB.list(env, PEND_KIND, 200); } catch (e) { return { checked, rescued, dropped }; }
+  const now = Date.now();
+
+  for (const row of rows) {
+    const p = row.value || {};
+    const age = now - (p.at || 0);
+    if (age < PEND_GRACE_MS) continue;             // the webhook may still be on its way
+    checked++;
+
+    if (age > PEND_GIVEUP_MS) { await _pendDone(env, row.id); dropped++; continue; }
+
+    try {
+      if (p.provider === 'paypal') {
+        const token = await _paypalToken(env);
+        if (!token) continue;                       // cannot ask right now; try next sweep
+        const r = await fetch(`${_paypalBase(env)}/v1/billing/subscriptions/${encodeURIComponent(row.id)}`, {
+          headers: { 'Authorization': `Bearer ${token}` } });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) continue;
+        if (d.status === 'ACTIVE') {
+          const tier = _paypalTierOf(env, d.plan_id, p.plan);
+          if (tier) {
+            await setEntitlement(env, p.email, tier, { source: 'paypal' });
+            rescued++;
+            audit(env, 'payment_reconciled', { provider: 'paypal', email: p.email, plan: tier });
+            await alertOnce(env, 'pay_reconciled',
+              'A PayPal subscription was ACTIVE but had never been granted - AMV has just granted it from the reconciliation sweep. '
+              + 'The webhook for it did not arrive or did not process. Check the PayPal webhook endpoint.', 60);
+          }
+          await _pendDone(env, row.id);
+        } else if (d.status === 'CANCELLED' || d.status === 'EXPIRED' || d.status === 'SUSPENDED') {
+          await _pendDone(env, row.id); dropped++;
+        }
+        continue;
+      }
+
+      /* Stripe: a checkout session, either a plan or a marketplace purchase. */
+      if (!env.STRIPE_SECRET_KEY) continue;
+      const r = await fetch(`https://api.stripe.com/v1/checkout/sessions/${encodeURIComponent(row.id)}`, {
+        headers: { 'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}` } });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) continue;
+
+      if (d.payment_status === 'paid' || d.status === 'complete') {
+        if (p.kind === 'market') {
+          await _creditSale(env, { itemId: p.itemId, buyer: p.email, seller: p.seller,
+                                   amountCents: d.amount_total, ref: d.payment_intent || row.id });
+        } else if (p.plan) {
+          await setEntitlement(env, p.email, p.plan, { source: 'stripe' });
+        }
+        rescued++;
+        audit(env, 'payment_reconciled', { provider: 'stripe', email: p.email, kind: p.kind || 'plan', plan: p.plan || '' });
+        await alertOnce(env, 'pay_reconciled',
+          'A Stripe payment had completed but was never applied - AMV has just applied it from the reconciliation sweep. '
+          + 'The webhook did not arrive or did not process, so check the Stripe webhook endpoint and its signing secret.', 60);
+        await _pendDone(env, row.id);
+      } else if (d.status === 'expired') {
+        await _pendDone(env, row.id); dropped++;
+      }
+    } catch (e) { /* a provider being unreachable is not a decision - try again next sweep */ }
+  }
+  if (checked) console.log('[cron] payments reconciled', JSON.stringify({ checked, rescued, dropped }));
+  return { checked, rescued, dropped };
 }
 
 /* ---------------- THE AI PROXY (the heart) -------------------------- */
@@ -8774,6 +8880,10 @@ async function stripeCheckout(request, env) {
     await alertOnce(env, 'stripe_checkout_fail', `💳 Stripe checkout failing: ${d.error?.message || 'unknown'} - customers may be unable to subscribe.`, 15);
     return json({ error: d.error?.message || 'stripe error' }, 502);
   }
+  /* Remembered until the webhook grants the plan. A dropped delivery would
+     otherwise leave somebody who has paid sitting on the free tier with
+     nothing watching, so the sweep asks Stripe directly. */
+  await _pendStart(env, d.id, { provider:'stripe', kind:'plan', email:user.email, plan });
   return json({ url: d.url, id: d.id });
 }
 
@@ -9003,11 +9113,13 @@ async function stripeWebhook(request, env, ctx) {
           // What a later refund or dispute will arrive quoting.
           ref: obj.payment_intent || obj.id,
         });
+        await _pendDone(env, obj.id);          // finished the normal way
         return new Response('ok', { status: 200 });
       }
       const email = (obj.metadata?.email || obj.client_reference_id || obj.customer_email || '').toLowerCase();
       const plan = obj.metadata?.plan || 'pro';
       if (email) {
+        await _pendDone(env, obj.id);        // finished the normal way
         /* This metadata was written by AMV when it created the session, not by
            the browser, so the seat count here is ours. It grants immediately so
            somebody who just paid is not left waiting on a second event - and
@@ -9646,6 +9758,11 @@ async function marketBuy(request, env) {
   });
   const d = await r.json();
   if (!r.ok) return json({ error: d.error?.message || 'stripe error' }, 502);
+  /* Remembered until the webhook completes it. If that delivery never
+     lands, the sweep asks Stripe directly rather than leaving somebody
+     who paid with nothing. */
+  await _pendStart(env, d.id, { provider:'stripe', kind:'market', email:user.email,
+                                itemId:id, seller:(it.authorEmail||'').toLowerCase() });
   return json({ ok: true, url: d.url, id: d.id });
 }
 
@@ -11431,6 +11548,9 @@ async function paypalSubscribe(request, env) {
   // return the approval URL for the client to open
   const approve = (d.links || []).find(l => l.rel === 'approve');
   if (!approve) return json({ error: 'no approval url from paypal' }, 502);
+  /* Same for PayPal: the subscription exists now, activation arrives later by
+     webhook, and a lost activation is a customer paying for nothing. */
+  await _pendStart(env, d.id, { provider:'paypal', email:user.email, plan });
   return json({ url: approve.href, id: d.id });
 }
 
@@ -11503,6 +11623,9 @@ async function paypalWebhook(request, env, ctx) {
             + 'Check PAYPAL_PLAN_PRO / _ELITE / _ULTRA match the billing plans in PayPal.', 5); } catch (_) {}
         }
         await _clearPastDue(env, em);
+        /* Finished the normal way, so the sweep has nothing to chase. The id is
+           the subscription's, which is what _pendStart recorded. */
+        await _pendDone(env, evt.resource?.id || '');
       }
     }
   } catch (e) { audit(env, 'webhook_error', { kind: 'paypal', msg: String(e.message).slice(0, 120) }); }
