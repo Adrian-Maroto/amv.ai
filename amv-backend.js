@@ -5906,6 +5906,68 @@ async function videoList(request, env) {
   });
 }
 
+/* ---- WHICH TOOLS ARE ALLOWED THROUGH TO THE MODEL ----------------------
+
+   The rule has always been right: never forward arbitrary client-supplied tool
+   definitions upstream. Somebody with a modified client could otherwise ship a
+   thousand tools, or one with a megabyte of schema, on every turn - a cost and
+   bounds attack paid for by AMV.
+
+   The implementation was wrong in a way nothing could see. It allowed by
+   `t.type`, and only 'web_search_20250305' has a type at all. Every one of
+   AMV's OWN tools is a custom tool - { name, description, input_schema }, no
+   type - so every one of them was silently dropped here, on every turn, since
+   the day they were written.
+
+   The effect was invisible from both ends and worse than either. The client
+   assembled the tools and believed it had sent them. The system prompt told the
+   model "you have real tools: generate_image, run_code, build_app" - and then
+   the model was handed none of them, so it could not emit a tool call even when
+   it wanted to. A person asking for an image got a sentence about generating an
+   image. Everything in _amvRunTool - real image generation, real execution,
+   real deploys - was unreachable in production, while the code for all of it
+   passed review and every test that did not go through this function.
+
+   So: named tools are allowed by NAME, from a list kept here, and the shape is
+   bounded rather than trusted. A name AMV does not know is still dropped. */
+const AMV_CLIENT_TOOLS = new Set([
+  'generate_image', 'generate_video', 'run_code', 'fix_code', 'build_app', 'deploy_site',
+  'crew_list', 'crew_add', 'crew_update', 'crew_pause', 'crew_resume', 'crew_remove', 'crew_standing',
+]);
+const TOOLS_MAX          = 24;      // more than AMV has, far less than an attack
+const TOOL_DESC_MAX      = 1200;    // a description, not a second prompt
+const TOOL_SCHEMA_MAX    = 4000;    // a schema, not a payload
+
+function _safeTools(list) {
+  const out = [];
+  for (const t of list) {
+    if (!t || out.length >= TOOLS_MAX) break;
+    /* Server-side tools, identified by type. max_uses is clamped because the
+       client asks for research depth and a tampered one must not be able to
+       request ten thousand searches. 60 is the ceiling even for the deepest
+       research tier. */
+    if (t.type === 'web_search_20250305') {
+      const n = parseInt(t.max_uses, 10);
+      out.push(t.max_uses == null ? t : { ...t, max_uses: Math.max(1, Math.min(60, isNaN(n) ? 5 : n)) });
+      continue;
+    }
+    if (t.type) continue;                         // an unknown server-side tool
+    /* AMV's own tools. Allowed by name, and only in a bounded shape - the
+       definition still comes from the client, so it is trimmed rather than
+       trusted. It only ever steers that user's own turn, which they pay for,
+       and nothing here executes: the work happens in their browser, behind
+       their own approval. */
+    const name = String(t.name || '');
+    if (!AMV_CLIENT_TOOLS.has(name)) continue;
+    const schema = (t.input_schema && typeof t.input_schema === 'object') ? t.input_schema : { type: 'object', properties: {} };
+    let schemaStr = '';
+    try { schemaStr = JSON.stringify(schema); } catch (e) { continue; }
+    if (schemaStr.length > TOOL_SCHEMA_MAX) continue;
+    out.push({ name, description: String(t.description || '').slice(0, TOOL_DESC_MAX), input_schema: schema });
+  }
+  return out;
+}
+
 /* ---------------- THE AI PROXY (the heart) -------------------------- */
 async function aiProxy(request, env, ctx) {
   const user = await requireUser(request, env);
@@ -6085,6 +6147,7 @@ async function aiProxy(request, env, ctx) {
   /* Always sent, whether or not the client supplied one: the identity framing
      is ours and goes first (AMV-077). Cached, so repeat turns are ~90% cheaper
      on it - the preamble is constant, which makes it an ideal prefix. */
+  /* (tool forwarding: see _safeTools) */
   upstreamBody.system = [{ type: 'text', text: _systemWithIdentity(body.system),
                            cache_control: { type: 'ephemeral' } }];
   // Only forward tools we explicitly support - never pass arbitrary client
@@ -6095,17 +6158,7 @@ async function aiProxy(request, env, ctx) {
   if (eng.thinking) upstreamBody.thinking = { type: 'adaptive' };
   if (eng.effort)   upstreamBody.output_config = { effort: eng.effort };
   if (body.tools && Array.isArray(body.tools)) {
-    const ALLOWED_TOOLS = new Set(['web_search_20250305']);
-    const safe = body.tools.filter(t => t && ALLOWED_TOOLS.has(t.type)).map(t => {
-      // Clamp max_uses server-side. The client asks for research depth, but a
-      // tampered client must not be able to request 10,000 searches and run up
-      // the bill. 60 is the ceiling even for the deepest research tier.
-      if (t.type === 'web_search_20250305' && t.max_uses != null) {
-        const n = parseInt(t.max_uses, 10);
-        t = { ...t, max_uses: Math.max(1, Math.min(60, isNaN(n) ? 5 : n)) };
-      }
-      return t;
-    });
+    const safe = _safeTools(body.tools);
     if (safe.length) upstreamBody.tools = safe;
   }
 

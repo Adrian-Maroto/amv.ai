@@ -7982,3 +7982,32 @@ html,body{height:100%;height:100dvh}
 @media (prefers-reduced-motion:reduce){
   .mc-standing-box{ transition:none; }
 }
+
+/* ============================================================
+   LAYER A68 - the jobs list shows what the SERVER is running
+
+   A paused job has to read as paused at a glance, and a job that only runs
+   while AMV is open has to be visually separable from one that does not - they
+   are different promises, and showing them identically is how somebody comes to
+   believe their laptop being shut does not matter.
+   ============================================================ */
+.mc-sched-row.paused{ opacity:.72; }
+.mc-sched-row.paused .mc-sched-goal{ text-decoration:none; color:var(--mu); }
+.mc-sched-note{
+  margin-top:var(--sp-2);
+  padding:var(--sp-2) var(--sp-3);
+  font-size:var(--t-sm);
+  line-height:1.5;
+  color:var(--mu);
+  background:var(--s1);
+  border:1px solid var(--bd);
+  border-radius:var(--r-md);
+}
+.mc-sched-acts{ display:flex; gap:var(--sp-2); flex-wrap:wrap; align-items:center; }
+/* Two actions per row need room on a phone; stacking the row is better than
+   shrinking buttons below a thumb's width. */
+@media (max-width:560px){
+  .mc-sched-row{ flex-wrap:wrap; }
+  .mc-sched-acts{ width:100%; margin-top:var(--sp-2); }
+  .mc-sched-acts .btn{ flex:1 1 auto; min-height:36px; }
+}

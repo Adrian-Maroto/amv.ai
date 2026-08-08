@@ -508,8 +508,32 @@ function _mcState(){
     done: bg.filter(t=>t.status==='done' && !isRunOfLiveJob(t)),
     runsOfJobs: bg.filter(t=>t.status==='done' && isRunOfLiveJob(t)),
     auton: jobs.filter(j=>j.on),
-    sched
+    sched,
+    /* THE JOBS THE SERVER IS ACTUALLY RUNNING.
+
+       This section used to render `sched` alone - a list in this browser's
+       localStorage, with the server's id stapled on afterwards. The cron does
+       not read that list. It reads the account's own record, which is why a job
+       kept running after the local entry was gone, and why a job set up on a
+       phone was invisible on a laptop while quietly spending money on both.
+
+       So the server's list is the truth here, and the local one is only for
+       work that never made it to the server (no engine connected, plan cannot
+       schedule) - which is real, still runs while AMV is open, and now says so
+       instead of being displayed identically to background work. */
+    server: (typeof _AUTOS !== 'undefined' && Array.isArray(_AUTOS)) ? _AUTOS : [],
+    serverLoaded: (typeof window._autoLoadState === 'function') ? !!window._autoLoadState().loaded : false,
+    serverError: (typeof window._autoLoadState === 'function') ? (window._autoLoadState().error || '') : ''
   };
+}
+/* Asked once per session, not once per render - renderCrewView runs on every
+   toggle, and a refresh that triggers a render that triggers a refresh is a
+   loop against the user's own backend. */
+let _mcAskedServer = false;
+/* Local entries that the server also knows about, so one job is one row. */
+function _mcLocalOnly(st){
+  const known = new Set((st.server||[]).map(x=>x.id));
+  return (st.sched||[]).filter(t=>!(t.autoId && known.has(t.autoId)));
 }
 /* When a recurring job last produced something, so the card can say "ran this
    morning, runs again tomorrow" rather than implying it has never run. */
@@ -676,6 +700,73 @@ try{
     if(c) c.textContent = t.value.length + '/' + MC_STANDING_MAX;
   });
 }catch(e){}
+
+/* A job the SERVER is running, shown with the controls that reach the server.
+
+   Every button here posts to the same /auto/update the chat tools use, so the
+   screen and the conversation are two doors onto one job rather than two
+   records that drift apart. */
+function _mcServerSchedRow(x){
+  const every = _CREW_EVERY_UI[String(x.repeat||'')] || 'on a schedule';
+  const paused = x.active === false;
+  const auto = x.approval === 'auto';
+  const when = paused ? 'Paused' : ('Runs ' + every + (x.next ? ' · next ' + _mcWhen(x.next) : ''));
+  return `<div class="mc-sched-row${paused?' paused':''}">
+    <div class="mc-sched-b">
+      <div class="mc-sched-goal">${escH(String(x.detail||'Background job').slice(0,180))}</div>
+      <div class="mc-sched-meta">${escH(when)} · Runs on AMV's servers, whether or not this is open</div>
+      <div class="mc-sched-mode-row"><span class="mc-sched-mode ${auto?'auto':''}">${auto
+        ? 'Autonomous - results are sent for you'
+        : 'Ask first - each result waits for your approval'}</span></div>
+    </div>
+    <div class="mc-sched-acts">
+      <button class="btn mc-mini ghost" data-dact="mcServerJob" data-darg="${escH(x.id)}|${paused?'resume':'pause'}">${paused?'Resume':'Pause'}</button>
+      <button class="btn mc-mini ghost" data-dact="mcServerJob" data-darg="${escH(x.id)}|delete">Remove</button>
+    </div>
+  </div>`;
+}
+/* Frequencies in the words a person uses, shared with the chat tools. */
+const _CREW_EVERY_UI = { '10min':'every 10 minutes', '30min':'every 30 minutes',
+                         hourly:'every hour', daily:'every day', weekly:'every week' };
+function _mcWhen(ts){
+  const d = Number(ts)||0; if(!d) return '';
+  const mins = Math.round((d - Date.now())/60000);
+  if(mins <= 0) return 'due now';
+  if(mins < 60) return 'in ' + mins + ' min';
+  if(mins < 60*24) return 'in ' + Math.round(mins/60) + 'h';
+  return 'in ' + Math.round(mins/1440) + 'd';
+}
+/* Pause, resume or remove a real server job from the screen. Removing asks
+   first, because it takes the job and its history and cannot be undone. */
+async function mcServerJob(arg){
+  const [id, action] = String(arg||'').split('|');
+  if(!id || !action) return;
+  if(action === 'delete'){
+    const yes = await showConfirmAsync('Remove this background job? It stops running and its history goes with it. Pausing keeps both.');
+    if(!yes) return;
+  }
+  try{
+    await _autoApi('/auto/update', { id, action });
+    if(typeof _autoRefresh === 'function') await _autoRefresh();
+    renderCrewView();
+    toast(action === 'delete' ? 'Removed. It will not run again.'
+        : action === 'pause' ? 'Paused. It stays here and will not run until you resume it.'
+        : 'Resumed. Its next run is one interval from now.', 'success', 4000);
+  }catch(e){
+    /* Never redraw as though it worked - the job is still running, and saying
+       otherwise is how somebody stops watching something that is still
+       spending. */
+    toast((e && e.message === 'not-connected')
+      ? 'AMV is not connected to its engine, so that job could not be changed. It is still running.'
+      : 'That did not work: ' + ((e && e.message) || 'the server refused it') + '. The job is unchanged.',
+      'error', 6500);
+  }
+}
+async function mcReloadJobs(){
+  try{ if(typeof _autoRefresh === 'function') await _autoRefresh(); }catch(e){}
+  renderCrewView();
+}
+try{ window.mcServerJob = mcServerJob; window.mcReloadJobs = mcReloadJobs; }catch(e){}
 
 /* A standing job shown as a row in the unified Scheduled section. */
 function _mcAutonSchedRow(j){
@@ -975,12 +1066,21 @@ function renderCrewView(){
     </div>`;
   };
   const st=_mcState();
+  /* Ask the server what it is running, the first time this screen is opened in
+     a session. The list is rendered from whatever is already known so the page
+     appears instantly, and the refresh redraws it a moment later - which is the
+     difference between a screen that is briefly out of date and one that is
+     permanently wrong about jobs on another device. */
+  if(!st.serverLoaded && !_mcAskedServer){
+    _mcAskedServer = true;
+    try{ if(typeof _autoRefresh === 'function') _autoRefresh().then(()=>{ if(S.tab==='crew') renderCrewView(); }); }catch(e){}
+  }
   const paused=_autonomyPaused();
   const tiles=[
     ['appr','Needs approval',st.appr.length,'wait'],
     ['fail','Action required',st.failed.length,'err'],
     ['active','Active work',st.active.length,'active'],
-    ['sched','Running jobs',st.sched.length+st.auton.length,'info'],
+    ['sched','Running jobs',st.server.length+_mcLocalOnly(st).length+st.auton.length,'info'],
     ['done','Completed',st.done.length,'muted']
   ];
 
@@ -995,7 +1095,7 @@ function renderCrewView(){
         <button class="mc-pause ${paused?'paused':''}" data-dact="${paused?'resumeAllAutonomous':'pauseAllAutonomous'}">${paused?'▶ Resume autonomy':'⏸ Pause all autonomous'}</button>
       </div>
     </header>
-    ${(()=>{ const n=_crewJobAllowance(); const used=st.sched.length+st.auton.length;
+    ${(()=>{ const n=_crewJobAllowance(); const used=st.server.length+_mcLocalOnly(st).length+st.auton.length;
       /* The number, before they hit it. A limit discovered by bumping into it
          reads as a fault; the same limit stated up front reads as a plan. */
       return n?`<div class="mc-allow">${used} of ${n} background job${n===1?'':'s'} in use <span>\u00b7 your plan runs ${n}</span></div>`:''; })()}
@@ -1037,7 +1137,20 @@ function renderCrewView(){
 
     <section id="mc-sched" class="mc-sec">
       <div class="sec-head"><h3>Running jobs</h3><span class="sec-sub">Recurring work AMV runs on a schedule. Each run creates fresh content (a new email, a new summary). For each one you choose: <b>Autonomous</b> sends it for you automatically, or <b>Ask first</b> drops a draft in "Needs your approval" every time so you review before it sends.</span><button class="mc-sec-link" data-dact="openSchedManager">Manage</button></div>
-      ${(st.sched.length||st.auton.length)?`<div class="mc-sched">${st.auton.map(_mcAutonSchedRow).join('')}${st.sched.slice(0,8).map(t=>_mcSchedRow(t,st)).join('')}</div>`:`<div class="mc-empty-row">No running jobs yet. Start a task above and choose how often it should repeat - it will show up here.</div>`}
+      ${(()=>{
+        const local = _mcLocalOnly(st);
+        const rows = st.server.map(_mcServerSchedRow).join('')
+                   + st.auton.map(_mcAutonSchedRow).join('')
+                   + local.slice(0,8).map(t=>_mcSchedRow(t,st)).join('');
+        if(rows) return `<div class="mc-sched">${rows}</div>`
+          + (local.length?`<div class="mc-sched-note">The ${local.length===1?'job':local.length+' jobs'} above without "runs on AMV's servers" could not be registered to run in the background, so ${local.length===1?'it runs':'they run'} only while AMV is open.</div>`:'');
+        /* A failed read is not an empty list. Saying "no running jobs" to
+           somebody whose jobs are running, because the request failed, invites
+           them to set everything up a second time. */
+        if(st.serverError)
+          return `<div class="mc-empty-row">Your running jobs could not be loaded (${escH(st.serverError)}). They have NOT stopped - this screen just cannot show them right now. <button class="mc-sec-link" data-dact="mcReloadJobs">Try again</button></div>`;
+        return `<div class="mc-empty-row">No running jobs yet. Start a task above and choose how often it should repeat - it will show up here. You can also just tell AMV in chat: "every morning, summarise my unread email".</div>`;
+      })()}
     </section>
 
     ${st.done.length?`<section id="mc-done" class="mc-sec">

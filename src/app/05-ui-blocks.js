@@ -544,29 +544,26 @@ async function _routeChatIntent(txt){
     return true;
   }
 
-  // 4) SCHEDULED / RECURRING / BACKGROUND - set it up on a schedule
-  if(/\b(every|each)\s+(morning|day|evening|night|week|weekday|monday|tuesday|wednesday|thursday|friday|saturday|sunday|hour)\b/i.test(txt)
-     || /\b(daily|weekly|hourly|recurring|on a schedule|scheduled|automatically)\b/i.test(txt)
-     || /\b(in the background|run.*background|background task)\b/i.test(txt)
-     || /\b(remind me|send me)\b[^.!?]{0,40}\b(every|each|daily|weekly)\b/i.test(txt)){
-    const m=pushUser();
-    if(typeof _scheduleAuto==='function'){
-      // detect frequency from the phrasing
-      let freq='daily';
-      if(/\bhour/i.test(t)) freq='hourly';
-      else if(/\bweekday|every monday|each monday/i.test(t)) freq='weekdays';
-      else if(/\bweek/i.test(t)) freq='weekly';
-      else if(/\bmonday|tuesday|wednesday|thursday|friday|saturday|sunday/i.test(t)) freq='weekly';
-      _scheduleAuto(txt, freq);
-      const ready=_aiBackendReady();
-      m.push({r:'a',c:'Done - scheduled to run **'+_freqLabel(freq).toLowerCase()+'**.'+(ready?' It\u2019ll run automatically and I\u2019ll have the result waiting for you.':' Connect the AMV engine in Settings so it can run when it\u2019s due.')+'\n\nManage or cancel it anytime under **Tasks**.',model:S.model});
-      setMsgs(m); renderChatMsgs(); renderHist();
-      return true;
-    }
-    m.push({r:'a',c:'I\u2019ll set this up as a recurring task - opening **Tasks** where you can confirm the schedule.',model:S.model});
-    setMsgs(m); renderChatMsgs(); renderHist(); setTab('tasks');
-    return true;
-  }
+  /* 4) SCHEDULED / RECURRING / BACKGROUND
+     Deliberately NOT handled here any more - it falls through to the model,
+     which has crew_add.
+
+     This branch used to create a real recurring background job from a regex on
+     the sentence, with the raw message as the instruction, and answer "Done -
+     scheduled to run daily." Nobody was asked. A background job spends money
+     unattended for as long as it exists, and the trigger was any sentence
+     containing "every morning" - including a question. "Do I need to water
+     these every day?" created a daily job, forever, and the only sign was one
+     line in a conversation the person scrolled past.
+
+     It was also the reason chat could not do what it now can. Matching here
+     returns before the model is ever called, so the model never got the chance
+     to use crew_add - and crew_add writes a proper instruction, asks first, and
+     shows exactly what will run and how often before anything is created.
+
+     Letting it through costs one model turn and replaces a guess with an
+     answer. If the engine is not connected the person is told so honestly,
+     which is the same thing the old branch could only pretend about. */
 
   // 5) MULTI-STEP / AGENTIC - "analyze X and email me", "research X and write a report and save it"
   const multiStep = /\b(and then|then|after that|,)\b/i.test(txt) &&
@@ -736,6 +733,14 @@ async function _callAI(msgs, _opts) {
     '\u2022 run_code - when code should be executed, tested, or verified, RUN it and report the real output. Use it to check your own work too.\n'+
     '\u2022 fix_code - when their code is broken, actually run it, fix it, and re-run until it passes.\n'+
     '\u2022 build_app - when they ask you to build/make/create something interactive (a page, a game, a dashboard, a tool), BUILD it and show them a live working version.\n'+
+    /* The Crew is the one part of AMV that keeps working when the person is not
+       here, so it is the part they most often want to change in passing -
+       "actually make that weekly", "stop the news one". Without these the
+       answer was a description of which tab to open, which is the product
+       telling somebody to go and do it themselves. */
+    '\u2022 crew_list / crew_add / crew_update / crew_pause / crew_resume / crew_remove - their BACKGROUND jobs, the ones that run on a schedule while they are away. Any question about what AMV is running for them is answered with crew_list, not from memory. Any request to start, change, stop or delete recurring work is done with these, not described. ALWAYS crew_list first so you act on a real job.\n'+
+    '\u2022 crew_standing - how they want ALL their background work done ("think harder", "always check two sources", "keep it short"). This genuinely reaches every future run.\n'+
+    'Never claim a background job was created, changed or removed unless the tool said so - if it failed, tell them exactly what failed. These jobs run unattended and cost money on a timer, so they are worth being precise about.\n'+
     'Prefer doing over explaining. Don\u2019t say "here is code you could run" - run it. Don\u2019t say "you could generate an image" - generate it. After a tool runs, briefly tell them what you did and what they got.';
   const sysPrompt=(MODEL_SYSTEMS[_routeKey]||SYS)+_agenticSys+_profileContext()+_skillsContext()+_pluginContext()+_localeContext()+_handoffContext('chat')+_langInstruction()+(_mems&&_mems.length?' Memory about you: '+_mems.join('; '):'')+_integrationStatusPrompt()+(_dnaShouldApply(msgs)?('\n\n'+dnaPromptBlock()+'\nApply this DESIGN DNA to any website, app, UI, HTML, or visual output you produce.'):'');
 
@@ -980,7 +985,10 @@ async function _callAI(msgs, _opts) {
             _toolBlocks[evt.index]={ id:evt.content_block.id, name:evt.content_block.name, json:'' };
             const t=_toolBlocks[evt.index];
             if(t.name && !String(t.name).startsWith('web_search')){
-              const _lbl=({generate_image:'Creating your image\u2026',run_code:'Running the code\u2026',fix_code:'Debugging\u2026',build_app:'Building it\u2026'})[t.name] || 'Working\u2026';
+              const _lbl=({generate_image:'Creating your image\u2026',run_code:'Running the code\u2026',fix_code:'Debugging\u2026',build_app:'Building it\u2026',
+                           crew_list:'Checking your background jobs\u2026',crew_add:'Setting up the job\u2026',crew_update:'Updating the job\u2026',
+                           crew_pause:'Pausing it\u2026',crew_resume:'Starting it again\u2026',crew_remove:'Removing it\u2026',
+                           crew_standing:'Updating your crew instructions\u2026'})[t.name] || 'Working\u2026';
               msgs[streamIdx]={...msgs[streamIdx], _status:_lbl};
               setMsgs(msgs); renderChatMsgs();
             }

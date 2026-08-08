@@ -404,24 +404,16 @@ function _freqNext(f, from){
   if(f==='weekly_mon'){ d.setDate(d.getDate()+((8-d.getDay())%7||7)); d.setHours(8,0,0,0); return d.getTime(); }
   return from+864e5;
 }
-/* Schedule an automation. This now goes to the SERVER, where a cron trigger
-   runs it in the background - so it fires even with AMV closed. Falls back to
-   a local record (and says so honestly) when the engine isn't connected. */
-function _scheduleAuto(goal, freq){
-  // Server path: real background execution.
-  _scheduleTask({ detail: goal, repeat: (freq==='hourly'||freq==='weekly') ? freq : 'daily', firstRunAt: _freqNext(freq, Date.now()) })
-    .then(item=>{
-      if(item){ try{ _autoRefresh(); }catch(e){} }
-      else {
-        // Not connected - keep a local record so nothing is lost, but don't
-        // pretend it will run unattended.
-        const list=_loadSched();
-        list.push({id:'a'+Date.now(), goal, freq, next:_freqNext(freq, Date.now()), created:Date.now(), lastRun:null, localOnly:true});
-        _saveSched(list);
-      }
-    })
-    .catch(()=>{});
-}
+/* _scheduleAuto lived here. Its only caller was the chat intent router, which
+   created a recurring background job from a regex on the user's sentence with
+   nobody asked and the raw message as the instruction - see the note where that
+   branch used to be. Chat now lets the model use crew_add instead, which writes
+   a real instruction and shows what will run before it runs.
+
+   Deleted rather than left orphaned: a function that quietly creates recurring
+   spend from a string, sitting unused next to the schedulers that are in use,
+   is the sort of thing that gets wired back up by somebody looking for exactly
+   that signature. _scheduleAuto2 below is a different function and is live. */
 /* load/store, not raw localStorage: raw bypasses _scopeKey, so this list was
    shared by every account on the device. Signing in as somebody else showed
    their scheduled jobs - goals that often carry personal detail - and

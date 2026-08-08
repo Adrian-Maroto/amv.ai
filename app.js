@@ -5059,29 +5059,26 @@ async function _routeChatIntent(txt){
     return true;
   }
 
-  // 4) SCHEDULED / RECURRING / BACKGROUND - set it up on a schedule
-  if(/\b(every|each)\s+(morning|day|evening|night|week|weekday|monday|tuesday|wednesday|thursday|friday|saturday|sunday|hour)\b/i.test(txt)
-     || /\b(daily|weekly|hourly|recurring|on a schedule|scheduled|automatically)\b/i.test(txt)
-     || /\b(in the background|run.*background|background task)\b/i.test(txt)
-     || /\b(remind me|send me)\b[^.!?]{0,40}\b(every|each|daily|weekly)\b/i.test(txt)){
-    const m=pushUser();
-    if(typeof _scheduleAuto==='function'){
-      // detect frequency from the phrasing
-      let freq='daily';
-      if(/\bhour/i.test(t)) freq='hourly';
-      else if(/\bweekday|every monday|each monday/i.test(t)) freq='weekdays';
-      else if(/\bweek/i.test(t)) freq='weekly';
-      else if(/\bmonday|tuesday|wednesday|thursday|friday|saturday|sunday/i.test(t)) freq='weekly';
-      _scheduleAuto(txt, freq);
-      const ready=_aiBackendReady();
-      m.push({r:'a',c:'Done - scheduled to run **'+_freqLabel(freq).toLowerCase()+'**.'+(ready?' It\u2019ll run automatically and I\u2019ll have the result waiting for you.':' Connect the AMV engine in Settings so it can run when it\u2019s due.')+'\n\nManage or cancel it anytime under **Tasks**.',model:S.model});
-      setMsgs(m); renderChatMsgs(); renderHist();
-      return true;
-    }
-    m.push({r:'a',c:'I\u2019ll set this up as a recurring task - opening **Tasks** where you can confirm the schedule.',model:S.model});
-    setMsgs(m); renderChatMsgs(); renderHist(); setTab('tasks');
-    return true;
-  }
+  /* 4) SCHEDULED / RECURRING / BACKGROUND
+     Deliberately NOT handled here any more - it falls through to the model,
+     which has crew_add.
+
+     This branch used to create a real recurring background job from a regex on
+     the sentence, with the raw message as the instruction, and answer "Done -
+     scheduled to run daily." Nobody was asked. A background job spends money
+     unattended for as long as it exists, and the trigger was any sentence
+     containing "every morning" - including a question. "Do I need to water
+     these every day?" created a daily job, forever, and the only sign was one
+     line in a conversation the person scrolled past.
+
+     It was also the reason chat could not do what it now can. Matching here
+     returns before the model is ever called, so the model never got the chance
+     to use crew_add - and crew_add writes a proper instruction, asks first, and
+     shows exactly what will run and how often before anything is created.
+
+     Letting it through costs one model turn and replaces a guess with an
+     answer. If the engine is not connected the person is told so honestly,
+     which is the same thing the old branch could only pretend about. */
 
   // 5) MULTI-STEP / AGENTIC - "analyze X and email me", "research X and write a report and save it"
   const multiStep = /\b(and then|then|after that|,)\b/i.test(txt) &&
@@ -5251,6 +5248,14 @@ async function _callAI(msgs, _opts) {
     '\u2022 run_code - when code should be executed, tested, or verified, RUN it and report the real output. Use it to check your own work too.\n'+
     '\u2022 fix_code - when their code is broken, actually run it, fix it, and re-run until it passes.\n'+
     '\u2022 build_app - when they ask you to build/make/create something interactive (a page, a game, a dashboard, a tool), BUILD it and show them a live working version.\n'+
+    /* The Crew is the one part of AMV that keeps working when the person is not
+       here, so it is the part they most often want to change in passing -
+       "actually make that weekly", "stop the news one". Without these the
+       answer was a description of which tab to open, which is the product
+       telling somebody to go and do it themselves. */
+    '\u2022 crew_list / crew_add / crew_update / crew_pause / crew_resume / crew_remove - their BACKGROUND jobs, the ones that run on a schedule while they are away. Any question about what AMV is running for them is answered with crew_list, not from memory. Any request to start, change, stop or delete recurring work is done with these, not described. ALWAYS crew_list first so you act on a real job.\n'+
+    '\u2022 crew_standing - how they want ALL their background work done ("think harder", "always check two sources", "keep it short"). This genuinely reaches every future run.\n'+
+    'Never claim a background job was created, changed or removed unless the tool said so - if it failed, tell them exactly what failed. These jobs run unattended and cost money on a timer, so they are worth being precise about.\n'+
     'Prefer doing over explaining. Don\u2019t say "here is code you could run" - run it. Don\u2019t say "you could generate an image" - generate it. After a tool runs, briefly tell them what you did and what they got.';
   const sysPrompt=(MODEL_SYSTEMS[_routeKey]||SYS)+_agenticSys+_profileContext()+_skillsContext()+_pluginContext()+_localeContext()+_handoffContext('chat')+_langInstruction()+(_mems&&_mems.length?' Memory about you: '+_mems.join('; '):'')+_integrationStatusPrompt()+(_dnaShouldApply(msgs)?('\n\n'+dnaPromptBlock()+'\nApply this DESIGN DNA to any website, app, UI, HTML, or visual output you produce.'):'');
 
@@ -5495,7 +5500,10 @@ async function _callAI(msgs, _opts) {
             _toolBlocks[evt.index]={ id:evt.content_block.id, name:evt.content_block.name, json:'' };
             const t=_toolBlocks[evt.index];
             if(t.name && !String(t.name).startsWith('web_search')){
-              const _lbl=({generate_image:'Creating your image\u2026',run_code:'Running the code\u2026',fix_code:'Debugging\u2026',build_app:'Building it\u2026'})[t.name] || 'Working\u2026';
+              const _lbl=({generate_image:'Creating your image\u2026',run_code:'Running the code\u2026',fix_code:'Debugging\u2026',build_app:'Building it\u2026',
+                           crew_list:'Checking your background jobs\u2026',crew_add:'Setting up the job\u2026',crew_update:'Updating the job\u2026',
+                           crew_pause:'Pausing it\u2026',crew_resume:'Starting it again\u2026',crew_remove:'Removing it\u2026',
+                           crew_standing:'Updating your crew instructions\u2026'})[t.name] || 'Working\u2026';
               msgs[streamIdx]={...msgs[streamIdx], _status:_lbl};
               setMsgs(msgs); renderChatMsgs();
             }
@@ -13105,8 +13113,32 @@ function _mcState(){
     done: bg.filter(t=>t.status==='done' && !isRunOfLiveJob(t)),
     runsOfJobs: bg.filter(t=>t.status==='done' && isRunOfLiveJob(t)),
     auton: jobs.filter(j=>j.on),
-    sched
+    sched,
+    /* THE JOBS THE SERVER IS ACTUALLY RUNNING.
+
+       This section used to render `sched` alone - a list in this browser's
+       localStorage, with the server's id stapled on afterwards. The cron does
+       not read that list. It reads the account's own record, which is why a job
+       kept running after the local entry was gone, and why a job set up on a
+       phone was invisible on a laptop while quietly spending money on both.
+
+       So the server's list is the truth here, and the local one is only for
+       work that never made it to the server (no engine connected, plan cannot
+       schedule) - which is real, still runs while AMV is open, and now says so
+       instead of being displayed identically to background work. */
+    server: (typeof _AUTOS !== 'undefined' && Array.isArray(_AUTOS)) ? _AUTOS : [],
+    serverLoaded: (typeof window._autoLoadState === 'function') ? !!window._autoLoadState().loaded : false,
+    serverError: (typeof window._autoLoadState === 'function') ? (window._autoLoadState().error || '') : ''
   };
+}
+/* Asked once per session, not once per render - renderCrewView runs on every
+   toggle, and a refresh that triggers a render that triggers a refresh is a
+   loop against the user's own backend. */
+let _mcAskedServer = false;
+/* Local entries that the server also knows about, so one job is one row. */
+function _mcLocalOnly(st){
+  const known = new Set((st.server||[]).map(x=>x.id));
+  return (st.sched||[]).filter(t=>!(t.autoId && known.has(t.autoId)));
 }
 /* When a recurring job last produced something, so the card can say "ran this
    morning, runs again tomorrow" rather than implying it has never run. */
@@ -13273,6 +13305,73 @@ try{
     if(c) c.textContent = t.value.length + '/' + MC_STANDING_MAX;
   });
 }catch(e){}
+
+/* A job the SERVER is running, shown with the controls that reach the server.
+
+   Every button here posts to the same /auto/update the chat tools use, so the
+   screen and the conversation are two doors onto one job rather than two
+   records that drift apart. */
+function _mcServerSchedRow(x){
+  const every = _CREW_EVERY_UI[String(x.repeat||'')] || 'on a schedule';
+  const paused = x.active === false;
+  const auto = x.approval === 'auto';
+  const when = paused ? 'Paused' : ('Runs ' + every + (x.next ? ' · next ' + _mcWhen(x.next) : ''));
+  return `<div class="mc-sched-row${paused?' paused':''}">
+    <div class="mc-sched-b">
+      <div class="mc-sched-goal">${escH(String(x.detail||'Background job').slice(0,180))}</div>
+      <div class="mc-sched-meta">${escH(when)} · Runs on AMV's servers, whether or not this is open</div>
+      <div class="mc-sched-mode-row"><span class="mc-sched-mode ${auto?'auto':''}">${auto
+        ? 'Autonomous - results are sent for you'
+        : 'Ask first - each result waits for your approval'}</span></div>
+    </div>
+    <div class="mc-sched-acts">
+      <button class="btn mc-mini ghost" data-dact="mcServerJob" data-darg="${escH(x.id)}|${paused?'resume':'pause'}">${paused?'Resume':'Pause'}</button>
+      <button class="btn mc-mini ghost" data-dact="mcServerJob" data-darg="${escH(x.id)}|delete">Remove</button>
+    </div>
+  </div>`;
+}
+/* Frequencies in the words a person uses, shared with the chat tools. */
+const _CREW_EVERY_UI = { '10min':'every 10 minutes', '30min':'every 30 minutes',
+                         hourly:'every hour', daily:'every day', weekly:'every week' };
+function _mcWhen(ts){
+  const d = Number(ts)||0; if(!d) return '';
+  const mins = Math.round((d - Date.now())/60000);
+  if(mins <= 0) return 'due now';
+  if(mins < 60) return 'in ' + mins + ' min';
+  if(mins < 60*24) return 'in ' + Math.round(mins/60) + 'h';
+  return 'in ' + Math.round(mins/1440) + 'd';
+}
+/* Pause, resume or remove a real server job from the screen. Removing asks
+   first, because it takes the job and its history and cannot be undone. */
+async function mcServerJob(arg){
+  const [id, action] = String(arg||'').split('|');
+  if(!id || !action) return;
+  if(action === 'delete'){
+    const yes = await showConfirmAsync('Remove this background job? It stops running and its history goes with it. Pausing keeps both.');
+    if(!yes) return;
+  }
+  try{
+    await _autoApi('/auto/update', { id, action });
+    if(typeof _autoRefresh === 'function') await _autoRefresh();
+    renderCrewView();
+    toast(action === 'delete' ? 'Removed. It will not run again.'
+        : action === 'pause' ? 'Paused. It stays here and will not run until you resume it.'
+        : 'Resumed. Its next run is one interval from now.', 'success', 4000);
+  }catch(e){
+    /* Never redraw as though it worked - the job is still running, and saying
+       otherwise is how somebody stops watching something that is still
+       spending. */
+    toast((e && e.message === 'not-connected')
+      ? 'AMV is not connected to its engine, so that job could not be changed. It is still running.'
+      : 'That did not work: ' + ((e && e.message) || 'the server refused it') + '. The job is unchanged.',
+      'error', 6500);
+  }
+}
+async function mcReloadJobs(){
+  try{ if(typeof _autoRefresh === 'function') await _autoRefresh(); }catch(e){}
+  renderCrewView();
+}
+try{ window.mcServerJob = mcServerJob; window.mcReloadJobs = mcReloadJobs; }catch(e){}
 
 /* A standing job shown as a row in the unified Scheduled section. */
 function _mcAutonSchedRow(j){
@@ -13572,12 +13671,21 @@ function renderCrewView(){
     </div>`;
   };
   const st=_mcState();
+  /* Ask the server what it is running, the first time this screen is opened in
+     a session. The list is rendered from whatever is already known so the page
+     appears instantly, and the refresh redraws it a moment later - which is the
+     difference between a screen that is briefly out of date and one that is
+     permanently wrong about jobs on another device. */
+  if(!st.serverLoaded && !_mcAskedServer){
+    _mcAskedServer = true;
+    try{ if(typeof _autoRefresh === 'function') _autoRefresh().then(()=>{ if(S.tab==='crew') renderCrewView(); }); }catch(e){}
+  }
   const paused=_autonomyPaused();
   const tiles=[
     ['appr','Needs approval',st.appr.length,'wait'],
     ['fail','Action required',st.failed.length,'err'],
     ['active','Active work',st.active.length,'active'],
-    ['sched','Running jobs',st.sched.length+st.auton.length,'info'],
+    ['sched','Running jobs',st.server.length+_mcLocalOnly(st).length+st.auton.length,'info'],
     ['done','Completed',st.done.length,'muted']
   ];
 
@@ -13592,7 +13700,7 @@ function renderCrewView(){
         <button class="mc-pause ${paused?'paused':''}" data-dact="${paused?'resumeAllAutonomous':'pauseAllAutonomous'}">${paused?'▶ Resume autonomy':'⏸ Pause all autonomous'}</button>
       </div>
     </header>
-    ${(()=>{ const n=_crewJobAllowance(); const used=st.sched.length+st.auton.length;
+    ${(()=>{ const n=_crewJobAllowance(); const used=st.server.length+_mcLocalOnly(st).length+st.auton.length;
       /* The number, before they hit it. A limit discovered by bumping into it
          reads as a fault; the same limit stated up front reads as a plan. */
       return n?`<div class="mc-allow">${used} of ${n} background job${n===1?'':'s'} in use <span>\u00b7 your plan runs ${n}</span></div>`:''; })()}
@@ -13634,7 +13742,20 @@ function renderCrewView(){
 
     <section id="mc-sched" class="mc-sec">
       <div class="sec-head"><h3>Running jobs</h3><span class="sec-sub">Recurring work AMV runs on a schedule. Each run creates fresh content (a new email, a new summary). For each one you choose: <b>Autonomous</b> sends it for you automatically, or <b>Ask first</b> drops a draft in "Needs your approval" every time so you review before it sends.</span><button class="mc-sec-link" data-dact="openSchedManager">Manage</button></div>
-      ${(st.sched.length||st.auton.length)?`<div class="mc-sched">${st.auton.map(_mcAutonSchedRow).join('')}${st.sched.slice(0,8).map(t=>_mcSchedRow(t,st)).join('')}</div>`:`<div class="mc-empty-row">No running jobs yet. Start a task above and choose how often it should repeat - it will show up here.</div>`}
+      ${(()=>{
+        const local = _mcLocalOnly(st);
+        const rows = st.server.map(_mcServerSchedRow).join('')
+                   + st.auton.map(_mcAutonSchedRow).join('')
+                   + local.slice(0,8).map(t=>_mcSchedRow(t,st)).join('');
+        if(rows) return `<div class="mc-sched">${rows}</div>`
+          + (local.length?`<div class="mc-sched-note">The ${local.length===1?'job':local.length+' jobs'} above without "runs on AMV's servers" could not be registered to run in the background, so ${local.length===1?'it runs':'they run'} only while AMV is open.</div>`:'');
+        /* A failed read is not an empty list. Saying "no running jobs" to
+           somebody whose jobs are running, because the request failed, invites
+           them to set everything up a second time. */
+        if(st.serverError)
+          return `<div class="mc-empty-row">Your running jobs could not be loaded (${escH(st.serverError)}). They have NOT stopped - this screen just cannot show them right now. <button class="mc-sec-link" data-dact="mcReloadJobs">Try again</button></div>`;
+        return `<div class="mc-empty-row">No running jobs yet. Start a task above and choose how often it should repeat - it will show up here. You can also just tell AMV in chat: "every morning, summarise my unread email".</div>`;
+      })()}
     </section>
 
     ${st.done.length?`<section id="mc-done" class="mc-sec">
@@ -15702,6 +15823,70 @@ const AMV_TOOLS = [
       html:{type:'string', description:'The complete HTML document to publish. If you just built something, pass that.'},
       title:{type:'string', description:'A short name for the site.'}
     }, required:['html'] }
+  },
+  /* ---- The Crew, from chat ----------------------------------------------
+     Somebody who says "set that up to run every morning" has already
+     described the job perfectly. Making them stop, find the Crew tab, and
+     retype it is the product failing at the exact moment it was working.
+
+     These call the same /auto/* routes the Crew screen calls, so a job
+     created here is the same record, in the same list, running on the same
+     cron - not a parallel idea of a job that chat keeps to itself.
+
+     Reading is free. Anything that starts spending money on a schedule, or
+     destroys work, asks the person first - see _TOOL_CONSENT below. */
+  {
+    name:'crew_list',
+    description:'List the person\'s background (Crew) jobs: what each one does, how often it runs, whether it is active or paused, and their standing instructions. ALWAYS call this before changing or removing a job, so you act on a real id rather than a guess. Also use it to answer any question about what AMV is running for them.',
+    input_schema:{ type:'object', properties:{} }
+  },
+  {
+    name:'crew_add',
+    description:'Create a real background job that runs on a schedule without them present, and appears in the Crew tab. Use when they ask for something to happen regularly ("every morning", "each week", "keep an eye on"). Not for one-off work you can just do now.',
+    input_schema:{ type:'object', properties:{
+      detail:{type:'string', description:'Exactly what the job should do on each run, written as an instruction to whoever runs it. Be specific - this is all it will have.'},
+      repeat:{type:'string', enum:['10min','30min','hourly','daily','weekly'], description:'How often it runs.'},
+      approval:{type:'string', enum:['require','auto'], description:'"require" (default) puts each result in front of them before anything is sent. "auto" only for jobs that purely produce information.'}
+    }, required:['detail'] }
+  },
+  {
+    name:'crew_update',
+    description:'Change what an existing background job does, or how often it runs. Call crew_list first to get the id.',
+    input_schema:{ type:'object', properties:{
+      id:{type:'string', description:'The job id from crew_list. Preferred.'},
+      match:{type:'string', description:'Only if you have no id: words from the job, used to find exactly one. Ambiguous matches are refused rather than guessed.'},
+      detail:{type:'string', description:'The new instruction, if it is changing.'},
+      repeat:{type:'string', enum:['10min','30min','hourly','daily','weekly'], description:'The new frequency, if it is changing.'},
+      approval:{type:'string', enum:['require','auto']}
+    }, required:[] }
+  },
+  {
+    name:'crew_pause',
+    description:'Stop a background job from running, keeping it and its history so it can be resumed. Use for "stop", "pause", "hold off on" - it is the safe answer when they want something to stop and you are not certain they want it gone.',
+    input_schema:{ type:'object', properties:{
+      id:{type:'string'}, match:{type:'string', description:'Words from the job, if you have no id.'}
+    }, required:[] }
+  },
+  {
+    name:'crew_resume',
+    description:'Start a paused background job running again.',
+    input_schema:{ type:'object', properties:{
+      id:{type:'string'}, match:{type:'string'}
+    }, required:[] }
+  },
+  {
+    name:'crew_remove',
+    description:'Delete a background job permanently, along with its history. Prefer crew_pause unless they clearly want it gone.',
+    input_schema:{ type:'object', properties:{
+      id:{type:'string'}, match:{type:'string'}
+    }, required:[] }
+  },
+  {
+    name:'crew_standing',
+    description:'Set the standing instructions that apply to EVERY background job they have now and every one they add later - how much care to take, what to prefer, what to leave out. Use for "make my crew think harder", "always check two sources", "keep it shorter". This changes how the work is done; it cannot change what AMV is allowed to do. Pass an empty string to clear it.',
+    input_schema:{ type:'object', properties:{
+      standing:{type:'string', description:'The instruction, in the person\'s own terms. Replaces any previous one, so include anything from before that still applies.'}
+    }, required:['standing'] }
   }
 ];
 
@@ -15712,7 +15897,12 @@ function _toolsFor(surface){
   const by = n => AMV_TOOLS.find(t=>t.name===n);
   if(surface==='dev')  return [by('generate_image'), by('deploy_site'), by('run_code')].filter(Boolean);
   if(surface==='lab')  return [by('run_code'), by('fix_code'), by('deploy_site')].filter(Boolean);
-  if(surface==='crew') return [by('generate_image'), by('run_code'), by('build_app'), by('deploy_site')].filter(Boolean);
+  /* The Crew surface can run the Crew. Talking to AMV on the screen that shows
+     your background jobs and not being able to change one of them from there
+     is the gap this whole path exists to close. */
+  if(surface==='crew') return [by('generate_image'), by('run_code'), by('build_app'), by('deploy_site'),
+                               by('crew_list'), by('crew_add'), by('crew_update'), by('crew_pause'),
+                               by('crew_resume'), by('crew_remove'), by('crew_standing')].filter(Boolean);
   return AMV_TOOLS;   // chat gets everything
 }
 try{ window._toolsFor=_toolsFor; }catch(e){}
@@ -15800,18 +15990,55 @@ try{ window.runAgentic = runAgentic; }catch(e){}
    happen. User-INITIATED calls (Dev/Lab "Run", explicit buttons) bypass this -
    they ARE the user's intent - so the gate lives only on the agentic
    model-driven dispatch path, never inside _amvRunTool itself. */
-const _TOOL_CONSENT = { deploy_site:true, run_code:true, fix_code:true };
+/* A background job is the highest-value thing on this list to an attacker: it
+   runs unattended, on a schedule, spending money, and it persists long after
+   the conversation that created it is gone. So creating one, restarting one,
+   deleting one, or editing the instructions that ride along on every run all
+   ask first - and the prompt says what will actually happen.
+
+   crew_list and crew_pause do not. Reading their own jobs is not a side effect,
+   and pausing STOPS the spending - putting a dialog in front of "stop doing
+   that" is the one place a confirmation makes things worse. */
+const _TOOL_CONSENT = { deploy_site:true, run_code:true, fix_code:true,
+                        crew_add:true, crew_update:true, crew_resume:true,
+                        crew_remove:true, crew_standing:true };
 function _toolNeedsConsent(name){ return !!_TOOL_CONSENT[name]; }
+/* How often a job runs, in the words a person uses. */
+const _CREW_EVERY = { '10min':'every 10 minutes', '30min':'every 30 minutes',
+                      hourly:'every hour', daily:'every day', weekly:'every week' };
 async function _confirmModelTool(name, input){
   input = input || {};
   const what = ({
     deploy_site:'publish a public web page live on the internet',
     run_code:'run '+String(input.lang||'code')+' on your device',
-    fix_code:'run and edit '+String(input.lang||'code')+' on your device'
+    fix_code:'run and edit '+String(input.lang||'code')+' on your device',
+    crew_add:'set up a job that runs on its own, on a schedule',
+    crew_update:'change one of your background jobs',
+    crew_resume:'start one of your background jobs running again',
+    crew_remove:'permanently delete one of your background jobs',
+    crew_standing:'change the instructions every background job follows'
   })[name] || ('run the "'+name+'" action');
   let detail='';
   if(name==='deploy_site') detail='Page title: '+String(input.title||'App');
   else if(name==='run_code'||name==='fix_code') detail=String(input.code||'').slice(0,600);
+  /* For a job, the dialog IS the preview: the exact instruction it will follow
+     and how often it will follow it. Nobody can consent to "a background job"
+     in the abstract, and this is the last point before it starts costing
+     money on a timer. */
+  else if(name==='crew_add')
+    detail = 'It will run ' + (_CREW_EVERY[String(input.repeat||'daily')] || 'every day') + ':\n\n'
+           + String(input.detail||'').slice(0,600)
+           + (String(input.approval||'require')==='auto'
+               ? '\n\nResults go straight to you without review.'
+               : '\n\nEach result waits for your approval before anything is sent.');
+  else if(name==='crew_update')
+    detail = [ input.detail ? 'New instruction:\n' + String(input.detail).slice(0,500) : '',
+               input.repeat ? 'New frequency: ' + (_CREW_EVERY[String(input.repeat)]||input.repeat) : ''
+             ].filter(Boolean).join('\n\n');
+  else if(name==='crew_standing')
+    detail = String(input.standing||'').trim()
+      ? 'Every background job will follow this from now on:\n\n' + String(input.standing).slice(0,600)
+      : 'Your standing instructions will be cleared, and jobs go back to running the standard way.';
   const ok = await _showModalAsync({
     title:'Allow the assistant to '+what+'?',
     body:'The assistant wants to '+what+' while answering you. This can be triggered by content it read, so allow it only if you actually want this to happen.'+(detail?'\n\n'+detail:''),
@@ -15954,12 +16181,204 @@ async function _amvRunTool(name, input, onStatus){
       }
       return { text:'Built it. A live, working version is shown to the user - they can open, edit, and download it.', render:card };
     }
+
+    if(name.slice(0,5) === 'crew_') return await _crewTool(name, input);
   }catch(e){
     return { text:'Tool "'+name+'" failed: '+(e.message||e), render:null };
   }
   return { text:'Unknown tool: '+name, render:null };
 }
-try{ window.AMV_TOOLS=AMV_TOOLS; window._amvRunTool=_amvRunTool; }catch(e){}
+
+/* ══════════════════════════════════════════════════════════════
+   THE CREW, RUN FROM CHAT
+
+   Every one of these goes through the same /auto/* routes the Crew screen
+   uses, so there is exactly one idea of what a background job is. A job
+   created in a sentence is the same record as one created by the form: same
+   list, same cron, same limits, same plan checks. Chat is a second door onto
+   the feature, not a second copy of it.
+
+   Three things the model is never allowed to do here, because each of them
+   would be a plausible-looking disaster:
+
+   - Guess which job it meant. "Remove the email one" with two email jobs
+     returns both and refuses. Deleting the wrong background job is silent
+     data loss the person only discovers when the thing they relied on has
+     been gone for a week.
+   - Claim something happened. Every failure comes back as an instruction to
+     say so plainly, because the one behaviour worse than not creating the
+     job is telling somebody it is running when it is not.
+   - Route around a limit. Plan ceilings, the free-tier shaping, the
+     permission rules for unattended runs - all of those live on the server
+     and are enforced identically no matter which door the request came in.
+   ══════════════════════════════════════════════════════════════ */
+const _CREW_REPEATS = ['10min','30min','hourly','daily','weekly'];
+
+/* Find the ONE job being talked about, or explain why that is not possible.
+   Returns { item } or { error } - never a best guess. */
+async function _crewFind(input){
+  let items = [];
+  try{ const d = await _autoApi('/auto/list', {}); items = d.items || []; }
+  catch(e){ return { error: _crewErr(e) }; }
+
+  const id = String((input && input.id) || '').trim();
+  if(id){
+    const byId = items.find(x => x.id === id);
+    if(byId) return { item: byId, items };
+    /* An id that is not on the list means the model invented it or the job is
+       already gone. Both are worth saying rather than falling through to a
+       fuzzy match that could hit something else entirely. */
+    return { error:'There is no background job with that id. Call crew_list to see the real ones, and tell the user if the job they meant is not there.' };
+  }
+
+  const q = String((input && input.match) || '').trim().toLowerCase();
+  if(!q) return { error:'Which job? Call crew_list, then pass the id of the one they mean.' };
+  const words = q.split(/\s+/).filter(w => w.length > 2);
+  const hits = items.filter(x => {
+    const hay = String(x.detail || '').toLowerCase();
+    return hay.includes(q) || (words.length > 0 && words.every(w => hay.includes(w)));
+  });
+  if(hits.length === 1) return { item: hits[0], items };
+  if(hits.length === 0)
+    return { error: items.length
+      ? 'No background job matches that. The ones that exist are: '
+        + items.map(x => x.id + ' - ' + String(x.detail||'').slice(0,70)).join(' | ')
+        + '. Ask the user which they meant, or tell them it does not exist.'
+      : 'They have no background jobs at all, so there is nothing to change. Say so.' };
+  return { error:'That matches ' + hits.length + ' jobs, so it is not clear which one they mean: '
+                 + hits.map(x => x.id + ' - ' + String(x.detail||'').slice(0,70)).join(' | ')
+                 + '. Ask the user which one before doing anything.' };
+}
+
+/* A failure the model can repeat to the person truthfully, including the one
+   thing they can do about it. */
+function _crewErr(e){
+  const msg = (e && e.message) || 'the server did not accept it';
+  if(msg === 'not-connected')
+    return 'AMV is not connected to its engine, so background jobs cannot be reached at all. Tell the user to connect it in Settings. Do NOT say the job was created.';
+  if(e && (e.code === 'plan_required' || e.code === 'plan_limit') || /paid plan/i.test(msg))
+    return 'This account\'s plan cannot run that: ' + msg + '. Tell the user exactly this and that upgrading lifts it. Do NOT say the job was created.';
+  return 'That did not work: ' + msg + '. Tell the user plainly - do NOT say it worked.';
+}
+
+/* One line per job, in the terms the person thinks in. */
+function _crewLine(x){
+  const every = _CREW_EVERY[String(x.repeat||'')] || 'on a schedule';
+  return '- [' + x.id + '] ' + (x.active === false ? 'PAUSED' : 'running ' + every)
+       + (x.approval === 'auto' ? ', results sent automatically' : ', each result waits for approval')
+       + ': ' + String(x.detail || '').slice(0, 220);
+}
+
+/* Repaint whatever is on screen, so a job created in chat is visible in Crew
+   the moment they look - rather than next time something happens to refresh. */
+function _crewSynced(){
+  try{ if(typeof _autoRefresh === 'function') _autoRefresh(); }catch(e){}
+  try{ if(S.tab === 'crew' && typeof renderCrewView === 'function') renderCrewView(); }catch(e){}
+  try{ if(S.tab === 'tasks' && typeof renderTasksView === 'function') renderTasksView(); }catch(e){}
+}
+
+async function _crewTool(name, input){
+  input = input || {};
+
+  if(name === 'crew_list'){
+    let d;
+    try{ d = await _autoApi('/auto/list', {}); }
+    catch(e){ return { text: _crewErr(e), render:null }; }
+    const items = d.items || [];
+    const standing = String(d.standing || '').trim();
+    const head = items.length
+      ? 'Their background jobs (' + items.length + (typeof d.maxAutomations === 'number' ? ' of ' + d.maxAutomations + ' allowed' : '') + '):\n'
+        + items.map(_crewLine).join('\n')
+      : 'They have no background jobs set up yet.'
+        + (d.canSchedule === false ? ' Their plan cannot run them - say so if they ask for one.' : '');
+    return { text: head + (standing
+      ? '\n\nStanding instructions applying to all of them: ' + standing
+      : '\n\nThey have no standing instructions set.'), render:null };
+  }
+
+  if(name === 'crew_add'){
+    const detail = String(input.detail || '').trim();
+    if(!detail) return { text:'A job needs to say what it does. Ask the user what they want it to do each time it runs.', render:null };
+    const repeat = _CREW_REPEATS.includes(String(input.repeat)) ? String(input.repeat) : 'daily';
+    const approval = input.approval === 'auto' ? 'auto' : 'require';
+    let d;
+    try{
+      d = await _autoApi('/auto/create', { detail, repeat, kind:'task', approval, notify:'app' });
+    }catch(e){ return { text: _crewErr(e), render:null }; }
+    _crewSynced();
+    /* The server is allowed to give a free account something smaller than was
+       asked for. Saying "done, every 10 minutes" when it made a weekly job is
+       the exact lie this whole path is built to avoid, so the model is handed
+       the shaping message and told to pass it on. */
+    const made = d.item || {};
+    const gotRepeat = String(made.repeat || repeat);
+    const shaped = gotRepeat !== repeat || d.shaped;
+    return { text:'Created. It is in their Crew tab now and runs '
+      + (_CREW_EVERY[gotRepeat] || 'on a schedule') + ' on its own.'
+      + (made.approval === 'auto' ? ' Results are sent without review.' : ' Each result waits for their approval.')
+      + (shaped ? ' IMPORTANT - tell the user this part: ' + (d.shapedWhy || 'their plan runs it ' + (_CREW_EVERY[gotRepeat]||'less often') + ' rather than what was asked for.') : ''),
+      render:null };
+  }
+
+  if(name === 'crew_standing'){
+    const text = String(input.standing == null ? '' : input.standing);
+    let d;
+    try{ d = await _autoStanding(text); }
+    catch(e){ return { text: _crewErr(e), render:null }; }
+    _crewSynced();
+    const n = typeof d.appliesTo === 'number' ? d.appliesTo : 0;
+    if(!String(d.standing || '').trim())
+      return { text:'Cleared. Their background jobs go back to running the standard way.', render:null };
+    return { text:'Saved, and it is real: the server puts this in front of every background run, so the next run of '
+      + (n ? 'all ' + n + ' of their jobs' : 'anything they set up') + ' follows it. '
+      + 'It changes how the work is done - it does not change what AMV is allowed to do, so do not tell them it grants any new permission.', render:null };
+  }
+
+  /* Everything below acts on one specific job. */
+  const found = await _crewFind(input);
+  if(found.error) return { text: found.error, render:null };
+  const item = found.item;
+  const what = String(item.detail || '').slice(0, 90);
+
+  try{
+    if(name === 'crew_pause'){
+      if(item.active === false) return { text:'That job ("' + what + '") is already paused. Nothing to do - say so.', render:null };
+      await _autoApi('/auto/update', { id:item.id, action:'pause' });
+      _crewSynced();
+      return { text:'Paused "' + what + '". It stays in their Crew tab and will not run until they resume it.', render:null };
+    }
+    if(name === 'crew_resume'){
+      if(item.active !== false) return { text:'That job ("' + what + '") is already running. Nothing to do - say so.', render:null };
+      await _autoApi('/auto/update', { id:item.id, action:'resume' });
+      _crewSynced();
+      return { text:'Resumed "' + what + '". Its next run is one full interval from now, not immediately.', render:null };
+    }
+    if(name === 'crew_remove'){
+      await _autoApi('/auto/update', { id:item.id, action:'delete' });
+      _crewSynced();
+      return { text:'Deleted "' + what + '" and its history. It will not run again. If they only wanted it stopped for now, tell them it can be set up again.', render:null };
+    }
+    if(name === 'crew_update'){
+      const patch = { id:item.id, action:'edit' };
+      if(typeof input.detail === 'string' && input.detail.trim()) patch.detail = input.detail.trim();
+      if(_CREW_REPEATS.includes(String(input.repeat))) patch.repeat = String(input.repeat);
+      if(input.approval === 'auto' || input.approval === 'require') patch.approval = input.approval;
+      if(!patch.detail && !patch.repeat && !patch.approval)
+        return { text:'Nothing was actually changed - no new instruction, frequency or approval setting was given. Ask the user what they want changed.', render:null };
+      await _autoApi('/auto/update', patch);
+      _crewSynced();
+      return { text:'Updated "' + what + '".'
+        + (patch.detail ? ' It now does: ' + patch.detail.slice(0,120) + '.' : '')
+        + (patch.repeat ? ' It now runs ' + (_CREW_EVERY[patch.repeat] || patch.repeat) + ', starting one interval from now.' : '')
+        + (patch.approval ? (patch.approval === 'auto' ? ' Results are now sent without review.' : ' Each result now waits for their approval.') : ''),
+        render:null };
+    }
+  }catch(e){ return { text: _crewErr(e), render:null }; }
+
+  return { text:'Unknown crew action: ' + name, render:null };
+}
+
+try{ window.AMV_TOOLS=AMV_TOOLS; window._amvRunTool=_amvRunTool; window._crewTool=_crewTool; }catch(e){}
 
 /* ══════════════════════════════════════════════════════════════
    CONTEXT WINDOW MANAGEMENT
@@ -22943,24 +23362,16 @@ function _freqNext(f, from){
   if(f==='weekly_mon'){ d.setDate(d.getDate()+((8-d.getDay())%7||7)); d.setHours(8,0,0,0); return d.getTime(); }
   return from+864e5;
 }
-/* Schedule an automation. This now goes to the SERVER, where a cron trigger
-   runs it in the background - so it fires even with AMV closed. Falls back to
-   a local record (and says so honestly) when the engine isn't connected. */
-function _scheduleAuto(goal, freq){
-  // Server path: real background execution.
-  _scheduleTask({ detail: goal, repeat: (freq==='hourly'||freq==='weekly') ? freq : 'daily', firstRunAt: _freqNext(freq, Date.now()) })
-    .then(item=>{
-      if(item){ try{ _autoRefresh(); }catch(e){} }
-      else {
-        // Not connected - keep a local record so nothing is lost, but don't
-        // pretend it will run unattended.
-        const list=_loadSched();
-        list.push({id:'a'+Date.now(), goal, freq, next:_freqNext(freq, Date.now()), created:Date.now(), lastRun:null, localOnly:true});
-        _saveSched(list);
-      }
-    })
-    .catch(()=>{});
-}
+/* _scheduleAuto lived here. Its only caller was the chat intent router, which
+   created a recurring background job from a regex on the user's sentence with
+   nobody asked and the raw message as the instruction - see the note where that
+   branch used to be. Chat now lets the model use crew_add instead, which writes
+   a real instruction and shows what will run before it runs.
+
+   Deleted rather than left orphaned: a function that quietly creates recurring
+   spend from a string, sitting unused next to the schedulers that are in use,
+   is the sort of thing that gets wired back up by somebody looking for exactly
+   that signature. _scheduleAuto2 below is a different function and is live. */
 /* load/store, not raw localStorage: raw bypasses _scopeKey, so this list was
    shared by every account on the device. Signing in as somebody else showed
    their scheduled jobs - goals that often carry personal detail - and

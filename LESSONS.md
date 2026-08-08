@@ -2431,3 +2431,73 @@ ordering by index, not just on the presence of both.
 **Rule:** for any feature whose value is that it changes later behaviour, the
 test must observe the later behaviour. Storing the setting and echoing it back
 is the implementation that passes every check except the one that matters.
+
+## 159. AMV's own backend had been throwing away AMV's own tools
+
+The chat proxy forwards only tools it recognises, which is right: a modified
+client must not be able to send a thousand tool definitions, or one with a
+megabyte of schema, on every turn at AMV's expense.
+
+It recognised them by `t.type`. Only the provider's server-side tools have a
+type - web search has one. Every tool AMV wrote is a CUSTOM tool:
+`{ name, description, input_schema }`, no type at all. So the filter dropped
+every one of them, on every turn, since the day they were written.
+
+Nothing could see it from either end. The client assembled the tools and
+believed it had sent them. The system prompt told the model "you have real
+tools: generate_image, run_code, build_app" - and then handed it none, so it
+could not have called one if it had wanted to. Somebody asking for an image got
+a sentence about generating an image. Every line of `_amvRunTool` - real image
+generation, real execution, real deploys - was unreachable in production, and
+passed review, because nothing tested that function.
+
+Two rules came out of it. The allowlist is now checked AGAINST the shipped
+tools, in both directions, so adding a tool client-side and forgetting the
+backend fails a test instead of failing silently. And a filter that decides what
+survives is worth one case per branch: the reason this lasted is that "web
+search works" was true the whole time.
+
+**Rule:** when a filter drops something, something must be able to tell. A
+silent drop on the happy path is indistinguishable from working.
+
+## 160. A regex was creating recurring paid work from a question
+
+The chat intent router matched `every|each (morning|day|week...)` and, on a
+match, created a real recurring background job from the raw message, answered
+"Done - scheduled to run daily", and returned before the model was ever called.
+
+Nobody was asked. A background job spends money unattended for as long as it
+exists, and the trigger was any sentence with "every morning" in it - including
+a question. "Do I need to water these every day?" created a daily job, forever,
+and the only sign was one line in a conversation the person scrolled past.
+
+It was also why chat could not do the thing it was supposed to do. Matching
+returns before the model is called, so the model could never use crew_add - the
+tool that writes a proper instruction, shows exactly what will run and how
+often, and waits for a yes.
+
+Removing the branch made the feature work AND removed a way to lose money. That
+combination is the signal: a shortcut that guesses at intent is usually standing
+where the real implementation should be.
+
+**Rule:** never let a pattern match commit the user to recurring spend. Guessing
+is for suggestions; the thing that costs money asks.
+
+## 161. The screen and the cron were reading different lists
+
+Crew's "Running jobs" rendered `amv_autosched` - a list in one browser's
+localStorage. The cron runs the account's server record. The two were joined
+only by an id stapled onto the local entry after the fact.
+
+So a job set up on a phone was invisible on a laptop while spending money on
+both; clearing site data hid running jobs without stopping them; and anything
+created server-side, including by chat, did not appear at all. Every one of
+those reads as "my job is gone" while the job is very much alive.
+
+The list a screen shows has to come from whatever actually does the work. The
+local list still exists, for work that genuinely could not be registered - and
+now says so, instead of being displayed identically to background work.
+
+**Rule:** render state from the authority that acts on it. A cache that can
+disagree with the executor will, and the disagreement always favours the version
+that makes somebody stop watching.
