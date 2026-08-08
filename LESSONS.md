@@ -2259,3 +2259,43 @@ invisible field. Both now use one list of what is genuinely reachable.
 
 **Rule:** for a dialog, the three things are entry, containment and return.
 Containment is the one everybody implements and the least useful on its own.
+
+## 152. A backup you have never restored is a hypothesis
+
+Export and import were both tested carefully, on their shapes: prefixes
+allowlisted, oversized values rejected, key counts bounded, a tampered snapshot
+unable to write a control key. All true, and none of it answers the only
+question a backup exists for - after the worst day, can a real customer sign
+in and find their plan, their purchases and their money as they left them.
+
+The failure mode is one prefix missing from a list. Everything restores
+cleanly except the ability to authenticate, or except the wallet, and every
+shape test still passes. Removing `acct:` from the backup list fails seven
+assertions in the behavioural version and none in the shape version: the
+snapshot is still valid, still bounded, still importable, and restores a
+museum.
+
+The property worth writing down came out of my own bad test. I put an account
+record in a hostile snapshot and asserted that person could still sign in
+afterwards. They could not - correctly - because merging a snapshot that
+contains an account record replaces the live one, password hash and all. That
+is what "merge" means and the route is admin-only, so it is not a hole; but it
+read like a product bug for ten minutes, and an operator restoring a partial
+snapshot needs to know it before they do it, not after. It has its own case
+now.
+
+**Rule:** test a backup by destroying the system and using the product as a
+customer afterwards. Anything less tests the file format.
+
+## 153. A test that throws says less than one that fails
+
+Sabotaging the backup list to drop `wallet:` produced no output at all. The
+assertion read `wallet.balance` on a record that was now absent, so the file
+crashed before reporting anything - and the sabotage that was supposed to prove
+the case looked, from the outside, exactly like a test that had not run.
+
+Reading defensively (`(await DB.get(...)) || {}`) turns the same sabotage into
+two named failures pointing straight at the missing prefix.
+
+**Rule:** in a test, read the thing you are asserting about as though it might
+be missing, because the bug you are hunting is usually "it is missing".
