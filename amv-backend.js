@@ -859,6 +859,44 @@ function _autoMaxFor(plan, cfg){
   return AUTO_MAX_BY_PLAN[plan] || 1;
 }
 const AUTO_INTERVALS = { '10min': 600e3, '30min': 1800e3, hourly: 3600e3, daily: 86400e3, weekly: 604800e3 };
+
+/* ---- HOW MUCH A BACKGROUND JOB IS ALLOWED TO DO ON ITS OWN ----------------
+
+   Three levels, ordered, least free to most:
+
+     suggest  AMV does not run the job. When it comes due it says the job is
+              due and what it would produce, and waits to be asked. Nothing is
+              generated, so nothing is spent.
+     require  AMV does the work and stops before delivery. The finished result
+              waits in the approval queue. This is the default and stays it.
+     auto     AMV does the work and delivers it - email, or waiting in the app.
+
+   There used to be two, and 'suggest' is not a label on top of them: at that
+   level the runner is never called, so the difference is visible on the bill as
+   well as on the screen.
+
+   The ordering exists because of the CEILING. An account can set the highest
+   level any of its jobs may reach, and the cron takes the lower of the two
+   every run. That is what makes "never let anything send on its own" a real
+   setting rather than a promise about how carefully somebody configures each
+   job: a job set to auto under a ceiling of require executes as require, and a
+   job created later inherits the same limit without anyone remembering to set
+   it. It is enforced where the work happens, so nothing that edits a job can
+   route around it. */
+const AUTO_APPROVALS = ['suggest', 'require', 'auto'];
+const AUTO_APPROVAL_RANK = { suggest: 0, require: 1, auto: 2 };
+function _autoApprovalOf(v, fallback) {
+  return AUTO_APPROVALS.includes(v) ? v : (fallback || 'require');
+}
+/* The level a run ACTUALLY executes at: the job's own, capped by the account's
+   ceiling. Read at run time rather than written into the job, so raising the
+   ceiling restores what each job was already set to instead of having flattened
+   them all permanently. */
+function _autoEffective(item, rec) {
+  const want = _autoApprovalOf(item && item.approval, 'require');
+  const cap = _autoApprovalOf(rec && rec.ceiling, 'auto');
+  return AUTO_APPROVAL_RANK[want] <= AUTO_APPROVAL_RANK[cap] ? want : cap;
+}
 const AUTO_MAX_RESULTS = 50;
 // The cron fires every 5 minutes, so the shortest meaningful interval is ~10min.
 // We keep a floor so nobody can schedule a job that hammers the model every tick.
@@ -880,6 +918,11 @@ async function autoList(request, env){
                    so the screen and the chat show the same standing instruction
                    rather than each remembering its own. */
                 standing: rec.standing || '',
+                /* The highest level any of this account's jobs may reach. The
+                   screen has to show it, because a job displaying "autonomous"
+                   under a ceiling of "ask first" would be lying about what
+                   happens tonight. */
+                ceiling: _autoApprovalOf(rec.ceiling, 'auto'),
                 emailReady: !!env.EMAIL_API_KEY, canSchedule: budget.ceiling > 0, plan: budget.plan,
                 // What this account may have, so the app offers exactly that.
                 free: budget.free, maxAutomations: budget.max,
@@ -943,7 +986,7 @@ async function autoCreate(request, env){
   const repeat = String(body.repeat||'daily').toLowerCase();
   const kind = (body.kind === 'research' || body.kind === 'invest') ? body.kind : 'task';
   const notify = (body.notify === 'email') ? 'email' : 'app';
-  const approval = (body.approval === 'auto') ? 'auto' : 'require';
+  const approval = _autoApprovalOf(body.approval, 'require');
   const scope = (body.scope && typeof body.scope === 'object') ? body.scope : null;
   if(!detail) return json({ error:'detail required' }, 400);
   if(detail.length > 2000) return json({ error:'detail too long' }, 400);
@@ -1060,13 +1103,51 @@ async function autoUpdate(request, env){
     return json({ ok:true, standing: text, appliesTo: items.length });
   }
 
+  /* THE CEILING - the highest level ANY of this account's background jobs may
+     reach, now or in future.
+
+     Handled before the id lookup because it belongs to the person rather than
+     to any one job, and it is the control that makes "nothing sends on its own"
+     something the system enforces instead of something they have to remember
+     for every job they ever create. Lowering it takes effect on the next run of
+     everything, including jobs somebody else on a family or team plan set up.
+
+     Nothing is rewritten when it moves. Each job keeps the level it was given
+     and the cron takes the lower of the two, so raising the ceiling later
+     restores exactly what was configured rather than leaving everything
+     flattened to whatever the strictest moment demanded. */
+  if(body.action === 'ceiling'){
+    const level = _autoApprovalOf(body.ceiling, null);
+    if(!AUTO_APPROVALS.includes(body.ceiling)) return json({ error:'invalid level' }, 400);
+    rec.ceiling = level;
+    rec.ceilingAt = Date.now();
+    await DB.put(env, 'auto', key, rec);
+    /* Worth an audit line: it is a security control, and lowering it is
+       something somebody may need to prove happened. */
+    audit(env, 'auto_ceiling_set', { by: user.email, level, jobs: items.length });
+    return json({ ok:true, ceiling: level,
+                  /* How many jobs this actually restrains right now, so the
+                     confirmation is about their jobs rather than about a word. */
+                  restrains: items.filter(x => AUTO_APPROVAL_RANK[_autoApprovalOf(x.approval,'require')] > AUTO_APPROVAL_RANK[level]).length,
+                  items });
+  }
+
   const i = items.findIndex(x=>x.id===id);
   if(i < 0) return json({ error:'not found' }, 404);
 
   if(body.action === 'delete') items.splice(i,1);
   else if(body.action === 'pause')  items[i].active = false;
   else if(body.action === 'resume'){ items[i].active = true; items[i].next = Date.now() + items[i].interval; }
-  else if(body.action === 'approval'){ items[i].approval = (items[i].approval === 'auto') ? 'require' : 'auto'; }
+  /* An explicit level, not a toggle. A toggle can only ever reach two of the
+     three, so the screen could not express "suggest only" at all and the chat
+     tool had to guess which way pressing it would go. A caller that sends no
+     level still gets the old flip between require and auto, so nothing that
+     already worked stops working. */
+  else if(body.action === 'approval'){
+    items[i].approval = AUTO_APPROVALS.includes(body.approval)
+      ? body.approval
+      : ((items[i].approval === 'auto') ? 'require' : 'auto');
+  }
   /* Change what a job does or how often. Without this there was no way to edit
      a running job at all: the screen offered it, posted to a route that did not
      exist, and the server carried on with the old schedule. Deleting and
@@ -1088,7 +1169,7 @@ async function autoUpdate(request, env){
          cadence chose - otherwise "change it to weekly" still fires tomorrow. */
       items[i].next = Date.now() + items[i].interval;
     }
-    if(body.approval === 'auto' || body.approval === 'require') items[i].approval = body.approval;
+    if(AUTO_APPROVALS.includes(body.approval)) items[i].approval = body.approval;
   }
   else return json({ error:'unknown action' }, 400);
 
@@ -1400,19 +1481,64 @@ async function runDueAutomations(env){
       // invocations can't both execute the same due job (duplicate model call or
       // email). The key is unique to this item's scheduled time; atomic on D1.
       if(!(await _claimOnce(env, 'autorun', `${email}:${item.id}:${item.next}`, 3*86400))) continue;
+
+      /* What this run may actually do: the job's level, capped by the account's
+         ceiling, decided HERE - at the point of spending and sending - so
+         nothing that edits a job elsewhere can get past it. */
+      const level = _autoEffective(item, rec);
+
+      /* SUGGEST ONLY: the runner is not called at all.
+
+         This is the level that has to cost nothing, or it is not a permission
+         level - it is a delivery preference with a different label. So the due
+         job produces a note that it is due and what it would do, spends no
+         tokens, sends nothing, and waits to be asked. */
+      if(level === 'suggest'){
+        rec.results = (rec.results||[]).concat({
+          id: 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2,6),
+          autoId: item.id, detail: item.detail, at: Date.now(), read: false,
+          /* Zero, stated rather than left absent. The timeline adds these up,
+             and a missing field reads as unknown where the whole point of this
+             level is that the answer is nothing. */
+          kind: 'suggestion', approval: 'suggest', outcome: 'suggested', costUSD: 0,
+          out: 'This job is due and is set to suggest only, so AMV has not run it.\n\n'
+             + 'What it would do:\n' + String(item.detail || '').slice(0, 1200)
+             + '\n\nNothing has been generated and nothing has been sent. Run it when you want it.'
+        }).slice(-AUTO_MAX_RESULTS);
+        item.runs = (item.runs||0) + 1;
+        item.lastLevel = 'suggest';
+        item.next = now + (item.interval || AUTO_INTERVALS.daily);
+        ran++; changed = true;
+        continue;
+      }
+
       try{
         const exec = await _autoExecute(env, item, budget, email, rec.standing || '');
         const out = (exec && exec.text) || '';
         // record the real cost of this run against the monthly cap
-        try{ const c = _autoCostUSD(exec && exec.usage || {});
+        let runCost = 0;
+        try{ const c = _autoCostUSD(exec && exec.usage || {}); runCost = c || 0;
           if(c>0){ await counter(env, costName, { op:'incr', amount:c, ttlMs: 86400000*70 });
                    await counter(env, `costtotal:${monthKey()}`, { op:'incr', amount:c, ttlMs: 86400000*70 });
                    await counter(env, `spend:${todayKey()}`, { op:'incr', amount:c, ttlMs: 86400000*2 }); } }catch(e){}
+        /* What happened to this result, decided here rather than guessed later.
+           "It ran" and "it reached you" are different facts, and the second one
+           is the one somebody is actually asking about when they look. */
+        const outcome = (level === 'require') ? 'waiting'
+                      : (item.notify === 'email' && env.EMAIL_API_KEY) ? 'emailed'
+                      : 'in-app';
         rec.results = (rec.results||[]).concat({
           id: 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2,6),
-          autoId: item.id, detail: item.detail, out, at: Date.now(), read: false, kind: item.kind||'task'
+          autoId: item.id, detail: item.detail, out, at: Date.now(), read: false, kind: item.kind||'task',
+          /* The level this run actually executed at, recorded rather than
+             inferred later from the job's current setting - which is the one
+             thing that will have changed by the time anybody reads it back. */
+          approval: level,
+          outcome,
+          costUSD: Math.round(runCost * 1e6) / 1e6
         }).slice(-AUTO_MAX_RESULTS);
         item.runs = (item.runs||0) + 1;
+        item.lastLevel = level;
         /* A soft failure ran fine and DELIVERED the reason - an institution that
            was down, or nothing linked yet. It is recorded so the job's row shows
            it, but it does not count toward the give-up counter: a bank having a
@@ -1422,17 +1548,36 @@ async function runDueAutomations(env){
         // Deliver by approval mode. Auto-approve tasks complete on their
         // own (emailed if requested). Require-approval tasks stop before
         // delivery: the finished work waits in the approval queue.
-        if(item.approval === 'require'){
+        /* Read from the EFFECTIVE level, not from item.approval. Reading the
+           job's own setting here is what a ceiling would have to get past, and
+           the whole point of the ceiling is that it cannot be got past. */
+        if(level === 'require'){
           try{ await _enqueueApproval(env, email, item, out); }catch(e){ /* best-effort */ }
         } else if(item.notify === 'email' && env.EMAIL_API_KEY){
           try{ await _autoEmailResult(env, email, item, out); }catch(e){ /* delivery is best-effort */ }
         }
       }catch(e){
-        item.lastError = String(e.message||e).slice(0,200);
+        const why = String(e.message||e).slice(0,200);
+        item.lastError = why;
         item.errors = (item.errors||0) + 1;
         // Give up on an automation that keeps failing, rather than burning quota forever.
         if(item.errors >= 5) item.active = false;
         failed++;
+        /* A FAILED RUN IS AN EVENT TOO.
+
+           Until now a failure set a field on the job and nothing else, so the
+           history showed successes and silence. Somebody looking at a job that
+           had not produced anything for a week could not tell whether it had
+           been failing every night or had simply had nothing to say - and those
+           call for opposite responses. It goes in the record, with the reason
+           and with whether the job has now been switched off for repeating. */
+        rec.results = (rec.results||[]).concat({
+          id: 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2,6),
+          autoId: item.id, detail: item.detail, at: Date.now(), read: false,
+          kind: 'failed', approval: level, outcome: 'failed', costUSD: 0,
+          out: 'This run did not complete: ' + why
+             + (item.errors >= 5 ? '\n\nIt has now failed five times, so AMV has switched it off rather than keep spending on it. Fix the cause and turn it back on.' : '')
+        }).slice(-AUTO_MAX_RESULTS);
       }
       item.next = now + (item.interval || AUTO_INTERVALS.daily);
       changed = true;
@@ -5933,6 +6078,7 @@ async function videoList(request, env) {
 const AMV_CLIENT_TOOLS = new Set([
   'generate_image', 'generate_video', 'run_code', 'fix_code', 'build_app', 'deploy_site',
   'crew_list', 'crew_add', 'crew_update', 'crew_pause', 'crew_resume', 'crew_remove', 'crew_standing',
+  'crew_ceiling',
 ]);
 const TOOLS_MAX          = 24;      // more than AMV has, far less than an attack
 const TOOL_DESC_MAX      = 1200;    // a description, not a second prompt

@@ -762,6 +762,77 @@ window._mcUseCrew=_mcUseCrew;
    single run, so it is capped, and the box says so rather than truncating in
    silence. */
 const MC_STANDING_MAX = 1200;
+
+/* HOW FAR ANY BACKGROUND JOB MAY GO WITHOUT ASKING.
+
+   Each job carries its own level, and this is the ceiling over all of them -
+   the setting somebody makes once when they decide "nothing sends on its own",
+   rather than a decision they have to remember correctly for every job they
+   ever create. The server applies it at the moment of spending and sending, so
+   a job set higher is held back rather than rewritten, and raising this later
+   gives every job back exactly what it was configured to do.
+
+   Written as three plain statements about what happens tonight, because that is
+   the question being answered. "Approve before action" is a category name;
+   "AMV does the work, then waits for you before anything goes out" is the
+   thing somebody is actually choosing. */
+const MC_LEVELS = [
+  { id:'suggest', label:'Suggest only',
+    say:'AMV tells you a job is due and what it would do. It does not run it, so it spends nothing.' },
+  { id:'require', label:'Ask me first',
+    say:'AMV does the work, then waits for you. Nothing is sent, posted or acted on until you approve it.' },
+  { id:'auto',    label:'Let it run',
+    say:'AMV does the work and delivers it on its own. Still no sending, buying or posting - an unattended run can only produce text.' },
+];
+function _mcCeilingHTML(){
+  const cur = (typeof window._autoCeilingLevel==='function' ? window._autoCeilingLevel() : 'auto') || 'auto';
+  const held = (typeof _AUTOS!=='undefined' && Array.isArray(_AUTOS))
+    ? _AUTOS.filter(x=>['suggest','require','auto'].indexOf(String(x.approval||'require'))
+                     > ['suggest','require','auto'].indexOf(cur)).length : 0;
+  return `<section id="mc-ceiling" class="mc-sec mc-ceiling">
+    <div class="sec-head">
+      <h3>How far AMV may go on its own</h3>
+      <span class="sec-sub">The most any background job may do without you, now and for anything you add later. A job set further than this is held back rather than changed.</span>
+    </div>
+    <div class="mc-lv" role="radiogroup" aria-label="How far AMV may go on its own">
+      ${MC_LEVELS.map(l=>`
+        <button class="mc-lv-opt${cur===l.id?' on':''}" role="radio" aria-checked="${cur===l.id?'true':'false'}"
+                data-dact="mcSetCeiling" data-darg="${l.id}">
+          <span class="mc-lv-dot" aria-hidden="true"></span>
+          <span class="mc-lv-b">
+            <span class="mc-lv-t">${escH(l.label)}</span>
+            <span class="mc-lv-s">${escH(l.say)}</span>
+          </span>
+        </button>`).join('')}
+    </div>
+    ${held?`<div class="mc-lv-held">${held===1?'1 of your jobs is':held+' of your jobs are'} set further than this and ${held===1?'is':'are'} being held back. ${held===1?'It keeps':'They keep'} its setting - raise this and ${held===1?'it goes':'they go'} back to normal.</div>`:''}
+  </section>`;
+}
+async function mcSetCeiling(level){
+  if(!['suggest','require','auto'].includes(level)) return;
+  try{
+    if(typeof window._autoCeiling !== 'function') throw new Error('not-connected');
+    const d = await window._autoCeiling(level);
+    renderCrewView();
+    const n = typeof d.restrains === 'number' ? d.restrains : 0;
+    const said = (MC_LEVELS.find(l=>l.id===level)||{}).say || '';
+    if(typeof toast==='function')
+      toast(said + (n ? ' ' + n + ' of your jobs ' + (n===1?'is':'are') + ' set further than this and will be held back.' : ''),
+            'success', 6500);
+  }catch(e){
+    /* The setting is a safety promise, so a failure to save it must never look
+       like a save. Somebody who believes they have switched off autonomous
+       sending and has not is worse off than somebody who never tried. */
+    if(typeof toast==='function')
+      toast((e && e.message === 'not-connected')
+        ? 'AMV is not connected to its engine, so that could not be saved. Your jobs are UNCHANGED.'
+        : 'That did not save: ' + ((e && e.message) || 'the server refused it') + '. Your jobs are UNCHANGED.',
+        'error', 7000);
+    renderCrewView();
+  }
+}
+try{ window.mcSetCeiling = mcSetCeiling; }catch(e){}
+
 function _mcStandingHTML(){
   const cur = (typeof window._autoStandingText==='function' ? window._autoStandingText() : '') || '';
   return `<section id="mc-standing" class="mc-sec mc-standing">
@@ -781,6 +852,92 @@ function _mcStandingHTML(){
     </div>
   </section>`;
 }
+/* ── WHAT AMV ACTUALLY DID WHILE NOBODY WAS WATCHING ─────────────────────────
+
+   Background work is the one part of this product that happens with the person
+   absent, which makes it the one part they have no way to check. Everything
+   else they can see happening. This is the record of everything else.
+
+   Three things it has to show that a list of finished results does not:
+
+   - Runs that FAILED. A job that has produced nothing for a week is either
+     failing every night or has genuinely had nothing to say, and those call for
+     opposite responses. Failures used to set a field on the job and appear
+     nowhere.
+   - The level each run EXECUTED at, recorded at the time. Reading it off the
+     job's current setting would be reading the one thing most likely to have
+     changed since.
+   - What each run COST. Unattended spending that nobody can itemise is the
+     thing that makes people turn a feature off entirely.
+
+   Read from the results the server already returns, so there is no second
+   record to drift from the first. */
+const MC_ACT_SHOWN = 12;
+const _MC_OUTCOME = {
+  emailed:   ['sent',      'Emailed to you'],
+  'in-app':  ['done',      'Waiting in AMV'],
+  waiting:   ['wait',      'Waiting for your approval'],
+  suggested: ['idle',      'Not run - suggest only'],
+  failed:    ['err',       'Did not complete'],
+};
+function _mcAgo(ts){
+  const d = Number(ts)||0; if(!d) return '';
+  const m = Math.round((Date.now()-d)/60000);
+  if(m < 1) return 'just now';
+  if(m < 60) return m + ' min ago';
+  if(m < 60*24) return Math.round(m/60) + 'h ago';
+  const days = Math.round(m/1440);
+  return days === 1 ? 'yesterday' : days + ' days ago';
+}
+function _mcMoney(n){
+  const v = Number(n)||0;
+  if(v <= 0) return 'nothing';
+  if(v < 0.01) return 'under a cent';
+  return '$' + v.toFixed(2);
+}
+function _mcActivityHTML(){
+  const all = (typeof _AUTO_RESULTS!=='undefined' && Array.isArray(_AUTO_RESULTS)) ? _AUTO_RESULTS : [];
+  const rows = all.slice().sort((a,b)=>(b.at||0)-(a.at||0)).slice(0, MC_ACT_SHOWN);
+  const spent = all.reduce((t,r)=>t + (Number(r.costUSD)||0), 0);
+
+  if(!rows.length){
+    /* An empty timeline and a timeline that could not be loaded are different
+       facts, and only one of them means "nothing has happened". */
+    const st = (typeof window._autoLoadState==='function') ? window._autoLoadState() : { loaded:true, error:'' };
+    return `<section id="mc-activity" class="mc-sec">
+      <div class="sec-head"><h3>What AMV did on its own</h3><span class="sec-sub">Every unattended run, what it cost, and what happened to it.</span></div>
+      <div class="mc-empty-row">${st && st.error
+        ? 'This could not be loaded (' + escH(st.error) + '). It does not mean nothing ran. <button class="mc-sec-link" data-dact="mcReloadJobs">Try again</button>'
+        : 'Nothing has run on its own yet. Once a background job runs, every one of its runs is listed here - including the ones that failed.'}</div>
+    </section>`;
+  }
+
+  return `<section id="mc-activity" class="mc-sec">
+    <div class="sec-head">
+      <h3>What AMV did on its own</h3>
+      <span class="sec-sub">Every unattended run, what it cost, and what happened to it. Nothing here was sent, bought or posted - background work can only produce text.</span>
+    </div>
+    <div class="mc-act">${rows.map(r=>{
+      const o = _MC_OUTCOME[String(r.outcome||'')] || (r.kind==='failed' ? _MC_OUTCOME.failed : ['done','Completed']);
+      return `<div class="mc-act-row ${o[0]}">
+        <span class="mc-act-when">${escH(_mcAgo(r.at))}</span>
+        <span class="mc-act-b">
+          <span class="mc-act-t">${escH(String(r.detail||'Background job').slice(0,120))}</span>
+          <span class="mc-act-m">
+            <span class="mc-act-st">${escH(o[1])}</span>
+            <span class="mc-act-sep">·</span>${escH(_mcMoney(r.costUSD))}
+            ${r.approval?`<span class="mc-act-sep">·</span>ran as “${escH((MC_LEVELS.find(l=>l.id===r.approval)||{}).label || r.approval)}”`:''}
+          </span>
+        </span>
+      </div>`;
+    }).join('')}</div>
+    <div class="mc-act-foot">
+      ${all.length > rows.length ? 'Showing the last ' + rows.length + ' of ' + all.length + ' runs. ' : ''}
+      Total spent on background work in this record: <b>${escH(_mcMoney(spent))}</b>.
+    </div>
+  </section>`;
+}
+
 async function mcSaveStanding(){
   const box = $('mc-standing-box'), btn = $('mc-standing-save');
   if(!box) return;
@@ -945,9 +1102,21 @@ function _mcServerSchedRow(x){
     <div class="mc-sched-b">
       <div class="mc-sched-goal">${escH(String(x.detail||'Background job').slice(0,180))}</div>
       <div class="mc-sched-meta">${escH(when)} · Runs on AMV's servers, whether or not this is open</div>
-      <div class="mc-sched-mode-row"><span class="mc-sched-mode ${auto?'auto':''}">${auto
-        ? 'Autonomous - results are sent for you'
-        : 'Ask first - each result waits for your approval'}</span></div>
+      <div class="mc-sched-mode-row">${(()=>{
+        /* What this job will ACTUALLY do tonight - its own level capped by the
+           account ceiling. Showing the job's own setting here would have it
+           reading "Autonomous" under a ceiling that stops it, which is the one
+           sentence on this screen that must never be wrong. */
+        const own = String(x.approval||'require');
+        const cap = (typeof window._autoCeilingLevel==='function' ? window._autoCeilingLevel() : 'auto') || 'auto';
+        const rank = l => ['suggest','require','auto'].indexOf(l);
+        const eff = rank(own) <= rank(cap) ? own : cap;
+        const say = { suggest:'Suggest only - it will not run until you ask',
+                      require:'Ask first - each result waits for your approval',
+                      auto:'Autonomous - results are delivered for you' }[eff];
+        return `<span class="mc-sched-mode ${eff==='auto'?'auto':''}">${escH(say)}</span>`
+             + (eff!==own?`<span class="mc-sched-held">held back from “${escH(own)}” by your account setting</span>`:'');
+      })()}</div>
     </div>
     <div class="mc-sched-acts">
       <button class="btn mc-mini ghost" data-dact="mcServerJob" data-darg="${escH(x.id)}|${paused?'resume':'pause'}">${paused?'Resume':'Pause'}</button>
@@ -1375,6 +1544,7 @@ function renderCrewView(){
     ${paused?`<div class="mc-paused-banner"><b>Autonomous work is paused.</b> Scheduled and standing jobs won’t run until you resume. Anything already waiting still needs your approval.</div>`:''}
     <div class="mc-tiles">${tiles.map(t=>`<button class="mc-tile mc-${t[3]}${t[2]?'':' zero'}" data-mcjump="mc-${t[0]}"><span class="mc-tile-n">${t[2]}</span><span class="mc-tile-l">${t[1]}</span></button>`).join('')}</div>
 
+    ${_mcCeilingHTML()}
     ${_mcStandingHTML()}
 
     <section id="mc-appr" class="mc-sec">
@@ -1410,6 +1580,8 @@ function renderCrewView(){
         return `<div class="mc-empty-row">No running jobs yet. Start a task above and choose how often it should repeat - it will show up here. You can also just tell AMV in chat: "every morning, summarise my unread email".</div>`;
       })()}
     </section>
+
+    ${_mcActivityHTML()}
 
     ${st.done.length?`<section id="mc-done" class="mc-sec">
       <div class="sec-head"><h3>Recently completed</h3></div>

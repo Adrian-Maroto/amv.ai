@@ -2529,3 +2529,62 @@ without a placeholder leaking through.
 **Rule:** if a feature is the reason to buy, the person who has not bought is
 the one who must be able to see it. And an example that does not work is worse
 than no example: it is the one they will pick.
+
+## 163. A third option that behaves like the second is worse than two options
+
+"Suggest only / ask me first / let it run" is a promise about what happens while
+nobody is watching, and it is the easiest promise in the product to render as a
+label and never enforce. A dropdown with three choices where two behave
+identically is worse than a dropdown with two: somebody picks the
+safest-sounding one and stops worrying.
+
+So suggest only had to mean the runner is never called - no tokens, no output,
+nothing queued - and that is what the test asserts, on the model stub's call
+count rather than on the record it writes.
+
+The ceiling is the other half, and it is the part that makes this a safety
+control rather than a preference. It is read AT THE POINT OF SPENDING AND
+SENDING, not written into each job, which gives three properties that each had
+their own sabotage: a job set higher is held back, a job created afterwards
+inherits it, and editing a job back up changes the job and changes nothing about
+tonight. Applying it by rewriting the jobs would have failed all three, and
+would also have destroyed a configuration somebody spent time on the first time
+they had a cautious week.
+
+**Rule:** enforce a limit where the thing it limits actually happens. Anywhere
+earlier is a suggestion, and every later edit is a way around it.
+
+## 164. The screen said what the job was set to, not what would happen
+
+A job row reading "Autonomous - results are delivered for you" under an account
+ceiling that stops it is the one sentence on that screen that must never be
+wrong - and it is exactly what a naive implementation prints, because the job's
+own field is the obvious thing to render. The row now shows the job's level
+capped by the ceiling, and says when it is being held back.
+
+The first version of that check tested the whole page's text for "Ask first",
+and passed while the row itself said "Autonomous" - because those words also
+appear in the section heading that explains the two modes. The check agreed with
+the bug. Scoped to the row, the same sabotage fails three assertions instead of
+one.
+
+**Rule:** assert on the element that makes the claim, never on the page that
+contains it. Explanatory copy elsewhere on the screen will happily satisfy a
+loose match.
+
+## 165. Failures set a field and appeared nowhere
+
+A run that failed wrote item.lastError and nothing else, so the history showed
+successes and silence. A job that has produced nothing for a week is either
+failing every night or has genuinely had nothing to say, and those call for
+opposite responses - but they looked identical to the person deciding whether to
+turn it off.
+
+Failures are now events in the same record as successes, with the reason and
+with whether the job has been switched off for repeating. Every run also records
+what it cost and what happened to it - emailed, waiting for approval, or not run
+at all - because "it ran" and "it reached you" are different facts and the
+second is what somebody is actually asking.
+
+**Rule:** if a thing can fail while nobody is watching, the failure is part of
+the record. A history of only the successes is not a history.

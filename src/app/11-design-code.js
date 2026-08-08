@@ -1429,7 +1429,7 @@ const AMV_TOOLS = [
     input_schema:{ type:'object', properties:{
       detail:{type:'string', description:'Exactly what the job should do on each run, written as an instruction to whoever runs it. Be specific - this is all it will have.'},
       repeat:{type:'string', enum:['10min','30min','hourly','daily','weekly'], description:'How often it runs.'},
-      approval:{type:'string', enum:['require','auto'], description:'"require" (default) puts each result in front of them before anything is sent. "auto" only for jobs that purely produce information.'}
+      approval:{type:'string', enum:['suggest','require','auto'], description:'How far it may go alone. "require" (default) does the work and waits for them before anything goes out. "auto" delivers on its own - only for jobs that purely produce information. "suggest" does not run the job at all, it just tells them it is due, which costs nothing.'}
     }, required:['detail'] }
   },
   {
@@ -1440,7 +1440,7 @@ const AMV_TOOLS = [
       match:{type:'string', description:'Only if you have no id: words from the job, used to find exactly one. Ambiguous matches are refused rather than guessed.'},
       detail:{type:'string', description:'The new instruction, if it is changing.'},
       repeat:{type:'string', enum:['10min','30min','hourly','daily','weekly'], description:'The new frequency, if it is changing.'},
-      approval:{type:'string', enum:['require','auto']}
+      approval:{type:'string', enum:['suggest','require','auto']}
     }, required:[] }
   },
   {
@@ -1465,6 +1465,13 @@ const AMV_TOOLS = [
     }, required:[] }
   },
   {
+    name:'crew_ceiling',
+    description:'Set the furthest ANY of their background jobs may go without them, now and for any they add later. Use for "never let anything run without asking me", "stop it doing things on its own", or the opposite. A job set further than this is held back rather than changed, so raising it later restores what each job was configured to do. This is a safety setting - always say plainly what it now means.',
+    input_schema:{ type:'object', properties:{
+      ceiling:{type:'string', enum:['suggest','require','auto'], description:'"suggest" nothing runs until asked and nothing is spent. "require" work is done but waits for approval before anything goes out. "auto" jobs deliver on their own.'}
+    }, required:['ceiling'] }
+  },
+  {
     name:'crew_standing',
     description:'Set the standing instructions that apply to EVERY background job they have now and every one they add later - how much care to take, what to prefer, what to leave out. Use for "make my crew think harder", "always check two sources", "keep it shorter". This changes how the work is done; it cannot change what AMV is allowed to do. Pass an empty string to clear it.',
     input_schema:{ type:'object', properties:{
@@ -1485,7 +1492,7 @@ function _toolsFor(surface){
      is the gap this whole path exists to close. */
   if(surface==='crew') return [by('generate_image'), by('run_code'), by('build_app'), by('deploy_site'),
                                by('crew_list'), by('crew_add'), by('crew_update'), by('crew_pause'),
-                               by('crew_resume'), by('crew_remove'), by('crew_standing')].filter(Boolean);
+                               by('crew_resume'), by('crew_remove'), by('crew_standing'), by('crew_ceiling')].filter(Boolean);
   return AMV_TOOLS;   // chat gets everything
 }
 try{ window._toolsFor=_toolsFor; }catch(e){}
@@ -1584,7 +1591,7 @@ try{ window.runAgentic = runAgentic; }catch(e){}
    that" is the one place a confirmation makes things worse. */
 const _TOOL_CONSENT = { deploy_site:true, run_code:true, fix_code:true,
                         crew_add:true, crew_update:true, crew_resume:true,
-                        crew_remove:true, crew_standing:true };
+                        crew_remove:true, crew_standing:true, crew_ceiling:true };
 function _toolNeedsConsent(name){ return !!_TOOL_CONSENT[name]; }
 /* How often a job runs, in the words a person uses. */
 const _CREW_EVERY = { '10min':'every 10 minutes', '30min':'every 30 minutes',
@@ -1599,7 +1606,8 @@ async function _confirmModelTool(name, input){
     crew_update:'change one of your background jobs',
     crew_resume:'start one of your background jobs running again',
     crew_remove:'permanently delete one of your background jobs',
-    crew_standing:'change the instructions every background job follows'
+    crew_standing:'change the instructions every background job follows',
+    crew_ceiling:'change how far ALL of your background jobs may go without asking you'
   })[name] || ('run the "'+name+'" action');
   let detail='';
   if(name==='deploy_site') detail='Page title: '+String(input.title||'App');
@@ -1618,6 +1626,12 @@ async function _confirmModelTool(name, input){
     detail = [ input.detail ? 'New instruction:\n' + String(input.detail).slice(0,500) : '',
                input.repeat ? 'New frequency: ' + (_CREW_EVERY[String(input.repeat)]||input.repeat) : ''
              ].filter(Boolean).join('\n\n');
+  else if(name==='crew_ceiling')
+    detail = ({
+      suggest:'From now on, no background job runs on its own. AMV will tell you when one is due and wait to be asked. Nothing is spent.',
+      require:'From now on, background jobs do the work but nothing goes out until you approve it.',
+      auto:'From now on, background jobs may complete and deliver their results without asking you each time.'
+    })[String(input.ceiling||'')] || '';
   else if(name==='crew_standing')
     detail = String(input.standing||'').trim()
       ? 'Every background job will follow this from now on:\n\n' + String(input.standing).slice(0,600)
@@ -1848,7 +1862,9 @@ function _crewErr(e){
 function _crewLine(x){
   const every = _CREW_EVERY[String(x.repeat||'')] || 'on a schedule';
   return '- [' + x.id + '] ' + (x.active === false ? 'PAUSED' : 'running ' + every)
-       + (x.approval === 'auto' ? ', results sent automatically' : ', each result waits for approval')
+       + ({ auto:', results delivered automatically',
+            suggest:', suggest only - it does not run until asked',
+            require:', each result waits for approval' }[String(x.approval||'require')] || '')
        + ': ' + String(x.detail || '').slice(0, 220);
 }
 
@@ -1874,16 +1890,21 @@ async function _crewTool(name, input){
         + items.map(_crewLine).join('\n')
       : 'They have no background jobs set up yet.'
         + (d.canSchedule === false ? ' Their plan cannot run them - say so if they ask for one.' : '');
+    const cap = String(d.ceiling || 'auto');
+    const capSay = { suggest:'Their account is set so NO background job runs on its own - each one waits to be asked. Any job above says what it is configured to do, but this is what actually happens.',
+                     require:'Their account is set so nothing goes out without their approval, whatever an individual job says.',
+                     auto:'' }[cap] || '';
     return { text: head + (standing
       ? '\n\nStanding instructions applying to all of them: ' + standing
-      : '\n\nThey have no standing instructions set.'), render:null };
+      : '\n\nThey have no standing instructions set.')
+      + (capSay ? '\n\n' + capSay : ''), render:null };
   }
 
   if(name === 'crew_add'){
     const detail = String(input.detail || '').trim();
     if(!detail) return { text:'A job needs to say what it does. Ask the user what they want it to do each time it runs.', render:null };
     const repeat = _CREW_REPEATS.includes(String(input.repeat)) ? String(input.repeat) : 'daily';
-    const approval = input.approval === 'auto' ? 'auto' : 'require';
+    const approval = ['suggest','require','auto'].includes(input.approval) ? input.approval : 'require';
     let d;
     try{
       d = await _autoApi('/auto/create', { detail, repeat, kind:'task', approval, notify:'app' });
@@ -1898,9 +1919,29 @@ async function _crewTool(name, input){
     const shaped = gotRepeat !== repeat || d.shaped;
     return { text:'Created. It is in their Crew tab now and runs '
       + (_CREW_EVERY[gotRepeat] || 'on a schedule') + ' on its own.'
-      + (made.approval === 'auto' ? ' Results are sent without review.' : ' Each result waits for their approval.')
+      + ({ auto:' Results are delivered without review.',
+           suggest:' It will NOT run on its own - AMV tells them it is due and waits to be asked, which costs nothing.',
+           require:' Each result waits for their approval.' }[String(made.approval||'require')] || '')
       + (shaped ? ' IMPORTANT - tell the user this part: ' + (d.shapedWhy || 'their plan runs it ' + (_CREW_EVERY[gotRepeat]||'less often') + ' rather than what was asked for.') : ''),
       render:null };
+  }
+
+  if(name === 'crew_ceiling'){
+    const lvl = String(input.ceiling||'');
+    if(!['suggest','require','auto'].includes(lvl))
+      return { text:'That is not one of the three levels. They are: suggest (nothing runs until asked), require (work is done, waits for approval), auto (delivers on its own). Ask the user which they meant.', render:null };
+    let d;
+    try{ d = await _autoCeiling(lvl); }
+    catch(e){ return { text: _crewErr(e), render:null }; }
+    _crewSynced();
+    const n = typeof d.restrains === 'number' ? d.restrains : 0;
+    const say = { suggest:'No background job will run on its own now. AMV tells them a job is due and waits to be asked, so nothing is spent either.',
+                  require:'Background jobs will do the work but nothing goes out until they approve it.',
+                  auto:'Background jobs may complete and deliver on their own again.' }[lvl];
+    return { text: say
+      + (n ? ' ' + n + ' of their jobs ' + (n===1?'is':'are') + ' set further than this and ' + (n===1?'is':'are')
+           + ' now held back - the ' + (n===1?'job keeps its':'jobs keep their') + ' own setting, so raising this later restores it.' : '')
+      + ' This is enforced by the server when each job runs, not by the app.', render:null };
   }
 
   if(name === 'crew_standing'){
@@ -1945,7 +1986,7 @@ async function _crewTool(name, input){
       const patch = { id:item.id, action:'edit' };
       if(typeof input.detail === 'string' && input.detail.trim()) patch.detail = input.detail.trim();
       if(_CREW_REPEATS.includes(String(input.repeat))) patch.repeat = String(input.repeat);
-      if(input.approval === 'auto' || input.approval === 'require') patch.approval = input.approval;
+      if(['suggest','require','auto'].includes(input.approval)) patch.approval = input.approval;
       if(!patch.detail && !patch.repeat && !patch.approval)
         return { text:'Nothing was actually changed - no new instruction, frequency or approval setting was given. Ask the user what they want changed.', render:null };
       await _autoApi('/auto/update', patch);
@@ -1953,7 +1994,9 @@ async function _crewTool(name, input){
       return { text:'Updated "' + what + '".'
         + (patch.detail ? ' It now does: ' + patch.detail.slice(0,120) + '.' : '')
         + (patch.repeat ? ' It now runs ' + (_CREW_EVERY[patch.repeat] || patch.repeat) + ', starting one interval from now.' : '')
-        + (patch.approval ? (patch.approval === 'auto' ? ' Results are now sent without review.' : ' Each result now waits for their approval.') : ''),
+        + (patch.approval ? ({ auto:' Results are now delivered without review.',
+                              suggest:' It will no longer run on its own - AMV will say it is due and wait to be asked.',
+                              require:' Each result now waits for their approval.' }[patch.approval] || '') : ''),
         render:null };
     }
   }catch(e){ return { text: _crewErr(e), render:null }; }

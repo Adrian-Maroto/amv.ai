@@ -1312,6 +1312,7 @@ async function _autoRefresh(){
     _AUTOS = d.items || [];
     _AUTO_RESULTS = d.results || [];
     if(typeof d.standing === 'string') _AUTO_STANDING = d.standing;
+    if(typeof d.ceiling === 'string') _AUTO_CEILING = d.ceiling;
     _AUTO_LOADED = true; _AUTO_LOAD_ERR = '';
     if(typeof d.emailReady === 'boolean') _AUTO_EMAIL_READY = d.emailReady;
     if(typeof d.canSchedule === 'boolean') _AUTO_CAN_SCHEDULE = d.canSchedule;
@@ -1370,6 +1371,24 @@ async function _autoMarkRead(){
    It is never permission. The rules an unattended runner operates under sit
    ABOVE this text and are not editable from here. */
 let _AUTO_STANDING = '';
+
+/* THE HIGHEST LEVEL ANY OF THIS ACCOUNT'S BACKGROUND JOBS MAY REACH.
+
+   Kept beside the standing instruction because they are the same kind of thing:
+   an account-wide rule that every job inherits, present and future. The server
+   is the authority - it applies the cap where the work happens - and this is
+   only what the screen shows, refreshed from /auto/list. Defaulting to 'auto'
+   means "nothing held back", which is what an account that has never touched
+   this has always had. */
+let _AUTO_CEILING = 'auto';
+const AUTO_LEVELS = ['suggest','require','auto'];
+async function _autoCeiling(level){
+  if(!AUTO_LEVELS.includes(level)) throw new Error('unknown level');
+  const d = await _autoApi('/auto/update', { action:'ceiling', ceiling: level });
+  _AUTO_CEILING = d.ceiling || level;
+  if(Array.isArray(d.items)) _AUTOS = d.items;
+  return d;
+}
 async function _autoStanding(text){
   const d = await _autoApi('/auto/update', { action:'standing', standing: String(text==null?'':text) });
   _AUTO_STANDING = typeof d.standing === 'string' ? d.standing : String(text||'');
@@ -1378,6 +1397,7 @@ async function _autoStanding(text){
 try{
   window._autoRefresh=_autoRefresh; window._autoAction=_autoAction; window._autoMarkRead=_autoMarkRead;
   window._autoStanding=_autoStanding; window._autoStandingText=()=>_AUTO_STANDING;
+  window._autoCeiling=_autoCeiling; window._autoCeilingLevel=()=>_AUTO_CEILING;
 }catch(e){}
 window.openTaskPanel=openTaskPanel; window.amvOpenFile=amvOpenFile;
 // On open: pull anything that ran in the background while you were away.

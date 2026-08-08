@@ -8172,3 +8172,74 @@ html,body{height:100%;height:100dvh}
   .cw-lock-buy{ align-items:stretch; }
   .cw-lock-buy .btn{ width:100%; }
 }
+
+/* ============================================================
+   LAYER A70 - the level control, and the record of what ran
+
+   Two things that only matter because background work happens with the person
+   absent: the setting that decides how far it may go, and the list of what it
+   actually did. The level control is deliberately three full statements rather
+   than three words - somebody is choosing what happens tonight, and "Approve
+   before action" is a category name, not an answer.
+   ============================================================ */
+.mc-ceiling{ background:var(--s1); border:1px solid var(--bd); border-radius:var(--r-lg); padding:var(--sp-4); }
+.mc-ceiling .sec-head{ margin-bottom:var(--sp-3); }
+.mc-lv{ display:grid; gap:var(--sp-2); }
+.mc-lv-opt{
+  display:flex; align-items:flex-start; gap:var(--sp-3);
+  width:100%; text-align:left;
+  padding:var(--sp-3);
+  background:var(--bg);
+  border:1px solid var(--bd);
+  border-radius:var(--r-md);
+  color:var(--tx);
+  font:inherit;
+  cursor:pointer;
+  transition:border-color .16s var(--ease), background .16s var(--ease);
+}
+.mc-lv-opt:hover{ border-color:var(--bdl); }
+.mc-lv-opt.on{ border-color:var(--accent); background:var(--accent-soft); }
+.mc-lv-opt:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+.mc-lv-dot{
+  flex:0 0 16px; width:16px; height:16px; margin-top:2px;
+  border:2px solid var(--bdl); border-radius:var(--r-pill);
+  background:transparent;
+}
+.mc-lv-opt.on .mc-lv-dot{ border-color:var(--accent); box-shadow:inset 0 0 0 3px var(--accent); }
+.mc-lv-b{ min-width:0; }
+.mc-lv-t{ display:block; font-size:var(--t-md); font-weight:650; }
+.mc-lv-s{ display:block; margin-top:2px; font-size:var(--t-sm); line-height:1.5; color:var(--mu); }
+.mc-lv-held{
+  margin-top:var(--sp-3); padding:var(--sp-2) var(--sp-3);
+  font-size:var(--t-sm); line-height:1.5; color:var(--tx);
+  background:color-mix(in srgb, var(--gold) 10%, var(--s2));
+  border:1px solid color-mix(in srgb, var(--gold) 35%, var(--bd));
+  border-radius:var(--r-md);
+}
+
+/* The record. A failed run has to be findable at a glance, because it is the
+   only row anybody is looking for. */
+.mc-act{ display:grid; gap:1px; background:var(--bd); border:1px solid var(--bd); border-radius:var(--r-md); overflow:hidden; }
+.mc-act-row{ display:flex; gap:var(--sp-3); align-items:flex-start; padding:var(--sp-3); background:var(--s1); }
+.mc-act-when{ flex:0 0 88px; font-size:var(--t-xs); color:var(--dim); padding-top:2px; font-variant-numeric:tabular-nums; }
+.mc-act-b{ min-width:0; flex:1; }
+.mc-act-t{ display:block; font-size:var(--t-base); line-height:1.45; color:var(--tx); overflow-wrap:anywhere; }
+.mc-act-m{ display:block; margin-top:3px; font-size:var(--t-xs); color:var(--dim); }
+.mc-act-sep{ margin:0 6px; opacity:.5; }
+.mc-act-st{ font-weight:650; }
+.mc-act-row.sent .mc-act-st{ color:var(--grn); }
+.mc-act-row.done .mc-act-st{ color:var(--accent); }
+.mc-act-row.wait .mc-act-st{ color:var(--gold); }
+.mc-act-row.idle .mc-act-st{ color:var(--mu); }
+.mc-act-row.err{ background:color-mix(in srgb, var(--red) 8%, var(--s1)); }
+.mc-act-row.err .mc-act-st{ color:var(--red); }
+.mc-act-foot{ margin-top:var(--sp-2); font-size:var(--t-sm); color:var(--mu); }
+
+@media (max-width:560px){
+  .mc-act-row{ flex-direction:column; gap:2px; }
+  .mc-act-when{ flex:none; }
+  .mc-lv-opt{ padding:var(--sp-3) var(--sp-2); }
+}
+@media (prefers-reduced-motion:reduce){ .mc-lv-opt{ transition:none; } }
+
+.mc-sched-held{display:block;margin-top:3px;font-size:var(--t-xs);color:var(--gold);}
