@@ -13105,6 +13105,36 @@ function _cwDefaultJobs(){ return [
     desc:'Takes the group chat that has said "we should do something" for three weeks and turns it into a date that works for everyone, with the thing booked or the tickets found.',
     sample:['5 people, 3 weeks of nobody picking a date.','Only 2 evenings work for everyone: Friday 14th and Saturday 22nd.','The 14th is 3 days before your test. The 22nd is clear.','Tickets for the 22nd: 3 left at 18, going up at the door.','Draft message with one date and one link, so it needs a yes rather than a discussion.'],
     prompt:'Turn a stalled plan into a decision. From the availability the user gives you, find the dates that genuinely work for everyone and say how few there are. Rule out any that collide with their own commitments and say why. Research the specific option - venue, tickets, cost, availability - with real current prices and links. Draft a message that proposes ONE date and ONE option, because a group answers a yes/no and does not answer an open question. Never claim to have booked anything.' },
+
+  /* ---- MAKING THINGS -----------------------------------------------------
+
+     For somebody who makes things - videos, music, art, writing, clothes,
+     games - rather than somebody selling something. The distinction matters:
+     the business jobs above optimise a funnel, and none of them are any use to
+     a seventeen year old with an editing app and an idea.
+
+     All three run on live research plus what the person tells AMV, and all
+     three stop where the work starts. AMV can tell you what is landing and why,
+     and it can be honest about a draft. It cannot make the thing, and a job
+     that pretended to would produce something nobody wants to watch. */
+
+  { id:'creative_ideas', every:'weekly', cat:'Making things', icon:'💡', title:'Ideas worth making this week', needs:'Web research', on:false,
+    desc:'Three specific things worth making this week, from what is genuinely landing in your corner right now - each with the angle and the opening line, and an honest note on which is the risky one.',
+    asks:{ q:'What do you make, and for whom?', ph:'The format and the subject - e.g. "short videos about skateboarding tricks, for beginners" or "acoustic covers on TikTok"' },
+    sample:['3 ideas, from what is actually landing in your corner this week - not what landed last year.','1. The "I tried it badly first" angle. Beginner-fail openings are outperforming clean demos on this topic right now, roughly 2x on saves.','   Hook: "Everyone shows you the landing. Here is the 40 attempts."','2. A 20-second answer to the question three big accounts got asked this week and none of them answered.','3. The contrarian one: the trick everybody teaches first is the one you should learn third. Riskiest of the three, most likely to travel.','Skipped 9 other trends - wrong audience, or already saturated by people with 100x your reach.'],
+    prompt:'Research what is genuinely performing right now in the user’s stated format and subject, this week rather than in general. Propose three specific things they could make, each with the angle, an opening hook written out, and one line on why this angle now - grounded in something you actually found, which you name. Say how many other trends you discarded and why, so the list reads as filtered rather than padded. Rank them and say which is riskiest. Never invent a trend, a statistic or an account. If nothing genuinely new is happening in their corner this week, say exactly that rather than manufacturing three ideas.' },
+
+  { id:'creative_check', cat:'Making things', icon:'🎬', title:'Be honest about this before I publish', needs:'Web research', on:false,
+    desc:'Paste what you are about to post and get the response an honest friend who knows the platform would give: what the first three seconds do, what is genuinely good, and whether this is a strong piece or an ordinary one.',
+    asks:{ q:'What are you about to publish, and where?', ph:'Paste the script, caption, lyrics or description - and say which platform and who it is for' },
+    sample:['THE FIRST THREE SECONDS: your hook is the fourth sentence. Everything before it is context nobody has earned yet.','WHAT IS WORKING: the middle section is genuinely good - specific, and it sounds like you.','WHAT WILL COST YOU: it ends on a summary. Endings that ask something get replies; summaries get scrolled.','THE HONEST NOTE: this is a solid piece, not a breakout one. The idea is familiar - the execution is what would have to carry it.','Two specific fixes, both under ten minutes.'],
+    prompt:'The user will paste something they are about to publish. Give them the response an honest friend who knows the platform would give: what the first three seconds do, what is genuinely working, what will cost them attention and why, and a plain assessment of whether this is a strong piece or an ordinary one. Be specific and quote their own words back. Do NOT rewrite it for them - name the fix and let them make it, because a piece rewritten by AMV stops sounding like them and that is the only thing they actually have. Never flatter: if it is ordinary, saying so is the entire value of being asked.' },
+
+  { id:'creative_repurpose', cat:'Making things', icon:'♻️', title:'Get more out of what I already made', needs:'Web research', on:false,
+    desc:'One thing you already made is usually five. Finds the section that stands alone, the line better than your title, and the posts hiding inside it - written out, not described.',
+    asks:{ q:'What have you already made?', ph:'Describe or paste the piece - and say which platforms you are on' },
+    sample:['One 8-minute video is at least 5 more things.','1. The 40-second section at 3:12 stands alone completely. That is the short.','2. The question you answer at 5:30 is a text post on its own - here it is written out.','3. Three stills worth posting, with captions.','4. The thing you said offhand at 6:04 is better than your title. Use it as the title next time.','Nothing here is new work - it is all already in what you made.'],
+    prompt:'Take something the user has already made and find everything else it can become across the platforms they use. Be specific: which section, which timestamp or paragraph, and what shape it takes on each platform. Write out the captions and text posts in full rather than describing them. Point out anything in the piece that is stronger than how it was framed - a line better than the title, a moment better than the thumbnail. Do not propose new work: the whole point is that this already exists. Ground the platform advice in what actually performs there now, and say when you are unsure.' },
 ]; }
 /* ── WHAT A JOB NEEDS, AGAINST WHAT IS ACTUALLY CONNECTED ────────────────────
 
@@ -13165,7 +13195,7 @@ try{ window.cwConnect=cwConnect; }catch(e){}
    A flat grid of seventy cards is a wall, and a wall reads as less capable than
    a shelf, not more. Grouped under headings with a filter, the same list reads
    as range. Order is deliberate: the categories people feel most keenly first. */
-const CW_CATS = ['Money','Work & career','Growing a business','Inbox & calendar',
+const CW_CATS = ['Money','Work & career','Growing a business','Making things','Inbox & calendar',
                  'Watching the world','Home & life','Learning','Health'];
 let _cwCat = 'all';
 function cwCat(c){ _cwCat = c || 'all'; renderCrewView(); }
