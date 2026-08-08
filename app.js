@@ -10007,9 +10007,42 @@ function renderMemoryView(){
   on($('mem-clr'),'click',()=>{S.memory=[];renderMemoryView();toast('All memories cleared','success');});
   renderMemList();
 }
+/* The same refusal chat applies, applied here too.
+
+   Chat declines to remember a password, key or card number because every
+   memory is replayed into every future request - which makes this store the
+   worst place in the product for a credential. That reason has nothing to do
+   with which door the text came through, and a control that only holds on one
+   of two doors is a control somebody will walk around without meaning to:
+   "AMV said no, so I typed it in the Memory tab instead" is a completely
+   reasonable thing for a person to do, and it ends with their password in
+   every prompt.
+
+   Deliberately the same narrow pattern, not a stricter one. A false positive
+   here means refusing to remember something ordinary and looking broken. */
+/* Things that must never end up in a store designed to be replayed into every
+   future request. Deliberately narrow: this refuses what is unmistakably a
+   credential rather than trying to be a classifier, because a false positive
+   means refusing to remember something ordinary and looking broken.
+
+   Declared here, in the module that ships the Memory tab, so it is defined
+   before every place that uses it rather than after one of them. */
+const _MEM_SECRET = /\b(password|passcode|pin\s*(?:code|number)|api[\s_-]?key|secret\s*key|private\s*key|seed\s*phrase|recovery\s*phrase|cvv|social\s*security|routing\s*number)\b/i;
+const _MEM_CARDISH = /\b(?:\d[ -]*?){13,19}\b/;
+function _memLooksSecret(t){
+  try{ return _MEM_SECRET.test(String(t||'')) || _MEM_CARDISH.test(String(t||'')); }catch(e){ return false; }
+}
+try{ window._memLooksSecret = _memLooksSecret; }catch(e){}
 function addMemory(){
   const inp=$('mem-inp'); if(!inp) return;
   const text=inp.value.trim(); if(!text) return;
+  if(_memLooksSecret(text)){
+    /* Not a toast that fades: they are about to conclude it did not save and
+       try again. Say what and why, and leave the text where they typed it. */
+    if(typeof toast==='function')
+      toast('AMV will not remember that - it looks like a password, key or card number. Every memory is included in every future conversation, so it is the one place a secret must not go. Remember something that is not the secret itself.','error',9000);
+    return;
+  }
   S.memory=[{id:'m'+Date.now(),text,added:Date.now()},...S.memory];
   inp.value='';
   renderMemList();
@@ -16976,12 +17009,11 @@ async function _crewTool(name, input){
      it asks.
    ══════════════════════════════════════════════════════════════ */
 
-/* Things that must never end up in a store designed to be replayed into every
-   future request. Deliberately narrow: this refuses what is unmistakably a
-   credential rather than trying to be a classifier, because a false positive
-   here means refusing to remember something ordinary and sounding broken. */
-const _MEM_SECRET = /\b(password|passcode|pin\s*(?:code|number)|api[\s_-]?key|secret\s*key|private\s*key|seed\s*phrase|recovery\s*phrase|cvv|social\s*security|routing\s*number)\b/i;
-const _MEM_CARDISH = /\b(?:\d[ -]*?){13,19}\b/;
+/* _MEM_SECRET, _MEM_CARDISH and _memLooksSecret are defined in
+   07-workspace-memory.js, beside the Memory tab that also uses them. They live
+   in the EARLIER module on purpose: both doors into the memory store have to
+   apply the same refusal, and a shared constant declared after one of its users
+   is an ordering dependency waiting to be noticed the hard way. */
 const _MEM_MAX = 400;
 
 function _memList(){
@@ -17045,7 +17077,7 @@ async function _sectionTool(name, input){
     /* Refused rather than stored. A memory is replayed into every future
        request, which makes it the worst possible place for a credential -
        and the person asking has almost certainly not thought about that. */
-    if(_MEM_SECRET.test(text) || _MEM_CARDISH.test(text))
+    if(_memLooksSecret(text))
       return { text:'Refused: that looks like a password, key, card number or other secret. AMV includes every memory in every future conversation, so it will not store one. Tell the user plainly why, and offer to remember something that is not the secret itself.', render:null };
     if(_memList().some(m => String(m.text||'').trim().toLowerCase() === text.toLowerCase()))
       return { text:'AMV already remembers exactly that. Nothing to do - say so rather than confirming a second save.', render:null };

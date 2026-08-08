@@ -2703,3 +2703,28 @@ by testing the guard. Nothing broke, but only by luck.
 **Rule:** stopping the thing that watches a process is not stopping the process.
 And a preflight that takes a second belongs before the step that takes half an
 hour, especially when its failure mode is fifty-three lies about the code.
+
+## 171. A refusal that only holds on one of two doors
+
+Chat declines to remember a password, because every memory is replayed into
+every future request and that makes the memory store the worst place in the
+product for a credential. The Memory tab accepted the same text happily.
+
+"AMV said no, so I typed it into the Memory tab instead" is a completely
+reasonable thing for a person to do. It ends with their password in every
+prompt, and they will believe they were careful, because something did refuse
+them once.
+
+The guard is now on both doors, and the shared pattern moved to the earlier
+module - it worked from the later one at runtime, but a constant declared after
+one of its users is an ordering dependency in a concatenated bundle, and this
+one is a safety control.
+
+Both directions were sabotaged, and the second one matters as much: a guard set
+to refuse EVERYTHING passes "the password was refused" and fails "an ordinary
+fact still saves". Without that second case the strictest possible bug - a
+memory feature that remembers nothing - looks exactly like success.
+
+**Rule:** when a rule can be reached by more than one path, test the paths, not
+the rule. And every guard needs a case proving it still lets the ordinary thing
+through, or the safest implementation is the broken one.

@@ -109,6 +109,34 @@ section('It will not remember a secret');
   ok(n1 === n0, 'and nothing was stored', { before: n0, after: n1 });
 }
 
+section('And the Memory tab refuses the same things chat does');
+{
+  /* A refusal that only holds on one of two doors is one somebody walks around
+     without meaning to. "AMV said no, so I typed it into the Memory tab
+     instead" is a completely reasonable thing for a person to do, and it ends
+     with their password in every prompt. */
+  const r = await page.evaluate(async () => {
+    setTab('memory');
+    await new Promise(x => setTimeout(x, 700));
+    const before = (S.memory || []).length;
+    const inp = document.getElementById('mem-inp');
+    inp.value = 'my banking password is hunter2plus';
+    document.getElementById('mem-add').click();
+    await new Promise(x => setTimeout(x, 400));
+    const afterSecret = (S.memory || []).length;
+
+    /* And an ordinary fact still saves, or the guard has just broken the
+       feature it is protecting. */
+    inp.value = 'I prefer short answers with the conclusion first.';
+    document.getElementById('mem-add').click();
+    await new Promise(x => setTimeout(x, 400));
+    return { before, afterSecret, afterNormal: (S.memory || []).length,
+             kept: inp.value.length > 0 };
+  });
+  ok(r.afterSecret === r.before, 'a password typed into the tab is refused too', r);
+  ok(r.afterNormal === r.before + 1, 'while an ordinary fact still saves', r);
+}
+
 section('And it will not remember the same thing twice');
 {
   const before = await page.evaluate(() => (S.memory || []).length);
