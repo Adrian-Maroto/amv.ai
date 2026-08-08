@@ -2205,3 +2205,29 @@ harness's.
 **Rule:** a test server should serve files the way the real one does, including
 content types. Fidelity in the harness is not pedantry; it is the difference
 between a test that can see a class of bug and one that cannot.
+
+## 150. An allowlist has two failure modes and they pull in opposite directions
+
+The widget's site key is public by design - it sits in the script tag of every
+page the widget is on. The domain allowlist is the only thing between that and
+a stranger running a chatbot on the customer's budget.
+
+Such a check can be wrong in two ways, and a test for one does not catch the
+other. Too strict and `shop.theircompany.example` is refused, which breaks a
+paying customer's own site for a reason they cannot diagnose. Too loose and
+`theircompany.example.evil.example` is accepted, which hands the key to
+whoever can register a domain.
+
+Suffix matching on a dot boundary gets both. Changing it to `startsWith` -
+the natural-looking simplification - fails the real subdomain AND accepts the
+lookalike, which is why that sabotage is worth more than either case alone.
+
+The other thing a public endpoint leaks is its refusals. Answering differently
+for "no such key" and "key exists but not from this domain" turns it into a way
+to enumerate customers, so both are the same 404 with the same wording, and no
+error anywhere names the owner, their plan, or how their caps are set. A
+stranger on somebody else's website is not owed any of it.
+
+**Rule:** for any allowlist, write the too-strict case and the too-loose case
+together. And on an unauthenticated endpoint, treat the error text as an output
+channel an attacker gets for free.
