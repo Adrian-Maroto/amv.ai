@@ -36,7 +36,7 @@ const FAST = process.argv.includes('--fast');
 
 const t0 = Date.now();
 let stepNum = 0;
-const TOTAL = FAST ? 4 : 6;   // syntax, worker, build, suites, page weight, preflight
+const TOTAL = FAST ? 4 : 7;   // syntax, worker, build, ports, suites, page weight, preflight
 
 /* Run a step. `fn` should throw (with a helpful message) on failure. */
 function step(label, fn) {
@@ -94,6 +94,35 @@ step('Build is fresh (index.html reflects source)', () => {
   const missing = markers.filter(m => app.includes(m) && !html.includes(m));
   if (missing.length)
     throw new Error(`index.html is STALE - missing ${missing.join(', ')}. The build did not pick up current app.js.`);
+});
+
+/* ── 3b. Nothing else is holding the test ports ───────────────────────────
+   The e2e harness serves the app from 9100 upwards. If anything else is on
+   9100 - a leftover server, or a second gate somebody forgot to stop - every
+   browser-driven suite dies with EADDRINUSE and the run reports fifty-odd
+   failures that say nothing about the code.
+
+   That has now cost two full gate runs and a lot of reading, both times because
+   the symptom points at the product and the cause is the machine. So it is
+   checked in one second, before the thirty minutes, and named exactly. */
+/* Synchronous on purpose: step() calls fn() without awaiting it, so an async
+   check here would return a promise nobody looks at and report a tick whatever
+   happened. A guard that cannot fail is worse than no guard. */
+if (!FAST) step('Test ports are free', () => {
+  const probe =
+    "const s=require('net').createServer();" +
+    "s.once('error',e=>{console.log(e.code||'EADDRINUSE');process.exit(3)});" +
+    "s.listen(9100,()=>s.close(()=>process.exit(0)));";
+  try {
+    execSync(`node -e "${probe}"`, { cwd: ROOT, stdio: 'pipe' });
+  } catch (e) {
+    const why = ((e.stdout || '').toString() + (e.stderr || '').toString()).trim() || 'in use';
+    throw new Error(
+      'port 9100 is not free (' + why + '), so every browser-driven suite would fail with '
+      + 'EADDRINUSE and not one of those failures would be about the code. Something else is '
+      + 'still running - most likely another `npm run check`, or a test server left behind. '
+      + 'Stop it, then run this again.');
+  }
 });
 
 /* ── 4. All test suites ──────────────────────────────────────────────────── */

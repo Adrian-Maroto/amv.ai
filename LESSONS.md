@@ -2674,3 +2674,32 @@ Same lesson as #153 and it still caught me.
 you should not claim. And every assertion that indexes into a collection has to
 survive that collection being empty, because empty is exactly what a regression
 looks like.
+
+## 170. Fifty-three failures that were not about the code
+
+A gate run came back with fifty-three e2e suites failed. Every one of them was
+EADDRINUSE on port 9100, because a previous gate was still running and holding
+it - I had stopped that run's MONITOR and believed I had stopped the run.
+
+This is the second time. The first cost twenty-two suites. Both times the
+symptom points squarely at the product and the cause is the machine, and both
+times I read failure output for a while before noticing the port.
+
+So the gate now checks, in about a second, that 9100 is free before spending
+thirty minutes finding out it is not - and says exactly what it means: nothing
+that follows would have been about the code.
+
+Two things went wrong in writing that guard, both worth keeping:
+
+`step()` calls its function without awaiting it. My first version was `async`,
+so it returned a promise nobody looked at and printed a tick regardless of what
+happened inside. A guard that cannot fail is worse than no guard, because now
+there is a green line saying the thing was checked.
+
+And verifying it, I bound port 9100 to prove the guard fires - WHILE the real
+gate was running. That is the same collision the guard exists to prevent, caused
+by testing the guard. Nothing broke, but only by luck.
+
+**Rule:** stopping the thing that watches a process is not stopping the process.
+And a preflight that takes a second belongs before the step that takes half an
+hour, especially when its failure mode is fifty-three lies about the code.
