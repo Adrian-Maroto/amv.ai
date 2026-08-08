@@ -19232,6 +19232,34 @@ try{ _initPWA(); }catch(e){}
    button; if it is not, the button still says plainly that it is unavailable
    rather than failing silently. */
 try{ _loadPublicConfig(); }catch(e){}
+
+/* Count this arrival, once per session.
+
+   Everything AMV measures starts at signup, so the largest group there is -
+   people who opened the page and left - was invisible, and visitors-to-accounts
+   is the number that says whether any of the marketing works.
+
+   Deliberately the smallest thing that answers it: a POST to AMV's own backend
+   that increments a daily COUNTER. Nothing identifying is sent - no id, no
+   address, no referrer, no user agent - so there is nothing here to leak, to
+   join back to a person, or to need a consent banner for. It cannot answer
+   "who", and "how many" is the whole question.
+
+   sessionStorage, not localStorage: one arrival per visit is what a funnel
+   means, and a returning visitor tomorrow is a new arrival. Failure is
+   silence - a metric must never be able to break the page it is measuring. */
+function _countVisit(){
+  try{
+    if(sessionStorage.getItem('amv_visit_counted')==='1') return;
+    sessionStorage.setItem('amv_visit_counted','1');
+    const base=(window.AMV_API && AMV_API.base)||'';
+    if(!base) return;
+    /* keepalive so it survives the user leaving immediately, which is exactly
+       the visit most worth counting. */
+    fetch(base.replace(/\/$/,'')+'/v1/visit',{method:'POST',keepalive:true}).catch(()=>{});
+  }catch(e){}
+}
+try{ _countVisit(); window._countVisit=_countVisit; }catch(e){}
 // Show a "new" dot on What's New if there are unseen updates
 try{ setTimeout(()=>{ try{ _checkWhatsNew(); }catch(e){} }, 800); }catch(e){}
 

@@ -2040,3 +2040,30 @@ and that was worth knowing too.
 **Rule:** for anything a person has to touch, assert reachability, not
 presence. And when a visual sabotage passes, find out whether the check is weak
 or your assumption about the layout was.
+
+## 143. The cheapest version of a metric is usually the honest one
+
+Everything AMV measured started at signup. The funnel could say that 4% of
+accounts paid and nothing whatsoever about the people who opened the page and
+left - which is the larger group, and visitors-to-accounts is the number most
+product and marketing work is actually trying to move.
+
+The obvious fix was to serve an analytics endpoint to the browser and let
+`track()` beacon to it. That means a third party receiving a record of every
+visitor, a CSP widened to admit them, a processor agreement, a consent banner
+that has to be honest about it, and a new place personal data lives that
+erasure has to reach. For one number.
+
+The counter version stores a daily integer. No id, no address, no referrer, no
+user agent - so there is nothing to leak, nothing to join back to a person,
+nothing to consent to, and nothing to erase. It cannot answer "who", and "how
+many" was the entire question.
+
+The test is mostly about what it must NOT do, and that is the right shape: the
+moment anything identifying appears beside the count, all of the obligations
+above become true at once and the design has quietly changed into something
+else.
+
+**Rule:** before collecting data about people, work out the smallest thing that
+answers the actual question. Very often it is a number, and a number has no
+privacy surface, no third party, and no way to become a breach.

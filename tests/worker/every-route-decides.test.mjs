@@ -63,6 +63,13 @@ const PUBLIC = {
      it cannot be used to inventory secrets, and public-config.test.mjs asserts
      all of that against an env deliberately stuffed with twelve real secrets. */
   '/v1/public-config':   'the values a visitor needs before they can sign in',
+  /* The people this counts are, by definition, the ones with no account -
+     requiring auth would measure only the group already counted everywhere
+     else. It stores nothing but a daily integer: no id, no address, no
+     referrer, no user agent, so there is nothing here to protect. Bounded per
+     IP, and a refused visit still answers 200 because this runs on somebody's
+     first page load and a metric must not break the thing it measures. */
+  '/v1/visit':           'counting arrivals, from people who have no account yet',
 };
 
 function bodyOf(fn){

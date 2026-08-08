@@ -3714,6 +3714,7 @@ export default {
       switch (path) {
         case '/v1/health':       return json({ ok: true, ts: Date.now() });
         case '/v1/public-config': return publicConfig(request, env);
+        case '/v1/visit':        return recordVisit(request, env);
         case '/auth/signup':     return authSignup(request, env);
         case '/auth/login':      return authLogin(request, env);
         case '/auth/google':     return authGoogle(request, env);
@@ -9991,6 +9992,11 @@ async function adminStats(request, env) {
      when an invited account has genuinely started using AMV - the same bar the
      reward is paid at - so this series is real activation, not raw signups. */
   const referrals30 = await _growthSeries(env, 'referral', 30);
+  /* The top of the funnel. Everything else here starts at signup, so the
+     largest group - people who looked and left - was invisible, and
+     visitors-to-accounts is the number most marketing work is trying to move. */
+  const visits30 = await _growthSeries(env, 'visit', 30);
+  const visits7 = visits30.slice(-7).reduce((n, d) => n + d.count, 0);
   const signupsToday = signups30.length ? signups30[signups30.length - 1].count : 0;
   const activeToday = active30.length ? active30[active30.length - 1].count : 0;
   const referrals7 = referrals30.slice(-7).reduce((n, d) => n + d.count, 0);
@@ -10014,7 +10020,12 @@ async function adminStats(request, env) {
               ? 'More accounts than one page can read. Revenue and population come from maintained counters and are exact; the per-account lists are the first ' + entRows.length + '.'
               : 'Every account was read.' },
     growth: { signupsToday, signups7, signupsPrev7, wowGrowthPct, signups30, active30,
-              referrals7, referrals30,
+              referrals7, referrals30, visits7, visits30,
+              /* Of the people who arrived, how many became accounts. Null
+                 rather than 0 when nothing has been counted yet, because "no
+                 visitors recorded" and "nobody converted" are different facts
+                 and showing 0% for the first is a lie about the product. */
+              visitToSignupPct: visits7 > 0 ? +((signups7 / visits7) * 100).toFixed(1) : null,
               // What share of the last week's signups came through an invite.
               referralSharePct: signups7 > 0 ? +((referrals7 / signups7) * 100).toFixed(1) : null },
     /* Signup -> activated -> returned -> paid. The question every piece of
@@ -10244,6 +10255,42 @@ const PUBLIC_CONFIG_KEYS = [
      TURNSTILE_SECRET is set. */
   ['turnstileSiteKey','TURNSTILE_SITE_KEY'],
 ];
+/* ══════════════════════════════════════════════════════════════════════
+   THE TOP OF THE FUNNEL - people who arrive and never sign up.
+
+   _funnelMark already answers everything from signup onwards: signed up,
+   got value, came back, paid. It cannot see the largest group there is, the
+   people who looked at the page and left, so the one number that decides
+   whether any of the marketing works - visitors who become accounts - was not
+   computable from anything AMV held.
+
+   The obvious fix was to serve an analytics endpoint to the browser and let
+   `track()` beacon to it. That means a third party receiving a record of every
+   visitor, a CSP widened to let it, and somebody else's cookie policy becoming
+   AMV's problem. For ONE number.
+
+   So this is first-party and deliberately impoverished. It increments a daily
+   COUNTER. There is no identifier of any kind in it - no id, no address, no
+   user agent, no referrer, nothing that could later be joined to a person -
+   which is why it needs no consent banner to be honest and no processor
+   agreement to be lawful. It cannot answer "who", only "how many", and how
+   many is the entire question.
+
+   Rate limited per IP because it is unauthenticated, and one visit per session
+   is enforced by the browser rather than trusted from it - a caller who lies
+   inflates a number that only they read. */
+async function recordVisit(request, env) {
+  const ip = request.headers.get('CF-Connecting-IP') || '';
+  if (ip) {
+    /* Generous: a person opening AMV in several tabs is normal. Bounded:
+       an unauthenticated counter is otherwise free to inflate. */
+    const r = await limitAction(env, `visit:${ip}`, 10, 200);
+    if (!r.ok) return json({ ok: true, counted: false });
+  }
+  try { await _recordGrowth(env, 'visit'); } catch (e) {}
+  return json({ ok: true, counted: true });
+}
+
 async function publicConfig(request, env) {
   /* Unauthenticated by necessity - it is read before anybody has an account -
      so it is bounded per IP like the other open endpoints. */
