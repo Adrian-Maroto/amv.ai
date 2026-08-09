@@ -578,6 +578,29 @@ async function _routeChatIntent(txt){
 try{ window._routeChatIntent=_routeChatIntent; }catch(e){}
 
 let _pendingMessage = '';
+/* THE QUESTION SOMEBODY TYPED BEFORE THEY HAD AN ACCOUNT.
+
+   Sending it after they sign in lived in two places - loginUser() for a return
+   visit and the signup path for a new one - because signup does not go through
+   loginUser. Both were four identical lines, which is a second definition
+   waiting to drift: fix a bug in one and the other keeps it, and the half that
+   keeps it is the NEW users, who are the only people this exists for.
+
+   One definition. Both callers use it. */
+function _sendPendingMessage(){
+  if(!_pendingMessage) return;
+  const pm = _pendingMessage;
+  _pendingMessage = '';   // cleared FIRST, so it can never fire twice
+  setTimeout(()=>{
+    try{
+      if(typeof setTab==='function') setTab('chat');
+      const ta = document.getElementById('mta');
+      if(ta){ ta.value = pm; ta.dispatchEvent(new Event('input')); }
+      sendMsg();
+    }catch(e){}
+  }, 300);
+}
+try{ window._sendPendingMessage=_sendPendingMessage; }catch(e){}
 /* How many times AMV will run tools and hand the results back to the model
    within one user message. Named so the limit and the sentence that explains
    hitting it cannot drift apart. */

@@ -2754,10 +2754,7 @@ function _completeIntroLogin(acct){
   // Onboarding popup removed per product direction (looked intrusive on sign-in).
   try{ saveStr('amv_onboarded','1'); }catch(e){}
   // if they typed a message before signing up, send it now
-  if(typeof _pendingMessage!=='undefined' && _pendingMessage){
-    const pm=_pendingMessage; _pendingMessage='';
-    setTimeout(()=>{ try{ const ta=$('mta'); if(ta){ ta.value=pm; ta.dispatchEvent(new Event('input')); } sendMsg(); }catch(e){} }, 300);
-  }
+  try{ _sendPendingMessage(); }catch(e){}
 }
 
 /* -- Keyboard shortcuts --

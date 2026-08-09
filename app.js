@@ -2425,11 +2425,8 @@ function loginUser(acct) {
   S.mk = loadStr('amv_mk');
   closeOvr();
   goApp();
-  // If they typed a message before signing up, send it now automatically.
-  if(_pendingMessage){
-    const pm=_pendingMessage; _pendingMessage='';
-    setTimeout(()=>{ try{ setTab('chat'); const ta=$('mta'); if(ta){ ta.value=pm; ta.dispatchEvent(new Event('input')); } sendMsg(); }catch(e){} }, 300);
-  }
+  // If they typed a message before signing in, send it now automatically.
+  _sendPendingMessage();
   // First-run onboarding popup removed per product direction - it read as an
   // intrusive modal on sign-in. Mark onboarded so nothing re-triggers it.
   try{ saveStr('amv_onboarded','1'); }catch(e){}
@@ -5093,6 +5090,29 @@ async function _routeChatIntent(txt){
 try{ window._routeChatIntent=_routeChatIntent; }catch(e){}
 
 let _pendingMessage = '';
+/* THE QUESTION SOMEBODY TYPED BEFORE THEY HAD AN ACCOUNT.
+
+   Sending it after they sign in lived in two places - loginUser() for a return
+   visit and the signup path for a new one - because signup does not go through
+   loginUser. Both were four identical lines, which is a second definition
+   waiting to drift: fix a bug in one and the other keeps it, and the half that
+   keeps it is the NEW users, who are the only people this exists for.
+
+   One definition. Both callers use it. */
+function _sendPendingMessage(){
+  if(!_pendingMessage) return;
+  const pm = _pendingMessage;
+  _pendingMessage = '';   // cleared FIRST, so it can never fire twice
+  setTimeout(()=>{
+    try{
+      if(typeof setTab==='function') setTab('chat');
+      const ta = document.getElementById('mta');
+      if(ta){ ta.value = pm; ta.dispatchEvent(new Event('input')); }
+      sendMsg();
+    }catch(e){}
+  }, 300);
+}
+try{ window._sendPendingMessage=_sendPendingMessage; }catch(e){}
 /* How many times AMV will run tools and hand the results back to the model
    within one user message. Named so the limit and the sentence that explains
    hitting it cannot drift apart. */
@@ -20472,10 +20492,7 @@ function _completeIntroLogin(acct){
   // Onboarding popup removed per product direction (looked intrusive on sign-in).
   try{ saveStr('amv_onboarded','1'); }catch(e){}
   // if they typed a message before signing up, send it now
-  if(typeof _pendingMessage!=='undefined' && _pendingMessage){
-    const pm=_pendingMessage; _pendingMessage='';
-    setTimeout(()=>{ try{ const ta=$('mta'); if(ta){ ta.value=pm; ta.dispatchEvent(new Event('input')); } sendMsg(); }catch(e){} }, 300);
-  }
+  try{ _sendPendingMessage(); }catch(e){}
 }
 
 /* -- Keyboard shortcuts --

@@ -3300,3 +3300,34 @@ fraud it prevents).
 whether the money can leave before then. A correct undo on an empty account is
 an audit trail, not a recovery. And when a security document says a control
 "should" exist, that sentence is the finding.
+
+## 192. The sabotage passed, and the test was fine
+
+A new suite covered the question somebody types before they have an account -
+the one that has to survive a sign-up modal, an auth round trip, a full
+re-render and a tab change. It passed 16/16 first time, which is the answer I
+wanted and therefore the one to distrust.
+
+So I broke it on purpose, and it still passed 16/16.
+
+The logic exists TWICE. Sign-up goes through one function and sign-in through
+another, and each carried its own four-line copy of "send what they typed". I
+had disabled the sign-in copy while the test exercises sign-up. Sabotaging the
+right half produced seven failures immediately: the test was correct, my
+verification was aimed at the wrong code.
+
+The duplication is the real finding. Two copies drift the moment anybody fixes
+a bug in one - and the half that would keep the bug is the SIGN-UP path, which
+is new users, who are the only people this feature exists for. The comment on
+that copy says it was added because "signup comes through HERE, so brand-new
+users never saw it" - which is that exact drift having already happened once,
+written down, and then left in place as a second copy rather than one shared
+function.
+
+One definition now, with the pending value cleared before the send so it can
+never fire twice. Sabotaging it breaks both paths, which is what a single
+definition is for.
+
+**Rule:** when a sabotage does not fail the test, suspect your aim before the
+test. Find every implementation of the behaviour first - if there is more than
+one, that is the bug, and the passing sabotage just found it for you.

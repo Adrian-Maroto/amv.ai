@@ -209,11 +209,8 @@ function loginUser(acct) {
   S.mk = loadStr('amv_mk');
   closeOvr();
   goApp();
-  // If they typed a message before signing up, send it now automatically.
-  if(_pendingMessage){
-    const pm=_pendingMessage; _pendingMessage='';
-    setTimeout(()=>{ try{ setTab('chat'); const ta=$('mta'); if(ta){ ta.value=pm; ta.dispatchEvent(new Event('input')); } sendMsg(); }catch(e){} }, 300);
-  }
+  // If they typed a message before signing in, send it now automatically.
+  _sendPendingMessage();
   // First-run onboarding popup removed per product direction - it read as an
   // intrusive modal on sign-in. Mark onboarded so nothing re-triggers it.
   try{ saveStr('amv_onboarded','1'); }catch(e){}
