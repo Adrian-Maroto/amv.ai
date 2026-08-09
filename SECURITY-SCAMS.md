@@ -27,7 +27,7 @@ authority** on money, limits, and content.
 
 ## B. Marketplace, payouts & money laundering
 
-11. **Wash trading / self-purchase to cash out** (buy your own listing with a stolen card, withdraw the 80%). → **Buying your own listing is blocked** (`You cannot buy your own listing`); withdrawals have a minimum and should be held/KYC'd before payout; requests are idempotent (no double-submit). ✅🛡️📋
+11. **Wash trading / self-purchase to cash out** (buy your own listing with a stolen card, withdraw the 80%). → **Buying your own listing is blocked** (`You cannot buy your own listing`), and money from a sale is **HELD for 14 days** before it can be withdrawn (`PAYOUT_HOLD_MS`), so a seller cannot outrun a chargeback - a reversal releases the hold and debits the balance, which is allowed to go negative. Requests are idempotent (no double-submit). ✅🛡️
 12. **Triangulation fraud** (sell goods bought with stolen cards). → Only digital deliverables/files are sold; payouts are held and reversible on chargeback. 🛡️📋
 13. **Fake "guaranteed profit" listings that do nothing.** → **Deliverable validation** rejects empty/vague listings per kind, and screening blocks "guaranteed profit/returns/risk-free." `_mktDeliverableOK` + `_MKT_REGULATED`. ✅
 14. **Prohibited goods** (drugs, weapons, malware, stolen data/credentials, CSAM, counterfeits). → Comprehensive pre-publish screening with leetspeak/homoglyph normalization; blocked before it ever reaches the catalog. `_mktScreen` + `_MKT_PROHIBITED`. ✅🛡️

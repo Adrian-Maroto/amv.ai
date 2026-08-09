@@ -10029,23 +10029,31 @@ function _mktEarnings(body){
   if(!body) return;
   body.innerHTML='<div class="fd-loading">Loading your earnings\u2026</div>';
   AMVMarket.earnings().then(d=>{
-    const bal=(d.balance||0), life=(d.lifetime||0), pct=d.sellerPct||80, min=d.minWithdraw||10;
+    /* AMV-187: the card labelled "Available to withdraw" was the whole balance,
+       which is now two different numbers. Money from a recent sale is held until
+       the dispute window has passed - it is still theirs and still counted, it
+       just cannot leave yet. Showing the total under that label would promise a
+       payout the server is about to refuse. */
+    const bal=(d.balance||0), avail=(d.available!=null?d.available:bal), pend=(d.pending||0),
+          holdDays=(d.holdDays||0), life=(d.lifetime||0), pct=d.sellerPct||80, min=d.minWithdraw||10;
     const txLabel={sale:'Sale',withdrawal:'Withdrawal'};
     const tx=(d.tx||[]).map(t=>'<div class="vrow"><span>'+(txLabel[t.type]||t.type)+(t.title?' \u00b7 '+escH(t.title):'')+(t.status?' <span style="color:var(--mu);font-size:11px">('+t.status+')</span>':'')+'</span>'+
       '<span class="vrow-n" style="color:'+(t.amount<0?'var(--mu)':'#4ade80')+'">'+(t.amount<0?'-$'+Math.abs(t.amount).toFixed(2):'+$'+t.amount.toFixed(2))+'</span></div>').join('')||'<div class="vrow"><span style="color:var(--mu)">No earnings yet - sell something to start.</span></div>';
     body.innerHTML=
       '<div class="vhero">'+
-        '<div class="vcard vcard-accent"><div class="vcard-n">$'+bal.toFixed(2)+'</div><div class="vcard-l">Available to withdraw</div></div>'+
+        '<div class="vcard vcard-accent"><div class="vcard-n">$'+avail.toFixed(2)+'</div><div class="vcard-l">Available to withdraw</div></div>'+
+        (pend>0?'<div class="vcard"><div class="vcard-n">$'+pend.toFixed(2)+'</div><div class="vcard-l">Clearing'+(holdDays?' \u00b7 '+holdDays+' days':'')+'</div></div>':'')+
         '<div class="vcard"><div class="vcard-n">$'+life.toFixed(2)+'</div><div class="vcard-l">Lifetime earnings</div></div>'+
         '<div class="vcard"><div class="vcard-n">'+pct+'%</div><div class="vcard-l">Your share of each sale</div></div>'+
       '</div>'+
       '<div class="ss2"><h3>Withdraw your balance</h3>'+
-        '<p style="font-size:12.5px;color:var(--mu);margin:0 0 12px;line-height:1.6">Minimum withdrawal is $'+min+'. Enter where you\u2019d like the funds sent (PayPal email or bank reference) and we\u2019ll process the payout.</p>'+
+        '<p style="font-size:12.5px;color:var(--mu);margin:0 0 12px;line-height:1.6">Minimum withdrawal is $'+min+'. Enter where you\u2019d like the funds sent (PayPal email or bank reference) and we\u2019ll process the payout.'+
+          (pend>0?' <b style="color:var(--tx)">$'+pend.toFixed(2)+'</b> from recent sales is still clearing - card payments can be disputed for a few weeks, so takings settle after '+holdDays+' days. It is yours; it just cannot be paid out yet.':'')+'</p>'+
         '<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;max-width:520px">'+
           '<div style="flex:1;min-width:200px"><label class="lbl">Payout destination</label><input id="wd-dest" placeholder="PayPal email or bank reference"></div>'+
-          '<button class="btn bp" id="wd-go" style="font-size:12px"'+(bal<min?' disabled':'')+'>Withdraw $'+bal.toFixed(2)+'</button>'+
+          '<button class="btn bp" id="wd-go" style="font-size:12px"'+(avail<min?' disabled':'')+'>Withdraw $'+avail.toFixed(2)+'</button>'+
         '</div>'+
-        (bal<min?'<div style="font-size:11.5px;color:var(--mu);margin-top:8px">You need at least $'+min+' to withdraw.</div>':'')+
+        (avail<min?'<div style="font-size:11.5px;color:var(--mu);margin-top:8px">You need at least $'+min+' available to withdraw.'+(pend>0?' You have $'+pend.toFixed(2)+' still clearing.':'')+'</div>':'')+
       '</div>'+
       '<div class="ss2"><h3>Transaction history</h3><div class="vbreak">'+tx+'</div></div>';
     on($('wd-go'),'click',async()=>{

@@ -9859,12 +9859,70 @@ async function _getListing(env, id) {
   if (!raw) return null;
   try { return JSON.parse(raw); } catch { return null; }
 }
+/* AMV-187: MONEY FROM A SALE CLEARS BEFORE IT CAN LEAVE.
+
+   A card dispute arrives weeks after the charge. `_reverseSale` already handles
+   that correctly on the books - it takes the item back, debits the seller, and
+   lets the balance go NEGATIVE so nobody profits by being quick. It only works
+   if the money is still here.
+
+   Withdrawal paid out the whole balance the moment it passed the minimum, with
+   no requirement that the funds had aged at all. So: list at $999, buy it from
+   a second account with a stolen card, take the $799 the same minute, abandon
+   the account. Six weeks later the dispute lands, the balance goes to -$799,
+   and that is a number in a record nobody will ever return to. AMV is out the
+   payout, the dispute fee, and a mark against its merchant account.
+
+   So each credit is HELD until the window has substantially passed. Held money
+   is still theirs - it is on the balance, it is shown, it is counted - it just
+   cannot leave yet. A reversal takes the held money first, because that is the
+   money most likely to still exist.
+
+   Additive on purpose: a wallet written before this has no `holds` array, and
+   an absent hold means cleared. Freezing every existing seller's balance on the
+   day this ships would cost real sellers to stop a fraud that has not happened. */
+const PAYOUT_HOLD_DAYS = 14;
+const PAYOUT_HOLD_MS = PAYOUT_HOLD_DAYS * 86400000;
+
 async function _wallet(env, email) {
   const raw = await env.AMV_KV.get(`wallet:${email}`);
   if (raw) { try { return JSON.parse(raw); } catch {} }
-  return { balance: 0, lifetime: 0, currency: 'usd' };
+  return { balance: 0, lifetime: 0, currency: 'usd', holds: [] };
 }
 async function _saveWallet(env, email, w) { await env.AMV_KV.put(`wallet:${email}`, JSON.stringify(w)); }
+
+/* What this seller could actually withdraw right now: the balance, less
+   everything still inside its clearing window. Never below zero on the
+   available side - a negative balance from a reversal is a debt to work off,
+   not a number to withdraw against. */
+async function _availableBalance(env, email, now = Date.now()) {
+  const w = await _wallet(env, email);
+  return _availableOf(w, now);
+}
+function _availableOf(w, now = Date.now()) {
+  /* Only holds that have NOT matured hold anything back. Subtracting every hold
+     regardless of age was the first version and it never cleared at all - money
+     would have been frozen for ever, which is a worse failure than the one this
+     exists to prevent. */
+  const held = (w.holds || [])
+    .filter(h => (+h.until || 0) > now)
+    .reduce((n, h) => n + (+h.amount || 0), 0);
+  return +Math.max(0, (+w.balance || 0) - held).toFixed(2);
+}
+/* Holds whose window has passed have done their job; once the money they were
+   holding has actually left, they are noise that makes the record harder to
+   read and the arithmetic easier to get wrong. */
+function _pruneMaturedHolds(w, now = Date.now()) {
+  w.holds = (w.holds || []).filter(h => (+h.until || 0) > now);
+  return w;
+}
+/* When the next tranche frees up, so a refusal can say WHEN rather than no. */
+function _nextClearingAt(w) {
+  const now = Date.now();
+  const times = (w.holds || []).map(h => +h.until || 0)
+    .filter(t => t > now).sort((a, b) => a - b);
+  return times.length ? times[0] : 0;
+}
 async function _walletTx(env, email) {
   const raw = await env.AMV_KV.get(`wallet_tx:${email}`);
   if (raw) { try { return JSON.parse(raw); } catch {} }
@@ -9968,6 +10026,13 @@ async function _creditSale(env, { itemId, buyer, seller, amountCents, ref }) {
     const w = await _wallet(env, sellerEmail);
     w.balance = +(w.balance + sellerShare).toFixed(2);
     w.lifetime = +(w.lifetime + sellerShare).toFixed(2);
+    /* Held until the dispute window has substantially passed. `at` is the sale
+       time so a test - or a backfill - can age it, and `ref` ties the hold to
+       the charge so a reversal can release exactly this one rather than
+       guessing at an amount. */
+    const at = Date.now();
+    w.holds = (w.holds || []).concat({ amount: sellerShare, at, until: at + PAYOUT_HOLD_MS,
+                                       ref: ref || '', item: itemId });
     await _saveWallet(env, sellerEmail, w);
     await _pushWalletTx(env, sellerEmail, { type: 'sale', amount: sellerShare, gross: price, item: itemId, title: it ? it.title : itemId, buyer, ts: Date.now() });
     // record the platform's cut (your revenue) so it shows in admin finance. The
@@ -9990,7 +10055,8 @@ async function _creditSale(env, { itemId, buyer, seller, amountCents, ref }) {
       await env.AMV_KV.put(`saleref:${ref}`, JSON.stringify({
         itemId, buyer, seller: sellerEmail, price,
         sellerShare: sellerEmail ? +(price * (1 - MARKET_PLATFORM_FEE)).toFixed(2) : 0,
-        at: Date.now(),
+        /* Carried so a reversal can release exactly this sale's hold. */
+        ref, at: Date.now(),
       }), { expirationTtl: 400 * 86400 });
     } catch (e) {}
   }
@@ -10029,6 +10095,16 @@ async function _reverseSale(env, ref, reason) {
     const w = await _wallet(env, rec.seller);
     w.balance = +((+w.balance || 0) - rec.sellerShare).toFixed(2);
     w.lifetime = +Math.max(0, (+w.lifetime || 0) - rec.sellerShare).toFixed(2);
+    /* Release this sale's hold. Leaving it would keep freezing money for a sale
+       that no longer exists - the seller would be short twice, once for the
+       reversal and once for a hold against nothing. Matched on the charge
+       reference, falling back to the item, so it releases THIS sale rather than
+       whichever hold happens to be the same size. */
+    const holds = (w.holds || []);
+    let i = holds.findIndex(h => rec.ref && h.ref && h.ref === rec.ref);
+    if (i < 0) i = holds.findIndex(h => h.item === rec.itemId);
+    if (i >= 0) holds.splice(i, 1);
+    w.holds = holds;
     await _saveWallet(env, rec.seller, w);
     await _pushWalletTx(env, rec.seller, { type: 'sale_reversed', amount: -rec.sellerShare,
       item: rec.itemId, buyer: rec.buyer, reason, ts: Date.now() });
@@ -10113,7 +10189,15 @@ async function marketEarnings(request, env) {
   if (!user) return json({ error: 'unauthorized' }, 401);
   const w = await _wallet(env, user.email);
   const tx = await _walletTx(env, user.email);
-  return json({ ok: true, balance: w.balance, lifetime: w.lifetime, currency: w.currency || 'usd', minWithdraw: MARKET_MIN_WITHDRAW, sellerPct: Math.round((1 - MARKET_PLATFORM_FEE) * 100), tx: tx.slice(0, 50) });
+  /* Three numbers, not one. "Balance" alone meant a seller saw money they could
+     not take and had no way to learn why - which reads as AMV keeping it. What
+     has cleared, what is still clearing, and how long that takes. */
+  const available = _availableOf(w);
+  const pending = +Math.max(0, (+w.balance || 0) - available).toFixed(2);
+  return json({ ok: true, balance: w.balance, available, pending,
+                holdDays: PAYOUT_HOLD_DAYS, availableAt: _nextClearingAt(w) || null,
+                lifetime: w.lifetime, currency: w.currency || 'usd', minWithdraw: MARKET_MIN_WITHDRAW,
+                sellerPct: Math.round((1 - MARKET_PLATFORM_FEE) * 100), tx: tx.slice(0, 50) });
 }
 
 /* Extraction: seller requests a withdrawal of their balance. Records a
@@ -10151,15 +10235,39 @@ async function marketWithdraw(request, env) {
   }
   try {
     const w = await _wallet(env, user.email);
-    if (w.balance < MARKET_MIN_WITHDRAW) return json({ error: `Minimum withdrawal is $${MARKET_MIN_WITHDRAW}. Your balance is $${w.balance.toFixed(2)}.` }, 400);
-    const amount = w.balance;
+    /* Only what has cleared. The balance may be larger - held money is still
+       theirs and still shown - but it cannot leave until the dispute window has
+       substantially passed, or a seller could outrun a chargeback and leave AMV
+       holding it. */
+    const available = _availableOf(w);
+    if (available < MARKET_MIN_WITHDRAW) {
+      const nextAt = _nextClearingAt(w);
+      const held = +((+w.balance || 0) - available).toFixed(2);
+      /* Said as a matter of time rather than a refusal, because for an honest
+         seller that is exactly what it is. */
+      const when = nextAt
+        ? ' $' + held.toFixed(2) + ' is still clearing and becomes available on '
+          + new Date(nextAt).toISOString().slice(0, 10) + '.'
+        : '';
+      return json({ error: `Minimum withdrawal is $${MARKET_MIN_WITHDRAW}. You have $${available.toFixed(2)} available.` + when,
+                    code: 'not_cleared', available, held, holdDays: PAYOUT_HOLD_DAYS,
+                    availableAt: nextAt || null }, 400);
+    }
+    const amount = available;
     const wid = 'wd_' + crypto.randomUUID().slice(0, 12);
     await env.AMV_KV.put(`withdraw:${wid}`, JSON.stringify({
       id: wid, seller: user.email, amount, destination: dest,
       status: 'pending', ts: Date.now(),
     }));
-    // zero the balance and log the debit
-    w.balance = 0;
+    /* Take out only what left. This used to zero the whole balance, which was
+       right when everything was withdrawable and is silent theft now: money
+       still inside its clearing window would vanish along with the payout, and
+       the seller would never see it again. The holds are untouched - they are
+       still that seller's money, still on the books, still on their own clock. */
+    w.balance = +((+w.balance || 0) - amount).toFixed(2);
+    /* The cleared tranches have now genuinely left; anything still inside its
+       window stays, on its own clock. */
+    _pruneMaturedHolds(w);
     await _saveWallet(env, user.email, w);
     await _pushWalletTx(env, user.email, { type: 'withdrawal', amount: -amount, status: 'pending', id: wid, ts: Date.now() });
     audit(env, 'market_withdraw', { seller: user.email, amount, id: wid });

@@ -3267,3 +3267,36 @@ constant cannot pass that, and neither can a number that is right for one plan.
 **Rule:** a limit displayed anywhere must come from the thing that enforces it.
 If a screen has to know a number, it has to ask - and if it cannot ask, the
 number does not belong on the screen.
+
+## 191. The reversal was perfect. The money had already gone.
+
+`_reverseSale` is the best-built thing in the marketplace: it takes the item
+back from the buyer, debits the seller, refuses to run twice, and deliberately
+lets the balance go NEGATIVE so nobody profits by being quick. Every one of
+those decisions is right.
+
+None of them matter if the money left first.
+
+Withdrawal paid out the whole balance the moment it passed a $10 minimum, with
+no requirement that the funds had aged at all. So: list at $999, buy it from a
+second account with a stolen card, take the $799 the same minute, abandon the
+account. Six weeks later the dispute lands, the balance goes to -$799, and that
+is a number in a record nobody will ever return to. AMV is out the payout, the
+dispute fee, and a mark against its merchant account.
+
+The security register described this as handled. It said withdrawals "should be
+held/KYC'd before payout" - and *should be* is not a control, it is an
+intention written in the same voice as the controls around it. That is how a
+gap survives a document whose whole purpose is to find gaps.
+
+Building it produced two of my own, both caught by the tests before they shipped
+and both the kind that destroy a seller's money rather than protect it:
+zeroing the balance on payout (which would have wiped the held portion along
+with the cleared part), and subtracting every hold regardless of age (which
+would have frozen every seller's earnings for ever - a worse failure than the
+fraud it prevents).
+
+**Rule:** for anything reversible, ask how long the reversal takes to arrive and
+whether the money can leave before then. A correct undo on an empty account is
+an audit trail, not a recovery. And when a security document says a control
+"should" exist, that sentence is the finding.
