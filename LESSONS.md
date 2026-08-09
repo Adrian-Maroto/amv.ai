@@ -2972,3 +2972,30 @@ phrase-list for jobs needing input, and now this.
 
 **Rule:** a check should read the same source the product reads. A copy is a
 second definition, and second definitions drift silently.
+
+## 181. The standing check caught me writing the exact defect it exists for
+
+The gate failed on `reads-cannot-fabricate`, a suite written earlier this
+session after finding twelve reads that answered a FAILED network call with a
+plausible empty value. The thirteenth was mine, written an hour ago:
+
+    }catch(e){ return []; }        // inside a per-course fetch
+
+A class whose coursework failed to load contributed nothing to the plan, and
+nothing anywhere said so. "Chemistry did not load" became "Chemistry has nothing
+due", on the screen somebody plans their week from. They miss the deadline, and
+AMV told them confidently there was not one.
+
+I wrote the check. I read the twelve examples. I then wrote the thirteenth in a
+new file, because the shape is genuinely invisible while you are writing it -
+the fallback is tidy, the failure is rare, and nothing about the line looks
+wrong until you ask what SENTENCE the empty value becomes.
+
+The fix was not to stop returning a partial answer. Five classes out of six is
+worth having; presenting it as six is the part that is not. The read now names
+what it could not fetch and says in words that anything set in those classes is
+missing, and the job is instructed to lead with that.
+
+**Rule:** a guard you wrote does not exempt you from the thing it guards. The
+value of this one was never the twelve it found - it is the ones nobody would
+have looked for, including mine.

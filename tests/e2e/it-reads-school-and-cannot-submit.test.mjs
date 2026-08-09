@@ -97,6 +97,46 @@ section('It reads real coursework and reports what is actually there');
      'and every date that exists is a real date', true);
 }
 
+section('A class that could not be read is not a class with nothing due');
+{
+  /* The defect the standing read-check caught in this very reader: swallowing
+     a failed per-course fetch turns "Chemistry did not load" into "Chemistry
+     has nothing due", on the screen somebody plans their week from. They miss
+     the deadline, and AMV told them confidently there wasn't one. */
+  const r = await page.evaluate(async () => {
+    window.getGToken = () => 'g-token';
+    window.ensureGToken = async () => 'g-token';
+    const real = window.fetch;
+    window.fetch = async (url, opts) => {
+      const u = String(url);
+      if (/v1\/courses\?/.test(u))
+        return { ok: true, json: async () => ({ courses: [{ id: 'c1', name: 'History' }, { id: 'c2', name: 'Chemistry' }] }) };
+      if (/courses\/c1\/courseWork/.test(u))
+        return { ok: true, json: async () => ({ courseWork: [
+          { title: 'Essay', maxPoints: 40, dueDate: { year: 2099, month: 3, day: 14 } }] }) };
+      if (/courses\/c2\/courseWork/.test(u)) throw new Error('network died');
+      return real(url, opts);
+    };
+    const out = await INTEGRATION_ACTIONS.classroom_due.run();
+    window.fetch = real;
+    return out;
+  });
+
+  ok(r.items.length === 1, 'the class that did load is still returned, because five of six is useful', r.items.length);
+  ok(Array.isArray(r.unread) && r.unread.includes('Chemistry'),
+     'and the one that did not is named', r.unread);
+  ok(/Could not read/i.test(r.note) && /NOT in this list/i.test(r.note),
+     'in a sentence, saying plainly that its work is missing', r.note);
+}
+
+section('And the job is told to pass that on');
+{
+  const p = await page.evaluate(() => (_cwJobs().find(x => x.id === 'school_auto') || {}).prompt || '');
+  ok(/could not be read, say so at the top/i.test(p),
+     'the instruction requires naming an unreadable class', /could not be read/i.test(p));
+  ok(/miss(es)? a deadline/i.test(p), 'and says why it matters', true);
+}
+
 section('The job that uses it is honest about where it runs');
 {
   /* The Google token lives in this browser and the server never sees it, so a

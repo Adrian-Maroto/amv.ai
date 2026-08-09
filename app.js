@@ -13140,7 +13140,7 @@ function _cwDefaultJobs(){ return [
     desc:'Reads what you have actually been set in Google Classroom - every class, every due date - and plans your week around it. Nothing to type in and nothing to keep updated.',
     asks:{ q:'Anything AMV should know beyond your classes?', ph:'Things Classroom does not have - a job, training, a test that was announced in class - or leave it blank and it works from Classroom alone' },
     sample:['Read from Classroom: 6 classes, 9 pieces of work still ahead.','DUE IN 2 DAYS - History essay (worth 40 points, the biggest thing this fortnight). Not mentioned since it was set.','DUE FRIDAY - Chemistry problem set, and the biology reading.','NO DUE DATE - the art portfolio. It has been open 3 weeks, which is usually how those end up done in one night.','THE COLLISION: history and chemistry both land Friday. Do the essay Wednesday or you are doing both on Thursday.','AMV reads Classroom. It cannot submit anything, and it is not able to - it was never given permission to.'],
-    prompt:'You are given the user’s real coursework from Google Classroom: each piece, its class, its due date and what it is worth. Build them a plan around it. Lead with what is due soonest and what is worth most, name any day where two significant things collide and give the specific move that fixes it, and call out anything with no due date that has been open a long time, because that is what gets done badly at the last minute. Use the points to say which piece actually matters. If they have told you anything Classroom does not know about, fold it in. Be brief - this is read before school. Never invent a piece of work or a due date: everything you list must be in what you were given. State plainly that you can read their coursework and cannot submit anything.' },
+    prompt:'You are given the user’s real coursework from Google Classroom: each piece, its class, its due date and what it is worth. Build them a plan around it. Lead with what is due soonest and what is worth most, name any day where two significant things collide and give the specific move that fixes it, and call out anything with no due date that has been open a long time, because that is what gets done badly at the last minute. Use the points to say which piece actually matters. If they have told you anything Classroom does not know about, fold it in. Be brief - this is read before school. Never invent a piece of work or a due date: everything you list must be in what you were given. If any class could not be read, say so at the top and name it - a plan that quietly omits a class reads as \u2018nothing is due\u2019 for it, and that is how somebody misses a deadline AMV told them about. State plainly that you can read their coursework and cannot submit anything.' },
 ]; }
 /* ── WHAT A JOB NEEDS, AGAINST WHAT IS ACTUALLY CONNECTED ────────────────────
 
@@ -21208,12 +21208,23 @@ const INTEGRATION_ACTIONS = {
       if(!courses.length) return { courses:0, items:[] };
 
       const now=Date.now();
+      /* A CLASS THAT COULD NOT BE READ IS NOT A CLASS WITH NOTHING DUE.
+
+         Swallowing a failed per-course read and returning nothing for it turns
+         "Chemistry did not load" into "Chemistry has nothing due" - on a screen
+         somebody plans their week from. The student misses the deadline and
+         AMV told them, confidently, that there wasn't one.
+
+         So a failure is recorded and reported. Reading five classes out of six
+         is genuinely useful and worth returning; presenting it as all six is
+         the part that is not. */
+      const unread=[];
       const per=await Promise.all(courses.map(async c=>{
         try{
           const r=await fetchDeadline('https://classroom.googleapis.com/v1/courses/'+encodeURIComponent(c.id)
             +'/courseWork?pageSize=30&orderBy=dueDate%20asc',{headers:{'Authorization':'Bearer '+t}});
           const d=await r.json();
-          if(d.error) return [];
+          if(d.error){ unread.push(c.name||c.id); return []; }
           return (d.courseWork||[]).map(w=>{
             /* Google gives the date and time separately, and either may be
                absent. A piece of work with no due date is real and common -
@@ -21228,7 +21239,7 @@ const INTEGRATION_ACTIONS = {
                      dueText: due ? new Date(due).toISOString().slice(0,10) : 'no due date',
                      link:w.alternateLink||'', points:w.maxPoints||null };
           });
-        }catch(e){ return []; }
+        }catch(e){ unread.push(c.name||c.id); return []; }
       }));
       const items=per.flat()
         /* Only what is still ahead of them. A planner listing last term's work
@@ -21236,7 +21247,14 @@ const INTEGRATION_ACTIONS = {
         .filter(x=>x.due===null || x.due>=now-86400000)
         .sort((a,b)=>(a.due||Infinity)-(b.due||Infinity))
         .slice(0,40);
-      return { courses:courses.length, items };
+      return { courses:courses.length, items, unread,
+               /* Said in words as well as in a field, because the field is
+                  what a caller checks and the sentence is what reaches the
+                  person. */
+               note: unread.length
+                 ? 'Could not read ' + unread.length + ' of ' + courses.length + ' classes ('
+                   + unread.join(', ') + '). Anything set in those is NOT in this list.'
+                 : '' };
     }
   },
   gmail_list_unread: {

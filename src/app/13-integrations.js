@@ -34,12 +34,23 @@ const INTEGRATION_ACTIONS = {
       if(!courses.length) return { courses:0, items:[] };
 
       const now=Date.now();
+      /* A CLASS THAT COULD NOT BE READ IS NOT A CLASS WITH NOTHING DUE.
+
+         Swallowing a failed per-course read and returning nothing for it turns
+         "Chemistry did not load" into "Chemistry has nothing due" - on a screen
+         somebody plans their week from. The student misses the deadline and
+         AMV told them, confidently, that there wasn't one.
+
+         So a failure is recorded and reported. Reading five classes out of six
+         is genuinely useful and worth returning; presenting it as all six is
+         the part that is not. */
+      const unread=[];
       const per=await Promise.all(courses.map(async c=>{
         try{
           const r=await fetchDeadline('https://classroom.googleapis.com/v1/courses/'+encodeURIComponent(c.id)
             +'/courseWork?pageSize=30&orderBy=dueDate%20asc',{headers:{'Authorization':'Bearer '+t}});
           const d=await r.json();
-          if(d.error) return [];
+          if(d.error){ unread.push(c.name||c.id); return []; }
           return (d.courseWork||[]).map(w=>{
             /* Google gives the date and time separately, and either may be
                absent. A piece of work with no due date is real and common -
@@ -54,7 +65,7 @@ const INTEGRATION_ACTIONS = {
                      dueText: due ? new Date(due).toISOString().slice(0,10) : 'no due date',
                      link:w.alternateLink||'', points:w.maxPoints||null };
           });
-        }catch(e){ return []; }
+        }catch(e){ unread.push(c.name||c.id); return []; }
       }));
       const items=per.flat()
         /* Only what is still ahead of them. A planner listing last term's work
@@ -62,7 +73,14 @@ const INTEGRATION_ACTIONS = {
         .filter(x=>x.due===null || x.due>=now-86400000)
         .sort((a,b)=>(a.due||Infinity)-(b.due||Infinity))
         .slice(0,40);
-      return { courses:courses.length, items };
+      return { courses:courses.length, items, unread,
+               /* Said in words as well as in a field, because the field is
+                  what a caller checks and the sentence is what reaches the
+                  person. */
+               note: unread.length
+                 ? 'Could not read ' + unread.length + ' of ' + courses.length + ' classes ('
+                   + unread.join(', ') + '). Anything set in those is NOT in this list.'
+                 : '' };
     }
   },
   gmail_list_unread: {
