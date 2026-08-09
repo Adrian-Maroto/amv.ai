@@ -61,6 +61,12 @@ section('It NEVER returns a secret, in any form');
     // Per-seat Teams billing and the model failover endpoint are optional
     // capabilities too, so "everything configured" has to include them.
     STRIPE_PRICE_TEAM_SEAT: 'price_SUPERSECRET', MODEL_API_FALLBACK_URL: 'https://backup.example',
+    /* A verified sender is part of being configured, not an extra. With only a
+       Resend key the default address delivers to the account owner and nobody
+       else, so "everything is configured" while every other person's password
+       reset goes nowhere would be exactly the false green this file exists to
+       prevent. */
+    RESET_EMAIL_FROM: 'AMV <hello@amv.test>',
     // Bindings too, or "everything configured" would not be true - which is
     // the point of the assertion below.
     DB: { prepare(){} }, AMV_COUNTER: {},
@@ -129,6 +135,35 @@ section('It is operator-only');
   const wrong = await W.adminReadiness(new Request('https://w/admin/readiness',
     { headers: { Authorization: 'Bearer not-the-token' } }), env);
   ok(wrong.status === 403, 'and neither does a wrong token', wrong.status);
+}
+
+section('A Resend key alone does not mean mail reaches anybody');
+{
+  /* The failure this exists for: the key is set, "Email delivery" goes green,
+     and the default sender is onboarding@resend.dev - which Resend delivers
+     ONLY to the address that owns the Resend account. Password resets reach the
+     operator and nobody else, every other person who forgets their password is
+     locked out permanently, and the screen whose whole job is to say what works
+     reported email as on. */
+  const env = Object.assign(bare(), { EMAIL_API_KEY: 're_key_only' });
+  const d = await get(env);
+  const sender = find(d, 'emailSender');
+  ok(!!sender, 'deliverability is reported as its own thing', (d.items || []).map(i => i.id).join(','));
+  ok(sender.on === false, 'and it is NOT on with only a key', sender.on);
+  ok(/only delivers to|nobody else|verified/i.test(sender.turnsOn || ''),
+     'saying plainly that mail reaches the owner and no one else', sender.turnsOn);
+  ok(/RESET_EMAIL_FROM/.test(JSON.stringify(sender)), 'and naming what to set', sender.how);
+
+  const emailItem = find(d, 'email');
+  ok(emailItem && emailItem.on === true,
+     'while the key itself is still correctly reported as present', emailItem && emailItem.on);
+}
+
+section('With a verified sender, it goes green');
+{
+  const env = Object.assign(bare(), { EMAIL_API_KEY: 're_key', RESET_EMAIL_FROM: 'AMV <hello@amv.test>' });
+  const sender = find(await get(env), 'emailSender');
+  ok(sender && sender.on === true, 'a verified sender satisfies it', sender && sender.on);
 }
 
 report('readiness');

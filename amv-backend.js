@@ -11611,6 +11611,19 @@ function _readinessReport(env) {
     { id: 'email', name: 'Email delivery', blocking: false, on: _has(env, 'EMAIL_API_KEY'),
       turnsOn: 'Password resets, the weekly digest, and automation results reaching an inbox instead of only the app.',
       how: put('EMAIL_API_KEY') },
+    /* AMV-193: CONFIGURED IS NOT THE SAME AS DELIVERABLE.
+       The line above goes green the moment a Resend key exists. But the default
+       sender is onboarding@resend.dev, which Resend only delivers to the
+       address that owns the Resend account - so with a key and no verified
+       domain, password resets reach the operator and NOBODY ELSE. Every other
+       person who forgets their password is locked out for good, and the screen
+       that exists to say what works reported email as on.
+       Preflight warns about this; a running deployment could not see it. */
+    { id: 'emailSender', name: 'Email actually reaches people', blocking: false,
+      on: _has(env, 'EMAIL_API_KEY') && _has(env, 'RESET_EMAIL_FROM'),
+      turnsOn: 'Mail to anyone other than you. Without a sender on a domain you have verified, the default '
+             + 'address only delivers to the owner of the email account - so password resets reach you and nobody else.',
+      how: put('RESET_EMAIL_FROM') },
     { id: 'appUrl', name: 'App address', blocking: false, on: _has(env, 'APP_URL'),
       turnsOn: 'Correct links in every email, invite links, and shared conversation URLs.',
       how: put('APP_URL') },
