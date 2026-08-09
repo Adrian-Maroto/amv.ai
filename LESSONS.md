@@ -3212,3 +3212,31 @@ each false positive got a fix, not an exemption.
 **Rule:** a feature is the wire, not the two ends. When both sides are written
 by the same person on the same day, the connection between them is the part
 nobody tests - so test that the caller exists, from the side that cannot see it.
+
+## 189. I rewrote the bug I was fixing, in the fix
+
+The marketplace inbox was broken because the client never read the server. My
+replacement called `AMV_API._fetch(...)` and treated the result as the parsed
+body. It is not - it resolves with the RESPONSE. So `d.error` was undefined,
+`d.thread` was undefined, the guard passed, and the code fell through to the
+local-only path.
+
+Which is the original defect, written by the person fixing the original defect,
+in the commit that fixes it. Both Worker suites stayed green - they test the
+server, and the server was fine. The client "worked": the message appeared in
+the sender's thread exactly as before.
+
+The only thing that saw it was the two-browser test, because it asks the
+question the unit tests structurally cannot: does the OTHER person have it. I
+had written that test first, for exactly this reason, and it still surprised
+me - I assumed the fix worked and the fixture was broken, and spent a round
+debugging the test.
+
+It then found a second one. `syncThreads` rebuilt each thread with the local id
+and dropped the server's, so after any sync the thread no longer knew where it
+lived, marking it read never reached the server, and the badge returned on the
+next refresh on every device for ever.
+
+**Rule:** write the test that watches from the other side FIRST, and believe it
+over your own reading of the diff. A fix verified only from the side that was
+already working is not verified.

@@ -1040,7 +1040,12 @@ const AMVMarket = {
      and are overwritten by what comes back. */
   async syncThreads(){
     if(!this._live()) return null;
-    const d = await AMV_API._fetch('/v1/market/threads',{method:'POST',body:'{}'});
+    /* _fetch resolves with the RESPONSE, not the parsed body - the same shape
+       every other call here uses. Treating it as JSON silently yields undefined
+       for every field, which reads as "the server said nothing" and falls back
+       to local data: the exact failure this whole change exists to remove. */
+    const r = await AMV_API._fetch('/v1/market/threads',{method:'POST',body:'{}'});
+    const d = await r.json().catch(()=>null);
     if(!d || !Array.isArray(d.threads)) return null;
     const me=this._me(); const all=this._allThreads();
     for(const t of d.threads){
@@ -1050,7 +1055,11 @@ const AMVMarket = {
          `th_x__y`, and merging on the raw id would have shown every exchange
          as two. */
       const id=this._threadId(a,b);
-      all[id]=Object.assign({}, t, { id, unread: t.unread||0 });
+      /* The server's own id is KEPT as serverId. Overwriting `id` and dropping
+         it meant that after any sync the thread no longer knew where it lived,
+         so marking it read never reached the server and the badge came back on
+         the next refresh - on every device, for ever. */
+      all[id]=Object.assign({}, t, { id, serverId: t.id, unread: t.unread||0 });
     }
     this._saveThreads(all);
     return d;
@@ -1076,8 +1085,9 @@ const AMVMarket = {
       if(opts && opts.item) payload.item = opts.item;         // asking about a listing
       else if(t.serverId) payload.thread = t.serverId;         // replying in a conversation
       else payload.to = otherEmail;
-      const d = await AMV_API._fetch('/v1/market/message',{method:'POST',body:JSON.stringify(payload)});
-      if(!d || d.error) throw new Error((d && d.error) || 'Could not send that message.');
+      const r = await AMV_API._fetch('/v1/market/message',{method:'POST',body:JSON.stringify(payload)});
+      const d = await r.json().catch(()=>null);
+      if(!r.ok || !d || d.error) throw new Error((d && d.error) || 'Could not send that message.');
       if(d.thread){
         t=Object.assign({}, d.thread, { id, serverId:d.thread.id, unread:0 });
         all[id]=t; this._saveThreads(all);
