@@ -22,6 +22,7 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { functionBody } from '../lib/source.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
@@ -72,17 +73,10 @@ const PUBLIC = {
   '/v1/visit':           'counting arrivals, from people who have no account yet',
 };
 
-function bodyOf(fn){
-  const m = src.match(new RegExp('(?:async\\s+)?function\\s+' + fn + '\\s*\\('));
-  if(!m) return '';
-  const i = src.indexOf('{', m.index + m[0].length);
-  let d = 0;
-  for(let j = i; j < src.length && j < i + 30000; j++){
-    if(src[j] === '{') d++;
-    else if(src[j] === '}'){ d--; if(d === 0) return src.slice(i, j + 1); }
-  }
-  return src.slice(i, i + 30000);
-}
+/* One definition, in tests/lib/source.mjs. Three files carried an identical
+   copy of this, each with its own 30000-character escape hatch - and a copy is
+   a second definition that drifts silently. */
+const bodyOf = (fn) => functionBody(src, fn);
 
 const routes = [...src.matchAll(/case\s+'([^']+)'\s*:\s*return\s+([A-Za-z_$][\w$]*)\(/g)]
   .map(m => ({ path: m[1], fn: m[2] }))

@@ -25,6 +25,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { functionBody } from '../lib/source.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const src = readFileSync(join(ROOT, 'app.js'), 'utf8');
@@ -142,7 +143,7 @@ section('Nothing is called that does not exist');
      So every function goApp and setTab call at startup has to actually be a
      function on the page. */
   const startup = new Set();
-  const goApp = src.slice(src.indexOf('function goApp()'), src.indexOf('function goApp()') + 4000);
+  const goApp = functionBody(src, 'goApp');
   for (const m of goApp.matchAll(/try\{\s*(?:const [^;]+;\s*)?(_[A-Za-z0-9_]+)\(/g)) startup.add(m[1]);
   for (const m of goApp.matchAll(/\b(_[A-Za-z0-9_]+)\(\)/g)) startup.add(m[1]);
   ok(startup.size > 8, 'the sweep found startup calls to check', startup.size);

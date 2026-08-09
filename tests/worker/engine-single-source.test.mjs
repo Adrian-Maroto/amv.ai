@@ -17,6 +17,7 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { functionBody } from '../lib/source.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
@@ -42,7 +43,7 @@ section('A model id appears only where the tiers are defined');
 section('The helper reads the table rather than repeating it');
 {
   ok(/function engineModel\(key\)/.test(src), 'there is one accessor', true);
-  const body = src.slice(src.indexOf('function engineModel(key)'), src.indexOf('function engineModel(key)') + 220);
+  const body = functionBody(src, 'engineModel');
   ok(/ENGINES\[key\]/.test(body), 'and it reads ENGINES', true);
   /* An unknown tier must resolve to a real engine, not undefined - a model of
      `undefined` reaches the provider as a malformed request. */

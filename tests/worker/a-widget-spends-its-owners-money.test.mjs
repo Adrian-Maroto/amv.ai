@@ -29,6 +29,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { functionBody } from '../lib/source.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -228,7 +229,7 @@ section('A turn refused AFTER the reservation gives it back');
 
 section('The synthetic user with infinite limits is gone from the source');
 {
-  const chat = src.slice(src.indexOf('async function widgetChat'), src.indexOf('async function widgetChat') + 9000);
+  const chat = functionBody(src, 'widgetChat');
   ok(!/plan: 'widget'/.test(chat),
      'no stand-in account is billed instead of a person', true);
   ok(!/dayTokens: Infinity/.test(chat),

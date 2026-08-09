@@ -61,9 +61,20 @@ section('The scheduler the command bar uses is the one the cron runs');
   ok(!/_fetch\(\s*'\/api\/schedule\//.test(bundle),
      'and nothing still posts to the scheduler that never existed', true);
 
+  /* The WHOLE function, bounded by where the next one begins. An 800-character
+     window here went stale the moment the tick grew a comment and failed a
+     correct implementation - the second time that shape has cost a gate run.
+
+     And the read is matched by KIND rather than by the name of the helper that
+     performs it, because which helper reads storage is an implementation
+     detail that has already changed once (every bounded list now goes through
+     scan(), which reports truncation). What must not change is WHICH RECORDS
+     the cron walks: the ones /auto/create writes. */
   const cronAt = worker.indexOf('async function runDueAutomations');
-  const cron = worker.slice(cronAt, cronAt + 800);
-  ok(/DB\.list\(env, 'auto'/.test(cron),
+  const ends = [worker.indexOf('\nasync function ', cronAt + 1), worker.indexOf('\nfunction ', cronAt + 1)].filter(i => i > 0);
+  const cron = worker.slice(cronAt, Math.min(...ends));
+  ok(ends.length > 0 && cron.length > 2000, 'the tick was located in full', cron.length);
+  ok(/(?:DB\.list|scan)\(\s*env,\s*'auto'/.test(cron),
      'while the cron walks exactly the records /auto/create writes', true);
 }
 

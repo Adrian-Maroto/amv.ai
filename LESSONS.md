@@ -3076,3 +3076,41 @@ exactly like a test that works.
 **Rule:** for each guard, ask which caller actually reaches it, and write THAT
 caller. The interesting case is rarely the one already on screen - it is the
 one for which the short-circuit above does not fire.
+
+## 185. A magic-number window is wrong in both directions, and silently
+
+Two gate runs were failed by correct code because a check located a function
+with a fixed character window:
+
+    src.slice(src.indexOf('async function runDueAutomations'), at + 800)
+
+Add a comment to the function and the line being looked for falls outside the
+window. Nothing is wrong with the product; the check simply stopped covering
+it. That is the failure mode that teaches people to ignore a test directory.
+
+The other direction is worse because it is silent. Replacing the windows with
+a real extractor turned up a check on `widgetChat` that had been passing on a
+line in the NEXT function: the 9000-character window ran past the end of the
+one it named. It asserted that a widget bills its owner's real plan, and it
+would have gone on passing if that line were deleted.
+
+Writing the extractor was its own lesson. Counting braces looks obvious and is
+wrong: a brace inside a string, a regex or a comment closes the function early,
+and the first version stopped 1200 characters into an 11800-character
+`widgetChat` - which would have quietly shrunk every check using it. Counting
+braces properly means tokenising JavaScript. What is actually reliable is the
+file's own shape: a top-level function ends where the next one begins, and its
+closing brace is a `}` alone in column 0. Both are structural, so neither moves
+when somebody adds a comment. One-liners and indented closers fall back to
+counting, hard-capped at the next declaration so a body can never read into the
+following function.
+
+Three files also carried an identical hand-rolled copy of the extractor, each
+with its own 30000-character escape hatch. One definition now, in
+`tests/lib/source.mjs`, verified against all 340 worker functions and all 974
+client functions.
+
+**Rule:** never locate code by a character count. If a check needs a function,
+find its actual boundaries - and if the helper doing that cannot be trusted,
+that is the thing to fix first, because every check built on it inherits the
+error without showing it.

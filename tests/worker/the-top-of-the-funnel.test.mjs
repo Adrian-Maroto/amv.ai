@@ -22,6 +22,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { functionBody } from '../lib/source.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -106,7 +107,7 @@ section('It needs no sign-in, because a visitor does not have one');
      Requiring auth would measure only the group already counted elsewhere. */
   const routeLine = src.slice(src.indexOf("case '/v1/visit'"), src.indexOf("case '/v1/visit'") + 120);
   ok(/recordVisit/.test(routeLine), 'the route is wired', routeLine.trim().slice(0, 60));
-  const body = src.slice(src.indexOf('async function recordVisit'), src.indexOf('async function recordVisit') + 900);
+  const body = functionBody(src, 'recordVisit');
   ok(!/requireUser/.test(body), 'and does not ask who they are', true);
 }
 
@@ -152,7 +153,7 @@ section('The owner can see visitors and the rate that matters');
 section('The browser counts one arrival per visit, not per render');
 {
   const client = readFileSync(join(ROOT, 'src', 'app', '12-handoff.js'), 'utf8');
-  const fn = client.slice(client.indexOf('function _countVisit'), client.indexOf('function _countVisit') + 800);
+  const fn = functionBody(client, '_countVisit');
   ok(/sessionStorage/.test(fn),
      'one per session, so a funnel means arrivals and not redraws', true);
   ok(!/localStorage/.test(fn),
