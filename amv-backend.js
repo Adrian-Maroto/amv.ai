@@ -456,7 +456,11 @@ const DB = {
    practical limit and still come through here, so if one ever does hit the
    ceiling it surfaces instead of silently doing three quarters of the job. */
 const SCAN_ALL = 1000000;
-const ADMIN_USERS_LIMIT = 300;      // one admin page of accounts
+const ADMIN_USERS_LIMIT = 300;
+/* One screenful. The per-account detail costs storage round trips, and a Worker
+   has a ceiling on how many it may make in one request - so this is what bounds
+   the admin list, not the number of accounts that happen to exist. */
+const ADMIN_USERS_PAGE = 60;      // one admin page of accounts
 const SUPPORT_SCAN_LIMIT = 500;     // accounts with tickets, not tickets
 async function scan(env, kind, limit, what) {
   const cap = limit || SCAN_ALL;
@@ -4596,20 +4600,45 @@ async function adminUsers(request, env) {
   const ownerEmail = String(env.OWNER_EMAIL || '').toLowerCase();
   const isOwner = !!ownerEmail && String(claims.email).toLowerCase() === ownerEmail;
   if(!isOwner && !(acct && acct.admin)) return json({ error:'forbidden' }, 403);
-  // list accounts (KV list is best-effort; cap for safety)
-  let users=[]; let truncated=false;
+  /* AMV-198: ONE PAGE OF ACCOUNTS, NOT ALL OF THEM AT ONCE.
+
+     This did six storage round trips per account across up to three hundred of
+     them - eighteen hundred in a single request, for one screen. A Worker has a
+     ceiling on how many it may make, so this screen was on a countdown to
+     failing outright, and long before that it was simply slow: the owner's own
+     Control Center getting worse every time AMV succeeded at anything.
+
+     Two of the six are now one bulk read for the whole page rather than one
+     each, and the rest are done for the page being looked at instead of every
+     account that exists. The page is a stated number the caller can move
+     through, so nothing has been removed from the screen - it arrives in
+     pieces. */
+  let users=[]; let truncated=false; let total=0; let hasMore=false;
+  const url = new URL(request.url);
+  const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0', 10) || 0);
+  const limit = Math.max(1, Math.min(ADMIN_USERS_PAGE,
+                  parseInt(url.searchParams.get('limit') || String(ADMIN_USERS_PAGE), 10) || ADMIN_USERS_PAGE));
   try{
     const s = await scan(env, 'acct', ADMIN_USERS_LIMIT, 'admin user list');
-    const list = s.rows; truncated = s.truncated;
+    const all = s.rows || []; truncated = s.truncated;
+    total = all.length;
+    const list = all.slice(offset, offset + limit);
+    hasMore = offset + list.length < total;
     const month = monthKey();
-    users = await Promise.all((list||[]).map(async r=>{
+    /* Every per-account record is read for THIS PAGE only. Reading a kind in
+       bulk instead was tried and is a pessimisation on the store AMV actually
+       runs on: `DB.list` over KV does one read per key, so pulling every
+       entitlement to serve sixty rows costs three hundred reads instead of
+       sixty. On D1 the reverse is true - one query beats sixty - and that is
+       worth doing when D1 is bound, but not by making the KV path worse today
+       for a backend that is not in use yet. */
+    users = await Promise.all(list.map(async r=>{
       const a=r.value||{}; const email=a.email; if(!email) return null;
-      // pull the richer per-user records so the owner sees the FULL picture
-      const [ent, wallet, purchases, abuse] = await Promise.all([
+      const [ent, abuse, wallet, purchases] = await Promise.all([
         DB.get(env, 'ent', email).catch(()=>null),
+        DB.get(env, 'abuse', email).catch(()=>null),
         env.AMV_KV.get(`wallet:${email}`).catch(()=>null),
         env.AMV_KV.get(`purchases:${email}`).catch(()=>null),
-        DB.get(env, 'abuse', email).catch(()=>null),
       ]);
       let monthCost=0, monthTok=0;
       try{ monthCost = (await counter(env, `cost:${email}:${month}`, { op:'get' })).value || 0; }catch(e){}
@@ -4636,10 +4665,11 @@ async function adminUsers(request, env) {
      that exist. Said plainly, because an operator reading 300 off an admin
      page and believing it is the customer base makes decisions on it. The real
      total lives on the stats screen, which counts rather than lists. */
-  return json({ users, count: users.length, truncated, scanLimit: ADMIN_USERS_LIMIT,
+  return json({ users, count: users.length, offset, limit, total, hasMore,
+                truncated, scanLimit: ADMIN_USERS_LIMIT,
                 note: truncated
                   ? 'Showing the first ' + ADMIN_USERS_LIMIT + ' accounts. There are more - this is not the total.'
-                  : null });
+                  : (hasMore ? 'Showing ' + (offset + users.length) + ' of ' + total + ' accounts.' : null) });
 }
 
 /* Verify a Google ID token (JWT credential) SERVER-SIDE before trusting it.

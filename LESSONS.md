@@ -3494,3 +3494,22 @@ themselves, where it is obviously an email.
 **Rule:** normalise where the meaning of the value is known, never in a helper
 that takes "an id". A helper that quietly rewrites its argument turns a missing
 record into a successful no-op.
+
+## 197. "Bulk read" was a pessimisation on the store we actually run on
+
+The admin list did six storage reads per account across up to three hundred of
+them. The obvious fix was to pull each kind once for everybody and join in
+memory - and the sabotage that should have caught a return to per-account reads
+did not fail, which is how the arithmetic got looked at properly.
+
+`DB.list` over KV lists the keys and then reads each one. Pulling every
+entitlement to serve a page of sixty costs three hundred reads instead of sixty.
+The "bulk" version was worse than what it replaced, on the only backend AMV
+currently runs on. It wins on D1, which is not bound yet.
+
+Paging was the part that actually mattered; the join was a habit from a
+different kind of database.
+
+**Rule:** before optimising a read, know what the store does with it. A helper
+called `list` is not a single query everywhere, and a sabotage that refuses to
+fail is telling you the measurement is wrong, not that the code is fine.

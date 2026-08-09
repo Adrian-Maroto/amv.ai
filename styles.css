@@ -8247,3 +8247,20 @@ html,body{height:100%;height:100dvh}
 .cwp-asks{background:var(--bg);border:1px solid var(--bd);border-radius:var(--r-md);padding:var(--sp-3);}
 .cwp-asks b{display:block;font-size:var(--t-md);color:var(--tx);}
 .cwp-asks span{display:block;margin-top:4px;font-size:var(--t-sm);line-height:1.5;color:var(--mu);}
+
+/* ── LAYER A71 ─ ADMIN USER LIST: A PAGE AT A TIME ───────────────────────────
+   The list arrives in pages now, so it needs a way to ask for the next one and
+   a way to say that what is on screen is not everything. Both reuse the tokens
+   the rest of the admin panel is built from - this is a control that already
+   exists in the design system, not a new kind of thing. */
+.adm-user-more{
+  display:block;width:100%;margin-top:var(--sp-3);padding:var(--sp-3) var(--sp-4);
+  font-family:var(--fn);font-size:var(--t-sm);font-weight:600;color:var(--tx);
+  background:var(--s2);border:1px solid var(--bd);border-radius:var(--r-md);
+  cursor:pointer;transition:background .16s var(--ease),border-color .16s var(--ease);
+}
+.adm-user-more:hover:not(:disabled){background:var(--s3);border-color:var(--bdl);}
+.adm-user-more:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+.adm-user-more:disabled{opacity:.6;cursor:default;}
+.adm-user-note{color:var(--mu);}
+@media (prefers-reduced-motion:reduce){ .adm-user-more{transition:none;} }

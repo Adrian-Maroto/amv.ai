@@ -857,13 +857,30 @@ function _admRenderTab(tab, backendLive, live){
 function _admKpi(label,val,sub,color){ return '<div class="adm-kpi"><div class="adm-kpi-v"'+(color?' style="color:'+color+'"':'')+'>'+(val||'-')+'</div><div class="adm-kpi-l">'+label+'</div><div class="adm-kpi-s">'+sub+'</div></div>'; }
 function _admAgo(ts){ const t=Date.parse(ts||0); if(!t) return ''; const s=(Date.now()-t)/1000; if(s<60)return Math.floor(s)+'s ago'; if(s<3600)return Math.floor(s/60)+'m ago'; if(s<86400)return Math.floor(s/3600)+'h ago'; return Math.floor(s/86400)+'d ago'; }
 function getConvsCount(){ try{ return (S.convs||[]).length; }catch(e){ return 0; } }
+/* One page of the admin user list. Returns null rather than throwing, because
+   a failed page must leave the screen saying so instead of empty. */
+async function _admUsersPage(offset){
+  if(!(window.AMV_API && AMV_API.base)) return null;
+  const base=AMV_API.base.replace(/\/$/,'');
+  const r=await fetchDeadline(base+'/admin/users?offset='+(offset||0)+'&limit=60',
+    { headers:{ 'Authorization':'Bearer '+(AMV_API.token||'') } });
+  if(!r.ok) return null;
+  const d=await r.json().catch(()=>null);
+  if(!d) return null;
+  return { users:d.users||[], total:d.total||0, hasMore:!!d.hasMore, note:d.note||'' };
+}
 async function _adminLoadUsers(backendLive){
   const el=$('adm-users'); if(!el) return;
-  let users=[];
+  let users=[]; let total=0, hasMore=false, note='';
   if(backendLive && window.AMV_API && AMV_API.base){
+    /* AMV-198: a page at a time. The server does several storage reads per
+       account and a Worker has a ceiling on how many it may make in one
+       request, so asking for every account at once is a screen that gets
+       slower as AMV grows and eventually stops answering. Nothing has been
+       removed - the rest is one click away, and the count says so. */
     try{
-      const r=await fetchDeadline(AMV_API.base.replace(/\/$/,'')+'/admin/users',{headers:{'Authorization':'Bearer '+(AMV_API.token||'')}});
-      if(r.ok){ const d=await r.json(); users=d.users||d||[]; }
+      const d=await _admUsersPage(0);
+      if(d){ users=d.users||[]; total=d.total||users.length; hasMore=!!d.hasMore; note=d.note||''; }
     }catch(e){}
   }
   if(!users.length){
@@ -890,11 +907,38 @@ async function _adminLoadUsers(backendLive){
       (u.local?'':'<button class="adm-user-act" data-admuser="'+escH(u.email)+'">Manage</button>')+
     '</div>';
   };
-  const summary = users.length>1 ? '<div class="adm-user-summary">'+users.length+' accounts \u00b7 '+
+  /* The count says what is ON SCREEN and what exists, separately. "300
+     accounts" read off a page that holds the first sixty is a number an
+     operator would then go and make decisions with. */
+  const shown = () => users.length + (total > users.length ? ' of ' + total : '') + ' account' + (total===1?'':'s');
+  const summary = users.length>1 ? '<div class="adm-user-summary">'+shown()+' \u00b7 '+
     users.filter(u=>u.plan&&u.plan!=='free').length+' paying \u00b7 '+
-    users.filter(u=>u.flagged).length+' flagged</div>' : '';
+    users.filter(u=>u.flagged).length+' flagged'+
+    (note?' \u00b7 <span class="adm-user-note">'+escH(note)+'</span>':'')+'</div>' : '';
+  const moreBtn = () => hasMore
+    ? '<button class="adm-user-more" id="adm-user-more">Show more accounts</button>'
+    : '';
   el.innerHTML=summary+'<div class="adm-user-search"><input id="adm-user-q" placeholder="Search users by name or email\u2026"></div>'+
-    '<div class="adm-user-list" id="adm-user-list">'+users.map(row).join('')+'</div>';
+    '<div class="adm-user-list" id="adm-user-list">'+users.map(row).join('')+'</div>'+moreBtn();
+
+  /* Appends the next page in place, so the list the owner was reading does not
+     jump back to the top and whatever they typed in the search box still
+     applies to everything now loaded. */
+  const wireMore = () => {
+    const b=$('adm-user-more'); if(!b) return;
+    on(b,'click',async ()=>{
+      b.disabled=true; b.textContent='Loading\u2026';
+      const d=await _admUsersPage(users.length).catch(()=>null);
+      if(!d){ b.disabled=false; b.textContent='That did not load. Try again'; return; }
+      users=users.concat(d.users); total=d.total||total; hasMore=d.hasMore; note=d.note||note;
+      const list=$('adm-user-list'); if(list) list.innerHTML=users.map(row).join('');
+      const sum=el.querySelector('.adm-user-summary');
+      if(sum) sum.innerHTML=shown()+' \u00b7 '+users.filter(u=>u.plan&&u.plan!=='free').length+' paying \u00b7 '+
+        users.filter(u=>u.flagged).length+' flagged'+(note?' \u00b7 <span class="adm-user-note">'+escH(note)+'</span>':'');
+      if(hasMore){ b.disabled=false; b.textContent='Show more accounts'; } else { b.remove(); }
+    });
+  };
+  wireMore();
   const q=$('adm-user-q'); if(q) on(q,'input',()=>{ const term=q.value.toLowerCase(); const filtered=users.filter(u=>(u.email+' '+(u.name||'')).toLowerCase().includes(term)); const list=$('adm-user-list'); if(list) list.innerHTML=filtered.map(row).join('')||'<div class="adm-users-loading">No matches.</div>'; });
 }
 
