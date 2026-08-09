@@ -66,6 +66,11 @@ function mkEnv(extra) {
       get: (n) => ({ async fetch(_u, init) {
         const b = JSON.parse(init.body); const cur = vals.get(n) || 0;
         if (b.op === 'claim') { if (vals.has(n)) return new Response(JSON.stringify({ claimed: false })); vals.set(n, 1); return new Response(JSON.stringify({ claimed: true })); }
+        /* A stub that can take a lock and never give it back is not a lock: the
+           first write through it succeeds and every write after it is refused
+           for ever. That is not how the code behaves, so it must not be how the
+           fixture behaves either. */
+        if (b.op === 'release') { vals.delete(n); return new Response(JSON.stringify({ ok: true })); }
         if (b.op === 'incr') { vals.set(n, cur + (b.amount || 0)); return new Response(JSON.stringify({ value: vals.get(n) })); }
         if (b.op === 'get') return new Response(JSON.stringify({ value: cur }));
         if (b.op === 'rateCheck') { vals.set(n, cur + 1); return new Response(JSON.stringify({ allowed: true })); }

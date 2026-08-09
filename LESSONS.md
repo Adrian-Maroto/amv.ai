@@ -3446,3 +3446,32 @@ Keep both. The simultaneous one is the real flow; the ordered one is the test.
 
 **Rule:** for a race with a known damaging order, drive that order deterministically.
 A concurrent case that relies on timing proves the flow works, not that the guard does.
+
+## 194. Catching everything turned a bug into "please try again"
+
+The team routes wrapped each locked change in `try { ... } catch { return busy }`.
+A lock that cannot be taken and an ordinary fault inside the mutate came out of
+that identically, so an "Assignment to constant variable" - a real crash, one
+line away - was answered with "your team was being changed by somebody else,
+please try again", for ever, to everybody.
+
+It cost an hour of looking for a lock problem that was not there. The lock now
+throws with `code:'record_busy'` and every caller re-throws anything else.
+
+**Rule:** a catch that produces a reassuring message must match on WHICH failure,
+never on the fact that one happened. "Try again" is a claim about the cause.
+
+## 195. A stub that can take a lock and never release it is not a lock
+
+Two suites had counter stubs that answered `claim` and had no `release` - one had
+no `claim` either, answering every op with `{allowed:true}`, which carries no
+`claimed` field, so taking a lock appeared to FAIL. The first made every write
+after the first one hang and refuse; the second refused every write outright.
+Both files still read as though they were testing messaging.
+
+The fixture has to model the primitive the code depends on, or it tests the
+fixture's idea of it.
+
+**Rule:** when code starts depending on a primitive, check every stub of that
+primitive in the suite before believing a result. A stub built for the old
+behaviour does not fail loudly - it fails as the feature.

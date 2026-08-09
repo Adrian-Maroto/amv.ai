@@ -2400,15 +2400,32 @@ async function linkAccept(request, env){
      the link flow rather than growing a second one beside it (AMV-102). */
   if((inv.scopes||[]).includes('family')){
     const parent = inv.grantee;                       // the one who sent the invitation
-    const fam = (await DB.get(env, 'fam', parent)) || { id:'fam_'+crypto.randomUUID().replace(/-/g,''), parentEmail: parent, members:[{ email: parent, role:'parent', joinedAt: Date.now() }], createdAt: Date.now() };
-    const kids = (fam.members||[]).filter(m=>m.role==='child');
-    if(kids.length >= FAMILY_MAX_CHILDREN){
-      return json({ error:'That family is full (' + FAMILY_MAX_CHILDREN + ' accounts).', code:'family_full' }, 402);
-    }
-    if(!(fam.members||[]).some(m=>m.email===user.email)){
-      fam.members.push({ email:user.email, role:'child', joinedAt:Date.now(), limits: Object.assign({}, FAMILY_DEFAULTS) });
-    }
-    await DB.put(env, 'fam', parent, fam);
+    /* AMV-197: the "is the family full" check and the seat it grants are one
+       operation. Two children accepting the last invitation together both saw
+       room, and the family ended up over its limit - or one of them joined and
+       was written away by the other. */
+    let res;
+    try{
+      /* The family may not exist yet, and the helper's save only writes a
+         record that was already there - so the write happens inside the mutate,
+         which is still inside the lock. */
+      res = await _withRecord(env, 'fam', parent,
+        _loadFam,
+        async () => {},
+        async (fresh) => {
+          const fam = fresh || { id:'fam_'+crypto.randomUUID().replace(/-/g,''), parentEmail: parent, members:[{ email: parent, role:'parent', joinedAt: Date.now() }], createdAt: Date.now() };
+          if(!(fam.members||[]).some(m=>m.email===user.email)){
+            const kids = (fam.members||[]).filter(m=>m.role==='child');
+            if(kids.length >= FAMILY_MAX_CHILDREN){
+              return { error:'That family is full (' + FAMILY_MAX_CHILDREN + ' accounts).', status:402, code:'family_full' };
+            }
+            fam.members.push({ email:user.email, role:'child', joinedAt:Date.now(), limits: Object.assign({}, FAMILY_DEFAULTS) });
+          }
+          await DB.put(env, 'fam', parent, fam);
+          return { ok:true };
+        });
+    }catch(e){ if(!_isBusy(e)) throw e; return _busyJson('family'); }
+    if(res && res.error) return json({ error: res.error, code: res.code }, res.status||400);
     const ent = (await DB.get(env, 'ent', user.email)) || { plan:'free' };
     ent.familyOf = parent;
     await DB.put(env, 'ent', user.email, ent);
@@ -2854,15 +2871,29 @@ async function familySetLimits(request, env){
   const em = String(child||'').toLowerCase().trim();
   const fam = await DB.get(env, 'fam', user.email);
   if(!fam) return json({ error:'You do not manage a family.' }, 404);
-  const m = (fam.members||[]).find(x => x.email === em && x.role === 'child');
-  if(!m) return json({ error:'That account is not in your family.' }, 404);
   const L = limits || {};
-  m.limits = {
+  const wanted = {
     monthlyUSD: Math.max(0, Math.min(500, +L.monthlyUSD || 0)),
     marketplace: !!L.marketplace,
     payouts: !!L.payouts,
   };
-  await DB.put(env, 'fam', user.email, fam);
+  /* AMV-197: applied to the family as it is inside the lock. Written back from
+     a copy read at the top of the request, setting one child's limits would
+     restore a child who had just left, or undo limits set for another one a
+     moment earlier - and a limit that silently did not take is the whole point
+     of this screen failing. */
+  let m;
+  try{
+    const applied = await _withFam(env, user.email, (fresh) => {
+      if(!fresh) return { error:'You do not manage a family.', status:404 };
+      const row = (fresh.members||[]).find(x => x.email === em && x.role === 'child');
+      if(!row) return { error:'That account is not in your family.', status:404 };
+      row.limits = wanted;
+      return { limits: row.limits };
+    });
+    if(applied && applied.error) return json({ error: applied.error, code: applied.code }, applied.status||400);
+    m = { limits: applied.limits };
+  }catch(e){ if(!_isBusy(e)) throw e; return _busyJson('family'); }
   /* On the CHILD's own activity log, not just the parent's. Somebody whose
      limits changed is entitled to see that it happened and when. */
   await _userEvent(env, request, em, 'family_limits_changed', { by: user.email, limits: m.limits });
@@ -2890,11 +2921,16 @@ async function familyLeave(request, env){
   const fam = user.family;
   if(!fam) return json({ error:'You are not in a family.' }, 404);
 
-  const rec = await DB.get(env, 'fam', fam.parent);
-  if(rec){
-    rec.members = (rec.members||[]).filter(x => x.email !== user.email);
-    await DB.put(env, 'fam', fam.parent, rec);
-  }
+  /* AMV-197: leaving under the family's lock. Otherwise a parent changing
+     somebody's limits in the same moment writes the record they read first, and
+     the child who left is back in the family with the spending controls that go
+     with it - which is the one thing leaving is supposed to end. */
+  try{
+    await _withFam(env, fam.parent, (rec) => {
+      if(!rec) return;
+      rec.members = (rec.members||[]).filter(x => x.email !== user.email);
+    });
+  }catch(e){ if(!_isBusy(e)) throw e; return _busyJson('family'); }
   const ent = (await DB.get(env, 'ent', user.email)) || {};
   delete ent.familyOf;
   await DB.put(env, 'ent', user.email, ent);
@@ -2932,8 +2968,15 @@ async function familyRemove(request, env){
   if(!listed && !pointsAtMe)
     return json({ error:'That account is not in your family.', code:'not_in_family' }, 404);
 
-  fam.members = (fam.members||[]).filter(x => x.email !== em);
-  await DB.put(env, 'fam', user.email, fam);
+  /* AMV-197: under the family's lock, so a removal cannot be undone by a
+     limits change or another removal that read the record first. A child who
+     was removed and is still listed keeps everything the family gives them. */
+  try{
+    await _withFam(env, user.email, (fresh) => {
+      if(!fresh) return;
+      fresh.members = (fresh.members||[]).filter(x => x.email !== em);
+    });
+  }catch(e){ if(!_isBusy(e)) throw e; return _busyJson('family'); }
   /* The marker on their entitlement is what every check reads, so it goes at
      the same time - a limit that outlives the family is a limit nobody can
      lift. */
@@ -4815,12 +4858,15 @@ async function authDeleteAccount(request, env) {
   try {
     const tid = await env.AMV_KV.get(`userteam:${email}`);
     if (tid) {
-      const team = await DB.get(env, 'team', tid);
-      if (team && Array.isArray(team.members) && team.ownerEmail !== email) {
-        const before = team.members.length;
-        team.members = team.members.filter(m => m.email !== email);
-        if (team.members.length !== before) await DB.put(env, 'team', tid, team);
-      } else if (team && team.ownerEmail === email) {
+      /* AMV-197: erasure competes with everything else the team is doing, and
+         it is the one write that must not be undone - a ghost member left on
+         the record is data AMV said it had deleted. */
+      const team = await _withTeam(env, tid, (fresh) => {
+        if (!fresh || !Array.isArray(fresh.members) || fresh.ownerEmail === email) return fresh;
+        fresh.members = fresh.members.filter(m => m.email !== email);
+        return fresh;
+      });
+      if (team && team.ownerEmail === email) {
         /* The OWNER is the one who pays. A team's plan is a cached copy of their
            entitlement, so deleting the owner used to leave `plan:'elite'` sitting
            on the record with no lapse marker and nobody being billed - every
@@ -4831,10 +4877,12 @@ async function authDeleteAccount(request, env) {
            to by one person closing their own account. It simply stops being a
            paid team, which is the true statement now that nobody is paying, and
            members fall back to their own plans. */
-        team.plan = 'free';
-        team.ownerGone = Date.now();
-        team.members = (team.members || []).filter(m => m.email !== email);
-        await DB.put(env, 'team', tid, team);
+        await _withTeam(env, tid, (fresh) => {
+          if (!fresh) return;
+          fresh.plan = 'free';
+          fresh.ownerGone = Date.now();
+          fresh.members = (fresh.members || []).filter(m => m.email !== email);
+        });
         audit(env, 'team_owner_deleted', { team: tid, was: email });
       }
     }
@@ -5024,12 +5072,14 @@ async function authDeleteAccount(request, env) {
   try {
     const ent = await DB.get(env, 'ent', email);
     if (ent && ent.familyOf) {
-      const fam = await DB.get(env, 'fam', ent.familyOf);
-      if (fam && Array.isArray(fam.members)) {
-        const before = fam.members.length;
+      /* AMV-197: under the family's lock. A parent adjusting limits at the same
+         moment would otherwise write back the record they read first, and the
+         deleted person's row would return - data AMV has already told them was
+         gone. */
+      await _withFam(env, ent.familyOf, (fam) => {
+        if (!fam || !Array.isArray(fam.members)) return;
         fam.members = fam.members.filter(m => m.email !== email);
-        if (fam.members.length !== before) await DB.put(env, 'fam', ent.familyOf, fam);
-      }
+      });
     }
   } catch {}
 
@@ -5285,12 +5335,17 @@ async function _refreshTeamPlan(env, email, ent){
   try{
     const tid = (ent && ent.teamId) || null;
     if(!tid) return;
-    const team = await DB.get(env, 'team', tid);
-    if(!team || team.ownerEmail !== String(email||'').toLowerCase()) return;
-    team.plan = (ent && ent.plan) || 'free';   /* sold: paired with pastDueSince below */
-    if(ent && ent.pastDueSince) team.pastDueSince = ent.pastDueSince; else delete team.pastDueSince;
-    team.customCfg = (ent && ent.custom) || null;
-    await DB.put(env, 'team', tid, team);
+    /* AMV-197: the cached plan is written under the team's lock. This runs from
+       a payment webhook, so it lands at whatever moment the processor chooses -
+       often the same one somebody is joining or leaving in. Written from a copy
+       read first, a paid plan can be wiped by a membership change, or a
+       membership change wiped by the plan. */
+    await _withTeam(env, tid, (team) => {
+      if(!team || team.ownerEmail !== String(email||'').toLowerCase()) return;
+      team.plan = (ent && ent.plan) || 'free';   /* sold: paired with pastDueSince below */
+      if(ent && ent.pastDueSince) team.pastDueSince = ent.pastDueSince; else delete team.pastDueSince;
+      team.customCfg = (ent && ent.custom) || null;
+    });
   }catch(e){ /* the cache refreshes on the next write; never fail a billing event */ }
 }
 
@@ -5491,19 +5546,34 @@ async function teamJoin(request, env){
   if(!(await _claimOnce(env, 'inviteused', token))) return json({ error:'this invite has already been used' }, 409);
   const team0 = await DB.get(env, 'team', inv.teamId);
   if(!team0) return json({ error:'team gone' }, 404);
-  const team = team0;
+  let team = team0;
   if(!team.members.find(m=>m.email===user.email)){
-    /* Re-checked at redemption: the invite may have been sent when there was
-       room and redeemed after the plan was downgraded. Letting it through would
-       hand out a seat nobody is paying for. */
-    const limit = _teamSeatLimit(_teamPlan(team), team.customCfg);
-    if((team.members||[]).length >= limit){
-      return json({ error: 'This team has no free seats right now. Ask the owner to upgrade or free one up.',
-                    code: 'seat_limit' }, 402);
-    }
-    team.members.push({ email:user.email, role:inv.role||'member', joinedAt:Date.now() });
-    await DB.put(env, 'team', team.id, team);
-    await _teamAudit(env, team, user.email, 'member_joined', { role: inv.role||'member' });
+    /* AMV-197: the seat check and the seat itself are one operation. Two people
+       redeeming the last invite together both saw room and both wrote, so the
+       team ended up one seat over its limit - or, when the writes landed the
+       other way, one of them joined and then vanished. */
+    let joined;
+    try{
+      joined = await _withTeam(env, team.id, (fresh) => {
+        if(!fresh) return { error:'team gone', status:404 };
+        fresh.members = fresh.members || [];
+        if(fresh.members.find(m=>m.email===user.email)) return { already:true };
+        /* Re-checked at redemption AND inside the lock: the invite may have
+           been sent when there was room and redeemed after the plan was
+           downgraded, or after somebody else took the last seat a moment ago.
+           Letting either through hands out a seat nobody is paying for. */
+        const limit = _teamSeatLimit(_teamPlan(fresh), fresh.customCfg);
+        if(fresh.members.length >= limit){
+          return { error:'This team has no free seats right now. Ask the owner to upgrade or free one up.',
+                   status:402, code:'seat_limit' };
+        }
+        fresh.members.push({ email:user.email, role:inv.role||'member', joinedAt:Date.now() });
+        team = fresh;
+        return { joined:true };
+      });
+    }catch(e){ if(!_isBusy(e)) throw e; return _busyJson('team'); }
+    if(joined && joined.error) return json({ error: joined.error, code: joined.code }, joined.status||400);
+    if(joined && joined.joined) await _teamAudit(env, team, user.email, 'member_joined', { role: inv.role||'member' });
   }
   await env.AMV_KV.put(`userteam:${user.email}`, team.id);
   await _setUserTeam(env, user.email, team.id);
@@ -5529,15 +5599,31 @@ async function teamRemove(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
   const { email } = await request.json().catch(()=>({}));
-  const team = await _teamOf(env, user.email);
+  let team = await _teamOf(env, user.email);
   if(!team) return json({ error:'no team' }, 404);
   if(!_can(team, user.email, 'remove')) return json({ error:'you don\u2019t have permission to remove members' }, 403);
   const target = String(email||'').toLowerCase().trim();
   if(_role(team, target)==='owner') return json({ error:'the owner can\u2019t be removed' }, 400);
   // admins can't remove other admins (only the owner can)
   if(_role(team, target)==='admin' && _role(team, user.email)!=='owner') return json({ error:'only the owner can remove an admin' }, 403);
-  team.members = team.members.filter(m=>m.email!==target || m.role==='owner');
-  await DB.put(env, 'team', team.id, team);
+  /* AMV-197: the removal itself happens against the team as it is now. Filtered
+     from a copy read at the top of the request, a removal that raced anything
+     else - somebody joining, a role change, another removal - could be written
+     back over, and the person removed would still be on the team with the
+     access that goes with it. */
+  let out;
+  try{
+    out = await _withTeam(env, team.id, (fresh) => {
+      if(!fresh) return { error:'no team', status:404 };
+      if(!_can(fresh, user.email, 'remove')) return { error:'you don’t have permission to remove members', status:403 };
+      if(_role(fresh, target)==='owner') return { error:'the owner can’t be removed', status:400 };
+      if(_role(fresh, target)==='admin' && _role(fresh, user.email)!=='owner') return { error:'only the owner can remove an admin', status:403 };
+      fresh.members = (fresh.members||[]).filter(m=>m.email!==target || m.role==='owner');
+      team = fresh;
+      return { members: fresh.members };
+    });
+  }catch(e){ if(!_isBusy(e)) throw e; return _busyJson('team'); }
+  if(out && out.error) return json({ error: out.error, code: out.code }, out.status||400);
   await env.AMV_KV.delete(`userteam:${target}`);
   // Off the team means back on their own plan and their own counters.
   await _setUserTeam(env, target, null);
@@ -5559,14 +5645,29 @@ async function teamRemove(request, env){
 async function teamLeave(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
-  const team = await _teamOf(env, user.email);
+  let team = await _teamOf(env, user.email);
   if(!team) return json({ error:'no team' }, 404);
   if(_role(team, user.email) === 'owner'){
     return json({ error: 'You own this team, so leaving it would leave everyone else on a plan nobody is paying for. Transfer ownership first, or remove the other members.',
                   code: 'owner_cannot_leave' }, 400);
   }
-  team.members = team.members.filter(m => m.email !== user.email);
-  await DB.put(env, 'team', team.id, team);
+  let left;
+  try{
+    left = await _withTeam(env, team.id, (fresh) => {
+      if(!fresh) return { error:'no team', status:404 };
+      /* Re-checked inside the lock: ownership can have been transferred TO them
+         between the check above and this write, and an owner walking away
+         leaves everybody else on a plan nobody pays for. */
+      if(_role(fresh, user.email) === 'owner'){
+        return { error:'You own this team, so leaving it would leave everyone else on a plan nobody is paying for. Transfer ownership first, or remove the other members.',
+                 status:400, code:'owner_cannot_leave' };
+      }
+      fresh.members = (fresh.members||[]).filter(m => m.email !== user.email);
+      team = fresh;
+      return { ok:true };
+    });
+  }catch(e){ if(!_isBusy(e)) throw e; return _busyJson('team'); }
+  if(left && left.error) return json({ error: left.error, code: left.code }, left.status||400);
   await env.AMV_KV.delete(`userteam:${user.email}`);
   await _setUserTeam(env, user.email, null);
   await _teamAudit(env, team, user.email, 'member_left', {});
@@ -5579,7 +5680,7 @@ async function teamSetRole(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
   const { email, role } = await request.json().catch(()=>({}));
-  const team = await _teamOf(env, user.email);
+  let team = await _teamOf(env, user.email);
   if(!team) return json({ error:'no team' }, 404);
   if(!_can(team, user.email, 'setRole')) return json({ error:'you don\u2019t have permission to change roles' }, 403);
   const target = String(email||'').toLowerCase().trim();
@@ -5589,10 +5690,26 @@ async function teamSetRole(request, env){
   if(m.role==='owner') return json({ error:'the owner\u2019s role can\u2019t be changed' }, 400);
   // only the owner can create/demote admins
   if(_role(team, user.email)!=='owner') return json({ error:'only the owner can change admin roles' }, 403);
-  const prev = m.role; m.role = newRole;
-  await DB.put(env, 'team', team.id, team);
-  await _teamAudit(env, team, user.email, 'role_changed', { target, from: prev, to: newRole });
-  return json({ ok:true, members: team.members });
+  let changed;
+  try{
+    changed = await _withTeam(env, team.id, (fresh) => {
+      if(!fresh) return { error:'no team', status:404 };
+      if(!_can(fresh, user.email, 'setRole')) return { error:'you don’t have permission to change roles', status:403 };
+      if(_role(fresh, user.email)!=='owner') return { error:'only the owner can change admin roles', status:403 };
+      const mm = (fresh.members||[]).find(x=>x.email===target);
+      /* Inside the lock, because the member may have left or been removed while
+         this request was in flight - and promoting somebody who is no longer on
+         the team would put them back on it. */
+      if(!mm) return { error:'member not found', status:404 };
+      if(mm.role==='owner') return { error:'the owner’s role can’t be changed', status:400 };
+      const was = mm.role; mm.role = newRole;
+      team = fresh;
+      return { prev: was, members: fresh.members };
+    });
+  }catch(e){ if(!_isBusy(e)) throw e; return _busyJson('team'); }
+  if(changed && changed.error) return json({ error: changed.error, code: changed.code }, changed.status||400);
+  await _teamAudit(env, team, user.email, 'role_changed', { target, from: changed.prev, to: newRole });
+  return json({ ok:true, members: changed.members });
 }
 
 /* Read the team's action audit log (owner/admin only). */
@@ -5618,15 +5735,28 @@ async function teamData(request, env){
   const patch = body.data || {};
   const bad = _boundedJson(patch, 64*1024, 6);
   if(bad) return json({ error: bad }, 413);
-  /* Bounding the PATCH is not bounding the record: repeated 64KB writes under
-     different keys grow team.data without limit, and that record is read on
-     every request the team makes. The total is what has to hold. */
-  const next = Object.assign({}, team, { data: Object.assign({}, team.data, patch) });
-  const full = _teamRecordTooBig(next);
-  if(full) return json({ error: full, code: 'team_full' }, 413);
-  team.data = next.data;
-  await DB.put(env, 'team', team.id, team);
-  return json({ ok:true, data: team.data });
+  /* AMV-197: merged into the team as it is inside the lock. Two admins editing
+     different keys of team data at once each wrote a whole record built from
+     their own read, so one of them lost everything the other had just saved -
+     the shared library included, since it lives on the same record. */
+  let saved;
+  try{
+    saved = await _withTeam(env, team.id, (fresh) => {
+      if(!fresh) return { error:'no team', status:404 };
+      if(!_can(fresh, user.email, 'editData')) return { error:'editing team data requires an admin or owner role', status:403 };
+      const next = Object.assign({}, fresh, { data: Object.assign({}, fresh.data, patch) });
+      /* Bounding the PATCH is not bounding the record: repeated 64KB writes
+         under different keys grow team.data without limit, and that record is
+         read on every request the team makes. The total is what has to hold,
+         and it has to be measured against what is stored NOW. */
+      const full = _teamRecordTooBig(next);
+      if(full) return { error: full, status:413, code:'team_full' };
+      fresh.data = next.data;
+      return { data: fresh.data };
+    });
+  }catch(e){ if(!_isBusy(e)) throw e; return _busyJson('team'); }
+  if(saved && saved.error) return json({ error: saved.error, code: saved.code }, saved.status||400);
+  return json({ ok:true, data: saved.data });
 }
 
 /* ---------------- SHARED TEAM LIBRARY ----------------
@@ -5656,33 +5786,48 @@ function _teamRecordTooBig(team){
 async function teamShare(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
-  const team = await _teamOf(env, user.email);
+  let team = await _teamOf(env, user.email);
   if(!team) return json({ error:'no team' }, 404);
   const { kind, item } = await request.json().catch(()=>({}));
   if(!kind || !item) return json({ error:'kind and item required' }, 400);
   const tooBig = _boundedJson(item, 32*1024, 6);
   if(tooBig) return json({ error: tooBig }, 413);
-  const shared = Array.isArray(team.data && team.data.shared) ? team.data.shared : [];
-  /* A per-member quota, not just a global one. With a single FIFO list, one
-     member sharing sixty things silently deletes everything their colleagues
-     shared - which looks exactly like the product losing their work. */
-  const mine = shared.filter(x => x && x.by === user.email).length;
-  if(mine >= TEAM_SHARE_PER_MEMBER){
-    return json({ error: 'You have shared ' + TEAM_SHARE_PER_MEMBER + ' items, which is the most one person can keep in the team library. Remove one of yours to add another.',
-                  code: 'share_limit' }, 429);
-  }
   const entry = { id:'shr_'+crypto.randomUUID().replace(/-/g,''), kind:String(kind).slice(0,24),
     title:String(item.title||item.name||'Untitled').slice(0,120), item,
     by:user.email, byName:user.name||user.email.split('@')[0], at:Date.now() };
-  shared.unshift(entry);
-  if(shared.length>TEAM_SHARE_MAX) shared.length=TEAM_SHARE_MAX;
-  const next = Object.assign({}, team, { data: Object.assign({}, team.data, { shared }) });
-  const full = _teamRecordTooBig(next);
-  if(full) return json({ error: full, code: 'team_full' }, 413);
-  team.data = next.data;
-  await DB.put(env, 'team', team.id, team);
+  /* AMV-197: the library is one list on one record, so two members sharing at
+     the same moment each wrote it back from their own read and one of the two
+     items was never there. Somebody watching their colleague share something
+     that then does not exist has no way to tell that from the product losing
+     it - because that is what happened. */
+  let put;
+  try{
+    put = await _withTeam(env, team.id, (fresh) => {
+      if(!fresh) return { error:'no team', status:404 };
+      const shared = Array.isArray(fresh.data && fresh.data.shared) ? fresh.data.shared.slice() : [];
+      /* A per-member quota, not just a global one. With a single FIFO list, one
+         member sharing sixty things silently deletes everything their colleagues
+         shared - which looks exactly like the product losing their work.
+         Counted inside the lock, or two shares at once both pass a check that
+         only one of them should. */
+      const mine = shared.filter(x => x && x.by === user.email).length;
+      if(mine >= TEAM_SHARE_PER_MEMBER){
+        return { error: 'You have shared ' + TEAM_SHARE_PER_MEMBER + ' items, which is the most one person can keep in the team library. Remove one of yours to add another.',
+                 status:429, code:'share_limit' };
+      }
+      shared.unshift(entry);
+      if(shared.length>TEAM_SHARE_MAX) shared.length=TEAM_SHARE_MAX;
+      const next = Object.assign({}, fresh, { data: Object.assign({}, fresh.data, { shared }) });
+      const full = _teamRecordTooBig(next);
+      if(full) return { error: full, status:413, code:'team_full' };
+      fresh.data = next.data;
+      team = fresh;
+      return { shared };
+    });
+  }catch(e){ if(!_isBusy(e)) throw e; return _busyJson('team'); }
+  if(put && put.error) return json({ error: put.error, code: put.code }, put.status||400);
   await _teamAudit(env, team, user.email, 'item_shared', { kind:entry.kind, title:entry.title });
-  return json({ ok:true, shared });
+  return json({ ok:true, shared: put.shared });
 }
 async function teamShared(request, env){
   const user = await requireUser(request, env);
@@ -5697,15 +5842,25 @@ async function teamUnshare(request, env){
   const team = await _teamOf(env, user.email);
   if(!team) return json({ error:'no team' }, 404);
   const { id } = await request.json().catch(()=>({}));
-  let shared = (team.data && team.data.shared) || [];
-  const entry = shared.find(s=>s.id===id);
-  // only the sharer or an admin/owner can remove
-  const role = _role(team, user.email);
-  if(entry && entry.by!==user.email && !TEAM_PERMS[role]?.has('editData')) return json({ error:'forbidden' }, 403);
-  shared = shared.filter(s=>s.id!==id);
-  team.data = Object.assign({}, team.data, { shared });
-  await DB.put(env, 'team', team.id, team);
-  return json({ ok:true, shared });
+  /* AMV-197: removing one item rewrote the whole list from a copy read at the
+     top of the request, so anything a colleague shared in between came back
+     from the dead - and the removal itself could be undone the same way. */
+  let cut;
+  try{
+    cut = await _withTeam(env, team.id, (fresh) => {
+      if(!fresh) return { error:'no team', status:404 };
+      let shared = (fresh.data && fresh.data.shared) || [];
+      const entry = shared.find(s=>s.id===id);
+      // only the sharer or an admin/owner can remove
+      const role = _role(fresh, user.email);
+      if(entry && entry.by!==user.email && !TEAM_PERMS[role]?.has('editData')) return { error:'forbidden', status:403 };
+      shared = shared.filter(s=>s.id!==id);
+      fresh.data = Object.assign({}, fresh.data, { shared });
+      return { shared };
+    });
+  }catch(e){ if(!_isBusy(e)) throw e; return _busyJson('team'); }
+  if(cut && cut.error) return json({ error: cut.error, code: cut.code }, cut.status||400);
+  return json({ ok:true, shared: cut.shared });
 }
 
 /* ---------------- TEAM PRESENCE ----------------
@@ -10071,12 +10226,21 @@ async function _withRecord(env, kind, id, load, save, mutate) {
     }
     await new Promise(r => setTimeout(r, 40 * (i + 1)));
   }
+  /* Tagged, because callers turn THIS into "try again" for the person. An
+     ordinary bug inside the mutate must not wear the same badge: a caller that
+     catches everything would answer "the record was busy" for ever while the
+     real fault never surfaced. */
   audit(env, 'record_lock_timeout', { kind, id: key });
   try { await alertOnce(env, 'record_lock:' + kind,
     'A ' + kind + ' record could not be locked to apply a change, so the change was NOT made. '
     + 'If this is `ent` somebody may be on the wrong plan; if it is `acct` a password change may not have taken.', 30); } catch (e) {}
-  throw new Error(kind + ' is busy');
+  const busy = new Error(kind + ' is busy');
+  busy.code = 'record_busy';
+  throw busy;
 }
+/* True only for "the lock could not be taken". Anything else thrown out of a
+   mutate is a fault, and telling somebody to try again would hide it. */
+const _isBusy = (e) => !!(e && e.code === 'record_busy');
 
 async function _withWallet(env, email, mutate) {
   const em = String(email || '').toLowerCase();
@@ -10106,6 +10270,41 @@ const _loadAcct = async (env, em) => (await DB.get(env, 'acct', em)) || null;
 const _saveAcct = async (env, em, a) => { if (a) await DB.put(env, 'acct', em, a); };
 async function _withAcct(env, email, mutate) {
   return _withRecord(env, 'acct', email, _loadAcct, _saveAcct, mutate);
+}
+
+/* AMV-197: THE RECORDS A GROUP OF PEOPLE ALL WRITE TO.
+
+   `acct` and `ent` belong to one person, so a lost write there needs two of
+   their own devices. A team record and a family record are written by everybody
+   in them, from different places, at the same time - joining, leaving, being
+   removed, changing a role, sharing something. Read-append-write on those does
+   not need a coincidence; it needs two people using the product.
+
+   What a lost write costs here is not an edit. It is a seat somebody paid for
+   and did not get, a member who was removed and can still see everything, or a
+   role change that silently did not happen. None of it errors, and the screen
+   shows whichever version won.
+
+   The mutate callback receives the record as it is INSIDE the lock, so a
+   permission or capacity check written there is checked against what is true
+   now rather than what was true when the request started. Returning
+   `{ error, status, code }` refuses without writing; returning anything else
+   commits. */
+const _loadTeam = async (env, id) => (await DB.get(env, 'team', id)) || null;
+const _saveTeam = async (env, id, t) => { if (t) await DB.put(env, 'team', id, t); };
+async function _withTeam(env, id, mutate) {
+  return _withRecord(env, 'team', id, _loadTeam, _saveTeam, mutate);
+}
+const _loadFam = async (env, id) => (await DB.get(env, 'fam', id)) || null;
+const _saveFam = async (env, id, f) => { if (f) await DB.put(env, 'fam', id, f); };
+async function _withFam(env, id, mutate) {
+  return _withRecord(env, 'fam', id, _loadFam, _saveFam, mutate);
+}
+/* One shape for "the lock said no" so every caller answers the same way, and
+   nobody is told a change happened that did not. */
+function _busyJson(what) {
+  return json({ error: 'Your ' + what + ' was being changed by somebody else just then, so this was not applied. Please try again.',
+                code: 'record_busy' }, 503);
 }
 
 /* What this seller could actually withdraw right now: the balance, less
@@ -10845,7 +11044,9 @@ async function marketMessage(request, env) {
       });
   } catch (e) {
     /* Not written. Say so, because a message that silently did not send is the
-       one failure this whole route exists to prevent. */
+       one failure this whole route exists to prevent. A fault inside the append
+       is NOT the same thing and must not be dressed up as "try again". */
+    if (!_isBusy(e)) throw e;
     audit(env, 'market_message_busy', { from: user.email, to: other });
     return json({ error: 'That conversation was busy for a moment and your message was not sent. Please send it again.', code: 'thread_busy' }, 503);
   }
