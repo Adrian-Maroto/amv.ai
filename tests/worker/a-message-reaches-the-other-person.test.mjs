@@ -57,14 +57,22 @@ globalThis.fetch = async (url, opts) => {
   return { ok: true, status: 200, json: async () => ({}) };
 };
 
-function mkEnv(extra) {
+function mkEnv(extra, readDelayMs = 0) {
   const m = new Map(); const vals = new Map(); emails = [];
   return Object.assign({
     JWT_SECRET: 'j', ADMIN_TOKEN: 'a', APP_URL: 'https://amv.test',
     EMAIL_API_KEY: 'k', SUPPORT_EMAIL: 'help@amv.test',
     AMV_KV: {
       _map: m,
-      async get(k) { return m.has(k) ? m.get(k) : null; },
+      /* The value as it stood when the read was ISSUED, handed back after the
+         delay - which is what a read is. Sleeping and then looking at the map
+         would let a slow reader see a write that landed meanwhile, so two
+         writers could never disagree and no race could be expressed. */
+      async get(k) {
+        const asServed = m.has(k) ? m.get(k) : null;
+        if (readDelayMs) await new Promise(r => setTimeout(r, readDelayMs));
+        return asServed;
+      },
       async put(k, v) { m.set(k, v); },
       async delete(k) { m.delete(k); },
       async list({ prefix, limit, cursor } = {}) {
@@ -79,6 +87,16 @@ function mkEnv(extra) {
       get: (n) => ({ async fetch(_u, init) {
         const b = JSON.parse(init.body); const cur = vals.get(n) || 0;
         if (b.op === 'rateCheck') { vals.set(n, cur + 1); return new Response(JSON.stringify({ allowed: true })); }
+        /* The lock primitive, modelled rather than waved through. A stub that
+           answered every op with {allowed:true} returns no `claimed` field, so
+           taking a lock would appear to FAIL - and a route that now writes
+           under one would 503 on every call while the file still looked like
+           it was testing messaging. */
+        if (b.op === 'claim') {
+          if (vals.has('c:' + n)) return new Response(JSON.stringify({ claimed: false }));
+          vals.set('c:' + n, 1); return new Response(JSON.stringify({ claimed: true }));
+        }
+        if (b.op === 'release') { vals.delete('c:' + n); return new Response(JSON.stringify({ ok: true })); }
         return new Response(JSON.stringify({ allowed: true, value: cur }));
       } }),
     },
@@ -250,6 +268,73 @@ section('A stranger cannot read anybody’s inbox');
   const theirs = await post(env, '/v1/market/threads', {}, outsider);
   ok((theirs.body.threads || []).length === 0,
      'and somebody else’s conversation is not in their inbox', (theirs.body.threads || []).length);
+}
+
+section('Two people replying at the same moment both get through');
+{
+  /* A thread has two writers by definition, and it was read, appended to, and
+     written back with nothing holding it. Both replying in the same second read
+     the same conversation and both write it, so one message is simply gone -
+     no error, and the sender keeps seeing it in their own copy. They find out
+     it never arrived when the other person answers something else, or never
+     answers at all.
+
+     The store here hands back the value as it stood when the read was issued,
+     so the two really do disagree. Without that this passes with no lock at
+     all. */
+  const env = mkEnv(null, 12);
+  const { buyer, seller, item } = await twoPeopleAndAListing(env);
+  await post(env, '/v1/market/message', { item: item.id, text: 'is it still available' }, buyer);
+  /* The seller replies through the conversation, not through their own
+     listing - which is how the product works, and the only way the two writers
+     are the two people in the thread. */
+  const seen = await post(env, '/v1/market/threads', {}, seller);
+  const tid = ((seen.body.threads || [])[0] || {}).id;
+  ok(!!tid, 'the seller can see the conversation', tid);
+
+  const [a, b] = await Promise.all([
+    post(env, '/v1/market/message', { item: item.id, text: 'BUYER SAYS TOMORROW' }, buyer),
+    post(env, '/v1/market/message', { thread: tid, text: 'SELLER SAYS YES' }, seller),
+  ]);
+  ok(a.body.ok === true && b.body.ok === true, 'neither send was refused',
+     { buyer: a.body.error || 'ok', seller: b.body.error || 'ok' });
+
+  const inbox = await post(env, '/v1/market/threads', {}, seller);
+  const thread = (inbox.body.threads || [])[0] || {};
+  const texts = (thread.msgs || []).map(m => m.text);
+  ok(texts.includes('BUYER SAYS TOMORROW'), 'the buyer’s message is in the conversation', texts);
+  ok(texts.includes('SELLER SAYS YES'), 'and so is the seller’s', texts);
+  ok(texts.length === 3, 'three messages were sent and three are there', texts.length);
+}
+
+section('A send that cannot take the lock is reported, not swallowed');
+{
+  /* The failure that would replace the old one: a message that did not send,
+     answered with ok. The person walks away believing it was delivered, which
+     is worse than being told to send it again. */
+  const env = mkEnv(null, 12);
+  const { buyer, seller, item } = await twoPeopleAndAListing(env);
+  await post(env, '/v1/market/message', { item: item.id, text: 'first' }, buyer);
+
+  /* Hold the thread's lock so the send cannot take it. */
+  const held = await post(env, '/v1/market/threads', {}, buyer);
+  const tid = ((held.body.threads || [])[0] || {}).id;
+  ok(!!tid, 'the conversation exists to be locked', tid);
+  /* The name _claimOnce builds, so holding it here is the same lock the route
+     will try to take rather than a lookalike. */
+  const lock = 'claim:rmut:mktthread:' + String(tid).toLowerCase();
+  const taken = await (await env.AMV_COUNTER.get(lock).fetch('https://do/counter',
+    { method: 'POST', body: JSON.stringify({ op: 'claim', ttlMs: 15000 }) })).json();
+  ok(taken.claimed === true, 'the lock is held before the send is attempted', taken);
+
+  const r = await post(env, '/v1/market/message', { item: item.id, text: 'second' }, buyer);
+  ok(r.body.ok !== true, 'it is not reported as sent', r.body);
+  ok(r.status === 503 && r.body.code === 'thread_busy', 'it says the conversation was busy', { status: r.status, code: r.body.code });
+  ok(/send it again|not sent/i.test(r.body.error || ''), 'and tells them to send it again', r.body.error);
+
+  const after = await post(env, '/v1/market/threads', {}, buyer);
+  const texts = (((after.body.threads || [])[0] || {}).msgs || []).map(m => m.text);
+  ok(!texts.includes('second'), 'and the message really is not in the conversation', texts);
 }
 
 globalThis.fetch = realFetch;

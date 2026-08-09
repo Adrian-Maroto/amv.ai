@@ -10804,25 +10804,51 @@ async function marketMessage(request, env) {
     return json({ error: 'That message contains content that isn\u2019t allowed on the marketplace.', code: 'policy_violation' }, 422);
   }
   const key = _threadId(user.email, other);
-  let t = who.thread || null;
-  if (!t) { try { const raw = await env.AMV_KV.get(key); if (raw) t = JSON.parse(raw); } catch {} }
-  if (!t) t = { id: key, a: user.email, b: other, aName: user.name || user.email.split('@')[0], bName: other.split('@')[0], msgs: [], read: {} };
-  if (t.a === user.email) t.aName = user.name || t.aName; else t.bName = user.name || t.bName;
-  /* What it is about, kept on the thread so the other side sees "about Vintage
-     jacket" rather than a message from a stranger with no context. */
-  if (who.about && !t.about) t.about = who.about;
-  t.msgs.push({ from: user.email, text: body, ts: Date.now() });
-  if (t.msgs.length > 500) t.msgs = t.msgs.slice(-500);
-  /* READ MARKERS ARE COUNTS, not timestamps.
+  /* AMV-196: READ, APPEND, WRITE - AND THE OTHER PERSON'S REPLY IS GONE.
 
-     They were timestamps, and nothing ever compared them to anything, so
-     "unread" could not be computed on the server at all - which is part of why
-     the inbox was reading localStorage. A count of messages a person has seen
-     is comparable to the length of the thread, which is the whole question. */
-  t.read = t.read || {};
-  if (typeof t.read[user.email] !== 'number' || t.read[user.email] > t.msgs.length) t.read[user.email] = 0;
-  t.read[user.email] = t.msgs.length;          // the sender has seen their own message
-  await env.AMV_KV.put(key, JSON.stringify(t));
+     A thread has two writers by definition. Both replying in the same moment
+     read the same thread and both write it back, so one message vanishes: no
+     error anywhere, and the sender keeps seeing it in their own copy of the
+     conversation. They find out it never arrived when the other person answers
+     something else, or never answers at all.
+
+     `who.thread` is the copy _messageRecipient read BEFORE any of this, so it
+     is used only when there is nothing stored at all - otherwise appending to
+     it would be the same lost write with an extra step. */
+  let t = null;
+  try {
+    t = await _withRecord(env, 'mktthread', key,
+      async (e, k) => { try { const raw = await e.AMV_KV.get(k); return raw ? JSON.parse(raw) : null; } catch (err) { return null; } },
+      async () => {},                    // written explicitly below, inside the lock
+      async (stored) => {
+        let th = stored || who.thread || null;
+        if (!th) th = { id: key, a: user.email, b: other, aName: user.name || user.email.split('@')[0], bName: other.split('@')[0], msgs: [], read: {} };
+        if (th.a === user.email) th.aName = user.name || th.aName; else th.bName = user.name || th.bName;
+        /* What it is about, kept on the thread so the other side sees "about
+           Vintage jacket" rather than a message from a stranger with no context. */
+        if (who.about && !th.about) th.about = who.about;
+        th.msgs = th.msgs || [];
+        th.msgs.push({ from: user.email, text: body, ts: Date.now() });
+        if (th.msgs.length > 500) th.msgs = th.msgs.slice(-500);
+        /* READ MARKERS ARE COUNTS, not timestamps.
+
+           They were timestamps, and nothing ever compared them to anything, so
+           "unread" could not be computed on the server at all - which is part of
+           why the inbox was reading localStorage. A count of messages a person
+           has seen is comparable to the length of the thread, which is the whole
+           question. */
+        th.read = th.read || {};
+        if (typeof th.read[user.email] !== 'number' || th.read[user.email] > th.msgs.length) th.read[user.email] = 0;
+        th.read[user.email] = th.msgs.length;    // the sender has seen their own message
+        await env.AMV_KV.put(key, JSON.stringify(th));
+        return th;
+      });
+  } catch (e) {
+    /* Not written. Say so, because a message that silently did not send is the
+       one failure this whole route exists to prevent. */
+    audit(env, 'market_message_busy', { from: user.email, to: other });
+    return json({ error: 'That conversation was busy for a moment and your message was not sent. Please send it again.', code: 'thread_busy' }, 503);
+  }
   audit(env, 'market_message', { from: user.email, to: other });
 
   /* TELL THEM TO COME AND READ IT - and send them nothing else.
