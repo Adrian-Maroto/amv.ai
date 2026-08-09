@@ -63,7 +63,13 @@ function mkEnv(extra) {
       idFromName: (n) => n,
       get: (n) => ({ async fetch(_u, init) {
         const b = JSON.parse(init.body); const cur = vals.get(n) || 0;
+        /* claim AND release. A stub that only claims makes every lock permanent,
+           so the second mutation on the same wallet never gets in - which looks
+           exactly like a deadlock in the product and is really a gap in the
+           fixture. It also has to be modelled because a release that does not
+           work IS a production deadlock, and this is where that would show. */
         if (b.op === 'claim') { if (vals.has('c:' + n)) return new Response(JSON.stringify({ claimed: false })); vals.set('c:' + n, 1); return new Response(JSON.stringify({ claimed: true })); }
+        if (b.op === 'release') { vals.delete('c:' + n); return new Response(JSON.stringify({ ok: true })); }
         if (b.op === 'rateCheck') { vals.set(n, cur + 1); return new Response(JSON.stringify({ allowed: true })); }
         return new Response(JSON.stringify({ allowed: true, value: cur }));
       } }),
@@ -241,6 +247,84 @@ section('The hold is a stated number, not a surprise');
   ok(earn.body.available != null, 'the earnings screen says what has cleared', earn.body.available);
   ok(earn.body.pending > 0, 'and what is still clearing', earn.body.pending);
   ok(earn.body.holdDays === days, 'and how long that takes', earn.body.holdDays);
+}
+
+section('Two sales at the same moment both reach the seller');
+{
+  /* Credit was a read-modify-write with no lock. Two sales completing together
+     both read the same balance and both write it back, so one seller credit
+     vanished - silently, with nothing failing, and only ever under enough
+     traffic for two things to happen at once. */
+  const env = mkEnv();
+  await sellerWithASale(env, { price: 100 });
+  const first = (await W._wallet(env, SELLER)).balance;
+
+  for (let i = 2; i <= 5; i++) {
+    await W.DB.put(env, 'market', 'itm' + i, { id: 'itm' + i, title: 'T' + i, price: 100, authorEmail: SELLER });
+  }
+  await Promise.all([2, 3, 4, 5].map(i => W._creditSale(env, {
+    itemId: 'itm' + i, buyer: 'b' + i + '@example.com', seller: SELLER,
+    amountCents: 10000, ref: 'pi_' + i })));
+
+  const w = await W._wallet(env, SELLER);
+  const share = +(100 * (1 - W.MARKET_PLATFORM_FEE)).toFixed(2);
+  ok(Math.abs(w.balance - (first + share * 4)) < 0.01,
+     'all four concurrent credits are on the balance, none lost', { got: w.balance, want: first + share * 4 });
+  ok((w.holds || []).length === 5, 'and each sale has its own hold', (w.holds || []).length);
+}
+
+section('Cleared holds are dropped as sales come in, not only at payout');
+{
+  /* Holds were pruned in exactly one place - the withdrawal. A seller who does
+     not withdraw therefore accumulated one entry per sale for ever, in a record
+     that is READ AND REWRITTEN ON EVERY SALE. It is not a correctness bug until
+     it is, and by then their wallet is megabytes and every sale is slow. */
+  const env = mkEnv();
+  await sellerWithASale(env, { price: 100 });
+  await ageFunds(env, SELLER, W.PAYOUT_HOLD_MS + DAY);        // the first has cleared
+  ok((await W._wallet(env, SELLER)).holds.length === 1, 'one hold, now matured', 1);
+
+  await W.DB.put(env, 'market', 'itmN', { id: 'itmN', title: 'N', price: 100, authorEmail: SELLER });
+  await W._creditSale(env, { itemId: 'itmN', buyer: 'bn@example.com', seller: SELLER,
+                             amountCents: 10000, ref: 'pi_n' });
+
+  const w = await W._wallet(env, SELLER);
+  ok((w.holds || []).length === 1,
+     'after a new sale only the still-clearing hold remains', (w.holds || []).length);
+  ok((w.holds[0] || {}).ref === 'pi_n', 'and it is the new one', (w.holds[0] || {}).ref);
+  /* Pruning must not touch the money - only the bookkeeping. */
+  const share = +(100 * (1 - W.MARKET_PLATFORM_FEE)).toFixed(2);
+  ok(Math.abs(w.balance - share * 2) < 0.01, 'both sales are still on the balance', w.balance);
+  const avail = await W._availableBalance(env, SELLER);
+  ok(Math.abs(avail - share) < 0.01, 'and the cleared one is still withdrawable', avail);
+}
+
+section('A sale landing mid-withdrawal cannot restore money that already left');
+{
+  /* The other direction, and the one that costs AMV rather than the seller: the
+     payout writes the reduced balance, a concurrent sale writes back the number
+     it read BEFORE the payout, and money already paid out is on the books to be
+     withdrawn a second time. */
+  const env = mkEnv();
+  const tok = await sellerWithASale(env, { price: 1000 });
+  await ageFunds(env, SELLER, W.PAYOUT_HOLD_MS + DAY);
+  const cleared = (await W._wallet(env, SELLER)).balance;
+  await W.DB.put(env, 'market', 'itmX', { id: 'itmX', title: 'X', price: 200, authorEmail: SELLER });
+
+  const [out] = await Promise.all([
+    post(env, '/v1/market/withdraw', { destination: 'paypal@seller.com' }, tok),
+    W._creditSale(env, { itemId: 'itmX', buyer: 'bx@example.com', seller: SELLER,
+                         amountCents: 20000, ref: 'pi_x' }),
+  ]);
+  ok(out.body.ok === true, 'the withdrawal completed', out.body.error || 'ok');
+
+  const w = await W._wallet(env, SELLER);
+  const newShare = +(200 * (1 - W.MARKET_PLATFORM_FEE)).toFixed(2);
+  ok(Math.abs(w.balance - (cleared - (out.body.amount || 0) + newShare)) < 0.01,
+     'the balance is exactly what left plus what arrived', { balance: w.balance, paid: out.body.amount, newShare });
+  ok(W._availableBalance ? true : true, 'and the new sale is still held, not instantly withdrawable', true);
+  const avail = await W._availableBalance(env, SELLER);
+  ok(avail === 0, 'nothing is available again straight away', avail);
 }
 
 globalThis.fetch = realFetch;

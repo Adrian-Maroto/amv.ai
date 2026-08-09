@@ -9891,6 +9891,52 @@ async function _wallet(env, email) {
 }
 async function _saveWallet(env, email, w) { await env.AMV_KV.put(`wallet:${email}`, JSON.stringify(w)); }
 
+/* AMV-190: EVERY WALLET MUTATION GOES THROUGH HERE.
+
+   Withdrawal already serialized itself, because two withdrawals racing was
+   obviously money. Crediting a sale and reversing one did read-modify-write on
+   the SAME record with no lock at all, which is the same race wearing a
+   different hat:
+
+     two sales completing together - both read balance B, both write B+share,
+     and one seller credit is silently gone. The seller notices; AMV cannot
+     explain it, because nothing failed.
+
+     a sale landing during a withdrawal - the payout zeroes what left, the sale
+     writes the balance it read before that, and money already paid out is back
+     on the books to be withdrawn a second time.
+
+   Neither shows up until there is enough traffic for two things to happen at
+   once, which is to say: until it is working.
+
+   Short lock, real release, and a few retries - a webhook that cannot get the
+   lock must NOT give up, because giving up means somebody paid and nobody was
+   credited. If it truly cannot, it throws, and the caller's retry or the
+   reconciliation sweep picks it up rather than the money quietly vanishing. */
+const WALLET_LOCK_TRIES = 6;
+async function _withWallet(env, email, mutate) {
+  const em = String(email || '').toLowerCase();
+  if (!em) return null;
+  let lastErr = null;
+  for (let i = 0; i < WALLET_LOCK_TRIES; i++) {
+    if (await _claimOnce(env, 'wmut', em, 15)) {
+      try {
+        const w = await _wallet(env, em);
+        const out = await mutate(w);
+        await _saveWallet(env, em, w);
+        return out;
+      } catch (e) { lastErr = e; throw e; }
+      finally { await _releaseClaim(env, 'wmut', em); }
+    }
+    await new Promise(r => setTimeout(r, 40 * (i + 1)));
+  }
+  /* Loud. A credit that cannot be applied is somebody's money, and the one
+     thing that must not happen is for it to disappear quietly. */
+  audit(env, 'wallet_lock_timeout', { email: em });
+  try { await alertOnce(env, 'wallet_lock', 'A wallet could not be locked to apply a change - a sale credit or reversal may not have been recorded. Check the reconciliation sweep.', 30); } catch (e) {}
+  throw lastErr || new Error('wallet is busy');
+}
+
 /* What this seller could actually withdraw right now: the balance, less
    everything still inside its clearing window. Never below zero on the
    available side - a negative balance from a reversal is a debt to work off,
@@ -10023,7 +10069,7 @@ async function _creditSale(env, { itemId, buyer, seller, amountCents, ref }) {
   // credit the seller 80%
   if (sellerEmail) {
     const sellerShare = +(price * (1 - MARKET_PLATFORM_FEE)).toFixed(2);
-    const w = await _wallet(env, sellerEmail);
+    await _withWallet(env, sellerEmail, (w) => {
     w.balance = +(w.balance + sellerShare).toFixed(2);
     w.lifetime = +(w.lifetime + sellerShare).toFixed(2);
     /* Held until the dispute window has substantially passed. `at` is the sale
@@ -10033,7 +10079,12 @@ async function _creditSale(env, { itemId, buyer, seller, amountCents, ref }) {
     const at = Date.now();
     w.holds = (w.holds || []).concat({ amount: sellerShare, at, until: at + PAYOUT_HOLD_MS,
                                        ref: ref || '', item: itemId });
-    await _saveWallet(env, sellerEmail, w);
+    /* Matured holds are dropped on every credit, not only on withdrawal. They
+       were pruned in one place - the payout - so a seller who never withdrew
+       accumulated one entry per sale for ever, in a record that is read and
+       rewritten on every single sale. */
+    _pruneMaturedHolds(w);
+    });
     await _pushWalletTx(env, sellerEmail, { type: 'sale', amount: sellerShare, gross: price, item: itemId, title: it ? it.title : itemId, buyer, ts: Date.now() });
     // record the platform's cut (your revenue) so it shows in admin finance. The
     // full charge is already in Stripe; this logs the marketplace fee distinctly.
@@ -10092,7 +10143,7 @@ async function _reverseSale(env, ref, reason) {
      reversal by being fast, and withdrawals are gated on a positive balance, so
      the debt is paid down by their next sales. */
   if (rec.seller && rec.sellerShare > 0) {
-    const w = await _wallet(env, rec.seller);
+    await _withWallet(env, rec.seller, (w) => {
     w.balance = +((+w.balance || 0) - rec.sellerShare).toFixed(2);
     w.lifetime = +Math.max(0, (+w.lifetime || 0) - rec.sellerShare).toFixed(2);
     /* Release this sale's hold. Leaving it would keep freezing money for a sale
@@ -10105,7 +10156,8 @@ async function _reverseSale(env, ref, reason) {
     if (i < 0) i = holds.findIndex(h => h.item === rec.itemId);
     if (i >= 0) holds.splice(i, 1);
     w.holds = holds;
-    await _saveWallet(env, rec.seller, w);
+    _pruneMaturedHolds(w);
+    });
     await _pushWalletTx(env, rec.seller, { type: 'sale_reversed', amount: -rec.sellerShare,
       item: rec.itemId, buyer: rec.buyer, reason, ts: Date.now() });
   }
@@ -10264,11 +10316,16 @@ async function marketWithdraw(request, env) {
        still inside its clearing window would vanish along with the payout, and
        the seller would never see it again. The holds are untouched - they are
        still that seller's money, still on the books, still on their own clock. */
-    w.balance = +((+w.balance || 0) - amount).toFixed(2);
-    /* The cleared tranches have now genuinely left; anything still inside its
-       window stays, on its own clock. */
-    _pruneMaturedHolds(w);
-    await _saveWallet(env, user.email, w);
+    /* Under the SAME lock every other wallet change takes, re-reading inside
+       it. The wdlock above stops two withdrawals racing each other; this stops
+       a sale or a reversal landing in the middle of this one and writing back a
+       balance it read before the payout. */
+    await _withWallet(env, user.email, (ww) => {
+      ww.balance = +((+ww.balance || 0) - amount).toFixed(2);
+      /* The cleared tranches have now genuinely left; anything still inside its
+         window stays, on its own clock. */
+      _pruneMaturedHolds(ww);
+    });
     await _pushWalletTx(env, user.email, { type: 'withdrawal', amount: -amount, status: 'pending', id: wid, ts: Date.now() });
     audit(env, 'market_withdraw', { seller: user.email, amount, id: wid });
     /* Somebody is owed money now. An operator cannot fulfil what they never
