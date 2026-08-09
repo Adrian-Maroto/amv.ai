@@ -763,7 +763,11 @@ function aegisErrorMessage(status, raw){
   if(status===402||(r.includes('plan')&&r.includes('requires'))) return (raw||'This model needs a higher plan.')+'  →  Open Settings → Billing to upgrade.';
   if(r.includes('daily usage limit')) return 'You’ve hit today’s usage limit. It resets at midnight UTC - or upgrade your plan for much more.';
   if(r.includes('monthly usage limit')) return 'You’ve reached this month’s usage. Upgrade your plan for more room to run.';
-  if(r.includes('at capacity for today')) return 'AMV is at capacity for today. Please try again tomorrow.';
+  /* Kept as a fallback for callers with no code to go on. The sentence the
+     server sent wins when there is one, because "at capacity for FREE accounts,
+     paid plans are running normally" and "at capacity for today" are different
+     facts and only one of them is true at a time. */
+  if(r.includes('at capacity')) return raw || 'AMV is at capacity right now. Please try again shortly.';
   if(status===401||r.includes('authentication')||r.includes('invalid x-api-key')||r.includes('sign in again'))
     return 'Your session needs a refresh - sign out and back in. (If self-hosting, re-check your API key in Settings.)';
   if(status===403) return 'Access forbidden (403). This key lacks permission for this model or endpoint.';

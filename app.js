@@ -2014,7 +2014,11 @@ function aegisErrorMessage(status, raw){
   if(status===402||(r.includes('plan')&&r.includes('requires'))) return (raw||'This model needs a higher plan.')+'  →  Open Settings → Billing to upgrade.';
   if(r.includes('daily usage limit')) return 'You’ve hit today’s usage limit. It resets at midnight UTC - or upgrade your plan for much more.';
   if(r.includes('monthly usage limit')) return 'You’ve reached this month’s usage. Upgrade your plan for more room to run.';
-  if(r.includes('at capacity for today')) return 'AMV is at capacity for today. Please try again tomorrow.';
+  /* Kept as a fallback for callers with no code to go on. The sentence the
+     server sent wins when there is one, because "at capacity for FREE accounts,
+     paid plans are running normally" and "at capacity for today" are different
+     facts and only one of them is true at a time. */
+  if(r.includes('at capacity')) return raw || 'AMV is at capacity right now. Please try again shortly.';
   if(status===401||r.includes('authentication')||r.includes('invalid x-api-key')||r.includes('sign in again'))
     return 'Your session needs a refresh - sign out and back in. (If self-hosting, re-check your API key in Settings.)';
   if(status===403) return 'Access forbidden (403). This key lacks permission for this model or endpoint.';
@@ -5395,23 +5399,52 @@ async function _callAI(msgs, _opts) {
         res=await fetch(_endpoint,{method:'POST',headers:_headers,body:_payload,signal:_ctrl.signal});
         clearTimeout(_to);
         if(res.ok) break;
-        // A quota 429 is NOT transient - read the body first. If the server says
-        // we're out of usage, stop the chat with the quota card + live countdown
-        // instead of retrying or showing a generic error.
-        if(res.status===429){
-          const qerr=await res.clone().json().catch(()=>({}));
-          if(qerr && (qerr.code==='quota_day'||qerr.code==='quota_month')){
-            const resetAt=qerr.resetAt||(Date.now()+3600000);
-            quotaLock(resetAt);
-            msgs[streamIdx]={r:'a',c:'',_quota:true,_resetAt:resetAt};
-            setMsgs(msgs); S.busy=false; renderChatMsgs();
-            _recordUsageOnce();
-            return;
-          }
+        /* READ THE BODY BEFORE DECIDING ANYTHING - including whether to retry.
+
+           AMV's envelope is {error:"<a sentence written for a person>", code}.
+           This read `err?.error?.message`, which is the shape of an upstream
+           PROVIDER's error object, not AMV's. `error` is a string, so `.message`
+           was undefined every single time and `raw` was always empty - so every
+           refusal the backend had carefully worded came out of
+           aegisErrorMessage as "The AI service had a temporary error (503)".
+
+           The person shed for capacity was told AMV was broken instead of that
+           free accounts are busy today and paid ones are not. The person who
+           needed a higher plan was told to retry. Both are the exact moment the
+           wording was written for, and neither ever saw it. */
+        const err=await res.json().catch(()=>({}));
+        const srvCode=String((err&&err.code)||'');
+        const srvMsg=(typeof (err&&err.error)==='string' ? err.error : (err?.error?.message||''));
+        /* A code means AMV itself decided this, in its own words. Anything else
+           - an upstream provider's message, an empty body - still goes through
+           the guesser below, which now at least receives the text. */
+        const fromAMV=!!srvCode && !!srvMsg;
+
+        // A quota 429 is NOT transient. If the server says we're out of usage,
+        // stop the chat with the quota card + live countdown instead of
+        // retrying or showing a generic error.
+        if(res.status===429 && (srvCode==='quota_day'||srvCode==='quota_month')){
+          const resetAt=err.resetAt||(Date.now()+3600000);
+          quotaLock(resetAt);
+          msgs[streamIdx]={r:'a',c:'',_quota:true,_resetAt:resetAt};
+          setMsgs(msgs); S.busy=false; renderChatMsgs();
+          _recordUsageOnce();
+          return;
         }
-        // retry transient server/rate errors
         if(_userStopped) break;          // Stop means stop, not "try again"
-        if((res.status===429||res.status>=500) && _attempt<_maxRetries){
+        /* A DECISION DOES NOT CHANGE IN 700ms.
+
+           Retrying a refusal AMV meant makes the person wait through two more
+           round trips before they are told the same thing - and each of those
+           round trips reserves and refunds their allowance again on the server.
+           Only the codes that really are a passing condition are retried.
+           Anything else, INCLUDING a code added later, is answered at once:
+           that default is the safe one, because the cost of not retrying a
+           transient error is one manual retry, and the cost of retrying a
+           settled one is silence followed by the wrong message. */
+        const _transient=/^(provider_error|rate_limited|not_ready|acct_busy)$/;
+        const _settled=fromAMV && !_transient.test(srvCode);
+        if(!_settled && (res.status===429||res.status>=500) && _attempt<_maxRetries){
           _attempt++;
           const wait=Math.min(8000, 700*Math.pow(2,_attempt));
           msgs[streamIdx]={...msgs[streamIdx],c:'',streaming:true,_retrying:'Busy right now - retrying ('+_attempt+'/'+_maxRetries+')…'};
@@ -5419,13 +5452,12 @@ async function _callAI(msgs, _opts) {
           await new Promise(r=>setTimeout(r,wait));
           continue;
         }
-        const err=await res.json().catch(()=>({}));
-        const raw=err?.error?.message||'';
+        const raw=srvMsg;
         AEGIS.log('api_error',{status:res.status,raw:raw.slice(0,200)}); AEGIS.recordError();
         /* Already turned into a sentence for a human, from the REAL status.
            Tagged so the handler below does not run it through the guesser a
            second time - see the comment there. */
-        throw _saidPlainly(new Error(aegisErrorMessage(res.status, raw)));
+        throw _saidPlainly(new Error(fromAMV ? srvMsg : aegisErrorMessage(res.status, raw)));
       }catch(fe){
         clearTimeout(_to);
         /* The user pressing Stop aborts this same controller, so an AbortError
