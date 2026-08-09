@@ -4370,6 +4370,28 @@ async function authSignup(request, env){
   //  2. Turnstile (Cloudflare's free CAPTCHA): verified when TURNSTILE_SECRET is
   //     set. Until you configure it, we rely on the honeypot + rate limits.
   if (body.company || body.website) { audit(env,'bot_blocked',{where:'signup_honeypot'}); return json({ error:'signup failed' }, 400); }
+  /* AMV-191: THIS WAS THE ONE AUTH ROUTE WITH NO CEILING.
+     Login and password reset were both bounded; creating an account - the thing
+     that makes something which then SPENDS - was not. The comment above claims
+     "we rely on the honeypot + rate limits" and only the honeypot existed. The
+     captcha does not cover it either: _verifyCaptcha returns true when
+     TURNSTILE_SECRET is unset, which is the default.
+
+     An account is not free. Each one carries a real monthly token allowance and
+     a weekly autonomous job that runs on a timer, so unlimited sign-ups is
+     unlimited spend on AMV's card - and a funnel whose numbers stop describing
+     people.
+
+     Keyed per address, generous enough for a household or an office. _ipHash
+     returns '' when there is nothing to hash, and keyed on THAT every
+     unidentifiable caller would share one bucket - five sign-ups a minute for
+     the whole internet, a denial of service written by the person adding the
+     rate limit. So it falls back to the address, then to a named bucket. */
+  const sIp = (await _ipHash(env, request))
+           || request.headers.get('CF-Connecting-IP')
+           || request.headers.get('X-Forwarded-For') || 'unknown';
+  const sBlock = await guardAction(env, `signup:${sIp}`, 5, 40, 'sign-ups');
+  if (sBlock) return sBlock;
   const capOk = await _verifyCaptcha(env, body.captchaToken, request);
   if (!capOk) return json({ error:'Please complete the verification and try again.', code:'captcha_required' }, 400);
   const em = String(email||'').toLowerCase().trim();
@@ -12229,6 +12251,17 @@ async function authResetConfirm(request, env) {
   const token = String(body.token || '').trim();
   const password = String(body.password || '');
   if (!token) return json({ error: 'missing token' }, 400);
+  /* AMV-191: bounded, though the token is long and random rather than a
+     guessable code - the six-digit path is separate and counts its own attempts.
+     This is not about somebody brute-forcing their way in; it is that an
+     unbounded route doing a storage read per call is a free way to hammer the
+     store, and that every other door has a ceiling. Keyed per address so one
+     source cannot spend everybody's. */
+  const rcIp = (await _ipHash(env, request))
+            || request.headers.get('CF-Connecting-IP')
+            || request.headers.get('X-Forwarded-For') || 'unknown';
+  const rcBlock = await guardAction(env, `resetconfirm:${rcIp}`, 10, 60, 'password resets');
+  if (rcBlock) return rcBlock;
   if (password.length < 8) return json({ error: 'Password must be at least 8 characters.' }, 400);
   const stored = await env.AMV_KV.get(`reset:${token}`);
   if (!stored) return json({ error: 'This reset link is invalid or has expired. Please request a new one.' }, 400);

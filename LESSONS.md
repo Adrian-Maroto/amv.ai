@@ -3364,3 +3364,25 @@ in.
 **Rule:** duplication is not a style problem, it is a correctness problem with a
 delay on it. Find the copies mechanically, because you will not find them by
 reading.
+
+## 190. I added the rate limit to the wrong function, and my own test said so
+
+Sign-up was the one auth route with no ceiling. I anchored the fix on
+`const capOk = await _verifyCaptcha(...)`, asserted it matched exactly once, and
+it did - in `authLogin`. Both routes verify a captcha. I had added a rate limit
+to the route that already had one, and left the unbounded one untouched.
+
+Thirty sign-ups from one address all succeeded, which is what the behaviour
+cases said. But the case that actually named the bug was the source-level one at
+the bottom of the file - a list of every auth route and a check that each is
+bounded. It came back `["authSignup", "authResetConfirm"]`, which is the fix
+reporting that it had not been applied.
+
+Matching once is not the same as matching the right one. `assert count == 1` felt
+like rigour and is only a guard against ambiguity, not against aiming at the
+wrong thing - the two functions are near-identical neighbours, which is exactly
+when this happens and exactly when a unique match is least reassuring.
+
+**Rule:** when a fix targets one of several similar sites, assert afterwards
+that it landed in the named one. An exhaustive list of the sites, each checked,
+catches it; a successful edit does not prove a correct edit.
