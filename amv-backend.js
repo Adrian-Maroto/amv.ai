@@ -438,6 +438,47 @@ const DB = {
   },
 };
 
+/* AMV-182: a bounded scan that comes back exactly full has probably stopped
+   short of the end, and each one of these is wrong in its own way when it
+   does. The renewal sweep stops checking paying accounts past its limit, so a
+   stable arbitrary subset is never revoked. An erasure leaves records behind
+   and reports success. An admin screen shows a subset that looks like the
+   whole list, and the operator counts it. The only thing they had in common
+   was that NOBODY WAS TOLD - the flag was computed and dropped.
+
+   So every bounded scan goes through here: the limit is enforced in one place,
+   truncation is audited and paged once per window, and the caller gets the
+   flag back so a screen can say "this is not all of it" rather than implying
+   it is. `what` names the caller, because "a scan was truncated" is not
+   actionable and "the renewal sweep was truncated" is.
+
+   Scans that must be COMPLETE to be correct (erasure, backup) pass no
+   practical limit and still come through here, so if one ever does hit the
+   ceiling it surfaces instead of silently doing three quarters of the job. */
+const SCAN_ALL = 1000000;
+const ADMIN_USERS_LIMIT = 300;      // one admin page of accounts
+const SUPPORT_SCAN_LIMIT = 500;     // accounts with tickets, not tickets
+async function scan(env, kind, limit, what) {
+  const cap = limit || SCAN_ALL;
+  const all = await DB.list(env, kind, cap);
+  /* The underlying list reads a page at a time and can overshoot the cap by up
+     to a page, so the cap is applied here. Without this the limit was advisory
+     and a caller that promised "the first N" could hand back N plus a bit. */
+  const truncated = all.length >= cap;
+  const rows = truncated ? all.slice(0, cap) : all;
+  if (truncated) {
+    audit(env, 'scan_truncated', { kind, limit: cap, what });
+    try {
+      await alertOnce(env, 'scantrunc:' + what,
+        'A SCAN STOPPED SHORT. "' + what + '" read ' + cap + ' "' + kind + '" records and there are more, '
+        + 'so everything past that point was not looked at. Whatever this scan is responsible for has NOT '
+        + 'been done for those records, and will not be on the next run either - the cut-off is in the same '
+        + 'place every time. Raise the limit for this scan or page it.', 12 * 60);
+    } catch (e) {}
+  }
+  return { rows, truncated };
+}
+
 // Per-plan limits (TUNE THESE to protect margin). Tokens/day, tokens/month.
 const PLAN_LIMITS = {
   // Token allowances per plan. These are sized to be GENEROUS for real usage
@@ -1423,18 +1464,71 @@ async function _autoEmailResult(env, email, item, out){
   return _sendEmail(env, email, subject, html, text);
 }
 
+/* A tick has to end. This is the wall-clock budget for one pass of the
+   autonomous work: past it, the tick stops cleanly and says how much it left,
+   rather than being killed partway through with no record of where it got to.
+   Well inside the platform's ceiling on a scheduled invocation, so stopping is
+   a decision AMV makes rather than something that happens to it. */
+const AUTO_TICK_BUDGET_MS = 25 * 1000;
+
 /* ---- The cron tick: find everything due, run it, store the result ---- */
 async function runDueAutomations(env){
   const now = Date.now();
-  let scanned = 0, ran = 0, failed = 0;
+  const started = Date.now();
+  let scanned = 0, ran = 0, failed = 0, deferred = 0;
   // AMV-032: paginate the scan so users beyond the first KV page aren't silently
   // skipped (DB.list walks every page).
-  const users = await DB.list(env, 'auto', 1000000);
-  for(const u of users){
-    const email = u.id;
+  const { rows: allUsers, truncated } = await scan(env, 'auto', SCAN_ALL, 'autonomous work tick');
+
+  /* AMV-183: TWO fixes, and they only work together.
+
+     Before this, every user with any active job cost two round trips per tick
+     (their entitlement, then their billing subject) whether or not anything was
+     due - so the tick's cost scaled with everyone who had ever created a job,
+     not with the work actually due. And the loop had no time budget at all: it
+     walked a list of up to a million in a fixed order until something killed
+     it. Anybody far enough down that list would never run. Not "run late" -
+     never, because the order was stable and the cut fell in the same place
+     every tick. They would have paid for a nightly job that had silently
+     stopped existing.
+
+     So: nothing is looked up for a user with nothing due (the check is a field
+     comparison, no I/O), and the ones who DO have work are taken most-overdue
+     first. That ordering is what makes the budget safe to enforce. A run sets
+     `next` forward, so whoever just ran goes to the back; whoever got cut off
+     is by definition more overdue than everybody who ran, and is at the FRONT
+     of the next tick. Starvation is not possible - being late is, and being
+     late is reported.
+
+     One deliberate consequence: the "above your plan's job limit" note on a
+     downgraded account's extra jobs is now written the next time any of that
+     account's work comes due, rather than on the next tick. Knowing the limit
+     needs the entitlement, which is exactly the lookup being skipped. For daily
+     jobs that is within a day, and it lands before the job would have run. */
+  const users = [];
+  for(const u of allUsers){
     const rec = u.value;
     if(!rec || !Array.isArray(rec.items) || !rec.items.length) continue;
     if(rec.paused) continue;   // user hit "Pause all autonomous"
+    let soonest = Infinity;
+    for(const it of rec.items){ if(it && it.active && (it.next||0) <= now) soonest = Math.min(soonest, it.next||0); }
+    if(soonest === Infinity) continue;      // nothing due: costs nothing to skip
+    users.push({ id: u.id, value: rec, soonest });
+  }
+  users.sort((a,b)=> a.soonest - b.soonest);
+  const queued = users.length;
+  let processed = 0;
+
+  for(const u of users){
+    const email = u.id;
+    const rec = u.value;
+
+    /* Out of time. Everything left is more overdue than everything that ran,
+       so it leads the next tick - but it is still late, and lateness that
+       nobody can see is how "my job stopped running" becomes a support ticket
+       instead of a known state. */
+    if(Date.now() - started > AUTO_TICK_BUDGET_MS){ deferred = queued - processed; break; }
+    processed++;
 
     let changed = false;
     // The plan's monthly cost ceiling - automations spend real money and must
@@ -1594,7 +1688,23 @@ async function runDueAutomations(env){
     }
     if(changed) await DB.put(env, 'auto', email, rec);
   }
-  return { scanned, ran, failed };
+
+  /* Running out of time once is a busy minute. Running out of time every tick
+     means the due work no longer fits in a tick, and the backlog grows without
+     anything failing - every individual run succeeds, and people's jobs still
+     arrive later and later. That is the state worth being told about, so it is
+     paged rather than logged. */
+  if(deferred > 0){
+    audit(env, 'auto_tick_deferred', { queued, processed, deferred, ran, failed });
+    try{
+      await alertOnce(env, 'auto_backlog',
+        'THE AUTONOMOUS TICK IS OUT OF TIME. ' + processed + ' of ' + queued + ' accounts with work due were '
+        + 'handled and ' + deferred + ' were left for the next run. They are first in line next time, so nothing '
+        + 'is lost - but if this keeps happening the due work no longer fits in one tick and people’s jobs are '
+        + 'arriving late. Raise the tick budget or spread the work.', 3 * 60);
+    }catch(e){}
+  }
+  return { scanned, ran, failed, queued, processed, deferred, truncated };
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -3180,7 +3290,7 @@ async function abuseList(request, env){
      KV meant that on a D1 deployment there was nothing to iterate - the abuse
      screen would have been permanently empty however many accounts were
      flagged, which is the one screen whose emptiness must be true. */
-  const listing = await DB.list(env, 'abuse', 5000);
+  const { rows: listing, truncated } = await scan(env, 'abuse', 5000, 'abuse review screen');
   const rows = [];
   for(const k of listing){
     const rec = k.value;
@@ -3189,7 +3299,12 @@ async function abuseList(request, env){
                         blockedAt:rec.blockedAt||null, events:(rec.events||[]).slice(-5) });
   }
   rows.sort((a,b)=> (b.blockedAt||0) - (a.blockedAt||0));
-  return json({ ok:true, flagged: rows, blockedCount: rows.filter(r=>r.blocked).length });
+  /* Truncation travels with the list. An abuse screen that shows a subset while
+     looking like the whole is worse than one that shows nothing: the operator
+     concludes there is no more abuse. */
+  return json({ ok:true, flagged: rows, blockedCount: rows.filter(r=>r.blocked).length,
+                truncated, note: truncated
+                  ? 'This is not everything. More flagged accounts exist than this screen scanned.' : null });
 }
 
 /* POST /admin/abuse/clear - lift a flag (a genuine refund that got caught).
@@ -3503,7 +3618,7 @@ async function backupExport(request, env){
     for(const prefix of BACKUP_PREFIXES){
       const kind = prefix.slice(0, -1);
       try{
-        for(const r of await DB.list(env, kind, 1000000)){
+        for(const r of (await scan(env, kind, SCAN_ALL, 'backup export: ' + kind)).rows){
           const key = `${kind}:${r.id}`;
           if(data[key] == null){ data[key] = JSON.stringify(r.value); count++; bytes += data[key].length + key.length; }
         }
@@ -3906,7 +4021,7 @@ export default {
 
         try{
           const r = await runDueAutomations(env);
-          if(r.ran || r.failed) console.log('[cron] automations', JSON.stringify(r));
+          if(r.ran || r.failed || r.deferred) console.log('[cron] automations', JSON.stringify(r));
         }catch(e){
           console.error('[cron] failed', e && e.message);
           try{ await _workerError(env, 'cron', e); }catch(_){}
@@ -3940,7 +4055,7 @@ export default {
          taken out by an unrelated failure earlier in the tick. */
       try{
         const s = await runRenewalSweep(env);
-        if(s && s.ran && s.stale) console.log('[cron] renewal sweep', JSON.stringify(s));
+        if(s && s.ran && (s.stale || s.truncated)) console.log('[cron] renewal sweep', JSON.stringify(s));
       }catch(e){
         console.error('[cron] renewal sweep failed', e && e.message);
         try{ await _workerError(env, 'cron.renewals', e); }catch(_){}
@@ -4387,9 +4502,10 @@ async function adminUsers(request, env) {
   const isOwner = !!ownerEmail && String(claims.email).toLowerCase() === ownerEmail;
   if(!isOwner && !(acct && acct.admin)) return json({ error:'forbidden' }, 403);
   // list accounts (KV list is best-effort; cap for safety)
-  let users=[];
+  let users=[]; let truncated=false;
   try{
-    const list = await DB.list(env, 'acct', 300);
+    const s = await scan(env, 'acct', ADMIN_USERS_LIMIT, 'admin user list');
+    const list = s.rows; truncated = s.truncated;
     const month = monthKey();
     users = await Promise.all((list||[]).map(async r=>{
       const a=r.value||{}; const email=a.email; if(!email) return null;
@@ -4421,7 +4537,14 @@ async function adminUsers(request, env) {
     }));
     users = users.filter(Boolean);
   }catch(e){}
-  return json({ users, count: users.length });
+  /* `count` is the number of rows on THIS screen, not the number of accounts
+     that exist. Said plainly, because an operator reading 300 off an admin
+     page and believing it is the customer base makes decisions on it. The real
+     total lives on the stats screen, which counts rather than lists. */
+  return json({ users, count: users.length, truncated, scanLimit: ADMIN_USERS_LIMIT,
+                note: truncated
+                  ? 'Showing the first ' + ADMIN_USERS_LIMIT + ' accounts. There are more - this is not the total.'
+                  : null });
 }
 
 /* Verify a Google ID token (JWT credential) SERVER-SIDE before trusting it.
@@ -4710,7 +4833,7 @@ async function authDeleteAccount(request, env) {
        D1 deployment, so the snapshots of everything this person had bought
        survived the erasure of their account - data that was supposed to be gone
        and is keyed by their address. */
-    const snaps = await DB.list(env, 'mktsnap', 20000);
+    const { rows: snaps } = await scan(env, 'mktsnap', SCAN_ALL, 'erasure: marketplace snapshots');
     for (const s of snaps) {
       if (!s || typeof s.id !== 'string' || !s.id.startsWith(email + ':')) continue;
       try { await DB.del(env, 'mktsnap', s.id); } catch {}
@@ -4728,7 +4851,7 @@ async function authDeleteAccount(request, env) {
      Both directions: invitations ABOUT this account, and invitations this
      account sent to somebody else. */
   try {
-    const invites = await DB.list(env, 'link', 20000);
+    const { rows: invites } = await scan(env, 'link', SCAN_ALL, 'erasure: account-link invitations');
     for (const l of invites) {
       const id = l && typeof l.id === 'string' ? l.id : '';
       const rec = (l && l.value) || {};
@@ -6154,6 +6277,9 @@ function _safeTools(list) {
 const PEND_KIND = 'paypending';
 const PEND_GRACE_MS = 10 * 60 * 1000;      // give the webhook a fair chance first
 const PEND_GIVEUP_MS = 24 * 60 * 60 * 1000; // an unpaid session is never coming back
+/* One provider lookup per pending row, so this pass gets its own budget. It
+   shares a tick with the rest of the cron work, so it takes a smaller slice. */
+const RECONCILE_BUDGET_MS = 15 * 1000;
 
 async function _pendStart(env, id, data) {
   if (!id) return;
@@ -6167,10 +6293,31 @@ async function _pendDone(env, id) {
 async function reconcilePayments(env) {
   let checked = 0, rescued = 0, dropped = 0;
   let rows = [];
-  try { rows = await DB.list(env, PEND_KIND, 200); } catch (e) { return { checked, rescued, dropped }; }
+  /* No practical ceiling. A pending payment is somebody who has been CHARGED
+     and is waiting to be given what they paid for; capping this at 200 meant
+     that during the exact incident this exists for - a webhook outage, where
+     hundreds pile up at once - the ones past the cap were the ones never
+     rescued. The reconciler is the last line, so it reads all of them. */
+  try { rows = (await scan(env, PEND_KIND, SCAN_ALL, 'payment reconciliation')).rows; }
+  catch (e) { return { checked, rescued, dropped }; }
   const now = Date.now();
+  const started = Date.now();
 
+  /* Oldest charge first, and a budget. One provider lookup per row means a
+     large pile cannot be worked through in a single tick - but a resolved row
+     is DELETED, so the list drains from the front and whatever is left over is
+     older than everything just handled, which puts it first next time. The
+     person who has been waiting longest for what they paid for is served
+     first, and nobody is stuck behind a permanently unreachable row. */
+  rows.sort((a, b) => ((a.value || {}).at || 0) - ((b.value || {}).at || 0));
+
+  let seen = 0;
   for (const row of rows) {
+    if (Date.now() - started > RECONCILE_BUDGET_MS) {
+      audit(env, 'reconcile_deferred', { checked, rescued, dropped, remaining: rows.length - seen });
+      break;
+    }
+    seen++;
     const p = row.value || {};
     const age = now - (p.at || 0);
     if (age < PEND_GRACE_MS) continue;             // the webhook may still be on its way
@@ -8710,8 +8857,11 @@ async function runRenewalSweep(env, now = Date.now()) {
      or double-page. */
   if (!(await _claimOnce(env, 'renewsweep', day, 3 * 86400))) return { ran: false, reason: 'already swept today' };
 
-  const rows = await DB.list(env, 'ent', SWEEP_SCAN_LIMIT);
-  const truncated = rows.length >= SWEEP_SCAN_LIMIT;
+  /* Through scan(), so hitting the ceiling pages somebody. Until it did, the
+     sweep past 2000 entitlements checked a stable arbitrary subset and the
+     rest were never examined for a lapsed payment again - silently, forever,
+     with `truncated` computed here and thrown away by the caller. */
+  const { rows, truncated } = await scan(env, 'ent', SWEEP_SCAN_LIMIT, 'renewal sweep');
   let paid = 0;
   const stale = [];
   for (const row of rows) {
@@ -10421,8 +10571,7 @@ async function adminStats(request, env) {
      lists below are a sample - the headline money comes from the maintained
      counters instead, which are exact at any size. */
   const SCAN_LIMIT = 2000;
-  const entRows = await DB.list(env, 'ent', SCAN_LIMIT);
-  const truncated = entRows.length >= SCAN_LIMIT;
+  const { rows: entRows, truncated } = await scan(env, 'ent', SCAN_LIMIT, 'owner stats screen');
   for (const row of entRows) {
     const e = row.value || {};
     const email = row.id;
@@ -10978,13 +11127,23 @@ async function supportSubmit(request, env) {
    surface - it contains other people's words about their own accounts. */
 async function supportInbox(request, env) {
   if (!_requireAdmin(request, env)) { audit(env, 'auth_fail', { reason: 'admin_bad_token' }); return json({ error: 'forbidden' }, 403); }
-  const rows = await DB.list(env, 'support', 500);
+  const { rows, truncated } = await scan(env, 'support', SUPPORT_SCAN_LIMIT, 'support inbox');
   const out = [];
   for (const row of rows) {
     for (const t of ((row.value || {}).tickets || [])) out.push(Object.assign({ email: row.id }, t));
   }
   out.sort((a, b) => (b.at || 0) - (a.at || 0));
-  return json({ ok: true, tickets: out.slice(0, 200), accounts: rows.length });
+  /* Two separate ways this list is not everything, and an unanswered customer
+     is the cost of either: more accounts than the scan read, and more tickets
+     than the page shows. Both are stated rather than implied by a short list. */
+  const shown = out.slice(0, 200);
+  return json({ ok: true, tickets: shown, accounts: rows.length,
+                truncated: truncated || out.length > shown.length,
+                totalTickets: out.length,
+                note: truncated
+                  ? 'More accounts have tickets than this scan read - there is unseen mail beyond this list.'
+                  : (out.length > shown.length
+                      ? 'Showing the ' + shown.length + ' newest of ' + out.length + ' tickets.' : null) });
 }
 
 /* Approval rate per engine, for the dashboard and the weekly digest. A rate

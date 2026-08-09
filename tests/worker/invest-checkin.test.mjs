@@ -254,7 +254,14 @@ section('A busy month in chat does not switch the check-in off');
      This one spends nothing, so that gate is about a different resource - and
      applying it anyway would silently stop the savings check-in of somebody
      whose only sin was using chat a lot. */
-  const loop = src.slice(src.indexOf('async function runDueAutomations'), src.indexOf('async function runDueAutomations') + 4000);
+  /* The WHOLE function, found by where the next one starts. A fixed character
+     window here went stale the moment the tick grew a comment, and reported a
+     correct implementation as broken - which is the failure mode that teaches
+     people to ignore this suite. */
+  const at = src.indexOf('async function runDueAutomations');
+  const ends = [src.indexOf('\nasync function ', at + 1), src.indexOf('\nfunction ', at + 1)].filter(i => i > 0);
+  const loop = src.slice(at, Math.min(...ends));
+  ok(ends.length > 0 && loop.length > 2000, 'the tick was located in full', loop.length);
   ok(/item\.kind !== 'invest'/.test(loop),
      'the ceiling check deliberately does not apply to it');
   ok(loop.indexOf("item.kind !== 'invest'") < loop.indexOf('monthly allowance reached'),

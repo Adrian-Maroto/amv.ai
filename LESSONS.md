@@ -2999,3 +2999,54 @@ missing, and the job is instructed to lead with that.
 **Rule:** a guard you wrote does not exempt you from the thing it guards. The
 value of this one was never the twelve it found - it is the ones nobody would
 have looked for, including mine.
+
+## 182. The flag was computed, correctly, and then dropped on the floor
+
+`runRenewalSweep` read two thousand entitlements, worked out
+`const truncated = rows.length >= SWEEP_SCAN_LIMIT`, and returned it. The cron
+did `if(s && s.ran && s.stale) console.log(...)`. So the one fact that mattered
+was calculated by somebody who understood the risk, handed to the caller, and
+never looked at again.
+
+Past two thousand paying accounts, a stable arbitrary subset was never examined
+for a lapsed payment. Not examined late. Never, because the cut falls in the
+same place every day. Seven more scans had the same shape: an erasure that left
+records behind and returned "your account has been deleted" anyway, an abuse
+screen showing a subset that reads as the whole list, a reconciliation that
+rescued the first two hundred people who had been charged.
+
+Every one of them looks correct in review. A limit is prudence, and each author
+wrote one. The defect is not the limit - it is that hitting it is a fact about
+the world and it stayed inside the function.
+
+**Rule:** a bound you enforce has to leave the function. There is now one
+`scan()` that every list goes through: it caps, audits, pages, and returns the
+flag, and a standing check fails the build if any code reads a list around it.
+Work that has to be complete to be correct (erasure, backup, paying people what
+they bought) passes no practical ceiling at all.
+
+## 183. A loop with no clock is a loop that silently drops its tail
+
+The autonomous tick listed up to a million users and walked them in a fixed
+order, several round trips each, with no elapsed-time check anywhere. The
+platform decides when that ends.
+
+Two things follow, and the second is the one that costs a customer. Everybody
+who had ever created a job cost two lookups per tick whether or not anything was
+due, so the tick's cost scaled with the customer base rather than with the work.
+And when it was killed partway, the people far enough down the list never ran -
+not late, never, because the order was stable. They were paying for a nightly
+job that had quietly stopped existing, and nothing failed, so nothing was
+reported.
+
+The fix needed both halves to work. Nothing is looked up for an account with
+nothing due (a field comparison, no I/O), and the accounts that do have work are
+taken MOST OVERDUE FIRST. That ordering is what makes a budget safe to enforce:
+a run sets `next` forward, so whoever just ran goes to the back, and whoever got
+cut off is by definition more overdue than everyone who ran and leads the next
+tick. Starvation stops being possible. Being late is still possible, and being
+late now pages somebody.
+
+**Rule:** any loop that can outlive its tick needs a budget AND an order that
+makes stopping fair. A budget without the ordering just picks the same victims
+every time, politely.
