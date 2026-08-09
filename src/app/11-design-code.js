@@ -961,16 +961,21 @@ function _devDownloadProject(){
    This used to base64 the page into a URL fragment ("nothing is stored on a
    server"), which isn't a deployment and broke past ~18KB. Now it actually
    hosts the site and returns a shareable link that works for anyone. */
+/* AMV-188: this was a byte-for-byte copy of _autoApi with one difference, and
+   the difference was the bug.
+
+   That one carries `code` and `status` onto the error, with a comment saying
+   why: a caller has to be able to tell "this needs a paid plan" from "the
+   network failed", and matching on prose breaks the first time the wording
+   changes. This copy threw a bare Error, so every deploy failure arrived
+   indistinguishable - a plan limit, a quota, a dead connection, all the same
+   sentence with nothing to branch on.
+
+   The fix was applied to one of the two copies. That is what duplication does,
+   and it had already happened here with the reasoning written down next to the
+   half that got it. One definition now. */
 async function _deployApi(path, body){
-  if(!(window.AMV_API && AMV_API.live && AMV_API.token)) throw new Error('not-connected');
-  const r = await fetchDeadline(AMV_API.base.replace(/\/$/,'')+path, {
-    method:'POST',
-    headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+AMV_API.token },
-    body: JSON.stringify(body||{})
-  });
-  const d = await r.json().catch(()=>({}));
-  if(!r.ok || d.error) throw new Error(d.error || ('failed ('+r.status+')'));
-  return d;
+  return _autoApi(path, body);
 }
 
 async function _devDeploy(){

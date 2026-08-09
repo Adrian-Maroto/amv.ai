@@ -3331,3 +3331,36 @@ definition is for.
 **Rule:** when a sabotage does not fail the test, suspect your aim before the
 test. Find every implementation of the behaviour first - if there is more than
 one, that is the bug, and the passing sabotage just found it for you.
+
+## 193. The copy that got the fix, and the copy that did not
+
+`_deployApi` was a byte-for-byte copy of `_autoApi` with one difference. The
+other one carries the error `code` and `status` through, with a comment saying
+why: a caller has to be able to tell "this needs a paid plan" from "the network
+failed", and matching on prose breaks the first time the wording changes.
+
+This copy threw a bare Error. So every deploy failure arrived indistinguishable
+- a plan limit, a quota, a dead connection, one sentence and nothing to branch
+on.
+
+The fix had been thought about, written down in a comment explaining the
+reasoning, and applied to one of the two places it belonged. That is the whole
+failure mode of duplication in a single artifact: not that the copies WILL
+drift, but that by the time you find them one of them is already the old one.
+
+That is three in a day, all found by accident: three hand-rolled function-body
+extractors, of which one silently mis-read an 11800-character function as 1200;
+two copies of the pending-message send, where the copy nobody would have fixed
+was the sign-up path; and this. None of them were noticed by reading the code -
+each surfaced only because something else forced a comparison.
+
+So it is a standing check now rather than a habit. Normalise whitespace,
+comments and string CONTENTS, then flag any four-line block of real code that
+appears in two modules. Honest duplication is listed with its reason, and a
+second check fails if a listed reason no longer matches anything - an
+allowance for duplication that no longer exists is a hole the next copy hides
+in.
+
+**Rule:** duplication is not a style problem, it is a correctness problem with a
+delay on it. Find the copies mechanically, because you will not find them by
+reading.
