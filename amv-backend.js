@@ -5039,9 +5039,24 @@ async function authDeleteAccount(request, env) {
      carry retention obligations that erasure does not override, and deciding
      otherwise is a legal call rather than an engineering one. It stays until
      somebody with the authority to say so decides how long. */
+  /* AMV-192: A FAILED DELETE IS NOT A SUCCESSFUL ERASURE.
+
+     This swallowed every failure whole - a storage hiccup on one kind, a
+     timeout on another, and the route still answered ok with a smaller number
+     nobody compares to anything. The person is told their data is gone while
+     their bank credential, their conversations, their family record are still
+     here, and nobody finds out, because the only trace was a counter that
+     quietly counted lower.
+
+     "Your account has been deleted" is a statement to a regulator, not a status
+     message. So what survives is collected, named, returned, audited and paged.
+     Erasure that half-worked and SAYS so can be finished by hand; erasure that
+     half-worked in silence cannot, because nobody knows to look. */
   let deleted = 0;
+  const eraseFailed = [];
   for (const kind of perUserKinds) {
-    try { await DB.del(env, kind, email); deleted++; } catch {}
+    try { await DB.del(env, kind, email); deleted++; }
+    catch (e) { eraseFailed.push(kind); }
   }
   /* Uncounted, so the conversion denominator follows reality. A counter that
      only ever goes up would make the funnel look worse every time somebody
@@ -5110,6 +5125,29 @@ async function authDeleteAccount(request, env) {
   // Revoke all tokens so existing sessions die immediately.
   try { await revokeUserTokens(env, email); } catch {}
 
+  /* What survived, said out loud in all three places it has to be said: to the
+     person who asked, in AMV's own record, and to somebody who can go and
+     finish it. The person leaving will not keep this reply - the audit line and
+     the page are what exist afterwards. */
+  if (eraseFailed.length) {
+    audit(env, 'account_delete_incomplete', { email, keysRemoved: deleted, failed: eraseFailed.join(',') });
+    try {
+      await alertOnce(env, 'erase_incomplete:' + email,
+        'AN ERASURE DID NOT COMPLETE. ' + email + ' asked to be deleted and these could not be removed: '
+        + eraseFailed.join(', ') + '. Everything else went. This is a legal obligation that is now part done, '
+        + 'and the person has been told it is incomplete - remove the rest by hand and confirm to them.', 60);
+    } catch (e) {}
+    return json({
+      ok: false,
+      incomplete: true,
+      deleted: false,
+      prefixesPurged: deleted,
+      failed: eraseFailed,
+      error: 'Some of your data could not be deleted (' + eraseFailed.join(', ') + '). '
+           + 'Everything else has been removed and our team has been alerted to finish it. '
+           + 'Contact support if you do not get confirmation.',
+    }, 500);
+  }
   audit(env, 'account_deleted', { email, keysRemoved: deleted });
   return json({ ok: true, deleted: true, prefixesPurged: deleted });
 }

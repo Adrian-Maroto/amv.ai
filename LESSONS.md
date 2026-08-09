@@ -3386,3 +3386,23 @@ when this happens and exactly when a unique match is least reassuring.
 **Rule:** when a fix targets one of several similar sites, assert afterwards
 that it landed in the named one. An exhaustive list of the sites, each checked,
 catches it; a successful edit does not prove a correct edit.
+
+## 191. The sabotage passed because the thing I broke had nothing after it
+
+Erasure gave up on the first failed delete - `break` in the catch - and the
+suite stayed green. The case was built with `fin` as the failing kind, and `fin`
+sits near the end of PER_USER_KINDS, so stopping there left nothing behind to
+find. The assertion was right, the fixture made it unreachable.
+
+Rebuilt from the real list: fail `kinds[0]`, then assert `kinds[kinds.length-1]`
+is still gone. Now giving up early fails, because there is something after the
+break to be left behind.
+
+Same shape as the family-leave gap and the marketplace thread gap earlier today:
+a guard exercised with data that short-circuits before reaching it. Three times
+in one day, and each time the assertion read perfectly - the flaw was in what
+was fed to it, which is the half nobody re-reads.
+
+**Rule:** when a case depends on ORDER, build it from the real order rather than
+picking a plausible member. `kinds[0]` and `kinds[kinds.length-1]` cannot drift
+away from what the code walks; a hand-picked name can, and did.
