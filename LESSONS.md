@@ -3114,3 +3114,47 @@ client functions.
 find its actual boundaries - and if the helper doing that cannot be trusted,
 that is the thing to fix first, because every check built on it inherits the
 error without showing it.
+
+## 186. I nearly rebuilt a working system on a number I had guessed
+
+First-load weight was the last of five items. I read the module sizes on disk,
+saw `04-i18n.js` at 149KB and an `I18N` constant spanning 128KB in the bundle,
+and concluded the translation dictionary was about 60KB gzipped - eleven per
+cent of the page. I had a design ready: emit the dictionary as a sibling file,
+load it only when somebody picks a language, add a head script so returning
+non-English visitors do not see a flash of English.
+
+Then I measured properly, by removing each module and re-minifying and
+re-gzipping the whole bundle:
+
+    JS minified+gzipped  420KB      CSS gzipped  112KB
+      04-i18n.js          58.5      10-mission-control  51.2
+      12-handoff          47.5      11-design-code      37.1
+      05-ui-blocks        35.8      07-workspace-memory 25.3
+
+The two dictionaries inside `04-i18n.js` are 82KB raw and 34KB gzipped - the
+rest of that module is the embed widget and the translation machinery, which
+has to stay. So the change was worth 6%, not 11%, in exchange for a new file
+in the deploy path, a head script reading localStorage before paint, a
+flash-of-English risk for exactly the users the feature exists for, and
+rewriting a passing test's synchronous contract. That is a bad trade, and I
+was one edit from making it.
+
+Both numbers I started from were real measurements of the wrong thing. 149KB
+was the module on disk, unminified, including code that is not the dictionary.
+128KB was the span between two `const` declarations in the bundle, which
+counts everything in between. Neither had been near gzip or terser, and gzip is
+where a dictionary of repetitive short strings loses most of its size.
+
+The real lever is elsewhere and is an architecture question, not an
+optimisation: mission-control, handoff, design-code and admin-fraud are about
+157KB gzipped and none of them is needed to paint the first screen. Splitting
+them means giving up the property CLAUDE.md states outright - one runtime
+script, shared global scope, order dependencies across module boundaries. That
+is the owner's call, and with 77KB of headroom under the ceiling and nothing
+failing, it is not urgent enough to take unasked.
+
+**Rule:** measure the artifact that ships, in the state it ships in. A size
+read off disk, off an unminified file, or off a span between two declarations
+is not the number the decision depends on - and being roughly right about which
+file is biggest is not the same as being right about what removing it buys.
