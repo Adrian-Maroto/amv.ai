@@ -308,6 +308,29 @@ section('A child removed from a family does not come back');
   ok((two.limits || {}).monthlyUSD === 25, 'and the other child’s new limit took', two.limits);
 }
 
+section('The record it locks is the record it was asked for');
+{
+  /* The lock used to lowercase the id it was given. That is right for an email
+     and silently wrong for a record id: the key becomes one that does not
+     exist, the load finds nothing, the mutate does nothing, and the caller is
+     told the change was applied. Nothing fails and nothing changed.
+
+     Real team ids happen to be lowercase, so it hid there and surfaced on the
+     erasure path instead - a deleted team owner whose team kept its paid plan
+     for ever, which is the exact bug that code was written to prevent. */
+  const env = mkEnv();
+  await W.DB.put(env, 'team', 'T-Mixed-Case', { id: 'T-Mixed-Case', ownerEmail: 'o@example.com',
+    plan: 'elite', members: [{ email: 'o@example.com', role: 'owner' }] });
+
+  await W._withTeam(env, 'T-Mixed-Case', (t) => { if (t) t.plan = 'free'; });
+
+  const after = await W.DB.get(env, 'team', 'T-Mixed-Case');
+  ok(!!after, 'the record is still where it was', !!after);
+  ok(after.plan === 'free', 'and the change reached it, case and all', after.plan);
+  ok(!(await W.DB.get(env, 'team', 't-mixed-case')),
+     'nothing was written to a lowercased key nobody asked for', 'none');
+}
+
 section('A change that cannot take the lock is refused, not written blind');
 {
   /* Silently proceeding without the lock is the original bug with a comment

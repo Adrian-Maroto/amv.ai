@@ -2409,7 +2409,7 @@ async function linkAccept(request, env){
       /* The family may not exist yet, and the helper's save only writes a
          record that was already there - so the write happens inside the mutate,
          which is still inside the lock. */
-      res = await _withRecord(env, 'fam', parent,
+      res = await _withRecord(env, 'fam', String(parent || '').toLowerCase(),
         _loadFam,
         async () => {},
         async (fresh) => {
@@ -4861,32 +4861,41 @@ async function authDeleteAccount(request, env) {
       /* AMV-197: erasure competes with everything else the team is doing, and
          it is the one write that must not be undone - a ghost member left on
          the record is data AMV said it had deleted. */
-      const team = await _withTeam(env, tid, (fresh) => {
-        if (!fresh || !Array.isArray(fresh.members) || fresh.ownerEmail === email) return fresh;
-        fresh.members = fresh.members.filter(m => m.email !== email);
-        return fresh;
-      });
-      if (team && team.ownerEmail === email) {
-        /* The OWNER is the one who pays. A team's plan is a cached copy of their
-           entitlement, so deleting the owner used to leave `plan:'elite'` sitting
-           on the record with no lapse marker and nobody being billed - every
-           member kept a paid plan, free, permanently.
+      /* ONE pass under ONE lock, member and owner alike. Taking it, releasing
+         it, and taking it again for the owner case is two chances for the team
+         to change underneath a half-finished erasure - and if the second
+         attempt cannot get the lock, the owner teardown silently does not
+         happen while the first half already did. */
+      const wasOwner = await _withTeam(env, tid, (fresh) => {
+        if (!fresh) return false;
+        const owner = fresh.ownerEmail === email;
+        fresh.members = (fresh.members || []).filter(m => m.email !== email);
+        if (owner) {
+          /* The OWNER is the one who pays. A team's plan is a cached copy of
+             their entitlement, so deleting the owner used to leave
+             `plan:'elite'` sitting on the record with no lapse marker and
+             nobody being billed - every member kept a paid plan, free,
+             permanently.
 
-           The team is NOT deleted: other people's shared projects and library
-           live in it, and destroying those is not a consequence anybody agreed
-           to by one person closing their own account. It simply stops being a
-           paid team, which is the true statement now that nobody is paying, and
-           members fall back to their own plans. */
-        await _withTeam(env, tid, (fresh) => {
-          if (!fresh) return;
+             The team is NOT deleted: other people's shared projects and library
+             live in it, and destroying those is not a consequence anybody
+             agreed to by one person closing their own account. It simply stops
+             being a paid team, which is the true statement now that nobody is
+             paying, and members fall back to their own plans. */
           fresh.plan = 'free';
           fresh.ownerGone = Date.now();
-          fresh.members = (fresh.members || []).filter(m => m.email !== email);
-        });
-        audit(env, 'team_owner_deleted', { team: tid, was: email });
-      }
+        }
+        return owner;
+      });
+      if (wasOwner) audit(env, 'team_owner_deleted', { team: tid, was: email });
     }
-  } catch {}
+  } catch (e) {
+    /* Not silent. A ghost member left on a team record is data AMV has told
+       somebody was deleted, and nobody finds out from an empty catch. */
+    audit(env, 'erase_team_failed', { email, error: String((e && e.message) || e) });
+    try { await alertOnce(env, 'erase_team:' + email,
+      'An account was deleted but could not be removed from its team, so a membership row may still name them. Remove it by hand.', 60); } catch (_) {}
+  }
 
   // 2) Delete the user's deployed public sites (records + index).
   try {
@@ -10213,7 +10222,13 @@ const WALLET_LOCK_TRIES = 6;
    pass it back out. Failing to take the lock throws rather than writing
    anyway - a lost entitlement or a reverted password must not happen quietly. */
 async function _withRecord(env, kind, id, load, save, mutate) {
-  const key = String(id || '').toLowerCase();
+  /* The key is used AS GIVEN. It used to be lowercased here, which is right for
+     an email and silently wrong for a record id: a team id that is not already
+     lowercase becomes a key that does not exist, `load` returns nothing, the
+     mutate does nothing, and the caller is told the change was applied. The
+     callers that key by email lowercase it themselves, where it is obviously an
+     email. */
+  const key = String(id || '');
   if (!key) return null;
   for (let i = 0; i < WALLET_LOCK_TRIES; i++) {
     if (await _claimOnce(env, 'rmut:' + kind, key, 15)) {
@@ -10269,7 +10284,7 @@ async function _withWallet(env, email, mutate) {
 const _loadAcct = async (env, em) => (await DB.get(env, 'acct', em)) || null;
 const _saveAcct = async (env, em, a) => { if (a) await DB.put(env, 'acct', em, a); };
 async function _withAcct(env, email, mutate) {
-  return _withRecord(env, 'acct', email, _loadAcct, _saveAcct, mutate);
+  return _withRecord(env, 'acct', String(email || '').toLowerCase(), _loadAcct, _saveAcct, mutate);
 }
 
 /* AMV-197: THE RECORDS A GROUP OF PEOPLE ALL WRITE TO.
@@ -10298,7 +10313,8 @@ async function _withTeam(env, id, mutate) {
 const _loadFam = async (env, id) => (await DB.get(env, 'fam', id)) || null;
 const _saveFam = async (env, id, f) => { if (f) await DB.put(env, 'fam', id, f); };
 async function _withFam(env, id, mutate) {
-  return _withRecord(env, 'fam', id, _loadFam, _saveFam, mutate);
+  // Keyed by the parent's address, so lowercasing is right here and stated here.
+  return _withRecord(env, 'fam', String(id || '').toLowerCase(), _loadFam, _saveFam, mutate);
 }
 /* One shape for "the lock said no" so every caller answers the same way, and
    nobody is told a change happened that did not. */

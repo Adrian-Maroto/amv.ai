@@ -3475,3 +3475,22 @@ fixture's idea of it.
 **Rule:** when code starts depending on a primitive, check every stub of that
 primitive in the suite before believing a result. A stub built for the old
 behaviour does not fail loudly - it fails as the feature.
+
+## 196. The helper normalised a key that was not a name
+
+`_withRecord` lowercased the id it was given. That is right for an email and
+silently wrong for a record id: the key becomes one that does not exist, the
+load finds nothing, the mutate runs against nothing, the save writes nothing,
+and the caller is told the change was applied. No error anywhere.
+
+Real team ids are already lowercase, so every team test passed. It surfaced on
+the erasure path, where a deleted team owner's team kept its paid plan for ever
+- the exact bug that code was written to prevent, reintroduced by a convenience
+one line away from it.
+
+The key is now used as given, and the two callers that key by email lowercase it
+themselves, where it is obviously an email.
+
+**Rule:** normalise where the meaning of the value is known, never in a helper
+that takes "an id". A helper that quietly rewrites its argument turns a missing
+record into a successful no-op.
