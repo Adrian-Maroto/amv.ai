@@ -38,6 +38,12 @@ const SELF = /user\.email|_autoKey\(|owner\b|\bme\b/;
 /* Every cross-account write, and why it is allowed to be one. */
 const CLASSIFIED = {
   authDeleteAccount: 'erasure reaches into the team, family and link records this account is part of',
+  /* Newly VISIBLE rather than newly true: the thread write used a bare `key`
+     variable, which neither pattern above could match, so a route that writes a
+     record shared with another person sat outside this check entirely. A
+     conversation belongs to both people in it, and _messageRecipient decides
+     which conversation the sender is allowed to write to. */
+  marketMessage:     'a conversation belongs to both people in it; the recipient is derived, never taken from the caller',
   apiKeyCreate:      'the lookup row is keyed by a hash of the new key, not by a person',
   shareCreate:       'a share is keyed by its own generated id',
   shareVisibility:   'checks rec.owner before writing',
@@ -81,6 +87,19 @@ function writesElsewhere(b){
   for(const m of b.matchAll(/DB\.put\(env,\s*'([a-z_]+)',\s*([^,]+),/g))
     if(!SELF.test(m[2])) out.push(m[1]);
   for(const m of b.matchAll(/env\.AMV_KV\.put\(`([a-z_]+):\$\{([^}]+)\}/g))
+    if(!SELF.test(m[2])) out.push(m[1]);
+  /* A write through the record lock is still a write. When the team and family
+     routes moved inside _withTeam / _withFam the direct `DB.put` disappeared
+     from every one of them, and this check stopped being able to SEE eight
+     cross-account writes it had been watching - which is precisely the drift
+     the stale-classification case exists to catch, and it caught it. */
+  for(const m of b.matchAll(/_withTeam\(env,\s*([^,]+),/g))
+    if(!SELF.test(m[1])) out.push('team');
+  for(const m of b.matchAll(/_withFam\(env,\s*([^,]+),/g))
+    if(!SELF.test(m[1])) out.push('fam');
+  for(const m of b.matchAll(/_withAcct\(env,\s*([^,]+),/g))
+    if(!SELF.test(m[1])) out.push('acct');
+  for(const m of b.matchAll(/_withRecord\(env,\s*'([a-z_]+)',\s*([^,]+),/g))
     if(!SELF.test(m[2])) out.push(m[1]);
   return out;
 }
