@@ -434,28 +434,41 @@ section('Messages go to a person, say something, and are screened');
 {
   const env = mkEnv();
   const aTok = await signup(env, 'msga@example.com', 'A');
-  await signup(env, 'msgb@example.com', 'B');
+  const bTokUp = await signup(env, 'msgb@example.com', 'B');
+  /* A listing is what makes a first message legal now - the seller is derived
+     from it rather than taken from an address the sender typed. This section
+     used to send to a bare address, which was the hole. */
+  const item = (await post(env, '/v1/market/publish',
+    { title: 'A thing for sale', text: 'goods', price: 10 }, bTokUp)).body.item;
+  ok(!!item, 'B has something listed', !!item);
 
-  const empty = await post(env, '/v1/market/message', { to: 'msgb@example.com', text: '   ' }, aTok);
+  const empty = await post(env, '/v1/market/message', { item: item.id, text: '   ' }, aTok);
   ok(empty.status === 400, 'an empty message is refused', empty.body);
 
   const self = await post(env, '/v1/market/message', { to: 'msga@example.com', text: 'hi' }, aTok);
   ok(self.status === 400, 'and so is messaging yourself', self.body);
 
-  const sentOk = await post(env, '/v1/market/message', { to: 'msgb@example.com', text: 'is this still for sale?' }, aTok);
-  ok(sentOk.body.ok === true, 'a real message is delivered to the thread', sentOk.body.error || 'ok');
-  ok(sentOk.body.thread.msgs.length === 1 && sentOk.body.thread.msgs[0].from === 'msga@example.com',
-     'attributed to whoever actually sent it, not to whoever the body names', sentOk.body.thread.msgs[0]);
+  /* The security property, asserted head-on: an address alone reaches nobody. */
+  const stranger = await post(env, '/v1/market/message', { to: 'msgb@example.com', text: 'hi' }, aTok);
+  ok(stranger.status === 403,
+     'and a bare address with no listing behind it reaches nobody', stranger.body.error);
+
+  const sentOk = await post(env, '/v1/market/message', { item: item.id, text: 'is this still for sale?' }, aTok);
+  ok(sentOk.body.ok === true, 'a question about the listing is delivered', sentOk.body.error || 'ok');
+  const first = ((sentOk.body.thread || {}).msgs || [])[0];
+  ok(!!first && first.from === 'msga@example.com',
+     'attributed to whoever actually sent it, not to whoever the body names', first);
 
   /* Both sides share ONE thread, in either order - otherwise a reply starts a
      second conversation and each person sees half of it. */
   const bTok = (await (await call(env, '/auth/login', { email: 'msgb@example.com', password: PW })).json()).token;
-  const reply = await post(env, '/v1/market/message', { to: 'msga@example.com', text: 'yes' }, bTok);
-  ok(reply.body.thread.id === sentOk.body.thread.id, 'a reply lands in the same thread', reply.body.thread.id);
-  ok(reply.body.thread.msgs.length === 2, 'which now holds both messages', reply.body.thread.msgs.length);
+  const tid = (sentOk.body.thread || {}).id;
+  const reply = await post(env, '/v1/market/message', { thread: tid, text: 'yes' }, bTok);
+  ok((reply.body.thread || {}).id === tid, 'a reply lands in the same thread', (reply.body.thread || {}).id);
+  ok(((reply.body.thread || {}).msgs || []).length === 2, 'which now holds both messages', ((reply.body.thread || {}).msgs || []).length);
 
   const threads = await post(env, '/v1/market/threads', {}, aTok);
-  ok((threads.body.threads || []).length === 1, 'and each person sees the one conversation', threads.body.threads.length);
+  ok((threads.body.threads || []).length === 1, 'and each person sees the one conversation', (threads.body.threads || []).length);
 }
 
 section('A widget belongs to whoever made it');
