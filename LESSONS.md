@@ -3406,3 +3406,43 @@ was fed to it, which is the half nobody re-reads.
 **Rule:** when a case depends on ORDER, build it from the real order rather than
 picking a plausible member. `kinds[0]` and `kinds[kinds.length-1]` cannot drift
 away from what the code walks; a hand-picked name can, and did.
+
+## 192. A slow read is not a stale read, and only a stale read is a race
+
+The concurrency fixture gave every KV read a 12ms delay so two writers could
+interleave, and the test passed with the entitlement lock removed. The delay was
+real; the read was not.
+
+    async get(k){ await sleep(12); return m.get(k); }     // wrong
+    async get(k){ const v = m.get(k); await sleep(12); return v; }   // right
+
+The first sleeps and THEN looks at the map, so the slower reader sees whatever
+landed in the meantime. Two writers never hold different views, so there is
+nothing to lose, so no lock can be missed. A real read is answered with what
+storage held when the request arrived and delivered later - which is the entire
+reason read-modify-write is unsafe.
+
+The section asserting the fixture "can express a race" measured elapsed time,
+which was true and irrelevant. It now asserts staleness directly: issue a read,
+write over the key, and require the in-flight read to still return the old value.
+
+**Rule:** a concurrency fixture must be proved STALE, not slow. Assert that a
+read already in flight cannot see a write that landed after it, before trusting
+anything the fixture says about locking.
+
+## 193. Firing two writers together does not choose the order that breaks them
+
+With the lock in place the login/reset race passed; with the login writing back
+its stale copy it also passed. Both sides do PBKDF2, the timings shift every
+run, and the damaging sequence - login reads, reset completes entirely, login
+writes - came up rarely enough to never be seen.
+
+`Promise.all` expresses simultaneity, not sequence. The fix was to state the
+sequence: a hook on the store makes the login's first account read outlast the
+whole reset, so everything the login does afterwards is provably working from a
+record that is already out of date.
+
+Keep both. The simultaneous one is the real flow; the ordered one is the test.
+
+**Rule:** for a race with a known damaging order, drive that order deterministically.
+A concurrent case that relies on timing proves the flow works, not that the guard does.

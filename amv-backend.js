@@ -3862,11 +3862,20 @@ async function authAdminReset(request, env){
   if(!acct) return json({ error:'No account with that email.' }, 404);
 
   const salt = crypto.randomUUID().replace(/-/g,'');
-  acct.pwHash  = await _hashPassword(password, salt, PBKDF2_ITERATIONS);
-  acct.salt    = salt;
-  acct.pwIter  = PBKDF2_ITERATIONS;
-  acct.pwResetAt = Date.now();
-  await DB.put(env, 'acct', email, acct);
+  const newHash = await _hashPassword(password, salt, PBKDF2_ITERATIONS);
+  /* Under the record lock, for the same reason as the self-serve reset: the
+     hashing above is slow enough for another write to land, and the loser of
+     that race is a credential. */
+  try{
+    await _withAcct(env, email, (a) => {
+      if(!a) return;
+      a.pwHash = newHash; a.salt = salt; a.pwIter = PBKDF2_ITERATIONS;
+      a.pwResetAt = Date.now();
+    });
+  }catch(e){
+    audit(env, 'password_reset_admin_blocked', { email });
+    return json({ error:'Something else was changing that account just now, so the password was not changed. Try again in a moment.', code:'acct_busy' }, 503);
+  }
   try{ await revokeUserTokens(env, email); }catch(e){}
   audit(env, 'password_reset_admin', { email });
   return json({ ok:true });
@@ -4504,8 +4513,22 @@ async function authLogin(request, env) {
   if(usedIter < PBKDF2_ITERATIONS){
     try{
       const newHash = await _hashPassword(password, acct.salt, PBKDF2_ITERATIONS);
-      acct.pwHash = newHash; acct.pwIter = PBKDF2_ITERATIONS;
-      await DB.put(env, 'acct', em, acct);
+      /* AMV-196: under the record lock, re-reading inside it, and ONLY if the
+         stored hash is still the one this login verified against.
+
+         Writing the whole record back from a read taken at the top of the
+         request is how a password reset gets silently undone: somebody resets
+         because they think they are compromised, a login with the OLD password
+         is in flight, and it restores the old hash and salt. The reset reports
+         success, the new password does not work, and the old one still does.
+
+         An upgrade is a nice-to-have; losing a password change is not. If the
+         record moved underneath us, the upgrade is skipped - the next login
+         does it. */
+      await _withAcct(env, em, (fresh) => {
+        if (!fresh || fresh.pwHash !== acct.pwHash || fresh.salt !== acct.salt) return;
+        fresh.pwHash = newHash; fresh.pwIter = PBKDF2_ITERATIONS;
+      });
     }catch(e){ /* non-fatal - login still succeeds */ }
   }
   try{ await _markActive(env, em); }catch(e){}
@@ -8778,7 +8801,18 @@ async function _billingSubjectOf(env, email, ent){
 
 async function setEntitlement(env, email, plan, extra = {}) {
   const em = email.toLowerCase();
-  const prev = (await DB.get(env, 'ent', em)) || {};
+  /* AMV-196: the read and the write are one operation.
+
+     This reads the current entitlement, carries fields forward, and writes a
+     new one. Unguarded, two of those at once lose a write - and the writers are
+     a Stripe webhook, a PayPal webhook, a referral bonus, a past-due mark and
+     an admin edit, several of which can land in the same second after a
+     checkout. The one that loses can be the plan somebody just paid for, and
+     nothing fails: they simply stay on free. */
+  return _withRecord(env, 'ent', em,
+    async (e, k) => (await DB.get(e, 'ent', k)) || {},
+    async () => {},                      // written explicitly below, with the counters
+    async (prev) => {
   const ent = { plan, updatedAt: Date.now(), ...extra };
   for (const k of ENT_CARRY_KEYS) if (prev[k] !== undefined && ent[k] === undefined) ent[k] = prev[k];
   /* When a PROCESSOR is the reason for this write, money is behind it - a
@@ -8814,6 +8848,7 @@ async function setEntitlement(env, email, plan, extra = {}) {
      device or country, which is honest: we do not know one. */
   await _userEvent(env, null, email, 'plan_changed', { plan });
   return ent;
+    });
 }
 
 /* AMV-064: a renewal that FAILED must not buy another month of service.
@@ -10002,6 +10037,47 @@ async function _saveWallet(env, email, w) { await env.AMV_KV.put(`wallet:${email
    credited. If it truly cannot, it throws, and the caller's retry or the
    reconciliation sweep picks it up rather than the money quietly vanishing. */
 const WALLET_LOCK_TRIES = 6;
+
+/* AMV-196: READ, CHANGE, WRITE - WITHOUT LOSING THE OTHER WRITER.
+
+   The wallet was the first record found doing this unguarded, and it is not the
+   only one that matters. Two of the others cost more than money:
+
+     `acct` - authLogin rewrites the password hash when it upgrades the
+     iteration count, and authResetConfirm writes the NEW hash. A login with the
+     OLD password in flight when a reset lands writes back the record it read
+     BEFORE the reset, restoring the old hash and salt. The reset reports
+     success, the new password does not work, and the old one still does -
+     which is precisely the situation somebody resets their password to escape.
+
+     `ent` - thirteen callers of setEntitlement plus three direct writers. A
+     Stripe grant racing a referral bonus loses one of them, and the one that
+     loses can be the plan somebody just paid for.
+
+   `mutate` receives the CURRENT record, read inside the lock. Return a value to
+   pass it back out. Failing to take the lock throws rather than writing
+   anyway - a lost entitlement or a reverted password must not happen quietly. */
+async function _withRecord(env, kind, id, load, save, mutate) {
+  const key = String(id || '').toLowerCase();
+  if (!key) return null;
+  for (let i = 0; i < WALLET_LOCK_TRIES; i++) {
+    if (await _claimOnce(env, 'rmut:' + kind, key, 15)) {
+      try {
+        const rec = await load(env, key);
+        const out = await mutate(rec);
+        await save(env, key, rec);
+        return out;
+      } finally { await _releaseClaim(env, 'rmut:' + kind, key); }
+    }
+    await new Promise(r => setTimeout(r, 40 * (i + 1)));
+  }
+  audit(env, 'record_lock_timeout', { kind, id: key });
+  try { await alertOnce(env, 'record_lock:' + kind,
+    'A ' + kind + ' record could not be locked to apply a change, so the change was NOT made. '
+    + 'If this is `ent` somebody may be on the wrong plan; if it is `acct` a password change may not have taken.', 30); } catch (e) {}
+  throw new Error(kind + ' is busy');
+}
+
 async function _withWallet(env, email, mutate) {
   const em = String(email || '').toLowerCase();
   if (!em) return null;
@@ -10023,6 +10099,13 @@ async function _withWallet(env, email, mutate) {
   audit(env, 'wallet_lock_timeout', { email: em });
   try { await alertOnce(env, 'wallet_lock', 'A wallet could not be locked to apply a change - a sale credit or reversal may not have been recorded. Check the reconciliation sweep.', 30); } catch (e) {}
   throw lastErr || new Error('wallet is busy');
+}
+
+/* The two records where a lost write is worse than money. */
+const _loadAcct = async (env, em) => (await DB.get(env, 'acct', em)) || null;
+const _saveAcct = async (env, em, a) => { if (a) await DB.put(env, 'acct', em, a); };
+async function _withAcct(env, email, mutate) {
+  return _withRecord(env, 'acct', email, _loadAcct, _saveAcct, mutate);
 }
 
 /* What this seller could actually withdraw right now: the balance, less
@@ -12402,12 +12485,27 @@ async function authResetConfirm(request, env) {
     audit(env, 'reset_token_predates_account', { email });
     return json({ error: 'This reset link is invalid or has expired. Please request a new one.' }, 400);
   }
-  // hash the new password with a fresh salt
+  /* Hash the new password with a fresh salt. This is deliberately slow, which
+     is the point of it - and it is why the write that follows takes the record
+     lock instead of writing back the copy read before the hashing started.
+     AMV-196: anything else that touched this account in the meantime would be
+     reverted, and in the other direction a login's iteration upgrade could put
+     the OLD credential back after this said the reset worked. */
   const salt = crypto.randomUUID().replace(/-/g, '');
-  acct.pwHash = await _hashPassword(password, salt, PBKDF2_ITERATIONS);
-  acct.salt = salt; acct.pwIter = PBKDF2_ITERATIONS;
-  acct.pwResetAt = Date.now();
-  await DB.put(env, 'acct', email, acct);
+  const newHash = await _hashPassword(password, salt, PBKDF2_ITERATIONS);
+  try {
+    await _withAcct(env, email, (a) => {
+      if (!a) return;
+      a.pwHash = newHash; a.salt = salt; a.pwIter = PBKDF2_ITERATIONS;
+      a.pwResetAt = Date.now();
+    });
+  } catch (e) {
+    /* Not written, so do NOT consume the token - the link still works and they
+       can try again. Saying it worked here is the failure that matters: they
+       would walk away believing the old password no longer opens the account. */
+    audit(env, 'password_reset_blocked', { email });
+    return json({ error: 'Something else was changing this account just now, so the password was not changed. Please try again in a moment.', code: 'acct_busy' }, 503);
+  }
   // consume the token (single-use) and revoke existing sessions for safety
   await env.AMV_KV.delete(`reset:${token}`);
   try { await revokeUserTokens(env, email); } catch (e) {}
