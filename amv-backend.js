@@ -509,6 +509,12 @@ const PLAN_LIMITS = {
    engine line changes again, re-measure with count_tokens rather than guessing. */
 const TOKENIZER_SCALE = 1.30;
 
+/* How much of the global daily spend cap the FREE tier is allowed to reach.
+   Paying accounts get all of it. Below this, everybody is served; above it, the
+   free tier is shed first and customers who have paid keep working - which is
+   the only order that is not a refund waiting to happen. */
+const FREE_TIER_CAP_SHARE = 0.7;
+
 /* =====================================================================
    AUDIT LOGGING (auditor #5)
    Structured, security-relevant event logging. Goes to:
@@ -6596,9 +6602,31 @@ async function aiProxy(request, env, ctx) {
   }
 
   // 4) GLOBAL SPEND CAP - hard ceiling across ALL users (atomic read)
+  /* AMV-195: THE FREE TIER MUST NOT BE ABLE TO LOCK OUT PAYING CUSTOMERS.
+
+     One cap, checked the same way for everybody, meant a busy day of free usage
+     could exhaust it and the next request refused was somebody on Ultra. AMV
+     has taken their money and cannot deliver - which is a refund, a chargeback,
+     and a fair complaint, all caused by traffic that pays nothing.
+
+     So the cap is shared but not equally. Free accounts stop at a fraction of
+     it; paying accounts keep the whole thing. When the day is busy the free
+     tier is what gets shed, which is the correct order - and the message says
+     so honestly rather than implying AMV is broken. */
   const gName = `spend:${todayKey()}`;
   const gCap = parseFloat(env.GLOBAL_DAILY_USD_CAP || '500');
-  const gRes = await counter(env, gName, { op: 'checkCap', cap: gCap });
+  const _paying = _planPriceUSD(user.plan, user.customCfg) > 0;
+  const gCapForThem = _paying ? gCap : +(gCap * FREE_TIER_CAP_SHARE).toFixed(2);
+  const gRes = await counter(env, gName, { op: 'checkCap', cap: gCapForThem });
+  if (!gRes.allowed && !_paying) {
+    /* Free, and the day's free budget is spent. Paying accounts are unaffected
+       and are told so, because "AMV is down" and "AMV is busy for free accounts"
+       are different sentences and only one of them is true. */
+    audit(env, 'free_cap_hit', { value: gRes.value || 0, cap: gCapForThem, email: user.email });
+    await refundReservation();
+    return json({ error: 'AMV is at capacity for free accounts today - it resets tomorrow. Paid plans are running normally.',
+                  code: 'free_capacity' }, 503);
+  }
   if (!gRes.allowed) {
     audit(env,'global_cap_hit',{value:gRes.value||0,cap:gCap}); ctx.waitUntil(notify(env, `GLOBAL DAILY SPEND CAP HIT: $${(gRes.value||0).toFixed(2)} >= $${gCap}`));
     await refundReservation();   // the call never happened - don't eat their quota
