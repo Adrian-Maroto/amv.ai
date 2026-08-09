@@ -220,5 +220,48 @@ section('The digest never carries a secret');
   ok(!body.includes('admin-secret'), 'and neither is the admin token');
 }
 
+section('The digest carries what is waiting on a person');
+{
+  /* The support inbox and the abuse review are routes behind the admin token
+     with no screen calling either - the dashboard's moderation card still says
+     "pending". A customer complaint is stored correctly and read by nobody
+     unless somebody remembers to curl an endpoint, and an unanswered support
+     ticket is churn that never explains itself. The digest already arrives
+     without being asked for, so it is where this belongs. */
+  const env = makeEnv(); await seed(env);
+  const m = await W._ownerMetrics(env);
+  const withWaiting = Object.assign({}, m, { waiting: { support: 3, supportOldestDays: 6, flagged: 2 } });
+  const all = W._buildDigest(withWaiting, null).flags.join(' | ');
+  ok(/3 support messages are waiting/.test(all), 'unanswered support is flagged', all.slice(0, 180));
+  ok(/oldest for 6 days/.test(all), 'with how long the oldest has waited', all.slice(0, 220));
+  ok(/only thing that will tell you/.test(all), 'and says nothing else will tell them', true);
+  ok(/2 accounts are blocked/.test(all), 'blocked accounts are flagged too', all.slice(0, 300));
+}
+
+section('And invents nothing when nothing is waiting');
+{
+  const env = makeEnv(); await seed(env);
+  const m = await W._ownerMetrics(env);
+  const quiet = Object.assign({}, m, { waiting: { support: 0, supportOldestDays: 0, flagged: 0 } });
+  const all = W._buildDigest(quiet, null).flags.join(' | ');
+  ok(!/waiting for a reply/.test(all), 'no invented urgency', all.slice(0, 140));
+  ok(!/blocked for chargeback/.test(all), 'and no invented abuse', all.slice(0, 140));
+}
+
+section('The count comes from the real records, not from a caller');
+{
+  /* _ownerMetrics gathers it itself, so the digest cannot be handed a
+     comfortable number by whoever calls it. */
+  const env = makeEnv(); await seed(env);
+  await W.DB.put(env, 'support', 'cust@x.com', { tickets: [
+    { id: 't1', at: Date.now() - 3 * 86400000, msg: 'my plan did not apply' },
+    { id: 't2', at: Date.now(), msg: 'second' }] });
+  await W.DB.put(env, 'abuse', 'bad@x.com', { email: 'bad@x.com', blocked: true, disputes: 2 });
+  const m2 = await W._ownerMetrics(env);
+  ok(m2.waiting && m2.waiting.support === 2, 'it counted the real open tickets', m2.waiting);
+  ok(m2.waiting.supportOldestDays >= 3, 'and how long the oldest has waited', m2.waiting.supportOldestDays);
+  ok(m2.waiting.flagged === 1, 'and the blocked accounts', m2.waiting.flagged);
+}
+
 report('owner-digest');
 done();

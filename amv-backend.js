@@ -11757,7 +11757,37 @@ async function _ownerMetrics(env) {
     headers: { Authorization: 'Bearer ' + env.ADMIN_TOKEN },
   }), env);
   if (!r || r.status !== 200) return null;
-  return await r.json().catch(() => null);
+  const m = await r.json().catch(() => null);
+  if (!m) return null;
+
+  /* AMV-194: WHAT IS WAITING ON A PERSON.
+
+     The support inbox and the abuse review are real routes behind the admin
+     token, and no screen calls either - the moderation card in the dashboard
+     still says "pending". That is a defensible way to build them and a terrible
+     way to run them: a customer files a complaint, it is stored correctly, and
+     the only way anybody reads it is remembering to curl an endpoint. An
+     unanswered support ticket is churn that never explains itself.
+
+     So the digest - the one thing that already arrives without being asked for
+     - carries the count. Cheap to gather, and it turns "I must remember to
+     check" into "something told me". */
+  try {
+    const { rows: sup } = await scan(env, 'support', SUPPORT_SCAN_LIMIT, 'digest: support waiting');
+    let open = 0, oldest = 0;
+    for (const row of sup) {
+      for (const t of ((row.value || {}).tickets || [])) {
+        if (t && t.status === 'closed') continue;
+        open++;
+        if (t && t.at && (!oldest || t.at < oldest)) oldest = t.at;
+      }
+    }
+    const { rows: ab } = await scan(env, 'abuse', 5000, 'digest: abuse flags');
+    const flagged = ab.filter(x => (x.value || {}).blocked).length;
+    m.waiting = { support: open, supportOldestDays: oldest ? Math.floor((Date.now() - oldest) / 86400000) : 0,
+                  flagged };
+  } catch (e) { /* the digest is worth sending without this */ }
+  return m;
 }
 
 /* The handful of figures worth carrying week to week. Deliberately small: a
@@ -11847,6 +11877,17 @@ function _buildDigest(m, prev) {
   /* What to actually DO. Only stated when the numbers say it - a digest that
      ends with advice every week is a digest nobody finishes reading. */
   const flags = [];
+  /* Somebody is waiting on a person, and there is no screen that shows it. */
+  const waiting = (m && m.waiting) || {};
+  if (waiting.support > 0) {
+    flags.push(waiting.support + ' support message' + (waiting.support > 1 ? 's are' : ' is') + ' waiting for a reply'
+      + (waiting.supportOldestDays > 0 ? ', the oldest for ' + waiting.supportOldestDays + ' day' + (waiting.supportOldestDays > 1 ? 's' : '') : '')
+      + '. Nobody is emailed when one arrives, so this line is the only thing that will tell you.');
+  }
+  if (waiting.flagged > 0) {
+    flags.push(waiting.flagged + ' account' + (waiting.flagged > 1 ? 's are' : ' is') + ' blocked for chargeback or refund abuse. '
+      + 'Worth a look in case any of them is a real customer caught by a pattern.');
+  }
   if (snap.mrrAtRisk > 0)
     flags.push('$' + snap.mrrAtRisk.toFixed(2) + ' of MRR is on cards that failed. Those accounts drop to Free when their grace period ends.');
   if (snap.unprofitable > 0)
