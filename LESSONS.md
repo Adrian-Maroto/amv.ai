@@ -3180,3 +3180,35 @@ click the dialog only if it appeared. Both failures now report.
 **Rule:** a test whose purpose is diagnosis has to survive the failure it
 diagnoses. Reach for the thing that might not be there, and the missing case is
 the exact case you wrote the test for.
+
+## 188. Both halves passed. The wire between them did not exist.
+
+`/v1/market/threads` was written, served, and had passing Worker tests. The
+marketplace inbox in the client was complete - conversations, unread dots, a
+composer. Neither side was broken. Nothing in the client had ever called that
+route, and the send was `.catch(()=>{})` with the result discarded.
+
+So a buyer asked "is this still available?", watched it appear in their own
+thread, and the seller never received it. The message existed on the sender's
+machine and in a server record nothing read. On a marketplace that is the
+question that starts most sales, and neither person could tell it had failed -
+the buyer assumes they were ignored.
+
+No test could see it. Each half was correct in isolation, and that is exactly
+what both suites checked.
+
+There was already a standing check that every path the app calls is a route the
+Worker serves. The mirror did not exist, and the mirror is the one that catches
+this. Writing it found `/v1/video/list` too: it works, it is tested, and no
+screen reads it - somebody paying for twenty videos a month cannot see how many
+are left.
+
+Building the check taught its own lesson. Two routes looked orphaned because
+they are called as `'/v1/resume?id=' + turnId`, and one looked like an unmetered
+image gap until I checked and found `imageGenerate` doing the identical atomic
+reserve. A check that cries wolf is how an exemption list stops being read, so
+each false positive got a fix, not an exemption.
+
+**Rule:** a feature is the wire, not the two ends. When both sides are written
+by the same person on the same day, the connection between them is the part
+nobody tests - so test that the caller exists, from the side that cannot see it.

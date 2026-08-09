@@ -4253,6 +4253,7 @@ export default {
         case '/v1/market/review':   return marketReview(request, env);
         case '/v1/market/message':  return marketMessage(request, env);
         case '/v1/market/threads':  return marketThreads(request, env);
+        case '/v1/market/thread/read': return marketThreadRead(request, env);
         // --- FOUNDER ADMIN (token-gated) ---
         case '/v1/admin/stats':     return adminStats(request, env);
         case '/v1/admin/finance':   return adminFinance(request, env);
@@ -10369,17 +10370,80 @@ async function marketReview(request, env) {
 function _threadId(a, b) { return 'mkthread:' + [String(a || '').toLowerCase(), String(b || '').toLowerCase()].sort().join('__'); }
 
 /* Send a message to another user (buyer<->seller). Appends to the shared thread. */
+/* WHO A MESSAGE IS ALLOWED TO REACH.
+
+   AMV-185: the recipient used to be whatever address the caller typed. That
+   makes this endpoint a way to put text into any inbox on the internet with
+   AMV's name on the envelope, and no amount of screening the words fixes what
+   the thing IS.
+
+   So the recipient is derived, never supplied: from the listing being asked
+   about, or from a conversation this account is already part of. Both are
+   things the sender can only name because they already have a legitimate
+   reason to. A raw address is accepted ONLY when it belongs to an existing AMV
+   account AND a conversation with them already exists - which is a reply, not
+   a first contact.
+
+   Asking a seller a question before buying stays open on purpose. It is the
+   question that starts most sales, and gating it behind a purchase would be
+   protecting the marketplace from working. */
+async function _messageRecipient(env, user, body) {
+  const me = String(user.email).toLowerCase();
+
+  /* About a listing: the seller is whoever published it. */
+  if (body.item) {
+    const it = await _getListing(env, String(body.item));
+    if (!it) return { error: 'That listing no longer exists.', status: 404 };
+    const seller = String(it.authorEmail || '').toLowerCase();
+    if (!seller) return { error: 'That listing has no seller to message.', status: 404 };
+    if (seller === me) return { error: 'That is your own listing.', status: 400 };
+    return { email: seller, about: { id: it.id, title: it.title } };
+  }
+
+  /* A conversation that already exists, and that this account is part of. */
+  const tid = body.thread ? String(body.thread) : '';
+  if (tid) {
+    let t = null;
+    try { const raw = await env.AMV_KV.get(tid); if (raw) t = JSON.parse(raw); } catch (e) {}
+    if (!t) return { error: 'That conversation does not exist.', status: 404 };
+    const a = String(t.a || '').toLowerCase(), b = String(t.b || '').toLowerCase();
+    if (a !== me && b !== me) return { error: 'That is not your conversation.', status: 403 };
+    return { email: a === me ? b : a, thread: t };
+  }
+
+  /* A bare address: only as a reply into a conversation that already exists.
+     A first message to a typed address is exactly the case being closed. */
+  const typed = String(body.to || '').toLowerCase();
+  if (!typed) return { error: 'Say who this is for - a listing, or a conversation.', status: 400 };
+  if (typed === me) return { error: 'You cannot message yourself.', status: 400 };
+  const key = _threadId(me, typed);
+  let existing = null;
+  try { const raw = await env.AMV_KV.get(key); if (raw) existing = JSON.parse(raw); } catch (e) {}
+  if (!existing) {
+    /* Deliberately the same answer whether or not that address has an account.
+       "No such person" would turn this into a way to test which addresses are
+       registered here. */
+    return { error: 'You can only message people through one of their listings, or a conversation you already have.',
+             status: 403, code: 'no_thread' };
+  }
+  return { email: typed, thread: existing };
+}
+
 async function marketMessage(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
   // Messaging reaches another user - guard against spam/harassment.
   const blocked = await guardAction(env, `mktmsg:${user.email}`, 15, 300, 'messages');
   if (blocked) return blocked;
-  const { to, text } = await request.json().catch(() => ({}));
-  const other = String(to || '').toLowerCase();
+  const reqBody = await request.json().catch(() => ({}));
+  const { text } = reqBody;
   const body = String(text || '').trim().slice(0, 2000);
-  if (!other || other === user.email) return json({ error: 'invalid recipient' }, 400);
   if (!body) return json({ error: 'empty message' }, 400);
+
+  const who = await _messageRecipient(env, user, reqBody);
+  if (who.error) return json({ error: who.error, code: who.code }, who.status || 400);
+  const other = who.email;
+  if (other === String(user.email).toLowerCase()) return json({ error: 'invalid recipient' }, 400);
   // Screen private messages - block prohibited content (illegal offers, CSAM, etc.)
   const mScreen = _marketScreen({ text: body, title: '' });
   if (!mScreen.ok && mScreen.action === 'blocked') {
@@ -10387,16 +10451,79 @@ async function marketMessage(request, env) {
     return json({ error: 'That message contains content that isn\u2019t allowed on the marketplace.', code: 'policy_violation' }, 422);
   }
   const key = _threadId(user.email, other);
-  let t;
-  try { const raw = await env.AMV_KV.get(key); if (raw) t = JSON.parse(raw); } catch {}
+  let t = who.thread || null;
+  if (!t) { try { const raw = await env.AMV_KV.get(key); if (raw) t = JSON.parse(raw); } catch {} }
   if (!t) t = { id: key, a: user.email, b: other, aName: user.name || user.email.split('@')[0], bName: other.split('@')[0], msgs: [], read: {} };
   if (t.a === user.email) t.aName = user.name || t.aName; else t.bName = user.name || t.bName;
+  /* What it is about, kept on the thread so the other side sees "about Vintage
+     jacket" rather than a message from a stranger with no context. */
+  if (who.about && !t.about) t.about = who.about;
   t.msgs.push({ from: user.email, text: body, ts: Date.now() });
   if (t.msgs.length > 500) t.msgs = t.msgs.slice(-500);
-  t.read = t.read || {}; t.read[user.email] = Date.now();
+  /* READ MARKERS ARE COUNTS, not timestamps.
+
+     They were timestamps, and nothing ever compared them to anything, so
+     "unread" could not be computed on the server at all - which is part of why
+     the inbox was reading localStorage. A count of messages a person has seen
+     is comparable to the length of the thread, which is the whole question. */
+  t.read = t.read || {};
+  if (typeof t.read[user.email] !== 'number' || t.read[user.email] > t.msgs.length) t.read[user.email] = 0;
+  t.read[user.email] = t.msgs.length;          // the sender has seen their own message
   await env.AMV_KV.put(key, JSON.stringify(t));
   audit(env, 'market_message', { from: user.email, to: other });
+
+  /* TELL THEM TO COME AND READ IT - and send them nothing else.
+
+     The message body does NOT travel. If it did, this endpoint would still be
+     a way to deliver an attacker's words and links into somebody's inbox, and
+     deriving the recipient above would have bought nothing. They get who, and
+     a way back to AMV. Best-effort: a notification that fails must not fail
+     the send, because the message IS delivered - it is in their inbox. */
+  const noteCtx = { from: (user.name || String(user.email).split('@')[0]), to: other,
+                    about: (who.about && who.about.title) || (t.about && t.about.title) || '' };
+  try { await _notifyNewMessage(env, noteCtx); } catch (e) {}
   return json({ ok: true, thread: t });
+}
+
+/* "Somebody messaged you on AMV." Who, and a link. Never the message. */
+async function _notifyNewMessage(env, { from, to, about }) {
+  if (!env.EMAIL_API_KEY) return false;
+  const appUrl = String(env.APP_URL || '').replace(/\/$/, '');
+  const link = appUrl ? appUrl + '?tab=market&inbox=1' : '';
+  const who = _escHtml(String(from || 'Someone').slice(0, 60));
+  const item = about ? _escHtml(String(about).slice(0, 80)) : '';
+  return _sendEmail(env, to, `${String(from || 'Someone').slice(0, 60)} sent you a message on AMV`,
+    _emailShell('You have a new message',
+      `<p style="margin:0 0 18px;font-size:14px;line-height:1.65;color:#555"><b>${who}</b> sent you a message on AMV`
+      + (item ? ` about <b>${item}</b>` : '') + '.</p>'
+      + '<p style="margin:0 0 22px;font-size:14px;line-height:1.65;color:#555">Open AMV to read it and reply.</p>',
+      link ? { label: 'Open your messages', url: link } : null,
+      '<p style="margin:0;font-size:12px;line-height:1.6;color:#999">For your safety the message itself is not included in this email. '
+      + 'Read it in AMV, where you can see who sent it and report anything that should not be there.</p>',
+      'You received this because somebody messaged you on the AMV marketplace.'),
+    `${String(from || 'Someone').slice(0, 60)} sent you a message on AMV`
+    + (about ? ` about "${String(about).slice(0, 80)}"` : '') + '.\n\n'
+    + 'Open AMV to read it and reply: ' + link + '\n\n'
+    + 'For your safety the message itself is not included in this email.\n\n- The AMV team');
+}
+
+/* Opening a conversation clears its badge. Only for a thread you are in. */
+async function marketThreadRead(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  const { thread } = await request.json().catch(() => ({}));
+  const tid = String(thread || '');
+  if (!tid) return json({ error: 'which conversation?' }, 400);
+  let t = null;
+  try { const raw = await env.AMV_KV.get(tid); if (raw) t = JSON.parse(raw); } catch (e) {}
+  if (!t) return json({ error: 'not found' }, 404);
+  const me = String(user.email).toLowerCase();
+  if (String(t.a || '').toLowerCase() !== me && String(t.b || '').toLowerCase() !== me)
+    return json({ error: 'not your conversation' }, 403);
+  t.read = t.read || {};
+  t.read[me] = (t.msgs || []).length;
+  await env.AMV_KV.put(tid, JSON.stringify(t));
+  return json({ ok: true, unread: 0 });
 }
 
 /* List the current user's message threads (newest first). */
@@ -10418,7 +10545,20 @@ async function marketThreads(request, env) {
     cursor = page.list_complete ? undefined : page.cursor;
   } while (cursor);
   out.sort((x, y) => (y.msgs[y.msgs.length - 1]?.ts || 0) - (x.msgs[x.msgs.length - 1]?.ts || 0));
-  return json({ ok: true, threads: out });
+  /* Unread computed HERE, from the record, so both devices and both people
+     agree. The client used to work it out from its own localStorage, which is
+     how one side could see a conversation the other had never received. */
+  const withUnread = out.map(t => {
+    const seen = (t.read && typeof t.read[me] === 'number') ? t.read[me] : 0;
+    const total = (t.msgs || []).length;
+    const last = (t.msgs || [])[total - 1];
+    /* Only messages from the OTHER person count as unread - your own reply is
+       not something waiting for you. */
+    const unread = (last && String(last.from || '').toLowerCase() !== me) ? Math.max(0, total - seen) : 0;
+    return Object.assign({}, t, { unread });
+  });
+  return json({ ok: true, threads: withUnread,
+                unreadTotal: withUnread.reduce((n, t) => n + (t.unread ? 1 : 0), 0) });
 }
 
 /* =====================================================================

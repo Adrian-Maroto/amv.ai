@@ -1026,7 +1026,36 @@ const AMVMarket = {
     const all=this._allThreads();
     return all[id]||{ id, a:this._me(), b:otherEmail, msgs:[], read:{} };
   },
-  async sendMessage(otherEmail, text, otherName){
+  /* AMV-185: PULL THE CONVERSATIONS FROM THE SERVER.
+
+     There was no such thing. Threads lived in localStorage and the send was
+     fired at the server best-effort with the result thrown away, so a message
+     existed on the sender's own machine and in a record nothing ever read. The
+     recipient's inbox was their own empty storage. It looked like it worked
+     from the one side that could see it - which is the worst way for a feature
+     to fail, because the buyer thinks the seller ignored them.
+
+     The server is the truth here, because a conversation has two people in it
+     and only the server sees both. Local copies are kept as the offline view
+     and are overwritten by what comes back. */
+  async syncThreads(){
+    if(!this._live()) return null;
+    const d = await AMV_API._fetch('/v1/market/threads',{method:'POST',body:'{}'});
+    if(!d || !Array.isArray(d.threads)) return null;
+    const me=this._me(); const all=this._allThreads();
+    for(const t of d.threads){
+      const a=String(t.a||'').toLowerCase(), b=String(t.b||'').toLowerCase();
+      /* Re-keyed to the LOCAL id scheme so one conversation does not appear
+         twice - the server names threads `mkthread:x__y` and the client
+         `th_x__y`, and merging on the raw id would have shown every exchange
+         as two. */
+      const id=this._threadId(a,b);
+      all[id]=Object.assign({}, t, { id, unread: t.unread||0 });
+    }
+    this._saveThreads(all);
+    return d;
+  },
+  async sendMessage(otherEmail, text, otherName, opts){
     otherEmail=(otherEmail||'').toLowerCase();
     if(otherEmail===this._me()) throw new Error('You can\u2019t message yourself.');
     text=String(text||'').trim(); if(!text) throw new Error('Message is empty');
@@ -1036,20 +1065,46 @@ const AMVMarket = {
     if(!t){ t={ id, a:this._me(), b:otherEmail, aName:this._meName(), bName:otherName||otherEmail.split('@')[0], msgs:[], read:{} }; }
     // keep names fresh
     if(t.a===this._me()) t.aName=this._meName(); else t.bName=this._meName();
+
+    /* THE SERVER FIRST, and its refusal is the answer.
+
+       This used to be `.catch(()=>{})` after the local write, so a message the
+       server rejected - or never received - still appeared in the sender's
+       thread looking delivered. "Sent" has to mean sent. */
+    if(this._live()){
+      const payload = { text };
+      if(opts && opts.item) payload.item = opts.item;         // asking about a listing
+      else if(t.serverId) payload.thread = t.serverId;         // replying in a conversation
+      else payload.to = otherEmail;
+      const d = await AMV_API._fetch('/v1/market/message',{method:'POST',body:JSON.stringify(payload)});
+      if(!d || d.error) throw new Error((d && d.error) || 'Could not send that message.');
+      if(d.thread){
+        t=Object.assign({}, d.thread, { id, serverId:d.thread.id, unread:0 });
+        all[id]=t; this._saveThreads(all);
+        return t;
+      }
+    }
     t.msgs.push({ from:this._me(), text:text.slice(0,2000), ts:Date.now() });
     t.read=t.read||{}; t.read[this._me()]=t.msgs.length;
     all[id]=t; this._saveThreads(all);
-    if(this._live()){ try{ AMV_API._fetch('/v1/market/message',{method:'POST',body:JSON.stringify({to:otherEmail,text})}).catch(()=>{}); }catch(e){} }
     return t;
   },
   markThreadRead(otherEmail){
     const id=this._threadId(this._me(),otherEmail);
     const all=this._allThreads(); const t=all[id]; if(!t) return;
-    t.read=t.read||{}; t.read[this._me()]=t.msgs.length; all[id]=t; this._saveThreads(all);
+    t.read=t.read||{}; t.read[this._me()]=t.msgs.length; t.unread=0; all[id]=t; this._saveThreads(all);
+    /* Told to the server too, so opening it on a phone clears the badge on a
+       laptop. Best-effort deliberately: the badge is not worth failing on. */
+    if(this._live() && t.serverId){
+      try{ AMV_API._fetch('/v1/market/thread/read',{method:'POST',body:JSON.stringify({thread:t.serverId})}).catch(()=>{}); }catch(e){}
+    }
   },
   unreadCount(){
     const me=this._me();
     return this.myThreads().reduce((n,t)=>{
+      /* The server's count wins when there is one - it is the only place that
+         has seen both sides of the conversation. */
+      if(typeof t.unread==='number') return n + (t.unread>0?1:0);
       const last=t.msgs[t.msgs.length-1];
       const seenCount=(t.read&&typeof t.read[me]==='number')?t.read[me]:0;
       // unread if there are messages I haven't seen AND the newest isn't mine

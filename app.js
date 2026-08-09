@@ -8767,7 +8767,36 @@ const AMVMarket = {
     const all=this._allThreads();
     return all[id]||{ id, a:this._me(), b:otherEmail, msgs:[], read:{} };
   },
-  async sendMessage(otherEmail, text, otherName){
+  /* AMV-185: PULL THE CONVERSATIONS FROM THE SERVER.
+
+     There was no such thing. Threads lived in localStorage and the send was
+     fired at the server best-effort with the result thrown away, so a message
+     existed on the sender's own machine and in a record nothing ever read. The
+     recipient's inbox was their own empty storage. It looked like it worked
+     from the one side that could see it - which is the worst way for a feature
+     to fail, because the buyer thinks the seller ignored them.
+
+     The server is the truth here, because a conversation has two people in it
+     and only the server sees both. Local copies are kept as the offline view
+     and are overwritten by what comes back. */
+  async syncThreads(){
+    if(!this._live()) return null;
+    const d = await AMV_API._fetch('/v1/market/threads',{method:'POST',body:'{}'});
+    if(!d || !Array.isArray(d.threads)) return null;
+    const me=this._me(); const all=this._allThreads();
+    for(const t of d.threads){
+      const a=String(t.a||'').toLowerCase(), b=String(t.b||'').toLowerCase();
+      /* Re-keyed to the LOCAL id scheme so one conversation does not appear
+         twice - the server names threads `mkthread:x__y` and the client
+         `th_x__y`, and merging on the raw id would have shown every exchange
+         as two. */
+      const id=this._threadId(a,b);
+      all[id]=Object.assign({}, t, { id, unread: t.unread||0 });
+    }
+    this._saveThreads(all);
+    return d;
+  },
+  async sendMessage(otherEmail, text, otherName, opts){
     otherEmail=(otherEmail||'').toLowerCase();
     if(otherEmail===this._me()) throw new Error('You can\u2019t message yourself.');
     text=String(text||'').trim(); if(!text) throw new Error('Message is empty');
@@ -8777,20 +8806,46 @@ const AMVMarket = {
     if(!t){ t={ id, a:this._me(), b:otherEmail, aName:this._meName(), bName:otherName||otherEmail.split('@')[0], msgs:[], read:{} }; }
     // keep names fresh
     if(t.a===this._me()) t.aName=this._meName(); else t.bName=this._meName();
+
+    /* THE SERVER FIRST, and its refusal is the answer.
+
+       This used to be `.catch(()=>{})` after the local write, so a message the
+       server rejected - or never received - still appeared in the sender's
+       thread looking delivered. "Sent" has to mean sent. */
+    if(this._live()){
+      const payload = { text };
+      if(opts && opts.item) payload.item = opts.item;         // asking about a listing
+      else if(t.serverId) payload.thread = t.serverId;         // replying in a conversation
+      else payload.to = otherEmail;
+      const d = await AMV_API._fetch('/v1/market/message',{method:'POST',body:JSON.stringify(payload)});
+      if(!d || d.error) throw new Error((d && d.error) || 'Could not send that message.');
+      if(d.thread){
+        t=Object.assign({}, d.thread, { id, serverId:d.thread.id, unread:0 });
+        all[id]=t; this._saveThreads(all);
+        return t;
+      }
+    }
     t.msgs.push({ from:this._me(), text:text.slice(0,2000), ts:Date.now() });
     t.read=t.read||{}; t.read[this._me()]=t.msgs.length;
     all[id]=t; this._saveThreads(all);
-    if(this._live()){ try{ AMV_API._fetch('/v1/market/message',{method:'POST',body:JSON.stringify({to:otherEmail,text})}).catch(()=>{}); }catch(e){} }
     return t;
   },
   markThreadRead(otherEmail){
     const id=this._threadId(this._me(),otherEmail);
     const all=this._allThreads(); const t=all[id]; if(!t) return;
-    t.read=t.read||{}; t.read[this._me()]=t.msgs.length; all[id]=t; this._saveThreads(all);
+    t.read=t.read||{}; t.read[this._me()]=t.msgs.length; t.unread=0; all[id]=t; this._saveThreads(all);
+    /* Told to the server too, so opening it on a phone clears the badge on a
+       laptop. Best-effort deliberately: the badge is not worth failing on. */
+    if(this._live() && t.serverId){
+      try{ AMV_API._fetch('/v1/market/thread/read',{method:'POST',body:JSON.stringify({thread:t.serverId})}).catch(()=>{}); }catch(e){}
+    }
   },
   unreadCount(){
     const me=this._me();
     return this.myThreads().reduce((n,t)=>{
+      /* The server's count wins when there is one - it is the only place that
+         has seen both sides of the conversation. */
+      if(typeof t.unread==='number') return n + (t.unread>0?1:0);
       const last=t.msgs[t.msgs.length-1];
       const seenCount=(t.read&&typeof t.read[me]==='number')?t.read[me]:0;
       // unread if there are messages I haven't seen AND the newest isn't mine
@@ -9247,7 +9302,10 @@ function _mktPreview(it, after){
     el.querySelectorAll('[data-sim]').forEach(c=>on(c,'click',()=>{ const s=sims.find(x=>x.id===c.dataset.sim); if(s){ closeOvr(); setTimeout(()=>_mktPreview(s,after),120); } }));
   });
   on($('mkt-pv-buy'),'click',async()=>{ await _mktDoBuy(it,()=>{ closeOvr(); after&&after(); }); });
-  on($('mkt-pv-msg'),'click',()=>{ closeOvr(); _mktChat(it.authorEmail, it.author, 'Hi! I saw "'+it.title+'" just sold - could you make another?'); });
+  /* The listing travels with the message. The server derives the seller from
+     it rather than trusting an address in the request, which is what makes a
+     first message to somebody you have never dealt with safe to allow. */
+  on($('mkt-pv-msg'),'click',()=>{ closeOvr(); _mktChat(it.authorEmail, it.author, 'Hi! I saw "'+it.title+'" just sold - could you make another?', it.id); });
   on($('mkt-pv-get'),'click',async()=>{ try{ await AMVMarket.install(it); after&&after(); _mktAfterInstall(it); }catch(e){ toast(e.message||'Could not add','error'); } });
   on($('mkt-pv-use'),'click',async()=>{ try{ await AMVMarket.install(it); _mktAfterInstall(it); }catch(e){ toast('Could not add','error'); } });
   on($('mkt-pv-remove'),'click',async()=>{
@@ -9346,7 +9404,10 @@ async function _mktSellerProfile(sellerEmail, sellerName){
     '<div class="ss2"><h3>Listings</h3><div class="vbreak">'+listingRows+'</div></div>'+
   '</div></div>';
   on($('mkt-sp-bg'),'click',closeOvr);
-  on($('mkt-sp-msg'),'click',()=>{ closeOvr(); _mktChat(sellerEmail, name); });
+  /* From a seller's profile there is no one listing in view, so the first of
+     theirs is used as the context. A seller with no listings cannot be
+     messaged out of the blue, which is the point. */
+  on($('mkt-sp-msg'),'click',()=>{ closeOvr(); _mktChat(sellerEmail, name, '', (theirs[0]||{}).id); });
   on($('mkt-write-review'),'click',()=>_mktReviewDialog(sellerEmail, name, ()=>_mktSellerProfile(sellerEmail,name)));
   document.querySelectorAll('#mkt-sp-bg [data-mk-open]').forEach(el=>on(el,'click',()=>{ const it=theirs.find(x=>x.id===el.dataset.mkOpen); if(it) _mktPreview(it, ()=>_mktSellerProfile(sellerEmail,name)); }));
 }
@@ -9355,6 +9416,11 @@ window._mktSellerProfile=_mktSellerProfile;
 /* Messages inbox - list of conversations, opens a thread on click. */
 function _mktMessages(){
   const r=$('ovr'); if(!r) return;
+  /* Ask the server what conversations exist before drawing them. Without this
+     the inbox showed only what this device had sent - so the person a message
+     was FOR saw an empty inbox, for ever. Redrawn when it lands rather than
+     awaited, so the screen opens instantly either way. */
+  try{ AMVMarket.syncThreads().then(d=>{ if(d && $('mkt-inbox-bg')) _mktMessages(); }).catch(()=>{}); }catch(e){}
   const threads=AMVMarket.myThreads();
   const me=AMVMarket._me();
   const rows = threads.length ? threads.map(t=>{
@@ -9381,11 +9447,14 @@ function _mktMessages(){
 window._mktMessages=_mktMessages;
 
 /* A single conversation thread with a seller (or buyer). prefill seeds the composer. */
-function _mktChat(otherEmail, otherName, prefill){
+function _mktChat(otherEmail, otherName, prefill, aboutItem){
   otherEmail=(otherEmail||'').toLowerCase();
   if(!otherEmail){ toast('No seller to message','error'); return; }
   const r=$('ovr'); if(!r) return;
   AMVMarket.markThreadRead(otherEmail);
+  /* Pull the real conversation before drawing it, so a reply the other person
+     sent from their own device is actually here. Redrawn when it arrives. */
+  try{ AMVMarket.syncThreads().then(()=>{ if($('mkt-chat-bg')) draw(); }).catch(()=>{}); }catch(e){}
   const me=AMVMarket._me();
   const draw=()=>{
     const t=AMVMarket.thread(otherEmail);
@@ -9400,7 +9469,20 @@ function _mktChat(otherEmail, otherName, prefill){
     '</div></div>';
     on($('mkt-chat-bg'),'click',closeOvr);
     on($('mkt-chat-prof'),'click',()=>{ closeOvr(); _mktSellerProfile(otherEmail, name); });
-    const send=async()=>{ const txt=$('mkt-chat-txt')?.value||''; if(!txt.trim()) return; try{ await AMVMarket.sendMessage(otherEmail, txt, name); prefill=''; draw(); const b=$('mkt-chat-body'); if(b) b.scrollTop=b.scrollHeight; }catch(e){ toast(e.message||'Could not send','error'); } };
+    const send=async()=>{ const txt=$('mkt-chat-txt')?.value||''; if(!txt.trim()) return;
+      const btn=$('mkt-chat-send'); if(btn){ btn.disabled=true; btn.textContent='Sending\u2026'; }
+      try{
+        /* `aboutItem` is what makes a FIRST message legal: the server derives
+           the seller from the listing rather than trusting a typed address. */
+        await AMVMarket.sendMessage(otherEmail, txt, name, aboutItem?{item:aboutItem}:null);
+        prefill=''; draw(); const b=$('mkt-chat-body'); if(b) b.scrollTop=b.scrollHeight;
+      }catch(e){
+        /* Said out loud. A message that did not send used to appear in the
+           thread anyway, so the sender waited for a reply to something nobody
+           had received. */
+        if(btn){ btn.disabled=false; btn.textContent='Send'; }
+        toast(e.message||'Could not send that message','error');
+      } };
     on($('mkt-chat-send'),'click',send);
     on($('mkt-chat-txt'),'keydown',e=>{ if(e.key==='Enter') send(); });
     const b=$('mkt-chat-body'); if(b) b.scrollTop=b.scrollHeight;
