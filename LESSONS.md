@@ -3158,3 +3158,25 @@ failing, it is not urgent enough to take unasked.
 read off disk, off an unminified file, or off a span between two declarations
 is not the number the decision depends on - and being roughly right about which
 file is biggest is not the same as being right about what removing it buys.
+
+## 187. A test that crashes instead of reporting hides the thing it found
+
+The new end-to-end suite for the agentic loop caught every sabotage I threw at
+it, but twice it caught them by DYING: `upstream[1].messages` with no second
+turn, and clicking an approval dialog that a sabotaged build never showed. Both
+ended the run with a stack trace instead of the sentence naming which link came
+apart.
+
+That matters more here than in most suites. This one exists to be read when the
+product's core promise breaks, and the whole value is the line that says WHICH
+of the four links failed - the model was not offered the tools, the browser
+never ran one, the result did not go back up, or the answer never arrived. A
+TypeError on line 135 says none of that, and the other twenty assertions never
+run, so nobody learns that everything else was fine.
+
+Guarding cost two lines: index through a named variable that can be absent, and
+click the dialog only if it appeared. Both failures now report.
+
+**Rule:** a test whose purpose is diagnosis has to survive the failure it
+diagnoses. Reach for the thing that might not be there, and the missing case is
+the exact case you wrote the test for.
