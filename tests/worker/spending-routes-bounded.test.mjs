@@ -55,7 +55,6 @@ const BOUNDED = /guardAction\(|limitAction\(|checkCap|_spendAllowed\(|_budgetFor
 const EXEMPT = {
   authGoogle:          'sign-in itself, and the token check is what proves who is calling',
   authDeleteAccount:   'one call per account deletion, behind an explicit confirmation',
-  stripeInvoices:      'a read of the caller\'s own invoices, no session created',
   adminFinance:        'admin only',
 };
 

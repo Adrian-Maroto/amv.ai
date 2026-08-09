@@ -9170,6 +9170,14 @@ async function adminFinance(request, env) {
 async function stripeInvoices(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
+  /* AMV-184: it was exempt from the bound because it creates no session and
+     reads only the caller's own invoices. Both true, and neither is the
+     argument. Every call spends a slot of AMV's Stripe rate limit, and the
+     people who lose when that runs out are everybody else trying to check out.
+     Reading your own billing history a hundred times a day is generous; the
+     hundred-and-first is somebody testing what happens. */
+  const ib = await guardAction(env, `stripeinv:${user.email}`, 10, 100, 'billing history requests');
+  if (ib) return ib;
   if (!env.STRIPE_SECRET_KEY) return json({ ok: true, invoices: [] });
   const custId = await env.AMV_KV.get(`stripecust:${user.email}`);
   if (!custId) return json({ ok: true, invoices: [] });

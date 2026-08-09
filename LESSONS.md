@@ -3050,3 +3050,29 @@ late now pages somebody.
 **Rule:** any loop that can outlive its tick needs a budget AND an order that
 makes stopping fair. A budget without the ordering just picks the same victims
 every time, politely.
+
+## 184. A test that only tries the easy caller proves nothing about the hard one
+
+Fourteen sabotages against the new route suite; thirteen were caught. The one
+that survived: `familyLeave` rewritten to fall back to `body.email` when the
+caller is in no family. That is a real hole - it deletes the `familyOf` marker
+every parental limit on a child is read from, on somebody else's child.
+
+My test asked the CHILD to leave while naming a different address, and asserted
+they left their own family. Correct behaviour, correctly asserted, and
+completely blind to the defect: the child already had `user.family`, so the
+body fallback was never reached. The only caller who could expose it was one
+with no family at all, and I had used that caller for a different assertion
+(the honest 404) and moved on.
+
+The fix was one more case: an account in no family names somebody else's, and
+gets nowhere.
+
+Three of the fourteen also failed to APPLY - a string that matched twice, one
+that matched three times, one that matched zero. Each printed loudly and
+stopped instead of running. A sabotage that silently does not apply looks
+exactly like a test that works.
+
+**Rule:** for each guard, ask which caller actually reaches it, and write THAT
+caller. The interesting case is rarely the one already on screen - it is the
+one for which the short-circuit above does not fire.

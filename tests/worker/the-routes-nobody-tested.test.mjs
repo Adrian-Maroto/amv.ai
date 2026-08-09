@@ -221,6 +221,21 @@ section('Leaving a family is something only you can do to yourself');
   const notIn = await post(env, '/v1/family/leave', {}, parentTok);
   ok(notIn.status === 404, 'somebody in no family is told so', notIn.body);
 
+  /* And naming a family they are not in does not put them in one they can then
+     leave. Membership is read from the CALLER's own entitlement; a body field
+     is not a way to reach into somebody else's household - which would delete
+     the marker every parental limit on that child is read from.
+
+     The version of this test that only asked the child to leave passed against
+     exactly that defect, because the child had a family already and the body
+     was never consulted. */
+  const strangerTok = await signup(env, 'stranger@example.com', 'Stranger');
+  const reach = await post(env, '/v1/family/leave', { email: 'parent@example.com', parent: 'parent@example.com' }, strangerTok);
+  ok(reach.status === 404, 'and naming somebody else’s family gets them nowhere', reach.body);
+  const untouched = await W.DB.get(env, 'fam', 'parent@example.com');
+  ok((untouched.members || []).some(m => m.email === 'kid@example.com'),
+     'with that family exactly as it was', (untouched.members || []).map(m => m.email));
+
   const left = await post(env, '/v1/family/leave', { email: 'someone.else@example.com' }, kidTok);
   ok(left.body.ok === true && left.body.left === 'parent@example.com',
      'the child leaves their OWN family, whatever the body says', left.body);
