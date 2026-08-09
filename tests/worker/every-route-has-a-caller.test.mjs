@@ -45,10 +45,10 @@ const EXEMPT = {
   '/auth/reset/status':  'diagnostic for the reset flow; the flow itself works without it',
   '/team/members':       'superseded by /team/get, which already returns the roster',
   '/team/data':          'superseded by /team/share and /team/shared',
-  /* KNOWN GAP, deliberately listed rather than quietly exempted: the route
-     works and is tested, but no screen shows anybody their video allowance.
-     Somebody paying for twenty videos a month cannot see how many are left. */
-  '/v1/video/list':      'GAP: no screen reads it yet - the video allowance is invisible to the person paying for it',
+  /* The video allowance is now reported by /v1/usage, which the usage screen
+     reads, so the gap this used to record is closed. The route itself remains
+     as the media screen's own check and has no caller yet. */
+  '/v1/video/list':      'superseded by /v1/usage, which now reports the video allowance the screen shows',
   /* Redundant, and verified so rather than assumed: imageGenerate performs the
      same atomic reserve against the same `img:` counter, so generation IS
      capped - just not through here. Left in place because removing a route is

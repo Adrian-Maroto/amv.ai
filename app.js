@@ -10458,12 +10458,22 @@ function _usageContentHTML(){
       usagePanel+
       trendPanel+
       '<div class="ss2"><h3>What you\u2019ve used</h3><div class="vbreak">'+breakdown+'</div></div>'+
-      '<div class="ss2"><h3>Today\u2019s plan usage</h3>'+
-        '<div style="display:flex;flex-direction:column;gap:10px">'+
-          '<div><div style="display:flex;justify-content:space-between;font-size:12px;color:var(--mu);margin-bottom:4px"><span>Messages</span><span>'+mc+' / 30</span></div><div class="sbb"><div class="sbf2" style="width:'+Math.min(mc/30*100,100)+'%"></div></div></div>'+
-          '<div><div style="display:flex;justify-content:space-between;font-size:12px;color:var(--mu);margin-bottom:4px"><span>Images</span><span>'+ic+' / 4</span></div><div class="sbb"><div class="sbf2" style="width:'+Math.min(ic/4*100,100)+'%"></div></div></div>'+
+      /* THIS DEVICE, said as this device.
+
+         It used to read "Messages 12 / 30" and "Images 2 / 4" against numbers
+         that are true on no plan at all - the real image cap is 100 a day on
+         Pro and 2000 on Ultra. So a paying customer was shown a limit five
+         hundred times smaller than the one they had bought, on the screen they
+         open to find out what they have left. The real figures are in the
+         panel above, from the server; this is a local tally and now says so
+         instead of inventing a ceiling. */
+      '<div class="ss2"><h3>On this device</h3>'+
+        '<p class="vsub" style="margin-bottom:12px">What this browser has done in this session. Your real allowance is above, counted by AMV\u2019s servers.</p>'+
+        '<div class="vbreak">'+
+          '<div class="vrow"><span>Conversations</span><span class="vrow-n">'+mc+'</span></div>'+
+          '<div class="vrow"><span>Images made here</span><span class="vrow-n">'+ic+'</span></div>'+
         '</div>'+
-        '<button class="btn bp" data-stab="plans" style="margin-top:14px;font-size:12px">Upgrade for more &rarr;</button>'+
+        '<button class="btn bp" data-stab="plans" style="margin-top:14px;font-size:12px">See plans &rarr;</button>'+
       '</div>'+
       (isAdmin()? (function(){var u=AEGIS.usage();var cap=AEGIS.cfg.dailyTokenCap;var used=u.inTok+u.outTok;var pct=Math.min(used/cap*100,100);return '<div class="ss2" style="margin-top:18px"><h3>Token usage &amp; cost (today) - operator</h3>'+'<div class="stg" style="margin-bottom:12px">'+'<div class="stc"><div class="stv">'+u.reqs+'</div><div class="stl">API requests</div></div>'+'<div class="stc"><div class="stv">'+u.inTok.toLocaleString()+'</div><div class="stl">Input tokens</div></div>'+'<div class="stc"><div class="stv">'+u.outTok.toLocaleString()+'</div><div class="stl">Output tokens</div></div>'+'<div class="stc"><div class="stv">$'+u.costUSD.toFixed(3)+'</div><div class="stl">Est. cost</div></div>'+'</div>'+'<div><div style="display:flex;justify-content:space-between;font-size:12px;color:var(--mu);margin-bottom:4px"><span>Daily token cap (this device)</span><span>'+used.toLocaleString()+' / '+cap.toLocaleString()+'</span></div><div class="sbb"><div class="sbf2" style="width:'+pct+'%"></div></div></div>'+'<div style="display:flex;gap:8px;margin-top:12px"><button class="btn bs" data-dact="aegisExport" style="font-size:12px">Export audit log</button><button class="btn bs" data-dact="aegisClear" style="font-size:12px">Clear log</button></div>'+'</div>';})() : '');
 }
@@ -10491,6 +10501,19 @@ function _paintServerUsage(){
       '<p class="srv-sub">Counted by AMV\u2019s servers - these are the limits that actually apply.</p>'+
       '<div class="srv-row"><div class="srv-lbl"><span>Today</span><span>'+n(d.day.used)+' / '+n(d.day.limit)+'</span></div>'+bar(d.day.used, d.day.limit)+'</div>'+
       '<div class="srv-row"><div class="srv-lbl"><span>This month</span><span>'+n(d.month.used)+' / '+n(d.month.limit)+'</span></div>'+bar(d.month.used, d.month.limit)+'</div>'+
+      /* Images and video, from the same counters the server refuses on. They
+         used to be absent here and guessed at below against a hardcoded 4,
+         which is wrong on every paid plan - and video had no reader anywhere,
+         so the allowance somebody pays for was invisible until it ran out. */
+      (d.images && d.images.limit
+        ? '<div class="srv-row"><div class="srv-lbl"><span>Images today</span><span>'+n(d.images.used)+' / '+n(d.images.limit)+'</span></div>'+bar(d.images.used, d.images.limit)+'</div>'
+        : '')+
+      (d.videos && d.videos.limit
+        ? '<div class="srv-row"><div class="srv-lbl"><span>Videos this month</span><span>'+n(d.videos.used)+' / '+n(d.videos.limit)+'</span></div>'+bar(d.videos.used, d.videos.limit)+
+          (d.videos.configured===false?'<div class="srv-off" style="margin-top:6px">Video generation is not switched on for this deployment yet, so none of these have been used.</div>':'')+'</div>'
+        : (d.videos && d.videos.limit===0
+            ? '<div class="srv-row"><div class="srv-lbl"><span>Videos</span><span>Not on your plan</span></div></div>'
+            : ''))+
       (bonus > 0
         ? '<div class="srv-bonus">Includes <b>+'+n(bonus)+'</b> bonus tokens from invites you have earned. '+
           '<a data-sp-go="invite" style="color:var(--accent);cursor:pointer">See your invites &rarr;</a></div>'

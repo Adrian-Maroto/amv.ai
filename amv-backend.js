@@ -7198,9 +7198,26 @@ async function usageReport(request, env) {
   const dUsed = (await counter(env, `usg:${subject}:${todayKey()}`, { op: 'get' })).value || 0;
   const mUsed = (await counter(env, `usg:${subject}:${monthKey()}`, { op: 'get' })).value || 0;
   const mCost = (await counter(env, `cost:${subject}:${monthKey()}`, { op: 'get' })).value || 0;
+  /* AMV-186: IMAGES AND VIDEO BELONG HERE TOO.
+
+     Tokens were the only allowance this endpoint reported, so they were the
+     only one any screen could show honestly. The images bar on the usage page
+     was a device-local count against a hardcoded 4 - wrong for every paid plan,
+     where the real cap is 100, 500 or 2000 - and the video allowance had no
+     reader at all, so somebody paying for twenty videos a month had no way to
+     learn how many were left until generation refused.
+
+     These are the counters the Worker actually reserves against, keyed the same
+     way, so the screen and the refusal can no longer disagree. Images are per
+     DAY and video per MONTH, matching how each is enforced. */
+  const imgUsed = (await counter(env, `img:${user.email}:${todayKey()}`, { op: 'get' })).value || 0;
+  const vidUsed = (await counter(env, `vid:${subject}:${monthKey()}`, { op: 'get' })).value || 0;
   return json({
     plan: user.plan,
     day: { used: dUsed, limit: limits.dayTokens },
+    images: { used: imgUsed, limit: limits.imagesDay || 0, per: 'day' },
+    videos: { used: vidUsed, limit: limits.videosMonth || 0, per: 'month',
+              configured: _videoConfigured(env) },
     // `bonus` is the referral capacity folded into the monthly limit above, sent
     // separately so the app can say WHERE the extra allowance came from.
     month: { used: mUsed, limit: limits.monthTokens, costUSD: +mCost.toFixed(4), bonus: limits.bonusTokens || 0 },

@@ -3240,3 +3240,30 @@ next refresh on every device for ever.
 **Rule:** write the test that watches from the other side FIRST, and believe it
 over your own reading of the diff. A fix verified only from the side that was
 already working is not verified.
+
+## 190. The screen told a paying customer a limit five hundred times too small
+
+The usage page drew "Images 2 / 4" from a device-local count against a
+hardcoded 4. The real cap is 100 a day on Pro and 2000 on Ultra. So somebody on
+the top plan watched a bar fill up and got told to upgrade - by the product they
+were already paying the most for. Messages had the same shape against a
+hardcoded 30.
+
+Nothing errored. The server enforced the correct number the whole time; only the
+page was wrong, and the page is the only place anybody looks to find out what
+they have left.
+
+The mirror of it was video. `/v1/usage` reported tokens and nothing else, so
+images and video had no honest source to draw from at all - and `/v1/video/list`
+existed, worked, had tests, and no screen read it. The allowance somebody pays
+twenty videos a month for was invisible until generation refused.
+
+The fix is one rule rather than three numbers: every allowance a person can
+spend is reported by the server, from the same counter that enforces it. The
+test proves it the only way that means anything - read the reported cap, spend
+exactly that many, and require the refusal to land on the number shown. A
+constant cannot pass that, and neither can a number that is right for one plan.
+
+**Rule:** a limit displayed anywhere must come from the thing that enforces it.
+If a screen has to know a number, it has to ask - and if it cannot ask, the
+number does not belong on the screen.
