@@ -21,7 +21,7 @@
    ───────────────────────────────────────────────────────────────────────── */
 import { gzipSync } from 'zlib';
 import { execSync } from 'child_process';
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync, writeFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -173,6 +173,28 @@ step('Deploy preflight', () => {
 
 /* ── Verdict ─────────────────────────────────────────────────────────────── */
 const secs = ((Date.now() - t0) / 1000).toFixed(1);
+
+/* WHAT THIS COMMIT IS ALLOWED TO DEPLOY.
+
+   A Stop hook fast-forwards main to whatever is committed, and Render deploys
+   main - so an intermediate commit that happens to be red goes live, and mails
+   a failure. That is most of where a mailbox full of CI failures came from: not
+   one broken thing, but a red commit reaching main for the few minutes before
+   the follow-up fixed it.
+
+   So a FULL pass records which commit it passed on. The hook pushes the branch
+   always - work is never stranded - and moves main only when this marker names
+   the exact commit it is about to push. A commit nobody has proven stays on the
+   branch, which is where an unproven commit belongs.
+
+   --fast never writes it: it skips the suites, so it has proven nothing about
+   whether the product works. */
+if (!FAST) {
+  try {
+    const head = execSync('git rev-parse HEAD', { cwd: ROOT, stdio: 'pipe' }).toString().trim();
+    writeFileSync(join(ROOT, '.gate-pass'), head + '\n');
+  } catch (e) { /* not a git checkout, or git is unavailable - not a gate failure */ }
+}
 console.log('');
 /* AMV-094: SHIPPABLE and DEPLOYABLE are two different claims, and printing one
    green line for both let a config blocker hide behind a passing test suite.

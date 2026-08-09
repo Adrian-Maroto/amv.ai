@@ -6,3 +6,4 @@ tests/worker/.build/
 
 # Screenshots from tests/lib/shots.mjs - look at them, do not commit them
 .shots/
+.gate-pass
