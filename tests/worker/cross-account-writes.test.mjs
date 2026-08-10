@@ -101,6 +101,13 @@ function writesElsewhere(b){
     if(!SELF.test(m[1])) out.push('acct');
   for(const m of b.matchAll(/_withRecord\(env,\s*'([a-z_]+)',\s*([^,]+),/g))
     if(!SELF.test(m[2])) out.push(m[1]);
+  /* The generic helpers, for the same reason as the two above: when nine record
+     kinds moved inside them the direct put vanished from every one of those
+     routes, and this check went blind to writes it had been watching. */
+  for(const m of b.matchAll(/_withKind\(env,\s*'([a-z_]+)',\s*([^,]+),/g))
+    if(!SELF.test(m[2])) out.push(m[1]);
+  for(const m of b.matchAll(/_withKV\(env,\s*'([a-z_]+)',\s*([^,]+),/g))
+    if(!SELF.test(m[2])) out.push(m[1]);
   return out;
 }
 

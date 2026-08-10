@@ -460,7 +460,10 @@ const ADMIN_USERS_LIMIT = 300;
 /* One screenful. The per-account detail costs storage round trips, and a Worker
    has a ceiling on how many it may make in one request - so this is what bounds
    the admin list, not the number of accounts that happen to exist. */
-const ADMIN_USERS_PAGE = 60;      // one admin page of accounts
+const ADMIN_USERS_PAGE = 60;
+/* How many views accumulate in the counter before they are folded back onto the
+   listing. One write per fifty instead of one per view. */
+const MKT_VIEW_FOLD = 50;      // one admin page of accounts
 const SUPPORT_SCAN_LIMIT = 500;     // accounts with tickets, not tickets
 async function scan(env, kind, limit, what) {
   const cap = limit || SCAN_ALL;
@@ -965,6 +968,10 @@ async function guardAction(env, key, perMin, perDay, label) {
    is enough to see it genuinely work, and not enough to run a business on. */
 const AUTO_MAX_BY_PLAN = { free: 0, pro: 5, elite: 25, ultra: 100 };
 const AUTO_MAX_PER_USER = 100;                   // hard cap: no runaway fan-out
+/* The results list was never trimmed. It is read on every Crew screen and
+   appended to on every run, so it grows without limit - and the record it lives
+   on is read by the tick every five minutes. Bounded here, newest kept. */
+const AUTO_RESULTS_KEEP = 200;
 /* Crew and scheduled autonomy need a paid plan. The plans page has always said
    so ("Autonomous agents and Crew" is listed under Pro); nothing enforced it. */
 const AUTO_MIN_PLAN = 'pro';
@@ -1322,12 +1329,20 @@ async function autoPause(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
   const key = _autoKey(user.email);
-  const rec = (await DB.get(env, 'auto', key)) || { items:[], results:[] };
+  /* AMV-205: PAUSE HAS TO ACTUALLY STOP THE WORK.
+
+     The cron tick writes this same record back after every run. A pause landing
+     while the tick held an earlier copy was written away, so the job the person
+     stopped kept running unattended and kept spending. Pause is what people
+     reach for when something is going wrong, so it failing silently is worse
+     than not having it. */
   if(request.method === 'POST'){
     const body = await request.json().catch(()=>({}));
-    rec.paused = !!body.paused;
-    await DB.put(env, 'auto', key, rec);
+    const paused = !!body.paused;
+    await _withKind(env, 'auto', key, (rec) => { rec.paused = paused; }, { items:[], results:[] });
+    return json({ ok:true, paused });
   }
+  const rec = (await DB.get(env, 'auto', key)) || { items:[], results:[] };
   return json({ ok:true, paused: !!rec.paused });
 }
 
@@ -1337,8 +1352,11 @@ async function autoPause(request, env){
 const AUTO_APPROVALS_MAX = 50;
 async function _enqueueApproval(env, email, item, out){
   const now = Date.now();
-  const arec = (await DB.get(env, 'approvals', email)) || { items:[] };
-  arec.items = (arec.items||[]).concat({
+  /* AMV-206: the queue is one list on one record, written by an autonomous run
+     on one side and by a person deciding on the other. Appended under the lock,
+     or an enqueue lands on top of an approve and the decision is gone - which
+     puts an item somebody rejected back in front of them, or loses it. */
+  const entry = {
     id: 'ap' + now.toString(36) + Math.random().toString(36).slice(2,6),
     icon: item.kind === 'research' ? '\uD83D\uDD0D' : '\u2709\uFE0F',
     title: String(item.detail || 'Scheduled task').slice(0,140),
@@ -1349,8 +1367,10 @@ async function _enqueueApproval(env, email, item, out){
     result: { type:'doc', title: String(item.detail||'').slice(0,140), body: String(out||'').slice(0,8000) },
     preview: String(out||'').slice(0,4000),
     startedAt: now, readyAt: now, autoApprove: false
-  }).slice(-AUTO_APPROVALS_MAX);
-  await DB.put(env, 'approvals', email, arec);
+  };
+  await _withKind(env, 'approvals', email, (rec) => {
+    rec.items = (rec.items||[]).concat(entry).slice(-AUTO_APPROVALS_MAX);
+  }, { items: [] });
 }
 
 /* ---- Execute ONE automation against the real model ---- */
@@ -1760,7 +1780,36 @@ async function runDueAutomations(env){
       item.next = now + (item.interval || AUTO_INTERVALS.daily);
       changed = true;
     }
-    if(changed) await DB.put(env, 'auto', email, rec);
+    /* AMV-205: the tick holds this record for the whole of a run, which can be
+       seconds, and used to write its whole stale copy back at the end. Anything
+       the person did meanwhile - pausing, adding a job, editing one, clearing
+       results - was silently undone, and the one that matters is pause: the job
+       they stopped carried on running and spending.
+
+       Only what the RUN produced is carried across, applied to the record as it
+       is inside the lock. Everything else on it belongs to the person, and is
+       left exactly as they left it. */
+    if(changed) {
+      const ran = new Map((rec.items||[]).map(i => [i.id, i]));
+      const produced = (rec.results||[]).slice(-AUTO_RESULTS_KEEP);
+      await _withKind(env, 'auto', email, (fresh) => {
+        for(const item of (fresh.items||[])){
+          const after = ran.get(item.id);
+          if(!after) continue;
+          item.next = after.next;
+          item.runs = after.runs;
+          item.errors = after.errors;
+          item.lastError = after.lastError;
+          /* A job the RUN switched off after five failures stays off. A job the
+             PERSON switched off stays off too - so this only ever turns one
+             off, never back on. */
+          if(after.active === false) item.active = false;
+        }
+        const known = new Set((fresh.results||[]).map(r => r && r.id).filter(Boolean));
+        const fresher = produced.filter(r => r && r.id && !known.has(r.id));
+        if(fresher.length) fresh.results = (fresh.results||[]).concat(fresher).slice(-AUTO_RESULTS_KEEP);
+      }, { items:[], results:[] });
+    }
   }
 
   /* Running out of time once is a busy minute. Running out of time every tick
@@ -1849,13 +1898,32 @@ async function deploySite(request, env){
     }
   }
 
-  const rec = {
-    slug, owner, title, html,
-    created: (await DB.get(env,'site',slug))?.created || Date.now(),
-    updated: Date.now(),
-    views: (await DB.get(env,'site',slug))?.views || 0
-  };
-  await DB.put(env, 'site', slug, rec);
+  /* AMV-209: THE NAME IS CLAIMED IN THE SAME BREATH AS IT IS CHECKED.
+
+     The check above reads the slug and refuses when somebody else holds it, and
+     then this wrote. Two people deploying the same name at the same moment both
+     read nothing and both wrote, so one person's public address quietly became
+     another's - and the check that exists to prevent exactly that passed for
+     both of them. Re-checked inside the lock, which is the only place the
+     answer is still true when the write happens. */
+  let taken = false;
+  const rec = await _withKind(env, 'site', slug, (cur) => {
+    /* A record that does not exist loads as an empty object, so "no owner" is
+       not "somebody else's owner" - checking only `!==` claimed every free name
+       was taken. */
+    if (cur && cur.owner && cur.owner !== owner) { taken = true; return null; }
+    const next = {
+      slug, owner, title, html,
+      created: (cur && cur.created) || Date.now(),
+      updated: Date.now(),
+      views: (cur && cur.views) || 0
+    };
+    /* Copied onto the loaded record, because the helper writes back what it
+       loaded rather than what the mutate returns. */
+    if (cur) { for (const k of Object.keys(cur)) if (!(k in next)) delete cur[k]; Object.assign(cur, next); return cur; }
+    return next;
+  }, {});
+  if (taken) return json({ error:'that name is taken' }, 409);
 
   if(!(idx.slugs||[]).includes(slug)){
     idx.slugs = (idx.slugs||[]).concat(slug);
@@ -3576,8 +3644,13 @@ async function crewApprovalAct(request, env){
     }
   }
 
-  rec.items = (rec.items || []).filter(a => a.id !== id);   // approve/reject both resolve it
-  await DB.put(env, 'approvals', user.email, rec);
+  /* AMV-206: the decision removes ONE item from the queue as it is inside the
+     lock. Writing the whole list back from a copy read at the top of the request
+     put every approval enqueued since then back in front of the person, or - the
+     other way round - lost the decision they had just made. */
+  await _withKind(env, 'approvals', user.email, (fresh) => {
+    fresh.items = (fresh.items || []).filter(a => a.id !== id);   // approve/reject both resolve it
+  }, { items: [] });
   audit(env, 'approval_act', { by:user.email, action: action || 'resolved', delivered });
   return json({ ok:true, action: action || 'resolved', found:true, delivered });
 }
@@ -8653,20 +8726,29 @@ async function accountActivity(request, env) {
 async function _abuseRecord(env, email, kind, detail = {}) {
   email = String(email || '').toLowerCase();
   if (!email) return null;
-  const rec = (await DB.get(env, 'abuse', email)) || { email, disputes: 0, refunds: 0, events: [], blocked: false };
-  if (kind === 'dispute') rec.disputes = (rec.disputes || 0) + 1;
-  if (kind === 'refund')  rec.refunds  = (rec.refunds  || 0) + 1;
-  rec.events = (rec.events || []).concat({ kind, at: Date.now(), ...detail }).slice(-50);
+  /* AMV-208: this record accumulates evidence, and two things write it - a flag
+     going on, from a dispute or a refund or referral velocity, and the owner
+     clearing one. Losing a flag to the write that cleared another loses the
+     reason the next decision would have been made, and the counts that decide
+     whether an account is blocked are counted off it. Under the lock, and the
+     block decision made against the totals as they are inside it. */
+  let blockedNow = null;
+  const rec = await _withKind(env, 'abuse', email, (r) => {
+    if (kind === 'dispute') r.disputes = (r.disputes || 0) + 1;
+    if (kind === 'refund')  r.refunds  = (r.refunds  || 0) + 1;
+    r.events = (r.events || []).concat({ kind, at: Date.now(), ...detail }).slice(-50);
 
-  // Decide whether this account is now blocked from new paid purchases.
-  const shouldBlock = (rec.disputes >= ABUSE_DISPUTE_BLOCK) || (rec.refunds >= ABUSE_REFUND_BLOCK);
-  if (shouldBlock && !rec.blocked) {
-    rec.blocked = true;
-    rec.blockedAt = Date.now();
-    rec.blockedReason = rec.disputes >= ABUSE_DISPUTE_BLOCK ? 'chargeback' : 'refund_pattern';
-    audit(env, 'abuse_blocked', { email, reason: rec.blockedReason, disputes: rec.disputes, refunds: rec.refunds });
-  }
-  await DB.put(env, 'abuse', email, rec);
+    // Decide whether this account is now blocked from new paid purchases.
+    const shouldBlock = (r.disputes >= ABUSE_DISPUTE_BLOCK) || (r.refunds >= ABUSE_REFUND_BLOCK);
+    if (shouldBlock && !r.blocked) {
+      r.blocked = true;
+      r.blockedAt = Date.now();
+      r.blockedReason = r.disputes >= ABUSE_DISPUTE_BLOCK ? 'chargeback' : 'refund_pattern';
+      blockedNow = { reason: r.blockedReason, disputes: r.disputes, refunds: r.refunds };
+    }
+    return r;
+  }, { email, disputes: 0, refunds: 0, events: [], blocked: false });
+  if (blockedNow) audit(env, 'abuse_blocked', { email, ...blockedNow });
   return rec;
 }
 
@@ -10313,9 +10395,10 @@ async function marketInstall(request, env) {
   const raw = await env.AMV_KV.get(`market:${id}`);
   if (raw) {
     try {
-      const it = JSON.parse(raw);
-      it.installs = (it.installs || 0) + 1;
-      await env.AMV_KV.put(`market:${id}`, JSON.stringify(it));
+      JSON.parse(raw);                       // still a listing, not a stray key
+      await _withKV(env, 'market', id, (rec) => {
+        if (rec) rec.installs = (rec.installs || 0) + 1;
+      });
     } catch {}
   }
   return json({ ok: true, counted: true });
@@ -10511,6 +10594,27 @@ async function _withTeam(env, id, mutate) {
 }
 const _loadFam = async (env, id) => (await DB.get(env, 'fam', id)) || null;
 const _saveFam = async (env, id, f) => { if (f) await DB.put(env, 'fam', id, f); };
+/* AMV-203: the same lock for any record that is read, changed and written back.
+
+   Nine of the ten defects found in the sweep after AMV-202 were this one shape
+   on nine different record kinds, so the helper is generic rather than one per
+   kind. `empty` is what a missing record starts as, and it is COPIED per call -
+   a shared default object would be mutated by the first caller and handed to
+   every one after it. */
+async function _withKind(env, kind, id, mutate, empty) {
+  return _withRecord(env, kind, String(id || ''),
+    async (e, k) => (await DB.get(e, kind, k)) || (empty === undefined ? null : JSON.parse(JSON.stringify(empty))),
+    async (e, k, rec) => { if (rec) await DB.put(e, kind, k, rec); },
+    mutate);
+}
+/* And for the records that live under a raw KV key rather than a DB kind. */
+async function _withKV(env, name, key, mutate, empty) {
+  return _withRecord(env, name, String(key || ''),
+    async (e, k) => { try { const raw = await e.AMV_KV.get(`${name}:${k}`); return raw ? JSON.parse(raw) : (empty === undefined ? null : JSON.parse(JSON.stringify(empty))); } catch (err) { return empty === undefined ? null : JSON.parse(JSON.stringify(empty)); } },
+    async (e, k, rec) => { if (rec) await e.AMV_KV.put(`${name}:${k}`, JSON.stringify(rec)); },
+    mutate);
+}
+
 /* AMV-202: A LOCK ONLY HOLDS IF EVERY WRITER TAKES IT.
 
    setEntitlement has run under the ent record lock since AMV-196, which stops
@@ -10666,9 +10770,18 @@ async function _creditSale(env, { itemId, buyer, seller, amountCents, ref }) {
   const sellerEmail = seller || (it && it.authorEmail) || '';
   // grant ownership to the buyer
   await env.AMV_KV.put(`entitleitem:${buyer}:${itemId}`, '1');
-  const purchases = await _purchasesList(env, buyer);
-  purchases.unshift({ id: itemId, title: it ? it.title : itemId, kind: it ? it.kind : 'prompt', price, ts: Date.now() });
-  await env.AMV_KV.put(`purchases:${buyer}`, JSON.stringify(purchases.slice(0, 500)));
+  /* AMV-207: a buyer's history, appended under the lock. Access to the item is
+     granted by entitleitem above and is not at risk here - what a lost write
+     costs is the record of what they bought, which is the thing they look at to
+     find it again. A refund landing beside a purchase used to lose one of the
+     two. */
+  const bought = { id: itemId, title: it ? it.title : itemId, kind: it ? it.kind : 'prompt', price, ts: Date.now() };
+  await _withKV(env, 'purchases', buyer, (list) => {
+    /* Changed IN PLACE: the helper writes back the object it loaded, so a
+       mutate that builds a new array would be a no-op that looked like a write. */
+    list.unshift(bought);
+    if (list.length > 500) list.length = 500;
+  }, []);
   // AMV-037: snapshot the deliverable at purchase time. The buyer paid for THIS
   // content - a later seller edit or delete must never revoke their access.
   if (it) { try { await DB.put(env, 'mktsnap', `${buyer}:${itemId}`, { ...it, _boughtAt: Date.now() }); } catch (e) {} }
@@ -10700,9 +10813,14 @@ async function _creditSale(env, { itemId, buyer, seller, amountCents, ref }) {
   }
   // bump sale count; user listings are one-of-a-kind → mark SOLD (leaves catalog)
   if (it) {
-    it.sales = (it.sales || 0) + 1; it.installs = (it.installs || 0) + 1;
-    if (/^usr_/.test(itemId)) it.status = 'sold';
-    await env.AMV_KV.put(`market:${itemId}`, JSON.stringify(it));
+    /* AMV-204: the sale is recorded on the listing under the lock. This is the
+       write a visitor's page view used to put back, which is how an item that
+       had sold went back on sale. */
+    await _withKV(env, 'market', itemId, (rec) => {
+      if (!rec) return null;
+      rec.sales = (rec.sales || 0) + 1; rec.installs = (rec.installs || 0) + 1;
+      if (/^usr_/.test(itemId)) rec.status = 'sold';
+    });
   }
   /* AMV-091: a reverse index from the payment to what it bought. Without it a
      refund or chargeback arrives as a charge id we cannot connect to anything,
@@ -10739,9 +10857,11 @@ async function _reverseSale(env, ref, reason) {
   try { await env.AMV_KV.delete(`entitleitem:${rec.buyer}:${rec.itemId}`); } catch (e) {}
   try { await DB.del(env, 'mktsnap', `${rec.buyer}:${rec.itemId}`); } catch (e) {}
   try {
-    const list = await _purchasesList(env, rec.buyer);
-    await env.AMV_KV.put(`purchases:${rec.buyer}`,
-      JSON.stringify(list.filter(p => p.id !== rec.itemId)));
+    await _withKV(env, 'purchases', rec.buyer, (list) => {
+      const keep = list.filter(p => p && p.id !== rec.itemId);
+      list.length = 0;
+      for (const p of keep) list.push(p);
+    }, []);
   } catch (e) {}
 
   /* 2. The seller does not keep the money. The balance is allowed to go
@@ -10772,9 +10892,11 @@ async function _reverseSale(env, ref, reason) {
   try {
     const it = await _getListing(env, rec.itemId);
     if (it) {
-      it.sales = Math.max(0, (it.sales || 1) - 1);
-      if (/^usr_/.test(rec.itemId) && it.status === 'sold') it.status = 'active';
-      await env.AMV_KV.put(`market:${rec.itemId}`, JSON.stringify(it));
+      await _withKV(env, 'market', rec.itemId, (cur) => {
+        if (!cur) return null;
+        cur.sales = Math.max(0, (cur.sales || 1) - 1);
+        if (/^usr_/.test(rec.itemId) && cur.status === 'sold') cur.status = 'active';
+      });
     }
   } catch (e) {}
 
@@ -11072,26 +11194,75 @@ async function marketSetStatus(request, env) {
   if (status === 'active') {
     const screen = _marketScreen(it, ((await DB.get(env, 'seller', user.email)) || {}).verifiedFor);
     if (!screen.ok) {
-      it.status = 'removed';
-      await env.AMV_KV.put(`market:${id}`, JSON.stringify(it));
+      await _withKV(env, 'market', id, (rec) => { if (rec) rec.status = 'removed'; });
       return json({ error: screen.reason, code: 'policy_violation' }, 422);
     }
-    if (screen.action === 'held_for_review') { it.status = 'under_review'; await env.AMV_KV.put(`market:${id}`, JSON.stringify(it)); return json({ ok: true, status: 'under_review' }); }
+    if (screen.action === 'held_for_review') {
+      await _withKV(env, 'market', id, (rec) => { if (rec) rec.status = 'under_review'; });
+      return json({ ok: true, status: 'under_review' });
+    }
   }
-  it.status = status;
-  await env.AMV_KV.put(`market:${id}`, JSON.stringify(it));
+  /* Re-checked inside the lock: the listing may have SOLD between the
+     ownership check above and this write, and putting it back to active would
+     re-list something somebody has already bought. */
+  const set = await _withKV(env, 'market', id, (rec) => {
+    if (!rec) return null;
+    if (rec.status === 'sold' && status === 'active') return false;
+    rec.status = status;
+    return true;
+  });
+  if (set === false) return json({ error: 'This listing has sold, so it cannot be put back on sale.', code: 'already_sold' }, 409);
   audit(env, 'market_status', { id, status, by: user.email });
   return json({ ok: true, status });
 }
 
 /* Increment a listing's view counter (best-effort analytics, not authed). */
 async function marketView(request, env) {
+  /* AMV-204: A VIEW COUNTER IS NOT A REASON TO REWRITE A LISTING.
+
+     This read the whole listing, added one to `views`, and wrote the whole
+     record back - with no auth, on every page load. Three things wrong with
+     that, and the first is the expensive one:
+
+       - the most FREQUENT write in the marketplace was racing the two that
+         carry money. A visitor loading the page while a sale or a status change
+         was being written put the old record back, so an item that had just
+         sold went back on sale because somebody looked at it;
+       - anyone could drive unlimited writes to one key by reloading, which is
+         billed and is an abuse vector with no account behind it;
+       - KV allows roughly one write per second per key, so the listing that
+         gets popular - the only one where the count matters - throttles and
+         loses its own views.
+
+     The count lives in the counter now, which is what a counter is for: it is
+     atomic, it is cheap, and it touches nothing else on the record. */
   const { id } = await request.json().catch(() => ({}));
-  const it = await _getListing(env, id);
+  const key = String(id || '').slice(0, 64);
+  if (!key) return json({ ok: true });
+  const it = await _getListing(env, key);
   if (!it) return json({ ok: true });
-  it.views = (it.views || 0) + 1;
-  await env.AMV_KV.put(`market:${id}`, JSON.stringify(it));
-  return json({ ok: true, views: it.views });
+  let views = (it.views || 0) + 1;
+  try {
+    const r = await counter(env, `mktviews:${key}`, { op: 'incr', amount: 1, ttlMs: 86400000 * 400 });
+    /* The counter starts at zero for listings that existed before this, so the
+       number already on the record is carried alongside rather than thrown away. */
+    const since = (r && r.value) || 1;
+    views = (it.views || 0) + since;
+    /* The browse screen reads `views` off the record and cannot afford a
+       counter read per listing, so the record is refreshed from the counter -
+       under the lock, and only every MKT_VIEW_FOLD views. That is one write per
+       fifty instead of one per view: the count on screen stays right, the abuse
+       and hot-key problems go away, and a write that does lose a race now costs
+       at most a few views rather than a sale. */
+    if (since >= MKT_VIEW_FOLD && since % MKT_VIEW_FOLD === 0) {
+      await _withKV(env, 'market', key, (rec) => {
+        if (!rec) return null;
+        rec.views = (rec.views || 0) + since;
+      });
+      await counter(env, `mktviews:${key}`, { op: 'incr', amount: -since, ttlMs: 86400000 * 400 });
+    }
+  } catch (e) { /* a view that could not be counted is not worth failing over */ }
+  return json({ ok: true, views });
 }
 
 /* Buyer rates a listing (item rating, 1-5). Recomputes the listing average. */
@@ -11109,10 +11280,17 @@ async function marketRate(request, env) {
   map[user.email] = s;
   await env.AMV_KV.put(key, JSON.stringify(map));
   const vals = Object.values(map);
-  it.rating = +(vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1);
-  it.ratings = vals.length;
-  await env.AMV_KV.put(`market:${id}`, JSON.stringify(it));
-  return json({ ok: true, rating: it.rating, ratings: it.ratings });
+  const rating = +(vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1);
+  /* AMV-204: the average goes onto the listing under the lock. Written from a
+     copy read before a sale or a status change landed, a rating put the old
+     record back - so an item that had just sold went back on sale because
+     somebody rated it. */
+  await _withKV(env, 'market', id, (rec) => {
+    if (!rec) return null;
+    rec.rating = rating;
+    rec.ratings = vals.length;
+  });
+  return json({ ok: true, rating, ratings: vals.length });
 }
 
 /* Buyer reviews a SELLER (person) with 1-5 stars + text. Gated: must have
@@ -11836,18 +12014,27 @@ async function apiKeyRevoke(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
   const { id } = await request.json().catch(() => ({}));
-  const rec = (await DB.get(env, 'apikeys', user.email)) || { items: [] };
-  const item = (rec.items || []).find(k => k.id === id);
-  if (!item) return json({ error: 'not found' }, 404);
-  if (!item.revoked) {
-    item.revoked = Date.now();
-    await DB.put(env, 'apikeys', user.email, rec);
-    /* Delete the lookup too. Marking the record revoked without removing what
-       the request path reads would leave the key working. */
-    if (item.hash) { try { await env.AMV_KV.delete(`apikey:${item.hash}`); } catch (e) {} }
-    audit(env, 'apikey_revoked', { email: user.email, id });
-    await _userEvent(env, request, user.email, 'api_key_revoked');
-  }
+  /* AMV-210: the hot path stamps lastUsed on this same record once a minute
+     per key, so a revoke could be written back over. The KEY still stopped
+     working either way - the lookup row below is what the request path reads,
+     and deleting it is what revocation really is - but the record would show a
+     revoked key as active, which is a screen telling somebody the opposite of
+     the truth about a credential. */
+  let hash = '';
+  const found = await _withKind(env, 'apikeys', user.email, (rec) => {
+    const item = (rec.items || []).find(k => k.id === id);
+    if (!item) return false;
+    hash = item.hash || '';
+    if (!item.revoked) item.revoked = Date.now();
+    return true;
+  }, { items: [] });
+  if (!found) return json({ error: 'not found' }, 404);
+  /* Delete the lookup too - this is what the request path reads, and deleting
+     it is what revocation really is. Marking the record without removing this
+     would leave the key working. */
+  if (hash) { try { await env.AMV_KV.delete(`apikey:${hash}`); } catch (e) {} }
+  audit(env, 'apikey_revoked', { email: user.email, id });
+  await _userEvent(env, request, user.email, 'api_key_revoked');
   return json({ ok: true, id, revoked: true });
 }
 
@@ -11877,9 +12064,17 @@ async function _userFromApiKey(request, env) {
   // at most once a minute: this is on the hot path of every API request.
   const now = Date.now();
   if (!item.lastUsed || now - item.lastUsed > 60000) {
+    /* Under the lock, and re-found inside it: this runs on every authenticated
+       API request, so it is the write most likely to be racing a revoke. */
+    try {
+      await _withKind(env, 'apikeys', ref.email, (rec2) => {
+        const cur = (rec2.items || []).find(k => k.id === ref.id);
+        if (!cur) return null;
+        cur.lastUsed = now;
+        cur.calls = (cur.calls || 0) + 1;
+      }, { items: [] });
+    } catch (e) {}
     item.lastUsed = now;
-    item.calls = (item.calls || 0) + 1;
-    try { await DB.put(env, 'apikeys', ref.email, rec); } catch (e) {}
   }
 
   const e = (await DB.get(env, 'ent', ref.email)) || {};

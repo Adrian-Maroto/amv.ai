@@ -3572,3 +3572,27 @@ lock, which is the last place anyone looks when reviewing a locking change.
 record and convert them in the same change. Then write the rule as a source
 check, because the next writer added will reach for the plain put - that is what
 the rest of the file looks like.
+
+## 201. Inventory first, then verify each one, then build
+
+Asked for the top ten rather than the first three, I built a complete inventory:
+every record kind, every function that writes it. That was right, and it found
+the dominant defect class in one pass instead of five.
+
+Then I listed ten findings straight off the inventory. Three were wrong.
+
+  - "a payout can be paid twice" - adminPayoutMark already claims a lock,
+    re-reads inside it, and refuses when the payout is no longer pending.
+  - "a revoked API key keeps working" - revocation deletes the lookup row the
+    request path reads, so the key stops working whatever happens to the record.
+  - "the bank link record has two writers" - it has one; the second name was a
+    dispatcher that contained the write.
+
+Each was a pattern match presented as a defect. The inventory tells you where to
+LOOK; it does not tell you what is true, because the real guarantee often lives
+somewhere the pattern cannot see - a delete, a separate lookup, a claim already
+taken three lines up.
+
+**Rule:** an inventory produces candidates, not findings. Read the function
+before it goes on the list, and say so publicly when one dissolves - a list of
+ten that contains three phantoms is worse than a list of seven.
