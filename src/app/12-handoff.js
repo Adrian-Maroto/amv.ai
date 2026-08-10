@@ -2809,104 +2809,20 @@ function setupKeyboard(){
 const CANVAS_QUEUE_KEY='amv_canvas_queue';
 
 async function runCanvasAutomation() {
-  const token=loadStr('amv_canvas');
-  const baseUrl=loadStr('amv_canvas_url');
-  if(!token||!baseUrl){
-    toast('Add Canvas API token in Settings → Integrations first.','error');
-    return;
-  }
-  if(!_aiBackendReady()){
-    toast('AMV isn\u2019t connected yet - the workspace owner needs to switch on the AMV engine first.','error');
-    return;
-  }
+  /* THIS COULD NEVER HAVE WORKED, AND NOW IT DOES NOT PRETEND TO.
 
-  // Show automation modal
-  const r=document.getElementById('ovr'); if(!r) return;
-  r.innerHTML=
-    '<div class="ov" id="ca-bg"><div class="ob wide" onclick="event.stopPropagation()">'+
-      '<button class="oc" onclick="closeOvr()">&#215;</button>'+
-      '<h2>&#x1F4DA; Canvas Automation</h2>'+
-      '<p class="ob-sub">AMV will read your assignments, complete them, and save results to your Google Drive or download them.</p>'+
-      '<div id="ca-status" style="min-height:120px;background:rgba(0,0,0,.2);border:1px solid var(--bd);border-radius:var(--r-md);padding:13px;font-size:12px;color:var(--mu);font-family:var(--mn);overflow-y:auto;max-height:280px;line-height:1.8">'+
-        'Connecting to Canvas API...<br>'+
-      '</div>'+
-      '<div style="margin-top:13px;display:flex;gap:8px">'+
-        '<button class="btn bp" id="ca-start" style="font-size:13px">Start Automation</button>'+
-        '<button class="btn bs" onclick="closeOvr()" style="font-size:13px">Cancel</button>'+
-      '</div>'+
-      '<p style="font-size:10px;color:var(--dim);margin-top:9px">Your computer must stay on and browser open. For overnight automation, deploy a backend server - see the Help section.</p>'+
-    '</div></div>';
-  document.getElementById('ca-bg')?.addEventListener('click',closeOvr);
+     What used to be here called `yourschool.instructure.com/api/v1/...` from
+     the browser. The page's Content-Security-Policy names every host AMV may
+     reach, no school is on that list, and none can be - the host is different
+     for every school. So the browser refused the request before it left, every
+     time, for everybody, and the failure looked like AMV being broken.
 
-  const log=(msg,color)=>{
-    const s=document.getElementById('ca-status');
-    if(s) s.innerHTML+=('<span style="color:'+(color||'var(--mu)')+'">'+escH(msg)+'</span><br>');
-    if(s) s.scrollTop=s.scrollHeight;
-  };
-
-  document.getElementById('ca-start')?.addEventListener('click',async()=>{
-    const btn=document.getElementById('ca-start');
-    if(btn){btn.disabled=true;btn.textContent='Running…';}
-    log('Fetching courses from Canvas...','var(--accent)');
-
-    try{
-      // Fetch courses
-      const coursesRes=await fetchDeadline(baseUrl+'/api/v1/courses?enrollment_type=student&per_page=20',{
-        headers:{'Authorization':'Bearer '+token}
-      },20000);
-      if(!coursesRes.ok) throw new Error('Canvas API error: '+coursesRes.status+' - check your token and URL.');
-      const courses=await coursesRes.json();
-      log('Found '+courses.length+' active courses.','var(--grn)');
-
-      let completed=0, total=0;
-      for(const course of courses.slice(0,5)){
-        log('Checking '+course.name+'...','var(--tx)');
-        // Fetch assignments
-        const assignRes=await fetchDeadline(baseUrl+'/api/v1/courses/'+course.id+'/assignments?bucket=upcoming&per_page=10',{
-          headers:{'Authorization':'Bearer '+token}
-        },20000);
-        /* The courses call above checks its status; this one did not, so a 401
-           or a 403 here returned an error OBJECT, `.filter` was not a function,
-           and the run died with a TypeError instead of "check your token" -
-           the same failure, reported as a bug in AMV. */
-        if(!assignRes.ok){ log('Canvas refused the assignment list for '+course.name+' ('+assignRes.status+') - skipping it.','var(--red)'); continue; }
-        const assignments=await assignRes.json();
-        if(!Array.isArray(assignments)){ log('Canvas sent an unexpected answer for '+course.name+' - skipping it.','var(--red)'); continue; }
-        const pending=assignments.filter(a=>!a.has_submitted_submissions&&a.due_at);
-        total+=pending.length;
-        log(pending.length+' pending assignments in '+course.name,'var(--mu)');
-
-        for(const assignment of pending.slice(0,3)){
-          log('Working on: '+assignment.name,'var(--gold)');
-          // Use AMV AI to complete it
-          const prompt='Complete this assignment fully and professionally.\n\nCourse: '+course.name+'\nAssignment: '+assignment.name+'\n\nInstructions:\n'+(assignment.description||'No instructions provided - write a comprehensive response.').replace(/<[^>]*>/g,' ').trim()+'\n\nProvide a complete, submission-ready response.';
-
-          try{
-            const answer=await aiComplete(prompt, null, {model:(typeof qModel==='function'?qModel('draft'):'amv-core'), max_tokens:4000, noLang:true});
-            log('&#x2713; Completed: '+assignment.name,'var(--grn)');
-
-            // Save to a downloadable file
-            const blob=new Blob(['Assignment: '+assignment.name+'\nCourse: '+course.name+'\n\n'+answer],{type:'text/plain'});
-            const url=URL.createObjectURL(blob);
-            const a=document.createElement('a');
-            a.href=url; a.download=assignment.name.replace(/[^a-z0-9]/gi,'_').slice(0,50)+'.txt';
-            document.body.appendChild(a); a.click(); document.body.removeChild(a);
-            completed++;
-          } catch(aiErr){
-            log('AI error on '+assignment.name+': '+aiErr.message,'var(--red)');
-          }
-          // Brief delay to avoid rate limits
-          await new Promise(res=>setTimeout(res,1500));
-        }
-      }
-      log('&#x2713; Automation complete! '+completed+'/'+total+' assignments processed.','var(--grn)');
-      log('Files downloaded to your computer. Review before submitting.','var(--mu)');
-      if(btn){btn.textContent='Done!';btn.style.background='var(--grn)';}
-    } catch(err){
-      log('Error: '+err.message,'var(--red)');
-      if(btn){btn.disabled=false;btn.textContent='Retry';}
-    }
-  });
+     Canvas is read by the Worker now, which has no CSP, and the flow that
+     follows from it - copy the doc the assignment points at, share it with the
+     teacher when the student says to - lives in schoolOpen. This name is kept
+     because things still call it. */
+  if(typeof schoolOpen === 'function') return schoolOpen();
+  toast('School work has moved. Open it from the sidebar.', 'info');
 }
 try{ window.runCanvasAutomation=runCanvasAutomation; }catch(e){}
 

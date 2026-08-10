@@ -461,6 +461,11 @@ const ADMIN_USERS_LIMIT = 300;
    has a ceiling on how many it may make in one request - so this is what bounds
    the admin list, not the number of accounts that happen to exist. */
 const ADMIN_USERS_PAGE = 60;
+/* How much school work one request will read. A student has a handful of
+   courses; the bound is here so a Worker request cannot fan out into hundreds
+   of Canvas calls. */
+const SCHOOL_COURSE_MAX = 8;
+const SCHOOL_ASSIGNMENT_MAX = 10;
 /* How many views accumulate in the counter before they are folded back onto the
    listing. One write per fifty instead of one per view. */
 const MKT_VIEW_FOLD = 50;      // one admin page of accounts
@@ -2248,6 +2253,191 @@ function _webHostAllowed(raw){
   return { ok:true, url:u.toString() };
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+   SCHOOL: READING CANVAS, AND THE DOC AN ASSIGNMENT IS ACTUALLY ABOUT.
+
+   AMV had a Canvas feature that could never have worked for anybody. It called
+   `yourschool.instructure.com/api/v1/...` FROM THE BROWSER, and the page's
+   Content-Security-Policy names every host AMV may reach - Google, GitHub,
+   Slack, Stripe. No school's Canvas host is on it and none can be, because the
+   host is different for every school. So the browser refused the request before
+   it left, on every run, for every student.
+
+   Reading it here instead is the only way that works: a Worker has no CSP. It
+   also means the token stops living only in a browser tab, and erasure can
+   reach it - a school token in localStorage is a credential AMV promised to
+   delete and had no way to.
+
+   The second half of the same dead end: an assignment that says "make a copy of
+   this doc" carries the doc as a LINK, and the old code ran the description
+   through `.replace(/<[^>]*>/g,' ')` before anything read it. That strips tags,
+   and the link lives inside one - so the single thing the assignment is about
+   was deleted before the model ever saw it. Links are pulled out first now, and
+   kept.
+
+   What AMV does NOT do here is hand anything in. It reads, it copies, it shares
+   when the student says to. Submitting stays the student's own action, which is
+   the same boundary the Classroom scopes already draw. */
+
+/* A school's Canvas host. Public https only - the SSRF gate above - and it must
+   look like a host rather than a path, because "base URL" is the field somebody
+   pastes a whole assignment link into. */
+function _canvasBase(raw){
+  const gate = _webHostAllowed(String(raw || '').trim().replace(/\/+$/, ''));
+  if(!gate.ok) return { ok:false, why:gate.why };
+  const u = new URL(gate.url);
+  if(u.protocol !== 'https:') return { ok:false, why:'A school Canvas address has to be https.' };
+  if(u.pathname && u.pathname !== '/') return { ok:false, why:'Use just the address of your school\u2019s Canvas, like https://yourschool.instructure.com - not a link to one page.' };
+  return { ok:true, base:'https://' + u.hostname };
+}
+
+/* Where a Google Doc, Sheet or Slide deck lives in an assignment. Kept as the
+   id AND the original link, because the id is what Drive needs and the link is
+   what a person recognises. */
+const _DOC_LINK = /https?:\/\/(?:docs|drive)\.google\.com\/(?:(document|spreadsheets|presentation)\/d\/|file\/d\/|open\?id=)([A-Za-z0-9_-]{10,})/g;
+const _DOC_KIND = { document:'doc', spreadsheets:'sheet', presentation:'slides' };
+function _docLinksFrom(html){
+  const out = []; const seen = new Set();
+  const text = String(html || '');
+  let m;
+  _DOC_LINK.lastIndex = 0;
+  while((m = _DOC_LINK.exec(text))){
+    const id = m[2];
+    if(seen.has(id)) continue;
+    seen.add(id);
+    out.push({ id, kind: _DOC_KIND[m[1]] || 'file', url: m[0] });
+  }
+  return out;
+}
+
+/* The instructions as a person reads them: tags gone, but the LINKS named
+   rather than deleted, so what the assignment is about survives the stripping
+   that used to destroy it. */
+function _assignmentText(html){
+  const links = _docLinksFrom(html);
+  let t = String(html || '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  if(links.length){
+    t += '\n\nAttached ' + (links.length === 1 ? 'document' : 'documents') + ':\n'
+       + links.map(l => '- ' + l.kind + ': ' + l.url).join('\n');
+  }
+  return t;
+}
+
+/* The stored connection. Kept server-side so the token is not only in a browser
+   tab, so erasure can reach it, and so a request does not carry it every time. */
+const _loadSchool = async (env, em) => (await DB.get(env, 'school', em)) || null;
+
+async function schoolConnect(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'Please sign in.' }, 401);
+  const body = await request.json().catch(()=>({}));
+  const gate = _canvasBase(body.baseUrl);
+  if(!gate.ok) return json({ error:gate.why, code:'bad_base' }, 400);
+  const token = String(body.token || '').trim();
+  if(token.length < 20) return json({ error:'That does not look like a Canvas access token. Generate one in Canvas under Account \u2192 Settings \u2192 New Access Token.', code:'bad_token' }, 400);
+
+  /* Proved before it is stored. Saving a token that does not work and telling
+     somebody they are connected is the failure this whole area is full of. */
+  let who;
+  try{
+    const r = await fetch(gate.base + '/api/v1/users/self', { headers:{ Authorization:'Bearer ' + token } });
+    if(r.status === 401 || r.status === 403)
+      return json({ error:'Canvas did not accept that token. Check it was copied whole, and that it has not expired.', code:'canvas_auth' }, 400);
+    if(!r.ok) return json({ error:'Your school\u2019s Canvas answered ' + r.status + '. Check the address is right.', code:'canvas_error' }, 502);
+    who = await r.json().catch(()=>({}));
+  }catch(e){
+    return json({ error:'AMV could not reach that address. Check it is your school\u2019s Canvas address.', code:'canvas_unreachable' }, 502);
+  }
+  await DB.put(env, 'school', user.email, { base: gate.base, token, name: who && who.name, at: Date.now() });
+  audit(env, 'school_connected', { email:user.email, host:new URL(gate.base).hostname });
+  return json({ ok:true, name: (who && who.name) || '', host: new URL(gate.base).hostname });
+}
+
+async function schoolDisconnect(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'Please sign in.' }, 401);
+  await DB.del(env, 'school', user.email);
+  audit(env, 'school_disconnected', { email:user.email });
+  return json({ ok:true });
+}
+
+/* One door to Canvas. Every call goes through here so the token is attached in
+   one place, the host is re-checked on every request rather than trusted
+   because it was checked once, and a refusal comes back as a sentence. */
+async function _canvasGet(env, rec, path){
+  const gate = _canvasBase(rec.base);
+  if(!gate.ok) return { error:gate.why, status:400 };
+  const url = gate.base + '/api/v1/' + String(path || '').replace(/^\/+/, '');
+  let r;
+  try{ r = await fetch(url, { headers:{ Authorization:'Bearer ' + rec.token } }); }
+  catch(e){ return { error:'AMV could not reach your school\u2019s Canvas just now.', status:502 }; }
+  if(r.status === 401 || r.status === 403)
+    return { error:'Canvas refused that request. Your access token may have expired - reconnect it in Settings.', status:401, code:'canvas_auth' };
+  if(!r.ok) return { error:'Canvas answered ' + r.status + '.', status:502 };
+  const data = await r.json().catch(()=>null);
+  if(data == null) return { error:'Canvas sent something AMV could not read.', status:502 };
+  return { data };
+}
+
+/* What is due, with the documents an assignment points at KEPT rather than
+   stripped out of it. */
+async function schoolWork(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'Please sign in.' }, 401);
+  const rec = await _loadSchool(env, user.email);
+  if(!rec) return json({ connected:false,
+    error:'Connect your school\u2019s Canvas first, in Settings \u2192 Integrations.', code:'not_connected' }, 400);
+
+  const courses = await _canvasGet(env, rec, 'courses?enrollment_state=active&per_page=20');
+  if(courses.error) return json({ error:courses.error, code:courses.code }, courses.status);
+  if(!Array.isArray(courses.data)) return json({ error:'Canvas did not return a course list.' }, 502);
+
+  const out = [];
+  for(const c of courses.data.slice(0, SCHOOL_COURSE_MAX)){
+    const a = await _canvasGet(env, rec, 'courses/' + encodeURIComponent(c.id) + '/assignments?bucket=upcoming&per_page=10');
+    if(a.error || !Array.isArray(a.data)) continue;
+    for(const it of a.data.slice(0, SCHOOL_ASSIGNMENT_MAX)){
+      out.push({
+        id: it.id, course: c.name, courseId: c.id,
+        name: it.name, dueAt: it.due_at || null,
+        url: it.html_url || '',
+        instructions: _assignmentText(it.description),
+        docs: _docLinksFrom(it.description),
+        submitted: !!it.has_submitted_submissions,
+      });
+    }
+  }
+  return json({ connected:true, work: out, count: out.length });
+}
+
+/* Who to share it with. Read from the course rather than guessed, because a
+   guessed address is somebody else's inbox. */
+async function schoolTeachers(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'Please sign in.' }, 401);
+  const rec = await _loadSchool(env, user.email);
+  if(!rec) return json({ error:'Connect your school\u2019s Canvas first.', code:'not_connected' }, 400);
+  const body = await request.json().catch(()=>({}));
+  const courseId = String(body.courseId || '').replace(/[^0-9a-zA-Z_-]/g, '').slice(0, 40);
+  if(!courseId) return json({ error:'Which course?' }, 400);
+
+  const r = await _canvasGet(env, rec, 'courses/' + encodeURIComponent(courseId) + '/users?enrollment_type=teacher&per_page=10');
+  if(r.error) return json({ error:r.error, code:r.code }, r.status);
+  const teachers = (Array.isArray(r.data) ? r.data : [])
+    .map(t => ({ name: t.name || '', email: t.email || t.login_id || '' }))
+    .filter(t => t.email);
+  /* An empty list is not an error and is not a reason to invent one: schools
+     often hide staff addresses, and the honest answer is to ask. */
+  return json({ ok:true, teachers, askUser: teachers.length === 0 });
+}
+
 /* Redact secrets before anything can reach a trace, a log or a response. */
 function _webRedact(text, secrets){
   let t = String(text == null ? '' : text);
@@ -3771,6 +3961,11 @@ const BACKUP_PREFIXES = [
 const BACKUP_NEVER = [
   'fin:', 'finlink:', 'invsnap:',
   'goauth:',    // OAuth tokens - a backup file is the last place these belong
+  /* A school access token, for the same reason as the bank link above it: a
+     backup is a file somebody downloads, and one leaked export should not hand
+     over a student's school account. A restore leaves Canvas unlinked, which is
+     one reconnection and the correct trade. */
+  'school:',
   'link:',      // pending invitations, minutes-long and carrying a confirmation code
   'presence:',  // who is online right now
   'errors:'     // worker diagnostics, regenerated by the thing that failed
@@ -4372,6 +4567,10 @@ export default {
         case '/v1/spend/limits':         return spendGet(request, env);
         case '/v1/spend/set':            return spendSet(request, env);
         case '/v1/family/get':           return familyGet(request, env);
+        case '/v1/school/connect':       return schoolConnect(request, env);
+        case '/v1/school/disconnect':    return schoolDisconnect(request, env);
+        case '/v1/school/work':          return schoolWork(request, env);
+        case '/v1/school/teachers':      return schoolTeachers(request, env);
         case '/v1/family/limits':        return familySetLimits(request, env);
         case '/v1/family/remove':        return familyRemove(request, env);
         case '/v1/family/leave':         return familyLeave(request, env);
@@ -4939,7 +5138,7 @@ async function authLogout(request, env) {
    is the dangerous way round - an export that omits a record the product is
    still holding tells somebody they have everything when they do not, which is
    the question a data-access request is actually asking. */
-const PER_USER_KINDS = ['acct', 'ent', 'entitleitem', 'data', 'auto', 'crewjobs',
+const PER_USER_KINDS = ['acct', 'ent', 'entitleitem', 'data', 'auto', 'crewjobs', 'school',
   'approvals', 'handoff', 'abuse', 'seller', 'widget', 'wallet', 'wallet_tx',
   'purchases', 'stripecust', 'userteam', 'sites', 'spendlimits',
   'fin', 'finlink', 'invsnap', 'links', 'fam', 'apikeys', 'consent', 'widget_owner', 'shares', 'presence',

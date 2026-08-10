@@ -8264,3 +8264,41 @@ html,body{height:100%;height:100dvh}
 .adm-user-more:disabled{opacity:.6;cursor:default;}
 .adm-user-note{color:var(--mu);}
 @media (prefers-reduced-motion:reduce){ .adm-user-more{transition:none;} }
+
+/* ── LAYER A72 ─ SCHOOL: WHAT IS DUE, AND THE DOC IT POINTS AT ───────────────
+   Reuses the overlay and button components the rest of the product is built
+   from. The only new shapes are the assignment row and the ask block, and the
+   ask block is deliberately quiet: it is a question, not a call to action. */
+.sch-loading,.sch-empty{padding:var(--sp-5) var(--sp-4);text-align:center;color:var(--mu);font-size:var(--t-sm);}
+.sch-empty b{display:block;color:var(--tx);font-size:var(--t-md);margin-bottom:var(--sp-2);}
+.sch-empty span{display:block;line-height:1.6;}
+.sch-list{display:flex;flex-direction:column;gap:var(--sp-2);max-height:60vh;overflow-y:auto;}
+.sch-item{display:flex;align-items:center;gap:var(--sp-3);padding:var(--sp-3);
+  background:var(--s2);border:1px solid var(--bd);border-radius:var(--r-md);}
+.sch-item-main{flex:1;min-width:0;}
+.sch-item-main b{display:block;font-size:var(--t-md);color:var(--tx);}
+.sch-item-main span{display:block;font-size:var(--t-sm);color:var(--mu);margin-top:2px;}
+.sch-doc{color:var(--accent)!important;}
+.sch-doc-none{color:var(--dim)!important;}
+.sch-go{flex:0 0 auto;font-size:var(--t-sm);}
+.sch-step h3{margin:0 0 2px;font-size:var(--t-lg);color:var(--tx);}
+.sch-course{margin:0 0 var(--sp-3);font-size:var(--t-sm);color:var(--mu);}
+.sch-instructions{white-space:pre-wrap;max-height:30vh;overflow-y:auto;padding:var(--sp-3);
+  background:var(--bg);border:1px solid var(--bd);border-radius:var(--r-md);
+  font-size:var(--t-sm);line-height:1.6;color:var(--mu);}
+.sch-ask{margin-top:var(--sp-4);padding:var(--sp-4);background:var(--s2);
+  border:1px solid var(--bd);border-radius:var(--r-md);}
+.sch-ask b{display:block;font-size:var(--t-md);color:var(--tx);}
+.sch-ask>span{display:block;margin-top:var(--sp-1);font-size:var(--t-sm);line-height:1.6;color:var(--mu);}
+.sch-ask .inp{margin-top:var(--sp-3);width:100%;}
+.sch-role{display:flex;align-items:center;gap:var(--sp-2);margin-top:var(--sp-3);
+  font-size:var(--t-sm);color:var(--mu);cursor:pointer;}
+.sch-btns{display:flex;gap:var(--sp-2);margin-top:var(--sp-4);flex-wrap:wrap;}
+.sch-note{margin-top:var(--sp-3);font-size:var(--t-xs);line-height:1.6;color:var(--dim);}
+.sch-done{padding:var(--sp-3);background:var(--s2);border:1px solid var(--bd);
+  border-radius:var(--r-md);font-size:var(--t-sm);color:var(--tx);}
+.sch-done-final{border-color:var(--grn);}
+.sch-err{margin-top:var(--sp-3);font-size:var(--t-sm);line-height:1.6;color:var(--red);}
+.sch-lbl{display:block;margin:var(--sp-4) 0 var(--sp-1);font-size:var(--t-sm);color:var(--mu);}
+.sch-help{margin-top:var(--sp-2);font-size:var(--t-xs);line-height:1.6;color:var(--dim);}
+@media (max-width:560px){ .sch-item{flex-direction:column;align-items:stretch;} .sch-go{width:100%;} }

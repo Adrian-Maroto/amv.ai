@@ -3596,3 +3596,39 @@ taken three lines up.
 **Rule:** an inventory produces candidates, not findings. Read the function
 before it goes on the list, and say so publicly when one dissolves - a list of
 ten that contains three phantoms is worse than a list of seven.
+
+## 202. A feature can be shipped, documented and impossible
+
+The Canvas automation had a modal, a progress log, error handling, a rate-limit
+pause and a help note about overnight runs. It called
+`yourschool.instructure.com` from the BROWSER, and the page's own
+Content-Security-Policy names every host AMV may reach. No school is on that
+list and none can be - the host differs per school. The browser refused before
+the request left, on every run, for every student, since the day it was written.
+
+Nothing caught it because every piece looks right in isolation and the failure
+surfaces as a network error, which reads as the school being down.
+
+The second half was the same in miniature: the assignment description was run
+through `.replace(/<[^>]*>/g,' ')` before anything read it, and the Google Doc
+the assignment is ABOUT lives inside a tag as an href. The one thing that
+mattered was deleted first.
+
+**Rule:** for anything the browser calls, check it against connect-src before
+believing it works. A host that is not on that list is not a bug to debug later,
+it is a feature that has never run.
+
+## 203. The rule I wrote to pin it did not match the code that broke it
+
+Having fixed the browser-side Canvas call, I wrote a check that the browser
+never calls a school host - matching `fetch(...instructure...)` and
+`loadStr('amv_canvas_url') +`. It passed. The real code was
+`fetchDeadline(baseUrl+'/api/v1/courses...')` with `baseUrl` read three lines
+earlier, so the dead code was still shipping while its own guard reported green.
+
+The fix was to stop matching the CALL and start matching the CAPABILITY: the
+browser must hold no school address at all.
+
+**Rule:** write the rule against the thing that must not exist, not against the
+shape the defect happened to take. A guard that only recognises yesterday's
+spelling is a guard that passes tomorrow.
