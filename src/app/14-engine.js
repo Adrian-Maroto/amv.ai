@@ -787,7 +787,7 @@ async function _labDeploy(){
     }
     _labStat('\u2713 live','ok');
     _labOut('<div class="lab-sec"><div class="lab-sec-h">Published</div>'+
-      '<div class="lab-md">It\u2019s live at <a href="'+escH(url)+'" target="_blank" rel="noopener" style="color:var(--accent)">'+escH(url)+'</a> - anyone with the link can open it.</div></div>');
+      '<div class="lab-md">It\u2019s live at <a href="'+escH(safeUrl(url))+'" target="_blank" rel="noopener" style="color:var(--accent)">'+escH(url)+'</a> - anyone with the link can open it.</div></div>');
   }catch(e){
     _labStat('\u2717 '+e.message,'err');
     _labOut('<div class="lab-sec err"><pre class="lab-pre">'+_esc(e.message)+'</pre></div>');

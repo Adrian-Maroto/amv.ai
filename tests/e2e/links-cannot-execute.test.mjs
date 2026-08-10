@@ -128,31 +128,79 @@ section('And an artifact shared by link cannot either');
   ok(r.escaped, 'entity-escaped in the markup', r.escaped);
 }
 
-section('The places that handle an outside URL call it');
+section('EVERY href and src built by concatenation is guarded, or named here');
 {
-  /* Computed, so the next one is covered too. A URL that came from a provider,
-     a search, a share link or the wire, going into an href/src/window.open,
-     must pass through the allowlist. */
-  const OUTSIDE = [
-    ['the research chips',        /rsrc-chip" href="'\+escH\(safeUrl\(/],
-    ['the site list',             /site-u" href="'\+escH\(safeUrl\(/],
-    ['the deployed-site link',    /'\+escH\(safeUrl\(d\.url\)\)\+'/],
-    ['a generated image',         /<img src="'\+escH\(safeMediaSrc\(/],
-    ['a generated video',         /<video src="'\+escH\(safeMediaSrc\(/],
-    ['the video card',            /vvid" src="'\+escH\(safeMediaSrc\(v\.url\)\)/],
-    ['the video download',        /vdl" href="'\+escH\(safeMediaSrc\(v\.url\)\)/],
-    ['the premium image',         /safeMediaSrc\(await _premiumImageSrc\(/],
-    ['a shared session item',     /shr-u" href="'\+escH\(safeUrl\(i\.url\)\)/],
-    ['a Stripe receipt',          /safeUrl\(tx\.receipt\)/],
-    ['an invoice PDF',            /safeUrl\(v\.pdf\)/],
-    ['the checkout redirect',     /safeUrl\(await AMV_API\.stripeCheckout\(/],
-    ['the billing portal',        /safeUrl\(await AMV_API\.portal\(/],
-    ['the external pay window',   /const safe=safeUrl\(url\)/],
-    ['opening a live site',       /safeUrl\(b\.dataset\.open\)/],
-    ['opening a generated image', /safeMediaSrc\(b\.dataset\.url\)/],
+  /* This used to be a roster: sixteen call sites, each asserted to call
+     safeUrl. A roster cannot notice a seventeenth, and by the time anybody
+     looked there were four - the deploy URL that came back over the wire, and
+     three in the school screens, one of them rendering whatever html_url the
+     connected Canvas returned. Every one of them passed this file, because
+     this file was only ever asked about the sixteen somebody had remembered.
+
+     So it is a sweep now. Find every href/src assembled by string
+     concatenation in the shipped bundle, and require each to go through the
+     allowlist - or to be named below with the reason it needs no allowlist,
+     which is always "the value did not come from outside".
+
+     The reasons are checked too: an exemption that no longer matches anything
+     is deleted rather than left to excuse the next thing that looks like it. */
+  const EXEMPT = [
+    ['the app’s own address on the share card',
+     /^location\.origin\s*\+\s*location\.pathname/,
+     'built from where the page already is - there is no outside value in it'],
+    ['a blob: preview of an artifact',
+     /^url\+'" sandbox=/,
+     'URL.createObjectURL of a Blob this page just made; sandboxed, and no string from anywhere else reaches it'],
+    ['the widget install snippet',
+     /^host\+'\/widget\.js/,
+     'shown as text to copy, from the operator’s own backend base - it is not a link this page follows'],
+    ['a markdown link or image',
+     /^_mdAttr\((url|alt)\)/,
+     'the scheme is pinned by the pattern that matched it: md() only rewrites [text](https://...) and ![alt](https://...), so no other scheme can reach the attribute'],
   ];
-  const missing = OUTSIDE.filter(([, re]) => !re.test(bundle)).map(([name]) => name);
-  ok(missing.length === 0, 'every one of them is guarded', missing);
+
+  /* href="' + EXPR  /  src="' + EXPR, in either spacing the codebase uses. */
+  const sites = [...bundle.matchAll(/(href|src)\s*=\s*"'\s*\+\s*([^;\n]{1,80})/g)]
+    .map(m => ({ attr: m[1], expr: m[2].trim() }));
+
+  ok(sites.length > 15, 'the bundle really does assemble links this way', sites.length);
+
+  /* Guarded means the allowlist produced the value that reaches the attribute.
+     Usually that is inline - escH(safeUrl(x)). It is also allowed to hold the
+     result in a const first, which is what a site does when an unsafe value
+     should fall back to something rather than render an empty attribute; in
+     that case the const's initialiser has to be the guard, and this looks for
+     exactly that declaration. Nothing else counts: a value that merely passed
+     near a guard is not a value the guard returned. */
+  const inlineGuard = /^(escH\(\s*)?(safeUrl|safeMediaSrc)\s*\(/;
+  const heldGuard = (expr) => {
+    const m = expr.match(/^escH\(\s*([A-Za-z_$][\w$]*)\s*\)/);
+    if (!m) return false;
+    return new RegExp('const\\s+' + m[1] + '\\s*=[^;\\n]*\\b(safeUrl|safeMediaSrc)\\s*\\(').test(bundle);
+  };
+  const GUARDED = (expr) => inlineGuard.test(expr) || heldGuard(expr);
+  const unguarded = sites
+    .filter(s => !GUARDED(s.expr))
+    .filter(s => !EXEMPT.some(([, re]) => re.test(s.expr)))
+    .map(s => s.attr + '="\'+' + s.expr.slice(0, 50));
+  ok(unguarded.length === 0,
+     'nothing reaches an href or src without passing the allowlist first',
+     [...new Set(unguarded)].slice(0, 6));
+
+  const stale = EXEMPT.filter(([, re]) => !sites.some(s => re.test(s.expr))).map(([name]) => name);
+  ok(stale.length === 0, 'and every exemption still describes something that exists', stale);
+}
+
+section('The four that were found unguarded stay guarded, by name');
+{
+  /* The sweep above would catch these again, but it would catch them as a
+     count. Named individually so a regression says WHICH one, and because
+     each is a different kind of outside: the wire, Google, and a school. */
+  [['the deployed-site address, which came back over the wire', /live at <a href="'\+escH\(safeUrl\(url\)\)/],
+   ['the copy Drive just made',                                 /escH\(safeUrl\(link\)\)/],
+   ['the assignment link the connected Canvas returned',        /escH\(safeUrl\(a\.url\)\)/],
+   ['the original document an assignment points at',            /escH\(safeUrl\(d\.url\)\)/]]
+    .forEach(([name, re]) => ok(re.test(bundle), name, re.test(bundle)));
 }
 
 section('And the guard is one function, not a pattern people retype');

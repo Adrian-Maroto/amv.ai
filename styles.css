@@ -8302,3 +8302,27 @@ html,body{height:100%;height:100dvh}
 .sch-lbl{display:block;margin:var(--sp-4) 0 var(--sp-1);font-size:var(--t-sm);color:var(--mu);}
 .sch-help{margin-top:var(--sp-2);font-size:var(--t-xs);line-height:1.6;color:var(--dim);}
 @media (max-width:560px){ .sch-item{flex-direction:column;align-items:stretch;} .sch-go{width:100%;} }
+
+/* ── LAYER A73 ─ SCHOOL: THE DOOR, AND THE CHOICE OF DOCUMENT ────────────────
+   Two things the first version of these screens did not have a shape for.
+
+   The empty state now carries the way OUT of it. It used to say "add your
+   school's Canvas address in Settings" and there was nothing in Settings to
+   add it with, so the sentence was the whole feature's dead end - a screen
+   that names a place that does not exist is worse than one that says nothing.
+
+   And an assignment that points at more than one document gets a choice
+   instead of a silent first-pick. Deliberately plain rows: this is a question
+   about which file, not a decision that wants persuading. */
+.sch-connect-cta{margin-top:var(--sp-4);}
+.sch-pick{display:flex;flex-direction:column;gap:var(--sp-1);margin:var(--sp-3) 0;}
+.sch-pick-row{display:flex;align-items:center;gap:var(--sp-2);padding:var(--sp-2) var(--sp-3);
+  border:1px solid var(--bd);border-radius:var(--r-md);background:var(--s2);
+  font-size:var(--t-sm);color:var(--tx);cursor:pointer;transition:border-color .15s var(--ease);}
+.sch-pick-row:hover{border-color:var(--bdl);}
+.sch-pick-row:focus-within{border-color:var(--accent);}
+.sch-pick-row input{flex-shrink:0;accent-color:var(--accent);}
+.sch-pick-k{flex:1;}
+.sch-pick-row a{color:var(--mu);font-size:var(--t-xs);text-decoration:underline;}
+.sch-pick-row a:hover{color:var(--accent);}
+@media (max-width:560px){ .sch-pick-row{flex-wrap:wrap;} .sch-pick-k{flex:1 0 100%;} }

@@ -714,7 +714,14 @@ function _pfpFor(email){ try{ return email?loadStr('amv_pfp_'+String(email).toLo
 // (Caller provides the round container; this fills it.)
 function _avatarInner(email){
   const pfp=_pfpFor(email);
-  if(pfp) return '<img src="'+pfp+'" alt="" style="width:100%;height:100%;border-radius:50%;object-fit:cover;display:block">';
+  /* Always a data:image URL this browser made with FileReader, so in practice
+     it is safe - but "in practice" is what every one of these was before it
+     was not, and a stored value is a stored value. It goes through the same
+     allowlist as every other picture, and anything the allowlist will not
+     vouch for falls back to the generic mark rather than to a broken image
+     icon: a picture that cannot be shown is not a reason to show nothing. */
+  const safePfp = pfp ? safeMediaSrc(pfp) : '';
+  if(safePfp) return '<img src="'+escH(safePfp)+'" alt="" style="width:100%;height:100%;border-radius:50%;object-fit:cover;display:block">';
   return _defaultAvatarSVG();
 }
 // A complete round avatar element of a given pixel size.
@@ -18856,6 +18863,18 @@ function _tryProtocol(url){ /* intentionally does nothing - see comment above */
 async function connectIntegration(id){
   const m = INTEGRATION_META[id];
   if(!m){ return; }
+  /* Canvas is not an OAuth provider and needs nothing from the operator: the
+     student pastes their own access token, and it is kept on the server
+     because the page's own policy forbids the browser from calling a school
+     host. Without this branch it fell through to the generic message below,
+     which told them to wait for an operator who has nothing to do - and the
+     real connect screen was reachable from nowhere, so the whole area was a
+     dead end behind a sentence that was not true. */
+  if(id==='canvas'){
+    if(typeof schoolConnectOpen === 'function') return schoolConnectOpen();
+    toast('The school screens are not loaded on this page.','error',5000);
+    return;
+  }
   // Google has a real OAuth path already wired
   if(id==='google'){
     const cid=loadStr('amv_gauth');
@@ -18966,6 +18985,21 @@ async function connectSms(){
 }
 function disconnectIntegration(id){
   const m=INTEGRATION_META[id]; if(!m) return;
+  /* The school token is on the SERVER, not in this browser. Removing a local
+     key and saying "disconnected" would report something that did not happen
+     and leave the school connected and readable. The server is asked, and it
+     is only called disconnected when the server says so. */
+  if(id==='canvas'){
+    (async () => {
+      try{
+        await AMV_API._wrote('/v1/school/disconnect', {}, 'Your school could not be disconnected.');
+        try{ localStorage.removeItem(_scopeKey('amv_canvas')); }catch(e){}
+        toast('Your school is disconnected and the token is deleted.','info',5000);
+      }catch(e){ toast(e.message,'error',6000); }
+      _refreshIntegrationsUI();
+    })();
+    return;
+  }
   try{ localStorage.removeItem(_scopeKey(m.key)); }catch(e){}
   if(id==='google'){ try{ localStorage.removeItem(_scopeKey('amv_gtoken')); localStorage.removeItem(_scopeKey('amv_gtoken_exp')); }catch(e){} }
   toast(m.name+' disconnected','info'); _refreshIntegrationsUI();
@@ -20629,112 +20663,20 @@ function setupKeyboard(){
   });
 }
 
-/* === CANVAS AUTOMATION SYSTEM === */
-const CANVAS_QUEUE_KEY='amv_canvas_queue';
+/* THE CANVAS AUTOMATION SYSTEM IS GONE, AND SO IS THE RESIDUE OF IT.
 
-async function runCanvasAutomation() {
-  /* THIS COULD NEVER HAVE WORKED, AND NOW IT DOES NOT PRETEND TO.
+   Two things lived here and neither was reachable. runCanvasAutomation was
+   a shim whose own comment said "this name is kept because things still
+   call it" - nothing did, once the Connectors row started naming schoolOpen
+   directly. And openOvernightQueue was a whole modal, about eighty lines of
+   it, referenced by nothing anywhere in the bundle: a queue people could
+   not open, promising overnight work that needed their computer left on,
+   which is the automation this area was rebuilt to stop pretending about.
 
-     What used to be here called `yourschool.instructure.com/api/v1/...` from
-     the browser. The page's Content-Security-Policy names every host AMV may
-     reach, no school is on that list, and none can be - the host is different
-     for every school. So the browser refused the request before it left, every
-     time, for everybody, and the failure looked like AMV being broken.
-
-     Canvas is read by the Worker now, which has no CSP, and the flow that
-     follows from it - copy the doc the assignment points at, share it with the
-     teacher when the student says to - lives in schoolOpen. This name is kept
-     because things still call it. */
-  if(typeof schoolOpen === 'function') return schoolOpen();
-  toast('School work has moved. Open it from the sidebar.', 'info');
-}
-try{ window.runCanvasAutomation=runCanvasAutomation; }catch(e){}
-
-/* Canvas overnight queue (requires backend for true overnight - shows instructions) */
-function openOvernightQueue(){
-  const r=document.getElementById('ovr'); if(!r) return;
-  r.innerHTML=
-    '<div class="ov" id="oq-bg"><div class="ob wide" onclick="event.stopPropagation()">'+
-      '<button class="oc" onclick="closeOvr()">&#215;</button>'+
-      '<h2>&#x1F319; Overnight Task Queue</h2>'+
-      '<p class="ob-sub">Tasks to run overnight. Your computer must stay on, OR deploy a backend server.</p>'+
-      '<div class="sf" style="margin-bottom:14px">'+
-        '<input type="text" id="oq-task" placeholder="e.g. Complete all pending Canvas assignments for CS101…">'+
-        '<button class="btn bp" id="oq-add" style="align-self:flex-start;font-size:12px">Add Task</button>'+
-      '</div>'+
-      '<div id="oq-list" style="display:flex;flex-direction:column;gap:7px;min-height:60px;margin-bottom:14px"></div>'+
-      '<div class="wb" style="margin-bottom:13px">&#9888; For true overnight automation (computer OFF), you need a backend server. See Help Center for the free Render.com setup guide.</div>'+
-      '<div style="display:flex;gap:8px">'+
-        '<button class="btn bp" id="oq-run" style="font-size:13px">&#x25B6; Run Queue Now</button>'+
-        '<button class="btn bs" onclick="closeOvr()" style="font-size:13px">Done</button>'+
-      '</div>'+
-    '</div></div>';
-  document.getElementById('oq-bg')?.addEventListener('click',closeOvr);
-
-  let queue=[];
-  try{ queue=JSON.parse(localStorage.getItem(CANVAS_QUEUE_KEY)||'[]'); }catch(e){ queue=[]; }
-  if(!Array.isArray(queue)) queue=[];
-  const renderQ=()=>{
-    const list=document.getElementById('oq-list');
-    if(!list) return;
-    list.innerHTML=queue.length?queue.map((t,i)=>
-      '<div style="display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.04);border:1px solid var(--bd);border-radius:7px;padding:9px 12px;font-size:12px;">'+
-        '<span style="flex:1">'+escH(t)+'</span>'+
-        /* Was an inline onclick calling queue.splice(...) and renderQ(). Both
-           are LOCAL to this function, and an inline handler attribute runs in
-           the global scope - so every click threw ReferenceError: queue is not
-           defined and the row stayed. no-dead-controls did not catch it because
-           its inline-handler check skips any call containing a dot, and this
-           one began "queue.splice(". Bound properly instead, like the rest of
-           the file. */
-        '<button type="button" class="oq-del" data-oq="'+i+'" aria-label="Remove this task" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px">&#215;</button>'+
-      '</div>'
-    ).join(''):'<div style="font-size:12px;color:var(--t3);font-style:italic">No tasks queued.</div>';
-    list.querySelectorAll('[data-oq]').forEach(b=>on(b,'click',()=>{
-      const i=parseInt(b.dataset.oq,10);
-      if(!(i>=0)) return;
-      queue.splice(i,1);
-      try{ localStorage.setItem(CANVAS_QUEUE_KEY,JSON.stringify(queue)); }catch(e){}
-      renderQ();
-    }));
-  };
-  renderQ();
-
-  document.getElementById('oq-add')?.addEventListener('click',()=>{
-    const inp=document.getElementById('oq-task');
-    if(!inp?.value.trim()) return;
-    const taskText=inp.value.trim();
-    // Task #1: check capability before queueing. Warn specifically if missing.
-    try{
-      const a=(typeof analyzeTaskIntent==='function')?analyzeTaskIntent(taskText):null;
-      if(a&&a.matched&&!a.ready){
-        const missing=(a.missing[0]&&a.missing[0].integration)||(a.unsupported[0]&&a.unsupported[0].integration)||'a required integration';
-        const api=(a.missing[0]&&a.missing[0].api)||(a.unsupported[0]&&a.unsupported[0].api)||'integration';
-        toast('Queued, but needs '+missing+' ('+api+') connected to run','info',4500);
-      } else {
-        toast('Task added to queue','success');
-      }
-    }catch(e){ toast('Task added to queue','success'); }
-    queue.push(taskText);
-    localStorage.setItem(CANVAS_QUEUE_KEY,JSON.stringify(queue));
-    inp.value=''; renderQ();
-  });
-
-  document.getElementById('oq-run')?.addEventListener('click',()=>{
-    if(!queue.length){toast('No tasks in queue','info');return;}
-    closeOvr();
-    // Send all queued tasks to chat as one big automation request
-    setTab('chat');
-    setTimeout(()=>{
-      const ta=document.getElementById('mta');
-      if(ta){
-        ta.value='Run these automation tasks in sequence:\n'+queue.map((t,i)=>(i+1)+'. '+t).join('\n');
-        ta.dispatchEvent(new Event('input'));
-        ta.focus();
-      }
-    },200);
-  });
-}
+   What replaced both is real and has a door: Connectors -> Canvas LMS opens
+   schoolConnectOpen, and once connected the same row opens schoolOpen. Work
+   that should run without anybody present belongs to Crew, which has a
+   server to run on. */
 
 
 
@@ -22025,7 +21967,14 @@ function _integrationsCatalogHTML(){
     )+
     cat('Productivity',
       intRow({id:'notion',name:'Notion',desc:'Reads and writes pages, builds docs in your workspace.',auto:true,connected:isConn('amv_notion'),icon:'\uD83D\uDCDD',bg:'rgba(255,255,255,.08)'})+
-      intRow({id:'canvas',name:'Canvas LMS',desc:'Reads assignments and drafts answers from your notes. Works overnight.',auto:true,connected:isConn('amv_canvas'),run:'runCanvasAutomation',runLabel:'Run now',icon:'\uD83C\uDF93',bg:'rgba(230,70,70,.14)'})
+      /* The description says what it does now. It used to promise "drafts
+         answers from your notes, works overnight", which described an
+         automation that was removed - and which had never run anyway, because
+         it called the school from the browser and the page's policy refused
+         every request. What is left is real: read what is due, take your own
+         copy of the document the assignment points at, share it with the
+         teacher when you say to. Handing in stays the student's own act. */
+      intRow({id:'canvas',name:'Canvas LMS',desc:'Reads what is due, makes your own copy of the doc an assignment points at, and shares it with your teacher when you say to.',auto:true,connected:isConn('amv_canvas'),run:'schoolOpen',runLabel:'Open my school work',icon:'\uD83C\uDF93',bg:'rgba(230,70,70,.14)'})
     )+
     cat('Office files',
       intRow({id:'excel',name:'Excel & CSV',desc:'Upload a sheet - AMV runs formulas, builds pivots and charts, then you download.',auto:false,connected:false,icon:'\uD83D\uDCCA',bg:'rgba(33,115,70,.14)'})+
@@ -23219,7 +23168,7 @@ async function _labDeploy(){
     }
     _labStat('\u2713 live','ok');
     _labOut('<div class="lab-sec"><div class="lab-sec-h">Published</div>'+
-      '<div class="lab-md">It\u2019s live at <a href="'+escH(url)+'" target="_blank" rel="noopener" style="color:var(--accent)">'+escH(url)+'</a> - anyone with the link can open it.</div></div>');
+      '<div class="lab-md">It\u2019s live at <a href="'+escH(safeUrl(url))+'" target="_blank" rel="noopener" style="color:var(--accent)">'+escH(url)+'</a> - anyone with the link can open it.</div></div>');
   }catch(e){
     _labStat('\u2717 '+e.message,'err');
     _labOut('<div class="lab-sec err"><pre class="lab-pre">'+_esc(e.message)+'</pre></div>');
@@ -29177,9 +29126,15 @@ async function _schoolRender(){
   let d;
   try{ d = await AMV_API._wrote('/v1/school/work', {}, 'AMV could not read your school work.'); }
   catch(e){
+    /* The server is the authority on whether a school is connected. When it
+       says no, the local marker the Connectors list reads is wrong, so it goes
+       - otherwise that list would keep showing "Connected" for a school this
+       screen has just been refused by. */
+    if(e.code === 'not_connected'){ try{ localStorage.removeItem(_scopeKey('amv_canvas')); }catch(_e){} }
     body.innerHTML = '<div class="sch-empty"><b>' + escH(e.message) + '</b>'+
       (e.code === 'not_connected'
-        ? '<span>' + T('Add your school’s Canvas address and an access token in Settings, and this fills itself in.') + '</span>'
+        ? '<span>' + T('Connect your school below and this fills itself in.') + '</span>'+
+          '<button class="btn bp sch-connect-cta" data-dact="schoolConnectOpen">' + T('Connect your school') + '</button>'
         : '') + '</div>';
     return;
   }
@@ -29211,21 +29166,36 @@ let _schoolWork = [];
    three different things, and only one of them involves another person. */
 async function schoolPrepare(index){
   const a = _schoolWork[+index]; if(!a) return;
-  const doc = (a.docs || [])[0];
-  if(!doc){ toast(T('That assignment has no document attached.'), 'info'); return; }
+  const docs = a.docs || [];
+  if(!docs.length){ toast(T('That assignment has no document attached.'), 'info'); return; }
 
   const g = _schoolGoogleToken();
   if(!g.ok){ toast(g.why, 'error', 7000); return; }
 
   const body = $('sch-body'); if(!body) return;
-  const kind = SCHOOL_DOC_KINDS[doc.kind] || T('document');
+  /* An assignment often points at more than one document - the template you
+     are meant to work in, and a rubric or an example you are not. Copying the
+     first one and calling it "your copy" is the kind of quiet wrong answer
+     that gets somebody a zero, so when there is a choice it is theirs. */
+  const many = docs.length > 1;
+  const kindOf = (d) => SCHOOL_DOC_KINDS[d.kind] || T('document');
+  const picker = many
+    ? '<div class="sch-pick">' + docs.map((d, i) =>
+        '<label class="sch-pick-row"><input type="radio" name="sch-doc" value="' + i + '"' + (i === 0 ? ' checked' : '') + '>'+
+          '<span class="sch-pick-k">' + escH(kindOf(d)) + '</span>'+
+          '<a href="' + escH(safeUrl(d.url)) + '" target="_blank" rel="noopener">' + T('open the original') + '</a>'+
+        '</label>').join('') + '</div>'
+    : '';
+
   body.innerHTML =
     '<div class="sch-step">'+
       '<h3>' + escH(a.name || '') + '</h3>'+
       '<p class="sch-course">' + escH(a.course || '') + '</p>'+
       '<div class="sch-instructions">' + escH((a.instructions || '').slice(0, 1200)) + '</div>'+
       '<div class="sch-ask">'+
-        '<b>' + T('Make your own copy of the') + ' ' + escH(kind) + '?</b>'+
+        (many
+          ? '<b>' + T('This assignment points at more than one document. Which one do you work in?') + '</b>' + picker
+          : '<b>' + T('Make your own copy of the') + ' ' + escH(kindOf(docs[0])) + '?</b>')+
         '<span>' + T('The copy goes in your Google Drive. The teacher’s original is not touched.') + '</span>'+
         '<div class="sch-btns">'+
           '<button class="btn bp" id="sch-copy">' + T('Make my copy') + '</button>'+
@@ -29237,6 +29207,11 @@ async function schoolPrepare(index){
   const btn = $('sch-copy');
   if(!btn) return;
   on(btn, 'click', async () => {
+    const picked = many
+      ? (document.querySelector('input[name="sch-doc"]:checked') || {}).value
+      : 0;
+    const doc = docs[+picked || 0];
+    if(!doc) return;
     btn.disabled = true; btn.textContent = T('Copying…');
     let copy;
     try{
@@ -29265,7 +29240,7 @@ async function _schoolAfterCopy(a, copy, token){
 
   body.innerHTML =
     '<div class="sch-step">'+
-      '<div class="sch-done">' + T('Your copy is made.') + ' <a href="' + escH(link) + '" target="_blank" rel="noopener">' + T('Open it') + '</a></div>'+
+      '<div class="sch-done">' + T('Your copy is made.') + ' <a href="' + escH(safeUrl(link)) + '" target="_blank" rel="noopener">' + T('Open it') + '</a></div>'+
       '<div class="sch-ask">'+
         '<b>' + T('Share your copy with your teacher?') + '</b>'+
         (teachers.length
@@ -29304,9 +29279,9 @@ async function _schoolAfterCopy(a, copy, token){
     body.innerHTML =
       '<div class="sch-step">'+
         '<div class="sch-done sch-done-final">' + T('Shared with') + ' ' + escH(who) + '.</div>'+
-        '<p>' + T('Your copy:') + ' <a href="' + escH(link) + '" target="_blank" rel="noopener">' + escH(a.name || T('your document')) + '</a></p>'+
+        '<p>' + T('Your copy:') + ' <a href="' + escH(safeUrl(link)) + '" target="_blank" rel="noopener">' + escH(a.name || T('your document')) + '</a></p>'+
         '<div class="sch-note">' + T('Last step is yours: open the assignment in Canvas and hand it in.') + '</div>'+
-        (a.url ? '<a class="btn bp" href="' + escH(a.url) + '" target="_blank" rel="noopener">' + T('Open the assignment in Canvas') + '</a>' : '')+
+        (a.url ? '<a class="btn bp" href="' + escH(safeUrl(a.url)) + '" target="_blank" rel="noopener">' + T('Open the assignment in Canvas') + '</a>' : '')+
         '<button class="btn bs" data-dact="_schoolRender">' + T('Back to my work') + '</button>'+
       '</div>';
   });
@@ -29345,6 +29320,10 @@ async function schoolConnectOpen(){
       const d = await AMV_API._wrote('/v1/school/connect',
         { baseUrl: ($('schc-url')||{}).value || '', token: ($('schc-tok')||{}).value || '' },
         'That could not be connected.');
+      /* The marker the Connectors list reads. Written only after the server
+         has proved the token against the real Canvas, so "Connected" there
+         means connected rather than attempted. */
+      try{ saveStr('amv_canvas', d.host || '1'); }catch(_e){}
       toast(T('Connected to') + ' ' + (d.host || T('your school')), 'success');
       closeOvr(); schoolOpen();
     }catch(e){
@@ -29357,8 +29336,10 @@ async function schoolConnectOpen(){
     off.disabled = true;
     try{
       await AMV_API._wrote('/v1/school/disconnect', {}, 'That could not be disconnected.');
+      try{ localStorage.removeItem(_scopeKey('amv_canvas')); }catch(_e){}
       toast(T('Your school is disconnected and the token is deleted.'), 'info');
       closeOvr();
+      try{ if(typeof _refreshIntegrationsUI === 'function') _refreshIntegrationsUI(); }catch(_e){}
     }catch(e){ off.disabled = false; say(e.message); }
   });
 }

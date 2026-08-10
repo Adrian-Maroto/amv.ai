@@ -1037,6 +1037,18 @@ function _tryProtocol(url){ /* intentionally does nothing - see comment above */
 async function connectIntegration(id){
   const m = INTEGRATION_META[id];
   if(!m){ return; }
+  /* Canvas is not an OAuth provider and needs nothing from the operator: the
+     student pastes their own access token, and it is kept on the server
+     because the page's own policy forbids the browser from calling a school
+     host. Without this branch it fell through to the generic message below,
+     which told them to wait for an operator who has nothing to do - and the
+     real connect screen was reachable from nowhere, so the whole area was a
+     dead end behind a sentence that was not true. */
+  if(id==='canvas'){
+    if(typeof schoolConnectOpen === 'function') return schoolConnectOpen();
+    toast('The school screens are not loaded on this page.','error',5000);
+    return;
+  }
   // Google has a real OAuth path already wired
   if(id==='google'){
     const cid=loadStr('amv_gauth');
@@ -1147,6 +1159,21 @@ async function connectSms(){
 }
 function disconnectIntegration(id){
   const m=INTEGRATION_META[id]; if(!m) return;
+  /* The school token is on the SERVER, not in this browser. Removing a local
+     key and saying "disconnected" would report something that did not happen
+     and leave the school connected and readable. The server is asked, and it
+     is only called disconnected when the server says so. */
+  if(id==='canvas'){
+    (async () => {
+      try{
+        await AMV_API._wrote('/v1/school/disconnect', {}, 'Your school could not be disconnected.');
+        try{ localStorage.removeItem(_scopeKey('amv_canvas')); }catch(e){}
+        toast('Your school is disconnected and the token is deleted.','info',5000);
+      }catch(e){ toast(e.message,'error',6000); }
+      _refreshIntegrationsUI();
+    })();
+    return;
+  }
   try{ localStorage.removeItem(_scopeKey(m.key)); }catch(e){}
   if(id==='google'){ try{ localStorage.removeItem(_scopeKey('amv_gtoken')); localStorage.removeItem(_scopeKey('amv_gtoken_exp')); }catch(e){} }
   toast(m.name+' disconnected','info'); _refreshIntegrationsUI();
@@ -2810,112 +2837,20 @@ function setupKeyboard(){
   });
 }
 
-/* === CANVAS AUTOMATION SYSTEM === */
-const CANVAS_QUEUE_KEY='amv_canvas_queue';
+/* THE CANVAS AUTOMATION SYSTEM IS GONE, AND SO IS THE RESIDUE OF IT.
 
-async function runCanvasAutomation() {
-  /* THIS COULD NEVER HAVE WORKED, AND NOW IT DOES NOT PRETEND TO.
+   Two things lived here and neither was reachable. runCanvasAutomation was
+   a shim whose own comment said "this name is kept because things still
+   call it" - nothing did, once the Connectors row started naming schoolOpen
+   directly. And openOvernightQueue was a whole modal, about eighty lines of
+   it, referenced by nothing anywhere in the bundle: a queue people could
+   not open, promising overnight work that needed their computer left on,
+   which is the automation this area was rebuilt to stop pretending about.
 
-     What used to be here called `yourschool.instructure.com/api/v1/...` from
-     the browser. The page's Content-Security-Policy names every host AMV may
-     reach, no school is on that list, and none can be - the host is different
-     for every school. So the browser refused the request before it left, every
-     time, for everybody, and the failure looked like AMV being broken.
-
-     Canvas is read by the Worker now, which has no CSP, and the flow that
-     follows from it - copy the doc the assignment points at, share it with the
-     teacher when the student says to - lives in schoolOpen. This name is kept
-     because things still call it. */
-  if(typeof schoolOpen === 'function') return schoolOpen();
-  toast('School work has moved. Open it from the sidebar.', 'info');
-}
-try{ window.runCanvasAutomation=runCanvasAutomation; }catch(e){}
-
-/* Canvas overnight queue (requires backend for true overnight - shows instructions) */
-function openOvernightQueue(){
-  const r=document.getElementById('ovr'); if(!r) return;
-  r.innerHTML=
-    '<div class="ov" id="oq-bg"><div class="ob wide" onclick="event.stopPropagation()">'+
-      '<button class="oc" onclick="closeOvr()">&#215;</button>'+
-      '<h2>&#x1F319; Overnight Task Queue</h2>'+
-      '<p class="ob-sub">Tasks to run overnight. Your computer must stay on, OR deploy a backend server.</p>'+
-      '<div class="sf" style="margin-bottom:14px">'+
-        '<input type="text" id="oq-task" placeholder="e.g. Complete all pending Canvas assignments for CS101…">'+
-        '<button class="btn bp" id="oq-add" style="align-self:flex-start;font-size:12px">Add Task</button>'+
-      '</div>'+
-      '<div id="oq-list" style="display:flex;flex-direction:column;gap:7px;min-height:60px;margin-bottom:14px"></div>'+
-      '<div class="wb" style="margin-bottom:13px">&#9888; For true overnight automation (computer OFF), you need a backend server. See Help Center for the free Render.com setup guide.</div>'+
-      '<div style="display:flex;gap:8px">'+
-        '<button class="btn bp" id="oq-run" style="font-size:13px">&#x25B6; Run Queue Now</button>'+
-        '<button class="btn bs" onclick="closeOvr()" style="font-size:13px">Done</button>'+
-      '</div>'+
-    '</div></div>';
-  document.getElementById('oq-bg')?.addEventListener('click',closeOvr);
-
-  let queue=[];
-  try{ queue=JSON.parse(localStorage.getItem(CANVAS_QUEUE_KEY)||'[]'); }catch(e){ queue=[]; }
-  if(!Array.isArray(queue)) queue=[];
-  const renderQ=()=>{
-    const list=document.getElementById('oq-list');
-    if(!list) return;
-    list.innerHTML=queue.length?queue.map((t,i)=>
-      '<div style="display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.04);border:1px solid var(--bd);border-radius:7px;padding:9px 12px;font-size:12px;">'+
-        '<span style="flex:1">'+escH(t)+'</span>'+
-        /* Was an inline onclick calling queue.splice(...) and renderQ(). Both
-           are LOCAL to this function, and an inline handler attribute runs in
-           the global scope - so every click threw ReferenceError: queue is not
-           defined and the row stayed. no-dead-controls did not catch it because
-           its inline-handler check skips any call containing a dot, and this
-           one began "queue.splice(". Bound properly instead, like the rest of
-           the file. */
-        '<button type="button" class="oq-del" data-oq="'+i+'" aria-label="Remove this task" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px">&#215;</button>'+
-      '</div>'
-    ).join(''):'<div style="font-size:12px;color:var(--t3);font-style:italic">No tasks queued.</div>';
-    list.querySelectorAll('[data-oq]').forEach(b=>on(b,'click',()=>{
-      const i=parseInt(b.dataset.oq,10);
-      if(!(i>=0)) return;
-      queue.splice(i,1);
-      try{ localStorage.setItem(CANVAS_QUEUE_KEY,JSON.stringify(queue)); }catch(e){}
-      renderQ();
-    }));
-  };
-  renderQ();
-
-  document.getElementById('oq-add')?.addEventListener('click',()=>{
-    const inp=document.getElementById('oq-task');
-    if(!inp?.value.trim()) return;
-    const taskText=inp.value.trim();
-    // Task #1: check capability before queueing. Warn specifically if missing.
-    try{
-      const a=(typeof analyzeTaskIntent==='function')?analyzeTaskIntent(taskText):null;
-      if(a&&a.matched&&!a.ready){
-        const missing=(a.missing[0]&&a.missing[0].integration)||(a.unsupported[0]&&a.unsupported[0].integration)||'a required integration';
-        const api=(a.missing[0]&&a.missing[0].api)||(a.unsupported[0]&&a.unsupported[0].api)||'integration';
-        toast('Queued, but needs '+missing+' ('+api+') connected to run','info',4500);
-      } else {
-        toast('Task added to queue','success');
-      }
-    }catch(e){ toast('Task added to queue','success'); }
-    queue.push(taskText);
-    localStorage.setItem(CANVAS_QUEUE_KEY,JSON.stringify(queue));
-    inp.value=''; renderQ();
-  });
-
-  document.getElementById('oq-run')?.addEventListener('click',()=>{
-    if(!queue.length){toast('No tasks in queue','info');return;}
-    closeOvr();
-    // Send all queued tasks to chat as one big automation request
-    setTab('chat');
-    setTimeout(()=>{
-      const ta=document.getElementById('mta');
-      if(ta){
-        ta.value='Run these automation tasks in sequence:\n'+queue.map((t,i)=>(i+1)+'. '+t).join('\n');
-        ta.dispatchEvent(new Event('input'));
-        ta.focus();
-      }
-    },200);
-  });
-}
+   What replaced both is real and has a door: Connectors -> Canvas LMS opens
+   schoolConnectOpen, and once connected the same row opens schoolOpen. Work
+   that should run without anybody present belongs to Crew, which has a
+   server to run on. */
 
 
 

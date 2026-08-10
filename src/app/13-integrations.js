@@ -709,7 +709,14 @@ function _integrationsCatalogHTML(){
     )+
     cat('Productivity',
       intRow({id:'notion',name:'Notion',desc:'Reads and writes pages, builds docs in your workspace.',auto:true,connected:isConn('amv_notion'),icon:'\uD83D\uDCDD',bg:'rgba(255,255,255,.08)'})+
-      intRow({id:'canvas',name:'Canvas LMS',desc:'Reads assignments and drafts answers from your notes. Works overnight.',auto:true,connected:isConn('amv_canvas'),run:'runCanvasAutomation',runLabel:'Run now',icon:'\uD83C\uDF93',bg:'rgba(230,70,70,.14)'})
+      /* The description says what it does now. It used to promise "drafts
+         answers from your notes, works overnight", which described an
+         automation that was removed - and which had never run anyway, because
+         it called the school from the browser and the page's policy refused
+         every request. What is left is real: read what is due, take your own
+         copy of the document the assignment points at, share it with the
+         teacher when you say to. Handing in stays the student's own act. */
+      intRow({id:'canvas',name:'Canvas LMS',desc:'Reads what is due, makes your own copy of the doc an assignment points at, and shares it with your teacher when you say to.',auto:true,connected:isConn('amv_canvas'),run:'schoolOpen',runLabel:'Open my school work',icon:'\uD83C\uDF93',bg:'rgba(230,70,70,.14)'})
     )+
     cat('Office files',
       intRow({id:'excel',name:'Excel & CSV',desc:'Upload a sheet - AMV runs formulas, builds pivots and charts, then you download.',auto:false,connected:false,icon:'\uD83D\uDCCA',bg:'rgba(33,115,70,.14)'})+

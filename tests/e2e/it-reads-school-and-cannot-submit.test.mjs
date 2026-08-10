@@ -217,6 +217,96 @@ section('And a Classroom that errors is reported, not guessed around');
   ok(/scope/i.test(r.msg), 'carrying what Google actually said', r.msg);
 }
 
+section('A student can actually get in, which is the part that was missing');
+{
+  /* The whole area shipped once with no door on either side.
+
+     Connectors -> Canvas LMS -> Connect fell through to the generic branch and
+     said "it needs its API key added by the operator in Settings first - once
+     that's done, Connect opens Canvas LMS's secure approval popup". Three
+     claims, none of them true: no operator key is involved, there is no OAuth
+     popup, and the token is the student's own to paste. schoolConnectOpen -
+     the screen that really does it - was called from nowhere in the bundle.
+     And the row's "run" control only renders when connected is true, computed
+     from a localStorage key the server-side flow never wrote, so it could not
+     become true either.
+
+     Every piece was finished. Nobody could reach any of it. So this checks the
+     path a person walks, not the functions that exist. */
+  /* Pressed, not read. An earlier version of this check looked for the word
+     "canvas" in the source of connectIntegration, and a sabotage that renamed
+     the branch to 'canvasXX' sailed straight past it - the word was still
+     there. What matters is where the button goes, so the button is used. */
+  const wired = await L.page.evaluate(async () => {
+    const out = { opened: false, toasts: [] };
+    const realOpen = window.schoolConnectOpen;
+    const realToast = window.toast;
+    window.schoolConnectOpen = () => { out.opened = true; };
+    window.toast = (msg) => { out.toasts.push(String(msg)); };
+    try { await connectIntegration('canvas'); } catch (e) { out.threw = String(e && e.message); }
+    window.schoolConnectOpen = realOpen;
+    window.toast = realToast;
+    out.connectOpenExists = typeof realOpen === 'function';
+    out.openExists = typeof window.schoolOpen === 'function';
+    out.catalog = _integrationsCatalogHTML();
+    return out;
+  });
+  ok(wired.connectOpenExists && wired.openExists,
+     'both school screens exist', { connect: wired.connectOpenExists, work: wired.openExists });
+  ok(wired.opened === true,
+     'pressing Connect on the Canvas row opens the school connect screen', wired.opened);
+  ok(!wired.toasts.some(t => /operator|API key/i.test(t)),
+     'and says nothing about waiting for an operator, who has nothing to do here', wired.toasts);
+
+  /* Disconnect, the same way: the token is on the SERVER, so a disconnect that
+     only clears a local key reports something that did not happen and leaves
+     the school readable. */
+  const off = await L.page.evaluate(async () => {
+    const out = { calls: [] };
+    const realWrote = AMV_API._wrote;
+    AMV_API._wrote = async (path) => { out.calls.push(path); return { ok: true }; };
+    try { disconnectIntegration('canvas'); } catch (e) { out.threw = String(e && e.message); }
+    await new Promise(r => setTimeout(r, 60));
+    AMV_API._wrote = realWrote;
+    return out;
+  });
+  ok(off.calls.some(p => /school\/disconnect/.test(p)),
+     'disconnecting asks the server to delete the token rather than clearing a local key', off.calls);
+
+  /* Not connected, so the row offers the way to connect. */
+  ok(/data-int-conn="canvas"/.test(wired.catalog),
+     'before connecting, the row offers Connect', /data-int-conn="canvas"/.test(wired.catalog));
+
+  /* And once connected it offers the way IN. This is the half that could never
+     happen: the marker the row reads was written by nothing, so the run
+     control was unreachable no matter what a student did. */
+  const after = await L.page.evaluate(() => {
+    saveStr('amv_canvas', 'school.instructure.com');
+    const html = _integrationsCatalogHTML();
+    const names = (html.match(/data-int-run="([^"]+)"/g) || []).map(s => s.replace(/.*="|"$/g, ''));
+    localStorage.removeItem(_scopeKey('amv_canvas'));
+    return { names, dead: names.filter(n => typeof window[n] !== 'function'), connectedShown: /Connected/.test(html) };
+  });
+  ok(after.names.length > 0, 'once connected, the row offers something to run', after);
+  ok(after.dead.length === 0, 'and every name it dispatches is a function this page has', after.dead);
+  ok(after.connectedShown, 'and it says Connected, from a marker the connect flow really writes', after.connectedShown);
+}
+
+section('What the catalog promises is what the feature does');
+{
+  /* The row's description outlived the automation it described: "drafts
+     answers from your notes. Works overnight." That automation was removed
+     for being impossible, and the sentence stayed - which is the same lie the
+     old Canvas modal told, moved one screen back. */
+  const html = await L.page.evaluate(() => _integrationsCatalogHTML());
+  const row = (html.match(/<div class="int-card">(?:(?!<div class="int-card">)[\s\S])*?Canvas LMS[\s\S]*?<\/div>\s*<\/div>\s*<\/div>/) || [''])[0];
+  ok(row.length > 0, 'the Canvas row was found', row.length);
+  ok(!/overnight/i.test(row), 'it no longer promises overnight work', row.slice(0, 200));
+  ok(!/drafts answers/i.test(row), 'nor drafting answers, which it does not do', row.slice(0, 200));
+  ok(/copy/i.test(row) && /share/i.test(row),
+     'and it says the two things it really does: make your copy, share it with your teacher', row.slice(0, 240));
+}
+
 section('Nothing broke');
 {
   ok(L.errors.length === 0, 'no JavaScript errors', L.errors.slice(0, 4));

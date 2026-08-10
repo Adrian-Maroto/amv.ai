@@ -714,7 +714,14 @@ function _pfpFor(email){ try{ return email?loadStr('amv_pfp_'+String(email).toLo
 // (Caller provides the round container; this fills it.)
 function _avatarInner(email){
   const pfp=_pfpFor(email);
-  if(pfp) return '<img src="'+pfp+'" alt="" style="width:100%;height:100%;border-radius:50%;object-fit:cover;display:block">';
+  /* Always a data:image URL this browser made with FileReader, so in practice
+     it is safe - but "in practice" is what every one of these was before it
+     was not, and a stored value is a stored value. It goes through the same
+     allowlist as every other picture, and anything the allowlist will not
+     vouch for falls back to the generic mark rather than to a broken image
+     icon: a picture that cannot be shown is not a reason to show nothing. */
+  const safePfp = pfp ? safeMediaSrc(pfp) : '';
+  if(safePfp) return '<img src="'+escH(safePfp)+'" alt="" style="width:100%;height:100%;border-radius:50%;object-fit:cover;display:block">';
   return _defaultAvatarSVG();
 }
 // A complete round avatar element of a given pixel size.

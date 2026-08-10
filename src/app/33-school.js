@@ -95,9 +95,15 @@ async function _schoolRender(){
   let d;
   try{ d = await AMV_API._wrote('/v1/school/work', {}, 'AMV could not read your school work.'); }
   catch(e){
+    /* The server is the authority on whether a school is connected. When it
+       says no, the local marker the Connectors list reads is wrong, so it goes
+       - otherwise that list would keep showing "Connected" for a school this
+       screen has just been refused by. */
+    if(e.code === 'not_connected'){ try{ localStorage.removeItem(_scopeKey('amv_canvas')); }catch(_e){} }
     body.innerHTML = '<div class="sch-empty"><b>' + escH(e.message) + '</b>'+
       (e.code === 'not_connected'
-        ? '<span>' + T('Add your school’s Canvas address and an access token in Settings, and this fills itself in.') + '</span>'
+        ? '<span>' + T('Connect your school below and this fills itself in.') + '</span>'+
+          '<button class="btn bp sch-connect-cta" data-dact="schoolConnectOpen">' + T('Connect your school') + '</button>'
         : '') + '</div>';
     return;
   }
@@ -129,21 +135,36 @@ let _schoolWork = [];
    three different things, and only one of them involves another person. */
 async function schoolPrepare(index){
   const a = _schoolWork[+index]; if(!a) return;
-  const doc = (a.docs || [])[0];
-  if(!doc){ toast(T('That assignment has no document attached.'), 'info'); return; }
+  const docs = a.docs || [];
+  if(!docs.length){ toast(T('That assignment has no document attached.'), 'info'); return; }
 
   const g = _schoolGoogleToken();
   if(!g.ok){ toast(g.why, 'error', 7000); return; }
 
   const body = $('sch-body'); if(!body) return;
-  const kind = SCHOOL_DOC_KINDS[doc.kind] || T('document');
+  /* An assignment often points at more than one document - the template you
+     are meant to work in, and a rubric or an example you are not. Copying the
+     first one and calling it "your copy" is the kind of quiet wrong answer
+     that gets somebody a zero, so when there is a choice it is theirs. */
+  const many = docs.length > 1;
+  const kindOf = (d) => SCHOOL_DOC_KINDS[d.kind] || T('document');
+  const picker = many
+    ? '<div class="sch-pick">' + docs.map((d, i) =>
+        '<label class="sch-pick-row"><input type="radio" name="sch-doc" value="' + i + '"' + (i === 0 ? ' checked' : '') + '>'+
+          '<span class="sch-pick-k">' + escH(kindOf(d)) + '</span>'+
+          '<a href="' + escH(safeUrl(d.url)) + '" target="_blank" rel="noopener">' + T('open the original') + '</a>'+
+        '</label>').join('') + '</div>'
+    : '';
+
   body.innerHTML =
     '<div class="sch-step">'+
       '<h3>' + escH(a.name || '') + '</h3>'+
       '<p class="sch-course">' + escH(a.course || '') + '</p>'+
       '<div class="sch-instructions">' + escH((a.instructions || '').slice(0, 1200)) + '</div>'+
       '<div class="sch-ask">'+
-        '<b>' + T('Make your own copy of the') + ' ' + escH(kind) + '?</b>'+
+        (many
+          ? '<b>' + T('This assignment points at more than one document. Which one do you work in?') + '</b>' + picker
+          : '<b>' + T('Make your own copy of the') + ' ' + escH(kindOf(docs[0])) + '?</b>')+
         '<span>' + T('The copy goes in your Google Drive. The teacher’s original is not touched.') + '</span>'+
         '<div class="sch-btns">'+
           '<button class="btn bp" id="sch-copy">' + T('Make my copy') + '</button>'+
@@ -155,6 +176,11 @@ async function schoolPrepare(index){
   const btn = $('sch-copy');
   if(!btn) return;
   on(btn, 'click', async () => {
+    const picked = many
+      ? (document.querySelector('input[name="sch-doc"]:checked') || {}).value
+      : 0;
+    const doc = docs[+picked || 0];
+    if(!doc) return;
     btn.disabled = true; btn.textContent = T('Copying…');
     let copy;
     try{
@@ -183,7 +209,7 @@ async function _schoolAfterCopy(a, copy, token){
 
   body.innerHTML =
     '<div class="sch-step">'+
-      '<div class="sch-done">' + T('Your copy is made.') + ' <a href="' + escH(link) + '" target="_blank" rel="noopener">' + T('Open it') + '</a></div>'+
+      '<div class="sch-done">' + T('Your copy is made.') + ' <a href="' + escH(safeUrl(link)) + '" target="_blank" rel="noopener">' + T('Open it') + '</a></div>'+
       '<div class="sch-ask">'+
         '<b>' + T('Share your copy with your teacher?') + '</b>'+
         (teachers.length
@@ -222,9 +248,9 @@ async function _schoolAfterCopy(a, copy, token){
     body.innerHTML =
       '<div class="sch-step">'+
         '<div class="sch-done sch-done-final">' + T('Shared with') + ' ' + escH(who) + '.</div>'+
-        '<p>' + T('Your copy:') + ' <a href="' + escH(link) + '" target="_blank" rel="noopener">' + escH(a.name || T('your document')) + '</a></p>'+
+        '<p>' + T('Your copy:') + ' <a href="' + escH(safeUrl(link)) + '" target="_blank" rel="noopener">' + escH(a.name || T('your document')) + '</a></p>'+
         '<div class="sch-note">' + T('Last step is yours: open the assignment in Canvas and hand it in.') + '</div>'+
-        (a.url ? '<a class="btn bp" href="' + escH(a.url) + '" target="_blank" rel="noopener">' + T('Open the assignment in Canvas') + '</a>' : '')+
+        (a.url ? '<a class="btn bp" href="' + escH(safeUrl(a.url)) + '" target="_blank" rel="noopener">' + T('Open the assignment in Canvas') + '</a>' : '')+
         '<button class="btn bs" data-dact="_schoolRender">' + T('Back to my work') + '</button>'+
       '</div>';
   });
@@ -263,6 +289,10 @@ async function schoolConnectOpen(){
       const d = await AMV_API._wrote('/v1/school/connect',
         { baseUrl: ($('schc-url')||{}).value || '', token: ($('schc-tok')||{}).value || '' },
         'That could not be connected.');
+      /* The marker the Connectors list reads. Written only after the server
+         has proved the token against the real Canvas, so "Connected" there
+         means connected rather than attempted. */
+      try{ saveStr('amv_canvas', d.host || '1'); }catch(_e){}
       toast(T('Connected to') + ' ' + (d.host || T('your school')), 'success');
       closeOvr(); schoolOpen();
     }catch(e){
@@ -275,8 +305,10 @@ async function schoolConnectOpen(){
     off.disabled = true;
     try{
       await AMV_API._wrote('/v1/school/disconnect', {}, 'That could not be disconnected.');
+      try{ localStorage.removeItem(_scopeKey('amv_canvas')); }catch(_e){}
       toast(T('Your school is disconnected and the token is deleted.'), 'info');
       closeOvr();
+      try{ if(typeof _refreshIntegrationsUI === 'function') _refreshIntegrationsUI(); }catch(_e){}
     }catch(e){ off.disabled = false; say(e.message); }
   });
 }
