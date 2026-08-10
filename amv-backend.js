@@ -4133,7 +4133,7 @@ async function handoffAct(request, env){
 const BACKUP_PREFIXES = [
   'acct:', 'ent:', 'entitleitem:', 'data:', 'auto:', 'team:', 'userteam:',
   'teamtasks:', 'sites:', 'site:', 'abuse:', 'seller:', 'widget:', 'market:',
-  'wallet:', 'purchases:', 'stripecust:', 'tokepoch:', 'sms:',
+  'wallet:', 'purchases:', 'stripecust:', 'tokepoch:', 'sms:', 'mktreport:',
   'consent:', 'apikeys:', 'billing:', 'fam:', 'links:', 'approvals:',
   'handoff:', 'crewjobs:', 'share:', 'shares:', 'widget_owner:',
   /* Added after a check compared this list against every durable record kind
@@ -4774,6 +4774,7 @@ export default {
         case '/errors':          return errorsReport(request, env, ctx);
         case '/errors/list':     return errorsList(request, env);
         case '/errors/resolve':  return errorsResolve(request, env);
+        case '/admin/reports':     return adminReports(request, env);
         case '/admin/abuse/list':  return abuseList(request, env);
         case '/admin/abuse/clear': return abuseClear(request, env);
         case '/admin/payouts':       return adminPayouts(request, env);
@@ -4846,6 +4847,7 @@ export default {
         case '/v1/market/view':     return marketView(request, env);
         case '/v1/market/rate':     return marketRate(request, env);
         case '/v1/market/review':   return marketReview(request, env);
+        case '/v1/market/report':   return marketReport(request, env);
         case '/v1/market/message':  return marketMessage(request, env);
         case '/v1/market/threads':  return marketThreads(request, env);
         case '/v1/market/thread/read': return marketThreadRead(request, env);
@@ -11742,6 +11744,149 @@ async function marketRate(request, env) {
 
 /* Buyer reviews a SELLER (person) with 1-5 stars + text. Gated: must have
    bought at least one of that seller's listings. Stored under the seller. */
+/* ══════════════════════════════════════════════════════════════
+   REPORTING A LISTING - THE THING THE POLICY SAID ALREADY HAPPENED.
+
+   The marketplace policy screen tells buyers, in the product, that "buyers can
+   report any listing; reports are reviewed by our team". None of that existed.
+   There was a _mktReport dialog in the browser that nothing opened, and if
+   anything had opened it, it wrote the report to localStorage - in the
+   REPORTER'S OWN BROWSER, where the only person who could ever read it is the
+   person complaining. There was no route here at all.
+
+   That is the worst shape a safety promise can take: somebody sees an abusive
+   listing, believes they have told the platform, and nobody has been told.
+   For a marketplace that takes payments and pays sellers out, the policy is
+   also the thing an operator would be held to.
+
+   So it is real. A report is a durable record on the server, it is audited, it
+   alerts the operator, three of them hide the listing pending a decision, and
+   the operator has a screen that lists them.
+
+   Keyed by listing, not by reporter, because the question anybody asks later
+   is "what has been said about THIS listing" - and because a per-reporter key
+   would put somebody else's complaint inside the reported seller's own erasure
+   scope. */
+const REPORT_REASONS = new Set(['scam', 'stolen', 'illegal', 'sexual', 'harassment', 'broken', 'other']);
+/* Enough independent reports that leaving it up is the bigger risk. Low on
+   purpose: a wrongly hidden listing is one operator click to restore, and a
+   scam left up while a queue is read is somebody's money. */
+const REPORT_AUTOHIDE = 3;
+
+async function marketReport(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Please sign in to report a listing.' }, 401);
+  /* Bounded: a report route is also a way to bury a competitor under noise,
+     and a way to make AMV write storage as fast as somebody can click. */
+  const g = await guardAction(env, `mktreport:${user.email}`, 5, 30, 'reporting listings');
+  if (g) return g;
+
+  const body = await request.json().catch(() => ({}));
+  const id = String(body.id || '').slice(0, 80);
+  const reason = String(body.reason || 'other');
+  const note = String(body.note || '').slice(0, 1000);
+  if (!id) return json({ error: 'Which listing?' }, 400);
+  if (!REPORT_REASONS.has(reason)) return json({ error: 'Pick one of the listed reasons.' }, 400);
+
+  const it = await _getListing(env, id);
+  if (!it) return json({ error: 'That listing no longer exists.' }, 404);
+  if ((it.authorEmail || '').toLowerCase() === user.email.toLowerCase())
+    return json({ error: 'That is your own listing.' }, 400);
+
+  /* Under the record's lock, because several people reporting the same listing
+     at the same moment is the NORMAL case for anything worth reporting - and
+     losing all but one of them is losing exactly the signal that mattered. */
+  const byId = await _errHash(user.email.toLowerCase());
+  let rec;
+  try {
+    rec = await _withKind(env, 'mktreport', id, (r) => {
+      r.itemId = id;
+      r.title = String(it.title || '').slice(0, 140);
+      r.seller = it.authorEmail || '';
+      r.reports = Array.isArray(r.reports) ? r.reports : [];
+      /* One per person per listing. A second report from the same account
+         updates what they said rather than counting twice, so the count means
+         "how many different people" - which is the only version of the number
+         worth acting on.
+
+         Identified by a one-way hash, never the address. This record is keyed
+         by the LISTING, so it sits outside the reporter's own erasure scope -
+         and a complaint about somebody else's listing must not be the thing
+         that keeps a reporter's email on the server after they have asked for
+         it to be gone. The hash still dedupes, which is all it was for. */
+      const prior = r.reports.find(x => x.by === byId);
+      if (prior) { prior.reason = reason; prior.note = note; prior.ts = Date.now(); }
+      else r.reports.push({ by: byId, reason, note, ts: Date.now() });
+      r.count = r.reports.length;
+      r.lastAt = Date.now();
+      if (!r.status) r.status = 'open';
+      /* _withRecord hands back whatever the mutate returns, and writes back the
+         object it loaded. Both matter here: the record is mutated IN PLACE so
+         the write is the updated one, and it is returned so the count below is
+         the count that was actually stored rather than one read again after
+         the lock was let go. */
+      return r;
+    }, { itemId: id, reports: [], status: 'open' });
+  } catch (e) {
+    if (_isBusy(e)) return _busyJson('report');
+    throw e;
+  }
+
+  audit(env, 'market_reported', { by: user.email, itemId: id, reason, count: rec.count });
+
+  /* Enough people have said something that leaving it visible while a queue is
+     read is the bigger risk. Hidden, not deleted - the seller keeps the work
+     and the operator decides. */
+  let hidden = false;
+  if (rec.count >= REPORT_AUTOHIDE && !it.hidden) {
+    try {
+      await _withKind(env, 'market', id, (m) => {
+        if (!m || !m.id) return;
+        m.hidden = true;
+        m.hiddenReason = 'reported';
+        m.hiddenAt = Date.now();
+      }, null);
+      hidden = true;
+      audit(env, 'market_autohidden', { itemId: id, count: rec.count });
+    } catch (e) { if (!_isBusy(e)) throw e; }
+  }
+
+  try {
+    await notify(env, `Listing reported (${rec.count}x): "${rec.title}" by ${rec.seller || 'unknown'} - reason: ${reason}.`
+      + (hidden ? ' Hidden automatically pending review.' : ''));
+  } catch (e) {}
+
+  return json({ ok: true, count: rec.count, hidden,
+    message: hidden
+      ? 'Thank you. Enough people have reported this that it is now hidden while it is reviewed.'
+      : 'Thank you. This has been sent for review.' });
+}
+
+/* What came in, for the person who has to act on it. */
+async function adminReports(request, env) {
+  if (!_requireAdmin(request, env)) return json({ error: 'forbidden' }, 403);
+  /* DB.list hands back {id, value} rows, not the records themselves. Reading
+     r.count off the wrapper gave every listing a count of zero and no seller -
+     an operator screen that answers confidently with nothing in it, which is
+     worse than one that fails. */
+  const { rows, truncated } = await scan(env, 'mktreport', 2000, 'marketplace reports screen');
+  const open = rows.map(r => r.value || {}).filter(r => (r.status || 'open') === 'open');
+  open.sort((a, b) => (b.count || 0) - (a.count || 0) || (b.lastAt || 0) - (a.lastAt || 0));
+  return json({
+    ok: true,
+    reports: open.slice(0, 200).map(r => ({
+      itemId: r.itemId, title: r.title, seller: r.seller, count: r.count || 0,
+      lastAt: r.lastAt || 0,
+      reasons: [...new Set((r.reports || []).map(x => x.reason))],
+      notes: (r.reports || []).map(x => x.note).filter(Boolean).slice(0, 5),
+    })),
+    openCount: open.length,
+    total: rows.length,
+    truncated,
+    autoHideAt: REPORT_AUTOHIDE,
+  });
+}
+
 async function marketReview(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);

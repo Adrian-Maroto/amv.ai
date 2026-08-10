@@ -597,6 +597,47 @@ function _payoutsPaint(host, d){
   host.querySelectorAll('[data-po-rej]').forEach(b=>on(b,'click',()=>settle(b.dataset.poRej,'rejected')));
 }
 try{ window._loadPayouts=_loadPayouts; }catch(e){}
+/* Reported listings, next to the payouts they sit beside in kind: both are
+   things somebody has to DO something about, and both were invisible before
+   there was a screen for them. This one exists because the marketplace policy
+   told buyers their reports were reviewed by a team, and until the route
+   behind it was built there was nothing to review and nobody to review it. */
+function _reportsCardHTML(){
+  return '<div class="ss2" id="fd-reports"><h3>Reported listings</h3>'+
+    '<div class="fd-loading">Checking what has been reported\u2026</div></div>';
+}
+async function _loadReports(){
+  const host=$('fd-reports'); if(!host) return;
+  const base=loadStr('amv_api_base')||'';
+  const tok=($('fd-token')&&$('fd-token').value||'').trim()||((typeof _adminToken==='function')?_adminToken():'');
+  if(!base||!tok){ host.innerHTML='<h3>Reported listings</h3><div class="fd-empty">Enter your admin token to see what has been reported.</div>'; return; }
+  try{
+    const r=await fetchDeadline(base.replace(/\/$/,'')+'/admin/reports',{headers:{'Authorization':'Bearer '+tok}},15000);
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok||!d.ok){ host.innerHTML='<h3>Reported listings</h3><div class="fd-empty">'+(r.status===403?'That admin token was rejected.':'Could not load reports.')+'</div>'; return; }
+    _reportsPaint(host, d);
+  }catch(e){ host.innerHTML='<h3>Reported listings</h3><div class="fd-empty">Could not reach the backend, so this would be out of date.</div>'; }
+}
+function _reportsPaint(host, d){
+  const list=d.reports||[];
+  const when=(t)=>t?new Date(t).toLocaleDateString():'';
+  const rows=list.map(r=>
+    '<div class="rp-row">'+
+      '<div class="rp-main">'+
+        '<div class="rp-title">'+escH(r.title||r.itemId||'')+'</div>'+
+        '<div class="rp-sub">'+escH(r.seller||'unknown seller')+' \u00b7 '+escH((r.reasons||[]).join(', '))+' \u00b7 '+escH(when(r.lastAt))+'</div>'+
+        ((r.notes||[]).length?'<div class="rp-note">'+escH(String(r.notes[0]).slice(0,220))+'</div>':'')+
+      '</div>'+
+      '<div class="rp-count'+((r.count||0)>=(d.autoHideAt||3)?' hot':'')+'">'+(r.count||0)+'</div>'+
+    '</div>').join('');
+  host.innerHTML='<h3>Reported listings</h3>'+
+    '<div class="rp-total'+(list.length?' hot':'')+'">'+(d.openCount||0)+' open'+
+      '<span class="rp-sub2">hidden automatically at '+(d.autoHideAt||3)+' reports from different people</span></div>'+
+    (rows||'<div class="fd-empty">Nothing has been reported.</div>')+
+    (d.truncated?'<div class="rp-fine">More reports exist than this screen reads, so this is the busiest part of a longer list.</div>':'');
+}
+try{ window._loadReports=_loadReports; }catch(e){}
+
 
 /* AMV-081: the weekly digest, on the one screen that already holds the admin
    token. Preview shows exactly what would be sent; sending is a separate,
@@ -1894,7 +1935,7 @@ function _renderSetPaneInner(){
            stats body, so the pane's own delayed reload rebuilt it and wiped a
            preview the operator was in the middle of reading. */
         const dh=$('fd-digest-host');
-        if(dh && !dh.firstChild){ dh.innerHTML=_payoutCardHTML()+_digestCardHTML(); _wireDigestCard(); _loadPayouts(); }
+        if(dh && !dh.firstChild){ dh.innerHTML=_payoutCardHTML()+_reportsCardHTML()+_digestCardHTML(); _wireDigestCard(); _loadPayouts(); _loadReports(); }
         // wire kill switch
         const kbtn=$('fd-kill');
         /* THE PLATFORM KILL SWITCH, and its answer was thrown away.

@@ -271,8 +271,15 @@ function _mktBrowse(body){
         '<div class="mk-meta"><span class="mkt-by" data-mk-seller="'+escH(it.authorEmail||'')+'" data-mk-sellername="'+escH(it.author||'')+'">by '+escH(it.author||'community')+'</span>'+
           '<span class="mk-installs">'+(it.sales?(it.sales+' sold'):(it.installs?(it.installs+' installs'):'new'))+'</span></div>'+
         '<div class="mk-card-actions">'+previewBtn+btn+'</div>'+
+        /* The way to say something is wrong with this. The policy screen has
+           always promised buyers could report a listing; until now there was
+           no control anywhere that opened the dialog, so the promise was the
+           whole feature. Quiet by design - it is a safety valve, not a call to
+           action - but present on every card. */
+        '<button class="mk-report" data-mk-report="'+escH(it.id)+'" data-mk-title="'+escH(it.title||'')+'" title="Report this listing" aria-label="Report this listing">'+T('Report')+'</button>'+
       '</div>';
     }).join('');
+    grid.querySelectorAll('[data-mk-report]').forEach(b=>on(b,'click',()=>{ _mktReport(b.dataset.mkReport, b.dataset.mkTitle||''); }));
     grid.querySelectorAll('.mk-preview').forEach(b=>on(b,'click',()=>{ const it=items.find(x=>x.id===b.dataset.mkId); if(it) _mktPreview(it, ()=>{ reload(); }); }));
     grid.querySelectorAll('[data-mk-seller]').forEach(s=>on(s,'click',()=>{ _mktSellerProfile(s.dataset.mkSeller||'', s.dataset.mkSellername||''); }));
     grid.querySelectorAll('.mk-buy').forEach(b=>on(b,'click',()=>{ const it=items.find(x=>x.id===b.dataset.mkId); if(it) _mktDoBuy(it, ()=>reload()); }));
@@ -813,8 +820,8 @@ const MKT_POLICY_SECTIONS = [
   { h:'How enforcement works', items:[
     'Every listing is screened automatically before it goes live.',
     'Prohibited content is blocked outright and never reaches the catalog.',
-    'Higher-risk listings are published but held for review, and removed if they break the rules.',
-    'Buyers can report any listing; reports are reviewed by our team.',
+    'Higher-risk listings are refused at publish and never reach the catalog; the seller is told which rule was hit.',
+    'Anyone signed in can report a listing. Reports reach the operator, and enough of them hide a listing straight away while it is looked at.',
     'Three violations suspend your selling access. Serious violations suspend it immediately.',
   ]},
 ];
@@ -936,33 +943,55 @@ function _mktBlockedDialog(reason, action, category){
 }
 try{ window._mktBlockedDialog=_mktBlockedDialog; }catch(e){}
 
-// Buyers can report a listing. Reports are stored and surfaced to the operator.
+/* REPORTING A LISTING - IT LEAVES THE BROWSER NOW.
+
+   The policy screen has always told buyers "reports are reviewed by our team".
+   This dialog existed, nothing opened it, and if anything had, it wrote the
+   complaint into the REPORTER'S OWN local storage - where the only person who
+   could ever read it is the person complaining. Then it said "our review team
+   will look at this listing". Nobody was ever told anything.
+
+   It posts to the server, which keeps the record, alerts the operator, and
+   hides a listing that enough different people have reported. The answer shown
+   is the server's, so it says what actually happened rather than a sentence
+   written in advance. */
 function _mktReport(itemId, title){
   const r=$('ovr'); if(!r) return;
-  r.innerHTML='<div class="ovr-bg" id="mkr-bg"><div class="ovr-card" style="max-width:430px" onclick="event.stopPropagation()">'+
-    '<div style="font-size:15px;font-weight:600;margin-bottom:4px">Report this listing</div>'+
+  const REASONS=[['illegal','Illegal or prohibited content'],['scam','Scam or fraud'],
+    ['stolen','Stolen or pirated material'],['broken','Not as described'],
+    ['sexual','Sexual or abusive content'],['harassment','Hate or harassment'],
+    ['other','Something else']];
+  r.innerHTML='<div class="ovr-bg" id="mkr-bg"><div class="ovr-card" style="max-width:430px">'+
+    '<div style="font-size:15px;font-weight:600;margin-bottom:4px">'+T('Report this listing')+'</div>'+
     '<div style="font-size:12.5px;color:var(--mu);margin-bottom:14px">'+escH(title||'')+'</div>'+
-    '<label class="lbl">What\u2019s wrong with it?</label>'+
+    '<label class="lbl">'+T('What\u2019s wrong with it?')+'</label>'+
     '<select id="mkr-reason" class="sel" style="width:100%;margin-bottom:10px">'+
-      ['Illegal or prohibited content','Scam or fraud','Stolen / pirated material','Not as described','Sexual or abusive content','Hate or harassment','Something else']
-        .map(o=>'<option>'+o+'</option>').join('')+
+      REASONS.map(o=>'<option value="'+o[0]+'">'+escH(T(o[1]))+'</option>').join('')+
     '</select>'+
-    '<textarea id="mkr-note" rows="3" placeholder="Any details that help us review it (optional)" style="width:100%;resize:vertical"></textarea>'+
+    '<textarea id="mkr-note" rows="3" placeholder="'+T('Any details that help us review it (optional)')+'" style="width:100%;resize:vertical"></textarea>'+
+    '<div id="mkr-err" class="sch-err" hidden></div>'+
     '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">'+
-      '<button class="btn bs" id="mkr-cancel" style="font-size:12px">Cancel</button>'+
-      '<button class="btn bd2" id="mkr-send" style="font-size:12px">Submit report</button>'+
+      '<button class="btn bs" id="mkr-cancel" style="font-size:12px">'+T('Cancel')+'</button>'+
+      '<button class="btn bd2" id="mkr-send" style="font-size:12px">'+T('Submit report')+'</button>'+
     '</div></div></div>';
   r.classList.add('on');
   on($('mkr-cancel'),'click',closeOvr);
-  on($('mkr-bg'),'click',closeOvr);
-  on($('mkr-send'),'click',()=>{
+  /* Guard the backdrop rather than stopping propagation inside the card, or
+     every delegated control in here is dead (LESSONS #5). */
+  on($('mkr-bg'),'click',(e)=>{ if(e.target===e.currentTarget) closeOvr(); });
+  on($('mkr-send'),'click',async()=>{
+    const btn=$('mkr-send'); if(!btn) return;
+    btn.disabled=true; btn.textContent=T('Sending\u2026');
     try{
-      const reports=load('amv_mkt_reports')||[];
-      reports.push({ id:itemId, title:title||'', reason:$('mkr-reason')?.value||'', note:($('mkr-note')?.value||'').slice(0,500), by:(S.user&&S.user.email)||'', ts:Date.now() });
-      store('amv_mkt_reports',reports);
-    }catch(e){}
-    closeOvr();
-    toast('Report submitted - our review team will look at this listing.','success',4000);
+      const d=await AMV_API._wrote('/v1/market/report',
+        { id:itemId, reason:($('mkr-reason')||{}).value||'other', note:($('mkr-note')||{}).value||'' },
+        'That report could not be sent.');
+      closeOvr();
+      toast(d.message||T('Thank you. This has been sent for review.'),'success',5000);
+    }catch(e){
+      btn.disabled=false; btn.textContent=T('Submit report');
+      const box=$('mkr-err'); if(box){ box.hidden=false; box.textContent=e.message; }
+    }
   });
 }
 try{ window._mktReport=_mktReport; }catch(e){}
