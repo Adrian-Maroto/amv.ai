@@ -8924,7 +8924,7 @@ async function referralStatus(request, env) {
    paid for in months, and the sweep below would act on that. The asymmetry
    decides it - failing to notice a lapse costs one month's revenue, wrongly
    cancelling somebody who is paying costs the customer. */
-const ENT_CARRY_KEYS = ['refBonus', 'teamId', 'familyOf', 'renewedAt'];
+const ENT_CARRY_KEYS = ['refBonus', 'teamId', 'familyOf', 'renewedAt', 'lastEventAt', 'lastEventSrc'];
 
 /* ── FAMILY ────────────────────────────────────────────────────────────────
    A parent's account carries a child's, the way a phone plan does.
@@ -9098,8 +9098,37 @@ async function setEntitlement(env, email, plan, extra = {}) {
     async (e, k) => (await DB.get(e, 'ent', k)) || {},
     async () => {},                      // written explicitly below, with the counters
     async (prev) => {
+  /* AMV-200: A LATE WEBHOOK MUST NOT UNDO A NEWER ONE.
+
+     Stripe and PayPal both deliver at-least-once with NO ordering guarantee,
+     and both retry a failed delivery for days. Nothing here knew which event
+     was newer, so the last one to arrive won - whatever it said.
+
+     The sequence that costs money: a cancellation is delivered and applied, and
+     then an earlier "still active" event, retried after its first delivery
+     failed, arrives behind it. The cancelled customer is back on a paid plan,
+     free, until somebody notices. It cuts the other way too - a late cancel
+     undoing an upgrade somebody has just paid for, which is a support ticket
+     from a customer who did everything right.
+
+     Only PROCESSOR events carry a time, and only they are compared. An admin
+     edit, a team seat change or a referral bonus has no event behind it and
+     always applies - it is a person deciding now, not a message from a queue.
+     Comparison is per provider, because two processors' clocks are not one
+     timeline and nothing sensible can be said across them. */
+  const evtAt = +extra.eventAt || 0;
+  const evtSrc = String(extra.source || '');
+  if (evtAt && (evtSrc === 'stripe' || evtSrc === 'paypal')
+      && prev.lastEventSrc === evtSrc && +prev.lastEventAt > evtAt) {
+    audit(env, 'entitlement_stale_event', { email, plan, source: evtSrc, eventAt: evtAt, applied: +prev.lastEventAt });
+    return prev;                         // nothing written; the newer state stands
+  }
   const ent = { plan, updatedAt: Date.now(), ...extra };
   for (const k of ENT_CARRY_KEYS) if (prev[k] !== undefined && ent[k] === undefined) ent[k] = prev[k];
+  if (evtAt && (evtSrc === 'stripe' || evtSrc === 'paypal')) {
+    ent.lastEventAt = evtAt; ent.lastEventSrc = evtSrc;
+  }
+  delete ent.eventAt;                    // the marker above is the record of it
   /* When a PROCESSOR is the reason for this write, money is behind it - a
      checkout, a renewal, a live subscription re-read. That is the only signal
      that says "this plan is still being paid for", and without recording it
@@ -9684,6 +9713,13 @@ async function stripeWebhook(request, env, ctx) {
   if (evt.id && !(await _claimOnce(env, 'stripeevt', evt.id))) {
     return json({ received: true, duplicate: true });
   }
+  /* AMV-200: WHEN this happened, not when it arrived. Stripe gives no ordering
+     guarantee and retries a failed delivery for days, so the order events land
+     in is not the order they occurred in. `created` is seconds; everything else
+     here works in milliseconds. Falling back to now is deliberate: an event
+     with no time is treated as the newest thing we know, which applies it
+     rather than discarding it. */
+  const evtAt = (+evt.created ? +evt.created * 1000 : Date.now());
 
   try {
     if (type === 'checkout.session.completed') {
@@ -9711,7 +9747,7 @@ async function stripeWebhook(request, env, ctx) {
            Stripe and corrects this if they ever diverge. */
         const first = { source: 'stripe', sub: obj.subscription };
         if (plan === 'team') first.custom = { seats: _teamSeatCount({ seats: obj.metadata?.seats }) };
-        await setEntitlement(env, email, plan, first);
+        await setEntitlement(env, email, plan, { ...first, eventAt: evtAt });
         if (obj.customer) {
           await _linkCustomer(env, email, obj.customer);   // both directions
           /* The plan they just bought replaces the one they had. Stripe does
@@ -9744,7 +9780,7 @@ async function stripeWebhook(request, env, ctx) {
       const status = type === 'customer.subscription.updated' ? (obj.status || '') : 'active';
       const DEAD = ['unpaid', 'canceled', 'incomplete_expired'];
       if (email && DEAD.indexOf(status) >= 0) {
-        await setEntitlement(env, email, 'free', { source: 'stripe', canceled: true, status });
+        await setEntitlement(env, email, 'free', { source: 'stripe', canceled: true, status, eventAt: evtAt });
       } else if (email && status === 'past_due') {
         await _markPastDue(env, email, { sub: obj.id || '' });
       } else if (email && plan) {
@@ -9758,7 +9794,7 @@ async function stripeWebhook(request, env, ctx) {
           const qty = obj.items?.data?.[0]?.quantity ?? obj.lines?.data?.[0]?.quantity;
           extra.custom = { seats: _teamSeatCount({ seats: qty }) };
         }
-        await setEntitlement(env, email, plan, extra);   // clears pastDueSince
+        await setEntitlement(env, email, plan, { ...extra, eventAt: evtAt });   // clears pastDueSince
       }
       // Record each recurring renewal payment (invoice.paid carries amount_paid).
       if (type === 'invoice.paid' && email) {
@@ -9771,7 +9807,7 @@ async function stripeWebhook(request, env, ctx) {
     } else if (type === 'customer.subscription.deleted') {
       // cancellation/expiry - downgrade to free
       const email = await _emailFromCustomer(env, obj.customer);
-      if (email) await setEntitlement(env, email, 'free', { source: 'stripe', canceled: true });
+      if (email) await setEntitlement(env, email, 'free', { source: 'stripe', canceled: true, eventAt: evtAt });
     } else if (type === 'charge.dispute.created') {
       /* CHARGEBACK - the customer told their bank to reverse the payment. This
          is the DoorDash method: they keep the compute they already used and get
@@ -9788,7 +9824,7 @@ async function stripeWebhook(request, env, ctx) {
         const email = await _emailFromCustomer(env, obj.customer)
                    || (obj.metadata?.email || '').toLowerCase();
         if (email) {
-          await setEntitlement(env, email, 'free', { source: 'stripe', disputed: true });
+          await setEntitlement(env, email, 'free', { source: 'stripe', disputed: true, eventAt: evtAt });
           await _abuseRecord(env, email, 'dispute', { chargeId: obj.charge || obj.id, amount: obj.amount });
           audit(env, 'chargeback', { email, amount: obj.amount });
         }
@@ -9803,7 +9839,7 @@ async function stripeWebhook(request, env, ctx) {
         const email = await _emailFromCustomer(env, charge.customer)
                    || (charge.metadata?.email || '').toLowerCase();
         if (email) {
-          await setEntitlement(env, email, 'free', { source: 'stripe', refunded: true });
+          await setEntitlement(env, email, 'free', { source: 'stripe', refunded: true, eventAt: evtAt });
           await _abuseRecord(env, email, 'refund', { chargeId: charge.id, amount: charge.amount_refunded || charge.amount });
           audit(env, 'refund', { email, amount: charge.amount_refunded || charge.amount });
         }
@@ -12640,12 +12676,26 @@ async function paypalWebhook(request, env, ctx) {
   const verified = await verifyPaypalWebhook(env, request.headers, raw);
   if (!verified) { audit(env, 'forged_webhook', { kind: 'paypal' }); return new Response('bad signature', { status: 400 }); }
   let evt; try { evt = JSON.parse(raw); } catch { return new Response('bad json', { status: 400 }); }
+  /* AMV-201: the same exactly-once guarantee Stripe has had. PayPal redelivers
+     an event until it gets a 200, and every redelivery was being processed
+     again here. Most handlers happen to be idempotent, but "happens to be" is
+     not a guarantee, and the two money paths should not have different ones.
+     Released below if handling genuinely fails, so a real failure is still
+     allowed to be retried. */
+  if (evt.id && !(await _claimOnce(env, 'paypalevt', evt.id))) {
+    return new Response('ok', { status: 200 });
+  }
+  /* AMV-200: when it happened. PayPal gives no ordering guarantee either, so a
+     retried older event can arrive after a newer one - a cancellation followed
+     by a stale "still active" would put a cancelled customer back on a paid
+     plan, free. */
+  const evtAt = Date.parse(evt.create_time || evt.resource?.create_time || '') || Date.now();
   try {
     const custom = evt.resource?.custom_id || '';
     const [email, claimedPlan] = custom.split('|');
     if (evt.event_type === 'PAYMENT.CAPTURE.REFUNDED' || evt.event_type === 'BILLING.SUBSCRIPTION.CANCELLED'
         || evt.event_type === 'BILLING.SUBSCRIPTION.EXPIRED') {
-      if (email) await setEntitlement(env, email.toLowerCase(), 'free', { source: 'paypal', canceled: true });
+      if (email) await setEntitlement(env, email.toLowerCase(), 'free', { source: 'paypal', canceled: true, eventAt: evtAt });
     } else if (evt.event_type === 'BILLING.SUBSCRIPTION.PAYMENT.FAILED'
             || evt.event_type === 'BILLING.SUBSCRIPTION.SUSPENDED') {
       // Same rule as Stripe: a failed payment does not buy another month.
@@ -12683,7 +12733,7 @@ async function paypalWebhook(request, env, ctx) {
              sees a live subscription rather than revoking one that is being
              paid for. */
           if (!cur || cur.plan !== tier || cur.pastDueSince) {
-            await setEntitlement(env, em, tier, { source: 'paypal' });
+            await setEntitlement(env, em, tier, { source: 'paypal', eventAt: evtAt });
           } else {
             cur.renewedAt = Date.now();
             delete cur.pastDueSince;
@@ -12706,7 +12756,12 @@ async function paypalWebhook(request, env, ctx) {
         await _pendDone(env, evt.resource?.id || '');
       }
     }
-  } catch (e) { audit(env, 'webhook_error', { kind: 'paypal', msg: String(e.message).slice(0, 120) }); }
+  } catch (e) {
+    audit(env, 'webhook_error', { kind: 'paypal', msg: String(e.message).slice(0, 120) });
+    /* Genuinely failed, so let PayPal's retry reprocess it rather than treating
+       the redelivery as a duplicate of work that never happened. */
+    if (evt.id) { try { await _releaseClaim(env, 'paypalevt', evt.id); } catch (_) {} }
+  }
   return json({ received: true });
 }
 

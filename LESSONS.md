@@ -3513,3 +3513,41 @@ different kind of database.
 **Rule:** before optimising a read, know what the store does with it. A helper
 called `list` is not a single query everywhere, and a sabotage that refuses to
 fail is telling you the measurement is wrong, not that the code is fine.
+
+## 198. A control is only as wide as the paths that call it
+
+The daily spend cap was correct, tested, and enforced - on two of the four paths
+that spend money. Image and video generation never asked it for permission and
+never told it what they cost, so the one control against a runaway bill could
+not see the two most expensive calls AMV makes.
+
+Nothing about the cap was wrong. The defect was a gap in who calls it, which no
+test of the cap could ever find, because every test of the cap goes through a
+path that calls it.
+
+The fix is a single gate every spending path goes through, plus a source rule
+that fails the build when a path that calls a paid provider does not.
+
+**Rule:** for any control that protects money, safety or privacy, enumerate the
+callers, not the control. Ask "what else does this thing that needs guarding",
+and write the check against the LIST, so the next one added is caught by
+absence.
+
+## 199. At-least-once with no ordering means the last arrival is not the last event
+
+Stripe and PayPal both retry failed deliveries for days and neither guarantees
+order. Nothing here read `created` or `create_time`, so a cancellation applied
+first and a retried older "still active" landing behind it put a cancelled
+customer back on a paid plan, free, with an audit trail showing a legitimate
+grant.
+
+The guard has to be narrow to be safe: only processor events carry a time and
+only they are compared, per provider, because two clocks are not one timeline.
+An admin edit, a referral bonus and the reconciliation sweep carry no event and
+must always apply - the sweep especially, since it is the thing that repairs an
+account whose webhook was lost. A guard that blocked it would cause the failure
+it exists to prevent, from the other side.
+
+**Rule:** when consuming an event stream, decide what "newer" means before
+writing the handler. If the answer is "whatever arrived last", the handler has a
+bug that only shows up under retries.

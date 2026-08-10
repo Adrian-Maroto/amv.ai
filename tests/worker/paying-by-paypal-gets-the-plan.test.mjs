@@ -32,7 +32,7 @@ const ROOT = join(__dir, '..', '..');
 const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'paypal.harness.mjs');
-writeFileSync(harness, src + '\nexport { DB, _paypalTierOf };\n');
+writeFileSync(harness, src + '\nexport { DB, _paypalTierOf, setEntitlement };\n');
 const W = await import(harness + '?t=' + Date.now());
 const worker = W.default;
 
@@ -225,6 +225,49 @@ section('The tier mapping itself');
      from env values that may be undefined. */
   ok(W._paypalTierOf(env, undefined, null) === null, 'an absent plan id does not match an unset secret', true);
   ok(W._paypalTierOf(env, 'P-ULTRA-NOT-SET', null) === null, 'nor does an id for a tier with no secret set', true);
+}
+
+section('A redelivered event is not processed a second time');
+{
+  /* PayPal redelivers until it gets a 200. Stripe's handler has claimed the
+     event id since the day it was written; this one processed every redelivery
+     again. Most of the handlers happen to be idempotent, but "happens to be" is
+     not a guarantee, and the two money paths should not have different ones.
+
+     Observed by changing the record between the two deliveries: if the second
+     delivery is processed, it grants the plan again and the change is gone. */
+  const env = mkEnv();
+  const withId = async (id, event_type, resource) => {
+    const r = await worker.fetch(new Request('https://api.amv.test/v1/paypal/webhook', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': '80.80.80.81',
+                 'paypal-transmission-id': 't1', 'paypal-transmission-time': new Date().toISOString(),
+                 'paypal-cert-url': 'https://api.paypal.com/cert', 'paypal-auth-algo': 'SHA256withRSA',
+                 'paypal-transmission-sig': 'sig' },
+      body: JSON.stringify({ id, event_type, resource, create_time: new Date().toISOString() }),
+    }), env, ctx);
+    await ctx.settle();
+    return r;
+  };
+
+  const res = { id: 'I-SUB-REPLAY', plan_id: PLAN_PRO, custom_id: USER + '|pro', status: 'ACTIVE' };
+  const first = await withId('WH-REPLAY-1', 'BILLING.SUBSCRIPTION.ACTIVATED', res);
+  ok(first.status === 200, 'the first delivery is accepted', first.status);
+  ok(await planOf(env) === 'pro', 'and grants the plan', await planOf(env));
+
+  /* Somebody cancels, or an operator corrects the account by hand. */
+  await W.setEntitlement(env, USER, 'free', { source: 'admin' });
+  ok(await planOf(env) === 'free', 'the account is changed afterwards', await planOf(env));
+
+  const again = await withId('WH-REPLAY-1', 'BILLING.SUBSCRIPTION.ACTIVATED', res);
+  ok(again.status === 200, 'the redelivery is still answered 200, so PayPal stops retrying', again.status);
+  ok(await planOf(env) === 'free',
+     'but it did not run again and put the plan back', await planOf(env));
+
+  /* A DIFFERENT event still works, or the guard would be a wall. */
+  const other = await withId('WH-REPLAY-2', 'BILLING.SUBSCRIPTION.ACTIVATED', res);
+  ok(other.status === 200 && await planOf(env) === 'pro',
+     'a genuinely new event is processed normally', await planOf(env));
 }
 
 globalThis.fetch = realFetch;
