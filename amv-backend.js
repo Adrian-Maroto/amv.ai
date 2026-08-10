@@ -519,6 +519,70 @@ const TOKENIZER_SCALE = 1.30;
    the only order that is not a refund waiting to happen. */
 const FREE_TIER_CAP_SHARE = 0.7;
 
+/* AMV-199: WHAT A PICTURE AND A VIDEO COST.
+
+   The daily spend cap exists because a runaway bill kills a company faster than
+   no customers. It was checked on chat and on the widget, and the counter it
+   reads was incremented by the stream meter and the automation tick. Image and
+   video generation - the two most expensive calls AMV makes, by an order of
+   magnitude per call - did neither. They never asked the ceiling for
+   permission, and their cost never reached the number the ceiling reads.
+
+   So the control could not see the spend most likely to run away; the owner's
+   daily spend figure understated the real bill; and the per-account cost and
+   the unprofitable-accounts list left out the accounts most likely to be on it.
+   A number that is quietly wrong is worse than one that is missing.
+
+   These are list prices, overridable per deployment because providers change
+   them and a stale constant is how a cap silently stops meaning what it says.
+   They are deliberately not free to be zero: a cost of nothing would restore
+   exactly the blindness this closes. */
+const IMAGE_COST_USD = Math.max(0.001, parseFloat(globalThis.AMV_IMAGE_COST || '0') || 0.04);
+const VIDEO_COST_USD = Math.max(0.01, parseFloat(globalThis.AMV_VIDEO_COST || '0') || 0.50);
+const _imageCost = (env) => Math.max(0.001, parseFloat(env && env.IMAGE_COST_USD) || IMAGE_COST_USD);
+const _videoCost = (env) => Math.max(0.01, parseFloat(env && env.VIDEO_COST_USD) || VIDEO_COST_USD);
+
+/* One gate, so a spending path added later cannot quietly be outside the
+   ceiling the way these two were. Returns a refusal to hand back, or null when
+   the call may go ahead.
+
+   The free tier is shed first, exactly as it is on chat: on a busy day the
+   traffic that pays nothing is what stops, because turning away somebody who
+   has paid is a refund, then a chargeback, then a review. */
+async function _spendGate(env, user, what) {
+  const gCap = parseFloat(env.GLOBAL_DAILY_USD_CAP || '500');
+  if (!(gCap > 0)) return null;
+  const paying = _planPriceUSD(user.plan, user.customCfg) > 0;
+  const cap = paying ? gCap : +(gCap * FREE_TIER_CAP_SHARE).toFixed(2);
+  let res;
+  try { res = await counter(env, `spend:${todayKey()}`, { op: 'checkCap', cap }); }
+  catch (e) { return null; }        // the counter being unreachable must not stop the product
+  if (res && res.allowed) return null;
+  if (!paying) {
+    audit(env, 'free_cap_hit', { what, value: res && res.value, cap });
+    return json({ error: 'AMV is at capacity for free accounts today - it resets tomorrow. Paid plans are running normally.',
+                  code: 'free_capacity' }, 503);
+  }
+  audit(env, 'global_cap_hit', { what, value: res && res.value, cap });
+  try { await alertOnce(env, 'global_cap', 'The daily spend ceiling has been reached, so AMV is refusing paid work until tomorrow.', 60); } catch (e) {}
+  return json({ error: 'Service is at capacity for today. Please try again tomorrow.', code: 'global_cap' }, 503);
+}
+
+/* What it cost, recorded where the ceiling and the owner's screens read it.
+   Best-effort on purpose: losing the accounting must not lose the work somebody
+   already paid a provider for - but it is audited, so a counter that stops
+   answering is visible rather than a bill that quietly stops being counted. */
+async function _recordSpend(env, subject, usd, what) {
+  const amount = +(+usd || 0);
+  if (!(amount > 0)) return;
+  try {
+    await counter(env, `spend:${todayKey()}`, { op: 'incr', amount, ttlMs: 86400000 * 2 });
+    await counter(env, `cost:${subject}:${monthKey()}`, { op: 'incr', amount, ttlMs: 86400000 * 70 });
+  } catch (e) {
+    audit(env, 'spend_not_recorded', { what, subject, usd: amount, error: String((e && e.message) || e) });
+  }
+}
+
 /* =====================================================================
    AUDIT LOGGING (auditor #5)
    Structured, security-relevant event logging. Goes to:
@@ -6350,6 +6414,13 @@ async function videoGenerate(request, env) {
     try { await counter(env, vName, { op: 'incr', amount: -1, ttlMs: 86400000 * 70 }); } catch (e) {}
   };
 
+  /* AMV-199: and the day's ceiling. A video is the single most expensive thing
+     AMV can be asked to do, and this path used to spend it without ever asking
+     whether the day's budget was gone. After the per-user reservation, so a
+     refusal here hands that allowance back. */
+  const vidGate = await _spendGate(env, user, 'video');
+  if (vidGate) { await refund(); return vidGate; }
+
   let providerId = '';
   try {
     const resp = await fetch(env.VIDEO_API_URL, {
@@ -6380,6 +6451,13 @@ async function videoGenerate(request, env) {
     created: Date.now(), updated: Date.now(),
   };
   await env.AMV_KV.put('vidjob:' + id, JSON.stringify(job), { expirationTtl: VIDEO_JOB_TTL });
+
+  /* Counted at ACCEPTANCE, not at delivery. The provider bills for the render
+     the moment it starts it, so waiting for the finished file to record the
+     cost would leave every in-flight video invisible to the ceiling - and a
+     burst of them is exactly the shape of a runaway bill. Cancelling or failing
+     later does not refund the provider, so it does not refund this either. */
+  await _recordSpend(env, user.billingSubject || user.email, _videoCost(env), 'video');
 
   audit(env, 'video_start', { email: user.email });
   return json({ ok: true, id, status: 'starting' });
@@ -7461,6 +7539,15 @@ async function imageGenerate(request, env) {
   if (!reserved.allowed) return json({ error: 'Daily image limit reached. Upgrade for more.', code: 'img_quota' }, 429);
   const refundImage = async () => { try { await counter(env, imgName, { op: 'incr', amount: -1, ttlMs: 86400000 * 2 }); } catch (e) {} };
 
+  /* AMV-199: the day's ceiling applies here too. A picture costs many times
+     what a message does, and this path used to ask nobody's permission before
+     spending it - so the one control that stops a runaway bill could not see
+     the spend most likely to run away. Checked AFTER the per-user reservation
+     so a refusal here gives that allowance back rather than charging somebody
+     for a call AMV declined to make. */
+  const imgGate = await _spendGate(env, user, 'image');
+  if (imgGate) { await refundImage(); return imgGate; }
+
   try {
     const model = env.IMAGE_API_MODEL || 'gpt-image-1';
     const upstream = await fetch(env.IMAGE_API_URL, {
@@ -7481,8 +7568,12 @@ async function imageGenerate(request, env) {
     }
     const data = await upstream.json().catch(() => ({}));
     const item = (data && data.data && data.data[0]) || {};
-    if (item.url) return json({ ok: true, url: item.url });
-    if (item.b64_json) return json({ ok: true, b64: item.b64_json });
+    if (item.url || item.b64_json) {
+      /* Recorded only when a picture was really produced, so a provider error
+         does not appear on the bill or on the account's cost. */
+      await _recordSpend(env, user.billingSubject || user.email, _imageCost(env), 'image');
+      return json(item.url ? { ok: true, url: item.url } : { ok: true, b64: item.b64_json });
+    }
     await refundImage();
     return json({ error: 'Image generation returned no image. Please try again.' }, 502);
   } catch (e) {
