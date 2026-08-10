@@ -3551,3 +3551,24 @@ it exists to prevent, from the other side.
 **Rule:** when consuming an event stream, decide what "newer" means before
 writing the handler. If the answer is "whatever arrived last", the handler has a
 bug that only shows up under retries.
+
+## 200. A lock only holds if every writer takes it
+
+setEntitlement went under the ent record lock and the work was called done.
+Eleven other functions kept writing that record directly - the past-due mark,
+the referral bonus, the team marker, the family marker, erasure, a renewal
+touch-up in the PayPal webhook - and a locked writer is no safer than the
+unlocked one racing it. The guard was worth nothing against any of them.
+
+The sharpest was a past-due mark landing beside a payment: the customer pays,
+the grant is applied under the lock, the unlocked write puts back the record it
+read first, and somebody who has just paid is marked past due and loses access.
+
+The fix was mechanical. Finding it was not, because everything about the locked
+function looked right - the defect was entirely in code that never mentions the
+lock, which is the last place anyone looks when reviewing a locking change.
+
+**Rule:** after putting a record under a lock, enumerate every writer of that
+record and convert them in the same change. Then write the rule as a source
+check, because the next writer added will reach for the plain put - that is what
+the rest of the file looks like.

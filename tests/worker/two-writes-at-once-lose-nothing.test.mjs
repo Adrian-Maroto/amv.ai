@@ -384,6 +384,52 @@ section('Different people do not queue behind each other');
   ok(elapsed < 200, 'without one waiting on the other', elapsed);
 }
 
+section('Nothing writes an entitlement outside the lock');
+{
+  /* A LOCK ONLY HOLDS IF EVERY WRITER TAKES IT.
+
+     setEntitlement went under the lock and eleven other functions kept writing
+     this record directly: the past-due mark, the referral bonus, the team
+     marker, the family marker, erasure, and a renewal touch-up in the PayPal
+     webhook. A locked writer is no safer than the unlocked one racing it, so
+     the guard was worth nothing against any of them - and the sharpest, a
+     past-due mark landing beside a payment, takes access away from somebody who
+     has just paid.
+
+     Stated as a source rule because the defect is an absence. The next function
+     that needs to change an entitlement will reach for DB.put, since that is
+     what the rest of the file looks like, and nothing else would notice.
+
+     A write that appears INSIDE a lock's own save callback is the lock doing
+     its job, so the rule is about the enclosing function: whichever function
+     contains an entitlement write must also be taking the lock. A bare
+     `DB.put(env,'ent',...)` in a function that mentions no lock is the defect,
+     and that is exactly what the eleven looked like. */
+  const allowed = new Set(['setEntitlement', '_saveEnt']);
+  /* Top-level declarations of both shapes. Matching only `function name(`
+     attributed `_saveEnt` - an arrow const - to whatever function happened to
+     precede it, and blamed that one instead. */
+  const decl = /(?:^|\n)(?:(?:async )?function ([A-Za-z_$][\w$]*)\s*\(|const ([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?\()/g;
+  const marks = [];
+  let m;
+  while ((m = decl.exec(src))) marks.push({ name: m[1] || m[2], at: m.index });
+  const ownerOf = (i) => { let o = '(top level)'; for (const k of marks) { if (k.at < i) o = k.name; else break; } return o; };
+  const bodyOfMark = (name) => {
+    const i = marks.findIndex(k => k.name === name);
+    if (i < 0) return '';
+    return src.slice(marks[i].at, i + 1 < marks.length ? marks[i + 1].at : src.length);
+  };
+  const writers = new Set();
+  for (const w of src.matchAll(/DB\.put\(\s*e(?:nv)?\s*,\s*'ent'/g)) writers.add(ownerOf(w.index));
+  const offenders = [...writers].filter(fn => {
+    if (allowed.has(fn)) return false;
+    const body = bodyOfMark(fn);
+    return !/_withEnt\(|_withRecord\(\s*env,\s*'ent'/.test(body);
+  });
+  ok(offenders.length === 0,
+     'every function that writes an entitlement takes the lock', offenders);
+}
+
 globalThis.fetch = realFetch;
 if (report('two-writes-at-once-lose-nothing') > 0) process.exitCode = 1;
 done();

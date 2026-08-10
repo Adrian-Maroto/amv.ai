@@ -2494,9 +2494,11 @@ async function linkAccept(request, env){
         });
     }catch(e){ if(!_isBusy(e)) throw e; return _busyJson('family'); }
     if(res && res.error) return json({ error: res.error, code: res.code }, res.status||400);
-    const ent = (await DB.get(env, 'ent', user.email)) || { plan:'free' };
-    ent.familyOf = parent;
-    await DB.put(env, 'ent', user.email, ent);
+    /* AMV-202: the marker every parental limit reads, written under the lock. */
+    await _withRecord(env, 'ent', String(user.email||'').toLowerCase(),
+      async (e, k) => (await DB.get(e, 'ent', k)) || { plan:'free' },
+      async (e, k, rec) => { await DB.put(e, 'ent', k, rec); },
+      (rec) => { rec.familyOf = parent; });
     await _userEvent(env, request, user.email, 'family_joined', { parent });
     audit(env, 'family_joined', { parent, child:user.email });
     return json({ ok:true, link, family:{ parent, limits: FAMILY_DEFAULTS } });
@@ -2999,9 +3001,12 @@ async function familyLeave(request, env){
       rec.members = (rec.members||[]).filter(x => x.email !== user.email);
     });
   }catch(e){ if(!_isBusy(e)) throw e; return _busyJson('family'); }
-  const ent = (await DB.get(env, 'ent', user.email)) || {};
-  delete ent.familyOf;
-  await DB.put(env, 'ent', user.email, ent);
+  /* AMV-202: leaving clears the marker under the lock, so a plan change landing
+     at the same moment cannot put the family membership back. */
+  await _withRecord(env, 'ent', String(user.email||'').toLowerCase(),
+    async (e, k) => (await DB.get(e, 'ent', k)) || {},
+    async (e, k, rec) => { await DB.put(e, 'ent', k, rec); },
+    (rec) => { delete rec.familyOf; });
 
   await _userEvent(env, request, user.email, 'family_left', { parent: fam.parent });
   /* On the parent's log too - somebody leaving is exactly the kind of change
@@ -3048,8 +3053,10 @@ async function familyRemove(request, env){
   /* The marker on their entitlement is what every check reads, so it goes at
      the same time - a limit that outlives the family is a limit nobody can
      lift. */
-  delete ent.familyOf;
-  await DB.put(env, 'ent', em, ent);
+  await _withRecord(env, 'ent', em,
+    async (e, k) => (await DB.get(e, 'ent', k)) || {},
+    async (e, k, rec) => { await DB.put(e, 'ent', k, rec); },
+    (rec) => { delete rec.familyOf; });
   await _userEvent(env, request, em, 'family_left', { parent: user.email });
   audit(env, 'family_remove', { parent: user.email, child: em });
   return json({ ok:true, members: fam.members });
@@ -5193,8 +5200,10 @@ async function authDeleteAccount(request, env) {
     const mine = await DB.get(env, 'fam', email);
     for (const m of ((mine && mine.members) || [])) {
       if (!m || !m.email) continue;
-      const ce = await DB.get(env, 'ent', m.email);
-      if (ce && ce.familyOf === email) { delete ce.familyOf; await DB.put(env, 'ent', m.email, ce); }
+      await _withEnt(env, m.email, (ce) => {
+        if (!ce || ce.familyOf !== email) return null;
+        delete ce.familyOf;
+      });
     }
   } catch {}
 
@@ -8785,9 +8794,12 @@ async function _referralCapture(env, request, newEmail, refRaw) {
        it, checking for a pending invite would mean an extra lookup on every
        load for every account forever - a permanent cost paid by the whole user
        base for a state that only a few accounts are ever in. */
-    const ent = (await DB.get(env, 'ent', em)) || { plan: 'free' };
-    ent.refPending = true;
-    await DB.put(env, 'ent', em, ent);
+    /* AMV-202: the marker goes on under the lock. A signup grant landing at the
+       same moment would otherwise be written away by this, or take this with it. */
+    await _withRecord(env, 'ent', em,
+      async (e, k) => (await DB.get(e, 'ent', k)) || { plan: 'free' },
+      async (e, k, rec) => { await DB.put(e, 'ent', k, rec); },
+      (rec) => { rec.refPending = true; });
     audit(env, 'referral_pending', { referrer, email: em });
   } catch (e) { /* never let growth plumbing break account creation */ }
 }
@@ -8809,14 +8821,21 @@ function _bonusTokens(ent) {
 async function _referralGrant(env, email, kind) {
   const em = String(email || '').toLowerCase();
   if (!em) return false;
-  const ent = (await DB.get(env, 'ent', em)) || { plan: 'free' };
-  const active = _referralActive(ent);
-  if (active.length >= REFERRAL_MAX_CONVERSIONS) {
-    audit(env, 'referral_capped', { email: em });
-    return false;
-  }
-  ent.refBonus = active.concat({ at: Date.now(), tokens: REFERRAL_REWARD_TOKENS, kind });
-  await DB.put(env, 'ent', em, ent);
+  /* AMV-202: bonus capacity is money. Two conversions landing together both
+     read the same list and both wrote it, so one reward vanished - and the cap
+     on how many a person may earn was checked against a list that was already
+     out of date, so both could pass a check only one should. Counted and
+     appended inside the lock, against the list as it is now. */
+  const granted = await _withRecord(env, 'ent', em,
+    async (e, k) => (await DB.get(e, 'ent', k)) || { plan: 'free' },
+    async (e, k, rec) => { if (rec) await DB.put(e, 'ent', k, rec); },
+    (rec) => {
+      const live = _referralActive(rec);
+      if (live.length >= REFERRAL_MAX_CONVERSIONS) return false;
+      rec.refBonus = live.concat({ at: Date.now(), tokens: REFERRAL_REWARD_TOKENS, kind });
+      return true;
+    });
+  if (!granted) { audit(env, 'referral_capped', { email: em }); return false; }
   audit(env, 'referral_reward', { email: em, tokens: REFERRAL_REWARD_TOKENS, kind });
   return true;
 }
@@ -8828,8 +8847,11 @@ async function _referralGrant(env, email, kind) {
    app load pays for a lookup that can never find anything. */
 async function _referralClearPending(env, em) {
   try {
-    const ent = await DB.get(env, 'ent', em);
-    if (ent && ent.refPending) { delete ent.refPending; await DB.put(env, 'ent', em, ent); }
+    await _withEnt(env, em, (ent) => {
+      if (!ent || !ent.refPending) return null;
+      delete ent.refPending;
+      return ent;
+    });
   } catch (e) { /* the flag is an optimisation; never fail a request over it */ }
 }
 
@@ -9011,9 +9033,12 @@ async function _teamSeatsSold(env){
    authenticated request for the sake of the few accounts in a team. */
 async function _setUserTeam(env, email, teamId){
   const em = String(email||'').toLowerCase(); if(!em) return;
-  const ent = (await DB.get(env, 'ent', em)) || { plan: 'free' };
-  if(teamId) ent.teamId = teamId; else delete ent.teamId;
-  await DB.put(env, 'ent', em, ent);
+  /* AMV-202: joining or leaving a team must not write back a plan read before
+     a payment landed. */
+  await _withRecord(env, 'ent', em,
+    async (e, k) => (await DB.get(e, 'ent', k)) || { plan: 'free' },
+    async (e, k, ent) => { await DB.put(e, 'ent', k, ent); },
+    (ent) => { if(teamId) ent.teamId = teamId; else delete ent.teamId; });
 }
 
 /* AMV-100: the single answer to "whose allowance is this request spending".
@@ -9251,16 +9276,29 @@ function _billingState(ent) {
    that a later successful payment restores it exactly. */
 async function _markPastDue(env, email, detail) {
   const em = String(email || '').toLowerCase(); if (!em) return;
-  const ent = (await DB.get(env, 'ent', em)) || { plan: 'free' };
-  if (ent.plan === 'free') return;                       // nothing to lose
-  if (ent.pastDueSince) return;                          // keep the FIRST failure date
-  ent.pastDueSince = Date.now();
-  /* WHY, kept on the record, because the honest sentence differs. A declined
-     card is the customer's to fix. A renewal we never saw might be nothing but
-     our own webhook being broken, and telling somebody who is paying that
-     their payment failed sends them to cancel a card that works. */
-  if (detail && detail.reason) ent.pastDueReason = String(detail.reason).slice(0, 40);
-  await DB.put(env, 'ent', em, ent);
+  /* AMV-202: THE ONE THAT COSTS A PAYING CUSTOMER THEIR ACCOUNT.
+
+     A past-due mark written from a copy read before a payment landed puts that
+     copy back - so somebody who has just paid is marked past due and loses what
+     they bought, with nothing failing anywhere. Under the lock, and re-read
+     inside it, so the plan this judges is the plan as it is now. */
+  const ent = await _withRecord(env, 'ent', em,
+    async (e, k) => (await DB.get(e, 'ent', k)) || { plan: 'free' },
+    async (e, k, rec) => { if (rec) await DB.put(e, 'ent', k, rec); },
+    (rec) => {
+      if (rec.plan === 'free') return null;              // nothing to lose
+      if (rec.pastDueSince) return null;                 // keep the FIRST failure date
+      rec.pastDueSince = Date.now();
+      /* WHY, kept on the record, because the honest sentence differs. A declined
+         card is the customer's to fix. A renewal we never saw might be nothing
+         but our own webhook being broken, and telling somebody who is paying
+         that their payment failed sends them to cancel a card that works. */
+      if (detail && detail.reason) rec.pastDueReason = String(detail.reason).slice(0, 40);
+      return rec;
+    });
+  /* Nothing to do is not a failure - the record is written back exactly as it
+     was read inside the lock, which changes nothing. */
+  if (!ent) return;
   /* A failed payment never touched the team, so a team whose owner stopped
      paying kept its plan until something else happened to write the record -
      and the grace window expires on a clock, not on a write (AMV-100). */
@@ -9371,10 +9409,14 @@ async function runRenewalSweep(env, now = Date.now()) {
 /* A payment succeeded - the account is current again. */
 async function _clearPastDue(env, email) {
   const em = String(email || '').toLowerCase(); if (!em) return;
-  const ent = await DB.get(env, 'ent', em);
-  if (!ent || !ent.pastDueSince) return;
-  delete ent.pastDueSince;
-  await DB.put(env, 'ent', em, ent);
+  /* AMV-202: under the record's lock, so clearing the mark cannot write back a
+     plan that changed while this was being read. */
+  const ent = await _withEnt(env, em, (e) => {
+    if (!e || !e.pastDueSince) return null;
+    delete e.pastDueSince;
+    return e;
+  });
+  if (!ent) return;
   await _refreshTeamPlan(env, em, ent);
   audit(env, 'payment_recovered', { email: em, plan: ent.plan });
 }
@@ -10469,6 +10511,27 @@ async function _withTeam(env, id, mutate) {
 }
 const _loadFam = async (env, id) => (await DB.get(env, 'fam', id)) || null;
 const _saveFam = async (env, id, f) => { if (f) await DB.put(env, 'fam', id, f); };
+/* AMV-202: A LOCK ONLY HOLDS IF EVERY WRITER TAKES IT.
+
+   setEntitlement has run under the ent record lock since AMV-196, which stops
+   two grants losing each other. It does nothing about the eleven other places
+   that wrote this record directly and took no lock at all - and a locked writer
+   is no safer than the unlocked one racing it.
+
+   The sharp one is a past-due mark landing beside a payment: the customer pays,
+   the grant is applied under the lock, and the unlocked past-due write puts
+   back the record it read first. A paying customer is marked past due and loses
+   what they just bought, and nothing anywhere fails.
+
+   Keyed by address, so lowercasing belongs here where the value is obviously an
+   address. Whatever `load` returned is written back, so a mutate that decides
+   there is nothing to do rewrites the record it just read inside the lock -
+   which is a no-op, not a lost write. */
+const _loadEnt = async (env, em) => (await DB.get(env, 'ent', em)) || null;
+const _saveEnt = async (env, em, e) => { if (e) await DB.put(env, 'ent', em, e); };
+async function _withEnt(env, email, mutate) {
+  return _withRecord(env, 'ent', String(email || '').toLowerCase(), _loadEnt, _saveEnt, mutate);
+}
 async function _withFam(env, id, mutate) {
   // Keyed by the parent's address, so lowercasing is right here and stated here.
   return _withRecord(env, 'fam', String(id || '').toLowerCase(), _loadFam, _saveFam, mutate);
@@ -12735,9 +12798,13 @@ async function paypalWebhook(request, env, ctx) {
           if (!cur || cur.plan !== tier || cur.pastDueSince) {
             await setEntitlement(env, em, tier, { source: 'paypal', eventAt: evtAt });
           } else {
-            cur.renewedAt = Date.now();
-            delete cur.pastDueSince;
-            await DB.put(env, 'ent', em, cur);
+            /* AMV-202: a renewal touch-up is still an entitlement write, and a
+               webhook is exactly when another one is likely to be in flight. */
+            await _withEnt(env, em, (rec) => {
+              if (!rec) return null;
+              rec.renewedAt = Date.now();
+              delete rec.pastDueSince;
+            });
           }
           audit(env, 'paypal_grant', { email: em, plan: tier, event: evt.event_type });
         } else {
