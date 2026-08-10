@@ -2053,19 +2053,9 @@ function _aiFriendly(msg){
   return 'AMV hit a snag. Please try again.';
 }
 
-/* Render a clean inline "hit a snag" card with a Retry button into `el`.
-   onRetry() is called when the user clicks Retry. Consistent everywhere. */
-function _aiFailCard(el, error, onRetry){
-  if(!el) return;
-  const msg=_aiFriendly(error && error.message ? error.message : error);
-  el.innerHTML='<div class="ai-snag">'+
-    '<div class="ai-snag-row"><span class="ai-snag-ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg></span>'+
-      '<span class="ai-snag-msg">'+escH(msg)+'</span></div>'+
-    (onRetry?'<button class="ai-snag-retry" type="button">Retry</button>':'')+
-  '</div>';
-  if(onRetry){ const b=el.querySelector('.ai-snag-retry'); if(b) b.addEventListener('click',()=>{ try{ onRetry(); }catch(e){} }); }
-}
-try{ window._aiFriendly=_aiFriendly; window._aiFailCard=_aiFailCard; }catch(e){}
+/* _aiFailCard lived here: an inline "hit a snag" card with a Retry button,
+   exported on window and rendered by nothing. Its own comment said
+   "Consistent everywhere", which was true in the way that costs nothing. */
 
 
 // Init state
@@ -11672,7 +11662,6 @@ function renderBillingView(targetEl){
   const hasPortal=!!portal;
   const liveBackend=window.AMV_API&&AMV_API.live;
   const plan=loadStr('amv_plan')||'free';
-  const pm=_loadPM();
   let P=PLANS[plan]||PLANS.free;
   let customSummary=null;
   if(plan==='custom'){
@@ -11721,7 +11710,6 @@ function renderBillingView(targetEl){
           _drow('Started',fmt(sinceDate))+
           _drow('Renews',fmt(nextDate))+
           _drow('Billing email',escH(email))+
-          (pm?_drow('Payment method',_pmBrandIcon(pm.brand)+' \u00b7\u00b7\u00b7\u00b7 '+escH(pm.last4)+(pm.exp?'  (exp '+escH(pm.exp)+')':'')):'')+
         '</div>'+
         /* The billing portal is the only place a card can be changed or a
            subscription cancelled. The handler for this button already existed
@@ -11906,7 +11894,20 @@ function _setPlan(plan){
   try{ if(typeof _revealTeamNav==='function') _revealTeamNav(); }catch(e){}
   try{ if(typeof renderView==='function' && S.tab) renderView(); }catch(e){}
 }
-function _planAllowsModel(mk){ if(mk==='auto') return true; const plan=loadStr('amv_plan')||'free'; if(plan==='custom') return true; const t=PLAN_TIERS[plan]||PLAN_TIERS.free; return t.models.indexOf(mk)>=0; }
+/* Reads the plan the SERVER confirmed, not the value in local storage.
+
+   verifiedPlan existed for exactly this and was called by nothing, so the one
+   client-side gate that decides which engines somebody may pick read a value
+   anybody can edit in a console. The sync below corrects that value whenever
+   it runs, so the exposure is the window before the first sync answers - but
+   that window is every cold start, and "the server refuses it a moment later"
+   means an error instead of an honest "your plan does not include this".
+
+   Display-only reads elsewhere still use the synced local value on purpose:
+   they need an answer before the first round trip, and showing the last known
+   plan name is better than showing Free to somebody who pays. This one gates
+   a capability, so it waits for the server. */
+function _planAllowsModel(mk){ if(mk==='auto') return true; const plan=(typeof verifiedPlan==='function'?verifiedPlan():(loadStr('amv_plan')||'free')); if(plan==='custom') return true; const t=PLAN_TIERS[plan]||PLAN_TIERS.free; return t.models.indexOf(mk)>=0; }
 
 /* Sync the REAL plan from the backend entitlement store. The server sets the
    plan only via a verified payment webhook, so this is the source of truth -
@@ -12277,13 +12278,18 @@ function _switchPlan(target){
   openCheckout(target);
 }
 function _secItem(ic,t,d){ return '<div class="sec-item"><div class="sec-ic">'+ic+'</div><div><div class="sec-t">'+t+'</div><div class="sec-d">'+d+'</div></div></div>'; }
-function _pmBrandIcon(b){ return ({visa:'VISA',mastercard:'MC',amex:'AMEX',discover:'DISC'})[b]||'CARD'; }
 function _pmLabel(pm){ return ({card:'Card',apple:'Apple Pay',google:'Google Pay',paypal:'PayPal',bank:'Bank'})[pm.type]||'Card'; }
-/* Payment method storage - DISPLAY ONLY. Never stores PAN/CVC. */
-function _loadPM(){ try{ const v=load('amv_pm_display'); return (v&&v.last4)?v:null; }catch(e){ return null; } }
-function _savePM(obj){ try{ store('amv_pm_display',{type:obj.type,brand:obj.brand||'card',last4:String(obj.last4||'').slice(-4),exp:obj.exp||'',token:obj.token||('tok_'+Math.random().toString(36).slice(2,12))}); }catch(e){} }
-function removePM(){ try{ localStorage.removeItem(_scopeKey('amv_pm_display')); }catch(e){} renderBillingView(); toast('Payment method removed','info'); }
-window.removePM=removePM;
+/* THE PAYMENT-METHOD CARD IS GONE, AND IT NEVER RENDERED ANYWAY.
+
+   Three functions lived here: _savePM, _loadPM, removePM. Nothing ever called
+   _savePM, so amv_pm_display was never written, so _loadPM always returned
+   null and the "Payment method  ····  4242" row could not appear. removePM was
+   exported with no button. And _savePM invented token:'tok_'+random and stored
+   it as though it meant something - a made-up payment token, which is exactly
+   the mock-shipped-as-real this product does not do.
+
+   The card is at Stripe and the control for it is the billing portal, which
+   this screen already opens. One place, and it is the real one. */
 
 /* ============================================================
    SECURE CHECKOUT
@@ -12833,13 +12839,11 @@ function _mountStripe(pk,plan){
   if(window.Stripe){ go(); return; }
   const s=document.createElement('script'); s.src='https://js.stripe.com/v3/'; s.onload=go; s.onerror=()=>{ const b=$('pay-body'); if(b) b.innerHTML='<div class="pay-err">Could not reach Stripe. Check your connection.</div>'; }; document.head.appendChild(s);
 }
-function openPaymentMethod(method){
-  // All methods open the payment sheet on the chosen tab (defaults to Pro plan to add a method)
-  const plan='pro';
-  openPaymentSheet(plan);
-  setTimeout(()=>{ const map={card:'card',stripe:'stripe',apple:'stripe',paypal:'paypal',venmo:'paypal'}; const tab=map[method]||'card'; const tb=document.querySelector('.pay-tab[data-pt="'+tab+'"]'); if(tb) tb.click(); },50);
-}
-window.openCheckout=openCheckout;window.openPaymentSheet=openPaymentSheet;window.openPaymentMethod=openPaymentMethod;
+/* openPaymentMethod lived here: it opened the payment sheet on a chosen tab,
+   for a "manage your payment methods" screen that no longer exists. Referenced
+   by nothing. Adding or changing a card is the billing portal's job, which is
+   Stripe's own screen and always current. */
+window.openCheckout=openCheckout;window.openPaymentSheet=openPaymentSheet;
 
 
 /* === APPS & EXTENSIONS === */
@@ -14881,7 +14885,13 @@ function cwDemo(){
   _cwSaveApprovals(appr); renderCrewView();
   toast('Example draft added - press Preview to see the full workspace','info',4000);
 }
-function cwApprove(id){ const a=_cwApprovals().filter(x=>x.id!==id); _cwSaveApprovals(a); toast('Approved - sent','info'); renderCrewView(); }
+/* cwApprove used to live here. It removed the item from the local list and
+   toasted "Approved - sent" without calling the server at all - cwReject
+   beside it does call AMV_API.actApproval - so had anything wired it, it would
+   have told somebody their draft went out when nothing had been sent. It was
+   superseded by apvApprove in the approval panel below and referenced by
+   nothing, which made the lie dormant rather than harmless. One approval path,
+   and it is the one that talks to the server. */
 function cwReject(id){
   const all=_cwApprovals(); const removed=all.find(x=>x.id===id); const idx=all.findIndex(x=>x.id===id);
   if(window.AMV_API && AMV_API.live){ AMV_API.actApproval(id,'reject').catch(()=>{}); }
@@ -14889,16 +14899,9 @@ function cwReject(id){
   if(removed){ toastAction('Removed - it won’t be sent.','Return',()=>{ const list=_cwApprovals(); if(!list.some(x=>x.id===removed.id)){ list.splice(Math.min(idx,list.length),0,removed); _cwSaveApprovals(list); if(window.AMV_API && AMV_API.live){ AMV_API.actApproval(id,'restore').catch(()=>{}); } toast('Brought back','success'); renderCrewView(); } }); }
   else toast('Removed','info');
 }
-function cwEdit(id){ const item=_cwApprovals().find(x=>x.id===id); cwReject(id); setTab('chat'); setTimeout(()=>{ const ta=$('mta'); if(ta&&item){ ta.value='Help me revise this draft:\n\n'+item.preview; ta.focus(); } },120); }
-window.cwToggle=cwToggle;window.cwDemo=cwDemo;window.cwApprove=cwApprove;window.cwReject=cwReject;window.cwEdit=cwEdit;
-function cwTry(prompt){
-  // Take a "try saying" example, drop the user into chat with it ready to send.
-  try{
-    setTab('chat');
-    setTimeout(()=>{ const ta=$('mta'); if(ta){ ta.value=prompt; ta.dispatchEvent(new Event('input')); ta.focus(); } toast('Press send and AMV will set this up for you','info',3500); }, 120);
-  }catch(e){}
-}
-window.cwTry=cwTry;
+
+window.cwToggle=cwToggle;window.cwDemo=cwDemo;window.cwReject=cwReject;
+
 
 /* ============================================================
    APPROVAL + PREVIEW WORKSPACE  (Phase 1 of the Mission Control redesign)
@@ -16665,8 +16668,8 @@ async function _devSend(){
 }
 window.renderCodeView=renderCodeView;
 
-function codeStart(kind){ setTab('chat'); setTimeout(()=>{ const map={'New script':'Write a new script that ','Fix a bug':'Here is my code and the error I am getting:\n\n','Refactor':'Refactor this code to be cleaner:\n\n','Explain':'Explain what this code does, step by step:\n\n'}; const ta=$('mta'); if(ta){ ta.value=map[kind]||''; ta.focus(); } },120); }
-window.codeStart=codeStart;
+/* codeStart lived here, exported and referenced by nothing. */
+
 
 
 /* ══════════════════════════════════════════════════════════════
@@ -18087,20 +18090,8 @@ function _hoPullConv(convId){
 window._hoPickChat=_hoPickChat; window._hoPullConv=_hoPullConv;
 /* Pull the most recent conversation's content into the handoff context, so a
    user can hand off real work - not just retype notes. */
-function hoFromChat(){
-  try{
-    const convs=(S.convs||[]);
-    const hasMsgs=c=>c&&c.msgs&&c.msgs.length;
-    const conv=convs.find(c=>c.id===S.cur&&hasMsgs(c)) || convs.find(hasMsgs);
-    if(!conv){ toast('No recent chat to pull in','info'); return; }
-    const txt=m=>typeof m.c==='string'?m.c:(Array.isArray(m.c)?(m.c.map(x=>x&&x.text?x.text:'').join(' ')):'');
-    const text=conv.msgs.slice(-12).map(m=>(m.r==='u'?'You: ':'AMV: ')+txt(m)).join('\n\n');
-    const ta=$('ho-ctx'); if(ta){ ta.value=(ta.value?ta.value+'\n\n':'')+text; ta.focus(); }
-    if($('ho-title') && !$('ho-title').value) $('ho-title').value=conv.title||'Continue this conversation';
-    toast('Pulled in your last chat','success');
-  }catch(e){ toast('Could not pull chat','error'); }
-}
-window.hoFromChat=hoFromChat;
+/* hoFromChat lived here, exported and referenced by nothing. */
+
 /* Update one sent handoff in place. */
 function _hoSetStatus(id, status){
   const out=_hoOut(); const rec=out.find(x=>x.id===id);
@@ -19417,8 +19408,12 @@ function _renderSkillsPane(pane){
 // area in AMV; toggling persists and gates that area.
 // Core capabilities are always available - we never silently restrict what AMV
 // can do behind a toggle the user may have forgotten about.
-function _pluginOn(id){ return true; }
-try{ window._renderSkillsPane=_renderSkillsPane; window._pluginOn=_pluginOn; }catch(e){}
+/* _pluginOn(id){ return true; } lived here: a function whose name asks
+   whether a plugin is enabled and whose body said yes to everything, exported
+   on window, called by nothing. Dormant, and one call away from turning every
+   plugin on for everybody regardless of what they chose. A permission check
+   answers the real question or it does not exist. */
+try{ window._renderSkillsPane=_renderSkillsPane; }catch(e){}
 
 function _renderSetPaneInner(){
   const pane=$('set-pane'); if(!pane) return;
@@ -21338,12 +21333,10 @@ function getGToken(){
   localStorage.removeItem('amv_gtoken'); localStorage.removeItem('amv_gtoken_exp'); return null;
 }
 try{ window.refreshGToken=refreshGToken; window.ensureGToken=ensureGToken; }catch(e){}
-function disconnectGoogle(){
-  localStorage.removeItem('amv_gtoken'); localStorage.removeItem('amv_gtoken_exp');
-  toast('Google disconnected','info');
-  if(S.tab==='integrations') renderIntegrationsView();
-}
-window.disconnectGoogle=disconnectGoogle;
+/* disconnectGoogle lived here and was reachable from nothing.
+   disconnectIntegration('google') does the same work from the Connectors list,
+   which is where somebody actually looks for it. Two functions for one action
+   is how they drift. */
 /* Real Gmail/Calendar/Drive actions - open in chat */
 /* ============================================================
    AUTONOMOUS INTEGRATION ACTIONS - the real "does the work" layer.
@@ -24130,38 +24123,14 @@ function stopAutonomous(){ _AUTO.running=false; _autoSetStatus('Stopping…'); }
    so the user reaches a success in their first session. Non-nagging:
    shows once, dismissible, remembers completion. This is the moment a
    broad product becomes an obvious one. */
-function _startOnboarding(){
-  const r=$('ovr'); if(!r) return;
-  const name=(S.user&&S.user.name)?String(S.user.name).split(' ')[0]:'there';
-  const paths=[
-    { k:'write',  title:'Write something',    sub:'Essay, email, post, plan',            ic:'<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>', demo:'Write a punchy 200-word intro for my project' },
-    { k:'image',  title:'Create an image',     sub:'Any style, from a sentence',          ic:'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>', demo:'Create an image of a calm mountain lake at sunrise' },
-    { k:'build',  title:'Build an app',         sub:'Describe it, AMV codes it',           ic:'<path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/>', demo:'Build a simple to-do list app I can use' },
-    { k:'auto',   title:'Automate something',   sub:'Run it on a schedule',                ic:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', demo:'Every morning, summarize the top tech news for me' },
-  ];
-  r.innerHTML='<div class="ov" id="onb-bg"><div class="ob onb sig-aura" onclick="event.stopPropagation()">'+
-    '<button class="oc" onclick="_finishOnboarding()" aria-label="Skip">\u00d7</button>'+
-    '<div class="onb-mark ce-mark-sig">'+((typeof amvMark==='function')?amvMark(40):'')+'</div>'+
-    '<div class="onb-head"><span class="onb-eyebrow">Welcome to AMV</span>'+
-      '<h2 class="onb-title">Hi '+escH(name)+' - what should we make first?</h2>'+
-      '<p class="onb-sub">AMV doesn\u2019t just answer - it does the work. Pick one to watch it happen. You can ask for any of this in chat anytime.</p></div>'+
-    '<div class="onb-grid stagger-in">'+paths.map(p=>'<button class="onb-card" data-onb="'+p.k+'">'+
-      '<span class="onb-card-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+p.ic+'</svg></span>'+
-      '<span class="onb-card-t">'+p.title+'</span><span class="onb-card-s">'+p.sub+'</span></button>').join('')+'</div>'+
-    '<button class="onb-skip" onclick="_finishOnboarding()">I\u2019ll explore on my own</button>'+
-  '</div></div>';
-  on($('onb-bg'),'click',_finishOnboarding);
-  r.querySelectorAll('[data-onb]').forEach(b=>on(b,'click',()=>{
-    const p=paths.find(x=>x.k===b.dataset.onb); _finishOnboarding();
-    if(!p) return;
-    setTab('chat');
-    // drop the demo prompt into the composer so the user sees exactly what to type,
-    // then send it through the real intent router - a genuine first result.
-    setTimeout(()=>{ try{ const ta=$('mta'); if(ta){ ta.value=p.demo; ta.dispatchEvent(new Event('input')); } if(typeof sendMsg==='function') sendMsg(); }catch(e){} }, 220);
-  }));
-}
-function _finishOnboarding(){ try{ saveStr('amv_onboarded','1'); }catch(e){} try{ closeOvr(); }catch(e){} }
-try{ window._startOnboarding=_startOnboarding; window._finishOnboarding=_finishOnboarding; }catch(e){}
+/* A SECOND FIRST-RUN FLOW, REACHABLE FROM NOWHERE.
+
+   _startOnboarding built a four-path welcome overlay and _finishOnboarding
+   wrote amv_onboarded. Nothing called either. The first run people actually
+   see is _firstRunHTML in 31-firstrun.js, reached from the empty chat state,
+   and it records itself under a different key - so there were two onboarding
+   systems with two notions of "has this person been welcomed", one of them
+   invisible, and a storage key written only by code that never ran. */
 
 /* ============================================================
    COMMAND PALETTE (#7)  - ⌘K / Ctrl+K

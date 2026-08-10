@@ -795,19 +795,9 @@ function _aiFriendly(msg){
   return 'AMV hit a snag. Please try again.';
 }
 
-/* Render a clean inline "hit a snag" card with a Retry button into `el`.
-   onRetry() is called when the user clicks Retry. Consistent everywhere. */
-function _aiFailCard(el, error, onRetry){
-  if(!el) return;
-  const msg=_aiFriendly(error && error.message ? error.message : error);
-  el.innerHTML='<div class="ai-snag">'+
-    '<div class="ai-snag-row"><span class="ai-snag-ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg></span>'+
-      '<span class="ai-snag-msg">'+escH(msg)+'</span></div>'+
-    (onRetry?'<button class="ai-snag-retry" type="button">Retry</button>':'')+
-  '</div>';
-  if(onRetry){ const b=el.querySelector('.ai-snag-retry'); if(b) b.addEventListener('click',()=>{ try{ onRetry(); }catch(e){} }); }
-}
-try{ window._aiFriendly=_aiFriendly; window._aiFailCard=_aiFailCard; }catch(e){}
+/* _aiFailCard lived here: an inline "hit a snag" card with a Retry button,
+   exported on window and rendered by nothing. Its own comment said
+   "Consistent everywhere", which was true in the way that costs nothing. */
 
 
 // Init state

@@ -1022,7 +1022,6 @@ function renderBillingView(targetEl){
   const hasPortal=!!portal;
   const liveBackend=window.AMV_API&&AMV_API.live;
   const plan=loadStr('amv_plan')||'free';
-  const pm=_loadPM();
   let P=PLANS[plan]||PLANS.free;
   let customSummary=null;
   if(plan==='custom'){
@@ -1071,7 +1070,6 @@ function renderBillingView(targetEl){
           _drow('Started',fmt(sinceDate))+
           _drow('Renews',fmt(nextDate))+
           _drow('Billing email',escH(email))+
-          (pm?_drow('Payment method',_pmBrandIcon(pm.brand)+' \u00b7\u00b7\u00b7\u00b7 '+escH(pm.last4)+(pm.exp?'  (exp '+escH(pm.exp)+')':'')):'')+
         '</div>'+
         /* The billing portal is the only place a card can be changed or a
            subscription cancelled. The handler for this button already existed
@@ -1256,7 +1254,20 @@ function _setPlan(plan){
   try{ if(typeof _revealTeamNav==='function') _revealTeamNav(); }catch(e){}
   try{ if(typeof renderView==='function' && S.tab) renderView(); }catch(e){}
 }
-function _planAllowsModel(mk){ if(mk==='auto') return true; const plan=loadStr('amv_plan')||'free'; if(plan==='custom') return true; const t=PLAN_TIERS[plan]||PLAN_TIERS.free; return t.models.indexOf(mk)>=0; }
+/* Reads the plan the SERVER confirmed, not the value in local storage.
+
+   verifiedPlan existed for exactly this and was called by nothing, so the one
+   client-side gate that decides which engines somebody may pick read a value
+   anybody can edit in a console. The sync below corrects that value whenever
+   it runs, so the exposure is the window before the first sync answers - but
+   that window is every cold start, and "the server refuses it a moment later"
+   means an error instead of an honest "your plan does not include this".
+
+   Display-only reads elsewhere still use the synced local value on purpose:
+   they need an answer before the first round trip, and showing the last known
+   plan name is better than showing Free to somebody who pays. This one gates
+   a capability, so it waits for the server. */
+function _planAllowsModel(mk){ if(mk==='auto') return true; const plan=(typeof verifiedPlan==='function'?verifiedPlan():(loadStr('amv_plan')||'free')); if(plan==='custom') return true; const t=PLAN_TIERS[plan]||PLAN_TIERS.free; return t.models.indexOf(mk)>=0; }
 
 /* Sync the REAL plan from the backend entitlement store. The server sets the
    plan only via a verified payment webhook, so this is the source of truth -
@@ -1627,11 +1638,16 @@ function _switchPlan(target){
   openCheckout(target);
 }
 function _secItem(ic,t,d){ return '<div class="sec-item"><div class="sec-ic">'+ic+'</div><div><div class="sec-t">'+t+'</div><div class="sec-d">'+d+'</div></div></div>'; }
-function _pmBrandIcon(b){ return ({visa:'VISA',mastercard:'MC',amex:'AMEX',discover:'DISC'})[b]||'CARD'; }
 function _pmLabel(pm){ return ({card:'Card',apple:'Apple Pay',google:'Google Pay',paypal:'PayPal',bank:'Bank'})[pm.type]||'Card'; }
-/* Payment method storage - DISPLAY ONLY. Never stores PAN/CVC. */
-function _loadPM(){ try{ const v=load('amv_pm_display'); return (v&&v.last4)?v:null; }catch(e){ return null; } }
-function _savePM(obj){ try{ store('amv_pm_display',{type:obj.type,brand:obj.brand||'card',last4:String(obj.last4||'').slice(-4),exp:obj.exp||'',token:obj.token||('tok_'+Math.random().toString(36).slice(2,12))}); }catch(e){} }
-function removePM(){ try{ localStorage.removeItem(_scopeKey('amv_pm_display')); }catch(e){} renderBillingView(); toast('Payment method removed','info'); }
-window.removePM=removePM;
+/* THE PAYMENT-METHOD CARD IS GONE, AND IT NEVER RENDERED ANYWAY.
+
+   Three functions lived here: _savePM, _loadPM, removePM. Nothing ever called
+   _savePM, so amv_pm_display was never written, so _loadPM always returned
+   null and the "Payment method  ····  4242" row could not appear. removePM was
+   exported with no button. And _savePM invented token:'tok_'+random and stored
+   it as though it meant something - a made-up payment token, which is exactly
+   the mock-shipped-as-real this product does not do.
+
+   The card is at Stripe and the control for it is the billing portal, which
+   this screen already opens. One place, and it is the real one. */
 

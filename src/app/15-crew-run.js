@@ -247,36 +247,12 @@ function stopAutonomous(){ _AUTO.running=false; _autoSetStatus('Stopping…'); }
    so the user reaches a success in their first session. Non-nagging:
    shows once, dismissible, remembers completion. This is the moment a
    broad product becomes an obvious one. */
-function _startOnboarding(){
-  const r=$('ovr'); if(!r) return;
-  const name=(S.user&&S.user.name)?String(S.user.name).split(' ')[0]:'there';
-  const paths=[
-    { k:'write',  title:'Write something',    sub:'Essay, email, post, plan',            ic:'<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>', demo:'Write a punchy 200-word intro for my project' },
-    { k:'image',  title:'Create an image',     sub:'Any style, from a sentence',          ic:'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>', demo:'Create an image of a calm mountain lake at sunrise' },
-    { k:'build',  title:'Build an app',         sub:'Describe it, AMV codes it',           ic:'<path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/>', demo:'Build a simple to-do list app I can use' },
-    { k:'auto',   title:'Automate something',   sub:'Run it on a schedule',                ic:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', demo:'Every morning, summarize the top tech news for me' },
-  ];
-  r.innerHTML='<div class="ov" id="onb-bg"><div class="ob onb sig-aura" onclick="event.stopPropagation()">'+
-    '<button class="oc" onclick="_finishOnboarding()" aria-label="Skip">\u00d7</button>'+
-    '<div class="onb-mark ce-mark-sig">'+((typeof amvMark==='function')?amvMark(40):'')+'</div>'+
-    '<div class="onb-head"><span class="onb-eyebrow">Welcome to AMV</span>'+
-      '<h2 class="onb-title">Hi '+escH(name)+' - what should we make first?</h2>'+
-      '<p class="onb-sub">AMV doesn\u2019t just answer - it does the work. Pick one to watch it happen. You can ask for any of this in chat anytime.</p></div>'+
-    '<div class="onb-grid stagger-in">'+paths.map(p=>'<button class="onb-card" data-onb="'+p.k+'">'+
-      '<span class="onb-card-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+p.ic+'</svg></span>'+
-      '<span class="onb-card-t">'+p.title+'</span><span class="onb-card-s">'+p.sub+'</span></button>').join('')+'</div>'+
-    '<button class="onb-skip" onclick="_finishOnboarding()">I\u2019ll explore on my own</button>'+
-  '</div></div>';
-  on($('onb-bg'),'click',_finishOnboarding);
-  r.querySelectorAll('[data-onb]').forEach(b=>on(b,'click',()=>{
-    const p=paths.find(x=>x.k===b.dataset.onb); _finishOnboarding();
-    if(!p) return;
-    setTab('chat');
-    // drop the demo prompt into the composer so the user sees exactly what to type,
-    // then send it through the real intent router - a genuine first result.
-    setTimeout(()=>{ try{ const ta=$('mta'); if(ta){ ta.value=p.demo; ta.dispatchEvent(new Event('input')); } if(typeof sendMsg==='function') sendMsg(); }catch(e){} }, 220);
-  }));
-}
-function _finishOnboarding(){ try{ saveStr('amv_onboarded','1'); }catch(e){} try{ closeOvr(); }catch(e){} }
-try{ window._startOnboarding=_startOnboarding; window._finishOnboarding=_finishOnboarding; }catch(e){}
+/* A SECOND FIRST-RUN FLOW, REACHABLE FROM NOWHERE.
+
+   _startOnboarding built a four-path welcome overlay and _finishOnboarding
+   wrote amv_onboarded. Nothing called either. The first run people actually
+   see is _firstRunHTML in 31-firstrun.js, reached from the empty chat state,
+   and it records itself under a different key - so there were two onboarding
+   systems with two notions of "has this person been welcomed", one of them
+   invisible, and a storage key written only by code that never ran. */
 

@@ -1965,7 +1965,13 @@ function cwDemo(){
   _cwSaveApprovals(appr); renderCrewView();
   toast('Example draft added - press Preview to see the full workspace','info',4000);
 }
-function cwApprove(id){ const a=_cwApprovals().filter(x=>x.id!==id); _cwSaveApprovals(a); toast('Approved - sent','info'); renderCrewView(); }
+/* cwApprove used to live here. It removed the item from the local list and
+   toasted "Approved - sent" without calling the server at all - cwReject
+   beside it does call AMV_API.actApproval - so had anything wired it, it would
+   have told somebody their draft went out when nothing had been sent. It was
+   superseded by apvApprove in the approval panel below and referenced by
+   nothing, which made the lie dormant rather than harmless. One approval path,
+   and it is the one that talks to the server. */
 function cwReject(id){
   const all=_cwApprovals(); const removed=all.find(x=>x.id===id); const idx=all.findIndex(x=>x.id===id);
   if(window.AMV_API && AMV_API.live){ AMV_API.actApproval(id,'reject').catch(()=>{}); }
@@ -1973,16 +1979,9 @@ function cwReject(id){
   if(removed){ toastAction('Removed - it won’t be sent.','Return',()=>{ const list=_cwApprovals(); if(!list.some(x=>x.id===removed.id)){ list.splice(Math.min(idx,list.length),0,removed); _cwSaveApprovals(list); if(window.AMV_API && AMV_API.live){ AMV_API.actApproval(id,'restore').catch(()=>{}); } toast('Brought back','success'); renderCrewView(); } }); }
   else toast('Removed','info');
 }
-function cwEdit(id){ const item=_cwApprovals().find(x=>x.id===id); cwReject(id); setTab('chat'); setTimeout(()=>{ const ta=$('mta'); if(ta&&item){ ta.value='Help me revise this draft:\n\n'+item.preview; ta.focus(); } },120); }
-window.cwToggle=cwToggle;window.cwDemo=cwDemo;window.cwApprove=cwApprove;window.cwReject=cwReject;window.cwEdit=cwEdit;
-function cwTry(prompt){
-  // Take a "try saying" example, drop the user into chat with it ready to send.
-  try{
-    setTab('chat');
-    setTimeout(()=>{ const ta=$('mta'); if(ta){ ta.value=prompt; ta.dispatchEvent(new Event('input')); ta.focus(); } toast('Press send and AMV will set this up for you','info',3500); }, 120);
-  }catch(e){}
-}
-window.cwTry=cwTry;
+
+window.cwToggle=cwToggle;window.cwDemo=cwDemo;window.cwReject=cwReject;
+
 
 /* ============================================================
    APPROVAL + PREVIEW WORKSPACE  (Phase 1 of the Mission Control redesign)

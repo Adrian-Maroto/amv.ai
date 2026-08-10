@@ -546,13 +546,11 @@ function _mountStripe(pk,plan){
   if(window.Stripe){ go(); return; }
   const s=document.createElement('script'); s.src='https://js.stripe.com/v3/'; s.onload=go; s.onerror=()=>{ const b=$('pay-body'); if(b) b.innerHTML='<div class="pay-err">Could not reach Stripe. Check your connection.</div>'; }; document.head.appendChild(s);
 }
-function openPaymentMethod(method){
-  // All methods open the payment sheet on the chosen tab (defaults to Pro plan to add a method)
-  const plan='pro';
-  openPaymentSheet(plan);
-  setTimeout(()=>{ const map={card:'card',stripe:'stripe',apple:'stripe',paypal:'paypal',venmo:'paypal'}; const tab=map[method]||'card'; const tb=document.querySelector('.pay-tab[data-pt="'+tab+'"]'); if(tb) tb.click(); },50);
-}
-window.openCheckout=openCheckout;window.openPaymentSheet=openPaymentSheet;window.openPaymentMethod=openPaymentMethod;
+/* openPaymentMethod lived here: it opened the payment sheet on a chosen tab,
+   for a "manage your payment methods" screen that no longer exists. Referenced
+   by nothing. Adding or changing a card is the billing portal's job, which is
+   Stripe's own screen and always current. */
+window.openCheckout=openCheckout;window.openPaymentSheet=openPaymentSheet;
 
 
 /* === APPS & EXTENSIONS === */

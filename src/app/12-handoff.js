@@ -213,20 +213,8 @@ function _hoPullConv(convId){
 window._hoPickChat=_hoPickChat; window._hoPullConv=_hoPullConv;
 /* Pull the most recent conversation's content into the handoff context, so a
    user can hand off real work - not just retype notes. */
-function hoFromChat(){
-  try{
-    const convs=(S.convs||[]);
-    const hasMsgs=c=>c&&c.msgs&&c.msgs.length;
-    const conv=convs.find(c=>c.id===S.cur&&hasMsgs(c)) || convs.find(hasMsgs);
-    if(!conv){ toast('No recent chat to pull in','info'); return; }
-    const txt=m=>typeof m.c==='string'?m.c:(Array.isArray(m.c)?(m.c.map(x=>x&&x.text?x.text:'').join(' ')):'');
-    const text=conv.msgs.slice(-12).map(m=>(m.r==='u'?'You: ':'AMV: ')+txt(m)).join('\n\n');
-    const ta=$('ho-ctx'); if(ta){ ta.value=(ta.value?ta.value+'\n\n':'')+text; ta.focus(); }
-    if($('ho-title') && !$('ho-title').value) $('ho-title').value=conv.title||'Continue this conversation';
-    toast('Pulled in your last chat','success');
-  }catch(e){ toast('Could not pull chat','error'); }
-}
-window.hoFromChat=hoFromChat;
+/* hoFromChat lived here, exported and referenced by nothing. */
+
 /* Update one sent handoff in place. */
 function _hoSetStatus(id, status){
   const out=_hoOut(); const rec=out.find(x=>x.id===id);
@@ -1543,8 +1531,12 @@ function _renderSkillsPane(pane){
 // area in AMV; toggling persists and gates that area.
 // Core capabilities are always available - we never silently restrict what AMV
 // can do behind a toggle the user may have forgotten about.
-function _pluginOn(id){ return true; }
-try{ window._renderSkillsPane=_renderSkillsPane; window._pluginOn=_pluginOn; }catch(e){}
+/* _pluginOn(id){ return true; } lived here: a function whose name asks
+   whether a plugin is enabled and whose body said yes to everything, exported
+   on window, called by nothing. Dormant, and one call away from turning every
+   plugin on for everybody regardless of what they chose. A permission check
+   answers the real question or it does not exist. */
+try{ window._renderSkillsPane=_renderSkillsPane; }catch(e){}
 
 function _renderSetPaneInner(){
   const pane=$('set-pane'); if(!pane) return;
@@ -3464,10 +3456,8 @@ function getGToken(){
   localStorage.removeItem('amv_gtoken'); localStorage.removeItem('amv_gtoken_exp'); return null;
 }
 try{ window.refreshGToken=refreshGToken; window.ensureGToken=ensureGToken; }catch(e){}
-function disconnectGoogle(){
-  localStorage.removeItem('amv_gtoken'); localStorage.removeItem('amv_gtoken_exp');
-  toast('Google disconnected','info');
-  if(S.tab==='integrations') renderIntegrationsView();
-}
-window.disconnectGoogle=disconnectGoogle;
+/* disconnectGoogle lived here and was reachable from nothing.
+   disconnectIntegration('google') does the same work from the Connectors list,
+   which is where somebody actually looks for it. Two functions for one action
+   is how they drift. */
 /* Real Gmail/Calendar/Drive actions - open in chat */

@@ -1348,8 +1348,8 @@ async function _devSend(){
 }
 window.renderCodeView=renderCodeView;
 
-function codeStart(kind){ setTab('chat'); setTimeout(()=>{ const map={'New script':'Write a new script that ','Fix a bug':'Here is my code and the error I am getting:\n\n','Refactor':'Refactor this code to be cleaner:\n\n','Explain':'Explain what this code does, step by step:\n\n'}; const ta=$('mta'); if(ta){ ta.value=map[kind]||''; ta.focus(); } },120); }
-window.codeStart=codeStart;
+/* codeStart lived here, exported and referenced by nothing. */
+
 
 
 /* ══════════════════════════════════════════════════════════════
