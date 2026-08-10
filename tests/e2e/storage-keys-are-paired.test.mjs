@@ -117,8 +117,15 @@ section('Every key is both written and read, or is named here with the reason');
     amv_feedback_endpoint:  'where in-app feedback is forwarded, if anywhere',
     amv_browser_service:    'an external headless-browser service for the universal agent',
     amv_fin_provider:       'which bank aggregator this deployment uses',
-    amv_canvas:             'an external canvas host',
-    amv_canvas_url:         'and its address',
+    /* amv_canvas and amv_canvas_url were excused here as "an external canvas
+       host" and "its address" - operator-set, nothing to do with the app.
+       Both were residue of a Canvas integration that called a school straight
+       from the browser, which the page's own policy had always refused, so
+       neither key was ever written by anything. amv_canvas_url is gone
+       entirely. amv_canvas is now written by the connect flow, after the
+       server has proved the token against the real Canvas, and cleared when
+       the server says a school is not connected - so it is state like any
+       other key and is checked like any other key. */
     /* amv_gauth was excused here as "the Google OAuth client id for this
        deployment" - operator-set, type it in yourself. That was the whole
        defect: every visitor who was not the operator got a "Continue with
@@ -173,6 +180,18 @@ section('Every key is both written and read, or is named here with the reason');
   ok(nowRead.length === 0, 'nothing excused as write-only has quietly gained a reader', nowRead);
   const nowWritten = Object.keys(OPERATOR_SET).filter(k => writes.has(k));
   ok(nowWritten.length === 0, 'and nothing excused as operator-set is now written by the app', nowWritten);
+
+  /* The third way an excuse rots, and the one nothing was checking: the key
+     is gone. amv_canvas_url sat here excused as "an external canvas host's
+     address" long after the code that read it had been deleted - so the list
+     was carrying a reason for something that no longer existed, which is how
+     the next key with a similar name inherits an excuse nobody re-examined.
+     An exemption has to name something real. */
+  const vanished = [...Object.keys(OPERATOR_SET), ...Object.keys(WRITE_ONLY), ...Object.keys(ERASE_ONLY)]
+    .filter(k => !keys.has(k) && !all.includes("'" + k + "'"))
+    .sort();
+  ok(vanished.length === 0,
+     'and every excused key still appears somewhere in the app', vanished);
 }
 
 section('The two doors are still different doors');

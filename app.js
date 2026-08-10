@@ -21993,7 +21993,12 @@ function _integrationsCatalogHTML(){
          every request. What is left is real: read what is due, take your own
          copy of the document the assignment points at, share it with the
          teacher when you say to. Handing in stays the student's own act. */
-      intRow({id:'canvas',name:'Canvas LMS',desc:'Reads what is due, makes your own copy of the doc an assignment points at, and shares it with your teacher when you say to.',auto:true,connected:isConn('amv_canvas'),run:'schoolOpen',runLabel:'Open my school work',icon:'\uD83C\uDF93',bg:'rgba(230,70,70,.14)'})
+      intRow({id:'canvas',name:'Canvas LMS',desc:'Reads what is due, makes your own copy of the doc an assignment points at, and shares it with your teacher when you say to.',/* Read with the key written out, not through isConn's variable, because
+         the check that pairs every storage key with its reader can only see a
+         literal - and this key stopped being operator-set the moment the
+         connect flow began writing it. A read it cannot see is a key it
+         reports as written into the void. */
+      auto:true,connected:!!loadStr('amv_canvas'),run:'schoolOpen',runLabel:'Open my school work',icon:'\uD83C\uDF93',bg:'rgba(230,70,70,.14)'})
     )+
     cat('Office files',
       intRow({id:'excel',name:'Excel & CSV',desc:'Upload a sheet - AMV runs formulas, builds pivots and charts, then you download.',auto:false,connected:false,icon:'\uD83D\uDCCA',bg:'rgba(33,115,70,.14)'})+
