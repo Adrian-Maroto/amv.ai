@@ -1,0 +1,123 @@
+/* THREE FINISHED FEATURES THAT COULD NEVER RUN, FROM ONE CAUSE.
+
+   A Content-Security-Policy names every host a page may reach. Anything else is
+   refused by the browser before the request leaves - and the refusal surfaces
+   as a network error in a console nobody has open, which reads exactly like the
+   third party being down. So a feature can be built, styled, error-handled,
+   documented and shipped, and be impossible.
+
+   Three were:
+
+     Canvas          fetched yourschool.instructure.com from the browser. No
+                     school is in connect-src and none can be - the host differs
+                     per school. It had a modal, a progress log, a rate-limit
+                     pause and a help note, and had never once worked.
+     Classroom       fetches classroom.googleapis.com. connect-src allows
+                     accounts.google.com, gmail.googleapis.com and
+                     www.googleapis.com - not that one. This is the coursework
+                     reader whose read-only scopes are the subject of another
+                     test file: the permission model is right and the call could
+                     never happen.
+     Analytics       injects a script tag for googletagmanager.com or
+                     plausible.io. Neither is in script-src, so an operator can
+                     configure analytics, see no error, and collect nothing.
+
+   Fixing three is not the job. Nothing compared the app against its own policy,
+   which is why all three shipped, so this compares them - every host the bundle
+   fetches against connect-src, every script it injects against script-src.
+
+   A host that is missing here is not a bug to find later. It is a feature that
+   has never run. */
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+import { ok, section, report, done } from '../lib/assert.mjs';
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
+const app = readFileSync(join(ROOT, 'app.js'), 'utf8');
+
+/* The policy as the browser reads it. */
+function directive(name) {
+  const m = html.match(new RegExp(name + ' ([^;"]*)'));
+  if (!m) return null;
+  return new Set(m[1].split(/\s+/).filter(Boolean)
+    .filter(v => /^https?:\/\//.test(v))
+    .map(v => v.replace(/^https?:\/\//, '')));
+}
+/* 'self' and a wildcard entry both cover things this cannot enumerate, so a
+   host is allowed if it matches exactly or matches a *.host entry. */
+const allows = (set, host) => {
+  if (!set) return false;
+  if (set.has(host)) return true;
+  for (const entry of set) {
+    if (entry.startsWith('*.') && host.endsWith(entry.slice(1))) return true;
+  }
+  return false;
+};
+const hostsIn = (re) => {
+  const out = new Set();
+  for (const m of app.matchAll(re)) {
+    const h = String(m[1] || '').replace(/^https?:\/\//, '').split('/')[0];
+    if (h) out.add(h);
+  }
+  return [...out].sort();
+};
+
+section('The page states a policy at all');
+{
+  ok(!!directive('connect-src'), 'connect-src is set', !!directive('connect-src'));
+  ok(!!directive('script-src'), 'script-src is set', !!directive('script-src'));
+  ok((directive('connect-src') || new Set()).size > 3,
+     'and it is a real list rather than a placeholder', (directive('connect-src') || new Set()).size);
+}
+
+section('Every host the app FETCHES is one it is allowed to reach');
+{
+  /* The literal ones. A URL built from a variable cannot be checked here, which
+     is exactly why the Canvas call hid for so long - and why the rule below
+     about school hosts exists separately. */
+  const connect = directive('connect-src');
+  const fetched = hostsIn(/fetch(?:Deadline)?\(\s*['"`](https:\/\/[a-z0-9.-]+)/gi);
+  ok(fetched.length > 0, 'the app really does call out to named hosts', fetched.length);
+  const blocked = fetched.filter(h => !allows(connect, h));
+  ok(blocked.length === 0,
+     'none of them is refused by the page’s own policy', blocked);
+}
+
+section('Every script the app INJECTS is one it is allowed to load');
+{
+  const script = directive('script-src');
+  const injected = hostsIn(/\.src\s*=\s*['"`](https:\/\/[a-z0-9.-]+)/gi);
+  const blocked = injected.filter(h => !allows(script, h));
+  ok(blocked.length === 0,
+     'no analytics or widget script is added that the browser will refuse', blocked);
+}
+
+section('And no school host is called from the browser at all');
+{
+  /* This one cannot be fixed by adding a host, because the host is different
+     for every school. It has to be read by the Worker, which has no policy to
+     obey. Stated as a capability rather than as a spelling: the browser holds
+     no school address, so it cannot build such a URL however it is written. */
+  const traces = []
+    .concat(app.match(/amv_canvas_url/g) || [])
+    .concat(app.match(/fetch(?:Deadline)?\([^)]*instructure/g) || [])
+    .concat(app.match(/baseUrl\s*\+\s*['"`]\/api\/v1/g) || []);
+  ok(traces.length === 0,
+     'the browser holds no school address and calls no school host', traces.slice(0, 3));
+}
+
+section('The policy has not been widened to nothing to make this pass');
+{
+  /* The cheap way to make everything above green is `connect-src *`, which is
+     the same as having no policy. */
+  const raw = (html.match(/connect-src ([^;"]*)/) || [])[1] || '';
+  ok(!/(^|\s)\*(\s|$)/.test(raw), 'connect-src is not a wildcard', raw.slice(0, 60));
+  const rawScript = (html.match(/script-src ([^;"]*)/) || [])[1] || '';
+  ok(!/(^|\s)\*(\s|$)/.test(rawScript), 'script-src is not a wildcard', rawScript.slice(0, 60));
+  ok(!/unsafe-eval/.test(rawScript), 'and does not allow eval', rawScript.slice(0, 80));
+}
+
+if (report('the-page-can-reach-what-it-calls') > 0) process.exitCode = 1;
+done();
