@@ -119,5 +119,30 @@ section('The policy has not been widened to nothing to make this pass');
   ok(!/unsafe-eval/.test(rawScript), 'and does not allow eval', rawScript.slice(0, 80));
 }
 
+section('AMV is the only product named in AMV');
+{
+  /* A settings screen shipped a line reading "Set your Anthropic key" and a
+     visible link out to that company's console, in the bundle every visitor
+     downloads. Off-brand, and the wrong instruction as well: the key is a
+     Worker secret, and which provider sits behind it is a deployment decision
+     the operator has already made.
+
+     Checked against the built bundle rather than the modules, because what
+     ships is what matters. The screening list in the marketplace is exempt by
+     shape: it exists to REJECT these words in what people upload, so the names
+     have to appear in it, and it is data rather than something anybody reads. */
+  const banned = /(Anthropic|OpenAI|ChatGPT|\bClaude\b|\bGemini\b|Copilot|\bGrok\b|Perplexity)/g;
+  const hits = [];
+  for (const m of app.matchAll(banned)) {
+    const around = app.slice(Math.max(0, m.index - 120), m.index + 40);
+    if (/banned\s*=|_BANNED|screenList/.test(around)) continue;   // the rejection list
+    hits.push(m[0] + ' … ' + around.slice(-60).replace(/\s+/g, ' '));
+  }
+  ok(hits.length === 0, 'no other company is named in what visitors download', hits.slice(0, 3));
+
+  const links = (app.match(/https:\/\/[a-z.]*(anthropic|openai|perplexity)\.com[^"']*/gi) || []);
+  ok(links.length === 0, 'and nothing links people out to buy from one', links.slice(0, 2));
+}
+
 if (report('the-page-can-reach-what-it-calls') > 0) process.exitCode = 1;
 done();

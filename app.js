@@ -5254,7 +5254,7 @@ async function _callAI(msgs, _opts) {
   let _inTok=0,_outTok=0;
   // Record usage exactly once, no matter how the stream ends (success, error, or
   // user-stop). Prevents lost usage accounting when a stream is interrupted after
-  // tokens were already consumed. (Grok flagged this fragility - now robust.)
+  // tokens were already consumed.
   let _usageRecorded=false;
   const _recordUsageOnce=()=>{
     if(_usageRecorded) return; _usageRecorded=true;
@@ -19758,9 +19758,14 @@ function _renderSetPaneInner(){
         '<div id="test-result" class="conn-test"></div></div>'+
       '</div>'+
       '<div class="ss2"><h3>Where does the AI key go?</h3>'+
-        '<p style="font-size:12.5px;color:var(--mu);line-height:1.6;margin:0">Set your Anthropic key as a secret on the Worker - it never touches the browser:</p>'+
+        /* AMV is the product. Naming somebody else's company here, and linking
+           people out to buy from them, is both off-brand and the wrong
+           instruction: the key is a Worker secret, and which provider is behind
+           it is a deployment decision the operator has already made. This is the
+           bundle every visitor downloads. */
+        '<p style="font-size:12.5px;color:var(--mu);line-height:1.6;margin:0">Your model key is a secret on the Worker, so it never reaches the browser:</p>'+
         '<pre style="background:var(--surface);border:1px solid var(--hair);border-radius:8px;padding:10px;font-size:11.5px;overflow:auto;margin:8px 0 0"><code>wrangler secret put AMV_MODEL_KEY</code></pre>'+
-        '<a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" class="conn-link">Get an Anthropic key \u2192</a>'+
+        '<p style="font-size:11.5px;color:var(--dim);line-height:1.6;margin:8px 0 0">Until it is set, AMV says so on every screen that needs it rather than failing quietly.</p>'+
       '</div>';
     on($('save-base'),'click',()=>{
       const v=($('s-base')?.value||'').trim().replace(/\/$/,'');

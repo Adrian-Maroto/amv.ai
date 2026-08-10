@@ -51,8 +51,6 @@ const PREFIXED = [...client.matchAll(/[`'"](\/v1\/[a-z-]+\/)[`'"]\s*\+/g)].map(m
 /* Paths that belong to somebody ELSE's API, with whose. A path here is not a
    mistake; a path here that turns out to be ours is. */
 const FOREIGN = {
-  '/api/v1/courses': 'Canvas LMS, on the school\'s own host',
-  '/api/v1/courses/': 'the same, per course',
   '/issues': 'the GitHub API, on api.github.com',
 };
 

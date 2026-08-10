@@ -738,7 +738,7 @@ async function _callAI(msgs, _opts) {
   let _inTok=0,_outTok=0;
   // Record usage exactly once, no matter how the stream ends (success, error, or
   // user-stop). Prevents lost usage accounting when a stream is interrupted after
-  // tokens were already consumed. (Grok flagged this fragility - now robust.)
+  // tokens were already consumed.
   let _usageRecorded=false;
   const _recordUsageOnce=()=>{
     if(_usageRecorded) return; _usageRecorded=true;
