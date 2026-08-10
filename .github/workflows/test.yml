@@ -2,8 +2,21 @@ name: tests
 
 # Markdown never reaches the build, so a docs-only commit does not need thirty
 # minutes of browsers to prove it. Every other path still does.
+# WHERE THIS RUNS, AND WHY NOT EVERYWHERE.
+#
+# A Stop hook pushes the working branch after every turn so nothing is lost if a
+# session dies. Those commits are work in progress by definition - the local gate
+# has not finished on them yet - and CI was running every one and emailing a
+# failure for each. That is where a mailbox full of red comes from, and it
+# teaches the only bad lesson available: that a failure email means nothing.
+#
+# So CI runs where a red result is a real answer. `main` only carries commits the
+# gate has already passed, and a pull request is somebody deliberately asking.
+# The working branch is a work surface and is left alone; it is still pushed, so
+# the work is safe, it just is not judged half-finished.
 on:
   push:
+    branches: [main]
     paths-ignore: ['**.md']
   pull_request:
     paths-ignore: ['**.md']
