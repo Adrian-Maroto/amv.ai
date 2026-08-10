@@ -8326,3 +8326,9 @@ html,body{height:100%;height:100dvh}
 .sch-pick-row a{color:var(--mu);font-size:var(--t-xs);text-decoration:underline;}
 .sch-pick-row a:hover{color:var(--accent);}
 @media (max-width:560px){ .sch-pick-row{flex-wrap:wrap;} .sch-pick-k{flex:1 0 100%;} }
+
+/* ── LAYER A74 ─ A FIELD THAT SAYS WHAT IT TAKES ─────────────────────────────
+   The listing price is whole dollars, because the server rounds whatever it
+   is sent. Saying so under the field is the cheap half of that; refusing a
+   price that would be changed is the other half. */
+.sl-hint{margin-top:var(--sp-1);font-size:var(--t-xs);line-height:1.5;color:var(--dim);}

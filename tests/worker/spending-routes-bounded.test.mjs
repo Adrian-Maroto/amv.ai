@@ -29,8 +29,22 @@ const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
    a second definition that drifts silently. */
 const bodyOf = (fn) => functionBody(src, fn);
 
-/* Calls that cost money or consume somebody else's rate limit. */
-const SPENDS = /_modelFetch\(|_finCall\(|api\.resend\.com|api\.stripe\.com|oauth2\.googleapis|api\.twilio|_vidCall\(/;
+/* Calls that cost money or consume somebody else's rate limit.
+
+   This was a list of vendors: _modelFetch, _finCall, resend, stripe, google,
+   twilio, _vidCall. It called itself exhaustive and it was exhaustive over the
+   third parties somebody had thought of, which is not the same property. Four
+   school routes shipped with no bound at all because they call a school's
+   Canvas - a host nobody could have put on a vendor list, since it is
+   different for every school - and matched none of these spellings.
+
+   So it asks about the capability instead: does this handler make a request
+   leave the Worker? A named vendor, a guarded fetch, a bare fetch to any URL -
+   all of them cost the operator a subrequest and cost somebody else their rate
+   limit, and all of them are found by asking that question. The next
+   integration is covered on the day it is written rather than on the day
+   somebody remembers to add it here. */
+const SPENDS = /_modelFetch\(|_finCall\(|_vidCall\(|fetchGuarded\(|fetchDeadline\(|(?:await\s+)?fetch\(/;
 /* Anything that bounds how often, whether by rate limit or by allowance. */
 /* What counts as a bound.
 

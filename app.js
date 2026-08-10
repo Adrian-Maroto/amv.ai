@@ -9911,7 +9911,15 @@ function _mktSell(body){
         '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
           '<div style="flex:1;min-width:160px"><label class="lbl">Title</label><input id="sl-title" placeholder="e.g. Excel Finance Pack for AMV" autocomplete="off"></div>'+
           '<div><label class="lbl">Type</label><select id="sl-kind" class="sel"><option value="prompt">Prompt</option><option value="crew">Crew</option><option value="integration">Integration</option><option value="workflow">Workflow</option><option value="guide">Guide</option><option value="bundle">File bundle</option></select></div>'+
-          '<div style="width:110px"><label class="lbl">Price (USD)</label><input id="sl-price" type="number" min="0" max="999" value="0" inputmode="numeric"></div>'+
+          /* Whole dollars, said on the field. The server rounds - Math.round on
+             the price it is given - so a seller who typed 19.99 got a $20
+             listing and was told nothing about it. Either the field says what
+             it accepts or the price somebody sets is not the price they get,
+             and the second one is how a seller finds out from a sale. */
+          '<div style="width:130px"><label class="lbl">Price (USD)</label>'+
+            '<input id="sl-price" type="number" min="0" max="999" step="1" value="0" inputmode="numeric" aria-describedby="sl-price-h">'+
+            '<div id="sl-price-h" class="sl-hint">Whole dollars. 0 is free.</div>'+
+          '</div>'+
         '</div>'+
         '<div><label class="lbl">Category</label><input id="sl-cat" placeholder="e.g. Finance"></div>'+
         '<div><label class="lbl">Short description</label><input id="sl-desc" placeholder="What does the buyer get?"></div>'+
@@ -10022,6 +10030,17 @@ function _mktSell(body){
       icon:staged.length&&!$('sl-text')?.value?_fileIcon(staged[0].type,staged[0].name):'\u2728',
     };
     if(!item.title){ toast('A title is required','error'); return; }
+    /* A price that is not what they typed gets said, not applied. The field
+       takes whole dollars and the server rounds whatever it is sent, so
+       "19.99" silently became a different listing price - and a seller finds
+       that out from a sale. Refusing costs one correction; changing it
+       quietly costs their trust in what the number on the field means. */
+    const priceRaw=($('sl-price')?.value||'0').trim();
+    if(priceRaw && !/^\d+$/.test(priceRaw)){
+      toast('Prices are whole dollars - use '+Math.max(0,Math.min(999,Math.round(parseFloat(priceRaw)||0)))+' rather than '+priceRaw+'.','error',6000);
+      $('sl-price')?.focus();
+      return;
+    }
     if(!item.text && !item.files.length){ toast('Add a deliverable: paste text/links or attach at least one file','error',5000); return; }
     // It must actually work: real, usable content for its kind.
     const deliv=_mktDeliverableOK(item);

@@ -564,7 +564,31 @@ async function _spendGate(env, user, what) {
   const cap = paying ? gCap : +(gCap * FREE_TIER_CAP_SHARE).toFixed(2);
   let res;
   try { res = await counter(env, `spend:${todayKey()}`, { op: 'checkCap', cap }); }
-  catch (e) { return null; }        // the counter being unreachable must not stop the product
+  catch (e) {
+    /* FAILING OPEN IS THE RIGHT CALL. FAILING OPEN QUIETLY IS NOT.
+
+       If the counter cannot be reached, refusing everybody turns one component
+       being unhappy into a total outage, and that is worse. So the work goes
+       ahead - but for as long as this is happening the daily ceiling does not
+       exist, and it used to not exist in total silence: no audit line, no
+       alert, nothing anywhere saying the one control that stops a runaway bill
+       was switched off. An operator would find out from the invoice.
+
+       Now it says so. The free tier is still shed first, because if the
+       ceiling is blind the cheapest thing to do is stop giving compute away
+       while nobody can count it - that keeps the unbounded window as small as
+       it can be without turning a degraded counter into a refund. */
+    audit(env, 'spend_gate_blind', { what, cap, paying, error: String((e && e.message) || e) });
+    try {
+      await alertOnce(env, 'spend_gate_blind',
+        'The spend counter is unreachable, so the daily ceiling is not being enforced. Paid work is still running; free work is being refused until it recovers.', 30);
+    } catch (_) {}
+    if (!paying) {
+      return json({ error: 'AMV is at capacity for free accounts right now. Paid plans are running normally - please try again shortly.',
+                    code: 'free_capacity' }, 503);
+    }
+    return null;
+  }
   if (res && res.allowed) return null;
   if (!paying) {
     audit(env, 'free_cap_hit', { what, value: res && res.value, cap });
@@ -586,6 +610,22 @@ async function _recordSpend(env, subject, usd, what) {
   try {
     await counter(env, `spend:${todayKey()}`, { op: 'incr', amount, ttlMs: 86400000 * 2 });
     await counter(env, `cost:${subject}:${monthKey()}`, { op: 'incr', amount, ttlMs: 86400000 * 70 });
+    /* AND the platform total, which is the one the owner actually reads.
+
+       Chat books all three of these. This booked the first two, so image and
+       video reached the daily ceiling and the per-account cost and never
+       reached costtotal - the number the founder dashboard reports as the
+       month's cost, and the number every margin on that screen is derived
+       from. Video is the dearest call in the product at half a dollar a go,
+       and it was the one missing from the profit figure.
+
+       This is the same blindness the ceiling had before it was fixed, left
+       behind in the place where it is least visible: a ceiling that is too
+       low announces itself, a cost that is too low does not. The comment
+       above IMAGE_COST_USD says a number that is quietly wrong is worse than
+       one that is missing, and for a while this was the number. */
+    await counter(env, `costtotal:${monthKey()}`, { op: 'incr', amount, ttlMs: 86400000 * 70 });
+    await counter(env, `featcost:${what || 'other'}:${monthKey()}`, { op: 'incr', amount, ttlMs: 86400000 * 70 });
   } catch (e) {
     audit(env, 'spend_not_recorded', { what, subject, usd: amount, error: String((e && e.message) || e) });
   }
@@ -607,7 +647,7 @@ function audit(env, event, detail) {
     // Optional: ship high-signal events to an external collector.
     if (env && env.AUDIT_WEBHOOK && _highSignal(event)) {
       // fire-and-forget; never block the request on logging
-      fetch(env.AUDIT_WEBHOOK, {
+      fetchDeadline(env.AUDIT_WEBHOOK, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(rec),
       }).catch(() => {});
@@ -618,7 +658,7 @@ function audit(env, event, detail) {
     if (env && env.POSTHOG_KEY) {
       const host = (env.POSTHOG_HOST || 'https://us.i.posthog.com').replace(/\/$/, '');
       const { by, email, ip, ...safe } = detail || {};
-      fetch(host + '/capture/', {
+      fetchDeadline(host + '/capture/', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           api_key: env.POSTHOG_KEY,
@@ -669,7 +709,7 @@ function _forwardSentry(env, ctx, e) {
       tags: { kind: String(e.kind || 'error'), tab: String(e.tab || '') },
       extra: { where: e.where, stack: e.stack, ua: e.ua },
     };
-    const p = fetch(s.url, {
+    const p = fetchDeadline(s.url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -2229,7 +2269,88 @@ function _webIsConsequential(verb, label, text){
   return false;
 }
 
-/* SSRF gate: only public http(s). Re-checked on every navigation. */
+/* ══════════════════════════════════════════════════════════════
+   OUTBOUND REQUESTS: A DEADLINE, AND A GATE THAT SURVIVES A REDIRECT.
+
+   Two things every fetch out of this Worker was missing.
+
+   NO DEADLINE. There were 41 outbound fetches here and not one AbortSignal
+   between them. The browser half of AMV has had fetchDeadline for as long as
+   it has had a network call; the server half had nothing. A provider that
+   accepts the connection and then says nothing holds the request until the
+   platform kills it, and on the model path the caller's allowance is reserved
+   the whole time - so a third party being slow costs the customer their quota
+   and costs the operator the wall clock. Worst at a route that fetches a host
+   the CALLER chose: point it at a black hole and the Worker waits.
+
+   THE GATE ONLY GUARDED THE FIRST HOP. _webHostAllowed refuses localhost, the
+   RFC1918 ranges, 169.254, the metadata host - and it was checked once,
+   against the address somebody typed. fetch follows redirects by default, so
+   a server that answers 302 http://169.254.169.254/ was followed with no
+   second look, which is the whole gate walked around by one response header.
+   Workers also forward the Authorization header across origins where a
+   browser strips it, so the redirect takes the credential with it.
+
+   So: hops are followed by hand, each one re-gated, and the credential is
+   dropped the moment the origin changes. A redirect that leaves the origin is
+   a different server, and it does not get to keep the key that was meant for
+   the first one. */
+const OUTBOUND_TIMEOUT_MS = 15000;
+/* Image and video generation legitimately take minutes, so they get their own
+   number. A ceiling that cuts off work people paid for is not a safety
+   feature, it is the same outage from the other side - but a job that has been
+   silent for three minutes is hung, not slow. */
+const GENERATION_TIMEOUT_MS = 180000;
+const OUTBOUND_MAX_HOPS = 5;
+
+/* THE ONE EXEMPTION, STATED RATHER THAN LEFT IMPLICIT.
+
+   _modelFetch is not wrapped. Aborting a signal aborts the response body too,
+   so a deadline on a streamed answer does not bound a hang - it cuts the
+   sentence somebody is reading, at a time that has nothing to do with whether
+   anything is wrong. A chat that stops mid-word at fifteen seconds is a worse
+   failure than the one this exists to prevent, and it would happen to every
+   long answer rather than to the rare hung request. That call already accepts
+   a caller's own signal, and the platform bounds the request either way. */
+
+/* A fetch that cannot hang. Everything else here goes through it. */
+function fetchDeadline(url, init, ms){
+  return fetch(url, Object.assign({}, init || {}, {
+    signal: AbortSignal.timeout(Math.max(1000, +ms || OUTBOUND_TIMEOUT_MS)),
+  }));
+}
+
+/* A fetch to an address somebody else chose. Every hop is re-gated, and the
+   Authorization header does not cross an origin boundary. */
+async function fetchGuarded(rawUrl, init, ms){
+  let target = String(rawUrl || '');
+  let opts = Object.assign({}, init || {});
+  const firstOrigin = (() => { try { return new URL(target).origin; } catch(e){ return ''; } })();
+  for(let hop = 0; hop <= OUTBOUND_MAX_HOPS; hop++){
+    const gate = _webHostAllowed(target);
+    if(!gate.ok) return { blocked: true, why: gate.why, url: target, hop };
+    const r = await fetchDeadline(gate.url, Object.assign({}, opts, { redirect: 'manual' }), ms);
+    if(!(r.status >= 300 && r.status < 400)) return { blocked: false, response: r };
+    const loc = r.headers.get('location');
+    if(!loc) return { blocked: false, response: r };
+    let next; try { next = new URL(loc, gate.url).toString(); } catch(e){ return { blocked: false, response: r }; }
+    /* Leaving the origin the credential was issued for: the credential stays
+       behind. A 302 is not a reason to hand somebody else's server a token. */
+    let nextOrigin = ''; try { nextOrigin = new URL(next).origin; } catch(e){}
+    if(nextOrigin !== firstOrigin && opts.headers){
+      const h = {};
+      for(const [k, v] of Object.entries(opts.headers)){
+        if(!/^authorization$/i.test(k) && !/^cookie$/i.test(k)) h[k] = v;
+      }
+      opts = Object.assign({}, opts, { headers: h });
+    }
+    target = next;
+  }
+  return { blocked: true, why: 'That address redirected too many times.', url: target, hop: OUTBOUND_MAX_HOPS };
+}
+
+/* SSRF gate: only public http(s). Re-checked on every navigation, and on every
+   hop of a redirect chain - see fetchGuarded above. */
 function _webHostAllowed(raw){
   let u; try{ u = new URL(String(raw)); }catch(e){ return { ok:false, why:'That is not a valid URL.' }; }
   if(u.protocol !== 'http:' && u.protocol !== 'https:') return { ok:false, why:'Only http and https are allowed.' };
@@ -2337,6 +2458,13 @@ const _loadSchool = async (env, em) => (await DB.get(env, 'school', em)) || null
 async function schoolConnect(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'Please sign in.' }, 401);
+  /* This route makes AMV fetch a host the CALLER named. Unbounded, that is a
+     way to have the operator's Workers budget hammer any address on the
+     internet, as often as somebody likes, from AMV's own IP - and it was
+     unbounded, because the rule that checks for this knew third parties by
+     name and had never heard of a school. */
+  const cg = await guardAction(env, `schoolconn:${user.email}`, 5, 40, 'connecting a school');
+  if(cg) return cg;
   const body = await request.json().catch(()=>({}));
   const gate = _canvasBase(body.baseUrl);
   if(!gate.ok) return json({ error:gate.why, code:'bad_base' }, 400);
@@ -2347,7 +2475,12 @@ async function schoolConnect(request, env){
      somebody they are connected is the failure this whole area is full of. */
   let who;
   try{
-    const r = await fetch(gate.base + '/api/v1/users/self', { headers:{ Authorization:'Bearer ' + token } });
+    const out = await fetchGuarded(gate.base + '/api/v1/users/self', { headers:{ Authorization:'Bearer ' + token } });
+    if(out.blocked){
+      audit(env, 'school_connect_blocked', { email:user.email, why:out.why });
+      return json({ error:'That address sent AMV somewhere it is not allowed to go, so nothing was saved. ' + out.why, code:'blocked_url' }, 400);
+    }
+    const r = out.response;
     if(r.status === 401 || r.status === 403)
       return json({ error:'Canvas did not accept that token. Check it was copied whole, and that it has not expired.', code:'canvas_auth' }, 400);
     if(!r.ok) return json({ error:'Your school\u2019s Canvas answered ' + r.status + '. Check the address is right.', code:'canvas_error' }, 502);
@@ -2363,6 +2496,8 @@ async function schoolConnect(request, env){
 async function schoolDisconnect(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'Please sign in.' }, 401);
+  const dg = await guardAction(env, `schooloff:${user.email}`, 10, 60, 'disconnecting your school');
+  if(dg) return dg;
   await DB.del(env, 'school', user.email);
   audit(env, 'school_disconnected', { email:user.email });
   return json({ ok:true });
@@ -2375,8 +2510,22 @@ async function _canvasGet(env, rec, path){
   const gate = _canvasBase(rec.base);
   if(!gate.ok) return { error:gate.why, status:400 };
   const url = gate.base + '/api/v1/' + String(path || '').replace(/^\/+/, '');
+  /* Through the guarded fetch, not a bare one. The address here is whatever a
+     student typed on the connect screen, so it is exactly the case the SSRF
+     gate exists for - and a bare fetch would follow a redirect out of that
+     host, carrying the Canvas token with it, past a gate that had already
+     said yes to the first hop. It also gets a deadline: a school that accepts
+     the connection and never answers used to hold the request open until the
+     platform killed it. */
   let r;
-  try{ r = await fetch(url, { headers:{ Authorization:'Bearer ' + rec.token } }); }
+  try{
+    const out = await fetchGuarded(url, { headers:{ Authorization:'Bearer ' + rec.token } });
+    if(out.blocked){
+      audit(env, 'school_fetch_blocked', { host:new URL(gate.base).hostname, why:out.why });
+      return { error:'Your school\u2019s address sent AMV somewhere it is not allowed to go, so nothing was read. ' + out.why, status:400, code:'blocked_url' };
+    }
+    r = out.response;
+  }
   catch(e){ return { error:'AMV could not reach your school\u2019s Canvas just now.', status:502 }; }
   if(r.status === 401 || r.status === 403)
     return { error:'Canvas refused that request. Your access token may have expired - reconnect it in Settings.', status:401, code:'canvas_auth' };
@@ -2391,6 +2540,12 @@ async function _canvasGet(env, rec, path){
 async function schoolWork(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'Please sign in.' }, 401);
+  /* One call here fans out to a course list plus one request per course, so
+     it is up to nine outbound requests to somebody else's server every time
+     it is pressed. Bounded per account: the cost of an unbounded version is
+     paid by the operator and by the school. */
+  const wg = await guardAction(env, `schoolwork:${user.email}`, 12, 300, 'reading your school work');
+  if(wg) return wg;
   const rec = await _loadSchool(env, user.email);
   if(!rec) return json({ connected:false,
     error:'Connect your school\u2019s Canvas first, in Settings \u2192 Integrations.', code:'not_connected' }, 400);
@@ -2422,6 +2577,8 @@ async function schoolWork(request, env){
 async function schoolTeachers(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'Please sign in.' }, 401);
+  const tg = await guardAction(env, `schoolteach:${user.email}`, 15, 300, 'looking up your teachers');
+  if(tg) return tg;
   const rec = await _loadSchool(env, user.email);
   if(!rec) return json({ error:'Connect your school\u2019s Canvas first.', code:'not_connected' }, 400);
   const body = await request.json().catch(()=>({}));
@@ -2525,7 +2682,7 @@ async function stripeSubscribe(request, env){
     const rec = (await DB.get(env, 'billing', user.email)) || {};
     let customer = rec.customerId;
     if(!customer){
-      const cr = await fetch('https://api.stripe.com/v1/customers', { method:'POST', headers:sk,
+      const cr = await fetchDeadline('https://api.stripe.com/v1/customers', { method:'POST', headers:sk,
         body: form({ email:user.email, 'metadata[amv_user]':user.email }) });
       const cd = await cr.json();
       if(!cr.ok) return json({ error:cd.error?.message || 'could not create customer' }, 502);
@@ -2536,13 +2693,13 @@ async function stripeSubscribe(request, env){
        invoice. A customer who cannot cancel disputes the charge instead. */
     await _linkCustomer(env, user.email, customer);
     // attach the tokenised card and make it the default
-    const at = await fetch('https://api.stripe.com/v1/payment_methods/' + encodeURIComponent(pm) + '/attach',
+    const at = await fetchDeadline('https://api.stripe.com/v1/payment_methods/' + encodeURIComponent(pm) + '/attach',
       { method:'POST', headers:sk, body: form({ customer }) });
     if(!at.ok){ const ad = await at.json(); return json({ error:ad.error?.message || 'card could not be attached' }, 402); }
-    await fetch('https://api.stripe.com/v1/customers/' + customer, { method:'POST', headers:sk,
+    await fetchDeadline('https://api.stripe.com/v1/customers/' + customer, { method:'POST', headers:sk,
       body: form({ 'invoice_settings[default_payment_method]':pm }) });
 
-    const sr = await fetch('https://api.stripe.com/v1/subscriptions', { method:'POST', headers:sk,
+    const sr = await fetchDeadline('https://api.stripe.com/v1/subscriptions', { method:'POST', headers:sk,
       body: form({ customer, 'items[0][price]':priceId, 'expand[0]':'latest_invoice.payment_intent' }) });
     const sd = await sr.json();
     if(!sr.ok) return json({ error:sd.error?.message || 'subscription failed' }, 402);
@@ -2617,7 +2774,7 @@ async function googleOAuthExchange(request, env){
     return json({ error:'redirect_uri is not permitted' }, 400);
 
   try{
-    const r = await fetch('https://oauth2.googleapis.com/token', {
+    const r = await fetchDeadline('https://oauth2.googleapis.com/token', {
       method:'POST', headers:{ 'Content-Type':'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         code, code_verifier: verifier, redirect_uri: redirectUri,
@@ -2657,7 +2814,7 @@ async function googleOAuthRefresh(request, env){
   const rec = await DB.get(env, 'goauth', user.email);
   if(!rec || !rec.refreshToken) return json({ error:'Google is not connected.', code:'needs_auth' }, 400);
   try{
-    const r = await fetch('https://oauth2.googleapis.com/token', {
+    const r = await fetchDeadline('https://oauth2.googleapis.com/token', {
       method:'POST', headers:{ 'Content-Type':'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ refresh_token: rec.refreshToken, client_id: env.GOOGLE_CLIENT_ID,
         client_secret: env.GOOGLE_CLIENT_SECRET, grant_type: 'refresh_token' }).toString()
@@ -2936,7 +3093,7 @@ async function _investCheckin(env, email, opts){
   const base = (env.FINANCE_API_URL || 'https://production.plaid.com').replace(/\/$/, '');
   let accounts = [];
   try{
-    const r = await fetch(base + '/accounts/balance/get', {
+    const r = await fetchDeadline(base + '/accounts/balance/get', {
       method:'POST', headers:{ 'Content-Type':'application/json' },
       body: JSON.stringify({ client_id: env.FINANCE_CLIENT_ID, secret: env.FINANCE_SECRET, access_token: rec.accessToken }) });
     const d = await r.json();
@@ -2992,7 +3149,7 @@ async function financeRoute(request, env, path){
 
   try{
     if(path === 'accounts'){
-      const r = await fetch(base + '/accounts/balance/get', {
+      const r = await fetchDeadline(base + '/accounts/balance/get', {
         method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(auth) });
       const d = await r.json();
       if(!r.ok) return json({ error:d.error_message || 'Could not read your accounts.', code:'provider_error' }, 502);
@@ -3005,7 +3162,7 @@ async function financeRoute(request, env, path){
       const days = Math.min(365, Math.max(1, +body.days || 30));
       const end = new Date(), start = new Date(Date.now() - days*86400000);
       const iso = d => d.toISOString().slice(0,10);
-      const r = await fetch(base + '/transactions/get', {
+      const r = await fetchDeadline(base + '/transactions/get', {
         method:'POST', headers:{ 'Content-Type':'application/json' },
         body: JSON.stringify(Object.assign({}, auth, { start_date:iso(start), end_date:iso(end), options:{ count:250 } })) });
       const d = await r.json();
@@ -3045,7 +3202,7 @@ function _finBase(env){ return String((env && env.FINANCE_API_URL) || 'https://p
 
 async function _finCall(env, path, body){
   try{
-    const r = await fetch(_finBase(env) + path, {
+    const r = await fetchDeadline(_finBase(env) + path, {
       method:'POST', headers:{ 'Content-Type':'application/json' },
       body: JSON.stringify(Object.assign({ client_id: env.FINANCE_CLIENT_ID, secret: env.FINANCE_SECRET }, body || {})) });
     const d = await r.json().catch(()=>({}));
@@ -3362,7 +3519,7 @@ async function linkInvite(request, env){
     + 'You can leave at any time from Settings, and everything goes back to normal.\n\n'
     + 'Your approval code is ' + code + '. It expires in 15 minutes.\n\n'
     + 'If you were not expecting this, ignore this email - nothing changes unless you enter the code yourself.';
-  const sent = await fetch('https://api.resend.com/emails', {
+  const sent = await fetchDeadline('https://api.resend.com/emails', {
     method:'POST', headers:{ 'Authorization':'Bearer ' + env.EMAIL_API_KEY, 'Content-Type':'application/json' },
     body: JSON.stringify({ from, to:[owner],
       subject: isFamily ? (user.email + ' wants to manage what your AMV account can spend')
@@ -3457,8 +3614,40 @@ async function browserRun(request, env, ctx){
     await page.setViewport({ width:1280, height:900 });
     await page.goto(gate.url, { waitUntil:'domcontentloaded', timeout:20000 });
 
+    /* WHERE IT ACTUALLY IS, not where it was sent.
+
+       The gate above was checked once, against the address the caller gave.
+       A goto follows redirects, a page can send itself somewhere with a meta
+       refresh or a line of script, and a click goes wherever the link goes -
+       none of which came back through the gate. The comment on _webHostAllowed
+       claimed it was "re-checked on every navigation" and it was re-checked on
+       every INSTRUCTED one, which is a different thing and not the dangerous
+       one. A real browser inside the operator's network, one 302 away from an
+       internal address, is the pivot this gate exists to prevent.
+
+       So the landing place is gated too, every step, whatever got it there. */
+    const _landedSomewhereBlocked = async () => {
+      let here = ''; try { here = await page.url(); } catch(e){ return null; }
+      const g = _webHostAllowed(here);
+      return g.ok ? null : { url: here, why: g.why };
+    };
+    const _bad0 = await _landedSomewhereBlocked();
+    if(_bad0){
+      await browser.close();
+      audit(env, 'web_agent_blocked', { by:user.email, reason:'redirect', to:_bad0.url });
+      return json({ ok:false, code:'blocked_url',
+        error:'That address sent AMV somewhere it is not allowed to go, so the run stopped. ' + _bad0.why }, 400);
+    }
+
     for(let step = 0; step < WEB_MAX_STEPS; step++){
       if(Date.now() - started > WEB_MAX_MS){ trace.push({ step, verb:'blocked', why:'time cap reached' }); break; }
+      const _bad = await _landedSomewhereBlocked();
+      if(_bad){
+        await browser.close();
+        audit(env, 'web_agent_blocked', { by:user.email, reason:'navigation', to:_bad.url, step });
+        return json({ ok:false, code:'blocked_url', trace,
+          error:'The page navigated somewhere AMV is not allowed to go, so the run stopped. ' + _bad.why }, 400);
+      }
       const obs = await page.evaluate(_WEB_OBSERVE);
 
       if(obs.captcha){
@@ -4262,9 +4451,10 @@ async function authAdminReset(request, env){
     audit(env, 'password_reset_admin_blocked', { email });
     return json({ error:'Something else was changing that account just now, so the password was not changed. Try again in a moment.', code:'acct_busy' }, 503);
   }
-  try{ await revokeUserTokens(env, email); }catch(e){}
-  audit(env, 'password_reset_admin', { email });
-  return json({ ok:true });
+  const _revoked = await _revokeOrSay(env, email, 'password_reset_admin');
+  audit(env, 'password_reset_admin', { email, sessionsRevoked: _revoked });
+  return json({ ok:true, sessionsRevoked: _revoked,
+    note: _revoked ? undefined : 'The password was changed, but existing sessions could not be signed out. Sign out everywhere again once storage recovers.' });
 }
 
 /* Is password reset actually usable? The app asks this so it can tell the
@@ -4759,7 +4949,7 @@ async function _verifyCaptcha(env, token, request){
     form.set('secret', env.TURNSTILE_SECRET);
     form.set('response', String(token));
     if (ip) form.set('remoteip', ip);
-    const r = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+    const r = await fetchDeadline('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
       method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body: form.toString()
     });
     const d = await r.json().catch(()=>({}));
@@ -5026,7 +5216,7 @@ async function authGoogle(request, env) {
   if (!credential) return json({ error: 'credential required' }, 400);
   try{
     // Google's tokeninfo validates signature + expiry for us and returns the claims.
-    const r = await fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(credential));
+    const r = await fetchDeadline('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(credential));
     if(!r.ok){ audit(env,'google_verify_fail',{status:r.status}); return json({ error:'invalid google token' }, 401); }
     const claims = await r.json();
     // AMV-052: FAIL CLOSED. Google sign-in requires GOOGLE_CLIENT_ID so we can
@@ -5370,12 +5560,12 @@ async function authDeleteAccount(request, env) {
     if (custId && env.STRIPE_SECRET_KEY) {
       const sk = { 'Authorization': 'Bearer ' + env.STRIPE_SECRET_KEY,
                    'Content-Type': 'application/x-www-form-urlencoded' };
-      const ls = await fetch('https://api.stripe.com/v1/subscriptions?status=active&limit=100&customer=' +
+      const ls = await fetchDeadline('https://api.stripe.com/v1/subscriptions?status=active&limit=100&customer=' +
         encodeURIComponent(custId), { headers: sk });
       const ld = await ls.json().catch(() => ({}));
       for (const sub of ((ld && ld.data) || [])) {
         try {
-          const dr = await fetch('https://api.stripe.com/v1/subscriptions/' + encodeURIComponent(sub.id),
+          const dr = await fetchDeadline('https://api.stripe.com/v1/subscriptions/' + encodeURIComponent(sub.id),
             { method: 'DELETE', headers: sk });
           if (dr.ok) cancelled++; else cancelFailed++;
         } catch { cancelFailed++; }
@@ -5423,7 +5613,7 @@ async function authDeleteAccount(request, env) {
     const g = await DB.get(env, 'goauth', email);
     if (g && g.refreshToken) {
       try {
-        await fetch('https://oauth2.googleapis.com/revoke', {
+        await fetchDeadline('https://oauth2.googleapis.com/revoke', {
           method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
           body: new URLSearchParams({ token: g.refreshToken }).toString(),
         });
@@ -5586,7 +5776,7 @@ async function authDeleteAccount(request, env) {
   } catch {}
 
   // Revoke all tokens so existing sessions die immediately.
-  try { await revokeUserTokens(env, email); } catch {}
+  await _revokeOrSay(env, email, 'account_deleted');
 
   /* What survived, said out loud in all three places it has to be said: to the
      person who asked, in AMV's own record, and to somebody who can go and
@@ -6704,7 +6894,7 @@ async function videoGenerate(request, env) {
 
   let providerId = '';
   try {
-    const resp = await fetch(env.VIDEO_API_URL, {
+    const resp = await fetchDeadline(env.VIDEO_API_URL, {
       method: 'POST',
       headers: {
         'Authorization': 'Bearer ' + env.VIDEO_API_KEY,
@@ -6714,7 +6904,7 @@ async function videoGenerate(request, env) {
         version: env.VIDEO_MODEL,
         input: { prompt, duration: seconds, aspect_ratio: aspect },
       }),
-    });
+    }, GENERATION_TIMEOUT_MS);
     const d = await resp.json().catch(() => ({}));
     if (!resp.ok) throw new Error(d?.detail || d?.error?.message || ('Provider returned ' + resp.status));
     providerId = String(d.id || d.request_id || '');
@@ -6772,7 +6962,7 @@ async function videoStatus(request, env) {
 
   try {
     const base = env.VIDEO_API_URL.replace(/\/+$/, '');
-    const resp = await fetch(base + '/' + job.providerId, {
+    const resp = await fetchDeadline(base + '/' + job.providerId, {
       headers: { 'Authorization': 'Bearer ' + env.VIDEO_API_KEY },
     });
     const d = await resp.json().catch(() => ({}));
@@ -6972,7 +7162,7 @@ async function reconcilePayments(env) {
       if (p.provider === 'paypal') {
         const token = await _paypalToken(env);
         if (!token) continue;                       // cannot ask right now; try next sweep
-        const r = await fetch(`${_paypalBase(env)}/v1/billing/subscriptions/${encodeURIComponent(row.id)}`, {
+        const r = await fetchDeadline(`${_paypalBase(env)}/v1/billing/subscriptions/${encodeURIComponent(row.id)}`, {
           headers: { 'Authorization': `Bearer ${token}` } });
         const d = await r.json().catch(() => ({}));
         if (!r.ok) continue;
@@ -6995,7 +7185,7 @@ async function reconcilePayments(env) {
 
       /* Stripe: a checkout session, either a plan or a marketplace purchase. */
       if (!env.STRIPE_SECRET_KEY) continue;
-      const r = await fetch(`https://api.stripe.com/v1/checkout/sessions/${encodeURIComponent(row.id)}`, {
+      const r = await fetchDeadline(`https://api.stripe.com/v1/checkout/sessions/${encodeURIComponent(row.id)}`, {
         headers: { 'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}` } });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) continue;
@@ -7831,14 +8021,14 @@ async function imageGenerate(request, env) {
 
   try {
     const model = env.IMAGE_API_MODEL || 'gpt-image-1';
-    const upstream = await fetch(env.IMAGE_API_URL, {
+    const upstream = await fetchDeadline(env.IMAGE_API_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${env.IMAGE_API_KEY}`,   // KEY HIDDEN SERVER-SIDE
       },
       body: JSON.stringify({ model, prompt, size, n: 1 }),
-    });
+    }, GENERATION_TIMEOUT_MS);
     if (!upstream.ok) {
       // AMV-053: log the provider's raw response server-side; return a generic
       // message so upstream/internal details aren't exposed to the client.
@@ -8308,7 +8498,7 @@ function _widgetLoaderJS(key, appHost) {
 /* ---------------- alerting (webhook) ------------------------------- */
 async function notify(env, msg) {
   if (!env.ALERT_WEBHOOK) return;
-  try { await fetch(env.ALERT_WEBHOOK, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: '[AMV] ' + msg }) }); } catch {}
+  try { await fetchDeadline(env.ALERT_WEBHOOK, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: '[AMV] ' + msg }) }); } catch {}
 }
 
 /* Throttled alert: fire at most once per `key` per `windowMin` minutes, so a
@@ -8382,9 +8572,40 @@ async function _hmacKey(secret) {
 }
 // Per-user token epoch: incrementing it in KV revokes all that user's tokens.
 async function _tokenEpoch(env, email) {
-  try { const v = await env.AMV_KV.get(`tokepoch:${email}`); return v ? parseInt(v, 10) || 0 : 0; }
-  catch { return 0; }
+  /* A READ THAT FAILED IS NOT THE ANSWER ZERO.
+
+     This used to catch any storage error and return 0. verifyToken compares
+     the token's epoch against what comes back, so while the read was failing
+     every token issued before the first revocation matched and verified. The
+     two things that increment this epoch are a password reset and signing out
+     everywhere - which is to say, the window where it fails open is exactly
+     the window after somebody's account was compromised, and the sessions
+     they had just revoked would be live again.
+
+     So a failure is a failure. It throws, and the caller refuses rather than
+     guessing. Refusing on a storage blip signs people out, which is annoying
+     and recoverable; the other way round hands a stolen session back, which
+     is not. */
+  const v = await env.AMV_KV.get(`tokepoch:${email}`);
+  return v ? parseInt(v, 10) || 0 : 0;
 }
+  /* A password that changed and sessions that did not is a half-done job, and
+     the half that did not happen is the half that matters after a compromise.
+     It is not a reason to fail the reset - the new password is already
+     written, and telling them it failed would send them to try again with a
+     credential that no longer works. So it is said instead: audited, alerted,
+     and named in the answer, so nobody walks away believing the old sessions
+     are gone when they are not. */
+async function _revokeOrSay(env, email, where) {
+  try { await revokeUserTokens(env, email); return true; }
+  catch (e) {
+    audit(env, 'token_revoke_failed', { email, where, error: String((e && e.message) || e) });
+    try { await alertOnce(env, 'token_revoke_failed',
+      'A password change could not sign existing sessions out. Storage may be unhealthy; sessions issued before the change are still valid.', 30); } catch (_) {}
+    return false;
+  }
+}
+
 async function revokeUserTokens(env, email) {
   const cur = await _tokenEpoch(env, email);
   await env.AMV_KV.put(`tokepoch:${email}`, String(cur + 1));
@@ -8598,7 +8819,7 @@ async function sendSms(env, to, body) {
   if (!sid || !token || !from) throw new Error('twilio_not_configured');
   const url = `https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`;
   const form = new URLSearchParams({ To: to, From: from, Body: body });
-  const resp = await fetch(url, {
+  const resp = await fetchDeadline(url, {
     method: 'POST',
     headers: {
       'Authorization': 'Basic ' + btoa(sid + ':' + token),
@@ -9795,7 +10016,7 @@ async function stripeCheckout(request, env) {
     form.set('subscription_data[metadata][plan]', 'team');
   }
 
-  const r = await fetch('https://api.stripe.com/v1/checkout/sessions', {
+  const r = await fetchDeadline('https://api.stripe.com/v1/checkout/sessions', {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}`, 'Content-Type': 'application/x-www-form-urlencoded' },
     body: form.toString(),
@@ -9830,7 +10051,7 @@ async function stripePortal(request, env) {
   // dev fallback when no APP_URL is configured.
   const origin = (env.APP_URL || env.APP_ORIGIN || request.headers.get('Origin') || '').replace(/\/$/, '');
   const form = new URLSearchParams({ customer: custId, return_url: origin });
-  const r = await fetch('https://api.stripe.com/v1/billing_portal/sessions', {
+  const r = await fetchDeadline('https://api.stripe.com/v1/billing_portal/sessions', {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}`, 'Content-Type': 'application/x-www-form-urlencoded' },
     body: form.toString(),
@@ -9898,7 +10119,7 @@ async function adminFinance(request, env) {
   const after = url.searchParams.get('after') || '';
   let q = `https://api.stripe.com/v1/charges?limit=${limit}`;
   if (after) q += `&starting_after=${encodeURIComponent(after)}`;
-  const r = await fetch(q, { headers: { 'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}` } });
+  const r = await fetchDeadline(q, { headers: { 'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}` } });
   const d = await r.json().catch(() => ({}));
   if (!r.ok) {
     await alertOnce(env, 'admin_finance_fail', `Admin finance: Stripe charges fetch failed (${d.error?.message || r.status}).`, 30);
@@ -9959,7 +10180,7 @@ async function stripeInvoices(request, env) {
   if (!env.STRIPE_SECRET_KEY) return json({ ok: true, invoices: [] });
   const custId = await env.AMV_KV.get(`stripecust:${user.email}`);
   if (!custId) return json({ ok: true, invoices: [] });
-  const r = await fetch(`https://api.stripe.com/v1/invoices?customer=${encodeURIComponent(custId)}&limit=24`, {
+  const r = await fetchDeadline(`https://api.stripe.com/v1/invoices?customer=${encodeURIComponent(custId)}&limit=24`, {
     headers: { 'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}` },
   });
   const d = await r.json();
@@ -10206,14 +10427,14 @@ async function _cancelSupersededSubs(env, customerId, keepSubId, email) {
                'Content-Type': 'application/x-www-form-urlencoded' };
   let cancelled = 0, failed = 0;
   try {
-    const ls = await fetch('https://api.stripe.com/v1/subscriptions?status=all&limit=100&customer=' +
+    const ls = await fetchDeadline('https://api.stripe.com/v1/subscriptions?status=all&limit=100&customer=' +
       encodeURIComponent(customerId), { headers: sk });
     const ld = await ls.json().catch(() => ({}));
     for (const sub of ((ld && ld.data) || [])) {
       if (!sub || !sub.id || sub.id === keepSubId) continue;
       if (_SUB_STILL_BILLS.indexOf(String(sub.status || '')) < 0) continue;
       try {
-        const dr = await fetch('https://api.stripe.com/v1/subscriptions/' + encodeURIComponent(sub.id),
+        const dr = await fetchDeadline('https://api.stripe.com/v1/subscriptions/' + encodeURIComponent(sub.id),
           { method: 'DELETE', headers: sk });
         if (dr.ok) { cancelled++; audit(env, 'stripe_superseded_cancelled', { email, sub: sub.id, kept: keepSubId || '' }); }
         else failed++;
@@ -10256,7 +10477,7 @@ async function _emailFromCustomer(env, customerId) {
      us who this is. Back-fill KV so it is a one-time cost. */
   if (!env.STRIPE_SECRET_KEY) return '';
   try {
-    const r = await fetch('https://api.stripe.com/v1/customers/' + encodeURIComponent(customerId), {
+    const r = await fetchDeadline('https://api.stripe.com/v1/customers/' + encodeURIComponent(customerId), {
       headers: { 'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}` },
     });
     if (!r.ok) return '';
@@ -10940,7 +11161,7 @@ async function marketBuy(request, env) {
   form.set('metadata[buyer]', user.email);
   form.set('metadata[seller]', it.authorEmail || '');
 
-  const r = await fetch('https://api.stripe.com/v1/checkout/sessions', {
+  const r = await fetchDeadline('https://api.stripe.com/v1/checkout/sessions', {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}`, 'Content-Type': 'application/x-www-form-urlencoded' },
     body: form.toString(),
@@ -11282,13 +11503,31 @@ async function marketWithdraw(request, env) {
    return the balance rather than swallow it a second time.
    ===================================================================== */
 
+const ADMIN_PAYOUT_SCAN_MAX = 5000;
 const PAYOUT_STATES = new Set(['pending', 'paid', 'rejected']);
 
 /* GET /admin/payouts - what is owed, and to whom. */
 async function adminPayouts(request, env) {
   if (!_requireAdmin(request, env)) return json({ error: 'forbidden' }, 403);
+  /* THE CAP IS REAL, SO IT HAS TO BE ADMITTED.
+
+     This scanned until it held 5000 records, then sorted by time and showed
+     the first 500. Both numbers were wrong past the cap and neither said so.
+     KV lists in KEY order, not in time order, so the 5000 kept were an
+     arbitrary slice of the withdrawals rather than the newest ones - which
+     means the "recent 500" were the recent 500 OF AN ARBITRARY SLICE, and
+     `owed`, the money taken out of sellers' balances that has not reached
+     them, was summed over that same slice. It is the platform's liability,
+     it under-reported in silence, and the direction of the error is the
+     dangerous one: it makes the business look like it owes less than it does.
+
+     A bounded scan that stops short has to say so - the rule from AMV-031.
+     So the cap is still there, because an unbounded admin scan is its own
+     outage, and the answer now carries whether it was hit and how much was
+     read. A number that might be short is reported as one. */
   const out = [];
   let cursor;
+  let truncated = false;
   do {
     const page = await env.AMV_KV.list({ prefix: 'withdraw:', cursor, limit: 1000 });
     for (const k of (page.keys || [])) {
@@ -11297,7 +11536,8 @@ async function adminPayouts(request, env) {
       try { out.push(JSON.parse(raw)); } catch (e) {}
     }
     cursor = page.list_complete ? undefined : page.cursor;
-  } while (cursor && out.length < 5000);
+    if (cursor && out.length >= ADMIN_PAYOUT_SCAN_MAX) { truncated = true; break; }
+  } while (cursor);
 
   out.sort((a, b) => (b.ts || 0) - (a.ts || 0));
   const pending = out.filter(w => (w.status || 'pending') === 'pending');
@@ -11309,6 +11549,14 @@ async function adminPayouts(request, env) {
     owed: +pending.reduce((n, w) => n + (+w.amount || 0), 0).toFixed(2),
     pendingCount: pending.length,
     paidTotal: +out.filter(w => w.status === 'paid').reduce((n, w) => n + (+w.amount || 0), 0).toFixed(2),
+    /* Said out loud, in the answer, so a screen cannot present a partial total
+       as a complete one. */
+    scanned: out.length,
+    truncated,
+    scanLimit: ADMIN_PAYOUT_SCAN_MAX,
+    note: truncated
+      ? 'More withdrawal records exist than this scan reads, so these totals are a floor rather than the full picture. Settle the pending ones and they stop accumulating.'
+      : undefined,
   });
 }
 
@@ -13088,6 +13336,12 @@ async function paypalSubscribe(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
   if (!env.PAYPAL_CLIENT_ID || !env.PAYPAL_SECRET) return json({ error: 'paypal not configured' }, 503);
+  /* The same bound the card path has had all along, for the same reason: one
+     account hammering this burns AMV's rate limit at PayPal, and the people
+     who then cannot check out are everybody else. It was missing here because
+     the rule that finds these knew Stripe's hostname and not PayPal's. */
+  const pg = await guardAction(env, `paypalsub:${user.email}`, 10, 100, 'starting a subscription');
+  if (pg) return pg;
   const { plan } = await request.json().catch(() => ({}));
   // PayPal subscriptions require a pre-created billing plan per tier. Map tier →
   // the plan id you set as a secret. If it's not set, say so honestly rather
@@ -13100,7 +13354,7 @@ async function paypalSubscribe(request, env) {
   const token = await _paypalToken(env);
   if (!token) return json({ error: 'paypal auth failed' }, 502);
   const appUrl = (env.APP_URL || '').replace(/\/$/, '');
-  const r = await fetch(`${_paypalBase(env)}/v1/billing/subscriptions`, {
+  const r = await fetchDeadline(`${_paypalBase(env)}/v1/billing/subscriptions`, {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -13249,7 +13503,7 @@ function _paypalBase(env) { return env.PAYPAL_MODE === 'live' ? 'https://api-m.p
 async function _paypalToken(env) {
   try {
     const auth = btoa(`${env.PAYPAL_CLIENT_ID}:${env.PAYPAL_SECRET}`);
-    const r = await fetch(`${_paypalBase(env)}/v1/oauth2/token`, {
+    const r = await fetchDeadline(`${_paypalBase(env)}/v1/oauth2/token`, {
       method: 'POST',
       headers: { 'Authorization': `Basic ${auth}`, 'Content-Type': 'application/x-www-form-urlencoded' },
       body: 'grant_type=client_credentials',
@@ -13263,7 +13517,7 @@ async function verifyPaypalWebhook(env, headers, body) {
     if (!env.PAYPAL_WEBHOOK_ID) return false;
     const token = await _paypalToken(env);
     if (!token) return false;
-    const r = await fetch(`${_paypalBase(env)}/v1/notifications/verify-webhook-signature`, {
+    const r = await fetchDeadline(`${_paypalBase(env)}/v1/notifications/verify-webhook-signature`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -13388,10 +13642,11 @@ async function authResetConfirm(request, env) {
   }
   // consume the token (single-use) and revoke existing sessions for safety
   await env.AMV_KV.delete(`reset:${token}`);
-  try { await revokeUserTokens(env, email); } catch (e) {}
-  audit(env, 'password_reset', { email });
+  const _revoked = await _revokeOrSay(env, email, 'password_reset');
+  audit(env, 'password_reset', { email, sessionsRevoked: _revoked });
   await _userEvent(env, request, email, 'password_changed');
-  return json({ ok: true });
+  return json({ ok: true, sessionsRevoked: _revoked,
+    note: _revoked ? undefined : 'Your password was changed, but AMV could not sign out sessions that were already open. Use "sign out everywhere" once things settle.' });
 }
 
 // Wire this to your email provider (Resend shown as an example).
@@ -13436,7 +13691,7 @@ async function _sendEmail(env, to, subject, html, text) {
   if (!env.EMAIL_API_KEY) return false;
   const from = env.RESET_EMAIL_FROM || RESET_FROM_DEFAULT;
   try {
-    const resp = await fetch('https://api.resend.com/emails', {
+    const resp = await fetchDeadline('https://api.resend.com/emails', {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + env.EMAIL_API_KEY, 'Content-Type': 'application/json' },
       body: JSON.stringify({ from, to: [to], subject, html, text }),
