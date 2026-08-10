@@ -3761,3 +3761,66 @@ method-shaped matches that caught it.
 context it appears - definition, method, property, call - and exclude the
 ones that are not the thing you mean. Then load the module, not just parse
 it.
+
+## 211. A promise in the product is a feature, and this one had no code at all
+
+The marketplace policy screen told buyers, in shipped copy: "Buyers can
+report any listing; reports are reviewed by our team." There was a report
+dialog nothing opened; if anything had opened it, it wrote the complaint
+into the reporter's OWN localStorage and then thanked them. There was no
+route on the server. Nobody could ever be told anything.
+
+The same screen said higher-risk listings were "published but held for
+review". The publish path returns 422 and stores nothing, so that state has
+never existed and there was no queue to hold anything in.
+
+I found both by reading the enforcement list one line at a time and asking,
+for each, which code does this. Two of five had none.
+
+**Rule:** user-facing policy is a specification. Read it as one, line by
+line, and check each claim against the code that would have to exist. A
+safety promise with no implementation is worse than no promise: it stops
+the person from doing anything else about the problem.
+
+## 212. Ask the reachability question in both directions
+
+no-dead-controls checks that every button names a real function. Nothing
+checked the reverse - that every function offered as an entry point is
+reached by something - and sixteen were not. One of them was the school
+feature (#204). Among the rest: an approval that said "sent" and called no
+server, a permission check whose body was `return true`, and a function
+that minted a fake payment token.
+
+One direction finds broken buttons. The other finds finished features with
+no door, and lies waiting for somebody to wire them.
+
+**Rule:** for any pairing check, write down what a pass does NOT prove.
+Here, pairing a storage key's writer with its reader proved nothing when
+both sat in dead code - amv_pm_display passed that check while being
+entirely unreachable.
+
+## 213. Test through the real thing, or test your stub
+
+I first wrote the report test against the handlers directly with a stubbed
+user, and it failed on authentication in a way that told me nothing.
+Rewritten to go through worker.fetch with a real signup and a real token,
+it immediately found two defects in the code I had just written: _withKind
+returns what the mutate returns and mine returned nothing, so the count in
+the response was undefined; and adminReports read r.count off DB.list's
+{id, value} wrapper, so the operator screen answered confidently with every
+count at zero.
+
+A screen that is sure and empty is worse than one that fails.
+
+**Rule:** drive the real entry point. A stub you wrote agrees with the code
+you wrote, including where both are wrong.
+
+## 214. I shipped this batch's own defect while fixing it
+
+I built /admin/reports and committed it before there was any screen calling
+it - a route reachable from nothing, in the same change whose entire subject
+was features reachable from nothing. every-route-has-a-caller caught it in
+seconds.
+
+**Rule:** the check you are writing applies to the code you are writing.
+Run the existing suite against your own work before believing it.

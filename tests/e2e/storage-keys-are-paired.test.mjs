@@ -13,6 +13,15 @@
    reader that did not exist, and a scheduler posting to a route that was never
    built. They look identical to working code from either side.
 
+   WHAT THIS FILE CANNOT SEE, so that nobody reads more into a pass than is
+   there: pairing is necessary and not sufficient. amv_pm_display had a writer
+   and a reader and both of them sat in functions nothing called, so the key was
+   completely dead while this check reported it healthy - _savePM was never
+   invoked, so the payment-method row _loadPM fed could never render. A pair
+   only means something when something can reach it. Reachability is
+   every-entry-point-has-a-door's job; the two are halves of one question and
+   neither answers it alone.
+
    None of it is visible by reading, because the two halves are in different
    files and each is correct where it sits. So it is computed: every key, every
    access, both directions, and an exhaustive list of the ones that are
