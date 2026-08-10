@@ -8338,7 +8338,11 @@ html,body{height:100%;height:100dvh}
    card: it has to be findable when somebody needs it and must not compete
    with buying. It sits under the actions rather than beside them so the two
    primary buttons keep their full width on a phone. */
-.mk-report{display:block;width:100%;margin-top:var(--sp-2);padding:var(--sp-1) 0;
+/* 32px minimum, because a safety control somebody cannot hit on a phone is
+   not a safety control. The first version was 20px tall - quiet taken too far,
+   and the mobile sweep said so. */
+.mk-report{display:flex;align-items:center;justify-content:center;
+  width:100%;min-height:32px;margin-top:var(--sp-2);padding:var(--sp-2) 0;
   background:none;border:none;font-size:var(--t-xs);color:var(--dim);
   cursor:pointer;text-align:center;border-radius:var(--r-sm);
   transition:color .15s var(--ease),background .15s var(--ease);}

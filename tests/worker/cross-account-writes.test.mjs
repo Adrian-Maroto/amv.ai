@@ -74,6 +74,18 @@ const CLASSIFIED = {
   marketWithdraw:    'a payout keyed by its own generated id',
   marketSetStatus:   'checks it.authorEmail before writing',
   marketRate:        'an aggregate rating on a public listing',
+  /* Two cross-account writes and both are the point of the route rather than a
+     slip. A report is BY one person ABOUT another person's listing, so it
+     cannot be keyed to the caller: keying it to the reporter would scatter one
+     listing's complaints across the accounts of everybody who complained, and
+     would put those complaints inside the reported seller's own erasure scope
+     if it were keyed the other way. It is keyed to the LISTING, the reporter is
+     a one-way hash, and the seller cannot reach it. The second write hides the
+     listing once enough different people have reported it - editing another
+     person's record on purpose, which is what moderation is; it sets hidden
+     rather than deleting, so the seller keeps the work and an operator
+     decides. */
+  marketReport:      'a report is about somebody else\'s listing by definition, so it is keyed to the listing and holds a hashed reporter; the second write hides that listing at the threshold, which is the moderation action itself',
   widgetConfigGet:   'the widget key comes from the caller\'s own widget_owner row',
   widgetConfigSave:  'the widget key comes from the caller\'s own widget_owner row',
 };
