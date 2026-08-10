@@ -3632,3 +3632,132 @@ browser must hold no school address at all.
 **Rule:** write the rule against the thing that must not exist, not against the
 shape the defect happened to take. A guard that only recognises yesterday's
 spelling is a guard that passes tomorrow.
+
+## 204. Finished, correct, and reachable from nowhere
+
+The school work shipped complete: a connect screen that proved the token
+against the real Canvas before storing it, a work list, a copy step, a
+share step with the teacher's address shown. Then I checked whether a
+student could open any of it, and the answer was no.
+
+Settings -> Connectors -> Canvas LMS -> Connect fell through to the generic
+branch and said "it needs its API key added by the operator in Settings
+first - once that's done, Connect opens Canvas LMS's secure approval
+popup". No operator key is involved, there is no OAuth popup, and the token
+is the student's own to paste: three claims, none true. The connect screen
+was called by nothing. And the row's run control only renders when
+`connected` is true, computed from a localStorage key the server-side flow
+never wrote, so it could not become true either.
+
+Every test I had written passed, because every one of them tested the
+feature and none of them tested the way in.
+
+**Rule:** a feature is not done when its parts work. It is done when the
+path a person walks from the front of the product reaches it. Test the
+door, not only the room.
+
+## 205. Reading a function's source is not testing its behaviour
+
+The first version of the door check asserted `/canvas/.test(String(
+connectIntegration)) && /schoolConnectOpen/.test(...)`. I sabotaged it by
+renaming the branch to `'canvasXX'` and it passed: the word "canvas" was
+still in the source, and the button still went nowhere.
+
+Rewritten to stub `schoolConnectOpen`, call `connectIntegration('canvas')`,
+and assert it was reached. The same sabotage then failed it immediately.
+
+**Rule:** if the check can be satisfied by a string that happens to be
+present, it is a grep, not a test. Press the button.
+
+## 206. A rule that lists the places it protects is always one behind
+
+Two of these in one sweep.
+
+`links-cannot-execute` asserted that sixteen named call sites call
+`safeUrl`. It cannot notice a seventeenth, and there were four - including
+one rendering whatever link the connected Canvas returned.
+
+`spending-routes-bounded` called itself exhaustive and its `SPENDS` regex
+was a list of vendors: stripe, resend, twilio, google. Four school routes
+shipped with no rate limit because a school's address is different for
+every school and matched nothing. Rewritten to ask whether a request leaves
+the Worker at all, it found PayPal's subscribe route unbounded on its first
+run - while Stripe's had been guarded all along, for the reason the file
+already stated.
+
+**Rule:** enumerate the shape, not the instances. "Every href built by
+concatenation" and "every handler that fetches" find the next one; a list
+of the ones somebody remembered finds none of them.
+
+## 207. The gate was checked once, and the other side gets to redirect
+
+`_webHostAllowed` refuses localhost, RFC1918, 169.254, the metadata host -
+the whole class of attack it exists for. It was checked against the address
+somebody typed, and `fetch` follows redirects, so `302 Location:
+http://169.254.169.254/` walked around all of it. The party issuing that
+redirect is the exact party the gate exists to distrust.
+
+Workers also forward `Authorization` across an origin change where a
+browser strips it, so the redirect took the credential too. And the browser
+agent had the same hole with a wider mouth: it gated where it was SENT and
+never where it LANDED, though a page can redirect, meta-refresh, or
+navigate itself.
+
+**Rule:** a check on untrusted input runs on every hop, not on the first
+one. If something else chooses where the next request goes, that choice is
+input too.
+
+## 208. Failing open is a decision; failing open in silence is a bug
+
+`_spendGate` caught a counter error and returned null, with a comment
+saying the counter being unreachable must not stop the product. That is
+right. It did it with no audit line, no alert, and no degraded mode - so
+the one control that stops a runaway bill could be switched off and the
+invoice would be the first anybody heard of it.
+
+`_tokenEpoch` was the same shape with the opposite stakes: it returned 0 on
+a failed read, and 0 is a real epoch, so every token issued before the
+first revocation verified. The two things that bump that epoch are a
+password reset and signing out everywhere - so it failed open precisely in
+the window after a compromise.
+
+**Rule:** decide open or closed on the stakes, then say so either way. A
+read that failed is not a value; treating it as one is how a security check
+turns into a formality nobody can see is gone.
+
+## 209. The number that is quietly short is the one that gets believed
+
+Chat books three counters: the daily ceiling, the account's cost, and
+`costtotal`, which is what the founder dashboard reports as the month's
+cost. `_recordSpend` - the only thing that books image and video - booked
+two of them. So video at fifty cents a call, the dearest thing in the
+product, never reached the profit figure.
+
+The same shape in the payouts screen: the scan stops at 5000 records in KEY
+order, then reports `owed` from that arbitrary slice. Both errors run in
+the direction that makes the business look healthier than it is, which is
+the direction nobody investigates.
+
+I had fixed exactly this blindness for the ceiling one batch earlier and
+left it in the place where it is least visible, because a ceiling that is
+too low announces itself and a cost that is too low does not.
+
+**Rule:** when you fix a number, find every other number fed by the same
+write. And a scan that stopped early says so in its answer - a partial
+total presented as a complete one is worse than no total.
+
+## 210. Do not blanket-replace on a name the language also uses
+
+Routing 41 bare fetches through a deadline helper, I rewrote `fetch(` to
+`fetchDeadline(` across the Worker. It also rewrote `async fetch(request,
+env, ctx)` - the module's entry point - and the Durable Object's `async
+fetch(request)`, and `stub.fetch(...)`, which is a binding call and not a
+network request. The Worker would not have started.
+
+`node --check` passed. It was a module-load check and a grep for
+method-shaped matches that caught it.
+
+**Rule:** before a mechanical rename, list what the name means in every
+context it appears - definition, method, property, call - and exclude the
+ones that are not the thing you mean. Then load the module, not just parse
+it.
