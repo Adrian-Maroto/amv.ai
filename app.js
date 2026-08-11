@@ -18412,21 +18412,39 @@ async function _loadPayouts(){
 }
 function _payoutsPaint(host, d){
   const money=n=>'$'+(+n||0).toFixed(2);
-  const pending=(d.payouts||[]).filter(p=>(p.status||'pending')==='pending');
+  /* The QUEUE, not the ledger. Payouts AMV cleared by itself are not what
+     somebody has to read - showing them here would rebuild the inbox this was
+     built to empty, and a queue nobody finishes is one where the dangerous
+     rows get the same glance as the rest. What is shown is what has a reason
+     against it, WITH the reason, so the operator is deciding rather than
+     guessing. */
+  const pending=(d.needsReview||(d.payouts||[]).filter(p=>(p.status||'pending')==='pending'));
   const rows=pending.map(p=>
     '<div class="po-row" data-po="'+escH(p.id)+'">'+
       '<div class="po-main"><div class="po-who">'+escH(p.seller||'')+'</div>'+
         '<div class="po-dest">'+escH(p.destination||'no destination given')+'</div></div>'+
-      '<div class="po-amt">'+money(p.amount)+'</div>'+
+      '<div class="po-amt">'+money(p.amount)+
+        ((p.reasons&&p.reasons.length)
+          ? '<span class="po-why">'+escH(p.reasons.join(' \u00b7 '))+'</span>'
+          : '')+'</div>'+
       '<div class="po-acts">'+
         '<button class="btn bs" type="button" data-po-paid="'+escH(p.id)+'">Mark paid</button>'+
         '<button class="btn bs" type="button" data-po-rej="'+escH(p.id)+'">Reject</button>'+
       '</div>'+
     '</div>').join('');
-  host.innerHTML='<h3>Payouts owed</h3>'+
-    '<div class="po-total'+(d.owed>0?' owe':'')+'">'+money(d.owed)+' owed to '+pending.length+' seller'+(pending.length===1?'':'s')+
-      '<span class="po-sub">'+money(d.paidTotal)+' paid out so far</span></div>'+
-    (rows||'<div class="fd-empty">Nothing owed right now.</div>')+
+  const auto=+d.approvedCount||0;
+  host.innerHTML='<h3>Payouts</h3>'+
+    '<div class="po-total'+(d.owed>0?' owe':'')+'">'+money(d.owed)+' owed'+
+      '<span class="po-sub">'+money(d.paidTotal)+' paid out so far'+
+        (d.reservePct?' \u00b7 '+Math.round(d.reservePct*100)+'% of every sale held '+(d.reserveDays||120)+' days against late disputes':'')+
+      '</span></div>'+
+    /* The number that says whether this is working: how much cleared without
+       anybody reading it. If that figure is not most of them, the thresholds
+       are wrong and the queue is about to become an inbox again. */
+    '<div class="po-auto">'+auto+' cleared automatically ('+money(d.approvedTotal||0)+')'+
+      '<span class="po-sub">under $'+(d.autoMaxUSD||100)+', clean history, identity verified past $'+(d.kycThresholdUSD||600)+'</span></div>'+
+    '<div class="po-qh">'+pending.length+' need'+(pending.length===1?'s':'')+' you</div>'+
+    (rows||'<div class="fd-empty">Nothing is waiting on you.</div>')+
     '<div class="po-say" id="po-say" role="status" aria-live="polite"></div>'+
     '<div class="po-fine">Rejecting returns the money to the seller\u2019s balance. Marking paid does not send anything - do that with your payment provider first.</div>';
   /* Rejecting CREDITS the seller's wallet, so sending it twice pays the same

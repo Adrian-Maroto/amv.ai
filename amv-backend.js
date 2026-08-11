@@ -11218,8 +11218,28 @@ async function _creditSale(env, { itemId, buyer, seller, amountCents, ref }) {
        the charge so a reversal can release exactly this one rather than
        guessing at an amount. */
     const at = Date.now();
-    w.holds = (w.holds || []).concat({ amount: sellerShare, at, until: at + PAYOUT_HOLD_MS,
+    /* A ROLLING RESERVE, BECAUSE THE HOLD IS SHORTER THAN THE RISK.
+
+       The 14-day hold answers "did this sale stick". It does not answer the
+       real question, which is that a card dispute can arrive up to 120 days
+       after the charge. Holding EVERYTHING for 120 days would be safe and
+       would also make AMV useless to an honest seller, who would wait four
+       months to be paid for work already delivered.
+
+       So the money is split the way payment platforms split it: most of it
+       clears on the short hold, and a small percentage of every sale is held
+       across the full dispute window. That reserve is what a late chargeback
+       is taken from, so a reversal at day 60 lands on money AMV still has
+       rather than on money it has already sent. It is the seller's money and
+       it is shown as theirs the whole time - it clears late, it is not lost. */
+    const reserved = +(sellerShare * PAYOUT_RESERVE_PCT).toFixed(2);
+    const clearing = +(sellerShare - reserved).toFixed(2);
+    w.holds = (w.holds || []).concat({ amount: clearing, at, until: at + PAYOUT_HOLD_MS,
                                        ref: ref || '', item: itemId });
+    if (reserved > 0) {
+      w.holds = w.holds.concat({ amount: reserved, at, until: at + PAYOUT_RESERVE_MS,
+                                 ref: ref || '', item: itemId, reserve: true });
+    }
     /* Matured holds are dropped on every credit, not only on withdrawal. They
        were pruned in one place - the payout - so a seller who never withdrew
        accumulated one entry per sale for ever, in a record that is read and
@@ -11457,9 +11477,24 @@ async function marketWithdraw(request, env) {
     }
     const amount = available;
     const wid = 'wd_' + crypto.randomUUID().slice(0, 12);
+
+    /* DECIDED HERE, so the queue is the exceptions rather than the business.
+       A payout with nothing against it clears itself; anything with a reason
+       goes to a person, carrying the reasons so they are deciding rather than
+       guessing. 'blocked' still creates the record - the seller is told, the
+       money stays theirs, and an operator can override - because a scoring
+       system that can silently delete somebody's earnings is worse than the
+       fraud it prevents. */
+    const risk = await _payoutRisk(env, user.email, amount, w);
+    const status = risk.tier === 'auto' ? 'approved' : 'pending';
+
     await env.AMV_KV.put(`withdraw:${wid}`, JSON.stringify({
       id: wid, seller: user.email, amount, destination: dest,
-      status: 'pending', ts: Date.now(),
+      status, ts: Date.now(),
+      risk: { tier: risk.tier, score: risk.score, reasons: risk.reasons },
+      kycVerified: !!(risk.kyc && risk.kyc.verified),
+      approvedBy: risk.tier === 'auto' ? 'auto' : '',
+      approvedAt: risk.tier === 'auto' ? Date.now() : 0,
     }));
     /* Take out only what left. This used to zero the whole balance, which was
        right when everything was withdrawable and is silent theft now: money
@@ -11471,17 +11506,39 @@ async function marketWithdraw(request, env) {
        a sale or a reversal landing in the middle of this one and writing back a
        balance it read before the payout. */
     await _withWallet(env, user.email, (ww) => {
+      /* A destination that just changed is one of the signals above, so the
+         change has to be recorded when it happens rather than inferred later. */
+      if (ww.lastDest && ww.lastDest !== dest) ww.destChangedAt = Date.now();
+      ww.lastDest = dest;
       ww.balance = +((+ww.balance || 0) - amount).toFixed(2);
       /* The cleared tranches have now genuinely left; anything still inside its
          window stays, on its own clock. */
       _pruneMaturedHolds(ww);
     });
-    await _pushWalletTx(env, user.email, { type: 'withdrawal', amount: -amount, status: 'pending', id: wid, ts: Date.now() });
-    audit(env, 'market_withdraw', { seller: user.email, amount, id: wid });
-    /* Somebody is owed money now. An operator cannot fulfil what they never
-       hear about, and this used to be silent (AMV-089). */
-    await notify(env, `Payout requested: $${amount.toFixed(2)} to ${user.email}. Settle it in the founder dashboard.`);
-    return json({ ok: true, amount, id: wid, status: 'pending' });
+    await _pushWalletTx(env, user.email, { type: 'withdrawal', amount: -amount, status, id: wid, ts: Date.now() });
+    /* Counted for the velocity signal and the identity threshold, both of which
+       are about the pattern across payouts rather than this one. */
+    await _withWallet(env, user.email, (ww) => {
+      ww.payouts = (Array.isArray(ww.payouts) ? ww.payouts : []).concat({ at: Date.now(), amount }).slice(-20);
+      ww.paidOut = +(((+ww.paidOut) || 0) + amount).toFixed(2);
+    });
+    audit(env, 'market_withdraw', { seller: user.email, amount, id: wid, tier: risk.tier, score: risk.score });
+
+    /* An operator is told about the ones that need them, and NOT about the
+       ordinary ones - a notification for every payout is how the ones that
+       matter stop being read. */
+    if (risk.tier !== 'auto') {
+      await notify(env, `Payout needs review: $${amount.toFixed(2)} to ${user.email}`
+        + ` (${risk.tier}, score ${risk.score}) - ` + risk.reasons.join('; '));
+    }
+    return json({ ok: true, amount, id: wid, status,
+      /* The seller is told which of the two happened and why, because "pending"
+         with no explanation is how somebody decides the platform is stealing
+         from them. */
+      message: risk.tier === 'auto'
+        ? 'Approved. It will be sent on the next payout run.'
+        : 'This payout is being reviewed before it is sent. ' + (risk.reasons[0] || '') + '.',
+      reviewing: risk.tier !== 'auto' });
   } finally {
     await _releaseClaim(env, 'wdlock', user.email);
   }
@@ -11505,8 +11562,143 @@ async function marketWithdraw(request, env) {
    return the balance rather than swallow it a second time.
    ===================================================================== */
 
+/* ══════════════════════════════════════════════════════════════
+   DECIDING PAYOUTS AT A SCALE WHERE NOBODY CAN READ THEM ALL.
+
+   Every payout used to wait for the owner to mark it paid. That is right at
+   ten sellers and impossible at ten thousand, and the alternative people reach
+   for - approve everything - is how a marketplace gets drained. Neither is the
+   answer, and the answer is not a bigger inbox.
+
+   What payment platforms actually do, and what this does: decide each payout
+   on evidence, release the ones that are provably ordinary, and send only the
+   ones that are not to a person. The queue then stays the size of the problem
+   rather than the size of the business.
+
+   Three things carry the weight:
+
+     the reserve   a percentage of every sale is held across the full dispute
+                   window, so a late chargeback is taken from money AMV still
+                   holds. See the hold split at the credit site.
+
+     the score     account age, dispute and refund history, how concentrated
+                   the sales are, how fast payouts are being requested, and
+                   whether the destination just changed. Each is a reason a
+                   person would give, so the answer can be explained.
+
+     the tier      auto, review, or blocked. Nothing is ever auto-PAID by
+                   accident: auto means AMV has cleared it, and money still
+                   moves through whatever rail the operator has configured.
+
+   Deliberately conservative where it is cheap to be: a payout wrongly sent to
+   review costs somebody a day, a payout wrongly released costs the money. */
+const PAYOUT_AUTO_MAX_USD       = 100;    // at or under this, and clean, releases itself
+const PAYOUT_KYC_THRESHOLD_USD  = 600;    // cumulative payouts before identity is required
+const PAYOUT_RESERVE_PCT        = 0.10;   // of every sale, held across the dispute window
+const PAYOUT_RESERVE_DAYS       = 120;    // how long a card dispute can take to arrive
+const PAYOUT_RESERVE_MS         = PAYOUT_RESERVE_DAYS * 86400000;
+const PAYOUT_MIN_AGE_DAYS       = 30;     // a brand new account is not a track record
+const PAYOUT_VELOCITY_WINDOW_MS = 7 * 86400000;
+const PAYOUT_VELOCITY_MAX       = 3;      // payouts in that window before it looks like cashing out
+
+/* Identity. There is no provider wired, and this does not pretend there is:
+   past the threshold a payout goes to REVIEW so a person verifies, rather than
+   being auto-released or marked verified by something that checked nothing.
+   When a provider key exists this reads its answer instead, and the threshold
+   is also where the US 1099 reporting line sits, so it is a number worth
+   keeping whatever the provider turns out to be. */
+async function _kycState(env, email) {
+  try {
+    const raw = await env.AMV_KV.get(`kyc:${String(email || '').toLowerCase()}`);
+    if (!raw) return { verified: false, provider: '', checkedAt: 0 };
+    const k = JSON.parse(raw);
+    return { verified: !!k.verified, provider: k.provider || '', checkedAt: +k.checkedAt || 0 };
+  } catch (e) { return { verified: false, provider: '', checkedAt: 0 }; }
+}
+
+/* Why this payout is or is not ordinary, in sentences somebody could read out.
+   Returns { tier, score, reasons, kyc } and never throws - a scoring error must
+   not become a released payout, so anything unexpected lands in review. */
+async function _payoutRisk(env, email, amount, wallet) {
+  const reasons = [];
+  let score = 0;
+  const em = String(email || '').toLowerCase();
+
+  try {
+    const acct = await DB.get(env, 'acct', em);
+    const ageDays = acct && acct.createdAt ? (Date.now() - acct.createdAt) / 86400000 : 0;
+    if (ageDays < PAYOUT_MIN_AGE_DAYS) {
+      score += 40;
+      reasons.push('the account is ' + Math.floor(ageDays) + ' days old, under the ' + PAYOUT_MIN_AGE_DAYS + '-day mark');
+    }
+
+    /* Disputes and refunds already recorded against this seller. This is the
+       single strongest signal there is: somebody whose sales come back is
+       somebody whose next payout is likely to be taken back too. */
+    const abuse = await DB.get(env, 'abuse', em);
+    const disputes = (abuse && +abuse.disputes) || 0;
+    const refunds = (abuse && +abuse.refunds) || 0;
+    if (disputes > 0) { score += 50 * Math.min(disputes, 3); reasons.push(disputes + ' payment dispute' + (disputes === 1 ? '' : 's') + ' on record'); }
+    if (refunds > 2)  { score += 20; reasons.push(refunds + ' refunds on record'); }
+
+    const standing = await DB.get(env, 'seller', em);
+    if (standing && standing.banned) { score += 200; reasons.push('selling access is suspended'); }
+    else if (standing && +standing.strikes > 0) { score += 25 * +standing.strikes; reasons.push(+standing.strikes + ' policy strike(s)'); }
+
+    /* Concentration. Fifty sales to fifty people is a business; fifty sales to
+       two people is one person moving money through AMV, which is what
+       wash-trading looks like from the inside. */
+    const tx = Array.isArray(wallet && wallet.tx) ? wallet.tx : [];
+    const buyers = new Set(tx.map(t => t && t.buyer).filter(Boolean));
+    if (tx.length >= 3 && buyers.size <= 2) {
+      score += 45;
+      reasons.push('sales come from only ' + buyers.size + ' buyer' + (buyers.size === 1 ? '' : 's'));
+    }
+
+    /* Velocity. Cashing out fast is what somebody does when they expect the
+       money to be taken back. */
+    const recent = (wallet && Array.isArray(wallet.payouts) ? wallet.payouts : [])
+      .filter(p => p && (Date.now() - (+p.at || 0)) < PAYOUT_VELOCITY_WINDOW_MS).length;
+    if (recent >= PAYOUT_VELOCITY_MAX) { score += 30; reasons.push(recent + ' payouts in the last 7 days'); }
+
+    /* A destination changed just before a withdrawal is the shape of a taken
+       -over account being emptied. */
+    const destAt = +(wallet && wallet.destChangedAt) || 0;
+    if (destAt && (Date.now() - destAt) < 3 * 86400000) {
+      score += 35; reasons.push('the payout destination changed in the last 3 days');
+    }
+
+    if (amount > PAYOUT_AUTO_MAX_USD) {
+      score += 20;
+      reasons.push('$' + amount.toFixed(2) + ' is over the $' + PAYOUT_AUTO_MAX_USD + ' automatic limit');
+    }
+  } catch (e) {
+    /* A signal that could not be read is not a clean signal. */
+    audit(env, 'payout_risk_error', { email: em, error: String((e && e.message) || e) });
+    return { tier: 'review', score: 999, kyc: { verified: false }, 
+             reasons: ['AMV could not finish checking this payout, so a person should look at it'] };
+  }
+
+  /* Identity, past the point where it is legally and practically required. */
+  const kyc = await _kycState(env, em);
+  const lifetimePaid = +(wallet && wallet.paidOut) || 0;
+  if (!kyc.verified && (lifetimePaid + amount) > PAYOUT_KYC_THRESHOLD_USD) {
+    score += 60;
+    reasons.push('total payouts would pass $' + PAYOUT_KYC_THRESHOLD_USD + ' and identity has not been verified');
+  }
+
+  const tier = score >= 100 ? 'blocked' : (score > 0 ? 'review' : 'auto');
+  return { tier, score, reasons, kyc };
+}
+
 const ADMIN_PAYOUT_SCAN_MAX = 5000;
-const PAYOUT_STATES = new Set(['pending', 'paid', 'rejected']);
+/* 'approved' is the step that did not exist. Before, a payout was either
+   waiting for a person or already sent, so there was nowhere to record "AMV has
+   decided this is fine and the money has not physically moved yet" - and money
+   moving is a different act from money being cleared to move, done by whatever
+   rail the operator has configured. Keeping them apart is what lets the
+   decision be automatic without the disbursement being automatic. */
+const PAYOUT_STATES = new Set(['pending', 'approved', 'paid', 'rejected']);
 
 /* GET /admin/payouts - what is owed, and to whom. */
 async function adminPayouts(request, env) {
@@ -11542,14 +11734,37 @@ async function adminPayouts(request, env) {
   } while (cursor);
 
   out.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  /* THE QUEUE IS NOW THE EXCEPTIONS. Payouts AMV cleared by itself are
+     'approved' and are not what somebody has to read; 'pending' means a
+     signal fired and a person is being asked. Separating them is the whole
+     point - a queue that contains every payout is a queue nobody finishes,
+     and then the risky ones are read with the same attention as the rest. */
   const pending = out.filter(w => (w.status || 'pending') === 'pending');
+  const approved = out.filter(w => w.status === 'approved');
   return json({
     ok: true,
     payouts: out.slice(0, 500),
     /* The number that matters: money taken out of sellers' balances that has
        not yet reached them. It is a liability until it is paid. */
-    owed: +pending.reduce((n, w) => n + (+w.amount || 0), 0).toFixed(2),
+    /* Everything not yet sent is owed, whichever side of the decision it is
+       on - an approved payout is still money AMV has taken from a seller's
+       balance and not delivered. Reporting only the reviewed ones would make
+       the liability look smaller the better the risk engine got. */
+    owed: +[...pending, ...approved].reduce((n, w) => n + (+w.amount || 0), 0).toFixed(2),
     pendingCount: pending.length,
+    approvedCount: approved.length,
+    approvedTotal: +approved.reduce((n, w) => n + (+w.amount || 0), 0).toFixed(2),
+    needsReview: pending.slice(0, 200).map(w => ({
+      id: w.id, seller: w.seller, amount: w.amount, destination: w.destination, ts: w.ts,
+      tier: (w.risk && w.risk.tier) || 'review',
+      score: (w.risk && w.risk.score) || 0,
+      reasons: (w.risk && w.risk.reasons) || [],
+      kycVerified: !!w.kycVerified,
+    })),
+    autoMaxUSD: PAYOUT_AUTO_MAX_USD,
+    kycThresholdUSD: PAYOUT_KYC_THRESHOLD_USD,
+    reservePct: PAYOUT_RESERVE_PCT,
+    reserveDays: PAYOUT_RESERVE_DAYS,
     paidTotal: +out.filter(w => w.status === 'paid').reduce((n, w) => n + (+w.amount || 0), 0).toFixed(2),
     /* Said out loud, in the answer, so a screen cannot present a partial total
        as a complete one. */
@@ -11569,7 +11784,7 @@ async function adminPayoutMark(request, env) {
   const id = String(body.id || '');
   const status = String(body.status || '');
   if (!/^wd_[A-Za-z0-9-]{4,40}$/.test(id)) return json({ error: 'bad id' }, 400);
-  if (!PAYOUT_STATES.has(status) || status === 'pending') return json({ error: 'status must be paid or rejected' }, 400);
+  if (!PAYOUT_STATES.has(status) || status === 'pending') return json({ error: 'status must be approved, paid or rejected' }, 400);
 
   /* SERIALIZED, because rejecting CREDITS a wallet.
 
@@ -11591,7 +11806,11 @@ async function adminPayoutMark(request, env) {
     const raw = await env.AMV_KV.get(`withdraw:${id}`);
     if (!raw) return json({ error: 'not found' }, 404);
     let rec = null; try { rec = JSON.parse(raw); } catch (e) { return json({ error: 'not found' }, 404); }
-    if ((rec.status || 'pending') !== 'pending') {
+    /* An APPROVED payout is still settleable - approved means AMV cleared it,
+       not that the money moved, so marking it paid (or rejecting it after a
+       second look) is exactly what an operator does next. Only a terminal
+       state refuses. */
+    if (!['pending', 'approved'].includes(rec.status || 'pending')) {
       // Settling twice would either pay twice or refund twice. It is money.
       return json({ error: 'This payout was already ' + rec.status + '.', code: 'already_settled' }, 409);
     }

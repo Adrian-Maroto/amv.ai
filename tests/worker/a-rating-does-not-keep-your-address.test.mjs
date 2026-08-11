@@ -283,15 +283,26 @@ section('A defence that is not built says so');
      There is no identity check anywhere in the code. Naming an absent control
      in a list of present ones is how an operator ends up believing a gate is
      there - and this is the payout path, where believing it costs money. */
-  ok(!/\bkyc\b/i.test(src), 'there is genuinely no KYC in the code', true);
+  /* This used to assert there was no KYC at all, which was true when it was
+     written and is the wrong question now. There is a threshold and a hook;
+     what there is NOT is anything that verifies a person. The assertion that
+     matters is that nothing marks somebody verified on the strength of
+     nothing - a fake verification is worse than none, because it converts a
+     queue entry into a released payout. */
+  const kycFn = src.slice(src.indexOf('async function _kycState'), src.indexOf('async function _payoutRisk'));
+  ok(/PAYOUT_KYC_THRESHOLD_USD/.test(src), 'a threshold exists', true);
+  ok(!/verified:\s*true/.test(kycFn),
+     'and nothing in the identity path marks anybody verified by itself', true);
+  ok(/_kycState\(/.test(src.slice(src.indexOf('async function _payoutRisk'))),
+     'the payout decision consults it rather than assuming', true);
   const item51 = (register.match(/^51\..*$/m) || [''])[0];
-  ok(/NOT built/i.test(item51), 'and the register says so plainly', item51.slice(0, 140));
+  ok(/[Ss]till not built/i.test(item51), 'and the register says so plainly', item51.slice(0, 140));
   ok(/MARKET_MIN_WITHDRAW/.test(item51) && /PAYOUT_HOLD_DAYS/.test(item51),
-     'while naming the two that are', true);
-  ok(/manual/i.test(item51),
-     'and the operator, who is the actual check in the absence of the other one', true);
-  ok(/120/.test(item51),
-     'including that the hold is short against a dispute window, which is the real exposure', item51.slice(0, 260));
+     'while naming the ones that are', true);
+  ok(/PAYOUT_RESERVE_PCT/.test(item51) && /120/.test(item51),
+     'including the reserve, which is what now covers the dispute window the hold does not reach', item51.slice(0, 300));
+  ok(/_payoutRisk/.test(item51),
+     'and the scoring that decides which payouts a person ever sees', true);
 }
 
 section('The anti-phishing rule is one that is actually true');
