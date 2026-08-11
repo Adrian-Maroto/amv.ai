@@ -8357,8 +8357,15 @@ async function widgetChat(request, env, ctx) {
      everything else rather than needing its own rule. */
   const ownerEmail = String(cfg.owner || '').toLowerCase();
   const ownerEnt = ownerEmail ? ((await DB.get(env, 'ent', ownerEmail)) || {}) : {};
+  /* familyOf is carried on the entitlement (ENT_CARRY_KEYS), so the parent's
+     record can be read without a second lookup on every widget turn. Without
+     it ownerUser has no family at all and _monthlyCeilingUSD would answer with
+     the plan backstop alone - which is how a capped child's widget would keep
+     spending past the limit their parent set. */
+  const ownerFam = ownerEmail ? await _familyOf(env, ownerEmail, ownerEnt) : null;
   const ownerUser = { email: ownerEmail || ('widget:' + key), plan: _planOf(ownerEnt),
-                      customCfg: ownerEnt.custom || null, bonusTokens: ownerEnt.bonusTokens || 0 };
+                      customCfg: ownerEnt.custom || null, bonusTokens: ownerEnt.bonusTokens || 0,
+                      family: ownerFam };
   const ownerLimits = effectiveLimits(ownerUser);
   const ownerSubject = ownerEnt.teamId ? ('team:' + ownerEnt.teamId) : (ownerEmail || ('widget:' + key));
 
@@ -8394,6 +8401,33 @@ async function widgetChat(request, env, ctx) {
     if (!msgCap) return;
     try { await counter(env, msgName, { op: 'incr', amount: -1, ttlMs: 86400000 * 2 }); } catch (e) {}
   };
+
+  /* THE OWNER'S DOLLAR CEILING, which every other spending path consults.
+
+     The widget was bounded by three things and none of them was this one: a
+     per-widget message cap, a per-widget daily spend cap the owner sets (and
+     which defaults to unlimited), and the owner's TOKEN allowance. Tokens are
+     a count. The ceiling that stops chat, image, video and SMS is a dollar
+     figure - the lower of the plan's cost backstop and a parent's monthly
+     limit - and a widget belonging to a capped account ran past it, because
+     the widget asked a different question.
+
+     Checked against the owner's billing subject, since a widget spends the
+     owner's money whoever is typing into it on somebody else's website. */
+  const ownerCeiling = _monthlyCeilingUSD(ownerUser);
+  if (ownerCeiling != null) {
+    let oc = null;
+    try { oc = await counter(env, `cost:${ownerSubject}:${monthKey()}`, { op: 'checkCap', cap: ownerCeiling }); }
+    catch (e) { audit(env, 'spend_gate_blind', { what: 'widget', scope: 'account', error: String((e && e.message) || e) }); }
+    if (oc && !oc.allowed) {
+      audit(env, 'widget_owner_cap', { key, subject: ownerSubject });
+      await refundMsg();
+      /* A stranger on somebody else's website is told nothing about that
+         person's billing - only that the assistant is not available. */
+      return new Response(JSON.stringify({ error: 'This assistant is unavailable right now. Please try again later.' }),
+        { status: 503, headers: { 'Content-Type': 'application/json', ...corsHeaders(request, env) } });
+    }
+  }
 
   // Per-widget DAILY SPEND cap (hard margin protection for the owner).
   const wSpendName = `wspend:${key}:${todayKey()}`;

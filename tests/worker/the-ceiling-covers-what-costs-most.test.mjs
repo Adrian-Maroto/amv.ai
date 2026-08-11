@@ -317,5 +317,24 @@ section('A cap of zero really is zero');
      W._monthlyCeilingUSD && W._monthlyCeilingUSD(lower));
 }
 
+section('And the widget spends the owner’s money against the owner’s ceiling');
+{
+  /* The widget was bounded by three things, none of them this one: a per-widget
+     message cap, a per-widget daily spend cap the owner sets and which defaults
+     to unlimited, and the owner's TOKEN allowance. Tokens are a count. The
+     dollar ceiling that stops chat, image, video and SMS was never asked, so a
+     widget belonging to a capped account ran past the limit somebody set. */
+  const wc = src.slice(src.indexOf('async function widgetChat('),
+                       src.indexOf('async function widgetChat(') + 9000);
+  ok(/_monthlyCeilingUSD\(ownerUser\)/.test(wc),
+     'the widget asks the same ceiling as every other spending path', true);
+  ok(/cost:\$\{ownerSubject\}/.test(wc),
+     'against the OWNER’s billing subject, since it is their money whoever is typing', true);
+  ok(/_familyOf\(env, ownerEmail/.test(wc),
+     'and the owner’s family limits are resolved, so a parent’s cap reaches a widget their child deployed', true);
+  ok(/unavailable right now/.test(wc),
+     'a stranger on somebody else’s website is told nothing about that person’s billing', true);
+}
+
 if (report('the-ceiling-covers-what-costs-most') > 0) process.exitCode = 1;
 done();
