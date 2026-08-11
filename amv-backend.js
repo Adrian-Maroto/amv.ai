@@ -496,7 +496,7 @@ const PLAN_LIMITS = {
   // Token allowances per plan. These are sized to be GENEROUS for real usage
   // (a heavy day of chatting/coding is well under the daily cap) while keeping a
   // healthy margin at worst case - the plan price is decoupled from raw token
-  // cost, exactly like ChatGPT/Claude. The 45% cost backstop below is only an
+  // cost, the way every subscription AI product prices. The 45% backstop below is only an
   // anti-abuse floor that normal users never reach. Blended compute ~$6/Mtok:
   //   pro   $15  -> ~1.8M/mo ≈ $11 worst-case compute (~27% floor, usually far higher margin)
   //   elite $75  -> ~7M/mo, ultra $200 -> ~18M/mo - all comfortably profitable.
@@ -1551,7 +1551,7 @@ async function _autoExecute(env, item, budget, email, standing){
 }
 
 /* Estimate USD cost of an automation run (worst-case-ish, matches the web path's
-   accounting spirit). Web searches are billed by Anthropic per request. */
+   accounting spirit). Web searches are billed by the provider per request. */
 function _autoCostUSD(usage){
   const inUSD  = (usage.input||0)  / 1e6 * 3;     // ~$3 / M input
   const outUSD = (usage.output||0) / 1e6 * 15;    // ~$15 / M output
@@ -4297,7 +4297,7 @@ async function _workerError(env, where, err, extra){
 
 
 /* ==============================================================
-   FORGOT PASSWORD - the flow people actually expect (Claude/ChatGPT style):
+   FORGOT PASSWORD - the flow people actually expect (the flow every product uses):
      1. Enter your email    -> POST /auth/reset/code
      2. Get a 6-digit code  -> emailed to you, valid 15 minutes
      3. Type the code       -> POST /auth/reset/verify -> one-time token
@@ -7980,7 +7980,7 @@ async function mediaPolicyRefusal(env, user, prompt, surface) {
    IMAGE_API_KEY as Worker secrets), image generation is proxied here so the
    key stays server-side and every call is metered against the user's daily
    image cap. The request body is { prompt, width, height }. We POST to the
-   configured provider in a standard OpenAI-images-compatible shape and return
+   configured provider in a the standard images-API shape most providers accept and return
    { url } or { b64 }. If no provider is configured we return {configured:false}
    so the client falls back to the built-in free generator. This means adding a
    premium key is the ONLY step needed to upgrade image quality app-wide. */
@@ -8102,7 +8102,7 @@ async function usageReport(request, env) {
 /* =====================================================================
    EMBEDDABLE WIDGET  (the "add AMV chat to any website" feature)
    ---------------------------------------------------------------------
-   Model (same shape ChatGPT/Intercom-style embeds use):
+   Model (the same shape any support-chat embed uses):
      1. The site owner (an authenticated AMV user) creates a widget config.
         We mint a PUBLIC site key (pk_...) that is safe to ship in HTML.
      2. They paste a one-line <script src=".../widget.js?k=pk_..."> on their
@@ -8115,7 +8115,7 @@ async function usageReport(request, env) {
           • per-widget daily message cap  (abuse / cost ceiling)
           • per-widget daily spend cap    (hard margin protection)
           • the global daily spend cap     (shared safety net)
-        The Anthropic key is NEVER exposed; the model is chosen by the owner
+        The model key is NEVER exposed; the model is chosen by the owner
         and clamped server-side. This makes the widget safe to expose to the
         open internet without turning your model into a free public API.
    ===================================================================== */
@@ -8694,11 +8694,13 @@ async function verifyToken(token, secret, env = null, expectedTyp = 'access') {
         # OPTIONAL - premium image generation. Set these three and image
         # generation app-wide automatically upgrades from the built-in free
         # generator to your paid provider (key stays server-side, metered
-        # against each user's daily image cap). Any OpenAI-images-compatible
-        # endpoint works (OpenAI gpt-image-1, or a compatible proxy):
+        # against each user's daily image cap). Any endpoint with the standard
+        # images shape works - it must accept POST { model, prompt, size, n }
+        # and answer { data: [ { url } ] } or { data: [ { b64_json } ] }, which
+        # is what most image providers and their proxies already speak:
         wrangler secret put IMAGE_API_KEY        (your image provider key)
-        wrangler secret put IMAGE_API_URL        (e.g. https://api.openai.com/v1/images/generations)
-        wrangler secret put IMAGE_API_MODEL      (optional, defaults to gpt-image-1)
+        wrangler secret put IMAGE_API_URL        (the provider's images endpoint)
+        wrangler secret put IMAGE_API_MODEL      (the model name that provider expects)
    4. wrangler.toml config:
         [vars]
         GLOBAL_DAILY_USD_CAP = "500"             (your hard ceiling)

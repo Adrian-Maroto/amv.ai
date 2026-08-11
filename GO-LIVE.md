@@ -40,6 +40,31 @@ Set each with `npx wrangler secret put NAME` (it prompts for the value).
 | `EMAIL_API_KEY` | Password-reset emails **and** delivery of autonomous task results by email (Resend key) |
 | `GLOBAL_DAILY_USD_CAP` | Your daily spend ceiling across all users (defaults to $500) - your runaway-bill protection |
 
+### Make the alarms audible - the one people skip
+
+| Secret | Unlocks |
+|---|---|
+| `ALERT_WEBHOOK` | **Where AMV shouts.** A Slack/Discord incoming-webhook URL. Without it `notify()` returns immediately and every alarm in the product is silent: the daily spend ceiling being hit, the spend counter going unreachable (which means the ceiling is not being enforced at all), a payout that needs your review, a reported listing, a bounded scan that stopped short, a failed session revocation after a password change. All of that logic exists and runs; with no webhook, none of it reaches you. |
+| `OWNER_EMAIL` | Who the founder digest and owner-only notices go to |
+| `SUPPORT_EMAIL` | The address shown to users, and where in-app support messages land |
+
+> If you set nothing else in this table, set `ALERT_WEBHOOK`. Everything AMV
+> knows about its own trouble goes through it, and the failure is silent by
+> design - a missing webhook is not an error, it is just quiet.
+
+### Tune the money limits (all optional, all have defaults)
+
+| Secret | Default | What it changes |
+|---|---|---|
+| `GLOBAL_DAILY_USD_CAP` | `500` | The hard ceiling on model spend across all users, per day |
+| `IMAGE_COST_USD` | `0.04` | What one image is assumed to cost, for the ceiling and your cost figures |
+| `VIDEO_COST_USD` | `0.50` | The same for one video - the most expensive call in the product |
+
+> Payout decisioning (the $100 auto-clear limit, the $600 identity threshold,
+> the 10% / 120-day reserve) is set in `amv-backend.js` next to `_payoutRisk`,
+> not by environment - they are policy, and policy belongs where the reasoning
+> that justifies it is written down.
+
 ### Turn on paid plans + marketplace purchases (money)
 | Secret | Unlocks |
 |---|---|

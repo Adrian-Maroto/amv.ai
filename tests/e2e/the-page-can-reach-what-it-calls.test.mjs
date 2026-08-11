@@ -36,6 +36,7 @@ import { ok, section, report, done } from '../lib/assert.mjs';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
 const app = readFileSync(join(ROOT, 'app.js'), 'utf8');
+const worker = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 
 /* The policy as the browser reads it. */
 function directive(name) {
@@ -142,6 +143,60 @@ section('AMV is the only product named in AMV');
 
   const links = (app.match(/https:\/\/[a-z.]*(anthropic|openai|perplexity)\.com[^"']*/gi) || []);
   ok(links.length === 0, 'and nothing links people out to buy from one', links.slice(0, 2));
+}
+
+section('The provider is named on the server and nowhere a person can see');
+{
+  /* This check read app.js and stopped, so the entire Worker was outside it -
+     and the Worker is a pushed artifact too. It does name the provider, in the
+     only two places that cannot avoid it: the model identifiers it sends
+     upstream, and the API host it sends them to. You cannot call an API
+     without naming its models.
+
+     Deleting those would not be brand discipline, it would be breaking the
+     product. What matters is the property underneath the rule, which nothing
+     was actually asserting: a person using AMV never sees another company's
+     name. The tiers they choose from are amv-pulse, amv-core, amv-forge and
+     amv-apex, and the mapping to real models stays on the server.
+
+     So the rule is: server-side, the provider may be named where the call
+     requires it. Browser-side, never - and that is now checked rather than
+     coincidental. */
+  const PROVIDER = /claude-(haiku|sonnet|opus|fable)[\w.-]*|api\.anthropic\.com/gi;
+
+  const inBrowser = [...new Set([...(app.match(PROVIDER) || []), ...(html.match(PROVIDER) || [])])];
+  ok(inBrowser.length === 0,
+     'no provider model id or endpoint reaches the browser bundle', inBrowser.slice(0, 4));
+
+  const inWorker = [...new Set(worker.match(PROVIDER) || [])];
+  ok(inWorker.length > 0,
+     'the Worker does name them, because a call has to say what it is calling', inWorker.length);
+
+  /* And the names it is allowed to use are exactly those two shapes - a
+     sentence about the provider, a comment, a piece of user-facing copy, would
+     all be something else and none of them belongs here either. */
+  const beyondIdentifiers = [];
+  for (const m of worker.matchAll(/(?:Anthropic|OpenAI|ChatGPT|\bClaude\b|\bGemini\b|Copilot|\bGrok\b|Perplexity)/gi)) {
+    const around = worker.slice(Math.max(0, m.index - 200), m.index + 60);
+    /* The AMV-only screening list, which has to contain these words in order
+       to reject them in what people upload. It is data the code matches
+       against, not something anybody reads - the same exemption this file
+       already makes for the browser side, applied for the same reason. */
+    if (/banned\s*=|_MKT_PROHIBITED|_marketScreen|screenList|prohibited/i.test(around)) continue;
+    /* The two identifiers a call cannot avoid. */
+    if (/claude-(haiku|sonnet|opus|fable)/i.test(around) || /api\.anthropic\.com/i.test(around)) continue;
+    if (/AMV_MODEL_KEY \|\| env\.ANTHROPIC_API_KEY/.test(around)) continue;
+    /* A required request header. Same category as the model ids: the API
+       defines the name, and a call that omits it is refused. */
+    if (/'anthropic-version'/.test(around)) continue;
+    beyondIdentifiers.push(m[0] + ' … ' + around.slice(-70).replace(/\s+/g, ' '));
+  }
+  ok(beyondIdentifiers.length === 0,
+     'and nothing else in the Worker names another company', beyondIdentifiers.slice(0, 3));
+
+  /* The tiers a person actually picks from are AMV's own. */
+  const tiers = [...new Set(app.match(/amv-(pulse|core|forge|apex)/g) || [])];
+  ok(tiers.length === 4, 'the four tiers people choose from are AMV names', tiers);
 }
 
 if (report('the-page-can-reach-what-it-calls') > 0) process.exitCode = 1;
