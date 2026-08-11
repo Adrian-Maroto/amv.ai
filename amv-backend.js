@@ -11319,11 +11319,22 @@ async function _reverseSale(env, ref, reason) {
        reversal and once for a hold against nothing. Matched on the charge
        reference, falling back to the item, so it releases THIS sale rather than
        whichever hold happens to be the same size. */
+    /* EVERY hold for this sale, not the first one found.
+
+       A sale now leaves TWO holds: the part that clears on the short window
+       and the reserve slice that clears across the dispute window. They share
+       a reference, so releasing one by index left the other frozen against a
+       sale that no longer exists - the seller short by the reserve, invisibly,
+       for four months. That is the exact failure the note above describes, and
+       adding the reserve reintroduced it.
+
+       Matched on the charge reference, falling back to the item, so it
+       releases THIS sale's holds rather than whichever happen to be the same
+       size. */
     const holds = (w.holds || []);
-    let i = holds.findIndex(h => rec.ref && h.ref && h.ref === rec.ref);
-    if (i < 0) i = holds.findIndex(h => h.item === rec.itemId);
-    if (i >= 0) holds.splice(i, 1);
-    w.holds = holds;
+    const byRef = rec.ref ? holds.filter(h => h.ref && h.ref === rec.ref) : [];
+    const drop = byRef.length ? byRef : holds.filter(h => h.item === rec.itemId);
+    w.holds = holds.filter(h => !drop.includes(h));
     _pruneMaturedHolds(w);
     });
     await _pushWalletTx(env, rec.seller, { type: 'sale_reversed', amount: -rec.sellerShare,

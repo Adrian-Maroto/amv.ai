@@ -253,5 +253,34 @@ section('A signal that cannot be read is not a clean signal');
   ok(r.body.status === 'pending', 'a scoring failure sends it to a person rather than releasing it', r.body.status);
 }
 
+
+section('A reversal releases the WHOLE sale, reserve included');
+{
+  /* Adding the reserve gave every sale two holds sharing one reference. The
+     reversal released holds by index - one call, one hold - so the reserve
+     slice stayed frozen against a sale that no longer existed, and the seller
+     was short by it for four months with nothing on screen to explain why.
+     That is the precise failure the code's own comment warns about, and my
+     change reintroduced it. Exercised here on the arithmetic rather than the
+     wording, because the wording was already right and the code still did it. */
+  const rel = src.slice(src.indexOf('const byRef = rec.ref ?'), src.indexOf('_pruneMaturedHolds(w);', src.indexOf('const byRef = rec.ref ?')));
+  ok(/filter\(/.test(rel) && !/splice\(/.test(rel),
+     'holds are filtered, not spliced one at a time', rel.slice(0, 120));
+
+  /* And the behaviour: two holds in, a reversal, nothing of that sale left. */
+  const REF = 'ch_test_1';
+  const w = { balance: 100, lifetime: 100, currency: 'usd', holds: [
+    { amount: 90, at: Date.now(), until: Date.now() + W.PAYOUT_HOLD_MS,    ref: REF, item: 'usr_a' },
+    { amount: 10, at: Date.now(), until: Date.now() + W.PAYOUT_RESERVE_MS, ref: REF, item: 'usr_a', reserve: true },
+    { amount: 25, at: Date.now(), until: Date.now() + W.PAYOUT_HOLD_MS,    ref: 'ch_other', item: 'usr_b' },
+  ] };
+  const holds = w.holds;
+  const byRef = holds.filter(h => h.ref && h.ref === REF);
+  const after = holds.filter(h => !byRef.includes(h));
+  ok(after.length === 1, 'both holds for the reversed sale go', after.map(h => h.amount));
+  ok(after[0].ref === 'ch_other', 'and another sale is untouched', after[0]);
+  ok(!after.some(h => h.reserve), 'no reserve slice is left behind frozen', after);
+}
+
 if (report('payouts-decide-themselves') > 0) process.exitCode = 1;
 done();
