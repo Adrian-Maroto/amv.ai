@@ -70,6 +70,15 @@ section('A requested payout is visible to the operator, with what is owed');
   const token = await tokenFor(env, 'seller@x.com');
   const d = await (await withdraw(env, token, 'paypal: seller@x.com')).json();
   ok(d.ok === true && d.amount === 120, 'the withdrawal is accepted', d);
+  /* And the seller's open-payout index knows about it - written by the route
+     itself, which is what lets account deletion ask "is money on its way to
+     you" without walking a ledger that is retained for ever and only grows.
+     Checked HERE, on the path that really creates one: asserting it against a
+     helper called by hand proves the helper works and not that anything calls
+     it. */
+  const openIdx = JSON.parse(env._kv.get('wdopen:seller@x.com') || '{}');
+  ok((openIdx.ids || []).length === 1 && openIdx.built > 0,
+     'and it is recorded as being in flight, without a ledger scan', openIdx);
   ok((await balanceOf(env, 'seller@x.com')) === 0, 'and the balance is debited');
 
   const list = await (await adminGet(env)).json();

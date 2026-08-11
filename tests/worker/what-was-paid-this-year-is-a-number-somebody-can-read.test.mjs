@@ -37,7 +37,7 @@ const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'taxyear.harness.mjs');
 writeFileSync(harness, src +
-  '\nexport { _recordPaidForTax, _paidThisYear, _payoutsInFlight, _payoutRisk, taxYearOf,' +
+  '\nexport { _recordPaidForTax, _paidThisYear, _payoutsInFlight, _openPayoutAdd, _openPayoutRemove, _payoutRisk, taxYearOf,' +
   ' TAX_REPORT_THRESHOLD_USD, PAYOUT_KYC_THRESHOLD_USD, PER_USER_KINDS, BACKUP_PREFIXES, adminPayoutMark };\n');
 const W = await import(harness + '?t=' + Date.now());
 
@@ -187,6 +187,40 @@ section('An account cannot be deleted out from under a payout in flight');
   const broken = { AMV_KV: { list: async () => { throw new Error('kv down'); } } };
   ok((await W._payoutsInFlight(broken, 'gone@x.com')).length === 0,
      'and a failed scan lets the deletion proceed rather than refusing it', true);
+}
+
+section('The open-payout index is kept true by the routes themselves');
+{
+  /* The section above seeds withdraw: records directly, so it exercises the
+     BACKFILL - which is why two sabotages passed it: removing the index update
+     from settling, and trusting the index over the record, both left the
+     backfill answering correctly. The backfill is a migration path, not the
+     one the product runs.
+
+     Driven through the real routes here, with the index already built so the
+     backfill cannot cover for it. */
+  store.clear();
+  store.set('wdopen:sel@x.com', JSON.stringify({ ids: [], built: Date.now() }));
+  store.set('withdraw:wd_live0001', JSON.stringify({
+    id: 'wd_live0001', seller: 'sel@x.com', amount: 25, status: 'pending', ts: Date.now() }));
+  await W._openPayoutAdd(env, 'sel@x.com', 'wd_live0001');
+
+  const open = await W._payoutsInFlight(env, 'sel@x.com');
+  ok(open.length === 1, 'a requested payout is in flight', open.map(o => o.id));
+
+  await W.adminPayoutMark(adminReq({ id: 'wd_live0001', status: 'paid' }), env);
+  const idx = JSON.parse(store.get('wdopen:sel@x.com') || '{}');
+  ok((idx.ids || []).length === 0,
+     'settling it takes it out of the index, so the ledger is never walked again', idx);
+  const after = await W._payoutsInFlight(env, 'sel@x.com');
+  ok(after.length === 0, 'and nothing is in flight afterwards', after.map(o => o.id));
+
+  /* And the record wins over the index. A stale entry must not block somebody
+     from deleting their account for a payout that has already settled. */
+  await W._openPayoutAdd(env, 'sel@x.com', 'wd_live0001');
+  const stale = await W._payoutsInFlight(env, 'sel@x.com');
+  ok(stale.length === 0,
+     'a stale entry pointing at a settled payout is ignored, not believed', stale.map(o => o.id));
 }
 
 section('The guard lives outside the erasure routine, on purpose');

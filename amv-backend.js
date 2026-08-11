@@ -4438,7 +4438,7 @@ const BACKUP_PREFIXES = [
      recoverable - but the rebuild is the expensive scan they exist to avoid,
      and a restore is exactly when nobody wants every seller's first page load
      to walk the whole catalogue. */
-  'mktmine:', 'mktinbox:'
+  'mktmine:', 'mktinbox:', 'wdopen:'
 ];
 /* Never exported. Listed so the omission reads as a decision, not an oversight.
    Two reasons appear here: it is a CREDENTIAL and must not sit in a snapshot
@@ -5755,6 +5755,10 @@ const PER_USER_KINDS = ['acct', 'ent', 'entitleitem', 'data', 'auto', 'crewjobs'
      so they go with the account like everything else - and the records they
      point at are erased by the loops above and below this one. */
   'mktmine', 'mktinbox',
+  /* Which of this person's payouts have not settled. The payouts themselves
+     are retained - that is the tax record - and this is only a pointer, so it
+     goes with the account. */
+  'wdopen',
   'purchases', 'stripecust', 'userteam', 'sites', 'spendlimits',
   'fin', 'finlink', 'invsnap', 'links', 'fam', 'apikeys', 'consent', 'widget_owner', 'shares', 'presence',
   /* Support tickets are keyed by the reporter's email precisely so they land
@@ -5841,28 +5845,106 @@ async function accountExport(request, env) {
    for a guard, written in the middle of a deletion routine, would have made
    the payout ledger look erased to the one check whose job is to notice if it
    ever were. */
+/* A SELLER'S UNSETTLED PAYOUTS, WITHOUT READING THE WHOLE LEDGER.
+
+   This walked every `withdraw:` record ever written to find the handful
+   belonging to one person - on account deletion, which is rare, so it was easy
+   to leave. It gets slower every day and never recovers: the ledger is
+   retained for ever on purpose, because it is the tax record.
+
+   The index is complete BY CONSTRUCTION rather than by everybody remembering.
+   A payout is unsettled from the moment it is requested until the moment it is
+   settled, and there are exactly two places in this file where either happens
+   - marketWithdraw and adminPayoutMark. Both go through the two helpers below,
+   so an id cannot enter or leave the open set anywhere else.
+
+   That distinction is the whole reason this one is safe and the automation
+   due-index was not: there, a due time could be set from any number of places
+   and completeness rested on discipline. Here the state transition IS the
+   write, and the write is in two functions. */
+async function _openPayoutAdd(env, email, id) {
+  const em = String(email || '').toLowerCase();
+  if (!em || !id) return;
+  try {
+    await _withKV(env, 'wdopen', em, (r) => {
+      r.ids = Array.isArray(r.ids) ? r.ids : [];
+      if (!r.ids.includes(id)) r.ids.push(id);
+      /* An index that gains a payout is an index. Without this the next read
+         would rebuild it by scanning, which is the cost being removed. */
+      r.built = r.built || Date.now();
+      return r;
+    }, { ids: [] });
+  } catch (e) { audit(env, 'open_payout_index_failed', { email: em, id, op: 'add', error: String((e && e.message) || e) }); }
+}
+async function _openPayoutRemove(env, email, id) {
+  const em = String(email || '').toLowerCase();
+  if (!em || !id) return;
+  try {
+    await _withKV(env, 'wdopen', em, (r) => {
+      r.ids = (Array.isArray(r.ids) ? r.ids : []).filter(x => x !== id);
+      r.built = r.built || Date.now();
+      return r;
+    }, { ids: [] });
+  } catch (e) { audit(env, 'open_payout_index_failed', { email: em, id, op: 'remove', error: String((e && e.message) || e) }); }
+}
+
 async function _payoutsInFlight(env, email) {
+  const em = String(email || '').toLowerCase();
   const held = [];
   try {
-    let cursor;
-    do {
-      const page = await env.AMV_KV.list({ prefix: 'withdraw:', cursor, limit: 1000 });
-      for (const k of (page.keys || [])) {
-        const raw = await env.AMV_KV.get(k.name);
-        if (!raw) continue;
-        let w = null; try { w = JSON.parse(raw); } catch (e) { continue; }
-        if (w && w.seller === email && ['pending', 'approved'].includes(w.status || 'pending')) held.push(w);
+    const raw = await env.AMV_KV.get(`wdopen:${em}`);
+    let idx = null;
+    try { idx = raw ? JSON.parse(raw) : null; } catch (e) { idx = null; }
+    /* BUILT ON FIRST USE, like the marketplace indexes and for the same
+       reason: a payout requested before this index existed is in no index, and
+       "no entry" would read as "nothing in flight" - which is the answer that
+       lets somebody delete an account with money on its way to them. `built`
+       is what separates a seller with nothing outstanding from one nobody has
+       looked up yet. */
+    if (!idx || !idx.built) {
+      const found = [];
+      let cursor, scanned = 0;
+      do {
+        const page = await env.AMV_KV.list({ prefix: 'withdraw:', cursor, limit: 1000 });
+        for (const k of (page.keys || [])) {
+          scanned++;
+          const w = await env.AMV_KV.get(k.name);
+          if (!w) continue;
+          let rec = null; try { rec = JSON.parse(w); } catch (e) { continue; }
+          if (rec && String(rec.seller || '').toLowerCase() === em
+              && ['pending', 'approved'].includes(rec.status || 'pending')) found.push(rec.id || k.name.slice(9));
+        }
+        cursor = page.list_complete ? undefined : page.cursor;
+        if (cursor && scanned >= 20000) {
+          /* A backfill that stopped short is NOT written as complete - the
+             payouts past the cap would be lost to this check for good, which
+             is worse than the slow read it replaces. */
+          audit(env, 'open_payout_backfill_partial', { email: em, scanned });
+          cursor = undefined;
+          idx = { ids: found, built: 0 };
+          break;
+        }
+      } while (cursor);
+      if (!idx) {
+        idx = { ids: found, built: Date.now() };
+        try { await env.AMV_KV.put(`wdopen:${em}`, JSON.stringify(idx)); } catch (e) {}
       }
-      cursor = page.list_complete ? undefined : page.cursor;
-      /* Bounded like every other scan of this size here. Fifty unsettled
-         payouts is already far past anything an honest seller has. */
-      if (cursor && held.length > 50) break;
-    } while (cursor);
+    }
+    const ids = idx.ids || [];
+    for (const id of ids) {
+      const w = await env.AMV_KV.get(`withdraw:${id}`);
+      if (!w) continue;
+      let rec = null; try { rec = JSON.parse(w); } catch (e) { continue; }
+      /* Checked against the RECORD, not taken from the index. An index is a
+         convenience; the payout's own status is the truth, and a stale entry
+         must not block somebody's deletion for a payout that already settled. */
+      if (rec && rec.seller === em && ['pending', 'approved'].includes(rec.status || 'pending')) held.push(rec);
+    }
   } catch (e) {
-    /* A scan that failed must not become a way to block somebody's deletion.
+    /* A read that failed must not become a way to block somebody's deletion.
        The payout records survive erasure, so an unsettled payout is still
        traceable even if this never ran. */
-    audit(env, 'delete_payout_check_failed', { email, error: String((e && e.message) || e) });
+    audit(env, 'delete_payout_check_failed', { email: em, error: String((e && e.message) || e) });
     return [];
   }
   return held;
@@ -11100,9 +11182,24 @@ async function _emailFromCustomer(env, customerId) {
 const MARKET_CACHE_KEY = 'mktcache:v1';
 const MARKET_CACHE_TTL_S = 60;
 const MARKET_LIST_MAX = 500;      // items returned
+/* A rebuild in flight in this isolate, so eight simultaneous visitors do not
+   start eight full reads of the store. Module scope on purpose: an isolate is
+   exactly the scope that serves concurrent requests. */
+let _mktBuilding = null;
 
 async function _marketCacheBust(env) {
   try { await env.AMV_KV.delete(MARKET_CACHE_KEY); } catch (e) { /* stale for a minute is survivable */ }
+  /* And release the rebuild claim, or a publish clears the snapshot and the
+     next request finds no copy AND no permission to build one. */
+  try { await _releaseClaim(env, 'mktbuild', 'snapshot'); } catch (e) {}
+  /* AND the in-flight build, which is the subtle one. A build that started
+     BEFORE this publish will not contain the new listing, and a request
+     arriving now would join it and be handed a catalogue that is already
+     wrong - the seller looks straight at the marketplace and does not find
+     what they just published. Dropping the handle means the next request
+     starts a fresh build; the old one still finishes and writes, and is
+     immediately superseded. */
+  _mktBuilding = null;
 }
 
 async function _marketSnapshot(env) {
@@ -11136,11 +11233,51 @@ async function marketList(request, env) {
     if (raw) snap = JSON.parse(raw);
   } catch (e) { snap = null; }   // an unreadable cache is a miss, not a failure
 
-  if (!snap || !Array.isArray(snap.items)) {
-    snap = await _marketSnapshot(env);
-    try {
-      await env.AMV_KV.put(MARKET_CACHE_KEY, JSON.stringify(snap), { expirationTtl: MARKET_CACHE_TTL_S });
-    } catch (e) { /* uncached is slow, not broken */ }
+  const fresh = snap && Array.isArray(snap.items) && (Date.now() - (+snap.at || 0) < MARKET_CACHE_TTL_S * 1000);
+
+  if (!fresh) {
+    /* ONE REBUILD AT A TIME, AND NOBODY WAITS FOR IT.
+
+       The snapshot expiring is the busiest moment this route has: every
+       request in flight misses at once and every one of them rebuilds, so a
+       catalogue that costs one full read per minute costs one per CONCURRENT
+       VISITOR instead - and the worse the traffic, the worse the multiplier.
+       That is a thundering herd, and a cache is what caused it.
+
+       So the rebuild is claimed. Whoever gets the claim does the work; anybody
+       else serves the copy they already have, which is seconds stale on a
+       catalogue and not worth a full store read to avoid. Only a caller who
+       has NO copy at all - the very first request after a deploy - waits for a
+       build, because there is nothing honest to hand back.
+
+       The snapshot is now stored without a TTL and judged by its own
+       timestamp. Under a TTL there is no stale copy to serve at the exact
+       moment one is needed. */
+    const noCopy = !snap || !Array.isArray(snap.items);
+    /* CLAIMED WITHOUT AWAITING FIRST.
+
+       The first version asked _claimOnce before setting this, and every one of
+       eight simultaneous visitors passed the claim - because `await` yields,
+       so all eight got their answer before any of them had marked a build as
+       running. The guard has to be taken SYNCHRONOUSLY, in the same turn as
+       the check, or it is not a guard at all.
+
+       That is why the assignment below sits directly under the test with no
+       await between them. */
+    if (!_mktBuilding) {
+      _mktBuilding = (async () => {
+        const built = await _marketSnapshot(env);
+        try { await env.AMV_KV.put(MARKET_CACHE_KEY, JSON.stringify(built)); } catch (e) { /* uncached is slow, not broken */ }
+        return built;
+      })();
+      /* Cleared when it settles, not here - anybody arriving meanwhile should
+         join THIS build rather than start another. */
+      _mktBuilding.then(() => { _mktBuilding = null; }, () => { _mktBuilding = null; });
+    }
+    /* Somebody holding a stale copy serves it and does not wait: seconds of
+       staleness on a catalogue is not worth a full store read to avoid.
+       Somebody with nothing waits for the build already in flight. */
+    if (noCopy) { try { snap = await _mktBuilding; } catch (e) { snap = null; } }
   }
 
   return json({ ok: true, items: snap.items,
@@ -12254,6 +12391,8 @@ async function marketWithdraw(request, env) {
       approvedBy: risk.tier === 'auto' ? 'auto' : '',
       approvedAt: risk.tier === 'auto' ? Date.now() : 0,
     }));
+    /* It is unsettled from this moment. One of the two places that is true. */
+    await _openPayoutAdd(env, user.email, wid);
     /* Take out only what left. This used to zero the whole balance, which was
        right when everything was withdrawable and is silent theft now: money
        still inside its clearing window would vanish along with the payout, and
@@ -12710,6 +12849,11 @@ async function adminPayoutMark(request, env) {
     rec.settledAt = Date.now();
     rec.note = String(body.note || '').slice(0, 200);
     await env.AMV_KV.put(`withdraw:${id}`, JSON.stringify(rec));
+    /* And it stops being unsettled here. The other one. Removed after the
+       status is stored, so a failure between the two leaves an entry pointing
+       at a settled payout - which _payoutsInFlight re-checks and ignores -
+       rather than a payout in flight that nothing names. */
+    await _openPayoutRemove(env, rec.seller, id);
 
     if (status === 'rejected') {
       /* Give it back. The balance was debited when the request was made; a

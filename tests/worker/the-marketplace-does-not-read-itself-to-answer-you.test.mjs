@@ -207,6 +207,45 @@ section('Publishing clears it, because a seller looks straight at the catalogue'
      'and it is in the catalogue on the very next request', d.items.length);
 }
 
+section('Only one visitor rebuilds the snapshot when it goes stale');
+{
+  /* The moment a cache expires is the busiest moment this route has: every
+     request in flight misses at once, and before the rebuild was claimed every
+     one of them did a full store read. A cache that turns one read per minute
+     into one per CONCURRENT VISITOR is worse than no cache, and the busier it
+     gets the worse the multiplier. */
+  seedCatalogue();
+  await W._marketCacheBust(env);
+  await W.marketList(new Request('https://w/v1/market/list'), env);   // build one
+  /* Age it past its life, without deleting it - there has to be a stale copy
+     to serve, which is why the snapshot carries its own timestamp instead of
+     living on a TTL. */
+  const snap = JSON.parse(store.get(W.MARKET_CACHE_KEY));
+  snap.at = Date.now() - 10 * 60 * 1000;
+  store.set(W.MARKET_CACHE_KEY, JSON.stringify(snap));
+
+  meter();
+  const answers = await Promise.all(
+    Array.from({ length: 8 }, () => W.marketList(new Request('https://w/v1/market/list'), env)));
+  const bodies = await Promise.all(answers.map(r => r.json()));
+  ok(bodies.every(b => b.ok && b.items.length > 0),
+     'all eight visitors get a catalogue', bodies.map(b => b.items.length));
+
+  /* COUNTED AFTER THE BUILDS FINISH, not after the answers do.
+
+     Seven of those eight did not wait for a rebuild - that is the point of
+     the guard. So the reads a rebuild does land AFTER the response, and a
+     count taken here sees almost none of them. The first version of this
+     check did exactly that and passed a sabotage that removed the guard
+     entirely: eight rebuilds were running, and it was measuring zero of them.
+
+     Draining the queue first is what makes the number mean anything. */
+  for (let i = 0; i < 20; i++) await new Promise(r => setTimeout(r, 0));
+  ok(reads < OTHERS + 60,
+     'and between them they rebuild it once, not once each',
+     { reads, oneRebuild: OTHERS, eightWouldBe: OTHERS * 8 });
+}
+
 section('The ranking is over everything read, not over an arbitrary slice');
 {
   /* The failure this replaces: sorting AFTER stopping meant the top of the

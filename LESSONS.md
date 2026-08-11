@@ -4043,3 +4043,35 @@ the index is a prefetch hint and the full pass still has to happen.
 **And:** when the third consecutive fix to a design reveals a fourth hole of
 the same shape, that is the design telling you something. Stop adding cases.
 
+
+## 227. Count what finishes, not what you waited for
+
+The stampede guard on the catalogue was measured by counting storage reads
+around eight simultaneous requests. It passed a sabotage that removed the
+guard entirely - because seven of the eight deliberately do NOT wait for a
+rebuild, so the reads those rebuilds do land after the response, and a count
+taken when the answers arrive sees almost none of them. Eight full rebuilds
+were running and the check measured zero of them.
+
+Draining the queue before reading the counter is what makes the number mean
+anything.
+
+**Rule:** when the thing being measured is work that outlives the response -
+a background rebuild, a waitUntil, a fire-and-forget write - the measurement
+has to wait for it. A number taken at the moment of the answer is a number
+about the answer, not about the work.
+
+## 228. A backfill will cover for the wiring you forgot to test
+
+Two sabotages against the open-payout index passed: removing the index update
+from settling, and trusting the index over the record. Both passed because the
+test seeded payout records directly with no index, which took the BACKFILL
+path - and the backfill scans the ledger and gets the right answer whatever
+the wiring does.
+
+The backfill is the migration path. It is not the path the product runs, and
+it is very good at hiding that the real one is broken.
+
+**Rule:** when an index is built on first use, every check of its upkeep must
+start from an index that is ALREADY BUILT. Otherwise the fallback answers, the
+check goes green, and the thing being tested was never reached.
