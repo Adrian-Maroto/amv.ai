@@ -43,7 +43,7 @@ authority** on money, limits, and content.
 
 22. **Credential stuffing / brute force.** → Auth attempts throttle and lock (429 after repeated fails); passwords hashed; JWT signed with `JWT_SECRET` (fails closed without it). 🛡️
 23. **Password-reset token abuse.** → Reset codes are single-use, expiring, and rate-limited. 🛡️
-24. **Session/token theft via XSS.** → Output is escaped everywhere (`escH`), and the strict CSP (`default-src 'none'`) blocks injected/external scripts. ✅🛡️
+24. **Session/token theft via XSS.** → Output is escaped everywhere (`escH`), every URL reaching an `href`/`src` passes a scheme allowlist (`safeUrl`/`safeMediaSrc`, swept exhaustively rather than site-by-site), and the CSP names every host the page may reach (`default-src 'self'`, with explicit `connect-src`/`script-src` lists). **Known limit, stated rather than glossed:** `script-src` still carries `'unsafe-inline'`, because the app uses inline `onclick` attributes throughout - so the CSP is a host allowlist here, not an inline-script defence, and `escH` plus the URL allowlist are what actually stop injection. ✅🛡️
 25. **Disposable-email signup for abuse.** → Email verification for reset flows; the free tier is capped so throwaway accounts gain little; disposable-domain blocking is a server toggle. 🛡️📋
 26. **OAuth (Gmail/Calendar) token abuse.** → Minimal scopes; every send/change goes through human-in-the-loop approval; the agent can't act unattended without your explicit auto-approve. ✅🛡️
 27. **Admin/operator takeover.** → Admin is gated by a server-side `ADMIN_TOKEN`, never derivable on the client; owner-only controls check `isAdmin()`. 🛡️
@@ -62,7 +62,7 @@ authority** on money, limits, and content.
 
 ## E. Web & application security
 
-37. **Stored/reflected XSS** (via a listing, chat, or profile). → Everything user-supplied is HTML-escaped; CSP `default-src 'none'` blocks external/injected script execution. ✅🛡️
+37. **Stored/reflected XSS** (via a listing, chat, or profile). → Everything user-supplied is HTML-escaped; the CSP names every host the page may reach (`default-src 'self'`, with explicit `connect-src`/`script-src` lists), and every URL reaching an `href`/`src` passes a scheme allowlist. `script-src` still carries `'unsafe-inline'` for the app's inline handlers, so escaping and the URL allowlist - not the CSP - are what stop injected script here. ✅🛡️
 38. **CSRF.** → State changes use Bearer-token auth (not ambient cookies), so cross-site form posts can't ride a session. 🛡️
 39. **Clickjacking.** → `X-Frame-Options: DENY` + CSP `frame-ancestors 'none'`. 🛡️
 40. **SSRF via image/video provider URLs.** → Those endpoints are operator-configured server secrets, not user-supplied; user URLs aren't blindly fetched. 🛡️

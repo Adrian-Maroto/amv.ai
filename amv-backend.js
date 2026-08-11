@@ -11723,10 +11723,33 @@ async function marketRate(request, env) {
   if (!(await _ownsItem(env, user.email, id))) return json({ error: 'buy it before rating' }, 403);
   const it = await _getListing(env, id);
   if (!it) return json({ error: 'not found' }, 404);
+  /* PSEUDONYMOUS, LIKE THE REVIEWS RIGHT BELOW THIS.
+
+     This used to store map[user.email] = stars. The record is keyed by the
+     LISTING - somebody else's listing - so it is not in PER_USER_KINDS and it
+     could not be: erasing the rater's account cannot reach a record filed under
+     a seller's item. A rater's address therefore outlived their own deletion,
+     with nothing anywhere able to find it.
+
+     marketReview, the function immediately after this one, already stores a
+     one-way hash and says why in its own comment: never the raw email, so a
+     list can be shown publicly without leaking addresses. The same record, the
+     same reasoning, one function apart, and only one of them did it.
+
+     Existing maps are migrated in place. The keys ARE the addresses, and the
+     hash is a pure function of the address, so every old key can be converted
+     here without needing to know whose it is - and the average, which is all
+     anybody reads, does not move. */
   const key = `mkrate:${id}`;
   let map = {};
   try { const raw = await env.AMV_KV.get(key); if (raw) map = JSON.parse(raw); } catch {}
-  map[user.email] = s;
+  const IS_HASH = /^[0-9a-f]{16}$/;
+  const migrated = {};
+  for (const [who, val] of Object.entries(map)) {
+    migrated[IS_HASH.test(who) ? who : await _errHash(String(who).toLowerCase())] = val;
+  }
+  map = migrated;
+  map[await _errHash(user.email.toLowerCase())] = s;
   await env.AMV_KV.put(key, JSON.stringify(map));
   const vals = Object.values(map);
   const rating = +(vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1);
