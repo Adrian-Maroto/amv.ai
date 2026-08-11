@@ -120,6 +120,14 @@ function writesElsewhere(b){
     if(!SELF.test(m[2])) out.push(m[1]);
   for(const m of b.matchAll(/_withKV\(env,\s*'([a-z_]+)',\s*([^,]+),/g))
     if(!SELF.test(m[2])) out.push(m[1]);
+  /* And the named wrapper. _withAuto is the one function every write of an
+     automation record goes through - it takes the same lock and books the
+     due-time index from the record, so no caller can forget it. The kind is in
+     the NAME rather than in an argument, which is exactly the shape that would
+     have made this check go blind to five more routes: the third time this has
+     happened, and the reason each helper is listed here as it appears. */
+  for(const m of b.matchAll(/_withAuto\(env,\s*([^,]+),/g))
+    if(!SELF.test(m[1])) out.push('auto');
   return out;
 }
 

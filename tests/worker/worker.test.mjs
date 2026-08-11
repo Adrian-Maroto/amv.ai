@@ -18,11 +18,29 @@ mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'worker.harness.mjs');
 writeFileSync(harness,
   src +
-  '\nexport { runDueAutomations, AUTO_INTERVALS, AUTO_MIN_INTERVAL, _autoExecute, autoCreate, _autoEmailResult, deploySite, serveSite, deployList, deployDelete, errorsReport, errorsList, errorsResolve, stripeWebhook, stripeCheckout, abuseList, abuseClear, _abuseRecord, _abuseStatus, setEntitlement, getEntitlement, adminStats, authSignup, _recordGrowth, _growthSeries, _markActive, ENGINES, FREE_AUTO_REPEAT };' +
+  '\nexport { runDueAutomations, AUTO_INTERVALS, AUTO_MIN_INTERVAL, _autoExecute, autoCreate, _autoEmailResult, deploySite, serveSite, deployList, deployDelete, errorsReport, errorsList, errorsResolve, stripeWebhook, stripeCheckout, abuseList, abuseClear, _abuseRecord, _abuseStatus, setEntitlement, getEntitlement, adminStats, authSignup, _recordGrowth, _growthSeries, _markActive, ENGINES, FREE_AUTO_REPEAT, _autoBucketAdd };' +
   '\nexport function __setRequireUser(fn){ requireUser = fn; }\n'
 );
 
 const W = await import(harness + '?t=' + Date.now());
+
+/* SEEDING AN AUTOMATION THE WAY THE PRODUCT DOES.
+
+   The tick reads a due-time index instead of every account now, and the index
+   is written by _withAuto - the one function every write of an `auto:` record
+   goes through. Writing the record straight into the store, which is what
+   these lines do and what nothing in the product does, produces a record the
+   index has never heard of.
+
+   So the seed books it too. Without this the checks below pass or fail
+   depending on whether a full sweep happened to be due in the minute the suite
+   ran, which is the worst kind of test. */
+const seedAuto = async (email, rec) => {
+  store.set('auto:' + email, JSON.stringify(rec));
+  for (const it of (rec.items || [])) {
+    if (it && it.active && it.next) await W._autoBucketAdd(env, email, it.next);
+  }
+};
 
 /* ── Mock Cloudflare KV ─────────────────────────────────────────────────── */
 const store = new Map();
@@ -69,7 +87,7 @@ const now = Date.now();
 // test users a plan. Their spend must count against the monthly cost cap.
 await W.setEntitlement(env, 'alice@test.com', 'pro');
 await W.setEntitlement(env, 'bob@test.com', 'pro');
-store.set('auto:alice@test.com', JSON.stringify({
+await seedAuto('alice@test.com', {
   items: [
     { id: 'a1', detail: 'Daily news brief', repeat: 'daily', interval: W.AUTO_INTERVALS.daily,
       next: now - 1000, created: now, runs: 0, active: true },
@@ -77,12 +95,12 @@ store.set('auto:alice@test.com', JSON.stringify({
       next: now + 9e8, created: now, runs: 0, active: true }
   ],
   results: []
-}));
-store.set('auto:bob@test.com', JSON.stringify({
+});
+await seedAuto('bob@test.com', {
   items: [{ id: 'b1', detail: 'paused', repeat: 'daily', interval: W.AUTO_INTERVALS.daily,
             next: now - 5000, created: now, runs: 0, active: false }],
   results: []
-}));
+});
 
 const tick = await W.runDueAutomations(env);
 const alice = JSON.parse(store.get('auto:alice@test.com'));
@@ -103,7 +121,7 @@ ok(bob.results.length === 0, 'other users are unaffected');
 section('Automations: overlapping crons cannot double-run the same slot (AMV-032)');
 const beforeRuns = alice.items[0].runs;
 alice.items[0].next = now - 1000;          // put it back to the slot we already ran
-store.set('auto:alice@test.com', JSON.stringify(alice));
+await seedAuto('alice@test.com', alice);
 globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: 'dup' }], usage: { input_tokens: 1, output_tokens: 1 } }) });
 await W.runDueAutomations(env);
 const alice2 = JSON.parse(store.get('auto:alice@test.com'));
@@ -112,11 +130,11 @@ ok(alice2.items[0].runs === beforeRuns, 'the same scheduled slot does not execut
 section('Automations: a failing task cannot burn quota forever');
 globalThis.fetch = async () => ({ ok: false, status: 500, text: async () => 'boom' });
 await W.setEntitlement(env, 'carl@test.com', 'pro');
-store.set('auto:carl@test.com', JSON.stringify({
+await seedAuto('carl@test.com', {
   items: [{ id: 'c1', detail: 'x', repeat: 'daily', interval: W.AUTO_INTERVALS.daily,
             next: now - 1, created: now, runs: 0, errors: 4, active: true }],
   results: []
-}));
+});
 await W.runDueAutomations(env);
 const carl = JSON.parse(store.get('auto:carl@test.com'));
 ok(!!carl.items[0].lastError, 'the failure is recorded', carl.items[0].lastError);
@@ -203,11 +221,11 @@ globalThis.fetch = async (url, opts) => {
   return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: 'ETH update. Not financial advice.' }], usage: { input_tokens: 100, output_tokens: 100 } }) };
 };
 await W.setEntitlement(envWithEmail, 'emma@test.com', 'pro');
-store.set('auto:emma@test.com', JSON.stringify({
+await seedAuto('emma@test.com', {
   items: [{ id: 'em1', detail: 'Watch ETH', repeat: '10min', interval: W.AUTO_INTERVALS['10min'],
             kind: 'research', notify: 'email', next: now - 1, created: now, runs: 0, active: true }],
   results: []
-}));
+});
 await W.runDueAutomations(envWithEmail);
 ok(emailSent !== null, 'an email was sent for a research job with notify:email', !!emailSent);
 if (emailSent) ok(/ETH|watch/i.test(JSON.stringify(emailSent)), 'the email is about the watched subject');
@@ -390,11 +408,11 @@ section('Automations: a FREE-plan job runs, but only cheaply');
 globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: 'x' }], usage: { input_tokens: 100, output_tokens: 100 } }) });
 // free user with a due automation - must NOT call the model
 store.set('ent:free@test.com', JSON.stringify({ plan: 'free' }));
-store.set('auto:free@test.com', JSON.stringify({
+await seedAuto('free@test.com', {
   items: [{ id: 'f1', detail: 'watch something', repeat: '10min', interval: W.AUTO_INTERVALS['10min'],
             kind: 'research', notify: 'app', next: Date.now() - 1, created: Date.now(), runs: 0, active: true }],
   results: []
-}));
+});
 let modelCalls = 0, freeBody = null;
 const prevFetch = globalThis.fetch;
 globalThis.fetch = async (...a) => {
@@ -420,11 +438,11 @@ await W.setEntitlement(env, 'maxed@test.com', 'pro');       // ceiling = 15 * 0.
 // push their monthly cost over the ceiling
 const mk = new Date().toISOString().slice(0,7);
 store.set('ctr:cost:maxed@test.com:' + mk, '999');          // way over
-store.set('auto:maxed@test.com', JSON.stringify({
+await seedAuto('maxed@test.com', {
   items: [{ id: 'm1', detail: 'watch', repeat: '10min', interval: W.AUTO_INTERVALS['10min'],
             kind: 'research', notify: 'app', next: Date.now() - 1, created: Date.now(), runs: 0, active: true }],
   results: []
-}));
+});
 let maxedCalls = 0;
 const pf2 = globalThis.fetch;
 globalThis.fetch = async (...a) => { maxedCalls++; return pf2(...a); };
@@ -439,11 +457,11 @@ globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ co
 await W.setEntitlement(env, 'payer2@test.com', 'pro');
 const mk2 = new Date().toISOString().slice(0,7);
 store.delete('ctr:cost:payer2@test.com:' + mk2);
-store.set('auto:payer2@test.com', JSON.stringify({
+await seedAuto('payer2@test.com', {
   items: [{ id: 'p1', detail: 'brief me', repeat: 'daily', interval: W.AUTO_INTERVALS.daily,
             kind: 'task', notify: 'app', next: Date.now() - 1, created: Date.now(), runs: 0, active: true }],
   results: []
-}));
+});
 await W.runDueAutomations(env);
 const costAfter = parseFloat(store.get('ctr:cost:payer2@test.com:' + mk2) || '0');
 ok(costAfter > 0, 'the automation run added to the user\'s monthly cost', costAfter);

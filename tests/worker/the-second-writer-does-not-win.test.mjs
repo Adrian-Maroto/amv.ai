@@ -294,7 +294,11 @@ section('The tick does not write the person’s record wholesale');
   ok(!/DB\.put\(env, 'auto'/.test(body),
      'the tick does not write the auto record directly',
      (body.match(/DB\.put\(env, 'auto'[^;]*/g) || []).slice(0, 2));
-  ok(/_withKind\(env, 'auto'/.test(body),
+  /* _withAuto is the one function every write of an automation record goes
+     through: it takes the same lock and books the due-time index from the
+     record, so booking cannot be left to a caller. A named wrapper around the
+     lock is still the lock. */
+  ok(/_with(?:Auto|Kind)\(env, (?:'auto', )?/.test(body),
      'it merges what the run produced under the lock instead', true);
 }
 

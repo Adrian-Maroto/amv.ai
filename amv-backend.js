@@ -1451,7 +1451,7 @@ async function autoCreate(request, env){
      whole thing back after - so a result the tick produced meanwhile is
      erased, and so is a `next` it had just moved. Appending inside the lock
      touches only the list this request is adding to. */
-  await _withKind(env, 'auto', key, (fresh) => {
+  await _withAuto(env, key, (fresh) => {
     if(!fresh) return;
     fresh.items = (fresh.items||[]).concat(item);
   }, { items:[], results:[] });
@@ -1494,7 +1494,7 @@ async function autoUpdate(request, env){
     /* Under the lock the cron takes - see autoCreate. Only the two fields
        this action owns are touched, so a run in progress keeps everything it
        wrote. */
-    await _withKind(env, 'auto', key, (fresh) => {
+    await _withAuto(env, key, (fresh) => {
       if(!fresh) return;
       fresh.standing = text;
       fresh.standingAt = Date.now();
@@ -1519,7 +1519,7 @@ async function autoUpdate(request, env){
   if(body.action === 'ceiling'){
     const level = _autoApprovalOf(body.ceiling, null);
     if(!AUTO_APPROVALS.includes(body.ceiling)) return json({ error:'invalid level' }, 400);
-    await _withKind(env, 'auto', key, (fresh) => {
+    await _withAuto(env, key, (fresh) => {
       if(!fresh) return;
       fresh.ceiling = level;
       fresh.ceilingAt = Date.now();
@@ -1587,7 +1587,7 @@ async function autoUpdate(request, env){
      statement about the jobs this person was looking at. The cron only ever
      changes bookkeeping fields on items it ran, and takes the same lock to do
      it, so the two cannot interleave mid-write. */
-  const saved = await _withKind(env, 'auto', key, (fresh) => {
+  const saved = await _withAuto(env, key, (fresh) => {
     if(!fresh) return null;
     fresh.items = items;
     return items;
@@ -1604,7 +1604,7 @@ async function autoClearResults(request, env){
      (AMV-205), so marking results read has to take it too - otherwise the copy
      read here is written back over whatever the tick produced in between, and
      a result that arrived while somebody was looking at the page disappears. */
-  await _withKind(env, 'auto', key, (rec) => {
+  await _withAuto(env, key, (rec) => {
     if(!rec) return;
     (rec.results||[]).forEach(r=>{ r.read = true; });
   }, { items:[], results:[] });
@@ -1629,7 +1629,7 @@ async function autoPause(request, env){
   if(request.method === 'POST'){
     const body = await request.json().catch(()=>({}));
     const paused = !!body.paused;
-    await _withKind(env, 'auto', key, (rec) => { rec.paused = paused; }, { items:[], results:[] });
+    await _withAuto(env, key, (rec) => { rec.paused = paused; }, { items:[], results:[] });
     return json({ ok:true, paused });
   }
   const rec = (await DB.get(env, 'auto', key)) || { items:[], results:[] };
@@ -1856,13 +1856,152 @@ async function _autoEmailResult(env, email, item, out){
 const AUTO_TICK_BUDGET_MS = 25 * 1000;
 
 /* ---- The cron tick: find everything due, run it, store the result ---- */
-async function runDueAutomations(env){
-  const now = Date.now();
+/* WHICH ACCOUNTS HAVE WORK DUE, WITHOUT READING ALL OF THEM.
+
+   The tick opens by scanning every `auto:` record - one read per account that
+   has ever created an automation, every five minutes, whether or not anything
+   is due. At a million such accounts that is twelve million reads an hour to
+   discover that nothing needs doing, and the bill arrives whether anybody's
+   job runs or not. The work is due-driven; the cost was population-driven.
+
+   This was tried once before and reverted, and the reason it failed is worth
+   keeping: the index was maintained by each caller remembering to book a
+   bucket when it set a due time. Correctness rested on discipline, so a
+   partially populated index still skipped accounts nobody had booked, and
+   every fix revealed the next hole.
+
+   What changed is that there is now exactly ONE way to write an automation
+   record. Putting every writer under the same lock left a single choke point,
+   and booking happens THERE - derived from the record being written rather
+   than from what the caller remembered. A due time cannot move without the
+   bucket moving with it, because the bucket is computed from the record.
+
+   Two things still hold the floor up:
+     - an empty index is never believed. Empty means "no idea", and no idea
+       means read properly. A hint may make work cheaper; it may never be the
+       reason work is skipped.
+     - a full sweep runs in the first five minutes of every hour regardless. */
+const AUTO_BUCKET_SHARDS = 16;
+/* Current hour plus two. The lookback is for ticks that were MISSED - a
+   deploy, an outage - and every tick within an hour re-reads that hour anyway.
+   Three hours by sixteen shards is 48 reads per tick, against one read per
+   account in the product. */
+const AUTO_BUCKET_LOOKBACK_H = 2;
+/* How far ahead a sweep books. An account due in eight hours does not need a
+   bucket now; the sweep running in its hour will book it, and booking every
+   idle account on every sweep is the same population-shaped cost moved from
+   reads to writes. */
+const AUTO_BUCKET_LOOKAHEAD_MS = 3 * 3600000;
+const AUTO_BUCKET_TTL_S = 60 * 60 * 30;   // an hour bucket outlives any lookback
+
+const _autoHourKey = (ms) => new Date(ms || Date.now()).toISOString().slice(0, 13);  // YYYY-MM-DDTHH
+function _autoShardOf(email) {
+  const e = String(email || '');
+  let h = 0;
+  for (let i = 0; i < e.length; i++) h = (h * 31 + e.charCodeAt(i)) >>> 0;
+  return h % AUTO_BUCKET_SHARDS;
+}
+
+async function _autoBucketAdd(env, email, nextMs) {
+  const em = String(email || '').toLowerCase();
+  const when = +nextMs || 0;
+  if (!em || !when) return;
+  try {
+    await _withKV(env, `duehour:${_autoHourKey(when)}`, String(_autoShardOf(em)), (r) => {
+      r.emails = Array.isArray(r.emails) ? r.emails : [];
+      if (!r.emails.includes(em)) r.emails.push(em);
+      /* Bounded. An hour with more due accounts than this is past what one
+         tick can run anyway, and the hourly sweep is underneath it. */
+      if (r.emails.length > 20000) r.emails = r.emails.slice(-20000);
+      return r;
+    }, { emails: [] }, AUTO_BUCKET_TTL_S);
+  } catch (e) {
+    audit(env, 'auto_bucket_write_failed', { email: em, error: String((e && e.message) || e) });
+  }
+}
+
+/* EVERY WRITE OF AN AUTOMATION RECORD GOES THROUGH HERE.
+
+   Booking is part of the write, computed from the record that was just
+   written, so no caller can forget it and no caller has to know it exists.
+   The SOONEST active job is what gets booked: the tick reads the whole record
+   when it comes for that one, runs everything due on it, and writes back
+   through this same function - which books whatever is soonest next. */
+async function _withAuto(env, email, mutate, empty) {
+  let soonest = 0;
+  const out = await _withKind(env, 'auto', email, async (rec) => {
+    const r = await mutate(rec);
+    for (const it of ((rec && rec.items) || [])) {
+      if (it && it.active && it.next && (!soonest || it.next < soonest)) soonest = it.next;
+    }
+    return r;
+  }, empty);
+  if (soonest) await _autoBucketAdd(env, email, soonest);
+  return out;
+}
+
+/* The accounts named by this hour's buckets and the few before it. Null when
+   they cannot be read, which means "do it the slow way". */
+async function _autoDueCandidates(env, now) {
+  const emails = new Set();
+  try {
+    for (let h = 0; h <= AUTO_BUCKET_LOOKBACK_H; h++) {
+      const hour = _autoHourKey(now - h * 3600000);
+      for (let sh = 0; sh < AUTO_BUCKET_SHARDS; sh++) {
+        const raw = await env.AMV_KV.get(`duehour:${hour}:${sh}`);
+        if (!raw) continue;
+        for (const em of (JSON.parse(raw).emails || [])) emails.add(em);
+      }
+    }
+  } catch (e) {
+    audit(env, 'auto_bucket_read_failed', { error: String((e && e.message) || e) });
+    return null;
+  }
+  return emails;
+}
+
+/* `atMs` exists so a check can pin the clock. The tick behaves differently in
+   the first five minutes of an hour - that is when the full sweep runs - so a
+   measurement that cannot say when it is running measures a different thing
+   depending on when somebody runs it. Production never passes it. */
+async function runDueAutomations(env, atMs){
+  const now = +atMs || Date.now();
   const started = Date.now();
   let scanned = 0, ran = 0, failed = 0, deferred = 0;
   // AMV-032: paginate the scan so users beyond the first KV page aren't silently
   // skipped (DB.list walks every page).
-  const { rows: allUsers, truncated } = await scan(env, 'auto', SCAN_ALL, 'autonomous work tick');
+  /* THE CHEAP PATH, WITH THE OLD ONE UNDERNEATH IT.
+
+     The buckets name the accounts with work due in this hour and the two
+     before it. An empty set is never believed - empty means "no idea", and no
+     idea means read properly - and a full sweep runs in the first five minutes
+     of every hour regardless. So the index can only ever make a tick cheaper;
+     it can never be the reason a job does not run. */
+  let allUsers = [], truncated = false, viaIndex = false;
+  const sweepDue = new Date(now).getUTCMinutes() < 5;
+  const candidates = sweepDue ? null : await _autoDueCandidates(env, now);
+  if (candidates && candidates.size > 0) {
+    viaIndex = true;
+    for (const em of candidates) {
+      const rec = await DB.get(env, 'auto', em);
+      if (rec) allUsers.push({ id: em, value: rec });
+    }
+  } else {
+    const s = await scan(env, 'auto', SCAN_ALL, 'autonomous work tick');
+    allUsers = s.rows; truncated = s.truncated;
+    /* Book what is due SOON on the way past, so accounts written before the
+       index existed join the fast path without waiting to be edited. Only the
+       near ones: booking every idle account here would be the same
+       population-shaped cost moved from reads to writes, which is the thing
+       being removed. */
+    for (const u of allUsers) {
+      let soonest = 0;
+      for (const it of ((u.value && u.value.items) || [])) {
+        if (it && it.active && it.next && (!soonest || it.next < soonest)) soonest = it.next;
+      }
+      if (soonest && soonest - now < AUTO_BUCKET_LOOKAHEAD_MS) await _autoBucketAdd(env, u.id, soonest);
+    }
+  }
 
   /* AMV-183: TWO fixes, and they only work together.
 
@@ -1911,7 +2050,17 @@ async function runDueAutomations(env){
        so it leads the next tick - but it is still late, and lateness that
        nobody can see is how "my job stopped running" becomes a support ticket
        instead of a known state. */
-    if(Date.now() - started > AUTO_TICK_BUDGET_MS){ deferred = queued - processed; break; }
+    if(Date.now() - started > AUTO_TICK_BUDGET_MS){
+      deferred = queued - processed;
+      /* The rest have not run, so nothing re-set their due time and nothing
+         re-booked them. Booked into the CURRENT hour, which is what the next
+         tick reads - otherwise "the tick ran out of time" quietly becomes "the
+         job did not run until the next sweep". */
+      for(const rest of users.slice(processed - 1)) {
+        try { await _autoBucketAdd(env, rest.id, Date.now()); } catch (e) {}
+      }
+      break;
+    }
     processed++;
 
     let changed = false;
@@ -1959,6 +2108,9 @@ async function runDueAutomations(env){
       }
       if (!gRes || !gRes.allowed) {
         audit(env, 'auto_skipped_global_cap', { email, paying: payingAuto, value: gRes && gRes.value, cap: capForThem });
+        /* Skipped, not done - it keeps its place so the next tick tries again
+           once the day's ceiling has room. */
+        try { await _autoBucketAdd(env, email, Date.now()); } catch (e) {}
         try { await alertOnce(env, 'auto_global_cap',
           'Scheduled work is being skipped because the daily spend ceiling is reached (or the counter is unreadable). '
           + 'Automations resume on their own when the day rolls over.', 60); } catch (_) {}
@@ -2129,7 +2281,7 @@ async function runDueAutomations(env){
     if(changed) {
       const ran = new Map((rec.items||[]).map(i => [i.id, i]));
       const produced = (rec.results||[]).slice(-AUTO_RESULTS_KEEP);
-      await _withKind(env, 'auto', email, (fresh) => {
+      await _withAuto(env, email, (fresh) => {
         for(const item of (fresh.items||[])){
           const after = ran.get(item.id);
           if(!after) continue;

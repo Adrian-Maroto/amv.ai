@@ -4126,3 +4126,41 @@ by somebody who has never seen this code, and it will look harmless.
 **Rule:** validate a value against what it is FOR, at the point it is used.
 "Nothing else currently looks like this" is a coincidence, not a control, and
 the whole danger is that it stays true right up until it does not.
+
+## 232. The fix that failed once became possible when something else changed
+
+The due-time index for the automation tick was built, made safe four different
+ways, and reverted - because the index was maintained by each caller
+remembering to book a bucket, so a partially populated one still skipped
+accounts nobody had booked. Correctness rested on discipline.
+
+Putting every writer of that record under the same lock, for an unrelated
+reason, left exactly ONE way to write it. Booking now happens there, derived
+from the record being written. A due time cannot move without the bucket
+moving with it, because nobody is being asked to remember.
+
+The first attempt was not a bad idea badly executed. It was a good idea whose
+precondition did not exist yet.
+
+**Rule:** when a design keeps needing another special case, the missing thing
+is usually a choke point. Look for whether one can be created before deciding
+the design is wrong - and if it cannot, revert, because "every caller
+remembers" is not a property any codebase keeps.
+
+## 233. Three checks went blind the same way, one wrapper at a time
+
+Moving the automation writes behind _withAuto broke three unrelated checks:
+the lock-coverage sweep, the cross-account-write sweep, and the tick's own
+merge check. Each detected a write by looking for `DB.put(env, 'auto'` or
+`_withKind(env, 'auto'`, and each silently stopped seeing five routes.
+
+The cross-account file already carried two comments about this exact thing
+happening when team, family and nine other kinds moved behind helpers. It is
+now the third time, and the shape is always the same: a check that recognises
+a write by ITS SPELLING goes blind the moment the spelling improves.
+
+**Rule:** a check that watches for an operation should ask the source what
+performs that operation, not carry a list of the ways it is currently written.
+Where that is impractical, put the list in ONE place both the code and the
+check read - and expect to be adding to it, out loud, every time somebody
+refactors.

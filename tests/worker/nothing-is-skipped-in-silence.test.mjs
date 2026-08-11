@@ -231,18 +231,45 @@ section('A tick costs nothing for somebody with nothing due');
      created a job cost two round trips per tick whether or not anything was
      due, so the cost scaled with the customer base rather than with the work.
      The due check is a field comparison and must stay one. */
-  const env = mkEnv();
-  for (let i = 0; i < 50; i++) {
-    await W.DB.put(env, 'ent', 'idle' + i + '@example.com', { plan: 'pro' });
-    await W.DB.put(env, 'auto', 'idle' + i + '@example.com', {
-      items: [{ id: 'j', active: true, detail: 'later', next: Date.now() + 3600000, interval: 86400000 }], results: [] });
-  }
-  const before = reads;
-  const r = await W.runDueAutomations(env);
-  const perUser = (reads - before - 50) / 50;   // 50 unavoidable reads: the list itself
-  ok(r.queued === 0, 'nobody is queued', r.queued);
-  ok(r.ran === 0 && modelCalls === 0, 'nothing runs and nothing is spent', { ran: r.ran, modelCalls });
-  ok(perUser < 0.5, 'and an idle account costs no lookup of its own', +perUser.toFixed(2));
+  /* MEASURED AS A SLOPE, not as an average.
+
+     Dividing total reads by accounts conflates two different things: the cost
+     that grows with the customer base, which is what this forbids, and a FIXED
+     cost that does not. The tick reads a due-time index now - a constant
+     handful of records per run whatever the population - and against fifty
+     accounts a fixed 48 reads looks like one each, which is exactly the shape
+     being forbidden. At fifty thousand it is a thousandth each.
+
+     Run at two sizes; the DIFFERENCE is what counts. Fixed costs cancel and
+     anything per-account survives. The clock is pinned away from the first
+     five minutes of the hour, or this measures a full sweep whenever somebody
+     happens to run it then. */
+  const quiet = (() => { const d = new Date(); d.setUTCHours(9, 30, 0, 0); return d.getTime(); })();
+  const costFor = async (n) => {
+    const env = mkEnv();
+    for (let i = 0; i < n; i++) {
+      await W.DB.put(env, 'ent', 'idle' + i + '@example.com', { plan: 'pro' });
+      await W.DB.put(env, 'auto', 'idle' + i + '@example.com', {
+        /* Genuinely idle: nothing due for eight hours. An account due within
+           the next hour is not idle for this purpose - the sweep books it into
+           its hour on the way past, and that booking is what makes the eleven
+           ticks after it cheap. */
+        items: [{ id: 'j', active: true, detail: 'later', next: quiet + 8 * 3600000, interval: 86400000 }], results: [] });
+    }
+    const before = reads;
+    const r = await W.runDueAutomations(env, quiet);
+    return { reads: reads - before, r };
+  };
+  const small = await costFor(20);
+  const large = await costFor(120);
+  /* One read per account is unavoidable on a sweep - the tick has to look at a
+     record to know nothing is due in it. What must not grow is anything on top
+     of that: an entitlement lookup, a billing subject, a family read. */
+  const perUser = (large.reads - small.reads) / 100 - 1;
+  ok(large.r.queued === 0, 'nobody is queued', large.r.queued);
+  ok(large.r.ran === 0 && modelCalls === 0, 'nothing runs and nothing is spent', { ran: large.r.ran, modelCalls });
+  ok(perUser < 0.5, 'and an idle account costs no lookup of its own',
+     { perUser: +perUser.toFixed(2), small: small.reads, large: large.reads });
 }
 
 section('The most overdue work is done first');

@@ -39,6 +39,10 @@ const code = codeOnly(src);           // a lock mentioned in a comment is not a 
 /* Every kind that is written through one of the locking helpers, anywhere. */
 const LOCK_CALL = /_with(?:Kind|KV|Record|Acct|Ent|Team|Fam|Wallet)\(\s*env\s*,\s*'([a-z_]+)'/g;
 const lockedKinds = new Set([...code.matchAll(LOCK_CALL)].map(m => m[1]));
+/* Named wrappers that take a lock for one kind and add something to the write.
+   _withAuto locks `auto` and books the due-time index from the record, so that
+   booking cannot be left to a caller. A wrapper is still a lock. */
+if (/async function _withAuto\(/.test(code)) lockedKinds.add('auto');
 
 /* Every top-level handler, and the kinds it reads and writes back itself. */
 const lines = code.split('\n');
@@ -188,13 +192,19 @@ section('The six that were bypassing it now take it, by name');
   /* Takes the lock AND does not also write the record raw - a dead-code lock
      beside a live DB.put is what three sabotages did, and it has to read as
      the bypass it is. */
+  /* `auto` is written through _withAuto now - a wrapper that takes the same
+     lock and books the due-time index as part of the write, so booking cannot
+     be forgotten by a caller. A named wrapper around the lock is still the
+     lock, so it counts as one. */
+  const LOCK_FOR = { auto: /_with(?:Auto|Kind|KV|Record)\(\s*env\s*,\s*(?:'auto'\s*,\s*)?/ };
   const takesLock = (fn, kind) => {
     const b = bodies.find(x => x.name === fn);
     if (!b) return false;
     /* A dead-code lock beside a live DB.put is a bypass, so the write has to
        be the locked one rather than merely accompanied by a lock. */
     const put = b.text.search(new RegExp('DB\\.put\\(\\s*env\\s*,\\s*\'' + kind + '\''));
-    const lock = b.text.search(new RegExp('_with(?:Kind|KV|Record)\\(\\s*env\\s*,\\s*\'' + kind + '\''));
+    const re = LOCK_FOR[kind] || new RegExp('_with(?:Kind|KV|Record)\\(\\s*env\\s*,\\s*\'' + kind + '\'');
+    const lock = b.text.search(re);
     return lock >= 0 && (put < 0 || lock < put);
   };
   ok(takesLock('abuseClear', 'abuse'),
