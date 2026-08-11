@@ -276,5 +276,60 @@ section('An error message does not send somebody to a screen that is not there')
      'and says what really has to happen instead', true);
 }
 
+
+section('A defence that is not built says so');
+{
+  /* Item 51 listed "(server) KYC" beside two things that really are built.
+     There is no identity check anywhere in the code. Naming an absent control
+     in a list of present ones is how an operator ends up believing a gate is
+     there - and this is the payout path, where believing it costs money. */
+  ok(!/\bkyc\b/i.test(src), 'there is genuinely no KYC in the code', true);
+  const item51 = (register.match(/^51\..*$/m) || [''])[0];
+  ok(/NOT built/i.test(item51), 'and the register says so plainly', item51.slice(0, 140));
+  ok(/MARKET_MIN_WITHDRAW/.test(item51) && /PAYOUT_HOLD_DAYS/.test(item51),
+     'while naming the two that are', true);
+  ok(/manual/i.test(item51),
+     'and the operator, who is the actual check in the absence of the other one', true);
+  ok(/120/.test(item51),
+     'including that the hold is short against a dispute window, which is the real exposure', item51.slice(0, 260));
+}
+
+section('The anti-phishing rule is one that is actually true');
+{
+  /* Item 52 said AMV never asks for keys in-product. It does: a student pastes
+     a Canvas access token, and the Connectors list takes a GitHub token and a
+     Slack webhook. Teaching "if it asks for a key it is not us" to somebody
+     using a product that asks for keys is worse than teaching nothing - it is
+     the exact heuristic a fake-support scammer wants them to hold. */
+  const bundle3 = readFileSync(join(ROOT, 'app.js'), 'utf8');
+  const asksForTokens = /paste the token from Canvas/.test(bundle3);
+  ok(asksForTokens, 'the app really does ask for a third-party token', asksForTokens);
+
+  const item52 = (register.match(/^52\..*$/m) || [''])[0];
+  ok(!/never asks for passwords\/keys in-product/.test(item52),
+     'so the register no longer claims otherwise', item52.slice(0, 120));
+  ok(/never asks for your AMV password/i.test(item52),
+     'and states the rule that does hold', item52.slice(0, 140));
+  ok(/outside the app/i.test(item52),
+     'plus the one that catches the actual attack: no credential is ever requested outside the app', true);
+
+  /* And the supporting fact has to stay true: a token somebody pastes is
+     masked going in and never comes back out. */
+  ok(/id="schc-tok"[^>]*type="password"/.test(bundle3),
+     'the token field is masked', true);
+  const connect = src.slice(src.indexOf('async function schoolConnect('), src.indexOf('async function schoolConnect(') + 3000);
+  /* Matched as a PROPERTY, not as the word. The first version matched
+     json({ ... token ... }) and fired on the error message "that does not look
+     like a Canvas access token" - the third time this session a check has
+     confused a defect with a sentence describing one. What must not happen is
+     the value being returned, which means `token:` as a key. */
+  const returnsToken = /json\(\s*\{[^)]*\btoken\s*:/.test(connect);
+  ok(!returnsToken, 'and no response hands a stored token back', returnsToken);
+
+  /* Nor does the record that holds it get read back by any route. */
+  const workFn = src.slice(src.indexOf('async function schoolWork('), src.indexOf('async function schoolWork(') + 2000);
+  ok(!/\btoken\s*:/.test(workFn), 'the work list carries no credential either', true);
+}
+
 if (report('a-rating-does-not-keep-your-address') > 0) process.exitCode = 1;
 done();

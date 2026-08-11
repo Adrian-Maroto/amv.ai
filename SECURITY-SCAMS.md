@@ -79,8 +79,8 @@ authority** on money, limits, and content.
 
 49. **Advance-fee / "guaranteed returns" investment schemes** listed or generated. → Financial-advice terms are restricted to verified sellers; "guaranteed profit/returns" is blocked; the AI declines unlicensed financial advice. ✅🛡️
 50. **"Buy me gift cards / send crypto" agent manipulation.** → Any purchase/payment/send is a consequential action that stops for explicit human approval. ✅
-51. **Money-muling via payouts.** → Withdrawal minimums + holds + (server) KYC before real funds move. 🛡️📋
-52. **Fake-support / recovery-scam impersonation.** → AMV never asks for passwords/keys in-product; keys live server-side and are never shown. 📋✅
+51. **Money-muling via payouts.** → What is BUILT: a `MARKET_MIN_WITHDRAW` floor ($10), a `PAYOUT_HOLD_DAYS` clearing window (14) that a reversal claws back, and **manual settlement** - `/admin/payouts` lists what is owed and an operator marks each one paid or rejected, so no money leaves without a person deciding. **NOT built: KYC.** This entry used to name it as though it were a gate. There is no identity check anywhere in the code, so the operator IS the check, and the 14-day hold is short against a card dispute window that runs to 120 days - a payout settled at day 14 and disputed at day 60 is a real loss. Do the identity check before settling anything large. 🛡📋
+52. **Fake-support / recovery-scam impersonation.** → **AMV never asks for your AMV password**, and never asks for anything by email, DM or phone - every credential is typed into a screen you navigated to yourself. This entry used to say AMV never asks for keys in-product, which is not true and is the wrong thing to teach: connecting a school asks a student to paste a Canvas access token, and the Connectors list takes a GitHub token and a Slack webhook. Those are third-party credentials you choose to hand over - they go into a masked field, are stored server-side, and are never shown back or returned by any route. The rule worth remembering is the one that holds: **anything asking for your AMV password, or asking for any credential outside the app, is not AMV.** 📋✅
 
 ---
 
