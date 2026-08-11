@@ -1016,6 +1016,19 @@ async function counter(env, name, payload) {
 }
 async function _counterKVFallback(env, name, payload) {
   const op = payload.op;
+  /* No usable store at all. Every branch below reaches straight into
+     env.AMV_KV, so an unbound (or half-bound) namespace used to surface as a
+     TypeError thrown from whichever handler happened to touch a counter -
+     a 500 with no explanation, from code that had nothing to do with the
+     fault. Answer honestly instead: nothing can be counted, so nothing is
+     allowed, and the caller is told WHY rather than being handed an
+     exception. Callers that must keep working without a counter check for
+     `unavailable` and decide for themselves. */
+  const kv = env && env.AMV_KV;
+  if (!kv || typeof kv.get !== 'function' || typeof kv.put !== 'function') {
+    try { await alertOnce(env, 'counter_unavailable', 'No counter storage is bound (AMV_COUNTER and AMV_KV are both unusable) - limits and caps cannot be enforced.', 15); } catch (_) {}
+    return { allowed: false, value: 0, count: 0, unavailable: true };
+  }
   if (op === 'rateCheck') {
     const cur = parseInt(await env.AMV_KV.get('rl:' + name) || '0', 10);
     if (cur >= payload.limit) return { allowed: false, count: cur };
@@ -1056,10 +1069,15 @@ async function _counterKVFallback(env, name, payload) {
 async function limitAction(env, key, perMin, perDay = 0) {
   const minName = `act:${key}:${Math.floor(Date.now() / 60000)}`;
   const minRes = await counter(env, minName, { op: 'rateCheck', limit: perMin, windowMs: 60000 });
+  /* The counter could not be reached at all. That is a server fault, not the
+     caller doing something too often, and saying "slow down" would blame them
+     for it. Pass the distinction up so the caller can answer honestly. */
+  if (minRes.unavailable) return { ok: false, code: 'limit_unavailable', unavailable: true };
   if (!minRes.allowed) return { ok: false, code: 'rate_limited', scope: 'minute' };
   if (perDay > 0) {
     const dayName = `actday:${key}:${todayKey()}`;
     const dayRes = await counter(env, dayName, { op: 'reserve', amount: 1, cap: perDay, ttlMs: 86400000 * 2 });
+    if (dayRes.unavailable) return { ok: false, code: 'limit_unavailable', unavailable: true };
     if (!dayRes.allowed) return { ok: false, code: 'daily_limit', scope: 'day' };
   }
   return { ok: true };
@@ -1070,6 +1088,13 @@ async function limitAction(env, key, perMin, perDay = 0) {
 async function guardAction(env, key, perMin, perDay, label) {
   const r = await limitAction(env, key, perMin, perDay);
   if (r.ok) return null;
+  /* Storage is gone, so the limit could not be evaluated. Refusing is right -
+     an unenforceable cap is not a cap - but it is a 503 and it says so,
+     because telling somebody they are going too fast when the fault is ours
+     sends them off to fix something that is not broken. */
+  if (r.unavailable) {
+    return json({ error: 'That is temporarily unavailable. Please try again in a moment.', code: r.code }, 503);
+  }
   const msg = r.scope === 'day'
     ? `You've hit the daily limit for ${label}. Try again tomorrow.`
     : `You're doing that too fast. Give it a moment.`;
@@ -4328,13 +4353,31 @@ async function _adminGate(request, env, what, perMin, perDay) {
   const ip = (await _ipHash(env, request))
           || request.headers.get('CF-Connecting-IP')
           || request.headers.get('X-Forwarded-For') || 'unknown';
-  const blocked = await guardAction(env, `admin:${what}:${ip}`, perMin || 30, perDay || 500, 'admin requests');
-  if (blocked) return blocked;
+  const lim = await limitAction(env, `admin:${what}:${ip}`, perMin || 30, perDay || 500);
+  /* If the counter store itself is unreachable, do NOT refuse. These are the
+     routes an operator needs during exactly that failure - readiness is the
+     endpoint whose whole job is to report that storage is broken, and it must
+     not be the first casualty of it. The token check below is untouched and
+     still fail-closed, so this widens nothing to a stranger; it only declines
+     to enforce a rate limit that cannot be evaluated, and writes that down. */
+  if (!lim.ok && lim.unavailable) {
+    audit(env, 'admin_limit_unavailable', { what });
+  } else if (!lim.ok) {
+    return json({
+      error: lim.scope === 'day'
+        ? "You've hit the daily limit for admin requests. Try again tomorrow."
+        : "You're doing that too fast. Give it a moment.",
+      code: lim.code,
+    }, 429);
+  }
   if (!_adminTokenOK(request, env)) {
     /* A wrong token is worth knowing about: it is either an operator with a
        stale copy or somebody trying. Either way it should not be silent. */
     audit(env, 'admin_denied', { what, ip });
-    return json({ error: 'unauthorized' }, 401);
+    /* 403 to match every other admin refusal in this file. The status is part
+       of the contract - one surface answering 401 while the rest answer 403
+       means a caller has to know which route it is talking to. */
+    return json({ error: 'forbidden' }, 403);
   }
   return null;
 }

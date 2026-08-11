@@ -11,6 +11,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { functionBody, codeOnly } from '../lib/source.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -94,7 +95,13 @@ section('A rejected optional parameter cannot take AI down for everyone');
   ok(/upstream\.status === 400/.test(src), 'a 400 is inspected rather than passed straight through');
   ok(/thinking\|output_config\|effort\|cache_control/.test(src),
      'and only a complaint about an OPTIONAL parameter triggers the retry');
-  const guard = src.slice(src.indexOf('AMV-068'), src.indexOf('AMV-068') + 1800);
+  /* Anchored on the handler, not on the comment that used to introduce it.
+     `src.indexOf('AMV-068')` found a marker that exists only in prose: delete
+     the comment and indexOf returns -1, the 1800-character window becomes the
+     last character of the file, and all four assertions below fail on code
+     that never changed. Worse the other way - move the comment and the window
+     silently covers unrelated code while still passing. */
+  const guard = codeOnly(functionBody(src, 'aiProxy'));
   ok(/const plain = \{/.test(guard), 'the retry strips the tuning and keeps the request');
   ok(/messages: \(body\.messages \|\| \[\]\)/.test(guard), 'sending the messages without cache markers');
   ok(/upstream_param_fallback/.test(guard), 'the fallback is audited, so it is not silent');

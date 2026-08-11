@@ -31,6 +31,19 @@ const mkEnv = (extra = {}) => ({
 });
 const jget = async (r) => { try { return await r.json(); } catch { return {}; } };
 
+/* Why the refusal is 403 and not 401.
+
+   These three asserted 401 while every other admin route in the product
+   answered 403, and once all of them went through one gate the disagreement
+   had to be settled. 401 reads better in the abstract - no valid credential
+   was presented - but it is the wrong answer HERE, for a reason in the client:
+   src/app/01-core.js treats a 401 on any non-/auth call as an expired SESSION,
+   silently refreshes the token and signs the person out if that fails. An
+   operator whose admin token is stale would be logged out of their own
+   account, which is a different fault than the one that happened. Their
+   session is fine; the admin token is not. 403 says exactly that, and it is
+   what the rest of the admin surface already said. */
+
 /* ── AMV-035: admin token is header-only, constant-time, fail-closed ────── */
 section('AMV-035: admin token must be a header, not a body field');
 {
@@ -38,20 +51,20 @@ section('AMV-035: admin token must be a header, not a body field');
   const env = mkEnv({ ADMIN_TOKEN: 'admin-secret' });
   // token in the BODY only → rejected (bodies leak into logs)
   let r = await W.errorsList(new Request('https://api/errors/list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: 'admin-secret' }) }), env);
-  ok(r.status === 401, 'a token supplied in the request BODY is rejected', r.status);
+  ok(r.status === 403, 'a token supplied in the request BODY is rejected', r.status);
   // token in the header → accepted
   r = await W.errorsList(new Request('https://api/errors/list', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Admin-Token': 'admin-secret' }, body: '{}' }), env);
   ok(r.status === 200, 'the correct token in the X-Admin-Token header is accepted', r.status);
   // wrong token → rejected
   r = await W.errorsList(new Request('https://api/errors/list', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Admin-Token': 'nope' }, body: '{}' }), env);
-  ok(r.status === 401, 'a wrong header token is rejected', r.status);
+  ok(r.status === 403, 'a wrong header token is rejected', r.status);
 }
 section('AMV-035: admin endpoints fail closed when ADMIN_TOKEN is unset');
 {
   store.clear();
   const env = mkEnv({});   // no ADMIN_TOKEN
   const r = await W.errorsList(new Request('https://api/errors/list', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Admin-Token': 'anything' }, body: '{}' }), env);
-  ok(r.status === 401, 'with no ADMIN_TOKEN configured, admin access is denied', r.status);
+  ok(r.status === 403, 'with no ADMIN_TOKEN configured, admin access is denied', r.status);
 }
 
 /* ── AMV-034: owner identity comes only from OWNER_EMAIL ────────────────── */

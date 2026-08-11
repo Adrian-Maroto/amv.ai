@@ -22,7 +22,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
-import { functionBody } from '../lib/source.mjs';
+import { functionBody, codeOnly } from '../lib/source.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -278,7 +278,20 @@ section('The account ceiling binds image and video, not only chat');
      that the rule existed in exactly one handler. */
   const defs = (src.match(/function _monthlyCeilingUSD\(/g) || []).length;
   ok(defs === 1, 'the ceiling is defined once', defs);
-  const chat = src.slice(src.indexOf('const costName = `cost:${user.billingSubject'), src.indexOf('// 4) GLOBAL SPEND CAP'));
+  /* Both ends of this window are CODE. The far end used to be the comment
+     `// 4) GLOBAL SPEND CAP`, so renumbering or rewording a section heading
+     moved the boundary - and if the heading were deleted, indexOf returns -1,
+     slice() reads to the end of the string and the window silently becomes
+     everything before the start marker instead of the chat path. */
+  /* The chat path is aiProxy, so that is what is read.
+
+     The window here used to run from the FIRST `const costName = ...` in the
+     file to the comment `// 4) GLOBAL SPEND CAP`. The first of those is in
+     _spendGate, seven thousand lines earlier, so the window was most of the
+     Worker and the assertion below passed on any mention of the helper
+     anywhere in it. A window that large is not a window. */
+  const chat = codeOnly(functionBody(src, 'aiProxy'));
+  ok(chat.length > 2000, 'the chat handler was found', chat.length);
   ok(/_monthlyCeilingUSD\(user\)/.test(chat), 'and chat asks the same one', true);
   ok(!/planPriceUSD\(user\.plan[^)]*\) \* 0\.45/.test(chat),
      'rather than keeping its own copy of the arithmetic', true);

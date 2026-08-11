@@ -90,6 +90,159 @@ export function functionBody(src, name) {
   return src.slice(open, ceiling);
 }
 
+/* THE SAME TEXT, WITH THE PROSE TAKEN OUT.
+
+   A check that reads source can be satisfied by a COMMENT, and that is not a
+   theoretical worry - it happened here. A new assertion read _adminGate and
+   asked whether it refuses, by looking for the refusal status. It passed. The
+   status in the code was 403; the only "401" in the function was the sentence
+   explaining why it is NOT 401 any more. The check was green because of the
+   paragraph written to explain the change it was supposed to notice.
+
+   This codebase comments heavily and deliberately, which makes the hazard
+   bigger here than in most: the more carefully a decision is written down, the
+   more likely the words describing it satisfy a grep looking for it. Any check
+   asserting that CODE does something should ask this for the text first.
+
+   Comments only. String and template literals stay, because a great many of
+   these checks legitimately look for a key prefix or a message inside one.
+
+   Regex literals have to be recognised even though they are kept, because
+   `/['"]/ ` and `/https?:\/\//` both contain characters that would otherwise
+   start a string or a comment and swallow the rest of the file. Whether a `/`
+   opens a regex or divides is decided by what precedes it, which is the same
+   rule a JavaScript tokeniser uses. Running this over the whole Worker and
+   re-checking the result with `node --check` is how that was confirmed - a
+   version that got it wrong produced a file that no longer parsed. */
+export function codeOnly(text) {
+  const n = text.length;
+  const out = [];
+  /* The last significant character emitted. It is what decides whether the next
+     `/` opens a regex or divides - `x = /re/` versus `a / b`. */
+  let prev = '';
+  /* A short rolling window of what was just emitted, so `return /re/` and
+     `case /re/` are told apart from `a / b`, which one previous character
+     cannot do. */
+  let recent = '';
+  const remember = (t) => { recent = (recent + t).slice(-24); };
+  const KEYWORD_BEFORE_REGEX = /(?:^|[^\w$.])(return|typeof|instanceof|in|of|new|delete|void|case|do|else|yield|await)\s*$/;
+
+  scan(0, false);
+  return out.join('');
+
+  /* One scanner, used for the file and for the inside of every ${ }. They are
+     the same language, and writing a second simpler loop for substitutions is
+     how a regex containing a quote - `${s.replace(/['"]/g, '')}` - starts a
+     string that never ends. Returns the index just past the stopping point.
+
+     stopAtBrace: consume up to the matching `}` and return past it. */
+  function scan(from, stopAtBrace) {
+    let i = from, depth = 0;
+    while (i < n) {
+      const c = text[i], d = text[i + 1];
+
+      if (c === '/' && d === '*') {
+        const end = text.indexOf('*/', i + 2);
+        const cut = end < 0 ? n : end + 2;
+        /* Blanked rather than removed, so every line number and column in the
+           result still lines up with the file it came from. */
+        out.push(text.slice(i, cut).replace(/[^\n]/g, ' '));
+        remember(' '); i = cut; continue;
+      }
+      if (c === '/' && d === '/') {
+        const end = text.indexOf('\n', i);
+        const cut = end < 0 ? n : end;
+        out.push(' '.repeat(cut - i));
+        remember(' '); i = cut; continue;
+      }
+      if (c === '/') {
+        /* A regex literal. Kept whole - it is code - but it has to be
+           RECOGNISED, because the quotes and slashes inside one would otherwise
+           be read as a string or a comment and eat the rest of the file. */
+        const isRegex = prev === '' || '(,=:[!&|?{};+-*%<>~^'.includes(prev) ||
+                        KEYWORD_BEFORE_REGEX.test(recent);
+        if (isRegex) {
+          let j = i + 1, cls = false, closed = false;
+          for (; j < n; j++) {
+            const ch = text[j];
+            if (ch === '\\') { j++; continue; }
+            if (ch === '\n') break;                 // not a regex after all
+            if (cls) { if (ch === ']') cls = false; continue; }
+            if (ch === '[') { cls = true; continue; }
+            if (ch === '/') { closed = true; break; }
+          }
+          if (closed) {
+            j++;
+            while (j < n && /[dgimsuvy]/.test(text[j])) j++;   // flags
+            const lit = text.slice(i, j);
+            out.push(lit); remember(lit); prev = '/'; i = j; continue;
+          }
+        }
+        out.push(c); remember(c); prev = c; i++; continue;
+      }
+
+      if (c === '"' || c === "'") {
+        /* Copied intact - a quote inside it must not open another literal, and
+           `//` inside a URL is not a comment. */
+        let j = i + 1;
+        for (; j < n; j++) {
+          if (text[j] === '\\') { j++; continue; }
+          if (text[j] === c) { j++; break; }
+          if (text[j] === '\n') break;              // unterminated: bail out
+        }
+        const lit = text.slice(i, j);
+        out.push(lit); remember(lit); prev = c; i = j; continue;
+      }
+
+      if (c === '`') { i = template(i); continue; }
+
+      if (stopAtBrace) {
+        if (c === '{') depth++;
+        else if (c === '}') {
+          if (depth === 0) { out.push('}'); prev = '}'; return i + 1; }
+          depth--;
+        }
+      }
+
+      out.push(c); remember(c);
+      if (!/\s/.test(c)) prev = c;
+      i++;
+    }
+    return i;
+  }
+
+  /* A template literal, from its opening backtick, returning the index just
+     past its close. The text is emitted verbatim; the code inside each ${ }
+     goes back through scan(), so comments there are stripped and a nested
+     template is handled exactly like any other.
+
+     Skipping a template by looking for the next backtick is what an earlier
+     version did, and it is wrong the moment one template contains another -
+     `${a ? `x` : `y`}` - which this app's HTML builders do constantly. The
+     scan then ends the outer literal on the INNER opening backtick, every
+     backtick after it is off by one, and the scanner believes it is inside a
+     string for thousands of lines. Not a theoretical drift: it left real block
+     comments in app.js unstripped from line 9712 on, and because the mistake
+     makes MORE text look like a string, it fails in the direction of passing. */
+  function template(start) {
+    out.push('`'); remember('`');
+    let i = start + 1;
+    while (i < n) {
+      const ch = text[i];
+      if (ch === '\\') { out.push(text.slice(i, i + 2)); i += 2; continue; }
+      if (ch === '`') { out.push('`'); prev = '`'; return i + 1; }
+      if (ch === '$' && text[i + 1] === '{') {
+        out.push('${'); remember('${'); prev = '{';
+        i = scan(i + 2, true);
+        continue;
+      }
+      out.push(ch); i++;
+    }
+    prev = '`';
+    return i;   // unterminated - the file is broken, and saying so is not this helper's job
+  }
+}
+
 /* The same thing including the declaration line, for checks that care about the
    signature or about a comment attached to the function. */
 export function functionSource(src, name) {

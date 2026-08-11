@@ -115,9 +115,14 @@ section('And nobody but the operator can take one');
   /* This file downloads every account, every chat and every balance in one
      request. It is the single most valuable object the system can produce. */
   const anon = await call('/admin/backup/export');
-  ok(anon.status === 401, 'without the admin token it is refused', anon.status);
+  /* 403, not 401: every admin-token refusal in the product now answers the
+     same way, and it has to be 403 because the app treats a 401 on a
+     non-/auth call as an expired session and signs the person out. The
+     operator's session is fine; their admin token is not. The reasoning is
+     written out once, in admin-security.test.mjs. */
+  ok(anon.status === 403, 'without the admin token it is refused', anon.status);
   const wrong = await call('/admin/backup/export', undefined, { 'Authorization': 'Bearer nope' });
-  ok(wrong.status === 401, 'and a wrong one is refused', wrong.status);
+  ok(wrong.status === 403, 'and a wrong one is refused', wrong.status);
 }
 
 section('THE WORST DAY: the deployment is destroyed');

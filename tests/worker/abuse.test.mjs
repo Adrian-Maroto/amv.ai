@@ -117,13 +117,18 @@ section('Abuse endpoints reject non-admins');
 r = await W.abuseList(new Request('https://api.amv.dev/admin/abuse/list', {
   method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}'
 }), env);
-ok(r.status === 401, 'no admin token = no access to the abuse list', r.status);
+/* 403, not 401: every admin-token refusal in the product now answers the
+   same way, and it has to be 403 because the app treats a 401 on a
+   non-/auth call as an expired session and signs the person out. The
+   operator's session is fine; their admin token is not. The reasoning is
+   written out once, in admin-security.test.mjs. */
+ok(r.status === 403, 'no admin token = no access to the abuse list', r.status);
 
 r = await W.abuseClear(new Request('https://api.amv.dev/admin/abuse/clear', {
   method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Admin-Token': 'wrong' },
   body: JSON.stringify({ email: 'x@test.com' })
 }), env);
-ok(r.status === 401, 'a wrong admin token cannot clear flags', r.status);
+ok(r.status === 403, 'a wrong admin token cannot clear flags', r.status);
 
 /* ── The webhook itself, end to end (with a real signature) ────────────── */
 section('The Stripe webhook handles a chargeback event end-to-end');

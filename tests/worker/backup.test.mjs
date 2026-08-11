@@ -139,13 +139,18 @@ section('Backup endpoints are admin-only');
 r = await W.backupExport(new Request('https://api.amv.dev/admin/backup/export', {
   method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}'
 }), env);
-ok(r.status === 401, 'export without the admin token is unauthorized', r.status);
+/* 403, not 401: every admin-token refusal in the product now answers the
+   same way, and it has to be 403 because the app treats a 401 on a
+   non-/auth call as an expired session and signs the person out. The
+   operator's session is fine; their admin token is not. The reasoning is
+   written out once, in admin-security.test.mjs. */
+ok(r.status === 403, 'export without the admin token is refused', r.status);
 
 r = await W.backupImport(new Request('https://api.amv.dev/admin/backup/import', {
   method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Admin-Token': 'wrong' },
   body: JSON.stringify({ snapshot: snap })
 }), env);
-ok(r.status === 401, 'import with a wrong token is unauthorized', r.status);
+ok(r.status === 403, 'import with a wrong token is refused', r.status);
 
 report();
 done();

@@ -296,9 +296,14 @@ ok(timeouts[0].count === 2, 'with a count of 2', timeouts[0].count);
 
 section('Errors: the dashboard is admin-only');
 let r2 = await W.errorsList(req({}, null, 'https://api/errors/list'), env);
-ok(r2.status === 401, 'no token is rejected', r2.status);
+/* 403, not 401: every admin-token refusal in the product now answers the
+   same way, and it has to be 403 because the app treats a 401 on a
+   non-/auth call as an expired session and signs the person out. The
+   operator's session is fine; their admin token is not. The reasoning is
+   written out once, in admin-security.test.mjs. */
+ok(r2.status === 403, 'no token is rejected', r2.status);
 r2 = await W.errorsList(req({}, 'wrong', 'https://api/errors/list'), env);
-ok(r2.status === 401, 'a wrong token is rejected', r2.status);
+ok(r2.status === 403, 'a wrong token is rejected', r2.status);
 
 section('Errors: resolving clears the board');
 r2 = await W.errorsResolve(req({ fp: top.fp }, 'admin-secret', 'https://api/errors/resolve'), env);

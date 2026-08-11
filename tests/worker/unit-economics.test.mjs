@@ -6,6 +6,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { functionBody, codeOnly } from '../lib/source.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -112,9 +113,16 @@ section('The counters are actually written by the meter');
   ok(/featcost:\$\{feature \|\| 'chat'\}/.test(src), 'every metered call attributes its cost to a feature');
   ok(/cachesave:\$\{mk\}/.test(src), 'and records what the cache saved');
   ok(/eng\.inCost \* 0\.90/.test(src), 'the saving is the 90% a cache read did not cost', true);
-  const meter = src.slice(src.indexOf('async function meterStream'));
-  ok(/catch \(e\) \{ \/\* reporting must never break metering \*\/ \}/.test(meter),
-     'and a reporting failure can never break the billing it reports on');
+  /* This asked for an exact COMMENT - `catch (e) { /* reporting must never
+     break metering *\/ }` - so rewording the note failed the check and, worse,
+     pasting the note next to a bare rethrow would have passed it. The property
+     is that the reporting work is inside a try whose catch does not rethrow. */
+  const meter = codeOnly(functionBody(src, 'meterStream')).replace(/\s+/g, ' ');
+  ok(/try \{/.test(meter), 'the reporting is wrapped', true);
+  const catches = [...meter.matchAll(/catch\s*(?:\([^)]*\))?\s*\{([^}]*)\}/g)].map(m => m[1].trim());
+  ok(catches.length > 0, 'and the wrap is closed by a catch', catches.length);
+  ok(catches.every(b => !/throw|reject\(/.test(b)),
+     'and a reporting failure can never break the billing it reports on', catches);
 }
 
 section('It is on the screen, not just in the response');

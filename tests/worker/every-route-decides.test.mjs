@@ -22,7 +22,7 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
-import { functionBody } from '../lib/source.mjs';
+import { functionBody, codeOnly } from '../lib/source.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
@@ -36,8 +36,13 @@ const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
    safe code as broken. A checker that cries wolf gets deleted. */
 const VERIFIERS = [...src.matchAll(/function\s+(verify[A-Za-z]*(?:Signature|Webhook|Token))\s*\(/g)]
   .map(m => m[1]);
+/* _adminGate is the fifth way, and the one that caught this check out: fourteen
+   admin routes moved from calling _requireAdmin directly to calling the gate
+   that rate-limits AND checks the token, and every one of them was reported
+   here as newly unauthenticated. Recognising a name is only safe if the name
+   really does the check, so that is asserted below rather than assumed. */
 const AUTH = new RegExp(
-  ['requireUser\\(', '_adminTokenOK\\(', '_adminOk\\(', '_requireAdmin\\(']
+  ['requireUser\\(', '_adminTokenOK\\(', '_adminOk\\(', '_requireAdmin\\(', '_adminGate\\(']
     .concat(VERIFIERS.map(v => v + '\\(')).join('|'));
 
 /* Public on purpose, each with the reason it has to be. */
@@ -89,6 +94,30 @@ section('The route table and every verifier were read');
      starts passing for the wrong reason. */
   ok(VERIFIERS.length >= 3,
      'every webhook verifier the worker defines is known to this check', VERIFIERS);
+}
+
+section('Each name this check accepts as "authenticates" actually does');
+{
+  /* The failure mode of a list like AUTH is not that it misses a helper - that
+     shows up immediately as a false positive. It is that somebody adds a name
+     to it to make this file green, and the name does not check anything. Every
+     accepted name is read here, so accepting one is a claim with evidence. */
+  /* codeOnly, because the first version of this assertion passed on a COMMENT.
+     It looked for the refusal status in _adminGate and found it in the
+     sentence explaining which status the function no longer returns. */
+  const gate = codeOnly(bodyOf('_adminGate'));
+  ok(/_adminTokenOK\(/.test(gate), '_adminGate verifies the admin token', true);
+  ok(/return json\([^)]*\},\s*40[13]\s*\)/.test(gate.replace(/\s+/g, ' ')),
+     'and returns a refusal when it does not match', gate.replace(/\s+/g, ' ').slice(-260));
+  ok(/_adminTokenOK\(/.test(codeOnly(bodyOf('_adminOk'))), '_adminOk does too', true);
+  ok(/_adminTokenOK\(/.test(codeOnly(bodyOf('_requireAdmin'))), 'and so does _requireAdmin', true);
+
+  /* And the gate must not be able to let somebody through by failing. Storage
+     being unreachable relaxes the RATE LIMIT deliberately; it must never
+     relax the token, so the refusal cannot sit before the check. */
+  const uIdx = gate.indexOf('unavailable'), tIdx = gate.indexOf('_adminTokenOK');
+  ok(uIdx > 0 && tIdx > uIdx && !/return null/.test(gate.slice(uIdx, tIdx)),
+     'a store outage does not return early past the token check', { uIdx, tIdx });
 }
 
 section('Every route authenticates, or is listed as public with a reason');

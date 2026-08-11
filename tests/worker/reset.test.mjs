@@ -143,11 +143,16 @@ ok((await r.json()).token, 'and that password works immediately');
 
 r = await W.authAdminReset(adminPost('/auth/admin-reset',
   { email: 'amarotovaleria@gmail.com', password: 'hackerPass123' }, 'WRONG'), env);
-ok(r.status === 401, 'a wrong admin token is rejected', r.status);
+/* 403, not 401: every admin-token refusal in the product now answers the
+   same way, and it has to be 403 because the app treats a 401 on a
+   non-/auth call as an expired session and signs the person out. The
+   operator's session is fine; their admin token is not. The reasoning is
+   written out once, in admin-security.test.mjs. */
+ok(r.status === 403, 'a wrong admin token is rejected', r.status);
 
 r = await W.authAdminReset(adminPost('/auth/admin-reset',
   { email: 'amarotovaleria@gmail.com', password: 'hackerPass123' }), env);
-ok(r.status === 401, 'no admin token is rejected', r.status);
+ok(r.status === 403, 'no admin token is rejected', r.status);
 
 /* ═══ THE 6-DIGIT CODE FLOW ══════════════════════════════════════════════ */
 section('Code flow: email → 6-digit code → new password');

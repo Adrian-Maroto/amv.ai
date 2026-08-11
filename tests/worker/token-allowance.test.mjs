@@ -7,7 +7,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
-import { functionBody } from '../lib/source.mjs';
+import { functionBody, codeOnly } from '../lib/source.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -87,10 +87,13 @@ section('Margin is still guaranteed by the dollar backstop, not by these caps');
      _autoBudget. The SMS one now asks the helper. _autoBudget takes an
      entitlement rather than a user, so it cannot see family limits at all -
      that is a real gap, recorded rather than papered over here. */
-  const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const code = codeOnly(src);
   const copies = (code.match(/\* 0\.45/g) || []).length;
   ok(copies <= 2, 'the 45% arithmetic is not spread across the worker', copies);
-  const sms = src.slice(src.indexOf('Keyed by the billing subject so a team'), src.indexOf('Keyed by the billing subject so a team') + 900);
+  /* Anchored on the handler rather than on a sentence inside it. The window
+     used to start at the words "Keyed by the billing subject so a team", so
+     rewording that comment moved the check onto whatever followed. */
+  const sms = codeOnly(functionBody(src, 'smsIncoming'));
   ok(/_monthlyCeilingUSD\(user\)/.test(sms),
      'the SMS path asks the shared ceiling, so a parent’s limit reaches it', true);
   ok(/anti-abuse guard/.test(src), 'and the token caps are documented as the secondary guard they are');
