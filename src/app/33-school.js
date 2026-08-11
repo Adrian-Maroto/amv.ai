@@ -152,7 +152,7 @@ async function schoolPrepare(index){
     ? '<div class="sch-pick">' + docs.map((d, i) =>
         '<label class="sch-pick-row"><input type="radio" name="sch-doc" value="' + i + '"' + (i === 0 ? ' checked' : '') + '>'+
           '<span class="sch-pick-k">' + escH(kindOf(d)) + '</span>'+
-          '<a href="' + escH(safeUrl(d.url)) + '" target="_blank" rel="noopener">' + T('open the original') + '</a>'+
+          '<a href="' + escH(safeUrl(d.url)) + '" target="_blank" rel="noopener noreferrer">' + T('open the original') + '</a>'+
         '</label>').join('') + '</div>'
     : '';
 
@@ -209,7 +209,7 @@ async function _schoolAfterCopy(a, copy, token){
 
   body.innerHTML =
     '<div class="sch-step">'+
-      '<div class="sch-done">' + T('Your copy is made.') + ' <a href="' + escH(safeUrl(link)) + '" target="_blank" rel="noopener">' + T('Open it') + '</a></div>'+
+      '<div class="sch-done">' + T('Your copy is made.') + ' <a href="' + escH(safeUrl(link)) + '" target="_blank" rel="noopener noreferrer">' + T('Open it') + '</a></div>'+
       '<div class="sch-ask">'+
         '<b>' + T('Share your copy with your teacher?') + '</b>'+
         (teachers.length
@@ -248,9 +248,9 @@ async function _schoolAfterCopy(a, copy, token){
     body.innerHTML =
       '<div class="sch-step">'+
         '<div class="sch-done sch-done-final">' + T('Shared with') + ' ' + escH(who) + '.</div>'+
-        '<p>' + T('Your copy:') + ' <a href="' + escH(safeUrl(link)) + '" target="_blank" rel="noopener">' + escH(a.name || T('your document')) + '</a></p>'+
+        '<p>' + T('Your copy:') + ' <a href="' + escH(safeUrl(link)) + '" target="_blank" rel="noopener noreferrer">' + escH(a.name || T('your document')) + '</a></p>'+
         '<div class="sch-note">' + T('Last step is yours: open the assignment in Canvas and hand it in.') + '</div>'+
-        (a.url ? '<a class="btn bp" href="' + escH(safeUrl(a.url)) + '" target="_blank" rel="noopener">' + T('Open the assignment in Canvas') + '</a>' : '')+
+        (a.url ? '<a class="btn bp" href="' + escH(safeUrl(a.url)) + '" target="_blank" rel="noopener noreferrer">' + T('Open the assignment in Canvas') + '</a>' : '')+
         '<button class="btn bs" data-dact="_schoolRender">' + T('Back to my work') + '</button>'+
       '</div>';
   });

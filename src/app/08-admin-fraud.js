@@ -670,7 +670,7 @@ function _admRenderTab(tab, backendLive, live){
           '<td class="adm-fin-amt">$'+(tx.amount||0).toFixed(2)+(tx.refunded>0?' <span class="adm-fin-ref">-$'+tx.refunded.toFixed(2)+'</span>':'')+'</td>'+
           '<td><span class="adm-fin-status s-'+escH(tx.status||'')+'">'+escH(tx.status||'')+'</span></td>'+
           '<td>'+(tx.last4?('\u2022\u2022\u2022\u2022 '+escH(tx.last4)):'-')+'</td>'+
-          '<td>'+(safeUrl(tx.receipt)?'<a href="'+escH(safeUrl(tx.receipt))+'" target="_blank" rel="noopener" class="adm-fin-rc">Receipt</a>':'')+'</td>'+
+          '<td>'+(safeUrl(tx.receipt)?'<a href="'+escH(safeUrl(tx.receipt))+'" target="_blank" rel="noopener noreferrer" class="adm-fin-rc">Receipt</a>':'')+'</td>'+
         '</tr>').join('')+
       '</tbody></table></div>'+
       (f.hasMore?'<div class="adm-fin-more">Showing the most recent '+f.transactions.length+' transactions.</div>':'');
@@ -1209,7 +1209,7 @@ async function _loadInvoices(){
         '<div class="bill-inv-main"><span class="bill-inv-num">'+escH(v.number)+'</span><span class="bill-inv-date">'+dt+'</span></div>'+
         '<div class="bill-inv-right"><span class="bill-inv-amt">'+v.currency+' '+v.amount.toFixed(2)+'</span>'+
         '<span class="bill-inv-status '+(paid?'ok':'')+'">'+escH(v.status)+'</span>'+
-        (safeUrl(v.pdf)?'<a class="bill-inv-dl" href="'+escH(safeUrl(v.pdf))+'" target="_blank" rel="noopener">Download</a>':'')+
+        (safeUrl(v.pdf)?'<a class="bill-inv-dl" href="'+escH(safeUrl(v.pdf))+'" target="_blank" rel="noopener noreferrer">Download</a>':'')+
         '</div></div>';
     }).join('')+'</div>';
   }catch(e){ if(el) el.innerHTML='<div class="bill-inv-empty">Couldn\u2019t load invoices right now.</div>'; _logErr('loadInvoices',e); }

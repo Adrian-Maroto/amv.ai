@@ -1731,7 +1731,7 @@ function _buildResearchPanel(state, finished){
   // dedupe display hosts, keep first 12 for the chips
   const shown = sources.slice(0, 12);
   const chips = shown.map(s=>
-    '<a class="rsrc-chip" href="'+escH(safeUrl(s.url))+'" target="_blank" rel="noopener" title="'+escH(s.title)+'">'+
+    '<a class="rsrc-chip" href="'+escH(safeUrl(s.url))+'" target="_blank" rel="noopener noreferrer" title="'+escH(s.title)+'">'+
       '<span class="rsrc-fav"></span>'+escH(host(s.url))+
     '</a>'
   ).join('');
@@ -2770,7 +2770,7 @@ function renderVidGrid(){
         '<div class="vtt">'+escH(v.p.slice(0,46))+(v.p.length>46?'\u2026':'')+'</div>'+
         '<div class="vtg">'+tags.map(t=>'<span class="vtk">'+escH(t)+'</span>').join('')+
           (v.status==='succeeded' && v.url
-            ? '<a class="vtk vdl" href="'+escH(safeMediaSrc(v.url))+'" download target="_blank" rel="noopener">Download</a>'
+            ? '<a class="vtk vdl" href="'+escH(safeMediaSrc(v.url))+'" download target="_blank" rel="noopener noreferrer">Download</a>'
             : '')+
         '</div>'+
       '</div>'+

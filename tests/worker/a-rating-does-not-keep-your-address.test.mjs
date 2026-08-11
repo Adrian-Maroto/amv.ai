@@ -192,5 +192,44 @@ section('And the register is not claiming that limit away elsewhere');
   ok(wrong === 0, 'nothing anywhere in the register claims default-src none', wrong);
 }
 
+
+section('Every external link drops the referrer as well as the opener');
+{
+  /* Register item 45 said external links carry rel="noopener noreferrer".
+     Sixteen of eighteen carried noopener alone. The tab-nabbing defence the
+     item is NAMED for was genuinely in place - noopener is the one that stops
+     window.opener - but the destination still learned which AMV page somebody
+     came from, and a shared-artifact or deployed-site URL is not a thing to
+     hand to whatever they clicked through to. */
+  const bundle = readFileSync(join(ROOT, 'app.js'), 'utf8');
+  const opener = (bundle.match(/rel="noopener"/g) || []).length;
+  const both   = (bundle.match(/rel="noopener noreferrer"/g) || []).length;
+  ok(both > 10, 'external links carry both', both);
+  ok(opener === 0, 'and none carries noopener alone any more', opener);
+
+  const item45 = (register.match(/^45\..*$/m) || [''])[0];
+  ok(/noreferrer/.test(item45), 'the register still claims it', item45.slice(0, 80));
+}
+
+section('The register describes the SSRF gate that actually exists');
+{
+  /* It claimed only public http(s) passes, which was true of the first hop and
+     false across a redirect until that was fixed. The claim is true now; the
+     item says WHY, because "only public passes" is exactly what somebody would
+     read and not re-check. */
+  const item53 = (register.match(/^53\..*$/m) || [''])[0];
+  ok(/every hop/i.test(item53), 'it names the property that makes it true', item53.slice(0, 120));
+  ok(/redirect/i.test(item53) && /Authorization/.test(item53),
+     'including the redirect and the credential that used to travel with it', true);
+}
+
+section('And the register has no mojibake in it');
+{
+  /* A stray thorn in "per-minute/per-day" - trivial, and this is a document
+     somebody may be shown when they ask how AMV handles abuse. */
+  const junk = (register.match(/[\u00fe\u00c3\u00ef\ufffd]/g) || []);
+  ok(junk.length === 0, 'no stray characters', junk.slice(0, 5));
+}
+
 if (report('a-rating-does-not-keep-your-address') > 0) process.exitCode = 1;
 done();

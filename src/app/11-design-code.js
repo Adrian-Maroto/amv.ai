@@ -1044,7 +1044,7 @@ async function openMySites(){
   const rows = sites.length
     ? sites.map(s=>'<div class="site-row">'+
         '<div class="site-l"><div class="site-t">'+escH(s.title||s.slug)+'</div>'+
-          '<a class="site-u" href="'+escH(safeUrl(s.url))+'" target="_blank" rel="noopener">'+escH(String(s.url||'').replace(/^https?:\/\//,''))+'</a>'+
+          '<a class="site-u" href="'+escH(safeUrl(s.url))+'" target="_blank" rel="noopener noreferrer">'+escH(String(s.url||'').replace(/^https?:\/\//,''))+'</a>'+
           '<div class="site-m">'+(s.views||0)+' view'+((s.views||0)===1?'':'s')+' \u00b7 '+Math.max(1,Math.round((s.bytes||0)/1024))+'KB</div></div>'+
         '<div class="site-r">'+
           '<button class="btn bs" data-open="'+escH(s.url)+'">Open</button>'+
@@ -1816,7 +1816,7 @@ async function _amvRunTool(name, input, onStatus){
         return {
           text:'Published successfully. It is LIVE at: '+d.url+' - give the user this exact URL.',
           render:'<div class="chat-deployed"><span class="deploy-dot"></span><div><b>Live now</b>'+
-                 '<a href="'+escH(safeUrl(d.url))+'" target="_blank" rel="noopener">'+escH(d.url)+'</a></div></div>'
+                 '<a href="'+escH(safeUrl(d.url))+'" target="_blank" rel="noopener noreferrer">'+escH(d.url)+'</a></div></div>'
         };
       }catch(e){ return { text:'Deploy failed: '+(e.message||e), render:null }; }
     }

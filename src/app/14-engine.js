@@ -787,7 +787,7 @@ async function _labDeploy(){
     }
     _labStat('\u2713 live','ok');
     _labOut('<div class="lab-sec"><div class="lab-sec-h">Published</div>'+
-      '<div class="lab-md">It\u2019s live at <a href="'+escH(safeUrl(url))+'" target="_blank" rel="noopener" style="color:var(--accent)">'+escH(url)+'</a> - anyone with the link can open it.</div></div>');
+      '<div class="lab-md">It\u2019s live at <a href="'+escH(safeUrl(url))+'" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">'+escH(url)+'</a> - anyone with the link can open it.</div></div>');
   }catch(e){
     _labStat('\u2717 '+e.message,'err');
     _labOut('<div class="lab-sec err"><pre class="lab-pre">'+_esc(e.message)+'</pre></div>');
@@ -927,8 +927,8 @@ async function crewRun(kind, title, opts){
         'You are an elite travel planner. Use markdown headers, tables, and bullet lists.');
       // realistic booking handoff (real search links, not a fake "booked")
       const q=encodeURIComponent(detail);
-      const book='<a class="btn bp" href="https://www.google.com/travel/flights?q='+q+'" target="_blank" rel="noopener">Search & book flights →</a>'+
-                 '<a class="btn" href="https://www.booking.com/searchresults.html?ss='+q+'" target="_blank" rel="noopener">Find hotels →</a>';
+      const book='<a class="btn bp" href="https://www.google.com/travel/flights?q='+q+'" target="_blank" rel="noopener noreferrer">Search & book flights →</a>'+
+                 '<a class="btn" href="https://www.booking.com/searchresults.html?ss='+q+'" target="_blank" rel="noopener noreferrer">Find hotels →</a>';
       up({status:'done', body:out, actions:book});
     }
     else if(kind==='gmail'){
@@ -1044,8 +1044,8 @@ async function _tripPlan(){
     const q=encodeURIComponent((data.from!=='(flexible)'?data.from+' to ':'')+data.destination+' '+data.start+' to '+data.end);
     const hq=encodeURIComponent(data.destination);
     $('trip-actions').innerHTML=
-      '<a class="btn bp" target="_blank" rel="noopener" href="https://www.google.com/travel/flights?q='+q+'">Search & book flights →</a>'+
-      '<a class="btn" target="_blank" rel="noopener" href="https://www.booking.com/searchresults.html?ss='+hq+'&checkin='+data.start+'&checkout='+data.end+'">Book hotels →</a>'+
+      '<a class="btn bp" target="_blank" rel="noopener noreferrer" href="https://www.google.com/travel/flights?q='+q+'">Search & book flights →</a>'+
+      '<a class="btn" target="_blank" rel="noopener noreferrer" href="https://www.booking.com/searchresults.html?ss='+hq+'&checkin='+data.start+'&checkout='+data.end+'">Book hotels →</a>'+
       '<button class="btn" id="trip-redo">Plan another</button>'+
       '<button class="btn" id="trip-save">Save to a chat</button>';
     on($('trip-redo'),'click',openTripPlanner);

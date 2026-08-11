@@ -3680,7 +3680,7 @@ async function openSharedChatsManager(){
   body.innerHTML='<p class="ob-sub">Anyone with one of these links can read that conversation. Revoking a link stops it working immediately.</p>'+
     '<ul class="shr-list">'+items.map(i=>
       '<li class="shr-item"><div><div class="shr-t">'+escH(i.title||'Conversation')+'</div>'+
-      '<a class="shr-u" href="'+escH(safeUrl(i.url))+'" target="_blank" rel="noopener">'+escH(i.url)+'</a></div>'+
+      '<a class="shr-u" href="'+escH(safeUrl(i.url))+'" target="_blank" rel="noopener noreferrer">'+escH(i.url)+'</a></div>'+
       '<button class="btn bs shr-rev" data-id="'+escH(i.id)+'">Revoke</button></li>').join('')+'</ul>';
   body.querySelectorAll('.shr-rev').forEach(b=>b.addEventListener('click',async()=>{
     b.disabled=true; b.textContent='Revoking\u2026';
@@ -6244,7 +6244,7 @@ function _buildResearchPanel(state, finished){
   // dedupe display hosts, keep first 12 for the chips
   const shown = sources.slice(0, 12);
   const chips = shown.map(s=>
-    '<a class="rsrc-chip" href="'+escH(safeUrl(s.url))+'" target="_blank" rel="noopener" title="'+escH(s.title)+'">'+
+    '<a class="rsrc-chip" href="'+escH(safeUrl(s.url))+'" target="_blank" rel="noopener noreferrer" title="'+escH(s.title)+'">'+
       '<span class="rsrc-fav"></span>'+escH(host(s.url))+
     '</a>'
   ).join('');
@@ -7283,7 +7283,7 @@ function renderVidGrid(){
         '<div class="vtt">'+escH(v.p.slice(0,46))+(v.p.length>46?'\u2026':'')+'</div>'+
         '<div class="vtg">'+tags.map(t=>'<span class="vtk">'+escH(t)+'</span>').join('')+
           (v.status==='succeeded' && v.url
-            ? '<a class="vtk vdl" href="'+escH(safeMediaSrc(v.url))+'" download target="_blank" rel="noopener">Download</a>'
+            ? '<a class="vtk vdl" href="'+escH(safeMediaSrc(v.url))+'" download target="_blank" rel="noopener noreferrer">Download</a>'
             : '')+
         '</div>'+
       '</div>'+
@@ -11310,7 +11310,7 @@ function _admRenderTab(tab, backendLive, live){
           '<td class="adm-fin-amt">$'+(tx.amount||0).toFixed(2)+(tx.refunded>0?' <span class="adm-fin-ref">-$'+tx.refunded.toFixed(2)+'</span>':'')+'</td>'+
           '<td><span class="adm-fin-status s-'+escH(tx.status||'')+'">'+escH(tx.status||'')+'</span></td>'+
           '<td>'+(tx.last4?('\u2022\u2022\u2022\u2022 '+escH(tx.last4)):'-')+'</td>'+
-          '<td>'+(safeUrl(tx.receipt)?'<a href="'+escH(safeUrl(tx.receipt))+'" target="_blank" rel="noopener" class="adm-fin-rc">Receipt</a>':'')+'</td>'+
+          '<td>'+(safeUrl(tx.receipt)?'<a href="'+escH(safeUrl(tx.receipt))+'" target="_blank" rel="noopener noreferrer" class="adm-fin-rc">Receipt</a>':'')+'</td>'+
         '</tr>').join('')+
       '</tbody></table></div>'+
       (f.hasMore?'<div class="adm-fin-more">Showing the most recent '+f.transactions.length+' transactions.</div>':'');
@@ -11849,7 +11849,7 @@ async function _loadInvoices(){
         '<div class="bill-inv-main"><span class="bill-inv-num">'+escH(v.number)+'</span><span class="bill-inv-date">'+dt+'</span></div>'+
         '<div class="bill-inv-right"><span class="bill-inv-amt">'+v.currency+' '+v.amount.toFixed(2)+'</span>'+
         '<span class="bill-inv-status '+(paid?'ok':'')+'">'+escH(v.status)+'</span>'+
-        (safeUrl(v.pdf)?'<a class="bill-inv-dl" href="'+escH(safeUrl(v.pdf))+'" target="_blank" rel="noopener">Download</a>':'')+
+        (safeUrl(v.pdf)?'<a class="bill-inv-dl" href="'+escH(safeUrl(v.pdf))+'" target="_blank" rel="noopener noreferrer">Download</a>':'')+
         '</div></div>';
     }).join('')+'</div>';
   }catch(e){ if(el) el.innerHTML='<div class="bill-inv-empty">Couldn\u2019t load invoices right now.</div>'; _logErr('loadInvoices',e); }
@@ -16364,7 +16364,7 @@ async function openMySites(){
   const rows = sites.length
     ? sites.map(s=>'<div class="site-row">'+
         '<div class="site-l"><div class="site-t">'+escH(s.title||s.slug)+'</div>'+
-          '<a class="site-u" href="'+escH(safeUrl(s.url))+'" target="_blank" rel="noopener">'+escH(String(s.url||'').replace(/^https?:\/\//,''))+'</a>'+
+          '<a class="site-u" href="'+escH(safeUrl(s.url))+'" target="_blank" rel="noopener noreferrer">'+escH(String(s.url||'').replace(/^https?:\/\//,''))+'</a>'+
           '<div class="site-m">'+(s.views||0)+' view'+((s.views||0)===1?'':'s')+' \u00b7 '+Math.max(1,Math.round((s.bytes||0)/1024))+'KB</div></div>'+
         '<div class="site-r">'+
           '<button class="btn bs" data-open="'+escH(s.url)+'">Open</button>'+
@@ -17136,7 +17136,7 @@ async function _amvRunTool(name, input, onStatus){
         return {
           text:'Published successfully. It is LIVE at: '+d.url+' - give the user this exact URL.',
           render:'<div class="chat-deployed"><span class="deploy-dot"></span><div><b>Live now</b>'+
-                 '<a href="'+escH(safeUrl(d.url))+'" target="_blank" rel="noopener">'+escH(d.url)+'</a></div></div>'
+                 '<a href="'+escH(safeUrl(d.url))+'" target="_blank" rel="noopener noreferrer">'+escH(d.url)+'</a></div></div>'
         };
       }catch(e){ return { text:'Deploy failed: '+(e.message||e), render:null }; }
     }
@@ -23255,7 +23255,7 @@ async function _labDeploy(){
     }
     _labStat('\u2713 live','ok');
     _labOut('<div class="lab-sec"><div class="lab-sec-h">Published</div>'+
-      '<div class="lab-md">It\u2019s live at <a href="'+escH(safeUrl(url))+'" target="_blank" rel="noopener" style="color:var(--accent)">'+escH(url)+'</a> - anyone with the link can open it.</div></div>');
+      '<div class="lab-md">It\u2019s live at <a href="'+escH(safeUrl(url))+'" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">'+escH(url)+'</a> - anyone with the link can open it.</div></div>');
   }catch(e){
     _labStat('\u2717 '+e.message,'err');
     _labOut('<div class="lab-sec err"><pre class="lab-pre">'+_esc(e.message)+'</pre></div>');
@@ -23395,8 +23395,8 @@ async function crewRun(kind, title, opts){
         'You are an elite travel planner. Use markdown headers, tables, and bullet lists.');
       // realistic booking handoff (real search links, not a fake "booked")
       const q=encodeURIComponent(detail);
-      const book='<a class="btn bp" href="https://www.google.com/travel/flights?q='+q+'" target="_blank" rel="noopener">Search & book flights →</a>'+
-                 '<a class="btn" href="https://www.booking.com/searchresults.html?ss='+q+'" target="_blank" rel="noopener">Find hotels →</a>';
+      const book='<a class="btn bp" href="https://www.google.com/travel/flights?q='+q+'" target="_blank" rel="noopener noreferrer">Search & book flights →</a>'+
+                 '<a class="btn" href="https://www.booking.com/searchresults.html?ss='+q+'" target="_blank" rel="noopener noreferrer">Find hotels →</a>';
       up({status:'done', body:out, actions:book});
     }
     else if(kind==='gmail'){
@@ -23512,8 +23512,8 @@ async function _tripPlan(){
     const q=encodeURIComponent((data.from!=='(flexible)'?data.from+' to ':'')+data.destination+' '+data.start+' to '+data.end);
     const hq=encodeURIComponent(data.destination);
     $('trip-actions').innerHTML=
-      '<a class="btn bp" target="_blank" rel="noopener" href="https://www.google.com/travel/flights?q='+q+'">Search & book flights →</a>'+
-      '<a class="btn" target="_blank" rel="noopener" href="https://www.booking.com/searchresults.html?ss='+hq+'&checkin='+data.start+'&checkout='+data.end+'">Book hotels →</a>'+
+      '<a class="btn bp" target="_blank" rel="noopener noreferrer" href="https://www.google.com/travel/flights?q='+q+'">Search & book flights →</a>'+
+      '<a class="btn" target="_blank" rel="noopener noreferrer" href="https://www.booking.com/searchresults.html?ss='+hq+'&checkin='+data.start+'&checkout='+data.end+'">Book hotels →</a>'+
       '<button class="btn" id="trip-redo">Plan another</button>'+
       '<button class="btn" id="trip-save">Save to a chat</button>';
     on($('trip-redo'),'click',openTripPlanner);
@@ -29246,7 +29246,7 @@ async function schoolPrepare(index){
     ? '<div class="sch-pick">' + docs.map((d, i) =>
         '<label class="sch-pick-row"><input type="radio" name="sch-doc" value="' + i + '"' + (i === 0 ? ' checked' : '') + '>'+
           '<span class="sch-pick-k">' + escH(kindOf(d)) + '</span>'+
-          '<a href="' + escH(safeUrl(d.url)) + '" target="_blank" rel="noopener">' + T('open the original') + '</a>'+
+          '<a href="' + escH(safeUrl(d.url)) + '" target="_blank" rel="noopener noreferrer">' + T('open the original') + '</a>'+
         '</label>').join('') + '</div>'
     : '';
 
@@ -29303,7 +29303,7 @@ async function _schoolAfterCopy(a, copy, token){
 
   body.innerHTML =
     '<div class="sch-step">'+
-      '<div class="sch-done">' + T('Your copy is made.') + ' <a href="' + escH(safeUrl(link)) + '" target="_blank" rel="noopener">' + T('Open it') + '</a></div>'+
+      '<div class="sch-done">' + T('Your copy is made.') + ' <a href="' + escH(safeUrl(link)) + '" target="_blank" rel="noopener noreferrer">' + T('Open it') + '</a></div>'+
       '<div class="sch-ask">'+
         '<b>' + T('Share your copy with your teacher?') + '</b>'+
         (teachers.length
@@ -29342,9 +29342,9 @@ async function _schoolAfterCopy(a, copy, token){
     body.innerHTML =
       '<div class="sch-step">'+
         '<div class="sch-done sch-done-final">' + T('Shared with') + ' ' + escH(who) + '.</div>'+
-        '<p>' + T('Your copy:') + ' <a href="' + escH(safeUrl(link)) + '" target="_blank" rel="noopener">' + escH(a.name || T('your document')) + '</a></p>'+
+        '<p>' + T('Your copy:') + ' <a href="' + escH(safeUrl(link)) + '" target="_blank" rel="noopener noreferrer">' + escH(a.name || T('your document')) + '</a></p>'+
         '<div class="sch-note">' + T('Last step is yours: open the assignment in Canvas and hand it in.') + '</div>'+
-        (a.url ? '<a class="btn bp" href="' + escH(safeUrl(a.url)) + '" target="_blank" rel="noopener">' + T('Open the assignment in Canvas') + '</a>' : '')+
+        (a.url ? '<a class="btn bp" href="' + escH(safeUrl(a.url)) + '" target="_blank" rel="noopener noreferrer">' + T('Open the assignment in Canvas') + '</a>' : '')+
         '<button class="btn bs" data-dact="_schoolRender">' + T('Back to my work') + '</button>'+
       '</div>';
   });
