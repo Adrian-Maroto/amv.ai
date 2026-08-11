@@ -1743,6 +1743,37 @@ async function runDueAutomations(env){
     const costCeiling = budget.ceiling;
     const costName = `cost:${sub.subject}:${monthKey()}`;
 
+    /* THE DAY'S CEILING, WHICH THIS PATH CONTRIBUTED TO AND NEVER CONSULTED.
+
+       Chat, image, video and the widget all check the global daily cap before
+       spending. This tick incremented it afterwards and never asked - so once
+       the ceiling was reached, every path a person can SEE refused, and the
+       unattended cron kept going. The one thing running while nobody is
+       watching was the one thing the ceiling did not stop, which is the worst
+       possible place for that hole to be.
+
+       Free accounts are shed first, exactly as they are everywhere else: on a
+       busy day the work that pays nothing is what stops. And a failure to read
+       the counter refuses rather than proceeds - unlike the interactive paths,
+       nobody is here to notice a runaway, so the safe answer is the quiet one. */
+    const gCapAuto = parseFloat(env.GLOBAL_DAILY_USD_CAP || '500');
+    if (gCapAuto > 0) {
+      const payingAuto = _planPriceUSD(sub.plan, sub.customCfg) > 0;
+      const capForThem = payingAuto ? gCapAuto : +(gCapAuto * FREE_TIER_CAP_SHARE).toFixed(2);
+      let gRes = null;
+      try { gRes = await counter(env, `spend:${todayKey()}`, { op: 'checkCap', cap: capForThem }); }
+      catch (e) {
+        audit(env, 'spend_gate_blind', { what: 'automation', email, error: String((e && e.message) || e) });
+      }
+      if (!gRes || !gRes.allowed) {
+        audit(env, 'auto_skipped_global_cap', { email, paying: payingAuto, value: gRes && gRes.value, cap: capForThem });
+        try { await alertOnce(env, 'auto_global_cap',
+          'Scheduled work is being skipped because the daily spend ceiling is reached (or the counter is unreadable). '
+          + 'Automations resume on their own when the day rolls over.', 60); } catch (_) {}
+        continue;
+      }
+    }
+
     /* The plan's JOB limit, honoured here and not only at the moment one is
        created. Somebody on Elite with twenty-five running jobs who drops to Pro
        used to keep all twenty-five: creation was gated, running never was, so

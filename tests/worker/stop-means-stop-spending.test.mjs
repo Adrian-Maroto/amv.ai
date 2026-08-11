@@ -27,7 +27,7 @@ const ROOT = join(__dir, '..', '..');
 const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'kill.harness.mjs');
-writeFileSync(harness, src + '\nexport { DB, _killCache };\n');
+writeFileSync(harness, src + '\nexport { DB, _killCache, counter, todayKey };\n');
 const W = await import(harness + '?t=' + Date.now());
 const worker = W.default;
 
@@ -169,6 +169,52 @@ section('AND it stops the cron, which spends with nobody present');
   await c2.settle();
   ok(modelCalls.length > 0,
      'while the identical automation, unpaused, really does call the model', modelCalls.length);
+}
+
+section('AND the day\u2019s ceiling stops the cron, which it never used to');
+{
+  /* The kill switch stopped the cron. The daily spend ceiling did not.
+
+     Chat, image, video and the widget all CHECK the global counter before
+     spending. The automation tick incremented it afterwards and never asked -
+     so once the ceiling was reached, every path a person can see refused and
+     the unattended cron carried on. The one thing running while nobody is
+     watching was the one thing the ceiling did not stop, which is the worst
+     place in the product for that hole to be. */
+  const env = mkEnv();
+  env.GLOBAL_DAILY_USD_CAP = '10';
+  await signedIn(env);
+  await W.DB.put(env, 'ent', USER, { plan: 'ultra', updatedAt: Date.now(), renewedAt: Date.now(), source: 'stripe' });
+  await W.DB.put(env, 'auto', USER, { items: [{
+    id: 'a1', name: 'runaway', prompt: 'do the thing',
+    active: true, next: Date.now() - 60000, every: 'day',
+  }] });
+  /* The day is already spent. */
+  await W.counter(env, `spend:${W.todayKey()}`, { op: 'incr', amount: 25, ttlMs: 86400000 });
+
+  const c = { waitUntil(p) { this._p = this._p || []; if (p) this._p.push(Promise.resolve(p).catch(() => {})); },
+              passThroughOnException() {}, async settle() { await Promise.all(this._p || []); } };
+  await worker.scheduled({ cron: '*/5 * * * *' }, env, c);
+  await c.settle();
+  ok(modelCalls.length === 0,
+     'a cron tick past the day\u2019s ceiling calls the model zero times', modelCalls.length);
+
+  /* The control, so this is not satisfied by an automation that was never
+     going to run: the identical fixture with the day NOT spent does spend. */
+  const env2 = mkEnv();
+  env2.GLOBAL_DAILY_USD_CAP = '10';
+  await call(env2, '/auth/signup', { email: USER, name: 'S', password: PW });
+  await W.DB.put(env2, 'ent', USER, { plan: 'ultra', updatedAt: Date.now(), renewedAt: Date.now(), source: 'stripe' });
+  await W.DB.put(env2, 'auto', USER, { items: [{
+    id: 'a1', name: 'runaway', prompt: 'do the thing',
+    active: true, next: Date.now() - 60000, every: 'day',
+  }] });
+  const c2 = { waitUntil(p) { this._p = this._p || []; if (p) this._p.push(Promise.resolve(p).catch(() => {})); },
+               passThroughOnException() {}, async settle() { await Promise.all(this._p || []); } };
+  await worker.scheduled({ cron: '*/5 * * * *' }, env2, c2);
+  await c2.settle();
+  ok(modelCalls.length > 0,
+     'while the identical automation, with the day unspent, really does run', modelCalls.length);
 }
 
 section('And the cron runs normally when it is not paused');
