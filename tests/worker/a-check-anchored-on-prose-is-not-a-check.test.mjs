@@ -102,19 +102,6 @@ section('Every test file was read, and both product sources with them');
   });
 }
 
-section('No window into the source is located by a sentence');
-{
-  const bad = [];
-  for (const f of files) {
-    const code = codeOnly(f.text);           // the test's OWN comments do not count
-    for (const m of code.matchAll(/\.indexOf\(\s*(['"])((?:\\.|(?!\1).)*)\1/g)) {
-      if (onlyInProse(m[2])) bad.push(f.name + ': ' + JSON.stringify(m[2].slice(0, 60)));
-    }
-  }
-  ok(bad.length === 0,
-     'a window is anchored on code, so editing a comment cannot move it', bad);
-}
-
 /* Which local variables in a test file hold PRODUCT SOURCE.
 
    This matters because most regexes in these files are matched against page
@@ -143,6 +130,28 @@ function sourceVars(text) {
     if (known.size === before) break;
   }
   return known;
+}
+
+section('No window into the source is located by a sentence');
+{
+  /* Only indexOf on a variable that HOLDS product source. The first version
+     asked it of every indexOf in every file and flagged a test building a KV
+     key - `key.indexOf('seller@')` - because those characters happen to
+     appear in a comment in the Worker. A check that reports unrelated code is
+     a check somebody switches off. */
+  const bad = [];
+  for (const f of files) {
+    const code = codeOnly(f.text);           // the test's OWN comments do not count
+    const vars = sourceVars(code);
+    if (!vars.size) continue;
+    const names = [...vars].join('|');
+    const re = new RegExp('\\b(?:' + names + ')\\.indexOf\\(\\s*([\'"])((?:\\\\.|(?!\\1).)*)\\1', 'g');
+    for (const m of code.matchAll(re)) {
+      if (onlyInProse(m[2])) bad.push(f.name + ': ' + JSON.stringify(m[2].slice(0, 60)));
+    }
+  }
+  ok(bad.length === 0,
+     'a window is anchored on code, so editing a comment cannot move it', bad);
 }
 
 section('And no assertion about the source passes on prose alone');

@@ -3910,3 +3910,36 @@ Believing it would have cost more.
 **Rule:** the gate measures a commit. Commit first, run it, and leave every
 tracked file alone until it finishes. If something needs fixing meanwhile,
 kill the run rather than letting it produce a verdict about nothing.
+
+## 219. A backup is a file that gets IMPORTED, so "credential" means both ways
+
+Widening the backup list, I moved `apikey:` into it and wrote the reason out:
+these are only hashes, and the per-user index was already backed up, so
+restoring the index without the lookup leaves a list of keys that no longer
+authenticate. Every word of that is true about READING a snapshot.
+
+It is wrong about restoring one. The record maps a hash to an account, so a
+planted row mints a working API key for whoever wrote the file - and
+`a-restore-brings-it-back` plants exactly that key and expects it refused. It
+went red on the next run.
+
+**Rule:** when deciding whether something belongs in a backup, ask both
+questions. Not only "what does this leak if the file is read", but "what does
+this GRANT if the file is imported". The second one is what makes an
+authentication record different from a data record, and a hash is still a
+credential when the system trusts whatever it is compared against.
+
+## 220. Two thresholds that share a number are still two thresholds
+
+The payout risk engine used one constant, $600, for "identity has not been
+verified" and for the tax reporting line. They looked like the same rule
+because the number matched. They are not: identity is fairly measured over a
+lifetime, and reporting is measured over a calendar year. Somebody paid $400
+in each of three years had passed the lifetime mark and was never reportable;
+somebody paid $700 in their first year was reportable and had passed nothing.
+Sharing the constant also meant the day the identity line moved for a fraud
+reason, the legal reporting line would have moved with it, silently.
+
+**Rule:** two rules that happen to agree on a value still get two named
+constants, and each says what question it answers. Merging them is only right
+when they would have to move together.

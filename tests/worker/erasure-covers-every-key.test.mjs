@@ -137,6 +137,15 @@ section('Every key naming a person is erased, or retained for a stated reason');
     reset:     'keyed by the TOKEN, so no scan finds it from an address; authResetConfirm refuses a link older than the account it names instead',
     apikey:    'keyed by the hash, and deleted by walking the account\'s own apikeys row - which erasure does explicitly',
     entitleitem: 'an idempotency marker for a marketplace grant; erased with the kinds, and carries no content',
+    /* The two money records, kept on purpose and stated in the deletion reply
+       rather than left to be discovered. A record of money actually sent has
+       to outlive the account under tax and anti-money-laundering rules, and
+       the right to erasure does not override a legal retention obligation -
+       both GDPR and the CCPA say so in the same breath as the right itself.
+       They hold what was paid and when, and nothing about what was sold, to
+       whom, or anything the person wrote. */
+    withdraw:   'the payout ledger - what AMV actually sent and when; kept for the statutory period and named in the deletion reply',
+    payoutyear: 'the calendar-year totals a tax filing is built from; the same obligation, and the same disclosure',
   };
   const missing = [...KEYED_BY_PERSON]
     .filter(k => !ERASED.has(k) && !(k in RETAINED_ON_PURPOSE))
@@ -146,6 +155,12 @@ section('Every key naming a person is erased, or retained for a stated reason');
 
   /* And an excuse that has since stopped being true is itself a finding. */
   const nowErased = Object.keys(RETAINED_ON_PURPOSE).filter(k => ERASED.has(k) && k !== 'apikey' && k !== 'entitleitem');
+  /* And the person is TOLD. A retention decision nobody discloses is a
+     retention decision that reads as an accident the day somebody looks. */
+  ok(/retained:\s*\{/.test(erasureBody) || /retained/.test(bodyOf('authDeleteAccount')),
+     'the deletion reply says what was kept', true);
+  ok(/Tax and anti-money-laundering law/.test(src),
+     'and on what grounds, in words the person asking can read', true);
   ok(nowErased.length === 0,
      'nothing excused as retained is quietly being deleted anyway', nowErased);
 }
