@@ -210,12 +210,27 @@ const retry = await page.evaluate(async () => {
   const calls = {};
   window.fetch = async (url) => { const u = String(url); calls[u] = (calls[u] || 0) + 1; return { status: 503, ok: false, json: async () => ({}), headers: { get: () => null } }; };
   try { await AMV_API._fetch('/v1/team/invite', { method: 'POST', body: '{}' }); } catch (e) {}
+  /* A POST that is NOT named repeatable. Under the old roster this retried,
+     because the roster listed what to exclude and anything unlisted was fair
+     game - which is how /auto/create, /v1/keys/create and /v1/share/create
+     came to be retried. The default is inverted now, so an unnamed mutation
+     is left alone. */
   try { await AMV_API._fetch('/v1/generic', { method: 'POST', body: '{}' }); } catch (e) {}
+  /* And something genuinely safe to repeat, so this proves the inversion did
+     not simply switch retrying off: a read, and a POST named repeatable
+     because the second write stores what the first one did. */
+  try { await AMV_API._fetch('/v1/read-me', { method: 'GET' }); } catch (e) {}
+  try { await AMV_API._fetch('/v1/sync/pull', { method: 'POST', body: '{}' }); } catch (e) {}
   window.fetch = realFetch;
-  return { invite: calls['https://good.example/v1/team/invite'] || 0, generic: calls['https://good.example/v1/generic'] || 0 };
+  return { invite: calls['https://good.example/v1/team/invite'] || 0,
+           generic: calls['https://good.example/v1/generic'] || 0,
+           read: calls['https://good.example/v1/read-me'] || 0,
+           repeatable: calls['https://good.example/v1/sync/pull'] || 0 };
 });
 ok(retry.invite === 1, 'a non-idempotent mutation (team invite) is NOT retried', retry.invite);
-ok(retry.generic > 1, 'a retryable request still retries on 5xx', retry.generic);
+ok(retry.generic === 1, 'and neither is a mutation nobody has named as safe to repeat', retry.generic);
+ok(retry.read > 1, 'a read still retries on 5xx', retry.read);
+ok(retry.repeatable > 1, 'and so does a mutation named as safe to repeat', retry.repeatable);
 
 /* ── Sandboxing: generated apps run with no same-origin access ─────────────
    A generated app is untrusted code. It must render in an iframe WITHOUT

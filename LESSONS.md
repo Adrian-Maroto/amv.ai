@@ -4013,3 +4013,31 @@ list in another file.
 safe answer the default. A mutation is not retried unless it is named as safe
 to repeat. The roster still exists, but now a forgotten entry costs a
 redundant round trip instead of a duplicate credential.
+
+## 225. An index that is never cleaned is the leak it replaced
+
+The due-time buckets that stop the cron reading every account went in with a
+TTL marker beside them and no TTL on the records themselves. A bucket
+describes ONE hour and is worthless afterwards, so one record per hour per
+shard would have accumulated for ever - the same unbounded growth the index
+was built to fix, moved somewhere nobody looks.
+
+That is twice in two days: the seller and inbox indexes went in uncapped, and
+these went in unexpiring.
+
+**Rule:** when adding an index or a cache, write down what removes an entry
+before writing what adds one. If the answer is "nothing", it is not an index,
+it is a leak with a fast read.
+
+## 226. Measure the slope, not the average
+
+A check asserted that an idle account costs no lookup of its own, as total
+reads divided by accounts. Moving the tick onto a due-time index added a fixed
+cost - a constant handful of records per run - and against fifty accounts a
+fixed 48 reads reads as one each, which is exactly what the check forbids. It
+is not per-account: at fifty thousand it is a thousandth each.
+
+**Rule:** to test that a cost does not scale, run it at two sizes and measure
+the DIFFERENCE. Fixed costs cancel; anything per-item survives. An average
+cannot tell the two apart, and will either forbid a constant or wave through a
+linear cost hidden under a large constant.

@@ -31,7 +31,7 @@ const ROOT = join(__dir, '..', '..');
 const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'levels.harness.mjs');
-writeFileSync(harness, src + '\nexport { DB, AUTO_APPROVALS, _autoEffective };\n');
+writeFileSync(harness, src + '\nexport { DB, AUTO_APPROVALS, _autoEffective, _autoBucketAdd };\n');
 const W = await import(harness + '?t=' + Date.now());
 const worker = W.default;
 
@@ -207,6 +207,13 @@ section('A job created AFTER the ceiling inherits it');
   const rec = await W.DB.get(env, 'auto', USER);
   rec.items[0].next = Date.now() - 60000;
   await W.DB.put(env, 'auto', USER, rec);
+  /* The tick reads a due-time index now instead of every account, so moving
+     a due time means telling the index - which every route that moves one
+     does. This writes the record behind the product's back, which nothing in
+     the product does, so it says so itself. Without it the account is
+     invisible until the next full sweep, and the sweep is the floor under
+     this path rather than the path being tested here. */
+  await W._autoBucketAdd(env, USER, rec.items[0].next);
   await tick(env);
 
   ok(emails.length === 0, 'the new job does not send either', emails.length);
@@ -249,6 +256,7 @@ section('Raising the ceiling gives every job back what it was set to');
   const rec = await W.DB.get(env, 'auto', USER);
   rec.items[0].next = Date.now() - 60000;
   await W.DB.put(env, 'auto', USER, rec);
+  await W._autoBucketAdd(env, USER, rec.items[0].next);   // as every route that moves a due time does
   await tick(env);
   ok(sent.length === 1, 'and runs normally again once the ceiling is raised', sent.length);
   ok(emails.length === 1, 'delivering as it was configured to', emails.length);

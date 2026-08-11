@@ -198,8 +198,22 @@ section('The person is charged for BOTH calls, because AMV pays for both');
      was never billed. */
   const month = new Date().toISOString().slice(0, 7);
   const num = async (k) => { try { return parseFloat(await KV.get(k)) || 0; } catch (e) { return 0; } };
-  const tokens = await num(`ctr:usg:${USER}:${month}`);
-  const spend  = await num(`ctr:cost:${USER}:${month}`);
+  /* Found by PREFIX rather than by guessing the window.
+
+     An allowance is counted over the billing period now, not the calendar
+     month, so `ctr:usg:someone@x.com:2026-08` is the right key only for a free
+     account. Hardcoding either one makes this file report a broken meter every
+     time the window changes - and a test that says "nothing was billed" when
+     everything was billed is worse than no test. What is being checked is that
+     the Worker wrote this account's usage somewhere, so it looks for that. */
+  const sumByPrefix = async (prefix) => {
+    const all = await KV.list({ prefix });
+    let n = 0;
+    for (const k of (all.keys || [])) n += await num(k.name);
+    return n;
+  };
+  const tokens = await sumByPrefix(`ctr:usg:${USER}:`);
+  const spend  = await sumByPrefix(`ctr:cost:${USER}:`);
   const house  = await num(`ctr:costtotal:${month}`);
 
   ok(tokens > 0, 'the account\u2019s token usage was written by the Worker', tokens);

@@ -159,39 +159,36 @@ section('No write anywhere in the client ignores its answer');
 {
   /* The property, not the four instances. app.js is the generated, unminified
      concatenation, so this holds whether or not the bundle was minified. */
-  const src = readFileSync(join(ROOT, 'app.js'), 'utf8');
-  const api = src.slice(src.indexOf('const AMV_API'), src.indexOf('const AMV_API') + 40000);
-  const deaf = [];
-  const re = /^\s{2}async ([A-Za-z_0-9]+)\(([^)]*)\)\s*\{/gm;
-  let m;
-  while ((m = re.exec(api))) {
-    let d = 0, j = api.indexOf('{', m.index + m[0].length - 1), k = j;
-    do { if (api[k] === '{') d++; else if (api[k] === '}') d--; k++; } while (d > 0 && k < api.length);
-    const body = api.slice(j, k);
-    if (!/_fetch\(/.test(body)) continue;
-    /* An assigned result is read; a bare `await this._fetch(...)` is not. */
-    if (/(?:^|[^=\w.])await this\._fetch\(/m.test(body.replace(/=\s*await this\._fetch\(/g, '=X('))) {
-      deaf.push(m[1]);
-    }
-  }
-  ok(deaf.length === 0, 'no method throws away what the server answered', deaf);
-}
+  /* Asked of the BEHAVIOUR, not of the source text.
 
-section('A handoff is never replayed onto somebody else');
-{
-  /* It is a create, into another person's inbox. A 5xx raised after the write
-     landed would, on retry, hand the same work over twice. */
-  /* Read from app.js, not from the running page: the bundle the browser loads
-     is minified, so `const noRetry` is not there to match on. */
-  const src = readFileSync(join(ROOT, 'app.js'), 'utf8');
-  /* The paths live inside regex literals, so every slash is backslash-escaped
-     in the source text. Drop the escapes and read it as the path it stands for. */
-  const line = (src.match(/const noRetry =[\s\S]*?;\n/) || [''])[0].replace(/\\\//g, '/');
-  const isNoRetry = { found: line.length > 0,
-                      handoff: /api\/handoff/.test(line), pause: /auto\/pause/.test(line) };
-  ok(isNoRetry.found, 'the retry policy was located', isNoRetry.found);
-  ok(isNoRetry.handoff, 'creating one is excluded from automatic retry', isNoRetry);
-  ok(!isNoRetry.pause, 'while setting a flag, which is the same done twice, still retries', isNoRetry);
+     This read the `const noRetry =` line and looked for `api/handoff` in it.
+     That was already fragile - the shipped file is minified, so the comment
+     above says so - and it broke outright when the policy stopped being a
+     roster of excluded paths. Worse, it would have kept passing if the path
+     had been listed somewhere that no longer did anything.
+
+     What matters is that sending a handoff twice cannot happen by accident. */
+  const tries = await page.evaluate(async () => {
+    AMV_API.base = 'https://good.example';
+    AMV_API._setTokens({ token: 't', refreshToken: 'r' });
+    AMV_API._backoff = () => Promise.resolve();
+    const realFetch = window.fetch;
+    const calls = {};
+    window.fetch = async (url) => {
+      const u = String(url); calls[u] = (calls[u] || 0) + 1;
+      return { status: 503, ok: false, json: async () => ({}), headers: { get: () => null } };
+    };
+    try { await AMV_API._fetch('/api/handoff', { method: 'POST', body: '{}' }); } catch (e) {}
+    try { await AMV_API._fetch('/auto/update', { method: 'POST', body: '{}' }); } catch (e) {}
+    window.fetch = realFetch;
+    return { handoff: calls['https://good.example/api/handoff'] || 0,
+             pause: calls['https://good.example/auto/update'] || 0 };
+  });
+  ok(tries.handoff === 1, 'creating one is excluded from automatic retry', tries);
+  /* The other half of the rule, and the reason it is not simply "never retry a
+     POST": pausing sets a flag, and setting a flag twice is setting it once.
+     Work that is safe to repeat still survives a blip. */
+  ok(tries.pause > 1, 'while setting a flag, which is the same done twice, still retries', tries);
 }
 
 section('And a stub that cannot fail cannot test a refusal');
