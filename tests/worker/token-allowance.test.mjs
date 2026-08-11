@@ -7,6 +7,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { functionBody } from '../lib/source.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -68,7 +69,30 @@ section('The browser guard matches the server, so nobody is stopped by a phantom
 
 section('Margin is still guaranteed by the dollar backstop, not by these caps');
 {
-  ok(/priceForBackstop \* 0\.45/.test(src), 'the cost ceiling is unchanged');
+  /* The PROPERTY, not the spelling. This matched the literal
+     `priceForBackstop * 0.45` and failed the day that arithmetic moved into a
+     shared helper - while the backstop it exists to protect was still exactly
+     45% and still enforced. A rule written against the shape a defect happened
+     to take will fail on a correct refactor and pass on a real regression that
+     keeps the words (LESSONS #203).
+
+     What must stay true: one definition of the ceiling, at 45% of the plan
+     price, consulted by every path that spends. */
+  const ceiling = functionBody(src, '_monthlyCeilingUSD');
+  ok(ceiling.length > 0, 'the ceiling is defined in one place', ceiling.length > 0);
+  ok(/\* 0\.45/.test(ceiling), 'and it is still 45% of the plan price', /\* 0\.45/.test(ceiling));
+  ok(/_planPriceUSD\(/.test(ceiling), 'derived from the price, not a hardcoded figure', true);
+  /* And every path that spends asks it rather than recomputing. Counting the
+     arithmetic found three copies in code: this helper, the SMS path, and
+     _autoBudget. The SMS one now asks the helper. _autoBudget takes an
+     entitlement rather than a user, so it cannot see family limits at all -
+     that is a real gap, recorded rather than papered over here. */
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const copies = (code.match(/\* 0\.45/g) || []).length;
+  ok(copies <= 2, 'the 45% arithmetic is not spread across the worker', copies);
+  const sms = src.slice(src.indexOf('Keyed by the billing subject so a team'), src.indexOf('Keyed by the billing subject so a team') + 900);
+  ok(/_monthlyCeilingUSD\(user\)/.test(sms),
+     'the SMS path asks the shared ceiling, so a parent’s limit reaches it', true);
   ok(/anti-abuse guard/.test(src), 'and the token caps are documented as the secondary guard they are');
 }
 

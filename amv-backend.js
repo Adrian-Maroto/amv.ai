@@ -7396,7 +7396,6 @@ async function aiProxy(request, env, ctx) {
   // 3b) COST BACKSTOP - applies to EVERY paid plan. A user can never cost us
   //     more than a safe fraction of what they paid, guaranteeing margin even
   //     if they run 100% on the most expensive model. This is the profit lock.
-  let priceForBackstop = _planPriceUSD(user.plan, user.customCfg);
   /* A child's cap is a ceiling on top of the plan's, never a raise. The parent
      can spend less on them than the plan allows; they can never spend more,
      whatever the plan is or who pays for it. */
@@ -8951,7 +8950,16 @@ async function smsIncoming(request, env, ctx) {
      team paid for is the thing being spent. */
   const price = _planPriceUSD(user.plan, user.customCfg);
   {
-    const cap = price > 0 ? price * 0.45 : FREE_AUTO_CEILING_USD;
+    /* The shared ceiling, so a parent's limit reaches this too. This path
+       computed the plan backstop itself and never looked at family limits, so
+       a child capped at $10 a month could keep running AMV over SMS on the
+       plan's allowance - the limit was real on the paths that happened to
+       contain the code. */
+    const shared = _monthlyCeilingUSD(user);
+    /* No shared ceiling means no plan backstop and no family limit, which is
+       exactly the free case - so the fallback is the free automation ceiling
+       and the plan arithmetic does not need repeating here. */
+    const cap = shared != null ? shared : FREE_AUTO_CEILING_USD;
     const capRes = await counter(env, `cost:${user.billingSubject}:${monthKey()}`, { op: 'checkCap', cap });
     if (!capRes.allowed) return twiml(price > 0
       ? 'You\u2019ve used your plan\u2019s allowance for this cycle. It resets next month.'
