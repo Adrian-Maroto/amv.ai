@@ -1262,13 +1262,36 @@ function _confirmDeleteAccount(){
     go.disabled=true; go.textContent='Deleting\u2026';
     // Purge server-side FIRST (while we still hold the token to authenticate it).
     if(connected){
+      let retained=null;
       try{
         const r=await AMV_API._fetch('/auth/delete',{method:'POST',body:'{}'});
-        if(!r.ok){ throw new Error('server delete failed'); }
+        const d=await r.json().catch(()=>({}));
+        if(!r.ok){
+          /* SAY WHAT THE SERVER SAID.
+
+             This threw the answer away and showed "please try again or contact
+             support" for everything. The server refuses this for one reason it
+             can do something about - a payout still on its way, which it names
+             along with the amount and how to clear it - and that sentence
+             never reached anybody. They retried, it refused again for the same
+             reason, and they contacted support about a wait that would have
+             ended by itself. */
+          go.disabled=false; go.textContent='Delete account';
+          const msg=(d&&d.error)||'Couldn\u2019t delete on the server. Please try again or contact support.';
+          if(typeof toast==='function') toast(msg,'error', d&&d.code==='payout_pending'?9000:5000);
+          return;
+        }
+        retained=d&&d.retained||null;
       }catch(e){
         go.disabled=false; go.textContent='Delete account';
         if(typeof toast==='function') toast('Couldn\u2019t delete on the server. Please try again or contact support.','error');
         return;
+      }
+      /* What AMV keeps, and why, shown before the page goes. The server sends
+         it on every deletion; nothing displayed it, so a disclosure written to
+         be read was only ever in a response body. */
+      if(retained&&retained.what){
+        try{ alert('Your account is deleted.\n\n'+retained.what+'\n\n'+(retained.why||'')); }catch(e){}
       }
     }
     // Erase THIS account off the device, rather than blanking all of storage.

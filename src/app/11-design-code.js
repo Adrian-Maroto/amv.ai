@@ -811,7 +811,17 @@ function renderCodeView(){
   on($('dev-add'),'click',(e)=>{ e.stopPropagation(); if(addMenu) addMenu.style.display=addMenu.style.display==='none'?'block':'none'; });
   // The hero's obvious upload button opens the same menu.
   on($('dev-hero-add'),'click',(e)=>{ e.stopPropagation(); if(addMenu) addMenu.style.display=addMenu.style.display==='none'?'block':'none'; });
-  document.addEventListener('click',()=>{ if(addMenu) addMenu.style.display='none'; });
+  /* ONE listener, not one per render.
+
+     This added an anonymous document-level handler every time the Dev view
+     rendered, and removed none of them - so switching to Dev fifty times left
+     fifty handlers running on every click in the product for the rest of the
+     session. Named and de-duplicated: the handler closes over nothing but the
+     id, so a single one does the job for every render. */
+  if(!window._devAddMenuCloser){
+    window._devAddMenuCloser=()=>{ const mnu=document.getElementById('dev-add-menu'); if(mnu) mnu.style.display='none'; };
+    document.addEventListener('click',window._devAddMenuCloser);
+  }
   if(addMenu){ addMenu.querySelectorAll('[data-add]').forEach(b=>on(b,'click',(e)=>{ e.stopPropagation(); addMenu.style.display='none'; const k=b.dataset.add; if(k==='files') $('dev-files')&&$('dev-files').click(); else if(k==='folder') $('dev-folderinput')&&$('dev-folderinput').click(); else connectFolderFlow(); })); }
   // Drag & drop files straight onto Dev.
   const devShell=$('dev-shell');

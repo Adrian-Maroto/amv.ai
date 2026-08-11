@@ -44,7 +44,10 @@ const SECURITY_HEADERS = {
   'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'",
   'Cross-Origin-Resource-Policy': 'same-site',
 };
-const json = (o, s = 200) => new Response(JSON.stringify(o), { status: s, headers: { 'Content-Type': 'application/json', ...CORS, ...SECURITY_HEADERS } });
+/* `extra` is for headers that are part of the ANSWER rather than the policy -
+   Retry-After on a refusal being the one that matters: a 429 with no idea how
+   long to wait sends the caller straight back into the same wall. */
+const json = (o, s = 200, extra) => new Response(JSON.stringify(o), { status: s, headers: { 'Content-Type': 'application/json', ...CORS, ...SECURITY_HEADERS, ...(extra || {}) } });
 
 /* ---- model catalog: maps AMV model -> real engine + cost + min plan ---- */
 /* ---- model catalog ---------------------------------------------------------
@@ -635,7 +638,7 @@ async function _spendGate(env, user, what) {
      limit set for your account" is not "AMV is busy". */
   const ceiling = _monthlyCeilingUSD(user);
   if (ceiling != null) {
-    const costName = `cost:${user.billingSubject || user.email}:${monthKey()}`;
+    const costName = `cost:${user.billingSubject || user.email}:${_periodKeyOf(user)}`;
     let capRes = null;
     try { capRes = await counter(env, costName, { op: 'checkCap', cap: ceiling }); }
     catch (e) { audit(env, 'spend_gate_blind', { what, scope: 'account', error: String((e && e.message) || e) }); }
@@ -695,12 +698,16 @@ async function _spendGate(env, user, what) {
    Best-effort on purpose: losing the accounting must not lose the work somebody
    already paid a provider for - but it is audited, so a counter that stops
    answering is visible rather than a bill that quietly stops being counted. */
-async function _recordSpend(env, subject, usd, what) {
+async function _recordSpend(env, subject, usd, what, period) {
   const amount = +(+usd || 0);
   if (!(amount > 0)) return;
   try {
     await counter(env, `spend:${todayKey()}`, { op: 'incr', amount, ttlMs: 86400000 * 2 });
-    await counter(env, `cost:${subject}:${monthKey()}`, { op: 'incr', amount, ttlMs: 86400000 * 70 });
+    /* The customer's own window, which is their billing period rather than the
+       calendar month - see _periodKeyFor. The platform totals below stay on the
+       calendar, because those are the owner's reporting and a month is what a
+       month means there. */
+    await counter(env, `cost:${subject}:${period || monthKey()}`, { op: 'incr', amount, ttlMs: 86400000 * 70 });
     /* AND the platform total, which is the one the owner actually reads.
 
        Chat books all three of these. This booked the first two, so image and
@@ -814,6 +821,57 @@ function _forwardSentry(env, ctx, e) {
 
 const todayKey = () => new Date().toISOString().slice(0, 10);
 const monthKey = () => new Date().toISOString().slice(0, 7);
+
+/* THE WINDOW AN ALLOWANCE IS ACTUALLY MEASURED OVER.
+
+   Every per-customer allowance in this file was keyed by monthKey() - the
+   CALENDAR month. Subscriptions do not bill on the calendar. They bill on the
+   day somebody subscribed, and the two only line up for people who happened to
+   sign up on the 1st.
+
+   What that cost: somebody who subscribes on the 28th spends four days against
+   August's bucket, and on 1 September gets a completely fresh one - still
+   inside their FIRST paid month. They receive close to two months of compute
+   for one payment, and it repeats every month for as long as they stay. The
+   customer who subscribed on the 1st gets exactly what they paid for. Nothing
+   about it looks wrong from any single screen: every charge is correct, every
+   counter is correct, and the window they are counted over is the wrong one.
+
+   `renewedAt` already moves on every successful payment - the renewal sweep
+   sets it - so the anchor existed and nothing consulted it.
+
+   Free accounts keep the calendar month. They have no billing date, so there
+   is no anniversary to anchor to, and the 1st is as good a boundary as any. */
+function _periodStartISO(anchorMs, nowMs) {
+  const a = new Date(anchorMs), n = new Date(nowMs);
+  const anchorDay = a.getUTCDate();
+  let y = n.getUTCFullYear(), mo = n.getUTCMonth();
+  /* The 31st does not exist in September. A subscription anchored on the 31st
+     renews on the 30th there and on the 28th in February, which is what every
+     processor does, so the window has to agree with the charge. */
+  const dayIn = (yy, mm) => Math.min(anchorDay, new Date(Date.UTC(yy, mm + 1, 0)).getUTCDate());
+  if (n.getUTCDate() < dayIn(y, mo)) {
+    mo -= 1;
+    if (mo < 0) { mo = 11; y -= 1; }
+  }
+  const d = dayIn(y, mo);
+  return `${y}-${String(mo + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+
+/* The key for a billing subject's current allowance window. Takes what it
+   needs rather than a whole user, so the cron and the request path - which
+   hold different shapes - can both ask the same question. */
+function _periodKeyFor(renewedAt, plan, customCfg) {
+  const anchor = +renewedAt || 0;
+  if (!anchor || !(_planPriceUSD(plan, customCfg) > 0)) return monthKey();
+  return _periodStartISO(anchor, Date.now());
+}
+
+/* The same question asked of a resolved user, which is what most callers have.
+   `billingRenewedAt` is put there by requireUser from the billing subject, so a
+   team member is measured over the TEAM's period rather than their own. */
+const _periodKeyOf = (user) =>
+  _periodKeyFor(user && user.billingRenewedAt, user && user.plan, user && user.customCfg);
 
 /* =====================================================================
    INPUT VALIDATION (auditor #4)
@@ -1098,7 +1156,19 @@ async function guardAction(env, key, perMin, perDay, label) {
   const msg = r.scope === 'day'
     ? `You've hit the daily limit for ${label}. Try again tomorrow.`
     : `You're doing that too fast. Give it a moment.`;
-  return json({ error: msg, code: r.code }, 429);
+  /* HOW LONG TO WAIT, said rather than left to be guessed.
+
+     No 429 in this file carried Retry-After, and the client retries a 429 with
+     an exponential backoff that starts in the hundreds of milliseconds - well
+     inside a per-minute window. So a caller who hit the limit spent two more
+     attempts being refused, which the limiter has to handle, and burned their
+     own remaining budget doing it. The header is the one thing that makes a
+     retry useful instead of harmful: the minute limit says how long is left of
+     this minute, the daily one says try tomorrow. */
+  const retryAfter = r.scope === 'day'
+    ? Math.max(60, Math.ceil((86400000 - (Date.now() % 86400000)) / 1000))
+    : Math.max(1, 60 - Math.floor((Date.now() % 60000) / 1000));
+  return json({ error: msg, code: r.code, retryAfter }, 429, { 'Retry-After': String(retryAfter) });
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -1829,7 +1899,7 @@ async function runDueAutomations(env){
     const fam = await _familyOf(env, email, ent);
     const budget = _autoBudget({ plan: sub.plan, custom: sub.customCfg }, fam);
     const costCeiling = budget.ceiling;
-    const costName = `cost:${sub.subject}:${monthKey()}`;
+    const costName = `cost:${sub.subject}:${_periodKeyFor(sub.renewedAt, sub.plan, sub.customCfg)}`;
 
     /* THE DAY'S CEILING, WHICH THIS PATH CONTRIBUTED TO AND NEVER CONSULTED.
 
@@ -2419,6 +2489,13 @@ async function _spendAllowed(env, email, amount, clientLimit){
       need:'This purchase is $' + amt.toFixed(2) + ', above the $' + perPurchase.toFixed(2) + ' single-purchase limit on your account.',
       message:'Raise the limit in Settings if you want this to go through.' };
 
+  /* Deliberately the CALENDAR month, unlike the plan allowance above.
+
+     This is not something anybody bought - it is the limit a person set on
+     what AMV may spend on their behalf, and the screen where they set it says
+     it resets on the 1st. Moving it onto their billing anniversary would make
+     their own control mean something they did not choose, to fix a problem
+     they do not have: this cap is theirs, and it is not sold by the month. */
   const name = `spendmo:${email}:${monthKey()}`;
   const spent = (await counter(env, name, { op:'get' })).value || 0;
   if(spent + amt > (L.monthlyCap || 0))
@@ -6423,6 +6500,9 @@ async function teamCreate(request, env){
      expires with no write at all. */
   const ownerEnt = (await DB.get(env, 'ent', user.email)) || { plan: 'free' };
   team.plan = ownerEnt.plan || 'free';   /* sold: the lapse rides alongside and _teamPlan applies it at read */
+  /* The owner's renewal anniversary, cached with the plan it belongs to, so a
+     seat's allowance window is the one the team is actually billed on. */
+  team.renewedAt = +ownerEnt.renewedAt || 0;
   if(ownerEnt.pastDueSince) team.pastDueSince = ownerEnt.pastDueSince;
   team.customCfg = ownerEnt.custom || null;
   await DB.put(env, 'team', id, team);
@@ -7189,6 +7269,7 @@ async function requireUser(request, env) {
   data.plan = sub.plan;
   data.customCfg = sub.customCfg;
   if (sub.teamId) { data.teamId = sub.teamId; data.teamRole = sub.teamRole; data.teamSeated = sub.seated; }
+  data.billingRenewedAt = sub.renewedAt || 0;
   /* Resolved here so every check downstream reads the same answer, and none of
      them go to storage on their own (AMV-102). */
   data.family = await _familyOf(env, data.email, e);
@@ -7302,7 +7383,7 @@ async function videoGenerate(request, env) {
   /* Reserve one video against the monthly cap ATOMICALLY, before we spend a
      cent at the provider. Same reasoning as the token quota: a plain
      read-then-check lets a burst of parallel requests all pass. */
-  const vName = `vid:${user.billingSubject || user.email}:${monthKey()}`;
+  const vName = `vid:${user.billingSubject || user.email}:${_periodKeyOf(user)}`;
   const res = await counter(env, vName, {
     op: 'reserve', amount: 1, cap: limits.videosMonth, ttlMs: 86400000 * 70
   });
@@ -7360,7 +7441,7 @@ async function videoGenerate(request, env) {
      cost would leave every in-flight video invisible to the ceiling - and a
      burst of them is exactly the shape of a runaway bill. Cancelling or failing
      later does not refund the provider, so it does not refund this either. */
-  await _recordSpend(env, user.billingSubject || user.email, _videoCost(env), 'video');
+  await _recordSpend(env, user.billingSubject || user.email, _videoCost(env), 'video', _periodKeyOf(user));
 
   audit(env, 'video_start', { email: user.email });
   return json({ ok: true, id, status: 'starting' });
@@ -7422,7 +7503,10 @@ async function videoStatus(request, env) {
       const limits = effectiveLimits(user);
       if (limits.videosMonth && await _claimOnce(env, 'vidrefund', id)) {
         try {
-          await counter(env, `vid:${user.billingSubject || user.email}:${monthKey()}`,
+          /* The SAME window the charge went into. A refund keyed to the
+             calendar month while the charge sits in the billing period gives
+             the credit back into a bucket the person is not spending from. */
+          await counter(env, `vid:${user.billingSubject || user.email}:${_periodKeyOf(user)}`,
             { op: 'incr', amount: -1, ttlMs: 86400000 * 70 });
         } catch (e) {}
       }
@@ -7446,7 +7530,7 @@ async function videoList(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'Please sign in again.' }, 401);
   const limits = effectiveLimits(user);
-  const used = (await counter(env, `vid:${user.billingSubject || user.email}:${monthKey()}`, { op: 'get' })).value || 0;
+  const used = (await counter(env, `vid:${user.billingSubject || user.email}:${_periodKeyOf(user)}`, { op: 'get' })).value || 0;
   return json({
     ok: true,
     configured: _videoConfigured(env),
@@ -7729,7 +7813,7 @@ async function aiProxy(request, env, ctx) {
      of people on it (AMV-100). */
   const subject = user.billingSubject || user.email;
   const dName = `usg:${subject}:${todayKey()}`;
-  const mName = `usg:${subject}:${monthKey()}`;
+  const mName = `usg:${subject}:${_periodKeyOf(user)}`;
 
   // Upper bound for this call: what we're sending + the most it can generate.
   const estIn  = _estimateReserveInput(body);
@@ -7773,7 +7857,7 @@ async function aiProxy(request, env, ctx) {
      whatever the plan is or who pays for it. */
   const familyCapUSD = (user.family && user.family.limits && user.family.limits.monthlyUSD != null)
     ? Math.max(0, +user.family.limits.monthlyUSD || 0) : null;
-  const costName = `cost:${user.billingSubject || user.email}:${monthKey()}`;
+  const costName = `cost:${user.billingSubject || user.email}:${_periodKeyOf(user)}`;
   /* One definition, shared with the image and video gate - see
      _monthlyCeilingUSD. It used to be written out here and only here, which is
      why it bound chat and nothing else. */
@@ -8469,7 +8553,7 @@ async function imageGenerate(request, env) {
     if (item.url || item.b64_json) {
       /* Recorded only when a picture was really produced, so a provider error
          does not appear on the bill or on the account's cost. */
-      await _recordSpend(env, user.billingSubject || user.email, _imageCost(env), 'image');
+      await _recordSpend(env, user.billingSubject || user.email, _imageCost(env), 'image', _periodKeyOf(user));
       return json(item.url ? { ok: true, url: item.url } : { ok: true, b64: item.b64_json });
     }
     await refundImage();
@@ -8490,8 +8574,8 @@ async function usageReport(request, env) {
      one number while the server refused on another (AMV-100). */
   const subject = user.billingSubject || user.email;
   const dUsed = (await counter(env, `usg:${subject}:${todayKey()}`, { op: 'get' })).value || 0;
-  const mUsed = (await counter(env, `usg:${subject}:${monthKey()}`, { op: 'get' })).value || 0;
-  const mCost = (await counter(env, `cost:${subject}:${monthKey()}`, { op: 'get' })).value || 0;
+  const mUsed = (await counter(env, `usg:${subject}:${_periodKeyOf(user)}`, { op: 'get' })).value || 0;
+  const mCost = (await counter(env, `cost:${subject}:${_periodKeyOf(user)}`, { op: 'get' })).value || 0;
   /* AMV-186: IMAGES AND VIDEO BELONG HERE TOO.
 
      Tokens were the only allowance this endpoint reported, so they were the
@@ -8505,7 +8589,7 @@ async function usageReport(request, env) {
      way, so the screen and the refusal can no longer disagree. Images are per
      DAY and video per MONTH, matching how each is enforced. */
   const imgUsed = (await counter(env, `img:${user.email}:${todayKey()}`, { op: 'get' })).value || 0;
-  const vidUsed = (await counter(env, `vid:${subject}:${monthKey()}`, { op: 'get' })).value || 0;
+  const vidUsed = (await counter(env, `vid:${subject}:${_periodKeyOf(user)}`, { op: 'get' })).value || 0;
   return json({
     plan: user.plan,
     day: { used: dUsed, limit: limits.dayTokens },
@@ -8789,7 +8873,7 @@ async function widgetChat(request, env, ctx) {
   const ownerCeiling = _monthlyCeilingUSD(ownerUser);
   if (ownerCeiling != null) {
     let oc = null;
-    try { oc = await counter(env, `cost:${ownerSubject}:${monthKey()}`, { op: 'checkCap', cap: ownerCeiling }); }
+    try { oc = await counter(env, `cost:${ownerSubject}:${_periodKeyOf(ownerUser)}`, { op: 'checkCap', cap: ownerCeiling }); }
     catch (e) { audit(env, 'spend_gate_blind', { what: 'widget', scope: 'account', error: String((e && e.message) || e) }); }
     if (oc && !oc.allowed) {
       audit(env, 'widget_owner_cap', { key, subject: ownerSubject });
@@ -8824,7 +8908,7 @@ async function widgetChat(request, env, ctx) {
   const wReserve = _estimateReserveInput({ messages: body.messages })
                  + Math.max(1, Math.min(cfg.maxOut || 1024, 200000));
   const ownerDayName = `usg:${ownerSubject}:${todayKey()}`;
-  const ownerMonthName = `usg:${ownerSubject}:${monthKey()}`;
+  const ownerMonthName = `usg:${ownerSubject}:${_periodKeyOf(ownerUser)}`;
   const oDay = await counter(env, ownerDayName, { op: 'reserve', amount: wReserve, cap: ownerLimits.dayTokens, ttlMs: 86400000 * 35 });
   if (!oDay.allowed) {
     audit(env, 'widget_owner_quota', { key, owner: ownerEmail, scope: 'day' });
@@ -9374,7 +9458,7 @@ async function smsIncoming(request, env, ctx) {
        exactly the free case - so the fallback is the free automation ceiling
        and the plan arithmetic does not need repeating here. */
     const cap = shared != null ? shared : FREE_AUTO_CEILING_USD;
-    const capRes = await counter(env, `cost:${user.billingSubject}:${monthKey()}`, { op: 'checkCap', cap });
+    const capRes = await counter(env, `cost:${user.billingSubject}:${_periodKeyOf(user)}`, { op: 'checkCap', cap });
     if (!capRes.allowed) return twiml(price > 0
       ? 'You\u2019ve used your plan\u2019s allowance for this cycle. It resets next month.'
       : 'You\u2019ve used what the free plan covers for texting this month. Upgrade for more, or it resets next month.');
@@ -9703,7 +9787,13 @@ const REFERRAL_DAY_CAP         = 20;                 // signups one code may min
    into an IP, which is what the same-device check actually needs. */
 async function _ipHash(env, request) {
   try {
-    const ip = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || '';
+    /* CF-Connecting-IP is set by the edge and cannot be forged from outside.
+       X-Forwarded-For is a caller-supplied LIST and is only a fallback for
+       running off the edge - so take the first hop rather than the whole
+       header, or somebody appending junk gets a fresh rate-limit bucket per
+       request just by lengthening the string. */
+    const fwd = String(request.headers.get('X-Forwarded-For') || '').split(',')[0].trim();
+    const ip = request.headers.get('CF-Connecting-IP') || fwd || '';
     if (!ip || !env.JWT_SECRET) return '';
     const key = await _hmacKey(env.JWT_SECRET);
     const mac = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode('ip:' + ip)));
@@ -9858,7 +9948,13 @@ async function _referralMaybeConvert(env, email) {
   // Not yet a real user. Not a rejection - just not yet, so we leave the invite
   // pending and check again next time they open the app.
   if (Date.now() - (acct.createdAt || 0) < REFERRAL_MIN_AGE_MS) return null;
-  const used = (await counter(env, `usg:${em}:${monthKey()}`, { op: 'get' })).value || 0;
+  /* Read through the same window the meter writes to, or this finds nothing
+     for anybody on a paid plan and referrals silently stop qualifying. The
+     entitlement is read for the anchor - once per invite, on a path that runs
+     rarely, which is the right place to spend a read. */
+  const refEnt = (await DB.get(env, 'ent', em)) || {};
+  const refPeriod = _periodKeyFor(refEnt.renewedAt, _planOf(refEnt), refEnt.custom);
+  const used = (await counter(env, `usg:${em}:${refPeriod}`, { op: 'get' })).value || 0;
   if (used < REFERRAL_QUALIFY_TOKENS) return null;
 
   // The code must STILL belong to the referrer in both directions (collision race).
@@ -10072,7 +10168,11 @@ async function _billingSubjectOf(env, email, ent){
   const em = String(email || '').toLowerCase();
   const e = ent || (await DB.get(env, 'ent', em)) || {};
   const out = { subject: em, plan: _planOf(e), customCfg: e.custom || null,
-                teamId: null, teamRole: null, seated: false };
+                teamId: null, teamRole: null, seated: false,
+                /* The anniversary the allowance window is anchored on. It
+                   travels with the subject, so a team member is measured over
+                   the TEAM's period rather than opening one of their own. */
+                renewedAt: +e.renewedAt || 0 };
   if(!e.teamId) return out;
   const team = await DB.get(env, 'team', e.teamId);
   /* Membership is the source of truth, exactly as in _teamOf - a stale pointer
@@ -10087,6 +10187,7 @@ async function _billingSubjectOf(env, email, ent){
     out.plan = teamPlan;
     out.customCfg = team.customCfg || null;
     out.subject = 'team:' + team.id;
+    out.renewedAt = +team.renewedAt || 0;
   }
   return out;
 }
@@ -11408,6 +11509,19 @@ async function _getListing(env, id) {
    not rebuilt on every page load - which is the bug this exists to fix,
    rewritten as a cache miss. */
 const MKT_SCAN_MAX = 20000;      // keys, not results: a bound has to bound the work
+/* AND A BOUND ON THE INDEX ITSELF.
+
+   These indexes were added to stop three pages reading the whole store, and
+   they went in without a cap - which trades an unbounded READ for an unbounded
+   WRITE, and the write is the worse one. Both records are written on every
+   publish and every message, and KV has a hard ceiling on a value: past it
+   every write fails, so the person stops being able to publish or send
+   anything at all. The read they replaced was only slow.
+
+   Most recent last, capped. An inbox that holds your most recent few thousand
+   conversations is how every inbox works, and this bounds the INDEX, not the
+   data - every listing and every message is still exactly where it was. */
+const MKT_INDEX_MAX = 4000;
 
 async function _sellerListingIds(env, email) {
   const em = String(email || '').toLowerCase();
@@ -11439,7 +11553,7 @@ async function _sellerListingIds(env, email) {
      the seller would lose the listings past the cap permanently, which is
      worse than the slow page it replaces. */
   if (!truncated) {
-    try { await env.AMV_KV.put(`mktmine:${em}`, JSON.stringify({ ids, built: Date.now() })); } catch (e) {}
+    try { await env.AMV_KV.put(`mktmine:${em}`, JSON.stringify({ ids: ids.slice(-MKT_INDEX_MAX), built: Date.now() })); } catch (e) {}
   } else {
     audit(env, 'seller_index_partial', { email: em, scanned });
   }
@@ -11455,6 +11569,7 @@ async function _sellerIndexAdd(env, email, id) {
     await _withKV(env, 'mktmine', em, (r) => {
       r.ids = Array.isArray(r.ids) ? r.ids : [];
       if (!r.ids.includes(id)) r.ids.push(id);
+      if (r.ids.length > MKT_INDEX_MAX) r.ids = r.ids.slice(-MKT_INDEX_MAX);
       /* Marked built either way: an index that gains a listing is an index,
          and leaving `built` unset would send the next read back to the scan. */
       r.built = r.built || Date.now();
@@ -12852,6 +12967,10 @@ async function marketReport(request, env) {
       const prior = r.reports.find(x => x.by === byId);
       if (prior) { prior.reason = reason; prior.note = note; prior.ts = Date.now(); }
       else r.reports.push({ by: byId, reason, note, ts: Date.now() });
+      /* Deduped per reporter, so this grows with distinct PEOPLE rather than
+         with complaints - but distinct people is still unbounded, and the
+         count that drives the auto-hide only needs the recent ones. */
+      if (r.reports.length > 500) r.reports = r.reports.slice(-500);
       r.count = r.reports.length;
       r.lastAt = Date.now();
       if (!r.status) r.status = 'open';
@@ -13178,7 +13297,10 @@ async function _inboxIndexAdd(env, email, threadKey) {
   try {
     await _withKV(env, 'mktinbox', em, (r) => {
       r.ids = Array.isArray(r.ids) ? r.ids : [];
-      if (!r.ids.includes(threadKey)) r.ids.push(threadKey);
+      /* Moved to the end rather than skipped, so the most recent conversation
+         is the last to be dropped when the cap bites. */
+      r.ids = r.ids.filter(x => x !== threadKey).concat(threadKey);
+      if (r.ids.length > MKT_INDEX_MAX) r.ids = r.ids.slice(-MKT_INDEX_MAX);
       r.built = r.built || Date.now();
       return r;
     }, { ids: [], built: 0 });
@@ -13210,7 +13332,7 @@ async function _inboxThreadKeys(env, email) {
   /* A partial backfill is not written as complete - somebody would lose the
      conversations past the cap for good, which is worse than a slow page. */
   if (!truncated) {
-    try { await env.AMV_KV.put(`mktinbox:${me}`, JSON.stringify({ ids, built: Date.now() })); } catch (e) {}
+    try { await env.AMV_KV.put(`mktinbox:${me}`, JSON.stringify({ ids: ids.slice(-MKT_INDEX_MAX), built: Date.now() })); } catch (e) {}
   } else {
     audit(env, 'inbox_index_partial', { email: me, scanned });
   }

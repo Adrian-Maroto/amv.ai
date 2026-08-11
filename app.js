@@ -257,28 +257,42 @@ const AMV_API = {
     // We DO NOT retry: auth endpoints, streaming, or anything caller marks
     // non-idempotent (payments), to avoid double-charging or replaying.
     const url = this.base.replace(/\/$/,'') + path;
-    // AMV-050: never auto-retry a NON-IDEMPOTENT mutation - a retry on a 5xx/429
-    // could double-submit it (a second invite, listing, purchase, withdrawal,
-    // deploy, etc.). Auth and payments were already excluded; extend to the other
-    // state-creating endpoints. Metered/idempotent POSTs (AI proxy, sync) still retry.
-    const noRetry = o.noRetry || /^\/auth\//.test(path)
-      || /\/(stripe|paypal|pay|subscribe|capture)/.test(path)
-      /* link/invite emails a confirmation code and finance/link/finish spends a
-         one-time token at the provider; replaying either sends a second email
-         or fails a second exchange confusingly. Revoke and unlink are
-         idempotent but are listed too - withdrawing access should happen once,
-         deliberately, not as a side effect of a flaky connection. */
-      /* A handoff is a create, and it lands in somebody ELSE's inbox. A 5xx
-         raised after the write went through would, on retry, hand the same work
-         over twice - to a person who then has to work out which of two
-         identical batons is the live one. Toggles and the pause flag are not
-         listed: they set a value, so doing it twice is doing it once.
+    /* WHICH REQUESTS MAY BE SENT TWICE.
 
-         A support report is the same shape and was missed when the route was
-         added: it creates a ticket AND pages the operator, so a retry files the
-         same bug three times, pages three times, and spends a rate limit that
-         exists precisely because reaching a human is worth abusing. */
-      || /\/(family\/(limits|remove|leave)|link\/(invite|revoke)|finance\/(link\/(start|finish)|unlink)|team\/(invite|join|remove|leave|role|share|unshare|data|task\/(create|update))|market\/(publish|buy|withdraw|review|install)|api\/handoff|v1\/support|deploy|sms\/register|widget\/save)/.test(path);
+       This was a roster: a list of paths that must not be retried, extended
+       each time somebody noticed another one. Rosters go stale silently, and
+       this one had. /auto/create, /v1/keys/create, /v1/share/create,
+       /team/create, /v1/market/message and /v1/feedback were all missing, so a
+       5xx raised AFTER the write went through would send them again - leaving
+       up to three live API keys the person never saw, three public share URLs
+       where revoking the one they know about leaves two live, or three
+       scheduled jobs quietly spending money forever.
+
+       So the default is inverted. A mutation is not retried unless it is named
+       here as safe to repeat, and "safe to repeat" means doing it twice is the
+       same as doing it once: setting a value, reading through a POST, or a
+       write the server makes idempotent itself. A new endpoint added tomorrow
+       is not retried until somebody has thought about it, which is the way
+       round that fails safely.
+
+       GET and HEAD are always retryable - they change nothing by definition. */
+    const method = String((o && o.method) || 'GET').toUpperCase();
+    const mutating = method !== 'GET' && method !== 'HEAD';
+
+    /* Safe to repeat, each because doing it twice is doing it once.
+
+       - sync/pull, keys/list, share/list, link/list, team/get, team/audit,
+         market/(threads|mylistings|purchases|earnings), family/get: reads that
+         are POSTs because they take a body. Nothing is created.
+       - sync/push, spend/(set|limits), widget/config, market/status,
+         thread/read, approvals/edit, auto/update, team/(presence|tasks):
+         they SET a value. The second write stores what the first one did.
+       - the AI proxy is metered and carries its own idempotency. */
+    const REPEATABLE = /\/(v1\/(chat|messages|proxy)|sync\/(pull|push)|keys\/list|share\/(list|visibility)|link\/list|team\/(get|audit|presence|tasks)|market\/(threads|mylistings|purchases|earnings|status|thread\/read|unlist|rate)|family\/get|spend\/(set|limits)|widget\/config|approvals\/edit|auto\/update)(\/|$|\?)/;
+
+    const noRetry = o.noRetry
+      || /^\/auth\//.test(path)
+      || (mutating && !REPEATABLE.test(path));
     const MAX = noRetry ? 0 : 2;        // up to 2 retries (3 total attempts)
 
     /* AMV-061: a request with no deadline can hang forever.
@@ -16137,7 +16151,17 @@ function renderCodeView(){
   on($('dev-add'),'click',(e)=>{ e.stopPropagation(); if(addMenu) addMenu.style.display=addMenu.style.display==='none'?'block':'none'; });
   // The hero's obvious upload button opens the same menu.
   on($('dev-hero-add'),'click',(e)=>{ e.stopPropagation(); if(addMenu) addMenu.style.display=addMenu.style.display==='none'?'block':'none'; });
-  document.addEventListener('click',()=>{ if(addMenu) addMenu.style.display='none'; });
+  /* ONE listener, not one per render.
+
+     This added an anonymous document-level handler every time the Dev view
+     rendered, and removed none of them - so switching to Dev fifty times left
+     fifty handlers running on every click in the product for the rest of the
+     session. Named and de-duplicated: the handler closes over nothing but the
+     id, so a single one does the job for every render. */
+  if(!window._devAddMenuCloser){
+    window._devAddMenuCloser=()=>{ const mnu=document.getElementById('dev-add-menu'); if(mnu) mnu.style.display='none'; };
+    document.addEventListener('click',window._devAddMenuCloser);
+  }
   if(addMenu){ addMenu.querySelectorAll('[data-add]').forEach(b=>on(b,'click',(e)=>{ e.stopPropagation(); addMenu.style.display='none'; const k=b.dataset.add; if(k==='files') $('dev-files')&&$('dev-files').click(); else if(k==='folder') $('dev-folderinput')&&$('dev-folderinput').click(); else connectFolderFlow(); })); }
   // Drag & drop files straight onto Dev.
   const devShell=$('dev-shell');
@@ -19145,13 +19169,36 @@ function _confirmDeleteAccount(){
     go.disabled=true; go.textContent='Deleting\u2026';
     // Purge server-side FIRST (while we still hold the token to authenticate it).
     if(connected){
+      let retained=null;
       try{
         const r=await AMV_API._fetch('/auth/delete',{method:'POST',body:'{}'});
-        if(!r.ok){ throw new Error('server delete failed'); }
+        const d=await r.json().catch(()=>({}));
+        if(!r.ok){
+          /* SAY WHAT THE SERVER SAID.
+
+             This threw the answer away and showed "please try again or contact
+             support" for everything. The server refuses this for one reason it
+             can do something about - a payout still on its way, which it names
+             along with the amount and how to clear it - and that sentence
+             never reached anybody. They retried, it refused again for the same
+             reason, and they contacted support about a wait that would have
+             ended by itself. */
+          go.disabled=false; go.textContent='Delete account';
+          const msg=(d&&d.error)||'Couldn\u2019t delete on the server. Please try again or contact support.';
+          if(typeof toast==='function') toast(msg,'error', d&&d.code==='payout_pending'?9000:5000);
+          return;
+        }
+        retained=d&&d.retained||null;
       }catch(e){
         go.disabled=false; go.textContent='Delete account';
         if(typeof toast==='function') toast('Couldn\u2019t delete on the server. Please try again or contact support.','error');
         return;
+      }
+      /* What AMV keeps, and why, shown before the page goes. The server sends
+         it on every deletion; nothing displayed it, so a disclosure written to
+         be read was only ever in a response body. */
+      if(retained&&retained.what){
+        try{ alert('Your account is deleted.\n\n'+retained.what+'\n\n'+(retained.why||'')); }catch(e){}
       }
     }
     // Erase THIS account off the device, rather than blanking all of storage.

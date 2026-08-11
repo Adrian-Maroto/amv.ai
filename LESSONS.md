@@ -3979,3 +3979,37 @@ on their page.
 entry point. Calling X directly tests a function nobody doubted. This is the
 same lesson as #205 (a door check that was a grep) arriving from a different
 direction, which is how I know it is the shape and not the instance.
+
+## 223. node --check does not find an undeclared identifier
+
+Capping the two marketplace indexes, a cleanup step in my own patch script
+deleted the block that declared `MKT_INDEX_MAX` while leaving four references
+to it. `node --check amv-backend.js` passed - it is a syntax check, and an
+undeclared name is a runtime ReferenceError, not a syntax error. The Worker
+would have loaded and then thrown on the first publish or message, which is
+the worst possible place: the write path of the feature the cap was protecting.
+
+Running one suite found it in seconds.
+
+**Rule:** `node --check` proves the file parses and nothing else. Before
+believing an edit, RUN something that executes the changed path. The gate's
+stage 2 (the Worker loads as a module) and any one suite are both cheap; a
+syntax check on its own is not evidence.
+
+## 224. A default that has to be maintained is a default that goes stale
+
+The client's no-retry rule was a roster of paths that must not be repeated,
+extended each time somebody noticed another one. It had gone stale:
+/auto/create, /v1/keys/create, /v1/share/create, /team/create,
+/v1/market/message and /v1/feedback were all missing, so a 5xx raised AFTER
+the write went through would send them again - three live API keys the person
+never saw, three public share URLs where revoking the known one leaves two
+live, three scheduled jobs spending forever.
+
+Every one of those endpoints was added by somebody who did not think about a
+list in another file.
+
+**Rule:** when the safe answer and the maintained answer disagree, make the
+safe answer the default. A mutation is not retried unless it is named as safe
+to repeat. The roster still exists, but now a forgotten entry costs a
+redundant round trip instead of a duplicate credential.

@@ -257,28 +257,42 @@ const AMV_API = {
     // We DO NOT retry: auth endpoints, streaming, or anything caller marks
     // non-idempotent (payments), to avoid double-charging or replaying.
     const url = this.base.replace(/\/$/,'') + path;
-    // AMV-050: never auto-retry a NON-IDEMPOTENT mutation - a retry on a 5xx/429
-    // could double-submit it (a second invite, listing, purchase, withdrawal,
-    // deploy, etc.). Auth and payments were already excluded; extend to the other
-    // state-creating endpoints. Metered/idempotent POSTs (AI proxy, sync) still retry.
-    const noRetry = o.noRetry || /^\/auth\//.test(path)
-      || /\/(stripe|paypal|pay|subscribe|capture)/.test(path)
-      /* link/invite emails a confirmation code and finance/link/finish spends a
-         one-time token at the provider; replaying either sends a second email
-         or fails a second exchange confusingly. Revoke and unlink are
-         idempotent but are listed too - withdrawing access should happen once,
-         deliberately, not as a side effect of a flaky connection. */
-      /* A handoff is a create, and it lands in somebody ELSE's inbox. A 5xx
-         raised after the write went through would, on retry, hand the same work
-         over twice - to a person who then has to work out which of two
-         identical batons is the live one. Toggles and the pause flag are not
-         listed: they set a value, so doing it twice is doing it once.
+    /* WHICH REQUESTS MAY BE SENT TWICE.
 
-         A support report is the same shape and was missed when the route was
-         added: it creates a ticket AND pages the operator, so a retry files the
-         same bug three times, pages three times, and spends a rate limit that
-         exists precisely because reaching a human is worth abusing. */
-      || /\/(family\/(limits|remove|leave)|link\/(invite|revoke)|finance\/(link\/(start|finish)|unlink)|team\/(invite|join|remove|leave|role|share|unshare|data|task\/(create|update))|market\/(publish|buy|withdraw|review|install)|api\/handoff|v1\/support|deploy|sms\/register|widget\/save)/.test(path);
+       This was a roster: a list of paths that must not be retried, extended
+       each time somebody noticed another one. Rosters go stale silently, and
+       this one had. /auto/create, /v1/keys/create, /v1/share/create,
+       /team/create, /v1/market/message and /v1/feedback were all missing, so a
+       5xx raised AFTER the write went through would send them again - leaving
+       up to three live API keys the person never saw, three public share URLs
+       where revoking the one they know about leaves two live, or three
+       scheduled jobs quietly spending money forever.
+
+       So the default is inverted. A mutation is not retried unless it is named
+       here as safe to repeat, and "safe to repeat" means doing it twice is the
+       same as doing it once: setting a value, reading through a POST, or a
+       write the server makes idempotent itself. A new endpoint added tomorrow
+       is not retried until somebody has thought about it, which is the way
+       round that fails safely.
+
+       GET and HEAD are always retryable - they change nothing by definition. */
+    const method = String((o && o.method) || 'GET').toUpperCase();
+    const mutating = method !== 'GET' && method !== 'HEAD';
+
+    /* Safe to repeat, each because doing it twice is doing it once.
+
+       - sync/pull, keys/list, share/list, link/list, team/get, team/audit,
+         market/(threads|mylistings|purchases|earnings), family/get: reads that
+         are POSTs because they take a body. Nothing is created.
+       - sync/push, spend/(set|limits), widget/config, market/status,
+         thread/read, approvals/edit, auto/update, team/(presence|tasks):
+         they SET a value. The second write stores what the first one did.
+       - the AI proxy is metered and carries its own idempotency. */
+    const REPEATABLE = /\/(v1\/(chat|messages|proxy)|sync\/(pull|push)|keys\/list|share\/(list|visibility)|link\/list|team\/(get|audit|presence|tasks)|market\/(threads|mylistings|purchases|earnings|status|thread\/read|unlist|rate)|family\/get|spend\/(set|limits)|widget\/config|approvals\/edit|auto\/update)(\/|$|\?)/;
+
+    const noRetry = o.noRetry
+      || /^\/auth\//.test(path)
+      || (mutating && !REPEATABLE.test(path));
     const MAX = noRetry ? 0 : 2;        // up to 2 retries (3 total attempts)
 
     /* AMV-061: a request with no deadline can hang forever.

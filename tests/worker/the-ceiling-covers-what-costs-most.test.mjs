@@ -29,7 +29,7 @@ const ROOT = join(__dir, '..', '..');
 const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'ceiling.harness.mjs');
-writeFileSync(harness, src + '\nexport { DB, setEntitlement, todayKey, monthKey, FREE_TIER_CAP_SHARE, _imageCost, _videoCost, _monthlyCeilingUSD, _spendGate };\n');
+writeFileSync(harness, src + '\nexport { DB, setEntitlement, todayKey, monthKey, FREE_TIER_CAP_SHARE, _imageCost, _videoCost, _monthlyCeilingUSD, _spendGate, _periodKeyFor, _periodStartISO };\n');
 const W = await import(harness + '?t=' + Date.now());
 const worker = W.default;
 
@@ -133,7 +133,13 @@ section('Generating a picture reaches the number the ceiling reads');
   ok(delta > 0, 'the day’s spend went up', delta);
   ok(Math.abs(delta - W._imageCost(env)) < 1e-9, 'by what a picture costs', delta);
 
-  const mine = env._vals.get(`cost:painter@example.com:${W.monthKey()}`) || 0;
+  /* Looked up through the window the PRODUCT uses, not the calendar month.
+     An allowance is counted over the billing period now - see _periodKeyFor -
+     and a test that reads the old key would report zero spend on a working
+     meter, which is the most misleading way for this to fail. */
+  const ent = await W.DB.get(env, 'ent', 'painter@example.com');
+  const period = W._periodKeyFor(ent && ent.renewedAt, 'ultra', null);
+  const mine = env._vals.get(`cost:painter@example.com:${period}`) || 0;
   ok(Math.abs(mine - W._imageCost(env)) < 1e-9,
      'and it is on the account that spent it, so unit economics can see it', mine);
 }
