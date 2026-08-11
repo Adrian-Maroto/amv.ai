@@ -23,7 +23,7 @@ authority** on money, limits, and content.
 7. **Subscription proration / downgrade abuse.** → Plan changes recompute entitlement server-side; upgrades only apply on confirmed payment. 🛡️
 8. **Currency rounding / FX manipulation.** → FX is display-only; the billed number is the fixed USD price, not a client value. ✅
 9. **Coupon / promo-code stacking & farming.** → No public promo-credit system exists, so there's nothing to farm; any future codes must be single-use + server-validated. 📋
-10. **Referral farming** (many fake accounts for referral credit). → No cash/credit referral program exists; the free tier is capped daily and by a global spend ceiling, so extra accounts gain almost nothing. 📋✅
+10. **Referral farming** (many fake accounts for referral credit). → **There IS a referral reward** - this entry used to say there was not, and "nothing to farm" was the whole stated defence. Both sides of a conversion get `REFERRAL_REWARD_TOKENS` (100,000), so the real protections are the ones that bound it: at most `REFERRAL_MAX_CONVERSIONS` (5) rewards are active per account, each expires after `REFERRAL_BONUS_TTL_MS` (90 days), a capped grant is refused and audited (`referral_capped`), and the reward is TOKENS - it cannot be withdrawn, transferred or turned into cash, so farming costs model spend rather than money, and that spend sits under the global daily USD ceiling. Worth watching: the `referral_capped` audit line and the referral series on the founder dashboard. 🛡✅
 
 ## B. Marketplace, payouts & money laundering
 

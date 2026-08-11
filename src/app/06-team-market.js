@@ -843,7 +843,13 @@ const AMVMarket = {
     // payment processor, so paid items must NOT be handed over for free -
     // route the buyer to add a payment method. Free items continue instantly.
     if((it.price||0) > 0){
-      const e=new Error('This item costs $'+it.price+'. Add a payment method to buy it - free items are added instantly.');
+      /* Names something that exists. "Add a payment method" pointed at a screen
+         AMV does not have - card details live at Stripe and are collected
+         during checkout, and the one function that used to open a payment
+         sheet for this was itself reachable from nothing. Telling somebody to
+         go do a thing there is no way to do is the same dead end as a button
+         that does nothing, written as a sentence. */
+      const e=new Error('This item costs $'+it.price+'. Paid items go through secure checkout, which needs AMV connected to its backend - free items are added instantly.');
       e.code='needs_payment'; throw e;
     }
     // one-of-a-kind: a user listing already marked sold is gone

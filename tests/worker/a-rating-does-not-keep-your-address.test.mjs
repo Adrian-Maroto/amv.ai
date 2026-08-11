@@ -231,5 +231,50 @@ section('And the register has no mojibake in it');
   ok(junk.length === 0, 'no stray characters', junk.slice(0, 5));
 }
 
+
+section('The register does not defend a risk by denying the feature exists');
+{
+  /* Item 10 said referral farming was safe because "no cash/credit referral
+     program exists, so there's nothing to farm". One exists: both sides of a
+     conversion get REFERRAL_REWARD_TOKENS. The reasoning given was therefore
+     void, while the protections that DO bound it - a cap on active rewards, a
+     TTL, an audit line when a grant is refused, and the fact that the reward is
+     tokens rather than money - went unwritten. That is the worst version: the
+     defence is real and the document points somewhere else, so nobody checks
+     the numbers that matter. */
+  ok(/REFERRAL_REWARD_TOKENS\s*=\s*\d+/.test(src), 'the reward exists in the code', true);
+  const item10 = (register.match(/^10\..*$/m) || [''])[0];
+  ok(!/no cash\/credit referral program exists/i.test(item10),
+     'and the register no longer denies it', item10.slice(0, 120));
+  ok(/REFERRAL_MAX_CONVERSIONS/.test(item10) && /REFERRAL_BONUS_TTL_MS/.test(item10),
+     'it names the two bounds that actually limit farming', item10.slice(0, 200));
+  ok(/token/i.test(item10) && /(cash|withdraw)/i.test(item10),
+     'and says the reward cannot become money, which is why this is spend and not loss', true);
+
+  /* The numbers in the document are the numbers in the code. A register that
+     quotes a constant is a register that goes stale the day somebody tunes it. */
+  const constOf = (n) => { const m = src.match(new RegExp(n + '\\s*=\\s*(\\d+)')); return m ? m[1] : null; };
+  const maxConv = constOf('REFERRAL_MAX_CONVERSIONS');
+  const reward  = constOf('REFERRAL_REWARD_TOKENS');
+  ok(maxConv && item10.includes('(' + maxConv + ')'),
+     'the cap quoted in the register matches the code', { code: maxConv, item: item10.slice(0, 200) });
+  ok(reward && item10.includes(Number(reward).toLocaleString('en-US')),
+     'and so does the reward size', { code: reward });
+}
+
+section('An error message does not send somebody to a screen that is not there');
+{
+  /* "Add a payment method to buy it" named an action AMV has no screen for -
+     cards live at Stripe and are taken during checkout, and the one function
+     that used to open a payment sheet was itself reachable from nothing. A
+     sentence pointing at a door that does not exist is the same dead end as a
+     button that does nothing. */
+  const bundle2 = readFileSync(join(ROOT, 'app.js'), 'utf8');
+  ok(!/Add a payment method to buy it/.test(bundle2),
+     'the message no longer names a screen that does not exist', true);
+  ok(/Paid items go through secure checkout/.test(bundle2),
+     'and says what really has to happen instead', true);
+}
+
 if (report('a-rating-does-not-keep-your-address') > 0) process.exitCode = 1;
 done();
