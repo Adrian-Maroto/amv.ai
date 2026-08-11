@@ -1446,8 +1446,15 @@ async function autoCreate(request, env){
     tier: budget.free ? 'free' : 'paid',
     created: Date.now(), runs: 0, lastError: null, active: true
   };
-  rec.items = (rec.items||[]).concat(item);
-  await DB.put(env, 'auto', key, rec);
+  /* Under the lock the cron takes. A run holds this record for the length of
+     a job, and creating one here read it before that started and wrote the
+     whole thing back after - so a result the tick produced meanwhile is
+     erased, and so is a `next` it had just moved. Appending inside the lock
+     touches only the list this request is adding to. */
+  await _withKind(env, 'auto', key, (fresh) => {
+    if(!fresh) return;
+    fresh.items = (fresh.items||[]).concat(item);
+  }, { items:[], results:[] });
   return json({ ok:true, item, emailReady,
                 // true only when they asked for email and cannot have it
                 deliveryDowngraded: notify === 'email' && !emailReady,
@@ -1484,9 +1491,14 @@ async function autoUpdate(request, env){
      it works. */
   if(body.action === 'standing'){
     const text = String(body.standing == null ? '' : body.standing).trim().slice(0, AUTO_STANDING_MAX);
-    rec.standing = text;
-    rec.standingAt = Date.now();
-    await DB.put(env, 'auto', key, rec);
+    /* Under the lock the cron takes - see autoCreate. Only the two fields
+       this action owns are touched, so a run in progress keeps everything it
+       wrote. */
+    await _withKind(env, 'auto', key, (fresh) => {
+      if(!fresh) return;
+      fresh.standing = text;
+      fresh.standingAt = Date.now();
+    }, { items:[], results:[] });
     audit(env, 'auto_standing_set', { by: user.email, len: text.length });
     return json({ ok:true, standing: text, appliesTo: items.length });
   }
@@ -1507,9 +1519,11 @@ async function autoUpdate(request, env){
   if(body.action === 'ceiling'){
     const level = _autoApprovalOf(body.ceiling, null);
     if(!AUTO_APPROVALS.includes(body.ceiling)) return json({ error:'invalid level' }, 400);
-    rec.ceiling = level;
-    rec.ceilingAt = Date.now();
-    await DB.put(env, 'auto', key, rec);
+    await _withKind(env, 'auto', key, (fresh) => {
+      if(!fresh) return;
+      fresh.ceiling = level;
+      fresh.ceilingAt = Date.now();
+    }, { items:[], results:[] });
     /* Worth an audit line: it is a security control, and lowering it is
        something somebody may need to prove happened. */
     audit(env, 'auto_ceiling_set', { by: user.email, level, jobs: items.length });
@@ -1561,9 +1575,24 @@ async function autoUpdate(request, env){
   }
   else return json({ error:'unknown action' }, 400);
 
-  rec.items = items;
-  await DB.put(env, 'auto', key, rec);
-  return json({ ok:true, items });
+  /* Under the lock, and the ITEM LIST only.
+
+     The edits above were applied to a copy read at the top of this handler and
+     the whole record was written back - so a result the cron produced while
+     somebody was pressing "pause" is erased, and so is a `next` the run had
+     just moved. Writing only `items` inside the lock leaves everything else on
+     the record exactly as the tick left it.
+
+     The list written is the one edited here, which is deliberate: an edit is a
+     statement about the jobs this person was looking at. The cron only ever
+     changes bookkeeping fields on items it ran, and takes the same lock to do
+     it, so the two cannot interleave mid-write. */
+  const saved = await _withKind(env, 'auto', key, (fresh) => {
+    if(!fresh) return null;
+    fresh.items = items;
+    return items;
+  }, { items:[], results:[] });
+  return json({ ok:true, items: saved || items });
 }
 
 /* ---- mark results as read ---- */
@@ -1571,9 +1600,14 @@ async function autoClearResults(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
   const key = _autoKey(user.email);
-  const rec = (await DB.get(env, 'auto', key)) || { items:[], results:[] };
-  (rec.results||[]).forEach(r=>{ r.read = true; });
-  await DB.put(env, 'auto', key, rec);
+  /* The cron writes this record under the lock while a run is in progress
+     (AMV-205), so marking results read has to take it too - otherwise the copy
+     read here is written back over whatever the tick produced in between, and
+     a result that arrived while somebody was looking at the page disappears. */
+  await _withKind(env, 'auto', key, (rec) => {
+    if(!rec) return;
+    (rec.results||[]).forEach(r=>{ r.read = true; });
+  }, { items:[], results:[] });
   return json({ ok:true });
 }
 
@@ -3131,12 +3165,19 @@ async function linkAccept(request, env){
   // the link itself, readable by BOTH sides
   const link = { id:'lnk_' + Date.now().toString(36), owner:user.email, grantee:inv.grantee,
     scopes:inv.scopes, active:true, createdAt:Date.now() };
-  const ownerRec = (await DB.get(env, 'links', user.email)) || { items: [] };
-  ownerRec.items = [link, ...(ownerRec.items || [])].slice(0, 50);
-  await DB.put(env, 'links', user.email, ownerRec);
-  const granteeRec = (await DB.get(env, 'links', inv.grantee)) || { items: [] };
-  granteeRec.items = [link, ...(granteeRec.items || [])].slice(0, 50);
-  await DB.put(env, 'links', inv.grantee, granteeRec);
+  /* Both sides, under the lock revoking takes.
+
+     Accepting read each list, put the new link on the front and wrote the
+     whole list back. A revocation landing in that window is erased - and a
+     revocation is the one write here that must never be lost, because losing
+     it leaves somebody with access to an account after they have been told it
+     stopped. The two are the same record and now hold the same lock. */
+  for (const who of [user.email, inv.grantee]) {
+    await _withKind(env, 'links', who, (r) => {
+      if (!r) return;
+      r.items = [link, ...(r.items || [])].slice(0, 50);
+    }, { items: [] });
+  }
   audit(env, 'link_accepted', { owner:user.email, grantee:inv.grantee, scopes:(inv.scopes||[]).join(',') });
 
   /* A FAMILY invitation is the same consent flow with a different consequence.
@@ -3208,10 +3249,15 @@ async function linkRevoke(request, env){
   if(link.owner !== user.email && link.grantee !== user.email)
     return json({ error:'that link is not yours' }, 403);
   // deactivate on BOTH sides so access really stops
+  /* Both sides, each under the lock. These records are written by accepting
+     an invitation as well as by revoking one, and a revocation that loses the
+     race leaves access switched ON for somebody who has been told it is off -
+     which is the one direction this must never fail in. */
   for(const who of [link.owner, link.grantee]){
-    const r = (await DB.get(env, 'links', who)) || { items: [] };
-    (r.items || []).forEach(l => { if(l.id === id){ l.active = false; l.revokedAt = Date.now(); l.revokedBy = user.email; } });
-    await DB.put(env, 'links', who, r);
+    await _withKind(env, 'links', who, (r) => {
+      if(!r) return;
+      (r.items || []).forEach(l => { if(l.id === id){ l.active = false; l.revokedAt = Date.now(); l.revokedBy = user.email; } });
+    }, { items: [] });
   }
   audit(env, 'link_revoked', { by:user.email, link:id });
   return json({ ok:true, revoked:true });
@@ -4155,7 +4201,20 @@ async function abuseClear(request, env){
   /* Same mismatch: abuse records are written through DB, so clearing one has to
      go through DB or the flag survives on D1 and the account stays marked. */
   if(body.remove){ await DB.del(env, 'abuse', email); }
-  else { rec.blocked = false; rec.clearedAt = Date.now(); await DB.put(env, 'abuse', email, rec); }
+  else {
+    /* UNDER THE LOCK EVERY OTHER WRITER TAKES.
+       A dispute arriving from Stripe writes this record through _withKind. An
+       operator clearing a flag read it, edited it and wrote it back raw - so a
+       chargeback landing in that window is erased by the clear, and the account
+       is unmarked with the dispute never recorded. That is money, and it is the
+       lock's whole purpose. Re-read inside it rather than trusting the copy
+       fetched above. */
+    await _withKind(env, 'abuse', email, (fresh) => {
+      if(!fresh) return;
+      fresh.blocked = false;
+      fresh.clearedAt = Date.now();
+    }, null);
+  }
   audit(env, 'abuse_cleared', { email, removed: !!body.remove });
   return json({ ok:true });
 }
@@ -4238,9 +4297,25 @@ async function crewApprovalEdit(request, env){
   if(JSON.stringify(next).length > APPROVAL_ITEM_MAX)
     return json({ error:'That edit is too large to save.', code:'too_big' }, 413);
 
-  rec.items = (rec.items || []).map(a => a.id === id ? next : a);
-  await DB.put(env, 'approvals', user.email, rec);
-  return json({ ok:true, approval: next });
+  /* UNDER THE LOCK, because _enqueueApproval writes this same record whenever
+     an autonomous run produces something to approve. Editing one read the
+     queue, changed an entry and wrote the whole queue back - so an approval
+     that arrived in between is erased by the edit, and the thing it was asking
+     permission for silently never gets asked about again.
+
+     Re-found inside the lock, not carried in from the read above: the entry
+     may have been acted on while this request was being validated, and
+     writing `next` over a decision somebody already made is the same lost
+     write from the other direction. */
+  const saved = await _withKind(env, 'approvals', user.email, (fresh) => {
+    if(!fresh || !Array.isArray(fresh.items)) return null;
+    const at = fresh.items.findIndex(a => a && a.id === id);
+    if(at < 0) return null;
+    fresh.items[at] = next;
+    return next;
+  }, { items: [] });
+  if(!saved) return json({ error:'no such approval' }, 404);
+  return json({ ok:true, approval: saved });
 }
 
 async function crewApprovalAct(request, env){
@@ -8157,9 +8232,15 @@ async function shareCreate(request, env){
   const id = _shareId();
   await DB.put(env, 'share', id, rec);
   // Owner index, so the privacy screen can actually list and revoke them.
-  const mine = (await DB.get(env, 'shares', rec.owner)) || { items: [] };
-  mine.items = [{ id, title, at: rec.at, listed }, ...(mine.items || [])].slice(0, 200);
-  await DB.put(env, 'shares', rec.owner, mine);
+  /* Under the lock revoking takes. Creating read this list, put a new entry on
+     the front and wrote the whole thing back - so a revocation landing in that
+     window is undone, and a link somebody was told had stopped working is back
+     in their index and still live. That is the direction this must never fail
+     in, which is why both sides of it now hold the same lock. */
+  await _withKind(env, 'shares', rec.owner, (mine) => {
+    if(!mine) return;
+    mine.items = [{ id, title, at: rec.at, listed }, ...(mine.items || [])].slice(0, 200);
+  }, { items: [] });
   audit(env, 'share_created', { by: user.email, id, listed });
   const base = (env.APP_URL || '').replace(/\/$/, '') || new URL(request.url).origin;
   return json({ ok:true, id, listed, url: base + '/c/' + id });
@@ -8187,9 +8268,12 @@ async function shareVisibility(request, env){
   const listed = body.listed === true;
   rec.listed = listed;
   await DB.put(env, 'share', id, rec);
-  const mine = (await DB.get(env, 'shares', user.email.toLowerCase())) || { items: [] };
-  mine.items = (mine.items||[]).map(i => i.id === id ? Object.assign({}, i, { listed }) : i);
-  await DB.put(env, 'shares', user.email.toLowerCase(), mine);
+  /* Same lock, same reason: this rewrote the whole index to change one flag,
+     so a share created or revoked in between was undone by it. */
+  await _withKind(env, 'shares', user.email.toLowerCase(), (mine) => {
+    if(!mine) return;
+    mine.items = (mine.items||[]).map(i => i.id === id ? Object.assign({}, i, { listed }) : i);
+  }, { items: [] });
   audit(env, 'share_visibility', { by: user.email, id, listed });
   return json({ ok:true, id, listed });
 }
@@ -8203,9 +8287,16 @@ async function shareRevoke(request, env){
   // Only the owner can revoke, and a missing record is not an error worth
   // leaking - either way the link no longer works for them.
   if(rec && rec.owner === user.email.toLowerCase()) await DB.del(env, 'share', id);
-  const mine = (await DB.get(env, 'shares', user.email.toLowerCase())) || { items: [] };
-  mine.items = (mine.items||[]).filter(i => i.id !== id);
-  await DB.put(env, 'shares', user.email.toLowerCase(), mine);
+  /* Under the lock, because shareCreate writes this same list. Revoking read
+     it, filtered one out and wrote the whole thing back - so a share created
+     in that window is erased from the index while its `share:` record lives
+     on, and the person has a public URL that no screen of theirs lists. The
+     inverse loses the revocation itself, which is worse: content stays
+     reachable after somebody was told it had stopped being. */
+  await _withKind(env, 'shares', user.email.toLowerCase(), (mine) => {
+    if(!mine) return;
+    mine.items = (mine.items||[]).filter(i => i.id !== id);
+  }, { items: [] });
   audit(env, 'share_revoked', { by: user.email, id });
   return json({ ok:true });
 }
@@ -11479,10 +11570,22 @@ async function marketPublish(request, env) {
   const screen = _marketScreen(item, standing.verifiedFor);
   if (!screen.ok) {
     if (screen.action === 'blocked') {
-      standing.strikes = (standing.strikes || 0) + 1;
-      standing.lastViolation = { category: screen.category, at: Date.now() };
-      if (standing.strikes >= 3) standing.banned = true;      // 3 strikes = suspended
-      await DB.put(env, 'seller', user.email, standing);
+      /* Under the lock: moderation writes this record too, and a strike lost
+         to a concurrent write is a seller who should be suspended and is not.
+         Counted INSIDE, from the stored value rather than from the copy read
+         at the top of this handler, so two violations landing together both
+         count instead of the second overwriting the first with the same
+         number. What the reply says comes back out of the lock, so the person
+         is told the strike they actually have. */
+      const after = await _withKind(env, 'seller', user.email, (fresh) => {
+        if(!fresh) return null;
+        fresh.strikes = (fresh.strikes || 0) + 1;
+        fresh.lastViolation = { category: screen.category, at: Date.now() };
+        if(fresh.strikes >= 3) fresh.banned = true;      // 3 strikes = suspended
+        return { strikes: fresh.strikes, banned: !!fresh.banned };
+      }, { strikes: 0, banned: false, verifiedFor: [] });
+      standing.strikes = (after && after.strikes) || ((standing.strikes || 0) + 1);
+      standing.banned = !!(after && after.banned);
       audit(env, 'market_blocked', { by: user.email, title, category: screen.category, term: screen.term, strikes: standing.strikes });
       return json({
         error: screen.reason, code: 'policy_violation', category: screen.category,

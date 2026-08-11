@@ -4075,3 +4075,37 @@ it is very good at hiding that the real one is broken.
 **Rule:** when an index is built on first use, every check of its upkeep must
 start from an index that is ALREADY BUILT. Otherwise the fallback answers, the
 check goes green, and the thing being tested was never reached.
+
+## 229. The third time is the shape, not the instance
+
+A lock only holds if every writer takes it. Entitlements had eleven writers
+and one lock; teams and families had the same shape; and computing it a third
+time found seven more bypasses across six record kinds - clearing an abuse
+flag could erase a chargeback that landed while it read, editing an approval
+could drop one that arrived, accepting an invitation could undo a revocation.
+
+Each of the first two times was fixed as an instance. The third time it is a
+computed check: every kind written through a lock anywhere, against every
+handler that writes that kind directly, with the exemptions named and their
+reasons stated.
+
+**Rule:** the second occurrence of a defect is a coincidence; the third is a
+category, and a category gets a check that computes the answer rather than a
+fix that lists the cases. If the check can be written, it should have been
+written the second time.
+
+## 230. A check that skips whole functions cannot see inside them
+
+The first version of that check ignored any handler that MENTIONED a lock,
+which made it useless: three sabotages adding a raw write back beside the
+locked call all passed, because the function still contained the word. A
+handler that locks one record and writes another straight is exactly the shape
+being hunted.
+
+Two more attempts failed for the opposite reason - reporting the lock's own
+save helpers, and reporting a write that sits INSIDE the lock's callback.
+
+**Rule:** ask the question at the granularity of the thing being protected.
+"Does this function lock" is not the question; "is this record's write inside
+this record's lock" is. A check whose unit is bigger than its subject either
+misses everything or reports everything, and both get it switched off.
