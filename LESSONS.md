@@ -4109,3 +4109,20 @@ save helpers, and reporting a write that sits INSIDE the lock's callback.
 "Does this function lock" is not the question; "is this record's write inside
 this record's lock" is. A check whose unit is bigger than its subject either
 misses everything or reports everything, and both get it switched off.
+
+## 231. A guard made of somebody else's schema is not a guard
+
+Two routes took `body.thread` and used it directly as a storage key, one of
+them for a write. Nothing bad happened, because the membership check
+underneath needs the record to carry `a` or `b` equal to the caller, and only
+thread records have those fields.
+
+That is the entire protection, and it is a fact about UNRELATED records. The
+day any other kind gains an `a` or a `b` holding an address - a pairing, an
+A/B assignment, any two-party thing - that write becomes a way to overwrite it
+by name. The change that introduces it will be in a different feature, written
+by somebody who has never seen this code, and it will look harmless.
+
+**Rule:** validate a value against what it is FOR, at the point it is used.
+"Nothing else currently looks like this" is a coincidence, not a control, and
+the whole danger is that it stays true right up until it does not.

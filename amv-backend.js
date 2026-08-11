@@ -13332,6 +13332,21 @@ async function marketReview(request, env) {
 /* Deterministic thread id for a pair (order-independent) so both share one. */
 function _threadId(a, b) { return 'mkthread:' + [String(a || '').toLowerCase(), String(b || '').toLowerCase()].sort().join('__'); }
 
+/* A THREAD ID FROM A CALLER IS NOT A STORAGE KEY UNTIL IT LOOKS LIKE ONE.
+
+   Two routes took `body.thread` and handed it straight to the namespace - one
+   of them for a WRITE. Nothing bad happens today, because the membership check
+   underneath needs the record to have `a` or `b` equal to the caller and only
+   thread records have those. That is the whole guard, and it is a guard made
+   of somebody else's schema: the day any other record gains an `a` or a `b`
+   holding an address, this becomes a way to read and overwrite it by name.
+
+   Every other route in this file validates before keying - a listing id, a
+   payout id, a slug, a rating id. This is the one that did not, and the shape
+   is fixed and cheap to insist on. */
+const _threadKeyOK = (tid) =>
+  /^mkthread:[^\s:]{1,120}__[^\s:]{1,120}$/.test(String(tid || ''));
+
 /* Send a message to another user (buyer<->seller). Appends to the shared thread. */
 /* WHO A MESSAGE IS ALLOWED TO REACH.
 
@@ -13366,6 +13381,10 @@ async function _messageRecipient(env, user, body) {
   /* A conversation that already exists, and that this account is part of. */
   const tid = body.thread ? String(body.thread) : '';
   if (tid) {
+    /* Same guard as marketThreadRead: shaped like a thread key before it is
+       used as one, so the membership test below is a second line rather than
+       the only one. */
+    if (!_threadKeyOK(tid)) return { error: 'That conversation does not exist.', status: 404 };
     let t = null;
     try { const raw = await env.AMV_KV.get(tid); if (raw) t = JSON.parse(raw); } catch (e) {}
     if (!t) return { error: 'That conversation does not exist.', status: 404 };
@@ -13512,6 +13531,10 @@ async function marketThreadRead(request, env) {
   const { thread } = await request.json().catch(() => ({}));
   const tid = String(thread || '');
   if (!tid) return json({ error: 'which conversation?' }, 400);
+  /* Shaped like a thread key before it is used as one - the membership check
+     below must not be the only thing standing between a caller-supplied
+     string and a write to that name. */
+  if (!_threadKeyOK(tid)) return json({ error: 'not found' }, 404);
   let t = null;
   try { const raw = await env.AMV_KV.get(tid); if (raw) t = JSON.parse(raw); } catch (e) {}
   if (!t) return json({ error: 'not found' }, 404);
