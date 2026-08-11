@@ -10,6 +10,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { functionBody, codeOnly } from '../lib/source.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -212,16 +213,26 @@ section('Every read of the plan honours the lapse - not just some of them');
      plan inline, so the guarantee moved one function along - and _autoBudget
      itself reads the EFFECTIVE plan, which is the thing that must never be
      skipped. Both halves are checked, so neither can quietly stop happening. */
-  ok(/const budget = await _budgetFor\(env, user\)/.test(src) &&
-     /const budget = _autoBudget\(\{ plan: sub\.plan, custom: sub\.customCfg \}\)/.test(src),
+  /* Asked of the two functions rather than of the file, and without their
+     comments, so this survives an argument being added - which it has been
+     twice now, and each time these went red on correct code. What must hold is
+     that neither path computes a budget of its own. */
+  const cron = codeOnly(functionBody(src, 'runDueAutomations'));
+  const create = codeOnly(functionBody(src, 'autoCreate'));
+  ok(/_budgetFor\(env, user\)/.test(create) && /_autoBudget\(/.test(cron),
      'the cron that runs automations takes its budget from one place');
+  ok(!/_planPriceUSD\([^)]*\)\s*\*\s*0\.45/.test(cron),
+     'and does not keep its own copy of the ceiling arithmetic', true);
   /* And that one place resolves the billing subject first (AMV-100), so a team
      member's scheduled work spends the TEAM's budget rather than opening a
      second private one per seat. */
   ok(/const sub = await _billingSubjectOf\(env, email, ent\)/.test(src),
      'and resolves whose budget it is before spending any of it');
-  ok(/function _autoBudget\(ent\)\{\s*\n\s*const plan = _planOf\(ent \|\| \{\}\)/.test(src),
+  const budgetFn = codeOnly(functionBody(src, '_autoBudget'));
+  ok(/const plan = _planOf\(ent \|\| \{\}\)/.test(budgetFn),
      'and that budget reads the effective plan, so a lapsed card cannot keep spending');
+  ok(!/\bent\.plan\b/.test(budgetFn),
+     'never the sold plan straight off the record', budgetFn.slice(0, 200));
   ok(/plan: _planOf\(e\)/.test(src), 'and the SMS path, which also costs per message');
   ok(/const plan = _planOf\(e\);/.test(src),
      'and the founder dashboard, so MRR is not inflated by subscriptions that stopped paying');

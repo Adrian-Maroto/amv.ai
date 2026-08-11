@@ -1258,16 +1258,41 @@ const FREE_AUTO_MAX_TOKENS   = 1200;
    as free would silently shape a paying customer's automation down to one
    weekly job, and they would have no way to tell why. */
 async function _budgetFor(env, user){
-  if(user && user.plan) return _autoBudget({ plan: user.plan, custom: user.customCfg });
-  return _autoBudget((await DB.get(env, 'ent', (user && user.email) || '')) || { plan: 'free' });
+  /* requireUser has already resolved the family, so this costs nothing. */
+  if(user && user.plan) return _autoBudget({ plan: user.plan, custom: user.customCfg }, user.family);
+  const ent = (await DB.get(env, 'ent', (user && user.email) || '')) || { plan: 'free' };
+  return _autoBudget(ent, await _familyOf(env, (user && user.email) || '', ent));
 }
 
-function _autoBudget(ent){
+/* The budget for background work.
+
+   `family` is a second argument rather than a field on the entitlement because
+   that is where it lives: membership and its limits are on the FAMILY record,
+   and denormalising a parent's cap onto every child's entitlement would mean a
+   parent lowering it had to find and rewrite every one - with a window in
+   between where some children are still spending against the old number.
+
+   It has to be here at all because the ceiling was computed from the plan and
+   nothing else. A parent who set $10 a month bounded their child's chat,
+   images and video, and then any automation that child had scheduled ran to
+   the PLAN's ceiling instead - unattended, monthly, and invisible to the
+   person who set the limit. The limit somebody sets has to hold everywhere,
+   and the place it is easiest to miss is the work that runs while nobody is
+   watching. */
+function _autoBudget(ent, family){
   const plan = _planOf(ent || {});
   const planPrice = _planPriceUSD(plan, ent && ent.custom);
   const max = _autoMaxFor(plan, ent && ent.custom);
-  if (planPrice > 0) return { plan, ceiling: planPrice * 0.45, free: false, max };
-  return { plan, ceiling: FREE_AUTO_CEILING_USD, free: true, max };
+  const free = !(planPrice > 0);
+  /* A free account's automation ceiling is its own small number, not the plan
+     backstop - that is what lets its one weekly job run at all. */
+  const base = free ? FREE_AUTO_CEILING_USD : planPrice * 0.45;
+  /* The same ceiling every other spending path asks for, so a family cap
+     cannot mean one thing to chat and another to the cron. Null when neither
+     a plan backstop nor a family cap applies, which is the free case. */
+  const shared = _monthlyCeilingUSD({ plan, customCfg: ent && ent.custom, family });
+  const ceiling = shared == null ? base : Math.min(base, shared);
+  return { plan, ceiling, free, max, familyCapped: shared != null && shared < base };
 }
 
 /* ---- create an automation ---- */
@@ -1797,7 +1822,12 @@ async function runDueAutomations(env){
        against a private ceiling the team is not paying for - the seat would
        come with its own second budget. */
     const sub = await _billingSubjectOf(env, email, ent);
-    const budget = _autoBudget({ plan: sub.plan, custom: sub.customCfg });
+    /* The cron runs outside requireUser, so the family is resolved by hand the
+       same way the plan is. Free when there is no family: _familyOf returns
+       immediately on an entitlement with no familyOf, so this is a read only
+       for accounts that actually belong to one. */
+    const fam = await _familyOf(env, email, ent);
+    const budget = _autoBudget({ plan: sub.plan, custom: sub.customCfg }, fam);
     const costCeiling = budget.ceiling;
     const costName = `cost:${sub.subject}:${monthKey()}`;
 
@@ -1865,7 +1895,18 @@ async function runDueAutomations(env){
          things, and the one that gets switched off is the one about money. */
       if(item.kind !== 'invest'){
         const capNow = await counter(env, costName, { op:'checkCap', cap: costCeiling });
-        if(!capNow.allowed){ item.lastError = 'monthly allowance reached'; changed = true; continue; }
+        if(!capNow.allowed){
+          /* Name the limit that actually stopped it. "Monthly allowance
+             reached" tells somebody on a family plan to upgrade, which will
+             not help and is not theirs to do - the number is their parent's,
+             and only their parent can move it. The interactive paths already
+             say so; this one said the wrong thing to the only person who could
+             not act on it. */
+          item.lastError = budget.familyCapped
+            ? 'monthly limit set for this account reached - whoever manages your family can raise it'
+            : 'monthly allowance reached';
+          changed = true; continue;
+        }
       }
       // AMV-032: LEASE this specific run slot so two overlapping/retried cron
       // invocations can't both execute the same due job (duplicate model call or

@@ -3871,3 +3871,42 @@ changed the shape of the data and did not re-read its readers.
 every place that reads it. `findIndex`, `find`, `[0]` and `splice(i, 1)`
 are all assumptions about count, and none of them announces itself when the
 count changes.
+
+## 217. A check can be green because of the comment explaining it
+
+I unified the admin refusal on 403 and wrote a careful note in the function
+saying why it is no longer 401. Then I added an assertion that _adminGate
+refuses, by looking for the refusal status in it. It passed. The status in
+the code was 403; the only "401" in the whole function was the sentence I
+had just written to explain that it is NOT 401.
+
+Running every suite against a source with the comments blanked out found
+five more of the same shape - windows anchored on `AMV-068`, on "Keyed by
+the billing subject so a team", on "An unhandled exception reached the top
+level", and one assertion demanding an exact comment. One window ran from
+the first `costName` in the file to a section heading seven thousand lines
+later and passed on any mention of the helper anywhere in between.
+
+This codebase comments heavily on purpose, which makes it worse here than
+elsewhere: the better a decision is written down, the more likely the prose
+satisfies a grep looking for the decision.
+
+**Rule:** a check about code reads code. Locate windows with a code anchor
+(a declaration, a call, an assignment), never a sentence, and strip comments
+before matching. `tests/lib/source.mjs` has `codeOnly` for this, and
+`a-check-anchored-on-prose-is-not-a-check` fails the build if a new one
+appears. Asserting on a comment is allowed only when the documentation IS
+the property, and then it is named in that file's exemption list.
+
+## 218. Do not gate a tree you are still editing
+
+I started the full gate, then began the next fix while it ran. The suites
+build their harnesses from `amv-backend.js` at the moment each one starts,
+so the run was half testing the committed tree and half testing edits that
+did not exist when it began - and `.gate-pass` would have recorded a SHA
+that never corresponded to what was measured. Killing it cost two minutes.
+Believing it would have cost more.
+
+**Rule:** the gate measures a commit. Commit first, run it, and leave every
+tracked file alone until it finishes. If something needs fixing meanwhile,
+kill the run rather than letting it produce a verdict about nothing.
