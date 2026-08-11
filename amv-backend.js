@@ -366,13 +366,46 @@ let _killCache = { val: false, ts: 0 };
    ===================================================================== */
 const DB = {
   _hasD1(env){ return !!(env && env.DB && typeof env.DB.prepare === 'function'); },
+  /* A CORRUPT RECORD IS ONE BAD RECORD, NOT A BROKEN ACCOUNT.
+
+     This parsed stored JSON with no guard, on the read that 135 call sites
+     depend on - every account, entitlement, wallet, team, family, seller and
+     school row goes through here. One malformed value therefore threw from
+     inside whichever handler happened to touch it, and threw again on every
+     retry, for ever: the person could not log in, could not be billed, could
+     not be repaired through the product.
+
+     It is not hypothetical. backupImport writes whatever JSON an uploaded file
+     contains, a truncated write leaves a partial value, and a restore from a
+     half-finished export leaves several. Other readers in this file already
+     guard for exactly this reason (_wallet, _getListing); the one that matters
+     most did not.
+
+     Returning null is the honest answer: the record could not be read, which
+     every caller already handles as "not there". It is also LOUD - a corrupt
+     record is a real fault and silently treating it as absent is how somebody
+     ends up recreated as a free user - so it is audited and alerted rather
+     than swallowed. */
   async get(env, kind, id){
+    let raw = null;
     if(this._hasD1(env)){
       const row = await env.DB.prepare('SELECT json FROM kv WHERE kind=? AND id=?').bind(kind, id).first();
-      return row && row.json ? JSON.parse(row.json) : null;
+      raw = row && row.json ? row.json : null;
+    } else {
+      raw = await env.AMV_KV.get(`${kind}:${id}`);
     }
-    const raw = await env.AMV_KV.get(`${kind}:${id}`);
-    return raw ? JSON.parse(raw) : null;
+    if(!raw) return null;
+    try { return JSON.parse(raw); }
+    catch (e) {
+      try {
+        audit(env, 'record_unreadable', { kind, id, bytes: String(raw).length });
+        await alertOnce(env, 'record_unreadable:' + kind,
+          'A stored ' + kind + ' record could not be parsed, so it reads as missing. '
+          + 'Something wrote invalid JSON - a truncated write, or a restore from a bad export. '
+          + 'The account behind it will behave as though the record does not exist until it is repaired.', 30);
+      } catch (_) {}
+      return null;
+    }
   },
   async put(env, kind, id, obj, kvOpts){
     const j = JSON.stringify(obj);
@@ -3915,7 +3948,7 @@ async function errorsReport(request, env, ctx){
 /* POST /errors/list - YOUR dashboard. Admin only. */
 async function errorsList(request, env){
   const body = await request.json().catch(()=>({}));
-  if(!_adminTokenOK(request, env)) return json({ error:'unauthorized' }, 401);
+  { const g = await _adminGate(request, env, 'read', 60, 2000); if (g) return g; }
 
   const idx = (await DB.get(env, 'errors', 'index')) || { groups:{} };
   const groups = Object.values(idx.groups)
@@ -3932,7 +3965,7 @@ async function errorsList(request, env){
 /* POST /errors/resolve - mark a bug fixed (clears it from the board). */
 async function errorsResolve(request, env){
   const body = await request.json().catch(()=>({}));
-  if(!_adminTokenOK(request, env)) return json({ error:'unauthorized' }, 401);
+  { const g = await _adminGate(request, env, 'read', 60, 2000); if (g) return g; }
   const idx = (await DB.get(env, 'errors', 'index')) || { groups:{} };
   if(body.all) idx.groups = {};
   else if(body.fp) delete idx.groups[String(body.fp)];
@@ -3945,7 +3978,7 @@ async function errorsResolve(request, env){
    positive. */
 async function abuseList(request, env){
   const body = await request.json().catch(()=>({}));
-  if(!_adminTokenOK(request, env)) return json({ error:'unauthorized' }, 401);
+  { const g = await _adminGate(request, env, 'read', 60, 2000); if (g) return g; }
   /* Listed through DB. Reading each row through DB while LISTING straight from
      KV meant that on a D1 deployment there was nothing to iterate - the abuse
      screen would have been permanently empty however many accounts were
@@ -3971,7 +4004,7 @@ async function abuseList(request, env){
    Admin-only. */
 async function abuseClear(request, env){
   const body = await request.json().catch(()=>({}));
-  if(!_adminTokenOK(request, env)) return json({ error:'unauthorized' }, 401);
+  { const g = await _adminGate(request, env, 'read', 60, 2000); if (g) return g; }
   const email = String(body.email||'').toLowerCase();
   if(!email) return json({ error:'email required' }, 400);
   const rec = await DB.get(env, 'abuse', email);
@@ -4252,6 +4285,19 @@ const BACKUP_NEVER = [
 /* AMV-035: admin-token auth. Read the token ONLY from a header (never the
    request body - bodies get captured by logs, traces and error telemetry),
    compare in constant time, and FAIL CLOSED when ADMIN_TOKEN is unconfigured. */
+/* ONE ADMIN GATE. There were two.
+
+   _requireAdmin accepted Authorization: Bearer only; _adminTokenOK accepted
+   that OR an X-Admin-Token header. Eighteen call sites split between them, and
+   both were cryptographically sound, so nothing was broken today - which is
+   precisely why it would have stayed that way. The hazard is drift: rate
+   limiting, an audit line, an IP allowlist or a lockout added to "the admin
+   check" would have covered a bit over half the admin surface, and the half it
+   missed would have gone on working exactly as before.
+
+   Both header spellings are still accepted, because both were in use and a
+   deploy that suddenly rejects an operator's existing tooling is its own
+   outage. What changes is that there is now one place to change. */
 function _adminTokenOK(request, env){
   if(!env.ADMIN_TOKEN) return false;
   const hdr = String(request.headers.get('X-Admin-Token')
@@ -4259,13 +4305,51 @@ function _adminTokenOK(request, env){
   if(!hdr) return false;
   return timingSafeEqual(new TextEncoder().encode(hdr), new TextEncoder().encode(String(env.ADMIN_TOKEN)));
 }
+
+/* Kept as the name eleven call sites use, now a single line over the one
+   implementation rather than a second copy of the comparison. */
+function _requireAdmin(request, env) {
+  return _adminTokenOK(request, env);
+}
+
+/* WRONG GUESSES ARE BOUNDED, AND SO IS THE EXPENSIVE ROUTE BEHIND THEM.
+
+   Not one of the ten admin routes had a limit. The token is long and random so
+   guessing it is impractical, and that is not the whole risk: every attempt is
+   free to whoever is making it and costs AMV a request, and /admin/backup/export
+   walks every record under every prefix - so a leaked or shared token turns
+   into unlimited full-database dumps, which is a bill and a data-exfiltration
+   rate rolled together.
+
+   Keyed by source rather than by account, because an admin request that fails
+   has no account behind it yet. Deliberately generous: a real operator
+   refreshing a dashboard must never be the one who gets refused. */
+async function _adminGate(request, env, what, perMin, perDay) {
+  const ip = (await _ipHash(env, request))
+          || request.headers.get('CF-Connecting-IP')
+          || request.headers.get('X-Forwarded-For') || 'unknown';
+  const blocked = await guardAction(env, `admin:${what}:${ip}`, perMin || 30, perDay || 500, 'admin requests');
+  if (blocked) return blocked;
+  if (!_adminTokenOK(request, env)) {
+    /* A wrong token is worth knowing about: it is either an operator with a
+       stale copy or somebody trying. Either way it should not be silent. */
+    audit(env, 'admin_denied', { what, ip });
+    return json({ error: 'unauthorized' }, 401);
+  }
+  return null;
+}
 async function _adminOk(request, env){
   return _adminTokenOK(request, env);
 }
 
 /* POST /admin/backup/export → a JSON snapshot of all durable data. */
 async function backupExport(request, env){
-  if(!(await _adminOk(request, env))) return json({ error:'unauthorized' }, 401);
+  /* The most expensive route in the product: it reads every record under every
+     prefix. Bounded tightly - a real operator takes a backup occasionally, and
+     anything faster than that is either a script gone wrong or somebody
+     draining the store through a token they should not have. */
+  const gate = await _adminGate(request, env, 'backup', 10, 100);
+  if (gate) return gate;
 
   const data = {};
   let count = 0, bytes = 0;
@@ -4322,7 +4406,15 @@ async function backupExport(request, env){
    We never auto-delete. Restores are additive by design so a restore can't
    itself destroy data. */
 async function backupImport(request, env){
-  if(!(await _adminOk(request, env))) return json({ error:'unauthorized' }, 401);
+  /* Writes arbitrary records back over live data, which makes an accidental
+     repeat worse than a slow one. */
+  /* Ten a minute rather than three: an operator legitimately runs several in a
+     row - try a merge, check it, restore the full snapshot - and a limit that
+     breaks the honest sequence is a limit that gets removed. Still a hard
+     bound on a leaked token: nobody dumps or overwrites the store hundreds of
+     times an hour through this. */
+  const gate = await _adminGate(request, env, 'restore', 10, 100);
+  if (gate) return gate;
   const body = await request.json().catch(()=>({}));
   const snap = body.snapshot;
   const mode = body.mode === 'missing' ? 'missing' : 'merge';
@@ -4515,7 +4607,7 @@ async function sendResetCodeEmail(env, to, code) {
    simply rejected, and the token never leaves your machine. */
 async function authAdminReset(request, env){
   const body = await request.json().catch(()=>({}));
-  if(!_adminTokenOK(request, env)) return json({ error:'unauthorized' }, 401);
+  { const g = await _adminGate(request, env, 'read', 60, 2000); if (g) return g; }
 
   const email = String(body.email||'').toLowerCase().trim();
   const password = String(body.password||'');
@@ -4973,7 +5065,15 @@ export default {
         try{ path = new URL(request.url).pathname; }catch(_){}
         ctx.waitUntil(_workerError(env, path, err));
       }catch(_){}
-      return json({ error: err.message || 'server error' }, 500);
+      /* The MESSAGE stays on the server. This returned err.message straight to
+         whoever made the request, which is the one thing this file is careful
+         about everywhere else - the image path logs the provider's raw response
+         and answers generically for exactly this reason. An exception message
+         is written for an engineer and can carry a key name, a storage path, a
+         query fragment or a stack-shaped hint; none of that belongs in an
+         answer to a stranger. It is recorded above, with an alert, so nothing
+         is lost by not saying it here. */
+      return json({ error: 'Something went wrong on our side. It has been logged.' }, 500);
     }
   },
 };
@@ -6207,7 +6307,11 @@ async function teamJoin(request, env){
   const { token } = await request.json().catch(()=>({}));
   const raw = token ? await env.AMV_KV.get(`invite:${token}`) : null;
   if(!raw) return json({ error:'invalid or expired invite' }, 404);
-  const inv = JSON.parse(raw);
+  /* A malformed invite record is an INVALID invite, which is what the person
+     needs to hear - not a server error that tells them nothing and tells the
+     operator nothing either. */
+  const inv = _safeJson(raw);
+  if(!inv) return json({ error:'invalid or expired invite' }, 404);
   // BIND to the recipient: only the authenticated user the invite was sent to may
   // redeem it. A leaked/forwarded invite link cannot grant a role to any other
   // account (this is how an admin invite became a transferable privilege grant).
@@ -8678,6 +8782,14 @@ function b64urlDecodeToBytes(str) {
   return bytes;
 }
 // Constant-time byte comparison - defeats timing attacks
+/* Parse, or say you could not. Used where a throw would be worse than a null:
+   a webhook body arriving malformed should become a clean refusal, not an
+   exception thrown from inside the signature check before the handler's own
+   guarded parse can answer 400. */
+function _safeJson(txt) {
+  try { return JSON.parse(txt); } catch (e) { return null; }
+}
+
 function timingSafeEqual(a, b) {
   if (a.length !== b.length) return false;
   let diff = 0;
@@ -11847,7 +11959,7 @@ const PAYOUT_STATES = new Set(['pending', 'approved', 'paid', 'rejected']);
 
 /* GET /admin/payouts - what is owed, and to whom. */
 async function adminPayouts(request, env) {
-  if (!_requireAdmin(request, env)) return json({ error: 'forbidden' }, 403);
+  { const g = await _adminGate(request, env, 'read', 60, 2000); if (g) return g; }
   /* THE CAP IS REAL, SO IT HAS TO BE ADMITTED.
 
      This scanned until it held 5000 records, then sorted by time and showed
@@ -11924,7 +12036,7 @@ async function adminPayouts(request, env) {
 
 /* POST /admin/payouts/mark { id, status, note } */
 async function adminPayoutMark(request, env) {
-  if (!_requireAdmin(request, env)) return json({ error: 'forbidden' }, 403);
+  { const g = await _adminGate(request, env, 'read', 60, 2000); if (g) return g; }
   const body = await request.json().catch(() => ({}));
   const id = String(body.id || '');
   const status = String(body.status || '');
@@ -12251,7 +12363,7 @@ async function marketReport(request, env) {
 
 /* What came in, for the person who has to act on it. */
 async function adminReports(request, env) {
-  if (!_requireAdmin(request, env)) return json({ error: 'forbidden' }, 403);
+  { const g = await _adminGate(request, env, 'read', 60, 2000); if (g) return g; }
   /* DB.list hands back {id, value} rows, not the records themselves. Reading
      r.count off the wrapper gave every listing a count of zero and no seller -
      an operator screen that answers confidently with nothing in it, which is
@@ -12548,16 +12660,7 @@ async function _noteAuthFail(env, key){
     await env.AMV_KV.put(key, String(n), { expirationTtl: 900 });
   }catch(e){}
 }
-function _requireAdmin(request, env) {
-  const tok = (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
-  if (!env.ADMIN_TOKEN || !tok) return false;
-  // constant-time compare to avoid leaking the token through response timing;
-  // header-only (never a query param, which would leak into logs/history)
-  const a = new TextEncoder().encode(tok), b = new TextEncoder().encode(env.ADMIN_TOKEN);
-  if (a.length !== b.length) return false;
-  let diff = 0; for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
-  return diff === 0;
-}
+
 
 /* Mark a user active today, counted at most ONCE per day (unique DAU). We set a
    per-user marker with a 2-day TTL; the first mark of the day bumps the counter. */
@@ -13458,7 +13561,7 @@ function _readinessReport(env) {
 
 /* GET /admin/readiness - admin-gated, and it never returns a secret value. */
 async function adminReadiness(request, env) {
-  if (!_requireAdmin(request, env)) return json({ error: 'forbidden' }, 403);
+  { const g = await _adminGate(request, env, 'read', 60, 2000); if (g) return g; }
   return json(Object.assign({ ok: true, checkedAt: Date.now() }, _readinessReport(env)));
 }
 
@@ -13750,7 +13853,7 @@ async function runWeeklyDigest(env) {
    action, so it takes an explicit flag rather than happening because someone
    opened a URL. */
 async function adminDigest(request, env) {
-  if (!_requireAdmin(request, env)) return json({ error: 'forbidden' }, 403);
+  { const g = await _adminGate(request, env, 'read', 60, 2000); if (g) return g; }
   const url = new URL(request.url);
   const send = url.searchParams.get('send') === '1';
   if (send) {
@@ -13774,7 +13877,7 @@ async function adminDigest(request, env) {
 
 // flip the global kill switch on/off
 async function adminKill(request, env) {
-  if (!_requireAdmin(request, env)) return json({ error: 'forbidden' }, 403);
+  { const g = await _adminGate(request, env, 'read', 60, 2000); if (g) return g; }
   const { on } = await request.json().catch(() => ({}));
   if (on) await env.AMV_KV.put('GLOBAL_KILL', '1');
   else await env.AMV_KV.delete('GLOBAL_KILL');
@@ -13784,7 +13887,7 @@ async function adminKill(request, env) {
 
 // inspect one user, or override their plan (e.g. comp an account, stop abuse)
 async function adminUser(request, env) {
-  if (!_requireAdmin(request, env)) return json({ error: 'forbidden' }, 403);
+  { const g = await _adminGate(request, env, 'read', 60, 2000); if (g) return g; }
   const body = await request.json().catch(() => ({}));
   const email = String(body.email || '').toLowerCase().trim();
   if (!email) return json({ error: 'email required' }, 400);
@@ -14059,7 +14162,7 @@ async function verifyPaypalWebhook(env, headers, body) {
         transmission_sig: headers.get('paypal-transmission-sig'),
         transmission_time: headers.get('paypal-transmission-time'),
         webhook_id: env.PAYPAL_WEBHOOK_ID,
-        webhook_event: JSON.parse(body),
+        webhook_event: _safeJson(body),
       }),
     });
     const d = await r.json();
