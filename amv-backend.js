@@ -1448,8 +1448,6 @@ async function autoCreate(request, env){
   };
   rec.items = (rec.items||[]).concat(item);
   await DB.put(env, 'auto', key, rec);
-  /* So the tick can find this account without reading everybody. */
-  await _autoBucketAdd(env, key, item.next);
   return json({ ok:true, item, emailReady,
                 // true only when they asked for email and cannot have it
                 deliveryDowngraded: notify === 'email' && !emailReady,
@@ -1565,9 +1563,6 @@ async function autoUpdate(request, env){
 
   rec.items = items;
   await DB.put(env, 'auto', key, rec);
-  /* Re-bucketed here rather than at each place `next` moves above: this is
-     the one write, so it is the one place that cannot be forgotten. */
-  for(const it of items) if(it && it.active && it.next) await _autoBucketAdd(env, key, it.next);
   return json({ ok:true, items });
 }
 
@@ -1579,9 +1574,6 @@ async function autoClearResults(request, env){
   const rec = (await DB.get(env, 'auto', key)) || { items:[], results:[] };
   (rec.results||[]).forEach(r=>{ r.read = true; });
   await DB.put(env, 'auto', key, rec);
-  /* Re-bucketed here rather than at each place `next` moves above: this is
-     the one write, so it is the one place that cannot be forgotten. */
-  for(const it of items) if(it && it.active && it.next) await _autoBucketAdd(env, key, it.next);
   return json({ ok:true });
 }
 
@@ -1830,170 +1822,13 @@ async function _autoEmailResult(env, email, item, out){
 const AUTO_TICK_BUDGET_MS = 25 * 1000;
 
 /* ---- The cron tick: find everything due, run it, store the result ---- */
-/* WHICH ACCOUNTS HAVE WORK DUE, WITHOUT READING ALL OF THEM.
-
-   The tick opened by scanning every `auto:` record in the product - one read
-   per account that has ever created an automation, every five minutes, whether
-   or not anything was due. An earlier fix removed the two EXTRA lookups per
-   user and left the base scan, so the cost still scaled with the population
-   rather than with the work: at a million such accounts that is twelve million
-   reads an hour to discover that nothing needs doing, and the bill arrives
-   whether anybody's job runs or not.
-
-   So the accounts with work due in a given hour are written down when the due
-   time is set, and the tick reads those buckets instead.
-
-   Sharded, because the alternative is one record per hour that every job
-   creation in the product writes to - a hot key with a lock on it, which is a
-   different scaling wall in the same place. Sixteen shards means a tick reads
-   sixteen records to cover an hour rather than a million.
-
-   A LOOKBACK, because a bucket is a promise about a moment and ticks can be
-   missed - a deploy, an outage, a run that overran its budget. Reading the
-   last few hours as well costs a fixed handful of reads and means a job whose
-   hour was missed still runs late rather than never.
-
-   And a FLOOR under all of it: if the buckets cannot be read, or the index has
-   not been built yet for an account that predates it, the tick falls back to
-   the old full scan. The scan is slow, not wrong. Silently skipping somebody's
-   scheduled work IS wrong, and it is the failure this whole path exists to
-   avoid - so the expensive answer is the safe default when the cheap one is
-   unavailable, and it says so. */
-const AUTO_BUCKET_SHARDS = 16;
-/* Current hour plus two. The lookback exists for ticks that were MISSED - a
-   deploy, an outage - and every tick in an hour re-reads that hour's buckets
-   anyway, so three hours is generous. It is also the fixed cost of the fast
-   path: three hours by sixteen shards is 48 reads per tick, against one read
-   per account in the product before. */
-const AUTO_BUCKET_LOOKBACK_H = 2;
-const AUTO_BUCKET_TTL_S = 60 * 60 * 24 * 40;   // an hour bucket outlives any lookback
-
-const _autoHourKey = (ms) => new Date(ms || Date.now()).toISOString().slice(0, 13);  // YYYY-MM-DDTHH
-function _autoShardOf(email) {
-  const e = String(email || '');
-  let h = 0;
-  for (let i = 0; i < e.length; i++) h = (h * 31 + e.charCodeAt(i)) >>> 0;
-  return h % AUTO_BUCKET_SHARDS;
-}
-
-/* Called wherever a job's `next` is set - creation, edit, and after a run. */
-async function _autoBucketAdd(env, email, nextMs) {
-  const em = String(email || '').toLowerCase();
-  const when = +nextMs || 0;
-  if (!em || !when) return;
-  const hour = _autoHourKey(when);
-  try {
-    await _withKV(env, `duehour:${hour}`, String(_autoShardOf(em)), (r) => {
-      r.emails = Array.isArray(r.emails) ? r.emails : [];
-      if (!r.emails.includes(em)) r.emails.push(em);
-      /* Bounded, like every other index here. An hour with more due accounts
-         than this is past what one tick can run anyway, and the hourly sweep
-         is the floor underneath. */
-      if (r.emails.length > 20000) r.emails = r.emails.slice(-20000);
-      return r;
-      /* Expires on its own: a bucket describes ONE hour and is worthless
-         after it, and the `auto:` records are the truth either way. */
-    }, { emails: [] }, AUTO_BUCKET_TTL_S);
-  } catch (e) {
-    /* A hint that could not be written means this account is not in the fast
-       path for that hour. Recorded, because the consequence is a job that runs
-       only when a fallback scan happens to cover it. */
-    audit(env, 'auto_bucket_write_failed', { email: em, hour, error: String((e && e.message) || e) });
-  }
-}
-
-/* The accounts named by this hour's buckets and the few before it. Returns
-   null when the buckets cannot be trusted, which means "do it the slow way". */
-async function _autoDueCandidates(env, now) {
-  const emails = new Set();
-  try {
-    for (let h = 0; h <= AUTO_BUCKET_LOOKBACK_H; h++) {
-      const hour = _autoHourKey(now - h * 3600000);
-      for (let sh = 0; sh < AUTO_BUCKET_SHARDS; sh++) {
-        const raw = await env.AMV_KV.get(`duehour:${hour}:${sh}`);
-        if (!raw) continue;
-        const r = JSON.parse(raw);
-        for (const em of (r.emails || [])) emails.add(em);
-      }
-    }
-  } catch (e) {
-    audit(env, 'auto_bucket_read_failed', { error: String((e && e.message) || e) });
-    return null;
-  }
-  return emails;
-}
-
-/* `atMs` exists so a check can pin the clock. The tick's behaviour depends on
-   the minute - a full sweep runs in the first five of every hour - and a test
-   that cannot say when it is running is a test that passes or fails depending
-   on when somebody happens to run it. Production never passes it. */
-async function runDueAutomations(env, atMs){
-  const now = +atMs || Date.now();
+async function runDueAutomations(env){
+  const now = Date.now();
   const started = Date.now();
   let scanned = 0, ran = 0, failed = 0, deferred = 0;
   // AMV-032: paginate the scan so users beyond the first KV page aren't silently
   // skipped (DB.list walks every page).
-  /* THE CHEAP PATH FIRST, WITH THE OLD ONE UNDERNEATH IT.
-
-     The buckets name the accounts with work due in this hour and the few
-     before it, so an ordinary tick reads a fixed handful of records instead of
-     one per account in the product. When they cannot be read - or when a full
-     sweep is due, which catches anything written before the index existed and
-     anything whose bucket expired - it falls back to the scan that was here
-     before. Slow is survivable; silently skipping somebody's scheduled work is
-     not. */
-  let allUsers = [], truncated = false, viaIndex = false;
-  /* One full sweep an hour, on the tick that lands in the first five minutes.
-     It is the floor under every way a bucket can be wrong, and at twelve ticks
-     an hour it removes eleven twelfths of the reads rather than all of them -
-     which is the honest trade for not being able to prove a hint is complete. */
-  const sweepDue = new Date(now).getUTCMinutes() < 5;
-  /* Not read at all when a sweep is going to happen regardless - the hint
-     would be paid for and thrown away. */
-  const candidates = sweepDue ? null : await _autoDueCandidates(env, now);
-
-  /* AN EMPTY SET OF CANDIDATES IS AMBIGUOUS, AND THE TWO MEANINGS ARE
-     OPPOSITE. It is either "nothing is due this hour", which is the common
-     case and should cost nothing - or "no bucket has ever been written",
-     which is what every automation that predates this index looks like, and
-     skipping those means somebody's nightly job silently stops.
-
-     They are told apart by a marker written after the first full sweep. Until
-     it exists, an empty set means the index is not ready and the scan runs.
-     After it exists, an empty set means what it says. The marker is set by the
-     sweep itself, so this needs no migration and no deploy step: the first
-     tick scans, everything due runs, everything gets bucketed, and every tick
-     after that reads a handful of records. */
-  let seeded = false;
-  try { seeded = !!(await env.AMV_KV.get('dueseeded')); } catch (e) { seeded = false; }
-  const trustIndex = candidates && !sweepDue && (candidates.size > 0 || seeded);
-  if (trustIndex) {
-    viaIndex = true;
-    for (const em of candidates) {
-      const rec = await DB.get(env, 'auto', em);
-      if (rec) allUsers.push({ id: em, value: rec });
-    }
-  } else {
-    const s = await scan(env, 'auto', SCAN_ALL, 'autonomous work tick');
-    allUsers = s.rows; truncated = s.truncated;
-    /* This sweep saw everything, so from here an empty bucket means empty.
-       Written only when the scan was COMPLETE - a truncated one has not seen
-       everything and must not license skipping the rest. */
-    if (!s.truncated) { try { await env.AMV_KV.put('dueseeded', String(Date.now())); } catch (e) {} }
-    /* Deliberately NOT bucketing every account on the way past.
-
-       That was the first version and it undid the point: two extra writes per
-       account per sweep is the same "cost scales with the customer base"
-       shape, moved from reads to writes. An account with nothing due for six
-       days does not need a bucket entry today.
-
-       Instead the buckets are fed where a due time is SET - creation, edit,
-       and after every run. An automation that predates the index therefore
-       joins the fast path the first time it runs, and its first run comes from
-       this sweep. The cost of that is bounded and worth naming: for one hour
-       after this ships, a job can be up to an hour late once. After that every
-       job is in a bucket and the tick is cheap. */
-  }
+  const { rows: allUsers, truncated } = await scan(env, 'auto', SCAN_ALL, 'autonomous work tick');
 
   /* AMV-183: TWO fixes, and they only work together.
 
@@ -2042,21 +1877,7 @@ async function runDueAutomations(env, atMs){
        so it leads the next tick - but it is still late, and lateness that
        nobody can see is how "my job stopped running" becomes a support ticket
        instead of a known state. */
-    if(Date.now() - started > AUTO_TICK_BUDGET_MS){
-      deferred = queued - processed;
-      /* PUT THE REST BACK WHERE THE NEXT TICK WILL LOOK.
-
-         Work that was deferred has not run, so nothing re-set its due time and
-         nothing re-bucketed it. Without this it falls out of the fast path
-         entirely and waits for the next full sweep - which is how "the tick
-         ran out of time" quietly becomes "your job did not run for an hour".
-         Bucketed into the CURRENT hour, because that is what the next tick
-         reads. */
-      for(const rest of users.slice(processed - 1)) {
-        try { await _autoBucketAdd(env, rest.id, Date.now()); } catch (e) {}
-      }
-      break;
-    }
+    if(Date.now() - started > AUTO_TICK_BUDGET_MS){ deferred = queued - processed; break; }
     processed++;
 
     let changed = false;
@@ -2104,9 +1925,6 @@ async function runDueAutomations(env, atMs){
       }
       if (!gRes || !gRes.allowed) {
         audit(env, 'auto_skipped_global_cap', { email, paying: payingAuto, value: gRes && gRes.value, cap: capForThem });
-        /* Skipped, not done. It keeps its place in the fast path so the next
-           tick tries again once the day's ceiling has room. */
-        try { await _autoBucketAdd(env, email, Date.now()); } catch (e) {}
         try { await alertOnce(env, 'auto_global_cap',
           'Scheduled work is being skipped because the daily spend ceiling is reached (or the counter is unreadable). '
           + 'Automations resume on their own when the day rolls over.', 60); } catch (_) {}
@@ -2191,7 +2009,6 @@ async function runDueAutomations(env, atMs){
         item.runs = (item.runs||0) + 1;
         item.lastLevel = 'suggest';
         item.next = now + (item.interval || AUTO_INTERVALS.daily);
-        await _autoBucketAdd(env, email, item.next);
         ran++; changed = true;
         continue;
       }
@@ -2264,7 +2081,6 @@ async function runDueAutomations(env, atMs){
         }).slice(-AUTO_MAX_RESULTS);
       }
       item.next = now + (item.interval || AUTO_INTERVALS.daily);
-      await _autoBucketAdd(env, email, item.next);
       changed = true;
     }
     /* AMV-205: the tick holds this record for the whole of a run, which can be
@@ -11952,15 +11768,10 @@ async function _withKind(env, kind, id, mutate, empty) {
     mutate);
 }
 /* And for the records that live under a raw KV key rather than a DB kind. */
-/* `ttlS` is for records that are a HINT rather than the truth - the due-time
-   buckets, which describe one hour and are worthless after it. Without it they
-   accumulate forever: one record per hour per shard, written once and never
-   read again, which is the same unbounded-growth shape the buckets exist to
-   fix, moved somewhere less visible. */
-async function _withKV(env, name, key, mutate, empty, ttlS) {
+async function _withKV(env, name, key, mutate, empty) {
   return _withRecord(env, name, String(key || ''),
     async (e, k) => { try { const raw = await e.AMV_KV.get(`${name}:${k}`); return raw ? JSON.parse(raw) : (empty === undefined ? null : JSON.parse(JSON.stringify(empty))); } catch (err) { return empty === undefined ? null : JSON.parse(JSON.stringify(empty)); } },
-    async (e, k, rec) => { if (rec) await e.AMV_KV.put(`${name}:${k}`, JSON.stringify(rec), ttlS ? { expirationTtl: ttlS } : undefined); },
+    async (e, k, rec) => { if (rec) await e.AMV_KV.put(`${name}:${k}`, JSON.stringify(rec)); },
     mutate);
 }
 

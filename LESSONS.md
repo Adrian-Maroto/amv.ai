@@ -4014,30 +4014,32 @@ safe answer the default. A mutation is not retried unless it is named as safe
 to repeat. The roster still exists, but now a forgotten entry costs a
 redundant round trip instead of a duplicate credential.
 
-## 225. An index that is never cleaned is the leak it replaced
+## 225. A hint that can be incomplete cannot license skipping work
 
-The due-time buckets that stop the cron reading every account went in with a
-TTL marker beside them and no TTL on the records themselves. A bucket
-describes ONE hour and is worthless afterwards, so one record per hour per
-shard would have accumulated for ever - the same unbounded growth the index
-was built to fix, moved somewhere nobody looks.
+I built a due-time index so the cron would stop reading every account every
+five minutes, and spent an afternoon making it safe. Each fix revealed the
+next hole. An empty index was indistinguishable from an index nobody had
+written yet, so I added a marker set by the first full sweep. Then deferred
+work fell out of the fast path, so I re-booked it. Then work skipped by the
+day's ceiling did, so I re-booked that too.
 
-That is twice in two days: the seller and inbox indexes went in uncapped, and
-these went in unexpiring.
+The one I could not fix by adding another special case: a PARTIALLY populated
+index. Once any account is in this hour's bucket, the bucket is non-empty, and
+a non-empty bucket was treated as the answer - so an account nobody had booked
+was skipped even though the index had never claimed to be complete. Every fix
+was correct and the design was still wrong, because correctness depended on
+every writer of a due time remembering to book one, forever, including writers
+added later.
 
-**Rule:** when adding an index or a cache, write down what removes an entry
-before writing what adds one. If the answer is "nothing", it is not an index,
-it is a leak with a fast read.
+I reverted it. The cost of reading every account is money. The cost of a
+silently skipped job is somebody's nightly work not running with nothing
+failing anywhere, and no reads saved are worth that.
 
-## 226. Measure the slope, not the average
+**Rule:** an index may make work cheaper. It may only make work SKIPPED if it
+is complete by construction - written on the single path every writer must go
+through, not by each writer remembering. If completeness rests on discipline,
+the index is a prefetch hint and the full pass still has to happen.
 
-A check asserted that an idle account costs no lookup of its own, as total
-reads divided by accounts. Moving the tick onto a due-time index added a fixed
-cost - a constant handful of records per run - and against fifty accounts a
-fixed 48 reads reads as one each, which is exactly what the check forbids. It
-is not per-account: at fifty thousand it is a thousandth each.
+**And:** when the third consecutive fix to a design reveals a fourth hole of
+the same shape, that is the design telling you something. Stop adding cases.
 
-**Rule:** to test that a cost does not scale, run it at two sizes and measure
-the DIFFERENCE. Fixed costs cancel; anything per-item survives. An average
-cannot tell the two apart, and will either forbid a constant or wave through a
-linear cost hidden under a large constant.
