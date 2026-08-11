@@ -28,7 +28,7 @@ const harness = join(__dir, '.build', 'family.harness.mjs');
 writeFileSync(harness, src + `
 export { familyGet, familySetLimits, familyRemove, familyLeave, linkInvite, linkAccept,
          marketBuy, marketWithdraw, requireUser, setEntitlement, issueTokens,
-         _familyOf, _familyLimitsOf, DB, FAMILY_DEFAULTS, FAMILY_MAX_CHILDREN };
+         _familyOf, _familyLimitsOf, _monthlyCeilingUSD, DB, FAMILY_DEFAULTS, FAMILY_MAX_CHILDREN };
 `);
 const W = await import(harness + '?t=' + Date.now());
 
@@ -136,12 +136,24 @@ section('The money cap is the LOWER of the two, and zero means zero');
 {
   /* The parent can spend less on a child than the plan allows. They can never
      spend more, whatever the plan is or who pays for it. */
-  ok(/Math\.min\(planCeiling, familyCapUSD\)/.test(src),
-     'the smaller ceiling is the one that applies');
-  ok(/familyCapUSD == null \? planCeiling/.test(src),
-     'and an account with no family is unaffected by any of it');
-  ok(/planCeiling > 0 \|\| familyCapUSD != null/.test(src),
-     'a cap still applies on a plan that has no ceiling of its own - otherwise zero would mean unlimited');
+  /* Asked of the FUNCTION, not of the source text. These matched the exact
+     spelling of the arithmetic while it lived inline in the chat handler, so
+     they failed the day it moved into a shared helper - which was a correct
+     refactor that made the same rule bind image, video, SMS and the widget as
+     well. A rule written against a spelling fails on a fix and passes on a
+     regression that keeps the words (LESSONS #203). */
+  const ceil = W._monthlyCeilingUSD;
+  ok(typeof ceil === 'function', 'there is one ceiling function to ask', typeof ceil);
+
+  ok(ceil({ plan: 'ultra', family: { limits: { monthlyUSD: 5 } } }) === 5,
+     'the smaller ceiling is the one that applies', ceil({ plan: 'ultra', family: { limits: { monthlyUSD: 5 } } }));
+  ok(ceil({ plan: 'pro' }) > 0 && ceil({ plan: 'pro' }) === ceil({ plan: 'pro', family: { limits: {} } }),
+     'and an account with no family limit is unaffected by any of it', ceil({ plan: 'pro' }));
+  ok(ceil({ plan: 'free', family: { limits: { monthlyUSD: 0 } } }) === 0,
+     'a cap still applies on a plan that has no ceiling of its own - otherwise zero would mean unlimited',
+     ceil({ plan: 'free', family: { limits: { monthlyUSD: 0 } } }));
+  ok(ceil({ plan: 'free' }) === null,
+     'while a free account with no cap at all has no dollar ceiling to hit', ceil({ plan: 'free' }));
   ok(/code: 'family_cap'/.test(src),
      'and hitting it is reported as a family limit, not as a plan limit');
   ok(/whoever manages your family can raise it/i.test(src),

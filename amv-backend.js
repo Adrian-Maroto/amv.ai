@@ -5388,7 +5388,12 @@ async function authLogout(request, env) {
    is the dangerous way round - an export that omits a record the product is
    still holding tells somebody they have everything when they do not, which is
    the question a data-access request is actually asking. */
-const PER_USER_KINDS = ['acct', 'ent', 'entitleitem', 'data', 'auto', 'crewjobs', 'school',
+/* 'kyc' is here because identity evidence is the single most sensitive record
+   AMV holds about a person - and it was added with the payout risk engine and
+   left out of this list, so a deleted account kept its verification row for
+   ever with nothing able to reach it. The erasure check caught it, which is
+   exactly what that check is for. */
+const PER_USER_KINDS = ['acct', 'ent', 'entitleitem', 'data', 'auto', 'crewjobs', 'school', 'kyc',
   'approvals', 'handoff', 'abuse', 'seller', 'widget', 'wallet', 'wallet_tx',
   'purchases', 'stripecust', 'userteam', 'sites', 'spendlimits',
   'fin', 'finlink', 'invsnap', 'links', 'fam', 'apikeys', 'consent', 'widget_owner', 'shares', 'presence',

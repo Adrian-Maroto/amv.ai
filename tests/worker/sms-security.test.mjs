@@ -111,8 +111,16 @@ section('Texting has a dollar ceiling on every plan, including the free one');
   const srcTxt = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
   ok(!/if \(price > 0\) \{\s*\n\s*const capRes/.test(srcTxt),
      'the handler no longer skips the check when the plan price is zero');
-  ok(/cap = price > 0 \? price \* 0\.45 : FREE_AUTO_CEILING_USD/.test(srcTxt),
-     'it picks a ceiling for every plan instead');
+  /* THE PROPERTY, NOT THE SPELLING. This matched the literal text of the
+     arithmetic while it lived inline in the chat handler. Moving it into one
+     shared helper - which is what made the same ceiling bind image, video, SMS
+     and the widget - broke the match while the 45% backstop it guards was
+     untouched. A rule written against a spelling fails on a correct fix and
+     passes on a regression that keeps the words (LESSONS #203). */
+  ok(/_monthlyCeilingUSD\(user\)/.test(srcTxt),
+     'it picks a ceiling for every plan instead - the same one every other spending path uses', true);
+  ok(/FREE_AUTO_CEILING_USD/.test(srcTxt),
+     'with the free ceiling as the fallback when there is no plan or family limit at all', true);
   ok(/cost:\$\{user\.billingSubject\}/.test(srcTxt),
      'and charges it to the account or team that is actually paying');
 }

@@ -184,8 +184,15 @@ section('One definition of what a plan costs');
      profit guarantee is three chances for one to be quietly out of date. */
   const copies = (src.match(/= ?\{ ?pro: ?15, ?elite: ?75, ?ultra: ?200 ?\}/g) || []).length;   // assignments, not the comment describing them
   ok(copies === 1, 'the plan price table exists exactly once', copies);
-  ok(/priceForBackstop = _planPriceUSD\(user\.plan, user\.customCfg\)/.test(src),
-     'the chat cost backstop reads it');
+  /* THE PROPERTY, NOT THE SPELLING. This matched the literal text of the
+     arithmetic while it lived inline in the chat handler. Moving it into one
+     shared helper - which is what made the same ceiling bind image, video, SMS
+     and the widget - broke the match while the 45% backstop it guards was
+     untouched. A rule written against a spelling fails on a correct fix and
+     passes on a regression that keeps the words (LESSONS #203). */
+  const ceilFn3 = src.slice(src.indexOf('function _monthlyCeilingUSD'), src.indexOf('function _monthlyCeilingUSD') + 900);
+  ok(/_planPriceUSD\(user\.plan, user\.customCfg\)/.test(ceilFn3),
+     'the chat cost backstop reads it', true);
   ok(/const price = _planPriceUSD\(user\.plan, user\.customCfg\)/.test(src),
      'the SMS backstop reads the same one');
   ok(/const planPrice = _planPriceUSD\(plan, ent && ent\.custom\)/.test(src),

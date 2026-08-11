@@ -26,7 +26,16 @@ const blended = eng => 0.8 * eng.inCost + 0.2 * eng.outCost;
 
 section('The dollar backstop, not the token cap, is what guarantees margin');
 {
-  ok(/priceForBackstop \* 0\.45/.test(src), 'the ceiling exists in the request path');
+  /* THE PROPERTY, NOT THE SPELLING. This matched the literal text of the
+     arithmetic while it lived inline in the chat handler. Moving it into one
+     shared helper - which is what made the same ceiling bind image, video, SMS
+     and the widget - broke the match while the 45% backstop it guards was
+     untouched. A rule written against a spelling fails on a correct fix and
+     passes on a regression that keeps the words (LESSONS #203). */
+  const ceilFn = src.slice(src.indexOf('function _monthlyCeilingUSD'), src.indexOf('function _monthlyCeilingUSD') + 900);
+  ok(/\* 0\.45/.test(ceilFn) && /_planPriceUSD\(/.test(ceilFn),
+     'the ceiling exists, at 45% of the plan price', true);
+  ok(/_monthlyCeilingUSD\(user\)/.test(src), 'and the request path asks for it', true);
   Object.entries(PRICE).forEach(([plan, price]) => {
     const ceiling = price * BACKSTOP;
     const margin = (price - ceiling) / price;

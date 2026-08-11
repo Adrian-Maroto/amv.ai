@@ -36,7 +36,7 @@ mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'clearing.harness.mjs');
 writeFileSync(harness, src
   + '\nexport { DB, _wallet, _saveWallet, _creditSale, _reverseSale, _availableBalance,'
-  + ' PAYOUT_HOLD_MS, MARKET_MIN_WITHDRAW, MARKET_PLATFORM_FEE };\n');
+  + ' PAYOUT_HOLD_MS, PAYOUT_RESERVE_MS, PAYOUT_RESERVE_PCT, MARKET_MIN_WITHDRAW, MARKET_PLATFORM_FEE };\n');
 const W = await import(harness + '?t=' + Date.now());
 const worker = W.default;
 
@@ -129,22 +129,54 @@ section('A sale credits the seller, and the money is not theirs to take yet');
   ok(/\d/.test(tried.body.error || ''), 'naming when', tried.body.error);
 }
 
-section('Once it has cleared, they are paid in full');
+section('Once the hold clears they are paid, less the reserve that has not');
 {
+  /* THIS SECTION USED TO ASSERT 100% AT DAY 14, and that was right until the
+     rolling reserve existed. It is deliberately no longer true: the 14-day
+     hold answers "did this sale stick", and a card dispute can arrive up to
+     120 days after the charge, so a slice of every sale is held across the
+     whole window. Holding EVERYTHING for 120 days would be safe and would
+     also make AMV useless to an honest seller waiting four months to be paid
+     for delivered work.
+
+     The property this section was really guarding is untouched and is checked
+     harder below: the seller is paid IN FULL, eventually. The reserve is a
+     delay, not a deduction, and a test that could not tell those apart would
+     be the one worth worrying about. */
   const env = mkEnv();
   const tok = await sellerWithASale(env);
   await ageFunds(env, SELLER, W.PAYOUT_HOLD_MS + DAY);
 
   const share = +(999 * (1 - W.MARKET_PLATFORM_FEE)).toFixed(2);
+  const reserved = +(share * W.PAYOUT_RESERVE_PCT).toFixed(2);
+  const clears = +(share - reserved).toFixed(2);
+
   const avail = await W._availableBalance(env, SELLER);
-  ok(Math.abs(avail - share) < 0.01, 'the whole share is available', { avail, share });
+  ok(Math.abs(avail - clears) < 0.01,
+     'the share is available apart from the reserve slice', { avail, clears, reserved });
+  ok(reserved > 0, 'and the reserve is a real amount, not a rounding artefact', reserved);
 
   const out = await post(env, '/v1/market/withdraw', { destination: 'paypal@seller.com' }, tok);
-  ok(out.body.ok === true, 'and the withdrawal goes through', out.body.error || 'ok');
-  ok(Math.abs((out.body.amount || 0) - share) < 0.01, 'for the full amount', out.body.amount);
+  ok(out.body.ok === true, 'the withdrawal goes through', out.body.error || 'ok');
+  ok(Math.abs((out.body.amount || 0) - clears) < 0.01, 'for what has cleared', out.body.amount);
 
   const after = await W._availableBalance(env, SELLER);
-  ok(after === 0, 'with nothing left available afterwards', after);
+  ok(after === 0, 'with nothing further available yet', after);
+
+  /* AND THE REST ARRIVES. This is the assertion that keeps the reserve honest:
+     it is the seller's money the whole time and it clears late rather than
+     being kept. Without this, a bug that quietly confiscated 10% of every sale
+     would pass everything above it. */
+  await ageFunds(env, SELLER, W.PAYOUT_RESERVE_MS + DAY);
+  const later = await W._availableBalance(env, SELLER);
+  ok(Math.abs(later - reserved) < 0.01,
+     'once the dispute window has passed, the reserve becomes available too', { later, reserved });
+
+  const out2 = await post(env, '/v1/market/withdraw', { destination: 'paypal@seller.com' }, tok);
+  ok(out2.body.ok === true, 'and they can take it', out2.body.error || 'ok');
+  ok(Math.abs(((out.body.amount || 0) + (out2.body.amount || 0)) - share) < 0.01,
+     'so across the two payouts they receive the entire share - the reserve delayed it and nothing kept it',
+     { first: out.body.amount, second: out2.body.amount, share });
 }
 
 section('A chargeback inside the window takes back money that is still here');
@@ -189,16 +221,32 @@ section('Two sales clear on their own clocks');
                              amountCents: 50000, ref: 'pi_2' });
 
   const avail = await W._availableBalance(env, SELLER);
+  /* The older sale's SHORT hold has matured. Its reserve slice has not - that
+     one runs for the whole dispute window - and neither has any part of the
+     newer sale. Counted rather than assumed, so this still fails if the two
+     sales' clocks ever get confused with each other. */
   const first = +(100 * (1 - W.MARKET_PLATFORM_FEE)).toFixed(2);
-  ok(Math.abs(avail - first) < 0.01, 'only the older sale has cleared', { avail, first });
+  const firstClears = +(first * (1 - W.PAYOUT_RESERVE_PCT)).toFixed(2);
+  ok(Math.abs(avail - firstClears) < 0.01,
+     'only the older sale has cleared, and only the part of it that is not reserved',
+     { avail, firstClears, first });
 
   const out = await post(env, '/v1/market/withdraw', { destination: 'paypal@seller.com' }, tok);
   ok(out.body.ok === true, 'they can take that much', out.body.error || 'ok');
-  ok(Math.abs((out.body.amount || 0) - first) < 0.01, 'and only that much', out.body.amount);
+  ok(Math.abs((out.body.amount || 0) - firstClears) < 0.01, 'and only that much', out.body.amount);
 
   const w = await W._wallet(env, SELLER);
   ok(w.balance > 0, 'the newer sale is still on the books', w.balance);
-  ok((w.holds || []).length === 1, 'still held, on its own clock', (w.holds || []).length);
+  /* Three holds remain: the older sale's reserve, and the newer sale's two.
+     A sale leaves two holds now - the part that clears on the short window and
+     the reserve that clears on the long one - so a count of "one per sale" is
+     the assumption that broke here rather than the behaviour. */
+  const remaining = (w.holds || []);
+  ok(remaining.length === 3, 'still held, each on its own clock', remaining.length);
+  ok(remaining.filter(h => h.reserve).length === 2,
+     'two of them are reserve slices, one per sale', remaining.filter(h => h.reserve).length);
+  ok(remaining.filter(h => h.ref === 'pi_2').length === 2,
+     'and the newer sale is wholly unavailable, both of its parts', remaining.filter(h => h.ref === 'pi_2').length);
 }
 
 section('Nothing is silently taken from a seller who did nothing wrong');
@@ -270,7 +318,15 @@ section('Two sales at the same moment both reach the seller');
   const share = +(100 * (1 - W.MARKET_PLATFORM_FEE)).toFixed(2);
   ok(Math.abs(w.balance - (first + share * 4)) < 0.01,
      'all four concurrent credits are on the balance, none lost', { got: w.balance, want: first + share * 4 });
-  ok((w.holds || []).length === 5, 'and each sale has its own hold', (w.holds || []).length);
+  /* Two holds per sale now - the part that clears on the short window and the
+     reserve that clears across the dispute window - so five sales leave ten.
+     Asserted as "per sale" rather than as a bare number, because the number is
+     the thing that changed and the property is what matters. */
+  const holds = (w.holds || []);
+  const refs = new Set(holds.map(h => h.ref));
+  ok(refs.size === 5, 'and each sale is represented', refs.size);
+  ok(holds.length === refs.size * 2,
+     'by both of its holds - the clearing part and the reserve', { holds: holds.length, sales: refs.size });
 }
 
 section('Cleared holds are dropped as sales come in, not only at payout');
@@ -282,21 +338,38 @@ section('Cleared holds are dropped as sales come in, not only at payout');
   const env = mkEnv();
   await sellerWithASale(env, { price: 100 });
   await ageFunds(env, SELLER, W.PAYOUT_HOLD_MS + DAY);        // the first has cleared
-  ok((await W._wallet(env, SELLER)).holds.length === 1, 'one hold, now matured', 1);
+  /* Ageing moves the clocks; it does not prune - that happens on the next
+     credit or withdrawal, which is exactly what this section is about. So both
+     holds are still carried here: the short one now matured, the reserve still
+     running for the rest of the dispute window. */
+  const afterAge = (await W._wallet(env, SELLER)).holds;
+  ok(afterAge.length === 2, 'both holds are still carried before anything prunes', afterAge.length);
+  ok(afterAge.filter(h => (h.until || 0) <= Date.now()).length === 1,
+     'one of them has matured', afterAge.map(h => h.until));
+  ok(afterAge.filter(h => h.reserve && (h.until || 0) > Date.now()).length === 1,
+     'and the reserve is the one still running', afterAge.filter(h => h.reserve));
 
   await W.DB.put(env, 'market', 'itmN', { id: 'itmN', title: 'N', price: 100, authorEmail: SELLER });
   await W._creditSale(env, { itemId: 'itmN', buyer: 'bn@example.com', seller: SELLER,
                              amountCents: 10000, ref: 'pi_n' });
 
   const w = await W._wallet(env, SELLER);
-  ok((w.holds || []).length === 1,
-     'after a new sale only the still-clearing hold remains', (w.holds || []).length);
-  ok((w.holds[0] || {}).ref === 'pi_n', 'and it is the new one', (w.holds[0] || {}).ref);
+  const hs = (w.holds || []);
+  /* The matured SHORT hold of the first sale is gone. What remains is the first
+     sale's reserve plus both of the new sale's holds - nothing that has
+     matured is still being carried, which is what this section is about. */
+  ok(hs.length === 3, 'only holds that are still running remain', hs.length);
+  ok(hs.filter(h => h.ref === 'pi_n').length === 2, 'both parts of the new sale', hs.filter(h => h.ref === 'pi_n').length);
+  ok(hs.filter(h => h.reserve).length === 2, 'and a reserve for each sale', hs.filter(h => h.reserve).length);
+  ok(!hs.some(h => (h.until || 0) <= Date.now()), 'and nothing matured is still carried', hs.map(h => h.until));
+
   /* Pruning must not touch the money - only the bookkeeping. */
   const share = +(100 * (1 - W.MARKET_PLATFORM_FEE)).toFixed(2);
   ok(Math.abs(w.balance - share * 2) < 0.01, 'both sales are still on the balance', w.balance);
   const avail = await W._availableBalance(env, SELLER);
-  ok(Math.abs(avail - share) < 0.01, 'and the cleared one is still withdrawable', avail);
+  const clearedPart = +(share * (1 - W.PAYOUT_RESERVE_PCT)).toFixed(2);
+  ok(Math.abs(avail - clearedPart) < 0.01,
+     'and the cleared part of the first sale is still withdrawable', { avail, clearedPart });
 }
 
 section('A sale landing mid-withdrawal cannot restore money that already left');

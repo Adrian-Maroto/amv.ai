@@ -50,7 +50,14 @@ section('The margin backstop now buys the usage the plan actually pays for');
   ok(turnsNow > turnsBefore * 2,
      'a Pro user gets more than twice the deep-engine turns for the same protected margin',
      turnsBefore + ' -> ' + turnsNow + ' turns');
-  ok(/priceForBackstop \* 0\.45/.test(src), 'and the 55% margin floor itself is unchanged');
+  /* THE PROPERTY, NOT THE SPELLING. This matched the literal text of the
+     arithmetic while it lived inline in the chat handler. Moving it into one
+     shared helper - which is what made the same ceiling bind image, video, SMS
+     and the widget - broke the match while the 45% backstop it guards was
+     untouched. A rule written against a spelling fails on a correct fix and
+     passes on a regression that keeps the words (LESSONS #203). */
+  const ceilFn2 = src.slice(src.indexOf('function _monthlyCeilingUSD'), src.indexOf('function _monthlyCeilingUSD') + 900);
+  ok(/\* 0\.45/.test(ceilFn2), 'and the 55% margin floor itself is unchanged', true);
 }
 
 section('Thinking is configured explicitly, never left to the default');
