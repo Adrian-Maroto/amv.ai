@@ -22,13 +22,14 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { functionBody } from '../lib/source.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
 const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'ceiling.harness.mjs');
-writeFileSync(harness, src + '\nexport { DB, setEntitlement, todayKey, monthKey, FREE_TIER_CAP_SHARE, _imageCost, _videoCost };\n');
+writeFileSync(harness, src + '\nexport { DB, setEntitlement, todayKey, monthKey, FREE_TIER_CAP_SHARE, _imageCost, _videoCost, _monthlyCeilingUSD, _spendGate };\n');
 const W = await import(harness + '?t=' + Date.now());
 const worker = W.default;
 
@@ -252,5 +253,69 @@ section('Every path that calls a paid provider goes through the one gate');
 }
 
 globalThis.fetch = realFetch;
+/* ── A PARENT'S LIMIT IS A LIMIT ON EVERYTHING, NOT ON CHAT ──────────────────
+
+   The ceiling that stops chat was written inside the chat handler, so it bound
+   chat and nothing else. Image and video were bounded by a plan COUNT - so
+   many images a day - and a count is not a dollar limit. A parent who set $10
+   a month had a child who stopped at $10 of conversation and could then run
+   the plan's whole daily image allowance every day, and video at fifty cents
+   a call, indefinitely.
+
+   Same shape as the defect this file was written for, one level down: there
+   the DAILY ceiling was blind to the two most expensive calls, here the
+   PER-ACCOUNT one was. Both because the rule lived where one path could see
+   it. There is one definition now and both paths ask it. */
+section('The account ceiling binds image and video, not only chat');
+{
+  const gate = functionBody(src, '_spendGate');
+  ok(/_monthlyCeilingUSD\(/.test(gate),
+     'the media gate asks for this account’s ceiling', true);
+  ok(/family_cap/.test(gate),
+     'and can refuse for the family limit specifically, so the message names the person who can change it', true);
+
+  /* One definition, not two that drift. The whole reason this was missed is
+     that the rule existed in exactly one handler. */
+  const defs = (src.match(/function _monthlyCeilingUSD\(/g) || []).length;
+  ok(defs === 1, 'the ceiling is defined once', defs);
+  const chat = src.slice(src.indexOf('const costName = `cost:${user.billingSubject'), src.indexOf('// 4) GLOBAL SPEND CAP'));
+  ok(/_monthlyCeilingUSD\(user\)/.test(chat), 'and chat asks the same one', true);
+  ok(!/planPriceUSD\(user\.plan[^)]*\) \* 0\.45/.test(chat),
+     'rather than keeping its own copy of the arithmetic', true);
+}
+
+section('A cap of zero really is zero');
+{
+  /* A parent switching paid compute off has to mean it - including for the
+     calls that never consulted them before. */
+  const child = { email: 'kid@x.com', plan: 'pro', family: { limits: { monthlyUSD: 0 } } };
+  const ceiling = W._monthlyCeilingUSD(child);
+  ok(ceiling === 0, 'zero survives as zero rather than falling back to the plan', ceiling);
+
+  /* THE CASE THAT ACTUALLY BREAKS, and the first version of this section
+     missed it. On a paid plan the plan's own backstop is above zero, so a
+     falsy-vs-null slip in the guard is hidden by it - a sabotage swapping
+     `familyCapUSD == null` for `!familyCapUSD` passed. On the FREE plan there
+     is no backstop, so the same slip returns "no ceiling at all": a parent who
+     switched paid compute off for a child would have switched off the limit
+     instead. Zero and absent are different answers and the free child is where
+     the difference shows. */
+  const freeChild = { email: 'kid2@x.com', plan: 'free', family: { limits: { monthlyUSD: 0 } } };
+  const freeCeiling = W._monthlyCeilingUSD(freeChild);
+  ok(freeCeiling === 0,
+     'a free child with the cap set to zero has a ceiling of zero, not none', freeCeiling);
+  ok(freeCeiling !== null,
+     'and null would mean unlimited, which is the opposite of what the parent asked for', freeCeiling);
+
+  const adult = { email: 'a@x.com', plan: 'pro' };
+  ok((W._monthlyCeilingUSD ? W._monthlyCeilingUSD(adult) : 1) > 0,
+     'while an ordinary account still gets the plan backstop', W._monthlyCeilingUSD && W._monthlyCeilingUSD(adult));
+
+  const lower = { email: 'k@x.com', plan: 'ultra', family: { limits: { monthlyUSD: 5 } } };
+  ok((W._monthlyCeilingUSD ? W._monthlyCeilingUSD(lower) : 0) === 5,
+     'and the lower of the two wins - a parent can spend less than the plan allows, never more',
+     W._monthlyCeilingUSD && W._monthlyCeilingUSD(lower));
+}
+
 if (report('the-ceiling-covers-what-costs-most') > 0) process.exitCode = 1;
 done();

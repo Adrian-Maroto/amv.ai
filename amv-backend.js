@@ -550,6 +550,36 @@ const VIDEO_COST_USD = Math.max(0.01, parseFloat(globalThis.AMV_VIDEO_COST || '0
 const _imageCost = (env) => Math.max(0.001, parseFloat(env && env.IMAGE_COST_USD) || IMAGE_COST_USD);
 const _videoCost = (env) => Math.max(0.01, parseFloat(env && env.VIDEO_COST_USD) || VIDEO_COST_USD);
 
+/* THE CEILING ON ONE ACCOUNT'S MONTH, IN ONE PLACE.
+
+   The plan's own cost backstop and a parent's monthly limit are the same kind
+   of number - a dollar ceiling on what this subject may spend in a month - and
+   the lower of the two always wins. A parent can spend less on a child than
+   the plan allows; they can never spend more, whatever the plan is or who pays
+   for it.
+
+   This lived only inside the chat handler, so it bound chat and nothing else.
+   The image and video paths were bounded by a COUNT from the plan - so many
+   images a day - and a count is not a dollar limit: a parent who set $10 a
+   month still had a child able to run the plan's full daily image allowance
+   every day, and video at fifty cents a call. The limit was real on the one
+   path that happened to contain the code.
+
+   Returns null when this subject has no dollar ceiling at all. */
+function _monthlyCeilingUSD(user) {
+  const planCeiling = _planPriceUSD(user.plan, user.customCfg) > 0
+    ? _planPriceUSD(user.plan, user.customCfg) * 0.45 : 0;
+  let familyCapUSD = null;
+  if (user.family && user.family.limits && user.family.limits.monthlyUSD != null) {
+    familyCapUSD = Math.max(0, +user.family.limits.monthlyUSD || 0);
+  }
+  if (!(planCeiling > 0) && familyCapUSD == null) return null;
+  /* A cap of zero really is zero - a parent who sets it there has switched off
+     paid compute for that child, and that has to mean it. */
+  return familyCapUSD == null ? planCeiling
+       : (planCeiling > 0 ? Math.min(planCeiling, familyCapUSD) : familyCapUSD);
+}
+
 /* One gate, so a spending path added later cannot quietly be outside the
    ceiling the way these two were. Returns a refusal to hand back, or null when
    the call may go ahead.
@@ -558,6 +588,34 @@ const _videoCost = (env) => Math.max(0.01, parseFloat(env && env.VIDEO_COST_USD)
    traffic that pays nothing is what stops, because turning away somebody who
    has paid is a refund, then a chargeback, then a review. */
 async function _spendGate(env, user, what) {
+  /* THIS ACCOUNT'S OWN CEILING FIRST, because it is the one somebody set.
+
+     The global cap protects AMV. It says nothing about whether THIS person -
+     or the parent paying for them - agreed to this spend, and image and video
+     were bounded only by a plan COUNT: so many images a day. A count is not a
+     dollar limit. A parent who set $10 a month had a child who stopped at $10
+     of chat and could then run the plan's full daily image allowance every
+     day, plus video at fifty cents a call.
+
+     Checked before the global ceiling because it refuses for a different
+     reason and the person needs to hear the right one: "you have used the
+     limit set for your account" is not "AMV is busy". */
+  const ceiling = _monthlyCeilingUSD(user);
+  if (ceiling != null) {
+    const costName = `cost:${user.billingSubject || user.email}:${monthKey()}`;
+    let capRes = null;
+    try { capRes = await counter(env, costName, { op: 'checkCap', cap: ceiling }); }
+    catch (e) { audit(env, 'spend_gate_blind', { what, scope: 'account', error: String((e && e.message) || e) }); }
+    if (capRes && !capRes.allowed) {
+      const hitFamily = !!(user.family && user.family.limits && user.family.limits.monthlyUSD != null);
+      audit(env, 'spend_cap_hit', { email: user.email, plan: user.plan, family: hitFamily, what });
+      return json(hitFamily
+        ? { error: 'You have used the monthly limit set for your account. It resets next month, or whoever manages your family can raise it.',
+            code: 'family_cap' }
+        : { error: 'You\u2019ve used your full plan allowance for this billing cycle. It resets next month, or upgrade for more.',
+            code: 'quota_month' }, 429);
+    }
+  }
   const gCap = parseFloat(env.GLOBAL_DAILY_USD_CAP || '500');
   if (!(gCap > 0)) return null;
   const paying = _planPriceUSD(user.plan, user.customCfg) > 0;
@@ -7342,18 +7400,14 @@ async function aiProxy(request, env, ctx) {
   /* A child's cap is a ceiling on top of the plan's, never a raise. The parent
      can spend less on them than the plan allows; they can never spend more,
      whatever the plan is or who pays for it. */
-  let familyCapUSD = null;
-  if (user.family && user.family.limits && user.family.limits.monthlyUSD != null) {
-    familyCapUSD = Math.max(0, +user.family.limits.monthlyUSD || 0);
-  }
+  const familyCapUSD = (user.family && user.family.limits && user.family.limits.monthlyUSD != null)
+    ? Math.max(0, +user.family.limits.monthlyUSD || 0) : null;
   const costName = `cost:${user.billingSubject || user.email}:${monthKey()}`;
-  const planCeiling = priceForBackstop > 0 ? priceForBackstop * 0.45 : 0;
-  if (planCeiling > 0 || familyCapUSD != null) {
-    /* The lower of the two always wins. A cap of zero really is zero - a parent
-       who sets it there has switched off paid compute for that child, and that
-       has to mean it. */
-    const costCeiling = familyCapUSD == null ? planCeiling
-                      : (planCeiling > 0 ? Math.min(planCeiling, familyCapUSD) : familyCapUSD);
+  /* One definition, shared with the image and video gate - see
+     _monthlyCeilingUSD. It used to be written out here and only here, which is
+     why it bound chat and nothing else. */
+  const costCeiling = _monthlyCeilingUSD(user);
+  if (costCeiling != null) {
     const capRes = await counter(env, costName, { op: 'checkCap', cap: costCeiling });
     if (!capRes.allowed) {
       audit(env,'spend_cap_hit',{email:user.email,plan:user.plan,family:!!(user.family)}); await refundReservation();
