@@ -3943,3 +3943,39 @@ reason, the legal reporting line would have moved with it, silently.
 **Rule:** two rules that happen to agree on a value still get two named
 constants, and each says what question it answers. Merging them is only right
 when they would have to move together.
+
+## 221. A bound on results is not a bound on work
+
+The public catalogue stopped at `out.length < 500` and read every listing in
+the store to get there. The counter moved only when a listing survived the
+visible-and-active filter, so a catalogue of a hundred thousand removed
+listings and ten live ones read all hundred thousand and reported a bound.
+
+The same line hid a second fault: it sorted by installs AFTER stopping, so
+"most popular" meant the most popular of whichever listings came first in KEY
+order. That defect had already been found and fixed on the payouts screen. It
+was still on the page every visitor sees, because the fix was applied to one
+instance rather than to the shape.
+
+**Rule:** bound the WORK - keys read, records fetched, milliseconds spent -
+never the results kept. And when a filter sits between the two, they are not
+the same number and the difference is unbounded. If a list is ranked, rank it
+over everything read before cutting, or the ranking describes the slice rather
+than the catalogue.
+
+## 222. Test the wiring, not the helper
+
+Three sabotages passed my own new tests: deleting `_sellerIndexAdd` from
+marketPublish, deleting `_inboxIndexAdd` for the recipient, and deleting the
+cache clear from publishing. Every one of them passed because I had called the
+helper directly in the test and proved the helper works.
+
+The helper is never what breaks. What breaks is the call site - somebody
+refactors the route and the one line that maintains the index goes with it,
+and the failure is silent: a seller publishes a listing and it is simply not
+on their page.
+
+**Rule:** a check for "X happens when Y happens" drives Y through its real
+entry point. Calling X directly tests a function nobody doubted. This is the
+same lesson as #205 (a door check that was a grep) arriving from a different
+direction, which is how I know it is the shape and not the instance.

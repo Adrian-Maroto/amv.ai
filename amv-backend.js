@@ -4355,7 +4355,13 @@ const BACKUP_PREFIXES = [
   /* Referral codes are permanent per account and live in links people have
      already shared, so a restore that reissues them breaks every one. */
   'refcode:', 'refmine:', 'refpend:',
-  'waitlist:'     // people who asked to be told; losing them loses the launch list
+  'waitlist:',    // people who asked to be told; losing them loses the launch list
+  'mkthread:',    // marketplace conversations - the messages themselves
+  /* The two indexes. They can be rebuilt from a scan, so losing them is
+     recoverable - but the rebuild is the expensive scan they exist to avoid,
+     and a restore is exactly when nobody wants every seller's first page load
+     to walk the whole catalogue. */
+  'mktmine:', 'mktinbox:'
 ];
 /* Never exported. Listed so the omission reads as a decision, not an oversight.
    Two reasons appear here: it is a CREDENTIAL and must not sit in a snapshot
@@ -4398,7 +4404,11 @@ const BACKUP_NEVER = [
      rate-limit bucket for the current minute, a spend tally for the current
      day. Restoring yesterday's counters would either refuse people for use
      that already expired or hand back budget that was already spent. */
-  'ctr:', 'rl:'
+  'ctr:', 'rl:',
+  /* The catalogue snapshot. Sixty seconds old by design and rebuilt on the
+     first request after a restore - putting it in a backup would restore a
+     stale front page and nothing else. */
+  'mktcache:'
 ];
 
 /* AMV-035: admin-token auth. Read the token ONLY from a header (never the
@@ -5663,6 +5673,11 @@ async function authLogout(request, env) {
    exactly what that check is for. */
 const PER_USER_KINDS = ['acct', 'ent', 'entitleitem', 'data', 'auto', 'crewjobs', 'school', 'kyc',
   'approvals', 'handoff', 'abuse', 'seller', 'widget', 'wallet', 'wallet_tx',
+  /* The two convenience indexes: which listings somebody published and which
+     conversations they are in. They name a person and point at their things,
+     so they go with the account like everything else - and the records they
+     point at are erased by the loops above and below this one. */
+  'mktmine', 'mktinbox',
   'purchases', 'stripecust', 'userteam', 'sites', 'spendlimits',
   'fin', 'finlink', 'invsnap', 'links', 'fam', 'apikeys', 'consent', 'widget_owner', 'shares', 'presence',
   /* Support tickets are keyed by the reporter's email precisely so they land
@@ -10960,21 +10975,81 @@ async function _emailFromCustomer(env, customerId) {
    technical substrate for the network effect - it lights up as real users
    publish and install.
    ===================================================================== */
-async function marketList(request, env) {
-  // public: list active community listings, newest+popular first
-  const out = [];
-  let cursor;
+/* THE CATALOGUE, WHICH ANYBODY CAN ASK FOR.
+
+   This walked every `market:` key and did a full read of each one, on a PUBLIC
+   unauthenticated route, with no cache. One HTTP request from anybody at all
+   turned into one storage read per listing in the product. That is a bill and
+   a way to generate load, and it grew with every listing anybody published.
+
+   The bound it had was worse than none: `while (cursor && out.length < 500)`
+   counts VISIBLE results, so a catalogue of a hundred thousand hidden or
+   removed listings and ten active ones read all hundred thousand. And it
+   sorted by installs AFTER stopping, so "most popular" was the most popular of
+   whichever listings happened to come first in KEY order - the same defect
+   already found and fixed in the payouts screen, still here on the page every
+   visitor sees.
+
+   So: one snapshot, built at most once a minute and shared by everybody who
+   asks. The bound is on KEYS READ rather than on results kept, which is the
+   only version of it that bounds the work. Publishing or removing a listing
+   clears it, because a seller not seeing their own new listing is the thing
+   people actually notice; anything else is a minute stale, which a catalogue
+   can be. */
+const MARKET_CACHE_KEY = 'mktcache:v1';
+const MARKET_CACHE_TTL_S = 60;
+const MARKET_LIST_MAX = 500;      // items returned
+
+async function _marketCacheBust(env) {
+  try { await env.AMV_KV.delete(MARKET_CACHE_KEY); } catch (e) { /* stale for a minute is survivable */ }
+}
+
+async function _marketSnapshot(env) {
+  const items = [];
+  let cursor, scanned = 0, truncated = false;
   do {
     const page = await env.AMV_KV.list({ prefix: 'market:', cursor, limit: 1000 });
-    for (const k of page.keys) {
+    for (const k of (page.keys || [])) {
+      scanned++;
       const raw = await env.AMV_KV.get(k.name);
       if (!raw) continue;
-      try { const it = JSON.parse(raw); if (!it.hidden && (!it.status || it.status === 'active')) out.push(_publicListing(it)); } catch {}
+      try {
+        const it = JSON.parse(raw);
+        if (!it.hidden && (!it.status || it.status === 'active')) items.push(_publicListing(it));
+      } catch (e) {}
     }
     cursor = page.list_complete ? undefined : page.cursor;
-  } while (cursor && out.length < 500);
-  out.sort((a, b) => (b.installs || 0) - (a.installs || 0));
-  return json({ ok: true, items: out });
+    if (cursor && scanned >= MKT_SCAN_MAX) { truncated = true; break; }
+  } while (cursor);
+  /* Ranked across everything that was read, then cut - rather than cut in
+     arbitrary key order and ranked within that. */
+  items.sort((a, b) => (b.installs || 0) - (a.installs || 0));
+  return { items: items.slice(0, MARKET_LIST_MAX), scanned, truncated, at: Date.now() };
+}
+
+async function marketList(request, env) {
+  // public: active community listings, most installed first
+  let snap = null;
+  try {
+    const raw = await env.AMV_KV.get(MARKET_CACHE_KEY);
+    if (raw) snap = JSON.parse(raw);
+  } catch (e) { snap = null; }   // an unreadable cache is a miss, not a failure
+
+  if (!snap || !Array.isArray(snap.items)) {
+    snap = await _marketSnapshot(env);
+    try {
+      await env.AMV_KV.put(MARKET_CACHE_KEY, JSON.stringify(snap), { expirationTtl: MARKET_CACHE_TTL_S });
+    } catch (e) { /* uncached is slow, not broken */ }
+  }
+
+  return json({ ok: true, items: snap.items,
+    /* A catalogue that stopped short says so, in the answer, rather than
+       presenting a slice as the whole store. */
+    truncated: snap.truncated || undefined,
+    scanned: snap.truncated ? snap.scanned : undefined,
+    note: snap.truncated
+      ? 'There are more listings than this view reads in one pass, so this is the most installed of what it reached. Search to find a specific one.'
+      : undefined });
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -11244,6 +11319,8 @@ async function marketPublish(request, env) {
     createdAt: Date.now(),
   };
   await env.AMV_KV.put(`market:${clean.id}`, JSON.stringify(clean));
+  await _sellerIndexAdd(env, user.email, clean.id);
+  await _marketCacheBust(env);
   if (screen.action === 'held_for_review') {
     audit(env, 'market_held_for_review', { id: clean.id, by: user.email, signals: screen.signals });
   }
@@ -11312,6 +11389,89 @@ async function _getListing(env, id) {
   const raw = await env.AMV_KV.get(`market:${id}`);
   if (!raw) return null;
   try { return JSON.parse(raw); } catch { return null; }
+}
+
+/* ONE SELLER'S LISTINGS, WITHOUT READING EVERYBODY'S.
+
+   marketMyListings walked every `market:` key in the product and did a full
+   read of each one, keeping the handful whose authorEmail matched. With four
+   listings that is four reads. With four hundred thousand it is four hundred
+   thousand reads, on a page one seller opened to see their own three items -
+   and it had no cap at all, so it did not stop, it just got slower and more
+   expensive every time anybody else published anything.
+
+   An index is the whole fix: the author of a listing never changes, so the
+   membership is decided once at publish and once at removal.
+
+   BUILT ON FIRST USE rather than migrated. `built` is what separates "this
+   seller has no listings" from "nobody has ever asked", so an empty index is
+   not rebuilt on every page load - which is the bug this exists to fix,
+   rewritten as a cache miss. */
+const MKT_SCAN_MAX = 20000;      // keys, not results: a bound has to bound the work
+
+async function _sellerListingIds(env, email) {
+  const em = String(email || '').toLowerCase();
+  if (!em) return { ids: [], built: 0, scanned: 0, truncated: false };
+  try {
+    const raw = await env.AMV_KV.get(`mktmine:${em}`);
+    if (raw) {
+      const r = JSON.parse(raw);
+      if (r && r.built) return { ids: Array.isArray(r.ids) ? r.ids : [], built: r.built, scanned: 0, truncated: false };
+    }
+  } catch (e) { /* unreadable index: rebuild it below rather than fail the page */ }
+
+  /* The old behaviour, ONCE, to seed the index for listings that predate it. */
+  const ids = [];
+  let cursor, scanned = 0, truncated = false;
+  do {
+    const page = await env.AMV_KV.list({ prefix: 'market:', cursor, limit: 1000 });
+    for (const k of (page.keys || [])) {
+      scanned++;
+      const raw = await env.AMV_KV.get(k.name);
+      if (!raw) continue;
+      try { const it = JSON.parse(raw); if (it && it.authorEmail === em) ids.push(it.id || k.name.slice(7)); } catch (e) {}
+    }
+    cursor = page.list_complete ? undefined : page.cursor;
+    if (cursor && scanned >= MKT_SCAN_MAX) { truncated = true; break; }
+  } while (cursor);
+
+  /* A backfill that stopped short must NOT be written as if it were complete -
+     the seller would lose the listings past the cap permanently, which is
+     worse than the slow page it replaces. */
+  if (!truncated) {
+    try { await env.AMV_KV.put(`mktmine:${em}`, JSON.stringify({ ids, built: Date.now() })); } catch (e) {}
+  } else {
+    audit(env, 'seller_index_partial', { email: em, scanned });
+  }
+  return { ids, built: 0, scanned, truncated };
+}
+
+/* Keep it true. Called where a listing is created and where it is removed -
+   the only two moments its author changes. */
+async function _sellerIndexAdd(env, email, id) {
+  const em = String(email || '').toLowerCase();
+  if (!em || !id) return;
+  try {
+    await _withKV(env, 'mktmine', em, (r) => {
+      r.ids = Array.isArray(r.ids) ? r.ids : [];
+      if (!r.ids.includes(id)) r.ids.push(id);
+      /* Marked built either way: an index that gains a listing is an index,
+         and leaving `built` unset would send the next read back to the scan. */
+      r.built = r.built || Date.now();
+      return r;
+    }, { ids: [], built: 0 });
+  } catch (e) { audit(env, 'seller_index_add_failed', { email: em, id, error: String((e && e.message) || e) }); }
+}
+async function _sellerIndexRemove(env, email, id) {
+  const em = String(email || '').toLowerCase();
+  if (!em || !id) return;
+  try {
+    await _withKV(env, 'mktmine', em, (r) => {
+      r.ids = (Array.isArray(r.ids) ? r.ids : []).filter(x => x !== id);
+      r.built = r.built || Date.now();
+      return r;
+    }, { ids: [], built: 0 });
+  } catch (e) { audit(env, 'seller_index_remove_failed', { email: em, id, error: String((e && e.message) || e) }); }
 }
 /* AMV-187: MONEY FROM A SALE CLEARS BEFORE IT CAN LEAVE.
 
@@ -11853,19 +12013,26 @@ async function marketPurchases(request, env) {
 async function marketMyListings(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
+  /* Their own ids, then their own records. What this used to do was read every
+     listing in the product and throw away the ones belonging to somebody else. */
+  const idx = await _sellerListingIds(env, user.email);
   const out = [];
-  let cursor;
-  do {
-    const page = await env.AMV_KV.list({ prefix: 'market:', cursor, limit: 1000 });
-    for (const k of page.keys) {
-      const raw = await env.AMV_KV.get(k.name);
-      if (!raw) continue;
-      try { const it = JSON.parse(raw); if (it.authorEmail === user.email) out.push(it); } catch {}
-    }
-    cursor = page.list_complete ? undefined : page.cursor;
-  } while (cursor);
+  for (const id of idx.ids) {
+    const it = await _getListing(env, id);
+    /* An id in the index whose record is gone is not an error worth showing
+       somebody - it is a removal that raced this read, or an old entry. It is
+       dropped here and tidied on the next write. */
+    if (it) out.push(it);
+  }
   out.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  return json({ ok: true, items: out });
+  return json({ ok: true, items: out,
+    /* Only ever true on the one-time backfill for a catalogue larger than the
+       scan bound, and said out loud rather than quietly showing fewer items
+       than somebody has. */
+    truncated: idx.truncated || undefined,
+    note: idx.truncated
+      ? 'Some of your listings could not be indexed in one pass. They are safe - reload in a moment and the rest will appear.'
+      : undefined });
 }
 async function marketUnlist(request, env) {
   const user = await requireUser(request, env);
@@ -11875,6 +12042,8 @@ async function marketUnlist(request, env) {
   if (!it) return json({ error: 'not found' }, 404);
   if (it.authorEmail !== user.email) return json({ error: 'not your listing' }, 403);
   await env.AMV_KV.delete(`market:${id}`);
+  await _sellerIndexRemove(env, user.email, id);
+  await _marketCacheBust(env);
   audit(env, 'market_unlist', { id, by: user.email });
   return json({ ok: true });
 }
@@ -12479,10 +12648,15 @@ async function marketSetStatus(request, env) {
     const screen = _marketScreen(it, ((await DB.get(env, 'seller', user.email)) || {}).verifiedFor);
     if (!screen.ok) {
       await _withKV(env, 'market', id, (rec) => { if (rec) rec.status = 'removed'; });
+      /* Cleared straight away rather than left to expire. A minute of
+         staleness is fine for a catalogue and is NOT fine for something
+         moderation just pulled - that minute is the whole harm. */
+      await _marketCacheBust(env);
       return json({ error: screen.reason, code: 'policy_violation' }, 422);
     }
     if (screen.action === 'held_for_review') {
       await _withKV(env, 'market', id, (rec) => { if (rec) rec.status = 'under_review'; });
+      await _marketCacheBust(env);
       return json({ ok: true, status: 'under_review' });
     }
   }
@@ -12496,6 +12670,9 @@ async function marketSetStatus(request, env) {
     return true;
   });
   if (set === false) return json({ error: 'This listing has sold, so it cannot be put back on sale.', code: 'already_sold' }, 409);
+  /* Deactivating is somebody taking their own listing down, and they will look
+     straight at the catalogue to check that it went. */
+  await _marketCacheBust(env);
   audit(env, 'market_status', { id, status, by: user.email });
   return json({ ok: true, status });
 }
@@ -12705,6 +12882,10 @@ async function marketReport(request, env) {
         m.hiddenAt = Date.now();
       }, null);
       hidden = true;
+      /* Out of the catalogue now. Auto-hiding is the response to enough people
+         saying something is wrong, and leaving it on the front page for
+         another minute is the exact risk the auto-hide exists to cut. */
+      await _marketCacheBust(env);
       audit(env, 'market_autohidden', { itemId: id, count: rec.count });
     } catch (e) { if (!_isBusy(e)) throw e; }
   }
@@ -12914,6 +13095,13 @@ async function marketMessage(request, env) {
     audit(env, 'market_message_busy', { from: user.email, to: other });
     return json({ error: 'That conversation was busy for a moment and your message was not sent. Please send it again.', code: 'thread_busy' }, 503);
   }
+  /* Both sides now know this conversation exists without anybody having to
+     find it by listing every thread in the product. Written after the message
+     is safely stored, and best-effort: an index that missed one entry costs a
+     rebuild, and failing the send because a convenience index did not write
+     would lose the thing that actually mattered. */
+  await _inboxIndexAdd(env, user.email, key);
+  await _inboxIndexAdd(env, other, key);
   audit(env, 'market_message', { from: user.email, to: other });
 
   /* TELL THEM TO COME AND READ IT - and send them nothing else.
@@ -12971,23 +13159,78 @@ async function marketThreadRead(request, env) {
 }
 
 /* List the current user's message threads (newest first). */
+/* ONE PERSON'S CONVERSATIONS, WITHOUT LISTING EVERYBODY'S.
+
+   A thread key encodes both participants - `mkthread:a@x.com__b@x.com` - so
+   the inbox filtered on the key and avoided reading other people's threads.
+   That is the cheap half. The expensive half is that it still LISTED every
+   thread key in the product, on every inbox load, with no cap: the work grew
+   with total conversations rather than with the caller's.
+
+   The key shape also cannot be narrowed by prefix, because the pair is sorted
+   - somebody whose address sorts second appears in the middle of the key and
+   no prefix reaches them. So it is an index, built on first use like the
+   seller one, for the same reason: the alternative is a migration, and the
+   old scan is already the correct answer, just once instead of every time. */
+async function _inboxIndexAdd(env, email, threadKey) {
+  const em = String(email || '').toLowerCase();
+  if (!em || !threadKey) return;
+  try {
+    await _withKV(env, 'mktinbox', em, (r) => {
+      r.ids = Array.isArray(r.ids) ? r.ids : [];
+      if (!r.ids.includes(threadKey)) r.ids.push(threadKey);
+      r.built = r.built || Date.now();
+      return r;
+    }, { ids: [], built: 0 });
+  } catch (e) { audit(env, 'inbox_index_failed', { email: em, error: String((e && e.message) || e) }); }
+}
+
+async function _inboxThreadKeys(env, email) {
+  const me = String(email || '').toLowerCase();
+  try {
+    const raw = await env.AMV_KV.get(`mktinbox:${me}`);
+    if (raw) {
+      const r = JSON.parse(raw);
+      if (r && r.built) return { ids: Array.isArray(r.ids) ? r.ids : [], truncated: false };
+    }
+  } catch (e) { /* unreadable index: rebuild below rather than fail the inbox */ }
+
+  const ids = [];
+  let cursor, scanned = 0, truncated = false;
+  do {
+    const page = await env.AMV_KV.list({ prefix: 'mkthread:', cursor, limit: 1000 });
+    for (const k of (page.keys || [])) {
+      scanned++;
+      if (k.name.includes(me)) ids.push(k.name);
+    }
+    cursor = page.list_complete ? undefined : page.cursor;
+    if (cursor && scanned >= MKT_SCAN_MAX) { truncated = true; break; }
+  } while (cursor);
+
+  /* A partial backfill is not written as complete - somebody would lose the
+     conversations past the cap for good, which is worse than a slow page. */
+  if (!truncated) {
+    try { await env.AMV_KV.put(`mktinbox:${me}`, JSON.stringify({ ids, built: Date.now() })); } catch (e) {}
+  } else {
+    audit(env, 'inbox_index_partial', { email: me, scanned });
+  }
+  return { ids, truncated };
+}
+
 async function marketThreads(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
   const me = user.email.toLowerCase();
   const out = [];
-  let cursor;
-  do {
-    const page = await env.AMV_KV.list({ prefix: 'mkthread:', cursor, limit: 1000 });
-    for (const k of page.keys) {
-      // fast filter: the pair is encoded in the key
-      if (!k.name.includes(me)) continue;
-      const raw = await env.AMV_KV.get(k.name);
-      if (!raw) continue;
-      try { const t = JSON.parse(raw); if (t.a === me || t.b === me) out.push(t); } catch {}
-    }
-    cursor = page.list_complete ? undefined : page.cursor;
-  } while (cursor);
+  const idx = await _inboxThreadKeys(env, me);
+  for (const name of idx.ids) {
+    const raw = await env.AMV_KV.get(name);
+    if (!raw) continue;
+    /* Membership is re-checked against the RECORD, not taken from the index.
+       An index is a convenience; it is not an authorization, and a wrong entry
+       must not become a way to read somebody else's conversation. */
+    try { const t = JSON.parse(raw); if (t.a === me || t.b === me) out.push(t); } catch (e) {}
+  }
   out.sort((x, y) => (y.msgs[y.msgs.length - 1]?.ts || 0) - (x.msgs[x.msgs.length - 1]?.ts || 0));
   /* Unread computed HERE, from the record, so both devices and both people
      agree. The client used to work it out from its own localStorage, which is
