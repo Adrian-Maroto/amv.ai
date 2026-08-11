@@ -3824,3 +3824,50 @@ seconds.
 
 **Rule:** the check you are writing applies to the code you are writing.
 Run the existing suite against your own work before believing it.
+
+## 215. A check that cannot run reports success
+
+Two gates collided on port 9100. Clearing it, I ran:
+
+    (ss -ltn 2>/dev/null || netstat -ltn 2>/dev/null) | grep -c 9100
+
+and read `0` as "the port is free". Neither `ss` nor `netstat` exists in
+this container. Both halves failed silently, the pipeline printed nothing,
+and `grep -c` counted zero matches in no input. The answer was identical to
+the answer for "definitely free", so I started a forty-minute gate on a
+port that was still held, and it failed at stage 4.
+
+The reliable version does not ask a tool whether the port is free, it tries
+to bind it:
+
+    node -e "require('net').createServer()
+      .once('error', e => { console.log('IN USE', e.code); process.exit(1); })
+      .once('listening', function () { console.log('free'); this.close(); })
+      .listen(9100, '127.0.0.1')"
+
+That cannot report free unless it really was.
+
+This is the same defect I have spent the session finding in AMV - the CSP
+check that passed because it looked at the wrong file, the exemption that
+outlived its key, the sabotage that failed to apply and proved nothing -
+committed in my own verification, which is the one place I was not looking.
+
+**Rule:** an absent tool and a clean result must not look alike. Prefer a
+check that DOES the thing over one that asks about it, and when a command
+can fail silently, make its failure loud before trusting its output.
+
+## 216. A second hold needs the code that consumes holds re-read
+
+Adding the rolling reserve gave every sale two holds sharing one charge
+reference. The reversal path released holds by index - findIndex, splice -
+so it dropped one and left the reserve frozen against a sale that no longer
+existed. The comment directly above that code warns about exactly this:
+"the seller would be short twice".
+
+I wrote the note's own failure into the code it was guarding, because I
+changed the shape of the data and did not re-read its readers.
+
+**Rule:** when you change how many of something a record holds, grep for
+every place that reads it. `findIndex`, `find`, `[0]` and `splice(i, 1)`
+are all assumptions about count, and none of them announces itself when the
+count changes.
