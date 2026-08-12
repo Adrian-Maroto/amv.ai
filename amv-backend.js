@@ -5344,227 +5344,34 @@ export default {
     })());
   },
 
+  /* ONE CATCH THAT ACTUALLY CATCHES.
+
+     The catch below exists so a broken endpoint answers in AMV's own words,
+     records the fault and pages an operator. It had never once fired for a
+     route, and could not: the switch it guarded said
+
+         case '/v1/messages': return aiProxy(request, env, ctx);
+
+     and every handler here is async. Returning a promise EXITS the try. The
+     rejection lands after the block is gone, so it was not an unhandled
+     exception reaching the top level - it was one leaving through the roof.
+
+     What a person got instead was Cloudflare's own 1101 error page: no AMV
+     wording, no recovery path, and the message from the exception - which is
+     precisely what the comment below is careful never to send - decided by
+     somebody else's error page rather than by this file. Nothing was written
+     to the error log and nobody was alerted, so the one signal that says the
+     product is broken for everybody was silent for the whole class of faults
+     most likely to cause it: a provider timing out, storage refusing, a null
+     dereference in a new handler.
+
+     `await` is the entire fix. It is spelled with the routing moved into
+     its own function so there is exactly one thing to await and no chance of
+     a later `return` inside the router escaping the same way - including the
+     four public GET routes, which were outside the try altogether. */
   async fetch(request, env, ctx) {
-    const url = new URL(request.url);
-    const path = url.pathname.replace(/\/+$/, '');
-
-    // Live deployed sites are PUBLIC - served before any auth/CORS gating.
-    if (request.method === 'GET' && path.startsWith('/s/')) {
-      return serveSite(request, env, path.slice(3));
-    }
-
-    // A shared conversation is a public page - no auth, and it must be
-    // reachable by a link preview crawler (AMV-074).
-    if (request.method === 'GET' && path.startsWith('/c/')) {
-      return sharePage(request, env, path.slice(3));
-    }
-
-    // The password-reset page must be public too - the whole point is that the
-    // user cannot log in. This is what the reset email links to.
-    if (request.method === 'GET' && path === '/reset') {
-      return resetPage(request, env);
-    }
-
-    if (request.method === 'OPTIONS') {
-      // The public widget endpoint may be locked to specific origins; reflect the
-      // request Origin for its preflight so a domain-restricted widget still works.
-      if (path === '/v1/widget/chat') {
-        const o = request.headers.get('Origin') || '*';
-        return new Response(null, { headers: {
-          'Access-Control-Allow-Origin': o,
-          'Access-Control-Allow-Methods': 'POST,OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type',
-          'Vary': 'Origin',
-        }});
-      }
-      return new Response(null, { headers: { ...CORS, ...SECURITY_HEADERS } });
-    }
-
     try {
-      // ---------- GLOBAL KILL SWITCH ----------
-      // Cached in-isolate for a few seconds so it's not a KV round-trip on
-      // every single request (this is the hottest path). Worst-case delay to
-      // honor a freshly-flipped switch is _KILL_TTL_MS. (auditor: hot-path read)
-      if (path.startsWith('/v1/')) {
-        const now = Date.now();
-        if (now - _killCache.ts > _KILL_TTL_MS) {
-          _killCache.val = (await env.AMV_KV.get('GLOBAL_KILL')) === '1';
-          _killCache.ts = now;
-        }
-        if (_killCache.val) return json({ error: 'Service temporarily paused. Please try again soon.' }, 503);
-      }
-
-      switch (path) {
-        case '/v1/health':       return json({ ok: true, ts: Date.now() });
-        case '/v1/public-config': return publicConfig(request, env);
-        case '/v1/visit':        return recordVisit(request, env);
-        case '/auth/signup':     return authSignup(request, env);
-        case '/auth/login':      return authLogin(request, env);
-        case '/auth/google':     return authGoogle(request, env);
-        case '/admin/users':     return adminUsers(request, env);
-        case '/auth/refresh':    return authRefresh(request, env);
-        case '/auth/logout':     return authLogout(request, env);
-        case '/auth/delete':     return authDeleteAccount(request, env);
-        case '/auth/reset':      return authReset(request, env);
-        case '/auth/reset/confirm': return authResetConfirm(request, env);
-        case '/auth/reset/status':  return authResetStatus(request, env);
-        case '/auth/reset/code':    return authResetCode(request, env);
-        case '/auth/reset/verify':  return authResetVerify(request, env);
-        case '/auth/admin-reset':   return authAdminReset(request, env);
-        case '/v1/resume':       return resumeAnswer(request, env);
-        case '/v1/activity':     return accountActivity(request, env);
-        case '/v1/keys/create':  return apiKeyCreate(request, env);
-        case '/v1/keys/list':    return apiKeyList(request, env);
-        case '/v1/keys/revoke':  return apiKeyRevoke(request, env);
-        case '/v1/feedback':     return feedbackRecord(request, env);
-        case '/v1/support':      return supportSubmit(request, env);
-        case '/v1/admin/support': return supportInbox(request, env);
-        case '/v1/referral':     return referralStatus(request, env);
-        case '/v1/share/create': return shareCreate(request, env);
-        case '/v1/share/list':   return shareList(request, env);
-        case '/v1/share/revoke': return shareRevoke(request, env);
-        case '/v1/share/visibility': return shareVisibility(request, env);
-        case '/sync/pull':       return syncPull(request, env);
-        case '/sync/push':       return syncPush(request, env);
-        case '/auto/list':       return autoList(request, env);
-        case '/auto/create':     return autoCreate(request, env);
-        case '/auto/update':     return autoUpdate(request, env);
-        case '/auto/read':       return autoClearResults(request, env);
-        case '/auto/pause':      return autoPause(request, env);
-        case '/deploy':          return deploySite(request, env);
-        case '/deploy/list':     return deployList(request, env);
-        case '/deploy/delete':   return deployDelete(request, env);
-        case '/v1/browser/run':  return browserRun(request, env, ctx);
-        case '/v1/finance/accounts':     return financeRoute(request, env, 'accounts');
-        case '/v1/finance/transactions': return financeRoute(request, env, 'transactions');
-        case '/v1/oauth/google/exchange': return googleOAuthExchange(request, env);
-        case '/v1/oauth/google/refresh':  return googleOAuthRefresh(request, env);
-        case '/v1/finance/checkin':      return financeCheckin(request, env);
-        case '/v1/finance/status':       return financeStatus(request, env);
-        case '/v1/finance/link/start':   return financeLinkStart(request, env);
-        case '/v1/finance/link/finish':  return financeLinkFinish(request, env);
-        case '/v1/finance/unlink':       return financeUnlink(request, env);
-        case '/v1/spend/limits':         return spendGet(request, env);
-        case '/v1/spend/set':            return spendSet(request, env);
-        case '/v1/family/get':           return familyGet(request, env);
-        case '/v1/school/connect':       return schoolConnect(request, env);
-        case '/v1/school/disconnect':    return schoolDisconnect(request, env);
-        case '/v1/school/work':          return schoolWork(request, env);
-        case '/v1/school/teachers':      return schoolTeachers(request, env);
-        case '/v1/family/limits':        return familySetLimits(request, env);
-        case '/v1/family/remove':        return familyRemove(request, env);
-        case '/v1/family/leave':         return familyLeave(request, env);
-        case '/v1/link/invite':          return linkInvite(request, env);
-        case '/v1/link/accept':          return linkAccept(request, env);
-        case '/v1/link/list':            return linkList(request, env);
-        case '/v1/link/revoke':          return linkRevoke(request, env);
-        case '/v1/consent':              return consentRecord(request, env);
-        case '/v1/subscribe':            return stripeSubscribe(request, env);
-        case '/v1/fraud/record':         return fraudRecord(request, env);
-        case '/errors':          return errorsReport(request, env, ctx);
-        case '/errors/list':     return errorsList(request, env);
-        case '/errors/resolve':  return errorsResolve(request, env);
-        case '/admin/reports':     return adminReports(request, env);
-        case '/admin/abuse/list':  return abuseList(request, env);
-        case '/admin/abuse/clear': return abuseClear(request, env);
-        case '/admin/payouts':       return adminPayouts(request, env);
-        case '/admin/payouts/mark':  return adminPayoutMark(request, env);
-        case '/admin/readiness':     return adminReadiness(request, env);
-        case '/admin/digest':        return adminDigest(request, env);
-        case '/admin/backup/export': return backupExport(request, env);
-        case '/admin/backup/import': return backupImport(request, env);
-        case '/api/jobs':            return crewJobs(request, env);
-        case '/api/approvals':       return crewApprovals(request, env);
-        case '/api/approvals/act':   return crewApprovalAct(request, env);
-        case '/api/approvals/edit':  return crewApprovalEdit(request, env);
-        case '/api/handoff':         return request.method === 'POST' ? handoffCreate(request, env) : handoffList(request, env);
-        case '/api/handoff/act':     return handoffAct(request, env);
-        case '/team/create':     return teamCreate(request, env);
-        case '/team/get':        return teamGet(request, env);
-        case '/team/invite':     return teamInvite(request, env);
-        case '/team/join':       return teamJoin(request, env);
-        case '/team/members':    return teamMembers(request, env);
-        case '/team/remove':     return teamRemove(request, env);
-        case '/team/leave':      return teamLeave(request, env);
-        case '/team/role':       return teamSetRole(request, env);
-        case '/team/audit':      return teamAuditLog(request, env);
-        case '/team/data':       return teamData(request, env);
-        case '/team/share':      return teamShare(request, env);
-        case '/team/shared':     return teamShared(request, env);
-        case '/team/unshare':    return teamUnshare(request, env);
-        case '/team/presence':   return teamPresence(request, env);
-        case '/team/tasks':      return teamTasks(request, env);
-        case '/team/task/create': return teamTaskCreate(request, env);
-        case '/team/task/update': return teamTaskUpdate(request, env);
-        case '/v1/messages':     return aiProxy(request, env, ctx);
-        case '/v1/image':        return imageMeter(request, env);
-        case '/v1/image/generate': return imageGenerate(request, env);
-        case '/v1/video/generate': return videoGenerate(request, env);
-        case '/v1/video/status':   return videoStatus(request, env);
-        case '/v1/video/list':     return videoList(request, env);
-        case '/v1/usage':        return usageReport(request, env);
-        case '/sms/register':    return smsRegister(request, env);
-        case '/waitlist':        return waitlistAdd(request, env);
-        case '/sms/incoming':    return smsIncoming(request, env, ctx);
-        // --- PAYMENTS (real Stripe + PayPal) ---
-        case '/v1/stripe/checkout': return stripeCheckout(request, env);
-        case '/v1/stripe/portal':   return stripePortal(request, env);
-        case '/v1/stripe/invoices': return stripeInvoices(request, env);
-        case '/v1/stripe/webhook':  return stripeWebhook(request, env, ctx);
-        /* There is no /v1/paypal/create or /v1/paypal/capture. They backed a
-           ONE-TIME PayPal order, and a one-time order cannot pay for a monthly
-           plan: the capture granted an entitlement with no renewal to expire
-           it, no subscription behind it, and no event that would ever revoke
-           it. Fifteen dollars once bought Pro for ever, and any signed-in
-           account could do it with two curl calls long after the browser flow
-           that used them was removed. AMV sells subscriptions; that is what
-           the route below is for. */
-        case '/v1/paypal/subscribe': return paypalSubscribe(request, env);
-        case '/v1/paypal/webhook':  return paypalWebhook(request, env, ctx);
-        case '/v1/entitlement':     return getEntitlement(request, env);
-        case '/v1/account/export':  return accountExport(request, env);
-        // --- MARKETPLACE (community templates) ---
-        case '/v1/market/list':     return marketList(request, env);
-        case '/v1/market/publish':  return marketPublish(request, env);
-        case '/v1/market/install':  return marketInstall(request, env);
-        case '/v1/market/buy':      return marketBuy(request, env);
-        case '/v1/market/purchases': return marketPurchases(request, env);
-        case '/v1/market/mylistings': return marketMyListings(request, env);
-        case '/v1/market/unlist':   return marketUnlist(request, env);
-        case '/v1/market/earnings': return marketEarnings(request, env);
-        case '/v1/market/withdraw': return marketWithdraw(request, env);
-        case '/v1/market/status':   return marketSetStatus(request, env);
-        case '/v1/market/view':     return marketView(request, env);
-        case '/v1/market/rate':     return marketRate(request, env);
-        case '/v1/market/review':   return marketReview(request, env);
-        case '/v1/market/report':   return marketReport(request, env);
-        case '/v1/market/message':  return marketMessage(request, env);
-        case '/v1/market/threads':  return marketThreads(request, env);
-        case '/v1/market/thread/read': return marketThreadRead(request, env);
-        // --- FOUNDER ADMIN (token-gated) ---
-        case '/v1/admin/stats':     return adminStats(request, env);
-        case '/v1/admin/finance':   return adminFinance(request, env);
-        case '/v1/admin/kill':      return adminKill(request, env);
-        case '/v1/admin/user':      return adminUser(request, env);
-        // --- EMBEDDABLE WIDGET ---
-        case '/v1/widget/config':   return widgetConfigGet(request, env);   // owner: read config
-        case '/v1/widget/config-public': return widgetConfigPublic(request, env); // public: display fields only
-        case '/v1/widget/save':     return widgetConfigSave(request, env);  // owner: create/update config
-        case '/v1/widget/chat':     return widgetChat(request, env, ctx);   // public: end-visitor chat (site-key gated)
-        case '/widget.js':          return widgetLoader(request, env);      // public: the <script> embed loader
-        default: {
-          // A browser hitting an unknown URL should get a friendly HTML page;
-          // an API client gets JSON. We tell them apart by the Accept header.
-          const accept = request.headers.get('Accept') || '';
-          if (accept.includes('text/html')) {
-            return new Response(
-              `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>404 - Not found</title><style>body{margin:0;height:100vh;display:flex;align-items:center;justify-content:center;background:#0b0e14;color:#e6e6e6;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}.b{text-align:center;padding:24px}.c{font-size:72px;font-weight:800;color:#4c7dff;line-height:1}.t{font-size:22px;margin:12px 0 6px}.s{color:#9aa4b2;margin-bottom:20px}a{display:inline-block;padding:10px 20px;background:#4c7dff;color:#fff;text-decoration:none;border-radius:9px;font-weight:600}</style></head><body><div class="b"><div class="c">404</div><div class="t">Page not found</div><div class="s">This page doesn't exist or may have moved.</div><a href="/">Go home</a></div></body></html>`,
-              { status: 404, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
-            );
-          }
-          return json({ error: 'not found' }, 404);
-        }
-      }
+      return await _route(request, env, ctx);
     } catch (err) {
       // An unhandled exception reached the top level. Record it AND alert (both
       // throttled + best-effort) so a broken endpoint pages you instead of
@@ -5586,6 +5393,230 @@ export default {
     }
   },
 };
+
+/* THE ROUTER. Everything it can do is awaited by the caller above, which is
+   the only reason the error handling there works at all. */
+async function _route(request, env, ctx) {
+  const url = new URL(request.url);
+  const path = url.pathname.replace(/\/+$/, '');
+
+  // Live deployed sites are PUBLIC - served before any auth/CORS gating.
+  if (request.method === 'GET' && path.startsWith('/s/')) {
+    return serveSite(request, env, path.slice(3));
+  }
+
+  // A shared conversation is a public page - no auth, and it must be
+  // reachable by a link preview crawler (AMV-074).
+  if (request.method === 'GET' && path.startsWith('/c/')) {
+    return sharePage(request, env, path.slice(3));
+  }
+
+  // The password-reset page must be public too - the whole point is that the
+  // user cannot log in. This is what the reset email links to.
+  if (request.method === 'GET' && path === '/reset') {
+    return resetPage(request, env);
+  }
+
+  if (request.method === 'OPTIONS') {
+    // The public widget endpoint may be locked to specific origins; reflect the
+    // request Origin for its preflight so a domain-restricted widget still works.
+    if (path === '/v1/widget/chat') {
+      const o = request.headers.get('Origin') || '*';
+      return new Response(null, { headers: {
+        'Access-Control-Allow-Origin': o,
+        'Access-Control-Allow-Methods': 'POST,OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Vary': 'Origin',
+      }});
+    }
+    return new Response(null, { headers: { ...CORS, ...SECURITY_HEADERS } });
+  }
+
+  // ---------- GLOBAL KILL SWITCH ----------
+  // Cached in-isolate for a few seconds so it's not a KV round-trip on
+  // every single request (this is the hottest path). Worst-case delay to
+  // honor a freshly-flipped switch is _KILL_TTL_MS. (auditor: hot-path read)
+  if (path.startsWith('/v1/')) {
+    const now = Date.now();
+    if (now - _killCache.ts > _KILL_TTL_MS) {
+      _killCache.val = (await env.AMV_KV.get('GLOBAL_KILL')) === '1';
+      _killCache.ts = now;
+    }
+    if (_killCache.val) return json({ error: 'Service temporarily paused. Please try again soon.' }, 503);
+  }
+
+  switch (path) {
+    case '/v1/health':       return json({ ok: true, ts: Date.now() });
+    case '/v1/public-config': return publicConfig(request, env);
+    case '/v1/visit':        return recordVisit(request, env);
+    case '/auth/signup':     return authSignup(request, env);
+    case '/auth/login':      return authLogin(request, env);
+    case '/auth/google':     return authGoogle(request, env);
+    case '/admin/users':     return adminUsers(request, env);
+    case '/auth/refresh':    return authRefresh(request, env);
+    case '/auth/logout':     return authLogout(request, env);
+    case '/auth/delete':     return authDeleteAccount(request, env);
+    case '/auth/reset':      return authReset(request, env);
+    case '/auth/reset/confirm': return authResetConfirm(request, env);
+    case '/auth/reset/status':  return authResetStatus(request, env);
+    case '/auth/reset/code':    return authResetCode(request, env);
+    case '/auth/reset/verify':  return authResetVerify(request, env);
+    case '/auth/admin-reset':   return authAdminReset(request, env);
+    case '/v1/resume':       return resumeAnswer(request, env);
+    case '/v1/activity':     return accountActivity(request, env);
+    case '/v1/keys/create':  return apiKeyCreate(request, env);
+    case '/v1/keys/list':    return apiKeyList(request, env);
+    case '/v1/keys/revoke':  return apiKeyRevoke(request, env);
+    case '/v1/feedback':     return feedbackRecord(request, env);
+    case '/v1/support':      return supportSubmit(request, env);
+    case '/v1/admin/support': return supportInbox(request, env);
+    case '/v1/referral':     return referralStatus(request, env);
+    case '/v1/share/create': return shareCreate(request, env);
+    case '/v1/share/list':   return shareList(request, env);
+    case '/v1/share/revoke': return shareRevoke(request, env);
+    case '/v1/share/visibility': return shareVisibility(request, env);
+    case '/sync/pull':       return syncPull(request, env);
+    case '/sync/push':       return syncPush(request, env);
+    case '/auto/list':       return autoList(request, env);
+    case '/auto/create':     return autoCreate(request, env);
+    case '/auto/update':     return autoUpdate(request, env);
+    case '/auto/read':       return autoClearResults(request, env);
+    case '/auto/pause':      return autoPause(request, env);
+    case '/deploy':          return deploySite(request, env);
+    case '/deploy/list':     return deployList(request, env);
+    case '/deploy/delete':   return deployDelete(request, env);
+    case '/v1/browser/run':  return browserRun(request, env, ctx);
+    case '/v1/finance/accounts':     return financeRoute(request, env, 'accounts');
+    case '/v1/finance/transactions': return financeRoute(request, env, 'transactions');
+    case '/v1/oauth/google/exchange': return googleOAuthExchange(request, env);
+    case '/v1/oauth/google/refresh':  return googleOAuthRefresh(request, env);
+    case '/v1/finance/checkin':      return financeCheckin(request, env);
+    case '/v1/finance/status':       return financeStatus(request, env);
+    case '/v1/finance/link/start':   return financeLinkStart(request, env);
+    case '/v1/finance/link/finish':  return financeLinkFinish(request, env);
+    case '/v1/finance/unlink':       return financeUnlink(request, env);
+    case '/v1/spend/limits':         return spendGet(request, env);
+    case '/v1/spend/set':            return spendSet(request, env);
+    case '/v1/family/get':           return familyGet(request, env);
+    case '/v1/school/connect':       return schoolConnect(request, env);
+    case '/v1/school/disconnect':    return schoolDisconnect(request, env);
+    case '/v1/school/work':          return schoolWork(request, env);
+    case '/v1/school/teachers':      return schoolTeachers(request, env);
+    case '/v1/family/limits':        return familySetLimits(request, env);
+    case '/v1/family/remove':        return familyRemove(request, env);
+    case '/v1/family/leave':         return familyLeave(request, env);
+    case '/v1/link/invite':          return linkInvite(request, env);
+    case '/v1/link/accept':          return linkAccept(request, env);
+    case '/v1/link/list':            return linkList(request, env);
+    case '/v1/link/revoke':          return linkRevoke(request, env);
+    case '/v1/consent':              return consentRecord(request, env);
+    case '/v1/subscribe':            return stripeSubscribe(request, env);
+    case '/v1/fraud/record':         return fraudRecord(request, env);
+    case '/errors':          return errorsReport(request, env, ctx);
+    case '/errors/list':     return errorsList(request, env);
+    case '/errors/resolve':  return errorsResolve(request, env);
+    case '/admin/reports':     return adminReports(request, env);
+    case '/admin/abuse/list':  return abuseList(request, env);
+    case '/admin/abuse/clear': return abuseClear(request, env);
+    case '/admin/payouts':       return adminPayouts(request, env);
+    case '/admin/payouts/mark':  return adminPayoutMark(request, env);
+    case '/admin/readiness':     return adminReadiness(request, env);
+    case '/admin/digest':        return adminDigest(request, env);
+    case '/admin/backup/export': return backupExport(request, env);
+    case '/admin/backup/import': return backupImport(request, env);
+    case '/api/jobs':            return crewJobs(request, env);
+    case '/api/approvals':       return crewApprovals(request, env);
+    case '/api/approvals/act':   return crewApprovalAct(request, env);
+    case '/api/approvals/edit':  return crewApprovalEdit(request, env);
+    case '/api/handoff':         return request.method === 'POST' ? handoffCreate(request, env) : handoffList(request, env);
+    case '/api/handoff/act':     return handoffAct(request, env);
+    case '/team/create':     return teamCreate(request, env);
+    case '/team/get':        return teamGet(request, env);
+    case '/team/invite':     return teamInvite(request, env);
+    case '/team/join':       return teamJoin(request, env);
+    case '/team/members':    return teamMembers(request, env);
+    case '/team/remove':     return teamRemove(request, env);
+    case '/team/leave':      return teamLeave(request, env);
+    case '/team/role':       return teamSetRole(request, env);
+    case '/team/audit':      return teamAuditLog(request, env);
+    case '/team/data':       return teamData(request, env);
+    case '/team/share':      return teamShare(request, env);
+    case '/team/shared':     return teamShared(request, env);
+    case '/team/unshare':    return teamUnshare(request, env);
+    case '/team/presence':   return teamPresence(request, env);
+    case '/team/tasks':      return teamTasks(request, env);
+    case '/team/task/create': return teamTaskCreate(request, env);
+    case '/team/task/update': return teamTaskUpdate(request, env);
+    case '/v1/messages':     return aiProxy(request, env, ctx);
+    case '/v1/image':        return imageMeter(request, env);
+    case '/v1/image/generate': return imageGenerate(request, env);
+    case '/v1/video/generate': return videoGenerate(request, env);
+    case '/v1/video/status':   return videoStatus(request, env);
+    case '/v1/video/list':     return videoList(request, env);
+    case '/v1/usage':        return usageReport(request, env);
+    case '/sms/register':    return smsRegister(request, env);
+    case '/waitlist':        return waitlistAdd(request, env);
+    case '/sms/incoming':    return smsIncoming(request, env, ctx);
+    // --- PAYMENTS (real Stripe + PayPal) ---
+    case '/v1/stripe/checkout': return stripeCheckout(request, env);
+    case '/v1/stripe/portal':   return stripePortal(request, env);
+    case '/v1/stripe/invoices': return stripeInvoices(request, env);
+    case '/v1/stripe/webhook':  return stripeWebhook(request, env, ctx);
+    /* There is no /v1/paypal/create or /v1/paypal/capture. They backed a
+       ONE-TIME PayPal order, and a one-time order cannot pay for a monthly
+       plan: the capture granted an entitlement with no renewal to expire
+       it, no subscription behind it, and no event that would ever revoke
+       it. Fifteen dollars once bought Pro for ever, and any signed-in
+       account could do it with two curl calls long after the browser flow
+       that used them was removed. AMV sells subscriptions; that is what
+       the route below is for. */
+    case '/v1/paypal/subscribe': return paypalSubscribe(request, env);
+    case '/v1/paypal/webhook':  return paypalWebhook(request, env, ctx);
+    case '/v1/entitlement':     return getEntitlement(request, env);
+    case '/v1/account/export':  return accountExport(request, env);
+    // --- MARKETPLACE (community templates) ---
+    case '/v1/market/list':     return marketList(request, env);
+    case '/v1/market/publish':  return marketPublish(request, env);
+    case '/v1/market/install':  return marketInstall(request, env);
+    case '/v1/market/buy':      return marketBuy(request, env);
+    case '/v1/market/purchases': return marketPurchases(request, env);
+    case '/v1/market/mylistings': return marketMyListings(request, env);
+    case '/v1/market/unlist':   return marketUnlist(request, env);
+    case '/v1/market/earnings': return marketEarnings(request, env);
+    case '/v1/market/withdraw': return marketWithdraw(request, env);
+    case '/v1/market/status':   return marketSetStatus(request, env);
+    case '/v1/market/view':     return marketView(request, env);
+    case '/v1/market/rate':     return marketRate(request, env);
+    case '/v1/market/review':   return marketReview(request, env);
+    case '/v1/market/report':   return marketReport(request, env);
+    case '/v1/market/message':  return marketMessage(request, env);
+    case '/v1/market/threads':  return marketThreads(request, env);
+    case '/v1/market/thread/read': return marketThreadRead(request, env);
+    // --- FOUNDER ADMIN (token-gated) ---
+    case '/v1/admin/stats':     return adminStats(request, env);
+    case '/v1/admin/finance':   return adminFinance(request, env);
+    case '/v1/admin/kill':      return adminKill(request, env);
+    case '/v1/admin/user':      return adminUser(request, env);
+    // --- EMBEDDABLE WIDGET ---
+    case '/v1/widget/config':   return widgetConfigGet(request, env);   // owner: read config
+    case '/v1/widget/config-public': return widgetConfigPublic(request, env); // public: display fields only
+    case '/v1/widget/save':     return widgetConfigSave(request, env);  // owner: create/update config
+    case '/v1/widget/chat':     return widgetChat(request, env, ctx);   // public: end-visitor chat (site-key gated)
+    case '/widget.js':          return widgetLoader(request, env);      // public: the <script> embed loader
+    default: {
+      // A browser hitting an unknown URL should get a friendly HTML page;
+      // an API client gets JSON. We tell them apart by the Accept header.
+      const accept = request.headers.get('Accept') || '';
+      if (accept.includes('text/html')) {
+        return new Response(
+          `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>404 - Not found</title><style>body{margin:0;height:100vh;display:flex;align-items:center;justify-content:center;background:#0b0e14;color:#e6e6e6;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}.b{text-align:center;padding:24px}.c{font-size:72px;font-weight:800;color:#4c7dff;line-height:1}.t{font-size:22px;margin:12px 0 6px}.s{color:#9aa4b2;margin-bottom:20px}a{display:inline-block;padding:10px 20px;background:#4c7dff;color:#fff;text-decoration:none;border-radius:9px;font-weight:600}</style></head><body><div class="b"><div class="c">404</div><div class="t">Page not found</div><div class="s">This page doesn't exist or may have moved.</div><a href="/">Go home</a></div></body></html>`,
+          { status: 404, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+        );
+      }
+      return json({ error: 'not found' }, 404);
+    }
+  }
+}
 
 /* ---------------- AUTH: issue a signed session token ---------------- */
 /* ============================================================
@@ -8325,7 +8356,35 @@ async function aiProxy(request, env, ctx) {
      retried on another endpoint: words already delivered would be repeated. */
   const _callUpstream = (payload) => _modelFetch(env, payload, { stream: true });
 
-  let upstream = await _callUpstream(upstreamBody);
+  /* A THROW BURNS THE ALLOWANCE THAT AN ERROR STATUS GIVES BACK.
+
+     Every refusal below this point refunds, and the comment on the first one
+     says why: "otherwise an outage would quietly burn through everyone's daily
+     quota". That was true of an error STATUS. _modelFetch also THROWS - on a
+     socket failure, a DNS failure, a timeout - and a throw walked straight past
+     all of it with `reserve` tokens still booked against the person.
+
+     Which is exactly backwards. An HTTP 500 from the model is the mild case;
+     the network being down is the one that fails every request at once, and it
+     was the one that charged for the failure. A handful of them is a free
+     account's whole day, spent on answers nobody received.
+
+     Caught rather than left to the top-level handler because only here is it
+     known what to give back. The person is told the truth - AMV could not
+     reach the model, nothing was counted - with a code the client already
+     treats as worth retrying, since a network blip usually is. */
+  let upstream;
+  try {
+    upstream = await _callUpstream(upstreamBody);
+  } catch (netErr) {
+    await refundReservation();
+    try { await _workerError(env, 'aiProxy:unreachable', netErr); } catch (_) {}
+    try { await alertOnce(env, 'model_unreachable',
+      'AMV cannot reach the model endpoint at all (network error, not an error status). Chat is failing for everyone. '
+      + 'Check AMV_MODEL_URL and the provider’s status.', 10); } catch (_) {}
+    return json({ error: 'AMV could not reach the model just now. Nothing has been counted against your allowance - please try again in a moment.',
+                  code: 'provider_error' }, 503);
+  }
 
   /* AMV-068: a rejected OPTIONAL parameter must not take AI down for everyone.
      thinking, output_config and cache_control are tuning, not the request. If a
@@ -9364,7 +9423,22 @@ async function widgetChat(request, env, ctx) {
   };
 
   // stream:true - the widget streams this straight through to the visitor.
-  const upstream = await _modelFetch(env, upstreamBody, { stream: true });
+  /* The same hole chat had, and worse here: a throw from _modelFetch left the
+     widget's daily message booked AND the owner's tokens reserved, and it left
+     without the widget's CORS headers - so the page on somebody else's site
+     could not even read the error to say anything to the visitor. */
+  let upstream;
+  try {
+    upstream = await _modelFetch(env, upstreamBody, { stream: true });
+  } catch (netErr) {
+    await refundMsg(); await refundOwner();
+    try { await _workerError(env, 'widgetChat:unreachable', netErr); } catch (_) {}
+    try { await alertOnce(env, 'model_unreachable',
+      'AMV cannot reach the model endpoint at all (network error, not an error status). Chat is failing for everyone. '
+      + 'Check AMV_MODEL_URL and the provider’s status.', 10); } catch (_) {}
+    return new Response(JSON.stringify({ error: 'The assistant is unavailable right now. Please try again in a moment.' }),
+      { status: 503, headers: { 'Content-Type': 'application/json', ...wcors } });
+  }
 
   if (!upstream.ok) {
     const e = await upstream.json().catch(() => ({}));

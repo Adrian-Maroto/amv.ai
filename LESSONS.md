@@ -4196,3 +4196,34 @@ not typed out, or the sixth path added next year is outside it and nobody
 finds out until the invoice. And any field that gates something, living on a
 record some other write REPLACES, must be on that write's carry list before it
 is trusted anywhere.
+
+## 235. The error handler had never once run
+
+The Worker's fetch handler wrapped its routing in a try/catch that recorded
+the fault, alerted an operator and answered in AMV's own words. The switch it
+guarded said `case '/v1/messages': return aiProxy(request, env, ctx);` and
+every handler in the file is async.
+
+Returning a promise exits the try. The rejection arrives after the block is
+gone. So for the entire life of the product, any handler that threw produced
+Cloudflare's own error page - no AMV wording, no log line, no alert - and the
+one signal that says "the product is broken for everybody" was silent for
+precisely the faults most likely to cause it.
+
+Nothing about the code looked wrong, and the comment on the catch describes,
+accurately and at length, behaviour that never happened. Reading it is what
+made it invisible: it says what the author intended, and intent is what a
+reader checks against.
+
+The same shape had a second instance one layer down. Every refusal in the chat
+path refunds the tokens it reserved, and the first one's comment says why -
+"otherwise an outage would quietly burn through everyone's daily quota". True
+of an error STATUS. `_modelFetch` also THROWS, and a throw walked past every
+refund with the reservation still booked. The mild failure gave the allowance
+back; the total one charged for it.
+
+**Rule:** `return somethingAsync()` inside a `try` is not inside the try. Grep
+for it wherever a catch is load-bearing. And test error handling by CAUSING
+the error, not by reading the handler - a catch block is the one piece of code
+whose correctness cannot be inferred from looking at it, because the thing it
+handles is by definition what nobody expected.
