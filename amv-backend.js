@@ -616,6 +616,37 @@ function _monthlyCeilingUSD(user) {
        : (planCeiling > 0 ? Math.min(planCeiling, familyCapUSD) : familyCapUSD);
 }
 
+/* AN ACCOUNT BLOCKED FOR TAKING ITS MONEY BACK DOES NOT GET MORE.
+
+   `blocked` is set by _abuseRecord on a chargeback or a refund pattern, and it
+   was read in exactly two places: whether a new checkout could start, and
+   whether a referral paid out. Neither of those is where the money goes. So
+   somebody blocked for charging back went on calling the model, generating
+   images, texting, running scheduled work and serving a widget - every one of
+   them a real invoice AMV pays - having already demonstrated they take the
+   money back afterwards. The block stopped them BUYING and did nothing about
+   them SPENDING, which is the wrong half.
+
+   One named helper rather than a condition repeated per path, because the
+   thing being asserted about this fix is that every path asks, and a copy in
+   six places is six chances for the seventh to be forgotten silently.
+
+   It answers 403 rather than 402 or 429: this is not a limit that resets and
+   not a payment that can be made, it is a decision about the account, and the
+   client must not read it as "try again" or as an expired session. The message
+   says what happened and where to go without naming the reason - that is on
+   the account for support to read, not for somebody probing to learn which
+   signal tripped. */
+const ACCOUNT_HOLD_MESSAGE =
+  'This account is on hold and cannot use paid features. Contact support if you think that is wrong.';
+
+async function _accountHold(env, subject, what) {
+  if (!subject || !subject.blocked) return null;
+  audit(env, 'spend_blocked_account', {
+    email: subject.email || '', what, reason: subject.blockedReason || '' });
+  return json({ error: ACCOUNT_HOLD_MESSAGE, code: 'account_blocked' }, 403);
+}
+
 /* One gate, so a spending path added later cannot quietly be outside the
    ceiling the way these two were. Returns a refusal to hand back, or null when
    the call may go ahead.
@@ -624,6 +655,8 @@ function _monthlyCeilingUSD(user) {
    traffic that pays nothing is what stops, because turning away somebody who
    has paid is a refund, then a chargeback, then a review. */
 async function _spendGate(env, user, what) {
+  const held = await _accountHold(env, user, what);
+  if (held) return held;
   /* THIS ACCOUNT'S OWN CEILING FIRST, because it is the one somebody set.
 
      The global cap protects AMV. It says nothing about whether THIS person -
@@ -2070,6 +2103,23 @@ async function runDueAutomations(env, atMs){
        compute its own and they could drift. A free account now has a small real
        ceiling rather than zero, which is what lets its one weekly job run. */
     const ent = (await DB.get(env, 'ent', email)) || { plan: 'free' };
+    /* AN ACCOUNT ON HOLD RUNS NOTHING WHILE NOBODY IS WATCHING.
+
+       Asked here rather than through _accountHold because there is no request
+       to refuse - the answer is to skip this account and go on to the next.
+       The entitlement was read a line ago, so it costs nothing.
+
+       This is the worst of the paths the hold did not reach: unattended,
+       recurring, and invisible until an invoice arrives. It is NOT re-booked
+       into the bucket, unlike the global-cap skip - that one waits for the day
+       to roll over, and this one waits for an operator to clear the block, so
+       booking it would be re-reading a held account every hour for ever. Its
+       `next` is untouched, so the moment the block is cleared the sweep in the
+       first five minutes of the hour picks it straight back up. */
+    if (ent.blocked) {
+      audit(env, 'auto_skipped_blocked', { email, reason: ent.blockedReason || '' });
+      continue;
+    }
     /* AMV-100: the cron runs outside requireUser, so it resolves the same
        subject by hand. Without this a team member's scheduled work would spend
        against a private ceiling the team is not paying for - the seat would
@@ -4366,6 +4416,14 @@ async function abuseClear(request, env){
       fresh.blocked = false;
       fresh.clearedAt = Date.now();
     }, null);
+    /* And on the entitlement, or the account stays refused everywhere that
+       reads the fast copy while the operator is looking at a cleared flag. */
+    try {
+      await _withEnt(env, email, (e) => {
+        if (!e) return;
+        delete e.blocked; delete e.blockedReason; delete e.blockedAt;
+      });
+    } catch (e) { audit(env, 'abuse_unblock_not_propagated', { email, error: String((e && e.message) || e) }); }
   }
   audit(env, 'abuse_cleared', { email, removed: !!body.remove });
   return json({ ok:true });
@@ -7579,6 +7637,11 @@ async function requireUser(request, env) {
   data.customCfg = sub.customCfg;
   if (sub.teamId) { data.teamId = sub.teamId; data.teamRole = sub.teamRole; data.teamSeated = sub.seated; }
   data.billingRenewedAt = sub.renewedAt || 0;
+  /* Set when an account is blocked for charging back or a refund pattern. It
+     rides on the entitlement, which is read here anyway, so every path that
+     spends can ask without a second lookup. */
+  data.blocked = !!e.blocked;
+  data.blockedReason = e.blockedReason || '';
   /* Resolved here so every check downstream reads the same answer, and none of
      them go to storage on their own (AMV-102). */
   data.family = await _familyOf(env, data.email, e);
@@ -8041,6 +8104,16 @@ async function reconcilePayments(env) {
 async function aiProxy(request, env, ctx) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'Please sign in again.' }, 401);
+
+  /* Before the key check, the rate limit and the reservation, because none of
+     those should be spent deciding something already decided. Chat does not go
+     through _spendGate - it enforces its own ceiling inline against a token
+     reservation - so it has to ask here or the largest spending path in the
+     product is the one the hold does not reach. */
+  {
+    const held = await _accountHold(env, user, 'chat');
+    if (held) return held;
+  }
 
   /* No model key, no request. This used to fall straight through: quota was
      reserved, a rate-limit slot spent, and an outbound call made with
@@ -9146,7 +9219,23 @@ async function widgetChat(request, env, ctx) {
   const ownerFam = ownerEmail ? await _familyOf(env, ownerEmail, ownerEnt) : null;
   const ownerUser = { email: ownerEmail || ('widget:' + key), plan: _planOf(ownerEnt),
                       customCfg: ownerEnt.custom || null, bonusTokens: ownerEnt.bonusTokens || 0,
-                      family: ownerFam };
+                      family: ownerFam,
+                      blocked: !!ownerEnt.blocked, blockedReason: ownerEnt.blockedReason || '' };
+  /* A widget spends the OWNER's money, whoever is typing into it, so the
+     owner's hold stops it - otherwise the one spending path that keeps running
+     after a chargeback is the one embedded on a public website, where the
+     person who charged back does not even have to be present.
+
+     The visitor is told the assistant is unavailable and nothing else. They
+     are a stranger on somebody else's site; the state of that person's account
+     is not theirs to learn.
+
+     Nothing has been reserved at this point - the message cap and the token
+     reservation are both below - so there is nothing to give back. */
+  if (await _accountHold(env, ownerUser, 'widget')) {
+    return new Response(JSON.stringify({ error: 'This assistant is unavailable right now. Please try again later.' }),
+      { status: 503, headers: { 'Content-Type': 'application/json', ...wcors } });
+  }
   const ownerLimits = effectiveLimits(ownerUser);
   const ownerSubject = ownerEnt.teamId ? ('team:' + ownerEnt.teamId) : (ownerEmail || ('widget:' + key));
 
@@ -9748,7 +9837,16 @@ async function smsIncoming(request, env, ctx) {
   /* Same resolution requireUser does, by hand, because this arrives from Twilio
      rather than from a signed-in browser (AMV-100). */
   const sub = await _billingSubjectOf(env, email, e);
-  const user = { email, plan: sub.plan, customCfg: sub.customCfg, billingSubject: sub.subject };
+  /* blocked comes off the entitlement that was just read, the same way
+     requireUser carries it, so the hold reaches a channel that arrives from
+     Twilio rather than from a signed-in browser. */
+  const user = { email, plan: sub.plan, customCfg: sub.customCfg, billingSubject: sub.subject,
+                 blocked: !!e.blocked, blockedReason: e.blockedReason || '' };
+  /* Answered in Twilio's own language rather than as JSON - this reply is read
+     aloud to somebody's phone, and a 403 body would arrive as nothing at all. */
+  if (await _accountHold(env, user, 'sms')) {
+    return twiml('This account is on hold and cannot use paid features. Contact support if you think that is wrong.');
+  }
 
   // rate-limit SMS per number (cheap abuse guard) - atomic test-and-increment
   const smsRlName = `sms:rl:${from}:${Math.floor(Date.now() / 60000)}`;
@@ -10053,11 +10151,43 @@ async function _abuseRecord(env, email, kind, detail = {}) {
       r.blocked = true;
       r.blockedAt = Date.now();
       r.blockedReason = r.disputes >= ABUSE_DISPUTE_BLOCK ? 'chargeback' : 'refund_pattern';
+      /* MARKED WHERE THE SPENDING PATHS CAN SEE IT.
+
+         This flag was set here and read in two places: whether a new checkout
+         may start, and whether a referral pays out. Nothing on the paths that
+         actually cost money asked. So an account blocked for charging back
+         went on calling the model, generating images and running scheduled
+         work - all of it billed to AMV, from somebody who has already proved
+         they take the money back.
+
+         Denormalised onto the entitlement because requireUser reads that
+         record on every request anyway. Reading `abuse:` on the hot path would
+         be a second lookup per call to save the same lookup, and the whole
+         point is that this costs nothing to check. */
       blockedNow = { reason: r.blockedReason, disputes: r.disputes, refunds: r.refunds };
     }
     return r;
   }, { email, disputes: 0, refunds: 0, events: [], blocked: false });
-  if (blockedNow) audit(env, 'abuse_blocked', { email, ...blockedNow });
+  if (blockedNow) {
+    audit(env, 'abuse_blocked', { email, ...blockedNow });
+    /* Written onto the entitlement, under its own lock, so every request sees
+       it without a second lookup. Best-effort and audited: if it cannot be
+       written the account is still blocked in the abuse record, and the paths
+       that read that one still refuse - this makes the block reach the rest. */
+    try {
+      await _withEnt(env, email, (e) => {
+        if (!e) return;
+        e.blocked = true;
+        e.blockedReason = blockedNow.reason;
+        e.blockedAt = Date.now();
+      });
+    } catch (e) {
+      audit(env, 'abuse_block_not_propagated', { email, error: String((e && e.message) || e) });
+      try { await alertOnce(env, 'blockprop:' + email,
+        'An account was blocked for ' + blockedNow.reason + ' but the flag did not reach its entitlement, '
+        + 'so the spending paths will not see it. Set it by hand.', 60); } catch (_) {}
+    }
+  }
   return rec;
 }
 
@@ -10349,7 +10479,13 @@ async function referralStatus(request, env) {
    paid for in months, and the sweep below would act on that. The asymmetry
    decides it - failing to notice a lapse costs one month's revenue, wrongly
    cancelling somebody who is paying costs the customer. */
-const ENT_CARRY_KEYS = ['refBonus', 'teamId', 'familyOf', 'renewedAt', 'lastEventAt', 'lastEventSrc'];
+/* `blocked` is here for the reason the whole list exists. setEntitlement
+   REPLACES the record, so without carrying it, the next plan change - a
+   renewal, an upgrade, a webhook - would quietly unblock an account that was
+   blocked for charging back. The one thing somebody in that position does next
+   is pay again. */
+const ENT_CARRY_KEYS = ['refBonus', 'teamId', 'familyOf', 'renewedAt', 'lastEventAt', 'lastEventSrc',
+                        'blocked', 'blockedReason', 'blockedAt'];
 
 /* ── FAMILY ────────────────────────────────────────────────────────────────
    A parent's account carries a child's, the way a phone plan does.
@@ -12580,6 +12716,15 @@ async function marketWithdraw(request, env) {
   if (!user) return json({ error: 'unauthorized' }, 401);
   const ageBadW = await _moneyAgeGate(env, user.email);
   if (ageBadW) return json(ageBadW, ageBadW.code === 'age_required' ? 428 : 403);
+  /* The one place the hold stops money LEAVING rather than being spent, and
+     the one where it is irreversible: a payout is a transfer AMV cannot claw
+     back, so an account blocked for charging back must not be able to take
+     cash out while an operator is still looking at it. Nothing is lost by
+     waiting - the balance stays theirs, and clearing the block releases it. */
+  {
+    const heldW = await _accountHold(env, user, 'withdraw');
+    if (heldW) return heldW;
+  }
   const { destination } = await request.json().catch(() => ({}));
   /* Taking money OUT is the one a parent most needs to be able to stop. */
   if (user.family && user.family.limits && !user.family.limits.payouts) {

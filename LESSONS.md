@@ -4164,3 +4164,35 @@ performs that operation, not carry a list of the ways it is currently written.
 Where that is impractical, put the list in ONE place both the code and the
 check read - and expect to be adding to it, out loud, every time somebody
 refactors.
+
+## 234. A flag can be set correctly, audited correctly, and reach nothing
+
+`blocked` was set on a chargeback by the right code, under the right lock,
+with the right audit line. It was read in two places: whether a new checkout
+could start, and whether a referral paid out.
+
+Neither of those is where the money goes. A blocked account went on calling
+the model, generating images and video, texting, serving a widget on a public
+website and running scheduled work every hour - and it could still withdraw
+marketplace earnings on the way out. The only thing the block prevented was
+paying AMV again.
+
+Nothing about the code looked wrong. The flag existed, the writer was careful,
+the audit trail was complete, and there was a test asserting the account was
+blocked - which passed, because it asked the abuse record rather than asking
+what the account could still do.
+
+The second half was quieter and worse. The flag rides on the entitlement so
+the hot path can read it for free, and `setEntitlement` REPLACES that record.
+Without carrying the field, the next renewal or upgrade unblocks the account -
+and paying again is precisely the next thing somebody in that position does.
+A defence that a chargeback fraudster can clear by making one more payment is
+not a defence.
+
+**Rule:** setting a flag is half a feature. The other half is the roster of
+everything that must consult it, and that roster has to be COMPUTED from what
+the code does - here, "asks this account's dollar counter for permission" -
+not typed out, or the sixth path added next year is outside it and nobody
+finds out until the invoice. And any field that gates something, living on a
+record some other write REPLACES, must be on that write's carry list before it
+is trusted anywhere.
