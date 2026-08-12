@@ -4227,3 +4227,35 @@ for it wherever a catch is load-bearing. And test error handling by CAUSING
 the error, not by reading the handler - a catch block is the one piece of code
 whose correctness cannot be inferred from looking at it, because the thing it
 handles is by definition what nobody expected.
+
+## 236. "Exactly once" lasted thirty seconds, and the safer storage was the weaker one
+
+`_claimOnce` does two jobs with one signature. Most callers want a mutex - hold
+it while a withdrawal runs, release it after - and they pass a small number of
+seconds. Five callers wanted a claim that says "this has been handled" and
+never stops saying it, and none of them passed anything, so they got the
+default: thirty seconds.
+
+Stripe and PayPal both document at-least-once delivery, and their retries are
+minutes and hours apart. A duplicate credited the seller twice for one sale,
+booked the platform fee twice and recorded a renewal payment twice. A failed
+video "refunds the quota EXACTLY ONCE" - once a minute, if you kept polling.
+A one-time invite was one-time for half a minute.
+
+What hid it is the part worth keeping. THE TWO BACKENDS DISAGREED. The KV path
+stored the key with no expiry when the argument was absent, which is correct.
+The Durable Object path - the one that runs in production, chosen precisely
+because it is atomic enough for money - turned the same absent argument into a
+thirty-second lease. The safer storage had the weaker guarantee, and the whole
+difference was one `|| 30`.
+
+And every existing test that touches those paths builds an env with no
+AMV_COUNTER, so all of them exercised the KV path: the one that was already
+right. The defect lived exactly where the test doubles did not go.
+
+**Rule:** when one helper has two fallbacks, they are two implementations of
+one contract and they have to be tested as such - a double that models only
+the simpler one proves nothing about the code that actually runs. And when a
+default decides between "pays twice" and "refuses a retry", make the default
+the one somebody will notice: a lock held too long produces a complaint, a
+lock released too early produces silence.

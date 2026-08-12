@@ -7027,7 +7027,7 @@ async function teamJoin(request, env){
   // account (this is how an admin invite became a transferable privilege grant).
   if(!inv.email || inv.email !== user.email) return json({ error:'this invite was sent to a different email' }, 403);
   // Consume atomically so two racers can't both redeem the same token.
-  if(!(await _claimOnce(env, 'inviteused', token))) return json({ error:'this invite has already been used' }, 409);
+  if(!(await _claimOnce(env, 'inviteused', token, CLAIM_ONCE_TTL_S))) return json({ error:'this invite has already been used' }, 409);
   const team0 = await DB.get(env, 'team', inv.teamId);
   if(!team0) return json({ error:'team gone' }, 404);
   let team = team0;
@@ -7904,7 +7904,7 @@ async function videoStatus(request, env) {
       // an atomic per-job claim guarantees only the first one gives the quota back
       // (a plain "!job.error" read races and can refund twice / go negative).
       const limits = effectiveLimits(user);
-      if (limits.videosMonth && await _claimOnce(env, 'vidrefund', id)) {
+      if (limits.videosMonth && await _claimOnce(env, 'vidrefund', id, CLAIM_ONCE_TTL_S)) {
         try {
           /* The SAME window the charge went into. A refund keyed to the
              calendar month while the charge sits in the billing period gives
@@ -11319,7 +11319,45 @@ async function stripeInvoices(request, env) {
    or concurrent caller gets false. On D1 this is a hard atomic guarantee - the
    PRIMARY KEY (kind,id) makes the second INSERT fail. On KV it is best-effort
    (KV is eventually consistent - enable D1 for the money paths, see DEPLOY.md).
-   ttlSec is only honored on the KV path and is used for short-lived locks. */
+   ttlSec is the claim's LIFETIME and every caller states it - see below. */
+
+/* HOW LONG "EXACTLY ONCE" LASTS, AND WHY IT IS NOT THIRTY SECONDS.
+
+   This function does two different jobs. Most callers want a MUTEX: hold it
+   while a withdrawal is processed, release it after. Those pass a small number
+   of seconds and are correct. Five callers wanted the other thing - a claim
+   that says this event has been handled, FOR EVER - and none of them passed
+   anything, so they got the default, which was thirty seconds.
+
+   What that meant:
+
+     stripeevt / paypalevt  the webhook replay guard. Both providers deliver
+                            AT LEAST once and say so. A duplicate arriving
+                            thirty-one seconds later was processed as new: the
+                            seller credited twice for one sale, the platform
+                            fee recorded twice, a renewal payment booked twice.
+     sale                   the same, one layer in.
+     vidrefund              a failed video refunds the quota "EXACTLY ONCE",
+                            says the comment. Polling the job's status once a
+                            minute refunded it once a minute.
+     inviteused             "this invite has already been used" was true for
+                            thirty seconds and then stopped being true.
+
+   Nothing caught it because THE TWO BACKENDS DISAGREED. The KV path put the
+   key with no expiry at all when ttlSec was absent - permanent, correct - and
+   the Durable Object path, which is the one that actually runs in production
+   and the one chosen precisely because it is atomic enough for money, turned
+   the same absent argument into a thirty-second lease. The safer storage had
+   the weaker guarantee, and the difference lived in one `|| 30`.
+
+   So the default is now permanent-ish rather than momentary, because the two
+   ways of being wrong are not equal. A claim held too long refuses a retry
+   that should have run, and somebody notices and complains. A claim released
+   too early pays twice, and nobody notices at all. Every call site still
+   states its own lifetime - a test asserts that - so the default is a
+   backstop, not an invitation to leave it out. */
+const CLAIM_ONCE_TTL_S = 400 * 86400;
+
 async function _claimOnce(env, kind, id, ttlSec){
   if(!id) return true;
   /* Prefer the Durable Object: it serializes ops, so the check and the claim
@@ -11328,7 +11366,7 @@ async function _claimOnce(env, kind, id, ttlSec){
      KV path is last and is best-effort ONLY, because get-then-put races. */
   if(env && env.AMV_COUNTER){
     try{
-      const r = await counter(env, 'claim:' + kind + ':' + id, { op:'claim', ttlMs:(ttlSec||30)*1000 });
+      const r = await counter(env, 'claim:' + kind + ':' + id, { op:'claim', ttlMs:(ttlSec||CLAIM_ONCE_TTL_S)*1000 });
       if(r && typeof r.claimed === 'boolean') return r.claimed;
     }catch(e){ /* fall through to the next strategy */ }
   }
@@ -11370,7 +11408,7 @@ async function stripeWebhook(request, env, ctx) {
   // a sale, double-record a renewal payment, or re-run any side effect. If later
   // processing throws we RELEASE the claim (below) so the provider's retry is
   // allowed to reprocess a genuinely-failed event.
-  if (evt.id && !(await _claimOnce(env, 'stripeevt', evt.id))) {
+  if (evt.id && !(await _claimOnce(env, 'stripeevt', evt.id, CLAIM_ONCE_TTL_S))) {
     return json({ received: true, duplicate: true });
   }
   /* AMV-200: WHEN this happened, not when it arrived. Stripe gives no ordering
@@ -12055,7 +12093,7 @@ async function marketInstall(request, env) {
   const { id } = await request.json().catch(() => ({}));
   if (!id || !/^[a-z0-9_]+$/i.test(id)) return json({ error: 'bad id' }, 400);
   // Second and later installs by the same account are honoured, but not counted.
-  const first = await _claimOnce(env, 'mktinst', `${user.email}:${id}`, 400 * 86400);
+  const first = await _claimOnce(env, 'mktinst', `${user.email}:${id}`, CLAIM_ONCE_TTL_S);
   if (!first) return json({ ok: true, counted: false });
   const raw = await env.AMV_KV.get(`market:${id}`);
   if (raw) {
@@ -12526,7 +12564,7 @@ async function _creditSale(env, { itemId, buyer, seller, amountCents, ref }) {
   // the same item twice (marketBuy blocks re-purchase), so this is a stable key.
   // The claim is atomic on D1, closing the double-credit race that a plain
   // "already owns it?" read cannot (two concurrent callers both read "no").
-  if (!(await _claimOnce(env, 'sale', `${buyer}:${itemId}`))) return;
+  if (!(await _claimOnce(env, 'sale', `${buyer}:${itemId}`, CLAIM_ONCE_TTL_S))) return;
   const it = await _getListing(env, itemId);
   const price = amountCents != null ? amountCents / 100 : (it ? it.price : 0);
   const sellerEmail = seller || (it && it.authorEmail) || '';
@@ -12633,7 +12671,7 @@ async function _reverseSale(env, ref, reason) {
   try { rec = JSON.parse(await env.AMV_KV.get(`saleref:${ref}`) || 'null'); } catch (e) {}
   if (!rec || !rec.itemId || !rec.buyer) return null;
   // Once. A refund followed by a dispute on the same charge must not claw twice.
-  if (!(await _claimOnce(env, 'salerev', ref, 400 * 86400))) return null;
+  if (!(await _claimOnce(env, 'salerev', ref, CLAIM_ONCE_TTL_S))) return null;
 
   // 1. The buyer does not keep what they did not pay for.
   try { await env.AMV_KV.delete(`entitleitem:${rec.buyer}:${rec.itemId}`); } catch (e) {}
@@ -15393,7 +15431,7 @@ async function paypalWebhook(request, env, ctx) {
      not a guarantee, and the two money paths should not have different ones.
      Released below if handling genuinely fails, so a real failure is still
      allowed to be retried. */
-  if (evt.id && !(await _claimOnce(env, 'paypalevt', evt.id))) {
+  if (evt.id && !(await _claimOnce(env, 'paypalevt', evt.id, CLAIM_ONCE_TTL_S))) {
     return new Response('ok', { status: 200 });
   }
   /* AMV-200: when it happened. PayPal gives no ordering guarantee either, so a
