@@ -4259,3 +4259,38 @@ the simpler one proves nothing about the code that actually runs. And when a
 default decides between "pays twice" and "refuses a retry", make the default
 the one somebody will notice: a lock held too long produces a complaint, a
 lock released too early produces silence.
+
+## 237. Fixing a bug removed the accident that was covering a second one
+
+Making the exactly-once claims permanent (#236) was right. It also broke
+something, because the claim is taken BEFORE the work: a credit that failed
+halfway now left the claim held for four hundred days, so the retry found it,
+concluded the job was done, and the seller was never paid while the buyer held
+the item. The thirty-second expiry had been making that survivable BY ACCIDENT.
+
+That is the uncomfortable shape: the thing that was wrong was also, quietly,
+the thing that made a second wrong thing recoverable. Fixing one alone trades a
+loud fault for a silent one - paid twice produces a complaint, never paid for a
+sale marked complete produces nothing to point at.
+
+Releasing the claim on failure was only half of the answer, and the test found
+the other half: once retries are allowed, THE STEPS THAT ALREADY SUCCEEDED RUN
+AGAIN. Puts do not care. Appends and counters do, and nearly every step here
+was an append or a counter.
+
+Then two wrong shapes in a row, both the same mistake. First "skip everything
+if the credit already happened", then "skip everything if the history line
+already existed" - and both skip precisely the work a resumption still owes,
+because they key a step off an earlier step. A retry that cannot finish the job
+is not a retry. What works is each step carrying its own evidence: the wallet
+hold's ref, the history line's ref, a stable id on the ledger entry.
+
+And one guard turned out to be dead weight that only did harm: nothing after
+the listing counter can throw, so it can never run twice, and guarding it could
+only skip it on the pass that still owed the count.
+
+**Rule:** when a fix removes a mechanism, ask what was depending on it - an
+expiry, a retry, a default - because "wrong" and "load-bearing" are not
+exclusive. And at-least-once delivery is a contract with two halves: letting
+the retry happen, and making every step safe to run again. Deliver only the
+first and the failure moves rather than leaves.

@@ -7028,8 +7028,20 @@ async function teamJoin(request, env){
   if(!inv.email || inv.email !== user.email) return json({ error:'this invite was sent to a different email' }, 403);
   // Consume atomically so two racers can't both redeem the same token.
   if(!(await _claimOnce(env, 'inviteused', token, CLAIM_ONCE_TTL_S))) return json({ error:'this invite has already been used' }, 409);
+  /* THE INVITE IS SPENT ONLY IF THEY ACTUALLY JOINED.
+
+     The claim is permanent now, which is what stops a link being redeemed
+     twice. It also means every way out of here that is NOT a join burns a
+     one-time invite for ever - and one of them, the team record being busy, is
+     a transient lock collision that resolves in a second. Somebody would click
+     their invitation, be told to try again, and find it already used.
+
+     So the claim is given back on every path where nobody joined. Re-claiming
+     is safe: the invite record itself is what proves they were invited, and it
+     is only deleted at the end, on success. */
+  const _unspend = async () => { try { await _releaseClaim(env, 'inviteused', token); } catch (_) {} };
   const team0 = await DB.get(env, 'team', inv.teamId);
-  if(!team0) return json({ error:'team gone' }, 404);
+  if(!team0) { await _unspend(); return json({ error:'team gone' }, 404); }
   let team = team0;
   if(!team.members.find(m=>m.email===user.email)){
     /* AMV-197: the seat check and the seat itself are one operation. Two people
@@ -7055,8 +7067,8 @@ async function teamJoin(request, env){
         team = fresh;
         return { joined:true };
       });
-    }catch(e){ if(!_isBusy(e)) throw e; return _busyJson('team'); }
-    if(joined && joined.error) return json({ error: joined.error, code: joined.code }, joined.status||400);
+    }catch(e){ await _unspend(); if(!_isBusy(e)) throw e; return _busyJson('team'); }
+    if(joined && joined.error) { await _unspend(); return json({ error: joined.error, code: joined.code }, joined.status||400); }
     if(joined && joined.joined) await _teamAudit(env, team, user.email, 'member_joined', { role: inv.role||'member' });
   }
   await env.AMV_KV.put(`userteam:${user.email}`, team.id);
@@ -7905,13 +7917,20 @@ async function videoStatus(request, env) {
       // (a plain "!job.error" read races and can refund twice / go negative).
       const limits = effectiveLimits(user);
       if (limits.videosMonth && await _claimOnce(env, 'vidrefund', id, CLAIM_ONCE_TTL_S)) {
+        /* The claim is permanent, so a refund that fails has to give it back
+           or the quota is never returned - the next poll would find the claim
+           held and conclude the refund had already happened. It was recoverable
+           before only because the claim lapsed after thirty seconds. */
         try {
           /* The SAME window the charge went into. A refund keyed to the
              calendar month while the charge sits in the billing period gives
              the credit back into a bucket the person is not spending from. */
           await counter(env, `vid:${user.billingSubject || user.email}:${_periodKeyOf(user)}`,
             { op: 'incr', amount: -1, ttlMs: 86400000 * 70 });
-        } catch (e) {}
+        } catch (e) {
+          try { await _releaseClaim(env, 'vidrefund', id); } catch (_) {}
+          audit(env, 'video_refund_failed', { id, error: String((e && e.message) || e).slice(0, 160) });
+        }
       }
     }
 
@@ -11197,6 +11216,12 @@ async function _recordTxn(env, tx) {
     };
     const raw = await env.AMV_KV.get('txn:log');
     const log = raw ? JSON.parse(raw) : [];
+    /* A caller that supplies its own id is saying this entry IS this event, so
+       writing it again is the same write rather than a second one. That is what
+       lets a retried sale record its fee without recording it twice - and the
+       id has to be supplied, because a generated one is different every time
+       and would make every replay look new. */
+    if (tx.id && log.some((e) => e && e.id === tx.id)) return log.find((e) => e.id === tx.id);
     log.unshift(entry);
     await env.AMV_KV.put('txn:log', JSON.stringify(log.slice(0, 1000)));   // keep last 1000
     return entry;
@@ -11382,6 +11407,37 @@ async function _claimOnce(env, kind, id, ttlSec){
   await env.AMV_KV.put(k, '1', ttlSec ? { expirationTtl: ttlSec } : undefined);
   return true;
 }
+/* A CLAIM TAKEN BEFORE THE WORK MUST BE GIVEN BACK IF THE WORK DID NOT HAPPEN.
+
+   Making the exactly-once claims permanent closed the hole where a duplicate
+   webhook paid a seller twice. It opened the opposite one, which is worse:
+   the claim is taken FIRST, and if the credit then failed halfway - storage
+   refusing, the wallet lock unavailable - the retry would find the claim held
+   and return immediately. Not "paid twice" but "never paid", for ever, with
+   the buyer already holding the item. The thirty-second expiry had been
+   covering for that by accident, which is not a design.
+
+   The webhook handler one level up already does exactly this: it releases the
+   event claim in its catch so the provider's retry can reprocess a genuinely
+   failed event. This is that, made reusable, so the two places do not have to
+   agree by memory.
+
+   Rethrows deliberately. A caller that swallowed the error here would report
+   success for work that did not happen, and the retry it just re-enabled would
+   never be asked for. */
+async function _onceOrRetry(env, kind, id, ttlSec, work){
+  if(!(await _claimOnce(env, kind, id, ttlSec))) return { claimed: false };
+  try{
+    const value = await work();
+    return { claimed: true, value };
+  }catch(e){
+    try{ await _releaseClaim(env, kind, id); }catch(_){}
+    audit(env, 'claim_released_after_failure', { kind, id: String(id).slice(0, 120),
+                                                 error: String((e && e.message) || e).slice(0, 160) });
+    throw e;
+  }
+}
+
 async function _releaseClaim(env, kind, id){
   try{
     // release wherever it was claimed - the DO first, mirroring _claimOnce
@@ -12484,10 +12540,25 @@ async function _walletTx(env, email) {
   if (raw) { try { return JSON.parse(raw); } catch {} }
   return [];
 }
+/* Append a line to somebody's money history, at most once per event.
+
+   A sale that fails partway is retried, and the retry re-runs the steps that
+   already succeeded - so an append has to be able to tell whether it is the
+   same event coming round again. `ref` (the charge) and `item` together are
+   that identity, and a caller supplying both gets exactly-once for free.
+
+   Returns whether it actually wrote, so a caller can tell "recorded now" from
+   "was already recorded" - which is what the steps after it key on. A caller
+   with no ref gets the old behaviour: always append. */
 async function _pushWalletTx(env, email, tx) {
   const list = await _walletTx(env, email);
+  if (tx && tx.ref && tx.item &&
+      list.some((t) => t && t.ref === tx.ref && t.item === tx.item && t.type === tx.type)) {
+    return false;
+  }
   list.unshift(tx);
   await env.AMV_KV.put(`wallet_tx:${email}`, JSON.stringify(list.slice(0, 500)));
+  return true;
 }
 async function _ownsItem(env, email, id) {
   return !!(await env.AMV_KV.get(`entitleitem:${email}:${id}`));
@@ -12564,7 +12635,20 @@ async function _creditSale(env, { itemId, buyer, seller, amountCents, ref }) {
   // the same item twice (marketBuy blocks re-purchase), so this is a stable key.
   // The claim is atomic on D1, closing the double-credit race that a plain
   // "already owns it?" read cannot (two concurrent callers both read "no").
-  if (!(await _claimOnce(env, 'sale', `${buyer}:${itemId}`, CLAIM_ONCE_TTL_S))) return;
+  /* Claimed through the helper so a credit that fails halfway gives the claim
+     back and the provider's retry - or the reconcile sweep - can finish it.
+     Taking the claim and then failing used to be recoverable only because the
+     claim expired in thirty seconds; now that it is permanent, the release has
+     to be deliberate. */
+  const _sale = await _onceOrRetry(env, 'sale', `${buyer}:${itemId}`, CLAIM_ONCE_TTL_S,
+    async () => { await _creditSaleWork(env, { itemId, buyer, seller, amountCents, ref }); });
+  return _sale.value;
+}
+
+/* The credit itself. Separated only so the claim above wraps ALL of it - there
+   is no partial success here worth keeping: either the buyer owns it and the
+   seller was paid, or the whole thing is retried. */
+async function _creditSaleWork(env, { itemId, buyer, seller, amountCents, ref }) {
   const it = await _getListing(env, itemId);
   const price = amountCents != null ? amountCents / 100 : (it ? it.price : 0);
   const sellerEmail = seller || (it && it.authorEmail) || '';
@@ -12576,7 +12660,20 @@ async function _creditSale(env, { itemId, buyer, seller, amountCents, ref }) {
      find it again. A refund landing beside a purchase used to lose one of the
      two. */
   const bought = { id: itemId, title: it ? it.title : itemId, kind: it ? it.kind : 'prompt', price, ts: Date.now() };
+  /* EVERY STEP HERE HAS TO SURVIVE BEING RUN TWICE.
+
+     The claim around this is released when the work throws, so the retry can
+     finish a sale that failed halfway - which means the steps that already
+     succeeded run again. Granting the item and writing the snapshot are puts
+     and do not care. This is an append, and it did care: a credit that failed
+     at the wallet left the purchase recorded, and the retry recorded it again,
+     so the buyer's history showed one item bought twice.
+
+     A buyer can only own a listing once - marketBuy refuses a re-purchase - so
+     the entry's own presence is the evidence. */
+  let alreadyBought = false;
   await _withKV(env, 'purchases', buyer, (list) => {
+    if (list.some((x) => x && x.id === itemId)) { alreadyBought = true; return; }
     /* Changed IN PLACE: the helper writes back the object it loaded, so a
        mutate that builds a new array would be a no-op that looked like a write. */
     list.unshift(bought);
@@ -12586,9 +12683,24 @@ async function _creditSale(env, { itemId, buyer, seller, amountCents, ref }) {
   // content - a later seller edit or delete must never revoke their access.
   if (it) { try { await DB.put(env, 'mktsnap', `${buyer}:${itemId}`, { ...it, _boughtAt: Date.now() }); } catch (e) {} }
   // credit the seller 80%
+  let credited = false;
   if (sellerEmail) {
     const sellerShare = +(price * (1 - MARKET_PLATFORM_FEE)).toFixed(2);
-    await _withWallet(env, sellerEmail, (w) => {
+    /* THE MONEY STEP, ASKED WHETHER IT ALREADY HAPPENED - INSIDE THE LOCK.
+
+       The retry has to be able to finish an unfinished sale without paying for
+       a finished one, and the only place that question can be answered without
+       racing is inside the wallet's own lock, against the wallet's own record.
+       The hold written below carries this charge's `ref` and the item, so its
+       presence IS the evidence that this sale was credited. Nothing else has
+       to be trusted - not a marker written elsewhere, not the order the steps
+       ran in.
+
+       Holds are pruned once matured, at fourteen days. Every retry that can
+       reach here happens within a provider's redelivery window, which is days,
+       so the evidence is always still there when it is needed. */
+    credited = await _withWallet(env, sellerEmail, (w) => {
+    if ((w.holds || []).some((h) => h && h.item === itemId && (h.ref || '') === (ref || ''))) return false;
     w.balance = +(w.balance + sellerShare).toFixed(2);
     w.lifetime = +(w.lifetime + sellerShare).toFixed(2);
     /* Held until the dispute window has substantially passed. `at` is the sale
@@ -12623,15 +12735,49 @@ async function _creditSale(env, { itemId, buyer, seller, amountCents, ref }) {
        accumulated one entry per sale for ever, in a record that is read and
        rewritten on every single sale. */
     _pruneMaturedHolds(w);
+    return true;
     });
-    await _pushWalletTx(env, sellerEmail, { type: 'sale', amount: sellerShare, gross: price, item: itemId, title: it ? it.title : itemId, buyer, ts: Date.now() });
+    /* NOT gated on `credited`. That was the first attempt and it was wrong in
+       the way that matters: a sale which failed HERE, after the money moved,
+       comes back with the credit already done - so keying these off the credit
+       would skip for ever the exact steps that failed. Each one carries its own
+       evidence instead, so it can tell a repeat from a resumption.
+
+       `ref` and the item are what make this line identifiable as this sale. */
+    await _pushWalletTx(env, sellerEmail, { type: 'sale', amount: sellerShare, gross: price,
+      item: itemId, title: it ? it.title : itemId, buyer, ref: ref || '', ts: Date.now() });
     // record the platform's cut (your revenue) so it shows in admin finance. The
     // full charge is already in Stripe; this logs the marketplace fee distinctly.
+    /* Given a stable id rather than a generated one, so a resumed sale records
+       the fee it could not record the first time WITHOUT recording it twice.
+       Gating this on whether the credit or the history line was new was the
+       first attempt and it was wrong the same way both times: the retry exists
+       to finish the steps that failed, so keying a step off an earlier step
+       skips exactly the work that is missing. */
     const platformCut = +(price * MARKET_PLATFORM_FEE).toFixed(2);
-    if (platformCut > 0) await _recordTxn(env, { provider: 'marketplace', email: buyer, amount: platformCut,
+    if (platformCut > 0) await _recordTxn(env, { id: 'mktfee_' + (ref || itemId) + '_' + itemId,
+      provider: 'marketplace', email: buyer, amount: platformCut,
       currency: 'USD', kind: 'marketplace fee', status: 'succeeded', ref: itemId });
   }
-  // bump sale count; user listings are one-of-a-kind → mark SOLD (leaves catalog)
+  /* bump sale count; user listings are one-of-a-kind -> mark SOLD (leaves catalog)
+
+     Skipped when this pass credited nothing, or a retry would count one sale
+     twice on the listing every reader sees. A free listing has no seller and no
+     credit to key on, so it uses the buyer's own history instead - the same
+     evidence, one record over.
+
+     The one thing this does not cover is a failure landing strictly between the
+     wallet write and this line, which leaves the counter one short. That is the
+     direction to be wrong in: a sale count that reads low is a display being
+     modest, and the money is right. */
+  /* NOT guarded, deliberately, and the reason is worth stating because a guard
+     here looks obviously right. Nothing after this line can throw - the saleref
+     write below swallows its own errors - so a pass that reaches this bump also
+     finishes, takes the claim for good, and is never retried. The counter
+     therefore cannot run twice. A guard would only be able to do one thing:
+     skip the bump on a pass that is resuming, which is the pass that still owes
+     the count. Guarding it loses sales from the listing; not guarding it cannot
+     add any. */
   if (it) {
     /* AMV-204: the sale is recorded on the listing under the lock. This is the
        write a visitor's page view used to put back, which is how an item that
