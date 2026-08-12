@@ -197,8 +197,17 @@ section('The status is written before the money moves');
      "paid twice" is not. The safe order is asserted, not assumed. */
   const fn = String(W.adminPayoutMark);
   const putAt = fn.indexOf('withdraw:${id}`, JSON.stringify(rec)');
-  const creditAt = fn.indexOf('_saveWallet');
-  ok(putAt > 0 && creditAt > 0, 'both steps were located', { putAt, creditAt });
+  /* ANCHORED ON THE OPERATION, NOT ON ONE SPELLING OF IT.
+
+     This looked for `_saveWallet`, which was how the refund reached storage
+     until the refund was moved under the wallet lock - and then this check
+     could not find the credit at all and failed on correct code. The same
+     brittleness is what let the unlocked write exist in the first place: the
+     lock sweep was also looking for a particular spelling. So: any of the ways
+     this function can put money back into a balance. */
+  const creditAt = Math.min(...['_saveWallet', '_withWallet']
+    .map(n => fn.indexOf(n)).filter(i => i >= 0).concat([Infinity]));
+  ok(putAt > 0 && creditAt < Infinity, 'both steps were located', { putAt, creditAt });
   ok(putAt < creditAt, 'the record is settled first', { putAt, creditAt });
 }
 

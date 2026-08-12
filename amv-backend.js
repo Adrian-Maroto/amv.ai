@@ -13604,9 +13604,22 @@ async function adminPayoutMark(request, env) {
       /* Give it back. The balance was debited when the request was made; a
          payout that will never be sent has to return it, or rejecting is just a
          second way to destroy the same money. */
-      const w = await _wallet(env, rec.seller);
-      w.balance = +((+w.balance || 0) + (+rec.amount || 0)).toFixed(2);
-      await _saveWallet(env, rec.seller, w);
+      /* UNDER THE LOCK EVERY OTHER WALLET WRITE TAKES.
+
+         This read the wallet, added the amount and wrote the whole record back
+         raw - the one writer in the product that did not go through
+         _withWallet. `polock` serialises settlements of THIS payout and says
+         nothing about the wallet, so a sale credit or another withdrawal
+         landing in the middle was simply lost: the object written back here is
+         the one read before they happened, so it takes their holds, their
+         pendingOut and their balance with it.
+
+         Both directions cost somebody money. The refund losing to a sale drops
+         the refund; the refund winning drops the sale, and it restores a stale
+         balance on top - money the seller may already have withdrawn. */
+      await _withWallet(env, rec.seller, (ww) => {
+        ww.balance = +((+ww.balance || 0) + (+rec.amount || 0)).toFixed(2);
+      });
       await _pushWalletTx(env, rec.seller, { type: 'withdrawal_returned', amount: +rec.amount || 0,
                                              status: 'rejected', id, ts: Date.now() });
     } else {

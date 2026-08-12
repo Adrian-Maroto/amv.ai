@@ -68,10 +68,56 @@ const readModifyWrite = (body) => {
   const puts = [...body.matchAll(/DB\.put\(\s*env\s*,\s*'([a-z_]+)'/g)].map(m => m[1]);
   return [...new Set(gets.filter(g => puts.includes(g)))];
 };
+/* A WRITE DOES NOT HAVE TO SPELL ITSELF DB.put.
+
+   This asked for `DB.put(env, 'kind'` and nothing else, so a record written
+   through a named helper was invisible to it. The wallet is written by
+   `_saveWallet(env, email, w)`, which puts `wallet:<email>` straight into the
+   namespace - and the payout-rejection refund read the wallet, added the
+   money and wrote the whole record back that way, outside the lock every other
+   wallet writer takes. A refund landing beside a sale silently dropped one of
+   them, and the whole file exists to find exactly that.
+
+   It is the third time a check here has gone blind because it recognised a
+   write by its spelling (LESSONS #233). So the helpers are DERIVED: any
+   top-level `_saveX(env, ...)` whose body writes a `<kind>:` key is a way of
+   writing that kind, and calling it counts. A fourth spelling invented next
+   year is covered without anybody editing this list. */
+const SAVERS = new Map();
+for (const m of code.matchAll(/^(?:async\s+)?function\s+(_save[A-Za-z]*)\s*\(/gm)) {
+  const seg = code.slice(m.index, m.index + 500);
+  const k = seg.match(/AMV_KV\.put\(\s*`([a-z_]+):/) || seg.match(/DB\.put\(\s*env\s*,\s*'([a-z_]+)'/);
+  if (k) SAVERS.set(m[1], k[1]);
+}
+
+/* AND THE LOCKS THAT DO NOT NAME THEIR KIND EITHER.
+
+   `lockedKinds` was built from `_withX(env, 'kind'` - which is right for the
+   generic helpers and blind to the ones that already know what they guard.
+   `_withWallet(env, email, ...)` takes no kind argument, so `wallet` was never
+   a locked kind here at all, and the rule this whole file rests on - locked
+   somewhere, therefore locked everywhere - simply never applied to the record
+   that holds people's money.
+
+   Derived from the pair: a `_withX` whose body calls a `_saveX` is the lock for
+   whatever that saver writes. */
+const FIXED_LOCKS = new Map();
+for (const m of code.matchAll(/^(?:async\s+)?function\s+(_with[A-Za-z]+)\s*\(/gm)) {
+  const seg = code.slice(m.index, m.index + 1200);
+  for (const [saver, kind] of SAVERS) {
+    if (new RegExp('\\b' + saver + '\\(').test(seg)) { FIXED_LOCKS.set(m[1], kind); lockedKinds.add(kind); }
+  }
+}
+
 /* Every kind this handler writes DIRECTLY, whether or not it also takes a lock
    for something. */
-const rawWrites = (body) =>
-  new Set([...body.matchAll(/DB\.put\(\s*env\s*,\s*'([a-z_]+)'/g)].map(m => m[1]));
+const rawWrites = (body) => {
+  const out = new Set([...body.matchAll(/DB\.put\(\s*env\s*,\s*'([a-z_]+)'/g)].map(m => m[1]));
+  for (const [fn, kind] of SAVERS) {
+    if (new RegExp('\\b' + fn + '\\(').test(body)) out.add(kind);
+  }
+  return out;
+};
 
 /* Handlers that legitimately write a record they also read, with no lock and
    with a reason. Each one is a single writer, or a write where losing the race
@@ -103,6 +149,12 @@ const NO_LOCK_NEEDED = {
 section('Both sides were read');
 {
   ok(lockedKinds.size >= 8, 'the kinds written through a lock were found', [...lockedKinds].sort());
+  /* A derivation that finds nothing passes everything. Named because the whole
+     reason this exists is that `wallet` was invisible here. */
+  ok(SAVERS.size >= 1, 'the named save helpers were derived from the source', [...SAVERS]);
+  ok(SAVERS.get('_saveWallet') === 'wallet',
+     'including the one that writes the wallet, which this check could not see', SAVERS.get('_saveWallet'));
+  ok(lockedKinds.has('wallet'), 'and the wallet is a locked kind, so every writer must take it', true);
   ok(bodies.length > 200, 'and every handler in the Worker', bodies.length);
   const anyRMW = bodies.filter(b => readModifyWrite(b.text).length).length;
   ok(anyRMW > 10, 'including the ones that read a record and write it back', anyRMW);
@@ -129,10 +181,22 @@ section('No record is written through a lock in one place and raw in another');
   const insideTheLock = (body, kind) => {
     const open = body.indexOf("_withRecord(env, '" + kind + "'");
     const openK = body.search(new RegExp('_with(?:Kind|KV|Acct|Ent|Team|Fam|Wallet)\\(\\s*env\\s*,\\s*\'' + kind + '\''));
-    const first = [open, openK].filter(i => i >= 0);
+    /* The wrappers that know their own kind and so do not name it. */
+    const fixed = [...FIXED_LOCKS].filter(([, k]) => k === kind)
+      .map(([fn]) => body.search(new RegExp('\\b' + fn + '\\(')));
+    const first = [open, openK, ...fixed].filter(i => i >= 0);
     if (!first.length) return false;
-    const put = body.search(new RegExp('DB\\.put\\(\\s*env\\s*,\\s*\'' + kind + '\''));
-    return put < 0 || Math.min(...first) < put;
+    const puts = [body.search(new RegExp('DB\\.put\\(\\s*env\\s*,\\s*\'' + kind + '\''))];
+    /* The named savers too, or a raw `_saveWallet` sitting AFTER a _withWallet
+       call in the same handler would be read as "inside the lock" when it is
+       the bypass this is looking for. */
+    for (const [fn, k] of SAVERS) {
+      if (k !== kind) continue;
+      const at = body.search(new RegExp('\\b' + fn + '\\('));
+      if (at >= 0) puts.push(at);
+    }
+    const put = Math.min(...puts.filter(i => i >= 0).concat([Infinity]));
+    return put === Infinity || Math.min(...first) < put;
   };
   /* The save halves of the lock helpers themselves. `_saveAcct` exists to be
      the write _withAcct performs INSIDE the lock, so reporting it is reporting

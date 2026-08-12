@@ -4325,3 +4325,36 @@ read that only happens when a marker exists.
 about which goes first - both orders fail, and the argument is about who
 absorbs it. Add the intermediate state that makes the half-done case
 recognisable, and something that acts on it.
+
+## 239. The check that existed to find this could not see it, twice over
+
+Rejecting a payout credited a seller's wallet by reading it, adding the amount
+and writing the whole record back raw - the only wallet writer in the product
+outside _withWallet. A sale landing at the same moment was overwritten, and not
+just the balance: the object written back is the one read before, so it carries
+away the other write's holds and history too. Demonstrated: the balance goes
+0 -> 100 -> 16, and the seller loses the entire $100 refund.
+
+There is a whole test file whose job is to find writers that skip a lock. It
+could not see this, for two reasons, and both are the same reason:
+
+  - it looked for `DB.put(env, 'kind'`, and a wallet is written by a named
+    helper, `_saveWallet`;
+  - it built its list of locked kinds from `_withX(env, 'kind'`, and
+    _withWallet takes an EMAIL - so `wallet` was never on the list of records
+    that have a lock at all.
+
+The rule the entire file rests on - locked somewhere, therefore locked
+everywhere - had never once applied to the record holding people's money. Both
+are now derived from the source: a `_saveX` that writes a `<kind>:` key is a
+way of writing that kind, and a `_withX` that calls it is that kind's lock.
+
+Fixing it then broke a THIRD check, which asserted the settle order by looking
+for `_saveWallet` and could no longer find the credit at all. Same brittleness,
+third instance in this file.
+
+**Rule:** LESSONS #233 said a check should ask the source what performs an
+operation rather than carry a list of spellings. This is the same lesson
+arriving from the other side: when a check finds nothing, ask whether it CAN
+find anything. A sweep that reports zero because its pattern never matches
+looks exactly like a sweep that reports zero because the code is clean.
