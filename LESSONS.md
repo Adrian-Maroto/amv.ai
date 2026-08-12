@@ -4294,3 +4294,34 @@ expiry, a retry, a default - because "wrong" and "load-bearing" are not
 exclusive. And at-least-once delivery is a contract with two halves: letting
 the retry happen, and making every step safe to run again. Deliver only the
 first and the failure moves rather than leaves.
+
+## 238. The order of two writes was the difference between paying twice and stealing
+
+A withdrawal wrote the `withdraw:` record - the thing an operator reads to
+decide what AMV owes - and debited the seller's balance afterwards. Between
+those two writes the same money was both promised and still spendable.
+
+Nothing anywhere closed that gap. What is available to withdraw is balance
+minus unmatured holds; `_payoutsInFlight` exists and is only ever read as an
+input to the risk score. So a debit that did not happen left the full amount
+withdrawable with an approved payout already standing against it: ask again,
+get a second record, and the operator working the queue sends the money twice.
+It does not take an exception - a Worker can be cut off between two writes.
+
+The obvious fix, swapping them, is not automatically better: debiting first and
+failing before the record is written destroys the seller's money, which the
+comment above the payout queue calls the worst defect the product ever had.
+Both orders lose money, in opposite directions and to opposite people.
+
+What resolves it is a third state. The debit carries a marker naming the payout
+it is for, so between the two writes the money is neither spendable nor
+promised - the only state that cannot be double-spent - and the marker is what
+lets a later attempt tell "this payout is real" from "this money never went
+anywhere". An exception rolls it back on the spot; a request that simply ended
+is corrected by the next withdrawal, under the same lock, at the cost of one
+read that only happens when a marker exists.
+
+**Rule:** when two writes must both happen and cannot be atomic, do not argue
+about which goes first - both orders fail, and the argument is about who
+absorbs it. Add the intermediate state that makes the half-done case
+recognisable, and something that acts on it.

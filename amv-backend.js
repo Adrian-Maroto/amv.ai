@@ -12969,6 +12969,45 @@ async function marketEarnings(request, env) {
 /* Extraction: seller requests a withdrawal of their balance. Records a
    pending payout and zeroes the balance (operator fulfills it via the
    destination on file). Idempotent-ish via a unique request id. */
+/* MONEY THAT LEFT A BALANCE FOR A PAYOUT THAT WAS NEVER WRITTEN.
+
+   The withdrawal debits first and writes the payout record second, because the
+   other order is a way to be paid twice. That leaves one narrow state: debited,
+   with a marker naming the payout, and no record - which happens if the request
+   is cut off between the two. The rollback in the withdrawal handles an
+   exception; nothing can handle the Worker simply ending, so this does.
+
+   Checked at the top of the next withdrawal, under the same lock, which is the
+   only moment it matters and costs one read only when a marker exists - which
+   is to say almost never. A marker whose record DOES exist is left alone: that
+   payout is real and the money is genuinely gone. */
+async function _reconcileStrandedPayouts(env, email) {
+  const w = await _wallet(env, email);
+  const pending = Array.isArray(w.pendingOut) ? w.pendingOut : [];
+  if (!pending.length) return 0;
+  const stranded = [];
+  for (const p of pending) {
+    if (!p || !p.id) continue;
+    let rec = null;
+    try { rec = await env.AMV_KV.get(`withdraw:${p.id}`); }
+    catch (e) { return 0; }   // cannot tell: leave it rather than refund twice
+    if (!rec) stranded.push(p);
+  }
+  if (!stranded.length) {
+    /* Every marker has a record behind it, so they are all settled business. */
+    await _withWallet(env, email, (ww) => { ww.pendingOut = []; });
+    return 0;
+  }
+  const total = +stranded.reduce((n, p) => n + (+p.amount || 0), 0).toFixed(2);
+  await _withWallet(env, email, (ww) => {
+    ww.balance = +((+ww.balance || 0) + total).toFixed(2);
+    const ids = new Set(stranded.map((p) => p.id));
+    ww.pendingOut = (Array.isArray(ww.pendingOut) ? ww.pendingOut : []).filter((p) => p && !ids.has(p.id));
+  });
+  audit(env, 'withdraw_stranded_returned', { seller: email, amount: total, ids: stranded.map((p) => p.id) });
+  return total;
+}
+
 async function marketWithdraw(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
@@ -13009,6 +13048,11 @@ async function marketWithdraw(request, env) {
     return json({ error: 'A withdrawal is already being processed. Please try again in a moment.' }, 409);
   }
   try {
+    /* Anything a previous attempt debited for a payout that was never written
+       goes back before this one decides what is available. Under the same lock,
+       so it cannot race the withdrawal it is correcting. */
+    try { await _reconcileStrandedPayouts(env, user.email); }
+    catch (e) { audit(env, 'withdraw_reconcile_failed', { seller: user.email, error: String((e && e.message) || e).slice(0, 160) }); }
     const w = await _wallet(env, user.email);
     /* Only what has cleared. The balance may be larger - held money is still
        theirs and still shown - but it cannot leave until the dispute window has
@@ -13041,16 +13085,25 @@ async function marketWithdraw(request, env) {
     const risk = await _payoutRisk(env, user.email, amount, w);
     const status = risk.tier === 'auto' ? 'approved' : 'pending';
 
-    await env.AMV_KV.put(`withdraw:${wid}`, JSON.stringify({
-      id: wid, seller: user.email, amount, destination: dest,
-      status, ts: Date.now(),
-      risk: { tier: risk.tier, score: risk.score, reasons: risk.reasons },
-      kycVerified: !!(risk.kyc && risk.kyc.verified),
-      approvedBy: risk.tier === 'auto' ? 'auto' : '',
-      approvedAt: risk.tier === 'auto' ? Date.now() : 0,
-    }));
-    /* It is unsettled from this moment. One of the two places that is true. */
-    await _openPayoutAdd(env, user.email, wid);
+    /* THE MONEY LEAVES THE BALANCE BEFORE ANYTHING PROMISES IT.
+
+       This wrote the payout record first and debited afterwards, and the gap
+       between the two was a way to be paid twice. Nothing subtracts a payout
+       already in flight when working out what is available - `_availableOf` is
+       balance minus unmatured holds, and `_payoutsInFlight` is only ever read
+       as a risk signal - so a debit that did not happen left the full amount
+       still withdrawable with an approved payout already standing against it.
+       The seller asks again, a second record is written, and an operator
+       working the queue sends the money twice.
+
+       It does not take an exception. A Worker can be cut off mid-request, and
+       the window was two storage writes wide.
+
+       So the debit comes first, in the lock, together with a marker naming the
+       payout it is for. Between here and the record being written the money is
+       neither spendable nor promised, which is the only state that cannot be
+       double-spent. `_reconcileStrandedPayouts` above puts it back if the
+       record never appeared. */
     /* Take out only what left. This used to zero the whole balance, which was
        right when everything was withdrawable and is silent theft now: money
        still inside its clearing window would vanish along with the payout, and
@@ -13066,9 +13119,43 @@ async function marketWithdraw(request, env) {
       if (ww.lastDest && ww.lastDest !== dest) ww.destChangedAt = Date.now();
       ww.lastDest = dest;
       ww.balance = +((+ww.balance || 0) - amount).toFixed(2);
+      /* Debited, and owed. The marker is what tells a later attempt that this
+         money left for a payout, so it can be given back if the payout record
+         turns out never to have been written. */
+      ww.pendingOut = (Array.isArray(ww.pendingOut) ? ww.pendingOut : [])
+        .concat({ id: wid, amount, at: Date.now() }).slice(-20);
       /* The cleared tranches have now genuinely left; anything still inside its
          window stays, on its own clock. */
       _pruneMaturedHolds(ww);
+    });
+    try {
+      await env.AMV_KV.put(`withdraw:${wid}`, JSON.stringify({
+        id: wid, seller: user.email, amount, destination: dest,
+        status, ts: Date.now(),
+        risk: { tier: risk.tier, score: risk.score, reasons: risk.reasons },
+        kycVerified: !!(risk.kyc && risk.kyc.verified),
+        approvedBy: risk.tier === 'auto' ? 'auto' : '',
+        approvedAt: risk.tier === 'auto' ? Date.now() : 0,
+      }));
+      /* It is unsettled from this moment. One of the two places that is true. */
+      await _openPayoutAdd(env, user.email, wid);
+    } catch (e) {
+      /* The record is what makes the payout real, so without it the debit was
+         for nothing and the money goes straight back. Told out loud: a balance
+         that moved down and up again with no payout to show for it is exactly
+         the kind of thing a seller writes in about. */
+      await _withWallet(env, user.email, (ww) => {
+        ww.balance = +((+ww.balance || 0) + amount).toFixed(2);
+        ww.pendingOut = (Array.isArray(ww.pendingOut) ? ww.pendingOut : []).filter((p) => p && p.id !== wid);
+      });
+      audit(env, 'withdraw_rolled_back', { seller: user.email, amount, id: wid,
+                                           error: String((e && e.message) || e).slice(0, 160) });
+      throw e;
+    }
+    /* The record exists and is now the authority on what is owed, so the marker
+       has done its job. */
+    await _withWallet(env, user.email, (ww) => {
+      ww.pendingOut = (Array.isArray(ww.pendingOut) ? ww.pendingOut : []).filter((p) => p && p.id !== wid);
     });
     await _pushWalletTx(env, user.email, { type: 'withdrawal', amount: -amount, status, id: wid, ts: Date.now() });
     /* Counted for the velocity signal and the identity threshold, both of which
