@@ -4358,3 +4358,32 @@ operation rather than carry a list of spellings. This is the same lesson
 arriving from the other side: when a check finds nothing, ask whether it CAN
 find anything. A sweep that reports zero because its pattern never matches
 looks exactly like a sweep that reports zero because the code is clean.
+
+## 240. One function, five callers, and the race was between the callers
+
+`_pushWalletTx` read a seller's money history, unshifted a line and wrote it
+back. No lock. It is called from every path that moves a seller's money: the
+sale credit, the reversal, the withdrawal, and both payout settlements. Two of
+those landing together lost one of the two lines - shown directly: two appends
+at the same instant leave one.
+
+The single-writer shape is what hid it. Every earlier defect of this kind had
+several handlers writing one record, which is visible in a diff and reads as
+dangerous. This is ONE function, and it looks like the careful version of
+itself. The race was never inside it; it was between its callers.
+
+The lock sweep is silent about it for a reason worth keeping: `wallet_tx` had
+no locked writer anywhere, so the rule that file enforces - locked somewhere,
+therefore locked everywhere - never engaged. A record that nobody has EVER
+locked is invisible to a check about locks being taken consistently. That check
+finds inconsistency, not absence, and those are different questions.
+
+It had also quietly stopped being a log. The dedupe added when sale credits
+became retryable made this record the evidence for whether a history line was
+already written, so a lost line no longer just left a gap - it let the next
+attempt write a second one.
+
+**Rule:** "only one function writes this" is not a concurrency argument. Ask how
+many callers it has and whether any two can run at once. And a consistency
+check cannot tell you about a record that has never been consistent with
+anything - for those, ask separately whether the record needs a lock at all.

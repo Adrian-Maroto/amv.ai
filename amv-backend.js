@@ -12550,15 +12550,42 @@ async function _walletTx(env, email) {
    Returns whether it actually wrote, so a caller can tell "recorded now" from
    "was already recorded" - which is what the steps after it key on. A caller
    with no ref gets the old behaviour: always append. */
+/* UNDER THE LOCK, BECAUSE FIVE MONEY PATHS WRITE THIS AND NONE OF THEM WAITED.
+
+   This was a read, an unshift and a put - a read-modify-write with nothing
+   serialising it - and it is called from every path that moves a seller's
+   money: the sale credit, the reversal, the withdrawal, and both payout
+   settlements. A sale landing beside a withdrawal simply lost one of the two
+   lines, and this record is what a seller reads to understand what happened to
+   their money and what an operator reads in a dispute.
+
+   The single-writer shape is what hid it. Every other record here has several
+   handlers writing it, which is visible; this has ONE function with five
+   callers, which reads as safe and is not. And it is why the lock sweep is
+   silent: `wallet_tx` had no locked writer anywhere, so the rule it enforces -
+   locked somewhere, therefore locked everywhere - never engaged. Going through
+   the shared helper is what puts it inside that rule, so the next writer is
+   held to it.
+
+   It also stopped being merely a log. The dedupe below is what tells a retried
+   sale that its history line already exists, so a lost line does not just
+   leave a gap now - it lets the next attempt write a second one.
+
+   `_withKV` writes `wallet_tx:<key>`, which is the same key this always used,
+   and the key is passed through exactly as callers give it - lowercasing here
+   and not in `_walletTx` would split reads from writes. */
 async function _pushWalletTx(env, email, tx) {
-  const list = await _walletTx(env, email);
-  if (tx && tx.ref && tx.item &&
-      list.some((t) => t && t.ref === tx.ref && t.item === tx.item && t.type === tx.type)) {
-    return false;
-  }
-  list.unshift(tx);
-  await env.AMV_KV.put(`wallet_tx:${email}`, JSON.stringify(list.slice(0, 500)));
-  return true;
+  return await _withKV(env, 'wallet_tx', email, (list) => {
+    if (tx && tx.ref && tx.item &&
+        list.some((t) => t && t.ref === tx.ref && t.item === tx.item && t.type === tx.type)) {
+      return false;
+    }
+    /* In place: the helper writes back the object it loaded, so building a new
+       array here would be a no-op that looked like a write. */
+    list.unshift(tx);
+    if (list.length > 500) list.length = 500;
+    return true;
+  }, []);
 }
 async function _ownsItem(env, email, id) {
   return !!(await env.AMV_KV.get(`entitleitem:${email}:${id}`));
