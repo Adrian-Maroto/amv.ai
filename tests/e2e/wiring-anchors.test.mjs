@@ -121,9 +121,29 @@ section('Nothing in the bundle waits on an element that was removed');
      succeed, and whatever was attached to it is gone. */
   const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
   const declaredStatic = new Set([...html.matchAll(/\sid=["']([a-zA-Z0-9_-]+)["']/g)].map(m => m[1]));
+
+  /* ONE exception, and it is a real creation rather than a hole: the shared
+     modal shell builds its ids by concatenation - `id="'+id+'-body"' - so the
+     literal `cv-body` is looked up but never spelled out anywhere. That looks
+     exactly like a dead lookup to the rule above.
+
+     The suffixes are read out of _ovShell ITSELF rather than listed here, so a
+     fifth element added to the shell is covered without anybody remembering to
+     update this, and a suffix removed from the shell stops being minted here
+     too. And an id is only minted for a shell that is actually CALLED with
+     that prefix - `$('zz-body')` with no `_ovShell({id:'zz'})` still fires. */
+  const shell = functionBody(src, '_ovShell');
+  const suffixes = [...new Set([...shell.matchAll(/\+\s*id\s*\+\s*'(-[a-z]+)/g)].map(m => m[1]))];
+  ok(suffixes.length >= 3,
+     'the modal shell really does mint its ids by concatenation', suffixes);
+  const minted = new Set();
+  for (const m of src.matchAll(/_ovShell\(\s*\{[^}]*?\bid\s*:\s*['"]([a-zA-Z0-9_-]+)['"]/g)) {
+    for (const suf of suffixes) minted.add(m[1] + suf);
+  }
+
   const dead = [];
   for (const id of wanted) {
-    if (declaredStatic.has(id)) continue;
+    if (declaredStatic.has(id) || minted.has(id)) continue;
     const mentions = (src.match(new RegExp("['\"]" + id.replace(/-/g, '[-]') + "['\"]", 'g')) || []).length;
     if (mentions <= 1) dead.push(id);
   }

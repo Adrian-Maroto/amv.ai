@@ -164,6 +164,30 @@ section('A Telegram bot token is treated like the credential it is');
   const status = codeOnly(functionBody(src, 'telegramStatus'));
   ok(!/secret/.test(status.replace(/rec && rec\.secret/g, '')),
      'and the token never comes back out', true);
+
+  /* A token contains a colon, and Telegram is addressed as /bot<token>/METHOD
+     with the token RAW. encodeURIComponent turns that colon into %3A, which
+     would have made every connect and every send address a path Telegram does
+     not serve - the integration would not have worked at all, in a way no
+     test here can see because api.telegram.org is unreachable from the test
+     environment. So the grammar is asserted instead of the round trip. */
+  const code = codeOnly(src);
+  ok(!/encodeURIComponent\(token\)/.test(code),
+     'the token is not percent-encoded into a path that Telegram does not serve', true);
+  ok(/\/bot\$\{token\}\//.test(code), 'it goes in raw, the way the API is addressed', true);
+
+  /* Raw is only safe because the shape is proved first, and proved by BOTH
+     paths - the one that takes it from a person and the one that takes it back
+     out of storage. One shared pattern, so they cannot drift apart. */
+  const shape = (code.match(/const TELEGRAM_TOKEN_RE = ([^\n]+)/) || [])[1] || '';
+  ok(/^\/\^/.test(shape.trim()) && /\$\/;?$/.test(shape.trim()),
+     'and its shape is anchored at both ends, so nothing else can ride along', shape.trim());
+  ok(!/[/.?#]/.test('123456789:AAbbbbccccddddeeeeffff'.replace(/[A-Za-z0-9_:-]/g, '')),
+     'a token that passes cannot contain a slash, dot, query or fragment', true);
+  ok((code.match(/TELEGRAM_TOKEN_RE\.test\(/g) || []).length >= 2,
+     'and both the connect and the send check it', (code.match(/TELEGRAM_TOKEN_RE\.test\(/g) || []).length);
+  ok(/TELEGRAM_TOKEN_RE\.test\(token\)/.test(codeOnly(functionBody(src, '_telegramSend'))),
+     'including the one that reads it back out of storage', true);
 }
 
 section('What the screen says about a connection, it asked the server');

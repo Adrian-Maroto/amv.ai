@@ -17400,6 +17400,22 @@ async function coverageMap(request, env) {
 
 const TELEGRAM_API = 'https://api.telegram.org';
 
+/* The shape BotFather gives out, in one place because two paths depend on it:
+   the connect, which checks what somebody pasted, and the send, which checks
+   what came back out of storage.
+
+   It is also what makes it safe to put the token straight into the URL. The
+   Telegram API is addressed as /bot<token>/METHOD with the token RAW - and a
+   token contains a colon, which encodeURIComponent turns into %3A. Every
+   character this pattern admits is already legal unencoded in a URL path
+   segment (RFC 3986 pchar includes ':'), and nothing that could change the
+   path - a slash, a dot segment, a query or a fragment - can get through it.
+
+   NOT verified against Telegram itself: api.telegram.org is unreachable from
+   the environment this was written in, so this rests on the documented URL
+   form and on the grammar, not on a live call. */
+const TELEGRAM_TOKEN_RE = /^\d{5,}:[A-Za-z0-9_-]{20,}$/;
+
 /* The token is a credential that can send as their bot, so it is encrypted at
    rest exactly like a mailbox password, under the same key. */
 async function telegramConnect(request, env) {
@@ -17414,7 +17430,7 @@ async function telegramConnect(request, env) {
   const body = await request.json().catch(() => ({}));
   const token = String(body.token || '').trim();
   const chatId = String(body.chatId || '').trim().slice(0, 40);
-  if (!/^\d{5,}:[A-Za-z0-9_-]{20,}$/.test(token)) {
+  if (!TELEGRAM_TOKEN_RE.test(token)) {
     return json({ error: 'That does not look like a bot token. BotFather gives you one shaped like 123456789:AA...', code: 'bad_token' }, 400);
   }
   if (!/^-?\d{1,20}$/.test(chatId)) {
@@ -17426,7 +17442,7 @@ async function telegramConnect(request, env) {
      here able to fix it. */
   let who = null;
   try {
-    const r = await fetchDeadline(`${TELEGRAM_API}/bot${encodeURIComponent(token)}/getMe`, { method: 'GET' }, 10000);
+    const r = await fetchDeadline(`${TELEGRAM_API}/bot${token}/getMe`, { method: 'GET' }, 10000);
     const d = await r.json().catch(() => ({}));
     if (!r.ok || !d.ok) {
       return json({ error: 'Telegram refused that token. Check you copied the whole thing from BotFather.', code: 'tg_auth' }, 401);
@@ -17470,11 +17486,16 @@ async function _telegramSend(env, email, text) {
   if (!rec || !rec.secret) return { sent: false, reason: 'not_connected' };
   const token = await _mailDecrypt(env, rec.secret);
   if (!token) return { sent: false, reason: 'unreadable' };
+  /* Checked AGAIN on the way out. The connect proved this token before storing
+     it, but what is interpolated here came back from storage rather than from
+     the check, and a value that goes into a URL should be proved by the code
+     that builds the URL - not by a different function that ran days ago. */
+  if (!TELEGRAM_TOKEN_RE.test(token)) return { sent: false, reason: 'unreadable' };
   const form = new URLSearchParams();
   form.set('chat_id', rec.chatId);
   form.set('text', String(text || '').slice(0, 4000));
   form.set('disable_web_page_preview', 'true');
-  const r = await fetchDeadline(`${TELEGRAM_API}/bot${encodeURIComponent(token)}/sendMessage`,
+  const r = await fetchDeadline(`${TELEGRAM_API}/bot${token}/sendMessage`,
     { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: form.toString() }, 10000);
   const d = await r.json().catch(() => ({}));
   return { sent: !!(r.ok && d.ok), reason: d.description || '' };
