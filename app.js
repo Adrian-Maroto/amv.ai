@@ -7819,6 +7819,35 @@ function renderDashboard(){
 }
 function greeting(){ const h=new Date().getHours(); return h<12?'morning':h<17?'afternoon':'evening'; }
 
+/* ONE MODAL SHELL, BECAUSE THERE WERE ABOUT TO BE FIVE.
+
+   The mail connect screen, the inbox, the job boards, the coverage board and
+   the Telegram connect screen all open the same overlay with the same header
+   and the same two ways to close. Four of them had already been written out
+   longhand before the duplicate check caught it, and the fifth would have
+   been copied from the fourth.
+
+   The close handling is the part worth sharing rather than repeating: the
+   backdrop is guarded with `e.target === e.currentTarget` instead of
+   stopPropagation, because stopping propagation inside a dialog kills every
+   delegated handler on every button in it - which is LESSONS #5, learned once
+   already and easy to reintroduce by copying a modal that got it right. */
+function _ovShell(o){
+  const id = o.id;
+  return '<div class="ov" id="'+id+'-bg"><div class="ml-modal'+(o.wide?' cv-modal':'')+
+      '" role="dialog" aria-modal="true" aria-labelledby="'+id+'-h">'+
+    '<div class="ml-head"><div><div class="eyebrow">'+escH(o.eyebrow||'')+'</div>'+
+      '<h2 id="'+id+'-h">'+escH(o.title||'')+'</h2></div>'+
+      '<button class="tp-x" id="'+id+'-x" aria-label="Close">\u2715</button></div>'+
+    '<div id="'+id+'-body">'+(o.body||'')+'</div>'+
+  '</div></div>';
+}
+function _ovWire(id){
+  const r=$('ovr'); if(!r) return;
+  on($(id+'-bg'),'click',(e)=>{ if(e.target===e.currentTarget) r.innerHTML=''; });
+  on($(id+'-x'),'click',()=>{ r.innerHTML=''; });
+}
+window._ovShell=_ovShell; window._ovWire=_ovWire;
 
 /* ============================================================
    TEAM / WORKSPACE MODE (frontend) - the B2B tier.
@@ -22738,12 +22767,9 @@ async function disconnectMail(){
 /* The inbox, and the thing a person actually wants: a summary of it. */
 async function openMailInbox(){
   const r=$('ovr'); if(!r) return;
-  r.innerHTML='<div class="ov" id="mi-bg"><div class="ml-modal"><div class="ml-head">'+
-    '<div><div class="eyebrow">Mail</div><h2>Your inbox</h2></div>'+
-    '<button class="tp-x" id="mi-x" aria-label="Close">✕</button></div>'+
-    '<div id="mi-body"><p class="mu">Reading your mailbox…</p></div></div></div>';
-  on($('mi-bg'),'click',(e)=>{ if(e.target===e.currentTarget) r.innerHTML=''; });
-  on($('mi-x'),'click',()=>{ r.innerHTML=''; });
+  r.innerHTML=_ovShell({ id:'mi', eyebrow:'Mail', title:'Your inbox',
+                         body:'<p class="mu">Reading your mailbox\u2026</p>' });
+  _ovWire('mi');
 
   let data=null;
   try{ data=await AMV_API.mailInbox(25); }
@@ -25427,12 +25453,9 @@ async function _jobBoardsLoad(){
 
 async function openJobBoards(){
   const r=$('ovr'); if(!r) return;
-  r.innerHTML='<div class="ov" id="jb-bg"><div class="ml-modal"><div class="ml-head">'+
-    '<div><div class="eyebrow">Job hunt</div><h2>Job boards</h2></div>'+
-    '<button class="tp-x" id="jb-x" aria-label="Close">✕</button></div>'+
-    '<div id="jb-body"><p class="mu">Loading…</p></div></div></div>';
-  on($('jb-bg'),'click',(e)=>{ if(e.target===e.currentTarget) r.innerHTML=''; });
-  on($('jb-x'),'click',()=>{ r.innerHTML=''; });
+  r.innerHTML=_ovShell({ id:'jb', eyebrow:'Job hunt', title:'Job boards',
+                         body:'<p class="mu">Loading\u2026</p>' });
+  _ovWire('jb');
 
   const cat=await _jobBoardsLoad();
   const b=$('jb-body'); if(!b) return;
@@ -25455,7 +25478,15 @@ async function openJobBoards(){
       const list=byC[c];
       return '<div class="jb-c"><div class="jb-c-h">'+escH(list[0].flag+' '+c)+'</div>'+
         list.map(x=>'<div class="jb-row">'+
-          '<a class="jb-n" href="'+escH(x.url)+'" target="_blank" rel="noopener noreferrer">'+escH(x.name)+'</a>'+
+          /* THROUGH THE ALLOWLIST, like every other link in the product.
+
+             These URLs come from AMV's own board registry, so nothing hostile
+             is in them today - and that is exactly the argument that gets a
+             guard skipped until the day the data comes from somewhere else.
+             safeUrl admits http, https, same-origin paths and mailto, and
+             returns empty for anything else, so a javascript: URL cannot be
+             one link away from being clickable. */
+          '<a class="jb-n" href="'+escH(safeUrl(x.url))+'" target="_blank" rel="noopener noreferrer">'+escH(x.name)+'</a>'+
           badge(x)+
           (x.note?'<div class="jb-note">'+escH(x.note)+'</div>':'')+
         '</div>').join('')+'</div>';

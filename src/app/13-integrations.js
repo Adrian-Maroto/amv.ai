@@ -1285,12 +1285,9 @@ async function disconnectMail(){
 /* The inbox, and the thing a person actually wants: a summary of it. */
 async function openMailInbox(){
   const r=$('ovr'); if(!r) return;
-  r.innerHTML='<div class="ov" id="mi-bg"><div class="ml-modal"><div class="ml-head">'+
-    '<div><div class="eyebrow">Mail</div><h2>Your inbox</h2></div>'+
-    '<button class="tp-x" id="mi-x" aria-label="Close">✕</button></div>'+
-    '<div id="mi-body"><p class="mu">Reading your mailbox…</p></div></div></div>';
-  on($('mi-bg'),'click',(e)=>{ if(e.target===e.currentTarget) r.innerHTML=''; });
-  on($('mi-x'),'click',()=>{ r.innerHTML=''; });
+  r.innerHTML=_ovShell({ id:'mi', eyebrow:'Mail', title:'Your inbox',
+                         body:'<p class="mu">Reading your mailbox\u2026</p>' });
+  _ovWire('mi');
 
   let data=null;
   try{ data=await AMV_API.mailInbox(25); }

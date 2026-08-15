@@ -3274,4 +3274,33 @@ function renderDashboard(){
 }
 function greeting(){ const h=new Date().getHours(); return h<12?'morning':h<17?'afternoon':'evening'; }
 
+/* ONE MODAL SHELL, BECAUSE THERE WERE ABOUT TO BE FIVE.
+
+   The mail connect screen, the inbox, the job boards, the coverage board and
+   the Telegram connect screen all open the same overlay with the same header
+   and the same two ways to close. Four of them had already been written out
+   longhand before the duplicate check caught it, and the fifth would have
+   been copied from the fourth.
+
+   The close handling is the part worth sharing rather than repeating: the
+   backdrop is guarded with `e.target === e.currentTarget` instead of
+   stopPropagation, because stopping propagation inside a dialog kills every
+   delegated handler on every button in it - which is LESSONS #5, learned once
+   already and easy to reintroduce by copying a modal that got it right. */
+function _ovShell(o){
+  const id = o.id;
+  return '<div class="ov" id="'+id+'-bg"><div class="ml-modal'+(o.wide?' cv-modal':'')+
+      '" role="dialog" aria-modal="true" aria-labelledby="'+id+'-h">'+
+    '<div class="ml-head"><div><div class="eyebrow">'+escH(o.eyebrow||'')+'</div>'+
+      '<h2 id="'+id+'-h">'+escH(o.title||'')+'</h2></div>'+
+      '<button class="tp-x" id="'+id+'-x" aria-label="Close">\u2715</button></div>'+
+    '<div id="'+id+'-body">'+(o.body||'')+'</div>'+
+  '</div></div>';
+}
+function _ovWire(id){
+  const r=$('ovr'); if(!r) return;
+  on($(id+'-bg'),'click',(e)=>{ if(e.target===e.currentTarget) r.innerHTML=''; });
+  on($(id+'-x'),'click',()=>{ r.innerHTML=''; });
+}
+window._ovShell=_ovShell; window._ovWire=_ovWire;
 
