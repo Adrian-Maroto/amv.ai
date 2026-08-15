@@ -615,6 +615,19 @@ const AMV_API = {
   async spendLimits(){ const r=await this._fetch('/v1/spend/limits',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
   async spendSet(limits){ const r=await this._fetch('/v1/spend/set',{method:'POST',body:JSON.stringify({limits})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
 
+  /* GLOBAL MAIL - the same shape as every other call here.
+
+     `password` goes up and never comes back: the server encrypts it, stores
+     the ciphertext and returns only what a person needs to see. Nothing in
+     this file keeps a copy, so a person's mailbox password never sits in
+     localStorage the way an integration token does. */
+  async mailProviders(){ const r=await this._fetch('/v1/mail/providers',{method:'POST',body:'{}'}); const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(d.error||'Could not load providers.'); return d; },
+  async mailStatus(){ const r=await this._fetch('/v1/mail/status',{method:'POST',body:'{}'}); return await r.json().catch(()=>({})); },
+  async mailConnect(body){ const r=await this._fetch('/v1/mail/connect',{method:'POST',body:JSON.stringify(body)}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not connect.'),{code:d.code}); return d; },
+  async mailDisconnect(){ const r=await this._fetch('/v1/mail/disconnect',{method:'POST',body:'{}'}); return await r.json().catch(()=>({})); },
+  async mailInbox(limit){ const r=await this._fetch('/v1/mail/inbox',{method:'POST',body:JSON.stringify({limit:limit||20})}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not read the mailbox.'),{code:d.code}); return d; },
+  async mailMessage(uid){ const r=await this._fetch('/v1/mail/message',{method:'POST',body:JSON.stringify({uid})}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not read that message.'),{code:d.code}); return d; },
+  async mailSend(body){ const r=await this._fetch('/v1/mail/send',{method:'POST',body:JSON.stringify(body)}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not send.'),{code:d.code}); return d; },
   async portal(customer){ const r=await this._fetch('/v1/stripe/portal',{method:'POST',body:JSON.stringify({customer})}); const d=await r.json(); if(!r.ok||!d.url) throw new Error(d.error||'Could not open billing.'); return d.url; },
 };
 window.AMV_API = AMV_API;

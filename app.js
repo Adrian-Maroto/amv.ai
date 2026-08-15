@@ -615,6 +615,19 @@ const AMV_API = {
   async spendLimits(){ const r=await this._fetch('/v1/spend/limits',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
   async spendSet(limits){ const r=await this._fetch('/v1/spend/set',{method:'POST',body:JSON.stringify({limits})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
 
+  /* GLOBAL MAIL - the same shape as every other call here.
+
+     `password` goes up and never comes back: the server encrypts it, stores
+     the ciphertext and returns only what a person needs to see. Nothing in
+     this file keeps a copy, so a person's mailbox password never sits in
+     localStorage the way an integration token does. */
+  async mailProviders(){ const r=await this._fetch('/v1/mail/providers',{method:'POST',body:'{}'}); const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(d.error||'Could not load providers.'); return d; },
+  async mailStatus(){ const r=await this._fetch('/v1/mail/status',{method:'POST',body:'{}'}); return await r.json().catch(()=>({})); },
+  async mailConnect(body){ const r=await this._fetch('/v1/mail/connect',{method:'POST',body:JSON.stringify(body)}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not connect.'),{code:d.code}); return d; },
+  async mailDisconnect(){ const r=await this._fetch('/v1/mail/disconnect',{method:'POST',body:'{}'}); return await r.json().catch(()=>({})); },
+  async mailInbox(limit){ const r=await this._fetch('/v1/mail/inbox',{method:'POST',body:JSON.stringify({limit:limit||20})}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not read the mailbox.'),{code:d.code}); return d; },
+  async mailMessage(uid){ const r=await this._fetch('/v1/mail/message',{method:'POST',body:JSON.stringify({uid})}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not read that message.'),{code:d.code}); return d; },
+  async mailSend(body){ const r=await this._fetch('/v1/mail/send',{method:'POST',body:JSON.stringify(body)}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not send.'),{code:d.code}); return d; },
   async portal(customer){ const r=await this._fetch('/v1/stripe/portal',{method:'POST',body:JSON.stringify({customer})}); const d=await r.json(); if(!r.ok||!d.url) throw new Error(d.error||'Could not open billing.'); return d.url; },
 };
 window.AMV_API = AMV_API;
@@ -22106,7 +22119,18 @@ function _integrationsCatalogHTML(){
     '</div>'+
     cat('Email &amp; calendar',
       intRow({id:'google',name:'Google (Gmail, Drive, Calendar)',desc:'Reads & drafts email, organizes Drive, manages your calendar - automatically.',auto:true,connected:gConnected,icon:'\uD83D\uDCE7',bg:'rgba(66,133,244,.14)'})+
-      intRow({id:'outlook',name:'Microsoft 365 (Outlook, OneDrive)',desc:'Email, calendar and files across your Microsoft account.',auto:true,connected:isConn('amv_outlook'),icon:'\uD83D\uDCEB',bg:'rgba(0,120,212,.14)'})
+      intRow({id:'outlook',name:'Microsoft 365 (Outlook, OneDrive)',desc:'Email, calendar and files across your Microsoft account.',auto:true,connected:isConn('amv_outlook'),icon:'\uD83D\uDCEB',bg:'rgba(0,120,212,.14)'})+
+      /* The rest of the world. Google and Microsoft cover a lot of people and
+         not most of them: QQ and 163 in China, Naver in Korea, Yandex and
+         Mail.ru in Russia, GMX in Germany, WP.pl in Poland, UOL in Brazil.
+         All of them speak IMAP, so one connector reaches all of them. */
+      intRow({id:'mail',name:'Mail worldwide (QQ, 163, Naver, Yandex, GMX, WP.pl, UOL\u2026)',
+              desc:_mailConnectedAccount()
+                ? ('Connected to '+escH(_mailConnectedAccount().address)+'. AMV reads it, summarizes it and drafts replies.')
+                : 'Your own provider, in 22 countries. Reads, summarizes and drafts replies - automatically.',
+              auto:true,connected:!!_mailConnectedAccount(),
+              run:'openMailInbox',runLabel:'Open inbox',
+              icon:'\uD83C\uDF0D',bg:'rgba(120,180,120,.14)'})
     )+
     cat('Messaging &amp; chat',
       intRow({id:'slack',name:'Slack',desc:'Answers, summaries and tasks inside any channel with /amv.',auto:true,connected:isConn('amv_slack'),icon:'\uD83D\uDCAC',bg:'rgba(74,21,75,.16)'})+
@@ -22144,8 +22168,16 @@ window._integrationsCatalogHTML=_integrationsCatalogHTML;
 
 function _wireIntegrationCatalog(root){
   root=root||document;
-  root.querySelectorAll('[data-int-conn]').forEach(btn=>on(btn,'click',()=>connectIntegration(btn.dataset.intConn)));
-  root.querySelectorAll('[data-int-disc]').forEach(btn=>on(btn,'click',()=>disconnectIntegration(btn.dataset.intDisc)));
+  /* Mail is connected with a password rather than an OAuth round trip, so it
+     has its own flow instead of being pushed through connectIntegration. */
+  root.querySelectorAll('[data-int-conn]').forEach(btn=>on(btn,'click',()=>{
+    if(btn.dataset.intConn==='mail') return openMailConnect();
+    connectIntegration(btn.dataset.intConn);
+  }));
+  root.querySelectorAll('[data-int-disc]').forEach(btn=>on(btn,'click',()=>{
+    if(btn.dataset.intDisc==='mail') return disconnectMail();
+    disconnectIntegration(btn.dataset.intDisc);
+  }));
   root.querySelectorAll('[data-int-run]').forEach(btn=>on(btn,'click',()=>{
     const fn=window[btn.dataset.intRun];
     if(typeof fn==='function') fn();
@@ -22158,6 +22190,13 @@ window._wireIntegrationCatalog=_wireIntegrationCatalog;
 /* Refresh whichever integrations surface is currently visible:
    the standalone Integrations page OR the Settings > Integrations pane. */
 function _refreshIntegrationsUI(){
+  /* Status first, then repaint. Without this a mailbox that IS connected shows
+     a Connect button until some other event happens to redraw the page, which
+     reads as the connection having failed. */
+  try{ refreshMailStatus().then(()=>{ try{ _paintIntegrations(); }catch(e){} }); }catch(e){}
+  return _paintIntegrations();
+}
+function _paintIntegrations(){
   try{
     if(S.tab==='integrations'){ renderIntegrationsView(); return; }
     if(S.tab==='settings' && S.settingsPane==='integrations'){ renderSetPane(); return; }
@@ -22534,8 +22573,176 @@ function showCustomTask(){
   });
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+   GLOBAL MAIL - the connect flow and the inbox.
 
+   The integrations page offered Google and Microsoft 365 and nothing else,
+   which means it offered nothing at all to most of the world. This is the
+   other half of that: pick your provider, paste the app password it gives
+   you, and AMV reads and answers your mail the same way it does for Gmail.
 
+   The per-provider instruction is shown AT the password field rather than in
+   a help page, because every one of these providers calls it something
+   different and hides it somewhere different, and somebody who pastes their
+   ordinary login password gets a refusal that reads like a bug in AMV.
+   ═══════════════════════════════════════════════════════════════════════ */
+let _MAILP = null;        // provider catalogue, fetched once
+let _MAIL_STATUS = null;  // what is connected right now
+
+async function _mailLoadProviders(){
+  if(_MAILP) return _MAILP;
+  try{ _MAILP = await AMV_API.mailProviders(); }catch(e){ _MAILP = null; }
+  return _MAILP;
+}
+
+async function refreshMailStatus(){
+  try{ _MAIL_STATUS = await AMV_API.mailStatus(); }catch(e){ _MAIL_STATUS = null; }
+  return _MAIL_STATUS;
+}
+
+function _mailConnectedAccount(){
+  return (_MAIL_STATUS && _MAIL_STATUS.connected && _MAIL_STATUS.account) ? _MAIL_STATUS.account : null;
+}
+
+/* The picker. Grouped by country so somebody scans for their flag rather than
+   reading forty names, and every provider carries its own setup sentence. */
+async function openMailConnect(){
+  const cat = await _mailLoadProviders();
+  const r=$('ovr'); if(!r) return;
+  if(!cat || !cat.providers){
+    r.innerHTML='<div class="ov" id="ml-bg"><div class="ml-modal"><h2>Mail</h2>'+
+      '<p class="mu">AMV could not load the provider list. Check your connection and try again.</p>'+
+      '<div class="ml-foot"><button class="btn" id="ml-x">Close</button></div></div></div>';
+    on($('ml-x'),'click',()=>{ r.innerHTML=''; });
+    return;
+  }
+  const byCountry={};
+  for(const p of cat.providers){
+    const k=p.custom?'zz':(p.country||'zz');
+    (byCountry[k]=byCountry[k]||[]).push(p);
+  }
+  const order=Object.keys(byCountry).sort((a,b)=> a==='zz'?1 : b==='zz'?-1 : a.localeCompare(b));
+  const opts=order.map(c=>{
+    const list=byCountry[c];
+    const label=c==='zz'?'Anywhere else':(list[0].flag+' '+c);
+    return '<optgroup label="'+escH(label)+'">'+
+      list.map(p=>'<option value="'+escH(p.id)+'">'+escH(p.flag+' '+p.name)+'</option>').join('')+
+    '</optgroup>';
+  }).join('');
+
+  r.innerHTML='<div class="ov" id="ml-bg"><div class="ml-modal" role="dialog" aria-modal="true" aria-labelledby="ml-h">'+
+    '<div class="ml-head"><div><div class="eyebrow">Mail</div><h2 id="ml-h">Connect your mailbox</h2></div>'+
+      '<button class="tp-x" id="ml-x" aria-label="Close">✕</button></div>'+
+    '<p class="mu ml-intro">AMV works with '+(+cat.countries||20)+'+ countries’ mail providers over IMAP, the open standard they all support. Your password is encrypted on AMV’s server and is never sent back to this browser.</p>'+
+    '<label class="ml-f"><span>Provider</span><select id="ml-prov">'+opts+'</select></label>'+
+    '<div id="ml-custom" style="display:none">'+
+      '<label class="ml-f"><span>IMAP server</span><input id="ml-imap" placeholder="imap.example.com" autocomplete="off"></label>'+
+      '<label class="ml-f"><span>SMTP server</span><input id="ml-smtp" placeholder="smtp.example.com" autocomplete="off"></label>'+
+    '</div>'+
+    '<label class="ml-f"><span>Email address</span><input id="ml-addr" type="email" placeholder="you@example.com" autocomplete="username"></label>'+
+    '<label class="ml-f"><span>App password</span><input id="ml-pass" type="password" autocomplete="off"></label>'+
+    '<p class="ml-setup" id="ml-setup"></p>'+
+    '<div class="ml-err" id="ml-err" style="display:none" role="alert"></div>'+
+    '<div class="ml-foot"><button class="btn" id="ml-cancel">Cancel</button>'+
+      '<button class="btn bp" id="ml-go">Connect</button></div>'+
+  '</div></div>';
+
+  const sel=$('ml-prov');
+  const showSetup=()=>{
+    const p=cat.providers.find(x=>x.id===sel.value);
+    const el=$('ml-setup'); if(el&&p) el.textContent=p.setup||'';
+    const cu=$('ml-custom'); if(cu) cu.style.display=(p&&p.custom)?'':'none';
+  };
+  on(sel,'change',showSetup); showSetup();
+
+  /* Guarded so a click INSIDE the dialog does not close it, without using
+     stopPropagation - which would kill the delegated handlers on every button
+     in here (LESSONS #5). */
+  on($('ml-bg'),'click',(e)=>{ if(e.target===e.currentTarget) r.innerHTML=''; });
+  on($('ml-x'),'click',()=>{ r.innerHTML=''; });
+  on($('ml-cancel'),'click',()=>{ r.innerHTML=''; });
+  on($('ml-go'),'click',async()=>{
+    const btn=$('ml-go'), err=$('ml-err');
+    const provider=sel.value;
+    const body={ provider, address:($('ml-addr')||{}).value||'', password:($('ml-pass')||{}).value||'' };
+    const p=cat.providers.find(x=>x.id===provider);
+    if(p&&p.custom){ body.imap=($('ml-imap')||{}).value||''; body.smtp=($('ml-smtp')||{}).value||''; }
+    err.style.display='none';
+    btn.disabled=true; btn.textContent='Connecting…';
+    try{
+      await AMV_API.mailConnect(body);
+      /* Cleared the moment it has been handed over. There is no reason for a
+         mailbox password to stay in a DOM node after it has been used. */
+      const pw=$('ml-pass'); if(pw) pw.value='';
+      await refreshMailStatus();
+      r.innerHTML='';
+      toast('Mailbox connected','success');
+      try{ _refreshIntegrationsUI(); }catch(e){}
+    }catch(e){
+      /* The server distinguishes a wrong password from IMAP being switched off
+         from a server that did not answer, and each needs a different action -
+         so its sentence is shown rather than a generic failure. */
+      err.textContent=String((e&&e.message)||'Could not connect.');
+      err.style.display='';
+      btn.disabled=false; btn.textContent='Connect';
+    }
+  });
+}
+
+async function disconnectMail(){
+  if(!confirm('Disconnect this mailbox? AMV will stop reading it and will forget the password.')) return;
+  try{ await AMV_API.mailDisconnect(); }catch(e){}
+  await refreshMailStatus();
+  toast('Mailbox disconnected','success');
+  try{ _refreshIntegrationsUI(); }catch(e){}
+}
+
+/* The inbox, and the thing a person actually wants: a summary of it. */
+async function openMailInbox(){
+  const r=$('ovr'); if(!r) return;
+  r.innerHTML='<div class="ov" id="mi-bg"><div class="ml-modal"><div class="ml-head">'+
+    '<div><div class="eyebrow">Mail</div><h2>Your inbox</h2></div>'+
+    '<button class="tp-x" id="mi-x" aria-label="Close">✕</button></div>'+
+    '<div id="mi-body"><p class="mu">Reading your mailbox…</p></div></div></div>';
+  on($('mi-bg'),'click',(e)=>{ if(e.target===e.currentTarget) r.innerHTML=''; });
+  on($('mi-x'),'click',()=>{ r.innerHTML=''; });
+
+  let data=null;
+  try{ data=await AMV_API.mailInbox(25); }
+  catch(e){
+    const b=$('mi-body'); if(b) b.innerHTML='<div class="ml-err" role="alert">'+escH(String((e&&e.message)||'Could not read the mailbox.'))+'</div>';
+    return;
+  }
+  const msgs=(data&&data.messages)||[];
+  const b=$('mi-body'); if(!b) return;
+  if(!msgs.length){ b.innerHTML='<p class="mu">Nothing in the inbox right now.</p>'; return; }
+  b.innerHTML='<div class="mi-list">'+msgs.map(m=>
+      '<div class="mi-row'+(m.seen?'':' unread')+'">'+
+        '<div class="mi-from">'+escH(m.from||'(no sender)')+'</div>'+
+        '<div class="mi-subj">'+escH(m.subject||'(no subject)')+'</div>'+
+        '<div class="mi-date">'+escH(m.date||'')+'</div>'+
+      '</div>').join('')+'</div>'+
+    '<div class="ml-foot"><button class="btn bp" id="mi-sum">Summarize these in chat</button></div>';
+  on($('mi-sum'),'click',()=>{
+    /* Handed to chat as text rather than summarised here, so it goes through
+       the same model, plan limits and spend ceiling as everything else rather
+       than round a second path. */
+    const lines=msgs.map(m=>'- '+(m.from||'?')+' | '+(m.subject||'(no subject)')+' | '+(m.date||''));
+    r.innerHTML='';
+    try{
+      setTab('chat');
+      const box=$('inp'); if(box){ box.value='Summarize my inbox and tell me what needs a reply:\n'+lines.join('\n'); box.focus(); }
+    }catch(e){}
+  });
+}
+
+/* Exposed by name because the catalogue's Run button resolves its handler
+   through window[...] - a function that is only a top-level declaration works
+   in the bundle today and stops working the moment anything wraps it. */
+window.openMailConnect = openMailConnect;
+window.openMailInbox   = openMailInbox;
+window.disconnectMail  = disconnectMail;
+window.refreshMailStatus = refreshMailStatus;
 
 /* ============================================================
    AMV ENGINE - real working backbone for the dev/agent tools

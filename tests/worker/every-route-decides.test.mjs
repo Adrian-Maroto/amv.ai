@@ -42,7 +42,7 @@ const VERIFIERS = [...src.matchAll(/function\s+(verify[A-Za-z]*(?:Signature|Webh
    here as newly unauthenticated. Recognising a name is only safe if the name
    really does the check, so that is asserted below rather than assumed. */
 const AUTH = new RegExp(
-  ['requireUser\\(', '_adminTokenOK\\(', '_adminOk\\(', '_requireAdmin\\(', '_adminGate\\(']
+  ['requireUser\\(', '_adminTokenOK\\(', '_adminOk\\(', '_requireAdmin\\(', '_adminGate\\(', '_mailRun\\(']
     .concat(VERIFIERS.map(v => v + '\\(')).join('|'));
 
 /* Public on purpose, each with the reason it has to be. */
@@ -111,6 +111,15 @@ section('Each name this check accepts as "authenticates" actually does');
      'and returns a refusal when it does not match', gate.replace(/\s+/g, ' ').slice(-260));
   ok(/_adminTokenOK\(/.test(codeOnly(bodyOf('_adminOk'))), '_adminOk does too', true);
   ok(/_adminTokenOK\(/.test(codeOnly(bodyOf('_requireAdmin'))), 'and so does _requireAdmin', true);
+
+  /* The sixth way, and the one that caught this check out again: the mail
+     routes hand the whole request to _mailRun, which authenticates, rate
+     limits and loads the mailbox. Recognising the name is only safe if the
+     name really does the check. */
+  const mail = codeOnly(bodyOf('_mailRun'));
+  ok(/requireUser\(/.test(mail), '_mailRun authenticates', true);
+  ok(/return json\(\{ error: 'unauthorized' \}, 401\)/.test(mail.replace(/\s+/g, ' ')),
+     'and refuses when there is nobody there', true);
 
   /* And the gate must not be able to let somebody through by failing. Storage
      being unreachable relaxes the RATE LIMIT deliberately; it must never
