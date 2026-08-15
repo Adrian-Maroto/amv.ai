@@ -198,7 +198,12 @@ section('It still cannot be used to grant the crew permission it does not have')
   }, attack);
   await L.settle();
 
-  await jobDueNow('Email my teacher about the deadline');
+  /* A job that RUNS, because this section is about the system prompt a run is
+     given. "Email my teacher" now stops before the prompt is built and asks for
+     the mailbox and the address it would need - correct, and covered in
+     worker/a-run-asks-for-what-it-needs - but a run that never reaches the
+     model builds no prompt for this to read. */
+  await jobDueNow('Draft a note to the client about the deadline');
   const sys = await runCronAndReadPrompt();
 
   ok(/cannot send email/i.test(sys), 'it still cannot send email', /cannot send email/i.test(sys));
