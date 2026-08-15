@@ -4495,3 +4495,36 @@ from the server, never inferred from a local flag - and the fetch has to
 complete BEFORE the repaint, or the honest answer arrives after the wrong one
 is on screen. Before shipping a status indicator, name the line of code that
 makes it change. If there isn't one, it is a picture of a status.
+
+## 246. A watcher whose pattern matches its own command line waits for itself
+
+The shippability gate is watched by polling for its process:
+
+    until ! pgrep -f "node check.mjs"; do sleep 20; done
+
+The watcher runs as `bash -c '... pgrep -f "node check.mjs" ...'`, so its OWN
+command line contains that string. `pgrep -f` matches against the full command
+line of every process, including the watcher. The condition is therefore never
+false. It waits for itself, for ever, and reports "still running" the entire
+time.
+
+It cost three hours in one afternoon. The gate had finished and FAILED at
+17:57; the watcher was still reporting it as running at 21:08, and the only
+reason anybody found out was the owner asking why it had been four hours.
+
+Two things made it survive scrutiny. It is indistinguishable from a slow run -
+"still running" is exactly what a healthy long job looks like. And the answer
+it gives is the reassuring one, so nobody goes looking.
+
+The tell was never the process list, it was the LOG: 1KB written in 53 minutes
+where a healthy run produces about 900KB, and an mtime fourteen minutes stale.
+The artifact the job actually produces is evidence; the process table was the
+thing lying.
+
+**Rule:** never let a watcher's liveness test match text that appears in its
+own command line - `pgrep -f "[n]ode check.mjs"`, a pidfile, or the exit status
+of the job itself. And prefer the ARTIFACT over the process: does the log still
+grow, did the marker appear, did the output file change. Above all, a watcher
+must be able to say "I do not know" - one that can only ever report progress is
+not a watcher, it is a reassurance. Same family as #239: a check that cannot
+find anything looks exactly like a check that found nothing wrong.
