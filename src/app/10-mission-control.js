@@ -5,6 +5,24 @@
    each one with a click. Nothing is sent without your OK.
    ============================================================ */
 function _cwJobs(){ return load('amv_cw_jobs') || _cwDefaultJobs(); }
+
+/* ── THE EVERYDAY JOBS JOIN THE DEFINITIONS, NOT THE LIST ────────────────────
+
+   The server sync rebuilds `amv_cw_jobs` from _cwDefaultJobs() on every run -
+   deliberately, because the definitions are the source of truth for what a job
+   IS and the server only says whether it is ON. Which means a job appended to
+   somebody's saved list is silently deleted the next time that sync runs.
+
+   So these are cached where the definitions are read from, and _cwDefaultJobs
+   returns the built-in jobs FIRST and unchanged, with the everyday ones after.
+   Nothing that was already there moves, changes id, or disappears. */
+function _everydayDefs(){
+  const d = load('amv_everyday_defs');
+  return Array.isArray(d) ? d : [];
+}
+function _everydayCache(list){
+  store('amv_everyday_defs', Array.isArray(list) ? list : []);
+}
 function _cwSaveJobs(j){ store('amv_cw_jobs', j); }
 function _cwDefaultJobs(){ return [
   { id:'job_hunt', cat:'Work & career', icon:'\uD83D\uDCBC', title:'Job hunt - find and prepare applications', needs:'Email, Web research', on:false,
@@ -499,7 +517,7 @@ function _cwDefaultJobs(){ return [
     asks:{ q:'Anything AMV should know beyond your classes?', ph:'Things Classroom does not have - a job, training, a test that was announced in class - or leave it blank and it works from Classroom alone' },
     sample:['Read from Classroom: 6 classes, 9 pieces of work still ahead.','DUE IN 2 DAYS - History essay (worth 40 points, the biggest thing this fortnight). Not mentioned since it was set.','DUE FRIDAY - Chemistry problem set, and the biology reading.','NO DUE DATE - the art portfolio. It has been open 3 weeks, which is usually how those end up done in one night.','THE COLLISION: history and chemistry both land Friday. Do the essay Wednesday or you are doing both on Thursday.','AMV reads Classroom. It cannot submit anything, and it is not able to - it was never given permission to.'],
     prompt:'You are given the user’s real coursework from Google Classroom: each piece, its class, its due date and what it is worth. Build them a plan around it. Lead with what is due soonest and what is worth most, name any day where two significant things collide and give the specific move that fixes it, and call out anything with no due date that has been open a long time, because that is what gets done badly at the last minute. Use the points to say which piece actually matters. If they have told you anything Classroom does not know about, fold it in. Be brief - this is read before school. Never invent a piece of work or a due date: everything you list must be in what you were given. If any class could not be read, say so at the top and name it - a plan that quietly omits a class reads as \u2018nothing is due\u2019 for it, and that is how somebody misses a deadline AMV told them about. State plainly that you can read their coursework and cannot submit anything.' },
-]; }
+].concat(_everydayDefs()); }
 /* ── WHAT A JOB NEEDS, AGAINST WHAT IS ACTUALLY CONNECTED ────────────────────
 
    Every preset already declared its requirements in `needs`, and nothing ever

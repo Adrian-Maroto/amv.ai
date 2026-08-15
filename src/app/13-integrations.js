@@ -716,6 +716,12 @@ function _integrationsCatalogHTML(){
               icon:'\uD83D\uDCBC',bg:'rgba(200,160,90,.14)'})+
       /* The answer to "does any of this work where I live", which is the first
          thing somebody outside the United States wants to know. */
+      /* The half of "what works where I live" that is not a directory: the
+         things somebody there does every week. */
+      intRow({id:'everyday',name:'Everyday life where you live',
+              desc:'Bills, renewals, fines, official letters and school dates - watched and dated for your country, not somebody else\u2019s.',
+              auto:false,connected:false,use:'everyday',useLabel:'See yours',
+              icon:'\uD83C\uDFE0',bg:'rgba(150,170,110,.14)'})+
       intRow({id:'coverage',name:'AMV around the world',
               desc:'Every country AMV works in, and what it can do there - mail, job boards, and where it can apply for you.',
               auto:false,connected:false,use:'coverage',useLabel:'See coverage',
@@ -791,6 +797,7 @@ function _wireIntegrationCatalog(root){
   root.querySelectorAll('[data-int-use]').forEach(btn=>on(btn,'click',()=>{
     if(btn.dataset.intUse==='jobs' && typeof openJobBoards==='function') return openJobBoards();
     if(btn.dataset.intUse==='coverage' && typeof openCoverage==='function') return openCoverage();
+    if(btn.dataset.intUse==='everyday' && typeof openEveryday==='function') return openEveryday();
     setTab(btn.dataset.intUse||'chat'); toast('Upload your file with the \uD83D\uDCCE button, or just describe what you need.','info',4500); }));
 }
 window._wireIntegrationCatalog=_wireIntegrationCatalog;
@@ -1403,8 +1410,10 @@ async function openCoverage(){
     '<div class="cv-l"><span class="cv-k">Mail</span>'+
       '<span>'+escH(String(c.mail.national+c.mail.global))+' providers'+
       (c.mail.names.length?' · '+escH(c.mail.names.slice(0,2).join(', ')):'')+'</span></div>'+
+    '<div class="cv-l"><span class="cv-k">Daily</span>'+
+      '<span>'+escH(String(c.everyday||0))+' everyday jobs</span></div>'+
     '<div class="cv-l"><span class="cv-k">Jobs</span>'+
-      '<span>'+escH(String(c.jobs.boards))+' board'+(c.jobs.boards===1?'':'s')+
+      '<span>'+escH(String((c.jobs.boards||0)+(c.jobs.global||0)))+' board'+((c.jobs.boards+(c.jobs.global||0))===1?'':'s')+
       (c.jobs.names.length?' · '+escH(c.jobs.names.slice(0,2).join(', ')):'')+'</span></div>'+
     (c.jobs.autoApply
       ? '<div class="cv-auto">AMV can apply for you here</div>'
@@ -1478,4 +1487,103 @@ async function disconnectTelegram(){
   try{ _refreshIntegrationsUI(); }catch(e){}
 }
 window.disconnectTelegram = disconnectTelegram;
+
+/* ═══════════════════════════════════════════════════════════════════════
+   EVERYDAY LIFE, WHERE YOU LIVE.
+
+   The Crew catalogue was built around work: inboxes, competitors, weekly
+   reports. That is a good product for somebody with a desk job in an
+   English-speaking country and it is not most people's week. Most people's
+   week is a bill with a date on it, a renewal that lapses quietly, a fine
+   with a discount window, a document somebody official is waiting for.
+
+   Choosing a country does not create a separate feature. It folds that
+   country's jobs into the SAME Crew list as the built-in ones, with the same
+   toggles, the same access checks and the same scheduling - so there is one
+   way to run a job in AMV rather than two that drift apart.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* A guess, said as a guess. The browser's region is right often enough to
+   save a scroll and wrong often enough that it must never be silent. */
+function _everydayGuess(){
+  try{
+    const l = (navigator.languages && navigator.languages[0]) || navigator.language || '';
+    const m = /[-_]([A-Za-z]{2})$/.exec(String(l));
+    return m ? m[1].toUpperCase() : '';
+  }catch(e){ return ''; }
+}
+
+async function openEveryday(){
+  const r=$('ovr'); if(!r) return;
+  r.innerHTML=_ovShell({ id:'ed', wide:true, eyebrow:'Everyday life',
+                         title:'What you already do, every week',
+                         body:'<p class="mu">Loading\u2026</p>' });
+  _ovWire('ed');
+
+  const saved = loadStr('amv_everyday_country') || '';
+  let code = saved || _everydayGuess();
+  let d=null; try{ d=await AMV_API.everyday(code); }catch(e){ d=null; }
+  const b=$('ed-body'); if(!b) return;
+  if(!d||!Array.isArray(d.universal)){
+    b.innerHTML='<div class="ml-err">Could not load these. Try again in a moment.</div>'; return;
+  }
+
+  const paint=(data)=>{
+    const body=$('ed-body'); if(!body) return;
+    const opts=(data.countries||[]).map(c=>
+      '<option value="'+escH(c.code)+'"'+(c.code===data.country?' selected':'')+'>'+
+        escH(c.name)+'</option>').join('');
+    const row=(j,local)=>'<div class="ed-row">'+
+      '<div class="ed-i">'+escH(j.icon||'')+'</div>'+
+      '<div class="ed-t"><div class="ed-n">'+escH(j.title||'')+
+        (local?'<span class="ed-tag">'+escH(data.name||data.country)+'</span>':'')+'</div>'+
+        '<div class="ed-d">'+escH(j.desc||'')+'</div>'+
+        '<div class="ed-need">Needs '+escH(j.needs||'')+'</div></div></div>';
+    const chosen = !!(data.country && data.local && data.local.length);
+    body.innerHTML=
+      '<p class="mu ml-intro">These are things you already do. AMV does not do them for you - it watches for '+
+        'them, works out the date, and tells you in time. Nothing is paid, filed or renewed on your behalf.</p>'+
+      '<label class="ml-f cv-find"><span>Where do you live?</span>'+
+        '<select id="ed-c"><option value="">Choose a country</option>'+opts+'</select></label>'+
+      (chosen
+        ? '<div class="cv-c-h">'+escH(data.name||data.country)+' \u00b7 '+data.local.length+'</div>'+
+          data.local.map(j=>row(j,true)).join('')
+        : '<p class="mu">Choose a country and the ones specific to it appear here.</p>')+
+      '<div class="cv-c-h">Everywhere \u00b7 '+data.universal.length+'</div>'+
+      data.universal.map(j=>row(j,false)).join('')+
+      '<div class="ml-foot"><button class="btn bp" id="ed-add"'+(chosen?'':' disabled')+'>'+
+        'Add '+((chosen?data.local.length:0)+data.universal.length)+' to my Crew</button></div>';
+
+    on($('ed-c'),'change',async(e)=>{
+      const c=e.target.value;
+      const sel=$('ed-c'); if(sel) sel.disabled=true;
+      try{ const nd=await AMV_API.everyday(c); paint(nd); }
+      catch(err){ if(sel) sel.disabled=false; toast('Could not load those','error'); }
+    });
+    on($('ed-add'),'click',()=>{
+      /* Cached where the DEFINITIONS are read from, not appended to the saved
+         list - the server sync rebuilds that list from the definitions every
+         run, so anything only in the list is deleted the next time it runs. */
+      const defs=(data.local||[]).concat(data.universal).map(j=>Object.assign({}, j, {
+        cat:'Everyday life', on:false,
+      }));
+      _everydayCache(defs);
+      if(data.country) saveStr('amv_everyday_country', data.country);
+      /* Rebuild from definitions so the new ones appear, keeping every switch
+         somebody had already set. */
+      try{
+        const byId={}; (_cwJobs()||[]).forEach(j=>{ byId[j.id]=j; });
+        _cwSaveJobs(_cwDefaultJobs().map(def=>Object.assign({}, def, {
+          on: byId[def.id] ? !!byId[def.id].on : !!def.on,
+          autoId: byId[def.id] ? (byId[def.id].autoId||null) : null,
+        })));
+      }catch(e){}
+      r.innerHTML='';
+      toast(defs.length+' added to your Crew, all switched off until you turn them on','success');
+      try{ if(typeof renderCrewView==='function') renderCrewView(); }catch(e){}
+    });
+  };
+  paint(d);
+}
+window.openEveryday = openEveryday;
 

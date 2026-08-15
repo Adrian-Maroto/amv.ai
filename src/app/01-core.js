@@ -615,6 +615,8 @@ const AMV_API = {
   async spendLimits(){ const r=await this._fetch('/v1/spend/limits',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
   async spendSet(limits){ const r=await this._fetch('/v1/spend/set',{method:'POST',body:JSON.stringify({limits})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
 
+  /* THE THINGS PEOPLE ALREADY DO, WHERE THEY LIVE. */
+  async everyday(country){ const r=await this._fetch('/v1/everyday',{method:'POST',body:JSON.stringify({country})}); const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(d.error||'Could not load these.'); return d; },
   /* WHAT AMV DOES, PER COUNTRY. Computed on the server from the same
      registries the features use, so this can never claim more than exists. */
   async coverage(){ const r=await this._fetch('/v1/coverage',{method:'POST',body:'{}'}); const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(d.error||'Could not load coverage.'); return d; },

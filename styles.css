@@ -8490,3 +8490,18 @@ html,body{height:100%;height:100dvh}
    is the only reason anybody opens the coverage board. */
 .cv-find{margin-bottom:var(--sp-4)}
 .cv-find input{width:100%}
+
+/* ── LAYER A83: EVERYDAY LIFE WHERE YOU LIVE ─────────────────────────────
+   A list somebody reads down looking for the two or three that are their
+   week, so the title carries and the rest recedes. */
+.ed-row{display:flex;gap:var(--sp-3);padding:var(--sp-3) 0;border-bottom:1px solid var(--bd)}
+.ed-row:last-child{border-bottom:0}
+.ed-i{font-size:var(--t-xl);line-height:1.2;flex:0 0 auto;width:28px;text-align:center}
+.ed-t{min-width:0}
+.ed-n{font-size:var(--t-md);font-weight:600;color:var(--tx);display:flex;gap:var(--sp-2);
+  align-items:center;flex-wrap:wrap}
+.ed-tag{font-size:var(--t-xs);font-weight:500;color:var(--accent);
+  background:var(--accent-soft);border-radius:var(--r-pill);padding:1px var(--sp-2)}
+.ed-d{font-size:var(--t-sm);color:var(--mu);line-height:1.5;margin-top:2px}
+.ed-need{font-size:var(--t-xs);color:var(--dim);margin-top:var(--sp-1)}
+.cv-find select{width:100%}
