@@ -1001,7 +1001,30 @@ const _MC_OUTCOME = {
   waiting:   ['wait',      'Waiting for your approval'],
   suggested: ['idle',      'Not run - suggest only'],
   failed:    ['err',       'Did not complete'],
+  /* Its own state, not a failure. A run stopped because it has not been given
+     a permission has done nothing wrong, and showing it in red beside real
+     breakages teaches people to ignore the red. */
+  needs_access: ['need',   'Needs your permission'],
 };
+/* WHAT TODAY'S RUN IS WAITING FOR, ON TODAY'S RUN.
+
+   The server sends the missing permissions as data rather than only as prose,
+   so each one can be listed against the run that wanted it and can name the
+   place it is fixed. That matters because the same job asks for different
+   things on different days - a single line saying "needs access" on a job that
+   runs every night tells somebody nothing about which night or what for. */
+function _mcNeeds(r){
+  const list = Array.isArray(r && r.needs) ? r.needs : [];
+  if(!list.length) return '';
+  return `<span class="mc-need">
+    <span class="mc-need-h">Important - to finish this run AMV needs:</span>
+    <span class="mc-need-l">${list.map(n=>`<span class="mc-need-i">
+      <b>${escH(String(n.needs||''))}</b>
+      <em>so it can ${escH(String(n.label||''))}${n.where?` · add it in ${escH(String(n.where))}`:''}</em>
+    </span>`).join('')}</span>
+  </span>`;
+}
+
 function _mcAgo(ts){
   const d = Number(ts)||0; if(!d) return '';
   const m = Math.round((Date.now()-d)/60000);
@@ -1050,6 +1073,7 @@ function _mcActivityHTML(){
             <span class="mc-act-sep">·</span>${escH(_mcMoney(r.costUSD))}
             ${r.approval?`<span class="mc-act-sep">·</span>ran as “${escH((MC_LEVELS.find(l=>l.id===r.approval)||{}).label || r.approval)}”`:''}
           </span>
+          ${_mcNeeds(r)}
         </span>
       </div>`;
     }).join('')}</div>

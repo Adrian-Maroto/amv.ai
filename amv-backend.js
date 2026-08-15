@@ -1997,6 +1997,23 @@ async function _autoDueCandidates(env, now) {
    the first five minutes of an hour - that is when the full sweep runs - so a
    measurement that cannot say when it is running measures a different thing
    depending on when somebody runs it. Production never passes it. */
+/* WHAT A RUN CHANGES ABOUT A JOB, AND WHAT SURVIVES BEING WRITTEN BACK.
+
+   The tick works on its own copy of the record and merges the result back
+   under the lock, field by field, so a change somebody made in the app while
+   the job was running is not overwritten wholesale. That is right, and it has
+   the failure mode every hand-written field list has: the merge copied four
+   fields while the run set six, and the two it missed were simply lost.
+
+   `lastLevel` had been lost that way for as long as it has existed - the
+   suggest branch records which permission level a run actually executed at,
+   precisely so it cannot be inferred wrongly later, and it never once reached
+   storage. Nothing failed; the field was just always empty.
+
+   Named here, and asserted against what the tick actually assigns, so adding a
+   seventh forces the decision instead of quietly not persisting. */
+const AUTO_CARRY_KEYS = ['next', 'runs', 'errors', 'lastError', 'lastLevel', 'lastNeeds'];
+
 async function runDueAutomations(env, atMs){
   const now = +atMs || Date.now();
   const started = Date.now();
@@ -2130,6 +2147,11 @@ async function runDueAutomations(env, atMs){
        immediately on an entitlement with no familyOf, so this is a read only
        for accounts that actually belong to one. */
     const fam = await _familyOf(env, email, ent);
+    /* What this person has connected, read once for the whole user rather than
+       once per job. The needs check below runs for every due item, so its cost
+       has to be flat in the number of jobs. */
+    let connected = {};
+    try { connected = await _autoConnected(env, email); } catch (e) { connected = {}; }
     const budget = _autoBudget({ plan: sub.plan, custom: sub.customCfg }, fam);
     const costCeiling = budget.ceiling;
     const costName = `cost:${sub.subject}:${_periodKeyFor(sub.renewedAt, sub.plan, sub.customCfg)}`;
@@ -2249,6 +2271,37 @@ async function runDueAutomations(env, atMs){
         continue;
       }
 
+      /* ASKED BEFORE ANYTHING IS SPENT.
+
+         Recomputed on every run, from this run's own instruction plus anything
+         a previous run of it discovered - so a job whose work changes from day
+         to day asks for what TODAY needs rather than what it needed when it
+         was created. A run stopped here is deliberately not counted as a
+         failure: five failures switch a job off, and somebody who has not
+         pasted a token yet has not broken anything. */
+      const needs = _autoNeedsFor(item, connected, item.discoveredNeeds);
+      if(!needs.ready){
+        rec.results = (rec.results||[]).concat({
+          id: 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2,6),
+          autoId: item.id, detail: item.detail, at: now, read: false,
+          kind: 'needs_access', approval: level, outcome: 'needs_access', costUSD: 0,
+          /* Carried as data as well as prose so the interface can list them,
+             link each one to the place it is fixed, and stop showing it the
+             moment it is connected. */
+          needs: needs.missing,
+          out: _autoNeedsMessage(item, needs.missing, now)
+        }).slice(-AUTO_MAX_RESULTS);
+        audit(env, 'auto_needs_access', { email, item: item.id, missing: needs.missing.map(m=>m.id) });
+        item.runs = (item.runs||0) + 1;
+        item.lastNeeds = needs.missing.map(m=>m.id);
+        item.next = now + (item.interval || AUTO_INTERVALS.daily);
+        ran++; changed = true;
+        continue;
+      }
+      /* Cleared, so a job that was blocked yesterday and is fine today does not
+         keep showing yesterday's request. */
+      if(item.lastNeeds && item.lastNeeds.length) item.lastNeeds = [];
+
       try{
         const exec = await _autoExecute(env, item, budget, email, rec.standing || '');
         const out = (exec && exec.text) || '';
@@ -2335,10 +2388,7 @@ async function runDueAutomations(env, atMs){
         for(const item of (fresh.items||[])){
           const after = ran.get(item.id);
           if(!after) continue;
-          item.next = after.next;
-          item.runs = after.runs;
-          item.errors = after.errors;
-          item.lastError = after.lastError;
+          for(const k of AUTO_CARRY_KEYS) item[k] = after[k];
           /* A job the RUN switched off after five failures stays off. A job the
              PERSON switched off stays off too - so this only ever turns one
              off, never back on. */
@@ -16739,4 +16789,135 @@ async function mailSend(request, env) {
     audit(env, 'mail_sent', { by: user.email, to: to.length, provider: cfg.provider });
     return { sent: true, to };
   }, 'messages sent');
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   WHAT THIS RUN NEEDS, ASKED BEFORE IT RUNS.
+
+   A scheduled job discovers what it needs while it is running, and until now
+   it had no way to say so. "Every day at 7pm check Canvas and do my work"
+   needs different things on different days: Monday's quiz needs nothing but
+   the Canvas token, Tuesday's essay needs Drive to make a copy of the
+   worksheet, Thursday's group project needs an address to send it to. A job
+   that cannot ask for the second and third half-finishes, and the person finds
+   out by looking.
+
+   So the question is asked PER RUN. The set is computed from this run's own
+   instruction and from whatever the run has already discovered, every time it
+   fires - which is the only way Tuesday can ask for something Monday did not.
+
+   Three rules, each a real failure in the keyword check this replaces:
+
+     - it runs on the SERVER, because the cron has no browser and unattended
+       work is exactly where this matters;
+     - it is asked BEFORE any money is spent, so a run that cannot finish does
+       not bill somebody for the half that worked;
+     - a run stopped for a missing permission is NOT a failure. Failures count
+       towards switching a job off after five, and somebody who has not pasted
+       a token yet has not broken anything.
+
+   And it only claims what the SERVER can actually check. Google, mail and
+   Canvas are held here and are genuinely verifiable. GitHub and Slack are
+   connected in the browser and nowhere else, so a scheduled run cannot use
+   them at all - and saying that plainly is better than a nightly job quietly
+   producing text that goes nowhere, which is what happened before.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+const AUTO_CAPABILITIES = [
+  { id: 'google', label: 'use your Google account (Drive, Docs, Calendar or Gmail)',
+    needs: 'your Google account connected to AMV',
+    where: 'Integrations, then Google',
+    match: /\b(gmail|google|drive|docs?|sheets?|spreadsheet|slides|calendar|meeting|appointment)\b/i,
+    has: (c) => !!c.google },
+
+  { id: 'mail', label: 'read your inbox or send from it',
+    needs: 'your mailbox connected, using the app password your provider gives you',
+    where: 'Integrations, then Mail worldwide',
+    /* NOT the bare word "email". "Email me a summary" is a DELIVERY
+       instruction, already handled by the job's notify setting, and matching it
+       blocked jobs that never needed a mailbox at all - which is how a
+       permission check stops being useful and starts being something people
+       route around. This asks for reading or replying to somebody's own
+       mailbox, which is the only thing that actually needs the credential. */
+    match: /\b(my (?:e-?mails?|inbox|mailbox)|inbox|unread|reply to|read (?:my )?e-?mails?|check (?:my )?(?:e-?mail|mail)|qq ?mail|163 ?mail|naver|yandex|gmx)\b/i,
+    has: (c) => !!c.mail },
+
+  { id: 'school', label: 'read your Canvas coursework',
+    needs: 'your school’s Canvas address and an access token',
+    where: 'Integrations, then Canvas LMS',
+    match: /\b(canvas|assignment|homework|coursework|lms|my class(?:es)?|due (?:today|tomorrow|this week))\b/i,
+    has: (c) => !!c.school },
+
+  /* Not an integration - a fact only the person has. A job told to send its
+     work somewhere cannot invent the address, and the old behaviour was to
+     produce the work and stop, without saying why. Satisfied by an address in
+     the instruction itself, or by Canvas being connected, since AMV can look a
+     course's teacher up there. */
+  { id: 'recipient', label: 'send this to somebody',
+    needs: 'the address it should go to - put it in the job’s instructions, or connect Canvas so AMV can look your teacher up',
+    where: 'the job itself',
+    match: /\b(send (?:it|this|them)?\s?(?:to|off)|submit (?:it|this)|hand (?:it )?in|email (?:it|this) to|email (?:my|the) (?:teacher|professor|tutor|boss|manager))\b/i,
+    has: (c, item) => /[^@\s]+@[^@\s]+\.[^@\s]+/.test(String((item && item.detail) || '')) || !!c.school },
+
+  /* Connected in the browser and nowhere else, so the cron genuinely cannot
+     reach them. Stated rather than silently skipped. */
+  { id: 'github', label: 'change a repository',
+    needs: 'GitHub connected on the server - today it is connected in your browser only, so scheduled runs cannot reach it',
+    where: 'Integrations, then GitHub',
+    match: /\b(github|pull request|\bpr\b|repository|repo|commit|merge)\b/i,
+    has: () => false, browserOnly: true },
+  { id: 'slack', label: 'post to Slack',
+    needs: 'Slack connected on the server - today it is connected in your browser only, so scheduled runs cannot reach it',
+    where: 'Integrations, then Slack',
+    match: /\b(slack|post to (?:the )?channel|#[a-z0-9_-]{2,})\b/i,
+    has: () => false, browserOnly: true },
+];
+
+/* One pass over what this person has, so resolving a run's needs is a fixed
+   handful of reads rather than one per capability - the tick runs this for
+   every due job and the cost has to be flat. */
+async function _autoConnected(env, email) {
+  const get = async (kind) => { try { return await DB.get(env, kind, email); } catch (e) { return null; } };
+  const [g, mail, school] = await Promise.all([get('goauth'), get('mailcfg'), get('school')]);
+  return {
+    google: !!(g && (g.refresh_token || g.access_token)),
+    mail:   !!(mail && mail.secret),
+    school: !!(school && school.token),
+  };
+}
+
+/* What THIS run is missing.
+
+   `extra` is how a run says what it worked out for itself: today's Canvas
+   assignment turning out to be an essay adds 'google', even though the job's
+   standing instruction never mentioned Drive. That is the whole reason this is
+   computed per run rather than once when the job was created. */
+function _autoNeedsFor(item, connected, extra) {
+  const text = String((item && item.detail) || '');
+  const asked = new Set((Array.isArray(extra) ? extra : []).map(String));
+  const missing = [];
+  for (const cap of AUTO_CAPABILITIES) {
+    if (!(asked.has(cap.id) || cap.match.test(text))) continue;
+    if (cap.has(connected || {}, item)) continue;
+    missing.push({ id: cap.id, label: cap.label, needs: cap.needs, where: cap.where,
+                   browserOnly: !!cap.browserOnly,
+                   why: asked.has(cap.id) ? 'discovered' : 'instruction' });
+  }
+  return { ready: missing.length === 0, missing };
+}
+
+/* The sentence somebody reads against the run that stopped.
+
+   Dated on purpose. A job that runs every night and only tonight needs
+   something new is unactionable as "I need access" - the person has to know it
+   is TODAY'S run, and which one. */
+function _autoNeedsMessage(item, missing, atMs) {
+  const when = new Date(atMs || Date.now()).toISOString().slice(0, 10);
+  const what = String((item && item.detail) || 'this job').slice(0, 140);
+  const lines = missing.map((m) => '  • ' + m.needs + '\n    (so AMV can ' + m.label + ' — add it in ' + m.where + ')');
+  return 'Important: AMV needs your permission before it can finish this.\n\n'
+       + 'Job: ' + what + '\nRun: ' + when + '\n\n'
+       + 'What it needs:\n' + lines.join('\n')
+       + '\n\nNothing was run and nothing was charged. Add ' + (missing.length > 1 ? 'these' : 'this')
+       + ' and it picks up on the next run.';
 }

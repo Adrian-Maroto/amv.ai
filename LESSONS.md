@@ -4387,3 +4387,43 @@ attempt write a second one.
 many callers it has and whether any two can run at once. And a consistency
 check cannot tell you about a record that has never been consistent with
 anything - for those, ask separately whether the record needs a lock at all.
+
+## 241. A run changed six fields and four of them survived
+
+The automation tick works on its own copy of a job and merges the result back
+under the lock, field by field, so a change somebody made in the app while the
+job was running is not overwritten wholesale. That is the right design and it
+has the failure mode every hand-written field list has: the merge copied four
+fields while the run set six.
+
+`lastLevel` had been lost that way since the day it was written. The suggest
+branch records which permission level a run actually executed at, precisely so
+it cannot be inferred wrongly later, and it never once reached storage. Nothing
+failed, no test noticed, the field was simply always empty.
+
+Found only because a new field needed to survive the same trip and did not.
+
+**Rule:** when code copies fields between two shapes of the same record, the
+list of fields is a roster, and rosters go stale silently. Name it, and assert
+it against what the writer actually assigns - computed, so the seventh field
+somebody adds next year is covered without them knowing this rule exists.
+
+## 242. A permission check that fires too often gets routed around
+
+The first version of the per-run capability check matched the bare word
+"email", so "Email me a summary of my week" asked for a mailbox connection.
+That job never needed one: it is a delivery instruction, already handled by the
+job's own notify setting.
+
+The existing crew suite caught it, because five of its assertions stopped being
+reached - the run they depended on was now stopping to ask for a permission it
+did not need.
+
+The point is not the regex. It is that a guard which interrupts work that was
+fine is worse than no guard, because people stop reading it. The matcher now
+asks for reading or replying to somebody's own mailbox, which is the only thing
+that actually needs the credential.
+
+**Rule:** when adding a check that can stop work, the question is not only
+"does it catch what it should" but "what does it stop that was already fine".
+Run the existing suite before believing the new one.
