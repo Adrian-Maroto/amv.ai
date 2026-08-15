@@ -4450,3 +4450,48 @@ a test, exactly like a comment claiming it cannot. When a capability note names
 a mechanism - a route, a tool, a function - assert the mechanism exists and
 does that thing. Otherwise the most carefully written file in the repository is
 the one most likely to be wrong.
+
+## 244. A check on ONE instance is satisfiable by a constant
+
+The coverage board computes, per country, how many mail providers and job
+boards reach it. The test proved that by picking Germany, deriving the real
+number from the registry, and comparing.
+
+Sabotage: replace the derivation with the literal `3`. The test PASSED.
+
+Germany happens to have exactly three national providers. So the one country
+chosen to prove the derivation was the one country a constant fits. The check
+had been reading a coincidence for as long as it existed, and it looked like
+one of the strongest assertions in the file - it named a real registry, did
+real arithmetic, and compared two numbers.
+
+Widened to every country, plus an assertion that the numbers are not all the
+same, there is no constant that passes. The sabotage now fails on both.
+
+**Rule:** when proving that a value is DERIVED rather than written down, one
+sample cannot do it - a single expected value is a single literal somebody can
+write. Check the whole population, and assert the population actually varies,
+so that "they are all N" cannot pass either. And sabotage by replacing the
+derivation with a constant, not by breaking it into an error: an error proves
+the code runs, a constant proves the check measures.
+
+## 245. A row whose state can never change is decoration
+
+The Telegram integration shipped its row reading `isConn('amv_telegram_on')` -
+a browser-storage key. Nothing in the codebase ever writes that key. The token
+lives on the server, so the browser has no way to know.
+
+The row would have shown "Connect" to somebody already connected, permanently.
+The obvious response to that is to connect again, which means pasting a bot
+token a second time into a product that already had one.
+
+It read as correct because every neighbouring row does the same thing -
+`isConn('amv_slack')`, `isConn('amv_discord')` - and copying the shape of the
+line beside it is how the wrong thing gets written most confidently. The mail
+connector, two rows up, had already solved it: ask the server, then repaint.
+
+**Rule:** the connected state of a credential the SERVER holds must be fetched
+from the server, never inferred from a local flag - and the fetch has to
+complete BEFORE the repaint, or the honest answer arrives after the wrong one
+is on screen. Before shipping a status indicator, name the line of code that
+makes it change. If there isn't one, it is a picture of a status.
