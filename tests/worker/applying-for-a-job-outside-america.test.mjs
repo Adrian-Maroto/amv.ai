@@ -52,8 +52,21 @@ section('The boards are the ones people in those countries actually use');
   ok(W.JOB_BOARDS.job51 && W.JOB_BOARDS.zhaopin, 'including 51job and Zhaopin for China', true);
   ok(W.JOB_BOARDS.saramin && W.JOB_BOARDS.naukri, 'and Saramin and Naukri', true);
 
-  const bad = list.filter(([, b]) => !b.name || !b.country || !b.url || !b.apply).map(([id]) => id);
+  /* A board named `global` has no country ON PURPOSE - Jooble, Careerjet and
+     the remote boards serve every country, exactly like the worldwide mail
+     providers, and giving one a country would be a lie about where it works.
+     Everything else is still required of it, and a board that is NOT global
+     must still name a country: dropping the requirement outright would let a
+     genuinely incomplete entry through, which is what this check exists for. */
+  const bad = list.filter(([, b]) =>
+    !b.name || !b.url || !b.apply || (!b.country && !b.global)).map(([id]) => id);
   ok(bad.length === 0, 'and every entry is complete', bad);
+
+  const globals = list.filter(([, b]) => b.global);
+  ok(globals.length >= 10, 'and the worldwide ones are marked as such rather than left blank',
+     globals.length);
+  ok(globals.every(([, b]) => !b.country),
+     'with no country claimed, because they are not in one', true);
 }
 
 section('Each board says what AMV can honestly do on it');
