@@ -22901,25 +22901,46 @@ async function openCoverage(){
   if(!d||!d.byContinent){ b.innerHTML='<div class="ml-err">Could not load this. Try again in a moment.</div>'; return; }
 
   const order=['Europe','Asia','North America','South America','Africa','Oceania','Other'];
-  const conts=order.filter(k=>d.byContinent[k]&&d.byContinent[k].length);
+
+  const card=(c)=>'<div class="cv-card">'+
+    '<div class="cv-n">'+escH(c.name)+'</div>'+
+    '<div class="cv-l"><span class="cv-k">Mail</span>'+
+      '<span>'+escH(String(c.mail.national+c.mail.global))+' providers'+
+      (c.mail.names.length?' · '+escH(c.mail.names.slice(0,2).join(', ')):'')+'</span></div>'+
+    '<div class="cv-l"><span class="cv-k">Jobs</span>'+
+      '<span>'+escH(String(c.jobs.boards))+' board'+(c.jobs.boards===1?'':'s')+
+      (c.jobs.names.length?' · '+escH(c.jobs.names.slice(0,2).join(', ')):'')+'</span></div>'+
+    (c.jobs.autoApply
+      ? '<div class="cv-auto">AMV can apply for you here</div>'
+      : '<div class="cv-prep">AMV prepares applications here</div>')+
+  '</div>';
+
+  /* Forty-five countries across six continents is a long scroll to reach the
+     one you live in, which is the only reason anybody opens this. Filtered in
+     the page, over data already loaded, so it costs nothing per keystroke. */
+  const paint=(q)=>{
+    const s=String(q||'').trim().toLowerCase();
+    const hit=(c)=>!s || String(c.name).toLowerCase().includes(s) || String(c.code).toLowerCase()===s;
+    const html=order.filter(k=>d.byContinent[k]&&d.byContinent[k].some(hit))
+      .map(k=>'<div class="cv-c"><div class="cv-c-h">'+escH(k)+'</div><div class="cv-grid">'+
+        d.byContinent[k].filter(hit).map(card).join('')+'</div></div>').join('');
+    const g=$('cv-list'); if(!g) return;
+    /* An empty result says so. Showing nothing reads as the page having
+       broken, and the honest answer is that AMV does not reach there yet. */
+    g.innerHTML = html || '<p class="mu">No country matches that. AMV reaches '+
+      escH(String(d.totals.countries))+' countries so far.</p>';
+  };
+
   b.innerHTML=
     '<p class="mu ml-intro">'+escH(String(d.totals.countries))+' countries across '+escH(String(d.totals.continents))+
       ' continents. Mail works in every one of them, because '+escH(String(d.totals.mailGlobal))+
       ' of the '+escH(String(d.totals.mailProviders))+' providers are the ones used worldwide - the rest are the '+
       'national ones people actually have. '+escH(String(d.totals.jobBoards))+' job boards.</p>'+
-    conts.map(k=>'<div class="cv-c"><div class="cv-c-h">'+escH(k)+'</div><div class="cv-grid">'+
-      d.byContinent[k].map(c=>'<div class="cv-card">'+
-        '<div class="cv-n">'+escH(c.name)+'</div>'+
-        '<div class="cv-l"><span class="cv-k">Mail</span>'+
-          '<span>'+escH(String(c.mail.national+c.mail.global))+' providers'+
-          (c.mail.names.length?' \u00b7 '+escH(c.mail.names.slice(0,2).join(', ')):'')+'</span></div>'+
-        '<div class="cv-l"><span class="cv-k">Jobs</span>'+
-          '<span>'+escH(String(c.jobs.boards))+' board'+(c.jobs.boards===1?'':'s')+
-          (c.jobs.names.length?' \u00b7 '+escH(c.jobs.names.slice(0,2).join(', ')):'')+'</span></div>'+
-        (c.jobs.autoApply
-          ? '<div class="cv-auto">AMV can apply for you here</div>'
-          : '<div class="cv-prep">AMV prepares applications here</div>')+
-      '</div>').join('')+'</div></div>').join('');
+    '<label class="ml-f cv-find"><span>Find your country</span>'+
+      '<input id="cv-q" type="search" autocomplete="off" placeholder="e.g. Nigeria, Brazil, ID"></label>'+
+    '<div id="cv-list"></div>';
+  paint('');
+  on($('cv-q'),'input',(e)=>paint(e.target.value));
 }
 window.openCoverage = openCoverage;
 

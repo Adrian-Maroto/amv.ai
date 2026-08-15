@@ -17339,7 +17339,7 @@ function _coverage() {
   }
 
   const codes = new Set([...Object.keys(mailNational), ...Object.keys(boards)]);
-  const countries = [...codes].sort().map((c) => {
+  const countries = [...codes].map((c) => {
     const jb = boards[c] || [];
     return {
       code: c,
@@ -17351,7 +17351,14 @@ function _coverage() {
               /* The one fact that changes what somebody expects overnight. */
               autoApply: jb.some((x) => x.apply === 'email') },
     };
-  });
+  })
+  /* BY NAME, not by code. Sorting the two-letter codes put Europe in the
+     order Austria, Belgium, Switzerland, Czechia, Germany, Denmark, Spain -
+     AT, BE, CH, CZ, DE, DK, ES - which is perfectly ordered and reads as
+     random to the one person this page exists for, who is scanning it for
+     their own country. localeCompare so accented names sort where a reader
+     expects rather than after Z. */
+  .sort((a, b) => a.name.localeCompare(b.name));
 
   const byContinent = {};
   for (const c of countries) (byContinent[c.continent] = byContinent[c.continent] || []).push(c);

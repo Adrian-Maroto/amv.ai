@@ -8484,3 +8484,9 @@ html,body{height:100%;height:100dvh}
   border:1px solid color-mix(in srgb,var(--gold) 30%,transparent);
   border-radius:var(--r-pill);padding:1px var(--sp-2)}
 @media (max-width:640px){ .cv-grid{grid-template-columns:1fr} }
+
+/* ── LAYER A82: FINDING YOUR OWN COUNTRY ─────────────────────────────────
+   Forty-five countries is a long scroll to reach the one you live in, which
+   is the only reason anybody opens the coverage board. */
+.cv-find{margin-bottom:var(--sp-4)}
+.cv-find input{width:100%}
