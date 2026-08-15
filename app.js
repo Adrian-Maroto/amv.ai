@@ -615,6 +615,13 @@ const AMV_API = {
   async spendLimits(){ const r=await this._fetch('/v1/spend/limits',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
   async spendSet(limits){ const r=await this._fetch('/v1/spend/set',{method:'POST',body:JSON.stringify({limits})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
 
+  /* WHAT AMV DOES, PER COUNTRY. Computed on the server from the same
+     registries the features use, so this can never claim more than exists. */
+  async coverage(){ const r=await this._fetch('/v1/coverage',{method:'POST',body:'{}'}); const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(d.error||'Could not load coverage.'); return d; },
+  async telegramStatus(){ const r=await this._fetch('/v1/telegram/status',{method:'POST',body:'{}'}); return await r.json().catch(()=>({})); },
+  async telegramConnect(b){ const r=await this._fetch('/v1/telegram/connect',{method:'POST',body:JSON.stringify(b)}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not connect.'),{code:d.code}); return d; },
+  async telegramDisconnect(){ const r=await this._fetch('/v1/telegram/disconnect',{method:'POST',body:'{}'}); return await r.json().catch(()=>({})); },
+  async telegramSend(text){ const r=await this._fetch('/v1/telegram/send',{method:'POST',body:JSON.stringify({text})}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not send.'),{code:d.code}); return d; },
   /* GLOBAL JOB BOARDS. The apply call is the one that was missing entirely:
      the job hunt has always described an email application as something AMV
      submits end to end, and there was no route behind it. */
@@ -14000,6 +14007,21 @@ const _MC_OUTCOME = {
    place it is fixed. That matters because the same job asks for different
    things on different days - a single line saying "needs access" on a job that
    runs every night tells somebody nothing about which night or what for. */
+/* WHAT A JOB WILL NEED, SHOWN BEFORE IT GETS THERE.
+
+   The one below says what a run that already stopped was missing, which is
+   right and is too late to be the only place it is said. The server resolves
+   the same question for every job on the list, so the gap is visible while
+   somebody is still sitting in front of it. Rendered on the job row itself;
+   this lives here because the two belong together and drift apart otherwise. */
+function _mcWillNeed(item){
+  const list = Array.isArray(item && item.willNeed) ? item.willNeed : [];
+  if(!list.length) return '';
+  return `<span class="mc-willneed" title="${escH(list.map(n=>String(n.needs||'')).join(' · '))}">
+    Needs ${list.map(n=>escH(String(n.id||n.needs||''))).join(', ')} before this can run
+  </span>`;
+}
+
 function _mcNeeds(r){
   const list = Array.isArray(r && r.needs) ? r.needs : [];
   if(!list.length) return '';
@@ -22195,11 +22217,31 @@ function _integrationsCatalogHTML(){
       intRow({id:'jobboards',name:'Job boards worldwide (Europe, Asia and beyond)',
               desc:'StepStone, Reed, Pracuj, Naukri, Saramin, 51job, Rikunabi and more - AMV applies where a posting takes email, and prepares the rest.',
               auto:false,connected:false,use:'jobs',useLabel:'Browse boards',
-              icon:'\uD83D\uDCBC',bg:'rgba(200,160,90,.14)'})
+              icon:'\uD83D\uDCBC',bg:'rgba(200,160,90,.14)'})+
+      /* The answer to "does any of this work where I live", which is the first
+         thing somebody outside the United States wants to know. */
+      intRow({id:'coverage',name:'AMV around the world',
+              desc:'Every country AMV works in, and what it can do there - mail, job boards, and where it can apply for you.',
+              auto:false,connected:false,use:'coverage',useLabel:'See coverage',
+              icon:'\uD83C\uDF10',bg:'rgba(90,150,200,.14)'})
     )+
     cat('Messaging &amp; chat',
       intRow({id:'slack',name:'Slack',desc:'Answers, summaries and tasks inside any channel with /amv.',auto:true,connected:isConn('amv_slack'),icon:'\uD83D\uDCAC',bg:'rgba(74,21,75,.16)'})+
       intRow({id:'sms',name:'Text messages (SMS)',desc:'Run AMV from any phone by text - \u201ccheck Project X\u201d, \u201cdraft a reply\u201d.',auto:true,connected:!!smsPhone,icon:'\uD83D\uDCF1',bg:'rgba(63,185,80,.14)'})+
+      /* The messenger most of the world actually uses. Free official API, no
+         business verification, and it is the default across Russia, Ukraine,
+         Iran, much of Central Asia, and huge in Brazil, India and Nigeria -
+         where SMS costs money per message and Slack is a work tool. */
+      /* Asked of the server, like the mailbox, NOT of a local flag. The token
+         lives on the server, so a browser key is a guess - and a wrong guess
+         here shows Connect to somebody already connected, who then connects a
+         second time. */
+      intRow({id:'telegram',name:'Telegram',
+              desc:_telegramConnectedBot()
+                ? ('Connected as @'+escH(_telegramConnectedBot())+'. AMV sends your background work here.')
+                : 'Run AMV from Telegram and get your background work there - through a bot you own and can revoke.',
+              auto:true,connected:!!_TG_STATUS&&!!_TG_STATUS.connected,
+              icon:'\u2708\uFE0F',bg:'rgba(42,171,238,.16)'})+
       intRow({id:'discord',name:'Discord',desc:'Bring AMV into your servers for answers and automations.',auto:true,connected:isConn('amv_discord'),icon:'\uD83C\uDFAE',bg:'rgba(88,101,242,.16)'})
     )+
     cat('Developer',
@@ -22237,10 +22279,12 @@ function _wireIntegrationCatalog(root){
      has its own flow instead of being pushed through connectIntegration. */
   root.querySelectorAll('[data-int-conn]').forEach(btn=>on(btn,'click',()=>{
     if(btn.dataset.intConn==='mail') return openMailConnect();
+    if(btn.dataset.intConn==='telegram') return openTelegramConnect();
     connectIntegration(btn.dataset.intConn);
   }));
   root.querySelectorAll('[data-int-disc]').forEach(btn=>on(btn,'click',()=>{
     if(btn.dataset.intDisc==='mail') return disconnectMail();
+    if(btn.dataset.intDisc==='telegram') return disconnectTelegram();
     disconnectIntegration(btn.dataset.intDisc);
   }));
   root.querySelectorAll('[data-int-run]').forEach(btn=>on(btn,'click',()=>{
@@ -22250,6 +22294,7 @@ function _wireIntegrationCatalog(root){
   }));
   root.querySelectorAll('[data-int-use]').forEach(btn=>on(btn,'click',()=>{
     if(btn.dataset.intUse==='jobs' && typeof openJobBoards==='function') return openJobBoards();
+    if(btn.dataset.intUse==='coverage' && typeof openCoverage==='function') return openCoverage();
     setTab(btn.dataset.intUse||'chat'); toast('Upload your file with the \uD83D\uDCCE button, or just describe what you need.','info',4500); }));
 }
 window._wireIntegrationCatalog=_wireIntegrationCatalog;
@@ -22260,7 +22305,10 @@ function _refreshIntegrationsUI(){
   /* Status first, then repaint. Without this a mailbox that IS connected shows
      a Connect button until some other event happens to redraw the page, which
      reads as the connection having failed. */
-  try{ refreshMailStatus().then(()=>{ try{ _paintIntegrations(); }catch(e){} }); }catch(e){}
+  try{
+    Promise.all([refreshMailStatus(), refreshTelegramStatus()])
+      .then(()=>{ try{ _paintIntegrations(); }catch(e){} });
+  }catch(e){}
   return _paintIntegrations();
 }
 function _paintIntegrations(){
@@ -22544,6 +22592,11 @@ function _autoServerHTML(){
        silence that used to stand for both. */
     const err = it.lastError
       ? '<div class="asrv-err">Last run: '+escH(String(it.lastError))+'</div>' : '';
+    /* And what it WILL need, resolved by the server for every job on this
+       list. Without this, the only place a missing permission is said is
+       against a run that already stopped - so somebody schedules a job at noon
+       and finds out at 7pm that AMV could not finish it. */
+    const willNeed = (typeof _mcWillNeed === 'function') ? _mcWillNeed(it) : '';
     const runs = +it.runs||0;
     return '<div class="asrv-job">'
       +'<div class="asrv-top">'
@@ -22553,6 +22606,7 @@ function _autoServerHTML(){
       +'</div>'
       +'<div class="asrv-meta">'+escH(_autoWhenLabel(it))+' · run '+runs+' time'+(runs===1?'':'s')+'</div>'
       + err
+      + willNeed
       +'<div class="asrv-acts">'
       +'<button class="btn bs asrv-b" data-auto-act="'+(it.active?'pause':'resume')+'" data-auto-id="'+escH(String(it.id))+'">'+(it.active?'Pause':'Resume')+'</button>'
       +'<button class="btn bs asrv-b" data-auto-act="delete" data-auto-id="'+escH(String(it.id))+'">Delete</button>'
@@ -22655,6 +22709,18 @@ function showCustomTask(){
    ═══════════════════════════════════════════════════════════════════════ */
 let _MAILP = null;        // provider catalogue, fetched once
 let _MAIL_STATUS = null;  // what is connected right now
+/* Telegram sits here rather than beside its own UI because it is the same
+   fact of the same shape: a credential the SERVER holds, so the only honest
+   answer to "is this connected" comes from the server. */
+let _TG_STATUS = null;
+
+async function refreshTelegramStatus(){
+  try{ _TG_STATUS = await AMV_API.telegramStatus(); }catch(e){ _TG_STATUS = null; }
+  return _TG_STATUS;
+}
+function _telegramConnectedBot(){
+  return (_TG_STATUS && _TG_STATUS.connected && _TG_STATUS.bot) ? String(_TG_STATUS.bot) : '';
+}
 
 async function _mailLoadProviders(){
   if(_MAILP) return _MAILP;
@@ -22807,6 +22873,94 @@ window.openMailConnect = openMailConnect;
 window.openMailInbox   = openMailInbox;
 window.disconnectMail  = disconnectMail;
 window.refreshMailStatus = refreshMailStatus;
+window.refreshTelegramStatus = refreshTelegramStatus;
+
+/* ═══════════════════════════════════════════════════════════════════════
+   WHAT AMV CAN DO WHERE.
+
+   Deliberately NOT a geographic map. A real world map is a hundred kilobytes
+   of path data in a single-file app that has a hard page-weight ceiling, and
+   it would be the heaviest thing a visitor downloads - on a phone in Lagos or
+   Jakarta, which is exactly who this is for. Making the product slower for
+   the people it is meant to reach is not a trade worth making for a picture.
+
+   A board reads better anyway: continents, then countries, then what actually
+   works there. Every number comes from the server, which computes it from the
+   same registries the features use, so this page cannot promise a country
+   something the product does not do.
+   ═══════════════════════════════════════════════════════════════════════ */
+async function openCoverage(){
+  const r=$('ovr'); if(!r) return;
+  r.innerHTML=_ovShell({ id:'cv', wide:true, eyebrow:'AMV worldwide',
+                         title:'What AMV does in your country',
+                         body:'<p class="mu">Loading\u2026</p>' });
+  _ovWire('cv');
+
+  let d=null; try{ d=await AMV_API.coverage(); }catch(e){ d=null; }
+  const b=$('cv-body'); if(!b) return;
+  if(!d||!d.byContinent){ b.innerHTML='<div class="ml-err">Could not load this. Try again in a moment.</div>'; return; }
+
+  const order=['Europe','Asia','North America','South America','Africa','Oceania','Other'];
+  const conts=order.filter(k=>d.byContinent[k]&&d.byContinent[k].length);
+  b.innerHTML=
+    '<p class="mu ml-intro">'+escH(String(d.totals.countries))+' countries across '+escH(String(d.totals.continents))+
+      ' continents. Mail works in every one of them, because '+escH(String(d.totals.mailGlobal))+
+      ' of the '+escH(String(d.totals.mailProviders))+' providers are the ones used worldwide - the rest are the '+
+      'national ones people actually have. '+escH(String(d.totals.jobBoards))+' job boards.</p>'+
+    conts.map(k=>'<div class="cv-c"><div class="cv-c-h">'+escH(k)+'</div><div class="cv-grid">'+
+      d.byContinent[k].map(c=>'<div class="cv-card">'+
+        '<div class="cv-n">'+escH(c.name)+'</div>'+
+        '<div class="cv-l"><span class="cv-k">Mail</span>'+
+          '<span>'+escH(String(c.mail.national+c.mail.global))+' providers'+
+          (c.mail.names.length?' \u00b7 '+escH(c.mail.names.slice(0,2).join(', ')):'')+'</span></div>'+
+        '<div class="cv-l"><span class="cv-k">Jobs</span>'+
+          '<span>'+escH(String(c.jobs.boards))+' board'+(c.jobs.boards===1?'':'s')+
+          (c.jobs.names.length?' \u00b7 '+escH(c.jobs.names.slice(0,2).join(', ')):'')+'</span></div>'+
+        (c.jobs.autoApply
+          ? '<div class="cv-auto">AMV can apply for you here</div>'
+          : '<div class="cv-prep">AMV prepares applications here</div>')+
+      '</div>').join('')+'</div></div>').join('');
+}
+window.openCoverage = openCoverage;
+
+/* Telegram: the person's own bot, so the messages come from something they
+   control and can revoke, and AMV is not a middleman holding one bot every
+   customer shares. */
+async function openTelegramConnect(){
+  const r=$('ovr'); if(!r) return;
+  r.innerHTML=_ovShell({ id:'tg', eyebrow:'Telegram', title:'Connect your bot', body:
+    '<p class="mu ml-intro">AMV sends through a bot you own, so you can revoke it any time and the messages are not from a stranger.</p>'+
+    '<p class="ml-setup">Open Telegram, message <b>@BotFather</b>, send <b>/newbot</b>, and it gives you a token. '+
+      'Then send your new bot any message, open <b>api.telegram.org/bot&lt;your token&gt;/getUpdates</b> in a browser, and copy the <b>chat id</b> it shows.</p>'+
+    '<label class="ml-f"><span>Bot token</span><input id="tg-tok" type="password" autocomplete="off" placeholder="123456789:AA\u2026"></label>'+
+    '<label class="ml-f"><span>Chat id</span><input id="tg-chat" autocomplete="off" placeholder="e.g. 87654321"></label>'+
+    '<div class="ml-err" id="tg-err" style="display:none" role="alert"></div>'+
+    '<div class="ml-foot"><button class="btn" id="tg-cancel">Cancel</button>'+
+      '<button class="btn bp" id="tg-go">Connect</button></div>' });
+  _ovWire('tg');
+  on($('tg-cancel'),'click',()=>{ r.innerHTML=''; });
+  on($('tg-go'),'click',async()=>{
+    const btn=$('tg-go'), err=$('tg-err');
+    err.style.display='none'; btn.disabled=true; btn.textContent='Connecting\u2026';
+    try{
+      await AMV_API.telegramConnect({ token:($('tg-tok')||{}).value||'', chatId:($('tg-chat')||{}).value||'' });
+      const t=$('tg-tok'); if(t) t.value='';
+      r.innerHTML=''; toast('Telegram connected','success');
+      try{ _refreshIntegrationsUI(); }catch(e){}
+    }catch(e){
+      err.textContent=String((e&&e.message)||'Could not connect.'); err.style.display='';
+      btn.disabled=false; btn.textContent='Connect';
+    }
+  });
+}
+window.openTelegramConnect = openTelegramConnect;
+async function disconnectTelegram(){
+  if(!confirm('Disconnect Telegram? AMV will forget the bot token.')) return;
+  try{ await AMV_API.telegramDisconnect(); }catch(e){}
+  toast('Telegram disconnected','success');
+  try{ _refreshIntegrationsUI(); }catch(e){}
+}
+window.disconnectTelegram = disconnectTelegram;
 
 /* ============================================================
    AMV ENGINE - real working backbone for the dev/agent tools

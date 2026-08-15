@@ -615,6 +615,13 @@ const AMV_API = {
   async spendLimits(){ const r=await this._fetch('/v1/spend/limits',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
   async spendSet(limits){ const r=await this._fetch('/v1/spend/set',{method:'POST',body:JSON.stringify({limits})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
 
+  /* WHAT AMV DOES, PER COUNTRY. Computed on the server from the same
+     registries the features use, so this can never claim more than exists. */
+  async coverage(){ const r=await this._fetch('/v1/coverage',{method:'POST',body:'{}'}); const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(d.error||'Could not load coverage.'); return d; },
+  async telegramStatus(){ const r=await this._fetch('/v1/telegram/status',{method:'POST',body:'{}'}); return await r.json().catch(()=>({})); },
+  async telegramConnect(b){ const r=await this._fetch('/v1/telegram/connect',{method:'POST',body:JSON.stringify(b)}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not connect.'),{code:d.code}); return d; },
+  async telegramDisconnect(){ const r=await this._fetch('/v1/telegram/disconnect',{method:'POST',body:'{}'}); return await r.json().catch(()=>({})); },
+  async telegramSend(text){ const r=await this._fetch('/v1/telegram/send',{method:'POST',body:JSON.stringify({text})}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not send.'),{code:d.code}); return d; },
   /* GLOBAL JOB BOARDS. The apply call is the one that was missing entirely:
      the job hunt has always described an email application as something AMV
      submits end to end, and there was no route behind it. */

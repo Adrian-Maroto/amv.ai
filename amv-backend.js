@@ -1309,7 +1309,23 @@ async function autoList(request, env){
      that and nothing more: whether results can reach an inbox, and whether the
      plan can run background work at all. */
   const budget = await _budgetFor(env, user);
-  return json({ ok:true, items: rec.items||[], results: (rec.results||[]).slice(-AUTO_MAX_RESULTS),
+  /* WHAT EACH JOB WILL NEED, BEFORE IT GETS THERE.
+
+     A run that stops for a missing permission says so against that run - which
+     is right, and is too late to be the only place it is said. Somebody sets a
+     job up at noon and finds out at 7pm that AMV cannot finish it. Resolved
+     here too, on the list itself, so the gap is visible while they are still
+     sitting in front of it.
+
+     One read of what they have connected for the whole list, not one per job,
+     because this is a screen somebody opens constantly. */
+  let _conn = {};
+  try { _conn = await _autoConnected(env, user.email); } catch (e) { _conn = {}; }
+  const _items = (rec.items || []).map((it) => {
+    const n = _autoNeedsFor(it, _conn, it.discoveredNeeds);
+    return n.ready ? it : Object.assign({}, it, { willNeed: n.missing });
+  });
+  return json({ ok:true, items: _items, results: (rec.results||[]).slice(-AUTO_MAX_RESULTS),
                 /* Read back what the account has told its background work to do,
                    so the screen and the chat show the same standing instruction
                    rather than each remembering its own. */
@@ -4784,6 +4800,9 @@ const BACKUP_NEVER = [
      account behind it. One leaked export file must not be a way into every
      connected inbox, so this is excluded on purpose rather than forgotten. */
   'mailcfg:',
+  /* A bot token sends as somebody's own bot. Same rule as a mailbox password:
+     never in a file anybody can download. */
+  'telegram:',
   'goauth:',    // OAuth tokens - a backup file is the last place these belong
   /* A school access token, for the same reason as the bank link above it: a
      backup is a file somebody downloads, and one leaked export should not hand
@@ -5652,6 +5671,13 @@ async function _route(request, env, ctx) {
     case '/v1/admin/kill':      return adminKill(request, env);
     case '/v1/admin/user':      return adminUser(request, env);
     // --- EMBEDDABLE WIDGET ---
+    // --- WHAT AMV CAN DO, PER COUNTRY (computed from the registries) ---
+    case '/v1/coverage':        return coverageMap(request, env);
+    // --- TELEGRAM (official Bot API; the messenger most of the world uses) ---
+    case '/v1/telegram/status':     return telegramStatus(request, env);
+    case '/v1/telegram/connect':    return telegramConnect(request, env);
+    case '/v1/telegram/disconnect': return telegramDisconnect(request, env);
+    case '/v1/telegram/send':       return telegramSend(request, env);
     // --- GLOBAL JOB BOARDS (57 boards, 38 countries) ---
     case '/v1/jobs/boards':     return jobBoards(request, env);
     case '/v1/jobs/apply':      return jobApply(request, env);
@@ -6129,7 +6155,7 @@ async function authLogout(request, env) {
    left out of this list, so a deleted account kept its verification row for
    ever with nothing able to reach it. The erasure check caught it, which is
    exactly what that check is for. */
-const PER_USER_KINDS = ['acct', 'ent', 'entitleitem', 'data', 'auto', 'crewjobs', 'mailcfg', 'school', 'kyc',
+const PER_USER_KINDS = ['acct', 'ent', 'entitleitem', 'data', 'auto', 'crewjobs', 'mailcfg', 'telegram', 'school', 'kyc',
   'approvals', 'handoff', 'abuse', 'seller', 'widget', 'wallet', 'wallet_tx',
   /* The two convenience indexes: which listings somebody published and which
      conversations they are in. They name a person and point at their things,
@@ -11187,7 +11213,30 @@ async function stripeCheckout(request, env) {
   // dev fallback when no APP_URL is configured.
   const origin = (env.APP_URL || env.APP_ORIGIN || request.headers.get('Origin') || '').replace(/\/$/, '');
   const form = new URLSearchParams();
+  /* HOW THE REST OF THE WORLD PAYS.
+
+     Checkout offered cards and nothing else. That is fine in the United
+     States and it quietly excludes an enormous number of people everywhere
+     AMV was just translated for: iDEAL is the majority of Dutch online
+     payments, BLIK is how Poland pays, PIX is instant and universal in
+     Brazil, OXXO is cash at a shop counter in Mexico, and SEPA Direct Debit
+     is the ordinary way a European pays for something monthly. Somebody in
+     Warsaw could read a page in Polish, browse boards in Polish, connect a
+     Polish mailbox, and then find the only way to subscribe was a card.
+
+     `automatic_payment_methods` is Stripe's own answer to this: it offers the
+     methods that are available in the buyer's country AND valid for this kind
+     of payment, so a subscription is offered SEPA rather than a one-off method
+     that cannot recur. That correctness is exactly why this is one parameter
+     rather than a hand-kept list of method names per country - a list would be
+     wrong the first time Stripe added a market, and wrong in the direction of
+     a failed payment.
+
+     Which methods actually appear is still governed by what is enabled in the
+     Stripe dashboard, so this cannot turn anything on that the operator has
+     not agreed to. */
   form.set('mode', 'subscription');
+  form.set('automatic_payment_methods[enabled]', 'true');
   form.set('line_items[0][price]', price);
   form.set('line_items[0][quantity]', String(seats));
   /* Reuse the Stripe customer this account is already bound to.
@@ -12691,6 +12740,10 @@ async function marketBuy(request, env) {
   const origin = (env.APP_URL || env.APP_ORIGIN || request.headers.get('Origin') || '').replace(/\/$/, '');
   const form = new URLSearchParams();
   form.set('mode', 'payment');
+  /* The same for a marketplace purchase, where the single-use methods matter
+     most: PIX, OXXO, BLIK and iDEAL are all one-off payments and all of them
+     are how their countries actually buy something once. */
+  form.set('automatic_payment_methods[enabled]', 'true');
   form.set('line_items[0][price_data][currency]', 'usd');
   form.set('line_items[0][price_data][product_data][name]', ('AMV: ' + it.title).slice(0, 120));
   form.set('line_items[0][price_data][unit_amount]', String(it.price * 100));
@@ -16273,6 +16326,49 @@ const MAIL_PROVIDERS = {
               imap: 'imap.mweb.co.za', smtp: 'smtp.mweb.co.za',
               setup: 'Use your Mweb address and password.' },
 
+  /* ── North America ───────────────────────────────────────────────── */
+  comcast:  { name: 'Xfinity (Comcast)', country: 'US', flag: '🇺🇸',
+              imap: 'imap.comcast.net', smtp: 'smtp.comcast.net',
+              setup: 'In Xfinity settings, turn on third-party access for email programs, then use your Xfinity password.' },
+  bell:     { name: 'Bell / Sympatico', country: 'CA', flag: '🇨🇦',
+              imap: 'imap.bell.net', smtp: 'smtp.bell.net',
+              setup: 'Use your Bell email address and password.' },
+
+  /* ── Oceania ─────────────────────────────────────────────────────── */
+  telstra:  { name: 'Telstra (BigPond)', country: 'AU', flag: '🇦🇺',
+              imap: 'imap.telstra.com', smtp: 'smtp.telstra.com',
+              setup: 'Use your Telstra Mail address and password.' },
+
+  /* ── EVERYWHERE. ──────────────────────────────────────────────────────
+     These are not one country's providers, they are the ones somebody in
+     Lagos, Jakarta, Riyadh, Buenos Aires or Mexico City is most likely to
+     actually be using - and until now the connector had no entry for any of
+     them, which meant an American or an Indonesian could not use the feature
+     at all while a Pole could. Marked `global` so the coverage board counts
+     them for every country rather than pretending mail is unavailable where a
+     national ISP does not run a mail service. */
+  gmail:    { name: 'Gmail', country: '', flag: '🌐', global: true,
+              imap: 'imap.gmail.com', smtp: 'smtp.gmail.com',
+              setup: 'Google requires an App Password here, not your normal one. Turn on 2-Step Verification in your Google Account, then go to Security, App passwords, and create one for Mail.' },
+  outlook:  { name: 'Outlook / Hotmail / Live', country: '', flag: '🌐', global: true,
+              imap: 'outlook.office365.com', smtp: 'smtp.office365.com',
+              setup: 'If you use two-step verification, create an app password at account.microsoft.com under Security, Advanced security options. Otherwise use your normal password.' },
+  yahoo:    { name: 'Yahoo Mail', country: '', flag: '🌐', global: true,
+              imap: 'imap.mail.yahoo.com', smtp: 'smtp.mail.yahoo.com',
+              setup: 'Yahoo requires an app password. Go to Account Security, then Generate app password.' },
+  aol:      { name: 'AOL Mail', country: '', flag: '🌐', global: true,
+              imap: 'imap.aol.com', smtp: 'smtp.aol.com',
+              setup: 'AOL requires an app password, created under Account Security.' },
+  icloud:   { name: 'iCloud Mail', country: '', flag: '🌐', global: true,
+              imap: 'imap.mail.me.com', smtp: 'smtp.mail.me.com',
+              setup: 'Apple requires an app-specific password. Sign in at account.apple.com, then App-Specific Passwords, and generate one.' },
+  fastmail: { name: 'Fastmail', country: '', flag: '🌐', global: true,
+              imap: 'imap.fastmail.com', smtp: 'smtp.fastmail.com',
+              setup: 'In Fastmail go to Settings, Privacy & Security, App Passwords, and create one for IMAP/SMTP.' },
+  mailcom:  { name: 'mail.com', country: '', flag: '🌐', global: true,
+              imap: 'imap.mail.com', smtp: 'smtp.mail.com',
+              setup: 'In mail.com settings, enable POP3/IMAP access for external programs.' },
+
   /* ── Anywhere else ───────────────────────────────────────────────── */
   /* The honest answer to "does it support my provider". Every host still goes
      through the same private-address guard the web agent uses, so this cannot
@@ -17018,6 +17114,41 @@ const JOB_BOARDS = {
   gulftalent:  { name: 'GulfTalent', country: 'AE', flag: '🇦🇪', url: 'https://www.gulftalent.com', apply: 'portal' },
   alljobs:     { name: 'AllJobs', country: 'IL', flag: '🇮🇱', url: 'https://www.alljobs.co.il', apply: 'email' },
 
+  /* ── North America ───────────────────────────────────────────────── */
+  indeed:      { name: 'Indeed', country: 'US', flag: '🇺🇸', url: 'https://www.indeed.com', apply: 'portal',
+                 note: 'Indeed forbids automated applying, so AMV fills the application and you send it.' },
+  linkedin:    { name: 'LinkedIn Jobs', country: 'US', flag: '🇺🇸', url: 'https://www.linkedin.com/jobs', apply: 'account',
+                 note: 'LinkedIn forbids automation outright. AMV prepares the application and nothing more.' },
+  ziprecruiter:{ name: 'ZipRecruiter', country: 'US', flag: '🇺🇸', url: 'https://www.ziprecruiter.com', apply: 'portal' },
+  glassdoor:   { name: 'Glassdoor', country: 'US', flag: '🇺🇸', url: 'https://www.glassdoor.com/Job', apply: 'portal' },
+  usajobs:     { name: 'USAJOBS', country: 'US', flag: '🇺🇸', url: 'https://www.usajobs.gov', apply: 'portal',
+                 note: 'Federal postings; applications go through the government portal.' },
+  dice:        { name: 'Dice', country: 'US', flag: '🇺🇸', url: 'https://www.dice.com', apply: 'portal' },
+  jobbank:     { name: 'Job Bank (Government of Canada)', country: 'CA', flag: '🇨🇦', url: 'https://www.jobbank.gc.ca', apply: 'email',
+                 note: 'Most Job Bank postings publish an application address, so AMV can send these.' },
+  workopolis:  { name: 'Workopolis', country: 'CA', flag: '🇨🇦', url: 'https://www.workopolis.com', apply: 'portal' },
+  jobillico:   { name: 'Jobillico', country: 'CA', flag: '🇨🇦', url: 'https://www.jobillico.com', apply: 'portal' },
+
+  /* ── South America ───────────────────────────────────────────────── */
+  bumeran:     { name: 'Bumeran', country: 'AR', flag: '🇦🇷', url: 'https://www.bumeran.com.ar', apply: 'portal' },
+  zonajobs:    { name: 'ZonaJobs', country: 'AR', flag: '🇦🇷', url: 'https://www.zonajobs.com.ar', apply: 'portal' },
+  computrabajo:{ name: 'Computrabajo', country: 'AR', flag: '🇦🇷', url: 'https://ar.computrabajo.com', apply: 'portal' },
+
+  /* ── Southeast Asia and the Middle East ──────────────────────────── */
+  glints:      { name: 'Glints', country: 'ID', flag: '🇮🇩', url: 'https://glints.com/id', apply: 'portal' },
+  jobstreetid: { name: 'JobStreet Indonesia', country: 'ID', flag: '🇮🇩', url: 'https://www.jobstreet.co.id', apply: 'portal' },
+  karir:       { name: 'Karir.com', country: 'ID', flag: '🇮🇩', url: 'https://www.karir.com', apply: 'portal' },
+  tanqeeb:     { name: 'Tanqeeb', country: 'SA', flag: '🇸🇦', url: 'https://saudi.tanqeeb.com', apply: 'email' },
+  bayts:       { name: 'Bayt Saudi Arabia', country: 'SA', flag: '🇸🇦', url: 'https://www.bayt.com/en/saudi-arabia', apply: 'portal' },
+
+  /* ── Africa ──────────────────────────────────────────────────────── */
+  wuzzuf:      { name: 'Wuzzuf', country: 'EG', flag: '🇪🇬', url: 'https://wuzzuf.net', apply: 'portal' },
+  forasna:     { name: 'Forasna (فرصنا)', country: 'EG', flag: '🇪🇬', url: 'https://forasna.com', apply: 'portal' },
+  myjobmag:    { name: 'MyJobMag', country: 'NG', flag: '🇳🇬', url: 'https://www.myjobmag.com', apply: 'email',
+                 note: 'Many Nigerian postings list an application address directly.' },
+  careers24:   { name: 'Careers24', country: 'ZA', flag: '🇿🇦', url: 'https://www.careers24.com', apply: 'portal' },
+  brightermonday:{ name: 'BrighterMonday', country: 'KE', flag: '🇰🇪', url: 'https://www.brightermonday.co.ke', apply: 'portal' },
+
   /* ── elsewhere, so the picture is not Europe and Asia only ───────────── */
   seek:        { name: 'Seek', country: 'AU', flag: '🇦🇺', url: 'https://www.seek.com.au', apply: 'portal' },
   catho:       { name: 'Catho', country: 'BR', flag: '🇧🇷', url: 'https://www.catho.com.br', apply: 'portal' },
@@ -17144,4 +17275,220 @@ async function jobApply(request, env) {
   return json({ ok: true, sent: true, to, board: boardId,
                 remainingToday: Math.max(0, JOB_APPLY_DAILY_CAP - (res.value || 0)),
                 from: cfg.address });
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   WHAT AMV CAN DO WHERE.
+
+   The first question somebody outside the United States has is not "what
+   features does this have", it is "does any of this work where I live". Until
+   now the only way to answer that was to read an integrations list and infer.
+
+   COMPUTED FROM THE REGISTRIES, never written by hand. A country appears here
+   because a mail provider or a job board names it, and the counts are the
+   actual length of those lists. A hand-maintained coverage page is a promise
+   that goes stale in a month and then lies to exactly the people it was built
+   to reach; this one cannot say more than the product does.
+
+   Global providers - Gmail, Outlook, Yahoo, iCloud and the rest - count for
+   every country, because they are what somebody in Lagos or Jakarta is most
+   likely to actually be using. Counting only national ISPs would report Egypt
+   as having no mail, which is false and would be the wrong thing to promote.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Only the countries the registries actually name. Adding a provider for a new
+   country and forgetting this map leaves it grouped under "Other", which is
+   visible rather than silent - the coverage test asserts it is empty. */
+const CONTINENT_OF = {
+  US: 'North America', CA: 'North America', MX: 'North America',
+  BR: 'South America', AR: 'South America',
+  GB: 'Europe', IE: 'Europe', FR: 'Europe', DE: 'Europe', AT: 'Europe', CH: 'Europe',
+  ES: 'Europe', IT: 'Europe', PT: 'Europe', NL: 'Europe', BE: 'Europe', PL: 'Europe',
+  CZ: 'Europe', DK: 'Europe', NO: 'Europe', SE: 'Europe', FI: 'Europe', RU: 'Europe',
+  UA: 'Europe', TR: 'Europe',
+  CN: 'Asia', JP: 'Asia', KR: 'Asia', IN: 'Asia', SG: 'Asia', MY: 'Asia', PH: 'Asia',
+  VN: 'Asia', HK: 'Asia', TW: 'Asia', TH: 'Asia', ID: 'Asia', AE: 'Asia', SA: 'Asia', IL: 'Asia',
+  ZA: 'Africa', NG: 'Africa', EG: 'Africa', KE: 'Africa',
+  AU: 'Oceania', NZ: 'Oceania',
+};
+
+const COUNTRY_NAME = {
+  US: 'United States', CA: 'Canada', MX: 'Mexico', BR: 'Brazil', AR: 'Argentina',
+  GB: 'United Kingdom', IE: 'Ireland', FR: 'France', DE: 'Germany', AT: 'Austria',
+  CH: 'Switzerland', ES: 'Spain', IT: 'Italy', PT: 'Portugal', NL: 'Netherlands',
+  BE: 'Belgium', PL: 'Poland', CZ: 'Czechia', DK: 'Denmark', NO: 'Norway', SE: 'Sweden',
+  FI: 'Finland', RU: 'Russia', UA: 'Ukraine', TR: 'Türkiye',
+  CN: 'China', JP: 'Japan', KR: 'South Korea', IN: 'India', SG: 'Singapore',
+  MY: 'Malaysia', PH: 'Philippines', VN: 'Vietnam', HK: 'Hong Kong', TW: 'Taiwan',
+  TH: 'Thailand', ID: 'Indonesia', AE: 'United Arab Emirates', SA: 'Saudi Arabia', IL: 'Israel',
+  ZA: 'South Africa', NG: 'Nigeria', EG: 'Egypt', KE: 'Kenya',
+  AU: 'Australia', NZ: 'New Zealand',
+};
+
+/* Everything AMV can do, per country, derived. */
+function _coverage() {
+  const mailGlobal = Object.values(MAIL_PROVIDERS).filter((p) => p.global);
+  const mailNational = {};
+  for (const p of Object.values(MAIL_PROVIDERS)) {
+    if (p.global || p.custom || !p.country) continue;
+    (mailNational[p.country] = mailNational[p.country] || []).push(p.name);
+  }
+  const boards = {};
+  for (const [id, b] of Object.entries(JOB_BOARDS)) {
+    (boards[b.country] = boards[b.country] || []).push({ id, name: b.name, apply: b.apply });
+  }
+
+  const codes = new Set([...Object.keys(mailNational), ...Object.keys(boards)]);
+  const countries = [...codes].sort().map((c) => {
+    const jb = boards[c] || [];
+    return {
+      code: c,
+      name: COUNTRY_NAME[c] || c,
+      continent: CONTINENT_OF[c] || 'Other',
+      mail: { national: (mailNational[c] || []).length, global: mailGlobal.length,
+              names: (mailNational[c] || []).slice(0, 4) },
+      jobs: { boards: jb.length, names: jb.slice(0, 4).map((x) => x.name),
+              /* The one fact that changes what somebody expects overnight. */
+              autoApply: jb.some((x) => x.apply === 'email') },
+    };
+  });
+
+  const byContinent = {};
+  for (const c of countries) (byContinent[c.continent] = byContinent[c.continent] || []).push(c);
+  return {
+    countries, byContinent,
+    totals: {
+      countries: countries.length,
+      continents: Object.keys(byContinent).length,
+      mailProviders: Object.keys(MAIL_PROVIDERS).length,
+      jobBoards: Object.keys(JOB_BOARDS).length,
+      /* Said plainly: every country can use mail, because the global providers
+         work everywhere. It is the honest headline and it is also true. */
+      mailGlobal: mailGlobal.length,
+    },
+  };
+}
+
+async function coverageMap(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  return json(Object.assign({ ok: true }, _coverage()));
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   TELEGRAM - one integration, and a large part of the world.
+
+   AMV can be reached by text message, which costs money per message and is
+   really a United States and Western Europe assumption. Telegram is the
+   default messenger across Russia, Ukraine, Iran, much of Central Asia, and
+   is enormous in Brazil, India, Indonesia and Nigeria. Its Bot API is
+   official, free, needs no business verification, and is a plain HTTPS call -
+   which makes it the single widest reach available for the least work.
+
+   It is the person's OWN bot: they create it with @BotFather, paste the
+   token, and AMV talks through it. So the messages come from something they
+   control and can revoke, and AMV is not a middleman holding one bot that
+   every customer shares.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+const TELEGRAM_API = 'https://api.telegram.org';
+
+/* The token is a credential that can send as their bot, so it is encrypted at
+   rest exactly like a mailbox password, under the same key. */
+async function telegramConnect(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  const g = await guardAction(env, 'tgconn:' + user.email, 6, 300, 'Telegram connection attempts');
+  if (g) return g;
+  if (!(await _mailCredKey(env))) {
+    return json({ error: 'AMV cannot store a bot token safely on this deployment yet, so it will not store one at all. MAIL_CRED_KEY has to be set first.',
+                  code: 'needs_service' }, 503);
+  }
+  const body = await request.json().catch(() => ({}));
+  const token = String(body.token || '').trim();
+  const chatId = String(body.chatId || '').trim().slice(0, 40);
+  if (!/^\d{5,}:[A-Za-z0-9_-]{20,}$/.test(token)) {
+    return json({ error: 'That does not look like a bot token. BotFather gives you one shaped like 123456789:AA...', code: 'bad_token' }, 400);
+  }
+  if (!/^-?\d{1,20}$/.test(chatId)) {
+    return json({ error: 'AMV needs the chat id to send to. Message your bot once, then open api.telegram.org/bot<token>/getUpdates to find it.', code: 'bad_chat' }, 400);
+  }
+
+  /* Proved before it is stored, like the mailbox: a token that fails at 7am
+     during a scheduled run is worse than an error while somebody is sitting
+     here able to fix it. */
+  let who = null;
+  try {
+    const r = await fetchDeadline(`${TELEGRAM_API}/bot${encodeURIComponent(token)}/getMe`, { method: 'GET' }, 10000);
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.ok) {
+      return json({ error: 'Telegram refused that token. Check you copied the whole thing from BotFather.', code: 'tg_auth' }, 401);
+    }
+    who = d.result || {};
+  } catch (e) {
+    return json({ error: 'AMV could not reach Telegram just now. Nothing was saved - try again in a moment.', code: 'tg_unreachable' }, 502);
+  }
+
+  const enc = await _mailEncrypt(env, token);
+  if (!enc) return json({ error: 'AMV could not encrypt that token, so it did not store it.', code: 'needs_service' }, 503);
+  await _withKV(env, 'telegram', user.email, (rec) => {
+    rec.secret = enc; rec.chatId = chatId;
+    rec.botName = String(who.username || '').slice(0, 60);
+    rec.connectedAt = Date.now();
+  }, {});
+  audit(env, 'telegram_connected', { by: user.email, bot: String(who.username || '').slice(0, 40) });
+  return json({ ok: true, bot: who.username || '', chatId });
+}
+
+async function telegramDisconnect(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  await DB.del(env, 'telegram', user.email);
+  audit(env, 'telegram_disconnected', { by: user.email });
+  return json({ ok: true, connected: false });
+}
+
+async function telegramStatus(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  const rec = await DB.get(env, 'telegram', user.email);
+  /* The token never comes back, in any response. */
+  return json({ ok: true, connected: !!(rec && rec.secret),
+                bot: (rec && rec.botName) || '', chatId: (rec && rec.chatId) || '' });
+}
+
+/* Send, used by the route below and available to scheduled work. */
+async function _telegramSend(env, email, text) {
+  const rec = await DB.get(env, 'telegram', email);
+  if (!rec || !rec.secret) return { sent: false, reason: 'not_connected' };
+  const token = await _mailDecrypt(env, rec.secret);
+  if (!token) return { sent: false, reason: 'unreadable' };
+  const form = new URLSearchParams();
+  form.set('chat_id', rec.chatId);
+  form.set('text', String(text || '').slice(0, 4000));
+  form.set('disable_web_page_preview', 'true');
+  const r = await fetchDeadline(`${TELEGRAM_API}/bot${encodeURIComponent(token)}/sendMessage`,
+    { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: form.toString() }, 10000);
+  const d = await r.json().catch(() => ({}));
+  return { sent: !!(r.ok && d.ok), reason: d.description || '' };
+}
+
+async function telegramSend(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  const held = await _accountHold(env, user, 'telegram_send');
+  if (held) return held;
+  const g = await guardAction(env, 'tgsend:' + user.email, 30, 300, 'Telegram messages');
+  if (g) return g;
+  const body = await request.json().catch(() => ({}));
+  const text = String(body.text || '');
+  if (!text.trim()) return json({ error: 'The message is empty.', code: 'bad_body' }, 400);
+  let out;
+  try { out = await _telegramSend(env, user.email, text); }
+  catch (e) { return json({ error: 'AMV could not reach Telegram just now.', code: 'tg_unreachable' }, 502); }
+  if (!out.sent) {
+    if (out.reason === 'not_connected') return json({ error: 'No Telegram bot is connected yet.', code: 'tg_not_connected' }, 428);
+    return json({ error: 'Telegram did not accept that message. ' + (out.reason || ''), code: 'tg_failed' }, 502);
+  }
+  return json({ ok: true, sent: true });
 }

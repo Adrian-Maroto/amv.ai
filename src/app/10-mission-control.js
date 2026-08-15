@@ -1013,6 +1013,21 @@ const _MC_OUTCOME = {
    place it is fixed. That matters because the same job asks for different
    things on different days - a single line saying "needs access" on a job that
    runs every night tells somebody nothing about which night or what for. */
+/* WHAT A JOB WILL NEED, SHOWN BEFORE IT GETS THERE.
+
+   The one below says what a run that already stopped was missing, which is
+   right and is too late to be the only place it is said. The server resolves
+   the same question for every job on the list, so the gap is visible while
+   somebody is still sitting in front of it. Rendered on the job row itself;
+   this lives here because the two belong together and drift apart otherwise. */
+function _mcWillNeed(item){
+  const list = Array.isArray(item && item.willNeed) ? item.willNeed : [];
+  if(!list.length) return '';
+  return `<span class="mc-willneed" title="${escH(list.map(n=>String(n.needs||'')).join(' · '))}">
+    Needs ${list.map(n=>escH(String(n.id||n.needs||''))).join(', ')} before this can run
+  </span>`;
+}
+
 function _mcNeeds(r){
   const list = Array.isArray(r && r.needs) ? r.needs : [];
   if(!list.length) return '';
