@@ -4427,3 +4427,26 @@ that actually needs the credential.
 **Rule:** when adding a check that can stop work, the question is not only
 "does it catch what it should" but "what does it stop that was already fine".
 Run the existing suite before believing the new one.
+
+## 243. The capability note described a route that did not exist
+
+The job hunt's honest-capability comment says an email-apply posting is one
+AMV "can submit end to end", and names `gmail_send` as the thing that does it.
+There is no such route. There never was. The client decided `applied_email`,
+wrote the application into the person's history, and nothing was sent.
+
+The comment was not a lie when it was written - it described the intent. It
+became one when the backend it named was never built, and nothing connected
+the description to the code, so it read as true to every person who checked.
+
+This is the same shape as LESSONS #235, where the top-level catch described
+behaviour that never happened, and #241, where a field was recorded and never
+persisted. Three instances now of prose that documents an intention while the
+code does something else, and in every case the prose is what made it
+invisible: a reader checks the description, finds it reasonable, and moves on.
+
+**Rule:** a comment claiming the product CAN do something is a claim that needs
+a test, exactly like a comment claiming it cannot. When a capability note names
+a mechanism - a route, a tool, a function - assert the mechanism exists and
+does that thing. Otherwise the most carefully written file in the repository is
+the one most likely to be wrong.

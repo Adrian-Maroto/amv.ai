@@ -615,6 +615,11 @@ const AMV_API = {
   async spendLimits(){ const r=await this._fetch('/v1/spend/limits',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
   async spendSet(limits){ const r=await this._fetch('/v1/spend/set',{method:'POST',body:JSON.stringify({limits})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
 
+  /* GLOBAL JOB BOARDS. The apply call is the one that was missing entirely:
+     the job hunt has always described an email application as something AMV
+     submits end to end, and there was no route behind it. */
+  async jobBoards(){ const r=await this._fetch('/v1/jobs/boards',{method:'POST',body:'{}'}); const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(d.error||'Could not load job boards.'); return d; },
+  async jobApply(body){ const r=await this._fetch('/v1/jobs/apply',{method:'POST',body:JSON.stringify(body)}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not send the application.'),{code:d.code}); return d; },
   /* GLOBAL MAIL - the same shape as every other call here.
 
      `password` goes up and never comes back: the server encrypts it, stores

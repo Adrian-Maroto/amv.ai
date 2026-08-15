@@ -615,6 +615,11 @@ const AMV_API = {
   async spendLimits(){ const r=await this._fetch('/v1/spend/limits',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
   async spendSet(limits){ const r=await this._fetch('/v1/spend/set',{method:'POST',body:JSON.stringify({limits})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
 
+  /* GLOBAL JOB BOARDS. The apply call is the one that was missing entirely:
+     the job hunt has always described an email application as something AMV
+     submits end to end, and there was no route behind it. */
+  async jobBoards(){ const r=await this._fetch('/v1/jobs/boards',{method:'POST',body:'{}'}); const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(d.error||'Could not load job boards.'); return d; },
+  async jobApply(body){ const r=await this._fetch('/v1/jobs/apply',{method:'POST',body:JSON.stringify(body)}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not send the application.'),{code:d.code}); return d; },
   /* GLOBAL MAIL - the same shape as every other call here.
 
      `password` goes up and never comes back: the server encrypts it, stores
@@ -22154,7 +22159,14 @@ function _integrationsCatalogHTML(){
                 : 'Your own provider, in 22 countries. Reads, summarizes and drafts replies - automatically.',
               auto:true,connected:!!_mailConnectedAccount(),
               run:'openMailInbox',runLabel:'Open inbox',
-              icon:'\uD83C\uDF0D',bg:'rgba(120,180,120,.14)'})
+              icon:'\uD83C\uDF0D',bg:'rgba(120,180,120,.14)'})+
+      /* The boards somebody's country actually uses. Reachable from here
+         because this is where a person goes looking for what AMV connects
+         to, and a catalogue nothing links to is a catalogue nobody reads. */
+      intRow({id:'jobboards',name:'Job boards worldwide (Europe, Asia and beyond)',
+              desc:'StepStone, Reed, Pracuj, Naukri, Saramin, 51job, Rikunabi and more - AMV applies where a posting takes email, and prepares the rest.',
+              auto:false,connected:false,use:'jobs',useLabel:'Browse boards',
+              icon:'\uD83D\uDCBC',bg:'rgba(200,160,90,.14)'})
     )+
     cat('Messaging &amp; chat',
       intRow({id:'slack',name:'Slack',desc:'Answers, summaries and tasks inside any channel with /amv.',auto:true,connected:isConn('amv_slack'),icon:'\uD83D\uDCAC',bg:'rgba(74,21,75,.16)'})+
@@ -22207,7 +22219,9 @@ function _wireIntegrationCatalog(root){
     if(typeof fn==='function') fn();
     else toast('That automation is not available in this build.','error');
   }));
-  root.querySelectorAll('[data-int-use]').forEach(btn=>on(btn,'click',()=>{ setTab(btn.dataset.intUse||'chat'); toast('Upload your file with the \uD83D\uDCCE button, or just describe what you need.','info',4500); }));
+  root.querySelectorAll('[data-int-use]').forEach(btn=>on(btn,'click',()=>{
+    if(btn.dataset.intUse==='jobs' && typeof openJobBoards==='function') return openJobBoards();
+    setTab(btn.dataset.intUse||'chat'); toast('Upload your file with the \uD83D\uDCCE button, or just describe what you need.','info',4500); }));
 }
 window._wireIntegrationCatalog=_wireIntegrationCatalog;
 
@@ -25388,6 +25402,68 @@ function openJobHunt(){
   });
 }
 try{ window.openJobHunt=openJobHunt; }catch(e){}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   JOB BOARDS, BY COUNTRY.
+
+   The job hunt knew American boards. Somebody in Munich, Seoul, Warsaw or
+   Mumbai does not use them, so the feature was decoration for most of the
+   world. This is the catalogue, grouped by country, with the one thing a
+   person actually needs to know about each: whether AMV can finish the
+   application or only prepare it.
+
+   That distinction is shown rather than buried, because it is the difference
+   between "it applied for me overnight" and "there are twelve applications
+   waiting for me to tap send", and finding that out the hard way is how
+   somebody misses a deadline.
+   ═══════════════════════════════════════════════════════════════════════ */
+let _JOBB = null;
+
+async function _jobBoardsLoad(){
+  if(_JOBB) return _JOBB;
+  try{ _JOBB = await AMV_API.jobBoards(); }catch(e){ _JOBB = null; }
+  return _JOBB;
+}
+
+async function openJobBoards(){
+  const r=$('ovr'); if(!r) return;
+  r.innerHTML='<div class="ov" id="jb-bg"><div class="ml-modal"><div class="ml-head">'+
+    '<div><div class="eyebrow">Job hunt</div><h2>Job boards</h2></div>'+
+    '<button class="tp-x" id="jb-x" aria-label="Close">✕</button></div>'+
+    '<div id="jb-body"><p class="mu">Loading…</p></div></div></div>';
+  on($('jb-bg'),'click',(e)=>{ if(e.target===e.currentTarget) r.innerHTML=''; });
+  on($('jb-x'),'click',()=>{ r.innerHTML=''; });
+
+  const cat=await _jobBoardsLoad();
+  const b=$('jb-body'); if(!b) return;
+  if(!cat||!cat.boards){ b.innerHTML='<div class="ml-err">Could not load the boards. Try again in a moment.</div>'; return; }
+
+  const byC={};
+  for(const x of cat.boards){ (byC[x.country]=byC[x.country]||[]).push(x); }
+  const codes=Object.keys(byC).sort();
+  /* Three words, because this is the whole point of the list. */
+  const badge=(x)=> x.autoApply
+    ? '<span class="jb-can">AMV can apply</span>'
+    : '<span class="jb-prep">AMV prepares it</span>';
+
+  b.innerHTML=
+    '<p class="mu ml-intro">'+escH(String(cat.boards.length))+' boards across '+escH(String(cat.countries))+' countries. '+
+      'Where a posting publishes an address, AMV writes and sends the application from your own mailbox. '+
+      'Where the board only takes applications through its own form, AMV fills everything in and you tap send - '+
+      'those sites do not allow anything else, and AMV will not pretend otherwise.</p>'+
+    '<div class="jb-list">'+codes.map(c=>{
+      const list=byC[c];
+      return '<div class="jb-c"><div class="jb-c-h">'+escH(list[0].flag+' '+c)+'</div>'+
+        list.map(x=>'<div class="jb-row">'+
+          '<a class="jb-n" href="'+escH(x.url)+'" target="_blank" rel="noopener noreferrer">'+escH(x.name)+'</a>'+
+          badge(x)+
+          (x.note?'<div class="jb-note">'+escH(x.note)+'</div>':'')+
+        '</div>').join('')+'</div>';
+    }).join('')+'</div>'+
+    '<div class="ml-foot"><span class="mu" style="font-size:var(--t-xs)">Up to '+escH(String(cat.dailyCap))+
+      ' applications a day, so your own address is never treated as bulk mail.</span></div>';
+}
+window.openJobBoards = openJobBoards;
 /* ============================================================
    AMV UNIVERSAL AGENT CORE - the layer that lets Crew connect to
    ANYTHING and actually do it.

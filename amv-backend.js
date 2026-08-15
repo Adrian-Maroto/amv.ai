@@ -5652,6 +5652,9 @@ async function _route(request, env, ctx) {
     case '/v1/admin/kill':      return adminKill(request, env);
     case '/v1/admin/user':      return adminUser(request, env);
     // --- EMBEDDABLE WIDGET ---
+    // --- GLOBAL JOB BOARDS (57 boards, 38 countries) ---
+    case '/v1/jobs/boards':     return jobBoards(request, env);
+    case '/v1/jobs/apply':      return jobApply(request, env);
     // --- GLOBAL MAIL (IMAP/SMTP, 22 countries) ---
     case '/v1/mail/providers':  return mailProviders(request, env);
     case '/v1/mail/status':     return mailStatus(request, env);
@@ -16920,4 +16923,225 @@ function _autoNeedsMessage(item, missing, atMs) {
        + 'What it needs:\n' + lines.join('\n')
        + '\n\nNothing was run and nothing was charged. Add ' + (missing.length > 1 ? 'these' : 'this')
        + ' and it picks up on the next run.';
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   JOB BOARDS OUTSIDE AMERICA, AND AN APPLY THAT ACTUALLY SENDS.
+
+   Two problems, and the second is the one nobody had noticed.
+
+   First: the job hunt knew about American boards. Somebody in Munich, Seoul,
+   Warsaw or Mumbai does not use them, so the feature was decoration for most
+   of the world.
+
+   Second, and worse: the honest-capability note in the job hunt says an
+   email-apply job is one AMV "can submit end to end", and names `gmail_send`
+   as the thing that does it. There is no such route. There never was. The
+   client decided `applied_email`, recorded that it had applied, and nothing
+   left the building - which is precisely the class of thing AMV is not
+   allowed to do.
+
+   Both are fixed by the same piece of work. The mail connector gives AMV a way
+   to send as the person, from their own mailbox, in twenty-two countries - so
+   an email application is now genuinely sent, and it is sent from the address
+   an employer can reply to rather than from AMV.
+
+   WHERE AUTO-APPLY STOPS. Most large boards forbid automated applying in their
+   terms: LinkedIn, Indeed, Seek and Naukri all do. AMV does not do it anyway
+   and then hope. Where a board is an email application - which is still most
+   of Europe's small and mid-size employers, and every public-sector posting
+   that lists an address - AMV submits it. Everywhere else it prepares the
+   whole application and hands it over for one tap, and the board entry says
+   which of the two it is, so nobody has to guess.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* `apply` is the honest field: what AMV can actually do on this board.
+     email     an address is published, so AMV composes and sends it.
+     portal    a web form with no apply API. AMV fills everything and you tap.
+     account   applications only exist inside the board's own account system. */
+const JOB_BOARDS = {
+  /* ── Europe ──────────────────────────────────────────────────────────── */
+  stepstone:   { name: 'StepStone', country: 'DE', flag: '🇩🇪', url: 'https://www.stepstone.de', apply: 'portal' },
+  xing:        { name: 'XING Jobs', country: 'DE', flag: '🇩🇪', url: 'https://www.xing.com/jobs', apply: 'account' },
+  arbeitsagentur:{ name: 'Bundesagentur für Arbeit', country: 'DE', flag: '🇩🇪', url: 'https://www.arbeitsagentur.de/jobsuche', apply: 'email',
+                 note: 'Public-sector and Mittelstand postings here usually list an application address.' },
+  karriereat:  { name: 'karriere.at', country: 'AT', flag: '🇦🇹', url: 'https://www.karriere.at', apply: 'portal' },
+  jobsch:      { name: 'jobs.ch', country: 'CH', flag: '🇨🇭', url: 'https://www.jobs.ch', apply: 'portal' },
+  reed:        { name: 'Reed', country: 'GB', flag: '🇬🇧', url: 'https://www.reed.co.uk', apply: 'portal' },
+  totaljobs:   { name: 'Totaljobs', country: 'GB', flag: '🇬🇧', url: 'https://www.totaljobs.com', apply: 'portal' },
+  cvlibrary:   { name: 'CV-Library', country: 'GB', flag: '🇬🇧', url: 'https://www.cv-library.co.uk', apply: 'portal' },
+  irishjobs:   { name: 'IrishJobs', country: 'IE', flag: '🇮🇪', url: 'https://www.irishjobs.ie', apply: 'portal' },
+  wttj:        { name: 'Welcome to the Jungle', country: 'FR', flag: '🇫🇷', url: 'https://www.welcometothejungle.com', apply: 'portal' },
+  apec:        { name: 'APEC', country: 'FR', flag: '🇫🇷', url: 'https://www.apec.fr', apply: 'email',
+                 note: 'Cadre postings frequently publish a contact address.' },
+  francetravail:{ name: 'France Travail (Pôle emploi)', country: 'FR', flag: '🇫🇷', url: 'https://candidat.francetravail.fr', apply: 'email' },
+  infojobs:    { name: 'InfoJobs', country: 'ES', flag: '🇪🇸', url: 'https://www.infojobs.net', apply: 'portal' },
+  infojobsit:  { name: 'InfoJobs Italia', country: 'IT', flag: '🇮🇹', url: 'https://www.infojobs.it', apply: 'portal' },
+  nationalevb: { name: 'Nationale Vacaturebank', country: 'NL', flag: '🇳🇱', url: 'https://www.nationalevacaturebank.nl', apply: 'portal' },
+  vdab:        { name: 'VDAB', country: 'BE', flag: '🇧🇪', url: 'https://www.vdab.be', apply: 'email' },
+  pracuj:      { name: 'Pracuj.pl', country: 'PL', flag: '🇵🇱', url: 'https://www.pracuj.pl', apply: 'portal' },
+  olxpraca:    { name: 'OLX Praca', country: 'PL', flag: '🇵🇱', url: 'https://www.olx.pl/praca', apply: 'email' },
+  jobscz:      { name: 'Jobs.cz', country: 'CZ', flag: '🇨🇿', url: 'https://www.jobs.cz', apply: 'portal' },
+  netempregos: { name: 'Net-Empregos', country: 'PT', flag: '🇵🇹', url: 'https://www.net-empregos.com', apply: 'email' },
+  jobindex:    { name: 'Jobindex', country: 'DK', flag: '🇩🇰', url: 'https://www.jobindex.dk', apply: 'email' },
+  finn:        { name: 'FINN Jobb', country: 'NO', flag: '🇳🇴', url: 'https://www.finn.no/job', apply: 'email' },
+  arbetsformedlingen:{ name: 'Arbetsförmedlingen', country: 'SE', flag: '🇸🇪', url: 'https://arbetsformedlingen.se/platsbanken', apply: 'email' },
+  duunitori:   { name: 'Duunitori', country: 'FI', flag: '🇫🇮', url: 'https://duunitori.fi', apply: 'email' },
+  hh:          { name: 'HeadHunter (hh.ru)', country: 'RU', flag: '🇷🇺', url: 'https://hh.ru', apply: 'account' },
+  workua:      { name: 'Work.ua', country: 'UA', flag: '🇺🇦', url: 'https://www.work.ua', apply: 'portal' },
+  kariyer:     { name: 'Kariyer.net', country: 'TR', flag: '🇹🇷', url: 'https://www.kariyer.net', apply: 'portal' },
+
+  /* ── Asia ────────────────────────────────────────────────────────────── */
+  job51:       { name: '51job (前程无忧)', country: 'CN', flag: '🇨🇳', url: 'https://www.51job.com', apply: 'account' },
+  zhaopin:     { name: 'Zhaopin (智联招聘)', country: 'CN', flag: '🇨🇳', url: 'https://www.zhaopin.com', apply: 'account' },
+  bosszhipin:  { name: 'BOSS Zhipin (BOSS直聘)', country: 'CN', flag: '🇨🇳', url: 'https://www.zhipin.com', apply: 'account',
+                 note: 'Applications are a chat with the hiring manager inside the app, so AMV prepares the message rather than sending it.' },
+  liepin:      { name: 'Liepin (猎聘)', country: 'CN', flag: '🇨🇳', url: 'https://www.liepin.com', apply: 'account' },
+  rikunabi:    { name: 'Rikunabi (リクナビ)', country: 'JP', flag: '🇯🇵', url: 'https://job.rikunabi.com', apply: 'account' },
+  doda:        { name: 'doda', country: 'JP', flag: '🇯🇵', url: 'https://doda.jp', apply: 'account' },
+  mynavi:      { name: 'Mynavi (マイナビ)', country: 'JP', flag: '🇯🇵', url: 'https://tenshoku.mynavi.jp', apply: 'account' },
+  saramin:     { name: 'Saramin (사람인)', country: 'KR', flag: '🇰🇷', url: 'https://www.saramin.co.kr', apply: 'account' },
+  jobkorea:    { name: 'JobKorea (잡코리아)', country: 'KR', flag: '🇰🇷', url: 'https://www.jobkorea.co.kr', apply: 'account' },
+  wanted:      { name: 'Wanted', country: 'KR', flag: '🇰🇷', url: 'https://www.wanted.co.kr', apply: 'account' },
+  naukri:      { name: 'Naukri', country: 'IN', flag: '🇮🇳', url: 'https://www.naukri.com', apply: 'portal' },
+  foundit:     { name: 'foundit (Monster India)', country: 'IN', flag: '🇮🇳', url: 'https://www.foundit.in', apply: 'portal' },
+  shine:       { name: 'Shine', country: 'IN', flag: '🇮🇳', url: 'https://www.shine.com', apply: 'portal' },
+  mycareersfuture:{ name: 'MyCareersFuture', country: 'SG', flag: '🇸🇬', url: 'https://www.mycareersfuture.gov.sg', apply: 'portal' },
+  jobstreet:   { name: 'JobStreet', country: 'MY', flag: '🇲🇾', url: 'https://www.jobstreet.com.my', apply: 'portal' },
+  kalibrr:     { name: 'Kalibrr', country: 'PH', flag: '🇵🇭', url: 'https://www.kalibrr.com', apply: 'portal' },
+  vietnamworks:{ name: 'VietnamWorks', country: 'VN', flag: '🇻🇳', url: 'https://www.vietnamworks.com', apply: 'portal' },
+  topcv:       { name: 'TopCV', country: 'VN', flag: '🇻🇳', url: 'https://www.topcv.vn', apply: 'portal' },
+  jobsdb:      { name: 'JobsDB', country: 'HK', flag: '🇭🇰', url: 'https://hk.jobsdb.com', apply: 'portal' },
+  job104:      { name: '104 Job Bank (104人力銀行)', country: 'TW', flag: '🇹🇼', url: 'https://www.104.com.tw', apply: 'account' },
+  jobsdbth:    { name: 'JobsDB Thailand', country: 'TH', flag: '🇹🇭', url: 'https://th.jobsdb.com', apply: 'portal' },
+  bayt:        { name: 'Bayt', country: 'AE', flag: '🇦🇪', url: 'https://www.bayt.com', apply: 'portal' },
+  gulftalent:  { name: 'GulfTalent', country: 'AE', flag: '🇦🇪', url: 'https://www.gulftalent.com', apply: 'portal' },
+  alljobs:     { name: 'AllJobs', country: 'IL', flag: '🇮🇱', url: 'https://www.alljobs.co.il', apply: 'email' },
+
+  /* ── elsewhere, so the picture is not Europe and Asia only ───────────── */
+  seek:        { name: 'Seek', country: 'AU', flag: '🇦🇺', url: 'https://www.seek.com.au', apply: 'portal' },
+  catho:       { name: 'Catho', country: 'BR', flag: '🇧🇷', url: 'https://www.catho.com.br', apply: 'portal' },
+  vagas:       { name: 'Vagas.com', country: 'BR', flag: '🇧🇷', url: 'https://www.vagas.com.br', apply: 'portal' },
+  occ:         { name: 'OCC Mundial', country: 'MX', flag: '🇲🇽', url: 'https://www.occ.com.mx', apply: 'portal' },
+  jobberman:   { name: 'Jobberman', country: 'NG', flag: '🇳🇬', url: 'https://www.jobberman.com', apply: 'portal' },
+  pnet:        { name: 'Pnet', country: 'ZA', flag: '🇿🇦', url: 'https://www.pnet.co.za', apply: 'portal' },
+};
+
+/* How many applications AMV will send as somebody in one day.
+
+   An auto-apply feature that can send unbounded mail from a person's own
+   address is a spam cannon wearing a job hunt's clothes, and the account it
+   would get suspended is theirs, not AMV's. Twenty-five is more than any real
+   person sends in a day and far below anything a provider treats as bulk. */
+const JOB_APPLY_DAILY_CAP = 25;
+
+/* What AMV can honestly do on this board. */
+function _jobBoardChannel(id) {
+  const b = JOB_BOARDS[id];
+  return b ? b.apply : 'unknown';
+}
+
+/* The catalogue, so the interface can show somebody the boards their country
+   actually uses instead of four American ones. */
+async function jobBoards(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  const boards = Object.entries(JOB_BOARDS).map(([id, b]) => ({
+    id, name: b.name, country: b.country, flag: b.flag, url: b.url,
+    apply: b.apply, note: b.note || '',
+    /* Said once, here, rather than left for the interface to guess: only an
+       email application is something AMV can complete on its own. */
+    autoApply: b.apply === 'email',
+  }));
+  const countries = new Set(boards.map((b) => b.country));
+  return json({ ok: true, boards, countries: countries.size, dailyCap: JOB_APPLY_DAILY_CAP });
+}
+
+/* SEND THE APPLICATION. FOR REAL, THIS TIME.
+
+   The job hunt has always described an email-apply posting as one AMV "can
+   submit end to end", and named `gmail_send` as what does it. No such route
+   existed. The client decided `applied_email`, wrote it into the history, and
+   nothing was sent - a feature reporting success for work that never happened,
+   which is the one thing this product is not allowed to do.
+
+   It sends from the person's OWN mailbox rather than from AMV, for two reasons
+   that both matter to whether they get the job: an employer replying goes to
+   them, and a message from a stranger's automation is a message that lands in
+   spam. That is only possible at all because the mail connector exists, and it
+   works in every country it covers rather than only where Gmail is used. */
+async function jobApply(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  /* Sending mail as somebody, to strangers, is outward-facing. An account on
+     hold does not get to do it. */
+  const held = await _accountHold(env, user, 'job_apply');
+  if (held) return held;
+
+  const body = await request.json().catch(() => ({}));
+  const to = String(body.to || '').trim().slice(0, 200);
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) {
+    return json({ error: 'That posting has no application address AMV can send to. It can prepare the application for you to submit instead.',
+                  code: 'no_apply_email' }, 400);
+  }
+  const subject = String(body.subject || '').trim().slice(0, 250);
+  const text = String(body.text || '').slice(0, 60000);
+  if (!subject || !text.trim()) return json({ error: 'The application is empty.', code: 'bad_body' }, 400);
+
+  const job = (body.job && typeof body.job === 'object') ? body.job : {};
+  const boardId = String(job.board || '');
+  const board = JOB_BOARDS[boardId] || null;
+
+  /* ONE A DAY IS A JOB HUNT. FIVE HUNDRED IS A SPAM RUN.
+
+     Counted atomically, before anything is sent, against the person rather
+     than the device - and the account that gets suspended for bulk sending
+     would be theirs, not AMV's, which is why this is a hard stop and not a
+     warning. */
+  let res = null;
+  try {
+    res = await counter(env, `jobapply:${user.email}:${todayKey()}`,
+                        { op: 'reserve', amount: 1, cap: JOB_APPLY_DAILY_CAP, ttlMs: 86400000 * 2 });
+  } catch (e) {
+    audit(env, 'job_apply_uncounted', { by: user.email, error: String((e && e.message) || e) });
+    return json({ error: 'AMV could not check how many applications you have sent today, so it has not sent this one.',
+                  code: 'not_ready' }, 503);
+  }
+  if (!res.allowed) {
+    return json({ error: `That is ${JOB_APPLY_DAILY_CAP} applications sent today, which is the daily limit. It resets tomorrow - the rest are prepared and waiting.`,
+                  code: 'apply_cap' }, 429);
+  }
+  const giveBack = async () => {
+    try { await counter(env, `jobapply:${user.email}:${todayKey()}`, { op: 'incr', amount: -1, ttlMs: 86400000 * 2 }); } catch (e) {}
+  };
+
+  const cfg = await _mailCfgFor(env, user.email);
+  if (!cfg) {
+    await giveBack();
+    return json({ error: 'AMV sends applications from your own mailbox, so an employer replies to you rather than to us. Connect your mailbox first.',
+                  code: 'mail_not_connected' }, 428);
+  }
+
+  try {
+    await _smtpSend(cfg, { to: [to], subject, text });
+  } catch (e) {
+    await giveBack();
+    const kind = (e && e.kind) || (String(e && e.message) === 'mail_timeout' ? 'timeout' : 'net');
+    audit(env, 'job_apply_failed', { by: user.email, board: boardId, kind });
+    const fail = _mailFailure(kind, cfg.provider);
+    /* Named as an application that did NOT go, because "could not send" on a
+       screen listing applications reads as a delivery note. */
+    return json({ error: 'This application was not sent. ' + fail.error, code: fail.code, sent: false },
+                kind === 'auth' ? 401 : 502);
+  }
+
+  /* Recorded because an application sent on somebody's behalf, to a named
+     employer, is exactly the kind of autonomous action that has to leave a
+     trail - without the letter itself, which is theirs. */
+  audit(env, 'job_applied', { by: user.email, board: boardId,
+                              country: board ? board.country : '',
+                              title: String(job.title || '').slice(0, 80) });
+  return json({ ok: true, sent: true, to, board: boardId,
+                remainingToday: Math.max(0, JOB_APPLY_DAILY_CAP - (res.value || 0)),
+                from: cfg.address });
 }

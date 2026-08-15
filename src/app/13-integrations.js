@@ -706,7 +706,14 @@ function _integrationsCatalogHTML(){
                 : 'Your own provider, in 22 countries. Reads, summarizes and drafts replies - automatically.',
               auto:true,connected:!!_mailConnectedAccount(),
               run:'openMailInbox',runLabel:'Open inbox',
-              icon:'\uD83C\uDF0D',bg:'rgba(120,180,120,.14)'})
+              icon:'\uD83C\uDF0D',bg:'rgba(120,180,120,.14)'})+
+      /* The boards somebody's country actually uses. Reachable from here
+         because this is where a person goes looking for what AMV connects
+         to, and a catalogue nothing links to is a catalogue nobody reads. */
+      intRow({id:'jobboards',name:'Job boards worldwide (Europe, Asia and beyond)',
+              desc:'StepStone, Reed, Pracuj, Naukri, Saramin, 51job, Rikunabi and more - AMV applies where a posting takes email, and prepares the rest.',
+              auto:false,connected:false,use:'jobs',useLabel:'Browse boards',
+              icon:'\uD83D\uDCBC',bg:'rgba(200,160,90,.14)'})
     )+
     cat('Messaging &amp; chat',
       intRow({id:'slack',name:'Slack',desc:'Answers, summaries and tasks inside any channel with /amv.',auto:true,connected:isConn('amv_slack'),icon:'\uD83D\uDCAC',bg:'rgba(74,21,75,.16)'})+
@@ -759,7 +766,9 @@ function _wireIntegrationCatalog(root){
     if(typeof fn==='function') fn();
     else toast('That automation is not available in this build.','error');
   }));
-  root.querySelectorAll('[data-int-use]').forEach(btn=>on(btn,'click',()=>{ setTab(btn.dataset.intUse||'chat'); toast('Upload your file with the \uD83D\uDCCE button, or just describe what you need.','info',4500); }));
+  root.querySelectorAll('[data-int-use]').forEach(btn=>on(btn,'click',()=>{
+    if(btn.dataset.intUse==='jobs' && typeof openJobBoards==='function') return openJobBoards();
+    setTab(btn.dataset.intUse||'chat'); toast('Upload your file with the \uD83D\uDCCE button, or just describe what you need.','info',4500); }));
 }
 window._wireIntegrationCatalog=_wireIntegrationCatalog;
 

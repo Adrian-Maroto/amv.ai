@@ -257,3 +257,65 @@ function openJobHunt(){
   });
 }
 try{ window.openJobHunt=openJobHunt; }catch(e){}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   JOB BOARDS, BY COUNTRY.
+
+   The job hunt knew American boards. Somebody in Munich, Seoul, Warsaw or
+   Mumbai does not use them, so the feature was decoration for most of the
+   world. This is the catalogue, grouped by country, with the one thing a
+   person actually needs to know about each: whether AMV can finish the
+   application or only prepare it.
+
+   That distinction is shown rather than buried, because it is the difference
+   between "it applied for me overnight" and "there are twelve applications
+   waiting for me to tap send", and finding that out the hard way is how
+   somebody misses a deadline.
+   ═══════════════════════════════════════════════════════════════════════ */
+let _JOBB = null;
+
+async function _jobBoardsLoad(){
+  if(_JOBB) return _JOBB;
+  try{ _JOBB = await AMV_API.jobBoards(); }catch(e){ _JOBB = null; }
+  return _JOBB;
+}
+
+async function openJobBoards(){
+  const r=$('ovr'); if(!r) return;
+  r.innerHTML='<div class="ov" id="jb-bg"><div class="ml-modal"><div class="ml-head">'+
+    '<div><div class="eyebrow">Job hunt</div><h2>Job boards</h2></div>'+
+    '<button class="tp-x" id="jb-x" aria-label="Close">✕</button></div>'+
+    '<div id="jb-body"><p class="mu">Loading…</p></div></div></div>';
+  on($('jb-bg'),'click',(e)=>{ if(e.target===e.currentTarget) r.innerHTML=''; });
+  on($('jb-x'),'click',()=>{ r.innerHTML=''; });
+
+  const cat=await _jobBoardsLoad();
+  const b=$('jb-body'); if(!b) return;
+  if(!cat||!cat.boards){ b.innerHTML='<div class="ml-err">Could not load the boards. Try again in a moment.</div>'; return; }
+
+  const byC={};
+  for(const x of cat.boards){ (byC[x.country]=byC[x.country]||[]).push(x); }
+  const codes=Object.keys(byC).sort();
+  /* Three words, because this is the whole point of the list. */
+  const badge=(x)=> x.autoApply
+    ? '<span class="jb-can">AMV can apply</span>'
+    : '<span class="jb-prep">AMV prepares it</span>';
+
+  b.innerHTML=
+    '<p class="mu ml-intro">'+escH(String(cat.boards.length))+' boards across '+escH(String(cat.countries))+' countries. '+
+      'Where a posting publishes an address, AMV writes and sends the application from your own mailbox. '+
+      'Where the board only takes applications through its own form, AMV fills everything in and you tap send - '+
+      'those sites do not allow anything else, and AMV will not pretend otherwise.</p>'+
+    '<div class="jb-list">'+codes.map(c=>{
+      const list=byC[c];
+      return '<div class="jb-c"><div class="jb-c-h">'+escH(list[0].flag+' '+c)+'</div>'+
+        list.map(x=>'<div class="jb-row">'+
+          '<a class="jb-n" href="'+escH(x.url)+'" target="_blank" rel="noopener noreferrer">'+escH(x.name)+'</a>'+
+          badge(x)+
+          (x.note?'<div class="jb-note">'+escH(x.note)+'</div>':'')+
+        '</div>').join('')+'</div>';
+    }).join('')+'</div>'+
+    '<div class="ml-foot"><span class="mu" style="font-size:var(--t-xs)">Up to '+escH(String(cat.dailyCap))+
+      ' applications a day, so your own address is never treated as bulk mail.</span></div>';
+}
+window.openJobBoards = openJobBoards;
