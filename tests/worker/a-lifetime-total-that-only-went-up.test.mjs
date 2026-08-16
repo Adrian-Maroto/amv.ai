@@ -191,10 +191,14 @@ section('The correction happens under the wallet lock, with the refund');
      between them leaves the balance restored and the total still inflated, or
      the reverse - and a second unlocked write to the wallet is the exact defect
      the comment above this block was added for. */
-  const fn = codeOnly(functionBody(src, 'adminPayoutMark'));
-  const i = fn.indexOf("if (status === 'rejected')");
-  ok(i > -1, 'the rejection branch was found', i);
-  const branch = fn.slice(i, fn.indexOf('} else {', i));
+  /* The rejection now goes through a named helper rather than sitting inline,
+     because the refund had to become idempotent and separately recoverable
+     (AMV-011). The property is unchanged - one lock, both corrections - so this
+     follows it there rather than asserting the shape it used to have. */
+  const branch = codeOnly(functionBody(src, '_refundRejectedPayout'));
+  ok(branch.length > 400, 'the refund helper was read', branch.length);
+  ok(/_onceOrRetry\(env, 'porefund'/.test(branch),
+     'and the refund is claimed once, so completing it twice is impossible', true);
 
   const lockIdx = branch.indexOf('_withWallet(');
   const balIdx = branch.indexOf('ww.balance');

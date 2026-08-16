@@ -9,10 +9,35 @@ observed to fail on the assertions that name the defect, and the fix was
 restored. A guard that has never been seen to fail is not a guard, and three
 times this week a check turned out to be unable to fail at all.
 
-## Phase 1 - in progress
+## Phase 1 - complete
 
-**Done: AMV-004, AMV-006, AMV-007, AMV-023, AMV-041.**
-**Left: AMV-009, AMV-010, AMV-011.**
+All eight: AMV-004, 006, 007, 009, 010, 011, 023, 041.
+
+**AMV-009 was two defects at one door.** Every call to the buy route created a
+fresh payment session, so a double-click produced two live checkouts and both
+took a card - and because the credit is exactly-once per buyer and item, the
+second payment granted nothing. The safety mechanism is what made the loss
+silent. Separately, a one-of-a-kind listing was checked for 'sold' and then
+acted on, so two buyers arriving together both paid and one received nothing.
+The session is now remembered and handed back, and the listing is reserved
+through the counter that serialises - a first version wrote the reservation to
+storage after a read, which is the same race with an extra step.
+
+**AMV-010 and AMV-011 are both a claim on the wrong side of a failure.** The
+marketplace reversal took a permanent claim before four steps that could each
+fail, three of which swallowed their own errors: a half-finished reversal left
+the claim held, the provider's retry was discarded as a duplicate of work that
+never happened, and the buyer kept an item they charged back. `_creditSale` -
+the same money going the other way - had this fixed already, with a comment
+saying why.
+
+The rejected payout is subtler. The status is written before the money moves,
+deliberately, and the note explaining it is right that the other order risks
+crediting twice. What it misses is what its own order costs: if the credit
+fails, the payout is terminally rejected and the seller's balance was never
+returned. Both orders lose, so neither is used - the refund is claimed once and
+marked outstanding on the record until it lands, and a rejected payout that
+still owes money can be settled again to finish it.
 
 **AMV-007** is the one where the audit's implied fix is wrong. Comparing
 timestamps across Stripe and PayPal is unsound - two processors' clocks are not
@@ -100,9 +125,9 @@ read as working for as long as it did.
 | 1 | AMV-006 | HIGH | API-key authentication omits account holds, family limits, team billing identi | DONE |
 | 1 | AMV-007 | HIGH | Cross-processor webhook ordering can overwrite a newer subscription state | DONE |
 | 0 | AMV-008 | HIGH | PayPal webhook failures acknowledge success and suppress provider retries | DONE |
-| 1 | AMV-009 | HIGH | Marketplace checkout allows duplicate charges and one-of-a-kind overselling | TODO |
-| 1 | AMV-010 | HIGH | Marketplace reversal takes a permanent claim before best-effort, non-idempoten | TODO |
-| 1 | AMV-011 | HIGH | Payout rejection is marked terminal before the seller is refunded | TODO |
+| 1 | AMV-009 | HIGH | Marketplace checkout allows duplicate charges and one-of-a-kind overselling | DONE |
+| 1 | AMV-010 | HIGH | Marketplace reversal takes a permanent claim before best-effort, non-idempoten | DONE |
+| 1 | AMV-011 | HIGH | Payout rejection is marked terminal before the seller is refunded | DONE |
 | 0 | AMV-012 | HIGH | `_withKV` treats read/parse failures as an empty record and can overwrite live | DONE |
 | 3 | AMV-013 | HIGH | Lease locks have no owner token, renewal, or fencing | TODO |
 | 0 | AMV-014 | HIGH | Account export returns the live Canvas bearer token | DONE |
