@@ -8080,20 +8080,35 @@ async function syncPush(request, env){
   return json({ ok:true, rev: merged._rev, merged: !authoritative, guarded, serverTime: Date.now() });
 }
 
-async function requireUser(request, env) {
-  const auth = request.headers.get('Authorization') || '';
-  const token = auth.replace(/^Bearer\s+/i, '');
-  /* AMV-097: an API key is a credential for the same account, so it resolves
-     HERE - which means every quota, cost ceiling, plan check and abuse control
-     downstream applies to an API call exactly as it does to a browser one,
-     with no second path to keep in step. */
-  if (token.startsWith(API_KEY_PREFIX) || request.headers.get('X-AMV-Key')) {
-    return await _userFromApiKey(request, env);
-  }
-  const data = await verifyToken(token, env.JWT_SECRET, env, 'access');
-  if (!data) return null;
-  // attach current plan + custom config from entitlement store
-  const e = (await DB.get(env, 'ent', data.email)) || {};
+/* AMV-006 / AMV-023: ONE PRINCIPAL, BUILT ONE WAY.
+
+   Everything downstream - quotas, dollar ceilings, holds, family limits, team
+   billing - reads fields off the object the auth path returns. There were three
+   places that built one: the browser session, the API key, and the SMS handler,
+   and only the first was complete.
+
+   An API key returned `{ email, plan, customCfg, billing, bonusTokens }`. No
+   billingSubject, so a team member's key drew on their own email instead of the
+   team's pooled allowance and the team's ceiling never applied to it. No
+   `blocked`, so an account suspended for chargebacks could keep spending
+   through a key it made earlier. And no `family`, so a child capped at $10 a
+   month could create an API key and spend without the cap - the one control a
+   parent set, defeated by a button in settings.
+
+   The SMS handler is the same defect with a comment on top. It builds a user by
+   hand and passes it to the shared ceiling helper, under a note saying "the
+   shared ceiling, so a parent's limit reaches this too". The object has no
+   family on it, so the helper could only ever answer with the plan backstop.
+   The prose described the intent and the code guaranteed the opposite.
+
+   Neither was a missing idea. Both were a second copy of a resolution that
+   already existed, drifting from it. So there is one now, and the three callers
+   share it - which is also the only version where adding a fourth field cannot
+   reach two paths out of three. */
+async function _principalOf(env, email, ent, extra) {
+  const em = String(email || '').toLowerCase();
+  const e = ent || (await DB.get(env, 'ent', em)) || {};
+  const data = Object.assign({ email: em }, extra || {});
   // _planOf, not e.plan: a lapsed subscription must not still buy compute.
   data.plan = _planOf(e);
   data.customCfg = e.custom || null;   // { price, monthTokens, dayTokens, rpm } set at checkout
@@ -8102,7 +8117,7 @@ async function requireUser(request, env) {
   /* AMV-100: a team member draws on the TEAM's plan and the TEAM's counters.
      `billingSubject` is what every quota is keyed by from here - see
      _billingSubjectOf for why the plan and the counters must move together. */
-  const sub = await _billingSubjectOf(env, data.email, e);
+  const sub = await _billingSubjectOf(env, em, e);
   data.billingSubject = sub.subject;
   data.plan = sub.plan;
   data.customCfg = sub.customCfg;
@@ -8115,8 +8130,27 @@ async function requireUser(request, env) {
   data.blockedReason = e.blockedReason || '';
   /* Resolved here so every check downstream reads the same answer, and none of
      them go to storage on their own (AMV-102). */
-  data.family = await _familyOf(env, data.email, e);
+  data.family = await _familyOf(env, em, e);
   return data;
+}
+
+async function requireUser(request, env) {
+  const auth = request.headers.get('Authorization') || '';
+  const token = auth.replace(/^Bearer\s+/i, '');
+  /* AMV-097: an API key is a credential for the same account, so it resolves
+     HERE - which means every quota, cost ceiling, plan check and abuse control
+     downstream applies to an API call exactly as it does to a browser one,
+     with no second path to keep in step. */
+  if (token.startsWith(API_KEY_PREFIX) || request.headers.get('X-AMV-Key')) {
+    return await _userFromApiKey(request, env);
+  }
+  const data = await verifyToken(token, env.JWT_SECRET, env, 'access');
+  if (!data) return null;
+  /* The token's own claims survive - name, issued-at, whatever else it carries -
+     with the account's current state resolved on top. Read fresh every request
+     rather than trusted from the token, so a plan change, a block or a new
+     family limit takes effect immediately instead of at the next sign-in. */
+  return await _principalOf(env, data.email, null, data);
 }
 
 /* Resolve the effective limits for a user - custom plans use their purchased
@@ -10484,14 +10518,15 @@ async function smsIncoming(request, env, ctx) {
 
   // load their plan + enforce the SAME limits/caps as the web app
   const e = (await DB.get(env, 'ent', email)) || {};
-  /* Same resolution requireUser does, by hand, because this arrives from Twilio
-     rather than from a signed-in browser (AMV-100). */
-  const sub = await _billingSubjectOf(env, email, e);
-  /* blocked comes off the entitlement that was just read, the same way
-     requireUser carries it, so the hold reaches a channel that arrives from
-     Twilio rather than from a signed-in browser. */
-  const user = { email, plan: sub.plan, customCfg: sub.customCfg, billingSubject: sub.subject,
-                 blocked: !!e.blocked, blockedReason: e.blockedReason || '' };
+  /* AMV-023: the SAME principal, not a hand-built one.
+
+     This used to assemble six fields itself. The ceiling check further down
+     calls the shared helper and carries a comment saying a parent's limit
+     reaches SMS through it - and `family` was not one of the six, so the helper
+     could only ever answer with the plan backstop. A child capped at $10 a
+     month could text AMV all month against the plan's allowance instead, and
+     the comment said otherwise. */
+  const user = await _principalOf(env, email, e, { via: 'sms' });
   /* Answered in Twilio's own language rather than as JSON - this reply is read
      aloud to somebody's phone, and a 403 body would arrive as nothing at all. */
   if (await _accountHold(env, user, 'sms')) {
@@ -11186,7 +11221,64 @@ async function referralStatus(request, env) {
    blocked for charging back. The one thing somebody in that position does next
    is pay again. */
 const ENT_CARRY_KEYS = ['refBonus', 'teamId', 'familyOf', 'renewedAt', 'lastEventAt', 'lastEventSrc',
-                        'blocked', 'blockedReason', 'blockedAt'];
+                        'blocked', 'blockedReason', 'blockedAt',
+                        /* AMV-007: which subscription owns this plan, and the ones that no
+                           longer do. Carried like every other fact that must survive a
+                           write from a different source. */
+                        'subId', 'retiredSubs'];
+
+/* AMV-007: WHOSE SUBSCRIPTION IS THIS PLAN?
+
+   Staleness is compared per provider, and that is correct: two processors'
+   clocks are not one timeline and nothing sensible can be said across them.
+   The gap is what happens when the event comes from the OTHER processor
+   entirely. The comparison simply does not apply, so the event wins by default.
+
+   The sequence that costs a customer their plan: they cancel PayPal, resubscribe
+   on Stripe, and PayPal's cancellation webhook - retried for days, as both
+   providers do - lands afterwards and sets them to free. They have paid, the
+   payment is live, and AMV has revoked the thing they are being charged for.
+   It runs the other way too: a stale PayPal "still active" reactivating an
+   account that cancelled on Stripe, which is a paid plan given away for free.
+
+   The audit's implied fix is to compare the timestamps across processors. That
+   is unsound for the reason the existing comment already gives.
+
+   OWNERSHIP is the sound version, and it needs no shared clock. One subscription
+   owns the plan at a time. An event from that subscription is authoritative. An
+   event from any other is only allowed to do one thing - take ownership, by
+   granting a paid plan, which is the one message that can only follow real money
+   moving. Everything else from a non-owner is ignored, because a processor that
+   is not billing this customer has nothing to say about whether they are paid up.
+
+   A retired subscription can never speak again, even to claim ownership: its
+   activation events are exactly what a days-long retry queue is full of.
+
+   Events with no subscription id - a chargeback, a refund - are not making an
+   ownership claim at all. They apply if they come from the processor that owns
+   the plan, and are ignored otherwise, so a dispute still revokes access and a
+   refund on an old PayPal charge cannot revoke a live Stripe plan. */
+const ENT_MAX_RETIRED = 8;
+function _entEventVerdict(prev, src, subId, isPaidGrant) {
+  const owner = String((prev && prev.lastEventSrc) || '');
+  const ownerSub = String((prev && prev.subId) || '');
+  const retired = Array.isArray(prev && prev.retiredSubs) ? prev.retiredSubs : [];
+
+  if (subId && retired.indexOf(subId) > -1) {
+    return { apply: false, reason: 'retired_subscription' };
+  }
+  /* Nothing owns it yet - the first processor event to arrive takes it. */
+  if (!owner || (!ownerSub && !subId)) return { apply: true, takeOver: !!subId };
+  if (!subId) {
+    /* No claim of its own, so it defers to whoever owns the plan. */
+    return src === owner ? { apply: true } : { apply: false, reason: 'not_the_owning_processor' };
+  }
+  if (src === owner && subId === ownerSub) return { apply: true };
+  if (!ownerSub) return { apply: true, takeOver: true };
+  /* A different subscription. Only real money moving lets it take over. */
+  if (isPaidGrant) return { apply: true, takeOver: true };
+  return { apply: false, reason: 'not_the_owning_subscription' };
+}
 
 /* ── FAMILY ────────────────────────────────────────────────────────────────
    A parent's account carries a child's, the way a phone plan does.
@@ -11388,16 +11480,52 @@ async function setEntitlement(env, email, plan, extra = {}) {
      timeline and nothing sensible can be said across them. */
   const evtAt = +extra.eventAt || 0;
   const evtSrc = String(extra.source || '');
-  if (evtAt && (evtSrc === 'stripe' || evtSrc === 'paypal')
+  const fromProcessor = (evtSrc === 'stripe' || evtSrc === 'paypal');
+  const evtSub = String(extra.sub || '');
+  /* A grant of a PAID plan is the only message that can only follow real money
+     moving, which is what makes it the one thing allowed to move ownership. */
+  const isPaidGrant = fromProcessor && _planPriceUSD(plan, extra.custom || prev.custom) > 0;
+
+  /* AMV-007. Asked before staleness, because "is this processor even billing
+     this customer" comes before "is this the newest thing it said". */
+  let verdict = { apply: true };
+  if (fromProcessor) {
+    verdict = _entEventVerdict(prev, evtSrc, evtSub, isPaidGrant);
+    if (!verdict.apply) {
+      audit(env, 'entitlement_event_ignored', { email, plan, source: evtSrc,
+        sub: evtSub, reason: verdict.reason, owner: prev.lastEventSrc || '', ownerSub: prev.subId || '' });
+      return prev;                       // nothing written; the owning subscription stands
+    }
+  }
+
+  if (evtAt && fromProcessor
       && prev.lastEventSrc === evtSrc && +prev.lastEventAt > evtAt) {
     audit(env, 'entitlement_stale_event', { email, plan, source: evtSrc, eventAt: evtAt, applied: +prev.lastEventAt });
     return prev;                         // nothing written; the newer state stands
   }
   const ent = { plan, updatedAt: Date.now(), ...extra };
   for (const k of ENT_CARRY_KEYS) if (prev[k] !== undefined && ent[k] === undefined) ent[k] = prev[k];
-  if (evtAt && (evtSrc === 'stripe' || evtSrc === 'paypal')) {
+  if (evtAt && fromProcessor) {
     ent.lastEventAt = evtAt; ent.lastEventSrc = evtSrc;
   }
+  if (fromProcessor && evtSub) {
+    /* Ownership moved, so the subscription that held it is retired and can
+       never speak again - its own retries are the thing being defended
+       against. Bounded, because this is a defence against a retry queue rather
+       than a history. */
+    if (verdict.takeOver && prev.subId && prev.subId !== evtSub) {
+      const was = Array.isArray(prev.retiredSubs) ? prev.retiredSubs.slice() : [];
+      if (was.indexOf(prev.subId) < 0) was.push(prev.subId);
+      ent.retiredSubs = was.slice(-ENT_MAX_RETIRED);
+      audit(env, 'entitlement_owner_changed', { email, from: prev.lastEventSrc || '',
+        fromSub: prev.subId, to: evtSrc, toSub: evtSub, plan });
+    }
+    ent.subId = evtSub;
+    ent.lastEventSrc = evtSrc;
+  }
+  /* `sub` is the claim; `subId` above is the record of it. Leaving both would
+     put two names for one fact on the entitlement. */
+  delete ent.sub;
   delete ent.eventAt;                    // the marker above is the record of it
   /* When a PROCESSOR is the reason for this write, money is behind it - a
      checkout, a renewal, a live subscription re-read. That is the only signal
@@ -12163,9 +12291,14 @@ async function stripeWebhook(request, env, ctx) {
          paid for. Granting a plan off the price alone re-granted access to
          subscriptions Stripe had already marked unpaid. */
       const status = type === 'customer.subscription.updated' ? (obj.status || '') : 'active';
+      /* AMV-007: which subscription this is about. On a subscription event the
+         object IS the subscription; on an invoice it names the one it belongs
+         to. Passed through so a message from a subscription that no longer owns
+         the plan cannot revoke one the customer is currently paying for. */
+      const subId = (type === 'customer.subscription.updated' ? obj.id : obj.subscription) || '';
       const DEAD = ['unpaid', 'canceled', 'incomplete_expired'];
       if (email && DEAD.indexOf(status) >= 0) {
-        await setEntitlement(env, email, 'free', { source: 'stripe', canceled: true, status, eventAt: evtAt });
+        await setEntitlement(env, email, 'free', { source: 'stripe', canceled: true, status, eventAt: evtAt, sub: subId });
       } else if (email && status === 'past_due') {
         await _markPastDue(env, email, { sub: obj.id || '' });
       } else if (email && plan) {
@@ -12174,7 +12307,7 @@ async function stripeWebhook(request, env, ctx) {
            it is read off the subscription item rather than trusted from a
            client, a metadata field, or a number we stored at checkout and hoped
            stayed true through a seat change. */
-        const extra = { source: 'stripe' };
+        const extra = { source: 'stripe', sub: subId };
         if (plan === 'team') {
           const qty = obj.items?.data?.[0]?.quantity ?? obj.lines?.data?.[0]?.quantity;
           extra.custom = { seats: _teamSeatCount({ seats: qty }) };
@@ -12192,7 +12325,7 @@ async function stripeWebhook(request, env, ctx) {
     } else if (type === 'customer.subscription.deleted') {
       // cancellation/expiry - downgrade to free
       const email = await _emailFromCustomer(env, obj.customer);
-      if (email) await setEntitlement(env, email, 'free', { source: 'stripe', canceled: true, eventAt: evtAt });
+      if (email) await setEntitlement(env, email, 'free', { source: 'stripe', canceled: true, eventAt: evtAt, sub: obj.id || '' });
     } else if (type === 'charge.dispute.created') {
       /* CHARGEBACK - the customer told their bank to reverse the payment. This
          is the DoorDash method: they keep the compute they already used and get
@@ -15563,9 +15696,10 @@ async function _userFromApiKey(request, env) {
     item.lastUsed = now;
   }
 
-  const e = (await DB.get(env, 'ent', ref.email)) || {};
-  return { email: ref.email, plan: _planOf(e), customCfg: e.custom || null,
-           billing: _billingState(e), bonusTokens: _bonusTokens(e), via: 'apikey', keyId: ref.id };
+  /* The SAME principal a browser session gets. This used to return five fields
+     of its own and nothing else, so an API key carried no billing subject, no
+     block, and no family limit - see _principalOf. */
+  return await _principalOf(env, ref.email, null, { via: 'apikey', keyId: ref.id });
 }
 
 /* =====================================================================
@@ -16443,9 +16577,16 @@ async function paypalWebhook(request, env, ctx) {
   try {
     const custom = evt.resource?.custom_id || '';
     const [email, claimedPlan] = custom.split('|');
+    /* AMV-007: which PayPal subscription this event is about. A subscription
+       event IS the subscription; a sale names the agreement it was taken under.
+       A refund of a one-off capture names neither, and correctly makes no
+       ownership claim. */
+    const ppSub = evt.resource?.billing_agreement_id
+               || (/^BILLING\.SUBSCRIPTION\./.test(evt.event_type || '') ? (evt.resource?.id || '') : '')
+               || '';
     if (evt.event_type === 'PAYMENT.CAPTURE.REFUNDED' || evt.event_type === 'BILLING.SUBSCRIPTION.CANCELLED'
         || evt.event_type === 'BILLING.SUBSCRIPTION.EXPIRED') {
-      if (email) await setEntitlement(env, email.toLowerCase(), 'free', { source: 'paypal', canceled: true, eventAt: evtAt });
+      if (email) await setEntitlement(env, email.toLowerCase(), 'free', { source: 'paypal', canceled: true, eventAt: evtAt, sub: ppSub });
     } else if (evt.event_type === 'BILLING.SUBSCRIPTION.PAYMENT.FAILED'
             || evt.event_type === 'BILLING.SUBSCRIPTION.SUSPENDED') {
       // Same rule as Stripe: a failed payment does not buy another month.
@@ -16483,7 +16624,7 @@ async function paypalWebhook(request, env, ctx) {
              sees a live subscription rather than revoking one that is being
              paid for. */
           if (!cur || cur.plan !== tier || cur.pastDueSince) {
-            await setEntitlement(env, em, tier, { source: 'paypal', eventAt: evtAt });
+            await setEntitlement(env, em, tier, { source: 'paypal', eventAt: evtAt, sub: ppSub });
           } else {
             /* AMV-202: a renewal touch-up is still an entitlement write, and a
                webhook is exactly when another one is likely to be in flight. */

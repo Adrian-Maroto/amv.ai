@@ -11,6 +11,37 @@ times this week a check turned out to be unable to fail at all.
 
 ## Phase 1 - in progress
 
+**Done: AMV-004, AMV-006, AMV-007, AMV-023, AMV-041.**
+**Left: AMV-009, AMV-010, AMV-011.**
+
+**AMV-007** is the one where the audit's implied fix is wrong. Comparing
+timestamps across Stripe and PayPal is unsound - two processors' clocks are not
+one timeline, and the existing comment says so correctly. The gap is that when
+the event comes from the OTHER processor the comparison never applies, so it
+wins by default: cancel PayPal, resubscribe on Stripe, and PayPal's retried
+cancellation revokes the plan they are currently paying for.
+
+Fixed by OWNERSHIP, which needs no shared clock. One subscription owns the plan;
+its events are authoritative; an event from any other may do exactly one thing -
+take ownership by granting a paid plan, the one message that can only follow
+real money moving. A subscription that loses ownership is retired and can never
+speak again, because its own retries are what is being defended against. Events
+with no subscription id (a chargeback, a refund) make no ownership claim and
+apply only from the processor that owns the plan.
+
+**AMV-006 and AMV-023 are one defect with two doors.** Three places built the
+principal every spending check reads. The browser built it completely; the API
+key returned five fields and none of the three that stop spending; the SMS
+handler built six by hand and also omitted the family. So a child capped at $10
+a month could create an API key in settings and spend past it, or text AMV all
+month. A team member's key drew on their own email rather than the team's pooled
+allowance. An account blocked for charging back kept working through a key it
+made earlier.
+
+The SMS copy carried a comment saying a parent's limit reaches it, above code
+that could not do that - the comment-versus-code class again. There is one
+resolution now and the three doors share it.
+
 **AMV-004 (atomic spend ceilings) and AMV-041 (payout total) are done.**
 
 AMV-004 turned out to be six ceilings, not one: chat's account ceiling, the
@@ -66,8 +97,8 @@ read as working for as long as it did.
 | 0 | AMV-003 | HIGH | Inbound SMS model usage is not charged and bypasses the global kill switch | DONE |
 | 1 | AMV-004 | HIGH | Dollar spend ceilings are check-then-charge rather than atomic reservations | DONE |
 | 0 | AMV-005 | HIGH | Family-cap refusal dereferences undefined `planCeiling` and returns a 500 | DONE |
-| 1 | AMV-006 | HIGH | API-key authentication omits account holds, family limits, team billing identi | TODO |
-| 1 | AMV-007 | HIGH | Cross-processor webhook ordering can overwrite a newer subscription state | TODO |
+| 1 | AMV-006 | HIGH | API-key authentication omits account holds, family limits, team billing identi | DONE |
+| 1 | AMV-007 | HIGH | Cross-processor webhook ordering can overwrite a newer subscription state | DONE |
 | 0 | AMV-008 | HIGH | PayPal webhook failures acknowledge success and suppress provider retries | DONE |
 | 1 | AMV-009 | HIGH | Marketplace checkout allows duplicate charges and one-of-a-kind overselling | TODO |
 | 1 | AMV-010 | HIGH | Marketplace reversal takes a permanent claim before best-effort, non-idempoten | TODO |
@@ -86,7 +117,7 @@ read as working for as long as it did.
 | 5 | AMV-060 | HIGH | Shipped deployment configuration is not launch-ready | TODO |
 | 2 | AMV-SP-03 | HIGH | Account deletion cancels Stripe but not PayPal subscriptions | TODO |
 | 2 | AMV-SP-04 | HIGH | Payout-in-flight lookup fails open during account deletion | TODO |
-| 1 | AMV-023 | MEDIUM | SMS user context omits family limits | TODO |
+| 1 | AMV-023 | MEDIUM | SMS user context omits family limits | DONE |
 | 5 | AMV-024 | MEDIUM | Changing an SMS phone leaves the old phone authorized | TODO |
 | 5 | AMV-025 | MEDIUM | SMS verification uses `Math.random`, has no attempt cap, and updates uniquenes | TODO |
 | 5 | AMV-026 | MEDIUM | Login and reset responses enumerate registered accounts | TODO |
