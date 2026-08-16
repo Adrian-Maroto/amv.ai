@@ -124,6 +124,36 @@ section('Everyday life reaches every country AMV is promoted in');
   ok(thin.length === 0, 'and at least five specific to each promoted country', thin);
 }
 
+section('Every country AMV reaches has an everyday life, not just the promoted ones');
+{
+  /* THE UNIVERSALITY INVARIANT, and the reason it is asserted rather than
+     counted. The coverage board is computed from the mail and board
+     registries, so it will happily tell somebody in Lisbon or Taipei that AMV
+     works in their country. For twenty-five of the forty-five it did that
+     while the everyday half - the part that is used every week rather than
+     twice a year - was empty for them.
+
+     A count would not have caught it: "twenty countries have everyday jobs"
+     reads as progress. What matters is that the set of countries AMV CLAIMS
+     is the same set it actually serves, so this compares the two directly and
+     names any country on the wrong side. */
+  const cov = W._coverage();
+  const have = new Set(Object.keys(W.EVERYDAY_BY_COUNTRY));
+  const claimed = cov.countries.map((c) => c.code);
+  const hollow = claimed.filter((c) => !have.has(c));
+  ok(hollow.length === 0,
+     'no country is listed as reached while having no everyday jobs', hollow);
+
+  /* And the reverse: a country with everyday jobs that the board never shows
+     is content nobody can find. */
+  const orphan = [...have].filter((c) => !claimed.includes(c));
+  ok(orphan.length === 0, 'and none has jobs the coverage board never surfaces', orphan);
+
+  ok(claimed.length >= 45, 'across every country the board lists', claimed.length);
+  const thin = [...have].filter((c) => W.EVERYDAY_BY_COUNTRY[c].length < 5);
+  ok(thin.length === 0, 'each with at least five of its own', thin);
+}
+
 section('They are specific to a country, not one list translated twenty times');
 {
   /* The failure this guards against is a catalogue that looks local and is
@@ -132,7 +162,10 @@ section('They are specific to a country, not one list translated twenty times');
   const sig = (c) => (W.EVERYDAY_BY_COUNTRY[c] || []).map((j) => j.title).sort().join('|');
   const seen = new Map();
   const clones = [];
-  for (const c of Object.keys(PROMOTED)) {
+  /* EVERY country, not the promoted twenty. Checking only the twenty would
+     have let the other twenty-five be copies of each other, which is exactly
+     the shortcut that gets taken when a list grows from twenty to forty-five. */
+  for (const c of Object.keys(W.EVERYDAY_BY_COUNTRY)) {
     const s = sig(c);
     if (seen.has(s)) clones.push(seen.get(s) + '=' + c);
     seen.set(s, c);
