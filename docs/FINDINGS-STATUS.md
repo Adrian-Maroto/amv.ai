@@ -11,7 +11,66 @@ times this week a check turned out to be unable to fail at all.
 
 ## Phase 5 - in progress
 
-**Done: AMV-024, 025, 026, 027, 029, 030, 051, 052, 054, 055, SP-08, SP-10.**
+**Done: AMV-024, 025, 026, 027, 029, 030, 037, 039, 043, 044, 046, 048, 051,
+052, 054, 055, 058, 059, SP-07, SP-08, SP-09, SP-12.**
+**Left: AMV-038, 056, 060, SP-02, SP-06, SP-11.**
+
+**AMV-039 was a promise six empty catches could not keep.** The account export -
+the file somebody is handed when they ask what AMV holds on them - wrapped every
+read and listing in `catch(e){}` and then said "Everything AMV holds on the
+server for this account". An answer missing a record nobody knows is missing is
+worse than a refusal, because the person cannot tell and stops asking. Whatever
+could not be read is named now, and the note only claims completeness when it is
+true. An export missing the ACCOUNT record is refused outright: that is not a
+partial export, it is a file about nobody.
+
+**AMV-037.** The public error sink pruned its index by raw COUNT, so the way to
+hide a real fault from the operator was to send more of something else - a flood
+of invented fingerprints pushes genuine errors out by ordinary arithmetic, and
+the dashboard cannot tell "this stopped happening" from "this was pushed off the
+end". Ranked by how many DIFFERENT people hit it now. Its text is scrubbed on
+the way in: a stack trace quotes whatever was in scope, which on an auth path is
+a token and on a reset page is the code in the URL, and nobody chose to send
+those.
+
+**AMV-046.** `audit()` posted to the external collector without waitUntil, under
+a comment saying "never block the request on logging". A Worker's isolate can be
+torn down the moment it answers, so that is fire-and-maybe, and the faster the
+request the less likely the event left - on auth failures, forged webhooks and
+spend blocks, whose absence looks exactly like nothing having happened.
+
+**AMV-044.** The widget loader runs on the CUSTOMER'S site and obeyed a
+postMessage without asking where it came from. Closing a panel is small; an open
+channel into a script on a third party's page is not, and the next verb this
+protocol grows would be obeyed from anywhere too.
+
+**AMV-043.** Reviewing a seller was proved by reading the LISTING to see who
+wrote it - so the proof depended on the listing existing, and the person who
+decides that is the seller being reviewed. The delete button silenced every
+buyer. Who somebody bought from is a fact about the transaction and is recorded
+with it now; older purchases fall back to the snapshot taken at the sale, which
+the seller cannot touch.
+
+**AMV-SP-09.** Three payment redirects read the request Origin when APP_URL was
+unset, under a comment calling it "only a dev fallback" - and nothing in the code
+knows what development is. `Origin: https://amv-billing.example` puts an
+attacker's address in Stripe's success_url: the customer really pays, to the real
+Stripe, and lands on a page the attacker controls at the moment they expect to
+confirm something. There is no fallback now.
+
+**AMV-SP-07.** A blocked account is two records, and DELETING the abuse record -
+the stronger of the two operator actions - updated only one. The account stayed
+refused everywhere with the evidence gone.
+
+**AMV-051, 052, 048, 058, 059, SP-12.** The operator's user list turned a storage
+failure into an empty customer base. Three of sixteen admin routes checked the
+token with no ceiling. The mail KDF used the same hard-coded salt in every copy
+of AMV, and accepted sixteen letter As as a key. CI ran actions on a mutable
+major tag, under a note deferring the pinning to some later day. The deploy
+script called a wrangler nobody declared. And the dependency audit was something
+a person ran by hand, which means it happens once - it is a script now, with an
+ACCEPTED list that fails on anything unassessed and on any exemption for
+something no longer flagged.
 
 **AMV-026 was two answers to one question.** "no such account" with a 404 and
 "wrong password" with a 401: point a list of a million addresses at the sign-in
@@ -481,16 +540,16 @@ read as working for as long as it did.
 | 3 | AMV-034 | MEDIUM | Team creation and join are multi-record partial commits | DONE |
 | 3 | AMV-035 | MEDIUM | Automation create/update/run workflows have race and exactly-once gaps | DONE |
 | 4 | AMV-036 | MEDIUM | Browser spend control trusts client-declared amount and records it before laun | DONE |
-| 5 | AMV-037 | MEDIUM | Public error telemetry can be poisoned and leak sensitive text | TODO |
+| 5 | AMV-037 | MEDIUM | Public error telemetry can be poisoned and leak sensitive text | DONE |
 | 5 | AMV-038 | MEDIUM | Backup export can silently omit D1 data and buffers the full store in memory | TODO |
-| 5 | AMV-039 | MEDIUM | Account export swallows read/list failures and may claim completeness | TODO |
+| 5 | AMV-039 | MEDIUM | Account export swallows read/list failures and may claim completeness | DONE |
 | 0 | AMV-040 | MEDIUM | Payout wash-trading signal reads a field that is never populated | DONE |
 | 1 | AMV-041 | MEDIUM | `paidOut` increments on request and is not reversed when a payout is rejected | DONE |
 | 3 | AMV-042 | MEDIUM | Marketplace ratings, reviews, and thread-read state lose concurrent updates | DONE |
-| 5 | AMV-043 | MEDIUM | Reviews can become impossible after a seller unlists an item | TODO |
-| 5 | AMV-044 | MEDIUM | Widget message listener does not verify origin or source | TODO |
+| 5 | AMV-043 | MEDIUM | Reviews can become impossible after a seller unlists an item | DONE |
+| 5 | AMV-044 | MEDIUM | Widget message listener does not verify origin or source | DONE |
 | 3 | AMV-045 | MEDIUM | Widget configuration and live-key writes are non-transactional | DONE |
-| 5 | AMV-046 | MEDIUM | Audit webhook delivery is fire-and-forget without `waitUntil` | TODO |
+| 5 | AMV-046 | MEDIUM | Audit webhook delivery is fire-and-forget without `waitUntil` | DONE |
 | 4 | AMV-047 | MEDIUM | IMAP literal parsing allocates attacker/provider-declared sizes before truncat | DONE |
 | 4 | AMV-049 | MEDIUM | JavaScript sandbox timeout cannot stop a synchronous infinite loop | DONE |
 | 4 | AMV-050 | MEDIUM | School work aggregation performs many sequential external calls and accepts la | DONE |
@@ -503,14 +562,14 @@ read as working for as long as it did.
 | 5 | AMV-SP-02 | MEDIUM | Google OAuth grant is outside the shared export/erasure inventory | TODO |
 | 3 | AMV-SP-05 | MEDIUM | Team task and audit collections still have multi-writer lost-update windows | DONE |
 | 5 | AMV-SP-06 | MEDIUM | Approval and handoff flows can report success after partial delivery/state upd | TODO |
-| 5 | AMV-SP-07 | MEDIUM | Clearing abuse records can leave entitlement-level blocking in place | TODO |
-| 5 | AMV-SP-09 | MEDIUM | Marketplace success/cancel redirects can reflect the request Origin when APP_U | TODO |
+| 5 | AMV-SP-07 | MEDIUM | Clearing abuse records can leave entitlement-level blocking in place | DONE |
+| 5 | AMV-SP-09 | MEDIUM | Marketplace success/cancel redirects can reflect the request Origin when APP_U | DONE |
 | 5 | AMV-SP-10 | MEDIUM | Password login accepts unbounded password length before PBKDF2 | DONE |
-| 5 | AMV-048 | LOW | Mail credential KDF uses a fixed salt and permits weak deployment secrets | TODO |
+| 5 | AMV-048 | LOW | Mail credential KDF uses a fixed salt and permits weak deployment secrets | DONE |
 | 5 | AMV-054 | LOW | JWT verifier treats `typ`, `nbf`, and `exp` as optional | DONE |
 | 5 | AMV-055 | LOW | Short deterministic identifiers use weak 32-bit or ~56-bit spaces | DONE |
-| 5 | AMV-058 | LOW | CI actions are referenced by mutable major tags | TODO |
-| 5 | AMV-059 | LOW | Deploy script depends on an undeclared global Wrangler installation | TODO |
+| 5 | AMV-058 | LOW | CI actions are referenced by mutable major tags | DONE |
+| 5 | AMV-059 | LOW | Deploy script depends on an undeclared global Wrangler installation | DONE |
 | 5 | AMV-SP-08 | LOW | Google OAuth redirect validation uses a prefix comparison | DONE |
 | 5 | AMV-SP-11 | LOW | Route comments and documentation overstate several security guarantees | TODO |
-| 5 | AMV-SP-12 | INFO | Dependency vulnerability audit is not reproducible in the supplied environment | TODO |
+| 5 | AMV-SP-12 | INFO | Dependency vulnerability audit is not reproducible in the supplied environment | DONE |

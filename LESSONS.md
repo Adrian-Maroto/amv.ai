@@ -4693,3 +4693,35 @@ the search is cheap, which is the whole point. And when a passing test tells you
 to add one entry, ask whether the entry is the finding or a symptom of a list
 built the wrong way: three red suites here were pointing at thirteen missing
 entries, and adding three would have left ten routes broken with the suite green.
+
+## 253. A convenience easier to call than the correct thing gets called
+
+Sixteen admin routes, three different gates. Thirteen went through `_adminGate`,
+which checks the token, applies a ceiling and writes an audit line. Three called
+`_requireAdmin`, a one-line predicate that returned whether the token matched -
+so guessing at the admin token was unbounded on those three and bounded on the
+other thirteen, and an attacker only has to find the one that is not.
+
+Nobody chose that. `_requireAdmin(request, env)` is a boolean, reads naturally in
+an `if`, and needs no `await` on a helper that returns a Response. `_adminGate`
+is the correct thing and is slightly more awkward to use. Given both, people
+reach for the one that fits the line they are writing.
+
+So the fix was not to add a ceiling to the three. It was to DELETE the
+predicate. There is now no way to ask "is this an admin" that does not also
+apply the limit and write the line, because the only function that answers is
+the one that does all three.
+
+The same shape appeared twice more in one afternoon. The first attempt at
+letting the session-authenticated screen share the ceiling was a
+`tokenAlreadyChecked` flag into `_adminGate` - which puts a `return null` in
+front of the token check, and the next caller to pass that flag by mistake walks
+straight through. Splitting the rate limit into its own function is the same
+behaviour with no door in it. And `_requireAdmin` had a sibling that was already
+gone for the same reason: two implementations of "is this an admin" accepting
+different headers, so hardening one covered half the surface while appearing to
+cover all of it.
+
+The rule: when a safe path and a convenient path both exist, the convenient one
+is the one in production. Remove it rather than documenting which to use, and be
+suspicious of any parameter whose value is "skip the check above".

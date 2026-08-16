@@ -988,6 +988,42 @@ async function _recordSpend(env, subject, usd, what, period, reserved) {
    We log auth failures, quota/rate/spend blocks, and forged webhooks -
    the signals you'd watch to spot abuse. PII is minimized (email only).
    ===================================================================== */
+/* AMV-046: A WORKER STOPS THE MOMENT IT ANSWERS, AND TAKES THE PROMISE WITH IT.
+
+   `audit()` started a fetch to AUDIT_WEBHOOK and to PostHog and did not wait,
+   with a comment saying "fire-and-forget; never block the request on logging".
+   The first half is right and the second half is not what happens: a Worker's
+   isolate is free to be torn down as soon as the response is returned, and a
+   promise nobody registered goes with it. So the delivery is not fire-and-
+   forget, it is fire-and-maybe - and the faster the request answers, the less
+   likely the event ever leaves.
+
+   Which events. `_highSignal` picks auth failures, forged webhooks, spend
+   blocks, admin denials: the ones an external collector exists to see, and the
+   ones whose absence looks exactly like nothing having happened. An anomaly
+   detector fed by a channel that drops under load is worse than none, because
+   the load is when it matters.
+
+   `waitUntil` is the platform's answer and it needs a context object, which
+   `audit` does not have and cannot be given without threading it through
+   several hundred call sites. So the most recent live context is kept here and
+   used. It is not perfectly attributed - under concurrency the promise may
+   extend a different request's lifetime than the one that logged - and that
+   does not matter for what waitUntil actually does, which is keep the isolate
+   alive until the promise settles. Wrapped, because using a context whose
+   request has already finished throws, and a logging call must never be the
+   thing that breaks a request. */
+let _liveCtx = null;
+function _bg(p) {
+  if (!p || typeof p.then !== 'function') return;
+  const settled = p.catch(() => {});
+  try {
+    if (_liveCtx && typeof _liveCtx.waitUntil === 'function') { _liveCtx.waitUntil(settled); return; }
+  } catch (e) { /* a finished context: the fallback below still applies */ }
+  /* Nothing to hold it open. Better than throwing, and honest: this is the
+     case where delivery really is best-effort. */
+}
+
 function audit(env, event, detail) {
   try {
     const rec = { t: new Date().toISOString(), event, ...detail };
@@ -996,10 +1032,10 @@ function audit(env, event, detail) {
     // Optional: ship high-signal events to an external collector.
     if (env && env.AUDIT_WEBHOOK && _highSignal(event)) {
       // fire-and-forget; never block the request on logging
-      fetchDeadline(env.AUDIT_WEBHOOK, {
+      _bg(fetchDeadline(env.AUDIT_WEBHOOK, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(rec),
-      }).catch(() => {});
+      }));
     }
     // Product analytics: mirror every business event to PostHog when configured
     // (set POSTHOG_KEY as a Worker secret). Inert until then. distinct_id is
@@ -1007,7 +1043,7 @@ function audit(env, event, detail) {
     if (env && env.POSTHOG_KEY) {
       const host = (env.POSTHOG_HOST || 'https://us.i.posthog.com').replace(/\/$/, '');
       const { by, email, ip, ...safe } = detail || {};
-      fetchDeadline(host + '/capture/', {
+      _bg(fetchDeadline(host + '/capture/', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           api_key: env.POSTHOG_KEY,
@@ -1016,7 +1052,7 @@ function audit(env, event, detail) {
           properties: { ...safe, source: 'amv-worker' },
           timestamp: rec.t,
         }),
-      }).catch(() => {});
+      }));
     }
   } catch { /* logging must never throw */ }
 }
@@ -3566,7 +3602,7 @@ async function schoolConnect(request, env){
      "for now" is how it stays plain. */
   const enc = await _mailEncrypt(env, token);
   if (!enc) {
-    return json({ error: 'AMV cannot store a school token safely on this deployment yet, so it will not store one at all. MAIL_CRED_KEY has to be set first.',
+    return json({ error: 'AMV cannot store a school token safely on this deployment yet, so it will not store one at all. MAIL_CRED_KEY has to be set first, to a long random value - at least 24 characters of real randomness, not a phrase.',
                   code: 'needs_service' }, 503);
   }
   await DB.put(env, 'school', user.email, { base: gate.base, secret: enc, name: who && who.name, at: Date.now() });
@@ -5315,6 +5351,31 @@ async function browserRun(request, env, ctx){
   }
 }
 
+/* Take the credentials out of text somebody's browser assembled by accident.
+
+   Deliberately shapes rather than values: this code cannot know what a given
+   deployment's tokens look like, and a list of exact secrets would be a list of
+   secrets. What it CAN recognise is the shape of a thing that is only ever a
+   credential - a JWT's three dot-separated base64 segments, a bearer header, an
+   `sk_`/`pk_` provider key, and the query parameters whose names mean "this is
+   the secret": token, code, key, secret, password, credential, signature.
+
+   Each becomes a marker rather than being deleted, so an engineer reading the
+   dashboard can still see that a token WAS there - which is often the clue. */
+const _ERR_SCRUB = [
+  [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, '[jwt]'],
+  [/\b(?:Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{12,}/gi, '$&'.replace(/.*/, '[authorization]')],
+  [/\b(?:sk|pk|rk)_(?:live|test)_[A-Za-z0-9]{8,}/g, '[provider-key]'],
+  [/\b(?:amv|api)_[A-Za-z0-9_-]{16,}/gi, '[api-key]'],
+  [/([?&#](?:token|code|key|secret|password|passwd|pwd|credential|signature|sig|access_token|refresh_token|id_token|api_key|apikey)=)[^&#\s"']+/gi, '$1[redacted]'],
+  [/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, '[email]'],
+];
+function _errScrub(text, max) {
+  let t = String(text == null ? '' : text);
+  for (const [re, to] of _ERR_SCRUB) t = t.replace(re, to);
+  return t.slice(0, max);
+}
+
 async function errorsReport(request, env, ctx){
   // AMV-054: this is a PUBLIC (unauthenticated) telemetry sink. Rate-limit per IP
   // so it can't be flooded to amplify storage or poison the dashboard.
@@ -5332,9 +5393,22 @@ async function errorsReport(request, env, ctx){
   for(const raw of events){
     const e = {
       kind:  String(raw.kind||'error').slice(0,24),
-      msg:   String(raw.msg||'').slice(0,300),
-      where: String(raw.where||'').slice(0,120),
-      stack: String(raw.stack||'').slice(0,1200),
+      /* AMV-037: SCRUBBED, BECAUSE THIS TEXT COMES OUT OF SOMEBODY'S BROWSER.
+
+         A message and a stack are written for an engineer and assembled from
+         whatever was in scope: the URL of the page, which carries a reset code
+         or an OAuth code often enough; the argument to the call that threw,
+         which on an auth path is a token; whatever the person had typed. All of
+         it lands in the operator's dashboard and is forwarded to Sentry, which
+         is a third party.
+
+         Nobody chose to send those. They arrived because a stack trace quotes
+         its surroundings, and the report is automatic. So the shapes that are
+         recognisably credentials are removed on the way in, before storage and
+         before anything is forwarded - a redaction after the fact is not one. */
+      msg:   _errScrub(raw.msg, 300),
+      where: _errScrub(raw.where, 120),
+      stack: _errScrub(raw.stack, 1200),
       tab:   String(raw.tab||'').slice(0,24),
       ua:    String(raw.ua||'').slice(0,120),
       ver:   String(raw.ver||'').slice(0,24),
@@ -5405,7 +5479,27 @@ async function errorsReport(request, env, ctx){
   }
   keys = Object.keys(idx.groups);
   if(keys.length > ERR_MAX_GROUPS){
-    keys.sort((a,b)=>(idx.groups[a].count||0)-(idx.groups[b].count||0));
+    /* AMV-037: WHAT GETS DROPPED WHEN A STRANGER FILLS THIS UP.
+
+       This sink is public - it has to be, because the errors worth knowing
+       about happen to people who are not signed in - and it was pruned by raw
+       COUNT. So the way to hide a real fault from the operator was to send more
+       of something else: a flood of invented fingerprints, each with a high
+       count, pushes every genuine error out of the index by ordinary
+       arithmetic. The per-address ceiling bounds one sender and does not bound
+       a botnet, and the dashboard cannot tell the difference between "this
+       stopped happening" and "this was pushed off the end".
+
+       So the ranking is by how many DIFFERENT people hit it, and only then by
+       how often. One sender with a thousand reports of one thing counts as one
+       person; a real fault reaching twenty customers outranks it however loud
+       it is. `burst` is already the rolling set of distinct reporters, kept as
+       one-way hashes, so this needs no new record and no new identifier. */
+    const reach = (k) => {
+      const g = idx.groups[k] || {};
+      return Array.isArray(g.burst) ? g.burst.length : 0;
+    };
+    keys.sort((a,b)=> (reach(a) - reach(b)) || ((idx.groups[a].count||0)-(idx.groups[b].count||0)));
     for(const k of keys.slice(0, keys.length - ERR_MAX_GROUPS)) delete idx.groups[k];
   }
 
@@ -5479,7 +5573,43 @@ async function abuseClear(request, env){
   if(!rec) return json({ error:'not found' }, 404);
   /* Same mismatch: abuse records are written through DB, so clearing one has to
      go through DB or the flag survives on D1 and the account stays marked. */
-  if(body.remove){ await DB.del(env, 'abuse', email); }
+  /* AMV-SP-07: THE FLAG THAT DOES THE BLOCKING IS ON THE OTHER RECORD.
+
+     Two things are true at once about a blocked account: an `abuse` record
+     saying why, and `ent.blocked`, which is the fast copy every request
+     actually reads. Clearing the flag propagated to both. DELETING the record
+     did not - it removed the abuse row and left ent.blocked exactly where it
+     was.
+
+     So the outcome of "remove" was the worst available: the account stays
+     refused everywhere, and the record that explained why is gone. The operator
+     is looking at a screen with nothing on it while the customer cannot use
+     anything, and there is no longer any evidence to work back from. Removing
+     is the STRONGER of the two operator actions, and it did less. */
+  let unblocked = true;
+  const liftEntBlock = async () => {
+    try {
+      await _withEnt(env, email, (e) => {
+        if (!e) return;
+        delete e.blocked; delete e.blockedReason; delete e.blockedAt;
+      });
+    } catch (e) {
+      unblocked = false;
+      audit(env, 'abuse_unblock_not_propagated', { email, error: String((e && e.message) || e) });
+    }
+  };
+
+  if(body.remove){
+    /* The entitlement first. If it fails, the abuse record is still there to
+       explain the block - which is the recoverable order to fail in. */
+    await liftEntBlock();
+    if(!unblocked){
+      return json({ error: 'AMV could not lift the block on that account, so it did not delete the record explaining it either. '
+                         + 'Nothing was changed - try again in a moment.',
+                    code: 'unblock_failed' }, 503);
+    }
+    await DB.del(env, 'abuse', email);
+  }
   else {
     /* UNDER THE LOCK EVERY OTHER WRITER TAKES.
        A dispute arriving from Stripe writes this record through _withKind. An
@@ -5495,15 +5625,15 @@ async function abuseClear(request, env){
     }, null);
     /* And on the entitlement, or the account stays refused everywhere that
        reads the fast copy while the operator is looking at a cleared flag. */
-    try {
-      await _withEnt(env, email, (e) => {
-        if (!e) return;
-        delete e.blocked; delete e.blockedReason; delete e.blockedAt;
-      });
-    } catch (e) { audit(env, 'abuse_unblock_not_propagated', { email, error: String((e && e.message) || e) }); }
+    await liftEntBlock();
   }
-  audit(env, 'abuse_cleared', { email, removed: !!body.remove });
-  return json({ ok:true });
+  audit(env, 'abuse_cleared', { email, removed: !!body.remove, unblocked });
+  /* Said rather than assumed. An operator who has just cleared a flag needs to
+     know whether the person can actually use the product again, and a bare
+     ok:true answers a different question. */
+  return json({ ok:true, unblocked,
+    ...(unblocked ? {} : { warning: 'The abuse record was cleared, but the block on the account could not be lifted. '
+                                  + 'They are still refused - clear it again in a moment.' }) });
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -5950,10 +6080,25 @@ function _adminTokenOK(request, env){
    Keyed by source rather than by account, because an admin request that fails
    has no account behind it yet. Deliberately generous: a real operator
    refreshing a dashboard must never be the one who gets refused. */
-async function _adminGate(request, env, what, perMin, perDay, opts) {
-  const ip = (await _ipHash(env, request))
-          || request.headers.get('CF-Connecting-IP')
-          || request.headers.get('X-Forwarded-For') || 'unknown';
+/* The CEILING half, on its own, so the one caller that authenticates
+   differently can have it without a way past the token check.
+
+   The first version of this passed a `tokenAlreadyChecked` flag into
+   _adminGate and returned early on it. That works and it is the wrong shape: it
+   puts a `return null` in front of the token check, which is the exact thing
+   every-route-decides refuses to allow - correctly, because the next caller to
+   pass that flag by mistake walks straight through. There is no flag now.
+   Splitting the function is the same code with no door in it. */
+/* Who is asking, as a keyed hash rather than an address, in one place because
+   both halves of the gate need it. */
+async function _adminIp(request, env) {
+  return (await _ipHash(env, request))
+      || request.headers.get('CF-Connecting-IP')
+      || request.headers.get('X-Forwarded-For') || 'unknown';
+}
+
+async function _adminRateLimit(request, env, what, perMin, perDay) {
+  const ip = await _adminIp(request, env);
   const lim = await limitAction(env, `admin:${what}:${ip}`, perMin || 30, perDay || 500);
   /* If the counter store itself is unreachable, do NOT refuse. These are the
      routes an operator needs during exactly that failure - readiness is the
@@ -5971,14 +6116,16 @@ async function _adminGate(request, env, what, perMin, perDay, opts) {
       code: lim.code,
     }, 429);
   }
-  /* One caller authenticates by session rather than by the admin token and has
-     already done it - see adminUsers, which explains why the two credentials
-     are kept apart. It still wants the ceiling and the audit above. */
-  if (opts && opts.tokenAlreadyChecked) return null;
+  return null;
+}
+
+async function _adminGate(request, env, what, perMin, perDay) {
+  const limited = await _adminRateLimit(request, env, what, perMin, perDay);
+  if (limited) return limited;
   if (!_adminTokenOK(request, env)) {
     /* A wrong token is worth knowing about: it is either an operator with a
        stale copy or somebody trying. Either way it should not be silent. */
-    audit(env, 'admin_denied', { what, ip });
+    audit(env, 'admin_denied', { what, ip: await _adminIp(request, env) });
     /* 403 to match every other admin refusal in this file. The status is part
        of the contract - one surface answering 401 while the rest answer 403
        means a caller has to know which route it is talking to. */
@@ -6557,6 +6704,7 @@ export default {
        crons = ["every 5 minutes"]   // i.e. the standard 5-minute cron expression
   */
   async scheduled(event, env, ctx) {
+    _liveCtx = ctx;   // AMV-046: the tick logs too, and its events matter most
     ctx.waitUntil((async()=>{
       /* THE KILL SWITCH HAS TO REACH THE CRON, OR IT DOES NOT STOP SPENDING.
 
@@ -6657,6 +6805,10 @@ export default {
      a later `return` inside the router escaping the same way - including the
      four public GET routes, which were outside the try altogether. */
   async fetch(request, env, ctx) {
+    /* AMV-046: so audit() can register its deliveries with waitUntil. It has no
+       ctx of its own and cannot be handed one without threading it through
+       several hundred call sites. */
+    _liveCtx = ctx;
     try {
       /* AMV-029: HOW MUCH THE SENDER IS ALLOWED TO HAND OVER.
 
@@ -6736,6 +6888,35 @@ function _bodyTooBig(request) {
       + Math.round(max / 1024) + ' KB), so nothing was read.',
     code: 'body_too_large', limit: max,
   }, 413);
+}
+
+/* AMV-SP-09: WHERE SOMEBODY LANDS AFTER PAYING IS NOT THE CALLER'S CHOICE.
+
+   The three payment redirects read `APP_URL || APP_ORIGIN || request Origin`,
+   under a comment saying the request Origin is "only a dev fallback when no
+   APP_URL is configured". The comment is describing an intention. Nothing in
+   the code knows whether a deployment is development: a production instance
+   that simply never set APP_URL takes the redirect from a header the caller
+   sends, and that header is not authenticated by anything.
+
+   What that is worth: a request to start a checkout with `Origin:
+   https://amv-billing.example` puts an attacker's address into Stripe's
+   success_url. The customer pays - really pays, to the real Stripe - and is
+   returned to a page the attacker controls, at the exact moment they are
+   expecting to be asked to confirm something. That is a phishing page with
+   perfect timing and a genuine transaction behind it.
+
+   There is no fallback now. A deployment that has not been told its own address
+   cannot start a payment, and says which setting is missing. That is the honest
+   version of "dev fallback": it works the moment the setting exists, and it
+   does not quietly do something dangerous before then. */
+function _paymentReturnOrigin(env) {
+  return String((env && (env.APP_URL || env.APP_ORIGIN)) || '').replace(/\/$/, '');
+}
+function _paymentOriginMissing() {
+  return json({ error: 'Payments are not set up on this deployment: AMV does not know its own address, '
+                     + 'so it cannot say where to send you after paying. Set APP_URL and this works immediately.',
+                code: 'needs_service' }, 503);
 }
 
 /* AMV-028: THE CONFIGURED ORIGIN, APPLIED WHERE EVERY RESPONSE PASSES.
@@ -7490,7 +7671,7 @@ async function adminUsers(request, env) {
      What was not deliberate is that this one had no rate limit and no audit
      line at all, while the sixteen beside it had both. One admin surface
      without a ceiling is the one somebody walks through. */
-  { const g = await _adminGate(request, env, 'userlist', 60, 2000, { tokenAlreadyChecked: true }); if (g) return g; }
+  { const g = await _adminRateLimit(request, env, 'userlist', 60, 2000); if (g) return g; }
   audit(env, 'admin_user_list', { by: String(claims.email).toLowerCase(), owner: isOwner });
   /* AMV-198: ONE PAGE OF ACCOUNTS, NOT ALL OF THEM AT ONCE.
 
@@ -7837,19 +8018,56 @@ async function accountExport(request, env) {
 
   const email = String(user.email || '').toLowerCase();
   const records = {}, withheld = {};
+
+  /* AMV-039: "EVERYTHING AMV HOLDS" WAS A PROMISE SIX EMPTY CATCHES COULD NOT KEEP.
+
+     Every read and every listing here was wrapped in `catch(e){}`, and the note
+     on the way out said this file is everything AMV holds on the server for
+     this account. So a storage error, a timeout, one page of a listing that did
+     not come back - and the export was quietly short, and said it was complete.
+
+     This is not an ordinary swallowed error. A data export is the thing a
+     person is given when they exercise a right to it, and it is read as an
+     answer to "what do you have on me". An answer that is missing a record
+     nobody knows is missing is worse than a refusal, because the person cannot
+     tell and stops asking.
+
+     Nothing is silent now. Whatever could not be read is named, the answer says
+     plainly whether it is complete, and the note only claims completeness when
+     it is true. */
+  const unreadable = [];
+  const noteFailure = (what, e) => {
+    unreadable.push({ what, why: String((e && e.message) || e).slice(0, 120) });
+  };
+
   for (const kind of PER_USER_KINDS) {
     if (kind in EXPORT_REDACTED) {
       let present = false;
-      try { present = !!(await DB.get(env, kind, email)); } catch (e) {}
+      try { present = !!(await DB.get(env, kind, email)); }
+      catch (e) { noteFailure(kind, e); continue; }
       if (present) withheld[kind] = EXPORT_REDACTED[kind];
       continue;
     }
-    try { const v = await DB.get(env, kind, email); if (v != null) records[kind] = v; } catch (e) {}
+    try { const v = await DB.get(env, kind, email); if (v != null) records[kind] = v; }
+    catch (e) { noteFailure(kind, e); }
+  }
+
+  /* The account record is the SUBJECT of the export. Without it there is
+     nothing to hand over that means anything, so that one failure is refused
+     outright rather than reported as a gap. */
+  if (unreadable.some(u => u.what === 'acct')) {
+    audit(env, 'account_export_failed', { email });
+    return json({ error: 'AMV could not read your account record just now, so it will not hand you an export that is missing it. '
+                       + 'Nothing has been lost - please try again in a moment.',
+                  code: 'export_unavailable' }, 503);
   }
 
   /* The loose keys, in the same shapes erasure removes them. */
   const loose = {};
-  const add = async (k, label) => { try { const v = await env.AMV_KV.get(k); if (v != null) loose[label || k] = v; } catch (e) {} };
+  const add = async (k, label) => {
+    try { const v = await env.AMV_KV.get(k); if (v != null) loose[label || k] = v; }
+    catch (e) { noteFailure(label || k, e); }
+  };
   await add(`alog:${email}`, 'activity_log');
   await add(`refmine:${email}`, 'referral_code');
   await add(`refpend:${email}`, 'referral_pending');
@@ -7866,16 +8084,30 @@ async function accountExport(request, env) {
         }
         cursor = page.list_complete ? undefined : page.cursor;
       } while (cursor);
-    } catch (e) {}
+    } catch (e) { noteFailure(prefix + '*', e); }
   }
 
-  audit(env, 'account_exported', { email, kinds: Object.keys(records).length });
+  const complete = unreadable.length === 0;
+  if (!complete) {
+    audit(env, 'account_export_partial', { email, missing: unreadable.length });
+    try { await alertOnce(env, 'export_partial',
+      'A data export came back incomplete - ' + unreadable.length + ' record(s) could not be read. '
+      + 'The person was told, but this is a storage fault worth looking at.', 60); } catch (e) {}
+  }
+  audit(env, 'account_exported', { email, kinds: Object.keys(records).length, complete });
   return json({
     ok: true,
     generatedAt: new Date().toISOString(),
     account: email,
-    note: 'Everything AMV holds on the server for this account. Records that are live credentials are listed under `withheld` by name only - AMV will not hand a key back through an export.',
+    complete,
+    note: (complete
+      ? 'Everything AMV holds on the server for this account.'
+      : 'This export is INCOMPLETE. ' + unreadable.length + ' record'
+        + (unreadable.length === 1 ? '' : 's') + ' could not be read and are listed under `unreadable`. '
+        + 'Nothing has been deleted - they exist and could not be fetched. Ask again shortly for a complete copy.')
+      + ' Records that are live credentials are listed under `withheld` by name only - AMV will not hand a key back through an export.',
     records, loose, withheld,
+    ...(complete ? {} : { unreadable }),
     alsoRetained: { billing: 'invoices and payment records are kept to meet retention obligations and are available on request' },
   });
 }
@@ -11723,9 +11955,28 @@ function _widgetLoaderJS(key, appHost) {
     btn.onclick=function(){ open=!open; wrap.style.display=open?'block':'none'; btn.style.transform='scale(1)'; };
     document.body.appendChild(wrap); document.body.appendChild(btn);
   }
-  // let the iframe ask us to close (X inside the panel)
+  /* AMV-044: THE X INSIDE THE PANEL, AND NOBODY ELSE.
+
+     This listened for a message and acted on it without asking where it came
+     from. The listener runs on the CUSTOMER'S OWN SITE - AMV's script, on
+     somebody else's page - so every frame on that page, and every window with a
+     handle to it, could send {__amvWidget:'close'} and be obeyed.
+
+     Closing a panel is a small thing to be able to do. The listener is not: it
+     is an open channel into a script running on a third party's site, and the
+     moment this protocol grows a second verb - open it, point it somewhere,
+     hand it a session - the same code obeys that from anywhere too. The cost of
+     checking is two comparisons.
+
+     Both checks, because either alone leaves a way in: the ORIGIN alone would
+     accept any frame served from the app host, including one an attacker
+     embedded themselves, and the SOURCE alone would accept a window that
+     happens to be the frame but is showing something else. */
+  var APP_ORIGIN=(function(){ try{ return new URL(SRC).origin; }catch(e){ return ''; } })();
   window.addEventListener('message',function(e){
-    if(e&&e.data&&e.data.__amvWidget==='close'){ open=false; if(wrap) wrap.style.display='none'; }
+    if(!e || !APP_ORIGIN || e.origin!==APP_ORIGIN) return;
+    if(!frame || e.source!==frame.contentWindow) return;
+    if(e.data && e.data.__amvWidget==='close'){ open=false; if(wrap) wrap.style.display='none'; }
   });
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',build); else build();
 })();`;
@@ -13642,11 +13893,10 @@ async function stripeCheckout(request, env) {
      that asks for a million gets the cap. */
   const seats = plan === 'team' ? _teamSeatCount({ seats: body.seats }) : 1;
 
-  // AMV-025: the server-configured origin is authoritative for payment redirects.
-  // NEVER reflect the request Origin header when APP_URL is set - a direct caller
-  // could point the post-payment redirect at a phishing site. Origin is only a
-  // dev fallback when no APP_URL is configured.
-  const origin = (env.APP_URL || env.APP_ORIGIN || request.headers.get('Origin') || '').replace(/\/$/, '');
+  // AMV-025 / AMV-SP-09: the server-configured origin is authoritative for
+  // payment redirects, and there is no fallback to the request Origin.
+  const origin = _paymentReturnOrigin(env);
+  if (!origin) return _paymentOriginMissing();
   const form = new URLSearchParams();
   /* HOW THE REST OF THE WORLD PAYS.
 
@@ -13729,11 +13979,10 @@ async function stripePortal(request, env) {
   if (!env.STRIPE_SECRET_KEY) return json({ error: 'payments not configured' }, 503);
   const custId = await env.AMV_KV.get(`stripecust:${user.email}`);
   if (!custId) return json({ error: 'no subscription found' }, 404);
-  // AMV-025: the server-configured origin is authoritative for payment redirects.
-  // NEVER reflect the request Origin header when APP_URL is set - a direct caller
-  // could point the post-payment redirect at a phishing site. Origin is only a
-  // dev fallback when no APP_URL is configured.
-  const origin = (env.APP_URL || env.APP_ORIGIN || request.headers.get('Origin') || '').replace(/\/$/, '');
+  // AMV-025 / AMV-SP-09: the server-configured origin is authoritative for
+  // payment redirects, and there is no fallback to the request Origin.
+  const origin = _paymentReturnOrigin(env);
+  if (!origin) return _paymentOriginMissing();
   const form = new URLSearchParams({ customer: custId, return_url: origin });
   const r = await fetchDeadline('https://api.stripe.com/v1/billing_portal/sessions', {
     method: 'POST',
@@ -15309,11 +15558,10 @@ async function marketBuy(request, env) {
     }
   }
 
-  // AMV-025: the server-configured origin is authoritative for payment redirects.
-  // NEVER reflect the request Origin header when APP_URL is set - a direct caller
-  // could point the post-payment redirect at a phishing site. Origin is only a
-  // dev fallback when no APP_URL is configured.
-  const origin = (env.APP_URL || env.APP_ORIGIN || request.headers.get('Origin') || '').replace(/\/$/, '');
+  // AMV-025 / AMV-SP-09: the server-configured origin is authoritative for
+  // payment redirects, and there is no fallback to the request Origin.
+  const origin = _paymentReturnOrigin(env);
+  if (!origin) return _paymentOriginMissing();
   const form = new URLSearchParams();
   form.set('mode', 'payment');
   /* The same for a marketplace purchase, where the single-use methods matter
@@ -15403,7 +15651,23 @@ async function _creditSaleWork(env, { itemId, buyer, seller, amountCents, ref })
      costs is the record of what they bought, which is the thing they look at to
      find it again. A refund landing beside a purchase used to lose one of the
      two. */
-  const bought = { id: itemId, title: it ? it.title : itemId, kind: it ? it.kind : 'prompt', price, ts: Date.now() };
+  /* AMV-043: THE SELLER, WRITTEN DOWN AT THE MOMENT OF THE SALE.
+
+     Reviewing a seller used to be proved by walking the buyer's purchases and
+     reading each LISTING to see who wrote it. So the proof depended on the
+     listing still existing - and the person who decides whether it exists is
+     the seller being reviewed. Delete the item and every buyer of it silently
+     loses the ability to say anything about you, which is the one thing a
+     reputation system must not let a seller do.
+
+     It is not only deletion: a listing that moderation removes, or one that a
+     restore did not bring back, takes the same reviews with it.
+
+     Who somebody bought from is a fact about the transaction. It is recorded
+     with the transaction now, so it survives whatever happens to the listing
+     afterwards. */
+  const bought = { id: itemId, title: it ? it.title : itemId, kind: it ? it.kind : 'prompt',
+                   price, ts: Date.now(), seller: sellerEmail || (it ? String(it.authorEmail || '').toLowerCase() : '') };
   /* EVERY STEP HERE HAS TO SURVIVE BEING RUN TWICE.
 
      The claim around this is released when the work throws, so the retry can
@@ -16641,7 +16905,13 @@ async function marketRate(request, env) {
   const { id, stars } = await request.json().catch(() => ({}));
   const s = Math.max(1, Math.min(5, Math.round(Number(stars) || 0)));
   if (!(await _ownsItem(env, user.email, id))) return json({ error: 'buy it before rating' }, 403);
-  const it = await _getListing(env, id);
+  /* AMV-043: the snapshot taken at purchase stands in for a listing the seller
+     has since taken down. Somebody who paid for a thing may say what they
+     thought of it, and whether the seller still offers it is not their
+     business - a rating that disappears when the seller withdraws the item is a
+     rating the seller controls. */
+  const it = (await _getListing(env, id))
+          || (await DB.get(env, 'mktsnap', `${user.email}:${id}`).catch(() => null));
   if (!it) return json({ error: 'not found' }, 404);
   /* PSEUDONYMOUS, LIKE THE REVIEWS RIGHT BELOW THIS.
 
@@ -16872,12 +17142,22 @@ async function marketReview(request, env) {
   const { seller, stars, text } = await request.json().catch(() => ({}));
   const sellerEmail = String(seller || '').toLowerCase();
   if (!sellerEmail || sellerEmail === user.email) return json({ error: 'invalid seller' }, 400);
-  // verify the buyer owns something from this seller
+  /* AMV-043: from the purchase itself where it is recorded, and only then from
+     the listing - which may not exist any more, and whose existence is the
+     seller's own decision. The snapshot taken at purchase is the third place to
+     look, because it is the copy a seller cannot touch. */
   const purchases = await _purchasesList(env, user.email);
   let bought = false;
   for (const p of purchases) {
-    const it = await _getListing(env, p.id);
-    if (it && (it.authorEmail || '').toLowerCase() === sellerEmail) { bought = true; break; }
+    if (!p) continue;
+    if (String(p.seller || '').toLowerCase() === sellerEmail) { bought = true; break; }
+    /* Older purchases, recorded before the seller was written down. */
+    if (!p.seller) {
+      const snap = await DB.get(env, 'mktsnap', `${user.email}:${p.id}`).catch(() => null);
+      if (snap && String(snap.authorEmail || '').toLowerCase() === sellerEmail) { bought = true; break; }
+      const it = await _getListing(env, p.id);
+      if (it && (it.authorEmail || '').toLowerCase() === sellerEmail) { bought = true; break; }
+    }
   }
   if (!bought) return json({ error: 'You can only review sellers you\u2019ve bought from.' }, 403);
   const s = Math.max(1, Math.min(5, Math.round(Number(stars) || 0)));
@@ -19269,13 +19549,60 @@ const MAIL_MAX_LIST   = 50;
    in the clear. That is the honest-degradation rule applied to the one place
    it matters most: a feature that quietly weakens its own encryption because a
    setting is missing is worse than a feature that says it is not ready. */
-async function _mailCredKey(env) {
+/* AMV-048: THE SALT WAS THE SAME ON EVERY DEPLOYMENT AMV HAS EVER HAD.
+
+   `salt: 'amv-mail-credentials-v1'`, hard-coded, identical everywhere. A salt's
+   whole job is to make precomputation useless, and a constant one in shipped
+   source is a constant an attacker has too: work done once against it applies
+   to every AMV instance in the world at the same time. The iteration count is
+   respectable and it is being spent on a table somebody can build once.
+
+   The salt is derived from the deployment's own key now, so it differs
+   everywhere without needing a new setting or a migration. That does not add
+   entropy - it cannot, it comes from the same secret - and it is not what it is
+   for: it makes the precomputation per-deployment, which is the exact property
+   a shared constant threw away.
+
+   Old ciphertexts keep working. Anything written under v1 still decrypts,
+   because a key rotation that silently locks people out of their own mailbox is
+   a worse outcome than the thing being fixed. New writes use v2.
+
+   AND THE SECRET ITSELF. `length < 16` was the only check, so
+   MAIL_CRED_KEY=aaaaaaaaaaaaaaaa passed - sixteen characters and about four
+   bits. PBKDF2 over that is a formality. A key this weak is refused outright
+   and said so, rather than being stretched into a false sense of safety: mail
+   degrades honestly on a bad key, exactly as it does on a missing one. */
+const MAIL_CRED_MIN = 24;
+
+/* Enough different characters that this is a generated secret rather than
+   somebody holding a key down. Deliberately crude: it cannot measure entropy,
+   and it can refuse the shapes that obviously have none. */
+function _mailCredWeak(secret) {
+  const s = String(secret || '');
+  if (s.length < MAIL_CRED_MIN) return 'shorter than ' + MAIL_CRED_MIN + ' characters';
+  if (new Set(s).size < 8) return 'made of too few different characters';
+  if (/^(.)\1+$/.test(s)) return 'the same character repeated';
+  if (/^(?:0123456789|abcdefghij|password|changeme|secret|test)/i.test(s)) return 'a placeholder rather than a secret';
+  return null;
+}
+
+async function _mailCredSalt(secret) {
+  /* Per deployment, from the deployment's own key. Not stored, so there is
+     nothing to migrate and nothing to lose. */
+  const bytes = new TextEncoder().encode('amv-mail-credentials-v2:' + secret);
+  return new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+}
+
+async function _mailCredKey(env, version) {
   const secret = String((env && env.MAIL_CRED_KEY) || '');
-  if (secret.length < 16) return null;
+  if (_mailCredWeak(secret)) return null;
   const enc = new TextEncoder();
+  const salt = version === 1
+    ? enc.encode('amv-mail-credentials-v1')   // only ever used to READ what v1 wrote
+    : await _mailCredSalt(secret);
   const material = await crypto.subtle.importKey('raw', enc.encode(secret), 'PBKDF2', false, ['deriveKey']);
   return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt: enc.encode('amv-mail-credentials-v1'), iterations: 120000, hash: 'SHA-256' },
+    { name: 'PBKDF2', salt, iterations: 120000, hash: 'SHA-256' },
     material, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
 }
 
@@ -19290,14 +19617,25 @@ async function _mailEncrypt(env, plain) {
 }
 
 async function _mailDecrypt(env, blob) {
-  const key = await _mailCredKey(env);
-  if (!key || !blob) return null;
-  try {
-    const raw = Uint8Array.from(atob(String(blob)), (c) => c.charCodeAt(0));
-    const iv = raw.subarray(0, 12), ct = raw.subarray(12);
-    const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
-    return new TextDecoder().decode(pt);
-  } catch (e) { return null; }
+  if (!blob) return null;
+  const raw0 = (() => {
+    try { return Uint8Array.from(atob(String(blob)), (c) => c.charCodeAt(0)); }
+    catch (e) { return null; }
+  })();
+  if (!raw0) return null;
+  /* v2 and the v1 that came before it. Trying both is what makes this a
+     rotation rather than a lockout - a mailbox connected last week must keep
+     working, and its owner should never find out this changed. */
+  for (const version of [2, 1]) {
+    const key = await _mailCredKey(env, version);
+    if (!key) return null;
+    try {
+      const iv = raw0.subarray(0, 12), ct = raw0.subarray(12);
+      const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
+      return new TextDecoder().decode(pt);
+    } catch (e) { /* wrong key for this blob; try the older one */ }
+  }
+  return null;
 }
 
 /* What the browser is allowed to know about a connection. Everything except
@@ -19728,7 +20066,7 @@ async function mailConnect(request, env) {
 
   if (!(await _mailCredKey(env))) {
     audit(env, 'mail_no_cred_key', { by: user.email });
-    return json({ error: 'AMV cannot store mail passwords safely on this deployment yet, so it will not store one at all. MAIL_CRED_KEY has to be set first.',
+    return json({ error: 'AMV cannot store mail passwords safely on this deployment yet, so it will not store one at all. MAIL_CRED_KEY has to be set first, to a long random value - at least 24 characters of real randomness, not a phrase.',
                   code: 'needs_service' }, 503);
   }
 
@@ -20558,7 +20896,7 @@ async function telegramConnect(request, env) {
   const g = await guardAction(env, 'tgconn:' + user.email, 6, 300, 'Telegram connection attempts');
   if (g) return g;
   if (!(await _mailCredKey(env))) {
-    return json({ error: 'AMV cannot store a bot token safely on this deployment yet, so it will not store one at all. MAIL_CRED_KEY has to be set first.',
+    return json({ error: 'AMV cannot store a bot token safely on this deployment yet, so it will not store one at all. MAIL_CRED_KEY has to be set first, to a long random value - at least 24 characters of real randomness, not a phrase.',
                   code: 'needs_service' }, 503);
   }
   const body = await request.json().catch(() => ({}));

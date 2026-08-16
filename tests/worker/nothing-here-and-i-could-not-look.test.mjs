@@ -177,11 +177,19 @@ section('The three that were ungated are on the same gate as the rest');
 section('The session-based screen shares the ceiling without sharing the key');
 {
   const users = codeOnly(functionBody(src, 'adminUsers') || '');
-  ok(/_adminGate\(request, env, 'userlist'/.test(users),
+  ok(/_adminRateLimit\(request, env, 'userlist'/.test(users),
      'the user list is rate limited like everything else', true);
   ok(/audit\(env, 'admin_user_list'/.test(users), 'and writes down who looked', true);
-  ok(/tokenAlreadyChecked: true/.test(users),
-     'while keeping its own credential rather than accepting the operator token', true);
+  /* It takes the CEILING and not the gate, which is the point: the first
+     attempt at this passed a "already authenticated" flag into _adminGate, and
+     that put a `return null` in front of the token check - the exact shape
+     every-route-decides refuses, and rightly, because the next caller to pass
+     the flag by mistake walks straight through. Splitting the function is the
+     same behaviour with no door in it. */
+  ok(!/_adminGate\(/.test(users),
+     'while keeping its own credential rather than borrowing the operator gate', true);
+  ok(!/tokenAlreadyChecked/.test(codeOnly(src)),
+     'and there is no flag anywhere that skips a token check', true);
 
   /* The part that must NOT be true: a signed-in admin account cannot reach the
      routes that need the operator's token. */

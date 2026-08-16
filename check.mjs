@@ -151,6 +151,15 @@ step('Page weight is under control', () => {
       + 'Trim it, or raise the ceiling deliberately and say why.');
 });
 
+/* AMV-SP-12: the dependency audit, run from the committed lockfile rather than
+   by hand in an environment somebody has to arrange. It skips itself when the
+   registry is unreachable, because a gate that goes red on a train is a gate
+   people learn to ignore - and it fails on any advisory nobody has written a
+   reason for. */
+step('Dependencies have no unassessed advisories', () => {
+  sh('node audit-deps.mjs');
+});
+
 /* ── 5. Deploy preflight ─────────────────────────────────────────────────── */
 step('Deploy preflight', () => {
   // Preflight exits 1 when the config isn't deployable. In dev the KV id is a

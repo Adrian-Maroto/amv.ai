@@ -42,7 +42,7 @@ const VERIFIERS = [...src.matchAll(/function\s+(verify[A-Za-z]*(?:Signature|Webh
    here as newly unauthenticated. Recognising a name is only safe if the name
    really does the check, so that is asserted below rather than assumed. */
 const AUTH = new RegExp(
-  ['requireUser\\(', '_adminTokenOK\\(', '_adminOk\\(', '_requireAdmin\\(', '_adminGate\\(', '_mailRun\\(']
+  ['requireUser\\(', '_adminTokenOK\\(', '_adminOk\\(', '_adminGate\\(', '_mailRun\\(']
     .concat(VERIFIERS.map(v => v + '\\(')).join('|'));
 
 /* Public on purpose, each with the reason it has to be. */
@@ -110,7 +110,12 @@ section('Each name this check accepts as "authenticates" actually does');
   ok(/return json\([^)]*\},\s*40[13]\s*\)/.test(gate.replace(/\s+/g, ' ')),
      'and returns a refusal when it does not match', gate.replace(/\s+/g, ' ').slice(-260));
   ok(/_adminTokenOK\(/.test(codeOnly(bodyOf('_adminOk'))), '_adminOk does too', true);
-  ok(/_adminTokenOK\(/.test(codeOnly(bodyOf('_requireAdmin'))), 'and so does _requireAdmin', true);
+  /* _requireAdmin used to be on this list. It is deleted (AMV-052): it was a
+     bare "is this an admin" predicate with no ceiling and no audit, and three
+     routes reached for it instead of the gate. A name that is easier to call
+     than the correct thing gets called, so the fix was to remove the name. */
+  ok(!/function _requireAdmin\b/.test(codeOnly(src)),
+     'and the bare admin predicate is gone rather than merely unused', true);
 
   /* The sixth way, and the one that caught this check out again: the mail
      routes hand the whole request to _mailRun, which authenticates, rate
@@ -124,9 +129,23 @@ section('Each name this check accepts as "authenticates" actually does');
   /* And the gate must not be able to let somebody through by failing. Storage
      being unreachable relaxes the RATE LIMIT deliberately; it must never
      relax the token, so the refusal cannot sit before the check. */
-  const uIdx = gate.indexOf('unavailable'), tIdx = gate.indexOf('_adminTokenOK');
-  ok(uIdx > 0 && tIdx > uIdx && !/return null/.test(gate.slice(uIdx, tIdx)),
-     'a store outage does not return early past the token check', { uIdx, tIdx });
+  /* The rate limit lives in its own function now (AMV-052), because one caller
+     authenticates by session and wants the ceiling without a way past the token
+     check - and the first attempt at that was a flag into this gate, which put
+     a `return null` in front of the token check. Exactly what this rule is for.
+
+     So the property is checked across the two: the gate runs the limiter, then
+     the token check, with nothing returning in between; and the limiter is
+     asked no question about tokens at all, so it cannot answer one wrongly. */
+  const lIdx = gate.indexOf('_adminRateLimit'), tIdx = gate.indexOf('_adminTokenOK');
+  ok(lIdx > 0 && tIdx > lIdx, 'the gate limits first and then checks the token', { lIdx, tIdx });
+  ok(!/return null/.test(gate.slice(lIdx, tIdx)),
+     'with nothing returning early in between', gate.slice(lIdx, tIdx).replace(/\s+/g, ' ').slice(0, 120));
+
+  const limiter = codeOnly(bodyOf('_adminRateLimit'));
+  ok(/unavailable/.test(limiter), 'the limiter is the one that relaxes on an outage', true);
+  ok(!/_adminTokenOK|requireUser/.test(limiter),
+     'and it never decides who is calling, so it cannot let anybody through', true);
 }
 
 section('Every route authenticates, or is listed as public with a reason');
