@@ -17,7 +17,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
-import { codeOnly } from '../lib/source.mjs';
+import { codeOnly, functionBody } from '../lib/source.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -295,6 +295,54 @@ section('Connecting is refused before it can store a password unsafely');
   const stored = store.get('mailcfg:' + EMAIL) || '';
   ok(stored && !stored.includes('client-auth-code'),
      'and what is on disk is ciphertext, not the password', stored.slice(0, 30));
+}
+
+section('SMTP can upgrade, and never writes a password before it has');
+{
+  /* WHY THIS EXISTS. Implicit TLS on 465 is encrypted from the first byte.
+     STARTTLS on 587 opens in the CLEAR and upgrades on request - and a great
+     many consumer ISPs offer only the second. Speaking one dialect meant Shaw,
+     TELUS, Optus, AT&T, BT, Telenet, Bluewin and the rest were unreachable.
+
+     The dangerous half of adding it is the order of operations. If AUTH is
+     sent before the upgrade, or if a refused STARTTLS is allowed to continue,
+     the password crosses the wire unencrypted - and it works, so nothing
+     reports a problem. That is the failure this section is about. */
+  const send = codeOnly(functionBody(src, '_smtpSend'));
+  ok(/STARTTLS/.test(send), 'the sender can request an upgrade', true);
+  ok(/socket\.startTls\(\)/.test(send), 'and actually performs it', true);
+
+  /* Order, measured rather than described: the upgrade must appear before the
+     first AUTH in the source of this function. */
+  const iTls = send.indexOf('startTls()');
+  const iAuth = send.indexOf('AUTH LOGIN');
+  ok(iTls > -1 && iAuth > -1 && iTls < iAuth,
+     'and the upgrade happens BEFORE any credential is written', { startTls: iTls, auth: iAuth });
+
+  /* A refusal must end the attempt. Continuing after a failed upgrade is how a
+     password gets sent in the clear while everything still appears to work. */
+  ok(/typeof socket\.startTls !== 'function'/.test(send) && /throw /.test(send),
+     'and a connection that cannot be upgraded fails instead of continuing', true);
+
+  /* EHLO twice: the capability list before and after an upgrade are different
+     documents, and AUTH is frequently absent from the first. */
+  ok((send.match(/EHLO amv/g) || []).length >= 2,
+     'and EHLO is re-issued on the encrypted channel', (send.match(/EHLO amv/g) || []).length);
+
+  /* The dialect has to survive being written down. A scheduled send happens
+     days later and cannot re-derive the port from a hostname. */
+  const code = codeOnly(src);
+  ok(/rec\.smtpMode = p\.smtpMode/.test(code),
+     'the provider dialect is stored with the account, not guessed later', true);
+  ok(/smtpMode: rec\.smtpMode \|\| 'tls'/.test(code),
+     'and an account saved before this existed still defaults to what it connected with', true);
+
+  const starttls = Object.values(W.MAIL_PROVIDERS).filter((p) => p.smtpMode === 'starttls');
+  ok(starttls.length >= 10, 'providers that need the upgrade are now reachable', starttls.length);
+  ok(starttls.every((p) => p.smtpPort === 587),
+     'and each names the port it actually answers on', starttls.map((p) => p.name + ':' + p.smtpPort));
+  ok(Object.values(W.MAIL_PROVIDERS).filter((p) => !p.custom && !p.smtpMode).every((p) => !p.smtpPort),
+     'while the implicit-TLS ones are left alone', true);
 }
 
 if (report('mail-works-outside-america') > 0) process.exitCode = 1;

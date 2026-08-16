@@ -16247,6 +16247,7 @@ const MAIL_PROVIDERS = {
               setup: 'In your Telekom account create an app password (Passwort für E-Mail-Programme) and use that.' },
   bluewin:  { name: 'Bluewin (Swisscom)', country: 'CH', flag: '🇨🇭',
               imap: 'imap.bluewin.ch', smtp: 'smtpauths.bluewin.ch',
+              smtpPort: 587, smtpMode: 'starttls',
               setup: 'Use your Swisscom login. If you have two-factor on, create an app password in your Swisscom account first.' },
 
   /* ── France, Belgium, Netherlands ────────────────────────────────── */
@@ -16261,6 +16262,7 @@ const MAIL_PROVIDERS = {
               setup: 'In your laposte.net mailbox settings, enable IMAP access for external software.' },
   telenet:  { name: 'Telenet', country: 'BE', flag: '🇧🇪',
               imap: 'imap.telenet.be', smtp: 'smtp.telenet.be',
+              smtpPort: 587, smtpMode: 'starttls',
               setup: 'Use your Telenet mail address and password. IMAP is available by default.' },
   kpn:      { name: 'KPN Mail', country: 'NL', flag: '🇳🇱',
               imap: 'imap.kpnmail.nl', smtp: 'smtp.kpnmail.nl',
@@ -16340,6 +16342,38 @@ const MAIL_PROVIDERS = {
   telstra:  { name: 'Telstra (BigPond)', country: 'AU', flag: '🇦🇺',
               imap: 'imap.telstra.com', smtp: 'smtp.telstra.com',
               setup: 'Use your Telstra Mail address and password.' },
+
+  /* ── ONLY REACHABLE NOW THAT SMTP CAN UPGRADE ────────────────────────
+     Every one of these offers submission on 587 with STARTTLS and does not
+     answer implicit TLS on 465, which is why they were left out of the
+     catalogue rather than added with a port that would have failed silently
+     at 7am in the middle of a scheduled run. They are consumer ISPs, which
+     is to say they are what a large number of ordinary people in Canada,
+     Australia and the United States actually have. */
+  shaw:     { name: 'Shaw / Rogers', country: 'CA', flag: '🇨🇦',
+              imap: 'imap.shaw.ca', smtp: 'smtp.shaw.ca', smtpPort: 587, smtpMode: 'starttls',
+              setup: 'Use your Shaw email address and password.' },
+  telus:    { name: 'TELUS', country: 'CA', flag: '🇨🇦',
+              imap: 'imap.telus.net', smtp: 'smtp.telus.net', smtpPort: 587, smtpMode: 'starttls',
+              setup: 'Use your TELUS email address and password.' },
+  optus:    { name: 'Optus', country: 'AU', flag: '🇦🇺',
+              imap: 'imap.optusnet.com.au', smtp: 'mail.optusnet.com.au', smtpPort: 587, smtpMode: 'starttls',
+              setup: 'Use your Optus email address and password.' },
+  att:      { name: 'AT&T / Yahoo hosted', country: 'US', flag: '🇺🇸',
+              imap: 'imap.mail.att.net', smtp: 'smtp.mail.att.net', smtpPort: 587, smtpMode: 'starttls',
+              setup: 'AT&T requires a secure mail key rather than your account password. Create one in your AT&T profile under Sign-in info.' },
+  spectrum: { name: 'Spectrum (Charter)', country: 'US', flag: '🇺🇸',
+              imap: 'mobile.charter.net', smtp: 'mobile.charter.net', smtpPort: 587, smtpMode: 'starttls',
+              setup: 'Use your Spectrum email address and password.' },
+  cox:      { name: 'Cox', country: 'US', flag: '🇺🇸',
+              imap: 'imap.cox.net', smtp: 'smtp.cox.net', smtpPort: 587, smtpMode: 'starttls',
+              setup: 'In Cox settings, enable external email access first, then use your Cox password.' },
+  bt:       { name: 'BT Mail', country: 'GB', flag: '🇬🇧',
+              imap: 'mail.btinternet.com', smtp: 'mail.btinternet.com', smtpPort: 587, smtpMode: 'starttls',
+              setup: 'Use your BT email address and password.' },
+  xs4all:   { name: 'Freedom / XS4ALL', country: 'NL', flag: '🇳🇱',
+              imap: 'imap.freedom.nl', smtp: 'smtp.freedom.nl', smtpPort: 587, smtpMode: 'starttls',
+              setup: 'Use your Freedom email address and password.' },
 
   /* ── EVERYWHERE. ──────────────────────────────────────────────────────
      These are not one country's providers, they are the ones somebody in
@@ -16457,10 +16491,25 @@ function _mailPublic(rec) {
    top-level on purpose: `cloudflare:sockets` does not exist under Node, and
    the gate loads this file under Node to prove the Worker still parses. */
 let _mailConnector = null;
-async function _mailSocket(host, port) {
-  if (_mailConnector) return _mailConnector(host, port);
+async function _mailSocket(host, port, mode) {
+  if (_mailConnector) return _mailConnector(host, port, mode);
   const { connect } = await import('cloudflare:sockets');
-  return connect({ hostname: host, port: +port }, { secureTransport: 'on' });
+  /* TWO WAYS TO GET AN ENCRYPTED SMTP SESSION, AND PROVIDERS DISAGREE.
+
+     Implicit TLS on 465 is encrypted from the first byte. STARTTLS on 587
+     opens in the clear, announces itself, and upgrades - and an enormous
+     number of consumer ISPs offer only that one. Speaking just 465 meant
+     every such provider was unreachable, which is why Shaw, TELUS and Optus
+     were left out of the catalogue rather than added with a port that would
+     fail at 7am in the middle of a scheduled run.
+
+     `starttls` opens the socket unencrypted and hands back one that can be
+     upgraded. Nothing secret is written before the upgrade - see _smtpSend,
+     which sends only EHLO and STARTTLS in the clear and re-issues EHLO after,
+     because the server's capability list before and after the upgrade are
+     different documents and AUTH is commonly only offered in the second. */
+  return connect({ hostname: host, port: +port },
+                 { secureTransport: mode === 'starttls' ? 'starttls' : 'on' });
 }
 
 /* A byte-accurate reader over the socket.
@@ -16703,10 +16752,32 @@ async function _smtpSend(cfg, msg) {
     }
   };
   try {
-    socket = await _mailSocket(cfg.smtp, cfg.smtpPort || MAIL_SMTP_PORT);
+    const port = +(cfg.smtpPort || MAIL_SMTP_PORT);
+    const mode = (cfg.smtpMode === 'starttls' || port === 587 || port === 25)
+      ? 'starttls' : 'tls';
+    socket = await _mailSocket(cfg.smtp, port, mode);
     wire = _mailWire(socket);
     await expect(2);
     await wire.write('EHLO amv\r\n'); await expect(2);
+
+    if (mode === 'starttls') {
+      /* Upgrade BEFORE any credential is written. If the server refuses, the
+         send fails here rather than continuing in the clear - a password sent
+         unencrypted to save a round trip is not a trade worth making, and a
+         silent downgrade is exactly how that happens. */
+      await wire.write('STARTTLS\r\n'); await expect(2);
+      if (typeof socket.startTls !== 'function') {
+        throw Object.assign(new Error('This server needs STARTTLS and the connection cannot be upgraded.'),
+                            { kind: 'net' });
+      }
+      socket = socket.startTls();
+      wire = _mailWire(socket);
+      /* EHLO again on the encrypted channel. The capability list before and
+         after an upgrade are different documents, and AUTH is frequently
+         absent from the first one. */
+      await wire.write('EHLO amv\r\n'); await expect(2);
+    }
+
     await wire.write('AUTH LOGIN\r\n'); await expect(3);
     await wire.write(b64(cfg.address) + '\r\n'); await expect(3);
     await wire.write(b64(cfg.password) + '\r\n'); await expect(2);
@@ -16742,6 +16813,7 @@ async function mailProviders(request, env) {
   const list = Object.entries(MAIL_PROVIDERS).map(([id, p]) => ({
     id, name: p.name, country: p.country, flag: p.flag, custom: !!p.custom, setup: p.setup,
     imap: p.imap, smtp: p.smtp,
+    smtpPort: p.smtpPort || MAIL_SMTP_PORT, smtpMode: p.smtpMode || 'tls',
   }));
   const countries = new Set(list.map((p) => p.country).filter(Boolean));
   return json({ ok: true, providers: list, countries: countries.size,
@@ -16812,6 +16884,12 @@ async function mailConnect(request, env) {
      record it read first, and the reconnection would vanish. */
   await _withKV(env, 'mailcfg', user.email, (rec) => {
     rec.provider = provider; rec.address = address; rec.imap = imap; rec.smtp = smtp;
+    /* Carried from the catalogue, because the send happens days later on a
+       schedule and cannot look the provider up again from a hostname alone.
+       Without this a provider that only speaks STARTTLS on 587 would be dialled
+       on 465 every night and fail in a way nobody is awake to see. */
+    rec.smtpPort = p.smtpPort || MAIL_SMTP_PORT;
+    rec.smtpMode = p.smtpMode || 'tls';
     rec.secret = enc; rec.connectedAt = Date.now(); rec.lastOkAt = Date.now(); rec.lastError = '';
   }, {});
   /* The password is not in this line, and must never be. */
@@ -16836,7 +16914,12 @@ async function _mailCfgFor(env, email) {
   if (!rec || !rec.secret) return null;
   const password = await _mailDecrypt(env, rec.secret);
   if (!password) return null;
-  return { address: rec.address, password, imap: rec.imap, smtp: rec.smtp, provider: rec.provider, rec };
+  return { address: rec.address, password, imap: rec.imap, smtp: rec.smtp,
+           /* Records written before STARTTLS existed have neither field, and
+              465 implicit TLS is what they were connected with, so that is the
+              honest default rather than a guess. */
+           smtpPort: rec.smtpPort || MAIL_SMTP_PORT, smtpMode: rec.smtpMode || 'tls',
+           provider: rec.provider, rec };
 }
 
 async function _mailRun(request, env, work, what) {
