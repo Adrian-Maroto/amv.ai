@@ -23333,36 +23333,101 @@ async function runCode(code, lang, onStatus){
   return {ok:false, stdout:'', stderr:'Unsupported language: '+lang, result:'', ms:0};
 }
 
-// JS runs in a sandboxed iframe. The user's code is injected as a REAL <script>
-// (never eval) so it runs even under the app's strict CSP, and the iframe gets
-// its own permissive CSP via a <meta> tag. stdout is captured via a console proxy.
+/* AMV-049: THE TIMEOUT COULD NOT STOP THE ONE THING IT WAS FOR.
+
+   JS ran in a hidden iframe, and an iframe runs on the SAME THREAD as the page.
+   So `while(true){}` in somebody's program did not time out after fifteen
+   seconds - it froze the whole tab, permanently. The setTimeout that was
+   supposed to stop it was queued on the thread the loop was holding, and could
+   not fire until the loop ended, which was never. Removing the iframe cannot
+   help either: a script that never yields is never interrupted by the DOM.
+
+   The message it eventually would have shown said "the sandbox was terminated",
+   which was prose describing something the code could not do. An infinite loop
+   is the single most common mistake in a program somebody is asking a computer
+   to run for them, and the one case the timeout existed for was the one case it
+   could not handle. The Lab exists to run code that is wrong.
+
+   A Worker has its own thread and can really be killed. `terminate()` stops a
+   synchronous loop dead, because the main thread was never blocked and its
+   timer fires on schedule - which is exactly why the Python path has always
+   used one. This is the same, and the code goes into the worker's own source
+   rather than through eval, so it needs no 'unsafe-eval' anywhere.
+
+   A Worker also has no document, no localStorage and no cookies, so untrusted
+   code there cannot reach the page's tokens at all - the iframe's unique origin
+   was the only thing standing between them before.
+
+   There is deliberately NO fallback to the old path. A sandbox that silently
+   degrades to one that can freeze the tab is worse than one that says it is
+   unavailable, because nobody finds out which one they got. */
+const JS_SANDBOX_MS = 15000;
+
+function _jsWorkerSource(code, id){
+  const tag = JSON.stringify(id);
+  return 'self.window=self;var __logs=[];'+
+    'function __fmt(a){try{return (typeof a==="object"&&a!==null)?JSON.stringify(a):String(a)}catch(e){return String(a)}}'+
+    'var __p=function(){__logs.push(Array.prototype.slice.call(arguments).map(__fmt).join(" "))};'+
+    'self.console={log:__p,error:__p,warn:__p,info:__p,debug:__p,trace:__p};'+
+    'var __sent=false;'+
+    'function __done(ok,err,result){ if(__sent) return; __sent=true;'+
+      'self.postMessage({__sbx:'+tag+',ok:ok,logs:__logs.slice(),error:err||"",'+
+      'result:(result===undefined||result===null)?"":String(result)}); }'+
+    /* An error thrown from a callback or a rejected promise nobody awaited
+       still has to end the run, or the person waits fifteen seconds for a
+       timeout instead of seeing their mistake. */
+    'self.onerror=function(m,s,l,c,e){ __done(false,(e&&e.stack)?e.stack:String(m)); return true; };'+
+    'self.onunhandledrejection=function(ev){ var r=ev&&ev.reason; __done(false,(r&&r.stack)?r.stack:String(r)); };'+
+    '(async function(){ var __r;'+
+      'try{ __r = await (async function(){\n'+code+'\n})(); }'+
+      'catch(e){ __done(false,(e&&e.stack)?e.stack:String(e)); return; }'+
+      '__done(true,"",__r);'+
+    '})();';
+}
+
 function _runJS(code, t0){
   return new Promise(resolve=>{
-    const iframe=document.createElement('iframe');
-    iframe.sandbox='allow-scripts';
-    iframe.style.display='none';
     const id='sbx_'+Math.random().toString(36).slice(2);
-    let done=false;
-    const finish=(res)=>{ if(done) return; done=true; try{document.body.removeChild(iframe);}catch(e){} window.removeEventListener('message',onMsg); resolve(res); };
-    const onMsg=(ev)=>{ if(!ev.data||ev.data.__sbx!==id) return; finish({ok:ev.data.ok, stdout:(ev.data.logs||[]).join('\n'), stderr:ev.data.error||'', result:ev.data.result||'', ms:Math.round(performance.now()-t0)}); };
-    window.addEventListener('message',onMsg);
-    const harness='(function(){var logs=[];'+
-      'function fmt(a){try{return typeof a==="object"?JSON.stringify(a):String(a)}catch(e){return String(a)}}'+
-      'var p=function(){logs.push(Array.prototype.slice.call(arguments).map(fmt).join(" "))};'+
-      'console.log=p;console.error=p;console.warn=p;console.info=p;'+
-      'window.__L=logs;'+
-      'window.__D=function(ok,err,result){parent.postMessage({__sbx:'+JSON.stringify(id)+',ok:ok,logs:logs,error:err||"",result:(result===undefined||result===null)?"":String(result)},"*")};'+
-      'window.onerror=function(m,s,l,c,e){window.__D(false,(e&&e.stack)?e.stack:String(m));return true};'+
-    '})();';
-    const runner='(async function(){try{var __r=await (async function(){\n'+code+'\n})();window.__D(true,"",__r);}catch(e){window.__D(false,(e&&e.stack)?e.stack:String(e))}})();';
-    const meta='<meta http-equiv="Content-Security-Policy" content="script-src \'unsafe-inline\'; default-src \'none\'">';
-    const html='<!doctype html><html><head>'+meta+'</head><body>'+
-      '<script>'+harness+'<\/script>'+
-      '<script>'+runner+'<\/script>'+
-    '</body></html>';
-    iframe.srcdoc=html;
-    document.body.appendChild(iframe);
-    setTimeout(()=>finish({ok:false,stdout:'',stderr:'Execution timed out (15s) - the program ran too long. Check for infinite loops or heavy computation.',result:'',ms:15000}),15000);
+    let done=false, worker=null, url='';
+    const finish=(res)=>{
+      if(done) return; done=true;
+      /* Killed on EVERY exit, not only on the timeout: a program that has
+         already posted its answer can still be spinning in a callback, and a
+         worker nobody stopped keeps a thread and its memory for the life of
+         the tab. */
+      try{ if(worker) worker.terminate(); }catch(e){}
+      try{ if(url) URL.revokeObjectURL(url); }catch(e){}
+      resolve(res);
+    };
+    const ms=()=>Math.round(performance.now()-t0);
+
+    try{
+      if(typeof Worker!=='function' || typeof Blob!=='function' || !(URL&&URL.createObjectURL))
+        throw new Error('Workers are not available in this browser');
+      url=URL.createObjectURL(new Blob([_jsWorkerSource(code, id)],{type:'application/javascript'}));
+      worker=new Worker(url);
+    }catch(e){
+      finish({ok:false,stdout:'',stderr:'The JavaScript sandbox could not start, so nothing was run: '+((e&&e.message)||e),result:'',ms:ms()});
+      return;
+    }
+
+    worker.onmessage=(ev)=>{
+      const d=ev&&ev.data;
+      if(!d||d.__sbx!==id) return;
+      finish({ok:!!d.ok, stdout:(d.logs||[]).join('\n'), stderr:d.error||'', result:d.result||'', ms:ms()});
+    };
+    /* A program that does not PARSE never runs, so the worker fails to load and
+       there is no message to wait for. Reported as the syntax error it is
+       rather than as a fifteen-second timeout. */
+    worker.onerror=(ev)=>{
+      try{ if(ev&&ev.preventDefault) ev.preventDefault(); }catch(e){}
+      const where=(ev&&ev.lineno)?(' (line '+Math.max(1,(ev.lineno|0)-1)+')'):'';
+      finish({ok:false,stdout:'',stderr:((ev&&ev.message)||'The program could not be started.')+where,result:'',ms:ms()});
+    };
+
+    setTimeout(()=>finish({ok:false,stdout:'',
+      stderr:'Execution timed out after '+Math.round(JS_SANDBOX_MS/1000)+'s and the sandbox was stopped. Check for an infinite loop or heavy computation.',
+      result:'',ms:JS_SANDBOX_MS}), JS_SANDBOX_MS);
   });
 }
 

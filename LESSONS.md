@@ -4637,3 +4637,32 @@ concurrency, or pick two operations that really do take no common lock - here,
 an invite and a role change, which is what a real team does all day. And when a
 sabotage of the exact line under test does not turn the section red, the section
 is not testing that line, whatever its name says.
+
+## 251. Site isolation hid the defect, and would have hidden the fix
+
+The Lab's JavaScript sandbox was a hidden iframe with a fifteen-second timeout
+that could not fire, because an iframe shares the page's thread and the timeout
+was queued behind the loop it was meant to stop. That is the finding, and it is
+correct in general.
+
+It is not what this browser does. Chromium gives a sandboxed iframe an opaque
+origin and its own renderer process, so `while(true){}` in there did not freeze
+the tab at all - the page kept painting and kept firing timers. The check
+written first, "the page is still alive while the program spins", passed with
+the defect fully in place.
+
+The damage was real and one step further along: nothing ever STOPPED the
+program. Detaching a frame whose script never yields does not interrupt it, and
+because every run shared one opaque origin, the runaway held the renderer and
+the NEXT program had nowhere to run. One infinite loop and the Lab was over for
+that session - a fresh `return 1+1` simply never came back. That is the property
+the test now measures, and it fails hard on the old code.
+
+Two rules out of it. First: when a finding names a mechanism, verify the
+mechanism on the browser in front of you before writing the assertion, because
+the platform may already be compensating and the assertion will then prove
+nothing. Second: when the honest observable is not available - here, whether
+terminate() was called, which shows up only as CPU somebody else is burning and
+measured within noise - say so in the test and check the shape instead. A flaky
+numeric threshold is worse than an honest structural check, because a test
+people re-run until it goes green has stopped meaning anything.

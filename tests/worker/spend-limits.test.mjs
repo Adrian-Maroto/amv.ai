@@ -21,7 +21,8 @@ const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'spend.harness.mjs');
 writeFileSync(harness, src + `
-export { _spendClean, _spendLimits, _spendAllowed, _spendRecord, spendGet, spendSet,
+export { _spendClean, _spendLimits, _spendAllowed, _spendReserve, _spendRelease, _spendRecord,
+         spendGet, spendSet, _webIsMoney, _webSpendGate,
          WEB_ABSOLUTE_SPEND_CAP, SPEND_DEFAULTS, DB };
 export function __setRequireUser(fn){ requireUser = fn; }
 `);
@@ -110,26 +111,134 @@ section('The account is what decides, not the request');
 
 section('The monthly ceiling is counted, not just displayed');
 {
+  /* The month moved from _spendAllowed to _spendReserve (AMV-036), because a
+     ceiling that is READ and then, separately, incremented is one two runs walk
+     through together. _spendAllowed still decides whether a purchase of this
+     SIZE is permitted at all; _spendReserve is what books the money. */
   store.clear();
   await W.spendSet(req({ limits: { enabled: true, autoUnder: 10, perPurchase: 100, monthlyCap: 120 } }), env);
-  await W._spendRecord(env, 'a@x.com', 100);
+  const first = await W._spendReserve(env, 'a@x.com', 100, 0);
+  ok(first.ok === true && first.reserved === 100, 'a purchase inside the month is booked', first);
 
-  const over = await W._spendAllowed(env, 'a@x.com', 50, 0);
-  ok(over && over.code === 'over_monthly', 'spending past the month is refused', over);
-  ok(/20\.00 is left/.test(over.need), 'saying exactly what is left', over.need);
+  const over = await W._spendReserve(env, 'a@x.com', 50, 0);
+  ok(over.refused && over.refused.code === 'over_monthly', 'spending past the month is refused', over);
+  ok(/20\.00 is left/.test(over.refused.need), 'saying exactly what is left', over.refused.need);
 
-  const under = await W._spendAllowed(env, 'a@x.com', 15, 0);
-  ok(under === null, 'while what fits still goes through', under);
+  const under = await W._spendReserve(env, 'a@x.com', 15, 0);
+  ok(under.ok === true, 'while what fits still goes through', under);
+
+  /* And a refusal is not a booking: the refused $50 must not have moved the
+     total, or a run refused twice would silently close the month. */
+  const d = await (await W.spendGet(new Request('https://x/v1/spend/limits', { method:'POST', body:'{}' }), env)).json();
+  ok(d.spentThisMonth === 115, 'a refusal counts nothing', d.spentThisMonth);
+}
+
+section('Twenty runs at once cannot walk through the same ceiling');
+{
+  /* The finding. This was a `get`, a compare, and later an `incr` - so two runs
+     starting together both read the same total, both found room, and both went.
+     On the one number a person sets specifically to stop AMV spending their
+     money, and it needs a double-click rather than an attacker. */
+  /* With the counter this really runs on. Without AMV_COUNTER bound, `counter`
+     falls back to plain storage, and that fallback says in its own comment that
+     it is the race the Durable Object exists to close - so asserting atomicity
+     against it would be asserting it against a stub weaker than production, and
+     would pass on nothing. This stub serialises the way the object does, and
+     implements the same rule: deny when the RESULT would exceed the cap. */
+  store.clear();
+  let chain = Promise.resolve();
+  const vals = new Map();
+  const atomic = Object.assign({}, env, {
+    AMV_COUNTER: { idFromName: (n) => n, get: (n) => ({ fetch(_u, init){
+      return (chain = chain.then(async () => {
+        await Promise.resolve();
+        const b = JSON.parse(init.body); const cur = vals.get(n) || 0;
+        if(b.op === 'reserve'){
+          const next = cur + Number(b.amount);
+          if(!Number.isFinite(next) || next > b.cap) return new Response(JSON.stringify({ allowed:false, value:cur }));
+          vals.set(n, next); return new Response(JSON.stringify({ allowed:true, value:next }));
+        }
+        if(b.op === 'incr'){ vals.set(n, cur + (b.amount||0)); return new Response(JSON.stringify({ value:vals.get(n) })); }
+        return new Response(JSON.stringify({ value:cur, allowed:true }));
+      })); } }) },
+  });
+  await W.spendSet(req({ limits: { enabled: true, autoUnder: 10, perPurchase: 50, monthlyCap: 100 } }), env);
+  const rs = await Promise.all(Array.from({ length: 20 }, () => W._spendReserve(atomic, 'a@x.com', 25, 0)));
+  const yes = rs.filter(r => r.ok).length;
+  ok(yes === 4, 'exactly four $25 purchases fit under a $100 month', yes);
+  ok(rs.filter(r => r.refused).length === 16, 'and the other sixteen are refused', rs.filter(r => r.refused).length);
+
+  const d = await (await W.spendGet(new Request('https://x/v1/spend/limits', { method:'POST', body:'{}' }), atomic)).json();
+  ok(d.spentThisMonth === 100, 'the month holds exactly the cap, not a penny over', d.spentThisMonth);
+  ok(d.remaining === 0, 'with nothing left', d.remaining);
+}
+
+section('Money held for a purchase that did not happen goes back');
+{
+  /* A run has a dozen ways to end without buying anything - blocked, refused
+     for approval, capped on steps, thrown. Every one of them used to leave the
+     amount counted, because it was recorded before the browser even launched. */
+  store.clear();
+  await W.spendSet(req({ limits: { enabled: true, autoUnder: 10, perPurchase: 60, monthlyCap: 100 } }), env);
+  const held = await W._spendReserve(env, 'a@x.com', 60, 0);
+  ok(held.ok === true, 'the money is held while the run happens', held);
+
+  const blockedMeanwhile = await W._spendReserve(env, 'a@x.com', 60, 0);
+  ok(blockedMeanwhile.refused, 'and while it is held nobody else can spend it', blockedMeanwhile.refused && blockedMeanwhile.refused.code);
+
+  await W._spendRelease(env, 'a@x.com', 60);
+  const d = await (await W.spendGet(new Request('https://x/v1/spend/limits', { method:'POST', body:'{}' }), env)).json();
+  ok(d.spentThisMonth === 0, 'a run that bought nothing gives the month back', d.spentThisMonth);
+  const after = await W._spendReserve(env, 'a@x.com', 60, 0);
+  ok(after.ok === true, 'so the next run can use it', after);
 }
 
 section('A refused purchase does not eat the month');
 {
   store.clear();
   await W.spendSet(req({ limits: { enabled: true, autoUnder: 10, perPurchase: 20, monthlyCap: 100 } }), env);
-  await W._spendAllowed(env, 'a@x.com', 500, 0);        // refused
+  await W._spendReserve(env, 'a@x.com', 500, 0);        // refused
   const d = await (await W.spendGet(new Request('https://x/v1/spend/limits', { method:'POST', body:'{}' }), env)).json();
   ok(d.spentThisMonth === 0, 'nothing was counted against a purchase that never happened', d.spentThisMonth);
   ok(d.remaining === 100, 'so the whole month is still available', d.remaining);
+}
+
+section('A purchase with no budget behind it is refused outright');
+{
+  /* The other half of AMV-036: `spendAmount` comes from the CLIENT, and a
+     client that simply left it out got the age gate and nothing else - then the
+     agent was free to click "Place order", because the approval gate asks
+     whether the user approved the RUN, not whether any budget covers the
+     purchase. The whole spending control was optional to the caller.
+
+     Money-shaped is narrower than irreversible: sending a message cannot be
+     undone and costs nothing. */
+  [['Place order', true], ['Pay now', true], ['Buy it now', true], ['Complete checkout', true],
+   ['Subscribe', true], ['Withdraw funds', true], ['Book this room', true], ['Donate', true],
+   ['Send message', false], ['Publish post', false], ['Delete account', false],
+   ['Submit application', false]].forEach(([label, money]) => {
+    ok(W._webIsMoney('click', label, '') === money,
+       '"' + label + '" is ' + (money ? '' : 'not ') + 'a purchase', label);
+  });
+  ok(W._webIsMoney('scroll', 'Buy now', '') === false,
+     'and scrolling past a Buy button is not one either');
+
+  /* And the gate itself, which is what the run consults. */
+  const noBudget = W._webSpendGate('click', 'Place order', '', 0);
+  ok(noBudget.ok === false, 'a purchase with nothing held is refused', noBudget);
+  ok(noBudget.code === 'spend_undeclared', 'with a code the app can act on', noBudget.code);
+
+  const withBudget = W._webSpendGate('click', 'Place order', '', 40);
+  ok(withBudget.ok === true, 'and goes through when money is held for it', withBudget);
+  ok(withBudget.money === true, 'and counts as the purchase, so the hold is kept', withBudget.money);
+
+  const free = W._webSpendGate('click', 'Send message', '', 0);
+  ok(free.ok === true && free.money === false,
+     'while something that costs nothing needs no budget and keeps no hold', free);
+  ok(W._webSpendGate('click', 'Place order', '', '') .ok === false,
+     'a budget that is not a number is not a budget');
+  ok(W._webSpendGate('click', 'Place order', '', -5).ok === false,
+     'and neither is a negative one');
 }
 
 section('The browser agent asks the account, not the caller');
@@ -141,12 +250,32 @@ section('The browser agent asks the account, not the caller');
     return ends.length ? src.slice(at, at + 1 + Math.min(...ends)) : src.slice(at);
   };
   const b = fn('browserRun');
-  ok(/_spendAllowed\(env, user\.email, declaredSpend, spendLimit\)/.test(b),
-     'it checks against the stored limits', true);
-  ok(/_spendRecord\(env, user\.email, declaredSpend\)/.test(b),
-     'and records the spend so the monthly ceiling means something', true);
+  ok(/_spendReserve\(env, user\.email, declaredSpend, spendLimit\)/.test(b),
+     'it books against the stored limits', true);
   ok(!/hardCap/.test(b),
      'the old client-supplied cap is gone rather than left alongside', true);
+
+  /* AMV-036 ordering, which is the whole of the second half. The month was
+     charged and THEN the code discovered there was no browser binding, or no
+     driver, or no model key, and answered 503 - with the amount already
+     counted. A deployment missing a binding could burn a whole allowance on
+     runs that never opened a page. */
+  const iBrowser = b.indexOf('if(!env.BROWSER)');
+  const iKey = b.indexOf('if(!_modelKey(env))');
+  const iReserve = b.indexOf('_spendReserve(env, user.email');
+  ok(iBrowser > -1 && iBrowser < iReserve,
+     'nothing is booked until there is a browser to run it', { browser: iBrowser, reserve: iReserve });
+  ok(iKey > -1 && iKey < iReserve,
+     'nor until there is a key to drive it', { key: iKey, reserve: iReserve });
+
+  /* And it is given back on every way out, from one place, so no branch can
+     forget it. */
+  ok(/finally\{/.test(b) || /finally \{/.test(b), 'the run has a single exit for the money', true);
+  ok(/if\(!spentHere\)/.test(b), 'which keeps it only when a purchase really happened', true);
+  ok(/releaseHeld\(\)/.test(b), 'and hands it back otherwise', true);
+  ok(/_webSpendGate\(v\.verb, target \? target\.label : '', a\.text, heldSpend\)/.test(b),
+     'and every step is put to the money gate before it runs', true);
+  ok(/if\(!money\.ok\)\{/.test(b), 'which the run obeys', true);
 }
 
 section('Limits are readable, so the screen can show what really applies');

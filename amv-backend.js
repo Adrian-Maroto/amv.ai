@@ -591,6 +591,10 @@ const ADMIN_USERS_PAGE = 60;
    courses; the bound is here so a Worker request cannot fan out into hundreds
    of Canvas calls. */
 const SCHOOL_COURSE_MAX = 8;
+/* AMV-050: a ceiling on ONE answer from a school's server. The host is whatever
+   a student typed, so its size is not a number to trust. Two megabytes is far
+   more than a page of Canvas JSON and far less than a Worker's memory. */
+const SCHOOL_MAX_BYTES = 2 * 1024 * 1024;
 const SCHOOL_ASSIGNMENT_MAX = 10;
 /* How many views accumulate in the counter before they are folded back onto the
    listing. One write per fifty instead of one per view. */
@@ -3142,7 +3146,62 @@ async function spendSet(request, env){
   return json({ ok:true, limits });
 }
 
-/* The decision, made server-side. Returns null when allowed, or the refusal. */
+/* AMV-036: THE CEILING WAS READ, THE MONTH WAS EATEN, AND NEITHER WAS TIED
+   TO A PURCHASE.
+
+   Three things, all in one route.
+
+   The monthly cap was a `get` followed by a compare followed by, later, an
+   `incr`. Two runs starting together both read the same total, both found room
+   under it, and both went. That is the AMV-004 shape on the one number a person
+   sets specifically to stop AMV spending their money, and it needs a
+   double-click rather than an attacker.
+
+   The month was charged before a browser existed. `_spendRecord` ran, and then
+   the code discovered there was no browser binding, or no driver, or no model
+   key, and returned 503 - with the amount already counted. A person whose
+   deployment is missing a binding could burn their entire monthly allowance on
+   runs that never opened a page. The comment above it said it was "counted only
+   once a purchase has actually been attempted", which was true of nothing: it
+   was counted once a RUN was attempted.
+
+   And the ceiling only applied to a run that ASKED for one. `spendAmount` comes
+   from the client, and a client that simply omits it got the age gate and
+   nothing else - then the agent was free to click "Place order", because the
+   approval gate asks whether the user approved the RUN, not whether any budget
+   covers the purchase. So the entire spending control was optional to the
+   caller, which is the same as not having it.
+
+   Now: reserved atomically before anything is launched, released if the run
+   never reaches a purchase, and a money-shaped action refused outright unless a
+   reservation is holding money for it. Under-declaring buys a smaller ceiling,
+   not a bigger one, and declaring nothing buys none. */
+
+/* Money-shaped, as opposed to merely irreversible. Sending a message is
+   consequential and costs nothing; placing an order is both. */
+const WEB_MONEY_LABEL = /\b(buy|purchase|order|pay|paying|checkout|subscribe|donate|bid|book|reserve|transfer|withdraw|deposit|tip|upgrade|renew)\b/i;
+function _webIsMoney(verb, label, text){
+  if(!_webIsConsequential(verb, label, text)) return false;
+  return WEB_MONEY_LABEL.test(String(label || ''));
+}
+
+/* May this step happen, given what the run has set aside?
+
+   A function rather than four lines inside the loop, for the same reason
+   _webTypePlan is: inline, the only available check reads the source, and a
+   check that reads source cannot tell a working gate from a disabled one. */
+function _webSpendGate(verb, label, text, held){
+  if(!_webIsMoney(verb, label, text)) return { ok:true, money:false };
+  if(!(+held > 0)) return { ok:false, code:'spend_undeclared' };
+  return { ok:true, money:true };
+}
+
+/* The decision, made server-side. Returns null when allowed, or the refusal.
+
+   Reads only - it decides whether a purchase of this size is permitted at all,
+   and does NOT touch the month. _spendReserve is what binds money, because a
+   check and a booking that are two calls are two calls something can happen
+   between. */
 async function _spendAllowed(env, email, amount, clientLimit){
   const amt = +amount || 0;
   if(!(amt > 0)) return null;
@@ -3169,22 +3228,61 @@ async function _spendAllowed(env, email, amount, clientLimit){
      it resets on the 1st. Moving it onto their billing anniversary would make
      their own control mean something they did not choose, to fix a problem
      they do not have: this cap is theirs, and it is not sold by the month. */
-  const name = `spendmo:${email}:${monthKey()}`;
-  const spent = (await counter(env, name, { op:'get' })).value || 0;
-  if(spent + amt > (L.monthlyCap || 0))
-    return { code:'over_monthly',
-      need:'This would take you past your $' + (L.monthlyCap||0).toFixed(2) + ' monthly limit - $'
-        + Math.max(0, (L.monthlyCap||0) - spent).toFixed(2) + ' is left this month.',
-      message:'The month resets on the 1st, or you can raise the limit in Settings.' };
   return null;
 }
 
-/* Counted only once a purchase has actually been attempted, so a refused one
-   never eats somebody's month. */
+const SPEND_MONTH_TTL_MS = 86400000 * 70;
+const _spendMonthKey = (email) => `spendmo:${email}:${monthKey()}`;
+
+/* BOOK the money, atomically, against the monthly cap.
+
+   Deliberately the CALENDAR month, unlike the plan allowance elsewhere. This is
+   not something anybody bought - it is the limit a person set on what AMV may
+   spend on their behalf, and the screen where they set it says it resets on the
+   1st. Moving it onto their billing anniversary would make their own control
+   mean something they did not choose, to fix a problem they do not have.
+
+   Returns { ok } or { refused }. The reservation is real money held: whoever
+   takes one owns releasing it. */
+async function _spendReserve(env, email, amount, clientLimit){
+  const amt = +amount || 0;
+  if(!(amt > 0)) return { ok:true, reserved:0 };
+  const refused = await _spendAllowed(env, email, amt, clientLimit);
+  if(refused) return { refused };
+
+  const L = await _spendLimits(env, email);
+  const cap = +L.monthlyCap || 0;
+  const r = await _reserveUSD(env, _spendMonthKey(email), amt, cap, SPEND_MONTH_TTL_MS);
+  if(r.allowed) return { ok:true, reserved: amt };
+
+  /* AMV-032: a counter that could not answer is not a counter that said yes.
+     Refusing to spend somebody's money because the ledger is unreachable is the
+     right way round to be wrong. */
+  if(r.unavailable)
+    return { refused:{ code:'spend_unavailable',
+      need:'AMV cannot check your spending limit right now, so it will not spend anything.',
+      message:'Try again in a moment - nothing was charged.' } };
+
+  const left = Math.max(0, cap - (r.value || 0));
+  return { refused:{ code:'over_monthly',
+    need:'This would take you past your $' + cap.toFixed(2) + ' monthly limit - $'
+      + left.toFixed(2) + ' is left this month.',
+    message:'The month resets on the 1st, or you can raise the limit in Settings.' } };
+}
+
+/* Give it back. A run that never reached a purchase must not have eaten the
+   month, and a run that failed to start must not have eaten anything. */
+async function _spendRelease(env, email, amount){
+  await _releaseUSD(env, _spendMonthKey(email), +amount || 0, SPEND_MONTH_TTL_MS);
+}
+
+/* Kept for the callers that spend outside a reservation. Inside browserRun the
+   money is reserved up front instead, because a check and a booking that are
+   two calls are two calls something can happen between. */
 async function _spendRecord(env, email, amount){
   const amt = +amount || 0;
   if(!(amt > 0)) return;
-  try{ await counter(env, `spendmo:${email}:${monthKey()}`, { op:'incr', amount: amt, ttlMs: 86400000 * 70 }); }catch(e){}
+  try{ await counter(env, _spendMonthKey(email), { op:'incr', amount: amt, ttlMs: SPEND_MONTH_TTL_MS }); }catch(e){}
 }
 
 const WEB_MAX_STEPS = 24;
@@ -3492,9 +3590,58 @@ async function _canvasGet(env, rec, path){
   if(r.status === 401 || r.status === 403)
     return { error:'Canvas refused that request. Your access token may have expired - reconnect it in Settings.', status:401, code:'canvas_auth' };
   if(!r.ok) return { error:'Canvas answered ' + r.status + '.', status:502 };
-  const data = await r.json().catch(()=>null);
+  /* AMV-050: NOT `await r.json()`.
+     The host on the other end of this is whatever a student typed on the
+     connect screen. `r.json()` reads the whole body into memory first and only
+     then finds out how big it was, so a school - or something pretending to be
+     one, or a real Canvas having a bad day - answering with half a gigabyte was
+     an instruction to buffer half a gigabyte inside a Worker that has 128MB.
+     Read with a ceiling instead, and stop at it rather than after it. */
+  const body = await _readCapped(r, SCHOOL_MAX_BYTES).catch(() => ({ failed:true }));
+  if(body.failed) return { error:'AMV could not read what your school’s Canvas sent.', status:502 };
+  if(body.tooBig){
+    audit(env, 'school_response_too_big', { host:new URL(gate.base).hostname, bytes:body.bytes });
+    return { error:'Your school’s Canvas sent more in one answer than AMV will read, so nothing was read from it.',
+             status:502, code:'canvas_too_big' };
+  }
+  let data = null;
+  try{ data = JSON.parse(body.text); }catch(e){ data = null; }
   if(data == null) return { error:'Canvas sent something AMV could not read.', status:502 };
   return { data };
+}
+
+/* Read a response body with a ceiling, stopping AT it rather than after it.
+
+   The Content-Length is checked first because it is free, and then the stream
+   is counted anyway - a length header is a claim by the same server whose size
+   is in question, and a chunked response has no length at all. */
+async function _readCapped(r, max){
+  const claimed = Number(r.headers && r.headers.get && r.headers.get('content-length'));
+  if(Number.isFinite(claimed) && claimed > max) return { tooBig:true, bytes:claimed };
+  if(!r.body || typeof r.body.getReader !== 'function'){
+    const t = await r.text();
+    return t.length > max ? { tooBig:true, bytes:t.length } : { text:t };
+  }
+  const reader = r.body.getReader();
+  const chunks = [];
+  let n = 0;
+  for(;;){
+    const { value, done } = await reader.read();
+    if(done) break;
+    if(!value) continue;
+    n += value.length;
+    if(n > max){
+      /* Cancelled, so the connection closes instead of continuing to arrive
+         while nobody is reading it. */
+      try{ await reader.cancel(); }catch(e){}
+      return { tooBig:true, bytes:n };
+    }
+    chunks.push(value);
+  }
+  const buf = new Uint8Array(n);
+  let at = 0;
+  for(const c of chunks){ buf.set(c, at); at += c.length; }
+  return { text: new TextDecoder().decode(buf) };
 }
 
 /* What is due, with the documents an assignment points at KEPT rather than
@@ -3516,10 +3663,33 @@ async function schoolWork(request, env){
   if(courses.error) return json({ error:courses.error, code:courses.code }, courses.status);
   if(!Array.isArray(courses.data)) return json({ error:'Canvas did not return a course list.' }, 502);
 
+  /* AMV-050: TOGETHER, NOT ONE AFTER ANOTHER.
+
+     This was a `for` loop with an `await` in it: eight courses meant eight
+     round trips to a school's server end to end, each one waiting for the last.
+     On a school having a slow morning that is eight timeouts stacked into one
+     request, held open inside a Worker with a wall-clock limit - so the feature
+     failed hardest exactly when the student needed it, and it burned the
+     operator's request duration doing nothing but waiting.
+
+     The number of them is already bounded by SCHOOL_COURSE_MAX, so running them
+     at once is bounded too: the whole thing now costs about one round trip
+     instead of eight, and the ceiling on how many is unchanged. */
+  const picked = courses.data.slice(0, SCHOOL_COURSE_MAX);
+  const fetched = await Promise.all(picked.map(async (c) => {
+    const a = await _canvasGet(env, rec, 'courses/' + encodeURIComponent(c.id) + '/assignments?bucket=upcoming&per_page=10')
+      .catch(() => ({ error:'unreadable' }));
+    return { c, a };
+  }));
+
   const out = [];
-  for(const c of courses.data.slice(0, SCHOOL_COURSE_MAX)){
-    const a = await _canvasGet(env, rec, 'courses/' + encodeURIComponent(c.id) + '/assignments?bucket=upcoming&per_page=10');
-    if(a.error || !Array.isArray(a.data)) continue;
+  const missed = [];
+  for(const { c, a } of fetched){
+    /* A course whose assignments could not be read used to be skipped in
+       silence. A student then sees a homework list with an entire class simply
+       absent from it and no reason to doubt it, which is the worst way for this
+       to be wrong - so what is missing is named. */
+    if(a.error || !Array.isArray(a.data)){ missed.push(String(c.name || c.id)); continue; }
     for(const it of a.data.slice(0, SCHOOL_ASSIGNMENT_MAX)){
       out.push({
         id: it.id, course: c.name, courseId: c.id,
@@ -3531,7 +3701,11 @@ async function schoolWork(request, env){
       });
     }
   }
-  return json({ connected:true, work: out, count: out.length });
+  return json({ connected:true, work: out, count: out.length,
+    partial: missed.length > 0,
+    missedCourses: missed,
+    ...(missed.length ? { notice: 'AMV could not read ' + missed.join(', ')
+      + ', so anything due in ' + (missed.length === 1 ? 'it' : 'them') + ' is not in this list.' } : {}) });
 }
 
 /* Who to share it with. Read from the course rather than guessed, because a
@@ -4800,29 +4974,43 @@ async function browserRun(request, env, ctx){
     }
   }
 
+  // Feature-detect so a deploy without the binding degrades honestly. BEFORE
+  // any money is booked (AMV-036): a deployment with no browser binding used to
+  // charge the month and then answer 503, so a person could burn an entire
+  // allowance on runs that never opened a page.
+  if(!env.BROWSER)
+    return json({ error:'Web automation is not enabled on this deployment. Add the Browser Rendering binding (see DEPLOY.md) and it starts working with no other change.', code:'needs_service' }, 503);
+  if(!_modelKey(env))
+    return json({ error:'Web automation needs the AI key to read pages and decide actions.', code:'needs_key' }, 503);
+
+  /* AMV-036: BOOKED, not read. Two runs starting together used to both read the
+     same month-to-date total, both find room under the cap, and both go. This
+     holds the money in one atomic step, and the run owns giving it back. */
+  let heldSpend = 0;
   if(declaredSpend > 0){
     const ent = await getEntitlement(env, user.email).catch(() => null);
     /* Against the limits stored on the ACCOUNT, not against whatever the client
        sent. body.spendLimit is still honoured when it is SMALLER - a client
        being more careful than the account requires is fine; one claiming a
        bigger allowance than the account holds is not. */
-    const refused = await _spendAllowed(env, user.email, declaredSpend, spendLimit);
-    if(refused){
-      audit(env, 'web_agent_spend_blocked', { by:user.email, amount:declaredSpend, why:refused.code });
-      return json(Object.assign({ ok:false }, refused), 400);
+    const booked = await _spendReserve(env, user.email, declaredSpend, spendLimit);
+    if(booked.refused){
+      audit(env, 'web_agent_spend_blocked', { by:user.email, amount:declaredSpend, why:booked.refused.code });
+      return json(Object.assign({ ok:false }, booked.refused), 400);
     }
-    await _spendRecord(env, user.email, declaredSpend);
+    heldSpend = booked.reserved || 0;
     audit(env, 'web_agent_spend_attempt', { by:user.email, amount:declaredSpend, approved:!!body.approved, plan:(ent&&ent.plan)||'' });
   }
-
-  // Feature-detect so a deploy without the binding degrades honestly.
-  if(!env.BROWSER)
-    return json({ error:'Web automation is not enabled on this deployment. Add the Browser Rendering binding (see DEPLOY.md) and it starts working with no other change.', code:'needs_service' }, 503);
-  if(!_modelKey(env))
-    return json({ error:'Web automation needs the AI key to read pages and decide actions.', code:'needs_key' }, 503);
+  /* Whatever happens below, money booked for a purchase that never happened
+     goes back. Called from exactly one place so it cannot be forgotten on a
+     branch, and it is idempotent because it zeroes what it holds. */
+  const releaseHeld = async () => {
+    if(heldSpend > 0){ const h = heldSpend; heldSpend = 0; await _spendRelease(env, user.email, h); }
+  };
 
   const started = Date.now();
   const trace = [];
+  let spentHere = false;
   let browser = null;
   try{
     let puppeteer;
@@ -4988,6 +5176,32 @@ async function browserRun(request, env, ctx){
         return json({ ok:false, code:'needs_info', need:_webRedact(a.why || 'more information', secrets), url:obs.url, trace });
       }
 
+      /* AMV-036: A PURCHASE NEEDS A BUDGET HOLDING MONEY FOR IT.
+
+         The approval gate asks whether the user approved this RUN. It does not
+         ask whether anything covers the purchase - so a client that simply left
+         `spendAmount` out got past the age gate and then had the agent click
+         "Place order" with no ceiling applied anywhere. The entire spending
+         control was optional to the caller, which is the same as not having
+         one.
+
+         Declaring is how a run gets purchasing power. Under-declaring buys a
+         smaller ceiling, not a bigger one. */
+      const money = _webSpendGate(v.verb, target ? target.label : '', a.text, heldSpend);
+      if(!money.ok){
+        await browser.close();
+        audit(env, 'web_agent_spend_undeclared',
+          { by:user.email, label:String((target && target.label) || '').slice(0,60), step });
+        return json({ ok:false, code:money.code, url:obs.url, trace,
+          error:'That step would spend money and this run has no budget set aside for it, so AMV stopped.',
+          need:'Say how much this may cost and run it again - AMV holds that amount against your monthly limit before it starts.' }, 400);
+      }
+      /* From here the money is considered spent: AMV cannot see what a third
+         party's checkout actually charged, and a reservation released after a
+         purchase went through would give back an allowance that was really
+         used. */
+      if(money.money) spentHere = true;
+
       const sel = a.ref ? '[data-amv-ref="' + String(a.ref).replace(/[^0-9]/g,'') + '"]' : null;
       if(v.verb === 'goto') await page.goto(a.url, { waitUntil:'domcontentloaded', timeout:20000 });
       else if(v.verb === 'click' && sel) await page.click(sel).catch(() => {});
@@ -5047,6 +5261,15 @@ async function browserRun(request, env, ctx){
     try{ if(browser) await browser.close(); }catch(_){}
     if(ctx && ctx.waitUntil) ctx.waitUntil(_workerError(env, 'browserRun', e));
     return json({ error:_webRedact(String((e && e.message) || e), secrets).slice(0, 300), trace }, 502);
+  }finally{
+    /* AMV-036: ONE place, so no exit can forget it. The run has a dozen ways
+       to end - blocked, refused, capped, thrown - and money booked for a
+       purchase that never happened goes back on every one of them. It is only
+       kept when a money-shaped action was actually performed. */
+    if(!spentHere){
+      try{ await releaseHeld(); }
+      catch(relErr){ audit(env, 'web_agent_spend_release_failed', { by:user.email, amount:heldSpend }); }
+    }
   }
 }
 
@@ -18610,17 +18833,51 @@ async function _mailSocket(host, port, mode) {
    character count smaller than the byte count - so a string-based buffer reads
    the wrong amount and every response after it is off by one. Mail from the
    countries this feature exists for is precisely the mail that is not ASCII. */
+/* AMV-047: A SIZE THE OTHER END DECLARED IS NOT A SIZE TO ALLOCATE.
+
+   IMAP announces a literal as `{123}` and the reader believed the number: it
+   pulled from the socket until it had that many octets, with no ceiling. The
+   number comes from the mail server, and the mail server's address comes from
+   the person connecting their mailbox - so `{4294967295}` was an instruction to
+   buffer four gigabytes in a Worker with a 128MB limit, and the only thing that
+   stopped it was the process dying.
+
+   The same reader had two siblings of the same shape. `line()` scanned for CRLF
+   and pulled forever if none came, so a server that answers with an endless
+   line of anything else is the same attack without needing a literal at all.
+   And `_imapCmd` collects response lines until it sees its tag, so a server
+   that simply never sends the tag grows an array instead of a buffer.
+
+   Three ceilings, and one budget across the whole session so that none of them
+   can be walked past in instalments. Every one of them ends the session with a
+   sentence about what happened, rather than truncating - a truncated literal
+   puts the reader out of step with the stream, and every response after it
+   would be parsed against the wrong bytes. */
+const MAIL_MAX_LITERAL = 1000000;      // one literal block; a mail body's text part is far under this
+const MAIL_MAX_LINE    = 64 * 1024;    // an IMAP/SMTP line; the protocol's own limit is far smaller
+const MAIL_MAX_LINES   = 2000;         // response lines before the tagged completion
+const MAIL_MAX_SESSION = 4000000;      // everything read from one connection
+
+function _mailTooBig(what, n) {
+  return Object.assign(new Error('mail_too_big:' + what + ':' + n), { kind: 'toobig' });
+}
+
 function _mailWire(socket) {
   const writer = socket.writable.getWriter();
   const reader = socket.readable.getReader();
   const enc = new TextEncoder(), dec = new TextDecoder();
   let buf = new Uint8Array(0);
+  let read = 0;
   const until = Date.now() + MAIL_TIMEOUT_MS;
 
   const pull = async () => {
     if (Date.now() > until) throw new Error('mail_timeout');
     const { value, done } = await reader.read();
     if (done || !value) throw new Error('mail_closed');
+    /* Counted as it arrives, so a server cannot stay under every individual
+       ceiling and still stream without end. */
+    read += value.length;
+    if (read > MAIL_MAX_SESSION) throw _mailTooBig('session', read);
     const next = new Uint8Array(buf.length + value.length);
     next.set(buf, 0); next.set(value, buf.length);
     buf = next;
@@ -18636,13 +18893,21 @@ function _mailWire(socket) {
             return out;
           }
         }
+        /* No line ending yet, and more of it than a line is allowed to be. */
+        if (buf.length > MAIL_MAX_LINE) throw _mailTooBig('line', buf.length);
         await pull();
       }
     },
     async bytes(n) {
-      while (buf.length < n) await pull();
-      const out = dec.decode(buf.subarray(0, n));
-      buf = buf.subarray(n);
+      const want = Number(n);
+      /* Checked BEFORE anything is read, because the whole point is not to
+         start. A size that is not a plain non-negative integer is refused for
+         the same reason a huge one is: it did not come from us. */
+      if (!Number.isInteger(want) || want < 0) throw _mailTooBig('literal', n);
+      if (want > MAIL_MAX_LITERAL) throw _mailTooBig('literal', want);
+      while (buf.length < want) await pull();
+      const out = dec.decode(buf.subarray(0, want));
+      buf = buf.subarray(want);
       return out;
     },
     async close() {
@@ -18669,6 +18934,13 @@ function _mailFailure(kind, provider) {
   }
   if (kind === 'timeout') {
     return { code: 'mail_unreachable', error: 'Your mail provider did not answer in time. Nothing was changed - try again in a moment.' };
+  }
+  if (kind === 'toobig') {
+    /* AMV-047. Said plainly, because the honest answer is that AMV stopped
+       rather than that the provider is broken - and because a mailbox that
+       really does hold something enormous is a support conversation, not a
+       retry. */
+    return { code: 'mail_too_big', error: 'Your mail server sent more in one go than AMV will read, so it stopped. Nothing was changed. If this keeps happening, the mailbox may hold a message far larger than AMV handles.' };
   }
   return { code: 'mail_unreachable', error: 'AMV could not reach that mail server. Check the server address, or try again shortly.' };
 }
@@ -18728,6 +19000,9 @@ async function _imapCmd(wire, tag, cmd) {
       const rest = line.slice(tag.length + 1);
       return { ok: /^OK\b/i.test(rest), status: rest, lines };
     }
+    /* AMV-047: a server that never sends the tagged completion grows this
+       array instead of the buffer, which is the same failure one level up. */
+    if (lines.length >= MAIL_MAX_LINES) throw _mailTooBig('lines', lines.length);
     lines.push(line);
   }
 }
