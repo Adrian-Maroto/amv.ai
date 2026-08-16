@@ -11,7 +11,33 @@ times this week a check turned out to be unable to fail at all.
 
 ## Phase 3 - in progress
 
-**Done: AMV-013, 031, 032.** Left: AMV-033, 034, 035, 042, 045, 053, SP-05.
+**Done: AMV-013, 031, 032, 033, 042, 045, 053.** Left: AMV-034, 035, SP-05.
+
+**AMV-033, 042, 045 and 053 were one pattern.** Eight handlers read a record,
+changed it and wrote it back with no lock, and every one was excused in the lock
+roster on the same reasoning: it is the caller's own record, so there is nobody
+to race. That is true about who OWNS the record and says nothing about how many
+WRITERS it has - a phone and a laptop is two, a double-submitted form is two, a
+retry beside the request it retries is two.
+
+Three were wrong on their own terms as well:
+
+- `apiKeyCreate` was excused because "the cap below refuses the second anyway".
+  The cap is read inside the window it is meant to close. The key that loses the
+  race is worse than lost: its lookup row is written regardless, so it goes on
+  authenticating while vanishing from the list that is the only way to revoke it.
+- `handoffCreate` was excused as writing "the SENDER's own copy" and writes the
+  recipient's inbox too - a record every other sender appends to.
+- `widgetConfigSave` was excused because "the only other writer is this same
+  handler", which is the race rather than a reason there isn't one.
+
+Two more were never the caller's record at all: ratings are keyed by the LISTING
+and reviews by the SELLER, so their writers are every buyer of it.
+
+All eight exemptions were deleted rather than reworded, and moving the two
+marketplace records under the lock made them visible to the backup and
+cross-account rosters for the first time - both of which then demanded a
+decision, which is what they are for.
 
 **AMV-013.** Locks expire, so a holder whose work outran its lease lost the lock
 without being told and somebody else took it - and then the first one finished
@@ -270,7 +296,7 @@ read as working for as long as it did.
 | 5 | AMV-030 | MEDIUM | Most routes do not enforce HTTP methods | TODO |
 | 3 | AMV-031 | MEDIUM | Malformed database JSON is treated as a missing record | DONE |
 | 3 | AMV-032 | MEDIUM | Atomic counters and claims silently fall back to non-atomic KV | DONE |
-| 3 | AMV-033 | MEDIUM | Multiple shared records still use unlocked read-modify-write | TODO |
+| 3 | AMV-033 | MEDIUM | Multiple shared records still use unlocked read-modify-write | DONE |
 | 3 | AMV-034 | MEDIUM | Team creation and join are multi-record partial commits | TODO |
 | 3 | AMV-035 | MEDIUM | Automation create/update/run workflows have race and exactly-once gaps | TODO |
 | 4 | AMV-036 | MEDIUM | Browser spend control trusts client-declared amount and records it before laun | TODO |
@@ -279,17 +305,17 @@ read as working for as long as it did.
 | 5 | AMV-039 | MEDIUM | Account export swallows read/list failures and may claim completeness | TODO |
 | 0 | AMV-040 | MEDIUM | Payout wash-trading signal reads a field that is never populated | DONE |
 | 1 | AMV-041 | MEDIUM | `paidOut` increments on request and is not reversed when a payout is rejected | DONE |
-| 3 | AMV-042 | MEDIUM | Marketplace ratings, reviews, and thread-read state lose concurrent updates | TODO |
+| 3 | AMV-042 | MEDIUM | Marketplace ratings, reviews, and thread-read state lose concurrent updates | DONE |
 | 5 | AMV-043 | MEDIUM | Reviews can become impossible after a seller unlists an item | TODO |
 | 5 | AMV-044 | MEDIUM | Widget message listener does not verify origin or source | TODO |
-| 3 | AMV-045 | MEDIUM | Widget configuration and live-key writes are non-transactional | TODO |
+| 3 | AMV-045 | MEDIUM | Widget configuration and live-key writes are non-transactional | DONE |
 | 5 | AMV-046 | MEDIUM | Audit webhook delivery is fire-and-forget without `waitUntil` | TODO |
 | 4 | AMV-047 | MEDIUM | IMAP literal parsing allocates attacker/provider-declared sizes before truncat | TODO |
 | 4 | AMV-049 | MEDIUM | JavaScript sandbox timeout cannot stop a synchronous infinite loop | TODO |
 | 4 | AMV-050 | MEDIUM | School work aggregation performs many sequential external calls and accepts la | TODO |
 | 5 | AMV-051 | MEDIUM | Admin user listing converts storage failure into a valid empty result | TODO |
 | 5 | AMV-052 | MEDIUM | Administrative routes use inconsistent authentication and rate-limiting gates | TODO |
-| 3 | AMV-053 | MEDIUM | API-key creation limit is a racy read-append-write | TODO |
+| 3 | AMV-053 | MEDIUM | API-key creation limit is a racy read-append-write | DONE |
 | 5 | AMV-056 | MEDIUM | Third-party frontend code is broadly trusted without integrity pinning | TODO |
 | 0 | AMV-057 | MEDIUM | `test:worker` runs only the aggregate file, not all Worker test files | DONE |
 | 0 | AMV-SP-01 | MEDIUM | Google signup analytics uses an undefined variable and omits population accoun | DONE |

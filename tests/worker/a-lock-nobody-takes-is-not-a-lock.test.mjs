@@ -122,6 +122,27 @@ const rawWrites = (body) => {
 /* Handlers that legitimately write a record they also read, with no lock and
    with a reason. Each one is a single writer, or a write where losing the race
    costs nothing anybody would notice. */
+/* EIGHT EXEMPTIONS WERE DELETED HERE, NOT REWORDED.
+
+   Every one of them said some version of "the caller's own record, and nobody
+   else writes it". That is true of who OWNS the record and says nothing about
+   how many writers it has: one person with a phone and a laptop is two, a
+   double-submitted form is two, and a retry landing beside the original is two.
+
+   Three of them were wrong on their own terms as well. apiKeyCreate was excused
+   because "the cap below refuses the second anyway" - the cap is read inside
+   the same window it is meant to close, so it refuses nothing, and the key that
+   loses the race keeps a live lookup row while vanishing from the list that
+   could revoke it. handoffCreate was excused as writing "the SENDER's own copy"
+   and wrote the recipient's inbox too, which every other sender appends to.
+   widgetConfigSave was excused because "the only other writer is this same
+   handler", which is the definition of the race rather than a reason there
+   isn't one.
+
+   All eight take the lock now. An exemption whose reason has stopped being
+   true is how a real bypass gets waved through later by inheriting somebody
+   else's reasoning - which is exactly what happened to the signup, and it took
+   an external audit to notice. */
 const NO_LOCK_NEEDED = {
   authDeleteAccount: 'erasure, which is terminal: it is removing this person from every link they are in, and there is nothing left afterwards for a lost write to matter to. It already holds the team lock for the same pass',
   /* authSignup WAS exempted here, on the grounds that it creates the record
@@ -137,23 +158,15 @@ const NO_LOCK_NEEDED = {
      how a real bypass gets waved through by inheriting somebody else's. */
   authGoogle:      'the same account creation through Google, with the same claim in front of it',
   teamCreate:      'writes a team that does not exist yet, under a fresh id nobody else has',
-  apiKeyCreate:    'appends to the caller\'s own key list; two creates at once is one person double-clicking, and the cap below refuses the second anyway',
   teamPresence:    'who is online right now, overwritten every few seconds by design - a lost write is corrected before anybody reads it',
   errorsReport:    'a telemetry sink; losing a sample of a burst that is being counted in the hundreds changes nothing anybody acts on',
   _workerError:    'the same sink, from the Worker side',
   errorsResolve:   'an operator marking an error group read',
-  deployDelete:    'the caller\'s own site index',
-  consentRecord:   'append-only consent log for one account',
   _investCheckin:  'a snapshot for one account, rewritten in full each time',
-  crewJobs:        'the caller\'s own crew list',
   googleOAuthExchange: 'writes the token it has just received for one account',
-  supportSubmit:   'appends to the caller\'s own ticket list',
   stripeSubscribe: 'writes the billing row for the checkout it is creating',
   fraudRecord:     'an append-only assessment log, read only by an operator',
-  handoffCreate:   'the recipient\'s inbox is appended to under _withKind by the deliver path; this writes the SENDER\'s own copy',
-  handoffAct:      'the actor\'s own copy of a handoff they already hold',
   widgetConfigGet: 'creates the caller\'s widget record on first read, with a key nobody else has yet',
-  widgetConfigSave: 'the caller\'s own widget settings; the only other writer is this same handler',
 };
 
 section('Both sides were read');

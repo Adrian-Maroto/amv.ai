@@ -44,6 +44,19 @@ const CLASSIFIED = {
      conversation belongs to both people in it, and _messageRecipient decides
      which conversation the sender is allowed to write to. */
   marketMessage:     'a conversation belongs to both people in it; the recipient is derived, never taken from the caller',
+  /* Newly VISIBLE rather than newly true, like marketMessage above it. The
+     review list used a bare `env.AMV_KV.put(key, ...)` with the key in a
+     variable, which no pattern here could match - so a route that writes a
+     record belonging to another person sat outside this check entirely. Moving
+     it under the record lock (AMV-042) is what made it findable.
+
+     Writing the seller's record IS the feature: a review is a buyer's statement
+     about a seller, filed under that seller. What makes it safe is that the
+     caller cannot choose what to say about whom without having bought from
+     them - the handler refuses unless the buyer owns something of that
+     seller's - and that the reviewer is stored as a one-way hash, so the list
+     can be public without leaking an address. */
+  marketReview:      'a review is a buyer\'s statement about a seller, filed under the seller; the handler refuses unless the buyer owns something of theirs, and the reviewer is stored as a hash',
   apiKeyCreate:      'the lookup row is keyed by a hash of the new key, not by a person',
   shareCreate:       'a share is keyed by its own generated id',
   shareVisibility:   'checks rec.owner before writing',

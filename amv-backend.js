@@ -2869,10 +2869,14 @@ async function deploySite(request, env){
   }, {});
   if (taken) return json({ error:'that name is taken' }, 409);
 
-  if(!(idx.slugs||[]).includes(slug)){
-    idx.slugs = (idx.slugs||[]).concat(slug);
-    await DB.put(env, 'sites', owner, idx);
-  }
+  /* AMV-033: the other writer of this index, and the one deployDelete races.
+     Publishing two pages at once, or publishing one while taking another down,
+     both read the list and both write it back - so a page ends up either served
+     but unlisted, or listed after it was deleted. */
+  await _withKind(env, 'sites', owner, (rec) => {
+    rec.slugs = rec.slugs || [];
+    if (!rec.slugs.includes(slug)) rec.slugs.push(slug);
+  }, { slugs: [] });
   return json({ ok:true, slug, url:_siteUrl(request, slug), updated:rec.updated });
 }
 
@@ -2909,9 +2913,13 @@ async function deployDelete(request, env){
      the D1 row untouched - the page carried on serving, publicly, after its
      owner took it down. Undoing a publish has to actually unpublish. */
   await DB.del(env, 'site', slug);
-  const idx = (await DB.get(env, 'sites', owner)) || { slugs: [] };
-  idx.slugs = (idx.slugs||[]).filter(x=>x!==slug);
-  await DB.put(env, 'sites', owner, idx);
+  /* AMV-033: the owner's site index is written by publish as well as by this,
+     so deleting one page while another is being published loses whichever
+     write lands first - and the loss shows up as a page that is either missing
+     from the list while still served, or listed after being taken down. */
+  await _withKind(env, 'sites', owner, (idx) => {
+    idx.slugs = (idx.slugs||[]).filter(x=>x!==slug);
+  }, { slugs: [] });
   return json({ ok:true });
 }
 
@@ -3932,7 +3940,23 @@ async function consentRecord(request, env){
   const version = String(body.termsVersion || '').slice(0, 32);
   if(!version) return json({ error:'termsVersion required' }, 400);
 
-  const prev = (await DB.get(env, 'consent', user.email)) || { history: [] };
+  const entryIp = (request.headers.get('CF-Connecting-IP') || '').slice(0, 45);
+  const entryCountry = (request.cf && request.cf.country) || '';
+  const entryUa = (request.headers.get('User-Agent') || '').slice(0, 180);
+  const nowYear = new Date().getUTCFullYear();
+  let ageRecorded = null;
+  let entry = null;
+  /* AMV-033: THE BIRTH YEAR IS RECORDED ONCE, AND ONCE MEANS ONCE.
+
+     The check below is deliberately write-once - the comment says a limit
+     anyone can raise by retyping it is not a limit - and it was a read
+     followed by a write. Two requests arriving together both read a record with
+     no birth year, both decide they may set it, and the later one wins. So the
+     value that cannot be edited could be edited, by sending it twice.
+
+     Under the record lock the second request reads what the first stored and
+     declines, which is what the rule already said. */
+  await _withKind(env, 'consent', user.email, (prev) => {
   /* Age, recorded HERE and not only in the browser. The client has always had
      an age gate and it lives in localStorage, so clearing one key - or calling
      the API directly with a key - walked straight through it. Under-13 handling
@@ -3944,22 +3968,20 @@ async function consentRecord(request, env){
      limit anyone can raise by retyping it is not a limit. */
   if(body.birthYear != null && !prev.birthYear){
     const y = Math.floor(+body.birthYear) || 0;
-    const nowY = new Date().getUTCFullYear();
-    if(y >= 1900 && y <= nowY){
+    if(y >= 1900 && y <= nowYear){
       prev.birthYear = y;
       prev.ageSetAt = Date.now();
-      audit(env, 'age_recorded', { by: user.email, adult: (nowY - y) >= ADULT_AGE });
+      ageRecorded = { by: user.email, adult: (nowYear - y) >= ADULT_AGE };
     }
   }
-  const entry = {
-    version, at: Date.now(),
-    ip: (request.headers.get('CF-Connecting-IP') || '').slice(0, 45),
-    country: (request.cf && request.cf.country) || '',
-    ua: (request.headers.get('User-Agent') || '').slice(0, 180)
-  };
+  entry = { version, at: Date.now(), ip: entryIp, country: entryCountry, ua: entryUa };
   prev.current = entry;
   prev.history = [entry, ...(prev.history || [])].slice(0, 20);   // every version ever accepted
-  await DB.put(env, 'consent', user.email, prev);
+  }, { history: [] });
+  /* Audited outside the lock: it is a storage write of its own, and holding a
+     record lock across one is how a lease runs out mid-work. */
+  if (ageRecorded) audit(env, 'age_recorded', ageRecorded);
+  if (!entry) return json({ error: 'Could not record that just now. Please try again.' }, 503);
   audit(env, 'consent_accepted', { by: user.email, version });
   return json({ ok: true, version, at: entry.at });
 }
@@ -4874,9 +4896,15 @@ async function crewJobs(request, env){
     if(blocked) return blocked;
     const { id, on } = await request.json().catch(()=>({}));
     if(!id) return json({ error:'id required' }, 400);
-    const rec = (await DB.get(env, 'crewjobs', user.email)) || { jobs:{} };
-    rec.jobs[id] = { key:id, on_flag: !!on, updatedAt: Date.now() };
-    await DB.put(env, 'crewjobs', user.email, rec);
+    /* AMV-033: one person with two tabs is two writers. The lock roster
+       excused every one of these as "the caller's own record", which is true
+       and is not the same as "one writer" - a phone and a laptop, or a retry
+       landing beside the original, both read the record and both write it
+       back, and the later one silently drops the earlier change. */
+    await _withKind(env, 'crewjobs', user.email, (rec) => {
+      rec.jobs = rec.jobs || {};
+      rec.jobs[id] = { key:id, on_flag: !!on, updatedAt: Date.now() };
+    }, { jobs:{} });
     return json({ ok:true });
   }
   const rec = (await DB.get(env, 'crewjobs', user.email)) || { jobs:{} };
@@ -5033,14 +5061,23 @@ async function handoffCreate(request, env){
   const entry = { id, from_email: user.email, to_email: toEmail,
                   title: String(title).slice(0,300), context: String(context||'').slice(0,5000),
                   status: 'pending', at: Date.now() };
-  // record on the sender's "sent"
-  const mine = (await DB.get(env, 'handoff', user.email)) || { incoming:[], sent:[] };
-  mine.sent = (mine.sent || []).concat(entry).slice(-100);
-  await DB.put(env, 'handoff', user.email, mine);
-  // and on the recipient's "incoming"
-  const theirs = (await DB.get(env, 'handoff', toEmail)) || { incoming:[], sent:[] };
-  theirs.incoming = (theirs.incoming || []).concat(entry).slice(-100);
-  await DB.put(env, 'handoff', toEmail, theirs);
+  /* AMV-033: THE RECIPIENT'S INBOX HAS AS MANY WRITERS AS IT HAS SENDERS.
+
+     The lock roster excused this handler because it "writes the SENDER's own
+     copy". It writes both, and the second one is somebody else's record - an
+     inbox every other sender appends to as well. Two people handing work to the
+     same person at the same moment both read that inbox, both append, and the
+     later write wins: one handoff is simply gone, and the sender who lost is
+     told it was delivered.
+
+     The sender's own record needs the lock too, for the same reason as
+     everything else here: two tabs, or this and handoffAct at once. */
+  await _withKind(env, 'handoff', user.email, (mine) => {
+    mine.sent = (mine.sent || []).concat(entry).slice(-100);
+  }, { incoming:[], sent:[] });
+  await _withKind(env, 'handoff', toEmail, (theirs) => {
+    theirs.incoming = (theirs.incoming || []).concat(entry).slice(-100);
+  }, { incoming:[], sent:[] });
   return json({ ok:true, id });
 }
 
@@ -5054,12 +5091,18 @@ async function handoffAct(request, env){
   if(blockedAct) return blockedAct;
   const { id, action } = await request.json().catch(()=>({}));
   if(!id) return json({ error:'id required' }, 400);
-  const mine = (await DB.get(env, 'handoff', user.email)) || { incoming:[], sent:[] };
-  const entry = (mine.incoming || []).find(h => h.id === id);
-  if(!entry) return json({ error:'not found' }, 404);
+  /* AMV-033: read and written under the lock, so a status set here cannot be
+     lost to a handoff arriving in the same inbox at the same moment. The entry
+     is found inside it too - deciding on a copy read beforehand is the same
+     race with an extra step. */
   const status = action === 'done' ? 'done' : 'seen';
-  mine.incoming = (mine.incoming || []).map(h => h.id === id ? { ...h, status } : h);
-  await DB.put(env, 'handoff', user.email, mine);
+  let entry = null;
+  await _withKind(env, 'handoff', user.email, (mine) => {
+    entry = (mine.incoming || []).find(h => h.id === id) || null;
+    if (!entry) return;
+    mine.incoming = (mine.incoming || []).map(h => h.id === id ? { ...h, status } : h);
+  }, { incoming:[], sent:[] });
+  if(!entry) return json({ error:'not found' }, 404);
 
   /* And on the SENDER's copy. Only the recipient's own record was updated, so
      the person who handed the work over went on seeing "waiting on them" for
@@ -5069,13 +5112,13 @@ async function handoffAct(request, env){
   const from = String(entry.from_email || '').toLowerCase();
   if(from && from !== user.email){
     try{
-      const theirs = (await DB.get(env, 'handoff', from)) || { incoming:[], sent:[] };
-      let touched = false;
-      theirs.sent = (theirs.sent || []).map(h => {
-        if(h.id !== id) return h;
-        touched = true; return { ...h, status };
-      });
-      if(touched) await DB.put(env, 'handoff', from, theirs);
+      /* AMV-033: and this one is unambiguously somebody else's record - the
+         sender's, which every person they have ever handed work to writes a
+         status into. Read-append-write here loses one of two status updates
+         landing together, and the one lost reads as work still waiting. */
+      await _withKind(env, 'handoff', from, (theirs) => {
+        theirs.sent = (theirs.sent || []).map(h => (h.id === id ? { ...h, status } : h));
+      }, { incoming:[], sent:[] });
     }catch(e){ /* the recipient's own record is already correct */ }
   }
   return json({ ok:true, status });
@@ -5122,6 +5165,15 @@ const BACKUP_PREFIXES = [
                   // the permissive direction and the wrong way to be wrong
   'fraud:',     // the abuse assessments an operator would need after an incident
   'support:',   // open tickets; losing them loses the customers waiting on a reply
+  /* Newly visible to the roster rather than newly durable: both used a bare
+     namespace write until the lock moved them (AMV-042). They are real content
+     that people wrote and that buyers read before deciding to spend - losing
+     every rating and review in a restore would silently reset the reputation
+     the marketplace runs on. Neither holds an address: the rater and the
+     reviewer are stored as one-way hashes, which is what lets them be backed
+     up and shown publicly without carrying somebody's identity along. */
+  'mkrate:',    // ratings on a listing, keyed by the listing
+  'mkreview:',  // reviews of a seller, keyed by the seller
   /* SEVENTEEN MORE, FOUND THE SAME WAY AND MISSED FOR ONE REASON.
 
      The check that produced the four above derives the record kinds from
@@ -10211,24 +10263,45 @@ async function widgetConfigSave(request, env) {
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== 'object') return json({ error: 'Invalid body.' }, 400);
 
-  let cfg = await DB.get(env, 'widget_owner', user.email);
-  if (!cfg) cfg = { ...WIDGET_DEFAULTS, key: _newSiteKey(), owner: user.email, created: Date.now() };
+  /* AMV-045: TWO RECORDS THAT MUST NOT DISAGREE, WRITTEN WITHOUT A LOCK.
 
-  // Apply only known, bounded fields
+     The lock roster excused this as "the caller's own widget settings; the only
+     other writer is this same handler" - which is true and is the problem. Two
+     saves from two tabs both read the config, each applies its own subset of
+     fields, and the later write puts back a record missing the other's changes.
+     The person sees their spend cap revert with nothing having errored.
+
+     Worse, the config is written to TWO keys: the owner's copy and the
+     public-lookup copy the widget itself reads. Between those two writes they
+     disagree, and a failure between them leaves a widget serving settings its
+     owner can no longer see. The site key is minted here on first save, so a
+     race can also mint two - one of which the owner never learns about.
+
+     Applied inside the lock, from the record as it is at that moment rather
+     than from a copy read beforehand. */
   const clampNum = (v, min, max, dflt) => { const n = Number(v); return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : dflt; };
-  if (typeof body.title === 'string')       cfg.title = body.title.slice(0, 60);
-  if (typeof body.greeting === 'string')    cfg.greeting = body.greeting.slice(0, 300);
-  if (typeof body.accent === 'string' && /^#[0-9a-fA-F]{6}$/.test(body.accent)) cfg.accent = body.accent;
-  if (typeof body.systemPrompt === 'string') cfg.systemPrompt = body.systemPrompt.slice(0, 4000);
-  if (typeof body.model === 'string' && (ENGINES[body.model] || RAW_TO_KEY[body.model])) cfg.model = RAW_TO_KEY[body.model] || body.model;
-  if (Array.isArray(body.origins))          cfg.origins = body.origins.map(_host).filter(Boolean).slice(0, 20);
-  if (body.dailyMsgCap != null)             cfg.dailyMsgCap = clampNum(body.dailyMsgCap, 0, 100000, cfg.dailyMsgCap);
-  if (body.dailySpendCapUSD != null)        cfg.dailySpendCapUSD = clampNum(body.dailySpendCapUSD, 0, 1000, cfg.dailySpendCapUSD);
-  if (body.maxOut != null)                  cfg.maxOut = clampNum(body.maxOut, 128, 4000, cfg.maxOut);
-  if (typeof body.enabled === 'boolean')    cfg.enabled = body.enabled;
-  cfg.updated = Date.now();
-
-  await DB.put(env, 'widget_owner', user.email, cfg);
+  let cfg = null;
+  await _withKind(env, 'widget_owner', user.email, (rec) => {
+    if (!rec.key) Object.assign(rec, { ...WIDGET_DEFAULTS, key: _newSiteKey(), owner: user.email, created: Date.now() });
+    // Apply only known, bounded fields
+    if (typeof body.title === 'string')       rec.title = body.title.slice(0, 60);
+    if (typeof body.greeting === 'string')    rec.greeting = body.greeting.slice(0, 300);
+    if (typeof body.accent === 'string' && /^#[0-9a-fA-F]{6}$/.test(body.accent)) rec.accent = body.accent;
+    if (typeof body.systemPrompt === 'string') rec.systemPrompt = body.systemPrompt.slice(0, 4000);
+    if (typeof body.model === 'string' && (ENGINES[body.model] || RAW_TO_KEY[body.model])) rec.model = RAW_TO_KEY[body.model] || body.model;
+    if (Array.isArray(body.origins))          rec.origins = body.origins.map(_host).filter(Boolean).slice(0, 20);
+    if (body.dailyMsgCap != null)             rec.dailyMsgCap = clampNum(body.dailyMsgCap, 0, 100000, rec.dailyMsgCap);
+    if (body.dailySpendCapUSD != null)        rec.dailySpendCapUSD = clampNum(body.dailySpendCapUSD, 0, 1000, rec.dailySpendCapUSD);
+    if (body.maxOut != null)                  rec.maxOut = clampNum(body.maxOut, 128, 4000, rec.maxOut);
+    if (typeof body.enabled === 'boolean')    rec.enabled = body.enabled;
+    rec.updated = Date.now();
+    cfg = rec;
+  }, {});
+  if (!cfg) return json({ error: 'Could not save the widget settings just now. Please try again.' }, 503);
+  /* The public copy, written from what the lock actually stored. Second, so a
+     failure between them leaves the owner's record ahead of the public one -
+     the direction where the widget serves the older settings rather than
+     settings its owner cannot see. */
   await DB.put(env, 'widget', cfg.key, cfg);
   audit(env, 'widget_save', { owner: user.email, key: cfg.key });
   return json({ ok: true, config: cfg });
@@ -15402,18 +15475,46 @@ async function marketRate(request, env) {
      hash is a pure function of the address, so every old key can be converted
      here without needing to know whose it is - and the average, which is all
      anybody reads, does not move. */
-  const key = `mkrate:${id}`;
-  let map = {};
-  try { const raw = await env.AMV_KV.get(key); if (raw) map = JSON.parse(raw); } catch {}
+  /* AMV-042: THIS RECORD IS KEYED BY THE LISTING, SO ITS WRITERS ARE EVERY BUYER.
+
+     Read-modify-write on a record one person owns is a race between their own
+     tabs. On a record keyed by somebody else's LISTING it is a race between
+     strangers: two buyers rating the same item at the same moment both read the
+     map, both add themselves, and the later write drops the earlier rating.
+     Popular items - the ones with the most raters - are exactly where it
+     happens most, and the only symptom is a rating count that is quietly lower
+     than the number of people who rated.
+
+     The hashing and the migration move inside the lock with everything else.
+     They read the map and rewrite every key in it, which is the largest
+     read-modify-write in this function and was the one furthest from any lock. */
   const IS_HASH = /^[0-9a-f]{16}$/;
-  const migrated = {};
-  for (const [who, val] of Object.entries(map)) {
-    migrated[IS_HASH.test(who) ? who : await _errHash(String(who).toLowerCase())] = val;
+  const mine = await _errHash(user.email.toLowerCase());
+  /* The hashes are computed before the lock: the mutate below is synchronous,
+     and awaiting inside it would hold the lock across storage calls for every
+     existing rater. */
+  const preHashed = new Map();
+  {
+    let seed = {};
+    try { const raw = await env.AMV_KV.get(`mkrate:${id}`); if (raw) seed = JSON.parse(raw); } catch {}
+    for (const who of Object.keys(seed)) {
+      if (!IS_HASH.test(who)) preHashed.set(who, await _errHash(String(who).toLowerCase()));
+    }
   }
-  map = migrated;
-  map[await _errHash(user.email.toLowerCase())] = s;
-  await env.AMV_KV.put(key, JSON.stringify(map));
-  const vals = Object.values(map);
+  let vals = [];
+  await _withKV(env, 'mkrate', id, (map) => {
+    const migrated = {};
+    for (const [who, val] of Object.entries(map)) {
+      /* A key that arrived between the pre-hash pass and the lock is left as it
+         is rather than dropped - it is somebody's rating, and the next writer
+         migrates it. Losing it to be tidy would be the defect this fixes. */
+      migrated[IS_HASH.test(who) ? who : (preHashed.get(who) || who)] = val;
+    }
+    for (const k of Object.keys(map)) delete map[k];
+    Object.assign(map, migrated);
+    map[mine] = s;
+    vals = Object.values(map);
+  }, {});
   const rating = +(vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1);
   /* AMV-204: the average goes onto the listing under the lock. Written from a
      copy read before a sale or a status change landed, a rating put the old
@@ -15596,8 +15697,6 @@ async function marketReview(request, env) {
   if (!bought) return json({ error: 'You can only review sellers you\u2019ve bought from.' }, 403);
   const s = Math.max(1, Math.min(5, Math.round(Number(stars) || 0)));
   const key = `mkreview:${sellerEmail}`;
-  let list = [];
-  try { const raw = await env.AMV_KV.get(key); if (raw) list = JSON.parse(raw); } catch {}
   // Screen review text - user-generated content that displays publicly.
   const reviewText = String(text || '').slice(0, 1000);
   const rScreen = _marketScreen({ text: reviewText, title: '' });
@@ -15610,9 +15709,14 @@ async function marketReview(request, env) {
   // email, so a review list can be shown publicly without leaking addresses.
   const byId = await _errHash(user.email.toLowerCase());
   const entry = { byId, byName: (user.name || user.email.split('@')[0]).slice(0, 40), stars: s, text: reviewText, ts: Date.now() };
-  const existing = list.findIndex(r => (r.byId || '') === byId || (r.by || '').toLowerCase() === user.email.toLowerCase());
-  if (existing >= 0) list[existing] = entry; else list.unshift(entry);
-  await env.AMV_KV.put(key, JSON.stringify(list.slice(0, 500)));
+  /* AMV-042: keyed by the SELLER, so every buyer of theirs writes it. Two
+     reviews landing together both read the list, both add themselves, and one
+     disappears - and the buyer who lost is told their review was posted. */
+  await _withKV(env, 'mkreview', sellerEmail, (list) => {
+    const existing = list.findIndex(r => (r.byId || '') === byId || (r.by || '').toLowerCase() === user.email.toLowerCase());
+    if (existing >= 0) list[existing] = entry; else list.unshift(entry);
+    if (list.length > 500) list.length = 500;
+  }, []);
   audit(env, 'market_review', { seller: sellerEmail, by: user.email, stars: s });
   return json({ ok: true, review: entry });
 }
@@ -16342,11 +16446,6 @@ async function apiKeyCreate(request, env) {
 
   const body = await request.json().catch(() => ({}));
   const name = String(body.name || 'API key').slice(0, 60).trim() || 'API key';
-  const rec = (await DB.get(env, 'apikeys', user.email)) || { items: [] };
-  const live = (rec.items || []).filter(k => !k.revoked);
-  if (live.length >= API_KEY_MAX_PER_USER) {
-    return json({ error: 'You can have up to ' + API_KEY_MAX_PER_USER + ' active keys. Revoke one to create another.' }, 429);
-  }
 
   const key = _newApiKey();
   const hash = await _apiKeyHash(key);
@@ -16357,8 +16456,34 @@ async function apiKeyCreate(request, env) {
      not the key, and _apiKeyPublic never returns it. */
   const item = { id: 'k_' + crypto.randomUUID().slice(0, 12), name, hash,
                  last4: key.slice(-4), created: Date.now(), calls: 0 };
-  rec.items = (rec.items || []).concat(item);
-  await DB.put(env, 'apikeys', user.email, rec);
+  /* AMV-053: THE CAP AND THE APPEND ARE ONE DECISION.
+
+     This read the key list, counted the live ones, compared them to the cap and
+     wrote the list back - four steps with three gaps. Two creates arriving
+     together both read the same list, both decide they are under the cap, and
+     both write: the cap is exceeded, and worse, the second write is made from a
+     list that does not contain the first key. That key is LOST from the record
+     while its lookup row still exists, so it goes on authenticating and cannot
+     be revoked through the product, because nothing lists it.
+
+     The lock roster excused this handler on the grounds that two creates at
+     once is one person double-clicking and "the cap below refuses the second
+     anyway". A double-click is exactly how it happens, and the cap is read
+     inside the same window it is supposed to close - so it refuses nothing.
+     Same shape as the signup exemption, and wrong for the same reason.
+
+     The lookup row is written after the lock, deliberately: it is a different
+     key, and a failure between them leaves a key that is listed and does not
+     work - visible and revocable - rather than one that works and is invisible. */
+  let capped = false;
+  await _withKind(env, 'apikeys', user.email, (rec) => {
+    const live = (rec.items || []).filter(k => !k.revoked);
+    if (live.length >= API_KEY_MAX_PER_USER) { capped = true; return; }
+    rec.items = (rec.items || []).concat(item);
+  }, { items: [] });
+  if (capped) {
+    return json({ error: 'You can have up to ' + API_KEY_MAX_PER_USER + ' active keys. Revoke one to create another.' }, 429);
+  }
   // The lookup the request path uses: hash -> which account, which key.
   await env.AMV_KV.put(`apikey:${hash}`, JSON.stringify({ email: user.email, id: item.id }));
   audit(env, 'apikey_created', { email: user.email, id: item.id });
@@ -16628,9 +16753,13 @@ async function supportSubmit(request, env) {
     status: 'open',
   };
 
-  const prev = (await DB.get(env, 'support', user.email)) || { tickets: [] };
-  const tickets = [ticket].concat(Array.isArray(prev.tickets) ? prev.tickets : []).slice(0, SUPPORT_KEEP);
-  await DB.put(env, 'support', user.email, { tickets, updatedAt: Date.now() });
+  /* AMV-033: two tickets submitted from two tabs both read the list, both
+     prepend, and the later write loses the earlier ticket - somebody who asked
+     for help and was told it was sent. */
+  await _withKind(env, 'support', user.email, (rec) => {
+    rec.tickets = [ticket].concat(Array.isArray(rec.tickets) ? rec.tickets : []).slice(0, SUPPORT_KEEP);
+    rec.updatedAt = Date.now();
+  }, { tickets: [] });
 
   /* Told to the operator NOW. A ticket that only exists until somebody thinks
      to open an admin page is barely better than one in a browser. Not
