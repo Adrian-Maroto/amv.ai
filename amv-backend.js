@@ -602,19 +602,40 @@ const _videoCost = (env) => Math.max(0.01, parseFloat(env && env.VIDEO_COST_USD)
    path that happened to contain the code.
 
    Returns null when this subject has no dollar ceiling at all. */
-function _monthlyCeilingUSD(user) {
+function _monthlyCeiling(user) {
   const planCeiling = _planPriceUSD(user.plan, user.customCfg) > 0
     ? _planPriceUSD(user.plan, user.customCfg) * 0.45 : 0;
+  /* A child's cap is a ceiling on top of the plan's, never a raise. The parent
+     can spend less on them than the plan allows; they can never spend more,
+     whatever the plan is or who pays for it. */
   let familyCapUSD = null;
   if (user.family && user.family.limits && user.family.limits.monthlyUSD != null) {
     familyCapUSD = Math.max(0, +user.family.limits.monthlyUSD || 0);
   }
-  if (!(planCeiling > 0) && familyCapUSD == null) return null;
+  if (!(planCeiling > 0) && familyCapUSD == null) {
+    return { value: null, source: null, planCeiling, familyCapUSD };
+  }
   /* A cap of zero really is zero - a parent who sets it there has switched off
      paid compute for that child, and that has to mean it. */
-  return familyCapUSD == null ? planCeiling
+  const value = familyCapUSD == null ? planCeiling
        : (planCeiling > 0 ? Math.min(planCeiling, familyCapUSD) : familyCapUSD);
+  /* AMV-005: WHICH ceiling bound, not only what it was.
+
+     The refusal has to name the right person. "Upgrade for more" is not an
+     action a child can take, and telling a parent to ask themselves is
+     nonsense. The caller used to work this out again from its own copy of
+     familyCapUSD and a `planCeiling` that existed only in THIS function - so
+     the family branch threw a ReferenceError and the customer got a 500 where
+     a 429 belonged, on the one path where somebody is already being told no.
+
+     Deciding it here means there is one computation and one answer. */
+  const source = (familyCapUSD != null && (planCeiling === 0 || familyCapUSD <= planCeiling))
+    ? 'family' : 'plan';
+  return { value, source, planCeiling, familyCapUSD };
 }
+
+/* The value alone, for the callers that only gate on it. */
+function _monthlyCeilingUSD(user) { return _monthlyCeiling(user).value; }
 
 /* AN ACCOUNT BLOCKED FOR TAKING ITS MONEY BACK DOES NOT GET MORE.
 
@@ -669,14 +690,21 @@ async function _spendGate(env, user, what) {
      Checked before the global ceiling because it refuses for a different
      reason and the person needs to hear the right one: "you have used the
      limit set for your account" is not "AMV is busy". */
-  const ceiling = _monthlyCeilingUSD(user);
+  const ceilingInfo = _monthlyCeiling(user);
+  const ceiling = ceilingInfo.value;
   if (ceiling != null) {
     const costName = `cost:${user.billingSubject || user.email}:${_periodKeyOf(user)}`;
     let capRes = null;
     try { capRes = await counter(env, costName, { op: 'checkCap', cap: ceiling }); }
     catch (e) { audit(env, 'spend_gate_blind', { what, scope: 'account', error: String((e && e.message) || e) }); }
     if (capRes && !capRes.allowed) {
-      const hitFamily = !!(user.family && user.family.limits && user.family.limits.monthlyUSD != null);
+      /* AMV-005, the second half. This said "family" whenever a family cap
+         EXISTED rather than when it was the one that bound - so a child on a
+         paid plan whose parent had set a generous cap, who then used up the
+         PLAN allowance, was told to ask their parent to raise a limit that was
+         not the constraint. The advice was confidently wrong, which is worse
+         than vague. The helper decides it once, from the numbers. */
+      const hitFamily = ceilingInfo.source === 'family';
       audit(env, 'spend_cap_hit', { email: user.email, plan: user.plan, family: hitFamily, what });
       return json(hitFamily
         ? { error: 'You have used the monthly limit set for your account. It resets next month, or whoever manages your family can raise it.',
@@ -8377,24 +8405,21 @@ async function aiProxy(request, env, ctx) {
   // 3b) COST BACKSTOP - applies to EVERY paid plan. A user can never cost us
   //     more than a safe fraction of what they paid, guaranteeing margin even
   //     if they run 100% on the most expensive model. This is the profit lock.
-  /* A child's cap is a ceiling on top of the plan's, never a raise. The parent
-     can spend less on them than the plan allows; they can never spend more,
-     whatever the plan is or who pays for it. */
-  const familyCapUSD = (user.family && user.family.limits && user.family.limits.monthlyUSD != null)
-    ? Math.max(0, +user.family.limits.monthlyUSD || 0) : null;
   const costName = `cost:${user.billingSubject || user.email}:${_periodKeyOf(user)}`;
   /* One definition, shared with the image and video gate - see
      _monthlyCeilingUSD. It used to be written out here and only here, which is
      why it bound chat and nothing else. */
-  const costCeiling = _monthlyCeilingUSD(user);
+  const ceiling = _monthlyCeiling(user);
+  const costCeiling = ceiling.value;
   if (costCeiling != null) {
     const capRes = await counter(env, costName, { op: 'checkCap', cap: costCeiling });
     if (!capRes.allowed) {
       audit(env,'spend_cap_hit',{email:user.email,plan:user.plan,family:!!(user.family)}); await refundReservation();
       /* "Upgrade for more" is not an action a child can take. Tell them the
          true one: the person who set the limit is the person who can change
-         it. */
-      const hitFamilyCap = familyCapUSD != null && (planCeiling === 0 || familyCapUSD <= planCeiling);
+         it. Which one bound is decided in _monthlyCeiling, beside the numbers
+         it was decided from. */
+      const hitFamilyCap = ceiling.source === 'family';
       return json(hitFamilyCap
         ? { error: 'You have used the monthly limit set for your account. It resets next month, or whoever manages your family can raise it.',
             code: 'family_cap' }
@@ -15904,9 +15929,23 @@ async function paypalWebhook(request, env, ctx) {
     }
   } catch (e) {
     audit(env, 'webhook_error', { kind: 'paypal', msg: String(e.message).slice(0, 120) });
-    /* Genuinely failed, so let PayPal's retry reprocess it rather than treating
-       the redelivery as a duplicate of work that never happened. */
+    /* AMV-008: RELEASING THE CLAIM IS HALF OF A RETRY. THE STATUS IS THE OTHER.
+
+       This released the claim and then fell through to the 200 below, so PayPal
+       recorded the delivery as handled and never sent it again. The comment
+       here said "let PayPal's retry reprocess it" while the code was the reason
+       no retry would come. A customer paid, processing threw, and they were
+       charged with no plan - and nothing anywhere reported a failure.
+
+       A webhook is acknowledged when the work is durable, never before. The
+       claim goes back so the redelivery is not mistaken for a duplicate, and
+       the status tells PayPal to send it. */
     if (evt.id) { try { await _releaseClaim(env, 'paypalevt', evt.id); } catch (_) {} }
+    try { await alertOnce(env, 'paypal_webhook_failed',
+      'A PayPal webhook failed to process and was returned for retry. Event '
+      + (evt && evt.id ? evt.id : 'unknown') + ' type ' + (evt && evt.event_type ? evt.event_type : 'unknown')
+      + '. If this repeats, a payment may be taken with no plan granted.', 15); } catch (_) {}
+    return new Response('retry', { status: 503, headers: { ...CORS } });
   }
   return json({ received: true });
 }
