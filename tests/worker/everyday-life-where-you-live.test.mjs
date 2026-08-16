@@ -32,7 +32,7 @@ const app = readFileSync(join(ROOT, 'app.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'everyday.harness.mjs');
 writeFileSync(harness, src +
-  '\nexport { EVERYDAY_UNIVERSAL, EVERYDAY_BY_COUNTRY, JOB_BOARDS, _coverage, COUNTRY_NAME };\n');
+  '\nexport { EVERYDAY_UNIVERSAL, EVERYDAY_BY_COUNTRY, JOB_BOARDS, _coverage, COUNTRY_NAME, CONTINENT_OF };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 const PROMOTED = {
@@ -149,7 +149,21 @@ section('Every country AMV reaches has an everyday life, not just the promoted o
   const orphan = [...have].filter((c) => !claimed.includes(c));
   ok(orphan.length === 0, 'and none has jobs the coverage board never surfaces', orphan);
 
-  ok(claimed.length >= 45, 'across every country the board lists', claimed.length);
+  ok(claimed.length >= 100, 'across every country the board lists', claimed.length);
+
+  /* A THIRD DIRECTION, and the one that actually caught something. New Zealand
+     sat in the continent and name maps from the beginning with no mail
+     provider, no job board and no everyday job, so it was never shown on the
+     coverage board at all - a country the code knew about and the product did
+     nothing for. It is invisible to both checks above, because it is neither a
+     hollow claim nor an unsurfaced job: it is simply absent.
+
+     Anything named in the continent map is a country somebody intended AMV to
+     reach, so it has to appear. */
+  const mapped = Object.keys(W.CONTINENT_OF);
+  const phantom = mapped.filter((c) => !claimed.includes(c));
+  ok(phantom.length === 0,
+     'and no country is named in the maps while the product does nothing there', phantom);
   const thin = [...have].filter((c) => W.EVERYDAY_BY_COUNTRY[c].length < 5);
   ok(thin.length === 0, 'each with at least five of its own', thin);
 }
@@ -175,7 +189,7 @@ section('They are specific to a country, not one list translated twenty times');
   const all = Object.values(W.EVERYDAY_BY_COUNTRY).flat();
   const ids = all.map((j) => j.id);
   ok(new Set(ids).size === ids.length, 'and every job has its own id', ids.length - new Set(ids).size);
-  ok(all.length + W.EVERYDAY_UNIVERSAL.length >= 110, 'across this many in total',
+  ok(all.length + W.EVERYDAY_UNIVERSAL.length >= 500, 'across this many in total',
      all.length + W.EVERYDAY_UNIVERSAL.length);
 }
 

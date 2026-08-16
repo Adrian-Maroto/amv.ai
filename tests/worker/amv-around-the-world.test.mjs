@@ -81,7 +81,7 @@ section('And every one of them has somewhere to look for work');
 section('The coverage board is computed, never written by hand');
 {
   const cov = W._coverage();
-  ok(cov.countries.length >= 40, 'it covers this many countries', cov.countries.length);
+  ok(cov.countries.length >= 100, 'it covers this many countries', cov.countries.length);
   ok(cov.totals.continents >= 5, 'across this many continents', cov.totals.continents);
 
   /* The whole point: every number traces to a registry entry. A hand-kept
