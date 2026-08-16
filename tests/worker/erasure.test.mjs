@@ -39,7 +39,14 @@ const env = {
   },
 };
 W.__setRequireUser(async () => ({ email: 'gone@x.com' }));
-const req = () => new Request('https://x/auth/delete', { method:'POST', body:'{}' });
+/* AMV-015: erasure now asks the person to prove they are still there. A bearer
+   token is the credential most likely to have leaked - a shared laptop left
+   signed in, a script on another page - and this is the one action that cannot
+   be undone. These accounts have no password set, so confirming means typing
+   the address, which is what the interface can honestly ask of a federated
+   sign-in. */
+const req = () => new Request('https://x/auth/delete', { method:'POST',
+  body: JSON.stringify({ confirmEmail: 'gone@x.com' }) });
 
 const realFetch = globalThis.fetch;
 let providerCalls = [];
@@ -295,7 +302,7 @@ section('A connected Google account does not outlive the account');
 
   W.__setRequireUser(async () => ({ email:'gone@x.com' }));
   await W.authDeleteAccount(new Request('https://w/auth/delete',
-    { method:'POST', body: JSON.stringify({ confirm:'DELETE' }) }), env2);
+    { method:'POST', body: JSON.stringify({ confirm:'DELETE', confirmEmail:'gone@x.com' }) }), env2);
 
   globalThis.fetch = priorFetch;
 
@@ -315,7 +322,7 @@ section('Spending limits do not outlive the account either');
   await W.DB.put(env3, 'spendlimits', 'gone2@x.com', { enabled:true, perPurchase:100 });
   W.__setRequireUser(async () => ({ email:'gone2@x.com' }));
   await W.authDeleteAccount(new Request('https://w/auth/delete',
-    { method:'POST', body: JSON.stringify({ confirm:'DELETE' }) }), env3);
+    { method:'POST', body: JSON.stringify({ confirm:'DELETE', confirmEmail:'gone2@x.com' }) }), env3);
   ok(!(await W.DB.get(env3, 'spendlimits', 'gone2@x.com')),
      'the limits record is erased with everything else', true);
 }

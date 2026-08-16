@@ -182,11 +182,34 @@ section('An account cannot be deleted out from under a payout in flight');
   ok((await W._payoutsInFlight(env, 'nobody@x.com')).length === 0,
      'an account with nothing in flight is not held up', true);
 
-  /* A scan that cannot run must not become a way to block a deletion - the
-     payout records survive erasure, so it stays traceable either way. */
+  /* THIS CASE USED TO ASSERT THE DEFECT.
+
+     It required a failed scan to answer "nothing in flight", on the reasoning
+     that a read failure must not block somebody's right to erasure and that the
+     payout records survive anyway. The first half is a good instinct and the
+     second half is half true: the RECORD survives, and the person it was owed
+     to does not - erasure takes the wallet the payout was debited from.
+
+     So an empty list, which is indistinguishable from a clean one, let a
+     storage blip erase an account with money on its way to it. That fails in
+     the one direction that cannot be undone: waiting costs somebody minutes,
+     erasing costs them their balance and there is no putting it back
+     (AMV-SP-04).
+
+     The two outcomes are separate now. A genuine miss is still an empty list.
+     An unreadable one throws, and the caller turns it into "try again shortly"
+     rather than deleting on the strength of a lookup that never happened. */
   const broken = { AMV_KV: { list: async () => { throw new Error('kv down'); } } };
-  ok((await W._payoutsInFlight(broken, 'gone@x.com')).length === 0,
-     'and a failed scan lets the deletion proceed rather than refusing it', true);
+  let threw = null;
+  try { await W._payoutsInFlight(broken, 'gone@x.com'); } catch (e) { threw = e; }
+  ok(threw != null, 'a scan that cannot run says so rather than answering', threw && threw.message);
+  ok(threw && threw.code === 'payout_check_unavailable',
+     'with a code the caller can turn into a retry', threw && threw.code);
+
+  /* And it is still not a wall: a genuine miss remains an empty list, so
+     somebody with nothing outstanding is never held up. */
+  ok((await W._payoutsInFlight(env, 'nobody-at-all@x.com')).length === 0,
+     'while an account with nothing in flight still deletes freely', true);
 }
 
 section('The open-payout index is kept true by the routes themselves');

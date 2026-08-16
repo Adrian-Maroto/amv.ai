@@ -9,6 +9,36 @@ observed to fail on the assertions that name the defect, and the fix was
 restored. A guard that has never been seen to fail is not a guard, and three
 times this week a check turned out to be unable to fail at all.
 
+## Phase 2 - in progress
+
+**Done: AMV-015, AMV-SP-03, AMV-SP-04.** Left: AMV-016, 017, 018, 019, 020.
+
+Deletion is the one irreversible action in the product and it took whatever the
+auth path accepted - so an access token was enough, and an access token is the
+credential most likely to have leaked. An API key was enough too, which is
+worse: a key exists so a machine can act without a person, and no automation has
+a reason to erase the account it runs on.
+
+**AMV-SP-04 is the same mistake pointed at money.** Deletion waits while a
+payout is on its way, because erasure takes the wallet. That check caught every
+read failure and returned an empty list, which is indistinguishable from a clean
+one - so a storage blip erased an account with money in flight. The comment
+defending it said the payout records survive erasure; the record survives and
+the person it was owed to does not.
+
+One existing test asserted that behaviour as correct. It has been rewritten to
+the reasoning above rather than worked around.
+
+**AMV-SP-03**: only Stripe was cancelled on deletion. A PayPal subscriber who
+deleted their account went on being charged every month - worse on that side,
+because PayPal bills against an agreement with nothing on AMV's side involved.
+The subscription id is on the entitlement where AMV-007 records it.
+
+Eight suites needed updating for the new confirmation. That is a real behaviour
+change, so each call site was corrected rather than the gate weakened - and the
+deletion throttle's own counter keys, which name the account, are now erased
+with it.
+
 ## Phase 1 - complete
 
 All eight: AMV-004, 006, 007, 009, 010, 011, 023, 041.
@@ -131,7 +161,7 @@ read as working for as long as it did.
 | 0 | AMV-012 | HIGH | `_withKV` treats read/parse failures as an empty record and can overwrite live | DONE |
 | 3 | AMV-013 | HIGH | Lease locks have no owner token, renewal, or fencing | TODO |
 | 0 | AMV-014 | HIGH | Account export returns the live Canvas bearer token | DONE |
-| 2 | AMV-015 | HIGH | Account deletion requires only a bearer token and can report success after par | TODO |
+| 2 | AMV-015 | HIGH | Account deletion requires only a bearer token and can report success after par | DONE |
 | 2 | AMV-016 | HIGH | Backup restore is KV-only and can restore stale authentication/authorization s | TODO |
 | 2 | AMV-017 | HIGH | Concurrent signup can create multiple valid sessions for one email with last-w | TODO |
 | 2 | AMV-018 | HIGH | Password-reset codes and links are not atomically attempt-limited or consumed | TODO |
@@ -140,8 +170,8 @@ read as working for as long as it did.
 | 0 | AMV-021 | HIGH | Model compatibility retry can throw outside reservation cleanup | DONE |
 | 0 | AMV-022 | HIGH | Model transport has no default deadline | DONE |
 | 5 | AMV-060 | HIGH | Shipped deployment configuration is not launch-ready | TODO |
-| 2 | AMV-SP-03 | HIGH | Account deletion cancels Stripe but not PayPal subscriptions | TODO |
-| 2 | AMV-SP-04 | HIGH | Payout-in-flight lookup fails open during account deletion | TODO |
+| 2 | AMV-SP-03 | HIGH | Account deletion cancels Stripe but not PayPal subscriptions | DONE |
+| 2 | AMV-SP-04 | HIGH | Payout-in-flight lookup fails open during account deletion | DONE |
 | 1 | AMV-023 | MEDIUM | SMS user context omits family limits | DONE |
 | 5 | AMV-024 | MEDIUM | Changing an SMS phone leaves the old phone authorized | TODO |
 | 5 | AMV-025 | MEDIUM | SMS verification uses `Math.random`, has no attempt cap, and updates uniquenes | TODO |

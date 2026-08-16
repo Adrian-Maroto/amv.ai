@@ -28,7 +28,14 @@ const env = { JWT_SECRET: 'x'.repeat(40), AMV_KV: {
 
 let asUser = null;
 W.__setRequireUser(async () => asUser ? { email: asUser } : null);
-const req = () => new Request('https://x', { method:'POST', headers:{'Content-Type':'application/json'}, body:'{}' });
+/* AMV-015: erasure now asks the person to prove they are still there. A bearer
+   token is the credential most likely to have leaked - a shared laptop left
+   signed in, a script on another page - and this is the one action that cannot
+   be undone. These accounts have no password set, so confirming means typing
+   the address, which is what the interface can honestly ask of a federated
+   sign-in. */
+const req = () => new Request('https://x/auth/delete', { method:'POST',
+  body: JSON.stringify({ confirmEmail: asUser || '' }) });
 
 /* seed two users' data */
 function seed(){

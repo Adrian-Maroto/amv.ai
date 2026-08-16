@@ -6695,19 +6695,100 @@ async function _payoutsInFlight(env, email) {
       if (rec && rec.seller === em && ['pending', 'approved'].includes(rec.status || 'pending')) held.push(rec);
     }
   } catch (e) {
-    /* A read that failed must not become a way to block somebody's deletion.
-       The payout records survive erasure, so an unsettled payout is still
-       traceable even if this never ran. */
+    /* AMV-SP-04: "I COULD NOT LOOK" IS NOT "I LOOKED AND FOUND NOTHING".
+
+       This returned an empty list on any read failure, and the note said a
+       failed read must not become a way to block somebody's deletion. That is
+       the right instinct about a right to erasure and the wrong answer about
+       money. An empty list is indistinguishable from a clean one, so a storage
+       blip let an account be erased while a payout was on its way to it - and
+       erasure takes the WALLET, so the balance those payouts were debited from
+       goes too. The comment's own consolation, that the payout records survive,
+       is only half true: the record survives and the person it was owed to does
+       not.
+
+       It also fails in the one direction that cannot be undone. Waiting costs
+       somebody a few minutes; erasing costs them their money and there is no
+       putting it back.
+
+       So the two outcomes are separated. A genuine miss still means nothing is
+       in flight. An unreadable one throws, and the caller asks them to try
+       again rather than deleting on the strength of a lookup that never
+       happened. */
     audit(env, 'delete_payout_check_failed', { email: em, error: String((e && e.message) || e) });
-    return [];
+    const err = new Error('payouts in flight could not be checked');
+    err.code = 'payout_check_unavailable';
+    throw err;
   }
   return held;
+}
+
+/* AMV-015: DELETING EVERYTHING SOMEBODY HAS NEEDS MORE THAN A BEARER TOKEN.
+
+   Erasure is the one irreversible action in the product. It took whatever
+   requireUser accepted and nothing more - so an access token was enough, and an
+   access token is the thing most likely to have leaked: a shared laptop left
+   signed in, a token pulled out of storage by a script on some other page, a
+   borrowed phone. Every other destructive act in a product like this asks the
+   person to prove they are still there, precisely because holding a session is
+   not the same as being the account owner right now.
+
+   An API key is not a way to do it at all. A key is for automation, and no
+   automation has a reason to erase the account it runs on; making it possible
+   only means a leaked key can.
+
+   Federated accounts have no password to check, so they confirm by typing their
+   own address - which proves intent and the identity of whoever is looking at
+   the screen, and is what the interface can honestly ask of them. */
+async function _reauthForDelete(env, request, user, body) {
+  if (user.via === 'apikey') {
+    return json({ error: 'An API key cannot delete an account. Sign in and delete it from your settings.',
+                  code: 'reauth_required' }, 403);
+  }
+  const em = String(user.email || '').toLowerCase();
+  const acct = await DB.get(env, 'acct', em);
+  if (!acct) return json({ error: 'unauthorized' }, 401);
+
+  /* Bounded, because this endpoint now accepts a password and everything that
+     accepts a password is a guessing surface. */
+  const g = await guardAction(env, `delacct:${em}`, 5, 20, 'account deletion');
+  if (g) return g;
+
+  if (acct.provider === 'email' && acct.pwHash) {
+    const password = String((body && body.password) || '');
+    if (!password) {
+      return json({ error: 'Enter your password to confirm you want to delete your account. This cannot be undone.',
+                    code: 'reauth_required', need: 'password' }, 401);
+    }
+    const hash = await _hashPassword(password, acct.salt, acct.pwIter || 100000);
+    const ok = timingSafeEqual(new TextEncoder().encode(hash), new TextEncoder().encode(acct.pwHash || ''));
+    if (!ok) {
+      audit(env, 'delete_reauth_failed', { email: em });
+      return json({ error: 'That password is not right.', code: 'reauth_failed' }, 401);
+    }
+    return null;
+  }
+
+  /* No password on the account - it is a federated sign-in. Typing the address
+     is what can honestly be asked, and it still requires somebody to be looking
+     at the screen rather than a token being replayed. */
+  const typed = String((body && body.confirmEmail) || '').toLowerCase().trim();
+  if (typed !== em) {
+    return json({ error: 'Type your email address to confirm you want to delete your account. This cannot be undone.',
+                  code: 'reauth_required', need: 'confirmEmail' }, 401);
+  }
+  return null;
 }
 
 async function authDeleteAccount(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
   const email = user.email;
+
+  /* Before anything is touched. */
+  const body = await request.json().catch(() => ({}));
+  const reauth = await _reauthForDelete(env, request, user, body);
+  if (reauth) return reauth;
 
   /* MONEY IN FLIGHT IS A REASON TO WAIT, NOT A REASON TO REFUSE.
 
@@ -6721,7 +6802,23 @@ async function authDeleteAccount(request, env) {
      the payout or cancel it, and the account deletes normally. Saying which
      one and how much matters - "you cannot delete your account" with no
      reason is how somebody decides the platform is keeping them hostage. */
-  const held = await _payoutsInFlight(env, email);
+  let held = [];
+  try {
+    held = await _payoutsInFlight(env, email);
+  } catch (e) {
+    /* Deliberately NOT treated as "nothing outstanding". See _payoutsInFlight:
+       erasure takes the wallet, so proceeding on a lookup that failed is how
+       somebody loses money AMV was in the middle of sending them. */
+    try { await alertOnce(env, 'delete_payout_check',
+      'An account deletion could not be completed because the unsettled-payout check could not be read. '
+      + 'The account is intact and the person has been asked to try again.', 30); } catch (_) {}
+    return json({
+      error: 'AMV could not confirm whether you have any payouts still being sent, so your account has not '
+           + 'been deleted. Nothing has changed. Please try again in a few minutes - this is a temporary fault '
+           + 'on our side, not a refusal.',
+      code: 'payout_check_unavailable',
+    }, 503);
+  }
   if (held.length) {
     const total = +held.reduce((n, w) => n + (+w.amount || 0), 0).toFixed(2);
     audit(env, 'delete_blocked_payout', { email, count: held.length, total });
@@ -6894,6 +6991,42 @@ async function authDeleteAccount(request, env) {
     if (custId) await env.AMV_KV.delete(`custemail:${custId}`);
   } catch { cancelFailed++; }
 
+  /* AMV-SP-03: AND PAYPAL, WHICH WAS NEVER CANCELLED AT ALL.
+
+     Only Stripe was ended here. A customer who pays through PayPal and deletes
+     their account went on being charged every month for a product they no
+     longer have - which is the exact failure the note above describes, left in
+     place for the other half of the paying customers. It is worse on this side:
+     PayPal bills against an agreement the customer set up, so it keeps taking
+     money with nothing on AMV's side involved at all.
+
+     The subscription id is on the entitlement, recorded when the plan was
+     granted (AMV-007), so there is no lookup to lose. Read BEFORE the record is
+     erased, for the same reason the Stripe block runs before the customer maps
+     go: after erasure there is nothing left that names the subscription. */
+  try {
+    const ent = await DB.get(env, 'ent', email);
+    const ppSub = ent && ent.lastEventSrc === 'paypal' ? String(ent.subId || '') : '';
+    if (ppSub && env.PAYPAL_CLIENT_ID && env.PAYPAL_SECRET) {
+      const token = await _paypalToken(env);
+      if (!token) { cancelFailed++; }
+      else {
+        const r = await fetchDeadline(
+          `${_paypalBase(env)}/v1/billing/subscriptions/${encodeURIComponent(ppSub)}/cancel`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reason: 'Account deleted at the customer\u2019s request' }),
+          });
+        /* PayPal answers 204 on success, and 422 when the subscription is
+           already cancelled or expired - which is the outcome asked for, so it
+           is not a failure. */
+        if (r.status === 204 || r.ok) cancelled++;
+        else if (r.status === 422) { /* already not billing; nothing to do */ }
+        else cancelFailed++;
+      }
+    }
+  } catch { cancelFailed++; }
+
   /* A card still being charged after erasure is the one failure here that costs
      a real person real money, and the account row is about to go - so if the
      cancellation did not land, it has to reach a human who can finish it. */
@@ -6901,7 +7034,7 @@ async function authDeleteAccount(request, env) {
     try {
       await alertOnce(env, 'delete_cancel_fail_' + email,
         'Account deleted but a subscription could not be cancelled for ' + email +
-        '. Cancel it in Stripe now - this card is still being charged.', 1);
+        '. Cancel it in Stripe or PayPal now - this customer is still being charged.', 1);
     } catch {}
   }
   audit(env, 'account_delete_billing', { email, cancelled, cancelFailed });
@@ -7070,7 +7203,13 @@ async function authDeleteAccount(request, env) {
      key itself. `mktsess:` names them and the item they were part-way through
      buying, which is a record of what somebody was shopping for. All three are
      exactly what erasure is for. */
-  for (const prefix of [`resume:${email}:`, `smsverify:${email}:`, `mktsess:${email}:`]) {
+  for (const prefix of [`resume:${email}:`, `smsverify:${email}:`, `mktsess:${email}:`,
+                        /* The throttle on this very endpoint. Confirming a deletion takes a
+                           password, so it is rate limited like everything else that does -
+                           and the counter keys carry the address. They expire on their own,
+                           but "it will be gone tomorrow" is not what erasure means, and
+                           there is nothing left to throttle once the account is gone. */
+                        `rl:act:delacct:${email}:`, `ctr:actday:delacct:${email}:`]) {
     try {
       let cursor;
       do {

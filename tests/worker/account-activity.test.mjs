@@ -186,7 +186,12 @@ section('Deleting the account deletes the record of it too');
   const env = makeEnv();
   const a = await signup(env, 'gone@x.com', { ua: CHROME_MAC });
   ok(!!(await env.AMV_KV.get('alog:gone@x.com')), 'the log exists while the account does');
-  await W.authDeleteAccount(authed('/auth/delete', a.token, 'POST'), env);
+  /* AMV-015: erasure asks for the password, so a leaked session cannot do it. */
+  await W.authDeleteAccount(new Request('https://x/auth/delete', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + a.token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: PW }),
+  }), env);
   ok(!(await env.AMV_KV.get('alog:gone@x.com')), 'and is gone with it - erasure means the activity log too');
   ok(!(await env.AMV_KV.get('refmine:gone@x.com')), 'along with the referral code claim');
   /* `tokepoch` is deliberately kept: it is a bare integer with no personal data

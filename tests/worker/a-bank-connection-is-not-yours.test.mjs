@@ -203,7 +203,8 @@ section('Deleting the account takes the bank connection with it');
   const env = mkEnv();
   const tok = await signup(env, ME);
   await linked(env, ME);
-  await req(env, '/auth/delete', {}, tok);
+  /* AMV-015: erasure asks the person to confirm they are still there. */
+  await req(env, '/auth/delete', { password: PW }, tok);
   ok(!(await W.DB.get(env, 'fin', ME)), 'no credential is left behind', await W.DB.get(env, 'fin', ME));
   ok(!(await W.DB.get(env, 'finlink', ME)), 'and no link session either', true);
 }

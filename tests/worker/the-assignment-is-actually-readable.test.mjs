@@ -230,7 +230,7 @@ section('The school token is deleted with the account, and never exported');
   const tok = await signup(env, 'leaving@example.com');
   await connect(env, tok);
   ok(!!(await W.DB.get(env, 'school', 'leaving@example.com')), 'the token is stored while connected', true);
-  await post(env, '/auth/delete', { confirm: 'DELETE' }, tok);
+  await post(env, '/auth/delete', { confirm: 'DELETE', password: 'A-real-Passw0rd!' }, tok);
   ok(!(await W.DB.get(env, 'school', 'leaving@example.com')), 'and gone when the account is', 'gone');
 }
 

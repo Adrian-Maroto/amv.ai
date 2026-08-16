@@ -125,7 +125,9 @@ section('And the wrong way when somebody leaves');
   const env = mkEnv();
   await build(env, { free: 9, pro: 1 });
   const tok = (await (await call(env, '/auth/login', { email: 'free0@x.com', password: PW, provider: 'email' })).json()).token;
-  await call(env, '/auth/delete', {}, { 'Authorization': 'Bearer ' + tok });
+  /* AMV-015: erasure asks the person to confirm they are still there. */
+  await call(env, '/auth/delete', { password: PW, confirmEmail: 'free0@x.com' },
+            { 'Authorization': 'Bearer ' + tok });
   const d = await stats(env);
   ok(d.users.accounts === 9,
      'a deleted account leaves the denominator, or the funnel looks worse every time somebody goes', d.users.accounts);
