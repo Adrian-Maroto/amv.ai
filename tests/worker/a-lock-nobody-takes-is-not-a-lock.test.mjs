@@ -124,7 +124,17 @@ const rawWrites = (body) => {
    costs nothing anybody would notice. */
 const NO_LOCK_NEEDED = {
   authDeleteAccount: 'erasure, which is terminal: it is removing this person from every link they are in, and there is nothing left afterwards for a lost write to matter to. It already holds the team lock for the same pass',
-  authSignup:      'creates the account record that everything else keys on - there is nobody else to race, and _claimOnce already stops two signups for one address',
+  /* authSignup WAS exempted here, on the grounds that it creates the record
+     everything else keys on, that there is nobody to race, and that a claim
+     already stopped two signups for one address. Every part of that was wrong.
+     There is somebody to race - the other person submitting the same form - and
+     there was no claim anywhere in front of it. Two signups arriving together
+     both read nothing, both wrote, and the second one's password became the
+     account's while the first still held a working session (AMV-017).
+
+     It takes the account lock now, so it needs no exemption. The line is gone
+     rather than reworded: an exemption whose reason has stopped being true is
+     how a real bypass gets waved through by inheriting somebody else's. */
   authGoogle:      'the same account creation through Google, with the same claim in front of it',
   teamCreate:      'writes a team that does not exist yet, under a fresh id nobody else has',
   apiKeyCreate:    'appends to the caller\'s own key list; two creates at once is one person double-clicking, and the cap below refuses the second anyway',

@@ -11,7 +11,26 @@ times this week a check turned out to be unable to fail at all.
 
 ## Phase 2 - in progress
 
-**Done: AMV-015, AMV-SP-03, AMV-SP-04.** Left: AMV-016, 017, 018, 019, 020.
+**Done: AMV-015, 017, 018, AMV-SP-03, AMV-SP-04.** Left: AMV-016, 019, 020.
+
+**AMV-018 was a five-attempt limit that counted five per round trip.** A
+six-digit code is a million possibilities, which five tries makes safe. The
+counter was read, compared, incremented and written - four steps with three
+gaps - so guesses arriving together all read the same number and all wrote the
+same increment back. The cap bounded sequential guesses and nothing else, which
+turns a million possibilities into a few minutes of parallel traffic against
+whatever address somebody names. Two submissions of a CORRECT code likewise both
+consumed it and both minted a single-use token.
+
+**AMV-017** is the same shape on the way in: read the account, find nothing,
+write one. Two signups for an address arriving together both wrote, the last won,
+and both callers were handed a working session for an account whose password
+belonged to the second person. Measured at three accounts created for one address
+with ten concurrent requests before the fix.
+
+The lock roster carried an exemption for the signup saying there was nobody to
+race and that a claim already stopped it. Both halves were false and there was no
+claim. The exemption is gone rather than reworded.
 
 Deletion is the one irreversible action in the product and it took whatever the
 auth path accepted - so an access token was enough, and an access token is the
@@ -163,8 +182,8 @@ read as working for as long as it did.
 | 0 | AMV-014 | HIGH | Account export returns the live Canvas bearer token | DONE |
 | 2 | AMV-015 | HIGH | Account deletion requires only a bearer token and can report success after par | DONE |
 | 2 | AMV-016 | HIGH | Backup restore is KV-only and can restore stale authentication/authorization s | TODO |
-| 2 | AMV-017 | HIGH | Concurrent signup can create multiple valid sessions for one email with last-w | TODO |
-| 2 | AMV-018 | HIGH | Password-reset codes and links are not atomically attempt-limited or consumed | TODO |
+| 2 | AMV-017 | HIGH | Concurrent signup can create multiple valid sessions for one email with last-w | DONE |
+| 2 | AMV-018 | HIGH | Password-reset codes and links are not atomically attempt-limited or consumed | DONE |
 | 2 | AMV-019 | HIGH | Refresh and access tokens are persisted in localStorage under a weak inline-sc | TODO |
 | 2 | AMV-020 | HIGH | Service worker caches revocable or token-bearing same-origin pages | TODO |
 | 0 | AMV-021 | HIGH | Model compatibility retry can throw outside reservation cleanup | DONE |

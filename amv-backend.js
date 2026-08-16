@@ -5412,22 +5412,56 @@ async function authResetVerify(request, env) {
   const code = String(body.code || '').replace(/\D/g, '');
   if (!email || !code) return json({ error: 'Enter the 6-digit code.' }, 400);
 
-  const raw = await env.AMV_KV.get('resetcode:' + email);
-  if (!raw) return json({ error: 'That code has expired. Request a new one.' }, 400);
+  /* AMV-018: A FIVE-ATTEMPT LIMIT THAT COUNTED FIVE PER ROUND TRIP.
 
-  let rec = null;
-  try { rec = JSON.parse(raw); } catch (e) { rec = null; }
-  if (!rec) return json({ error: 'That code has expired. Request a new one.' }, 400);
+     This read the record, compared the code, incremented the counter and wrote
+     it back - four steps with three gaps. Guesses arriving together all read
+     `attempts` at the same number, all decide they are under the limit, and all
+     write the same increment back. The cap does not bound the number of
+     guesses, it bounds the number of SEQUENTIAL guesses, and nothing stops
+     somebody sending a thousand at once.
 
-  if (rec.attempts >= RESET_CODE_ATTEMPTS) {
+     A six-digit code is a million possibilities. Five tries makes that safe;
+     unlimited parallel tries makes it a few minutes of traffic, against
+     whatever address the attacker names.
+
+     The correct code has the same shape. Two submissions of a real code both
+     read it, both delete it, and both mint a reset token - two live
+     single-use tokens for one use.
+
+     All of it now happens inside the record lock, where the value cannot change
+     between reading it and acting on it. The record is marked used rather than
+     deleted in place, because the lock's writer saves whatever load returned;
+     the delete after it is cleanup, and a second attempt that gets in first
+     sees `used` and is refused. */
+  let verdict;
+  try {
+    verdict = await _withKV(env, 'resetcode', email, (rec) => {
+      if (!rec || !rec.code || rec.used) return { gone: true };
+      if ((+rec.attempts || 0) >= RESET_CODE_ATTEMPTS) return { exhausted: true };
+      if (rec.code !== code) {
+        rec.attempts = (+rec.attempts || 0) + 1;
+        return { wrong: true, left: RESET_CODE_ATTEMPTS - rec.attempts };
+      }
+      rec.used = true;                   // consumed, once, under the lock
+      return { ok: true };
+    }, null);
+  } catch (e) {
+    /* The store could not be read, so nothing is known about this code. Letting
+       it through would be a free attempt; counting it would let a storage fault
+       burn somebody's tries. Neither, and say so. */
+    if (_isBusy(e)) return json({ error: 'That is being checked already. Try again in a moment.' }, 409);
+    audit(env, 'reset_code_unreadable', { email });
+    return json({ error: 'AMV could not check that code just now. Please try again in a moment.' }, 503);
+  }
+
+  if (!verdict || verdict.gone) return json({ error: 'That code has expired. Request a new one.' }, 400);
+  if (verdict.exhausted) {
     await env.AMV_KV.delete('resetcode:' + email);
     return json({ error: 'Too many incorrect attempts. Request a new code.' }, 429);
   }
-
-  if (rec.code !== code) {
-    rec.attempts++;
-    const left = RESET_CODE_ATTEMPTS - rec.attempts;
-    await env.AMV_KV.put('resetcode:' + email, JSON.stringify(rec), { expirationTtl: RESET_CODE_TTL });
+  if (verdict.wrong) {
+    const left = verdict.left;
     audit(env, 'reset_code_bad', { email });
     return json({
       error: left > 0
@@ -6140,16 +6174,38 @@ async function authSignup(request, env){
   if(!password || password.length < 8 || password.length > 512) return json({ error:'password must be at least 8 characters' }, 400);
   if(_isCommonPassword(password)) return json({ error:'that password is too common - please choose a stronger one' }, 400);
   const safeName = String(name||'').slice(0, 80);
-  const existing = await DB.get(env, 'acct', em);
-  if(existing) return json({ error:'account exists' }, 409);
   const salt = crypto.randomUUID();
   const pwHash = await _hashPassword(password, salt, PBKDF2_ITERATIONS);
   /* AMV-075: a keyed hash of the signup network, never the address itself. It
      exists for exactly one comparison - "did the inviter and the invited sign up
      from the same place" - and cannot be reversed back into an IP. */
   const sipHash = await _ipHash(env, request);
+
+  /* AMV-017: TWO PEOPLE CANNOT BOTH CREATE THE SAME ACCOUNT.
+
+     This read the account, found nothing, and wrote one - a check followed by a
+     decision, with everything the hash costs sitting in the gap. Two signups
+     for the same address arriving together both read nothing, both write, and
+     the last one wins. Both callers are then handed a valid session for one
+     account whose password is the SECOND person's: whoever signed up first has
+     a working session on an account somebody else controls, and neither of them
+     is told anything is wrong.
+
+     It does not need an attacker. A double-submitted form on a slow connection
+     is the ordinary way to produce it, and the PBKDF2 hash above widens the
+     window to something a human can hit.
+
+     Decided inside the record lock, where the answer cannot change between
+     reading it and acting on it. The mutate returns whether it created the
+     account, so the caller can answer honestly without a second read. */
   const acct = { email: em, name: safeName, provider:'email', salt, pwHash, pwIter: PBKDF2_ITERATIONS, createdAt: Date.now(), sipHash };
-  await DB.put(env, 'acct', em, acct);
+  let created = false;
+  await _withKind(env, 'acct', em, (rec) => {
+    if (rec && rec.email) return;                    // somebody already has it
+    Object.assign(rec, acct);                        // written by the lock, in place
+    created = true;
+  }, {});
+  if (!created) return json({ error:'account exists' }, 409);
   /* THE DENOMINATOR. Conversion was computed against the number of ENTITLEMENT
      rows, and a free signup never creates one - so the denominator was, near
      enough, "people who have already paid" and the dashboard reported ~100%
