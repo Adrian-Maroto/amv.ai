@@ -146,7 +146,21 @@ if (backend && toml) {
        up to the redirect works. */
     'GOOGLE_CLIENT_SECRET',
     'FINANCE_CLIENT_ID', 'FINANCE_SECRET', 'FINANCE_API_URL',
-    'SENTRY_DSN', 'POSTHOG_KEY', 'POSTHOG_HOST', 'SUPPORT_EMAIL', 'BROWSER'];
+    'SENTRY_DSN', 'POSTHOG_KEY', 'POSTHOG_HOST', 'SUPPORT_EMAIL', 'BROWSER',
+    /* AMV-060: four more the Worker reads and this list did not name, so they
+       came out as an "unknown env var" warning on every run. A warning that is
+       always there for a reason nobody needs to act on is a warning people stop
+       reading - and the one time it names something real, they will skip that
+       too.
+
+       MAIL_CRED_KEY is the one that matters: without it the mail, school and
+       Telegram connectors refuse to store a credential at all, and they say so
+       clearly - but only once somebody tries. It belongs on the deploy
+       checklist rather than being discovered by a customer. */
+    'MAIL_CRED_KEY',        // encrypts stored mailbox/school/bot credentials; without it those connectors refuse
+    'TURNSTILE_SITE_KEY',   // the public half of Turnstile; the secret half is above
+    'IMAGE_COST_USD',       // what an image really costs, so the ceilings price it correctly
+    'VIDEO_COST_USD'];      // the same for video
   const usedSecrets = [...used].filter(u => KNOWN_SECRETS.includes(u)).sort();
   const REQUIRED = ['AMV_MODEL_KEY', 'JWT_SECRET'];
   /* Secrets that are optional to HAVE, but not optional once their partner is

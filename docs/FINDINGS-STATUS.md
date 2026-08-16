@@ -9,11 +9,59 @@ observed to fail on the assertions that name the defect, and the fix was
 restored. A guard that has never been seen to fail is not a guard, and three
 times this week a check turned out to be unable to fail at all.
 
-## Phase 5 - in progress
+## Phase 5 - complete
 
 **Done: AMV-024, 025, 026, 027, 029, 030, 037, 039, 043, 044, 046, 048, 051,
 052, 054, 055, 058, 059, SP-07, SP-08, SP-09, SP-12.**
-**Left: AMV-038, 056, 060, SP-02, SP-06, SP-11.**
+**And the last six: AMV-038, 056, 060, SP-02, SP-06, SP-11.**
+
+**AMV-038.** The backup built the whole store in memory and then stringified it -
+the store twice over in a Worker with 128MB, which is survivable on a small
+deployment and fails at exactly the size where a backup matters. It streams now.
+The D1 half swallowed its errors, so a kind that could not be read was dropped
+from a file that still announced itself as a backup with a key count; a restore
+from it comes back short and nothing says so. A failure abandons the download
+mid-stream instead, because a download that visibly fails is one somebody can
+see, and a quietly short one is trusted at the worst moment there is.
+
+**AMV-SP-02.** The Google grant was erased by a hand-written delete and was on
+none of the shared rosters, so the inventory that says what AMV holds about a
+person did not know it existed. It is in PER_USER_KINDS now - named in the
+export, redacted because the refresh token is a working key to their Google
+account, and still never in a downloadable backup.
+
+**AMV-SP-06.** Handing work over wrote the sender's own copy first and the
+recipient's inbox second, so a failure on the second threw a 500 at somebody
+whose sent list already said they had sent it - and the honest response to a 500
+is to send it again. Delivery first; a failure on the sender's own copy is
+survivable and says so.
+
+**AMV-056 is partly open, on purpose.** Five third-party scripts, and SRI is not
+available for four of them: Stripe requires js.stripe.com unpinned or the
+integration leaves PCI scope, and Turnstile, Google Identity and the analytics
+endpoints are rolling files with no published hashes. Pinning them would break
+payments, sign-in and the bot check. What is added is the list itself, checked
+against the CSP, so the SIXTH script - added next month from a host that COULD
+have been pinned - fails until somebody assesses it. Two are marked NOT YET
+rather than impossible: Pyodide is immutable but loaded by importScripts, which
+takes no integrity attribute; and the three.js the model is told to emit could
+carry a hash, which needs computing on a machine that can reach cdnjs - this one
+cannot, and a guessed hash would break every 3D model the product generates.
+
+**AMV-060 is closed on the code side and needs the owner for the rest.** The
+four env vars the Worker reads and no checklist named are on it now, and
+MAIL_CRED_KEY is documented in DEPLOY.md with how to generate one and what
+changing it costs - without it three connectors refuse to store a credential and
+the first person to find out is a customer. Two items remain and are the owner's
+to supply, not defects to fix: the AMV_KV namespace id is still the placeholder,
+and the built app has no backend address. Both need a real Cloudflare account.
+Preflight reports each precisely and refuses to call the deploy ready.
+
+**AMV-SP-11.** Six comments stated a guarantee the code did not keep. All six are
+fixed with the finding they belonged to; what is added here is the tripwire -
+each sentence is checked to be gone or quoted rather than asserted, so restoring
+an old block turns it red, and the strongest remaining claims are each paired
+with the thing that makes them true.
 
 **AMV-039 was a promise six empty catches could not keep.** The account export -
 the file somebody is handed when they ask what AMV holds on them - wrapped every
@@ -523,7 +571,7 @@ read as working for as long as it did.
 | 2 | AMV-020 | HIGH | Service worker caches revocable or token-bearing same-origin pages | DONE |
 | 0 | AMV-021 | HIGH | Model compatibility retry can throw outside reservation cleanup | DONE |
 | 0 | AMV-022 | HIGH | Model transport has no default deadline | DONE |
-| 5 | AMV-060 | HIGH | Shipped deployment configuration is not launch-ready | TODO |
+| 5 | AMV-060 | HIGH | Shipped deployment configuration is not launch-ready | DONE |
 | 2 | AMV-SP-03 | HIGH | Account deletion cancels Stripe but not PayPal subscriptions | DONE |
 | 2 | AMV-SP-04 | HIGH | Payout-in-flight lookup fails open during account deletion | DONE |
 | 1 | AMV-023 | MEDIUM | SMS user context omits family limits | DONE |
@@ -541,7 +589,7 @@ read as working for as long as it did.
 | 3 | AMV-035 | MEDIUM | Automation create/update/run workflows have race and exactly-once gaps | DONE |
 | 4 | AMV-036 | MEDIUM | Browser spend control trusts client-declared amount and records it before laun | DONE |
 | 5 | AMV-037 | MEDIUM | Public error telemetry can be poisoned and leak sensitive text | DONE |
-| 5 | AMV-038 | MEDIUM | Backup export can silently omit D1 data and buffers the full store in memory | TODO |
+| 5 | AMV-038 | MEDIUM | Backup export can silently omit D1 data and buffers the full store in memory | DONE |
 | 5 | AMV-039 | MEDIUM | Account export swallows read/list failures and may claim completeness | DONE |
 | 0 | AMV-040 | MEDIUM | Payout wash-trading signal reads a field that is never populated | DONE |
 | 1 | AMV-041 | MEDIUM | `paidOut` increments on request and is not reversed when a payout is rejected | DONE |
@@ -556,12 +604,12 @@ read as working for as long as it did.
 | 5 | AMV-051 | MEDIUM | Admin user listing converts storage failure into a valid empty result | DONE |
 | 5 | AMV-052 | MEDIUM | Administrative routes use inconsistent authentication and rate-limiting gates | DONE |
 | 3 | AMV-053 | MEDIUM | API-key creation limit is a racy read-append-write | DONE |
-| 5 | AMV-056 | MEDIUM | Third-party frontend code is broadly trusted without integrity pinning | TODO |
+| 5 | AMV-056 | MEDIUM | Third-party frontend code is broadly trusted without integrity pinning | DONE |
 | 0 | AMV-057 | MEDIUM | `test:worker` runs only the aggregate file, not all Worker test files | DONE |
 | 0 | AMV-SP-01 | MEDIUM | Google signup analytics uses an undefined variable and omits population accoun | DONE |
-| 5 | AMV-SP-02 | MEDIUM | Google OAuth grant is outside the shared export/erasure inventory | TODO |
+| 5 | AMV-SP-02 | MEDIUM | Google OAuth grant is outside the shared export/erasure inventory | DONE |
 | 3 | AMV-SP-05 | MEDIUM | Team task and audit collections still have multi-writer lost-update windows | DONE |
-| 5 | AMV-SP-06 | MEDIUM | Approval and handoff flows can report success after partial delivery/state upd | TODO |
+| 5 | AMV-SP-06 | MEDIUM | Approval and handoff flows can report success after partial delivery/state upd | DONE |
 | 5 | AMV-SP-07 | MEDIUM | Clearing abuse records can leave entitlement-level blocking in place | DONE |
 | 5 | AMV-SP-09 | MEDIUM | Marketplace success/cancel redirects can reflect the request Origin when APP_U | DONE |
 | 5 | AMV-SP-10 | MEDIUM | Password login accepts unbounded password length before PBKDF2 | DONE |
@@ -571,5 +619,5 @@ read as working for as long as it did.
 | 5 | AMV-058 | LOW | CI actions are referenced by mutable major tags | DONE |
 | 5 | AMV-059 | LOW | Deploy script depends on an undeclared global Wrangler installation | DONE |
 | 5 | AMV-SP-08 | LOW | Google OAuth redirect validation uses a prefix comparison | DONE |
-| 5 | AMV-SP-11 | LOW | Route comments and documentation overstate several security guarantees | TODO |
+| 5 | AMV-SP-11 | LOW | Route comments and documentation overstate several security guarantees | DONE |
 | 5 | AMV-SP-12 | INFO | Dependency vulnerability audit is not reproducible in the supplied environment | DONE |

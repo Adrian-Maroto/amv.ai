@@ -1031,7 +1031,8 @@ function audit(env, event, detail) {
     console.log('AUDIT ' + JSON.stringify(rec));
     // Optional: ship high-signal events to an external collector.
     if (env && env.AUDIT_WEBHOOK && _highSignal(event)) {
-      // fire-and-forget; never block the request on logging
+      // Registered with waitUntil (see _bg), not abandoned: the request is not
+      // blocked on it and the isolate is kept alive until it settles.
       _bg(fetchDeadline(env.AUDIT_WEBHOOK, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(rec),
@@ -5828,13 +5829,37 @@ async function handoffCreate(request, env){
 
      The sender's own record needs the lock too, for the same reason as
      everything else here: two tabs, or this and handoffAct at once. */
-  await _withKind(env, 'handoff', user.email, (mine) => {
-    mine.sent = (mine.sent || []).concat(entry).slice(-100);
-  }, { incoming:[], sent:[] });
+  /* AMV-SP-06: THE ONE THAT MATTERS FIRST, AND SUCCESS ONLY WHEN IT LANDED.
+
+     These ran the other way round: the sender's own copy, then the recipient's
+     inbox, then ok:true. If the second write failed the exception went to the
+     top and the sender got a 500 - with their own "sent" list already saying
+     they had sent it. So their screen shows a handoff that was delivered
+     nowhere, and the honest thing for them to do about a 500 is send it again,
+     which is how one lost handoff becomes two duplicates.
+
+     Delivery first. A failure there means nothing was written anywhere and the
+     error is true. */
   await _withKind(env, 'handoff', toEmail, (theirs) => {
     theirs.incoming = (theirs.incoming || []).concat(entry).slice(-100);
   }, { incoming:[], sent:[] });
-  return json({ ok:true, id });
+
+  /* And the sender's own copy after, where a failure is survivable: the handoff
+     HAS arrived, and the only thing missing is a line in the sender's history.
+     Answering 500 here would be the worst of the options - it is not true, and
+     it would have them send it a second time. */
+  let recorded = true;
+  try {
+    await _withKind(env, 'handoff', user.email, (mine) => {
+      mine.sent = (mine.sent || []).concat(entry).slice(-100);
+    }, { incoming:[], sent:[] });
+  } catch (e) {
+    recorded = false;
+    audit(env, 'handoff_sender_copy_failed', { by: user.email, to: toEmail, id });
+  }
+  return json({ ok:true, id, recorded,
+    ...(recorded ? {} : { warning: 'It was delivered, but AMV could not add it to your own sent list. '
+                                 + 'Do not send it again - they have it.' }) });
 }
 
 async function handoffAct(request, env){
@@ -5866,6 +5891,7 @@ async function handoffAct(request, env){
      people; marking it done on one side only is half a feature, and the half
      that is missing is the half the sender is watching. */
   const from = String(entry.from_email || '').toLowerCase();
+  let notified = true;
   if(from && from !== user.email){
     try{
       /* AMV-033: and this one is unambiguously somebody else's record - the
@@ -5875,9 +5901,19 @@ async function handoffAct(request, env){
       await _withKind(env, 'handoff', from, (theirs) => {
         theirs.sent = (theirs.sent || []).map(h => (h.id === id ? { ...h, status } : h));
       }, { incoming:[], sent:[] });
-    }catch(e){ /* the recipient's own record is already correct */ }
+    }catch(e){
+      /* AMV-SP-06: the recipient's own record IS already correct, which is why
+         this is not an error - but it is not nothing either. The sender is the
+         person watching this status, and the whole point of updating their copy
+         is that they stop waiting. Swallowed, it leaves them waiting for ever
+         with both sides reporting success. */
+      notified = false;
+      audit(env, 'handoff_status_not_propagated', { by: user.email, to: from, id, status });
+    }
   }
-  return json({ ok:true, status });
+  return json({ ok:true, status, notified,
+    ...(notified ? {} : { warning: 'Your side is updated. AMV could not update theirs, so they may still see this as waiting - '
+                                 + 'tell them, or set it again in a moment.' }) });
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -6146,46 +6182,98 @@ async function backupExport(request, env){
   const gate = await _adminGate(request, env, 'backup', 10, 100);
   if (gate) return gate;
 
-  const data = {};
+  /* AMV-038: STREAMED, AND HONEST ABOUT WHAT IT COULD NOT READ.
+
+     Two things were wrong with building this in memory.
+
+     It accumulated every record into one object and then JSON.stringify'd it,
+     which is the whole store twice over inside a Worker with 128MB. That is
+     survivable on a small deployment and it is not a property that holds - it
+     fails at exactly the size where a backup starts to matter, and the operator
+     finds out on the day they need the file.
+
+     And the D1 half swallowed its errors. A kind that could not be read was
+     dropped, silently, from a file that still announced itself as a backup with
+     a key count. A restore from it comes back short and nothing anywhere says
+     so. A backup that is quietly incomplete is worse than no backup, because it
+     is the thing somebody trusts at the worst possible moment.
+
+     So the file is written out as it is read, and a kind that fails ABORTS it.
+     The stream is already flowing by then, so the abort cannot become a clean
+     503 - it errors the response, which is what a half-written file must do:
+     the download fails visibly rather than landing on disk looking complete. */
   let count = 0, bytes = 0;
-  for(const prefix of BACKUP_PREFIXES){
-    let cursor;
-    do{
-      const page = await env.AMV_KV.list({ prefix, cursor, limit: 1000 });
-      for(const k of page.keys){
-        const raw = await env.AMV_KV.get(k.name);
-        if(raw != null){ data[k.name] = raw; count++; bytes += raw.length + k.name.length; }
-      }
-      cursor = page.list_complete ? undefined : page.cursor;
-    } while(cursor);
-  }
+  const failed = [];
+  const enc = new TextEncoder();
 
-  // AMV-036: when D1 is the source of truth, KV won't hold these records - pull
-  // them from D1 too so the export is a COMPLETE recovery artifact, not a
-  // silently-empty one.
-  if(DB._hasD1(env)){
-    for(const prefix of BACKUP_PREFIXES){
-      const kind = prefix.slice(0, -1);
-      try{
-        for(const r of (await scan(env, kind, SCAN_ALL, 'backup export: ' + kind)).rows){
-          const key = `${kind}:${r.id}`;
-          if(data[key] == null){ data[key] = JSON.stringify(r.value); count++; bytes += data[key].length + key.length; }
+  const body = new ReadableStream({
+    async pull(controller) {
+      const send = (s) => controller.enqueue(enc.encode(s));
+      try {
+        send('{"_amv_backup":1'
+          + ',"createdAt":' + Date.now()
+          + ',"createdISO":' + JSON.stringify(new Date().toISOString())
+          + ',"prefixes":' + JSON.stringify(BACKUP_PREFIXES)
+          + ',"data":{');
+        let first = true;
+        const emit = (key, raw) => {
+          send((first ? '' : ',') + JSON.stringify(key) + ':' + JSON.stringify(raw));
+          first = false;
+          count++; bytes += raw.length + key.length;
+        };
+
+        for (const prefix of BACKUP_PREFIXES) {
+          let cursor;
+          do {
+            const page = await env.AMV_KV.list({ prefix, cursor, limit: 1000 });
+            for (const k of page.keys) {
+              const raw = await env.AMV_KV.get(k.name);
+              if (raw != null) emit(k.name, raw);
+            }
+            cursor = page.list_complete ? undefined : page.cursor;
+          } while (cursor);
         }
-      }catch(e){}
-    }
-  }
 
-  const snapshot = {
-    _amv_backup: 1,
-    createdAt: Date.now(),
-    createdISO: new Date().toISOString(),
-    keyCount: count,
-    approxBytes: bytes,
-    prefixes: BACKUP_PREFIXES,
-    data
-  };
-  audit(env, 'backup_export', { keyCount: count, bytes });
-  return new Response(JSON.stringify(snapshot), {
+        // When D1 is the source of truth, KV won't hold these records - pull
+        // them from D1 too so the export is a COMPLETE recovery artifact.
+        if (DB._hasD1(env)) {
+          const seen = new Set();
+          for (const prefix of BACKUP_PREFIXES) {
+            const kind = prefix.slice(0, -1);
+            try {
+              for (const r of (await scan(env, kind, SCAN_ALL, 'backup export: ' + kind)).rows) {
+                const key = `${kind}:${r.id}`;
+                if (seen.has(key)) continue;
+                seen.add(key);
+                emit(key, JSON.stringify(r.value));
+              }
+            } catch (e) {
+              /* Named, and then the whole file is abandoned. Reporting the gap
+                 inside the file would be honest and useless: the person reading
+                 it is a restore script. */
+              failed.push(kind);
+              throw new Error('backup incomplete: could not read ' + kind + ' from D1');
+            }
+          }
+        }
+
+        send('},"keyCount":' + count + ',"approxBytes":' + bytes + ',"complete":true}');
+        audit(env, 'backup_export', { keyCount: count, bytes });
+        controller.close();
+      } catch (e) {
+        audit(env, 'backup_export_failed', { keyCount: count, failed: failed.join(',') || 'read', why: String((e && e.message) || e).slice(0, 160) });
+        try { await alertOnce(env, 'backup_failed',
+          'A backup export failed part-way through and was abandoned rather than saved short. '
+          + (failed.length ? 'Could not read: ' + failed.join(', ') + '. ' : '')
+          + 'There is no usable backup from this attempt.', 30); } catch (_) {}
+        /* Errors the stream. A download that stops mid-file is a download the
+           operator can SEE failed - which a quietly short one is not. */
+        controller.error(e);
+      }
+    },
+  });
+
+  return new Response(body, {
     headers: {
       'Content-Type': 'application/json',
       'Content-Disposition': `attachment; filename="amv-backup-${new Date().toISOString().slice(0,10)}.json"`
@@ -7977,6 +8065,19 @@ const PER_USER_KINDS = ['acct', 'ent', 'entitleitem', 'data', 'auto', 'crewjobs'
   'wdopen',
   'purchases', 'stripecust', 'userteam', 'sites', 'spendlimits',
   'fin', 'finlink', 'invsnap', 'links', 'fam', 'apikeys', 'consent', 'widget_owner', 'shares', 'presence',
+  /* AMV-SP-02: the Google grant. It was erased - by a hand-written delete in
+     authDeleteAccount, which also revokes the token at Google first - and it
+     was never on this list, which is the shared inventory the export walks and
+     the erasure roster checks against. So it sat outside the one place that
+     knows what AMV holds about a person: the export did not mention it at all,
+     and its deletion depended on somebody having remembered rather than on
+     anything that would notice if they stopped.
+
+     A person asking what AMV holds on them should be told there is a live grant
+     to their Google account. Not the token - that is a credential and goes in
+     EXPORT_REDACTED beside the mailbox password - but the fact of it, which is
+     the thing they would want to revoke. */
+  'goauth',
   /* Support tickets are keyed by the reporter's email precisely so they land
      here: a support inbox is one of the easiest places for somebody's words
      about their own account to outlive them. Erased with the account, and in
@@ -7996,7 +8097,11 @@ const EXPORT_REDACTED = { fin: 'bank connection credential', finlink: 'bank link
      support ticket, a shared laptop. The mailbox and Telegram credentials were
      already treated this way; this one was missed because it was added later. */
   school: 'school (Canvas) access token', telegram: 'messaging bot token',
-  mailcfg: 'mailbox password' };
+  mailcfg: 'mailbox password',
+  /* AMV-SP-02. Named so the export says a grant exists, redacted because the
+     refresh token in it is a working key to somebody's Google account - which
+     then travels wherever a downloaded file travels. */
+  goauth: 'Google account access grant (revoke it in your Google account, or by disconnecting here)' };
 
 /* GET /v1/account/export - everything the server holds about the caller.
 

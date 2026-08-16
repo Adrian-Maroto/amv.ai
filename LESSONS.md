@@ -4725,3 +4725,30 @@ cover all of it.
 The rule: when a safe path and a convenient path both exist, the convenient one
 is the one in production. Remove it rather than documenting which to use, and be
 suspicious of any parameter whose value is "skip the check above".
+
+## 254. "Only a dev fallback" is a claim about a deployment the code cannot make
+
+Three payment redirects read `APP_URL || APP_ORIGIN || request Origin`, with a
+comment saying the request Origin is "only a dev fallback when no APP_URL is
+configured".
+
+Nothing in a Worker knows whether it is development. There is no flag, no
+hostname it can trust, no build-time marker on that branch. A production
+deployment that simply never set APP_URL is byte-for-byte the same code path as
+a laptop - so the fallback intended for one machine was live on all of them, and
+it took the post-payment redirect from a header the caller controls. `Origin:
+https://amv-billing.example` and a real customer really pays, to the real
+Stripe, and lands on a phishing page at the exact moment they expect to confirm
+something.
+
+The pattern is not specific to origins. Any comment of the form "this is only
+for X" where the code cannot detect X is a comment describing a hope. Its
+siblings in this codebase read "only a dev-time state", "only when running
+locally", "only until we set this up" - and every one of them is a branch that
+runs in production whenever the configuration it depends on is absent.
+
+The fix is not a better comment or an environment check. It is to delete the
+fallback and refuse: a deployment that has not been told its own address cannot
+start a payment, and says which setting is missing. That works the moment the
+setting exists and does nothing dangerous before then, which is what "dev
+fallback" was trying to mean and could not enforce.

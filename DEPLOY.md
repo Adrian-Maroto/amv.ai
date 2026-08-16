@@ -67,6 +67,25 @@ npx wrangler secret put JWT_SECRET          # required - any long random string
 npx wrangler secret put ADMIN_TOKEN        # required to view the error dashboard
 npx wrangler secret put EMAIL_API_KEY      # Resend key - WITHOUT THIS, PASSWORD RESET NEVER SENDS
 # RESET_EMAIL_FROM is optional - see "Password reset" below
+
+# AMV-060: this one was read by the Worker and named in no checklist, so the
+# first time anybody found out about it was a customer being told a connector
+# would not store their password.
+#
+# MAIL_CRED_KEY encrypts every credential AMV holds on somebody's behalf: a
+# mailbox app password, a school access token, a Telegram bot token. Without it
+# those three connectors REFUSE to store anything rather than storing it in the
+# clear, which is the right behaviour and is not a state to launch in.
+#
+# It must be a long RANDOM value - at least 24 characters, generated, not a
+# phrase. AMV refuses a short or low-entropy one outright (AMV-048), because
+# stretching a weak key just makes the weakness harder to see. Generate one:
+#   node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
+#
+# CHANGING IT MAKES EVERY STORED CREDENTIAL UNREADABLE. Nobody loses an account,
+# but everyone who connected a mailbox has to reconnect it. Set it once, before
+# anybody uses those features, and keep it.
+npx wrangler secret put MAIL_CRED_KEY
 # Google sign-in hardening. With this set, AMV uses the auth-code + PKCE flow:
 # the browser only ever holds a single-use code, the exchange happens on the
 # Worker, and the refresh token never reaches the browser. Without it, AMV
