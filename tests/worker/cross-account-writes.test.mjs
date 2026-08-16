@@ -81,6 +81,17 @@ const CLASSIFIED = {
   teamShare:         'role-checked shared library',
   teamUnshare:       'role-checked shared library',
   teamPresence:      'presence keyed by team, written by a member',
+  /* Newly VISIBLE rather than newly true. The task board was written with
+     _saveTeamTasks, a helper this checker's patterns cannot see through, so two
+     routes that write a record shared with every member of a team sat outside
+     this check entirely. Moving the board under the record lock (AMV-SP-05) is
+     what made them findable - the same way AMV-042 surfaced marketReview.
+
+     The board is keyed by the team the CALLER belongs to, resolved from their
+     own membership by _teamOf, never taken from the request. There is no team
+     id on the wire to point somewhere else. */
+  teamTaskCreate:    'the board is keyed by the caller\'s own team, resolved from their membership rather than taken from the request',
+  teamTaskUpdate:    'the same board, and the task is re-found by id inside the lock so two editors cannot overwrite each other',
   smsRegister:       'a short-lived verification row keyed by the address being verified',
   marketPublish:     'a listing keyed by an id generated here',
   marketInstall:     'an install counter on a public listing',

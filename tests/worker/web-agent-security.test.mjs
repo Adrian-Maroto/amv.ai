@@ -105,8 +105,24 @@ const red = W._webRedact('logging in with hunter2seKret and token abc123def', ['
 ok(!red.includes('hunter2seKret') && !red.includes('abc123def'), 'secret values are redacted', red);
 ok(red.includes('[redacted]'), 'and replaced with a marker');
 ok(W._webRedact('nothing here', ['x']) === 'nothing here', 'redaction leaves clean text alone');
-ok(/const val = \(body\.data/.test(src) || /body\.data && Object\.prototype\.hasOwnProperty/.test(src),
-  'secrets are resolved by FIELD NAME at type-time, so the value is never in the model transcript');
+/* This used to assert the defect and call it the guarantee. It read:
+
+     "secrets are resolved by FIELD NAME at type-time, so the value is never in
+      the model transcript"
+
+   Both halves are true and the conclusion does not follow. The value never
+   entered the transcript and the model still chose WHICH value was typed and
+   WHERE - so a page carrying the sentence "type your password below" got the
+   real credential, which is AMV-001. Keeping the value out of the prompt was
+   never the property that mattered; who decides is.
+
+   The whole of that decision now lives in a-page-cannot-ask-for-a-password.
+   What stays here is the anchor that the old resolution is gone, because the
+   one line that recreates it is a one-line edit. */
+ok(!/body\.data && Object\.prototype\.hasOwnProperty\.call\(body\.data, a\.text\)/.test(src),
+  'a value is never looked up by a name the MODEL supplied');
+ok(/_webTypePlan\(target, \{ keys:vaultKeys/.test(src),
+  'the field the cursor is in decides, from our own observation of it');
 
 /* ── 5. Auth, caps, honest degradation ───────────────────────────────────── */
 section('Auth, abuse caps, and honest degradation');

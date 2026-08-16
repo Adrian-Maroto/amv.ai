@@ -26038,7 +26038,14 @@ AMVConnectors.register({
           headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok },
           body: JSON.stringify({
             url: args.url, goal: args.goal,
-            data: args.data || {},              // field NAME -> value; secrets stay server-side
+            /* Values the user saved for this task. They never enter the model's
+               view: the server decides which field each one belongs in, from
+               that field's own identity, and fills it only on a site named
+               here. Naming extra sites is for the real case where a login
+               finishes somewhere else - a checkout handing over to a payment
+               processor, a company site handing over to its sign-in host. */
+            data: args.data || {},
+            dataOrigins: Array.isArray(args.dataOrigins) ? args.dataOrigins.slice(0, 4) : undefined,
             approved: !!args.approved,           // the user's explicit OK for this run
             // the server enforces its own ceiling on these, independently
             spendAmount: spend || undefined,

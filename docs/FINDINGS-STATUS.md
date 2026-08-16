@@ -9,9 +9,46 @@ observed to fail on the assertions that name the defect, and the fix was
 restored. A guard that has never been seen to fail is not a guard, and three
 times this week a check turned out to be unable to fail at all.
 
-## Phase 3 - in progress
+## Phase 3 - complete
 
-**Done: AMV-013, 031, 032, 033, 042, 045, 053.** Left: AMV-034, 035, SP-05.
+**Done: AMV-013, 031, 032, 033, 034, 035, 042, 045, 053, SP-05.**
+
+**AMV-035 and SP-05 are the same sentence read twice: the part that MUTATES was
+made safe and the part that DECIDES was left outside it.** `autoCreate` appends
+the new job inside the record lock and says why in a comment - a run holds that
+record for the length of a job, so writing the whole thing back afterwards would
+erase what the tick produced. All correct. The plan's job LIMIT was counted
+before the lock was taken, so two creates arriving together both read the same
+list, both found room, and both appended one after the other: the lock kept the
+list perfectly intact and the limit was what broke. A plan that runs one
+background job ran two, from a double-click, and each of them spends money every
+tick for ever. The count now happens against the list as it is inside the lock.
+
+The team's task board had neither half. Read, append, write back, no lock, and
+as many writers as the team has people: two members adding a task in the same
+moment lose one, and the person who created it was told it worked. Its ceiling
+was outside too, so that moved in with it - refused rather than trimmed, because
+a board that quietly drops the oldest item loses work without saying so. The
+audit log was the same shape and worse consequence: a log with holes in it is
+worse than no log, because it is trusted.
+
+The audit log needed the test to be rewritten before it proved anything. Driven
+through the task route, two creates never actually overlap at the LOG - the task
+board's own lock serialises them a step earlier - so the section passed on a log
+with no protection at all. It is now also driven directly with genuinely
+concurrent writers, which is the situation a real team is in whenever two people
+do two different things, since an invite and a role change take no common lock.
+
+**AMV-034.** Joining a team is three writes: the member goes into the team, then
+two pointers say which team they are in. The membership is what the owner is
+billed for; the pointers are what lets the member reach it and what makes their
+usage draw on the team's allowance. A failure between them left the worst of
+both - a seat counted and charged, held by somebody who cannot open the team,
+whose requests spend their own allowance, and who can then go on to create a
+team of their own, because that check reads the pointer that was never written.
+KV has no transaction, so the answer is to compensate: the seat is given back and
+the person is told to try the invite again. The invite is consumed LAST, so a
+retry is possible at all.
 
 **AMV-033, 042, 045 and 053 were one pattern.** Eight handlers read a record,
 changed it and wrote it back with no lock, and every one was excused in the lock
@@ -297,8 +334,8 @@ read as working for as long as it did.
 | 3 | AMV-031 | MEDIUM | Malformed database JSON is treated as a missing record | DONE |
 | 3 | AMV-032 | MEDIUM | Atomic counters and claims silently fall back to non-atomic KV | DONE |
 | 3 | AMV-033 | MEDIUM | Multiple shared records still use unlocked read-modify-write | DONE |
-| 3 | AMV-034 | MEDIUM | Team creation and join are multi-record partial commits | TODO |
-| 3 | AMV-035 | MEDIUM | Automation create/update/run workflows have race and exactly-once gaps | TODO |
+| 3 | AMV-034 | MEDIUM | Team creation and join are multi-record partial commits | DONE |
+| 3 | AMV-035 | MEDIUM | Automation create/update/run workflows have race and exactly-once gaps | DONE |
 | 4 | AMV-036 | MEDIUM | Browser spend control trusts client-declared amount and records it before laun | TODO |
 | 5 | AMV-037 | MEDIUM | Public error telemetry can be poisoned and leak sensitive text | TODO |
 | 5 | AMV-038 | MEDIUM | Backup export can silently omit D1 data and buffers the full store in memory | TODO |
@@ -320,7 +357,7 @@ read as working for as long as it did.
 | 0 | AMV-057 | MEDIUM | `test:worker` runs only the aggregate file, not all Worker test files | DONE |
 | 0 | AMV-SP-01 | MEDIUM | Google signup analytics uses an undefined variable and omits population accoun | DONE |
 | 5 | AMV-SP-02 | MEDIUM | Google OAuth grant is outside the shared export/erasure inventory | TODO |
-| 3 | AMV-SP-05 | MEDIUM | Team task and audit collections still have multi-writer lost-update windows | TODO |
+| 3 | AMV-SP-05 | MEDIUM | Team task and audit collections still have multi-writer lost-update windows | DONE |
 | 5 | AMV-SP-06 | MEDIUM | Approval and handoff flows can report success after partial delivery/state upd | TODO |
 | 5 | AMV-SP-07 | MEDIUM | Clearing abuse records can leave entitlement-level blocking in place | TODO |
 | 5 | AMV-SP-09 | MEDIUM | Marketplace success/cancel redirects can reflect the request Origin when APP_U | TODO |

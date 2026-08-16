@@ -4615,3 +4615,25 @@ rather than by hand, so a check that reads a field nothing populates cannot
 pass. And treat a control that has never fired as unproven rather than as
 evidence of a clean system: if a fraud signal, a ceiling, or a limit has never
 refused anything, the first question is whether it CAN.
+
+## 250. A concurrency test whose two requests share an earlier lock proves nothing about the later one
+
+Two members create a task at the same moment. The task board is written under a
+record lock and so is the audit log, and the behavioural check for the LOG
+passed with the log's lock removed entirely.
+
+The reason is that the board's lock serialises the two requests a step before
+the log write. The first request takes it, does its work, releases; the second
+is still backing off. By the time either one reaches `_teamAudit` the other has
+finished, so the log write is always alone and the read-modify-write it was
+supposed to catch never overlaps with anything.
+
+The test looked like a race test. It was a sequential test with extra steps,
+and it would have carried a defect into production wearing a passing check.
+
+The rule: a test for a race on record B must not funnel its writers through a
+lock on record A first. Either drive the thing under test DIRECTLY with genuine
+concurrency, or pick two operations that really do take no common lock - here,
+an invite and a role change, which is what a real team does all day. And when a
+sabotage of the exact line under test does not turn the section red, the section
+is not testing that line, whatever its name says.

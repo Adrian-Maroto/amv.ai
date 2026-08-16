@@ -19,6 +19,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { codeOnly, functionBody } from '../lib/source.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -126,7 +127,17 @@ section('The record every request loads has a ceiling');
 section('The task board is bounded too, and says so rather than dropping work');
 {
   ok(W.TEAM_TASK_MAX > 0, 'there is a limit at all', W.TEAM_TASK_MAX);
-  ok(/if\(tasks\.length >= TEAM_TASK_MAX\)/.test(src), 'checked before a task is added');
+  /* Anchored on the property rather than on the line. This read
+     `if(tasks.length >= TEAM_TASK_MAX)` against a count taken before the record
+     lock - which is where AMV-SP-05 found it, and is a check two members can
+     both pass at once. What matters is that the ceiling is decided against the
+     list as it is INSIDE the lock, so the anchor is the ordering. */
+  const create = codeOnly(functionBody(src, 'teamTaskCreate') || '');
+  const lock = create.indexOf("_withKind(env, 'teamtasks'");
+  const cap = create.indexOf('TEAM_TASK_MAX');
+  const end = create.indexOf('}, []);', lock);
+  ok(lock > -1 && cap > lock && cap < end,
+     'checked inside the lock, against the list as it is at that moment', { lock, cap, end });
   ok(/code: 'task_limit'/.test(src), 'and refused with a reason');
   ok(!/tasks\.length\s*=\s*TEAM_TASK_MAX/.test(src),
      'never silently trimmed - a board that drops the oldest task loses work without saying so');
