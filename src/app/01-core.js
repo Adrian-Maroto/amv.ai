@@ -238,8 +238,35 @@ const AMV_API = {
   set base(v){ try{ const val=(v||'').trim(); if(val && !_isSecureApiOrigin(_originOf(val))){ try{ toast('Backend URL must be a valid https:// address','error'); }catch(e){} return; } saveStr('amv_api_base', val); }catch(e){} },
   get token(){ try{ return loadStr('amv_api_token')||''; }catch(e){ return ''; } },
   set token(v){ try{ saveStr('amv_api_token', v||''); }catch(e){} },
-  get refreshTok(){ try{ return loadStr('amv_api_refresh')||''; }catch(e){ return ''; } },
-  set refreshTok(v){ try{ saveStr('amv_api_refresh', v||''); }catch(e){} },
+  /* AMV-019: the refresh token is the long-lived half of a session - weeks
+     valid, and it mints access tokens on demand, so a copy of it is a copy of
+     the account. Written to localStorage it was readable by anything that ended
+     up running on the page.
+
+     When the server holds it in an HttpOnly cookie it says so, and nothing is
+     kept here at all: script cannot read the cookie, so the same injection that
+     used to walk off with a month-long credential gets nothing.
+
+     The fallback is not a compromise, it is honest degradation. A deployment
+     with no configured origin cannot use a cross-origin cookie - the browser
+     refuses it - so the old path stays for those, and the session keeps working
+     rather than silently failing to survive a reload. */
+  get cookieAuth(){ try{ return loadStr('amv_refresh_cookie')==='1'; }catch(e){ return false; } },
+  set cookieAuth(v){ try{ saveStr('amv_refresh_cookie', v?'1':''); }catch(e){} },
+  get refreshTok(){
+    if(this.cookieAuth) return this._rtMem||'';
+    try{ return loadStr('amv_api_refresh')||''; }catch(e){ return ''; }
+  },
+  set refreshTok(v){
+    if(this.cookieAuth){
+      /* Held for this page only, so a tab that has just signed in can refresh
+         before the cookie has been round-tripped. It never reaches storage. */
+      this._rtMem = v||'';
+      try{ localStorage.removeItem('amv_api_refresh'); }catch(e){}
+      return;
+    }
+    try{ saveStr('amv_api_refresh', v||''); }catch(e){}
+  },
   get live(){ return !!this.base; },
 
   async _fetch(path, opts, _retried){
@@ -377,6 +404,9 @@ const AMV_API = {
     throw new Error(d.error || 'Login failed');
   },
   _setTokens(d){
+    /* Set BEFORE the token is stored: the setter below reads it to decide
+       whether the refresh token may touch storage at all. */
+    if(d && d.refreshInCookie) this.cookieAuth = true;
     this.token = d.token||'';
     if(d.refreshToken) this.refreshTok = d.refreshToken;
     // AMV-013: bind these tokens to the origin that issued them.
@@ -395,10 +425,16 @@ const AMV_API = {
       const ctrl = (typeof AbortController!=='undefined') ? new AbortController() : null;
       const to = setTimeout(()=>{ try{ ctrl && ctrl.abort(); }catch(_){} }, 12000);
       try{
-        if(!this.refreshTok) return false;
+        /* In cookie mode the browser carries the token and this side may have
+           nothing - which is the point, and is not a reason to give up. */
+        if(!this.refreshTok && !this.cookieAuth) return false;
         const r = await fetch(this.base.replace(/\/$/,'')+'/auth/refresh', {
           method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({ refreshToken: this.refreshTok }),
+          /* Sends the cookie. Only honoured cross-origin when the server
+             answers with a concrete Allow-Origin and Allow-Credentials, which
+             is exactly the deployment that sets the cookie in the first place. */
+          credentials: this.cookieAuth ? 'include' : 'same-origin',
+          body: JSON.stringify(this.refreshTok ? { refreshToken: this.refreshTok } : {}),
           signal: ctrl ? ctrl.signal : undefined
         });
         if(!r.ok) return false;
@@ -521,8 +557,16 @@ const AMV_API = {
   async logout(everywhere){
     if(!this.live || !this.token) return false;
     try{
+      /* In cookie mode this side has no refresh token to name, so the cookie
+         has to travel or the server cannot tell WHICH session is signing out -
+         and its only safe reading of an unscoped sign-out is to end every
+         session on every device. Sending the cookie is what keeps an ordinary
+         sign-out about this device. */
       const r = await this._fetch('/auth/logout', {method:'POST',
-        body: JSON.stringify(everywhere ? {everywhere:true} : {refreshToken: this.refreshTok})});
+        credentials: this.cookieAuth ? 'include' : 'same-origin',
+        body: JSON.stringify(everywhere ? {everywhere:true} : (this.refreshTok ? {refreshToken: this.refreshTok} : {}))});
+      /* Whatever the answer, this device is signed out here. */
+      this._rtMem = '';
       const d = await r.json().catch(()=>({}));
       return !!(d && d.ok);
     }catch(e){ return false; }

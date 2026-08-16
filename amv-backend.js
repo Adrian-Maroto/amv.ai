@@ -455,6 +455,51 @@ const DB = {
       return null;
     }
   },
+  /* AMV-031: THE READS WHERE "MISSING" IS A PERMISSION.
+
+     `get` above answers null for a record it could not parse, and for most
+     callers that is right - the alternative is a person who cannot log in,
+     cannot be billed and cannot be repaired through the product, which is the
+     defect that answer was written to fix.
+
+     It is exactly wrong for the handful of records where ABSENCE GRANTS
+     SOMETHING. A `seller` row that will not parse reads as a seller who was
+     never banned. An `abuse` row reads as somebody with no disputes. A `fam`
+     row reads as a child with no spending limit. And an `acct` row reads as an
+     address nobody has registered - which, since the signup that creates one
+     now decides existence from this read, means a corrupt account record can be
+     signed up over, with a new password, by anybody who knows the address.
+
+     Every one of those fails OPEN, and every one of them is invisible: the
+     record is corrupt, so nothing downstream can tell the difference between a
+     clean answer and no answer at all.
+
+     So these callers ask a question `get` cannot answer: not "what is in this
+     record" but "is this record readable". A corrupt one throws, and the caller
+     decides - refuse the signup, send the payout to review, apply the strictest
+     limits - rather than being handed a null that means the opposite of the
+     truth. */
+  async getStrict(env, kind, id){
+    let raw = null;
+    if(this._hasD1(env)){
+      const row = await env.DB.prepare('SELECT json FROM kv WHERE kind=? AND id=?').bind(kind, id).first();
+      raw = row && row.json ? row.json : null;
+    } else {
+      raw = await env.AMV_KV.get(`${kind}:${id}`);
+    }
+    if(raw == null) return null;                 // genuinely absent, which is a real answer
+    try { return JSON.parse(raw); }
+    catch (e) {
+      try {
+        audit(env, 'record_unreadable_strict', { kind, id, bytes: String(raw).length });
+        await alertOnce(env, 'record_unreadable:' + kind,
+          'A stored ' + kind + ' record could not be parsed. This one decides whether somebody is allowed '
+          + 'something, so it is being treated as unreadable rather than as absent - the request was refused '
+          + 'instead of being granted by default. Repair the record.', 30);
+      } catch (_) {}
+      throw new UnreadableRecordError(`${kind}:${id}`, 'invalid JSON');
+    }
+  },
   async put(env, kind, id, obj, kvOpts){
     const j = JSON.stringify(obj);
     if(this._hasD1(env)){
@@ -1230,13 +1275,36 @@ export class AMVCounter {
       const held = await this.state.storage.get('claim');
       if (held && held.until > now) return json({ claimed: false, until: held.until });
       const ttl = Math.max(1000, Number(body.ttlMs) || 30000);
-      await this.state.storage.put('claim', { until: now + ttl });
+      /* AMV-013: WHO HOLDS IT, NOT JUST THAT IT IS HELD.
+         A claim carries an owner token so a release can prove it is giving back
+         the lock it took. See the release below for what that stops. */
+      const owner = crypto.randomUUID();
+      await this.state.storage.put('claim', { until: now + ttl, owner });
       await this.state.storage.setAlarm(now + ttl + 1000);
-      return json({ claimed: true, until: now + ttl });
+      return json({ claimed: true, until: now + ttl, owner });
     }
     if (op === 'release') {
+      /* AMV-013: A RELEASE USED TO DELETE WHOEVER'S LOCK WAS THERE.
+
+         Leases expire. A holder whose work outran its TTL - a slow storage
+         call, a provider taking its time - lost the lock without knowing, and
+         somebody else took it. Then the first one finished and released, and
+         the delete was unconditional: it removed the SECOND holder's lock while
+         that holder was still working. From there both of them believe they
+         have it, which is the exact state the lock exists to make impossible,
+         and it happens under load rather than under attack.
+
+         A release now has to name the claim it is giving back. One that does
+         not match is a holder whose lease had already expired, which is worth
+         knowing about on its own - so it is reported rather than silently
+         ignored. */
+      const held = await this.state.storage.get('claim');
+      if (!held) return json({ released: true, wasHeld: false });
+      if (body.owner && held.owner && held.owner !== body.owner) {
+        return json({ released: false, reason: 'not_owner' });
+      }
       await this.state.storage.delete('claim');
-      return json({ released: true });
+      return json({ released: true, wasHeld: true });
     }
     if (op === 'get') {
       return json({ value: (await this.state.storage.get('v')) || 0 });
@@ -1270,6 +1338,30 @@ async function counter(env, name, payload) {
     // silently. Alert operators (throttled) so a transient/fault condition that
     // weakens quota enforcement is visible instead of a transparent downgrade.
     try { if (env.AMV_COUNTER) await alertOnce(env, 'counter_degraded', 'Atomic counter DO failed - falling back to non-atomic KV, quota enforcement is weakened: ' + String((e && e.message) || e), 15); } catch (_) {}
+    /* AMV-032: AND FOR THE OPS WHERE ATOMICITY IS THE WHOLE POINT, DO NOT.
+
+       Alerting was the right first step and it is not enough on its own,
+       because the fallback still ran. `claim` and `reserve` are not counters
+       that can be a little bit wrong - they are the mutual exclusion behind a
+       payout and the ceiling behind a bill. Done through KV they are a read
+       followed by a write, which is the race they exist to close, so a failing
+       DO quietly turned "only one of these may proceed" into "all of them may".
+
+       An UNBOUND namespace is different and keeps its fallback: that is a
+       development machine with no Durable Object configured, the degradation is
+       documented, and refusing there would mean the product does not run at all
+       without wrangler.
+
+       Bound-and-failing is a fault, and the honest answer to a fault is that
+       the question could not be answered. Callers already understand
+       `unavailable` - guardAction turns it into a 503 that says so rather than
+       telling somebody they are going too fast. */
+    if (env.AMV_COUNTER && (payload.op === 'claim' || payload.op === 'reserve')) {
+      audit(env, 'atomic_unavailable', { op: payload.op, name: String(name).slice(0, 120) });
+      return payload.op === 'claim'
+        ? { claimed: false, unavailable: true, code: 'atomic_unavailable' }
+        : { allowed: false, unavailable: true, code: 'atomic_unavailable', value: 0 };
+    }
   }
   // ---- KV fallback (best-effort, NOT atomic) - only used if DO unbound ----
   return _counterKVFallback(env, name, payload);
@@ -5268,6 +5360,71 @@ async function backupExport(request, env){
                        never clobbers newer live data).
    We never auto-delete. Restores are additive by design so a restore can't
    itself destroy data. */
+/* AMV-016: WHAT A RESTORE IS NOT ALLOWED TO UNDO.
+
+   Returns the value to write, and whether something in the live record was held
+   forward against the snapshot. Revocation is monotonic: it can be added by a
+   restore and never removed by one.
+
+   Deliberately narrow. A restore that quietly refused to write most of what it
+   was given would be worse than one that overwrites too much - an operator has
+   to be able to trust that a restore restores. These are the four facts that
+   mean "this access was taken away", and nothing else is touched. */
+async function _restoreMerge(env, key, incoming) {
+  try {
+    /* The token epoch is a bare counter and the rule is simply the larger one.
+       Written as max rather than "keep the live one" so a restore can still
+       carry an epoch FORWARD from a snapshot taken after the live store lost
+       it - the point is that it never goes down. */
+    if (key.startsWith('tokepoch:')) {
+      const live = parseInt(await env.AMV_KV.get(key) || '0', 10) || 0;
+      const from = parseInt(incoming, 10) || 0;
+      if (live > from) return { value: String(live), held: true };
+      return { value: String(from), held: false };
+    }
+
+    const liveRaw = await env.AMV_KV.get(key);
+    if (liveRaw == null) return { value: incoming, held: false };
+    let live = null, from = null;
+    try { live = JSON.parse(liveRaw); from = JSON.parse(incoming); } catch (e) { return { value: incoming, held: false }; }
+    if (!live || !from || typeof live !== 'object' || typeof from !== 'object') return { value: incoming, held: false };
+
+    let held = false;
+    /* An account blocked for charging back stays blocked. */
+    if (key.startsWith('ent:') && live.blocked && !from.blocked) {
+      from.blocked = true;
+      from.blockedReason = live.blockedReason || from.blockedReason || '';
+      from.blockedAt = live.blockedAt || from.blockedAt || Date.now();
+      held = true;
+    }
+    /* A suspended seller stays suspended, and strikes are not forgiven by a
+       restore either - both are the record of a decision somebody made. */
+    if (key.startsWith('seller:')) {
+      if (live.banned && !from.banned) { from.banned = true; held = true; }
+      if ((+live.strikes || 0) > (+from.strikes || 0)) { from.strikes = +live.strikes; held = true; }
+    }
+    /* A revoked API key is a credential somebody deliberately killed. Merged by
+       id, so keys created after the snapshot survive the restore too. */
+    if (key.startsWith('apikeys:') && Array.isArray(live.items) && Array.isArray(from.items)) {
+      const byId = new Map(from.items.map((k) => [k && k.id, k]));
+      for (const cur of live.items) {
+        if (!cur || !cur.id) continue;
+        const inSnap = byId.get(cur.id);
+        if (!inSnap) { from.items.push(cur); held = true; continue; }
+        if (cur.revoked && !inSnap.revoked) { inSnap.revoked = true; held = true; }
+      }
+    }
+    return { value: held ? JSON.stringify(from) : incoming, held };
+  } catch (e) {
+    /* Unreadable live state means the comparison could not be made. Writing the
+       snapshot over it anyway is the one thing that must not happen here, so
+       the incoming value is kept as-is and the caller records that a restore
+       ran - the alternative is silently deciding a revocation did not exist. */
+    audit(env, 'restore_merge_failed', { key, error: String((e && e.message) || e).slice(0, 120) });
+    return { value: incoming, held: false };
+  }
+}
+
 async function backupImport(request, env){
   /* Writes arbitrary records back over live data, which makes an accidental
      repeat worse than a slow one. */
@@ -5296,18 +5453,47 @@ async function backupImport(request, env){
   const MAX_VALUE_BYTES = 2 * 1024 * 1024;   // 2MB per value
   if(entries.length > MAX_IMPORT_KEYS) return json({ error:'snapshot has too many keys to import safely' }, 413);
 
-  let restored = 0, skipped = 0, rejected = 0;
+  let restored = 0, skipped = 0, rejected = 0, heldForward = 0;
   for(const [key, val] of entries){
     if(typeof val !== 'string' || !allowed(key) || val.length > MAX_VALUE_BYTES){ rejected++; continue; }
     if(mode === 'missing'){
       const existing = await env.AMV_KV.get(key);
       if(existing != null){ skipped++; continue; }
     }
-    await env.AMV_KV.put(key, val);
+    /* AMV-016: A RESTORE MAY NOT UNDO A REVOCATION.
+
+       Everything here was a straight overwrite, which is right for data and
+       wrong for anything that says somebody's access was TAKEN AWAY. A restore
+       is normally run after an incident - which is precisely when the state
+       being written over is the state created by responding to it.
+
+       The sharp one is the token epoch. verifyToken compares a token's epoch
+       against the stored number, and every "sign out everywhere" and every
+       password reset increments it. Writing an older number back makes every
+       token issued before that point valid again - so restoring a snapshot
+       taken the day before a compromise hands the intruder their session back,
+       silently, as part of the recovery.
+
+       The same shape covers a revoked API key, an account blocked for charging
+       back, and a suspended seller: all three are recorded ON the record a
+       restore overwrites.
+
+       Revocation only moves one way. */
+      const merged = await _restoreMerge(env, key, val);
+      if (merged.held) heldForward++;
+      await env.AMV_KV.put(key, merged.value);
     restored++;
   }
-  audit(env, 'backup_import', { mode, restored, skipped, rejected, from: snap.createdISO });
-  return json({ ok:true, mode, restored, skipped, rejected, snapshotFrom: snap.createdISO || null });
+  audit(env, 'backup_import', { mode, restored, skipped, rejected, heldForward, from: snap.createdISO });
+  return json({ ok:true, mode, restored, skipped, rejected,
+    /* Said out loud. An operator restoring a snapshot needs to know that some
+       of it was deliberately not applied, and why - a silent partial restore is
+       one they will assume was total. */
+    heldForward,
+    note: heldForward
+      ? heldForward + ' record(s) were restored WITHOUT undoing a revocation, block or sign-out that happened after this snapshot was taken. Access that was taken away stays taken away.'
+      : null,
+    snapshotFrom: snap.createdISO || null });
 }
 
 
@@ -5759,7 +5945,7 @@ export default {
      four public GET routes, which were outside the try altogether. */
   async fetch(request, env, ctx) {
     try {
-      return await _route(request, env, ctx);
+      return _applyCors(request, env, await _route(request, env, ctx));
     } catch (err) {
       // An unhandled exception reached the top level. Record it AND alert (both
       // throttled + best-effort) so a broken endpoint pages you instead of
@@ -5777,10 +5963,47 @@ export default {
          query fragment or a stack-shaped hint; none of that belongs in an
          answer to a stranger. It is recorded above, with an alert, so nothing
          is lost by not saying it here. */
-      return json({ error: 'Something went wrong on our side. It has been logged.' }, 500);
+      return _applyCors(request, env, json({ error: 'Something went wrong on our side. It has been logged.' }, 500));
     }
   },
 };
+
+/* AMV-028: THE CONFIGURED ORIGIN, APPLIED WHERE EVERY RESPONSE PASSES.
+
+   `ALLOWED_ORIGIN` exists so an operator can lock the browser API to their own
+   front end, and `corsFor(env)` was written to honour it. Nothing called it.
+   Every JSON response went out through `json()`, which carries a hardcoded
+   `Access-Control-Allow-Origin: *` - so the setting was a comment describing a
+   behaviour the product did not have, and a deployment that had set it was no
+   more restricted than one that had not.
+
+   Fixed here rather than in `json()`, which is called from several hundred
+   places and has no access to `env`. Every response the Worker produces goes
+   through this one line, so there is nowhere for a route to be forgotten.
+
+   `*` is kept as the default. Locking the API to one origin is a real choice
+   with real consequences for anybody embedding the widget, and the token is the
+   security boundary - flipping it on for everybody who has not asked would
+   break working deployments to enforce a setting they never set.
+
+   Credentials are only allowed when a concrete origin is configured, because a
+   browser refuses `Allow-Credentials` alongside a wildcard - which is the rule
+   that makes an origin-locked deployment the one that can hold an HttpOnly
+   refresh cookie. */
+function _applyCors(request, env, res) {
+  try {
+    const want = _corsOrigin(env);
+    if (want === '*') return res;
+    const h = new Headers(res.headers);
+    h.set('Access-Control-Allow-Origin', want);
+    h.set('Access-Control-Allow-Credentials', 'true');
+    /* A response that varies by origin must say so, or a shared cache can hand
+       one origin's answer to another. */
+    const vary = h.get('Vary');
+    h.set('Vary', vary ? (/\bOrigin\b/i.test(vary) ? vary : vary + ', Origin') : 'Origin');
+    return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
+  } catch (e) { return res; }
+}
 
 /* THE ROUTER. Everything it can do is awaited by the caller above, which is
    the only reason the error handling there works at all. */
@@ -6199,6 +6422,17 @@ async function authSignup(request, env){
      reading it and acting on it. The mutate returns whether it created the
      account, so the caller can answer honestly without a second read. */
   const acct = { email: em, name: safeName, provider:'email', salt, pwHash, pwIter: PBKDF2_ITERATIONS, createdAt: Date.now(), sipHash };
+  /* AMV-031: a record that will not parse is not an address nobody has taken.
+     Asked before the lock, because the answer decides whether this is a
+     creation at all - and being handed null for a corrupt account record would
+     let anybody who knows the address sign up over it with a new password. */
+  try {
+    await DB.getStrict(env, 'acct', em);
+  } catch (e) {
+    audit(env, 'signup_blocked_unreadable', { email: em });
+    return json({ error: 'AMV could not check that address just now. Please try again in a few minutes.',
+                  code: 'account_unreadable' }, 503);
+  }
   let created = false;
   await _withKind(env, 'acct', em, (rec) => {
     if (rec && rec.email) return;                    // somebody already has it
@@ -6227,7 +6461,7 @@ async function authSignup(request, env){
   await _userEvent(env, request, em, 'account_created');
   // An invite code, if they arrived through one. Recorded, not yet rewarded.
   try{ await _referralCapture(env, request, em, body.ref); }catch(e){}
-  return json(await issueTokens(env, em, safeName));
+  return _tokenResponse(env, await issueTokens(env, em, safeName));
 }
 async function authLogin(request, env) {
   const body = await request.json().catch(()=>({}));
@@ -6319,7 +6553,7 @@ async function authLogin(request, env) {
   }
   try{ await _markActive(env, em); }catch(e){}
   await _userEvent(env, request, em, 'signed_in');
-  return json(await issueTokens(env, em, acct.name || name || ''));
+  return _tokenResponse(env, await issueTokens(env, em, acct.name || name || ''));
 }
 
 /* Operator user list - admin-gated. Returns accounts for the Admin Control
@@ -6457,7 +6691,7 @@ async function authGoogle(request, env) {
     }
     await _userEvent(env, request, em, 'signed_in', { reason: 'Google' });
     const tokens = await issueTokens(env, em, name);
-    return json(Object.assign({ email:em, name, picture:claims.picture||'' }, tokens));
+    return _tokenResponse(env, tokens, { email: em, name, picture: claims.picture || '' });
   }catch(e){
     audit(env,'google_verify_error',{msg:String(e).slice(0,120)});
     return json({ error:'verification failed' }, 500);
@@ -6466,7 +6700,12 @@ async function authGoogle(request, env) {
 
 /* Exchange a valid refresh token for a fresh access+refresh pair. */
 async function authRefresh(request, env) {
-  const { refreshToken } = await request.json().catch(()=>({}));
+  const body = await request.json().catch(()=>({}));
+  /* The cookie first, because on a deployment where it is in force it is the
+     copy the browser holds and the body is not sent at all. The body remains a
+     fallback for a deployment with no configured origin, and for anything that
+     is not a browser. */
+  const refreshToken = _readRefreshCookie(request) || (body && body.refreshToken) || '';
   if (!refreshToken) return json({ error: 'refresh token required' }, 400);
   const data = await verifyToken(refreshToken, env.JWT_SECRET, env, 'refresh');
   if (!data || !data.email) return json({ error: 'invalid or expired refresh token' }, 401);
@@ -6484,7 +6723,7 @@ async function authRefresh(request, env) {
     }
   }
   try{ await _markActive(env, data.email); }catch(e){}
-  return json(await issueTokens(env, data.email, data.name || ''));
+  return _tokenResponse(env, await issueTokens(env, data.email, data.name || ''));
 }
 
 /* Sign out everywhere: bump the user's token epoch, revoking all tokens. */
@@ -6506,15 +6745,21 @@ async function authLogout(request, env) {
   if (body && body.everywhere) {
     await revokeUserTokens(env, data.email);
     await _userEvent(env, request, data.email, 'signed_out_everywhere');
-    return json({ ok: true, scope: 'all' });
+    return json({ ok: true, scope: 'all' }, 200, _clearRefreshCookie(env));
   }
   /* Retire just this device's refresh token. Claiming its id is exactly what
      the refresh endpoint does on use, so a retired token is indistinguishable
      from one already spent - and a replay of it revokes the account, which is
      the correct response to a stolen token being reused. */
   let scoped = false;
-  if (body && body.refreshToken) {
-    const rt = await verifyToken(String(body.refreshToken), env.JWT_SECRET, env, 'refresh');
+  /* AMV-019: the cookie is where the refresh token lives on a deployment that
+     has one, and script cannot read it - so a signing-out client has nothing to
+     put in the body. Without looking here, every ordinary sign-out would find
+     itself unscoped and revoke every session the person has on every device,
+     which is a working feature turned into a daily annoyance by a security fix. */
+  const rtRaw = String((body && body.refreshToken) || _readRefreshCookie(request) || '');
+  if (rtRaw) {
+    const rt = await verifyToken(rtRaw, env.JWT_SECRET, env, 'refresh');
     if (rt && rt.email === data.email && rt.jti) {
       await _claimOnce(env, 'usedrefresh', rt.jti, Math.floor(REFRESH_TTL_MS / 1000));
       scoped = true;
@@ -6527,10 +6772,10 @@ async function authLogout(request, env) {
        would leave a live token behind on a request that promised otherwise. */
     await revokeUserTokens(env, data.email);
     await _userEvent(env, request, data.email, 'signed_out_everywhere', { reason: 'unscoped' });
-    return json({ ok: true, scope: 'all' });
+    return json({ ok: true, scope: 'all' }, 200, _clearRefreshCookie(env));
   }
   await _userEvent(env, request, data.email, 'signed_out');
-  return json({ ok: true, scope: 'device' });
+  return json({ ok: true, scope: 'device' }, 200, _clearRefreshCookie(env));
 }
 
 /* DELETE MY ACCOUNT - the "right to erasure" the privacy policy promises.
@@ -10505,6 +10750,66 @@ async function signToken(payload, secret, opts = {}) {
 }
 
 /* Issue an access+refresh pair for a user. */
+/* AMV-019: THE LONG-LIVED HALF OF THE SESSION, OUT OF REACH OF SCRIPT.
+
+   Both tokens were handed to the browser and both were written to
+   localStorage, which is readable by any script that ends up running on the
+   page - an injected one, a compromised dependency, an extension. The access
+   token is short-lived and has to be readable, because it goes in an
+   Authorization header. The REFRESH token is the one worth protecting: it is
+   valid for weeks and mints new access tokens on demand, so a copy of it is a
+   copy of the account.
+
+   It travels as an HttpOnly cookie now. Script cannot read an HttpOnly cookie
+   at all, so the same injection that could previously walk off with a
+   month-long credential gets, at worst, one short-lived token.
+
+   Scoped to /auth so it is not attached to every API call - it is only ever
+   needed by refresh and logout, and a credential that rides along on requests
+   that do not need it is a credential with more chances to leak.
+
+   SameSite=None is required because the app and the API are different origins,
+   and that in turn requires Secure and a concrete Allow-Origin - which is why
+   this only engages on a deployment that has set ALLOWED_ORIGIN. Without it
+   the browser would refuse the cookie and the session would silently stop
+   surviving a reload, so the token is still returned in the body and the
+   response says which mode is in force rather than leaving the client to
+   guess. */
+const REFRESH_COOKIE = 'amv_rt';
+function _cookieAuthOn(env) { return _corsOrigin(env) !== '*'; }
+function _refreshCookie(env, value, maxAgeS) {
+  const bits = [`${REFRESH_COOKIE}=${value}`, 'HttpOnly', 'Secure', 'SameSite=None', 'Path=/auth'];
+  bits.push('Max-Age=' + Math.max(0, Math.floor(maxAgeS)));
+  return bits.join('; ');
+}
+function _readRefreshCookie(request) {
+  try {
+    const raw = request.headers.get('Cookie') || '';
+    for (const part of raw.split(';')) {
+      const i = part.indexOf('=');
+      if (i < 0) continue;
+      if (part.slice(0, i).trim() === REFRESH_COOKIE) return part.slice(i + 1).trim();
+    }
+  } catch (e) {}
+  return '';
+}
+/* The tokens, plus the cookie that carries the long one. Returns a Response so
+   every issuing path sets the cookie the same way - four call sites setting a
+   header by hand is four chances for one of them to be forgotten, which is the
+   shape of most of this week's findings. */
+function _tokenResponse(env, tokens, extra) {
+  const body = Object.assign({}, tokens, extra || {});
+  if (!_cookieAuthOn(env)) return json(body);
+  /* The client is told the cookie is authoritative, so it can stop keeping its
+     own copy. Saying so explicitly beats having the client infer it from a
+     header it cannot read. */
+  body.refreshInCookie = true;
+  return json(body, 200, { 'Set-Cookie': _refreshCookie(env, tokens.refreshToken, REFRESH_TTL_MS / 1000) });
+}
+function _clearRefreshCookie(env) {
+  return _cookieAuthOn(env) ? { 'Set-Cookie': _refreshCookie(env, '', 0) } : undefined;
+}
+
 async function issueTokens(env, email, name) {
   const epoch = await _tokenEpoch(env, email);
   const base = { email, name: name || '' };
@@ -11532,7 +11837,20 @@ async function _familyOf(env, email, ent){
   const em = String(email || '').toLowerCase();
   const e = ent || (await DB.get(env, 'ent', em)) || {};
   if(!e.familyOf) return null;
-  const fam = await DB.get(env, 'fam', e.familyOf);
+  /* AMV-031: the entitlement SAYS this person is in a family. If the family
+     record cannot be read, the honest answer is not "then they have no limits" -
+     that is the one reading which hands a capped child the full plan allowance,
+     and it happens silently because a corrupt record and an absent one look
+     identical to the caller.
+     Strictest defaults instead: still in the family, limited to what the
+     defaults allow, until somebody repairs the record. */
+  let fam = null;
+  try {
+    fam = await DB.getStrict(env, 'fam', e.familyOf);
+  } catch (err) {
+    audit(env, 'family_unreadable', { email: em, family: e.familyOf });
+    return { id: e.familyOf, parent: '', limits: Object.assign({}, FAMILY_DEFAULTS), unreadable: true };
+  }
   const limits = _familyLimitsOf(fam, em);
   if(!fam || !limits) return null;        // membership is the source of truth
   return { id: fam.id, parent: fam.parentEmail, limits };
@@ -12360,6 +12678,18 @@ async function stripeInvoices(request, env) {
    backstop, not an invitation to leave it out. */
 const CLAIM_ONCE_TTL_S = 400 * 86400;
 
+/* AMV-013: the token for each lock this isolate currently holds.
+
+   An isolate handles one request at a time for a given lock - it takes it,
+   works, releases - so a map keyed by lock name is exactly right, and it keeps
+   the token off every call signature. Seventeen claim sites and fourteen
+   release sites would otherwise each have to thread it through, and the one
+   that forgot would be the one that deletes somebody else's lock.
+
+   Bounded: an entry is removed the moment its lock is released, and a lock
+   whose release never runs is one whose isolate is gone with the map. */
+const _CLAIM_OWNERS = new Map();
+
 async function _claimOnce(env, kind, id, ttlSec){
   if(!id) return true;
   /* Prefer the Durable Object: it serializes ops, so the check and the claim
@@ -12369,7 +12699,20 @@ async function _claimOnce(env, kind, id, ttlSec){
   if(env && env.AMV_COUNTER){
     try{
       const r = await counter(env, 'claim:' + kind + ':' + id, { op:'claim', ttlMs:(ttlSec||CLAIM_ONCE_TTL_S)*1000 });
-      if(r && typeof r.claimed === 'boolean') return r.claimed;
+      /* AMV-032: a bound Durable Object that could not answer is a fault, not a
+         reason to take the lock through a path that cannot hold it. Refusing
+         means the caller retries or reports busy; falling through would mean
+         two holders. */
+      if(r && r.unavailable) return false;
+      if(r && typeof r.claimed === 'boolean'){
+        /* AMV-013: remember WHICH claim this is, so the matching release can
+           prove it is giving back the lock it took rather than whatever lock
+           happens to be there when it gets around to it. Kept beside the
+           request rather than returned, so all seventeen call sites keep their
+           boolean and none of them can forget to carry it. */
+        if(r.claimed && r.owner) _CLAIM_OWNERS.set(kind + ':' + id, r.owner);
+        return r.claimed;
+      }
     }catch(e){ /* fall through to the next strategy */ }
   }
   if(env && env.DB && typeof env.DB.prepare === 'function'){
@@ -12419,7 +12762,23 @@ async function _releaseClaim(env, kind, id){
   try{
     // release wherever it was claimed - the DO first, mirroring _claimOnce
     if(env && env.AMV_COUNTER){
-      try{ await counter(env, 'claim:' + kind + ':' + id, { op:'release' }); }catch(e){}
+      const mapKey = kind + ':' + id;
+      const owner = _CLAIM_OWNERS.get(mapKey) || '';
+      _CLAIM_OWNERS.delete(mapKey);
+      try{
+        const r = await counter(env, 'claim:' + kind + ':' + id, { op:'release', owner });
+        /* Refused means this holder's lease had already expired and somebody
+           else has the lock - so the work just finished ran outside it. That is
+           a real condition to know about: it is how two writers end up believing
+           they are alone, and it shows up under load rather than under attack. */
+        if(r && r.released === false && r.reason === 'not_owner'){
+          audit(env, 'lock_lease_expired', { kind, id: String(id).slice(0, 120) });
+          try{ await alertOnce(env, 'lock_lease_expired:' + kind,
+            'A lock on ' + kind + ' expired while the work it was protecting was still running, so another '
+            + 'writer took it. Two writers were briefly inside the same critical section. If this recurs, the '
+            + 'lease is too short for what it is guarding.', 60); }catch(_){}
+        }
+      }catch(e){}
     }
     if(env && env.DB && typeof env.DB.prepare === 'function'){
       await env.DB.prepare('DELETE FROM kv WHERE kind=? AND id=?').bind(kind, String(id)).run();
@@ -14502,13 +14861,18 @@ async function _payoutRisk(env, email, amount, wallet) {
     /* Disputes and refunds already recorded against this seller. This is the
        single strongest signal there is: somebody whose sales come back is
        somebody whose next payout is likely to be taken back too. */
-    const abuse = await DB.get(env, 'abuse', em);
+    /* AMV-031: strict, because an unreadable abuse record reads as a seller
+       with no disputes - the single strongest signal there is, answered wrong
+       in the direction that releases the money. The whole function is wrapped
+       in a handler that sends an unreadable state to a person. */
+    const abuse = await DB.getStrict(env, 'abuse', em);
     const disputes = (abuse && +abuse.disputes) || 0;
     const refunds = (abuse && +abuse.refunds) || 0;
     if (disputes > 0) { score += 50 * Math.min(disputes, 3); reasons.push(disputes + ' payment dispute' + (disputes === 1 ? '' : 's') + ' on record'); }
     if (refunds > 2)  { score += 20; reasons.push(refunds + ' refunds on record'); }
 
-    const standing = await DB.get(env, 'seller', em);
+    /* And an unreadable seller record reads as one who was never banned. */
+    const standing = await DB.getStrict(env, 'seller', em);
     if (standing && standing.banned) { score += 200; reasons.push('selling access is suspended'); }
     else if (standing && +standing.strikes > 0) { score += 25 * +standing.strikes; reasons.push(+standing.strikes + ' policy strike(s)'); }
 

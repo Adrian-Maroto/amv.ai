@@ -214,7 +214,11 @@ section('Neither path reads a variable it does not define');
   /* The mistake itself, checked where it happened. Both blocks must refer to
      the normalised address and nothing else. */
   const i = src.indexOf('async function authGoogle');
-  const gbody = src.slice(i, src.indexOf('\n}\n', src.indexOf('return json(Object.assign({ email:em', i)));
+  /* Anchored on the END of the handler rather than on the exact line it
+     returns. That line changed when the refresh token moved into a cookie
+     (AMV-019) and this slice silently became empty, which made three real
+     checks below pass on nothing. */
+  const gbody = src.slice(i, src.indexOf('\n}\n', src.indexOf('catch(e){', src.indexOf('const tokens = await issueTokens', i))));
   ok(gbody.length > 400, 'the Google handler was read', gbody.length);
   ok(!/_funnelMark\(env, email\b/.test(gbody), 'the Google path does not name a variable it lacks', true);
   ok(/_funnelMark\(env, em\b/.test(gbody), 'it uses the address it actually has', true);

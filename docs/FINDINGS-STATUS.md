@@ -9,9 +9,78 @@ observed to fail on the assertions that name the defect, and the fix was
 restored. A guard that has never been seen to fail is not a guard, and three
 times this week a check turned out to be unable to fail at all.
 
-## Phase 2 - in progress
+## Phase 3 - in progress
 
-**Done: AMV-015, 017, 018, AMV-SP-03, AMV-SP-04.** Left: AMV-016, 019, 020.
+**Done: AMV-013, 031, 032.** Left: AMV-033, 034, 035, 042, 045, 053, SP-05.
+
+**AMV-013.** Locks expire, so a holder whose work outran its lease lost the lock
+without being told and somebody else took it - and then the first one finished
+and released, unconditionally, deleting the second holder's lock while that
+holder was still inside. Both then believe they are alone, which is the state a
+lock exists to make impossible, and it needs load rather than an attacker. A
+claim carries an owner token now and a release must name it. A refused release
+means a lease too short for its work, which is reported.
+
+**AMV-032.** The atomic counter falls back to plain storage when the Durable
+Object cannot be reached. Reasonable for a tally; not for `claim` and `reserve`,
+which through storage are a read followed by a write - the exact race they exist
+to close. An alert for this was added once and the fallback still ran underneath
+it. Those two ops now refuse rather than degrade. An UNBOUND namespace keeps its
+fallback: that is a development machine, and refusing there would mean the
+product does not run without wrangler.
+
+**AMV-031.** A record that will not parse reads as one that is not there, which
+is right for most callers and exactly wrong where absence GRANTS something: an
+unreadable seller row is a seller who was never banned, an abuse row is somebody
+with no disputes, a family row is a child with no spending limit. And an account
+row is an address nobody has registered - which, once signup started deciding
+existence from that read, meant a corrupt account record could be signed up over
+with a new password. Those four callers ask a strict question now; everything
+else keeps the null it needs.
+
+## Phase 2 - complete (and AMV-028 with it)
+
+All eight, plus AMV-028 pulled forward from Phase 5 because AMV-019 depends on it.
+
+**AMV-019.** A session is two tokens. The access token is short-lived and has to
+be readable by script; the refresh token is valid for a month and mints access
+tokens on demand, so a copy of it is a copy of the account. Both were in
+localStorage, readable by anything that ends up running on the page. The long
+one is now an HttpOnly cookie, scoped to `/auth`, which script cannot read at
+all.
+
+**AMV-028 was the prerequisite.** A cross-origin cookie needs SameSite=None,
+which needs Secure, which needs a concrete Allow-Origin and Allow-Credentials -
+a browser refuses credentials beside a wildcard. `ALLOWED_ORIGIN` and a
+`corsFor` helper both existed and nothing called either: every response went out
+through `json()`, which carries a hardcoded `*`. Applied at the single point
+every response passes through, because `json()` has several hundred call sites
+and no access to `env` - which is why it went unapplied for so long.
+
+The default stays open. Locking the API is a real choice with consequences for
+anybody embedding the widget, and turning it on for people who never asked would
+break working deployments to enforce a setting they did not set.
+
+**AMV-020.** The service worker stored every same-origin 200, keyed by the full
+URL - so an OAuth return carrying a code, or a share link carrying its token,
+went into Cache Storage where script can read it and outlived signing out. URLs
+with a query string are never stored now, and the server's own `no-store` is
+honoured, which is a rule rather than a list of paths somebody has to extend.
+
+**AMV-016.** A restore wrote every key straight over the live one, and a restore
+is normally run after an incident - so the state being overwritten is the state
+created by responding to it. Restoring an old token epoch makes every session
+issued before it valid again: sign out everywhere, restore yesterday's snapshot
+as part of putting things right, and the stolen session is live again. Same
+shape for a revoked API key, a blocked account and a suspended seller.
+Revocation is monotonic now, and the restore reports what it held forward -
+a partial restore an operator does not know about is one they assume was total.
+
+**Still open from AMV-019:** the CSP allows `unsafe-inline`, and 97 inline
+`onclick` handlers depend on it. Removing it is a real UI refactor across
+fifteen files, not a header change, so it is tracked separately rather than
+rushed - a broken button on a payment screen is a worse outcome than the
+hardening is a gain.
 
 **AMV-018 was a five-attempt limit that counted five per round trip.** A
 six-digit code is a million possibilities, which five tries makes safe. The
@@ -178,14 +247,14 @@ read as working for as long as it did.
 | 1 | AMV-010 | HIGH | Marketplace reversal takes a permanent claim before best-effort, non-idempoten | DONE |
 | 1 | AMV-011 | HIGH | Payout rejection is marked terminal before the seller is refunded | DONE |
 | 0 | AMV-012 | HIGH | `_withKV` treats read/parse failures as an empty record and can overwrite live | DONE |
-| 3 | AMV-013 | HIGH | Lease locks have no owner token, renewal, or fencing | TODO |
+| 3 | AMV-013 | HIGH | Lease locks have no owner token, renewal, or fencing | DONE |
 | 0 | AMV-014 | HIGH | Account export returns the live Canvas bearer token | DONE |
 | 2 | AMV-015 | HIGH | Account deletion requires only a bearer token and can report success after par | DONE |
-| 2 | AMV-016 | HIGH | Backup restore is KV-only and can restore stale authentication/authorization s | TODO |
+| 2 | AMV-016 | HIGH | Backup restore is KV-only and can restore stale authentication/authorization s | DONE |
 | 2 | AMV-017 | HIGH | Concurrent signup can create multiple valid sessions for one email with last-w | DONE |
 | 2 | AMV-018 | HIGH | Password-reset codes and links are not atomically attempt-limited or consumed | DONE |
-| 2 | AMV-019 | HIGH | Refresh and access tokens are persisted in localStorage under a weak inline-sc | TODO |
-| 2 | AMV-020 | HIGH | Service worker caches revocable or token-bearing same-origin pages | TODO |
+| 2 | AMV-019 | HIGH | Refresh and access tokens are persisted in localStorage under a weak inline-sc | DONE |
+| 2 | AMV-020 | HIGH | Service worker caches revocable or token-bearing same-origin pages | DONE |
 | 0 | AMV-021 | HIGH | Model compatibility retry can throw outside reservation cleanup | DONE |
 | 0 | AMV-022 | HIGH | Model transport has no default deadline | DONE |
 | 5 | AMV-060 | HIGH | Shipped deployment configuration is not launch-ready | TODO |
@@ -196,11 +265,11 @@ read as working for as long as it did.
 | 5 | AMV-025 | MEDIUM | SMS verification uses `Math.random`, has no attempt cap, and updates uniquenes | TODO |
 | 5 | AMV-026 | MEDIUM | Login and reset responses enumerate registered accounts | TODO |
 | 5 | AMV-027 | MEDIUM | Google sign-in is an unbounded external-call amplifier and does not require `e | TODO |
-| 5 | AMV-028 | MEDIUM | Configured CORS origin is ignored by JSON responses | TODO |
+| 5 | AMV-028 | MEDIUM | Configured CORS origin is ignored by JSON responses | DONE |
 | 5 | AMV-029 | MEDIUM | No global request-body size limit exists before JSON/text/form parsing | TODO |
 | 5 | AMV-030 | MEDIUM | Most routes do not enforce HTTP methods | TODO |
-| 3 | AMV-031 | MEDIUM | Malformed database JSON is treated as a missing record | TODO |
-| 3 | AMV-032 | MEDIUM | Atomic counters and claims silently fall back to non-atomic KV | TODO |
+| 3 | AMV-031 | MEDIUM | Malformed database JSON is treated as a missing record | DONE |
+| 3 | AMV-032 | MEDIUM | Atomic counters and claims silently fall back to non-atomic KV | DONE |
 | 3 | AMV-033 | MEDIUM | Multiple shared records still use unlocked read-modify-write | TODO |
 | 3 | AMV-034 | MEDIUM | Team creation and join are multi-record partial commits | TODO |
 | 3 | AMV-035 | MEDIUM | Automation create/update/run workflows have race and exactly-once gaps | TODO |
