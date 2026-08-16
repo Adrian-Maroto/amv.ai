@@ -24,6 +24,7 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { chromium } from 'playwright';
+import { LAUNCH } from './harness.mjs';
 import { createServer } from 'http';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -148,7 +149,7 @@ export async function bootLive(opts = {}) {
 
   const worker = (await import(join(ROOT, 'amv-backend.js') + '?live=' + Date.now())).default;
   const server = await serveArtifact(port, apiBase);
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(LAUNCH);
   const context = await browser.newContext({ viewport: opts.viewport || { width: 1280, height: 900 } });
   const page = await context.newPage();
 

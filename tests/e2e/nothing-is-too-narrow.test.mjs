@@ -19,6 +19,7 @@
    So this measures the CONTENT column across the range, which is the number
    that decides whether a screen can be used. */
 import { chromium } from 'playwright';
+import { LAUNCH } from '../lib/harness.mjs';
 import { createServer } from 'http';
 import { readFileSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -37,7 +38,7 @@ const server = createServer((req, res) => {
   res.end(readFileSync(abs));
 });
 await new Promise(r => server.listen(PORT, r));
-const browser = await chromium.launch();
+const browser = await chromium.launch(LAUNCH);
 
 /* Narrower than this and a form field cannot hold a sentence, a label wraps to
    three lines, and a textarea shows a word per line. It is not a style rule -

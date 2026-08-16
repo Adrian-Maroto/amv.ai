@@ -11,6 +11,7 @@
 
    Own port, so it can run while the gate has 9100. */
 import { chromium } from 'playwright';
+import { LAUNCH } from './harness.mjs';
 import { createServer } from 'http';
 import { readFileSync, mkdirSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -47,7 +48,7 @@ export async function shoot({ tabs, themes = ['dark'], sizes = ['phone', 'deskto
     res.end(readFileSync(abs));
   });
   await new Promise(r => server.listen(PORT, r));
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(LAUNCH);
   const made = [];
 
   for (const theme of themes) {
