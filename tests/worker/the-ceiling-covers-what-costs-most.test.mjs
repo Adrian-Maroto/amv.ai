@@ -359,12 +359,35 @@ section('And the widget spends the owner’s money against the owner’s ceiling
      to unlimited, and the owner's TOKEN allowance. Tokens are a count. The
      dollar ceiling that stops chat, image, video and SMS was never asked, so a
      widget belonging to a capped account ran past the limit somebody set. */
-  const wc = src.slice(src.indexOf('async function widgetChat('),
-                       src.indexOf('async function widgetChat(') + 9000);
+  /* The whole handler, not a fixed number of characters from its start. The
+     window used to be 9000, which is a guess about how long the function is -
+     it drifted past the line it was looking for the moment the handler grew,
+     and reported the ceiling as missing when it was three lines further down.
+     A check that fails when unrelated code moves is a check people learn to
+     edit rather than believe. */
+  const wc = functionBody(src, 'widgetChat');
+  ok(wc.length > 2000, 'the widget handler was read in full', wc.length);
   ok(/_monthlyCeilingUSD\(ownerUser\)/.test(wc),
      'the widget asks the same ceiling as every other spending path', true);
   ok(/cost:\$\{ownerSubject\}/.test(wc),
      'against the OWNER’s billing subject, since it is their money whoever is typing', true);
+
+  /* AND THAT THE COUNTER IT ASKS IS THE COUNTER IT FEEDS.
+
+     Checking `cost:<owner>` was only ever half of it. The metering handed
+     meterStream `costName: wSpendName` - the per-widget tally - so the owner's
+     account counter was read before every turn and written by none of them. The
+     ceiling was real, keyed correctly, and unreachable: a widget could run for
+     ever against a limit that never moved.
+
+     Same shape as the SMS ceiling and the wash-trading signal, and invisible
+     for the same reason - a number that never rises looks exactly like an
+     account that has not spent anything. */
+  ok(/acctCostName: ownerCostName/.test(wc),
+     'and the owner’s ledger is what the turn is metered into, not only checked', true);
+  const meter = functionBody(src, 'meterStream');
+  ok(/if \(acctCostName\)/.test(meter) && /counter\(env, acctCostName, \{ op: 'incr'/.test(meter),
+     'which the metering really increments', true);
   ok(/_familyOf\(env, ownerEmail/.test(wc),
      'and the owner’s family limits are resolved, so a parent’s cap reaches a widget their child deployed', true);
   ok(/unavailable right now/.test(wc),

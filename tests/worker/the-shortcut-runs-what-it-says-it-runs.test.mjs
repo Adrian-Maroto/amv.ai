@@ -64,8 +64,15 @@ section('The shortcuts select whole directories');
 section('No filter still means everything, which is what the gate uses');
 {
   const all = select('');
-  const total = onDisk('worker').length + onDisk('e2e').length;
-  ok(all.length === total, 'every suite in the repository is selected', { selected: all.length, total });
+  const disk = [...onDisk('worker').map(f => 'worker/' + f), ...onDisk('e2e').map(f => 'e2e/' + f)];
+  /* The names, not only the count. A mismatch of one is impossible to diagnose
+     from two numbers, and this file exists because a selection that quietly
+     covers less than it claims looks identical to one that covers everything. */
+  const missing = disk.filter(f => !all.includes(f));
+  const extra = all.filter(f => !disk.includes(f));
+  ok(missing.length === 0 && extra.length === 0,
+     'every suite in the repository is selected',
+     { selected: all.length, onDisk: disk.length, missing, extra });
 
   /* The gate calls the runner with no filter. If that ever gained a filter, the
      thing that decides whether AMV ships would narrow silently. */

@@ -74,7 +74,16 @@ function mkEnv() {
         const b = JSON.parse(init.body); const cur = vals.get(x) || 0;
         if (b.op === 'checkCap') return new Response(JSON.stringify({ allowed: cur < b.cap, value: cur }));
         if (b.op === 'incr') { vals.set(x, cur + (b.amount || 0)); return new Response(JSON.stringify({ value: vals.get(x) })); }
-        if (b.op === 'reserve') { vals.set(x, cur + (b.amount || 0)); return new Response(JSON.stringify({ allowed: true, value: vals.get(x) })); }
+        /* The real Durable Object REFUSES a reservation that would take the
+           counter past its cap. This stub used to allow every one of them,
+           which made it more permissive than the thing it stands in for - so a
+           ceiling that had stopped working would still look enforced here. */
+        if (b.op === 'reserve') {
+          const amt = Number(b.amount);
+          if (!Number.isFinite(amt) || amt < 0) return new Response(JSON.stringify({ allowed: false, value: cur }));
+          if (b.cap != null && b.cap !== Infinity && cur + amt > b.cap) return new Response(JSON.stringify({ allowed: false, value: cur }));
+          vals.set(x, cur + amt); return new Response(JSON.stringify({ allowed: true, value: vals.get(x) }));
+        }
         if (b.op === 'get') return new Response(JSON.stringify({ value: cur }));
         if (b.op === 'rateCheck') { vals.set(x, cur + 1); return new Response(JSON.stringify({ allowed: true })); }
         if (b.op === 'claim') { if (vals.has('c:' + x)) return new Response(JSON.stringify({ claimed: false })); vals.set('c:' + x, 1); return new Response(JSON.stringify({ claimed: true })); }

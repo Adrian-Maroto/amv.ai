@@ -96,14 +96,27 @@ section('Being told no does not cost the customer their allowance');
   /* The refund has to come BEFORE the refusal returns, or the reservation is
      kept for work that was never done. Measured by position, not by presence:
      a refund after the return is not a refund. */
-  const capIdx = fn.indexOf("op: 'checkCap'");
+  /* Anchored on the cost ceiling itself rather than on the op it used. The
+     ceiling stopped being a `checkCap` when it became an atomic reservation
+     (AMV-004), and this check went looking for a string that no longer exists -
+     which found nothing and reported the refund as missing. Anchoring on the
+     THING rather than on how it is currently implemented is what stops that
+     happening again the next time the mechanism changes. */
+  const capIdx = fn.indexOf('_reserveUSD(env, costName');
+  ok(capIdx > -1, 'the account ceiling is booked before the model runs', capIdx);
   const refundIdx = fn.indexOf('refundReservation()', capIdx);
   const returnIdx = fn.indexOf('429', capIdx);
-  ok(capIdx > -1 && refundIdx > -1 && returnIdx > -1,
-     'the cap check, the refund and the refusal are all present', true);
+  ok(refundIdx > -1 && returnIdx > -1,
+     'the refund and the refusal are both present after it', { refundIdx, returnIdx });
   ok(refundIdx < returnIdx,
      'and the reservation is refunded before the refusal is returned',
      { refund: refundIdx, refusal: returnIdx });
+
+  /* And the dollars go back with the tokens. The refund closure is the one
+     thing every early return already calls, so folding the money release into
+     it is what stops the next early return giving back half. */
+  ok(/const refundReservation = async \(\) => \{[\s\S]*?await releaseUSD\(\);[\s\S]*?\};/.test(fn),
+     'and the money booked for the call goes back with the tokens', true);
 }
 
 if (report('the-refusal-at-the-cap-is-a-refusal') > 0) process.exitCode = 1;

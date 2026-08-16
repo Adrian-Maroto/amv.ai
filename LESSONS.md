@@ -4528,3 +4528,90 @@ grow, did the marker appear, did the output file change. Above all, a watcher
 must be able to say "I do not know" - one that can only ever report progress is
 not a watcher, it is a reassurance. Same family as #239: a check that cannot
 find anything looks exactly like a check that found nothing wrong.
+
+## 247. A reservation larger than the ceiling it guards deletes the feature
+
+Fixing the dollar ceilings (AMV-004) meant booking what a call could cost
+before running it instead of reading a total afterwards. For automations I
+priced ONE worst case: the largest output any run type produces, plus the full
+eight web searches a research job may make. That came to $0.149.
+
+`FREE_AUTO_CEILING_USD` is $0.10.
+
+So every free automation asked to book $0.149 against a $0.10 ceiling, was
+refused, and never ran. Not slowed, not degraded - gone, for every free account
+in the product. And it failed as a job that simply does not happen, which is
+the quietest possible failure: nothing errors, nothing is logged as wrong, the
+row just never updates.
+
+A free run does not cost anything like $0.149. It uses the cheap tier, a 1200
+token output cap, and never touches the web - `_autoExecute` already excludes
+free accounts from research. The worst case I priced was a run that free
+accounts cannot perform.
+
+**Rule:** a pre-flight reservation must be an upper bound on what THIS call can
+cost, derived from the same constants the call itself is built from - not the
+worst case across every shape the code can take. If the reservation cannot fit
+under the ceiling it is reserved against, the ceiling has not been protected,
+the feature has been removed. Sanity-check every reservation against the
+SMALLEST ceiling it will ever meet, which is the free tier, not the paid one.
+
+Corollary, and the reason this was caught at all: keep a test that asserts the
+cheapest plan still works. `worker.test.mjs` had "a free user's automation does
+run", and that single case is what turned a silent feature deletion into a
+failing suite.
+
+## 248. A stub more permissive than the thing it stands in for
+
+Two test doubles were wrong in the same direction on the same day.
+
+The Google signup test stubbed `fetch` to return `{keys: []}` for anything
+Google-shaped. The Worker does not verify the JWT itself - it calls Google's
+tokeninfo endpoint and reads the CLAIMS back. So every case 401'd with an
+audience mismatch, which read like a product failure and was a stub answering
+in a shape the real endpoint never uses.
+
+Worse in the other direction: `the-free-tier-cannot-lock-out-a-customer`
+stubbed the counter's `reserve` op as `vals.set(x, cur + amount); allowed:
+true` - it ignored the cap entirely. The real Durable Object refuses when the
+result would exceed it. That double had been sitting there passing for weeks,
+and it would have gone on passing if the ceiling had stopped refusing anything
+at all, because the double never refused anything either.
+
+The first stub made a working product look broken and got noticed in minutes.
+The second made a broken ceiling look enforced and could have survived to
+production.
+
+**Rule:** a test double must be at least as STRICT as the thing it replaces.
+Where it stands in for something that can refuse - a cap, a lock, a signature,
+a quota - it must be able to refuse, on the same condition and at the same
+boundary. A double that always says yes turns every test that depends on it
+into a test of nothing, and it fails in the direction that ships.
+
+## 249. The ceiling was read constantly and written never
+
+Three of these in one week, in three unrelated systems:
+
+- the payout wash-trading signal read `wallet.tx`; sales are written to a
+  separate `wallet_tx` record and the wallet has no `.tx` at all
+- `/sms/incoming` checked the account's monthly dollar ceiling on every message
+  and never incremented it
+- `widgetChat` checked the owner's `cost:<subject>` ceiling before every turn
+  and metered into `wspend:<key>`
+
+Each reads, at the site, exactly like a working control. Each was unreachable:
+the number they consult is one nothing feeds, so it sits at zero for ever and
+the comparison can only ever come out one way.
+
+They are invisible for a shared reason. An empty result and a clean result look
+identical, and the code that READS is in a different place from the code that
+WRITES - so reviewing either half in isolation shows nothing wrong. The reader
+names a plausible field. The writer names a plausible field. They are not the
+same field, and no single screenful of code contains both.
+
+**Rule:** for any threshold check, find the writer before believing the reader.
+Tie them together in the test - build the fixture with the PRODUCTION writer
+rather than by hand, so a check that reads a field nothing populates cannot
+pass. And treat a control that has never fired as unproven rather than as
+evidence of a clean system: if a fraud signal, a ceiling, or a limit has never
+refused anything, the first question is whether it CAN.

@@ -165,6 +165,33 @@ function _modelHeaders(env, extra){
    provider fails as a request rather than as a dead Worker. */
 const MODEL_DEADLINE_MS = 120000;
 
+/* What one inbound text can cost, for the reservation the SMS path takes before
+   it runs. The output figure is runSmsAgent's own max_tokens; the input one is
+   a generous allowance for a 1600-character message plus the system prompt.
+   Both are upper bounds - the reservation is settled against the real usage the
+   moment the turn returns, so over-reserving costs nothing but a slightly
+   earlier refusal for somebody already at their ceiling. */
+const SMS_MAX_OUT_TOK = 400;
+const SMS_EST_IN_TOK = 1200;
+
+/* WHAT AMV ITSELF ADDS TO EVERY REQUEST, IN TOKENS.
+
+   _estimateReserveInput counts the caller's messages and the caller's system
+   text. It does not count the identity framing AMV prepends, the tool
+   definitions it forwards, or the cache-write premium - all of which are real
+   input the provider bills for. So the estimate is reliably SMALLER than the
+   truth, which is harmless for an allowance that settles up afterwards and not
+   harmless at all for a dollar ceiling: if every reservation under-books, a
+   burst still settles past the limit, just by less.
+
+   A ceiling is only a ceiling if the reservation is an upper BOUND. This is the
+   headroom that makes it one. Over-reserving costs nothing - the difference is
+   given straight back when the turn settles - beyond refusing somebody who is
+   already within a few cents of their limit, which is the right way to be
+   wrong about money. */
+const AI_INJECTED_INPUT_TOK = 4000;
+const AI_INPUT_SAFETY = 1.25;      // cache writes are billed at ~125% of input
+
 async function _modelFetch(env, payload, opts){
   const o = opts || {};
   const init = {
@@ -693,9 +720,24 @@ async function _accountHold(env, subject, what) {
    The free tier is shed first, exactly as it is on chat: on a busy day the
    traffic that pays nothing is what stops, because turning away somebody who
    has paid is a refund, then a chargeback, then a review. */
-async function _spendGate(env, user, what) {
+/* AMV-004: this books the money it is about to allow, rather than reading a
+   total and hoping nothing else arrives before the charge lands.
+
+   `usd` is what this call will cost. Image and video have a fixed published
+   price, so the reservation is exact rather than an upper bound and there is
+   nothing to settle beyond the amount itself.
+
+   `out` is filled in with what was booked, per counter, so the caller can pass
+   it to _recordSpend (which then applies only the difference) or to
+   _releaseSpendGate if the work does not happen. A caller that passes neither
+   gets the old read-only behaviour, which is still correct for a pure check. */
+async function _spendGate(env, user, what, usd, out) {
   const held = await _accountHold(env, user, what);
   if (held) return held;
+  const price = Math.max(0, +usd || 0);
+  const book = out || {};
+  book.account = 0; book.global = 0; book.accountName = ''; book.globalName = '';
+  book.period = _periodKeyOf(user);
   /* THIS ACCOUNT'S OWN CEILING FIRST, because it is the one somebody set.
 
      The global cap protects AMV. It says nothing about whether THIS person -
@@ -713,7 +755,13 @@ async function _spendGate(env, user, what) {
   if (ceiling != null) {
     const costName = `cost:${user.billingSubject || user.email}:${_periodKeyOf(user)}`;
     let capRes = null;
-    try { capRes = await counter(env, costName, { op: 'checkCap', cap: ceiling }); }
+    /* Reserved, not read. The old `checkCap` here let every concurrent request
+       see the same total and all pass; the account's monthly ceiling could be
+       exceeded by as many videos as arrived at once, at half a dollar each. */
+    try {
+      capRes = await _reserveUSD(env, costName, price, ceiling, 86400000 * 70);
+      if (capRes.allowed) { book.account = capRes.reserved; book.accountName = costName; }
+    }
     catch (e) { audit(env, 'spend_gate_blind', { what, scope: 'account', error: String((e && e.message) || e) }); }
     if (capRes && !capRes.allowed) {
       /* AMV-005, the second half. This said "family" whenever a family cap
@@ -735,8 +783,15 @@ async function _spendGate(env, user, what) {
   if (!(gCap > 0)) return null;
   const paying = _planPriceUSD(user.plan, user.customCfg) > 0;
   const cap = paying ? gCap : +(gCap * FREE_TIER_CAP_SHARE).toFixed(2);
+  /* Two ceilings, two reservations, and the second one failing has to give the
+     first one back - otherwise being refused by the day's ceiling would still
+     consume the customer's own monthly allowance for work that never ran. */
+  const gName = `spend:${todayKey()}`;
   let res;
-  try { res = await counter(env, `spend:${todayKey()}`, { op: 'checkCap', cap }); }
+  try {
+    res = await _reserveUSD(env, gName, price, cap, 86400000 * 2);
+    if (res.allowed) { book.global = res.reserved; book.globalName = gName; }
+  }
   catch (e) {
     /* FAILING OPEN IS THE RIGHT CALL. FAILING OPEN QUIETLY IS NOT.
 
@@ -757,12 +812,16 @@ async function _spendGate(env, user, what) {
         'The spend counter is unreachable, so the daily ceiling is not being enforced. Paid work is still running; free work is being refused until it recovers.', 30);
     } catch (_) {}
     if (!paying) {
+      await _releaseSpendGate(env, book);
       return json({ error: 'AMV is at capacity for free accounts right now. Paid plans are running normally - please try again shortly.',
                     code: 'free_capacity' }, 503);
     }
     return null;
   }
   if (res && res.allowed) return null;
+  /* From here the day's ceiling refused, so whatever the account's own ceiling
+     just booked is money for work that will not happen. */
+  await _releaseSpendGate(env, book);
   if (!paying) {
     audit(env, 'free_cap_hit', { what, value: res && res.value, cap });
     return json({ error: 'AMV is at capacity for free accounts today - it resets tomorrow. Paid plans are running normally.',
@@ -773,20 +832,84 @@ async function _spendGate(env, user, what) {
   return json({ error: 'Service is at capacity for today. Please try again tomorrow.', code: 'global_cap' }, 503);
 }
 
+/* Give back everything a gate booked, for work that is not going to happen.
+   Zeroes the record as it goes, so calling it twice cannot refund twice - a
+   double release would credit the customer money they never spent, which is
+   the same class of error as the double charge this all exists to prevent. */
+async function _releaseSpendGate(env, book) {
+  if (!book) return;
+  if (book.account > 0 && book.accountName) {
+    await _releaseUSD(env, book.accountName, book.account, 86400000 * 70);
+  }
+  if (book.global > 0 && book.globalName) {
+    await _releaseUSD(env, book.globalName, book.global, 86400000 * 2);
+  }
+  book.account = 0; book.global = 0;
+}
+
+/* AMV-004: A DOLLAR CEILING THAT IS ONLY READ IS NOT A CEILING.
+
+   Every dollar limit in AMV was enforced as `checkCap` (a read) followed, after
+   the work, by `incr` (the charge). Those are two calls. The counter is a
+   Durable Object so each one is atomic on its own, but the PAIR is not: twenty
+   concurrent requests all read the same total, all decide they fit, and all
+   proceed. The overshoot is bounded only by how many requests arrive at once.
+
+   The token quota two blocks up already knew this - there is a comment there
+   measuring an 8-request burst at 3.2x its cap - and it was fixed by reserving
+   an upper bound atomically before the call and settling the difference after.
+   The money ceilings were left on the racing version, which is the wrong way
+   round: tokens are an allowance, dollars are the bill.
+
+   So the same shape, for money. `_reserveUSD` books the most this call can
+   cost before it runs; `_releaseUSD` gives it back if the work does not happen;
+   and `_recordSpend` is told what was already booked so it applies only the
+   difference instead of charging twice.
+
+   Reserving an upper bound means somebody very close to their ceiling can be
+   refused while a few cents remain. That is the correct direction for a control
+   whose whole job is to stop a bill: being stopped one call early is a smaller
+   harm than an unbounded overshoot, and it is what the token path already does. */
+async function _reserveUSD(env, name, usd, cap, ttlMs) {
+  /* No ceiling means nothing to reserve against - the counter is still written
+     afterwards, it just cannot refuse. */
+  if (cap == null) return { allowed: true, value: 0, reserved: 0 };
+  const amount = Math.max(0, +usd || 0);
+  const r = await counter(env, name, { op: 'reserve', amount, cap, ttlMs });
+  return { allowed: !!(r && r.allowed), value: (r && r.value) || 0,
+           reserved: (r && r.allowed) ? amount : 0 };
+}
+/* Hand back money booked for work that did not happen. Never throws: a refund
+   that fails must not also fail the refusal it belongs to. */
+async function _releaseUSD(env, name, usd, ttlMs) {
+  if (!(+usd > 0)) return;
+  try { await counter(env, name, { op: 'incr', amount: -(+usd), ttlMs }); }
+  catch (e) { audit(env, 'spend_release_failed', { name, usd: +usd }); }
+}
+
 /* What it cost, recorded where the ceiling and the owner's screens read it.
    Best-effort on purpose: losing the accounting must not lose the work somebody
    already paid a provider for - but it is audited, so a counter that stops
-   answering is visible rather than a bill that quietly stops being counted. */
-async function _recordSpend(env, subject, usd, what, period) {
+   answering is visible rather than a bill that quietly stops being counted.
+
+   `reserved` is what a pre-flight reservation already booked, per counter. The
+   two CAPPED ledgers settle the difference; the two REPORTING ledgers
+   (`costtotal`, `featcost`) are never reserved against and always take the full
+   amount, or the owner's numbers would be short by whatever was pre-booked. */
+async function _recordSpend(env, subject, usd, what, period, reserved) {
   const amount = +(+usd || 0);
-  if (!(amount > 0)) return;
+  const preGlobal = Math.max(0, +((reserved && reserved.global) || 0));
+  const preAccount = Math.max(0, +((reserved && reserved.account) || 0));
+  if (!(amount > 0) && !(preGlobal > 0) && !(preAccount > 0)) return;
   try {
-    await counter(env, `spend:${todayKey()}`, { op: 'incr', amount, ttlMs: 86400000 * 2 });
+    const dGlobal = amount - preGlobal;
+    if (dGlobal !== 0) await counter(env, `spend:${todayKey()}`, { op: 'incr', amount: dGlobal, ttlMs: 86400000 * 2 });
     /* The customer's own window, which is their billing period rather than the
        calendar month - see _periodKeyFor. The platform totals below stay on the
        calendar, because those are the owner's reporting and a month is what a
        month means there. */
-    await counter(env, `cost:${subject}:${period || monthKey()}`, { op: 'incr', amount, ttlMs: 86400000 * 70 });
+    const dAccount = amount - preAccount;
+    if (dAccount !== 0) await counter(env, `cost:${subject}:${period || monthKey()}`, { op: 'incr', amount: dAccount, ttlMs: 86400000 * 70 });
     /* AND the platform total, which is the one the owner actually reads.
 
        Chat books all three of these. This booked the first two, so image and
@@ -1866,13 +1989,13 @@ async function _autoExecute(env, item, budget, email, standing){
 
   const body = {
     model: free ? ENGINES['amv-pulse'].model : ENGINES['amv-core'].model,
-    max_tokens: free ? FREE_AUTO_MAX_TOKENS : (isResearch ? 2500 : 3000),
+    max_tokens: free ? FREE_AUTO_MAX_TOKENS : (isResearch ? AUTO_RESEARCH_MAX_TOKENS : AUTO_TASK_MAX_TOKENS),
     system: systemFull,
     messages: [{ role:'user', content: item.detail }]
   };
   // Research jobs get the web_search tool so they actually pull live information.
   if(isResearch){
-    body.tools = [{ type:'web_search_20250305', name:'web_search', max_uses: 8 }];
+    body.tools = [{ type:'web_search_20250305', name:'web_search', max_uses: AUTO_MAX_SEARCHES }];
   }
 
   const r = await _modelFetch(env, body);
@@ -1892,6 +2015,33 @@ async function _autoExecute(env, item, budget, email, standing){
 
 /* Estimate USD cost of an automation run (worst-case-ish, matches the web path's
    accounting spirit). Web searches are billed by the provider per request. */
+/* The most THIS run can cost, priced at the same rates _autoCostUSD settles
+   with, so the reservation and the charge are on one scale.
+
+   Per run type, mirroring _autoExecute's own body rather than taking the worst
+   case across all of them. A flat worst-case figure was tried first and it was
+   $0.149 - larger than FREE_AUTO_CEILING_USD, which is $0.10 - so every free
+   automation was refused before it ran. A reservation that cannot fit under the
+   ceiling it is reserved against does not protect the ceiling, it deletes the
+   feature; and it fails silently, as a job that simply never runs.
+
+   AUTO_MAX_SEARCHES and the token caps are the same constants _autoExecute
+   passes to the model, so the two cannot drift into disagreeing about what a
+   run can cost. */
+const AUTO_MAX_SEARCHES = 8;
+const AUTO_RESEARCH_MAX_TOKENS = 2500;
+const AUTO_TASK_MAX_TOKENS = 3000;
+const AUTO_EST_IN_TOK = 8000;
+const AUTO_FREE_EST_IN_TOK = 3000;
+function _autoRunMaxUSD(free, isResearch){
+  const inTok  = free ? AUTO_FREE_EST_IN_TOK : AUTO_EST_IN_TOK;
+  const outTok = free ? FREE_AUTO_MAX_TOKENS
+               : (isResearch ? AUTO_RESEARCH_MAX_TOKENS : AUTO_TASK_MAX_TOKENS);
+  /* Research is the only shape that reaches the web, and _autoExecute already
+     excludes free accounts from it. */
+  const searches = isResearch ? AUTO_MAX_SEARCHES : 0;
+  return (inTok / 1e6) * 3 + (outTok / 1e6) * 15 + searches * WEB_SEARCH_COST_USD;
+}
 function _autoCostUSD(usage){
   const inUSD  = (usage.input||0)  / 1e6 * 3;     // ~$3 / M input
   const outUSD = (usage.output||0) / 1e6 * 15;    // ~$15 / M output
@@ -2232,9 +2382,21 @@ async function runDueAutomations(env, atMs){
        the counter refuses rather than proceeds - unlike the interactive paths,
        nobody is here to notice a runaway, so the safe answer is the quiet one. */
     const gCapAuto = parseFloat(env.GLOBAL_DAILY_USD_CAP || '500');
+    /* The share of the day's ceiling this account may reach, named once so the
+       coarse gate below and the per-run reservation further down cannot drift
+       apart into two different ceilings. Infinity when no ceiling is set, which
+       _reserveUSD treats as "book it, never refuse". */
+    const payingAuto = _planPriceUSD(sub.plan, sub.customCfg) > 0;
+    const gCapAutoForRun = gCapAuto > 0
+      ? (payingAuto ? gCapAuto : +(gCapAuto * FREE_TIER_CAP_SHARE).toFixed(2))
+      : null;
     if (gCapAuto > 0) {
-      const payingAuto = _planPriceUSD(sub.plan, sub.customCfg) > 0;
-      const capForThem = payingAuto ? gCapAuto : +(gCapAuto * FREE_TIER_CAP_SHARE).toFixed(2);
+      const capForThem = gCapAutoForRun;
+      /* A READ here on purpose. This is the coarse "is the day's budget gone,
+         skip this account entirely" gate, taken once before the item loop; the
+         binding reservation is taken per RUN below, where it can be settled
+         against what that run actually cost. Reserving here would book one
+         run's worth for however many items the account has due. */
       let gRes = null;
       try { gRes = await counter(env, `spend:${todayKey()}`, { op: 'checkCap', cap: capForThem }); }
       catch (e) {
@@ -2275,6 +2437,16 @@ async function runDueAutomations(env, atMs){
       }
       scanned++;
       if(!item.active || item.next > now) continue;
+      /* What this item booked before it ran. Reset per item, and handed back by
+         every path below that decides not to run after all - a skipped job that
+         keeps its reservation quietly eats the allowance of the jobs behind it
+         in the same tick. */
+      let itemBooked = 0, itemGlobalBooked = 0;
+      const gDayName = `spend:${todayKey()}`;
+      const releaseItem = async () => {
+        if (itemBooked > 0) { await _releaseUSD(env, costName, itemBooked, 86400000 * 70); itemBooked = 0; }
+        if (itemGlobalBooked > 0) { await _releaseUSD(env, gDayName, itemGlobalBooked, 86400000 * 2); itemGlobalBooked = 0; }
+      };
       // If this user is already at their monthly spend ceiling, skip the run
       // (don't burn compute they've effectively used up). Free plan (ceiling 0)
       // has no paid budget for automations, so they never execute a paid model
@@ -2284,7 +2456,23 @@ async function runDueAutomations(env, atMs){
          savings check-in because they used AMV a lot in chat - two unrelated
          things, and the one that gets switched off is the one about money. */
       if(item.kind !== 'invest'){
-        const capNow = await counter(env, costName, { op:'checkCap', cap: costCeiling });
+        /* The same two facts _autoExecute decides the call from, so the
+           reservation is for the run that is about to happen rather than for
+           the most expensive run the product can do. */
+        const runFree = !!(budget && budget.free) || item.tier === 'free';
+        const runResearch = item.kind === 'research' && !runFree;
+        const runMax = _autoRunMaxUSD(runFree, runResearch);
+        /* The day's ceiling, booked for THIS run. Taken first so a refusal
+           here costs nothing to unwind. */
+        const gNow = await _reserveUSD(env, gDayName, runMax, gCapAutoForRun, 86400000 * 2);
+        itemGlobalBooked = gNow.reserved;
+        if(!gNow.allowed){
+          audit(env, 'auto_skipped_global_cap', { email, item: item.id, cap: gCapAutoForRun });
+          item.lastError = 'the day’s capacity is used up - this will run again tomorrow';
+          changed = true; await releaseItem(); continue;
+        }
+        const capNow = await _reserveUSD(env, costName, runMax, costCeiling, 86400000 * 70);
+        itemBooked = capNow.reserved;
         if(!capNow.allowed){
           /* Name the limit that actually stopped it. "Monthly allowance
              reached" tells somebody on a family plan to upgrade, which will
@@ -2295,13 +2483,13 @@ async function runDueAutomations(env, atMs){
           item.lastError = budget.familyCapped
             ? 'monthly limit set for this account reached - whoever manages your family can raise it'
             : 'monthly allowance reached';
-          changed = true; continue;
+          changed = true; await releaseItem(); continue;
         }
       }
       // AMV-032: LEASE this specific run slot so two overlapping/retried cron
       // invocations can't both execute the same due job (duplicate model call or
       // email). The key is unique to this item's scheduled time; atomic on D1.
-      if(!(await _claimOnce(env, 'autorun', `${email}:${item.id}:${item.next}`, 3*86400))) continue;
+      if(!(await _claimOnce(env, 'autorun', `${email}:${item.id}:${item.next}`, 3*86400))) { await releaseItem(); continue; }
 
       /* What this run may actually do: the job's level, capped by the account's
          ceiling, decided HERE - at the point of spending and sending - so
@@ -2330,6 +2518,9 @@ async function runDueAutomations(env, atMs){
         item.lastLevel = 'suggest';
         item.next = now + (item.interval || AUTO_INTERVALS.daily);
         ran++; changed = true;
+        /* Suggest-only: nothing was generated and no model was called, so the
+           money booked for it belongs back in the allowance. */
+        await releaseItem();
         continue;
       }
 
@@ -2358,6 +2549,8 @@ async function runDueAutomations(env, atMs){
         item.lastNeeds = needs.missing.map(m=>m.id);
         item.next = now + (item.interval || AUTO_INTERVALS.daily);
         ran++; changed = true;
+        /* Blocked on access it does not have, so no model call happened. */
+        await releaseItem();
         continue;
       }
       /* Cleared, so a job that was blocked yesterday and is fine today does not
@@ -2369,10 +2562,18 @@ async function runDueAutomations(env, atMs){
         const out = (exec && exec.text) || '';
         // record the real cost of this run against the monthly cap
         let runCost = 0;
+        /* SETTLED against the two reservations taken before the run, not added
+           on top of them - adding outright would charge every automation twice
+           and cut somebody off at half their allowance. The platform total is
+           never reserved against, so it takes the full amount. */
         try{ const c = _autoCostUSD(exec && exec.usage || {}); runCost = c || 0;
-          if(c>0){ await counter(env, costName, { op:'incr', amount:c, ttlMs: 86400000*70 });
-                   await counter(env, `costtotal:${monthKey()}`, { op:'incr', amount:c, ttlMs: 86400000*70 });
-                   await counter(env, `spend:${todayKey()}`, { op:'incr', amount:c, ttlMs: 86400000*2 }); } }catch(e){}
+          const dAcct = c - itemBooked;
+          const dGlobal = c - itemGlobalBooked;
+          if(dAcct !== 0) await counter(env, costName, { op:'incr', amount:dAcct, ttlMs: 86400000*70 });
+          if(c>0) await counter(env, `costtotal:${monthKey()}`, { op:'incr', amount:c, ttlMs: 86400000*70 });
+          if(dGlobal !== 0) await counter(env, gDayName, { op:'incr', amount:dGlobal, ttlMs: 86400000*2 });
+          itemBooked = 0; itemGlobalBooked = 0;
+        }catch(e){}
         /* What happened to this result, decided here rather than guessed later.
            "It ran" and "it reached you" are different facts, and the second one
            is the one somebody is actually asking about when they look. */
@@ -8044,7 +8245,12 @@ async function videoGenerate(request, env) {
      AMV can be asked to do, and this path used to spend it without ever asking
      whether the day's budget was gone. After the per-user reservation, so a
      refusal here hands that allowance back. */
-  const vidGate = await _spendGate(env, user, 'video');
+  /* AMV-004: the gate now BOOKS the video's price rather than reading a total,
+     so a burst of requests cannot all pass the same ceiling. `vidBook` carries
+     what was booked so the failure paths below can hand it back and the
+     recording below can settle rather than charge twice. */
+  const vidBook = {};
+  const vidGate = await _spendGate(env, user, 'video', _videoCost(env), vidBook);
   if (vidGate) { await refund(); return vidGate; }
 
   let providerId = '';
@@ -8066,6 +8272,10 @@ async function videoGenerate(request, env) {
     if (!providerId) throw new Error('The video provider did not return a job id.');
   } catch (e) {
     await refund();                       // nothing was generated - give it back
+    /* And the money the gate booked for it. The provider never started a
+       render, so nothing was billed and nothing may be held against either
+       ceiling. */
+    await _releaseSpendGate(env, vidBook);
     try { await _workerError(env, 'videoGenerate', e); } catch (_) {}
     return json({ error: 'Could not start the video: ' + e.message }, 502);
   }
@@ -8083,7 +8293,7 @@ async function videoGenerate(request, env) {
      cost would leave every in-flight video invisible to the ceiling - and a
      burst of them is exactly the shape of a runaway bill. Cancelling or failing
      later does not refund the provider, so it does not refund this either. */
-  await _recordSpend(env, user.billingSubject || user.email, _videoCost(env), 'video', _periodKeyOf(user));
+  await _recordSpend(env, user.billingSubject || user.email, _videoCost(env), 'video', _periodKeyOf(user), vidBook);
 
   audit(env, 'video_start', { email: user.email });
   return json({ ok: true, id, status: 'starting' });
@@ -8502,6 +8712,15 @@ async function aiProxy(request, env, ctx) {
       await counter(env, dName, { op: 'incr', amount: -reserve, ttlMs: 86400000 * 35 });
       await counter(env, mName, { op: 'incr', amount: -reserve, ttlMs: 86400000 * 70 });
     } catch (e) { /* never throw out of a refund */ }
+    /* AMV-004: and the dollars, which are booked before the model runs for the
+       same reason the tokens are. Every refusal below already calls this, so
+       folding the money in here is what stops a new early return from giving
+       back the allowance and silently keeping the charge.
+
+       Declared after this closure and read only when it is called, which is
+       always after they exist - the two quota refusals above return before
+       either is booked, and they refund inline rather than through this. */
+    await releaseUSD();
   };
 
   const mUsed = mRes.value || 0;
@@ -8512,13 +8731,38 @@ async function aiProxy(request, env, ctx) {
   //     more than a safe fraction of what they paid, guaranteeing margin even
   //     if they run 100% on the most expensive model. This is the profit lock.
   const costName = `cost:${user.billingSubject || user.email}:${_periodKeyOf(user)}`;
+  /* The day's ceiling is named here rather than at the block that uses it, so
+     the release closure below can reach it. Both dollar ceilings are booked
+     before the model runs and both have to be givable back together. */
+  const gName = `spend:${todayKey()}`;
+  const gCap = parseFloat(env.GLOBAL_DAILY_USD_CAP || '500');
+  const _paying = _planPriceUSD(user.plan, user.customCfg) > 0;
+  const gCapForThem = _paying ? gCap : +(gCap * FREE_TIER_CAP_SHARE).toFixed(2);
   /* One definition, shared with the image and video gate - see
      _monthlyCeilingUSD. It used to be written out here and only here, which is
      why it bound chat and nothing else. */
   const ceiling = _monthlyCeiling(user);
   const costCeiling = ceiling.value;
+  /* AMV-004: the most this call can cost, priced from the tokens already
+     reserved above. Booked before the model runs rather than read, so a burst
+     of parallel requests cannot all pass the same total - the token allowance
+     three blocks up has worked this way since an 8-request burst was measured
+     at 3.2x its cap, and the dollar ceiling was left on the racing version.
+
+     An upper bound, so it is settled after the call rather than charged. The
+     cost of over-reserving is that somebody a few cents from their ceiling is
+     stopped one call early, which is the right direction for a control that
+     exists to stop a bill. */
+  const estUSD = (((estIn + AI_INJECTED_INPUT_TOK) * AI_INPUT_SAFETY) / 1e6) * eng.inCost
+               + (estOut / 1e6) * eng.outCost;
+  let bookedUSD = 0, bookedGlobalUSD = 0;
+  const releaseUSD = async () => {
+    if (bookedUSD > 0) { await _releaseUSD(env, costName, bookedUSD, 86400000 * 70); bookedUSD = 0; }
+    if (bookedGlobalUSD > 0) { await _releaseUSD(env, gName, bookedGlobalUSD, 86400000 * 2); bookedGlobalUSD = 0; }
+  };
   if (costCeiling != null) {
-    const capRes = await counter(env, costName, { op: 'checkCap', cap: costCeiling });
+    const capRes = await _reserveUSD(env, costName, estUSD, costCeiling, 86400000 * 70);
+    bookedUSD = capRes.reserved;
     if (!capRes.allowed) {
       audit(env,'spend_cap_hit',{email:user.email,plan:user.plan,family:!!(user.family)}); await refundReservation();
       /* "Upgrade for more" is not an action a child can take. Tell them the
@@ -8546,11 +8790,8 @@ async function aiProxy(request, env, ctx) {
      it; paying accounts keep the whole thing. When the day is busy the free
      tier is what gets shed, which is the correct order - and the message says
      so honestly rather than implying AMV is broken. */
-  const gName = `spend:${todayKey()}`;
-  const gCap = parseFloat(env.GLOBAL_DAILY_USD_CAP || '500');
-  const _paying = _planPriceUSD(user.plan, user.customCfg) > 0;
-  const gCapForThem = _paying ? gCap : +(gCap * FREE_TIER_CAP_SHARE).toFixed(2);
-  const gRes = await counter(env, gName, { op: 'checkCap', cap: gCapForThem });
+  const gRes = await _reserveUSD(env, gName, estUSD, gCapForThem, 86400000 * 2);
+  bookedGlobalUSD = gRes.reserved;
   if (!gRes.allowed && !_paying) {
     /* Free, and the day's free budget is spent. Paying accounts are unaffected
        and are told so, because "AMV is down" and "AMV is busy for free accounts"
@@ -8689,8 +8930,13 @@ async function aiProxy(request, env, ctx) {
 
   // 7) tee the stream: pass to client AND tally tokens/cost as it flows
   const [toClient, toMeter] = upstream.body.tee();
+  /* The reservations are handed on so meterStream settles them instead of
+     charging again. Passed by value AFTER every early return, so anything that
+     refused above has already given them back and the numbers here are what is
+     genuinely still booked. */
   ctx.waitUntil(meterStream(toMeter, eng, { dName, mName, gName, costName, user, env, limits,
-    reqMessages: body.messages || [], reserved: reserve, reqId: _reqId }));
+    reqMessages: body.messages || [], reserved: reserve,
+    reservedUSD: bookedUSD, reservedGlobalUSD: bookedGlobalUSD, reqId: _reqId }));
 
   return new Response(toClient, {
     status: 200,
@@ -8977,7 +9223,7 @@ async function resumeAnswer(request, env) {
   return json({ ok: true, text: d.text || '', at: d.at || 0 });
 }
 
-async function meterStream(stream, eng, { dName, mName, gName, costName, user, env, limits, reqMessages, reserved = 0, reqId = '', feature = 'chat' }) {
+async function meterStream(stream, eng, { dName, mName, gName, costName, acctCostName = '', user, env, limits, reqMessages, reserved = 0, reservedUSD = 0, reservedGlobalUSD = 0, reservedAcctUSD = 0, reqId = '', feature = 'chat' }) {
   /* AMV-098: how long the user waited. Cost and quality are measured; speed is
      not, and it is the thing people feel most - a routing change that halves
      the bill and doubles the wait would have looked like a pure win on every
@@ -9081,8 +9327,33 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, user, e
     await counter(env, dName, { op: 'incr', amount: delta, ttlMs: 86400000 * 35 });
     await counter(env, mName, { op: 'incr', amount: delta, ttlMs: 86400000 * 70 });
   }
-  const gRes = await counter(env, gName, { op: 'incr', amount: cost, ttlMs: 86400000 * 2 });
-  await counter(env, costName, { op: 'incr', amount: cost, ttlMs: 86400000 * 70 });
+  /* SETTLE the dollar reservations, exactly as the tokens are settled above.
+     `reservedUSD` was booked against these two counters before the model ran,
+     so adding `cost` outright here would charge every call twice - which is the
+     mirror-image of the race the reservation exists to close, and would look
+     like the ceiling working unusually well right up until somebody was cut off
+     at half their allowance. */
+  const dCost = cost - (reservedGlobalUSD || 0);
+  const gRes = dCost !== 0
+    ? await counter(env, gName, { op: 'incr', amount: dCost, ttlMs: 86400000 * 2 })
+    : { value: 0 };
+  const dAcct = cost - (reservedUSD || 0);
+  if (dAcct !== 0) await counter(env, costName, { op: 'incr', amount: dAcct, ttlMs: 86400000 * 70 });
+  /* A SECOND account ledger, when this path's primary counter is not the
+     account's own. The widget is the only one: its `costName` is the
+     per-widget `wspend:` counter, so the owner's `cost:` counter - the one the
+     owner's monthly ceiling and family cap are measured against, and the one
+     this handler CHECKS before every turn - was never written by widget
+     traffic at all.
+
+     That ceiling could therefore never be reached by a widget, however much a
+     stranger on somebody else's website typed into it. It is the same shape as
+     the SMS ceiling and the wash-trading signal: a control that reads a number
+     nothing feeds. */
+  if (acctCostName) {
+    const dOwner = cost - (reservedAcctUSD || 0);
+    if (dOwner !== 0) await counter(env, acctCostName, { op: 'incr', amount: dOwner, ttlMs: 86400000 * 70 });
+  }
   /* The same money, totalled once - so the dashboard can report spend without
      adding up every account (AMV-088). */
   await counter(env, `costtotal:${monthKey()}`, { op: 'incr', amount: cost, ttlMs: 86400000 * 70 });
@@ -9243,7 +9514,10 @@ async function imageGenerate(request, env) {
      the spend most likely to run away. Checked AFTER the per-user reservation
      so a refusal here gives that allowance back rather than charging somebody
      for a call AMV declined to make. */
-  const imgGate = await _spendGate(env, user, 'image');
+  /* AMV-004: books the picture's price against both ceilings rather than
+     reading them, so twenty parallel requests cannot all pass the same total. */
+  const imgBook = {};
+  const imgGate = await _spendGate(env, user, 'image', _imageCost(env), imgBook);
   if (imgGate) { await refundImage(); return imgGate; }
 
   try {
@@ -9262,6 +9536,7 @@ async function imageGenerate(request, env) {
       const txt = await upstream.text().catch(() => '');
       try { await _workerError(env, 'imageGenerate.provider', new Error('status ' + upstream.status + ': ' + txt.slice(0, 300))); } catch (_) {}
       await refundImage();
+      await _releaseSpendGate(env, imgBook);
       return json({ error: 'Image generation is temporarily unavailable. Please try again.' }, 502);
     }
     const data = await upstream.json().catch(() => ({}));
@@ -9269,14 +9544,20 @@ async function imageGenerate(request, env) {
     if (item.url || item.b64_json) {
       /* Recorded only when a picture was really produced, so a provider error
          does not appear on the bill or on the account's cost. */
-      await _recordSpend(env, user.billingSubject || user.email, _imageCost(env), 'image', _periodKeyOf(user));
+      await _recordSpend(env, user.billingSubject || user.email, _imageCost(env), 'image', _periodKeyOf(user), imgBook);
       return json(item.url ? { ok: true, url: item.url } : { ok: true, b64: item.b64_json });
     }
     await refundImage();
+    /* No picture, so no provider bill and nothing to hold against either
+       ceiling. The comment above _recordSpend says the cost is recorded only
+       when an image was really produced; the reservation has to follow the same
+       rule or the ceiling fills up with failures. */
+    await _releaseSpendGate(env, imgBook);
     return json({ error: 'Image generation returned no image. Please try again.' }, 502);
   } catch (e) {
     try { await _workerError(env, 'imageGenerate', e); } catch (_) {}
     await refundImage();
+    await _releaseSpendGate(env, imgBook);
     return json({ error: 'Image generation failed. Please try again.' }, 502);
   }
 }
@@ -9603,9 +9884,29 @@ async function widgetChat(request, env, ctx) {
      Checked against the owner's billing subject, since a widget spends the
      owner's money whoever is typing into it on somebody else's website. */
   const ownerCeiling = _monthlyCeilingUSD(ownerUser);
+  /* AMV-004: what this turn can cost at most, booked against all three dollar
+     ceilings before the model runs. The widget is the surface where genuine
+     concurrency is easiest to produce - it is public, and anybody can open the
+     page in twenty tabs - so it is the worst place to be reading a total and
+     charging afterwards. Settled by meterStream against what the turn really
+     cost. */
+  const wMaxOut = Math.min(cfg.maxOut || eng.maxOut, eng.maxOut);
+  const wEstUSD = (((_estimateReserveInput({ messages: body.messages }) + AI_INJECTED_INPUT_TOK) * AI_INPUT_SAFETY) / 1e6) * eng.inCost
+                + (wMaxOut / 1e6) * eng.outCost;
+  const ownerCostName = `cost:${ownerSubject}:${_periodKeyOf(ownerUser)}`;
+  let bookedOwnerUSD = 0, bookedWidgetUSD = 0, bookedGlobalW = 0;
+  const releaseWidgetUSD = async () => {
+    if (bookedOwnerUSD > 0) { await _releaseUSD(env, ownerCostName, bookedOwnerUSD, 86400000 * 70); bookedOwnerUSD = 0; }
+    if (bookedWidgetUSD > 0) { await _releaseUSD(env, wSpendName, bookedWidgetUSD, 86400000 * 70); bookedWidgetUSD = 0; }
+    if (bookedGlobalW > 0) { await _releaseUSD(env, `spend:${todayKey()}`, bookedGlobalW, 86400000 * 2); bookedGlobalW = 0; }
+  };
+  const wSpendName = `wspend:${key}:${todayKey()}`;
   if (ownerCeiling != null) {
     let oc = null;
-    try { oc = await counter(env, `cost:${ownerSubject}:${_periodKeyOf(ownerUser)}`, { op: 'checkCap', cap: ownerCeiling }); }
+    try {
+      oc = await _reserveUSD(env, ownerCostName, wEstUSD, ownerCeiling, 86400000 * 70);
+      bookedOwnerUSD = oc.reserved;
+    }
     catch (e) { audit(env, 'spend_gate_blind', { what: 'widget', scope: 'account', error: String((e && e.message) || e) }); }
     if (oc && !oc.allowed) {
       audit(env, 'widget_owner_cap', { key, subject: ownerSubject });
@@ -9618,12 +9919,13 @@ async function widgetChat(request, env, ctx) {
   }
 
   // Per-widget DAILY SPEND cap (hard margin protection for the owner).
-  const wSpendName = `wspend:${key}:${todayKey()}`;
   if (cfg.dailySpendCapUSD > 0) {
-    const capRes = await counter(env, wSpendName, { op: 'checkCap', cap: cfg.dailySpendCapUSD });
+    const capRes = await _reserveUSD(env, wSpendName, wEstUSD, cfg.dailySpendCapUSD, 86400000 * 70);
+    bookedWidgetUSD = capRes.reserved;
     if (!capRes.allowed) {
       audit(env, 'widget_spend_cap', { key });
       await refundMsg();
+      await releaseWidgetUSD();
       return new Response(JSON.stringify({ error: 'This assistant is unavailable right now. Please try again later.' }), { status: 429, headers: { 'Content-Type': 'application/json', ...wcors } });
     }
   }
@@ -9645,6 +9947,7 @@ async function widgetChat(request, env, ctx) {
   if (!oDay.allowed) {
     audit(env, 'widget_owner_quota', { key, owner: ownerEmail, scope: 'day' });
     await refundMsg();
+    await releaseWidgetUSD();
     return new Response(JSON.stringify({ error: 'This assistant has reached its limit for today. Please try again tomorrow.' }),
       { status: 429, headers: { 'Content-Type': 'application/json', ...wcors } });
   }
@@ -9653,6 +9956,7 @@ async function widgetChat(request, env, ctx) {
     audit(env, 'widget_owner_quota', { key, owner: ownerEmail, scope: 'month' });
     try { await counter(env, ownerDayName, { op: 'incr', amount: -wReserve, ttlMs: 86400000 * 35 }); } catch (e) {}
     await refundMsg();
+    await releaseWidgetUSD();
     return new Response(JSON.stringify({ error: 'This assistant is unavailable right now. Please try again later.' }),
       { status: 429, headers: { 'Content-Type': 'application/json', ...wcors } });
   }
@@ -9660,12 +9964,17 @@ async function widgetChat(request, env, ctx) {
   const refundOwner = async () => {
     try { await counter(env, ownerDayName, { op: 'incr', amount: -wReserve, ttlMs: 86400000 * 35 }); } catch (e) {}
     try { await counter(env, ownerMonthName, { op: 'incr', amount: -wReserve, ttlMs: 86400000 * 70 }); } catch (e) {}
+    /* And the dollars. Every path that gives the tokens back has to give these
+       back too, or a refused turn permanently consumes the owner's monthly
+       budget for work that never ran. */
+    await releaseWidgetUSD();
   };
 
   // GLOBAL daily spend cap (shared safety net across the whole platform).
   const gName = `spend:${todayKey()}`;
   const gCap = parseFloat(env.GLOBAL_DAILY_USD_CAP || '500');
-  const gRes = await counter(env, gName, { op: 'checkCap', cap: gCap });
+  const gRes = await _reserveUSD(env, gName, wEstUSD, gCap, 86400000 * 2);
+  bookedGlobalW = gRes.reserved;
   if (!gRes.allowed) {
     await refundMsg(); await refundOwner();
     return new Response(JSON.stringify({ error: 'Service is at capacity. Please try again later.' }), { status: 503, headers: { 'Content-Type': 'application/json', ...wcors } });
@@ -9721,6 +10030,14 @@ async function widgetChat(request, env, ctx) {
     reserved: wReserve,
     gName,                                    // shares the global spend cap
     costName: wSpendName,                     // per-widget spend counter (the hard cap above)
+    /* AND the owner's own account ledger, which widget traffic never touched.
+       The owner's monthly ceiling is CHECKED at the top of this handler against
+       `cost:<subject>` and the metering wrote `wspend:<key>`, so that ceiling
+       could not be reached by a widget no matter how much it was used. */
+    acctCostName: ownerCostName,
+    reservedUSD: bookedWidgetUSD,
+    reservedGlobalUSD: bookedGlobalW,
+    reservedAcctUSD: bookedOwnerUSD,
     user: ownerUser,
     env, limits: ownerLimits,
     reqMessages: body.messages,
@@ -10203,6 +10520,7 @@ async function smsIncoming(request, env, ctx) {
      budget (AMV-100), which is also the only reading under which the seat the
      team paid for is the thing being spent. */
   const price = _planPriceUSD(user.plan, user.customCfg);
+  let smsCostName = '', smsReserveUSD = 0, smsBookedUSD = 0;
   {
     /* The shared ceiling, so a parent's limit reaches this too. This path
        computed the plan backstop itself and never looked at family limits, so
@@ -10214,7 +10532,17 @@ async function smsIncoming(request, env, ctx) {
        exactly the free case - so the fallback is the free automation ceiling
        and the plan arithmetic does not need repeating here. */
     const cap = shared != null ? shared : FREE_AUTO_CEILING_USD;
-    const capRes = await counter(env, `cost:${user.billingSubject}:${_periodKeyOf(user)}`, { op: 'checkCap', cap });
+    /* AMV-004: booked, not read. A text message is the cheapest way to produce
+       genuine concurrency against one account - a script can post to this
+       endpoint as fast as it likes - and reading the total then charging after
+       let every one of them pass the same check. Reserved at the tier's
+       published rate for a full-length reply; settled below to what the turn
+       really cost. */
+    smsCostName = `cost:${user.billingSubject}:${_periodKeyOf(user)}`;
+    const smsEng = ENGINES['amv-pulse'];
+    smsReserveUSD = (SMS_EST_IN_TOK / 1e6) * smsEng.inCost + (SMS_MAX_OUT_TOK / 1e6) * smsEng.outCost;
+    const capRes = await _reserveUSD(env, smsCostName, smsReserveUSD, cap, 86400000 * 70);
+    smsBookedUSD = capRes.reserved;
     if (!capRes.allowed) return twiml(price > 0
       ? 'You\u2019ve used your plan\u2019s allowance for this cycle. It resets next month.'
       : 'You\u2019ve used what the free plan covers for texting this month. Upgrade for more, or it resets next month.');
@@ -10250,7 +10578,13 @@ async function smsIncoming(request, env, ctx) {
   if (smsUsage) {
     const eng = ENGINES['amv-pulse'];
     const usd = (smsUsage.input / 1e6) * eng.inCost + (smsUsage.output / 1e6) * eng.outCost;
-    await _recordSpend(env, user.billingSubject || email, usd, 'sms', _periodKeyOf(user));
+    await _recordSpend(env, user.billingSubject || email, usd, 'sms', _periodKeyOf(user),
+                       { account: smsBookedUSD });
+  } else if (smsBookedUSD > 0) {
+    /* The turn failed, so there is nothing to settle against - hand the whole
+       reservation back rather than leaving somebody's allowance holding money
+       for an answer they never got. */
+    await _releaseUSD(env, smsCostName, smsBookedUSD, 86400000 * 70);
   }
   // SMS segments are 160 chars; keep replies tight
   if (reply.length > 600) reply = reply.slice(0, 590) + '…';
@@ -10261,7 +10595,10 @@ async function runSmsAgent(text, env) {
   const sys = 'You are AMV over SMS. Reply in plain text, no markdown, concise (a few sentences max, fits in a text message). The user may ask you to check tasks, summarize, draft, or answer questions. Be direct and useful. Never use em or en dashes; use a plain hyphen (-) instead. ACCURACY: never invent facts, numbers, prices, dates or sources, and never say you did something (checked, sent, booked, completed) unless it actually happened. If you are unsure or cannot verify, say so briefly instead of guessing.';
   const resp = await _modelFetch(env, {
     model: engineModel('amv-pulse'), // cheapest tier - SMS is short Q&A
-    max_tokens: 400,
+    /* The same constant the pre-flight reservation prices against. Two literals
+       would drift, and the one that drifts silently is the reservation - it
+       would simply stop matching what a turn can cost. */
+    max_tokens: SMS_MAX_OUT_TOK,
     system: sys,
     messages: [{ role: 'user', content: text }],
   });
@@ -14007,6 +14344,33 @@ async function adminPayoutMark(request, env) {
          balance on top - money the seller may already have withdrawn. */
       await _withWallet(env, rec.seller, (ww) => {
         ww.balance = +((+ww.balance || 0) + (+rec.amount || 0)).toFixed(2);
+        /* AMV-041: AND THE LIFETIME TOTAL, WHICH ONLY EVER WENT UP.
+
+           `paidOut` is added to when a payout is REQUESTED. Nothing took it
+           back when one was rejected, so it drifted away from the truth in one
+           direction for ever: every refused request left the seller permanently
+           credited with money AMV never sent them.
+
+           It feeds one thing - the point past which identity has to be verified
+           before more can be paid out. So an inflated figure asks an honest
+           seller for documents they do not owe yet, and the error accumulates:
+           enough refused requests and somebody is held at a threshold they
+           never actually reached. It also contradicts the rule stated eight
+           lines below, where the tax total is deliberately recorded at
+           SETTLEMENT because what counts is what was really sent.
+
+           Corrected inside the same lock that returns the balance, because the
+           two facts describe one event and must not be able to disagree. Floored
+           at zero: a total of money sent cannot be negative, whatever order
+           historical records arrive in. */
+        const back = +rec.amount || 0;
+        ww.paidOut = +Math.max(0, ((+ww.paidOut) || 0) - back).toFixed(2);
+        /* The velocity signal counts payouts in a window. One that was refused
+           is not evidence of anything, so it stops counting too. */
+        if (Array.isArray(ww.payouts)) {
+          const i = ww.payouts.findIndex((p) => p && Math.abs((+p.amount || 0) - back) < 1e-9);
+          if (i > -1) ww.payouts.splice(i, 1);
+        }
       });
       await _pushWalletTx(env, rec.seller, { type: 'withdrawal_returned', amount: +rec.amount || 0,
                                              status: 'rejected', id, ts: Date.now() });

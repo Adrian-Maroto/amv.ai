@@ -9,6 +9,30 @@ observed to fail on the assertions that name the defect, and the fix was
 restored. A guard that has never been seen to fail is not a guard, and three
 times this week a check turned out to be unable to fail at all.
 
+## Phase 1 - in progress
+
+**AMV-004 (atomic spend ceilings) and AMV-041 (payout total) are done.**
+
+AMV-004 turned out to be six ceilings, not one: chat's account ceiling, the
+day's global ceiling, image, video, the widget's three, and SMS. All were a read
+followed by a charge, which twenty concurrent requests walk straight through -
+measured at 4.4x a $0.30 ceiling before the fix. They now book an upper bound
+atomically before the work and settle the difference after, the same shape the
+token allowance has used since an 8-request burst was measured at 3.2x its cap.
+
+Two things found while fixing it that the audit did not report:
+
+- **The widget metered into a ledger it did not check.** `widgetChat` tested the
+  owner's `cost:<subject>` ceiling before every turn and handed the metering
+  `wspend:<key>`. So the owner's monthly ceiling - the one a family cap and the
+  plan backstop both flow into - was read constantly and written never by widget
+  traffic, and could not be reached however much a stranger on somebody else's
+  website typed into it. Third instance this week of the same shape; see
+  LESSONS #249.
+- **A reservation can delete a feature.** The first automation reservation
+  priced one worst case at $0.149 against a free ceiling of $0.10, so every free
+  automation was refused and simply never ran. LESSONS #247.
+
 ## Phase 0 - complete
 
 Ten findings, ten fixes, eight new test files. Two things were found while
@@ -40,7 +64,7 @@ read as working for as long as it did.
 | 4 | AMV-001 | CRITICAL | Browser agent can disclose supplied secrets to a hostile page | TODO |
 | 4 | AMV-002 | HIGH | Browser network isolation is incomplete: redirects are checked after requests  | TODO |
 | 0 | AMV-003 | HIGH | Inbound SMS model usage is not charged and bypasses the global kill switch | DONE |
-| 1 | AMV-004 | HIGH | Dollar spend ceilings are check-then-charge rather than atomic reservations | TODO |
+| 1 | AMV-004 | HIGH | Dollar spend ceilings are check-then-charge rather than atomic reservations | DONE |
 | 0 | AMV-005 | HIGH | Family-cap refusal dereferences undefined `planCeiling` and returns a 500 | DONE |
 | 1 | AMV-006 | HIGH | API-key authentication omits account holds, family limits, team billing identi | TODO |
 | 1 | AMV-007 | HIGH | Cross-processor webhook ordering can overwrite a newer subscription state | TODO |
@@ -80,7 +104,7 @@ read as working for as long as it did.
 | 5 | AMV-038 | MEDIUM | Backup export can silently omit D1 data and buffers the full store in memory | TODO |
 | 5 | AMV-039 | MEDIUM | Account export swallows read/list failures and may claim completeness | TODO |
 | 0 | AMV-040 | MEDIUM | Payout wash-trading signal reads a field that is never populated | DONE |
-| 1 | AMV-041 | MEDIUM | `paidOut` increments on request and is not reversed when a payout is rejected | TODO |
+| 1 | AMV-041 | MEDIUM | `paidOut` increments on request and is not reversed when a payout is rejected | DONE |
 | 3 | AMV-042 | MEDIUM | Marketplace ratings, reviews, and thread-read state lose concurrent updates | TODO |
 | 5 | AMV-043 | MEDIUM | Reviews can become impossible after a seller unlists an item | TODO |
 | 5 | AMV-044 | MEDIUM | Widget message listener does not verify origin or source | TODO |
