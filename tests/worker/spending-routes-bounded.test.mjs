@@ -61,7 +61,12 @@ const BOUNDED = /guardAction\(|limitAction\(|checkCap|_spendAllowed\(|_budgetFor
 
 /* Spends, but does not need its own bound - each with the reason. */
 const EXEMPT = {
-  authGoogle:          'sign-in itself, and the token check is what proves who is calling',
+  /* authGoogle used to be exempt here, on the reasoning that "sign-in itself,
+     and the token check is what proves who is calling" - which is exactly the
+     reasoning AMV-027 found to be wrong. The token check happens AFTER the
+     outbound call to Google, so it proves who is calling only for requests that
+     have already cost something. It has a bound now, and this line's removal is
+     the roster noticing on its own, which is what it is for. */
   authDeleteAccount:   'one call per account deletion, behind an explicit confirmation',
   adminFinance:        'admin only',
 };

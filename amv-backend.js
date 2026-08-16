@@ -3385,6 +3385,27 @@ async function fetchGuarded(rawUrl, init, ms){
   return { blocked: true, why: 'That address redirected too many times.', url: target, hop: OUTBOUND_MAX_HOPS };
 }
 
+/* Same ORIGIN, decided by parsing rather than by comparing strings.
+
+   Scheme, host and port each become a field of their own, so nothing in one of
+   them can reach across into another - which is the whole failure a prefix
+   comparison has. `https://amv.homes.evil.co` and `https://amv.homes@evil.co`
+   both start with `https://amv.homes` and neither is it.
+
+   A path is deliberately not part of the comparison: a callback lives at a path
+   under the origin, and that is the normal case. */
+function _sameOrigin(a, b){
+  try {
+    const x = new URL(String(a));
+    const y = new URL(String(b));
+    /* A URL carrying credentials is refused outright rather than compared. It
+       has no legitimate use in a redirect target and it exists in this shape
+       for exactly one reason. */
+    if (x.username || x.password) return false;
+    return x.origin === y.origin && x.origin !== 'null';
+  } catch (e) { return false; }
+}
+
 /* SSRF gate: only public http(s). Re-checked on every navigation, and on every
    hop of a redirect chain - see fetchGuarded above. */
 function _webHostAllowed(raw){
@@ -4130,9 +4151,30 @@ async function googleOAuthExchange(request, env){
   const redirectUri = String(body.redirect_uri || '');
   if(!code || !verifier || !redirectUri) return json({ error:'code, verifier and redirect_uri are required' }, 400);
 
-  // The redirect_uri must be one WE serve - never echo back an arbitrary one.
+  /* AMV-SP-08: "STARTS WITH" IS NOT "IS".
+
+     This compared the caller's redirect_uri against the app's own address with
+     indexOf === 0, which is a string prefix and not an origin. Every one of
+     these passes a prefix check against https://amv.homes:
+
+        https://amv.homes.attacker.example/steal
+        https://amv.homes@attacker.example/steal
+        https://amv.homes.evil.co
+
+     and the first two are the ones that matter, because a browser sends the
+     authorisation code to the HOST, not to the string. Google will happily
+     redirect there if the attacker has registered it; and even where it will
+     not, this endpoint hands the redirect_uri straight to Google's token
+     exchange, so a value that is not ours has no business being accepted here
+     at all.
+
+     Compared as an ORIGIN, parsed rather than matched. A path underneath it is
+     fine - that is what a callback path is - and a different host, a different
+     scheme, a different port or a userinfo trick is not, because parsing puts
+     each of those in a field of its own where a prefix cannot reach across
+     them. */
   const allowed = (env.APP_ORIGIN || env.APP_URL || '').replace(/\/$/, '');
-  if(allowed && redirectUri.indexOf(allowed) !== 0)
+  if(allowed && !_sameOrigin(redirectUri, allowed))
     return json({ error:'redirect_uri is not permitted' }, 400);
 
   try{
@@ -5889,9 +5931,12 @@ function _adminTokenOK(request, env){
 
 /* Kept as the name eleven call sites use, now a single line over the one
    implementation rather than a second copy of the comparison. */
-function _requireAdmin(request, env) {
-  return _adminTokenOK(request, env);
-}
+/* AMV-052: _requireAdmin used to live here, and it is DELETED rather than left
+   unused. It was a bare "is this an admin" predicate, and three routes reached
+   for it instead of the gate - which is how they ended up checking the token
+   with no ceiling and no audit while the thirteen beside them had both. A
+   convenience that is easier to call than the correct thing gets called; the
+   fix is that there is no longer one to reach for. _adminGate is the only door. */
 
 /* WRONG GUESSES ARE BOUNDED, AND SO IS THE EXPENSIVE ROUTE BEHIND THEM.
 
@@ -5905,7 +5950,7 @@ function _requireAdmin(request, env) {
    Keyed by source rather than by account, because an admin request that fails
    has no account behind it yet. Deliberately generous: a real operator
    refreshing a dashboard must never be the one who gets refused. */
-async function _adminGate(request, env, what, perMin, perDay) {
+async function _adminGate(request, env, what, perMin, perDay, opts) {
   const ip = (await _ipHash(env, request))
           || request.headers.get('CF-Connecting-IP')
           || request.headers.get('X-Forwarded-For') || 'unknown';
@@ -5926,6 +5971,10 @@ async function _adminGate(request, env, what, perMin, perDay) {
       code: lim.code,
     }, 429);
   }
+  /* One caller authenticates by session rather than by the admin token and has
+     already done it - see adminUsers, which explains why the two credentials
+     are kept apart. It still wants the ceiling and the audit above. */
+  if (opts && opts.tokenAlreadyChecked) return null;
   if (!_adminTokenOK(request, env)) {
     /* A wrong token is worth knowing about: it is either an operator with a
        stale copy or somebody trying. Either way it should not be silent. */
@@ -6220,19 +6269,39 @@ async function authResetCode(request, env) {
 
   const acct = await DB.get(env, 'acct', email);
 
-  let sent = false;
+  let delivered = false;
   if (acct && emailConfigured) {
     const code = _sixDigitCode();
     await env.AMV_KV.put('resetcode:' + email,
       JSON.stringify({ code, attempts: 0, at: Date.now() }),
       { expirationTtl: RESET_CODE_TTL });
-    try { sent = await sendResetCodeEmail(env, email, code); } catch (e) { sent = false; }
+    try { delivered = await sendResetCodeEmail(env, email, code); } catch (e) { delivered = false; }
+    if (!delivered) {
+      /* The one thing the caller is no longer told, said loudly to the person
+         who can fix it. A provider outage now looks identical to a stranger's
+         address from the outside, so without this it would look like nothing
+         at all from the inside too. */
+      audit(env, 'reset_delivery_failed', { email });
+      try { await alertOnce(env, 'reset_delivery',
+        'Password reset codes are not being delivered - the email provider refused or did not answer. '
+        + 'Nobody can reset a password until this is fixed, and the reset screen cannot say so, '
+        + 'because saying so would tell strangers which addresses have accounts.', 30); } catch (e) {}
+    }
   }
 
-  // Never reveal whether the account exists. But DO reveal whether email is set
-  // up at all, so the app can tell the truth instead of saying "check your
-  // inbox" when nothing could ever have been sent.
-  return json({ ok: true, sent, emailConfigured });
+  /* AMV-026: THE ANSWER DEPENDS ON THE DEPLOYMENT, NEVER ON THE ADDRESS.
+
+     This already refused to say whether the account exists - and then said it
+     anyway through `sent`, which was true only when the address was registered.
+     With email configured, `sent:false` meant "no account here", which is the
+     same enumeration one field along from where it was being guarded against.
+
+     So `sent` now reports whether AMV can send reset codes AT ALL, which is a
+     fact about this deployment and identical for every address. `emailConfigured`
+     stays, because the app must be able to say "email is not set up on this
+     deployment" rather than "check your inbox" when nothing could ever arrive -
+     and that is a property of the server, not of the person asking. */
+  return json({ ok: true, sent: emailConfigured, emailConfigured });
 }
 
 /* STEP 2 - verify the code, hand back a one-time token. */
@@ -6339,7 +6408,7 @@ async function authAdminReset(request, env){
   const email = String(body.email||'').toLowerCase().trim();
   const password = String(body.password||'');
   if(!email || !email.includes('@')) return json({ error:'valid email required' }, 400);
-  if(password.length < 8) return json({ error:'Password must be at least 8 characters.' }, 400);
+  { const bad = _passwordLengthProblem(password); if(bad) return json(bad, 400); }
 
   const acct = await DB.get(env, 'acct', email);
   if(!acct) return json({ error:'No account with that email.' }, 404);
@@ -6589,6 +6658,22 @@ export default {
      four public GET routes, which were outside the try altogether. */
   async fetch(request, env, ctx) {
     try {
+      /* AMV-029: HOW MUCH THE SENDER IS ALLOWED TO HAND OVER.
+
+         Nothing bounded a request body. Every handler went straight to
+         `request.json()`, which reads the whole thing into memory before
+         anybody can object - so an unauthenticated POST of a hundred megabytes
+         of JSON to any endpoint was a hundred megabytes buffered and parsed
+         inside a Worker with a 128MB limit, for the price of uploading it. The
+         parse is the expensive part and it happens before the handler has even
+         decided the caller is allowed to be there.
+
+         Checked here rather than in each handler, for the reason AMV-028's CORS
+         was: there are a hundred and sixty routes and one place they all pass
+         through, and a rule applied in a hundred and sixty places is a rule
+         with a hole in it by next month. */
+      const tooBig = _bodyTooBig(request);
+      if (tooBig) return _applyCors(request, env, tooBig);
       return _applyCors(request, env, await _route(request, env, ctx));
     } catch (err) {
       // An unhandled exception reached the top level. Record it AND alert (both
@@ -6611,6 +6696,47 @@ export default {
     }
   },
 };
+
+/* AMV-029: the default ceiling on a request body, and the routes that are
+   genuinely bigger.
+
+   A megabyte is many times any chat turn, form or settings blob AMV sends. The
+   exceptions are the two places a person really does hand over a large file,
+   and they are listed rather than implied so a new route is small by default
+   and a large one is somebody's decision. */
+const BODY_MAX_BYTES = 1024 * 1024;
+const BODY_MAX_BY_PATH = {
+  '/admin/backup/import': 64 * 1024 * 1024,  // a whole namespace snapshot, restored by the operator
+  '/sync/push': 8 * 1024 * 1024,             // everything one account has, from one device
+};
+
+function _bodyMaxFor(path) {
+  return Object.prototype.hasOwnProperty.call(BODY_MAX_BY_PATH, path)
+    ? BODY_MAX_BY_PATH[path] : BODY_MAX_BYTES;
+}
+
+/* Refuse on the DECLARED length, before a byte of the body is read.
+
+   Content-Length is the sender's own claim, so it is a fast path and not the
+   answer on its own - but it is the answer for every honest client, and for a
+   dishonest one the platform still has to receive what it sends. The bodies
+   that are actually parsed downstream are separately bounded where they are
+   read: the mail reader (AMV-047) and the school reader (AMV-050) both count
+   as they go, for exactly this reason. */
+function _bodyTooBig(request) {
+  const m = String(request.method || '').toUpperCase();
+  if (m === 'GET' || m === 'HEAD' || m === 'OPTIONS') return null;
+  let path = '';
+  try { path = new URL(request.url).pathname.replace(/\/+$/, ''); } catch (e) {}
+  const max = _bodyMaxFor(path);
+  const declared = Number(request.headers.get('content-length'));
+  if (!Number.isFinite(declared) || declared <= max) return null;
+  return json({
+    error: 'That request is larger than AMV accepts on this endpoint ('
+      + Math.round(max / 1024) + ' KB), so nothing was read.',
+    code: 'body_too_large', limit: max,
+  }, 413);
+}
 
 /* AMV-028: THE CONFIGURED ORIGIN, APPLIED WHERE EVERY RESPONSE PASSES.
 
@@ -6735,6 +6861,70 @@ async function _route(request, env, ctx) {
       _killCache.ts = now;
     }
     if (_killCache.val) return json({ error: 'Service temporarily paused. Please try again soon.' }, 503);
+  }
+
+  /* AMV-030: A ROUTE THAT ANSWERS ANY VERB ANSWERS THE WRONG ONES.
+
+     Nothing here checked the method. `/v1/family/leave`, `/v1/mail/disconnect`,
+     `/team/leave`, `/v1/finance/unlink` and forty more read no body at all, so
+     every one of them did its work on a GET - and a GET is what a browser
+     performs from an <img src>, a link somebody clicks, a preview crawler
+     following a URL out of a chat message. That is a state-changing action
+     triggered by loading a page, with the signed-in customer's own session
+     attached, which is the classic shape of cross-site request forgery. It
+     needs no attacker skill: it needs somebody to open a link.
+
+     HTTP already has the distinction and it is the right one to use. A SAFE
+     route - one that reads and changes nothing - may be fetched with GET.
+     Everything else is POST, because a POST is not what a page loads by
+     accident.
+
+     Listed rather than derived. "Does it read a request body" looked like the
+     rule and is not: the routes above read no body and change plenty. Safety is
+     a fact about what a handler DOES, so it has to be written down by somebody
+     who looked, and a new route is POST-only until it is. */
+  const GET_SAFE = new Set([
+    '/v1/health',               // liveness, reads nothing
+    '/v1/public-config',        // which features this deployment has
+    '/v1/entitlement',          // what plan this account is on
+    '/v1/market/list',          // the public marketplace
+    '/v1/account/export',       // the caller's own data, read-only, and a download
+    '/widget.js',               // a <script src> on somebody else's site
+    '/v1/widget/config-public', // fetched by that script before the chat opens
+    /* Read-only screens that carry their arguments in the query string, which
+       is what makes them GETs in the first place. Every one of them was checked
+       for writes before being listed - see a-link-is-not-a-command, which
+       re-checks it on every run rather than trusting this comment. */
+    '/v1/resume',               // a public resume page, opened by its link
+
+    /* The read-only screens the app really does fetch with GET. Found by
+       sweeping every fetch in src/app that sets no method, rather than by
+       guessing - the first version of this list was written from memory and
+       would have broken the operator's own dashboard, which is precisely the
+       surface the rule about verifying on the surface the owner uses exists
+       for. Every one of them was then read and confirmed to write nothing. */
+    '/v1/activity', '/v1/referral', '/v1/usage', '/v1/stripe/invoices',
+    '/api/approvals',
+    '/admin/users', '/admin/payouts', '/admin/digest', '/admin/reports',
+    '/admin/abuse/list', '/admin/readiness', '/admin/backup/export',
+    '/v1/admin/finance', '/v1/admin/stats', '/v1/admin/support',
+
+    /* Two routes are a GET and a POST of the same thing: the GET lists, the
+       POST changes. Both must be reachable, and the handler decides which it
+       is - see the test, which checks that they really do branch rather than
+       taking this comment's word for it. */
+    '/api/handoff',             // GET lists the inbox, POST sends one
+    '/api/jobs',                // GET lists jobs, POST toggles one
+  ]);
+  if (request.method !== 'POST' && !(request.method === 'GET' && GET_SAFE.has(path))) {
+    /* HEAD is answered like GET on the safe ones by the runtime; anything else
+       is refused with the list, because a 405 that does not say what IS allowed
+       sends people guessing. */
+    if (!(request.method === 'HEAD' && GET_SAFE.has(path))) {
+      const allow = GET_SAFE.has(path) ? 'GET, HEAD, POST, OPTIONS' : 'POST, OPTIONS';
+      return json({ error: 'That endpoint does not accept ' + request.method + ' requests.',
+                    code: 'method_not_allowed', allow }, 405, { 'Allow': allow });
+    }
   }
 
   switch (path) {
@@ -6951,7 +7141,48 @@ function _isCommonPassword(pw){
   if(/^(01234567|12345678|abcdefgh|87654321)/.test(p)) return true;   // obvious sequences
   return false;
 }
+/* AMV-SP-10: A PASSWORD IS A SECRET, NOT A WORKLOAD.
+
+   PBKDF2 is deliberately expensive, and its cost is per BYTE of what it hashes
+   as well as per iteration. Signup capped the length at 512 and login capped it
+   at nothing at all, so a sign-in attempt could carry a ten megabyte "password"
+   and the server would faithfully run six hundred thousand rounds of SHA-256
+   over it before deciding it was wrong. That is a request that costs the
+   operator seconds of CPU and the sender nothing, on an endpoint that has to be
+   open to the world by definition, and the per-email throttle does not help:
+   the attacker picks the email.
+
+   One bound, checked before any key derivation anywhere, so a new password
+   route cannot be written without it. 512 bytes is far past any real
+   passphrase and far short of a weapon. */
+const PASSWORD_MAX = 512;
+const PASSWORD_MIN = 8;
+function _passwordTooLong(password){
+  if(String(password == null ? '' : password).length <= PASSWORD_MAX) return null;
+  return { error:'That password is longer than ' + PASSWORD_MAX + ' characters, which AMV does not accept. Use a shorter one - length past this point adds nothing.',
+           code:'password_too_long' };
+}
+/* The MAXIMUM is about the server and applies everywhere a password is read.
+   The MINIMUM is about the password and applies only where one is being SET -
+   enforcing it at sign-in would lock out any account whose password predates
+   the rule, which is a rule change turning into an outage for the people least
+   able to explain it. */
+function _passwordLengthProblem(password){
+  const tooLong = _passwordTooLong(password);
+  if(tooLong) return tooLong;
+  if(String(password == null ? '' : password).length < PASSWORD_MIN)
+    return { error:'Password must be at least ' + PASSWORD_MIN + ' characters.', code:'password_too_short' };
+  return null;
+}
+
 async function _hashPassword(password, salt, iterations){
+  /* The last line of defence, at the one place every route funnels through. A
+     caller that skipped the check above does not get to spend the CPU anyway. */
+  if(String(password == null ? '' : password).length > PASSWORD_MAX){
+    const e = new Error('password too long');
+    e.code = 'password_too_long';
+    throw e;
+  }
   const enc = new TextEncoder();
   const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
   const bits = await crypto.subtle.deriveBits({ name:'PBKDF2', salt: enc.encode(salt), iterations: iterations || PBKDF2_ITERATIONS, hash:'SHA-256' }, keyMaterial, 256);
@@ -7038,7 +7269,7 @@ async function authSignup(request, env){
   if(!em || em.length > 254 || !/^[^\s@:]{1,64}@[^\s@:]+\.[^\s@:]{2,}$/.test(em)) return json({ error:'valid email required' }, 400);
   // AMV-051: raise the password baseline - 8+ chars and reject the most common
   // passwords so a leaked hash has meaningfully more offline resistance.
-  if(!password || password.length < 8 || password.length > 512) return json({ error:'password must be at least 8 characters' }, 400);
+  { const bad = _passwordLengthProblem(password); if(bad) return json(bad, 400); }
   if(_isCommonPassword(password)) return json({ error:'that password is too common - please choose a stronger one' }, 400);
   const safeName = String(name||'').slice(0, 80);
   const salt = crypto.randomUUID();
@@ -7130,8 +7361,36 @@ async function authLogin(request, env) {
     const fails = parseInt(await env.AMV_KV.get(rlKey) || '0', 10);
     if (fails >= 8) { audit(env, 'auth_fail', { email: em, reason: 'throttled' }); return json({ error: 'Too many attempts. Please wait a few minutes and try again.' }, 429); }
   }
+  /* AMV-026: ONE ANSWER, WHATEVER IS TRUE ON THIS SIDE.
+
+     "no such account" with a 404 and "wrong password" with a 401 are two
+     different answers, and the difference is the whole of the question an
+     attacker is asking. Point a list of a million addresses at this endpoint
+     and it sorts them into customers and strangers, for free, with no password
+     guessed - which is a breach on its own for anybody whose membership here is
+     private, and the shortlist for credential stuffing for everybody else.
+
+     Every failure below is now the same status, the same code and the same
+     sentence. The reason is still recorded server-side, where an operator can
+     see it and an attacker cannot.
+
+     The check on the password's LENGTH moved above the account lookup, because
+     it is a fact about the request rather than about the account and answering
+     it early keeps it out of the enumeration set. */
+  { const bad = _passwordTooLong(password); if(bad) return json(bad, 400); }
+
+  const SAME_ANSWER = { error:'That email and password do not match an account.', code:'bad_credentials' };
   const acct0 = await DB.get(env, 'acct', em);
-  if(!acct0){ await _noteAuthFail(env, rlKey); return json({ error:'no such account' }, 404); }
+  if(!acct0){
+    await _noteAuthFail(env, rlKey);
+    audit(env,'auth_fail',{email:em,reason:'no_account'});
+    /* The same work, so the CLOCK does not answer the question the status code
+       no longer does. Without this a missing account returns in a millisecond
+       and a real one takes as long as PBKDF2 does, which is the same disclosure
+       measured with a stopwatch instead of read off the screen. */
+    await _hashPassword(password, 'absent-account-timing-salt', PBKDF2_ITERATIONS).catch(() => {});
+    return json(SAME_ANSWER, 401);
+  }
   const acct = acct0;
   // FAIL CLOSED: only a real email-password account with a stored password hash
   // may obtain a token here. A federated account (provider !== 'email', or no
@@ -7141,9 +7400,11 @@ async function authLogin(request, env) {
   if(acct.provider !== 'email' || !acct.pwHash){
     await _noteAuthFail(env, rlKey);
     audit(env,'auth_fail',{email:em,reason:'wrong_method'});
-    return json({ error:'wrong password' }, 401);   // generic - never reveal the account's provider
+    /* Same reason as above: this branch skipped the hashing entirely, so a
+       Google account and a password account were a stopwatch apart. */
+    await _hashPassword(password, acct.salt || 'absent-account-timing-salt', acct.pwIter || PBKDF2_ITERATIONS).catch(() => {});
+    return json(SAME_ANSWER, 401);   // generic - never reveal the account's provider
   }
-  if(!password) return json({ error:'password required' }, 400);
   // verify using the iteration count the hash was MADE with (default 100k for
   // pre-upgrade accounts), so raising the global count never locks anyone out
   const usedIter = acct.pwIter || 100000;
@@ -7169,7 +7430,7 @@ async function authLogin(request, env) {
         await _userEvent(env, request, em, 'sign_in_failed', { reason: 'wrong password' });
       }
     }catch(e){ /* logging must never change the outcome of a sign-in */ }
-    return json({ error:'wrong password' }, 401);
+    return json(SAME_ANSWER, 401);
   }
   // success - clear the failure counter
   try{ await env.AMV_KV.delete(rlKey); }catch(e){}
@@ -7217,6 +7478,20 @@ async function adminUsers(request, env) {
   const ownerEmail = String(env.OWNER_EMAIL || '').toLowerCase();
   const isOwner = !!ownerEmail && String(claims.email).toLowerCase() === ownerEmail;
   if(!isOwner && !(acct && acct.admin)) return json({ error:'forbidden' }, 403);
+  /* AMV-052: RATE LIMITED AND AUDITED LIKE EVERY OTHER ADMIN SURFACE.
+
+     This route authenticates DIFFERENTLY from the rest on purpose - the owner's
+     Control Center reaches it with their signed-in session, while the operator
+     screens use the admin token, and those are two different credentials for
+     two different things. Deliberately kept apart: making them
+     interchangeable would let any account flagged admin export the whole
+     database without the operator's token.
+
+     What was not deliberate is that this one had no rate limit and no audit
+     line at all, while the sixteen beside it had both. One admin surface
+     without a ceiling is the one somebody walks through. */
+  { const g = await _adminGate(request, env, 'userlist', 60, 2000, { tokenAlreadyChecked: true }); if (g) return g; }
+  audit(env, 'admin_user_list', { by: String(claims.email).toLowerCase(), owner: isOwner });
   /* AMV-198: ONE PAGE OF ACCOUNTS, NOT ALL OF THEM AT ONCE.
 
      This did six storage round trips per account across up to three hundred of
@@ -7277,7 +7552,25 @@ async function adminUsers(request, env) {
       };
     }));
     users = users.filter(Boolean);
-  }catch(e){}
+  }catch(e){
+    /* AMV-051: A STORAGE FAILURE IS NOT AN EMPTY CUSTOMER BASE.
+
+       This was `catch(e){}`. The listing throws - the scan cannot reach the
+       store, a read times out - and `users` is still the empty array it was
+       initialised to, so the request answers 200 with `users: []` and
+       `count: 0`. To the operator that is not an error. It is a screen saying
+       there are no accounts.
+
+       Which is the worst possible thing for this particular screen to say,
+       because it is the screen somebody opens DURING an incident to find out
+       whether anything is left. "Nothing here" and "I could not look" have to
+       be different answers, and only one of them is true. */
+    audit(env, 'admin_user_list_failed', { why: String((e && e.message) || e).slice(0, 120) });
+    try{ await _workerError(env, 'adminUsers', e); }catch(_){}
+    return json({ error: 'AMV could not read the account list just now, so this screen is not showing one. '
+                       + 'This is a read failure, not an empty database - nothing has been lost.',
+                  code: 'listing_unavailable' }, 503);
+  }
   /* `count` is the number of rows on THIS screen, not the number of accounts
      that exist. Said plainly, because an operator reading 300 off an admin
      page and believing it is the customer base makes decisions on it. The real
@@ -7298,6 +7591,37 @@ async function authGoogle(request, env) {
   const body = await request.json().catch(()=>({}));
   const { credential } = body;
   if (!credential) return json({ error: 'credential required' }, 400);
+  /* AMV-027: A REQUEST NOBODY HAS TO AUTHENTICATE MAKES AMV CALL SOMEBODY ELSE.
+
+     Every call here becomes an outbound request to Google, from AMV's own
+     address, paid for out of the operator's Workers budget - and this endpoint
+     is open by definition, because signing in is what it is for. Unbounded,
+     that is a free amplifier: a loop of garbage credentials turns one attacker's
+     bandwidth into AMV hammering Google until Google starts refusing AMV, which
+     breaks sign-in for real customers without anybody's password being guessed.
+
+     Bounded by source, before the outbound call rather than after it - a limit
+     applied to the answer still pays for the question. A real person signs in a
+     handful of times; this ceiling is nowhere near them. */
+  const gip = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'noip';
+  const gLimit = await limitAction(env, 'googlesig:' + gip, 20, 300);
+  if (!gLimit.ok) {
+    /* A counter that cannot be reached is a fault here, not a verdict. Refusing
+       on it would turn one storage blip into "nobody can sign in with Google",
+       which is a worse outcome than a brief window in which the amplifier is
+       unbounded - and unlike the money ceilings, nothing irreversible happens
+       on the other side of this one. It is audited, so the window is visible
+       rather than silent. */
+    if (gLimit.unavailable) audit(env, 'google_limit_unavailable', {});
+    else {
+      audit(env, 'google_rate_limited', {});
+      return json({ error: 'Too many sign-in attempts from here. Give it a moment and try again.',
+                    code: 'rate_limited' }, 429, { 'Retry-After': '60' });
+    }
+  }
+  /* A credential far larger than any id token is refused before it is put on a
+     URL and sent anywhere. A Google id token is around a kilobyte. */
+  if (String(credential).length > 4096) return json({ error: 'invalid google token' }, 401);
   try{
     // Google's tokeninfo validates signature + expiry for us and returns the claims.
     const r = await fetchDeadline('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(credential));
@@ -7311,7 +7635,27 @@ async function authGoogle(request, env) {
     if(!expectedAud){ audit(env,'google_unconfigured',{}); return json({ error:'Google sign-in is not configured for this workspace.', code:'google_unconfigured' }, 503); }
     if(claims.aud !== expectedAud){ audit(env,'google_aud_mismatch',{}); return json({ error:'token audience mismatch' }, 401); }
     if(!/(^|\.)accounts\.google\.com$/.test(String(claims.iss||''))){ return json({ error:'bad issuer' }, 401); }
-    if(claims.email_verified === false || claims.email_verified === 'false'){ return json({ error:'unverified google email' }, 401); }
+    /* AMV-027: VERIFIED MEANS VERIFIED, NOT "DID NOT SAY OTHERWISE".
+
+       This refused an explicit `false` and let ABSENCE through. A token with no
+       email_verified claim at all was treated as a verified address - and this
+       claim is the only thing standing between "Google says this person owns
+       this address" and "somebody typed this address into a Google account".
+
+       The consequence is not a bad signup, it is a takeover: an address that
+       already exists here as an email-and-password account is signed straight
+       into, below, with no password. Somebody creates a Google account claiming
+       a customer's address, and if Google has not verified it and AMV does not
+       insist, they are that customer.
+
+       So it is required, and required to be true. A missing claim is a refusal,
+       which is the only safe reading of a fact nobody asserted. */
+    const verified = claims.email_verified;
+    if(verified !== true && verified !== 'true'){
+      audit(env,'google_unverified_email',{ had: typeof verified });
+      return json({ error:'Google has not confirmed that this address belongs to that account, so AMV cannot sign you in with it.',
+                    code:'google_unverified' }, 401);
+    }
     const em = String(claims.email||'').toLowerCase().trim();
     if(!em) return json({ error:'no email in token' }, 401);
     const name = claims.name || em.split('@')[0];
@@ -10203,10 +10547,50 @@ async function aiProxy(request, env, ctx) {
    ===================================================================== */
 const SHARE_MAX_BYTES = 512 * 1024;
 const SHARE_MAX_MSGS = 400;
-const _shareId = () => {
-  const a = new Uint8Array(9); crypto.getRandomValues(a);
-  return [...a].map(b => b.toString(36).padStart(2, '0')).join('').slice(0, 14);
-};
+/* AMV-055: AN IDENTIFIER THAT IS THE PERMISSION HAS TO BE UNGUESSABLE.
+
+   A share link is a bearer capability: whoever has the id can read the
+   conversation, and there is nothing else to check, because the whole point is
+   that it works for somebody with no account. So the id is the password, and it
+   was about fifty bits long.
+
+   Not because the source was weak - it was crypto.getRandomValues - but because
+   the ENCODING threw most of it away. Nine random bytes were rendered as
+   `b.toString(36).padStart(2,'0')`, two characters per byte, and then cut to
+   fourteen characters: seven bytes' worth. Worse, the first character of each
+   pair could only ever be 0-7, because 255 in base 36 is "73". So the alphabet
+   looked like 36 and half the positions carried three bits.
+
+   This helper takes the bytes and maps them onto the alphabet evenly, with
+   rejection rather than a modulo - a modulo over 256 would make the first few
+   characters of the alphabet more likely than the rest, which is the same class
+   of mistake one level down. Twenty-two characters of base 36 is over a hundred
+   and thirteen bits, which is not guessable by anyone. */
+const _ID_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
+function _randId(len) {
+  const n = Math.max(1, len | 0);
+  const out = [];
+  /* 252 is the largest multiple of 36 under 256. Anything above it is thrown
+     away and redrawn, so every character is equally likely. */
+  const LIMIT = 252;
+  while (out.length < n) {
+    const buf = new Uint8Array(n * 2);
+    crypto.getRandomValues(buf);
+    for (let i = 0; i < buf.length && out.length < n; i++) {
+      if (buf[i] >= LIMIT) continue;
+      out.push(_ID_ALPHABET[buf[i] % 36]);
+    }
+  }
+  return out.join('');
+}
+const _shareId = () => _randId(22);
+/* The shape a share id may have, in one place because it is checked at three.
+   The upper bound moved from 20 to 32 when the id grew to 22 characters
+   (AMV-055) - and the old bound is why it moved rather than being deleted:
+   this is a KV key built from something a stranger sends, so a ceiling on its
+   length is doing real work. Ids issued before the change are 14 characters
+   and still match, so no existing link stopped working. */
+const SHARE_ID_RE = /^[a-z0-9]{6,32}$/;
 function _shareEsc(t){
   return String(t == null ? '' : t)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -10273,7 +10657,7 @@ async function shareVisibility(request, env){
   if(!user) return json({ error:'unauthorized' }, 401);
   const body = await request.json().catch(()=>({}));
   const id = String(body.id||'');
-  if(!/^[a-z0-9]{6,20}$/.test(id)) return json({ error:'bad id' }, 400);
+  if(!SHARE_ID_RE.test(id)) return json({ error:'bad id' }, 400);
   const rec = await DB.get(env, 'share', id);
   if(!rec || rec.owner !== user.email.toLowerCase()) return json({ error:'not found' }, 404);
   const listed = body.listed === true;
@@ -10293,7 +10677,7 @@ async function shareRevoke(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
   const { id } = await request.json().catch(()=>({}));
-  if(!/^[a-z0-9]{6,20}$/.test(String(id||''))) return json({ error:'bad id' }, 400);
+  if(!SHARE_ID_RE.test(String(id||''))) return json({ error:'bad id' }, 400);
   const rec = await DB.get(env, 'share', id);
   // Only the owner can revoke, and a missing record is not an error worth
   // leaking - either way the link no longer works for them.
@@ -10321,7 +10705,7 @@ async function sharePage(request, env, id){
     '<p style="color:#666">This link may have been revoked by its owner.</p></div>',
     { status: 404, headers: { 'Content-Type':'text/html; charset=utf-8', 'X-Robots-Tag':'noindex, nofollow' } });
 
-  if(!/^[a-z0-9]{6,20}$/.test(String(id||''))) return notFound('That link is not valid');
+  if(!SHARE_ID_RE.test(String(id||''))) return notFound('That link is not valid');
   const rec = await DB.get(env, 'share', id);
   if(!rec) return notFound('This conversation is no longer shared');
   /* Anything created before this choice existed was created under a promise of
@@ -11590,9 +11974,32 @@ async function verifyToken(token, secret, env = null, expectedTyp = 'access') {
     const data = JSON.parse(b64urlDecodeToString(payloadB64));
     const nowSec = Math.floor(Date.now() / 1000);
     if (data.ver !== TOKEN_VER) return null;
-    if (data.typ && expectedTyp && data.typ !== expectedTyp) return null;
-    if (data.nbf && nowSec < data.nbf - 60) return null;          // not-yet-valid (60s skew)
-    if (data.exp && nowSec > data.exp) return null;               // expired
+
+    /* AMV-054: A CLAIM THAT IS ONLY CHECKED WHEN PRESENT IS NOT A CHECK.
+
+       These read `if (data.exp && ...)` and `if (data.typ && ...)`, so a token
+       carrying neither passed every one of them. That is the wrong shape for a
+       verifier: what a token DOES NOT SAY is exactly what a verifier must not
+       be relaxed about.
+
+       What it bought, if a token without them ever existed: no `exp` is a
+       session that never ends - revocation still catches it through the epoch,
+       but nothing else does, and "valid for ever unless somebody notices" is
+       not a session. No `typ` is worse, because the refresh token and the
+       access token differ only in that field: without it the month-long refresh
+       token is accepted anywhere the fifteen-minute access token is, which
+       undoes the whole reason for having two.
+
+       signToken has always set all three, so this was not reachable today. It
+       was reachable by one future issuing path that forgot one field, and it
+       would have failed open and silently. Required now, so that path fails
+       closed and loudly instead. */
+    if (!data.typ || typeof data.typ !== 'string') return null;
+    if (expectedTyp && data.typ !== expectedTyp) return null;
+    if (!Number.isFinite(data.exp)) return null;
+    if (nowSec > data.exp) return null;                            // expired
+    if (!Number.isFinite(data.nbf)) return null;
+    if (nowSec < data.nbf - 60) return null;                       // not-yet-valid (60s skew)
     if (env && data.email) {                                       // revocation check
       const epoch = await _tokenEpoch(env, data.email);
       if ((data.epoch || 0) !== epoch) return null;
@@ -11699,6 +12106,10 @@ async function verifyToken(token, secret, env = null, expectedTyp = 'access') {
 
 // Link a phone number to an AMV account (called by the website after the
 // user verifies they own the number). Stored as phone -> email in KV.
+/* AMV-025: how many guesses a six-digit code is worth. Five, like the reset
+   code, because the two are the same thing for the same reason. */
+const SMS_CODE_MAX_ATTEMPTS = 5;
+
 async function smsRegister(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
@@ -11720,19 +12131,115 @@ async function smsRegister(request, env) {
       return json({ error: 'SMS is not configured on this workspace yet.', code: 'sms_unconfigured' }, 503);
     const rl = await limitAction(env, `smsverify:${phone}`, 3, 10);
     if (!rl.ok) return json({ error: 'Too many codes requested. Please wait a few minutes.' }, 429);
-    const vcode = String(Math.floor(100000 + Math.random() * 900000));
-    await env.AMV_KV.put(`smsverify:${email}:${phone}`, vcode, { expirationTtl: 600 });
+    /* AMV-025: NOT Math.random.
+
+       Math.random is a fast generator, not an unpredictable one - its internal
+       state is recoverable from a handful of outputs, and here the outputs are
+       handed to whoever asks for a code. Three requests to your own number, and
+       the next code sent to somebody else's is predictable. It is the same
+       crypto.getRandomValues the reset codes have always used; there was never
+       a reason for these two to differ. */
+    const vcode = _sixDigitCode();
+    await env.AMV_KV.put(`smsverify:${email}:${phone}`,
+      JSON.stringify({ code: vcode, attempts: 0, at: Date.now() }), { expirationTtl: 600 });
     try { await sendSms(env, phone, `Your AMV verification code is ${vcode}. It expires in 10 minutes.`); }
     catch (e) { return json({ error: 'Could not send the verification code.' }, 502); }
     return json({ ok: true, pending: true });
   }
-  const want = await env.AMV_KV.get(`smsverify:${email}:${phone}`);
-  if (!want || !timingSafeEqual(new TextEncoder().encode(code), new TextEncoder().encode(String(want))))
-    return json({ error: 'Incorrect or expired code.' }, 401);
+
+  /* AMV-025: A SIX-DIGIT CODE WITH NO ATTEMPT LIMIT IS A FOUR-MINUTE LOCK.
+
+     There was no cap on guesses at all. A million possibilities sounds like a
+     lot until nothing is counting: the code lives for ten minutes and the only
+     thing between an attacker and somebody else's number was how fast they
+     could send requests.
+
+     Counted inside the record lock, for the reason AMV-018 found on the reset
+     code: a read, a compare, an increment and a write is four steps with three
+     gaps, and guesses arriving together all read the same number and all decide
+     they are under the limit. */
+  let verdict;
+  try {
+    verdict = await _withKV(env, 'smsverify', `${email}:${phone}`, (rec) => {
+      if (!rec || !rec.code) return { gone: true };
+      if ((rec.attempts || 0) >= SMS_CODE_MAX_ATTEMPTS) return { exhausted: true };
+      rec.attempts = (rec.attempts || 0) + 1;
+      const match = timingSafeEqual(new TextEncoder().encode(code), new TextEncoder().encode(String(rec.code)));
+      if (!match) return { wrong: true, left: Math.max(0, SMS_CODE_MAX_ATTEMPTS - rec.attempts) };
+      rec.used = true;
+      return { ok: true };
+    }, null);
+  } catch (e) {
+    if (_isBusy(e)) return _busyJson('phone verification');
+    /* A verification code is a throwaway, so a record that cannot be read is
+       answered as an expired one rather than as a server error - re-requesting
+       is the recovery, and it works. Anything else is a real fault. */
+    if (e instanceof UnreadableRecordError) verdict = { gone: true };
+    else throw e;
+  }
+
+  if (!verdict || verdict.gone) return json({ error: 'Incorrect or expired code.' }, 401);
+  if (verdict.exhausted)
+    return json({ error: 'Too many incorrect codes. Request a new one.', code: 'code_exhausted' }, 429);
+  if (verdict.wrong)
+    return json({ error: 'Incorrect or expired code. ' + verdict.left + ' attempt' + (verdict.left === 1 ? '' : 's') + ' left.' }, 401);
+
   await env.AMV_KV.delete(`smsverify:${email}:${phone}`);
-  await env.AMV_KV.put(`sms:phone:${phone}`, email);
+
+  /* AMV-025: THE UNIQUENESS CHECK WAS READ AT THE TOP AND WRITTEN AT THE BOTTOM.
+
+     "one account per number" was decided from a read taken before the code was
+     even checked, and enforced by a `put` that overwrites whatever is there. Two
+     accounts verifying the same number in the same minute both passed the check
+     and the second write won - so one number ends up linked to two accounts,
+     with the loser's link silently gone and the winner able to text as them.
+
+     Claimed atomically instead: the first one through owns the number. */
+  const claimedBy = await _claimPhone(env, phone, email);
+  if (claimedBy && claimedBy !== email)
+    return json({ error: 'that phone number is already linked to another account' }, 409);
+
+  /* AMV-024: THE NUMBER THEY JUST REPLACED WAS STILL LINKED.
+
+     `sms:user:<email>` was overwritten with the new number and
+     `sms:phone:<old>` was left exactly as it was. That row is the one
+     /sms/incoming reads to decide whose account a text belongs to - so somebody
+     who changed their number because they LOST the old handset, or sold it, or
+     left a shared phone behind, had just told AMV a new number and left the old
+     one able to spend their allowance and read their assistant. The screen said
+     the number was changed. Both of them worked.
+
+     The old link is removed here, after the new one is safely claimed, so a
+     failure in between leaves them reachable rather than locked out. */
+  const previous = await env.AMV_KV.get(`sms:user:${email}`);
   await env.AMV_KV.put(`sms:user:${email}`, phone);
-  return json({ ok: true, phone, verified: true });
+  if (previous && previous !== phone) {
+    try {
+      const ownedBy = await env.AMV_KV.get(`sms:phone:${previous}`);
+      if (ownedBy === email) await env.AMV_KV.delete(`sms:phone:${previous}`);
+      audit(env, 'sms_number_replaced', { email, had: previous.slice(-4), now: phone.slice(-4) });
+      await _userEvent(env, request, email, 'phone_changed', { endsWith: phone.slice(-4) });
+    } catch (e) { /* the new number is live either way; this must not undo it */ }
+  }
+  return json({ ok: true, phone, verified: true, replaced: previous && previous !== phone ? true : false });
+}
+
+/* One account per number, decided once rather than checked and later written.
+   Returns the address that owns it - this one if the claim succeeded, somebody
+   else's if it was already taken.
+
+   Deliberately on the SAME key /sms/incoming reads, in the same bare-address
+   format, rather than a second record beside it. A claim record and a lookup
+   record that have to agree are two records that can disagree, which is the
+   whole class of defect this file has spent a week removing. The lock and the
+   write are on the one row that decides. */
+async function _claimPhone(env, phone, email) {
+  let owner = '';
+  await _withRecord(env, 'smsphone', String(phone || ''),
+    async (e, k) => (await e.AMV_KV.get(`sms:phone:${k}`)) || '',
+    async (e, k) => { if (owner === email) await e.AMV_KV.put(`sms:phone:${k}`, email); },
+    (current) => { owner = current || email; });
+  return owner;
 }
 
 // Send an outbound SMS via Twilio's REST API.
@@ -13280,7 +13787,11 @@ async function _readTxnLog(env, limit = 200) {
    money in, refunds, and net - not estimates. Honestly returns empty + a
    configured:false flag when Stripe isn't set up yet. ---- */
 async function adminFinance(request, env) {
-  if (!_requireAdmin(request, env)) { audit(env, 'auth_fail', { reason: 'admin_bad_token' }); return json({ error: 'forbidden' }, 403); }
+  /* AMV-052: through the SAME gate as every other admin route. This was a bare
+     token comparison with no rate limit, so three of the sixteen admin routes
+     were an unbounded channel for guessing the token while the other thirteen
+     were not - and an attacker only has to find the unbounded one. */
+  { const g = await _adminGate(request, env, 'read', 60, 2000); if (g) return g; }
 
   // Non-Stripe payments (PayPal, marketplace/wallet) come from our own ledger.
   const ledger = await _readTxnLog(env, 300);
@@ -16842,7 +17353,11 @@ async function _growthSeries(env, kind, days){
 }
 
 async function adminStats(request, env) {
-  if (!_requireAdmin(request, env)) { audit(env, 'auth_fail', { reason: 'admin_bad_token' }); return json({ error: 'forbidden' }, 403); }
+  /* AMV-052: through the SAME gate as every other admin route. This was a bare
+     token comparison with no rate limit, so three of the sixteen admin routes
+     were an unbounded channel for guessing the token while the other thirteen
+     were not - and an attacker only has to find the unbounded one. */
+  { const g = await _adminGate(request, env, 'read', 60, 2000); if (g) return g; }
 
   const today = todayKey(), month = monthKey();
   // global spend today (atomic counter) + cap
@@ -17456,7 +17971,11 @@ async function supportSubmit(request, env) {
 /* The operator's inbox. Behind the admin token like every other operator
    surface - it contains other people's words about their own accounts. */
 async function supportInbox(request, env) {
-  if (!_requireAdmin(request, env)) { audit(env, 'auth_fail', { reason: 'admin_bad_token' }); return json({ error: 'forbidden' }, 403); }
+  /* AMV-052: through the SAME gate as every other admin route. This was a bare
+     token comparison with no rate limit, so three of the sixteen admin routes
+     were an unbounded channel for guessing the token while the other thirteen
+     were not - and an attacker only has to find the unbounded one. */
+  { const g = await _adminGate(request, env, 'read', 60, 2000); if (g) return g; }
   const { rows, truncated } = await scan(env, 'support', SUPPORT_SCAN_LIMIT, 'support inbox');
   const out = [];
   for (const row of rows) {
@@ -18344,7 +18863,7 @@ async function authResetConfirm(request, env) {
             || request.headers.get('X-Forwarded-For') || 'unknown';
   const rcBlock = await guardAction(env, `resetconfirm:${rcIp}`, 10, 60, 'password resets');
   if (rcBlock) return rcBlock;
-  if (password.length < 8) return json({ error: 'Password must be at least 8 characters.' }, 400);
+  { const bad = _passwordLengthProblem(password); if(bad) return json(bad, 400); }
   const stored = await env.AMV_KV.get(`reset:${token}`);
   if (!stored) return json({ error: 'This reset link is invalid or has expired. Please request a new one.' }, 400);
   /* Stored as {email, at}. The timestamp exists because erasure cannot reach

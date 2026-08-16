@@ -4666,3 +4666,30 @@ terminate() was called, which shows up only as CPU somebody else is burning and
 measured within noise - say so in the test and check the shape instead. A flaky
 numeric threshold is worse than an honest structural check, because a test
 people re-run until it goes green has stopped meaning anything.
+
+## 252. The safe list was written from memory and would have broken the dashboard
+
+Enforcing HTTP methods needs a list of routes that may be fetched with GET. I
+wrote one from what I remembered the client doing: health, public-config,
+entitlement, market list, account export, the widget.
+
+The suite went red on three unrelated screens, and the reason was that the
+operator's own Control Center fetches ten more routes with no `method` set -
+which is a GET. Reports, payouts, digest, readiness, backup export, stats,
+finance, support, the user list, plus activity, referral, usage and invoices on
+the customer side. Every one of them would have started answering 405 the moment
+this shipped, on the surface the owner uses most.
+
+The fix was not to add the three the tests named. It was to stop guessing: sweep
+every `fetch` and `fetchDeadline` call in `src/app` that sets no method, take
+the paths out of it, and build the list from that. Then read each handler and
+confirm it writes nothing, because "the client GETs it" is a fact about the
+client and "it is safe to GET" is a fact about the handler, and the roster needs
+both.
+
+Two rules. When a change makes a rule about which routes may do something, the
+list of routes comes from the code that calls them, not from recollection - and
+the search is cheap, which is the whole point. And when a passing test tells you
+to add one entry, ask whether the entry is the finding or a symptom of a list
+built the wrong way: three red suites here were pointing at thirteen missing
+entries, and adding three would have left ten routes broken with the suite green.

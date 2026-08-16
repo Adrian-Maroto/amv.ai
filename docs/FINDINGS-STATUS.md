@@ -9,6 +9,77 @@ observed to fail on the assertions that name the defect, and the fix was
 restored. A guard that has never been seen to fail is not a guard, and three
 times this week a check turned out to be unable to fail at all.
 
+## Phase 5 - in progress
+
+**Done: AMV-024, 025, 026, 027, 029, 030, 051, 052, 054, 055, SP-08, SP-10.**
+
+**AMV-026 was two answers to one question.** "no such account" with a 404 and
+"wrong password" with a 401: point a list of a million addresses at the sign-in
+endpoint and it sorts them into customers and strangers, free, with no password
+guessed. The reset screen was careful about this and gave it away one field
+along - it always answered ok:true and reported `sent`, which was true only for
+a registered address. Every failure is now the same status, code and sentence,
+and `sent` reports whether this DEPLOYMENT can send at all. The clock said it
+too: the absent branch skipped the hashing, so a missing account came back in a
+millisecond and a real one took as long as PBKDF2 does. Both branches do the
+work now. A delivery failure that the caller can no longer see is alerted to the
+operator instead, because hiding it from a stranger is not a reason to hide it
+from the person who can fix it.
+
+**AMV-027.** Google sign-in refused a token saying `email_verified: false` and
+accepted one that never mentioned the claim - and that claim is the only thing
+between "Google says this person owns this address" and "somebody typed this
+address into a Google account". An address that already exists here as a
+password account is signed straight into. Required to be true now. The same
+endpoint made AMV call Google once per request with nothing bounding it, from
+AMV's own address: bounded per source, before the outbound call. A counter
+outage does not refuse there, because turning a storage blip into "nobody can
+sign in" is worse than the amplification, and nothing irreversible is on the
+other side of it.
+
+**AMV-030 was one loaded page away from real damage.** Nothing checked the
+method, and forty-odd routes that read no body changed plenty - leave the
+family, unlink the bank, disconnect the mailbox. A GET is what a browser does
+from an `<img src>` or a link, with the customer's own session attached. Safe
+routes may be fetched; everything else is POST. The safe list was written from a
+sweep of every client fetch that sets no method, after the first version - built
+from memory - would have broken the operator's own dashboard.
+
+**AMV-029.** No ceiling on a request body. Applied at the one point every
+request passes through, before authentication, because the parse is the
+expensive part and it used to happen before the handler decided the caller was
+allowed to be there.
+
+**AMV-051.** The operator's user list wrapped its listing in `catch(e){}`, so a
+storage failure answered 200 with an empty array - a screen saying the customer
+base is empty, on the screen somebody opens during an incident to find out
+whether anything is left.
+
+**AMV-052.** Sixteen admin routes, three different gates. Three checked the
+token and nothing else, so guessing at it was unbounded on those three and
+bounded on the other thirteen - and an attacker only has to find the one that is
+not. The bare `_requireAdmin` predicate they reached for is deleted rather than
+left unused: a convenience easier to call than the correct thing gets called.
+The two credentials stay apart on purpose - a session-flagged admin still cannot
+export the database - but they now share the ceiling and the audit line.
+
+**AMV-024 and 025.** Changing a phone number overwrote `sms:user:<email>` and
+left `sms:phone:<old>` exactly as it was - and that second row is the one
+/sms/incoming reads to decide whose account a text belongs to. So the old
+handset stayed linked, as the authoritative row, and the reason people change a
+number is that they no longer control the old one. The code guarding it came
+from Math.random, had no attempt cap at all, and enforced "one account per
+number" with a read at the top of the handler and a write at the bottom.
+
+**AMV-054, 055, SP-08, SP-10.** The token verifier was strict about what a token
+SAID and silent about what it did not: `if (data.exp && ...)` passes a token
+with no expiry. The OAuth redirect check compared a prefix rather than an
+origin, and `https://amv.homes@attacker.example` passes a prefix check while
+sending the code to the attacker. A share id is a bearer capability and was
+about fifty bits, not from a weak source but from an encoding that threw most of
+it away. And PBKDF2 was run over an unbounded password at sign-in, which is
+seconds of the operator's CPU for the price of sending it.
+
 ## Phase 4 - complete
 
 **Done: AMV-001, 002, 036, 047, 049, 050.** The Browser Rendering binding can be
@@ -397,13 +468,13 @@ read as working for as long as it did.
 | 2 | AMV-SP-03 | HIGH | Account deletion cancels Stripe but not PayPal subscriptions | DONE |
 | 2 | AMV-SP-04 | HIGH | Payout-in-flight lookup fails open during account deletion | DONE |
 | 1 | AMV-023 | MEDIUM | SMS user context omits family limits | DONE |
-| 5 | AMV-024 | MEDIUM | Changing an SMS phone leaves the old phone authorized | TODO |
-| 5 | AMV-025 | MEDIUM | SMS verification uses `Math.random`, has no attempt cap, and updates uniquenes | TODO |
-| 5 | AMV-026 | MEDIUM | Login and reset responses enumerate registered accounts | TODO |
-| 5 | AMV-027 | MEDIUM | Google sign-in is an unbounded external-call amplifier and does not require `e | TODO |
+| 5 | AMV-024 | MEDIUM | Changing an SMS phone leaves the old phone authorized | DONE |
+| 5 | AMV-025 | MEDIUM | SMS verification uses `Math.random`, has no attempt cap, and updates uniquenes | DONE |
+| 5 | AMV-026 | MEDIUM | Login and reset responses enumerate registered accounts | DONE |
+| 5 | AMV-027 | MEDIUM | Google sign-in is an unbounded external-call amplifier and does not require `e | DONE |
 | 5 | AMV-028 | MEDIUM | Configured CORS origin is ignored by JSON responses | DONE |
-| 5 | AMV-029 | MEDIUM | No global request-body size limit exists before JSON/text/form parsing | TODO |
-| 5 | AMV-030 | MEDIUM | Most routes do not enforce HTTP methods | TODO |
+| 5 | AMV-029 | MEDIUM | No global request-body size limit exists before JSON/text/form parsing | DONE |
+| 5 | AMV-030 | MEDIUM | Most routes do not enforce HTTP methods | DONE |
 | 3 | AMV-031 | MEDIUM | Malformed database JSON is treated as a missing record | DONE |
 | 3 | AMV-032 | MEDIUM | Atomic counters and claims silently fall back to non-atomic KV | DONE |
 | 3 | AMV-033 | MEDIUM | Multiple shared records still use unlocked read-modify-write | DONE |
@@ -423,8 +494,8 @@ read as working for as long as it did.
 | 4 | AMV-047 | MEDIUM | IMAP literal parsing allocates attacker/provider-declared sizes before truncat | DONE |
 | 4 | AMV-049 | MEDIUM | JavaScript sandbox timeout cannot stop a synchronous infinite loop | DONE |
 | 4 | AMV-050 | MEDIUM | School work aggregation performs many sequential external calls and accepts la | DONE |
-| 5 | AMV-051 | MEDIUM | Admin user listing converts storage failure into a valid empty result | TODO |
-| 5 | AMV-052 | MEDIUM | Administrative routes use inconsistent authentication and rate-limiting gates | TODO |
+| 5 | AMV-051 | MEDIUM | Admin user listing converts storage failure into a valid empty result | DONE |
+| 5 | AMV-052 | MEDIUM | Administrative routes use inconsistent authentication and rate-limiting gates | DONE |
 | 3 | AMV-053 | MEDIUM | API-key creation limit is a racy read-append-write | DONE |
 | 5 | AMV-056 | MEDIUM | Third-party frontend code is broadly trusted without integrity pinning | TODO |
 | 0 | AMV-057 | MEDIUM | `test:worker` runs only the aggregate file, not all Worker test files | DONE |
@@ -434,12 +505,12 @@ read as working for as long as it did.
 | 5 | AMV-SP-06 | MEDIUM | Approval and handoff flows can report success after partial delivery/state upd | TODO |
 | 5 | AMV-SP-07 | MEDIUM | Clearing abuse records can leave entitlement-level blocking in place | TODO |
 | 5 | AMV-SP-09 | MEDIUM | Marketplace success/cancel redirects can reflect the request Origin when APP_U | TODO |
-| 5 | AMV-SP-10 | MEDIUM | Password login accepts unbounded password length before PBKDF2 | TODO |
+| 5 | AMV-SP-10 | MEDIUM | Password login accepts unbounded password length before PBKDF2 | DONE |
 | 5 | AMV-048 | LOW | Mail credential KDF uses a fixed salt and permits weak deployment secrets | TODO |
-| 5 | AMV-054 | LOW | JWT verifier treats `typ`, `nbf`, and `exp` as optional | TODO |
-| 5 | AMV-055 | LOW | Short deterministic identifiers use weak 32-bit or ~56-bit spaces | TODO |
+| 5 | AMV-054 | LOW | JWT verifier treats `typ`, `nbf`, and `exp` as optional | DONE |
+| 5 | AMV-055 | LOW | Short deterministic identifiers use weak 32-bit or ~56-bit spaces | DONE |
 | 5 | AMV-058 | LOW | CI actions are referenced by mutable major tags | TODO |
 | 5 | AMV-059 | LOW | Deploy script depends on an undeclared global Wrangler installation | TODO |
-| 5 | AMV-SP-08 | LOW | Google OAuth redirect validation uses a prefix comparison | TODO |
+| 5 | AMV-SP-08 | LOW | Google OAuth redirect validation uses a prefix comparison | DONE |
 | 5 | AMV-SP-11 | LOW | Route comments and documentation overstate several security guarantees | TODO |
 | 5 | AMV-SP-12 | INFO | Dependency vulnerability audit is not reproducible in the supplied environment | TODO |
