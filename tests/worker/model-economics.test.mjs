@@ -57,7 +57,7 @@ section('The margin backstop now buys the usage the plan actually pays for');
      and the widget - broke the match while the 45% backstop it guards was
      untouched. A rule written against a spelling fails on a correct fix and
      passes on a regression that keeps the words (LESSONS #203). */
-  const ceilFn2 = src.slice(src.indexOf('function _monthlyCeilingUSD'), src.indexOf('function _monthlyCeilingUSD') + 900);
+  const ceilFn2 = src.slice(src.indexOf('function _monthlyCeiling('), src.indexOf('function _monthlyCeiling(') + 900);
   ok(/\* 0\.45/.test(ceilFn2), 'and the 55% margin floor itself is unchanged', true);
 }
 

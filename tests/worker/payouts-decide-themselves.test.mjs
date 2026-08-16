@@ -106,8 +106,21 @@ async function seller(env, email, { ageDays = 200, balance = 50, buyers = 6, dis
   env.AMV_KV._map.set('consent:' + email, JSON.stringify({ email, birthYear: 1990, at: Date.now() }));
   env.AMV_KV._map.set('wallet:' + email, JSON.stringify({
     balance, lifetime: balance, currency: 'usd', holds: [], paidOut,
-    tx: Array.from({ length: Math.max(3, buyers) }, (_, i) => ({ type: 'sale', buyer: 'b' + (i % buyers) + '@x.com' })),
   }));
+  /* THIS FIXTURE USED TO BUILD `wallet.tx`, AND THAT IS WHY THE BUG SURVIVED.
+
+     The concentration signal read `wallet.tx`; sales are written by
+     _pushWalletTx into a separate `wallet_tx:<email>` record and the wallet has
+     no `.tx` at all. So the check was dead in production - and green here,
+     because this file handed it the invented shape it was looking for. The test
+     and the code agreed with each other and both disagreed with the product.
+
+     Built at the key the writer actually uses, so a fixture can no longer keep
+     a check alive that nothing real would ever trigger. */
+  env.AMV_KV._map.set('wallet_tx:' + email, JSON.stringify(
+    Array.from({ length: Math.max(3, buyers) },
+               (_, i) => ({ type: 'sale', buyer: 'b' + (i % buyers) + '@x.com', amount: 10, ts: Date.now() })),
+  ));
   if (disputes) env.AMV_KV._map.set('abuse:' + email, JSON.stringify({ email, disputes, refunds: 0 }));
   return tok;
 }

@@ -161,6 +161,10 @@ function _modelHeaders(env, extra){
 
 /* One request to the model. `stream` marks a call whose response is handed
    straight to the user, which is what makes it ineligible for a retry. */
+/* Long enough for a slow streamed answer, short enough that a stalled
+   provider fails as a request rather than as a dead Worker. */
+const MODEL_DEADLINE_MS = 120000;
+
 async function _modelFetch(env, payload, opts){
   const o = opts || {};
   const init = {
@@ -168,7 +172,21 @@ async function _modelFetch(env, payload, opts){
     headers: _modelHeaders(env, o.headers),
     body: typeof payload === 'string' ? payload : JSON.stringify(payload),
   };
-  if(o.signal) init.signal = o.signal;
+  /* AMV-022: EVERY MODEL CALL HAS A DEADLINE, WHETHER THE CALLER SET ONE OR NOT.
+
+     This used a signal only when the caller supplied one, and most call sites
+     do not. A provider that accepts the connection and then stalls held the
+     Worker, the caller's reservation and the request open until the platform
+     killed the whole invocation - which is the worst way to fail, because the
+     reservation is never refunded and nothing reports a cause.
+
+     A caller that knows better still wins: an explicit signal is used as given,
+     including one with a shorter deadline. This only fills in the gap. */
+  if (o.signal) {
+    init.signal = o.signal;
+  } else {
+    try { init.signal = AbortSignal.timeout(+o.timeoutMs || MODEL_DEADLINE_MS); } catch (_) {}
+  }
 
   const primary = _modelBase(env);
   let r, err = null;
@@ -3048,7 +3066,21 @@ function _assignmentText(html){
 
 /* The stored connection. Kept server-side so the token is not only in a browser
    tab, so erasure can reach it, and so a request does not carry it every time. */
-const _loadSchool = async (env, em) => (await DB.get(env, 'school', em)) || null;
+/* AMV-014: the token comes back out here and nowhere else, so every consumer
+   keeps reading `rec.token` and no call site had to learn about encryption.
+   A record written before this change still carries a plaintext `token`; it is
+   honoured so an existing connection does not silently stop working, and it is
+   re-encrypted on the next connect. */
+const _loadSchool = async (env, em) => {
+  const rec = await DB.get(env, 'school', em);
+  if (!rec) return null;
+  if (rec.secret) {
+    const token = await _mailDecrypt(env, rec.secret);
+    if (!token) return null;
+    return { ...rec, token };
+  }
+  return rec;
+};
 
 async function schoolConnect(request, env){
   const user = await requireUser(request, env);
@@ -3083,7 +3115,17 @@ async function schoolConnect(request, env){
   }catch(e){
     return json({ error:'AMV could not reach that address. Check it is your school\u2019s Canvas address.', code:'canvas_unreachable' }, 502);
   }
-  await DB.put(env, 'school', user.email, { base: gate.base, token, name: who && who.name, at: Date.now() });
+  /* AMV-014: encrypted at rest, the same way a mailbox password and a bot
+     token are. This was stored in the clear, which made every copy of the
+     record - a backup, a log, a storage dump - a copy of a working credential.
+     Refusing when there is no key is the honest failure: storing it plainly
+     "for now" is how it stays plain. */
+  const enc = await _mailEncrypt(env, token);
+  if (!enc) {
+    return json({ error: 'AMV cannot store a school token safely on this deployment yet, so it will not store one at all. MAIL_CRED_KEY has to be set first.',
+                  code: 'needs_service' }, 503);
+  }
+  await DB.put(env, 'school', user.email, { base: gate.base, secret: enc, name: who && who.name, at: Date.now() });
   audit(env, 'school_connected', { email:user.email, host:new URL(gate.base).hostname });
   return json({ ok:true, name: (who && who.name) || '', host: new URL(gate.base).hostname });
 }
@@ -5537,7 +5579,44 @@ async function _route(request, env, ctx) {
   // Cached in-isolate for a few seconds so it's not a KV round-trip on
   // every single request (this is the hottest path). Worst-case delay to
   // honor a freshly-flipped switch is _KILL_TTL_MS. (auditor: hot-path read)
-  if (path.startsWith('/v1/')) {
+  /* AMV-003: THE EMERGENCY STOP STOPPED ONE NAMESPACE.
+
+     This was `path.startsWith('/v1/')`, which reads like "the API" and is not.
+     /sms/incoming is outside it and calls the model through runSmsAgent, so
+     the one control that exists to stop AMV spending money did not stop the
+     one inbound channel a stranger can trigger by sending a text. The switch
+     that is supposed to be the last line of defence had a hole in exactly the
+     place an attacker does not need an account to reach.
+
+     Now everything is stopped except a named few, so a route added tomorrow is
+     covered by default rather than by remembering. The exceptions, each for a
+     reason:
+
+       health      - the thing that tells an operator the Worker is alive at
+                     all; killing it makes an outage indistinguishable from a
+                     pause.
+       admin/kill  - the switch itself. Blocking it meant the stop could be
+                     turned on through the API and only turned off with
+                     wrangler, which is a bad thing to discover mid-incident.
+       webhooks    - Stripe and PayPal do not spend AMV's money; they report
+                     that a customer already spent theirs. A 503 makes the
+                     provider retry, which is survivable briefly and loses
+                     paid subscriptions if the pause is long. Letting them
+                     through keeps billing state true while everything that
+                     COSTS is stopped.
+       /auth/*     - killing sign-in would lock every customer out of their own
+                     account, and the operator out of the incident, over a
+                     spend problem that has nothing to do with them. That is a
+                     deliberate choice with a test behind it in
+                     stop-means-stop-spending; the first version of this fix
+                     broke it, which is what the test is for. */
+  const KILL_EXEMPT = (p) =>
+    p === '/v1/health'                 // an outage must stay distinguishable from a pause
+    || p === '/v1/admin/kill'          // the switch itself, or it can only be lifted with wrangler
+    || p === '/v1/stripe/webhook'      // billing truth: these report money already spent,
+    || p === '/v1/paypal/webhook'      //   and a 503 for long enough loses paid subscriptions
+    || p.startsWith('/auth/');         // people, and the operator, keep reaching their accounts
+  if (!KILL_EXEMPT(path)) {
     const now = Date.now();
     if (now - _killCache.ts > _KILL_TTL_MS) {
       _killCache.val = (await env.AMV_KV.get('GLOBAL_KILL')) === '1';
@@ -5869,7 +5948,15 @@ async function authSignup(request, env){
      Counted here, at the one place an account comes into existence, so it is
      exact at any size and costs one increment. */
   try{ await counter(env, 'popaccounts', { op: 'incr', amount: 1 }); }catch(e){}
-  try{ await _recordGrowth(env, 'signup'); await _funnelMark(env, email, 'signup'); }catch(e){}
+  /* `em`, not `email`. The raw body value is whatever was typed - case and
+     surrounding whitespace included - and every other record this account
+     touches is keyed on the normalised address. Marking the funnel under the
+     typed form filed the signup under one identity and the later `paid` step
+     under another, so the customer counted as a signup that never converted
+     and the conversion rate read low for ever. Sibling of AMV-SP-01: the same
+     wrong variable at the same call, throwing in one path and silently
+     miscounting in the other. */
+  try{ await _recordGrowth(env, 'signup'); await _funnelMark(env, em, 'signup'); }catch(e){}
   await _userEvent(env, request, em, 'account_created');
   // An invite code, if they arrived through one. Recorded, not yet rewarded.
   try{ await _referralCapture(env, request, em, body.ref); }catch(e){}
@@ -6087,7 +6174,18 @@ async function authGoogle(request, env) {
     if(!acct){
       acct = { email:em, name, provider:'google', createdAt:Date.now(), sipHash: await _ipHash(env, request) };
       await DB.put(env, 'acct', em, acct);
-      try{ await _recordGrowth(env, 'signup'); await _funnelMark(env, email, 'signup'); }catch(e){}
+      /* AMV-SP-01: `email` does not exist here - the address in this function is
+         `em`. Every Google signup threw a ReferenceError into the empty catch
+         below, so none of them were ever recorded: the funnel undercounted
+         real customers and the account population did not move, while the
+         password path did both correctly. A swallowed exception in accounting
+         code is invisible precisely because nothing downstream depends on it.
+
+         The population counter is incremented here too, which the password
+         path did and this one did not - so the two providers now agree. */
+      try{ await counter(env, 'popaccounts', { op: 'incr', amount: 1 }); }catch(e){}
+      try{ await _recordGrowth(env, 'signup'); await _funnelMark(env, em, 'signup'); }
+      catch(e){ try{ await _workerError(env, 'authGoogle:accounting', e); }catch(_){} }
       try{ await _referralCapture(env, request, em, body.ref); }catch(e){}
     }
     await _userEvent(env, request, em, 'signed_in', { reason: 'Google' });
@@ -6209,7 +6307,15 @@ const PER_USER_KINDS = ['acct', 'ent', 'entitleitem', 'data', 'auto', 'crewjobs'
    an export into a key-exfiltration route. The fact that the record exists is
    disclosed; its contents are not. */
 const EXPORT_REDACTED = { fin: 'bank connection credential', finlink: 'bank link token',
-  apikeys: 'API key hashes', stripecust: 'payment processor customer id' };
+  apikeys: 'API key hashes', stripecust: 'payment processor customer id',
+  /* AMV-014: the Canvas record carries a live bearer token. It was in
+     PER_USER_KINDS, so the export walked it, and nothing redacted it - the
+     download handed somebody a working key to their own school account, which
+     then travels wherever that file travels: a mailbox, a cloud sync, a
+     support ticket, a shared laptop. The mailbox and Telegram credentials were
+     already treated this way; this one was missed because it was added later. */
+  school: 'school (Canvas) access token', telegram: 'messaging bot token',
+  mailcfg: 'mailbox password' };
 
 /* GET /v1/account/export - everything the server holds about the caller.
 
@@ -8539,7 +8645,23 @@ async function aiProxy(request, env, ctx) {
       };
       if (body.system) plain.system = String(body.system);      // no cache marker
       if (upstreamBody.tools) plain.tools = upstreamBody.tools;
-      const retry = await _callUpstream(plain);
+      /* AMV-021: INSIDE THE CATCH THAT REFUNDS, LIKE THE FIRST CALL.
+
+         The first _callUpstream is wrapped in a try/catch that refunds the
+         caller's reservation when the provider cannot be reached. This retry
+         was not, so a network failure on the second attempt left the request
+         with the quota already taken and nothing to show for it. The customer
+         pays for an attempt that never produced an answer, and the only path
+         that reaches this line is one where something already went wrong. */
+      let retry = null;
+      try {
+        retry = await _callUpstream(plain);
+      } catch (netErr) {
+        await refundReservation();
+        try { await _workerError(env, 'aiProxy:retry-unreachable', netErr); } catch (_) {}
+        return json({ error: 'AMV could not reach the model just now. Nothing was charged - try again in a moment.',
+                      code: 'upstream_unreachable' }, 502);
+      }
       if (retry.ok) {
         audit(env, 'upstream_param_fallback', { key, reason: raw.slice(0, 120) });
         try { await alertOnce(env, 'model_param_reject',
@@ -10098,12 +10220,37 @@ async function smsIncoming(request, env, ctx) {
       : 'You\u2019ve used what the free plan covers for texting this month. Upgrade for more, or it resets next month.');
   }
 
-  // run the agent on the cheapest capable model (SMS replies are short)
+  /* AMV-003 (second half): THE CEILING WAS CHECKED AND NEVER FED.
+
+     The block above asks whether this account is under its monthly dollar
+     ceiling. Nothing below ever told the counter that an SMS turn had cost
+     anything, so the answer was always computed from web spend alone. An
+     account that used AMV only by text had a cost counter of exactly zero for
+     ever, and the ceiling it is measured against could never be reached.
+
+     What actually bounded the bill was `sms:day` - 200 messages per number per
+     day - which is a message count, not money, and does not care how many
+     numbers are linked. Checking a limit while never incrementing it is the
+     same defect as the wash-trading signal that read a field nobody wrote: it
+     reads as a control and cannot fire.
+
+     Recorded through _recordSpend like chat, image and video, so it lands in
+     the account ceiling, the day's global spend, the platform total and the
+     per-feature split - and 'sms' becomes a line the owner can see rather than
+     a cost hidden inside somebody else's total. */
   let reply;
+  let smsUsage = null;
   try {
-    reply = await runSmsAgent(text, env);
+    const out = await runSmsAgent(text, env);
+    reply = out.text;
+    smsUsage = out.usage;
   } catch (err) {
     reply = 'Something went wrong handling that. Try again in a moment.';
+  }
+  if (smsUsage) {
+    const eng = ENGINES['amv-pulse'];
+    const usd = (smsUsage.input / 1e6) * eng.inCost + (smsUsage.output / 1e6) * eng.outCost;
+    await _recordSpend(env, user.billingSubject || email, usd, 'sms', _periodKeyOf(user));
   }
   // SMS segments are 160 chars; keep replies tight
   if (reply.length > 600) reply = reply.slice(0, 590) + '…';
@@ -10119,7 +10266,13 @@ async function runSmsAgent(text, env) {
     messages: [{ role: 'user', content: text }],
   });
   const data = await resp.json();
-  return (data.content || []).map(b => b.text || '').join('').trim() || 'No response.';
+  /* Returns what it cost as well as what it said. The caller cannot price a
+     turn it has no token counts for, and this is the only place they exist. */
+  const u = data.usage || {};
+  return {
+    text: (data.content || []).map(b => b.text || '').join('').trim() || 'No response.',
+    usage: { input: +u.input_tokens || 0, output: +u.output_tokens || 0 },
+  };
 }
 
 function normalizePhone(p) {
@@ -12605,9 +12758,52 @@ async function _withKind(env, kind, id, mutate, empty) {
     mutate);
 }
 /* And for the records that live under a raw KV key rather than a DB kind. */
+/* AMV-012: "NOT THERE" AND "COULD NOT BE READ" ARE DIFFERENT ANSWERS.
+
+   This caught every exception from the read - a transient storage error, a
+   timeout, corrupt JSON - and returned the caller's `empty` value, which the
+   mutate then filled in and the save wrote back over the key. A storage blip
+   during a wallet or entitlement mutation therefore replaced a live record
+   with a fresh empty one, silently, and the operation reported success.
+
+   The lock made this worse rather than better: the write happens inside the
+   lock, so it looks correct and nothing races it. It was the read that lied.
+
+   Availability and absence are now separate outcomes. A genuine miss still
+   yields `empty`, because a record that has never existed is a real state.
+   Anything else throws, and the caller fails rather than overwriting data it
+   could not see. Corrupt JSON throws too, and says which key, because a record
+   that cannot be parsed is a record to look at rather than one to replace. */
+class UnreadableRecordError extends Error {
+  constructor(key, cause) {
+    super('record could not be read: ' + key + (cause ? ' (' + cause + ')' : ''));
+    this.name = 'UnreadableRecordError';
+    this.key = key;
+    this.kind = 'unreadable';
+  }
+}
+
 async function _withKV(env, name, key, mutate, empty) {
+  const fresh = () => (empty === undefined ? null : JSON.parse(JSON.stringify(empty)));
   return _withRecord(env, name, String(key || ''),
-    async (e, k) => { try { const raw = await e.AMV_KV.get(`${name}:${k}`); return raw ? JSON.parse(raw) : (empty === undefined ? null : JSON.parse(JSON.stringify(empty))); } catch (err) { return empty === undefined ? null : JSON.parse(JSON.stringify(empty)); } },
+    async (e, k) => {
+      const id = `${name}:${k}`;
+      let raw;
+      try {
+        raw = await e.AMV_KV.get(id);
+      } catch (err) {
+        /* The store was unreachable. Nothing is known about this record, so
+           nothing may be written over it. */
+        throw new UnreadableRecordError(id, String((err && err.message) || err));
+      }
+      if (raw == null) return fresh();          // genuinely absent
+      try {
+        return JSON.parse(raw);
+      } catch (err) {
+        try { audit(env, 'record_corrupt', { key: id, bytes: String(raw).length }); } catch (_) {}
+        throw new UnreadableRecordError(id, 'invalid JSON');
+      }
+    },
     async (e, k, rec) => { if (rec) await e.AMV_KV.put(`${name}:${k}`, JSON.stringify(rec)); },
     mutate);
 }
@@ -13532,9 +13728,29 @@ async function _payoutRisk(env, email, amount, wallet) {
     /* Concentration. Fifty sales to fifty people is a business; fifty sales to
        two people is one person moving money through AMV, which is what
        wash-trading looks like from the inside. */
-    const tx = Array.isArray(wallet && wallet.tx) ? wallet.tx : [];
-    const buyers = new Set(tx.map(t => t && t.buyer).filter(Boolean));
-    if (tx.length >= 3 && buyers.size <= 2) {
+    /* AMV-040: THIS READ A FIELD NOTHING HAS EVER WRITTEN.
+
+       Sales are recorded by _pushWalletTx into the separate `wallet_tx`
+       record - the wallet itself has no `.tx`. So this list was always empty,
+       `tx.length >= 3` was never true, and the concentration signal has never
+       fired once. The most specific wash-trading check AMV has was dead code
+       that read like working code, and a fraud check that cannot fire is worse
+       than none: it is a reason not to look.
+
+       Only settled sales count. A pending or reversed one is not evidence of
+       anything, and counting it would let somebody manufacture the appearance
+       of a broad customer base with purchases they later cancel. */
+    /* Deliberately NOT caught here. The whole function is wrapped in a handler
+       that escalates an unreadable state to human review, which is a better
+       answer than this one scoring a partial penalty and letting the payout
+       proceed. Swallowing the error locally would turn "AMV could not check"
+       back into "AMV checked and found little", which is the exact confusion
+       that made the original defect invisible. */
+    const raw = await DB.get(env, 'wallet_tx', email);
+    const tx = Array.isArray(raw) ? raw : [];
+    const sales = tx.filter((t) => t && t.type === 'sale' && (t.buyer || t.from));
+    const buyers = new Set(sales.map((t) => t.buyer || t.from).filter(Boolean));
+    if (sales.length >= 3 && buyers.size <= 2) {
       score += 45;
       reasons.push('sales come from only ' + buyers.size + ' buyer' + (buyers.size === 1 ? '' : 's'));
     }
@@ -14538,7 +14754,10 @@ const FUNNEL_TTL_S = 400 * 86400;
 
 async function _funnelMark(env, email, step){
   try{
-    const em = String(email || '').toLowerCase();
+    /* Trimmed as well as lowercased, so one caller passing a raw typed address
+       cannot file the same person under two identities. Normalising at the
+       choke point rather than trusting five call sites to agree. */
+    const em = String(email || '').toLowerCase().trim();
     if(!em || FUNNEL_STEPS.indexOf(step) < 0) return false;
     const k = `fstep:${em}:${step}`;
     if(await env.AMV_KV.get(k)) return false;            // already counted, ever

@@ -274,9 +274,16 @@ globalThis.fetch = realFetch;
    it. There is one definition now and both paths ask it. */
 section('The account ceiling binds image and video, not only chat');
 {
+  /* DERIVED, not named. This asserted the literal `_monthlyCeilingUSD`, so a
+     rename would have failed it for the wrong reason - and, worse, a rename
+     that split the helper in two could have satisfied it while chat and media
+     quietly asked DIFFERENT functions again, which is the defect this file
+     exists for. What matters is that both paths reach the SAME one. */
   const gate = functionBody(src, '_spendGate');
-  ok(/_monthlyCeilingUSD\(/.test(gate),
-     'the media gate asks for this account’s ceiling', true);
+  const CEIL = /_monthlyCeiling(?:USD)?\(/g;
+  const gateAsks = [...new Set((gate.match(CEIL) || []))];
+  ok(gateAsks.length === 1,
+     'the media gate asks for this account’s ceiling, from one helper', gateAsks);
   ok(/family_cap/.test(gate),
      'and can refuse for the family limit specifically, so the message names the person who can change it', true);
 
@@ -298,7 +305,16 @@ section('The account ceiling binds image and video, not only chat');
      anywhere in it. A window that large is not a window. */
   const chat = codeOnly(functionBody(src, 'aiProxy'));
   ok(chat.length > 2000, 'the chat handler was found', chat.length);
-  ok(/_monthlyCeilingUSD\(user\)/.test(chat), 'and chat asks the same one', true);
+  const chatAsks = [...new Set((chat.match(CEIL) || []))];
+  ok(chatAsks.length === 1, 'and chat asks one too', chatAsks);
+  ok(chatAsks[0] === gateAsks[0],
+     'and it is the same helper, which is the whole point',
+     { chat: chatAsks[0], media: gateAsks[0] });
+
+  /* And that helper is the one holding the rule, not a wrapper that forwards
+     to a second copy. */
+  const body = codeOnly(functionBody(src, '_monthlyCeiling'));
+  ok(/0\.45/.test(body), 'and that helper is where the plan share is decided', true);
   ok(!/planPriceUSD\(user\.plan[^)]*\) \* 0\.45/.test(chat),
      'rather than keeping its own copy of the arithmetic', true);
 }
