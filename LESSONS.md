@@ -4752,3 +4752,32 @@ fallback and refuse: a deployment that has not been told its own address cannot
 start a payment, and says which setting is missing. That works the moment the
 setting exists and does nothing dangerous before then, which is what "dev
 fallback" was trying to mean and could not enforce.
+
+## 255. Three checks measured a proxy, and all three went red on a correct change
+
+In one session, three assertions failed on changes that made the product better:
+
+  - "the fetch handler returns in exactly two places" - a third return arrived,
+    the request-size refusal, which is a correct new guard;
+  - "at least two iframes are built in script" - one was REMOVED, because the
+    code sandbox became a Worker, which is strictly safer;
+  - "the label map contains this event, within 2000 characters of its start" - a
+    new label with a comment explaining it landed six characters past the edge.
+
+None of those is the property anybody cared about. The properties were: nothing
+returns without passing through the CORS layer; every frame built in script sets
+a sandbox; every event the server records has a label. Each was written as a
+COUNT or a WINDOW because that was easy to check, and each count is a fact about
+today's code rather than about the rule.
+
+A proxy fails in both directions, and the expensive direction is the one seen
+here: it goes red on a correct change, and the person fixing it is under pressure
+and reaches for the cheapest way to make it green - raise the number, widen the
+window - which quietly weakens the check for everyone after. A count that has
+been bumped twice is no longer guarding anything.
+
+The rule: when writing an assertion, ask what would make it fail. If the honest
+answer includes "somebody deleted the unsafe thing" or "somebody wrote a longer
+comment", it is measuring a proxy. Write the rule instead - `assigns.length >=
+dynamic`, `every return goes through _applyCors`, `slice to the closing brace` -
+and the assertion survives being right.
