@@ -28984,12 +28984,22 @@ const ACT_LABEL = {
   /* Raising a spending limit is the quiet half of taking money out: the
      withdrawal is loud, the permission that allowed it is not. Marked. */
   spend_limits_changed:   ['Spending limits changed', 'warn'],
+  /* AMV-024. The number that can text AMV as you IS a way in - somebody who
+     takes an account and moves the phone to a handset they hold keeps a channel
+     that survives a password change. It is warned for the same reason an API
+     key being minted is. The event carries only the last four digits, so this
+     row can say which number without putting one on a screen. */
+  phone_changed:          ['The phone number for texting was changed', 'warn'],
 };
 function _actLabel(ev){
   const m = ACT_LABEL[ev.kind];
   let text = m ? m[0] : String(ev.kind || 'Activity').replace(/_/g, ' ');
   if(ev.kind === 'plan_changed' && ev.plan) text += ' to ' + ev.plan;
   if(ev.kind === 'signed_in' && ev.reason) text += ' with ' + ev.reason;
+  /* Which number, without putting one on a screen. Somebody reading this row is
+     asking "was that me?", and the last four digits is the whole of what they
+     need to answer it. */
+  if(ev.kind === 'phone_changed' && ev.endsWith) text += ' (now ending ' + ev.endsWith + ')';
   return { text, tone: m ? m[1] : '' };
 }
 function _actWhen(ts){
