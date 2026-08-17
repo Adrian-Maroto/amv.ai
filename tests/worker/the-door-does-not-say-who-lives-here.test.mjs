@@ -298,6 +298,51 @@ section('A counter outage does not become a sign-in outage');
   ok(!!r.body.token, 'with a real token', !!r.body.token);
 }
 
+section('And the cost of that equal treatment is bounded');
+{
+  /* The trade this fix makes, closed rather than left. Answering a missing
+     account with the same work as a real one is what stops the clock leaking
+     which is which - and it means any string somebody sends now buys a PBKDF2
+     at six hundred thousand iterations. The only throttle here counted
+     FAILURES per email+ip, so rotating the address walked past it.
+
+     The ceiling is on attempts from one SOURCE. A person signing in is nowhere
+     near it; an amplifier runs into it immediately. */
+  const env = mkEnv();
+  await read(await W.authSignup(post('/auth/signup', { email: 'real@example.com', name: 'R', password: PW }), env));
+
+  const burst = [];
+  for (let i = 0; i < 45; i++) {
+    burst.push(await read(await W.authLogin(
+      post('/auth/login', { email: 'ghost' + i + '@example.com', password: 'Not-the-Passw0rd!' }, '4.4.4.4'), env)));
+  }
+  const stopped = burst.filter(r => r.status === 429).length;
+  ok(stopped > 0, 'a burst of sign-in attempts from one source is cut off', stopped);
+  ok(burst.filter(r => r.status === 401).length <= 30,
+     'so the number of password hashes one source can buy is bounded',
+     burst.filter(r => r.status === 401).length);
+  ok(/Too many sign-in attempts/.test(burst[burst.length - 1].body.error || ''),
+     'and it says so rather than looking like a wrong password',
+     burst[burst.length - 1].body.error);
+
+  /* And a different source is unaffected, because a shared address must not
+     lock out everybody behind it for one attacker. */
+  const other = await read(await W.authLogin(post('/auth/login', { email: 'real@example.com', password: PW }, '5.5.5.5'), env));
+  ok(other.status === 200, 'while somebody else signs in normally', other.status);
+}
+
+section('And a counter outage does not become a sign-in outage here either');
+{
+  const env = mkEnv();
+  await read(await W.authSignup(post('/auth/signup', { email: 'blip@example.com', name: 'B', password: PW }), env));
+  const broken = Object.assign({}, env, {
+    AMV_COUNTER: { idFromName: (n) => n, get: () => ({ async fetch() { throw new Error('counter down'); } }) },
+  });
+  const r = await read(await W.authLogin(post('/auth/login', { email: 'blip@example.com', password: PW }, '6.1.1.1'), broken));
+  ok(r.status === 200, 'somebody still gets in', r.status);
+  ok(!!r.body.token, 'with a real token', !!r.body.token);
+}
+
 section('The shape, so none of it comes back quietly');
 {
   const login = codeOnly(functionBody(src, 'authLogin') || '');

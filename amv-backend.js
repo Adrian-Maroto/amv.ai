@@ -7623,8 +7623,42 @@ async function authLogin(request, env) {
     const capOk = await _verifyCaptcha(env, body.captchaToken, request);
     if (!capOk) return json({ error:'Please complete the verification and try again.', code:'captcha_required' }, 400);
   }
-  // brute-force throttle: cap failed password attempts per email+IP
   const ip = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'noip';
+
+  /* HOW MANY TIMES ONE SOURCE MAY MAKE AMV HASH A PASSWORD.
+
+     The only throttle here counted FAILURES per email+ip, so an attacker
+     rotating the address paid nothing: every request bought a PBKDF2 at six
+     hundred thousand iterations, which is the most expensive thing this file
+     does on purpose. That was already true for addresses that exist.
+
+     AMV-026 made it true for any string. Closing the enumeration hole means a
+     missing account does the same hashing as a real one - that is the whole
+     point, the clock must not answer what the status code no longer does - and
+     it widened the CPU cost from "emails somebody has guessed correctly" to
+     "anything at all".
+
+     So the ceiling is on ATTEMPTS from one source, not on failures against one
+     address. Thirty a minute is nowhere near a person signing in and nowhere
+     near enough to be worth doing.
+
+     Unavailable does not refuse, for the reason the Google limiter does not:
+     turning a storage blip into "nobody can sign in" is a worse outcome than a
+     brief window of unbounded hashing, and nothing irreversible happens on the
+     other side of this one. */
+  {
+    const lim = await limitAction(env, `loginip:${ip}`, 30, 600);
+    if (!lim.ok) {
+      if (lim.unavailable) audit(env, 'login_limit_unavailable', {});
+      else {
+        audit(env, 'auth_fail', { email: em, reason: 'ip_throttled' });
+        return json({ error: 'Too many sign-in attempts from here. Give it a moment and try again.',
+                      code: 'rate_limited' }, 429, { 'Retry-After': '60' });
+      }
+    }
+  }
+
+  // brute-force throttle: cap failed password attempts per email+IP
   const rlKey = `authfail:${em}:${ip}`;
   {
     const fails = parseInt(await env.AMV_KV.get(rlKey) || '0', 10);
