@@ -41,16 +41,30 @@ let stepNum = 0;
    things, and they read as nobody looking at the screen they are on.
    Full: syntax, worker, build, ports, suites, page weight, deps, preflight.
    Fast skips the two that need a clear machine and forty minutes (ports, suites). */
-const TOTAL = FAST ? 6 : 8;
+const TOTAL = FAST ? 6 : 9;
+/* Stages that ran but did nothing, so the final verdict can say so instead of
+   letting a green tick stand in for work that never happened. */
+const skipped = [];
 
 /* Run a step. `fn` should throw (with a helpful message) on failure. */
+/* A step may return a string. It is printed beside the tick, and it exists for
+   one case: a stage that legitimately did NOT run.
+
+   The real-runtime stage skips when wrangler cannot start, which is right - a
+   gate that goes red for a reason that is not the code teaches people to
+   ignore it. But step() only shows output on failure, so a skip printed a
+   green tick and looked exactly like twenty-seven checks passing. That is the
+   shape this file has been bitten by twice: a guard that cannot fail. If a
+   stage did nothing, the screen has to say so. */
 function step(label, fn) {
   stepNum++;
   process.stdout.write(`  ${DIM}[${stepNum}/${TOTAL}]${X} ${label}… `);
   const s = Date.now();
   try {
-    fn();
-    console.log(`${G}✓${X} ${DIM}(${Date.now() - s}ms)${X}`);
+    const note = fn();
+    const tail = note ? ` ${Y}(${note})${X}` : '';
+    console.log(`${G}✓${X} ${DIM}(${Date.now() - s}ms)${X}${tail}`);
+    if (note) skipped.push(`${label} - ${note}`);
   } catch (e) {
     console.log(`${RED}✗${X}`);
     console.log(`\n${B}${RED}FAILED:${X} ${label}\n`);
@@ -193,6 +207,25 @@ step('Dependencies have no unassessed advisories', () => {
   sh('node audit-deps.mjs');
 });
 
+/* ── 4c. The Worker, in the runtime it actually deploys to ────────────────
+   Every Worker suite hands amv-backend.js an env built by hand: a Map for KV,
+   an object for the Durable Object. A double encodes what its author expected
+   to matter, and the first run of the real runtime found two defects in ninety
+   seconds that 280 suites had never been positioned to see - one of them being
+   what this Worker does with no secrets set, which is the state of every first
+   deploy.
+
+   Skipped honestly when wrangler cannot start. It binds 8877, not the 9100
+   range the e2e harness uses, so it cannot collide with stage 5. */
+if (!FAST) step('The Worker runs in workerd, not just in a mock', () => {
+  const out = sh('node smoke-real.mjs');
+  /* smoke-real.mjs exits 0 when it could not start the runtime, on purpose.
+     Exit code alone cannot tell that apart from twenty-seven passing checks,
+     so the note is read out of what it printed. */
+  const m = /^SKIP\s+(.*)$/m.exec(out);
+  return m ? 'SKIPPED: ' + m[1].trim() : '';
+});
+
 /* ── 5. Deploy preflight ─────────────────────────────────────────────────── */
 step('Deploy preflight', () => {
   // Preflight exits 1 when the config isn't deployable. In dev the KV id is a
@@ -243,8 +276,18 @@ console.log('');
    The code can be perfect while the deploy would still fail on a placeholder
    namespace id - and "all checks passed" is exactly the sentence that stops
    anyone looking. So the verdict now says which of the two it means. */
+/* And a stage that did not run is named before either verdict. "All checks
+   passed" is the sentence that stops anyone looking - the same reason the
+   config blocker was split out above - so it must not be printed over a stage
+   that was skipped. */
+if (skipped.length) {
+  console.log(`${B}${Y}! ${skipped.length} stage(s) did NOT run${X}, so this verdict covers less than usual:`);
+  for (const sk of skipped) console.log(`  ${Y}•${X} ${sk}`);
+  console.log('');
+}
+
 if (globalThis.__preflightPlaceholderWarn) {
-  console.log(`${B}${G}✓ SHIPPABLE${X} - code is ready: all checks passed in ${secs}s.`);
+  console.log(`${B}${G}✓ SHIPPABLE${X} - code is ready: ${skipped.length ? 'every check that RAN passed' : 'all checks passed'} in ${secs}s.`);
   console.log(`${DIM}  (source valid · worker loads · build fresh · tests green)${X}`);
   console.log('');
   console.log(`${B}${Y}! NOT DEPLOYABLE YET${X} - 1 configuration blocker:`);
@@ -253,6 +296,6 @@ if (globalThis.__preflightPlaceholderWarn) {
   console.log(`${DIM}  Deploying now would fail, or write to the wrong store.${X}\n`);
   process.exit(0);
 }
-console.log(`${B}${G}✓ SHIPPABLE${X} - all checks passed in ${secs}s.`);
+console.log(`${B}${G}✓ SHIPPABLE${X} - ${skipped.length ? 'every check that RAN passed' : 'all checks passed'} in ${secs}s.`);
 console.log(`${DIM}  (source valid · worker loads · build fresh · tests green · config checked)${X}\n`);
 process.exit(0);

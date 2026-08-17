@@ -2,6 +2,26 @@ name = "amv-backend"
 main = "amv-backend.js"
 compatibility_date = "2024-09-23"
 
+# ── WITHOUT THIS, TURNING ON THE BROWSER LATER DOES NOTHING ──
+# @cloudflare/puppeteer imports node:buffer. A Worker has no Node built-ins
+# unless this flag says so, so the import fails - and it fails in the ONE place
+# designed to survive it, the guarded dynamic import in browserRun. That catch
+# answers "the browser driver is not installed in this deployment. Run npm
+# install and redeploy", which would be wrong twice over: it IS installed, and
+# redeploying would not change anything.
+#
+# So the failure mode was: pay for the Workers paid plan, uncomment [browser],
+# and web automation still refuses - permanently, politely, and pointing at the
+# wrong fix. Found by running the Worker in workerd rather than by reading it;
+# wrangler warns about it at startup and nothing was listening.
+#
+# nodejs_compat is safe to set now rather than later. With a compatibility_date
+# of 2024-09-23 or newer it is the v2 behaviour, it only ADDS the Node built-ins
+# a module may import, and the Worker's own code imports none of them - so it
+# changes nothing until the browser driver is actually loaded. Setting it later,
+# on the day the binding goes on, means discovering this on the day.
+compatibility_flags = ["nodejs_compat"]
+
 # ── THIS is what makes automations run in the background ──
 # Cloudflare fires the Worker's scheduled() handler on this cron, whether or
 # not anyone has AMV open. Every 5 minutes it looks for due automations,
@@ -39,8 +59,14 @@ new_classes = ["AMVCounter"]
 #
 # Requires the Workers PAID plan. Uncomment to enable; the Worker feature-detects
 # env.BROWSER, so while this is commented out web automation degrades honestly
-# ("not enabled on this deployment") instead of failing at runtime. Nothing else
-# changes when you turn it on.
+# ("not enabled on this deployment") instead of failing at runtime.
+#
+# This used to say "Nothing else changes when you turn it on", and that was
+# false: it also needs nodejs_compat, which is set at the top of this file now.
+# Without it the driver's own import of node:buffer fails and the feature is
+# refused for ever with a message blaming npm. The flag is on, so uncommenting
+# these two lines really is all there is to it - but the sentence only became
+# true when the flag was added, not when it was written.
 #
 # It was ALSO held back on four security findings, and those are now closed:
 #   - a page could get a saved password typed into its own form (AMV-001)

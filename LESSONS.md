@@ -4874,3 +4874,95 @@ Worth noticing that the gate caught it for free. `check.mjs` runs the build on
 an already-built tree, so the second run IS the regression test, and no separate
 one is needed. When a build step is meant to be idempotent, the gate running it
 against its own output is the cheapest proof there is.
+
+## 259. The tests all set the secret, so nobody found out what happens without it
+
+Every Worker test in this repo builds an `env` by hand, and every one of them
+sets JWT_SECRET. Two hundred and eighty suites, and the state a Worker is
+actually in on its first deploy - storage bound, code deployed, `wrangler
+secret put` not yet run - had never been exercised once.
+
+Running it in workerd found it in ninety seconds. Signup answered 500. The
+account row was already written: the population counter incremented, the growth
+and funnel marks recorded, the account_created event stored, and THEN the signer
+threw, because issueTokens is the last thing signup does. So the account existed
+and its owner had no token; signing up again answered `account exists`, which is
+true and is the worst thing to tell them, because the account it names is one
+nobody can ever sign into. The address is spent. The operator sees a 500 with no
+cause.
+
+Three things.
+
+Fail-closed was right and was not the bug. The signer refuses to sign without a
+secret so a missing secret can never become a public key, and that must stay.
+The bug is WHERE it fires - at the end, after the writes. A correct refusal
+issued too late is a partial commit with good intentions.
+
+The most likely operator mistake deserves the most deliberate answer. Forgetting
+one secret is not an exotic failure, it is the default state of a fresh deploy.
+It came back as the same generic 500 as a genuine crash, and 500 invites a
+retry. 503 with the name of the missing secret says a retry will do the same
+thing and tells the one person who can fix it what to fix.
+
+And the general one: a hand-built test double encodes what its author expected
+to matter. Everybody who wrote one of these knew a token had to be signable, so
+everybody set the secret, so the one configuration that ships first was the one
+configuration never tested. Running the real runtime is not a nicety - it is the
+only thing in the loop that has no opinion about what should be there.
+
+## 260. A stage that skipped printed a green tick
+
+smoke-real.mjs skips rather than fails when wrangler cannot start, which is
+right: a gate that goes red for a reason that is not the code teaches people to
+ignore it, and audit-deps.mjs already follows that rule.
+
+But check.mjs only shows a stage's output on failure. So a skip printed
+`✓ (7908ms)` and read exactly like twenty-seven checks passing - and the verdict
+underneath said "all checks passed". On a machine without workerd, the gate
+would have claimed to have exercised the real runtime while never starting it.
+
+Written the same day as the entries about proxies standing in for rules, in the
+file that contains two other entries about guards that could not fail. The
+pattern is stubborn because the skip is CORRECT behaviour - the mistake is not
+in deciding to skip, it is in the screen not saying so.
+
+Three changes, all small. A step may return a note, printed beside its tick. A
+run that checked nothing says "nothing was checked" rather than "0 checks
+passed", which is a green line for having done nothing. And "all checks passed"
+becomes "every check that RAN passed" whenever a stage was skipped, because the
+first sentence is the one that stops anybody looking - the same reason the
+config blocker was split out of the verdict in AMV-094.
+
+Noticed only because the stage finished in 7.9 seconds and two wrangler boots
+should not be that fast. It was genuinely that fast. The check was worth making
+anyway, and it found a real hole: being right about the timing did not mean the
+stage was honest about the case where it is not.
+
+## 261. The check that measured the wrong thing found the wrong bug
+
+Sweeping every overlay at phone, tablet and laptop widths reported eighteen
+problems. Two of them were real. The rest were the check being wrong, in both
+directions at once.
+
+It asked whether the PANEL scrolls. That says nothing about whether the BACKDROP
+does - so Cowork, whose backdrop scrolls perfectly well, was reported as having
+an unreachable bottom, and Job Hunt, which genuinely does, was reported the same
+way. Identical symptom, opposite truth. Acting on that list would have meant
+"fixing" a working modal and shipping the broken one, with a green sweep either
+way.
+
+It also counted links inline in a sentence as undersized tap targets. WCAG 2.5.8
+exempts those deliberately, because padding a word in the middle of a paragraph
+to 24 pixels breaks the line and helps nobody.
+
+The fix was to stop inferring. Scroll the backdrop the way a finger would, then
+look at where the panel is. One extra step, and the answer stops being a guess
+about CSS and starts being the thing the user experiences.
+
+The real bug underneath was worth the trip: `.ov` centres with flex and has no
+overflow, and flex centring overflows in BOTH directions - the half above the
+container cannot be scrolled to even when the container scrolls. Any dialog
+taller than the viewport loses part of itself. Job Hunt lost the 250 pixels
+containing its Save button. Nothing looked broken; the form was right there and
+the button to submit it was not. `align-items: safe center` is the property made
+for precisely this, and it is one line for the whole class rather than one modal.

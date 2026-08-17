@@ -5369,6 +5369,18 @@ const _ERR_SCRUB = [
   [/\b(?:sk|pk|rk)_(?:live|test)_[A-Za-z0-9]{8,}/g, '[provider-key]'],
   [/\b(?:amv|api)_[A-Za-z0-9_-]{16,}/gi, '[api-key]'],
   [/([?&#](?:token|code|key|secret|password|passwd|pwd|credential|signature|sig|access_token|refresh_token|id_token|api_key|apikey)=)[^&#\s"']+/gi, '$1[redacted]'],
+  /* A CREDENTIAL THAT LIVES IN THE PATH, NOT THE QUERY.
+
+     Telegram's Bot API is addressed as /bot<token>/METHOD, with the token raw
+     in the path - that is the documented form, not a mistake here. It means the
+     one rule above, which looks for `?token=`, never sees it: a failed call to
+     api.telegram.org carries the whole credential in the URL, and a fetch error
+     quotes the URL it failed on.
+
+     AMV encrypts that token at rest with AES and refuses to store one at all
+     without MAIL_CRED_KEY. Letting it out through an error message would undo
+     every bit of that, three lines away from the code that does it. */
+  [/\/bot\d{5,}:[A-Za-z0-9_-]{20,}/g, '/bot[telegram-token]'],
   [/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, '[email]'],
 ];
 function _errScrub(text, max) {
@@ -6429,8 +6441,22 @@ async function backupImport(request, env){
 async function _workerError(env, where, err, extra){
   try{
     const idx = (await DB.get(env, 'errors', 'index')) || { groups:{} };
-    const e = { kind:'worker', msg:String(err&&err.message||err).slice(0,300),
-                where:String(where).slice(0,120), stack:String(err&&err.stack||'').slice(0,1200),
+    /* SCRUBBED HERE TOO.
+
+       AMV-037 scrubbed the PUBLIC sink, because that text arrives out of
+       somebody's browser. It left this one - the SERVER's - reading raw, and
+       this is the sink that sees actual credentials: an outbound call that
+       fails quotes the URL it failed on, and some of those URLs carry the
+       secret in them by the provider's design. Telegram's bot token is in the
+       path; a signed provider URL carries its signature in the query.
+
+       Unscrubbed, one failed send wrote a working bot token into KV in plain
+       text, posted it to the operator's Slack through alertOnce, and forwarded
+       it to Sentry - while the same token sat encrypted at rest two functions
+       away. The stack matters as much as the message: a stack quotes whatever
+       was in scope at the frame that threw. */
+    const e = { kind:'worker', msg:_errScrub(String(err&&err.message||err), 300),
+                where:String(where).slice(0,120), stack:_errScrub(String(err&&err.stack||''), 1200),
                 tab:'server', ua:'worker', ver:'', at:Date.now(), ...(extra||{}) };
     _forwardSentry(env, null, e);   // inert unless SENTRY_DSN is set
 
@@ -6914,6 +6940,30 @@ export default {
          with a hole in it by next month. */
       const tooBig = _bodyTooBig(request);
       if (tooBig) return _applyCors(request, env, tooBig);
+
+      /* A DEPLOYMENT THAT CANNOT FINISH THE JOB SHOULD NOT START IT.
+
+         Found by running this Worker in workerd with no secrets set, which is
+         exactly the state a first deploy is in until somebody remembers
+         `wrangler secret put`.
+
+         Signing fails closed without JWT_SECRET - deliberately, so a missing
+         secret can never become a public signing key. But issueTokens is the
+         LAST thing signup does. The account row was already written, the
+         counters already incremented, the growth already recorded; the throw
+         arrived after all of it and came back as a generic 500. So the account
+         existed, its owner had no token, and trying again answered "account
+         exists" with a 409. One forgotten secret and every person who signed up
+         is locked out of an address they own, permanently, with nothing on
+         either side saying why.
+
+         Checked here for the reason the body limit is: there are a hundred and
+         sixty routes and one place they all pass through. And checked BEFORE
+         the route runs, because the whole failure is that the work happened
+         first. */
+      const unconfigured = _deploymentCannotServe(request, env);
+      if (unconfigured) return _applyCors(request, env, unconfigured);
+
       return _applyCors(request, env, await _route(request, env, ctx));
     } catch (err) {
       // An unhandled exception reached the top level. Record it AND alert (both
@@ -6976,6 +7026,58 @@ function _bodyTooBig(request) {
       + Math.round(max / 1024) + ' KB), so nothing was read.',
     code: 'body_too_large', limit: max,
   }, 413);
+}
+
+/* THE ROUTES THAT CANNOT WORK WITHOUT A SIGNING KEY.
+
+   Not "every route": most of this Worker is honest about missing configuration
+   already, and refusing everything because one optional key is absent would
+   turn a partial deployment into no deployment. These are the paths that MUST
+   mint or renew a token to succeed, so without JWT_SECRET they cannot end any
+   way but a throw - and three of them write something first.
+
+   Everything that only VERIFIES is already fine: verifyToken wraps its work in
+   a try and answers null, so those paths come back 401 rather than 500. That is
+   the correct answer to "this deployment cannot check who you are" and it needs
+   no help from here.
+
+   The list is exactly the four handlers that call issueTokens or signToken,
+   read off the source rather than remembered - /auth/reset/confirm was on it
+   for a first draft and does not sign anything, and a route on this list that
+   does not need to be is a route refused for no reason.
+
+   Kept as a roster beside the check rather than as a condition inside each
+   handler, for the reason GET_SAFE is: a rule spread across a hundred and
+   sixty routes has a hole in it by next month. A new auth route that signs
+   something belongs on this list, and the test that reads it says so. */
+const NEEDS_SIGNING = new Set([
+  '/auth/signup',
+  '/auth/login',
+  '/auth/google',
+  '/auth/refresh',
+]);
+
+/* Whether this deployment can serve this request at all.
+
+   Answers with 503 rather than 500, because those mean different things to
+   everyone downstream: 500 says AMV broke and invites a retry, 503 says AMV is
+   not set up and a retry will do exactly the same thing. The message names the
+   missing thing without printing it - the operator needs to know WHICH secret,
+   and nobody needs to know its value. */
+function _deploymentCannotServe(request, env) {
+  let path = '';
+  try { path = new URL(request.url).pathname.replace(/\/+$/, ''); } catch (e) { return null; }
+  if (!NEEDS_SIGNING.has(path)) return null;
+  if (env && env.JWT_SECRET) return null;
+  /* Audited, because the operator's first sight of this should not be a
+     customer telling them sign-in is broken. */
+  try { audit(env, 'deployment_unconfigured', { path, missing: 'JWT_SECRET' }); } catch (e) {}
+  return json({
+    error: 'This AMV deployment is not finished being set up, so no account can '
+      + 'be created or signed in yet. Nothing was changed.',
+    code: 'not_configured',
+    missing: 'JWT_SECRET',
+  }, 503, { 'Retry-After': '300' });
 }
 
 /* AMV-SP-09: WHERE SOMEBODY LANDS AFTER PAYING IS NOT THE CALLER'S CHOICE.
@@ -10421,10 +10523,56 @@ const MARKET_RESERVE_S = 20 * 60;
 
 const PEND_KIND = 'paypending';
 const PEND_GRACE_MS = 10 * 60 * 1000;      // give the webhook a fair chance first
-const PEND_GIVEUP_MS = 24 * 60 * 60 * 1000; // an unpaid session is never coming back
+/* HOW LONG A PAYMENT CAN STILL BE ON ITS WAY.
+
+   This was 24 hours, under a comment saying "an unpaid session is never coming
+   back". That was true when the only way to pay was a card, where the answer
+   arrives in seconds. It stopped being true when automatic_payment_methods was
+   switched on: an OXXO voucher is cash at a shop counter and the customer has
+   three days, and SEPA Direct Debit can take up to fourteen and can still come
+   back failed.
+
+   This window is the safety net for a webhook that never arrived. Set shorter
+   than the payment method takes, it drops the row while the money is still
+   genuinely in flight - so somebody pays, the async event goes missing, and
+   nothing is left watching on AMV's side. They are charged and never get the
+   plan, which is the one outcome worse than not being paid.
+
+   Sixteen days: fourteen for the slowest method Stripe will hand us, plus room
+   for a weekend and a settlement delay. A row that really is dead costs one
+   provider lookup per sweep until then, which is the cheap side of this trade. */
+const PEND_GIVEUP_MS = 16 * 24 * 60 * 60 * 1000;
 /* One provider lookup per pending row, so this pass gets its own budget. It
    shares a tick with the rest of the cron work, so it takes a smaller slice. */
 const RECONCILE_BUDGET_MS = 15 * 1000;
+
+/* Whether a Stripe Checkout Session has actually been paid for.
+
+   The one question worth asking before anything is granted, and it was being
+   asked as `payment_status === 'paid' || status === 'complete'`, which answers
+   yes to a session that is complete and unpaid - the exact shape a voucher or a
+   direct debit has for its first three to fourteen days.
+
+   'no_payment_required' is a yes: that is a full-coupon or trial session where
+   Stripe is telling us there is no money to wait for. Anything else - and
+   notably 'unpaid' - is not fulfilled yet. Missing is not a yes either: an
+   object that does not say it was paid has not said it was paid.
+
+   Being strict about a missing field is only safe because of what happens next,
+   and it is worth writing down. A session this refuses stays in the pending
+   ledger, and the reconciliation sweep asks Stripe about it directly - and the
+   API object always carries payment_status. So a webhook payload that somehow
+   arrived without the field is granted by the sweep minutes later rather than
+   lost. Strict here, self-healing there: the failure mode of being wrong about
+   this is a delay, not a customer who paid and got nothing.
+
+   Three test fixtures omitted the field, which is how this was noticed - a
+   double that is more permissive than the thing it stands for is the same
+   defect class as the one this function exists to close. */
+function _stripeSessionPaid(session) {
+  const s = String((session && session.payment_status) || '');
+  return s === 'paid' || s === 'no_payment_required';
+}
 
 async function _pendStart(env, id, data) {
   if (!id) return;
@@ -10502,7 +10650,15 @@ async function reconcilePayments(env) {
       const d = await r.json().catch(() => ({}));
       if (!r.ok) continue;
 
-      if (d.payment_status === 'paid' || d.status === 'complete') {
+      /* `d.payment_status === 'paid' || d.status === 'complete'` was the same
+         defect as the webhook's, in an or: a session paid by voucher or direct
+         debit is 'complete' the moment the customer chooses it and 'unpaid'
+         until the money actually arrives, so the second half of that condition
+         granted on the first half being false. The sweep exists to rescue
+         payments the webhook missed - it must not rescue payments that have not
+         happened. An unpaid row is left alone and asked about again next sweep,
+         which is exactly what it is for. */
+      if (_stripeSessionPaid(d)) {
         if (p.kind === 'market') {
           await _creditSale(env, { itemId: p.itemId, buyer: p.email, seller: p.seller,
                                    amountCents: d.amount_total, ref: d.payment_intent || row.id });
@@ -12444,8 +12600,24 @@ async function verifyToken(token, secret, env = null, expectedTyp = 'access') {
             (Price IDs you create in the Stripe dashboard)
      In Stripe → Developers → Webhooks, add endpoint:
        https://<your-worker>/v1/stripe/webhook
-       events: checkout.session.completed, customer.subscription.updated,
-               customer.subscription.deleted, invoice.paid
+       events - ALL TEN. This list named four of them, and the other six are
+       handled here in code that would simply never run: an operator following
+       it subscribed to a quarter of what AMV listens for and had no way to
+       know. Each one is money moving in a direction somebody has to know about.
+         checkout.session.completed              a card paid, grant the plan
+         checkout.session.async_payment_succeeded a voucher or direct debit
+                                                  finally cleared - WITHOUT
+                                                  this, a customer who paid by
+                                                  OXXO or SEPA pays and is
+                                                  never granted anything
+         checkout.session.async_payment_failed    it did not clear; close it out
+         customer.subscription.updated            seats, plan or state changed
+         customer.subscription.deleted            it ended
+         invoice.paid                             a renewal went through
+         invoice.payment_failed                   a renewal was declined
+         charge.refunded                          money went back
+         refund.created                           the same, newer event shape
+         charge.dispute.created                   a chargeback was opened
    PayPal (optional):
      wrangler secret put PAYPAL_CLIENT_ID / PAYPAL_SECRET / PAYPAL_WEBHOOK_ID
      [vars] PAYPAL_MODE = "live"  (or "sandbox")
@@ -14458,7 +14630,40 @@ async function stripeWebhook(request, env, ctx) {
   const evtAt = (+evt.created ? +evt.created * 1000 : Date.now());
 
   try {
-    if (type === 'checkout.session.completed') {
+    if (type === 'checkout.session.completed' || type === 'checkout.session.async_payment_succeeded') {
+      /* A COMPLETED SESSION IS NOT A PAID ONE.
+
+         `automatic_payment_methods` is on, deliberately, so that the rest of
+         the world can pay the way it pays - and two of the methods it turns on
+         do not move money when the session completes. OXXO is a voucher the
+         customer takes to a shop counter in Mexico and has three days to pay in
+         cash. SEPA Direct Debit can take up to fourteen days and can come back
+         failed. For both, Stripe fires checkout.session.completed IMMEDIATELY
+         with payment_status: 'unpaid', and then, later, either
+         async_payment_succeeded or async_payment_failed.
+
+         This branch granted the plan on 'completed' and never looked at
+         payment_status. So the way to get AMV free, from any country where
+         those methods are enabled, was to choose one at checkout and then
+         simply not pay: the plan was granted in full, immediately, on a voucher
+         nobody ever redeemed. The marketplace branch was worse - it credited
+         the SELLER eighty percent of money that had not arrived, so AMV owed a
+         real payout on an imaginary sale.
+
+         Fulfilment now waits for the money. An unpaid session is acknowledged
+         (200, so Stripe stops retrying a delivery that was fine) and left in
+         the pending ledger, which is what the reconciliation sweep watches -
+         so a lost async event still gets picked up. async_payment_succeeded
+         arrives here and takes the same path, because a payment that took nine
+         days is still a payment and must fulfil exactly once. */
+      if (!_stripeSessionPaid(obj)) {
+        audit(env, 'payment_awaiting', {
+          id: obj.id, status: obj.payment_status || '',
+          email: (obj.metadata?.email || obj.client_reference_id || obj.customer_email || '').toLowerCase(),
+        });
+        return new Response('ok', { status: 200 });
+      }
+
       // Marketplace one-time purchase → grant item + 80/20 split
       if (obj.metadata?.kind === 'market_purchase') {
         await _creditSale(env, {
@@ -14498,6 +14703,21 @@ async function stripeWebhook(request, env, ctx) {
           currency: (obj.currency || 'usd').toUpperCase(), kind: plan, status: 'succeeded',
           ref: obj.subscription || obj.id || '' });
       }
+    } else if (type === 'checkout.session.async_payment_failed') {
+      /* The voucher expired, or the direct debit came back. Nothing was granted
+         when the session completed, so there is nothing to take away - what
+         matters is closing the pending row so the sweep stops asking Stripe
+         about a session that is never going to be paid, and telling the
+         operator, because a customer who chose a delayed method and failed is
+         somebody who tried to give AMV money and did not manage it. */
+      await _pendDone(env, obj.id);
+      audit(env, 'payment_async_failed', {
+        id: obj.id,
+        email: (obj.metadata?.email || obj.client_reference_id || obj.customer_email || '').toLowerCase(),
+      });
+      await alertOnce(env, 'stripe_async_failed',
+        'A customer chose a delayed payment method (voucher or direct debit) and it did not complete. '
+        + 'Nothing was granted. If this becomes common, check which methods are enabled in Stripe.', 60);
     } else if (type === 'invoice.payment_failed') {
       /* The renewal was DECLINED. Stripe will keep retrying for weeks; until
          this existed the plan stayed fully granted for all of it. Mark the
@@ -17008,6 +17228,21 @@ async function marketView(request, env) {
 
      The count lives in the counter now, which is what a counter is for: it is
      atomic, it is cheap, and it touches nothing else on the record. */
+  /* AND BOUNDED PER SOURCE, which the counter alone does not do.
+
+     The note above says the abuse problem "goes away" once the count moved off
+     the record. Half of it did: the lost update and the hot key are gone. What
+     did not is that this is an unauthenticated route which still costs a
+     listing read and a counter increment per request, both billed, and it was
+     the only public route in this Worker with nothing bounding it - every
+     other one carries a guard.
+
+     Generous, because a person browsing a marketplace really does open a lot of
+     listings, and because getting this wrong makes the shop look broken. */
+  const vg = await guardAction(env, 'mktview:' + (request.headers.get('CF-Connecting-IP') || 'anon'),
+                               120, 5000, 'listing views');
+  if (vg) return vg;
+
   const { id } = await request.json().catch(() => ({}));
   const key = String(id || '').slice(0, 64);
   if (!key) return json({ ok: true });
@@ -17023,9 +17258,11 @@ async function marketView(request, env) {
     /* The browse screen reads `views` off the record and cannot afford a
        counter read per listing, so the record is refreshed from the counter -
        under the lock, and only every MKT_VIEW_FOLD views. That is one write per
-       fifty instead of one per view: the count on screen stays right, the abuse
-       and hot-key problems go away, and a write that does lose a race now costs
-       at most a few views rather than a sale. */
+       fifty instead of one per view: the count on screen stays right, the
+       hot-key and lost-update problems go away, and a write that does lose a
+       race now costs at most a few views rather than a sale. The abuse half is
+       the guard at the top of this function, not this - a counter makes each
+       request cheap, it does not make the number of requests finite. */
     if (since >= MKT_VIEW_FOLD && since % MKT_VIEW_FOLD === 0) {
       await _withKV(env, 'market', key, (rec) => {
         if (!rec) return null;

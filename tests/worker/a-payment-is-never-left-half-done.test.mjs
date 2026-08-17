@@ -304,7 +304,8 @@ section('A payment that completed normally leaves nothing to rescue');
      the 400. */
   const SECRET = 'whsec_test';
   const body = JSON.stringify({ id: 'evt_ok', type: 'checkout.session.completed',
-    data: { object: { id: 'cs_ok', client_reference_id: BUYER, metadata: { email: BUYER, plan: 'pro' } } } });
+    data: { object: { id: 'cs_ok', payment_status: 'paid', client_reference_id: BUYER,
+                      metadata: { email: BUYER, plan: 'pro' } } } });
   const t = Math.floor(Date.now() / 1000);
   const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(SECRET),
     { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
@@ -333,13 +334,30 @@ section('A payment that completed normally leaves nothing to rescue');
 section('And a payment nobody ever resolves stops being chased');
 {
   /* Otherwise a provider that answers "unknown" for ever means an unbounded
-     list and a request against it on every sweep. */
+     list and a request against it on every sweep.
+
+     The window used to be 24 hours, and this asserted a DAY-old row was
+     dropped. That was right while a card was the only way to pay: the answer
+     arrives in seconds, so a day of silence means never. It became wrong the
+     moment automatic_payment_methods was switched on - an OXXO voucher gives
+     the customer three days to pay cash at a shop counter, and a SEPA debit can
+     take fourteen. Dropping at a day meant abandoning the row while the money
+     was still genuinely on its way, so a customer could pay and have nothing
+     watching to grant it: charged, and never given the thing.
+
+     Two ages now, because the rule has two halves and only testing the second
+     would pass on a window of any length at all. */
   const env = mkEnv();
-  await pendingSince(env, 'cs_ancient', { provider: 'stripe', kind: 'plan', email: BUYER, plan: 'pro' }, 60 * 48);
+  await pendingSince(env, 'cs_inflight', { provider: 'stripe', kind: 'plan', email: BUYER, plan: 'pro' }, 60 * 24 * 5);
   stripeSession = null;
+  const mid = await W.reconcilePayments(env);
+  ok(mid.dropped === 0 && (await pendings(env)) === 1,
+     'a five-day-old row is still watched, because a voucher can still be paid', mid);
+
+  await pendingSince(env, 'cs_ancient', { provider: 'stripe', kind: 'plan', email: BUYER, plan: 'pro' }, 60 * 24 * 20);
   const r = await W.reconcilePayments(env);
-  ok(r.dropped === 1 && (await pendings(env)) === 0,
-     'a day-old unresolved payment is let go rather than chased for ever', r);
+  ok(r.dropped === 1,
+     'and one older than any method AMV accepts is let go rather than chased for ever', r);
 }
 
 globalThis.fetch = realFetch;

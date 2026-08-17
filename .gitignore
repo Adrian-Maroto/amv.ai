@@ -7,3 +7,9 @@ tests/worker/.build/
 # Screenshots from tests/lib/shots.mjs - look at them, do not commit them
 .shots/
 .gate-pass
+
+# Local-only secrets for `wrangler dev`. Never committed, even when the values
+# are throwaway: a file that sometimes holds a real key must never be a file
+# git is willing to track.
+.dev.vars
+.dev.vars.*

@@ -8552,3 +8552,39 @@ html.framed-out body.framed-stop{visibility:visible}
   text-decoration:none;border:1px solid var(--accent-d)}
 .fstop-b:hover{background:var(--accent-d)}
 .fstop-b:focus-visible{outline:2px solid var(--tx);outline-offset:3px}
+
+/* ── LAYER A85: A PANEL TALLER THAN THE SCREEN ────────────────────────────
+   `.ov` is a flex backdrop with `align-items:center` and no overflow. That
+   centres a dialog beautifully and, the moment the dialog is taller than the
+   viewport, puts part of it somewhere nothing can reach: flexbox centring
+   overflows in BOTH directions, and the overflow above the container cannot be
+   scrolled to even when the container scrolls.
+
+   Found by opening every overlay at 390x844 and 320x568. Job Hunt is 1097px
+   tall on a phone, so its bottom 250px - which is where its Save button is -
+   simply could not be reached. Not clipped visibly, not obviously broken: the
+   form is right there and the button to submit it is not.
+
+   `safe center` is the property made for exactly this. It centres while there
+   is room and falls back to start alignment when there is not, so nothing ever
+   overflows past the scrollable edge; with overflow-y it means every dialog is
+   reachable at every height. One rule, because this was never one modal's bug -
+   `.ov` is the backdrop for most of the forty-five, and the others were only
+   fine because they happened to be short.
+
+   Cowork already solved this for itself with `.tp-ov` (flex-start + auto), and
+   it measured as reachable before this change. It stays that way: a more
+   specific rule and the same intent. */
+.ov{ overflow-y:auto; align-items:safe center; }
+/* Older engines ignore `safe center` and keep plain centring, so they get the
+   start alignment that is always reachable rather than the trap. */
+@supports not (align-items: safe center){
+  .ov{ align-items:flex-start; padding-block:6vh; }
+}
+
+/* A tap target has to be big enough to tap. 46x20 is a mouse-sized button on a
+   screen operated with a thumb. WCAG's 24px minimum has a deliberate exception
+   for links inline in a sentence, which is why `.lnk-inline` is left alone -
+   padding those would break the line they sit in and fix nothing. This is not
+   one of those: it is a Copy button in a row of its own. */
+.vsc-copy{ min-height:26px; min-width:44px; }

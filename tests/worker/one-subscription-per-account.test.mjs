@@ -105,7 +105,11 @@ section('The very first checkout has no customer to reuse');
 section('Paying binds the account to that customer');
 {
   SUBS = [{ id: 'sub_pro', status: 'active' }];
+  /* payment_status is on every real Checkout Session and this fixture did not
+     carry it - a double more permissive than the thing it stands for, which is
+     the shape that let an unpaid voucher be treated as a payment. */
   await W.stripeWebhook(hook({
+    payment_status: 'paid',
     metadata: { email: 'buyer@x.com', plan: 'pro' },
     customer: 'cus_A', subscription: 'sub_pro', amount_total: 1500, currency: 'usd',
   }), env, { waitUntil(){} });
@@ -130,6 +134,7 @@ section('And the plan it replaces stops billing');
 {
   SUBS = [{ id: 'sub_pro', status: 'active' }, { id: 'sub_elite', status: 'active' }];
   await W.stripeWebhook(hook({
+    payment_status: 'paid',
     metadata: { email: 'buyer@x.com', plan: 'elite' },
     customer: 'cus_A', subscription: 'sub_elite', amount_total: 7500, currency: 'usd',
   }), env, { waitUntil(){} });
