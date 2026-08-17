@@ -17,11 +17,13 @@
    is a list of ~50 defences, each marked as implemented. It is the document
    somebody would be shown if they asked how AMV handles abuse, which makes an
    overstatement in it worse than a gap: it stops the check from being made.
-   Item 24 claimed the page ships `default-src 'none'`. It ships 'self', and
-   script-src carries 'unsafe-inline' because the app uses inline onclick
-   attributes - so on that line the CSP is a host allowlist, not an
-   inline-script defence, and escH plus the URL allowlist are what actually
-   stop injection. Saying so is worth more than the sentence it replaced. */
+   Item 24 claimed the page ships `default-src 'none'`. It ships 'self'. It
+   also recorded a real limit - inline script was allowed, because the app used
+   inline onclick attributes throughout - and that limit is now closed: the
+   attributes are gone and the inline scripts are named by hash. So the item
+   has been corrected twice, in opposite directions, and the checks below move
+   with it. A register that understates a defence goes stale quietly; one that
+   overstates it stops somebody making the check. */
 import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -186,11 +188,15 @@ section('The scam register describes the CSP that actually ships');
      not still be claiming a limit that was closed, and the shipped page must
      really be the stricter one. A register that understates a defence goes
      stale quietly; one that overstates it stops somebody making the check. */
-  const shippedScript = (html.match(/script-src ([^;"]*)/) || [])[1] || '';
-  ok(!/'unsafe-inline'/.test(shippedScript),
+  /* Out of the policy, not out of the file: a comment above the meta tag
+     mentions the header, and searching the whole file finds the comment first.
+     That is what a decoy costs - the assertion reads something nobody serves. */
+  const csp = (html.match(/<meta http-equiv="Content-Security-Policy" content="([\s\S]*?)">/) || [, ''])[1];
+  const shippedScript = (csp.match(/(?:^|\s)script-src\s+([^;]*)/) || [])[1] || '';
+  ok(shippedScript.length > 20 && !/'unsafe-inline'/.test(shippedScript),
      'the page really does refuse inline script now', shippedScript.slice(0, 70));
-  ok(!/script-src[^.]{0,80}unsafe-inline/.test(item24),
-     'and the register no longer records that as an open limit', item24.slice(0, 200));
+  ok(/no longer carries/.test(item24) || /does not carry/.test(item24),
+     'and the register records it as closed rather than as an open limit', item24.slice(0, 240));
   ok(/style-src/.test(item24) && /unsafe-inline/.test(item24),
      'it names the one that IS still open - inline styles - rather than dropping the caveat entirely',
      true);

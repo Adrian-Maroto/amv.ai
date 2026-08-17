@@ -38,9 +38,17 @@ const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
 const app = readFileSync(join(ROOT, 'app.js'), 'utf8');
 const worker = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 
-/* The policy as the browser reads it. */
+/* The policy as the browser reads it - and ONLY out of the policy.
+
+   This used to search the whole file for the directive name. The first match
+   is not necessarily the policy: a comment ABOUT the header sits a few lines
+   above it, and once one mentioned the directive by name this read the comment
+   instead and reported four hosts as blocked that the real policy allows. The
+   meta content is the only place a browser looks, so it is the only place
+   this looks. */
+const CSP = (html.match(/<meta http-equiv="Content-Security-Policy" content="([\s\S]*?)">/) || [, ''])[1];
 function directive(name) {
-  const m = html.match(new RegExp(name + ' ([^;"]*)'));
+  const m = CSP.match(new RegExp('(?:^|\\s)' + name + '\\s+([^;]*)'));
   if (!m) return null;
   return new Set(m[1].split(/\s+/).filter(Boolean)
     .filter(v => /^https?:\/\//.test(v))
@@ -113,9 +121,9 @@ section('The policy has not been widened to nothing to make this pass');
 {
   /* The cheap way to make everything above green is `connect-src *`, which is
      the same as having no policy. */
-  const raw = (html.match(/connect-src ([^;"]*)/) || [])[1] || '';
+  const raw = (CSP.match(/(?:^|\s)connect-src\s+([^;]*)/) || [])[1] || '';
   ok(!/(^|\s)\*(\s|$)/.test(raw), 'connect-src is not a wildcard', raw.slice(0, 60));
-  const rawScript = (html.match(/script-src ([^;"]*)/) || [])[1] || '';
+  const rawScript = (CSP.match(/(?:^|\s)script-src\s+([^;]*)/) || [])[1] || '';
   ok(!/(^|\s)\*(\s|$)/.test(rawScript), 'script-src is not a wildcard', rawScript.slice(0, 60));
   ok(!/unsafe-eval/.test(rawScript), 'and does not allow eval', rawScript.slice(0, 80));
 }

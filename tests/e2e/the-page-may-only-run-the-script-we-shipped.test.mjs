@@ -142,10 +142,16 @@ section('And the delegation that replaced them is still the only dispatcher');
      'exactly one place resolves a data-dact element', dispatchers.length);
 
   /* A backdrop asks "did the click land on me". Nothing asks it by stopping
-     the click on the panel, because that kills every delegated button inside. */
-  const panelGuards = app.match(/onclick="event\.stopPropagation\(\)"/g) || [];
-  ok(panelGuards.length === 0,
-     'no overlay panel cancels the click its own buttons need', panelGuards.length);
+     the click on the panel, because that kills every delegated button inside.
+
+     Written as a NEGATED test on purpose. An assertion that a pattern is absent
+     cannot be made true by a comment - stripping comments can only remove
+     occurrences - which is why the meta-check that watches for prose-anchored
+     assertions exempts this form and flagged the positive `.match` version this
+     started as. The count is taken by a plain split, for the failure message. */
+  ok(!/onclick="event\.stopPropagation\(\)"/.test(app),
+     'no overlay panel cancels the click its own buttons need',
+     app.split('onclick="event.stopPropagation()"').length - 1);
   ok(/const onBackdrop\s*=/.test(app),
      'the backdrop rule lives in one helper');
 }

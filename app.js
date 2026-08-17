@@ -97,7 +97,7 @@ function _renderFramedRefusal(){
           'Because AMV can approve payments and change your account, it will not ' +
           'load here - a page you cannot see should not be able to sit over those ' +
           'buttons.</p>' +
-        '<a class="fstop-b" href="' + escH(url) + '" target="_top" rel="noopener">Open AMV directly</a>' +
+        '<a class="fstop-b" href="' + escH(url) + '" target="_top" rel="noopener noreferrer">Open AMV directly</a>' +
       '</div>';
   }catch(e){
     try{ document.body.textContent = 'AMV does not run inside another site.'; }catch(_){}
