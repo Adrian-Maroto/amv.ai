@@ -6914,6 +6914,30 @@ export default {
          with a hole in it by next month. */
       const tooBig = _bodyTooBig(request);
       if (tooBig) return _applyCors(request, env, tooBig);
+
+      /* A DEPLOYMENT THAT CANNOT FINISH THE JOB SHOULD NOT START IT.
+
+         Found by running this Worker in workerd with no secrets set, which is
+         exactly the state a first deploy is in until somebody remembers
+         `wrangler secret put`.
+
+         Signing fails closed without JWT_SECRET - deliberately, so a missing
+         secret can never become a public signing key. But issueTokens is the
+         LAST thing signup does. The account row was already written, the
+         counters already incremented, the growth already recorded; the throw
+         arrived after all of it and came back as a generic 500. So the account
+         existed, its owner had no token, and trying again answered "account
+         exists" with a 409. One forgotten secret and every person who signed up
+         is locked out of an address they own, permanently, with nothing on
+         either side saying why.
+
+         Checked here for the reason the body limit is: there are a hundred and
+         sixty routes and one place they all pass through. And checked BEFORE
+         the route runs, because the whole failure is that the work happened
+         first. */
+      const unconfigured = _deploymentCannotServe(request, env);
+      if (unconfigured) return _applyCors(request, env, unconfigured);
+
       return _applyCors(request, env, await _route(request, env, ctx));
     } catch (err) {
       // An unhandled exception reached the top level. Record it AND alert (both
@@ -6976,6 +7000,58 @@ function _bodyTooBig(request) {
       + Math.round(max / 1024) + ' KB), so nothing was read.',
     code: 'body_too_large', limit: max,
   }, 413);
+}
+
+/* THE ROUTES THAT CANNOT WORK WITHOUT A SIGNING KEY.
+
+   Not "every route": most of this Worker is honest about missing configuration
+   already, and refusing everything because one optional key is absent would
+   turn a partial deployment into no deployment. These are the paths that MUST
+   mint or renew a token to succeed, so without JWT_SECRET they cannot end any
+   way but a throw - and three of them write something first.
+
+   Everything that only VERIFIES is already fine: verifyToken wraps its work in
+   a try and answers null, so those paths come back 401 rather than 500. That is
+   the correct answer to "this deployment cannot check who you are" and it needs
+   no help from here.
+
+   The list is exactly the four handlers that call issueTokens or signToken,
+   read off the source rather than remembered - /auth/reset/confirm was on it
+   for a first draft and does not sign anything, and a route on this list that
+   does not need to be is a route refused for no reason.
+
+   Kept as a roster beside the check rather than as a condition inside each
+   handler, for the reason GET_SAFE is: a rule spread across a hundred and
+   sixty routes has a hole in it by next month. A new auth route that signs
+   something belongs on this list, and the test that reads it says so. */
+const NEEDS_SIGNING = new Set([
+  '/auth/signup',
+  '/auth/login',
+  '/auth/google',
+  '/auth/refresh',
+]);
+
+/* Whether this deployment can serve this request at all.
+
+   Answers with 503 rather than 500, because those mean different things to
+   everyone downstream: 500 says AMV broke and invites a retry, 503 says AMV is
+   not set up and a retry will do exactly the same thing. The message names the
+   missing thing without printing it - the operator needs to know WHICH secret,
+   and nobody needs to know its value. */
+function _deploymentCannotServe(request, env) {
+  let path = '';
+  try { path = new URL(request.url).pathname.replace(/\/+$/, ''); } catch (e) { return null; }
+  if (!NEEDS_SIGNING.has(path)) return null;
+  if (env && env.JWT_SECRET) return null;
+  /* Audited, because the operator's first sight of this should not be a
+     customer telling them sign-in is broken. */
+  try { audit(env, 'deployment_unconfigured', { path, missing: 'JWT_SECRET' }); } catch (e) {}
+  return json({
+    error: 'This AMV deployment is not finished being set up, so no account can '
+      + 'be created or signed in yet. Nothing was changed.',
+    code: 'not_configured',
+    missing: 'JWT_SECRET',
+  }, 503, { 'Retry-After': '300' });
 }
 
 /* AMV-SP-09: WHERE SOMEBODY LANDS AFTER PAYING IS NOT THE CALLER'S CHOICE.

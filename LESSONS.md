@@ -4874,3 +4874,38 @@ Worth noticing that the gate caught it for free. `check.mjs` runs the build on
 an already-built tree, so the second run IS the regression test, and no separate
 one is needed. When a build step is meant to be idempotent, the gate running it
 against its own output is the cheapest proof there is.
+
+## 259. The tests all set the secret, so nobody found out what happens without it
+
+Every Worker test in this repo builds an `env` by hand, and every one of them
+sets JWT_SECRET. Two hundred and eighty suites, and the state a Worker is
+actually in on its first deploy - storage bound, code deployed, `wrangler
+secret put` not yet run - had never been exercised once.
+
+Running it in workerd found it in ninety seconds. Signup answered 500. The
+account row was already written: the population counter incremented, the growth
+and funnel marks recorded, the account_created event stored, and THEN the signer
+threw, because issueTokens is the last thing signup does. So the account existed
+and its owner had no token; signing up again answered `account exists`, which is
+true and is the worst thing to tell them, because the account it names is one
+nobody can ever sign into. The address is spent. The operator sees a 500 with no
+cause.
+
+Three things.
+
+Fail-closed was right and was not the bug. The signer refuses to sign without a
+secret so a missing secret can never become a public key, and that must stay.
+The bug is WHERE it fires - at the end, after the writes. A correct refusal
+issued too late is a partial commit with good intentions.
+
+The most likely operator mistake deserves the most deliberate answer. Forgetting
+one secret is not an exotic failure, it is the default state of a fresh deploy.
+It came back as the same generic 500 as a genuine crash, and 500 invites a
+retry. 503 with the name of the missing secret says a retry will do the same
+thing and tells the one person who can fix it what to fix.
+
+And the general one: a hand-built test double encodes what its author expected
+to matter. Everybody who wrote one of these knew a token had to be signable, so
+everybody set the secret, so the one configuration that ships first was the one
+configuration never tested. Running the real runtime is not a nicety - it is the
+only thing in the loop that has no opinion about what should be there.
