@@ -10497,10 +10497,44 @@ const MARKET_RESERVE_S = 20 * 60;
 
 const PEND_KIND = 'paypending';
 const PEND_GRACE_MS = 10 * 60 * 1000;      // give the webhook a fair chance first
-const PEND_GIVEUP_MS = 24 * 60 * 60 * 1000; // an unpaid session is never coming back
+/* HOW LONG A PAYMENT CAN STILL BE ON ITS WAY.
+
+   This was 24 hours, under a comment saying "an unpaid session is never coming
+   back". That was true when the only way to pay was a card, where the answer
+   arrives in seconds. It stopped being true when automatic_payment_methods was
+   switched on: an OXXO voucher is cash at a shop counter and the customer has
+   three days, and SEPA Direct Debit can take up to fourteen and can still come
+   back failed.
+
+   This window is the safety net for a webhook that never arrived. Set shorter
+   than the payment method takes, it drops the row while the money is still
+   genuinely in flight - so somebody pays, the async event goes missing, and
+   nothing is left watching on AMV's side. They are charged and never get the
+   plan, which is the one outcome worse than not being paid.
+
+   Sixteen days: fourteen for the slowest method Stripe will hand us, plus room
+   for a weekend and a settlement delay. A row that really is dead costs one
+   provider lookup per sweep until then, which is the cheap side of this trade. */
+const PEND_GIVEUP_MS = 16 * 24 * 60 * 60 * 1000;
 /* One provider lookup per pending row, so this pass gets its own budget. It
    shares a tick with the rest of the cron work, so it takes a smaller slice. */
 const RECONCILE_BUDGET_MS = 15 * 1000;
+
+/* Whether a Stripe Checkout Session has actually been paid for.
+
+   The one question worth asking before anything is granted, and it was being
+   asked as `payment_status === 'paid' || status === 'complete'`, which answers
+   yes to a session that is complete and unpaid - the exact shape a voucher or a
+   direct debit has for its first three to fourteen days.
+
+   'no_payment_required' is a yes: that is a full-coupon or trial session where
+   Stripe is telling us there is no money to wait for. Anything else - and
+   notably 'unpaid' - is not fulfilled yet. Missing is not a yes either: an
+   object that does not say it was paid has not said it was paid. */
+function _stripeSessionPaid(session) {
+  const s = String((session && session.payment_status) || '');
+  return s === 'paid' || s === 'no_payment_required';
+}
 
 async function _pendStart(env, id, data) {
   if (!id) return;
@@ -10578,7 +10612,15 @@ async function reconcilePayments(env) {
       const d = await r.json().catch(() => ({}));
       if (!r.ok) continue;
 
-      if (d.payment_status === 'paid' || d.status === 'complete') {
+      /* `d.payment_status === 'paid' || d.status === 'complete'` was the same
+         defect as the webhook's, in an or: a session paid by voucher or direct
+         debit is 'complete' the moment the customer chooses it and 'unpaid'
+         until the money actually arrives, so the second half of that condition
+         granted on the first half being false. The sweep exists to rescue
+         payments the webhook missed - it must not rescue payments that have not
+         happened. An unpaid row is left alone and asked about again next sweep,
+         which is exactly what it is for. */
+      if (_stripeSessionPaid(d)) {
         if (p.kind === 'market') {
           await _creditSale(env, { itemId: p.itemId, buyer: p.email, seller: p.seller,
                                    amountCents: d.amount_total, ref: d.payment_intent || row.id });
@@ -12520,8 +12562,24 @@ async function verifyToken(token, secret, env = null, expectedTyp = 'access') {
             (Price IDs you create in the Stripe dashboard)
      In Stripe → Developers → Webhooks, add endpoint:
        https://<your-worker>/v1/stripe/webhook
-       events: checkout.session.completed, customer.subscription.updated,
-               customer.subscription.deleted, invoice.paid
+       events - ALL TEN. This list named four of them, and the other six are
+       handled here in code that would simply never run: an operator following
+       it subscribed to a quarter of what AMV listens for and had no way to
+       know. Each one is money moving in a direction somebody has to know about.
+         checkout.session.completed              a card paid, grant the plan
+         checkout.session.async_payment_succeeded a voucher or direct debit
+                                                  finally cleared - WITHOUT
+                                                  this, a customer who paid by
+                                                  OXXO or SEPA pays and is
+                                                  never granted anything
+         checkout.session.async_payment_failed    it did not clear; close it out
+         customer.subscription.updated            seats, plan or state changed
+         customer.subscription.deleted            it ended
+         invoice.paid                             a renewal went through
+         invoice.payment_failed                   a renewal was declined
+         charge.refunded                          money went back
+         refund.created                           the same, newer event shape
+         charge.dispute.created                   a chargeback was opened
    PayPal (optional):
      wrangler secret put PAYPAL_CLIENT_ID / PAYPAL_SECRET / PAYPAL_WEBHOOK_ID
      [vars] PAYPAL_MODE = "live"  (or "sandbox")
@@ -14534,7 +14592,40 @@ async function stripeWebhook(request, env, ctx) {
   const evtAt = (+evt.created ? +evt.created * 1000 : Date.now());
 
   try {
-    if (type === 'checkout.session.completed') {
+    if (type === 'checkout.session.completed' || type === 'checkout.session.async_payment_succeeded') {
+      /* A COMPLETED SESSION IS NOT A PAID ONE.
+
+         `automatic_payment_methods` is on, deliberately, so that the rest of
+         the world can pay the way it pays - and two of the methods it turns on
+         do not move money when the session completes. OXXO is a voucher the
+         customer takes to a shop counter in Mexico and has three days to pay in
+         cash. SEPA Direct Debit can take up to fourteen days and can come back
+         failed. For both, Stripe fires checkout.session.completed IMMEDIATELY
+         with payment_status: 'unpaid', and then, later, either
+         async_payment_succeeded or async_payment_failed.
+
+         This branch granted the plan on 'completed' and never looked at
+         payment_status. So the way to get AMV free, from any country where
+         those methods are enabled, was to choose one at checkout and then
+         simply not pay: the plan was granted in full, immediately, on a voucher
+         nobody ever redeemed. The marketplace branch was worse - it credited
+         the SELLER eighty percent of money that had not arrived, so AMV owed a
+         real payout on an imaginary sale.
+
+         Fulfilment now waits for the money. An unpaid session is acknowledged
+         (200, so Stripe stops retrying a delivery that was fine) and left in
+         the pending ledger, which is what the reconciliation sweep watches -
+         so a lost async event still gets picked up. async_payment_succeeded
+         arrives here and takes the same path, because a payment that took nine
+         days is still a payment and must fulfil exactly once. */
+      if (!_stripeSessionPaid(obj)) {
+        audit(env, 'payment_awaiting', {
+          id: obj.id, status: obj.payment_status || '',
+          email: (obj.metadata?.email || obj.client_reference_id || obj.customer_email || '').toLowerCase(),
+        });
+        return new Response('ok', { status: 200 });
+      }
+
       // Marketplace one-time purchase → grant item + 80/20 split
       if (obj.metadata?.kind === 'market_purchase') {
         await _creditSale(env, {
@@ -14574,6 +14665,21 @@ async function stripeWebhook(request, env, ctx) {
           currency: (obj.currency || 'usd').toUpperCase(), kind: plan, status: 'succeeded',
           ref: obj.subscription || obj.id || '' });
       }
+    } else if (type === 'checkout.session.async_payment_failed') {
+      /* The voucher expired, or the direct debit came back. Nothing was granted
+         when the session completed, so there is nothing to take away - what
+         matters is closing the pending row so the sweep stops asking Stripe
+         about a session that is never going to be paid, and telling the
+         operator, because a customer who chose a delayed method and failed is
+         somebody who tried to give AMV money and did not manage it. */
+      await _pendDone(env, obj.id);
+      audit(env, 'payment_async_failed', {
+        id: obj.id,
+        email: (obj.metadata?.email || obj.client_reference_id || obj.customer_email || '').toLowerCase(),
+      });
+      await alertOnce(env, 'stripe_async_failed',
+        'A customer chose a delayed payment method (voucher or direct debit) and it did not complete. '
+        + 'Nothing was granted. If this becomes common, check which methods are enabled in Stripe.', 60);
     } else if (type === 'invoice.payment_failed') {
       /* The renewal was DECLINED. Stripe will keep retrying for weeks; until
          this existed the plan stayed fully granted for all of it. Mark the
