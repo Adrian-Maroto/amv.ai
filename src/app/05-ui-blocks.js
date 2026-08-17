@@ -2830,7 +2830,7 @@ function planCards(inApp){
      by omission; the named branches only exist for the two operator-configured
      payment links. */
   function pBtn(label, cls, plan, isLand){
-    if(isLand) return '<button class="plnbtn pbs" onclick="openAuth(\'signup\')">'+label+'</button>';
+    if(isLand) return '<button class="plnbtn pbs" data-auth="signup">'+label+'</button>';
     if(plan==='free'){
       /* Nothing to buy. Saying so beats a button that appears to sell the plan
          they are already on - and beats calling openCheckout('free'), which
@@ -2840,9 +2840,9 @@ function planCards(inApp){
         ? '<button class="plnbtn pbs" disabled aria-disabled="true">Your current plan</button>'
         : '<button class="plnbtn pbs" data-gs="billing">Manage plan</button>';
     }
-    if(plan==='pro' && S.sp) return '<button class="plnbtn pbp" onclick="window.open(S.sp,\'_blank\',\'noopener\')">'+label+'</button>';
-    if(plan==='elite' && S.se) return '<button class="plnbtn pbs" onclick="window.open(S.se,\'_blank\',\'noopener\')">'+label+'</button>';
-    return '<button class="plnbtn '+(plan==='pro'?'pbp':'pbs')+'" onclick="openCheckout(\''+plan+'\')">'+label+'</button>';
+    if(plan==='pro' && S.sp) return '<button class="plnbtn pbp" data-dact="_openPlanLink" data-darg="pro">'+label+'</button>';
+    if(plan==='elite' && S.se) return '<button class="plnbtn pbs" data-dact="_openPlanLink" data-darg="elite">'+label+'</button>';
+    return '<button class="plnbtn '+(plan==='pro'?'pbp':'pbs')+'" data-dact="openCheckout" data-darg="'+escH(plan)+'">'+label+'</button>';
   }
   const isLand=!inApp;
   return [
@@ -2955,7 +2955,7 @@ try{ window._teamPlanBanner=_teamPlanBanner; }catch(e){}
 function _customPlanBanner(inApp){
   const btn = inApp
     ? '<button class="btn pbp plnbtn cpb-btn" data-dact="openCustomPlan">Build your plan \u2192</button>'
-    : '<button class="btn pbp plnbtn cpb-btn" onclick="openAuth(\'signup\')">Build your plan \u2192</button>';
+    : '<button class="btn pbp plnbtn cpb-btn" data-auth="signup">Build your plan \u2192</button>';
   return '<div class="cpb">'+
     '<div class="cpb-l"><div class="cpb-tier">Custom \u00b7 from $10/mo</div>'+
       '<div class="cpb-t">Want a plan sized exactly to you?</div>'+
@@ -3299,7 +3299,7 @@ function _ovShell(o){
 }
 function _ovWire(id){
   const r=$('ovr'); if(!r) return;
-  on($(id+'-bg'),'click',(e)=>{ if(e.target===e.currentTarget) r.innerHTML=''; });
+  onBackdrop($(id+'-bg'),()=>{ r.innerHTML=''; });
   on($(id+'-x'),'click',()=>{ r.innerHTML=''; });
 }
 window._ovShell=_ovShell; window._ovWire=_ovWire;

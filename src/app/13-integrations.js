@@ -847,12 +847,46 @@ function parseCSV(text){
 function csvToTable(data){
   if(!data||!data.length) return '';
   const h=data[0], rows=data.slice(1);
-  return `<table id="sheet-tbl" style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr>${h.map(hd=>`<th contenteditable="true" style="background:rgba(85,144,255,.12);border:1px solid rgba(255,255,255,.1);padding:8px 10px;text-align:left;font-weight:600;white-space:nowrap;position:sticky;top:0">${escH(hd)}</th>`).join('')}</tr></thead><tbody>${rows.map(row=>`<tr>${h.map((_,ci)=>`<td contenteditable="true" style="border:1px solid rgba(255,255,255,.06);padding:6px 10px;color:var(--tx)" onfocus="this.style.background='rgba(85,144,255,.08)'" onblur="this.style.background=''">${escH(row[ci]||'')}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+  return `<table id="sheet-tbl" style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr>${h.map(hd=>`<th contenteditable="true" style="background:rgba(85,144,255,.12);border:1px solid rgba(255,255,255,.1);padding:8px 10px;text-align:left;font-weight:600;white-space:nowrap;position:sticky;top:0">${escH(hd)}</th>`).join('')}</tr></thead><tbody>${rows.map(row=>`<tr>${h.map((_,ci)=>`<td contenteditable="true" style="border:1px solid rgba(255,255,255,.06);padding:6px 10px;color:var(--tx)">${escH(row[ci]||'')}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
 }
 function tableToCSV(){
   const t=document.getElementById('sheet-tbl'); if(!t) return '';
   return Array.from(t.querySelectorAll('tr')).map(tr=>Array.from(tr.querySelectorAll('th,td')).map(c=>'"'+c.textContent.replace(/"/g,'""')+'"').join(',')).join('\n');
 }
+/* The two download buttons used to carry their whole body in an onclick
+   attribute. Named functions instead: the attribute form is the last thing
+   holding 'unsafe-inline' in the script CSP, and a download that silently
+   produced nothing had nowhere to say so. */
+function _sheetDownloadCSV(){
+  const csv=tableToCSV();
+  if(!csv){ toast('There is nothing in this sheet to download yet.','error'); return; }
+  _saveBlob(new Blob([csv],{type:'text/csv'}), 'amv_'+Date.now()+'.csv');
+  toast('Downloaded','success');
+}
+function _docDownloadTxt(){
+  const b=$('doc-body');
+  if(!b || !b.innerText.trim()){ toast('There is nothing in this document to download yet.','error'); return; }
+  _saveBlob(new Blob([b.innerText],{type:'text/plain'}), 'doc_'+Date.now()+'.txt');
+  toast('Downloaded','success');
+}
+function _saveBlob(blob,name){
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download=name; a.click();
+  /* The object URL used to be left behind, one per download, for the life of
+     the tab. Revoked on the next tick because Chrome needs the click to have
+     been dispatched first. */
+  setTimeout(()=>{ try{ URL.revokeObjectURL(url); }catch(e){} },0);
+}
+function _bgAddGmailCheck(){ _bgAddTask({type:'gmail_check',title:'Check Gmail inbox'}); }
+function _bgAddCalendarCheck(){ _bgAddTask({type:'calendar_check',title:'Optimize my week'}); }
+function _toastResultCopied(){ toast('Result copied','success'); }
+try{
+  window._sheetDownloadCSV=_sheetDownloadCSV; window._docDownloadTxt=_docDownloadTxt;
+  window._bgAddGmailCheck=_bgAddGmailCheck; window._bgAddCalendarCheck=_bgAddCalendarCheck;
+  window._toastResultCopied=_toastResultCopied;
+}catch(e){}
+
 let _sheetData=[];
 function handleSheetFile(file){
   // An unreadable or corrupt file used to do nothing at all, with no error -
@@ -878,15 +912,15 @@ function openSheetEditor(data,name){
   <span style="font-size:13px;font-weight:600">&#128200; ${escH(name||'Spreadsheet')}</span>
   <span style="font-size:11px;color:var(--mu)">${data.length-1} rows &middot; ${data[0]&&data[0].length||0} cols</span>
   <div style="margin-left:auto;display:flex;gap:6px">
-    <button class="ext-btn" onclick="(()=>{const csv=tableToCSV();if(!csv)return;const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='amv_'+Date.now()+'.csv';a.click();toast('Downloaded','success');})()">&#8681; Download</button>
-    <button class="ext-btn" onclick="setTab('extensions')">&#10005; Close</button>
+    <button class="ext-btn" data-dact="_sheetDownloadCSV">&#8681; Download</button>
+    <button class="ext-btn" data-stab="extensions">&#10005; Close</button>
   </div>
 </div>
 <div style="flex:1;overflow:auto;padding:12px">${csvToTable(data)}</div>
 <div style="background:rgba(13,17,23,.97);border-top:1px solid rgba(255,255,255,.1);padding:12px 14px;flex-shrink:0">
   <div style="font-size:10px;color:#7cb8ff;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:7px">AMV AI Toolbar</div>
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
-    ${['Analyze trends','Find duplicates','Add totals row','Sort by first column','Summarize data'].map(q=>`<button class="ext-btn" onclick="runSheetAI('${q}')">${q}</button>`).join('')}
+    ${['Analyze trends','Find duplicates','Add totals row','Sort by first column','Summarize data'].map(q=>`<button class="ext-btn" data-dact="runSheetAI" data-darg="${q}">${q}</button>`).join('')}
   </div>
   <div style="display:flex;gap:8px">
     <input type="text" id="sheet-inp" placeholder="Ask AMV anything about this spreadsheet..." style="flex:1;font-size:13px">
@@ -924,15 +958,15 @@ function openDocEditor(content,name){
 <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;background:rgba(13,17,23,.95);border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0">
   <span style="font-size:13px;font-weight:600">&#128196; ${escH(name||'Document')}</span>
   <div style="margin-left:auto;display:flex;gap:6px">
-    <button class="ext-btn" onclick="(()=>{const b=$('doc-body');if(!b)return;const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([b.innerText],{type:'text/plain'}));a.download='doc_'+Date.now()+'.txt';a.click();})()">&#8681; Download</button>
-    <button class="ext-btn" onclick="setTab('extensions')">&#10005; Close</button>
+    <button class="ext-btn" data-dact="_docDownloadTxt">&#8681; Download</button>
+    <button class="ext-btn" data-stab="extensions">&#10005; Close</button>
   </div>
 </div>
 <div id="doc-body" contenteditable="true" spellcheck="true" style="flex:1;overflow-y:auto;padding:40px 60px;font-size:14px;line-height:1.9;color:var(--tx);outline:none;max-width:780px;margin:0 auto;width:100%;box-sizing:border-box">${(content||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n\n/g,'</p><p style="margin:0 0 14px">').replace(/\n/g,'<br>')}</div>
 <div style="background:rgba(13,17,23,.97);border-top:1px solid rgba(255,255,255,.1);padding:12px 14px;flex-shrink:0">
   <div style="font-size:10px;color:#7cb8ff;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:7px">AMV AI Toolbar</div>
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
-    ${['Improve writing','Fix grammar','Make it longer','Make it shorter','Change tone to formal'].map(q=>`<button class="ext-btn" onclick="runDocAI('${q}')">${q}</button>`).join('')}
+    ${['Improve writing','Fix grammar','Make it longer','Make it shorter','Change tone to formal'].map(q=>`<button class="ext-btn" data-dact="runDocAI" data-darg="${q}">${q}</button>`).join('')}
   </div>
   <div style="display:flex;gap:8px">
     <input type="text" id="doc-inp" placeholder="Ask AMV to edit, rewrite, or expand..." style="flex:1;font-size:13px">
@@ -1015,9 +1049,9 @@ function renderAutomationView(){
   const vc=$('vc'); if(!vc) return;
   const sc=s=>s==='done'?'#4ade80':s==='running'?'#5590ff':s==='failed'?'#ff4d4d':'#e0b341';
   const si=s=>s==='done'?'✓':s==='running'?'⟳':s==='failed'?'✕':'⏳';
-  const cards=['<div onclick="_bgAddTask({type:\'gmail_check\',title:\'Check Gmail inbox\'})" style="background:rgba(22,27,34,.6);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:16px;cursor:pointer;text-align:center;transition:all .2s" onmouseenter="this.style.borderColor=\'rgba(88,166,255,.2)\'" onmouseleave="this.style.borderColor=\'rgba(255,255,255,.07)\'"><div style="font-size:28px;margin-bottom:8px">📧</div><div style="font-size:13px;font-weight:600;margin-bottom:3px">Check Gmail</div><div style="font-size:11px;color:var(--mu)">Analyze unread emails</div></div>',
-  '<div onclick="_bgAddTask({type:\'calendar_check\',title:\'Optimize my week\'})" style="background:rgba(22,27,34,.6);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:16px;cursor:pointer;text-align:center;transition:all .2s" onmouseenter="this.style.borderColor=\'rgba(88,166,255,.2)\'" onmouseleave="this.style.borderColor=\'rgba(255,255,255,.07)\'"><div style="font-size:28px;margin-bottom:8px">📅</div><div style="font-size:13px;font-weight:600;margin-bottom:3px">Plan my week</div><div style="font-size:11px;color:var(--mu)">Calendar optimization</div></div>',
-  '<div onclick="showCustomTask()" style="background:rgba(22,27,34,.6);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:16px;cursor:pointer;text-align:center;transition:all .2s" onmouseenter="this.style.borderColor=\'rgba(88,166,255,.2)\'" onmouseleave="this.style.borderColor=\'rgba(255,255,255,.07)\'"><div style="font-size:28px;margin-bottom:8px">⚡</div><div style="font-size:13px;font-weight:600;margin-bottom:3px">Custom Task</div><div style="font-size:11px;color:var(--mu)">Any AI task in background</div></div>'].join('');
+  const cards=['<button type="button" class="bgq-card" data-dact="_bgAddGmailCheck"><span class="bgq-ic" aria-hidden="true">📧</span><span class="bgq-t">Check Gmail</span><span class="bgq-s">Analyze unread emails</span></button>',
+  '<button type="button" class="bgq-card" data-dact="_bgAddCalendarCheck"><span class="bgq-ic" aria-hidden="true">📅</span><span class="bgq-t">Plan my week</span><span class="bgq-s">Calendar optimization</span></button>',
+  '<button type="button" class="bgq-card" data-dact="showCustomTask"><span class="bgq-ic" aria-hidden="true">⚡</span><span class="bgq-t">Custom Task</span><span class="bgq-s">Any AI task in background</span></button>'].join('');
   const taskList=_bgQueue.tasks.length ? _bgQueue.tasks.slice().reverse().map(function(t){
     let h='<div style="background:rgba(22,27,34,.7);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:14px;margin-bottom:8px">';
     h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">';
@@ -1029,7 +1063,7 @@ function renderAutomationView(){
     if(t.error) h+='<div style="font-size:12px;color:var(--red);padding:8px;background:rgba(248,81,73,.08);border-radius:7px;margin-top:4px">'+escH(t.error)+'</div>';
     if(t.result){
       h+='<div style="font-size:12px;color:var(--mu);background:rgba(0,0,0,.25);border-radius:8px;padding:10px;margin-top:8px;max-height:180px;overflow-y:auto;white-space:pre-wrap;line-height:1.65">'+escH(t.result.slice(0,500))+(t.result.length>500?' ...(truncated)':'')+'</div>';
-      h+='<div style="display:flex;gap:6px;margin-top:8px"><button class="ext-btn" onclick="toast(&quot;Result copied&quot;,&quot;success&quot;)">Copy result</button></div>';
+      h+='<div style="display:flex;gap:6px;margin-top:8px"><button class="ext-btn" data-dact="_toastResultCopied">Copy result</button></div>';
     }
     h+='<div style="font-size:10px;color:var(--dim);margin-top:6px">'+new Date(t.created).toLocaleString()+'</div>';
     h+='</div>';
@@ -1041,7 +1075,7 @@ function renderAutomationView(){
 <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px">${cards}</div>
 </div>
 <div class="ss2">
-<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><h3 style="margin:0">Task Queue</h3><button class="ext-btn" onclick="renderAutomationView()">Refresh</button></div>
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><h3 style="margin:0">Task Queue</h3><button class="ext-btn" data-dact="renderAutomationView">Refresh</button></div>
 ${taskList}
 </div>
 </div></div>`;
@@ -1294,7 +1328,7 @@ async function openMailConnect(){
   /* Guarded so a click INSIDE the dialog does not close it, without using
      stopPropagation - which would kill the delegated handlers on every button
      in here (LESSONS #5). */
-  on($('ml-bg'),'click',(e)=>{ if(e.target===e.currentTarget) r.innerHTML=''; });
+  onBackdrop($('ml-bg'),()=>{ r.innerHTML=''; });
   on($('ml-x'),'click',()=>{ r.innerHTML=''; });
   on($('ml-cancel'),'click',()=>{ r.innerHTML=''; });
   on($('ml-go'),'click',async()=>{

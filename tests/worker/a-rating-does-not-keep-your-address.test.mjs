@@ -181,8 +181,18 @@ section('The scam register describes the CSP that actually ships');
      'and no longer claims a policy the page has never shipped', item24.slice(0, 200));
   ok(/default-src/.test(item24) && /'self'/.test(item24),
      'it names the one that is really there', true);
-  ok(/unsafe-inline/.test(item24),
-     'and states the limit rather than glossing it - script-src still allows inline, so the CSP is a host allowlist on this line',
+  /* This used to require the register to ADMIT that script-src allowed inline.
+     It does not any more, so the check flips with the fact: the register must
+     not still be claiming a limit that was closed, and the shipped page must
+     really be the stricter one. A register that understates a defence goes
+     stale quietly; one that overstates it stops somebody making the check. */
+  const shippedScript = (html.match(/script-src ([^;"]*)/) || [])[1] || '';
+  ok(!/'unsafe-inline'/.test(shippedScript),
+     'the page really does refuse inline script now', shippedScript.slice(0, 70));
+  ok(!/script-src[^.]{0,80}unsafe-inline/.test(item24),
+     'and the register no longer records that as an open limit', item24.slice(0, 200));
+  ok(/style-src/.test(item24) && /unsafe-inline/.test(item24),
+     'it names the one that IS still open - inline styles - rather than dropping the caveat entirely',
      true);
 }
 

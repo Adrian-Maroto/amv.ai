@@ -4,8 +4,11 @@
    that was the wrong question answered carefully. escH stops a value breaking
    OUT of the attribute. It says nothing about whether the value is dangerous
    INSIDE one. `javascript:alert(1)` contains not a single character escH
-   touches: no quote, no angle bracket, no ampersand. It arrives intact, and
-   script-src carries 'unsafe-inline', so nothing downstream stops it either.
+   touches: no quote, no angle bracket, no ampersand. It arrives intact. A CSP
+   without 'unsafe-inline' would also refuse a javascript: URL, and script-src
+   no longer carries it - but that is a second line and this is the first: it
+   depends on the header arriving, on the browser enforcing it, and on nobody
+   widening the directive later.
 
    That matters because a lot of these URLs are not ours. A research chip's href
    is a web search result. An image src is whatever the provider CDN answered

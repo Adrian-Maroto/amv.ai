@@ -21,6 +21,89 @@ const on = (el, ev, fn) => {
   }
   el.addEventListener(ev, fn);
 };
+
+/* CLICKING THE DARK PART CLOSES IT. CLICKING THE PANEL DOES NOT.
+
+   Every overlay in AMV is a backdrop with a panel inside it, and the backdrop's
+   click closes the thing. Keeping that click off the panel used to be written
+   ON the panel, as onclick="event.stopPropagation()" - thirty-seven times.
+
+   That is the wrong element to put it on, and it broke things. `data-dact` is
+   dispatched by ONE listener on `document`, so a stopPropagation anywhere
+   inside a panel kills every delegated button underneath it during the bubble.
+   A recent-chat row in a project card shipped like that and did nothing at all
+   when clicked (LESSONS #5, and the e2e file named after it). It also required
+   an inline handler on every panel, which is what kept 'unsafe-inline' in the
+   script CSP - so one wrong idiom cost the strongest header we have.
+
+   The question the backdrop is actually asking is "did this click land on ME",
+   and only the backdrop can answer it. `e.target === e.currentTarget` answers
+   it exactly, needs nothing on the panel, and lets the click keep bubbling to
+   the delegated dispatcher where it belongs. */
+const onBackdrop = (el, fn) => {
+  if(!el || typeof fn!=='function') return;
+  el.addEventListener('click', (e) => { if(e.target === e.currentTarget) fn(e); });
+};
+try{ window.onBackdrop = onBackdrop; }catch(e){}
+/* THE ONE DIRECTIVE A META TAG CANNOT DELIVER.
+
+   The page's CSP carries `frame-ancestors 'none'`, and it has never done
+   anything. The spec requires a policy delivered in a <meta> element to DROP
+   frame-ancestors, and browsers say so out loud in the console. So the line
+   that was supposed to stop AMV being put inside somebody else's page was a
+   defence on paper for as long as it has been written down.
+
+   That matters here more than on most sites. This page is where somebody
+   approves a payment, confirms a payout, deletes their account and connects a
+   bank. Clickjacking is exactly the attack those buttons are worth.
+
+   The API is covered - the Worker sends X-Frame-Options and frame-ancestors as
+   real headers, which work. A static file served by the host cannot, so the
+   page answers the question itself, in code that runs.
+
+   One frame is legitimate: the embeddable widget IS AMV's own page loaded in an
+   iframe on a customer's site, deliberately, with `#embed=1`. It has no signed
+   in account and no session to steal, so it is the exception and the only one.
+
+   A cross-origin parent makes reading `top.location` throw, and that throw is
+   itself the answer: something is framing us that we cannot see. Treated as
+   framed rather than swallowed, because the case where the check breaks is the
+   case where it is needed. */
+function _framedWithoutPermission(){
+  try{
+    if(window.top === window.self) return false;                  // nobody is framing us
+    if(String(location.hash||'').indexOf('embed=1') >= 0) return false;  // the widget, on purpose
+    return true;
+  }catch(e){
+    /* Reading window.top threw, which only happens cross-origin - so we are
+       framed, by someone we are not allowed to look at. */
+    return String(location.hash||'').indexOf('embed=1') < 0;
+  }
+}
+
+/* Refuse to render, and say why in a sentence somebody can act on. Deliberately
+   NOT a frame-buster: navigating a page the visitor did not ask to leave is its
+   own hostile act, and a sandboxed iframe blocks it anyway. A link they choose
+   to click ends up in the same place, honestly. */
+function _renderFramedRefusal(){
+  try{
+    const url = location.origin + location.pathname;
+    document.body.className = 'framed-stop';
+    document.body.innerHTML =
+      '<div class="fstop">' +
+        '<div class="fstop-mark">AMV</div>' +
+        '<h1 class="fstop-t">AMV does not run inside another site</h1>' +
+        '<p class="fstop-p">This page is embedded in a page that is not AMV. ' +
+          'Because AMV can approve payments and change your account, it will not ' +
+          'load here - a page you cannot see should not be able to sit over those ' +
+          'buttons.</p>' +
+        '<a class="fstop-b" href="' + escH(url) + '" target="_top" rel="noopener">Open AMV directly</a>' +
+      '</div>';
+  }catch(e){
+    try{ document.body.textContent = 'AMV does not run inside another site.'; }catch(_){}
+  }
+}
+
 /* === per-account storage scoping ===
    Every data key is namespaced by the logged-in user's email so accounts
    on the same browser cannot see each other's data. A small allowlist of
@@ -708,8 +791,10 @@ function _noDash(t){ return (t==null?'':String(t)).replace(/[\u2014\u2013]/g,'-'
    escH stops a value from breaking OUT of an attribute. It says nothing about
    whether the value is safe INSIDE one, and those are different questions.
    `javascript:alert(1)` contains not one character escH touches, so it passes
-   through untouched and runs when the link is clicked - and script-src carries
-   'unsafe-inline', so nothing downstream stops it either.
+   through untouched and runs when the link is clicked. A browser enforcing the
+   CSP would refuse it too, now that script-src no longer allows inline script -
+   but that is a second line, not this one. It depends on the header arriving,
+   on the browser honouring it, and on nobody widening the directive later.
 
    The URLs that reach an href, a src, or window.open in this app are not all
    ours. They come from web search results, an image or video provider's CDN,
@@ -1056,7 +1141,7 @@ function openStatusPanel(){
   const trust=(svg,title,sub)=>'<div class="st-trust"><span class="st-trust-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+svg+'</svg></span>'+
     '<div><div class="st-trust-t">'+escH(title)+'</div><div class="st-trust-s">'+escH(sub)+'</div></div></div>';
   r.insertAdjacentHTML('beforeend',
-    '<div class="ov" id="status-modal-bg"><div class="status-modal" onclick="event.stopPropagation()">'+
+    '<div class="ov" id="status-modal-bg"><div class="status-modal">'+
       '<div class="st-head"><div class="st-head-l"><span class="sb-status-dot '+_statusState+'" style="width:11px;height:11px"></span>'+
         '<span id="st-head-txt">'+(_statusState==='ok'?'All systems operational':_statusState==='degraded'?'Some services degraded':'You\u2019re offline')+'</span></div>'+
         '<button class="art-x" id="st-x" aria-label="Close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>'+
@@ -1075,7 +1160,7 @@ function openStatusPanel(){
       '</div>'+
     '</div></div>');
   $('st-x')?.addEventListener('click',closeStatusPanel);
-  on($('status-modal-bg'),'click',closeStatusPanel);
+  onBackdrop($('status-modal-bg'),closeStatusPanel);
   $('st-recheck')?.addEventListener('click',async()=>{ await _refreshStatusPanel(); });
   _refreshStatusPanel();
 }
@@ -1290,6 +1375,39 @@ function _logErr(where, err){
 try{ window._errQueue=_errQueue; window._errFlush=_errFlush; }catch(e){}
 try{ window._logErr=_logErr; }catch(e){}
 
+/* WHEN THE HEADER REFUSES SOMETHING, SAY SO.
+
+   script-src no longer allows inline script: it names the three scripts AMV
+   ships, by hash, and refuses everything else. That is the point - an injected
+   script is not on the list and does not run.
+
+   The failure mode of getting it wrong is the worst kind there is. A hash that
+   no longer matches, or a third party that starts injecting an inline script
+   of its own, does not throw and does not appear in any log; the browser
+   declines quietly and a feature is simply absent. Payments, the bot check and
+   sign-in with Google are all third-party scripts on this page.
+
+   The browser will tell us, if anybody listens. `securitypolicyviolation`
+   fires on every refusal with the directive and the blocked source, so a
+   mistake in this header arrives as a reported error with a name on it rather
+   than as a customer saying a button does nothing.
+
+   Rate-limited to the first few, because a page that violates once usually
+   violates in a loop and the sink is a shared resource. */
+let _cspSeen = 0;
+try{
+  document.addEventListener('securitypolicyviolation', (e) => {
+    try{
+      if(_cspSeen >= 5) return;
+      _cspSeen++;
+      /* The blocked URI only - never e.sample, which is a slice of the source
+         that was refused and can quote whatever was in scope. */
+      _logErr('csp.' + String(e.violatedDirective || 'unknown').slice(0, 40),
+              new Error(String(e.blockedURI || 'inline').slice(0, 120)));
+    }catch(_){}
+  });
+}catch(e){}
+
 /* Lightweight pagination for data-heavy lists. Renders items in pages and adds
    a "Show more" button so a user with hundreds of memories/images/etc. gets a
    fast, small DOM instead of thousands of nodes at once. State is kept per-key
@@ -1324,11 +1442,10 @@ function _showModalAsync({title, body, okText='OK', cancelText, placeholder, def
           '<button class="btn bp" id="modal-ok" style="padding:10px 16px;font-size:13px">'+escH(okText)+'</button>'+ 
         '</div>'+ 
       '</div></div>';
-    const box=$('modal-box'); if(box) box.addEventListener('click',e=>e.stopPropagation());
     on($('modal-close'),'click',()=>{ closeOvr(); resolve(null); });
     if(cancelText) on($('modal-cancel'),'click',()=>{ closeOvr(); resolve(null); });
     on($('modal-ok'),'click',()=>{ const hasInput=!!$('modal-input'); const val=hasInput?$('modal-input').value:true; closeOvr(); resolve(val); });
-    on($('modal-bg'),'click',()=>{ closeOvr(); resolve(null); });
+    onBackdrop($('modal-bg'),()=>{ closeOvr(); resolve(null); });
     const input=$('modal-input'); if(input){ input.focus(); input.select(); }
   });
 }
@@ -1800,7 +1917,7 @@ function _renderQuotaNotice(){
     cia.insertBefore(n, cia.firstChild);
   }
   n.innerHTML='<span class="quota-notice-dot"></span>You\u2019re out of usage - resets in <b class="quota-reset-live">'+escH(_fmtResetIn(_quotaLockUntil-Date.now()))+'</b>'+
-    '<button class="quota-notice-up" onclick="setTab(\'plans\')">Upgrade</button>';
+    '<button class="quota-notice-up" data-stab="plans">Upgrade</button>';
   const ta=$('mta');
   if(ta && !ta.disabled){ ta.dataset.ph=ta.placeholder; ta.disabled=true; ta.placeholder='Out of usage - resets in '+_fmtResetIn(_quotaLockUntil-Date.now()); }
 }
@@ -3550,8 +3667,8 @@ function addToProject(id){
     ? ws.map(w=>'<button class="proj-pick" data-wid="'+w.id+'" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:11px 12px;border:1px solid var(--bd);background:var(--s2);border-radius:10px;color:var(--tx);cursor:pointer;margin-bottom:8px;font-size:14px"><span style="font-size:18px">'+_safeIcon(w.icon||'\uD83D\uDCC1')+'</span>'+escH(w.name||'Project')+'</button>').join('')
     : '<p class="ob-sub">No projects yet. Create one in the Projects tab first.</p>';
   r.innerHTML=
-    '<div class="ov" id="ap-bg"><div class="ob" onclick="event.stopPropagation()">'+
-      '<button class="oc" onclick="closeOvr()">\u00d7</button>'+
+    '<div class="ov" id="ap-bg"><div class="ob">'+
+      '<button class="oc" data-dact="closeOvr">\u00d7</button>'+
       '<h2 style="margin-bottom:4px">Add to project</h2>'+
       '<p class="ob-sub">Move \u201c'+escH(conv.title||'chat')+'\u201d into a project.</p>'+
       '<div class="af">'+list+'</div>'+
@@ -3564,15 +3681,15 @@ function addToProject(id){
       closeOvr();
     });
   });
-  on($('ap-bg'),'click',closeOvr);
+  onBackdrop($('ap-bg'),closeOvr);
 }
 window.addToProject=addToProject;
 function renameConv(id){
   const conv=S.convs.find(x=>x.id===id); if(!conv) return;
   const r=$('ovr'); if(!r) return;
   r.innerHTML=
-    '<div class="ov" id="rn-bg"><div class="ob" onclick="event.stopPropagation()">'+
-      '<button class="oc" onclick="closeOvr()">\u00d7</button>'+
+    '<div class="ov" id="rn-bg"><div class="ob">'+
+      '<button class="oc" data-dact="closeOvr">\u00d7</button>'+
       '<h2 style="margin-bottom:4px">Rename chat</h2>'+
       '<p class="ob-sub">Give this conversation a clear name.</p>'+
       '<div class="af">'+
@@ -3584,7 +3701,7 @@ function renameConv(id){
   const save=()=>{ const v=($('rn-input')||{}).value||''; if(v.trim()){ conv.title=v.trim(); _autoSave(); renderHist(); } closeOvr(); };
   on($('rn-save'),'click',save);
   on($('rn-input'),'keydown',ev=>{ if(ev.key==='Enter') save(); });
-  on($('rn-bg'),'click',closeOvr);
+  onBackdrop($('rn-bg'),closeOvr);
 }
 function exportConv(id){
   const c=S.convs.find(x=>x.id===id);
@@ -3741,12 +3858,12 @@ function _renderSharedView(data){
 async function openSharedChatsManager(){
   const ovr=$('ovr'); if(!ovr) return;
   const live = !!(window.AMV_API && AMV_API.live && AMV_API.token);
-  ovr.innerHTML='<div class="ov" id="shr-bg"><div class="ob" onclick="event.stopPropagation()">'+
-    '<button class="oc" onclick="closeOvr()">&#215;</button>'+
+  ovr.innerHTML='<div class="ov" id="shr-bg"><div class="ob">'+
+    '<button class="oc" data-dact="closeOvr">&#215;</button>'+
     '<h2>Shared conversations</h2>'+
     '<div id="shr-body"><p class="ob-sub">Loading\u2026</p></div></div></div>';
   ovr.classList.add('on');
-  document.getElementById('shr-bg')?.addEventListener('click',e=>{ if(e.target===e.currentTarget) closeOvr(); });
+  onBackdrop($('shr-bg'),closeOvr);
   const body=document.getElementById('shr-body');
   if(!live){
     body.innerHTML='<p class="ob-sub">Links you create right now hold the conversation inside the link itself, so there is nothing stored to revoke - deleting the link is enough. Connect the AMV engine in Settings for shareable pages you can revoke later.</p>';
@@ -7428,7 +7545,7 @@ function planCards(inApp){
      by omission; the named branches only exist for the two operator-configured
      payment links. */
   function pBtn(label, cls, plan, isLand){
-    if(isLand) return '<button class="plnbtn pbs" onclick="openAuth(\'signup\')">'+label+'</button>';
+    if(isLand) return '<button class="plnbtn pbs" data-auth="signup">'+label+'</button>';
     if(plan==='free'){
       /* Nothing to buy. Saying so beats a button that appears to sell the plan
          they are already on - and beats calling openCheckout('free'), which
@@ -7438,9 +7555,9 @@ function planCards(inApp){
         ? '<button class="plnbtn pbs" disabled aria-disabled="true">Your current plan</button>'
         : '<button class="plnbtn pbs" data-gs="billing">Manage plan</button>';
     }
-    if(plan==='pro' && S.sp) return '<button class="plnbtn pbp" onclick="window.open(S.sp,\'_blank\',\'noopener\')">'+label+'</button>';
-    if(plan==='elite' && S.se) return '<button class="plnbtn pbs" onclick="window.open(S.se,\'_blank\',\'noopener\')">'+label+'</button>';
-    return '<button class="plnbtn '+(plan==='pro'?'pbp':'pbs')+'" onclick="openCheckout(\''+plan+'\')">'+label+'</button>';
+    if(plan==='pro' && S.sp) return '<button class="plnbtn pbp" data-dact="_openPlanLink" data-darg="pro">'+label+'</button>';
+    if(plan==='elite' && S.se) return '<button class="plnbtn pbs" data-dact="_openPlanLink" data-darg="elite">'+label+'</button>';
+    return '<button class="plnbtn '+(plan==='pro'?'pbp':'pbs')+'" data-dact="openCheckout" data-darg="'+escH(plan)+'">'+label+'</button>';
   }
   const isLand=!inApp;
   return [
@@ -7553,7 +7670,7 @@ try{ window._teamPlanBanner=_teamPlanBanner; }catch(e){}
 function _customPlanBanner(inApp){
   const btn = inApp
     ? '<button class="btn pbp plnbtn cpb-btn" data-dact="openCustomPlan">Build your plan \u2192</button>'
-    : '<button class="btn pbp plnbtn cpb-btn" onclick="openAuth(\'signup\')">Build your plan \u2192</button>';
+    : '<button class="btn pbp plnbtn cpb-btn" data-auth="signup">Build your plan \u2192</button>';
   return '<div class="cpb">'+
     '<div class="cpb-l"><div class="cpb-tier">Custom \u00b7 from $10/mo</div>'+
       '<div class="cpb-t">Want a plan sized exactly to you?</div>'+
@@ -7897,7 +8014,7 @@ function _ovShell(o){
 }
 function _ovWire(id){
   const r=$('ovr'); if(!r) return;
-  on($(id+'-bg'),'click',(e)=>{ if(e.target===e.currentTarget) r.innerHTML=''; });
+  onBackdrop($(id+'-bg'),()=>{ r.innerHTML=''; });
   on($(id+'-x'),'click',()=>{ r.innerHTML=''; });
 }
 window._ovShell=_ovShell; window._ovWire=_ovWire;
@@ -8412,10 +8529,10 @@ function _renderTeamManage(vc, team){
     const items = kind==='prompt' ? (S.prompts||[]) : (S.workspaces||[]);
     if(!items.length){ toast('You have no '+(kind==='prompt'?'prompts':'projects')+' to share yet','info'); return; }
     const r=$('ovr'); if(!r) return;
-    r.innerHTML='<div class="ov" id="shp-bg"><div class="ob" onclick="event.stopPropagation()" style="max-width:440px"><button class="oc" onclick="closeOvr()">\u00d7</button>'+
+    r.innerHTML='<div class="ov" id="shp-bg"><div class="ob" style="max-width:440px"><button class="oc" data-dact="closeOvr">\u00d7</button>'+
       '<h2 style="margin-bottom:4px">Share a '+kind+'</h2><p class="ob-sub" style="margin-bottom:14px">Everyone on your team will be able to use it.</p>'+
       '<div class="shp-list">'+items.map((it,i)=>'<button class="shp-item" data-shp="'+i+'">'+escH(it.title||it.name||('Untitled '+kind))+'</button>').join('')+'</div></div></div>';
-    on($('shp-bg'),'click',closeOvr);
+    onBackdrop($('shp-bg'),closeOvr);
     r.querySelectorAll('[data-shp]').forEach(b=>on(b,'click',async()=>{
       const it=items[+b.dataset.shp]; closeOvr();
       try{ const ns=await AMVTeam.share(kind, it); drawShared(ns); toast('Shared with your team','success'); }
@@ -9386,8 +9503,8 @@ window._recordTxn=_recordTxn;
 function _mktPaymentModal(it){
   const r=$('ovr'); if(!r) return;
   const price=it.price||0;
-  r.innerHTML='<div class="ov" id="mkpay-bg"><div class="ob mkpay" onclick="event.stopPropagation()" style="max-width:420px">'+
-    '<button class="oc" onclick="closeOvr()">\u00d7</button>'+
+  r.innerHTML='<div class="ov" id="mkpay-bg"><div class="ob mkpay" style="max-width:420px">'+
+    '<button class="oc" data-dact="closeOvr">\u00d7</button>'+
     '<h2 style="margin-bottom:14px">Complete your purchase</h2>'+
     '<div class="mkpay-item"><span class="mkpay-ic">'+_safeIcon(it.icon)+'</span><div style="flex:1"><div class="mkpay-t">'+escH(it.title)+'</div><div class="mkpay-k">'+escH(it.kind||'prompt')+' \u00b7 by '+escH(it.author||'community')+'</div></div><div class="mkpay-price">$'+price+'</div></div>'+
     '<div class="mkpay-rows"><div class="mkpay-row"><span>Item price</span><span>$'+price+'.00</span></div><div class="mkpay-row total"><span>Total due</span><span>$'+price+'.00</span></div></div>'+
@@ -9395,7 +9512,7 @@ function _mktPaymentModal(it){
     '<button class="btn bp" id="mkpay-go" style="width:100%;justify-content:center;margin-top:6px">Add a payment method to continue</button>'+
     '<p class="mkpay-sub">No payment method is connected yet. Add one to finish - you\u2019ll come right back here.</p>'+
   '</div></div>';
-  on($('mkpay-bg'),'click',closeOvr);
+  onBackdrop($('mkpay-bg'),closeOvr);
   on($('mkpay-go'),'click',()=>{ closeOvr(); try{ S.settingsPane='billing'; setTab('settings'); }catch(e){} });
 }
 window._mktPaymentModal=_mktPaymentModal;
@@ -9458,8 +9575,8 @@ function _mktPreview(it, after){
   else if(paid) actionBtn='<button class="btn bp" id="mkt-pv-buy">Buy \u00b7 $'+it.price+'</button>';
   else actionBtn='<button class="btn bp" id="mkt-pv-get">Get it free</button>';
   const rateRow = it._owned && !it._mine ? '<div class="mkt-rate"><span class="mkt-sec-h" style="margin:0">Your rating</span><span class="mkt-rate-stars" id="mkt-pv-rate">'+[1,2,3,4,5].map(n=>'<span class="mkt-rate-star'+(n<=(it._myRating||0)?' on':'')+'" data-stars="'+n+'">\u2605</span>').join('')+'</span></div>' : '';
-  r.innerHTML='<div class="ov" id="mkt-pv-bg"><div class="ob" onclick="event.stopPropagation()" style="max-width:560px">'+
-    '<button class="oc" onclick="closeOvr()">\u00d7</button>'+
+  r.innerHTML='<div class="ov" id="mkt-pv-bg"><div class="ob" style="max-width:560px">'+
+    '<button class="oc" data-dact="closeOvr">\u00d7</button>'+
     '<div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:6px">'+
       '<div class="mkt-pv-ic">'+_safeIcon(it.icon)+'</div>'+
       '<div style="flex:1"><h2 style="margin:0 0 2px">'+escH(it.title)+'</h2>'+
@@ -9470,10 +9587,10 @@ function _mktPreview(it, after){
     (it.status==='sold'?'<div class="mkt-sold-banner">\uD83D\uDD34 This item has sold. Message the seller to ask if they can make another.</div>':'')+
     lockedNote+ fullText + rateRow +
     '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">'+
-      '<button class="btn bs" onclick="closeOvr()">Close</button>'+actionBtn+'</div>'+
+      '<button class="btn bs" data-dact="closeOvr">Close</button>'+actionBtn+'</div>'+
     '<div id="mkt-similar"></div>'+
   '</div></div>';
-  on($('mkt-pv-bg'),'click',closeOvr);
+  onBackdrop($('mkt-pv-bg'),closeOvr);
   document.querySelectorAll('#ovr [data-mk-seller]').forEach(s=>on(s,'click',()=>{ _mktSellerProfile(s.dataset.mkSeller||'', s.dataset.mkSellername||''); }));
   document.querySelectorAll('#ovr .mkt-dl').forEach(b=>on(b,'click',()=>{ const f=it.files[parseInt(b.dataset.dl,10)]; if(f) _downloadFile(f); }));
   // similar items (same category + close price) - scroll-down section like Depop
@@ -9528,8 +9645,8 @@ async function _mktSellerProfile(sellerEmail, sellerName){
     const listingRows = theirs.length
       ? theirs.map(it=>'<div class="vrow mkt-listing-row" data-mk-open="'+escH(it.id)+'" style="cursor:pointer"><span>'+_safeIcon(it.icon)+' '+escH(it.title)+' '+_mktPriceTag(it)+'</span><span class="mkt-row-meta"><span class="mkt-st active">Active</span><span style="color:var(--mu);font-size:11px">'+(it.sales||it.installs||0)+(it.sales?' sold':' installs')+'</span><span class="mkt-row-arr">\u203a</span></span></div>').join('')
       : '<div style="color:var(--mu);font-size:12.5px">No active listings.</div>';
-    r.innerHTML='<div class="ov" id="mkt-sp-bg"><div class="ob" onclick="event.stopPropagation()" style="max-width:560px">'+
-      '<button class="oc" onclick="closeOvr()">\u00d7</button>'+
+    r.innerHTML='<div class="ov" id="mkt-sp-bg"><div class="ob" style="max-width:560px">'+
+      '<button class="oc" data-dact="closeOvr">\u00d7</button>'+
       '<div class="mkt-sp-head">'+_avatarHTML('amv',64)+
         '<div style="flex:1"><h2 style="margin:0 0 3px">AMV <span style="font-size:12px;color:var(--accent);vertical-align:middle">\u2713 Official</span></h2>'+
           '<div style="font-size:12.5px;color:var(--mu)">First-party tools, prompts and crews built by the AMV team.</div>'+
@@ -9538,7 +9655,7 @@ async function _mktSellerProfile(sellerEmail, sellerName){
         '</div></div>'+
       '<div class="ss2"><h3>Official listings</h3><div class="vbreak">'+listingRows+'</div></div>'+
     '</div></div>';
-    on($('mkt-sp-bg'),'click',closeOvr);
+    onBackdrop($('mkt-sp-bg'),closeOvr);
     on($('mkt-sp-msg'),'click',()=>{ closeOvr(); try{ setTab('help'); }catch(e){ toast('Reach the AMV team from the Help Center.','info'); } });
     document.querySelectorAll('#mkt-sp-bg [data-mk-open]').forEach(el=>on(el,'click',()=>{ const it=theirs.find(x=>x.id===el.dataset.mkOpen); if(it) _mktPreview(it, ()=>{}); }));
     return;
@@ -9576,8 +9693,8 @@ async function _mktSellerProfile(sellerEmail, sellerName){
   else if(bought) reviewBtn='<button class="btn bp" id="mkt-write-review" style="font-size:12px">'+(mine?'Edit your review':'Write a review')+'</button>';
   else reviewBtn='<span style="font-size:12px;color:var(--mu)">Buy from this seller to leave a review</span>';
 
-  r.innerHTML='<div class="ov" id="mkt-sp-bg"><div class="ob" onclick="event.stopPropagation()" style="max-width:560px">'+
-    '<button class="oc" onclick="closeOvr()">\u00d7</button>'+
+  r.innerHTML='<div class="ov" id="mkt-sp-bg"><div class="ob" style="max-width:560px">'+
+    '<button class="oc" data-dact="closeOvr">\u00d7</button>'+
     '<div class="mkt-sp-head">'+_avatarHTML(sellerEmail,64)+
       '<div style="flex:1"><h2 style="margin:0 0 3px">'+escH(name)+'</h2>'+
         '<div class="mkt-sp-stats">'+
@@ -9589,7 +9706,7 @@ async function _mktSellerProfile(sellerEmail, sellerName){
     '<div class="ss2" style="margin-top:16px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><h3 style="margin:0">Reviews</h3>'+reviewBtn+'</div>'+reviewList+'</div>'+
     '<div class="ss2"><h3>Listings</h3><div class="vbreak">'+listingRows+'</div></div>'+
   '</div></div>';
-  on($('mkt-sp-bg'),'click',closeOvr);
+  onBackdrop($('mkt-sp-bg'),closeOvr);
   /* From a seller's profile there is no one listing in view, so the first of
      theirs is used as the context. A seller with no listings cannot be
      messaged out of the blue, which is the point. */
@@ -9622,12 +9739,12 @@ function _mktMessages(){
       '<span class="mkt-thread-when">'+(last?_timeAgo(last.ts):'')+'</span>'+
     '</div>';
   }).join('') : '<div class="fd-empty">No messages yet. Message a seller from their profile to start a conversation.</div>';
-  r.innerHTML='<div class="ov" id="mkt-inbox-bg"><div class="ob" onclick="event.stopPropagation()" style="max-width:480px">'+
-    '<button class="oc" onclick="closeOvr()">\u00d7</button>'+
+  r.innerHTML='<div class="ov" id="mkt-inbox-bg"><div class="ob" style="max-width:480px">'+
+    '<button class="oc" data-dact="closeOvr">\u00d7</button>'+
     '<h2 style="margin-bottom:14px">Your messages</h2>'+
     '<div class="mkt-threads">'+rows+'</div>'+
   '</div></div>';
-  on($('mkt-inbox-bg'),'click',closeOvr);
+  onBackdrop($('mkt-inbox-bg'),closeOvr);
   r.querySelectorAll('[data-th]').forEach(t=>on(t,'click',()=>_mktChat(t.dataset.th, t.dataset.thn)));
 }
 window._mktMessages=_mktMessages;
@@ -9646,14 +9763,14 @@ function _mktChat(otherEmail, otherName, prefill, aboutItem){
     const t=AMVMarket.thread(otherEmail);
     const name=otherName||(t.a===me?t.bName:t.aName)||otherEmail.split('@')[0];
     const bubbles = t.msgs.length ? t.msgs.map(m=>'<div class="mkt-bubble '+(m.from===me?'me':'them')+'">'+escH(m.text)+'<span class="mkt-bubble-t">'+_timeAgo(m.ts)+'</span></div>').join('') : '<div style="color:var(--mu);font-size:12.5px;text-align:center;padding:20px">Say hello - ask about an item, a custom order, anything.</div>';
-    r.innerHTML='<div class="ov" id="mkt-chat-bg"><div class="ob" onclick="event.stopPropagation()" style="max-width:460px;display:flex;flex-direction:column;max-height:80vh">'+
-      '<button class="oc" onclick="closeOvr()">\u00d7</button>'+
+    r.innerHTML='<div class="ov" id="mkt-chat-bg"><div class="ob" style="max-width:460px;display:flex;flex-direction:column;max-height:80vh">'+
+      '<button class="oc" data-dact="closeOvr">\u00d7</button>'+
       '<div class="mkt-chat-head">'+_avatarHTML(otherEmail,36)+'<div><div style="font-weight:600;font-size:14px">'+escH(name)+'</div><div style="font-size:11px;color:var(--mu)">'+escH(otherEmail)+'</div></div>'+
         '<button class="btn bs" id="mkt-chat-prof" style="margin-left:auto;font-size:11px">Profile</button></div>'+
       '<div class="mkt-chat-body" id="mkt-chat-body">'+bubbles+'</div>'+
       '<div class="mkt-chat-input"><input type="text" id="mkt-chat-txt" placeholder="Message\u2026" autocomplete="off"'+(prefill?' value="'+escH(prefill)+'"':'')+'><button class="btn bp" id="mkt-chat-send">Send</button></div>'+
     '</div></div>';
-    on($('mkt-chat-bg'),'click',closeOvr);
+    onBackdrop($('mkt-chat-bg'),closeOvr);
     on($('mkt-chat-prof'),'click',()=>{ closeOvr(); _mktSellerProfile(otherEmail, name); });
     const send=async()=>{ const txt=$('mkt-chat-txt')?.value||''; if(!txt.trim()) return;
       const btn=$('mkt-chat-send'); if(btn){ btn.disabled=true; btn.textContent='Sending\u2026'; }
@@ -9692,15 +9809,15 @@ function _mktReviewDialog(sellerEmail, sellerName, onDone){
   const existing=AMVMarket.myReviewFor(sellerEmail);
   let stars=existing?existing.stars:0;
   const drawStars=()=>[1,2,3,4,5].map(n=>'<span class="mkt-rate-star'+(n<=stars?' on':'')+'" data-stars="'+n+'">\u2605</span>').join('');
-  r.innerHTML='<div class="ov" id="mkt-rv-bg"><div class="ob" onclick="event.stopPropagation()" style="max-width:460px">'+
-    '<button class="oc" onclick="closeOvr()">\u00d7</button>'+
+  r.innerHTML='<div class="ov" id="mkt-rv-bg"><div class="ob" style="max-width:460px">'+
+    '<button class="oc" data-dact="closeOvr">\u00d7</button>'+
     '<h2 style="margin-bottom:4px">Review '+escH(sellerName)+'</h2>'+
     '<p class="ob-sub" style="margin-bottom:14px">Your rating helps other buyers. You can only review sellers you\u2019ve bought from.</p>'+
     '<div class="mkt-rate" style="margin:0 0 14px"><span class="mkt-rate-stars" id="mkt-rv-stars">'+drawStars()+'</span></div>'+
     '<textarea id="mkt-rv-text" rows="4" placeholder="Share your experience (optional)\u2026" style="width:100%;font-size:13px">'+escH(existing?existing.text:'')+'</textarea>'+
-    '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px"><button class="btn bs" onclick="closeOvr()">Cancel</button><button class="btn bp" id="mkt-rv-save">Submit review</button></div>'+
+    '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px"><button class="btn bs" data-dact="closeOvr">Cancel</button><button class="btn bp" id="mkt-rv-save">Submit review</button></div>'+
   '</div></div>';
-  on($('mkt-rv-bg'),'click',closeOvr);
+  onBackdrop($('mkt-rv-bg'),closeOvr);
   const starsEl=$('mkt-rv-stars');
   const rebind=()=>{ starsEl.innerHTML=drawStars(); starsEl.querySelectorAll('[data-stars]').forEach(s=>on(s,'click',()=>{ stars=parseInt(s.dataset.stars,10); rebind(); })); };
   rebind();
@@ -9961,7 +10078,7 @@ function _mktBlockedDialog(reason, action, category){
   const icon = needsVer
     ? '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>'
     : '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>';
-  r.innerHTML='<div class="ovr-bg" id="mkb-bg"><div class="ovr-card" style="max-width:470px" onclick="event.stopPropagation()">'+
+  r.innerHTML='<div class="ovr-bg" id="mkb-bg"><div class="ovr-card" style="max-width:470px">'+
     '<div style="display:flex;gap:12px;align-items:flex-start">'+
       '<span style="width:38px;height:38px;flex-shrink:0;border-radius:10px;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,'+tint+' 13%,transparent);color:'+tint+'">'+
         '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+icon+'</svg></span>'+
@@ -9974,7 +10091,7 @@ function _mktBlockedDialog(reason, action, category){
     '</div></div></div>';
   r.classList.add('on');
   on($('mkb-ok'),'click',closeOvr);
-  on($('mkb-bg'),'click',closeOvr);
+  onBackdrop($('mkb-bg'),closeOvr);
   on($('mkb-rules'),'click',()=>{ closeOvr(); const b=$('mkt-rules-body'); if(b){ b.style.display='block'; b.scrollIntoView({behavior:'smooth',block:'center'}); } });
   on($('mkb-apply'),'click',()=>{ closeOvr(); toast('Verification for '+(category||'this category')+' is reviewed by our team. We\u2019ll email you once your seller account is approved.','info',5500); });
 }
@@ -10015,7 +10132,7 @@ function _mktReport(itemId, title){
   on($('mkr-cancel'),'click',closeOvr);
   /* Guard the backdrop rather than stopping propagation inside the card, or
      every delegated control in here is dead (LESSONS #5). */
-  on($('mkr-bg'),'click',(e)=>{ if(e.target===e.currentTarget) closeOvr(); });
+  onBackdrop($('mkr-bg'),closeOvr);
   on($('mkr-send'),'click',async()=>{
     const btn=$('mkr-send'); if(!btn) return;
     btn.disabled=true; btn.textContent=T('Sending\u2026');
@@ -10511,8 +10628,8 @@ function deletePrompt(id){
 function createPromptModal(){
   const r=$('ovr'); if(!r) return;
   r.innerHTML=
-    '<div class="ov" id="cp-bg"><div class="ob wide" onclick="event.stopPropagation()">'+
-      '<button class="oc" onclick="closeOvr()">×</button>'+
+    '<div class="ov" id="cp-bg"><div class="ob wide">'+
+      '<button class="oc" data-dact="closeOvr">×</button>'+
       '<h2 style="margin-bottom:4px">Create Prompt</h2>'+
       '<p class="ob-sub">Add a reusable prompt to your personal library.</p>'+
       '<div class="af">'+
@@ -10522,7 +10639,7 @@ function createPromptModal(){
         '<button class="btn bp" id="cp-save" style="width:100%;padding:11px">Save to Library</button>'+
       '</div>'+
     '</div></div>';
-  on($('cp-bg'),'click',closeOvr);
+  onBackdrop($('cp-bg'),closeOvr);
   on($('cp-save'),'click',()=>{
     const t=$('cp-title')?.value.trim(),c=$('cp-cat')?.value,tx=$('cp-text')?.value.trim();
     if(!t||!tx){toast('Title and prompt text required','error');return;}
@@ -10607,8 +10724,8 @@ function createWorkspaceModal(){
   const r=$('ovr'); if(!r) return;
   const icons=['📁','💼','🔬','🎨','💻','📊','✍️','🏠','🎯','🚀','📚','⚡'];
   r.innerHTML=
-    '<div class="ov" id="ws-bg"><div class="ob" onclick="event.stopPropagation()">'+
-      '<button class="oc" onclick="closeOvr()">×</button>'+
+    '<div class="ov" id="ws-bg"><div class="ob">'+
+      '<button class="oc" data-dact="closeOvr">×</button>'+
       '<h2 style="margin-bottom:4px">New Workspace</h2>'+
       '<p class="ob-sub">Create a workspace to organize related conversations.</p>'+
       '<div class="af">'+
@@ -10622,7 +10739,7 @@ function createWorkspaceModal(){
   document.querySelectorAll('.ws-ic-btn').forEach(b=>{
     on(b,'click',()=>{ selIcon=b.dataset.ic; document.querySelectorAll('.ws-ic-btn').forEach(x=>x.style.borderColor=x===b?'var(--indigo)':''); });
   });
-  on($('ws-bg'),'click',closeOvr);
+  onBackdrop($('ws-bg'),closeOvr);
   on($('ws-create'),'click',()=>{
     const n=$('ws-name')?.value.trim(),d=$('ws-desc')?.value.trim();
     if(!n){toast('Name required','error');return;}
@@ -12254,7 +12371,7 @@ function openUpgradeModal(lockedModel){
       '</div>'+
       '<div class="upg-row-r"><div class="upg-row-price" style="font-size:15px">Your price</div><span class="upg-row-go">Build \u2192</span></div>'+
     '</button>';
-  r.innerHTML='<div class="upg-ov" id="upg-bg"><div class="upg-modal" style="max-width:480px" onclick="event.stopPropagation()">'+
+  r.innerHTML='<div class="upg-ov" id="upg-bg"><div class="upg-modal" style="max-width:480px">'+
     '<button class="dna-x" id="upg-x" style="position:absolute;top:16px;right:16px">\u2715</button>'+
     '<div class="upg-head">'+
       '<div class="upg-lock">\uD83D\uDD12</div>'+
@@ -12266,7 +12383,7 @@ function openUpgradeModal(lockedModel){
       '<div class="upg-trust">Cancel anytime \u00b7 Keep your free account \u00b7 Secure checkout</div></div>'+
   '</div></div>';
   const close=()=>{ r.innerHTML=''; };
-  on($('upg-bg'),'click',close); on($('upg-x'),'click',close);
+  onBackdrop($('upg-bg'),close); on($('upg-x'),'click',close);
   r.querySelectorAll('[data-upg]').forEach(btn=>on(btn,'click',()=>{ const k=btn.dataset.upg; close(); if(k==='custom'){ openCustomPlan(); } else { openCheckout(k); } }));
   const cmp=$('upg-compare'); if(cmp) on(cmp,'click',()=>{ close(); openPlanCompare(needPlan); });
 }
@@ -12311,13 +12428,13 @@ function openPlanCompare(highlight){
   const head='<th></th>'+plans.map(p=>'<th class="'+(p===highlight?'pc-hl':'')+'">'+colName(p)+(p===highlight?'<span class="pc-tag">Recommended</span>':'')+'</th>').join('');
   const body=rows.map(([label,fn])=>'<tr><td class="pc-row">'+label+'</td>'+plans.map(p=>'<td class="'+(p===highlight?'pc-hl':'')+'">'+fn(p)+'</td>').join('')+'</tr>').join('');
   const cta='<tr><td></td>'+plans.map(p=>'<td class="'+(p===highlight?'pc-hl':'')+'">'+(p==='free'?'':'<button class="btn '+(p===highlight?'bp':'')+' pc-go" data-pcgo="'+p+'" style="font-size:11px;padding:6px 9px">'+(isC(p)?'Build':'Get')+'</button>')+'</td>').join('')+'</tr>';
-  r.innerHTML='<div class="upg-ov" id="pc-bg"><div class="pc-modal" onclick="event.stopPropagation()">'+
+  r.innerHTML='<div class="upg-ov" id="pc-bg"><div class="pc-modal">'+
     '<button class="dna-x" id="pc-x" style="position:absolute;top:16px;right:16px;z-index:2">\u2715</button>'+
     '<div class="pc-head"><h2>Compare plans</h2><p>Everything each plan includes - pick what fits how you work.</p></div>'+
     '<div class="pc-scroll"><table class="pc-table"><thead><tr>'+head+'</tr></thead><tbody>'+body+cta+'</tbody></table></div>'+
   '</div></div>';
   const close=()=>{ r.innerHTML=''; };
-  on($('pc-bg'),'click',close); on($('pc-x'),'click',close);
+  onBackdrop($('pc-bg'),close); on($('pc-x'),'click',close);
   r.querySelectorAll('[data-pcgo]').forEach(btn=>on(btn,'click',()=>{ const k=btn.dataset.pcgo; close(); if(k==='custom'){ openCustomPlan(); } else { openCheckout(k); } }));
 }
 window.openPlanCompare=openPlanCompare;
@@ -12330,7 +12447,7 @@ function openCustomPlan(){
   const render=()=>{
     const s=_customPlanSummary(price);
     const marginPct=Math.round(s.margin*100);
-    r.innerHTML='<div class="upg-ov" id="cp-bg"><div class="cp-modal" onclick="event.stopPropagation()">'+
+    r.innerHTML='<div class="upg-ov" id="cp-bg"><div class="cp-modal">'+
       '<button class="dna-x" id="cp-x" style="position:absolute;top:16px;right:16px">\u2715</button>'+
       '<div class="cp-head"><span class="eyebrow" style="color:var(--accent)">Custom plan</span>'+
         '<h2>Pay exactly for what you need</h2>'+
@@ -12352,7 +12469,7 @@ function openCustomPlan(){
       '<p class="cp-fine">Usage is capped at your plan size and resets monthly. Unused usage doesn\u2019t roll over. Cancel or resize anytime.</p>'+
     '</div></div>';
     const close=()=>{ r.innerHTML=''; };
-    on($('cp-bg'),'click',close); on($('cp-x'),'click',close);
+    onBackdrop($('cp-bg'),close); on($('cp-x'),'click',close);
     const _cpLocal=()=>{ const el=$('cp-local'); if(el) el.textContent=(window.AMVCurrency&&AMVCurrency.isLocal())?('≈ '+AMVCurrency.fmt(price)+' /mo in your currency'):''; };
     _cpLocal();
     const sl=$('cp-slider');
@@ -12538,6 +12655,30 @@ function _customPlanSummary(price){
 function _stripePK(){ return loadStr('amv_stripe_pk')||''; }
 function _stripeLink(plan){ try{ const m=load('amv_pay_links')||{}; return m[plan]||''; }catch(e){ return ''; } }
 
+/* The owner's own Stripe payment link for a plan, opened in a new tab.
+
+   Was `onclick="window.open(S.sp,'_blank','noopener')"` - an inline handler,
+   and one that opened whatever string was in that setting without asking what
+   scheme it was. The setting is the operator's, so this is not the usual
+   untrusted-input case, but it is stored in localStorage and reaches
+   window.open: safeUrl costs nothing and a `javascript:` in a settings field
+   would otherwise be a live one.
+
+   A missing or rejected link says so instead of opening a blank tab, because
+   "nothing happened" on the button that takes somebody's money is the worst
+   possible way to find out a setting is wrong. */
+function _openPlanLink(which){
+  const raw = which==='elite' ? (S.se||'') : (S.sp||'');
+  const url = safeUrl(raw);
+  if(!url){
+    toast('That plan link is not set up yet. Add it in Settings and try again.','error',4500);
+    return;
+  }
+  try{ track('upgrade_checkout_started', { plan: which==='elite'?'elite':'pro' }); }catch(e){}
+  window.open(url,'_blank','noopener');
+}
+try{ window._openPlanLink=_openPlanLink; }catch(e){}
+
 function openCheckout(plan, customPrice){
   try{ track('upgrade_checkout_started', { plan }); }catch(e){}
   if(plan==='free'){ _setPlan('free'); renderBillingView(); toast('Switched to Free','info'); return; }
@@ -12563,7 +12704,7 @@ function openCheckout(plan, customPrice){
 function openPaymentSheet(plan){
   const p=PLANS[plan]||PLANS.pro;
   const r=$('ovr'); if(!r) return;
-  r.innerHTML='<div class="pay-ov" id="pay-bg"><div class="pay-modal" onclick="event.stopPropagation()">'+
+  r.innerHTML='<div class="pay-ov" id="pay-bg"><div class="pay-modal">'+
     '<div class="pay-head"><div><div class="pay-title">Upgrade to '+p.name+'</div><div class="pay-sub">'+(p.blurb||'')+'</div></div><button class="dna-x" id="pay-x">✕</button></div>'+
     '<div class="pay-amount"><span class="pay-amt">$'+p.price+'</span><span class="pay-per">/month</span></div>'+
     '<div class="pay-methods-tabs" id="pay-tabs">'+
@@ -12574,7 +12715,7 @@ function openPaymentSheet(plan){
     '<div class="pay-body" id="pay-body"></div>'+
     '<div class="pay-secure"><span class="pay-lock">🔒</span> Encrypted &amp; secure · PCI-DSS Level 1 processing</div>'+
     '</div></div>';
-  on($('pay-bg'),'click',closePaySheet); on($('pay-x'),'click',closePaySheet);
+  onBackdrop($('pay-bg'),closePaySheet); on($('pay-x'),'click',closePaySheet);
   $('pay-tabs').querySelectorAll('.pay-tab').forEach(t=>on(t,'click',()=>{ $('pay-tabs').querySelectorAll('.pay-tab').forEach(x=>x.classList.toggle('on',x===t)); _payRenderMethod(t.dataset.pt,plan); }));
   _payRenderMethod('card',plan);
 }
@@ -14317,7 +14458,7 @@ function cwPeek(id){
   /* Guarded by target===currentTarget rather than stopPropagation on the panel:
      a panel that stops propagation kills the delegated click handler for every
      button inside it. */
-  on($('cwp-bg'),'click',(e)=>{ if(e.target===e.currentTarget) closeOvr(); });
+  onBackdrop($('cwp-bg'),closeOvr);
   on($('cwp-close'),'click',closeOvr);
   on($('cwp-cancel'),'click',closeOvr);
   on($('cwp-plans'),'click',()=>{ closeOvr(); setTab('plans'); });
@@ -14840,7 +14981,7 @@ function renderCrewView(){
              ['\uD83D\uDCE7','Check Gmail','gmail','crewRun(\'gmail\',\'Check Gmail\')'],
              ['\uD83D\uDCC5','Plan my week','week','crewRun(\'week\',\'Plan my week\')'],
              ['\u2728','Autonomous task','auto','openCowork()']]
-            .map(q=>`<button class="cw-quick-card" onclick="${q[3]}"><span class="cw-quick-ic">${q[0]}</span><span>${q[1]}</span></button>`).join('')}
+            .map(q=>`<button class="cw-quick-card" data-dact="_cwQuick" data-darg="${escH(q[2])}"><span class="cw-quick-ic" aria-hidden="true">${q[0]}</span><span>${escH(q[1])}</span></button>`).join('')}
         </div>
         <div id="crew-live" class="crew-live">${_crewResultsHTML()}</div>
       </section>
@@ -14856,7 +14997,7 @@ function renderCrewView(){
             ['\uD83C\uDFE6','Bank check-in','Every morning, check my linked bank account and report the balance, recent transactions, anything unusual, and my spend-vs-last-week. Prepare it as a clean daily report.'],
             ['\uD83D\uDCF0','News digest','Daily, gather the top developments in AI and produce a sharp 5-bullet briefing, each bullet with a link-worthy summary and why it matters.'],
             ['\u2709\uFE0F','Inbox triage','Each morning, read new emails, rank them by urgency with reasons, and draft a ready-to-send reply for each. I click send before anything goes out.']
-          ].map(t=>`<button class="tpl-card" onclick="openCoworkWith(${JSON.stringify(t[2]).replace(/"/g,'&quot;')})"><span class="tpl-ic">${t[0]}</span><span class="tpl-t">${t[1]}</span></button>`).join('')}
+          ].map(t=>`<button class="tpl-card" data-dact="openCoworkWith" data-darg="${escH(t[2])}"><span class="tpl-ic" aria-hidden="true">${t[0]}</span><span class="tpl-t">${escH(t[1])}</span></button>`).join('')}
         </div>
       </section>
     </div>
@@ -15246,7 +15387,7 @@ function apvPreview(id){
       <button class="pvw-more" data-apvmore="1" aria-label="More actions">⋯</button>
     </footer>
   </div></div>`;
-  on($('pvw-bg'),'click',(e)=>{ if(e.target===e.currentTarget) apvClose(); });
+  onBackdrop($('pvw-bg'),apvClose);
   setTimeout(()=>{ try{ document.querySelector('.pvw-back').focus(); }catch(e){} },30);
   const hist=r.querySelector('[data-apvhist]'); if(hist) on(hist,'click',()=>{ const s=r.querySelector('.pvw-side'); if(s) s.scrollIntoView({behavior:'smooth'}); });
   const more=r.querySelector('[data-apvmore]'); if(more) on(more,'click',()=>r.querySelector('.pvw-foot-act')?.classList.toggle('open'));
@@ -15385,7 +15526,7 @@ function apvEdit(id){
       </div>
     </footer>
   </div></div>`;
-  on($('ape-bg'),'click',(e)=>{ if(e.target===e.currentTarget) apvClose(); });
+  onBackdrop($('ape-bg'),apvClose);
   setTimeout(()=>{ try{ $('ape-title').focus(); }catch(e){} },30);
 }
 /* Turn a plain-English "when" into a normalized schedule. Understands "now",
@@ -15679,11 +15820,11 @@ function _studioRenderArtifacts(){
 }
 function _studioAddPrompt(){
   const r=$('ovr'); if(!r) return;
-  r.innerHTML='<div class="ov" id="sa-bg"><div class="ob" onclick="event.stopPropagation()" style="max-width:440px"><button class="oc" onclick="closeOvr()">×</button>'+
+  r.innerHTML='<div class="ov" id="sa-bg"><div class="ob" style="max-width:440px"><button class="oc" data-dact="closeOvr">×</button>'+
     '<h2 style="margin-bottom:6px">Add a design</h2><p class="ob-sub" style="margin-bottom:12px">Describe another page, screen, slide deck, or graphic. It joins this project so your whole set stays consistent.</p>'+
     '<textarea id="sa-brief" rows="3" placeholder="e.g. \'an about page matching this style\' or \'a pitch deck of 6 slides\'" style="width:100%;font-size:13px"></textarea>'+
-    '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px"><button class="btn bs" onclick="closeOvr()">Cancel</button><button class="btn bp" id="sa-go">Design it</button></div></div></div>';
-  on($('sa-bg'),'click',closeOvr);
+    '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px"><button class="btn bs" data-dact="closeOvr">Cancel</button><button class="btn bp" id="sa-go">Design it</button></div></div></div>';
+  onBackdrop($('sa-bg'),closeOvr);
   const go=()=>{ const v=$('sa-brief')?.value.trim(); if(!v){ toast('Describe the design','error'); return; } closeOvr(); _studioCreate(v); };
   on($('sa-go'),'click',go);
   setTimeout(()=>$('sa-brief')?.focus(),50);
@@ -15693,8 +15834,8 @@ function _studioHistory(){
   const a=_studioActive(); if(!a||!a.history.length){ toast('No history yet','info'); return; }
   const r=$('ovr'); if(!r) return;
   const rows=a.history.slice().reverse().map((h,i)=>{ const realIdx=a.history.length-1-i; return '<div class="studio-hrow"><div class="studio-hrow-b"><div class="studio-hrow-t">'+(i===0?'Current':('Version '+(realIdx+1)))+'</div><div class="studio-hrow-d">'+escH(h.brief||'(initial)')+' · '+_timeAgo(h.ts||Date.now())+'</div></div>'+(i===0?'':'<button class="btn bs" data-revert="'+realIdx+'">Revert</button>')+'</div>'; }).join('');
-  r.innerHTML='<div class="ov" id="sh-bg"><div class="ob" onclick="event.stopPropagation()" style="max-width:460px"><button class="oc" onclick="closeOvr()">×</button><h2 style="margin-bottom:12px">Version history</h2><div class="studio-hlist">'+rows+'</div></div></div>';
-  on($('sh-bg'),'click',closeOvr);
+  r.innerHTML='<div class="ov" id="sh-bg"><div class="ob" style="max-width:460px"><button class="oc" data-dact="closeOvr">×</button><h2 style="margin-bottom:12px">Version history</h2><div class="studio-hlist">'+rows+'</div></div></div>';
+  onBackdrop($('sh-bg'),closeOvr);
   r.querySelectorAll('[data-revert]').forEach(b=>on(b,'click',()=>{ const idx=+b.dataset.revert; const h=a.history[idx]; if(h){ a.html=h.html; a.history.push({brief:'reverted to v'+(idx+1),html:h.html,ts:Date.now()}); _STUDIO.html=h.html; _studioRenderPreview(h.html); closeOvr(); toast('Reverted','success'); } }));
 }
 // export the whole project - folder write-back or downloads
@@ -15892,7 +16033,7 @@ function openDNA(){
   const r=$('ovr'); if(!r) return;
   _DNA._sec=_DNA._sec||'colors';
   const seen=loadStr('amv_dna_intro')==='1';
-  r.innerHTML=`<div class="dna-ov" id="dna-bg"><div class="dna-modal" onclick="event.stopPropagation()">
+  r.innerHTML=`<div class="dna-ov" id="dna-bg"><div class="dna-modal">
     <div class="dna-head">
       <div><h2>Design DNA</h2><p>Your reusable style guide. Set it once - every design AMV makes follows it.</p></div>
       <div style="display:flex;align-items:center;gap:4px">
@@ -15929,7 +16070,7 @@ function openDNA(){
     </div>
   </div></div>`;
   const showMain=()=>{ saveStr('amv_dna_intro','1'); const i=$('dna-intro'); if(i)i.style.display='none'; const bm=$('dna-body-main'); if(bm)bm.style.display=''; const fm=$('dna-foot-main'); if(fm)fm.style.display='flex'; _dnaRenderSection(_DNA._sec); _dnaFoot(); $('dna-nav').querySelectorAll('.dna-nav-b').forEach(b=>on(b,'click',()=>{ _DNA._sec=b.dataset.sec; $('dna-nav').querySelectorAll('.dna-nav-b').forEach(x=>x.classList.toggle('on',x===b)); _dnaRenderSection(b.dataset.sec); })); };
-  on($('dna-bg'),'click',closeDNA);
+  onBackdrop($('dna-bg'),closeDNA);
   on($('dna-x'),'click',closeDNA);
   on($('dna-help'),'click',()=>{ const i=$('dna-intro'); if(i)i.style.display=''; const bm=$('dna-body-main'); if(bm)bm.style.display='none'; const fm=$('dna-foot-main'); if(fm)fm.style.display='none'; });
   on($('dna-intro-go'),'click',showMain);
@@ -16358,7 +16499,7 @@ function renderCodeView(){
 let _LAB_HANDOFF='';
 function _devConnectVSCode(){
   const r=$('ovr'); if(!r) return;
-  r.innerHTML='<div class="ov" id="vsc-bg"><div class="tp-modal" style="max-width:480px" onclick="event.stopPropagation()">'+
+  r.innerHTML='<div class="ov" id="vsc-bg"><div class="tp-modal" style="max-width:480px">'+
     '<button class="dna-x" id="vsc-x" style="position:absolute;top:14px;right:14px">\u2715</button>'+
     '<h2 style="font-family:var(--fdisplay);font-weight:500;font-size:21px;margin:0 0 6px">Use AMV in VS Code</h2>'+
     '<p style="font-size:13px;color:var(--mu);line-height:1.6;margin:0 0 18px">Run these two commands in your project folder. That\u2019s it - AMV opens in your editor and can read, write, and run your code.</p>'+
@@ -16367,7 +16508,7 @@ function _devConnectVSCode(){
     '<p style="font-size:11px;color:var(--dim);margin:16px 0 0;line-height:1.5">Your code stays on your machine - the CLI just links this account to your editor.</p>'+
   '</div></div>';
   const close=()=>{ r.innerHTML=''; };
-  on($('vsc-bg'),'click',close); on($('vsc-x'),'click',close);
+  onBackdrop($('vsc-bg'),close); on($('vsc-x'),'click',close);
   r.querySelectorAll('.vsc-copy').forEach(btn=>on(btn,'click',()=>{ try{ navigator.clipboard.writeText(btn.dataset.c); btn.textContent='Copied'; setTimeout(()=>btn.textContent='Copy',1200); }catch(e){} }));
 }
 const _DEV={ log:[], lang:'js', busy:false, curCode:'', curLang:'', curRun:null,
@@ -17899,7 +18040,7 @@ function _ctxRenderMeter(hostId, kind){
 // Compress the current context, start fresh, and resume seamlessly.
 async function _ctxHandoffFlow(kind){
   const r=$('ovr'); if(!r) return;
-  r.innerHTML='<div class="ovr-bg"><div class="ovr-card" style="max-width:460px" onclick="event.stopPropagation()">'+
+  r.innerHTML='<div class="ovr-bg"><div class="ovr-card" style="max-width:460px">'+
     '<div style="font-size:15px;font-weight:600;margin-bottom:6px">Carrying your context over\u2026</div>'+
     '<div style="font-size:13px;color:var(--mu);line-height:1.6" id="ctx-step">Compressing everything important from this '+(kind==='dev'?'session':'chat')+'\u2026</div>'+
     '<div class="ctx-bar" style="margin-top:14px"><div class="ctx-fill" id="ctx-anim" style="width:15%"></div></div>'+
@@ -17974,7 +18115,7 @@ function openHandoffManager(){
           '<button class="btn bp" data-ho-use="'+escH(h.id)+'" style="font-size:11.5px">Resume</button>'+
         '</div></div>').join('')
     : '<div class="ho-empty">No handoffs yet. When a chat or Dev session fills up, AMV creates one automatically.</div>';
-  r.innerHTML='<div class="ovr-bg" id="ho-bg"><div class="ovr-card" style="max-width:560px" onclick="event.stopPropagation()">'+
+  r.innerHTML='<div class="ovr-bg" id="ho-bg"><div class="ovr-card" style="max-width:560px">'+
     '<div style="font-size:16px;font-weight:600;margin-bottom:4px">Context handoffs</div>'+
     '<div style="font-size:12.5px;color:var(--mu);line-height:1.6;margin-bottom:16px">A handoff is a compressed snapshot of a conversation - the goal, every decision, the current state, and the next steps. Load one into a fresh chat and AMV picks up exactly where you left off.</div>'+
     '<div class="ho-list">'+rows+'</div>'+
@@ -17991,7 +18132,7 @@ function openHandoffManager(){
   '</div></div>';
   r.classList.add('on');
   on($('ho-close'),'click',closeOvr);
-  on($('ho-bg'),'click',closeOvr);
+  onBackdrop($('ho-bg'),closeOvr);
   r.querySelectorAll('[data-ho-dl]').forEach(b=>on(b,'click',()=>{
     const h=all.find(x=>x.id===b.dataset.hoDl); if(h) _ctxDownload(h.token, h.title);
   }));
@@ -18251,15 +18392,15 @@ function _hoPickChat(){
       '<div class="hopick-p">'+escH(prev||'(empty)')+'</div></button>';
   }).join('');
 
-  r.innerHTML='<div class="ov" id="hopick-bg"><div class="ob hopick-modal" onclick="event.stopPropagation()" style="max-width:520px">'+
-    '<button class="oc" onclick="closeOvr()">×</button>'+
+  r.innerHTML='<div class="ov" id="hopick-bg"><div class="ob hopick-modal" style="max-width:520px">'+
+    '<button class="oc" data-dact="closeOvr">×</button>'+
     '<h2 style="margin:0 0 4px">Pull in your work</h2>'+
     '<p style="font-size:12.5px;color:var(--mu);margin:0 0 14px">A conversation, a design, a project or some code. '+
       'The actual content comes across, not a description of it.</p>'+
     (sessRows?'<div class="hopick-h">Designs, projects and code</div><div class="hopick-list">'+sessRows+'</div>':'')+
     (chatRows?'<div class="hopick-h">Conversations</div><div class="hopick-list">'+chatRows+'</div>':'')+
     '</div></div>';
-  on($('hopick-bg'),'click',(e)=>{ if(e.target===$('hopick-bg')) closeOvr(); });
+  onBackdrop($('hopick-bg'),closeOvr);
   r.querySelectorAll('[data-hopick]').forEach(b=>on(b,'click',()=>{ _hoPullConv(b.dataset.hopick); closeOvr(); }));
   r.querySelectorAll('[data-hosess]').forEach(b=>on(b,'click',()=>{ _hoPullSession(b.dataset.hosess); closeOvr(); }));
 }
@@ -18496,8 +18637,8 @@ function render404View(){
       '<h2 class="nf-title">Page not found</h2>'+
       '<p class="nf-sub">The page you\u2019re looking for doesn\u2019t exist or may have moved.</p>'+
       '<div class="nf-actions">'+
-        '<button class="btn bp" onclick="setTab(\'chat\')">Go to chat</button>'+
-        '<button class="btn bs" onclick="setTab(\'dashboard\')">Home</button>'+
+        '<button class="btn bp" data-stab="chat">Go to chat</button>'+
+        '<button class="btn bs" data-stab="dashboard">Home</button>'+
       '</div>'+
     '</div></div>';
 }
@@ -18851,13 +18992,13 @@ function _openSettingsPicker(){
       '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">'+s.icon+'</svg>'+
       '<span>'+escH(T(s.label))+'</span></button>';
   }).join('');
-  r.innerHTML='<div class="ov" id="setpick-bg"><div class="ob setpick-modal" onclick="event.stopPropagation()" style="max-width:460px">'+
-    '<button class="oc" onclick="closeOvr()" aria-label="Close">×</button>'+
+  r.innerHTML='<div class="ov" id="setpick-bg"><div class="ob setpick-modal" style="max-width:460px">'+
+    '<button class="oc" data-dact="closeOvr" aria-label="Close">×</button>'+
     '<h2 style="margin:0 0 12px;font-size:18px">Settings</h2>'+
     '<div class="set-search-wrap setpick-searchwrap"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>'+
       '<input id="setpick-search" class="set-search" type="text" placeholder="Search settings…" autocomplete="off"></div>'+
     '<div class="setpick-list" id="setpick-list">'+rows+'</div></div></div>';
-  on($('setpick-bg'),'click',(e)=>{ if(e.target===$('setpick-bg')) closeOvr(); });
+  onBackdrop($('setpick-bg'),closeOvr);
   r.querySelectorAll('[data-setpick]').forEach(b=>on(b,'click',()=>{
     S.settingsPane=b.dataset.setpick; closeOvr(); renderSettingsView();
     try{ const c=document.querySelector('.settings-content'); if(c) c.scrollTop=0; }catch(e){}
@@ -19313,8 +19454,8 @@ function _confirmDeleteAccount(){
   const ovr=$('ovr'); if(!ovr) return;
   const connected = !!(window.AMV_API && AMV_API.live && AMV_API.token);
   ovr.innerHTML=
-    '<div class="ov" id="del-bg"><div class="ob" onclick="event.stopPropagation()">'+
-      '<button class="oc" onclick="closeOvr()">&#215;</button>'+
+    '<div class="ov" id="del-bg"><div class="ob">'+
+      '<button class="oc" data-dact="closeOvr">&#215;</button>'+
       '<h2 style="color:var(--red)">Delete your account</h2>'+
       '<p class="ob-sub">This permanently removes '+(connected
         ? 'your account, chats, projects, automations, and subscription from AMV\u2019s servers'
@@ -19324,12 +19465,12 @@ function _confirmDeleteAccount(){
       '<label class="lbl">Type <b>DELETE</b> to confirm</label>'+
       '<input type="text" id="del-confirm" placeholder="DELETE" autocomplete="off">'+
       '<div style="display:flex;gap:9px;margin-top:14px">'+
-        '<button class="btn bs" onclick="closeOvr()" style="flex:1">Cancel</button>'+
+        '<button class="btn bs" data-dact="closeOvr" style="flex:1">Cancel</button>'+
         '<button class="btn bd2" id="del-go" style="flex:1" disabled>Delete account</button>'+
       '</div>'+
     '</div></div>';
   ovr.classList.add('on');
-  document.getElementById('del-bg')?.addEventListener('click',closeOvr);
+  onBackdrop($('del-bg'),closeOvr);
   const inp=$('del-confirm'), go=$('del-go');
   on(inp,'input',()=>{ if(go) go.disabled = (inp.value.trim().toUpperCase()!=='DELETE'); });
   on($('del-export'),'click',()=>{ try{ _exportUserData(); }catch(e){} });   // async; its own errors are reported inside
@@ -19784,7 +19925,7 @@ function _renderSetPaneInner(){
       '</div>'+
       '<div class="ss2"><h3>This device</h3>'+
         '<div class="br2"><div><div style="font-size:13px;font-weight:500">Signed in on this browser</div><div style="font-size:11px;color:var(--t2);margin-top:2px">Signing out here leaves your other devices signed in.</div></div></div>'+
-        '<button class="btn bs" style="font-size:12px;margin-top:12px" onclick="signOut()">Sign out of this device</button>'+
+        '<button class="btn bs" style="font-size:12px;margin-top:12px" data-dact="signOut">Sign out of this device</button>'+
       '</div>';
     _renderActivityBlock(document.getElementById('act-block'));
     on($('reset-pw-btn'),'click',async()=>{
@@ -20091,12 +20232,12 @@ function _renderSetPaneInner(){
       '<div class="set-title">Live / Backend</div>'+
       '<div class="set-sub">Connect AMV to your deployed backend so Crew jobs, approvals and Handoff work for real and across accounts. Leave blank to run in local demo mode.</div>'+
       '<div class="ss2"><h3>Backend URL</h3>'+
-        '<div style="display:flex;gap:8px"><input type="url" id="be-url" value="'+escH(liveBase)+'" placeholder="https://amv-ai-backend.your.workers.dev" style="flex:1;font-size:12px"><button class="btn bp" style="font-size:12px" onclick="amvSaveBackend()">Save</button></div>'+
+        '<div style="display:flex;gap:8px"><input type="url" id="be-url" value="'+escH(liveBase)+'" placeholder="https://amv-ai-backend.your.workers.dev" style="flex:1;font-size:12px"><button class="btn bp" style="font-size:12px" data-dact="amvSaveBackend">Save</button></div>'+
         '<p style="font-size:11px;color:var(--mu);margin-top:8px">'+(liveBase?('Status: <span style="color:#4ade80">configured</span>'+(tokenSet?' &middot; signed in':' &middot; not signed in')):'Status: local demo mode')+'</p>'+
       '</div>'+
       '<div class="ss2" style="margin-top:14px"><h3>Sign in to backend</h3>'+
         '<p style="font-size:12px;color:var(--mu);margin:-4px 0 10px">Sign in with your AMV account email and password to sync this device. To use Google, sign in with Google on the main sign-in screen - it is verified server-side.</p>'+
-        '<div style="display:flex;flex-direction:column;gap:8px"><input type="email" id="be-email" value="'+escH((S.user&&S.user.email)||'')+'" placeholder="you@email.com" style="font-size:12px" autocomplete="username"><div style="display:flex;gap:8px"><input type="password" id="be-pass" placeholder="Your password" style="flex:1;font-size:12px" autocomplete="current-password"><button class="btn bp" style="font-size:12px" onclick="amvBackendLogin()">Connect</button></div></div>'+
+        '<div style="display:flex;flex-direction:column;gap:8px"><input type="email" id="be-email" value="'+escH((S.user&&S.user.email)||'')+'" placeholder="you@email.com" style="font-size:12px" autocomplete="username"><div style="display:flex;gap:8px"><input type="password" id="be-pass" placeholder="Your password" style="flex:1;font-size:12px" autocomplete="current-password"><button class="btn bp" style="font-size:12px" data-dact="amvBackendLogin">Connect</button></div></div>'+
       '</div>';
   } else if(sp==='apikeys'){
     const liveBase=loadStr('amv_api_base')||'';
@@ -20273,8 +20414,11 @@ function _renderSetPaneInner(){
       '<div class="set-title">Usage</div>'+
       '<div class="set-sub">Your current usage this window, activity, and the impact AMV has had for you.</div>'+
       _usageContentHTML();
-    // wire upgrade buttons inside the pane
-    pane.querySelectorAll('[data-stab]').forEach(b=>on(b,'click',()=>{ S.tab='plans'; setTab('plans'); }));
+    /* The upgrade buttons in here need no wiring: data-stab is dispatched by
+       the same document listener as everything else, and it sends you to the
+       tab the button NAMES. This used to also bind each one directly to
+       setTab('plans'), which sent the "team" button to plans first and then
+       let the delegation correct it - two renders and the wrong one first. */
 
   } else if(sp==='integrations'){
     pane.innerHTML =
@@ -20342,8 +20486,8 @@ function _renderSetPaneInner(){
         '</div>'+
         '<p style="font-size:12px;color:var(--t2);line-height:1.65;margin-bottom:13px">Your AI workforce - it does the work, not just answers it. Chat, agents, builds, images, video, and automation in one place.</p>'+
         '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
-          '<button class="btn bs" style="font-size:12px" onclick="openTerms()">Terms of Service</button>'+
-          '<button class="btn bs" style="font-size:12px" onclick="openPrivacy()">Privacy Policy</button>'+
+          '<button class="btn bs" style="font-size:12px" data-dact="openTerms">Terms of Service</button>'+
+          '<button class="btn bs" style="font-size:12px" data-dact="openPrivacy">Privacy Policy</button>'+
           supportButton({label:'Contact Support',cls:'btn bs',subject:'AMV Support request'})+
         '</div>'+
       '</div>'+
@@ -20355,7 +20499,7 @@ function _renderSetPaneInner(){
           _shortcutRowsHTML()+
         '</div>'+
       '</div>'+
-      (S.user?'<div class="ss2" style="border-color:rgba(255,95,87,.2)"><h3 style="color:var(--red)">Sign Out</h3><p style="font-size:12px;color:var(--t2);margin-bottom:12px">Your data remains saved and will be restored on next sign in.</p><button class="btn bd2" onclick="signOut()" style="font-size:12px">Sign out</button></div>':'');
+      (S.user?'<div class="ss2" style="border-color:rgba(255,95,87,.2)"><h3 style="color:var(--red)">Sign Out</h3><p style="font-size:12px;color:var(--t2);margin-bottom:12px">Your data remains saved and will be restored on next sign in.</p><button class="btn bd2" data-dact="signOut" style="font-size:12px">Sign out</button></div>':'');
   } else {
     pane.innerHTML='';
   }
@@ -20669,11 +20813,19 @@ try{ window.openWhatsNew=openWhatsNew; }catch(e){}
 
 /* -- Cookie consent -- */
 function accCk(){ localStorage.setItem('amv_ck','1'); const ck=document.getElementById('ck'); if(ck)ck.remove(); }
+
+/* Two buttons did two things each, written as a semicolon in an onclick
+   attribute. Named, so the delegated dispatcher can run them and so the script
+   CSP does not have to allow inline script for the sake of one comma. */
+function _acceptCookies(){ accCk(); closeOvr(); }
+function _closeThenPrivacy(){ closeOvr(); openPrivacy(); }
+try{ window._acceptCookies=_acceptCookies; window._closeThenPrivacy=_closeThenPrivacy; }catch(e){}
+
 function renderCk(){
   if(localStorage.getItem('amv_ck')) return;
   const div=document.createElement('div');
   div.id='ck';
-  div.innerHTML='<p>We use essential cookies to keep you signed in. By continuing you agree to our <button class="ckl" onclick="openTerms()">Terms</button> and <button class="ckl" onclick="openPrivacy()">Privacy Policy</button>.</p>'+
+  div.innerHTML='<p>We use essential cookies to keep you signed in. By continuing you agree to our <button class="ckl" data-dact="openTerms">Terms</button> and <button class="ckl" data-dact="openPrivacy">Privacy Policy</button>.</p>'+
     '<div style="display:flex;gap:7px;flex-shrink:0"><button class="btn bp" id="ck-acc" style="padding:5px 13px;font-size:12px">Accept</button><button class="btn bs" id="ck-nec" style="padding:5px 11px;font-size:12px">Necessary Only</button></div>';
   document.body.appendChild(div);
   document.getElementById('ck-acc')?.addEventListener('click',accCk);
@@ -20703,8 +20855,8 @@ try{ window._legalEffective=_legalEffective; }catch(e){}
 function openTerms(){
   const r=document.getElementById('ovr'); if(!r) return;
   r.innerHTML=
-    '<div class="ov" id="terms-bg"><div class="ob wide tall" onclick="event.stopPropagation()">'+
-      '<button class="oc" onclick="closeOvr()">&#215;</button>'+
+    '<div class="ov" id="terms-bg"><div class="ob wide tall">'+
+      '<button class="oc" data-dact="closeOvr">&#215;</button>'+
       '<h2>Terms of Service</h2>'+
       '<p class="ob-sub">Effective '+escH(_legalEffective())+' - please read carefully.</p>'+
       '<div class="ts">'+
@@ -20714,12 +20866,12 @@ function openTerms(){
         '<h4>4. AI Disclaimer</h4>AI outputs may be inaccurate. Do not rely on AMV.AI for medical, legal, or financial decisions without independent professional verification. AMV.AI does not provide financial advice; scheduled research reports information only.'+
         '<h4>5. Payments &amp; Refunds</h4>Subscriptions are billed monthly by our payment processor and can be cancelled any time; access continues to the end of the paid period. Refunds are handled per our posted policy. Chargeback or refund abuse may result in account suspension.'+
         '<h4>6. Acceptable Use &amp; Limits</h4>Each plan includes usage limits. Automated scraping of the service, reselling access, or circumventing limits is prohibited.'+
-        '<h4>7. Privacy</h4>Your use of AMV.AI is also governed by our <button class="lnk-inline" onclick="closeOvr();openPrivacy()">Privacy Policy</button>, which explains what we collect and how it is handled.'+
+        '<h4>7. Privacy</h4>Your use of AMV.AI is also governed by our <button class="lnk-inline" data-dact="_closeThenPrivacy">Privacy Policy</button>, which explains what we collect and how it is handled.'+
         '<h4>8. Contact</h4>'+(_supportEmail()?escH(_supportEmail()):'Contact support from the Help Center in the app.')+
       '</div>'+
-      '<div style="display:flex;gap:9px"><button class="btn bp" onclick="accCk();closeOvr()" style="flex:1">I Accept</button><button class="btn bs" onclick="closeOvr()">Close</button></div>'+
+      '<div style="display:flex;gap:9px"><button class="btn bp" data-dact="_acceptCookies" style="flex:1">I Accept</button><button class="btn bs" data-dact="closeOvr">Close</button></div>'+
     '</div></div>';
-  document.getElementById('terms-bg')?.addEventListener('click',closeOvr);
+  onBackdrop($('terms-bg'),closeOvr);
 }
 
 /* Real, SEPARATE privacy policy - required to take payments (Stripe) and to
@@ -20730,8 +20882,8 @@ function openPrivacy(){
   const r=document.getElementById('ovr'); if(!r) return;
   const contact=_supportEmail()?escH(_supportEmail()):'the Help Center in the app';
   r.innerHTML=
-    '<div class="ov" id="priv-bg"><div class="ob wide tall" onclick="event.stopPropagation()">'+
-      '<button class="oc" onclick="closeOvr()">&#215;</button>'+
+    '<div class="ov" id="priv-bg"><div class="ob wide tall">'+
+      '<button class="oc" data-dact="closeOvr">&#215;</button>'+
       '<h2>Privacy Policy</h2>'+
       '<p class="ob-sub">Effective '+escH(_legalEffective())+' - how AMV.AI handles your data.</p>'+
       '<div class="ts">'+
@@ -20762,9 +20914,9 @@ function openPrivacy(){
         '<h4>8. Children</h4>AMV.AI is not directed to children under 13 (or the minimum age in your region), and we do not knowingly collect their data.'+
         '<h4>9. Changes &amp; contact</h4>We may update this policy; material changes will be noted with a new effective date. Questions: '+contact+'.'+
       '</div>'+
-      '<div style="display:flex;gap:9px"><button class="btn bp" onclick="closeOvr()" style="flex:1">Got it</button></div>'+
+      '<div style="display:flex;gap:9px"><button class="btn bp" data-dact="closeOvr" style="flex:1">Got it</button></div>'+
     '</div></div>';
-  document.getElementById('priv-bg')?.addEventListener('click',closeOvr);
+  onBackdrop($('priv-bg'),closeOvr);
 }
 try{ window.openPrivacy=openPrivacy; }catch(e){}
 
@@ -20773,7 +20925,7 @@ function openAuth(mode){
   const r=document.getElementById('ovr'); if(!r) return;
   const isL=(mode==='login');
   r.innerHTML=
-    '<div class="ov" id="auth-bg"><div class="ob" onclick="event.stopPropagation()">'+
+    '<div class="ov" id="auth-bg"><div class="ob">'+
       '<button class="oc" id="auth-x">&#215;</button>'+
       '<h2>'+(isL?'Welcome back':'Create your account')+'</h2>'+
       '<p class="ob-sub">'+(isL?'Sign in to your AMV.AI account.':'Free forever. No credit card required.')+'</p>'+
@@ -20797,7 +20949,7 @@ function openAuth(mode){
       (isL?'<div class="asw" style="margin-top:6px"><button id="auth-forgot" style="color:var(--mu)">Forgot password?</button></div>':'')+
       '<p class="an">By continuing you agree to our <button id="a-terms">Terms</button> and <button id="a-priv">Privacy Policy</button></p>'+
     '</div></div>';
-  document.getElementById('auth-bg')?.addEventListener('click',closeOvr);
+  onBackdrop($('auth-bg'),closeOvr);
   document.getElementById('auth-x')?.addEventListener('click',closeOvr);
   document.getElementById('g-btn')?.addEventListener('click',triggerGoogle);
   document.getElementById('auth-submit')?.addEventListener('click',()=>isL?doLoginForm():doSignupForm());
@@ -21139,6 +21291,14 @@ try{ _countVisit(); window._countVisit=_countVisit; }catch(e){}
 try{ setTimeout(()=>{ try{ _checkWhatsNew(); }catch(e){} }, 800); }catch(e){}
 
 // Boot logic
+/* FIRST, because everything after it renders something worth clicking.
+   `frame-ancestors` in a <meta> CSP is ignored by every browser - the spec
+   says so - so this is what actually stops AMV being framed by a page that
+   wants your click on Approve. The widget (#embed=1) is framed on purpose and
+   is excluded inside the check. */
+if(typeof _framedWithoutPermission==='function' && _framedWithoutPermission()){
+  try{ _renderFramedRefusal(); }catch(e){ try{ document.body.textContent='AMV does not run inside another site.'; }catch(_){} }
+} else
 // If this is the embeddable widget (#embed=1&k=pk_...), render the compact chat panel and stop.
 if(typeof _checkEmbedView==='function' && _checkEmbedView()){
   // embed chat rendered; skip normal app boot
@@ -22427,12 +22587,46 @@ function parseCSV(text){
 function csvToTable(data){
   if(!data||!data.length) return '';
   const h=data[0], rows=data.slice(1);
-  return `<table id="sheet-tbl" style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr>${h.map(hd=>`<th contenteditable="true" style="background:rgba(85,144,255,.12);border:1px solid rgba(255,255,255,.1);padding:8px 10px;text-align:left;font-weight:600;white-space:nowrap;position:sticky;top:0">${escH(hd)}</th>`).join('')}</tr></thead><tbody>${rows.map(row=>`<tr>${h.map((_,ci)=>`<td contenteditable="true" style="border:1px solid rgba(255,255,255,.06);padding:6px 10px;color:var(--tx)" onfocus="this.style.background='rgba(85,144,255,.08)'" onblur="this.style.background=''">${escH(row[ci]||'')}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+  return `<table id="sheet-tbl" style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr>${h.map(hd=>`<th contenteditable="true" style="background:rgba(85,144,255,.12);border:1px solid rgba(255,255,255,.1);padding:8px 10px;text-align:left;font-weight:600;white-space:nowrap;position:sticky;top:0">${escH(hd)}</th>`).join('')}</tr></thead><tbody>${rows.map(row=>`<tr>${h.map((_,ci)=>`<td contenteditable="true" style="border:1px solid rgba(255,255,255,.06);padding:6px 10px;color:var(--tx)">${escH(row[ci]||'')}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
 }
 function tableToCSV(){
   const t=document.getElementById('sheet-tbl'); if(!t) return '';
   return Array.from(t.querySelectorAll('tr')).map(tr=>Array.from(tr.querySelectorAll('th,td')).map(c=>'"'+c.textContent.replace(/"/g,'""')+'"').join(',')).join('\n');
 }
+/* The two download buttons used to carry their whole body in an onclick
+   attribute. Named functions instead: the attribute form is the last thing
+   holding 'unsafe-inline' in the script CSP, and a download that silently
+   produced nothing had nowhere to say so. */
+function _sheetDownloadCSV(){
+  const csv=tableToCSV();
+  if(!csv){ toast('There is nothing in this sheet to download yet.','error'); return; }
+  _saveBlob(new Blob([csv],{type:'text/csv'}), 'amv_'+Date.now()+'.csv');
+  toast('Downloaded','success');
+}
+function _docDownloadTxt(){
+  const b=$('doc-body');
+  if(!b || !b.innerText.trim()){ toast('There is nothing in this document to download yet.','error'); return; }
+  _saveBlob(new Blob([b.innerText],{type:'text/plain'}), 'doc_'+Date.now()+'.txt');
+  toast('Downloaded','success');
+}
+function _saveBlob(blob,name){
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download=name; a.click();
+  /* The object URL used to be left behind, one per download, for the life of
+     the tab. Revoked on the next tick because Chrome needs the click to have
+     been dispatched first. */
+  setTimeout(()=>{ try{ URL.revokeObjectURL(url); }catch(e){} },0);
+}
+function _bgAddGmailCheck(){ _bgAddTask({type:'gmail_check',title:'Check Gmail inbox'}); }
+function _bgAddCalendarCheck(){ _bgAddTask({type:'calendar_check',title:'Optimize my week'}); }
+function _toastResultCopied(){ toast('Result copied','success'); }
+try{
+  window._sheetDownloadCSV=_sheetDownloadCSV; window._docDownloadTxt=_docDownloadTxt;
+  window._bgAddGmailCheck=_bgAddGmailCheck; window._bgAddCalendarCheck=_bgAddCalendarCheck;
+  window._toastResultCopied=_toastResultCopied;
+}catch(e){}
+
 let _sheetData=[];
 function handleSheetFile(file){
   // An unreadable or corrupt file used to do nothing at all, with no error -
@@ -22458,15 +22652,15 @@ function openSheetEditor(data,name){
   <span style="font-size:13px;font-weight:600">&#128200; ${escH(name||'Spreadsheet')}</span>
   <span style="font-size:11px;color:var(--mu)">${data.length-1} rows &middot; ${data[0]&&data[0].length||0} cols</span>
   <div style="margin-left:auto;display:flex;gap:6px">
-    <button class="ext-btn" onclick="(()=>{const csv=tableToCSV();if(!csv)return;const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='amv_'+Date.now()+'.csv';a.click();toast('Downloaded','success');})()">&#8681; Download</button>
-    <button class="ext-btn" onclick="setTab('extensions')">&#10005; Close</button>
+    <button class="ext-btn" data-dact="_sheetDownloadCSV">&#8681; Download</button>
+    <button class="ext-btn" data-stab="extensions">&#10005; Close</button>
   </div>
 </div>
 <div style="flex:1;overflow:auto;padding:12px">${csvToTable(data)}</div>
 <div style="background:rgba(13,17,23,.97);border-top:1px solid rgba(255,255,255,.1);padding:12px 14px;flex-shrink:0">
   <div style="font-size:10px;color:#7cb8ff;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:7px">AMV AI Toolbar</div>
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
-    ${['Analyze trends','Find duplicates','Add totals row','Sort by first column','Summarize data'].map(q=>`<button class="ext-btn" onclick="runSheetAI('${q}')">${q}</button>`).join('')}
+    ${['Analyze trends','Find duplicates','Add totals row','Sort by first column','Summarize data'].map(q=>`<button class="ext-btn" data-dact="runSheetAI" data-darg="${q}">${q}</button>`).join('')}
   </div>
   <div style="display:flex;gap:8px">
     <input type="text" id="sheet-inp" placeholder="Ask AMV anything about this spreadsheet..." style="flex:1;font-size:13px">
@@ -22504,15 +22698,15 @@ function openDocEditor(content,name){
 <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;background:rgba(13,17,23,.95);border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0">
   <span style="font-size:13px;font-weight:600">&#128196; ${escH(name||'Document')}</span>
   <div style="margin-left:auto;display:flex;gap:6px">
-    <button class="ext-btn" onclick="(()=>{const b=$('doc-body');if(!b)return;const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([b.innerText],{type:'text/plain'}));a.download='doc_'+Date.now()+'.txt';a.click();})()">&#8681; Download</button>
-    <button class="ext-btn" onclick="setTab('extensions')">&#10005; Close</button>
+    <button class="ext-btn" data-dact="_docDownloadTxt">&#8681; Download</button>
+    <button class="ext-btn" data-stab="extensions">&#10005; Close</button>
   </div>
 </div>
 <div id="doc-body" contenteditable="true" spellcheck="true" style="flex:1;overflow-y:auto;padding:40px 60px;font-size:14px;line-height:1.9;color:var(--tx);outline:none;max-width:780px;margin:0 auto;width:100%;box-sizing:border-box">${(content||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n\n/g,'</p><p style="margin:0 0 14px">').replace(/\n/g,'<br>')}</div>
 <div style="background:rgba(13,17,23,.97);border-top:1px solid rgba(255,255,255,.1);padding:12px 14px;flex-shrink:0">
   <div style="font-size:10px;color:#7cb8ff;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:7px">AMV AI Toolbar</div>
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
-    ${['Improve writing','Fix grammar','Make it longer','Make it shorter','Change tone to formal'].map(q=>`<button class="ext-btn" onclick="runDocAI('${q}')">${q}</button>`).join('')}
+    ${['Improve writing','Fix grammar','Make it longer','Make it shorter','Change tone to formal'].map(q=>`<button class="ext-btn" data-dact="runDocAI" data-darg="${q}">${q}</button>`).join('')}
   </div>
   <div style="display:flex;gap:8px">
     <input type="text" id="doc-inp" placeholder="Ask AMV to edit, rewrite, or expand..." style="flex:1;font-size:13px">
@@ -22595,9 +22789,9 @@ function renderAutomationView(){
   const vc=$('vc'); if(!vc) return;
   const sc=s=>s==='done'?'#4ade80':s==='running'?'#5590ff':s==='failed'?'#ff4d4d':'#e0b341';
   const si=s=>s==='done'?'✓':s==='running'?'⟳':s==='failed'?'✕':'⏳';
-  const cards=['<div onclick="_bgAddTask({type:\'gmail_check\',title:\'Check Gmail inbox\'})" style="background:rgba(22,27,34,.6);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:16px;cursor:pointer;text-align:center;transition:all .2s" onmouseenter="this.style.borderColor=\'rgba(88,166,255,.2)\'" onmouseleave="this.style.borderColor=\'rgba(255,255,255,.07)\'"><div style="font-size:28px;margin-bottom:8px">📧</div><div style="font-size:13px;font-weight:600;margin-bottom:3px">Check Gmail</div><div style="font-size:11px;color:var(--mu)">Analyze unread emails</div></div>',
-  '<div onclick="_bgAddTask({type:\'calendar_check\',title:\'Optimize my week\'})" style="background:rgba(22,27,34,.6);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:16px;cursor:pointer;text-align:center;transition:all .2s" onmouseenter="this.style.borderColor=\'rgba(88,166,255,.2)\'" onmouseleave="this.style.borderColor=\'rgba(255,255,255,.07)\'"><div style="font-size:28px;margin-bottom:8px">📅</div><div style="font-size:13px;font-weight:600;margin-bottom:3px">Plan my week</div><div style="font-size:11px;color:var(--mu)">Calendar optimization</div></div>',
-  '<div onclick="showCustomTask()" style="background:rgba(22,27,34,.6);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:16px;cursor:pointer;text-align:center;transition:all .2s" onmouseenter="this.style.borderColor=\'rgba(88,166,255,.2)\'" onmouseleave="this.style.borderColor=\'rgba(255,255,255,.07)\'"><div style="font-size:28px;margin-bottom:8px">⚡</div><div style="font-size:13px;font-weight:600;margin-bottom:3px">Custom Task</div><div style="font-size:11px;color:var(--mu)">Any AI task in background</div></div>'].join('');
+  const cards=['<button type="button" class="bgq-card" data-dact="_bgAddGmailCheck"><span class="bgq-ic" aria-hidden="true">📧</span><span class="bgq-t">Check Gmail</span><span class="bgq-s">Analyze unread emails</span></button>',
+  '<button type="button" class="bgq-card" data-dact="_bgAddCalendarCheck"><span class="bgq-ic" aria-hidden="true">📅</span><span class="bgq-t">Plan my week</span><span class="bgq-s">Calendar optimization</span></button>',
+  '<button type="button" class="bgq-card" data-dact="showCustomTask"><span class="bgq-ic" aria-hidden="true">⚡</span><span class="bgq-t">Custom Task</span><span class="bgq-s">Any AI task in background</span></button>'].join('');
   const taskList=_bgQueue.tasks.length ? _bgQueue.tasks.slice().reverse().map(function(t){
     let h='<div style="background:rgba(22,27,34,.7);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:14px;margin-bottom:8px">';
     h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">';
@@ -22609,7 +22803,7 @@ function renderAutomationView(){
     if(t.error) h+='<div style="font-size:12px;color:var(--red);padding:8px;background:rgba(248,81,73,.08);border-radius:7px;margin-top:4px">'+escH(t.error)+'</div>';
     if(t.result){
       h+='<div style="font-size:12px;color:var(--mu);background:rgba(0,0,0,.25);border-radius:8px;padding:10px;margin-top:8px;max-height:180px;overflow-y:auto;white-space:pre-wrap;line-height:1.65">'+escH(t.result.slice(0,500))+(t.result.length>500?' ...(truncated)':'')+'</div>';
-      h+='<div style="display:flex;gap:6px;margin-top:8px"><button class="ext-btn" onclick="toast(&quot;Result copied&quot;,&quot;success&quot;)">Copy result</button></div>';
+      h+='<div style="display:flex;gap:6px;margin-top:8px"><button class="ext-btn" data-dact="_toastResultCopied">Copy result</button></div>';
     }
     h+='<div style="font-size:10px;color:var(--dim);margin-top:6px">'+new Date(t.created).toLocaleString()+'</div>';
     h+='</div>';
@@ -22621,7 +22815,7 @@ function renderAutomationView(){
 <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px">${cards}</div>
 </div>
 <div class="ss2">
-<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><h3 style="margin:0">Task Queue</h3><button class="ext-btn" onclick="renderAutomationView()">Refresh</button></div>
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><h3 style="margin:0">Task Queue</h3><button class="ext-btn" data-dact="renderAutomationView">Refresh</button></div>
 ${taskList}
 </div>
 </div></div>`;
@@ -22874,7 +23068,7 @@ async function openMailConnect(){
   /* Guarded so a click INSIDE the dialog does not close it, without using
      stopPropagation - which would kill the delegated handlers on every button
      in here (LESSONS #5). */
-  on($('ml-bg'),'click',(e)=>{ if(e.target===e.currentTarget) r.innerHTML=''; });
+  onBackdrop($('ml-bg'),()=>{ r.innerHTML=''; });
   on($('ml-x'),'click',()=>{ r.innerHTML=''; });
   on($('ml-cancel'),'click',()=>{ r.innerHTML=''; });
   on($('ml-go'),'click',async()=>{
@@ -24145,6 +24339,32 @@ function _crewResultsHTML(){
 }
 function _crewRender(){ const el=$('crew-live'); if(el) el.innerHTML=_crewResultsHTML(); }
 
+/* THE FOUR QUICK CARDS ON THE CREW SCREEN.
+
+   Each card used to carry its own call as a string in an onclick attribute -
+   including `crewRun('gmail','Check Gmail')`, a two-argument call, which is why
+   the attribute form was reached for in the first place: the delegated
+   dispatcher passes one argument.
+
+   The card already knows which one it is, so the kind is the argument and the
+   title lives here beside the thing that uses it. An unknown kind does nothing
+   rather than calling crewRun with undefined and starting a run that reports a
+   failure the person did not cause. */
+const _CW_QUICK = {
+  trip: null,                              // its own screen, not a crew run
+  gmail: 'Check Gmail',
+  week:  'Plan my week',
+  auto:  null,                             // opens the cowork composer
+};
+function _cwQuick(kind){
+  if(kind==='trip'){ openTripPlanner(); return; }
+  if(kind==='auto'){ openCowork(); return; }
+  const title=_CW_QUICK[kind];
+  if(!title) return;
+  crewRun(kind, title);
+}
+try{ window._cwQuick=_cwQuick; }catch(e){}
+
 async function crewRun(kind, title, opts){
   opts=opts||{};
   const res={id:'cr'+Date.now(), kind, title, status:'running', note:'starting…', body:'', actions:''};
@@ -24205,7 +24425,7 @@ window.crewRun=crewRun;
 /* ===== DEDICATED TRIP PLANNER (own screen, real form -> AI) ===== */
 function openTripPlanner(){
   const r=$('ovr'); if(!r) return;
-  r.innerHTML = `<div class="ov trip-ov" id="trip-bg"><div class="trip-modal" onclick="event.stopPropagation()">
+  r.innerHTML = `<div class="ov trip-ov" id="trip-bg"><div class="trip-modal">
     <div class="trip-head">
       <div><div class="eyebrow">AMV Travel</div><h2 class="trip-title">Plan a trip</h2></div>
       <button class="trip-x" id="trip-close" aria-label="close">✕</button>
@@ -24247,7 +24467,7 @@ function openTripPlanner(){
     </div>
   </div></div>`;
   on($('trip-close'),'click',closeTripPlanner);
-  on($('trip-bg'),'click',closeTripPlanner);
+  onBackdrop($('trip-bg'),closeTripPlanner);
   on($('trip-plan'),'click',_tripPlan);
   // sensible default dates (next month, 5 days)
   const s=new Date(Date.now()+30*864e5), e=new Date(Date.now()+35*864e5);
@@ -24315,7 +24535,7 @@ function openTaskPanel(mode){
   const fileLine = isFile && _PENDING_FILE ? '<div class="tp-file">📎 '+escH(_PENDING_FILE.name)+' <span>'+Math.round(_PENDING_FILE.size/1024)+' KB</span></div>' : '';
   const ph = isFile ? "e.g. 'find the bugs and fix them', 'summarize the key points', 'clean this data and chart revenue by month'"
                     : "Describe exactly what you want AMV to do. Be specific - it will actually do it and show the result.";
-  r.innerHTML = `<div class="ov tp-ov" id="tp-bg"><div class="tp-modal" onclick="event.stopPropagation()">
+  r.innerHTML = `<div class="ov tp-ov" id="tp-bg"><div class="tp-modal">
     <div class="tp-head"><div><div class="eyebrow">AMV Task</div><h2 class="tp-title">${title}</h2></div><button class="tp-x" id="tp-close">✕</button></div>
     <div class="tp-body" id="tp-step1">
       ${fileLine}
@@ -24340,7 +24560,7 @@ function openTaskPanel(mode){
     </div>
   </div></div>`;
   on($('tp-close'),'click',closeTaskPanel);
-  on($('tp-bg'),'click',closeTaskPanel);
+  onBackdrop($('tp-bg'),closeTaskPanel);
   on($('tp-run'),'click',()=>_taskRun(mode));
   const rep=$('tp-repeat'), note=$('tp-recur-note');
   on(rep,'change',()=>{ note.textContent = rep.value==='none' ? '' :
@@ -24952,7 +25172,7 @@ function openCommandPalette(){
   const r=$('ovr'); if(!r) return;
   if(document.getElementById('cmdk-bg')){ return; } // already open
   r.insertAdjacentHTML('beforeend',
-    '<div class="ov cmdk-ov" id="cmdk-bg"><div class="cmdk" onclick="event.stopPropagation()">'+
+    '<div class="ov cmdk-ov" id="cmdk-bg"><div class="cmdk">'+
       '<div class="cmdk-inp-wrap">'+
         '<svg class="cmdk-search-ic" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>'+
         '<input id="cmdk-inp" class="cmdk-inp" placeholder="Search commands\u2026 (type a page or action)" autocomplete="off" spellcheck="false">'+
@@ -24970,7 +25190,7 @@ function openCommandPalette(){
     else if(e.key==='Enter'){ e.preventDefault(); _runPalette(_palSel); }
     else if(e.key==='Escape'){ e.preventDefault(); closeCommandPalette(); }
   });
-  on($('cmdk-bg'),'click',closeCommandPalette);
+  onBackdrop($('cmdk-bg'),closeCommandPalette);
   setTimeout(()=>inp.focus(),30);
 }
 function closeCommandPalette(){ const el=$('cmdk-bg'); if(el) el.remove(); }
@@ -25074,14 +25294,14 @@ function openShortcutSheet(){
     '</div>'
   ).join('');
   r.insertAdjacentHTML('beforeend',
-    '<div class="ov cmdk-ov" id="ksheet-bg"><div class="ksheet" onclick="event.stopPropagation()">'+
+    '<div class="ov cmdk-ov" id="ksheet-bg"><div class="ksheet">'+
       '<div class="ks-head"><div class="ks-title">Keyboard shortcuts</div>'+
         '<button class="art-x" id="ks-x" aria-label="Close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>'+
       '<div class="ks-body">'+sections+'</div>'+
       '<div class="ks-foot">Press <kbd class="ks-key">?</kbd> anytime to open this. <kbd class="ks-key">Esc</kbd> to close.</div>'+
     '</div></div>');
   $('ks-x')?.addEventListener('click',closeShortcutSheet);
-  on($('ksheet-bg'),'click',closeShortcutSheet);
+  onBackdrop($('ksheet-bg'),closeShortcutSheet);
   const esc=(ev)=>{ if(ev.key==='Escape'){ closeShortcutSheet(); document.removeEventListener('keydown',esc); } };
   document.addEventListener('keydown',esc);
 }
@@ -25143,7 +25363,7 @@ function _aaInit(){
 
 function openCowork(){
   const r=$('ovr'); if(!r) return;
-  r.innerHTML = `<div class="ov tp-ov" id="cw-bg"><div class="tp-modal cowork-modal" onclick="event.stopPropagation()">
+  r.innerHTML = `<div class="ov tp-ov" id="cw-bg"><div class="tp-modal cowork-modal">
     <div class="tp-head"><div><div class="eyebrow">AMV Autonomous</div><h2 class="tp-title">Give AMV an outcome</h2></div><button class="tp-x" id="cw-close">✕</button></div>
     <div class="tp-body" id="cw-step1">
       <p class="trip-sub">Describe the result you want - not the steps. AMV plans the work, executes each step itself, and brings back a finished deliverable. You approve anything that sends or shares.</p>
@@ -25215,7 +25435,7 @@ function openCowork(){
     </div>
   </div></div>`;
   on($('cw-close'),'click',()=>{ stopAutonomous(); const x=$('ovr'); if(x) x.innerHTML=''; });
-  on($('cw-bg'),'click',()=>{ if(!_AUTO.running){ const x=$('ovr'); if(x) x.innerHTML=''; } });
+  onBackdrop($('cw-bg'),()=>{ if(!_AUTO.running){ const x=$('ovr'); if(x) x.innerHTML=''; } });
   on($('cw-go'),'click',_coworkStart);
   _SCHED={cad:'once', days:[1], dom:1, hour:9};
   const updNote=()=>{ const n=$('cw-freq-note'); if(!n) return; n.textContent = _SCHED.cad==='once' ? '' : (_schedHuman()+' - runs automatically when due while AMV is open. You still approve any send/post step.'); };
@@ -25443,7 +25663,7 @@ function _schedEdit(id){
       </div>
     </footer>
   </div></div>`;
-  on($('sce-bg'),'click',(e)=>{ if(e.target===e.currentTarget) apvClose(); });
+  onBackdrop($('sce-bg'),apvClose);
   const sync=()=>{ const c=$('sce-cad').value; const hf=$('sce-hour-f'),df=$('sce-days-f'),mf=$('sce-dom-f'); if(hf)hf.style.display=(c==='hourly')?'none':'flex'; if(df)df.style.display=(c==='weekly')?'block':'none'; if(mf)mf.style.display=(c==='monthly')?'flex':'none'; };
   on($('sce-cad'),'change',sync); sync();
   setTimeout(()=>{ try{ $('sce-goal').focus(); }catch(e){} },30);
@@ -25539,7 +25759,7 @@ function openSchedManager(){
     </div>
   </div></div>`;
   on($('sm-close'),'click',()=>{ const x=$('ovr'); if(x) x.innerHTML=''; });
-  on($('sm-bg'),'click',(e)=>{ if(e.target===e.currentTarget){ const x=$('ovr'); if(x) x.innerHTML=''; } });
+  onBackdrop($('sm-bg'),()=>{ const x=$('ovr'); if(x) x.innerHTML=''; });
   setTimeout(()=>{ try{ $('sm-close').focus(); }catch(e){} },30);
 }
 window.openSchedManager=openSchedManager;
@@ -25806,8 +26026,8 @@ function openJobHunt(){
   const r=typeof $==='function' && $('ovr'); if(!r) { try{ setTab('crew'); }catch(e){} return; }
   const c=AMVJobs.cfg();
   const val=v=>escH(v==null?'':String(v));
-  r.innerHTML='<div class="ov" id="jh-bg"><div class="ob jh-modal" onclick="event.stopPropagation()" style="max-width:560px">'+
-    '<button class="oc" onclick="closeOvr()" aria-label="Close">×</button>'+
+  r.innerHTML='<div class="ov" id="jh-bg"><div class="ob jh-modal" style="max-width:560px">'+
+    '<button class="oc" data-dact="closeOvr" aria-label="Close">×</button>'+
     '<h2 style="margin:0 0 4px">Job Hunt</h2>'+
     '<p style="font-size:12.5px;color:var(--mu);margin:0 0 14px">I find roles that match your profile and prepare a tailored application for each one, ready for you to review and send. Submitting on my own is not switched on yet - nothing goes to an employer without you.</p>'+
     '<div class="jh-form" style="display:flex;flex-direction:column;gap:11px">'+
@@ -25831,9 +26051,9 @@ function openJobHunt(){
         '<select id="jh-mode" class="sel" aria-label="Apply mode"><option value="ask"'+(c.mode==='ask'?' selected':'')+'>Show me each one before it is sent</option><option value="auto"'+(c.mode==='auto'?' selected':'')+'>Prepare as many as possible for one-tap sending</option></select>'+
       '<span style="font-size:11.5px;color:var(--mu);display:block;margin-top:5px">Either way, nothing reaches an employer until you send it.</span></label>'+
     '</div>'+
-    '<div style="display:flex;gap:9px;margin-top:16px"><button class="btn bp" id="jh-save" style="flex:1">Save</button><button class="btn bs" onclick="closeOvr()">Cancel</button></div>'+
+    '<div style="display:flex;gap:9px;margin-top:16px"><button class="btn bp" id="jh-save" style="flex:1">Save</button><button class="btn bs" data-dact="closeOvr">Cancel</button></div>'+
   '</div></div>';
-  on($('jh-bg'),'click',(e)=>{ if(e.target===$('jh-bg')) closeOvr(); });
+  onBackdrop($('jh-bg'),closeOvr);
   on($('jh-save'),'click',()=>{
     const g=id=>{ const el=$(id); return el?el.value.trim():''; };
     const list=s=>s.split(',').map(x=>x.trim()).filter(Boolean);

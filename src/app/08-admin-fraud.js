@@ -1482,7 +1482,7 @@ function openUpgradeModal(lockedModel){
       '</div>'+
       '<div class="upg-row-r"><div class="upg-row-price" style="font-size:15px">Your price</div><span class="upg-row-go">Build \u2192</span></div>'+
     '</button>';
-  r.innerHTML='<div class="upg-ov" id="upg-bg"><div class="upg-modal" style="max-width:480px" onclick="event.stopPropagation()">'+
+  r.innerHTML='<div class="upg-ov" id="upg-bg"><div class="upg-modal" style="max-width:480px">'+
     '<button class="dna-x" id="upg-x" style="position:absolute;top:16px;right:16px">\u2715</button>'+
     '<div class="upg-head">'+
       '<div class="upg-lock">\uD83D\uDD12</div>'+
@@ -1494,7 +1494,7 @@ function openUpgradeModal(lockedModel){
       '<div class="upg-trust">Cancel anytime \u00b7 Keep your free account \u00b7 Secure checkout</div></div>'+
   '</div></div>';
   const close=()=>{ r.innerHTML=''; };
-  on($('upg-bg'),'click',close); on($('upg-x'),'click',close);
+  onBackdrop($('upg-bg'),close); on($('upg-x'),'click',close);
   r.querySelectorAll('[data-upg]').forEach(btn=>on(btn,'click',()=>{ const k=btn.dataset.upg; close(); if(k==='custom'){ openCustomPlan(); } else { openCheckout(k); } }));
   const cmp=$('upg-compare'); if(cmp) on(cmp,'click',()=>{ close(); openPlanCompare(needPlan); });
 }
@@ -1539,13 +1539,13 @@ function openPlanCompare(highlight){
   const head='<th></th>'+plans.map(p=>'<th class="'+(p===highlight?'pc-hl':'')+'">'+colName(p)+(p===highlight?'<span class="pc-tag">Recommended</span>':'')+'</th>').join('');
   const body=rows.map(([label,fn])=>'<tr><td class="pc-row">'+label+'</td>'+plans.map(p=>'<td class="'+(p===highlight?'pc-hl':'')+'">'+fn(p)+'</td>').join('')+'</tr>').join('');
   const cta='<tr><td></td>'+plans.map(p=>'<td class="'+(p===highlight?'pc-hl':'')+'">'+(p==='free'?'':'<button class="btn '+(p===highlight?'bp':'')+' pc-go" data-pcgo="'+p+'" style="font-size:11px;padding:6px 9px">'+(isC(p)?'Build':'Get')+'</button>')+'</td>').join('')+'</tr>';
-  r.innerHTML='<div class="upg-ov" id="pc-bg"><div class="pc-modal" onclick="event.stopPropagation()">'+
+  r.innerHTML='<div class="upg-ov" id="pc-bg"><div class="pc-modal">'+
     '<button class="dna-x" id="pc-x" style="position:absolute;top:16px;right:16px;z-index:2">\u2715</button>'+
     '<div class="pc-head"><h2>Compare plans</h2><p>Everything each plan includes - pick what fits how you work.</p></div>'+
     '<div class="pc-scroll"><table class="pc-table"><thead><tr>'+head+'</tr></thead><tbody>'+body+cta+'</tbody></table></div>'+
   '</div></div>';
   const close=()=>{ r.innerHTML=''; };
-  on($('pc-bg'),'click',close); on($('pc-x'),'click',close);
+  onBackdrop($('pc-bg'),close); on($('pc-x'),'click',close);
   r.querySelectorAll('[data-pcgo]').forEach(btn=>on(btn,'click',()=>{ const k=btn.dataset.pcgo; close(); if(k==='custom'){ openCustomPlan(); } else { openCheckout(k); } }));
 }
 window.openPlanCompare=openPlanCompare;
@@ -1558,7 +1558,7 @@ function openCustomPlan(){
   const render=()=>{
     const s=_customPlanSummary(price);
     const marginPct=Math.round(s.margin*100);
-    r.innerHTML='<div class="upg-ov" id="cp-bg"><div class="cp-modal" onclick="event.stopPropagation()">'+
+    r.innerHTML='<div class="upg-ov" id="cp-bg"><div class="cp-modal">'+
       '<button class="dna-x" id="cp-x" style="position:absolute;top:16px;right:16px">\u2715</button>'+
       '<div class="cp-head"><span class="eyebrow" style="color:var(--accent)">Custom plan</span>'+
         '<h2>Pay exactly for what you need</h2>'+
@@ -1580,7 +1580,7 @@ function openCustomPlan(){
       '<p class="cp-fine">Usage is capped at your plan size and resets monthly. Unused usage doesn\u2019t roll over. Cancel or resize anytime.</p>'+
     '</div></div>';
     const close=()=>{ r.innerHTML=''; };
-    on($('cp-bg'),'click',close); on($('cp-x'),'click',close);
+    onBackdrop($('cp-bg'),close); on($('cp-x'),'click',close);
     const _cpLocal=()=>{ const el=$('cp-local'); if(el) el.textContent=(window.AMVCurrency&&AMVCurrency.isLocal())?('≈ '+AMVCurrency.fmt(price)+' /mo in your currency'):''; };
     _cpLocal();
     const sl=$('cp-slider');

@@ -390,11 +390,36 @@ shape for a revoked API key, a blocked account and a suspended seller.
 Revocation is monotonic now, and the restore reports what it held forward -
 a partial restore an operator does not know about is one they assume was total.
 
-**Still open from AMV-019:** the CSP allows `unsafe-inline`, and 97 inline
-`onclick` handlers depend on it. Removing it is a real UI refactor across
-fifteen files, not a header change, so it is tracked separately rather than
-rushed - a broken button on a payment screen is a worse outcome than the
-hardening is a gain.
+**The second half of AMV-019 is now closed too.** `script-src` no longer allows
+`'unsafe-inline'`: it names the three inline scripts AMV ships - the boot-flash
+guard, the launcher, and the bundle itself for the launcher's no-blob fallback -
+by sha256, computed by the build so no hash is ever typed or left stale. What
+had been blocking it was about a hundred `onclick` attributes, and there is no
+partial credit: removing the directive with one left does not harden anything,
+it kills that button.
+
+All hundred are gone. Sixty-six were two patterns. Twenty-eight were
+`closeOvr()`, which the delegated dispatcher could always have run. Thirty-seven
+were `onclick="event.stopPropagation()"` on an overlay panel - an idiom that was
+never right here, because `data-dact` is dispatched by ONE listener on
+`document`, so stopping the click on a panel kills every delegated button inside
+it. That had already shipped as a real bug on the recent-chats row, which did
+nothing at all when clicked. A backdrop asks `e.target === e.currentTarget`
+instead, in one helper, and the click keeps bubbling to the dispatcher. Hover
+and focus states written as `this.style.*` attributes are CSS now, so they also
+work for a keyboard and a touch screen, which they never did.
+
+Three things guard it: the build refuses to write `index.html` if `script-src`
+still allows inline afterwards; a suite fails on any event-handler attribute
+anywhere in the built page, and boots it in a real browser to prove the bundle
+still runs under the header; and the page reports `securitypolicyviolation` to
+the error sink, because a refusal is silent by construction and the third-party
+scripts on this page (payments, the bot check, sign-in with Google) are the ones
+that would fail invisibly if this were wrong.
+
+`style-src` keeps `'unsafe-inline'`: several hundred inline style attributes are
+presentation, they cannot exfiltrate anything, and CSP offers no way to hash
+them.
 
 **AMV-018 was a five-attempt limit that counted five per round trip.** A
 six-digit code is a million possibilities, which five tries makes safe. The

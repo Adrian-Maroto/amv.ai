@@ -175,15 +175,15 @@ function _hoPickChat(){
       '<div class="hopick-p">'+escH(prev||'(empty)')+'</div></button>';
   }).join('');
 
-  r.innerHTML='<div class="ov" id="hopick-bg"><div class="ob hopick-modal" onclick="event.stopPropagation()" style="max-width:520px">'+
-    '<button class="oc" onclick="closeOvr()">×</button>'+
+  r.innerHTML='<div class="ov" id="hopick-bg"><div class="ob hopick-modal" style="max-width:520px">'+
+    '<button class="oc" data-dact="closeOvr">×</button>'+
     '<h2 style="margin:0 0 4px">Pull in your work</h2>'+
     '<p style="font-size:12.5px;color:var(--mu);margin:0 0 14px">A conversation, a design, a project or some code. '+
       'The actual content comes across, not a description of it.</p>'+
     (sessRows?'<div class="hopick-h">Designs, projects and code</div><div class="hopick-list">'+sessRows+'</div>':'')+
     (chatRows?'<div class="hopick-h">Conversations</div><div class="hopick-list">'+chatRows+'</div>':'')+
     '</div></div>';
-  on($('hopick-bg'),'click',(e)=>{ if(e.target===$('hopick-bg')) closeOvr(); });
+  onBackdrop($('hopick-bg'),closeOvr);
   r.querySelectorAll('[data-hopick]').forEach(b=>on(b,'click',()=>{ _hoPullConv(b.dataset.hopick); closeOvr(); }));
   r.querySelectorAll('[data-hosess]').forEach(b=>on(b,'click',()=>{ _hoPullSession(b.dataset.hosess); closeOvr(); }));
 }
@@ -420,8 +420,8 @@ function render404View(){
       '<h2 class="nf-title">Page not found</h2>'+
       '<p class="nf-sub">The page you\u2019re looking for doesn\u2019t exist or may have moved.</p>'+
       '<div class="nf-actions">'+
-        '<button class="btn bp" onclick="setTab(\'chat\')">Go to chat</button>'+
-        '<button class="btn bs" onclick="setTab(\'dashboard\')">Home</button>'+
+        '<button class="btn bp" data-stab="chat">Go to chat</button>'+
+        '<button class="btn bs" data-stab="dashboard">Home</button>'+
       '</div>'+
     '</div></div>';
 }
@@ -775,13 +775,13 @@ function _openSettingsPicker(){
       '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">'+s.icon+'</svg>'+
       '<span>'+escH(T(s.label))+'</span></button>';
   }).join('');
-  r.innerHTML='<div class="ov" id="setpick-bg"><div class="ob setpick-modal" onclick="event.stopPropagation()" style="max-width:460px">'+
-    '<button class="oc" onclick="closeOvr()" aria-label="Close">×</button>'+
+  r.innerHTML='<div class="ov" id="setpick-bg"><div class="ob setpick-modal" style="max-width:460px">'+
+    '<button class="oc" data-dact="closeOvr" aria-label="Close">×</button>'+
     '<h2 style="margin:0 0 12px;font-size:18px">Settings</h2>'+
     '<div class="set-search-wrap setpick-searchwrap"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>'+
       '<input id="setpick-search" class="set-search" type="text" placeholder="Search settings…" autocomplete="off"></div>'+
     '<div class="setpick-list" id="setpick-list">'+rows+'</div></div></div>';
-  on($('setpick-bg'),'click',(e)=>{ if(e.target===$('setpick-bg')) closeOvr(); });
+  onBackdrop($('setpick-bg'),closeOvr);
   r.querySelectorAll('[data-setpick]').forEach(b=>on(b,'click',()=>{
     S.settingsPane=b.dataset.setpick; closeOvr(); renderSettingsView();
     try{ const c=document.querySelector('.settings-content'); if(c) c.scrollTop=0; }catch(e){}
@@ -1237,8 +1237,8 @@ function _confirmDeleteAccount(){
   const ovr=$('ovr'); if(!ovr) return;
   const connected = !!(window.AMV_API && AMV_API.live && AMV_API.token);
   ovr.innerHTML=
-    '<div class="ov" id="del-bg"><div class="ob" onclick="event.stopPropagation()">'+
-      '<button class="oc" onclick="closeOvr()">&#215;</button>'+
+    '<div class="ov" id="del-bg"><div class="ob">'+
+      '<button class="oc" data-dact="closeOvr">&#215;</button>'+
       '<h2 style="color:var(--red)">Delete your account</h2>'+
       '<p class="ob-sub">This permanently removes '+(connected
         ? 'your account, chats, projects, automations, and subscription from AMV\u2019s servers'
@@ -1248,12 +1248,12 @@ function _confirmDeleteAccount(){
       '<label class="lbl">Type <b>DELETE</b> to confirm</label>'+
       '<input type="text" id="del-confirm" placeholder="DELETE" autocomplete="off">'+
       '<div style="display:flex;gap:9px;margin-top:14px">'+
-        '<button class="btn bs" onclick="closeOvr()" style="flex:1">Cancel</button>'+
+        '<button class="btn bs" data-dact="closeOvr" style="flex:1">Cancel</button>'+
         '<button class="btn bd2" id="del-go" style="flex:1" disabled>Delete account</button>'+
       '</div>'+
     '</div></div>';
   ovr.classList.add('on');
-  document.getElementById('del-bg')?.addEventListener('click',closeOvr);
+  onBackdrop($('del-bg'),closeOvr);
   const inp=$('del-confirm'), go=$('del-go');
   on(inp,'input',()=>{ if(go) go.disabled = (inp.value.trim().toUpperCase()!=='DELETE'); });
   on($('del-export'),'click',()=>{ try{ _exportUserData(); }catch(e){} });   // async; its own errors are reported inside
@@ -1708,7 +1708,7 @@ function _renderSetPaneInner(){
       '</div>'+
       '<div class="ss2"><h3>This device</h3>'+
         '<div class="br2"><div><div style="font-size:13px;font-weight:500">Signed in on this browser</div><div style="font-size:11px;color:var(--t2);margin-top:2px">Signing out here leaves your other devices signed in.</div></div></div>'+
-        '<button class="btn bs" style="font-size:12px;margin-top:12px" onclick="signOut()">Sign out of this device</button>'+
+        '<button class="btn bs" style="font-size:12px;margin-top:12px" data-dact="signOut">Sign out of this device</button>'+
       '</div>';
     _renderActivityBlock(document.getElementById('act-block'));
     on($('reset-pw-btn'),'click',async()=>{
@@ -2015,12 +2015,12 @@ function _renderSetPaneInner(){
       '<div class="set-title">Live / Backend</div>'+
       '<div class="set-sub">Connect AMV to your deployed backend so Crew jobs, approvals and Handoff work for real and across accounts. Leave blank to run in local demo mode.</div>'+
       '<div class="ss2"><h3>Backend URL</h3>'+
-        '<div style="display:flex;gap:8px"><input type="url" id="be-url" value="'+escH(liveBase)+'" placeholder="https://amv-ai-backend.your.workers.dev" style="flex:1;font-size:12px"><button class="btn bp" style="font-size:12px" onclick="amvSaveBackend()">Save</button></div>'+
+        '<div style="display:flex;gap:8px"><input type="url" id="be-url" value="'+escH(liveBase)+'" placeholder="https://amv-ai-backend.your.workers.dev" style="flex:1;font-size:12px"><button class="btn bp" style="font-size:12px" data-dact="amvSaveBackend">Save</button></div>'+
         '<p style="font-size:11px;color:var(--mu);margin-top:8px">'+(liveBase?('Status: <span style="color:#4ade80">configured</span>'+(tokenSet?' &middot; signed in':' &middot; not signed in')):'Status: local demo mode')+'</p>'+
       '</div>'+
       '<div class="ss2" style="margin-top:14px"><h3>Sign in to backend</h3>'+
         '<p style="font-size:12px;color:var(--mu);margin:-4px 0 10px">Sign in with your AMV account email and password to sync this device. To use Google, sign in with Google on the main sign-in screen - it is verified server-side.</p>'+
-        '<div style="display:flex;flex-direction:column;gap:8px"><input type="email" id="be-email" value="'+escH((S.user&&S.user.email)||'')+'" placeholder="you@email.com" style="font-size:12px" autocomplete="username"><div style="display:flex;gap:8px"><input type="password" id="be-pass" placeholder="Your password" style="flex:1;font-size:12px" autocomplete="current-password"><button class="btn bp" style="font-size:12px" onclick="amvBackendLogin()">Connect</button></div></div>'+
+        '<div style="display:flex;flex-direction:column;gap:8px"><input type="email" id="be-email" value="'+escH((S.user&&S.user.email)||'')+'" placeholder="you@email.com" style="font-size:12px" autocomplete="username"><div style="display:flex;gap:8px"><input type="password" id="be-pass" placeholder="Your password" style="flex:1;font-size:12px" autocomplete="current-password"><button class="btn bp" style="font-size:12px" data-dact="amvBackendLogin">Connect</button></div></div>'+
       '</div>';
   } else if(sp==='apikeys'){
     const liveBase=loadStr('amv_api_base')||'';
@@ -2197,8 +2197,11 @@ function _renderSetPaneInner(){
       '<div class="set-title">Usage</div>'+
       '<div class="set-sub">Your current usage this window, activity, and the impact AMV has had for you.</div>'+
       _usageContentHTML();
-    // wire upgrade buttons inside the pane
-    pane.querySelectorAll('[data-stab]').forEach(b=>on(b,'click',()=>{ S.tab='plans'; setTab('plans'); }));
+    /* The upgrade buttons in here need no wiring: data-stab is dispatched by
+       the same document listener as everything else, and it sends you to the
+       tab the button NAMES. This used to also bind each one directly to
+       setTab('plans'), which sent the "team" button to plans first and then
+       let the delegation correct it - two renders and the wrong one first. */
 
   } else if(sp==='integrations'){
     pane.innerHTML =
@@ -2266,8 +2269,8 @@ function _renderSetPaneInner(){
         '</div>'+
         '<p style="font-size:12px;color:var(--t2);line-height:1.65;margin-bottom:13px">Your AI workforce - it does the work, not just answers it. Chat, agents, builds, images, video, and automation in one place.</p>'+
         '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
-          '<button class="btn bs" style="font-size:12px" onclick="openTerms()">Terms of Service</button>'+
-          '<button class="btn bs" style="font-size:12px" onclick="openPrivacy()">Privacy Policy</button>'+
+          '<button class="btn bs" style="font-size:12px" data-dact="openTerms">Terms of Service</button>'+
+          '<button class="btn bs" style="font-size:12px" data-dact="openPrivacy">Privacy Policy</button>'+
           supportButton({label:'Contact Support',cls:'btn bs',subject:'AMV Support request'})+
         '</div>'+
       '</div>'+
@@ -2279,7 +2282,7 @@ function _renderSetPaneInner(){
           _shortcutRowsHTML()+
         '</div>'+
       '</div>'+
-      (S.user?'<div class="ss2" style="border-color:rgba(255,95,87,.2)"><h3 style="color:var(--red)">Sign Out</h3><p style="font-size:12px;color:var(--t2);margin-bottom:12px">Your data remains saved and will be restored on next sign in.</p><button class="btn bd2" onclick="signOut()" style="font-size:12px">Sign out</button></div>':'');
+      (S.user?'<div class="ss2" style="border-color:rgba(255,95,87,.2)"><h3 style="color:var(--red)">Sign Out</h3><p style="font-size:12px;color:var(--t2);margin-bottom:12px">Your data remains saved and will be restored on next sign in.</p><button class="btn bd2" data-dact="signOut" style="font-size:12px">Sign out</button></div>':'');
   } else {
     pane.innerHTML='';
   }
@@ -2593,11 +2596,19 @@ try{ window.openWhatsNew=openWhatsNew; }catch(e){}
 
 /* -- Cookie consent -- */
 function accCk(){ localStorage.setItem('amv_ck','1'); const ck=document.getElementById('ck'); if(ck)ck.remove(); }
+
+/* Two buttons did two things each, written as a semicolon in an onclick
+   attribute. Named, so the delegated dispatcher can run them and so the script
+   CSP does not have to allow inline script for the sake of one comma. */
+function _acceptCookies(){ accCk(); closeOvr(); }
+function _closeThenPrivacy(){ closeOvr(); openPrivacy(); }
+try{ window._acceptCookies=_acceptCookies; window._closeThenPrivacy=_closeThenPrivacy; }catch(e){}
+
 function renderCk(){
   if(localStorage.getItem('amv_ck')) return;
   const div=document.createElement('div');
   div.id='ck';
-  div.innerHTML='<p>We use essential cookies to keep you signed in. By continuing you agree to our <button class="ckl" onclick="openTerms()">Terms</button> and <button class="ckl" onclick="openPrivacy()">Privacy Policy</button>.</p>'+
+  div.innerHTML='<p>We use essential cookies to keep you signed in. By continuing you agree to our <button class="ckl" data-dact="openTerms">Terms</button> and <button class="ckl" data-dact="openPrivacy">Privacy Policy</button>.</p>'+
     '<div style="display:flex;gap:7px;flex-shrink:0"><button class="btn bp" id="ck-acc" style="padding:5px 13px;font-size:12px">Accept</button><button class="btn bs" id="ck-nec" style="padding:5px 11px;font-size:12px">Necessary Only</button></div>';
   document.body.appendChild(div);
   document.getElementById('ck-acc')?.addEventListener('click',accCk);
@@ -2627,8 +2638,8 @@ try{ window._legalEffective=_legalEffective; }catch(e){}
 function openTerms(){
   const r=document.getElementById('ovr'); if(!r) return;
   r.innerHTML=
-    '<div class="ov" id="terms-bg"><div class="ob wide tall" onclick="event.stopPropagation()">'+
-      '<button class="oc" onclick="closeOvr()">&#215;</button>'+
+    '<div class="ov" id="terms-bg"><div class="ob wide tall">'+
+      '<button class="oc" data-dact="closeOvr">&#215;</button>'+
       '<h2>Terms of Service</h2>'+
       '<p class="ob-sub">Effective '+escH(_legalEffective())+' - please read carefully.</p>'+
       '<div class="ts">'+
@@ -2638,12 +2649,12 @@ function openTerms(){
         '<h4>4. AI Disclaimer</h4>AI outputs may be inaccurate. Do not rely on AMV.AI for medical, legal, or financial decisions without independent professional verification. AMV.AI does not provide financial advice; scheduled research reports information only.'+
         '<h4>5. Payments &amp; Refunds</h4>Subscriptions are billed monthly by our payment processor and can be cancelled any time; access continues to the end of the paid period. Refunds are handled per our posted policy. Chargeback or refund abuse may result in account suspension.'+
         '<h4>6. Acceptable Use &amp; Limits</h4>Each plan includes usage limits. Automated scraping of the service, reselling access, or circumventing limits is prohibited.'+
-        '<h4>7. Privacy</h4>Your use of AMV.AI is also governed by our <button class="lnk-inline" onclick="closeOvr();openPrivacy()">Privacy Policy</button>, which explains what we collect and how it is handled.'+
+        '<h4>7. Privacy</h4>Your use of AMV.AI is also governed by our <button class="lnk-inline" data-dact="_closeThenPrivacy">Privacy Policy</button>, which explains what we collect and how it is handled.'+
         '<h4>8. Contact</h4>'+(_supportEmail()?escH(_supportEmail()):'Contact support from the Help Center in the app.')+
       '</div>'+
-      '<div style="display:flex;gap:9px"><button class="btn bp" onclick="accCk();closeOvr()" style="flex:1">I Accept</button><button class="btn bs" onclick="closeOvr()">Close</button></div>'+
+      '<div style="display:flex;gap:9px"><button class="btn bp" data-dact="_acceptCookies" style="flex:1">I Accept</button><button class="btn bs" data-dact="closeOvr">Close</button></div>'+
     '</div></div>';
-  document.getElementById('terms-bg')?.addEventListener('click',closeOvr);
+  onBackdrop($('terms-bg'),closeOvr);
 }
 
 /* Real, SEPARATE privacy policy - required to take payments (Stripe) and to
@@ -2654,8 +2665,8 @@ function openPrivacy(){
   const r=document.getElementById('ovr'); if(!r) return;
   const contact=_supportEmail()?escH(_supportEmail()):'the Help Center in the app';
   r.innerHTML=
-    '<div class="ov" id="priv-bg"><div class="ob wide tall" onclick="event.stopPropagation()">'+
-      '<button class="oc" onclick="closeOvr()">&#215;</button>'+
+    '<div class="ov" id="priv-bg"><div class="ob wide tall">'+
+      '<button class="oc" data-dact="closeOvr">&#215;</button>'+
       '<h2>Privacy Policy</h2>'+
       '<p class="ob-sub">Effective '+escH(_legalEffective())+' - how AMV.AI handles your data.</p>'+
       '<div class="ts">'+
@@ -2686,9 +2697,9 @@ function openPrivacy(){
         '<h4>8. Children</h4>AMV.AI is not directed to children under 13 (or the minimum age in your region), and we do not knowingly collect their data.'+
         '<h4>9. Changes &amp; contact</h4>We may update this policy; material changes will be noted with a new effective date. Questions: '+contact+'.'+
       '</div>'+
-      '<div style="display:flex;gap:9px"><button class="btn bp" onclick="closeOvr()" style="flex:1">Got it</button></div>'+
+      '<div style="display:flex;gap:9px"><button class="btn bp" data-dact="closeOvr" style="flex:1">Got it</button></div>'+
     '</div></div>';
-  document.getElementById('priv-bg')?.addEventListener('click',closeOvr);
+  onBackdrop($('priv-bg'),closeOvr);
 }
 try{ window.openPrivacy=openPrivacy; }catch(e){}
 
@@ -2697,7 +2708,7 @@ function openAuth(mode){
   const r=document.getElementById('ovr'); if(!r) return;
   const isL=(mode==='login');
   r.innerHTML=
-    '<div class="ov" id="auth-bg"><div class="ob" onclick="event.stopPropagation()">'+
+    '<div class="ov" id="auth-bg"><div class="ob">'+
       '<button class="oc" id="auth-x">&#215;</button>'+
       '<h2>'+(isL?'Welcome back':'Create your account')+'</h2>'+
       '<p class="ob-sub">'+(isL?'Sign in to your AMV.AI account.':'Free forever. No credit card required.')+'</p>'+
@@ -2721,7 +2732,7 @@ function openAuth(mode){
       (isL?'<div class="asw" style="margin-top:6px"><button id="auth-forgot" style="color:var(--mu)">Forgot password?</button></div>':'')+
       '<p class="an">By continuing you agree to our <button id="a-terms">Terms</button> and <button id="a-priv">Privacy Policy</button></p>'+
     '</div></div>';
-  document.getElementById('auth-bg')?.addEventListener('click',closeOvr);
+  onBackdrop($('auth-bg'),closeOvr);
   document.getElementById('auth-x')?.addEventListener('click',closeOvr);
   document.getElementById('g-btn')?.addEventListener('click',triggerGoogle);
   document.getElementById('auth-submit')?.addEventListener('click',()=>isL?doLoginForm():doSignupForm());
@@ -3063,6 +3074,14 @@ try{ _countVisit(); window._countVisit=_countVisit; }catch(e){}
 try{ setTimeout(()=>{ try{ _checkWhatsNew(); }catch(e){} }, 800); }catch(e){}
 
 // Boot logic
+/* FIRST, because everything after it renders something worth clicking.
+   `frame-ancestors` in a <meta> CSP is ignored by every browser - the spec
+   says so - so this is what actually stops AMV being framed by a page that
+   wants your click on Approve. The widget (#embed=1) is framed on purpose and
+   is excluded inside the check. */
+if(typeof _framedWithoutPermission==='function' && _framedWithoutPermission()){
+  try{ _renderFramedRefusal(); }catch(e){ try{ document.body.textContent='AMV does not run inside another site.'; }catch(_){} }
+} else
 // If this is the embeddable widget (#embed=1&k=pk_...), render the compact chat panel and stop.
 if(typeof _checkEmbedView==='function' && _checkEmbedView()){
   // embed chat rendered; skip normal app boot

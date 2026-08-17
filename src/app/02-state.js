@@ -457,7 +457,7 @@ function _renderQuotaNotice(){
     cia.insertBefore(n, cia.firstChild);
   }
   n.innerHTML='<span class="quota-notice-dot"></span>You\u2019re out of usage - resets in <b class="quota-reset-live">'+escH(_fmtResetIn(_quotaLockUntil-Date.now()))+'</b>'+
-    '<button class="quota-notice-up" onclick="setTab(\'plans\')">Upgrade</button>';
+    '<button class="quota-notice-up" data-stab="plans">Upgrade</button>';
   const ta=$('mta');
   if(ta && !ta.disabled){ ta.dataset.ph=ta.placeholder; ta.disabled=true; ta.placeholder='Out of usage - resets in '+_fmtResetIn(_quotaLockUntil-Date.now()); }
 }

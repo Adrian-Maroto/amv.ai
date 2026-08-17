@@ -4812,3 +4812,42 @@ which is a command printing more than a megabyte, and that costs milliseconds.
 And a catch that answers two different failures with one sentence hides the one
 you did not expect. "The command failed" and "the command talked too much" are
 different problems with different fixes, and conflating them cost an hour.
+
+## 257. A hundred small conveniences were one large header
+
+`script-src 'unsafe-inline'` sat in AMV's CSP because roughly a hundred
+elements were wired with `onclick="..."`. Removing it was written down as a
+real UI refactor rather than a header change, and deferred - correctly, because
+there is no partial credit. Take the directive out with one attribute left and
+nothing is safer; a button is just dead, and the odds are even that it is on a
+payment screen.
+
+What made it worth doing anyway is that the attributes were not merely a cost.
+Thirty-seven of them were `onclick="event.stopPropagation()"` on an overlay
+panel, and that idiom is actively wrong here: `data-dact` is dispatched by one
+listener on `document`, so stopping the click on a panel kills every delegated
+button inside it. One of those had already shipped as a real bug (LESSONS #5,
+the recent-chats row that did nothing). The refactor did not trade
+functionality for a header. It removed a class of silent breakage AND got the
+header, because the reason both existed was the same wrong idiom.
+
+The general shape: when a hardening step is blocked by a hundred instances of
+one pattern, ask what the pattern costs on its own. If the answer is "nothing",
+the hardening is the only argument and it is a fair fight against the risk of
+touching a hundred things. If the answer is "it also breaks buttons", the
+refactor was already owed and the header is the bonus.
+
+Two details from doing it.
+
+The question a backdrop is asking is "did this click land on ME", and only the
+backdrop can answer it. Putting the answer on the panel - stop the click before
+it gets there - is the same answer written on the wrong element, which is why
+it had side effects. `e.target === e.currentTarget` on the backdrop is exact,
+needs nothing from the panel, and lets the click keep bubbling to the
+dispatcher. It now lives in one helper, so there is one place to get it right.
+
+And the hashes have to be computed by the build, not typed. A hash somebody has
+to remember to update stops matching on the first edit, and a stale hash does
+not warn - it blanks the page. The build also refuses to write index.html if
+script-src still allows inline afterwards, because the failure this change can
+cause is silent by construction and needs something loud in front of it.

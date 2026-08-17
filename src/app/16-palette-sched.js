@@ -52,7 +52,7 @@ function openCommandPalette(){
   const r=$('ovr'); if(!r) return;
   if(document.getElementById('cmdk-bg')){ return; } // already open
   r.insertAdjacentHTML('beforeend',
-    '<div class="ov cmdk-ov" id="cmdk-bg"><div class="cmdk" onclick="event.stopPropagation()">'+
+    '<div class="ov cmdk-ov" id="cmdk-bg"><div class="cmdk">'+
       '<div class="cmdk-inp-wrap">'+
         '<svg class="cmdk-search-ic" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>'+
         '<input id="cmdk-inp" class="cmdk-inp" placeholder="Search commands\u2026 (type a page or action)" autocomplete="off" spellcheck="false">'+
@@ -70,7 +70,7 @@ function openCommandPalette(){
     else if(e.key==='Enter'){ e.preventDefault(); _runPalette(_palSel); }
     else if(e.key==='Escape'){ e.preventDefault(); closeCommandPalette(); }
   });
-  on($('cmdk-bg'),'click',closeCommandPalette);
+  onBackdrop($('cmdk-bg'),closeCommandPalette);
   setTimeout(()=>inp.focus(),30);
 }
 function closeCommandPalette(){ const el=$('cmdk-bg'); if(el) el.remove(); }
@@ -174,14 +174,14 @@ function openShortcutSheet(){
     '</div>'
   ).join('');
   r.insertAdjacentHTML('beforeend',
-    '<div class="ov cmdk-ov" id="ksheet-bg"><div class="ksheet" onclick="event.stopPropagation()">'+
+    '<div class="ov cmdk-ov" id="ksheet-bg"><div class="ksheet">'+
       '<div class="ks-head"><div class="ks-title">Keyboard shortcuts</div>'+
         '<button class="art-x" id="ks-x" aria-label="Close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>'+
       '<div class="ks-body">'+sections+'</div>'+
       '<div class="ks-foot">Press <kbd class="ks-key">?</kbd> anytime to open this. <kbd class="ks-key">Esc</kbd> to close.</div>'+
     '</div></div>');
   $('ks-x')?.addEventListener('click',closeShortcutSheet);
-  on($('ksheet-bg'),'click',closeShortcutSheet);
+  onBackdrop($('ksheet-bg'),closeShortcutSheet);
   const esc=(ev)=>{ if(ev.key==='Escape'){ closeShortcutSheet(); document.removeEventListener('keydown',esc); } };
   document.addEventListener('keydown',esc);
 }
@@ -243,7 +243,7 @@ function _aaInit(){
 
 function openCowork(){
   const r=$('ovr'); if(!r) return;
-  r.innerHTML = `<div class="ov tp-ov" id="cw-bg"><div class="tp-modal cowork-modal" onclick="event.stopPropagation()">
+  r.innerHTML = `<div class="ov tp-ov" id="cw-bg"><div class="tp-modal cowork-modal">
     <div class="tp-head"><div><div class="eyebrow">AMV Autonomous</div><h2 class="tp-title">Give AMV an outcome</h2></div><button class="tp-x" id="cw-close">✕</button></div>
     <div class="tp-body" id="cw-step1">
       <p class="trip-sub">Describe the result you want - not the steps. AMV plans the work, executes each step itself, and brings back a finished deliverable. You approve anything that sends or shares.</p>
@@ -315,7 +315,7 @@ function openCowork(){
     </div>
   </div></div>`;
   on($('cw-close'),'click',()=>{ stopAutonomous(); const x=$('ovr'); if(x) x.innerHTML=''; });
-  on($('cw-bg'),'click',()=>{ if(!_AUTO.running){ const x=$('ovr'); if(x) x.innerHTML=''; } });
+  onBackdrop($('cw-bg'),()=>{ if(!_AUTO.running){ const x=$('ovr'); if(x) x.innerHTML=''; } });
   on($('cw-go'),'click',_coworkStart);
   _SCHED={cad:'once', days:[1], dom:1, hour:9};
   const updNote=()=>{ const n=$('cw-freq-note'); if(!n) return; n.textContent = _SCHED.cad==='once' ? '' : (_schedHuman()+' - runs automatically when due while AMV is open. You still approve any send/post step.'); };
@@ -543,7 +543,7 @@ function _schedEdit(id){
       </div>
     </footer>
   </div></div>`;
-  on($('sce-bg'),'click',(e)=>{ if(e.target===e.currentTarget) apvClose(); });
+  onBackdrop($('sce-bg'),apvClose);
   const sync=()=>{ const c=$('sce-cad').value; const hf=$('sce-hour-f'),df=$('sce-days-f'),mf=$('sce-dom-f'); if(hf)hf.style.display=(c==='hourly')?'none':'flex'; if(df)df.style.display=(c==='weekly')?'block':'none'; if(mf)mf.style.display=(c==='monthly')?'flex':'none'; };
   on($('sce-cad'),'change',sync); sync();
   setTimeout(()=>{ try{ $('sce-goal').focus(); }catch(e){} },30);
@@ -639,7 +639,7 @@ function openSchedManager(){
     </div>
   </div></div>`;
   on($('sm-close'),'click',()=>{ const x=$('ovr'); if(x) x.innerHTML=''; });
-  on($('sm-bg'),'click',(e)=>{ if(e.target===e.currentTarget){ const x=$('ovr'); if(x) x.innerHTML=''; } });
+  onBackdrop($('sm-bg'),()=>{ const x=$('ovr'); if(x) x.innerHTML=''; });
   setTimeout(()=>{ try{ $('sm-close').focus(); }catch(e){} },30);
 }
 window.openSchedManager=openSchedManager;

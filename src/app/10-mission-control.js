@@ -1265,7 +1265,7 @@ function cwPeek(id){
   /* Guarded by target===currentTarget rather than stopPropagation on the panel:
      a panel that stops propagation kills the delegated click handler for every
      button inside it. */
-  on($('cwp-bg'),'click',(e)=>{ if(e.target===e.currentTarget) closeOvr(); });
+  onBackdrop($('cwp-bg'),closeOvr);
   on($('cwp-close'),'click',closeOvr);
   on($('cwp-cancel'),'click',closeOvr);
   on($('cwp-plans'),'click',()=>{ closeOvr(); setTab('plans'); });
@@ -1788,7 +1788,7 @@ function renderCrewView(){
              ['\uD83D\uDCE7','Check Gmail','gmail','crewRun(\'gmail\',\'Check Gmail\')'],
              ['\uD83D\uDCC5','Plan my week','week','crewRun(\'week\',\'Plan my week\')'],
              ['\u2728','Autonomous task','auto','openCowork()']]
-            .map(q=>`<button class="cw-quick-card" onclick="${q[3]}"><span class="cw-quick-ic">${q[0]}</span><span>${q[1]}</span></button>`).join('')}
+            .map(q=>`<button class="cw-quick-card" data-dact="_cwQuick" data-darg="${escH(q[2])}"><span class="cw-quick-ic" aria-hidden="true">${q[0]}</span><span>${escH(q[1])}</span></button>`).join('')}
         </div>
         <div id="crew-live" class="crew-live">${_crewResultsHTML()}</div>
       </section>
@@ -1804,7 +1804,7 @@ function renderCrewView(){
             ['\uD83C\uDFE6','Bank check-in','Every morning, check my linked bank account and report the balance, recent transactions, anything unusual, and my spend-vs-last-week. Prepare it as a clean daily report.'],
             ['\uD83D\uDCF0','News digest','Daily, gather the top developments in AI and produce a sharp 5-bullet briefing, each bullet with a link-worthy summary and why it matters.'],
             ['\u2709\uFE0F','Inbox triage','Each morning, read new emails, rank them by urgency with reasons, and draft a ready-to-send reply for each. I click send before anything goes out.']
-          ].map(t=>`<button class="tpl-card" onclick="openCoworkWith(${JSON.stringify(t[2]).replace(/"/g,'&quot;')})"><span class="tpl-ic">${t[0]}</span><span class="tpl-t">${t[1]}</span></button>`).join('')}
+          ].map(t=>`<button class="tpl-card" data-dact="openCoworkWith" data-darg="${escH(t[2])}"><span class="tpl-ic" aria-hidden="true">${t[0]}</span><span class="tpl-t">${escH(t[1])}</span></button>`).join('')}
         </div>
       </section>
     </div>
@@ -2194,7 +2194,7 @@ function apvPreview(id){
       <button class="pvw-more" data-apvmore="1" aria-label="More actions">⋯</button>
     </footer>
   </div></div>`;
-  on($('pvw-bg'),'click',(e)=>{ if(e.target===e.currentTarget) apvClose(); });
+  onBackdrop($('pvw-bg'),apvClose);
   setTimeout(()=>{ try{ document.querySelector('.pvw-back').focus(); }catch(e){} },30);
   const hist=r.querySelector('[data-apvhist]'); if(hist) on(hist,'click',()=>{ const s=r.querySelector('.pvw-side'); if(s) s.scrollIntoView({behavior:'smooth'}); });
   const more=r.querySelector('[data-apvmore]'); if(more) on(more,'click',()=>r.querySelector('.pvw-foot-act')?.classList.toggle('open'));
@@ -2333,7 +2333,7 @@ function apvEdit(id){
       </div>
     </footer>
   </div></div>`;
-  on($('ape-bg'),'click',(e)=>{ if(e.target===e.currentTarget) apvClose(); });
+  onBackdrop($('ape-bg'),apvClose);
   setTimeout(()=>{ try{ $('ape-title').focus(); }catch(e){} },30);
 }
 /* Turn a plain-English "when" into a normalized schedule. Understands "now",

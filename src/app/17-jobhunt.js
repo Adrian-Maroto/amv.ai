@@ -211,8 +211,8 @@ function openJobHunt(){
   const r=typeof $==='function' && $('ovr'); if(!r) { try{ setTab('crew'); }catch(e){} return; }
   const c=AMVJobs.cfg();
   const val=v=>escH(v==null?'':String(v));
-  r.innerHTML='<div class="ov" id="jh-bg"><div class="ob jh-modal" onclick="event.stopPropagation()" style="max-width:560px">'+
-    '<button class="oc" onclick="closeOvr()" aria-label="Close">×</button>'+
+  r.innerHTML='<div class="ov" id="jh-bg"><div class="ob jh-modal" style="max-width:560px">'+
+    '<button class="oc" data-dact="closeOvr" aria-label="Close">×</button>'+
     '<h2 style="margin:0 0 4px">Job Hunt</h2>'+
     '<p style="font-size:12.5px;color:var(--mu);margin:0 0 14px">I find roles that match your profile and prepare a tailored application for each one, ready for you to review and send. Submitting on my own is not switched on yet - nothing goes to an employer without you.</p>'+
     '<div class="jh-form" style="display:flex;flex-direction:column;gap:11px">'+
@@ -236,9 +236,9 @@ function openJobHunt(){
         '<select id="jh-mode" class="sel" aria-label="Apply mode"><option value="ask"'+(c.mode==='ask'?' selected':'')+'>Show me each one before it is sent</option><option value="auto"'+(c.mode==='auto'?' selected':'')+'>Prepare as many as possible for one-tap sending</option></select>'+
       '<span style="font-size:11.5px;color:var(--mu);display:block;margin-top:5px">Either way, nothing reaches an employer until you send it.</span></label>'+
     '</div>'+
-    '<div style="display:flex;gap:9px;margin-top:16px"><button class="btn bp" id="jh-save" style="flex:1">Save</button><button class="btn bs" onclick="closeOvr()">Cancel</button></div>'+
+    '<div style="display:flex;gap:9px;margin-top:16px"><button class="btn bp" id="jh-save" style="flex:1">Save</button><button class="btn bs" data-dact="closeOvr">Cancel</button></div>'+
   '</div></div>';
-  on($('jh-bg'),'click',(e)=>{ if(e.target===$('jh-bg')) closeOvr(); });
+  onBackdrop($('jh-bg'),closeOvr);
   on($('jh-save'),'click',()=>{
     const g=id=>{ const el=$(id); return el?el.value.trim():''; };
     const list=s=>s.split(',').map(x=>x.trim()).filter(Boolean);
