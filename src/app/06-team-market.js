@@ -508,10 +508,10 @@ function _renderTeamManage(vc, team){
     const items = kind==='prompt' ? (S.prompts||[]) : (S.workspaces||[]);
     if(!items.length){ toast('You have no '+(kind==='prompt'?'prompts':'projects')+' to share yet','info'); return; }
     const r=$('ovr'); if(!r) return;
-    r.innerHTML='<div class="ov" id="shp-bg"><div class="ob" onclick="event.stopPropagation()" style="max-width:440px"><button class="oc" onclick="closeOvr()">\u00d7</button>'+
+    r.innerHTML='<div class="ov" id="shp-bg"><div class="ob" style="max-width:440px"><button class="oc" data-dact="closeOvr">\u00d7</button>'+
       '<h2 style="margin-bottom:4px">Share a '+kind+'</h2><p class="ob-sub" style="margin-bottom:14px">Everyone on your team will be able to use it.</p>'+
       '<div class="shp-list">'+items.map((it,i)=>'<button class="shp-item" data-shp="'+i+'">'+escH(it.title||it.name||('Untitled '+kind))+'</button>').join('')+'</div></div></div>';
-    on($('shp-bg'),'click',closeOvr);
+    onBackdrop($('shp-bg'),closeOvr);
     r.querySelectorAll('[data-shp]').forEach(b=>on(b,'click',async()=>{
       const it=items[+b.dataset.shp]; closeOvr();
       try{ const ns=await AMVTeam.share(kind, it); drawShared(ns); toast('Shared with your team','success'); }

@@ -21,6 +21,89 @@ const on = (el, ev, fn) => {
   }
   el.addEventListener(ev, fn);
 };
+
+/* CLICKING THE DARK PART CLOSES IT. CLICKING THE PANEL DOES NOT.
+
+   Every overlay in AMV is a backdrop with a panel inside it, and the backdrop's
+   click closes the thing. Keeping that click off the panel used to be written
+   ON the panel, as onclick="event.stopPropagation()" - thirty-seven times.
+
+   That is the wrong element to put it on, and it broke things. `data-dact` is
+   dispatched by ONE listener on `document`, so a stopPropagation anywhere
+   inside a panel kills every delegated button underneath it during the bubble.
+   A recent-chat row in a project card shipped like that and did nothing at all
+   when clicked (LESSONS #5, and the e2e file named after it). It also required
+   an inline handler on every panel, which is what kept 'unsafe-inline' in the
+   script CSP - so one wrong idiom cost the strongest header we have.
+
+   The question the backdrop is actually asking is "did this click land on ME",
+   and only the backdrop can answer it. `e.target === e.currentTarget` answers
+   it exactly, needs nothing on the panel, and lets the click keep bubbling to
+   the delegated dispatcher where it belongs. */
+const onBackdrop = (el, fn) => {
+  if(!el || typeof fn!=='function') return;
+  el.addEventListener('click', (e) => { if(e.target === e.currentTarget) fn(e); });
+};
+try{ window.onBackdrop = onBackdrop; }catch(e){}
+/* THE ONE DIRECTIVE A META TAG CANNOT DELIVER.
+
+   The page's CSP carries `frame-ancestors 'none'`, and it has never done
+   anything. The spec requires a policy delivered in a <meta> element to DROP
+   frame-ancestors, and browsers say so out loud in the console. So the line
+   that was supposed to stop AMV being put inside somebody else's page was a
+   defence on paper for as long as it has been written down.
+
+   That matters here more than on most sites. This page is where somebody
+   approves a payment, confirms a payout, deletes their account and connects a
+   bank. Clickjacking is exactly the attack those buttons are worth.
+
+   The API is covered - the Worker sends X-Frame-Options and frame-ancestors as
+   real headers, which work. A static file served by the host cannot, so the
+   page answers the question itself, in code that runs.
+
+   One frame is legitimate: the embeddable widget IS AMV's own page loaded in an
+   iframe on a customer's site, deliberately, with `#embed=1`. It has no signed
+   in account and no session to steal, so it is the exception and the only one.
+
+   A cross-origin parent makes reading `top.location` throw, and that throw is
+   itself the answer: something is framing us that we cannot see. Treated as
+   framed rather than swallowed, because the case where the check breaks is the
+   case where it is needed. */
+function _framedWithoutPermission(){
+  try{
+    if(window.top === window.self) return false;                  // nobody is framing us
+    if(String(location.hash||'').indexOf('embed=1') >= 0) return false;  // the widget, on purpose
+    return true;
+  }catch(e){
+    /* Reading window.top threw, which only happens cross-origin - so we are
+       framed, by someone we are not allowed to look at. */
+    return String(location.hash||'').indexOf('embed=1') < 0;
+  }
+}
+
+/* Refuse to render, and say why in a sentence somebody can act on. Deliberately
+   NOT a frame-buster: navigating a page the visitor did not ask to leave is its
+   own hostile act, and a sandboxed iframe blocks it anyway. A link they choose
+   to click ends up in the same place, honestly. */
+function _renderFramedRefusal(){
+  try{
+    const url = location.origin + location.pathname;
+    document.body.className = 'framed-stop';
+    document.body.innerHTML =
+      '<div class="fstop">' +
+        '<div class="fstop-mark">AMV</div>' +
+        '<h1 class="fstop-t">AMV does not run inside another site</h1>' +
+        '<p class="fstop-p">This page is embedded in a page that is not AMV. ' +
+          'Because AMV can approve payments and change your account, it will not ' +
+          'load here - a page you cannot see should not be able to sit over those ' +
+          'buttons.</p>' +
+        '<a class="fstop-b" href="' + escH(url) + '" target="_top" rel="noopener noreferrer">Open AMV directly</a>' +
+      '</div>';
+  }catch(e){
+    try{ document.body.textContent = 'AMV does not run inside another site.'; }catch(_){}
+  }
+}
+
 /* === per-account storage scoping ===
    Every data key is namespaced by the logged-in user's email so accounts
    on the same browser cannot see each other's data. A small allowlist of
@@ -708,8 +791,10 @@ function _noDash(t){ return (t==null?'':String(t)).replace(/[\u2014\u2013]/g,'-'
    escH stops a value from breaking OUT of an attribute. It says nothing about
    whether the value is safe INSIDE one, and those are different questions.
    `javascript:alert(1)` contains not one character escH touches, so it passes
-   through untouched and runs when the link is clicked - and script-src carries
-   'unsafe-inline', so nothing downstream stops it either.
+   through untouched and runs when the link is clicked. A browser enforcing the
+   CSP would refuse it too, now that script-src no longer allows inline script -
+   but that is a second line, not this one. It depends on the header arriving,
+   on the browser honouring it, and on nobody widening the directive later.
 
    The URLs that reach an href, a src, or window.open in this app are not all
    ours. They come from web search results, an image or video provider's CDN,
@@ -1056,7 +1141,7 @@ function openStatusPanel(){
   const trust=(svg,title,sub)=>'<div class="st-trust"><span class="st-trust-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+svg+'</svg></span>'+
     '<div><div class="st-trust-t">'+escH(title)+'</div><div class="st-trust-s">'+escH(sub)+'</div></div></div>';
   r.insertAdjacentHTML('beforeend',
-    '<div class="ov" id="status-modal-bg"><div class="status-modal" onclick="event.stopPropagation()">'+
+    '<div class="ov" id="status-modal-bg"><div class="status-modal">'+
       '<div class="st-head"><div class="st-head-l"><span class="sb-status-dot '+_statusState+'" style="width:11px;height:11px"></span>'+
         '<span id="st-head-txt">'+(_statusState==='ok'?'All systems operational':_statusState==='degraded'?'Some services degraded':'You\u2019re offline')+'</span></div>'+
         '<button class="art-x" id="st-x" aria-label="Close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>'+
@@ -1075,7 +1160,7 @@ function openStatusPanel(){
       '</div>'+
     '</div></div>');
   $('st-x')?.addEventListener('click',closeStatusPanel);
-  on($('status-modal-bg'),'click',closeStatusPanel);
+  onBackdrop($('status-modal-bg'),closeStatusPanel);
   $('st-recheck')?.addEventListener('click',async()=>{ await _refreshStatusPanel(); });
   _refreshStatusPanel();
 }
@@ -1290,6 +1375,39 @@ function _logErr(where, err){
 try{ window._errQueue=_errQueue; window._errFlush=_errFlush; }catch(e){}
 try{ window._logErr=_logErr; }catch(e){}
 
+/* WHEN THE HEADER REFUSES SOMETHING, SAY SO.
+
+   script-src no longer allows inline script: it names the three scripts AMV
+   ships, by hash, and refuses everything else. That is the point - an injected
+   script is not on the list and does not run.
+
+   The failure mode of getting it wrong is the worst kind there is. A hash that
+   no longer matches, or a third party that starts injecting an inline script
+   of its own, does not throw and does not appear in any log; the browser
+   declines quietly and a feature is simply absent. Payments, the bot check and
+   sign-in with Google are all third-party scripts on this page.
+
+   The browser will tell us, if anybody listens. `securitypolicyviolation`
+   fires on every refusal with the directive and the blocked source, so a
+   mistake in this header arrives as a reported error with a name on it rather
+   than as a customer saying a button does nothing.
+
+   Rate-limited to the first few, because a page that violates once usually
+   violates in a loop and the sink is a shared resource. */
+let _cspSeen = 0;
+try{
+  document.addEventListener('securitypolicyviolation', (e) => {
+    try{
+      if(_cspSeen >= 5) return;
+      _cspSeen++;
+      /* The blocked URI only - never e.sample, which is a slice of the source
+         that was refused and can quote whatever was in scope. */
+      _logErr('csp.' + String(e.violatedDirective || 'unknown').slice(0, 40),
+              new Error(String(e.blockedURI || 'inline').slice(0, 120)));
+    }catch(_){}
+  });
+}catch(e){}
+
 /* Lightweight pagination for data-heavy lists. Renders items in pages and adds
    a "Show more" button so a user with hundreds of memories/images/etc. gets a
    fast, small DOM instead of thousands of nodes at once. State is kept per-key
@@ -1324,11 +1442,10 @@ function _showModalAsync({title, body, okText='OK', cancelText, placeholder, def
           '<button class="btn bp" id="modal-ok" style="padding:10px 16px;font-size:13px">'+escH(okText)+'</button>'+ 
         '</div>'+ 
       '</div></div>';
-    const box=$('modal-box'); if(box) box.addEventListener('click',e=>e.stopPropagation());
     on($('modal-close'),'click',()=>{ closeOvr(); resolve(null); });
     if(cancelText) on($('modal-cancel'),'click',()=>{ closeOvr(); resolve(null); });
     on($('modal-ok'),'click',()=>{ const hasInput=!!$('modal-input'); const val=hasInput?$('modal-input').value:true; closeOvr(); resolve(val); });
-    on($('modal-bg'),'click',()=>{ closeOvr(); resolve(null); });
+    onBackdrop($('modal-bg'),()=>{ closeOvr(); resolve(null); });
     const input=$('modal-input'); if(input){ input.focus(); input.select(); }
   });
 }

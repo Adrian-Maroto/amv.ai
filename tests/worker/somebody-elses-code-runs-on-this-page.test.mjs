@@ -143,14 +143,14 @@ section('The CSP is what makes the list enforceable, so it stays strict');
   ok(/'self'/.test(defaultSrc) && !/\*/.test(defaultSrc),
      'and everything not named falls back to self', defaultSrc);
 
-  /* AMV-019 left this open deliberately and it is recorded rather than
-     forgotten: 'unsafe-inline' is still in script-src because ninety-odd inline
-     handlers depend on it, and removing it is a UI refactor with browser
-     verification rather than a header edit. It is written down in
-     docs/FINDINGS-STATUS.md, not hidden here. */
-  const inlineStillNeeded = /'unsafe-inline'/.test(csp);
-  ok(typeof inlineStillNeeded === 'boolean',
-     'the inline-script allowance is a known open item, not a surprise', inlineStillNeeded);
+  /* This used to record 'unsafe-inline' as a known open item from AMV-019 -
+     ninety-odd inline handlers depended on it. They are gone, and so is the
+     allowance: the inline scripts AMV ships are named by hash instead. The
+     detail is in tests/e2e/the-page-may-only-run-the-script-we-shipped; what
+     matters HERE is that a host allowlist means something once inline script
+     is refused, which is the assumption the rest of this file rests on. */
+  ok(!/'unsafe-inline'/.test(csp), 'inline script is refused outright', csp.slice(0, 80));
+  ok(/'sha256-/.test(csp), 'and the scripts AMV does ship are named by hash', true);
   ok(!/'unsafe-eval'/.test(csp), 'while unsafe-eval is NOT allowed', csp);
 }
 

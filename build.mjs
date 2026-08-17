@@ -15,6 +15,7 @@
  */
 import { readFileSync, writeFileSync, readdirSync, existsSync } from 'fs';
 import { deflateSync as zlibDeflate } from 'zlib';
+import { createHash } from 'crypto';
 import { execSync } from 'child_process';
 
 const args = process.argv.slice(2);
@@ -152,9 +153,99 @@ async function rebuild() {
     throw new Error('assembled code does not match intended bundle - aborting write');
   }
 
+  // 5) pin the inline scripts by hash so the CSP does not have to trust every
+  //    inline script on the page. See sealScriptCSP.
+  html = sealScriptCSP(html, app);
+
   writeFileSync('index.html', html);
   writePWA(html);
   console.log(`Built index.html - deferred non-blocking script${MINIFY ? ', minified' : ''}, validated OK.`);
+}
+
+/* NAMING THE SCRIPT THIS PAGE IS ALLOWED TO RUN, INSTEAD OF ALLOWING ANY.
+
+   `script-src 'unsafe-inline'` means every inline script on the page runs, and
+   the browser has no way to tell AMV's from one an injection wrote. It is the
+   single header that decides whether an XSS anywhere in the product is a
+   cosmetic bug or a session handed over, so it is worth what it costs.
+
+   What kept it: about a hundred onclick/onmouseenter attributes, which are
+   inline script and are NOT covered by a hash. Those are gone now - every
+   button goes through the delegated data-dact dispatcher and every hover state
+   is CSS - so what is left is three inline scripts, all of them ours, all of
+   them known at build time:
+
+     1. the boot-flash guard in the shell, which decides landing-vs-app before
+        the first paint;
+     2. the launcher, which turns the inert text/plain block into a deferred
+        blob script;
+     3. the app bundle itself - hashed because the launcher falls back to
+        running it inline when a blob URL cannot be made (a strict enough
+        sandbox, an old browser). Without its hash that fallback would be
+        blocked and the app would simply not start on those browsers, which
+        trades one silent failure for another.
+
+   Hashes are computed here rather than written by hand, because a hash that
+   somebody has to remember to update is a hash that stops matching on the
+   first edit - and a stale one does not warn, it blanks the page.
+
+   'unsafe-inline' is REMOVED from script-src, not merely joined by the hashes.
+   A browser that understands hashes ignores it anyway, but one that does not
+   would keep honouring it, and the whole point is that no such browser gets
+   the weaker version. It stays in style-src: several hundred inline style
+   attributes are presentation, they cannot exfiltrate anything, and hashing
+   them is not a thing CSP offers. */
+function sealScriptCSP(html, appCode) {
+  const sha = (text) =>
+    "'sha256-" + createHash('sha256').update(Buffer.from(text, 'utf8')).digest('base64') + "'";
+
+  /* Every inline script the browser will EXECUTE: no src attribute, and a type
+     that is absent or a JavaScript MIME. text/plain and application/ld+json are
+     data blocks - never executed, never checked. */
+  const hashes = [];
+  const SCRIPT_RE = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
+  let mm;
+  while ((mm = SCRIPT_RE.exec(html)) !== null) {
+    const attrs = mm[1] || '';
+    if (/\bsrc\s*=/i.test(attrs)) continue;                       // external, covered by host allowlist
+    const type = (attrs.match(/\btype\s*=\s*["']([^"']*)["']/i) || [, ''])[1].toLowerCase();
+    if (type && !/^(text|application)\/(java|ecma)script$/.test(type)) continue;
+    hashes.push(sha(mm[2]));
+  }
+  if (!hashes.length) throw new Error('no inline scripts found to hash - CSP would be wrong');
+
+  /* The inline fallback runs the bundle verbatim, so its hash is the bundle's,
+     not the text/plain block's (which carries the escaped sentinel). */
+  hashes.push(sha(appCode));
+
+  const cspPat = /(<meta http-equiv="Content-Security-Policy" content=")([\s\S]*?)(">)/;
+  const found = html.match(cspPat);
+  if (!found) throw new Error('Content-Security-Policy meta not found - aborting write');
+
+  const body = found[2];
+  if (!/(^|\s)script-src\s/.test(body)) throw new Error('no script-src directive in the CSP');
+
+  /* Whether the directive was FOUND, not whether the text changed. A rebuild
+     with no source change produces byte-identical output - the same hashes, the
+     same hosts, in the same order - so "the string is different" reports a
+     no-op as a failure, and it did: the gate refused a correct build on its
+     second run. The question is whether the rewrite ran. */
+  let rewrote = false;
+  const sealed = body.replace(/(^|\n)(\s*)script-src\s([^;]*);/, (_m, nl, indent, value) => {
+    rewrote = true;
+    const kept = value
+      .split(/\s+/)
+      .filter(Boolean)
+      .filter((tok) => tok !== "'unsafe-inline'" && !/^'sha256-/.test(tok));
+    return nl + indent + 'script-src ' + hashes.join(' ') + ' ' + kept.join(' ') + ';';
+  });
+  if (!rewrote) throw new Error('script-src could not be rewritten - aborting write');
+  if (/script-src[^;]*'unsafe-inline'/.test(sealed)) {
+    throw new Error("script-src still allows 'unsafe-inline' after sealing - aborting write");
+  }
+
+  console.log(`CSP: script-src pinned to ${hashes.length} hashes, 'unsafe-inline' removed.`);
+  return html.replace(cspPat, (_m, a, _b, c) => a + sealed + c);
 }
 
 /* THE TWO FILES A PWA CANNOT DO WITHOUT.

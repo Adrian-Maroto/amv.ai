@@ -170,11 +170,11 @@ function _studioRenderArtifacts(){
 }
 function _studioAddPrompt(){
   const r=$('ovr'); if(!r) return;
-  r.innerHTML='<div class="ov" id="sa-bg"><div class="ob" onclick="event.stopPropagation()" style="max-width:440px"><button class="oc" onclick="closeOvr()">×</button>'+
+  r.innerHTML='<div class="ov" id="sa-bg"><div class="ob" style="max-width:440px"><button class="oc" data-dact="closeOvr">×</button>'+
     '<h2 style="margin-bottom:6px">Add a design</h2><p class="ob-sub" style="margin-bottom:12px">Describe another page, screen, slide deck, or graphic. It joins this project so your whole set stays consistent.</p>'+
     '<textarea id="sa-brief" rows="3" placeholder="e.g. \'an about page matching this style\' or \'a pitch deck of 6 slides\'" style="width:100%;font-size:13px"></textarea>'+
-    '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px"><button class="btn bs" onclick="closeOvr()">Cancel</button><button class="btn bp" id="sa-go">Design it</button></div></div></div>';
-  on($('sa-bg'),'click',closeOvr);
+    '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px"><button class="btn bs" data-dact="closeOvr">Cancel</button><button class="btn bp" id="sa-go">Design it</button></div></div></div>';
+  onBackdrop($('sa-bg'),closeOvr);
   const go=()=>{ const v=$('sa-brief')?.value.trim(); if(!v){ toast('Describe the design','error'); return; } closeOvr(); _studioCreate(v); };
   on($('sa-go'),'click',go);
   setTimeout(()=>$('sa-brief')?.focus(),50);
@@ -184,8 +184,8 @@ function _studioHistory(){
   const a=_studioActive(); if(!a||!a.history.length){ toast('No history yet','info'); return; }
   const r=$('ovr'); if(!r) return;
   const rows=a.history.slice().reverse().map((h,i)=>{ const realIdx=a.history.length-1-i; return '<div class="studio-hrow"><div class="studio-hrow-b"><div class="studio-hrow-t">'+(i===0?'Current':('Version '+(realIdx+1)))+'</div><div class="studio-hrow-d">'+escH(h.brief||'(initial)')+' · '+_timeAgo(h.ts||Date.now())+'</div></div>'+(i===0?'':'<button class="btn bs" data-revert="'+realIdx+'">Revert</button>')+'</div>'; }).join('');
-  r.innerHTML='<div class="ov" id="sh-bg"><div class="ob" onclick="event.stopPropagation()" style="max-width:460px"><button class="oc" onclick="closeOvr()">×</button><h2 style="margin-bottom:12px">Version history</h2><div class="studio-hlist">'+rows+'</div></div></div>';
-  on($('sh-bg'),'click',closeOvr);
+  r.innerHTML='<div class="ov" id="sh-bg"><div class="ob" style="max-width:460px"><button class="oc" data-dact="closeOvr">×</button><h2 style="margin-bottom:12px">Version history</h2><div class="studio-hlist">'+rows+'</div></div></div>';
+  onBackdrop($('sh-bg'),closeOvr);
   r.querySelectorAll('[data-revert]').forEach(b=>on(b,'click',()=>{ const idx=+b.dataset.revert; const h=a.history[idx]; if(h){ a.html=h.html; a.history.push({brief:'reverted to v'+(idx+1),html:h.html,ts:Date.now()}); _STUDIO.html=h.html; _studioRenderPreview(h.html); closeOvr(); toast('Reverted','success'); } }));
 }
 // export the whole project - folder write-back or downloads
@@ -383,7 +383,7 @@ function openDNA(){
   const r=$('ovr'); if(!r) return;
   _DNA._sec=_DNA._sec||'colors';
   const seen=loadStr('amv_dna_intro')==='1';
-  r.innerHTML=`<div class="dna-ov" id="dna-bg"><div class="dna-modal" onclick="event.stopPropagation()">
+  r.innerHTML=`<div class="dna-ov" id="dna-bg"><div class="dna-modal">
     <div class="dna-head">
       <div><h2>Design DNA</h2><p>Your reusable style guide. Set it once - every design AMV makes follows it.</p></div>
       <div style="display:flex;align-items:center;gap:4px">
@@ -420,7 +420,7 @@ function openDNA(){
     </div>
   </div></div>`;
   const showMain=()=>{ saveStr('amv_dna_intro','1'); const i=$('dna-intro'); if(i)i.style.display='none'; const bm=$('dna-body-main'); if(bm)bm.style.display=''; const fm=$('dna-foot-main'); if(fm)fm.style.display='flex'; _dnaRenderSection(_DNA._sec); _dnaFoot(); $('dna-nav').querySelectorAll('.dna-nav-b').forEach(b=>on(b,'click',()=>{ _DNA._sec=b.dataset.sec; $('dna-nav').querySelectorAll('.dna-nav-b').forEach(x=>x.classList.toggle('on',x===b)); _dnaRenderSection(b.dataset.sec); })); };
-  on($('dna-bg'),'click',closeDNA);
+  onBackdrop($('dna-bg'),closeDNA);
   on($('dna-x'),'click',closeDNA);
   on($('dna-help'),'click',()=>{ const i=$('dna-intro'); if(i)i.style.display=''; const bm=$('dna-body-main'); if(bm)bm.style.display='none'; const fm=$('dna-foot-main'); if(fm)fm.style.display='none'; });
   on($('dna-intro-go'),'click',showMain);
@@ -849,7 +849,7 @@ function renderCodeView(){
 let _LAB_HANDOFF='';
 function _devConnectVSCode(){
   const r=$('ovr'); if(!r) return;
-  r.innerHTML='<div class="ov" id="vsc-bg"><div class="tp-modal" style="max-width:480px" onclick="event.stopPropagation()">'+
+  r.innerHTML='<div class="ov" id="vsc-bg"><div class="tp-modal" style="max-width:480px">'+
     '<button class="dna-x" id="vsc-x" style="position:absolute;top:14px;right:14px">\u2715</button>'+
     '<h2 style="font-family:var(--fdisplay);font-weight:500;font-size:21px;margin:0 0 6px">Use AMV in VS Code</h2>'+
     '<p style="font-size:13px;color:var(--mu);line-height:1.6;margin:0 0 18px">Run these two commands in your project folder. That\u2019s it - AMV opens in your editor and can read, write, and run your code.</p>'+
@@ -858,7 +858,7 @@ function _devConnectVSCode(){
     '<p style="font-size:11px;color:var(--dim);margin:16px 0 0;line-height:1.5">Your code stays on your machine - the CLI just links this account to your editor.</p>'+
   '</div></div>';
   const close=()=>{ r.innerHTML=''; };
-  on($('vsc-bg'),'click',close); on($('vsc-x'),'click',close);
+  onBackdrop($('vsc-bg'),close); on($('vsc-x'),'click',close);
   r.querySelectorAll('.vsc-copy').forEach(btn=>on(btn,'click',()=>{ try{ navigator.clipboard.writeText(btn.dataset.c); btn.textContent='Copied'; setTimeout(()=>btn.textContent='Copy',1200); }catch(e){} }));
 }
 const _DEV={ log:[], lang:'js', busy:false, curCode:'', curLang:'', curRun:null,
@@ -2390,7 +2390,7 @@ function _ctxRenderMeter(hostId, kind){
 // Compress the current context, start fresh, and resume seamlessly.
 async function _ctxHandoffFlow(kind){
   const r=$('ovr'); if(!r) return;
-  r.innerHTML='<div class="ovr-bg"><div class="ovr-card" style="max-width:460px" onclick="event.stopPropagation()">'+
+  r.innerHTML='<div class="ovr-bg"><div class="ovr-card" style="max-width:460px">'+
     '<div style="font-size:15px;font-weight:600;margin-bottom:6px">Carrying your context over\u2026</div>'+
     '<div style="font-size:13px;color:var(--mu);line-height:1.6" id="ctx-step">Compressing everything important from this '+(kind==='dev'?'session':'chat')+'\u2026</div>'+
     '<div class="ctx-bar" style="margin-top:14px"><div class="ctx-fill" id="ctx-anim" style="width:15%"></div></div>'+
@@ -2465,7 +2465,7 @@ function openHandoffManager(){
           '<button class="btn bp" data-ho-use="'+escH(h.id)+'" style="font-size:11.5px">Resume</button>'+
         '</div></div>').join('')
     : '<div class="ho-empty">No handoffs yet. When a chat or Dev session fills up, AMV creates one automatically.</div>';
-  r.innerHTML='<div class="ovr-bg" id="ho-bg"><div class="ovr-card" style="max-width:560px" onclick="event.stopPropagation()">'+
+  r.innerHTML='<div class="ovr-bg" id="ho-bg"><div class="ovr-card" style="max-width:560px">'+
     '<div style="font-size:16px;font-weight:600;margin-bottom:4px">Context handoffs</div>'+
     '<div style="font-size:12.5px;color:var(--mu);line-height:1.6;margin-bottom:16px">A handoff is a compressed snapshot of a conversation - the goal, every decision, the current state, and the next steps. Load one into a fresh chat and AMV picks up exactly where you left off.</div>'+
     '<div class="ho-list">'+rows+'</div>'+
@@ -2482,7 +2482,7 @@ function openHandoffManager(){
   '</div></div>';
   r.classList.add('on');
   on($('ho-close'),'click',closeOvr);
-  on($('ho-bg'),'click',closeOvr);
+  onBackdrop($('ho-bg'),closeOvr);
   r.querySelectorAll('[data-ho-dl]').forEach(b=>on(b,'click',()=>{
     const h=all.find(x=>x.id===b.dataset.hoDl); if(h) _ctxDownload(h.token, h.title);
   }));

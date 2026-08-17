@@ -349,8 +349,8 @@ window._recordTxn=_recordTxn;
 function _mktPaymentModal(it){
   const r=$('ovr'); if(!r) return;
   const price=it.price||0;
-  r.innerHTML='<div class="ov" id="mkpay-bg"><div class="ob mkpay" onclick="event.stopPropagation()" style="max-width:420px">'+
-    '<button class="oc" onclick="closeOvr()">\u00d7</button>'+
+  r.innerHTML='<div class="ov" id="mkpay-bg"><div class="ob mkpay" style="max-width:420px">'+
+    '<button class="oc" data-dact="closeOvr">\u00d7</button>'+
     '<h2 style="margin-bottom:14px">Complete your purchase</h2>'+
     '<div class="mkpay-item"><span class="mkpay-ic">'+_safeIcon(it.icon)+'</span><div style="flex:1"><div class="mkpay-t">'+escH(it.title)+'</div><div class="mkpay-k">'+escH(it.kind||'prompt')+' \u00b7 by '+escH(it.author||'community')+'</div></div><div class="mkpay-price">$'+price+'</div></div>'+
     '<div class="mkpay-rows"><div class="mkpay-row"><span>Item price</span><span>$'+price+'.00</span></div><div class="mkpay-row total"><span>Total due</span><span>$'+price+'.00</span></div></div>'+
@@ -358,7 +358,7 @@ function _mktPaymentModal(it){
     '<button class="btn bp" id="mkpay-go" style="width:100%;justify-content:center;margin-top:6px">Add a payment method to continue</button>'+
     '<p class="mkpay-sub">No payment method is connected yet. Add one to finish - you\u2019ll come right back here.</p>'+
   '</div></div>';
-  on($('mkpay-bg'),'click',closeOvr);
+  onBackdrop($('mkpay-bg'),closeOvr);
   on($('mkpay-go'),'click',()=>{ closeOvr(); try{ S.settingsPane='billing'; setTab('settings'); }catch(e){} });
 }
 window._mktPaymentModal=_mktPaymentModal;
@@ -421,8 +421,8 @@ function _mktPreview(it, after){
   else if(paid) actionBtn='<button class="btn bp" id="mkt-pv-buy">Buy \u00b7 $'+it.price+'</button>';
   else actionBtn='<button class="btn bp" id="mkt-pv-get">Get it free</button>';
   const rateRow = it._owned && !it._mine ? '<div class="mkt-rate"><span class="mkt-sec-h" style="margin:0">Your rating</span><span class="mkt-rate-stars" id="mkt-pv-rate">'+[1,2,3,4,5].map(n=>'<span class="mkt-rate-star'+(n<=(it._myRating||0)?' on':'')+'" data-stars="'+n+'">\u2605</span>').join('')+'</span></div>' : '';
-  r.innerHTML='<div class="ov" id="mkt-pv-bg"><div class="ob" onclick="event.stopPropagation()" style="max-width:560px">'+
-    '<button class="oc" onclick="closeOvr()">\u00d7</button>'+
+  r.innerHTML='<div class="ov" id="mkt-pv-bg"><div class="ob" style="max-width:560px">'+
+    '<button class="oc" data-dact="closeOvr">\u00d7</button>'+
     '<div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:6px">'+
       '<div class="mkt-pv-ic">'+_safeIcon(it.icon)+'</div>'+
       '<div style="flex:1"><h2 style="margin:0 0 2px">'+escH(it.title)+'</h2>'+
@@ -433,10 +433,10 @@ function _mktPreview(it, after){
     (it.status==='sold'?'<div class="mkt-sold-banner">\uD83D\uDD34 This item has sold. Message the seller to ask if they can make another.</div>':'')+
     lockedNote+ fullText + rateRow +
     '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">'+
-      '<button class="btn bs" onclick="closeOvr()">Close</button>'+actionBtn+'</div>'+
+      '<button class="btn bs" data-dact="closeOvr">Close</button>'+actionBtn+'</div>'+
     '<div id="mkt-similar"></div>'+
   '</div></div>';
-  on($('mkt-pv-bg'),'click',closeOvr);
+  onBackdrop($('mkt-pv-bg'),closeOvr);
   document.querySelectorAll('#ovr [data-mk-seller]').forEach(s=>on(s,'click',()=>{ _mktSellerProfile(s.dataset.mkSeller||'', s.dataset.mkSellername||''); }));
   document.querySelectorAll('#ovr .mkt-dl').forEach(b=>on(b,'click',()=>{ const f=it.files[parseInt(b.dataset.dl,10)]; if(f) _downloadFile(f); }));
   // similar items (same category + close price) - scroll-down section like Depop
@@ -491,8 +491,8 @@ async function _mktSellerProfile(sellerEmail, sellerName){
     const listingRows = theirs.length
       ? theirs.map(it=>'<div class="vrow mkt-listing-row" data-mk-open="'+escH(it.id)+'" style="cursor:pointer"><span>'+_safeIcon(it.icon)+' '+escH(it.title)+' '+_mktPriceTag(it)+'</span><span class="mkt-row-meta"><span class="mkt-st active">Active</span><span style="color:var(--mu);font-size:11px">'+(it.sales||it.installs||0)+(it.sales?' sold':' installs')+'</span><span class="mkt-row-arr">\u203a</span></span></div>').join('')
       : '<div style="color:var(--mu);font-size:12.5px">No active listings.</div>';
-    r.innerHTML='<div class="ov" id="mkt-sp-bg"><div class="ob" onclick="event.stopPropagation()" style="max-width:560px">'+
-      '<button class="oc" onclick="closeOvr()">\u00d7</button>'+
+    r.innerHTML='<div class="ov" id="mkt-sp-bg"><div class="ob" style="max-width:560px">'+
+      '<button class="oc" data-dact="closeOvr">\u00d7</button>'+
       '<div class="mkt-sp-head">'+_avatarHTML('amv',64)+
         '<div style="flex:1"><h2 style="margin:0 0 3px">AMV <span style="font-size:12px;color:var(--accent);vertical-align:middle">\u2713 Official</span></h2>'+
           '<div style="font-size:12.5px;color:var(--mu)">First-party tools, prompts and crews built by the AMV team.</div>'+
@@ -501,7 +501,7 @@ async function _mktSellerProfile(sellerEmail, sellerName){
         '</div></div>'+
       '<div class="ss2"><h3>Official listings</h3><div class="vbreak">'+listingRows+'</div></div>'+
     '</div></div>';
-    on($('mkt-sp-bg'),'click',closeOvr);
+    onBackdrop($('mkt-sp-bg'),closeOvr);
     on($('mkt-sp-msg'),'click',()=>{ closeOvr(); try{ setTab('help'); }catch(e){ toast('Reach the AMV team from the Help Center.','info'); } });
     document.querySelectorAll('#mkt-sp-bg [data-mk-open]').forEach(el=>on(el,'click',()=>{ const it=theirs.find(x=>x.id===el.dataset.mkOpen); if(it) _mktPreview(it, ()=>{}); }));
     return;
@@ -539,8 +539,8 @@ async function _mktSellerProfile(sellerEmail, sellerName){
   else if(bought) reviewBtn='<button class="btn bp" id="mkt-write-review" style="font-size:12px">'+(mine?'Edit your review':'Write a review')+'</button>';
   else reviewBtn='<span style="font-size:12px;color:var(--mu)">Buy from this seller to leave a review</span>';
 
-  r.innerHTML='<div class="ov" id="mkt-sp-bg"><div class="ob" onclick="event.stopPropagation()" style="max-width:560px">'+
-    '<button class="oc" onclick="closeOvr()">\u00d7</button>'+
+  r.innerHTML='<div class="ov" id="mkt-sp-bg"><div class="ob" style="max-width:560px">'+
+    '<button class="oc" data-dact="closeOvr">\u00d7</button>'+
     '<div class="mkt-sp-head">'+_avatarHTML(sellerEmail,64)+
       '<div style="flex:1"><h2 style="margin:0 0 3px">'+escH(name)+'</h2>'+
         '<div class="mkt-sp-stats">'+
@@ -552,7 +552,7 @@ async function _mktSellerProfile(sellerEmail, sellerName){
     '<div class="ss2" style="margin-top:16px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><h3 style="margin:0">Reviews</h3>'+reviewBtn+'</div>'+reviewList+'</div>'+
     '<div class="ss2"><h3>Listings</h3><div class="vbreak">'+listingRows+'</div></div>'+
   '</div></div>';
-  on($('mkt-sp-bg'),'click',closeOvr);
+  onBackdrop($('mkt-sp-bg'),closeOvr);
   /* From a seller's profile there is no one listing in view, so the first of
      theirs is used as the context. A seller with no listings cannot be
      messaged out of the blue, which is the point. */
@@ -585,12 +585,12 @@ function _mktMessages(){
       '<span class="mkt-thread-when">'+(last?_timeAgo(last.ts):'')+'</span>'+
     '</div>';
   }).join('') : '<div class="fd-empty">No messages yet. Message a seller from their profile to start a conversation.</div>';
-  r.innerHTML='<div class="ov" id="mkt-inbox-bg"><div class="ob" onclick="event.stopPropagation()" style="max-width:480px">'+
-    '<button class="oc" onclick="closeOvr()">\u00d7</button>'+
+  r.innerHTML='<div class="ov" id="mkt-inbox-bg"><div class="ob" style="max-width:480px">'+
+    '<button class="oc" data-dact="closeOvr">\u00d7</button>'+
     '<h2 style="margin-bottom:14px">Your messages</h2>'+
     '<div class="mkt-threads">'+rows+'</div>'+
   '</div></div>';
-  on($('mkt-inbox-bg'),'click',closeOvr);
+  onBackdrop($('mkt-inbox-bg'),closeOvr);
   r.querySelectorAll('[data-th]').forEach(t=>on(t,'click',()=>_mktChat(t.dataset.th, t.dataset.thn)));
 }
 window._mktMessages=_mktMessages;
@@ -609,14 +609,14 @@ function _mktChat(otherEmail, otherName, prefill, aboutItem){
     const t=AMVMarket.thread(otherEmail);
     const name=otherName||(t.a===me?t.bName:t.aName)||otherEmail.split('@')[0];
     const bubbles = t.msgs.length ? t.msgs.map(m=>'<div class="mkt-bubble '+(m.from===me?'me':'them')+'">'+escH(m.text)+'<span class="mkt-bubble-t">'+_timeAgo(m.ts)+'</span></div>').join('') : '<div style="color:var(--mu);font-size:12.5px;text-align:center;padding:20px">Say hello - ask about an item, a custom order, anything.</div>';
-    r.innerHTML='<div class="ov" id="mkt-chat-bg"><div class="ob" onclick="event.stopPropagation()" style="max-width:460px;display:flex;flex-direction:column;max-height:80vh">'+
-      '<button class="oc" onclick="closeOvr()">\u00d7</button>'+
+    r.innerHTML='<div class="ov" id="mkt-chat-bg"><div class="ob" style="max-width:460px;display:flex;flex-direction:column;max-height:80vh">'+
+      '<button class="oc" data-dact="closeOvr">\u00d7</button>'+
       '<div class="mkt-chat-head">'+_avatarHTML(otherEmail,36)+'<div><div style="font-weight:600;font-size:14px">'+escH(name)+'</div><div style="font-size:11px;color:var(--mu)">'+escH(otherEmail)+'</div></div>'+
         '<button class="btn bs" id="mkt-chat-prof" style="margin-left:auto;font-size:11px">Profile</button></div>'+
       '<div class="mkt-chat-body" id="mkt-chat-body">'+bubbles+'</div>'+
       '<div class="mkt-chat-input"><input type="text" id="mkt-chat-txt" placeholder="Message\u2026" autocomplete="off"'+(prefill?' value="'+escH(prefill)+'"':'')+'><button class="btn bp" id="mkt-chat-send">Send</button></div>'+
     '</div></div>';
-    on($('mkt-chat-bg'),'click',closeOvr);
+    onBackdrop($('mkt-chat-bg'),closeOvr);
     on($('mkt-chat-prof'),'click',()=>{ closeOvr(); _mktSellerProfile(otherEmail, name); });
     const send=async()=>{ const txt=$('mkt-chat-txt')?.value||''; if(!txt.trim()) return;
       const btn=$('mkt-chat-send'); if(btn){ btn.disabled=true; btn.textContent='Sending\u2026'; }
@@ -655,15 +655,15 @@ function _mktReviewDialog(sellerEmail, sellerName, onDone){
   const existing=AMVMarket.myReviewFor(sellerEmail);
   let stars=existing?existing.stars:0;
   const drawStars=()=>[1,2,3,4,5].map(n=>'<span class="mkt-rate-star'+(n<=stars?' on':'')+'" data-stars="'+n+'">\u2605</span>').join('');
-  r.innerHTML='<div class="ov" id="mkt-rv-bg"><div class="ob" onclick="event.stopPropagation()" style="max-width:460px">'+
-    '<button class="oc" onclick="closeOvr()">\u00d7</button>'+
+  r.innerHTML='<div class="ov" id="mkt-rv-bg"><div class="ob" style="max-width:460px">'+
+    '<button class="oc" data-dact="closeOvr">\u00d7</button>'+
     '<h2 style="margin-bottom:4px">Review '+escH(sellerName)+'</h2>'+
     '<p class="ob-sub" style="margin-bottom:14px">Your rating helps other buyers. You can only review sellers you\u2019ve bought from.</p>'+
     '<div class="mkt-rate" style="margin:0 0 14px"><span class="mkt-rate-stars" id="mkt-rv-stars">'+drawStars()+'</span></div>'+
     '<textarea id="mkt-rv-text" rows="4" placeholder="Share your experience (optional)\u2026" style="width:100%;font-size:13px">'+escH(existing?existing.text:'')+'</textarea>'+
-    '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px"><button class="btn bs" onclick="closeOvr()">Cancel</button><button class="btn bp" id="mkt-rv-save">Submit review</button></div>'+
+    '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px"><button class="btn bs" data-dact="closeOvr">Cancel</button><button class="btn bp" id="mkt-rv-save">Submit review</button></div>'+
   '</div></div>';
-  on($('mkt-rv-bg'),'click',closeOvr);
+  onBackdrop($('mkt-rv-bg'),closeOvr);
   const starsEl=$('mkt-rv-stars');
   const rebind=()=>{ starsEl.innerHTML=drawStars(); starsEl.querySelectorAll('[data-stars]').forEach(s=>on(s,'click',()=>{ stars=parseInt(s.dataset.stars,10); rebind(); })); };
   rebind();
@@ -924,7 +924,7 @@ function _mktBlockedDialog(reason, action, category){
   const icon = needsVer
     ? '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>'
     : '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>';
-  r.innerHTML='<div class="ovr-bg" id="mkb-bg"><div class="ovr-card" style="max-width:470px" onclick="event.stopPropagation()">'+
+  r.innerHTML='<div class="ovr-bg" id="mkb-bg"><div class="ovr-card" style="max-width:470px">'+
     '<div style="display:flex;gap:12px;align-items:flex-start">'+
       '<span style="width:38px;height:38px;flex-shrink:0;border-radius:10px;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,'+tint+' 13%,transparent);color:'+tint+'">'+
         '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+icon+'</svg></span>'+
@@ -937,7 +937,7 @@ function _mktBlockedDialog(reason, action, category){
     '</div></div></div>';
   r.classList.add('on');
   on($('mkb-ok'),'click',closeOvr);
-  on($('mkb-bg'),'click',closeOvr);
+  onBackdrop($('mkb-bg'),closeOvr);
   on($('mkb-rules'),'click',()=>{ closeOvr(); const b=$('mkt-rules-body'); if(b){ b.style.display='block'; b.scrollIntoView({behavior:'smooth',block:'center'}); } });
   on($('mkb-apply'),'click',()=>{ closeOvr(); toast('Verification for '+(category||'this category')+' is reviewed by our team. We\u2019ll email you once your seller account is approved.','info',5500); });
 }
@@ -978,7 +978,7 @@ function _mktReport(itemId, title){
   on($('mkr-cancel'),'click',closeOvr);
   /* Guard the backdrop rather than stopping propagation inside the card, or
      every delegated control in here is dead (LESSONS #5). */
-  on($('mkr-bg'),'click',(e)=>{ if(e.target===e.currentTarget) closeOvr(); });
+  onBackdrop($('mkr-bg'),closeOvr);
   on($('mkr-send'),'click',async()=>{
     const btn=$('mkr-send'); if(!btn) return;
     btn.disabled=true; btn.textContent=T('Sending\u2026');
@@ -1474,8 +1474,8 @@ function deletePrompt(id){
 function createPromptModal(){
   const r=$('ovr'); if(!r) return;
   r.innerHTML=
-    '<div class="ov" id="cp-bg"><div class="ob wide" onclick="event.stopPropagation()">'+
-      '<button class="oc" onclick="closeOvr()">×</button>'+
+    '<div class="ov" id="cp-bg"><div class="ob wide">'+
+      '<button class="oc" data-dact="closeOvr">×</button>'+
       '<h2 style="margin-bottom:4px">Create Prompt</h2>'+
       '<p class="ob-sub">Add a reusable prompt to your personal library.</p>'+
       '<div class="af">'+
@@ -1485,7 +1485,7 @@ function createPromptModal(){
         '<button class="btn bp" id="cp-save" style="width:100%;padding:11px">Save to Library</button>'+
       '</div>'+
     '</div></div>';
-  on($('cp-bg'),'click',closeOvr);
+  onBackdrop($('cp-bg'),closeOvr);
   on($('cp-save'),'click',()=>{
     const t=$('cp-title')?.value.trim(),c=$('cp-cat')?.value,tx=$('cp-text')?.value.trim();
     if(!t||!tx){toast('Title and prompt text required','error');return;}
@@ -1526,7 +1526,19 @@ function renderWsGrid(){
   }
   g.innerHTML=S.workspaces.map(ws=>{
     const chats=allConvs.filter(c=>c.wsId===ws.id);
-    const preview=chats.slice(0,3).map(c=>'<div class="wsc-chat" data-dact="loadConv" data-darg="'+c.id+'" onclick="event.stopPropagation()" style="font-size:12px;color:var(--mu);padding:4px 0;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">\u2022 '+escH(c.title||'Untitled')+'</div>').join('');
+    /* LESSONS #5, live: this row carried data-dact AND
+       onclick="event.stopPropagation()". The delegation that runs data-dact is a
+       single listener on `document`, so a stopPropagation on the row itself ran
+       first and the click never arrived - clicking a recent chat inside a
+       project card did nothing at all, silently, for as long as this has
+       shipped.
+
+       The stopPropagation was there to keep the click off the surrounding card,
+       which has its own data-dact="openWorkspace". It was never needed for that:
+       the dispatcher resolves with e.target.closest('[data-dact]'), which finds
+       the NEAREST one - the row - so the card's action does not fire anyway.
+       The guard was doing nothing except breaking the thing it was attached to. */
+    const preview=chats.slice(0,3).map(c=>'<div class="wsc-chat" data-dact="loadConv" data-darg="'+c.id+'" style="font-size:12px;color:var(--mu);padding:4px 0;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">\u2022 '+escH(c.title||'Untitled')+'</div>').join('');
     return '<div class="wsc" data-dact="openWorkspace" data-darg="'+ws.id+'">'+
       '<div class="wsic" style="background:rgba(85,144,255,.1)">'+ws.icon+'</div>'+
       '<div class="wsn">'+escH(ws.name)+'</div>'+
@@ -1558,8 +1570,8 @@ function createWorkspaceModal(){
   const r=$('ovr'); if(!r) return;
   const icons=['📁','💼','🔬','🎨','💻','📊','✍️','🏠','🎯','🚀','📚','⚡'];
   r.innerHTML=
-    '<div class="ov" id="ws-bg"><div class="ob" onclick="event.stopPropagation()">'+
-      '<button class="oc" onclick="closeOvr()">×</button>'+
+    '<div class="ov" id="ws-bg"><div class="ob">'+
+      '<button class="oc" data-dact="closeOvr">×</button>'+
       '<h2 style="margin-bottom:4px">New Workspace</h2>'+
       '<p class="ob-sub">Create a workspace to organize related conversations.</p>'+
       '<div class="af">'+
@@ -1573,7 +1585,7 @@ function createWorkspaceModal(){
   document.querySelectorAll('.ws-ic-btn').forEach(b=>{
     on(b,'click',()=>{ selIcon=b.dataset.ic; document.querySelectorAll('.ws-ic-btn').forEach(x=>x.style.borderColor=x===b?'var(--indigo)':''); });
   });
-  on($('ws-bg'),'click',closeOvr);
+  onBackdrop($('ws-bg'),closeOvr);
   on($('ws-create'),'click',()=>{
     const n=$('ws-name')?.value.trim(),d=$('ws-desc')?.value.trim();
     if(!n){toast('Name required','error');return;}

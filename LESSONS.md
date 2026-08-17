@@ -4812,3 +4812,65 @@ which is a command printing more than a megabyte, and that costs milliseconds.
 And a catch that answers two different failures with one sentence hides the one
 you did not expect. "The command failed" and "the command talked too much" are
 different problems with different fixes, and conflating them cost an hour.
+
+## 257. A hundred small conveniences were one large header
+
+`script-src 'unsafe-inline'` sat in AMV's CSP because roughly a hundred
+elements were wired with `onclick="..."`. Removing it was written down as a
+real UI refactor rather than a header change, and deferred - correctly, because
+there is no partial credit. Take the directive out with one attribute left and
+nothing is safer; a button is just dead, and the odds are even that it is on a
+payment screen.
+
+What made it worth doing anyway is that the attributes were not merely a cost.
+Thirty-seven of them were `onclick="event.stopPropagation()"` on an overlay
+panel, and that idiom is actively wrong here: `data-dact` is dispatched by one
+listener on `document`, so stopping the click on a panel kills every delegated
+button inside it. One of those had already shipped as a real bug (LESSONS #5,
+the recent-chats row that did nothing). The refactor did not trade
+functionality for a header. It removed a class of silent breakage AND got the
+header, because the reason both existed was the same wrong idiom.
+
+The general shape: when a hardening step is blocked by a hundred instances of
+one pattern, ask what the pattern costs on its own. If the answer is "nothing",
+the hardening is the only argument and it is a fair fight against the risk of
+touching a hundred things. If the answer is "it also breaks buttons", the
+refactor was already owed and the header is the bonus.
+
+Two details from doing it.
+
+The question a backdrop is asking is "did this click land on ME", and only the
+backdrop can answer it. Putting the answer on the panel - stop the click before
+it gets there - is the same answer written on the wrong element, which is why
+it had side effects. `e.target === e.currentTarget` on the backdrop is exact,
+needs nothing from the panel, and lets the click keep bubbling to the
+dispatcher. It now lives in one helper, so there is one place to get it right.
+
+And the hashes have to be computed by the build, not typed. A hash somebody has
+to remember to update stops matching on the first edit, and a stale hash does
+not warn - it blanks the page. The build also refuses to write index.html if
+script-src still allows inline afterwards, because the failure this change can
+cause is silent by construction and needs something loud in front of it.
+
+## 258. "The text changed" is not "the rewrite ran"
+
+The build rewrites script-src with the hashes of the inline scripts, and
+refused to write index.html if the rewrite had not happened. The way it asked
+was `if (sealed === body) throw` - if the string came back identical, nothing
+was replaced.
+
+Identical is exactly what a correct second build produces. Same hashes, same
+hosts, same order. So the gate refused a correct build the moment it ran twice,
+which is every gate run after the first, with a message pointing at the CSP
+instead of at the check.
+
+The same shape as #255 and it was written the same day, by the same hands, in a
+guard added to prevent a silent failure. The proxy was convenient - one
+comparison, no bookkeeping - and it answered a different question than the one
+that mattered. `let rewrote = false` set inside the replacer costs one line and
+answers the actual question: did the directive match.
+
+Worth noticing that the gate caught it for free. `check.mjs` runs the build on
+an already-built tree, so the second run IS the regression test, and no separate
+one is needed. When a build step is meant to be idempotent, the gate running it
+against its own output is the cheapest proof there is.

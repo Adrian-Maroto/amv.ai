@@ -23,6 +23,7 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { codeOnly, functionBody } from '../lib/source.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const bundle = readFileSync(join(ROOT, 'app.js'), 'utf8');
@@ -120,43 +121,38 @@ section('Every other dispatch attribute resolves too');
   ok(deadTabs.length === 0, 'and no button opens a tab that does not exist', deadTabs);
 }
 
-section('And an inline onclick names a function that exists');
+section('And there is no second way to wire a control any more');
 {
-  /* The plan cards do not use delegation - they carry inline handlers - which
-     is how the Ultra tier shipped a $200 buy button with no handler at all
-     while looking identical to the three that worked. A misspelled name here is
-     the same silence, one layer down. */
-  const calls = new Set();
-  for(const m of all.matchAll(/onclick="([A-Za-z_$][\w$.]*)\s*\(/g)) calls.add(m[1]);
-  for(const m of all.matchAll(/onclick=\\"([A-Za-z_$][\w$.]*)\s*\(/g)) calls.add(m[1]);
-  ok(calls.size > 3, 'the inline handlers were parsed', [...calls].slice(0, 12));
-  const dead = [...calls]
-    .filter(n => n.indexOf('.') < 0)        // window.foo() / S.x() resolve elsewhere
-    .filter(n => !defined.has(n))
-    .sort();
-  ok(dead.length === 0, 'each one calls something that is defined', dead);
+  /* This section used to READ the inline onclick attributes and check that each
+     one named something defined - the plan cards carried them, which is how the
+     Ultra tier shipped a $200 buy button with no handler at all.
 
-  /* AND THE RECEIVER HAS TO BE REACHABLE FROM GLOBAL SCOPE.
+     There are none left. Every control goes through the delegated dispatcher,
+     which the sections above already check end to end, and the reason is the
+     CSP: script-src names the scripts this page may run by hash, and an
+     attribute handler is inline script that no hash covers. So the old check
+     has nothing to read - `calls.size > 3` on an empty set is a check that can
+     no longer pass rather than a check that is passing.
 
-     Skipping every dotted call let a real dead control through: the overnight
-     queue's delete button was `onclick="queue.splice(i,1);...renderQ()"`, and
-     `queue` and `renderQ` are LOCAL to the function that wrote the markup. An
-     inline handler attribute is compiled in the GLOBAL scope, so every click
-     threw ReferenceError and the row never went away.
+     What is worth keeping is the invariant that replaced it. One dispatch
+     mechanism means one place a name can be wrong, and the sections above are
+     that place. The rule itself - no event-handler attribute anywhere in the
+     built page, asserted against the artifact and in a browser - lives in
+     tests/e2e/the-page-may-only-run-the-script-we-shipped. */
+  const inline = [...codeOnly(all).matchAll(/\son(?:click|mouseenter|mouseleave|focus|blur|load|error)=\\?["']/g)];
+  ok(inline.length === 0,
+     'nothing is wired by an attribute, so the delegated check above is the whole story',
+     inline.length);
 
-     So the object being called on is checked too - it has to be something the
-     bundle actually declares at the top level, or a browser global. */
-  const GLOBALS = new Set(['window', 'document', 'location', 'navigator', 'console',
-                           'localStorage', 'sessionStorage', 'history', 'event', 'this',
-                           'JSON', 'Math', 'Object', 'Array', 'String', 'Number', 'Date']);
-  const receivers = new Set();
-  for(const m of all.matchAll(/onclick=\\?"([A-Za-z_$][\w$]*)\./g)) receivers.add(m[1]);
-  const unreachable = [...receivers]
-    .filter(n => !GLOBALS.has(n))
-    .filter(n => !defined.has(n))
-    .sort();
-  ok(unreachable.length === 0,
-     'and the object it calls on is reachable from global scope', unreachable);
+  /* The receiver check that used to live here caught a real one: the overnight
+     queue's delete button called `queue.splice(...)` and `renderQ()`, both
+     LOCAL to the function that wrote the markup, so every click threw
+     ReferenceError in the global scope an attribute compiles in. Delegation
+     cannot reproduce that - the dispatcher only ever looks up a bare name on
+     window - but the equivalent mistake is a data-darg the handler cannot use,
+     and every action name resolving is what rules it out. */
+  ok(acts.size > 40 && [...acts].every(a => defined.has(a)),
+     'and every name the one mechanism can dispatch is defined', acts.size);
 }
 
 section('Every plan on the pricing page can actually be bought');
@@ -181,8 +177,10 @@ section('Every plan on the pricing page can actually be bought');
     /* Either named explicitly, or covered by the default that routes to
        checkout. The default is what makes the next tier safe. */
     const named = new RegExp("plan==='" + p + "'").test(builder);
-    const byDefault = /return '<button class="plnbtn '[\s\S]{0,120}openCheckout\(\\'"?\+plan/.test(builder)
-                   || /openCheckout\(\\''\+plan\+'\\'\)/.test(builder);
+    /* The fallback used to be an inline onclick that interpolated the plan;
+       it is a delegated action with the plan as its argument now. Same rule -
+       a tier nobody named still reaches checkout - matched on what is there. */
+    const byDefault = /data-dact="openCheckout" data-darg="'\+escH\(plan\)\+'"/.test(builder);
     return !named && !byDefault;
   });
   ok(unreachable.length === 0, 'no paid tier has a button that does nothing', unreachable);
@@ -191,17 +189,39 @@ section('Every plan on the pricing page can actually be bought');
      'and there is no handler-less fallback left to fall into', true);
 }
 
-section('A control inside a stopPropagation modal is not dispatched this way');
+section('And no modal cancels the click its own controls need');
 {
-  /* LESSONS #5: a modal that stops propagation kills delegation for everything
-     inside it, so those controls are bound directly instead. The picker modal
-     is the known one - asserted so a future edit that switches it to data-dact
-     does not produce buttons that are dead for a completely different reason. */
-  const at = bundle.indexOf('hopick-modal');
-  if(at > 0){
-    const modal = bundle.slice(at, at + 1200);
-    ok(!/data-dact=/.test(modal),
-       'the handoff picker binds its rows directly, not through delegation', true);
+  /* This section used to say the opposite, and it was right at the time: a
+     panel that called event.stopPropagation() killed delegation for everything
+     inside it, so controls in there had to be bound directly, and the picker
+     modal was asserted to carry no data-dact so a future edit would not add a
+     button that was dead for a reason nobody would look for.
+
+     Thirty-seven panels were written that way and one of them had already
+     shipped the bug (LESSONS #5, the recent-chats row). The guard is on the
+     BACKDROP now - it asks whether the click landed on itself - so delegation
+     reaches inside every modal and the rule inverts: a panel that stops the
+     click is the defect, not the design. */
+  /* Comments stripped: both patterns are written out in prose right beside the
+     code that removed them, and a raw match counts the explanation as an
+     instance. LESSONS #255. */
+  const panelGuards = codeOnly(bundle).match(/onclick="event\.stopPropagation\(\)"/g) || [];
+  ok(panelGuards.length === 0,
+     'no overlay panel stops the click before the dispatcher sees it', panelGuards.length);
+
+  /* The whole builder, not a window from the modal string: the rows are
+     assembled BEFORE the markup that contains them, so a slice anchored on the
+     panel reads past every one of them. */
+  const picker = functionBody(bundle, '_hoPickChat');
+  if(picker){
+    const modal = picker;
+    ok(!/stopPropagation/.test(modal),
+       'the handoff picker in particular, which is where this was asserted before', true);
+    /* Its rows are still bound directly, by data-hopick rather than data-dact -
+       they carry an id the handler needs, not an action name. That is fine, and
+       it is checked so a future edit does not half-convert them. */
+    ok(/data-hopick=/.test(modal),
+       'and its rows still carry the id their handler is bound with', true);
   } else {
     ok(true, 'the handoff picker markup was not found to check', 'skipped');
   }

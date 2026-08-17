@@ -113,6 +113,30 @@ function _customPlanSummary(price){
 function _stripePK(){ return loadStr('amv_stripe_pk')||''; }
 function _stripeLink(plan){ try{ const m=load('amv_pay_links')||{}; return m[plan]||''; }catch(e){ return ''; } }
 
+/* The owner's own Stripe payment link for a plan, opened in a new tab.
+
+   Was `onclick="window.open(S.sp,'_blank','noopener')"` - an inline handler,
+   and one that opened whatever string was in that setting without asking what
+   scheme it was. The setting is the operator's, so this is not the usual
+   untrusted-input case, but it is stored in localStorage and reaches
+   window.open: safeUrl costs nothing and a `javascript:` in a settings field
+   would otherwise be a live one.
+
+   A missing or rejected link says so instead of opening a blank tab, because
+   "nothing happened" on the button that takes somebody's money is the worst
+   possible way to find out a setting is wrong. */
+function _openPlanLink(which){
+  const raw = which==='elite' ? (S.se||'') : (S.sp||'');
+  const url = safeUrl(raw);
+  if(!url){
+    toast('That plan link is not set up yet. Add it in Settings and try again.','error',4500);
+    return;
+  }
+  try{ track('upgrade_checkout_started', { plan: which==='elite'?'elite':'pro' }); }catch(e){}
+  window.open(url,'_blank','noopener');
+}
+try{ window._openPlanLink=_openPlanLink; }catch(e){}
+
 function openCheckout(plan, customPrice){
   try{ track('upgrade_checkout_started', { plan }); }catch(e){}
   if(plan==='free'){ _setPlan('free'); renderBillingView(); toast('Switched to Free','info'); return; }
@@ -138,7 +162,7 @@ function openCheckout(plan, customPrice){
 function openPaymentSheet(plan){
   const p=PLANS[plan]||PLANS.pro;
   const r=$('ovr'); if(!r) return;
-  r.innerHTML='<div class="pay-ov" id="pay-bg"><div class="pay-modal" onclick="event.stopPropagation()">'+
+  r.innerHTML='<div class="pay-ov" id="pay-bg"><div class="pay-modal">'+
     '<div class="pay-head"><div><div class="pay-title">Upgrade to '+p.name+'</div><div class="pay-sub">'+(p.blurb||'')+'</div></div><button class="dna-x" id="pay-x">✕</button></div>'+
     '<div class="pay-amount"><span class="pay-amt">$'+p.price+'</span><span class="pay-per">/month</span></div>'+
     '<div class="pay-methods-tabs" id="pay-tabs">'+
@@ -149,7 +173,7 @@ function openPaymentSheet(plan){
     '<div class="pay-body" id="pay-body"></div>'+
     '<div class="pay-secure"><span class="pay-lock">🔒</span> Encrypted &amp; secure · PCI-DSS Level 1 processing</div>'+
     '</div></div>';
-  on($('pay-bg'),'click',closePaySheet); on($('pay-x'),'click',closePaySheet);
+  onBackdrop($('pay-bg'),closePaySheet); on($('pay-x'),'click',closePaySheet);
   $('pay-tabs').querySelectorAll('.pay-tab').forEach(t=>on(t,'click',()=>{ $('pay-tabs').querySelectorAll('.pay-tab').forEach(x=>x.classList.toggle('on',x===t)); _payRenderMethod(t.dataset.pt,plan); }));
   _payRenderMethod('card',plan);
 }

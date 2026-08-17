@@ -1248,8 +1248,8 @@ function addToProject(id){
     ? ws.map(w=>'<button class="proj-pick" data-wid="'+w.id+'" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:11px 12px;border:1px solid var(--bd);background:var(--s2);border-radius:10px;color:var(--tx);cursor:pointer;margin-bottom:8px;font-size:14px"><span style="font-size:18px">'+_safeIcon(w.icon||'\uD83D\uDCC1')+'</span>'+escH(w.name||'Project')+'</button>').join('')
     : '<p class="ob-sub">No projects yet. Create one in the Projects tab first.</p>';
   r.innerHTML=
-    '<div class="ov" id="ap-bg"><div class="ob" onclick="event.stopPropagation()">'+
-      '<button class="oc" onclick="closeOvr()">\u00d7</button>'+
+    '<div class="ov" id="ap-bg"><div class="ob">'+
+      '<button class="oc" data-dact="closeOvr">\u00d7</button>'+
       '<h2 style="margin-bottom:4px">Add to project</h2>'+
       '<p class="ob-sub">Move \u201c'+escH(conv.title||'chat')+'\u201d into a project.</p>'+
       '<div class="af">'+list+'</div>'+
@@ -1262,15 +1262,15 @@ function addToProject(id){
       closeOvr();
     });
   });
-  on($('ap-bg'),'click',closeOvr);
+  onBackdrop($('ap-bg'),closeOvr);
 }
 window.addToProject=addToProject;
 function renameConv(id){
   const conv=S.convs.find(x=>x.id===id); if(!conv) return;
   const r=$('ovr'); if(!r) return;
   r.innerHTML=
-    '<div class="ov" id="rn-bg"><div class="ob" onclick="event.stopPropagation()">'+
-      '<button class="oc" onclick="closeOvr()">\u00d7</button>'+
+    '<div class="ov" id="rn-bg"><div class="ob">'+
+      '<button class="oc" data-dact="closeOvr">\u00d7</button>'+
       '<h2 style="margin-bottom:4px">Rename chat</h2>'+
       '<p class="ob-sub">Give this conversation a clear name.</p>'+
       '<div class="af">'+
@@ -1282,7 +1282,7 @@ function renameConv(id){
   const save=()=>{ const v=($('rn-input')||{}).value||''; if(v.trim()){ conv.title=v.trim(); _autoSave(); renderHist(); } closeOvr(); };
   on($('rn-save'),'click',save);
   on($('rn-input'),'keydown',ev=>{ if(ev.key==='Enter') save(); });
-  on($('rn-bg'),'click',closeOvr);
+  onBackdrop($('rn-bg'),closeOvr);
 }
 function exportConv(id){
   const c=S.convs.find(x=>x.id===id);
@@ -1439,12 +1439,12 @@ function _renderSharedView(data){
 async function openSharedChatsManager(){
   const ovr=$('ovr'); if(!ovr) return;
   const live = !!(window.AMV_API && AMV_API.live && AMV_API.token);
-  ovr.innerHTML='<div class="ov" id="shr-bg"><div class="ob" onclick="event.stopPropagation()">'+
-    '<button class="oc" onclick="closeOvr()">&#215;</button>'+
+  ovr.innerHTML='<div class="ov" id="shr-bg"><div class="ob">'+
+    '<button class="oc" data-dact="closeOvr">&#215;</button>'+
     '<h2>Shared conversations</h2>'+
     '<div id="shr-body"><p class="ob-sub">Loading\u2026</p></div></div></div>';
   ovr.classList.add('on');
-  document.getElementById('shr-bg')?.addEventListener('click',e=>{ if(e.target===e.currentTarget) closeOvr(); });
+  onBackdrop($('shr-bg'),closeOvr);
   const body=document.getElementById('shr-body');
   if(!live){
     body.innerHTML='<p class="ob-sub">Links you create right now hold the conversation inside the link itself, so there is nothing stored to revoke - deleting the link is enough. Connect the AMV engine in Settings for shareable pages you can revoke later.</p>';

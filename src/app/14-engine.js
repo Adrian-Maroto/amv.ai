@@ -976,6 +976,32 @@ function _crewResultsHTML(){
 }
 function _crewRender(){ const el=$('crew-live'); if(el) el.innerHTML=_crewResultsHTML(); }
 
+/* THE FOUR QUICK CARDS ON THE CREW SCREEN.
+
+   Each card used to carry its own call as a string in an onclick attribute -
+   including `crewRun('gmail','Check Gmail')`, a two-argument call, which is why
+   the attribute form was reached for in the first place: the delegated
+   dispatcher passes one argument.
+
+   The card already knows which one it is, so the kind is the argument and the
+   title lives here beside the thing that uses it. An unknown kind does nothing
+   rather than calling crewRun with undefined and starting a run that reports a
+   failure the person did not cause. */
+const _CW_QUICK = {
+  trip: null,                              // its own screen, not a crew run
+  gmail: 'Check Gmail',
+  week:  'Plan my week',
+  auto:  null,                             // opens the cowork composer
+};
+function _cwQuick(kind){
+  if(kind==='trip'){ openTripPlanner(); return; }
+  if(kind==='auto'){ openCowork(); return; }
+  const title=_CW_QUICK[kind];
+  if(!title) return;
+  crewRun(kind, title);
+}
+try{ window._cwQuick=_cwQuick; }catch(e){}
+
 async function crewRun(kind, title, opts){
   opts=opts||{};
   const res={id:'cr'+Date.now(), kind, title, status:'running', note:'starting…', body:'', actions:''};
@@ -1036,7 +1062,7 @@ window.crewRun=crewRun;
 /* ===== DEDICATED TRIP PLANNER (own screen, real form -> AI) ===== */
 function openTripPlanner(){
   const r=$('ovr'); if(!r) return;
-  r.innerHTML = `<div class="ov trip-ov" id="trip-bg"><div class="trip-modal" onclick="event.stopPropagation()">
+  r.innerHTML = `<div class="ov trip-ov" id="trip-bg"><div class="trip-modal">
     <div class="trip-head">
       <div><div class="eyebrow">AMV Travel</div><h2 class="trip-title">Plan a trip</h2></div>
       <button class="trip-x" id="trip-close" aria-label="close">✕</button>
@@ -1078,7 +1104,7 @@ function openTripPlanner(){
     </div>
   </div></div>`;
   on($('trip-close'),'click',closeTripPlanner);
-  on($('trip-bg'),'click',closeTripPlanner);
+  onBackdrop($('trip-bg'),closeTripPlanner);
   on($('trip-plan'),'click',_tripPlan);
   // sensible default dates (next month, 5 days)
   const s=new Date(Date.now()+30*864e5), e=new Date(Date.now()+35*864e5);
@@ -1146,7 +1172,7 @@ function openTaskPanel(mode){
   const fileLine = isFile && _PENDING_FILE ? '<div class="tp-file">📎 '+escH(_PENDING_FILE.name)+' <span>'+Math.round(_PENDING_FILE.size/1024)+' KB</span></div>' : '';
   const ph = isFile ? "e.g. 'find the bugs and fix them', 'summarize the key points', 'clean this data and chart revenue by month'"
                     : "Describe exactly what you want AMV to do. Be specific - it will actually do it and show the result.";
-  r.innerHTML = `<div class="ov tp-ov" id="tp-bg"><div class="tp-modal" onclick="event.stopPropagation()">
+  r.innerHTML = `<div class="ov tp-ov" id="tp-bg"><div class="tp-modal">
     <div class="tp-head"><div><div class="eyebrow">AMV Task</div><h2 class="tp-title">${title}</h2></div><button class="tp-x" id="tp-close">✕</button></div>
     <div class="tp-body" id="tp-step1">
       ${fileLine}
@@ -1171,7 +1197,7 @@ function openTaskPanel(mode){
     </div>
   </div></div>`;
   on($('tp-close'),'click',closeTaskPanel);
-  on($('tp-bg'),'click',closeTaskPanel);
+  onBackdrop($('tp-bg'),closeTaskPanel);
   on($('tp-run'),'click',()=>_taskRun(mode));
   const rep=$('tp-repeat'), note=$('tp-recur-note');
   on(rep,'change',()=>{ note.textContent = rep.value==='none' ? '' :
