@@ -102,7 +102,7 @@ section('When everything can be deleted, it is - and that is what is said');
 {
   const env = mkEnv();
   const tok = await anAccountWithThings(env);
-  const r = await post(env, '/auth/delete', { confirm: 'DELETE' }, tok);
+  const r = await post(env, '/auth/delete', { confirm: 'DELETE', password: PW }, tok);
   ok(r.body.ok === true, 'the request succeeds', r.body.error || 'ok');
   ok(!(r.body.failed || []).length, 'nothing is reported as left behind', r.body.failed);
 
@@ -120,7 +120,7 @@ section('When a delete fails, the request does NOT come back a success');
      accounts. */
   const env = mkEnv(['fin']);
   const tok = await anAccountWithThings(env);
-  const r = await post(env, '/auth/delete', { confirm: 'DELETE' }, tok);
+  const r = await post(env, '/auth/delete', { confirm: 'DELETE', password: PW }, tok);
 
   ok(r.body.ok !== true, 'it is not reported as done', r.body);
   ok(r.status >= 500 || r.body.incomplete === true,
@@ -141,15 +141,25 @@ section('Everything that COULD go, still went');
      if the loop gives up on the first error - there is nothing after it to
      leave behind - so the case has to be built from the real order. */
   const kinds = W.PER_USER_KINDS;
-  const firstKind = kinds[0];
+  /* The EARLIEST kind that is not `acct`. Confirming a deletion reads the
+     account record to check the password (AMV-015), so a store that cannot
+     serve `acct` refuses before anything is erased rather than erasing half -
+     which is the right answer and makes `acct` useless as the injected
+     failure here. Everything after it still has to be reached, which is what
+     this case is about. */
+  const firstKind = kinds.find(k => k !== 'acct');
   const lastKind = kinds[kinds.length - 1];
-  ok(firstKind !== lastKind && kinds.length > 3, 'there is a real list to walk', kinds.length);
+  ok(firstKind && firstKind !== lastKind && kinds.length > 3,
+     'there is a real list to walk', { first: firstKind, last: lastKind, n: kinds.length });
+  ok(kinds.indexOf(firstKind) <= 1,
+     'and the failure is injected near the front, so there is plenty after it',
+     kinds.indexOf(firstKind));
 
   const env = mkEnv([firstKind]);
   const tok = await anAccountWithThings(env);
   await W.DB.put(env, firstKind, USER, { something: true });
   await W.DB.put(env, lastKind, USER, { something: true });
-  await post(env, '/auth/delete', { confirm: 'DELETE' }, tok);
+  await post(env, '/auth/delete', { confirm: 'DELETE', password: PW }, tok);
 
   ok(!(await W.DB.get(env, lastKind, USER)),
      'a kind AFTER the failing one is still deleted - the loop does not give up', lastKind);
@@ -166,7 +176,7 @@ section('Somebody is told, because the person cannot fix it themselves');
 {
   const env = mkEnv(['fin', 'data']);
   const tok = await anAccountWithThings(env);
-  await post(env, '/auth/delete', { confirm: 'DELETE' }, tok);
+  await post(env, '/auth/delete', { confirm: 'DELETE', password: PW }, tok);
   await ctx.settle();
 
   ok(alerts.length > 0, 'an operator is paged', alerts.length);
@@ -184,7 +194,7 @@ section('And it is in the audit record, not only in a reply nobody kept');
   const seen = [];
   const realLog = console.log;
   console.log = (...a) => { seen.push(a.join(' ')); };
-  await post(env, '/auth/delete', { confirm: 'DELETE' }, tok);
+  await post(env, '/auth/delete', { confirm: 'DELETE', password: PW }, tok);
   console.log = realLog;
 
   const audits = seen.filter(l => /^AUDIT/.test(l)).join(' ');

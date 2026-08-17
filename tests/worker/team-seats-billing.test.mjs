@@ -190,7 +190,7 @@ section('One definition of what a plan costs');
      and the widget - broke the match while the 45% backstop it guards was
      untouched. A rule written against a spelling fails on a correct fix and
      passes on a regression that keeps the words (LESSONS #203). */
-  const ceilFn3 = src.slice(src.indexOf('function _monthlyCeilingUSD'), src.indexOf('function _monthlyCeilingUSD') + 900);
+  const ceilFn3 = src.slice(src.indexOf('function _monthlyCeiling('), src.indexOf('function _monthlyCeiling(') + 900);
   ok(/_planPriceUSD\(user\.plan, user\.customCfg\)/.test(ceilFn3),
      'the chat cost backstop reads it', true);
   ok(/const price = _planPriceUSD\(user\.plan, user\.customCfg\)/.test(src),

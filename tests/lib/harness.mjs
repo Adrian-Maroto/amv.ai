@@ -2,7 +2,7 @@
    Every e2e test uses this so a boot-sequence change breaks one file, not twenty. */
 import { chromium } from 'playwright';
 import { createServer } from 'http';
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync, statSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -10,6 +10,36 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 export const APP = join(__dir, '..', '..', 'index.html');
 
 let _port = 9100;
+
+/* WHICH CHROMIUM TO DRIVE.
+
+   Playwright downloads a browser build pinned to its own version and refuses
+   to launch anything else it did not put there. Some machines - CI images and
+   sandboxes among them - ship a browser already and set
+   PLAYWRIGHT_BROWSERS_PATH at it, and if the installed Playwright is even
+   slightly newer than that image, it looks for a build number that is not
+   present and every end-to-end suite dies at launch with no output at all.
+
+   That is what it did: ninety-five suites failed identically, none of them
+   printing a line, and it read like ninety-five regressions rather than one
+   missing file.
+
+   So: use the browser the machine provides when there is one, and otherwise
+   let Playwright find its own. A no-op on a normal machine, and the difference
+   between a working suite and no suite on a provisioned one. */
+function providedChromium() {
+  const base = process.env.PLAYWRIGHT_BROWSERS_PATH;
+  if (!base) return '';
+  for (const p of [join(base, 'chromium'),
+                   join(base, 'chromium', 'chrome-linux', 'chrome')]) {
+    try { if (existsSync(p) && statSync(p).isFile()) return p; } catch (e) {}
+  }
+  return '';
+}
+export const LAUNCH = (() => {
+  const exe = providedChromium();
+  return exe ? { executablePath: exe } : {};
+})();
 
 export async function serveApp() {
   if (!existsSync(APP)) {
@@ -54,7 +84,7 @@ export async function serveApp() {
    Pass { user: null } to test the signed-out state. */
 export async function bootApp(opts = {}) {
   const { url, server } = await serveApp();
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(LAUNCH);
   const page = await browser.newPage({
     viewport: opts.viewport || { width: 1280, height: 860 }
   });

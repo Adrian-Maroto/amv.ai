@@ -316,8 +316,15 @@ section('Every event the server records has a label on the activity screen');
   const worker = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
   const bundle = readFileSync(join(ROOT, 'app.js'), 'utf8');
   const kinds = [...new Set([...worker.matchAll(/_userEvent\(env,[^,]*,[^,]*,\s*'([a-z_]+)'/g)].map(m => m[1]))];
+  /* The whole map, to its closing brace - not a fixed number of characters from
+     the start of it. The window used to be 2000, and adding a label with a
+     comment explaining it pushed the entry six characters past the edge: the
+     check went red on a correctly-labelled event, which is a check measuring
+     the wrong thing. */
   const at = bundle.indexOf('const ACT_LABEL');
-  const blk = bundle.slice(at, at + 2000);
+  const end = bundle.indexOf('\n};', at);
+  ok(at > -1 && end > at, 'the label map was found', { at, end });
+  const blk = bundle.slice(at, end);
   const missing = kinds.filter(k => blk.indexOf(k + ':') < 0);
   ok(kinds.length > 10, 'the worker really does record a lot of them', kinds.length);
   ok(missing.length === 0, 'and every one is labelled rather than falling through', missing);

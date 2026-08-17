@@ -226,7 +226,11 @@ W.__setRequireUser(async () => ({ email: 'gone@x.com', plan: 'free', customCfg: 
 
 section('And in practice, the four that were surviving do not');
 {
-  await W.DB.put(env, 'acct', 'gone@x.com', { email: 'gone@x.com', name: 'Gone' });
+  /* A federated account, so confirming means typing the address. Erasure is
+     the one irreversible act in the product and now asks the person to prove
+     they are still there (AMV-015) - a bearer token alone used to be enough,
+     and a bearer token is the thing most likely to have leaked. */
+  await W.DB.put(env, 'acct', 'gone@x.com', { email: 'gone@x.com', name: 'Gone', provider: 'google' });
   store.set('resetcode:gone@x.com', JSON.stringify({ code: '123456', attempts: 0 }));
   store.set('smsverify:gone@x.com:+15551234567', '998877');
   store.set('resume:gone@x.com:r_abc', 'the answer they paid for');
@@ -238,7 +242,7 @@ section('And in practice, the four that were surviving do not');
 
   const r = await W.authDeleteAccount(new Request('https://api.amv.dev/auth/delete', {
     method: 'POST', headers: { Authorization: 'Bearer t', 'Content-Type': 'application/json' },
-    body: JSON.stringify({ confirm: 'DELETE' }),
+    body: JSON.stringify({ confirm: 'DELETE', confirmEmail: 'gone@x.com' }),
   }), env);
   ok(r.status === 200, 'the account was deleted', r.status);
 

@@ -42,6 +42,13 @@ new_classes = ["AMVCounter"]
 # ("not enabled on this deployment") instead of failing at runtime. Nothing else
 # changes when you turn it on.
 #
+# It was ALSO held back on four security findings, and those are now closed:
+#   - a page could get a saved password typed into its own form (AMV-001)
+#   - a redirect reached an internal address before anything checked (AMV-002)
+#   - the spending ceiling was optional to the caller and charged too early (AMV-036)
+# A run also refuses to start at all if the browser driver cannot block requests
+# before they are made, so turning this on cannot quietly get the weaker version.
+#
 # [browser]
 # binding = "BROWSER"
 

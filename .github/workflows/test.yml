@@ -45,10 +45,26 @@ jobs:
     # sit there burning minutes. This is generous against a ~35 minute gate.
     timeout-minutes: 75
     steps:
-      # NOTE (AMV-041): for supply-chain hardening, pin these to full-length
-      # commit SHAs (e.g. actions/checkout@<sha>) once you've verified them.
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      # AMV-058: PINNED TO COMMITS, BECAUSE A TAG IS NOT A VERSION.
+      #
+      # These used to say @v4, under a note that deferred the pinning to some
+      # later day - a comment describing the fix instead of being it, which is
+      # the same class of defect as everything else found this week.
+      #
+      # A major tag is MUTABLE. Whoever controls the action's repository can
+      # move v4 to any commit, and every run of this workflow then executes
+      # whatever it now points at - with the repository checked out and the
+      # runner's environment in reach. That is not a hypothetical supply-chain
+      # shape; moved tags are how it has actually happened to other people.
+      #
+      # A commit SHA cannot be moved. Each is the v4.4.0 release of its action,
+      # resolved from the upstream repository, with the version kept beside it
+      # so an upgrade is a deliberate edit rather than something that happens
+      # to a workflow nobody touched. To update: read the release notes, resolve
+      # the new tag with `git ls-remote --tags`, and change both the SHA and the
+      # comment together.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
         with:
           node-version: 22
       # Reproducible install straight from the committed lockfile.

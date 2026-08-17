@@ -57,10 +57,29 @@ section('The handler awaits its routing, which is the whole fix');
   ok(s > 0 && e > s, 'the fetch handler was found', fetchBody.length);
 
   const returns = [...fetchBody.matchAll(/return\s+([^\n;]*)/g)].map(m => m[1].trim());
-  ok(returns.length === 2,
-     'it returns in exactly two places: the route, and the refusal when it throws', returns);
-  ok(/^await _route\(/.test(returns[0]),
-     'the routing one is AWAITED, so a rejection lands in the catch below', returns[0]);
+  /* THE PROPERTY, not the count. This asserted "exactly two returns" and went
+     red when a third arrived - the request-size refusal (AMV-029), which is a
+     correct early return that also goes out through the CORS layer. A count is
+     a proxy for "nothing escapes without passing through the roof"; that is
+     what is checked now, so a legitimate new guard does not read as a
+     regression while a real escape still does. */
+  ok(returns.length >= 2, 'the handler returns in at least the two known places', returns);
+  const escaping = returns.filter(r => !/^_applyCors\(/.test(r));
+  ok(escaping.length === 0,
+     'and every one of them goes out through the CORS layer, so nothing leaves around it', escaping);
+  ok(returns.some(r => /\bawait _route\(/.test(r)),
+     'one of them is the routing itself', returns);
+  /* The PROPERTY is that the route is awaited before anything is returned, so a
+     rejection lands in the catch rather than escaping as a pending promise. It
+     is no longer the whole return expression - the response passes through the
+     CORS layer on its way out (AMV-028) - so this checks that the await is
+     there and inside this return, rather than that the return is spelt a
+     particular way. */
+  const routing = returns.find(r => /_route\(/.test(r)) || '';
+  ok(/\bawait _route\(/.test(routing),
+     'the routing one is AWAITED, so a rejection lands in the catch below', routing);
+  ok(!/_route\((?!.*await)/.test(returns[0].replace(/await _route\([^)]*\)/, '')),
+     'and there is no second, unawaited call to it beside the first', returns[0]);
   /* The specific regression: a route wired straight into the handler is
      outside the await again, and the catch goes quiet for it. */
   ok(!/case\s*'/.test(fetchBody),

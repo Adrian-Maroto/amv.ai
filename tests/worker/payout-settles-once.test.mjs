@@ -188,7 +188,20 @@ section('The lock is released, so the next payout is settleable');
   ok(d.ok === true, 'a different payout settles straight after', d);
   ok(balanceOf('a@x.com') === 10 && balanceOf('b@x.com') === 25, 'both sellers got theirs', {
     a: balanceOf('a@x.com'), b: balanceOf('b@x.com') });
-  ok(claims.size === 0, 'and no lock was left held', [...claims.keys()]);
+  /* A LOCK and a ONCE-CLAIM are different things and only one of them is
+     released.
+
+     `polock` serialises settlements of a payout and must be given back, or the
+     next operator action on it hangs for the length of the TTL. `porefund` is
+     the opposite: it is what makes the refund impossible to complete twice
+     (AMV-011), so it is kept deliberately and for ever. Asserting that no claim
+     survives at all would be demanding the idempotency be thrown away, which is
+     how a correct guard gets deleted to make a test pass. */
+  const locks = [...claims.keys()].filter(k => /polock/.test(k));
+  ok(locks.length === 0, 'and no lock was left held', locks);
+  const once = [...claims.keys()].filter(k => /porefund/.test(k));
+  ok(once.length === 2,
+     'while each refund keeps its once-claim, so it can never be paid twice', once);
 }
 
 section('The status is written before the money moves');

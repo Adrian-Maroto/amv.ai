@@ -47,7 +47,9 @@ section('AMV-033: phone binding requires SMS verification');
   const vkeys = [...store.keys()].filter(k => k.startsWith('smsverify:'));
   ok(vkeys.length === 1, 'a verification code was stored');
   ok(![...store.keys()].some(k => k.startsWith('sms:phone:')), 'the phone is NOT linked before verification');
-  const code = store.get(vkeys[0]);
+  /* Stored as a record now rather than a bare string, because the attempt
+     counter has to live somewhere (AMV-025). */
+  const code = JSON.parse(store.get(vkeys[0])).code;
   // step 2 wrong code -> rejected
   r = await W.smsRegister(jreq({ phone: '+15551234567', code: '000000' }, aliceTok), env);
   ok(r.status === 401, 'a wrong code is rejected');

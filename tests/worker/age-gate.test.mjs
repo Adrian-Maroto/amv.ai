@@ -141,8 +141,8 @@ section('The browser agent cannot be used to walk around it');
      'and treats a purchase-shaped goal as a purchase even with no amount declared', true);
   /* Anchored on the spend CHECK rather than on any one constant, so moving the
      ceiling somewhere else cannot quietly retire this ordering rule. */
-  ok(/_spendAllowed\(/.test(b) && b.indexOf('_moneyAgeGate') < b.indexOf('_spendAllowed('),
-     'before the spend check, so an underage run is refused rather than merely capped', true);
+  ok(/_spendReserve\(/.test(b) && b.indexOf('_moneyAgeGate') < b.indexOf('_spendReserve('),
+     'before the money is booked, so an underage run is refused rather than merely capped', true);
 }
 
 if (report('age-gate') > 0) process.exitCode = 1;

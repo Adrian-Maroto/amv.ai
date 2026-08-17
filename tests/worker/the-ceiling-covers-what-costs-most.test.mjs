@@ -274,9 +274,16 @@ globalThis.fetch = realFetch;
    it. There is one definition now and both paths ask it. */
 section('The account ceiling binds image and video, not only chat');
 {
+  /* DERIVED, not named. This asserted the literal `_monthlyCeilingUSD`, so a
+     rename would have failed it for the wrong reason - and, worse, a rename
+     that split the helper in two could have satisfied it while chat and media
+     quietly asked DIFFERENT functions again, which is the defect this file
+     exists for. What matters is that both paths reach the SAME one. */
   const gate = functionBody(src, '_spendGate');
-  ok(/_monthlyCeilingUSD\(/.test(gate),
-     'the media gate asks for this account’s ceiling', true);
+  const CEIL = /_monthlyCeiling(?:USD)?\(/g;
+  const gateAsks = [...new Set((gate.match(CEIL) || []))];
+  ok(gateAsks.length === 1,
+     'the media gate asks for this account’s ceiling, from one helper', gateAsks);
   ok(/family_cap/.test(gate),
      'and can refuse for the family limit specifically, so the message names the person who can change it', true);
 
@@ -298,7 +305,16 @@ section('The account ceiling binds image and video, not only chat');
      anywhere in it. A window that large is not a window. */
   const chat = codeOnly(functionBody(src, 'aiProxy'));
   ok(chat.length > 2000, 'the chat handler was found', chat.length);
-  ok(/_monthlyCeilingUSD\(user\)/.test(chat), 'and chat asks the same one', true);
+  const chatAsks = [...new Set((chat.match(CEIL) || []))];
+  ok(chatAsks.length === 1, 'and chat asks one too', chatAsks);
+  ok(chatAsks[0] === gateAsks[0],
+     'and it is the same helper, which is the whole point',
+     { chat: chatAsks[0], media: gateAsks[0] });
+
+  /* And that helper is the one holding the rule, not a wrapper that forwards
+     to a second copy. */
+  const body = codeOnly(functionBody(src, '_monthlyCeiling'));
+  ok(/0\.45/.test(body), 'and that helper is where the plan share is decided', true);
   ok(!/planPriceUSD\(user\.plan[^)]*\) \* 0\.45/.test(chat),
      'rather than keeping its own copy of the arithmetic', true);
 }
@@ -343,12 +359,35 @@ section('And the widget spends the owner’s money against the owner’s ceiling
      to unlimited, and the owner's TOKEN allowance. Tokens are a count. The
      dollar ceiling that stops chat, image, video and SMS was never asked, so a
      widget belonging to a capped account ran past the limit somebody set. */
-  const wc = src.slice(src.indexOf('async function widgetChat('),
-                       src.indexOf('async function widgetChat(') + 9000);
+  /* The whole handler, not a fixed number of characters from its start. The
+     window used to be 9000, which is a guess about how long the function is -
+     it drifted past the line it was looking for the moment the handler grew,
+     and reported the ceiling as missing when it was three lines further down.
+     A check that fails when unrelated code moves is a check people learn to
+     edit rather than believe. */
+  const wc = functionBody(src, 'widgetChat');
+  ok(wc.length > 2000, 'the widget handler was read in full', wc.length);
   ok(/_monthlyCeilingUSD\(ownerUser\)/.test(wc),
      'the widget asks the same ceiling as every other spending path', true);
   ok(/cost:\$\{ownerSubject\}/.test(wc),
      'against the OWNER’s billing subject, since it is their money whoever is typing', true);
+
+  /* AND THAT THE COUNTER IT ASKS IS THE COUNTER IT FEEDS.
+
+     Checking `cost:<owner>` was only ever half of it. The metering handed
+     meterStream `costName: wSpendName` - the per-widget tally - so the owner's
+     account counter was read before every turn and written by none of them. The
+     ceiling was real, keyed correctly, and unreachable: a widget could run for
+     ever against a limit that never moved.
+
+     Same shape as the SMS ceiling and the wash-trading signal, and invisible
+     for the same reason - a number that never rises looks exactly like an
+     account that has not spent anything. */
+  ok(/acctCostName: ownerCostName/.test(wc),
+     'and the owner’s ledger is what the turn is metered into, not only checked', true);
+  const meter = functionBody(src, 'meterStream');
+  ok(/if \(acctCostName\)/.test(meter) && /counter\(env, acctCostName, \{ op: 'incr'/.test(meter),
+     'which the metering really increments', true);
   ok(/_familyOf\(env, ownerEmail/.test(wc),
      'and the owner’s family limits are resolved, so a parent’s cap reaches a widget their child deployed', true);
   ok(/unavailable right now/.test(wc),

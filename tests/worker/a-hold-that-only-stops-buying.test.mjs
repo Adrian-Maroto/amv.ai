@@ -46,10 +46,21 @@ const worker = W.default;
 
 /* ── the roster, computed from the source ──────────────────────────────────
    Every place that asks an account's dollar counter for permission, and the
-   function it is in. `checkCap` is the operation that means "may I spend this
-   person's money" - a `get` is a report reading somebody else's total and an
+   function it is in. A `get` is a report reading somebody else's total and an
    `incr` is the bill after the fact, so neither is a path that can be stopped.
-   Comments stripped first: a prefix named in a paragraph is not a counter. */
+   Comments stripped first: a prefix named in a paragraph is not a counter.
+
+   TWO operations mean "may I spend this person's money", not one. It used to
+   be `checkCap` alone; AMV-004 replaced the money ceilings with atomic
+   reservations, because a read followed by a charge is a pair that twenty
+   concurrent requests walk straight through. The moment that landed, this
+   roster matched nothing at all - and a roster that finds nothing reports the
+   same green as a roster that finds everything in order.
+
+   That is the failure this whole file is about, turned on itself. So the
+   detector asks the QUESTION - does this path seek permission before spending -
+   rather than naming the mechanism that answered it last week, and the
+   assertions below check the roster is non-empty first. */
 const code = codeOnly(src);
 const decls = [...code.matchAll(/^(?:async )?function ([A-Za-z_$][\w$]*)\s*\(/gm)]
   .map(m => ({ name: m[1], at: m.index }));
@@ -67,7 +78,7 @@ for (const m of code.matchAll(/`cost:\$\{/g)) {
   const fn = enclosing(m.index);
   if (!fn) continue;
   const body = codeOnly(functionBody(src, fn));
-  if (/op:\s*'checkCap'/.test(body)) SPENDERS.add(fn);
+  if (/op:\s*'checkCap'/.test(body) || /_reserveUSD\(/.test(body)) SPENDERS.add(fn);
 }
 
 section('The paths that spend an account’s money were found');
@@ -105,8 +116,18 @@ section('And each name accepted as "asks" actually refuses');
   ok(/403/.test(hold), 'and answers 403 - a decision, not a limit that resets', true);
   ok(/account_blocked/.test(hold), 'with a code the client can act on', true);
 
+  /* The ordering matters and the reason is about the SENTENCE somebody reads.
+     A held account asked about its ceiling first would be told "you have used
+     your allowance", which is not what happened and is not something they can
+     act on. The hold is a decision about the account; the ceiling is a limit
+     that resets. The decision comes first.
+
+     Anchored on the ceiling itself rather than on `checkCap`, which is how the
+     ceiling used to be asked and is not how it is asked now. */
   const gate = codeOnly(functionBody(src, '_spendGate'));
-  const hIdx = gate.indexOf('_accountHold'), cIdx = gate.indexOf('checkCap');
+  const hIdx = gate.indexOf('_accountHold');
+  const cIdx = gate.search(/_reserveUSD\(|op:\s*'checkCap'/);
+  ok(cIdx > -1, 'the ceiling really is asked in _spendGate', cIdx);
   ok(hIdx > 0 && cIdx > hIdx,
      '_spendGate asks the hold BEFORE it asks the ceiling', { hIdx, cIdx });
 

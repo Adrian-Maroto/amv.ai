@@ -37,8 +37,16 @@ const frames = framesIn(bundle).concat(framesIn(html));
 section('The frames were found');
 {
   ok(frames.length >= 6, 'iframes in the shipped markup', frames.length);
+  /* HOW MANY there are is not the property. This asserted "at least two frames
+     built in script", and went red when AMV-049 REMOVED one - the code sandbox
+     stopped being a hidden iframe and became a Worker, which is strictly safer
+     and left one script-built frame instead of two. A count is a proxy for
+     "every one of them is sandboxed", and the proxy fails on exactly the change
+     that improves the thing it stands for.
+
+     So: however many there are, each is checked below. Zero would be fine. */
   const dynamic = [...bundle.matchAll(/createElement\('iframe'\)/g)].length;
-  ok(dynamic >= 2, 'and the ones built in script', dynamic);
+  ok(dynamic >= 0, 'and however many are built in script', dynamic);
 }
 
 section('Every frame is sandboxed');
@@ -53,7 +61,12 @@ section('And a frame built in script is sandboxed before it is used');
   /* An element created with createElement has no sandbox until one is assigned,
      and assigning it AFTER the src is set is too late in some browsers. */
   const assigns = [...bundle.matchAll(/\.sandbox\s*=\s*'([^']*)'/g)].map(m => m[1]);
-  ok(assigns.length >= 2, 'the script-built frames set a sandbox', assigns);
+  const dynamic = [...bundle.matchAll(/createElement\('iframe'\)/g)].length;
+  /* One assignment for every frame built in script. That is the property the
+     old count was standing in for, and unlike a count it stays true whether
+     there are five of them or none. */
+  ok(assigns.length >= dynamic,
+     'every script-built frame sets a sandbox', { built: dynamic, sandboxed: assigns.length });
   assigns.forEach(v => {
     UNSAFE.forEach(flag => ok(v.indexOf(flag) < 0, 'and it does not include ' + flag, v));
   });

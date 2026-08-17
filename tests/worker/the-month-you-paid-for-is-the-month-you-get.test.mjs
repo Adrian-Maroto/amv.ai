@@ -174,9 +174,18 @@ section('A team member is measured over the TEAM’s period');
   ok(/renewedAt/.test(sub), 'the billing subject carries the anniversary', true);
   ok(/out\.renewedAt = \+team\.renewedAt/.test(sub),
      'and a seated member takes the team’s, not their own', true);
-  const req = codeOnly(functionBody(src, 'requireUser'));
-  ok(/billingRenewedAt = sub\.renewedAt/.test(req),
+  /* Read from the shared principal rather than from requireUser. The
+     resolution moved there when the API key and SMS paths were found to be
+     building their own thinner copies (AMV-006/023), so anchoring on the
+     browser door alone would now check one entrance out of three - and would
+     have gone green while the other two carried no anniversary at all. */
+  const prin = codeOnly(functionBody(src, '_principalOf'));
+  ok(/billingRenewedAt = sub\.renewedAt/.test(prin),
      'which is what reaches every check downstream', true);
+  for (const fn of ['requireUser', '_userFromApiKey', 'smsIncoming']) {
+    ok(/_principalOf\(/.test(codeOnly(functionBody(src, fn))),
+       'and ' + fn + ' resolves through it', true);
+  }
 }
 
 if (report('the-month-you-paid-for-is-the-month-you-get') > 0) process.exitCode = 1;

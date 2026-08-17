@@ -67,6 +67,11 @@ function mkEnv() {
   const m = new Map(); const n = new Map(); canvasCalls = []; canvasStatus = 200;
   return {
     JWT_SECRET: 'a-real-looking-secret-value-for-tests', ADMIN_TOKEN: 'a', APP_URL: 'https://amv.test',
+    /* The Canvas token is a credential and is encrypted at rest like a mailbox
+       password, so connecting needs the key that does it. Without one the
+       connect refuses rather than storing the token in the clear (AMV-014),
+       which is the behaviour a separate test asserts. */
+    MAIL_CRED_KEY: 'a-long-enough-key-for-tests-0123456789',
     AMV_KV: {
       _map: m,
       async get(k) { return m.has(k) ? m.get(k) : null; },
@@ -225,7 +230,7 @@ section('The school token is deleted with the account, and never exported');
   const tok = await signup(env, 'leaving@example.com');
   await connect(env, tok);
   ok(!!(await W.DB.get(env, 'school', 'leaving@example.com')), 'the token is stored while connected', true);
-  await post(env, '/auth/delete', { confirm: 'DELETE' }, tok);
+  await post(env, '/auth/delete', { confirm: 'DELETE', password: 'A-real-Passw0rd!' }, tok);
   ok(!(await W.DB.get(env, 'school', 'leaving@example.com')), 'and gone when the account is', 'gone');
 }
 

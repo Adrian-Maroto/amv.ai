@@ -307,6 +307,83 @@ section('Signing in still works while paused');
   ok(modelCalls.length === 0, 'while nothing that spends runs', modelCalls.length);
 }
 
+section('The pause is a default, not a list of remembered routes');
+{
+  /* AMV-003. The guard used to be `if (path.startsWith('/v1/'))`, which is a
+     fence around a naming convention rather than around spending. Every route
+     that does not happen to begin `/v1/` was outside it - and `/sms/incoming`,
+     which invokes the model with no session and no person present, is exactly
+     such a route. A control whose coverage depends on how somebody named a URL
+     grows a hole the day somebody names one differently.
+
+     Inverted: everything is stopped unless it is named as an exception. Checked
+     by running EVERY route the router knows rather than the ones I thought of,
+     so a route added tomorrow is inside the fence without anybody adding a line
+     here. */
+  const sw = src.slice(src.indexOf('switch (path) {'), src.indexOf('default: {', src.indexOf('switch (path) {')));
+  const routes = [...new Set([...sw.matchAll(/case '(\/[^']*)'/g)].map(m => m[1]))];
+  ok(routes.length > 100, 'the router’s routes were read from the router', routes.length);
+
+  const env = mkEnv();
+  await flip(env, true);
+  const leaked = [];
+  const exempt = [];
+  for (const p of routes) {
+    let st = 0;
+    try { st = (await call(env, p, {}, { 'Authorization': 'Bearer nope' })).status; }
+    catch (e) { st = -1; }
+    if (st === 503) continue;
+    (st === -1 ? leaked : exempt).push(p + ':' + st);
+    if (st !== -1) exempt[exempt.length - 1] = p;
+  }
+  ok(leaked.length === 0, 'no route threw instead of refusing', leaked);
+
+  /* What is allowed through is the named few and nothing else. Asserted as a
+     set equality, because a check that only counts would pass if one exception
+     were swapped for another. */
+  const EXPECTED = ['/v1/health', '/v1/admin/kill', '/v1/stripe/webhook', '/v1/paypal/webhook'];
+  const unexpected = exempt.filter(p => !EXPECTED.includes(p) && !p.startsWith('/auth/'));
+  ok(unexpected.length === 0,
+     'every route that is not stopped is one of the named exceptions', unexpected);
+  for (const p of EXPECTED) {
+    ok(exempt.includes(p), p + ' is still reachable while paused, as intended', p);
+  }
+  ok(exempt.some(p => p.startsWith('/auth/')), 'and so is signing in', exempt.filter(p => p.startsWith('/auth/')).length);
+
+  /* And the shape that caused it does not come back. */
+  const guard = src.slice(src.indexOf('const KILL_EXEMPT'), src.indexOf('switch (path) {'));
+  ok(!/startsWith\('\/v1\/'\)/.test(guard),
+     'the guard no longer keys on a URL prefix', true);
+  await flip(env, false);
+}
+
+section('The SMS line, which was the hole');
+{
+  /* Named on its own because it is the one that mattered: no session, no
+     browser, reachable by anybody who can POST, and it calls the model.
+
+     The two status codes are the proof. Unpaused it answers 403 - it fails
+     closed with no Twilio token configured, which is a different control.
+     Paused it answers 503, which can only be the switch, and only if the
+     switch runs before the route. A test that checked "it did not run the
+     model" would pass on the 403 alone and prove nothing. */
+  const env = mkEnv();
+  const smsPost = () => worker.fetch(new Request('https://api.amv.test/sms/incoming', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'CF-Connecting-IP': '40.40.40.40' },
+    body: 'From=%2B15550001111&Body=hello',
+  }), env, ctx);
+
+  const open = await smsPost();
+  ok(open.status === 403, 'unpaused it is refused by the Twilio check, not the switch', open.status);
+
+  await flip(env, true);
+  const paused = await smsPost();
+  ok(paused.status === 503, 'paused it is refused by the switch, before the route runs', paused.status);
+  ok(modelCalls.length === 0, 'and the model was never called', modelCalls.length);
+  await flip(env, false);
+}
+
 globalThis.fetch = realFetch;
 if (report('stop-means-stop-spending') > 0) process.exitCode = 1;
 done();

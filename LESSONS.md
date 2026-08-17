@@ -4528,3 +4528,287 @@ grow, did the marker appear, did the output file change. Above all, a watcher
 must be able to say "I do not know" - one that can only ever report progress is
 not a watcher, it is a reassurance. Same family as #239: a check that cannot
 find anything looks exactly like a check that found nothing wrong.
+
+## 247. A reservation larger than the ceiling it guards deletes the feature
+
+Fixing the dollar ceilings (AMV-004) meant booking what a call could cost
+before running it instead of reading a total afterwards. For automations I
+priced ONE worst case: the largest output any run type produces, plus the full
+eight web searches a research job may make. That came to $0.149.
+
+`FREE_AUTO_CEILING_USD` is $0.10.
+
+So every free automation asked to book $0.149 against a $0.10 ceiling, was
+refused, and never ran. Not slowed, not degraded - gone, for every free account
+in the product. And it failed as a job that simply does not happen, which is
+the quietest possible failure: nothing errors, nothing is logged as wrong, the
+row just never updates.
+
+A free run does not cost anything like $0.149. It uses the cheap tier, a 1200
+token output cap, and never touches the web - `_autoExecute` already excludes
+free accounts from research. The worst case I priced was a run that free
+accounts cannot perform.
+
+**Rule:** a pre-flight reservation must be an upper bound on what THIS call can
+cost, derived from the same constants the call itself is built from - not the
+worst case across every shape the code can take. If the reservation cannot fit
+under the ceiling it is reserved against, the ceiling has not been protected,
+the feature has been removed. Sanity-check every reservation against the
+SMALLEST ceiling it will ever meet, which is the free tier, not the paid one.
+
+Corollary, and the reason this was caught at all: keep a test that asserts the
+cheapest plan still works. `worker.test.mjs` had "a free user's automation does
+run", and that single case is what turned a silent feature deletion into a
+failing suite.
+
+## 248. A stub more permissive than the thing it stands in for
+
+Two test doubles were wrong in the same direction on the same day.
+
+The Google signup test stubbed `fetch` to return `{keys: []}` for anything
+Google-shaped. The Worker does not verify the JWT itself - it calls Google's
+tokeninfo endpoint and reads the CLAIMS back. So every case 401'd with an
+audience mismatch, which read like a product failure and was a stub answering
+in a shape the real endpoint never uses.
+
+Worse in the other direction: `the-free-tier-cannot-lock-out-a-customer`
+stubbed the counter's `reserve` op as `vals.set(x, cur + amount); allowed:
+true` - it ignored the cap entirely. The real Durable Object refuses when the
+result would exceed it. That double had been sitting there passing for weeks,
+and it would have gone on passing if the ceiling had stopped refusing anything
+at all, because the double never refused anything either.
+
+The first stub made a working product look broken and got noticed in minutes.
+The second made a broken ceiling look enforced and could have survived to
+production.
+
+**Rule:** a test double must be at least as STRICT as the thing it replaces.
+Where it stands in for something that can refuse - a cap, a lock, a signature,
+a quota - it must be able to refuse, on the same condition and at the same
+boundary. A double that always says yes turns every test that depends on it
+into a test of nothing, and it fails in the direction that ships.
+
+## 249. The ceiling was read constantly and written never
+
+Three of these in one week, in three unrelated systems:
+
+- the payout wash-trading signal read `wallet.tx`; sales are written to a
+  separate `wallet_tx` record and the wallet has no `.tx` at all
+- `/sms/incoming` checked the account's monthly dollar ceiling on every message
+  and never incremented it
+- `widgetChat` checked the owner's `cost:<subject>` ceiling before every turn
+  and metered into `wspend:<key>`
+
+Each reads, at the site, exactly like a working control. Each was unreachable:
+the number they consult is one nothing feeds, so it sits at zero for ever and
+the comparison can only ever come out one way.
+
+They are invisible for a shared reason. An empty result and a clean result look
+identical, and the code that READS is in a different place from the code that
+WRITES - so reviewing either half in isolation shows nothing wrong. The reader
+names a plausible field. The writer names a plausible field. They are not the
+same field, and no single screenful of code contains both.
+
+**Rule:** for any threshold check, find the writer before believing the reader.
+Tie them together in the test - build the fixture with the PRODUCTION writer
+rather than by hand, so a check that reads a field nothing populates cannot
+pass. And treat a control that has never fired as unproven rather than as
+evidence of a clean system: if a fraud signal, a ceiling, or a limit has never
+refused anything, the first question is whether it CAN.
+
+## 250. A concurrency test whose two requests share an earlier lock proves nothing about the later one
+
+Two members create a task at the same moment. The task board is written under a
+record lock and so is the audit log, and the behavioural check for the LOG
+passed with the log's lock removed entirely.
+
+The reason is that the board's lock serialises the two requests a step before
+the log write. The first request takes it, does its work, releases; the second
+is still backing off. By the time either one reaches `_teamAudit` the other has
+finished, so the log write is always alone and the read-modify-write it was
+supposed to catch never overlaps with anything.
+
+The test looked like a race test. It was a sequential test with extra steps,
+and it would have carried a defect into production wearing a passing check.
+
+The rule: a test for a race on record B must not funnel its writers through a
+lock on record A first. Either drive the thing under test DIRECTLY with genuine
+concurrency, or pick two operations that really do take no common lock - here,
+an invite and a role change, which is what a real team does all day. And when a
+sabotage of the exact line under test does not turn the section red, the section
+is not testing that line, whatever its name says.
+
+## 251. Site isolation hid the defect, and would have hidden the fix
+
+The Lab's JavaScript sandbox was a hidden iframe with a fifteen-second timeout
+that could not fire, because an iframe shares the page's thread and the timeout
+was queued behind the loop it was meant to stop. That is the finding, and it is
+correct in general.
+
+It is not what this browser does. Chromium gives a sandboxed iframe an opaque
+origin and its own renderer process, so `while(true){}` in there did not freeze
+the tab at all - the page kept painting and kept firing timers. The check
+written first, "the page is still alive while the program spins", passed with
+the defect fully in place.
+
+The damage was real and one step further along: nothing ever STOPPED the
+program. Detaching a frame whose script never yields does not interrupt it, and
+because every run shared one opaque origin, the runaway held the renderer and
+the NEXT program had nowhere to run. One infinite loop and the Lab was over for
+that session - a fresh `return 1+1` simply never came back. That is the property
+the test now measures, and it fails hard on the old code.
+
+Two rules out of it. First: when a finding names a mechanism, verify the
+mechanism on the browser in front of you before writing the assertion, because
+the platform may already be compensating and the assertion will then prove
+nothing. Second: when the honest observable is not available - here, whether
+terminate() was called, which shows up only as CPU somebody else is burning and
+measured within noise - say so in the test and check the shape instead. A flaky
+numeric threshold is worse than an honest structural check, because a test
+people re-run until it goes green has stopped meaning anything.
+
+## 252. The safe list was written from memory and would have broken the dashboard
+
+Enforcing HTTP methods needs a list of routes that may be fetched with GET. I
+wrote one from what I remembered the client doing: health, public-config,
+entitlement, market list, account export, the widget.
+
+The suite went red on three unrelated screens, and the reason was that the
+operator's own Control Center fetches ten more routes with no `method` set -
+which is a GET. Reports, payouts, digest, readiness, backup export, stats,
+finance, support, the user list, plus activity, referral, usage and invoices on
+the customer side. Every one of them would have started answering 405 the moment
+this shipped, on the surface the owner uses most.
+
+The fix was not to add the three the tests named. It was to stop guessing: sweep
+every `fetch` and `fetchDeadline` call in `src/app` that sets no method, take
+the paths out of it, and build the list from that. Then read each handler and
+confirm it writes nothing, because "the client GETs it" is a fact about the
+client and "it is safe to GET" is a fact about the handler, and the roster needs
+both.
+
+Two rules. When a change makes a rule about which routes may do something, the
+list of routes comes from the code that calls them, not from recollection - and
+the search is cheap, which is the whole point. And when a passing test tells you
+to add one entry, ask whether the entry is the finding or a symptom of a list
+built the wrong way: three red suites here were pointing at thirteen missing
+entries, and adding three would have left ten routes broken with the suite green.
+
+## 253. A convenience easier to call than the correct thing gets called
+
+Sixteen admin routes, three different gates. Thirteen went through `_adminGate`,
+which checks the token, applies a ceiling and writes an audit line. Three called
+`_requireAdmin`, a one-line predicate that returned whether the token matched -
+so guessing at the admin token was unbounded on those three and bounded on the
+other thirteen, and an attacker only has to find the one that is not.
+
+Nobody chose that. `_requireAdmin(request, env)` is a boolean, reads naturally in
+an `if`, and needs no `await` on a helper that returns a Response. `_adminGate`
+is the correct thing and is slightly more awkward to use. Given both, people
+reach for the one that fits the line they are writing.
+
+So the fix was not to add a ceiling to the three. It was to DELETE the
+predicate. There is now no way to ask "is this an admin" that does not also
+apply the limit and write the line, because the only function that answers is
+the one that does all three.
+
+The same shape appeared twice more in one afternoon. The first attempt at
+letting the session-authenticated screen share the ceiling was a
+`tokenAlreadyChecked` flag into `_adminGate` - which puts a `return null` in
+front of the token check, and the next caller to pass that flag by mistake walks
+straight through. Splitting the rate limit into its own function is the same
+behaviour with no door in it. And `_requireAdmin` had a sibling that was already
+gone for the same reason: two implementations of "is this an admin" accepting
+different headers, so hardening one covered half the surface while appearing to
+cover all of it.
+
+The rule: when a safe path and a convenient path both exist, the convenient one
+is the one in production. Remove it rather than documenting which to use, and be
+suspicious of any parameter whose value is "skip the check above".
+
+## 254. "Only a dev fallback" is a claim about a deployment the code cannot make
+
+Three payment redirects read `APP_URL || APP_ORIGIN || request Origin`, with a
+comment saying the request Origin is "only a dev fallback when no APP_URL is
+configured".
+
+Nothing in a Worker knows whether it is development. There is no flag, no
+hostname it can trust, no build-time marker on that branch. A production
+deployment that simply never set APP_URL is byte-for-byte the same code path as
+a laptop - so the fallback intended for one machine was live on all of them, and
+it took the post-payment redirect from a header the caller controls. `Origin:
+https://amv-billing.example` and a real customer really pays, to the real
+Stripe, and lands on a phishing page at the exact moment they expect to confirm
+something.
+
+The pattern is not specific to origins. Any comment of the form "this is only
+for X" where the code cannot detect X is a comment describing a hope. Its
+siblings in this codebase read "only a dev-time state", "only when running
+locally", "only until we set this up" - and every one of them is a branch that
+runs in production whenever the configuration it depends on is absent.
+
+The fix is not a better comment or an environment check. It is to delete the
+fallback and refuse: a deployment that has not been told its own address cannot
+start a payment, and says which setting is missing. That works the moment the
+setting exists and does nothing dangerous before then, which is what "dev
+fallback" was trying to mean and could not enforce.
+
+## 255. Three checks measured a proxy, and all three went red on a correct change
+
+In one session, three assertions failed on changes that made the product better:
+
+  - "the fetch handler returns in exactly two places" - a third return arrived,
+    the request-size refusal, which is a correct new guard;
+  - "at least two iframes are built in script" - one was REMOVED, because the
+    code sandbox became a Worker, which is strictly safer;
+  - "the label map contains this event, within 2000 characters of its start" - a
+    new label with a comment explaining it landed six characters past the edge.
+
+None of those is the property anybody cared about. The properties were: nothing
+returns without passing through the CORS layer; every frame built in script sets
+a sandbox; every event the server records has a label. Each was written as a
+COUNT or a WINDOW because that was easy to check, and each count is a fact about
+today's code rather than about the rule.
+
+A proxy fails in both directions, and the expensive direction is the one seen
+here: it goes red on a correct change, and the person fixing it is under pressure
+and reaches for the cheapest way to make it green - raise the number, widen the
+window - which quietly weakens the check for everyone after. A count that has
+been bumped twice is no longer guarding anything.
+
+The rule: when writing an assertion, ask what would make it fail. If the honest
+answer includes "somebody deleted the unsafe thing" or "somebody wrote a longer
+comment", it is measuring a proxy. Write the rule instead - `assigns.length >=
+dynamic`, `every return goes through _applyCors`, `slice to the closing brace` -
+and the assertion survives being right.
+
+## 256. The gate said NOT SHIPPABLE because the tests printed too much
+
+Two gate runs in a row came back red. The second one had every single suite
+passing - all 287 of them, verified by running them directly - and the gate
+still said "NOT shippable - fix the above", with nothing above to fix.
+
+`execSync` has a one-megabyte output buffer by default. The full suite prints
+1,052,124 bytes, which crossed the line when this session added ten test files.
+Node killed the child and threw; the catch dumped the truncated output and the
+gate reported it as a failed command. The summary line naming the failing suite
+was in the 3,548 bytes that never arrived, which is why the log showed hundreds
+of green ticks and then a verdict with no cause.
+
+Three things worth keeping.
+
+It would have stayed broken. Output only grows, so the gate would have said NOT
+shippable for ever - and a control that cries wolf twice is one people start
+working around. The dangerous failure mode of a gate is not that it misses
+something; it is that it becomes noise.
+
+The test of the gate could not have caught it. `check.test.mjs` runs
+`check.mjs --fast`, which SKIPS the "All test suites" stage - sensibly, because
+running the suite inside the suite would take forty minutes. So the one stage
+capable of producing a megabyte of output was the one stage the gate's own test
+never exercised. The fix is not to run it: it is to test the thing that broke,
+which is a command printing more than a megabyte, and that costs milliseconds.
+
+And a catch that answers two different failures with one sentence hides the one
+you did not expect. "The command failed" and "the command talked too much" are
+different problems with different fixes, and conflating them cost an hour.

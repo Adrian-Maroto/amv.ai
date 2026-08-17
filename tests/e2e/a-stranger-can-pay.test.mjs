@@ -26,6 +26,7 @@ import { readFileSync, writeFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { chromium } from 'playwright';
+import { LAUNCH } from '../lib/harness.mjs';
 import { createServer } from 'http';
 import { ok, section, report, done } from '../lib/assert.mjs';
 
@@ -54,7 +55,7 @@ const server = createServer((req, res) => {
   res.end(body);
 });
 await new Promise(r => server.listen(PORT, r));
-const browser = await chromium.launch();
+const browser = await chromium.launch(LAUNCH);
 
 /* A visitor who has never been here: empty storage, nothing configured. */
 async function freshVisitor() {

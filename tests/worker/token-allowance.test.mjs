@@ -78,8 +78,13 @@ section('Margin is still guaranteed by the dollar backstop, not by these caps');
 
      What must stay true: one definition of the ceiling, at 45% of the plan
      price, consulted by every path that spends. */
-  const ceiling = functionBody(src, '_monthlyCeilingUSD');
-  ok(ceiling.length > 0, 'the ceiling is defined in one place', ceiling.length > 0);
+  /* `_monthlyCeilingUSD` is now a one-line wrapper returning the value from
+     `_monthlyCeiling`, which also reports WHICH limit bound (AMV-005). The rule
+     lives in the latter, so that is what this reads - and it asserts the body
+     is real, since a wrapper would satisfy a length check while containing
+     none of the arithmetic. */
+  const ceiling = functionBody(src, '_monthlyCeiling');
+  ok(ceiling.length > 200, 'the ceiling is defined in one place, with a real body', ceiling.length);
   ok(/\* 0\.45/.test(ceiling), 'and it is still 45% of the plan price', /\* 0\.45/.test(ceiling));
   ok(/_planPriceUSD\(/.test(ceiling), 'derived from the price, not a hardcoded figure', true);
   /* And every path that spends asks it rather than recomputing. Counting the

@@ -44,6 +44,19 @@ const CLASSIFIED = {
      conversation belongs to both people in it, and _messageRecipient decides
      which conversation the sender is allowed to write to. */
   marketMessage:     'a conversation belongs to both people in it; the recipient is derived, never taken from the caller',
+  /* Newly VISIBLE rather than newly true, like marketMessage above it. The
+     review list used a bare `env.AMV_KV.put(key, ...)` with the key in a
+     variable, which no pattern here could match - so a route that writes a
+     record belonging to another person sat outside this check entirely. Moving
+     it under the record lock (AMV-042) is what made it findable.
+
+     Writing the seller's record IS the feature: a review is a buyer's statement
+     about a seller, filed under that seller. What makes it safe is that the
+     caller cannot choose what to say about whom without having bought from
+     them - the handler refuses unless the buyer owns something of that
+     seller's - and that the reviewer is stored as a one-way hash, so the list
+     can be public without leaking an address. */
+  marketReview:      'a review is a buyer\'s statement about a seller, filed under the seller; the handler refuses unless the buyer owns something of theirs, and the reviewer is stored as a hash',
   apiKeyCreate:      'the lookup row is keyed by a hash of the new key, not by a person',
   shareCreate:       'a share is keyed by its own generated id',
   shareVisibility:   'checks rec.owner before writing',
@@ -68,6 +81,17 @@ const CLASSIFIED = {
   teamShare:         'role-checked shared library',
   teamUnshare:       'role-checked shared library',
   teamPresence:      'presence keyed by team, written by a member',
+  /* Newly VISIBLE rather than newly true. The task board was written with
+     _saveTeamTasks, a helper this checker's patterns cannot see through, so two
+     routes that write a record shared with every member of a team sat outside
+     this check entirely. Moving the board under the record lock (AMV-SP-05) is
+     what made them findable - the same way AMV-042 surfaced marketReview.
+
+     The board is keyed by the team the CALLER belongs to, resolved from their
+     own membership by _teamOf, never taken from the request. There is no team
+     id on the wire to point somewhere else. */
+  teamTaskCreate:    'the board is keyed by the caller\'s own team, resolved from their membership rather than taken from the request',
+  teamTaskUpdate:    'the same board, and the task is re-found by id inside the lock so two editors cannot overwrite each other',
   smsRegister:       'a short-lived verification row keyed by the address being verified',
   marketPublish:     'a listing keyed by an id generated here',
   marketInstall:     'an install counter on a public listing',
