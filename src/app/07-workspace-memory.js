@@ -1526,7 +1526,19 @@ function renderWsGrid(){
   }
   g.innerHTML=S.workspaces.map(ws=>{
     const chats=allConvs.filter(c=>c.wsId===ws.id);
-    const preview=chats.slice(0,3).map(c=>'<div class="wsc-chat" data-dact="loadConv" data-darg="'+c.id+'" onclick="event.stopPropagation()" style="font-size:12px;color:var(--mu);padding:4px 0;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">\u2022 '+escH(c.title||'Untitled')+'</div>').join('');
+    /* LESSONS #5, live: this row carried data-dact AND
+       onclick="event.stopPropagation()". The delegation that runs data-dact is a
+       single listener on `document`, so a stopPropagation on the row itself ran
+       first and the click never arrived - clicking a recent chat inside a
+       project card did nothing at all, silently, for as long as this has
+       shipped.
+
+       The stopPropagation was there to keep the click off the surrounding card,
+       which has its own data-dact="openWorkspace". It was never needed for that:
+       the dispatcher resolves with e.target.closest('[data-dact]'), which finds
+       the NEAREST one - the row - so the card's action does not fire anyway.
+       The guard was doing nothing except breaking the thing it was attached to. */
+    const preview=chats.slice(0,3).map(c=>'<div class="wsc-chat" data-dact="loadConv" data-darg="'+c.id+'" style="font-size:12px;color:var(--mu);padding:4px 0;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">\u2022 '+escH(c.title||'Untitled')+'</div>').join('');
     return '<div class="wsc" data-dact="openWorkspace" data-darg="'+ws.id+'">'+
       '<div class="wsic" style="background:rgba(85,144,255,.1)">'+ws.icon+'</div>'+
       '<div class="wsn">'+escH(ws.name)+'</div>'+
