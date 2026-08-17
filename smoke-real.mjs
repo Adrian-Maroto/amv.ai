@@ -270,7 +270,11 @@ try {
   rmSync(join(ROOT, '.wrangler', 'state'), { recursive: true, force: true });
 }
 
-if (code === 0) {
+if (code === 0 && checks === 0) {
+  /* Not "0 checks passed", which is a green line for having done nothing.
+     The SKIP above already said why; this must not talk over it. */
+  console.log('\n\x1b[33mNothing was checked against the real runtime.\x1b[0m');
+} else if (code === 0) {
   console.log(`\n\x1b[32m${checks} checks passed against the real runtime.\x1b[0m`);
 } else {
   console.log(`\n\x1b[31m${code} check(s) FAILED against the real runtime.\x1b[0m`);

@@ -4909,3 +4909,31 @@ to matter. Everybody who wrote one of these knew a token had to be signable, so
 everybody set the secret, so the one configuration that ships first was the one
 configuration never tested. Running the real runtime is not a nicety - it is the
 only thing in the loop that has no opinion about what should be there.
+
+## 260. A stage that skipped printed a green tick
+
+smoke-real.mjs skips rather than fails when wrangler cannot start, which is
+right: a gate that goes red for a reason that is not the code teaches people to
+ignore it, and audit-deps.mjs already follows that rule.
+
+But check.mjs only shows a stage's output on failure. So a skip printed
+`✓ (7908ms)` and read exactly like twenty-seven checks passing - and the verdict
+underneath said "all checks passed". On a machine without workerd, the gate
+would have claimed to have exercised the real runtime while never starting it.
+
+Written the same day as the entries about proxies standing in for rules, in the
+file that contains two other entries about guards that could not fail. The
+pattern is stubborn because the skip is CORRECT behaviour - the mistake is not
+in deciding to skip, it is in the screen not saying so.
+
+Three changes, all small. A step may return a note, printed beside its tick. A
+run that checked nothing says "nothing was checked" rather than "0 checks
+passed", which is a green line for having done nothing. And "all checks passed"
+becomes "every check that RAN passed" whenever a stage was skipped, because the
+first sentence is the one that stops anybody looking - the same reason the
+config blocker was split out of the verdict in AMV-094.
+
+Noticed only because the stage finished in 7.9 seconds and two wrangler boots
+should not be that fast. It was genuinely that fast. The check was worth making
+anyway, and it found a real hole: being right about the timing did not mean the
+stage was honest about the case where it is not.
