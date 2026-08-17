@@ -56,10 +56,38 @@ function step(label, fn) {
 }
 
 /* Run a shell command; on failure, throw an Error carrying its output. */
+/* THE GATE REPORTED "NOT SHIPPABLE" BECAUSE THE SUITE PRINTED TOO MUCH.
+
+   execSync defaults to a one-megabyte output buffer. The full suite prints
+   slightly over that - it crossed the line when this session added ten test
+   files - and node then KILLS the child and throws. The catch below dumped the
+   truncated output and the gate said "NOT shippable - fix the above", with
+   nothing above to fix, because the summary line naming the failing suite was
+   in the part that never arrived.
+
+   Every one of the 287 suites was passing while it said that. It took an hour
+   to find, and it was the second gate failure in a row, which is the worst
+   property this could have had: a control that cries wolf teaches people to
+   stop believing it, and it would have said NOT shippable for ever - the output
+   only grows.
+
+   Two changes. The buffer is large enough that output size cannot decide
+   shippability. And the two failures are told apart: a command that FAILED and
+   a command that talked too much are different problems, and answering both
+   with the same sentence is what hid this. */
+const SH_MAX_BUFFER = 256 * 1024 * 1024;
+
 function sh(cmd) {
   try {
-    return execSync(cmd, { cwd: ROOT, stdio: 'pipe' }).toString();
+    return execSync(cmd, { cwd: ROOT, stdio: 'pipe', maxBuffer: SH_MAX_BUFFER }).toString();
   } catch (e) {
+    /* Node reports this as ENOBUFS, and on some versions only as a message. */
+    if (e && (e.code === 'ENOBUFS' || /maxBuffer/i.test(String(e.message || '')))) {
+      throw new Error(
+        `The output of \`${cmd}\` exceeded ${Math.round(SH_MAX_BUFFER / 1048576)}MB and the run was killed.\n` +
+        'This is NOT a test failure - nothing below it ran to completion, and no suite reported anything.\n' +
+        'Raise SH_MAX_BUFFER in check.mjs, or run the command directly to see what it says.');
+    }
     const out = (e.stdout || '').toString() + (e.stderr || '').toString();
     throw new Error(out.trim() || `command failed: ${cmd}`);
   }

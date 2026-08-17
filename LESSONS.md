@@ -4781,3 +4781,34 @@ answer includes "somebody deleted the unsafe thing" or "somebody wrote a longer
 comment", it is measuring a proxy. Write the rule instead - `assigns.length >=
 dynamic`, `every return goes through _applyCors`, `slice to the closing brace` -
 and the assertion survives being right.
+
+## 256. The gate said NOT SHIPPABLE because the tests printed too much
+
+Two gate runs in a row came back red. The second one had every single suite
+passing - all 287 of them, verified by running them directly - and the gate
+still said "NOT shippable - fix the above", with nothing above to fix.
+
+`execSync` has a one-megabyte output buffer by default. The full suite prints
+1,052,124 bytes, which crossed the line when this session added ten test files.
+Node killed the child and threw; the catch dumped the truncated output and the
+gate reported it as a failed command. The summary line naming the failing suite
+was in the 3,548 bytes that never arrived, which is why the log showed hundreds
+of green ticks and then a verdict with no cause.
+
+Three things worth keeping.
+
+It would have stayed broken. Output only grows, so the gate would have said NOT
+shippable for ever - and a control that cries wolf twice is one people start
+working around. The dangerous failure mode of a gate is not that it misses
+something; it is that it becomes noise.
+
+The test of the gate could not have caught it. `check.test.mjs` runs
+`check.mjs --fast`, which SKIPS the "All test suites" stage - sensibly, because
+running the suite inside the suite would take forty minutes. So the one stage
+capable of producing a megabyte of output was the one stage the gate's own test
+never exercised. The fix is not to run it: it is to test the thing that broke,
+which is a command printing more than a megabyte, and that costs milliseconds.
+
+And a catch that answers two different failures with one sentence hides the one
+you did not expect. "The command failed" and "the command talked too much" are
+different problems with different fixes, and conflating them cost an hour.
