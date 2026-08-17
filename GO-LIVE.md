@@ -38,6 +38,7 @@ Set each with `npx wrangler secret put NAME` (it prompts for the value).
 |---|---|
 | `ADMIN_TOKEN` | Founder Dashboard + admin tools (any long random string) |
 | `EMAIL_API_KEY` | Password-reset emails **and** delivery of autonomous task results by email (Resend key) |
+| `MAIL_CRED_KEY` | Encrypts every credential AMV holds for somebody: a mailbox password, a Telegram bot token, a school access token. Without it those three connectors **refuse to store anything** rather than store it in the clear - honest, and the first person to find out is a customer. Any long random value, 24+ characters of real randomness (not a phrase). Changing it later makes every stored credential unreadable and everyone has to reconnect. |
 | `GLOBAL_DAILY_USD_CAP` | Your daily spend ceiling across all users (defaults to $500) - your runaway-bill protection |
 
 ### Make the alarms audible - the one people skip
@@ -74,6 +75,43 @@ Set each with `npx wrangler secret put NAME` (it prompts for the value).
 
 > Without Stripe configured, paid items are correctly **blocked** (no free
 > purchases) - the app degrades honestly.
+
+#### And the webhook itself, which the secrets above do not create
+
+A secret is not an endpoint. In **Stripe → Developers → Webhooks**, add:
+
+```
+https://<your-worker>.workers.dev/v1/stripe/webhook
+```
+
+Subscribe it to **all ten** of these. AMV handles every one, and each is money
+moving in a direction somebody has to know about:
+
+| Event | What AMV does with it |
+|---|---|
+| `checkout.session.completed` | A card paid - grant the plan |
+| `checkout.session.async_payment_succeeded` | **A voucher or direct debit finally cleared.** Miss this one and a customer who paid by OXXO or SEPA pays you and is never granted anything |
+| `checkout.session.async_payment_failed` | It did not clear - close it out, grant nothing |
+| `customer.subscription.updated` | Seats, plan or state changed |
+| `customer.subscription.deleted` | It ended |
+| `invoice.paid` | A renewal went through |
+| `invoice.payment_failed` | A renewal was declined - the account goes past due |
+| `charge.refunded` | Money went back |
+| `refund.created` | The same, newer event shape |
+| `charge.dispute.created` | A chargeback was opened |
+
+> **Why the delayed ones matter.** Checkout offers the methods available in the
+> buyer's country, which is what lets somebody in Warsaw or Mexico City actually
+> pay you. Two of them - OXXO (a voucher paid in cash at a shop counter, up to
+> three days) and SEPA Direct Debit (up to fourteen) - complete the checkout
+> BEFORE the money moves. AMV grants nothing until it has actually arrived, and
+> the event that tells it so is `async_payment_succeeded`. If a payment never
+> clears, nothing was granted and there is nothing to claw back.
+
+> If the webhook is missing or misconfigured entirely, the cron reconciliation
+> sweep asks Stripe directly and grants what was really paid, then alerts you
+> that your webhooks are not arriving. That is a safety net, not a substitute -
+> it runs every five minutes, not instantly.
 
 ### Turn on integrations + more generation (optional, add anytime)
 | Secret | Unlocks |
@@ -124,6 +162,45 @@ real backend. (Read from the `amv-api-base` meta tag, overridable via
 ```bash
 npm run check        # full health gate - should say SHIPPABLE
 ```
+
+Nine stages, forty to fifty minutes. One of them, **"The Worker runs in workerd,
+not just in a mock"**, boots the real Cloudflare runtime with a real KV and a
+real Durable Object and drives twenty-seven checks against it - concurrency
+ceilings, the signup race, token forgery, the operator boundary. If it prints
+`SKIPPED` beside its tick, wrangler could not start on that machine and the real
+runtime was **not** exercised; the verdict says so rather than claiming
+otherwise.
+
+You can run just that one at any time:
+
+```bash
+node smoke-real.mjs
+```
+
+### The five minutes after you first deploy
+
+In order, because each one catches a different way the day goes wrong:
+
+1. **Hit any auth route before setting secrets, on purpose.** It should answer
+   `503 not_configured` and name the missing secret. If it answers `500`, you
+   are running an old build - stop and redeploy, because that version created
+   accounts nobody could ever sign into.
+2. **Open the live site in a PRIVATE WINDOW.** This is the one place the "works
+   on my machine" version fails: typing the backend URL into Settings configures
+   only the browser you typed it in. Sign up, send a chat, open the upgrade
+   sheet. Anything that degrades to demo behaviour means step 4 was missed.
+3. **Open the browser console on the landing page.** AMV's script policy names
+   the scripts it ships by hash and refuses everything else. If a third party
+   (Stripe, Turnstile, sign-in with Google) is being blocked you will see
+   `Refused to execute` or `Refused to load` there - and AMV reports it to your
+   error dashboard too, so it cannot fail silently. A clean console means the
+   payment and sign-in scripts really loaded.
+4. **Put a card through in Stripe test mode**, then check the plan applied. Then
+   check the **Webhooks** page in Stripe shows a `200` for the delivery. A `4xx`
+   there means the signing secret does not match.
+5. **Check your alarm channel got something.** Set `ALERT_WEBHOOK` first - a
+   deployment with no alarm channel is one where the first person to notice a
+   problem is a customer.
 
 - Open the live site in a PRIVATE WINDOW - the one place the "works on my
   machine" version of this fails. Sign up, send a chat, and open the upgrade
