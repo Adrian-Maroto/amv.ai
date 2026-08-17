@@ -5369,6 +5369,18 @@ const _ERR_SCRUB = [
   [/\b(?:sk|pk|rk)_(?:live|test)_[A-Za-z0-9]{8,}/g, '[provider-key]'],
   [/\b(?:amv|api)_[A-Za-z0-9_-]{16,}/gi, '[api-key]'],
   [/([?&#](?:token|code|key|secret|password|passwd|pwd|credential|signature|sig|access_token|refresh_token|id_token|api_key|apikey)=)[^&#\s"']+/gi, '$1[redacted]'],
+  /* A CREDENTIAL THAT LIVES IN THE PATH, NOT THE QUERY.
+
+     Telegram's Bot API is addressed as /bot<token>/METHOD, with the token raw
+     in the path - that is the documented form, not a mistake here. It means the
+     one rule above, which looks for `?token=`, never sees it: a failed call to
+     api.telegram.org carries the whole credential in the URL, and a fetch error
+     quotes the URL it failed on.
+
+     AMV encrypts that token at rest with AES and refuses to store one at all
+     without MAIL_CRED_KEY. Letting it out through an error message would undo
+     every bit of that, three lines away from the code that does it. */
+  [/\/bot\d{5,}:[A-Za-z0-9_-]{20,}/g, '/bot[telegram-token]'],
   [/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, '[email]'],
 ];
 function _errScrub(text, max) {
@@ -6429,8 +6441,22 @@ async function backupImport(request, env){
 async function _workerError(env, where, err, extra){
   try{
     const idx = (await DB.get(env, 'errors', 'index')) || { groups:{} };
-    const e = { kind:'worker', msg:String(err&&err.message||err).slice(0,300),
-                where:String(where).slice(0,120), stack:String(err&&err.stack||'').slice(0,1200),
+    /* SCRUBBED HERE TOO.
+
+       AMV-037 scrubbed the PUBLIC sink, because that text arrives out of
+       somebody's browser. It left this one - the SERVER's - reading raw, and
+       this is the sink that sees actual credentials: an outbound call that
+       fails quotes the URL it failed on, and some of those URLs carry the
+       secret in them by the provider's design. Telegram's bot token is in the
+       path; a signed provider URL carries its signature in the query.
+
+       Unscrubbed, one failed send wrote a working bot token into KV in plain
+       text, posted it to the operator's Slack through alertOnce, and forwarded
+       it to Sentry - while the same token sat encrypted at rest two functions
+       away. The stack matters as much as the message: a stack quotes whatever
+       was in scope at the frame that threw. */
+    const e = { kind:'worker', msg:_errScrub(String(err&&err.message||err), 300),
+                where:String(where).slice(0,120), stack:_errScrub(String(err&&err.stack||''), 1200),
                 tab:'server', ua:'worker', ver:'', at:Date.now(), ...(extra||{}) };
     _forwardSentry(env, null, e);   // inert unless SENTRY_DSN is set
 
@@ -17190,6 +17216,21 @@ async function marketView(request, env) {
 
      The count lives in the counter now, which is what a counter is for: it is
      atomic, it is cheap, and it touches nothing else on the record. */
+  /* AND BOUNDED PER SOURCE, which the counter alone does not do.
+
+     The note above says the abuse problem "goes away" once the count moved off
+     the record. Half of it did: the lost update and the hot key are gone. What
+     did not is that this is an unauthenticated route which still costs a
+     listing read and a counter increment per request, both billed, and it was
+     the only public route in this Worker with nothing bounding it - every
+     other one carries a guard.
+
+     Generous, because a person browsing a marketplace really does open a lot of
+     listings, and because getting this wrong makes the shop look broken. */
+  const vg = await guardAction(env, 'mktview:' + (request.headers.get('CF-Connecting-IP') || 'anon'),
+                               120, 5000, 'listing views');
+  if (vg) return vg;
+
   const { id } = await request.json().catch(() => ({}));
   const key = String(id || '').slice(0, 64);
   if (!key) return json({ ok: true });
@@ -17205,9 +17246,11 @@ async function marketView(request, env) {
     /* The browse screen reads `views` off the record and cannot afford a
        counter read per listing, so the record is refreshed from the counter -
        under the lock, and only every MKT_VIEW_FOLD views. That is one write per
-       fifty instead of one per view: the count on screen stays right, the abuse
-       and hot-key problems go away, and a write that does lose a race now costs
-       at most a few views rather than a sale. */
+       fifty instead of one per view: the count on screen stays right, the
+       hot-key and lost-update problems go away, and a write that does lose a
+       race now costs at most a few views rather than a sale. The abuse half is
+       the guard at the top of this function, not this - a counter makes each
+       request cheap, it does not make the number of requests finite. */
     if (since >= MKT_VIEW_FOLD && since % MKT_VIEW_FOLD === 0) {
       await _withKV(env, 'market', key, (rec) => {
         if (!rec) return null;
