@@ -96,9 +96,14 @@ const listing = async (env, id, extra) =>
 const walletOf = async (env, em) => await W._wallet(env, em);
 const owns = async (env, em, id) => !!(await env.AMV_KV.get(`entitleitem:${em}:${id}`));
 
+/* payment_status: 'paid' because every real Checkout Session carries it, and
+   this fixture did not. A marketplace sale is where that mattered most - an
+   unpaid session used to credit the SELLER their eighty percent, so AMV booked
+   a payout against money that had not arrived. See
+   a-voucher-nobody-paid-is-not-a-payment for the unpaid direction. */
 const sale = (id, itemId, amountCents, ref) => ({
   id, type: 'checkout.session.completed',
-  data: { object: { id: 'cs_' + id, amount_total: amountCents, payment_intent: ref,
+  data: { object: { id: 'cs_' + id, payment_status: 'paid', amount_total: amountCents, payment_intent: ref,
     metadata: { kind: 'market_purchase', itemId, buyer: BUYER, seller: SELLER } } },
 });
 

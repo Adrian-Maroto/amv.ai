@@ -10556,7 +10556,19 @@ const RECONCILE_BUDGET_MS = 15 * 1000;
    'no_payment_required' is a yes: that is a full-coupon or trial session where
    Stripe is telling us there is no money to wait for. Anything else - and
    notably 'unpaid' - is not fulfilled yet. Missing is not a yes either: an
-   object that does not say it was paid has not said it was paid. */
+   object that does not say it was paid has not said it was paid.
+
+   Being strict about a missing field is only safe because of what happens next,
+   and it is worth writing down. A session this refuses stays in the pending
+   ledger, and the reconciliation sweep asks Stripe about it directly - and the
+   API object always carries payment_status. So a webhook payload that somehow
+   arrived without the field is granted by the sweep minutes later rather than
+   lost. Strict here, self-healing there: the failure mode of being wrong about
+   this is a delay, not a customer who paid and got nothing.
+
+   Three test fixtures omitted the field, which is how this was noticed - a
+   double that is more permissive than the thing it stands for is the same
+   defect class as the one this function exists to close. */
 function _stripeSessionPaid(session) {
   const s = String((session && session.payment_status) || '');
   return s === 'paid' || s === 'no_payment_required';
