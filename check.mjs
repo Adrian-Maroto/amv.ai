@@ -41,7 +41,7 @@ let stepNum = 0;
    things, and they read as nobody looking at the screen they are on.
    Full: syntax, worker, build, ports, suites, page weight, deps, preflight.
    Fast skips the two that need a clear machine and forty minutes (ports, suites). */
-const TOTAL = FAST ? 6 : 8;
+const TOTAL = FAST ? 6 : 9;
 
 /* Run a step. `fn` should throw (with a helpful message) on failure. */
 function step(label, fn) {
@@ -191,6 +191,20 @@ step('Page weight is under control', () => {
    reason for. */
 step('Dependencies have no unassessed advisories', () => {
   sh('node audit-deps.mjs');
+});
+
+/* ── 4c. The Worker, in the runtime it actually deploys to ────────────────
+   Every Worker suite hands amv-backend.js an env built by hand: a Map for KV,
+   an object for the Durable Object. A double encodes what its author expected
+   to matter, and the first run of the real runtime found two defects in ninety
+   seconds that 280 suites had never been positioned to see - one of them being
+   what this Worker does with no secrets set, which is the state of every first
+   deploy.
+
+   Skipped honestly when wrangler cannot start. It binds 8877, not the 9100
+   range the e2e harness uses, so it cannot collide with stage 5. */
+if (!FAST) step('The Worker runs in workerd, not just in a mock', () => {
+  sh('node smoke-real.mjs');
 });
 
 /* ── 5. Deploy preflight ─────────────────────────────────────────────────── */
