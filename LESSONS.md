@@ -4937,3 +4937,32 @@ Noticed only because the stage finished in 7.9 seconds and two wrangler boots
 should not be that fast. It was genuinely that fast. The check was worth making
 anyway, and it found a real hole: being right about the timing did not mean the
 stage was honest about the case where it is not.
+
+## 261. The check that measured the wrong thing found the wrong bug
+
+Sweeping every overlay at phone, tablet and laptop widths reported eighteen
+problems. Two of them were real. The rest were the check being wrong, in both
+directions at once.
+
+It asked whether the PANEL scrolls. That says nothing about whether the BACKDROP
+does - so Cowork, whose backdrop scrolls perfectly well, was reported as having
+an unreachable bottom, and Job Hunt, which genuinely does, was reported the same
+way. Identical symptom, opposite truth. Acting on that list would have meant
+"fixing" a working modal and shipping the broken one, with a green sweep either
+way.
+
+It also counted links inline in a sentence as undersized tap targets. WCAG 2.5.8
+exempts those deliberately, because padding a word in the middle of a paragraph
+to 24 pixels breaks the line and helps nobody.
+
+The fix was to stop inferring. Scroll the backdrop the way a finger would, then
+look at where the panel is. One extra step, and the answer stops being a guess
+about CSS and starts being the thing the user experiences.
+
+The real bug underneath was worth the trip: `.ov` centres with flex and has no
+overflow, and flex centring overflows in BOTH directions - the half above the
+container cannot be scrolled to even when the container scrolls. Any dialog
+taller than the viewport loses part of itself. Job Hunt lost the 250 pixels
+containing its Save button. Nothing looked broken; the form was right there and
+the button to submit it was not. `align-items: safe center` is the property made
+for precisely this, and it is one line for the whole class rather than one modal.
