@@ -225,14 +225,21 @@ function sealScriptCSP(html, appCode) {
   const body = found[2];
   if (!/(^|\s)script-src\s/.test(body)) throw new Error('no script-src directive in the CSP');
 
+  /* Whether the directive was FOUND, not whether the text changed. A rebuild
+     with no source change produces byte-identical output - the same hashes, the
+     same hosts, in the same order - so "the string is different" reports a
+     no-op as a failure, and it did: the gate refused a correct build on its
+     second run. The question is whether the rewrite ran. */
+  let rewrote = false;
   const sealed = body.replace(/(^|\n)(\s*)script-src\s([^;]*);/, (_m, nl, indent, value) => {
+    rewrote = true;
     const kept = value
       .split(/\s+/)
       .filter(Boolean)
       .filter((tok) => tok !== "'unsafe-inline'" && !/^'sha256-/.test(tok));
     return nl + indent + 'script-src ' + hashes.join(' ') + ' ' + kept.join(' ') + ';';
   });
-  if (sealed === body) throw new Error('script-src could not be rewritten - aborting write');
+  if (!rewrote) throw new Error('script-src could not be rewritten - aborting write');
   if (/script-src[^;]*'unsafe-inline'/.test(sealed)) {
     throw new Error("script-src still allows 'unsafe-inline' after sealing - aborting write");
   }

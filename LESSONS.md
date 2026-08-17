@@ -4851,3 +4851,26 @@ to remember to update stops matching on the first edit, and a stale hash does
 not warn - it blanks the page. The build also refuses to write index.html if
 script-src still allows inline afterwards, because the failure this change can
 cause is silent by construction and needs something loud in front of it.
+
+## 258. "The text changed" is not "the rewrite ran"
+
+The build rewrites script-src with the hashes of the inline scripts, and
+refused to write index.html if the rewrite had not happened. The way it asked
+was `if (sealed === body) throw` - if the string came back identical, nothing
+was replaced.
+
+Identical is exactly what a correct second build produces. Same hashes, same
+hosts, same order. So the gate refused a correct build the moment it ran twice,
+which is every gate run after the first, with a message pointing at the CSP
+instead of at the check.
+
+The same shape as #255 and it was written the same day, by the same hands, in a
+guard added to prevent a silent failure. The proxy was convenient - one
+comparison, no bookkeeping - and it answered a different question than the one
+that mattered. `let rewrote = false` set inside the replacer costs one line and
+answers the actual question: did the directive match.
+
+Worth noticing that the gate caught it for free. `check.mjs` runs the build on
+an already-built tree, so the second run IS the regression test, and no separate
+one is needed. When a build step is meant to be idempotent, the gate running it
+against its own output is the cheapest proof there is.
