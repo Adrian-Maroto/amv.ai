@@ -248,12 +248,18 @@ section('The app still starts, in a browser, under that header');
     .then(() => page.waitForTimeout(1400))
     .then(() => page.frames().length > 1 ? page.frames()[1].evaluate(() => ({
       refused: !!document.querySelector('.fstop'),
+      prePaint: document.documentElement.classList.contains('framed-out'),
       body: (document.body.textContent || '').slice(0, 90),
-    })) : { refused: null, body: 'no frame' });
+    })) : { refused: null, prePaint: null, body: 'no frame' });
   ok(framed.refused === true,
      'framed by another origin, AMV refuses to render', framed);
   ok(/does not run inside another site/i.test(framed.body || ''),
      'and says why, rather than showing a blank rectangle', framed.body);
+  /* The bundle is deferred. Without the mark set by the pre-paint script, the
+     landing screen is on display for as long as it takes 1.3MB to arrive - and
+     a frame of AMV is all a clickjack needs. */
+  ok(framed.prePaint === true,
+     'and it was decided before anything could be painted', framed);
 
   /* The widget is the exception and has to keep working, or this traded
      clickjacking for a broken product on every customer site that embeds it. */

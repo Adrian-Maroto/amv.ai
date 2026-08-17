@@ -41,7 +41,7 @@
      ============================================================ -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
-  script-src 'sha256-wseuiU/DH/c7sAaCUSad5u0/Gqhr65Ap9pAiU8Gvass=' 'sha256-ATJYgy5u1vl52owQhXvcqJIy6OEB6cK7U7Px+exXmVI=' 'sha256-CYUgXBVQ/ZQuJpLG/xpk0OijnVJ+nC+04Qx3Dk1eYw4=' 'self' blob: https://accounts.google.com https://js.stripe.com https://www.paypal.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://challenges.cloudflare.com https://www.googletagmanager.com https://plausible.io;
+  script-src 'sha256-REFqXHLTolqnfA0M9ypUo6jlUvmXN60LNpr9teboiLk=' 'sha256-ATJYgy5u1vl52owQhXvcqJIy6OEB6cK7U7Px+exXmVI=' 'sha256-CYUgXBVQ/ZQuJpLG/xpk0OijnVJ+nC+04Qx3Dk1eYw4=' 'self' blob: https://accounts.google.com https://js.stripe.com https://www.paypal.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://challenges.cloudflare.com https://www.googletagmanager.com https://plausible.io;
   worker-src 'self' blob:;
   style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
   font-src 'self' https://fonts.gstatic.com data:;
@@ -8638,6 +8638,13 @@ html,body{height:100%;height:100dvh}
 #sheet-tbl td:focus{background:var(--accent-soft);outline:1px solid var(--accent)}
 #sheet-tbl th:focus{outline:1px solid var(--accent)}
 
+/* Nothing is painted at all while the root is marked framed-out. The mark is
+   set by the pre-paint script in the shell, before the deferred bundle has
+   even been fetched, so a framing page never gets a frame of AMV to click on.
+   The bundle then replaces the body with the explanation below. */
+html.framed-out body{visibility:hidden}
+html.framed-out body.framed-stop{visibility:visible}
+
 /* The page AMV shows when it has been put inside somebody else's site.
    Deliberately plain and self-contained: it is the one screen that renders
    when nothing else is allowed to. */
@@ -8661,8 +8668,25 @@ html,body{height:100%;height:100dvh}
 <script>
 /* Boot-flash guard: decide landing-vs-app BEFORE the first paint.
    The main bundle is deferred, so without this the landing screen flashes
-   for a frame on every refresh even when you're already signed in. */
+   for a frame on every refresh even when you're already signed in.
+
+   It also carries the frame check, for the same reason it exists: this is the
+   only script that runs before anything is drawn. `frame-ancestors` is ignored
+   in a <meta> policy - the spec says so - so being framed is decided here and
+   confirmed by the bundle. Marking the root element is enough: a CSS rule
+   blanks the page, so nothing of AMV is ever painted inside somebody else's
+   site, not even for the frame it would take the bundle to arrive. The
+   embeddable widget (#embed=1) is framed on purpose and is the exception. */
 (function(){
+  try{
+    var embed = String(location.hash || '').indexOf('embed=1') >= 0;
+    var framed = false;
+    try{ framed = (window.top !== window.self); }catch(e){ framed = true; }
+    if(framed && !embed){
+      document.documentElement.classList.add('framed-out');
+      return;
+    }
+  }catch(e){}
   try{
     var u = localStorage.getItem('amv_user');
     if(u && JSON.parse(u) && JSON.parse(u).email){

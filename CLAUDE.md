@@ -64,7 +64,9 @@ Companion docs (do not duplicate them here - read them):
 
 ## Verify like this
 - `npm run check` is the shippability gate (syntax, worker load, build fresh,
-  all suites, deploy preflight -> "SHIPPABLE"). It takes ~210s; do not run a
+  all suites, deploy preflight -> "SHIPPABLE"). It takes 40-50 MINUTES now, not
+  the ~210s this line used to claim - the e2e directory grew and every suite
+  drives a real browser. Budget for it; do not run a
   second test that binds port 9100 while it runs.
 - e2e uses the Playwright harness in `tests/lib/harness.mjs` (`bootApp`).
 - Rebuild (`node build.mjs`) before checking, or the "build fresh" step fails.
