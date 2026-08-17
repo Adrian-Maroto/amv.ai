@@ -36,7 +36,12 @@ const FAST = process.argv.includes('--fast');
 
 const t0 = Date.now();
 let stepNum = 0;
-const TOTAL = FAST ? 4 : 7;   // syntax, worker, build, ports, suites, page weight, preflight
+/* Kept in step with the stages below. Adding the dependency audit without
+   updating this printed "[8/7]", and the fast total was two out as well - small
+   things, and they read as nobody looking at the screen they are on.
+   Full: syntax, worker, build, ports, suites, page weight, deps, preflight.
+   Fast skips the two that need a clear machine and forty minutes (ports, suites). */
+const TOTAL = FAST ? 6 : 8;
 
 /* Run a step. `fn` should throw (with a helpful message) on failure. */
 function step(label, fn) {

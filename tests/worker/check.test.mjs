@@ -118,6 +118,30 @@ section('The gate does not fail because the suite talked too much');
      'and an over-large output is reported as itself, not as a failing suite', true);
 }
 
+section('And the stage counter counts the stages there are');
+{
+  /* Cosmetic, and it is the operator's screen. It printed "[8/7]" after a stage
+     was added without updating the total, and the fast total was two out as
+     well - the sort of thing that reads as nobody looking at the output they
+     are asking somebody to trust. */
+  const gate = readFileSync(join(ROOT, 'check.mjs'), 'utf8');
+  const stages = (gate.match(/^\s*(?:if \(!FAST\) )?step\(/gm) || []).length;
+  const skipped = (gate.match(/^\s*if \(!FAST\) step\(/gm) || []).length;
+  const m = /const TOTAL = FAST \? (\d+) : (\d+);/.exec(gate);
+  ok(!!m, 'the totals are declared', m && m[0]);
+  ok(+m[2] === stages, 'the full total matches the stages that run', { said: m && +m[2], real: stages });
+  ok(+m[1] === stages - skipped,
+     'and the fast total matches the ones fast actually runs',
+     { said: m && +m[1], real: stages - skipped });
+
+  const r = runCheck();
+  ok(!/\[(\d+)\/\1\]/.test(r.out.replace(/\[(\d+)\/(\d+)\]/g, (a, x, y) => (+x <= +y ? '' : a))) &&
+     !/\[(\d+)\/(\d+)\]/.test(r.out.split('\n').filter(l => {
+       const mm = /\[(\d+)\/(\d+)\]/.exec(l); return mm && +mm[1] > +mm[2];
+     }).join('\n')),
+     'and no stage numbers itself past the total', r.out.split('\n').filter(l => /\[\d+\/\d+\]/.test(l)).join(' | '));
+}
+
 // cleanup scratch
 try { rmSync(bakApp); rmSync(bakBackend); } catch {}
 
