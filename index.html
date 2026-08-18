@@ -8749,6 +8749,25 @@ body.light .fr-d{ color:#67656d; }
       rule that does not apply would make the product worse to look at in order
       to pass a check - so the check is taught the exemption instead. */
 
+/* ── LAYER A87: A CONTROL BIG ENOUGH TO HIT ──────────────────────────────
+   WCAG 2.5.8 (AA) asks for 24x24 CSS pixels on anything you click or tap. The
+   image style and ratio chips were 20px tall on desktop - the only controls in
+   the product below the line, found by measuring every control on eight tabs at
+   two widths rather than by eye.
+
+   Worth being precise about what was NOT wrong, because the audit asked for
+   something stricter than the standard. It reports a 32px mobile floor against
+   a 44px target: 44x44 is WCAG 2.5.5, which is AAA, and Apple's human interface
+   guidance. Measured against the AA rule that actually applies, mobile has ZERO
+   controls under 24px - it already passes. Raising 41 mobile controls to 44px
+   would reflow most of the phone layout to clear a bar the product is not held
+   to, so it is written down as a comfort improvement rather than done quietly
+   as a correctness fix.
+
+   Height only. These chips sit in wrapping rows where forcing a min-width would
+   stretch short labels like "1:1" into odd wide boxes. */
+.stb,.rab{ min-height:24px; display:inline-flex; align-items:center; }
+
 </style>
 <!-- BUILD:CSS:END -->
 <script>
