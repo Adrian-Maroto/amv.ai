@@ -8693,6 +8693,62 @@ html.framed-out body.framed-stop{visibility:visible}
    one of those: it is a Copy button in a row of its own. */
 .vsc-copy{ min-height:26px; min-width:44px; }
 
+/* ── LAYER A86: TEXT SOMEBODY CAN ACTUALLY READ ──────────────────────────
+   Six colour pairs in the shipped page fail WCAG 2.1 AA for normal text,
+   measured on the RENDERED page rather than read off the tokens - two of them
+   the design audit named, four it did not.
+
+   Measuring mattered more than reading here. A first pass reported the light
+   Sign-up button at 1.02:1, white on white, which would have been an invisible
+   primary CTA. It was wrong: the button carries a gradient, and a gradient sets
+   background-image rather than background-color, so walking up the tree for a
+   solid colour fell straight through it to the page behind. Unmeasurable is not
+   the same as failing. The same blind spot flagged the gradient-text greeting.
+
+   And the obvious fix was the wrong one. Darkening --accent so white text
+   passes on a button drops accent-coloured TEXT on the dark background from
+   4.20 to 3.78 - one failure traded for another. So the accent is left alone
+   and the two jobs are separated: --accent-d behind white text, a lighter
+   --accent-tx for accent text on a dark surface. */
+
+/* 1. --dim was 3.14:1 on the dark background and 2.47:1 in light. It is the
+      token for sidebar section labels, timestamps and helper text - small type,
+      which is the type that needs contrast most, not least. */
+:root{ --dim:#929098; }
+body.light{ --dim:#706c64; }
+
+/* 2. Accent text on a dark surface. The active sidebar item read 4.2:1. */
+:root{ --accent-tx:#578eff; }
+body.light{ --accent-tx:var(--accent); }
+#sb .snb.on,#sb .snb.on span,.snb.on,.snb.on span{ color:var(--accent-tx)!important; }
+
+/* 3. White on the accent is 4.1:1, and --on-accent - the token that exists for
+      exactly this - was set to white in BOTH themes. It cannot be one colour:
+      on the dark theme's #3f76f5 white gives 4.10 and near-black gives 4.83, and
+      on the light theme's #3366d4 it is the other way round (5.26 vs 3.76). So
+      it is defined per theme, which fixes every control that uses it - buttons,
+      avatars, the schedule chips - without touching the accent itself. The base
+      stylesheet had `.bp{color:#0a0a0a}` originally; a later layer overrode it
+      to white and took the contrast with it. */
+:root{ --on-accent:#0a0a0a; }
+body.light{ --on-accent:#ffffff; }
+/* The layer at 2826 sets these !important, so matching it is the only way to
+   win in an append-only cascade. */
+.btn.bp,.bp,.dsn-go,#ncb,.ncb,.plnbtn.bp{ color:var(--on-accent)!important; }
+
+/* 4. The sidebar group label leaked the dark theme's colour into light mode,
+      where it measured 2.47:1. Bound to --mu in both. */
+.sbl{ color:var(--mu); }
+
+/* 5. Feature descriptions on the raised light surface: 4.11:1. */
+body.light .fr-d{ color:#67656d; }
+
+/* 6. The logo letter is white on the accent at 4.1:1 and is LEFT THAT WAY.
+      WCAG 1.4.3 exempts text that is part of a logo or brand name, and the mark
+      is exactly that. Forcing dark text onto the blue brand mark to satisfy a
+      rule that does not apply would make the product worse to look at in order
+      to pass a check - so the check is taught the exemption instead. */
+
 </style>
 <!-- BUILD:CSS:END -->
 <script>
