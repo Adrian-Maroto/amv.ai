@@ -65,21 +65,10 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 @keyframes tOut{from{opacity:1}to{opacity:0;transform:translateX(20px)}}
 .ctxm{position:fixed;background:var(--s2);border:1px solid var(--bdl);border-radius:8px;padding:5px 0;z-index:9999;box-shadow:0 8px 24px rgba(0,0,0,.35);min-width:164px;animation:fi .12s ease}
 .ctxi{padding:8px 14px;font-size:13px;color:var(--tx);cursor:pointer;display:flex;align-items:center;gap:9px;transition:all .12s}.ctxi:hover{background:var(--s3)}.ctxi.danger{color:var(--red)}.ctxd{height:1px;background:var(--bd);margin:4px 0}
-#intro{position:fixed;inset:0;z-index:10000;background:var(--bg);display:flex;flex-direction:column;overflow:hidden}
-#intro.done{display:none}
-.iprog{display:flex;gap:5px;justify-content:center;padding:18px 0 0;flex-shrink:0}
-.ipd{width:28px;height:3px;border-radius:2px;background:var(--bd);transition:all .2s}.ipd.on{background:var(--blue);width:42px}
-.islides{flex:1;overflow:hidden;position:relative}
-.islide{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:28px 20px;transition:transform .38s cubic-bezier(.4,0,.2,1),opacity .3s}
-.islide.hl{transform:translateX(-100%);opacity:0;pointer-events:none}.islide.hr{transform:translateX(100%);opacity:0;pointer-events:none}.islide.vis{transform:translateX(0);opacity:1}
-.ifg{display:grid;grid-template-columns:repeat(2,1fr);gap:9px;max-width:500px;margin:16px auto 0}
-.ifc{background:var(--s1);border:1px solid var(--bd);border-radius:8px;padding:12px 14px;text-align:left}
-.ifc h4{font-size:12px;font-weight:600;margin-bottom:3px}.ifc p{font-size:11px;color:var(--mu);line-height:1.5}
-.inav{flex-shrink:0;padding:16px 24px 24px;display:flex;flex-direction:column;align-items:center;gap:10px}
-.trow{display:flex;align-items:flex-start;gap:10px;max-width:420px;text-align:left}
-.trow input[type=checkbox]{width:15px;height:15px;min-width:15px;margin-top:2px;accent-color:var(--blue);cursor:pointer}
-.trow span{font-size:12px;color:var(--mu);line-height:1.6}.trow button{background:none;border:none;color:var(--blue);cursor:pointer;font-family:var(--fn);font-size:12px}
-.iauthw{display:flex;flex-direction:column;gap:9px;width:100%;max-width:360px;margin-top:14px}
+/* The intro tour's styles lived here (#intro, .iprog, .ipd, .islide*, .ifg,
+   .ifc, .inav, .trow, .iauthw). The tour was unreachable and is gone, and
+   none of these selectors is referenced by any remaining markup - checked
+   rather than assumed. Removed so they stop shipping to every visitor. */
 #land{position:fixed;inset:0;z-index:200;background:var(--bg);overflow-y:auto;display:flex;flex-direction:column}
 #land.hidden{display:none}
 #lnav{display:flex;align-items:center;justify-content:space-between;padding:0 24px;height:54px;flex-shrink:0;border-bottom:1px solid var(--bd);position:sticky;top:0;background:var(--bg);z-index:10}

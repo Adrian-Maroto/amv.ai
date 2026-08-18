@@ -2341,8 +2341,8 @@ window.openShortcuts=openShortcuts;
 function setupLanding(){
   try{ if(!sessionStorage.getItem('amv_visit_marked')){ sessionStorage.setItem('amv_visit_marked','1'); AEGIS.log('page',{name:'landing'}); } }catch(e){ try{ AEGIS.log('page',{name:'landing'}); }catch(_){} }
   on($('brand-land'),'click',()=>{ window.scrollTo(0,0); });
-  on($('land-login'),'click',()=>{ hideIntro(); openAuth('login'); });
-  on($('land-signup'),'click',()=>{ hideIntro(); openAuth('signup'); });
+  on($('land-login'),'click',()=>{  openAuth('login'); });
+  on($('land-signup'),'click',()=>{  openAuth('signup'); });
   on($('cta-btn'),'click',()=>openAuth('signup'));
   on($('hero-go'),'click',()=>openAuth('signup'));
   on($('hero-inp'),'keydown',e=>{if(e.key==='Enter')openAuth('signup');});
@@ -2745,107 +2745,20 @@ function openAuth(mode){
   document.getElementById('a-email')?.addEventListener('keydown',e=>{if(e.key==='Enter')isL?doLoginForm():doSignupForm();});
 }
 
-/* -- Intro / Onboarding -- */
-let _iStep=0;
-const ITOTAL=5;
-function showIntro(){
-  const intro=document.getElementById('intro');
-  if(intro) intro.classList.remove('done');
-  document.getElementById('land')?.classList.remove('hidden');
-  document.getElementById('app')?.classList.remove('on');
-  _iStep=0; _renderIProg(); _goSlide(0); _setupIntro();
-}
-function hideIntro(){
-  const intro=document.getElementById('intro');
-  if(intro) intro.classList.add('done');
-}
-function _renderIProg(){
-  const p=document.getElementById('iprog'); if(!p) return;
-  p.innerHTML=Array.from({length:ITOTAL},(_,i)=>'<div class="ipd '+(i===_iStep?'on':'')+'" data-si="'+i+'"></div>').join('');
-  p.querySelectorAll('.ipd').forEach(d=>d.addEventListener('click',()=>_goSlide(parseInt(d.dataset.si))));
-}
-function _goSlide(n){
-  document.querySelectorAll('.islide').forEach(s=>{
-    const idx=parseInt(s.dataset.s);
-    s.className='islide '+(idx===n?'vis':idx<n?'hl':'hr');
-  });
-  _iStep=n; _renderIProg();
-  const back=document.getElementById('i-back');
-  const next=document.getElementById('i-next');
-  const skip=document.getElementById('i-skip');
-  if(back) back.style.display=n>0?'inline-flex':'none';
-  if(n===ITOTAL-1){
-    if(next) next.style.display='none';
-    if(skip) skip.style.display='none';
-  } else {
-    if(next){next.style.display='inline-flex';next.textContent=n===0?'Get Started':'Next';}
-    if(skip) skip.style.display='block';
-  }
-}
-function _setupIntro(){
-  document.getElementById('i-next')?.addEventListener('click',()=>{if(_iStep<ITOTAL-1)_goSlide(_iStep+1);});
-  document.getElementById('i-back')?.addEventListener('click',()=>{if(_iStep>0)_goSlide(_iStep-1);});
-  document.getElementById('i-skip')?.addEventListener('click',()=>{
-    hideIntro();
-    document.getElementById('land')?.classList.remove('hidden');
-    // Show auth immediately after hiding intro
-    setTimeout(()=>openAuth('signup'), 50);
-  });
-  document.getElementById('intro-terms-btn')?.addEventListener('click',e=>{e.preventDefault();openTerms();});
-  document.getElementById('intro-priv-btn')?.addEventListener('click',e=>{e.preventDefault();openPrivacy();});
-  document.getElementById('i-google-btn')?.addEventListener('click',_iGoogleSignIn);
-  document.getElementById('i-signup-btn')?.addEventListener('click',_iEmailSignup);
-  document.getElementById('i-signin-link')?.addEventListener('click',()=>{hideIntro();openAuth('login');});
-  document.getElementById('i-pass')?.addEventListener('keydown',e=>{if(e.key==='Enter')_iEmailSignup();});
-  // Swipe support
-  let tx=0;
-  const sl=document.getElementById('islides');
-  if(sl){
-    sl.addEventListener('touchstart',e=>{tx=e.touches[0].clientX;},{passive:true});
-    sl.addEventListener('touchend',e=>{
-      const dx=e.changedTouches[0].clientX-tx;
-      if(Math.abs(dx)>50){if(dx<0&&_iStep<ITOTAL-1)_goSlide(_iStep+1);else if(dx>0&&_iStep>0)_goSlide(_iStep-1);}
-    });
-  }
-  _goSlide(0);
-}
-function _showIErr(msg){ const e=document.getElementById('i-err');if(e){e.textContent=msg;e.style.display='block';} }
-async function _iGoogleSignIn(){
-  if(!document.getElementById('terms-chk')?.checked){_showIErr('Please accept the Terms to continue.');return;}
-  const cid=loadStr('amv_gauth');
-  if(cid && window.google?.accounts?.id){
-    try{
-      window.google.accounts.id.prompt(n=>{
-        if(n && (n.isNotDisplayed?.() || n.isSkippedMoment?.())){
-          _showIErr('Google Sign-In couldn\u2019t open here. Please sign up with your email below.');
-        }
-      });
-    }catch(e){ _showIErr('Google Sign-In is unavailable here. Please sign up with email.'); }
-    return;
-  }
-  _showIErr('Google Sign-In isn\u2019t enabled yet - please sign up with your email below. It only takes a second.');
-}
-async function _iEmailSignup(){
-  // Terms accepted implicitly by signing up (checkbox removed from gate)
-  document.getElementById('terms-chk') && (document.getElementById('terms-chk').checked=true);
-  const nm=document.getElementById('i-name')?.value.trim();
-  const em=document.getElementById('i-email')?.value.trim().toLowerCase();
-  const pw=document.getElementById('i-pass')?.value;
-  if(!nm){_showIErr('Please enter your full name.');return;}
-  if(!em||!em.includes('@')){_showIErr('Please enter a valid email.');return;}
-  if(!pw||pw.length<6){_showIErr('Password must be at least 6 characters.');return;}
-  const existing=findAccount(em);
-  if(existing){
-    const how = existing.provider==='google' ? 'with Google' : 'with email';
-    _showIErr('You already have an account ('+how+'). Click \u201cSign in instead\u201d.');
-    return;
-  }
-  const btn=document.getElementById('i-signup-btn');
-  if(btn){btn.disabled=true;btn.innerHTML='<div class="spin" style="width:14px;height:14px;border-width:2px;margin-right:8px"></div>Creating account…';}
-  const _newAcct=await createAccount(nm,em,pw);
-  try{ track('signup', { method:'email' }); }catch(e){}
-  _completeIntroLogin(_newAcct);
-}
+/* THE FIVE-STEP TOUR NOBODY EVER SAW.
+
+   showIntro() had zero callers and so did goLand(). Every branch of the boot
+   chain hid the intro, hid the landing, and went straight into the app - which
+   is the deliberate funnel (sign-up is required at the first send, not before
+   it), confirmed by the owner. So the tour, its five slides, its progress dots,
+   its swipe handling and its own sign-up form were unreachable code that every
+   visitor still downloaded.
+
+   Removed rather than left as something that reads like a feature. What stays
+   is _completeIntroLogin below: it is named for the intro and belongs to
+   nothing of the sort - signup, sign-in and password reset all finish through
+   it. Deleting this block wholesale would have taken sign-up with it. */
+
 function _completeIntroLogin(acct){
   if(!acct) return;
   // Nothing from any previous account may survive into this one.
@@ -2861,7 +2774,6 @@ function _completeIntroLogin(acct){
   if(uc&&uc.length){S.convs=uc;S.cur=S.convs[0].id;}
   else{S.convs=[newConvObj()];S.cur=S.convs[0].id;}
   S.imgs=[];S.vids=[];
-  hideIntro();
   document.getElementById('land')?.classList.add('hidden');
   S.tab='chat';   // new sign-ins land straight in chat
   goApp();
@@ -3101,14 +3013,12 @@ if(typeof _checkSharedArtifact==='function' && _checkSharedArtifact()){
     else if(!S.convs.length){S.convs=[newConvObj()];S.cur=S.convs[0].id;}
     else if(!S.cur) S.cur=S.convs[0].id;
     try{ _loadSessions(); }catch(e){}
-    hideIntro();
     document.getElementById('land')?.classList.add('hidden');
     goApp();
   } else {
     // No account yet: skip the intro wall - let them into the app immediately.
     // Sign-up is required the moment they try to send a message (see sendMsg).
     S.user=null; localStorage.removeItem('amv_user');
-    hideIntro();
     document.getElementById('land')?.classList.add('hidden');
     if(!S.convs||!S.convs.length){ S.convs=[newConvObj()]; S.cur=S.convs[0].id; }
     S.tab='chat';   // always land in chat (never a gated tab that would pop signup on load)
@@ -3116,7 +3026,6 @@ if(typeof _checkSharedArtifact==='function' && _checkSharedArtifact()){
   }
 } else {
   // First-ever visit, no session: straight into the app, gated at first send.
-  hideIntro();
   document.getElementById('land')?.classList.add('hidden');
   if(!S.convs||!S.convs.length){ S.convs=[newConvObj()]; S.cur=S.convs[0].id; }
   S.tab='chat';

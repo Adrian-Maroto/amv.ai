@@ -762,7 +762,6 @@ async function triggerGoogle() {
 }
 
 
-function goLand(){ document.getElementById('land').classList.remove('hidden'); document.getElementById('app').classList.remove('on'); }
 function _wireHdrAuth(){
   const su=document.getElementById('hdr-signup');
   const li=document.getElementById('hdr-login');
