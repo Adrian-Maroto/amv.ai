@@ -10730,7 +10730,7 @@ function createWorkspaceModal(){
       '<div class="af">'+
         '<div><label class="lbl">Name</label><input type="text" id="ws-name" placeholder="e.g. Research Project"></div>'+
         '<div><label class="lbl">Description</label><input type="text" id="ws-desc" placeholder="What is this workspace for?"></div>'+
-        '<div><label class="lbl">Icon</label><div style="display:flex;gap:6px;flex-wrap:wrap">'+icons.map(ic=>'<button class="ws-ic-btn" data-ic="'+ic+'" style="width:34px;height:34px;border-radius:7px;border:1px solid var(--bd);background:var(--s2);cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;transition:all .12s">'+ic+'</button>').join('')+'</div></div>'+
+        '<div><label class="lbl">Icon</label><div style="display:flex;gap:6px;flex-wrap:wrap">'+icons.map(ic=>'<button class="ws-ic-btn" data-ic="'+ic+'" style="width:34px;height:34px;border-radius:7px;border:1px solid var(--bd);background:var(--s2);cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;transition:background-color .12s,border-color .12s,color .12s,box-shadow .12s,transform .12s,opacity .12s">'+ic+'</button>').join('')+'</div></div>'+
         '<button class="btn bp" id="ws-create" style="width:100%;padding:11px">Create Workspace</button>'+
       '</div>'+
     '</div></div>';
@@ -19825,8 +19825,8 @@ function _renderSetPaneInner(){
       '<div class="ss2">'+
         '<div style="display:flex;align-items:center;gap:17px;margin-bottom:16px;flex-wrap:wrap">'+
           '<div style="position:relative;flex-shrink:0">'+
-            '<div id="pfp-c" style="width:72px;height:72px;border-radius:50%;background:var(--accent-soft);display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid rgba(255,255,255,.1);cursor:pointer;transition:all .2s">'+pfpHtml+'</div>'+
-            '<div id="pfp-edit" style="position:absolute;bottom:0;right:0;width:22px;height:22px;background:var(--s2);border:1px solid var(--bd);border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:11px;transition:all .12s">&#x270F;</div>'+
+            '<div id="pfp-c" style="width:72px;height:72px;border-radius:50%;background:var(--accent-soft);display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid rgba(255,255,255,.1);cursor:pointer;transition:background-color .2s,border-color .2s,color .2s,box-shadow .2s,transform .2s,opacity .2s">'+pfpHtml+'</div>'+
+            '<div id="pfp-edit" style="position:absolute;bottom:0;right:0;width:22px;height:22px;background:var(--s2);border:1px solid var(--bd);border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:11px;transition:background-color .12s,border-color .12s,color .12s,box-shadow .12s,transform .12s,opacity .12s">&#x270F;</div>'+
             '<input type="file" id="pfp-fi" accept="image/*" style="display:none">'+
           '</div>'+
           '<div><div style="font-size:16px;font-weight:700;letter-spacing:-.3px">'+escH(S.user&&S.user.name?S.user.name:'Guest')+'</div>'+
