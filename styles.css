@@ -8667,3 +8667,18 @@ body.light .fr-d{ color:#67656d; }
    width, height, padding or margin, so nothing was relying on it.
 
    A guard in tests/e2e/motion-is-declared-not-guessed keeps it that way. */
+
+/* ── LAYER A89: THE INPUT THAT ZOOMS THE PAGE ────────────────────────────
+   Safari on iOS zooms the whole page when you focus a text field whose
+   font-size is under 16px, and it does not zoom back out. It is the single
+   most common way a mobile web app feels broken, and it is invisible on every
+   desktop browser and in every emulator that is not actually iOS.
+
+   Every field in the product already cleared 16px except the sidebar's history
+   search at 12.5px. Applied at the breakpoint rather than globally, so the
+   desktop sizing that was deliberately chosen is untouched. */
+@media (max-width:700px){
+  /* #sb #hist-search sets 12px !important at line 600, so this has to match
+     both the specificity and the !important to win an append-only cascade. */
+  #sb #hist-search,#hist-search{ font-size:16px!important; }
+}
