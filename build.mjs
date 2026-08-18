@@ -66,8 +66,63 @@ function validate(js) {
   execSync('node --check /tmp/_amv_check.js', { stdio: 'pipe' });
 }
 
+/* AN EDIT MADE IN THE WRONG HALF OF index.html.
+
+   Most of index.html is GENERATED. The CSS between the BUILD:CSS markers comes
+   from styles.css; the script between the BUILD:JS markers comes from
+   src/app/*.js. Edit inside either and the next build overwrites it - silently,
+   with no error, and `npm run check` runs a build as its third stage, so the
+   work disappears without anybody typing a command that sounds destructive.
+
+   That is this codebase's signature defect aimed at its own author, and the
+   file is about to be edited a great deal.
+
+   Distinguishing "somebody edited index.html" from "somebody edited styles.css"
+   cannot be done by comparing the two - they differ in both cases. So the build
+   records a fingerprint of what it EMITTED, and checks on the next run whether
+   the file still holds it. A mismatch means the generated block changed while
+   the build was not looking, which only a hand-edit does.
+
+   It warns rather than refuses: a stamp can be legitimately absent (a fresh
+   clone, a first build) and refusing there would block a correct build for a
+   reason that is not the code. But it never just discards - the block is
+   written out first, so the answer to "I lost an hour of CSS" is a file path
+   rather than an apology. */
+const STAMP = '.buildstamp.json';
+
+function readStamp() {
+  try { return JSON.parse(readFileSync(STAMP, 'utf8')); } catch (e) { return null; }
+}
+
+function warnIfHandEdited(html) {
+  const stamp = readStamp();
+  if (!stamp) return;                        // first build, or a fresh clone
+
+  const regions = [
+    ['css', /<!-- BUILD:CSS:START -->\s*<style>([\s\S]*?)<\/style>\s*<!-- BUILD:CSS:END -->/, 'styles.css', '.discarded-index-css.txt'],
+    ['js',  /<!-- BUILD:JS:START -->([\s\S]*?)<!-- BUILD:JS:END -->/, 'src/app/*.js', '.discarded-index-js.txt'],
+  ];
+
+  for (const [key, pat, source, out] of regions) {
+    if (!stamp[key]) continue;
+    const m = html.match(pat);
+    if (!m) continue;
+    const now = createHash('sha256').update(Buffer.from(m[1], 'utf8')).digest('hex');
+    if (now === stamp[key]) continue;
+
+    try { writeFileSync(out, m[1]); } catch (e) {}
+    console.warn('');
+    console.warn(`  !! index.html was hand-edited inside the GENERATED ${key.toUpperCase()} block.`);
+    console.warn(`     That block is rebuilt from ${source}, so the edit is about to be replaced.`);
+    console.warn(`     Nothing is lost: the old content was saved to ${out}`);
+    console.warn(`     Move the change into ${source} and rebuild.`);
+    console.warn('');
+  }
+}
+
 async function rebuild() {
   let html = readFileSync('index.html', 'utf8');
+  warnIfHandEdited(html);
   const source = assembleJS();
   const css = readFileSync('styles.css', 'utf8');
 
@@ -158,6 +213,19 @@ async function rebuild() {
   html = sealScriptCSP(html, app);
 
   writeFileSync('index.html', html);
+
+  /* Record what was emitted, so the NEXT build can tell a hand-edit from a
+     source change. Written after the file, from the file's own content, so the
+     stamp can never describe something that was not actually written. */
+  try {
+    const emittedCss = (html.match(/<!-- BUILD:CSS:START -->\s*<style>([\s\S]*?)<\/style>\s*<!-- BUILD:CSS:END -->/) || [, ''])[1];
+    const emittedJs = (html.match(/<!-- BUILD:JS:START -->([\s\S]*?)<!-- BUILD:JS:END -->/) || [, ''])[1];
+    const sha = (t) => createHash('sha256').update(Buffer.from(t, 'utf8')).digest('hex');
+    writeFileSync(STAMP, JSON.stringify({
+      css: sha(emittedCss), js: sha(emittedJs), at: new Date().toISOString(),
+    }, null, 2) + '\n');
+  } catch (e) { /* a missing stamp only costs the warning, never the build */ }
+
   writePWA(html);
   console.log(`Built index.html - deferred non-blocking script${MINIFY ? ', minified' : ''}, validated OK.`);
 }
