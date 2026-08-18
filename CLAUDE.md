@@ -68,8 +68,21 @@ Companion docs (do not duplicate them here - read them):
   the ~210s this line used to claim - the e2e directory grew and every suite
   drives a real browser. Budget for it; do not run a
   second test that binds port 9100 while it runs.
+- `npm run check:fast` is the ITERATION loop: ~9 seconds, six stages (syntax,
+  worker loads, build fresh, page weight, deps, preflight). It deliberately
+  SKIPS the suites and the workerd stage, so it catches a broken build and a
+  stale artifact but NOT a behavioural regression. Use it between edits; use the
+  full `npm run check` before calling anything done.
 - e2e uses the Playwright harness in `tests/lib/harness.mjs` (`bootApp`).
 - Rebuild (`node build.mjs`) before checking, or the "build fresh" step fails.
+- **Editing `index.html`:** only lines outside the BUILD:CSS and BUILD:JS
+  markers are yours (the head/meta/CSP block, and the landing + app shell
+  markup). Anything between the markers is generated and is overwritten. The
+  build warns when it finds a hand-edit in a generated block and saves the old
+  content to `.discarded-index-*.txt` rather than dropping it, but the edit
+  still belongs in `styles.css` or `src/app/*.js`. Any index.html edit needs a
+  rebuild: the CSP pins the inline scripts by hash, so an edited boot script
+  that has not been rebuilt is refused by the browser.
 
 ## Installed tooling and when to use it
 Enabled project-wide (see `.claude/settings.json`). Use them for the job each is

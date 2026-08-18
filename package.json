@@ -13,6 +13,7 @@
     "preflight": "node preflight.mjs",
     "predeploy": "node preflight.mjs",
     "check": "node check.mjs",
+    "check:fast": "node check.mjs --fast",
     "backup": "node backup.mjs export",
     "restore": "node backup.mjs restore",
     "audit": "node audit-deps.mjs"

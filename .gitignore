@@ -13,3 +13,10 @@ tests/worker/.build/
 # git is willing to track.
 .dev.vars
 .dev.vars.*
+
+# Build state and rescue files for the index.html hand-edit guard.
+# The stamp is machine-local on purpose: committing it would change on every
+# build and add churn to every commit, and a fresh clone simply has no stamp
+# until its first build - which the guard already treats as "nothing to compare".
+.buildstamp.json
+.discarded-index-*.txt
