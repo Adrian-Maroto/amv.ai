@@ -4966,3 +4966,32 @@ taller than the viewport loses part of itself. Job Hunt lost the 250 pixels
 containing its Save button. Nothing looked broken; the form was right there and
 the button to submit it was not. `align-items: safe center` is the property made
 for precisely this, and it is one line for the whole class rather than one modal.
+
+## 262. Deleting a function by its call SHAPE leaves the calls that look different
+
+Removing the unreachable intro meant removing hideIntro(), so its call sites had
+to go too. The sweep matched `hideIntro();` - a statement on its own line - and
+removed six. Three more were sitting inline on shared lines:
+
+    closeOvr(); hideIntro(); accCk(); S.ck=true;
+
+Same call, different shape, invisible to the pattern. One of them was inside
+signOut(), so signing out threw ReferenceError and the account stayed signed in.
+
+The mistake is not the regex. It is choosing a pattern that describes how the
+call is FORMATTED rather than what it IS. An identifier is the thing being
+removed, so the search is `\bhideIntro\b` - it finds every spelling, including
+the ones in prose, which you then read and dismiss deliberately. Searching for
+the statement form silently reports the subset that happens to be laid out the
+way you pictured.
+
+The check afterwards is the same shape: for every identifier removed, grep the
+identifier and require zero. It takes one line per name and it would have caught
+all three before the build.
+
+Worth noting which control caught it. `npm run check:fast` was green throughout -
+it does not run the suites, and this was a runtime error inside a click handler.
+The full gate found it in a browser-driven privacy suite that signs out. That is
+the fast/full split doing exactly what it is documented to do, and the reason
+"use check:fast between edits, the full gate before calling anything done" is
+written in CLAUDE.md rather than assumed.

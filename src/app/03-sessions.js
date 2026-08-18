@@ -714,7 +714,7 @@ async function handleGoogleCred(resp) {
         /* accCk, not saveStr: cookie consent is per DEVICE, so it lives in the
            unscoped bucket. saveStr would file it under this account, where the
            banner - which reads the raw key - can never find it again. */
-        closeOvr(); hideIntro(); accCk(); S.ck=true;
+        closeOvr(); accCk(); S.ck=true;
         document.getElementById('land')?.classList.add('hidden');
         loginUser(acct); return;
       }
@@ -730,7 +730,7 @@ async function handleGoogleCred(resp) {
   if(p.picture&&acct.email) {
     fetch(p.picture).then(r=>r.blob()).then(b=>{const rd=new FileReader();rd.onload=e=>{saveStr('amv_pfp_'+acct.email,e.target.result);updateSbUser();};rd.readAsDataURL(b);}).catch(()=>{});
   }
-  closeOvr(); hideIntro();
+  closeOvr();
   accCk(); S.ck=true;   // per device, through the same door the banner reads
   document.getElementById('land')?.classList.add('hidden');
   loginUser(acct);
@@ -1160,7 +1160,6 @@ function signOut(){
   // Go straight to a usable no-account chat (no intro wall). Using any AMV feature
   // will prompt sign-up/login via the auth gate.
   if(!S.convs||!S.convs.length){ S.convs=[newConvObj()]; S.cur=S.convs[0].id; }
-  hideIntro();
   document.getElementById('land')?.classList.add('hidden');
   S.tab='chat'; goApp();
 }
