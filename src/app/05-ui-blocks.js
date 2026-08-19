@@ -2367,6 +2367,27 @@ function renderImgsView(){
   const ratioHtml=['1:1','16:9','9:16','4:3'].map(r=>'<button class="rab '+(r===S.imgRatio?'on':'')+'" data-r="'+r+'">'+r+'</button>').join('');
   vc.innerHTML=
     '<div id="imgv">'+
+      /* WHERE AM I AND WHAT HAPPENS HERE (AMV-D070).
+
+         This screen opened straight into a textarea and two rows of chips. The
+         only thing naming it was the sidebar selection, so it read as a tool
+         panel floating in the app rather than a place you had arrived at.
+         Measured across eleven tabs: Images and Video were the only two with no
+         visible h1 or h2 at all.
+
+         `.pghd` is a shared component, not a fourth bespoke header - Crew,
+         Marketplace and Usage each grew their own, which is the duplication
+         AMV-D013 is about. New surfaces use this one, and the existing three
+         move onto it when that finding is worked properly.
+
+         The title deliberately does NOT repeat the word the sidebar already
+         says. Naming the outcome adds something; saying "Images" three times
+         on one screen does not. */
+      '<header class="pghd"><div class="pghd-l">'+
+        '<span class="eyebrow">Create</span>'+
+        '<h2>Make an image of anything</h2>'+
+        '<p class="pghd-sub">Describe it and AMV generates it in seconds. Everything you make stays in the gallery below until you clear it.</p>'+
+      '</div></header>'+
       '<div id="imgctrl">'+
         '<div style="display:flex;gap:8px;margin-bottom:10px">'+
           '<textarea id="img-inp" placeholder="Describe any image - a scene, product, portrait, or style. Be specific for the best results." rows="2" style="flex:1;border-radius:var(--r-sm);font-size:13px;max-height:66px"></textarea>'+
@@ -2510,9 +2531,17 @@ function renderVideoView(){
   const mo=VMOODS.map(m=>'<option>'+m+'</option>').join('');
   vc.innerHTML=
     '<div id="vidv" class="fi">'+
+      /* Same page header as Images (AMV-D070). The card's own "AI Video
+         Generator" h3 is gone rather than moved: it named the tool a third
+         time, after the sidebar and the header, and the audit's specific ask
+         was to stop repeating the location label in every piece of chrome. The
+         sentence under it is the header's subtitle now, so nothing was lost. */
+      '<header class="pghd"><div class="pghd-l">'+
+        '<span class="eyebrow">Create</span>'+
+        '<h2>Turn a description into video</h2>'+
+        '<p class="pghd-sub">Describe a scene and AMV generates it. Style and mood are folded into the prompt; duration and aspect are sent to the engine.</p>'+
+      '</div></header>'+
       '<div class="card">'+
-        '<h3 style="font-size:14px;font-weight:600;margin-bottom:7px">AI Video Generator</h3>'+
-        '<p style="font-size:12px;color:var(--t2);margin-bottom:12px">Describe a scene and AMV generates it. Style and mood are folded into the prompt; duration and aspect are sent to the engine.</p>'+
         '<textarea id="vp" placeholder="Describe your scene - include camera movement, lighting, atmosphere, characters, action…" rows="3" style="margin-bottom:11px;font-size:13px"></textarea>'+
         '<div style="display:flex;gap:7px;flex-wrap:wrap;align-items:flex-end">'+
           '<div><label class="lbl" style="margin-bottom:3px">Duration</label><select id="vd" aria-label="Duration" style="width:auto;padding:6px 22px 6px 9px;font-size:12px"><option value="5" selected>5s</option><option value="10">10s</option></select></div>'+

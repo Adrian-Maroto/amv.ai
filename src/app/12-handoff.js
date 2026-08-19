@@ -384,30 +384,30 @@ function _trustBadge(svg,title,sub){
 
 /* === HELP CENTER === */
 const FAQS=[
-  {q:'How do I start with AMV?', a:'Click “New chat” in the top bar and type anything - an essay, code, a 3D model, an image, deep research. AMV figures out what you need and does the work. On mobile, tap the menu icon for the full sidebar.'},
-  {q:'What can AMV actually do?', a:'One place for everything: chat and research, image and video generation, interactive 3D, a design canvas (Studio), an app builder (Dev), and autonomous agents (Crew) that complete multi-step work for you and bring back a finished result to approve.'},
-  {q:'What is Crew and Mission Control?', a:'Crew is AMV working autonomously in the background. Mission Control (the Crew tab) is your overview of everything it’s doing - what needs your approval, what’s running now, what’s scheduled, and what’s finished. Give it an outcome and it plans the steps, does the work, and stops before anything consequential to wait for you.'},
-  {q:'How do approvals work - Preview &amp; Approve?', a:'When AMV finishes something that would send, publish, or change anything, it waits in “Needs your approval.” Press Preview to open the full workspace: the finished result, a timeline of what happened, the agents involved, and a plain-language summary of exactly what will happen. Then Approve, Edit, or Reject.'},
-  {q:'What is Auto Approve?', a:'When you trust a recurring task, turn on Auto Approve while setting it up. AMV then completes and performs the final action on its own - scoped to every run or just the first, capped by risk level, with an optional end date. High-risk actions still stop and ask unless you allow them. You can pause all autonomous work anytime from Mission Control.'},
-  {q:'How do I schedule recurring autonomous work?', a:'Start an autonomous task (Crew → Autonomous task) and pick a schedule - once, daily, weekly, or monthly. Manage everything under Scheduled: next run, last run, approval mode, and per-task pause or cancel. Connect the backend for true 24/7 runs even with AMV closed.'},
-  {q:'How do I generate images and video?', a:'Click Images or Video in the sidebar, describe what you want, choose a style and aspect ratio, and generate. Images render in seconds; video is sent to the engine and returned when ready.'},
-  {q:'How do I create interactive 3D models?', a:'Just ask in chat - e.g. “create a 3D model of a human heart.” It renders live with drag-to-rotate, scroll-to-zoom, and pan controls.'},
-  {q:'What is Studio (AMV Design)?', a:'Studio is a live design canvas. Describe a landing page, UI mockup, poster, or graphic and watch it build, then refine by chatting (“make it darker,” “add a pricing section”). Set a reusable Design DNA once and everything follows your colors, fonts, and style.'},
-  {q:'Can AMV build and run real apps?', a:'Yes - Dev writes the code, runs it in a live sandbox, and shows you the result. Lab lets you paste or upload existing code (any size) to run, find and fix bugs, review, refactor, or add tests. On higher plans you can deploy to a live URL.'},
-  {q:'How do I upload files for analysis?', a:'Click the paperclip in the chat input or drag &amp; drop. AMV reads PDFs, images, code, Excel, CSV, and Word - and can work across a whole folder for autonomous tasks.'},
-  {q:'How do I connect Gmail, Calendar, and files?', a:'Go to Settings → Connectors (or Integrations). Connect Google to let AMV read email, manage your calendar, and work with Drive files. Everything an agent wants to send still waits for your approval first.'},
-  {q:'What is Handoff?', a:'Handoff lets you pass a task - with its full context - to a teammate inside AMV, or receive one from them, so work moves between people without losing the thread.'},
-  {q:'What is the Marketplace?', a:'Browse and install prompts, crews, and integrations - free ones add to your Prompt Library or Crew instantly. Click any seller’s name to see their listings and reviews or message them. You can publish your own and keep 80% of every sale. Paid items always go through secure checkout.'},
+  {c:'start', q:'How do I start with AMV?', a:'Click “New chat” in the top bar and type anything - an essay, code, a 3D model, an image, deep research. AMV figures out what you need and does the work. On mobile, tap the menu icon for the full sidebar.'},
+  {c:'start', q:'What can AMV actually do?', a:'One place for everything: chat and research, image and video generation, interactive 3D, a design canvas (Studio), an app builder (Dev), and autonomous agents (Crew) that complete multi-step work for you and bring back a finished result to approve.'},
+  {c:'auto', q:'What is Crew and Mission Control?', a:'Crew is AMV working autonomously in the background. Mission Control (the Crew tab) is your overview of everything it’s doing - what needs your approval, what’s running now, what’s scheduled, and what’s finished. Give it an outcome and it plans the steps, does the work, and stops before anything consequential to wait for you.'},
+  {c:'auto', q:'How do approvals work - Preview &amp; Approve?', a:'When AMV finishes something that would send, publish, or change anything, it waits in “Needs your approval.” Press Preview to open the full workspace: the finished result, a timeline of what happened, the agents involved, and a plain-language summary of exactly what will happen. Then Approve, Edit, or Reject.'},
+  {c:'auto', q:'What is Auto Approve?', a:'When you trust a recurring task, turn on Auto Approve while setting it up. AMV then completes and performs the final action on its own - scoped to every run or just the first, capped by risk level, with an optional end date. High-risk actions still stop and ask unless you allow them. You can pause all autonomous work anytime from Mission Control.'},
+  {c:'auto', q:'How do I schedule recurring autonomous work?', a:'Start an autonomous task (Crew → Autonomous task) and pick a schedule - once, daily, weekly, or monthly. Manage everything under Scheduled: next run, last run, approval mode, and per-task pause or cancel. Connect the backend for true 24/7 runs even with AMV closed.'},
+  {c:'create', q:'How do I generate images and video?', a:'Click Images or Video in the sidebar, describe what you want, choose a style and aspect ratio, and generate. Images render in seconds; video is sent to the engine and returned when ready.'},
+  {c:'create', q:'How do I create interactive 3D models?', a:'Just ask in chat - e.g. “create a 3D model of a human heart.” It renders live with drag-to-rotate, scroll-to-zoom, and pan controls.'},
+  {c:'create', q:'What is Studio (AMV Design)?', a:'Studio is a live design canvas. Describe a landing page, UI mockup, poster, or graphic and watch it build, then refine by chatting (“make it darker,” “add a pricing section”). Set a reusable Design DNA once and everything follows your colors, fonts, and style.'},
+  {c:'build', q:'Can AMV build and run real apps?', a:'Yes - Dev writes the code, runs it in a live sandbox, and shows you the result. Lab lets you paste or upload existing code (any size) to run, find and fix bugs, review, refactor, or add tests. On higher plans you can deploy to a live URL.'},
+  {c:'chat', q:'How do I upload files for analysis?', a:'Click the paperclip in the chat input or drag &amp; drop. AMV reads PDFs, images, code, Excel, CSV, and Word - and can work across a whole folder for autonomous tasks.'},
+  {c:'connect', q:'How do I connect Gmail, Calendar, and files?', a:'Go to Settings → Connectors (or Integrations). Connect Google to let AMV read email, manage your calendar, and work with Drive files. Everything an agent wants to send still waits for your approval first.'},
+  {c:'connect', q:'What is Handoff?', a:'Handoff lets you pass a task - with its full context - to a teammate inside AMV, or receive one from them, so work moves between people without losing the thread.'},
+  {c:'connect', q:'What is the Marketplace?', a:'Browse and install prompts, crews, and integrations - free ones add to your Prompt Library or Crew instantly. Click any seller’s name to see their listings and reviews or message them. You can publish your own and keep 80% of every sale. Paid items always go through secure checkout.'},
   /* Priced from PLANS. Written out, this answer quoted three figures that
      nothing kept in step with the cards or with checkout, so changing a price
      left the Help Center stating the old one to the person who came here to
      ask what it costs. */
-  {q:'How do plans and limits work?', a:'Free gives you daily usage to explore everything. Pro ($'+PLANS.pro.price+'/mo) unlocks autonomous agents, Mission Control, the app builder, connected accounts, and '+PLANS.pro.mult+' usage. Elite ($'+PLANS.elite.price+'/mo) adds our most capable Apex model first, one-click deploy, and parallel agents at '+PLANS.elite.mult+' usage. Ultra ($'+PLANS.ultra.price+'/mo) is '+PLANS.ultra.mult+' usage with unlimited parallel agents and team workspaces. Custom lets you set your own hard-capped budget. Limits are usage-based - just work without counting messages.'},
-  {q:'What is AI Memory?', a:'Memory lets AMV remember facts about you - your role, preferences, and context - and apply them automatically in every conversation. Add or edit them under Memory in the sidebar.'},
-  {q:'How do I use voice input?', a:'Click the microphone in the chat input (best in Chrome and Edge), speak, and your words appear in the box. Press Enter to send.'},
-  {q:'How do I rename, star, or delete chats?', a:'Hover a chat in the sidebar for quick actions, or right-click for the full menu including Export and Share.'},
-  {q:'Can I export my conversations?', a:'Yes - right-click any chat and choose “Export as Markdown” to download a .md file for Notion, Obsidian, or any editor.'},
-  {q:'How is my data protected?', a:'Your data is stored in your browser and, when you connect the backend, encrypted in transit (256-bit TLS). Passwords are hashed with PBKDF2. Card details go straight to Stripe - AMV never sees them. Export or delete everything anytime.'}
+  {c:'billing', q:'How do plans and limits work?', a:'Free gives you daily usage to explore everything. Pro ($'+PLANS.pro.price+'/mo) unlocks autonomous agents, Mission Control, the app builder, connected accounts, and '+PLANS.pro.mult+' usage. Elite ($'+PLANS.elite.price+'/mo) adds our most capable Apex model first, one-click deploy, and parallel agents at '+PLANS.elite.mult+' usage. Ultra ($'+PLANS.ultra.price+'/mo) is '+PLANS.ultra.mult+' usage with unlimited parallel agents and team workspaces. Custom lets you set your own hard-capped budget. Limits are usage-based - just work without counting messages.'},
+  {c:'privacy', q:'What is AI Memory?', a:'Memory lets AMV remember facts about you - your role, preferences, and context - and apply them automatically in every conversation. Add or edit them under Memory in the sidebar.'},
+  {c:'chat', q:'How do I use voice input?', a:'Click the microphone in the chat input (best in Chrome and Edge), speak, and your words appear in the box. Press Enter to send.'},
+  {c:'chat', q:'How do I rename, star, or delete chats?', a:'Hover a chat in the sidebar for quick actions, or right-click for the full menu including Export and Share.'},
+  {c:'chat', q:'Can I export my conversations?', a:'Yes - right-click any chat and choose “Export as Markdown” to download a .md file for Notion, Obsidian, or any editor.'},
+  {c:'privacy', q:'How is my data protected?', a:'Your data is stored in your browser and, when you connect the backend, encrypted in transit (256-bit TLS). Passwords are hashed with PBKDF2. Card details go straight to Stripe - AMV never sees them. Export or delete everything anytime.'}
 ]
 
 /* A real 404 for unknown routes - instead of silently showing chat, tell the
@@ -427,22 +427,54 @@ function render404View(){
 }
 try{ window.render404View=render404View; }catch(e){}
 
+/* THE ONLY WAY IN WAS TO ALREADY KNOW THE WORD (AMV-D056).
+
+   Twenty questions in one flat accordion under a search box. Search is a good
+   second route and a poor first one: somebody who does not yet know what AMV
+   calls a thing cannot search for it, and scanning twenty rows to find out is
+   the work the page exists to save.
+
+   The questions are unchanged. They are grouped now, each group is a filter
+   chip, and search still runs across every answer regardless of the chip - so
+   the two routes do not fight. A group with nothing left after a search hides
+   its heading too, which is the bug this kind of filtering usually ships with. */
+const FAQ_CATS=[
+  ['start','Getting started'],
+  ['chat','Chat and results'],
+  ['create','Images, video and design'],
+  ['build','Building apps'],
+  ['auto','Automations and approvals'],
+  ['connect','Connections, teamwork and marketplace'],
+  ['billing','Plans and billing'],
+  ['privacy','Memory, data and privacy']
+];
 function renderHelpView(){
   const vc=$('vc'); if(!vc) return;
+  const chips='<div class="hc-chips" role="group" aria-label="Filter help by topic">'+
+    '<button class="hc-chip on" data-hcc="all">All</button>'+
+    FAQ_CATS.map(c=>'<button class="hc-chip" data-hcc="'+c[0]+'">'+escH(c[1])+'</button>').join('')+
+  '</div>';
+  const groups=FAQ_CATS.map(c=>{
+    const items=FAQS.map((f,i)=>[f,i]).filter(x=>x[0].c===c[0]);
+    if(!items.length) return '';
+    return '<section class="hc-group" data-hcg="'+c[0]+'">'+
+      '<h3 class="hc-group-h">'+escH(c[1])+'</h3>'+
+      items.map(x=>
+        '<div class="faq-item" id="fi-'+x[1]+'" data-hcg="'+c[0]+'">'+
+          '<div class="faq-q" data-fi="'+x[1]+'"><span>'+x[0].q+'</span><span class="faq-arr">+</span></div>'+
+          '<div class="faq-a">'+x[0].a+'</div>'+
+        '</div>').join('')+
+    '</section>';
+  }).join('');
   vc.innerHTML=
     '<div class="sv fi"><div class="vi">'+
       '<h2>Help Center</h2>'+
-      '<p class="vsub">Answers to the most common questions.</p>'+
+      '<p class="vsub">Pick a topic, or search if you already know the word for it.</p>'+
       '<div class="ss2">'+
-        '<input type="text" id="faq-search" placeholder="Search help…" style="font-size:13px;margin-bottom:13px">'+
-        '<div id="faq-list">'+
-          FAQS.map((f,i)=>
-            '<div class="faq-item" id="fi-'+i+'">'+
-              '<div class="faq-q" data-fi="'+i+'"><span>'+f.q+'</span><span class="faq-arr">+</span></div>'+
-              '<div class="faq-a">'+f.a+'</div>'+
-            '</div>'
-          ).join('')+
-        '</div>'+
+        '<input type="search" id="faq-search" placeholder="Search help…" aria-label="Search help" style="font-size:16px;margin-bottom:13px">'+
+        chips+
+        '<div id="faq-list">'+groups+'</div>'+
+        '<p id="faq-none" class="hc-none" hidden>No answer matches that. Try a different word, or ask AMV below - it can answer from the product itself.</p>'+
       '</div>'+
       '<div class="ss2"><h3>Share feedback</h3>'+
         '<p style="font-size:12.5px;color:var(--mu);margin-bottom:12px;line-height:1.55">Found a bug or have an idea? Tell us - real feedback shapes what we build next.</p>'+
@@ -464,13 +496,34 @@ function renderHelpView(){
       document.getElementById('fi-'+q.dataset.fi)?.classList.toggle('open');
     });
   });
-  on($('faq-search'),'input',function(){
-    const s=this.value.toLowerCase();
-    vc.querySelectorAll('.faq-item').forEach((item,i)=>{
-      const f=FAQS[i];
-      item.style.display=(!s||f.q.toLowerCase().includes(s)||f.a.toLowerCase().includes(s))?'block':'none';
+
+  /* One function decides what is visible, from the two inputs, every time.
+     Two independent handlers each hiding rows is how a chip and a search box
+     end up disagreeing about the same row. */
+  let cat='all';
+  function apply(){
+    const s=(($('faq-search')||{}).value||'').toLowerCase().trim();
+    let shown=0;
+    vc.querySelectorAll('.faq-item').forEach(item=>{
+      const f=FAQS[+item.querySelector('.faq-q').dataset.fi];
+      const okCat = cat==='all' || f.c===cat;
+      const okTxt = !s || f.q.toLowerCase().includes(s) || f.a.toLowerCase().includes(s);
+      const on = okCat && okTxt;
+      item.hidden = !on;
+      if(on) shown++;
     });
-  });
+    /* A heading over nothing reads as a group with no answers in it. */
+    vc.querySelectorAll('.hc-group').forEach(g=>{
+      g.hidden = !g.querySelector('.faq-item:not([hidden])');
+    });
+    const none=$('faq-none'); if(none) none.hidden = shown>0;
+  }
+  vc.querySelectorAll('[data-hcc]').forEach(b=>b.addEventListener('click',()=>{
+    cat=b.dataset.hcc;
+    vc.querySelectorAll('[data-hcc]').forEach(x=>x.classList.toggle('on',x===b));
+    apply();
+  }));
+  on($('faq-search'),'input',apply);
 }
 
 /* === SETTINGS VIEW === */
@@ -3065,9 +3118,22 @@ function _initCookieConsent(){
   wrap.setAttribute('aria-label','Cookie preferences');
   wrap.innerHTML =
     '<div class="cc-inner">'+
-      '<div class="cc-text">We use essential cookies to run AMV, and optional analytics cookies to understand usage so we can improve the product. You can change this anytime in Settings.</div>'+
+      /* THREE BUTTONS OF EQUAL WEIGHT FOR ONE REAL CHOICE (AMV-D059).
+
+         Manage, Essential only and Accept all were all `.btn`, and on a phone
+         `.cc-actions .btn{flex:1}` gave each of them a third of the row - so a
+         tertiary link to a settings pane was drawn at the same size as the two
+         answers, and the first thing a new visitor met was a legal control
+         with the visual weight of the product's own call to action.
+
+         Two answers keep button weight. Manage becomes a quiet text link. It
+         stays a <button> rather than becoming an <a>, because it performs an
+         action rather than navigating - the change is presentation only, so
+         keyboard and screen-reader behaviour are untouched. Three sentences
+         are one: the same commitment, without the paragraph. */
+      '<div class="cc-text">Essential cookies keep AMV running; analytics cookies are optional, and you can change this any time in Settings.</div>'+
       '<div class="cc-actions">'+
-        '<button class="btn" id="cc-manage">Manage</button>'+
+        '<button class="cc-manage-link" id="cc-manage">Manage</button>'+
         '<button class="btn" id="cc-decline">Essential only</button>'+
         '<button class="btn bp" id="cc-accept">Accept all</button>'+
       '</div>'+

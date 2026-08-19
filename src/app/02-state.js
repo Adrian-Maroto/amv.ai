@@ -620,21 +620,37 @@ function _sectionModelKey(section){
 }
 function _sectionModel(section){ return MODELS[_sectionModelKey(section)].model; }
 function _setSectionModel(section, key){ if(MODELS[key]) saveStr('amv_secmodel_'+section, key); }
-// cost label (relative usage) for a model key
-function _modelCostLabel(key){
-  const c=(MODELS[key]||{}).cost||0;
-  if(c===0) return 'light usage';
-  if(c<=1) return 'light usage';
-  if(c<=2) return 'standard usage';
-  if(c<=3) return 'higher usage';
-  return 'heaviest usage';
+/* WHAT A MODEL IS FOR, NOT HOW HEAVY IT IS.
+
+   The picker read "Apex \u00b7 heaviest", "Forge \u00b7 higher", "Pulse \u00b7 light". That is
+   this file's internal cost ladder shown to somebody who has never seen it, and
+   it asks them to translate. "Heaviest" is not a reason to pick something - read
+   plainly it sounds slow and expensive, which is exactly the wrong impression of
+   the model you reach for when the work is hard.
+
+   The label says what you would choose it FOR. The ladder still exists and still
+   decides routing and billing; it is simply not the thing a person is asked to
+   reason about.
+
+   (_modelCostLabel used to sit here returning "heaviest usage" and had no
+   callers at all - the live labels were built inline below. Removed rather than
+   left looking like the thing that produces them.) */
+function _modelOutcomeLabel(key){
+  const m=MODELS[key]||{};
+  if(m.model==='auto') return 'picks for you';
+  const c=m.cost||0;
+  if(c<=1) return 'fastest';
+  if(c<=2) return 'balanced';
+  if(c<=3) return 'built for code';
+  return 'highest quality';
 }
 // build a <select> of pickable models for a section (excludes hidden/image)
 function _sectionModelSelect(section, id){
   const cur=_sectionModelKey(section);
   return '<select id="'+id+'" class="sel secmodel-sel">'+MODEL_ORDER.map(k=>{
-    const m=MODELS[k]; const lvl=m.cost?(' \u00b7 '+(m.cost<=1?'light':m.cost<=2?'standard':m.cost<=3?'higher':'heaviest')):' \u00b7 light';
-    return '<option value="'+k+'"'+(k===cur?' selected':'')+'>'+m.label.replace('AMV ','')+lvl+'</option>';
+    const m=MODELS[k];
+    return '<option value="'+k+'"'+(k===cur?' selected':'')+'>'+
+      m.label.replace('AMV ','')+' \u00b7 '+_modelOutcomeLabel(k)+'</option>';
   }).join('')+'</select>';
 }
 

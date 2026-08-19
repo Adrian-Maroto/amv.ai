@@ -1704,7 +1704,29 @@ function renderCrewView(){
         <p class="vsub">Crew is AMV working on its own. Tell it an outcome and it plans the steps, does the work across your connected apps, and stops for your approval before anything is sent. This page is where you watch it all - what needs you, what’s running, and what’s scheduled.</p>
       </div>
       <div class="mc-head-r">
-        <button class="mc-pause ${paused?'paused':''}" data-dact="${paused?'resumeAllAutonomous':'pauseAllAutonomous'}">${paused?'▶ Resume autonomy':'⏸ Pause all autonomous'}</button>
+        ${(() => {
+          /* A SAFETY CONTROL FOR WORK THAT IS NOT HAPPENING.
+
+             "Pause all autonomous" was the loudest thing in this header and it
+             was always there - including on an account with nothing running,
+             which is every account on its first visit. The first control
+             somebody meets on the Crew screen was an emergency brake for a
+             machine that had not been started, and it plants the idea that
+             something here needs stopping before they have turned anything on.
+
+             When work IS running, pause is exactly right and stays. When
+             nothing is, the useful thing to offer is the way in. Paused counts
+             as active state on purpose: if somebody has paused autonomy they
+             must always be able to resume it, whether or not a job is listed. */
+          const running = st.server.length + _mcLocalOnly(st).length + st.auton.length;
+          if (paused) {
+            return `<button class="mc-pause paused" data-dact="resumeAllAutonomous">▶ Resume autonomy</button>`;
+          }
+          if (running > 0) {
+            return `<button class="mc-pause" data-dact="pauseAllAutonomous">⏸ Pause all autonomous</button>`;
+          }
+          return `<button class="mc-browse" data-dact="openCowork">Create an automation</button>`;
+        })()}
       </div>
     </header>
     ${(()=>{ const n=_crewJobAllowance(); const used=st.server.length+_mcLocalOnly(st).length+st.auton.length;
