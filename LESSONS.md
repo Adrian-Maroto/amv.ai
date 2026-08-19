@@ -4995,3 +4995,44 @@ The full gate found it in a browser-driven privacy suite that signs out. That is
 the fast/full split doing exactly what it is documented to do, and the reason
 "use check:fast between edits, the full gate before calling anything done" is
 written in CLAUDE.md rather than assumed.
+
+## 263. process.exit() throws away what console.log has not written yet, and only on CI
+
+Two commits went red on CI and the log was unreadable. It stopped in the middle
+of a suite unrelated to anything that had changed, contained no failing
+assertion anywhere in it, and had no summary. Everything about it said the
+runner had crashed partway through. It had not: all 296 suites ran, some failed,
+and the report naming them was written into a buffer that was discarded.
+
+When Node's stdout is a PIPE, writes are asynchronous. `process.exit()` does not
+flush what is still queued, so a large `console.log` immediately before it
+delivers a prefix and drops the rest. A terminal is synchronous, and so is a
+redirect to a file - which is why the same code prints in full on a laptop, in
+full when you tee it to a log, and is cut off in the one environment where the
+log is the only thing you have.
+
+The failure mode is worse than a crash. A crash tells you it crashed. This
+produced output that looked complete enough to reason about and pointed at an
+innocent suite, because the truncation lands wherever the buffer ran out rather
+than anywhere meaningful.
+
+The rule: any output a program emits on its way to `process.exit()` must be
+written synchronously. `writeSync(1, ...)` is synchronous whatever stdout is
+attached to. Retry on EAGAIN and EINTR rather than falling back - the first fix
+kept a `console.log` fallback inside the `writeSync` catch, and the new test
+rejected it, correctly. A fallback to the asynchronous path on the one write
+that must not be lost reintroduces the bug quietly, on whichever machine happens
+to take the fallback.
+
+Second rule, from the same failure: a gate that fails should lead with the
+answer. `sh()` threw carrying the runner's entire output, megabytes of ticks,
+with the names of the failing suites in a summary at the very bottom. Even with
+the flush fixed, that is the most fragile possible place to put the one thing
+somebody needs. The names go first now and only the failing sections are
+printed.
+
+Third, on how it was verified: `tests/e2e/a-failing-gate-can-be-read` pushes 4MB
+through a real pipe both ways and asserts that `console.log` + exit delivers
+LESS than `writeSync` + exit, before asserting the gate uses the second. A check
+that cannot demonstrate the failure it guards against is not evidence that the
+failure was ever real.
