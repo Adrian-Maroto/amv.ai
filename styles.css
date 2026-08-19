@@ -8816,3 +8816,27 @@ body.light .fr-d{ color:#67656d; }
 @media(max-width:700px){
   .hc-chip{ min-height:32px; }
 }
+
+/* ── LAYER A95: THE DOT IN THE WORDMARK (found by CI, not by eye) ─────────
+   `AMV.AI` in the header put its dot on `--blue` inline - a token CLAUDE.md
+   lists as deprecated - which measures 4.20:1 on the dark background where
+   WCAG 2.1 AA wants 4.5. A later layer already overrode it to `--accent` for
+   `#anav`, and that measures the same 4.20, so the override changed the token
+   and not the problem.
+
+   `--accent-tx` exists for exactly this: LAYER A86 added it because accent
+   text on a dark surface fails while the accent BEHIND white text must not be
+   darkened. It measures 5.94:1 here, and in light mode it is bound back to
+   --accent, which passes there.
+
+   Not exempted, though it could have been. WCAG 1.4.3 excludes text that is
+   part of a logo or brand name, and this is the brand name - the mark itself
+   is exempted on that rule a few layers up. The exemption is for cases where
+   passing would mean making the brand worse to look at. Here the token built
+   for the job already existed, so the honest fix was cheaper than the excuse.
+
+   `!important` matches the layer at 2063, which is the only way to win in an
+   append-only cascade. */
+.logo-wm-dot{ color:var(--accent-tx); }
+#anav .logo-wm .logo-wm-dot,
+.logo-wm .logo-wm-dot{ color:var(--accent-tx)!important; }

@@ -42,6 +42,13 @@ for (const theme of ['dark','light']) {
     document.body.classList.toggle('light', theme==='light');
     document.getElementById('ck')?.remove();
     setTab('chat');
+    /* MEASURE THE PAGE A PERSON SEES, NOT A FRAME THAT EXISTS FOR 200ms.
+
+       The webfonts load from a CDN with display:swap, so the first paint uses
+       fallback faces and everything reflows when Inter arrives. Waiting a fixed
+       500ms measures whichever of those two pages the machine happened to be
+       showing - warm cache here, cold cache on CI. */
+    try{ await document.fonts.ready; }catch(e){}
     await new Promise(r=>setTimeout(r,500));
     const parse=(c)=>{const m=c.match(/[\d.]+/g); return m?m.slice(0,3).map(Number):null;};
     const lum=r=>{const s=r.map(v=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4);});return .2126*s[0]+.7152*s[1]+.0722*s[2];};
@@ -59,7 +66,18 @@ for (const theme of ['dark','light']) {
     const bad=[];
     const seen=new Set();
     for(const el of document.querySelectorAll('button,a,input,label,p,span,div,h1,h2,h3,td,th')){
-      const r=el.getBoundingClientRect(); if(r.width<4||r.height<4) continue;
+      /* A FOUR-PIXEL FLOOR DECIDED WHETHER THIS SUITE PASSED.
+
+         This skipped anything under 4x4, meaning to skip elements that do not
+         render. It also skipped narrow REAL text: the dot in the AMV.AI
+         wordmark is 3.73px wide with Inter loaded and wider without it, so this
+         suite measured it on CI, skipped it here, and went red on one machine
+         and green on the other over a fraction of a pixel of glyph advance.
+
+         That cost two red builds and a long hunt. A check whose answer depends
+         on which font finished loading is not measuring contrast. Nothing that
+         is not rendered has a box at all, so 1px is the honest floor. */
+      const r=el.getBoundingClientRect(); if(r.width<1||r.height<1) continue;
       const cs=getComputedStyle(el);
       if(cs.visibility==='hidden'||cs.display==='none'||+cs.opacity<0.1) continue;
       /* WCAG 1.4.3 exempts text that is part of a logo or brand name. The AMV

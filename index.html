@@ -8932,6 +8932,30 @@ body.light .fr-d{ color:#67656d; }
   .hc-chip{ min-height:32px; }
 }
 
+/* ── LAYER A95: THE DOT IN THE WORDMARK (found by CI, not by eye) ─────────
+   `AMV.AI` in the header put its dot on `--blue` inline - a token CLAUDE.md
+   lists as deprecated - which measures 4.20:1 on the dark background where
+   WCAG 2.1 AA wants 4.5. A later layer already overrode it to `--accent` for
+   `#anav`, and that measures the same 4.20, so the override changed the token
+   and not the problem.
+
+   `--accent-tx` exists for exactly this: LAYER A86 added it because accent
+   text on a dark surface fails while the accent BEHIND white text must not be
+   darkened. It measures 5.94:1 here, and in light mode it is bound back to
+   --accent, which passes there.
+
+   Not exempted, though it could have been. WCAG 1.4.3 excludes text that is
+   part of a logo or brand name, and this is the brand name - the mark itself
+   is exempted on that rule a few layers up. The exemption is for cases where
+   passing would mean making the brand worse to look at. Here the token built
+   for the job already existed, so the honest fix was cheaper than the excuse.
+
+   `!important` matches the layer at 2063, which is the only way to win in an
+   append-only cascade. */
+.logo-wm-dot{ color:var(--accent-tx); }
+#anav .logo-wm .logo-wm-dot,
+.logo-wm .logo-wm-dot{ color:var(--accent-tx)!important; }
+
 </style>
 <!-- BUILD:CSS:END -->
 <script>
@@ -8982,7 +9006,7 @@ body.light .fr-d{ color:#67656d; }
   <nav id="lnav">
     <div class="logo-g" id="brand-land">
       <div class="logo-mark sig-mark-wrap" style="background:transparent;box-shadow:none"><svg class="amv-mark" width="28" height="28" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" style="display:block"><defs><linearGradient id="amvMkNav" x1="6" y1="34" x2="34" y2="6" gradientUnits="userSpaceOnUse"><stop stop-color="#5590ff"/><stop offset="1" stop-color="#4d7ef5"/></linearGradient><filter id="amvMkNavf" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="1.1" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs><g filter="url(#amvMkNavf)" stroke="url(#amvMkNav)" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 32 L20 10 L31 32" fill="none"/><path d="M14.5 24 L23.5 24" fill="none"/></g><circle cx="20" cy="6.2" r="2.4" fill="url(#amvMkNav)"/></svg></div>
-      <span class="logo-wm">AMV<span style="color:var(--blue)">.</span>AI</span>
+      <span class="logo-wm">AMV<span class="logo-wm-dot">.</span>AI</span>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
       <button class="btn bs" style="font-size:12px;padding:5px 14px" id="land-login">Log in</button>
@@ -9135,7 +9159,7 @@ body.light .fr-d{ color:#67656d; }
       </button>
       <div class="logo-g" id="app-brand">
         <div class="logo-mark logo-letter">A</div>
-        <span class="logo-wm">AMV<span style="color:var(--blue)">.</span>AI</span>
+        <span class="logo-wm">AMV<span class="logo-wm-dot">.</span>AI</span>
       </div>
     </div>
     <div class="hdr-mid">
