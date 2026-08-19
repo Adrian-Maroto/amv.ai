@@ -5036,3 +5036,44 @@ through a real pipe both ways and asserts that `console.log` + exit delivers
 LESS than `writeSync` + exit, before asserting the gate uses the second. A check
 that cannot demonstrate the failure it guards against is not evidence that the
 failure was ever real.
+
+## 264. A check that skips small elements decides its own result by glyph width
+
+The contrast suite passed on this machine and failed on CI, on the same commit,
+twice. The failing element was reported as `4.2:1 need 4.5 - 15px . "."` - a full
+stop, with no class, in the AMV.AI wordmark.
+
+It skipped anything under 4x4 pixels, meaning to skip elements that do not
+render. A period is 3.73px wide with Inter loaded and wider in a fallback face.
+The fonts come from a CDN with `display:swap`, so the page paints in a fallback
+first and reflows when Inter arrives; a warm cache measures one page and a cold
+runner measures the other. The suite was therefore deciding whether AMV ships on
+a fraction of a pixel of glyph advance.
+
+Three things went wrong and all three are worth separating:
+
+- **The floor was a guess at a proxy.** "Too small to matter" was standing in for
+  "not rendered". Nothing that fails to render has a box at all, so the honest
+  floor is 1px. The 4px version silently exempted real text - narrow glyphs, thin
+  columns - and nobody would ever have seen which.
+- **The page was measured mid-swap.** A fixed `setTimeout` after load measures
+  whichever paint the machine happened to be showing. `await document.fonts.ready`
+  measures the page a person actually reads.
+- **The defect it was hiding was real.** The wordmark dot was on `--blue`, a
+  deprecated token, at 4.20:1 against 4.5. A later layer had already overridden it
+  to `--accent`, which measures the same 4.20 - so the override changed the token
+  and not the problem, which is the shape of a fix that was never verified.
+
+It could have been exempted instead. WCAG 1.4.3 excludes text that is part of a
+logo or brand name, this is the brand name, and the mark beside it is already
+exempted on that rule. The exemption is for cases where passing would mean making
+the brand worse to look at. `--accent-tx` already existed for accent text on a
+dark surface and measures 5.94:1, so the honest fix was cheaper than the excuse.
+Reach for an exemption when fixing costs something real, not when it costs a
+minute of reading.
+
+The cost of the nondeterminism, separately from the defect: two red builds, a
+cancelled run, and two wrong hypotheses before the evidence arrived - and the
+evidence only arrived because the gate's own output had been fixed first. A
+flaky check does not just waste time, it teaches you to distrust the true
+result when it finally shows up.
