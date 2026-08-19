@@ -57,12 +57,17 @@ section('The one text the landing block exists to provide reads as written (AMV-
 /* ──────────────────────────────────────────────────────────────────────── */
 section('Crew leads with the way in, and with the brake only when it is needed (AMV-D024)');
 {
-  const head = async () => page.evaluate(async () => {
-    setTab('crew');
-    await new Promise(s => setTimeout(s, 400));
-    const b = document.querySelector('.mc-head-r button');
-    return b ? { cls: b.className, act: b.dataset.dact, txt: b.textContent.trim() } : null;
-  });
+  /* Wait for the control under test to exist, not for a number of
+      milliseconds. Crew kicks off a background refresh that can re-render, so a
+      fixed delay here is a bet on which render you read. */
+  const head = async () => {
+    await page.evaluate(() => setTab('crew'));
+    await page.waitForSelector('.mc-head-r button', { timeout: 15000 }).catch(() => {});
+    return page.evaluate(() => {
+      const b = document.querySelector('.mc-head-r button');
+      return b ? { cls: b.className, act: b.dataset.dact, txt: b.textContent.trim() } : null;
+    });
+  };
 
   /* Crew is gated on a plan. Without this the tab renders the upsell catalogue
      instead of Mission Control - which is how an earlier pass read "no pause
@@ -99,7 +104,8 @@ section('The model picker describes what you get, not what it costs us (AMV-D034
 /* ──────────────────────────────────────────────────────────────────────── */
 section('Help can be reached by topic, not only by already knowing the word (AMV-D056)');
 {
-  await page.evaluate(async () => { setTab('help'); await new Promise(s => setTimeout(s, 400)); });
+  await page.evaluate(() => setTab('help'));
+  await page.waitForSelector('.hc-group .faq-q', { timeout: 15000 });
   const shape = await page.evaluate(() => ({
     groups: document.querySelectorAll('.hc-group').length,
     chips: document.querySelectorAll('.hc-chip').length,
@@ -139,9 +145,9 @@ section('Help can be reached by topic, not only by already knowing the word (AMV
 section('Images and Video say what they are (AMV-D070)');
 {
   for (const tab of ['images', 'video']) {
-    const h = await page.evaluate(async (t) => {
-      setTab(t);
-      await new Promise(s => setTimeout(s, 400));
+    await page.evaluate((t) => setTab(t), tab);
+    await page.waitForSelector('#vc .pghd h2', { timeout: 15000 }).catch(() => {});
+    const h = await page.evaluate((t) => {
       const vc = document.getElementById('vc');
       const head = vc.querySelector('.pghd');
       const title = head && head.querySelector('h2');
@@ -192,12 +198,10 @@ section('The cookie banner is sized like compliance, not like the product (AMV-D
 /* ──────────────────────────────────────────────────────────────────────── */
 section('Lab offers one run action per state, and it is one that works (AMV-D033)');
 {
-  const enterLab = () => page.evaluate(async () => {
-    saveStr('amv_plan', 'ultra');
-    _LAB.code = '';
-    setTab('lab');
-    await new Promise(s => setTimeout(s, 500));
-  });
+  const enterLab = async () => {
+    await page.evaluate(() => { saveStr('amv_plan', 'ultra'); _LAB.code = ''; setTab('lab'); });
+    await page.waitForSelector('#lab-entry-acts [data-go]', { timeout: 15000 });
+  };
   const visible = (sel) => page.evaluate((q) => [...document.querySelectorAll(q)]
     .filter(e => { const r = e.getBoundingClientRect(); const cs = getComputedStyle(e);
       return r.width > 1 && r.height > 1 && cs.visibility !== 'hidden' && cs.display !== 'none'; })
@@ -210,8 +214,8 @@ section('Lab offers one run action per state, and it is one that works (AMV-D033
   ok(emptyFixes.length === 1, 'and exactly one fix action', emptyFixes);
   ok(/run it/i.test(emptyRuns[0] || ''), 'the one that survives is the one beside the paste box', emptyRuns[0]);
 
-  await page.evaluate(async () => { _LAB.code = 'console.log(1)'; renderLabView();
-    await new Promise(s => setTimeout(s, 350)); });
+  await page.evaluate(() => { _LAB.code = 'console.log(1)'; renderLabView(); });
+  await page.waitForSelector('#lab-run', { timeout: 15000 });
   const loadedRuns = await visible('#lab-run,[data-go="run"]');
   ok(loadedRuns.length === 1, 'with code loaded there is still exactly one', loadedRuns);
   ok(!/run it/i.test(loadedRuns[0] || ''), 'and now it is the toolbar one, next to the editor', loadedRuns[0]);
@@ -228,7 +232,21 @@ section('Lab offers one run action per state, and it is one that works (AMV-D033
   await enterLab();
   await page.fill('#lab-paste', 'console.log("the entry button really runs")');
   await page.click('[data-go="run"]');
-  await page.waitForSelector('#lab-out-stat:not(:empty)', { timeout: 15000 }).catch(() => {});
+  /* WAIT FOR AN OUTCOME, NOT FOR ANY TEXT AT ALL.
+
+     This waited for the status line to become non-empty, which _labRun sets to
+     "Running…" as its first act - so the wait returned while the run was still
+     going and the assertion read the progress message. It passed on a fast
+     machine and failed on CI, which is the same proxy-instead-of-the-rule
+     mistake this suite exists to catch, committed inside the suite itself.
+
+     Every terminal state is matched, the failing ones included: a real error
+     ends the wait and then fails the assertion below with the error in hand,
+     rather than sitting here until the timeout and reporting nothing useful. */
+  await page.waitForFunction(() => {
+    const t = (document.getElementById('lab-out-stat') || {}).textContent || '';
+    return /ran in|rendered|\u2717|error|isn\u2019t connected/i.test(t);
+  }, { timeout: 25000 }).catch(() => {});
   const ran = await page.evaluate(() => ({
     stat: (document.getElementById('lab-out-stat').textContent || '').trim(),
     out: (document.getElementById('lab-out-body').textContent || '').replace(/\s+/g, ' ').trim(),
@@ -241,9 +259,14 @@ section('Lab offers one run action per state, and it is one that works (AMV-D033
   await enterLab();
   await page.fill('#lab-paste', 'const x = 1');
   await page.click('[data-go="bugs"]');
-  await page.waitForSelector('#lab-out-stat:not(:empty)', { timeout: 15000 }).catch(() => {});
+  await page.waitForFunction(() => {
+    const t = (document.getElementById('lab-out-stat') || {}).textContent || '';
+    return /\u2713|\u2717|error|isn\u2019t connected|found|no issues/i.test(t);
+  }, { timeout: 25000 }).catch(() => {});
   const chip = await page.evaluate(() => (document.getElementById('lab-out-stat').textContent || '').trim());
   ok(chip.length > 0, 'an analysis chip answers rather than doing nothing at all', chip.slice(0, 70));
+  ok(!/^(analy|running|working|thinking)/i.test(chip),
+     'and the answer is an outcome, not a progress message', chip.slice(0, 70));
 }
 
 ok(errors.length === 0, 'no console errors anywhere in this sweep', errors.slice(0, 3));

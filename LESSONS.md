@@ -5115,3 +5115,43 @@ on a screen is a reason to operate that screen.
 And it was checked against the previous commit before being called a regression.
 It was not one; it had been shipping. Guessing either way would have been free
 and wrong half the time.
+
+## 266. I wrote the proxy-instead-of-the-rule defect into the suite that exists to catch it
+
+The guard for AMV-D033 asserts that pasting code and pressing Lab's entry Run
+really executes it. It waited like this:
+
+    await page.waitForSelector('#lab-out-stat:not(:empty)')
+
+`_labRun` sets that status to "Running…" as its FIRST act. So the wait returned
+while the run was still going, and the assertion read the progress message. It
+passed here and failed on CI, where the run does not finish inside the polling
+interval, and the reported value was literally `got: "Running…"`.
+
+"The status line has text in it" is not "the run finished". That is the same
+substitution this repository has now found in a build guard, a runner guard, a
+contrast check and a device sweep - and this time I put it inside the suite whose
+entire job is to catch it, in the same session, hours after writing the previous
+lesson about it. Knowing the failure mode by name is not protection against it.
+
+The rule for waits specifically: wait for a TERMINAL state, and enumerate every
+terminal state including the failures. Matching only the success marker turns a
+real error into a timeout that reports nothing useful, which is the same trap
+from the other direction.
+
+    await page.waitForFunction(() => {
+      const t = (document.getElementById('lab-out-stat')||{}).textContent || '';
+      return /ran in|rendered|✗|error|isn’t connected/i.test(t);
+    });
+
+And verified by REPRODUCING the CI condition rather than reasoning about it:
+`runCode` was stubbed to take three seconds, which made the old wait return
+"Running…" locally and the new one return "✓ ran in 14ms". A regex changed on
+the strength of an argument is not a fix; a regex that demonstrably rides out
+the failure is.
+
+The rest of that suite's fixed waits were then checked one by one rather than
+swept. Most sat after a SYNCHRONOUS render, where a fixed delay is harmless
+because the work is already done before the timer starts - so they were not the
+same bug. They were still anchored to the element under test, because "harmless
+today" depends on a render staying synchronous, and nothing enforces that.
