@@ -75,11 +75,21 @@ section('No filter still means everything, which is what the gate uses');
      { selected: all.length, onDisk: disk.length, missing, extra });
 
   /* The gate calls the runner with no filter. If that ever gained a filter, the
-     thing that decides whether AMV ships would narrow silently. */
+     thing that decides whether AMV ships would narrow silently.
+
+     Anchored on the sh() call rather than on the first place the file happens to
+     say "node tests/run.mjs". It used to take the first textual match anywhere
+     in check.mjs, which meant a COMMENT or an error message mentioning the
+     command could answer this question instead of the code - and one did: a
+     failure message that tells you to run a single suite on its own read as the
+     gate narrowing itself to one suite, and this went red with the gate
+     completely unchanged in that respect. A guard that a sentence about the
+     code can satisfy is not measuring the code. */
   const check = readFileSync(join(ROOT, 'check.mjs'), 'utf8');
-  const call = /node[^\n]*tests\/run\.mjs([^\n']*)/.exec(check);
+  const call = /\bsh\(\s*(['"`])node tests\/run\.mjs([^'"`]*)\1\s*\)/.exec(check);
   ok(call != null, 'the gate’s call to the runner was found', call && call[0]);
-  ok(!/run\.mjs\s+\S/.test(call[0]), 'and it passes no filter, so it runs everything', call[0]);
+  ok(call != null && call[2].trim() === '',
+     'and it passes no filter, so it runs everything', call && JSON.stringify(call[2]));
 }
 
 section('A name that is not a directory is still a name');

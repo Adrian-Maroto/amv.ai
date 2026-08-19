@@ -237,7 +237,7 @@ function _failureReport(fullOutput) {
 
   return `${failing.length} suite(s) failed:\n  ` + failing.join('\n  ') + '\n\n'
     + bodies.join('\n\n') + '\n\n'
-    + `(only the failing suites are shown; run \`node tests/run.mjs <name>\` for one of them)`;
+    + `(only the failing suites are shown; pass one of those names to the runner to work on it alone)`;
 }
 
 if (!FAST) step('All test suites', () => {
