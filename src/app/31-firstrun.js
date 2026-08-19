@@ -49,6 +49,24 @@ function _firstRunHTML(){
     if(typeof S!=='undefined' && Array.isArray(S.convs)
        && S.convs.some(c => (c.msgs||[]).length)) return '';
 
+    /* HOW MUCH OF THE FIRST SCREEN THIS IS ALLOWED TO TAKE (AMV-D022).
+
+       Measured before changing anything: the card was 310px on a 1440x900
+       desktop (34% of the viewport), 310px on a 1366x768 laptop (40%) and
+       371px on a 390x844 phone (44%). The composer stayed reachable without
+       scrolling at all three - that half of the finding did not reproduce -
+       but a third to a half of somebody's first screen was instruction.
+
+       Each item is a real starting point and every one of them still is, so
+       none were removed. What went is the layout: three stacked blocks with a
+       title AND a paragraph became three pills carrying the title only, and
+       the "Or just ask it anything" footer went with them - the composer sits
+       directly below with a cursor in it, which says that better.
+
+       The paragraph is not deleted, it moves. Each pill carries it as its
+       accessible name and as its hover title, so a screen reader still hears
+       what the line does before choosing it, and nothing is explained only by
+       a tooltip - the visible title already stands on its own. */
     return '<div class="fr-card" data-i18n role="region" aria-label="What AMV can do">'+
       '<div class="fr-top">'+
         '<div class="fr-h">AMV does the work, not just the talking</div>'+
@@ -56,12 +74,11 @@ function _firstRunHTML(){
       '</div>'+
       '<div class="fr-list">'+
         _FIRSTRUN_STARTS.map((s,i)=>
-          '<button class="fr-item" type="button" data-fr-go="'+i+'">'+
+          '<button class="fr-item" type="button" data-fr-go="'+i+'"'+
+            ' title="'+escH(s.d)+'" aria-label="'+escH(s.t+'. '+s.d)+'">'+
             '<span class="fr-t">'+escH(s.t)+'</span>'+
-            '<span class="fr-d">'+escH(s.d)+'</span>'+
           '</button>').join('')+
       '</div>'+
-      '<div class="fr-foot">Or just ask it anything.</div>'+
     '</div>';
   }catch(e){ return ''; }
 }

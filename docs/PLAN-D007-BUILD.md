@@ -1,0 +1,120 @@
+# AMV-D007 - one Build surface, made out of Studio, Dev and Lab
+
+Status: **plan only. Nothing is changed yet.** The owner approved the finding and
+asked explicitly that the large ones take the time they need and carry no
+mistakes. This is the written spec that has to be right before any code moves.
+
+## What exists today, measured rather than remembered
+
+Three sidebar destinations, already grouped under a collapsible "Build" heading
+(`_BUILD_TABS = ['studio','dev','lab']`, `src/app/03-sessions.js:782`). Each has
+its own render function, its own state object, and its own copy of five or six
+controls that do the same job.
+
+| | Studio | Dev | Lab |
+|---|---|---|---|
+| Renders | `renderDesignView` (`11-design-code.js:4`) | `renderCodeView` (`11-design-code.js:663`) | `renderLabView` (`14-engine.js:481`) |
+| State | `_STUDIO` | `_DEV` | `_LAB` |
+| Starts from | a description | a description | code you already have |
+| Produces | one HTML artifact | a file tree | an answer about the code |
+| Model picker | none | `_sectionModelSelect('code','dev-model')` | `_sectionModelSelect('debug','lab-model')` |
+| Bring code in | no | `dev-add` menu: files / folder / connect | `lab-upload-top`, `lab-drop`, paste |
+| Run | preview iframe only | preview iframe | `_labRun` plus a `Run it` entry button (AMV-D033) |
+| Deploy | no | `_devDeploy` | `_labDeploy` |
+| Take it away | `_studioExportProject` | `_devDownloadProject` | no |
+| New session | no | `_sessNew('dev')` | `lab-new` |
+
+The seam is already cut and already used: Dev's `dev-tolab` button copies the
+active file into `_LAB_HANDOFF` and calls `setTab('lab')`
+(`11-design-code.js:758`), and Lab picks it up on its next render
+(`14-engine.js:483`). That handoff exists because the split is artificial - the
+product already knows these are one job.
+
+**They are split by how the thing is built, not by what the person wants.**
+Somebody who wants a landing page can get one from Studio (as an HTML artifact)
+or from Dev (as a project). Nothing on either screen tells them which. That is
+the finding.
+
+## What the merged surface is
+
+**One destination, `build`.** One shell: a conversation on the left, a result on
+the right. What changes between the three of today is what the result pane shows
+and which actions the toolbar offers - and both follow from what the person
+brought in, not from a tab they had to pick first.
+
+Three entry states, one screen:
+
+1. **Describe something.** The composer, with starting points. This is Studio's
+   hero and Dev's hero, which are already the same screen written twice.
+2. **Bring code in.** Paste, upload files, upload a folder, connect a folder.
+   This is Lab's entry card and Dev's add menu, which are already the same
+   controls written twice.
+3. **Come back to something.** The session list, which today is per-tool.
+
+The result pane has the tabs the work needs: **Preview**, **Code**, **Findings**.
+Findings is Lab's output pane; it appears when there is something to report and
+not before. Preview is the iframe all three already have.
+
+Design DNA stays and applies to everything the surface produces, which is what
+it was always for - today it only reaches Studio.
+
+## What must NOT change
+
+- **Every capability survives.** Auto-Debug, the six analysis tools, agents,
+  Python and JS execution, deploy, My Sites, the error dashboard, VS Code
+  connect, folder write-back, project download, artifact export, Design DNA.
+  Deleting functionality needs the owner's explicit approval and this is not
+  that; the merge is about one door, not fewer rooms.
+- **Deep links keep working.** `setTab('dev')` has 8 callers outside these files
+  (`05-ui-blocks.js`, `07-workspace-memory.js`, `13-integrations.js`,
+  `16-palette-sched.js`, `26-nextstep.js`), `setTab('studio')` and
+  `setTab('lab')` have their own. `dev`, `studio` and `lab` stay as accepted tab
+  names that route into `build` with the right entry state, permanently, not as
+  a migration step.
+- **Sessions survive.** `_sessNew('dev')` / `_sessNew('lab')` and anything
+  already saved under those keys must still open. A merge that loses somebody's
+  work is worse than the split.
+- **The plan gates stay where they are.** Whatever Dev and Lab check today about
+  deploy and model tiers is checked by the merged surface identically. The
+  server is still the authority.
+
+## Order of work, and where it can stop safely
+
+Each step ends with the product working and the gate green. Nothing here is a
+big-bang rewrite.
+
+1. **Prove the inventory.** A test that names every control on all three screens
+   and every function they call, so step 6 can prove nothing was dropped.
+   Written first, against today's build, and it must pass before and after.
+2. **One shell, three renderers.** Introduce `renderBuildView` that routes to the
+   existing three untouched. `build` becomes a real tab; `studio`/`dev`/`lab`
+   route into it. No visual change yet. Ship this alone.
+3. **One toolbar.** Unify upload, run, deploy, download, model select and new
+   session into one set of controls that acts on whichever state is active. This
+   is where AMV-D033's duplicate Run disappears, and where the two deploy paths
+   become one.
+4. **One entry state.** Replace the three heroes with the single entry screen.
+   Studio's tiles, Dev's chips and Lab's paste/upload sit together, because they
+   are the same question asked three ways.
+5. **One result pane.** Preview / Code / Findings, with Findings appearing only
+   when there is something in it.
+6. **Retire the three renderers**, and run the step-1 inventory to prove every
+   control still exists and still reaches the same function.
+
+## What is deliberately deferred
+
+- **AMV-D033** (Lab's duplicate Run) is folded into step 3 rather than fixed
+  first. It is low effort, so it would normally have shipped with the small
+  batch; fixing it now means writing that code twice.
+- **AMV-D031 / D032** are subsumed the same way.
+- **AMV-D005 and D012** are unresolved owner questions about the wider
+  information architecture, and both touch what the sidebar looks like around
+  this. Nothing here assumes an answer to either.
+
+## How it gets verified
+
+Not by the build passing. On every step: the full gate, then the surface driven
+in a real browser at 1440, 1366, 768 and 390, signed in and signed out, on a
+free plan and a paid one. The step-1 inventory is the backstop against the
+failure this kind of merge actually has, which is not a crash - it is a button
+that quietly stopped being anywhere.

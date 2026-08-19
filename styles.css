@@ -8682,3 +8682,137 @@ body.light .fr-d{ color:#67656d; }
      both the specificity and the !important to win an append-only cascade. */
   #sb #hist-search,#hist-search{ font-size:16px!important; }
 }
+
+/* ── LAYER A90: THE WAY IN, WHERE THE BRAKE USED TO BE ───────────────────
+   Mission Control's header offered "Pause all autonomous" whether or not
+   anything was running. With nothing running it is now "Create an automation" -
+   the same slot, the same weight, but an action that leads somewhere instead of
+   an emergency control for a machine that was never started. Styled as a
+   primary action rather than the warning-coloured pause it replaces. */
+.mc-browse{
+  display:inline-flex;align-items:center;gap:7px;
+  font-size:var(--t-base);font-weight:600;padding:9px 15px;
+  border-radius:var(--rc,var(--r-md));
+  background:var(--accent-d);border:1px solid var(--accent-d);color:#fff;
+  cursor:pointer;font-family:inherit;
+  transition:background-color .15s var(--ease),border-color .15s var(--ease);
+}
+.mc-browse:hover{ background:var(--accent);border-color:var(--accent); }
+.mc-browse:focus-visible{ outline:2px solid var(--accent);outline-offset:2px; }
+
+/* ── LAYER A91: THE COOKIE BANNER IS NOT THE PRODUCT (AMV-D059) ──────────
+   Manage was a `.btn` beside the two real answers, and on a phone
+   `.cc-actions .btn{flex:1}` handed it a third of the row. It is now a text
+   link: same element, same handler, a third of the visual weight. On a narrow
+   screen it drops to its own line under the two answers rather than competing
+   with them for width.
+
+   Measured before changing anything: at 1440x900 the banner is 69px tall (7.7%
+   of the viewport) and at 390x844 it is 142px (16.9%), and at neither size does
+   it overlap the composer. The audit's "dominates the first fold" did not
+   reproduce - the weighting of the three actions did. */
+.cc-manage-link{
+  background:none;border:0;padding:0 var(--sp-2);
+  min-height:24px;display:inline-flex;align-items:center;
+  color:var(--mu);font-family:inherit;font-size:var(--t-sm);
+  text-decoration:underline;text-underline-offset:3px;
+  cursor:pointer;transition:color .15s var(--ease);
+}
+.cc-manage-link:hover{ color:var(--tx); }
+.cc-manage-link:focus-visible{ outline:2px solid var(--accent);outline-offset:2px;border-radius:var(--r-xs); }
+/* On a phone the two answers still share the row and Manage sits inline ahead
+   of them, rather than dropping to a line of its own. Measured: its own line
+   cost 14px of a 844px viewport for a tertiary link, which trades one half of
+   this finding for the other. Inline, the banner is no taller than it was and
+   the weighting is still fixed. It takes the row's 44px so the three controls
+   line up, which is free - the buttons already set that height. */
+@media(max-width:640px){
+  .cc-actions{ flex-wrap:nowrap;align-items:stretch; }
+  .cc-manage-link{ flex:0 0 auto;min-height:44px;padding:0 var(--sp-2); }
+}
+
+/* ── LAYER A92: ONE PAGE HEADER, SHARED (AMV-D070) ───────────────────────
+   Images and Video were the only two of eleven tabs with no visible heading -
+   both opened directly onto a form. `.pghd` is the compact page header they
+   now use: eyebrow, outcome-focused title, one line of description, and room
+   on the right for a local primary action when a screen has one.
+
+   It is written as a shared component on purpose. Crew (`.mc-head`),
+   Marketplace (`.mkt-head`) and the centred `.vi` block each carry their own
+   version of this, which is precisely the per-page styling AMV-D013 names.
+   Adding a fourth would have made that worse to fix later. */
+.pghd{
+  display:flex;align-items:flex-end;justify-content:space-between;
+  gap:var(--sp-4);margin:0 0 var(--sp-5);padding-bottom:var(--sp-4);
+  border-bottom:1px solid var(--bd);
+}
+.pghd-l{ min-width:0; }
+.pghd .eyebrow{ display:block;margin-bottom:var(--sp-1)!important; }
+.pghd h2{
+  font-size:var(--t-2xl);font-weight:600;letter-spacing:-.4px;
+  line-height:1.15;margin:0;color:var(--tx);
+}
+.pghd-sub{
+  margin:var(--sp-2) 0 0;max-width:62ch;
+  font-size:var(--t-md);color:var(--mu);line-height:1.55;
+}
+.pghd-r{ flex:0 0 auto;display:flex;gap:var(--sp-2);align-items:center; }
+@media(max-width:700px){
+  .pghd{ flex-direction:column;align-items:stretch;gap:var(--sp-2);
+         margin-bottom:var(--sp-4);padding-bottom:var(--sp-3); }
+  .pghd h2{ font-size:var(--t-xl); }
+  .pghd-sub{ font-size:var(--t-base); }
+}
+
+/* ── LAYER A93: THE FIRST SCREEN IS FOR TYPING ON (AMV-D022) ─────────────
+   The first-run card took 34% of a desktop viewport, 40% of a 1366x768 laptop
+   and 44% of a phone. Same three starting points, laid out as pills that wrap:
+   one line of heading, one row of choices, and then the composer.
+
+   `.fr-item` and `.fr-list` are re-declared at the same specificity rather than
+   with `!important` - this layer is after the one at 7296, so it simply wins. */
+.fr-card{ margin-top:var(--sp-4);padding:var(--sp-3) var(--sp-4); }
+.fr-top{ align-items:center;margin-bottom:var(--sp-3); }
+.fr-h{ font-size:var(--t-sm);font-weight:600;color:var(--mu); }
+.fr-list{ flex-direction:row;flex-wrap:wrap;gap:var(--sp-2); }
+.fr-item{
+  display:inline-flex;align-items:center;width:auto;min-height:34px;
+  padding:var(--sp-2) var(--sp-3);border-radius:var(--r-pill);
+}
+.fr-t{ font-size:var(--t-sm);font-weight:600;white-space:normal; }
+@media(max-width:700px){
+  .fr-item{ min-height:44px; }
+}
+
+/* ── LAYER A94: HELP HAS TOPICS, NOT JUST A SEARCH BOX (AMV-D056) ────────
+   Twenty questions in one undifferentiated accordion. They are grouped under
+   eight headings now, with a chip row that filters to one group, and search
+   still runs across every answer.
+
+   `[hidden]` needs the `!important`: `.faq-item` sets `display` at line 306, and
+   an author `display` beats the user-agent rule that `hidden` relies on - which
+   is the quiet way a filter ends up doing nothing at all. */
+.faq-item[hidden],.hc-group[hidden]{ display:none!important; }
+.hc-chips{
+  display:flex;flex-wrap:wrap;gap:var(--sp-2);
+  margin:0 0 var(--sp-4);
+}
+.hc-chip{
+  display:inline-flex;align-items:center;min-height:28px;
+  padding:var(--sp-1) var(--sp-3);border-radius:var(--r-pill);
+  background:var(--s2);border:1px solid var(--bd);color:var(--mu);
+  font-family:inherit;font-size:var(--t-sm);font-weight:500;cursor:pointer;
+  transition:background-color .15s var(--ease),border-color .15s var(--ease),color .15s var(--ease);
+}
+.hc-chip:hover{ color:var(--tx);border-color:var(--bdl); }
+.hc-chip.on{ background:var(--accent);border-color:var(--accent);color:var(--on-accent); }
+.hc-chip:focus-visible{ outline:2px solid var(--accent);outline-offset:2px; }
+.hc-group{ margin:0 0 var(--sp-5); }
+.hc-group-h{
+  font-size:var(--t-sm);font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--dim);margin:0 0 var(--sp-1);
+}
+.hc-none{ font-size:var(--t-base);color:var(--mu);line-height:1.6;margin:var(--sp-3) 0 0; }
+@media(max-width:700px){
+  .hc-chip{ min-height:32px; }
+}

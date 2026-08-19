@@ -2080,21 +2080,37 @@ function _sectionModelKey(section){
 }
 function _sectionModel(section){ return MODELS[_sectionModelKey(section)].model; }
 function _setSectionModel(section, key){ if(MODELS[key]) saveStr('amv_secmodel_'+section, key); }
-// cost label (relative usage) for a model key
-function _modelCostLabel(key){
-  const c=(MODELS[key]||{}).cost||0;
-  if(c===0) return 'light usage';
-  if(c<=1) return 'light usage';
-  if(c<=2) return 'standard usage';
-  if(c<=3) return 'higher usage';
-  return 'heaviest usage';
+/* WHAT A MODEL IS FOR, NOT HOW HEAVY IT IS.
+
+   The picker read "Apex \u00b7 heaviest", "Forge \u00b7 higher", "Pulse \u00b7 light". That is
+   this file's internal cost ladder shown to somebody who has never seen it, and
+   it asks them to translate. "Heaviest" is not a reason to pick something - read
+   plainly it sounds slow and expensive, which is exactly the wrong impression of
+   the model you reach for when the work is hard.
+
+   The label says what you would choose it FOR. The ladder still exists and still
+   decides routing and billing; it is simply not the thing a person is asked to
+   reason about.
+
+   (_modelCostLabel used to sit here returning "heaviest usage" and had no
+   callers at all - the live labels were built inline below. Removed rather than
+   left looking like the thing that produces them.) */
+function _modelOutcomeLabel(key){
+  const m=MODELS[key]||{};
+  if(m.model==='auto') return 'picks for you';
+  const c=m.cost||0;
+  if(c<=1) return 'fastest';
+  if(c<=2) return 'balanced';
+  if(c<=3) return 'built for code';
+  return 'highest quality';
 }
 // build a <select> of pickable models for a section (excludes hidden/image)
 function _sectionModelSelect(section, id){
   const cur=_sectionModelKey(section);
   return '<select id="'+id+'" class="sel secmodel-sel">'+MODEL_ORDER.map(k=>{
-    const m=MODELS[k]; const lvl=m.cost?(' \u00b7 '+(m.cost<=1?'light':m.cost<=2?'standard':m.cost<=3?'higher':'heaviest')):' \u00b7 light';
-    return '<option value="'+k+'"'+(k===cur?' selected':'')+'>'+m.label.replace('AMV ','')+lvl+'</option>';
+    const m=MODELS[k];
+    return '<option value="'+k+'"'+(k===cur?' selected':'')+'>'+
+      m.label.replace('AMV ','')+' \u00b7 '+_modelOutcomeLabel(k)+'</option>';
   }).join('')+'</select>';
 }
 
@@ -7080,6 +7096,27 @@ function renderImgsView(){
   const ratioHtml=['1:1','16:9','9:16','4:3'].map(r=>'<button class="rab '+(r===S.imgRatio?'on':'')+'" data-r="'+r+'">'+r+'</button>').join('');
   vc.innerHTML=
     '<div id="imgv">'+
+      /* WHERE AM I AND WHAT HAPPENS HERE (AMV-D070).
+
+         This screen opened straight into a textarea and two rows of chips. The
+         only thing naming it was the sidebar selection, so it read as a tool
+         panel floating in the app rather than a place you had arrived at.
+         Measured across eleven tabs: Images and Video were the only two with no
+         visible h1 or h2 at all.
+
+         `.pghd` is a shared component, not a fourth bespoke header - Crew,
+         Marketplace and Usage each grew their own, which is the duplication
+         AMV-D013 is about. New surfaces use this one, and the existing three
+         move onto it when that finding is worked properly.
+
+         The title deliberately does NOT repeat the word the sidebar already
+         says. Naming the outcome adds something; saying "Images" three times
+         on one screen does not. */
+      '<header class="pghd"><div class="pghd-l">'+
+        '<span class="eyebrow">Create</span>'+
+        '<h2>Make an image of anything</h2>'+
+        '<p class="pghd-sub">Describe it and AMV generates it in seconds. Everything you make stays in the gallery below until you clear it.</p>'+
+      '</div></header>'+
       '<div id="imgctrl">'+
         '<div style="display:flex;gap:8px;margin-bottom:10px">'+
           '<textarea id="img-inp" placeholder="Describe any image - a scene, product, portrait, or style. Be specific for the best results." rows="2" style="flex:1;border-radius:var(--r-sm);font-size:13px;max-height:66px"></textarea>'+
@@ -7223,9 +7260,17 @@ function renderVideoView(){
   const mo=VMOODS.map(m=>'<option>'+m+'</option>').join('');
   vc.innerHTML=
     '<div id="vidv" class="fi">'+
+      /* Same page header as Images (AMV-D070). The card's own "AI Video
+         Generator" h3 is gone rather than moved: it named the tool a third
+         time, after the sidebar and the header, and the audit's specific ask
+         was to stop repeating the location label in every piece of chrome. The
+         sentence under it is the header's subtitle now, so nothing was lost. */
+      '<header class="pghd"><div class="pghd-l">'+
+        '<span class="eyebrow">Create</span>'+
+        '<h2>Turn a description into video</h2>'+
+        '<p class="pghd-sub">Describe a scene and AMV generates it. Style and mood are folded into the prompt; duration and aspect are sent to the engine.</p>'+
+      '</div></header>'+
       '<div class="card">'+
-        '<h3 style="font-size:14px;font-weight:600;margin-bottom:7px">AI Video Generator</h3>'+
-        '<p style="font-size:12px;color:var(--t2);margin-bottom:12px">Describe a scene and AMV generates it. Style and mood are folded into the prompt; duration and aspect are sent to the engine.</p>'+
         '<textarea id="vp" placeholder="Describe your scene - include camera movement, lighting, atmosphere, characters, action…" rows="3" style="margin-bottom:11px;font-size:13px"></textarea>'+
         '<div style="display:flex;gap:7px;flex-wrap:wrap;align-items:flex-end">'+
           '<div><label class="lbl" style="margin-bottom:3px">Duration</label><select id="vd" aria-label="Duration" style="width:auto;padding:6px 22px 6px 9px;font-size:12px"><option value="5" selected>5s</option><option value="10">10s</option></select></div>'+
@@ -14895,7 +14940,29 @@ function renderCrewView(){
         <p class="vsub">Crew is AMV working on its own. Tell it an outcome and it plans the steps, does the work across your connected apps, and stops for your approval before anything is sent. This page is where you watch it all - what needs you, what’s running, and what’s scheduled.</p>
       </div>
       <div class="mc-head-r">
-        <button class="mc-pause ${paused?'paused':''}" data-dact="${paused?'resumeAllAutonomous':'pauseAllAutonomous'}">${paused?'▶ Resume autonomy':'⏸ Pause all autonomous'}</button>
+        ${(() => {
+          /* A SAFETY CONTROL FOR WORK THAT IS NOT HAPPENING.
+
+             "Pause all autonomous" was the loudest thing in this header and it
+             was always there - including on an account with nothing running,
+             which is every account on its first visit. The first control
+             somebody meets on the Crew screen was an emergency brake for a
+             machine that had not been started, and it plants the idea that
+             something here needs stopping before they have turned anything on.
+
+             When work IS running, pause is exactly right and stays. When
+             nothing is, the useful thing to offer is the way in. Paused counts
+             as active state on purpose: if somebody has paused autonomy they
+             must always be able to resume it, whether or not a job is listed. */
+          const running = st.server.length + _mcLocalOnly(st).length + st.auton.length;
+          if (paused) {
+            return `<button class="mc-pause paused" data-dact="resumeAllAutonomous">▶ Resume autonomy</button>`;
+          }
+          if (running > 0) {
+            return `<button class="mc-pause" data-dact="pauseAllAutonomous">⏸ Pause all autonomous</button>`;
+          }
+          return `<button class="mc-browse" data-dact="openCowork">Create an automation</button>`;
+        })()}
       </div>
     </header>
     ${(()=>{ const n=_crewJobAllowance(); const used=st.server.length+_mcLocalOnly(st).length+st.auton.length;
@@ -18599,30 +18666,30 @@ function _trustBadge(svg,title,sub){
 
 /* === HELP CENTER === */
 const FAQS=[
-  {q:'How do I start with AMV?', a:'Click “New chat” in the top bar and type anything - an essay, code, a 3D model, an image, deep research. AMV figures out what you need and does the work. On mobile, tap the menu icon for the full sidebar.'},
-  {q:'What can AMV actually do?', a:'One place for everything: chat and research, image and video generation, interactive 3D, a design canvas (Studio), an app builder (Dev), and autonomous agents (Crew) that complete multi-step work for you and bring back a finished result to approve.'},
-  {q:'What is Crew and Mission Control?', a:'Crew is AMV working autonomously in the background. Mission Control (the Crew tab) is your overview of everything it’s doing - what needs your approval, what’s running now, what’s scheduled, and what’s finished. Give it an outcome and it plans the steps, does the work, and stops before anything consequential to wait for you.'},
-  {q:'How do approvals work - Preview &amp; Approve?', a:'When AMV finishes something that would send, publish, or change anything, it waits in “Needs your approval.” Press Preview to open the full workspace: the finished result, a timeline of what happened, the agents involved, and a plain-language summary of exactly what will happen. Then Approve, Edit, or Reject.'},
-  {q:'What is Auto Approve?', a:'When you trust a recurring task, turn on Auto Approve while setting it up. AMV then completes and performs the final action on its own - scoped to every run or just the first, capped by risk level, with an optional end date. High-risk actions still stop and ask unless you allow them. You can pause all autonomous work anytime from Mission Control.'},
-  {q:'How do I schedule recurring autonomous work?', a:'Start an autonomous task (Crew → Autonomous task) and pick a schedule - once, daily, weekly, or monthly. Manage everything under Scheduled: next run, last run, approval mode, and per-task pause or cancel. Connect the backend for true 24/7 runs even with AMV closed.'},
-  {q:'How do I generate images and video?', a:'Click Images or Video in the sidebar, describe what you want, choose a style and aspect ratio, and generate. Images render in seconds; video is sent to the engine and returned when ready.'},
-  {q:'How do I create interactive 3D models?', a:'Just ask in chat - e.g. “create a 3D model of a human heart.” It renders live with drag-to-rotate, scroll-to-zoom, and pan controls.'},
-  {q:'What is Studio (AMV Design)?', a:'Studio is a live design canvas. Describe a landing page, UI mockup, poster, or graphic and watch it build, then refine by chatting (“make it darker,” “add a pricing section”). Set a reusable Design DNA once and everything follows your colors, fonts, and style.'},
-  {q:'Can AMV build and run real apps?', a:'Yes - Dev writes the code, runs it in a live sandbox, and shows you the result. Lab lets you paste or upload existing code (any size) to run, find and fix bugs, review, refactor, or add tests. On higher plans you can deploy to a live URL.'},
-  {q:'How do I upload files for analysis?', a:'Click the paperclip in the chat input or drag &amp; drop. AMV reads PDFs, images, code, Excel, CSV, and Word - and can work across a whole folder for autonomous tasks.'},
-  {q:'How do I connect Gmail, Calendar, and files?', a:'Go to Settings → Connectors (or Integrations). Connect Google to let AMV read email, manage your calendar, and work with Drive files. Everything an agent wants to send still waits for your approval first.'},
-  {q:'What is Handoff?', a:'Handoff lets you pass a task - with its full context - to a teammate inside AMV, or receive one from them, so work moves between people without losing the thread.'},
-  {q:'What is the Marketplace?', a:'Browse and install prompts, crews, and integrations - free ones add to your Prompt Library or Crew instantly. Click any seller’s name to see their listings and reviews or message them. You can publish your own and keep 80% of every sale. Paid items always go through secure checkout.'},
+  {c:'start', q:'How do I start with AMV?', a:'Click “New chat” in the top bar and type anything - an essay, code, a 3D model, an image, deep research. AMV figures out what you need and does the work. On mobile, tap the menu icon for the full sidebar.'},
+  {c:'start', q:'What can AMV actually do?', a:'One place for everything: chat and research, image and video generation, interactive 3D, a design canvas (Studio), an app builder (Dev), and autonomous agents (Crew) that complete multi-step work for you and bring back a finished result to approve.'},
+  {c:'auto', q:'What is Crew and Mission Control?', a:'Crew is AMV working autonomously in the background. Mission Control (the Crew tab) is your overview of everything it’s doing - what needs your approval, what’s running now, what’s scheduled, and what’s finished. Give it an outcome and it plans the steps, does the work, and stops before anything consequential to wait for you.'},
+  {c:'auto', q:'How do approvals work - Preview &amp; Approve?', a:'When AMV finishes something that would send, publish, or change anything, it waits in “Needs your approval.” Press Preview to open the full workspace: the finished result, a timeline of what happened, the agents involved, and a plain-language summary of exactly what will happen. Then Approve, Edit, or Reject.'},
+  {c:'auto', q:'What is Auto Approve?', a:'When you trust a recurring task, turn on Auto Approve while setting it up. AMV then completes and performs the final action on its own - scoped to every run or just the first, capped by risk level, with an optional end date. High-risk actions still stop and ask unless you allow them. You can pause all autonomous work anytime from Mission Control.'},
+  {c:'auto', q:'How do I schedule recurring autonomous work?', a:'Start an autonomous task (Crew → Autonomous task) and pick a schedule - once, daily, weekly, or monthly. Manage everything under Scheduled: next run, last run, approval mode, and per-task pause or cancel. Connect the backend for true 24/7 runs even with AMV closed.'},
+  {c:'create', q:'How do I generate images and video?', a:'Click Images or Video in the sidebar, describe what you want, choose a style and aspect ratio, and generate. Images render in seconds; video is sent to the engine and returned when ready.'},
+  {c:'create', q:'How do I create interactive 3D models?', a:'Just ask in chat - e.g. “create a 3D model of a human heart.” It renders live with drag-to-rotate, scroll-to-zoom, and pan controls.'},
+  {c:'create', q:'What is Studio (AMV Design)?', a:'Studio is a live design canvas. Describe a landing page, UI mockup, poster, or graphic and watch it build, then refine by chatting (“make it darker,” “add a pricing section”). Set a reusable Design DNA once and everything follows your colors, fonts, and style.'},
+  {c:'build', q:'Can AMV build and run real apps?', a:'Yes - Dev writes the code, runs it in a live sandbox, and shows you the result. Lab lets you paste or upload existing code (any size) to run, find and fix bugs, review, refactor, or add tests. On higher plans you can deploy to a live URL.'},
+  {c:'chat', q:'How do I upload files for analysis?', a:'Click the paperclip in the chat input or drag &amp; drop. AMV reads PDFs, images, code, Excel, CSV, and Word - and can work across a whole folder for autonomous tasks.'},
+  {c:'connect', q:'How do I connect Gmail, Calendar, and files?', a:'Go to Settings → Connectors (or Integrations). Connect Google to let AMV read email, manage your calendar, and work with Drive files. Everything an agent wants to send still waits for your approval first.'},
+  {c:'connect', q:'What is Handoff?', a:'Handoff lets you pass a task - with its full context - to a teammate inside AMV, or receive one from them, so work moves between people without losing the thread.'},
+  {c:'connect', q:'What is the Marketplace?', a:'Browse and install prompts, crews, and integrations - free ones add to your Prompt Library or Crew instantly. Click any seller’s name to see their listings and reviews or message them. You can publish your own and keep 80% of every sale. Paid items always go through secure checkout.'},
   /* Priced from PLANS. Written out, this answer quoted three figures that
      nothing kept in step with the cards or with checkout, so changing a price
      left the Help Center stating the old one to the person who came here to
      ask what it costs. */
-  {q:'How do plans and limits work?', a:'Free gives you daily usage to explore everything. Pro ($'+PLANS.pro.price+'/mo) unlocks autonomous agents, Mission Control, the app builder, connected accounts, and '+PLANS.pro.mult+' usage. Elite ($'+PLANS.elite.price+'/mo) adds our most capable Apex model first, one-click deploy, and parallel agents at '+PLANS.elite.mult+' usage. Ultra ($'+PLANS.ultra.price+'/mo) is '+PLANS.ultra.mult+' usage with unlimited parallel agents and team workspaces. Custom lets you set your own hard-capped budget. Limits are usage-based - just work without counting messages.'},
-  {q:'What is AI Memory?', a:'Memory lets AMV remember facts about you - your role, preferences, and context - and apply them automatically in every conversation. Add or edit them under Memory in the sidebar.'},
-  {q:'How do I use voice input?', a:'Click the microphone in the chat input (best in Chrome and Edge), speak, and your words appear in the box. Press Enter to send.'},
-  {q:'How do I rename, star, or delete chats?', a:'Hover a chat in the sidebar for quick actions, or right-click for the full menu including Export and Share.'},
-  {q:'Can I export my conversations?', a:'Yes - right-click any chat and choose “Export as Markdown” to download a .md file for Notion, Obsidian, or any editor.'},
-  {q:'How is my data protected?', a:'Your data is stored in your browser and, when you connect the backend, encrypted in transit (256-bit TLS). Passwords are hashed with PBKDF2. Card details go straight to Stripe - AMV never sees them. Export or delete everything anytime.'}
+  {c:'billing', q:'How do plans and limits work?', a:'Free gives you daily usage to explore everything. Pro ($'+PLANS.pro.price+'/mo) unlocks autonomous agents, Mission Control, the app builder, connected accounts, and '+PLANS.pro.mult+' usage. Elite ($'+PLANS.elite.price+'/mo) adds our most capable Apex model first, one-click deploy, and parallel agents at '+PLANS.elite.mult+' usage. Ultra ($'+PLANS.ultra.price+'/mo) is '+PLANS.ultra.mult+' usage with unlimited parallel agents and team workspaces. Custom lets you set your own hard-capped budget. Limits are usage-based - just work without counting messages.'},
+  {c:'privacy', q:'What is AI Memory?', a:'Memory lets AMV remember facts about you - your role, preferences, and context - and apply them automatically in every conversation. Add or edit them under Memory in the sidebar.'},
+  {c:'chat', q:'How do I use voice input?', a:'Click the microphone in the chat input (best in Chrome and Edge), speak, and your words appear in the box. Press Enter to send.'},
+  {c:'chat', q:'How do I rename, star, or delete chats?', a:'Hover a chat in the sidebar for quick actions, or right-click for the full menu including Export and Share.'},
+  {c:'chat', q:'Can I export my conversations?', a:'Yes - right-click any chat and choose “Export as Markdown” to download a .md file for Notion, Obsidian, or any editor.'},
+  {c:'privacy', q:'How is my data protected?', a:'Your data is stored in your browser and, when you connect the backend, encrypted in transit (256-bit TLS). Passwords are hashed with PBKDF2. Card details go straight to Stripe - AMV never sees them. Export or delete everything anytime.'}
 ]
 
 /* A real 404 for unknown routes - instead of silently showing chat, tell the
@@ -18642,22 +18709,54 @@ function render404View(){
 }
 try{ window.render404View=render404View; }catch(e){}
 
+/* THE ONLY WAY IN WAS TO ALREADY KNOW THE WORD (AMV-D056).
+
+   Twenty questions in one flat accordion under a search box. Search is a good
+   second route and a poor first one: somebody who does not yet know what AMV
+   calls a thing cannot search for it, and scanning twenty rows to find out is
+   the work the page exists to save.
+
+   The questions are unchanged. They are grouped now, each group is a filter
+   chip, and search still runs across every answer regardless of the chip - so
+   the two routes do not fight. A group with nothing left after a search hides
+   its heading too, which is the bug this kind of filtering usually ships with. */
+const FAQ_CATS=[
+  ['start','Getting started'],
+  ['chat','Chat and results'],
+  ['create','Images, video and design'],
+  ['build','Building apps'],
+  ['auto','Automations and approvals'],
+  ['connect','Connections, teamwork and marketplace'],
+  ['billing','Plans and billing'],
+  ['privacy','Memory, data and privacy']
+];
 function renderHelpView(){
   const vc=$('vc'); if(!vc) return;
+  const chips='<div class="hc-chips" role="group" aria-label="Filter help by topic">'+
+    '<button class="hc-chip on" data-hcc="all">All</button>'+
+    FAQ_CATS.map(c=>'<button class="hc-chip" data-hcc="'+c[0]+'">'+escH(c[1])+'</button>').join('')+
+  '</div>';
+  const groups=FAQ_CATS.map(c=>{
+    const items=FAQS.map((f,i)=>[f,i]).filter(x=>x[0].c===c[0]);
+    if(!items.length) return '';
+    return '<section class="hc-group" data-hcg="'+c[0]+'">'+
+      '<h3 class="hc-group-h">'+escH(c[1])+'</h3>'+
+      items.map(x=>
+        '<div class="faq-item" id="fi-'+x[1]+'" data-hcg="'+c[0]+'">'+
+          '<div class="faq-q" data-fi="'+x[1]+'"><span>'+x[0].q+'</span><span class="faq-arr">+</span></div>'+
+          '<div class="faq-a">'+x[0].a+'</div>'+
+        '</div>').join('')+
+    '</section>';
+  }).join('');
   vc.innerHTML=
     '<div class="sv fi"><div class="vi">'+
       '<h2>Help Center</h2>'+
-      '<p class="vsub">Answers to the most common questions.</p>'+
+      '<p class="vsub">Pick a topic, or search if you already know the word for it.</p>'+
       '<div class="ss2">'+
-        '<input type="text" id="faq-search" placeholder="Search help…" style="font-size:13px;margin-bottom:13px">'+
-        '<div id="faq-list">'+
-          FAQS.map((f,i)=>
-            '<div class="faq-item" id="fi-'+i+'">'+
-              '<div class="faq-q" data-fi="'+i+'"><span>'+f.q+'</span><span class="faq-arr">+</span></div>'+
-              '<div class="faq-a">'+f.a+'</div>'+
-            '</div>'
-          ).join('')+
-        '</div>'+
+        '<input type="search" id="faq-search" placeholder="Search help…" aria-label="Search help" style="font-size:16px;margin-bottom:13px">'+
+        chips+
+        '<div id="faq-list">'+groups+'</div>'+
+        '<p id="faq-none" class="hc-none" hidden>No answer matches that. Try a different word, or ask AMV below - it can answer from the product itself.</p>'+
       '</div>'+
       '<div class="ss2"><h3>Share feedback</h3>'+
         '<p style="font-size:12.5px;color:var(--mu);margin-bottom:12px;line-height:1.55">Found a bug or have an idea? Tell us - real feedback shapes what we build next.</p>'+
@@ -18679,13 +18778,34 @@ function renderHelpView(){
       document.getElementById('fi-'+q.dataset.fi)?.classList.toggle('open');
     });
   });
-  on($('faq-search'),'input',function(){
-    const s=this.value.toLowerCase();
-    vc.querySelectorAll('.faq-item').forEach((item,i)=>{
-      const f=FAQS[i];
-      item.style.display=(!s||f.q.toLowerCase().includes(s)||f.a.toLowerCase().includes(s))?'block':'none';
+
+  /* One function decides what is visible, from the two inputs, every time.
+     Two independent handlers each hiding rows is how a chip and a search box
+     end up disagreeing about the same row. */
+  let cat='all';
+  function apply(){
+    const s=(($('faq-search')||{}).value||'').toLowerCase().trim();
+    let shown=0;
+    vc.querySelectorAll('.faq-item').forEach(item=>{
+      const f=FAQS[+item.querySelector('.faq-q').dataset.fi];
+      const okCat = cat==='all' || f.c===cat;
+      const okTxt = !s || f.q.toLowerCase().includes(s) || f.a.toLowerCase().includes(s);
+      const on = okCat && okTxt;
+      item.hidden = !on;
+      if(on) shown++;
     });
-  });
+    /* A heading over nothing reads as a group with no answers in it. */
+    vc.querySelectorAll('.hc-group').forEach(g=>{
+      g.hidden = !g.querySelector('.faq-item:not([hidden])');
+    });
+    const none=$('faq-none'); if(none) none.hidden = shown>0;
+  }
+  vc.querySelectorAll('[data-hcc]').forEach(b=>b.addEventListener('click',()=>{
+    cat=b.dataset.hcc;
+    vc.querySelectorAll('[data-hcc]').forEach(x=>x.classList.toggle('on',x===b));
+    apply();
+  }));
+  on($('faq-search'),'input',apply);
 }
 
 /* === SETTINGS VIEW === */
@@ -21280,9 +21400,22 @@ function _initCookieConsent(){
   wrap.setAttribute('aria-label','Cookie preferences');
   wrap.innerHTML =
     '<div class="cc-inner">'+
-      '<div class="cc-text">We use essential cookies to run AMV, and optional analytics cookies to understand usage so we can improve the product. You can change this anytime in Settings.</div>'+
+      /* THREE BUTTONS OF EQUAL WEIGHT FOR ONE REAL CHOICE (AMV-D059).
+
+         Manage, Essential only and Accept all were all `.btn`, and on a phone
+         `.cc-actions .btn{flex:1}` gave each of them a third of the row - so a
+         tertiary link to a settings pane was drawn at the same size as the two
+         answers, and the first thing a new visitor met was a legal control
+         with the visual weight of the product's own call to action.
+
+         Two answers keep button weight. Manage becomes a quiet text link. It
+         stays a <button> rather than becoming an <a>, because it performs an
+         action rather than navigating - the change is presentation only, so
+         keyboard and screen-reader behaviour are untouched. Three sentences
+         are one: the same commitment, without the paragraph. */
+      '<div class="cc-text">Essential cookies keep AMV running; analytics cookies are optional, and you can change this any time in Settings.</div>'+
       '<div class="cc-actions">'+
-        '<button class="btn" id="cc-manage">Manage</button>'+
+        '<button class="cc-manage-link" id="cc-manage">Manage</button>'+
         '<button class="btn" id="cc-decline">Essential only</button>'+
         '<button class="btn bp" id="cc-accept">Accept all</button>'+
       '</div>'+
@@ -29610,6 +29743,24 @@ function _firstRunHTML(){
     if(typeof S!=='undefined' && Array.isArray(S.convs)
        && S.convs.some(c => (c.msgs||[]).length)) return '';
 
+    /* HOW MUCH OF THE FIRST SCREEN THIS IS ALLOWED TO TAKE (AMV-D022).
+
+       Measured before changing anything: the card was 310px on a 1440x900
+       desktop (34% of the viewport), 310px on a 1366x768 laptop (40%) and
+       371px on a 390x844 phone (44%). The composer stayed reachable without
+       scrolling at all three - that half of the finding did not reproduce -
+       but a third to a half of somebody's first screen was instruction.
+
+       Each item is a real starting point and every one of them still is, so
+       none were removed. What went is the layout: three stacked blocks with a
+       title AND a paragraph became three pills carrying the title only, and
+       the "Or just ask it anything" footer went with them - the composer sits
+       directly below with a cursor in it, which says that better.
+
+       The paragraph is not deleted, it moves. Each pill carries it as its
+       accessible name and as its hover title, so a screen reader still hears
+       what the line does before choosing it, and nothing is explained only by
+       a tooltip - the visible title already stands on its own. */
     return '<div class="fr-card" data-i18n role="region" aria-label="What AMV can do">'+
       '<div class="fr-top">'+
         '<div class="fr-h">AMV does the work, not just the talking</div>'+
@@ -29617,12 +29768,11 @@ function _firstRunHTML(){
       '</div>'+
       '<div class="fr-list">'+
         _FIRSTRUN_STARTS.map((s,i)=>
-          '<button class="fr-item" type="button" data-fr-go="'+i+'">'+
+          '<button class="fr-item" type="button" data-fr-go="'+i+'"'+
+            ' title="'+escH(s.d)+'" aria-label="'+escH(s.t+'. '+s.d)+'">'+
             '<span class="fr-t">'+escH(s.t)+'</span>'+
-            '<span class="fr-d">'+escH(s.d)+'</span>'+
           '</button>').join('')+
       '</div>'+
-      '<div class="fr-foot">Or just ask it anything.</div>'+
     '</div>';
   }catch(e){ return ''; }
 }
