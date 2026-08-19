@@ -67,6 +67,43 @@ Cannot be undone", and Delete Account already requires typing DELETE.
 12.5px on mobile. Safari on iOS zooms the whole page when a field under 16px is
 focused and does not zoom back. Fixed and guarded.
 
+## Owner decisions, recorded 2026-08-18
+
+Asked for all 65 remaining findings, answered in blocks.
+
+**REFUSED - not to be done.**
+- **AMV-D008** merge Crew, Handoff and Tasks into one Automate surface. The
+  owner does not want these merged. The three stay separate concepts. Anything
+  below that assumes a merged Automate is void.
+
+**DEFERRED - the owner has questions and will decide later. Do not start these.**
+- **AMV-D005** the information architecture exposes too many peer-level products.
+- **AMV-D012** there is no global operational home for active work.
+- **AMV-D057** Apps overlaps with Integrations and Marketplace. (Answered: three
+  catalogues split adjacent things by how they are built rather than what they
+  do, so somebody looking for a service cannot tell which to search. The
+  proposal is one Connections area for external accounts, one Marketplace for
+  installable things, and Apps dropped unless it is a genuinely distinct runtime
+  surface.)
+
+**APPROVED - everything else, 61 findings.** Including the large ones:
+AMV-D007 (merge Studio, Dev and Lab into one Build surface), AMV-D009 (reduce 18
+user settings panes and 5 owner panes), AMV-D013/D014 (cascade ownership and
+token adoption), AMV-D041 to D044 (type, radius and colour token migrations).
+
+**Standing instruction on pace.** The owner's words: do not "take like 3 mins for
+each - for the ones that take a long time, weeks even, take your time." The
+large items get real design work, a written plan, and verification on the
+surface a person actually uses. Sequencing matters too: D007 subsumes D031, D032
+and D033, and D009 subsumes D067 and D068, so the structural item goes first or
+the polish is done twice.
+
+**On my call.** D041/D042 (type scale), D064 (global library) and D065 (bulk
+actions) were left to my judgement. They are approved and will be done, but
+incrementally with before-and-after comparison rather than as a find-and-replace
+- 187 rules use 13px against a 13.5px token, so a bulk pass shifts type on every
+screen while reporting itself as consistency.
+
 ## Real, and needs a deliberate decision rather than a quiet change
 
 These are not defects with a right answer. Each changes what the product IS.
