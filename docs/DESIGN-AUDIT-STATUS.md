@@ -148,8 +148,39 @@ fix. Video's card-level "AI Video Generator" `h3` is gone rather than moved -
 the audit's specific ask was to stop repeating the location label in every piece
 of chrome.
 
-**AMV-D033 stays held back on purpose.** It is low effort and would otherwise
-belong in this batch, but AMV-D007 rewrites the surface it lives on.
+**AMV-D033 - real, fixed, and it was hiding a dead button.** Held back at first
+because AMV-D007 rewrites this surface; the owner asked for the small findings
+cleared before any large one, so it is done.
+
+Measured first: on the EMPTY Lab screen there were two Run controls visible at
+once ("Run" in the toolbar, "Run it" in the entry row) and two fix controls
+("Auto-Debug", "Find & fix the bugs"). With code loaded there was exactly one of
+each, so the duplication was confined to the entry state. One thing the audit
+predicted did NOT hold: the two Run buttons have the same scope. The paste box
+syncs into the editor, so the toolbar Run really does run what you pasted -
+checked by pasting code and pressing it.
+
+The toolbar's code actions are now hidden while the entry screen is up. They act
+on an editor that is empty by definition in that state, and the audit asks for
+the one surviving action to sit beside the input. Upload and New stay, because
+those are how code gets in. Everything returns the moment there is code. The
+eight entry buttons are split into the two people came for and the six analyses.
+
+**And the button did not work.** Pasting code and pressing "Run it" did nothing:
+the code appeared in the editor, the entry screen closed, no run started,
+nothing threw. `labLoad` ends with `setBlank()`, `.lab-entry` only renders while
+`lab-blank` is set, and blur fires before click - so pressing any entry action
+blurred the paste box, which loaded the code, which hid the entry screen and
+pulled the button out from under the pointer between mousedown and mouseup.
+Every one of the eight entry buttons was dead whenever the paste box had focus,
+which is precisely the state somebody is in the instant after pasting. It is
+pre-existing, not a regression: verified by checking out the previous commit and
+reproducing it there.
+
+Taking the paste on blur is kept - it is what stops the text being lost when
+somebody clicks Upload instead - but it no longer leaves the entry screen.
+Guarded by `tests/e2e/a-screen-explains-itself`, which now runs the real path:
+paste, click, and assert the pasted code's own output comes back.
 
 ## Owner decisions, recorded 2026-08-18
 

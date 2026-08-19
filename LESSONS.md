@@ -5077,3 +5077,41 @@ cancelled run, and two wrong hypotheses before the evidence arrived - and the
 evidence only arrived because the gate's own output had been fixed first. A
 flaky check does not just waste time, it teaches you to distrust the true
 result when it finally shows up.
+
+## 265. Blur fires before click, so a handler that hides the screen eats the click
+
+Lab's entry screen offers eight buttons: paste your code, then pick what AMV
+should do with it. Every one of them was dead whenever the paste box had focus -
+which is the state somebody is in the instant after pasting.
+
+The paste box takes its contents on `blur`, so the text is not lost if you click
+Upload instead. Taking it calls `labLoad`, which ends with `setBlank()`, which
+drops the `lab-blank` class - and `.lab-entry` is only displayed while that class
+is present. Blur runs before click. So pressing "Run it" blurred the box, loaded
+the code, hid the entry screen, and removed the button from under the pointer
+between mousedown and mouseup. The click never landed on anything.
+
+What makes it nasty is how it failed. Nothing threw, nothing logged, and the
+visible effect was CORRECT-looking: the pasted code appeared in the editor and
+the entry screen closed, exactly as it would on a successful run. Only the run
+was missing. Watching the output pane with a MutationObserver showed no writes at
+all, which is what finally said the handler was never reached rather than failing
+inside.
+
+The rule: any handler on `blur`, `focusout`, `mouseleave` or `pointerout` that
+changes what is on screen can destroy the control the pointer is travelling
+towards. If it hides, collapses, or re-renders the region the user is clicking
+into, the click is eaten. Do the state change on the action, not on the way out
+of the field - the action handler in this case was already pulling the paste in
+itself, so the blur only had to stop closing the screen.
+
+Two things about finding it, both worth keeping:
+
+It was found by testing the button, not by reading the markup. The work in hand
+was a hierarchy finding - too many Run buttons - and counting buttons would have
+declared the screen fixed while its primary action stayed dead. A visual finding
+on a screen is a reason to operate that screen.
+
+And it was checked against the previous commit before being called a regression.
+It was not one; it had been shipping. Guessing either way would have been free
+and wrong half the time.

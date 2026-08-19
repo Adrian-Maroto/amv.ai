@@ -23926,17 +23926,23 @@ function renderLabView(){
           </div>
         </div>
       </div>
+      <!-- Two actions people came for, then six analyses. AMV-D033. -->
       <div class="lab-entry-do">
-        <span class="lab-entry-lbl">Then just pick one - AMV loads it and explains what it finds</span>
+        <span class="lab-entry-lbl">What should AMV do with it?</span>
         <div class="lab-entry-acts" id="lab-entry-acts">
-          <button class="lab-go lab-go-p" data-go="run"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>Run it</button>
-          <button class="lab-go lab-go-a" data-go="debug"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 3 21 9 15 9"/></svg>Find &amp; fix the bugs</button>
-          <button class="lab-go" data-go="bugs">Find bugs</button>
-          <button class="lab-go" data-go="security">Security scan</button>
-          <button class="lab-go" data-go="smells">Code smells</button>
-          <button class="lab-go" data-go="refactor">Refactor</button>
-          <button class="lab-go" data-go="tests">Write tests</button>
-          <button class="lab-go" data-go="stacktrace">Explain an error</button>
+          <div class="lab-go-row lab-go-primary">
+            <button class="lab-go lab-go-p" data-go="run"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>Run it</button>
+            <button class="lab-go lab-go-a" data-go="debug"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 3 21 9 15 9"/></svg>Find &amp; fix the bugs</button>
+          </div>
+          <span class="lab-go-sub">Or have it look the code over</span>
+          <div class="lab-go-row">
+            <button class="lab-go" data-go="bugs">Find bugs</button>
+            <button class="lab-go" data-go="security">Security scan</button>
+            <button class="lab-go" data-go="smells">Code smells</button>
+            <button class="lab-go" data-go="refactor">Refactor</button>
+            <button class="lab-go" data-go="tests">Write tests</button>
+            <button class="lab-go" data-go="stacktrace">Explain an error</button>
+          </div>
         </div>
       </div>
       <input type="file" id="lab-files" multiple style="display:none">
@@ -24027,7 +24033,36 @@ function renderLabView(){
   // Entry-state paste box → loads straight into the editor
   const pasteBox=$('lab-paste');
   if(pasteBox){
-    const takePaste=()=>{ const v=pasteBox.value; if(v && v.trim()){ labLoad(v); pasteBox.value=''; } };
+    /* THE BUTTON THAT COULD NOT BE CLICKED.
+
+       Found while working AMV-D033, and it is the more serious half of that
+       screen: pasting code and pressing "Run it" did nothing at all. The code
+       appeared in the editor, the entry screen closed, and no run started.
+
+       `labLoad` ends with `setBlank()`, which drops the `lab-blank` class, and
+       `.lab-entry` is only displayed while that class is present. Blur fires
+       BEFORE click. So pressing any entry action blurred the paste box, which
+       loaded the code, which hid the entry screen - pulling the button out from
+       under the pointer between mousedown and mouseup. The click never landed
+       on it. Every one of the eight entry buttons was dead whenever the paste
+       box had focus, which is exactly the state somebody is in when they have
+       just pasted code.
+
+       Taking the paste on blur is still right - it is what stops the text being
+       lost when somebody clicks Upload instead. What it must not do is leave
+       the entry screen, because that is the click target. The state is put back
+       when we were on the entry screen, and the text stays visible in the box
+       rather than seeming to vanish. The click handler pulls it in again a
+       moment later, and loading the same string twice costs nothing.
+
+       Guarded by tests/e2e/a-screen-explains-itself. */
+    const takePaste=()=>{
+      const v=pasteBox.value; if(!v || !v.trim()) return;
+      const onEntry = !!(labShell && labShell.classList.contains('lab-blank'));
+      labLoad(v);
+      if(onEntry){ labShell.classList.add('lab-blank'); }
+      else { pasteBox.value=''; }
+    };
     on(pasteBox,'input',()=>{ /* live: don't steal focus, just track */ });
     on(pasteBox,'blur',takePaste);
     on(pasteBox,'paste',()=>setTimeout(takePaste,30));
@@ -24050,7 +24085,14 @@ function renderLabView(){
     on(labShell,'drop',async e=>{ e.preventDefault(); labShell.classList.remove('lab-dropping'); if(e.dataTransfer.files.length) await labIngest(e.dataTransfer.files); });
   }
 
-  // ONE-CLICK: the entry buttons take whatever is loaded (or pasted) and just do it.
+  /* ONE-CLICK: the entry buttons take whatever is loaded (or pasted) and just
+     do it.
+
+     This selects DESCENDANTS of #lab-entry-acts, which is why AMV-D033 split
+     that row into two groups INSIDE the existing container rather than moving
+     the id onto one of them. Had the id moved, all eight buttons would have
+     stopped responding and nothing would have said so - the markup would look
+     right and every click would do nothing. */
   vc.querySelectorAll('#lab-entry-acts [data-go]').forEach(btn=>on(btn,'click',async()=>{
     // pull in anything sitting in the paste box first
     if(pasteBox && pasteBox.value.trim()){ labLoad(pasteBox.value); pasteBox.value=''; }

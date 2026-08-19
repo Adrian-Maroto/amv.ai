@@ -189,6 +189,63 @@ section('The cookie banner is sized like compliance, not like the product (AMV-D
   await page.setViewportSize({ width: 1280, height: 860 });
 }
 
+/* ──────────────────────────────────────────────────────────────────────── */
+section('Lab offers one run action per state, and it is one that works (AMV-D033)');
+{
+  const enterLab = () => page.evaluate(async () => {
+    saveStr('amv_plan', 'ultra');
+    _LAB.code = '';
+    setTab('lab');
+    await new Promise(s => setTimeout(s, 500));
+  });
+  const visible = (sel) => page.evaluate((q) => [...document.querySelectorAll(q)]
+    .filter(e => { const r = e.getBoundingClientRect(); const cs = getComputedStyle(e);
+      return r.width > 1 && r.height > 1 && cs.visibility !== 'hidden' && cs.display !== 'none'; })
+    .map(e => (e.textContent || '').replace(/\s+/g, ' ').trim()), sel);
+
+  await enterLab();
+  const emptyRuns = await visible('#lab-run,[data-go="run"]');
+  const emptyFixes = await visible('#lab-debug,[data-go="debug"]');
+  ok(emptyRuns.length === 1, 'on the entry screen exactly one run action is offered', emptyRuns);
+  ok(emptyFixes.length === 1, 'and exactly one fix action', emptyFixes);
+  ok(/run it/i.test(emptyRuns[0] || ''), 'the one that survives is the one beside the paste box', emptyRuns[0]);
+
+  await page.evaluate(async () => { _LAB.code = 'console.log(1)'; renderLabView();
+    await new Promise(s => setTimeout(s, 350)); });
+  const loadedRuns = await visible('#lab-run,[data-go="run"]');
+  ok(loadedRuns.length === 1, 'with code loaded there is still exactly one', loadedRuns);
+  ok(!/run it/i.test(loadedRuns[0] || ''), 'and now it is the toolbar one, next to the editor', loadedRuns[0]);
+
+  /* THE HALF THAT MATTERS MOST.
+
+     Before this was fixed, every entry button was dead whenever the paste box
+     had focus - which is the state somebody is in the instant after pasting.
+     Blur fired before click, loaded the code, dropped `lab-blank`, and the
+     entry screen vanished from under the pointer between mousedown and mouseup.
+     Nothing threw and nothing logged; the code simply appeared in the editor
+     and no run started. A check that only counts buttons would have called that
+     screen fixed. */
+  await enterLab();
+  await page.fill('#lab-paste', 'console.log("the entry button really runs")');
+  await page.click('[data-go="run"]');
+  await page.waitForSelector('#lab-out-stat:not(:empty)', { timeout: 15000 }).catch(() => {});
+  const ran = await page.evaluate(() => ({
+    stat: (document.getElementById('lab-out-stat').textContent || '').trim(),
+    out: (document.getElementById('lab-out-body').textContent || '').replace(/\s+/g, ' ').trim(),
+  }));
+  ok(/ran in|rendered/i.test(ran.stat), 'pasting and pressing the entry run really executes the code', ran.stat);
+  ok(ran.out.includes('the entry button really runs'), 'and the output is the code the person pasted', ran.out.slice(0, 60));
+
+  /* The analysis chips take the same dead path, so one of them is checked too.
+     Without an engine key the honest answer is a refusal, not silence. */
+  await enterLab();
+  await page.fill('#lab-paste', 'const x = 1');
+  await page.click('[data-go="bugs"]');
+  await page.waitForSelector('#lab-out-stat:not(:empty)', { timeout: 15000 }).catch(() => {});
+  const chip = await page.evaluate(() => (document.getElementById('lab-out-stat').textContent || '').trim());
+  ok(chip.length > 0, 'an analysis chip answers rather than doing nothing at all', chip.slice(0, 70));
+}
+
 ok(errors.length === 0, 'no console errors anywhere in this sweep', errors.slice(0, 3));
 await app.close();
 if (report('a-screen-explains-itself') > 0) process.exitCode = 1;

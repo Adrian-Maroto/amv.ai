@@ -8840,3 +8840,36 @@ body.light .fr-d{ color:#67656d; }
 .logo-wm-dot{ color:var(--accent-tx); }
 #anav .logo-wm .logo-wm-dot,
 .logo-wm .logo-wm-dot{ color:var(--accent-tx)!important; }
+
+/* ── LAYER A96: ONE RUN BUTTON PER STATE (AMV-D033) ──────────────────────
+   Measured on the empty Lab screen: TWO Run controls visible at once ("Run" in
+   the toolbar and "Run it" in the entry row) and two debug controls
+   ("Auto-Debug" and "Find & fix the bugs"). With code loaded there is exactly
+   one of each, so the duplication was confined to the entry state.
+
+   Worth recording what was NOT wrong, because it looked worse than it was: the
+   two Run buttons have the SAME scope. The paste box syncs into the editor on
+   input, so the toolbar Run really does run what you pasted - checked by
+   pasting code and pressing it. The audit predicted users would believe the two
+   have different scope; they do not, and the fix is hierarchy rather than
+   behaviour.
+
+   The toolbar's code actions are hidden while the entry screen is up. They act
+   on an editor that is empty by definition in that state, and the entry row
+   sits next to the box you are actually typing in - which is where the audit
+   asks for the one surviving action to be. Upload and New stay: those are how
+   you get code in, so they are the two that still mean something here.
+
+   Nothing is removed. Every one of these returns the moment there is code. */
+.lab-shell.lab-blank .lab-bar-r #lab-run,
+.lab-shell.lab-blank .lab-bar-r #lab-debug,
+.lab-shell.lab-blank .lab-bar-r #lab-agents,
+.lab-shell.lab-blank .lab-bar-r #lab-deploy{ display:none; }
+
+.lab-entry-acts{ display:flex;flex-direction:column;align-items:center;gap:var(--sp-2); }
+.lab-go-row{ display:flex;flex-wrap:wrap;justify-content:center;gap:var(--sp-2); }
+.lab-go-primary{ margin-bottom:var(--sp-1); }
+.lab-go-sub{
+  font-size:var(--t-sm);color:var(--dim);
+  letter-spacing:.04em;text-transform:uppercase;margin-top:var(--sp-2);
+}
