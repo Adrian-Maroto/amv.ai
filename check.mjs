@@ -21,7 +21,7 @@
    ───────────────────────────────────────────────────────────────────────── */
 import { gzipSync } from 'zlib';
 import { execSync } from 'child_process';
-import { readFileSync, existsSync, writeFileSync } from 'fs';
+import { readFileSync, existsSync, writeFileSync, writeSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -66,10 +66,41 @@ function step(label, fn) {
     console.log(`${G}✓${X} ${DIM}(${Date.now() - s}ms)${X}${tail}`);
     if (note) skipped.push(`${label} - ${note}`);
   } catch (e) {
-    console.log(`${RED}✗${X}`);
-    console.log(`\n${B}${RED}FAILED:${X} ${label}\n`);
-    console.log(`${e.message}\n`);
-    console.log(`${B}${RED}✗ NOT shippable${X} - fix the above, then run ${B}npm run check${X} again.\n`);
+    /* WHY THIS WRITES TO FD 1 INSTEAD OF USING console.log.
+
+       A failing gate has to say WHICH suite failed, and on CI it did not - the
+       run went red and the log stopped in the middle of an unrelated suite,
+       with no summary and no failing assertion anywhere in it. It read like the
+       runner had crashed. It had not.
+
+       When Node's stdout is a PIPE, writes are asynchronous. That is what CI
+       gives a step, and what a laptop does NOT: a terminal and a redirect to a
+       file are both synchronous, so the same code prints everything locally and
+       is cut off in CI. `process.exit()` does not flush what is still queued, so
+       the tail of a multi-megabyte failure message - the part carrying the
+       summary that names the failing suites - was dropped every time.
+
+       So the gate was capable of failing in a way that could not be read, on the
+       one surface where reading it is all you can do. `writeSync` on fd 1 is
+       synchronous whatever stdout is attached to, and the exit happens after the
+       bytes are gone. */
+    const say = (t) => {
+      /* No console.log fallback: falling back to the asynchronous path on the
+         one write that must not be lost would reintroduce exactly this bug,
+         quietly, on whichever machine happened to take the fallback. writeSync
+         can report EAGAIN on a pipe whose reader is behind - the answer to that
+         is to try the rest again, not to give up on it. */
+      const buf = Buffer.from(t, 'utf8');
+      let off = 0;
+      while (off < buf.length) {
+        try { off += writeSync(1, buf, off, buf.length - off); }
+        catch (err) { if (err && (err.code === 'EAGAIN' || err.code === 'EINTR')) continue; return; }
+      }
+    };
+    say(`${RED}✗${X}\n`);
+    say(`\n${B}${RED}FAILED:${X} ${label}\n\n`);
+    say(`${e.message}\n`);
+    say(`\n${B}${RED}✗ NOT shippable${X} - fix the above, then run ${B}npm run check${X} again.\n\n`);
     process.exit(1);
   }
 }
@@ -173,8 +204,49 @@ if (!FAST) step('Test ports are free', () => {
 });
 
 /* ── 4. All test suites ──────────────────────────────────────────────────── */
+/* LEAD WITH THE ANSWER, AND PRINT ONLY WHAT IS BEING ASKED ABOUT.
+
+   `sh` throws carrying the runner's ENTIRE output - every tick of 296 suites,
+   several megabytes of it - and the names of the suites that failed are in the
+   summary at the very bottom. Reading a gate failure meant scrolling past
+   everything that worked to reach the four lines that did not.
+
+   The names go first now, and the body is cut down to the sections belonging to
+   the suites that actually failed. Nothing is hidden: the run is still on disk,
+   and the message says where. */
+function _failureReport(fullOutput) {
+  const plain = fullOutput.replace(/\x1b\[[0-9;]*m/g, '');
+  const failing = (plain.match(/^\s*✗ (?:e2e|worker)\/\S+/gm) || [])
+    .map((l) => l.replace(/^\s*✗ /, '').trim());
+  if (!failing.length) return fullOutput;
+
+  /* Split on the runner's own suite banner so each section can be matched back
+     to the name that headed it. */
+  const parts = plain.split(/^━━━ (\S+) ━━━$/m);
+  const sections = new Map();
+  for (let i = 1; i < parts.length; i += 2) sections.set(parts[i], parts[i + 1] || '');
+
+  const bodies = failing.map((name) => {
+    const body = sections.get(name);
+    if (!body) return `━━━ ${name} ━━━\n  (its output was not found in the run - read the full log)`;
+    /* Keep the tail: assertions print as they go and the failures are at the end
+       of a suite's own output, next to its count line. */
+    const lines = body.split('\n').filter((l) => l.trim());
+    return `━━━ ${name} ━━━\n` + lines.slice(-40).join('\n');
+  });
+
+  return `${failing.length} suite(s) failed:\n  ` + failing.join('\n  ') + '\n\n'
+    + bodies.join('\n\n') + '\n\n'
+    + `(only the failing suites are shown; run \`node tests/run.mjs <name>\` for one of them)`;
+}
+
 if (!FAST) step('All test suites', () => {
-  const out = sh('node tests/run.mjs');
+  let out;
+  try {
+    out = sh('node tests/run.mjs');
+  } catch (e) {
+    throw new Error(_failureReport(String((e && e.message) || '')));
+  }
   // run.mjs exits non-zero on failure (so sh would throw), but double-check the
   // summary line so a silent pass-through can't slip by.
   if (!/All \d+ suites passed/.test(out)) {
