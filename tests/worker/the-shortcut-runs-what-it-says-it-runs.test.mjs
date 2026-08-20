@@ -116,16 +116,32 @@ section('The selection is announced, so a narrow run cannot pass for a wide one'
 section('The two names that mean a directory are the two directories');
 {
   /* A hardcoded pair that drifts from the filesystem would put a new directory
-     back in the old broken behaviour without saying so. */
+     back in the old broken behaviour without saying so.
+
+     "Directory under tests/" was the wrong question, and the `lib` exclusion was
+     the evidence: the rule had already needed one hardcoded exception, which is
+     what a proxy looks like just before it needs a second. It got one - adding
+     tests/fixtures/ for the AMV-D007 control baseline failed this, and the
+     failure was correct about the mismatch and wrong about the concern, because
+     a directory of JSON is not a directory of suites nobody is running.
+
+     The question it actually means is "does this directory hold suites". lib and
+     fixtures hold none and drop out on their own, with no name written down. A
+     new tests/integration/foo.test.mjs still fails this, which is the entire
+     point of having it. */
   const runner = readFileSync(RUNNER, 'utf8');
   const dirs = /const DIRS = \[([^\]]*)\]/.exec(runner);
   ok(dirs != null, 'the directory list was found', dirs && dirs[1]);
   const named = dirs[1].split(',').map(s => s.trim().replace(/['"]/g, '')).filter(Boolean).sort();
+  const holdsSuites = (d) => {
+    try { return readdirSync(join(ROOT, 'tests', d)).some(f => f.endsWith('.test.mjs')); }
+    catch (e) { return false; }
+  };
   const actual = readdirSync(join(ROOT, 'tests'), { withFileTypes: true })
-    .filter(d => d.isDirectory() && !d.name.startsWith('.') && d.name !== 'lib')
-    .map(d => d.name).sort();
+    .filter(d => d.isDirectory() && !d.name.startsWith('.'))
+    .map(d => d.name).filter(holdsSuites).sort();
   ok(JSON.stringify(named) === JSON.stringify(actual),
-     'and it matches the test directories that actually exist', { named, actual });
+     'and it matches every directory that actually holds suites', { named, actual });
 }
 
 if (report('the-shortcut-runs-what-it-says-it-runs') > 0) process.exitCode = 1;
