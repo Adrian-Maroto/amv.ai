@@ -83,9 +83,27 @@ it was always for - today it only reaches Studio.
 Each step ends with the product working and the gate green. Nothing here is a
 big-bang rewrite.
 
-1. **Prove the inventory.** A test that names every control on all three screens
-   and every function they call, so step 6 can prove nothing was dropped.
-   Written first, against today's build, and it must pass before and after.
+1. **Prove the inventory. DONE.** `tests/e2e/the-build-surfaces-keep-every-control`
+   plus `tests/fixtures/build-surface-controls.json`: 279 controls captured by
+   driving the real app across eight states, and 46 operable ids checked against
+   the built bundle. It passes on today's build and must pass after every step
+   below.
+
+   Taking it found the gap that would have made it worthless. A first pass drove
+   Studio's hero and stopped, because reaching the canvas behind it normally
+   needs a model call - so it inventoried seven controls and left eight (back,
+   add, refine, download, export, code, history) outside the baseline. Studio's
+   entire working surface could have been deleted with every check green. Design
+   DNA had the same shape: twelve sections, one mounted at a time, 217 controls
+   between them, of which a naive snapshot sees a twelfth.
+
+   Five controls cannot be reached by driving at all - three hidden file inputs,
+   a hidden language select, and Save, which appears only once a folder is
+   connected. Those are asserted against the bundle instead, because "I could not
+   click it" and "it is gone" have to stay different answers. Sabotage-tested
+   three ways: deleting a visible canvas control fails the rendered half,
+   deleting the hidden file input fails ONLY the source half, and dropping one
+   DNA section fails with fourteen named controls.
 2. **One shell, three renderers.** Introduce `renderBuildView` that routes to the
    existing three untouched. `build` becomes a real tab; `studio`/`dev`/`lab`
    route into it. No visual change yet. Ship this alone.
