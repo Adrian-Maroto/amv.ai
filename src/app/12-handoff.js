@@ -342,9 +342,11 @@ function renderView(){
     case 'integrations': renderIntegrationsView(); break;
     case 'extensions': renderCrewView(); break;
     case 'crew': renderCrewView(); break;
-    case 'studio': renderDesignView(); break;
-    case 'dev': renderCodeView(); break;
-    case 'lab': renderLabView(); break;
+    /* One door for all three (AMV-D007 step 2). The renderers behind it are
+       unchanged; this is only where they are reached from. */
+    case 'studio':
+    case 'dev':
+    case 'lab': renderBuildView(); break;
     case 'handoff': renderHandoffView(); break;
     case 'market': renderMarketView(); break;
     case 'admin': renderAdminView(); break;
