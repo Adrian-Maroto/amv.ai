@@ -19,6 +19,91 @@
    as a migration that has to be finished before the deep links stop resolving.
    setTab('dev') has callers in five other modules; none of them should ever need
    to know this became one screen. */
+/* ── AMV-D007, STEP 3: ONE TOOLBAR, NOT TWO THAT DRIFTED ──────────────────
+
+   Dev and Lab each carried their own toolbar, and they had drifted the way two
+   copies of anything drift. The same job wore different icons: Dev put a
+   PAPERCLIP on "add existing code" and Lab an upload tray on "upload code
+   files". New session was the only glyph the two agreed on. Deploy existed in
+   both and was written twice. The model picker, the same.
+
+   One definition now, parameterised by mode. It deliberately emits the SAME ids
+   each surface already wires - #dev-new, #lab-new and the rest - so not one
+   event handler moves in this step. The ids collapse into shared ones only in
+   step 6, when the surfaces genuinely become one and the wiring moves with
+   them. Doing both at once would mean a markup change and a rewiring landing
+   together, with no way to say which broke something.
+
+   The guard is tests/e2e/the-build-surfaces-keep-every-control: 279 controls
+   and 46 operable ids, all of which must survive. */
+const _BUILD_ICO = {
+  add:    '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>',
+  fresh:  '<path d="M12 5v14M5 12h14"/>',
+  save:   '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/>',
+  deploy: '<path d="M13 2 3 14h8l-1 8 10-12h-8z"/>',
+  run:    '<polygon points="5 3 19 12 5 21 5 3"/>',
+  debug:  '<path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 3 21 9 15 9"/>',
+  agents: '<path d="M12 3l1.9 4.6 4.6 1.9-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/>',
+  tolab:  '<path d="M10 2h4M12 2v6.5L7 19a1 1 0 0 0 .9 1.5h8.2A1 1 0 0 0 17 19l-5-10.5"/>',
+};
+function _bico(k, size){
+  const n = size || 15;
+  return '<svg width="'+n+'" height="'+n+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+    + 'stroke-width="'+(n<15?2:1.8)+'" stroke-linecap="round" stroke-linejoin="round">'+(_BUILD_ICO[k]||'')+'</svg>';
+}
+/* An icon-only control needs BOTH a title and an aria-label: the title is the
+   mouse's tooltip and the label is the only name a screen reader ever hears.
+   Several of these carried one and not the other. */
+function _bIcoBtn(id, label, icon, extra){
+  return '<button class="dev-ico" id="'+id+'" title="'+escH(label)+'" aria-label="'+escH(label)+'"'
+    + (extra||'') + '>'+_bico(icon)+'</button>';
+}
+function _buildBarHTML(mode){
+  const isLab = mode === 'lab';
+  const badge = isLab ? 'Lab' : 'Dev';
+  const left = isLab
+    ? '<select id="lab-lang" class="lab-lang-sel" aria-label="Language">'
+        + '<option value="js">JavaScript</option><option value="python">Python</option>'
+        + '<option value="html">HTML</option></select>'
+        + _sectionModelSelect('debug','lab-model')
+        + '<span class="lab-count" id="lab-count"></span>'
+        + '<span class="sec-usage-note" id="lab-usage-note"></span>'
+    : _sectionModelSelect('code','dev-model')
+        + '<span class="sec-usage-note" id="dev-usage-note"></span>';
+
+  /* The right-hand side, in one order for both surfaces: bring work in, start
+     over, then the actions that operate on what is loaded. Dev's paperclip is
+     gone - the tray is what Lab already used and what the same job should look
+     like on both. */
+  const right = isLab
+    ? _bIcoBtn('lab-upload-top','Upload code files','add')
+      + _bIcoBtn('lab-new','New session','fresh')
+      + _bIcoBtn('lab-agents','Run agents on this code','agents')
+      + '<button class="lab-run-btn" id="lab-run">'+_bico('run',13)+'Run</button>'
+      + _bIcoBtn('lab-deploy','Publish this page to a live URL','deploy')
+      + '<button class="lab-fix-btn" id="lab-debug">'+_bico('debug',13)+'Auto-Debug</button>'
+    : '<div class="dev-addwrap">'
+        + _bIcoBtn('dev-add','Add existing code (optional)','add')
+        + '<div class="dev-add-menu" id="dev-add-menu" style="display:none">'
+          + '<button data-add="files"><b>Files</b><span>One or a few files</span></button>'
+          + '<button data-add="folder"><b>Folder</b><span>A whole project</span></button>'
+          + '<button data-add="connect"><b>Connect folder</b><span>Also save edits back &middot; Chrome/Edge</span></button>'
+        + '</div>'
+      + '</div>'
+      + _bIcoBtn('dev-tolab','Debug in Lab','tolab')
+      + _bIcoBtn('dev-save','Save to your folder','save',' style="display:none"')
+      + _bIcoBtn('dev-new','New session','fresh')
+      + '<input type="file" id="dev-files" multiple style="display:none">'
+      + '<input type="file" id="dev-folderinput" webkitdirectory directory multiple style="display:none">';
+
+  const cls = isLab ? 'lab-bar' : 'dev-bar';
+  return '<div class="'+cls+' build-bar">'
+    + '<div class="'+cls+'-l"><span class="dev-badge">'+badge+'</span>'+left+'</div>'
+    + '<div class="'+cls+'-r">'+right+'</div>'
+  + '</div>';
+}
+try{ window._buildBarHTML = _buildBarHTML; }catch(e){}
+
 const BUILD_SURFACES = { studio: 'design', dev: 'code', lab: 'lab' };
 function _buildMode(){
   return BUILD_SURFACES[S.tab] || S.buildMode || 'code';
@@ -698,28 +783,7 @@ function renderCodeView(){
   const blank = !_DEV.log.length;
   vc.innerHTML = `<div class="dev-shell${blank?' dev-blank':''}" id="dev-shell">
     <div class="dev-chat-pane">
-      <div class="dev-bar">
-        <div class="dev-bar-l">
-          <span class="dev-badge">Dev</span>
-          ${_sectionModelSelect('code','dev-model')}
-          <span class="sec-usage-note" id="dev-usage-note"></span>
-        </div>
-        <div class="dev-bar-r">
-          <div class="dev-addwrap">
-            <button class="dev-ico" id="dev-add" title="Add existing code (optional)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
-            <div class="dev-add-menu" id="dev-add-menu" style="display:none">
-              <button data-add="files"><b>Files</b><span>One or a few files</span></button>
-              <button data-add="folder"><b>Folder</b><span>A whole project</span></button>
-              <button data-add="connect"><b>Connect folder</b><span>Also save edits back &middot; Chrome/Edge</span></button>
-            </div>
-          </div>
-          <button class="dev-ico" id="dev-tolab" title="Debug in Lab"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2h4M12 2v6.5L7 19a1 1 0 0 0 .9 1.5h8.2A1 1 0 0 0 17 19l-5-10.5"/></svg></button>
-          <button class="dev-ico" id="dev-save" style="display:none" title="Save to your folder"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg></button>
-          <button class="dev-ico" id="dev-new" title="New session"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
-          <input type="file" id="dev-files" multiple style="display:none">
-          <input type="file" id="dev-folderinput" webkitdirectory directory multiple style="display:none">
-        </div>
-      </div>
+      ${_buildBarHTML('code')}
 
       <div id="dev-hero" class="dev-hero">
         <h2>What should we build?</h2>
