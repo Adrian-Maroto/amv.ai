@@ -93,6 +93,30 @@ section('It leads with the names of the suites that failed');
   ok(!out.includes('also fine'), 'while the suites that passed are left out');
   ok(out.length < fake.length, 'so the report is smaller than the raw run', `${out.length} vs ${fake.length}`);
 
+  /* A suite that DIES prints nothing of its own, and the first version of this
+     reported it as a name with an empty body underneath - "1 suite(s) failed:"
+     and then nothing, which is the same unreadable failure the flush fix was
+     meant to end. Its stderr is at the tail of the run, so that is what an empty
+     section falls back to. Caught for real: spend.test.mjs died this way during
+     an AMV-D007 gate run and the report had nothing under the name. */
+  const died =
+    'selected 3 suite(s) (all)\n' +
+    '━━━ e2e/alpha.test.mjs ━━━\n  \x1b[32m✓\x1b[0m fine\n\n1 passed, 0 failed\n' +
+    '━━━ e2e/dies.test.mjs ━━━\n' +
+    '━━━ e2e/omega.test.mjs ━━━\n  \x1b[32m✓\x1b[0m also fine\n\n1 passed, 0 failed\n' +
+    '\n════════ SUMMARY ════════\n' +
+    '  \x1b[32m✓ e2e/alpha.test.mjs\x1b[0m\n' +
+    '  \x1b[31m✗ e2e/dies.test.mjs\x1b[0m\n' +
+    '  \x1b[32m✓ e2e/omega.test.mjs\x1b[0m\n' +
+    '\n\x1b[31m1 suite(s) FAILED\x1b[0m\n' +
+    'Error: listen EADDRINUSE: address already in use :::9100\n';
+  const diedOut = build(died);
+  ok(diedOut.includes('e2e/dies.test.mjs'), 'a suite that dies is still named', diedOut.split('\n')[1]);
+  ok(/died rather than failed/.test(diedOut),
+     'and the report says it died rather than failed');
+  ok(diedOut.includes('EADDRINUSE'),
+     'and shows the tail of the run, which is where its error actually landed');
+
   /* A clean run must pass straight through - if nothing failed, the caller's
      own "did not report a clean pass" message is the one that matters. */
   const clean = 'selected 1 suite(s)\n━━━ e2e/alpha.test.mjs ━━━\n  ✓ fine\n\nAll 1 suites passed\n';

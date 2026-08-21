@@ -224,14 +224,35 @@ function _failureReport(fullOutput) {
      to the name that headed it. */
   const parts = plain.split(/^━━━ (\S+) ━━━$/m);
   const sections = new Map();
-  for (let i = 1; i < parts.length; i += 2) sections.set(parts[i], parts[i + 1] || '');
+  for (let i = 1; i < parts.length; i += 2) {
+    /* Cut at the summary. The LAST suite's section otherwise runs on into the
+       runner's own ✓/✗ list, which makes a suite that printed nothing look like
+       it printed plenty - and that is exactly the case this needs to detect. */
+    sections.set(parts[i], String(parts[i + 1] || '').split('════════ SUMMARY')[0]);
+  }
 
+  /* A suite that DIES rather than fails prints nothing between its banner and
+     the next one: the runner gives each child stdio:'inherit', so a startup
+     crash writes to stderr, and stderr arrives concatenated after all of stdout
+     rather than inside the section it belongs to. The first version of this
+     reported an empty body and left "1 suite(s) failed:" with nothing under it -
+     which is the same unreadable failure the flush fix was supposed to end,
+     arriving by a different route.
+
+     So an empty section falls back to the tail of the whole run, which is where
+     that stderr actually is. */
+  const tailOfRun = plain.split('\n').filter((l) => l.trim()).slice(-25).join('\n');
   const bodies = failing.map((name) => {
     const body = sections.get(name);
-    if (!body) return `━━━ ${name} ━━━\n  (its output was not found in the run - read the full log)`;
+    const lines = (body || '').split('\n').filter((l) => l.trim());
+    if (!lines.length) {
+      return `━━━ ${name} ━━━\n`
+        + `  (it printed nothing of its own - it died rather than failed.\n`
+        + `   The end of the whole run follows, which is where a crash lands:)\n`
+        + tailOfRun;
+    }
     /* Keep the tail: assertions print as they go and the failures are at the end
        of a suite's own output, next to its count line. */
-    const lines = body.split('\n').filter((l) => l.trim());
     return `━━━ ${name} ━━━\n` + lines.slice(-40).join('\n');
   });
 
