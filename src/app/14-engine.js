@@ -483,27 +483,7 @@ function renderLabView(){
   if(typeof _LAB_HANDOFF!=='undefined' && _LAB_HANDOFF){ _LAB.code=_LAB_HANDOFF; _LAB_HANDOFF=''; }
   const labBlank = !String(_LAB.code||'').trim();
   vc.innerHTML = `<div class="lab-shell${labBlank?' lab-blank':''}" id="lab-shell">
-    <div class="lab-bar">
-      <div class="lab-bar-l">
-        <span class="dev-badge">Lab</span>
-        <select id="lab-lang" class="lab-lang-sel">
-          <option value="js">JavaScript</option>
-          <option value="python">Python</option>
-          <option value="html">HTML</option>
-        </select>
-        ${_sectionModelSelect('debug','lab-model')}
-        <span class="lab-count" id="lab-count"></span>
-        <span class="sec-usage-note" id="lab-usage-note"></span>
-      </div>
-      <div class="lab-bar-r">
-        <button class="dev-ico" id="lab-upload-top" title="Upload code files"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></button>
-        <button class="dev-ico" id="lab-new" title="New session"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
-        <button class="dev-ico" id="lab-agents" title="Run agents on this code"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6 4.6 1.9-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/></svg></button>
-        <button class="lab-run-btn" id="lab-run"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>Run</button>
-        <button class="dev-ico" id="lab-deploy" title="Publish this page to a live URL"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h8l-1 8 10-12h-8z"/></svg></button>
-        <button class="lab-fix-btn" id="lab-debug"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 3 21 9 15 9"/></svg>Auto-Debug</button>
-      </div>
-    </div>
+    ${_buildBarHTML('lab')}
 
     <!-- ENTRY STATE: paste on the left, upload on the right -->
     <div class="lab-entry" id="lab-entry">
