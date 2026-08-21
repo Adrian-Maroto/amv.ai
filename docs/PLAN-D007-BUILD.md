@@ -131,9 +131,28 @@ big-bang rewrite.
    (`_devDeploy` and `_labDeploy`) are still two functions behind one shared
    button shape, and download/export is still per-surface. Those are wiring, so
    they belong with step 6.
-4. **One entry state.** Replace the three heroes with the single entry screen.
-   Studio's tiles, Dev's chips and Lab's paste/upload sit together, because they
-   are the same question asked three ways.
+4. **One entry state. DONE, in the form the product can actually honour.** All
+   three surfaces now open with the same header and the same three outcomes -
+   design it, build an app, work on code you already have - so the choice is
+   made once, in the open, and can be changed without going back to the sidebar
+   to guess again.
+
+   The three heroes were NOT collapsed into a single composer, and that is a
+   decision rather than a shortfall. Studio's composer creates a design, Dev's
+   builds a running app, and Lab takes code that already exists. One composer
+   would have to infer which, inference needs a model call, and a model call
+   means it cannot work without a key - so "type anything and we will work out
+   the tool" would be a feature that demos and then strands somebody on the
+   wrong surface. Three visible choices are one click and never wrong.
+
+   Each mode keeps its own composer and starting points with the same ids, so no
+   wiring moved.
+
+   The switch sits ABOVE each surface's toolbar, not inside its scrolling
+   content, because the first version did the latter: on a 390px phone Lab's
+   toolbar wraps to 164px and the first mode button rendered at the right size,
+   in the right place, with the right label, BEHIND the bar. Found by clicking
+   it, not by measuring it.
 5. **One result pane.** Preview / Code / Findings, with Findings appearing only
    when there is something in it.
 6. **Retire the three renderers**, and run the step-1 inventory to prove every

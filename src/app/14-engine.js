@@ -483,12 +483,12 @@ function renderLabView(){
   if(typeof _LAB_HANDOFF!=='undefined' && _LAB_HANDOFF){ _LAB.code=_LAB_HANDOFF; _LAB_HANDOFF=''; }
   const labBlank = !String(_LAB.code||'').trim();
   vc.innerHTML = `<div class="lab-shell${labBlank?' lab-blank':''}" id="lab-shell">
+    ${_buildEntryHeadHTML('lab','Drop in your code and AMV takes it from there',
+      'Paste it, or upload files - any size, 10,000+ lines is fine. Then pick what you want done.')}
     ${_buildBarHTML('lab')}
 
     <!-- ENTRY STATE: paste on the left, upload on the right -->
     <div class="lab-entry" id="lab-entry">
-      <h2>Drop in your code and AMV takes it from there</h2>
-      <p>Paste it, or upload files - any size, 10,000+ lines is fine. Then pick what you want done.</p>
       <div class="lab-entry-grid">
         <div class="lab-entry-card">
           <div class="lab-entry-h"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Paste your code</div>
@@ -608,6 +608,7 @@ function renderLabView(){
   };
 
   // Entry-state paste box → loads straight into the editor
+  _wireBuildModes(vc);
   const pasteBox=$('lab-paste');
   if(pasteBox){
     /* THE BUTTON THAT COULD NOT BE CLICKED.

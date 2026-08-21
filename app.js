@@ -15819,6 +15819,65 @@ function _buildBarHTML(mode){
 }
 try{ window._buildBarHTML = _buildBarHTML; }catch(e){}
 
+/* ── AMV-D007, STEP 4: ONE PLACE TO START, CHOSEN BY OUTCOME ──────────────
+
+   Three sidebar destinations split this work by how the thing gets built. A
+   person who wants a landing page can get one from Studio as a design or from
+   Dev as a running app, and nothing on either screen tells them which they
+   want. That is the finding.
+
+   So the entry screen asks the question the person actually has - what do you
+   want to end up with - and picks the surface from the answer. Design it, build
+   it, or work on code you already have.
+
+   Explicitly, with three visible choices, and NOT by reading the composer and
+   guessing. Intent classification here would need a model call, which means it
+   could not work without a key, and "type anything and we will figure out which
+   tool" is precisely the kind of thing that works in a demo and strands
+   somebody on the wrong surface in real use. The choice is one click and it is
+   never wrong.
+
+   Each mode keeps its own composer and its own starting points, with the same
+   ids they already had, so no wiring moves. What is new is that all three are
+   reachable from wherever you are, instead of requiring you to have guessed
+   right in the sidebar. */
+const _BUILD_MODE_TABS = [
+  ['studio', 'Design it',   'Landing pages, screens, posters - on a live canvas'],
+  ['dev',    'Build an app','Real software, written and running in a sandbox'],
+  ['lab',    'Work on code','Run, debug, review or refactor code you already have'],
+];
+function _buildModeSwitchHTML(active){
+  return '<div class="build-modes" role="tablist" aria-label="What do you want to end up with?">'
+    + _BUILD_MODE_TABS.map(([tab, label, hint]) =>
+        '<button class="build-mode' + (tab === active ? ' on' : '') + '"'
+        + ' role="tab" aria-selected="' + (tab === active ? 'true' : 'false') + '"'
+        + ' data-bmode="' + tab + '" title="' + escH(hint) + '">'
+        + '<span class="build-mode-t">' + escH(label) + '</span>'
+        + '<span class="build-mode-h">' + escH(hint) + '</span>'
+      + '</button>').join('')
+  + '</div>';
+}
+/* The header is the shared .pghd from AMV-D070 rather than a fourth bespoke
+   one - that duplication is what AMV-D013 is about, and this is the surface
+   that would otherwise have added to it. */
+function _buildEntryHeadHTML(active, title, sub){
+  return '<header class="pghd build-head"><div class="pghd-l">'
+      + '<span class="eyebrow">Build</span>'
+      + '<h2>' + escH(title) + '</h2>'
+      + '<p class="pghd-sub">' + escH(sub) + '</p>'
+    + '</div></header>'
+    + _buildModeSwitchHTML(active);
+}
+/* One handler for the three, wired once per render. Switching mode is just
+   setTab, so every existing route, deep link and session behaviour applies
+   unchanged - this adds a way to get there, it does not add a second way of
+   getting there that has to be kept in step. */
+function _wireBuildModes(root){
+  (root || document).querySelectorAll('[data-bmode]').forEach(b =>
+    on(b, 'click', () => { try{ setTab(b.dataset.bmode); }catch(e){} }));
+}
+try{ window._buildModeSwitchHTML = _buildModeSwitchHTML; window._wireBuildModes = _wireBuildModes; }catch(e){}
+
 const BUILD_SURFACES = { studio: 'design', dev: 'code', lab: 'lab' };
 function _buildMode(){
   return BUILD_SURFACES[S.tab] || S.buildMode || 'code';
@@ -15843,10 +15902,9 @@ function renderDesignView(){
     ['\uD83E\uDDE9','Component','A single button, card or form']
   ];
   vc.innerHTML = `<div class="sv fi"><div class="dsn-wrap">
+    ${_buildEntryHeadHTML('studio','What should we make?',
+      'Describe what you want and AMV creates it on a live canvas, then refines it as you chat. Or switch above to build a running app, or work on code you already have.')}
     <section class="dsn-hero">
-      <div class="dsn-eyebrow">AMV Design</div>
-      <h1 class="dsn-h1">Describe it.<br><span class="dsn-grad">Watch it build.</span></h1>
-      <p class="dsn-lead">Landing pages, UI mockups, posters and graphics - created on a live canvas and refined just by chatting. &ldquo;Make it darker.&rdquo; &ldquo;Add a pricing section.&rdquo; Export when it&rsquo;s right.</p>
       <div class="dsn-input-wrap">
         <textarea id="dsn-prompt" rows="1" placeholder="A sleek dark pricing page for an AI startup, three tiers, purple accents&hellip;"></textarea>
         <button class="dsn-go" data-dact="designGo" aria-label="Generate design">
@@ -15878,6 +15936,7 @@ function renderDesignView(){
     </section>
     ${_ownedMarketHTML('studio')}
   </div></div>`;
+  _wireBuildModes(vc);
   // auto-grow the hero textarea
   const ta=$('dsn-prompt');
   if(ta){ on(ta,'input',()=>{ ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,220)+'px'; }); }
@@ -16498,11 +16557,11 @@ function renderCodeView(){
   const blank = !_DEV.log.length;
   vc.innerHTML = `<div class="dev-shell${blank?' dev-blank':''}" id="dev-shell">
     <div class="dev-chat-pane">
+      ${_buildEntryHeadHTML('dev','What should we build?',
+        'Describe it in plain English. AMV writes the code, runs it, and shows you the live result.')}
       ${_buildBarHTML('code')}
 
       <div id="dev-hero" class="dev-hero">
-        <h2>What should we build?</h2>
-        <p>Describe it in plain English. AMV writes the code, runs it, and shows you the live result.</p>
         <div class="dev-hero-chips" id="dev-hero-chips">
           ${_devChip('A landing page for a coffee brand - hero, pricing, and a signup form','Landing page')}
           ${_devChip('A to-do app with add, complete, delete, and saved state','To-do app')}
@@ -16545,6 +16604,7 @@ function renderCodeView(){
       <div id="dev-code-body" class="dev-code-body" style="display:none"><div class="dev-code-layout"><div class="dev-tree" id="dev-tree"></div><div class="dev-code-main" id="dev-code-main"><div class="lab-placeholder">The code appears here as AMV writes it.</div></div></div></div>
     </div>
   </div>`;
+  _wireBuildModes(vc);
   // hero chips fill the composer
   vc.querySelectorAll('#dev-hero-chips [data-dq]').forEach(c=>on(c,'click',()=>{
     const t=$('dev-msg'); if(t){ t.value=c.dataset.dq; t.focus(); t.style.height='auto'; t.style.height=Math.min(t.scrollHeight,140)+'px'; }
@@ -23985,12 +24045,12 @@ function renderLabView(){
   if(typeof _LAB_HANDOFF!=='undefined' && _LAB_HANDOFF){ _LAB.code=_LAB_HANDOFF; _LAB_HANDOFF=''; }
   const labBlank = !String(_LAB.code||'').trim();
   vc.innerHTML = `<div class="lab-shell${labBlank?' lab-blank':''}" id="lab-shell">
+    ${_buildEntryHeadHTML('lab','Drop in your code and AMV takes it from there',
+      'Paste it, or upload files - any size, 10,000+ lines is fine. Then pick what you want done.')}
     ${_buildBarHTML('lab')}
 
     <!-- ENTRY STATE: paste on the left, upload on the right -->
     <div class="lab-entry" id="lab-entry">
-      <h2>Drop in your code and AMV takes it from there</h2>
-      <p>Paste it, or upload files - any size, 10,000+ lines is fine. Then pick what you want done.</p>
       <div class="lab-entry-grid">
         <div class="lab-entry-card">
           <div class="lab-entry-h"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Paste your code</div>
@@ -24110,6 +24170,7 @@ function renderLabView(){
   };
 
   // Entry-state paste box → loads straight into the editor
+  _wireBuildModes(vc);
   const pasteBox=$('lab-paste');
   if(pasteBox){
     /* THE BUTTON THAT COULD NOT BE CLICKED.
