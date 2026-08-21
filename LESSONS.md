@@ -5155,3 +5155,34 @@ swept. Most sat after a SYNCHRONOUS render, where a fixed delay is harmless
 because the work is already done before the timer starts - so they were not the
 same bug. They were still anchored to the element under test, because "harmless
 today" depends on a render staying synchronous, and nothing enforces that.
+
+## 267. Three ways a gate can fail without telling you anything, all found by red builds
+
+Within one session this gate failed unreadably three separate times, each by a
+different mechanism, and none of them was found by reading the code.
+
+1. `console.log` before `process.exit()` drops what is still queued when stdout
+   is a pipe, so CI lost the summary naming the failing suites (#263).
+2. The report led with megabytes of ticks and buried the answer at the bottom,
+   so even a complete log took scrolling to read.
+3. A suite that DIES rather than fails prints nothing between its banner and the
+   next one - the runner uses stdio:'inherit', so its stderr arrives
+   concatenated after all of stdout - and the report printed nothing back.
+
+The third had a companion defect that made the first fixture for it pass for the
+wrong reason: sections were split on the suite banner and never closed, so the
+LAST suite's body ran on into the runner's own summary list. A suite that
+printed nothing therefore looked like it had printed plenty - which is exactly
+the case the check existed to detect. It only surfaced because the fixture
+happened to put the dying suite last, and adding one after it turned the check
+red.
+
+The rule this leaves: **an instrument that reports failure is itself a thing that
+can fail, and it fails in the one condition you never exercise - the failing
+one.** Every check written this session got sabotage-tested; the reporting path
+around them did not, because it only runs when something is already wrong.
+
+Practically: when a gate goes red, the first question is whether the report is
+telling the truth about WHAT went red. Three times running, it was not, and each
+time the wrong answer pointed at an innocent suite - which costs more than no
+answer, because an innocent suite is a plausible thing to go and investigate.

@@ -117,10 +117,20 @@ big-bang rewrite.
 
    Nothing a person can see changed, which is the point, and the inventory from
    step 1 passing unchanged is what says so.
-3. **One toolbar.** Unify upload, run, deploy, download, model select and new
-   session into one set of controls that acts on whichever state is active. This
-   is where AMV-D033's duplicate Run disappears, and where the two deploy paths
-   become one.
+3. **One toolbar. DONE.** `_buildBarHTML(mode)` is the single definition. Dev and
+   Lab had drifted the way copies do - the same job wore a paperclip on one and
+   an upload tray on the other, New session was the only glyph they agreed on,
+   and Deploy was written twice.
+
+   It emits the SAME ids each surface already wires, so no event handler moved.
+   The ids collapse into shared ones in step 6, when the surfaces genuinely
+   become one and the wiring moves with them. A markup change and a rewiring in
+   one commit leaves no way to say which broke something.
+
+   Still to do in this area, deliberately deferred: the two deploy paths
+   (`_devDeploy` and `_labDeploy`) are still two functions behind one shared
+   button shape, and download/export is still per-surface. Those are wiring, so
+   they belong with step 6.
 4. **One entry state.** Replace the three heroes with the single entry screen.
    Studio's tiles, Dev's chips and Lab's paste/upload sit together, because they
    are the same question asked three ways.
