@@ -1,6 +1,39 @@
 /* ============================================================
    AMV DESIGN  - visual canvas: generate & iterate UI / graphics
    ============================================================ */
+/* ── AMV-D007, STEP 2: ONE DOOR INTO THE THREE BUILD SURFACES ─────────────
+
+   Studio, Dev and Lab are three sidebar destinations that split the same job by
+   how the thing is built rather than by what somebody wants. The merge into one
+   Build surface happens in steps, and this is the seam: every route into any of
+   the three now passes through one function.
+
+   Nothing a person can see changes in this step, on purpose. The three tabs
+   still exist, the sidebar still lists them, and each still renders exactly what
+   it rendered before - the guard for that is
+   tests/e2e/the-build-surfaces-keep-every-control, which knows all 279 controls
+   and has to keep passing at every step.
+
+   What it buys is that the next steps have one place to change instead of three,
+   and that studio/dev/lab keep working as route names permanently rather than
+   as a migration that has to be finished before the deep links stop resolving.
+   setTab('dev') has callers in five other modules; none of them should ever need
+   to know this became one screen. */
+const BUILD_SURFACES = { studio: 'design', dev: 'code', lab: 'lab' };
+function _buildMode(){
+  return BUILD_SURFACES[S.tab] || S.buildMode || 'code';
+}
+function renderBuildView(){
+  const mode = _buildMode();
+  /* Dispatch only. Each of these is the renderer it always was, and they are
+     deliberately not touched in this step - a refactor and a redesign in one
+     commit is how you lose the ability to say which one broke something. */
+  if(mode === 'design') return renderDesignView();
+  if(mode === 'lab') return renderLabView();
+  return renderCodeView();
+}
+try{ window.renderBuildView = renderBuildView; window._buildMode = _buildMode; }catch(e){}
+
 function renderDesignView(){
   const vc=$('vc'); if(!vc) return;
   const starts=[

@@ -104,9 +104,19 @@ big-bang rewrite.
    three ways: deleting a visible canvas control fails the rendered half,
    deleting the hidden file input fails ONLY the source half, and dropping one
    DNA section fails with fourteen named controls.
-2. **One shell, three renderers.** Introduce `renderBuildView` that routes to the
-   existing three untouched. `build` becomes a real tab; `studio`/`dev`/`lab`
-   route into it. No visual change yet. Ship this alone.
+2. **One shell, three renderers. DONE.** `renderBuildView` dispatches on
+   `_buildMode()` and the router's three cases all go through it. The three
+   renderers are untouched - a refactor and a redesign in one commit is how you
+   lose the ability to say which one broke something.
+
+   `studio`, `dev` and `lab` stay real route names rather than becoming
+   redirects, and the guard asserts that: `setTab('dev')` has callers in five
+   other modules and none of them should ever need to know this became one
+   screen. The Dev-to-Lab handoff is checked too, since that crossing is the
+   product already admitting these are one job.
+
+   Nothing a person can see changed, which is the point, and the inventory from
+   step 1 passing unchanged is what says so.
 3. **One toolbar.** Unify upload, run, deploy, download, model select and new
    session into one set of controls that acts on whichever state is active. This
    is where AMV-D033's duplicate Run disappears, and where the two deploy paths

@@ -138,6 +138,59 @@ section('The baseline itself cannot be quietly trimmed');
      `${FIX.operable_ids.length} vs ${FIX.expected_operable_id_count}`);
 }
 
+section('Every route into a Build surface goes through the one door (AMV-D007 step 2)');
+{
+  /* The seam, checked at the router rather than by trusting the comment above
+     it. If a fourth `case` ever calls a build renderer directly, the merge has
+     a second entry point and the steps after this one stop being one change. */
+  const src = readFileSync(join(ROOT, 'app.js'), 'utf8');
+  const router = /function renderView\(\)\{[\s\S]*?\n\}/.exec(src);
+  ok(router != null, 'the view router was found');
+  const body = (router ? router[0] : '').replace(/\/\*[\s\S]*?\*\//g, '');
+  for (const direct of ['renderDesignView', 'renderCodeView', 'renderLabView']) {
+    ok(!body.includes(direct + '()'),
+       `the router no longer calls ${direct} directly`, direct);
+  }
+  ok(body.includes('renderBuildView()'), 'it calls the shared one instead');
+
+  /* And each of the three still lands on its own surface, with the mode the
+     route implies. Behaviour-neutral is a claim, so it is measured. */
+  for (const [tab, mode, shell] of [['studio','design','.dsn-wrap'], ['dev','code','.dev-shell'], ['lab','lab','.lab-shell']]) {
+    const got = await page.evaluate(async ({ t, sel }) => {
+      _LAB.code = ''; _DEV.log = []; _DEV.project = {};
+      setTab(t);
+      await new Promise(s => setTimeout(s, 400));
+      return { mode: _buildMode(), shell: !!document.querySelector('#vc ' + sel), tab: S.tab };
+    }, { t: tab, sel: shell });
+    ok(got.mode === mode, `${tab} resolves to the ${mode} surface`, got.mode);
+    ok(got.shell, `${tab} still renders ${shell}`);
+    ok(got.tab === tab, `and ${tab} is still a real route name, not a redirect`, got.tab);
+  }
+
+  /* Dev hands code to Lab and that crossing is the product already admitting
+     these are one job. It has to survive every step of the merge. */
+  const handoff = await page.evaluate(async () => {
+    _DEV.log = [{ role: 'sys', text: 'x' }];
+    _devSetFile('a.js', 'console.log(1)', 'js');
+    setTab('dev');
+    await new Promise(s => setTimeout(s, 400));
+    /* Null-guarded on purpose. Reaching straight through to .click() turns a
+       MISSING control - exactly what this suite exists to detect - into an
+       uncaught TypeError that kills the run before it reports anything. A guard
+       that crashes instead of failing tells you less than no guard at all,
+       because the gate shows a stack trace where it should be naming a button.
+       Found by sabotaging the router and getting no report. */
+    const btn = document.getElementById('dev-tolab');
+    if (!btn) return { missing: true, tab: S.tab, code: '' };
+    btn.click();
+    await new Promise(s => setTimeout(s, 500));
+    return { missing: false, tab: S.tab, code: (document.getElementById('lab-code') || {}).value || '' };
+  });
+  ok(!handoff.missing, 'the Dev-to-Lab control is on the Dev surface', handoff);
+  ok(handoff.tab === 'lab', 'Dev still hands off to Lab', handoff.tab);
+  ok(handoff.code.includes('console.log(1)'), 'carrying the code with it', handoff.code);
+}
+
 ok(errors.length === 0, 'no console errors while opening every Build state', errors.slice(0, 3));
 await app.close();
 if (report('the-build-surfaces-keep-every-control') > 0) process.exitCode = 1;
