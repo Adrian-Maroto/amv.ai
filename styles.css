@@ -8940,3 +8940,35 @@ body.light .fr-d{ color:#67656d; }
   color:var(--tx);white-space:pre-wrap;word-break:break-word;
 }
 #studio-code.on{ background:var(--s3);border-color:var(--accent);color:var(--tx); }
+
+/* ── LAYER A99: STUDIO GETS THE SAME FULL-SCREEN PREVIEW (AMV-D007 step 5) ─
+   Dev and Lab both let a phone give the result the whole screen. Studio did
+   not: measured at 390x844, its side panel took 575px and the live canvas got
+   190px. It is the one surface whose entire purpose IS the preview.
+
+   Mirrors the rules for the other two exactly rather than inventing a third
+   way, which is the point of the step. */
+@media (max-width: 760px) {
+  /* HIDING ONE PANE IS NOT THE SAME AS GIVING THE OTHER THE ROOM.
+
+     The first version of this hid the side panel and stopped there, and the
+     preview stayed at 190px - the side was gone and the canvas was no bigger,
+     which looks fixed in a screenshot of the side panel and is not fixed at
+     all. `.studio-canvas` is `height:auto` on mobile, so `height:100%` on the
+     stage referred to nothing, and `.studio-frame` carries a 60vh that has to
+     be overridden or the iframe keeps its own idea of the size.
+
+     Caught by measuring the STAGE after the toggle rather than the side. */
+  /* The toggle bar is inserted as the canvas's first child, so with the side
+     pane hidden the grid holds two rows. Both default to content height, and a
+     stage whose only child is an iframe has no intrinsic height to give - which
+     is why the first attempt reached 422px of an 844px screen and stopped.
+     Named rows: the bar takes what it needs and the stage takes the rest. */
+  .studio-canvas.mv-show-out {
+    height: calc(100vh - var(--nav-h) - 2px);
+    grid-template-rows: auto 1fr;
+  }
+  .studio-canvas.mv-show-out .studio-side { display: none; }
+  .studio-canvas.mv-show-out .studio-stage { display: flex; height: 100%; min-height: 0; }
+  .studio-canvas.mv-show-out .studio-frame { height: 100%; }
+}

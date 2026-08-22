@@ -164,8 +164,15 @@ big-bang rewrite.
    shows the code in the surface now, matching Dev, with the same control id
    turned into a toggle.
 
+   Second half: a phone can now give the result the whole screen on all three.
+   Dev and Lab already had a pane toggle; Studio, the one surface whose entire
+   purpose IS the preview, did not - its side panel took 575px of an 844px
+   screen and the canvas got 190px. It now uses the same toggle, mounted where
+   the canvas is created rather than at setTab, because the canvas does not
+   exist yet when setTab runs.
+
    Still to do here: Lab's output pane and Dev's Preview/Code tabs are still two
-   separate structures, and the tab bar is not yet a shared component. Studio's
+   separate structures and the tab bar is not yet a shared component. Studio's
    viewport switcher (desktop/tablet/phone) exists only on Studio, though Dev's
    preview would benefit from it. Those are the rest of this step.
 6. **Retire the three renderers**, and run the step-1 inventory to prove every

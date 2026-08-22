@@ -3433,6 +3433,13 @@ function _mountMobilePaneToggle(tab){
     ? { shell:'.dev-shell', blank:'dev-blank', inLabel:'Build', outLabel:'Preview', barSel:'.dev-prev-bar' }
     : tab==='lab'
     ? { shell:'.lab-split', blank:null, inLabel:'Editor', outLabel:'Output', barSel:'.lab-out-top' }
+    /* Studio was the one Build surface without this (AMV-D007 step 5). Measured
+       on a 390px phone: its side panel took 575px of an 844px screen and the
+       live preview - the entire point of a design canvas - got a 190px strip.
+       Nothing was broken, everything was reachable; it was simply the only one
+       of the three that could not give the result the full screen. */
+    : tab==='studio'
+    ? { shell:'.studio-canvas', blank:null, inLabel:'Design', outLabel:'Preview', barSel:'.studio-frame-bar' }
     : null;
   if(!spec) return;
 
@@ -16037,6 +16044,13 @@ function _studioShowCanvas(brief){
       <div class="studio-code-body" id="studio-code-body" style="display:none"><pre class="studio-code-pre"><code id="studio-code-text"></code></pre></div>
     </div>
   </div>`;
+  /* The mobile pane toggle is mounted by setTab, and at that moment Studio is
+     still showing its hero - the canvas only exists after a design has been
+     created, which happens on a model call some seconds later. So the toggle
+     found no `.studio-canvas` and silently did nothing. Mounted here, where the
+     canvas actually comes into being. Dev and Lab do not have this problem
+     because their shells exist from the first render. */
+  try{ if(typeof _mountMobilePaneToggle==='function') _mountMobilePaneToggle('studio'); }catch(e){}
   on($('studio-back'),'click',()=>setTab('studio'));
   on($('studio-refine-go'),'click',_studioRefine);
   on($('studio-add'),'click',_studioAddPrompt);

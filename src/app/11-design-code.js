@@ -322,6 +322,13 @@ function _studioShowCanvas(brief){
       <div class="studio-code-body" id="studio-code-body" style="display:none"><pre class="studio-code-pre"><code id="studio-code-text"></code></pre></div>
     </div>
   </div>`;
+  /* The mobile pane toggle is mounted by setTab, and at that moment Studio is
+     still showing its hero - the canvas only exists after a design has been
+     created, which happens on a model call some seconds later. So the toggle
+     found no `.studio-canvas` and silently did nothing. Mounted here, where the
+     canvas actually comes into being. Dev and Lab do not have this problem
+     because their shells exist from the first render. */
+  try{ if(typeof _mountMobilePaneToggle==='function') _mountMobilePaneToggle('studio'); }catch(e){}
   on($('studio-back'),'click',()=>setTab('studio'));
   on($('studio-refine-go'),'click',_studioRefine);
   on($('studio-add'),'click',_studioAddPrompt);
