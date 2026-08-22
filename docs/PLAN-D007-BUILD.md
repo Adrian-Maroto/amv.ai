@@ -153,8 +153,21 @@ big-bang rewrite.
    toolbar wraps to 164px and the first mode button rendered at the right size,
    in the right place, with the right label, BEHIND the bar. Found by clicking
    it, not by measuring it.
-5. **One result pane.** Preview / Code / Findings, with Findings appearing only
-   when there is something in it.
+5. **One result pane. STARTED - the defect first.** Studio and Dev showed code
+   two completely different ways for the same job: Dev has a Code tab, Studio
+   opened a new browser window and wrote the markup into it.
+
+   That was not just inconsistent, it was broken. `window.open` returns null
+   when popups are blocked - the default in several browsers and common on
+   phones - and the guarded call then did nothing at all: no window, no toast,
+   no error, nothing on screen. Measured both ways rather than assumed. Studio
+   shows the code in the surface now, matching Dev, with the same control id
+   turned into a toggle.
+
+   Still to do here: Lab's output pane and Dev's Preview/Code tabs are still two
+   separate structures, and the tab bar is not yet a shared component. Studio's
+   viewport switcher (desktop/tablet/phone) exists only on Studio, though Dev's
+   preview would benefit from it. Those are the rest of this step.
 6. **Retire the three renderers**, and run the step-1 inventory to prove every
    control still exists and still reaches the same function.
 
