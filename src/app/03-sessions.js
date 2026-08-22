@@ -1218,6 +1218,47 @@ function signOutAndErase(){
 }
 try{ window.signOutAndErase = signOutAndErase; }catch(e){}
 
+/* KEYS THAT LIVE OUTSIDE THE PER-ACCOUNT NAMESPACE AND STILL BELONG TO A PERSON.
+
+   Most stored data is namespaced per account by _scopeKey, so it cannot cross.
+   _GLOBAL_KEYS is the deliberate exception - things that belong to the DEVICE.
+   Some of the entries in it belong to whoever was signed in instead, and
+   ordinary sign-out left every one of them sitting there for the next account.
+
+   Reproduced before fixing. Alice connects Google, signs out with the button in
+   the profile menu, Bob signs in on the same browser, and Bob had:
+
+     - amv_gtoken, Alice's Google ACCESS TOKEN. AMV reads it to reach Gmail,
+       Calendar and Drive, and the Integrations screen reads the same key to
+       decide Google is connected. Bob's AMV would have used it as his own.
+     - amv_owner, the owner flag.
+     - amv_credits, her balance.
+
+   The list existed - eraseDeviceData has it, and calls these keys "personal to
+   whoever was signed in" in as many words - but that path is only reached by
+   "Sign out AND ERASE", which is presented as the thing to use on a shared
+   computer. The ordinary button is the one people press.
+
+   Device preferences are deliberately NOT here: theme, accent, language, rail,
+   reduced motion, the backend URL, the cookie choice, the Google client id.
+   Those belong to the machine, and clearing them would reset the next person's
+   screen and their sign-in configuration for no privacy gain.
+
+   Guarded by tests/e2e/a-reset-really-resets, which fails on any _GLOBAL_KEYS
+   entry that is in neither list - so a new global key has to be classified. */
+const _SIGNOUT_CLEAR_GLOBAL = [
+  'amv_gtoken','amv_gtoken_exp','amv_oauth_return','amv_oauth_state',
+  'amv_owner','amv_credits','amv_credits_autoreload',
+  'amv_market_local','amv_market_purchases','amv_market_wallet',
+  'amv_market_ratings','amv_market_reviews','amv_market_installed','amv_market_threads',
+];
+const _DEVICE_GLOBAL_KEYS = [
+  'amv_user','amv_api_token','amv_api_refresh','amv_token_exp',
+  'amv_theme','amv_accent','amv_sb_rail','amv_session_started','amv_reduce_motion',
+  'amv_mute_chime','amv_api_base','amv_lang','amv_support_email','amv_gauth',
+  'amv_cookie_consent','amv_analytics_id','amv_ref_code','amv_links',
+];
+try{ window._SIGNOUT_CLEAR_GLOBAL=_SIGNOUT_CLEAR_GLOBAL; window._DEVICE_GLOBAL_KEYS=_DEVICE_GLOBAL_KEYS; }catch(e){}
 function signOut(){
   /* Retire THIS device's session server-side, and only this one. This used to
      post to /auth/logout with no body, which revoked every token on the
@@ -1225,6 +1266,10 @@ function signOut(){
      button says this device; now it means it. */
   try{ if(window.AMV_API && AMV_API.live && AMV_API.token) AMV_API.logout(false); }catch(e){}
   try{ localStorage.removeItem('amv_api_token'); localStorage.removeItem('amv_api_refresh'); localStorage.removeItem('amv_token_exp'); }catch(e){}
+  /* Everything unscoped that belongs to the person rather than the machine.
+     A connected Google account is the one that matters most: leaving its access
+     token behind hands the next account somebody's mail. */
+  try{ _SIGNOUT_CLEAR_GLOBAL.forEach(k => { try{ localStorage.removeItem(k); }catch(e){} }); }catch(e){}
   S.user=null; localStorage.removeItem('amv_user');
   _wipeAccountState();                 // clear Recents, Dev project, Lab code, memory - nothing crosses accounts
   const m=$('sb-popup'); if(m)m.classList.remove('on');
