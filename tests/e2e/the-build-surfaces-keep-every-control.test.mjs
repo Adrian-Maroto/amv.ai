@@ -587,6 +587,63 @@ section('Every control on a Build surface actually does something');
   }
 }
 
+section('Handing somebody a file works the same way everywhere (AMV-D007)');
+{
+  /* Fourteen copies of the same four-line blob-download dance existed and had
+     drifted: three appended the anchor to the document before clicking, the
+     rest clicked a detached one. Studio appended; Dev did not.
+
+     No failure was REPRODUCED - a detached anchor downloads fine in Chromium,
+     which is the only engine testable here - so this is alignment on the safer
+     of two behaviours rather than a verified bug fix, and the Build surfaces
+     now share one helper.
+
+     What is testable, and is what this checks, is that each download still
+     really fires. A refactor of file-saving that quietly stopped saving files
+     would be a poor trade for tidiness. */
+  const fired = [];
+  const onDownload = (d) => fired.push(d.suggestedFilename());
+  page.on('download', onDownload);
+
+  await page.evaluate(async () => {
+    setTab('studio');
+    _studioNewArtifact('My Design', 'page', 'b');
+    _studioSetHTML('<h1>design</h1>', 'b');
+    _studioShowCanvas('b');
+    await new Promise(s => setTimeout(s, 400));
+    document.getElementById('studio-download').click();
+  });
+  await page.waitForTimeout(700);
+
+  await page.evaluate(async () => {
+    _DEV.log = [{ role: 'sys', text: 'x' }]; _DEV.project = {};
+    _devSetFile('index.html', '<h1>one</h1>', 'html');
+    setTab('dev'); renderCodeView();
+    await new Promise(s => setTimeout(s, 400));
+    document.getElementById('dev-download-proj').click();
+  });
+  await page.waitForTimeout(700);
+
+  await page.evaluate(async () => {
+    _devSetFile('a.js', '1', 'js'); _devSetFile('b.css', 'x{}', 'css');
+    renderCodeView();
+    await new Promise(s => setTimeout(s, 400));
+    document.getElementById('dev-download-proj').click();
+  });
+  await page.waitForTimeout(700);
+  page.off('download', onDownload);
+
+  ok(fired.length === 3, 'all three Build downloads actually produce a file', fired.join(', '));
+  ok(fired.some(f => /\.html$/.test(f)), 'the design comes back as a page', fired.join(', '));
+  ok(fired.some(f => f === 'amv-project.txt'), 'and a multi-file project as a bundle', fired.join(', '));
+
+  /* One helper, not fourteen - checked at the source, since "a file downloaded"
+     is equally true of the copies. */
+  const src = readFileSync(join(ROOT, 'app.js'), 'utf8');
+  const helpers = (src.match(/function amvDownload\(/g) || []).length;
+  ok(helpers === 1, 'and there is exactly one download helper to keep correct', helpers);
+}
+
 ok(errors.length === 0, 'no console errors while opening every Build state', errors.slice(0, 3));
 await app.close();
 if (report('the-build-surfaces-keep-every-control') > 0) process.exitCode = 1;

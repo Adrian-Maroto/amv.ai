@@ -239,3 +239,37 @@ first. Both are human-initiated, so the extra dialog is arguably redundant - and
 equally, publishing to the internet is the kind of thing a confirmation suits.
 It is a product decision about how much friction publishing deserves, not a
 defect, so it is written down rather than settled unilaterally.
+
+
+## Download: one helper, and the sites still to convert
+
+Fourteen copies of the same four-line blob-download dance existed across the
+app, and they had drifted: three append the anchor to the document before
+clicking it, the rest click a detached one. Studio appended; Dev did not.
+
+Being straight about the evidence: **no failure was reproduced.** A detached
+anchor downloads correctly in Chromium, the only engine testable here.
+Appending is the pattern browsers have historically required and that
+implementations still use defensively, and it costs nothing. So `amvDownload`
+is alignment on the safer of two behaviours, not a verified bug fix, and should
+not be described as one.
+
+What is certain is that fourteen copies drift, and these already had.
+
+**Converted:** the Build surfaces - `_studioDownload`, and both paths in
+`_devDownloadProject`. Verified by real download events rather than by reading:
+`my-design.html`, `index.html`, `amv-project.txt` all fire.
+
+**Still to convert**, catalogued rather than changed in a commit about something
+else:
+
+- `src/app/02-state.js:766` - audit log export
+- `src/app/03-sessions.js:1522` - session export
+- `src/app/05-ui-blocks.js:350` - chat artifact download
+- `src/app/07-workspace-memory.js:177` - workspace file exports
+- `src/app/11-design-code.js:1074` - Dev multi-file save without a folder handle
+- `src/app/28-activity.js:131` - activity export
+- plus the export paths in `12-handoff.js` and `13-integrations.js`
+
+Three of these already append; the rest do not. They belong with the polish
+batch, where they can be converted and verified together.
