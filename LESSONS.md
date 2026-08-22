@@ -5186,3 +5186,42 @@ Practically: when a gate goes red, the first question is whether the report is
 telling the truth about WHAT went red. Three times running, it was not, and each
 time the wrong answer pointed at an innocent suite - which costs more than no
 answer, because an innocent suite is a plausible thing to go and investigate.
+
+## 268. Four controls that were present, correct, and did nothing
+
+In one stretch of the D007 merge, four separate controls on the Build surfaces
+turned out to be inert. Every one of them rendered at the right size, in the
+right place, with the right label, and every one would have passed any reading
+of the markup:
+
+- Lab's eight entry buttons died to a `blur` handler that hid the screen out
+  from under the pointer between mousedown and mouseup.
+- The new mode switch sat inside a scrolling region under a phone toolbar that
+  wraps to 164px, so the first button rendered BEHIND the bar.
+- Studio's "View code" called `window.open` and did nothing whatever when a
+  popup blocker returned null - no window, no toast, no error.
+- Studio's viewport switcher set `width` on a frame carrying `flex:1`, where
+  flex-basis decides the main size and width is never consulted. The buttons
+  highlighted and the preview never moved.
+
+Three of the four were found by accident while doing something else. That is not
+a method, so the fifth was found on purpose: a sweep that clicks every control
+on every Build state and asks whether ANYTHING observable changed - the view, an
+overlay, a toast, the tab.
+
+It is deliberately a low bar. It cannot tell right behaviour from wrong, only
+doing something from doing nothing. That is precisely the failure that kept
+recurring, and it is the one a human reviewer is worst at spotting, because the
+screen looks correct.
+
+Two things make the sweep honest rather than noisy. It FEEDS the inputs a
+control depends on first - "does nothing when its box is empty" is not a defect,
+"does nothing when you have given it what it needs" is. And it names the
+controls it cannot judge rather than tolerating them silently: three forward to
+a hidden file input and open a picker the page cannot observe, so they are
+listed as such instead of quietly passing.
+
+The general rule: for any class of defect found more than twice by accident,
+stop fixing instances and go build the check that enumerates them. Three
+accidents is the signal that the instrument is missing, not that the code is
+unlucky.
