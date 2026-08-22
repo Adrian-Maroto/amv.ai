@@ -2400,8 +2400,29 @@ function genImg(){
    the user hit and points them to the right upgrade. Reusable across features. */
 function _smartUpgradeNudge(feature, plan, reason){
   try{ track('upgrade_nudge_shown', { feature, plan }); }catch(e){}
-  const nextPlan={free:'Pro',pro:'Elite',elite:'Ultra',ultra:'Ultra',custom:'Ultra'}[plan]||'Pro';
-  const perk={images:'up to 60 images a day, every style, and priority speed',
+  /* THE NUMBER IN THE PITCH WAS NOT THE NUMBER IN THE PLAN.
+
+     This promised "up to 60 images a day" to everybody, at every tier. Pro
+     gives 100 and Elite gives 500, so the one moment somebody is actually
+     considering paying - they have just run out - was answered by understating
+     what they would get, by a factor of eight from Pro to Elite.
+
+     Not a lie in the direction that gets you sued, and still the wrong number
+     in the wrong place. It is read from IMG_DAY_CAP now, which `no-client-
+     throttle` already pins to PLAN_LIMITS in the Worker, so the pitch, the
+     client's own nudge-ahead check and the server's enforcement are one number
+     with two mirrors rather than three claims.
+
+     Teams and Custom are Infinity here on purpose - their real allowance scales
+     per account and only the server knows it - so they get words instead of a
+     number rather than "up to Infinity images a day". */
+  const nextKey={free:'pro',pro:'elite',elite:'ultra',ultra:'ultra',custom:'ultra'}[plan]||'pro';
+  const nextPlan=(typeof PLANS==='object'&&PLANS[nextKey]&&PLANS[nextKey].name)||'Pro';
+  const nextImgs=(typeof IMG_DAY_CAP==='object')?IMG_DAY_CAP[nextKey]:null;
+  const imgPerk=(typeof nextImgs==='number'&&isFinite(nextImgs))
+    ? 'up to '+nextImgs.toLocaleString()+' images a day'
+    : 'far more images a day';
+  const perk={images:imgPerk+', every style, and priority speed',
     video:'longer HD videos and more renders',
     chat:'much higher message limits and every model',
     default:'higher limits across everything AMV does'}[feature]||'higher limits';
