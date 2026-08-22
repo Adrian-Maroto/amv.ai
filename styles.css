@@ -8921,3 +8921,22 @@ body.light .fr-d{ color:#67656d; }
 .lab-shell:not(.lab-blank) > .build-modes,
 .dev-shell:not(.dev-blank) > .dev-chat-pane > .build-head,
 .dev-shell:not(.dev-blank) > .dev-chat-pane > .build-modes{ display:none; }
+
+/* ── LAYER A98: READING THE CODE WITHOUT A POPUP (AMV-D007 step 5) ───────
+   Studio's "View code" opened a new window and wrote into it. With popups
+   blocked, window.open returns null and the guarded call did nothing at all -
+   no window, no toast, no error. Measured: popups allowed opened one tab,
+   popups blocked opened none and said nothing.
+
+   It shows in the surface now, the way Dev's Code tab already did. Same job,
+   same treatment, and nothing between the person and their own markup. */
+.studio-code-body{
+  flex:1;min-height:0;overflow:auto;
+  background:var(--s1);border-radius:var(--r-md);
+}
+.studio-code-pre{
+  margin:0;padding:var(--sp-4);
+  font-family:var(--mn);font-size:var(--t-sm);line-height:1.6;
+  color:var(--tx);white-space:pre-wrap;word-break:break-word;
+}
+#studio-code.on{ background:var(--s3);border-color:var(--accent);color:var(--tx); }

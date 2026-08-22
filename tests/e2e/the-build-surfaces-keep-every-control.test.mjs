@@ -341,6 +341,55 @@ section('The outcome can be chosen from any Build surface (AMV-D007 step 4)');
      'and it steps out of the way once there is work on the surface', whenBusy);
 }
 
+section('Reading your own code does not depend on a popup (AMV-D007 step 5)');
+{
+  /* Studio's "View code" opened a new window and wrote the markup into it.
+     window.open returns null when popups are blocked - the default in several
+     browsers and common on phones - and the guarded call then did nothing at
+     all: no window, no toast, no error, nothing on screen. Measured both ways
+     before it was changed; popups allowed opened a tab, popups blocked opened
+     none and reported nothing.
+
+     window.open is stubbed to null here, which is exactly what a blocker does.
+     A check that only runs with popups working would never have seen this. */
+  const out = await page.evaluate(async () => {
+    const realOpen = window.open;
+    window.open = () => null;
+    try {
+      setTab('studio');
+      _studioNewArtifact('T', 'page', 'brief');
+      _studioSetHTML('<h1>the markup they asked to read</h1>', 'brief');
+      _studioShowCanvas('brief');
+      await new Promise(s => setTimeout(s, 400));
+      const btn = document.getElementById('studio-code');
+      if (!btn) return { missing: true };
+      const vis = (e) => !!e && getComputedStyle(e).display !== 'none';
+      btn.click();
+      await new Promise(s => setTimeout(s, 300));
+      const shown = {
+        codeVisible: vis(document.getElementById('studio-code-body')),
+        text: (document.getElementById('studio-code-text') || {}).textContent || '',
+        label: btn.textContent.trim(),
+      };
+      btn.click();
+      await new Promise(s => setTimeout(s, 300));
+      const back = {
+        codeHidden: !vis(document.getElementById('studio-code-body')),
+        previewVisible: vis(document.getElementById('studio-stage-inner')),
+        label: btn.textContent.trim(),
+      };
+      return { missing: false, shown, back };
+    } finally { window.open = realOpen; }
+  });
+  ok(!out.missing, 'the View code control is on the canvas');
+  ok(out.shown.codeVisible, 'with popups blocked, the code is still shown', out.shown);
+  ok(out.shown.text.includes('the markup they asked to read'),
+     'and it is the design\'s own markup', out.shown.text.slice(0, 50));
+  ok(/preview/i.test(out.shown.label), 'the control then offers the way back', out.shown.label);
+  ok(out.back.codeHidden && out.back.previewVisible, 'and really goes back', out.back);
+  ok(/code/i.test(out.back.label), 'with its original label', out.back.label);
+}
+
 ok(errors.length === 0, 'no console errors while opening every Build state', errors.slice(0, 3));
 await app.close();
 if (report('the-build-surfaces-keep-every-control') > 0) process.exitCode = 1;

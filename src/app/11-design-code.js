@@ -319,13 +319,37 @@ function _studioShowCanvas(brief){
         <div class="studio-vp" id="studio-vp"><button class="studio-vp-b on" data-vp="desktop" title="Desktop">🖥️</button><button class="studio-vp-b" data-vp="tablet" title="Tablet">📱</button><button class="studio-vp-b" data-vp="phone" title="Phone">📲</button></div>
       </div>
       <div class="studio-stage-inner" id="studio-stage-inner"><iframe id="studio-frame" class="studio-frame" sandbox="allow-scripts"></iframe></div>
+      <div class="studio-code-body" id="studio-code-body" style="display:none"><pre class="studio-code-pre"><code id="studio-code-text"></code></pre></div>
     </div>
   </div>`;
   on($('studio-back'),'click',()=>setTab('studio'));
   on($('studio-refine-go'),'click',_studioRefine);
   on($('studio-add'),'click',_studioAddPrompt);
   on($('studio-history'),'click',_studioHistory);
-  on($('studio-code'),'click',()=>{ const a=_studioActive(); if(!a) return; const w=window.open('','_blank'); if(w){ w.document.write('<pre style="white-space:pre-wrap;font:13px monospace;padding:20px">'+(a.html.replace(/</g,'&lt;'))+'</pre>'); } });
+  /* THE BUTTON THAT DID NOTHING BEHIND A POPUP BLOCKER (AMV-D007 step 5).
+
+     This opened a new window and wrote the markup into it. With popups blocked
+     - the default in several browsers, and common on phones - window.open
+     returns null, the `if(w)` skipped everything, and the button did absolutely
+     nothing: no window, no toast, no error, nothing on screen. Measured both
+     ways rather than assumed: popups allowed opened one tab, popups blocked
+     opened none and reported nothing.
+
+     It is also the same job Dev does with a Code tab, done a completely
+     different way. So it shows the code in the surface now, where nothing can
+     swallow it and where it matches the other Build surface. The button keeps
+     its id and becomes a toggle. */
+  on($('studio-code'),'click',()=>{
+    const a=_studioActive(); if(!a){ toast('Create a design first, then you can read its code.','info',3500); return; }
+    const body=$('studio-code-body'), stage=$('studio-stage-inner'), btn=$('studio-code'), t=$('studio-frame-t');
+    if(!body||!stage) return;
+    const showing = body.style.display !== 'none';
+    body.style.display = showing ? 'none' : 'block';
+    stage.style.display = showing ? '' : 'none';
+    if(btn){ btn.textContent = showing ? 'View code' : 'View preview'; btn.classList.toggle('on', !showing); }
+    if(t) t.textContent = showing ? 'Live preview' : 'Code';
+    if(!showing){ const code=$('studio-code-text'); if(code) code.textContent = a.html || ''; }
+  });
   on($('studio-download'),'click',()=>{ const a=_studioActive(); if(!a) return; _studioDownload(a); });
   on($('studio-export'),'click',_studioExportProject);
   // viewport toggles
