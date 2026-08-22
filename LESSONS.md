@@ -5466,3 +5466,68 @@ first edit, not when the revert is typed.
 The recovery was cheap only because the patch was a script in the scratchpad and
 could be replayed verbatim. That is now the second reason to write changes as
 scripts rather than as a series of edits.
+
+## 274. Everything that went wrong was answered with an offer to try again
+
+The chat error card rendered the same three things for every failure: a warning
+triangle, a sentence, and a Retry button. For a dropped connection that is
+exactly right. For a plan limit it is wrong twice - it invites somebody to
+hammer a decision that will not change, and the one thing it withholds is the
+thing the sentence just told them about.
+
+Four refusal codes had no client handling at all - `job_limit`, `img_quota`,
+`team_full`, `free_capacity` - and could not have had any, because the code
+never arrived. The fetch threw `new Error(message)` and dropped it. Telling a
+plan limit from a network drop meant matching on wording, which is the same
+defect as the deploy refusal, one layer up, affecting every refusal in the
+product at once.
+
+`free_capacity` is the one to remember. The server writes, honestly: *"AMV is at
+capacity for free accounts today. Paid plans are running normally."* That is the
+strongest sentence in the product - it is true, it is specific, and it names the
+thing that would fix it. Under it sat a button offering to retry the one action
+guaranteed to fail until tomorrow.
+
+### And the sentence itself was being thrown away
+
+Worse, and only found because I wrote the test: the card ran every message
+through the error guesser, which rewrites by keyword. It saw "capacity" and
+produced *"AMV had a brief hiccup. Please try again in a moment."* Not what
+happened, will not work, and the actionable half is gone. `"That engine is part
+of Elite"` matched no keyword and came out as *"AMV hit a snag."*
+
+**The most important sentences in the product were exactly the ones being
+overwritten**, because they are the ones AMV writes on purpose rather than
+inherits from a provider.
+
+The tag for this already existed. `_saidPlainly` marks an error AMV decided, its
+comment explains that the guesser must not run twice, and the fetch path honours
+it. But the tag lives on the *error*, and the message record kept only the
+string - so the renderer guessed again on a sentence that was already finished.
+Correct knowledge wired to a path that dropped it, which is #270 again.
+
+### The rule I keep re-learning, stated as a check
+
+Three sessions running, the same shape: work is done correctly, and the wire
+from the work to the person is missing or lossy. It is never visible from either
+end alone. So the check is: **for anything computed for a human to see, follow it
+all the way to the pixel.** Not "is it set" - is it *rendered*, and does it still
+say what it said.
+
+### The test taught me more than it asserted
+
+Two of its own failures were worth more than its assertions.
+
+It failed wholesale at first on "turn on the AMV engine", because writing the
+base and token into storage does not make `AMV_API.live` true. Then half of it
+passed silently on *"Slow down a moment before sending again"* - AMV throttles
+its own composer, correctly, and eight cases back to back walk straight into it
+with the network never touched. Every one of those looked green and had `hits:0`.
+
+A suite that fails for a reason unrelated to its subject teaches nothing; a
+suite that PASSES for one is worse. Instrument first, assert second: printing
+`hits`, `busy` and the card's text for each case found both in one run, after I
+had spent three edits guessing at status codes.
+
+The throttle is respected now rather than disabled. Turning off a real
+protection to make a test pass is testing a product that does not exist.

@@ -1256,7 +1256,26 @@ async function _callAI(msgs, _opts) {
     _recordUsageOnce();   // record any tokens consumed before the failure
     _streamBubbleReset();
     // friendly inline error card with a Retry action
-    msgs[streamIdx]={r:'a',c:'',model:S.model,_error:friendly,_errCode:(e&&e.code)||''};
+    /* THE SENTENCE AMV WROTE, KEPT.
+
+       `friendly` above is already the finished sentence when AMV itself decided
+       this - that is what the _saidPlainly tag means, and the comment above it
+       says so. The tag is a property of the ERROR, and this record kept only
+       the string, so the renderer ran it through the guesser a second time and
+       the guesser rewrote it.
+
+       What that cost, exactly: the server answers a free account at capacity
+       with "AMV is at capacity for free accounts today. Paid plans are running
+       normally." The guesser sees the word "capacity", and the person reads
+       "AMV had a brief hiccup. Please try again in a moment." - which is not
+       what happened, and trying again in a moment will not work. A plan
+       boundary fared worse still: "That engine is part of Elite" matched
+       nothing and came out as "AMV hit a snag."
+
+       The most important sentences in the product were the ones being
+       overwritten, because they are the ones AMV writes on purpose. */
+    msgs[streamIdx]={r:'a',c:'',model:S.model,_error:friendly,
+                     _errCode:(e&&e.code)||'',_errPlain:!!(e&&e._saidPlainly)};
   }
   _recordUsageOnce();   // final safety net - never lose usage accounting
 
@@ -1888,7 +1907,7 @@ function renderChatMsgs() {
           ? '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 15 9l7 .5-5.5 4.6L18.5 21 12 17.3 5.5 21l1.9-6.9L2 9.5 9 9z"/></svg>'
           : '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>')+
         '</span>'+
-        '<span class="ai-snag-msg">'+escH(_aiFriendly(m._error))+'</span></div>'+
+        '<span class="ai-snag-msg">'+escH(m._errPlain ? m._error : _aiFriendly(m._error))+'</span></div>'+
         _act+'</div>';
     } else if(!isU && m._retrying){
       content='<div class="ai-retrying"><div class="dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div><span>'+escH(m._retrying)+'</span></div>';
