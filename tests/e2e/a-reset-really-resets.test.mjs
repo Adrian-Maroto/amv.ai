@@ -48,6 +48,45 @@ section('No field can survive a reset without somebody deciding it should');
   }
 }
 
+section('Nothing of one account is left on S for the next one');
+{
+  /* The same enumeration, applied to the object that holds most user content.
+     It caught two things nobody had thought about: _entVerified, the SERVER'S
+     confirmation of a plan, which outlived the account it belonged to so that
+     verifiedPlan() answered "ultra" for the next person to sign in; and the
+     owner's revenue and payout totals sitting in memory afterwards. */
+  const keep = await page.evaluate(() => window._S_SIGNOUT_KEEP);
+  ok(Array.isArray(keep) && keep.length > 0, 'the survivor list is declared', keep && keep.length);
+
+  const wipeBody = (SRC.match(/function _wipeAccountState\(\)\{[\s\S]*?\n\}/) || [''])[0];
+  const cleared = new Set([...wipeBody.matchAll(/\bS\.([A-Za-z_][A-Za-z0-9_]*)\s*=/g)].map(m => m[1]));
+  const re = /(?<![A-Za-z0-9_.])S\.([A-Za-z_][A-Za-z0-9_]*)\s*=(?!=)/g;
+  const assigned = [...new Set([...SRC.matchAll(re)].map(m => m[1]))];
+  const unclassified = assigned.filter(f => !cleared.has(f) && !keep.includes(f));
+  ok(assigned.length > 20, 'there are S fields to check', assigned.length);
+  ok(unclassified.length === 0,
+     'every S field is either cleared on sign-out or listed as safe to keep',
+     unclassified.join(', ') + (unclassified.length ? ' - clear it in _wipeAccountState or add it to _S_SIGNOUT_KEEP' : ''));
+
+  /* And the one that mattered, driven rather than read. */
+  const ent = await page.evaluate(async () => {
+    AMV_API.base = 'https://api.test'; AMV_API.token = 't';
+    S.user = { name: 'Alice', email: 'alice@corp.com', ini: 'A' };
+    saveStr('amv_plan', 'ultra');
+    S._entVerified = { plan: 'ultra', at: Date.now() };
+    S._admFinance = { revenue: 41234.5 };
+    const asAlice = verifiedPlan();
+    _wipeAccountState();
+    S.user = { name: 'Bob', email: 'bob@other.com', ini: 'B' };
+    saveStr('amv_plan', 'free');
+    return { asAlice, asBob: verifiedPlan(), adminMoneyLeft: S._admFinance };
+  });
+  ok(ent.asAlice === 'ultra', 'a confirmed plan is honoured while that account is signed in', ent.asAlice);
+  ok(ent.asBob === 'free',
+     'and is NOT honoured for whoever signs in next on the same browser', ent.asBob);
+  ok(!ent.adminMoneyLeft, "and the owner's totals do not sit there afterwards", ent.adminMoneyLeft);
+}
+
 section('A new session cannot publish the work the last one made');
 {
   const out = await page.evaluate(async () => {

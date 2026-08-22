@@ -1084,6 +1084,18 @@ try{ window._mobileShowOutput=_mobileShowOutput; }catch(e){}
    Storage is already namespaced per account, but the in-memory copies are NOT
    automatically cleared - without this, one account's Recents / Dev project /
    Lab code leak into the next account signed in on the same browser. */
+/* The S fields that may legitimately outlive a sign-out: where you were, what
+   the sidebar looked like, which model and image style you picked. Anything NOT
+   here and not cleared below is a field nobody has classified, and
+   tests/e2e/a-reset-really-resets fails on it - which is how _entVerified and
+   the admin totals were caught. A view preference crossing accounts is
+   untidy; content or an entitlement crossing accounts is a defect. */
+const _S_SIGNOUT_KEEP = [
+  'tab','sbOpen','openTabs','settingsPane','starFilter','busy','ck','se','sp',
+  'model','imgStyle','imgRatio','_researchDepth','_researchTier',
+  '_adminTab','_mktTab','_setSearch','user',
+];
+try{ window._S_SIGNOUT_KEEP=_S_SIGNOUT_KEEP; }catch(e){}
 function _wipeAccountState(){
   try{ _SESSIONS.length = 0; }catch(e){ try{ _SESSIONS=[]; }catch(e2){} }
   /* Signing out clears MORE than a new session does: the same defaults, plus the
@@ -1098,6 +1110,23 @@ function _wipeAccountState(){
     S.memory=[]; S.convs=[]; S.cur=null; S.imgs=[]; S.vids=[]; S.att=null;
     S._chatFiles=[]; S._labFiles=[]; S._chatHandoff=null; S._preSettingsTab=null;
     S.workspaces=getDefaultWorkspaces(); S.prompts=getDefaultPrompts(); S.mk='';
+    /* FOUND BY ENUMERATING WHAT SURVIVED, NOT BY REMEMBERING TO ADD THEM.
+
+       _entVerified is the SERVER'S confirmation of a plan, and verifiedPlan()
+       returns it whenever a backend is connected. It outlived the account it
+       belonged to: Alice on Ultra signs out, Bob signs in on the same browser,
+       and verifiedPlan() answered "ultra" for Bob until the next entitlement
+       sync happened to correct it. The server stays the authority on what is
+       actually spent, so this was not a way to take Alice's usage - it unlocked
+       the paid surfaces for a free account, which is wrong on its own.
+
+       The admin figures are the owner's revenue and payout totals. They render
+       only behind isAdmin(), so nobody else would have SEEN them, but leaving
+       one account's money in memory for the next one is not a thing to leave. */
+    S._entVerified=null;
+    S._admFinance=null; S._admStats=null; S._admStatsError=null;
+    S._admFinanceLoading=false; S._admStatsLoading=false;
+    S._hoPulledConv=null;
   }catch(e){}
   try{ _CREW_RESULTS.length=0; }catch(e){}
   try{ if(typeof _TASKS!=='undefined' && Array.isArray(_TASKS)) _TASKS.length=0; }catch(e){}
