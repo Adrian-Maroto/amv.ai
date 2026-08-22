@@ -5426,3 +5426,43 @@ thousand characters of email body, so a bounded quantifier matched neither - and
 reported four senders, all correct, with nothing to flag. It now matches by
 position and takes a window forward. Same lesson as #266: the proxy is not the
 rule, and a source scan is nearly always a proxy.
+
+## 273. The page sold a word the server had never allowed
+
+Reading down the plans page asking "what enforces this line?" - the habit from
+#271 - found `Unlimited scheduled automations`, sold on Elite in the feature
+list and again in the comparison table.
+
+`AUTO_MAX_BY_PLAN` caps Elite at 25. Ultra at 100. A Teams seat gets five per
+seat. A Custom plan gets 25 or 100 by tier. The word has never been true at any
+price.
+
+Nothing was wrong with the limit; 25 background jobs is a good number and reads
+better than a word nobody believes. What was wrong is that **a claim and its
+enforcement lived in two files with nothing tying them together**, so one could
+move and the other could not know. The page now prints the number, and the
+number comes from a table that a test pins to the Worker's.
+
+### Comparing the tables would not have been enough
+
+My first version of that test compared the two tables and passed. It would have
+missed the thing that actually matters: `AUTO_MAX_BY_PLAN.free` is `0`, and the
+server answers `1` for free, because `|| 1` turns the zero into the single weekly
+job the refusal message promises. The tables agree and the answers do not.
+
+So the test lifts BOTH functions out of their own source by brace-matching and
+compares what they **answer**, plan by plan. Comparing inputs is a proxy;
+comparing outputs is the rule. Same lesson as #266 and #272, third time.
+
+### I destroyed my own uncommitted work again
+
+Mid-sabotage I ran `git checkout src/app/09-checkout-plans.js` to revert a
+deliberate break, and reverted the entire feature with it, because the feature
+was not committed yet. This is written down in this file already, from the last
+time I did it. Knowing the rule is not the same as having the habit: **commit
+first, then sabotage** is a sequence, and the moment to apply it is before the
+first edit, not when the revert is typed.
+
+The recovery was cheap only because the patch was a script in the scratchpad and
+could be replayed verbatim. That is now the second reason to write changes as
+scripts rather than as a series of edits.

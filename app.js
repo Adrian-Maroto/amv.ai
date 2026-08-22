@@ -12590,8 +12590,8 @@ function openUpgradeModal(lockedModel){
 function _planDetails(k){
   const D={
     pro:['All models, including AMV Forge for coding','5\u00d7 the usage of the Free plan','Autonomous agents and Crew for multi-step work','Image, video, and 3D generation','Build and run apps in the sandbox','Connect Gmail, calendar, and files','Scheduled and background automation','Faster generation'],
-    elite:['Everything in Pro, dialed up','20\u00d7 the usage','AMV Apex first - our most capable engine','Full-stack app builder with one-click deploy','Up to 5 agents running in parallel','4K video & premium image quality','Unlimited scheduled automations','Team workspaces - 10 seats on one subscription','Early access + 24/7 priority support'],
-    ultra:['Everything in Elite, maxed out','50\u00d7 the usage','Unlimited parallel agents - a whole crew at once','Whole-codebase context & autonomous projects','Export & download full multi-file projects','Deploy & host multiple live apps','Team workspaces - 25 seats, roles & shared projects','Fastest hardware + dedicated support'],
+    elite:['Everything in Pro, dialed up','20\u00d7 the usage','AMV Apex first - our most capable engine','Full-stack app builder with one-click deploy','Up to 5 agents running in parallel','4K video & premium image quality',_autoMaxLabel('elite')+' running in the background','Team workspaces - 10 seats on one subscription','Early access + 24/7 priority support'],
+    ultra:['Everything in Elite, maxed out','50\u00d7 the usage','Unlimited parallel agents - a whole crew at once',_autoMaxLabel('ultra')+' running in the background','Whole-codebase context & autonomous projects','Export & download full multi-file projects','Deploy & host multiple live apps','Team workspaces - 25 seats, roles & shared projects','Fastest hardware + dedicated support'],
   };
   return D[k]||['More usage','All models'];
 }
@@ -12616,7 +12616,9 @@ function openPlanCompare(highlight){
     ['Image generation', p=>'\u2713'],
     ['Video generation', p=>p==='free'?'-':(PLAN_RANK[p]>=2?'4K':'HD')],
     ['Parallel agents / long jobs', p=>isC(p)?'\u2713':(PLAN_RANK[p]>=3?'Unlimited':(PLAN_RANK[p]>=2?'Up to 5':(p==='pro'?'Limited':'-')))],
-    ['Scheduled & background automation', p=>p==='free'?'-':(PLAN_RANK[p]>=2?'Unlimited':'\u2713')],
+    /* The number, not a word the server has never honoured. AUTO_MAX_BY_PLAN
+       is the thing that decides, and it is what this row now reads. */
+    ['Scheduled & background jobs', p=>String(_autoMaxForPlan(p))],
     ['Connect Gmail, Drive, Calendar, GitHub', p=>p==='free'?'-':'\u2713'],
     ['Early access to new features', p=>isC(p)?'\u2713':(PLAN_RANK[p]>=2?'\u2713':'-')],
     ['Priority speed', p=>p==='free'?'Standard':(PLAN_RANK[p]>=3?'Fastest hardware':'\u2713')],
@@ -12763,6 +12765,38 @@ const PLANS={
 };
 const TEAM_SEAT_MIN=3, TEAM_SEAT_MAX=500;
 const PLAN_RANK={free:0,pro:1,elite:2,ultra:3,custom:2,team:2};
+
+/* WHAT THE PLANS PAGE MAY SAY ABOUT BACKGROUND JOBS.
+
+   The page sold Elite and above "Unlimited scheduled automations", in the
+   feature list and again in the comparison table. The server has never allowed
+   that: AUTO_MAX_BY_PLAN caps Elite at 25 and Ultra at 100, a Teams seat gets
+   five per seat, and a Custom plan gets 25 or 100 by its tier. So somebody paid
+   seventy-five dollars a month for a word the product could not honour, and
+   found out at their twenty-sixth job.
+
+   Nothing was wrong with the limit. The claim was wrong, and the honest fix is
+   to say the number - which is a good number, and reads better than a word
+   nobody believes anyway.
+
+   Mirrored from the Worker rather than restated: a test lifts BOTH functions
+   out of their own source and compares what they answer, plan by plan, so the
+   page cannot drift away from the thing that enforces it the way it just did.
+   Comparing the tables alone would not have been enough - free is 0 in the
+   table and 1 in the answer, because `|| 1` turns the zero into the single
+   weekly job the refusal message promises. */
+const AUTO_MAX_BY_PLAN={free:0,pro:5,elite:25,ultra:100};
+const AUTO_MAX_PER_USER=100;
+function _autoMaxForPlan(p,seats){
+  if(p==='team') return Math.min(AUTO_MAX_PER_USER, 5*(Number(seats)||TEAM_SEAT_MIN));
+  if(p==='custom') return 25;               // the tier a Custom plan ranks at
+  return AUTO_MAX_BY_PLAN[p]||1;            // 0 means "the one free weekly job", not none
+}
+/* How that reads on a page rather than in a table. */
+function _autoMaxLabel(p){
+  const n=_autoMaxForPlan(p);
+  return n===0 ? '-' : n+' scheduled job'+(n===1?'':'s');
+}
 
 /* ============================================================
    CUSTOM PLAN - pay-for-what-you-need, guaranteed profitable.
