@@ -15848,6 +15848,56 @@ try{ window._buildBarHTML = _buildBarHTML; }catch(e){}
    ids they already had, so no wiring moves. What is new is that all three are
    reachable from wherever you are, instead of requiring you to have guessed
    right in the sidebar. */
+/* ── AMV-D007, STEP 5: ONE VIEWPORT SWITCHER ─────────────────────────────
+   Studio could check a design at tablet and phone width. Dev could not - so
+   somebody building a responsive landing page in Dev had no way to see it
+   narrow, while the same job in Studio did. Same product, same question, and
+   the answer depended on which of the two surfaces you happened to be on.
+
+   One component and one handler, used by both. It takes the frame it drives as
+   an argument rather than reaching for a fixed id, because that is the only
+   difference between the two uses. */
+const _BUILD_VIEWPORTS = [['desktop','\uD83D\uDDA5\uFE0F','Desktop'],['tablet','\uD83D\uDCF1','Tablet'],['phone','\uD83D\uDCF2','Phone']];
+function _vpSwitchHTML(id){
+  return '<div class="studio-vp" id="'+id+'" role="group" aria-label="Preview width">'
+    + _BUILD_VIEWPORTS.map(([vp,ic,label],i) =>
+        '<button class="studio-vp-b'+(i===0?' on':'')+'" data-vp="'+vp+'"'
+        + ' title="'+label+'" aria-label="Preview at '+label.toLowerCase()+' width">'+ic+'</button>').join('')
+  + '</div>';
+}
+/* `frameFinder` is a function, not an element: Dev replaces its iframe every
+   time it renders a result, so an element captured at wiring time would be
+   stale by the first build. Studio keeps one frame and does not care. */
+function _wireVpSwitch(id, frameFinder){
+  const root = document.getElementById(id); if(!root) return;
+  root.querySelectorAll('.studio-vp-b').forEach(b => on(b, 'click', () => {
+    root.querySelectorAll('.studio-vp-b').forEach(x => x.classList.remove('on'));
+    b.classList.add('on');
+    const f = frameFinder(); if(!f) return;
+    const vp = b.dataset.vp;
+    /* THE FLEX BASIS THAT ATE THE WIDTH.
+
+       Setting width alone did nothing on Studio, and had never worked: the
+       inline style was applied correctly - phone really did set width:390px -
+       and the frame stayed 890px, because `.studio-frame` carries `flex:1`.
+       That is `flex-basis:0` with `flex-grow:1`, and in a flex row the basis
+       decides the main size, so `width` is simply not consulted. The buttons
+       highlighted, the transition ran on nothing, and the preview never moved.
+
+       Verified as pre-existing by rebuilding the previous commit and watching
+       the same thing happen there, rather than assuming I had caused it.
+
+       So the item has to stop growing before a width means anything. Desktop
+       puts `flex:1` back, because there the frame SHOULD fill the pane. */
+    const fixed = vp !== 'desktop';
+    f.style.flex   = fixed ? '0 0 auto' : '1';
+    f.style.width  = vp === 'phone' ? '390px' : vp === 'tablet' ? '768px' : '100%';
+    f.style.maxWidth = fixed ? '100%' : '';
+    f.style.margin = vp === 'desktop' ? '0' : '0 auto';
+  }));
+}
+try{ window._vpSwitchHTML=_vpSwitchHTML; window._wireVpSwitch=_wireVpSwitch; }catch(e){}
+
 const _BUILD_MODE_TABS = [
   ['studio', 'Design it',   'Landing pages, screens, posters - on a live canvas'],
   ['dev',    'Build an app','Real software, written and running in a sandbox'],
@@ -16038,7 +16088,7 @@ function _studioShowCanvas(brief){
     </div>
     <div class="studio-stage">
       <div class="studio-frame-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="studio-frame-t" id="studio-frame-t">Live preview</span>
-        <div class="studio-vp" id="studio-vp"><button class="studio-vp-b on" data-vp="desktop" title="Desktop">🖥️</button><button class="studio-vp-b" data-vp="tablet" title="Tablet">📱</button><button class="studio-vp-b" data-vp="phone" title="Phone">📲</button></div>
+        ${_vpSwitchHTML('studio-vp')}
       </div>
       <div class="studio-stage-inner" id="studio-stage-inner"><iframe id="studio-frame" class="studio-frame" sandbox="allow-scripts"></iframe></div>
       <div class="studio-code-body" id="studio-code-body" style="display:none"><pre class="studio-code-pre"><code id="studio-code-text"></code></pre></div>
@@ -16082,12 +16132,7 @@ function _studioShowCanvas(brief){
   on($('studio-download'),'click',()=>{ const a=_studioActive(); if(!a) return; _studioDownload(a); });
   on($('studio-export'),'click',_studioExportProject);
   // viewport toggles
-  document.querySelectorAll('#studio-vp .studio-vp-b').forEach(b=>on(b,'click',()=>{
-    document.querySelectorAll('#studio-vp .studio-vp-b').forEach(x=>x.classList.remove('on')); b.classList.add('on');
-    const f=$('studio-frame'); if(!f) return; const vp=b.dataset.vp;
-    f.style.width = vp==='phone'?'390px':vp==='tablet'?'768px':'100%';
-    f.style.margin = vp==='desktop'?'0':'0 auto';
-  }));
+  _wireVpSwitch('studio-vp', ()=>$('studio-frame'));
   _studioRenderArtifacts();
 }
 function _studioDownload(a){ const blob=new Blob([a.html],{type:'text/html'}); const el=document.createElement('a'); el.href=URL.createObjectURL(blob); el.download=(a.name||'design').replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'.html'; document.body.appendChild(el); el.click(); document.body.removeChild(el); URL.revokeObjectURL(el.href); }
@@ -16632,7 +16677,7 @@ function renderCodeView(){
           <button class="dev-pt on" id="dev-tab-prev" data-pv="preview">Preview</button>
           <button class="dev-pt" id="dev-tab-code" data-pv="code">Code</button>
         </div>
-        <div class="dev-prev-acts"><span id="dev-prev-s"></span>
+        <div class="dev-prev-acts">${_vpSwitchHTML('dev-vp')}<span id="dev-prev-s"></span>
           <button class="dev-openext" id="dev-download-proj" title="Download the project"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
           <button class="dev-openext" id="dev-deploy" title="Deploy a shareable page"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h8l-1 8 10-12h-8z"/></svg></button>
           <button class="dev-openext" id="dev-open-ext" title="Open in a new tab"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></button>
@@ -16660,6 +16705,7 @@ function renderCodeView(){
   on($('dev-model'),'change',function(){ _setSectionModel('code', this.value); devUsage(); toast('Code model set to '+MODELS[this.value].label,'info',2500); });
   // Code/Preview toggle (Terminal removed - Dev is a build-and-preview surface)
   const showPV=(pv)=>{ const pb=$('dev-prev-body'),cb=$('dev-code-body'); const tp=$('dev-tab-prev'),tc=$('dev-tab-code'); [pb,cb].forEach(x=>{if(x)x.style.display='none';}); [tp,tc].forEach(x=>x&&x.classList.remove('on')); if(pv==='code'){ if(cb)cb.style.display='block'; tc&&tc.classList.add('on'); } else { if(pb)pb.style.display='flex'; tp&&tp.classList.add('on'); } };
+  _wireVpSwitch('dev-vp', ()=>document.querySelector('#dev-prev-body .dev-prev-frame'));
   on($('dev-tab-prev'),'click',()=>showPV('preview'));
   on($('dev-tab-code'),'click',()=>showPV('code'));
   on($('dev-open-ext'),'click',()=>_devOpenExternal());

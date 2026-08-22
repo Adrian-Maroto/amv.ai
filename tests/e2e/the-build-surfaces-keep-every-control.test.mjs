@@ -447,6 +447,75 @@ section('A phone can give the result the whole screen on every Build surface (AM
   ok(desk.sideVisible, 'where both panes fit side by side anyway');
 }
 
+section('Checking a result at phone width works, on both surfaces (AMV-D007 step 5)');
+{
+  /* Studio could check a design at tablet and phone width and Dev could not, so
+     the same question got a different answer depending on which surface you
+     were on. One component and one handler now.
+
+     And Studio's had never actually worked. The inline style was applied
+     correctly - phone really did set width:390px - and the frame stayed at full
+     width, because `.studio-frame` carries `flex:1`. In a flex row the basis
+     decides the main size and `width` is not consulted. The buttons
+     highlighted, the transition ran on nothing, and the preview never moved.
+     Confirmed pre-existing by rebuilding the previous commit.
+
+     So this measures the RENDERED WIDTH. A check on the inline style would have
+     passed against the broken version, which is exactly how it survived. */
+  await page.setViewportSize({ width: 1280, height: 860 });
+  const studio = await page.evaluate(async () => {
+    setTab('studio');
+    _studioNewArtifact('T', 'page', 'b'); _studioSetHTML('<h1>hi</h1>', 'b');
+    _studioShowCanvas('b');
+    await new Promise(s => setTimeout(s, 500));
+    const w = () => Math.round(document.getElementById('studio-frame').getBoundingClientRect().width);
+    const out = { full: w() };
+    for (const vp of ['phone', 'tablet', 'desktop']) {
+      document.querySelector('#studio-vp [data-vp="' + vp + '"]').click();
+      await new Promise(s => setTimeout(s, 250));
+      out[vp] = w();
+    }
+    return out;
+  });
+  ok(studio.phone < studio.full * 0.6,
+     'Studio really narrows the canvas to phone width', `${studio.full} -> ${studio.phone}`);
+  ok(studio.tablet > studio.phone && studio.tablet < studio.full,
+     'and tablet sits between the two', `${studio.phone} / ${studio.tablet} / ${studio.full}`);
+  ok(studio.desktop === studio.full, 'and desktop gives it the pane back', studio.desktop);
+
+  const dev = await page.evaluate(async () => {
+    _DEV.log = [{ role: 'sys', text: 'x' }];
+    _devSetFile('index.html', '<h1>hi</h1>', 'html');
+    setTab('dev');
+    await new Promise(s => setTimeout(s, 400));
+    _devShowResult('<h1>hi</h1>', 'html', { html: '<h1>hi</h1>' });
+    await new Promise(s => setTimeout(s, 300));
+    const w = () => { const e = document.querySelector('#dev-prev-body .dev-prev-frame'); return e ? Math.round(e.getBoundingClientRect().width) : null; };
+    const out = { switcher: !!document.getElementById('dev-vp'), full: w() };
+    document.querySelector('#dev-vp [data-vp="phone"]').click();
+    await new Promise(s => setTimeout(s, 250));
+    out.phone = w();
+    /* Dev replaces its iframe on every build. A handler that captured the
+       element at wiring time would drive a frame that no longer exists. */
+    _devShowResult('<h1>again</h1>', 'html', { html: '<h1>again</h1>' });
+    await new Promise(s => setTimeout(s, 300));
+    document.querySelector('#dev-vp [data-vp="phone"]').click();
+    await new Promise(s => setTimeout(s, 250));
+    out.phoneAfterRebuild = w();
+    return out;
+  });
+  ok(dev.switcher, 'Dev has the same switcher Studio does');
+  ok(dev.phone < dev.full * 0.7, 'and it narrows its preview too', `${dev.full} -> ${dev.phone}`);
+  /* Both halves, and the second is the one that matters. "same as before"
+     is true when the switcher does nothing at all - a captured element is null
+     at wiring time, every click returns early, and both measurements are the
+     full width and therefore equal. That version passed this check until the
+     narrowness was asserted alongside it. */
+  ok(dev.phoneAfterRebuild < dev.full * 0.7 && dev.phoneAfterRebuild === dev.phone,
+     'still driving the right frame after a rebuild replaces it',
+     `${dev.phoneAfterRebuild} (phone was ${dev.phone}, full ${dev.full})`);
+}
+
 ok(errors.length === 0, 'no console errors while opening every Build state', errors.slice(0, 3));
 await app.close();
 if (report('the-build-surfaces-keep-every-control') > 0) process.exitCode = 1;

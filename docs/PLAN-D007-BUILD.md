@@ -171,10 +171,21 @@ big-bang rewrite.
    the canvas is created rather than at setTab, because the canvas does not
    exist yet when setTab runs.
 
-   Still to do here: Lab's output pane and Dev's Preview/Code tabs are still two
-   separate structures and the tab bar is not yet a shared component. Studio's
-   viewport switcher (desktop/tablet/phone) exists only on Studio, though Dev's
-   preview would benefit from it. Those are the rest of this step.
+   Third: one viewport switcher. Studio could check a design at tablet and phone
+   width; Dev could not, so the same question got a different answer depending
+   on which surface you were on. One component and one handler, and the handler
+   takes the frame as a FUNCTION because Dev replaces its iframe on every build.
+
+   Studio's had never worked. The inline width was applied correctly and the
+   frame did not move, because `.studio-frame` carries `flex:1` - in a flex row
+   the basis decides the main size and `width` is not consulted. The buttons
+   highlighted, the transition ran on nothing. Confirmed pre-existing by
+   rebuilding the previous commit.
+
+   Still to do: Lab's output pane and Dev's Preview/Code tabs are still two
+   separate structures and the tab bar is not yet a shared component. That is
+   the remainder of this step, and it is wiring-heavy, so it may fold into
+   step 6.
 6. **Retire the three renderers**, and run the step-1 inventory to prove every
    control still exists and still reaches the same function.
 
