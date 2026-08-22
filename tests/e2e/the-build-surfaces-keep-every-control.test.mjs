@@ -390,6 +390,63 @@ section('Reading your own code does not depend on a popup (AMV-D007 step 5)');
   ok(/code/i.test(out.back.label), 'with its original label', out.back.label);
 }
 
+section('A phone can give the result the whole screen on every Build surface (AMV-D007 step 5)');
+{
+  /* Dev and Lab both had a mobile pane toggle. Studio - the one surface whose
+     entire purpose IS the preview - did not: measured at 390x844, its side
+     panel took 575px of the screen and the live canvas got 190px.
+
+     Two things had to be right and only the first is obvious. The toggle is
+     mounted by setTab, and at that moment Studio still shows its hero, because
+     the canvas only exists after a design is created on a model call seconds
+     later - so it found no `.studio-canvas` and silently did nothing. And
+     hiding the side pane is not the same as giving the stage the room: the
+     canvas is height:auto on mobile, so the stage's height:100% referred to
+     nothing and it stayed at 190px with the side gone. That version looks fixed
+     if you check the side panel and is not fixed at all, which is why this
+     measures the STAGE. */
+  await page.setViewportSize({ width: 390, height: 844 });
+  const phone = await page.evaluate(async () => {
+    setTab('studio');
+    _studioNewArtifact('T', 'page', 'brief');
+    _studioSetHTML('<h1>hi</h1>', 'brief');
+    _studioShowCanvas('brief');
+    await new Promise(s => setTimeout(s, 500));
+    const h = (q) => { const e = document.querySelector(q); return e ? Math.round(e.getBoundingClientRect().height) : 0; };
+    const t = document.querySelector('.mv-toggle');
+    if (!t) return { toggle: false };
+    const before = h('.studio-stage');
+    t.querySelector('[data-mv="out"]').click();
+    await new Promise(s => setTimeout(s, 400));
+    const showing = { stage: h('.studio-stage'), sideHidden: getComputedStyle(document.querySelector('.studio-side')).display === 'none' };
+    t.querySelector('[data-mv="in"]').click();
+    await new Promise(s => setTimeout(s, 400));
+    return { toggle: true, labels: [...t.querySelectorAll('button')].map(b => b.textContent.trim()),
+             before, showing, back: h('.studio-stage'), vh: window.innerHeight };
+  });
+  ok(phone.toggle, 'Studio has the same pane toggle as Dev and Lab on a phone');
+  ok((phone.labels || []).length === 2, 'with two panes to choose between', phone.labels);
+  ok(phone.showing.sideHidden, 'choosing the preview puts the side panel away');
+  ok(phone.showing.stage > phone.before * 2,
+     'and the canvas actually grows, rather than the side just vanishing',
+     `${phone.before}px -> ${phone.showing.stage}px`);
+  ok(phone.showing.stage > phone.vh * 0.6,
+     'to most of the screen', `${phone.showing.stage} of ${phone.vh}`);
+  ok(phone.back === phone.before, 'and going back restores the design pane', `${phone.back} vs ${phone.before}`);
+
+  /* Desktop has both panes side by side and must not grow a toggle. */
+  await page.setViewportSize({ width: 1280, height: 860 });
+  const desk = await page.evaluate(async () => {
+    setTab('studio'); _studioShowCanvas('brief');
+    await new Promise(s => setTimeout(s, 400));
+    const t = document.querySelector('.mv-toggle');
+    return { present: !!t, shown: t ? getComputedStyle(t).display !== 'none' : false,
+             sideVisible: getComputedStyle(document.querySelector('.studio-side')).display !== 'none' };
+  });
+  ok(!desk.shown, 'and on a desktop the toggle stays out of the way', desk);
+  ok(desk.sideVisible, 'where both panes fit side by side anyway');
+}
+
 ok(errors.length === 0, 'no console errors while opening every Build state', errors.slice(0, 3));
 await app.close();
 if (report('the-build-surfaces-keep-every-control') > 0) process.exitCode = 1;

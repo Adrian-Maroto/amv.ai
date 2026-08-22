@@ -998,6 +998,13 @@ function _mountMobilePaneToggle(tab){
     ? { shell:'.dev-shell', blank:'dev-blank', inLabel:'Build', outLabel:'Preview', barSel:'.dev-prev-bar' }
     : tab==='lab'
     ? { shell:'.lab-split', blank:null, inLabel:'Editor', outLabel:'Output', barSel:'.lab-out-top' }
+    /* Studio was the one Build surface without this (AMV-D007 step 5). Measured
+       on a 390px phone: its side panel took 575px of an 844px screen and the
+       live preview - the entire point of a design canvas - got a 190px strip.
+       Nothing was broken, everything was reachable; it was simply the only one
+       of the three that could not give the result the full screen. */
+    : tab==='studio'
+    ? { shell:'.studio-canvas', blank:null, inLabel:'Design', outLabel:'Preview', barSel:'.studio-frame-bar' }
     : null;
   if(!spec) return;
 
