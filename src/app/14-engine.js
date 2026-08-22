@@ -476,7 +476,7 @@ async function analyzeCode(code, lang, kind){
 /* Lab starts EMPTY on purpose. It used to ship with demo code, which meant the
    entry screen ("Drop in your code and AMV takes it from there") never appeared
    - so nobody learned how to paste or upload. Empty = the instructions show. */
-const _LAB = { lang:'js', code:'', busy:false, files:[], chat:[] };
+const _LAB = { lang:'js', code:'', busy:false, files:[], chat:[], deploySlug:'' };
 
 function renderLabView(){
   const vc=$('vc'); if(!vc) return;
@@ -859,7 +859,12 @@ async function _labDeploy(){
   }
   _labBusy(true); _labStat('Publishing\u2026');
   try{
-    const out=await _amvRunTool('deploy_site',{ html:code, title:'Lab page' },(m)=>_labStat(m));
+    /* Re-publishing updates the page rather than minting another one. Without
+       the slug, twenty-five publishes of the same page filled the account's
+       entire site allowance with copies of it - see the note in _amvRunTool. */
+    const out=await _amvRunTool('deploy_site',
+      { html:code, title:'Lab page', slug:_LAB.deploySlug||undefined },(m)=>_labStat(m));
+    if(out && out.slug) _LAB.deploySlug = out.slug;
     /* deploy_site answers a failure with text rather than by throwing, so this
        used to print "Published" and a green "live" tick over the sentence
        explaining that nothing had been published. A URL coming back is the only

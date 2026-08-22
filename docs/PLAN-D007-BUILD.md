@@ -206,3 +206,36 @@ in a real browser at 1440, 1366, 768 and 390, signed in and signed out, on a
 free plan and a paid one. The step-1 inventory is the backstop against the
 failure this kind of merge actually has, which is not a crash - it is a button
 that quietly stopped being anywhere.
+
+
+## Found by reading the duplicated wiring, not by merging it
+
+Step 6 begins by checking whether the two deploy paths had drifted, since deploy
+is the one duplicated action that costs money and touches something public.
+
+**They had not drifted where it would have been dangerous.** `_devDeploy` and
+Lab's `deploy_site` tool both call `_deployApi('/deploy')`, so both get
+`deploySite`'s auth, rate limits (10/min, 100/day), 2MB cap, per-user site cap
+and slug-ownership check. No security or billing divergence.
+
+**They had drifted twice where it cost the user something.**
+
+1. Dev passed a slug so re-deploying updated the same URL; the tool path passed
+   none, so every Lab publish minted a NEW site against a 25-site cap.
+   Publishing one page twenty-five times filled the whole allowance with copies
+   of it. Fixed by threading the slug through the tool.
+
+2. Worse, and pre-existing on both: the slug was never cleared when a session
+   was reset. Build an app, publish it, press New session, build a different
+   app, publish it - and the second silently replaced the first at its own
+   address. Destructive, silent, and to a public artifact. Reproduced before
+   fixing and guarded in both directions, because the obvious fix (always clear
+   it) reintroduces problem 1.
+
+**One asymmetry left deliberately for the owner.** Pressing Deploy in Dev
+publishes a public page immediately. Pressing it in Lab routes through the
+model-tool path, which asks "publish a public web page live on the internet?"
+first. Both are human-initiated, so the extra dialog is arguably redundant - and
+equally, publishing to the internet is the kind of thing a confirmation suits.
+It is a product decision about how much friction publishing deserves, not a
+defect, so it is written down rather than settled unilaterally.

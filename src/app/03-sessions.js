@@ -122,12 +122,30 @@ try{ window._sessFlush=_sessFlush; window._sessLeave=_sessLeave; }catch(e){}
 let _resumingSession=false;
 function _resetToolState(kind){
   try{
+    /* A NEW SESSION MUST NOT PUBLISH OVER THE LAST ONE.
+
+       Deploying remembers a slug so that re-deploying UPDATES the same live URL
+       instead of minting another site - the account is capped at 25. But the
+       slug was never cleared here, and "New session" is somebody saying this is
+       a different thing now. So: build an app, publish it, press +, build a
+       completely different app, publish it - and the second one silently
+       replaced the first at its own address. Anyone holding that link got the
+       wrong page, and nothing anywhere said so.
+
+       Reproduced before fixing: the second publish really did send the first
+       app's slug. It is destructive, silent, and it happens to a public
+       artifact, which is the worst combination of the three.
+
+       Clearing it means a new session gets a new URL, and re-deploying WITHIN a
+       session still updates in place, which is the behaviour that was wanted. */
     if(kind==='dev'){
       _DEV.log=[]; _DEV.project={}; _DEV.activePath=''; _DEV.curCode=''; _DEV.curLang='';
+      _DEV.deploySlug=''; _DEV.deployedOnce=false;
     } else if(kind==='lab'){
       // Reset to the normal EMPTY entry screen (paste code / upload / find bugs),
       // never the old demo code.
       _LAB.code=''; _LAB.files=[]; _LAB.chat=[]; _LAB.busy=false;
+      _LAB.deploySlug='';
     } else if(kind==='studio'){
       _STUDIO.artifacts=[]; _STUDIO.activeId=''; _STUDIO.prompt=''; _STUDIO.html=''; _STUDIO.history=[];
     }
