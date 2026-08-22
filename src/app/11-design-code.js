@@ -1221,6 +1221,45 @@ async function _deployApi(path, body){
   return _autoApi(path, body);
 }
 
+/* THE MOMENT SOMEBODY MOST WANTS TO PAY.
+
+   Publishing to a live URL is an Elite feature, and the server enforces that
+   with code:'plan_required'. The client turned that into "Deploy failed: ..."
+   in a red error toast - which is wrong twice. It is not a failure, and the
+   person hitting it has just finished building something and wants it on the
+   internet. That is the highest-intent second in the whole product, and it was
+   being answered with an error and no way forward.
+
+   So a plan refusal is answered as a tier, with the way to lift it one tap
+   away. Everything else stays an error, because everything else IS one - and
+   the two are told apart by the machine-readable code rather than by matching
+   on prose, which is how that goes wrong the first time the wording changes. */
+function _deployRefusal(e, what){
+  const code = e && e.code;
+  if(code === 'plan_required'){
+    const msg = String((e && e.message) || 'Publishing to a live URL is part of Elite.');
+    try{ toastAction(msg, 'See plans', ()=>{ try{ setTab('plans'); }catch(_){} }, 9000); }
+    catch(_){ toast(msg, 'info', 7000); }
+    return true;
+  }
+  if(e && e.message === 'not-connected'){
+    toast('Connect the AMV engine in Settings to publish a live URL. You can still download '+(what||'it')+'.','error',6000);
+    return true;
+  }
+  return false;
+}
+try{ window._deployRefusal = _deployRefusal; }catch(e){}
+
+/* One card for "this is a tier, not a fault", wherever the refusal surfaces.
+   The button is `data-stab`, the delegated route to a tab that already exists,
+   so it keeps working inside panes that are re-rendered wholesale. */
+function _planUpsellCardHTML(title, msg){
+  return '<div class="deploy-tier"><b>'+escH(title||'Part of Elite')+'</b>'+
+         '<p>'+escH(String(msg||''))+'</p>'+
+         '<button class="btn bp" data-stab="plans">See plans \u2192</button></div>';
+}
+try{ window._planUpsellCardHTML = _planUpsellCardHTML; }catch(e){}
+
 async function _devDeploy(){
   let html='';
   try{ html=_devProjectPreviewHTML()||_DEV.lastHTML||''; }catch(e){ html=_DEV.lastHTML||''; }
@@ -1242,8 +1281,7 @@ async function _devDeploy(){
     _DEV.deployedOnce = true;
     try{ _sessTouch('dev'); }catch(e){}
   }catch(e){
-    if(e.message==='not-connected') toast('Connect the AMV engine in Settings to publish.','error',5000);
-    else toast('Deploy failed: '+e.message,'error',5000);
+    if(!_deployRefusal(e, 'the file')) toast('Deploy failed: '+e.message,'error',5000);
   }finally{
     if(btn){ btn.disabled=false; btn.innerHTML=old; }
   }
@@ -1465,6 +1503,12 @@ function _devRenderLog(){
     if(m._snag) return '<div class="dev-msg-ai"><div class="ai-snag"><div class="ai-snag-row"><span class="ai-snag-ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg></span><span class="ai-snag-msg">'+escH(m._snag)+'</span></div><button class="ai-snag-retry" data-dev-retry="1" type="button">Retry</button></div></div>';
     let h='<div class="dev-msg-ai">';
     if(m.text) h+='<div class="dev-ai-txt">'+(typeof md==='function'?md(m.text):escH(m.text))+'</div>';
+    /* Tool results carry a rendered card - the image that was generated, the
+       tier card when publishing needs a plan. Callers have been pushing `html`
+       onto the log since Dev learned to use tools; this renderer never read it,
+       so every one of those cards was built and thrown away. It is our own
+       markup, same provenance as md(m.text) on the line above. */
+    if(m.html) h+='<div class="dev-ai-embed">'+m.html+'</div>';
     if(m.code) h+='<div class="dev-code"><div class="dev-code-h">'+escH(m.lang||'code')+' <button class="dev-copy" data-code="'+encodeURIComponent(m.code)+'">copy</button></div><pre>'+escH(m.code.length>800?m.code.slice(0,800)+'\n…':m.code)+'</pre></div>';
     if(m.run) h+='<div class="dev-run '+(m.run.ok?'ok':'err')+'"><div class="dev-run-h">'+(m.run.ok?'✓ ran ('+m.run.ms+'ms)':'✗ error')+'</div><pre>'+escH(m.run.ok?(m.run.stdout||m.run.result||'(no output)'):m.run.stderr)+'</pre></div>';
     h+='</div>'; return h;
@@ -1512,10 +1556,17 @@ async function _devSend(){
       if(stat) stat.textContent='live';
       try{ _showDeployed(d.url, title, false); }catch(e){}
     }catch(e){
-      const why = e.message==='not-connected'
-        ? 'Connect the AMV engine in Settings and I can publish this to a live URL.'
-        : 'Couldn\u2019t publish: '+e.message;
-      _DEV.log.push({role:'ai',text:why}); _devRenderLog();
+      /* Third deploy caller, third place a plan limit can land. This one goes
+         through _deployApi and DOES throw, so the code arrives on the error. */
+      const isPlan = !!(e && e.code === 'plan_required');
+      const why = isPlan
+        ? String(e.message||'Publishing to a live URL is part of Elite.')
+        : e.message==='not-connected'
+          ? 'Connect the AMV engine in Settings and I can publish this to a live URL.'
+          : 'Couldn\u2019t publish: '+e.message;
+      _DEV.log.push({ role:'ai', text:why,
+                      html: isPlan ? _planUpsellCardHTML('Publishing is part of Elite', why) : '' });
+      _devRenderLog();
       if(stat) stat.textContent='';
     }
     _DEV.busy=false; return;
@@ -2074,7 +2125,28 @@ async function _amvRunTool(name, input, onStatus){
           render:'<div class="chat-deployed"><span class="deploy-dot"></span><div><b>Live now</b>'+
                  '<a href="'+escH(safeUrl(d.url))+'" target="_blank" rel="noopener noreferrer">'+escH(d.url)+'</a></div></div>'
         };
-      }catch(e){ return { text:'Deploy failed: '+(e.message||e), render:null }; }
+      }catch(e){
+        /* A PLAN LIMIT IS NOT A FAILURE, AND THIS IS WHERE IT ARRIVES.
+
+           This tool answers the caller by RETURNING, not by throwing - so a
+           branch on `catch(e => e.code)` further up is dead code, and the plan
+           refusal was arriving as the prose "Deploy failed: Publishing to a
+           live URL is part of Elite." Every caller then rendered it in red as a
+           breakage, with nothing to press.
+
+           The code and the plan are carried on the returned object so callers
+           can branch on the machine-readable field, and the render is the
+           upgrade rather than an error. The text stays honest about the
+           outcome - nothing was published - because it is also what the model
+           reads when a Crew run reaches this. */
+        if(e && e.code === 'plan_required'){
+          const why = String(e.message||'Publishing to a live URL is part of Elite.');
+          return { code:'plan_required', minPlan: e.minPlan || 'elite',
+                   text:'Not published: '+why+' Do not retry - it needs a plan change, not another attempt.',
+                   render:_planUpsellCardHTML('Publishing is part of Elite', why) };
+        }
+        return { text:'Deploy failed: '+(e.message||e), render:null };
+      }
     }
 
     if(name==='build_app'){

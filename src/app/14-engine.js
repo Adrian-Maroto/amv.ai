@@ -865,6 +865,15 @@ async function _labDeploy(){
     const out=await _amvRunTool('deploy_site',
       { html:code, title:'Lab page', slug:_LAB.deploySlug||undefined },(m)=>_labStat(m));
     if(out && out.slug) _LAB.deploySlug = out.slug;
+    /* deploy_site RETURNS its refusals, so this is where a plan limit lands -
+       not in the catch below. Shown as the tier it is, with the way forward. */
+    if(out && out.code === 'plan_required'){
+      _labStat('Publishing is part of Elite','');
+      _labOut('<div class="lab-sec">'+_planUpsellCardHTML('Publishing is part of Elite',
+        String(out.text||'').replace(/^Not published:\s*/,'').replace(/\s*Do not retry[^]*$/,''))+'</div>');
+      _labBusy(false);
+      return;
+    }
     /* deploy_site answers a failure with text rather than by throwing, so this
        used to print "Published" and a green "live" tick over the sentence
        explaining that nothing had been published. A URL coming back is the only
@@ -1285,6 +1294,11 @@ async function _autoApi(path, body){
     // how that goes wrong the first time the wording changes.
     const err = new Error(d.error || ('request failed ('+r.status+')'));
     if(d.code) err.code = d.code;
+    // And the plan that lifts it. Without this the caller knows a plan is
+    // needed but cannot say WHICH, so the only honest thing it could offer
+    // was a generic "see plans" - one guess away from sending somebody to
+    // buy the wrong tier.
+    if(d.minPlan) err.minPlan = d.minPlan;
     err.status = r.status;
     throw err;
   }

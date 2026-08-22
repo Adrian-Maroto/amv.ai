@@ -210,6 +210,34 @@ async function main() {
     }
   }
 
+  section('A free account cannot publish a live site');
+  {
+    /* THE HEADLINE PAID FEATURE, CHECKED AGAINST THE REAL WORKER.
+
+       deploySite had auth, a rate limit, a size cap and a per-user site cap -
+       and no PLAN check. Any signed-up free account could publish and host 25
+       live sites, while the pricing page sells one-click deploy as Elite and
+       hosting several as Ultra. The reason to buy Elite was free, and the
+       hosting was on the owner's bill.
+
+       Checked here rather than against a mock on purpose. A plan gate that
+       only holds in a stub is worth nothing - this is the same runtime
+       Cloudflare will run, reached over HTTP with a real signed token. */
+    const free = await post('/auth/signup', { email: 'freebie@smoke.test', name: 'F', password: PW },
+                            { 'CF-Connecting-IP': '17.0.0.9' });
+    const ftok = free.body.token;
+    ok(free.status === 200 && !!ftok, 'a free account signs up', free.status);
+    if (ftok) {
+      const r = await post('/deploy', { html: '<h1>free hosting please</h1>', title: 'Freebie' },
+                           { Authorization: 'Bearer ' + ftok });
+      ok(r.status === 402, 'and is refused a live URL with 402, not given one', r.status);
+      ok(r.body.code === 'plan_required',
+         'with a code the interface can turn into an upgrade rather than an error', r.body.code);
+      ok(r.body.minPlan === 'elite', 'naming the plan that includes it', r.body.minPlan);
+      ok(!r.body.url, 'and no address comes back', r.body.url || '(none)');
+    }
+  }
+
   section('The operator screen is the operator s');
   {
     const owner = await post('/auth/signup', { email: 'owner@smoke.test', name: 'O', password: PW },

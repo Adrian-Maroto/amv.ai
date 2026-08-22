@@ -8972,3 +8972,38 @@ body.light .fr-d{ color:#67656d; }
   .studio-canvas.mv-show-out .studio-stage { display: flex; height: 100%; min-height: 0; }
   .studio-canvas.mv-show-out .studio-frame { height: 100%; }
 }
+
+/* ── LAYER A100: A PLAN LIMIT IS AN OFFER, NOT A STACK TRACE ──────────────
+   Publishing to a live URL is an Elite feature and the server enforces it.
+   The refusal used to arrive in every surface as red error text - Dev's toast
+   said "Deploy failed:", Lab printed it in a monospace error pane, Crew handed
+   the model a sentence. Same moment in all three, and it is the single highest
+   intent second in the product: somebody just finished building something and
+   wants it on the internet. This is the card they get instead, in the same
+   place the error was, with the way forward one tap away. Restrained on
+   purpose - it reads as a tier, not as a sales interruption. */
+.deploy-tier{
+  border:1px solid var(--bd);
+  border-left:3px solid var(--accent);
+  background:var(--s2);
+  border-radius:var(--r-md);
+  padding:var(--sp-4);
+  margin:var(--sp-2) 0;
+  max-width:460px;
+}
+.deploy-tier b{
+  display:block;
+  font-family:var(--fdisplay);
+  font-size:var(--t-md);
+  color:var(--tx);
+  margin-bottom:var(--sp-1);
+}
+.deploy-tier p{
+  margin:0 0 var(--sp-3);
+  font-size:var(--t-base);
+  line-height:1.5;
+  color:var(--mu);
+}
+.deploy-tier .btn{ font-size:var(--t-sm); }
+.dev-ai-embed{ margin-top:var(--sp-2); }
+.dev-ai-embed img,.dev-ai-embed iframe{ max-width:100%; border-radius:var(--r-sm); }

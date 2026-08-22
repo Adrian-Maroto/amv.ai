@@ -2884,6 +2884,33 @@ async function deploySite(request, env){
   if(htmlBytes > SITE_MAX_BYTES)
     return json({ error:'Site is too large ('+(htmlBytes/1048576).toFixed(1)+'MB). Limit is 2MB.' }, 413);
 
+  /* WHAT THE PLANS PAGE SELLS, ACTUALLY ENFORCED.
+
+     Deploy had auth, a rate limit, a size cap and a per-user site cap - and no
+     PLAN check at all. So any free account could publish and host 25 live sites,
+     while the pricing page sells "One-click deploy to a live URL" as an Elite
+     feature and "Deploy & host multiple live apps" as Ultra. The headline reason
+     to buy Elite was free, and the hosting was on the owner's bill.
+
+     Two tiers, taken from the two places the product already states them - the
+     plan feature lists and the comparison table - rather than invented here:
+       Elite  one live app
+       Ultra  up to SITE_MAX_PER_USER of them
+     Pro says "build and run apps in the sandbox", which is running, not
+     publishing, so Pro is not a deploy tier.
+
+     A Teams seat ranks as Elite in _planRankOf, so a seat deploys one app,
+     which is what the seat is sold as carrying. */
+  const rank = _planRankOf(user.plan, user.customCfg);
+  if (rank < PLAN_RANK.elite) {
+    audit(env, 'deploy_plan_block', { email: user.email, plan: user.plan });
+    return json({
+      error: 'Publishing to a live URL is part of Elite. Your app still runs here, and you can download it any time.',
+      code: 'plan_required', minPlan: 'elite'
+    }, 402);
+  }
+  const maxSites = rank >= PLAN_RANK.ultra ? SITE_MAX_PER_USER : 1;
+
   const owner = String(user.email).toLowerCase();
   const idx   = (await DB.get(env, 'sites', owner)) || { slugs: [] };
 
@@ -2895,8 +2922,14 @@ async function deploySite(request, env){
     const existing = await DB.get(env, 'site', slug);
     if(existing && existing.owner !== owner) return json({ error:'that name is taken' }, 409);
   } else {
-    if((idx.slugs||[]).length >= SITE_MAX_PER_USER)
-      return json({ error:'You can host up to '+SITE_MAX_PER_USER+' sites. Delete one first.' }, 429);
+    /* Elite hosts one; Ultra hosts many. The refusal names the plan that lifts
+       it rather than only the number, because "you can host up to 1" with no way
+       forward reads as a fault rather than as a tier. */
+    if((idx.slugs||[]).length >= maxSites)
+      return json(maxSites === 1
+        ? { error:'Elite hosts one live app at a time. Replace it, delete it, or move to Ultra to host several.',
+            code:'plan_required', minPlan:'ultra' }
+        : { error:'You can host up to '+maxSites+' sites. Delete one first.' }, maxSites === 1 ? 402 : 429);
     // find a free slug
     const base = _slugify(title);
     slug = base;
