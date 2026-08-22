@@ -2557,12 +2557,30 @@ try{ window._sessFlush=_sessFlush; window._sessLeave=_sessLeave; }catch(e){}
 let _resumingSession=false;
 function _resetToolState(kind){
   try{
+    /* A NEW SESSION MUST NOT PUBLISH OVER THE LAST ONE.
+
+       Deploying remembers a slug so that re-deploying UPDATES the same live URL
+       instead of minting another site - the account is capped at 25. But the
+       slug was never cleared here, and "New session" is somebody saying this is
+       a different thing now. So: build an app, publish it, press +, build a
+       completely different app, publish it - and the second one silently
+       replaced the first at its own address. Anyone holding that link got the
+       wrong page, and nothing anywhere said so.
+
+       Reproduced before fixing: the second publish really did send the first
+       app's slug. It is destructive, silent, and it happens to a public
+       artifact, which is the worst combination of the three.
+
+       Clearing it means a new session gets a new URL, and re-deploying WITHIN a
+       session still updates in place, which is the behaviour that was wanted. */
     if(kind==='dev'){
       _DEV.log=[]; _DEV.project={}; _DEV.activePath=''; _DEV.curCode=''; _DEV.curLang='';
+      _DEV.deploySlug=''; _DEV.deployedOnce=false;
     } else if(kind==='lab'){
       // Reset to the normal EMPTY entry screen (paste code / upload / find bugs),
       // never the old demo code.
       _LAB.code=''; _LAB.files=[]; _LAB.chat=[]; _LAB.busy=false;
+      _LAB.deploySlug='';
     } else if(kind==='studio'){
       _STUDIO.artifacts=[]; _STUDIO.activeId=''; _STUDIO.prompt=''; _STUDIO.html=''; _STUDIO.history=[];
     }
@@ -17778,8 +17796,21 @@ async function _amvRunTool(name, input, onStatus){
       if(!html) return { text:'Nothing to publish - no HTML was given.', render:null };
       if(!/<html|<!doctype/i.test(html)) html = '<!DOCTYPE html><html><body>'+html+'</body></html>';
       try{
-        const d = await _deployApi('/deploy', { html, title: input.title || 'App' });
+        /* PUBLISHING THE SAME PAGE TWICE SHOULD NOT COST TWO OF YOUR TWENTY-FIVE.
+
+           Dev passes a slug, so re-deploying updates the same URL. This path did
+           not, so every publish minted a NEW site - and the server caps a user at
+           SITE_MAX_PER_USER (25). Publishing one Lab page twenty-five times filled
+           the whole allowance with copies of it and then answered "You can host up
+           to 25 sites. Delete one first." The same action cost a scarce resource
+           differently depending on which surface you pressed it from, and nothing
+           on either screen said so.
+
+           The slug is threaded through and handed back so the caller can keep it. */
+        const d = await _deployApi('/deploy', { html, title: input.title || 'App',
+                                                slug: input.slug || undefined });
         return {
+          slug: d.slug,
           text:'Published successfully. It is LIVE at: '+d.url+' - give the user this exact URL.',
           render:'<div class="chat-deployed"><span class="deploy-dot"></span><div><b>Live now</b>'+
                  '<a href="'+escH(safeUrl(d.url))+'" target="_blank" rel="noopener noreferrer">'+escH(d.url)+'</a></div></div>'
@@ -24122,7 +24153,7 @@ async function analyzeCode(code, lang, kind){
 /* Lab starts EMPTY on purpose. It used to ship with demo code, which meant the
    entry screen ("Drop in your code and AMV takes it from there") never appeared
    - so nobody learned how to paste or upload. Empty = the instructions show. */
-const _LAB = { lang:'js', code:'', busy:false, files:[], chat:[] };
+const _LAB = { lang:'js', code:'', busy:false, files:[], chat:[], deploySlug:'' };
 
 function renderLabView(){
   const vc=$('vc'); if(!vc) return;
@@ -24505,7 +24536,12 @@ async function _labDeploy(){
   }
   _labBusy(true); _labStat('Publishing\u2026');
   try{
-    const out=await _amvRunTool('deploy_site',{ html:code, title:'Lab page' },(m)=>_labStat(m));
+    /* Re-publishing updates the page rather than minting another one. Without
+       the slug, twenty-five publishes of the same page filled the account's
+       entire site allowance with copies of it - see the note in _amvRunTool. */
+    const out=await _amvRunTool('deploy_site',
+      { html:code, title:'Lab page', slug:_LAB.deploySlug||undefined },(m)=>_labStat(m));
+    if(out && out.slug) _LAB.deploySlug = out.slug;
     /* deploy_site answers a failure with text rather than by throwing, so this
        used to print "Published" and a green "live" tick over the sentence
        explaining that nothing had been published. A URL coming back is the only

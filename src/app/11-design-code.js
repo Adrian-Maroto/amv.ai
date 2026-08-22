@@ -2056,8 +2056,21 @@ async function _amvRunTool(name, input, onStatus){
       if(!html) return { text:'Nothing to publish - no HTML was given.', render:null };
       if(!/<html|<!doctype/i.test(html)) html = '<!DOCTYPE html><html><body>'+html+'</body></html>';
       try{
-        const d = await _deployApi('/deploy', { html, title: input.title || 'App' });
+        /* PUBLISHING THE SAME PAGE TWICE SHOULD NOT COST TWO OF YOUR TWENTY-FIVE.
+
+           Dev passes a slug, so re-deploying updates the same URL. This path did
+           not, so every publish minted a NEW site - and the server caps a user at
+           SITE_MAX_PER_USER (25). Publishing one Lab page twenty-five times filled
+           the whole allowance with copies of it and then answered "You can host up
+           to 25 sites. Delete one first." The same action cost a scarce resource
+           differently depending on which surface you pressed it from, and nothing
+           on either screen said so.
+
+           The slug is threaded through and handed back so the caller can keep it. */
+        const d = await _deployApi('/deploy', { html, title: input.title || 'App',
+                                                slug: input.slug || undefined });
         return {
+          slug: d.slug,
           text:'Published successfully. It is LIVE at: '+d.url+' - give the user this exact URL.',
           render:'<div class="chat-deployed"><span class="deploy-dot"></span><div><b>Live now</b>'+
                  '<a href="'+escH(safeUrl(d.url))+'" target="_blank" rel="noopener noreferrer">'+escH(d.url)+'</a></div></div>'
