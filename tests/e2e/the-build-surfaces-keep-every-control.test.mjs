@@ -278,6 +278,69 @@ section('One toolbar definition, not two that drift (AMV-D007 step 3)');
   }
 }
 
+section('The outcome can be chosen from any Build surface (AMV-D007 step 4)');
+{
+  /* CLICKED, not measured. The first version of this switch sat inside Lab's
+     scrolling entry region, and on a 390px phone the toolbar wraps to 164px -
+     so the first button rendered at the right size, in the right place, with
+     the right label, BEHIND the bar. elementFromPoint returned .lab-bar.
+     Anything that only measured it would have called it fine. It is above each
+     surface's own toolbar now. */
+  /* The DNA walk above leaves its panel open, and a modal is SUPPOSED to block
+     the page under it - the first run of this section failed with the overlay
+     intercepting every click, which was the check working and the starting
+     state being wrong. Closed explicitly rather than by hoping section order
+     never changes. */
+  await page.evaluate(() => { try { closeDNA(); } catch (e) {} const o = document.getElementById('ovr'); if (o) o.innerHTML = ''; });
+  await page.waitForTimeout(250);
+
+  for (const [w, h] of [[1280, 860], [390, 844]]) {
+    await page.setViewportSize({ width: w, height: h });
+    await page.evaluate(() => { _LAB.code = ''; _DEV.log = []; _DEV.project = {}; setTab('studio'); });
+    await page.waitForSelector('#vc [data-bmode]', { timeout: 15000 });
+
+    const seen = await page.evaluate(() => document.querySelectorAll('#vc .build-mode').length);
+    ok(seen === 3, `at ${w}x${h} all three outcomes are offered`, seen);
+
+    /* Every one of them, from every surface, by clicking it. */
+    for (const target of ['dev', 'lab', 'studio']) {
+      const covered = await page.evaluate((t) => {
+        const b = document.querySelector('#vc [data-bmode="' + t + '"]');
+        if (!b) return 'missing';
+        const r = b.getBoundingClientRect();
+        const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return (top && (top === b || b.contains(top))) ? null
+          : 'covered by ' + ((top && (top.className || top.tagName)) || 'nothing').toString().slice(0, 30);
+      }, target);
+      ok(covered === null, `at ${w}x${h} the ${target} choice is not covered by anything`, covered);
+
+      await page.click(`#vc [data-bmode="${target}"]`, { timeout: 15000 });
+      await page.waitForTimeout(450);
+      const now = await page.evaluate(() => {
+        const on = document.querySelector('#vc .build-mode.on');
+        return { tab: S.tab, active: on ? on.dataset.bmode : null,
+                 selected: [...document.querySelectorAll('#vc .build-mode')]
+                   .filter(b => b.getAttribute('aria-selected') === 'true').length };
+      });
+      ok(now.tab === target, `at ${w}x${h} choosing ${target} really goes there`, now.tab);
+      ok(now.active === target, `and the switch shows ${target} as current`, now.active);
+      ok(now.selected === 1, 'with exactly one marked selected for a screen reader', now.selected);
+    }
+  }
+  await page.setViewportSize({ width: 1280, height: 860 });
+
+  /* It is for starting, not for interrupting: once there is work in progress the
+     screen belongs to the work. */
+  const whenBusy = await page.evaluate(async () => {
+    _LAB.code = 'console.log(1)'; setTab('lab'); renderLabView();
+    await new Promise(s => setTimeout(s, 400));
+    const m = document.querySelector('#vc .build-mode');
+    return m ? getComputedStyle(m.parentElement).display : 'absent';
+  });
+  ok(whenBusy === 'none' || whenBusy === 'absent',
+     'and it steps out of the way once there is work on the surface', whenBusy);
+}
+
 ok(errors.length === 0, 'no console errors while opening every Build state', errors.slice(0, 3));
 await app.close();
 if (report('the-build-surfaces-keep-every-control') > 0) process.exitCode = 1;

@@ -8873,3 +8873,51 @@ body.light .fr-d{ color:#67656d; }
   font-size:var(--t-sm);color:var(--dim);
   letter-spacing:.04em;text-transform:uppercase;margin-top:var(--sp-2);
 }
+
+/* ── LAYER A97: PICK THE OUTCOME, NOT THE TOOL (AMV-D007 step 4) ─────────
+   Studio, Dev and Lab split this work by how a thing gets built. Somebody who
+   wants a landing page can get one from Studio as a design or from Dev as a
+   running app, and neither screen tells them which they want.
+
+   The three outcomes sit on every one of those screens now, so the choice is
+   made once, in the open, and can be changed without going back to the sidebar
+   to guess again. It is a real tablist: role, aria-selected, and a focus ring,
+   because it is navigation and not decoration. */
+.build-head{ margin-bottom:var(--sp-3); }
+.build-modes{
+  display:flex;flex-wrap:wrap;gap:var(--sp-2);
+  margin:0 0 var(--sp-5);
+}
+.build-mode{
+  flex:1 1 220px;min-width:0;text-align:left;cursor:pointer;
+  display:flex;flex-direction:column;gap:2px;
+  padding:var(--sp-3) var(--sp-4);border-radius:var(--r-md);
+  background:var(--s2);border:1px solid var(--bd);
+  font-family:inherit;color:var(--mu);
+  transition:background-color .15s var(--ease),border-color .15s var(--ease),color .15s var(--ease);
+}
+.build-mode:hover{ border-color:var(--bdl);color:var(--tx); }
+.build-mode:focus-visible{ outline:2px solid var(--accent);outline-offset:2px; }
+.build-mode.on{ background:var(--s3);border-color:var(--accent);color:var(--tx); }
+.build-mode-t{ font-size:var(--t-md);font-weight:600;color:inherit; }
+.build-mode-h{ font-size:var(--t-sm);color:var(--dim);line-height:1.45; }
+.build-mode.on .build-mode-h{ color:var(--mu); }
+@media(max-width:760px){
+  .build-mode{ flex:1 1 100%;padding:var(--sp-2) var(--sp-3);min-height:44px;justify-content:center; }
+  .build-mode-h{ display:none; }
+  .build-modes{ margin-bottom:var(--sp-4); }
+}
+
+/* The outcome choice sits ABOVE each surface's own toolbar, not inside its
+   scrolling content. Measured on a 390px phone: Lab's toolbar wraps to 164px,
+   the entry region scrolls beneath it, and the first mode button ended up
+   BEHIND the bar - elementFromPoint returned .lab-bar, so it was visible and
+   unclickable. That is the same defect as the dead entry buttons in AMV-D033,
+   and it is why this is checked by clicking rather than by measuring.
+
+   It shows only while the surface is at its entry state. Once there is work in
+   progress the screen belongs to the work, and the sidebar is still there. */
+.lab-shell:not(.lab-blank) > .build-head,
+.lab-shell:not(.lab-blank) > .build-modes,
+.dev-shell:not(.dev-blank) > .dev-chat-pane > .build-head,
+.dev-shell:not(.dev-blank) > .dev-chat-pane > .build-modes{ display:none; }
