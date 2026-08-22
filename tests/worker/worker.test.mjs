@@ -230,11 +230,18 @@ await W.runDueAutomations(envWithEmail);
 ok(emailSent !== null, 'an email was sent for a research job with notify:email', !!emailSent);
 if (emailSent) ok(/ETH|watch/i.test(JSON.stringify(emailSent)), 'the email is about the watched subject');
 
-// restore requireUser for any later tests
+/* restore requireUser for any later tests.
+   Alice and Bob carry a plan now, because publishing to a live URL is an Elite
+   feature and these tests are about what happens once somebody is allowed to
+   publish. A free account is checked separately, below, so the gate is proved
+   rather than worked around. */
 W.__setRequireUser(async (req) => {
   const a = req.headers.get('Authorization') || '';
-  if (a === 'Bearer alice') return { email: 'alice@test.com' };
-  if (a === 'Bearer bob') return { email: 'bob@test.com' };
+  if (a === 'Bearer alice')  return { email: 'alice@test.com', plan: 'ultra' };
+  if (a === 'Bearer bob')    return { email: 'bob@test.com',   plan: 'ultra' };
+  if (a === 'Bearer skint')  return { email: 'skint@test.com', plan: 'free'  };
+  if (a === 'Bearer promid') return { email: 'promid@test.com', plan: 'pro'  };
+  if (a === 'Bearer elite')  return { email: 'elite@test.com', plan: 'elite' };
   return null;
 });
 globalThis.fetch = async (url, opts) => {
@@ -282,6 +289,31 @@ r = await W.deployDelete(req({ slug }, 'alice'), env);
 ok((await r.json()).ok, 'the owner can take their site down');
 const gone = await W.serveSite(new Request('https://x/s/' + slug), env, slug);
 ok(gone.status === 404, 'the URL is genuinely offline afterwards', gone.status);
+
+section('Deploy: the plans page is telling the truth');
+/* Deploy had auth, a rate limit, a size cap and a per-user site cap - and no
+   plan check. Any free account could publish and host the full allowance of
+   live sites, while the plans page sells one-click deploy as Elite and hosting
+   several as Ultra. These four say the advertised line is the enforced one. */
+r = await W.deploySite(req({ html: '<h1>free hosting please</h1>', title: 'Freebie' }, 'skint'), env);
+d = await r.json();
+ok(r.status === 402, 'a free account is refused a live URL', r.status);
+ok(d.code === 'plan_required' && d.minPlan === 'elite',
+   'and told which plan includes it, in a field rather than in prose', d.code + '/' + d.minPlan);
+ok(!d.url, 'and no address comes back', d.url || '(none)');
+
+r = await W.deploySite(req({ html: '<h1>pro</h1>', title: 'Pro try' }, 'promid'), env);
+ok(r.status === 402, 'Pro is a sandbox plan, not a publishing one - it says so on the plans page', r.status);
+
+r = await W.deploySite(req({ html: '<h1>one</h1>', title: 'Elite one' }, 'elite'), env);
+const e1 = await r.json();
+ok(r.status === 200 && !!e1.url, 'Elite publishes', r.status);
+r = await W.deploySite(req({ html: '<h1>two</h1>', title: 'Elite two' }, 'elite'), env);
+d = await r.json();
+ok(r.status === 402 && d.minPlan === 'ultra',
+   'and a second live app is where Ultra begins - the tier is named, not just a number', r.status + '/' + d.minPlan);
+r = await W.deploySite(req({ html: '<h1>one v2</h1>', title: 'Elite one', slug: e1.slug }, 'elite'), env);
+ok(r.status === 200, 'while updating the one they already have is not a second app', r.status);
 
 /* ═══ ERROR REPORTING ════════════════════════════════════════════════════ */
 section('Errors: the same bug from many users groups into ONE row');

@@ -5297,3 +5297,67 @@ An exception list is where the next leak is, always, because it is the set of
 things somebody decided the general rule should not protect. It deserves an
 enumerating check, and it now has one: every unscoped key must be classified as
 personal-and-cleared or device-and-kept, so a new one cannot join silently.
+
+## 271. Nobody had checked whether the thing being sold was actually being sold
+
+Looking for revenue, I checked the paid capabilities one at a time against what
+the plans page promises. Model choice was properly gated - the server answers
+402 with a code. Then `deploySite`.
+
+It had authentication. It had a rate limit. It had a 2MB size cap. It had a
+per-user site cap of 25. Four guards, all correct, all carefully written. And no
+plan check at all.
+
+So any account that had typed an email address could publish and host 25 live
+web pages, while the pricing page sells "One-click deploy to a live URL" as the
+headline Elite feature and "Deploy & host multiple live apps" as the reason to
+go Ultra. The single biggest reason to pay was free, and the hosting bill was
+the owner's.
+
+The lesson is not "add a plan check". It is where I found this. Every guard on
+that route protects AMV from the user - abuse, cost, collision, overwrite. Not
+one of them was about whether the user was entitled to be there at all. A route
+can be thoroughly defended and still be giving away the product, because those
+are different questions and the first one looks like completeness.
+
+**A feature list is a specification.** Anything the marketing page states as
+included in a tier is a claim the server is making, and every one of those
+claims deserves the same treatment as an authorization rule: enforced in one
+place, on the server, with a test that fails when it stops being true. Reading
+down the plans page and asking "what enforces this line?" found the leak in
+about ten minutes. Nothing else I did this session was worth as much.
+
+### And then the interesting half
+
+Closing the hole took twelve lines. Making it worth anything took the rest of
+the day, because a plan gate that answers with a red error is worse than no gate
+- it has taken the feature away and given back nothing.
+
+The refusal surfaces in four places, and three of them could not have handled it
+even after the server was correct:
+
+- **The tool that publishes returns its failures instead of throwing.** So the
+  branch I first wrote - `catch(e => e.code === 'plan_required')` - was dead
+  code that could never execute. The comment explaining this was four lines
+  above where I put it. I had read it and written the bug anyway.
+- **The error object carried `code` but not `minPlan`.** A caller could tell a
+  plan was needed but not which one, so the most it could honestly offer was a
+  generic "see plans" - one guess away from selling somebody the wrong tier.
+- **Dev's chat renderer never read the `html` field on a log entry.** Callers
+  have been setting it since Dev learned to use tools. Every card built for that
+  renderer - the tier card, and every image Dev has ever generated - was
+  constructed and thrown away. Nothing errored. It just silently rendered
+  nothing, and no test asked.
+
+Three separate places where the data was correct and the path to the screen was
+not. Which is the same shape as #268 and #270: the work was done, and the wire
+from the work to the person was missing. That is now the most common defect I
+find in this codebase, and I should look for it first rather than last.
+
+**What the person gets instead.** The moment somebody presses Publish is the
+highest-intent second in the entire product - they have just finished building
+something and want it on the internet. It was answered with "Deploy failed:" and
+nothing to press. It is now a card that names the tier and puts the plans one
+tap away, in all four places, and the e2e suite clicks that button and asserts
+it actually arrives - because a card that looks like a route and is not one is
+exactly the defect class above, wearing the fix as a disguise.

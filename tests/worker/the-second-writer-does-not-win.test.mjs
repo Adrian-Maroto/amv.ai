@@ -88,6 +88,12 @@ const call = (env, path, body, tok) => worker.fetch(new Request('https://api.amv
 }), env, ctx);
 const post = async (env, p, b, t) => { const r = await call(env, p, b, t); return { status: r.status, body: await r.json().catch(() => ({})) }; };
 const signup = async (env, email) => (await (await call(env, '/auth/signup', { email, name: 'N', password: 'A-real-Passw0rd!' })).json()).token;
+/* Publishing to a live URL is an Elite feature and the server enforces it, so
+   anybody in this file who is about to deploy has to be able to. Ultra, because
+   these races involve two sites, and Elite hosts one. The gate itself is proved
+   in worker.test.mjs - this only stops it from standing in the way of the races
+   that are actually under test here. */
+const canPublish = async (env, email) => { await W.setEntitlement(env, email, 'ultra'); };
 const together = async (...ps) => (await Promise.allSettled(ps))
   .filter(r => r.status === 'rejected').map(r => String((r.reason && r.reason.message) || r.reason));
 
@@ -238,6 +244,8 @@ section('Two people cannot claim the same public name');
   const env = mkEnv();
   const a = await signup(env, 'alice@example.com');
   const b = await signup(env, 'bob@example.com');
+  await canPublish(env, 'alice@example.com');
+  await canPublish(env, 'bob@example.com');
   const [ra, rb] = await Promise.all([
     post(env, '/deploy', { slug: 'the-same-name', title: 'A', html: '<p>a</p>' }, a),
     post(env, '/deploy', { slug: 'the-same-name', title: 'B', html: '<p>b</p>' }, b),
@@ -258,6 +266,7 @@ section('An ordinary write is still just a write');
      use starts being refused. */
   const env = mkEnv();
   const tok = await signup(env, 'normal@example.com');
+  await canPublish(env, 'normal@example.com');
   const r = await post(env, '/deploy', { slug: 'my-page', title: 'Mine', html: '<p>hi</p>' }, tok);
   ok(r.status === 200, 'deploying a page works', r.status + ' ' + ((r.body || {}).error || ''));
   const again = await post(env, '/deploy', { slug: 'my-page', title: 'Mine v2', html: '<p>hi2</p>' }, tok);
