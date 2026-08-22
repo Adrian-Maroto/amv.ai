@@ -120,37 +120,53 @@ function _sessLeave(kind){
 try{ window._sessFlush=_sessFlush; window._sessLeave=_sessLeave; }catch(e){}
 // Reset a tool's live state to empty (after its work was saved to Recents).
 let _resumingSession=false;
+/* WHAT A RESET MEANS, WRITTEN AS WHAT SURVIVES RATHER THAN WHAT IS CLEARED.
+
+   This used to name the fields to clear, and it drifted the way that always
+   drifts: a field added later was simply not in the list, and nothing said so.
+   Two real defects came out of exactly that gap.
+
+     - `deploySlug` survived a new session, so building a different app and
+       publishing it REPLACED the previous app at its own public address.
+     - `lastHTML` survived a sign-out. `_devDeploy` falls back to it when the
+       project is empty, so the next person to sign in on that browser could
+       press Deploy on a blank screen and publish the PREVIOUS ACCOUNT'S work
+       to a public URL - at the previous account's slug, overwriting their site.
+       `_wipeAccountState` exists to stop precisely that; it just did not know
+       about the field.
+
+   So the defaults are declared, and a reset restores them wholesale. A field
+   added tomorrow is cleared by default and has to be added to KEEP on purpose
+   to survive - which is the safe direction for it to fail in. Guarded by
+   tests/e2e/a-reset-really-resets, which enumerates every field assigned
+   anywhere and fails on one that is in neither list. */
+const _TOOL_DEFAULTS = {
+  dev: { log:[], project:{}, activePath:'', curCode:'', curLang:'', curRun:null,
+         deploySlug:'', deployedOnce:false, lastHTML:'', name:'', files:[],
+         handoff:null, dirHandle:null, usingWorkspace:false, busy:false },
+  lab: { code:'', files:[], chat:[], busy:false, deploySlug:'' },
+  studio: { artifacts:[], activeId:'', prompt:'', html:'', history:[] },
+};
+/* `lang` is a preference, not work - somebody who writes Python should not have
+   to say so again every session. `sessId` is owned by the session machinery,
+   which assigns it before this runs. */
+const _TOOL_KEEP = { dev:['lang','sessId'], lab:['lang','sessId'], studio:['sessId'] };
+function _toolStateObj(kind){
+  return kind==='dev' ? (typeof _DEV!=='undefined'?_DEV:null)
+       : kind==='lab' ? (typeof _LAB!=='undefined'?_LAB:null)
+       : kind==='studio' ? (typeof _STUDIO!=='undefined'?_STUDIO:null) : null;
+}
 function _resetToolState(kind){
   try{
-    /* A NEW SESSION MUST NOT PUBLISH OVER THE LAST ONE.
-
-       Deploying remembers a slug so that re-deploying UPDATES the same live URL
-       instead of minting another site - the account is capped at 25. But the
-       slug was never cleared here, and "New session" is somebody saying this is
-       a different thing now. So: build an app, publish it, press +, build a
-       completely different app, publish it - and the second one silently
-       replaced the first at its own address. Anyone holding that link got the
-       wrong page, and nothing anywhere said so.
-
-       Reproduced before fixing: the second publish really did send the first
-       app's slug. It is destructive, silent, and it happens to a public
-       artifact, which is the worst combination of the three.
-
-       Clearing it means a new session gets a new URL, and re-deploying WITHIN a
-       session still updates in place, which is the behaviour that was wanted. */
-    if(kind==='dev'){
-      _DEV.log=[]; _DEV.project={}; _DEV.activePath=''; _DEV.curCode=''; _DEV.curLang='';
-      _DEV.deploySlug=''; _DEV.deployedOnce=false;
-    } else if(kind==='lab'){
-      // Reset to the normal EMPTY entry screen (paste code / upload / find bugs),
-      // never the old demo code.
-      _LAB.code=''; _LAB.files=[]; _LAB.chat=[]; _LAB.busy=false;
-      _LAB.deploySlug='';
-    } else if(kind==='studio'){
-      _STUDIO.artifacts=[]; _STUDIO.activeId=''; _STUDIO.prompt=''; _STUDIO.html=''; _STUDIO.history=[];
+    const obj = _toolStateObj(kind), def = _TOOL_DEFAULTS[kind];
+    if(!obj || !def) return;
+    for(const k of Object.keys(def)){
+      const v = def[k];
+      obj[k] = Array.isArray(v) ? [] : (v && typeof v === 'object') ? {} : v;
     }
   }catch(e){}
 }
+try{ window._TOOL_DEFAULTS=_TOOL_DEFAULTS; window._TOOL_KEEP=_TOOL_KEEP; }catch(e){}
 function _sessResume(id){
   const rec=_SESSIONS.find(s=>s.id===id); if(!rec) return;
   const k=rec.kind, st=rec.state||{};
@@ -1070,12 +1086,13 @@ try{ window._mobileShowOutput=_mobileShowOutput; }catch(e){}
    Lab code leak into the next account signed in on the same browser. */
 function _wipeAccountState(){
   try{ _SESSIONS.length = 0; }catch(e){ try{ _SESSIONS=[]; }catch(e2){} }
+  /* Signing out clears MORE than a new session does: the same defaults, plus the
+     preferences a reset deliberately keeps. Nothing of one account's may still
+     be sitting there when the next one signs in on this browser. */
   try{
-    _DEV.log=[]; _DEV.project={}; _DEV.activePath=''; _DEV.curCode=''; _DEV.curLang='';
-    _DEV.files=[]; _DEV.handoff=null; _DEV.dirHandle=null; _DEV.sessId=null;
-  }catch(e){}
-  try{
-    _LAB.code=''; _LAB.lang='js'; _LAB.busy=false; _LAB.files=[]; _LAB.sessId=null;
+    _resetToolState('dev'); _DEV.lang='js'; _DEV.sessId=null;
+    _resetToolState('lab'); _LAB.lang='js'; _LAB.sessId=null;
+    _resetToolState('studio'); _STUDIO.sessId=null;
   }catch(e){}
   try{
     S.memory=[]; S.convs=[]; S.cur=null; S.imgs=[]; S.vids=[]; S.att=null;

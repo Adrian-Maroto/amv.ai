@@ -5225,3 +5225,41 @@ The general rule: for any class of defect found more than twice by accident,
 stop fixing instances and go build the check that enumerates them. Three
 accidents is the signal that the instrument is missing, not that the code is
 unlucky.
+
+## 269. A reset written as a list of fields to clear will always drift
+
+Resetting Dev, Lab and Studio was a list of assignments naming the fields to
+clear. Fields added later were simply not on it, and nothing anywhere said so.
+Two defects came out of that gap and both reached a public URL.
+
+`deploySlug` survived a NEW SESSION. Deploying remembers a slug so re-deploying
+updates the same live page instead of minting another site. Build an app,
+publish it, press New session, build a different app, publish it - and the
+second silently replaced the first at its own address. Anyone holding that link
+got the wrong page.
+
+`lastHTML` survived a SIGN-OUT. `_devDeploy` falls back to it when the project
+is empty, so the next person to sign in on that browser could press Deploy on a
+blank screen and publish the PREVIOUS ACCOUNT'S work - to the previous account's
+slug, overwriting their site. The wipe function exists to prevent exactly this;
+its comment says so in as many words. It just did not know about the field.
+
+Both were found by enumerating what a reset leaves behind rather than by reading
+it: every field assigned anywhere on the three objects, minus every field the
+reset clears. Ten survived on Dev alone.
+
+The fix is not "add those two fields". It is inverting the statement: declare
+the DEFAULTS and restore them wholesale, so a field added tomorrow is cleared
+unless somebody deliberately adds it to a keep-list. The safe direction for a
+list to be incomplete is the one where the omission clears too much, not too
+little.
+
+The general rule: **a security boundary written as "these things must be
+cleared" is a list that will be incomplete. Write it as "these things survive"
+and let everything else fall on the safe side.** The same argument applies to
+allowlists over denylists, and it is the same reasoning - the failure mode of
+forgetting an entry should be restrictive, not permissive.
+
+And the guard for it enumerates rather than names: it fails on any field that is
+in neither list. Naming the two known leaks would have left the third to be
+found in production.
