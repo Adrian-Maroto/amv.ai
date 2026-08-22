@@ -5263,3 +5263,37 @@ forgetting an entry should be restrictive, not permissive.
 And the guard for it enumerates rather than names: it fails on any field that is
 in neither list. Naming the two known leaks would have left the third to be
 found in production.
+
+## 270. The safe path existed; it just was not the one the button used
+
+Ordinary sign-out left the next account on that browser holding the previous
+person's Google OAuth access token, the owner flag, and their credit balance.
+AMV reads that token to reach Gmail, Calendar and Drive, and the Integrations
+screen reads the same key to decide Google is connected - so the next account
+would have used it as their own.
+
+The striking part is that the correct list already existed. `eraseDeviceData`
+clears every one of those keys and its comment describes them exactly: "keys
+that live OUTSIDE the per-account namespace but are still personal to whoever
+was signed in". Somebody had thought this through completely.
+
+But that function is only reached by "Sign out AND ERASE", offered as the thing
+to use on a shared computer. The ordinary Sign out button - the one in the
+profile menu, the one people actually press - cleared four keys and stopped.
+
+So the defect was not missing knowledge. It was correct knowledge wired to the
+path nobody takes.
+
+Two things to carry forward:
+
+**When you find a well-reasoned safety routine, check what calls it.** A careful
+comment is evidence somebody understood the problem, not evidence the problem is
+handled. The gap between "we know" and "it runs" is invisible in review, because
+reading either function alone shows nothing wrong.
+
+**Most stored data was namespaced per account and therefore safe.** The leak was
+entirely in the deliberate exception list - the keys marked global on purpose.
+An exception list is where the next leak is, always, because it is the set of
+things somebody decided the general rule should not protect. It deserves an
+enumerating check, and it now has one: every unscoped key must be classified as
+personal-and-cleared or device-and-kept, so a new one cannot join silently.

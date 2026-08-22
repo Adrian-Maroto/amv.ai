@@ -87,6 +87,64 @@ section('Nothing of one account is left on S for the next one');
   ok(!ent.adminMoneyLeft, "and the owner's totals do not sit there afterwards", ent.adminMoneyLeft);
 }
 
+section('Signing out does not hand the next account your Google connection');
+{
+  /* Most stored data is namespaced per account, so it cannot cross. _GLOBAL_KEYS
+     is the deliberate exception for things belonging to the DEVICE - and several
+     of its entries belong to a PERSON. Ordinary sign-out left all of them.
+
+     Alice connects Google, signs out with the button in the profile menu, Bob
+     signs in on the same browser, and Bob had her Google ACCESS TOKEN - the key
+     AMV reads to reach Gmail, Calendar and Drive, and the same key the
+     Integrations screen reads to decide Google is connected. Also the owner flag
+     and her credit balance.
+
+     The list existed in eraseDeviceData, which even calls these keys "personal to
+     whoever was signed in" - but that path needs "Sign out AND ERASE", and the
+     ordinary button is the one people press. */
+  const lists = await page.evaluate(() => ({
+    clear: window._SIGNOUT_CLEAR_GLOBAL, device: window._DEVICE_GLOBAL_KEYS,
+  }));
+  ok(Array.isArray(lists.clear) && lists.clear.length > 0, 'the personal-key list is declared', lists.clear && lists.clear.length);
+
+  /* Every unscoped key must be classified as one or the other. A new global key
+     added later fails here until somebody decides which it is - which is the
+     only reason this was found, since nobody had a list of what leaks. */
+  /* Only real key names. The first version matched any quoted lowercase word,
+     and the match ran past the Set into _scopeKey below it, so the string
+     'guest' was reported as an unclassified storage key. */
+  const globals = (SRC.match(/const _GLOBAL_KEYS = new Set\(\[([\s\S]*?)\]\);/) || [])[1] || '';
+  const names = [...new Set([...globals.matchAll(/'(amv_[a-z_]+)'/g)].map(m => m[1]))];
+  ok(names.length > 10, 'the global key list was found', names.length);
+  const unclassified = names.filter(k => !lists.clear.includes(k) && !lists.device.includes(k));
+  ok(unclassified.length === 0,
+     'every unscoped key is either cleared on sign-out or declared a device setting',
+     unclassified.join(', ') + (unclassified.length ? ' - add to _SIGNOUT_CLEAR_GLOBAL or _DEVICE_GLOBAL_KEYS' : ''));
+
+  const out = await page.evaluate(async () => {
+    S.user = { name: 'Alice', email: 'alice@corp.com', ini: 'A' };
+    localStorage.setItem('amv_user', JSON.stringify(S.user));
+    saveStr('amv_gtoken', 'ya29.ALICE-PRIVATE-TOKEN');
+    saveStr('amv_gtoken_exp', String(Date.now() + 3600e3));
+    saveStr('amv_owner', '1');
+    saveStr('amv_credits', '250');
+    saveStr('amv_theme', 'dark');
+    const alice = { token: loadStr('amv_gtoken'), owner: loadStr('amv_owner'), credits: loadStr('amv_credits') };
+    signOut();
+    await new Promise(s => setTimeout(s, 250));
+    S.user = { name: 'Bob', email: 'bob@other.com', ini: 'B' };
+    localStorage.setItem('amv_user', JSON.stringify(S.user));
+    return { alice, bob: { token: loadStr('amv_gtoken'), owner: loadStr('amv_owner'),
+                           credits: loadStr('amv_credits'), theme: loadStr('amv_theme') } };
+  });
+  ok(out.alice.token.length > 0, 'Alice really had a Google token connected', out.alice.token.slice(0, 12));
+  ok(out.bob.token === '', 'and the next account does not get it', out.bob.token.slice(0, 24));
+  ok(out.bob.owner === '', 'nor the owner flag', out.bob.owner);
+  ok(out.bob.credits === '', 'nor the credit balance', out.bob.credits);
+  ok(out.bob.theme === 'dark',
+     'while the device\'s own settings are left alone, which is the point of the split', out.bob.theme);
+}
+
 section('A new session cannot publish the work the last one made');
 {
   const out = await page.evaluate(async () => {
