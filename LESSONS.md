@@ -5361,3 +5361,68 @@ nothing to press. It is now a card that names the tier and puts the plans one
 tap away, in all four places, and the e2e suite clicks that button and asserts
 it actually arrives - because a card that looks like a route and is not one is
 exactly the defect class above, wearing the fix as a disguise.
+
+## 272. Every limit in the Worker asked the same question, and it was the wrong half
+
+Looking for the next thing that costs money outside the token meter, I read the
+rate limits. There are a lot of them, they are careful, and they all ask one
+question: **how often may you do this.** Per actor. Not one of them asks how much
+somebody may be *sent*.
+
+That is the correct shape for cost, and for abuse of AMV. It is the wrong shape
+for abuse of a person, and email is the only thing in this product that leaves
+the building, lands somewhere we do not control, and arrives with our domain on
+it.
+
+What it permitted:
+
+- `marketMessage` is guarded at 300 messages a day and every one of them mails
+  the recipient. The guard does exactly what it says. The outcome is still three
+  hundred emails into one stranger's inbox in a day.
+- Team task assignment had no limit at all. Create, assign, delete, repeat.
+- An Ultra account may run 100 automations at a ten-minute interval, each able to
+  mail its result. Fourteen thousand emails a day, every one of them asked for.
+
+The first of those is the interesting one. **A working limit produced the abusive
+outcome**, because the limit and the harm were measured in different units. When
+I look at a guard now I ask not "is this enforced" but "is this counting the
+thing that hurts".
+
+The cap went where every send already passes, in the dimension nothing else
+covered, classed so a flood of one kind can never spend the budget another kind
+needs. Not because that is elegant, but because the failure it prevents is
+specific and bad: somebody floods you with task notifications, and the password
+reset you are waiting for is the one that gets refused.
+
+### The half that was a decision, not a fix
+
+When the counter cannot be reached, security and owner mail still goes and
+notification mail is held. The codebase's own stated principle argues the other
+way - "an unenforceable cap is not a cap" is written in `guardAction` and it is
+right. But a reset code that cannot be sent is somebody locked out of their
+account by our outage, with no 503 anywhere to tell them why. So the split is
+deliberate, written into the comment as a decision, and asserted in both
+directions rather than assumed. Sabotaging it either way - send everything, hold
+everything - fails three checks each time.
+
+### And a check that could not fail, again
+
+"One kind of mail cannot spend another kind's budget" passed when I deleted the
+budget entirely. Of course it did: with nothing refusing anything, the reset code
+goes out. The claim is only worth making once the flood has actually been
+stopped, so the section now asserts the flood hit its own ceiling first.
+
+That is the fourth or fifth time this session. The pattern is always the same
+shape: **a check whose success condition is also what "feature absent" looks
+like.** Before writing an assertion I should now ask what the world looks like
+with the feature deleted, and if the answer is "this still passes", the
+assertion is decoration.
+
+### One more scan that found four of six and looked clean
+
+The guard meant to stop a new sender joining uncapped walked the source with a
+single regex bracketing a whole call. Two of those argument lists run to a
+thousand characters of email body, so a bounded quantifier matched neither - and
+reported four senders, all correct, with nothing to flag. It now matches by
+position and takes a window forward. Same lesson as #266: the proxy is not the
+rule, and a source scan is nearly always a proxy.

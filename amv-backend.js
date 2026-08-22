@@ -2247,7 +2247,7 @@ async function _autoEmailResult(env, email, item, out){
     + 'Subject: ' + label + '\n\n' + out
     + '\n\nManage this recurring check in AMV -> Tasks.'
     + (appUrl ? '\n' + appUrl : '');
-  return _sendEmail(env, email, subject, html, text);
+  return _sendEmail(env, email, subject, html, text, 'auto');
 }
 
 /* A tick has to end. This is the wall-clock budget for one pass of the
@@ -2764,7 +2764,13 @@ async function runDueAutomations(env, atMs){
         if(level === 'require'){
           try{ await _enqueueApproval(env, email, item, out); }catch(e){ /* best-effort */ }
         } else if(item.notify === 'email' && env.EMAIL_API_KEY){
-          try{ await _autoEmailResult(env, email, item, out); }catch(e){ /* delivery is best-effort */ }
+          /* A refused send comes back FALSE, not as a throw. Dropping that on
+             the floor leaves somebody waiting on an email that is never coming,
+             next to a job showing green. The result itself is safe - it is in
+             the app - so this says which half arrived. */
+          let wentOut = false;
+          try{ wentOut = await _autoEmailResult(env, email, item, out); }catch(e){}
+          item.lastError = wentOut ? '' : 'The result is here in AMV. The email could not be delivered.';
         }
       }catch(e){
         const why = String(e.message||e).slice(0,200);
@@ -6546,20 +6552,29 @@ async function authResetCode(request, env) {
   /* Rate limit. Without this, anyone can hammer this endpoint and bomb a real
      person's inbox with reset codes, or burn through your email quota. Limited
      per-email, so one attacker can't lock out everyone. */
-  const rlKey = 'resetrl:' + email;
-  let rl = null;
-  try { rl = JSON.parse(await env.AMV_KV.get(rlKey) || 'null'); } catch (e) {}
-  const nowMs = Date.now();
-  if (rl && nowMs - rl.first < RESET_RL_WINDOW_MS && rl.n >= RESET_RL_MAX) {
+  /* THE LIMIT THAT A BURST WALKED THROUGH.
+
+     Read the count, compare it, write it back. Fifty requests arriving together
+     all read the same count, all decide they are under it, and all send - which
+     is the inbox bombing this limit exists to prevent, and the email bill with
+     it. The OTHER reset route, four hundred lines down, already uses the atomic
+     reserve for exactly this, with a comment saying why. One of the two copies
+     got the fix.
+
+     Reserved atomically now, in a fixed hour bucket rather than a window
+     starting at the first request. The difference is that a burst can straddle
+     a boundary and get two buckets' worth in a short span; that is the standard
+     trade for an operation that cannot race, and it is a far smaller hole than
+     the one it replaces. */
+  const rlBucket = Math.floor(Date.now() / RESET_RL_WINDOW_MS);
+  const rl = await counter(env, `resetcode:${email}:${rlBucket}`,
+                           { op: 'reserve', amount: 1, cap: RESET_RL_MAX, ttlMs: RESET_RL_WINDOW_MS * 2 });
+  if (!rl.allowed) {
     // Still 200 + ok:true - never reveal whether this address is registered.
-    audit(env, 'reset_rate_limited', { email });
-    return json({ ok: true, sent: false, emailConfigured, rateLimited: true });
+    audit(env, rl.unavailable ? 'reset_limit_unavailable' : 'reset_rate_limited', { email });
+    return json({ ok: true, sent: false, emailConfigured,
+                  rateLimited: !rl.unavailable, unavailable: !!rl.unavailable });
   }
-  await env.AMV_KV.put(rlKey,
-    JSON.stringify((rl && nowMs - rl.first < RESET_RL_WINDOW_MS)
-      ? { first: rl.first, n: rl.n + 1 }
-      : { first: nowMs, n: 1 }),
-    { expirationTtl: Math.ceil(RESET_RL_WINDOW_MS / 1000) });
 
   const acct = await DB.get(env, 'acct', email);
 
@@ -6676,7 +6691,7 @@ async function sendResetCodeEmail(env, to, code) {
     '<div style="margin:0 0 22px;padding:18px;background:#f6f7f9;border:1px solid #e6e8ec;border-radius:12px;text-align:center">' +
       '<span style="font-family:ui-monospace,Menlo,monospace;font-size:32px;font-weight:700;letter-spacing:9px;color:#111">' + code + '</span>' +
     '</div>';
-  return _sendEmail(env, to, 'Your AMV password reset code',
+  return _sendEmail_security(env, to, 'Your AMV password reset code',
     _emailShell('Your reset code',
       '<p style="margin:0 0 18px;font-size:14px;line-height:1.65;color:#555">Enter this code in AMV to set a new password. It expires in <b>15 minutes</b>.</p>' + bigCode,
       null,
@@ -17775,7 +17790,7 @@ async function _notifyNewMessage(env, { from, to, about }) {
   const link = appUrl ? appUrl + '?tab=market&inbox=1' : '';
   const who = _escHtml(String(from || 'Someone').slice(0, 60));
   const item = about ? _escHtml(String(about).slice(0, 80)) : '';
-  return _sendEmail(env, to, `${String(from || 'Someone').slice(0, 60)} sent you a message on AMV`,
+  return _sendEmail_message(env, to, `${String(from || 'Someone').slice(0, 60)} sent you a message on AMV`,
     _emailShell('You have a new message',
       `<p style="margin:0 0 18px;font-size:14px;line-height:1.65;color:#555"><b>${who}</b> sent you a message on AMV`
       + (item ? ` about <b>${item}</b>` : '') + '.</p>'
@@ -19126,7 +19141,7 @@ async function runWeeklyDigest(env) {
   try { prev = JSON.parse(await env.AMV_KV.get('digestsnap') || 'null'); } catch (e) { prev = null; }
 
   const d = _buildDigest(m, prev);
-  const ok = await _sendEmail(env, to, d.subject, d.html, d.text);
+  const ok = await _sendEmail(env, to, d.subject, d.html, d.text, 'owner');
   if (!ok) {
     /* Nothing was delivered, so two things must not happen: this snapshot must
        not become the baseline for a week the owner never saw - that would
@@ -19604,7 +19619,7 @@ async function authResetConfirm(request, env) {
 
 // Wire this to your email provider (Resend shown as an example).
 async function sendResetEmail(env, to, link) {
-  return _sendEmail(env, to, 'Reset your AMV password',
+  return _sendEmail_security(env, to, 'Reset your AMV password',
     _emailShell('Reset your password',
       `<p style="margin:0 0 22px;font-size:14px;line-height:1.65;color:#555">We received a request to reset your AMV password. Tap the button below to choose a new one. This link expires in <b>1 hour</b>.</p>`,
       { label: 'Reset my password', url: link },
@@ -19622,7 +19637,7 @@ async function sendTaskAssignedEmail(env, to, { assignerName, taskTitle, priorit
   const team = _escHtml(teamName || 'your team');
   const prio = priority && priority !== 'normal' ? ` <span style="font-size:11px;color:${priority==='high'?'#d23':'#888'};font-weight:600">(${_escHtml(priority)} priority)</span>` : '';
   const link = appUrl || '';
-  return _sendEmail(env, to, `${assignerName||'A teammate'} assigned you: ${taskTitle||'a task'}`,
+  return _sendEmail_task(env, to, `${assignerName||'A teammate'} assigned you: ${taskTitle||'a task'}`,
     _emailShell('You\u2019ve been assigned work',
       `<p style="margin:0 0 18px;font-size:14px;line-height:1.65;color:#555">${who} assigned you a task in <b>${team}</b> on AMV:</p>`+
       `<div style="background:#f6f6f9;border:1px solid #ececf3;border-radius:10px;padding:16px;margin:0 0 22px"><div style="font-size:15px;font-weight:600;color:#15131f">${safeTitle}${prio}</div></div>`,
@@ -19640,8 +19655,87 @@ async function sendTaskAssignedEmail(env, to, { assignerName, taskTitle, priorit
    in Resend, or their mail will not arrive. */
 const RESET_FROM_DEFAULT = 'AMV <onboarding@resend.dev>';
 
-async function _sendEmail(env, to, subject, html, text) {
+/* NOTHING CAPPED WHAT ONE PERSON COULD BE SENT.
+
+   Every rate limit in this file is per ACTOR - how often you may do a thing.
+   That is the right shape for cost, and for abuse of AMV. It is the wrong shape
+   for abuse of a PERSON, and email is the one thing here that leaves the
+   building and lands somewhere we do not control, on our domain, with our
+   reputation on it.
+
+   Three things were true at once:
+
+     marketMessage is guarded at 300 messages a day and every one of them mails
+     the recipient. The limit works exactly as written and the outcome is still
+     three hundred emails into one stranger's inbox in a day.
+
+     Team task assignment had no limit at all. Create, assign, delete, repeat.
+
+     An Ultra account may run 100 automations at a ten-minute interval, each
+     able to mail its result. That is fourteen thousand emails a day, all of
+     them asked for, none of them counted.
+
+   So the cap goes where every send already passes, in the dimension nothing
+   else covers: how much mail one ADDRESS can be sent in a day. Classed, and
+   each class holds its own budget, so a flood of task notifications can never
+   spend the one a password reset needs.
+
+   The numbers are backstops, not policy. `auto` sits well above a ten-minute
+   watch running all day (144) so the feature somebody paid for still works,
+   and well below the fan-out above.
+
+   When the counter cannot be reached, security and owner mail still goes and
+   notification mail is held. That is a deliberate split rather than one rule:
+   an unenforceable cap is not a cap, which argues for refusing - but a reset
+   code that cannot be sent is somebody locked out of their account by our
+   outage, and every actor-side limit is still in force underneath. The operator
+   is alerted either way. */
+const EMAIL_DAY_CAP = {
+  security: 10,   // reset codes and account security mail
+  owner:    14,   // the operator's own digests
+  message:  25,   // somebody messaged you on the marketplace
+  task:     25,   // work landed on you in a team
+  auto:    250,   // your own scheduled jobs, addressed to you, at your request
+  other:    25,
+};
+const EMAIL_SENDS_WITHOUT_A_COUNTER = { security: true, owner: true };
+
+async function _emailBudgetOk(env, cls, to) {
+  const cap = EMAIL_DAY_CAP[cls] || EMAIL_DAY_CAP.other;
+  const who = String(to || '').toLowerCase().trim();
+  if (!who) return false;
+  const r = await counter(env, `mailto:${cls}:${who}:${todayKey()}`,
+                          { op: 'reserve', amount: 1, cap, ttlMs: 86400000 * 2 });
+  if (r && r.unavailable) {
+    audit(env, 'email_budget_unavailable', { cls, to: who });
+    try {
+      await alertOnce(env, 'email_budget',
+        'The per-recipient email budget cannot be evaluated - the atomic counter is unavailable. ' +
+        'Security and owner mail is still going out; notification mail is being held.', 15);
+    } catch (e) { /* alerting must never break a send decision */ }
+    return !!EMAIL_SENDS_WITHOUT_A_COUNTER[cls];
+  }
+  if (!r || !r.allowed) {
+    audit(env, 'email_budget_block', { cls, cap, to: who });
+    return false;
+  }
+  return true;
+}
+
+/* Thin, named entry points for the sends whose argument lists span many lines.
+   The class is the first thing you read rather than a string trailing a
+   template-literal body twenty lines down, which is where a class gets pasted
+   wrong. */
+const _sendEmail_security = (env, ...a) => _sendEmailAs(env, 'security', a);
+const _sendEmail_message  = (env, ...a) => _sendEmailAs(env, 'message',  a);
+const _sendEmail_task     = (env, ...a) => _sendEmailAs(env, 'task',     a);
+function _sendEmailAs(env, cls, [to, subject, html, text]) {
+  return _sendEmail(env, to, subject, html, text, cls);
+}
+
+async function _sendEmail(env, to, subject, html, text, cls) {
   if (!env.EMAIL_API_KEY) return false;
+  if (!(await _emailBudgetOk(env, cls || 'other', to))) return false;
   const from = env.RESET_EMAIL_FROM || RESET_FROM_DEFAULT;
   try {
     const resp = await fetchDeadline('https://api.resend.com/emails', {
