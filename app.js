@@ -5575,6 +5575,30 @@ try{ window.stopGenerating=stopGenerating; }catch(e){}
    downstream tries to improve it. */
 function _saidPlainly(err){ try{ err._saidPlainly = true; }catch(e){} return err; }
 
+/* WHICH REFUSALS A PLAN ACTUALLY LIFTS, AND WHERE THAT IS DONE.
+
+   Every refusal in chat rendered the same card: a warning triangle, the
+   server's sentence, and a Retry button. For a provider hiccup that is exactly
+   right. For a plan limit it is wrong twice - it invites somebody to hammer a
+   decision that will not change, and the one thing it does not offer is the
+   thing the sentence just told them about.
+
+   The worst of them is `free_capacity`. The server says, honestly, "AMV is at
+   capacity for free accounts today. Paid plans are running normally." and the
+   only button offers to try the thing that will keep failing until tomorrow.
+
+   `global_cap` is deliberately NOT in this table. When the day's ceiling is
+   reached everybody is refused, paid included, so offering a plan there would
+   be selling a way past a door that is shut for everyone. Retry is the honest
+   answer to that one, and it keeps it. */
+const REFUSAL_LIFTED_BY = {
+  plan_required: 'plans', plan_limit: 'plans', job_limit: 'plans',
+  quota_day: 'plans', quota_month: 'plans', img_quota: 'plans',
+  free_capacity: 'plans', team_full: 'team',
+};
+function _refusalRoute(code){ return REFUSAL_LIFTED_BY[String(code || '')] || ''; }
+try{ window._refusalRoute = _refusalRoute; }catch(e){}
+
 async function _callAI(msgs, _opts) {
   _opts = _opts || {};
   /* The tool budget resets here rather than in sendMsg, because Regenerate,
@@ -5827,7 +5851,18 @@ async function _callAI(msgs, _opts) {
         /* Already turned into a sentence for a human, from the REAL status.
            Tagged so the handler below does not run it through the guesser a
            second time - see the comment there. */
-        throw _saidPlainly(new Error(fromAMV ? srvMsg : aegisErrorMessage(res.status, raw)));
+        /* The code travels with the sentence. Without it every refusal arrived
+           at the renderer as prose, so the only way to tell a plan limit from a
+           dropped connection was to match on wording - which is wrong the first
+           time the wording changes, and was already wrong for the four codes
+           nothing on the client had ever heard of. */
+        const _refusal = _saidPlainly(new Error(fromAMV ? srvMsg : aegisErrorMessage(res.status, raw)));
+        try{
+          if(srvCode) _refusal.code = srvCode;
+          if(err && err.minPlan) _refusal.minPlan = err.minPlan;
+          _refusal.status = res.status;
+        }catch(e){}
+        throw _refusal;
       }catch(fe){
         clearTimeout(_to);
         /* The user pressing Stop aborts this same controller, so an AbortError
@@ -6107,7 +6142,7 @@ async function _callAI(msgs, _opts) {
     _recordUsageOnce();   // record any tokens consumed before the failure
     _streamBubbleReset();
     // friendly inline error card with a Retry action
-    msgs[streamIdx]={r:'a',c:'',model:S.model,_error:friendly};
+    msgs[streamIdx]={r:'a',c:'',model:S.model,_error:friendly,_errCode:(e&&e.code)||''};
   }
   _recordUsageOnce();   // final safety net - never lose usage accounting
 
@@ -6314,6 +6349,7 @@ function bindChatEvents() {
     else if(action==='retry-ai') retryLastAI();
     else if(action==='speak') speakMessage(idx);
     else if(action==='quota-upgrade'){ setTab('plans'); }
+    else if(action==='seats-upgrade'){ setTab('team'); }
     else if(action==='quota-later'){ const m2=getMsgs(); if(m2[idx]&&m2[idx]._quota){ m2.splice(idx,1); setMsgs(m2); renderChatMsgs(); } }
   });
   on($('att-btn'),'click',()=>$('fi').click());
@@ -6725,9 +6761,21 @@ function renderChatMsgs() {
         '<div class="quota-actions"><button class="quota-upgrade" data-action="quota-upgrade" data-idx="'+i+'">Upgrade to '+nextPlan+'</button>'+
         '<button class="quota-later" data-action="quota-later" data-idx="'+i+'">I\u2019ll wait</button></div></div></div>';
     } else if(!isU && m._error){
-      content='<div class="ai-snag"><div class="ai-snag-row"><span class="ai-snag-ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg></span>'+
+      /* Retry is the right offer for a hiccup and the wrong one for a
+         decision. A refusal a plan lifts gets the plan instead. */
+      const _route=_refusalRoute(m._errCode);
+      const _act=_route==='plans'
+        ? '<button class="ai-snag-retry" data-action="quota-upgrade" type="button">See plans</button>'
+        : _route==='team'
+          ? '<button class="ai-snag-retry" data-action="seats-upgrade" type="button">Manage seats</button>'
+          : '<button class="ai-snag-retry" data-action="retry-ai" type="button">Retry</button>';
+      content='<div class="ai-snag'+(_route?' ai-snag-tier':'')+'"><div class="ai-snag-row"><span class="ai-snag-ic">'+
+        (_route
+          ? '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 15 9l7 .5-5.5 4.6L18.5 21 12 17.3 5.5 21l1.9-6.9L2 9.5 9 9z"/></svg>'
+          : '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>')+
+        '</span>'+
         '<span class="ai-snag-msg">'+escH(_aiFriendly(m._error))+'</span></div>'+
-        '<button class="ai-snag-retry" data-action="retry-ai" type="button">Retry</button></div>';
+        _act+'</div>';
     } else if(!isU && m._retrying){
       content='<div class="ai-retrying"><div class="dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div><span>'+escH(m._retrying)+'</span></div>';
     } else if(!isU && m.streaming && !(typeof m.c==='string' && m.c.length)){

@@ -9007,3 +9007,20 @@ body.light .fr-d{ color:#67656d; }
 .deploy-tier .btn{ font-size:var(--t-sm); }
 .dev-ai-embed{ margin-top:var(--sp-2); }
 .dev-ai-embed img,.dev-ai-embed iframe{ max-width:100%; border-radius:var(--r-sm); }
+
+/* ── LAYER A101: A DECISION IS NOT A HICCUP ───────────────────────────────
+   The chat error card answered every refusal with a warning triangle and a
+   Retry button. For a dropped connection that is right. For a plan limit it
+   invites somebody to hammer a decision that will not change, and withholds
+   the one thing the sentence just told them about. The worst case was the
+   server saying "AMV is at capacity for free accounts today - paid plans are
+   running normally" above a button offering to try again.
+
+   Same card, one step warmer, so it reads as a door rather than a fault: the
+   accent edge the tier cards use, and the accent on the button that leads
+   somewhere. Deliberately restrained - it is still the answer to something
+   that did not work. */
+.ai-snag-tier{ border-left:3px solid var(--accent); padding-left:var(--sp-3); }
+.ai-snag-tier .ai-snag-ic{ color:var(--accent); }
+.ai-snag-tier .ai-snag-retry{ border-color:var(--accent); color:var(--accent); }
+.ai-snag-tier .ai-snag-retry:hover{ background:var(--accent-soft); }
