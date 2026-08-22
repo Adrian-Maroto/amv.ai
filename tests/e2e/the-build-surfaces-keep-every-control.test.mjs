@@ -516,6 +516,77 @@ section('Checking a result at phone width works, on both surfaces (AMV-D007 step
      `${dev.phoneAfterRebuild} (phone was ${dev.phone}, full ${dev.full})`);
 }
 
+section('Every control on a Build surface actually does something');
+{
+  /* Four controls on these surfaces were found this session to be present,
+     correct, and inert: Lab's entry buttons died to a blur handler, the mode
+     switch sat behind a phone toolbar, View code vanished into a popup blocker,
+     and Studio's viewport switcher was defeated by a flex basis. All four
+     looked right in the markup. Three were found by accident while doing other
+     work, which is not a method.
+
+     So this clicks everything and asks whether ANYTHING observable changed -
+     the view, an overlay, a toast, the tab. It is deliberately a low bar: it
+     cannot tell right behaviour from wrong, only doing something from doing
+     nothing, and doing nothing silently is the failure that keeps recurring.
+
+     Inputs are fed first. "Does nothing when its box is empty" is not a defect;
+     "does nothing when you have given it what it needs" is, and that is the
+     path a person is actually on. */
+  const SKIP = ['studio-back', 'dev-new', 'lab-new', 'studio-export', 'studio-download',
+                'dev-download-proj', 'dev-deploy', 'lab-deploy', 'dev-open-ext', 'dev-tolab'];
+  const FEEDS = { 'studio-refine-go': 'studio-refine', 'dev-send': 'dev-msg',
+                  'lab-ask-go': 'lab-ask', 'lab-run': 'lab-code', 'lab-debug': 'lab-code' };
+  /* Forwards a click to a hidden <input type=file>, which opens a picker the
+     page cannot observe. Named rather than silently tolerated. */
+  const OPENS_A_FILE_PICKER = ['lab-upload-top', 'dev-add', 'dev-hero-add'];
+
+  const setups = {
+    'Studio canvas': `()=>{ setTab('studio'); _studioNewArtifact('T','page','b');
+        _studioSetHTML('<h1>hi</h1>','b'); _studioShowCanvas('b'); }`,
+    'Dev working': `()=>{ _DEV.log=[{role:'sys',text:'x'}]; _devSetFile('index.html','<h1>hi</h1>','html');
+        setTab('dev'); _devShowResult('<h1>hi</h1>','html',{html:'<h1>hi</h1>'}); }`,
+    'Lab loaded': `()=>{ _LAB.code='console.log(1)'; setTab('lab'); renderLabView(); }`,
+  };
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  for (const [label, setupSrc] of Object.entries(setups)) {
+    const dead = await page.evaluate(async ({ setupSrc, SKIP, FEEDS, PICKERS }) => {
+      const run = new Function('return (' + setupSrc + ')')();
+      const sig = () => {
+        const vc = document.getElementById('vc'), ovr = document.getElementById('ovr');
+        return JSON.stringify({ tab: S.tab, len: vc ? vc.innerHTML.length : 0,
+          ovr: ovr ? ovr.innerHTML.length : 0,
+          toasts: document.querySelectorAll('#toast-wrap > *').length,
+          cls: vc && vc.firstElementChild ? vc.firstElementChild.className : '' });
+      };
+      const nameOf = (b) => (b.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 24)
+        || b.getAttribute('aria-label') || b.getAttribute('title') || '';
+      const visible = () => [...document.querySelectorAll('#vc button')]
+        .filter(b => { const r = b.getBoundingClientRect(); return r.width > 1 && r.height > 1; });
+      run(); await new Promise(s => setTimeout(s, 500));
+      const wanted = visible().map(b => ({ id: b.id, label: nameOf(b) }));
+      const out = [];
+      for (const c of wanted) {
+        if (c.id && (SKIP.includes(c.id) || PICKERS.includes(c.id))) continue;
+        run(); await new Promise(s => setTimeout(s, 320));
+        const el = c.id ? document.getElementById(c.id) : visible().find(b => nameOf(b) === c.label);
+        if (!el) continue;
+        const feed = FEEDS[c.id];
+        if (feed) { const t = document.getElementById(feed);
+          if (t) { t.value = 'make the heading bigger'; t.dispatchEvent(new Event('input')); } }
+        await new Promise(s => setTimeout(s, 120));
+        const before = sig();
+        try { el.click(); } catch (e) { out.push((c.id || c.label) + ' threw ' + e.message); continue; }
+        await new Promise(s => setTimeout(s, 450));
+        if (sig() === before) out.push(c.id || '"' + c.label + '"');
+      }
+      return out;
+    }, { setupSrc, SKIP, FEEDS, PICKERS: OPENS_A_FILE_PICKER });
+    ok(dead.length === 0, `on ${label}, no control does nothing at all`, dead.join(', '));
+  }
+}
+
 ok(errors.length === 0, 'no console errors while opening every Build state', errors.slice(0, 3));
 await app.close();
 if (report('the-build-surfaces-keep-every-control') > 0) process.exitCode = 1;
