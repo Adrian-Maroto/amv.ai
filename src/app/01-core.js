@@ -166,6 +166,47 @@ function _scopeKey(k){
   if(who==='guest'){ try{ const u=JSON.parse(localStorage.getItem('amv_user')||'null'); if(u&&u.email) who=u.email.toLowerCase(); }catch(e){} }
   return 'u:'+who+'|'+k;
 }
+/* ONE WAY TO HAND SOMEBODY A FILE.
+
+   There were fourteen copies of this four-line dance across the app, and they
+   had drifted: three append the anchor to the document before clicking it and
+   the rest click a detached one. Studio's Download appends; Dev's did not.
+
+   Being straight about the evidence: a detached anchor downloads fine in
+   Chromium, which is the only engine testable here, so no failure was
+   REPRODUCED. Appending is the pattern browsers have historically required and
+   that every serious implementation still uses defensively, and it costs
+   nothing - the element is added and removed within one synchronous call and
+   never paints. So this is alignment on the safer of two behaviours, not a
+   verified bug fix, and it should not be read as one.
+
+   What IS certain is that fourteen copies of anything drift, and these already
+   had. AMV-D007 is about exactly that.
+
+   Converted so far: the Build surfaces (Studio and Dev), which is where the
+   divergence was found. The remaining sites - chat artifacts, activity log,
+   audit log, workspace exports, integrations - are catalogued in
+   docs/PLAN-D007-BUILD.md rather than changed in a commit about something else. */
+function amvDownload(filename, content, type){
+  try{
+    const blob = (content instanceof Blob) ? content : new Blob([content], { type: type || 'text/plain' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url;
+    a.download = filename || 'download.txt';
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    /* Revoked on a timer rather than immediately: some browsers read the blob
+       asynchronously after the click returns, and revoking too early gives an
+       empty file. */
+    setTimeout(() => { try{ URL.revokeObjectURL(url); }catch(e){} }, 2000);
+    return true;
+  }catch(e){ return false; }
+}
+try{ window.amvDownload = amvDownload; }catch(e){}
+
 // Detect a storage-quota failure across browsers (name varies by engine).
 function _isQuotaErr(e){
   return !!e && (e.name==='QuotaExceededError' || e.name==='NS_ERROR_DOM_QUOTA_REACHED' || e.code===22 || e.code===1014);

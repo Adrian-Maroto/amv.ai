@@ -413,7 +413,9 @@ function _studioShowCanvas(brief){
   _wireVpSwitch('studio-vp', ()=>$('studio-frame'));
   _studioRenderArtifacts();
 }
-function _studioDownload(a){ const blob=new Blob([a.html],{type:'text/html'}); const el=document.createElement('a'); el.href=URL.createObjectURL(blob); el.download=(a.name||'design').replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'.html'; document.body.appendChild(el); el.click(); document.body.removeChild(el); URL.revokeObjectURL(el.href); }
+function _studioDownload(a){
+  amvDownload((a.name||'design').replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'.html', a.html, 'text/html');
+}
 // artifacts strip - switch between designs in the project
 function _studioRenderArtifacts(){
   const el=$('studio-arts'); if(!el) return;
@@ -1184,18 +1186,15 @@ function _devDownloadProject(){
   try{
     if(paths.length===1){
       const p=paths[0], f=files[p];
-      const blob=new Blob([f.content||''],{type:'text/plain'});
-      const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=p.split('/').pop()||'file.txt'; a.click();
-      setTimeout(()=>URL.revokeObjectURL(a.href),2000);
-      toast('Downloaded '+a.download,'success',2500); return;
+      const name=p.split('/').pop()||'file.txt';
+      amvDownload(name, f.content||'', 'text/plain');
+      toast('Downloaded '+name,'success',2500); return;
     }
     // Multiple files: build a single self-describing bundle with clear separators.
     let bundle='/* AMV project export - '+paths.length+' files.\n';
     bundle+='   Each file is delimited by a ==== FILE: path ==== header. */\n\n';
     paths.forEach(p=>{ bundle+='/* ==== FILE: '+p+' ==== */\n'+(files[p].content||'')+'\n\n'; });
-    const blob=new Blob([bundle],{type:'text/plain'});
-    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='amv-project.txt'; a.click();
-    setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+    amvDownload('amv-project.txt', bundle, 'text/plain');
     toast('Downloaded project ('+paths.length+' files)','success',3000);
   }catch(e){ toast('Couldn\u2019t download the project.','error',3000); }
 }

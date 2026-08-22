@@ -166,6 +166,47 @@ function _scopeKey(k){
   if(who==='guest'){ try{ const u=JSON.parse(localStorage.getItem('amv_user')||'null'); if(u&&u.email) who=u.email.toLowerCase(); }catch(e){} }
   return 'u:'+who+'|'+k;
 }
+/* ONE WAY TO HAND SOMEBODY A FILE.
+
+   There were fourteen copies of this four-line dance across the app, and they
+   had drifted: three append the anchor to the document before clicking it and
+   the rest click a detached one. Studio's Download appends; Dev's did not.
+
+   Being straight about the evidence: a detached anchor downloads fine in
+   Chromium, which is the only engine testable here, so no failure was
+   REPRODUCED. Appending is the pattern browsers have historically required and
+   that every serious implementation still uses defensively, and it costs
+   nothing - the element is added and removed within one synchronous call and
+   never paints. So this is alignment on the safer of two behaviours, not a
+   verified bug fix, and it should not be read as one.
+
+   What IS certain is that fourteen copies of anything drift, and these already
+   had. AMV-D007 is about exactly that.
+
+   Converted so far: the Build surfaces (Studio and Dev), which is where the
+   divergence was found. The remaining sites - chat artifacts, activity log,
+   audit log, workspace exports, integrations - are catalogued in
+   docs/PLAN-D007-BUILD.md rather than changed in a commit about something else. */
+function amvDownload(filename, content, type){
+  try{
+    const blob = (content instanceof Blob) ? content : new Blob([content], { type: type || 'text/plain' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url;
+    a.download = filename || 'download.txt';
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    /* Revoked on a timer rather than immediately: some browsers read the blob
+       asynchronously after the click returns, and revoking too early gives an
+       empty file. */
+    setTimeout(() => { try{ URL.revokeObjectURL(url); }catch(e){} }, 2000);
+    return true;
+  }catch(e){ return false; }
+}
+try{ window.amvDownload = amvDownload; }catch(e){}
+
 // Detect a storage-quota failure across browsers (name varies by engine).
 function _isQuotaErr(e){
   return !!e && (e.name==='QuotaExceededError' || e.name==='NS_ERROR_DOM_QUOTA_REACHED' || e.code===22 || e.code===1014);
@@ -16244,7 +16285,9 @@ function _studioShowCanvas(brief){
   _wireVpSwitch('studio-vp', ()=>$('studio-frame'));
   _studioRenderArtifacts();
 }
-function _studioDownload(a){ const blob=new Blob([a.html],{type:'text/html'}); const el=document.createElement('a'); el.href=URL.createObjectURL(blob); el.download=(a.name||'design').replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'.html'; document.body.appendChild(el); el.click(); document.body.removeChild(el); URL.revokeObjectURL(el.href); }
+function _studioDownload(a){
+  amvDownload((a.name||'design').replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'.html', a.html, 'text/html');
+}
 // artifacts strip - switch between designs in the project
 function _studioRenderArtifacts(){
   const el=$('studio-arts'); if(!el) return;
@@ -17015,18 +17058,15 @@ function _devDownloadProject(){
   try{
     if(paths.length===1){
       const p=paths[0], f=files[p];
-      const blob=new Blob([f.content||''],{type:'text/plain'});
-      const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=p.split('/').pop()||'file.txt'; a.click();
-      setTimeout(()=>URL.revokeObjectURL(a.href),2000);
-      toast('Downloaded '+a.download,'success',2500); return;
+      const name=p.split('/').pop()||'file.txt';
+      amvDownload(name, f.content||'', 'text/plain');
+      toast('Downloaded '+name,'success',2500); return;
     }
     // Multiple files: build a single self-describing bundle with clear separators.
     let bundle='/* AMV project export - '+paths.length+' files.\n';
     bundle+='   Each file is delimited by a ==== FILE: path ==== header. */\n\n';
     paths.forEach(p=>{ bundle+='/* ==== FILE: '+p+' ==== */\n'+(files[p].content||'')+'\n\n'; });
-    const blob=new Blob([bundle],{type:'text/plain'});
-    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='amv-project.txt'; a.click();
-    setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+    amvDownload('amv-project.txt', bundle, 'text/plain');
     toast('Downloaded project ('+paths.length+' files)','success',3000);
   }catch(e){ toast('Couldn\u2019t download the project.','error',3000); }
 }
