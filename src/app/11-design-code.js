@@ -339,7 +339,7 @@ function renderDesignView(){
         <span class="dna-active-chip">${_DNA.colors.length} colors · ${escH(_DNA.themeFamily)} · ${escH(_DNA.theme)}</span>
       </div>
       <p class="dsn-dna-explain">Design DNA is your reusable style guide - set your colors, fonts, shapes and vibe once, and everything AMV designs follows it. Optional: skip it and AMV picks tasteful defaults.</p>
-      <div style="margin-top:12px;display:flex;height:22px;width:min(420px,80%);border-radius:7px;overflow:hidden;border:1px solid var(--hair)">${_DNA.colors.map(c2=>`<span style="flex:1;background:${c2.hex}"></span>`).join('')}</div>
+      <div style="margin-top:12px;display:flex;height:22px;width:min(420px,80%);border-radius:var(--r-sm);overflow:hidden;border:1px solid var(--hair)">${_DNA.colors.map(c2=>`<span style="flex:1;background:${c2.hex}"></span>`).join('')}</div>
     </section>
 
     <section class="dsn-starts">

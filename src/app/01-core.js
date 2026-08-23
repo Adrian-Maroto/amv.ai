@@ -938,7 +938,7 @@ function _avatarInner(email){
 // A complete round avatar element of a given pixel size.
 function _avatarHTML(email, size){
   size=size||32;
-  return '<div class="amv-av" style="width:'+size+'px;height:'+size+'px;border-radius:4px;overflow:hidden;flex-shrink:0;background:var(--accent)">'+_avatarInner(email)+'</div>';
+  return '<div class="amv-av" style="width:'+size+'px;height:'+size+'px;border-radius:var(--r-2xs);overflow:hidden;flex-shrink:0;background:var(--accent)">'+_avatarInner(email)+'</div>';
 }
 
 
@@ -1477,7 +1477,7 @@ function _showModalAsync({title, body, okText='OK', cancelText, placeholder, def
         '<button class="oc" id="modal-close" style="position:absolute;top:10px;right:10px">×</button>'+
         (title?'<h2 style="margin-bottom:10px">'+escH(title)+'</h2>':'')+
         '<div class="ob-sub" style="margin-bottom:16px;white-space:pre-wrap;line-height:1.5">'+escH(body)+'</div>'+
-        (placeholder!==undefined?'<input id="modal-input" type="text" value="'+escH(defaultValue||'')+'" placeholder="'+escH(placeholder||'')+'" style="width:100%;margin-bottom:16px;padding:12px;border-radius:12px;border:1px solid var(--bd);font-size:var(--t-base)">':'')+
+        (placeholder!==undefined?'<input id="modal-input" type="text" value="'+escH(defaultValue||'')+'" placeholder="'+escH(placeholder||'')+'" style="width:100%;margin-bottom:16px;padding:12px;border-radius:var(--r-lg);border:1px solid var(--bd);font-size:var(--t-base)">':'')+
         '<div style="display:flex;gap:10px;justify-content:flex-end">'+
           (cancelText?'<button class="btn bs" id="modal-cancel" style="padding:10px 16px;font-size:var(--t-base)">'+escH(cancelText)+'</button>':'')+
           '<button class="btn bp" id="modal-ok" style="padding:10px 16px;font-size:var(--t-base)">'+escH(okText)+'</button>'+ 

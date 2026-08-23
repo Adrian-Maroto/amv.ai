@@ -1359,7 +1359,7 @@ function addToProject(id){
   const ws=Array.isArray(S.workspaces)?S.workspaces:[];
   const r=$('ovr'); if(!r) return;
   const list = ws.length
-    ? ws.map(w=>'<button class="proj-pick" data-wid="'+w.id+'" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:11px 12px;border:1px solid var(--bd);background:var(--s2);border-radius:10px;color:var(--tx);cursor:pointer;margin-bottom:8px;font-size:var(--t-md)"><span style="font-size:var(--t-xl)">'+_safeIcon(w.icon||'\uD83D\uDCC1')+'</span>'+escH(w.name||'Project')+'</button>').join('')
+    ? ws.map(w=>'<button class="proj-pick" data-wid="'+w.id+'" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:11px 12px;border:1px solid var(--bd);background:var(--s2);border-radius:var(--r-md);color:var(--tx);cursor:pointer;margin-bottom:8px;font-size:var(--t-md)"><span style="font-size:var(--t-xl)">'+_safeIcon(w.icon||'\uD83D\uDCC1')+'</span>'+escH(w.name||'Project')+'</button>').join('')
     : '<p class="ob-sub">No projects yet. Create one in the Projects tab first.</p>';
   r.innerHTML=
     '<div class="ov" id="ap-bg"><div class="ob">'+

@@ -2601,7 +2601,7 @@ function loadImg(img){
     tries++;
     if(tries>MAX){
       _stopPhases();
-      if(ld) ld.innerHTML='<div class="ilt" style="text-align:center;padding:0 10px">Couldn\u2019t generate this one.<br><span style="font-size:var(--t-2xs);opacity:.6">The image service may be busy - try again in a moment.</span><br><button data-rimgid="'+img.id+'" class="retry-img-btn" style="background:var(--indigo);border:none;color:#fff;border-radius:5px;padding:5px 12px;cursor:pointer;font-family:var(--fn);font-size:var(--t-xs);margin-top:8px">Retry</button></div>';
+      if(ld) ld.innerHTML='<div class="ilt" style="text-align:center;padding:0 10px">Couldn\u2019t generate this one.<br><span style="font-size:var(--t-2xs);opacity:.6">The image service may be busy - try again in a moment.</span><br><button data-rimgid="'+img.id+'" class="retry-img-btn" style="background:var(--indigo);border:none;color:#fff;border-radius:var(--r-xs);padding:5px 12px;cursor:pointer;font-family:var(--fn);font-size:var(--t-xs);margin-top:8px">Retry</button></div>';
       // Wire retry button
       const retryBtn=ld.querySelector('.retry-img-btn');
       if(retryBtn) retryBtn.addEventListener('click',()=>resetImg(retryBtn.dataset.rimgid));

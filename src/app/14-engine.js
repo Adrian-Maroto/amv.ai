@@ -1010,7 +1010,7 @@ async function _labRun(){
     if(r.html){
       _labStat('\u2713 rendered','ok');
       const ifr=document.createElement('iframe');
-      ifr.sandbox='allow-scripts'; ifr.style.cssText='width:100%;height:100%;border:0;background:#fff;border-radius:8px';
+      ifr.sandbox='allow-scripts'; ifr.style.cssText='width:100%;height:100%;border:0;background:#fff;border-radius:var(--r-sm)';
       ifr.srcdoc=r.html;
       const b=$('lab-out-body'); if(b){ b.innerHTML=''; b.appendChild(ifr); }
     } else if(r.ok){
