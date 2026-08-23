@@ -246,13 +246,62 @@ big-bang rewrite.
    them. The fake window dots go - they are decoration on one surface out of
    three and they cost the bar its left slot.
 
-6. **Retire the three renderers**, and run the step-1 inventory to prove every
-   control still exists and still reaches the same function.
+6. **Retire the three renderers** - NOT DONE, on purpose, and here is the
+   measurement rather than the opinion.
 
-   Standing caveat, restated: the benefit of step 6 is tidiness. No control
-   moves, nothing a person can see changes. It is ~3,600 lines of renderer and
-   the inventory in step 1 exists precisely so it can be done safely - but if
-   anything ahead of it in the queue is user-visible, that goes first.
+   The three render functions are 48 lines (renderDesignView), 165
+   (renderCodeView) and 270 (renderLabView). Compared line by line after
+   normalising whitespace, they share **exactly one line of code between them**:
+
+       const vc=$('vc'); if(!vc) return;
+
+   Not "little duplication". One line. That is because steps 1 to 5 already
+   extracted everything shareable into `_buildEntryHeadHTML`, `_buildBarHTML`,
+   `_resultBarHTML`, `_ownedMarketHTML`, `_wireBuildModes`, `_wireVpSwitch` and
+   `_wireResultTabs`, and `renderBuildView` is already the dispatcher. What is
+   left in each is the markup that surface genuinely has and the others do not:
+   Studio's DNA hero, Dev's chat pane and preview, Lab's paste/upload entry,
+   editor and output.
+
+   Merging them means one larger function containing the same three mutually
+   exclusive branches, and losing the ability to say which surface broke. The
+   "~3,600 lines" this step was scoped against is the whole surface area of
+   `_studio*`, `_dev*` and `_lab*` helpers, not the renderers, and those helpers
+   do different jobs on different data.
+
+   The remaining duplication in the product is real but is app-wide rather than
+   Build-specific: one icon path appears ten times across every module, and the
+   textarea auto-grow idiom appears in seven. Extracting those is a cross-cutting
+   refactor of the whole app for cosmetic gain, on a product about to launch.
+
+   **The verification half of this step already exists and passes.**
+   `tests/e2e/the-build-surfaces-keep-every-control` is the step-1 inventory,
+   captured against the pre-merge build and driven through the real app: 90
+   checks, including the Studio canvas and all twelve Design DNA sections, plus
+   five controls that cannot be reached by driving and are checked against the
+   built bundle instead.
+
+   ### What reading them for that answer actually found
+
+   Three defects on the control that decides which engine each surface runs, all
+   of them user-visible, none of them tidiness:
+
+   - **Studio had no engine picker.** Every Studio call is sent with
+     `_sectionModel('design')`, and `_sectionModelSelect` had only ever been
+     called for `'code'` and `'debug'`. Nothing in the product could write
+     `amv_secmodel_design`. Studio had no "New session" either, while Dev and Lab
+     both did.
+   - **`auto` was clamped to the heaviest engine the plan allows.** `PLAN_TIERS`
+     lists engines and `auto` is not one, so `_planAllowedModel` treated it as
+     disallowed and walked `_BUILD_FALLBACK` from the top - Apex. The server has
+     routed `auto` for real since AMV-065, cheapest capable engine with the plan
+     ceiling applied server-side, and none of it was reachable.
+   - **Every engine was offered on every plan.** Picking Apex on Free selected
+     it, stored it, toasted it, and ran Core.
+
+   All three are fixed and locked by
+   `tests/e2e/the-engine-picker-keeps-its-word` (21 checks), each verified by
+   sabotage.
 
 ## What is deliberately deferred
 

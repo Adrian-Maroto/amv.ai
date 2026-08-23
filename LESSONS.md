@@ -5958,3 +5958,38 @@ check let something through.
 Same session, second time sabotage found the guard rather than the bug. It is
 cheap: commit first, break the line on purpose, run. If nothing fails, the guard
 is the thing that needs work.
+
+## 284. The tidiness task was hiding three real defects, and the tidying was wrong
+
+D007 step 6 was "retire the three renderers": ~3,600 lines, explicitly scoped as
+tidiness, "no control moves, nothing a person can see changes". The obvious way
+to do it is to start merging.
+
+Measured first instead. The three render functions are 48, 165 and 270 lines,
+and after normalising whitespace they share **exactly one line of code**:
+`const vc=$('vc'); if(!vc) return;`. Steps 1 to 5 had already extracted every
+shareable piece into helpers. Merging them would have produced one larger
+function with the same three branches and less ability to say which surface
+broke - a worse product, arrived at by following the plan.
+
+**A refactor written before the extraction work is a guess about what the code
+will look like afterwards.** Re-measure the duplication before merging anything;
+the number is cheap to get and it can say "already done" or "never was there".
+
+Then, reading the three for that measurement, the real findings turned up - and
+every one of them was on the same control:
+
+- Studio had no engine picker at all, while `_sectionModel('design')` was read
+  on every Studio call. Wired at the read end, unreachable at the write end.
+- `auto` was clamped to the HEAVIEST engine the plan allows, because PLAN_TIERS
+  lists engines and `auto` is not one, so "missing" was read as "not allowed".
+  The server had routed it properly for months.
+- Every engine was offered on every plan, selected fine, and silently ran a
+  cheaper one.
+
+Three defects, one control, three surfaces. The pattern this session keeps
+producing: **a control that reads correctly and does not do what it says.** It
+cannot be found by reading the renderer, only by driving it and comparing what
+the setting stores against what the request sends.
+
+The tidiness task was worth opening. It was not worth completing.
