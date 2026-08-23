@@ -126,6 +126,36 @@ section('The listing survives being read by another program');
      runs.map(r => r[r.length - 1]).join(' | '));
 }
 
+section('And so does the verdict every suite prints before it exits')
+{
+  /* THE BIGGER HALF, AND THE ONE THE FIRST VERSION OF THIS FILE MISSED.
+
+     Reverting the listing to console.log fails the section above. Reverting
+     tests/lib/assert.mjs to console.log failed nothing at all - and assert.mjs
+     is imported by every suite in the repository. `report()` prints "N passed,
+     0 failed" and `done()` calls process.exit on the next line, into the pipe
+     check.mjs is capturing. That line is what the gate reads to decide whether
+     the run passed.
+
+     A guard covering the small case and not the large one is worse than
+     honest: it certifies the class of bug as handled. */
+  const a = readFileSync(join(ROOT, 'tests', 'lib', 'assert.mjs'), 'utf8');
+  ok(/process\.exit\(/.test(a), 'the reporter does exit the process', true);
+  ok(!/console\.log\(/.test(a),
+     'and prints nothing with a call that exit can outrun', (a.match(/console\.log\([^)]{0,40}/) || [''])[0]);
+  ok(/from '\.\/say\.mjs'/.test(a),
+     'it writes through the one place that knows how', true);
+
+  /* Everything that prints and then exits into a pipe the gate reads. If a
+     fourth appears, it is named here or this fails. */
+  for (const f of ['tests/run.mjs', 'tests/lib/assert.mjs']) {
+    const src = readFileSync(join(ROOT, f), 'utf8');
+    const exits = /process\.exit\(/.test(src);
+    const logs  = /console\.log\(/.test(src);
+    ok(!(exits && logs), f + ' does not mix console.log with an exit', f);
+  }
+}
+
 section('No filter still means everything, which is what the gate uses');
 {
   const why = selFailed('');

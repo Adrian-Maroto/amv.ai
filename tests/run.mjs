@@ -9,6 +9,7 @@ import { readdirSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { say, sayLine } from './lib/say.mjs';
+const sayErr = (t) => sayLine(t, 2);
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..');
@@ -21,7 +22,7 @@ const flags = argv.filter(a => a.startsWith('--'));
 const filter = argv.find(a => !a.startsWith('--')) || '';
 
 if (!existsSync(join(ROOT, 'index.html'))) {
-  console.error('\x1b[31mindex.html not found. Run `node build.mjs` first.\x1b[0m');
+  sayErr('\x1b[31mindex.html not found. Run `node build.mjs` first.\x1b[0m');
   process.exit(1);
 }
 
@@ -56,7 +57,7 @@ for (const dir of DIRS) {
 }
 
 if (!suites.length) {
-  console.error(`No suites matched "${filter}"`);
+  sayErr(`No suites matched "${filter}"`);
   process.exit(1);
 }
 
@@ -88,11 +89,11 @@ if (flags.includes('--list')) {
 
 /* Say what was selected. A run that quietly covers one file looks exactly like
    a run that covers all of them once the output scrolls. */
-console.log(`\x1b[2mselected ${suites.length} suite(s)` +
+sayLine(`\x1b[2mselected ${suites.length} suite(s)` +
   (dirFilter ? ` in tests/${dirFilter}/` : nameFilter ? ` matching "${nameFilter}"` : ' (all)') + '\x1b[0m');
 
 const run = (s) => new Promise((resolve) => {
-  console.log(`\n\x1b[1m\x1b[36m━━━ ${s.name} ━━━\x1b[0m`);
+  sayLine(`\n\x1b[1m\x1b[36m━━━ ${s.name} ━━━\x1b[0m`);
   const p = spawn('node', [s.path], { stdio: 'inherit', cwd: ROOT });
   p.on('close', (code) => resolve({ name: s.name, code }));
 });
@@ -101,9 +102,9 @@ const results = [];
 for (const s of suites) results.push(await run(s));
 
 const failed = results.filter(r => r.code !== 0);
-console.log('\n\x1b[1m════════ SUMMARY ════════\x1b[0m');
+sayLine('\n\x1b[1m════════ SUMMARY ════════\x1b[0m');
 results.forEach(r => {
-  console.log(r.code === 0
+  sayLine(r.code === 0
     ? `  \x1b[32m✓ ${r.name}\x1b[0m`
     : `  \x1b[31m✗ ${r.name}\x1b[0m`);
 });
@@ -114,4 +115,4 @@ if (failed.length) {
   sayLine(`\n\x1b[31m${failed.length} suite(s) FAILED\x1b[0m`);
   process.exit(1);
 }
-console.log(`\n\x1b[32mAll ${results.length} suites passed\x1b[0m`);
+sayLine(`\n\x1b[32mAll ${results.length} suites passed\x1b[0m`);
