@@ -5734,3 +5734,56 @@ file twice already. What finally worked was not remembering harder: it was
 committing the fix the moment it passed, before touching anything else. That is
 the habit - **commit, then sabotage** - and it costs nothing when the fix is
 already right.
+
+## 279. Four times in one session, the instrument was the thing that was wrong
+
+Sweeping Settings for defects produced three findings in a row that were not
+findings, and a fourth earlier the same day. Each looked real until it was
+checked:
+
+- **"Eight inert controls on Appearance."** The sweep's signature watched the
+  pane's own HTML. Appearance's entire job is to change things OUTSIDE the pane -
+  the root font size, an accent variable, the language.
+- **"Nineteen inert language buttons."** The second sweep watched theme, accent
+  and font size. Not language. Clicking `Français` moves `_lang()` from `en` to
+  `fr`, writes storage and moves the selection. They were always live.
+- **"The API keys pane overflows by 40px on a phone."** A `<code>` inside a
+  `<pre>` carrying `overflow-x:auto`. A code block scrolling inside itself is
+  correct behaviour and fails "is any element wider than its container" every
+  single time. The page never scrolled.
+- **"A phantom settings pane with no id."** `{group:''}` is a deliberate divider
+  and the renderer reads it with `!== undefined`, correctly. My parser treated
+  the empty string as falsy and invented the row.
+
+Every one is the same defect in the measurement: **the instrument measured a
+proxy, and the proxy was not the rule.**
+
+- The rule is "the page must not scroll sideways." Not "no element exceeds its
+  parent."
+- The rule is "clicking this changes something a person can perceive." Not "the
+  pane's innerHTML got longer."
+- The rule is "this entry has no id." Not "this entry is falsy."
+
+### Why this keeps happening to me specifically
+
+A proxy is what you reach for when the real rule is expensive to observe.
+"Did anything a human could notice change?" has no API; `innerHTML.length` does.
+So the proxy is not a mistake of carelessness - it is the only thing that was
+easy to write, and it works often enough to feel proven.
+
+The tell is a sweep reporting a defect on a surface whose *purpose* is the thing
+the sweep cannot see. Appearance changes the document, not the pane. That should
+have been the first thought, not the third.
+
+### The rule I am taking from it
+
+**Before believing a sweep, sabotage it in reverse: make the product correct in
+a way the sweep would call broken, and see if it still complains.** Clicking a
+language button is correct behaviour; if the sweep flags it, the sweep is wrong.
+That check costs one run and would have caught all four.
+
+And the cheaper habit: when a sweep finds something, **verify the single case by
+hand before writing it down.** Three of these four died in under a minute of
+direct checking. The cost of not doing it is not just wasted time - it is a
+plan document, a commit message and a finding list that all confidently describe
+a defect that was never there.
