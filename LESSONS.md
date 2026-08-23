@@ -5830,3 +5830,37 @@ been right twice is the one to test hardest, not the one to trust.**
 
 The note has been extended so the next sweep finds the decision before it finds
 the numbers.
+
+## 281. I ran the suites I could think of, and CI found the one I could not
+
+AMV-D009 folded Invite into Team - it was 180 characters and zero controls, a
+button on the Team pane that had been given its own address. I ran the suites I
+believed depended on the settings navigation: `settings`, `account-access`,
+`a-screen-explains-itself`, `one-price-everywhere`. All green. Pushed.
+
+CI failed on `invite.test.mjs`:
+
+    ✗ Invite is in the settings navigation
+
+Its check was `nav.includes('invite')` - a top-level row I had deliberately
+removed. The section is titled *"The screen is reachable"*, so the intent
+survived and only the mechanism changed, and it now renders the screen from its
+own address instead. That is the stronger check anyway: **a nav row can exist
+and lead nowhere.**
+
+### The actual mistake, which was not the test
+
+`grep -rl "sn-btn" tests/` returns **seventeen** suites that touch the settings
+navigation. I had run four, chosen by thinking about which ones felt related.
+Invite did not feel related to a settings-navigation change, which is exactly
+why it was the one that broke.
+
+**When you change a shared structure, grep for the structure to find its
+dependents. Do not enumerate them from memory.** The structure has a name in the
+source - a class, an id, a constant - and that name is searchable. My intuition
+about which suites care is worth nothing against a two-second grep, and it was
+wrong in the specific way that costs a CI cycle.
+
+This generalises past tests: the same grep answers "what else reads this?" for
+any shared thing, which is #275 and #276 wearing different clothes. The habit is
+one line: **before you push a change to something shared, grep for its name.**
