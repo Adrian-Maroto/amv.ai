@@ -6064,3 +6064,36 @@ assert run first and the write run last.** Check the exit status, not the last
 line of output - and when a fix defines something per theme, verify every theme
 resolves it, because "defined" is not a property of the stylesheet, it is a
 property of the theme you are in.
+
+## 287. Zero is a different kind of finding from "not enough"
+
+Swept the product for live regions expecting to tune a few. There were **none**.
+Every toast, every status change, every streamed answer: the page changed and
+nothing announced it. A screen reader user had no way to know their message had
+sent or an answer had arrived.
+
+**A count of zero usually means the feature was never considered, not that it was
+considered and done badly.** That is worth separating, because the two need
+different work: tuning takes judgement about thresholds, and zero takes a
+decision about what the thing should do at all. The same sweep found the settings
+pane title was a `<div>` - not a wrong heading level, no heading - and the engine
+pickers had no accessible name at all rather than a poor one.
+
+Three specifics worth keeping, because each is a way to ship a live region that
+does nothing:
+
+- **`display:none` is not announced.** A hidden region has to be moved off-screen,
+  not removed from the box tree. Sabotaging this was the fastest of the three
+  checks to write and the likeliest mistake to make.
+- **Assigning the same string twice is not a change.** A repeated message
+  ("Copied", "Copied") announces once and then never again. Clear, then set on
+  the next frame.
+- **A stream must not be a live region.** It would read every partial token
+  aloud. Announce the start and the finish instead - and do it from the render
+  function, not the completion paths, because there were four of those (finished,
+  stopped, interrupted, retried) and hooking each is how you miss the fifth.
+
+The new test's own heading check then failed, and the finding was mine: the
+section above it left a conversation in state, which replaces chat's home screen
+where its `h1` lives. **A test that drives the app is a test that mutates it.**
+Reset what you changed before measuring something else.
