@@ -5,9 +5,10 @@
      node tests/run.mjs security   # only suites matching "security"
 */
 import { spawn } from 'child_process';
-import { readdirSync, existsSync, writeSync } from 'fs';
+import { readdirSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { say, sayLine } from './lib/say.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..');
@@ -81,17 +82,6 @@ if (flags.includes('--list')) {
      The identical defect was fixed in check.mjs earlier, with a test that
      pushes 4MB through a real pipe to prove it. That fix went to the one
      caller I was looking at. This is the other one. */
-  const say = (t) => {
-    const buf = Buffer.from(t, 'utf8');
-    let off = 0;
-    while (off < buf.length) {
-      try { off += writeSync(1, buf, off, buf.length - off); }
-      catch (err) {
-        if (err && (err.code === 'EAGAIN' || err.code === 'EINTR')) continue;
-        return;
-      }
-    }
-  };
   say(suites.map(s => s.name).join('\n') + '\n');
   process.exit(0);
 }
@@ -119,7 +109,9 @@ results.forEach(r => {
 });
 
 if (failed.length) {
-  console.log(`\n\x1b[31m${failed.length} suite(s) FAILED\x1b[0m`);
+  /* Written synchronously: this line is immediately followed by an exit, and
+     it is the line check.mjs reads to say WHICH suites failed. */
+  sayLine(`\n\x1b[31m${failed.length} suite(s) FAILED\x1b[0m`);
   process.exit(1);
 }
 console.log(`\n\x1b[32mAll ${results.length} suites passed\x1b[0m`);

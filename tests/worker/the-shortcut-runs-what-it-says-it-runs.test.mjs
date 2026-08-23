@@ -95,8 +95,20 @@ section('The listing survives being read by another program');
   ok(listBlock.length > 0, 'the listing branch was found', listBlock.length);
   ok(!/console\.log\(/.test(listBlock),
      'the listing is not written with a call process.exit can outrun', listBlock.slice(0, 80));
-  ok(/writeSync\(/.test(listBlock),
-     'it is written synchronously, so the tail cannot be lost to a pipe', true);
+  /* The PROPERTY, not one spelling of it. The first version of this looked for
+     `writeSync` in the block, which stopped being true the moment the writer
+     moved into a shared module - a guard failing because the code got better is
+     a guard testing the wrong thing. It asks whether the listing goes through a
+     writer that is synchronous, and follows it to where that is decided. */
+  const writer = (listBlock.match(/\b(say|sayLine)\s*\(/) || [])[1];
+  ok(!!writer, 'the listing goes through a named writer', writer || '(none)');
+  ok(new RegExp("import[^;]*\\b" + writer + "\\b[^;]*from '\\./lib/say\\.mjs'").test(runner),
+     'imported from the one place that knows how to write before an exit', true);
+  const sayer = readFileSync(join(ROOT, 'tests', 'lib', 'say.mjs'), 'utf8');
+  ok(/writeSync\(/.test(sayer) && !/console\.log\(/.test(sayer),
+     'and that place writes synchronously, so the tail cannot be lost to a pipe', true);
+  ok(/EAGAIN/.test(sayer) && /EINTR/.test(sayer),
+     'retrying the two conditions that are a full pipe rather than a failure', true);
 
   const N = 6;
   const runs = [];
