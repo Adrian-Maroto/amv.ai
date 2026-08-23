@@ -5787,3 +5787,46 @@ hand before writing it down.** Three of these four died in under a minute of
 direct checking. The cost of not doing it is not just wasted time - it is a
 plan document, a commit message and a finding list that all confidently describe
 a defect that was never there.
+
+## 280. I swept, found fifty-six defects, and the answer was already in the file
+
+A phone sweep of all fourteen tabs found 56 controls between 32px and 38px,
+against the 40px this codebase's own tap-target rule applies. It looked like the
+same defect I had just fixed twice - a correct rule applied to a hand-written
+list of seven classes instead of to what a control *is*. I wrote the layer that
+applies it properly.
+
+Then I went looking for why it had not taken effect, and found this, three
+layers up in the same file:
+
+> Measured against the AA rule that actually applies, mobile has ZERO controls
+> under 24px - it already passes. Raising 41 mobile controls to 44px would
+> reflow most of the phone layout to clear a bar the product is not held to, so
+> it is written down as a comfort improvement rather than done quietly as a
+> correctness fix.
+
+The decision had already been made, the measurement had already been taken, the
+reasoning was sound, and my layer was doing the precise thing that note says not
+to do: quietly reflowing the phone layout across seven tabs.
+
+**This is a different failure from #279.** There the instrument was wrong. Here
+the instrument was RIGHT - 56 controls really are under 40px - and the
+conclusion was wrong, because a measurement is not a finding until you know
+whether somebody already looked.
+
+### The check that would have caught it in ten seconds
+
+Before acting on a sweep: **grep the codebase for the thing you measured.** Not
+for the defect - for the DECISION. `grep -n "24px" styles.css` would have landed
+on that comment immediately. Numbers I am about to change have usually been
+thought about by somebody, and in this codebase that somebody wrote it down.
+
+### And the reason it nearly shipped
+
+The pattern-matching was good and that is exactly what made it dangerous. I had
+just fixed two real instances of "a correct rule applied to an enumerated list",
+so the third looked confirmed before it was checked. **A hypothesis that has
+been right twice is the one to test hardest, not the one to trust.**
+
+The note has been extended so the next sweep finds the decision before it finds
+the numbers.

@@ -8765,7 +8765,18 @@ body.light .fr-d{ color:#67656d; }
    as a correctness fix.
 
    Height only. These chips sit in wrapping rows where forcing a min-width would
-   stretch short labels like "1:1" into odd wide boxes. */
+   stretch short labels like "1:1" into odd wide boxes.
+
+   RE-SWEPT 2026-08-23 and the decision stands. Fourteen tabs at 390px: 56
+   controls sit between 32px and 38px - image styles, Crew filters, Help topics,
+   Lab actions, Marketplace report links, ratio chips. Every one clears the 24px
+   AA rule; none clears the 40px this file's other tap-target rule applies to a
+   named list of seven classes.
+
+   That inconsistency is real and it is deliberate, and it is recorded HERE so
+   the next sweep finds the decision before it finds the numbers. Raising them
+   is a visual change across half the product's screens, not a correctness fix,
+   and it needs the owner rather than a quiet layer. */
 .stb,.rab{ min-height:24px; display:inline-flex; align-items:center; }
 
 /* ── LAYER A88 note: WHY THERE IS NO `transition: all` IN THIS FILE ───────
