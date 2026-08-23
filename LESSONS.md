@@ -5864,3 +5864,51 @@ wrong in the specific way that costs a CI cycle.
 This generalises past tests: the same grep answers "what else reads this?" for
 any shared thing, which is #275 and #276 wearing different clothes. The habit is
 one line: **before you push a change to something shared, grep for its name.**
+
+## 282. The consistency finding was an accessibility bug wearing a costume
+
+The audit lists "72 distinct font sizes, hardcoded colour and stacking values"
+as a design-system consistency problem, and the earlier note in this repo agrees
+with it - migrating is "mechanical but NOT invisible", worth doing "screen by
+screen". Reasonable, and it made the work sound like tidying, which is why it
+sat behind four other things.
+
+Then I read what the tokens actually are:
+
+    --fs-s: var(--fs-scale, 1);
+    --t-xs: calc(11px * var(--fs-s));
+
+`--fs-scale` is what the **text size setting** writes. So the 1,197 hardcoded
+`font-size` declarations were not merely inconsistent - every one of them was a
+piece of text that ignores the reader's stated preference.
+
+Measured: 597 visible text elements across eight tabs, and choosing "Largest"
+moved **74 of them. Twelve percent.** The product shipped an accessibility
+control that did essentially nothing, and it did not look broken, because
+something moved.
+
+### The lesson is about how the finding was framed
+
+Somebody wrote it down as consistency. The earlier note in this file accepted
+that framing and reasoned carefully within it. I nearly did the same - the plan
+I wrote that morning called it "not tidying" only because I happened to read the
+`calc()` on the way past.
+
+**A finding's category is somebody's guess, and it is usually the guess of
+whoever noticed the symptom rather than the cause.** Before scheduling work by
+its stated severity, spend a minute on what the thing actually connects to. This
+one moved from "P3 consistency, do it screen by screen when there is time" to
+"an accessibility feature does not work" on the strength of one variable
+reference.
+
+### And the proof mattered as much as the fix
+
+511 of the rules used sizes that are exact steps on the scale, so they could be
+tokenised with no visual change at all. That is a claim worth proving rather
+than asserting: 740 text elements across fourteen tabs, before and after, **zero
+changed** - while the setting went from moving 12% of the text to 42%.
+
+The check that guards it does NOT count how many rules use a token. That would
+be a proxy, and proxies produced four false findings in this session. It asserts
+what the setting is for: a larger size makes the text larger on a real page, and
+nothing falls off the screen.
