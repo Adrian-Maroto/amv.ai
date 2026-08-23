@@ -494,7 +494,7 @@ async function _mktSellerProfile(sellerEmail, sellerName){
     r.innerHTML='<div class="ov" id="mkt-sp-bg"><div class="ob" style="max-width:560px">'+
       '<button class="oc" data-dact="closeOvr">\u00d7</button>'+
       '<div class="mkt-sp-head">'+_avatarHTML('amv',64)+
-        '<div style="flex:1"><h2 style="margin:0 0 3px">AMV <span style="font-size:var(--t-sm);color:var(--accent);vertical-align:middle">\u2713 Official</span></h2>'+
+        '<div style="flex:1"><h2 style="margin:0 0 3px">AMV <span style="font-size:var(--t-sm);color:var(--accent-txt);vertical-align:middle">\u2713 Official</span></h2>'+
           '<div style="font-size:var(--t-sm);color:var(--mu)">First-party tools, prompts and crews built by the AMV team.</div>'+
           '<div style="font-size:var(--t-sm);color:var(--mu);margin-top:4px">'+theirs.length+' official listing'+(theirs.length===1?'':'s')+'</div>'+
           '<button class="btn bp" id="mkt-sp-msg" style="font-size:var(--t-sm);margin-top:10px">\uD83D\uDCAC Contact AMV support</button>'+
@@ -1270,8 +1270,8 @@ function renderMemoryView(){
       (S.memory.length?'<button class="btn bd2" id="mem-clr" style="align-self:flex-start;font-size:var(--t-sm)">Clear All Memories</button>':'')+
       '<div class="ss2 ds-note">'+
         '<h3>How Memory Works</h3>'+
-        '<p style="font-size:var(--t-sm);color:var(--t2);line-height:1.65">Memories you add here are automatically included in every conversation with AMV, allowing for more personalized and contextual responses. Add facts about yourself, your preferences, your work, or anything you want AMV to always know.</p>'+
-        '<div style="margin-top:9px;font-size:var(--t-sm);color:var(--t2)">Examples:'+
+        '<p style="font-size:var(--t-sm);color:var(--mu);line-height:1.65">Memories you add here are automatically included in every conversation with AMV, allowing for more personalized and contextual responses. Add facts about yourself, your preferences, your work, or anything you want AMV to always know.</p>'+
+        '<div style="margin-top:9px;font-size:var(--t-sm);color:var(--mu)">Examples:'+
           '<div style="display:flex;flex-direction:column;gap:3px;margin-top:5px">'+
             '<span style="color:var(--tx)">• "I am a software engineer who works with Python and React"</span>'+
             '<span style="color:var(--tx)">• "I prefer concise, direct answers without unnecessary preamble"</span>'+
@@ -1636,7 +1636,7 @@ function _usageContentHTML(){
         '<span>'+us.used.toLocaleString()+' / '+us.cap.toLocaleString()+' used this window</span>'+
         '<span>'+us.reqs+' request'+(us.reqs===1?'':'s')+' &middot; resets every '+us.windowHours+'h</span>'+
       '</div>'+
-      (us.pct>=90?'<div class="usage-warn">You\u2019re nearly out for this window. It refreshes in '+AMVUsage.resetLabel()+', or <a data-stab="plans" style="color:var(--accent);cursor:pointer">upgrade for more &rarr;</a></div>':'')+
+      (us.pct>=90?'<div class="usage-warn">You\u2019re nearly out for this window. It refreshes in '+AMVUsage.resetLabel()+', or <a data-stab="plans" style="color:var(--accent-txt);cursor:pointer">upgrade for more &rarr;</a></div>':'')+
       '<p class="usage-note">Your usage refreshes on a rolling '+us.windowHours+'-hour window - no daily lockout. Heavier plans get a bigger allowance per window.</p>'+
     '</div>';
   // --- 14-day activity trend chart ---
@@ -1732,11 +1732,11 @@ function _paintServerUsage(){
             : ''))+
       (bonus > 0
         ? '<div class="srv-bonus">Includes <b>+'+n(bonus)+'</b> bonus tokens from invites you have earned. '+
-          '<a data-sp-go="invite" style="color:var(--accent);cursor:pointer">See your invites &rarr;</a></div>'
+          '<a data-sp-go="invite" style="color:var(--accent-txt);cursor:pointer">See your invites &rarr;</a></div>'
         : '')+
       (d.shared && d.shared.team
         ? '<div class="srv-bonus">These numbers are your <b>whole team</b>, not just you - one subscription is one allowance, '+
-          'however many people are on it. <a data-sp-team="1" style="color:var(--accent);cursor:pointer">Open Team &rarr;</a></div>'
+          'however many people are on it. <a data-sp-team="1" style="color:var(--accent-txt);cursor:pointer">Open Team &rarr;</a></div>'
         : '')+
       '<p class="srv-note">Your plan is '+escH(String(d.plan||'free'))+'. Daily and monthly allowances are separate: running out today does not spend your month.</p>';
     const go = host.querySelector('[data-sp-go]');

@@ -108,7 +108,7 @@ function renderTeamView(){
     '<div class="ss2" style="background:rgba(85,144,255,.06);border-color:rgba(85,144,255,.22)">'+
       '<h3>Which plan do I need?</h3>'+
       '<p style="font-size:var(--t-base);color:var(--tx);line-height:1.7;margin:0 0 4px">'+
-        'Teams unlocks on the <b style="color:var(--accent)">'+teamPlan.name+' plan ($'+teamPlan.price+'/month)</b> and above. '+
+        'Teams unlocks on the <b style="color:var(--accent-txt)">'+teamPlan.name+' plan ($'+teamPlan.price+'/month)</b> and above. '+
         'One Elite (or Ultra) subscription covers your shared workspace, roles, and team memory. '+
         'A <b>Custom plan</b> sized at the Elite tier or above also unlocks Teams.'+
       '</p>'+
@@ -117,7 +117,7 @@ function renderTeamView(){
         'You\u2019re currently on <b style="color:var(--tx)">'+planName+'</b>.'+
       '</p>'+
       (hasTeamPlan
-        ? '<div style="font-size:var(--t-base);color:#4ade80;font-weight:600">\u2713 Your '+planName+' plan includes Teams - create yours below.</div>'
+        ? '<div style="font-size:var(--t-base);color:var(--grn-txt);font-weight:600">\u2713 Your '+planName+' plan includes Teams - create yours below.</div>'
         : '<button class="btn bp" data-stab="plans" style="font-size:var(--t-sm)">Upgrade to '+teamPlan.name+' &rarr;</button>')+
     '</div>';
 
@@ -253,7 +253,7 @@ function _renderTeamSettingsPane(pane){
         '<div class="set-fact"><div class="set-fact-k">Members</div><div class="set-fact-v">'+seats.used+'</div></div>'+
         '<div class="set-fact"><div class="set-fact-k">Seats</div><div class="set-fact-v">'+seats.limit+'</div></div>'+
         '<div class="set-fact"><div class="set-fact-k">Free seats</div><div class="set-fact-v">'+Math.max(0,seats.limit-seats.used)+'</div>'+
-          (seats.over>0?'<div class="set-fact-s" style="color:var(--gold)">'+seats.over+' over your plan</div>':'')+'</div>'+
+          (seats.over>0?'<div class="set-fact-s" style="color:var(--gold-txt)">'+seats.over+' over your plan</div>':'')+'</div>'+
       '</div>'+
       '<button class="btn bs" data-stab="team" style="font-size:var(--t-sm);margin-top:14px">Manage the team \u2192</button>'+
     '</div>'
@@ -317,7 +317,7 @@ function _renderTeamManage(vc, team){
   const seatPrice=((typeof PLANS!=='undefined'&&PLANS.team)||{price:20}).price;
   const seatNote=seats
     ? '<p class="vsub">'+seats.used+' of '+seats.limit+' seat'+(seats.limit===1?'':'s')+' used'+
-      (over>0?' \u00b7 <b style="color:var(--gold)">'+over+' over your plan</b>':'')+
+      (over>0?' \u00b7 <b style="color:var(--gold-txt)">'+over+' over your plan</b>':'')+
       ' \u00b7 '+(onSeatPlan
         ? 'every seat adds its own allowance to the shared pool.'
         : 'everyone shares one allowance.')+'</p>'
@@ -346,7 +346,7 @@ function _renderTeamManage(vc, team){
       '</div>'
     : '';
   const overBanner=over>0
-    ? '<div class="ss2" style="border-color:var(--gold);background:rgba(245,158,11,.07)">'+
+    ? '<div class="ss2" style="border-color:var(--gold-txt);background:rgba(245,158,11,.07)">'+
       '<h3>'+over+' '+(over===1?'person is':'people are')+' not covered by your plan</h3>'+
       '<p style="font-size:var(--t-base);color:var(--tx);line-height:1.6;margin:0 0 10px">'+
       'Your plan includes '+seats.limit+' seat'+(seats.limit===1?'':'s')+' and the team has '+seats.used+' member'+(seats.used===1?'':'s')+'. '+
@@ -358,7 +358,7 @@ function _renderTeamManage(vc, team){
     : '';
   const memberRows=(team.members||[]).map(m=>
     '<div class="vrow"><span>'+escH(m.email)+(m.email===myEmail?' <span style="color:var(--mu)">(you)</span>':'')+
-    (m.seated===false?' <span class="team-role" style="background:rgba(245,158,11,.14);color:var(--gold)">no seat</span>':'')+'</span>'+
+    (m.seated===false?' <span class="team-role" style="background:rgba(245,158,11,.14);color:var(--gold-txt)">no seat</span>':'')+'</span>'+
     '<span style="display:flex;align-items:center;gap:10px"><span class="team-role team-role-'+m.role+'">'+m.role+'</span>'+
     // owner can promote/demote anyone who isn't the owner
     (isOwner&&m.role!=='owner'?'<button class="btn bs team-role-btn" data-team-setrole="'+escH(m.email)+'" data-team-newrole="'+(m.role==='admin'?'member':'admin')+'" style="font-size:var(--t-2xs);padding:3px 8px">'+(m.role==='admin'?'Make member':'Make admin')+'</button>':'')+
@@ -391,7 +391,7 @@ function _renderTeamManage(vc, team){
     (isOwner?'':'<div class="ss2"><h3>Leave this team</h3>'+
       '<p style="font-size:var(--t-sm);color:var(--mu);line-height:1.6;margin:0 0 10px">'+
       'You go back to your own plan and your own allowance. Anything you shared with the team stays with the team.</p>'+
-      '<button class="btn bs" id="team-leave" style="font-size:var(--t-sm);color:var(--red);border-color:var(--red)">Leave team</button></div>')+
+      '<button class="btn bs" id="team-leave" style="font-size:var(--t-sm);color:var(--red-txt);border-color:var(--red-txt)">Leave team</button></div>')+
     (canManage?'<div class="ss2"><h3>Activity log <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(who did what)</span></h3><div id="team-audit"><div style="color:var(--mu);font-size:var(--t-sm);padding:8px 0">Loading\u2026</div></div></div>':'')+
   '</div></div>';
   on($('team-invite-btn'),'click',async()=>{
@@ -423,7 +423,7 @@ function _renderTeamManage(vc, team){
          inline slot, with the one control that resolves it. */
       const res=$('team-invite-result');
       if(e.code==='seat_limit'&&res){
-        res.innerHTML='<div class="team-invite-link" style="border-color:var(--gold)">'+escH(e.message)+
+        res.innerHTML='<div class="team-invite-link" style="border-color:var(--gold-txt)">'+escH(e.message)+
           (isOwner?'<br><button class="btn bp" data-stab="plans" style="font-size:var(--t-xs);margin-top:8px">See plans</button>':'')+'</div>';
         return;
       }
