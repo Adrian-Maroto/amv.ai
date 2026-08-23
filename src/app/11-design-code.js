@@ -58,9 +58,35 @@ function _bIcoBtn(id, label, icon, extra){
   return '<button class="dev-ico" id="'+id+'" title="'+escH(label)+'" aria-label="'+escH(label)+'"'
     + (extra||'') + '>'+_bico(icon)+'</button>';
 }
+/* STUDIO WAS THE ONLY BUILD SURFACE YOU COULD NOT CHOOSE AN ENGINE ON.
+
+   Every Studio generation and every refine is sent with _sectionModel('design').
+   That reads amv_secmodel_design, and until this bar existed NOTHING in the
+   product ever wrote it - _sectionModelSelect was called for 'code' and for
+   'debug' and for nothing else. So the design engine was pinned to its default
+   forever, on the one surface of three where a person could not change it. The
+   setting was wired at the read end and unreachable at the write end.
+
+   "New session" was missing the same way. Studio is a SESSION_KINDS entry and
+   _sessNew('studio') has always worked, but no caller ever passed 'studio' -
+   so designs accumulated in one project with no way to start a clean one, while
+   Dev and Lab each had the button.
+
+   Both now sit where the other two surfaces already keep them. That is the
+   AMV-D007 "one control, one place" win on this surface; merging the three
+   render functions is not (they share exactly one line of code between them,
+   every piece of shared chrome having already been extracted into the helpers
+   above, so folding them together would produce one larger function with the
+   same three branches).
+
+   The markup class stays `dev-bar` for design mode rather than gaining a
+   `studio-bar` twin. It is the standard build bar, badly named; a third class
+   would mean copying its responsive rules a third time, which is the
+   duplication this work exists to remove. */
 function _buildBarHTML(mode){
   const isLab = mode === 'lab';
-  const badge = isLab ? 'Lab' : 'Dev';
+  const isDesign = mode === 'design';
+  const badge = isLab ? 'Lab' : isDesign ? 'Studio' : 'Dev';
   const left = isLab
     ? '<select id="lab-lang" class="lab-lang-sel" aria-label="Language">'
         + '<option value="js">JavaScript</option><option value="python">Python</option>'
@@ -68,6 +94,9 @@ function _buildBarHTML(mode){
         + _sectionModelSelect('debug','lab-model')
         + '<span class="lab-count" id="lab-count"></span>'
         + '<span class="sec-usage-note" id="lab-usage-note"></span>'
+    : isDesign
+    ? _sectionModelSelect('design','studio-model')
+        + '<span class="sec-usage-note" id="studio-usage-note"></span>'
     : _sectionModelSelect('code','dev-model')
         + '<span class="sec-usage-note" id="dev-usage-note"></span>';
 
@@ -75,7 +104,9 @@ function _buildBarHTML(mode){
      over, then the actions that operate on what is loaded. Dev's paperclip is
      gone - the tray is what Lab already used and what the same job should look
      like on both. */
-  const right = isLab
+  const right = isDesign
+    ? _bIcoBtn('studio-new','Start a new Studio project','fresh')
+    : isLab
     ? _bIcoBtn('lab-upload-top','Upload code files','add')
       + _bIcoBtn('lab-new','New session','fresh')
       + _bIcoBtn('lab-agents','Run agents on this code','agents')
@@ -293,6 +324,8 @@ function renderDesignView(){
   vc.innerHTML = `<div class="sv fi"><div class="dsn-wrap">
     ${_buildEntryHeadHTML('studio','What should we make?',
       'Describe what you want and AMV creates it on a live canvas, then refines it as you chat. Or switch above to build a running app, or work on code you already have.')}
+    ${_buildBarHTML('design')}
+
     <section class="dsn-hero">
       <div class="dsn-input-wrap">
         <textarea id="dsn-prompt" rows="1" placeholder="A sleek dark pricing page for an AI startup, three tiers, purple accents&hellip;"></textarea>
@@ -326,6 +359,19 @@ function renderDesignView(){
     ${_ownedMarketHTML('studio')}
   </div></div>`;
   _wireBuildModes(vc);
+  /* The two controls Studio never had. Both do exactly what their Dev and Lab
+     twins do, against the section this surface actually sends. */
+  on($('studio-model'),'change',function(){
+    _setSectionModel('design', this.value);
+    toast('Design model set to '+MODELS[this.value].label,'info',2500);
+  });
+  on($('studio-new'),'click',()=>{
+    _sessNew('studio');
+    _STUDIO.html=''; _STUDIO.prompt=''; _STUDIO.history=[];
+    _STUDIO.artifacts=[]; _STUDIO.activeId='';
+    renderDesignView();
+    toast('New Studio project','info',2000);
+  });
   // auto-grow the hero textarea
   const ta=$('dsn-prompt');
   if(ta){ on(ta,'input',()=>{ ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,220)+'px'; }); }
@@ -420,7 +466,12 @@ function _studioShowCanvas(brief){
       ${_resultBarHTML({ id:'studio-rb', statusId:'studio-status',
         tabs:[{id:'studio-frame-t',key:'preview',label:'Preview'},
               {id:'studio-code',key:'code',label:'Code'}],
-        actions: _vpSwitchHTML('studio-vp') })}
+        /* The engine picker is here as well as on Studio home because refines
+           are sent with _sectionModel('design') too, and the canvas is where
+           refining happens. Dev and Lab need only one because their shell never
+           leaves the screen; Studio replaces the whole view with the canvas.
+           Two mount points, one setting, one helper - not two settings. */
+        actions: _sectionModelSelect('design','studio-model-c') + _vpSwitchHTML('studio-vp') })}
       <div class="studio-stage-inner" id="studio-stage-inner"><iframe id="studio-frame" class="studio-frame" sandbox="allow-scripts"></iframe></div>
       <div class="studio-code-body" id="studio-code-body" style="display:none"><pre class="studio-code-pre"><code id="studio-code-text"></code></pre></div>
     </div>
@@ -432,6 +483,10 @@ function _studioShowCanvas(brief){
      canvas actually comes into being. Dev and Lab do not have this problem
      because their shells exist from the first render. */
   try{ if(typeof _mountMobilePaneToggle==='function') _mountMobilePaneToggle('studio'); }catch(e){}
+  on($('studio-model-c'),'change',function(){
+    _setSectionModel('design', this.value);
+    toast('Design model set to '+MODELS[this.value].label,'info',2500);
+  });
   on($('studio-back'),'click',()=>setTab('studio'));
   on($('studio-refine-go'),'click',_studioRefine);
   on($('studio-add'),'click',_studioAddPrompt);

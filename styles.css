@@ -9152,3 +9152,25 @@ body.light .fr-d{ color:#67656d; }
 /* Each merged renderer writes its own title, which is the heading it always
    had - so the section keeps its name and only its address changed. */
 .set-merged .set-title{ margin-top:0; }
+
+/* ── LAYER A104: STUDIO'S BUILD BAR BELONGS WITH ITS HEADING ───────────────
+   Studio's entry screen is `.dsn-wrap`, a centred column with `gap:60px`
+   between every child. Dropping the build bar in as one of those children put
+   sixty pixels of nothing above it and sixty below, so the one strip on the
+   page carrying the engine picker read as an orphan floating in the middle of
+   a marketing layout rather than as this surface's controls.
+
+   Lab puts its bar in the same position - directly under the head - and it
+   looks right there because `.lab-shell` is a shell, not a spaced column. This
+   pulls Studio's bar up against the head it belongs to and lets the hero keep
+   its own breathing room, without touching the gap every other child relies on.
+
+   The class is `dev-bar` because that is the standard build bar's name, badly
+   chosen long before design mode used it. See _buildBarHTML. */
+.dsn-wrap > .build-bar{
+  margin-top:-42px;
+  margin-bottom:-30px;
+  padding-left:0;
+  padding-right:0;
+  border-bottom:1px solid var(--bd);
+}

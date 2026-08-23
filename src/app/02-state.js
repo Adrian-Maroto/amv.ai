@@ -562,6 +562,25 @@ const _BUILD_FALLBACK = ['smart', 'coding', 'core', 'fast'];
 /* Clamp any model key to the best one this plan can actually run. */
 function _planAllowedModel(want){
   want = want || 'smart';
+  /* AUTO IS NOT AN ENGINE, AND CLAMPING IT COST REAL MONEY.
+
+     PLAN_TIERS[plan].models lists engines - fast, core, coding, smart. 'auto'
+     is not one of them and never was, so this function found it missing and
+     "clamped" it, walking _BUILD_FALLBACK from the top and handing back the
+     HEAVIEST engine the plan allows. On Elite and Ultra that is Apex, the most
+     expensive engine in the product, on every Studio, Dev and Lab call from
+     anybody who picked "AMV Auto - picks for you".
+
+     The server has routed auto for real since AMV-065: _autoRoute reads the
+     turn, picks the cheapest engine that will not visibly do a worse job,
+     applies the plan ceiling ITSELF, and reports back which engine answered so
+     the interface can name it. All of that was unreachable from the build
+     surfaces, because the clamp happened in the browser first.
+
+     So auto passes through. It is the one value here that is a request for
+     routing rather than a request for an engine, and the ceiling it needs is
+     already enforced on the server, which is where it belongs. */
+  if(want === 'auto') return 'auto';
   try{
     const plan = loadStr('amv_plan') || 'free';
     if(plan === 'custom') return want;
@@ -644,13 +663,32 @@ function _modelOutcomeLabel(key){
   if(c<=3) return 'built for code';
   return 'highest quality';
 }
-// build a <select> of pickable models for a section (excludes hidden/image)
+/* Build a <select> of pickable models for a section (excludes hidden/image).
+
+   AN OPTION YOU CAN PICK AND CANNOT GET IS A LIE THE PICKER TELLS.
+   Every engine was offered on every plan. Choosing Apex on Free selected it,
+   toasted "Design model set to AMV Apex", stored it - and then ran Core,
+   because _sectionModelKey clamps on the way back out. Present, chooseable,
+   and inert, which is the defect this whole pass keeps finding.
+
+   Now an engine the plan cannot run is disabled and says which plan unlocks it.
+   Same information, and it turns a silent downgrade into the one thing a
+   refusal should be: an offer. (Auto is never disabled - it is a request for
+   routing, and the server routes it within whatever the plan allows.) */
 function _sectionModelSelect(section, id){
   const cur=_sectionModelKey(section);
+  const plan=loadStr('amv_plan')||'free';
+  const tier=(typeof PLAN_TIERS!=='undefined' && PLAN_TIERS[plan])||null;
+  const canRun=k=> k==='auto' || plan==='custom' || !tier || !Array.isArray(tier.models)
+    || tier.models.indexOf(k)>=0;
+  const PLAN_LABEL={free:'Free',pro:'Pro',elite:'Elite',ultra:'Ultra'};
   return '<select id="'+id+'" class="sel secmodel-sel">'+MODEL_ORDER.map(k=>{
     const m=MODELS[k];
-    return '<option value="'+k+'"'+(k===cur?' selected':'')+'>'+
-      m.label.replace('AMV ','')+' \u00b7 '+_modelOutcomeLabel(k)+'</option>';
+    const okk=canRun(k);
+    const tail=okk ? _modelOutcomeLabel(k)
+      : 'on '+(PLAN_LABEL[m.rec]||'a paid plan');
+    return '<option value="'+k+'"'+(k===cur?' selected':'')+(okk?'':' disabled')+'>'+
+      m.label.replace('AMV ','')+' \u00b7 '+tail+'</option>';
   }).join('')+'</select>';
 }
 
@@ -706,6 +744,15 @@ const AEGIS = {
     'amv-forge': { in: 5.00,  out: 25.00 },
     'amv-core':  { in: 3.00,  out: 15.00 },
     'amv-pulse': { in: 1.00,  out: 5.00 },
+    /* An auto-routed call is sent as 'auto' and the SERVER decides the engine,
+       so the browser does not know which one answered. Without an entry here
+       the lookup misses and the call is costed at zero - and this figure is the
+       operator's "Spend today", so a growing share of real spend would simply
+       not appear on it. Core is the estimate because Core is what the router
+       returns for everything it is not sure about, and the two engines it can
+       pick instead sit either side of it. Marked estimated, which the label
+       already says. */
+    'auto':      { in: 3.00,  out: 15.00 },
   },
   _times: [],            // request timestamps (this session)
   _lastSend: 0,

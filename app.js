@@ -2063,6 +2063,25 @@ const _BUILD_FALLBACK = ['smart', 'coding', 'core', 'fast'];
 /* Clamp any model key to the best one this plan can actually run. */
 function _planAllowedModel(want){
   want = want || 'smart';
+  /* AUTO IS NOT AN ENGINE, AND CLAMPING IT COST REAL MONEY.
+
+     PLAN_TIERS[plan].models lists engines - fast, core, coding, smart. 'auto'
+     is not one of them and never was, so this function found it missing and
+     "clamped" it, walking _BUILD_FALLBACK from the top and handing back the
+     HEAVIEST engine the plan allows. On Elite and Ultra that is Apex, the most
+     expensive engine in the product, on every Studio, Dev and Lab call from
+     anybody who picked "AMV Auto - picks for you".
+
+     The server has routed auto for real since AMV-065: _autoRoute reads the
+     turn, picks the cheapest engine that will not visibly do a worse job,
+     applies the plan ceiling ITSELF, and reports back which engine answered so
+     the interface can name it. All of that was unreachable from the build
+     surfaces, because the clamp happened in the browser first.
+
+     So auto passes through. It is the one value here that is a request for
+     routing rather than a request for an engine, and the ceiling it needs is
+     already enforced on the server, which is where it belongs. */
+  if(want === 'auto') return 'auto';
   try{
     const plan = loadStr('amv_plan') || 'free';
     if(plan === 'custom') return want;
@@ -2145,13 +2164,32 @@ function _modelOutcomeLabel(key){
   if(c<=3) return 'built for code';
   return 'highest quality';
 }
-// build a <select> of pickable models for a section (excludes hidden/image)
+/* Build a <select> of pickable models for a section (excludes hidden/image).
+
+   AN OPTION YOU CAN PICK AND CANNOT GET IS A LIE THE PICKER TELLS.
+   Every engine was offered on every plan. Choosing Apex on Free selected it,
+   toasted "Design model set to AMV Apex", stored it - and then ran Core,
+   because _sectionModelKey clamps on the way back out. Present, chooseable,
+   and inert, which is the defect this whole pass keeps finding.
+
+   Now an engine the plan cannot run is disabled and says which plan unlocks it.
+   Same information, and it turns a silent downgrade into the one thing a
+   refusal should be: an offer. (Auto is never disabled - it is a request for
+   routing, and the server routes it within whatever the plan allows.) */
 function _sectionModelSelect(section, id){
   const cur=_sectionModelKey(section);
+  const plan=loadStr('amv_plan')||'free';
+  const tier=(typeof PLAN_TIERS!=='undefined' && PLAN_TIERS[plan])||null;
+  const canRun=k=> k==='auto' || plan==='custom' || !tier || !Array.isArray(tier.models)
+    || tier.models.indexOf(k)>=0;
+  const PLAN_LABEL={free:'Free',pro:'Pro',elite:'Elite',ultra:'Ultra'};
   return '<select id="'+id+'" class="sel secmodel-sel">'+MODEL_ORDER.map(k=>{
     const m=MODELS[k];
-    return '<option value="'+k+'"'+(k===cur?' selected':'')+'>'+
-      m.label.replace('AMV ','')+' \u00b7 '+_modelOutcomeLabel(k)+'</option>';
+    const okk=canRun(k);
+    const tail=okk ? _modelOutcomeLabel(k)
+      : 'on '+(PLAN_LABEL[m.rec]||'a paid plan');
+    return '<option value="'+k+'"'+(k===cur?' selected':'')+(okk?'':' disabled')+'>'+
+      m.label.replace('AMV ','')+' \u00b7 '+tail+'</option>';
   }).join('')+'</select>';
 }
 
@@ -2207,6 +2245,15 @@ const AEGIS = {
     'amv-forge': { in: 5.00,  out: 25.00 },
     'amv-core':  { in: 3.00,  out: 15.00 },
     'amv-pulse': { in: 1.00,  out: 5.00 },
+    /* An auto-routed call is sent as 'auto' and the SERVER decides the engine,
+       so the browser does not know which one answered. Without an entry here
+       the lookup misses and the call is costed at zero - and this figure is the
+       operator's "Spend today", so a growing share of real spend would simply
+       not appear on it. Core is the estimate because Core is what the router
+       returns for everything it is not sure about, and the two engines it can
+       pick instead sit either side of it. Marked estimated, which the label
+       already says. */
+    'auto':      { in: 3.00,  out: 15.00 },
   },
   _times: [],            // request timestamps (this session)
   _lastSend: 0,
@@ -16168,9 +16215,35 @@ function _bIcoBtn(id, label, icon, extra){
   return '<button class="dev-ico" id="'+id+'" title="'+escH(label)+'" aria-label="'+escH(label)+'"'
     + (extra||'') + '>'+_bico(icon)+'</button>';
 }
+/* STUDIO WAS THE ONLY BUILD SURFACE YOU COULD NOT CHOOSE AN ENGINE ON.
+
+   Every Studio generation and every refine is sent with _sectionModel('design').
+   That reads amv_secmodel_design, and until this bar existed NOTHING in the
+   product ever wrote it - _sectionModelSelect was called for 'code' and for
+   'debug' and for nothing else. So the design engine was pinned to its default
+   forever, on the one surface of three where a person could not change it. The
+   setting was wired at the read end and unreachable at the write end.
+
+   "New session" was missing the same way. Studio is a SESSION_KINDS entry and
+   _sessNew('studio') has always worked, but no caller ever passed 'studio' -
+   so designs accumulated in one project with no way to start a clean one, while
+   Dev and Lab each had the button.
+
+   Both now sit where the other two surfaces already keep them. That is the
+   AMV-D007 "one control, one place" win on this surface; merging the three
+   render functions is not (they share exactly one line of code between them,
+   every piece of shared chrome having already been extracted into the helpers
+   above, so folding them together would produce one larger function with the
+   same three branches).
+
+   The markup class stays `dev-bar` for design mode rather than gaining a
+   `studio-bar` twin. It is the standard build bar, badly named; a third class
+   would mean copying its responsive rules a third time, which is the
+   duplication this work exists to remove. */
 function _buildBarHTML(mode){
   const isLab = mode === 'lab';
-  const badge = isLab ? 'Lab' : 'Dev';
+  const isDesign = mode === 'design';
+  const badge = isLab ? 'Lab' : isDesign ? 'Studio' : 'Dev';
   const left = isLab
     ? '<select id="lab-lang" class="lab-lang-sel" aria-label="Language">'
         + '<option value="js">JavaScript</option><option value="python">Python</option>'
@@ -16178,6 +16251,9 @@ function _buildBarHTML(mode){
         + _sectionModelSelect('debug','lab-model')
         + '<span class="lab-count" id="lab-count"></span>'
         + '<span class="sec-usage-note" id="lab-usage-note"></span>'
+    : isDesign
+    ? _sectionModelSelect('design','studio-model')
+        + '<span class="sec-usage-note" id="studio-usage-note"></span>'
     : _sectionModelSelect('code','dev-model')
         + '<span class="sec-usage-note" id="dev-usage-note"></span>';
 
@@ -16185,7 +16261,9 @@ function _buildBarHTML(mode){
      over, then the actions that operate on what is loaded. Dev's paperclip is
      gone - the tray is what Lab already used and what the same job should look
      like on both. */
-  const right = isLab
+  const right = isDesign
+    ? _bIcoBtn('studio-new','Start a new Studio project','fresh')
+    : isLab
     ? _bIcoBtn('lab-upload-top','Upload code files','add')
       + _bIcoBtn('lab-new','New session','fresh')
       + _bIcoBtn('lab-agents','Run agents on this code','agents')
@@ -16403,6 +16481,8 @@ function renderDesignView(){
   vc.innerHTML = `<div class="sv fi"><div class="dsn-wrap">
     ${_buildEntryHeadHTML('studio','What should we make?',
       'Describe what you want and AMV creates it on a live canvas, then refines it as you chat. Or switch above to build a running app, or work on code you already have.')}
+    ${_buildBarHTML('design')}
+
     <section class="dsn-hero">
       <div class="dsn-input-wrap">
         <textarea id="dsn-prompt" rows="1" placeholder="A sleek dark pricing page for an AI startup, three tiers, purple accents&hellip;"></textarea>
@@ -16436,6 +16516,19 @@ function renderDesignView(){
     ${_ownedMarketHTML('studio')}
   </div></div>`;
   _wireBuildModes(vc);
+  /* The two controls Studio never had. Both do exactly what their Dev and Lab
+     twins do, against the section this surface actually sends. */
+  on($('studio-model'),'change',function(){
+    _setSectionModel('design', this.value);
+    toast('Design model set to '+MODELS[this.value].label,'info',2500);
+  });
+  on($('studio-new'),'click',()=>{
+    _sessNew('studio');
+    _STUDIO.html=''; _STUDIO.prompt=''; _STUDIO.history=[];
+    _STUDIO.artifacts=[]; _STUDIO.activeId='';
+    renderDesignView();
+    toast('New Studio project','info',2000);
+  });
   // auto-grow the hero textarea
   const ta=$('dsn-prompt');
   if(ta){ on(ta,'input',()=>{ ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,220)+'px'; }); }
@@ -16530,7 +16623,12 @@ function _studioShowCanvas(brief){
       ${_resultBarHTML({ id:'studio-rb', statusId:'studio-status',
         tabs:[{id:'studio-frame-t',key:'preview',label:'Preview'},
               {id:'studio-code',key:'code',label:'Code'}],
-        actions: _vpSwitchHTML('studio-vp') })}
+        /* The engine picker is here as well as on Studio home because refines
+           are sent with _sectionModel('design') too, and the canvas is where
+           refining happens. Dev and Lab need only one because their shell never
+           leaves the screen; Studio replaces the whole view with the canvas.
+           Two mount points, one setting, one helper - not two settings. */
+        actions: _sectionModelSelect('design','studio-model-c') + _vpSwitchHTML('studio-vp') })}
       <div class="studio-stage-inner" id="studio-stage-inner"><iframe id="studio-frame" class="studio-frame" sandbox="allow-scripts"></iframe></div>
       <div class="studio-code-body" id="studio-code-body" style="display:none"><pre class="studio-code-pre"><code id="studio-code-text"></code></pre></div>
     </div>
@@ -16542,6 +16640,10 @@ function _studioShowCanvas(brief){
      canvas actually comes into being. Dev and Lab do not have this problem
      because their shells exist from the first render. */
   try{ if(typeof _mountMobilePaneToggle==='function') _mountMobilePaneToggle('studio'); }catch(e){}
+  on($('studio-model-c'),'change',function(){
+    _setSectionModel('design', this.value);
+    toast('Design model set to '+MODELS[this.value].label,'info',2500);
+  });
   on($('studio-back'),'click',()=>setTab('studio'));
   on($('studio-refine-go'),'click',_studioRefine);
   on($('studio-add'),'click',_studioAddPrompt);
