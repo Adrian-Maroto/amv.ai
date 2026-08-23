@@ -10788,7 +10788,23 @@ function _memLooksSecret(t){
 try{ window._memLooksSecret = _memLooksSecret; }catch(e){}
 function addMemory(){
   const inp=$('mem-inp'); if(!inp) return;
-  const text=inp.value.trim(); if(!text) return;
+  const text=inp.value.trim();
+  /* PRESSED, AND NOTHING HAPPENED.
+
+     This returned silently on an empty field. The button is enabled, it is
+     labelled "Add Memory", and pressing it did nothing at all - no focus, no
+     message, no change anybody could perceive. Found by a sweep that clicks
+     every control on every tab and asks whether something observable changed,
+     then verified by hand, because that sweep also produced four false alarms.
+
+     Not disabled-when-empty on purpose: a disabled button is skipped by a
+     screen reader's control list and explains nothing to anybody. Enabled, and
+     it says what it needs. */
+  if(!text){
+    try{ inp.focus(); }catch(e){}
+    if(typeof toast==='function') toast('Type what AMV should remember, then add it.','info',3500);
+    return;
+  }
   if(_memLooksSecret(text)){
     /* Not a toast that fades: they are about to conclude it did not save and
        try again. Say what and why, and leave the text where they typed it. */

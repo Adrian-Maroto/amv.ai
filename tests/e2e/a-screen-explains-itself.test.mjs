@@ -196,6 +196,38 @@ section('The cookie banner is sized like compliance, not like the product (AMV-D
 }
 
 /* ──────────────────────────────────────────────────────────────────────── */
+section('A labelled button that is enabled does something');
+{
+  /* Memory's "Add Memory" was enabled, sat next to an empty field, and returned
+     silently - no focus, no message, nothing anybody could perceive. Found by a
+     sweep of 224 controls across 13 tabs; it was the only real one of fourteen
+     flagged, and the other thirteen were checked rather than assumed.
+
+     Not fixed by disabling the button when empty: a disabled control is skipped
+     by a screen reader's list and explains nothing to anyone. */
+  const r = await page.evaluate(async () => {
+    setTab('memory');
+    await new Promise(s => setTimeout(s, 500));
+    const add = document.getElementById('mem-add'), inp = document.getElementById('mem-inp');
+    if (!add || !inp) return { missing: true };
+    inp.value = '';
+    document.querySelectorAll('#toast-wrap > *').forEach(t => t.remove());
+    add.click();
+    await new Promise(s => setTimeout(s, 350));
+    const said = [...document.querySelectorAll('#toast-wrap > *')].map(t => t.textContent).join(' ');
+    const focused = document.activeElement === inp;
+    inp.value = 'I prefer short answers';
+    add.click();
+    await new Promise(s => setTimeout(s, 350));
+    return { said, focused, saved: (S.memory || []).length > 0, cleared: inp.value === '' };
+  });
+  ok(!r.missing, 'the memory composer is there', !r.missing);
+  ok(r.said.length > 0, 'pressing it on an empty field says something', r.said.slice(0, 60));
+  ok(r.focused, 'and puts the cursor where the answer goes', r.focused);
+  ok(r.saved, 'while a real memory still saves', r.saved);
+  ok(r.cleared, 'and the field is cleared afterwards', r.cleared);
+}
+
 section('Lab offers one run action per state, and it is one that works (AMV-D033)');
 {
   const enterLab = async () => {
