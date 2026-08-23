@@ -33,8 +33,31 @@ const REAL = {
 
 section('The screen is reachable, and searchable');
 {
-  const nav = await page.evaluate(() => [...document.querySelectorAll('.sn-btn')].map(b => b.dataset.sp));
-  ok(nav.includes('invite'), 'Invite is in the settings navigation');
+  /* Invite used to be its own row in the settings navigation. AMV-D009 folded
+     it into Team: it was 180 characters and zero controls, which is a button on
+     the Team pane that had been given its own address.
+
+     So the row is gone and the SCREEN is not. What this section is for is that
+     a person can get to it, and that is now asserted by rendering it rather
+     than by looking for a nav entry - which is the stronger check either way,
+     because a row can exist and lead nowhere. */
+  const r = await page.evaluate(async () => {
+    S.settingsPane = 'invite'; renderSettingsView();
+    await new Promise(s => setTimeout(s, 350));
+    const pane = document.getElementById('set-pane');
+    return {
+      content: (pane ? pane.textContent : ''),
+      anchored: !!document.getElementById('set-sec-invite'),
+      nav: [...document.querySelectorAll('.sn-btn.on')].map(b => b.textContent.trim()).join('|'),
+      rows: [...document.querySelectorAll('.sn-btn')].map(b => b.dataset.sp),
+    };
+  });
+  ok(/invite/i.test(r.content), 'the Invite screen still renders from its own address', r.content.slice(0, 60));
+  ok(r.anchored, 'and the page scrolls to it rather than dumping you at the top', r.anchored);
+  ok(/Team/.test(r.nav), 'with the navigation showing where it now lives', r.nav);
+  ok(!r.rows.includes('invite'),
+     'and it is no longer a row of its own, which is the point of the merge', r.rows.join(','));
+
   const pal = await page.evaluate(() => _paletteCommands()
     .some(c => /invite|referral/i.test((c.label || '') + ' ' + (c.kw || ''))));
   ok(pal, 'and it can be jumped to from the command palette');
