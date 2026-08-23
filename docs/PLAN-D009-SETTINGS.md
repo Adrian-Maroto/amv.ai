@@ -120,3 +120,56 @@ person can perceive", not "the pane's innerHTML got longer".
 
 The checks that survived are in `tests/e2e/settings-has-groups-that-do-work`,
 written against the rules rather than the proxies.
+
+---
+
+# D013/D041-D044 groundwork: the token migration is an accessibility fix
+
+Counted in `styles.css`:
+
+| | rules |
+|---|---|
+| `font-size` hardcoded in px | **1,197** |
+| `font-size: var(--t-*)` | 277 |
+
+The audit frames this as consistency. It is not only that. At line 5098 the
+scale is redefined:
+
+    --fs-s: var(--fs-scale, 1);
+    --t-xs: calc(11px * var(--fs-s));   ... and so on
+
+`--fs-scale` is what the **text size setting** writes. So a hardcoded px value
+does not merely skip a token - it **ignores the reader's text size preference
+entirely**. Only tokenised text grows when somebody chooses Large or Largest.
+
+That reframes the work: this is not tidying, it is making an accessibility
+control do what it says.
+
+## Which of the 1,197 can move without shifting a pixel
+
+The scale is 11 / 12 / 13.5 / 14 / 16 / 20 / 26 / 34.
+
+| px | rules | token | exact? |
+|---|---|---|---|
+| 11 | 154 | `--t-xs` | yes |
+| 12 | 182 | `--t-sm` | yes |
+| 13.5 | 69 | `--t-base` | yes |
+| 14 | 79 | `--t-md` | yes |
+| 16 | 27 | `--t-lg` | yes |
+| **subtotal** | **511** | | **no visual change at scale 1** |
+| 13 | 187 | nearest 13.5 | no - would shift |
+| 12.5 | 156 | between 12 and 13.5 | no |
+| 11.5 | 77 | between 11 and 12 | no |
+| 15 | 42 | between 14 and 16 | no |
+| 10.5 | 41 | below the scale | no |
+| 10 | 43 | below the scale | no |
+| 18 | 20 | between 16 and 20 | no |
+
+**511 rules migrate with zero visual change at the default size, and start
+responding to the text size setting.** That is the half worth doing, and it is
+provable rather than argued: render every tab before and after and assert the
+computed font size of every text element is identical.
+
+The other ~686 shift type if migrated and need a decision - add tokens for the
+in-between sizes, accept the shift, or leave them. That is the owner's call and
+is NOT bundled into the safe half.
