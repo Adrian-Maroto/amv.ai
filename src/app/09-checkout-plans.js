@@ -8,10 +8,10 @@
      entry, so no sensitive data is ever typed into an unsafe field.
    ============================================================ */
 const PLANS={
-  free:{name:'Free',price:0,blurb:'Daily usage to explore everything',mult:'1\u00d7'},
-  pro:{name:'Pro',price:15,blurb:'5\u00d7 the usage, all models, agents, and priority speed',mult:'5\u00d7'},
-  elite:{name:'Elite',price:75,blurb:'20\u00d7 usage, full-stack builds, one-click deploy, double Pro\u2019s throughput, Apex first',mult:'20\u00d7'},
-  ultra:{name:'Ultra',price:200,blurb:'50\u00d7 usage, the highest throughput AMV offers, whole-codebase context, autonomous projects, team workspaces',mult:'50\u00d7'},
+  free:{name:'Free',price:0,blurb:'Daily usage to explore everything',get mult(){return _multLabel('free');}},
+  pro:{name:'Pro',price:15,blurb:'Every model, autonomous agents, and the app sandbox',get mult(){return _multLabel('pro');}},
+  elite:{name:'Elite',price:75,blurb:'Ship real apps to a live URL, on our most capable engine',get mult(){return _multLabel('elite');}},
+  ultra:{name:'Ultra',price:200,blurb:'Whole codebases, autonomous projects, and a team around them',get mult(){return _multLabel('ultra');}},
   /* Priced PER SEAT, so `price` here is the price of one seat and the card that
      sells it multiplies. Every seat adds its own allowance to a shared pool
      rather than dividing a fixed one, which is why adding a teammate is worth
@@ -64,6 +64,31 @@ const AUTO_MAX_BY_PLAN={free:0,pro:5,elite:25,ultra:100};
    request. Mirrored here the same way the automation count is, with a test that
    lifts both and compares what they answer. */
 const PLAN_RPM={free:8,pro:20,elite:40,ultra:80};
+
+/* THE MULTIPLIER WAS UNDERSELLING BY FORTY PERCENT.
+
+   The page advertised 5x / 20x / 50x against Free. PLAN_LIMITS.monthTokens
+   delivers 7.2x / 28x / 72x. Every tier over-delivers, so there was never any
+   exposure - the page was simply quoting a number nobody had recomputed since
+   the allowances moved, at the moment somebody decides whether to pay.
+
+   Computed from the allowance now, and rounded DOWN to a round number. Down,
+   because an advertised multiplier is a promise: an exact figure would drop
+   visibly the next time the allowances are tuned, while a rounded-down one has
+   headroom built in. 7.2 becomes 7, 28 becomes 25, 72 becomes 70.
+
+   Mirrored from the Worker with a test comparing both tables, like the
+   automation count and the throughput limit. */
+const PLAN_MONTH_TOKENS={free:325000,pro:2340000,elite:9100000,ultra:23400000};
+function _usageMultiplier(p){
+  const base=PLAN_MONTH_TOKENS.free, mine=PLAN_MONTH_TOKENS[p];
+  if(!base||!mine) return 0;
+  const raw=mine/base;
+  /* Round down to something a person can hold in their head: whole numbers
+     below ten, multiples of five above it. */
+  return raw<10 ? Math.floor(raw) : Math.floor(raw/5)*5;
+}
+function _multLabel(p){ const m=_usageMultiplier(p); return m>1 ? m+'\u00d7' : '1\u00d7'; }
 function _rpmForPlan(p){
   if(p==='team') return PLAN_RPM.elite;      // a seat carries Elite capability
   if(p==='custom') return PLAN_RPM.elite;    // the tier a Custom plan ranks at

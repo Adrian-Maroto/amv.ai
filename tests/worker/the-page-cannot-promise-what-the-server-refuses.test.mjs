@@ -156,6 +156,56 @@ section('Throughput is sold as the tier it actually is')
      'the row is computed from the enforced limit, not typed out', true);
 }
 
+section('The usage multiplier is computed, and conservative')
+{
+  /* The page advertised 5x / 20x / 50x against Free while PLAN_LIMITS delivers
+     7.2x / 28x / 72x - conservative on every tier, so no exposure, just a
+     number nobody had recomputed since the allowances moved, quoted at the
+     moment somebody decides whether to pay.
+
+     Computed from the allowance now and rounded DOWN, because an advertised
+     multiplier is a promise: an exact figure drops visibly the next time the
+     allowances are tuned, a rounded-down one has headroom. */
+  const code = codeOnly(client);
+  const scode = codeOnly(server);
+
+  const srv = {};
+  for (const m of scode.matchAll(/(free|pro|elite|ultra):\s*\{[^}]*monthTokens:\s*(\d+)/g)) srv[m[1]] = Number(m[2]);
+  const cli = {};
+  const cm = code.match(/const PLAN_MONTH_TOKENS\s*=\s*\{([^}]*)\}/);
+  if (cm) for (const m of cm[1].matchAll(/([a-z]+)\s*:\s*(\d+)/g)) cli[m[1]] = Number(m[2]);
+
+  ok(Object.keys(srv).length >= 4, 'the Worker sets a monthly allowance per plan', srv);
+  ok(JSON.stringify(srv) === JSON.stringify(cli),
+     'and the page carries the same numbers', JSON.stringify(srv) + ' vs ' + JSON.stringify(cli));
+
+  /* Run the real function out of the bundle, against the SERVER's numbers. */
+  const grab = (src, name) => {
+    const i = src.indexOf('function ' + name + '(');
+    let d = 0;
+    for (let k = src.indexOf('{', i); k < src.length; k++) {
+      if (src[k] === '{') d++; else if (src[k] === '}' && --d === 0) return src.slice(i, k + 1);
+    }
+    return '';
+  };
+  const mult = new Function(
+    (code.match(/const PLAN_MONTH_TOKENS\s*=\s*\{[^}]*\};/) || [''])[0] + '\n'
+    + grab(code, '_usageMultiplier') + '\nreturn _usageMultiplier;')();
+
+  for (const p of ['pro', 'elite', 'ultra']) {
+    const real = srv[p] / srv.free;
+    const shown = mult(p);
+    ok(shown > 1, p + ' advertises a multiplier at all', shown);
+    ok(shown <= real, p + ' never claims more than the allowance delivers',
+       'claims ' + shown + 'x, delivers ' + real.toFixed(1) + 'x');
+    ok(real - shown < 6, 'and does not undersell it into meaninglessness',
+       'claims ' + shown + 'x, delivers ' + real.toFixed(1) + 'x');
+  }
+
+  ok(!/mult:'[0-9]/.test(code),
+     'no plan carries a hand-typed multiplier any more', true);
+}
+
 section('The label says what the answer is');
 {
   const code = codeOnly(client);
