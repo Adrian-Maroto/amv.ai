@@ -1199,7 +1199,7 @@ function _devConnectVSCode(){
   const r=$('ovr'); if(!r) return;
   r.innerHTML='<div class="ov" id="vsc-bg"><div class="tp-modal" style="max-width:480px">'+
     '<button class="dna-x" id="vsc-x" style="position:absolute;top:14px;right:14px">\u2715</button>'+
-    '<h2 style="font-family:var(--fdisplay);font-weight:500;font-size:calc(21px * var(--fs-s));margin:0 0 6px">Use AMV in VS Code</h2>'+
+    '<h2 style="font-family:var(--fdisplay);font-weight:500;font-size:var(--t-xl);margin:0 0 6px">Use AMV in VS Code</h2>'+
     '<p style="font-size:var(--t-base);color:var(--mu);line-height:1.6;margin:0 0 18px">Run these two commands in your project folder. That\u2019s it - AMV opens in your editor and can read, write, and run your code.</p>'+
     '<div class="vsc-cmd"><code>npm install -g @amv/cli</code><button class="vsc-copy" data-c="npm install -g @amv/cli">Copy</button></div>'+
     '<div class="vsc-cmd" style="margin-top:8px"><code>amv code .</code><button class="vsc-copy" data-c="amv code .">Copy</button></div>'+

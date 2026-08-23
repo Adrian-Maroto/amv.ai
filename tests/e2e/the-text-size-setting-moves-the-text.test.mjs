@@ -29,6 +29,21 @@ const app = await bootApp({ tab: 'chat', user: { name: 'A', email: 'a@x.com', in
 const { page, errors } = app;
 const TABS = ['chat', 'images', 'crew', 'dev', 'market', 'plans', 'settings', 'help'];
 
+/* TEXT, NOT GLYPHS - and the difference is the whole point.
+
+   An icon is a character sized to fill a box the stylesheet pins exactly, and it
+   deliberately does NOT follow the reading preference: growing a glyph inside a
+   box that cannot grow with it is an overflow, not an accessibility win. Same
+   reasoning as the AMV mark in the corner.
+
+   So the coverage number here has to measure text. When 39 icon rules moved off
+   the type scale onto --ic-*, this read 99% -> 87% and called it a regression,
+   which is the instrument counting a deliberate decision as a failure. The
+   filter is a property rather than a class list: an element whose visible text
+   contains no letter and no digit is a glyph, not a sentence. Icons get their
+   own check below, asserting the opposite. */
+const isText = (s) => /[\p{L}\p{N}]/u.test(s);
+
 const sample = async () => page.evaluate(async (tabs) => {
   const out = {};
   for (const t of tabs) {
@@ -38,7 +53,9 @@ const sample = async () => page.evaluate(async (tabs) => {
       const b = e.getBoundingClientRect();
       if (b.width < 1 || b.height < 1) return;
       if (![...e.childNodes].some(n => n.nodeType === 3 && n.textContent.trim())) return;
-      out[t + '|' + (e.className || e.tagName) + '|' + (e.textContent || '').trim().slice(0, 20)]
+      const txt = (e.textContent || '').trim();
+      if (!/[\p{L}\p{N}]/u.test(txt)) return;            // a glyph, not text
+      out[t + '|' + (e.className || e.tagName) + '|' + txt.slice(0, 20)]
         = getComputedStyle(e).fontSize;
     });
   }
@@ -190,6 +207,89 @@ section('And at the DEFAULT size, a heading is still a heading');
   const smallest = found[0] || { px: 0, tab: '?', text: '' };
   ok(smallest.px >= 20, 'no visible heading has collapsed to body size',
      smallest.px + 'px on ' + smallest.tab + ' - "' + smallest.text + '"');
+}
+
+section('And an icon deliberately holds its size, because its box cannot grow');
+{
+  /* The other half of the decision above. A glyph sized to fill a pinned box
+     must NOT follow the reading preference - .tk-ic is 38x38, .int-ic 48x48,
+     .es-icon 52x52, and inflating the character inside them is how you get an
+     overflow at the largest setting rather than a more readable product.
+
+     Asserted on the real page and by measurement, not by reading the stylesheet:
+     find glyphs, change the setting, and check that nothing inside a pinned box
+     spills out of it. */
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const read = () => page.evaluate(async (tabs) => {
+    const out = {};
+    for (const t of tabs) {
+      try { setTab(t); } catch (e) { continue; }
+      await new Promise(s => setTimeout(s, 320));
+      /* Identified by where the size COMES FROM, not by what the class is
+         called. A first attempt matched [class*="-ic"] and found almost
+         nothing, passing this section on two samples - the same class-name
+         fragility that has bitten this session before. An icon is an element
+         whose font-size resolves to one of the --ic-* steps. */
+      const root = getComputedStyle(document.documentElement);
+      const iconSizes = ['--ic-sm', '--ic-md', '--ic-lg']
+        .map(v => root.getPropertyValue(v).trim()).filter(Boolean);
+      document.querySelectorAll('#vc *').forEach(e => {
+        const b = e.getBoundingClientRect();
+        if (b.width < 1 || b.height < 1) return;
+        const cs = getComputedStyle(e);
+        if (!iconSizes.includes(cs.fontSize)) return;
+        out[t + '|' + (e.className || e.tagName)] = {
+          size: cs.fontSize,
+          spills: e.scrollWidth > e.clientWidth + 2 || e.scrollHeight > e.clientHeight + 2,
+        };
+      });
+    }
+    return out;
+  }, TABS);
+
+  await page.evaluate(() => { _applyZoom(1); });
+  await page.waitForTimeout(320);
+  const small = await read();
+  await page.evaluate(() => { _applyZoom(20 / 14); });
+  await page.waitForTimeout(420);
+  const large = await read();
+
+  const keys = Object.keys(small).filter(k => large[k]);
+  ok(keys.length >= 3, 'there are glyphs on the page to measure', keys.length);
+
+  const grew = keys.filter(k => small[k].size !== large[k].size);
+  ok(grew.length === 0, 'no icon grows with the reading preference',
+     grew.slice(0, 4).map(k => k + ' ' + small[k].size + ' -> ' + large[k].size));
+
+  const spilling = keys.filter(k => large[k].spills);
+  ok(spilling.length === 0, 'and none of them spills out of its box at the largest size',
+     spilling.slice(0, 4));
+
+  await page.evaluate(() => { _applyZoom(1); });
+}
+
+section('Chat prose is one size, not two');
+{
+  /* What you typed was 15px and what came back was 15.5px. Half a pixel apart on
+     the two halves of the same conversation is drift, not a decision, and it had
+     a second copy of itself in the fs-scaled block to keep in step. Both are
+     var(--t-prose) now, so this is what stops them parting again. */
+  await page.evaluate(() => { setTab('chat'); });
+  await page.waitForTimeout(300);
+  const sizes = await page.evaluate(() => {
+    const probe = (cls) => {
+      const d = document.createElement('div');
+      d.className = cls; d.textContent = 'x';
+      (document.getElementById('vc') || document.body).appendChild(d);
+      const px = getComputedStyle(d).fontSize;
+      d.remove();
+      return px;
+    };
+    return { user: probe('mb u'), amv: probe('mb ai') };
+  });
+  ok(sizes.user === sizes.amv,
+     'what you typed and what AMV replies are the same size',
+     sizes.user + ' vs ' + sizes.amv);
 }
 
 section('No JavaScript errors');

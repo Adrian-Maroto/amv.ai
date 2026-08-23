@@ -868,7 +868,7 @@ function _openSettingsPicker(){
   }).join('');
   r.innerHTML='<div class="ov" id="setpick-bg"><div class="ob setpick-modal" style="max-width:460px">'+
     '<button class="oc" data-dact="closeOvr" aria-label="Close">×</button>'+
-    '<h2 style="margin:0 0 12px;font-size:calc(18px * var(--fs-s))">Settings</h2>'+
+    '<h2 style="margin:0 0 12px;font-size:var(--t-xl)">Settings</h2>'+
     '<div class="set-search-wrap setpick-searchwrap"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>'+
       '<input id="setpick-search" class="set-search" type="text" placeholder="Search settings…" autocomplete="off"></div>'+
     '<div class="setpick-list" id="setpick-list">'+rows+'</div></div></div>';
@@ -2403,7 +2403,7 @@ function _renderSetPaneInner(only, into){
              out, this said "Version 2.0 - 2025" while the release notes one
              screen away listed 2.4, and the year had been wrong since January.
              A version number in two places is two version numbers. */
-          '<div><div style="font-size:calc(17px * var(--fs-s));font-weight:800;letter-spacing:-.4px">AMV<span style="color:var(--accent)">.</span>AI</div><div style="font-size:var(--t-xs);color:var(--t2);margin-top:2px">Version '+escH(_latestVersion()||'2.0')+' &bull; '+new Date().getFullYear()+'</div></div>'+
+          '<div><div style="font-size:var(--t-lg);font-weight:800;letter-spacing:-.4px">AMV<span style="color:var(--accent)">.</span>AI</div><div style="font-size:var(--t-xs);color:var(--t2);margin-top:2px">Version '+escH(_latestVersion()||'2.0')+' &bull; '+new Date().getFullYear()+'</div></div>'+
         '</div>'+
         '<p style="font-size:var(--t-sm);color:var(--t2);line-height:1.65;margin-bottom:13px">Your AI workforce - it does the work, not just answers it. Chat, agents, builds, images, video, and automation in one place.</p>'+
         '<div style="display:flex;gap:8px;flex-wrap:wrap">'+

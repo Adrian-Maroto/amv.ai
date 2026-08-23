@@ -1212,7 +1212,7 @@ function showCustomTask(){
   const div=document.createElement('div');
   div.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(8px)';
   div.innerHTML='<div style="background:var(--s1);border:1px solid var(--hair);border-radius:18px;padding:28px;width:100%;max-width:460px;box-shadow:0 24px 60px rgba(0,0,0,.4);position:relative">'
-    +'<div style="font-size:calc(18px * var(--fs-s));font-weight:700;color:var(--tx);margin-bottom:4px">Custom Background Task</div>'
+    +'<div style="font-size:var(--t-xl);font-weight:700;color:var(--tx);margin-bottom:4px">Custom Background Task</div>'
     +'<div style="font-size:var(--t-sm);color:var(--mu);margin-bottom:20px">Runs automatically - navigate away and it will complete</div>'
     +'<div style="display:flex;flex-direction:column;gap:14px">'
     +'<div><label style="font-size:var(--t-xs);font-weight:600;color:var(--mu);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:6px">Task Name</label><input type="text" id="ct-name" placeholder="e.g. Research competitors" style="width:100%;padding:10px 12px;background:var(--s2);border:1px solid var(--hair);border-radius:10px;color:var(--tx);font-size:var(--t-base);outline:none;box-sizing:border-box"></div>'

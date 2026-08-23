@@ -3899,7 +3899,7 @@ function addToProject(id){
   const ws=Array.isArray(S.workspaces)?S.workspaces:[];
   const r=$('ovr'); if(!r) return;
   const list = ws.length
-    ? ws.map(w=>'<button class="proj-pick" data-wid="'+w.id+'" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:11px 12px;border:1px solid var(--bd);background:var(--s2);border-radius:10px;color:var(--tx);cursor:pointer;margin-bottom:8px;font-size:var(--t-md)"><span style="font-size:calc(18px * var(--fs-s))">'+_safeIcon(w.icon||'\uD83D\uDCC1')+'</span>'+escH(w.name||'Project')+'</button>').join('')
+    ? ws.map(w=>'<button class="proj-pick" data-wid="'+w.id+'" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:11px 12px;border:1px solid var(--bd);background:var(--s2);border-radius:10px;color:var(--tx);cursor:pointer;margin-bottom:8px;font-size:var(--t-md)"><span style="font-size:var(--t-xl)">'+_safeIcon(w.icon||'\uD83D\uDCC1')+'</span>'+escH(w.name||'Project')+'</button>').join('')
     : '<p class="ob-sub">No projects yet. Create one in the Projects tab first.</p>';
   r.innerHTML=
     '<div class="ov" id="ap-bg"><div class="ob">'+
@@ -11113,7 +11113,7 @@ function createWorkspaceModal(){
       '<div class="af">'+
         '<div><label class="lbl">Name</label><input type="text" id="ws-name" placeholder="e.g. Research Project"></div>'+
         '<div><label class="lbl">Description</label><input type="text" id="ws-desc" placeholder="What is this workspace for?"></div>'+
-        '<div><label class="lbl">Icon</label><div style="display:flex;gap:6px;flex-wrap:wrap">'+icons.map(ic=>'<button class="ws-ic-btn" data-ic="'+ic+'" style="width:34px;height:34px;border-radius:7px;border:1px solid var(--bd);background:var(--s2);cursor:pointer;font-size:calc(18px * var(--fs-s));display:flex;align-items:center;justify-content:center;transition:background-color .12s,border-color .12s,color .12s,box-shadow .12s,transform .12s,opacity .12s">'+ic+'</button>').join('')+'</div></div>'+
+        '<div><label class="lbl">Icon</label><div style="display:flex;gap:6px;flex-wrap:wrap">'+icons.map(ic=>'<button class="ws-ic-btn" data-ic="'+ic+'" style="width:34px;height:34px;border-radius:7px;border:1px solid var(--bd);background:var(--s2);cursor:pointer;font-size:var(--t-xl);display:flex;align-items:center;justify-content:center;transition:background-color .12s,border-color .12s,color .12s,box-shadow .12s,transform .12s,opacity .12s">'+ic+'</button>').join('')+'</div></div>'+
         '<button class="btn bp" id="ws-create" style="width:100%;padding:11px">Create Workspace</button>'+
       '</div>'+
     '</div></div>';
@@ -17356,7 +17356,7 @@ function _devConnectVSCode(){
   const r=$('ovr'); if(!r) return;
   r.innerHTML='<div class="ov" id="vsc-bg"><div class="tp-modal" style="max-width:480px">'+
     '<button class="dna-x" id="vsc-x" style="position:absolute;top:14px;right:14px">\u2715</button>'+
-    '<h2 style="font-family:var(--fdisplay);font-weight:500;font-size:calc(21px * var(--fs-s));margin:0 0 6px">Use AMV in VS Code</h2>'+
+    '<h2 style="font-family:var(--fdisplay);font-weight:500;font-size:var(--t-xl);margin:0 0 6px">Use AMV in VS Code</h2>'+
     '<p style="font-size:var(--t-base);color:var(--mu);line-height:1.6;margin:0 0 18px">Run these two commands in your project folder. That\u2019s it - AMV opens in your editor and can read, write, and run your code.</p>'+
     '<div class="vsc-cmd"><code>npm install -g @amv/cli</code><button class="vsc-copy" data-c="npm install -g @amv/cli">Copy</button></div>'+
     '<div class="vsc-cmd" style="margin-top:8px"><code>amv code .</code><button class="vsc-copy" data-c="amv code .">Copy</button></div>'+
@@ -20034,7 +20034,7 @@ function _openSettingsPicker(){
   }).join('');
   r.innerHTML='<div class="ov" id="setpick-bg"><div class="ob setpick-modal" style="max-width:460px">'+
     '<button class="oc" data-dact="closeOvr" aria-label="Close">×</button>'+
-    '<h2 style="margin:0 0 12px;font-size:calc(18px * var(--fs-s))">Settings</h2>'+
+    '<h2 style="margin:0 0 12px;font-size:var(--t-xl)">Settings</h2>'+
     '<div class="set-search-wrap setpick-searchwrap"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>'+
       '<input id="setpick-search" class="set-search" type="text" placeholder="Search settings…" autocomplete="off"></div>'+
     '<div class="setpick-list" id="setpick-list">'+rows+'</div></div></div>';
@@ -21569,7 +21569,7 @@ function _renderSetPaneInner(only, into){
              out, this said "Version 2.0 - 2025" while the release notes one
              screen away listed 2.4, and the year had been wrong since January.
              A version number in two places is two version numbers. */
-          '<div><div style="font-size:calc(17px * var(--fs-s));font-weight:800;letter-spacing:-.4px">AMV<span style="color:var(--accent)">.</span>AI</div><div style="font-size:var(--t-xs);color:var(--t2);margin-top:2px">Version '+escH(_latestVersion()||'2.0')+' &bull; '+new Date().getFullYear()+'</div></div>'+
+          '<div><div style="font-size:var(--t-lg);font-weight:800;letter-spacing:-.4px">AMV<span style="color:var(--accent)">.</span>AI</div><div style="font-size:var(--t-xs);color:var(--t2);margin-top:2px">Version '+escH(_latestVersion()||'2.0')+' &bull; '+new Date().getFullYear()+'</div></div>'+
         '</div>'+
         '<p style="font-size:var(--t-sm);color:var(--t2);line-height:1.65;margin-bottom:13px">Your AI workforce - it does the work, not just answers it. Chat, agents, builds, images, video, and automation in one place.</p>'+
         '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
@@ -23961,7 +23961,7 @@ function showCustomTask(){
   const div=document.createElement('div');
   div.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(8px)';
   div.innerHTML='<div style="background:var(--s1);border:1px solid var(--hair);border-radius:18px;padding:28px;width:100%;max-width:460px;box-shadow:0 24px 60px rgba(0,0,0,.4);position:relative">'
-    +'<div style="font-size:calc(18px * var(--fs-s));font-weight:700;color:var(--tx);margin-bottom:4px">Custom Background Task</div>'
+    +'<div style="font-size:var(--t-xl);font-weight:700;color:var(--tx);margin-bottom:4px">Custom Background Task</div>'
     +'<div style="font-size:var(--t-sm);color:var(--mu);margin-bottom:20px">Runs automatically - navigate away and it will complete</div>'
     +'<div style="display:flex;flex-direction:column;gap:14px">'
     +'<div><label style="font-size:var(--t-xs);font-weight:600;color:var(--mu);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:6px">Task Name</label><input type="text" id="ct-name" placeholder="e.g. Research competitors" style="width:100%;padding:10px 12px;background:var(--s2);border:1px solid var(--hair);border-radius:10px;color:var(--tx);font-size:var(--t-base);outline:none;box-sizing:border-box"></div>'

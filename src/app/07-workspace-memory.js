@@ -1593,7 +1593,7 @@ function createWorkspaceModal(){
       '<div class="af">'+
         '<div><label class="lbl">Name</label><input type="text" id="ws-name" placeholder="e.g. Research Project"></div>'+
         '<div><label class="lbl">Description</label><input type="text" id="ws-desc" placeholder="What is this workspace for?"></div>'+
-        '<div><label class="lbl">Icon</label><div style="display:flex;gap:6px;flex-wrap:wrap">'+icons.map(ic=>'<button class="ws-ic-btn" data-ic="'+ic+'" style="width:34px;height:34px;border-radius:7px;border:1px solid var(--bd);background:var(--s2);cursor:pointer;font-size:calc(18px * var(--fs-s));display:flex;align-items:center;justify-content:center;transition:background-color .12s,border-color .12s,color .12s,box-shadow .12s,transform .12s,opacity .12s">'+ic+'</button>').join('')+'</div></div>'+
+        '<div><label class="lbl">Icon</label><div style="display:flex;gap:6px;flex-wrap:wrap">'+icons.map(ic=>'<button class="ws-ic-btn" data-ic="'+ic+'" style="width:34px;height:34px;border-radius:7px;border:1px solid var(--bd);background:var(--s2);cursor:pointer;font-size:var(--t-xl);display:flex;align-items:center;justify-content:center;transition:background-color .12s,border-color .12s,color .12s,box-shadow .12s,transform .12s,opacity .12s">'+ic+'</button>').join('')+'</div></div>'+
         '<button class="btn bp" id="ws-create" style="width:100%;padding:11px">Create Workspace</button>'+
       '</div>'+
     '</div></div>';
