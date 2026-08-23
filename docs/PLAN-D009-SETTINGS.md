@@ -79,3 +79,44 @@ Rules while doing it:
   thrown away.
 - Verified pane by pane on desktop and phone, against the same before/after
   measurement above.
+
+## Swept for defects beyond D009, and what did not reproduce
+
+D009 is the only NAMED finding for this surface whose text exists in the repo.
+D010, D049, D067 and D068 are ids without content - only 33 of the 78 findings
+are written down anywhere. Rather than guess at them, the surface was swept for
+the defect classes that have actually produced findings elsewhere in this work.
+
+**Inert controls: none.** All 29 controls on Appearance are live, and so is
+every control on the other twelve panes.
+
+**Horizontal scroll on a phone: none.** Thirteen panes at 390px, zero scroll the
+page sideways.
+
+**Tap targets: none under 40px.** Thirteen panes, zero.
+
+### Three false alarms, all of them mine
+
+Worth writing down, because each one looked like a finding right up until it was
+checked:
+
+1. A sweep reported **eight inert controls on Appearance**. Its signature
+   watched the pane's own HTML, and Appearance's whole job is to change things
+   OUTSIDE the pane - the root font size, an accent variable, the language.
+2. A second sweep, with a wider signature, reported **nineteen inert language
+   buttons**. It watched theme, accent and font size but not the language.
+   Clicking `Français` moves `_lang()` from `en` to `fr`, writes storage and
+   moves the selection. They were always live.
+3. A layout sweep reported the **API keys pane overflowing by 40px** on a phone.
+   The culprit was a `<code>` inside a `<pre class="ak-code">` that carries
+   `overflow-x:auto`. A code block scrolling inside itself is correct, and fails
+   "is any element wider than its container" every time. The page never
+   scrolled.
+
+The pattern is the same in all three: **the instrument measured a proxy and the
+proxy was not the rule.** The rule is "the page must not scroll sideways", not
+"no element exceeds its parent". The rule is "clicking this changes something a
+person can perceive", not "the pane's innerHTML got longer".
+
+The checks that survived are in `tests/e2e/settings-has-groups-that-do-work`,
+written against the rules rather than the proxies.

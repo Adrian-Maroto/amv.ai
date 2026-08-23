@@ -113,6 +113,47 @@ section('It still works on a phone');
   await page.setViewportSize({ width: 1440, height: 900 });
 }
 
+section('Every pane behaves on a phone')
+{
+  /* THE RULE, NOT A PROXY FOR IT.
+
+     A sweep asking "is any element wider than its container" reported the API
+     keys pane overflowing by 40px, and it was wrong: the culprit was a <code>
+     inside a <pre class="ak-code"> that carries `overflow-x:auto`. A code block
+     scrolling inside itself is the CORRECT behaviour and fails that question
+     every time.
+
+     What the standard actually says is that the page body must never scroll
+     sideways. That is what is asked here. Same for tap targets: the number that
+     matters is the 40px this product promises, measured on the control. */
+  await page.setViewportSize({ width: 390, height: 844 });
+  const panes = await page.evaluate(() => USER_SET_SECTIONS.filter(s => s.id).map(s => s.id));
+  ok(panes.length >= 10, 'there are panes to sweep', panes.length);
+
+  const bad = [];
+  const small = [];
+  for (const id of panes) {
+    const m = await page.evaluate(async (id) => {
+      S.settingsPane = id; renderSettingsView();
+      await new Promise(s => setTimeout(s, 300));
+      const p = document.getElementById('set-pane');
+      const under = [...p.querySelectorAll('button,a[href],select,input:not([type=checkbox]):not([type=radio])')]
+        .filter(e => { const r = e.getBoundingClientRect(); return r.width > 1 && r.height > 1 && r.height < 40; })
+        .map(e => ((e.textContent || '').trim().slice(0, 16) || e.className.slice(0, 16))
+                  + ':' + Math.round(e.getBoundingClientRect().height));
+      return {
+        pageScrolls: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        under,
+      };
+    }, id);
+    if (m.pageScrolls > 0) bad.push(id + ' +' + m.pageScrolls + 'px');
+    if (m.under.length) small.push(id + ': ' + m.under.slice(0, 4).join(', '));
+  }
+  ok(bad.length === 0, 'no settings pane makes the page scroll sideways', bad.join(' | '));
+  ok(small.length === 0, 'and nothing interactive is under the 40px tap target', small.join(' | '));
+  await page.setViewportSize({ width: 1440, height: 900 });
+}
+
 section('No JavaScript errors');
 ok(errors.length === 0, 'zero uncaught page errors', errors.slice(0, 3));
 
