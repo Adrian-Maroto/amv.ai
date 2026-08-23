@@ -1486,7 +1486,7 @@ function openUpgradeModal(lockedModel){
         '<div class="upg-row-name">Custom<span class="upg-row-tag alt">Build your own</span></div>'+
         '<div class="upg-row-desc">Pick your exact monthly budget - all models, hard-capped, from $10/mo.</div>'+
       '</div>'+
-      '<div class="upg-row-r"><div class="upg-row-price" style="font-size:calc(15px * var(--fs-s))">Your price</div><span class="upg-row-go">Build \u2192</span></div>'+
+      '<div class="upg-row-r"><div class="upg-row-price" style="font-size:var(--t-prose)">Your price</div><span class="upg-row-go">Build \u2192</span></div>'+
     '</button>';
   r.innerHTML='<div class="upg-ov" id="upg-bg"><div class="upg-modal" style="max-width:480px">'+
     '<button class="dna-x" id="upg-x" style="position:absolute;top:16px;right:16px">\u2715</button>'+

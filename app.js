@@ -10448,7 +10448,7 @@ function _mktBlockedDialog(reason, action, category){
     '<div style="display:flex;gap:12px;align-items:flex-start">'+
       '<span style="width:38px;height:38px;flex-shrink:0;border-radius:10px;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,'+tint+' 13%,transparent);color:'+tint+'">'+
         '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+icon+'</svg></span>'+
-      '<div><div style="font-size:calc(15px * var(--fs-s));font-weight:600;margin-bottom:6px">'+(needsVer?'Verification required':'Listing blocked by review')+'</div>'+
+      '<div><div style="font-size:var(--t-prose);font-weight:600;margin-bottom:6px">'+(needsVer?'Verification required':'Listing blocked by review')+'</div>'+
         '<div style="font-size:var(--t-base);color:var(--mu);line-height:1.6">'+escH(reason)+'</div></div>'+
     '</div>'+
     '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">'+
@@ -10482,7 +10482,7 @@ function _mktReport(itemId, title){
     ['sexual','Sexual or abusive content'],['harassment','Hate or harassment'],
     ['other','Something else']];
   r.innerHTML='<div class="ovr-bg" id="mkr-bg"><div class="ovr-card" style="max-width:430px">'+
-    '<div style="font-size:calc(15px * var(--fs-s));font-weight:600;margin-bottom:4px">'+T('Report this listing')+'</div>'+
+    '<div style="font-size:var(--t-prose);font-weight:600;margin-bottom:4px">'+T('Report this listing')+'</div>'+
     '<div style="font-size:var(--t-sm);color:var(--mu);margin-bottom:14px">'+escH(title||'')+'</div>'+
     '<label class="lbl">'+T('What\u2019s wrong with it?')+'</label>'+
     '<select id="mkr-reason" class="sel" style="width:100%;margin-bottom:10px">'+
@@ -12757,7 +12757,7 @@ function openUpgradeModal(lockedModel){
         '<div class="upg-row-name">Custom<span class="upg-row-tag alt">Build your own</span></div>'+
         '<div class="upg-row-desc">Pick your exact monthly budget - all models, hard-capped, from $10/mo.</div>'+
       '</div>'+
-      '<div class="upg-row-r"><div class="upg-row-price" style="font-size:calc(15px * var(--fs-s))">Your price</div><span class="upg-row-go">Build \u2192</span></div>'+
+      '<div class="upg-row-r"><div class="upg-row-price" style="font-size:var(--t-prose)">Your price</div><span class="upg-row-go">Build \u2192</span></div>'+
     '</button>';
   r.innerHTML='<div class="upg-ov" id="upg-bg"><div class="upg-modal" style="max-width:480px">'+
     '<button class="dna-x" id="upg-x" style="position:absolute;top:16px;right:16px">\u2715</button>'+
@@ -16913,7 +16913,7 @@ function openDNA(){
     <div class="dna-head">
       <div><h2>Design DNA</h2><p>Your reusable style guide. Set it once - every design AMV makes follows it.</p></div>
       <div style="display:flex;align-items:center;gap:4px">
-        <button class="dna-x" id="dna-help" title="What is this?" style="font-size:calc(15px * var(--fs-s))">?</button>
+        <button class="dna-x" id="dna-help" title="What is this?" style="font-size:var(--t-prose)">?</button>
         <button class="dna-x" id="dna-x">✕</button>
       </div>
     </div>
@@ -18990,7 +18990,7 @@ function _ctxRenderMeter(hostId, kind){
 async function _ctxHandoffFlow(kind){
   const r=$('ovr'); if(!r) return;
   r.innerHTML='<div class="ovr-bg"><div class="ovr-card" style="max-width:460px">'+
-    '<div style="font-size:calc(15px * var(--fs-s));font-weight:600;margin-bottom:6px">Carrying your context over\u2026</div>'+
+    '<div style="font-size:var(--t-prose);font-weight:600;margin-bottom:6px">Carrying your context over\u2026</div>'+
     '<div style="font-size:var(--t-base);color:var(--mu);line-height:1.6" id="ctx-step">Compressing everything important from this '+(kind==='dev'?'session':'chat')+'\u2026</div>'+
     '<div class="ctx-bar" style="margin-top:14px"><div class="ctx-fill" id="ctx-anim" style="width:15%"></div></div>'+
   '</div></div>';

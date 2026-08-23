@@ -756,7 +756,7 @@ function openDNA(){
     <div class="dna-head">
       <div><h2>Design DNA</h2><p>Your reusable style guide. Set it once - every design AMV makes follows it.</p></div>
       <div style="display:flex;align-items:center;gap:4px">
-        <button class="dna-x" id="dna-help" title="What is this?" style="font-size:calc(15px * var(--fs-s))">?</button>
+        <button class="dna-x" id="dna-help" title="What is this?" style="font-size:var(--t-prose)">?</button>
         <button class="dna-x" id="dna-x">✕</button>
       </div>
     </div>
@@ -2833,7 +2833,7 @@ function _ctxRenderMeter(hostId, kind){
 async function _ctxHandoffFlow(kind){
   const r=$('ovr'); if(!r) return;
   r.innerHTML='<div class="ovr-bg"><div class="ovr-card" style="max-width:460px">'+
-    '<div style="font-size:calc(15px * var(--fs-s));font-weight:600;margin-bottom:6px">Carrying your context over\u2026</div>'+
+    '<div style="font-size:var(--t-prose);font-weight:600;margin-bottom:6px">Carrying your context over\u2026</div>'+
     '<div style="font-size:var(--t-base);color:var(--mu);line-height:1.6" id="ctx-step">Compressing everything important from this '+(kind==='dev'?'session':'chat')+'\u2026</div>'+
     '<div class="ctx-bar" style="margin-top:14px"><div class="ctx-fill" id="ctx-anim" style="width:15%"></div></div>'+
   '</div></div>';

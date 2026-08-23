@@ -928,7 +928,7 @@ function _mktBlockedDialog(reason, action, category){
     '<div style="display:flex;gap:12px;align-items:flex-start">'+
       '<span style="width:38px;height:38px;flex-shrink:0;border-radius:10px;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,'+tint+' 13%,transparent);color:'+tint+'">'+
         '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+icon+'</svg></span>'+
-      '<div><div style="font-size:calc(15px * var(--fs-s));font-weight:600;margin-bottom:6px">'+(needsVer?'Verification required':'Listing blocked by review')+'</div>'+
+      '<div><div style="font-size:var(--t-prose);font-weight:600;margin-bottom:6px">'+(needsVer?'Verification required':'Listing blocked by review')+'</div>'+
         '<div style="font-size:var(--t-base);color:var(--mu);line-height:1.6">'+escH(reason)+'</div></div>'+
     '</div>'+
     '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">'+
@@ -962,7 +962,7 @@ function _mktReport(itemId, title){
     ['sexual','Sexual or abusive content'],['harassment','Hate or harassment'],
     ['other','Something else']];
   r.innerHTML='<div class="ovr-bg" id="mkr-bg"><div class="ovr-card" style="max-width:430px">'+
-    '<div style="font-size:calc(15px * var(--fs-s));font-weight:600;margin-bottom:4px">'+T('Report this listing')+'</div>'+
+    '<div style="font-size:var(--t-prose);font-weight:600;margin-bottom:4px">'+T('Report this listing')+'</div>'+
     '<div style="font-size:var(--t-sm);color:var(--mu);margin-bottom:14px">'+escH(title||'')+'</div>'+
     '<label class="lbl">'+T('What\u2019s wrong with it?')+'</label>'+
     '<select id="mkr-reason" class="sel" style="width:100%;margin-bottom:10px">'+
