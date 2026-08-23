@@ -1446,7 +1446,23 @@ async function _scheduleTask(t){
   }catch(e){
     /* A plan that cannot run background work is not an error to swallow - it is
        the one case where the user can fix it, so it points at the fix. */
-    if(e.code === 'plan_required' || e.code === 'plan_limit' || /paid plan/i.test(e.message||'')){
+    /* AT THE CAP IS NOT WITHOUT A PLAN.
+
+       `job_limit` is what a PAYING account gets when it reaches its automation
+       ceiling, and it was landing in "Could not schedule: ..." in red. That
+       customer's product is not broken and they have not been refused a
+       feature - they have twenty-five jobs and room for twenty-five. The
+       server's own sentence says removing one frees a slot, so this offers the
+       plan without dragging them to the plans tab, and leaves scheduling
+       enabled, because they can still schedule the moment they delete one. */
+    if(e.code === 'job_limit'){
+      const m = e.message || 'You are at your plan\u2019s background-job limit.';
+      if(typeof toastAction==='function')
+        toastAction(m, 'See plans', ()=>{ try{ setTab('plans'); }catch(_){} }, 9000);
+      else if(typeof toast==='function') toast(m,'info',7000);
+      return null;
+    }
+    if((typeof _isPlanRefusal==='function' && _isPlanRefusal(e)) || /paid plan/i.test(e.message||'')){
       _AUTO_CAN_SCHEDULE = false;
       if(typeof toast==='function') toast(e.message || 'Background automations need a paid plan.','info',7000);
       try{ if(typeof setTab==='function'){ S.tab='plans'; setTab('plans'); } }catch(_){}

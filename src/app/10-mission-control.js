@@ -1442,7 +1442,9 @@ function _mcWhereItRuns(res){
   if(res.code === 'needs_service')
     return ' It runs only while AMV is open, because the AMV engine is not connected yet.';
   /* A plan limit is not a failure - it is the answer, and it has somewhere to go. */
-  if(res.code === 'plan_required' || res.code === 'plan_limit')
+  /* job_limit belongs here too: it is what a PAYING account gets at its
+     automation cap, and it was falling through to "could NOT be registered". */
+  if(res.code === 'plan_required' || res.code === 'plan_limit' || res.code === 'job_limit')
     return ' ' + (res.error || 'Running work in the background is part of a paid plan.') +
            ' For now it runs only while AMV is open.';
   return ' It could NOT be registered to run in the background' + (res.error ? ' (' + res.error + ')' : '')

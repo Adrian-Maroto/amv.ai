@@ -142,6 +142,62 @@ section('Dev offers the plan on the card that used to offer a retry');
   ok(r.tier, 'styled as a door, not a fault', r.tier);
 }
 
+section('A paying account at its cap is not told the product is broken')
+{
+  /* `job_limit` is what an account WITH a plan gets when it reaches its
+     automation ceiling. Three separate call sites listed the plan codes by
+     hand, all three named plan_required and plan_limit, and all three missed
+     this one - so an Elite customer scheduling a twenty-sixth background job
+     was told "Could not schedule", in red, as though AMV were broken.
+
+     Driven through the three places that answer it. */
+  const r = await page.evaluate(async () => {
+    const out = {};
+    /* One: the sentence Crew puts in front of the person. */
+    out.crew = _mcWhereItRuns({ ok: false, code: 'job_limit',
+      error: 'Your plan runs 25 background jobs. Remove one to add another, or upgrade for more.' });
+
+    /* Two: what Crew tells the model, which is what the model then repeats. */
+    const e = new Error('Your plan runs 25 background jobs. Remove one to add another, or upgrade for more.');
+    e.code = 'job_limit';
+    out.model = _crewErr(e);
+
+    /* Three: scheduling from Tasks. The server answers 429 with the code. */
+    const rf = window.fetch;
+    window.fetch = async (u, o) => {
+      if (String(u).includes('/auto/create'))
+        return new Response(JSON.stringify({ error: 'Your plan runs 25 background jobs. Remove one to add another, or upgrade for more.', code: 'job_limit' }),
+                            { status: 429, headers: { 'Content-Type': 'application/json' } });
+      return rf(u, o);
+    };
+    document.querySelectorAll('#toast-wrap .toast').forEach(t => t.remove());
+    const before = S.tab;
+    await _scheduleTask({ detail: 'watch the news', repeat: 'daily' });
+    await new Promise(res => setTimeout(res, 250));
+    const toasts = [...document.querySelectorAll('#toast-wrap .toast')];
+    out.toast = toasts.map(t => t.textContent).join(' | ');
+    out.isError = toasts.some(t => t.classList.contains('error'));
+    out.btn = toasts.map(t => { const b = t.querySelector('.toast-btn'); return b ? b.textContent : ''; }).join('');
+    out.stayedPut = (S.tab === before);
+    out.canStill = (typeof _AUTO_CAN_SCHEDULE === 'undefined') ? null : _AUTO_CAN_SCHEDULE;
+    window.fetch = rf;
+    return out;
+  });
+
+  ok(/25 background jobs/.test(r.crew), 'Crew says the real reason', r.crew.slice(0, 100));
+  ok(!/could NOT be registered/i.test(r.crew), 'not that it could not be registered', r.crew.slice(0, 100));
+
+  ok(/background-job limit/.test(r.model), 'the model is told it is a limit, not a failure', r.model.slice(0, 90));
+  ok(/do NOT retry/i.test(r.model), 'and told not to burn a retry on it', r.model.slice(0, 140));
+
+  ok(r.toast.length > 0, 'scheduling says something', r.toast.slice(0, 100));
+  ok(!/Could not schedule/i.test(r.toast), 'and does not call a full shelf a failure', r.toast.slice(0, 100));
+  ok(!r.isError, 'nor style it as one', r.isError);
+  ok(/plans/i.test(r.btn), 'it offers the plan', r.btn);
+  ok(r.stayedPut, 'without dragging them off the screen they were on', r.stayedPut);
+  ok(r.canStill !== false, 'and scheduling stays enabled, because deleting one frees a slot', r.canStill);
+}
+
 section('No JavaScript errors');
 ok(errors.length === 0, 'zero uncaught page errors', errors.slice(0, 3));
 

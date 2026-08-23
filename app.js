@@ -5614,6 +5614,20 @@ const REFUSAL_LIFTED_BY = {
   free_capacity: 'plans', team_full: 'team',
 };
 function _refusalRoute(code){ return REFUSAL_LIFTED_BY[String(code || '')] || ''; }
+/* "Is this a tier rather than a fault?" - asked of the table above rather than
+   of a list of codes written out again at each call site. Three of those lists
+   existed, all three named plan_required and plan_limit, and all three had
+   missed `job_limit` - which is the one a PAYING account gets when it reaches
+   its automation cap. So an Elite customer scheduling a twenty-sixth job was
+   told "Could not schedule", in red, as though the product were broken.
+
+   The prose fallback stays for callers whose errors predate the code being
+   carried at all; it is a safety net, not the check. */
+function _isPlanRefusal(e){
+  try{ if(_refusalRoute(e && e.code)) return true; }catch(_){}
+  return /paid plan/i.test((e && e.message) || '');
+}
+try{ window._isPlanRefusal = _isPlanRefusal; }catch(e){}
 try{ window._refusalRoute = _refusalRoute; }catch(e){}
 
 async function _callAI(msgs, _opts) {
@@ -14974,7 +14988,9 @@ function _mcWhereItRuns(res){
   if(res.code === 'needs_service')
     return ' It runs only while AMV is open, because the AMV engine is not connected yet.';
   /* A plan limit is not a failure - it is the answer, and it has somewhere to go. */
-  if(res.code === 'plan_required' || res.code === 'plan_limit')
+  /* job_limit belongs here too: it is what a PAYING account gets at its
+     automation cap, and it was falling through to "could NOT be registered". */
+  if(res.code === 'plan_required' || res.code === 'plan_limit' || res.code === 'job_limit')
     return ' ' + (res.error || 'Running work in the background is part of a paid plan.') +
            ' For now it runs only while AMV is open.';
   return ' It could NOT be registered to run in the background' + (res.error ? ' (' + res.error + ')' : '')
@@ -18265,7 +18281,11 @@ function _crewErr(e){
   const msg = (e && e.message) || 'the server did not accept it';
   if(msg === 'not-connected')
     return 'AMV is not connected to its engine, so background jobs cannot be reached at all. Tell the user to connect it in Settings. Do NOT say the job was created.';
-  if(e && (e.code === 'plan_required' || e.code === 'plan_limit') || /paid plan/i.test(msg))
+  if(e && e.code === 'job_limit')
+    return 'The account is at its background-job limit: ' + msg +
+           '. Tell the user exactly this. Removing one frees a slot, and a higher plan raises the number. ' +
+           'Do NOT say the job was created, and do NOT retry - it will refuse again.';
+  if((typeof _isPlanRefusal==='function' && _isPlanRefusal(e)) || /paid plan/i.test(msg))
     return 'This account\'s plan cannot run that: ' + msg + '. Tell the user exactly this and that upgrading lifts it. Do NOT say the job was created.';
   return 'That did not work: ' + msg + '. Tell the user plainly - do NOT say it worked.';
 }
@@ -25473,7 +25493,23 @@ async function _scheduleTask(t){
   }catch(e){
     /* A plan that cannot run background work is not an error to swallow - it is
        the one case where the user can fix it, so it points at the fix. */
-    if(e.code === 'plan_required' || e.code === 'plan_limit' || /paid plan/i.test(e.message||'')){
+    /* AT THE CAP IS NOT WITHOUT A PLAN.
+
+       `job_limit` is what a PAYING account gets when it reaches its automation
+       ceiling, and it was landing in "Could not schedule: ..." in red. That
+       customer's product is not broken and they have not been refused a
+       feature - they have twenty-five jobs and room for twenty-five. The
+       server's own sentence says removing one frees a slot, so this offers the
+       plan without dragging them to the plans tab, and leaves scheduling
+       enabled, because they can still schedule the moment they delete one. */
+    if(e.code === 'job_limit'){
+      const m = e.message || 'You are at your plan\u2019s background-job limit.';
+      if(typeof toastAction==='function')
+        toastAction(m, 'See plans', ()=>{ try{ setTab('plans'); }catch(_){} }, 9000);
+      else if(typeof toast==='function') toast(m,'info',7000);
+      return null;
+    }
+    if((typeof _isPlanRefusal==='function' && _isPlanRefusal(e)) || /paid plan/i.test(e.message||'')){
       _AUTO_CAN_SCHEDULE = false;
       if(typeof toast==='function') toast(e.message || 'Background automations need a paid plan.','info',7000);
       try{ if(typeof setTab==='function'){ S.tab='plans'; setTab('plans'); } }catch(_){}

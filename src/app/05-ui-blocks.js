@@ -711,6 +711,20 @@ const REFUSAL_LIFTED_BY = {
   free_capacity: 'plans', team_full: 'team',
 };
 function _refusalRoute(code){ return REFUSAL_LIFTED_BY[String(code || '')] || ''; }
+/* "Is this a tier rather than a fault?" - asked of the table above rather than
+   of a list of codes written out again at each call site. Three of those lists
+   existed, all three named plan_required and plan_limit, and all three had
+   missed `job_limit` - which is the one a PAYING account gets when it reaches
+   its automation cap. So an Elite customer scheduling a twenty-sixth job was
+   told "Could not schedule", in red, as though the product were broken.
+
+   The prose fallback stays for callers whose errors predate the code being
+   carried at all; it is a safety net, not the check. */
+function _isPlanRefusal(e){
+  try{ if(_refusalRoute(e && e.code)) return true; }catch(_){}
+  return /paid plan/i.test((e && e.message) || '');
+}
+try{ window._isPlanRefusal = _isPlanRefusal; }catch(e){}
 try{ window._refusalRoute = _refusalRoute; }catch(e){}
 
 async function _callAI(msgs, _opts) {

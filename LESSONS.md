@@ -5578,3 +5578,44 @@ Two rules, and the second is new:
   before "it does not say the wrong thing", or absence certifies as success.
 - **Wait for settled, not for non-empty.** A status line has intermediate
   states, and every one of them satisfies "has text".
+
+## 276. Three lists of the same thing, and all three had the same gap
+
+`job_limit` is the code a **paying** account gets when it reaches its automation
+ceiling. Three separate call sites decide whether a refusal is a tier or a fault
+- the sentence Crew shows, the instruction Crew gives the model, and the toast
+that scheduling raises. All three enumerated the codes by hand. All three named
+`plan_required` and `plan_limit`. All three missed this one.
+
+So an Elite customer scheduling a twenty-sixth background job read *"Could not
+schedule"*, in red, and Crew told them it *"could NOT be registered"*. Nothing
+was broken and nothing had been refused them. They had twenty-five jobs and room
+for twenty-five, and the server's own sentence already said that removing one
+frees a slot.
+
+**The missing entry is not the defect. Three hand-written copies of the same
+question is the defect** - and the giveaway is that they were all wrong in the
+same way. When N places independently list the same set and all N agree, that is
+not N confirmations; it is one decision copied N times, and it drifts together.
+They ask the table now, through one predicate.
+
+### Where the copies came from
+
+Nobody wrote three lists on purpose. Each was written while fixing one surface,
+by someone who could see the codes that surface handled and had no reason to
+look for the others. That is the same root as #275 - a fix applied to one caller
+- and the counter-move is the same: after adding a branch on a code, grep for
+every other place that branches on a sibling of it.
+
+### A refusal answered too hard is still answered wrongly
+
+The existing plan branch navigates straight to the plans tab. For a free account
+with no background jobs at all, that is defensible. For a paying customer whose
+shelf is full it is not: it takes them off the screen they were working on to
+sell them something they may not need, when deleting one job would do. So
+`job_limit` offers the plan and stays put, and leaves scheduling enabled -
+because they can schedule again the moment they delete one.
+
+Worth stating plainly, since this whole thread has been about routing refusals
+toward payment: **an upgrade prompt at a moment the customer did not need one is
+a worse outcome than the error it replaced.**

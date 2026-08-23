@@ -2254,7 +2254,11 @@ function _crewErr(e){
   const msg = (e && e.message) || 'the server did not accept it';
   if(msg === 'not-connected')
     return 'AMV is not connected to its engine, so background jobs cannot be reached at all. Tell the user to connect it in Settings. Do NOT say the job was created.';
-  if(e && (e.code === 'plan_required' || e.code === 'plan_limit') || /paid plan/i.test(msg))
+  if(e && e.code === 'job_limit')
+    return 'The account is at its background-job limit: ' + msg +
+           '. Tell the user exactly this. Removing one frees a slot, and a higher plan raises the number. ' +
+           'Do NOT say the job was created, and do NOT retry - it will refuse again.';
+  if((typeof _isPlanRefusal==='function' && _isPlanRefusal(e)) || /paid plan/i.test(msg))
     return 'This account\'s plan cannot run that: ' + msg + '. Tell the user exactly this and that upgrading lifts it. Do NOT say the job was created.';
   return 'That did not work: ' + msg + '. Tell the user plainly - do NOT say it worked.';
 }
