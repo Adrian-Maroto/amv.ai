@@ -160,7 +160,7 @@ would be repeated.
   deploy`. Fully documented in `DEPLOY.md`.
 
 ### Secrets (owner sets at deploy - see DEPLOY.md)
-Required: `ANTHROPIC_API_KEY`, `JWT_SECRET`.
+Required: `AMV_MODEL_KEY`, `JWT_SECRET`.
 Also: `ADMIN_TOKEN`, `EMAIL_API_KEY`, `GLOBAL_DAILY_USD_CAP` (default $500),
 Stripe (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_*`),
 PayPal (`PAYPAL_CLIENT_ID`/`SECRET`/`MODE`, `PAYPAL_PLAN_*`),

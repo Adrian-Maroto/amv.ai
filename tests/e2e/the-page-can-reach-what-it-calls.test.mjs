@@ -193,7 +193,7 @@ section('The provider is named on the server and nowhere a person can see');
     if (/banned\s*=|_MKT_PROHIBITED|_marketScreen|screenList|prohibited/i.test(around)) continue;
     /* The two identifiers a call cannot avoid. */
     if (/claude-(haiku|sonnet|opus|fable)/i.test(around) || /api\.anthropic\.com/i.test(around)) continue;
-    if (/AMV_MODEL_KEY \|\| env\.ANTHROPIC_API_KEY/.test(around)) continue;
+    if (/env\.AMV_MODEL_KEY/.test(around)) continue;
     /* A required request header. Same category as the model ids: the API
        defines the name, and a call that omits it is refused. */
     if (/'anthropic-version'/.test(around)) continue;

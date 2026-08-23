@@ -5619,3 +5619,62 @@ because they can schedule again the moment they delete one.
 Worth stating plainly, since this whole thread has been about routing refusals
 toward payment: **an upgrade prompt at a moment the customer did not need one is
 a worse outcome than the error it replaced.**
+
+## 277. The rule held everywhere anybody looks
+
+AMV carries no other company's name in anything it ships. That rule was being
+kept by remembering it, and it had held in every place a person looks - no
+screen, no message, no document. It had quietly stopped holding in three places
+that do not read as "output":
+
+- **A secret name.** `_modelKey` accepted the provider's own name as a fallback
+  "so an existing deployment does not stop answering the moment this ships".
+  There is no existing deployment; preflight still reports the KV namespace id
+  as a placeholder. The alias protected a customer who does not exist, appeared
+  in the preflight secrets list the owner reads, and would have sat in the
+  Cloudflare dashboard beside the real one.
+- **Two documents calling that name required** - wrong twice, since it was a
+  fallback and the supported name is `AMV_MODEL_KEY`. Anybody following either
+  would set a secret the Worker ignores and watch the engine stay dark with
+  everything apparently configured. A doc naming a key the code stopped reading
+  is worse than a branding slip.
+- **A CSS comment naming the project's own instructions file**, in a layer I
+  wrote, shipped inside `index.html` to every visitor who opens the page.
+
+The code comment claimed *"every message, doc and readiness check names
+AMV_MODEL_KEY only."* The Worker was true to it. The docs, the preflight list
+and two test fixtures were not. A comment asserting a property of files it does
+not live in is a claim nobody can check while reading it - #270 again.
+
+**A rule kept by remembering it is kept in the places you look.** The exceptions
+accumulate where nobody thinks to check, because that is what "nobody thinks to
+check" means. It is an allowlist with a reason per entry now, and an entry that
+stops matching anything fails too - so an exemption cannot rot into a blanket
+one after the thing it excused is gone.
+
+### Where I stopped
+
+Three mentions stay: the endpoint constant, the protocol version header, and the
+provider's model ids. They are the upstream **wire protocol** - those exact
+strings are what makes a model call work. All three are server-side; the browser
+sends `amv-*` names and the response header reports the AMV tier, so none of
+them reaches a user.
+
+Renaming them rebrands nothing and breaks every answer AMV gives. **A rule
+applied until the product stops working is not being followed, it is being
+obeyed past the point of sense** - and CLAUDE.md says so itself: if a change
+would make AMV worse, do not make it, say so instead. Which is the other half of
+the job: I wrote down what stays, why, and the deployment-level option (point
+`MODEL_API_URL` at a proxy) that removes even the hostname without touching code.
+
+### The scan reported the wrong thing, convincingly
+
+The first version matched line by line and reported the built bundle as an
+unexplained mention, offering `"use strict";const $=e=>...` as the evidence.
+`index.html` is minified onto one line, so "the line" was the whole file and the
+excerpt was its first 160 characters - a real failure, pointing at nothing.
+
+It reads a window around each match now, which behaves the same minified or not.
+Worth keeping in mind generally: **any check that reasons about "lines" is making
+an assumption the build step is free to break**, and the artifact that actually
+ships is the one where it breaks.

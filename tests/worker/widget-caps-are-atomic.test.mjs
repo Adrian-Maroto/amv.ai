@@ -38,7 +38,7 @@ const counters = new Map();
    reserve really is a test-and-set and a read-then-check really can race. */
 const env = {
   JWT_SECRET: 'x'.repeat(40),
-  ANTHROPIC_API_KEY: 'sk-test',
+  AMV_MODEL_KEY: 'sk-test',
   AMV_KV: {
     async get(k) { return store.has(k) ? store.get(k) : null; },
     async put(k, v) { store.set(k, String(v)); },

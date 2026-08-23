@@ -20,7 +20,7 @@ const REPORT = {
   ok: true, checkedAt: Date.now(),
   items: [
     { id: 'ai', name: 'AI engine', blocking: true, on: false,
-      turnsOn: 'Every answer, agent, build, document and scheduled task.', how: 'wrangler secret put ANTHROPIC_API_KEY' },
+      turnsOn: 'Every answer, agent, build, document and scheduled task.', how: 'wrangler secret put AMV_MODEL_KEY' },
     { id: 'auth', name: 'Accounts and sessions', blocking: true, on: true,
       turnsOn: 'Sign-in, sync and every authenticated route.', how: 'wrangler secret put JWT_SECRET' },
     { id: 'email', name: 'Email delivery', blocking: false, on: false,
@@ -66,7 +66,7 @@ section('It reads the real configuration from the server');
   ok(/Not ready: AI engine still missing/.test(t), 'the verdict is the first thing said', t.slice(0, 60));
   ok(/2 of 5 configured/.test(t), 'with a real count', t);
   ok(/Every answer, agent, build/.test(t), 'each line says what it turns on');
-  ok(/wrangler secret put ANTHROPIC_API_KEY/.test(t), 'and the exact command for the ones that are off');
+  ok(/wrangler secret put AMV_MODEL_KEY/.test(t), 'and the exact command for the ones that are off');
 
   const auth = await page.evaluate(() => {
     const rows = [...document.querySelectorAll('.gl-row')];

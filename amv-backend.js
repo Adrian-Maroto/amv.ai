@@ -111,14 +111,20 @@ const RAW_TO_KEY = {
 };
 const PLAN_RANK = { free: 0, pro: 1, elite: 2, ultra: 3 };
 
-/* The model provider's key, under an AMV name.
+/* The model provider's key, under an AMV name - and only that name.
 
-   AMV_MODEL_KEY is the name to set. The legacy name is still accepted so an
-   existing deployment does not stop answering the moment this ships - it is a
-   fallback, not a second supported setting, and every message, doc and readiness
-   check names AMV_MODEL_KEY only. */
+   There used to be a second one here: the provider's own name, kept as a
+   fallback "so an existing deployment does not stop answering the moment this
+   ships". There is no existing deployment. Preflight still reports the KV
+   namespace id as a placeholder, so nothing has ever run against real storage,
+   and the alias was protecting a customer who does not exist at the cost of a
+   standing rule - AMV does not carry another company's name in anything it
+   ships, and a secret name is read by whoever opens the dashboard.
+
+   One name. Everything that asks for it, alerts about it or checks for it
+   already said AMV_MODEL_KEY; this was the last place that did not. */
 function _modelKey(env){
-  return (env && (env.AMV_MODEL_KEY || env.ANTHROPIC_API_KEY)) || '';
+  return (env && env.AMV_MODEL_KEY) || '';
 }
 
 /* ── THE MODEL TRANSPORT ───────────────────────────────────────────────────
