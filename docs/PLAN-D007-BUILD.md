@@ -211,6 +211,33 @@ big-bang rewrite.
    would produce the worse product, and the finding is about duplication of
    STYLE, not of concept.
 
+   All three bars, measured 2026-08-23:
+
+   | | left of the bar | right of the bar | bodies | status lives |
+   |---|---|---|---|---|
+   | Dev | tabs `Preview\|Code` | viewport, download, deploy, open | 2, toggled | in the bar, right |
+   | Lab | title `Output` | nothing | 1 (+ chat) | in the bar, left |
+   | Studio | 3 fake window dots, title | viewport | 2, toggled | **in the side panel** |
+
+   Two things fall out of that table, and both are user-visible, which matters
+   because step 6 is not:
+
+   **Studio's code toggle is a button in the SIDE panel; Dev's is a tab in the
+   bar.** Same job, two places, two idioms. Moving Studio's into the bar as a
+   tab is the actual D007 win on this surface - it is the "one control, one
+   place" the finding asks for, and a person switching between the two surfaces
+   stops having to relearn where it lives.
+
+   **Studio's status is in the side panel, away from the stage it describes.**
+   Dev and Lab both put it in the bar. This was noticed the hard way: an e2e
+   probe waiting for Studio to report a refusal had to watch an element in a
+   different pane from the thing that failed.
+
+   So the component is `_resultBarHTML({ tabs | title, actions, status })`, and
+   adopting it moves two controls to where the other surfaces already keep
+   them. The fake window dots go - they are decoration on one surface out of
+   three and they cost the bar its left slot.
+
 6. **Retire the three renderers**, and run the step-1 inventory to prove every
    control still exists and still reaches the same function.
 
