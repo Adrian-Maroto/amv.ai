@@ -174,47 +174,76 @@ The other ~686 shift type if migrated and need a decision - add tokens for the
 in-between sizes, accept the shift, or leave them. That is the owner's call and
 is NOT bundled into the safe half.
 
-## The safe half is done; here is the decision on the rest
+## Done: 99% of the text obeys the setting
 
-**Done (commit 5de077a):** 511 rules whose size is an exact step on the scale
-migrated to tokens. Proved invisible - 740 text elements across fourteen tabs,
-zero changed at the default size - and the text size setting went from moving
-12% of visible text to 42%, with no horizontal overflow at Largest on desktop
-or phone.
+The number that matters went 12% -> 42% -> **99%**, measured the same way each
+time: render fourteen tabs, record the computed font size of every visible text
+element, switch to Largest, record again, count what moved. 1,040 of 1,054.
 
-**Open, and it is a decision rather than a defect.** 723 hardcoded declarations
-remain, and every one of them sits BETWEEN steps on the scale:
+The only text that does NOT move is the AMV mark in the top-left corner. That is
+a logo in a fixed box, and a logo should not grow with a reading preference. It
+is left deliberately.
 
-| px | rules | nearest token | shift if migrated |
+### What it took, and what it cost
+
+Four passes, each measured before and after at the DEFAULT size so the cost is a
+fact rather than a claim.
+
+| pass | what | rules | shift at default |
 |---|---|---|---|
-| 13 | 187 | `--t-base` 13.5 | +0.5px on 187 rules |
-| 12.5 | 156 | `--t-sm` 12 or `--t-base` 13.5 | -0.5 or +1 |
-| 11.5 | 77 | `--t-xs` 11 or `--t-sm` 12 | -0.5 or +0.5 |
-| 15 | 42 | `--t-md` 14 or `--t-lg` 16 | -1 or +1 |
-| 10.5 | 41 | below the scale | no token exists |
-| 10 | 43 | below the scale | no token exists |
-| 18 | 20 | between 16 and 20 | -2 or +2 |
-| other | ~157 | various | various |
+| A | 20 / 26 / 34px - exact steps the first pass missed | 29 | none |
+| B | 10 / 10.5 / 9 / 9.5 / 8px - below the scale, so two steps were added | 95 | half a pixel |
+| C | 13 / 12.5 / 11.5 / 14.5 / 16.5px - within half a step | 437 | half a pixel |
+| D | 15 / 17 / 18 / 22 / 24 ... - off-scale display sizes | 157 | none |
+| E | inline `style="font-size:Npx"` in the JS renderers | 304 | half a pixel |
+| F | `font-size:clamp(...)` responsive headings | 19 | none |
 
-Three ways to close it, none of them free:
+**The total cost is half a pixel, on 399 of 1,054 elements, and nothing else.**
+Every single difference between the original render and this one is a 0.5px
+move: 13 -> 13.5, 12.5 -> 12, 10.5 -> 10, 14.5 -> 14, 11.5 -> 12, 9.5 -> 9. No
+element moved by a whole pixel. Horizontal overflow at Largest is 0px on
+desktop, tablet and phone.
 
-1. **Add tokens for the in-between sizes.** `--t-2xs` 10, `--t-xs-plus` 11.5,
-   and so on. Every remaining rule then migrates with no visual change and the
-   whole product obeys the text size setting. The cost is a scale of thirteen
-   steps instead of eight, which is a weaker scale - the point of a scale is
-   that it constrains.
-2. **Snap them to the nearest existing step.** The product obeys the setting
-   everywhere and the scale stays tight. The cost is that type shifts by half a
-   pixel to two pixels across roughly seven hundred rules, on every screen. It
-   needs looking at, screen by screen, not measuring.
-3. **Leave them.** No risk, and the text size setting keeps working on 42% of
-   the text rather than all of it.
+### The two new steps
 
-Recommendation: **(1) for the sizes below the scale (10 and 10.5px, 84 rules -
-there is no token to snap to and they are the smallest text in the product,
-which is exactly the text somebody enabling a larger size needs), then (2) for
-13px and 12.5px** - 343 rules, all moving by half a pixel, which is the
-smallest visible change available and covers the largest block. That reaches
-roughly 80% with one screen-by-screen review rather than three.
+`--t-2xs` 10px and `--t-3xs` 9px. The scale had nothing below 11px, but 95 rules
+did - badges, eyebrows, section labels, timestamps, statuses. That is the
+smallest text in the product, which is exactly the text somebody enabling a
+larger size needs most, and it was the text most stuck. One clean 1px ladder at
+the bottom: 9 / 10 / 11 / 12 / 13.5 / 14 / 16 / 20 / 26 / 34.
 
-This is a visual change across the product, so it waits for the owner.
+### The part that was nearly missed
+
+Body text was tokenised first and headings were not. So at Largest the body grew
+and the headings stayed frozen, and **the hierarchy inverted on every screen** -
+on the plans page the sub-heading ended up larger than the headline it sat
+under. A coverage percentage cannot show that; it went UP while the product got
+worse. It was caught by looking at a screenshot at Largest, and it is now
+asserted directly in `tests/e2e/the-text-size-setting-moves-the-text`: the plans
+headline must stay more than 1.5x the text beneath it, at the largest size.
+
+### The convention, and the one thing still open
+
+Two forms live in the CSS, and the difference is deliberate:
+
+- `font-size:var(--t-md)` - the size IS a step on the scale. Use this.
+- `font-size:calc(17px * var(--fs-s))` - the size is NOT a step. It obeys the
+  setting, which is the part a reader feels, but it is off-scale.
+
+157 declarations are in the second form, at 15 / 17 / 18 / 19 / 21 / 22 / 24 /
+25 / 27 / 28 / 29 / 30 / 36 / 38 / 46 / 52 / 72px. They sit 1 to 4px from the
+nearest step, so snapping them means display type moving visibly on every
+screen. **That is an aesthetic decision and it is the owner's**, and nothing is
+broken while it waits: those sizes already scale, and they render at exactly the
+px the product has always used. Do not write a NEW one - pick a token.
+
+`--fs-s` therefore has to be defined on bare `:root`, not only under
+`html.fs-scaled`. An undefined var inside `calc()` makes the whole declaration
+invalid, which drops it and inherits a size instead. It is `var(--fs-scale, 1)`,
+so at the default size the calc is exactly the px it names.
+
+### Still not started
+
+D014 / D043 / D044 - radii, colour, stacking. Their text is not in the repo
+either. Same approach as tasks 7 and 8 if they are picked up: sweep for what is
+real, label findings as mine.

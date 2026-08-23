@@ -1109,9 +1109,9 @@ function renderBillingView(targetEl){
          subscription actually ends. */
       (plan!=='free'?
       '<div class="ss2"><h3>Cancel</h3>'+
-        '<p style="font-size:12.5px;color:var(--mu);line-height:1.6;margin:0 0 10px">'+
+        '<p style="font-size:var(--t-sm);color:var(--mu);line-height:1.6;margin:0 0 10px">'+
           'You keep '+escH(P.name)+' until the end of the period you have already paid for, and nothing you have made is deleted.</p>'+
-        '<button class="btn bs" id="bill-cancel" style="font-size:12px;color:var(--red);border-color:var(--red)">Cancel subscription</button>'+
+        '<button class="btn bs" id="bill-cancel" style="font-size:var(--t-sm);color:var(--red);border-color:var(--red)">Cancel subscription</button>'+
         '<div class="seat-say" id="bill-cancel-say" role="status" aria-live="polite"></div>'+
       '</div>':'')+
       // INVOICES
@@ -1130,11 +1130,11 @@ function renderBillingView(targetEl){
       '</div>'+
       (isAdmin()?(
       '<div class="ss2" style="border:1px dashed var(--bd);border-radius:10px;padding:14px 16px">'+
-        '<h3 style="margin-top:0">Payment test mode <span style="font-weight:400;color:var(--mu);font-size:11px">(only you see this)</span></h3>'+
-        '<p style="font-size:12px;color:var(--t2);line-height:1.6;margin:0 0 10px">Simulate a completed checkout to verify the success flow end to end - plan gating, UI refresh, and confirmation - before your live payment keys are connected. This changes only your local plan; it never charges anything.</p>'+
+        '<h3 style="margin-top:0">Payment test mode <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(only you see this)</span></h3>'+
+        '<p style="font-size:var(--t-sm);color:var(--t2);line-height:1.6;margin:0 0 10px">Simulate a completed checkout to verify the success flow end to end - plan gating, UI refresh, and confirmation - before your live payment keys are connected. This changes only your local plan; it never charges anything.</p>'+
         '<div style="display:flex;gap:7px;flex-wrap:wrap">'+
-          ['pro','elite','ultra'].map(pl=>'<button class="btn" data-simpay="'+pl+'" style="font-size:12px">Simulate '+(PLANS[pl]?PLANS[pl].name:pl)+'</button>').join('')+
-          '<button class="btn" data-simpay="free" style="font-size:12px">Reset to Free</button>'+
+          ['pro','elite','ultra'].map(pl=>'<button class="btn" data-simpay="'+pl+'" style="font-size:var(--t-sm)">Simulate '+(PLANS[pl]?PLANS[pl].name:pl)+'</button>').join('')+
+          '<button class="btn" data-simpay="free" style="font-size:var(--t-sm)">Reset to Free</button>'+
         '</div>'+
       '</div>'
       ):'')+
@@ -1452,10 +1452,10 @@ function supportButton(opts){
   const email=_supportEmail();
   if(email){
     const subj=opts.subject?('?subject='+encodeURIComponent(opts.subject)):'';
-    return '<a href="mailto:'+escH(email)+subj+'" class="'+cls+'" style="font-size:12px">'+label+'</a>';
+    return '<a href="mailto:'+escH(email)+subj+'" class="'+cls+'" style="font-size:var(--t-sm)">'+label+'</a>';
   }
   // No address configured yet → graceful fallback to Ask AMV (no dead mailto)
-  return '<button class="'+cls+'" style="font-size:12px" data-dact="askAmv" data-darg="">'+label+'</button>';
+  return '<button class="'+cls+'" style="font-size:var(--t-sm)" data-dact="askAmv" data-darg="">'+label+'</button>';
 }
 window.supportButton=supportButton;
 
@@ -1486,7 +1486,7 @@ function openUpgradeModal(lockedModel){
         '<div class="upg-row-name">Custom<span class="upg-row-tag alt">Build your own</span></div>'+
         '<div class="upg-row-desc">Pick your exact monthly budget - all models, hard-capped, from $10/mo.</div>'+
       '</div>'+
-      '<div class="upg-row-r"><div class="upg-row-price" style="font-size:15px">Your price</div><span class="upg-row-go">Build \u2192</span></div>'+
+      '<div class="upg-row-r"><div class="upg-row-price" style="font-size:calc(15px * var(--fs-s))">Your price</div><span class="upg-row-go">Build \u2192</span></div>'+
     '</button>';
   r.innerHTML='<div class="upg-ov" id="upg-bg"><div class="upg-modal" style="max-width:480px">'+
     '<button class="dna-x" id="upg-x" style="position:absolute;top:16px;right:16px">\u2715</button>'+
@@ -1549,7 +1549,7 @@ function openPlanCompare(highlight){
   const colName=p=>isC(p)?'Custom':PLANS[p].name;
   const head='<th></th>'+plans.map(p=>'<th class="'+(p===highlight?'pc-hl':'')+'">'+colName(p)+(p===highlight?'<span class="pc-tag">Recommended</span>':'')+'</th>').join('');
   const body=rows.map(([label,fn])=>'<tr><td class="pc-row">'+label+'</td>'+plans.map(p=>'<td class="'+(p===highlight?'pc-hl':'')+'">'+fn(p)+'</td>').join('')+'</tr>').join('');
-  const cta='<tr><td></td>'+plans.map(p=>'<td class="'+(p===highlight?'pc-hl':'')+'">'+(p==='free'?'':'<button class="btn '+(p===highlight?'bp':'')+' pc-go" data-pcgo="'+p+'" style="font-size:11px;padding:6px 9px">'+(isC(p)?'Build':'Get')+'</button>')+'</td>').join('')+'</tr>';
+  const cta='<tr><td></td>'+plans.map(p=>'<td class="'+(p===highlight?'pc-hl':'')+'">'+(p==='free'?'':'<button class="btn '+(p===highlight?'bp':'')+' pc-go" data-pcgo="'+p+'" style="font-size:var(--t-xs);padding:6px 9px">'+(isC(p)?'Build':'Get')+'</button>')+'</td>').join('')+'</tr>';
   r.innerHTML='<div class="upg-ov" id="pc-bg"><div class="pc-modal">'+
     '<button class="dna-x" id="pc-x" style="position:absolute;top:16px;right:16px;z-index:2">\u2715</button>'+
     '<div class="pc-head"><h2>Compare plans</h2><p>Everything each plan includes - pick what fits how you work.</p></div>'+

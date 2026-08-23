@@ -257,11 +257,11 @@ function _mktBrowse(body){
     grid.innerHTML=filtered.map(it=>{
       const paid=it.price>0, owned=it._owned, mine=it._mine;
       let btn;
-      if(mine) btn='<button class="btn bs" disabled style="font-size:11.5px;flex:1;opacity:.7">Your listing</button>';
-      else if(owned) btn='<button class="btn bs mk-getowned" data-mk-id="'+escH(it.id)+'" style="font-size:11.5px;flex:1">\u2713 Owned - use it</button>';
-      else if(paid) btn='<button class="btn bp mk-buy" data-mk-id="'+escH(it.id)+'" style="font-size:11.5px;flex:1">Buy \u00b7 $'+it.price+'</button>';
-      else btn='<button class="btn bp mk-install" data-mk-id="'+escH(it.id)+'" style="font-size:11.5px;flex:1">'+(it._installed?'\u2713 Get again':'Get it free')+'</button>';
-      const previewBtn='<button class="btn bs mk-preview" data-mk-id="'+escH(it.id)+'" style="font-size:11.5px">Preview</button>';
+      if(mine) btn='<button class="btn bs" disabled style="font-size:var(--t-sm);flex:1;opacity:.7">Your listing</button>';
+      else if(owned) btn='<button class="btn bs mk-getowned" data-mk-id="'+escH(it.id)+'" style="font-size:var(--t-sm);flex:1">\u2713 Owned - use it</button>';
+      else if(paid) btn='<button class="btn bp mk-buy" data-mk-id="'+escH(it.id)+'" style="font-size:var(--t-sm);flex:1">Buy \u00b7 $'+it.price+'</button>';
+      else btn='<button class="btn bp mk-install" data-mk-id="'+escH(it.id)+'" style="font-size:var(--t-sm);flex:1">'+(it._installed?'\u2713 Get again':'Get it free')+'</button>';
+      const previewBtn='<button class="btn bs mk-preview" data-mk-id="'+escH(it.id)+'" style="font-size:var(--t-sm)">Preview</button>';
       return '<div class="mk-card">'+
         '<div class="mk-card-top"><span class="mk-icon">'+_safeIcon(it.icon)+'</span>'+
           '<span style="display:flex;gap:6px;align-items:center"><span class="mk-kind mk-kind-'+it.kind+'">'+it.kind+'</span>'+_mktPriceTag(it)+'</span></div>'+
@@ -309,12 +309,12 @@ function _mktBrowse(body){
         g.insertAdjacentHTML('afterbegin',
           '<div class="mk-partial">Showing only the listings built into AMV - the rest of the marketplace '+
           'could not be reached, and nothing can be bought until it is. '+
-          '<button class="btn bs" data-dact="_mktGoBrowse" style="font-size:12px">Try again</button></div>');
+          '<button class="btn bs" data-dact="_mktGoBrowse" style="font-size:var(--t-sm)">Try again</button></div>');
       }
     })
     .catch(e=>{
       const g=$('mk-grid');
-      if(g) g.innerHTML='<div class="adm-empty">Could not load the marketplace. Check your connection, then <button class="btn bs" data-dact="_mktGoBrowse" style="font-size:12px">try again</button>.</div>';
+      if(g) g.innerHTML='<div class="adm-empty">Could not load the marketplace. Check your connection, then <button class="btn bs" data-dact="_mktGoBrowse" style="font-size:var(--t-sm)">try again</button>.</div>';
       try{ _logErr('market.list', e); }catch(_){}
     });
   reload();
@@ -428,7 +428,7 @@ function _mktPreview(it, after){
       '<div style="flex:1"><h2 style="margin:0 0 2px">'+escH(it.title)+'</h2>'+
         '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="mk-kind mk-kind-'+it.kind+'">'+it.kind+'</span>'+_mktPriceTag(it)+_mktStars(it.rating,it.ratings)+'</div></div>'+
     '</div>'+
-    '<p style="font-size:12.5px;color:var(--mu);margin:8px 0">by <span class="mkt-by" data-mk-seller="'+escH(it.authorEmail||'')+'" data-mk-sellername="'+escH(it.author||'')+'">'+escH(it.author||'community')+'</span> \u00b7 '+(it.sales?it.sales+' sold':(it.installs||0)+' installs')+' \u00b7 '+escH(it.cat||'')+'</p>'+
+    '<p style="font-size:var(--t-sm);color:var(--mu);margin:8px 0">by <span class="mkt-by" data-mk-seller="'+escH(it.authorEmail||'')+'" data-mk-sellername="'+escH(it.author||'')+'">'+escH(it.author||'community')+'</span> \u00b7 '+(it.sales?it.sales+' sold':(it.installs||0)+' installs')+' \u00b7 '+escH(it.cat||'')+'</p>'+
     '<div class="mkt-pv-desc">'+escH(previewText)+'</div>'+
     (it.status==='sold'?'<div class="mkt-sold-banner">\uD83D\uDD34 This item has sold. Message the seller to ask if they can make another.</div>':'')+
     lockedNote+ fullText + rateRow +
@@ -489,15 +489,15 @@ async function _mktSellerProfile(sellerEmail, sellerName){
     const all=await AMVMarket.list();
     const theirs=all.filter(it=>!(it.authorEmail||'') && /^amv$/i.test(it.author||''));
     const listingRows = theirs.length
-      ? theirs.map(it=>'<div class="vrow mkt-listing-row" data-mk-open="'+escH(it.id)+'" style="cursor:pointer"><span>'+_safeIcon(it.icon)+' '+escH(it.title)+' '+_mktPriceTag(it)+'</span><span class="mkt-row-meta"><span class="mkt-st active">Active</span><span style="color:var(--mu);font-size:11px">'+(it.sales||it.installs||0)+(it.sales?' sold':' installs')+'</span><span class="mkt-row-arr">\u203a</span></span></div>').join('')
-      : '<div style="color:var(--mu);font-size:12.5px">No active listings.</div>';
+      ? theirs.map(it=>'<div class="vrow mkt-listing-row" data-mk-open="'+escH(it.id)+'" style="cursor:pointer"><span>'+_safeIcon(it.icon)+' '+escH(it.title)+' '+_mktPriceTag(it)+'</span><span class="mkt-row-meta"><span class="mkt-st active">Active</span><span style="color:var(--mu);font-size:var(--t-xs)">'+(it.sales||it.installs||0)+(it.sales?' sold':' installs')+'</span><span class="mkt-row-arr">\u203a</span></span></div>').join('')
+      : '<div style="color:var(--mu);font-size:var(--t-sm)">No active listings.</div>';
     r.innerHTML='<div class="ov" id="mkt-sp-bg"><div class="ob" style="max-width:560px">'+
       '<button class="oc" data-dact="closeOvr">\u00d7</button>'+
       '<div class="mkt-sp-head">'+_avatarHTML('amv',64)+
-        '<div style="flex:1"><h2 style="margin:0 0 3px">AMV <span style="font-size:12px;color:var(--accent);vertical-align:middle">\u2713 Official</span></h2>'+
-          '<div style="font-size:12.5px;color:var(--mu)">First-party tools, prompts and crews built by the AMV team.</div>'+
-          '<div style="font-size:12px;color:var(--mu);margin-top:4px">'+theirs.length+' official listing'+(theirs.length===1?'':'s')+'</div>'+
-          '<button class="btn bp" id="mkt-sp-msg" style="font-size:12px;margin-top:10px">\uD83D\uDCAC Contact AMV support</button>'+
+        '<div style="flex:1"><h2 style="margin:0 0 3px">AMV <span style="font-size:var(--t-sm);color:var(--accent);vertical-align:middle">\u2713 Official</span></h2>'+
+          '<div style="font-size:var(--t-sm);color:var(--mu)">First-party tools, prompts and crews built by the AMV team.</div>'+
+          '<div style="font-size:var(--t-sm);color:var(--mu);margin-top:4px">'+theirs.length+' official listing'+(theirs.length===1?'':'s')+'</div>'+
+          '<button class="btn bp" id="mkt-sp-msg" style="font-size:var(--t-sm);margin-top:10px">\uD83D\uDCAC Contact AMV support</button>'+
         '</div></div>'+
       '<div class="ss2"><h3>Official listings</h3><div class="vbreak">'+listingRows+'</div></div>'+
     '</div></div>';
@@ -528,26 +528,26 @@ async function _mktSellerProfile(sellerEmail, sellerName){
           '<span class="mkt-review-when">'+new Date(rv.ts).toLocaleDateString()+'</span></div>'+
         (rv.text?'<div class="mkt-review-text">'+escH(rv.text)+'</div>':'')+
       '</div>').join('')
-    : '<div style="color:var(--mu);font-size:12.5px;padding:6px 0">No reviews yet.</div>';
+    : '<div style="color:var(--mu);font-size:var(--t-sm);padding:6px 0">No reviews yet.</div>';
 
   const listingRows = theirs.length
-    ? theirs.map(it=>'<div class="vrow mkt-listing-row" data-mk-open="'+escH(it.id)+'" style="cursor:pointer"><span>'+_safeIcon(it.icon)+' '+escH(it.title)+' '+_mktPriceTag(it)+'</span><span class="mkt-row-meta"><span class="mkt-st '+(it.status==='sold'?'sold':'active')+'">'+(it.status==='sold'?'Sold':'Active')+'</span><span style="color:var(--mu);font-size:11px">'+(it.sales||0)+' sold</span><span class="mkt-row-arr">\u203a</span></span></div>').join('')
-    : '<div style="color:var(--mu);font-size:12.5px">No active listings.</div>';
+    ? theirs.map(it=>'<div class="vrow mkt-listing-row" data-mk-open="'+escH(it.id)+'" style="cursor:pointer"><span>'+_safeIcon(it.icon)+' '+escH(it.title)+' '+_mktPriceTag(it)+'</span><span class="mkt-row-meta"><span class="mkt-st '+(it.status==='sold'?'sold':'active')+'">'+(it.status==='sold'?'Sold':'Active')+'</span><span style="color:var(--mu);font-size:var(--t-xs)">'+(it.sales||0)+' sold</span><span class="mkt-row-arr">\u203a</span></span></div>').join('')
+    : '<div style="color:var(--mu);font-size:var(--t-sm)">No active listings.</div>';
 
   let reviewBtn='';
-  if(isMe) reviewBtn='<span style="font-size:12px;color:var(--mu)">This is you</span>';
-  else if(bought) reviewBtn='<button class="btn bp" id="mkt-write-review" style="font-size:12px">'+(mine?'Edit your review':'Write a review')+'</button>';
-  else reviewBtn='<span style="font-size:12px;color:var(--mu)">Buy from this seller to leave a review</span>';
+  if(isMe) reviewBtn='<span style="font-size:var(--t-sm);color:var(--mu)">This is you</span>';
+  else if(bought) reviewBtn='<button class="btn bp" id="mkt-write-review" style="font-size:var(--t-sm)">'+(mine?'Edit your review':'Write a review')+'</button>';
+  else reviewBtn='<span style="font-size:var(--t-sm);color:var(--mu)">Buy from this seller to leave a review</span>';
 
   r.innerHTML='<div class="ov" id="mkt-sp-bg"><div class="ob" style="max-width:560px">'+
     '<button class="oc" data-dact="closeOvr">\u00d7</button>'+
     '<div class="mkt-sp-head">'+_avatarHTML(sellerEmail,64)+
       '<div style="flex:1"><h2 style="margin:0 0 3px">'+escH(name)+'</h2>'+
         '<div class="mkt-sp-stats">'+
-          (rating.count?('<span class="mkt-stars">'+[1,2,3,4,5].map(n=>'<span class="mkt-star'+(n<=Math.round(rating.avg)?' on':'')+'">\u2605</span>').join('')+'<span class="mkt-stars-n">'+rating.avg+' ('+rating.count+' review'+(rating.count===1?'':'s')+')</span></span>'):'<span style="color:var(--mu);font-size:12px">No ratings yet</span>')+
+          (rating.count?('<span class="mkt-stars">'+[1,2,3,4,5].map(n=>'<span class="mkt-star'+(n<=Math.round(rating.avg)?' on':'')+'">\u2605</span>').join('')+'<span class="mkt-stars-n">'+rating.avg+' ('+rating.count+' review'+(rating.count===1?'':'s')+')</span></span>'):'<span style="color:var(--mu);font-size:var(--t-sm)">No ratings yet</span>')+
         '</div>'+
-        '<div style="font-size:12px;color:var(--mu);margin-top:4px">'+theirs.length+' listing'+(theirs.length===1?'':'s')+' \u00b7 '+totalSold+' sold</div>'+
-        (isMe?'':'<button class="btn bp" id="mkt-sp-msg" style="font-size:12px;margin-top:10px">\uD83D\uDCAC Message seller</button>')+
+        '<div style="font-size:var(--t-sm);color:var(--mu);margin-top:4px">'+theirs.length+' listing'+(theirs.length===1?'':'s')+' \u00b7 '+totalSold+' sold</div>'+
+        (isMe?'':'<button class="btn bp" id="mkt-sp-msg" style="font-size:var(--t-sm);margin-top:10px">\uD83D\uDCAC Message seller</button>')+
       '</div></div>'+
     '<div class="ss2" style="margin-top:16px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><h3 style="margin:0">Reviews</h3>'+reviewBtn+'</div>'+reviewList+'</div>'+
     '<div class="ss2"><h3>Listings</h3><div class="vbreak">'+listingRows+'</div></div>'+
@@ -608,11 +608,11 @@ function _mktChat(otherEmail, otherName, prefill, aboutItem){
   const draw=()=>{
     const t=AMVMarket.thread(otherEmail);
     const name=otherName||(t.a===me?t.bName:t.aName)||otherEmail.split('@')[0];
-    const bubbles = t.msgs.length ? t.msgs.map(m=>'<div class="mkt-bubble '+(m.from===me?'me':'them')+'">'+escH(m.text)+'<span class="mkt-bubble-t">'+_timeAgo(m.ts)+'</span></div>').join('') : '<div style="color:var(--mu);font-size:12.5px;text-align:center;padding:20px">Say hello - ask about an item, a custom order, anything.</div>';
+    const bubbles = t.msgs.length ? t.msgs.map(m=>'<div class="mkt-bubble '+(m.from===me?'me':'them')+'">'+escH(m.text)+'<span class="mkt-bubble-t">'+_timeAgo(m.ts)+'</span></div>').join('') : '<div style="color:var(--mu);font-size:var(--t-sm);text-align:center;padding:20px">Say hello - ask about an item, a custom order, anything.</div>';
     r.innerHTML='<div class="ov" id="mkt-chat-bg"><div class="ob" style="max-width:460px;display:flex;flex-direction:column;max-height:80vh">'+
       '<button class="oc" data-dact="closeOvr">\u00d7</button>'+
-      '<div class="mkt-chat-head">'+_avatarHTML(otherEmail,36)+'<div><div style="font-weight:600;font-size:14px">'+escH(name)+'</div><div style="font-size:11px;color:var(--mu)">'+escH(otherEmail)+'</div></div>'+
-        '<button class="btn bs" id="mkt-chat-prof" style="margin-left:auto;font-size:11px">Profile</button></div>'+
+      '<div class="mkt-chat-head">'+_avatarHTML(otherEmail,36)+'<div><div style="font-weight:600;font-size:var(--t-md)">'+escH(name)+'</div><div style="font-size:var(--t-xs);color:var(--mu)">'+escH(otherEmail)+'</div></div>'+
+        '<button class="btn bs" id="mkt-chat-prof" style="margin-left:auto;font-size:var(--t-xs)">Profile</button></div>'+
       '<div class="mkt-chat-body" id="mkt-chat-body">'+bubbles+'</div>'+
       '<div class="mkt-chat-input"><input type="text" id="mkt-chat-txt" placeholder="Message\u2026" autocomplete="off"'+(prefill?' value="'+escH(prefill)+'"':'')+'><button class="btn bp" id="mkt-chat-send">Send</button></div>'+
     '</div></div>';
@@ -660,7 +660,7 @@ function _mktReviewDialog(sellerEmail, sellerName, onDone){
     '<h2 style="margin-bottom:4px">Review '+escH(sellerName)+'</h2>'+
     '<p class="ob-sub" style="margin-bottom:14px">Your rating helps other buyers. You can only review sellers you\u2019ve bought from.</p>'+
     '<div class="mkt-rate" style="margin:0 0 14px"><span class="mkt-rate-stars" id="mkt-rv-stars">'+drawStars()+'</span></div>'+
-    '<textarea id="mkt-rv-text" rows="4" placeholder="Share your experience (optional)\u2026" style="width:100%;font-size:13px">'+escH(existing?existing.text:'')+'</textarea>'+
+    '<textarea id="mkt-rv-text" rows="4" placeholder="Share your experience (optional)\u2026" style="width:100%;font-size:var(--t-base)">'+escH(existing?existing.text:'')+'</textarea>'+
     '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px"><button class="btn bs" data-dact="closeOvr">Cancel</button><button class="btn bp" id="mkt-rv-save">Submit review</button></div>'+
   '</div></div>';
   onBackdrop($('mkt-rv-bg'),closeOvr);
@@ -686,7 +686,7 @@ function _mktPurchases(body){
         '<div class="mk-title">'+escH(it.title)+'</div>'+
         '<div class="mk-desc">'+escH(it.desc||'')+'</div>'+
         (it._removed?'<div class="mk-meta" style="color:var(--mu)">Seller removed this listing</div>':
-          '<div class="mk-meta"><span></span>'+fc+'</div><div class="mk-card-actions"><button class="btn bs mk-view" data-mk-id="'+escH(it.id)+'" style="font-size:11.5px;flex:1">View / download</button><button class="btn bp mk-use" data-mk-id="'+escH(it.id)+'" style="font-size:11.5px;flex:1">'+(it.kind==='crew'?'Use in Crew':(it.kind==='workflow'||it.kind==='integration')?'Use it':'Try in chat')+'</button></div>')+
+          '<div class="mk-meta"><span></span>'+fc+'</div><div class="mk-card-actions"><button class="btn bs mk-view" data-mk-id="'+escH(it.id)+'" style="font-size:var(--t-sm);flex:1">View / download</button><button class="btn bp mk-use" data-mk-id="'+escH(it.id)+'" style="font-size:var(--t-sm);flex:1">'+(it.kind==='crew'?'Use in Crew':(it.kind==='workflow'||it.kind==='integration')?'Use it':'Try in chat')+'</button></div>')+
       '</div>';
     }).join('')+'</div>';
     body.querySelectorAll('.mk-use').forEach(b=>on(b,'click',()=>{
@@ -698,10 +698,10 @@ function _mktPurchases(body){
     /* "No purchases yet" for somebody who has paid for things is the worst
        available answer, so a failed read says it failed. */
     body.innerHTML='<div class="ss2"><h3>Could not load your purchases</h3>'+
-      '<p style="font-size:13px;color:var(--mu);line-height:1.65;margin:0 0 12px">'+
+      '<p style="font-size:var(--t-base);color:var(--mu);line-height:1.65;margin:0 0 12px">'+
       escH((e&&e.message)||'AMV could not reach the server.')+
       ' Everything you have bought is still yours.</p>'+
-      '<button class="btn bs" id="mkt-pur-retry" style="font-size:12px">Try again</button></div>';
+      '<button class="btn bs" id="mkt-pur-retry" style="font-size:var(--t-sm)">Try again</button></div>';
     on($('mkt-pur-retry'),'click',()=>_mktPurchases(body));
   });
 }
@@ -928,12 +928,12 @@ function _mktBlockedDialog(reason, action, category){
     '<div style="display:flex;gap:12px;align-items:flex-start">'+
       '<span style="width:38px;height:38px;flex-shrink:0;border-radius:10px;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,'+tint+' 13%,transparent);color:'+tint+'">'+
         '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+icon+'</svg></span>'+
-      '<div><div style="font-size:15px;font-weight:600;margin-bottom:6px">'+(needsVer?'Verification required':'Listing blocked by review')+'</div>'+
-        '<div style="font-size:13px;color:var(--mu);line-height:1.6">'+escH(reason)+'</div></div>'+
+      '<div><div style="font-size:calc(15px * var(--fs-s));font-weight:600;margin-bottom:6px">'+(needsVer?'Verification required':'Listing blocked by review')+'</div>'+
+        '<div style="font-size:var(--t-base);color:var(--mu);line-height:1.6">'+escH(reason)+'</div></div>'+
     '</div>'+
     '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">'+
-      (needsVer?'<button class="btn bs" id="mkb-apply" style="font-size:12px">Apply for verification</button>':'<button class="btn bs" id="mkb-rules" style="font-size:12px">See the terms</button>')+
-      '<button class="btn bp" id="mkb-ok" style="font-size:12px">Got it</button>'+
+      (needsVer?'<button class="btn bs" id="mkb-apply" style="font-size:var(--t-sm)">Apply for verification</button>':'<button class="btn bs" id="mkb-rules" style="font-size:var(--t-sm)">See the terms</button>')+
+      '<button class="btn bp" id="mkb-ok" style="font-size:var(--t-sm)">Got it</button>'+
     '</div></div></div>';
   r.classList.add('on');
   on($('mkb-ok'),'click',closeOvr);
@@ -962,8 +962,8 @@ function _mktReport(itemId, title){
     ['sexual','Sexual or abusive content'],['harassment','Hate or harassment'],
     ['other','Something else']];
   r.innerHTML='<div class="ovr-bg" id="mkr-bg"><div class="ovr-card" style="max-width:430px">'+
-    '<div style="font-size:15px;font-weight:600;margin-bottom:4px">'+T('Report this listing')+'</div>'+
-    '<div style="font-size:12.5px;color:var(--mu);margin-bottom:14px">'+escH(title||'')+'</div>'+
+    '<div style="font-size:calc(15px * var(--fs-s));font-weight:600;margin-bottom:4px">'+T('Report this listing')+'</div>'+
+    '<div style="font-size:var(--t-sm);color:var(--mu);margin-bottom:14px">'+escH(title||'')+'</div>'+
     '<label class="lbl">'+T('What\u2019s wrong with it?')+'</label>'+
     '<select id="mkr-reason" class="sel" style="width:100%;margin-bottom:10px">'+
       REASONS.map(o=>'<option value="'+o[0]+'">'+escH(T(o[1]))+'</option>').join('')+
@@ -971,8 +971,8 @@ function _mktReport(itemId, title){
     '<textarea id="mkr-note" rows="3" placeholder="'+T('Any details that help us review it (optional)')+'" style="width:100%;resize:vertical"></textarea>'+
     '<div id="mkr-err" class="sch-err" hidden></div>'+
     '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">'+
-      '<button class="btn bs" id="mkr-cancel" style="font-size:12px">'+T('Cancel')+'</button>'+
-      '<button class="btn bd2" id="mkr-send" style="font-size:12px">'+T('Submit report')+'</button>'+
+      '<button class="btn bs" id="mkr-cancel" style="font-size:var(--t-sm)">'+T('Cancel')+'</button>'+
+      '<button class="btn bd2" id="mkr-send" style="font-size:var(--t-sm)">'+T('Submit report')+'</button>'+
     '</div></div></div>';
   r.classList.add('on');
   on($('mkr-cancel'),'click',closeOvr);
@@ -1000,7 +1000,7 @@ function _mktSell(body){
   if(!body) return;
   body.innerHTML=
     '<div class="ss2"><h3>List something for sale</h3>'+
-      '<p style="font-size:12.5px;color:var(--mu);margin:0 0 12px;line-height:1.6">Sell AMV prompts, crews, integrations, workflows, guides - or attach any files (PDFs, videos, models, datasets, images). Set any price (or free). You keep <b style="color:var(--tx)">80%</b> of every sale; it lands in your balance to withdraw. AMV-only - listings can\u2019t reference other AI products.</p>'+
+      '<p style="font-size:var(--t-sm);color:var(--mu);margin:0 0 12px;line-height:1.6">Sell AMV prompts, crews, integrations, workflows, guides - or attach any files (PDFs, videos, models, datasets, images). Set any price (or free). You keep <b style="color:var(--tx)">80%</b> of every sale; it lands in your balance to withdraw. AMV-only - listings can\u2019t reference other AI products.</p>'+
       '<div class="mkt-rules"><div class="mkt-rules-h"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>Marketplace Terms - every listing is screened before it goes live'+
         '<button class="mkt-rules-toggle" id="mkt-rules-toggle">Read the full terms</button></div>'+
         '<div class="mkt-rules-body" id="mkt-rules-body" style="display:none">'+
@@ -1025,12 +1025,12 @@ function _mktSell(body){
         '</div>'+
         '<div><label class="lbl">Category</label><input id="sl-cat" placeholder="e.g. Finance"></div>'+
         '<div><label class="lbl">Short description</label><input id="sl-desc" placeholder="What does the buyer get?"></div>'+
-        '<div><label class="lbl">The deliverable <span style="color:var(--mu);font-weight:400">(text, instructions, links - optional if you attach files)</span></label><textarea id="sl-text" rows="5" placeholder="Paste the content buyers get: a prompt, instructions, a link to a video, anything\u2026" style="font-family:var(--mn,ui-monospace,monospace);font-size:13px"></textarea></div>'+
+        '<div><label class="lbl">The deliverable <span style="color:var(--mu);font-weight:400">(text, instructions, links - optional if you attach files)</span></label><textarea id="sl-text" rows="5" placeholder="Paste the content buyers get: a prompt, instructions, a link to a video, anything\u2026" style="font-family:var(--mn,ui-monospace,monospace);font-size:var(--t-base)"></textarea></div>'+
         '<div><label class="lbl">Attach files <span style="color:var(--mu);font-weight:400">(PDF, video, models, images, any file - delivered on purchase)</span></label>'+
           '<div id="sl-drop" class="sl-drop"><input type="file" id="sl-files" multiple style="display:none"><span>\uD83D\uDCCE Click to add files, or drag them here</span></div>'+
           '<div id="sl-filelist" class="sl-filelist"></div>'+
         '</div>'+
-        '<button class="btn bp" id="sl-publish" style="align-self:flex-start;font-size:12px">List it</button>'+
+        '<button class="btn bp" id="sl-publish" style="align-self:flex-start;font-size:var(--t-sm)">List it</button>'+
       '</div>'+
     '</div>'+
     '<div class="ss2"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><h3 style="margin:0">Your listings</h3><div id="sl-summary" class="sl-summary"></div></div>'+
@@ -1082,7 +1082,7 @@ function _mktSell(body){
       const active=items.filter(i=>(i.status||'active')==='active').length;
       sum.innerHTML='<span class="sl-stat"><b>'+items.length+'</b> listings</span><span class="sl-stat"><b>'+active+'</b> active</span><span class="sl-stat"><b>'+totalViews+'</b> views</span><span class="sl-stat"><b>'+totalSold+'</b> sold</span>';
     }
-    if(!items.length){ el.innerHTML='<div style="color:var(--mu);font-size:12px">No listings yet. Create one above.</div>'; return; }
+    if(!items.length){ el.innerHTML='<div style="color:var(--mu);font-size:var(--t-sm)">No listings yet. Create one above.</div>'; return; }
     el.innerHTML='<div class="sl-list">'+items.map(it=>{
       const st=it.status||'active';
       const badge='<span class="sl-status sl-status-'+st+'">'+st+'</span>';
@@ -1113,9 +1113,9 @@ function _mktSell(body){
        could not be fetched invites them to publish a duplicate. */
     const el=$('sl-mine'); if(!el) return;
     const sum=$('sl-summary'); if(sum) sum.innerHTML='';
-    el.innerHTML='<div style="color:var(--mu);font-size:12px;line-height:1.6">'+
+    el.innerHTML='<div style="color:var(--mu);font-size:var(--t-sm);line-height:1.6">'+
       escH((e&&e.message)||'Could not load your listings.')+
-      ' They are still there. <button class="btn bs" id="sl-mine-retry" style="font-size:11.5px;margin-left:6px">Try again</button></div>';
+      ' They are still there. <button class="btn bs" id="sl-mine-retry" style="font-size:var(--t-sm);margin-left:6px">Try again</button></div>';
     on($('sl-mine-retry'),'click',loadMine);
   }); };
   loadMine();
@@ -1217,7 +1217,7 @@ function _mktEarnings(body){
     const bal=(d.balance||0), avail=(d.available!=null?d.available:bal), pend=(d.pending||0),
           holdDays=(d.holdDays||0), life=(d.lifetime||0), pct=d.sellerPct||80, min=d.minWithdraw||10;
     const txLabel={sale:'Sale',withdrawal:'Withdrawal'};
-    const tx=(d.tx||[]).map(t=>'<div class="vrow"><span>'+(txLabel[t.type]||t.type)+(t.title?' \u00b7 '+escH(t.title):'')+(t.status?' <span style="color:var(--mu);font-size:11px">('+t.status+')</span>':'')+'</span>'+
+    const tx=(d.tx||[]).map(t=>'<div class="vrow"><span>'+(txLabel[t.type]||t.type)+(t.title?' \u00b7 '+escH(t.title):'')+(t.status?' <span style="color:var(--mu);font-size:var(--t-xs)">('+t.status+')</span>':'')+'</span>'+
       '<span class="vrow-n" style="color:'+(t.amount<0?'var(--mu)':'#4ade80')+'">'+(t.amount<0?'-$'+Math.abs(t.amount).toFixed(2):'+$'+t.amount.toFixed(2))+'</span></div>').join('')||'<div class="vrow"><span style="color:var(--mu)">No earnings yet - sell something to start.</span></div>';
     body.innerHTML=
       '<div class="vhero">'+
@@ -1227,13 +1227,13 @@ function _mktEarnings(body){
         '<div class="vcard"><div class="vcard-n">'+pct+'%</div><div class="vcard-l">Your share of each sale</div></div>'+
       '</div>'+
       '<div class="ss2"><h3>Withdraw your balance</h3>'+
-        '<p style="font-size:12.5px;color:var(--mu);margin:0 0 12px;line-height:1.6">Minimum withdrawal is $'+min+'. Enter where you\u2019d like the funds sent (PayPal email or bank reference) and we\u2019ll process the payout.'+
+        '<p style="font-size:var(--t-sm);color:var(--mu);margin:0 0 12px;line-height:1.6">Minimum withdrawal is $'+min+'. Enter where you\u2019d like the funds sent (PayPal email or bank reference) and we\u2019ll process the payout.'+
           (pend>0?' <b style="color:var(--tx)">$'+pend.toFixed(2)+'</b> from recent sales is still clearing - card payments can be disputed for a few weeks, so takings settle after '+holdDays+' days. It is yours; it just cannot be paid out yet.':'')+'</p>'+
         '<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;max-width:520px">'+
           '<div style="flex:1;min-width:200px"><label class="lbl">Payout destination</label><input id="wd-dest" placeholder="PayPal email or bank reference"></div>'+
-          '<button class="btn bp" id="wd-go" style="font-size:12px"'+(avail<min?' disabled':'')+'>Withdraw $'+avail.toFixed(2)+'</button>'+
+          '<button class="btn bp" id="wd-go" style="font-size:var(--t-sm)"'+(avail<min?' disabled':'')+'>Withdraw $'+avail.toFixed(2)+'</button>'+
         '</div>'+
-        (avail<min?'<div style="font-size:11.5px;color:var(--mu);margin-top:8px">You need at least $'+min+' available to withdraw.'+(pend>0?' You have $'+pend.toFixed(2)+' still clearing.':'')+'</div>':'')+
+        (avail<min?'<div style="font-size:var(--t-sm);color:var(--mu);margin-top:8px">You need at least $'+min+' available to withdraw.'+(pend>0?' You have $'+pend.toFixed(2)+' still clearing.':'')+'</div>':'')+
       '</div>'+
       '<div class="ss2"><h3>Transaction history</h3><div class="vbreak">'+tx+'</div></div>';
     on($('wd-go'),'click',async()=>{
@@ -1247,10 +1247,10 @@ function _mktEarnings(body){
     /* Never a fabricated zero. The screen says it could not read the balance,
        which is a different statement from "you are owed nothing". */
     body.innerHTML='<div class="ss2"><h3>Could not load your earnings</h3>'+
-      '<p style="font-size:13px;color:var(--mu);line-height:1.65;margin:0 0 12px">'+
+      '<p style="font-size:var(--t-base);color:var(--mu);line-height:1.65;margin:0 0 12px">'+
       escH((e&&e.message)||'AMV could not reach the server.')+
       ' Nothing has changed - your balance is whatever it was.</p>'+
-      '<button class="btn bs" id="mkt-earn-retry" style="font-size:12px">Try again</button></div>';
+      '<button class="btn bs" id="mkt-earn-retry" style="font-size:var(--t-sm)">Try again</button></div>';
     on($('mkt-earn-retry'),'click',()=>_mktEarnings(body));
   });
 }
@@ -1263,15 +1263,15 @@ function renderMemoryView(){
       '<h2>AI Memory</h2>'+
       '<p class="vsub">AMV remembers facts about you to personalize every response. These memories are included with every AI request.</p>'+
       '<div style="display:flex;gap:8px">'+
-        '<input type="text" id="mem-inp" placeholder="Add a memory - e.g. I am a software engineer or I prefer concise answers" style="flex:1;font-size:13px">'+
-        '<button class="btn bp" id="mem-add" style="font-size:12px;white-space:nowrap">Add Memory</button>'+
+        '<input type="text" id="mem-inp" placeholder="Add a memory - e.g. I am a software engineer or I prefer concise answers" style="flex:1;font-size:var(--t-base)">'+
+        '<button class="btn bp" id="mem-add" style="font-size:var(--t-sm);white-space:nowrap">Add Memory</button>'+
       '</div>'+
       '<div id="mem-list" style="display:flex;flex-direction:column;gap:8px"></div>'+
-      (S.memory.length?'<button class="btn bd2" id="mem-clr" style="align-self:flex-start;font-size:12px">Clear All Memories</button>':'')+
+      (S.memory.length?'<button class="btn bd2" id="mem-clr" style="align-self:flex-start;font-size:var(--t-sm)">Clear All Memories</button>':'')+
       '<div class="ss2 ds-note">'+
         '<h3>How Memory Works</h3>'+
-        '<p style="font-size:12px;color:var(--t2);line-height:1.65">Memories you add here are automatically included in every conversation with AMV, allowing for more personalized and contextual responses. Add facts about yourself, your preferences, your work, or anything you want AMV to always know.</p>'+
-        '<div style="margin-top:9px;font-size:12px;color:var(--t2)">Examples:'+
+        '<p style="font-size:var(--t-sm);color:var(--t2);line-height:1.65">Memories you add here are automatically included in every conversation with AMV, allowing for more personalized and contextual responses. Add facts about yourself, your preferences, your work, or anything you want AMV to always know.</p>'+
+        '<div style="margin-top:9px;font-size:var(--t-sm);color:var(--t2)">Examples:'+
           '<div style="display:flex;flex-direction:column;gap:3px;margin-top:5px">'+
             '<span style="color:var(--tx)">• "I am a software engineer who works with Python and React"</span>'+
             '<span style="color:var(--tx)">• "I prefer concise, direct answers without unnecessary preamble"</span>'+
@@ -1438,8 +1438,8 @@ function renderPromptsView(){
       '<h2>Prompt Library</h2>'+
       '<p class="vsub">Ready-to-use prompts for every task. Click any prompt to load it into chat, or create your own.</p>'+
       '<div style="display:flex;gap:8px;margin-bottom:4px">'+
-        '<input type="text" id="pl-search" placeholder="Search prompts…" style="flex:1;font-size:13px">'+
-        '<button class="btn bp" id="pl-new" style="font-size:12px;white-space:nowrap">+ Create</button>'+
+        '<input type="text" id="pl-search" placeholder="Search prompts…" style="flex:1;font-size:var(--t-base)">'+
+        '<button class="btn bp" id="pl-new" style="font-size:var(--t-sm);white-space:nowrap">+ Create</button>'+
       '</div>'+
       '<div style="display:flex;gap:5px;flex-wrap:wrap" id="pl-cats">'+cats+'</div>'+
       '<div id="pl-list" style="display:flex;flex-direction:column;gap:8px"></div>'+
@@ -1465,9 +1465,9 @@ function renderPLList(cat){
       '<div class="plt"><span>'+escH(p.title)+'</span><span class="plcat">'+p.cat+'</span></div>'+
       '<div class="pltx">'+escH(p.text)+'</div>'+
       '<div style="display:flex;gap:5px;margin-top:9px">'+
-        '<button class="btn bp" style="font-size:11px;padding:4px 11px" data-dact="usePrompt" data-darg="'+p.id+'">Use Prompt</button>'+
-        '<button class="btn bs" style="font-size:11px;padding:4px 11px" data-dact="copyPrompt" data-darg="'+p.id+'">Copy</button>'+
-        (p.custom?'<button class="btn bd2" style="font-size:11px;padding:4px 11px" data-dact="deletePrompt" data-darg="'+p.id+'">Delete</button>':'')+
+        '<button class="btn bp" style="font-size:var(--t-xs);padding:4px 11px" data-dact="usePrompt" data-darg="'+p.id+'">Use Prompt</button>'+
+        '<button class="btn bs" style="font-size:var(--t-xs);padding:4px 11px" data-dact="copyPrompt" data-darg="'+p.id+'">Copy</button>'+
+        (p.custom?'<button class="btn bd2" style="font-size:var(--t-xs);padding:4px 11px" data-dact="deletePrompt" data-darg="'+p.id+'">Delete</button>':'')+
       '</div>'+
     '</div>'
   ).join('');
@@ -1554,12 +1554,12 @@ function renderWsGrid(){
        the dispatcher resolves with e.target.closest('[data-dact]'), which finds
        the NEAREST one - the row - so the card's action does not fire anyway.
        The guard was doing nothing except breaking the thing it was attached to. */
-    const preview=chats.slice(0,3).map(c=>'<div class="wsc-chat" data-dact="loadConv" data-darg="'+c.id+'" style="font-size:12px;color:var(--mu);padding:4px 0;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">\u2022 '+escH(c.title||'Untitled')+'</div>').join('');
+    const preview=chats.slice(0,3).map(c=>'<div class="wsc-chat" data-dact="loadConv" data-darg="'+c.id+'" style="font-size:var(--t-sm);color:var(--mu);padding:4px 0;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">\u2022 '+escH(c.title||'Untitled')+'</div>').join('');
     return '<div class="wsc" data-dact="openWorkspace" data-darg="'+ws.id+'">'+
       '<div class="wsic" style="background:rgba(85,144,255,.1)">'+ws.icon+'</div>'+
       '<div class="wsn">'+escH(ws.name)+'</div>'+
       '<div class="wsd">'+escH(ws.desc||'')+'</div>'+
-      (preview?'<div style="margin:8px 0 4px">'+preview+(chats.length>3?'<div style="font-size:11px;color:var(--dim);padding-top:2px">+'+(chats.length-3)+' more</div>':'')+'</div>':'<div class="wsc-empty">No chats yet - open to start one</div>')+
+      (preview?'<div style="margin:8px 0 4px">'+preview+(chats.length>3?'<div style="font-size:var(--t-xs);color:var(--dim);padding-top:2px">+'+(chats.length-3)+' more</div>':'')+'</div>':'<div class="wsc-empty">No chats yet - open to start one</div>')+
       '<div class="wsm">'+chats.length+' chat'+(chats.length===1?'':'s')+' \u00b7 '+new Date(ws.created||Date.now()).toLocaleDateString()+'</div>'+
     '</div>';
   }).join('')+'<button class="wsc wsc-add" data-dact="newProjectCTA"><div class="wsc-add-ic">+</div><div class="wsn">New project</div><div class="wsd">Start a fresh workspace</div></button>';
@@ -1593,7 +1593,7 @@ function createWorkspaceModal(){
       '<div class="af">'+
         '<div><label class="lbl">Name</label><input type="text" id="ws-name" placeholder="e.g. Research Project"></div>'+
         '<div><label class="lbl">Description</label><input type="text" id="ws-desc" placeholder="What is this workspace for?"></div>'+
-        '<div><label class="lbl">Icon</label><div style="display:flex;gap:6px;flex-wrap:wrap">'+icons.map(ic=>'<button class="ws-ic-btn" data-ic="'+ic+'" style="width:34px;height:34px;border-radius:7px;border:1px solid var(--bd);background:var(--s2);cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;transition:background-color .12s,border-color .12s,color .12s,box-shadow .12s,transform .12s,opacity .12s">'+ic+'</button>').join('')+'</div></div>'+
+        '<div><label class="lbl">Icon</label><div style="display:flex;gap:6px;flex-wrap:wrap">'+icons.map(ic=>'<button class="ws-ic-btn" data-ic="'+ic+'" style="width:34px;height:34px;border-radius:7px;border:1px solid var(--bd);background:var(--s2);cursor:pointer;font-size:calc(18px * var(--fs-s));display:flex;align-items:center;justify-content:center;transition:background-color .12s,border-color .12s,color .12s,box-shadow .12s,transform .12s,opacity .12s">'+ic+'</button>').join('')+'</div></div>'+
         '<button class="btn bp" id="ws-create" style="width:100%;padding:11px">Create Workspace</button>'+
       '</div>'+
     '</div></div>';
@@ -1689,9 +1689,9 @@ function _usageContentHTML(){
           '<div class="vrow"><span>Conversations</span><span class="vrow-n">'+mc+'</span></div>'+
           '<div class="vrow"><span>Images made here</span><span class="vrow-n">'+ic+'</span></div>'+
         '</div>'+
-        '<button class="btn bp" data-stab="plans" style="margin-top:14px;font-size:12px">See plans &rarr;</button>'+
+        '<button class="btn bp" data-stab="plans" style="margin-top:14px;font-size:var(--t-sm)">See plans &rarr;</button>'+
       '</div>'+
-      (isAdmin()? (function(){var u=AEGIS.usage();var cap=AEGIS.cfg.dailyTokenCap;var used=u.inTok+u.outTok;var pct=Math.min(used/cap*100,100);return '<div class="ss2" style="margin-top:18px"><h3>Token usage &amp; cost (today) - operator</h3>'+'<div class="stg" style="margin-bottom:12px">'+'<div class="stc"><div class="stv">'+u.reqs+'</div><div class="stl">API requests</div></div>'+'<div class="stc"><div class="stv">'+u.inTok.toLocaleString()+'</div><div class="stl">Input tokens</div></div>'+'<div class="stc"><div class="stv">'+u.outTok.toLocaleString()+'</div><div class="stl">Output tokens</div></div>'+'<div class="stc"><div class="stv">$'+u.costUSD.toFixed(3)+'</div><div class="stl">Est. cost</div></div>'+'</div>'+'<div><div style="display:flex;justify-content:space-between;font-size:12px;color:var(--mu);margin-bottom:4px"><span>Daily token cap (this device)</span><span>'+used.toLocaleString()+' / '+cap.toLocaleString()+'</span></div><div class="sbb"><div class="sbf2" style="width:'+pct+'%"></div></div></div>'+'<div style="display:flex;gap:8px;margin-top:12px"><button class="btn bs" data-dact="aegisExport" style="font-size:12px">Export audit log</button><button class="btn bs" data-dact="aegisClear" style="font-size:12px">Clear log</button></div>'+'</div>';})() : '');
+      (isAdmin()? (function(){var u=AEGIS.usage();var cap=AEGIS.cfg.dailyTokenCap;var used=u.inTok+u.outTok;var pct=Math.min(used/cap*100,100);return '<div class="ss2" style="margin-top:18px"><h3>Token usage &amp; cost (today) - operator</h3>'+'<div class="stg" style="margin-bottom:12px">'+'<div class="stc"><div class="stv">'+u.reqs+'</div><div class="stl">API requests</div></div>'+'<div class="stc"><div class="stv">'+u.inTok.toLocaleString()+'</div><div class="stl">Input tokens</div></div>'+'<div class="stc"><div class="stv">'+u.outTok.toLocaleString()+'</div><div class="stl">Output tokens</div></div>'+'<div class="stc"><div class="stv">$'+u.costUSD.toFixed(3)+'</div><div class="stl">Est. cost</div></div>'+'</div>'+'<div><div style="display:flex;justify-content:space-between;font-size:var(--t-sm);color:var(--mu);margin-bottom:4px"><span>Daily token cap (this device)</span><span>'+used.toLocaleString()+' / '+cap.toLocaleString()+'</span></div><div class="sbb"><div class="sbf2" style="width:'+pct+'%"></div></div></div>'+'<div style="display:flex;gap:8px;margin-top:12px"><button class="btn bs" data-dact="aegisExport" style="font-size:var(--t-sm)">Export audit log</button><button class="btn bs" data-dact="aegisClear" style="font-size:var(--t-sm)">Clear log</button></div>'+'</div>';})() : '');
 }
 window._usageContentHTML=_usageContentHTML;
 

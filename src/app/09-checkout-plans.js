@@ -418,7 +418,7 @@ function _preopenPay(){
       try{ w.document.write('<!doctype html><meta charset="utf-8"><title>Opening secure checkout…</title>'+
         '<body style="margin:0;font:15px/1.6 system-ui,-apple-system,Segoe UI,sans-serif;color:#111;background:#fff;display:flex;align-items:center;justify-content:center;height:100vh">'+
         '<div style="text-align:center"><div style="font-weight:600;margin-bottom:6px">Opening secure checkout…</div>'+
-        '<div style="opacity:.65;font-size:13px">One moment - do not close this tab.</div></div>'); }catch(e){}
+        '<div style="opacity:.65;font-size:var(--t-base)">One moment - do not close this tab.</div></div>'); }catch(e){}
     }
     return w||null;
   }catch(e){ return null; }

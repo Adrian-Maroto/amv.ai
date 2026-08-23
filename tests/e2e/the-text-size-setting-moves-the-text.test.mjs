@@ -58,12 +58,31 @@ section('Choosing a bigger size makes the text bigger');
   const pct = Math.round(moved.length / keys.length * 100);
 
   ok(keys.length > 300, 'there is a real page to measure', keys.length);
-  /* 42% at the time of writing, up from 12%. The floor is set below what was
-     achieved so an unrelated layout change cannot fail this, and well above
-     what it replaced so the regression it exists for cannot pass. */
-  ok(pct >= 35, 'a substantial share of visible text follows the setting',
+  /* 99% at the time of writing: 12% -> 42% -> 99%. The only text left behind is
+     the AMV mark in the top-left, which is a logo in a fixed box and SHOULD NOT
+     grow with a reading preference. The floor sits below what was achieved so an
+     unrelated layout change cannot fail this, and far above the 42% it replaced
+     so the regression it exists for cannot pass. */
+  ok(pct >= 90, 'nearly all visible text follows the setting',
      moved.length + ' of ' + keys.length + ' (' + pct + '%)');
-  ok(moved.length > 200, 'measured as a count, not only a ratio', moved.length);
+  ok(moved.length > 500, 'measured as a count, not only a ratio', moved.length);
+
+  /* The half that took longest to see. Body text was tokenised first, and
+     headings were not, so at Largest the body grew past headings that stayed
+     frozen - the hierarchy inverted on every screen. Nothing in a percentage
+     shows that, so it is asserted directly: the biggest text on the plans page
+     must still be bigger than the text under it, at the largest size. */
+  const h = await page.evaluate(async () => {
+    setTab('plans');
+    await new Promise(s => setTimeout(s, 400));
+    const head = document.querySelector('.plans-head h2');
+    const sub  = document.querySelector('.plans-head .vsub');
+    if (!head || !sub) return null;
+    return { head: parseFloat(getComputedStyle(head).fontSize),
+             sub:  parseFloat(getComputedStyle(sub).fontSize) };
+  });
+  ok(h && h.head > h.sub * 1.5, 'headings stay bigger than body text at the largest size',
+     h ? h.head + 'px over ' + h.sub + 'px' : 'not found');
 }
 
 section('And nothing falls off the screen at the largest size');

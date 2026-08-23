@@ -1849,7 +1849,7 @@ function _crewQueueHTML(){
     if(!q.length) return '<div class="cw-empty">No background tasks running.</div>';
     var sc=s=>s==='done'?'#4ade80':s==='running'?'#5590ff':s==='failed'?'#ff4d4d':'#e0b341';
     var si=s=>s==='done'?'✓':s==='running'?'⟳':s==='failed'?'✕':'⏳';
-    return q.slice().reverse().map(function(t){return '<div class="cw-qrow"><span style="color:'+sc(t.status)+'">'+si(t.status)+'</span><span style="flex:1">'+escH(t.title||t.type||'Task')+'</span><span style="font-size:11px;color:var(--mu)">'+(t.status||'')+'</span></div>';}).join('');
+    return q.slice().reverse().map(function(t){return '<div class="cw-qrow"><span style="color:'+sc(t.status)+'">'+si(t.status)+'</span><span style="flex:1">'+escH(t.title||t.type||'Task')+'</span><span style="font-size:var(--t-xs);color:var(--mu)">'+(t.status||'')+'</span></div>';}).join('');
   }catch(e){ return '<div class="cw-empty">No background tasks running.</div>'; }
 }
 function cwToggle(id){

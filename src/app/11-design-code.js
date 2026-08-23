@@ -486,7 +486,7 @@ function _studioAddPrompt(){
   const r=$('ovr'); if(!r) return;
   r.innerHTML='<div class="ov" id="sa-bg"><div class="ob" style="max-width:440px"><button class="oc" data-dact="closeOvr">×</button>'+
     '<h2 style="margin-bottom:6px">Add a design</h2><p class="ob-sub" style="margin-bottom:12px">Describe another page, screen, slide deck, or graphic. It joins this project so your whole set stays consistent.</p>'+
-    '<textarea id="sa-brief" rows="3" placeholder="e.g. \'an about page matching this style\' or \'a pitch deck of 6 slides\'" style="width:100%;font-size:13px"></textarea>'+
+    '<textarea id="sa-brief" rows="3" placeholder="e.g. \'an about page matching this style\' or \'a pitch deck of 6 slides\'" style="width:100%;font-size:var(--t-base)"></textarea>'+
     '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px"><button class="btn bs" data-dact="closeOvr">Cancel</button><button class="btn bp" id="sa-go">Design it</button></div></div></div>';
   onBackdrop($('sa-bg'),closeOvr);
   const go=()=>{ const v=$('sa-brief')?.value.trim(); if(!v){ toast('Describe the design','error'); return; } closeOvr(); _studioCreate(v); };
@@ -701,7 +701,7 @@ function openDNA(){
     <div class="dna-head">
       <div><h2>Design DNA</h2><p>Your reusable style guide. Set it once - every design AMV makes follows it.</p></div>
       <div style="display:flex;align-items:center;gap:4px">
-        <button class="dna-x" id="dna-help" title="What is this?" style="font-size:15px">?</button>
+        <button class="dna-x" id="dna-help" title="What is this?" style="font-size:calc(15px * var(--fs-s))">?</button>
         <button class="dna-x" id="dna-x">✕</button>
       </div>
     </div>
@@ -1144,11 +1144,11 @@ function _devConnectVSCode(){
   const r=$('ovr'); if(!r) return;
   r.innerHTML='<div class="ov" id="vsc-bg"><div class="tp-modal" style="max-width:480px">'+
     '<button class="dna-x" id="vsc-x" style="position:absolute;top:14px;right:14px">\u2715</button>'+
-    '<h2 style="font-family:var(--fdisplay);font-weight:500;font-size:21px;margin:0 0 6px">Use AMV in VS Code</h2>'+
-    '<p style="font-size:13px;color:var(--mu);line-height:1.6;margin:0 0 18px">Run these two commands in your project folder. That\u2019s it - AMV opens in your editor and can read, write, and run your code.</p>'+
+    '<h2 style="font-family:var(--fdisplay);font-weight:500;font-size:calc(21px * var(--fs-s));margin:0 0 6px">Use AMV in VS Code</h2>'+
+    '<p style="font-size:var(--t-base);color:var(--mu);line-height:1.6;margin:0 0 18px">Run these two commands in your project folder. That\u2019s it - AMV opens in your editor and can read, write, and run your code.</p>'+
     '<div class="vsc-cmd"><code>npm install -g @amv/cli</code><button class="vsc-copy" data-c="npm install -g @amv/cli">Copy</button></div>'+
     '<div class="vsc-cmd" style="margin-top:8px"><code>amv code .</code><button class="vsc-copy" data-c="amv code .">Copy</button></div>'+
-    '<p style="font-size:11px;color:var(--dim);margin:16px 0 0;line-height:1.5">Your code stays on your machine - the CLI just links this account to your editor.</p>'+
+    '<p style="font-size:var(--t-xs);color:var(--dim);margin:16px 0 0;line-height:1.5">Your code stays on your machine - the CLI just links this account to your editor.</p>'+
   '</div></div>';
   const close=()=>{ r.innerHTML=''; };
   onBackdrop($('vsc-bg'),close); on($('vsc-x'),'click',close);
@@ -1495,7 +1495,7 @@ function _errAskToken(msg){
     '<div class="share-title">Admin access</div>'+
     '<p class="share-sub">'+(msg?escH(msg)+' ':'')+'Enter your ADMIN_TOKEN (the secret you set on the Worker) to see what\u2019s breaking for your users.</p>'+
     '<input id="er-tok" class="inp" type="password" placeholder="ADMIN_TOKEN" autocomplete="off">'+
-    '<p class="share-sub" style="margin-top:8px;font-size:11px">Kept in memory for this tab only - never written to this device.</p>'+
+    '<p class="share-sub" style="margin-top:8px;font-size:var(--t-xs)">Kept in memory for this tab only - never written to this device.</p>'+
     '<div class="share-actions">'+
       '<button class="btn bp" id="er-go">View errors</button>'+
       '<button class="btn bs" id="er-x">Cancel</button>'+
@@ -2778,8 +2778,8 @@ function _ctxRenderMeter(hostId, kind){
 async function _ctxHandoffFlow(kind){
   const r=$('ovr'); if(!r) return;
   r.innerHTML='<div class="ovr-bg"><div class="ovr-card" style="max-width:460px">'+
-    '<div style="font-size:15px;font-weight:600;margin-bottom:6px">Carrying your context over\u2026</div>'+
-    '<div style="font-size:13px;color:var(--mu);line-height:1.6" id="ctx-step">Compressing everything important from this '+(kind==='dev'?'session':'chat')+'\u2026</div>'+
+    '<div style="font-size:calc(15px * var(--fs-s));font-weight:600;margin-bottom:6px">Carrying your context over\u2026</div>'+
+    '<div style="font-size:var(--t-base);color:var(--mu);line-height:1.6" id="ctx-step">Compressing everything important from this '+(kind==='dev'?'session':'chat')+'\u2026</div>'+
     '<div class="ctx-bar" style="margin-top:14px"><div class="ctx-fill" id="ctx-anim" style="width:15%"></div></div>'+
   '</div></div>';
   r.classList.add('on');
@@ -2848,24 +2848,24 @@ function openHandoffManager(){
         '<div class="ho-row-l"><div class="ho-row-t">'+escH(h.title||'Session')+'</div>'+
           '<div class="ho-row-m">'+escH(h.kind==='dev'?'Dev session':'Chat')+' \u00b7 '+new Date(h.at).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})+'</div></div>'+
         '<div class="ho-row-r">'+
-          '<button class="btn bs" data-ho-dl="'+escH(h.id)+'" style="font-size:11.5px">Download</button>'+
-          '<button class="btn bp" data-ho-use="'+escH(h.id)+'" style="font-size:11.5px">Resume</button>'+
+          '<button class="btn bs" data-ho-dl="'+escH(h.id)+'" style="font-size:var(--t-sm)">Download</button>'+
+          '<button class="btn bp" data-ho-use="'+escH(h.id)+'" style="font-size:var(--t-sm)">Resume</button>'+
         '</div></div>').join('')
     : '<div class="ho-empty">No handoffs yet. When a chat or Dev session fills up, AMV creates one automatically.</div>';
   r.innerHTML='<div class="ovr-bg" id="ho-bg"><div class="ovr-card" style="max-width:560px">'+
-    '<div style="font-size:16px;font-weight:600;margin-bottom:4px">Context handoffs</div>'+
-    '<div style="font-size:12.5px;color:var(--mu);line-height:1.6;margin-bottom:16px">A handoff is a compressed snapshot of a conversation - the goal, every decision, the current state, and the next steps. Load one into a fresh chat and AMV picks up exactly where you left off.</div>'+
+    '<div style="font-size:var(--t-lg);font-weight:600;margin-bottom:4px">Context handoffs</div>'+
+    '<div style="font-size:var(--t-sm);color:var(--mu);line-height:1.6;margin-bottom:16px">A handoff is a compressed snapshot of a conversation - the goal, every decision, the current state, and the next steps. Load one into a fresh chat and AMV picks up exactly where you left off.</div>'+
     '<div class="ho-list">'+rows+'</div>'+
     '<div class="ho-paste">'+
       '<label class="lbl">Paste a handoff</label>'+
-      '<textarea id="ho-paste-in" rows="3" placeholder="Paste an AMVCTX1:\u2026 handoff here (or the contents of a .amvctx file)" style="width:100%;resize:vertical;font-family:var(--mn,monospace);font-size:11.5px"></textarea>'+
+      '<textarea id="ho-paste-in" rows="3" placeholder="Paste an AMVCTX1:\u2026 handoff here (or the contents of a .amvctx file)" style="width:100%;resize:vertical;font-family:var(--mn,monospace);font-size:var(--t-sm)"></textarea>'+
       '<div style="display:flex;gap:8px;margin-top:9px">'+
-        '<button class="btn bs" id="ho-file-btn" style="font-size:12px">Load a .amvctx file</button>'+
-        '<button class="btn bp" id="ho-paste-go" style="font-size:12px">Resume from this handoff</button>'+
+        '<button class="btn bs" id="ho-file-btn" style="font-size:var(--t-sm)">Load a .amvctx file</button>'+
+        '<button class="btn bp" id="ho-paste-go" style="font-size:var(--t-sm)">Resume from this handoff</button>'+
       '</div>'+
       '<input type="file" id="ho-file" accept=".amvctx,.txt" style="display:none">'+
     '</div>'+
-    '<div style="display:flex;justify-content:flex-end;margin-top:16px"><button class="btn bs" id="ho-close" style="font-size:12px">Close</button></div>'+
+    '<div style="display:flex;justify-content:flex-end;margin-top:16px"><button class="btn bs" id="ho-close" style="font-size:var(--t-sm)">Close</button></div>'+
   '</div></div>';
   r.classList.add('on');
   on($('ho-close'),'click',closeOvr);

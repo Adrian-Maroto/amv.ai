@@ -97,7 +97,7 @@ function renderTeamView(){
         '<span class="seat-total" id="seat-total"></span>'+
       '</div>'+
       '<div class="seat-say" id="seat-say" role="status" aria-live="polite"></div>'+
-      '<button class="btn bp" id="seat-buy" style="font-size:12px">Get Teams</button>'+
+      '<button class="btn bp" id="seat-buy" style="font-size:var(--t-sm)">Get Teams</button>'+
       '<p class="seat-fine">Minimum '+min+' seats. Change the number any time - billing is prorated by the day, '+
         'so adding somebody mid-month costs the part of the month they are there for.</p>'+
     '</div>';
@@ -107,18 +107,18 @@ function renderTeamView(){
   const planRequirementCard=
     '<div class="ss2" style="background:rgba(85,144,255,.06);border-color:rgba(85,144,255,.22)">'+
       '<h3>Which plan do I need?</h3>'+
-      '<p style="font-size:13.5px;color:var(--tx);line-height:1.7;margin:0 0 4px">'+
+      '<p style="font-size:var(--t-base);color:var(--tx);line-height:1.7;margin:0 0 4px">'+
         'Teams unlocks on the <b style="color:var(--accent)">'+teamPlan.name+' plan ($'+teamPlan.price+'/month)</b> and above. '+
         'One Elite (or Ultra) subscription covers your shared workspace, roles, and team memory. '+
         'A <b>Custom plan</b> sized at the Elite tier or above also unlocks Teams.'+
       '</p>'+
-      '<p style="font-size:12.5px;color:var(--mu);line-height:1.6;margin:8px 0 12px">'+
+      '<p style="font-size:var(--t-sm);color:var(--mu);line-height:1.6;margin:8px 0 12px">'+
         'Free and Pro ($'+PLANS.pro.price+') are individual plans - they don\u2019t include team workspaces. '+
         'You\u2019re currently on <b style="color:var(--tx)">'+planName+'</b>.'+
       '</p>'+
       (hasTeamPlan
-        ? '<div style="font-size:13px;color:#4ade80;font-weight:600">\u2713 Your '+planName+' plan includes Teams - create yours below.</div>'
-        : '<button class="btn bp" data-stab="plans" style="font-size:12px">Upgrade to '+teamPlan.name+' &rarr;</button>')+
+        ? '<div style="font-size:var(--t-base);color:#4ade80;font-weight:600">\u2713 Your '+planName+' plan includes Teams - create yours below.</div>'
+        : '<button class="btn bp" data-stab="plans" style="font-size:var(--t-sm)">Upgrade to '+teamPlan.name+' &rarr;</button>')+
     '</div>';
 
   // No backend yet → show what Teams unlocks + the plan answer (honest, clear path)
@@ -129,7 +129,7 @@ function renderTeamView(){
       '<p class="vsub">Share projects, prompts, and AMV\u2019s memory across your whole team - with roles and permissions.</p>'+
       teamExplainer+
       planRequirementCard+
-      '<div class="ss2"><p style="font-size:12.5px;color:var(--mu);line-height:1.6;margin:0">Team mode runs on your AMV backend. Once it\u2019s connected and you\u2019re on the '+teamPlan.name+' plan, you can create a team and invite members right here.</p></div>'+
+      '<div class="ss2"><p style="font-size:var(--t-sm);color:var(--mu);line-height:1.6;margin:0">Team mode runs on your AMV backend. Once it\u2019s connected and you\u2019re on the '+teamPlan.name+' plan, you can create a team and invite members right here.</p></div>'+
     '</div></div>';
     return;
   }
@@ -161,7 +161,7 @@ function renderTeamView(){
       '<span class="eyebrow">Collaboration</span><h2>Team workspaces</h2>'+
       '<p class="vsub">AMV could not reach the server, so this would be out of date. '+
       'Check your connection and try again.</p>'+
-      '<button class="btn bs" data-dact="renderTeamView" style="font-size:12px">Retry</button>'+
+      '<button class="btn bs" data-dact="renderTeamView" style="font-size:var(--t-sm)">Retry</button>'+
     '</div></div>';
   });
 }
@@ -255,15 +255,15 @@ function _renderTeamSettingsPane(pane){
         '<div class="set-fact"><div class="set-fact-k">Free seats</div><div class="set-fact-v">'+Math.max(0,seats.limit-seats.used)+'</div>'+
           (seats.over>0?'<div class="set-fact-s" style="color:var(--gold)">'+seats.over+' over your plan</div>':'')+'</div>'+
       '</div>'+
-      '<button class="btn bs" data-stab="team" style="font-size:12px;margin-top:14px">Manage the team \u2192</button>'+
+      '<button class="btn bs" data-stab="team" style="font-size:var(--t-sm);margin-top:14px">Manage the team \u2192</button>'+
     '</div>'
     :'<div class="ss2"><h3>You are not in a team</h3>'+
-      '<p style="font-size:13px;color:var(--mu);line-height:1.65;margin:0 0 12px">'+
+      '<p style="font-size:var(--t-base);color:var(--mu);line-height:1.65;margin:0 0 12px">'+
       'Anyone can be invited into one on any plan - the team pays for your seat, not you. '+
       'To start one yourself you need a plan that includes seats.</p>'+
-      '<button class="btn bp" data-stab="team" style="font-size:12px">Open Team \u2192</button></div>')+
+      '<button class="btn bp" data-stab="team" style="font-size:var(--t-sm)">Open Team \u2192</button></div>')+
     '<div class="ss2"><h3>What a seat costs the team</h3>'+
-      '<p style="font-size:13px;color:var(--mu);line-height:1.65;margin:0">'+
+      '<p style="font-size:var(--t-base);color:var(--mu);line-height:1.65;margin:0">'+
       'Everyone on a team draws on the same monthly allowance, so one person having a heavy week '+
       'is felt by everybody. You can see how much is left in <b>Settings \u2192 Usage</b> at any time. '+
       'Nobody can be charged individually - there is one subscription and one bill.</p>'+
@@ -288,7 +288,7 @@ function _renderTeamCreate(vc){
     '<p class="vsub">Start a shared workspace and invite your teammates.</p>'+
     '<div class="ss2"><div class="sf" style="max-width:420px">'+
       '<div><label class="lbl">Team name</label><input type="text" id="team-name" placeholder="Acme Inc." autocomplete="off"></div>'+
-      '<button class="btn bp" id="team-create-btn" style="align-self:flex-start;font-size:12px">Create team</button>'+
+      '<button class="btn bp" id="team-create-btn" style="align-self:flex-start;font-size:var(--t-sm)">Create team</button>'+
     '</div></div>'+
   '</div></div>';
   on($('team-create-btn'),'click',async()=>{
@@ -334,26 +334,26 @@ function _renderTeamManage(vc, team){
           : '<b>'+seats.limit+' seats</b><span>included with '+escH(String(team.plan||'your plan'))+'</span>')+
       '</div>'+
       (onSeatPlan
-        ? '<p style="font-size:12.5px;color:var(--mu);line-height:1.6;margin:0 0 10px">'+
+        ? '<p style="font-size:var(--t-sm);color:var(--mu);line-height:1.6;margin:0 0 10px">'+
           'Changing the number is prorated by the day, so adding somebody mid-month costs '+
           'the part of the month they are there for.</p>'+
-          '<button class="btn bs" id="seat-manage" style="font-size:12px">Change seats</button>'
-        : '<p style="font-size:12.5px;color:var(--mu);line-height:1.6;margin:0 0 10px">'+
+          '<button class="btn bs" id="seat-manage" style="font-size:var(--t-sm)">Change seats</button>'
+        : '<p style="font-size:var(--t-sm);color:var(--mu);line-height:1.6;margin:0 0 10px">'+
           'Need a different number? Teams is priced per person at $'+seatPrice+'/month, '+
           'and every seat brings its own allowance rather than dividing this one.</p>'+
-          '<button class="btn bs" data-stab="plans" style="font-size:12px">See Teams pricing</button>')+
+          '<button class="btn bs" data-stab="plans" style="font-size:var(--t-sm)">See Teams pricing</button>')+
       '<div class="seat-say" id="seat-manage-say" role="status" aria-live="polite"></div>'+
       '</div>'
     : '';
   const overBanner=over>0
     ? '<div class="ss2" style="border-color:var(--gold);background:rgba(245,158,11,.07)">'+
       '<h3>'+over+' '+(over===1?'person is':'people are')+' not covered by your plan</h3>'+
-      '<p style="font-size:13px;color:var(--tx);line-height:1.6;margin:0 0 10px">'+
+      '<p style="font-size:var(--t-base);color:var(--tx);line-height:1.6;margin:0 0 10px">'+
       'Your plan includes '+seats.limit+' seat'+(seats.limit===1?'':'s')+' and the team has '+seats.used+' member'+(seats.used===1?'':'s')+'. '+
       'The '+(over===1?'member':'members')+' marked below are using their own plan instead of the team\u2019s, '+
       'so they have their own limits and lose the shared allowance. Upgrade to cover them, or remove them.</p>'+
-      (isOwner?'<button class="btn bp" data-stab="plans" style="font-size:12px">See plans &rarr;</button>':
-       '<p style="font-size:12px;color:var(--mu);margin:0">Only the owner can change the plan.</p>')+
+      (isOwner?'<button class="btn bp" data-stab="plans" style="font-size:var(--t-sm)">See plans &rarr;</button>':
+       '<p style="font-size:var(--t-sm);color:var(--mu);margin:0">Only the owner can change the plan.</p>')+
       '</div>'
     : '';
   const memberRows=(team.members||[]).map(m=>
@@ -361,7 +361,7 @@ function _renderTeamManage(vc, team){
     (m.seated===false?' <span class="team-role" style="background:rgba(245,158,11,.14);color:var(--gold)">no seat</span>':'')+'</span>'+
     '<span style="display:flex;align-items:center;gap:10px"><span class="team-role team-role-'+m.role+'">'+m.role+'</span>'+
     // owner can promote/demote anyone who isn't the owner
-    (isOwner&&m.role!=='owner'?'<button class="btn bs team-role-btn" data-team-setrole="'+escH(m.email)+'" data-team-newrole="'+(m.role==='admin'?'member':'admin')+'" style="font-size:10.5px;padding:3px 8px">'+(m.role==='admin'?'Make member':'Make admin')+'</button>':'')+
+    (isOwner&&m.role!=='owner'?'<button class="btn bs team-role-btn" data-team-setrole="'+escH(m.email)+'" data-team-newrole="'+(m.role==='admin'?'member':'admin')+'" style="font-size:var(--t-2xs);padding:3px 8px">'+(m.role==='admin'?'Make member':'Make admin')+'</button>':'')+
     (canManage&&m.role!=='owner'?'<button class="team-x" data-team-remove="'+escH(m.email)+'" title="Remove">\u00d7</button>':'')+'</span></div>'
   ).join('');
   vc.innerHTML='<div class="sv fi"><div class="vi">'+
@@ -371,28 +371,28 @@ function _renderTeamManage(vc, team){
     overBanner+
     seatManage+
     '<div class="team-presence" id="team-presence"></div>'+
-    '<div class="ss2"><h3>Shared library <span style="font-weight:400;color:var(--mu);font-size:11px">(projects &amp; prompts everyone can use)</span></h3>'+
+    '<div class="ss2"><h3>Shared library <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(projects &amp; prompts everyone can use)</span></h3>'+
       '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'+
-        '<button class="btn bs" id="team-share-project" style="font-size:12px">Share a project</button>'+
-        '<button class="btn bs" id="team-share-prompt" style="font-size:12px">Share a prompt</button></div>'+
-      '<div id="team-shared"><div style="color:var(--mu);font-size:12px;padding:6px 0">Loading\u2026</div></div>'+
+        '<button class="btn bs" id="team-share-project" style="font-size:var(--t-sm)">Share a project</button>'+
+        '<button class="btn bs" id="team-share-prompt" style="font-size:var(--t-sm)">Share a prompt</button></div>'+
+      '<div id="team-shared"><div style="color:var(--mu);font-size:var(--t-sm);padding:6px 0">Loading\u2026</div></div>'+
     '</div>'+
-    (canManage?'<div class="ss2"><h3>Invite a teammate</h3><div class="sf" style="max-width:480px"><div style="display:flex;gap:8px;align-items:flex-end"><div style="flex:1"><label class="lbl">Email</label><input type="email" id="team-invite-email" placeholder="teammate@company.com" autocomplete="off"></div><div><label class="lbl">Role</label><select id="team-invite-role" class="sel"><option value="member">Member</option><option value="admin">Admin</option></select></div><button class="btn bp" id="team-invite-btn" style="font-size:12px">Invite</button></div></div><div id="team-invite-result"></div></div>':'')+
+    (canManage?'<div class="ss2"><h3>Invite a teammate</h3><div class="sf" style="max-width:480px"><div style="display:flex;gap:8px;align-items:flex-end"><div style="flex:1"><label class="lbl">Email</label><input type="email" id="team-invite-email" placeholder="teammate@company.com" autocomplete="off"></div><div><label class="lbl">Role</label><select id="team-invite-role" class="sel"><option value="member">Member</option><option value="admin">Admin</option></select></div><button class="btn bp" id="team-invite-btn" style="font-size:var(--t-sm)">Invite</button></div></div><div id="team-invite-result"></div></div>':'')+
     '<div class="ss2"><h3>Members</h3><div class="vbreak">'+memberRows+'</div></div>'+
-    '<div class="ss2"><h3>Assigned work <span style="font-weight:400;color:var(--mu);font-size:11px">(assign tasks to teammates and track them)</span></h3>'+
+    '<div class="ss2"><h3>Assigned work <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(assign tasks to teammates and track them)</span></h3>'+
       '<div class="sf" style="max-width:560px;margin-bottom:14px"><div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">'+
         '<div style="flex:1;min-width:180px"><label class="lbl">Task</label><input type="text" id="tt-title" placeholder="e.g. Draft the launch email" autocomplete="off"></div>'+
         '<div><label class="lbl">Assign to</label><select id="tt-assignee" class="sel"><option value="">Unassigned</option>'+(team.members||[]).map(m=>'<option value="'+escH(m.email)+'">'+escH(m.email)+'</option>').join('')+'</select></div>'+
         '<div><label class="lbl">Priority</label><select id="tt-priority" class="sel"><option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option></select></div>'+
-        '<button class="btn bp" id="tt-add" style="font-size:12px">Assign</button>'+
+        '<button class="btn bp" id="tt-add" style="font-size:var(--t-sm)">Assign</button>'+
       '</div></div>'+
-      '<div id="tt-board"><div style="color:var(--mu);font-size:12px;padding:8px 0">Loading tasks\u2026</div></div>'+
+      '<div id="tt-board"><div style="color:var(--mu);font-size:var(--t-sm);padding:8px 0">Loading tasks\u2026</div></div>'+
     '</div>'+
     (isOwner?'':'<div class="ss2"><h3>Leave this team</h3>'+
-      '<p style="font-size:12.5px;color:var(--mu);line-height:1.6;margin:0 0 10px">'+
+      '<p style="font-size:var(--t-sm);color:var(--mu);line-height:1.6;margin:0 0 10px">'+
       'You go back to your own plan and your own allowance. Anything you shared with the team stays with the team.</p>'+
-      '<button class="btn bs" id="team-leave" style="font-size:12px;color:var(--red);border-color:var(--red)">Leave team</button></div>')+
-    (canManage?'<div class="ss2"><h3>Activity log <span style="font-weight:400;color:var(--mu);font-size:11px">(who did what)</span></h3><div id="team-audit"><div style="color:var(--mu);font-size:12px;padding:8px 0">Loading\u2026</div></div></div>':'')+
+      '<button class="btn bs" id="team-leave" style="font-size:var(--t-sm);color:var(--red);border-color:var(--red)">Leave team</button></div>')+
+    (canManage?'<div class="ss2"><h3>Activity log <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(who did what)</span></h3><div id="team-audit"><div style="color:var(--mu);font-size:var(--t-sm);padding:8px 0">Loading\u2026</div></div></div>':'')+
   '</div></div>';
   on($('team-invite-btn'),'click',async()=>{
     const email=$('team-invite-email')?.value.trim(); const r=$('team-invite-role')?.value||'member';
@@ -408,7 +408,7 @@ function _renderTeamManage(vc, team){
          relied on one quote-escape to stay safe. */
       if(res){
         res.innerHTML='<div class="team-invite-link">Invite link for '+escH(email)+':<br><code>'+escH(link)+'</code>'+
-          '<button class="btn bs" id="team-invite-copy" style="font-size:11px;margin-top:8px">Copy link</button></div>';
+          '<button class="btn bs" id="team-invite-copy" style="font-size:var(--t-xs);margin-top:8px">Copy link</button></div>';
         on($('team-invite-copy'),'click',async()=>{
           try{ await navigator.clipboard.writeText(link); toast('Link copied','success'); }
           catch(_){ toast('Copy was blocked by your browser - select the link above and copy it.','info',6000); }
@@ -424,7 +424,7 @@ function _renderTeamManage(vc, team){
       const res=$('team-invite-result');
       if(e.code==='seat_limit'&&res){
         res.innerHTML='<div class="team-invite-link" style="border-color:var(--gold)">'+escH(e.message)+
-          (isOwner?'<br><button class="btn bp" data-stab="plans" style="font-size:11px;margin-top:8px">See plans</button>':'')+'</div>';
+          (isOwner?'<br><button class="btn bp" data-stab="plans" style="font-size:var(--t-xs);margin-top:8px">See plans</button>':'')+'</div>';
         return;
       }
       toast(e.message||'Invite failed','error');
@@ -474,12 +474,12 @@ function _renderTeamManage(vc, team){
   // ── Shared library ──
   const drawShared=(shared)=>{
     const el=$('team-shared'); if(!el) return;
-    if(!shared||!shared.length){ el.innerHTML='<div style="color:var(--mu);font-size:12.5px;padding:6px 0">Nothing shared yet. Share a project or prompt so your whole team can use it.</div>'; return; }
+    if(!shared||!shared.length){ el.innerHTML='<div style="color:var(--mu);font-size:var(--t-sm);padding:6px 0">Nothing shared yet. Share a project or prompt so your whole team can use it.</div>'; return; }
     const _tsvg=(p)=>'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+p+'</svg>';
     const kindIc={project:_tsvg('<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9L9.6 3.9A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z"/>'),prompt:_tsvg('<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>')};
     el.innerHTML='<div class="team-shared-list">'+shared.map(s=>'<div class="team-shared-row"><span class="tsr-ic">'+(kindIc[s.kind]||_tsvg('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>'))+'</span>'+
       '<div class="tsr-main"><b>'+escH(s.title)+'</b><span>'+escH(s.kind)+' \u00b7 by '+escH(s.byName||(s.by||'').split('@')[0])+'</span></div>'+
-      '<button class="btn bs tsr-use" data-tsr-use="'+s.id+'" style="font-size:11px">Use</button>'+
+      '<button class="btn bs tsr-use" data-tsr-use="'+s.id+'" style="font-size:var(--t-xs)">Use</button>'+
       '<button class="team-x" data-tsr-del="'+s.id+'" title="Remove">\u00d7</button></div>').join('')+'</div>';
     el.querySelectorAll('[data-tsr-use]').forEach(b=>on(b,'click',()=>{
       const s=shared.find(x=>x.id===b.dataset.tsrUse); if(!s) return;
@@ -497,7 +497,7 @@ function _renderTeamManage(vc, team){
          which is the same false statement with a delay on it. The panel keeps
          the message. */
       const el=$('team-shared');
-      if(el) el.innerHTML='<div style="color:var(--mu);font-size:12px;padding:8px 0;line-height:1.6">'+
+      if(el) el.innerHTML='<div style="color:var(--mu);font-size:var(--t-sm);padding:8px 0;line-height:1.6">'+
         escH((e&&e.message)||'Could not load the shared library.')+
         ' Everything the team shared is still there - <button class="tt-mini" id="tsr-retry">try again</button></div>';
       on($('tsr-retry'),'click',()=>{ AMVTeam.shared().then(drawShared).catch(()=>{}); });
@@ -535,7 +535,7 @@ async function _loadTeamTasks(team, role, myEmail){
   catch(e){
     /* An empty board is a statement about the team's work. If it could not be
        read, the board says that instead of claiming there is nothing on it. */
-    board.innerHTML='<div class="tt-failed" style="color:var(--mu);font-size:12px;padding:8px 0;line-height:1.6">'+
+    board.innerHTML='<div class="tt-failed" style="color:var(--mu);font-size:var(--t-sm);padding:8px 0;line-height:1.6">'+
       escH((e&&e.message)||'Could not load the team board.')+
       ' Nothing has changed - <button class="tt-mini" id="tt-retry">try again</button></div>';
     on($('tt-retry'),'click',()=>_loadTeamTasks(team, role, myEmail));
@@ -544,7 +544,7 @@ async function _loadTeamTasks(team, role, myEmail){
   const tasks=data.tasks||[];
   const render=()=>{
     const el=$('tt-board'); if(!el) return;
-    if(!tasks.length){ el.innerHTML='<div style="color:var(--mu);font-size:12px;padding:8px 0">No tasks yet - assign the first one above.</div>'; return; }
+    if(!tasks.length){ el.innerHTML='<div style="color:var(--mu);font-size:var(--t-sm);padding:8px 0">No tasks yet - assign the first one above.</div>'; return; }
     const cols=['todo','in_progress','done'];
     el.innerHTML='<div class="tt-cols">'+cols.map(st=>{
       const items=tasks.filter(t=>t.status===st);
@@ -594,7 +594,7 @@ async function _loadTeamTasks(team, role, myEmail){
   if(role==='owner'||role==='admin'){
     AMVTeam.audit().then(log=>{
       const el=$('team-audit'); if(!el) return;
-      if(!log.length){ el.innerHTML='<div style="color:var(--mu);font-size:12px;padding:8px 0">No activity yet.</div>'; return; }
+      if(!log.length){ el.innerHTML='<div style="color:var(--mu);font-size:var(--t-sm);padding:8px 0">No activity yet.</div>'; return; }
       const _act={team_created:'created the team',member_invited:'invited',member_joined:'joined',member_removed:'removed',role_changed:'changed a role',task_created:'assigned a task',task_status:'moved a task',task_reassigned:'reassigned a task',task_deleted:'deleted a task'};
       el.innerHTML='<div class="team-log">'+log.slice(0,30).map(e=>{
         const when=new Date(e.t).toLocaleString();
@@ -611,7 +611,7 @@ async function _loadTeamTasks(team, role, myEmail){
          to the team. "No activity yet" for a log that could not be read is the
          one answer it must never give. */
       const el=$('team-audit'); if(!el) return;
-      el.innerHTML='<div style="color:var(--mu);font-size:12px;padding:8px 0;line-height:1.6">'+
+      el.innerHTML='<div style="color:var(--mu);font-size:var(--t-sm);padding:8px 0;line-height:1.6">'+
         escH((err&&err.message)||'Could not load the team activity log.')+
         ' This is not a record of nothing happening - <button class="tt-mini" id="tal-retry">try again</button></div>';
       on($('tal-retry'),'click',()=>_renderTeamManage(vc, team));
