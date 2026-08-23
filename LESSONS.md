@@ -5922,3 +5922,110 @@ The check that guards it does NOT count how many rules use a token. That would
 be a proxy, and proxies produced four false findings in this session. It asserts
 what the setting is for: a larger size makes the text larger on a real page, and
 nothing falls off the screen.
+
+## 283. A relative check cannot see an absolute break
+
+Finishing the type migration meant writing 157 off-scale display sizes as
+`calc(17px * var(--fs-s))` so they would obey the text size setting without
+being snapped to a step. That needs `--fs-s` defined on bare `:root`, because it
+had only ever existed under `html.fs-scaled`.
+
+I sabotaged that line to check the guard. **Every assertion in the file passed.**
+
+The break is severe: an undefined var inside `calc()` does not fall back, it
+invalidates the whole declaration, so the declaration is dropped and the element
+inherits body size. Measured on the sabotaged build: **105 headings across the
+product collapsed from 38, 30, 26px to 14px at the DEFAULT size.** The most
+visible possible regression, and the suite was green.
+
+It was green because every check in it was RELATIVE. "Does the text respond to
+the setting" - and 14px-then-38px is a response, a bigger one than before, so
+coverage went UP on the broken build. "Is the headline bigger than the body" -
+a frozen 38px headline still beats scaled body text, so that passed too, which I
+also confirmed by re-freezing it.
+
+**A suite made only of relative checks measures whether things move together. It
+cannot tell you where they started.** Both of my new checks were relative,
+because the bug I was hunting was relative, and I built the instrument out of the
+shape of the last bug.
+
+The check that catches it is absolute and states the contract in plain terms: at
+the default size, no visible heading renders at body size. It reads every `h1`
+and `h2` on every tab rather than three selectors I named, because a selector
+that stops matching goes quiet - and this whole entry exists because a quiet
+check let something through.
+
+Same session, second time sabotage found the guard rather than the bug. It is
+cheap: commit first, break the line on purpose, run. If nothing fails, the guard
+is the thing that needs work.
+
+## 284. The tidiness task was hiding three real defects, and the tidying was wrong
+
+D007 step 6 was "retire the three renderers": ~3,600 lines, explicitly scoped as
+tidiness, "no control moves, nothing a person can see changes". The obvious way
+to do it is to start merging.
+
+Measured first instead. The three render functions are 48, 165 and 270 lines,
+and after normalising whitespace they share **exactly one line of code**:
+`const vc=$('vc'); if(!vc) return;`. Steps 1 to 5 had already extracted every
+shareable piece into helpers. Merging them would have produced one larger
+function with the same three branches and less ability to say which surface
+broke - a worse product, arrived at by following the plan.
+
+**A refactor written before the extraction work is a guess about what the code
+will look like afterwards.** Re-measure the duplication before merging anything;
+the number is cheap to get and it can say "already done" or "never was there".
+
+Then, reading the three for that measurement, the real findings turned up - and
+every one of them was on the same control:
+
+- Studio had no engine picker at all, while `_sectionModel('design')` was read
+  on every Studio call. Wired at the read end, unreachable at the write end.
+- `auto` was clamped to the HEAVIEST engine the plan allows, because PLAN_TIERS
+  lists engines and `auto` is not one, so "missing" was read as "not allowed".
+  The server had routed it properly for months.
+- Every engine was offered on every plan, selected fine, and silently ran a
+  cheaper one.
+
+Three defects, one control, three surfaces. The pattern this session keeps
+producing: **a control that reads correctly and does not do what it says.** It
+cannot be found by reading the renderer, only by driving it and comparing what
+the setting stores against what the request sends.
+
+The tidiness task was worth opening. It was not worth completing.
+
+## 285. "Flaky" is a conclusion; 31.998046875 is evidence
+
+The full gate failed on `mobile-sweep`: one Crew button, reported as 32px, against
+a threshold of 32px. Standalone it failed roughly one run in five, and CI passed
+the same tree. Every signal said "flaky test, re-run it".
+
+Printing the raw number took two minutes. `getBoundingClientRect().height` was
+**31.998046875** on an element whose CSS says `min-height:32px`. The rect reports
+the box as laid out, not as declared, so an element at a fractional y offset comes
+back a five-hundred-and-twelfth of a pixel short - and a strict `<` against a
+whole number fails on a control that is exactly right.
+
+**A test that fails one run in five is not noise, it is a defect with a low
+reproduction rate.** The temptation is to re-run until green, and re-running is
+what makes the class invisible: the same comparison was sitting in six other
+places, two of them tap-target checks on controls sized to exactly their
+threshold, all waiting for a different unlucky day.
+
+Two more things fell out of chasing it properly.
+
+**Three different places make a page.** `bootApp`, one suite calling
+`browser.newPage({deviceScaleFactor: 2})` directly, and `bootLive` making pages
+from its own contexts, twice. I armed the first, ran the suites, and the second
+threw ReferenceError; the third turned up after that, and its only use of the
+comparator sits behind an early return - so it PASSED while being one rendered
+element away from throwing. Found one at a time, which is what a one-caller fix
+looks like from the inside.
+
+**Then sabotage caught the guard I wrote to catch it.** The sweep used
+`line.match(...)`, which returns only the leading match, and the line it was
+written for begins `if (b.width > 0 && ...`. It found `width > 0`, saw a small
+number, and never looked at the `< 32` at the end. Putting the original mistake
+back passed. Seventh instrument error this session, and the second where sabotage
+found the guard rather than the bug - which is now two for two on being worth the
+five minutes it costs.

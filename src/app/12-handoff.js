@@ -71,16 +71,16 @@ function renderHandoffView(){
       <div class="ss2">
         <h3>Hand something off</h3>
         <div style="display:flex;flex-direction:column;gap:12px">
-          <div><label class="lbl" style="font-size:11px;color:var(--mu)">What are you handing off?</label>
-            <input id="ho-title" placeholder="e.g. Finish the Q3 report intro" style="width:100%;background:var(--glass);border:1px solid var(--glass-bd);border-radius:var(--r-md);padding:12px;color:var(--tx);font-family:var(--fn);font-size:14px"></div>
-          <div><label class="lbl" style="font-size:11px;color:var(--mu)">The work itself - paste it here</label>
-            <textarea id="ho-ctx" placeholder="Paste the actual content the next person (or the agent) should work on: the draft, the code, the data, the email thread, the brief - plus anything they need to know to continue. This is the baton they pick up." style="width:100%;min-height:220px;background:var(--glass);border:1px solid var(--glass-bd);border-radius:var(--r-md);padding:12px;color:var(--tx);font-family:var(--mn,ui-monospace,monospace);font-size:13px;line-height:1.6;resize:vertical;tab-size:2"></textarea>
+          <div><label class="lbl" style="font-size:var(--t-xs);color:var(--mu)">What are you handing off?</label>
+            <input id="ho-title" placeholder="e.g. Finish the Q3 report intro" style="width:100%;background:var(--glass);border:1px solid var(--glass-bd);border-radius:var(--r-md);padding:12px;color:var(--tx);font-family:var(--fn);font-size:var(--t-md)"></div>
+          <div><label class="lbl" style="font-size:var(--t-xs);color:var(--mu)">The work itself - paste it here</label>
+            <textarea id="ho-ctx" placeholder="Paste the actual content the next person (or the agent) should work on: the draft, the code, the data, the email thread, the brief - plus anything they need to know to continue. This is the baton they pick up." style="width:100%;min-height:220px;background:var(--glass);border:1px solid var(--glass-bd);border-radius:var(--r-md);padding:12px;color:var(--tx);font-family:var(--mn,ui-monospace,monospace);font-size:var(--t-base);line-height:1.6;resize:vertical;tab-size:2"></textarea>
             <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
-              <button class="btn bs" data-dact="_hoPickChat" style="font-size:11.5px">Pull in your work…</button>
-              <span style="font-size:11px;color:var(--mu);align-self:center">a conversation, a design, a project or some code - or just paste anything above</span>
+              <button class="btn bs" data-dact="_hoPickChat" style="font-size:var(--t-sm)">Pull in your work…</button>
+              <span style="font-size:var(--t-xs);color:var(--mu);align-self:center">a conversation, a design, a project or some code - or just paste anything above</span>
             </div></div>
-          <div><label class="lbl" style="font-size:11px;color:var(--mu)">Hand off to</label>
-            <input id="ho-to" placeholder="teammate@email.com  - or type: crew" style="width:100%;background:var(--glass);border:1px solid var(--glass-bd);border-radius:var(--r-md);padding:12px;color:var(--tx);font-family:var(--fn);font-size:14px"></div>
+          <div><label class="lbl" style="font-size:var(--t-xs);color:var(--mu)">Hand off to</label>
+            <input id="ho-to" placeholder="teammate@email.com  - or type: crew" style="width:100%;background:var(--glass);border:1px solid var(--glass-bd);border-radius:var(--r-md);padding:12px;color:var(--tx);font-family:var(--fn);font-size:var(--t-md)"></div>
           <button class="btn bp" data-dact="hoSend" style="align-self:flex-start">Send handoff</button>
         </div>
       </div>
@@ -178,7 +178,7 @@ function _hoPickChat(){
   r.innerHTML='<div class="ov" id="hopick-bg"><div class="ob hopick-modal" style="max-width:520px">'+
     '<button class="oc" data-dact="closeOvr">×</button>'+
     '<h2 style="margin:0 0 4px">Pull in your work</h2>'+
-    '<p style="font-size:12.5px;color:var(--mu);margin:0 0 14px">A conversation, a design, a project or some code. '+
+    '<p style="font-size:var(--t-sm);color:var(--mu);margin:0 0 14px">A conversation, a design, a project or some code. '+
       'The actual content comes across, not a description of it.</p>'+
     (sessRows?'<div class="hopick-h">Designs, projects and code</div><div class="hopick-list">'+sessRows+'</div>':'')+
     (chatRows?'<div class="hopick-h">Conversations</div><div class="hopick-list">'+chatRows+'</div>':'')+
@@ -367,7 +367,7 @@ function renderPlansView(){
       _teamPlanBanner(true)+
       _customPlanBanner(true)+
       '<p class="px-note" style="display:none">Prices are in US dollars. Your local-currency amount is an estimate for convenience - you are charged the same value wherever you are, so there are no cheaper prices by country.</p>'+
-      '<div class="plans-compare-row"><button class="btn bs" id="plans-compare" style="font-size:12.5px">Compare all plans in detail \u2192</button></div>'+
+      '<div class="plans-compare-row"><button class="btn bs" id="plans-compare" style="font-size:var(--t-sm)">Compare all plans in detail \u2192</button></div>'+
       '<div class="trust-bar"><div class="trust-badges">'+
         _trustBadge('<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>','Bank-grade encryption','256-bit TLS on every request')+
         _trustBadge('<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/>','Secure payments','Processed by Stripe - we never see your card')+
@@ -404,7 +404,7 @@ const FAQS=[
      nothing kept in step with the cards or with checkout, so changing a price
      left the Help Center stating the old one to the person who came here to
      ask what it costs. */
-  {c:'billing', q:'How do plans and limits work?', a:'Free gives you daily usage to explore everything. Pro ($'+PLANS.pro.price+'/mo) unlocks autonomous agents, Mission Control, the app builder, connected accounts, and '+PLANS.pro.mult+' usage. Elite ($'+PLANS.elite.price+'/mo) adds our most capable Apex model first, one-click deploy, and parallel agents at '+PLANS.elite.mult+' usage. Ultra ($'+PLANS.ultra.price+'/mo) is '+PLANS.ultra.mult+' usage with unlimited parallel agents and team workspaces. Custom lets you set your own hard-capped budget. Limits are usage-based - just work without counting messages.'},
+  {c:'billing', q:'How do plans and limits work?', a:'Free gives you daily usage to explore everything. Pro ($'+PLANS.pro.price+'/mo) unlocks autonomous agents, Mission Control, the app builder, connected accounts, and '+PLANS.pro.mult+' usage. Elite ($'+PLANS.elite.price+'/mo) adds our most capable Apex model first, one-click deploy, and double Pro\u2019s throughput at '+PLANS.elite.mult+' usage. Ultra ($'+PLANS.ultra.price+'/mo) is '+PLANS.ultra.mult+' usage with the highest throughput AMV offers and team workspaces. Custom lets you set your own hard-capped budget. Limits are usage-based - just work without counting messages.'},
   {c:'privacy', q:'What is AI Memory?', a:'Memory lets AMV remember facts about you - your role, preferences, and context - and apply them automatically in every conversation. Add or edit them under Memory in the sidebar.'},
   {c:'chat', q:'How do I use voice input?', a:'Click the microphone in the chat input (best in Chrome and Edge), speak, and your words appear in the box. Press Enter to send.'},
   {c:'chat', q:'How do I rename, star, or delete chats?', a:'Hover a chat in the sidebar for quick actions, or right-click for the full menu including Export and Share.'},
@@ -473,24 +473,24 @@ function renderHelpView(){
       '<h2>Help Center</h2>'+
       '<p class="vsub">Pick a topic, or search if you already know the word for it.</p>'+
       '<div class="ss2">'+
-        '<input type="search" id="faq-search" placeholder="Search help…" aria-label="Search help" style="font-size:16px;margin-bottom:13px">'+
+        '<input type="search" id="faq-search" placeholder="Search help…" aria-label="Search help" style="font-size:var(--t-lg);margin-bottom:13px">'+
         chips+
         '<div id="faq-list">'+groups+'</div>'+
         '<p id="faq-none" class="hc-none" hidden>No answer matches that. Try a different word, or ask AMV below - it can answer from the product itself.</p>'+
       '</div>'+
       '<div class="ss2"><h3>Share feedback</h3>'+
-        '<p style="font-size:12.5px;color:var(--mu);margin-bottom:12px;line-height:1.55">Found a bug or have an idea? Tell us - real feedback shapes what we build next.</p>'+
+        '<p style="font-size:var(--t-sm);color:var(--mu);margin-bottom:12px;line-height:1.55">Found a bug or have an idea? Tell us - real feedback shapes what we build next.</p>'+
         '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
-          '<button class="btn bp" style="font-size:12px" data-dact="openFeedback" data-darg="bug">Report a bug</button>'+
-          '<button class="btn bs" style="font-size:12px" data-dact="openFeedback" data-darg="idea">Suggest a feature</button>'+
+          '<button class="btn bp" style="font-size:var(--t-sm)" data-dact="openFeedback" data-darg="bug">Report a bug</button>'+
+          '<button class="btn bs" style="font-size:var(--t-sm)" data-dact="openFeedback" data-darg="idea">Suggest a feature</button>'+
         '</div>'+
       '</div>'+
       '<div class="ss2"><h3>Still need help?</h3>'+
         '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
           supportButton({label:'Email Support',cls:'btn bp',subject:'AMV Support request'})+
-          '<button class="btn bs" style="font-size:12px" data-dact="askAmv" data-darg="">Ask AMV directly</button>'+
+          '<button class="btn bs" style="font-size:var(--t-sm)" data-dact="askAmv" data-darg="">Ask AMV directly</button>'+
         '</div>'+
-        (_supportEmail()?'<p style="font-size:11.5px;color:var(--mu);margin-top:10px">Or email us directly at <b style="color:var(--tx)">'+escH(_supportEmail())+'</b> - we reply within 24 hours.</p>':'')+
+        (_supportEmail()?'<p style="font-size:var(--t-sm);color:var(--mu);margin-top:10px">Or email us directly at <b style="color:var(--tx)">'+escH(_supportEmail())+'</b> - we reply within 24 hours.</p>':'')+
       '</div>'+
     '</div></div>';
   vc.querySelectorAll('.faq-q').forEach(q=>{
@@ -741,12 +741,12 @@ try{ window._loadReports=_loadReports; }catch(e){}
    explicit action because it puts a message in someone's inbox. */
 function _digestCardHTML(){
   return '<div class="ss2" style="margin-top:16px"><h3>Weekly digest</h3>'+
-    '<p style="font-size:12px;color:var(--mu);line-height:1.6;margin:-4px 0 12px">'+
+    '<p style="font-size:var(--t-sm);color:var(--mu);line-height:1.6;margin:-4px 0 12px">'+
       'These figures are emailed to the owner once a week, with the change since the week before. '+
       'It needs OWNER_EMAIL and an email provider configured on the Worker.</p>'+
     '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
-      '<button class="btn bs" id="fd-digest-preview" type="button" style="font-size:12px">Preview this week</button>'+
-      '<button class="btn bs" id="fd-digest-send" type="button" style="font-size:12px">Send it now</button>'+
+      '<button class="btn bs" id="fd-digest-preview" type="button" style="font-size:var(--t-sm)">Preview this week</button>'+
+      '<button class="btn bs" id="fd-digest-send" type="button" style="font-size:var(--t-sm)">Send it now</button>'+
     '</div>'+
     '<div id="fd-digest-out" class="fd-digest-out" role="status" aria-live="polite"></div>'+
   '</div>';
@@ -820,14 +820,14 @@ function _founderDashHTML(d){
     '<div class="ss2"><h3>Today\u2019s global spend</h3>'+
       '<div class="usage-bar"><div class="usage-bar-f" style="width:'+spendPct+'%;background:'+spendColor+'"></div></div>'+
       '<div class="usage-meta"><span>'+money(sp.today)+' of '+money(sp.cap)+' ('+spendPct+'%)</span><span>'+(sp.killed?'\u26D4 Service PAUSED':'\u2705 Service live')+'</span></div>'+
-      '<button class="btn '+(sp.killed?'bp':'bs')+'" id="fd-kill" style="margin-top:12px;font-size:12px">'+(sp.killed?'Resume service':'Pause service (kill switch)')+'</button>'+
+      '<button class="btn '+(sp.killed?'bp':'bs')+'" id="fd-kill" style="margin-top:12px;font-size:var(--t-sm)">'+(sp.killed?'Resume service':'Pause service (kill switch)')+'</button>'+
     '</div>'+
     // plan breakdown
     '<div class="ss2"><h3>Users by plan</h3><div class="fd-plans">'+
       ['free','pro','elite','ultra','custom'].map(p=>'<div class="fd-plan"><div class="fd-plan-n">'+fmt(byPlan[p]||0)+'</div><div class="fd-plan-l">'+p+'</div></div>').join('')+
     '</div></div>'+
     // top spenders (abuse / margin watch)
-    '<div class="ss2"><h3>Top spenders this month <span style="font-weight:400;color:var(--mu);font-size:11px">(margin &amp; abuse watch)</span></h3>'+
+    '<div class="ss2"><h3>Top spenders this month <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(margin &amp; abuse watch)</span></h3>'+
       '<div class="fd-table"><div class="fd-row fd-head"><span>User</span><span>Plan</span><span>AI cost</span></div>'+rows+'</div>'+
     '</div>';
 }
@@ -868,7 +868,7 @@ function _openSettingsPicker(){
   }).join('');
   r.innerHTML='<div class="ov" id="setpick-bg"><div class="ob setpick-modal" style="max-width:460px">'+
     '<button class="oc" data-dact="closeOvr" aria-label="Close">×</button>'+
-    '<h2 style="margin:0 0 12px;font-size:18px">Settings</h2>'+
+    '<h2 style="margin:0 0 12px;font-size:calc(18px * var(--fs-s))">Settings</h2>'+
     '<div class="set-search-wrap setpick-searchwrap"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>'+
       '<input id="setpick-search" class="set-search" type="text" placeholder="Search settings…" autocomplete="off"></div>'+
     '<div class="setpick-list" id="setpick-list">'+rows+'</div></div></div>';
@@ -988,12 +988,12 @@ function _paintWidgetForm(body, cfg, base){
     .map(m=>'<option value="'+m[0]+'"'+(cfg.model===m[0]?' selected':'')+'>'+m[1]+'</option>').join('');
   body.innerHTML=
     '<div class="ss2"><h3>Your embed code</h3>'+
-      '<p style="font-size:12px;color:var(--mu);margin-bottom:10px;line-height:1.6">Paste this once, just before <code>&lt;/body&gt;</code> on any page. The chat bubble appears in the corner. Changes you save here apply everywhere instantly - no need to re-paste.</p>'+
-      '<div style="position:relative"><pre id="wg-snippet" style="background:var(--surface);border:1px solid var(--hair);border-radius:8px;padding:12px 12px;font-size:11.5px;overflow:auto;margin:0;white-space:pre-wrap;word-break:break-all"><code>'+escH(snippet)+'</code></pre></div>'+
+      '<p style="font-size:var(--t-sm);color:var(--mu);margin-bottom:10px;line-height:1.6">Paste this once, just before <code>&lt;/body&gt;</code> on any page. The chat bubble appears in the corner. Changes you save here apply everywhere instantly - no need to re-paste.</p>'+
+      '<div style="position:relative"><pre id="wg-snippet" style="background:var(--surface);border:1px solid var(--hair);border-radius:8px;padding:12px 12px;font-size:var(--t-sm);overflow:auto;margin:0;white-space:pre-wrap;word-break:break-all"><code>'+escH(snippet)+'</code></pre></div>'+
       '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">'+
-        '<button class="btn bp" id="wg-copy" style="font-size:12px">Copy code</button>'+
-        '<button class="btn" id="wg-preview" style="font-size:12px">Preview widget</button>'+
-        '<span style="font-size:11px;color:var(--mu);align-self:center">Site key: <code>'+escH(cfg.key)+'</code></span>'+
+        '<button class="btn bp" id="wg-copy" style="font-size:var(--t-sm)">Copy code</button>'+
+        '<button class="btn" id="wg-preview" style="font-size:var(--t-sm)">Preview widget</button>'+
+        '<span style="font-size:var(--t-xs);color:var(--mu);align-self:center">Site key: <code>'+escH(cfg.key)+'</code></span>'+
       '</div>'+
     '</div>'+
     '<div class="ss2"><h3>Appearance</h3>'+
@@ -1006,12 +1006,12 @@ function _paintWidgetForm(body, cfg, base){
     '<div class="ss2"><h3>Behavior</h3>'+
       '<div class="sf">'+
         '<div><label class="lbl">AI model</label><select id="wg-model" class="inp">'+modelOpts+'</select></div>'+
-        '<div><label class="lbl">Instructions (system prompt) - tells the AI how to behave and what it knows</label><textarea id="wg-sys" rows="4" style="font-family:inherit;font-size:13px" placeholder="You are a helpful assistant for [your company]\u2026">'+escH(cfg.systemPrompt||'')+'</textarea></div>'+
+        '<div><label class="lbl">Instructions (system prompt) - tells the AI how to behave and what it knows</label><textarea id="wg-sys" rows="4" style="font-family:inherit;font-size:var(--t-base)" placeholder="You are a helpful assistant for [your company]\u2026">'+escH(cfg.systemPrompt||'')+'</textarea></div>'+
       '</div>'+
     '</div>'+
-    '<div class="ss2"><h3>Allowed domains <span style="font-weight:400;color:var(--mu);font-size:11px">(recommended)</span></h3>'+
-      '<p style="font-size:12px;color:var(--mu);margin-bottom:10px;line-height:1.6">Lock the widget to your own sites so nobody can embed it elsewhere and use your quota. One domain per line (e.g. <code>example.com</code>). Leave empty to allow any site '+(!(cfg.origins&&cfg.origins.length)?'- <b style="color:var(--red)">currently unrestricted</b>':'')+'.</p>'+
-      '<textarea id="wg-origins" rows="3" style="font-family:var(--mn);font-size:12px" placeholder="example.com&#10;www.example.com">'+escH((cfg.origins||[]).join('\n'))+'</textarea>'+
+    '<div class="ss2"><h3>Allowed domains <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(recommended)</span></h3>'+
+      '<p style="font-size:var(--t-sm);color:var(--mu);margin-bottom:10px;line-height:1.6">Lock the widget to your own sites so nobody can embed it elsewhere and use your quota. One domain per line (e.g. <code>example.com</code>). Leave empty to allow any site '+(!(cfg.origins&&cfg.origins.length)?'- <b style="color:var(--red)">currently unrestricted</b>':'')+'.</p>'+
+      '<textarea id="wg-origins" rows="3" style="font-family:var(--mn);font-size:var(--t-sm)" placeholder="example.com&#10;www.example.com">'+escH((cfg.origins||[]).join('\n'))+'</textarea>'+
     '</div>'+
     /* ZERO MEANS UNLIMITED, AND THE LABELS SAID "MAX".
        The server reads 0 on either of these as "no ceiling" - `dailyMsgCap > 0`
@@ -1021,7 +1021,7 @@ function _paintWidgetForm(body, cfg, base){
        remove the only per-widget limit on the owner's bill. Said plainly here,
        and warned about live, because a money control that means the opposite of
        how it reads is not a control. */
-    '<div class="ss2"><h3>Safety limits <span style="font-weight:400;color:var(--mu);font-size:11px">(protect your costs)</span></h3>'+
+    '<div class="ss2"><h3>Safety limits <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(protect your costs)</span></h3>'+
       '<div class="sf">'+
         '<div><label class="lbl">Max messages per day <span class="wg-hint">0 = no limit</span></label><input type="number" id="wg-msgcap" value="'+(cfg.dailyMsgCap||0)+'" min="0" max="100000"></div>'+
         '<div><label class="lbl">Max spend per day (USD) <span class="wg-hint">0 = no limit</span></label><input type="number" id="wg-spendcap" value="'+(cfg.dailySpendCapUSD||0)+'" min="0" max="1000" step="0.5"></div>'+
@@ -1030,10 +1030,10 @@ function _paintWidgetForm(body, cfg, base){
       '<div class="wg-capwarn" id="wg-capwarn" role="status" aria-live="polite"></div>'+
     '</div>'+
     '<div class="ss2"><div style="display:flex;align-items:center;justify-content:space-between">'+
-        '<div><div style="font-size:13px;font-weight:600">Widget enabled</div><div style="font-size:11px;color:var(--t2)">Turn the widget on or off across all your sites instantly.</div></div>'+
+        '<div><div style="font-size:var(--t-base);font-weight:600">Widget enabled</div><div style="font-size:var(--t-xs);color:var(--t2)">Turn the widget on or off across all your sites instantly.</div></div>'+
         '<label class="sw"><input type="checkbox" id="wg-enabled" '+(cfg.enabled?'checked':'')+'><span class="sw-sl"></span></label>'+
       '</div></div>'+
-    '<div style="display:flex;gap:8px"><button class="btn bp" id="wg-save" style="font-size:13px">Save changes</button><span id="wg-saved" style="font-size:12px;color:var(--green);align-self:center"></span></div>';
+    '<div style="display:flex;gap:8px"><button class="btn bp" id="wg-save" style="font-size:var(--t-base)">Save changes</button><span id="wg-saved" style="font-size:var(--t-sm);color:var(--green);align-self:center"></span></div>';
 
   /* What the current settings actually expose, recomputed as they are typed
      rather than discovered on a bill. An uncapped widget on an unrestricted
@@ -1335,7 +1335,7 @@ function _confirmDeleteAccount(){
         ? 'your account, chats, projects, automations, and subscription from AMV\u2019s servers'
         : 'all AMV data stored in this browser')+'. <b>This cannot be undone.</b></p>'+
       (connected?'':'<div class="fp-warn" style="margin-bottom:12px">\u26a0 You\u2019re not connected to the AMV engine, so only this browser\u2019s data will be cleared.</div>')+
-      '<p style="font-size:12.5px;color:var(--mu);margin-bottom:6px">Tip: you can <button class="lnk-inline" id="del-export">export your data</button> first.</p>'+
+      '<p style="font-size:var(--t-sm);color:var(--mu);margin-bottom:6px">Tip: you can <button class="lnk-inline" id="del-export">export your data</button> first.</p>'+
       '<label class="lbl">Type <b>DELETE</b> to confirm</label>'+
       '<input type="text" id="del-confirm" placeholder="DELETE" autocomplete="off">'+
       '<div style="display:flex;gap:9px;margin-top:14px">'+
@@ -1549,7 +1549,7 @@ function _activeSessionsHTML(){
         '<div class="sess-txt"><div class="sess-name">'+escH(browser+(os?' on '+os:''))+' <span class="sess-badge">This device</span></div>'+
           '<div class="sess-meta">Signed in \u00b7 since '+escH(when)+'</div></div>'+
       '</div>'+
-      '<button class="btn bs" id="signout-others" style="margin-top:12px;font-size:12px"'+(live?'':' disabled')+'>Sign out everywhere</button>'+
+      '<button class="btn bs" id="signout-others" style="margin-top:12px;font-size:var(--t-sm)"'+(live?'':' disabled')+'>Sign out everywhere</button>'+
       '<div class="set-sub" style="margin-top:8px">'+(live
         ? 'Ends every session on your account, including this one. You will be asked to sign in again.'
         : 'Needs the AMV backend connected. Without it there are no server sessions to end, so this would do nothing.')+'</div>'+
@@ -1626,7 +1626,7 @@ function _renderSkillsPane(pane){
       '<div class="skill-create">'+
         '<input class="inp" id="sk-name" placeholder="Skill name (e.g. \u201cLegal tone\u201d)" maxlength="60">'+
         '<textarea id="sk-instr" rows="2" placeholder="What should AMV do? e.g. \u201cWrite in a formal, precise tone and cite sources.\u201d" style="width:100%;resize:vertical;margin-top:8px"></textarea>'+
-        '<button class="btn bp" id="sk-add" style="margin-top:8px;font-size:12px">Create skill</button>'+
+        '<button class="btn bp" id="sk-add" style="margin-top:8px;font-size:var(--t-sm)">Create skill</button>'+
       '</div>'+
     '</div>'+
     '<div class="ss2"><h3>Presets</h3>'+
@@ -1742,11 +1742,11 @@ function _renderSetPaneInner(only, into){
         '<div style="display:flex;align-items:center;gap:17px;margin-bottom:16px;flex-wrap:wrap">'+
           '<div style="position:relative;flex-shrink:0">'+
             '<div id="pfp-c" style="width:72px;height:72px;border-radius:50%;background:var(--accent-soft);display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid rgba(255,255,255,.1);cursor:pointer;transition:background-color .2s,border-color .2s,color .2s,box-shadow .2s,transform .2s,opacity .2s">'+pfpHtml+'</div>'+
-            '<div id="pfp-edit" style="position:absolute;bottom:0;right:0;width:22px;height:22px;background:var(--s2);border:1px solid var(--bd);border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:11px;transition:background-color .12s,border-color .12s,color .12s,box-shadow .12s,transform .12s,opacity .12s">&#x270F;</div>'+
+            '<div id="pfp-edit" style="position:absolute;bottom:0;right:0;width:22px;height:22px;background:var(--s2);border:1px solid var(--bd);border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:var(--t-xs);transition:background-color .12s,border-color .12s,color .12s,box-shadow .12s,transform .12s,opacity .12s">&#x270F;</div>'+
             '<input type="file" id="pfp-fi" accept="image/*" style="display:none">'+
           '</div>'+
-          '<div><div style="font-size:16px;font-weight:700;letter-spacing:-.3px">'+escH(S.user&&S.user.name?S.user.name:'Guest')+'</div>'+
-          '<div style="font-size:12px;color:var(--t2);margin-top:2px">'+escH(S.user&&S.user.email?S.user.email:'')+'</div>'+
+          '<div><div style="font-size:var(--t-lg);font-weight:700;letter-spacing:-.3px">'+escH(S.user&&S.user.name?S.user.name:'Guest')+'</div>'+
+          '<div style="font-size:var(--t-sm);color:var(--t2);margin-top:2px">'+escH(S.user&&S.user.email?S.user.email:'')+'</div>'+
           '<span class="badge '+(S.user&&S.user.provider==='google'?'bb':'bg3')+'" style="margin-top:7px">'+(S.user&&S.user.provider==='google'?'Google Account':'Email Account')+'</span></div>'+
         '</div>'+
         '<div class="sf">'+
@@ -1764,10 +1764,10 @@ function _renderSetPaneInner(only, into){
             '<textarea id="s-instr" rows="3" placeholder="e.g. I primarily code in Python (not a beginner). Keep answers concise and skip the preamble." style="width:100%;resize:vertical;min-height:70px">'+escH(loadStr('amv_instructions')||'')+'</textarea>'+
             '<div class="lbl-help">AMV keeps these in mind across every chat and agent. Great for your role, preferences, and how you like answers.</div>'+
           '</div>'+
-          '<div id="acct-msg" style="display:none;font-size:12px;padding:7px 11px;border-radius:7px"></div>'+
+          '<div id="acct-msg" style="display:none;font-size:var(--t-sm);padding:7px 11px;border-radius:7px"></div>'+
           '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
-            '<button class="btn bp" id="save-profile" style="font-size:12px">Save changes</button>'+
-            '<button class="btn bs" id="rm-pfp" style="font-size:12px;'+(pfp?'':'opacity:.4;pointer-events:none')+'">Remove photo</button>'+
+            '<button class="btn bp" id="save-profile" style="font-size:var(--t-sm)">Save changes</button>'+
+            '<button class="btn bs" id="rm-pfp" style="font-size:var(--t-sm);'+(pfp?'':'opacity:.4;pointer-events:none')+'">Remove photo</button>'+
           '</div>'+
         '</div>'+
       '</div>'+
@@ -1823,11 +1823,11 @@ function _renderSetPaneInner(only, into){
       '<div class="set-title">Security</div>'+
       '<div class="set-sub">Manage your password and account security.</div>'+
       (S.user&&S.user.provider==='google'?
-        '<div class="ss2"><p style="font-size:13px;color:var(--t2)">Signed in with Google. Manage your password at <a href="https://myaccount.google.com" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">myaccount.google.com</a>.</p></div>':
+        '<div class="ss2"><p style="font-size:var(--t-base);color:var(--t2)">Signed in with Google. Manage your password at <a href="https://myaccount.google.com" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">myaccount.google.com</a>.</p></div>':
         '<div class="ss2"><h3>Password</h3>'+
           '<div class="br2"><div><div class="opt-name">Reset your password</div><div class="opt-desc">We\u2019ll send a secure reset link to '+escH((S.user&&S.user.email)||'your email')+'. No need to remember your current one.</div></div>'+
-          '<button class="btn bp" id="reset-pw-btn" style="font-size:12px;white-space:nowrap">Send reset link</button></div>'+
-          '<div id="pw-msg" style="display:none;font-size:12px;padding:9px 12px;border-radius:8px;margin-top:12px"></div>'+
+          '<button class="btn bp" id="reset-pw-btn" style="font-size:var(--t-sm);white-space:nowrap">Send reset link</button></div>'+
+          '<div id="pw-msg" style="display:none;font-size:var(--t-sm);padding:9px 12px;border-radius:8px;margin-top:12px"></div>'+
         '</div>')+
       /* Was a hardcoded "This browser - Active now" row wired to nothing. It is
          now the account's real event log; see 28-activity.js. */
@@ -1839,8 +1839,8 @@ function _renderSetPaneInner(only, into){
         '<div id="act-block"></div>'+
       '</div>'+
       '<div class="ss2"><h3>This device</h3>'+
-        '<div class="br2"><div><div style="font-size:13px;font-weight:500">Signed in on this browser</div><div style="font-size:11px;color:var(--t2);margin-top:2px">Signing out here leaves your other devices signed in.</div></div></div>'+
-        '<button class="btn bs" style="font-size:12px;margin-top:12px" data-dact="signOut">Sign out of this device</button>'+
+        '<div class="br2"><div><div style="font-size:var(--t-base);font-weight:500">Signed in on this browser</div><div style="font-size:var(--t-xs);color:var(--t2);margin-top:2px">Signing out here leaves your other devices signed in.</div></div></div>'+
+        '<button class="btn bs" style="font-size:var(--t-sm);margin-top:12px" data-dact="signOut">Sign out of this device</button>'+
       '</div>';
     _renderActivityBlock(document.getElementById('act-block'));
     on($('reset-pw-btn'),'click',async()=>{
@@ -1887,33 +1887,33 @@ function _renderSetPaneInner(only, into){
       '</div>'+
       // Your data
       '<div class="ss2"><h3>Your data</h3>'+
-        '<div class="prv-data-row"><div><div class="prv-pref-t">Export data</div><div class="prv-pref-s">Download everything AMV has for you as a JSON file.</div></div><button class="btn bs" id="prv-export" style="font-size:12px">Export data</button></div>'+
-        '<div class="prv-data-row"><div><div class="prv-pref-t">Shared chats</div><div class="prv-pref-s">Manage conversations you\u2019ve shared with a public link.</div></div><button class="btn bs" id="prv-shared" style="font-size:12px">Manage</button></div>'+
-        '<div class="prv-data-row"><div><div class="prv-pref-t">Memory preferences</div><div class="prv-pref-s">Control what AMV remembers about you across chats.</div></div><button class="btn bs" id="prv-memory" style="font-size:12px">Open memory</button></div>'+
-        '<div class="prv-data-row"><div><div class="prv-pref-t">Clear all chats</div><div class="prv-pref-s">Permanently delete your conversation history.</div></div><button class="btn bs" id="prv-clrchats" style="font-size:12px">Clear chats</button></div>'+
-        '<div class="prv-data-row"><div><div class="prv-pref-t" style="color:var(--red)">Delete all data</div><div class="prv-pref-s">Remove everything AMV has stored for you. This can\u2019t be undone.</div></div><button class="btn bd2" id="prv-clrall" style="font-size:12px">Delete everything</button></div>'+
+        '<div class="prv-data-row"><div><div class="prv-pref-t">Export data</div><div class="prv-pref-s">Download everything AMV has for you as a JSON file.</div></div><button class="btn bs" id="prv-export" style="font-size:var(--t-sm)">Export data</button></div>'+
+        '<div class="prv-data-row"><div><div class="prv-pref-t">Shared chats</div><div class="prv-pref-s">Manage conversations you\u2019ve shared with a public link.</div></div><button class="btn bs" id="prv-shared" style="font-size:var(--t-sm)">Manage</button></div>'+
+        '<div class="prv-data-row"><div><div class="prv-pref-t">Memory preferences</div><div class="prv-pref-s">Control what AMV remembers about you across chats.</div></div><button class="btn bs" id="prv-memory" style="font-size:var(--t-sm)">Open memory</button></div>'+
+        '<div class="prv-data-row"><div><div class="prv-pref-t">Clear all chats</div><div class="prv-pref-s">Permanently delete your conversation history.</div></div><button class="btn bs" id="prv-clrchats" style="font-size:var(--t-sm)">Clear chats</button></div>'+
+        '<div class="prv-data-row"><div><div class="prv-pref-t" style="color:var(--red)">Delete all data</div><div class="prv-pref-s">Remove everything AMV has stored for you. This can\u2019t be undone.</div></div><button class="btn bd2" id="prv-clrall" style="font-size:var(--t-sm)">Delete everything</button></div>'+
       '</div>'+
       (isAdmin()?(
-      '<div class="ss2"><h3>Analytics provider <span style="font-weight:400;color:var(--mu);font-size:11px">(operator setup)</span></h3>'+
-        '<div style="font-size:12px;color:var(--t2);line-height:1.7;margin-bottom:12px">Connect Google Analytics (GA4) or Plausible to measure real traffic. Enter your GA4 Measurement ID (starts with <code>G-</code>) or your Plausible site domain. Analytics only fire for visitors who accept analytics cookies.</div>'+
-        '<div style="display:flex;gap:8px;align-items:center"><input class="inp" id="prv-ga-id" placeholder="G-XXXXXXX  or  yoursite.com" value="'+escH(_analyticsId())+'" style="flex:1"><button class="btn bp" id="prv-ga-save" style="font-size:12px">Save</button></div>'+
+      '<div class="ss2"><h3>Analytics provider <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(operator setup)</span></h3>'+
+        '<div style="font-size:var(--t-sm);color:var(--t2);line-height:1.7;margin-bottom:12px">Connect Google Analytics (GA4) or Plausible to measure real traffic. Enter your GA4 Measurement ID (starts with <code>G-</code>) or your Plausible site domain. Analytics only fire for visitors who accept analytics cookies.</div>'+
+        '<div style="display:flex;gap:8px;align-items:center"><input class="inp" id="prv-ga-id" placeholder="G-XXXXXXX  or  yoursite.com" value="'+escH(_analyticsId())+'" style="flex:1"><button class="btn bp" id="prv-ga-save" style="font-size:var(--t-sm)">Save</button></div>'+
         /* "configured" was the whole status, and configured is not the same as
            running. The provider script is a third-party <script> and this page's
            Content-Security-Policy script-src allows neither of the two hosts, so
            an ID that is saved and consented to still measures nothing. Saying
            "configured" over that is the same failure as any other control that
            reports an outcome it did not check. */
-        '<div style="font-size:11px;color:var(--t2);margin-top:8px">Status: '+(_analyticsId()?('<span style="color:var(--grn)">configured</span> \u00b7 '+(/^G-/i.test(_analyticsId())?'Google Analytics':'Plausible')):'<span style="color:var(--mu)">not set</span>')+'</div>'+
+        '<div style="font-size:var(--t-xs);color:var(--t2);margin-top:8px">Status: '+(_analyticsId()?('<span style="color:var(--grn)">configured</span> \u00b7 '+(/^G-/i.test(_analyticsId())?'Google Analytics':'Plausible')):'<span style="color:var(--mu)">not set</span>')+'</div>'+
         (_analyticsId()&&_analyticsBlocked()
           ? '<div class="wg-capwarn on" style="margin-top:8px">Saved, but <b>nothing is being measured</b>. The provider\u2019s script was blocked before it loaded - this page\u2019s Content-Security-Policy does not list '+
             (/^G-/i.test(_analyticsId())?'googletagmanager.com':'plausible.io')+
             ', and an ad-blocker would do the same. Add the host to <code>script-src</code> (and its beacon host to <code>connect-src</code>) in index.html to switch it on, or leave analytics off.</div>'
           : '')+
       '</div>'+
-      (function(){ const f=_funnel(); const step=(l,n)=>'<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0"><span style="font-size:12.5px;color:var(--t2)">'+l+'</span><span style="font-size:14px;font-weight:600">'+(n||0)+'</span></div>';
+      (function(){ const f=_funnel(); const step=(l,n)=>'<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0"><span style="font-size:var(--t-sm);color:var(--t2)">'+l+'</span><span style="font-size:var(--t-md);font-weight:600">'+(n||0)+'</span></div>';
         const conv=(a,b)=>b?Math.round((a/b)*100):0;
-        return '<div class="ss2"><h3>Conversion funnel <span style="font-weight:400;color:var(--mu);font-size:11px">(this device)</span></h3>'+
-          '<div style="font-size:11px;color:var(--t2);margin-bottom:8px">First-party aggregate counts, tracked with no third party. Full cross-device funnels live in your analytics provider.</div>'+
+        return '<div class="ss2"><h3>Conversion funnel <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(this device)</span></h3>'+
+          '<div style="font-size:var(--t-xs);color:var(--t2);margin-bottom:8px">First-party aggregate counts, tracked with no third party. Full cross-device funnels live in your analytics provider.</div>'+
           step('Landing visits', f.visit)+
           '<div style="height:1px;background:var(--bd)"></div>'+
           step('Sign-ups'+(f.visit?' \u00b7 '+conv(f.signup,f.visit)+'%':''), f.signup)+
@@ -2033,10 +2033,10 @@ function _renderSetPaneInner(only, into){
          and the rest stays English - which is what somebody switching language
          actually sees, so it is said here rather than discovered. */
       (_aiBackendReady()
-        ? '<div class="ss2"><h3>The app itself</h3><p style="font-size:13px;color:var(--mu);line-height:1.65;margin:0">'+
+        ? '<div class="ss2"><h3>The app itself</h3><p style="font-size:var(--t-base);color:var(--mu);line-height:1.65;margin:0">'+
           'Every screen - chat, images, video, Studio, Dev, Lab, the marketplace, settings - switches with it. '+
           'The first screen you open in a new language takes a moment to come across, then it is remembered.</p></div>'
-        : '<div class="ss2"><h3>The app itself</h3><p style="font-size:13px;color:var(--mu);line-height:1.65;margin:0">'+
+        : '<div class="ss2"><h3>The app itself</h3><p style="font-size:var(--t-base);color:var(--mu);line-height:1.65;margin:0">'+
           'AMV\u2019s replies will be in your language straight away. Translating <b>the app\u2019s own screens</b> '+
           'needs the AMV engine connected - until then the common labels change and the rest stays in English '+
           'rather than being half-translated into something confusing.</p></div>')+
@@ -2080,7 +2080,7 @@ function _renderSetPaneInner(only, into){
       '<div id="fd-body"><div class="fd-loading">Loading platform stats\u2026</div></div>'+
       '<div id="fd-digest-host"></div>'+
       '<div class="fd-token-row"><input id="fd-token" type="password" autocomplete="off" placeholder="Admin token" class="inp" style="max-width:240px"/>'+
-        '<button class="btn bp" id="fd-load" style="font-size:12px">Load stats</button></div>'+
+        '<button class="btn bp" id="fd-load" style="font-size:var(--t-sm)">Load stats</button></div>'+
       '<div class="fd-note">Your admin token is set as the ADMIN_TOKEN secret on your Worker. It\u2019s never stored - paste it here each session.</div>';
     // Pre-fill from the session holder so the operator pastes it once per tab
     // rather than once per screen. Still never written to this device.
@@ -2149,12 +2149,12 @@ function _renderSetPaneInner(only, into){
       '<div class="set-title">Live / Backend</div>'+
       '<div class="set-sub">Connect AMV to your deployed backend so Crew jobs, approvals and Handoff work for real and across accounts. Leave blank to run in local demo mode.</div>'+
       '<div class="ss2"><h3>Backend URL</h3>'+
-        '<div style="display:flex;gap:8px"><input type="url" id="be-url" value="'+escH(liveBase)+'" placeholder="https://amv-ai-backend.your.workers.dev" style="flex:1;font-size:12px"><button class="btn bp" style="font-size:12px" data-dact="amvSaveBackend">Save</button></div>'+
-        '<p style="font-size:11px;color:var(--mu);margin-top:8px">'+(liveBase?('Status: <span style="color:#4ade80">configured</span>'+(tokenSet?' &middot; signed in':' &middot; not signed in')):'Status: local demo mode')+'</p>'+
+        '<div style="display:flex;gap:8px"><input type="url" id="be-url" value="'+escH(liveBase)+'" placeholder="https://amv-ai-backend.your.workers.dev" style="flex:1;font-size:var(--t-sm)"><button class="btn bp" style="font-size:var(--t-sm)" data-dact="amvSaveBackend">Save</button></div>'+
+        '<p style="font-size:var(--t-xs);color:var(--mu);margin-top:8px">'+(liveBase?('Status: <span style="color:#4ade80">configured</span>'+(tokenSet?' &middot; signed in':' &middot; not signed in')):'Status: local demo mode')+'</p>'+
       '</div>'+
       '<div class="ss2" style="margin-top:14px"><h3>Sign in to backend</h3>'+
-        '<p style="font-size:12px;color:var(--mu);margin:-4px 0 10px">Sign in with your AMV account email and password to sync this device. To use Google, sign in with Google on the main sign-in screen - it is verified server-side.</p>'+
-        '<div style="display:flex;flex-direction:column;gap:8px"><input type="email" id="be-email" value="'+escH((S.user&&S.user.email)||'')+'" placeholder="you@email.com" style="font-size:12px" autocomplete="username"><div style="display:flex;gap:8px"><input type="password" id="be-pass" placeholder="Your password" style="flex:1;font-size:12px" autocomplete="current-password"><button class="btn bp" style="font-size:12px" data-dact="amvBackendLogin">Connect</button></div></div>'+
+        '<p style="font-size:var(--t-sm);color:var(--mu);margin:-4px 0 10px">Sign in with your AMV account email and password to sync this device. To use Google, sign in with Google on the main sign-in screen - it is verified server-side.</p>'+
+        '<div style="display:flex;flex-direction:column;gap:8px"><input type="email" id="be-email" value="'+escH((S.user&&S.user.email)||'')+'" placeholder="you@email.com" style="font-size:var(--t-sm)" autocomplete="username"><div style="display:flex;gap:8px"><input type="password" id="be-pass" placeholder="Your password" style="flex:1;font-size:var(--t-sm)" autocomplete="current-password"><button class="btn bp" style="font-size:var(--t-sm)" data-dact="amvBackendLogin">Connect</button></div></div>'+
       '</div>';
   } else if(sp==='apikeys'){
     const liveBase=loadStr('amv_api_base')||'';
@@ -2166,10 +2166,10 @@ function _renderSetPaneInner(only, into){
         '<span class="conn-dot"></span>'+(connected?'Connected - AMV is ready':'Not connected - add your backend URL below')+
       '</div>'+
       '<div class="ss2"><h3>Backend URL</h3>'+
-        '<div class="sf"><div><label class="lbl">Your AMV Worker URL</label><input type="text" id="s-base" value="'+escH(liveBase)+'" placeholder="https://amv-backend.yourname.workers.dev" style="font-family:var(--mn);font-size:12px"></div>'+
+        '<div class="sf"><div><label class="lbl">Your AMV Worker URL</label><input type="text" id="s-base" value="'+escH(liveBase)+'" placeholder="https://amv-backend.yourname.workers.dev" style="font-family:var(--mn);font-size:var(--t-sm)"></div>'+
         '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'+
-          '<button class="btn bp" id="save-base" style="font-size:12px">Save &amp; connect</button>'+
-          '<button class="btn" id="test-base" style="font-size:12px">Test connection</button>'+
+          '<button class="btn bp" id="save-base" style="font-size:var(--t-sm)">Save &amp; connect</button>'+
+          '<button class="btn" id="test-base" style="font-size:var(--t-sm)">Test connection</button>'+
         '</div>'+
         '<div id="test-result" class="conn-test"></div></div>'+
       '</div>'+
@@ -2179,9 +2179,9 @@ function _renderSetPaneInner(only, into){
            instruction: the key is a Worker secret, and which provider is behind
            it is a deployment decision the operator has already made. This is the
            bundle every visitor downloads. */
-        '<p style="font-size:12.5px;color:var(--mu);line-height:1.6;margin:0">Your model key is a secret on the Worker, so it never reaches the browser:</p>'+
-        '<pre style="background:var(--surface);border:1px solid var(--hair);border-radius:8px;padding:10px;font-size:11.5px;overflow:auto;margin:8px 0 0"><code>wrangler secret put AMV_MODEL_KEY</code></pre>'+
-        '<p style="font-size:11.5px;color:var(--dim);line-height:1.6;margin:8px 0 0">Until it is set, AMV says so on every screen that needs it rather than failing quietly.</p>'+
+        '<p style="font-size:var(--t-sm);color:var(--mu);line-height:1.6;margin:0">Your model key is a secret on the Worker, so it never reaches the browser:</p>'+
+        '<pre style="background:var(--surface);border:1px solid var(--hair);border-radius:8px;padding:10px;font-size:var(--t-sm);overflow:auto;margin:8px 0 0"><code>wrangler secret put AMV_MODEL_KEY</code></pre>'+
+        '<p style="font-size:var(--t-sm);color:var(--dim);line-height:1.6;margin:8px 0 0">Until it is set, AMV says so on every screen that needs it rather than failing quietly.</p>'+
       '</div>';
     on($('save-base'),'click',()=>{
       const v=($('s-base')?.value||'').trim().replace(/\/$/,'');
@@ -2235,26 +2235,26 @@ function _renderSetPaneInner(only, into){
       '<div class="set-sub">Configure revenue collection and deployment.</div>'+
       (!S.sp&&!S.se?'<div class="wb">&#9888; Add your Stripe payment links to start collecting revenue.</div>':'')+
       '<div class="ss2"><h3>Stripe - card, Apple Pay &amp; Google Pay</h3>'+
-        '<p style="font-size:12px;color:var(--mu);margin-bottom:11px;line-height:1.6">The startup standard. Create a Payment Link at stripe.com &rarr; Payments &rarr; Payment Links. <b>Apple Pay and Google Pay appear automatically inside Stripe\u2019s checkout</b> - no extra setup. Clicking &ldquo;Card / Apple Pay&rdquo; opens your real Stripe checkout. Revenue goes straight to your Stripe account. Set each link\u2019s success URL to <code>yoursite.com/?paid=pro</code> (or <code>elite</code>) so the plan activates on return.</p>'+
+        '<p style="font-size:var(--t-sm);color:var(--mu);margin-bottom:11px;line-height:1.6">The startup standard. Create a Payment Link at stripe.com &rarr; Payments &rarr; Payment Links. <b>Apple Pay and Google Pay appear automatically inside Stripe\u2019s checkout</b> - no extra setup. Clicking &ldquo;Card / Apple Pay&rdquo; opens your real Stripe checkout. Revenue goes straight to your Stripe account. Set each link\u2019s success URL to <code>yoursite.com/?paid=pro</code> (or <code>elite</code>) so the plan activates on return.</p>'+
         '<div class="sf">'+
           '<div><label class="lbl">Pro Plan - $'+PLANS.pro.price+'/month</label><input type="url" id="s-sp" value="'+escH(S.sp||'')+'" placeholder="https://buy.stripe.com/…"></div>'+
           '<div><label class="lbl">Elite Plan - $'+PLANS.elite.price+'/month</label><input type="url" id="s-se" value="'+escH(S.se||'')+'" placeholder="https://buy.stripe.com/…"></div>'+
           '<div><label class="lbl">Stripe Customer Portal (subscription management)</label><input type="url" id="s-portal" value="'+escH(loadStr('amv_portal'))+'" placeholder="https://billing.stripe.com/p/…"></div>'+
-          '<button class="btn bp" id="save-stripe" style="align-self:flex-start;font-size:12px">Save Stripe Links</button>'+
+          '<button class="btn bp" id="save-stripe" style="align-self:flex-start;font-size:var(--t-sm)">Save Stripe Links</button>'+
         '</div>'+
       '</div>'+
       '<div class="ss2"><h3>Support email</h3>'+
-        '<p style="font-size:12px;color:var(--mu);margin-bottom:11px;line-height:1.6">The address your users reach you at. Once set, the <b>&ldquo;Email Support&rdquo;</b> buttons across the app (Help Center, About, legal) open a pre-filled email to this address. Leave blank and those buttons fall back to <b>&ldquo;Ask AMV directly&rdquo;</b> - never a broken link.</p>'+
+        '<p style="font-size:var(--t-sm);color:var(--mu);margin-bottom:11px;line-height:1.6">The address your users reach you at. Once set, the <b>&ldquo;Email Support&rdquo;</b> buttons across the app (Help Center, About, legal) open a pre-filled email to this address. Leave blank and those buttons fall back to <b>&ldquo;Ask AMV directly&rdquo;</b> - never a broken link.</p>'+
         '<div class="sf">'+
           '<div><label class="lbl">Support email address</label><input type="email" id="s-support" value="'+escH(_supportEmail())+'" placeholder="support@yourdomain.com" autocomplete="off"></div>'+
-          '<button class="btn bp" id="save-support" style="align-self:flex-start;font-size:12px">Save support email</button>'+
+          '<button class="btn bp" id="save-support" style="align-self:flex-start;font-size:var(--t-sm)">Save support email</button>'+
         '</div>'+
       '</div>'+
       '<div class="ss2"><h3>In-app card field (optional)</h3>'+
-        '<p style="font-size:12px;color:var(--mu);margin-bottom:11px;line-height:1.6">Prefer the card form inside AMV instead of redirecting? Add your Stripe <b>publishable</b> key (starts with <code>pk_</code>) to enable Stripe Elements - the card field is an isolated Stripe iframe, so card numbers never touch AMV. <b>Never paste a secret (sk_) key.</b></p>'+
+        '<p style="font-size:var(--t-sm);color:var(--mu);margin-bottom:11px;line-height:1.6">Prefer the card form inside AMV instead of redirecting? Add your Stripe <b>publishable</b> key (starts with <code>pk_</code>) to enable Stripe Elements - the card field is an isolated Stripe iframe, so card numbers never touch AMV. <b>Never paste a secret (sk_) key.</b></p>'+
         '<div class="sf">'+
-          '<div><label class="lbl">Stripe publishable key</label><input type="text" id="s-pk" value="'+escH(loadStr('amv_stripe_pk'))+'" placeholder="pk_live_…" style="font-family:var(--mn);font-size:12px"></div>'+
-          '<button class="btn bp" id="save-pk" style="align-self:flex-start;font-size:12px">Save key</button>'+
+          '<div><label class="lbl">Stripe publishable key</label><input type="text" id="s-pk" value="'+escH(loadStr('amv_stripe_pk'))+'" placeholder="pk_live_…" style="font-family:var(--mn);font-size:var(--t-sm)"></div>'+
+          '<button class="btn bp" id="save-pk" style="align-self:flex-start;font-size:var(--t-sm)">Save key</button>'+
         '</div>'+
       '</div>'+
       '<div class="ss2"><h3>PayPal &amp; Venmo</h3>'+
@@ -2265,11 +2265,11 @@ function _renderSetPaneInner(only, into){
            confirm a capture. The box was left over from a browser-side SDK
            flow that had to be removed for exactly that reason, and it read as
            the switch that turns PayPal on. */
-        '<p style="font-size:12px;color:var(--mu);margin-bottom:11px;line-height:1.6">PayPal and Venmo subscriptions are switched on with Worker secrets, not here: set <b>PAYPAL_CLIENT_ID</b>, <b>PAYPAL_SECRET</b> and <b>PAYPAL_WEBHOOK_ID</b> on your backend and the real PayPal checkout turns on for everyone. The links below are an optional fallback for a deployment with no backend connected - a hosted PayPal or Venmo page that takes the payment instead.</p>'+
+        '<p style="font-size:var(--t-sm);color:var(--mu);margin-bottom:11px;line-height:1.6">PayPal and Venmo subscriptions are switched on with Worker secrets, not here: set <b>PAYPAL_CLIENT_ID</b>, <b>PAYPAL_SECRET</b> and <b>PAYPAL_WEBHOOK_ID</b> on your backend and the real PayPal checkout turns on for everyone. The links below are an optional fallback for a deployment with no backend connected - a hosted PayPal or Venmo page that takes the payment instead.</p>'+
         '<div class="sf">'+
           '<div><label class="lbl">PayPal hosted link (optional fallback)</label><input type="url" id="s-ppl" value="'+escH((_payCfg().paypalLink)||'')+'" placeholder="https://www.paypal.com/…"></div>'+
           '<div><label class="lbl">Venmo hosted link (optional fallback)</label><input type="url" id="s-vml" value="'+escH((_payCfg().venmoLink)||'')+'" placeholder="https://venmo.com/…"></div>'+
-          '<button class="btn bp" id="save-wallets" style="align-self:flex-start;font-size:12px">Save PayPal / Venmo</button>'+
+          '<button class="btn bp" id="save-wallets" style="align-self:flex-start;font-size:var(--t-sm)">Save PayPal / Venmo</button>'+
         '</div>'+
       '</div>'+
       /* AMV-084: this list used to be assembled in the browser, which cannot
@@ -2278,7 +2278,7 @@ function _renderSetPaneInner(only, into){
          nothing about whether the server holds a key. It is now read from the
          server, which is the only thing that knows. */
       '<div class="ss2" style="background:rgba(35,209,139,.04);border-color:rgba(35,209,139,.15)"><h3 style="color:var(--green)">Go-Live status - what is actually switched on</h3>'+
-        '<p style="font-size:12px;color:var(--mu);margin:-4px 0 14px;line-height:1.6">Read from your Worker, not guessed here. Each line says what it turns on and how to set it. Values are never shown - only whether a secret exists.</p>'+
+        '<p style="font-size:var(--t-sm);color:var(--mu);margin:-4px 0 14px;line-height:1.6">Read from your Worker, not guessed here. Each line says what it turns on and how to set it. Values are never shown - only whether a secret exists.</p>'+
         '<div class="golive" id="golive-body"><div class="fd-loading">Checking your deployment\u2026</div></div>'+
       '</div>';
     setTimeout(_loadReadiness, 0);
@@ -2403,12 +2403,12 @@ function _renderSetPaneInner(only, into){
              out, this said "Version 2.0 - 2025" while the release notes one
              screen away listed 2.4, and the year had been wrong since January.
              A version number in two places is two version numbers. */
-          '<div><div style="font-size:17px;font-weight:800;letter-spacing:-.4px">AMV<span style="color:var(--accent)">.</span>AI</div><div style="font-size:11px;color:var(--t2);margin-top:2px">Version '+escH(_latestVersion()||'2.0')+' &bull; '+new Date().getFullYear()+'</div></div>'+
+          '<div><div style="font-size:calc(17px * var(--fs-s));font-weight:800;letter-spacing:-.4px">AMV<span style="color:var(--accent)">.</span>AI</div><div style="font-size:var(--t-xs);color:var(--t2);margin-top:2px">Version '+escH(_latestVersion()||'2.0')+' &bull; '+new Date().getFullYear()+'</div></div>'+
         '</div>'+
-        '<p style="font-size:12px;color:var(--t2);line-height:1.65;margin-bottom:13px">Your AI workforce - it does the work, not just answers it. Chat, agents, builds, images, video, and automation in one place.</p>'+
+        '<p style="font-size:var(--t-sm);color:var(--t2);line-height:1.65;margin-bottom:13px">Your AI workforce - it does the work, not just answers it. Chat, agents, builds, images, video, and automation in one place.</p>'+
         '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
-          '<button class="btn bs" style="font-size:12px" data-dact="openTerms">Terms of Service</button>'+
-          '<button class="btn bs" style="font-size:12px" data-dact="openPrivacy">Privacy Policy</button>'+
+          '<button class="btn bs" style="font-size:var(--t-sm)" data-dact="openTerms">Terms of Service</button>'+
+          '<button class="btn bs" style="font-size:var(--t-sm)" data-dact="openPrivacy">Privacy Policy</button>'+
           supportButton({label:'Contact Support',cls:'btn bs',subject:'AMV Support request'})+
         '</div>'+
       '</div>'+
@@ -2420,7 +2420,7 @@ function _renderSetPaneInner(only, into){
           _shortcutRowsHTML()+
         '</div>'+
       '</div>'+
-      (S.user?'<div class="ss2" style="border-color:rgba(255,95,87,.2)"><h3 style="color:var(--red)">Sign Out</h3><p style="font-size:12px;color:var(--t2);margin-bottom:12px">Your data remains saved and will be restored on next sign in.</p><button class="btn bd2" data-dact="signOut" style="font-size:12px">Sign out</button></div>':'');
+      (S.user?'<div class="ss2" style="border-color:rgba(255,95,87,.2)"><h3 style="color:var(--red)">Sign Out</h3><p style="font-size:var(--t-sm);color:var(--t2);margin-bottom:12px">Your data remains saved and will be restored on next sign in.</p><button class="btn bd2" data-dact="signOut" style="font-size:var(--t-sm)">Sign out</button></div>':'');
   } else {
     pane.innerHTML='';
   }
@@ -2747,7 +2747,7 @@ function renderCk(){
   const div=document.createElement('div');
   div.id='ck';
   div.innerHTML='<p>We use essential cookies to keep you signed in. By continuing you agree to our <button class="ckl" data-dact="openTerms">Terms</button> and <button class="ckl" data-dact="openPrivacy">Privacy Policy</button>.</p>'+
-    '<div style="display:flex;gap:7px;flex-shrink:0"><button class="btn bp" id="ck-acc" style="padding:5px 13px;font-size:12px">Accept</button><button class="btn bs" id="ck-nec" style="padding:5px 11px;font-size:12px">Necessary Only</button></div>';
+    '<div style="display:flex;gap:7px;flex-shrink:0"><button class="btn bp" id="ck-acc" style="padding:5px 13px;font-size:var(--t-sm)">Accept</button><button class="btn bs" id="ck-nec" style="padding:5px 11px;font-size:var(--t-sm)">Necessary Only</button></div>';
   document.body.appendChild(div);
   document.getElementById('ck-acc')?.addEventListener('click',accCk);
   document.getElementById('ck-nec')?.addEventListener('click',accCk);
@@ -2864,7 +2864,7 @@ function openAuth(mode){
         // (some bots skip those); off-screen + aria-hidden + tab-skipped instead.
         '<div aria-hidden="true" style="position:absolute;left:-9999px;top:-9999px;height:0;overflow:hidden"><label>Company<input type="text" id="a-company" name="company" tabindex="-1" autocomplete="off"></label></div>'+
         '<div id="a-turnstile" class="cf-turnstile" style="margin:4px 0"></div>'+
-        '<button class="btn bp" id="auth-submit" style="width:100%;padding:11px;font-size:14px">'+(isL?'Sign In':'Create Free Account')+'</button>'+
+        '<button class="btn bp" id="auth-submit" style="width:100%;padding:11px;font-size:var(--t-md)">'+(isL?'Sign In':'Create Free Account')+'</button>'+
       '</div>'+
       '<div class="asw">'+(isL?'No account? <button id="auth-sw">Sign up free</button>':'Already have an account? <button id="auth-sw">Sign in</button>')+'</div>'+
       (isL?'<div class="asw" style="margin-top:6px"><button id="auth-forgot" style="color:var(--mu)">Forgot password?</button></div>':'')+

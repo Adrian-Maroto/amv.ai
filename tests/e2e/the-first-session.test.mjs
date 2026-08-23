@@ -45,7 +45,7 @@ async function visit(tab) {
     const text = (vc.textContent || '').replace(/\s+/g, ' ').trim();
     const boxes = [...vc.querySelectorAll('*')].filter(el => {
       const r = el.getBoundingClientRect();
-      return r.width > 40 && r.height > 20;
+      return !__under(r.width, 40) && !__under(r.height, 20);
     }).length;
     return {
       tab: t,
@@ -207,7 +207,7 @@ section('Chat is ready to be typed into immediately');
     return {
       found: true,
       focusable: document.activeElement === box,
-      visible: rect.width > 100 && rect.height > 10,
+      visible: !__under(rect.width, 100) && !__under(rect.height, 10),
       disabled: !!box.disabled,
       placeholder: (box.getAttribute('placeholder') || '').slice(0, 60),
     };

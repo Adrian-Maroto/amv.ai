@@ -1477,10 +1477,10 @@ function _showModalAsync({title, body, okText='OK', cancelText, placeholder, def
         '<button class="oc" id="modal-close" style="position:absolute;top:10px;right:10px">×</button>'+
         (title?'<h2 style="margin-bottom:10px">'+escH(title)+'</h2>':'')+
         '<div class="ob-sub" style="margin-bottom:16px;white-space:pre-wrap;line-height:1.5">'+escH(body)+'</div>'+
-        (placeholder!==undefined?'<input id="modal-input" type="text" value="'+escH(defaultValue||'')+'" placeholder="'+escH(placeholder||'')+'" style="width:100%;margin-bottom:16px;padding:12px;border-radius:12px;border:1px solid var(--bd);font-size:13px">':'')+
+        (placeholder!==undefined?'<input id="modal-input" type="text" value="'+escH(defaultValue||'')+'" placeholder="'+escH(placeholder||'')+'" style="width:100%;margin-bottom:16px;padding:12px;border-radius:12px;border:1px solid var(--bd);font-size:var(--t-base)">':'')+
         '<div style="display:flex;gap:10px;justify-content:flex-end">'+
-          (cancelText?'<button class="btn bs" id="modal-cancel" style="padding:10px 16px;font-size:13px">'+escH(cancelText)+'</button>':'')+
-          '<button class="btn bp" id="modal-ok" style="padding:10px 16px;font-size:13px">'+escH(okText)+'</button>'+ 
+          (cancelText?'<button class="btn bs" id="modal-cancel" style="padding:10px 16px;font-size:var(--t-base)">'+escH(cancelText)+'</button>':'')+
+          '<button class="btn bp" id="modal-ok" style="padding:10px 16px;font-size:var(--t-base)">'+escH(okText)+'</button>'+ 
         '</div>'+ 
       '</div></div>';
     on($('modal-close'),'click',()=>{ closeOvr(); resolve(null); });
@@ -2063,6 +2063,25 @@ const _BUILD_FALLBACK = ['smart', 'coding', 'core', 'fast'];
 /* Clamp any model key to the best one this plan can actually run. */
 function _planAllowedModel(want){
   want = want || 'smart';
+  /* AUTO IS NOT AN ENGINE, AND CLAMPING IT COST REAL MONEY.
+
+     PLAN_TIERS[plan].models lists engines - fast, core, coding, smart. 'auto'
+     is not one of them and never was, so this function found it missing and
+     "clamped" it, walking _BUILD_FALLBACK from the top and handing back the
+     HEAVIEST engine the plan allows. On Elite and Ultra that is Apex, the most
+     expensive engine in the product, on every Studio, Dev and Lab call from
+     anybody who picked "AMV Auto - picks for you".
+
+     The server has routed auto for real since AMV-065: _autoRoute reads the
+     turn, picks the cheapest engine that will not visibly do a worse job,
+     applies the plan ceiling ITSELF, and reports back which engine answered so
+     the interface can name it. All of that was unreachable from the build
+     surfaces, because the clamp happened in the browser first.
+
+     So auto passes through. It is the one value here that is a request for
+     routing rather than a request for an engine, and the ceiling it needs is
+     already enforced on the server, which is where it belongs. */
+  if(want === 'auto') return 'auto';
   try{
     const plan = loadStr('amv_plan') || 'free';
     if(plan === 'custom') return want;
@@ -2145,13 +2164,32 @@ function _modelOutcomeLabel(key){
   if(c<=3) return 'built for code';
   return 'highest quality';
 }
-// build a <select> of pickable models for a section (excludes hidden/image)
+/* Build a <select> of pickable models for a section (excludes hidden/image).
+
+   AN OPTION YOU CAN PICK AND CANNOT GET IS A LIE THE PICKER TELLS.
+   Every engine was offered on every plan. Choosing Apex on Free selected it,
+   toasted "Design model set to AMV Apex", stored it - and then ran Core,
+   because _sectionModelKey clamps on the way back out. Present, chooseable,
+   and inert, which is the defect this whole pass keeps finding.
+
+   Now an engine the plan cannot run is disabled and says which plan unlocks it.
+   Same information, and it turns a silent downgrade into the one thing a
+   refusal should be: an offer. (Auto is never disabled - it is a request for
+   routing, and the server routes it within whatever the plan allows.) */
 function _sectionModelSelect(section, id){
   const cur=_sectionModelKey(section);
+  const plan=loadStr('amv_plan')||'free';
+  const tier=(typeof PLAN_TIERS!=='undefined' && PLAN_TIERS[plan])||null;
+  const canRun=k=> k==='auto' || plan==='custom' || !tier || !Array.isArray(tier.models)
+    || tier.models.indexOf(k)>=0;
+  const PLAN_LABEL={free:'Free',pro:'Pro',elite:'Elite',ultra:'Ultra'};
   return '<select id="'+id+'" class="sel secmodel-sel">'+MODEL_ORDER.map(k=>{
     const m=MODELS[k];
-    return '<option value="'+k+'"'+(k===cur?' selected':'')+'>'+
-      m.label.replace('AMV ','')+' \u00b7 '+_modelOutcomeLabel(k)+'</option>';
+    const okk=canRun(k);
+    const tail=okk ? _modelOutcomeLabel(k)
+      : 'on '+(PLAN_LABEL[m.rec]||'a paid plan');
+    return '<option value="'+k+'"'+(k===cur?' selected':'')+(okk?'':' disabled')+'>'+
+      m.label.replace('AMV ','')+' \u00b7 '+tail+'</option>';
   }).join('')+'</select>';
 }
 
@@ -2207,6 +2245,15 @@ const AEGIS = {
     'amv-forge': { in: 5.00,  out: 25.00 },
     'amv-core':  { in: 3.00,  out: 15.00 },
     'amv-pulse': { in: 1.00,  out: 5.00 },
+    /* An auto-routed call is sent as 'auto' and the SERVER decides the engine,
+       so the browser does not know which one answered. Without an entry here
+       the lookup misses and the call is costed at zero - and this figure is the
+       operator's "Spend today", so a growing share of real spend would simply
+       not appear on it. Core is the estimate because Core is what the router
+       returns for everything it is not sure about, and the two engines it can
+       pick instead sit either side of it. Marked estimated, which the label
+       already says. */
+    'auto':      { in: 3.00,  out: 15.00 },
   },
   _times: [],            // request timestamps (this session)
   _lastSend: 0,
@@ -3852,7 +3899,7 @@ function addToProject(id){
   const ws=Array.isArray(S.workspaces)?S.workspaces:[];
   const r=$('ovr'); if(!r) return;
   const list = ws.length
-    ? ws.map(w=>'<button class="proj-pick" data-wid="'+w.id+'" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:11px 12px;border:1px solid var(--bd);background:var(--s2);border-radius:10px;color:var(--tx);cursor:pointer;margin-bottom:8px;font-size:14px"><span style="font-size:18px">'+_safeIcon(w.icon||'\uD83D\uDCC1')+'</span>'+escH(w.name||'Project')+'</button>').join('')
+    ? ws.map(w=>'<button class="proj-pick" data-wid="'+w.id+'" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:11px 12px;border:1px solid var(--bd);background:var(--s2);border-radius:10px;color:var(--tx);cursor:pointer;margin-bottom:8px;font-size:var(--t-md)"><span style="font-size:calc(18px * var(--fs-s))">'+_safeIcon(w.icon||'\uD83D\uDCC1')+'</span>'+escH(w.name||'Project')+'</button>').join('')
     : '<p class="ob-sub">No projects yet. Create one in the Projects tab first.</p>';
   r.innerHTML=
     '<div class="ov" id="ap-bg"><div class="ob">'+
@@ -7139,9 +7186,9 @@ function showAttChip(){
   if(!ab2||!ac) return;
   const icons={img:'🖼',pdf:'📄',text:'📎'};
   const sz=S.att.size?(' ('+fmtSize(S.att.size)+')'):'';
-  ac.innerHTML='<span>'+(icons[S.att.kind]||'📎')+' <strong>'+escH(S.att.name)+'</strong><span style="color:var(--t3);font-size:10px">'+sz+'</span></span>';
+  ac.innerHTML='<span>'+(icons[S.att.kind]||'📎')+' <strong>'+escH(S.att.name)+'</strong><span style="color:var(--t3);font-size:var(--t-2xs)">'+sz+'</span></span>';
   const btn=document.createElement('button');
-  btn.textContent='×'; btn.style.cssText='background:none;border:none;color:var(--t2);cursor:pointer;font-size:13px;line-height:1;margin-left:4px';
+  btn.textContent='×'; btn.style.cssText='background:none;border:none;color:var(--t2);cursor:pointer;font-size:var(--t-base);line-height:1;margin-left:4px';
   btn.onclick=()=>{S.att=null;ab2.style.display='none';};
   ac.appendChild(btn);
   ab2.style.display='flex';
@@ -7395,16 +7442,16 @@ function renderImgsView(){
       '</div></header>'+
       '<div id="imgctrl">'+
         '<div style="display:flex;gap:8px;margin-bottom:10px">'+
-          '<textarea id="img-inp" placeholder="Describe any image - a scene, product, portrait, or style. Be specific for the best results." rows="2" style="flex:1;border-radius:var(--r-sm);font-size:13px;max-height:66px"></textarea>'+
-          '<button class="btn bp" id="gen-img-btn" style="align-self:flex-end;height:40px;padding:0 16px;font-size:13px">Generate</button>'+
+          '<textarea id="img-inp" placeholder="Describe any image - a scene, product, portrait, or style. Be specific for the best results." rows="2" style="flex:1;border-radius:var(--r-sm);font-size:var(--t-base);max-height:66px"></textarea>'+
+          '<button class="btn bp" id="gen-img-btn" style="align-self:flex-end;height:40px;padding:0 16px;font-size:var(--t-base)">Generate</button>'+
         '</div>'+
         '<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px" id="srow">'+styleHtml+'</div>'+
         '<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">'+
-          '<span style="font-size:10px;color:var(--t2);letter-spacing:.05em;text-transform:uppercase">Ratio</span>'+
+          '<span style="font-size:var(--t-2xs);color:var(--t2);letter-spacing:.05em;text-transform:uppercase">Ratio</span>'+
           '<div id="rrow">'+ratioHtml+'</div>'+
           '<button class="bg2" id="clrimgs" style="margin-left:auto;display:'+(S.imgs.length?'inline-flex':'none')+'">Clear all</button>'+
         '</div>'+
-        '<div style="font-size:10px;color:var(--t3);margin-top:6px">Ctrl+Enter to generate · HD output · 5-15s · No explicit content</div>'+
+        '<div style="font-size:var(--t-2xs);color:var(--t3);margin-top:6px">Ctrl+Enter to generate · HD output · 5-15s · No explicit content</div>'+
       '</div>'+
       '<div id="imgg"></div>'+
     '</div>';
@@ -7437,7 +7484,7 @@ function renderImgGallery(){
       '<div class="ifoot">'+
         '<div class="ipr">'+escH(img.prompt)+'</div>'+
         '<div class="ia">'+
-          '<span style="font-size:10px;color:var(--t2)">'+img.style+'</span>'+
+          '<span style="font-size:var(--t-2xs);color:var(--t2)">'+img.style+'</span>'+
           '<div style="display:flex;gap:3px">'+
             '<span class="ial" id="io-'+img.id+'" data-url="">Open</span>'+
             '<a class="ial" id="id-'+img.id+'" href="" download="amv.jpg">Save</a>'+
@@ -7504,7 +7551,7 @@ function loadImg(img){
     tries++;
     if(tries>MAX){
       _stopPhases();
-      if(ld) ld.innerHTML='<div class="ilt" style="text-align:center;padding:0 10px">Couldn\u2019t generate this one.<br><span style="font-size:10px;opacity:.6">The image service may be busy - try again in a moment.</span><br><button data-rimgid="'+img.id+'" class="retry-img-btn" style="background:var(--indigo);border:none;color:#fff;border-radius:5px;padding:5px 12px;cursor:pointer;font-family:var(--fn);font-size:11px;margin-top:8px">Retry</button></div>';
+      if(ld) ld.innerHTML='<div class="ilt" style="text-align:center;padding:0 10px">Couldn\u2019t generate this one.<br><span style="font-size:var(--t-2xs);opacity:.6">The image service may be busy - try again in a moment.</span><br><button data-rimgid="'+img.id+'" class="retry-img-btn" style="background:var(--indigo);border:none;color:#fff;border-radius:5px;padding:5px 12px;cursor:pointer;font-family:var(--fn);font-size:var(--t-xs);margin-top:8px">Retry</button></div>';
       // Wire retry button
       const retryBtn=ld.querySelector('.retry-img-btn');
       if(retryBtn) retryBtn.addEventListener('click',()=>resetImg(retryBtn.dataset.rimgid));
@@ -7547,16 +7594,16 @@ function renderVideoView(){
         '<p class="pghd-sub">Describe a scene and AMV generates it. Style and mood are folded into the prompt; duration and aspect are sent to the engine.</p>'+
       '</div></header>'+
       '<div class="card">'+
-        '<textarea id="vp" placeholder="Describe your scene - include camera movement, lighting, atmosphere, characters, action…" rows="3" style="margin-bottom:11px;font-size:13px"></textarea>'+
+        '<textarea id="vp" placeholder="Describe your scene - include camera movement, lighting, atmosphere, characters, action…" rows="3" style="margin-bottom:11px;font-size:var(--t-base)"></textarea>'+
         '<div style="display:flex;gap:7px;flex-wrap:wrap;align-items:flex-end">'+
-          '<div><label class="lbl" style="margin-bottom:3px">Duration</label><select id="vd" aria-label="Duration" style="width:auto;padding:6px 22px 6px 9px;font-size:12px"><option value="5" selected>5s</option><option value="10">10s</option></select></div>'+
-          '<div><label class="lbl" style="margin-bottom:3px">Aspect</label><select id="va" aria-label="Aspect ratio" style="width:auto;padding:6px 22px 6px 9px;font-size:12px"><option value="16:9" selected>16:9</option><option value="9:16">9:16</option><option value="1:1">1:1</option></select></div>'+
-          '<div><label class="lbl" style="margin-bottom:3px">Style</label><select id="vs" aria-label="Style" style="width:auto;padding:6px 22px 6px 9px;font-size:12px">'+so+'</select></div>'+
-          '<div><label class="lbl" style="margin-bottom:3px">Mood</label><select id="vm" aria-label="Mood" style="width:auto;padding:6px 22px 6px 9px;font-size:12px">'+mo+'</select></div>'+
-          '<button class="btn bp" id="gvb" style="font-size:13px">Generate Video</button>'+
-          (S.vids.length?'<button class="bg2" id="clrvids" style="font-size:11px">Clear all</button>':'')+
+          '<div><label class="lbl" style="margin-bottom:3px">Duration</label><select id="vd" aria-label="Duration" style="width:auto;padding:6px 22px 6px 9px;font-size:var(--t-sm)"><option value="5" selected>5s</option><option value="10">10s</option></select></div>'+
+          '<div><label class="lbl" style="margin-bottom:3px">Aspect</label><select id="va" aria-label="Aspect ratio" style="width:auto;padding:6px 22px 6px 9px;font-size:var(--t-sm)"><option value="16:9" selected>16:9</option><option value="9:16">9:16</option><option value="1:1">1:1</option></select></div>'+
+          '<div><label class="lbl" style="margin-bottom:3px">Style</label><select id="vs" aria-label="Style" style="width:auto;padding:6px 22px 6px 9px;font-size:var(--t-sm)">'+so+'</select></div>'+
+          '<div><label class="lbl" style="margin-bottom:3px">Mood</label><select id="vm" aria-label="Mood" style="width:auto;padding:6px 22px 6px 9px;font-size:var(--t-sm)">'+mo+'</select></div>'+
+          '<button class="btn bp" id="gvb" style="font-size:var(--t-base)">Generate Video</button>'+
+          (S.vids.length?'<button class="bg2" id="clrvids" style="font-size:var(--t-xs)">Clear all</button>':'')+
         '</div>'+
-        '<div id="vquota" style="font-size:10px;color:var(--t3);margin-top:8px">Ctrl+Enter to generate</div>'+
+        '<div id="vquota" style="font-size:var(--t-2xs);color:var(--t3);margin-top:8px">Ctrl+Enter to generate</div>'+
       '</div>'+
       '<div class="vg" id="vgrid"></div>'+
     '</div>';
@@ -7887,7 +7934,7 @@ function planCards(inApp){
       '<div class="plnanchor">Everything you need to explore</div>'+
       '<div class="plndiv"></div>'+
       '<ul class="plnfl">'+
-        '<li><span class="fck">\u2713</span>Daily usage to explore everything</li>'+
+        '<li><span class="fck">\u2713</span>A monthly allowance, yours to spend how you like</li>'+
         '<li><span class="fck">\u2713</span>Chat, images &amp; 3D generation</li>'+
         '<li><span class="fck">\u2713</span>File analysis - PDF, images, code</li>'+
         '<li><span class="fck">\u2713</span>Essays, code, math &amp; research</li>'+
@@ -7949,7 +7996,7 @@ function planCards(inApp){
       '<ul class="plnfl">'+
         '<li><span class="fck">\u2713</span><b>Everything in Elite</b>, plus:</li>'+
         '<li><span class="fck">\u2713</span><b>50× the usage</b> - effectively unlimited</li>'+
-        '<li><span class="fck">\u2713</span><b>Unlimited parallel agents</b> - a whole crew at once</li>'+
+        '<li><span class="fck">\u2713</span><b>Highest throughput</b> - '+_rpmLabel('ultra')+'</li>'+
         '<li><span class="fck">\u2713</span><b>Longest context</b> - whole codebases at once</li>'+
         '<li><span class="fck">\u2713</span>Hand off a goal, get a finished result</li>'+
         '<li><span class="fck">\u2713</span>Deploy &amp; host multiple live apps</li>'+
@@ -8268,8 +8315,8 @@ function renderDashboard(){
   vc.innerHTML=
     '<div class="sv fi"><div class="dash-wrap" style="max-width:1000px;margin:0 auto;display:flex;flex-direction:column;gap:22px">'+
       '<div>'+
-        '<h2 style="font-size:20px;font-weight:700;letter-spacing:-.4px;margin-bottom:3px">Good '+greeting()+', '+escH(S.user?.name?.split(' ')[0]||'there')+'.</h2>'+
-        '<p style="font-size:13px;color:var(--t2)">Here&#39;s what&#39;s happening with your AMV.AI account.</p>'+
+        '<h2 style="font-size:var(--t-xl);font-weight:700;letter-spacing:-.4px;margin-bottom:3px">Good '+greeting()+', '+escH(S.user?.name?.split(' ')[0]||'there')+'.</h2>'+
+        '<p style="font-size:var(--t-base);color:var(--t2)">Here&#39;s what&#39;s happening with your AMV.AI account.</p>'+
       '</div>'+
       '<div class="dg">'+
         '<div class="dc"><div class="dicon" style="background:rgba(85,144,255,.1)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--indigo)" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="dn">'+cc+'</div><div class="dl">Conversations</div></div>'+
@@ -8297,9 +8344,9 @@ function renderDashboard(){
           '</div>'+
         '</div>':'')+ 
       (isAdmin()?'<div class="ss2"><h3>Platform Status</h3>'+
-        '<div class="br2"><span style="color:var(--t2)">AI Engine</span><span style="color:'+(_aiBackendReady()?'var(--green)':'var(--red)')+';font-size:12px;font-weight:500">'+(_aiBackendReady()?'✓ Online':'⚠ Backend required')+'</span></div>'+
-        '<div class="br2"><span style="color:var(--t2)">Video</span><span style="color:'+(S.rl?'var(--green)':'var(--dim)')+';font-size:12px">'+(S.rl?'✓ Connected':'Not configured')+'</span></div>'+
-        (isAdmin()&&!_aiBackendReady()?'<button class="btn bs" data-gs="apikeys" style="margin-top:10px;font-size:12px">Connect backend</button>':'')+
+        '<div class="br2"><span style="color:var(--t2)">AI Engine</span><span style="color:'+(_aiBackendReady()?'var(--green)':'var(--red)')+';font-size:var(--t-sm);font-weight:500">'+(_aiBackendReady()?'✓ Online':'⚠ Backend required')+'</span></div>'+
+        '<div class="br2"><span style="color:var(--t2)">Video</span><span style="color:'+(S.rl?'var(--green)':'var(--dim)')+';font-size:var(--t-sm)">'+(S.rl?'✓ Connected':'Not configured')+'</span></div>'+
+        (isAdmin()&&!_aiBackendReady()?'<button class="btn bs" data-gs="apikeys" style="margin-top:10px;font-size:var(--t-sm)">Connect backend</button>':'')+
       '</div>':'')+ 
     '</div></div>';
   vc.querySelectorAll('.qab[data-qa]').forEach(b=>on(b,'click',()=>{ if(b.dataset.qa==='chat')newChat(); else setTab(b.dataset.qa); }));
@@ -8437,7 +8484,7 @@ function renderTeamView(){
         '<span class="seat-total" id="seat-total"></span>'+
       '</div>'+
       '<div class="seat-say" id="seat-say" role="status" aria-live="polite"></div>'+
-      '<button class="btn bp" id="seat-buy" style="font-size:12px">Get Teams</button>'+
+      '<button class="btn bp" id="seat-buy" style="font-size:var(--t-sm)">Get Teams</button>'+
       '<p class="seat-fine">Minimum '+min+' seats. Change the number any time - billing is prorated by the day, '+
         'so adding somebody mid-month costs the part of the month they are there for.</p>'+
     '</div>';
@@ -8447,18 +8494,18 @@ function renderTeamView(){
   const planRequirementCard=
     '<div class="ss2" style="background:rgba(85,144,255,.06);border-color:rgba(85,144,255,.22)">'+
       '<h3>Which plan do I need?</h3>'+
-      '<p style="font-size:13.5px;color:var(--tx);line-height:1.7;margin:0 0 4px">'+
+      '<p style="font-size:var(--t-base);color:var(--tx);line-height:1.7;margin:0 0 4px">'+
         'Teams unlocks on the <b style="color:var(--accent)">'+teamPlan.name+' plan ($'+teamPlan.price+'/month)</b> and above. '+
         'One Elite (or Ultra) subscription covers your shared workspace, roles, and team memory. '+
         'A <b>Custom plan</b> sized at the Elite tier or above also unlocks Teams.'+
       '</p>'+
-      '<p style="font-size:12.5px;color:var(--mu);line-height:1.6;margin:8px 0 12px">'+
+      '<p style="font-size:var(--t-sm);color:var(--mu);line-height:1.6;margin:8px 0 12px">'+
         'Free and Pro ($'+PLANS.pro.price+') are individual plans - they don\u2019t include team workspaces. '+
         'You\u2019re currently on <b style="color:var(--tx)">'+planName+'</b>.'+
       '</p>'+
       (hasTeamPlan
-        ? '<div style="font-size:13px;color:#4ade80;font-weight:600">\u2713 Your '+planName+' plan includes Teams - create yours below.</div>'
-        : '<button class="btn bp" data-stab="plans" style="font-size:12px">Upgrade to '+teamPlan.name+' &rarr;</button>')+
+        ? '<div style="font-size:var(--t-base);color:#4ade80;font-weight:600">\u2713 Your '+planName+' plan includes Teams - create yours below.</div>'
+        : '<button class="btn bp" data-stab="plans" style="font-size:var(--t-sm)">Upgrade to '+teamPlan.name+' &rarr;</button>')+
     '</div>';
 
   // No backend yet → show what Teams unlocks + the plan answer (honest, clear path)
@@ -8469,7 +8516,7 @@ function renderTeamView(){
       '<p class="vsub">Share projects, prompts, and AMV\u2019s memory across your whole team - with roles and permissions.</p>'+
       teamExplainer+
       planRequirementCard+
-      '<div class="ss2"><p style="font-size:12.5px;color:var(--mu);line-height:1.6;margin:0">Team mode runs on your AMV backend. Once it\u2019s connected and you\u2019re on the '+teamPlan.name+' plan, you can create a team and invite members right here.</p></div>'+
+      '<div class="ss2"><p style="font-size:var(--t-sm);color:var(--mu);line-height:1.6;margin:0">Team mode runs on your AMV backend. Once it\u2019s connected and you\u2019re on the '+teamPlan.name+' plan, you can create a team and invite members right here.</p></div>'+
     '</div></div>';
     return;
   }
@@ -8501,7 +8548,7 @@ function renderTeamView(){
       '<span class="eyebrow">Collaboration</span><h2>Team workspaces</h2>'+
       '<p class="vsub">AMV could not reach the server, so this would be out of date. '+
       'Check your connection and try again.</p>'+
-      '<button class="btn bs" data-dact="renderTeamView" style="font-size:12px">Retry</button>'+
+      '<button class="btn bs" data-dact="renderTeamView" style="font-size:var(--t-sm)">Retry</button>'+
     '</div></div>';
   });
 }
@@ -8595,15 +8642,15 @@ function _renderTeamSettingsPane(pane){
         '<div class="set-fact"><div class="set-fact-k">Free seats</div><div class="set-fact-v">'+Math.max(0,seats.limit-seats.used)+'</div>'+
           (seats.over>0?'<div class="set-fact-s" style="color:var(--gold)">'+seats.over+' over your plan</div>':'')+'</div>'+
       '</div>'+
-      '<button class="btn bs" data-stab="team" style="font-size:12px;margin-top:14px">Manage the team \u2192</button>'+
+      '<button class="btn bs" data-stab="team" style="font-size:var(--t-sm);margin-top:14px">Manage the team \u2192</button>'+
     '</div>'
     :'<div class="ss2"><h3>You are not in a team</h3>'+
-      '<p style="font-size:13px;color:var(--mu);line-height:1.65;margin:0 0 12px">'+
+      '<p style="font-size:var(--t-base);color:var(--mu);line-height:1.65;margin:0 0 12px">'+
       'Anyone can be invited into one on any plan - the team pays for your seat, not you. '+
       'To start one yourself you need a plan that includes seats.</p>'+
-      '<button class="btn bp" data-stab="team" style="font-size:12px">Open Team \u2192</button></div>')+
+      '<button class="btn bp" data-stab="team" style="font-size:var(--t-sm)">Open Team \u2192</button></div>')+
     '<div class="ss2"><h3>What a seat costs the team</h3>'+
-      '<p style="font-size:13px;color:var(--mu);line-height:1.65;margin:0">'+
+      '<p style="font-size:var(--t-base);color:var(--mu);line-height:1.65;margin:0">'+
       'Everyone on a team draws on the same monthly allowance, so one person having a heavy week '+
       'is felt by everybody. You can see how much is left in <b>Settings \u2192 Usage</b> at any time. '+
       'Nobody can be charged individually - there is one subscription and one bill.</p>'+
@@ -8628,7 +8675,7 @@ function _renderTeamCreate(vc){
     '<p class="vsub">Start a shared workspace and invite your teammates.</p>'+
     '<div class="ss2"><div class="sf" style="max-width:420px">'+
       '<div><label class="lbl">Team name</label><input type="text" id="team-name" placeholder="Acme Inc." autocomplete="off"></div>'+
-      '<button class="btn bp" id="team-create-btn" style="align-self:flex-start;font-size:12px">Create team</button>'+
+      '<button class="btn bp" id="team-create-btn" style="align-self:flex-start;font-size:var(--t-sm)">Create team</button>'+
     '</div></div>'+
   '</div></div>';
   on($('team-create-btn'),'click',async()=>{
@@ -8674,26 +8721,26 @@ function _renderTeamManage(vc, team){
           : '<b>'+seats.limit+' seats</b><span>included with '+escH(String(team.plan||'your plan'))+'</span>')+
       '</div>'+
       (onSeatPlan
-        ? '<p style="font-size:12.5px;color:var(--mu);line-height:1.6;margin:0 0 10px">'+
+        ? '<p style="font-size:var(--t-sm);color:var(--mu);line-height:1.6;margin:0 0 10px">'+
           'Changing the number is prorated by the day, so adding somebody mid-month costs '+
           'the part of the month they are there for.</p>'+
-          '<button class="btn bs" id="seat-manage" style="font-size:12px">Change seats</button>'
-        : '<p style="font-size:12.5px;color:var(--mu);line-height:1.6;margin:0 0 10px">'+
+          '<button class="btn bs" id="seat-manage" style="font-size:var(--t-sm)">Change seats</button>'
+        : '<p style="font-size:var(--t-sm);color:var(--mu);line-height:1.6;margin:0 0 10px">'+
           'Need a different number? Teams is priced per person at $'+seatPrice+'/month, '+
           'and every seat brings its own allowance rather than dividing this one.</p>'+
-          '<button class="btn bs" data-stab="plans" style="font-size:12px">See Teams pricing</button>')+
+          '<button class="btn bs" data-stab="plans" style="font-size:var(--t-sm)">See Teams pricing</button>')+
       '<div class="seat-say" id="seat-manage-say" role="status" aria-live="polite"></div>'+
       '</div>'
     : '';
   const overBanner=over>0
     ? '<div class="ss2" style="border-color:var(--gold);background:rgba(245,158,11,.07)">'+
       '<h3>'+over+' '+(over===1?'person is':'people are')+' not covered by your plan</h3>'+
-      '<p style="font-size:13px;color:var(--tx);line-height:1.6;margin:0 0 10px">'+
+      '<p style="font-size:var(--t-base);color:var(--tx);line-height:1.6;margin:0 0 10px">'+
       'Your plan includes '+seats.limit+' seat'+(seats.limit===1?'':'s')+' and the team has '+seats.used+' member'+(seats.used===1?'':'s')+'. '+
       'The '+(over===1?'member':'members')+' marked below are using their own plan instead of the team\u2019s, '+
       'so they have their own limits and lose the shared allowance. Upgrade to cover them, or remove them.</p>'+
-      (isOwner?'<button class="btn bp" data-stab="plans" style="font-size:12px">See plans &rarr;</button>':
-       '<p style="font-size:12px;color:var(--mu);margin:0">Only the owner can change the plan.</p>')+
+      (isOwner?'<button class="btn bp" data-stab="plans" style="font-size:var(--t-sm)">See plans &rarr;</button>':
+       '<p style="font-size:var(--t-sm);color:var(--mu);margin:0">Only the owner can change the plan.</p>')+
       '</div>'
     : '';
   const memberRows=(team.members||[]).map(m=>
@@ -8701,7 +8748,7 @@ function _renderTeamManage(vc, team){
     (m.seated===false?' <span class="team-role" style="background:rgba(245,158,11,.14);color:var(--gold)">no seat</span>':'')+'</span>'+
     '<span style="display:flex;align-items:center;gap:10px"><span class="team-role team-role-'+m.role+'">'+m.role+'</span>'+
     // owner can promote/demote anyone who isn't the owner
-    (isOwner&&m.role!=='owner'?'<button class="btn bs team-role-btn" data-team-setrole="'+escH(m.email)+'" data-team-newrole="'+(m.role==='admin'?'member':'admin')+'" style="font-size:10.5px;padding:3px 8px">'+(m.role==='admin'?'Make member':'Make admin')+'</button>':'')+
+    (isOwner&&m.role!=='owner'?'<button class="btn bs team-role-btn" data-team-setrole="'+escH(m.email)+'" data-team-newrole="'+(m.role==='admin'?'member':'admin')+'" style="font-size:var(--t-2xs);padding:3px 8px">'+(m.role==='admin'?'Make member':'Make admin')+'</button>':'')+
     (canManage&&m.role!=='owner'?'<button class="team-x" data-team-remove="'+escH(m.email)+'" title="Remove">\u00d7</button>':'')+'</span></div>'
   ).join('');
   vc.innerHTML='<div class="sv fi"><div class="vi">'+
@@ -8711,28 +8758,28 @@ function _renderTeamManage(vc, team){
     overBanner+
     seatManage+
     '<div class="team-presence" id="team-presence"></div>'+
-    '<div class="ss2"><h3>Shared library <span style="font-weight:400;color:var(--mu);font-size:11px">(projects &amp; prompts everyone can use)</span></h3>'+
+    '<div class="ss2"><h3>Shared library <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(projects &amp; prompts everyone can use)</span></h3>'+
       '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'+
-        '<button class="btn bs" id="team-share-project" style="font-size:12px">Share a project</button>'+
-        '<button class="btn bs" id="team-share-prompt" style="font-size:12px">Share a prompt</button></div>'+
-      '<div id="team-shared"><div style="color:var(--mu);font-size:12px;padding:6px 0">Loading\u2026</div></div>'+
+        '<button class="btn bs" id="team-share-project" style="font-size:var(--t-sm)">Share a project</button>'+
+        '<button class="btn bs" id="team-share-prompt" style="font-size:var(--t-sm)">Share a prompt</button></div>'+
+      '<div id="team-shared"><div style="color:var(--mu);font-size:var(--t-sm);padding:6px 0">Loading\u2026</div></div>'+
     '</div>'+
-    (canManage?'<div class="ss2"><h3>Invite a teammate</h3><div class="sf" style="max-width:480px"><div style="display:flex;gap:8px;align-items:flex-end"><div style="flex:1"><label class="lbl">Email</label><input type="email" id="team-invite-email" placeholder="teammate@company.com" autocomplete="off"></div><div><label class="lbl">Role</label><select id="team-invite-role" class="sel"><option value="member">Member</option><option value="admin">Admin</option></select></div><button class="btn bp" id="team-invite-btn" style="font-size:12px">Invite</button></div></div><div id="team-invite-result"></div></div>':'')+
+    (canManage?'<div class="ss2"><h3>Invite a teammate</h3><div class="sf" style="max-width:480px"><div style="display:flex;gap:8px;align-items:flex-end"><div style="flex:1"><label class="lbl">Email</label><input type="email" id="team-invite-email" placeholder="teammate@company.com" autocomplete="off"></div><div><label class="lbl">Role</label><select id="team-invite-role" class="sel"><option value="member">Member</option><option value="admin">Admin</option></select></div><button class="btn bp" id="team-invite-btn" style="font-size:var(--t-sm)">Invite</button></div></div><div id="team-invite-result"></div></div>':'')+
     '<div class="ss2"><h3>Members</h3><div class="vbreak">'+memberRows+'</div></div>'+
-    '<div class="ss2"><h3>Assigned work <span style="font-weight:400;color:var(--mu);font-size:11px">(assign tasks to teammates and track them)</span></h3>'+
+    '<div class="ss2"><h3>Assigned work <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(assign tasks to teammates and track them)</span></h3>'+
       '<div class="sf" style="max-width:560px;margin-bottom:14px"><div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">'+
         '<div style="flex:1;min-width:180px"><label class="lbl">Task</label><input type="text" id="tt-title" placeholder="e.g. Draft the launch email" autocomplete="off"></div>'+
         '<div><label class="lbl">Assign to</label><select id="tt-assignee" class="sel"><option value="">Unassigned</option>'+(team.members||[]).map(m=>'<option value="'+escH(m.email)+'">'+escH(m.email)+'</option>').join('')+'</select></div>'+
         '<div><label class="lbl">Priority</label><select id="tt-priority" class="sel"><option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option></select></div>'+
-        '<button class="btn bp" id="tt-add" style="font-size:12px">Assign</button>'+
+        '<button class="btn bp" id="tt-add" style="font-size:var(--t-sm)">Assign</button>'+
       '</div></div>'+
-      '<div id="tt-board"><div style="color:var(--mu);font-size:12px;padding:8px 0">Loading tasks\u2026</div></div>'+
+      '<div id="tt-board"><div style="color:var(--mu);font-size:var(--t-sm);padding:8px 0">Loading tasks\u2026</div></div>'+
     '</div>'+
     (isOwner?'':'<div class="ss2"><h3>Leave this team</h3>'+
-      '<p style="font-size:12.5px;color:var(--mu);line-height:1.6;margin:0 0 10px">'+
+      '<p style="font-size:var(--t-sm);color:var(--mu);line-height:1.6;margin:0 0 10px">'+
       'You go back to your own plan and your own allowance. Anything you shared with the team stays with the team.</p>'+
-      '<button class="btn bs" id="team-leave" style="font-size:12px;color:var(--red);border-color:var(--red)">Leave team</button></div>')+
-    (canManage?'<div class="ss2"><h3>Activity log <span style="font-weight:400;color:var(--mu);font-size:11px">(who did what)</span></h3><div id="team-audit"><div style="color:var(--mu);font-size:12px;padding:8px 0">Loading\u2026</div></div></div>':'')+
+      '<button class="btn bs" id="team-leave" style="font-size:var(--t-sm);color:var(--red);border-color:var(--red)">Leave team</button></div>')+
+    (canManage?'<div class="ss2"><h3>Activity log <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(who did what)</span></h3><div id="team-audit"><div style="color:var(--mu);font-size:var(--t-sm);padding:8px 0">Loading\u2026</div></div></div>':'')+
   '</div></div>';
   on($('team-invite-btn'),'click',async()=>{
     const email=$('team-invite-email')?.value.trim(); const r=$('team-invite-role')?.value||'member';
@@ -8748,7 +8795,7 @@ function _renderTeamManage(vc, team){
          relied on one quote-escape to stay safe. */
       if(res){
         res.innerHTML='<div class="team-invite-link">Invite link for '+escH(email)+':<br><code>'+escH(link)+'</code>'+
-          '<button class="btn bs" id="team-invite-copy" style="font-size:11px;margin-top:8px">Copy link</button></div>';
+          '<button class="btn bs" id="team-invite-copy" style="font-size:var(--t-xs);margin-top:8px">Copy link</button></div>';
         on($('team-invite-copy'),'click',async()=>{
           try{ await navigator.clipboard.writeText(link); toast('Link copied','success'); }
           catch(_){ toast('Copy was blocked by your browser - select the link above and copy it.','info',6000); }
@@ -8764,7 +8811,7 @@ function _renderTeamManage(vc, team){
       const res=$('team-invite-result');
       if(e.code==='seat_limit'&&res){
         res.innerHTML='<div class="team-invite-link" style="border-color:var(--gold)">'+escH(e.message)+
-          (isOwner?'<br><button class="btn bp" data-stab="plans" style="font-size:11px;margin-top:8px">See plans</button>':'')+'</div>';
+          (isOwner?'<br><button class="btn bp" data-stab="plans" style="font-size:var(--t-xs);margin-top:8px">See plans</button>':'')+'</div>';
         return;
       }
       toast(e.message||'Invite failed','error');
@@ -8814,12 +8861,12 @@ function _renderTeamManage(vc, team){
   // ── Shared library ──
   const drawShared=(shared)=>{
     const el=$('team-shared'); if(!el) return;
-    if(!shared||!shared.length){ el.innerHTML='<div style="color:var(--mu);font-size:12.5px;padding:6px 0">Nothing shared yet. Share a project or prompt so your whole team can use it.</div>'; return; }
+    if(!shared||!shared.length){ el.innerHTML='<div style="color:var(--mu);font-size:var(--t-sm);padding:6px 0">Nothing shared yet. Share a project or prompt so your whole team can use it.</div>'; return; }
     const _tsvg=(p)=>'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+p+'</svg>';
     const kindIc={project:_tsvg('<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9L9.6 3.9A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z"/>'),prompt:_tsvg('<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>')};
     el.innerHTML='<div class="team-shared-list">'+shared.map(s=>'<div class="team-shared-row"><span class="tsr-ic">'+(kindIc[s.kind]||_tsvg('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>'))+'</span>'+
       '<div class="tsr-main"><b>'+escH(s.title)+'</b><span>'+escH(s.kind)+' \u00b7 by '+escH(s.byName||(s.by||'').split('@')[0])+'</span></div>'+
-      '<button class="btn bs tsr-use" data-tsr-use="'+s.id+'" style="font-size:11px">Use</button>'+
+      '<button class="btn bs tsr-use" data-tsr-use="'+s.id+'" style="font-size:var(--t-xs)">Use</button>'+
       '<button class="team-x" data-tsr-del="'+s.id+'" title="Remove">\u00d7</button></div>').join('')+'</div>';
     el.querySelectorAll('[data-tsr-use]').forEach(b=>on(b,'click',()=>{
       const s=shared.find(x=>x.id===b.dataset.tsrUse); if(!s) return;
@@ -8837,7 +8884,7 @@ function _renderTeamManage(vc, team){
          which is the same false statement with a delay on it. The panel keeps
          the message. */
       const el=$('team-shared');
-      if(el) el.innerHTML='<div style="color:var(--mu);font-size:12px;padding:8px 0;line-height:1.6">'+
+      if(el) el.innerHTML='<div style="color:var(--mu);font-size:var(--t-sm);padding:8px 0;line-height:1.6">'+
         escH((e&&e.message)||'Could not load the shared library.')+
         ' Everything the team shared is still there - <button class="tt-mini" id="tsr-retry">try again</button></div>';
       on($('tsr-retry'),'click',()=>{ AMVTeam.shared().then(drawShared).catch(()=>{}); });
@@ -8875,7 +8922,7 @@ async function _loadTeamTasks(team, role, myEmail){
   catch(e){
     /* An empty board is a statement about the team's work. If it could not be
        read, the board says that instead of claiming there is nothing on it. */
-    board.innerHTML='<div class="tt-failed" style="color:var(--mu);font-size:12px;padding:8px 0;line-height:1.6">'+
+    board.innerHTML='<div class="tt-failed" style="color:var(--mu);font-size:var(--t-sm);padding:8px 0;line-height:1.6">'+
       escH((e&&e.message)||'Could not load the team board.')+
       ' Nothing has changed - <button class="tt-mini" id="tt-retry">try again</button></div>';
     on($('tt-retry'),'click',()=>_loadTeamTasks(team, role, myEmail));
@@ -8884,7 +8931,7 @@ async function _loadTeamTasks(team, role, myEmail){
   const tasks=data.tasks||[];
   const render=()=>{
     const el=$('tt-board'); if(!el) return;
-    if(!tasks.length){ el.innerHTML='<div style="color:var(--mu);font-size:12px;padding:8px 0">No tasks yet - assign the first one above.</div>'; return; }
+    if(!tasks.length){ el.innerHTML='<div style="color:var(--mu);font-size:var(--t-sm);padding:8px 0">No tasks yet - assign the first one above.</div>'; return; }
     const cols=['todo','in_progress','done'];
     el.innerHTML='<div class="tt-cols">'+cols.map(st=>{
       const items=tasks.filter(t=>t.status===st);
@@ -8934,7 +8981,7 @@ async function _loadTeamTasks(team, role, myEmail){
   if(role==='owner'||role==='admin'){
     AMVTeam.audit().then(log=>{
       const el=$('team-audit'); if(!el) return;
-      if(!log.length){ el.innerHTML='<div style="color:var(--mu);font-size:12px;padding:8px 0">No activity yet.</div>'; return; }
+      if(!log.length){ el.innerHTML='<div style="color:var(--mu);font-size:var(--t-sm);padding:8px 0">No activity yet.</div>'; return; }
       const _act={team_created:'created the team',member_invited:'invited',member_joined:'joined',member_removed:'removed',role_changed:'changed a role',task_created:'assigned a task',task_status:'moved a task',task_reassigned:'reassigned a task',task_deleted:'deleted a task'};
       el.innerHTML='<div class="team-log">'+log.slice(0,30).map(e=>{
         const when=new Date(e.t).toLocaleString();
@@ -8951,7 +8998,7 @@ async function _loadTeamTasks(team, role, myEmail){
          to the team. "No activity yet" for a log that could not be read is the
          one answer it must never give. */
       const el=$('team-audit'); if(!el) return;
-      el.innerHTML='<div style="color:var(--mu);font-size:12px;padding:8px 0;line-height:1.6">'+
+      el.innerHTML='<div style="color:var(--mu);font-size:var(--t-sm);padding:8px 0;line-height:1.6">'+
         escH((err&&err.message)||'Could not load the team activity log.')+
         ' This is not a record of nothing happening - <button class="tt-mini" id="tal-retry">try again</button></div>';
       on($('tal-retry'),'click',()=>_renderTeamManage(vc, team));
@@ -9730,11 +9777,11 @@ function _mktBrowse(body){
     grid.innerHTML=filtered.map(it=>{
       const paid=it.price>0, owned=it._owned, mine=it._mine;
       let btn;
-      if(mine) btn='<button class="btn bs" disabled style="font-size:11.5px;flex:1;opacity:.7">Your listing</button>';
-      else if(owned) btn='<button class="btn bs mk-getowned" data-mk-id="'+escH(it.id)+'" style="font-size:11.5px;flex:1">\u2713 Owned - use it</button>';
-      else if(paid) btn='<button class="btn bp mk-buy" data-mk-id="'+escH(it.id)+'" style="font-size:11.5px;flex:1">Buy \u00b7 $'+it.price+'</button>';
-      else btn='<button class="btn bp mk-install" data-mk-id="'+escH(it.id)+'" style="font-size:11.5px;flex:1">'+(it._installed?'\u2713 Get again':'Get it free')+'</button>';
-      const previewBtn='<button class="btn bs mk-preview" data-mk-id="'+escH(it.id)+'" style="font-size:11.5px">Preview</button>';
+      if(mine) btn='<button class="btn bs" disabled style="font-size:var(--t-sm);flex:1;opacity:.7">Your listing</button>';
+      else if(owned) btn='<button class="btn bs mk-getowned" data-mk-id="'+escH(it.id)+'" style="font-size:var(--t-sm);flex:1">\u2713 Owned - use it</button>';
+      else if(paid) btn='<button class="btn bp mk-buy" data-mk-id="'+escH(it.id)+'" style="font-size:var(--t-sm);flex:1">Buy \u00b7 $'+it.price+'</button>';
+      else btn='<button class="btn bp mk-install" data-mk-id="'+escH(it.id)+'" style="font-size:var(--t-sm);flex:1">'+(it._installed?'\u2713 Get again':'Get it free')+'</button>';
+      const previewBtn='<button class="btn bs mk-preview" data-mk-id="'+escH(it.id)+'" style="font-size:var(--t-sm)">Preview</button>';
       return '<div class="mk-card">'+
         '<div class="mk-card-top"><span class="mk-icon">'+_safeIcon(it.icon)+'</span>'+
           '<span style="display:flex;gap:6px;align-items:center"><span class="mk-kind mk-kind-'+it.kind+'">'+it.kind+'</span>'+_mktPriceTag(it)+'</span></div>'+
@@ -9782,12 +9829,12 @@ function _mktBrowse(body){
         g.insertAdjacentHTML('afterbegin',
           '<div class="mk-partial">Showing only the listings built into AMV - the rest of the marketplace '+
           'could not be reached, and nothing can be bought until it is. '+
-          '<button class="btn bs" data-dact="_mktGoBrowse" style="font-size:12px">Try again</button></div>');
+          '<button class="btn bs" data-dact="_mktGoBrowse" style="font-size:var(--t-sm)">Try again</button></div>');
       }
     })
     .catch(e=>{
       const g=$('mk-grid');
-      if(g) g.innerHTML='<div class="adm-empty">Could not load the marketplace. Check your connection, then <button class="btn bs" data-dact="_mktGoBrowse" style="font-size:12px">try again</button>.</div>';
+      if(g) g.innerHTML='<div class="adm-empty">Could not load the marketplace. Check your connection, then <button class="btn bs" data-dact="_mktGoBrowse" style="font-size:var(--t-sm)">try again</button>.</div>';
       try{ _logErr('market.list', e); }catch(_){}
     });
   reload();
@@ -9901,7 +9948,7 @@ function _mktPreview(it, after){
       '<div style="flex:1"><h2 style="margin:0 0 2px">'+escH(it.title)+'</h2>'+
         '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="mk-kind mk-kind-'+it.kind+'">'+it.kind+'</span>'+_mktPriceTag(it)+_mktStars(it.rating,it.ratings)+'</div></div>'+
     '</div>'+
-    '<p style="font-size:12.5px;color:var(--mu);margin:8px 0">by <span class="mkt-by" data-mk-seller="'+escH(it.authorEmail||'')+'" data-mk-sellername="'+escH(it.author||'')+'">'+escH(it.author||'community')+'</span> \u00b7 '+(it.sales?it.sales+' sold':(it.installs||0)+' installs')+' \u00b7 '+escH(it.cat||'')+'</p>'+
+    '<p style="font-size:var(--t-sm);color:var(--mu);margin:8px 0">by <span class="mkt-by" data-mk-seller="'+escH(it.authorEmail||'')+'" data-mk-sellername="'+escH(it.author||'')+'">'+escH(it.author||'community')+'</span> \u00b7 '+(it.sales?it.sales+' sold':(it.installs||0)+' installs')+' \u00b7 '+escH(it.cat||'')+'</p>'+
     '<div class="mkt-pv-desc">'+escH(previewText)+'</div>'+
     (it.status==='sold'?'<div class="mkt-sold-banner">\uD83D\uDD34 This item has sold. Message the seller to ask if they can make another.</div>':'')+
     lockedNote+ fullText + rateRow +
@@ -9962,15 +10009,15 @@ async function _mktSellerProfile(sellerEmail, sellerName){
     const all=await AMVMarket.list();
     const theirs=all.filter(it=>!(it.authorEmail||'') && /^amv$/i.test(it.author||''));
     const listingRows = theirs.length
-      ? theirs.map(it=>'<div class="vrow mkt-listing-row" data-mk-open="'+escH(it.id)+'" style="cursor:pointer"><span>'+_safeIcon(it.icon)+' '+escH(it.title)+' '+_mktPriceTag(it)+'</span><span class="mkt-row-meta"><span class="mkt-st active">Active</span><span style="color:var(--mu);font-size:11px">'+(it.sales||it.installs||0)+(it.sales?' sold':' installs')+'</span><span class="mkt-row-arr">\u203a</span></span></div>').join('')
-      : '<div style="color:var(--mu);font-size:12.5px">No active listings.</div>';
+      ? theirs.map(it=>'<div class="vrow mkt-listing-row" data-mk-open="'+escH(it.id)+'" style="cursor:pointer"><span>'+_safeIcon(it.icon)+' '+escH(it.title)+' '+_mktPriceTag(it)+'</span><span class="mkt-row-meta"><span class="mkt-st active">Active</span><span style="color:var(--mu);font-size:var(--t-xs)">'+(it.sales||it.installs||0)+(it.sales?' sold':' installs')+'</span><span class="mkt-row-arr">\u203a</span></span></div>').join('')
+      : '<div style="color:var(--mu);font-size:var(--t-sm)">No active listings.</div>';
     r.innerHTML='<div class="ov" id="mkt-sp-bg"><div class="ob" style="max-width:560px">'+
       '<button class="oc" data-dact="closeOvr">\u00d7</button>'+
       '<div class="mkt-sp-head">'+_avatarHTML('amv',64)+
-        '<div style="flex:1"><h2 style="margin:0 0 3px">AMV <span style="font-size:12px;color:var(--accent);vertical-align:middle">\u2713 Official</span></h2>'+
-          '<div style="font-size:12.5px;color:var(--mu)">First-party tools, prompts and crews built by the AMV team.</div>'+
-          '<div style="font-size:12px;color:var(--mu);margin-top:4px">'+theirs.length+' official listing'+(theirs.length===1?'':'s')+'</div>'+
-          '<button class="btn bp" id="mkt-sp-msg" style="font-size:12px;margin-top:10px">\uD83D\uDCAC Contact AMV support</button>'+
+        '<div style="flex:1"><h2 style="margin:0 0 3px">AMV <span style="font-size:var(--t-sm);color:var(--accent);vertical-align:middle">\u2713 Official</span></h2>'+
+          '<div style="font-size:var(--t-sm);color:var(--mu)">First-party tools, prompts and crews built by the AMV team.</div>'+
+          '<div style="font-size:var(--t-sm);color:var(--mu);margin-top:4px">'+theirs.length+' official listing'+(theirs.length===1?'':'s')+'</div>'+
+          '<button class="btn bp" id="mkt-sp-msg" style="font-size:var(--t-sm);margin-top:10px">\uD83D\uDCAC Contact AMV support</button>'+
         '</div></div>'+
       '<div class="ss2"><h3>Official listings</h3><div class="vbreak">'+listingRows+'</div></div>'+
     '</div></div>';
@@ -10001,26 +10048,26 @@ async function _mktSellerProfile(sellerEmail, sellerName){
           '<span class="mkt-review-when">'+new Date(rv.ts).toLocaleDateString()+'</span></div>'+
         (rv.text?'<div class="mkt-review-text">'+escH(rv.text)+'</div>':'')+
       '</div>').join('')
-    : '<div style="color:var(--mu);font-size:12.5px;padding:6px 0">No reviews yet.</div>';
+    : '<div style="color:var(--mu);font-size:var(--t-sm);padding:6px 0">No reviews yet.</div>';
 
   const listingRows = theirs.length
-    ? theirs.map(it=>'<div class="vrow mkt-listing-row" data-mk-open="'+escH(it.id)+'" style="cursor:pointer"><span>'+_safeIcon(it.icon)+' '+escH(it.title)+' '+_mktPriceTag(it)+'</span><span class="mkt-row-meta"><span class="mkt-st '+(it.status==='sold'?'sold':'active')+'">'+(it.status==='sold'?'Sold':'Active')+'</span><span style="color:var(--mu);font-size:11px">'+(it.sales||0)+' sold</span><span class="mkt-row-arr">\u203a</span></span></div>').join('')
-    : '<div style="color:var(--mu);font-size:12.5px">No active listings.</div>';
+    ? theirs.map(it=>'<div class="vrow mkt-listing-row" data-mk-open="'+escH(it.id)+'" style="cursor:pointer"><span>'+_safeIcon(it.icon)+' '+escH(it.title)+' '+_mktPriceTag(it)+'</span><span class="mkt-row-meta"><span class="mkt-st '+(it.status==='sold'?'sold':'active')+'">'+(it.status==='sold'?'Sold':'Active')+'</span><span style="color:var(--mu);font-size:var(--t-xs)">'+(it.sales||0)+' sold</span><span class="mkt-row-arr">\u203a</span></span></div>').join('')
+    : '<div style="color:var(--mu);font-size:var(--t-sm)">No active listings.</div>';
 
   let reviewBtn='';
-  if(isMe) reviewBtn='<span style="font-size:12px;color:var(--mu)">This is you</span>';
-  else if(bought) reviewBtn='<button class="btn bp" id="mkt-write-review" style="font-size:12px">'+(mine?'Edit your review':'Write a review')+'</button>';
-  else reviewBtn='<span style="font-size:12px;color:var(--mu)">Buy from this seller to leave a review</span>';
+  if(isMe) reviewBtn='<span style="font-size:var(--t-sm);color:var(--mu)">This is you</span>';
+  else if(bought) reviewBtn='<button class="btn bp" id="mkt-write-review" style="font-size:var(--t-sm)">'+(mine?'Edit your review':'Write a review')+'</button>';
+  else reviewBtn='<span style="font-size:var(--t-sm);color:var(--mu)">Buy from this seller to leave a review</span>';
 
   r.innerHTML='<div class="ov" id="mkt-sp-bg"><div class="ob" style="max-width:560px">'+
     '<button class="oc" data-dact="closeOvr">\u00d7</button>'+
     '<div class="mkt-sp-head">'+_avatarHTML(sellerEmail,64)+
       '<div style="flex:1"><h2 style="margin:0 0 3px">'+escH(name)+'</h2>'+
         '<div class="mkt-sp-stats">'+
-          (rating.count?('<span class="mkt-stars">'+[1,2,3,4,5].map(n=>'<span class="mkt-star'+(n<=Math.round(rating.avg)?' on':'')+'">\u2605</span>').join('')+'<span class="mkt-stars-n">'+rating.avg+' ('+rating.count+' review'+(rating.count===1?'':'s')+')</span></span>'):'<span style="color:var(--mu);font-size:12px">No ratings yet</span>')+
+          (rating.count?('<span class="mkt-stars">'+[1,2,3,4,5].map(n=>'<span class="mkt-star'+(n<=Math.round(rating.avg)?' on':'')+'">\u2605</span>').join('')+'<span class="mkt-stars-n">'+rating.avg+' ('+rating.count+' review'+(rating.count===1?'':'s')+')</span></span>'):'<span style="color:var(--mu);font-size:var(--t-sm)">No ratings yet</span>')+
         '</div>'+
-        '<div style="font-size:12px;color:var(--mu);margin-top:4px">'+theirs.length+' listing'+(theirs.length===1?'':'s')+' \u00b7 '+totalSold+' sold</div>'+
-        (isMe?'':'<button class="btn bp" id="mkt-sp-msg" style="font-size:12px;margin-top:10px">\uD83D\uDCAC Message seller</button>')+
+        '<div style="font-size:var(--t-sm);color:var(--mu);margin-top:4px">'+theirs.length+' listing'+(theirs.length===1?'':'s')+' \u00b7 '+totalSold+' sold</div>'+
+        (isMe?'':'<button class="btn bp" id="mkt-sp-msg" style="font-size:var(--t-sm);margin-top:10px">\uD83D\uDCAC Message seller</button>')+
       '</div></div>'+
     '<div class="ss2" style="margin-top:16px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><h3 style="margin:0">Reviews</h3>'+reviewBtn+'</div>'+reviewList+'</div>'+
     '<div class="ss2"><h3>Listings</h3><div class="vbreak">'+listingRows+'</div></div>'+
@@ -10081,11 +10128,11 @@ function _mktChat(otherEmail, otherName, prefill, aboutItem){
   const draw=()=>{
     const t=AMVMarket.thread(otherEmail);
     const name=otherName||(t.a===me?t.bName:t.aName)||otherEmail.split('@')[0];
-    const bubbles = t.msgs.length ? t.msgs.map(m=>'<div class="mkt-bubble '+(m.from===me?'me':'them')+'">'+escH(m.text)+'<span class="mkt-bubble-t">'+_timeAgo(m.ts)+'</span></div>').join('') : '<div style="color:var(--mu);font-size:12.5px;text-align:center;padding:20px">Say hello - ask about an item, a custom order, anything.</div>';
+    const bubbles = t.msgs.length ? t.msgs.map(m=>'<div class="mkt-bubble '+(m.from===me?'me':'them')+'">'+escH(m.text)+'<span class="mkt-bubble-t">'+_timeAgo(m.ts)+'</span></div>').join('') : '<div style="color:var(--mu);font-size:var(--t-sm);text-align:center;padding:20px">Say hello - ask about an item, a custom order, anything.</div>';
     r.innerHTML='<div class="ov" id="mkt-chat-bg"><div class="ob" style="max-width:460px;display:flex;flex-direction:column;max-height:80vh">'+
       '<button class="oc" data-dact="closeOvr">\u00d7</button>'+
-      '<div class="mkt-chat-head">'+_avatarHTML(otherEmail,36)+'<div><div style="font-weight:600;font-size:14px">'+escH(name)+'</div><div style="font-size:11px;color:var(--mu)">'+escH(otherEmail)+'</div></div>'+
-        '<button class="btn bs" id="mkt-chat-prof" style="margin-left:auto;font-size:11px">Profile</button></div>'+
+      '<div class="mkt-chat-head">'+_avatarHTML(otherEmail,36)+'<div><div style="font-weight:600;font-size:var(--t-md)">'+escH(name)+'</div><div style="font-size:var(--t-xs);color:var(--mu)">'+escH(otherEmail)+'</div></div>'+
+        '<button class="btn bs" id="mkt-chat-prof" style="margin-left:auto;font-size:var(--t-xs)">Profile</button></div>'+
       '<div class="mkt-chat-body" id="mkt-chat-body">'+bubbles+'</div>'+
       '<div class="mkt-chat-input"><input type="text" id="mkt-chat-txt" placeholder="Message\u2026" autocomplete="off"'+(prefill?' value="'+escH(prefill)+'"':'')+'><button class="btn bp" id="mkt-chat-send">Send</button></div>'+
     '</div></div>';
@@ -10133,7 +10180,7 @@ function _mktReviewDialog(sellerEmail, sellerName, onDone){
     '<h2 style="margin-bottom:4px">Review '+escH(sellerName)+'</h2>'+
     '<p class="ob-sub" style="margin-bottom:14px">Your rating helps other buyers. You can only review sellers you\u2019ve bought from.</p>'+
     '<div class="mkt-rate" style="margin:0 0 14px"><span class="mkt-rate-stars" id="mkt-rv-stars">'+drawStars()+'</span></div>'+
-    '<textarea id="mkt-rv-text" rows="4" placeholder="Share your experience (optional)\u2026" style="width:100%;font-size:13px">'+escH(existing?existing.text:'')+'</textarea>'+
+    '<textarea id="mkt-rv-text" rows="4" placeholder="Share your experience (optional)\u2026" style="width:100%;font-size:var(--t-base)">'+escH(existing?existing.text:'')+'</textarea>'+
     '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px"><button class="btn bs" data-dact="closeOvr">Cancel</button><button class="btn bp" id="mkt-rv-save">Submit review</button></div>'+
   '</div></div>';
   onBackdrop($('mkt-rv-bg'),closeOvr);
@@ -10159,7 +10206,7 @@ function _mktPurchases(body){
         '<div class="mk-title">'+escH(it.title)+'</div>'+
         '<div class="mk-desc">'+escH(it.desc||'')+'</div>'+
         (it._removed?'<div class="mk-meta" style="color:var(--mu)">Seller removed this listing</div>':
-          '<div class="mk-meta"><span></span>'+fc+'</div><div class="mk-card-actions"><button class="btn bs mk-view" data-mk-id="'+escH(it.id)+'" style="font-size:11.5px;flex:1">View / download</button><button class="btn bp mk-use" data-mk-id="'+escH(it.id)+'" style="font-size:11.5px;flex:1">'+(it.kind==='crew'?'Use in Crew':(it.kind==='workflow'||it.kind==='integration')?'Use it':'Try in chat')+'</button></div>')+
+          '<div class="mk-meta"><span></span>'+fc+'</div><div class="mk-card-actions"><button class="btn bs mk-view" data-mk-id="'+escH(it.id)+'" style="font-size:var(--t-sm);flex:1">View / download</button><button class="btn bp mk-use" data-mk-id="'+escH(it.id)+'" style="font-size:var(--t-sm);flex:1">'+(it.kind==='crew'?'Use in Crew':(it.kind==='workflow'||it.kind==='integration')?'Use it':'Try in chat')+'</button></div>')+
       '</div>';
     }).join('')+'</div>';
     body.querySelectorAll('.mk-use').forEach(b=>on(b,'click',()=>{
@@ -10171,10 +10218,10 @@ function _mktPurchases(body){
     /* "No purchases yet" for somebody who has paid for things is the worst
        available answer, so a failed read says it failed. */
     body.innerHTML='<div class="ss2"><h3>Could not load your purchases</h3>'+
-      '<p style="font-size:13px;color:var(--mu);line-height:1.65;margin:0 0 12px">'+
+      '<p style="font-size:var(--t-base);color:var(--mu);line-height:1.65;margin:0 0 12px">'+
       escH((e&&e.message)||'AMV could not reach the server.')+
       ' Everything you have bought is still yours.</p>'+
-      '<button class="btn bs" id="mkt-pur-retry" style="font-size:12px">Try again</button></div>';
+      '<button class="btn bs" id="mkt-pur-retry" style="font-size:var(--t-sm)">Try again</button></div>';
     on($('mkt-pur-retry'),'click',()=>_mktPurchases(body));
   });
 }
@@ -10401,12 +10448,12 @@ function _mktBlockedDialog(reason, action, category){
     '<div style="display:flex;gap:12px;align-items:flex-start">'+
       '<span style="width:38px;height:38px;flex-shrink:0;border-radius:10px;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,'+tint+' 13%,transparent);color:'+tint+'">'+
         '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+icon+'</svg></span>'+
-      '<div><div style="font-size:15px;font-weight:600;margin-bottom:6px">'+(needsVer?'Verification required':'Listing blocked by review')+'</div>'+
-        '<div style="font-size:13px;color:var(--mu);line-height:1.6">'+escH(reason)+'</div></div>'+
+      '<div><div style="font-size:calc(15px * var(--fs-s));font-weight:600;margin-bottom:6px">'+(needsVer?'Verification required':'Listing blocked by review')+'</div>'+
+        '<div style="font-size:var(--t-base);color:var(--mu);line-height:1.6">'+escH(reason)+'</div></div>'+
     '</div>'+
     '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">'+
-      (needsVer?'<button class="btn bs" id="mkb-apply" style="font-size:12px">Apply for verification</button>':'<button class="btn bs" id="mkb-rules" style="font-size:12px">See the terms</button>')+
-      '<button class="btn bp" id="mkb-ok" style="font-size:12px">Got it</button>'+
+      (needsVer?'<button class="btn bs" id="mkb-apply" style="font-size:var(--t-sm)">Apply for verification</button>':'<button class="btn bs" id="mkb-rules" style="font-size:var(--t-sm)">See the terms</button>')+
+      '<button class="btn bp" id="mkb-ok" style="font-size:var(--t-sm)">Got it</button>'+
     '</div></div></div>';
   r.classList.add('on');
   on($('mkb-ok'),'click',closeOvr);
@@ -10435,8 +10482,8 @@ function _mktReport(itemId, title){
     ['sexual','Sexual or abusive content'],['harassment','Hate or harassment'],
     ['other','Something else']];
   r.innerHTML='<div class="ovr-bg" id="mkr-bg"><div class="ovr-card" style="max-width:430px">'+
-    '<div style="font-size:15px;font-weight:600;margin-bottom:4px">'+T('Report this listing')+'</div>'+
-    '<div style="font-size:12.5px;color:var(--mu);margin-bottom:14px">'+escH(title||'')+'</div>'+
+    '<div style="font-size:calc(15px * var(--fs-s));font-weight:600;margin-bottom:4px">'+T('Report this listing')+'</div>'+
+    '<div style="font-size:var(--t-sm);color:var(--mu);margin-bottom:14px">'+escH(title||'')+'</div>'+
     '<label class="lbl">'+T('What\u2019s wrong with it?')+'</label>'+
     '<select id="mkr-reason" class="sel" style="width:100%;margin-bottom:10px">'+
       REASONS.map(o=>'<option value="'+o[0]+'">'+escH(T(o[1]))+'</option>').join('')+
@@ -10444,8 +10491,8 @@ function _mktReport(itemId, title){
     '<textarea id="mkr-note" rows="3" placeholder="'+T('Any details that help us review it (optional)')+'" style="width:100%;resize:vertical"></textarea>'+
     '<div id="mkr-err" class="sch-err" hidden></div>'+
     '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">'+
-      '<button class="btn bs" id="mkr-cancel" style="font-size:12px">'+T('Cancel')+'</button>'+
-      '<button class="btn bd2" id="mkr-send" style="font-size:12px">'+T('Submit report')+'</button>'+
+      '<button class="btn bs" id="mkr-cancel" style="font-size:var(--t-sm)">'+T('Cancel')+'</button>'+
+      '<button class="btn bd2" id="mkr-send" style="font-size:var(--t-sm)">'+T('Submit report')+'</button>'+
     '</div></div></div>';
   r.classList.add('on');
   on($('mkr-cancel'),'click',closeOvr);
@@ -10473,7 +10520,7 @@ function _mktSell(body){
   if(!body) return;
   body.innerHTML=
     '<div class="ss2"><h3>List something for sale</h3>'+
-      '<p style="font-size:12.5px;color:var(--mu);margin:0 0 12px;line-height:1.6">Sell AMV prompts, crews, integrations, workflows, guides - or attach any files (PDFs, videos, models, datasets, images). Set any price (or free). You keep <b style="color:var(--tx)">80%</b> of every sale; it lands in your balance to withdraw. AMV-only - listings can\u2019t reference other AI products.</p>'+
+      '<p style="font-size:var(--t-sm);color:var(--mu);margin:0 0 12px;line-height:1.6">Sell AMV prompts, crews, integrations, workflows, guides - or attach any files (PDFs, videos, models, datasets, images). Set any price (or free). You keep <b style="color:var(--tx)">80%</b> of every sale; it lands in your balance to withdraw. AMV-only - listings can\u2019t reference other AI products.</p>'+
       '<div class="mkt-rules"><div class="mkt-rules-h"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>Marketplace Terms - every listing is screened before it goes live'+
         '<button class="mkt-rules-toggle" id="mkt-rules-toggle">Read the full terms</button></div>'+
         '<div class="mkt-rules-body" id="mkt-rules-body" style="display:none">'+
@@ -10498,12 +10545,12 @@ function _mktSell(body){
         '</div>'+
         '<div><label class="lbl">Category</label><input id="sl-cat" placeholder="e.g. Finance"></div>'+
         '<div><label class="lbl">Short description</label><input id="sl-desc" placeholder="What does the buyer get?"></div>'+
-        '<div><label class="lbl">The deliverable <span style="color:var(--mu);font-weight:400">(text, instructions, links - optional if you attach files)</span></label><textarea id="sl-text" rows="5" placeholder="Paste the content buyers get: a prompt, instructions, a link to a video, anything\u2026" style="font-family:var(--mn,ui-monospace,monospace);font-size:13px"></textarea></div>'+
+        '<div><label class="lbl">The deliverable <span style="color:var(--mu);font-weight:400">(text, instructions, links - optional if you attach files)</span></label><textarea id="sl-text" rows="5" placeholder="Paste the content buyers get: a prompt, instructions, a link to a video, anything\u2026" style="font-family:var(--mn,ui-monospace,monospace);font-size:var(--t-base)"></textarea></div>'+
         '<div><label class="lbl">Attach files <span style="color:var(--mu);font-weight:400">(PDF, video, models, images, any file - delivered on purchase)</span></label>'+
           '<div id="sl-drop" class="sl-drop"><input type="file" id="sl-files" multiple style="display:none"><span>\uD83D\uDCCE Click to add files, or drag them here</span></div>'+
           '<div id="sl-filelist" class="sl-filelist"></div>'+
         '</div>'+
-        '<button class="btn bp" id="sl-publish" style="align-self:flex-start;font-size:12px">List it</button>'+
+        '<button class="btn bp" id="sl-publish" style="align-self:flex-start;font-size:var(--t-sm)">List it</button>'+
       '</div>'+
     '</div>'+
     '<div class="ss2"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><h3 style="margin:0">Your listings</h3><div id="sl-summary" class="sl-summary"></div></div>'+
@@ -10555,7 +10602,7 @@ function _mktSell(body){
       const active=items.filter(i=>(i.status||'active')==='active').length;
       sum.innerHTML='<span class="sl-stat"><b>'+items.length+'</b> listings</span><span class="sl-stat"><b>'+active+'</b> active</span><span class="sl-stat"><b>'+totalViews+'</b> views</span><span class="sl-stat"><b>'+totalSold+'</b> sold</span>';
     }
-    if(!items.length){ el.innerHTML='<div style="color:var(--mu);font-size:12px">No listings yet. Create one above.</div>'; return; }
+    if(!items.length){ el.innerHTML='<div style="color:var(--mu);font-size:var(--t-sm)">No listings yet. Create one above.</div>'; return; }
     el.innerHTML='<div class="sl-list">'+items.map(it=>{
       const st=it.status||'active';
       const badge='<span class="sl-status sl-status-'+st+'">'+st+'</span>';
@@ -10586,9 +10633,9 @@ function _mktSell(body){
        could not be fetched invites them to publish a duplicate. */
     const el=$('sl-mine'); if(!el) return;
     const sum=$('sl-summary'); if(sum) sum.innerHTML='';
-    el.innerHTML='<div style="color:var(--mu);font-size:12px;line-height:1.6">'+
+    el.innerHTML='<div style="color:var(--mu);font-size:var(--t-sm);line-height:1.6">'+
       escH((e&&e.message)||'Could not load your listings.')+
-      ' They are still there. <button class="btn bs" id="sl-mine-retry" style="font-size:11.5px;margin-left:6px">Try again</button></div>';
+      ' They are still there. <button class="btn bs" id="sl-mine-retry" style="font-size:var(--t-sm);margin-left:6px">Try again</button></div>';
     on($('sl-mine-retry'),'click',loadMine);
   }); };
   loadMine();
@@ -10690,7 +10737,7 @@ function _mktEarnings(body){
     const bal=(d.balance||0), avail=(d.available!=null?d.available:bal), pend=(d.pending||0),
           holdDays=(d.holdDays||0), life=(d.lifetime||0), pct=d.sellerPct||80, min=d.minWithdraw||10;
     const txLabel={sale:'Sale',withdrawal:'Withdrawal'};
-    const tx=(d.tx||[]).map(t=>'<div class="vrow"><span>'+(txLabel[t.type]||t.type)+(t.title?' \u00b7 '+escH(t.title):'')+(t.status?' <span style="color:var(--mu);font-size:11px">('+t.status+')</span>':'')+'</span>'+
+    const tx=(d.tx||[]).map(t=>'<div class="vrow"><span>'+(txLabel[t.type]||t.type)+(t.title?' \u00b7 '+escH(t.title):'')+(t.status?' <span style="color:var(--mu);font-size:var(--t-xs)">('+t.status+')</span>':'')+'</span>'+
       '<span class="vrow-n" style="color:'+(t.amount<0?'var(--mu)':'#4ade80')+'">'+(t.amount<0?'-$'+Math.abs(t.amount).toFixed(2):'+$'+t.amount.toFixed(2))+'</span></div>').join('')||'<div class="vrow"><span style="color:var(--mu)">No earnings yet - sell something to start.</span></div>';
     body.innerHTML=
       '<div class="vhero">'+
@@ -10700,13 +10747,13 @@ function _mktEarnings(body){
         '<div class="vcard"><div class="vcard-n">'+pct+'%</div><div class="vcard-l">Your share of each sale</div></div>'+
       '</div>'+
       '<div class="ss2"><h3>Withdraw your balance</h3>'+
-        '<p style="font-size:12.5px;color:var(--mu);margin:0 0 12px;line-height:1.6">Minimum withdrawal is $'+min+'. Enter where you\u2019d like the funds sent (PayPal email or bank reference) and we\u2019ll process the payout.'+
+        '<p style="font-size:var(--t-sm);color:var(--mu);margin:0 0 12px;line-height:1.6">Minimum withdrawal is $'+min+'. Enter where you\u2019d like the funds sent (PayPal email or bank reference) and we\u2019ll process the payout.'+
           (pend>0?' <b style="color:var(--tx)">$'+pend.toFixed(2)+'</b> from recent sales is still clearing - card payments can be disputed for a few weeks, so takings settle after '+holdDays+' days. It is yours; it just cannot be paid out yet.':'')+'</p>'+
         '<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;max-width:520px">'+
           '<div style="flex:1;min-width:200px"><label class="lbl">Payout destination</label><input id="wd-dest" placeholder="PayPal email or bank reference"></div>'+
-          '<button class="btn bp" id="wd-go" style="font-size:12px"'+(avail<min?' disabled':'')+'>Withdraw $'+avail.toFixed(2)+'</button>'+
+          '<button class="btn bp" id="wd-go" style="font-size:var(--t-sm)"'+(avail<min?' disabled':'')+'>Withdraw $'+avail.toFixed(2)+'</button>'+
         '</div>'+
-        (avail<min?'<div style="font-size:11.5px;color:var(--mu);margin-top:8px">You need at least $'+min+' available to withdraw.'+(pend>0?' You have $'+pend.toFixed(2)+' still clearing.':'')+'</div>':'')+
+        (avail<min?'<div style="font-size:var(--t-sm);color:var(--mu);margin-top:8px">You need at least $'+min+' available to withdraw.'+(pend>0?' You have $'+pend.toFixed(2)+' still clearing.':'')+'</div>':'')+
       '</div>'+
       '<div class="ss2"><h3>Transaction history</h3><div class="vbreak">'+tx+'</div></div>';
     on($('wd-go'),'click',async()=>{
@@ -10720,10 +10767,10 @@ function _mktEarnings(body){
     /* Never a fabricated zero. The screen says it could not read the balance,
        which is a different statement from "you are owed nothing". */
     body.innerHTML='<div class="ss2"><h3>Could not load your earnings</h3>'+
-      '<p style="font-size:13px;color:var(--mu);line-height:1.65;margin:0 0 12px">'+
+      '<p style="font-size:var(--t-base);color:var(--mu);line-height:1.65;margin:0 0 12px">'+
       escH((e&&e.message)||'AMV could not reach the server.')+
       ' Nothing has changed - your balance is whatever it was.</p>'+
-      '<button class="btn bs" id="mkt-earn-retry" style="font-size:12px">Try again</button></div>';
+      '<button class="btn bs" id="mkt-earn-retry" style="font-size:var(--t-sm)">Try again</button></div>';
     on($('mkt-earn-retry'),'click',()=>_mktEarnings(body));
   });
 }
@@ -10736,15 +10783,15 @@ function renderMemoryView(){
       '<h2>AI Memory</h2>'+
       '<p class="vsub">AMV remembers facts about you to personalize every response. These memories are included with every AI request.</p>'+
       '<div style="display:flex;gap:8px">'+
-        '<input type="text" id="mem-inp" placeholder="Add a memory - e.g. I am a software engineer or I prefer concise answers" style="flex:1;font-size:13px">'+
-        '<button class="btn bp" id="mem-add" style="font-size:12px;white-space:nowrap">Add Memory</button>'+
+        '<input type="text" id="mem-inp" placeholder="Add a memory - e.g. I am a software engineer or I prefer concise answers" style="flex:1;font-size:var(--t-base)">'+
+        '<button class="btn bp" id="mem-add" style="font-size:var(--t-sm);white-space:nowrap">Add Memory</button>'+
       '</div>'+
       '<div id="mem-list" style="display:flex;flex-direction:column;gap:8px"></div>'+
-      (S.memory.length?'<button class="btn bd2" id="mem-clr" style="align-self:flex-start;font-size:12px">Clear All Memories</button>':'')+
+      (S.memory.length?'<button class="btn bd2" id="mem-clr" style="align-self:flex-start;font-size:var(--t-sm)">Clear All Memories</button>':'')+
       '<div class="ss2 ds-note">'+
         '<h3>How Memory Works</h3>'+
-        '<p style="font-size:12px;color:var(--t2);line-height:1.65">Memories you add here are automatically included in every conversation with AMV, allowing for more personalized and contextual responses. Add facts about yourself, your preferences, your work, or anything you want AMV to always know.</p>'+
-        '<div style="margin-top:9px;font-size:12px;color:var(--t2)">Examples:'+
+        '<p style="font-size:var(--t-sm);color:var(--t2);line-height:1.65">Memories you add here are automatically included in every conversation with AMV, allowing for more personalized and contextual responses. Add facts about yourself, your preferences, your work, or anything you want AMV to always know.</p>'+
+        '<div style="margin-top:9px;font-size:var(--t-sm);color:var(--t2)">Examples:'+
           '<div style="display:flex;flex-direction:column;gap:3px;margin-top:5px">'+
             '<span style="color:var(--tx)">• "I am a software engineer who works with Python and React"</span>'+
             '<span style="color:var(--tx)">• "I prefer concise, direct answers without unnecessary preamble"</span>'+
@@ -10911,8 +10958,8 @@ function renderPromptsView(){
       '<h2>Prompt Library</h2>'+
       '<p class="vsub">Ready-to-use prompts for every task. Click any prompt to load it into chat, or create your own.</p>'+
       '<div style="display:flex;gap:8px;margin-bottom:4px">'+
-        '<input type="text" id="pl-search" placeholder="Search prompts…" style="flex:1;font-size:13px">'+
-        '<button class="btn bp" id="pl-new" style="font-size:12px;white-space:nowrap">+ Create</button>'+
+        '<input type="text" id="pl-search" placeholder="Search prompts…" style="flex:1;font-size:var(--t-base)">'+
+        '<button class="btn bp" id="pl-new" style="font-size:var(--t-sm);white-space:nowrap">+ Create</button>'+
       '</div>'+
       '<div style="display:flex;gap:5px;flex-wrap:wrap" id="pl-cats">'+cats+'</div>'+
       '<div id="pl-list" style="display:flex;flex-direction:column;gap:8px"></div>'+
@@ -10938,9 +10985,9 @@ function renderPLList(cat){
       '<div class="plt"><span>'+escH(p.title)+'</span><span class="plcat">'+p.cat+'</span></div>'+
       '<div class="pltx">'+escH(p.text)+'</div>'+
       '<div style="display:flex;gap:5px;margin-top:9px">'+
-        '<button class="btn bp" style="font-size:11px;padding:4px 11px" data-dact="usePrompt" data-darg="'+p.id+'">Use Prompt</button>'+
-        '<button class="btn bs" style="font-size:11px;padding:4px 11px" data-dact="copyPrompt" data-darg="'+p.id+'">Copy</button>'+
-        (p.custom?'<button class="btn bd2" style="font-size:11px;padding:4px 11px" data-dact="deletePrompt" data-darg="'+p.id+'">Delete</button>':'')+
+        '<button class="btn bp" style="font-size:var(--t-xs);padding:4px 11px" data-dact="usePrompt" data-darg="'+p.id+'">Use Prompt</button>'+
+        '<button class="btn bs" style="font-size:var(--t-xs);padding:4px 11px" data-dact="copyPrompt" data-darg="'+p.id+'">Copy</button>'+
+        (p.custom?'<button class="btn bd2" style="font-size:var(--t-xs);padding:4px 11px" data-dact="deletePrompt" data-darg="'+p.id+'">Delete</button>':'')+
       '</div>'+
     '</div>'
   ).join('');
@@ -11027,12 +11074,12 @@ function renderWsGrid(){
        the dispatcher resolves with e.target.closest('[data-dact]'), which finds
        the NEAREST one - the row - so the card's action does not fire anyway.
        The guard was doing nothing except breaking the thing it was attached to. */
-    const preview=chats.slice(0,3).map(c=>'<div class="wsc-chat" data-dact="loadConv" data-darg="'+c.id+'" style="font-size:12px;color:var(--mu);padding:4px 0;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">\u2022 '+escH(c.title||'Untitled')+'</div>').join('');
+    const preview=chats.slice(0,3).map(c=>'<div class="wsc-chat" data-dact="loadConv" data-darg="'+c.id+'" style="font-size:var(--t-sm);color:var(--mu);padding:4px 0;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">\u2022 '+escH(c.title||'Untitled')+'</div>').join('');
     return '<div class="wsc" data-dact="openWorkspace" data-darg="'+ws.id+'">'+
       '<div class="wsic" style="background:rgba(85,144,255,.1)">'+ws.icon+'</div>'+
       '<div class="wsn">'+escH(ws.name)+'</div>'+
       '<div class="wsd">'+escH(ws.desc||'')+'</div>'+
-      (preview?'<div style="margin:8px 0 4px">'+preview+(chats.length>3?'<div style="font-size:11px;color:var(--dim);padding-top:2px">+'+(chats.length-3)+' more</div>':'')+'</div>':'<div class="wsc-empty">No chats yet - open to start one</div>')+
+      (preview?'<div style="margin:8px 0 4px">'+preview+(chats.length>3?'<div style="font-size:var(--t-xs);color:var(--dim);padding-top:2px">+'+(chats.length-3)+' more</div>':'')+'</div>':'<div class="wsc-empty">No chats yet - open to start one</div>')+
       '<div class="wsm">'+chats.length+' chat'+(chats.length===1?'':'s')+' \u00b7 '+new Date(ws.created||Date.now()).toLocaleDateString()+'</div>'+
     '</div>';
   }).join('')+'<button class="wsc wsc-add" data-dact="newProjectCTA"><div class="wsc-add-ic">+</div><div class="wsn">New project</div><div class="wsd">Start a fresh workspace</div></button>';
@@ -11066,7 +11113,7 @@ function createWorkspaceModal(){
       '<div class="af">'+
         '<div><label class="lbl">Name</label><input type="text" id="ws-name" placeholder="e.g. Research Project"></div>'+
         '<div><label class="lbl">Description</label><input type="text" id="ws-desc" placeholder="What is this workspace for?"></div>'+
-        '<div><label class="lbl">Icon</label><div style="display:flex;gap:6px;flex-wrap:wrap">'+icons.map(ic=>'<button class="ws-ic-btn" data-ic="'+ic+'" style="width:34px;height:34px;border-radius:7px;border:1px solid var(--bd);background:var(--s2);cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;transition:background-color .12s,border-color .12s,color .12s,box-shadow .12s,transform .12s,opacity .12s">'+ic+'</button>').join('')+'</div></div>'+
+        '<div><label class="lbl">Icon</label><div style="display:flex;gap:6px;flex-wrap:wrap">'+icons.map(ic=>'<button class="ws-ic-btn" data-ic="'+ic+'" style="width:34px;height:34px;border-radius:7px;border:1px solid var(--bd);background:var(--s2);cursor:pointer;font-size:calc(18px * var(--fs-s));display:flex;align-items:center;justify-content:center;transition:background-color .12s,border-color .12s,color .12s,box-shadow .12s,transform .12s,opacity .12s">'+ic+'</button>').join('')+'</div></div>'+
         '<button class="btn bp" id="ws-create" style="width:100%;padding:11px">Create Workspace</button>'+
       '</div>'+
     '</div></div>';
@@ -11162,9 +11209,9 @@ function _usageContentHTML(){
           '<div class="vrow"><span>Conversations</span><span class="vrow-n">'+mc+'</span></div>'+
           '<div class="vrow"><span>Images made here</span><span class="vrow-n">'+ic+'</span></div>'+
         '</div>'+
-        '<button class="btn bp" data-stab="plans" style="margin-top:14px;font-size:12px">See plans &rarr;</button>'+
+        '<button class="btn bp" data-stab="plans" style="margin-top:14px;font-size:var(--t-sm)">See plans &rarr;</button>'+
       '</div>'+
-      (isAdmin()? (function(){var u=AEGIS.usage();var cap=AEGIS.cfg.dailyTokenCap;var used=u.inTok+u.outTok;var pct=Math.min(used/cap*100,100);return '<div class="ss2" style="margin-top:18px"><h3>Token usage &amp; cost (today) - operator</h3>'+'<div class="stg" style="margin-bottom:12px">'+'<div class="stc"><div class="stv">'+u.reqs+'</div><div class="stl">API requests</div></div>'+'<div class="stc"><div class="stv">'+u.inTok.toLocaleString()+'</div><div class="stl">Input tokens</div></div>'+'<div class="stc"><div class="stv">'+u.outTok.toLocaleString()+'</div><div class="stl">Output tokens</div></div>'+'<div class="stc"><div class="stv">$'+u.costUSD.toFixed(3)+'</div><div class="stl">Est. cost</div></div>'+'</div>'+'<div><div style="display:flex;justify-content:space-between;font-size:12px;color:var(--mu);margin-bottom:4px"><span>Daily token cap (this device)</span><span>'+used.toLocaleString()+' / '+cap.toLocaleString()+'</span></div><div class="sbb"><div class="sbf2" style="width:'+pct+'%"></div></div></div>'+'<div style="display:flex;gap:8px;margin-top:12px"><button class="btn bs" data-dact="aegisExport" style="font-size:12px">Export audit log</button><button class="btn bs" data-dact="aegisClear" style="font-size:12px">Clear log</button></div>'+'</div>';})() : '');
+      (isAdmin()? (function(){var u=AEGIS.usage();var cap=AEGIS.cfg.dailyTokenCap;var used=u.inTok+u.outTok;var pct=Math.min(used/cap*100,100);return '<div class="ss2" style="margin-top:18px"><h3>Token usage &amp; cost (today) - operator</h3>'+'<div class="stg" style="margin-bottom:12px">'+'<div class="stc"><div class="stv">'+u.reqs+'</div><div class="stl">API requests</div></div>'+'<div class="stc"><div class="stv">'+u.inTok.toLocaleString()+'</div><div class="stl">Input tokens</div></div>'+'<div class="stc"><div class="stv">'+u.outTok.toLocaleString()+'</div><div class="stl">Output tokens</div></div>'+'<div class="stc"><div class="stv">$'+u.costUSD.toFixed(3)+'</div><div class="stl">Est. cost</div></div>'+'</div>'+'<div><div style="display:flex;justify-content:space-between;font-size:var(--t-sm);color:var(--mu);margin-bottom:4px"><span>Daily token cap (this device)</span><span>'+used.toLocaleString()+' / '+cap.toLocaleString()+'</span></div><div class="sbb"><div class="sbf2" style="width:'+pct+'%"></div></div></div>'+'<div style="display:flex;gap:8px;margin-top:12px"><button class="btn bs" data-dact="aegisExport" style="font-size:var(--t-sm)">Export audit log</button><button class="btn bs" data-dact="aegisClear" style="font-size:var(--t-sm)">Clear log</button></div>'+'</div>';})() : '');
 }
 window._usageContentHTML=_usageContentHTML;
 
@@ -12333,9 +12380,9 @@ function renderBillingView(targetEl){
          subscription actually ends. */
       (plan!=='free'?
       '<div class="ss2"><h3>Cancel</h3>'+
-        '<p style="font-size:12.5px;color:var(--mu);line-height:1.6;margin:0 0 10px">'+
+        '<p style="font-size:var(--t-sm);color:var(--mu);line-height:1.6;margin:0 0 10px">'+
           'You keep '+escH(P.name)+' until the end of the period you have already paid for, and nothing you have made is deleted.</p>'+
-        '<button class="btn bs" id="bill-cancel" style="font-size:12px;color:var(--red);border-color:var(--red)">Cancel subscription</button>'+
+        '<button class="btn bs" id="bill-cancel" style="font-size:var(--t-sm);color:var(--red);border-color:var(--red)">Cancel subscription</button>'+
         '<div class="seat-say" id="bill-cancel-say" role="status" aria-live="polite"></div>'+
       '</div>':'')+
       // INVOICES
@@ -12354,11 +12401,11 @@ function renderBillingView(targetEl){
       '</div>'+
       (isAdmin()?(
       '<div class="ss2" style="border:1px dashed var(--bd);border-radius:10px;padding:14px 16px">'+
-        '<h3 style="margin-top:0">Payment test mode <span style="font-weight:400;color:var(--mu);font-size:11px">(only you see this)</span></h3>'+
-        '<p style="font-size:12px;color:var(--t2);line-height:1.6;margin:0 0 10px">Simulate a completed checkout to verify the success flow end to end - plan gating, UI refresh, and confirmation - before your live payment keys are connected. This changes only your local plan; it never charges anything.</p>'+
+        '<h3 style="margin-top:0">Payment test mode <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(only you see this)</span></h3>'+
+        '<p style="font-size:var(--t-sm);color:var(--t2);line-height:1.6;margin:0 0 10px">Simulate a completed checkout to verify the success flow end to end - plan gating, UI refresh, and confirmation - before your live payment keys are connected. This changes only your local plan; it never charges anything.</p>'+
         '<div style="display:flex;gap:7px;flex-wrap:wrap">'+
-          ['pro','elite','ultra'].map(pl=>'<button class="btn" data-simpay="'+pl+'" style="font-size:12px">Simulate '+(PLANS[pl]?PLANS[pl].name:pl)+'</button>').join('')+
-          '<button class="btn" data-simpay="free" style="font-size:12px">Reset to Free</button>'+
+          ['pro','elite','ultra'].map(pl=>'<button class="btn" data-simpay="'+pl+'" style="font-size:var(--t-sm)">Simulate '+(PLANS[pl]?PLANS[pl].name:pl)+'</button>').join('')+
+          '<button class="btn" data-simpay="free" style="font-size:var(--t-sm)">Reset to Free</button>'+
         '</div>'+
       '</div>'
       ):'')+
@@ -12444,11 +12491,17 @@ function _drow(k,v){ return '<div class="bd-row"><span class="bd-k">'+k+'</span>
    tighter than the server's, the user is stopped early by a number the server
    would have allowed - a limit that exists nowhere but here. */
 const PLAN_TIERS={
-  free:  { dailyTokenCap:52000,    rpmMax:8,  models:['fast','core'] },
+  free:  { dailyTokenCap:20000,    rpmMax:8,  models:['fast','core'] },
   pro:   { dailyTokenCap:325000,   rpmMax:20, models:['fast','core','coding'] },
   elite: { dailyTokenCap:1170000,  rpmMax:40, models:['fast','core','coding','smart'] },
   ultra: { dailyTokenCap:2860000,  rpmMax:80, models:['fast','core','coding','smart'] },
-  custom:{ dailyTokenCap:52000,    rpmMax:16, models:['fast','core','coding','smart'] }, // overridden per-user below
+  /* The server's fallback for a custom plan with no explicit dayTokens is
+     Math.round(50000 * TOKENIZER_SCALE) = 65,000. This said 52,000, which is
+     the failure the comment above names: a browser guard TIGHTER than the
+     server stops somebody at a number the server would have allowed, and it
+     exists nowhere but here. Found by grepping for the old free-tier value
+     after changing it, not by looking for it. */
+  custom:{ dailyTokenCap:65000,    rpmMax:16, models:['fast','core','coding','smart'] }, // overridden per-user below
 };
 function _setPlan(plan){
   if(!PLANS[plan]) plan='free';
@@ -12670,10 +12723,10 @@ function supportButton(opts){
   const email=_supportEmail();
   if(email){
     const subj=opts.subject?('?subject='+encodeURIComponent(opts.subject)):'';
-    return '<a href="mailto:'+escH(email)+subj+'" class="'+cls+'" style="font-size:12px">'+label+'</a>';
+    return '<a href="mailto:'+escH(email)+subj+'" class="'+cls+'" style="font-size:var(--t-sm)">'+label+'</a>';
   }
   // No address configured yet → graceful fallback to Ask AMV (no dead mailto)
-  return '<button class="'+cls+'" style="font-size:12px" data-dact="askAmv" data-darg="">'+label+'</button>';
+  return '<button class="'+cls+'" style="font-size:var(--t-sm)" data-dact="askAmv" data-darg="">'+label+'</button>';
 }
 window.supportButton=supportButton;
 
@@ -12704,7 +12757,7 @@ function openUpgradeModal(lockedModel){
         '<div class="upg-row-name">Custom<span class="upg-row-tag alt">Build your own</span></div>'+
         '<div class="upg-row-desc">Pick your exact monthly budget - all models, hard-capped, from $10/mo.</div>'+
       '</div>'+
-      '<div class="upg-row-r"><div class="upg-row-price" style="font-size:15px">Your price</div><span class="upg-row-go">Build \u2192</span></div>'+
+      '<div class="upg-row-r"><div class="upg-row-price" style="font-size:calc(15px * var(--fs-s))">Your price</div><span class="upg-row-go">Build \u2192</span></div>'+
     '</button>';
   r.innerHTML='<div class="upg-ov" id="upg-bg"><div class="upg-modal" style="max-width:480px">'+
     '<button class="dna-x" id="upg-x" style="position:absolute;top:16px;right:16px">\u2715</button>'+
@@ -12725,8 +12778,8 @@ function openUpgradeModal(lockedModel){
 function _planDetails(k){
   const D={
     pro:['All models, including AMV Forge for coding','5\u00d7 the usage of the Free plan','Autonomous agents and Crew for multi-step work','Image, video, and 3D generation','Build and run apps in the sandbox','Connect Gmail, calendar, and files','Scheduled and background automation','Faster generation'],
-    elite:['Everything in Pro, dialed up','20\u00d7 the usage','AMV Apex first - our most capable engine','Full-stack app builder with one-click deploy','Up to 5 agents running in parallel','4K video & premium image quality',_autoMaxLabel('elite')+' running in the background','Team workspaces - 10 seats on one subscription','Early access + 24/7 priority support'],
-    ultra:['Everything in Elite, maxed out','50\u00d7 the usage','Unlimited parallel agents - a whole crew at once',_autoMaxLabel('ultra')+' running in the background','Whole-codebase context & autonomous projects','Export & download full multi-file projects','Deploy & host multiple live apps','Team workspaces - 25 seats, roles & shared projects','Fastest hardware + dedicated support'],
+    elite:['Everything in Pro, dialed up','20\u00d7 the usage','AMV Apex first - our most capable engine','Full-stack app builder with one-click deploy','Double Pro\u2019s throughput - '+_rpmLabel('elite'),'4K video & premium image quality',_autoMaxLabel('elite')+' running in the background','Team workspaces - 10 seats on one subscription','Early access + 24/7 priority support'],
+    ultra:['Everything in Elite, maxed out','50\u00d7 the usage','The highest throughput AMV offers - '+_rpmLabel('ultra'),_autoMaxLabel('ultra')+' running in the background','Whole-codebase context & autonomous projects','Export & download full multi-file projects','Deploy & host multiple live apps','Team workspaces - 25 seats, roles & shared projects','Fastest hardware + dedicated support'],
   };
   return D[k]||['More usage','All models'];
 }
@@ -12750,7 +12803,10 @@ function openPlanCompare(highlight){
     ['Context window (how much it holds)', p=>p==='free'?'Standard':(PLAN_RANK[p]>=3?'Whole codebase':(PLAN_RANK[p]>=2?'Extra-large':'Large'))],
     ['Image generation', p=>'\u2713'],
     ['Video generation', p=>p==='free'?'-':(PLAN_RANK[p]>=2?'4K':'HD')],
-    ['Parallel agents / long jobs', p=>isC(p)?'\u2713':(PLAN_RANK[p]>=3?'Unlimited':(PLAN_RANK[p]>=2?'Up to 5':(p==='pro'?'Limited':'-')))],
+    /* Was "Limited / Up to 5 / Unlimited" for parallel agents, which nothing
+       enforced at any tier. This is the throughput limit that is real, and it
+       is read from the table the Worker checks against. */
+    ['Requests a minute (how much runs at once)', p=>_rpmCell(p)],
     /* The number, not a word the server has never honoured. AUTO_MAX_BY_PLAN
        is the thing that decides, and it is what this row now reads. */
     ['Scheduled & background jobs', p=>String(_autoMaxForPlan(p))],
@@ -12764,7 +12820,7 @@ function openPlanCompare(highlight){
   const colName=p=>isC(p)?'Custom':PLANS[p].name;
   const head='<th></th>'+plans.map(p=>'<th class="'+(p===highlight?'pc-hl':'')+'">'+colName(p)+(p===highlight?'<span class="pc-tag">Recommended</span>':'')+'</th>').join('');
   const body=rows.map(([label,fn])=>'<tr><td class="pc-row">'+label+'</td>'+plans.map(p=>'<td class="'+(p===highlight?'pc-hl':'')+'">'+fn(p)+'</td>').join('')+'</tr>').join('');
-  const cta='<tr><td></td>'+plans.map(p=>'<td class="'+(p===highlight?'pc-hl':'')+'">'+(p==='free'?'':'<button class="btn '+(p===highlight?'bp':'')+' pc-go" data-pcgo="'+p+'" style="font-size:11px;padding:6px 9px">'+(isC(p)?'Build':'Get')+'</button>')+'</td>').join('')+'</tr>';
+  const cta='<tr><td></td>'+plans.map(p=>'<td class="'+(p===highlight?'pc-hl':'')+'">'+(p==='free'?'':'<button class="btn '+(p===highlight?'bp':'')+' pc-go" data-pcgo="'+p+'" style="font-size:var(--t-xs);padding:6px 9px">'+(isC(p)?'Build':'Get')+'</button>')+'</td>').join('')+'</tr>';
   r.innerHTML='<div class="upg-ov" id="pc-bg"><div class="pc-modal">'+
     '<button class="dna-x" id="pc-x" style="position:absolute;top:16px;right:16px;z-index:2">\u2715</button>'+
     '<div class="pc-head"><h2>Compare plans</h2><p>Everything each plan includes - pick what fits how you work.</p></div>'+
@@ -12845,7 +12901,7 @@ window.openCustomPlan=openCustomPlan;
 function _planHighlights(k){
   return {
     pro:['All 4 models incl. Forge','5\u00d7 the usage','Autonomous agents & Crew','HD images, video & 3D','Priority speed'],
-    elite:['Everything in Pro','20\u00d7 the usage','Fastest models first','Parallel agents & long jobs','Early access'],
+    elite:['Everything in Pro','20\u00d7 the usage','Fastest models first','Double Pro\u2019s throughput','Early access'],
     ultra:['Everything in Elite','50\u00d7 the usage','Max concurrency','Team-grade throughput','Dedicated support'],
   }[k]||['More usage','All models'];
 }
@@ -12887,10 +12943,10 @@ function _pmLabel(pm){ return ({card:'Card',apple:'Apple Pay',google:'Google Pay
      entry, so no sensitive data is ever typed into an unsafe field.
    ============================================================ */
 const PLANS={
-  free:{name:'Free',price:0,blurb:'Daily usage to explore everything',mult:'1\u00d7'},
-  pro:{name:'Pro',price:15,blurb:'5\u00d7 the usage, all models, agents, and priority speed',mult:'5\u00d7'},
-  elite:{name:'Elite',price:75,blurb:'20\u00d7 usage, full-stack builds, one-click deploy, 5 parallel agents, Apex first',mult:'20\u00d7'},
-  ultra:{name:'Ultra',price:200,blurb:'50\u00d7 usage, unlimited parallel agents, whole-codebase context, autonomous projects, team workspaces',mult:'50\u00d7'},
+  free:{name:'Free',price:0,blurb:'A monthly allowance, enough to explore everything',get mult(){return _multLabel('free');}},
+  pro:{name:'Pro',price:15,blurb:'Every model, autonomous agents, and the app sandbox',get mult(){return _multLabel('pro');}},
+  elite:{name:'Elite',price:75,blurb:'Ship real apps to a live URL, on our most capable engine',get mult(){return _multLabel('elite');}},
+  ultra:{name:'Ultra',price:200,blurb:'Whole codebases, autonomous projects, and a team around them',get mult(){return _multLabel('ultra');}},
   /* Priced PER SEAT, so `price` here is the price of one seat and the card that
      sells it multiplies. Every seat adds its own allowance to a shared pool
      rather than dividing a fixed one, which is why adding a teammate is worth
@@ -12921,6 +12977,64 @@ const PLAN_RANK={free:0,pro:1,elite:2,ultra:3,custom:2,team:2};
    table and 1 in the answer, because `|| 1` turns the zero into the single
    weekly job the refusal message promises. */
 const AUTO_MAX_BY_PLAN={free:0,pro:5,elite:25,ultra:100};
+
+/* WHAT "PARALLEL AGENTS" WAS SELLING, AND WHAT IS ACTUALLY TIERED.
+
+   The comparison table read: Free "-", Pro "Limited", Elite "Up to 5", Ultra
+   "Unlimited". Nothing in the Worker caps how many agents run at once, at any
+   tier - so Pro and Elite already had what Ultra was sold as having, and the
+   headline reason to pay $125 more was fiction.
+
+   It was never a spend hole. Every agent's model calls go through the atomic
+   per-account meter, so somebody running twenty at once simply burns their own
+   allowance faster. What it cost was the reason to upgrade.
+
+   Not fixed by adding a concurrency cap. That would REMOVE capability from
+   accounts that have it today, to make a table honest, for no margin gain -
+   and concurrency limits exist to protect infrastructure, which here is already
+   protected by the per-account meter and the global daily ceiling.
+
+   Fixed by selling the throughput tier that is real and already enforced:
+   PLAN_LIMITS.rpm, checked atomically through the Durable Object on every
+   request. Mirrored here the same way the automation count is, with a test that
+   lifts both and compares what they answer. */
+const PLAN_RPM={free:8,pro:20,elite:40,ultra:80};
+
+/* THE MULTIPLIER WAS UNDERSELLING BY FORTY PERCENT.
+
+   The page advertised 5x / 20x / 50x against Free. PLAN_LIMITS.monthTokens
+   delivers 7.2x / 28x / 72x. Every tier over-delivers, so there was never any
+   exposure - the page was simply quoting a number nobody had recomputed since
+   the allowances moved, at the moment somebody decides whether to pay.
+
+   Computed from the allowance now, and rounded DOWN to a round number. Down,
+   because an advertised multiplier is a promise: an exact figure would drop
+   visibly the next time the allowances are tuned, while a rounded-down one has
+   headroom built in. 7.2 becomes 7, 28 becomes 25, 72 becomes 70.
+
+   Mirrored from the Worker with a test comparing both tables, like the
+   automation count and the throughput limit. */
+const PLAN_MONTH_TOKENS={free:325000,pro:2340000,elite:9100000,ultra:23400000};
+function _usageMultiplier(p){
+  const base=PLAN_MONTH_TOKENS.free, mine=PLAN_MONTH_TOKENS[p];
+  if(!base||!mine) return 0;
+  const raw=mine/base;
+  /* Round down to something a person can hold in their head: whole numbers
+     below ten, multiples of five above it. */
+  return raw<10 ? Math.floor(raw) : Math.floor(raw/5)*5;
+}
+function _multLabel(p){ const m=_usageMultiplier(p); return m>1 ? m+'\u00d7' : '1\u00d7'; }
+function _rpmForPlan(p){
+  if(p==='team') return PLAN_RPM.elite;      // a seat carries Elite capability
+  if(p==='custom') return PLAN_RPM.elite;    // the tier a Custom plan ranks at
+  return PLAN_RPM[p]||PLAN_RPM.free;
+}
+/* Two forms, because a table cell and a sentence want different things. The
+   automation row taught this the first time: with the row already labelled
+   "Scheduled & background jobs", printing "25 scheduled jobs" in every cell
+   says it twice. Same here. */
+function _rpmCell(p){ return String(_rpmForPlan(p)); }
+function _rpmLabel(p){ return _rpmForPlan(p)+' requests a minute'; }
 const AUTO_MAX_PER_USER=100;
 function _autoMaxForPlan(p,seats){
   if(p==='team') return Math.min(AUTO_MAX_PER_USER, 5*(Number(seats)||TEAM_SEAT_MIN));
@@ -13239,7 +13353,7 @@ function _preopenPay(){
       try{ w.document.write('<!doctype html><meta charset="utf-8"><title>Opening secure checkout…</title>'+
         '<body style="margin:0;font:15px/1.6 system-ui,-apple-system,Segoe UI,sans-serif;color:#111;background:#fff;display:flex;align-items:center;justify-content:center;height:100vh">'+
         '<div style="text-align:center"><div style="font-weight:600;margin-bottom:6px">Opening secure checkout…</div>'+
-        '<div style="opacity:.65;font-size:13px">One moment - do not close this tab.</div></div>'); }catch(e){}
+        '<div style="opacity:.65;font-size:var(--t-base)">One moment - do not close this tab.</div></div>'); }catch(e){}
     }
     return w||null;
   }catch(e){ return null; }
@@ -15411,7 +15525,7 @@ function _crewQueueHTML(){
     if(!q.length) return '<div class="cw-empty">No background tasks running.</div>';
     var sc=s=>s==='done'?'#4ade80':s==='running'?'#5590ff':s==='failed'?'#ff4d4d':'#e0b341';
     var si=s=>s==='done'?'✓':s==='running'?'⟳':s==='failed'?'✕':'⏳';
-    return q.slice().reverse().map(function(t){return '<div class="cw-qrow"><span style="color:'+sc(t.status)+'">'+si(t.status)+'</span><span style="flex:1">'+escH(t.title||t.type||'Task')+'</span><span style="font-size:11px;color:var(--mu)">'+(t.status||'')+'</span></div>';}).join('');
+    return q.slice().reverse().map(function(t){return '<div class="cw-qrow"><span style="color:'+sc(t.status)+'">'+si(t.status)+'</span><span style="flex:1">'+escH(t.title||t.type||'Task')+'</span><span style="font-size:var(--t-xs);color:var(--mu)">'+(t.status||'')+'</span></div>';}).join('');
   }catch(e){ return '<div class="cw-empty">No background tasks running.</div>'; }
 }
 function cwToggle(id){
@@ -16101,9 +16215,35 @@ function _bIcoBtn(id, label, icon, extra){
   return '<button class="dev-ico" id="'+id+'" title="'+escH(label)+'" aria-label="'+escH(label)+'"'
     + (extra||'') + '>'+_bico(icon)+'</button>';
 }
+/* STUDIO WAS THE ONLY BUILD SURFACE YOU COULD NOT CHOOSE AN ENGINE ON.
+
+   Every Studio generation and every refine is sent with _sectionModel('design').
+   That reads amv_secmodel_design, and until this bar existed NOTHING in the
+   product ever wrote it - _sectionModelSelect was called for 'code' and for
+   'debug' and for nothing else. So the design engine was pinned to its default
+   forever, on the one surface of three where a person could not change it. The
+   setting was wired at the read end and unreachable at the write end.
+
+   "New session" was missing the same way. Studio is a SESSION_KINDS entry and
+   _sessNew('studio') has always worked, but no caller ever passed 'studio' -
+   so designs accumulated in one project with no way to start a clean one, while
+   Dev and Lab each had the button.
+
+   Both now sit where the other two surfaces already keep them. That is the
+   AMV-D007 "one control, one place" win on this surface; merging the three
+   render functions is not (they share exactly one line of code between them,
+   every piece of shared chrome having already been extracted into the helpers
+   above, so folding them together would produce one larger function with the
+   same three branches).
+
+   The markup class stays `dev-bar` for design mode rather than gaining a
+   `studio-bar` twin. It is the standard build bar, badly named; a third class
+   would mean copying its responsive rules a third time, which is the
+   duplication this work exists to remove. */
 function _buildBarHTML(mode){
   const isLab = mode === 'lab';
-  const badge = isLab ? 'Lab' : 'Dev';
+  const isDesign = mode === 'design';
+  const badge = isLab ? 'Lab' : isDesign ? 'Studio' : 'Dev';
   const left = isLab
     ? '<select id="lab-lang" class="lab-lang-sel" aria-label="Language">'
         + '<option value="js">JavaScript</option><option value="python">Python</option>'
@@ -16111,6 +16251,9 @@ function _buildBarHTML(mode){
         + _sectionModelSelect('debug','lab-model')
         + '<span class="lab-count" id="lab-count"></span>'
         + '<span class="sec-usage-note" id="lab-usage-note"></span>'
+    : isDesign
+    ? _sectionModelSelect('design','studio-model')
+        + '<span class="sec-usage-note" id="studio-usage-note"></span>'
     : _sectionModelSelect('code','dev-model')
         + '<span class="sec-usage-note" id="dev-usage-note"></span>';
 
@@ -16118,7 +16261,9 @@ function _buildBarHTML(mode){
      over, then the actions that operate on what is loaded. Dev's paperclip is
      gone - the tray is what Lab already used and what the same job should look
      like on both. */
-  const right = isLab
+  const right = isDesign
+    ? _bIcoBtn('studio-new','Start a new Studio project','fresh')
+    : isLab
     ? _bIcoBtn('lab-upload-top','Upload code files','add')
       + _bIcoBtn('lab-new','New session','fresh')
       + _bIcoBtn('lab-agents','Run agents on this code','agents')
@@ -16336,6 +16481,8 @@ function renderDesignView(){
   vc.innerHTML = `<div class="sv fi"><div class="dsn-wrap">
     ${_buildEntryHeadHTML('studio','What should we make?',
       'Describe what you want and AMV creates it on a live canvas, then refines it as you chat. Or switch above to build a running app, or work on code you already have.')}
+    ${_buildBarHTML('design')}
+
     <section class="dsn-hero">
       <div class="dsn-input-wrap">
         <textarea id="dsn-prompt" rows="1" placeholder="A sleek dark pricing page for an AI startup, three tiers, purple accents&hellip;"></textarea>
@@ -16369,6 +16516,19 @@ function renderDesignView(){
     ${_ownedMarketHTML('studio')}
   </div></div>`;
   _wireBuildModes(vc);
+  /* The two controls Studio never had. Both do exactly what their Dev and Lab
+     twins do, against the section this surface actually sends. */
+  on($('studio-model'),'change',function(){
+    _setSectionModel('design', this.value);
+    toast('Design model set to '+MODELS[this.value].label,'info',2500);
+  });
+  on($('studio-new'),'click',()=>{
+    _sessNew('studio');
+    _STUDIO.html=''; _STUDIO.prompt=''; _STUDIO.history=[];
+    _STUDIO.artifacts=[]; _STUDIO.activeId='';
+    renderDesignView();
+    toast('New Studio project','info',2000);
+  });
   // auto-grow the hero textarea
   const ta=$('dsn-prompt');
   if(ta){ on(ta,'input',()=>{ ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,220)+'px'; }); }
@@ -16463,7 +16623,12 @@ function _studioShowCanvas(brief){
       ${_resultBarHTML({ id:'studio-rb', statusId:'studio-status',
         tabs:[{id:'studio-frame-t',key:'preview',label:'Preview'},
               {id:'studio-code',key:'code',label:'Code'}],
-        actions: _vpSwitchHTML('studio-vp') })}
+        /* The engine picker is here as well as on Studio home because refines
+           are sent with _sectionModel('design') too, and the canvas is where
+           refining happens. Dev and Lab need only one because their shell never
+           leaves the screen; Studio replaces the whole view with the canvas.
+           Two mount points, one setting, one helper - not two settings. */
+        actions: _sectionModelSelect('design','studio-model-c') + _vpSwitchHTML('studio-vp') })}
       <div class="studio-stage-inner" id="studio-stage-inner"><iframe id="studio-frame" class="studio-frame" sandbox="allow-scripts"></iframe></div>
       <div class="studio-code-body" id="studio-code-body" style="display:none"><pre class="studio-code-pre"><code id="studio-code-text"></code></pre></div>
     </div>
@@ -16475,6 +16640,10 @@ function _studioShowCanvas(brief){
      canvas actually comes into being. Dev and Lab do not have this problem
      because their shells exist from the first render. */
   try{ if(typeof _mountMobilePaneToggle==='function') _mountMobilePaneToggle('studio'); }catch(e){}
+  on($('studio-model-c'),'change',function(){
+    _setSectionModel('design', this.value);
+    toast('Design model set to '+MODELS[this.value].label,'info',2500);
+  });
   on($('studio-back'),'click',()=>setTab('studio'));
   on($('studio-refine-go'),'click',_studioRefine);
   on($('studio-add'),'click',_studioAddPrompt);
@@ -16529,7 +16698,7 @@ function _studioAddPrompt(){
   const r=$('ovr'); if(!r) return;
   r.innerHTML='<div class="ov" id="sa-bg"><div class="ob" style="max-width:440px"><button class="oc" data-dact="closeOvr">×</button>'+
     '<h2 style="margin-bottom:6px">Add a design</h2><p class="ob-sub" style="margin-bottom:12px">Describe another page, screen, slide deck, or graphic. It joins this project so your whole set stays consistent.</p>'+
-    '<textarea id="sa-brief" rows="3" placeholder="e.g. \'an about page matching this style\' or \'a pitch deck of 6 slides\'" style="width:100%;font-size:13px"></textarea>'+
+    '<textarea id="sa-brief" rows="3" placeholder="e.g. \'an about page matching this style\' or \'a pitch deck of 6 slides\'" style="width:100%;font-size:var(--t-base)"></textarea>'+
     '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px"><button class="btn bs" data-dact="closeOvr">Cancel</button><button class="btn bp" id="sa-go">Design it</button></div></div></div>';
   onBackdrop($('sa-bg'),closeOvr);
   const go=()=>{ const v=$('sa-brief')?.value.trim(); if(!v){ toast('Describe the design','error'); return; } closeOvr(); _studioCreate(v); };
@@ -16744,7 +16913,7 @@ function openDNA(){
     <div class="dna-head">
       <div><h2>Design DNA</h2><p>Your reusable style guide. Set it once - every design AMV makes follows it.</p></div>
       <div style="display:flex;align-items:center;gap:4px">
-        <button class="dna-x" id="dna-help" title="What is this?" style="font-size:15px">?</button>
+        <button class="dna-x" id="dna-help" title="What is this?" style="font-size:calc(15px * var(--fs-s))">?</button>
         <button class="dna-x" id="dna-x">✕</button>
       </div>
     </div>
@@ -17187,11 +17356,11 @@ function _devConnectVSCode(){
   const r=$('ovr'); if(!r) return;
   r.innerHTML='<div class="ov" id="vsc-bg"><div class="tp-modal" style="max-width:480px">'+
     '<button class="dna-x" id="vsc-x" style="position:absolute;top:14px;right:14px">\u2715</button>'+
-    '<h2 style="font-family:var(--fdisplay);font-weight:500;font-size:21px;margin:0 0 6px">Use AMV in VS Code</h2>'+
-    '<p style="font-size:13px;color:var(--mu);line-height:1.6;margin:0 0 18px">Run these two commands in your project folder. That\u2019s it - AMV opens in your editor and can read, write, and run your code.</p>'+
+    '<h2 style="font-family:var(--fdisplay);font-weight:500;font-size:calc(21px * var(--fs-s));margin:0 0 6px">Use AMV in VS Code</h2>'+
+    '<p style="font-size:var(--t-base);color:var(--mu);line-height:1.6;margin:0 0 18px">Run these two commands in your project folder. That\u2019s it - AMV opens in your editor and can read, write, and run your code.</p>'+
     '<div class="vsc-cmd"><code>npm install -g @amv/cli</code><button class="vsc-copy" data-c="npm install -g @amv/cli">Copy</button></div>'+
     '<div class="vsc-cmd" style="margin-top:8px"><code>amv code .</code><button class="vsc-copy" data-c="amv code .">Copy</button></div>'+
-    '<p style="font-size:11px;color:var(--dim);margin:16px 0 0;line-height:1.5">Your code stays on your machine - the CLI just links this account to your editor.</p>'+
+    '<p style="font-size:var(--t-xs);color:var(--dim);margin:16px 0 0;line-height:1.5">Your code stays on your machine - the CLI just links this account to your editor.</p>'+
   '</div></div>';
   const close=()=>{ r.innerHTML=''; };
   onBackdrop($('vsc-bg'),close); on($('vsc-x'),'click',close);
@@ -17538,7 +17707,7 @@ function _errAskToken(msg){
     '<div class="share-title">Admin access</div>'+
     '<p class="share-sub">'+(msg?escH(msg)+' ':'')+'Enter your ADMIN_TOKEN (the secret you set on the Worker) to see what\u2019s breaking for your users.</p>'+
     '<input id="er-tok" class="inp" type="password" placeholder="ADMIN_TOKEN" autocomplete="off">'+
-    '<p class="share-sub" style="margin-top:8px;font-size:11px">Kept in memory for this tab only - never written to this device.</p>'+
+    '<p class="share-sub" style="margin-top:8px;font-size:var(--t-xs)">Kept in memory for this tab only - never written to this device.</p>'+
     '<div class="share-actions">'+
       '<button class="btn bp" id="er-go">View errors</button>'+
       '<button class="btn bs" id="er-x">Cancel</button>'+
@@ -18821,8 +18990,8 @@ function _ctxRenderMeter(hostId, kind){
 async function _ctxHandoffFlow(kind){
   const r=$('ovr'); if(!r) return;
   r.innerHTML='<div class="ovr-bg"><div class="ovr-card" style="max-width:460px">'+
-    '<div style="font-size:15px;font-weight:600;margin-bottom:6px">Carrying your context over\u2026</div>'+
-    '<div style="font-size:13px;color:var(--mu);line-height:1.6" id="ctx-step">Compressing everything important from this '+(kind==='dev'?'session':'chat')+'\u2026</div>'+
+    '<div style="font-size:calc(15px * var(--fs-s));font-weight:600;margin-bottom:6px">Carrying your context over\u2026</div>'+
+    '<div style="font-size:var(--t-base);color:var(--mu);line-height:1.6" id="ctx-step">Compressing everything important from this '+(kind==='dev'?'session':'chat')+'\u2026</div>'+
     '<div class="ctx-bar" style="margin-top:14px"><div class="ctx-fill" id="ctx-anim" style="width:15%"></div></div>'+
   '</div></div>';
   r.classList.add('on');
@@ -18891,24 +19060,24 @@ function openHandoffManager(){
         '<div class="ho-row-l"><div class="ho-row-t">'+escH(h.title||'Session')+'</div>'+
           '<div class="ho-row-m">'+escH(h.kind==='dev'?'Dev session':'Chat')+' \u00b7 '+new Date(h.at).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})+'</div></div>'+
         '<div class="ho-row-r">'+
-          '<button class="btn bs" data-ho-dl="'+escH(h.id)+'" style="font-size:11.5px">Download</button>'+
-          '<button class="btn bp" data-ho-use="'+escH(h.id)+'" style="font-size:11.5px">Resume</button>'+
+          '<button class="btn bs" data-ho-dl="'+escH(h.id)+'" style="font-size:var(--t-sm)">Download</button>'+
+          '<button class="btn bp" data-ho-use="'+escH(h.id)+'" style="font-size:var(--t-sm)">Resume</button>'+
         '</div></div>').join('')
     : '<div class="ho-empty">No handoffs yet. When a chat or Dev session fills up, AMV creates one automatically.</div>';
   r.innerHTML='<div class="ovr-bg" id="ho-bg"><div class="ovr-card" style="max-width:560px">'+
-    '<div style="font-size:16px;font-weight:600;margin-bottom:4px">Context handoffs</div>'+
-    '<div style="font-size:12.5px;color:var(--mu);line-height:1.6;margin-bottom:16px">A handoff is a compressed snapshot of a conversation - the goal, every decision, the current state, and the next steps. Load one into a fresh chat and AMV picks up exactly where you left off.</div>'+
+    '<div style="font-size:var(--t-lg);font-weight:600;margin-bottom:4px">Context handoffs</div>'+
+    '<div style="font-size:var(--t-sm);color:var(--mu);line-height:1.6;margin-bottom:16px">A handoff is a compressed snapshot of a conversation - the goal, every decision, the current state, and the next steps. Load one into a fresh chat and AMV picks up exactly where you left off.</div>'+
     '<div class="ho-list">'+rows+'</div>'+
     '<div class="ho-paste">'+
       '<label class="lbl">Paste a handoff</label>'+
-      '<textarea id="ho-paste-in" rows="3" placeholder="Paste an AMVCTX1:\u2026 handoff here (or the contents of a .amvctx file)" style="width:100%;resize:vertical;font-family:var(--mn,monospace);font-size:11.5px"></textarea>'+
+      '<textarea id="ho-paste-in" rows="3" placeholder="Paste an AMVCTX1:\u2026 handoff here (or the contents of a .amvctx file)" style="width:100%;resize:vertical;font-family:var(--mn,monospace);font-size:var(--t-sm)"></textarea>'+
       '<div style="display:flex;gap:8px;margin-top:9px">'+
-        '<button class="btn bs" id="ho-file-btn" style="font-size:12px">Load a .amvctx file</button>'+
-        '<button class="btn bp" id="ho-paste-go" style="font-size:12px">Resume from this handoff</button>'+
+        '<button class="btn bs" id="ho-file-btn" style="font-size:var(--t-sm)">Load a .amvctx file</button>'+
+        '<button class="btn bp" id="ho-paste-go" style="font-size:var(--t-sm)">Resume from this handoff</button>'+
       '</div>'+
       '<input type="file" id="ho-file" accept=".amvctx,.txt" style="display:none">'+
     '</div>'+
-    '<div style="display:flex;justify-content:flex-end;margin-top:16px"><button class="btn bs" id="ho-close" style="font-size:12px">Close</button></div>'+
+    '<div style="display:flex;justify-content:flex-end;margin-top:16px"><button class="btn bs" id="ho-close" style="font-size:var(--t-sm)">Close</button></div>'+
   '</div></div>';
   r.classList.add('on');
   on($('ho-close'),'click',closeOvr);
@@ -19068,16 +19237,16 @@ function renderHandoffView(){
       <div class="ss2">
         <h3>Hand something off</h3>
         <div style="display:flex;flex-direction:column;gap:12px">
-          <div><label class="lbl" style="font-size:11px;color:var(--mu)">What are you handing off?</label>
-            <input id="ho-title" placeholder="e.g. Finish the Q3 report intro" style="width:100%;background:var(--glass);border:1px solid var(--glass-bd);border-radius:var(--r-md);padding:12px;color:var(--tx);font-family:var(--fn);font-size:14px"></div>
-          <div><label class="lbl" style="font-size:11px;color:var(--mu)">The work itself - paste it here</label>
-            <textarea id="ho-ctx" placeholder="Paste the actual content the next person (or the agent) should work on: the draft, the code, the data, the email thread, the brief - plus anything they need to know to continue. This is the baton they pick up." style="width:100%;min-height:220px;background:var(--glass);border:1px solid var(--glass-bd);border-radius:var(--r-md);padding:12px;color:var(--tx);font-family:var(--mn,ui-monospace,monospace);font-size:13px;line-height:1.6;resize:vertical;tab-size:2"></textarea>
+          <div><label class="lbl" style="font-size:var(--t-xs);color:var(--mu)">What are you handing off?</label>
+            <input id="ho-title" placeholder="e.g. Finish the Q3 report intro" style="width:100%;background:var(--glass);border:1px solid var(--glass-bd);border-radius:var(--r-md);padding:12px;color:var(--tx);font-family:var(--fn);font-size:var(--t-md)"></div>
+          <div><label class="lbl" style="font-size:var(--t-xs);color:var(--mu)">The work itself - paste it here</label>
+            <textarea id="ho-ctx" placeholder="Paste the actual content the next person (or the agent) should work on: the draft, the code, the data, the email thread, the brief - plus anything they need to know to continue. This is the baton they pick up." style="width:100%;min-height:220px;background:var(--glass);border:1px solid var(--glass-bd);border-radius:var(--r-md);padding:12px;color:var(--tx);font-family:var(--mn,ui-monospace,monospace);font-size:var(--t-base);line-height:1.6;resize:vertical;tab-size:2"></textarea>
             <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
-              <button class="btn bs" data-dact="_hoPickChat" style="font-size:11.5px">Pull in your work…</button>
-              <span style="font-size:11px;color:var(--mu);align-self:center">a conversation, a design, a project or some code - or just paste anything above</span>
+              <button class="btn bs" data-dact="_hoPickChat" style="font-size:var(--t-sm)">Pull in your work…</button>
+              <span style="font-size:var(--t-xs);color:var(--mu);align-self:center">a conversation, a design, a project or some code - or just paste anything above</span>
             </div></div>
-          <div><label class="lbl" style="font-size:11px;color:var(--mu)">Hand off to</label>
-            <input id="ho-to" placeholder="teammate@email.com  - or type: crew" style="width:100%;background:var(--glass);border:1px solid var(--glass-bd);border-radius:var(--r-md);padding:12px;color:var(--tx);font-family:var(--fn);font-size:14px"></div>
+          <div><label class="lbl" style="font-size:var(--t-xs);color:var(--mu)">Hand off to</label>
+            <input id="ho-to" placeholder="teammate@email.com  - or type: crew" style="width:100%;background:var(--glass);border:1px solid var(--glass-bd);border-radius:var(--r-md);padding:12px;color:var(--tx);font-family:var(--fn);font-size:var(--t-md)"></div>
           <button class="btn bp" data-dact="hoSend" style="align-self:flex-start">Send handoff</button>
         </div>
       </div>
@@ -19175,7 +19344,7 @@ function _hoPickChat(){
   r.innerHTML='<div class="ov" id="hopick-bg"><div class="ob hopick-modal" style="max-width:520px">'+
     '<button class="oc" data-dact="closeOvr">×</button>'+
     '<h2 style="margin:0 0 4px">Pull in your work</h2>'+
-    '<p style="font-size:12.5px;color:var(--mu);margin:0 0 14px">A conversation, a design, a project or some code. '+
+    '<p style="font-size:var(--t-sm);color:var(--mu);margin:0 0 14px">A conversation, a design, a project or some code. '+
       'The actual content comes across, not a description of it.</p>'+
     (sessRows?'<div class="hopick-h">Designs, projects and code</div><div class="hopick-list">'+sessRows+'</div>':'')+
     (chatRows?'<div class="hopick-h">Conversations</div><div class="hopick-list">'+chatRows+'</div>':'')+
@@ -19364,7 +19533,7 @@ function renderPlansView(){
       _teamPlanBanner(true)+
       _customPlanBanner(true)+
       '<p class="px-note" style="display:none">Prices are in US dollars. Your local-currency amount is an estimate for convenience - you are charged the same value wherever you are, so there are no cheaper prices by country.</p>'+
-      '<div class="plans-compare-row"><button class="btn bs" id="plans-compare" style="font-size:12.5px">Compare all plans in detail \u2192</button></div>'+
+      '<div class="plans-compare-row"><button class="btn bs" id="plans-compare" style="font-size:var(--t-sm)">Compare all plans in detail \u2192</button></div>'+
       '<div class="trust-bar"><div class="trust-badges">'+
         _trustBadge('<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>','Bank-grade encryption','256-bit TLS on every request')+
         _trustBadge('<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/>','Secure payments','Processed by Stripe - we never see your card')+
@@ -19401,7 +19570,7 @@ const FAQS=[
      nothing kept in step with the cards or with checkout, so changing a price
      left the Help Center stating the old one to the person who came here to
      ask what it costs. */
-  {c:'billing', q:'How do plans and limits work?', a:'Free gives you daily usage to explore everything. Pro ($'+PLANS.pro.price+'/mo) unlocks autonomous agents, Mission Control, the app builder, connected accounts, and '+PLANS.pro.mult+' usage. Elite ($'+PLANS.elite.price+'/mo) adds our most capable Apex model first, one-click deploy, and parallel agents at '+PLANS.elite.mult+' usage. Ultra ($'+PLANS.ultra.price+'/mo) is '+PLANS.ultra.mult+' usage with unlimited parallel agents and team workspaces. Custom lets you set your own hard-capped budget. Limits are usage-based - just work without counting messages.'},
+  {c:'billing', q:'How do plans and limits work?', a:'Free gives you daily usage to explore everything. Pro ($'+PLANS.pro.price+'/mo) unlocks autonomous agents, Mission Control, the app builder, connected accounts, and '+PLANS.pro.mult+' usage. Elite ($'+PLANS.elite.price+'/mo) adds our most capable Apex model first, one-click deploy, and double Pro\u2019s throughput at '+PLANS.elite.mult+' usage. Ultra ($'+PLANS.ultra.price+'/mo) is '+PLANS.ultra.mult+' usage with the highest throughput AMV offers and team workspaces. Custom lets you set your own hard-capped budget. Limits are usage-based - just work without counting messages.'},
   {c:'privacy', q:'What is AI Memory?', a:'Memory lets AMV remember facts about you - your role, preferences, and context - and apply them automatically in every conversation. Add or edit them under Memory in the sidebar.'},
   {c:'chat', q:'How do I use voice input?', a:'Click the microphone in the chat input (best in Chrome and Edge), speak, and your words appear in the box. Press Enter to send.'},
   {c:'chat', q:'How do I rename, star, or delete chats?', a:'Hover a chat in the sidebar for quick actions, or right-click for the full menu including Export and Share.'},
@@ -19470,24 +19639,24 @@ function renderHelpView(){
       '<h2>Help Center</h2>'+
       '<p class="vsub">Pick a topic, or search if you already know the word for it.</p>'+
       '<div class="ss2">'+
-        '<input type="search" id="faq-search" placeholder="Search help…" aria-label="Search help" style="font-size:16px;margin-bottom:13px">'+
+        '<input type="search" id="faq-search" placeholder="Search help…" aria-label="Search help" style="font-size:var(--t-lg);margin-bottom:13px">'+
         chips+
         '<div id="faq-list">'+groups+'</div>'+
         '<p id="faq-none" class="hc-none" hidden>No answer matches that. Try a different word, or ask AMV below - it can answer from the product itself.</p>'+
       '</div>'+
       '<div class="ss2"><h3>Share feedback</h3>'+
-        '<p style="font-size:12.5px;color:var(--mu);margin-bottom:12px;line-height:1.55">Found a bug or have an idea? Tell us - real feedback shapes what we build next.</p>'+
+        '<p style="font-size:var(--t-sm);color:var(--mu);margin-bottom:12px;line-height:1.55">Found a bug or have an idea? Tell us - real feedback shapes what we build next.</p>'+
         '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
-          '<button class="btn bp" style="font-size:12px" data-dact="openFeedback" data-darg="bug">Report a bug</button>'+
-          '<button class="btn bs" style="font-size:12px" data-dact="openFeedback" data-darg="idea">Suggest a feature</button>'+
+          '<button class="btn bp" style="font-size:var(--t-sm)" data-dact="openFeedback" data-darg="bug">Report a bug</button>'+
+          '<button class="btn bs" style="font-size:var(--t-sm)" data-dact="openFeedback" data-darg="idea">Suggest a feature</button>'+
         '</div>'+
       '</div>'+
       '<div class="ss2"><h3>Still need help?</h3>'+
         '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
           supportButton({label:'Email Support',cls:'btn bp',subject:'AMV Support request'})+
-          '<button class="btn bs" style="font-size:12px" data-dact="askAmv" data-darg="">Ask AMV directly</button>'+
+          '<button class="btn bs" style="font-size:var(--t-sm)" data-dact="askAmv" data-darg="">Ask AMV directly</button>'+
         '</div>'+
-        (_supportEmail()?'<p style="font-size:11.5px;color:var(--mu);margin-top:10px">Or email us directly at <b style="color:var(--tx)">'+escH(_supportEmail())+'</b> - we reply within 24 hours.</p>':'')+
+        (_supportEmail()?'<p style="font-size:var(--t-sm);color:var(--mu);margin-top:10px">Or email us directly at <b style="color:var(--tx)">'+escH(_supportEmail())+'</b> - we reply within 24 hours.</p>':'')+
       '</div>'+
     '</div></div>';
   vc.querySelectorAll('.faq-q').forEach(q=>{
@@ -19738,12 +19907,12 @@ try{ window._loadReports=_loadReports; }catch(e){}
    explicit action because it puts a message in someone's inbox. */
 function _digestCardHTML(){
   return '<div class="ss2" style="margin-top:16px"><h3>Weekly digest</h3>'+
-    '<p style="font-size:12px;color:var(--mu);line-height:1.6;margin:-4px 0 12px">'+
+    '<p style="font-size:var(--t-sm);color:var(--mu);line-height:1.6;margin:-4px 0 12px">'+
       'These figures are emailed to the owner once a week, with the change since the week before. '+
       'It needs OWNER_EMAIL and an email provider configured on the Worker.</p>'+
     '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
-      '<button class="btn bs" id="fd-digest-preview" type="button" style="font-size:12px">Preview this week</button>'+
-      '<button class="btn bs" id="fd-digest-send" type="button" style="font-size:12px">Send it now</button>'+
+      '<button class="btn bs" id="fd-digest-preview" type="button" style="font-size:var(--t-sm)">Preview this week</button>'+
+      '<button class="btn bs" id="fd-digest-send" type="button" style="font-size:var(--t-sm)">Send it now</button>'+
     '</div>'+
     '<div id="fd-digest-out" class="fd-digest-out" role="status" aria-live="polite"></div>'+
   '</div>';
@@ -19817,14 +19986,14 @@ function _founderDashHTML(d){
     '<div class="ss2"><h3>Today\u2019s global spend</h3>'+
       '<div class="usage-bar"><div class="usage-bar-f" style="width:'+spendPct+'%;background:'+spendColor+'"></div></div>'+
       '<div class="usage-meta"><span>'+money(sp.today)+' of '+money(sp.cap)+' ('+spendPct+'%)</span><span>'+(sp.killed?'\u26D4 Service PAUSED':'\u2705 Service live')+'</span></div>'+
-      '<button class="btn '+(sp.killed?'bp':'bs')+'" id="fd-kill" style="margin-top:12px;font-size:12px">'+(sp.killed?'Resume service':'Pause service (kill switch)')+'</button>'+
+      '<button class="btn '+(sp.killed?'bp':'bs')+'" id="fd-kill" style="margin-top:12px;font-size:var(--t-sm)">'+(sp.killed?'Resume service':'Pause service (kill switch)')+'</button>'+
     '</div>'+
     // plan breakdown
     '<div class="ss2"><h3>Users by plan</h3><div class="fd-plans">'+
       ['free','pro','elite','ultra','custom'].map(p=>'<div class="fd-plan"><div class="fd-plan-n">'+fmt(byPlan[p]||0)+'</div><div class="fd-plan-l">'+p+'</div></div>').join('')+
     '</div></div>'+
     // top spenders (abuse / margin watch)
-    '<div class="ss2"><h3>Top spenders this month <span style="font-weight:400;color:var(--mu);font-size:11px">(margin &amp; abuse watch)</span></h3>'+
+    '<div class="ss2"><h3>Top spenders this month <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(margin &amp; abuse watch)</span></h3>'+
       '<div class="fd-table"><div class="fd-row fd-head"><span>User</span><span>Plan</span><span>AI cost</span></div>'+rows+'</div>'+
     '</div>';
 }
@@ -19865,7 +20034,7 @@ function _openSettingsPicker(){
   }).join('');
   r.innerHTML='<div class="ov" id="setpick-bg"><div class="ob setpick-modal" style="max-width:460px">'+
     '<button class="oc" data-dact="closeOvr" aria-label="Close">×</button>'+
-    '<h2 style="margin:0 0 12px;font-size:18px">Settings</h2>'+
+    '<h2 style="margin:0 0 12px;font-size:calc(18px * var(--fs-s))">Settings</h2>'+
     '<div class="set-search-wrap setpick-searchwrap"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>'+
       '<input id="setpick-search" class="set-search" type="text" placeholder="Search settings…" autocomplete="off"></div>'+
     '<div class="setpick-list" id="setpick-list">'+rows+'</div></div></div>';
@@ -19985,12 +20154,12 @@ function _paintWidgetForm(body, cfg, base){
     .map(m=>'<option value="'+m[0]+'"'+(cfg.model===m[0]?' selected':'')+'>'+m[1]+'</option>').join('');
   body.innerHTML=
     '<div class="ss2"><h3>Your embed code</h3>'+
-      '<p style="font-size:12px;color:var(--mu);margin-bottom:10px;line-height:1.6">Paste this once, just before <code>&lt;/body&gt;</code> on any page. The chat bubble appears in the corner. Changes you save here apply everywhere instantly - no need to re-paste.</p>'+
-      '<div style="position:relative"><pre id="wg-snippet" style="background:var(--surface);border:1px solid var(--hair);border-radius:8px;padding:12px 12px;font-size:11.5px;overflow:auto;margin:0;white-space:pre-wrap;word-break:break-all"><code>'+escH(snippet)+'</code></pre></div>'+
+      '<p style="font-size:var(--t-sm);color:var(--mu);margin-bottom:10px;line-height:1.6">Paste this once, just before <code>&lt;/body&gt;</code> on any page. The chat bubble appears in the corner. Changes you save here apply everywhere instantly - no need to re-paste.</p>'+
+      '<div style="position:relative"><pre id="wg-snippet" style="background:var(--surface);border:1px solid var(--hair);border-radius:8px;padding:12px 12px;font-size:var(--t-sm);overflow:auto;margin:0;white-space:pre-wrap;word-break:break-all"><code>'+escH(snippet)+'</code></pre></div>'+
       '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">'+
-        '<button class="btn bp" id="wg-copy" style="font-size:12px">Copy code</button>'+
-        '<button class="btn" id="wg-preview" style="font-size:12px">Preview widget</button>'+
-        '<span style="font-size:11px;color:var(--mu);align-self:center">Site key: <code>'+escH(cfg.key)+'</code></span>'+
+        '<button class="btn bp" id="wg-copy" style="font-size:var(--t-sm)">Copy code</button>'+
+        '<button class="btn" id="wg-preview" style="font-size:var(--t-sm)">Preview widget</button>'+
+        '<span style="font-size:var(--t-xs);color:var(--mu);align-self:center">Site key: <code>'+escH(cfg.key)+'</code></span>'+
       '</div>'+
     '</div>'+
     '<div class="ss2"><h3>Appearance</h3>'+
@@ -20003,12 +20172,12 @@ function _paintWidgetForm(body, cfg, base){
     '<div class="ss2"><h3>Behavior</h3>'+
       '<div class="sf">'+
         '<div><label class="lbl">AI model</label><select id="wg-model" class="inp">'+modelOpts+'</select></div>'+
-        '<div><label class="lbl">Instructions (system prompt) - tells the AI how to behave and what it knows</label><textarea id="wg-sys" rows="4" style="font-family:inherit;font-size:13px" placeholder="You are a helpful assistant for [your company]\u2026">'+escH(cfg.systemPrompt||'')+'</textarea></div>'+
+        '<div><label class="lbl">Instructions (system prompt) - tells the AI how to behave and what it knows</label><textarea id="wg-sys" rows="4" style="font-family:inherit;font-size:var(--t-base)" placeholder="You are a helpful assistant for [your company]\u2026">'+escH(cfg.systemPrompt||'')+'</textarea></div>'+
       '</div>'+
     '</div>'+
-    '<div class="ss2"><h3>Allowed domains <span style="font-weight:400;color:var(--mu);font-size:11px">(recommended)</span></h3>'+
-      '<p style="font-size:12px;color:var(--mu);margin-bottom:10px;line-height:1.6">Lock the widget to your own sites so nobody can embed it elsewhere and use your quota. One domain per line (e.g. <code>example.com</code>). Leave empty to allow any site '+(!(cfg.origins&&cfg.origins.length)?'- <b style="color:var(--red)">currently unrestricted</b>':'')+'.</p>'+
-      '<textarea id="wg-origins" rows="3" style="font-family:var(--mn);font-size:12px" placeholder="example.com&#10;www.example.com">'+escH((cfg.origins||[]).join('\n'))+'</textarea>'+
+    '<div class="ss2"><h3>Allowed domains <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(recommended)</span></h3>'+
+      '<p style="font-size:var(--t-sm);color:var(--mu);margin-bottom:10px;line-height:1.6">Lock the widget to your own sites so nobody can embed it elsewhere and use your quota. One domain per line (e.g. <code>example.com</code>). Leave empty to allow any site '+(!(cfg.origins&&cfg.origins.length)?'- <b style="color:var(--red)">currently unrestricted</b>':'')+'.</p>'+
+      '<textarea id="wg-origins" rows="3" style="font-family:var(--mn);font-size:var(--t-sm)" placeholder="example.com&#10;www.example.com">'+escH((cfg.origins||[]).join('\n'))+'</textarea>'+
     '</div>'+
     /* ZERO MEANS UNLIMITED, AND THE LABELS SAID "MAX".
        The server reads 0 on either of these as "no ceiling" - `dailyMsgCap > 0`
@@ -20018,7 +20187,7 @@ function _paintWidgetForm(body, cfg, base){
        remove the only per-widget limit on the owner's bill. Said plainly here,
        and warned about live, because a money control that means the opposite of
        how it reads is not a control. */
-    '<div class="ss2"><h3>Safety limits <span style="font-weight:400;color:var(--mu);font-size:11px">(protect your costs)</span></h3>'+
+    '<div class="ss2"><h3>Safety limits <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(protect your costs)</span></h3>'+
       '<div class="sf">'+
         '<div><label class="lbl">Max messages per day <span class="wg-hint">0 = no limit</span></label><input type="number" id="wg-msgcap" value="'+(cfg.dailyMsgCap||0)+'" min="0" max="100000"></div>'+
         '<div><label class="lbl">Max spend per day (USD) <span class="wg-hint">0 = no limit</span></label><input type="number" id="wg-spendcap" value="'+(cfg.dailySpendCapUSD||0)+'" min="0" max="1000" step="0.5"></div>'+
@@ -20027,10 +20196,10 @@ function _paintWidgetForm(body, cfg, base){
       '<div class="wg-capwarn" id="wg-capwarn" role="status" aria-live="polite"></div>'+
     '</div>'+
     '<div class="ss2"><div style="display:flex;align-items:center;justify-content:space-between">'+
-        '<div><div style="font-size:13px;font-weight:600">Widget enabled</div><div style="font-size:11px;color:var(--t2)">Turn the widget on or off across all your sites instantly.</div></div>'+
+        '<div><div style="font-size:var(--t-base);font-weight:600">Widget enabled</div><div style="font-size:var(--t-xs);color:var(--t2)">Turn the widget on or off across all your sites instantly.</div></div>'+
         '<label class="sw"><input type="checkbox" id="wg-enabled" '+(cfg.enabled?'checked':'')+'><span class="sw-sl"></span></label>'+
       '</div></div>'+
-    '<div style="display:flex;gap:8px"><button class="btn bp" id="wg-save" style="font-size:13px">Save changes</button><span id="wg-saved" style="font-size:12px;color:var(--green);align-self:center"></span></div>';
+    '<div style="display:flex;gap:8px"><button class="btn bp" id="wg-save" style="font-size:var(--t-base)">Save changes</button><span id="wg-saved" style="font-size:var(--t-sm);color:var(--green);align-self:center"></span></div>';
 
   /* What the current settings actually expose, recomputed as they are typed
      rather than discovered on a bill. An uncapped widget on an unrestricted
@@ -20332,7 +20501,7 @@ function _confirmDeleteAccount(){
         ? 'your account, chats, projects, automations, and subscription from AMV\u2019s servers'
         : 'all AMV data stored in this browser')+'. <b>This cannot be undone.</b></p>'+
       (connected?'':'<div class="fp-warn" style="margin-bottom:12px">\u26a0 You\u2019re not connected to the AMV engine, so only this browser\u2019s data will be cleared.</div>')+
-      '<p style="font-size:12.5px;color:var(--mu);margin-bottom:6px">Tip: you can <button class="lnk-inline" id="del-export">export your data</button> first.</p>'+
+      '<p style="font-size:var(--t-sm);color:var(--mu);margin-bottom:6px">Tip: you can <button class="lnk-inline" id="del-export">export your data</button> first.</p>'+
       '<label class="lbl">Type <b>DELETE</b> to confirm</label>'+
       '<input type="text" id="del-confirm" placeholder="DELETE" autocomplete="off">'+
       '<div style="display:flex;gap:9px;margin-top:14px">'+
@@ -20546,7 +20715,7 @@ function _activeSessionsHTML(){
         '<div class="sess-txt"><div class="sess-name">'+escH(browser+(os?' on '+os:''))+' <span class="sess-badge">This device</span></div>'+
           '<div class="sess-meta">Signed in \u00b7 since '+escH(when)+'</div></div>'+
       '</div>'+
-      '<button class="btn bs" id="signout-others" style="margin-top:12px;font-size:12px"'+(live?'':' disabled')+'>Sign out everywhere</button>'+
+      '<button class="btn bs" id="signout-others" style="margin-top:12px;font-size:var(--t-sm)"'+(live?'':' disabled')+'>Sign out everywhere</button>'+
       '<div class="set-sub" style="margin-top:8px">'+(live
         ? 'Ends every session on your account, including this one. You will be asked to sign in again.'
         : 'Needs the AMV backend connected. Without it there are no server sessions to end, so this would do nothing.')+'</div>'+
@@ -20623,7 +20792,7 @@ function _renderSkillsPane(pane){
       '<div class="skill-create">'+
         '<input class="inp" id="sk-name" placeholder="Skill name (e.g. \u201cLegal tone\u201d)" maxlength="60">'+
         '<textarea id="sk-instr" rows="2" placeholder="What should AMV do? e.g. \u201cWrite in a formal, precise tone and cite sources.\u201d" style="width:100%;resize:vertical;margin-top:8px"></textarea>'+
-        '<button class="btn bp" id="sk-add" style="margin-top:8px;font-size:12px">Create skill</button>'+
+        '<button class="btn bp" id="sk-add" style="margin-top:8px;font-size:var(--t-sm)">Create skill</button>'+
       '</div>'+
     '</div>'+
     '<div class="ss2"><h3>Presets</h3>'+
@@ -20739,11 +20908,11 @@ function _renderSetPaneInner(only, into){
         '<div style="display:flex;align-items:center;gap:17px;margin-bottom:16px;flex-wrap:wrap">'+
           '<div style="position:relative;flex-shrink:0">'+
             '<div id="pfp-c" style="width:72px;height:72px;border-radius:50%;background:var(--accent-soft);display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid rgba(255,255,255,.1);cursor:pointer;transition:background-color .2s,border-color .2s,color .2s,box-shadow .2s,transform .2s,opacity .2s">'+pfpHtml+'</div>'+
-            '<div id="pfp-edit" style="position:absolute;bottom:0;right:0;width:22px;height:22px;background:var(--s2);border:1px solid var(--bd);border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:11px;transition:background-color .12s,border-color .12s,color .12s,box-shadow .12s,transform .12s,opacity .12s">&#x270F;</div>'+
+            '<div id="pfp-edit" style="position:absolute;bottom:0;right:0;width:22px;height:22px;background:var(--s2);border:1px solid var(--bd);border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:var(--t-xs);transition:background-color .12s,border-color .12s,color .12s,box-shadow .12s,transform .12s,opacity .12s">&#x270F;</div>'+
             '<input type="file" id="pfp-fi" accept="image/*" style="display:none">'+
           '</div>'+
-          '<div><div style="font-size:16px;font-weight:700;letter-spacing:-.3px">'+escH(S.user&&S.user.name?S.user.name:'Guest')+'</div>'+
-          '<div style="font-size:12px;color:var(--t2);margin-top:2px">'+escH(S.user&&S.user.email?S.user.email:'')+'</div>'+
+          '<div><div style="font-size:var(--t-lg);font-weight:700;letter-spacing:-.3px">'+escH(S.user&&S.user.name?S.user.name:'Guest')+'</div>'+
+          '<div style="font-size:var(--t-sm);color:var(--t2);margin-top:2px">'+escH(S.user&&S.user.email?S.user.email:'')+'</div>'+
           '<span class="badge '+(S.user&&S.user.provider==='google'?'bb':'bg3')+'" style="margin-top:7px">'+(S.user&&S.user.provider==='google'?'Google Account':'Email Account')+'</span></div>'+
         '</div>'+
         '<div class="sf">'+
@@ -20761,10 +20930,10 @@ function _renderSetPaneInner(only, into){
             '<textarea id="s-instr" rows="3" placeholder="e.g. I primarily code in Python (not a beginner). Keep answers concise and skip the preamble." style="width:100%;resize:vertical;min-height:70px">'+escH(loadStr('amv_instructions')||'')+'</textarea>'+
             '<div class="lbl-help">AMV keeps these in mind across every chat and agent. Great for your role, preferences, and how you like answers.</div>'+
           '</div>'+
-          '<div id="acct-msg" style="display:none;font-size:12px;padding:7px 11px;border-radius:7px"></div>'+
+          '<div id="acct-msg" style="display:none;font-size:var(--t-sm);padding:7px 11px;border-radius:7px"></div>'+
           '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
-            '<button class="btn bp" id="save-profile" style="font-size:12px">Save changes</button>'+
-            '<button class="btn bs" id="rm-pfp" style="font-size:12px;'+(pfp?'':'opacity:.4;pointer-events:none')+'">Remove photo</button>'+
+            '<button class="btn bp" id="save-profile" style="font-size:var(--t-sm)">Save changes</button>'+
+            '<button class="btn bs" id="rm-pfp" style="font-size:var(--t-sm);'+(pfp?'':'opacity:.4;pointer-events:none')+'">Remove photo</button>'+
           '</div>'+
         '</div>'+
       '</div>'+
@@ -20820,11 +20989,11 @@ function _renderSetPaneInner(only, into){
       '<div class="set-title">Security</div>'+
       '<div class="set-sub">Manage your password and account security.</div>'+
       (S.user&&S.user.provider==='google'?
-        '<div class="ss2"><p style="font-size:13px;color:var(--t2)">Signed in with Google. Manage your password at <a href="https://myaccount.google.com" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">myaccount.google.com</a>.</p></div>':
+        '<div class="ss2"><p style="font-size:var(--t-base);color:var(--t2)">Signed in with Google. Manage your password at <a href="https://myaccount.google.com" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">myaccount.google.com</a>.</p></div>':
         '<div class="ss2"><h3>Password</h3>'+
           '<div class="br2"><div><div class="opt-name">Reset your password</div><div class="opt-desc">We\u2019ll send a secure reset link to '+escH((S.user&&S.user.email)||'your email')+'. No need to remember your current one.</div></div>'+
-          '<button class="btn bp" id="reset-pw-btn" style="font-size:12px;white-space:nowrap">Send reset link</button></div>'+
-          '<div id="pw-msg" style="display:none;font-size:12px;padding:9px 12px;border-radius:8px;margin-top:12px"></div>'+
+          '<button class="btn bp" id="reset-pw-btn" style="font-size:var(--t-sm);white-space:nowrap">Send reset link</button></div>'+
+          '<div id="pw-msg" style="display:none;font-size:var(--t-sm);padding:9px 12px;border-radius:8px;margin-top:12px"></div>'+
         '</div>')+
       /* Was a hardcoded "This browser - Active now" row wired to nothing. It is
          now the account's real event log; see 28-activity.js. */
@@ -20836,8 +21005,8 @@ function _renderSetPaneInner(only, into){
         '<div id="act-block"></div>'+
       '</div>'+
       '<div class="ss2"><h3>This device</h3>'+
-        '<div class="br2"><div><div style="font-size:13px;font-weight:500">Signed in on this browser</div><div style="font-size:11px;color:var(--t2);margin-top:2px">Signing out here leaves your other devices signed in.</div></div></div>'+
-        '<button class="btn bs" style="font-size:12px;margin-top:12px" data-dact="signOut">Sign out of this device</button>'+
+        '<div class="br2"><div><div style="font-size:var(--t-base);font-weight:500">Signed in on this browser</div><div style="font-size:var(--t-xs);color:var(--t2);margin-top:2px">Signing out here leaves your other devices signed in.</div></div></div>'+
+        '<button class="btn bs" style="font-size:var(--t-sm);margin-top:12px" data-dact="signOut">Sign out of this device</button>'+
       '</div>';
     _renderActivityBlock(document.getElementById('act-block'));
     on($('reset-pw-btn'),'click',async()=>{
@@ -20884,33 +21053,33 @@ function _renderSetPaneInner(only, into){
       '</div>'+
       // Your data
       '<div class="ss2"><h3>Your data</h3>'+
-        '<div class="prv-data-row"><div><div class="prv-pref-t">Export data</div><div class="prv-pref-s">Download everything AMV has for you as a JSON file.</div></div><button class="btn bs" id="prv-export" style="font-size:12px">Export data</button></div>'+
-        '<div class="prv-data-row"><div><div class="prv-pref-t">Shared chats</div><div class="prv-pref-s">Manage conversations you\u2019ve shared with a public link.</div></div><button class="btn bs" id="prv-shared" style="font-size:12px">Manage</button></div>'+
-        '<div class="prv-data-row"><div><div class="prv-pref-t">Memory preferences</div><div class="prv-pref-s">Control what AMV remembers about you across chats.</div></div><button class="btn bs" id="prv-memory" style="font-size:12px">Open memory</button></div>'+
-        '<div class="prv-data-row"><div><div class="prv-pref-t">Clear all chats</div><div class="prv-pref-s">Permanently delete your conversation history.</div></div><button class="btn bs" id="prv-clrchats" style="font-size:12px">Clear chats</button></div>'+
-        '<div class="prv-data-row"><div><div class="prv-pref-t" style="color:var(--red)">Delete all data</div><div class="prv-pref-s">Remove everything AMV has stored for you. This can\u2019t be undone.</div></div><button class="btn bd2" id="prv-clrall" style="font-size:12px">Delete everything</button></div>'+
+        '<div class="prv-data-row"><div><div class="prv-pref-t">Export data</div><div class="prv-pref-s">Download everything AMV has for you as a JSON file.</div></div><button class="btn bs" id="prv-export" style="font-size:var(--t-sm)">Export data</button></div>'+
+        '<div class="prv-data-row"><div><div class="prv-pref-t">Shared chats</div><div class="prv-pref-s">Manage conversations you\u2019ve shared with a public link.</div></div><button class="btn bs" id="prv-shared" style="font-size:var(--t-sm)">Manage</button></div>'+
+        '<div class="prv-data-row"><div><div class="prv-pref-t">Memory preferences</div><div class="prv-pref-s">Control what AMV remembers about you across chats.</div></div><button class="btn bs" id="prv-memory" style="font-size:var(--t-sm)">Open memory</button></div>'+
+        '<div class="prv-data-row"><div><div class="prv-pref-t">Clear all chats</div><div class="prv-pref-s">Permanently delete your conversation history.</div></div><button class="btn bs" id="prv-clrchats" style="font-size:var(--t-sm)">Clear chats</button></div>'+
+        '<div class="prv-data-row"><div><div class="prv-pref-t" style="color:var(--red)">Delete all data</div><div class="prv-pref-s">Remove everything AMV has stored for you. This can\u2019t be undone.</div></div><button class="btn bd2" id="prv-clrall" style="font-size:var(--t-sm)">Delete everything</button></div>'+
       '</div>'+
       (isAdmin()?(
-      '<div class="ss2"><h3>Analytics provider <span style="font-weight:400;color:var(--mu);font-size:11px">(operator setup)</span></h3>'+
-        '<div style="font-size:12px;color:var(--t2);line-height:1.7;margin-bottom:12px">Connect Google Analytics (GA4) or Plausible to measure real traffic. Enter your GA4 Measurement ID (starts with <code>G-</code>) or your Plausible site domain. Analytics only fire for visitors who accept analytics cookies.</div>'+
-        '<div style="display:flex;gap:8px;align-items:center"><input class="inp" id="prv-ga-id" placeholder="G-XXXXXXX  or  yoursite.com" value="'+escH(_analyticsId())+'" style="flex:1"><button class="btn bp" id="prv-ga-save" style="font-size:12px">Save</button></div>'+
+      '<div class="ss2"><h3>Analytics provider <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(operator setup)</span></h3>'+
+        '<div style="font-size:var(--t-sm);color:var(--t2);line-height:1.7;margin-bottom:12px">Connect Google Analytics (GA4) or Plausible to measure real traffic. Enter your GA4 Measurement ID (starts with <code>G-</code>) or your Plausible site domain. Analytics only fire for visitors who accept analytics cookies.</div>'+
+        '<div style="display:flex;gap:8px;align-items:center"><input class="inp" id="prv-ga-id" placeholder="G-XXXXXXX  or  yoursite.com" value="'+escH(_analyticsId())+'" style="flex:1"><button class="btn bp" id="prv-ga-save" style="font-size:var(--t-sm)">Save</button></div>'+
         /* "configured" was the whole status, and configured is not the same as
            running. The provider script is a third-party <script> and this page's
            Content-Security-Policy script-src allows neither of the two hosts, so
            an ID that is saved and consented to still measures nothing. Saying
            "configured" over that is the same failure as any other control that
            reports an outcome it did not check. */
-        '<div style="font-size:11px;color:var(--t2);margin-top:8px">Status: '+(_analyticsId()?('<span style="color:var(--grn)">configured</span> \u00b7 '+(/^G-/i.test(_analyticsId())?'Google Analytics':'Plausible')):'<span style="color:var(--mu)">not set</span>')+'</div>'+
+        '<div style="font-size:var(--t-xs);color:var(--t2);margin-top:8px">Status: '+(_analyticsId()?('<span style="color:var(--grn)">configured</span> \u00b7 '+(/^G-/i.test(_analyticsId())?'Google Analytics':'Plausible')):'<span style="color:var(--mu)">not set</span>')+'</div>'+
         (_analyticsId()&&_analyticsBlocked()
           ? '<div class="wg-capwarn on" style="margin-top:8px">Saved, but <b>nothing is being measured</b>. The provider\u2019s script was blocked before it loaded - this page\u2019s Content-Security-Policy does not list '+
             (/^G-/i.test(_analyticsId())?'googletagmanager.com':'plausible.io')+
             ', and an ad-blocker would do the same. Add the host to <code>script-src</code> (and its beacon host to <code>connect-src</code>) in index.html to switch it on, or leave analytics off.</div>'
           : '')+
       '</div>'+
-      (function(){ const f=_funnel(); const step=(l,n)=>'<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0"><span style="font-size:12.5px;color:var(--t2)">'+l+'</span><span style="font-size:14px;font-weight:600">'+(n||0)+'</span></div>';
+      (function(){ const f=_funnel(); const step=(l,n)=>'<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0"><span style="font-size:var(--t-sm);color:var(--t2)">'+l+'</span><span style="font-size:var(--t-md);font-weight:600">'+(n||0)+'</span></div>';
         const conv=(a,b)=>b?Math.round((a/b)*100):0;
-        return '<div class="ss2"><h3>Conversion funnel <span style="font-weight:400;color:var(--mu);font-size:11px">(this device)</span></h3>'+
-          '<div style="font-size:11px;color:var(--t2);margin-bottom:8px">First-party aggregate counts, tracked with no third party. Full cross-device funnels live in your analytics provider.</div>'+
+        return '<div class="ss2"><h3>Conversion funnel <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(this device)</span></h3>'+
+          '<div style="font-size:var(--t-xs);color:var(--t2);margin-bottom:8px">First-party aggregate counts, tracked with no third party. Full cross-device funnels live in your analytics provider.</div>'+
           step('Landing visits', f.visit)+
           '<div style="height:1px;background:var(--bd)"></div>'+
           step('Sign-ups'+(f.visit?' \u00b7 '+conv(f.signup,f.visit)+'%':''), f.signup)+
@@ -21030,10 +21199,10 @@ function _renderSetPaneInner(only, into){
          and the rest stays English - which is what somebody switching language
          actually sees, so it is said here rather than discovered. */
       (_aiBackendReady()
-        ? '<div class="ss2"><h3>The app itself</h3><p style="font-size:13px;color:var(--mu);line-height:1.65;margin:0">'+
+        ? '<div class="ss2"><h3>The app itself</h3><p style="font-size:var(--t-base);color:var(--mu);line-height:1.65;margin:0">'+
           'Every screen - chat, images, video, Studio, Dev, Lab, the marketplace, settings - switches with it. '+
           'The first screen you open in a new language takes a moment to come across, then it is remembered.</p></div>'
-        : '<div class="ss2"><h3>The app itself</h3><p style="font-size:13px;color:var(--mu);line-height:1.65;margin:0">'+
+        : '<div class="ss2"><h3>The app itself</h3><p style="font-size:var(--t-base);color:var(--mu);line-height:1.65;margin:0">'+
           'AMV\u2019s replies will be in your language straight away. Translating <b>the app\u2019s own screens</b> '+
           'needs the AMV engine connected - until then the common labels change and the rest stays in English '+
           'rather than being half-translated into something confusing.</p></div>')+
@@ -21077,7 +21246,7 @@ function _renderSetPaneInner(only, into){
       '<div id="fd-body"><div class="fd-loading">Loading platform stats\u2026</div></div>'+
       '<div id="fd-digest-host"></div>'+
       '<div class="fd-token-row"><input id="fd-token" type="password" autocomplete="off" placeholder="Admin token" class="inp" style="max-width:240px"/>'+
-        '<button class="btn bp" id="fd-load" style="font-size:12px">Load stats</button></div>'+
+        '<button class="btn bp" id="fd-load" style="font-size:var(--t-sm)">Load stats</button></div>'+
       '<div class="fd-note">Your admin token is set as the ADMIN_TOKEN secret on your Worker. It\u2019s never stored - paste it here each session.</div>';
     // Pre-fill from the session holder so the operator pastes it once per tab
     // rather than once per screen. Still never written to this device.
@@ -21146,12 +21315,12 @@ function _renderSetPaneInner(only, into){
       '<div class="set-title">Live / Backend</div>'+
       '<div class="set-sub">Connect AMV to your deployed backend so Crew jobs, approvals and Handoff work for real and across accounts. Leave blank to run in local demo mode.</div>'+
       '<div class="ss2"><h3>Backend URL</h3>'+
-        '<div style="display:flex;gap:8px"><input type="url" id="be-url" value="'+escH(liveBase)+'" placeholder="https://amv-ai-backend.your.workers.dev" style="flex:1;font-size:12px"><button class="btn bp" style="font-size:12px" data-dact="amvSaveBackend">Save</button></div>'+
-        '<p style="font-size:11px;color:var(--mu);margin-top:8px">'+(liveBase?('Status: <span style="color:#4ade80">configured</span>'+(tokenSet?' &middot; signed in':' &middot; not signed in')):'Status: local demo mode')+'</p>'+
+        '<div style="display:flex;gap:8px"><input type="url" id="be-url" value="'+escH(liveBase)+'" placeholder="https://amv-ai-backend.your.workers.dev" style="flex:1;font-size:var(--t-sm)"><button class="btn bp" style="font-size:var(--t-sm)" data-dact="amvSaveBackend">Save</button></div>'+
+        '<p style="font-size:var(--t-xs);color:var(--mu);margin-top:8px">'+(liveBase?('Status: <span style="color:#4ade80">configured</span>'+(tokenSet?' &middot; signed in':' &middot; not signed in')):'Status: local demo mode')+'</p>'+
       '</div>'+
       '<div class="ss2" style="margin-top:14px"><h3>Sign in to backend</h3>'+
-        '<p style="font-size:12px;color:var(--mu);margin:-4px 0 10px">Sign in with your AMV account email and password to sync this device. To use Google, sign in with Google on the main sign-in screen - it is verified server-side.</p>'+
-        '<div style="display:flex;flex-direction:column;gap:8px"><input type="email" id="be-email" value="'+escH((S.user&&S.user.email)||'')+'" placeholder="you@email.com" style="font-size:12px" autocomplete="username"><div style="display:flex;gap:8px"><input type="password" id="be-pass" placeholder="Your password" style="flex:1;font-size:12px" autocomplete="current-password"><button class="btn bp" style="font-size:12px" data-dact="amvBackendLogin">Connect</button></div></div>'+
+        '<p style="font-size:var(--t-sm);color:var(--mu);margin:-4px 0 10px">Sign in with your AMV account email and password to sync this device. To use Google, sign in with Google on the main sign-in screen - it is verified server-side.</p>'+
+        '<div style="display:flex;flex-direction:column;gap:8px"><input type="email" id="be-email" value="'+escH((S.user&&S.user.email)||'')+'" placeholder="you@email.com" style="font-size:var(--t-sm)" autocomplete="username"><div style="display:flex;gap:8px"><input type="password" id="be-pass" placeholder="Your password" style="flex:1;font-size:var(--t-sm)" autocomplete="current-password"><button class="btn bp" style="font-size:var(--t-sm)" data-dact="amvBackendLogin">Connect</button></div></div>'+
       '</div>';
   } else if(sp==='apikeys'){
     const liveBase=loadStr('amv_api_base')||'';
@@ -21163,10 +21332,10 @@ function _renderSetPaneInner(only, into){
         '<span class="conn-dot"></span>'+(connected?'Connected - AMV is ready':'Not connected - add your backend URL below')+
       '</div>'+
       '<div class="ss2"><h3>Backend URL</h3>'+
-        '<div class="sf"><div><label class="lbl">Your AMV Worker URL</label><input type="text" id="s-base" value="'+escH(liveBase)+'" placeholder="https://amv-backend.yourname.workers.dev" style="font-family:var(--mn);font-size:12px"></div>'+
+        '<div class="sf"><div><label class="lbl">Your AMV Worker URL</label><input type="text" id="s-base" value="'+escH(liveBase)+'" placeholder="https://amv-backend.yourname.workers.dev" style="font-family:var(--mn);font-size:var(--t-sm)"></div>'+
         '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'+
-          '<button class="btn bp" id="save-base" style="font-size:12px">Save &amp; connect</button>'+
-          '<button class="btn" id="test-base" style="font-size:12px">Test connection</button>'+
+          '<button class="btn bp" id="save-base" style="font-size:var(--t-sm)">Save &amp; connect</button>'+
+          '<button class="btn" id="test-base" style="font-size:var(--t-sm)">Test connection</button>'+
         '</div>'+
         '<div id="test-result" class="conn-test"></div></div>'+
       '</div>'+
@@ -21176,9 +21345,9 @@ function _renderSetPaneInner(only, into){
            instruction: the key is a Worker secret, and which provider is behind
            it is a deployment decision the operator has already made. This is the
            bundle every visitor downloads. */
-        '<p style="font-size:12.5px;color:var(--mu);line-height:1.6;margin:0">Your model key is a secret on the Worker, so it never reaches the browser:</p>'+
-        '<pre style="background:var(--surface);border:1px solid var(--hair);border-radius:8px;padding:10px;font-size:11.5px;overflow:auto;margin:8px 0 0"><code>wrangler secret put AMV_MODEL_KEY</code></pre>'+
-        '<p style="font-size:11.5px;color:var(--dim);line-height:1.6;margin:8px 0 0">Until it is set, AMV says so on every screen that needs it rather than failing quietly.</p>'+
+        '<p style="font-size:var(--t-sm);color:var(--mu);line-height:1.6;margin:0">Your model key is a secret on the Worker, so it never reaches the browser:</p>'+
+        '<pre style="background:var(--surface);border:1px solid var(--hair);border-radius:8px;padding:10px;font-size:var(--t-sm);overflow:auto;margin:8px 0 0"><code>wrangler secret put AMV_MODEL_KEY</code></pre>'+
+        '<p style="font-size:var(--t-sm);color:var(--dim);line-height:1.6;margin:8px 0 0">Until it is set, AMV says so on every screen that needs it rather than failing quietly.</p>'+
       '</div>';
     on($('save-base'),'click',()=>{
       const v=($('s-base')?.value||'').trim().replace(/\/$/,'');
@@ -21232,26 +21401,26 @@ function _renderSetPaneInner(only, into){
       '<div class="set-sub">Configure revenue collection and deployment.</div>'+
       (!S.sp&&!S.se?'<div class="wb">&#9888; Add your Stripe payment links to start collecting revenue.</div>':'')+
       '<div class="ss2"><h3>Stripe - card, Apple Pay &amp; Google Pay</h3>'+
-        '<p style="font-size:12px;color:var(--mu);margin-bottom:11px;line-height:1.6">The startup standard. Create a Payment Link at stripe.com &rarr; Payments &rarr; Payment Links. <b>Apple Pay and Google Pay appear automatically inside Stripe\u2019s checkout</b> - no extra setup. Clicking &ldquo;Card / Apple Pay&rdquo; opens your real Stripe checkout. Revenue goes straight to your Stripe account. Set each link\u2019s success URL to <code>yoursite.com/?paid=pro</code> (or <code>elite</code>) so the plan activates on return.</p>'+
+        '<p style="font-size:var(--t-sm);color:var(--mu);margin-bottom:11px;line-height:1.6">The startup standard. Create a Payment Link at stripe.com &rarr; Payments &rarr; Payment Links. <b>Apple Pay and Google Pay appear automatically inside Stripe\u2019s checkout</b> - no extra setup. Clicking &ldquo;Card / Apple Pay&rdquo; opens your real Stripe checkout. Revenue goes straight to your Stripe account. Set each link\u2019s success URL to <code>yoursite.com/?paid=pro</code> (or <code>elite</code>) so the plan activates on return.</p>'+
         '<div class="sf">'+
           '<div><label class="lbl">Pro Plan - $'+PLANS.pro.price+'/month</label><input type="url" id="s-sp" value="'+escH(S.sp||'')+'" placeholder="https://buy.stripe.com/…"></div>'+
           '<div><label class="lbl">Elite Plan - $'+PLANS.elite.price+'/month</label><input type="url" id="s-se" value="'+escH(S.se||'')+'" placeholder="https://buy.stripe.com/…"></div>'+
           '<div><label class="lbl">Stripe Customer Portal (subscription management)</label><input type="url" id="s-portal" value="'+escH(loadStr('amv_portal'))+'" placeholder="https://billing.stripe.com/p/…"></div>'+
-          '<button class="btn bp" id="save-stripe" style="align-self:flex-start;font-size:12px">Save Stripe Links</button>'+
+          '<button class="btn bp" id="save-stripe" style="align-self:flex-start;font-size:var(--t-sm)">Save Stripe Links</button>'+
         '</div>'+
       '</div>'+
       '<div class="ss2"><h3>Support email</h3>'+
-        '<p style="font-size:12px;color:var(--mu);margin-bottom:11px;line-height:1.6">The address your users reach you at. Once set, the <b>&ldquo;Email Support&rdquo;</b> buttons across the app (Help Center, About, legal) open a pre-filled email to this address. Leave blank and those buttons fall back to <b>&ldquo;Ask AMV directly&rdquo;</b> - never a broken link.</p>'+
+        '<p style="font-size:var(--t-sm);color:var(--mu);margin-bottom:11px;line-height:1.6">The address your users reach you at. Once set, the <b>&ldquo;Email Support&rdquo;</b> buttons across the app (Help Center, About, legal) open a pre-filled email to this address. Leave blank and those buttons fall back to <b>&ldquo;Ask AMV directly&rdquo;</b> - never a broken link.</p>'+
         '<div class="sf">'+
           '<div><label class="lbl">Support email address</label><input type="email" id="s-support" value="'+escH(_supportEmail())+'" placeholder="support@yourdomain.com" autocomplete="off"></div>'+
-          '<button class="btn bp" id="save-support" style="align-self:flex-start;font-size:12px">Save support email</button>'+
+          '<button class="btn bp" id="save-support" style="align-self:flex-start;font-size:var(--t-sm)">Save support email</button>'+
         '</div>'+
       '</div>'+
       '<div class="ss2"><h3>In-app card field (optional)</h3>'+
-        '<p style="font-size:12px;color:var(--mu);margin-bottom:11px;line-height:1.6">Prefer the card form inside AMV instead of redirecting? Add your Stripe <b>publishable</b> key (starts with <code>pk_</code>) to enable Stripe Elements - the card field is an isolated Stripe iframe, so card numbers never touch AMV. <b>Never paste a secret (sk_) key.</b></p>'+
+        '<p style="font-size:var(--t-sm);color:var(--mu);margin-bottom:11px;line-height:1.6">Prefer the card form inside AMV instead of redirecting? Add your Stripe <b>publishable</b> key (starts with <code>pk_</code>) to enable Stripe Elements - the card field is an isolated Stripe iframe, so card numbers never touch AMV. <b>Never paste a secret (sk_) key.</b></p>'+
         '<div class="sf">'+
-          '<div><label class="lbl">Stripe publishable key</label><input type="text" id="s-pk" value="'+escH(loadStr('amv_stripe_pk'))+'" placeholder="pk_live_…" style="font-family:var(--mn);font-size:12px"></div>'+
-          '<button class="btn bp" id="save-pk" style="align-self:flex-start;font-size:12px">Save key</button>'+
+          '<div><label class="lbl">Stripe publishable key</label><input type="text" id="s-pk" value="'+escH(loadStr('amv_stripe_pk'))+'" placeholder="pk_live_…" style="font-family:var(--mn);font-size:var(--t-sm)"></div>'+
+          '<button class="btn bp" id="save-pk" style="align-self:flex-start;font-size:var(--t-sm)">Save key</button>'+
         '</div>'+
       '</div>'+
       '<div class="ss2"><h3>PayPal &amp; Venmo</h3>'+
@@ -21262,11 +21431,11 @@ function _renderSetPaneInner(only, into){
            confirm a capture. The box was left over from a browser-side SDK
            flow that had to be removed for exactly that reason, and it read as
            the switch that turns PayPal on. */
-        '<p style="font-size:12px;color:var(--mu);margin-bottom:11px;line-height:1.6">PayPal and Venmo subscriptions are switched on with Worker secrets, not here: set <b>PAYPAL_CLIENT_ID</b>, <b>PAYPAL_SECRET</b> and <b>PAYPAL_WEBHOOK_ID</b> on your backend and the real PayPal checkout turns on for everyone. The links below are an optional fallback for a deployment with no backend connected - a hosted PayPal or Venmo page that takes the payment instead.</p>'+
+        '<p style="font-size:var(--t-sm);color:var(--mu);margin-bottom:11px;line-height:1.6">PayPal and Venmo subscriptions are switched on with Worker secrets, not here: set <b>PAYPAL_CLIENT_ID</b>, <b>PAYPAL_SECRET</b> and <b>PAYPAL_WEBHOOK_ID</b> on your backend and the real PayPal checkout turns on for everyone. The links below are an optional fallback for a deployment with no backend connected - a hosted PayPal or Venmo page that takes the payment instead.</p>'+
         '<div class="sf">'+
           '<div><label class="lbl">PayPal hosted link (optional fallback)</label><input type="url" id="s-ppl" value="'+escH((_payCfg().paypalLink)||'')+'" placeholder="https://www.paypal.com/…"></div>'+
           '<div><label class="lbl">Venmo hosted link (optional fallback)</label><input type="url" id="s-vml" value="'+escH((_payCfg().venmoLink)||'')+'" placeholder="https://venmo.com/…"></div>'+
-          '<button class="btn bp" id="save-wallets" style="align-self:flex-start;font-size:12px">Save PayPal / Venmo</button>'+
+          '<button class="btn bp" id="save-wallets" style="align-self:flex-start;font-size:var(--t-sm)">Save PayPal / Venmo</button>'+
         '</div>'+
       '</div>'+
       /* AMV-084: this list used to be assembled in the browser, which cannot
@@ -21275,7 +21444,7 @@ function _renderSetPaneInner(only, into){
          nothing about whether the server holds a key. It is now read from the
          server, which is the only thing that knows. */
       '<div class="ss2" style="background:rgba(35,209,139,.04);border-color:rgba(35,209,139,.15)"><h3 style="color:var(--green)">Go-Live status - what is actually switched on</h3>'+
-        '<p style="font-size:12px;color:var(--mu);margin:-4px 0 14px;line-height:1.6">Read from your Worker, not guessed here. Each line says what it turns on and how to set it. Values are never shown - only whether a secret exists.</p>'+
+        '<p style="font-size:var(--t-sm);color:var(--mu);margin:-4px 0 14px;line-height:1.6">Read from your Worker, not guessed here. Each line says what it turns on and how to set it. Values are never shown - only whether a secret exists.</p>'+
         '<div class="golive" id="golive-body"><div class="fd-loading">Checking your deployment\u2026</div></div>'+
       '</div>';
     setTimeout(_loadReadiness, 0);
@@ -21400,12 +21569,12 @@ function _renderSetPaneInner(only, into){
              out, this said "Version 2.0 - 2025" while the release notes one
              screen away listed 2.4, and the year had been wrong since January.
              A version number in two places is two version numbers. */
-          '<div><div style="font-size:17px;font-weight:800;letter-spacing:-.4px">AMV<span style="color:var(--accent)">.</span>AI</div><div style="font-size:11px;color:var(--t2);margin-top:2px">Version '+escH(_latestVersion()||'2.0')+' &bull; '+new Date().getFullYear()+'</div></div>'+
+          '<div><div style="font-size:calc(17px * var(--fs-s));font-weight:800;letter-spacing:-.4px">AMV<span style="color:var(--accent)">.</span>AI</div><div style="font-size:var(--t-xs);color:var(--t2);margin-top:2px">Version '+escH(_latestVersion()||'2.0')+' &bull; '+new Date().getFullYear()+'</div></div>'+
         '</div>'+
-        '<p style="font-size:12px;color:var(--t2);line-height:1.65;margin-bottom:13px">Your AI workforce - it does the work, not just answers it. Chat, agents, builds, images, video, and automation in one place.</p>'+
+        '<p style="font-size:var(--t-sm);color:var(--t2);line-height:1.65;margin-bottom:13px">Your AI workforce - it does the work, not just answers it. Chat, agents, builds, images, video, and automation in one place.</p>'+
         '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
-          '<button class="btn bs" style="font-size:12px" data-dact="openTerms">Terms of Service</button>'+
-          '<button class="btn bs" style="font-size:12px" data-dact="openPrivacy">Privacy Policy</button>'+
+          '<button class="btn bs" style="font-size:var(--t-sm)" data-dact="openTerms">Terms of Service</button>'+
+          '<button class="btn bs" style="font-size:var(--t-sm)" data-dact="openPrivacy">Privacy Policy</button>'+
           supportButton({label:'Contact Support',cls:'btn bs',subject:'AMV Support request'})+
         '</div>'+
       '</div>'+
@@ -21417,7 +21586,7 @@ function _renderSetPaneInner(only, into){
           _shortcutRowsHTML()+
         '</div>'+
       '</div>'+
-      (S.user?'<div class="ss2" style="border-color:rgba(255,95,87,.2)"><h3 style="color:var(--red)">Sign Out</h3><p style="font-size:12px;color:var(--t2);margin-bottom:12px">Your data remains saved and will be restored on next sign in.</p><button class="btn bd2" data-dact="signOut" style="font-size:12px">Sign out</button></div>':'');
+      (S.user?'<div class="ss2" style="border-color:rgba(255,95,87,.2)"><h3 style="color:var(--red)">Sign Out</h3><p style="font-size:var(--t-sm);color:var(--t2);margin-bottom:12px">Your data remains saved and will be restored on next sign in.</p><button class="btn bd2" data-dact="signOut" style="font-size:var(--t-sm)">Sign out</button></div>':'');
   } else {
     pane.innerHTML='';
   }
@@ -21744,7 +21913,7 @@ function renderCk(){
   const div=document.createElement('div');
   div.id='ck';
   div.innerHTML='<p>We use essential cookies to keep you signed in. By continuing you agree to our <button class="ckl" data-dact="openTerms">Terms</button> and <button class="ckl" data-dact="openPrivacy">Privacy Policy</button>.</p>'+
-    '<div style="display:flex;gap:7px;flex-shrink:0"><button class="btn bp" id="ck-acc" style="padding:5px 13px;font-size:12px">Accept</button><button class="btn bs" id="ck-nec" style="padding:5px 11px;font-size:12px">Necessary Only</button></div>';
+    '<div style="display:flex;gap:7px;flex-shrink:0"><button class="btn bp" id="ck-acc" style="padding:5px 13px;font-size:var(--t-sm)">Accept</button><button class="btn bs" id="ck-nec" style="padding:5px 11px;font-size:var(--t-sm)">Necessary Only</button></div>';
   document.body.appendChild(div);
   document.getElementById('ck-acc')?.addEventListener('click',accCk);
   document.getElementById('ck-nec')?.addEventListener('click',accCk);
@@ -21861,7 +22030,7 @@ function openAuth(mode){
         // (some bots skip those); off-screen + aria-hidden + tab-skipped instead.
         '<div aria-hidden="true" style="position:absolute;left:-9999px;top:-9999px;height:0;overflow:hidden"><label>Company<input type="text" id="a-company" name="company" tabindex="-1" autocomplete="off"></label></div>'+
         '<div id="a-turnstile" class="cf-turnstile" style="margin:4px 0"></div>'+
-        '<button class="btn bp" id="auth-submit" style="width:100%;padding:11px;font-size:14px">'+(isL?'Sign In':'Create Free Account')+'</button>'+
+        '<button class="btn bp" id="auth-submit" style="width:100%;padding:11px;font-size:var(--t-md)">'+(isL?'Sign In':'Create Free Account')+'</button>'+
       '</div>'+
       '<div class="asw">'+(isL?'No account? <button id="auth-sw">Sign up free</button>':'Already have an account? <button id="auth-sw">Sign in</button>')+'</div>'+
       (isL?'<div class="asw" style="margin-top:6px"><button id="auth-forgot" style="color:var(--mu)">Forgot password?</button></div>':'')+
@@ -22937,7 +23106,7 @@ function _approveAction(detail){
   if(typeof _showModalAsync==='function'){
     return _showModalAsync({
       title:'Approve this action?',
-      body:'<div style="font-size:13.5px;line-height:1.6;color:var(--tx)">AMV wants to:<br><br><b>'+escH(detail)+'</b><br><br><span style="color:var(--mu);font-size:12px">This takes a real action on your connected account. Approve only if you\u2019re sure.</span></div>',
+      body:'<div style="font-size:var(--t-base);line-height:1.6;color:var(--tx)">AMV wants to:<br><br><b>'+escH(detail)+'</b><br><br><span style="color:var(--mu);font-size:var(--t-sm)">This takes a real action on your connected account. Approve only if you\u2019re sure.</span></div>',
       okText:'Approve & run', cancelText:'Skip this'
     });
   }
@@ -23253,11 +23422,11 @@ function _integrationsCatalogHTML(){
        behind, reachable by nothing. Connecting it here means the run control
        lives next to the connection it depends on. */
     const action=connected
-      ? ((o.run?'<button class="btn bp" data-int-run="'+o.run+'" style="font-size:12px">'+escH(o.runLabel||'Run')+'</button>':'')+
-         '<button class="btn int-disc" data-int-disc="'+o.id+'" style="font-size:12px">Disconnect</button>')
+      ? ((o.run?'<button class="btn bp" data-int-run="'+o.run+'" style="font-size:var(--t-sm)">'+escH(o.runLabel||'Run')+'</button>':'')+
+         '<button class="btn int-disc" data-int-disc="'+o.id+'" style="font-size:var(--t-sm)">Disconnect</button>')
       : (o.auto
-          ? '<button class="btn bp" data-int-conn="'+o.id+'" style="font-size:12px">Connect</button>'
-          : '<button class="btn bs" data-int-use="'+(o.use||'chat')+'" style="font-size:12px">'+(o.useLabel||'Open in chat')+'</button>');
+          ? '<button class="btn bp" data-int-conn="'+o.id+'" style="font-size:var(--t-sm)">Connect</button>'
+          : '<button class="btn bs" data-int-use="'+(o.use||'chat')+'" style="font-size:var(--t-sm)">'+(o.useLabel||'Open in chat')+'</button>');
     return '<div class="int-card">'+
       '<div class="int-ic" style="background:'+(o.bg||'var(--s3)')+'">'+o.icon+'</div>'+
       '<div class="int-body">'+
@@ -23427,7 +23596,7 @@ function parseCSV(text){
 function csvToTable(data){
   if(!data||!data.length) return '';
   const h=data[0], rows=data.slice(1);
-  return `<table id="sheet-tbl" style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr>${h.map(hd=>`<th contenteditable="true" style="background:rgba(85,144,255,.12);border:1px solid rgba(255,255,255,.1);padding:8px 10px;text-align:left;font-weight:600;white-space:nowrap;position:sticky;top:0">${escH(hd)}</th>`).join('')}</tr></thead><tbody>${rows.map(row=>`<tr>${h.map((_,ci)=>`<td contenteditable="true" style="border:1px solid rgba(255,255,255,.06);padding:6px 10px;color:var(--tx)">${escH(row[ci]||'')}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+  return `<table id="sheet-tbl" style="width:100%;border-collapse:collapse;font-size:var(--t-sm)"><thead><tr>${h.map(hd=>`<th contenteditable="true" style="background:rgba(85,144,255,.12);border:1px solid rgba(255,255,255,.1);padding:8px 10px;text-align:left;font-weight:600;white-space:nowrap;position:sticky;top:0">${escH(hd)}</th>`).join('')}</tr></thead><tbody>${rows.map(row=>`<tr>${h.map((_,ci)=>`<td contenteditable="true" style="border:1px solid rgba(255,255,255,.06);padding:6px 10px;color:var(--tx)">${escH(row[ci]||'')}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
 }
 function tableToCSV(){
   const t=document.getElementById('sheet-tbl'); if(!t) return '';
@@ -23489,8 +23658,8 @@ function openSheetEditor(data,name){
   const vc=$('vc'); if(!vc) return;
   vc.innerHTML=`<div style="display:flex;flex-direction:column;height:100%">
 <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;background:rgba(13,17,23,.95);border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0">
-  <span style="font-size:13px;font-weight:600">&#128200; ${escH(name||'Spreadsheet')}</span>
-  <span style="font-size:11px;color:var(--mu)">${data.length-1} rows &middot; ${data[0]&&data[0].length||0} cols</span>
+  <span style="font-size:var(--t-base);font-weight:600">&#128200; ${escH(name||'Spreadsheet')}</span>
+  <span style="font-size:var(--t-xs);color:var(--mu)">${data.length-1} rows &middot; ${data[0]&&data[0].length||0} cols</span>
   <div style="margin-left:auto;display:flex;gap:6px">
     <button class="ext-btn" data-dact="_sheetDownloadCSV">&#8681; Download</button>
     <button class="ext-btn" data-stab="extensions">&#10005; Close</button>
@@ -23498,15 +23667,15 @@ function openSheetEditor(data,name){
 </div>
 <div style="flex:1;overflow:auto;padding:12px">${csvToTable(data)}</div>
 <div style="background:rgba(13,17,23,.97);border-top:1px solid rgba(255,255,255,.1);padding:12px 14px;flex-shrink:0">
-  <div style="font-size:10px;color:#7cb8ff;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:7px">AMV AI Toolbar</div>
+  <div style="font-size:var(--t-2xs);color:#7cb8ff;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:7px">AMV AI Toolbar</div>
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
     ${['Analyze trends','Find duplicates','Add totals row','Sort by first column','Summarize data'].map(q=>`<button class="ext-btn" data-dact="runSheetAI" data-darg="${q}">${q}</button>`).join('')}
   </div>
   <div style="display:flex;gap:8px">
-    <input type="text" id="sheet-inp" placeholder="Ask AMV anything about this spreadsheet..." style="flex:1;font-size:13px">
-    <button class="btn bp" id="sheet-ask" style="font-size:13px;padding:8px 18px">Ask</button>
+    <input type="text" id="sheet-inp" placeholder="Ask AMV anything about this spreadsheet..." style="flex:1;font-size:var(--t-base)">
+    <button class="btn bp" id="sheet-ask" style="font-size:var(--t-base);padding:8px 18px">Ask</button>
   </div>
-  <div id="sheet-res" style="display:none;margin-top:10px;font-size:12px;color:var(--mu);background:var(--s2);border-radius:10px;padding:12px;max-height:180px;overflow-y:auto;white-space:pre-wrap;line-height:1.65"></div>
+  <div id="sheet-res" style="display:none;margin-top:10px;font-size:var(--t-sm);color:var(--mu);background:var(--s2);border-radius:10px;padding:12px;max-height:180px;overflow-y:auto;white-space:pre-wrap;line-height:1.65"></div>
 </div></div>`;
   on($('sheet-ask'),'click',()=>runSheetAI($('sheet-inp')&&$('sheet-inp').value));
   on($('sheet-inp'),'keydown',e=>{if(e.key==='Enter')runSheetAI($('sheet-inp')&&$('sheet-inp').value);});
@@ -23536,21 +23705,21 @@ function openDocEditor(content,name){
   const vc=$('vc'); if(!vc) return;
   vc.innerHTML=`<div style="display:flex;flex-direction:column;height:100%">
 <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;background:rgba(13,17,23,.95);border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0">
-  <span style="font-size:13px;font-weight:600">&#128196; ${escH(name||'Document')}</span>
+  <span style="font-size:var(--t-base);font-weight:600">&#128196; ${escH(name||'Document')}</span>
   <div style="margin-left:auto;display:flex;gap:6px">
     <button class="ext-btn" data-dact="_docDownloadTxt">&#8681; Download</button>
     <button class="ext-btn" data-stab="extensions">&#10005; Close</button>
   </div>
 </div>
-<div id="doc-body" contenteditable="true" spellcheck="true" style="flex:1;overflow-y:auto;padding:40px 60px;font-size:14px;line-height:1.9;color:var(--tx);outline:none;max-width:780px;margin:0 auto;width:100%;box-sizing:border-box">${(content||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n\n/g,'</p><p style="margin:0 0 14px">').replace(/\n/g,'<br>')}</div>
+<div id="doc-body" contenteditable="true" spellcheck="true" style="flex:1;overflow-y:auto;padding:40px 60px;font-size:var(--t-md);line-height:1.9;color:var(--tx);outline:none;max-width:780px;margin:0 auto;width:100%;box-sizing:border-box">${(content||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n\n/g,'</p><p style="margin:0 0 14px">').replace(/\n/g,'<br>')}</div>
 <div style="background:rgba(13,17,23,.97);border-top:1px solid rgba(255,255,255,.1);padding:12px 14px;flex-shrink:0">
-  <div style="font-size:10px;color:#7cb8ff;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:7px">AMV AI Toolbar</div>
+  <div style="font-size:var(--t-2xs);color:#7cb8ff;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:7px">AMV AI Toolbar</div>
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
     ${['Improve writing','Fix grammar','Make it longer','Make it shorter','Change tone to formal'].map(q=>`<button class="ext-btn" data-dact="runDocAI" data-darg="${q}">${q}</button>`).join('')}
   </div>
   <div style="display:flex;gap:8px">
-    <input type="text" id="doc-inp" placeholder="Ask AMV to edit, rewrite, or expand..." style="flex:1;font-size:13px">
-    <button class="btn bp" id="doc-ask" style="font-size:13px;padding:8px 18px">Ask</button>
+    <input type="text" id="doc-inp" placeholder="Ask AMV to edit, rewrite, or expand..." style="flex:1;font-size:var(--t-base)">
+    <button class="btn bp" id="doc-ask" style="font-size:var(--t-base);padding:8px 18px">Ask</button>
   </div>
 </div></div>`;
   on($('doc-ask'),'click',()=>runDocAI($('doc-inp')&&$('doc-inp').value));
@@ -23635,17 +23804,17 @@ function renderAutomationView(){
   const taskList=_bgQueue.tasks.length ? _bgQueue.tasks.slice().reverse().map(function(t){
     let h='<div style="background:rgba(22,27,34,.7);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:14px;margin-bottom:8px">';
     h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">';
-    h+='<span style="color:'+sc(t.status)+';font-size:16px">'+si(t.status)+'</span>';
-    h+='<span style="font-size:13px;font-weight:600;flex:1">'+escH(t.title)+'</span>';
-    h+='<span style="font-size:10px;color:'+sc(t.status)+';background:'+sc(t.status)+'22;border-radius:10px;padding:2px 10px;font-weight:600">'+t.status+'</span>';
+    h+='<span style="color:'+sc(t.status)+';font-size:var(--t-lg)">'+si(t.status)+'</span>';
+    h+='<span style="font-size:var(--t-base);font-weight:600;flex:1">'+escH(t.title)+'</span>';
+    h+='<span style="font-size:var(--t-2xs);color:'+sc(t.status)+';background:'+sc(t.status)+'22;border-radius:10px;padding:2px 10px;font-weight:600">'+t.status+'</span>';
     h+='</div>';
     if(t.status==='running') h+='<div style="height:4px;background:rgba(255,255,255,.1);border-radius:4px;margin-bottom:8px"><div style="height:100%;width:'+(t.progress||30)+'%;background:var(--blue);border-radius:4px;transition:width .5s"></div></div>';
-    if(t.error) h+='<div style="font-size:12px;color:var(--red);padding:8px;background:rgba(248,81,73,.08);border-radius:7px;margin-top:4px">'+escH(t.error)+'</div>';
+    if(t.error) h+='<div style="font-size:var(--t-sm);color:var(--red);padding:8px;background:rgba(248,81,73,.08);border-radius:7px;margin-top:4px">'+escH(t.error)+'</div>';
     if(t.result){
-      h+='<div style="font-size:12px;color:var(--mu);background:rgba(0,0,0,.25);border-radius:8px;padding:10px;margin-top:8px;max-height:180px;overflow-y:auto;white-space:pre-wrap;line-height:1.65">'+escH(t.result.slice(0,500))+(t.result.length>500?' ...(truncated)':'')+'</div>';
+      h+='<div style="font-size:var(--t-sm);color:var(--mu);background:rgba(0,0,0,.25);border-radius:8px;padding:10px;margin-top:8px;max-height:180px;overflow-y:auto;white-space:pre-wrap;line-height:1.65">'+escH(t.result.slice(0,500))+(t.result.length>500?' ...(truncated)':'')+'</div>';
       h+='<div style="display:flex;gap:6px;margin-top:8px"><button class="ext-btn" data-dact="_toastResultCopied">Copy result</button></div>';
     }
-    h+='<div style="font-size:10px;color:var(--dim);margin-top:6px">'+new Date(t.created).toLocaleString()+'</div>';
+    h+='<div style="font-size:var(--t-2xs);color:var(--dim);margin-top:6px">'+new Date(t.created).toLocaleString()+'</div>';
     h+='</div>';
     return h;
   }).join('') : emptyState({svg:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',title:'No automations yet',sub:'Set AMV to run on a schedule - a daily news brief, a weekly report - and it works while you don\u2019t. Pick a quick automation above to start.'});
@@ -23696,7 +23865,7 @@ function _autoServerHTML(){
     return '<section class="uniq-sec asrv"><div class="sec-head"><h3>Running on the server</h3></div>'
       +'<div class="asrv-failed">AMV could not check what is scheduled ('+escH(String(st.error))+'). '
       +'Anything already running is still running - this is not a list of nothing. '
-      +'<button class="btn bs" data-asrv-retry="1" style="font-size:11.5px">Try again</button></div></section>';
+      +'<button class="btn bs" data-asrv-retry="1" style="font-size:var(--t-sm)">Try again</button></div></section>';
   }
 
   const jobRows = jobs.map(it=>{
@@ -23792,12 +23961,12 @@ function showCustomTask(){
   const div=document.createElement('div');
   div.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(8px)';
   div.innerHTML='<div style="background:var(--s1);border:1px solid var(--hair);border-radius:18px;padding:28px;width:100%;max-width:460px;box-shadow:0 24px 60px rgba(0,0,0,.4);position:relative">'
-    +'<div style="font-size:18px;font-weight:700;color:var(--tx);margin-bottom:4px">Custom Background Task</div>'
-    +'<div style="font-size:12px;color:var(--mu);margin-bottom:20px">Runs automatically - navigate away and it will complete</div>'
+    +'<div style="font-size:calc(18px * var(--fs-s));font-weight:700;color:var(--tx);margin-bottom:4px">Custom Background Task</div>'
+    +'<div style="font-size:var(--t-sm);color:var(--mu);margin-bottom:20px">Runs automatically - navigate away and it will complete</div>'
     +'<div style="display:flex;flex-direction:column;gap:14px">'
-    +'<div><label style="font-size:11px;font-weight:600;color:var(--mu);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:6px">Task Name</label><input type="text" id="ct-name" placeholder="e.g. Research competitors" style="width:100%;padding:10px 12px;background:var(--s2);border:1px solid var(--hair);border-radius:10px;color:var(--tx);font-size:13px;outline:none;box-sizing:border-box"></div>'
-    +'<div><label style="font-size:11px;font-weight:600;color:var(--mu);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:6px">Instructions</label><textarea id="ct-prompt" rows="4" placeholder="What do you want AMV to do?" style="width:100%;padding:10px 12px;background:var(--s2);border:1px solid var(--hair);border-radius:10px;color:var(--tx);font-size:13px;outline:none;resize:vertical;box-sizing:border-box;font-family:inherit"></textarea></div>'
-    +'<button id="ct-go" style="width:100%;padding:13px;background:var(--accent);border:none;border-radius:12px;color:var(--on-accent);font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">&#9889; Run in Background</button>'
+    +'<div><label style="font-size:var(--t-xs);font-weight:600;color:var(--mu);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:6px">Task Name</label><input type="text" id="ct-name" placeholder="e.g. Research competitors" style="width:100%;padding:10px 12px;background:var(--s2);border:1px solid var(--hair);border-radius:10px;color:var(--tx);font-size:var(--t-base);outline:none;box-sizing:border-box"></div>'
+    +'<div><label style="font-size:var(--t-xs);font-weight:600;color:var(--mu);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:6px">Instructions</label><textarea id="ct-prompt" rows="4" placeholder="What do you want AMV to do?" style="width:100%;padding:10px 12px;background:var(--s2);border:1px solid var(--hair);border-radius:10px;color:var(--tx);font-size:var(--t-base);outline:none;resize:vertical;box-sizing:border-box;font-family:inherit"></textarea></div>'
+    +'<button id="ct-go" style="width:100%;padding:13px;background:var(--accent);border:none;border-radius:12px;color:var(--on-accent);font-size:var(--t-md);font-weight:700;cursor:pointer;font-family:inherit">&#9889; Run in Background</button>'
     +'</div></div>';
   r.innerHTML=''; r.appendChild(div);
   div.addEventListener('click',e=>{if(e.target===div)r.innerHTML='';});
@@ -26958,7 +27127,7 @@ function openJobHunt(){
   r.innerHTML='<div class="ov" id="jh-bg"><div class="ob jh-modal" style="max-width:560px">'+
     '<button class="oc" data-dact="closeOvr" aria-label="Close">×</button>'+
     '<h2 style="margin:0 0 4px">Job Hunt</h2>'+
-    '<p style="font-size:12.5px;color:var(--mu);margin:0 0 14px">I find roles that match your profile and prepare a tailored application for each one, ready for you to review and send. Submitting on my own is not switched on yet - nothing goes to an employer without you.</p>'+
+    '<p style="font-size:var(--t-sm);color:var(--mu);margin:0 0 14px">I find roles that match your profile and prepare a tailored application for each one, ready for you to review and send. Submitting on my own is not switched on yet - nothing goes to an employer without you.</p>'+
     '<div class="jh-form" style="display:flex;flex-direction:column;gap:11px">'+
       '<label class="jh-l">Roles to target<input id="jh-roles" class="inp" placeholder="e.g. Product Designer, UX Lead" value="'+val((c.targets.roles||[]).join(', '))+'"></label>'+
       '<label class="jh-l">Locations<input id="jh-loc" class="inp" placeholder="e.g. Remote, London, NYC" value="'+val((c.targets.locations||[]).join(', '))+'"></label>'+
@@ -26978,7 +27147,7 @@ function openJobHunt(){
       '<label class="jh-l">Resume (paste text for now)<textarea id="jh-resume" class="inp" rows="4" placeholder="Paste your resume text">'+val((c.resumes[0]||{}).text)+'</textarea></label>'+
       '<label class="jh-l">Mode'+
         '<select id="jh-mode" class="sel" aria-label="Apply mode"><option value="ask"'+(c.mode==='ask'?' selected':'')+'>Show me each one before it is sent</option><option value="auto"'+(c.mode==='auto'?' selected':'')+'>Prepare as many as possible for one-tap sending</option></select>'+
-      '<span style="font-size:11.5px;color:var(--mu);display:block;margin-top:5px">Either way, nothing reaches an employer until you send it.</span></label>'+
+      '<span style="font-size:var(--t-sm);color:var(--mu);display:block;margin-top:5px">Either way, nothing reaches an employer until you send it.</span></label>'+
     '</div>'+
     '<div style="display:flex;gap:9px;margin-top:16px"><button class="btn bp" id="jh-save" style="flex:1">Save</button><button class="btn bs" data-dact="closeOvr">Cancel</button></div>'+
   '</div></div>';
@@ -28573,13 +28742,13 @@ function _renderInvestPane(pane){
       ? '<div class="ss2"><h3>Link an account</h3>'+
         '<p class="fam-p fam-quiet">You will sign in with your institution directly. AMV never sees your '+
         'username or password.</p>'+
-        '<button class="btn bp" id="inv-link" style="font-size:12px">Link an investment account</button>'+
+        '<button class="btn bp" id="inv-link" style="font-size:var(--t-sm)">Link an investment account</button>'+
         '<div class="fam-say" id="inv-link-say" role="status" aria-live="polite"></div></div>'
       : '<div class="ss2"><h3>How it is doing</h3>'+
         '<div id="inv-out"><p class="fam-p fam-quiet">Check now to see where you stand.</p></div>'+
-        '<button class="btn bp" id="inv-now" style="font-size:12px">Check now</button> '+
+        '<button class="btn bp" id="inv-now" style="font-size:var(--t-sm)">Check now</button> '+
         /* Connecting a bank must be as easy to undo as it was to do. */
-        '<button class="btn bs" id="inv-unlink" style="font-size:12px">Disconnect</button>'+
+        '<button class="btn bs" id="inv-unlink" style="font-size:var(--t-sm)">Disconnect</button>'+
         '<div class="fam-say" id="inv-say" role="status" aria-live="polite"></div></div>'+
         '<div class="ss2"><h3>Tell me automatically</h3>'+
           '<p class="fam-p fam-quiet">AMV runs the check on its own and brings you the answer. '+
@@ -29477,7 +29646,7 @@ function _famChildHTML(st){
     /* The way out. Without it, accepting an invitation once meant somebody else
        controlled this account's spending permanently - and AMV cannot tell a
        parent from a stranger who talked you into it. */
-    '<button class="btn bs" id="fam-leave" style="font-size:12px;color:var(--red);border-color:var(--red)">Leave this family</button>'+
+    '<button class="btn bs" id="fam-leave" style="font-size:var(--t-sm);color:var(--red);border-color:var(--red)">Leave this family</button>'+
     '<div class="fam-say" id="fam-leave-say" role="status" aria-live="polite"></div>'+
   '</div>';
 }

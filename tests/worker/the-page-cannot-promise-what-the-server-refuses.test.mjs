@@ -119,6 +119,134 @@ section('The page prints the number the server would actually grant')
      'and free really is the one weekly job the refusal message promises', serverMax('free', {}));
 }
 
+section('Throughput is sold as the tier it actually is')
+{
+  /* The comparison table used to read Free "-", Pro "Limited", Elite "Up to 5",
+     Ultra "Unlimited" for parallel agents. NOTHING in the Worker caps
+     concurrency at any tier, so Pro and Elite already had what Ultra was sold
+     as having and the headline reason to pay $125 more was fiction.
+
+     Not closed by adding a cap - that removes capability from paying customers
+     to make a table honest, for no margin gain. Closed by selling the
+     throughput tier that is real and enforced atomically: PLAN_LIMITS.rpm. */
+  const code = codeOnly(client);
+  const scode = codeOnly(server);
+
+  const srvRpm = {};
+  for (const m of scode.matchAll(/(free|pro|elite|ultra):\s*\{[^}]*rpm:\s*(\d+)/g)) srvRpm[m[1]] = Number(m[2]);
+  const cliRpm = {};
+  const cm = code.match(/const PLAN_RPM\s*=\s*\{([^}]*)\}/);
+  if (cm) for (const m of cm[1].matchAll(/([a-z]+)\s*:\s*(\d+)/g)) cliRpm[m[1]] = Number(m[2]);
+
+  ok(Object.keys(srvRpm).length >= 4, 'the Worker sets a per-plan requests-a-minute limit', srvRpm);
+  ok(Object.keys(cliRpm).length >= 4, 'and the page carries the same table', cliRpm);
+  ok(JSON.stringify(srvRpm) === JSON.stringify(cliRpm),
+     'and they agree, plan for plan', JSON.stringify(srvRpm) + ' vs ' + JSON.stringify(cliRpm));
+
+  /* It is enforced, not merely declared - this is the difference between the
+     row that was there before and the one replacing it. */
+  ok(/rateCheck[^;]*limits\.rpm|limits\.rpm[^;]*rateCheck/.test(scode.replace(/\s+/g, ' ')),
+     'and the Worker actually checks it, atomically', true);
+
+  ok(!/Parallel agents \/ long jobs/.test(code),
+     'the fictional parallel-agents row is gone', true);
+  ok(!/[Uu]nlimited parallel agents/.test(code),
+     'and nothing anywhere still sells unlimited parallel agents', true);
+  ok(/_rpmCell\(p\)/.test(code),
+     'the row is computed from the enforced limit, not typed out', true);
+}
+
+section('The usage multiplier is computed, and conservative')
+{
+  /* The page advertised 5x / 20x / 50x against Free while PLAN_LIMITS delivers
+     7.2x / 28x / 72x - conservative on every tier, so no exposure, just a
+     number nobody had recomputed since the allowances moved, quoted at the
+     moment somebody decides whether to pay.
+
+     Computed from the allowance now and rounded DOWN, because an advertised
+     multiplier is a promise: an exact figure drops visibly the next time the
+     allowances are tuned, a rounded-down one has headroom. */
+  const code = codeOnly(client);
+  const scode = codeOnly(server);
+
+  const srv = {};
+  for (const m of scode.matchAll(/(free|pro|elite|ultra):\s*\{[^}]*monthTokens:\s*(\d+)/g)) srv[m[1]] = Number(m[2]);
+  const cli = {};
+  const cm = code.match(/const PLAN_MONTH_TOKENS\s*=\s*\{([^}]*)\}/);
+  if (cm) for (const m of cm[1].matchAll(/([a-z]+)\s*:\s*(\d+)/g)) cli[m[1]] = Number(m[2]);
+
+  ok(Object.keys(srv).length >= 4, 'the Worker sets a monthly allowance per plan', srv);
+  ok(JSON.stringify(srv) === JSON.stringify(cli),
+     'and the page carries the same numbers', JSON.stringify(srv) + ' vs ' + JSON.stringify(cli));
+
+  /* Run the real function out of the bundle, against the SERVER's numbers. */
+  const grab = (src, name) => {
+    const i = src.indexOf('function ' + name + '(');
+    let d = 0;
+    for (let k = src.indexOf('{', i); k < src.length; k++) {
+      if (src[k] === '{') d++; else if (src[k] === '}' && --d === 0) return src.slice(i, k + 1);
+    }
+    return '';
+  };
+  const mult = new Function(
+    (code.match(/const PLAN_MONTH_TOKENS\s*=\s*\{[^}]*\};/) || [''])[0] + '\n'
+    + grab(code, '_usageMultiplier') + '\nreturn _usageMultiplier;')();
+
+  for (const p of ['pro', 'elite', 'ultra']) {
+    const real = srv[p] / srv.free;
+    const shown = mult(p);
+    ok(shown > 1, p + ' advertises a multiplier at all', shown);
+    ok(shown <= real, p + ' never claims more than the allowance delivers',
+       'claims ' + shown + 'x, delivers ' + real.toFixed(1) + 'x');
+    ok(real - shown < 6, 'and does not undersell it into meaninglessness',
+       'claims ' + shown + 'x, delivers ' + real.toFixed(1) + 'x');
+  }
+
+  ok(!/mult:'[0-9]/.test(code),
+     'no plan carries a hand-typed multiplier any more', true);
+}
+
+section('The browser guard is never tighter than the server')
+{
+  /* PLAN_TIERS is a local guardrail so the browser can stop somebody before a
+     request that would be refused. Its own comment names the failure: a guard
+     TIGHTER than the server stops them at a number the server would have
+     allowed, and that limit exists nowhere but in the browser.
+
+     It had drifted both ways. `custom` said 52,000 against the server's 65,000
+     fallback - tighter, the bad direction, and pre-existing. `free` said 52,000
+     after the server moved to 20,000 - looser, so the browser stopped warning
+     early and let the server do the refusing. */
+  const code = codeOnly(client);
+  const scode = codeOnly(server);
+
+  const srv = {};
+  for (const m of scode.matchAll(/(free|pro|elite|ultra):\s*\{[^}]*dayTokens:\s*(\d+)/g)) srv[m[1]] = Number(m[2]);
+  const cli = {};
+  const cm = code.match(/const PLAN_TIERS\s*=\s*\{([\s\S]*?)\n\};/);
+  if (cm) for (const m of cm[1].matchAll(/(free|pro|elite|ultra):\s*\{[^}]*dailyTokenCap:\s*(\d+)/g)) cli[m[1]] = Number(m[2]);
+
+  ok(Object.keys(srv).length >= 4, 'the Worker sets a daily cap per plan', srv);
+  ok(Object.keys(cli).length >= 4, 'and the browser carries a guardrail', cli);
+  for (const p of Object.keys(srv)) {
+    ok(cli[p] === srv[p], p + ': the guardrail matches the server exactly',
+       'browser ' + cli[p] + ' vs server ' + srv[p]);
+  }
+
+  /* The custom fallback, which is computed rather than written out. */
+  const scale = Number((scode.match(/TOKENIZER_SCALE\s*=\s*([0-9.]+)/) || [])[1]);
+  /* Anchored on the custom fallback specifically. The first version matched
+     `Math.round(N * TOKENIZER_SCALE)` anywhere and picked up a different one,
+     reporting the server's custom default as 390,000 - a failure that looked
+     like a real drift and was the regex. */
+  const base = Number((scode.match(/dayTokens:\s*c\.dayTokens\s*\|\|\s*Math\.round\((\d+)\s*\*\s*TOKENIZER_SCALE\)/) || [])[1]);
+  const custom = Number((code.match(/custom:\s*\{\s*dailyTokenCap:\s*(\d+)/) || [])[1]);
+  ok(!!scale && !!base, 'the server computes a custom fallback', base + ' * ' + scale);
+  ok(custom === Math.round(base * scale),
+     'and the browser guardrail for custom matches it',
+     'browser ' + custom + ' vs server ' + Math.round(base * scale));
+}
+
 section('The label says what the answer is');
 {
   const code = codeOnly(client);

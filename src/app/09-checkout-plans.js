@@ -8,10 +8,10 @@
      entry, so no sensitive data is ever typed into an unsafe field.
    ============================================================ */
 const PLANS={
-  free:{name:'Free',price:0,blurb:'Daily usage to explore everything',mult:'1\u00d7'},
-  pro:{name:'Pro',price:15,blurb:'5\u00d7 the usage, all models, agents, and priority speed',mult:'5\u00d7'},
-  elite:{name:'Elite',price:75,blurb:'20\u00d7 usage, full-stack builds, one-click deploy, 5 parallel agents, Apex first',mult:'20\u00d7'},
-  ultra:{name:'Ultra',price:200,blurb:'50\u00d7 usage, unlimited parallel agents, whole-codebase context, autonomous projects, team workspaces',mult:'50\u00d7'},
+  free:{name:'Free',price:0,blurb:'A monthly allowance, enough to explore everything',get mult(){return _multLabel('free');}},
+  pro:{name:'Pro',price:15,blurb:'Every model, autonomous agents, and the app sandbox',get mult(){return _multLabel('pro');}},
+  elite:{name:'Elite',price:75,blurb:'Ship real apps to a live URL, on our most capable engine',get mult(){return _multLabel('elite');}},
+  ultra:{name:'Ultra',price:200,blurb:'Whole codebases, autonomous projects, and a team around them',get mult(){return _multLabel('ultra');}},
   /* Priced PER SEAT, so `price` here is the price of one seat and the card that
      sells it multiplies. Every seat adds its own allowance to a shared pool
      rather than dividing a fixed one, which is why adding a teammate is worth
@@ -42,6 +42,64 @@ const PLAN_RANK={free:0,pro:1,elite:2,ultra:3,custom:2,team:2};
    table and 1 in the answer, because `|| 1` turns the zero into the single
    weekly job the refusal message promises. */
 const AUTO_MAX_BY_PLAN={free:0,pro:5,elite:25,ultra:100};
+
+/* WHAT "PARALLEL AGENTS" WAS SELLING, AND WHAT IS ACTUALLY TIERED.
+
+   The comparison table read: Free "-", Pro "Limited", Elite "Up to 5", Ultra
+   "Unlimited". Nothing in the Worker caps how many agents run at once, at any
+   tier - so Pro and Elite already had what Ultra was sold as having, and the
+   headline reason to pay $125 more was fiction.
+
+   It was never a spend hole. Every agent's model calls go through the atomic
+   per-account meter, so somebody running twenty at once simply burns their own
+   allowance faster. What it cost was the reason to upgrade.
+
+   Not fixed by adding a concurrency cap. That would REMOVE capability from
+   accounts that have it today, to make a table honest, for no margin gain -
+   and concurrency limits exist to protect infrastructure, which here is already
+   protected by the per-account meter and the global daily ceiling.
+
+   Fixed by selling the throughput tier that is real and already enforced:
+   PLAN_LIMITS.rpm, checked atomically through the Durable Object on every
+   request. Mirrored here the same way the automation count is, with a test that
+   lifts both and compares what they answer. */
+const PLAN_RPM={free:8,pro:20,elite:40,ultra:80};
+
+/* THE MULTIPLIER WAS UNDERSELLING BY FORTY PERCENT.
+
+   The page advertised 5x / 20x / 50x against Free. PLAN_LIMITS.monthTokens
+   delivers 7.2x / 28x / 72x. Every tier over-delivers, so there was never any
+   exposure - the page was simply quoting a number nobody had recomputed since
+   the allowances moved, at the moment somebody decides whether to pay.
+
+   Computed from the allowance now, and rounded DOWN to a round number. Down,
+   because an advertised multiplier is a promise: an exact figure would drop
+   visibly the next time the allowances are tuned, while a rounded-down one has
+   headroom built in. 7.2 becomes 7, 28 becomes 25, 72 becomes 70.
+
+   Mirrored from the Worker with a test comparing both tables, like the
+   automation count and the throughput limit. */
+const PLAN_MONTH_TOKENS={free:325000,pro:2340000,elite:9100000,ultra:23400000};
+function _usageMultiplier(p){
+  const base=PLAN_MONTH_TOKENS.free, mine=PLAN_MONTH_TOKENS[p];
+  if(!base||!mine) return 0;
+  const raw=mine/base;
+  /* Round down to something a person can hold in their head: whole numbers
+     below ten, multiples of five above it. */
+  return raw<10 ? Math.floor(raw) : Math.floor(raw/5)*5;
+}
+function _multLabel(p){ const m=_usageMultiplier(p); return m>1 ? m+'\u00d7' : '1\u00d7'; }
+function _rpmForPlan(p){
+  if(p==='team') return PLAN_RPM.elite;      // a seat carries Elite capability
+  if(p==='custom') return PLAN_RPM.elite;    // the tier a Custom plan ranks at
+  return PLAN_RPM[p]||PLAN_RPM.free;
+}
+/* Two forms, because a table cell and a sentence want different things. The
+   automation row taught this the first time: with the row already labelled
+   "Scheduled & background jobs", printing "25 scheduled jobs" in every cell
+   says it twice. Same here. */
+function _rpmCell(p){ return String(_rpmForPlan(p)); }
+function _rpmLabel(p){ return _rpmForPlan(p)+' requests a minute'; }
 const AUTO_MAX_PER_USER=100;
 function _autoMaxForPlan(p,seats){
   if(p==='team') return Math.min(AUTO_MAX_PER_USER, 5*(Number(seats)||TEAM_SEAT_MIN));
@@ -360,7 +418,7 @@ function _preopenPay(){
       try{ w.document.write('<!doctype html><meta charset="utf-8"><title>Opening secure checkout…</title>'+
         '<body style="margin:0;font:15px/1.6 system-ui,-apple-system,Segoe UI,sans-serif;color:#111;background:#fff;display:flex;align-items:center;justify-content:center;height:100vh">'+
         '<div style="text-align:center"><div style="font-weight:600;margin-bottom:6px">Opening secure checkout…</div>'+
-        '<div style="opacity:.65;font-size:13px">One moment - do not close this tab.</div></div>'); }catch(e){}
+        '<div style="opacity:.65;font-size:var(--t-base)">One moment - do not close this tab.</div></div>'); }catch(e){}
     }
     return w||null;
   }catch(e){ return null; }

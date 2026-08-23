@@ -332,13 +332,13 @@ function _renderInvestPane(pane){
       ? '<div class="ss2"><h3>Link an account</h3>'+
         '<p class="fam-p fam-quiet">You will sign in with your institution directly. AMV never sees your '+
         'username or password.</p>'+
-        '<button class="btn bp" id="inv-link" style="font-size:12px">Link an investment account</button>'+
+        '<button class="btn bp" id="inv-link" style="font-size:var(--t-sm)">Link an investment account</button>'+
         '<div class="fam-say" id="inv-link-say" role="status" aria-live="polite"></div></div>'
       : '<div class="ss2"><h3>How it is doing</h3>'+
         '<div id="inv-out"><p class="fam-p fam-quiet">Check now to see where you stand.</p></div>'+
-        '<button class="btn bp" id="inv-now" style="font-size:12px">Check now</button> '+
+        '<button class="btn bp" id="inv-now" style="font-size:var(--t-sm)">Check now</button> '+
         /* Connecting a bank must be as easy to undo as it was to do. */
-        '<button class="btn bs" id="inv-unlink" style="font-size:12px">Disconnect</button>'+
+        '<button class="btn bs" id="inv-unlink" style="font-size:var(--t-sm)">Disconnect</button>'+
         '<div class="fam-say" id="inv-say" role="status" aria-live="polite"></div></div>'+
         '<div class="ss2"><h3>Tell me automatically</h3>'+
           '<p class="fam-p fam-quiet">AMV runs the check on its own and brings you the answer. '+

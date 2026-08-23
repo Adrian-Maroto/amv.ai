@@ -120,7 +120,7 @@ section('The box is on the Crew screen, where the jobs it governs are');
     box.focus();
     return {
       found: true,
-      visible: rect.width > 120 && rect.height > 30,
+      visible: !__under(rect.width, 120) && !__under(rect.height, 30),
       focusable: document.activeElement === box,
       disabled: !!box.disabled,
       empty: box.value === '',
@@ -277,7 +277,7 @@ section('And it is usable on a phone');
       boxFits: b.left >= -1 && b.right <= window.innerWidth + 1,
       btnFits: s.left >= -1 && s.right <= window.innerWidth + 1,
       /* Big enough to hit with a thumb rather than a cursor. */
-      btnTappable: s.height >= 32 && s.width >= 44,
+      btnTappable: !__under(s.height, 32) && !__under(s.width, 44),
       pageScrollsSideways: document.documentElement.scrollWidth > window.innerWidth + 1,
     };
   });

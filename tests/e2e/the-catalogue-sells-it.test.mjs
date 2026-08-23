@@ -437,9 +437,9 @@ section('And it works on a phone, which is where it will be read');
     return {
       open: true,
       fits: b.left >= -1 && b.right <= window.innerWidth + 1,
-      scrollable: p.scrollHeight > p.clientHeight ? true : b.height <= window.innerHeight,
+      scrollable: p.scrollHeight > p.clientHeight ? true : !__over(b.height, window.innerHeight),
       sideways: document.documentElement.scrollWidth > window.innerWidth + 1,
-      closeTappable: (() => { const x = document.getElementById('cwp-close'); if (!x) return false; const r2 = x.getBoundingClientRect(); return r2.width >= 28 && r2.height >= 28; })(),
+      closeTappable: (() => { const x = document.getElementById('cwp-close'); if (!x) return false; const r2 = x.getBoundingClientRect(); return !__under(r2.width, 28) && !__under(r2.height, 28); })(),
     };
   });
   ok(r.open && r.fits, 'the panel fits a narrow screen', r);
