@@ -15,7 +15,7 @@
    and an empty scope look identical from the outside. So this file asserts what
    the shortcut SELECTS, against what is on disk, rather than trusting a pass. */
 import { execFileSync } from 'child_process';
-import { readdirSync, readFileSync } from 'fs';
+import { readFileSync, readdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
@@ -39,14 +39,20 @@ const select = (filter) => {
     return execFileSync('node', args, { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
       .split('\n').map(s => s.trim()).filter(Boolean);
   } catch (e) {
-    return [];
+    /* A crashed runner used to come back as "selects nothing", which is a
+       different failure wearing this one's clothes: the caller then reports
+       that every suite is missing, and the reason - the runner would not even
+       start - is the one thing not said. */
+    return { failed: String((e && e.message) || e).slice(0, 200) };
   }
 };
+const sel = (filter) => { const r = select(filter); return Array.isArray(r) ? r : []; };
+const selFailed = (filter) => { const r = select(filter); return Array.isArray(r) ? '' : r.failed; };
 const onDisk = (dir) => readdirSync(join(ROOT, 'tests', dir)).filter(f => f.endsWith('.test.mjs'));
 
 section('The shortcuts select whole directories');
 {
-  const w = select('worker');
+  const w = sel('worker');
   const wDisk = onDisk('worker');
   ok(wDisk.length > 100, 'there is a real Worker suite on disk', wDisk.length);
   ok(w.length === wDisk.length,
@@ -54,16 +60,65 @@ section('The shortcuts select whole directories');
      { selected: w.length, onDisk: wDisk.length });
   ok(w.every(n => n.startsWith('worker/')), 'all of them from tests/worker/', w.slice(0, 2));
 
-  const e = select('e2e');
+  const e = sel('e2e');
   const eDisk = onDisk('e2e');
   ok(e.length === eDisk.length, 'and `test:e2e` selects every end-to-end file',
      { selected: e.length, onDisk: eDisk.length });
   ok(e.every(n => n.startsWith('e2e/')), 'all of them from tests/e2e/', e.slice(0, 2));
 }
 
+section('The listing survives being read by another program');
+{
+  /* THIS IS WHAT ACTUALLY BROKE, AND IT BROKE INVISIBLY.
+
+     The section below shells out with stdio 'pipe' and compares the names. It
+     reported 177 of 307 - the runner apparently skipping everything
+     alphabetically after "an-export-that-says-it-is-complete" - while the same
+     command run by hand printed all 307, every time.
+
+     The runner was fine. `--list` wrote with console.log in a loop and then
+     called process.exit(0), and Node's stdout is ASYNCHRONOUS to a pipe, so
+     exit did not wait for the queued writes. To a terminal that is invisible.
+     Under the gate's parallel load it cut the output in half.
+
+     So the check is run under load, which is the condition that produced it,
+     rather than once on a quiet machine where the old code also passes. */
+  /* The deterministic half. Six runs reproduce the truncation only sometimes -
+     it took four attempts to see it - and a check that fails one time in six is
+     worse than none, because a flaky gate teaches people to re-run it. So the
+     property is asserted at the source: this listing is read by another program
+     and must not be written with a call that exit can outrun. The runs below
+     corroborate; with a synchronous write they cannot fail. */
+  const runner = readFileSync(join(ROOT, 'tests', 'run.mjs'), 'utf8');
+  const listBlock = runner.slice(runner.indexOf("flags.includes('--list')"),
+                                 runner.indexOf('Say what was selected'));
+  ok(listBlock.length > 0, 'the listing branch was found', listBlock.length);
+  ok(!/console\.log\(/.test(listBlock),
+     'the listing is not written with a call process.exit can outrun', listBlock.slice(0, 80));
+  ok(/writeSync\(/.test(listBlock),
+     'it is written synchronously, so the tail cannot be lost to a pipe', true);
+
+  const N = 6;
+  const runs = [];
+  for (let i = 0; i < N; i++) runs.push(sel(''));
+  const sizes = runs.map(r => r.length);
+  const first = sizes[0];
+  ok(first > 300, 'a listing has every suite in it', first);
+  ok(sizes.every(n => n === first),
+     'and it is the same size every time, including when several run at once', sizes.join(','));
+
+  /* The tail specifically: a truncated write loses the END, so the last name
+     is the one that goes missing first and the count alone can look plausible. */
+  ok(runs.every(r => r[r.length - 1] === runs[0][r.length - 1]),
+     'the last line arrives every time, which is the one truncation takes first',
+     runs.map(r => r[r.length - 1]).join(' | '));
+}
+
 section('No filter still means everything, which is what the gate uses');
 {
-  const all = select('');
+  const why = selFailed('');
+  ok(!why, 'the runner could be asked what it would select', why || 'ok');
+  const all = sel('');
   const disk = [...onDisk('worker').map(f => 'worker/' + f), ...onDisk('e2e').map(f => 'e2e/' + f)];
   /* The names, not only the count. A mismatch of one is impossible to diagnose
      from two numbers, and this file exists because a selection that quietly
@@ -96,7 +151,7 @@ section('A name that is not a directory is still a name');
 {
   /* The old behaviour is useful and is kept - `node tests/run.mjs market` to
      iterate on one area. Making the directories special must not remove it. */
-  const m = select('market');
+  const m = sel('market');
   ok(m.length > 0, 'a substring filter still selects by filename', m.length);
   ok(m.every(n => /market/.test(n)), 'and only files whose name contains it', m);
   ok(m.length < onDisk('worker').length, 'a narrow filter really is narrow', m.length);

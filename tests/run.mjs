@@ -5,7 +5,7 @@
      node tests/run.mjs security   # only suites matching "security"
 */
 import { spawn } from 'child_process';
-import { readdirSync, existsSync } from 'fs';
+import { readdirSync, existsSync, writeSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -63,7 +63,36 @@ if (!suites.length) {
    broken, and a test for it cannot be "run the suite and count" - that is the
    suite. This makes the choice inspectable on its own. */
 if (flags.includes('--list')) {
-  for (const s of suites) console.log(s.name);
+  /* WRITTEN SYNCHRONOUSLY, BECAUSE SOMETHING IS READING THIS.
+
+     `console.log` in a loop followed by `process.exit(0)` loses its tail. To a
+     TTY that is invisible; to a PIPE it is not, because Node's stdout is
+     asynchronous there and exit does not wait for the queued writes.
+
+     It cost 130 suites. The guard that checks this selection shells out with
+     stdio 'pipe', and under the gate's parallel load the write was cut at 177
+     lines of 307 - reporting that the runner silently skipped everything
+     alphabetically after "an-export-that-says-it-is-complete". The runner was
+     fine. The listing was truncated, and the same command run by hand printed
+     all 307 every time, which is what makes this kind of failure so hard to
+     believe when it is real. Six runs in a loop reproduced it once: 307, 307,
+     307, 231, 307, 307.
+
+     The identical defect was fixed in check.mjs earlier, with a test that
+     pushes 4MB through a real pipe to prove it. That fix went to the one
+     caller I was looking at. This is the other one. */
+  const say = (t) => {
+    const buf = Buffer.from(t, 'utf8');
+    let off = 0;
+    while (off < buf.length) {
+      try { off += writeSync(1, buf, off, buf.length - off); }
+      catch (err) {
+        if (err && (err.code === 'EAGAIN' || err.code === 'EINTR')) continue;
+        return;
+      }
+    }
+  };
+  say(suites.map(s => s.name).join('\n') + '\n');
   process.exit(0);
 }
 

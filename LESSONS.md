@@ -5678,3 +5678,59 @@ It reads a window around each match now, which behaves the same minified or not.
 Worth keeping in mind generally: **any check that reasons about "lines" is making
 an assumption the build step is free to break**, and the artifact that actually
 ships is the one where it breaks.
+
+## 278. The gate accused the test runner, and the test runner was innocent
+
+`npm run check` failed on the guard whose entire purpose is to stop a narrow run
+passing for a wide one. It reported **177 suites selected of 307**, with the
+missing 130 being everything alphabetically after
+`an-export-that-says-it-is-complete`.
+
+Read at face value that says the gate had been running just over half the suite
+for who knows how long. It is the worst thing the gate could tell you, and it
+was false.
+
+Asked by hand, the runner printed all 307 - eight times out of eight. Nothing
+was ever skipped: `--list` is used by the guard, not by the run, and the run
+selects internally. The gate had always run everything.
+
+`--list` wrote with `console.log` in a loop and then called `process.exit(0)`.
+Node's stdout is **asynchronous to a pipe**, and exit does not wait for the
+queued writes. To a terminal that is invisible. The guard shells out with
+`stdio: 'pipe'`, and under the gate's parallel load the write was cut roughly in
+half. Six runs in a loop reproduced it once: 307, 307, 307, **231**, 307, 307.
+
+**This is the same defect I fixed in `check.mjs` earlier in this session**, with
+a suite that pushes 4MB through a real pipe to prove it. That fix went to the
+one caller I was looking at. #275 said a fix applied to one caller is a fix
+applied to one caller; I wrote that down and then did not go looking, and it
+took a false accusation against the test runner to surface the twin. **After
+fixing a class of bug, grep for the pattern, not the symptom** - `console.log`
+followed by `process.exit` is four characters to search for.
+
+### A check that fails one time in six is worse than none
+
+My first instinct was to prove the fix by running the listing repeatedly under
+load. That works - it is how I confirmed the bug - and it is the wrong shape for
+a permanent check, because a gate that fails occasionally teaches people to
+re-run it, which is the same as deleting it.
+
+So the property is asserted at the **source**: a listing another program reads
+must not be written with a call `exit` can outrun. Deterministic, fails every
+time the regression returns. The load runs stay as corroboration, and with a
+synchronous write they cannot fail.
+
+### The catch that turned a crash into a clean answer
+
+`select()` caught any failure and returned `[]`. A runner that would not start
+therefore looked identical to one that selected no files, and the caller
+faithfully reported every suite as missing - with the reason, that the runner
+crashed, the one thing not said. It returns the failure now.
+
+### And I destroyed uncommitted work with `git checkout` for the third time
+
+Mid-sabotage, again, on a fix that was not yet committed. The rule is in this
+file twice already. What finally worked was not remembering harder: it was
+committing the fix the moment it passed, before touching anything else. That is
+the habit - **commit, then sabotage** - and it costs nothing when the fix is
+already right.
