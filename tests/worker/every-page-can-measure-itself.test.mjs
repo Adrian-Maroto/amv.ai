@@ -90,14 +90,35 @@ section('And nothing went back to comparing a rect against a bare integer');
   const offenders = [];
   for (const f of testFiles) {
     if (f.endsWith('harness.mjs')) continue;
+    /* And this file, which quotes the anti-pattern verbatim in the comment
+       below as the example of what it is looking for. It is the one place the
+       pattern is supposed to appear. */
+    if (f.endsWith('every-page-can-measure-itself.test.mjs')) continue;
     const src = read(f);
     src.split('\n').forEach((line, i) => {
-      /* A tap-target or fit threshold: a rect dimension against a whole number
-         of 20 or more. Small numbers (> 0, > 1, < 2) are visibility guards and
-         are not what this is about. */
-      const m = line.match(/\b(?:height|width)\s*[<>]=?\s*(\d+)\b/);
-      if (m && Number(m[1]) >= 20 && !/__under|__over|innerWidth|innerHeight/.test(line)) {
-        offenders.push(f + ':' + (i + 1) + '  ' + line.trim().slice(0, 72));
+      /* EVERY comparison on the line, not the first one.
+
+         The first version of this used `line.match(...)`, which returns only the
+         leading match. The line it was written for reads
+
+             if (b.width > 0 && b.height > 0 && b.height < 32) {
+
+         so it found `width > 0`, saw a small number, and moved on - the `< 32`
+         at the end was never looked at. Sabotage caught it: putting the original
+         mistake back passed this check. A guard that reads the first half of a
+         line is the same kind of instrument error it exists to prevent.
+
+         The tolerant calls are stripped from the line first, so a line that
+         mixes both forms is judged on what is left rather than excused wholesale.
+
+         Small numbers (> 0, > 1, < 2) are visibility guards, and innerWidth /
+         innerHeight are viewport comparisons, neither of which is the subject. */
+      const rest = line.replace(/__under\s*\([^)]*\)/g, '').replace(/__over\s*\([^)]*\)/g, '');
+      for (const m of rest.matchAll(/\b(?:height|width)\s*[<>]=?\s*(\d+)\b/g)) {
+        if (Number(m[1]) >= 20 && !/innerWidth|innerHeight/.test(line)) {
+          offenders.push(f + ':' + (i + 1) + '  ' + line.trim().slice(0, 72));
+          break;
+        }
       }
     });
   }

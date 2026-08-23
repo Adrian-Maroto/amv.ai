@@ -5993,3 +5993,39 @@ cannot be found by reading the renderer, only by driving it and comparing what
 the setting stores against what the request sends.
 
 The tidiness task was worth opening. It was not worth completing.
+
+## 285. "Flaky" is a conclusion; 31.998046875 is evidence
+
+The full gate failed on `mobile-sweep`: one Crew button, reported as 32px, against
+a threshold of 32px. Standalone it failed roughly one run in five, and CI passed
+the same tree. Every signal said "flaky test, re-run it".
+
+Printing the raw number took two minutes. `getBoundingClientRect().height` was
+**31.998046875** on an element whose CSS says `min-height:32px`. The rect reports
+the box as laid out, not as declared, so an element at a fractional y offset comes
+back a five-hundred-and-twelfth of a pixel short - and a strict `<` against a
+whole number fails on a control that is exactly right.
+
+**A test that fails one run in five is not noise, it is a defect with a low
+reproduction rate.** The temptation is to re-run until green, and re-running is
+what makes the class invisible: the same comparison was sitting in six other
+places, two of them tap-target checks on controls sized to exactly their
+threshold, all waiting for a different unlucky day.
+
+Two more things fell out of chasing it properly.
+
+**Three different places make a page.** `bootApp`, one suite calling
+`browser.newPage({deviceScaleFactor: 2})` directly, and `bootLive` making pages
+from its own contexts, twice. I armed the first, ran the suites, and the second
+threw ReferenceError; the third turned up after that, and its only use of the
+comparator sits behind an early return - so it PASSED while being one rendered
+element away from throwing. Found one at a time, which is what a one-caller fix
+looks like from the inside.
+
+**Then sabotage caught the guard I wrote to catch it.** The sweep used
+`line.match(...)`, which returns only the leading match, and the line it was
+written for begins `if (b.width > 0 && ...`. It found `width > 0`, saw a small
+number, and never looked at the `< 32` at the end. Putting the original mistake
+back passed. Seventh instrument error this session, and the second where sabotage
+found the guard rather than the bug - which is now two for two on being worth the
+five minutes it costs.
