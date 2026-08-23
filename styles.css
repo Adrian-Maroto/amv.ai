@@ -9096,3 +9096,23 @@ body.light .fr-d{ color:#67656d; }
   .rb-status{ max-width:14ch; }
   .rb-tab{ padding:5px 10px; }
 }
+
+/* ── LAYER A103: A MERGED SETTINGS SECTION IS STILL ITS OWN SECTION ────────
+   AMV-D009 merged five pairs of panes that answer the same question - privacy
+   and security, billing and usage, capabilities and skills, appearance and
+   language, invite into team. Eighteen panes became thirteen and no group
+   holds more than three, where "General" used to hold twelve of eighteen.
+
+   A merge is two sections on one pane, not one of them absorbed. Without a
+   seam the second half reads as the first half continuing, which is how
+   somebody scrolls past the thing they came for. A rule and space, no box:
+   the pane already has cards in it and a second frame around a frame is
+   noise. */
+.set-merged{
+  margin-top:var(--sp-7);
+  padding-top:var(--sp-6);
+  border-top:1px solid var(--bd);
+}
+/* Each merged renderer writes its own title, which is the heading it always
+   had - so the section keeps its name and only its address changed. */
+.set-merged .set-title{ margin-top:0; }

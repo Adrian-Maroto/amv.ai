@@ -529,27 +529,63 @@ function renderHelpView(){
 }
 
 /* === SETTINGS VIEW === */
+
+/* AMV-D009: EIGHTEEN PANES, AND A GROUP CALLED "THE REST".
+
+   Measured before anything moved. The groups already existed and did no work:
+   General held TWELVE of the eighteen user panes and Workspace held one. A
+   group holding two-thirds of everything is a list with a title on it.
+
+   Five merges, each of two panes that answer the same question:
+
+     privacy    + security    -> Privacy & security
+     billing    + usage       -> Plan & usage
+     capabilities + skills    -> What AMV can do
+     appearance + language    -> Appearance & language
+     invite     -> teamset       (180 characters and no controls at all: it was
+                                  a button on the Team pane with its own address)
+
+   Eighteen panes to thirteen, and no group holding more than three.
+
+   NOTHING IS DELETED. A merge is two sections on one pane, both rendered, each
+   under its own heading. And every retired id still works: `S.settingsPane` is
+   set by name from at least six places in the product - Mission Control's
+   "connect", the marketplace's pay button, the team invite flow, the profile
+   menu - so an id that stopped resolving would be a dead link somewhere nobody
+   would think to look. They resolve through this table instead, and the pane
+   scrolls to the half that was asked for. */
+const SET_MERGED_INTO = {
+  security: 'privacy',
+  usage: 'billing',
+  skills: 'capabilities',
+  language: 'appearance',
+  invite: 'teamset',
+};
+/* The pane that actually renders for a requested id. */
+function _setPaneFor(id){ return SET_MERGED_INTO[id] || id; }
+/* The half of a merged pane a retired id was asking for, or ''. */
+function _setSectionFor(id){ return SET_MERGED_INTO[id] ? id : ''; }
+try{ window._setPaneFor=_setPaneFor; window._setSectionFor=_setSectionFor;
+     window.SET_MERGED_INTO=SET_MERGED_INTO; }catch(e){}
+
 const USER_SET_SECTIONS=[
-  {group:'General'},
+  {group:'You'},
   {id:'account',label:'Account',icon:'<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>'},
-  {id:'privacy',label:'Privacy',icon:'<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>'},
-  {id:'security',label:'Security',icon:'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>'},
-  {id:'billing',label:'Billing',icon:'<rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/>'},
-  {id:'usage',label:'Usage',icon:'<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>'},
-  {id:'capabilities',label:'Capabilities',icon:'<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>'},
-  {id:'spending',label:'Spending',icon:'<path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>'},
-  {id:'investing',label:'Investing',icon:'<path d="M3 17l6-6 4 4 8-8"/><path d="M21 7h-6M21 7v6"/>'},
-  {id:'teamset',label:'Team',icon:'<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/>'},
-  {id:'api',label:'API keys',icon:'<path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>'},
-  {id:'invite',label:'Invite',icon:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/>'},
+  {id:'privacy',label:'Privacy & security',icon:'<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>'},
   {id:'family',label:'Family & linked accounts',icon:'<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'},
-  {group:'Customize'},
-  {id:'appearance',label:'Appearance',icon:'<circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>'},
-  {id:'language',label:'Language',icon:'<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>'},
-  {id:'skills',label:'Skills',icon:'<path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5"/>'},
+  {group:'Plan & usage'},
+  {id:'billing',label:'Plan & usage',icon:'<rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/>'},
+  {id:'spending',label:'Spending limits',icon:'<path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>'},
+  {id:'investing',label:'Investing',icon:'<path d="M3 17l6-6 4 4 8-8"/><path d="M21 7h-6M21 7v6"/>'},
+  {group:'What AMV can do'},
+  {id:'capabilities',label:'Capabilities & skills',icon:'<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>'},
   {id:'integrations',label:'Connectors',icon:'<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" y1="9" x2="6" y2="21"/>'},
+  {id:'api',label:'API keys',icon:'<path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>'},
   {group:'Workspace'},
+  {id:'teamset',label:'Team',icon:'<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/>'},
   {id:'projects',label:'Projects',icon:'<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>'},
+  {group:'Preferences'},
+  {id:'appearance',label:'Appearance & language',icon:'<circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>'},
   {group:''},
   {id:'about',label:'About',icon:'<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>'},
 ];
@@ -809,7 +845,7 @@ try{ window.closeSettings=closeSettings; }catch(e){}
 function _curSetSection(){
   const admin=isAdmin()?ADMIN_SET_SECTIONS:[];
   const all=[...USER_SET_SECTIONS,...admin].filter(s=>s.id);
-  return all.find(s=>s.id===S.settingsPane) || all[0];
+  return all.find(s=>s.id===_setPaneFor(S.settingsPane)) || all[0];
 }
 function _settingsPickerBtnHTML(){
   const s=_curSetSection(); if(!s) return '';
@@ -826,7 +862,7 @@ function _openSettingsPicker(){
   const rows=sections.map(s=>{
     if(s.group!==undefined) return s.group?'<div class="setpick-group">'+escH(T(s.group))+'</div>':'';
     if(s.type==='div') return '';
-    return '<button class="setpick-row '+(s.id===S.settingsPane?'on':'')+'" data-setpick="'+s.id+'" data-lbl="'+escH((s.label||'').toLowerCase())+'">'+
+    return '<button class="setpick-row '+(s.id===_setPaneFor(S.settingsPane)?'on':'')+'" data-setpick="'+s.id+'" data-lbl="'+escH((s.label||'').toLowerCase())+'">'+
       '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">'+s.icon+'</svg>'+
       '<span>'+escH(T(s.label))+'</span></button>';
   }).join('');
@@ -864,7 +900,7 @@ function renderSettingsView(){
     }
     if(s.type==='div') return q?'':'<div class="sn-div"></div>';
     if(q && !(s.label||'').toLowerCase().includes(q)) return '';   // filter
-    return '<button class="sn-btn '+(s.id===S.settingsPane?'on':'')+'" data-sp="'+s.id+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">'+s.icon+'</svg>'+T(s.label)+'</button>';
+    return '<button class="sn-btn '+(s.id===_setPaneFor(S.settingsPane)?'on':'')+'" data-sp="'+s.id+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">'+s.icon+'</svg>'+T(s.label)+'</button>';
   }).join('');
   const noMatch = q && !visibleSections.some(s=>s.id && (s.label||'').toLowerCase().includes(q));
   vc.innerHTML=
@@ -1634,15 +1670,56 @@ function _renderSkillsPane(pane){
    answers the real question or it does not exist. */
 try{ window._renderSkillsPane=_renderSkillsPane; }catch(e){}
 
-function _renderSetPaneInner(){
-  const pane=$('set-pane'); if(!pane) return;
-  let sp=S.settingsPane;
+/* Append a merged-in pane as a second section of the one it now lives on.
+
+   Each renderer writes its own title, so the section keeps the heading it
+   always had - the merge changes where you find it, not what it says. The
+   anchor id is what a retired deep link scrolls to. */
+function _setAppendSection(pane, id){
+  if(!pane) return;
+  const wrap=document.createElement('div');
+  wrap.className='set-merged';
+  wrap.id='set-sec-'+id;
+  pane.appendChild(wrap);
+  try{ _renderSetPaneInner(id, wrap); }catch(e){}
+}
+try{ window._setAppendSection=_setAppendSection; }catch(e){}
+
+/* `only` and `into` exist so a MERGED pane can render its second half without
+   any of these branches being extracted into functions. The dispatcher is
+   called again with the retired id and a wrapper element, and the branch that
+   already knew how to draw that pane draws it there instead.
+
+   Extracting them was the alternative and it is the worse one: five long inline
+   branches lifted into functions is five chances to change behaviour while
+   claiming to move it, on the surface that holds someone's password, their
+   card and their spending limits. */
+function _renderSetPaneInner(only, into){
+  const pane=into||$('set-pane'); if(!pane) return;
+  /* A retired id renders the pane it was merged into, and the pane scrolls to
+     the half that was asked for. Resolved HERE rather than by rewriting
+     S.settingsPane, so a deep link that arrives as `security` still highlights
+     "Privacy & security" in the nav and still reads as the thing it asked for
+     in the picker on a phone. */
+  const _asked=only||S.settingsPane;
+  let sp=only||_setPaneFor(_asked);
+  const _wantSection=only?'':_setSectionFor(_asked);
   // Hard gate: admin/operator panes are OWNER-ONLY. If a non-owner reaches one
   // (forced state, stale pane), refuse and fall back to Account.
   const _ADMIN_PANES=['dashboard','apikeys','backend','platform'];
   if(_ADMIN_PANES.indexOf(sp)>=0 && !isAdmin()){ S.settingsPane='account'; sp='account'; }
+  if(_wantSection){
+    setTimeout(()=>{ try{
+      const t=document.getElementById('set-sec-'+_wantSection);
+      if(t) t.scrollIntoView({ block:'start', behavior:'auto' });
+    }catch(e){} }, 60);
+  }
   // Billing renders its full content INSIDE the settings pane (stays in Settings).
-  if(sp==='billing'){ if(typeof renderBillingView==='function'){ renderBillingView(pane); } return; }
+  if(sp==='billing'){
+    if(typeof renderBillingView==='function'){ renderBillingView(pane); }
+    if(!only) _setAppendSection(pane, 'usage');
+    return;
+  }
   // Projects lives in Settings now - render its grid inside the pane.
   if(sp==='projects'){
     pane.innerHTML=
@@ -1869,6 +1946,7 @@ function _renderSetPaneInner(){
       _confirmDeleteAccount();
     });
 
+    if(!only) _setAppendSection(pane, 'security');
   } else if(sp==='appearance'){
     const isDark=!document.body.classList.contains('light');
     const curFs=parseInt(loadStr('amv_fs')||'14',10);
@@ -1944,6 +2022,7 @@ function _renderSetPaneInner(){
     }));
     pane.querySelectorAll('[data-fs]').forEach(btn=>on(btn,'click',()=>setFontSize(parseInt(btn.dataset.fs,10))));
 
+    if(!only) _setAppendSection(pane, 'language');
   } else if(sp==='language'){
     const cur=_lang();
     pane.innerHTML=
@@ -2293,6 +2372,7 @@ function _renderSetPaneInner(){
     on($('cap-websearch'),'change',function(){ saveStr('amv_cap_websearch',this.checked?'1':'0'); toast(this.checked?'Web search on':'Web search off','info',2000); });
     on($('cap-memory'),'change',function(){ saveStr('amv_cap_memory',this.checked?'1':'0'); toast(this.checked?'Memory on':'Memory off','info',2000); });
     on($('cap-suggestions'),'change',function(){ saveStr('amv_cap_suggestions',this.checked?'1':'0'); toast(this.checked?'Suggestions on':'Suggestions off','info',2000); });
+    if(!only) _setAppendSection(pane, 'skills');
   } else if(sp==='spending'){
     /* Rendered from 25-money-family-ui.js - see there for why these two panes
        exist at all (the logic shipped with no way for anyone to reach it). */
@@ -2301,6 +2381,9 @@ function _renderSetPaneInner(){
     _renderInvestPane(pane);
   } else if(sp==='teamset'){
     _renderTeamSettingsPane(pane);
+    /* Invite was a pane of 180 characters and no controls. It is a section of
+       Team now, which is the only place anybody was going to look for it. */
+    _setAppendSection(pane, 'invite');
   } else if(sp==='family'){
     _renderFamilyPane(pane);
   } else if(sp==='api'){
