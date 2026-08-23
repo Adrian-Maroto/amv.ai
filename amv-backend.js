@@ -648,7 +648,24 @@ const PLAN_LIMITS = {
      Margin is unaffected. The real profit guarantee is the dollar backstop
      (planPrice * 0.45 of model cost), which is enforced separately and is now
      priced correctly - these token caps are a secondary anti-abuse guard. */
-  free:  { dayTokens: 52000,    monthTokens: 325000,    rpm: 8,  imagesDay: 8,   videosMonth: 0 },
+  /* THE FREE TIER USED TO DIE ON DAY SIX.
+     dayTokens was 52,000 against a monthly 325,000, so a day at the cap
+     exhausted the month in 6.2 days - against a monthly average of 10,833. An
+     engaged new account explored hard for a week and was locked out for three,
+     and the people that hits hardest are the ones most likely to convert.
+     The blurb said "Daily usage to explore everything".
+
+     The MONTHLY budget is unchanged, so this costs nothing and the margin is
+     identical. Only the shape moved: a day at the cap now lasts 16.2 days
+     instead of 6.2, and 20,000 tokens is still a long session rather than a
+     taste. What it costs is a single day's peak, 52,000 down to 20,000, which
+     is the trade for not being locked out for three weeks.
+
+     Deliberately NOT a welcome window that scales the first days. `createdAt`
+     is on the account record but not on the request path, so that needs new
+     plumbing and a fallback for records without it - machinery for a smaller
+     gain than the one line below. */
+  free:  { dayTokens: 20000,    monthTokens: 325000,    rpm: 8,  imagesDay: 8,   videosMonth: 0 },
   pro:   { dayTokens: 325000,   monthTokens: 2340000,   rpm: 20, imagesDay: 100, videosMonth: 20 },
   elite: { dayTokens: 1170000,  monthTokens: 9100000,   rpm: 40, imagesDay: 500, videosMonth: 120 },
   ultra: { dayTokens: 2860000,  monthTokens: 23400000,  rpm: 80, imagesDay: 2000, videosMonth: 600 },

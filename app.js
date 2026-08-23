@@ -12444,11 +12444,17 @@ function _drow(k,v){ return '<div class="bd-row"><span class="bd-k">'+k+'</span>
    tighter than the server's, the user is stopped early by a number the server
    would have allowed - a limit that exists nowhere but here. */
 const PLAN_TIERS={
-  free:  { dailyTokenCap:52000,    rpmMax:8,  models:['fast','core'] },
+  free:  { dailyTokenCap:20000,    rpmMax:8,  models:['fast','core'] },
   pro:   { dailyTokenCap:325000,   rpmMax:20, models:['fast','core','coding'] },
   elite: { dailyTokenCap:1170000,  rpmMax:40, models:['fast','core','coding','smart'] },
   ultra: { dailyTokenCap:2860000,  rpmMax:80, models:['fast','core','coding','smart'] },
-  custom:{ dailyTokenCap:52000,    rpmMax:16, models:['fast','core','coding','smart'] }, // overridden per-user below
+  /* The server's fallback for a custom plan with no explicit dayTokens is
+     Math.round(50000 * TOKENIZER_SCALE) = 65,000. This said 52,000, which is
+     the failure the comment above names: a browser guard TIGHTER than the
+     server stops somebody at a number the server would have allowed, and it
+     exists nowhere but here. Found by grepping for the old free-tier value
+     after changing it, not by looking for it. */
+  custom:{ dailyTokenCap:65000,    rpmMax:16, models:['fast','core','coding','smart'] }, // overridden per-user below
 };
 function _setPlan(plan){
   if(!PLANS[plan]) plan='free';
@@ -12890,7 +12896,7 @@ function _pmLabel(pm){ return ({card:'Card',apple:'Apple Pay',google:'Google Pay
      entry, so no sensitive data is ever typed into an unsafe field.
    ============================================================ */
 const PLANS={
-  free:{name:'Free',price:0,blurb:'Daily usage to explore everything',get mult(){return _multLabel('free');}},
+  free:{name:'Free',price:0,blurb:'A monthly allowance, enough to explore everything',get mult(){return _multLabel('free');}},
   pro:{name:'Pro',price:15,blurb:'Every model, autonomous agents, and the app sandbox',get mult(){return _multLabel('pro');}},
   elite:{name:'Elite',price:75,blurb:'Ship real apps to a live URL, on our most capable engine',get mult(){return _multLabel('elite');}},
   ultra:{name:'Ultra',price:200,blurb:'Whole codebases, autonomous projects, and a team around them',get mult(){return _multLabel('ultra');}},

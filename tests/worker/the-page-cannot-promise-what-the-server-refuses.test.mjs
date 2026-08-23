@@ -206,6 +206,47 @@ section('The usage multiplier is computed, and conservative')
      'no plan carries a hand-typed multiplier any more', true);
 }
 
+section('The browser guard is never tighter than the server')
+{
+  /* PLAN_TIERS is a local guardrail so the browser can stop somebody before a
+     request that would be refused. Its own comment names the failure: a guard
+     TIGHTER than the server stops them at a number the server would have
+     allowed, and that limit exists nowhere but in the browser.
+
+     It had drifted both ways. `custom` said 52,000 against the server's 65,000
+     fallback - tighter, the bad direction, and pre-existing. `free` said 52,000
+     after the server moved to 20,000 - looser, so the browser stopped warning
+     early and let the server do the refusing. */
+  const code = codeOnly(client);
+  const scode = codeOnly(server);
+
+  const srv = {};
+  for (const m of scode.matchAll(/(free|pro|elite|ultra):\s*\{[^}]*dayTokens:\s*(\d+)/g)) srv[m[1]] = Number(m[2]);
+  const cli = {};
+  const cm = code.match(/const PLAN_TIERS\s*=\s*\{([\s\S]*?)\n\};/);
+  if (cm) for (const m of cm[1].matchAll(/(free|pro|elite|ultra):\s*\{[^}]*dailyTokenCap:\s*(\d+)/g)) cli[m[1]] = Number(m[2]);
+
+  ok(Object.keys(srv).length >= 4, 'the Worker sets a daily cap per plan', srv);
+  ok(Object.keys(cli).length >= 4, 'and the browser carries a guardrail', cli);
+  for (const p of Object.keys(srv)) {
+    ok(cli[p] === srv[p], p + ': the guardrail matches the server exactly',
+       'browser ' + cli[p] + ' vs server ' + srv[p]);
+  }
+
+  /* The custom fallback, which is computed rather than written out. */
+  const scale = Number((scode.match(/TOKENIZER_SCALE\s*=\s*([0-9.]+)/) || [])[1]);
+  /* Anchored on the custom fallback specifically. The first version matched
+     `Math.round(N * TOKENIZER_SCALE)` anywhere and picked up a different one,
+     reporting the server's custom default as 390,000 - a failure that looked
+     like a real drift and was the regex. */
+  const base = Number((scode.match(/dayTokens:\s*c\.dayTokens\s*\|\|\s*Math\.round\((\d+)\s*\*\s*TOKENIZER_SCALE\)/) || [])[1]);
+  const custom = Number((code.match(/custom:\s*\{\s*dailyTokenCap:\s*(\d+)/) || [])[1]);
+  ok(!!scale && !!base, 'the server computes a custom fallback', base + ' * ' + scale);
+  ok(custom === Math.round(base * scale),
+     'and the browser guardrail for custom matches it',
+     'browser ' + custom + ' vs server ' + Math.round(base * scale));
+}
+
 section('The label says what the answer is');
 {
   const code = codeOnly(client);

@@ -83,7 +83,11 @@ section('Free stops, and says why in a way somebody can act on');
      turn must be refused - and refused as a LIMIT, not as an error, or the app
      shows "something went wrong" at the exact moment it should be showing an
      upgrade. */
-  const key = await burnDay(60000);          // free dayTokens is 52000
+  /* Burn past the free day cap. The number is deliberately well over it rather
+     than equal to it: the cap moved from 52,000 to 20,000 when the free tier
+     was reshaped, and a test that spends exactly the cap silently stops testing
+     the refusal the day somebody changes it. */
+  const key = await burnDay(60000);          // free dayTokens is 20000
   ok(!!key, 'the usage counter was found', key);
 
   const r = await ask();

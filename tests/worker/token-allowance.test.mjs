@@ -22,14 +22,45 @@ const W = await import(harness + '?t=' + Date.now());
 const BEFORE = { free: [40000, 250000], pro: [250000, 1800000], elite: [900000, 7000000], ultra: [2200000, 18000000] };
 
 section('The allowance is denominated in work, not in a unit that moved');
+/* One deliberate exception, named rather than loosened. The free DAY cap was
+   40,000 before the tokenizer scaling and 52,000 after, which is the ratio this
+   section exists to prove. It is 20,000 now, because the free tier was reshaped:
+   52,000 a day against a 325,000 month meant a day at the cap exhausted the
+   month in 6.2 days, and the blurb said "daily usage".
+
+   The reshape did not touch the MONTH, so the work a free account gets in a
+   billing period is exactly what the tokenizer scaling gave it - which is what
+   this section is actually about. Only the shape of a single day moved, and
+   that is asserted separately below. */
+const RESHAPED = new Set(['free.dayTokens']);
 Object.entries(BEFORE).forEach(([plan, [day, month]]) => {
   const now = W.PLAN_LIMITS[plan];
-  const dayRatio = now.dayTokens / day, monthRatio = now.monthTokens / month;
-  ok(Math.abs(dayRatio - W.TOKENIZER_SCALE) < 0.02,
-     `${plan} daily allowance scaled with the tokenizer`, dayRatio.toFixed(3));
+  const monthRatio = now.monthTokens / month;
+  if (!RESHAPED.has(plan + '.dayTokens')) {
+    const dayRatio = now.dayTokens / day;
+    ok(Math.abs(dayRatio - W.TOKENIZER_SCALE) < 0.02,
+       `${plan} daily allowance scaled with the tokenizer`, dayRatio.toFixed(3));
+  }
   ok(Math.abs(monthRatio - W.TOKENIZER_SCALE) < 0.02,
      `${plan} monthly allowance scaled with the tokenizer`, monthRatio.toFixed(3));
 });
+
+section('And the free tier cannot be spent in a week');
+{
+  /* What the free day cap is FOR now. At 52,000 against a 325,000 month, an
+     engaged new account exhausted the month in 6.2 days and was locked out for
+     the remaining three weeks - which hits hardest exactly the people most
+     likely to convert. */
+  const f = W.PLAN_LIMITS.free;
+  const days = f.monthTokens / f.dayTokens;
+  ok(days >= 14, 'a day at the free cap cannot exhaust the month in under a fortnight',
+     days.toFixed(1) + ' days');
+  ok(f.dayTokens >= 15000, 'while a single day is still a real session, not a taste',
+     f.dayTokens);
+  ok(f.dayTokens > f.monthTokens / 30,
+     'and a heavy day is still allowed to be heavier than the average',
+     f.dayTokens + ' vs ' + Math.round(f.monthTokens / 30));
+}
 
 section('So the same real work still fits');
 {

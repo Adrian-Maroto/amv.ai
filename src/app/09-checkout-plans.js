@@ -8,7 +8,7 @@
      entry, so no sensitive data is ever typed into an unsafe field.
    ============================================================ */
 const PLANS={
-  free:{name:'Free',price:0,blurb:'Daily usage to explore everything',get mult(){return _multLabel('free');}},
+  free:{name:'Free',price:0,blurb:'A monthly allowance, enough to explore everything',get mult(){return _multLabel('free');}},
   pro:{name:'Pro',price:15,blurb:'Every model, autonomous agents, and the app sandbox',get mult(){return _multLabel('pro');}},
   elite:{name:'Elite',price:75,blurb:'Ship real apps to a live URL, on our most capable engine',get mult(){return _multLabel('elite');}},
   ultra:{name:'Ultra',price:200,blurb:'Whole codebases, autonomous projects, and a team around them',get mult(){return _multLabel('ultra');}},
