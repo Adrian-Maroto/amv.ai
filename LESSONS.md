@@ -5922,3 +5922,39 @@ The check that guards it does NOT count how many rules use a token. That would
 be a proxy, and proxies produced four false findings in this session. It asserts
 what the setting is for: a larger size makes the text larger on a real page, and
 nothing falls off the screen.
+
+## 283. A relative check cannot see an absolute break
+
+Finishing the type migration meant writing 157 off-scale display sizes as
+`calc(17px * var(--fs-s))` so they would obey the text size setting without
+being snapped to a step. That needs `--fs-s` defined on bare `:root`, because it
+had only ever existed under `html.fs-scaled`.
+
+I sabotaged that line to check the guard. **Every assertion in the file passed.**
+
+The break is severe: an undefined var inside `calc()` does not fall back, it
+invalidates the whole declaration, so the declaration is dropped and the element
+inherits body size. Measured on the sabotaged build: **105 headings across the
+product collapsed from 38, 30, 26px to 14px at the DEFAULT size.** The most
+visible possible regression, and the suite was green.
+
+It was green because every check in it was RELATIVE. "Does the text respond to
+the setting" - and 14px-then-38px is a response, a bigger one than before, so
+coverage went UP on the broken build. "Is the headline bigger than the body" -
+a frozen 38px headline still beats scaled body text, so that passed too, which I
+also confirmed by re-freezing it.
+
+**A suite made only of relative checks measures whether things move together. It
+cannot tell you where they started.** Both of my new checks were relative,
+because the bug I was hunting was relative, and I built the instrument out of the
+shape of the last bug.
+
+The check that catches it is absolute and states the contract in plain terms: at
+the default size, no visible heading renders at body size. It reads every `h1`
+and `h2` on every tab rather than three selectors I named, because a selector
+that stops matching goes quiet - and this whole entry exists because a quiet
+check let something through.
+
+Same session, second time sabotage found the guard rather than the bug. It is
+cheap: commit first, break the line on purpose, run. If nothing fails, the guard
+is the thing that needs work.
