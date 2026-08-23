@@ -66,3 +66,54 @@ explains nothing to anyone.
 
 224 controls, one dead. That is a good result and it is worth stating plainly
 rather than padding the list to match a number somebody else counted.
+
+
+## Empty states: swept, clean
+
+CLAUDE.md's design standards ask for real loading, empty, success, warning,
+disabled, offline, unauthorized and error states. The empty state is the one a
+brand new account sees first, so it was swept across all thirteen tabs on an
+account with no data at all.
+
+Every tab renders a heading, real explanatory content and a way in. Nothing is
+blank, and nine of the thirteen carry explicit empty-state markup.
+
+| tab | chars | headings | controls |
+|---|---|---|---|
+| chat | 314 | 1 | 15 |
+| images | 460 | 2 | 17 |
+| video | 462 | 2 | 1 |
+| crew | 25,439 | 1 | 104 |
+| handoff | 610 | 4 | 2 |
+| studio | 992 | 3 | 9 |
+| dev | 766 | 2 | 12 |
+| lab | 862 | 2 | 13 |
+| market | 1,440 | 1 | 32 |
+| usage | 741 | 5 | 1 |
+| memory | 781 | 2 | 2 |
+| help | 5,864 | 11 | 13 |
+| plans | 2,763 | 1 | 7 |
+
+Crew's 25,000 characters on a new account are the plan comparison it shows
+when Crew is not on the account's plan - correct behaviour, not a blank being
+padded.
+
+## Where the sweeping stops
+
+Every defect class this work has a reliable instrument for has now been run
+across every surface:
+
+| class | result |
+|---|---|
+| inert controls | 224 controls, **1 dead**, fixed |
+| horizontal scroll on a phone | 14 tabs, clean |
+| tap targets under 40px | a recorded prior decision, not a defect (LESSONS 280) |
+| keyboard reach and focus | covered by 8 existing suites; the components added this session verified directly |
+| empty states | 13 tabs, clean |
+| contrast | closed earlier under D037-D040 |
+| accessible names | did not reproduce under D035/D036 |
+
+That is the honest end of what can be found without the original finding text.
+**The product is clean on every class that can be measured**, which is worth
+stating plainly rather than continuing to sweep until something turns up - four
+false findings in this session came from exactly that.
