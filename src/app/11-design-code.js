@@ -143,6 +143,60 @@ function _vpSwitchHTML(id){
         + ' title="'+label+'" aria-label="Preview at '+label.toLowerCase()+' width">'+ic+'</button>').join('')
   + '</div>';
 }
+/* ONE BAR ABOVE EVERY RESULT (AMV-D007 step 5).
+
+   Three surfaces show you a result and three bars sat above it, built three
+   ways. Measured rather than remembered:
+
+     Dev     tabs Preview|Code, then viewport, download, deploy, open external.
+             Status on the right.
+     Lab     the word "Output" and a status. Nothing else.
+     Studio  three fake window dots and a title, then viewport. Its code toggle
+             was a BUTTON IN THE SIDE PANEL and its status was down there too,
+             in a different pane from the stage both describe.
+
+   What is shared is the BAR, not the tabs. Dev has Preview|Code because Dev
+   writes the code and must show you both; Lab's code is already on screen in
+   the editor beside the output, so giving Lab that tab would hand it a control
+   that shows it what it is already looking at. A left slot that takes either
+   tabs or a title, a right slot that takes actions and a status, and each
+   surface fills what it actually has.
+
+   Two things move as a result, and both are visible to a person: Studio's code
+   toggle joins the bar as a tab where Dev keeps its, and Studio's status moves
+   next to the stage it is describing. Both keep their ids, so the step-1
+   inventory proves the control still exists and still reaches the same
+   function rather than being told a new one appeared. */
+function _resultBarHTML(o){
+  o = o || {};
+  const left = (o.tabs && o.tabs.length)
+    ? '<div class="rb-tabs" role="tablist">' + o.tabs.map((t, i) =>
+        '<button class="rb-tab' + (i === 0 ? ' on' : '') + '" id="' + t.id + '"'
+        + ' data-rb="' + t.key + '" type="button" role="tab"'
+        + ' aria-selected="' + (i === 0 ? 'true' : 'false') + '">' + escH(t.label) + '</button>').join('')
+      + '</div>'
+    : '<span class="rb-title"' + (o.titleId ? ' id="' + o.titleId + '"' : '') + '>' + escH(o.title || '') + '</span>';
+  /* aria-live so a status that appears while somebody is reading the result is
+     announced rather than only drawn. */
+  const status = '<span class="rb-status"' + (o.statusId ? ' id="' + o.statusId + '"' : '')
+    + ' role="status" aria-live="polite"></span>';
+  return '<div class="rb"' + (o.id ? ' id="' + o.id + '"' : '') + '>' + left
+    + '<div class="rb-acts">' + status + (o.actions || '') + '</div></div>';
+}
+/* The tab behaviour, once. `onPick` gets the key and does the surface-specific
+   part; selection state and aria are handled here so they cannot drift apart -
+   Dev's old toggle set a class and never touched aria at all. */
+function _wireResultTabs(barId, onPick){
+  const root = document.getElementById(barId); if(!root) return;
+  const tabs = [...root.querySelectorAll('[data-rb]')];
+  tabs.forEach(b => on(b, 'click', () => {
+    tabs.forEach(x => { x.classList.remove('on'); x.setAttribute('aria-selected', 'false'); });
+    b.classList.add('on'); b.setAttribute('aria-selected', 'true');
+    try{ onPick(b.dataset.rb); }catch(e){}
+  }));
+}
+try{ window._resultBarHTML=_resultBarHTML; window._wireResultTabs=_wireResultTabs; }catch(e){}
+
 /* `frameFinder` is a function, not an element: Dev replaces its iframe every
    time it renders a result, so an element captured at wiring time would be
    stale by the first build. Studio keeps one frame and does not care. */
@@ -356,18 +410,17 @@ function _studioShowCanvas(brief){
       </div>
       <div class="studio-actions">
         <button class="btn" id="studio-history">History</button>
-        <button class="btn" id="studio-code">View code</button>
       </div>
       <div class="studio-actions">
         <button class="btn" id="studio-download">Download this</button>
         <button class="btn" id="studio-export">Export project</button>
       </div>
-      <div id="studio-status" class="studio-status"></div>
     </div>
     <div class="studio-stage">
-      <div class="studio-frame-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="studio-frame-t" id="studio-frame-t">Live preview</span>
-        ${_vpSwitchHTML('studio-vp')}
-      </div>
+      ${_resultBarHTML({ id:'studio-rb', statusId:'studio-status',
+        tabs:[{id:'studio-frame-t',key:'preview',label:'Preview'},
+              {id:'studio-code',key:'code',label:'Code'}],
+        actions: _vpSwitchHTML('studio-vp') })}
       <div class="studio-stage-inner" id="studio-stage-inner"><iframe id="studio-frame" class="studio-frame" sandbox="allow-scripts"></iframe></div>
       <div class="studio-code-body" id="studio-code-body" style="display:none"><pre class="studio-code-pre"><code id="studio-code-text"></code></pre></div>
     </div>
@@ -396,16 +449,22 @@ function _studioShowCanvas(brief){
      different way. So it shows the code in the surface now, where nothing can
      swallow it and where it matches the other Build surface. The button keeps
      its id and becomes a toggle. */
-  on($('studio-code'),'click',()=>{
-    const a=_studioActive(); if(!a){ toast('Create a design first, then you can read its code.','info',3500); return; }
-    const body=$('studio-code-body'), stage=$('studio-stage-inner'), btn=$('studio-code'), t=$('studio-frame-t');
+  /* Was a button in the side panel that renamed itself between "View code" and
+     "View preview" - a toggle whose label describes where you are going while
+     the tab beside it describes where you are. Two tabs say it once. */
+  _wireResultTabs('studio-rb', (key)=>{
+    const body=$('studio-code-body'), stage=$('studio-stage-inner');
     if(!body||!stage) return;
-    const showing = body.style.display !== 'none';
-    body.style.display = showing ? 'none' : 'block';
-    stage.style.display = showing ? '' : 'none';
-    if(btn){ btn.textContent = showing ? 'View code' : 'View preview'; btn.classList.toggle('on', !showing); }
-    if(t) t.textContent = showing ? 'Live preview' : 'Code';
-    if(!showing){ const code=$('studio-code-text'); if(code) code.textContent = a.html || ''; }
+    const wantCode = key === 'code';
+    const a=_studioActive();
+    if(wantCode && !a){
+      toast('Create a design first, then you can read its code.','info',3500);
+      const back=$('studio-frame-t'); if(back){ back.click(); }
+      return;
+    }
+    body.style.display = wantCode ? 'block' : 'none';
+    stage.style.display = wantCode ? 'none' : '';
+    if(wantCode){ const code=$('studio-code-text'); if(code) code.textContent = (a && a.html) || ''; }
   });
   on($('studio-download'),'click',()=>{ const a=_studioActive(); if(!a) return; _studioDownload(a); });
   on($('studio-export'),'click',_studioExportProject);
@@ -952,17 +1011,12 @@ function renderCodeView(){
     </div>
 
     <div class="dev-preview">
-      <div class="dev-prev-bar">
-        <div class="dev-prev-tabs">
-          <button class="dev-pt on" id="dev-tab-prev" data-pv="preview">Preview</button>
-          <button class="dev-pt" id="dev-tab-code" data-pv="code">Code</button>
-        </div>
-        <div class="dev-prev-acts">${_vpSwitchHTML('dev-vp')}<span id="dev-prev-s"></span>
-          <button class="dev-openext" id="dev-download-proj" title="Download the project"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
+      ${_resultBarHTML({ id:'dev-rb', statusId:'dev-prev-s',
+        tabs:[{id:'dev-tab-prev',key:'preview',label:'Preview'},
+              {id:'dev-tab-code',key:'code',label:'Code'}],
+        actions: _vpSwitchHTML('dev-vp') + `<button class="dev-openext" id="dev-download-proj" title="Download the project"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
           <button class="dev-openext" id="dev-deploy" title="Deploy a shareable page"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h8l-1 8 10-12h-8z"/></svg></button>
-          <button class="dev-openext" id="dev-open-ext" title="Open in a new tab"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></button>
-        </div>
-      </div>
+          <button class="dev-openext" id="dev-open-ext" title="Open in a new tab"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></button>` })}
       <div id="dev-prev-body" class="dev-prev-body"><div class="lab-placeholder">Your live result appears here.</div></div>
       <div id="dev-code-body" class="dev-code-body" style="display:none"><div class="dev-code-layout"><div class="dev-tree" id="dev-tree"></div><div class="dev-code-main" id="dev-code-main"><div class="lab-placeholder">The code appears here as AMV writes it.</div></div></div></div>
     </div>
@@ -984,10 +1038,13 @@ function renderCodeView(){
   devUsage();
   on($('dev-model'),'change',function(){ _setSectionModel('code', this.value); devUsage(); toast('Code model set to '+MODELS[this.value].label,'info',2500); });
   // Code/Preview toggle (Terminal removed - Dev is a build-and-preview surface)
-  const showPV=(pv)=>{ const pb=$('dev-prev-body'),cb=$('dev-code-body'); const tp=$('dev-tab-prev'),tc=$('dev-tab-code'); [pb,cb].forEach(x=>{if(x)x.style.display='none';}); [tp,tc].forEach(x=>x&&x.classList.remove('on')); if(pv==='code'){ if(cb)cb.style.display='block'; tc&&tc.classList.add('on'); } else { if(pb)pb.style.display='flex'; tp&&tp.classList.add('on'); } };
+  /* Selection state and aria live in _wireResultTabs now, so this only does the
+     part that is Dev's: which body is on screen. */
+  const showPV=(pv)=>{ const pb=$('dev-prev-body'),cb=$('dev-code-body');
+    if(cb) cb.style.display = pv==='code' ? 'block' : 'none';
+    if(pb) pb.style.display = pv==='code' ? 'none' : 'flex'; };
   _wireVpSwitch('dev-vp', ()=>document.querySelector('#dev-prev-body .dev-prev-frame'));
-  on($('dev-tab-prev'),'click',()=>showPV('preview'));
-  on($('dev-tab-code'),'click',()=>showPV('code'));
+  _wireResultTabs('dev-rb', showPV);
   on($('dev-open-ext'),'click',()=>_devOpenExternal());
   on($('dev-download-proj'),'click',()=>_devDownloadProject());
   on($('dev-deploy'),'click',()=>_devDeploy());

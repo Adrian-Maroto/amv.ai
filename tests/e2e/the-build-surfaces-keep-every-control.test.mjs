@@ -341,53 +341,70 @@ section('The outcome can be chosen from any Build surface (AMV-D007 step 4)');
      'and it steps out of the way once there is work on the surface', whenBusy);
 }
 
-section('Reading your own code does not depend on a popup (AMV-D007 step 5)');
+section('Reading your own code does not depend on a popup (AMV-D007 step 5)')
 {
-  /* Studio's "View code" opened a new window and wrote the markup into it.
-     window.open returns null when popups are blocked - the default in several
+  /* Studio used to open a NEW BROWSER WINDOW and write the markup into it.
+     `window.open` returns null when popups are blocked - the default in several
      browsers and common on phones - and the guarded call then did nothing at
-     all: no window, no toast, no error, nothing on screen. Measured both ways
-     before it was changed; popups allowed opened a tab, popups blocked opened
-     none and reported nothing.
+     all: no window, no toast, no error, nothing on screen.
 
-     window.open is stubbed to null here, which is exactly what a blocker does.
-     A check that only runs with popups working would never have seen this. */
-  const out = await page.evaluate(async () => {
+     It shows the code in the surface now. Since step 5 that is a TAB in the
+     shared bar rather than a button in the side panel that renamed itself
+     between "View code" and "View preview" - a label describing where you are
+     going, next to a title describing where you are. Two tabs say it once, and
+     Dev keeps its in the same place, so the control does not move when you
+     move surface.
+
+     What is asserted is the intent, which did not change: the code is reachable
+     without a popup, it is really the design's own markup, and you can get
+     back. Only the mechanism moved. */
+  const r = await page.evaluate(async () => {
+    setTab('studio');
+    _studioNewArtifact('T', 'page', 'b');
+    _studioSetHTML('<h1>the real markup</h1>', 'b');
+    _studioShowCanvas('b');
+    await new Promise(s => setTimeout(s, 400));
     const realOpen = window.open;
-    window.open = () => null;
-    try {
-      setTab('studio');
-      _studioNewArtifact('T', 'page', 'brief');
-      _studioSetHTML('<h1>the markup they asked to read</h1>', 'brief');
-      _studioShowCanvas('brief');
-      await new Promise(s => setTimeout(s, 400));
-      const btn = document.getElementById('studio-code');
-      if (!btn) return { missing: true };
-      const vis = (e) => !!e && getComputedStyle(e).display !== 'none';
-      btn.click();
-      await new Promise(s => setTimeout(s, 300));
-      const shown = {
-        codeVisible: vis(document.getElementById('studio-code-body')),
-        text: (document.getElementById('studio-code-text') || {}).textContent || '',
-        label: btn.textContent.trim(),
-      };
-      btn.click();
-      await new Promise(s => setTimeout(s, 300));
-      const back = {
-        codeHidden: !vis(document.getElementById('studio-code-body')),
-        previewVisible: vis(document.getElementById('studio-stage-inner')),
-        label: btn.textContent.trim(),
-      };
-      return { missing: false, shown, back };
-    } finally { window.open = realOpen; }
+    window.open = () => null;                       // popups blocked
+
+    const bar  = document.getElementById('studio-rb');
+    const code = document.getElementById('studio-code');
+    const prev = document.getElementById('studio-frame-t');
+    if (!bar || !code || !prev) { window.open = realOpen; return { missing: true }; }
+
+    const inBar = bar.contains(code) && bar.contains(prev);
+    code.click();
+    await new Promise(s => setTimeout(s, 350));
+    const body = document.getElementById('studio-code-body');
+    const stage = document.getElementById('studio-stage-inner');
+    const shown = {
+      codeVisible: !!body && body.style.display !== 'none',
+      text: (document.getElementById('studio-code-text') || {}).textContent || '',
+      codeSelected: code.getAttribute('aria-selected') === 'true',
+      prevSelected: prev.getAttribute('aria-selected') === 'true',
+    };
+
+    prev.click();
+    await new Promise(s => setTimeout(s, 350));
+    const back = {
+      codeHidden: !!body && body.style.display === 'none',
+      previewVisible: !!stage && stage.style.display !== 'none',
+      prevSelected: prev.getAttribute('aria-selected') === 'true',
+      codeSelected: code.getAttribute('aria-selected') === 'true',
+    };
+    window.open = realOpen;
+    return { inBar, shown, back };
   });
-  ok(!out.missing, 'the View code control is on the canvas');
-  ok(out.shown.codeVisible, 'with popups blocked, the code is still shown', out.shown);
-  ok(out.shown.text.includes('the markup they asked to read'),
-     'and it is the design\'s own markup', out.shown.text.slice(0, 50));
-  ok(/preview/i.test(out.shown.label), 'the control then offers the way back', out.shown.label);
-  ok(out.back.codeHidden && out.back.previewVisible, 'and really goes back', out.back);
-  ok(/code/i.test(out.back.label), 'with its original label', out.back.label);
+
+  ok(!r.missing, 'the bar carries both a Preview and a Code tab', !r.missing);
+  ok(r.inBar, 'and they live in the bar, not in a side panel', r.inBar);
+  ok(r.shown.codeVisible, 'with popups blocked, the code is still shown', r.shown.codeVisible);
+  ok(/the real markup/.test(r.shown.text), 'and it is the design s own markup', r.shown.text.slice(0, 60));
+  ok(r.shown.codeSelected && !r.shown.prevSelected,
+     'the bar says which one you are on, to a screen reader too',
+     'code=' + r.shown.codeSelected + ' preview=' + r.shown.prevSelected);
+  ok(r.back.codeHidden && r.back.previewVisible, 'and Preview really goes back', JSON.stringify(r.back));
+  ok(r.back.prevSelected && !r.back.codeSelected, 'with the selection following', JSON.stringify(r.back));
 }
 
 section('A phone can give the result the whole screen on every Build surface (AMV-D007 step 5)');
@@ -569,6 +586,17 @@ section('Every control on a Build surface actually does something');
       const out = [];
       for (const c of wanted) {
         if (c.id && (SKIP.includes(c.id) || PICKERS.includes(c.id))) continue;
+        /* A tab that is ALREADY selected is correctly a no-op when clicked -
+           it is showing its panel and there is nowhere to go. Flagging that
+           would report correct behaviour as a defect, and a sweep that cries
+           wolf is a sweep people learn to skim. The pair is still proven live:
+           the unselected sibling is swept like any other control, and the
+           dedicated section below drives both directions and back. */
+        {
+          const pre = c.id ? document.getElementById(c.id) : null;
+          if (pre && pre.getAttribute('role') === 'tab'
+                  && pre.getAttribute('aria-selected') === 'true') continue;
+        }
         run(); await new Promise(s => setTimeout(s, 320));
         const el = c.id ? document.getElementById(c.id) : visible().find(b => nameOf(b) === c.label);
         if (!el) continue;

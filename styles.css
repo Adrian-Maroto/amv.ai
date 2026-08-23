@@ -5381,7 +5381,7 @@ body.light #ovr.on:has(> .nudge-modal){ background:rgba(40,40,50,.55); }
 
   /* ---- Tap targets: nothing interactive smaller than 44px ---- */
   .dev-ico, .dev-openext, .lab-ico,
-  .vtk, .dev-pt, .lab-pt {
+  .vtk, .dev-pt, .lab-pt, .rb-tab {
     min-height: 40px;
     min-width: 40px;
     display: inline-flex;
@@ -9024,3 +9024,75 @@ body.light .fr-d{ color:#67656d; }
 .ai-snag-tier .ai-snag-ic{ color:var(--accent); }
 .ai-snag-tier .ai-snag-retry{ border-color:var(--accent); color:var(--accent); }
 .ai-snag-tier .ai-snag-retry:hover{ background:var(--accent-soft); }
+
+/* ── LAYER A102: ONE BAR ABOVE EVERY RESULT (AMV-D007 step 5) ─────────────
+   Dev, Lab and Studio each had their own bar above the result, built three
+   ways: Dev with a tab pair and four actions, Lab with a bare label, Studio
+   with three fake window dots and a title. Same job, three sets of padding,
+   three type sizes, three places for the status to live - including Studio's,
+   which sat in the SIDE PANEL, describing a stage in a different pane.
+
+   One component. A left slot that takes tabs or a title, a right slot that
+   takes a status and actions. Tokens throughout, so this bar is the one place
+   the chrome is decided.
+
+   Not measured before now: none of the three had ANY narrow-width handling.
+   Dev's carries a tab pair, a three-button viewport switch, a status string
+   and three icon buttons - it does not fit a 390px phone, and nothing said so.
+   Below `--bp-sm` the title and the viewport switch stand down, because on a
+   phone the preview is already the width of the screen and naming the pane you
+   are looking at is the least useful thing in the row. */
+.rb{
+  display:flex; align-items:center; justify-content:space-between; gap:var(--sp-2);
+  padding:var(--sp-2) var(--sp-3);
+  border-bottom:1px solid var(--bd);
+  background:var(--bg);
+  flex-shrink:0; min-height:44px;
+}
+.rb-tabs{ display:flex; gap:2px; background:var(--s2); padding:3px; border-radius:var(--r-md); }
+.rb-tab{
+  padding:5px 13px; border:none; background:none; cursor:pointer;
+  font-family:inherit; font-size:var(--t-sm); font-weight:500; color:var(--mu);
+  border-radius:var(--r-sm); transition:background .14s var(--ease), color .14s var(--ease);
+}
+.rb-tab:hover{ color:var(--tx); }
+.rb-tab.on{ background:var(--s1); color:var(--tx); box-shadow:var(--sh-sm); }
+.rb-tab:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
+.rb-title{
+  font-size:var(--t-xs); font-weight:600; letter-spacing:.06em;
+  text-transform:uppercase; color:var(--dim);
+}
+.rb-acts{ display:flex; align-items:center; gap:var(--sp-1); min-width:0; }
+.rb-status{
+  font-size:var(--t-sm); color:var(--mu);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:38ch;
+}
+/* The viewport switch already had its own look; it keeps it, and stops being
+   pushed to the far edge by an auto margin now that the bar has real slots. */
+.rb-acts .studio-vp{ margin-left:0; }
+
+/* NOT forced to one height, on purpose. The first version of this layer pinned
+   the action buttons to 30px so all three bars would measure the same. They do
+   not measure the same and they should not: on a phone a later layer gives
+   every interactive thing in here a 40px minimum, so a bar carrying three icon
+   buttons is taller than a bar carrying the word "Output". Uniformity that
+   shrinks a touch target is the wrong kind of consistency, and the rule would
+   have quietly undone an accessibility guarantee to win a screenshot.
+
+   The same rule is why `.rb-tab` had to be added to that list: it replaces
+   `.dev-pt` and `.lab-pt`, which were already enrolled, and a new class does
+   not inherit a cross-cutting promise made to the old one. */
+
+@media (max-width: 560px){
+  .rb{ padding:var(--sp-2); gap:var(--sp-1); }
+  /* The viewport switch goes: on a phone the preview is already the width of
+     the screen, so offering to narrow it to phone width is offering nothing.
+
+     The TITLE stays. Hiding it was the first instinct and it was wrong -
+     measured on a 390px screen, Lab's bar holds a title and nothing else, so
+     hiding it left an empty 44px strip where the word "Output" had been. It is
+     49px wide. It was never the problem. */
+  .rb-acts .studio-vp{ display:none; }
+  .rb-status{ max-width:14ch; }
+  .rb-tab{ padding:5px 10px; }
+}
