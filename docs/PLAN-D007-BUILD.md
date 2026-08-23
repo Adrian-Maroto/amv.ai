@@ -153,7 +153,7 @@ big-bang rewrite.
    toolbar wraps to 164px and the first mode button rendered at the right size,
    in the right place, with the right label, BEHIND the bar. Found by clicking
    it, not by measuring it.
-5. **One result pane. STARTED - the defect first.** Studio and Dev showed code
+5. **One result pane. DONE.** Studio and Dev showed code
    two completely different ways for the same job: Dev has a Code tab, Studio
    opened a new browser window and wrote the markup into it.
 
@@ -182,10 +182,18 @@ big-bang rewrite.
    highlighted, the transition ran on nothing. Confirmed pre-existing by
    rebuilding the previous commit.
 
-   Still to do: Lab's output pane and Dev's Preview/Code tabs are still two
-   separate structures and the tab bar is not yet a shared component. That is
-   the remainder of this step, and it is wiring-heavy, so it may fold into
-   step 6.
+   **Finished 2026-08-23 with `_resultBarHTML`.** One component, a left slot for
+   tabs or a title and a right slot for a status and actions. Dev passes tabs,
+   Lab passes a title, Studio passes tabs - which is how Studio's code toggle
+   left the side panel and became a tab where Dev keeps its, and how Studio's
+   status came to sit beside the stage it describes. Both kept their ids, so
+   the step-1 inventory proves they still reach the same function.
+
+   Two mistakes made and caught by measuring rather than by reading: hiding the
+   title on narrow screens left Lab with an empty strip, and the new tab class
+   was not enrolled in the tap-target rule the old one was in, so the tabs lost
+   their 40px phone minimum while still looking right. Both are checks now, in
+   `tests/e2e/one-bar-above-every-result`.
    **Read before starting, 2026-08-23.** The two structures were measured rather
    than assumed, and they are not the same shape:
 
