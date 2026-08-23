@@ -173,3 +173,48 @@ computed font size of every text element is identical.
 The other ~686 shift type if migrated and need a decision - add tokens for the
 in-between sizes, accept the shift, or leave them. That is the owner's call and
 is NOT bundled into the safe half.
+
+## The safe half is done; here is the decision on the rest
+
+**Done (commit 5de077a):** 511 rules whose size is an exact step on the scale
+migrated to tokens. Proved invisible - 740 text elements across fourteen tabs,
+zero changed at the default size - and the text size setting went from moving
+12% of visible text to 42%, with no horizontal overflow at Largest on desktop
+or phone.
+
+**Open, and it is a decision rather than a defect.** 723 hardcoded declarations
+remain, and every one of them sits BETWEEN steps on the scale:
+
+| px | rules | nearest token | shift if migrated |
+|---|---|---|---|
+| 13 | 187 | `--t-base` 13.5 | +0.5px on 187 rules |
+| 12.5 | 156 | `--t-sm` 12 or `--t-base` 13.5 | -0.5 or +1 |
+| 11.5 | 77 | `--t-xs` 11 or `--t-sm` 12 | -0.5 or +0.5 |
+| 15 | 42 | `--t-md` 14 or `--t-lg` 16 | -1 or +1 |
+| 10.5 | 41 | below the scale | no token exists |
+| 10 | 43 | below the scale | no token exists |
+| 18 | 20 | between 16 and 20 | -2 or +2 |
+| other | ~157 | various | various |
+
+Three ways to close it, none of them free:
+
+1. **Add tokens for the in-between sizes.** `--t-2xs` 10, `--t-xs-plus` 11.5,
+   and so on. Every remaining rule then migrates with no visual change and the
+   whole product obeys the text size setting. The cost is a scale of thirteen
+   steps instead of eight, which is a weaker scale - the point of a scale is
+   that it constrains.
+2. **Snap them to the nearest existing step.** The product obeys the setting
+   everywhere and the scale stays tight. The cost is that type shifts by half a
+   pixel to two pixels across roughly seven hundred rules, on every screen. It
+   needs looking at, screen by screen, not measuring.
+3. **Leave them.** No risk, and the text size setting keeps working on 42% of
+   the text rather than all of it.
+
+Recommendation: **(1) for the sizes below the scale (10 and 10.5px, 84 rules -
+there is no token to snap to and they are the smallest text in the product,
+which is exactly the text somebody enabling a larger size needs), then (2) for
+13px and 12.5px** - 343 rules, all moving by half a pixel, which is the
+smallest visible change available and covers the largest block. That reaches
+roughly 80% with one screen-by-screen review rather than three.
+
+This is a visual change across the product, so it waits for the owner.
