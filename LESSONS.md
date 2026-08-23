@@ -5775,6 +5775,16 @@ The tell is a sweep reporting a defect on a surface whose *purpose* is the thing
 the sweep cannot see. Appearance changes the document, not the pane. That should
 have been the first thought, not the third.
 
+**A fifth, later the same day, and this one died before it was written down.** A
+check reported that the result-bar tab I had just built was not keyboard
+focusable - which would have been a real accessibility regression in my own new
+component. It ran without setting a viewport, so Dev's result pane was never
+shown, and `focus()` on a hidden element does not take. Re-run at 1440x900 with
+the pane visible: `tabIndex:0`, focusable, and a click through the keyboard path
+really did switch the body. The habit from this entry - verify the single case by
+hand before believing it - cost about thirty seconds and saved a false entry in a
+findings document.
+
 ### The rule I am taking from it
 
 **Before believing a sweep, sabotage it in reverse: make the product correct in
