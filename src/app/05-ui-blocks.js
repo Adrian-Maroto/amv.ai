@@ -452,7 +452,7 @@ function md(text) {  if(!text) return '';
   t = t.replace(/!\[([^\]]*)\]\((https?:\/\/[^)]+)\)/g, (m,alt,url)=>'<img src="'+_mdAttr(url)+'" alt="'+_mdAttr(alt)+'" class="chat-img" loading="lazy">');
   // Link TEXT ($1) is intentionally left as already-rendered inline HTML (bold/
   // italic/code were applied above); only the href URL is attribute-escaped.
-  t = t.replace(/\[(.+?)\]\((https?:\/\/[^)]+)\)/g, (m,txt,url)=>'<a href="'+_mdAttr(url)+'" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">'+txt+'</a>');
+  t = t.replace(/\[(.+?)\]\((https?:\/\/[^)]+)\)/g, (m,txt,url)=>'<a href="'+_mdAttr(url)+'" target="_blank" rel="noopener noreferrer" style="color:var(--accent-txt)">'+txt+'</a>');
   t = t.replace(/\n\n/g,'<br><br>').replace(/\n/g,'<br>');
   // Newline->\<br\> is fine for prose, but it also injects stray breaks INSIDE
   // block elements (between list items, around headings, around code blocks),
@@ -2236,9 +2236,9 @@ function showAttChip(){
   if(!ab2||!ac) return;
   const icons={img:'🖼',pdf:'📄',text:'📎'};
   const sz=S.att.size?(' ('+fmtSize(S.att.size)+')'):'';
-  ac.innerHTML='<span>'+(icons[S.att.kind]||'📎')+' <strong>'+escH(S.att.name)+'</strong><span style="color:var(--t3);font-size:var(--t-2xs)">'+sz+'</span></span>';
+  ac.innerHTML='<span>'+(icons[S.att.kind]||'📎')+' <strong>'+escH(S.att.name)+'</strong><span style="color:var(--dim);font-size:var(--t-2xs)">'+sz+'</span></span>';
   const btn=document.createElement('button');
-  btn.textContent='×'; btn.style.cssText='background:none;border:none;color:var(--t2);cursor:pointer;font-size:var(--t-base);line-height:1;margin-left:4px';
+  btn.textContent='×'; btn.style.cssText='background:none;border:none;color:var(--mu);cursor:pointer;font-size:var(--t-base);line-height:1;margin-left:4px';
   btn.onclick=()=>{S.att=null;ab2.style.display='none';};
   ac.appendChild(btn);
   ab2.style.display='flex';
@@ -2497,11 +2497,11 @@ function renderImgsView(){
         '</div>'+
         '<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px" id="srow">'+styleHtml+'</div>'+
         '<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">'+
-          '<span style="font-size:var(--t-2xs);color:var(--t2);letter-spacing:.05em;text-transform:uppercase">Ratio</span>'+
+          '<span style="font-size:var(--t-2xs);color:var(--mu);letter-spacing:.05em;text-transform:uppercase">Ratio</span>'+
           '<div id="rrow">'+ratioHtml+'</div>'+
           '<button class="bg2" id="clrimgs" style="margin-left:auto;display:'+(S.imgs.length?'inline-flex':'none')+'">Clear all</button>'+
         '</div>'+
-        '<div style="font-size:var(--t-2xs);color:var(--t3);margin-top:6px">Ctrl+Enter to generate · HD output · 5-15s · No explicit content</div>'+
+        '<div style="font-size:var(--t-2xs);color:var(--dim);margin-top:6px">Ctrl+Enter to generate · HD output · 5-15s · No explicit content</div>'+
       '</div>'+
       '<div id="imgg"></div>'+
     '</div>';
@@ -2534,7 +2534,7 @@ function renderImgGallery(){
       '<div class="ifoot">'+
         '<div class="ipr">'+escH(img.prompt)+'</div>'+
         '<div class="ia">'+
-          '<span style="font-size:var(--t-2xs);color:var(--t2)">'+img.style+'</span>'+
+          '<span style="font-size:var(--t-2xs);color:var(--mu)">'+img.style+'</span>'+
           '<div style="display:flex;gap:3px">'+
             '<span class="ial" id="io-'+img.id+'" data-url="">Open</span>'+
             '<a class="ial" id="id-'+img.id+'" href="" download="amv.jpg">Save</a>'+
@@ -2601,7 +2601,7 @@ function loadImg(img){
     tries++;
     if(tries>MAX){
       _stopPhases();
-      if(ld) ld.innerHTML='<div class="ilt" style="text-align:center;padding:0 10px">Couldn\u2019t generate this one.<br><span style="font-size:var(--t-2xs);opacity:.6">The image service may be busy - try again in a moment.</span><br><button data-rimgid="'+img.id+'" class="retry-img-btn" style="background:var(--indigo);border:none;color:#fff;border-radius:5px;padding:5px 12px;cursor:pointer;font-family:var(--fn);font-size:var(--t-xs);margin-top:8px">Retry</button></div>';
+      if(ld) ld.innerHTML='<div class="ilt" style="text-align:center;padding:0 10px">Couldn\u2019t generate this one.<br><span style="font-size:var(--t-2xs);opacity:.6">The image service may be busy - try again in a moment.</span><br><button data-rimgid="'+img.id+'" class="retry-img-btn" style="background:var(--indigo);border:none;color:#fff;border-radius:var(--r-xs);padding:5px 12px;cursor:pointer;font-family:var(--fn);font-size:var(--t-xs);margin-top:8px">Retry</button></div>';
       // Wire retry button
       const retryBtn=ld.querySelector('.retry-img-btn');
       if(retryBtn) retryBtn.addEventListener('click',()=>resetImg(retryBtn.dataset.rimgid));
@@ -2653,7 +2653,7 @@ function renderVideoView(){
           '<button class="btn bp" id="gvb" style="font-size:var(--t-base)">Generate Video</button>'+
           (S.vids.length?'<button class="bg2" id="clrvids" style="font-size:var(--t-xs)">Clear all</button>':'')+
         '</div>'+
-        '<div id="vquota" style="font-size:var(--t-2xs);color:var(--t3);margin-top:8px">Ctrl+Enter to generate</div>'+
+        '<div id="vquota" style="font-size:var(--t-2xs);color:var(--dim);margin-top:8px">Ctrl+Enter to generate</div>'+
       '</div>'+
       '<div class="vg" id="vgrid"></div>'+
     '</div>';
@@ -3366,7 +3366,7 @@ function renderDashboard(){
     '<div class="sv fi"><div class="dash-wrap" style="max-width:1000px;margin:0 auto;display:flex;flex-direction:column;gap:22px">'+
       '<div>'+
         '<h2 style="font-size:var(--t-xl);font-weight:700;letter-spacing:-.4px;margin-bottom:3px">Good '+greeting()+', '+escH(S.user?.name?.split(' ')[0]||'there')+'.</h2>'+
-        '<p style="font-size:var(--t-base);color:var(--t2)">Here&#39;s what&#39;s happening with your AMV.AI account.</p>'+
+        '<p style="font-size:var(--t-base);color:var(--mu)">Here&#39;s what&#39;s happening with your AMV.AI account.</p>'+
       '</div>'+
       '<div class="dg">'+
         '<div class="dc"><div class="dicon" style="background:rgba(85,144,255,.1)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--indigo)" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="dn">'+cc+'</div><div class="dl">Conversations</div></div>'+
@@ -3394,8 +3394,8 @@ function renderDashboard(){
           '</div>'+
         '</div>':'')+ 
       (isAdmin()?'<div class="ss2"><h3>Platform Status</h3>'+
-        '<div class="br2"><span style="color:var(--t2)">AI Engine</span><span style="color:'+(_aiBackendReady()?'var(--green)':'var(--red)')+';font-size:var(--t-sm);font-weight:500">'+(_aiBackendReady()?'✓ Online':'⚠ Backend required')+'</span></div>'+
-        '<div class="br2"><span style="color:var(--t2)">Video</span><span style="color:'+(S.rl?'var(--green)':'var(--dim)')+';font-size:var(--t-sm)">'+(S.rl?'✓ Connected':'Not configured')+'</span></div>'+
+        '<div class="br2"><span style="color:var(--mu)">AI Engine</span><span style="color:'+(_aiBackendReady()?'var(--green)':'var(--red)')+';font-size:var(--t-sm);font-weight:500">'+(_aiBackendReady()?'✓ Online':'⚠ Backend required')+'</span></div>'+
+        '<div class="br2"><span style="color:var(--mu)">Video</span><span style="color:'+(S.rl?'var(--green)':'var(--dim)')+';font-size:var(--t-sm)">'+(S.rl?'✓ Connected':'Not configured')+'</span></div>'+
         (isAdmin()&&!_aiBackendReady()?'<button class="btn bs" data-gs="apikeys" style="margin-top:10px;font-size:var(--t-sm)">Connect backend</button>':'')+
       '</div>':'')+ 
     '</div></div>';

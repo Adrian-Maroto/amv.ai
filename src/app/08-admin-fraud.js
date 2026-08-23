@@ -1066,7 +1066,7 @@ function renderBillingView(targetEl){
           _drow('Price','$'+P.price+' / month')+
           (customSummary?_drow('Monthly usage',customSummary.monthlyTokens.toLocaleString()+' tokens (credit-metered)'):'')+
           (customSummary?_drow('Daily limit',customSummary.dailyCap.toLocaleString()+' tokens/day'):'')+
-          _drow('Status','<span style="color:var(--grn)">Active</span>')+
+          _drow('Status','<span style="color:var(--grn-txt)">Active</span>')+
           _drow('Started',fmt(sinceDate))+
           _drow('Renews',fmt(nextDate))+
           _drow('Billing email',escH(email))+
@@ -1095,7 +1095,7 @@ function renderBillingView(targetEl){
           downTargets.filter(k=>k!=='free').map(k=>'<button class="btn bs" data-pay="'+escH(k)+'">Switch to '+escH(PLANS[k].name)+' \u00b7 $'+PLANS[k].price+'/mo</button>').join('')+
         '</div>'+
         '<p class="bill-acts-s">Changes take effect immediately and are prorated. '+
-          'Working with other people? <a data-stab="team" style="color:var(--accent);cursor:pointer">Teams is priced per person</a>.</p>'+
+          'Working with other people? <a data-stab="team" style="color:var(--accent-txt);cursor:pointer">Teams is priced per person</a>.</p>'+
       '</div>':'')+
       /* Cancelling. The pricing page promises "cancel with one click" and there
          was no control anywhere that did it, which is a claim the product did
@@ -1111,7 +1111,7 @@ function renderBillingView(targetEl){
       '<div class="ss2"><h3>Cancel</h3>'+
         '<p style="font-size:var(--t-sm);color:var(--mu);line-height:1.6;margin:0 0 10px">'+
           'You keep '+escH(P.name)+' until the end of the period you have already paid for, and nothing you have made is deleted.</p>'+
-        '<button class="btn bs" id="bill-cancel" style="font-size:var(--t-sm);color:var(--red);border-color:var(--red)">Cancel subscription</button>'+
+        '<button class="btn bs" id="bill-cancel" style="font-size:var(--t-sm);color:var(--red-txt);border-color:var(--red-txt)">Cancel subscription</button>'+
         '<div class="seat-say" id="bill-cancel-say" role="status" aria-live="polite"></div>'+
       '</div>':'')+
       // INVOICES
@@ -1129,9 +1129,9 @@ function renderBillingView(targetEl){
         '</div>'+
       '</div>'+
       (isAdmin()?(
-      '<div class="ss2" style="border:1px dashed var(--bd);border-radius:10px;padding:14px 16px">'+
+      '<div class="ss2" style="border:1px dashed var(--bd);border-radius:var(--r-md);padding:14px 16px">'+
         '<h3 style="margin-top:0">Payment test mode <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(only you see this)</span></h3>'+
-        '<p style="font-size:var(--t-sm);color:var(--t2);line-height:1.6;margin:0 0 10px">Simulate a completed checkout to verify the success flow end to end - plan gating, UI refresh, and confirmation - before your live payment keys are connected. This changes only your local plan; it never charges anything.</p>'+
+        '<p style="font-size:var(--t-sm);color:var(--mu);line-height:1.6;margin:0 0 10px">Simulate a completed checkout to verify the success flow end to end - plan gating, UI refresh, and confirmation - before your live payment keys are connected. This changes only your local plan; it never charges anything.</p>'+
         '<div style="display:flex;gap:7px;flex-wrap:wrap">'+
           ['pro','elite','ultra'].map(pl=>'<button class="btn" data-simpay="'+pl+'" style="font-size:var(--t-sm)">Simulate '+(PLANS[pl]?PLANS[pl].name:pl)+'</button>').join('')+
           '<button class="btn" data-simpay="free" style="font-size:var(--t-sm)">Reset to Free</button>'+
@@ -1486,7 +1486,7 @@ function openUpgradeModal(lockedModel){
         '<div class="upg-row-name">Custom<span class="upg-row-tag alt">Build your own</span></div>'+
         '<div class="upg-row-desc">Pick your exact monthly budget - all models, hard-capped, from $10/mo.</div>'+
       '</div>'+
-      '<div class="upg-row-r"><div class="upg-row-price" style="font-size:calc(15px * var(--fs-s))">Your price</div><span class="upg-row-go">Build \u2192</span></div>'+
+      '<div class="upg-row-r"><div class="upg-row-price" style="font-size:var(--t-prose)">Your price</div><span class="upg-row-go">Build \u2192</span></div>'+
     '</button>';
   r.innerHTML='<div class="upg-ov" id="upg-bg"><div class="upg-modal" style="max-width:480px">'+
     '<button class="dna-x" id="upg-x" style="position:absolute;top:16px;right:16px">\u2715</button>'+
@@ -1571,7 +1571,7 @@ function openCustomPlan(){
     const marginPct=Math.round(s.margin*100);
     r.innerHTML='<div class="upg-ov" id="cp-bg"><div class="cp-modal">'+
       '<button class="dna-x" id="cp-x" style="position:absolute;top:16px;right:16px">\u2715</button>'+
-      '<div class="cp-head"><span class="eyebrow" style="color:var(--accent)">Custom plan</span>'+
+      '<div class="cp-head"><span class="eyebrow" style="color:var(--accent-txt)">Custom plan</span>'+
         '<h2>Pay exactly for what you need</h2>'+
         '<p>Set your monthly budget. You get a guaranteed pool of usage for that price - all models included, hard-capped so there are never surprise charges.</p></div>'+
       '<div class="cp-price-row"><span class="cp-cur">$</span><span class="cp-price" id="cp-price">'+price+'</span><span class="cp-per">/month</span></div>'+

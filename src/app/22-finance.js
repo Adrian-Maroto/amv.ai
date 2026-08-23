@@ -346,7 +346,7 @@ function _renderInvestPane(pane){
           '<div class="inv-when">'+
             INVEST_WHEN.map(w=>'<button class="btn '+(when===w.k?'bp':'bs')+' inv-when-b" data-inv-when="'+w.k+'">'+
               escH(w.label)+'</button>').join('')+
-            (when?'<button class="btn bs inv-when-b" data-inv-when="" style="color:var(--red);border-color:var(--red)">Stop</button>':'')+
+            (when?'<button class="btn bs inv-when-b" data-inv-when="" style="color:var(--red-txt);border-color:var(--red-txt)">Stop</button>':'')+
           '</div>'+
           '<div class="fam-say" id="inv-when-say" role="status" aria-live="polite">'+
             (when?escH('AMV checks '+((INVEST_WHEN.find(w=>w.k===when)||{}).detail||when)+' and tells you.'):'')+

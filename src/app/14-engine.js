@@ -920,7 +920,7 @@ async function _labDeploy(){
     }
     _labStat('\u2713 live','ok');
     _labOut('<div class="lab-sec"><div class="lab-sec-h">Published</div>'+
-      '<div class="lab-md">It\u2019s live at <a href="'+escH(safeUrl(url))+'" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">'+escH(url)+'</a> - anyone with the link can open it.</div></div>');
+      '<div class="lab-md">It\u2019s live at <a href="'+escH(safeUrl(url))+'" target="_blank" rel="noopener noreferrer" style="color:var(--accent-txt)">'+escH(url)+'</a> - anyone with the link can open it.</div></div>');
   }catch(e){
     _labStat('\u2717 '+e.message,'err');
     _labOut('<div class="lab-sec err"><pre class="lab-pre">'+_esc(e.message)+'</pre></div>');
@@ -1010,7 +1010,7 @@ async function _labRun(){
     if(r.html){
       _labStat('\u2713 rendered','ok');
       const ifr=document.createElement('iframe');
-      ifr.sandbox='allow-scripts'; ifr.style.cssText='width:100%;height:100%;border:0;background:#fff;border-radius:8px';
+      ifr.sandbox='allow-scripts'; ifr.style.cssText='width:100%;height:100%;border:0;background:#fff;border-radius:var(--r-sm)';
       ifr.srcdoc=r.html;
       const b=$('lab-out-body'); if(b){ b.innerHTML=''; b.appendChild(ifr); }
     } else if(r.ok){

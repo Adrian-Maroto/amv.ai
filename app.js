@@ -938,7 +938,7 @@ function _avatarInner(email){
 // A complete round avatar element of a given pixel size.
 function _avatarHTML(email, size){
   size=size||32;
-  return '<div class="amv-av" style="width:'+size+'px;height:'+size+'px;border-radius:4px;overflow:hidden;flex-shrink:0;background:var(--accent)">'+_avatarInner(email)+'</div>';
+  return '<div class="amv-av" style="width:'+size+'px;height:'+size+'px;border-radius:var(--r-2xs);overflow:hidden;flex-shrink:0;background:var(--accent)">'+_avatarInner(email)+'</div>';
 }
 
 
@@ -1477,7 +1477,7 @@ function _showModalAsync({title, body, okText='OK', cancelText, placeholder, def
         '<button class="oc" id="modal-close" style="position:absolute;top:10px;right:10px">×</button>'+
         (title?'<h2 style="margin-bottom:10px">'+escH(title)+'</h2>':'')+
         '<div class="ob-sub" style="margin-bottom:16px;white-space:pre-wrap;line-height:1.5">'+escH(body)+'</div>'+
-        (placeholder!==undefined?'<input id="modal-input" type="text" value="'+escH(defaultValue||'')+'" placeholder="'+escH(placeholder||'')+'" style="width:100%;margin-bottom:16px;padding:12px;border-radius:12px;border:1px solid var(--bd);font-size:var(--t-base)">':'')+
+        (placeholder!==undefined?'<input id="modal-input" type="text" value="'+escH(defaultValue||'')+'" placeholder="'+escH(placeholder||'')+'" style="width:100%;margin-bottom:16px;padding:12px;border-radius:var(--r-lg);border:1px solid var(--bd);font-size:var(--t-base)">':'')+
         '<div style="display:flex;gap:10px;justify-content:flex-end">'+
           (cancelText?'<button class="btn bs" id="modal-cancel" style="padding:10px 16px;font-size:var(--t-base)">'+escH(cancelText)+'</button>':'')+
           '<button class="btn bp" id="modal-ok" style="padding:10px 16px;font-size:var(--t-base)">'+escH(okText)+'</button>'+ 
@@ -3899,7 +3899,7 @@ function addToProject(id){
   const ws=Array.isArray(S.workspaces)?S.workspaces:[];
   const r=$('ovr'); if(!r) return;
   const list = ws.length
-    ? ws.map(w=>'<button class="proj-pick" data-wid="'+w.id+'" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:11px 12px;border:1px solid var(--bd);background:var(--s2);border-radius:10px;color:var(--tx);cursor:pointer;margin-bottom:8px;font-size:var(--t-md)"><span style="font-size:calc(18px * var(--fs-s))">'+_safeIcon(w.icon||'\uD83D\uDCC1')+'</span>'+escH(w.name||'Project')+'</button>').join('')
+    ? ws.map(w=>'<button class="proj-pick" data-wid="'+w.id+'" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:11px 12px;border:1px solid var(--bd);background:var(--s2);border-radius:var(--r-md);color:var(--tx);cursor:pointer;margin-bottom:8px;font-size:var(--t-md)"><span style="font-size:var(--t-xl)">'+_safeIcon(w.icon||'\uD83D\uDCC1')+'</span>'+escH(w.name||'Project')+'</button>').join('')
     : '<p class="ob-sub">No projects yet. Create one in the Projects tab first.</p>';
   r.innerHTML=
     '<div class="ov" id="ap-bg"><div class="ob">'+
@@ -5402,7 +5402,7 @@ function md(text) {  if(!text) return '';
   t = t.replace(/!\[([^\]]*)\]\((https?:\/\/[^)]+)\)/g, (m,alt,url)=>'<img src="'+_mdAttr(url)+'" alt="'+_mdAttr(alt)+'" class="chat-img" loading="lazy">');
   // Link TEXT ($1) is intentionally left as already-rendered inline HTML (bold/
   // italic/code were applied above); only the href URL is attribute-escaped.
-  t = t.replace(/\[(.+?)\]\((https?:\/\/[^)]+)\)/g, (m,txt,url)=>'<a href="'+_mdAttr(url)+'" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">'+txt+'</a>');
+  t = t.replace(/\[(.+?)\]\((https?:\/\/[^)]+)\)/g, (m,txt,url)=>'<a href="'+_mdAttr(url)+'" target="_blank" rel="noopener noreferrer" style="color:var(--accent-txt)">'+txt+'</a>');
   t = t.replace(/\n\n/g,'<br><br>').replace(/\n/g,'<br>');
   // Newline->\<br\> is fine for prose, but it also injects stray breaks INSIDE
   // block elements (between list items, around headings, around code blocks),
@@ -7186,9 +7186,9 @@ function showAttChip(){
   if(!ab2||!ac) return;
   const icons={img:'🖼',pdf:'📄',text:'📎'};
   const sz=S.att.size?(' ('+fmtSize(S.att.size)+')'):'';
-  ac.innerHTML='<span>'+(icons[S.att.kind]||'📎')+' <strong>'+escH(S.att.name)+'</strong><span style="color:var(--t3);font-size:var(--t-2xs)">'+sz+'</span></span>';
+  ac.innerHTML='<span>'+(icons[S.att.kind]||'📎')+' <strong>'+escH(S.att.name)+'</strong><span style="color:var(--dim);font-size:var(--t-2xs)">'+sz+'</span></span>';
   const btn=document.createElement('button');
-  btn.textContent='×'; btn.style.cssText='background:none;border:none;color:var(--t2);cursor:pointer;font-size:var(--t-base);line-height:1;margin-left:4px';
+  btn.textContent='×'; btn.style.cssText='background:none;border:none;color:var(--mu);cursor:pointer;font-size:var(--t-base);line-height:1;margin-left:4px';
   btn.onclick=()=>{S.att=null;ab2.style.display='none';};
   ac.appendChild(btn);
   ab2.style.display='flex';
@@ -7447,11 +7447,11 @@ function renderImgsView(){
         '</div>'+
         '<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px" id="srow">'+styleHtml+'</div>'+
         '<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">'+
-          '<span style="font-size:var(--t-2xs);color:var(--t2);letter-spacing:.05em;text-transform:uppercase">Ratio</span>'+
+          '<span style="font-size:var(--t-2xs);color:var(--mu);letter-spacing:.05em;text-transform:uppercase">Ratio</span>'+
           '<div id="rrow">'+ratioHtml+'</div>'+
           '<button class="bg2" id="clrimgs" style="margin-left:auto;display:'+(S.imgs.length?'inline-flex':'none')+'">Clear all</button>'+
         '</div>'+
-        '<div style="font-size:var(--t-2xs);color:var(--t3);margin-top:6px">Ctrl+Enter to generate · HD output · 5-15s · No explicit content</div>'+
+        '<div style="font-size:var(--t-2xs);color:var(--dim);margin-top:6px">Ctrl+Enter to generate · HD output · 5-15s · No explicit content</div>'+
       '</div>'+
       '<div id="imgg"></div>'+
     '</div>';
@@ -7484,7 +7484,7 @@ function renderImgGallery(){
       '<div class="ifoot">'+
         '<div class="ipr">'+escH(img.prompt)+'</div>'+
         '<div class="ia">'+
-          '<span style="font-size:var(--t-2xs);color:var(--t2)">'+img.style+'</span>'+
+          '<span style="font-size:var(--t-2xs);color:var(--mu)">'+img.style+'</span>'+
           '<div style="display:flex;gap:3px">'+
             '<span class="ial" id="io-'+img.id+'" data-url="">Open</span>'+
             '<a class="ial" id="id-'+img.id+'" href="" download="amv.jpg">Save</a>'+
@@ -7551,7 +7551,7 @@ function loadImg(img){
     tries++;
     if(tries>MAX){
       _stopPhases();
-      if(ld) ld.innerHTML='<div class="ilt" style="text-align:center;padding:0 10px">Couldn\u2019t generate this one.<br><span style="font-size:var(--t-2xs);opacity:.6">The image service may be busy - try again in a moment.</span><br><button data-rimgid="'+img.id+'" class="retry-img-btn" style="background:var(--indigo);border:none;color:#fff;border-radius:5px;padding:5px 12px;cursor:pointer;font-family:var(--fn);font-size:var(--t-xs);margin-top:8px">Retry</button></div>';
+      if(ld) ld.innerHTML='<div class="ilt" style="text-align:center;padding:0 10px">Couldn\u2019t generate this one.<br><span style="font-size:var(--t-2xs);opacity:.6">The image service may be busy - try again in a moment.</span><br><button data-rimgid="'+img.id+'" class="retry-img-btn" style="background:var(--indigo);border:none;color:#fff;border-radius:var(--r-xs);padding:5px 12px;cursor:pointer;font-family:var(--fn);font-size:var(--t-xs);margin-top:8px">Retry</button></div>';
       // Wire retry button
       const retryBtn=ld.querySelector('.retry-img-btn');
       if(retryBtn) retryBtn.addEventListener('click',()=>resetImg(retryBtn.dataset.rimgid));
@@ -7603,7 +7603,7 @@ function renderVideoView(){
           '<button class="btn bp" id="gvb" style="font-size:var(--t-base)">Generate Video</button>'+
           (S.vids.length?'<button class="bg2" id="clrvids" style="font-size:var(--t-xs)">Clear all</button>':'')+
         '</div>'+
-        '<div id="vquota" style="font-size:var(--t-2xs);color:var(--t3);margin-top:8px">Ctrl+Enter to generate</div>'+
+        '<div id="vquota" style="font-size:var(--t-2xs);color:var(--dim);margin-top:8px">Ctrl+Enter to generate</div>'+
       '</div>'+
       '<div class="vg" id="vgrid"></div>'+
     '</div>';
@@ -8316,7 +8316,7 @@ function renderDashboard(){
     '<div class="sv fi"><div class="dash-wrap" style="max-width:1000px;margin:0 auto;display:flex;flex-direction:column;gap:22px">'+
       '<div>'+
         '<h2 style="font-size:var(--t-xl);font-weight:700;letter-spacing:-.4px;margin-bottom:3px">Good '+greeting()+', '+escH(S.user?.name?.split(' ')[0]||'there')+'.</h2>'+
-        '<p style="font-size:var(--t-base);color:var(--t2)">Here&#39;s what&#39;s happening with your AMV.AI account.</p>'+
+        '<p style="font-size:var(--t-base);color:var(--mu)">Here&#39;s what&#39;s happening with your AMV.AI account.</p>'+
       '</div>'+
       '<div class="dg">'+
         '<div class="dc"><div class="dicon" style="background:rgba(85,144,255,.1)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--indigo)" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="dn">'+cc+'</div><div class="dl">Conversations</div></div>'+
@@ -8344,8 +8344,8 @@ function renderDashboard(){
           '</div>'+
         '</div>':'')+ 
       (isAdmin()?'<div class="ss2"><h3>Platform Status</h3>'+
-        '<div class="br2"><span style="color:var(--t2)">AI Engine</span><span style="color:'+(_aiBackendReady()?'var(--green)':'var(--red)')+';font-size:var(--t-sm);font-weight:500">'+(_aiBackendReady()?'✓ Online':'⚠ Backend required')+'</span></div>'+
-        '<div class="br2"><span style="color:var(--t2)">Video</span><span style="color:'+(S.rl?'var(--green)':'var(--dim)')+';font-size:var(--t-sm)">'+(S.rl?'✓ Connected':'Not configured')+'</span></div>'+
+        '<div class="br2"><span style="color:var(--mu)">AI Engine</span><span style="color:'+(_aiBackendReady()?'var(--green)':'var(--red)')+';font-size:var(--t-sm);font-weight:500">'+(_aiBackendReady()?'✓ Online':'⚠ Backend required')+'</span></div>'+
+        '<div class="br2"><span style="color:var(--mu)">Video</span><span style="color:'+(S.rl?'var(--green)':'var(--dim)')+';font-size:var(--t-sm)">'+(S.rl?'✓ Connected':'Not configured')+'</span></div>'+
         (isAdmin()&&!_aiBackendReady()?'<button class="btn bs" data-gs="apikeys" style="margin-top:10px;font-size:var(--t-sm)">Connect backend</button>':'')+
       '</div>':'')+ 
     '</div></div>';
@@ -8495,7 +8495,7 @@ function renderTeamView(){
     '<div class="ss2" style="background:rgba(85,144,255,.06);border-color:rgba(85,144,255,.22)">'+
       '<h3>Which plan do I need?</h3>'+
       '<p style="font-size:var(--t-base);color:var(--tx);line-height:1.7;margin:0 0 4px">'+
-        'Teams unlocks on the <b style="color:var(--accent)">'+teamPlan.name+' plan ($'+teamPlan.price+'/month)</b> and above. '+
+        'Teams unlocks on the <b style="color:var(--accent-txt)">'+teamPlan.name+' plan ($'+teamPlan.price+'/month)</b> and above. '+
         'One Elite (or Ultra) subscription covers your shared workspace, roles, and team memory. '+
         'A <b>Custom plan</b> sized at the Elite tier or above also unlocks Teams.'+
       '</p>'+
@@ -8504,7 +8504,7 @@ function renderTeamView(){
         'You\u2019re currently on <b style="color:var(--tx)">'+planName+'</b>.'+
       '</p>'+
       (hasTeamPlan
-        ? '<div style="font-size:var(--t-base);color:#4ade80;font-weight:600">\u2713 Your '+planName+' plan includes Teams - create yours below.</div>'
+        ? '<div style="font-size:var(--t-base);color:var(--grn-txt);font-weight:600">\u2713 Your '+planName+' plan includes Teams - create yours below.</div>'
         : '<button class="btn bp" data-stab="plans" style="font-size:var(--t-sm)">Upgrade to '+teamPlan.name+' &rarr;</button>')+
     '</div>';
 
@@ -8640,7 +8640,7 @@ function _renderTeamSettingsPane(pane){
         '<div class="set-fact"><div class="set-fact-k">Members</div><div class="set-fact-v">'+seats.used+'</div></div>'+
         '<div class="set-fact"><div class="set-fact-k">Seats</div><div class="set-fact-v">'+seats.limit+'</div></div>'+
         '<div class="set-fact"><div class="set-fact-k">Free seats</div><div class="set-fact-v">'+Math.max(0,seats.limit-seats.used)+'</div>'+
-          (seats.over>0?'<div class="set-fact-s" style="color:var(--gold)">'+seats.over+' over your plan</div>':'')+'</div>'+
+          (seats.over>0?'<div class="set-fact-s" style="color:var(--gold-txt)">'+seats.over+' over your plan</div>':'')+'</div>'+
       '</div>'+
       '<button class="btn bs" data-stab="team" style="font-size:var(--t-sm);margin-top:14px">Manage the team \u2192</button>'+
     '</div>'
@@ -8704,7 +8704,7 @@ function _renderTeamManage(vc, team){
   const seatPrice=((typeof PLANS!=='undefined'&&PLANS.team)||{price:20}).price;
   const seatNote=seats
     ? '<p class="vsub">'+seats.used+' of '+seats.limit+' seat'+(seats.limit===1?'':'s')+' used'+
-      (over>0?' \u00b7 <b style="color:var(--gold)">'+over+' over your plan</b>':'')+
+      (over>0?' \u00b7 <b style="color:var(--gold-txt)">'+over+' over your plan</b>':'')+
       ' \u00b7 '+(onSeatPlan
         ? 'every seat adds its own allowance to the shared pool.'
         : 'everyone shares one allowance.')+'</p>'
@@ -8733,7 +8733,7 @@ function _renderTeamManage(vc, team){
       '</div>'
     : '';
   const overBanner=over>0
-    ? '<div class="ss2" style="border-color:var(--gold);background:rgba(245,158,11,.07)">'+
+    ? '<div class="ss2" style="border-color:var(--gold-txt);background:rgba(245,158,11,.07)">'+
       '<h3>'+over+' '+(over===1?'person is':'people are')+' not covered by your plan</h3>'+
       '<p style="font-size:var(--t-base);color:var(--tx);line-height:1.6;margin:0 0 10px">'+
       'Your plan includes '+seats.limit+' seat'+(seats.limit===1?'':'s')+' and the team has '+seats.used+' member'+(seats.used===1?'':'s')+'. '+
@@ -8745,7 +8745,7 @@ function _renderTeamManage(vc, team){
     : '';
   const memberRows=(team.members||[]).map(m=>
     '<div class="vrow"><span>'+escH(m.email)+(m.email===myEmail?' <span style="color:var(--mu)">(you)</span>':'')+
-    (m.seated===false?' <span class="team-role" style="background:rgba(245,158,11,.14);color:var(--gold)">no seat</span>':'')+'</span>'+
+    (m.seated===false?' <span class="team-role" style="background:rgba(245,158,11,.14);color:var(--gold-txt)">no seat</span>':'')+'</span>'+
     '<span style="display:flex;align-items:center;gap:10px"><span class="team-role team-role-'+m.role+'">'+m.role+'</span>'+
     // owner can promote/demote anyone who isn't the owner
     (isOwner&&m.role!=='owner'?'<button class="btn bs team-role-btn" data-team-setrole="'+escH(m.email)+'" data-team-newrole="'+(m.role==='admin'?'member':'admin')+'" style="font-size:var(--t-2xs);padding:3px 8px">'+(m.role==='admin'?'Make member':'Make admin')+'</button>':'')+
@@ -8778,7 +8778,7 @@ function _renderTeamManage(vc, team){
     (isOwner?'':'<div class="ss2"><h3>Leave this team</h3>'+
       '<p style="font-size:var(--t-sm);color:var(--mu);line-height:1.6;margin:0 0 10px">'+
       'You go back to your own plan and your own allowance. Anything you shared with the team stays with the team.</p>'+
-      '<button class="btn bs" id="team-leave" style="font-size:var(--t-sm);color:var(--red);border-color:var(--red)">Leave team</button></div>')+
+      '<button class="btn bs" id="team-leave" style="font-size:var(--t-sm);color:var(--red-txt);border-color:var(--red-txt)">Leave team</button></div>')+
     (canManage?'<div class="ss2"><h3>Activity log <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(who did what)</span></h3><div id="team-audit"><div style="color:var(--mu);font-size:var(--t-sm);padding:8px 0">Loading\u2026</div></div></div>':'')+
   '</div></div>';
   on($('team-invite-btn'),'click',async()=>{
@@ -8810,7 +8810,7 @@ function _renderTeamManage(vc, team){
          inline slot, with the one control that resolves it. */
       const res=$('team-invite-result');
       if(e.code==='seat_limit'&&res){
-        res.innerHTML='<div class="team-invite-link" style="border-color:var(--gold)">'+escH(e.message)+
+        res.innerHTML='<div class="team-invite-link" style="border-color:var(--gold-txt)">'+escH(e.message)+
           (isOwner?'<br><button class="btn bp" data-stab="plans" style="font-size:var(--t-xs);margin-top:8px">See plans</button>':'')+'</div>';
         return;
       }
@@ -10014,7 +10014,7 @@ async function _mktSellerProfile(sellerEmail, sellerName){
     r.innerHTML='<div class="ov" id="mkt-sp-bg"><div class="ob" style="max-width:560px">'+
       '<button class="oc" data-dact="closeOvr">\u00d7</button>'+
       '<div class="mkt-sp-head">'+_avatarHTML('amv',64)+
-        '<div style="flex:1"><h2 style="margin:0 0 3px">AMV <span style="font-size:var(--t-sm);color:var(--accent);vertical-align:middle">\u2713 Official</span></h2>'+
+        '<div style="flex:1"><h2 style="margin:0 0 3px">AMV <span style="font-size:var(--t-sm);color:var(--accent-txt);vertical-align:middle">\u2713 Official</span></h2>'+
           '<div style="font-size:var(--t-sm);color:var(--mu)">First-party tools, prompts and crews built by the AMV team.</div>'+
           '<div style="font-size:var(--t-sm);color:var(--mu);margin-top:4px">'+theirs.length+' official listing'+(theirs.length===1?'':'s')+'</div>'+
           '<button class="btn bp" id="mkt-sp-msg" style="font-size:var(--t-sm);margin-top:10px">\uD83D\uDCAC Contact AMV support</button>'+
@@ -10446,9 +10446,9 @@ function _mktBlockedDialog(reason, action, category){
     : '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>';
   r.innerHTML='<div class="ovr-bg" id="mkb-bg"><div class="ovr-card" style="max-width:470px">'+
     '<div style="display:flex;gap:12px;align-items:flex-start">'+
-      '<span style="width:38px;height:38px;flex-shrink:0;border-radius:10px;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,'+tint+' 13%,transparent);color:'+tint+'">'+
+      '<span style="width:38px;height:38px;flex-shrink:0;border-radius:var(--r-md);display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,'+tint+' 13%,transparent);color:'+tint+'">'+
         '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+icon+'</svg></span>'+
-      '<div><div style="font-size:calc(15px * var(--fs-s));font-weight:600;margin-bottom:6px">'+(needsVer?'Verification required':'Listing blocked by review')+'</div>'+
+      '<div><div style="font-size:var(--t-prose);font-weight:600;margin-bottom:6px">'+(needsVer?'Verification required':'Listing blocked by review')+'</div>'+
         '<div style="font-size:var(--t-base);color:var(--mu);line-height:1.6">'+escH(reason)+'</div></div>'+
     '</div>'+
     '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">'+
@@ -10482,7 +10482,7 @@ function _mktReport(itemId, title){
     ['sexual','Sexual or abusive content'],['harassment','Hate or harassment'],
     ['other','Something else']];
   r.innerHTML='<div class="ovr-bg" id="mkr-bg"><div class="ovr-card" style="max-width:430px">'+
-    '<div style="font-size:calc(15px * var(--fs-s));font-weight:600;margin-bottom:4px">'+T('Report this listing')+'</div>'+
+    '<div style="font-size:var(--t-prose);font-weight:600;margin-bottom:4px">'+T('Report this listing')+'</div>'+
     '<div style="font-size:var(--t-sm);color:var(--mu);margin-bottom:14px">'+escH(title||'')+'</div>'+
     '<label class="lbl">'+T('What\u2019s wrong with it?')+'</label>'+
     '<select id="mkr-reason" class="sel" style="width:100%;margin-bottom:10px">'+
@@ -10790,8 +10790,8 @@ function renderMemoryView(){
       (S.memory.length?'<button class="btn bd2" id="mem-clr" style="align-self:flex-start;font-size:var(--t-sm)">Clear All Memories</button>':'')+
       '<div class="ss2 ds-note">'+
         '<h3>How Memory Works</h3>'+
-        '<p style="font-size:var(--t-sm);color:var(--t2);line-height:1.65">Memories you add here are automatically included in every conversation with AMV, allowing for more personalized and contextual responses. Add facts about yourself, your preferences, your work, or anything you want AMV to always know.</p>'+
-        '<div style="margin-top:9px;font-size:var(--t-sm);color:var(--t2)">Examples:'+
+        '<p style="font-size:var(--t-sm);color:var(--mu);line-height:1.65">Memories you add here are automatically included in every conversation with AMV, allowing for more personalized and contextual responses. Add facts about yourself, your preferences, your work, or anything you want AMV to always know.</p>'+
+        '<div style="margin-top:9px;font-size:var(--t-sm);color:var(--mu)">Examples:'+
           '<div style="display:flex;flex-direction:column;gap:3px;margin-top:5px">'+
             '<span style="color:var(--tx)">• "I am a software engineer who works with Python and React"</span>'+
             '<span style="color:var(--tx)">• "I prefer concise, direct answers without unnecessary preamble"</span>'+
@@ -11113,7 +11113,7 @@ function createWorkspaceModal(){
       '<div class="af">'+
         '<div><label class="lbl">Name</label><input type="text" id="ws-name" placeholder="e.g. Research Project"></div>'+
         '<div><label class="lbl">Description</label><input type="text" id="ws-desc" placeholder="What is this workspace for?"></div>'+
-        '<div><label class="lbl">Icon</label><div style="display:flex;gap:6px;flex-wrap:wrap">'+icons.map(ic=>'<button class="ws-ic-btn" data-ic="'+ic+'" style="width:34px;height:34px;border-radius:7px;border:1px solid var(--bd);background:var(--s2);cursor:pointer;font-size:calc(18px * var(--fs-s));display:flex;align-items:center;justify-content:center;transition:background-color .12s,border-color .12s,color .12s,box-shadow .12s,transform .12s,opacity .12s">'+ic+'</button>').join('')+'</div></div>'+
+        '<div><label class="lbl">Icon</label><div style="display:flex;gap:6px;flex-wrap:wrap">'+icons.map(ic=>'<button class="ws-ic-btn" data-ic="'+ic+'" style="width:34px;height:34px;border-radius:var(--r-sm);border:1px solid var(--bd);background:var(--s2);cursor:pointer;font-size:var(--t-xl);display:flex;align-items:center;justify-content:center;transition:background-color .12s,border-color .12s,color .12s,box-shadow .12s,transform .12s,opacity .12s">'+ic+'</button>').join('')+'</div></div>'+
         '<button class="btn bp" id="ws-create" style="width:100%;padding:11px">Create Workspace</button>'+
       '</div>'+
     '</div></div>';
@@ -11156,7 +11156,7 @@ function _usageContentHTML(){
         '<span>'+us.used.toLocaleString()+' / '+us.cap.toLocaleString()+' used this window</span>'+
         '<span>'+us.reqs+' request'+(us.reqs===1?'':'s')+' &middot; resets every '+us.windowHours+'h</span>'+
       '</div>'+
-      (us.pct>=90?'<div class="usage-warn">You\u2019re nearly out for this window. It refreshes in '+AMVUsage.resetLabel()+', or <a data-stab="plans" style="color:var(--accent);cursor:pointer">upgrade for more &rarr;</a></div>':'')+
+      (us.pct>=90?'<div class="usage-warn">You\u2019re nearly out for this window. It refreshes in '+AMVUsage.resetLabel()+', or <a data-stab="plans" style="color:var(--accent-txt);cursor:pointer">upgrade for more &rarr;</a></div>':'')+
       '<p class="usage-note">Your usage refreshes on a rolling '+us.windowHours+'-hour window - no daily lockout. Heavier plans get a bigger allowance per window.</p>'+
     '</div>';
   // --- 14-day activity trend chart ---
@@ -11252,11 +11252,11 @@ function _paintServerUsage(){
             : ''))+
       (bonus > 0
         ? '<div class="srv-bonus">Includes <b>+'+n(bonus)+'</b> bonus tokens from invites you have earned. '+
-          '<a data-sp-go="invite" style="color:var(--accent);cursor:pointer">See your invites &rarr;</a></div>'
+          '<a data-sp-go="invite" style="color:var(--accent-txt);cursor:pointer">See your invites &rarr;</a></div>'
         : '')+
       (d.shared && d.shared.team
         ? '<div class="srv-bonus">These numbers are your <b>whole team</b>, not just you - one subscription is one allowance, '+
-          'however many people are on it. <a data-sp-team="1" style="color:var(--accent);cursor:pointer">Open Team &rarr;</a></div>'
+          'however many people are on it. <a data-sp-team="1" style="color:var(--accent-txt);cursor:pointer">Open Team &rarr;</a></div>'
         : '')+
       '<p class="srv-note">Your plan is '+escH(String(d.plan||'free'))+'. Daily and monthly allowances are separate: running out today does not spend your month.</p>';
     const go = host.querySelector('[data-sp-go]');
@@ -12337,7 +12337,7 @@ function renderBillingView(targetEl){
           _drow('Price','$'+P.price+' / month')+
           (customSummary?_drow('Monthly usage',customSummary.monthlyTokens.toLocaleString()+' tokens (credit-metered)'):'')+
           (customSummary?_drow('Daily limit',customSummary.dailyCap.toLocaleString()+' tokens/day'):'')+
-          _drow('Status','<span style="color:var(--grn)">Active</span>')+
+          _drow('Status','<span style="color:var(--grn-txt)">Active</span>')+
           _drow('Started',fmt(sinceDate))+
           _drow('Renews',fmt(nextDate))+
           _drow('Billing email',escH(email))+
@@ -12366,7 +12366,7 @@ function renderBillingView(targetEl){
           downTargets.filter(k=>k!=='free').map(k=>'<button class="btn bs" data-pay="'+escH(k)+'">Switch to '+escH(PLANS[k].name)+' \u00b7 $'+PLANS[k].price+'/mo</button>').join('')+
         '</div>'+
         '<p class="bill-acts-s">Changes take effect immediately and are prorated. '+
-          'Working with other people? <a data-stab="team" style="color:var(--accent);cursor:pointer">Teams is priced per person</a>.</p>'+
+          'Working with other people? <a data-stab="team" style="color:var(--accent-txt);cursor:pointer">Teams is priced per person</a>.</p>'+
       '</div>':'')+
       /* Cancelling. The pricing page promises "cancel with one click" and there
          was no control anywhere that did it, which is a claim the product did
@@ -12382,7 +12382,7 @@ function renderBillingView(targetEl){
       '<div class="ss2"><h3>Cancel</h3>'+
         '<p style="font-size:var(--t-sm);color:var(--mu);line-height:1.6;margin:0 0 10px">'+
           'You keep '+escH(P.name)+' until the end of the period you have already paid for, and nothing you have made is deleted.</p>'+
-        '<button class="btn bs" id="bill-cancel" style="font-size:var(--t-sm);color:var(--red);border-color:var(--red)">Cancel subscription</button>'+
+        '<button class="btn bs" id="bill-cancel" style="font-size:var(--t-sm);color:var(--red-txt);border-color:var(--red-txt)">Cancel subscription</button>'+
         '<div class="seat-say" id="bill-cancel-say" role="status" aria-live="polite"></div>'+
       '</div>':'')+
       // INVOICES
@@ -12400,9 +12400,9 @@ function renderBillingView(targetEl){
         '</div>'+
       '</div>'+
       (isAdmin()?(
-      '<div class="ss2" style="border:1px dashed var(--bd);border-radius:10px;padding:14px 16px">'+
+      '<div class="ss2" style="border:1px dashed var(--bd);border-radius:var(--r-md);padding:14px 16px">'+
         '<h3 style="margin-top:0">Payment test mode <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(only you see this)</span></h3>'+
-        '<p style="font-size:var(--t-sm);color:var(--t2);line-height:1.6;margin:0 0 10px">Simulate a completed checkout to verify the success flow end to end - plan gating, UI refresh, and confirmation - before your live payment keys are connected. This changes only your local plan; it never charges anything.</p>'+
+        '<p style="font-size:var(--t-sm);color:var(--mu);line-height:1.6;margin:0 0 10px">Simulate a completed checkout to verify the success flow end to end - plan gating, UI refresh, and confirmation - before your live payment keys are connected. This changes only your local plan; it never charges anything.</p>'+
         '<div style="display:flex;gap:7px;flex-wrap:wrap">'+
           ['pro','elite','ultra'].map(pl=>'<button class="btn" data-simpay="'+pl+'" style="font-size:var(--t-sm)">Simulate '+(PLANS[pl]?PLANS[pl].name:pl)+'</button>').join('')+
           '<button class="btn" data-simpay="free" style="font-size:var(--t-sm)">Reset to Free</button>'+
@@ -12757,7 +12757,7 @@ function openUpgradeModal(lockedModel){
         '<div class="upg-row-name">Custom<span class="upg-row-tag alt">Build your own</span></div>'+
         '<div class="upg-row-desc">Pick your exact monthly budget - all models, hard-capped, from $10/mo.</div>'+
       '</div>'+
-      '<div class="upg-row-r"><div class="upg-row-price" style="font-size:calc(15px * var(--fs-s))">Your price</div><span class="upg-row-go">Build \u2192</span></div>'+
+      '<div class="upg-row-r"><div class="upg-row-price" style="font-size:var(--t-prose)">Your price</div><span class="upg-row-go">Build \u2192</span></div>'+
     '</button>';
   r.innerHTML='<div class="upg-ov" id="upg-bg"><div class="upg-modal" style="max-width:480px">'+
     '<button class="dna-x" id="upg-x" style="position:absolute;top:16px;right:16px">\u2715</button>'+
@@ -12842,7 +12842,7 @@ function openCustomPlan(){
     const marginPct=Math.round(s.margin*100);
     r.innerHTML='<div class="upg-ov" id="cp-bg"><div class="cp-modal">'+
       '<button class="dna-x" id="cp-x" style="position:absolute;top:16px;right:16px">\u2715</button>'+
-      '<div class="cp-head"><span class="eyebrow" style="color:var(--accent)">Custom plan</span>'+
+      '<div class="cp-head"><span class="eyebrow" style="color:var(--accent-txt)">Custom plan</span>'+
         '<h2>Pay exactly for what you need</h2>'+
         '<p>Set your monthly budget. You get a guaranteed pool of usage for that price - all models included, hard-capped so there are never surprise charges.</p></div>'+
       '<div class="cp-price-row"><span class="cp-cur">$</span><span class="cp-price" id="cp-price">'+price+'</span><span class="cp-per">/month</span></div>'+
@@ -16496,7 +16496,7 @@ function renderDesignView(){
         <span class="dna-active-chip">${_DNA.colors.length} colors · ${escH(_DNA.themeFamily)} · ${escH(_DNA.theme)}</span>
       </div>
       <p class="dsn-dna-explain">Design DNA is your reusable style guide - set your colors, fonts, shapes and vibe once, and everything AMV designs follows it. Optional: skip it and AMV picks tasteful defaults.</p>
-      <div style="margin-top:12px;display:flex;height:22px;width:min(420px,80%);border-radius:7px;overflow:hidden;border:1px solid var(--hair)">${_DNA.colors.map(c2=>`<span style="flex:1;background:${c2.hex}"></span>`).join('')}</div>
+      <div style="margin-top:12px;display:flex;height:22px;width:min(420px,80%);border-radius:var(--r-sm);overflow:hidden;border:1px solid var(--hair)">${_DNA.colors.map(c2=>`<span style="flex:1;background:${c2.hex}"></span>`).join('')}</div>
     </section>
 
     <section class="dsn-starts">
@@ -16913,7 +16913,7 @@ function openDNA(){
     <div class="dna-head">
       <div><h2>Design DNA</h2><p>Your reusable style guide. Set it once - every design AMV makes follows it.</p></div>
       <div style="display:flex;align-items:center;gap:4px">
-        <button class="dna-x" id="dna-help" title="What is this?" style="font-size:calc(15px * var(--fs-s))">?</button>
+        <button class="dna-x" id="dna-help" title="What is this?" style="font-size:var(--t-prose)">?</button>
         <button class="dna-x" id="dna-x">✕</button>
       </div>
     </div>
@@ -17356,7 +17356,7 @@ function _devConnectVSCode(){
   const r=$('ovr'); if(!r) return;
   r.innerHTML='<div class="ov" id="vsc-bg"><div class="tp-modal" style="max-width:480px">'+
     '<button class="dna-x" id="vsc-x" style="position:absolute;top:14px;right:14px">\u2715</button>'+
-    '<h2 style="font-family:var(--fdisplay);font-weight:500;font-size:calc(21px * var(--fs-s));margin:0 0 6px">Use AMV in VS Code</h2>'+
+    '<h2 style="font-family:var(--fdisplay);font-weight:500;font-size:var(--t-xl);margin:0 0 6px">Use AMV in VS Code</h2>'+
     '<p style="font-size:var(--t-base);color:var(--mu);line-height:1.6;margin:0 0 18px">Run these two commands in your project folder. That\u2019s it - AMV opens in your editor and can read, write, and run your code.</p>'+
     '<div class="vsc-cmd"><code>npm install -g @amv/cli</code><button class="vsc-copy" data-c="npm install -g @amv/cli">Copy</button></div>'+
     '<div class="vsc-cmd" style="margin-top:8px"><code>amv code .</code><button class="vsc-copy" data-c="amv code .">Copy</button></div>'+
@@ -18990,7 +18990,7 @@ function _ctxRenderMeter(hostId, kind){
 async function _ctxHandoffFlow(kind){
   const r=$('ovr'); if(!r) return;
   r.innerHTML='<div class="ovr-bg"><div class="ovr-card" style="max-width:460px">'+
-    '<div style="font-size:calc(15px * var(--fs-s));font-weight:600;margin-bottom:6px">Carrying your context over\u2026</div>'+
+    '<div style="font-size:var(--t-prose);font-weight:600;margin-bottom:6px">Carrying your context over\u2026</div>'+
     '<div style="font-size:var(--t-base);color:var(--mu);line-height:1.6" id="ctx-step">Compressing everything important from this '+(kind==='dev'?'session':'chat')+'\u2026</div>'+
     '<div class="ctx-bar" style="margin-top:14px"><div class="ctx-fill" id="ctx-anim" style="width:15%"></div></div>'+
   '</div></div>';
@@ -20034,7 +20034,7 @@ function _openSettingsPicker(){
   }).join('');
   r.innerHTML='<div class="ov" id="setpick-bg"><div class="ob setpick-modal" style="max-width:460px">'+
     '<button class="oc" data-dact="closeOvr" aria-label="Close">×</button>'+
-    '<h2 style="margin:0 0 12px;font-size:calc(18px * var(--fs-s))">Settings</h2>'+
+    '<h2 style="margin:0 0 12px;font-size:var(--t-xl)">Settings</h2>'+
     '<div class="set-search-wrap setpick-searchwrap"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>'+
       '<input id="setpick-search" class="set-search" type="text" placeholder="Search settings…" autocomplete="off"></div>'+
     '<div class="setpick-list" id="setpick-list">'+rows+'</div></div></div>';
@@ -20155,7 +20155,7 @@ function _paintWidgetForm(body, cfg, base){
   body.innerHTML=
     '<div class="ss2"><h3>Your embed code</h3>'+
       '<p style="font-size:var(--t-sm);color:var(--mu);margin-bottom:10px;line-height:1.6">Paste this once, just before <code>&lt;/body&gt;</code> on any page. The chat bubble appears in the corner. Changes you save here apply everywhere instantly - no need to re-paste.</p>'+
-      '<div style="position:relative"><pre id="wg-snippet" style="background:var(--surface);border:1px solid var(--hair);border-radius:8px;padding:12px 12px;font-size:var(--t-sm);overflow:auto;margin:0;white-space:pre-wrap;word-break:break-all"><code>'+escH(snippet)+'</code></pre></div>'+
+      '<div style="position:relative"><pre id="wg-snippet" style="background:var(--surface);border:1px solid var(--hair);border-radius:var(--r-sm);padding:12px 12px;font-size:var(--t-sm);overflow:auto;margin:0;white-space:pre-wrap;word-break:break-all"><code>'+escH(snippet)+'</code></pre></div>'+
       '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">'+
         '<button class="btn bp" id="wg-copy" style="font-size:var(--t-sm)">Copy code</button>'+
         '<button class="btn" id="wg-preview" style="font-size:var(--t-sm)">Preview widget</button>'+
@@ -20176,7 +20176,7 @@ function _paintWidgetForm(body, cfg, base){
       '</div>'+
     '</div>'+
     '<div class="ss2"><h3>Allowed domains <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(recommended)</span></h3>'+
-      '<p style="font-size:var(--t-sm);color:var(--mu);margin-bottom:10px;line-height:1.6">Lock the widget to your own sites so nobody can embed it elsewhere and use your quota. One domain per line (e.g. <code>example.com</code>). Leave empty to allow any site '+(!(cfg.origins&&cfg.origins.length)?'- <b style="color:var(--red)">currently unrestricted</b>':'')+'.</p>'+
+      '<p style="font-size:var(--t-sm);color:var(--mu);margin-bottom:10px;line-height:1.6">Lock the widget to your own sites so nobody can embed it elsewhere and use your quota. One domain per line (e.g. <code>example.com</code>). Leave empty to allow any site '+(!(cfg.origins&&cfg.origins.length)?'- <b style="color:var(--red-txt)">currently unrestricted</b>':'')+'.</p>'+
       '<textarea id="wg-origins" rows="3" style="font-family:var(--mn);font-size:var(--t-sm)" placeholder="example.com&#10;www.example.com">'+escH((cfg.origins||[]).join('\n'))+'</textarea>'+
     '</div>'+
     /* ZERO MEANS UNLIMITED, AND THE LABELS SAID "MAX".
@@ -20196,7 +20196,7 @@ function _paintWidgetForm(body, cfg, base){
       '<div class="wg-capwarn" id="wg-capwarn" role="status" aria-live="polite"></div>'+
     '</div>'+
     '<div class="ss2"><div style="display:flex;align-items:center;justify-content:space-between">'+
-        '<div><div style="font-size:var(--t-base);font-weight:600">Widget enabled</div><div style="font-size:var(--t-xs);color:var(--t2)">Turn the widget on or off across all your sites instantly.</div></div>'+
+        '<div><div style="font-size:var(--t-base);font-weight:600">Widget enabled</div><div style="font-size:var(--t-xs);color:var(--mu)">Turn the widget on or off across all your sites instantly.</div></div>'+
         '<label class="sw"><input type="checkbox" id="wg-enabled" '+(cfg.enabled?'checked':'')+'><span class="sw-sl"></span></label>'+
       '</div></div>'+
     '<div style="display:flex;gap:8px"><button class="btn bp" id="wg-save" style="font-size:var(--t-base)">Save changes</button><span id="wg-saved" style="font-size:var(--t-sm);color:var(--green);align-self:center"></span></div>';
@@ -20496,7 +20496,7 @@ function _confirmDeleteAccount(){
   ovr.innerHTML=
     '<div class="ov" id="del-bg"><div class="ob">'+
       '<button class="oc" data-dact="closeOvr">&#215;</button>'+
-      '<h2 style="color:var(--red)">Delete your account</h2>'+
+      '<h2 style="color:var(--red-txt)">Delete your account</h2>'+
       '<p class="ob-sub">This permanently removes '+(connected
         ? 'your account, chats, projects, automations, and subscription from AMV\u2019s servers'
         : 'all AMV data stored in this browser')+'. <b>This cannot be undone.</b></p>'+
@@ -20912,7 +20912,7 @@ function _renderSetPaneInner(only, into){
             '<input type="file" id="pfp-fi" accept="image/*" style="display:none">'+
           '</div>'+
           '<div><div style="font-size:var(--t-lg);font-weight:700;letter-spacing:-.3px">'+escH(S.user&&S.user.name?S.user.name:'Guest')+'</div>'+
-          '<div style="font-size:var(--t-sm);color:var(--t2);margin-top:2px">'+escH(S.user&&S.user.email?S.user.email:'')+'</div>'+
+          '<div style="font-size:var(--t-sm);color:var(--mu);margin-top:2px">'+escH(S.user&&S.user.email?S.user.email:'')+'</div>'+
           '<span class="badge '+(S.user&&S.user.provider==='google'?'bb':'bg3')+'" style="margin-top:7px">'+(S.user&&S.user.provider==='google'?'Google Account':'Email Account')+'</span></div>'+
         '</div>'+
         '<div class="sf">'+
@@ -20930,7 +20930,7 @@ function _renderSetPaneInner(only, into){
             '<textarea id="s-instr" rows="3" placeholder="e.g. I primarily code in Python (not a beginner). Keep answers concise and skip the preamble." style="width:100%;resize:vertical;min-height:70px">'+escH(loadStr('amv_instructions')||'')+'</textarea>'+
             '<div class="lbl-help">AMV keeps these in mind across every chat and agent. Great for your role, preferences, and how you like answers.</div>'+
           '</div>'+
-          '<div id="acct-msg" style="display:none;font-size:var(--t-sm);padding:7px 11px;border-radius:7px"></div>'+
+          '<div id="acct-msg" style="display:none;font-size:var(--t-sm);padding:7px 11px;border-radius:var(--r-sm)"></div>'+
           '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
             '<button class="btn bp" id="save-profile" style="font-size:var(--t-sm)">Save changes</button>'+
             '<button class="btn bs" id="rm-pfp" style="font-size:var(--t-sm);'+(pfp?'':'opacity:.4;pointer-events:none')+'">Remove photo</button>'+
@@ -20989,11 +20989,11 @@ function _renderSetPaneInner(only, into){
       '<div class="set-title">Security</div>'+
       '<div class="set-sub">Manage your password and account security.</div>'+
       (S.user&&S.user.provider==='google'?
-        '<div class="ss2"><p style="font-size:var(--t-base);color:var(--t2)">Signed in with Google. Manage your password at <a href="https://myaccount.google.com" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">myaccount.google.com</a>.</p></div>':
+        '<div class="ss2"><p style="font-size:var(--t-base);color:var(--mu)">Signed in with Google. Manage your password at <a href="https://myaccount.google.com" target="_blank" rel="noopener noreferrer" style="color:var(--accent-txt)">myaccount.google.com</a>.</p></div>':
         '<div class="ss2"><h3>Password</h3>'+
           '<div class="br2"><div><div class="opt-name">Reset your password</div><div class="opt-desc">We\u2019ll send a secure reset link to '+escH((S.user&&S.user.email)||'your email')+'. No need to remember your current one.</div></div>'+
           '<button class="btn bp" id="reset-pw-btn" style="font-size:var(--t-sm);white-space:nowrap">Send reset link</button></div>'+
-          '<div id="pw-msg" style="display:none;font-size:var(--t-sm);padding:9px 12px;border-radius:8px;margin-top:12px"></div>'+
+          '<div id="pw-msg" style="display:none;font-size:var(--t-sm);padding:9px 12px;border-radius:var(--r-sm);margin-top:12px"></div>'+
         '</div>')+
       /* Was a hardcoded "This browser - Active now" row wired to nothing. It is
          now the account's real event log; see 28-activity.js. */
@@ -21005,7 +21005,7 @@ function _renderSetPaneInner(only, into){
         '<div id="act-block"></div>'+
       '</div>'+
       '<div class="ss2"><h3>This device</h3>'+
-        '<div class="br2"><div><div style="font-size:var(--t-base);font-weight:500">Signed in on this browser</div><div style="font-size:var(--t-xs);color:var(--t2);margin-top:2px">Signing out here leaves your other devices signed in.</div></div></div>'+
+        '<div class="br2"><div><div style="font-size:var(--t-base);font-weight:500">Signed in on this browser</div><div style="font-size:var(--t-xs);color:var(--mu);margin-top:2px">Signing out here leaves your other devices signed in.</div></div></div>'+
         '<button class="btn bs" style="font-size:var(--t-sm);margin-top:12px" data-dact="signOut">Sign out of this device</button>'+
       '</div>';
     _renderActivityBlock(document.getElementById('act-block'));
@@ -21057,11 +21057,11 @@ function _renderSetPaneInner(only, into){
         '<div class="prv-data-row"><div><div class="prv-pref-t">Shared chats</div><div class="prv-pref-s">Manage conversations you\u2019ve shared with a public link.</div></div><button class="btn bs" id="prv-shared" style="font-size:var(--t-sm)">Manage</button></div>'+
         '<div class="prv-data-row"><div><div class="prv-pref-t">Memory preferences</div><div class="prv-pref-s">Control what AMV remembers about you across chats.</div></div><button class="btn bs" id="prv-memory" style="font-size:var(--t-sm)">Open memory</button></div>'+
         '<div class="prv-data-row"><div><div class="prv-pref-t">Clear all chats</div><div class="prv-pref-s">Permanently delete your conversation history.</div></div><button class="btn bs" id="prv-clrchats" style="font-size:var(--t-sm)">Clear chats</button></div>'+
-        '<div class="prv-data-row"><div><div class="prv-pref-t" style="color:var(--red)">Delete all data</div><div class="prv-pref-s">Remove everything AMV has stored for you. This can\u2019t be undone.</div></div><button class="btn bd2" id="prv-clrall" style="font-size:var(--t-sm)">Delete everything</button></div>'+
+        '<div class="prv-data-row"><div><div class="prv-pref-t" style="color:var(--red-txt)">Delete all data</div><div class="prv-pref-s">Remove everything AMV has stored for you. This can\u2019t be undone.</div></div><button class="btn bd2" id="prv-clrall" style="font-size:var(--t-sm)">Delete everything</button></div>'+
       '</div>'+
       (isAdmin()?(
       '<div class="ss2"><h3>Analytics provider <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(operator setup)</span></h3>'+
-        '<div style="font-size:var(--t-sm);color:var(--t2);line-height:1.7;margin-bottom:12px">Connect Google Analytics (GA4) or Plausible to measure real traffic. Enter your GA4 Measurement ID (starts with <code>G-</code>) or your Plausible site domain. Analytics only fire for visitors who accept analytics cookies.</div>'+
+        '<div style="font-size:var(--t-sm);color:var(--mu);line-height:1.7;margin-bottom:12px">Connect Google Analytics (GA4) or Plausible to measure real traffic. Enter your GA4 Measurement ID (starts with <code>G-</code>) or your Plausible site domain. Analytics only fire for visitors who accept analytics cookies.</div>'+
         '<div style="display:flex;gap:8px;align-items:center"><input class="inp" id="prv-ga-id" placeholder="G-XXXXXXX  or  yoursite.com" value="'+escH(_analyticsId())+'" style="flex:1"><button class="btn bp" id="prv-ga-save" style="font-size:var(--t-sm)">Save</button></div>'+
         /* "configured" was the whole status, and configured is not the same as
            running. The provider script is a third-party <script> and this page's
@@ -21069,17 +21069,17 @@ function _renderSetPaneInner(only, into){
            an ID that is saved and consented to still measures nothing. Saying
            "configured" over that is the same failure as any other control that
            reports an outcome it did not check. */
-        '<div style="font-size:var(--t-xs);color:var(--t2);margin-top:8px">Status: '+(_analyticsId()?('<span style="color:var(--grn)">configured</span> \u00b7 '+(/^G-/i.test(_analyticsId())?'Google Analytics':'Plausible')):'<span style="color:var(--mu)">not set</span>')+'</div>'+
+        '<div style="font-size:var(--t-xs);color:var(--mu);margin-top:8px">Status: '+(_analyticsId()?('<span style="color:var(--grn-txt)">configured</span> \u00b7 '+(/^G-/i.test(_analyticsId())?'Google Analytics':'Plausible')):'<span style="color:var(--mu)">not set</span>')+'</div>'+
         (_analyticsId()&&_analyticsBlocked()
           ? '<div class="wg-capwarn on" style="margin-top:8px">Saved, but <b>nothing is being measured</b>. The provider\u2019s script was blocked before it loaded - this page\u2019s Content-Security-Policy does not list '+
             (/^G-/i.test(_analyticsId())?'googletagmanager.com':'plausible.io')+
             ', and an ad-blocker would do the same. Add the host to <code>script-src</code> (and its beacon host to <code>connect-src</code>) in index.html to switch it on, or leave analytics off.</div>'
           : '')+
       '</div>'+
-      (function(){ const f=_funnel(); const step=(l,n)=>'<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0"><span style="font-size:var(--t-sm);color:var(--t2)">'+l+'</span><span style="font-size:var(--t-md);font-weight:600">'+(n||0)+'</span></div>';
+      (function(){ const f=_funnel(); const step=(l,n)=>'<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0"><span style="font-size:var(--t-sm);color:var(--mu)">'+l+'</span><span style="font-size:var(--t-md);font-weight:600">'+(n||0)+'</span></div>';
         const conv=(a,b)=>b?Math.round((a/b)*100):0;
         return '<div class="ss2"><h3>Conversion funnel <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(this device)</span></h3>'+
-          '<div style="font-size:var(--t-xs);color:var(--t2);margin-bottom:8px">First-party aggregate counts, tracked with no third party. Full cross-device funnels live in your analytics provider.</div>'+
+          '<div style="font-size:var(--t-xs);color:var(--mu);margin-bottom:8px">First-party aggregate counts, tracked with no third party. Full cross-device funnels live in your analytics provider.</div>'+
           step('Landing visits', f.visit)+
           '<div style="height:1px;background:var(--bd)"></div>'+
           step('Sign-ups'+(f.visit?' \u00b7 '+conv(f.signup,f.visit)+'%':''), f.signup)+
@@ -21316,7 +21316,7 @@ function _renderSetPaneInner(only, into){
       '<div class="set-sub">Connect AMV to your deployed backend so Crew jobs, approvals and Handoff work for real and across accounts. Leave blank to run in local demo mode.</div>'+
       '<div class="ss2"><h3>Backend URL</h3>'+
         '<div style="display:flex;gap:8px"><input type="url" id="be-url" value="'+escH(liveBase)+'" placeholder="https://amv-ai-backend.your.workers.dev" style="flex:1;font-size:var(--t-sm)"><button class="btn bp" style="font-size:var(--t-sm)" data-dact="amvSaveBackend">Save</button></div>'+
-        '<p style="font-size:var(--t-xs);color:var(--mu);margin-top:8px">'+(liveBase?('Status: <span style="color:#4ade80">configured</span>'+(tokenSet?' &middot; signed in':' &middot; not signed in')):'Status: local demo mode')+'</p>'+
+        '<p style="font-size:var(--t-xs);color:var(--mu);margin-top:8px">'+(liveBase?('Status: <span style="color:var(--grn-txt)">configured</span>'+(tokenSet?' &middot; signed in':' &middot; not signed in')):'Status: local demo mode')+'</p>'+
       '</div>'+
       '<div class="ss2" style="margin-top:14px"><h3>Sign in to backend</h3>'+
         '<p style="font-size:var(--t-sm);color:var(--mu);margin:-4px 0 10px">Sign in with your AMV account email and password to sync this device. To use Google, sign in with Google on the main sign-in screen - it is verified server-side.</p>'+
@@ -21346,7 +21346,7 @@ function _renderSetPaneInner(only, into){
            it is a deployment decision the operator has already made. This is the
            bundle every visitor downloads. */
         '<p style="font-size:var(--t-sm);color:var(--mu);line-height:1.6;margin:0">Your model key is a secret on the Worker, so it never reaches the browser:</p>'+
-        '<pre style="background:var(--surface);border:1px solid var(--hair);border-radius:8px;padding:10px;font-size:var(--t-sm);overflow:auto;margin:8px 0 0"><code>wrangler secret put AMV_MODEL_KEY</code></pre>'+
+        '<pre style="background:var(--surface);border:1px solid var(--hair);border-radius:var(--r-sm);padding:10px;font-size:var(--t-sm);overflow:auto;margin:8px 0 0"><code>wrangler secret put AMV_MODEL_KEY</code></pre>'+
         '<p style="font-size:var(--t-sm);color:var(--dim);line-height:1.6;margin:8px 0 0">Until it is set, AMV says so on every screen that needs it rather than failing quietly.</p>'+
       '</div>';
     on($('save-base'),'click',()=>{
@@ -21569,9 +21569,9 @@ function _renderSetPaneInner(only, into){
              out, this said "Version 2.0 - 2025" while the release notes one
              screen away listed 2.4, and the year had been wrong since January.
              A version number in two places is two version numbers. */
-          '<div><div style="font-size:calc(17px * var(--fs-s));font-weight:800;letter-spacing:-.4px">AMV<span style="color:var(--accent)">.</span>AI</div><div style="font-size:var(--t-xs);color:var(--t2);margin-top:2px">Version '+escH(_latestVersion()||'2.0')+' &bull; '+new Date().getFullYear()+'</div></div>'+
+          '<div><div style="font-size:var(--t-lg);font-weight:800;letter-spacing:-.4px">AMV<span style="color:var(--accent-txt)">.</span>AI</div><div style="font-size:var(--t-xs);color:var(--mu);margin-top:2px">Version '+escH(_latestVersion()||'2.0')+' &bull; '+new Date().getFullYear()+'</div></div>'+
         '</div>'+
-        '<p style="font-size:var(--t-sm);color:var(--t2);line-height:1.65;margin-bottom:13px">Your AI workforce - it does the work, not just answers it. Chat, agents, builds, images, video, and automation in one place.</p>'+
+        '<p style="font-size:var(--t-sm);color:var(--mu);line-height:1.65;margin-bottom:13px">Your AI workforce - it does the work, not just answers it. Chat, agents, builds, images, video, and automation in one place.</p>'+
         '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
           '<button class="btn bs" style="font-size:var(--t-sm)" data-dact="openTerms">Terms of Service</button>'+
           '<button class="btn bs" style="font-size:var(--t-sm)" data-dact="openPrivacy">Privacy Policy</button>'+
@@ -21586,7 +21586,7 @@ function _renderSetPaneInner(only, into){
           _shortcutRowsHTML()+
         '</div>'+
       '</div>'+
-      (S.user?'<div class="ss2" style="border-color:rgba(255,95,87,.2)"><h3 style="color:var(--red)">Sign Out</h3><p style="font-size:var(--t-sm);color:var(--t2);margin-bottom:12px">Your data remains saved and will be restored on next sign in.</p><button class="btn bd2" data-dact="signOut" style="font-size:var(--t-sm)">Sign out</button></div>':'');
+      (S.user?'<div class="ss2" style="border-color:rgba(255,95,87,.2)"><h3 style="color:var(--red-txt)">Sign Out</h3><p style="font-size:var(--t-sm);color:var(--mu);margin-bottom:12px">Your data remains saved and will be restored on next sign in.</p><button class="btn bd2" data-dact="signOut" style="font-size:var(--t-sm)">Sign out</button></div>':'');
   } else {
     pane.innerHTML='';
   }
@@ -23675,7 +23675,7 @@ function openSheetEditor(data,name){
     <input type="text" id="sheet-inp" placeholder="Ask AMV anything about this spreadsheet..." style="flex:1;font-size:var(--t-base)">
     <button class="btn bp" id="sheet-ask" style="font-size:var(--t-base);padding:8px 18px">Ask</button>
   </div>
-  <div id="sheet-res" style="display:none;margin-top:10px;font-size:var(--t-sm);color:var(--mu);background:var(--s2);border-radius:10px;padding:12px;max-height:180px;overflow-y:auto;white-space:pre-wrap;line-height:1.65"></div>
+  <div id="sheet-res" style="display:none;margin-top:10px;font-size:var(--t-sm);color:var(--mu);background:var(--s2);border-radius:var(--r-md);padding:12px;max-height:180px;overflow-y:auto;white-space:pre-wrap;line-height:1.65"></div>
 </div></div>`;
   on($('sheet-ask'),'click',()=>runSheetAI($('sheet-inp')&&$('sheet-inp').value));
   on($('sheet-inp'),'keydown',e=>{if(e.key==='Enter')runSheetAI($('sheet-inp')&&$('sheet-inp').value);});
@@ -23802,16 +23802,16 @@ function renderAutomationView(){
   '<button type="button" class="bgq-card" data-dact="_bgAddCalendarCheck"><span class="bgq-ic" aria-hidden="true">📅</span><span class="bgq-t">Plan my week</span><span class="bgq-s">Calendar optimization</span></button>',
   '<button type="button" class="bgq-card" data-dact="showCustomTask"><span class="bgq-ic" aria-hidden="true">⚡</span><span class="bgq-t">Custom Task</span><span class="bgq-s">Any AI task in background</span></button>'].join('');
   const taskList=_bgQueue.tasks.length ? _bgQueue.tasks.slice().reverse().map(function(t){
-    let h='<div style="background:rgba(22,27,34,.7);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:14px;margin-bottom:8px">';
+    let h='<div style="background:rgba(22,27,34,.7);border:1px solid rgba(255,255,255,.08);border-radius:var(--r-lg);padding:14px;margin-bottom:8px">';
     h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">';
     h+='<span style="color:'+sc(t.status)+';font-size:var(--t-lg)">'+si(t.status)+'</span>';
     h+='<span style="font-size:var(--t-base);font-weight:600;flex:1">'+escH(t.title)+'</span>';
-    h+='<span style="font-size:var(--t-2xs);color:'+sc(t.status)+';background:'+sc(t.status)+'22;border-radius:10px;padding:2px 10px;font-weight:600">'+t.status+'</span>';
+    h+='<span style="font-size:var(--t-2xs);color:'+sc(t.status)+';background:'+sc(t.status)+'22;border-radius:var(--r-md);padding:2px 10px;font-weight:600">'+t.status+'</span>';
     h+='</div>';
-    if(t.status==='running') h+='<div style="height:4px;background:rgba(255,255,255,.1);border-radius:4px;margin-bottom:8px"><div style="height:100%;width:'+(t.progress||30)+'%;background:var(--blue);border-radius:4px;transition:width .5s"></div></div>';
-    if(t.error) h+='<div style="font-size:var(--t-sm);color:var(--red);padding:8px;background:rgba(248,81,73,.08);border-radius:7px;margin-top:4px">'+escH(t.error)+'</div>';
+    if(t.status==='running') h+='<div style="height:4px;background:rgba(255,255,255,.1);border-radius:var(--r-2xs);margin-bottom:8px"><div style="height:100%;width:'+(t.progress||30)+'%;background:var(--blue);border-radius:var(--r-2xs);transition:width .5s"></div></div>';
+    if(t.error) h+='<div style="font-size:var(--t-sm);color:var(--red-txt);padding:8px;background:rgba(248,81,73,.08);border-radius:var(--r-sm);margin-top:4px">'+escH(t.error)+'</div>';
     if(t.result){
-      h+='<div style="font-size:var(--t-sm);color:var(--mu);background:rgba(0,0,0,.25);border-radius:8px;padding:10px;margin-top:8px;max-height:180px;overflow-y:auto;white-space:pre-wrap;line-height:1.65">'+escH(t.result.slice(0,500))+(t.result.length>500?' ...(truncated)':'')+'</div>';
+      h+='<div style="font-size:var(--t-sm);color:var(--mu);background:rgba(0,0,0,.25);border-radius:var(--r-sm);padding:10px;margin-top:8px;max-height:180px;overflow-y:auto;white-space:pre-wrap;line-height:1.65">'+escH(t.result.slice(0,500))+(t.result.length>500?' ...(truncated)':'')+'</div>';
       h+='<div style="display:flex;gap:6px;margin-top:8px"><button class="ext-btn" data-dact="_toastResultCopied">Copy result</button></div>';
     }
     h+='<div style="font-size:var(--t-2xs);color:var(--dim);margin-top:6px">'+new Date(t.created).toLocaleString()+'</div>';
@@ -23960,13 +23960,13 @@ function showCustomTask(){
   const r=$('ovr'); if(!r) return;
   const div=document.createElement('div');
   div.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(8px)';
-  div.innerHTML='<div style="background:var(--s1);border:1px solid var(--hair);border-radius:18px;padding:28px;width:100%;max-width:460px;box-shadow:0 24px 60px rgba(0,0,0,.4);position:relative">'
-    +'<div style="font-size:calc(18px * var(--fs-s));font-weight:700;color:var(--tx);margin-bottom:4px">Custom Background Task</div>'
+  div.innerHTML='<div style="background:var(--s1);border:1px solid var(--hair);border-radius:var(--r-3xl);padding:28px;width:100%;max-width:460px;box-shadow:0 24px 60px rgba(0,0,0,.4);position:relative">'
+    +'<div style="font-size:var(--t-xl);font-weight:700;color:var(--tx);margin-bottom:4px">Custom Background Task</div>'
     +'<div style="font-size:var(--t-sm);color:var(--mu);margin-bottom:20px">Runs automatically - navigate away and it will complete</div>'
     +'<div style="display:flex;flex-direction:column;gap:14px">'
-    +'<div><label style="font-size:var(--t-xs);font-weight:600;color:var(--mu);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:6px">Task Name</label><input type="text" id="ct-name" placeholder="e.g. Research competitors" style="width:100%;padding:10px 12px;background:var(--s2);border:1px solid var(--hair);border-radius:10px;color:var(--tx);font-size:var(--t-base);outline:none;box-sizing:border-box"></div>'
-    +'<div><label style="font-size:var(--t-xs);font-weight:600;color:var(--mu);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:6px">Instructions</label><textarea id="ct-prompt" rows="4" placeholder="What do you want AMV to do?" style="width:100%;padding:10px 12px;background:var(--s2);border:1px solid var(--hair);border-radius:10px;color:var(--tx);font-size:var(--t-base);outline:none;resize:vertical;box-sizing:border-box;font-family:inherit"></textarea></div>'
-    +'<button id="ct-go" style="width:100%;padding:13px;background:var(--accent);border:none;border-radius:12px;color:var(--on-accent);font-size:var(--t-md);font-weight:700;cursor:pointer;font-family:inherit">&#9889; Run in Background</button>'
+    +'<div><label style="font-size:var(--t-xs);font-weight:600;color:var(--mu);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:6px">Task Name</label><input type="text" id="ct-name" placeholder="e.g. Research competitors" style="width:100%;padding:10px 12px;background:var(--s2);border:1px solid var(--hair);border-radius:var(--r-md);color:var(--tx);font-size:var(--t-base);outline:none;box-sizing:border-box"></div>'
+    +'<div><label style="font-size:var(--t-xs);font-weight:600;color:var(--mu);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:6px">Instructions</label><textarea id="ct-prompt" rows="4" placeholder="What do you want AMV to do?" style="width:100%;padding:10px 12px;background:var(--s2);border:1px solid var(--hair);border-radius:var(--r-md);color:var(--tx);font-size:var(--t-base);outline:none;resize:vertical;box-sizing:border-box;font-family:inherit"></textarea></div>'
+    +'<button id="ct-go" style="width:100%;padding:13px;background:var(--accent);border:none;border-radius:var(--r-lg);color:var(--on-accent);font-size:var(--t-md);font-weight:700;cursor:pointer;font-family:inherit">&#9889; Run in Background</button>'
     +'</div></div>';
   r.innerHTML=''; r.appendChild(div);
   div.addEventListener('click',e=>{if(e.target===div)r.innerHTML='';});
@@ -25292,7 +25292,7 @@ async function _labDeploy(){
     }
     _labStat('\u2713 live','ok');
     _labOut('<div class="lab-sec"><div class="lab-sec-h">Published</div>'+
-      '<div class="lab-md">It\u2019s live at <a href="'+escH(safeUrl(url))+'" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">'+escH(url)+'</a> - anyone with the link can open it.</div></div>');
+      '<div class="lab-md">It\u2019s live at <a href="'+escH(safeUrl(url))+'" target="_blank" rel="noopener noreferrer" style="color:var(--accent-txt)">'+escH(url)+'</a> - anyone with the link can open it.</div></div>');
   }catch(e){
     _labStat('\u2717 '+e.message,'err');
     _labOut('<div class="lab-sec err"><pre class="lab-pre">'+_esc(e.message)+'</pre></div>');
@@ -25382,7 +25382,7 @@ async function _labRun(){
     if(r.html){
       _labStat('\u2713 rendered','ok');
       const ifr=document.createElement('iframe');
-      ifr.sandbox='allow-scripts'; ifr.style.cssText='width:100%;height:100%;border:0;background:#fff;border-radius:8px';
+      ifr.sandbox='allow-scripts'; ifr.style.cssText='width:100%;height:100%;border:0;background:#fff;border-radius:var(--r-sm)';
       ifr.srcdoc=r.html;
       const b=$('lab-out-body'); if(b){ b.innerHTML=''; b.appendChild(ifr); }
     } else if(r.ok){
@@ -28756,7 +28756,7 @@ function _renderInvestPane(pane){
           '<div class="inv-when">'+
             INVEST_WHEN.map(w=>'<button class="btn '+(when===w.k?'bp':'bs')+' inv-when-b" data-inv-when="'+w.k+'">'+
               escH(w.label)+'</button>').join('')+
-            (when?'<button class="btn bs inv-when-b" data-inv-when="" style="color:var(--red);border-color:var(--red)">Stop</button>':'')+
+            (when?'<button class="btn bs inv-when-b" data-inv-when="" style="color:var(--red-txt);border-color:var(--red-txt)">Stop</button>':'')+
           '</div>'+
           '<div class="fam-say" id="inv-when-say" role="status" aria-live="polite">'+
             (when?escH('AMV checks '+((INVEST_WHEN.find(w=>w.k===when)||{}).detail||when)+' and tells you.'):'')+
@@ -29646,7 +29646,7 @@ function _famChildHTML(st){
     /* The way out. Without it, accepting an invitation once meant somebody else
        controlled this account's spending permanently - and AMV cannot tell a
        parent from a stranger who talked you into it. */
-    '<button class="btn bs" id="fam-leave" style="font-size:var(--t-sm);color:var(--red);border-color:var(--red)">Leave this family</button>'+
+    '<button class="btn bs" id="fam-leave" style="font-size:var(--t-sm);color:var(--red-txt);border-color:var(--red-txt)">Leave this family</button>'+
     '<div class="fam-say" id="fam-leave-say" role="status" aria-live="polite"></div>'+
   '</div>';
 }

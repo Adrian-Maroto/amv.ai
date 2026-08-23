@@ -321,7 +321,7 @@ function _famChildHTML(st){
     /* The way out. Without it, accepting an invitation once meant somebody else
        controlled this account's spending permanently - and AMV cannot tell a
        parent from a stranger who talked you into it. */
-    '<button class="btn bs" id="fam-leave" style="font-size:var(--t-sm);color:var(--red);border-color:var(--red)">Leave this family</button>'+
+    '<button class="btn bs" id="fam-leave" style="font-size:var(--t-sm);color:var(--red-txt);border-color:var(--red-txt)">Leave this family</button>'+
     '<div class="fam-say" id="fam-leave-say" role="status" aria-live="polite"></div>'+
   '</div>';
 }

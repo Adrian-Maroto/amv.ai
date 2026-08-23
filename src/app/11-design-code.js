@@ -339,7 +339,7 @@ function renderDesignView(){
         <span class="dna-active-chip">${_DNA.colors.length} colors · ${escH(_DNA.themeFamily)} · ${escH(_DNA.theme)}</span>
       </div>
       <p class="dsn-dna-explain">Design DNA is your reusable style guide - set your colors, fonts, shapes and vibe once, and everything AMV designs follows it. Optional: skip it and AMV picks tasteful defaults.</p>
-      <div style="margin-top:12px;display:flex;height:22px;width:min(420px,80%);border-radius:7px;overflow:hidden;border:1px solid var(--hair)">${_DNA.colors.map(c2=>`<span style="flex:1;background:${c2.hex}"></span>`).join('')}</div>
+      <div style="margin-top:12px;display:flex;height:22px;width:min(420px,80%);border-radius:var(--r-sm);overflow:hidden;border:1px solid var(--hair)">${_DNA.colors.map(c2=>`<span style="flex:1;background:${c2.hex}"></span>`).join('')}</div>
     </section>
 
     <section class="dsn-starts">
@@ -756,7 +756,7 @@ function openDNA(){
     <div class="dna-head">
       <div><h2>Design DNA</h2><p>Your reusable style guide. Set it once - every design AMV makes follows it.</p></div>
       <div style="display:flex;align-items:center;gap:4px">
-        <button class="dna-x" id="dna-help" title="What is this?" style="font-size:calc(15px * var(--fs-s))">?</button>
+        <button class="dna-x" id="dna-help" title="What is this?" style="font-size:var(--t-prose)">?</button>
         <button class="dna-x" id="dna-x">✕</button>
       </div>
     </div>
@@ -1199,7 +1199,7 @@ function _devConnectVSCode(){
   const r=$('ovr'); if(!r) return;
   r.innerHTML='<div class="ov" id="vsc-bg"><div class="tp-modal" style="max-width:480px">'+
     '<button class="dna-x" id="vsc-x" style="position:absolute;top:14px;right:14px">\u2715</button>'+
-    '<h2 style="font-family:var(--fdisplay);font-weight:500;font-size:calc(21px * var(--fs-s));margin:0 0 6px">Use AMV in VS Code</h2>'+
+    '<h2 style="font-family:var(--fdisplay);font-weight:500;font-size:var(--t-xl);margin:0 0 6px">Use AMV in VS Code</h2>'+
     '<p style="font-size:var(--t-base);color:var(--mu);line-height:1.6;margin:0 0 18px">Run these two commands in your project folder. That\u2019s it - AMV opens in your editor and can read, write, and run your code.</p>'+
     '<div class="vsc-cmd"><code>npm install -g @amv/cli</code><button class="vsc-copy" data-c="npm install -g @amv/cli">Copy</button></div>'+
     '<div class="vsc-cmd" style="margin-top:8px"><code>amv code .</code><button class="vsc-copy" data-c="amv code .">Copy</button></div>'+
@@ -2833,7 +2833,7 @@ function _ctxRenderMeter(hostId, kind){
 async function _ctxHandoffFlow(kind){
   const r=$('ovr'); if(!r) return;
   r.innerHTML='<div class="ovr-bg"><div class="ovr-card" style="max-width:460px">'+
-    '<div style="font-size:calc(15px * var(--fs-s));font-weight:600;margin-bottom:6px">Carrying your context over\u2026</div>'+
+    '<div style="font-size:var(--t-prose);font-weight:600;margin-bottom:6px">Carrying your context over\u2026</div>'+
     '<div style="font-size:var(--t-base);color:var(--mu);line-height:1.6" id="ctx-step">Compressing everything important from this '+(kind==='dev'?'session':'chat')+'\u2026</div>'+
     '<div class="ctx-bar" style="margin-top:14px"><div class="ctx-fill" id="ctx-anim" style="width:15%"></div></div>'+
   '</div></div>';

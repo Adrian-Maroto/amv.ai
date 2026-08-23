@@ -6029,3 +6029,38 @@ number, and never looked at the `< 32` at the end. Putting the original mistake
 back passed. Seventh instrument error this session, and the second where sabotage
 found the guard rather than the bug - which is now two for two on being worth the
 five minutes it costs.
+
+## 286. A token can be right for a fill and wrong for a word
+
+The colour sweep measured every piece of text against the background actually
+behind it, both themes, every tab. The light theme was showing status text at
+**1.71:1** for green, 1.93:1 for gold and 3.21:1 for red - including the colour
+it uses to say something went wrong. 4.5:1 is the floor.
+
+The instinct is that the palette is broken. It is not. `--grn` is a good green,
+and a green badge with dark text on it reads perfectly. **The same token was
+being used for a fill and for a word, and only one of those uses was ever
+checked.** The fix is a text variant per theme, not a new palette - which also
+means the brand does not move.
+
+Its mirror was on the same page: white ON the accent is 4.10:1, so the primary
+button and the "Most Popular" badge both failed. Every token that carries text
+needs testing in both directions - as the ink and as the paper.
+
+### And I broke the light theme while fixing it
+
+A patch adding `--accent-fill` asserted on a string an earlier edit had already
+changed. The assert threw **before** the write, so the token landed in one theme
+and not the other, and every white-on-accent control in the theme that lacked it
+lost its background: white text on white, **1.02:1**, worse than anything I was
+fixing.
+
+Two things caught it and neither was the test suite. The contrast sweep reported
+a 1.02:1 that had not been there before, and reading the script's own output
+showed an AssertionError above a success message I had already believed.
+
+**A patch script that asserts and then writes will half-apply if you let the
+assert run first and the write run last.** Check the exit status, not the last
+line of output - and when a fix defines something per theme, verify every theme
+resolves it, because "defined" is not a property of the stylesheet, it is a
+property of the theme you are in.
