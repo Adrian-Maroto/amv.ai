@@ -186,8 +186,38 @@ big-bang rewrite.
    separate structures and the tab bar is not yet a shared component. That is
    the remainder of this step, and it is wiring-heavy, so it may fold into
    step 6.
+   **Read before starting, 2026-08-23.** The two structures were measured rather
+   than assumed, and they are not the same shape:
+
+       Dev    .dev-prev-bar = .dev-prev-tabs [Preview|Code] + .dev-prev-acts
+              (viewport switch, status, download, deploy, open external)
+              two bodies, #dev-prev-body and #dev-code-body, toggled by showPV
+
+       Lab    .lab-out-top  = a label and #lab-out-stat
+              one body, #lab-out-body, plus a chat composer under it
+
+   Dev has Preview|Code because Dev GENERATES the code and has to show both.
+   Lab's code is already on screen in the editor beside the output. So giving
+   Lab a Preview/Code tab bar would make the two surfaces identical at the cost
+   of giving Lab a tab that shows it what it is already looking at.
+
+   **So the shared thing is the BAR, not the tabs.** One component with a left
+   slot (tabs, or a title) and a right slot (actions and status). Dev passes
+   tabs; Lab passes a title. Studio uses the same bar. That unifies the chrome,
+   the spacing, the status position and the action group - which is what D013 is
+   actually about - without inventing a control Lab has no use for.
+
+   This is worth saying explicitly because "merge the surfaces" read literally
+   would produce the worse product, and the finding is about duplication of
+   STYLE, not of concept.
+
 6. **Retire the three renderers**, and run the step-1 inventory to prove every
    control still exists and still reaches the same function.
+
+   Standing caveat, restated: the benefit of step 6 is tidiness. No control
+   moves, nothing a person can see changes. It is ~3,600 lines of renderer and
+   the inventory in step 1 exists precisely so it can be done safely - but if
+   anything ahead of it in the queue is user-visible, that goes first.
 
 ## What is deliberately deferred
 
