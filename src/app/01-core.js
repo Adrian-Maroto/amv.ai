@@ -942,6 +942,30 @@ function _avatarHTML(email, size){
 }
 
 
+/* NOTHING IN AMV SAID ANYTHING OUT LOUD.
+
+   Swept the whole product for live regions and found zero. Not "not enough" -
+   none. Every toast, every status change, and every answer AMV streamed back
+   was silent to a screen reader: the page changed and nothing announced it, so
+   somebody using one had no way to know a thing had happened.
+
+   One region, polite, off-screen but not display:none - a hidden element is not
+   announced, so it has to be positioned away rather than removed. Polite rather
+   than assertive because these are confirmations, not alarms, and assertive
+   interrupts whatever the reader is in the middle of.
+
+   The text is cleared first and set on the next frame. Assigning the same string
+   twice in a row is not a change, so a repeated message ("Copied", "Copied")
+   would be announced once and then never again. */
+function announce(msg){
+  try{
+    const r = $('sr-live'); if(!r || !msg) return;
+    r.textContent = '';
+    requestAnimationFrame(()=>{ r.textContent = String(msg).slice(0, 300); });
+  }catch(e){}
+}
+try{ window.announce = announce; }catch(e){}
+
 function toast(msg, type='info', dur=3000) {
   const wrap = $('toast-wrap');
   if (!wrap) return;
@@ -950,6 +974,8 @@ function toast(msg, type='info', dur=3000) {
   t.className = 'toast ' + type;
   t.innerHTML = '<div class="ticon">' + (icons[type]||'ℹ') + '</div><span>' + escH(msg) + '</span>';
   wrap.appendChild(t);
+  /* Toasts are the product's main feedback channel, so this is most of the fix. */
+  announce(msg);
   setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 200); }, dur);
 }
 /* A toast with a single action button (e.g. "Undo"). The action fires once,
@@ -959,6 +985,7 @@ function toastAction(msg, actionLabel, fn, dur=6000){
   const t=document.createElement('div'); t.className='toast info toast-act';
   t.innerHTML='<div class="ticon">↩</div><span>'+escH(msg)+'</span><button class="toast-btn">'+escH(actionLabel)+'</button>';
   wrap.appendChild(t);
+  announce(msg + '. ' + actionLabel + ' available.');
   let done=false;
   const kill=()=>{ if(done) return; done=true; t.classList.add('out'); setTimeout(()=>t.remove(),200); };
   t.querySelector('.toast-btn').addEventListener('click',()=>{ try{ fn(); }catch(e){} kill(); });

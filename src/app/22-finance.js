@@ -309,7 +309,7 @@ function _renderInvestPane(pane){
   const when=_invWhen();
 
   pane.innerHTML=
-    '<div class="set-title">Investing</div>'+
+    '<h2 class="set-title">Investing</h2>'+
     '<div class="set-sub">Link an investment account and AMV tells you how it is doing, as often as you like.</div>'+
     '<div class="ss2 set-what"><h3>What this is</h3>'+
       '<p>A check-in, not a dashboard. Each one records where your investments stand and tells you what '+

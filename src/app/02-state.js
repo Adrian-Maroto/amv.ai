@@ -682,7 +682,7 @@ function _sectionModelSelect(section, id){
   const canRun=k=> k==='auto' || plan==='custom' || !tier || !Array.isArray(tier.models)
     || tier.models.indexOf(k)>=0;
   const PLAN_LABEL={free:'Free',pro:'Pro',elite:'Elite',ultra:'Ultra'};
-  return '<select id="'+id+'" class="sel secmodel-sel">'+MODEL_ORDER.map(k=>{
+  return '<select id="'+id+'" class="sel secmodel-sel" aria-label="Engine for '+escH(section)+'">'+MODEL_ORDER.map(k=>{
     const m=MODELS[k];
     const okk=canRun(k);
     const tail=okk ? _modelOutcomeLabel(k)

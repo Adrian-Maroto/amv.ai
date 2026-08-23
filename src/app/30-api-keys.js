@@ -24,7 +24,7 @@ function _apiWhen(ts){
 
 function _renderApiKeysPane(pane){
   pane.innerHTML =
-    '<div class="set-title">API keys</div>'+
+    '<h2 class="set-title">API keys</h2>'+
     '<div class="set-sub">Use AMV from your own code. A key spends this account\u2019s plan - the same limits, '+
       'the same monthly ceiling, the same protections. Nothing separate to watch.</div>'+
     '<div class="ss2" id="api-body"><div class="ak-load">Loading your keys\u2026</div></div>'+

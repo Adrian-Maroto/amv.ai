@@ -33,7 +33,7 @@ function _mfSay(id, msg, kind){
    guard re-issues the fetch every redraw. */
 let _SPEND_PULLED = false, _SPEND_BUSY = false;
 function _renderSpendingPane(pane){
-  if(typeof AMVSpend === 'undefined'){ pane.innerHTML = '<div class="set-title">Spending</div>'; return; }
+  if(typeof AMVSpend === 'undefined'){ pane.innerHTML = '<h2 class="set-title">Spending</h2>'; return; }
   const c = AMVSpend.cfg();
   const spent = AMVSpend.spentThisMonth();
   const cap = +c.monthlyCap || 0;
@@ -73,7 +73,7 @@ function _renderSpendingPane(pane){
   const canConfigure = !gate;
 
   pane.innerHTML =
-    '<div class="set-title">Spending</div>'+
+    '<h2 class="set-title">Spending</h2>'+
     '<div class="set-sub">What AMV is allowed to spend for you, and what it has actually spent. Nothing is bought outside these limits.</div>'+
     /* What this IS, before what it is set to.
 
@@ -380,7 +380,7 @@ function _wireFamilyParent(pane){
 }
 
 function _renderFamilyPane(pane){
-  if(typeof AMVFamily === 'undefined'){ pane.innerHTML = '<div class="set-title">Family</div>'; return; }
+  if(typeof AMVFamily === 'undefined'){ pane.innerHTML = '<h2 class="set-title">Family</h2>'; return; }
   /* Fetch once, then redraw with the real thing. Guarded on not already having
      it, because an unguarded redraw here is a fetch loop. */
   const needState = _FAM_STATE === null;
@@ -409,7 +409,7 @@ function _renderFamilyPane(pane){
       'aria-label="Remove the link '+escH(dir==='out'?('to '+l.account):('that lets '+l.account+' access your account'))+'">Remove</button></li>';
 
   pane.innerHTML =
-    '<div class="set-title">Family</div>'+
+    '<h2 class="set-title">Family</h2>'+
     '<div class="set-sub">Carry someone else\u2019s AMV the way a phone plan does - you pay, and you set what it may spend on their account. They keep their own sign-in and their own conversations.</div>'+
     /* The parent's panel first, because that is who this screen is for. The
        generic account-linking below it is a different, rarer thing. */

@@ -942,6 +942,30 @@ function _avatarHTML(email, size){
 }
 
 
+/* NOTHING IN AMV SAID ANYTHING OUT LOUD.
+
+   Swept the whole product for live regions and found zero. Not "not enough" -
+   none. Every toast, every status change, and every answer AMV streamed back
+   was silent to a screen reader: the page changed and nothing announced it, so
+   somebody using one had no way to know a thing had happened.
+
+   One region, polite, off-screen but not display:none - a hidden element is not
+   announced, so it has to be positioned away rather than removed. Polite rather
+   than assertive because these are confirmations, not alarms, and assertive
+   interrupts whatever the reader is in the middle of.
+
+   The text is cleared first and set on the next frame. Assigning the same string
+   twice in a row is not a change, so a repeated message ("Copied", "Copied")
+   would be announced once and then never again. */
+function announce(msg){
+  try{
+    const r = $('sr-live'); if(!r || !msg) return;
+    r.textContent = '';
+    requestAnimationFrame(()=>{ r.textContent = String(msg).slice(0, 300); });
+  }catch(e){}
+}
+try{ window.announce = announce; }catch(e){}
+
 function toast(msg, type='info', dur=3000) {
   const wrap = $('toast-wrap');
   if (!wrap) return;
@@ -950,6 +974,8 @@ function toast(msg, type='info', dur=3000) {
   t.className = 'toast ' + type;
   t.innerHTML = '<div class="ticon">' + (icons[type]||'ℹ') + '</div><span>' + escH(msg) + '</span>';
   wrap.appendChild(t);
+  /* Toasts are the product's main feedback channel, so this is most of the fix. */
+  announce(msg);
   setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 200); }, dur);
 }
 /* A toast with a single action button (e.g. "Undo"). The action fires once,
@@ -959,6 +985,7 @@ function toastAction(msg, actionLabel, fn, dur=6000){
   const t=document.createElement('div'); t.className='toast info toast-act';
   t.innerHTML='<div class="ticon">↩</div><span>'+escH(msg)+'</span><button class="toast-btn">'+escH(actionLabel)+'</button>';
   wrap.appendChild(t);
+  announce(msg + '. ' + actionLabel + ' available.');
   let done=false;
   const kill=()=>{ if(done) return; done=true; t.classList.add('out'); setTimeout(()=>t.remove(),200); };
   t.querySelector('.toast-btn').addEventListener('click',()=>{ try{ fn(); }catch(e){} kill(); });
@@ -2183,7 +2210,7 @@ function _sectionModelSelect(section, id){
   const canRun=k=> k==='auto' || plan==='custom' || !tier || !Array.isArray(tier.models)
     || tier.models.indexOf(k)>=0;
   const PLAN_LABEL={free:'Free',pro:'Pro',elite:'Elite',ultra:'Ultra'};
-  return '<select id="'+id+'" class="sel secmodel-sel">'+MODEL_ORDER.map(k=>{
+  return '<select id="'+id+'" class="sel secmodel-sel" aria-label="Engine for '+escH(section)+'">'+MODEL_ORDER.map(k=>{
     const m=MODELS[k];
     const okk=canRun(k);
     const tail=okk ? _modelOutcomeLabel(k)
@@ -6790,10 +6817,31 @@ function _streamBubbleUpdate(streamIdx, text){
 }
 function _streamBubbleReset(){ _streamBubbleEl=null; if(_streamRAF){cancelAnimationFrame(_streamRAF);_streamRAF=null;} _streamPending=null; }
 
+/* An answer arriving is the single most important thing that happens in AMV, and
+   it was the least announced. The stream cannot be a live region itself - that
+   would read every partial token aloud, which is unusable - so the START and the
+   FINISH are announced instead, from here rather than from the completion paths,
+   because there are four of those (finished, stopped, interrupted, retried) and
+   hooking each one is how you miss the fifth. */
+let _srLastStreaming = false;
+function _announceChatTurn(msgs){
+  try{
+    const last = msgs[msgs.length-1];
+    const streaming = !!(last && last.r==='a' && last.streaming);
+    if(streaming && !_srLastStreaming) announce('AMV is answering');
+    else if(!streaming && _srLastStreaming){
+      const t = (last && typeof last.c==='string') ? last.c.trim() : '';
+      announce(t ? 'AMV answered. ' + t : 'AMV finished answering');
+    }
+    _srLastStreaming = streaming;
+  }catch(e){}
+}
+
 function renderChatMsgs() {
   const cm=$('cm');
   if(!cm) return;
   const msgs=getMsgs();
+  _announceChatTurn(msgs);
   const ini=S.user?.ini||'?';
 
   if(!msgs.length) {
@@ -8609,7 +8657,7 @@ function _renderTeamSettingsPane(pane){
   const seats=team&&team.seats;
 
   pane.innerHTML=
-    '<div class="set-title">Team</div>'+
+    '<h2 class="set-title">Team</h2>'+
     '<div class="set-sub">Sharing AMV with the people you work with.</div>'+
     '<div class="ss2 set-what"><h3>What a team is</h3>'+
       '<p>One AMV subscription that several people sign into with their own accounts. '+
@@ -20118,13 +20166,13 @@ function _renderWidgetPane(pane){
   const base=(loadStr('amv_api_base')||'').replace(/\/+$/,'');
   if(!live){
     pane.innerHTML=
-      '<div class="set-title">Website Widget</div>'+
+      '<h2 class="set-title">Website Widget</h2>'+
       '<div class="set-sub">Add an AMV chat bubble to any website with one line of code.</div>'+
       '<div class="wb">Connect your backend first (Settings \u2192 AI Connection and sign in). The widget\u2019s config and public key live on your server so it works securely on the open web.</div>';
     return;
   }
   pane.innerHTML=
-    '<div class="set-title">Website Widget</div>'+
+    '<h2 class="set-title">Website Widget</h2>'+
     '<div class="set-sub">Add an AMV chat bubble to any website with one line of code. Your visitors chat with an AI you control - no account needed on their end.</div>'+
     '<div id="wg-body"><div class="lab-placeholder">Loading your widget\u2026</div></div>';
 
@@ -20785,7 +20833,7 @@ function _renderSkillsPane(pane){
       '</div></div>';
   };
   pane.innerHTML=
-    '<div class="set-title">Skills</div>'+
+    '<h2 class="set-title">Skills</h2>'+
     '<div class="set-sub">Reusable instruction presets. Turn one on and AMV follows it in every chat until you turn it off.</div>'+
     '<div class="ss2"><h3>Your skills</h3>'+
       (custom.length?'<div class="skill-list">'+custom.map(s=>row(s,true)).join('')+'</div>':'<div class="skill-empty">No custom skills yet - create one below.</div>')+
@@ -20889,7 +20937,7 @@ function _renderSetPaneInner(only, into){
   // Projects lives in Settings now - render its grid inside the pane.
   if(sp==='projects'){
     pane.innerHTML=
-      '<div class="set-title">Projects</div>'+
+      '<h2 class="set-title">Projects</h2>'+
       '<div class="set-sub">Group related chats, builds, and research into a project so AMV keeps the full context together.</div>'+
       '<button class="btn bp" id="ws-new" style="align-self:flex-start;margin-bottom:16px">+ New project</button>'+
       '<div class="wg" id="ws-grid"></div>';
@@ -20902,7 +20950,7 @@ function _renderSetPaneInner(only, into){
 
   if(sp==='account'){
     pane.innerHTML=
-      '<div class="set-title">Account</div>'+
+      '<h2 class="set-title">Account</h2>'+
       '<div class="set-sub">Manage your profile and account information.</div>'+
       '<div class="ss2">'+
         '<div style="display:flex;align-items:center;gap:17px;margin-bottom:16px;flex-wrap:wrap">'+
@@ -20986,7 +21034,7 @@ function _renderSetPaneInner(only, into){
 
   } else if(sp==='security'){
     pane.innerHTML=
-      '<div class="set-title">Security</div>'+
+      '<h2 class="set-title">Security</h2>'+
       '<div class="set-sub">Manage your password and account security.</div>'+
       (S.user&&S.user.provider==='google'?
         '<div class="ss2"><p style="font-size:var(--t-base);color:var(--mu)">Signed in with Google. Manage your password at <a href="https://myaccount.google.com" target="_blank" rel="noopener noreferrer" style="color:var(--accent-txt)">myaccount.google.com</a>.</p></div>':
@@ -21036,7 +21084,7 @@ function _renderSetPaneInner(only, into){
 
   } else if(sp==='privacy'){
     pane.innerHTML=
-      '<div class="set-title">Privacy</div>'+
+      '<h2 class="set-title">Privacy</h2>'+
       '<div class="set-sub">AMV believes in transparent data practices. Here\u2019s how your information is handled, and the controls you have over it.</div>'+
       // Intro: protect / use
       '<div class="ss2"><div class="prv-cards">'+
@@ -21118,7 +21166,7 @@ function _renderSetPaneInner(only, into){
     const curFs=parseInt(loadStr('amv_fs')||'14',10);
     const fsBtn=(px,label)=>'<button class="fs-opt'+(curFs===px?' on':'')+'" data-fs="'+px+'"><span class="fs-pv" style="font-size:'+(px+1)+'px">Aa</span><span class="fs-lbl">'+label+'</span></button>';
     pane.innerHTML=
-      '<div class="set-title">Appearance</div>'+
+      '<h2 class="set-title">Appearance</h2>'+
       '<div class="set-sub">Customize how AMV.AI looks and feels. Changes apply instantly across the whole app.</div>'+
       '<div class="ss2"><h3>Theme</h3>'+
         '<div class="br2"><div><div class="opt-name">Dark Mode</div><div class="opt-desc">Deep dark, easy on the eyes</div></div>'+
@@ -21192,7 +21240,7 @@ function _renderSetPaneInner(only, into){
   } else if(sp==='language'){
     const cur=_lang();
     pane.innerHTML=
-      '<div class="set-title">Language</div>'+
+      '<h2 class="set-title">Language</h2>'+
       '<div class="set-sub">Choose the language for AMV\u2019s responses and the content it generates - chat replies, images, video, and 3D models will all use it. You can still ask for any other language inside a message.</div>'+
       /* The app's own text is translated too, but that half needs the engine.
          Without it a handful of common labels come from a built-in dictionary
@@ -21241,7 +21289,7 @@ function _renderSetPaneInner(only, into){
 
   } else if(sp==='dashboard'){
     pane.innerHTML=
-      '<div class="set-title">Founder Dashboard</div>'+
+      '<h2 class="set-title">Founder Dashboard</h2>'+
       '<div class="set-sub">Live platform spend, users, revenue, and abuse signals. Operator-only.</div>'+
       '<div id="fd-body"><div class="fd-loading">Loading platform stats\u2026</div></div>'+
       '<div id="fd-digest-host"></div>'+
@@ -21312,7 +21360,7 @@ function _renderSetPaneInner(only, into){
     const liveBase=loadStr('amv_api_base')||'';
     const tokenSet=!!(loadStr('amv_api_token'));
     pane.innerHTML=
-      '<div class="set-title">Live / Backend</div>'+
+      '<h2 class="set-title">Live / Backend</h2>'+
       '<div class="set-sub">Connect AMV to your deployed backend so Crew jobs, approvals and Handoff work for real and across accounts. Leave blank to run in local demo mode.</div>'+
       '<div class="ss2"><h3>Backend URL</h3>'+
         '<div style="display:flex;gap:8px"><input type="url" id="be-url" value="'+escH(liveBase)+'" placeholder="https://amv-ai-backend.your.workers.dev" style="flex:1;font-size:var(--t-sm)"><button class="btn bp" style="font-size:var(--t-sm)" data-dact="amvSaveBackend">Save</button></div>'+
@@ -21326,7 +21374,7 @@ function _renderSetPaneInner(only, into){
     const liveBase=loadStr('amv_api_base')||'';
     const connected=!!(window.AMV_API && AMV_API.live);
     pane.innerHTML=
-      '<div class="set-title">AI Connection</div>'+
+      '<h2 class="set-title">AI Connection</h2>'+
       '<div class="set-sub">AMV runs on your secure backend. The AI key lives <b>only on your server</b> - never in the browser - so usage, billing, and limits are always enforced and can never be bypassed.</div>'+
       '<div class="conn-status '+(connected?'ok':'off')+'" id="conn-status">'+
         '<span class="conn-dot"></span>'+(connected?'Connected - AMV is ready':'Not connected - add your backend URL below')+
@@ -21397,7 +21445,7 @@ function _renderSetPaneInner(only, into){
 
   } else if(sp==='platform'){
     pane.innerHTML=
-      '<div class="set-title">Platform &amp; Stripe</div>'+
+      '<h2 class="set-title">Platform &amp; Stripe</h2>'+
       '<div class="set-sub">Configure revenue collection and deployment.</div>'+
       (!S.sp&&!S.se?'<div class="wb">&#9888; Add your Stripe payment links to start collecting revenue.</div>':'')+
       '<div class="ss2"><h3>Stripe - card, Apple Pay &amp; Google Pay</h3>'+
@@ -21494,7 +21542,7 @@ function _renderSetPaneInner(only, into){
 
   } else if(sp==='usage'){
     pane.innerHTML=
-      '<div class="set-title">Usage</div>'+
+      '<h2 class="set-title">Usage</h2>'+
       '<div class="set-sub">Your current usage this window, activity, and the impact AMV has had for you.</div>'+
       _usageContentHTML();
     /* The upgrade buttons in here need no wiring: data-stab is dispatched by
@@ -21505,7 +21553,7 @@ function _renderSetPaneInner(only, into){
 
   } else if(sp==='integrations'){
     pane.innerHTML =
-      '<div class="set-title">Connectors</div>'+
+      '<h2 class="set-title">Connectors</h2>'+
       '<div class="set-sub">Connect AMV to your tools. <b style="color:var(--tx)">Autonomous</b> ones work in the background once connected; <b style="color:var(--tx)">manual</b> ones you trigger or upload to. Click Connect - you approve in a popup, no keys to paste.</div>'+
       _integrationsCatalogHTML();
     _wireIntegrationCatalog(pane);
@@ -21516,7 +21564,7 @@ function _renderSetPaneInner(only, into){
     const cap=(icon,title,desc)=>'<div class="cap-item"><span class="cap-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+icon+'</svg></span><div><div class="cap-t">'+escH(title)+'</div><div class="cap-d">'+escH(desc)+'</div></div></div>';
     const capToggle=(id,title,desc,on)=>'<div class="prv-pref"><div><div class="prv-pref-t">'+escH(title)+'</div><div class="prv-pref-s">'+escH(desc)+'</div></div><label class="sw"><input type="checkbox" id="'+id+'" '+(on?'checked':'')+'><span class="sw-sl"></span></label></div>';
     pane.innerHTML=
-      '<div class="set-title">Capabilities</div>'+
+      '<h2 class="set-title">Capabilities</h2>'+
       '<div class="set-sub">Everything AMV can do for you - and the switches you control.</div>'+
       '<div class="ss2"><h3>What AMV can do</h3>'+
         '<div class="cap-grid">'+
@@ -21560,7 +21608,7 @@ function _renderSetPaneInner(only, into){
     _renderInvitePane(pane);
   } else if(sp==='about'){
     pane.innerHTML=
-      '<div class="set-title">About AMV.AI</div>'+
+      '<h2 class="set-title">About AMV.AI</h2>'+
       '<div class="set-sub">Platform information and legal.</div>'+
       '<div class="ss2">'+
         '<div style="display:flex;align-items:center;gap:14px;margin-bottom:16px">'+
@@ -28719,7 +28767,7 @@ function _renderInvestPane(pane){
   const when=_invWhen();
 
   pane.innerHTML=
-    '<div class="set-title">Investing</div>'+
+    '<h2 class="set-title">Investing</h2>'+
     '<div class="set-sub">Link an investment account and AMV tells you how it is doing, as often as you like.</div>'+
     '<div class="ss2 set-what"><h3>What this is</h3>'+
       '<p>A check-in, not a dashboard. Each one records where your investments stand and tells you what '+
@@ -29358,7 +29406,7 @@ function _mfSay(id, msg, kind){
    guard re-issues the fetch every redraw. */
 let _SPEND_PULLED = false, _SPEND_BUSY = false;
 function _renderSpendingPane(pane){
-  if(typeof AMVSpend === 'undefined'){ pane.innerHTML = '<div class="set-title">Spending</div>'; return; }
+  if(typeof AMVSpend === 'undefined'){ pane.innerHTML = '<h2 class="set-title">Spending</h2>'; return; }
   const c = AMVSpend.cfg();
   const spent = AMVSpend.spentThisMonth();
   const cap = +c.monthlyCap || 0;
@@ -29398,7 +29446,7 @@ function _renderSpendingPane(pane){
   const canConfigure = !gate;
 
   pane.innerHTML =
-    '<div class="set-title">Spending</div>'+
+    '<h2 class="set-title">Spending</h2>'+
     '<div class="set-sub">What AMV is allowed to spend for you, and what it has actually spent. Nothing is bought outside these limits.</div>'+
     /* What this IS, before what it is set to.
 
@@ -29705,7 +29753,7 @@ function _wireFamilyParent(pane){
 }
 
 function _renderFamilyPane(pane){
-  if(typeof AMVFamily === 'undefined'){ pane.innerHTML = '<div class="set-title">Family</div>'; return; }
+  if(typeof AMVFamily === 'undefined'){ pane.innerHTML = '<h2 class="set-title">Family</h2>'; return; }
   /* Fetch once, then redraw with the real thing. Guarded on not already having
      it, because an unguarded redraw here is a fetch loop. */
   const needState = _FAM_STATE === null;
@@ -29734,7 +29782,7 @@ function _renderFamilyPane(pane){
       'aria-label="Remove the link '+escH(dir==='out'?('to '+l.account):('that lets '+l.account+' access your account'))+'">Remove</button></li>';
 
   pane.innerHTML =
-    '<div class="set-title">Family</div>'+
+    '<h2 class="set-title">Family</h2>'+
     '<div class="set-sub">Carry someone else\u2019s AMV the way a phone plan does - you pay, and you set what it may spend on their account. They keep their own sign-in and their own conversations.</div>'+
     /* The parent's panel first, because that is who this screen is for. The
        generic account-linking below it is a different, rarer thing. */
@@ -30191,7 +30239,7 @@ function _refWhen(ts){
 /* ---------- INVITE PANE ---------- */
 function _renderInvitePane(pane){
   pane.innerHTML =
-    '<div class="set-title">Invite</div>'+
+    '<h2 class="set-title">Invite</h2>'+
     '<div class="set-sub">Share AMV. When someone you invite actually uses it, you both get extra monthly capacity.</div>'+
     '<div class="ss2" id="ref-body"><div class="ref-load">Loading your invite link…</div></div>';
 
@@ -30622,7 +30670,7 @@ function _apiWhen(ts){
 
 function _renderApiKeysPane(pane){
   pane.innerHTML =
-    '<div class="set-title">API keys</div>'+
+    '<h2 class="set-title">API keys</h2>'+
     '<div class="set-sub">Use AMV from your own code. A key spends this account\u2019s plan - the same limits, '+
       'the same monthly ceiling, the same protections. Nothing separate to watch.</div>'+
     '<div class="ss2" id="api-body"><div class="ak-load">Loading your keys\u2026</div></div>'+

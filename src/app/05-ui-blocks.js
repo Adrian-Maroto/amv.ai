@@ -1840,10 +1840,31 @@ function _streamBubbleUpdate(streamIdx, text){
 }
 function _streamBubbleReset(){ _streamBubbleEl=null; if(_streamRAF){cancelAnimationFrame(_streamRAF);_streamRAF=null;} _streamPending=null; }
 
+/* An answer arriving is the single most important thing that happens in AMV, and
+   it was the least announced. The stream cannot be a live region itself - that
+   would read every partial token aloud, which is unusable - so the START and the
+   FINISH are announced instead, from here rather than from the completion paths,
+   because there are four of those (finished, stopped, interrupted, retried) and
+   hooking each one is how you miss the fifth. */
+let _srLastStreaming = false;
+function _announceChatTurn(msgs){
+  try{
+    const last = msgs[msgs.length-1];
+    const streaming = !!(last && last.r==='a' && last.streaming);
+    if(streaming && !_srLastStreaming) announce('AMV is answering');
+    else if(!streaming && _srLastStreaming){
+      const t = (last && typeof last.c==='string') ? last.c.trim() : '';
+      announce(t ? 'AMV answered. ' + t : 'AMV finished answering');
+    }
+    _srLastStreaming = streaming;
+  }catch(e){}
+}
+
 function renderChatMsgs() {
   const cm=$('cm');
   if(!cm) return;
   const msgs=getMsgs();
+  _announceChatTurn(msgs);
   const ini=S.user?.ini||'?';
 
   if(!msgs.length) {

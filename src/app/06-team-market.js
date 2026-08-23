@@ -222,7 +222,7 @@ function _renderTeamSettingsPane(pane){
   const seats=team&&team.seats;
 
   pane.innerHTML=
-    '<div class="set-title">Team</div>'+
+    '<h2 class="set-title">Team</h2>'+
     '<div class="set-sub">Sharing AMV with the people you work with.</div>'+
     '<div class="ss2 set-what"><h3>What a team is</h3>'+
       '<p>One AMV subscription that several people sign into with their own accounts. '+

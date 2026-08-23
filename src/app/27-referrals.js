@@ -52,7 +52,7 @@ function _refWhen(ts){
 /* ---------- INVITE PANE ---------- */
 function _renderInvitePane(pane){
   pane.innerHTML =
-    '<div class="set-title">Invite</div>'+
+    '<h2 class="set-title">Invite</h2>'+
     '<div class="set-sub">Share AMV. When someone you invite actually uses it, you both get extra monthly capacity.</div>'+
     '<div class="ss2" id="ref-body"><div class="ref-load">Loading your invite link…</div></div>';
 
