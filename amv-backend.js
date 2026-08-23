@@ -3514,19 +3514,57 @@ function _webHostAllowed(raw){
   if(h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.internal') || h.endsWith('.local'))
     return { ok:false, why:'Internal hosts are not reachable from the agent.' };
   if(h === 'metadata.google.internal') return { ok:false, why:'Blocked host.' };
+  /* The v4 ranges, factored out because IPv6 can carry an IPv4 address inside
+     it and has to reach exactly the same verdict. */
+  const v4Blocked = (a, b) =>
+    a === 10 || a === 127 || a === 0 ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) ||
+    (a === 169 && b === 254) ||
+    (a === 100 && b >= 64 && b <= 127) ||
+    a >= 224;
+
   const v4 = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if(v4){
-    const a = +v4[1], b = +v4[2];
-    if(a === 10 || a === 127 || a === 0 ||
-       (a === 172 && b >= 16 && b <= 31) ||
-       (a === 192 && b === 168) ||
-       (a === 169 && b === 254) ||
-       (a === 100 && b >= 64 && b <= 127) ||
-       a >= 224)
-      return { ok:false, why:'That address range is blocked (internal network).' };
-  }
-  if(h === '::1' || h.startsWith('fc') || h.startsWith('fd') || h.startsWith('fe80'))
+  if(v4 && v4Blocked(+v4[1], +v4[2]))
     return { ok:false, why:'That address range is blocked (internal network).' };
+
+  /* IPv6 CAN CARRY A BLOCKED IPv4 ADDRESS INSIDE IT.
+
+     The literal checks below catch ::1, fc00::/7 and fe80::/10, and the dotted
+     forms are normalised by `new URL` before they get here - it canonicalises
+     2130706433, 0177.0.0.1 and 127.1 all to 127.0.0.1, which is why those never
+     reached this far. What it does NOT do is flatten an IPv4-MAPPED address:
+
+         http://[::ffff:169.254.169.254]/   ->  hostname [::ffff:a9fe:a9fe]
+
+     That is the cloud metadata service, and it walked straight through - it is
+     not ::1, does not start with fc, fd or fe80, and is not a dotted quad. So
+     did [::] , which routes to the local host, and the NAT64 prefix 64:ff9b::,
+     which exists specifically to carry v4 addresses over v6.
+
+     The last 32 bits are pulled out of any address that embeds an IPv4 one and
+     run through the same table. */
+  if(h.includes(':')){
+    if(h === '::' || h === '::1') return { ok:false, why:'That address range is blocked (internal network).' };
+    if(h.startsWith('fc') || h.startsWith('fd') || h.startsWith('fe80'))
+      return { ok:false, why:'That address range is blocked (internal network).' };
+    const embedsV4 = /^::ffff:/i.test(h) || /^64:ff9b:/i.test(h) || /^::/.test(h);
+    if(embedsV4){
+      /* Either tail form: ::ffff:127.0.0.1 or its canonical ::ffff:7f00:1 */
+      const dotted = h.match(/(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+      if(dotted && v4Blocked(+dotted[1], +dotted[2]))
+        return { ok:false, why:'That address range is blocked (internal network).' };
+      const hexTail = h.match(/([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i);
+      if(hexTail){
+        const hi = parseInt(hexTail[1], 16), lo = parseInt(hexTail[2], 16);
+        if(v4Blocked((hi >> 8) & 255, hi & 255)) 
+          return { ok:false, why:'That address range is blocked (internal network).' };
+        /* ::ffff:0:1 style, where the whole v4 sits in the low word. */
+        if(hi === 0 && v4Blocked((lo >> 8) & 255, lo & 255))
+          return { ok:false, why:'That address range is blocked (internal network).' };
+      }
+    }
+  }
   return { ok:true, url:u.toString() };
 }
 
