@@ -24,7 +24,7 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { chromium } from 'playwright';
-import { LAUNCH } from './harness.mjs';
+import { LAUNCH, armGeom } from './harness.mjs';
 import { createServer } from 'http';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -151,6 +151,10 @@ export async function bootLive(opts = {}) {
   const server = await serveArtifact(port, apiBase);
   const browser = await chromium.launch(LAUNCH);
   const context = await browser.newContext({ viewport: opts.viewport || { width: 1280, height: 900 } });
+  /* Armed on the CONTEXT rather than the page, so every page this context makes
+     carries the subpixel-tolerant comparators. See armGeom in harness.mjs for
+     why comparing a rect against a whole number needs half a pixel of slack. */
+  await armGeom(context);
   const page = await context.newPage();
 
   const errors = [];
@@ -217,6 +221,7 @@ export async function bootLive(opts = {}) {
         const h = {}; rs.headers.forEach((v, k) => { h[k] = v; });
         await route.fulfill({ status: rs.status, headers: h, body: t });
       });
+      await armGeom(c2);
       const p2 = await c2.newPage();
       await p2.goto(`http://localhost:${port}`, { waitUntil: 'load' });
       await p2.waitForTimeout(600);

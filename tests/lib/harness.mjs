@@ -80,6 +80,43 @@ export async function serveApp() {
   return { url: `http://localhost:${port}`, server };
 }
 
+/* MEASURING A BOX AGAINST A WHOLE NUMBER NEEDS A TOLERANCE.
+
+   getBoundingClientRect returns the box's position in layout units, not its
+   declared size, so an element with `min-height:32px` sitting at a fractional y
+   offset comes back as 31.998046875 - a five-hundred-and-twelfth of a pixel
+   short of the number the stylesheet says. Six suites compared a rect dimension
+   against an integer with a strict `<`, and every one of them fails on a control
+   that is exactly the size it is supposed to be.
+
+   It surfaced as a flake: `mobile-sweep` failed the full gate on a Crew button
+   that measures 32px, and reproduced roughly one run in five standalone. Chased
+   to the raw value rather than dismissed, because "flaky" is a conclusion and
+   31.998046875 is evidence.
+
+   Half a pixel of slack. A control at 31.4px still fails, which is what these
+   checks are for; a control at 32px stops failing one time in five.
+
+   THIS IS EXPORTED, not folded into bootApp, because not every suite gets its
+   page from bootApp - every-dialog-can-be-reached builds its own with
+   `browser.newPage({ deviceScaleFactor: 2 })`, which is exactly the setting that
+   makes fractional layout values likeliest. Arming it there too was the second
+   half of this fix, and forgetting it is how a one-caller fix looks - and a
+   third caller turned up after that, `bootLive`, whose pages come from its own
+   contexts.
+
+   Takes a page OR a context; both expose addInitScript, and a context is the
+   better target when it will make more than one page. Call it BEFORE navigating.
+   The check that keeps this honest is in tests/e2e/every-page-can-measure-itself:
+   it fails if any suite uses the comparators on a page that never got them. */
+export async function armGeom(pageOrContext) {
+  await pageOrContext.addInitScript(() => {
+    const EPS = 0.5;
+    window.__under = (v, n) => v < n - EPS;   // meaningfully smaller than n
+    window.__over  = (v, n) => v > n + EPS;   // meaningfully larger than n
+  });
+}
+
 /* Boot the app: signed in, on a tab, cookie banner dismissed.
    Pass { user: null } to test the signed-out state. */
 export async function bootApp(opts = {}) {
@@ -91,6 +128,8 @@ export async function bootApp(opts = {}) {
 
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
+
+  await armGeom(page);
 
   await page.goto(url, { waitUntil: 'load' });
   await page.waitForTimeout(600);

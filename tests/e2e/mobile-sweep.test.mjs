@@ -36,7 +36,7 @@ async function measure() {
       if (cs.display === 'none' || cs.visibility === 'hidden') continue;
       const r = el.getBoundingClientRect();
       if (r.width === 0 || r.height === 0) continue;
-      if (r.height < 22 || r.width < 22) tiny.push((el.id || el.className || el.tagName).toString().slice(0, 40));
+      if (__under(r.height, 22) || __under(r.width, 22)) tiny.push((el.id || el.className || el.tagName).toString().slice(0, 40));
     }
     // Controls a screen reader would announce as nothing at all.
     const unnamed = [];
@@ -181,7 +181,7 @@ section('Every control on a phone is big enough to hit');
       const small = [];
       document.querySelectorAll('#vc button,#vc a[href],#vc input,#vc select').forEach(el => {
         const b = el.getBoundingClientRect();
-        if (b.width > 0 && b.height > 0 && b.height < 32) {
+        if (b.width > 0 && b.height > 0 && __under(b.height, 32)) {
           small.push(t + ':' + (String(el.className).split(' ')[0] || el.tagName) + '@' + Math.round(b.height));
         }
       });

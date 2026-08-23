@@ -525,7 +525,7 @@ await page.evaluate(() => setTab('plans'));
 await new Promise(r => setTimeout(r, 100));
 const touch = await page.evaluate(() => {
   const btns = [...document.querySelectorAll('.btn,.plnbtn')].filter(b => b.offsetParent && b.getBoundingClientRect().height > 0);
-  return { total: btns.length, small: btns.filter(b => b.getBoundingClientRect().height < 40).length };
+  return { total: btns.length, small: btns.filter(b => __under(b.getBoundingClientRect().height, 40)).length };
 });
 ok(touch.small === 0, 'all buttons meet a tappable height on small phones', touch);
 await page.setViewportSize({ width: 1280, height: 800 });

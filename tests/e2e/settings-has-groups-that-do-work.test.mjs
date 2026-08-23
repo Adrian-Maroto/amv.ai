@@ -138,7 +138,7 @@ section('Every pane behaves on a phone')
       await new Promise(s => setTimeout(s, 300));
       const p = document.getElementById('set-pane');
       const under = [...p.querySelectorAll('button,a[href],select,input:not([type=checkbox]):not([type=radio])')]
-        .filter(e => { const r = e.getBoundingClientRect(); return r.width > 1 && r.height > 1 && r.height < 40; })
+        .filter(e => { const r = e.getBoundingClientRect(); return r.width > 1 && r.height > 1 && __under(r.height, 40); })
         .map(e => ((e.textContent || '').trim().slice(0, 16) || e.className.slice(0, 16))
                   + ':' + Math.round(e.getBoundingClientRect().height));
       return {

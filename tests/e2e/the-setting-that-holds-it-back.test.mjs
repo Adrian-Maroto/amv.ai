@@ -318,7 +318,7 @@ section('It works on a phone and without a mouse');
     const fits = el => { const b = el.getBoundingClientRect(); return b.left >= -1 && b.right <= window.innerWidth + 1; };
     return {
       opts: opts.length && opts.every(fits),
-      tappable: opts.every(o => o.getBoundingClientRect().height >= 44),
+      tappable: opts.every(o => !__under(o.getBoundingClientRect().height, 44)),
       rows: !rows.length || rows.every(fits),
       sideways: document.documentElement.scrollWidth > window.innerWidth + 1,
     };

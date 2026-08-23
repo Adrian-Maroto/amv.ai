@@ -27,6 +27,7 @@
 import { chromium } from 'playwright';
 import { createServer } from 'http';
 import { readFileSync } from 'fs';
+import { armGeom } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
 
 const HTML = readFileSync('index.html');
@@ -71,6 +72,10 @@ const note = (s) => { problems.push(s); };
 for (const [label, w, h] of SIZES) {
   section(`${label}  ${w}x${h}`);
   const page = await browser.newPage({ viewport: { width: w, height: h }, deviceScaleFactor: 2 });
+  /* This page is built here rather than by bootApp, so it has to be armed here
+     too - and deviceScaleFactor:2 is the setting that makes a rect come back a
+     fraction under its declared size in the first place. */
+  await armGeom(page);
   await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'load' });
   await page.waitForTimeout(900);
   await page.evaluate(() => {
@@ -120,7 +125,7 @@ for (const [label, w, h] of SIZES) {
          breaks the line they sit in and helps nobody. Everything else counts. */
       const smallEls = [...panel.querySelectorAll('button, a, input, select, textarea, [data-dact]')]
         .filter(el => !el.matches('.lnk-inline, .ckl'))
-        .filter(el => { const r2 = el.getBoundingClientRect(); return r2.width > 0 && r2.height > 0 && (r2.height < 24 || r2.width < 24); });
+        .filter(el => { const r2 = el.getBoundingClientRect(); return r2.width > 0 && r2.height > 0 && (__under(r2.height, 24) || __under(r2.width, 24)); });
       const small = smallEls.length;
       const smallWhat = smallEls.map(el => (el.className || el.tagName) + ' ' + Math.round(el.getBoundingClientRect().width) + 'x' + Math.round(el.getBoundingClientRect().height)).join(', ');
       return {
