@@ -204,9 +204,30 @@ section('And at the DEFAULT size, a heading is still a heading');
      quiet check let the break through once already. */
   found.sort((a, b) => a.px - b.px);
   ok(found.length >= 6, 'there are real headings on the page to measure', found.length);
+
+  /* AGAINST THE BODY TEXT, NOT AGAINST A MAGIC NUMBER.
+
+     This used to demand 20px, which was the size of the smallest heading on the
+     day it was written - not a property of anything. It then failed the moment
+     the settings pane title became a real <h2>: that title is 16px, which is a
+     perfectly good size for a nested pane header and is nowhere near collapsed.
+
+     What "collapsed" actually means is that a heading came out the size of the
+     text it heads. So it is measured against the text: body is --t-base 13.5 and
+     prose is --t-prose 15, and a heading has to clear the larger of those. A
+     genuine collapse lands AT body size and still fails; a deliberate 16px
+     section heading passes, because it is not a collapse. */
+  const bodyPx = await page.evaluate(() => {
+    const cs = getComputedStyle(document.body);
+    const read = (v) => parseFloat(cs.getPropertyValue(v)) || 0;
+    return Math.max(read('--t-base'), read('--t-prose'), read('--t-md'));
+  });
+  ok(bodyPx > 0, 'the body text size is readable from the tokens', bodyPx + 'px');
+
   const smallest = found[0] || { px: 0, tab: '?', text: '' };
-  ok(smallest.px >= 20, 'no visible heading has collapsed to body size',
-     smallest.px + 'px on ' + smallest.tab + ' - "' + smallest.text + '"');
+  ok(smallest.px > bodyPx, 'no visible heading has collapsed to body size',
+     smallest.px + 'px on ' + smallest.tab + ' - "' + smallest.text +
+     '" against body ' + bodyPx + 'px');
 }
 
 section('And an icon deliberately holds its size, because its box cannot grow');

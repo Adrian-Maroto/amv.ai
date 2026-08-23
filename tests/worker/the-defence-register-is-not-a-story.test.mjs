@@ -40,7 +40,20 @@ const numeric = (s) => {
    turn ninety days into ninety. */
 const codeValue = (name) => {
   const m = worker.match(new RegExp('const\\s+' + name + '\\s*=\\s*([^;]+);'));
-  if (!m) return { missing: true };
+  if (!m) {
+    /* Not everything the register names is a `const`. JWT_SECRET, ADMIN_TOKEN
+       and STRIPE_WEBHOOK_SECRET are operator-configured and only ever appear as
+       env.NAME - demanding a declaration marked all three missing, which was the
+       test being wrong rather than the register.
+
+       Where the worker supplies a fallback - env.GLOBAL_DAILY_USD_CAP || '500' -
+       that default IS the documented number and is worth comparing, so it is
+       pulled out and checked like any other. */
+    const envDefault = worker.match(new RegExp('env\\.' + name + "\\s*\\|\\|\\s*'([^']+)'"));
+    if (envDefault) return { value: parseFloat(envDefault[1]) };
+    if (new RegExp('env\\.' + name + '\\b').test(worker)) return { envOnly: true };
+    return { missing: true };
+  }
   const expr = m[1].trim();
   if (/^[\d\s*+.\/()-]+$/.test(expr)) {
     try { return { value: Function('"use strict";return (' + expr + ')')() }; }
@@ -57,8 +70,9 @@ section('Every number the register commits to is the number in the code');
   const missing = [], wrong = [], checked = [];
   for (const c of claims) {
     const got = codeValue(c.name);
-    if (got.missing) { missing.push(c.name + ' is cited but not defined in the worker'); continue; }
-    if (got.unparsed !== undefined) continue;          // not a plain literal, nothing to compare
+    if (got.missing) { missing.push(c.name + ' is cited but the worker never reads it'); continue; }
+    if (got.envOnly) continue;                          // operator-configured, no number to compare
+    if (got.unparsed !== undefined) continue;           // not a plain literal, nothing to compare
     const want = numeric(c.stated);
     if (want === null) continue;                        // prose, not a figure
 
