@@ -811,6 +811,23 @@ function _aiFriendly(msg){
   return 'AMV hit a snag. Please try again.';
 }
 
+/* THE GUESSER IS FOR ERRORS NOBODY WROTE.
+
+   _aiFriendly takes a STRING and rewrites it by keyword, which is right for a
+   provider's raw output and wrong for a sentence AMV composed on purpose. The
+   tag that tells them apart lives on the ERROR, so every caller that reached
+   for _aiFriendly(err.message) threw the tag away one character before it was
+   needed - and the sentences being rewritten were AMV's own, because those are
+   the ones written deliberately.
+
+   One function, taking the error rather than its message, so the choice is
+   made once instead of remembered at each call site. */
+function _errText(err){
+  if(err && err._saidPlainly && err.message) return String(err.message);
+  return _aiFriendly(err && err.message);
+}
+try{ window._errText=_errText; }catch(e){}
+
 /* _aiFailCard lived here: an inline "hit a snag" card with a Retry button,
    exported on window and rendered by nothing. Its own comment said
    "Consistent everywhere", which was true in the way that costs nothing. */

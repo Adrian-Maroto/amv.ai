@@ -327,7 +327,7 @@ async function _studioCreate(brief){
     _studioSetHTML(html, brief);
     _studioRenderPreview(html); _studioRenderArtifacts();
     _studioStatus('');
-  }catch(err){ _studioStatus(_aiFriendly(err&&err.message)); }
+  }catch(err){ _studioStatus(_errText(err)); }
 }
 async function _studioRefine(){
   const inp=$('studio-refine'); const msg=inp?inp.value.trim():''; if(!msg) return;
@@ -340,7 +340,7 @@ async function _studioRefine(){
     const html=extractCode(resp,'html')||extractCode(resp)||resp;
     _studioSetHTML(html, msg);
     _studioRenderPreview(html); _studioRenderArtifacts(); _studioStatus('');
-  }catch(err){ _studioStatus(_aiFriendly(err&&err.message)); }
+  }catch(err){ _studioStatus(_errText(err)); }
 }
 function _studioShowCanvas(brief){
   const vc=$('vc'); if(!vc) return;
@@ -1500,7 +1500,15 @@ function _devRenderLog(){
   el.innerHTML=_DEV.log.map(m=>{
     if(m.role==='user') return '<div class="dev-msg-u">'+escH(m.text)+'</div>';
     if(m.role==='sys') return '<div class="dev-msg-sys">'+escH(m.text)+'</div>';
-    if(m._snag) return '<div class="dev-msg-ai"><div class="ai-snag"><div class="ai-snag-row"><span class="ai-snag-ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg></span><span class="ai-snag-msg">'+escH(m._snag)+'</span></div><button class="ai-snag-retry" data-dev-retry="1" type="button">Retry</button></div></div>';
+    if(m._snag){
+      /* Retry answers a hiccup. A plan boundary gets the plan, on the same
+         card, because retrying a tier is a loop with no exit. */
+      const r=m._snagRoute||'';
+      const act = r==='plans' ? '<button class="ai-snag-retry" data-stab="plans" type="button">See plans</button>'
+                : r==='team'  ? '<button class="ai-snag-retry" data-stab="team" type="button">Manage seats</button>'
+                :               '<button class="ai-snag-retry" data-dev-retry="1" type="button">Retry</button>';
+      return '<div class="dev-msg-ai"><div class="ai-snag'+(r?' ai-snag-tier':'')+'"><div class="ai-snag-row"><span class="ai-snag-ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg></span><span class="ai-snag-msg">'+escH(m._snag)+'</span></div>'+act+'</div></div>';
+    }
     let h='<div class="dev-msg-ai">';
     if(m.text) h+='<div class="dev-ai-txt">'+(typeof md==='function'?md(m.text):escH(m.text))+'</div>';
     /* Tool results carry a rendered card - the image that was generated, the
@@ -1637,7 +1645,7 @@ async function _devSend(){
       if(stat) stat.textContent=run.ok?'✓ ran ('+run.ms+'ms)':'✗ error';
     } else { if(stat) stat.textContent=''; }
     _DEV.log.push(entry); _devRenderLog();
-  }catch(err){ _DEV.log.push({role:'ai',text:'',_snag:_aiFriendly(err&&err.message)}); _devRenderLog(); if(stat) stat.textContent=''; }
+  }catch(err){ _DEV.log.push({role:'ai',text:'',_snag:_errText(err),_snagRoute:(typeof _refusalRoute==='function'?_refusalRoute(err&&err.code):'')}); _devRenderLog(); if(stat) stat.textContent=''; }
   _DEV.busy=false;
 }
 window.renderCodeView=renderCodeView;

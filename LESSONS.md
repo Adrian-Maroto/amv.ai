@@ -5531,3 +5531,50 @@ had spent three edits guessing at status codes.
 
 The throttle is respected now rather than disabled. Turning off a real
 protection to make a test pass is testing a product that does not exist.
+
+## 275. Chat had the fix. The four surfaces sharing one helper did not.
+
+After fixing chat's refusal path I went looking for the same defect elsewhere,
+and found it in the place that mattered more: `aiComplete` and `aiCompleteLong`,
+the two helpers Studio, Dev, Lab, Crew and every agent call.
+
+Both answered a non-2xx with `new Error('AI error ' + status + ': ' + rawBody)`.
+The body is JSON. It carries the sentence AMV wrote, the machine-readable code
+and the plan that lifts it - and all of it went into a string as text, where
+the error guesser then rewrote it by keyword into *"AMV hit a snag."*
+
+So five surfaces rendered a plan boundary as a fault, with the reason and the
+way out both sitting in memory a function call away from the screen.
+
+**A fix applied to one caller is a fix applied to one caller.** Chat had its own
+path and its own fix. The shared helper is where four surfaces meet, and it is
+exactly the place nobody audits, because auditing a surface means reading the
+surface. After fixing anything, the next question is: what else calls the thing
+underneath this?
+
+### One function, taking the error, not its message
+
+`_aiFriendly` takes a STRING. The tag that says "AMV wrote this, do not rewrite
+it" lives on the ERROR. So every caller reaching for `_aiFriendly(err.message)`
+threw the tag away one character before it was needed - and did so invisibly,
+because the result was still a readable English sentence, just the wrong one.
+
+`_errText(err)` takes the error. The choice is made once instead of remembered
+at each call site. **A helper whose signature cannot see the thing it needs to
+branch on will be misused at every call site, and none of them will look wrong.**
+
+### Two checks that certified absence as success
+
+Both in the same section, both found only because the numbers looked wrong.
+
+*"Studio does not say 'hit a snag'"* passed on an **empty string** - Studio's
+status was never read at all, and a negative assertion is true of nothing. Then,
+with the read fixed, it passed on **"Designing…"**, because the wait broke on
+the first non-empty text and read the progress message as the outcome.
+
+Two rules, and the second is new:
+
+- A negative assertion needs a positive one in front of it. "It says something"
+  before "it does not say the wrong thing", or absence certifies as success.
+- **Wait for settled, not for non-empty.** A status line has intermediate
+  states, and every one of them satisfies "has text".

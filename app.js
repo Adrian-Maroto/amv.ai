@@ -2312,6 +2312,23 @@ function _aiFriendly(msg){
   return 'AMV hit a snag. Please try again.';
 }
 
+/* THE GUESSER IS FOR ERRORS NOBODY WROTE.
+
+   _aiFriendly takes a STRING and rewrites it by keyword, which is right for a
+   provider's raw output and wrong for a sentence AMV composed on purpose. The
+   tag that tells them apart lives on the ERROR, so every caller that reached
+   for _aiFriendly(err.message) threw the tag away one character before it was
+   needed - and the sentences being rewritten were AMV's own, because those are
+   the ones written deliberately.
+
+   One function, taking the error rather than its message, so the choice is
+   made once instead of remembered at each call site. */
+function _errText(err){
+  if(err && err._saidPlainly && err.message) return String(err.message);
+  return _aiFriendly(err && err.message);
+}
+try{ window._errText=_errText; }catch(e){}
+
 /* _aiFailCard lived here: an inline "hit a snag" card with a Retry button,
    exported on window and rendered by nothing. Its own comment said
    "Consistent everywhere", which was true in the way that costs nothing. */
@@ -16321,7 +16338,7 @@ async function _studioCreate(brief){
     _studioSetHTML(html, brief);
     _studioRenderPreview(html); _studioRenderArtifacts();
     _studioStatus('');
-  }catch(err){ _studioStatus(_aiFriendly(err&&err.message)); }
+  }catch(err){ _studioStatus(_errText(err)); }
 }
 async function _studioRefine(){
   const inp=$('studio-refine'); const msg=inp?inp.value.trim():''; if(!msg) return;
@@ -16334,7 +16351,7 @@ async function _studioRefine(){
     const html=extractCode(resp,'html')||extractCode(resp)||resp;
     _studioSetHTML(html, msg);
     _studioRenderPreview(html); _studioRenderArtifacts(); _studioStatus('');
-  }catch(err){ _studioStatus(_aiFriendly(err&&err.message)); }
+  }catch(err){ _studioStatus(_errText(err)); }
 }
 function _studioShowCanvas(brief){
   const vc=$('vc'); if(!vc) return;
@@ -17494,7 +17511,15 @@ function _devRenderLog(){
   el.innerHTML=_DEV.log.map(m=>{
     if(m.role==='user') return '<div class="dev-msg-u">'+escH(m.text)+'</div>';
     if(m.role==='sys') return '<div class="dev-msg-sys">'+escH(m.text)+'</div>';
-    if(m._snag) return '<div class="dev-msg-ai"><div class="ai-snag"><div class="ai-snag-row"><span class="ai-snag-ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg></span><span class="ai-snag-msg">'+escH(m._snag)+'</span></div><button class="ai-snag-retry" data-dev-retry="1" type="button">Retry</button></div></div>';
+    if(m._snag){
+      /* Retry answers a hiccup. A plan boundary gets the plan, on the same
+         card, because retrying a tier is a loop with no exit. */
+      const r=m._snagRoute||'';
+      const act = r==='plans' ? '<button class="ai-snag-retry" data-stab="plans" type="button">See plans</button>'
+                : r==='team'  ? '<button class="ai-snag-retry" data-stab="team" type="button">Manage seats</button>'
+                :               '<button class="ai-snag-retry" data-dev-retry="1" type="button">Retry</button>';
+      return '<div class="dev-msg-ai"><div class="ai-snag'+(r?' ai-snag-tier':'')+'"><div class="ai-snag-row"><span class="ai-snag-ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg></span><span class="ai-snag-msg">'+escH(m._snag)+'</span></div>'+act+'</div></div>';
+    }
     let h='<div class="dev-msg-ai">';
     if(m.text) h+='<div class="dev-ai-txt">'+(typeof md==='function'?md(m.text):escH(m.text))+'</div>';
     /* Tool results carry a rendered card - the image that was generated, the
@@ -17631,7 +17656,7 @@ async function _devSend(){
       if(stat) stat.textContent=run.ok?'✓ ran ('+run.ms+'ms)':'✗ error';
     } else { if(stat) stat.textContent=''; }
     _DEV.log.push(entry); _devRenderLog();
-  }catch(err){ _DEV.log.push({role:'ai',text:'',_snag:_aiFriendly(err&&err.message)}); _devRenderLog(); if(stat) stat.textContent=''; }
+  }catch(err){ _DEV.log.push({role:'ai',text:'',_snag:_errText(err),_snagRoute:(typeof _refusalRoute==='function'?_refusalRoute(err&&err.code):'')}); _devRenderLog(); if(stat) stat.textContent=''; }
   _DEV.busy=false;
 }
 window.renderCodeView=renderCodeView;
@@ -24027,6 +24052,37 @@ window._aiBackendReady=_aiBackendReady;
    (~1-2k lines of code). This keeps the conversation going - feeding the model
    its own partial output and asking it to continue - until it finishes naturally.
    That's how Dev can emit 10,000+ lines in one build. */
+/* WHAT A REFUSAL LOOKS LIKE TO EVERY SURFACE THAT IS NOT CHAT.
+
+   Both engine calls answered a non-2xx with
+   `new Error('AI error ' + status + ': ' + rawBody)`. The body is JSON and it
+   carries everything a caller needs - the sentence AMV wrote, the code, the
+   plan that lifts it - and all of it went into a string as text.
+
+   So Studio, Dev, Lab, Crew and every agent turned a plan boundary into "AI
+   error 402: {\"error\":\"That engine is part of Elite\",...}", handed that to the
+   error guesser, and showed the person "AMV hit a snag. Please try again." A
+   tier, rendered as a fault, with the reason and the way out both present in
+   memory and neither reaching the screen.
+
+   Chat had this fixed on its own path. Four surfaces shared this one and
+   nobody had looked at it. */
+async function _aiError(res){
+  const t = await res.text().catch(()=>'');
+  let d = null; try{ d = JSON.parse(t); }catch(e){}
+  const said = (d && typeof d.error === 'string') ? d.error : '';
+  const err = new Error(said || ('AI error '+res.status+(t?': '+t.slice(0,200):'')));
+  /* AMV wrote this sentence, so nothing downstream may rewrite it. */
+  if(said){ try{ err._saidPlainly = true; }catch(e){} }
+  try{
+    if(d && d.code) err.code = d.code;
+    if(d && d.minPlan) err.minPlan = d.minPlan;
+    err.status = res.status;
+  }catch(e){}
+  return err;
+}
+try{ window._aiError = _aiError; }catch(e){}
+
 async function aiCompleteLong(prompt, system, opts){
   opts = opts || {};
   /* An unrecognised engine falls back to the BALANCED tier, not the dearest
@@ -24053,7 +24109,7 @@ async function aiCompleteLong(prompt, system, opts){
     else if(!opts.noLang) body.system = _langInstruction();
 
     const res = await fetchDeadline(url, {method:'POST', headers, body: JSON.stringify(body)}, 180000);
-    if(!res.ok){ const t=await res.text().catch(()=>''); throw new Error('AI error '+res.status+': '+t.slice(0,200)); }
+    if(!res.ok) throw await _aiError(res);
     const data = await res.json();
     const chunk = (data.content||[]).map(b=>b.text||'').join('');
     full += chunk;
@@ -24093,7 +24149,7 @@ async function aiComplete(prompt, system, opts){
   if(system) body.system = system + (opts.noLang?'':_langInstruction());
   else if(!opts.noLang) body.system = _langInstruction();
   const res = await fetchDeadline(url,{method:'POST',headers,body:JSON.stringify(body)}, 120000);
-  if(!res.ok){ const t=await res.text().catch(()=>''); throw new Error('AI error '+res.status+': '+t.slice(0,200)); }
+  if(!res.ok) throw await _aiError(res);
   const data = await res.json();
   const text=_noDash((data.content||[]).map(b=>b.text||'').join('').trim());
   // record usage for EVERY call (Lab, Dev, Studio, Cowork, agents) - not just chat

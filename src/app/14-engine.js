@@ -25,6 +25,37 @@ window._aiBackendReady=_aiBackendReady;
    (~1-2k lines of code). This keeps the conversation going - feeding the model
    its own partial output and asking it to continue - until it finishes naturally.
    That's how Dev can emit 10,000+ lines in one build. */
+/* WHAT A REFUSAL LOOKS LIKE TO EVERY SURFACE THAT IS NOT CHAT.
+
+   Both engine calls answered a non-2xx with
+   `new Error('AI error ' + status + ': ' + rawBody)`. The body is JSON and it
+   carries everything a caller needs - the sentence AMV wrote, the code, the
+   plan that lifts it - and all of it went into a string as text.
+
+   So Studio, Dev, Lab, Crew and every agent turned a plan boundary into "AI
+   error 402: {\"error\":\"That engine is part of Elite\",...}", handed that to the
+   error guesser, and showed the person "AMV hit a snag. Please try again." A
+   tier, rendered as a fault, with the reason and the way out both present in
+   memory and neither reaching the screen.
+
+   Chat had this fixed on its own path. Four surfaces shared this one and
+   nobody had looked at it. */
+async function _aiError(res){
+  const t = await res.text().catch(()=>'');
+  let d = null; try{ d = JSON.parse(t); }catch(e){}
+  const said = (d && typeof d.error === 'string') ? d.error : '';
+  const err = new Error(said || ('AI error '+res.status+(t?': '+t.slice(0,200):'')));
+  /* AMV wrote this sentence, so nothing downstream may rewrite it. */
+  if(said){ try{ err._saidPlainly = true; }catch(e){} }
+  try{
+    if(d && d.code) err.code = d.code;
+    if(d && d.minPlan) err.minPlan = d.minPlan;
+    err.status = res.status;
+  }catch(e){}
+  return err;
+}
+try{ window._aiError = _aiError; }catch(e){}
+
 async function aiCompleteLong(prompt, system, opts){
   opts = opts || {};
   /* An unrecognised engine falls back to the BALANCED tier, not the dearest
@@ -51,7 +82,7 @@ async function aiCompleteLong(prompt, system, opts){
     else if(!opts.noLang) body.system = _langInstruction();
 
     const res = await fetchDeadline(url, {method:'POST', headers, body: JSON.stringify(body)}, 180000);
-    if(!res.ok){ const t=await res.text().catch(()=>''); throw new Error('AI error '+res.status+': '+t.slice(0,200)); }
+    if(!res.ok) throw await _aiError(res);
     const data = await res.json();
     const chunk = (data.content||[]).map(b=>b.text||'').join('');
     full += chunk;
@@ -91,7 +122,7 @@ async function aiComplete(prompt, system, opts){
   if(system) body.system = system + (opts.noLang?'':_langInstruction());
   else if(!opts.noLang) body.system = _langInstruction();
   const res = await fetchDeadline(url,{method:'POST',headers,body:JSON.stringify(body)}, 120000);
-  if(!res.ok){ const t=await res.text().catch(()=>''); throw new Error('AI error '+res.status+': '+t.slice(0,200)); }
+  if(!res.ok) throw await _aiError(res);
   const data = await res.json();
   const text=_noDash((data.content||[]).map(b=>b.text||'').join('').trim());
   // record usage for EVERY call (Lab, Dev, Studio, Cowork, agents) - not just chat
