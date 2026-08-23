@@ -7949,7 +7949,7 @@ function planCards(inApp){
       '<ul class="plnfl">'+
         '<li><span class="fck">\u2713</span><b>Everything in Elite</b>, plus:</li>'+
         '<li><span class="fck">\u2713</span><b>50× the usage</b> - effectively unlimited</li>'+
-        '<li><span class="fck">\u2713</span><b>Unlimited parallel agents</b> - a whole crew at once</li>'+
+        '<li><span class="fck">\u2713</span><b>Highest throughput</b> - '+_rpmLabel('ultra')+'</li>'+
         '<li><span class="fck">\u2713</span><b>Longest context</b> - whole codebases at once</li>'+
         '<li><span class="fck">\u2713</span>Hand off a goal, get a finished result</li>'+
         '<li><span class="fck">\u2713</span>Deploy &amp; host multiple live apps</li>'+
@@ -12725,8 +12725,8 @@ function openUpgradeModal(lockedModel){
 function _planDetails(k){
   const D={
     pro:['All models, including AMV Forge for coding','5\u00d7 the usage of the Free plan','Autonomous agents and Crew for multi-step work','Image, video, and 3D generation','Build and run apps in the sandbox','Connect Gmail, calendar, and files','Scheduled and background automation','Faster generation'],
-    elite:['Everything in Pro, dialed up','20\u00d7 the usage','AMV Apex first - our most capable engine','Full-stack app builder with one-click deploy','Up to 5 agents running in parallel','4K video & premium image quality',_autoMaxLabel('elite')+' running in the background','Team workspaces - 10 seats on one subscription','Early access + 24/7 priority support'],
-    ultra:['Everything in Elite, maxed out','50\u00d7 the usage','Unlimited parallel agents - a whole crew at once',_autoMaxLabel('ultra')+' running in the background','Whole-codebase context & autonomous projects','Export & download full multi-file projects','Deploy & host multiple live apps','Team workspaces - 25 seats, roles & shared projects','Fastest hardware + dedicated support'],
+    elite:['Everything in Pro, dialed up','20\u00d7 the usage','AMV Apex first - our most capable engine','Full-stack app builder with one-click deploy','Double Pro\u2019s throughput - '+_rpmLabel('elite'),'4K video & premium image quality',_autoMaxLabel('elite')+' running in the background','Team workspaces - 10 seats on one subscription','Early access + 24/7 priority support'],
+    ultra:['Everything in Elite, maxed out','50\u00d7 the usage','The highest throughput AMV offers - '+_rpmLabel('ultra'),_autoMaxLabel('ultra')+' running in the background','Whole-codebase context & autonomous projects','Export & download full multi-file projects','Deploy & host multiple live apps','Team workspaces - 25 seats, roles & shared projects','Fastest hardware + dedicated support'],
   };
   return D[k]||['More usage','All models'];
 }
@@ -12750,7 +12750,10 @@ function openPlanCompare(highlight){
     ['Context window (how much it holds)', p=>p==='free'?'Standard':(PLAN_RANK[p]>=3?'Whole codebase':(PLAN_RANK[p]>=2?'Extra-large':'Large'))],
     ['Image generation', p=>'\u2713'],
     ['Video generation', p=>p==='free'?'-':(PLAN_RANK[p]>=2?'4K':'HD')],
-    ['Parallel agents / long jobs', p=>isC(p)?'\u2713':(PLAN_RANK[p]>=3?'Unlimited':(PLAN_RANK[p]>=2?'Up to 5':(p==='pro'?'Limited':'-')))],
+    /* Was "Limited / Up to 5 / Unlimited" for parallel agents, which nothing
+       enforced at any tier. This is the throughput limit that is real, and it
+       is read from the table the Worker checks against. */
+    ['Requests a minute (how much runs at once)', p=>_rpmCell(p)],
     /* The number, not a word the server has never honoured. AUTO_MAX_BY_PLAN
        is the thing that decides, and it is what this row now reads. */
     ['Scheduled & background jobs', p=>String(_autoMaxForPlan(p))],
@@ -12845,7 +12848,7 @@ window.openCustomPlan=openCustomPlan;
 function _planHighlights(k){
   return {
     pro:['All 4 models incl. Forge','5\u00d7 the usage','Autonomous agents & Crew','HD images, video & 3D','Priority speed'],
-    elite:['Everything in Pro','20\u00d7 the usage','Fastest models first','Parallel agents & long jobs','Early access'],
+    elite:['Everything in Pro','20\u00d7 the usage','Fastest models first','Double Pro\u2019s throughput','Early access'],
     ultra:['Everything in Elite','50\u00d7 the usage','Max concurrency','Team-grade throughput','Dedicated support'],
   }[k]||['More usage','All models'];
 }
@@ -12889,8 +12892,8 @@ function _pmLabel(pm){ return ({card:'Card',apple:'Apple Pay',google:'Google Pay
 const PLANS={
   free:{name:'Free',price:0,blurb:'Daily usage to explore everything',mult:'1\u00d7'},
   pro:{name:'Pro',price:15,blurb:'5\u00d7 the usage, all models, agents, and priority speed',mult:'5\u00d7'},
-  elite:{name:'Elite',price:75,blurb:'20\u00d7 usage, full-stack builds, one-click deploy, 5 parallel agents, Apex first',mult:'20\u00d7'},
-  ultra:{name:'Ultra',price:200,blurb:'50\u00d7 usage, unlimited parallel agents, whole-codebase context, autonomous projects, team workspaces',mult:'50\u00d7'},
+  elite:{name:'Elite',price:75,blurb:'20\u00d7 usage, full-stack builds, one-click deploy, double Pro\u2019s throughput, Apex first',mult:'20\u00d7'},
+  ultra:{name:'Ultra',price:200,blurb:'50\u00d7 usage, the highest throughput AMV offers, whole-codebase context, autonomous projects, team workspaces',mult:'50\u00d7'},
   /* Priced PER SEAT, so `price` here is the price of one seat and the card that
      sells it multiplies. Every seat adds its own allowance to a shared pool
      rather than dividing a fixed one, which is why adding a teammate is worth
@@ -12921,6 +12924,39 @@ const PLAN_RANK={free:0,pro:1,elite:2,ultra:3,custom:2,team:2};
    table and 1 in the answer, because `|| 1` turns the zero into the single
    weekly job the refusal message promises. */
 const AUTO_MAX_BY_PLAN={free:0,pro:5,elite:25,ultra:100};
+
+/* WHAT "PARALLEL AGENTS" WAS SELLING, AND WHAT IS ACTUALLY TIERED.
+
+   The comparison table read: Free "-", Pro "Limited", Elite "Up to 5", Ultra
+   "Unlimited". Nothing in the Worker caps how many agents run at once, at any
+   tier - so Pro and Elite already had what Ultra was sold as having, and the
+   headline reason to pay $125 more was fiction.
+
+   It was never a spend hole. Every agent's model calls go through the atomic
+   per-account meter, so somebody running twenty at once simply burns their own
+   allowance faster. What it cost was the reason to upgrade.
+
+   Not fixed by adding a concurrency cap. That would REMOVE capability from
+   accounts that have it today, to make a table honest, for no margin gain -
+   and concurrency limits exist to protect infrastructure, which here is already
+   protected by the per-account meter and the global daily ceiling.
+
+   Fixed by selling the throughput tier that is real and already enforced:
+   PLAN_LIMITS.rpm, checked atomically through the Durable Object on every
+   request. Mirrored here the same way the automation count is, with a test that
+   lifts both and compares what they answer. */
+const PLAN_RPM={free:8,pro:20,elite:40,ultra:80};
+function _rpmForPlan(p){
+  if(p==='team') return PLAN_RPM.elite;      // a seat carries Elite capability
+  if(p==='custom') return PLAN_RPM.elite;    // the tier a Custom plan ranks at
+  return PLAN_RPM[p]||PLAN_RPM.free;
+}
+/* Two forms, because a table cell and a sentence want different things. The
+   automation row taught this the first time: with the row already labelled
+   "Scheduled & background jobs", printing "25 scheduled jobs" in every cell
+   says it twice. Same here. */
+function _rpmCell(p){ return String(_rpmForPlan(p)); }
+function _rpmLabel(p){ return _rpmForPlan(p)+' requests a minute'; }
 const AUTO_MAX_PER_USER=100;
 function _autoMaxForPlan(p,seats){
   if(p==='team') return Math.min(AUTO_MAX_PER_USER, 5*(Number(seats)||TEAM_SEAT_MIN));
@@ -19401,7 +19437,7 @@ const FAQS=[
      nothing kept in step with the cards or with checkout, so changing a price
      left the Help Center stating the old one to the person who came here to
      ask what it costs. */
-  {c:'billing', q:'How do plans and limits work?', a:'Free gives you daily usage to explore everything. Pro ($'+PLANS.pro.price+'/mo) unlocks autonomous agents, Mission Control, the app builder, connected accounts, and '+PLANS.pro.mult+' usage. Elite ($'+PLANS.elite.price+'/mo) adds our most capable Apex model first, one-click deploy, and parallel agents at '+PLANS.elite.mult+' usage. Ultra ($'+PLANS.ultra.price+'/mo) is '+PLANS.ultra.mult+' usage with unlimited parallel agents and team workspaces. Custom lets you set your own hard-capped budget. Limits are usage-based - just work without counting messages.'},
+  {c:'billing', q:'How do plans and limits work?', a:'Free gives you daily usage to explore everything. Pro ($'+PLANS.pro.price+'/mo) unlocks autonomous agents, Mission Control, the app builder, connected accounts, and '+PLANS.pro.mult+' usage. Elite ($'+PLANS.elite.price+'/mo) adds our most capable Apex model first, one-click deploy, and double Pro\u2019s throughput at '+PLANS.elite.mult+' usage. Ultra ($'+PLANS.ultra.price+'/mo) is '+PLANS.ultra.mult+' usage with the highest throughput AMV offers and team workspaces. Custom lets you set your own hard-capped budget. Limits are usage-based - just work without counting messages.'},
   {c:'privacy', q:'What is AI Memory?', a:'Memory lets AMV remember facts about you - your role, preferences, and context - and apply them automatically in every conversation. Add or edit them under Memory in the sidebar.'},
   {c:'chat', q:'How do I use voice input?', a:'Click the microphone in the chat input (best in Chrome and Edge), speak, and your words appear in the box. Press Enter to send.'},
   {c:'chat', q:'How do I rename, star, or delete chats?', a:'Hover a chat in the sidebar for quick actions, or right-click for the full menu including Export and Share.'},

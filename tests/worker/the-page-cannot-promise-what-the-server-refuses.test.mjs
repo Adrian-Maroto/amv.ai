@@ -119,6 +119,43 @@ section('The page prints the number the server would actually grant')
      'and free really is the one weekly job the refusal message promises', serverMax('free', {}));
 }
 
+section('Throughput is sold as the tier it actually is')
+{
+  /* The comparison table used to read Free "-", Pro "Limited", Elite "Up to 5",
+     Ultra "Unlimited" for parallel agents. NOTHING in the Worker caps
+     concurrency at any tier, so Pro and Elite already had what Ultra was sold
+     as having and the headline reason to pay $125 more was fiction.
+
+     Not closed by adding a cap - that removes capability from paying customers
+     to make a table honest, for no margin gain. Closed by selling the
+     throughput tier that is real and enforced atomically: PLAN_LIMITS.rpm. */
+  const code = codeOnly(client);
+  const scode = codeOnly(server);
+
+  const srvRpm = {};
+  for (const m of scode.matchAll(/(free|pro|elite|ultra):\s*\{[^}]*rpm:\s*(\d+)/g)) srvRpm[m[1]] = Number(m[2]);
+  const cliRpm = {};
+  const cm = code.match(/const PLAN_RPM\s*=\s*\{([^}]*)\}/);
+  if (cm) for (const m of cm[1].matchAll(/([a-z]+)\s*:\s*(\d+)/g)) cliRpm[m[1]] = Number(m[2]);
+
+  ok(Object.keys(srvRpm).length >= 4, 'the Worker sets a per-plan requests-a-minute limit', srvRpm);
+  ok(Object.keys(cliRpm).length >= 4, 'and the page carries the same table', cliRpm);
+  ok(JSON.stringify(srvRpm) === JSON.stringify(cliRpm),
+     'and they agree, plan for plan', JSON.stringify(srvRpm) + ' vs ' + JSON.stringify(cliRpm));
+
+  /* It is enforced, not merely declared - this is the difference between the
+     row that was there before and the one replacing it. */
+  ok(/rateCheck[^;]*limits\.rpm|limits\.rpm[^;]*rateCheck/.test(scode.replace(/\s+/g, ' ')),
+     'and the Worker actually checks it, atomically', true);
+
+  ok(!/Parallel agents \/ long jobs/.test(code),
+     'the fictional parallel-agents row is gone', true);
+  ok(!/[Uu]nlimited parallel agents/.test(code),
+     'and nothing anywhere still sells unlimited parallel agents', true);
+  ok(/_rpmCell\(p\)/.test(code),
+     'the row is computed from the enforced limit, not typed out', true);
+}
+
 section('The label says what the answer is');
 {
   const code = codeOnly(client);

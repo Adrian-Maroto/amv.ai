@@ -1501,8 +1501,8 @@ function openUpgradeModal(lockedModel){
 function _planDetails(k){
   const D={
     pro:['All models, including AMV Forge for coding','5\u00d7 the usage of the Free plan','Autonomous agents and Crew for multi-step work','Image, video, and 3D generation','Build and run apps in the sandbox','Connect Gmail, calendar, and files','Scheduled and background automation','Faster generation'],
-    elite:['Everything in Pro, dialed up','20\u00d7 the usage','AMV Apex first - our most capable engine','Full-stack app builder with one-click deploy','Up to 5 agents running in parallel','4K video & premium image quality',_autoMaxLabel('elite')+' running in the background','Team workspaces - 10 seats on one subscription','Early access + 24/7 priority support'],
-    ultra:['Everything in Elite, maxed out','50\u00d7 the usage','Unlimited parallel agents - a whole crew at once',_autoMaxLabel('ultra')+' running in the background','Whole-codebase context & autonomous projects','Export & download full multi-file projects','Deploy & host multiple live apps','Team workspaces - 25 seats, roles & shared projects','Fastest hardware + dedicated support'],
+    elite:['Everything in Pro, dialed up','20\u00d7 the usage','AMV Apex first - our most capable engine','Full-stack app builder with one-click deploy','Double Pro\u2019s throughput - '+_rpmLabel('elite'),'4K video & premium image quality',_autoMaxLabel('elite')+' running in the background','Team workspaces - 10 seats on one subscription','Early access + 24/7 priority support'],
+    ultra:['Everything in Elite, maxed out','50\u00d7 the usage','The highest throughput AMV offers - '+_rpmLabel('ultra'),_autoMaxLabel('ultra')+' running in the background','Whole-codebase context & autonomous projects','Export & download full multi-file projects','Deploy & host multiple live apps','Team workspaces - 25 seats, roles & shared projects','Fastest hardware + dedicated support'],
   };
   return D[k]||['More usage','All models'];
 }
@@ -1526,7 +1526,10 @@ function openPlanCompare(highlight){
     ['Context window (how much it holds)', p=>p==='free'?'Standard':(PLAN_RANK[p]>=3?'Whole codebase':(PLAN_RANK[p]>=2?'Extra-large':'Large'))],
     ['Image generation', p=>'\u2713'],
     ['Video generation', p=>p==='free'?'-':(PLAN_RANK[p]>=2?'4K':'HD')],
-    ['Parallel agents / long jobs', p=>isC(p)?'\u2713':(PLAN_RANK[p]>=3?'Unlimited':(PLAN_RANK[p]>=2?'Up to 5':(p==='pro'?'Limited':'-')))],
+    /* Was "Limited / Up to 5 / Unlimited" for parallel agents, which nothing
+       enforced at any tier. This is the throughput limit that is real, and it
+       is read from the table the Worker checks against. */
+    ['Requests a minute (how much runs at once)', p=>_rpmCell(p)],
     /* The number, not a word the server has never honoured. AUTO_MAX_BY_PLAN
        is the thing that decides, and it is what this row now reads. */
     ['Scheduled & background jobs', p=>String(_autoMaxForPlan(p))],
@@ -1621,7 +1624,7 @@ window.openCustomPlan=openCustomPlan;
 function _planHighlights(k){
   return {
     pro:['All 4 models incl. Forge','5\u00d7 the usage','Autonomous agents & Crew','HD images, video & 3D','Priority speed'],
-    elite:['Everything in Pro','20\u00d7 the usage','Fastest models first','Parallel agents & long jobs','Early access'],
+    elite:['Everything in Pro','20\u00d7 the usage','Fastest models first','Double Pro\u2019s throughput','Early access'],
     ultra:['Everything in Elite','50\u00d7 the usage','Max concurrency','Team-grade throughput','Dedicated support'],
   }[k]||['More usage','All models'];
 }

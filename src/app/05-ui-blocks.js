@@ -3046,7 +3046,7 @@ function planCards(inApp){
       '<ul class="plnfl">'+
         '<li><span class="fck">\u2713</span><b>Everything in Elite</b>, plus:</li>'+
         '<li><span class="fck">\u2713</span><b>50× the usage</b> - effectively unlimited</li>'+
-        '<li><span class="fck">\u2713</span><b>Unlimited parallel agents</b> - a whole crew at once</li>'+
+        '<li><span class="fck">\u2713</span><b>Highest throughput</b> - '+_rpmLabel('ultra')+'</li>'+
         '<li><span class="fck">\u2713</span><b>Longest context</b> - whole codebases at once</li>'+
         '<li><span class="fck">\u2713</span>Hand off a goal, get a finished result</li>'+
         '<li><span class="fck">\u2713</span>Deploy &amp; host multiple live apps</li>'+
