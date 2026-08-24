@@ -6210,3 +6210,35 @@ Worth generalising. **When a request describes a feature, check whether the
 risky part of it is already live.** A request is often a description of
 something half-present, and the half that is present is usually the half that
 does not ask permission.
+
+## 292. The meta-check caught me writing the exact bug I spent the session fixing
+
+Ten times this session an instrument measured a proxy. Then, adding a check
+that the worker really caps `auto` to the plan, I wrote:
+
+```js
+ok(/never route above what they pay for/.test(router) && /return 'amv-core'/.test(router), ...)
+```
+
+The first half of that is a COMMENT in the worker. So deleting the comment
+would have failed the check, and gutting the cap while leaving the comment
+would have passed it. The assertion was about the explanation, not the code.
+
+I did not catch it. `a-check-anchored-on-prose-is-not-a-check` did - a suite
+that strips comments from both product sources and refuses any assertion which
+only matches the prose. It named the file and quoted the regex.
+
+Two things worth keeping:
+
+**A rule you believe is not a rule you follow.** I had written the proxy
+lesson nine times in this file before adding a tenth instance of it, in a test
+whose entire purpose was to close a two-file gap. Knowing the failure class is
+not protection against it. The check is.
+
+**Meta-checks earn their cost.** This suite asserts nothing about the product.
+It asserts something about the other suites, which is the only place a
+prose-anchored assertion can be caught, because every individual suite passes
+happily while doing it.
+
+Anchored now on `rank < PLAN_RANK[ENGINES[k].minPlan]` and the `'amv-core'` it
+returns - both code, both load-bearing.

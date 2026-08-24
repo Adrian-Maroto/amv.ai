@@ -116,7 +116,13 @@ section('Auto is safe from every plan, which is what makes it a safe default');
      'the worker recognises auto rather than treating it as an unknown engine');
   const router = worker.slice(worker.indexOf('function _autoRoute('),
                               worker.indexOf('function _autoRoute(') + 1600);
-  ok(/never route above what they pay for/.test(router) && /return 'amv-core'/.test(router),
+  /* Anchored on the comparison and the value it returns, not on the sentence
+     above them. The first version of this matched the comment that explains the
+     cap - so deleting the comment would have failed the check, and gutting the
+     cap while leaving the comment would have passed it. Which is the whole
+     failure this repo keeps a meta-check for, and it caught me. */
+  ok(/rank\s*<\s*PLAN_RANK\[ENGINES\[k\]\.minPlan\]/.test(router)
+     && /return 'amv-core'/.test(router),
      'and the router caps its own choice to the plan before returning it');
   ok(/const key = routed \? routed\.key/.test(worker),
      'and the plan check downstream runs on the routed engine, not the word auto');
