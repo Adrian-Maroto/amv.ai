@@ -807,6 +807,22 @@ async function _callAI(msgs, _opts) {
     '\u2022 account_status - their real plan, usage and what background work has cost. Never estimate any of that from memory; look.\n'+
     'Never claim a background job was created, changed or removed unless the tool said so - if it failed, tell them exactly what failed. These jobs run unattended and cost money on a timer, so they are worth being precise about.\n'+
     'Prefer doing over explaining. Don\u2019t say "here is code you could run" - run it. Don\u2019t say "you could generate an image" - generate it. After a tool runs, briefly tell them what you did and what they got.';
+  /* "Keep this chat motivational" has to actually take, and has to say so.
+     Set BEFORE the prompt is built, so it applies to the very turn that asked
+     for it rather than only to the next one - which would look like it was
+     ignored. */
+  try{
+    if(typeof _detectChatTone==='function'){
+      /* The message as typed, not the lowercased copy made further down for
+         routing - the tone is echoed back to the user and should read the way
+         they wrote it. */
+      const _said=(msgs.filter(m=>m.r==='u').slice(-1)[0]||{});
+      const _tone=_detectChatTone(typeof _said.c==='string'?_said.c:(_said.d||''));
+      if(_tone && typeof _setChatTone==='function' && _setChatTone(_tone)){
+        toast('This chat will stay '+_tone+'. A new chat starts fresh.','success',4000);
+      }
+    }
+  }catch(e){}
   const sysPrompt=(MODEL_SYSTEMS[_routeKey]||SYS)+_agenticSys+_profileContext()+_chatToneContext()+_skillsContext()+_pluginContext()+_localeContext()+_handoffContext('chat')+_langInstruction()+(_mems&&_mems.length?' Memory about you: '+_mems.join('; '):'')+_integrationStatusPrompt()+(_dnaShouldApply(msgs)?('\n\n'+dnaPromptBlock()+'\nApply this DESIGN DNA to any website, app, UI, HTML, or visual output you produce.'):'');
 
   // Add streaming placeholder message

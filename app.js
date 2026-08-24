@@ -5834,6 +5834,22 @@ async function _callAI(msgs, _opts) {
     '\u2022 account_status - their real plan, usage and what background work has cost. Never estimate any of that from memory; look.\n'+
     'Never claim a background job was created, changed or removed unless the tool said so - if it failed, tell them exactly what failed. These jobs run unattended and cost money on a timer, so they are worth being precise about.\n'+
     'Prefer doing over explaining. Don\u2019t say "here is code you could run" - run it. Don\u2019t say "you could generate an image" - generate it. After a tool runs, briefly tell them what you did and what they got.';
+  /* "Keep this chat motivational" has to actually take, and has to say so.
+     Set BEFORE the prompt is built, so it applies to the very turn that asked
+     for it rather than only to the next one - which would look like it was
+     ignored. */
+  try{
+    if(typeof _detectChatTone==='function'){
+      /* The message as typed, not the lowercased copy made further down for
+         routing - the tone is echoed back to the user and should read the way
+         they wrote it. */
+      const _said=(msgs.filter(m=>m.r==='u').slice(-1)[0]||{});
+      const _tone=_detectChatTone(typeof _said.c==='string'?_said.c:(_said.d||''));
+      if(_tone && typeof _setChatTone==='function' && _setChatTone(_tone)){
+        toast('This chat will stay '+_tone+'. A new chat starts fresh.','success',4000);
+      }
+    }
+  }catch(e){}
   const sysPrompt=(MODEL_SYSTEMS[_routeKey]||SYS)+_agenticSys+_profileContext()+_chatToneContext()+_skillsContext()+_pluginContext()+_localeContext()+_handoffContext('chat')+_langInstruction()+(_mems&&_mems.length?' Memory about you: '+_mems.join('; '):'')+_integrationStatusPrompt()+(_dnaShouldApply(msgs)?('\n\n'+dnaPromptBlock()+'\nApply this DESIGN DNA to any website, app, UI, HTML, or visual output you produce.'):'');
 
   // Add streaming placeholder message
@@ -21011,6 +21027,49 @@ function _chatTone(){
     return (c && typeof c.tone==='string') ? c.tone.trim() : '';
   }catch(e){ return ''; }
 }
+/* NOBODY COULD ACTUALLY SET A TONE.
+
+   _setChatTone existed, was exported, and had NO CALLERS anywhere in the
+   product. The plumbing behind it was all correct - the tone rides on the
+   conversation, reaches the system prompt through _chatToneContext, is picked
+   up by _userStyle on the other surfaces, and resets when a new chat starts
+   because it lives on the conversation object rather than in storage. Every
+   part of it worked except the part where a person says the thing.
+
+   So "keep this chat motivational" did nothing, which is exactly what the owner
+   reported. Present, correct, and unreachable.
+
+   The match is deliberately narrow. It fires only on an instruction that names
+   THIS conversation - "keep this chat ...", "for this chat, ...", "in this
+   conversation, ..." - because that is the phrasing that means "until I say
+   otherwise, here" rather than "do this once, now". A request without that
+   scope is an ordinary message and is left alone: the model handles "be brief"
+   for one turn perfectly well, and hijacking it would make the next twenty
+   replies terse for reasons nobody could see.
+
+   Whatever follows the scope is captured verbatim rather than matched against a
+   list of moods. The owner said "motivational etc", and the "etc" is the point. */
+const _TONE_SCOPES = [
+  /\bkeep\s+this\s+(?:chat|conversation|thread)\s+(.{2,200})$/i,
+  /\bfor\s+this\s+(?:chat|conversation|thread)[,:]?\s+(.{2,200})$/i,
+  /\bin\s+this\s+(?:chat|conversation|thread)[,:]?\s+(.{2,200})$/i,
+  /\b(?:make|keep)\s+(?:all\s+)?(?:your\s+)?(?:responses|replies|answers)\s+in\s+this\s+(?:chat|conversation)\s+(.{2,200})$/i,
+];
+function _detectChatTone(text){
+  const t = String(text||'').trim();
+  if(!t || t.length > 400) return '';        // a scope instruction is short
+  for(const rx of _TONE_SCOPES){
+    const m = t.match(rx);
+    if(m && m[1]){
+      const v = m[1].replace(/["'.!\s]+$/,'').trim();
+      /* "keep this chat private" and friends are about the conversation, not
+         about how to write in it. */
+      if(/^(private|secret|confidential|open|saved|short)$/i.test(v)) return '';
+      if(v.length >= 2) return v;
+    }
+  }
+  return '';
+}
 function _setChatTone(t){
   try{
     const c=(S.convs||[]).find(x=>x.id===S.cur);
@@ -21034,7 +21093,7 @@ function _chatToneContext(){
   const t=_chatTone();
   return t ? ('\n\n[For this conversation only]\n'+t) : '';
 }
-try{ window._userStyle=_userStyle; window._chatTone=_chatTone; window._setChatTone=_setChatTone;
+try{ window._userStyle=_userStyle; window._chatTone=_chatTone; window._setChatTone=_setChatTone; window._detectChatTone=_detectChatTone;
      window._chatToneContext=_chatToneContext; }catch(e){}
 
 /* THIS DEVICE, AND THE CONTROL THAT REVOKES THE REST.
