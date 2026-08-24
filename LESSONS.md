@@ -6242,3 +6242,32 @@ happily while doing it.
 
 Anchored now on `rank < PLAN_RANK[ENGINES[k].minPlan]` and the `'amv-core'` it
 returns - both code, both load-bearing.
+
+## 293. Built the vault, never drew on it. Then did it again, one level down.
+
+Connected accounts: encryption under a Worker secret, sealed state, PKCE,
+scope filtering, real revocation, erasure coverage, a screen showing what each
+grant may do and which job used it last. All correct. All useless.
+
+`connUse` had exactly one reference in the worker - its own definition. The
+runner still received only the job's own text, so every token was stored,
+guarded and never read. The feature was a vault with nothing drawing on it.
+
+I caught that by grepping for callers before claiming it worked, which is the
+right instinct and is now a habit worth keeping. Then I wired the runner, and
+walked straight into the same failure one level down: `_cwRunsUnattended` still
+decided routing, and it returns true only for jobs needing nothing but web
+research. So every account-backed job still went to the foreground schedule,
+the capability list never reached the server, and the mailbox the runner could
+now open was never opened. Correct at both ends. Not joined in the middle.
+Twice, in one feature, in one sitting.
+
+The pattern is specific enough to name: **when a new capability makes an old
+predicate wrong, the predicate does not fail - it quietly keeps routing around
+the new thing.** `_cwRunsUnattended` was not broken. It was answering the
+question it was written for, which had stopped being the question that mattered.
+Nothing fails loudly in that situation; the feature just never runs.
+
+The check that would have caught both, and is now in the file: count the
+references. One is a definition. A feature nothing calls is a feature that does
+not exist, however well it is built.
