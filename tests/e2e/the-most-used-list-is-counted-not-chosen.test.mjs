@@ -183,6 +183,15 @@ section('The floor lives on the server, where the client cannot move it');
   ok(/total\s*<\s*CREW_POPULAR_MIN[\s\S]{0,160}enough\s*:\s*false/.test(worker),
      'below it the server returns enough:false rather than a short list');
   ok(/case '\/crew\/popular'/.test(worker), 'and the endpoint is actually routed');
+
+  /* Public and unauthenticated is not the same as free. Every call is a KV
+     read, and an endpoint anybody can reach with no credential is the one
+     worth hammering - so it has to be limited even though it has no login. */
+  const fn = worker.slice(worker.indexOf('async function crewPopular'),
+                          worker.indexOf('async function autoCreate'));
+  ok(/guardAction\(/.test(fn), 'the endpoint is rate limited despite taking no token');
+  ok(/CF-Connecting-IP/.test(fn), 'per caller rather than globally');
+  ok(/Cache-Control/.test(fn), 'and a repeat visit inside a few minutes does not re-read storage');
 }
 
 section('No JavaScript errors');

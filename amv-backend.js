@@ -1757,19 +1757,37 @@ function _autoBudget(ent, family){
    read a leaderboard of your own product's features helps nobody. */
 const CREW_POPULAR_MIN = 25;      // total jobs created before any ranking is shown
 async function crewPopular(request, env){
+  /* PUBLIC AND UNAUTHENTICATED IS NOT THE SAME AS FREE.
+
+     This endpoint takes no token on purpose - it is aggregate counts of a
+     public catalogue, and requiring a login to read a leaderboard of your own
+     product's features helps nobody. That is the argument for no auth. It is
+     not an argument for no limit: every call is a KV read, and an endpoint
+     anybody can reach with no credential is exactly the one worth hammering.
+
+     Per IP, per minute, generous enough that a real person clicking around
+     Crew never sees it. Behind it, a cache header, so a browser that visits
+     the screen twice in a minute does not ask twice. */
+  const ip = (request.headers.get('CF-Connecting-IP')
+           || request.headers.get('X-Forwarded-For') || 'noip').slice(0, 45);
+  const blocked = await guardAction(env, 'crewpop:' + ip, 60, 0, 'this');
+  if(blocked) return blocked;
   let rec = null;
   try{ rec = await DB.get(env, 'stats', 'jobuse'); }catch(_e){ rec = null; }
   const counts = (rec && rec.counts) || {};
   const total = (rec && rec.total) || 0;
   if(total < CREW_POPULAR_MIN){
-    return json({ enough:false, total, need: CREW_POPULAR_MIN, top: [] });
+    return json({ enough:false, total, need: CREW_POPULAR_MIN, top: [] },
+                200, { 'Cache-Control': 'public, max-age=300' });
   }
   const top = Object.keys(counts)
     .map(id => ({ id, n: counts[id]|0 }))
     .filter(x => x.n > 0)
     .sort((a,b) => b.n - a.n || (a.id < b.id ? -1 : 1))
     .slice(0, 10);
-  return json({ enough:true, total, top });
+  /* Five minutes. A ranking that is five minutes stale is the same ranking;
+     one that is re-read from KV on every page view is a bill. */
+  return json({ enough:true, total, top }, 200, { 'Cache-Control': 'public, max-age=300' });
 }
 
 /* WHAT A STORED INSTRUCTION MAY NEVER CONTAIN.
