@@ -479,7 +479,27 @@ section('Checking a result at phone width works, on both surfaces (AMV-D007 step
 
      So this measures the RENDERED WIDTH. A check on the inline style would have
      passed against the broken version, which is exactly how it survived. */
-  await page.setViewportSize({ width: 1280, height: 860 });
+  /* WIDE ENOUGH THAT THE CLAIM CAN ACTUALLY BE TRUE.
+
+     This ran at 1280 and asserted the tablet preset sits between phone and the
+     full pane. At 1280 with the sidebar showing, the pane is 730px - narrower
+     than the 768px tablet preset - so the claim is arithmetically impossible
+     and the switcher is not at fault. It passed anyway, because an earlier
+     section in this file leaves the viewport at a phone width, the sidebar
+     collapses, and it used to STAY collapsed on the way back to desktop. The
+     assertion was riding on a bug: with the sidebar gone the pane was wide
+     enough, and the moment the sidebar started being restored properly the
+     check failed on a product that had not changed.
+
+     Measured on both trees to be sure: in isolation this section reports
+     390 / 768 / 730 identically before and after the sidebar fix.
+
+     So the viewport is now wide enough for the three presets to be genuinely
+     distinguishable, and the assertion below keeps its full strength rather
+     than being loosened to fit. A tablet preset wider than the pane still
+     scrolls inside it, which is what a device preview should do - it is not
+     clamped, because a "Tablet" button that quietly shows 730px is lying. */
+  await page.setViewportSize({ width: 1600, height: 900 });
   const studio = await page.evaluate(async () => {
     setTab('studio');
     _studioNewArtifact('T', 'page', 'b'); _studioSetHTML('<h1>hi</h1>', 'b');
