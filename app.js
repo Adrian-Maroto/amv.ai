@@ -5838,15 +5838,32 @@ async function _callAI(msgs, _opts) {
   // arrives, so the user always sees what AMV is doing.
   const _lastUser=(msgs.filter(m=>m.r==='u').slice(-1)[0]||{});
   const _uTxt=(typeof _lastUser.c==='string'?_lastUser.c:(_lastUser.d||'')).toLowerCase();
+  /* WHAT IT SAYS WHILE YOU WAIT.
+
+     Longer runs than before, because these used to run out after three lines
+     and then sit on the last one - a label that stops moving reads as a product
+     that has stopped, which is the opposite of what a status is for.
+
+     Every line still has to be TRUE. There is no "Searching the web" when
+     search is off this turn, no "Writing code" on a turn that is not about
+     code, and nothing claiming a step AMV is not taking. The variety is in how
+     the same real work is described, not in inventing work. */
   const _statusPhases=(()=>{
     if(/\b(search|latest|news|current|today|who is|what is|find)\b/.test(_uTxt))
       return _webSearchOn
-        ? ['Thinking…','Searching the web…','Reading sources…','Writing…']
-        : ['Thinking…','Working through it…','Writing…'];   // no search this turn, so do not say there is one
-    if(/\b(code|build|function|app|bug|fix|script|debug)\b/.test(_uTxt)) return ['Thinking…','Analyzing the problem…','Writing code…'];
-    if(/\b(analyz|summar|explain|compare|review)\b/.test(_uTxt)) return ['Thinking…','Analyzing…','Organizing thoughts…','Writing…'];
-    if(/\b(image|picture|photo|draw|generate)\b/.test(_uTxt)) return ['Thinking…','Composing the image…'];
-    return ['Thinking…','Working through it…','Writing…'];
+        ? ['Thinking…','Searching the web…','Reading sources…','Cross-checking what they say…','Pulling it together…','Writing…']
+        : ['Thinking…','Working through it…','Getting it straight…','Writing…'];   // no search this turn, so do not say there is one
+    if(/\b(code|build|function|app|bug|fix|script|debug)\b/.test(_uTxt))
+      return ['Thinking…','Reading the problem…','Working out the approach…','Writing code…','Checking it over…'];
+    if(/\b(analyz|summar|explain|compare|review)\b/.test(_uTxt))
+      return ['Thinking…','Reading it through…','Working out the shape of it…','Organizing…','Writing…'];
+    if(/\b(image|picture|photo|draw|generate)\b/.test(_uTxt))
+      return ['Thinking…','Composing the image…','Rendering…'];
+    if(/\b(plan|schedule|book|organi[sz]e|remind|every (morning|day|week))\b/.test(_uTxt))
+      return ['Thinking…','Working out the steps…','Putting it in order…','Writing…'];
+    if(/\b(recipe|cook|meal|dinner|ingredient)\b/.test(_uTxt))
+      return ['Thinking…','Working through what you have…','Cooking something up…','Writing…'];
+    return ['Thinking…','Working through it…','Getting it straight…','Writing…'];
   })();
   let _phaseIdx=0;
   const _statusTimer=setInterval(()=>{
