@@ -6927,10 +6927,24 @@ function renderChatMsgs() {
       '<div class="chome">'+
         '<h1 class="chome-title"><span class="chome-greet">'+title+'</span></h1>'+
       '</div>'+
-      /* One card, once, for a brand new account (AMV-099). Usually nothing. */
-      (typeof _firstRunHTML==='function' ? _firstRunHTML() : '');
+      /* THE NEW CHAT IS A GREETING AND SOME SMALL CHIPS, AND NOTHING ELSE.
+
+         There was one more thing here: _firstRunHTML, a card headed "AMV does
+         the work, not just the talking" with three examples inside it, shown
+         once to a new account. 640x144 of panel sitting between the greeting
+         and the chips.
+
+         Removed at the owner's direction - they want the quiet shape, a
+         greeting and the small suggestions under the box, and nothing that
+         needs dismissing before you can start typing. The three examples it
+         carried are not lost: the chips below say the same things in the form
+         somebody can actually click into the composer.
+
+         _firstRunHTML and _wireFirstRun stay in 31-firstrun.js rather than
+         being deleted - they are a coherent piece of onboarding and this is a
+         placement decision, not a judgement that the content is wrong. */
+      '';
     try{ if(typeof _wireAwayCard==='function') _wireAwayCard(cm); }catch(e){}
-    try{ if(typeof _wireFirstRun==='function') _wireFirstRun(cm); }catch(e){}
     const chips=$('chome-chips');
     if(chips){
       chips.innerHTML=
