@@ -204,7 +204,7 @@ function renderMarketView(){
 window.renderMarketView=renderMarketView;
 
 function _mktPriceTag(it){
-  if(!it.price||it.price<=0) return '<span class="mkt-free">Free</span>';
+  if(!it.price||it.price<=0) return '<span class="mkt-free">'+escH(T('Free'))+'</span>';
   return '<span class="mkt-price">$'+it.price+'</span>';
 }
 function _mktStars(rating, ratings){
@@ -261,10 +261,10 @@ function _mktBrowse(body){
       else if(owned) btn='<button class="btn bs mk-getowned" data-mk-id="'+escH(it.id)+'" style="font-size:var(--t-sm);flex:1">\u2713 Owned - use it</button>';
       else if(paid) btn='<button class="btn bp mk-buy" data-mk-id="'+escH(it.id)+'" style="font-size:var(--t-sm);flex:1">Buy \u00b7 $'+it.price+'</button>';
       else btn='<button class="btn bp mk-install" data-mk-id="'+escH(it.id)+'" style="font-size:var(--t-sm);flex:1">'+(it._installed?'\u2713 Get again':'Get it free')+'</button>';
-      const previewBtn='<button class="btn bs mk-preview" data-mk-id="'+escH(it.id)+'" style="font-size:var(--t-sm)">Preview</button>';
+      const previewBtn='<button class="btn bs mk-preview" data-mk-id="'+escH(it.id)+'" style="font-size:var(--t-sm)">'+escH(T('Preview'))+'</button>';
       return '<div class="mk-card">'+
         '<div class="mk-card-top"><span class="mk-icon">'+_safeIcon(it.icon)+'</span>'+
-          '<span style="display:flex;gap:6px;align-items:center"><span class="mk-kind mk-kind-'+it.kind+'">'+it.kind+'</span>'+_mktPriceTag(it)+'</span></div>'+
+          '<span style="display:flex;gap:6px;align-items:center"><span class="mk-kind mk-kind-'+it.kind+'">'+escH(T(it.kind))+'</span>'+_mktPriceTag(it)+'</span></div>'+
         '<div class="mk-title">'+escH(it.title)+'</div>'+
         '<div class="mk-rating-row">'+_mktStars(it.rating,it.ratings)+'</div>'+
         '<div class="mk-desc">'+escH(it.desc||'')+'</div>'+
@@ -292,7 +292,17 @@ function _mktBrowse(body){
   const drawFilters=()=>{
     const cats=['All',...Array.from(new Set(items.map(i=>i.cat).filter(Boolean)))];
     const fb=$('mk-filters'); if(!fb) return;
-    fb.innerHTML=cats.map(c=>'<button class="mk-filter'+(c===activeCat?' on':'')+'" data-mk-cat="'+escH(c)+'">'+escH(c)+'</button>').join('');
+    /* THE LABEL TRANSLATES, THE FILTER VALUE MUST NOT.
+
+       These chips were the only labels in the product left in English after a
+       language switch - All, Sales, Finance, Marketing and the rest - because
+       they are written straight from the listing data with no T() around them.
+
+       The value and the label were the same string, so translating in place
+       would have broken filtering: activeCat is compared against i.cat, the raw
+       English category recorded on the listing. data-mk-cat keeps the raw value
+       and only the visible text moves. */
+    fb.innerHTML=cats.map(c=>'<button class="mk-filter'+(c===activeCat?' on':'')+'" data-mk-cat="'+escH(c)+'">'+escH(T(c))+'</button>').join('');
     fb.querySelectorAll('[data-mk-cat]').forEach(b=>on(b,'click',()=>{ activeCat=b.dataset.mkCat; drawFilters(); draw(); }));
   };
   /* A failed load used to leave the grid on its loading state forever, which
@@ -426,7 +436,7 @@ function _mktPreview(it, after){
     '<div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:6px">'+
       '<div class="mkt-pv-ic">'+_safeIcon(it.icon)+'</div>'+
       '<div style="flex:1"><h2 style="margin:0 0 2px">'+escH(it.title)+'</h2>'+
-        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="mk-kind mk-kind-'+it.kind+'">'+it.kind+'</span>'+_mktPriceTag(it)+_mktStars(it.rating,it.ratings)+'</div></div>'+
+        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="mk-kind mk-kind-'+it.kind+'">'+escH(T(it.kind))+'</span>'+_mktPriceTag(it)+_mktStars(it.rating,it.ratings)+'</div></div>'+
     '</div>'+
     '<p style="font-size:var(--t-sm);color:var(--mu);margin:8px 0">by <span class="mkt-by" data-mk-seller="'+escH(it.authorEmail||'')+'" data-mk-sellername="'+escH(it.author||'')+'">'+escH(it.author||'community')+'</span> \u00b7 '+(it.sales?it.sales+' sold':(it.installs||0)+' installs')+' \u00b7 '+escH(it.cat||'')+'</p>'+
     '<div class="mkt-pv-desc">'+escH(previewText)+'</div>'+
