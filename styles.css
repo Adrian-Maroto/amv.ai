@@ -9359,3 +9359,30 @@ body.light .fr-d{ color:#67656d; }
   .cw-pop-n{ flex:1 1 100%; padding-left:calc(22px + var(--sp-3) + var(--ic-sm) + var(--sp-3)); }
   .cw-pop-prog{ margin-left:0; }
 }
+
+/* ── LAYER A109: THE ONE-OFF ERRANDS ───────────────────────────────────────
+   Deliberately lighter than a job card. A job is a switch you leave on; these
+   are a door into a chat, so they read as buttons rather than as things with
+   state. Same row height on every screen so the grid does not go ragged. */
+.cw-errands{ margin:var(--sp-5) 0 var(--sp-4); }
+.cw-errands .sec-head{ margin-bottom:var(--sp-3); }
+.cw-errand-grid{
+  display:grid; gap:var(--sp-2);
+  grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
+}
+.cw-errand{
+  display:flex; align-items:center; gap:var(--sp-3);
+  padding:var(--sp-3) var(--sp-4); min-height:56px;
+  border:1px solid var(--bd); border-radius:var(--r-lg); background:var(--s1);
+  color:var(--tx); font-size:var(--t-md); font-weight:600; text-align:left;
+  cursor:pointer; transition:border-color .16s var(--ease), background .16s var(--ease), transform .16s var(--ease);
+}
+.cw-errand:hover{ border-color:var(--accent); background:var(--s2); }
+.cw-errand:active{ transform:translateY(1px); }
+.cw-errand:focus-visible{ outline:2px solid var(--accent); outline-offset:3px; }
+.cw-errand-ic{ font-size:var(--ic-sm); line-height:1; flex:0 0 auto; }
+.cw-errand-t{ flex:1 1 auto; min-width:0; }
+@media(prefers-reduced-motion:reduce){
+  .cw-errand{ transition:none; }
+  .cw-errand:active{ transform:none; }
+}

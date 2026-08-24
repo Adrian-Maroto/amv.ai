@@ -28,7 +28,7 @@ await page.evaluate(() => document.getElementById('ck')?.remove());
    "no backend configured at all". */
 async function showCrew(reply, opts = {}) {
   return page.evaluate(async (o) => {
-    localStorage.setItem('amv_plan', o.plan || 'free');
+    saveStr('amv_plan', o.plan || 'free');
     if (o.reply === null) {
       AMV_API.base = '';
       delete AMV_API.crewPopular;

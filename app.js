@@ -14507,6 +14507,87 @@ function _cwDefaultJobs(){ return [
     asks:{ q:'Anything AMV should know beyond your classes?', ph:'Things Classroom does not have - a job, training, a test that was announced in class - or leave it blank and it works from Classroom alone' },
     sample:['Read from Classroom: 6 classes, 9 pieces of work still ahead.','DUE IN 2 DAYS - History essay (worth 40 points, the biggest thing this fortnight). Not mentioned since it was set.','DUE FRIDAY - Chemistry problem set, and the biology reading.','NO DUE DATE - the art portfolio. It has been open 3 weeks, which is usually how those end up done in one night.','THE COLLISION: history and chemistry both land Friday. Do the essay Wednesday or you are doing both on Thursday.','AMV reads Classroom. It cannot submit anything, and it is not able to - it was never given permission to.'],
     prompt:'You are given the user’s real coursework from Google Classroom: each piece, its class, its due date and what it is worth. Build them a plan around it. Lead with what is due soonest and what is worth most, name any day where two significant things collide and give the specific move that fixes it, and call out anything with no due date that has been open a long time, because that is what gets done badly at the last minute. Use the points to say which piece actually matters. If they have told you anything Classroom does not know about, fold it in. Be brief - this is read before school. Never invent a piece of work or a due date: everything you list must be in what you were given. If any class could not be read, say so at the top and name it - a plan that quietly omits a class reads as \u2018nothing is due\u2019 for it, and that is how somebody misses a deadline AMV told them about. State plainly that you can read their coursework and cannot submit anything.' },
+
+  /* ---- EVERYDAY LIFE, THE PART THAT REPEATS ------------------------------
+
+     The catalogue above is mostly work, money and study. The owner's list was
+     none of those: the weather before you leave, where petrol is cheapest this
+     week, what is about to go off in the fridge, what the school has quietly
+     asked for by Friday. Small things, and the ones people actually want an
+     assistant for.
+
+     Every one of these runs on live web research and what the person tells it,
+     so they genuinely run with AMV closed and the result is emailed. None of
+     them books, buys, pays or files anything - the ones that touch a business
+     or a doctor prepare everything and stop, and their instructions say so in
+     the runner's own words rather than only on the card. That line is the
+     difference between a useful assistant and a lawsuit. */
+
+  { id:'weather_day', every:'daily', cat:'Home & life', icon:'🌤️', title:'The forecast, and what to do about it', needs:'Web research', on:false,
+    desc:'Every morning, the day where you actually are - and the one thing it changes. Not a temperature you could have read anywhere, but whether to leave earlier, take a coat, or move the thing you had planned outside.',
+    asks:{ q:'Where are you, and what does weather change for you?', ph:'Town or postcode, then what it affects - e.g. “Manchester, I cycle to work and my kids walk to school”' },
+    sample:['Rain from 07:40 to about 09:15, then dry all day.','THAT MEANS: leave at 07:20 and you miss it, or leave at 09:30 and you miss it. 08:00 is the worst possible time.','14C, feels like 11 in the wind. Coat, not a jacket.','Tomorrow is the dry day this week, if you are moving anything outdoors.'],
+    prompt:'Search the live web for today’s forecast for the user’s stated location, from a real forecast source you name. Do not just recite numbers: lead with the ONE thing the weather changes for them today, given what they told you it affects. Give the timing of any rain, snow or wind precisely enough to plan around - the hour it starts and the hour it stops - because a day that is “60% rain” is useless and “wet until nine, then dry” is a decision. Say what to wear only when it is not obvious. Mention tomorrow only if it is materially different and something could be moved to it. If the forecast source is uncertain or the models disagree, say so plainly rather than picking one. Never invent a temperature or a time.' },
+
+  { id:'fuel_watch', every:'weekly', cat:'Money', icon:'⛽', title:'Where fuel is cheapest near me', needs:'Web research', on:false,
+    desc:'Once a week, the real price at the stations you would actually drive to - what it costs to fill up at each, and whether the cheaper one is worth the detour or just further away.',
+    asks:{ q:'Where do you fill up, and what do you drive?', ph:'Your area or postcode, the fuel type, roughly your tank size, and any loyalty card - e.g. “Leeds LS6, diesel, 55 litre tank, Costco member”' },
+    sample:['Cheapest within a sensible drive: 138.9 a litre at the supermarket on Kirkstall Road.','A FULL TANK THERE: 76.40. At your usual station it is 81.35. You save 4.95.','THE CATCH: it is 2.6 miles further each way, which costs you about 0.90 in fuel. Real saving is roughly 4.','Prices rose about 2p across the area this week, so this is not the week to wait for better.'],
+    prompt:'Search the live web for current fuel prices at stations near the user’s stated location, for their stated fuel type, from a real price source you name along with how recently it was updated. List the genuinely cheapest few, with the price per litre or gallon and what a full tank of their stated size actually costs at each. Then do the arithmetic they will not: compare against their usual station, subtract the fuel burned getting to a further one, and say whether the detour is actually worth it in money. Say which way prices are moving in their area this week, so they know whether to fill now or wait. If prices at a station are stale or unverified, say so rather than presenting them as current. Never invent a price or a station.' },
+
+  { id:'store_deals', every:'daily', cat:'Money', icon:'🏷️', title:'Discounts where I actually shop',  needs:'Web research', on:false,
+    desc:'Every morning, real current offers at the specific shops you buy from - and only on the things you actually buy. No vouchers for a shop you have never been to and no code that expired in March.',
+    asks:{ q:'Which shops, and what do you buy there?', ph:'One per line - the shop and the kind of thing - e.g. “Tesco, weekly food shop” / “Uniqlo, basics” / “Boots, contact lenses”' },
+    sample:['3 offers worth your time today, out of 41 running.','TESCO - 3 for 2 across the nappies you buy monthly. Works out at 11.32 saved on a normal shop. Ends Tuesday.','BOOTS - your lens brand is on the 25% multibuy again. It was 25% in January too, so this is the regular cycle, not a one-off.','UNIQLO - the basics you buy are NOT in the sale. The sale is outerwear.','Dropped 38: wrong shop, wrong products, or a “deal” that is the normal price.'],
+    prompt:'Search the live web for offers running RIGHT NOW at the specific shops the user named, and only on the kinds of things they said they buy there. For each: what the offer is, what it saves on a realistic basket for them in money, when it ends, and a link. Then be the filter they came for: say how many offers you discarded and why, and explicitly call out any “deal” that is simply the usual price or a discount off an inflated one. If an offer runs on a predictable cycle, say so, because knowing it will be back in six weeks changes whether they buy today. Verify every offer is currently live and dated - an expired voucher is worse than no email. Never invent an offer, a code or a saving.' },
+
+  { id:'local_basket', every:'weekly', cat:'Money', icon:'🍎', title:'Where the food shop is cheapest this week', needs:'Web research', on:false,
+    desc:'The things you buy every week, priced across the shops you can actually reach - so you know where the fruit is cheap this week and whether the whole shop is worth moving.',
+    asks:{ q:'Where do you shop, and what is on the list every week?', ph:'Your area, the shops within reach, then the items you always buy - e.g. “Birmingham B14, Aldi Lidl Tesco Asda, bananas milk eggs chicken rice nappies”' },
+    sample:['Your usual list, priced across 4 shops: 38.60 to 47.15. That is a 22% spread on the same food.','FRUIT IS THE GAP THIS WEEK: bananas and apples are 40% cheaper at Aldi than Tesco. Everything else is within pennies.','SO: it is not worth moving the whole shop. It is worth buying fruit in one place.','CHICKEN went up everywhere, about 8%, so that is the market and not your shop.','Prices checked today from each retailer’s own listings.'],
+    prompt:'Search the live web for current prices on the specific items the user listed, at the specific shops they said they can reach, using each retailer’s own current listings and naming your source and the date. Price their whole list at each shop and give the total, so the spread is visible. Then say the useful thing rather than the obvious one: identify which few items account for most of the difference, and say honestly whether it is worth moving the entire shop or only worth buying two things elsewhere - because “drive to a fourth supermarket to save 90p” is bad advice. Flag any item that has risen everywhere, since that is the market rather than their choice of shop. If a price cannot be verified, leave the item out and say which ones you could not check. Never estimate a price and present it as read.' },
+
+  { id:'fridge_recipes', every:'daily', cat:'Home & life', icon:'🥕', title:'What is about to go off, and what to cook with it', needs:'Web research', on:false,
+    desc:'Tell AMV what you bought and it keeps track of what expires when - then, before anything is wasted, gives you real meals built from exactly what is in the house.',
+    asks:{ q:'What did you buy, and who are you cooking for?', ph:'What you bought and when - e.g. “Wednesday: eggs, spinach, chicken thighs, double cream, half a loaf” - plus how many people and anything nobody eats' },
+    sample:['GOING FIRST: the spinach, 2 days at most. Then the cream, Sunday. The eggs are fine until the 14th.','TONIGHT, uses the spinach and 3 eggs: a proper frittata. 20 minutes, one pan, and you have everything except nothing.','FRIDAY, uses the cream and the chicken: chicken in a mustard cream sauce over the rice you already have.','THE BREAD is going stale rather than off - it is better as croutons on Saturday than binned on Thursday.','Nothing here needs a shop.'],
+    prompt:'Track what the user told you they bought and when. Work out realistic use-by order from typical shelf life for each item, stating the assumption rather than pretending to know an exact date, and lead with what must be used first. Then give two or three actual meals built ONLY from what they have said is in the house plus ordinary staples, naming which perishable each meal rescues and roughly how long it takes. Say plainly if a meal needs one thing they do not have. Distinguish food that is genuinely unsafe past a date from food that is simply past its best, since one must be thrown away and the other becomes something else. On anything where getting it wrong is a health risk - meat, fish, eggs, reheated rice, anything cooked and stored - be conservative and say so; when in doubt, tell them to throw it out. You are not a food safety authority and must say so.' },
+
+  { id:'figure_market', every:'daily', cat:'Watching the world', icon:'📣', title:'When someone I watch posts, and what moved after', needs:'Web research', on:false,
+    desc:'Follow the accounts whose posts actually move things. AMV brings you what was said, the source, and what the market did in the hours after - the facts and the numbers, and never a recommendation to buy or sell anything.',
+    asks:{ q:'Who should AMV watch, and what are you exposed to?', ph:'The accounts or people, then the markets, sectors or holdings you care about - e.g. “@realDonaldTrump and the Fed chair; I hold index funds and some semiconductor stocks”' },
+    sample:['2 posts yesterday that anything moved after. 9 that nothing moved after.','14:12 - a post on tariffs on imported vehicles. Full text quoted below, with the link.','WHAT MOVED: two European carmakers fell 3.1% and 2.4% within the hour. The broad index did not move.','ON WHAT YOU HOLD: your semiconductor exposure was untouched by this one - it is a different supply chain.','19:40 - a post on interest rates. Markets were closed. Futures moved 0.3%, which is noise at that hour.','This is what happened. It is information, not financial advice, and AMV will not tell you what to buy.'],
+    prompt:'Search the live web for what the accounts the user named have posted since your last run. For each post: the time, the substance quoted accurately, and the direct link to the original - never a paraphrase presented as a quote. Then give the market context: what actually moved in the hours afterwards, with real figures and the source, and be rigorous about the difference between a move that followed the post and one that was already happening. Say explicitly when nothing moved, and say when a market was closed, because a futures wobble at midnight is noise and presenting it as a reaction is misleading. Relate it to what the user said they are exposed to, including saying plainly when a post has nothing to do with anything they hold. You must NOT give financial advice: never say what to buy, sell, hold or wait for, never predict a price or a direction, and never rank ideas by attractiveness. If the user asks you to, decline and give the facts instead. End every report by stating that this is information, not financial advice.' },
+
+  { id:'appt_chase', every:'weekly', cat:'Health', icon:'🩺', title:'Get the appointment, and get ready for it', needs:'Web research', on:false,
+    desc:'The parts of a medical appointment that are actually work: finding who can see you soonest, having every reference and number ready before you call, and turning up knowing what to ask. AMV does not book anything - it hands you a call you can make in two minutes.',
+    asks:{ q:'What do you need seen to, and where?', ph:'Who you are registered with, what it is about, how urgent, and anything relevant - e.g. “GP in Bristol BS7, recurring headaches for 6 weeks, also due a dental check”' },
+    sample:['3 things open. One of them has been open 6 weeks.','THE HEADACHES: your surgery releases same-day slots at 08:00 and online booking opens at 07:30. That is the door, and calling at 09:30 is why you have not got in.','READY TO GO: your NHS number, the dates you have recorded, what you have already tried, and the three questions worth asking. All below, ready to read out.','THE DENTAL CHECK is overdue by 4 months. Two practices nearby are taking new NHS patients this month - both links below.','AMV has NOT booked anything. These are calls for you to make.'],
+    prompt:'Help the user actually get seen. Research the real booking routes for the specific provider or area they named - opening times, when slots are released, online booking, and any triage service - from current sources you name, and say plainly when opening hours or availability could not be verified. Then prepare the call so it takes them two minutes: the number, the reference or patient details they told you, a two-sentence account of the problem in the order a receptionist needs it, and the questions worth asking once they are in front of a clinician. Track anything that has been open too long and say how long, because that is the thing that gets forgotten. You must NOT book, cancel, confirm or reschedule anything, and you must NOT contact any surgery, practice or clinician - say clearly in every report that nothing has been booked and these are calls for the user to make. Do not diagnose, do not suggest a diagnosis, and do not advise for or against treatment: you are preparing an appointment, not replacing one. If anything the user describes could be an emergency, say so first and tell them to seek urgent care now.' },
+
+  { id:'family_week', every:'weekly', cat:'Family & kids', icon:'👨‍👩‍👧', title:'The week ahead for the whole house', needs:'Web research', on:false,
+    desc:'Everything the family has to be somewhere for, in one place - with the kit, the money and the forms each one quietly needs, and the two days that are going to collide.',
+    asks:{ q:'Who is in the house, and what is on this term?', ph:'Each child, their year, and what they do - clubs, lessons, teams, days they need kit - plus your own fixed commitments' },
+    sample:['THURSDAY IS THE PROBLEM. Swimming at 16:00 and parents’ evening at 17:30, 20 minutes apart in opposite directions.','THE FIX: parents’ evening slots are usually bookable - take a 18:30 and the day works.','KIT: PE Tuesday and Friday for Amir. Swimming bag Thursday. Football boots need studs before Saturday, the old ones are worn.','MONEY: trip payment closes Friday, 14. School dinner balance is low.','FORMS: consent slip for the museum trip has not gone back. It went out 9 days ago.'],
+    prompt:'Build the week for a whole household from what the user has told you about each person. Lead with the collision - the day where two things overlap or leave no time between them - and give one specific move that fixes it rather than just naming the clash. Then list what each day needs to actually work: kit, uniform, equipment, packed lunches, anything that must be in a bag the night before. Separately list money owed with its deadline, and forms or permissions outstanding with how long they have been outstanding, because those are what get missed. Be brief and scannable - this is read while doing something else. Only include what the user has actually told you or what you can verify from a real source such as a school website; never invent a club, a deadline or an amount. If something looks like it is missing, ask rather than guessing.' },
+
+  { id:'school_admin', every:'weekly', cat:'Family & kids', icon:'📋', title:'What the school has asked for', needs:'Web research', on:false,
+    desc:'Schools ask for things in a newsletter on a Tuesday and expect them by Friday. This watches the school’s own pages and letters for what has actually been asked of you, what it costs, and what closes when.',
+    asks:{ q:'Which school, and which children?', ph:'The school name and its website if you have it, each child’s year or class, and where letters reach you' },
+    sample:['4 things asked of you this week. 2 have deadlines.','TRIP PAYMENT - 14, closes Friday. Places are capped, so late usually means no.','WORLD BOOK DAY is a week on Thursday. Costume. This is the one people find out about the night before.','NON-UNIFORM Friday, 1 for the charity. Nothing to organise.','INSET DAY 3 March - school closed, and it is a Monday, so childcare.','From the school newsletter dated the 4th and the term calendar page.'],
+    prompt:'Watch the school’s own published sources - newsletters, term calendar, class pages - for what has actually been asked of a parent, and report only that. For each item: what is being asked, which child it concerns, what it costs, and the deadline. Put anything with a hard deadline or a cap first, and flag well in advance the things that need preparation rather than money - costume days, a closed day that means childcare, anything requiring a form signed by someone else. Say when nothing was asked this week rather than padding the list. Name the source and its date for every item, and say plainly if a page could not be read, since a quiet omission reads as “nothing was asked” and that is how a deadline gets missed. Never invent a date, an amount or an event.' },
+
+  { id:'kids_weekend', every:'weekly', cat:'Family & kids', icon:'🎡', title:'Something to do with the kids this weekend', needs:'Web research', on:false,
+    desc:'Real things happening near you this weekend, at ages that match your children, with the actual price - including the free ones, and honest about which are worth the journey.',
+    asks:{ q:'Where are you, how old are the children, and what is the budget?', ph:'Your area and how far you will travel, each child’s age, and roughly what you are willing to spend - e.g. “Cardiff, 30 min drive, 3 and 7, under 25 total”' },
+    sample:['5 things on this weekend that suit a 3 and a 7 year old. 3 of them are free.','SATURDAY - free craft session at the library, 10:30, drop-in, no booking. Suits both, and the 3 year old will last about 40 minutes.','SATURDAY - the museum has a dinosaur trail on this month. Free entry, 2 for the trail sheet.','SUNDAY - farm park, 9 each, 25 minutes away. Worth it in dry weather and grim in the rain, and Sunday is forecast wet.','SKIPPED: 4 things aimed at over-8s and one that is 22 a head.'],
+    prompt:'Search the live web for things genuinely happening this weekend within the distance the user gave, suitable for the specific ages of their children. For each: what it is, exactly when, what it costs including any per-child charge, whether booking is needed, how far it is, and the link. Lead with the free and cheap ones - the ask was for something to do, not something to spend. Be honest about fit: say when something will hold a younger child for forty minutes rather than an afternoon, and when an activity depends on the weather, check the forecast and say so. Say how many you discarded and why, so the list reads as filtered. Everything must be verified as actually running this weekend from a real source you name - an event that finished last month is the failure this job exists to avoid.' },
+
+  { id:'family_health', every:'weekly', cat:'Family & kids', icon:'💚', title:'Nobody in this house misses a check-up', needs:'Web research', on:false,
+    desc:'Vaccinations, dental checks, eye tests, reviews and prescriptions - for everyone in the house, tracked by date, so the one that quietly went twenty months without a dentist is the one you hear about.',
+    asks:{ q:'Who is in the house, and when was each thing last done?', ph:'Each person, their age, and the last date you know for dentist, optician, vaccinations and any repeat prescription' },
+    sample:['1 overdue, 1 due this month, everything else fine.','OVERDUE - Layla, dentist. Last seen 20 months ago; children are usually seen every 6 to 12 months.','DUE THIS MONTH - your own repeat prescription runs out on the 19th. Ordering takes 3 working days at your surgery, so the 14th is the real deadline.','ON SCHEDULE - the pre-school booster is due at 3 years 4 months, which is April for Sami. Nothing to do yet.','AMV has not booked anything. Nothing here is medical advice.'],
+    prompt:'Track routine health admin for everyone the user has told you about: dental checks, eye tests, routine vaccinations and boosters by age, health reviews and repeat prescriptions. Work from the standard schedule published for the user’s country, which you should name and link, and say when a schedule is a general guideline rather than a rule. Lead with anything genuinely overdue and say how overdue. Work backwards from real lead times - if reordering a prescription takes three days, the deadline is three days earlier, and say so. Be explicit about what is NOT due, so the list stays trustworthy. Do NOT book or contact anyone, and say so in every report. Do not give medical advice, do not interpret symptoms and do not advise for or against any vaccination or treatment - this job tracks dates and nothing else. Tell the user to confirm anything that matters with their own clinician.' },
 ].concat(_everydayDefs()); }
 /* ── WHAT A JOB NEEDS, AGAINST WHAT IS ACTUALLY CONNECTED ────────────────────
 
@@ -14573,7 +14654,7 @@ try{ window.cwConnect=cwConnect; }catch(e){}
    a shelf, not more. Grouped under headings with a filter, the same list reads
    as range. Order is deliberate: the categories people feel most keenly first. */
 const CW_CATS = ['Money','Work & career','Growing a business','Making things','Inbox & calendar',
-                 'Watching the world','Home & life','Learning','Health'];
+                 'Watching the world','Home & life','Family & kids','Learning','Health'];
 let _cwCat = 'all';
 function cwCat(c){ _cwCat = c || 'all'; renderCrewView(); }
 try{ window.cwCat=cwCat; }catch(e){}
@@ -14706,6 +14787,87 @@ function _cwJobsBody(jobs, jobCard){
       <div class="cw-cat-h">More<span class="cw-cat-n">${rest.length}</span></div>
       <div class="cw-jobs-grid">${rest.map(jobCard).join('')}</div>
     </div>`:'');
+}
+
+/* ── THE ONE-OFF ERRANDS, AND WHY THEY ARE NOT JOBS ──────────────────────────
+
+   Half the owner's list does not repeat. Nobody wants the fastest route to the
+   airport every Tuesday - they want it once, now, for a flight at six.
+
+   Those could have been cards on this screen that ran through crewRun, and
+   that would have been the wrong place to put them: crewRun's generic path
+   calls the model with no web tool at all. A "cheapest route" answered from
+   memory is a confident, plausible, out-of-date answer, which is worse than no
+   feature. Chat has the live web search. So these open a chat with the request
+   already written, one blank left for the detail only the person has, and they
+   press send when they have filled it in.
+
+   Nothing is auto-sent. The composer is filled and focused, the same as the
+   starter chips do, so the request they send is one they have actually read. */
+const CW_ERRANDS = [
+  ['route', '🗺️', 'Fastest route somewhere',
+   'Find me the fastest realistic route from [WHERE I AM] to [WHERE I AM GOING], leaving at [WHEN]. '+
+   'Check current conditions on the live web, not a typical journey time: traffic, engineering works, cancellations and anything closed. '+
+   'Give me the route, the door-to-door time, and the time I actually have to leave. '+
+   'If there is a genuinely better alternative - a different mode, a different departure time - say so and say why. '+
+   'Tell me how confident you are and what could still go wrong.'],
+  ['scamcheck', '🛡️', 'Is this a scam?',
+   'I am about to pay for this and I want to know if it is a scam. Here is everything I have:\n\n[PASTE THE LISTING, MESSAGE, LINK, SELLER NAME OR OFFER HERE]\n\n'+
+   'Check it against how this kind of fraud actually works right now. Look up the seller, the site, the payment method and the price against what this really costs. '+
+   'Tell me the specific things that are wrong with it, the things that are genuinely fine, and what an honest version of this would look like. '+
+   'If it is a known scam pattern, name the pattern. If you cannot tell, say you cannot tell rather than reassuring me. '+
+   'Then tell me the safest way to buy this thing, and what to do if I have already paid.'],
+  ['papers', '📄', 'Work out which papers I need',
+   'I need to work out exactly what paperwork this requires: [WHAT I AM APPLYING FOR - e.g. a visa, a residency renewal, a passport, a licence] '+
+   'for [WHO, NATIONALITY, WHERE THEY ARE NOW, AND WHERE THEY ARE APPLYING].\n\n'+
+   'Go to the official government source and use that, not a summary on somebody else’s site. Give me: '+
+   'every document required and what it must show, the exact forms with their real names and numbers, the fees, the order things must be done in, '+
+   'how long each step takes, and what is most commonly refused or sent back. '+
+   'Link the official page for each. Say clearly where the rules are unclear or recently changed. '+
+   'You are not a lawyer and this is not legal advice - say so, and tell me when this is a case where I genuinely need one.'],
+  ['booking', '🍽️', 'Get a table or an appointment ready',
+   'I want to book [WHAT - a restaurant, a doctor, a garage, a haircut] in [WHERE], for [WHEN AND HOW MANY PEOPLE].\n\n'+
+   'Find the real options that actually fit, check whether they take bookings online or by phone, and check what is actually available for that time. '+
+   'Then prepare the booking so it takes me two minutes: the place, the number or the direct booking link, what to ask for, and anything I need to have ready. '+
+   'Do not book, call, email or confirm anything on my behalf - hand me a call I can make or a link I can press. '+
+   'If nothing is available at that time, say so and give me the nearest thing that is.'],
+  ['pricecheck', '🔎', 'Am I paying too much for this?',
+   'I am about to pay [AMOUNT] for [THE THING]. Tell me whether that is a fair price right now.\n\n'+
+   'Check what it actually sells for today across real sellers, whether this is a normal price or an inflated one with a discount stuck on it, '+
+   'and whether it is about to be cheaper - a known sale, a new model, a seasonal pattern. '+
+   'Tell me the cheapest legitimate place to get it and what the catch is with each. '+
+   'If it is a fair price, say so plainly instead of manufacturing a reason to wait.'],
+];
+function cwErrand(key){
+  const e = CW_ERRANDS.find(x => x[0] === key);
+  if(!e) return;
+  try{ if(typeof newChat === 'function') newChat(); else setTab('chat'); }catch(_){ setTab('chat'); }
+  setTimeout(()=>{
+    const ta = $('mta');
+    if(!ta){ toast('Open a chat and paste your question there.','info',4000); return; }
+    ta.value = e[3];
+    try{ ta.dispatchEvent(new Event('input')); }catch(_){}
+    ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,220)+'px';
+    ta.focus();
+    /* The bracketed blank is the only part they have to write. Putting the
+       caret on it beats asking somebody to hunt for it in eight lines. */
+    try{
+      const at = e[3].indexOf('[');
+      if(at >= 0) ta.setSelectionRange(at, e[3].indexOf(']', at) + 1);
+    }catch(_){}
+    try{ if(typeof announce==='function') announce('Chat opened with your request ready. Fill in the highlighted part, then send.'); }catch(_){}
+  }, 220);
+}
+try{ window.cwErrand=cwErrand; }catch(e){}
+
+function _cwErrandsHTML(){
+  return `<section class="cw-errands">
+    <div class="sec-head"><h3>${escH(T('Things that do not repeat'))}</h3><span class="sec-sub">${escH(T('The jobs below run on a schedule. These are one-offs - AMV opens a chat with the request written out, you fill in the one blank, and it looks it up live.'))}</span></div>
+    <div class="cw-errand-grid">${CW_ERRANDS.map(e=>`<button class="cw-errand" data-dact="cwErrand" data-darg="${escH(e[0])}">
+      <span class="cw-errand-ic" aria-hidden="true">${e[1]}</span>
+      <span class="cw-errand-t">${escH(T(e[2]))}</span>
+    </button>`).join('')}</div>
+  </section>`;
 }
 
 function _cwApprovals(){ return load('amv_cw_approvals') || []; }
@@ -15716,6 +15878,9 @@ function renderCrewView(){
       <div class="cw-lock-note">Elite runs ${CREW_JOBS_BY_PLAN.elite} at once and Ultra runs ${CREW_JOBS_BY_PLAN.ultra}. A job keeps running whether or not AMV is open, which is the part that costs money to provide.</div>
     </div>
     <div class="crew-jobs-sec cw-locked">
+      ${/* These open a CHAT, not a Crew job, so they work without a plan and
+            belong here as much as on the paid screen. */ ''}
+      ${_cwErrandsHTML()}
       ${_cwPopularHTML()}
       ${_cwCatChips(jobs)}
       ${_cwJobsBody(jobs, _cwLockedCard)}
@@ -15904,6 +16069,7 @@ function renderCrewView(){
     <div class="crew-jobs-sec mc-start">
       <div class="sec-head"><h3>Start new work</h3><span class="sec-sub">Turn on a standing job - AMV runs it automatically and emails you results.</span></div>
       <div class="cw-anything">These are starting points, not the limit. Type <b>anything</b> in the box above and AMV works out which accounts, sites and tools it needs and does it - on a schedule if you ask. If something it needs is not connected yet, it tells you exactly what to add.</div>
+      ${_cwErrandsHTML()}
       ${_cwPopularHTML()}
       ${_cwCatChips(jobs)}
       ${_cwJobsBody(jobs, jobCard)}
