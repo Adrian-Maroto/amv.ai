@@ -601,6 +601,104 @@ function _cwCatChips(jobs){
     + `</div>`;
 }
 
+/* ── WHAT PEOPLE ACTUALLY START ───────────────────────────────────────────────
+   The owner asked for a top ten "based on actual data", and the whole value of
+   that sentence is in the last two words. A hand-picked order dressed as a
+   ranking is the exact thing this product is not allowed to ship, so this reads
+   one number per job from the server and nothing else: how many times each job
+   in the catalogue has been turned into scheduled work. No account is named, no
+   instruction is stored, nothing about what any run produced.
+
+   Below the server's floor it says there is not enough yet and shows no order
+   at all. Six starts sorted into a "top ten" is three coincidences presented as
+   a trend, and the first person to read it would be misled by their own data. */
+let _cwPop = { state:'idle', data:null, err:'' };
+async function _cwLoadPopular(){
+  /* 'error' is terminal until somebody presses Try again. Without that a
+     failing endpoint would be re-requested on every repaint of a screen
+     that repaints on every toggle. */
+  if(_cwPop.state==='loading' || _cwPop.state==='done' || _cwPop.state==='error') return;
+  if(!(window.AMV_API && AMV_API.live && AMV_API.crewPopular)){
+    _cwPop = { state:'off', data:null, err:'' }; _cwPopPaint(); return;
+  }
+  _cwPop.state='loading';
+  try{
+    const d = await AMV_API.crewPopular();
+    _cwPop = { state:'done', data:(d&&typeof d==='object')?d:null, err:'' };
+  }catch(e){
+    /* Named, not swallowed. A ranking that quietly vanishes looks like a
+       feature that was never built, and the owner would be right to ask. */
+    _cwPop = { state:'error', data:null, err:String((e&&e.message)||'').slice(0,120) };
+  }
+  _cwPopPaint();
+}
+function _cwPopPaint(){
+  try{ const el=document.getElementById('cw-pop-body'); if(el) el.innerHTML=_cwPopBodyHTML(); }catch(e){}
+}
+function cwPopReload(){ _cwPop={ state:'idle', data:null, err:'' }; _cwPopPaint(); _cwLoadPopular(); }
+try{ window.cwPopReload=cwPopReload; }catch(e){}
+
+function _cwPopularHTML(){
+  /* Kicked off from the render that first puts the container on the page, so
+     the request is made once per load rather than once per repaint. */
+  try{ setTimeout(_cwLoadPopular, 0); }catch(e){}
+  return `<section class="cw-pop" id="cw-pop">
+    <div class="sec-head"><h3>${escH(T('Most used right now'))}</h3><span class="sec-sub">${escH(T('Ranked by how many times these jobs have actually been started across AMV. Counts only - no names, and nothing about what any job did.'))}</span></div>
+    <div id="cw-pop-body" class="cw-pop-body">${_cwPopBodyHTML()}</div>
+  </section>`;
+}
+
+function _cwPopBodyHTML(){
+  const st=_cwPop;
+  if(st.state==='off')
+    return `<div class="cw-pop-note">${escH(T('This ranking is counted on AMV’s servers. This copy is not connected to one, so there is no real data to show - and an invented order would be worse than an empty space.'))}</div>`;
+  if(st.state==='idle' || st.state==='loading')
+    return `<div class="cw-pop-note" aria-busy="true">${escH(T('Reading what people are starting most...'))}</div>`;
+  if(st.state==='error')
+    return `<div class="cw-pop-note">${escH(T('The ranking could not be loaded'))}${st.err?' ('+escH(st.err)+')':''}. <button class="mc-sec-link" data-dact="cwPopReload">${escH(T('Try again'))}</button></div>`;
+
+  const d=st.data||{};
+  if(!d.enough){
+    const have=Math.max(0, d.total|0);
+    const need=Math.max(1, (d.need|0)||25);
+    const pct=Math.min(100, Math.round((have/need)*100));
+    return `<div class="cw-pop-note cw-pop-early">
+      <b>${escH(T('Not enough data yet.'))}</b>
+      ${escH(T('A ranking needs a real sample behind it. Once enough jobs have been started, the ten people reach for most appear here, counted rather than chosen.'))}
+      <span class="cw-pop-prog" role="img" aria-label="${escH(have+' of '+need+' starts needed before a ranking is shown')}">
+        <span class="cw-pop-prog-bar"><span style="width:${pct}%"></span></span>
+        <span class="cw-pop-prog-n">${have} / ${need}</span>
+      </span>
+    </div>`;
+  }
+
+  /* Ids the catalogue no longer carries are dropped rather than shown raw. A
+     row reading "gmail_sweep_v2  41 starts" is not a job anybody can open. */
+  const byId={}; (_cwJobs()||[]).forEach(j=>{ if(j&&j.id) byId[j.id]=j; });
+  const rows=(Array.isArray(d.top)?d.top:[])
+    .map(x=>({ n:Math.max(0,(x&&x.n)|0), job:byId[(x&&x.id)||''] }))
+    .filter(x=>x.job && x.n>0);
+  if(!rows.length)
+    return `<div class="cw-pop-note">${escH(T('What people are running most was described in their own words rather than picked from a card, so there is nothing here to rank yet. The box above takes anything you can write down.'))}</div>`;
+
+  const max=rows[0].n||1;
+  const total=Math.max(0, d.total|0);
+  return `<ol class="cw-pop-list">`+rows.map((x,i)=>`<li class="cw-pop-row">
+      <span class="cw-pop-rank" aria-hidden="true">${i+1}</span>
+      <span class="cw-pop-ic" aria-hidden="true">${x.job.icon||'✨'}</span>
+      <button class="cw-pop-b" data-dact="cwPeek" data-darg="${escH(x.job.id)}"
+              aria-label="${escH('Number '+(i+1)+'. '+x.job.title+'. '+x.n+' start'+(x.n===1?'':'s')+'. See what it does')}">
+        <span class="cw-pop-t">${escH(x.job.title)}</span>
+        <span class="cw-pop-d">${escH(x.job.desc)}</span>
+      </button>
+      <span class="cw-pop-n">
+        <span class="cw-pop-meter" aria-hidden="true"><span style="width:${Math.max(6,Math.round((x.n/max)*100))}%"></span></span>
+        <span class="cw-pop-n-t"><b>${x.n}</b> ${escH(T(x.n===1?'start':'starts'))}</span>
+      </span>
+    </li>`).join('')+`</ol>
+    <div class="cw-pop-foot">${escH(T('Counted from'))} ${total} ${escH(T(total===1?'job started across AMV.':'jobs started across AMV.'))}</div>`;
+}
+
 function _cwJobsBody(jobs, jobCard){
   if(_cwCat!=='all'){
     const sel=jobs.filter(j=>j.cat===_cwCat);
@@ -1434,6 +1532,12 @@ async function _mcScheduleServer(payload){
     const r = await AMV_API._fetch('/auto/create',{ method:'POST', body:JSON.stringify({
       detail: payload.goal, repeat: _mcRepeatFor(payload),
       kind: payload.kind || 'task', approval: payload.approval === 'auto' ? 'auto' : 'require',
+      /* Which catalogue entry this came from, so a most-used list can be built
+         from what people actually run rather than from a guess. Counts only,
+         nothing that identifies anybody - see crewPopular in the worker.
+         Absent when somebody typed the job themselves, which is fine: the
+         ranking is of catalogue entries. */
+      srcId: payload.srcId || '',
       notify: payload.notify || 'app' }) });
     const d = await r.json().catch(()=>({}));
     if(!r.ok || d.error) return { ok:false, code:d.code||'failed', error:d.error||'' };
@@ -1622,6 +1726,7 @@ function renderCrewView(){
       <div class="cw-lock-note">Elite runs ${CREW_JOBS_BY_PLAN.elite} at once and Ultra runs ${CREW_JOBS_BY_PLAN.ultra}. A job keeps running whether or not AMV is open, which is the part that costs money to provide.</div>
     </div>
     <div class="crew-jobs-sec cw-locked">
+      ${_cwPopularHTML()}
       ${_cwCatChips(jobs)}
       ${_cwJobsBody(jobs, _cwLockedCard)}
     </div></div>`;
@@ -1809,6 +1914,7 @@ function renderCrewView(){
     <div class="crew-jobs-sec mc-start">
       <div class="sec-head"><h3>Start new work</h3><span class="sec-sub">Turn on a standing job - AMV runs it automatically and emails you results.</span></div>
       <div class="cw-anything">These are starting points, not the limit. Type <b>anything</b> in the box above and AMV works out which accounts, sites and tools it needs and does it - on a schedule if you ask. If something it needs is not connected yet, it tells you exactly what to add.</div>
+      ${_cwPopularHTML()}
       ${_cwCatChips(jobs)}
       ${_cwJobsBody(jobs, jobCard)}
     </div>
@@ -1992,7 +2098,11 @@ async function _cwToggleReal(jobs, j){
       const detail = (j.prompt||j.desc||j.title)
         + (extra ? '\n\nWhat the user has told you, which is the only information you have about them - use it and do not invent anything beyond it:\n' + j.answer : '');
       item=await _scheduleTask({ detail, repeat:(j.every||'daily'),
-                                 kind:'research', notify:'app', approval:'auto' });
+                                 kind:'research', notify:'app', approval:'auto',
+                                 /* Which catalogue job this is, so the most-used
+                                    list is built from what people actually turn
+                                    on rather than from a guess. */
+                                 srcId: j.id });
     }catch(e){ item=null; }
     finally{ _cwPending.delete(j.id); }
     /* _scheduleTask reports the reason itself - a plan limit sends them to the

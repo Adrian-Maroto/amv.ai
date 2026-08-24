@@ -9279,3 +9279,78 @@ body.light .fr-d{ color:#67656d; }
   .habit-nudge{ left:var(--sp-3); right:var(--sp-3); bottom:var(--sp-3); width:auto; }
 }
 @media(prefers-reduced-motion:reduce){ .habit-nudge{ animation:none; } }
+
+/* ── LAYER A108: A RANKING THAT IS COUNTED, NOT CHOSEN ─────────────────────
+   The most-used band above the Crew catalogue. It has three shapes and they
+   are deliberately different weights: a quiet line while it loads or while
+   there is not enough data, and a real ranked list once there is. The empty
+   shape must not look like a broken ranking - it is a true statement about how
+   much has happened, so it reads as a sentence, not as an error. */
+.cw-pop{ margin:var(--sp-5) 0 var(--sp-6); }
+.cw-pop .sec-head{ margin-bottom:var(--sp-3); }
+.cw-pop-note{
+  border:1px solid var(--bd); border-radius:var(--r-lg); background:var(--s1);
+  padding:var(--sp-4); color:var(--mu); font-size:var(--t-md); line-height:1.55;
+}
+.cw-pop-note b{ color:var(--tx); }
+.cw-pop-early{ display:flex; flex-wrap:wrap; align-items:center; gap:var(--sp-2); }
+.cw-pop-prog{ display:inline-flex; align-items:center; gap:var(--sp-2); margin-left:auto; }
+.cw-pop-prog-bar{
+  display:block; width:120px; height:6px; border-radius:var(--r-pill);
+  background:var(--s3); overflow:hidden;
+}
+.cw-pop-prog-bar>span{
+  display:block; height:100%; border-radius:var(--r-pill); background:var(--accent);
+  min-width:2px; transition:width .4s var(--ease);
+}
+.cw-pop-prog-n{ font-size:var(--t-xs); color:var(--dim); font-variant-numeric:tabular-nums; white-space:nowrap; }
+
+.cw-pop-list{
+  list-style:none; margin:0; padding:0;
+  border:1px solid var(--bd); border-radius:var(--r-lg); background:var(--s1); overflow:hidden;
+}
+.cw-pop-row{
+  display:flex; align-items:center; gap:var(--sp-3);
+  padding:var(--sp-3) var(--sp-4); border-top:1px solid var(--bd);
+}
+.cw-pop-row:first-child{ border-top:0; }
+.cw-pop-rank{
+  flex:0 0 auto; min-width:22px; text-align:right;
+  font-family:var(--fdisplay), var(--fn); font-size:var(--t-md); font-weight:700;
+  color:var(--dim); font-variant-numeric:tabular-nums;
+}
+.cw-pop-row:nth-child(1) .cw-pop-rank{ color:var(--gold-txt); }
+.cw-pop-ic{ flex:0 0 auto; font-size:var(--ic-sm); line-height:1; }
+.cw-pop-b{
+  flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:2px;
+  background:none; border:0; padding:0; text-align:left; cursor:pointer; color:inherit;
+  border-radius:var(--r-xs);
+}
+.cw-pop-t{ font-size:var(--t-md); font-weight:650; color:var(--tx); }
+.cw-pop-d{
+  font-size:var(--t-sm); color:var(--mu); line-height:1.4;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.cw-pop-b:hover .cw-pop-t{ color:var(--accent-txt); }
+.cw-pop-b:focus-visible{ outline:2px solid var(--accent); outline-offset:3px; }
+.cw-pop-n{ flex:0 0 auto; display:flex; align-items:center; gap:var(--sp-2); }
+.cw-pop-meter{
+  display:block; width:84px; height:6px; border-radius:var(--r-pill);
+  background:var(--s3); overflow:hidden;
+}
+.cw-pop-meter>span{
+  display:block; height:100%; border-radius:var(--r-pill); background:var(--accent-fill);
+}
+.cw-pop-n-t{ font-size:var(--t-xs); color:var(--mu); font-variant-numeric:tabular-nums; white-space:nowrap; }
+.cw-pop-n-t b{ color:var(--tx); font-size:var(--t-sm); }
+.cw-pop-foot{ margin-top:var(--sp-2); font-size:var(--t-xs); color:var(--dim); }
+
+@media(max-width:720px){
+  .cw-pop-row{ flex-wrap:wrap; padding:var(--sp-3); gap:var(--sp-2) var(--sp-3); }
+  .cw-pop-b{ flex:1 1 60%; }
+  .cw-pop-d{ white-space:normal; }
+  /* The meter is decoration once the row wraps; the number is the fact. */
+  .cw-pop-meter{ display:none; }
+  .cw-pop-n{ flex:1 1 100%; padding-left:calc(22px + var(--sp-3) + var(--ic-sm) + var(--sp-3)); }
+  .cw-pop-prog{ margin-left:0; }
+}

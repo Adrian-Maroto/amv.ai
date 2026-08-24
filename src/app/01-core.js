@@ -739,6 +739,10 @@ const AMV_API = {
   async approvals(){ const r=await this._fetch('/api/approvals'); return (await r.json()).approvals||[]; },
   async actApproval(id,action){ return this._wrote('/api/approvals/act',{id,action}); },
   async pauseAutonomy(paused){ return this._wrote('/auto/pause',{paused:!!paused},'The server did not accept that.'); },
+  /* Public on purpose, and unauthenticated: it is an aggregate count of a
+     public catalogue. No token is attached because none is needed, and one
+     less endpoint that reads a session is one less endpoint to get wrong. */
+  async crewPopular(){ const r=await this._fetch('/crew/popular'); return await r.json(); },
   async createHandoff(h){ return this._wrote('/api/handoff',h,'That handoff was not accepted.'); },
   async listHandoff(){ const r=await this._fetch('/api/handoff'); return await r.json(); },
   async actHandoff(id,action){ return this._wrote('/api/handoff/act',{id,action},'That could not be updated.'); },

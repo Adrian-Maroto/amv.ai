@@ -1421,6 +1421,9 @@ async function _scheduleTask(t){
       notify: wantEmail ? 'email' : 'app',
       firstRunAt: t.firstRunAt || null,
       approval: t.approval || 'require',
+      /* The catalogue entry this came from, when it came from one. Counts only,
+         and only in aggregate - see crewPopular in the worker. */
+      srcId: t.srcId || '',
       scope: t.scope || null
     });
     if(typeof d.emailReady === 'boolean') _AUTO_EMAIL_READY = d.emailReady;

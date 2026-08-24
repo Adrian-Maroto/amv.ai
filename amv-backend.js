@@ -1740,6 +1740,38 @@ function _autoBudget(ent, family){
 }
 
 /* ---- create an automation ---- */
+/* THE MOST-USED LIST, AND WHY IT IS ALLOWED TO BE EMPTY.
+
+   Returns catalogue ids and how many times each has been turned into a real
+   job, most first. It reads one aggregate record: counts and nothing else, no
+   email, no job text, nothing that could be traced to a person.
+
+   A MINIMUM BEFORE IT WILL RANK ANYTHING. With three jobs created in total, a
+   "top 10 most used" is a list of three coincidences presented as a trend, and
+   the first person to read it would be misled by their own data. Under the
+   floor it returns `enough:false` and the interface says there is not enough
+   yet - which is the honest answer and, at launch, the true one for a while.
+
+   Public on purpose: it is aggregate counts of a public catalogue, it makes the
+   catalogue better for somebody deciding what to try, and requiring a login to
+   read a leaderboard of your own product's features helps nobody. */
+const CREW_POPULAR_MIN = 25;      // total jobs created before any ranking is shown
+async function crewPopular(request, env){
+  let rec = null;
+  try{ rec = await DB.get(env, 'stats', 'jobuse'); }catch(_e){ rec = null; }
+  const counts = (rec && rec.counts) || {};
+  const total = (rec && rec.total) || 0;
+  if(total < CREW_POPULAR_MIN){
+    return json({ enough:false, total, need: CREW_POPULAR_MIN, top: [] });
+  }
+  const top = Object.keys(counts)
+    .map(id => ({ id, n: counts[id]|0 }))
+    .filter(x => x.n > 0)
+    .sort((a,b) => b.n - a.n || (a.id < b.id ? -1 : 1))
+    .slice(0, 10);
+  return json({ enough:true, total, top });
+}
+
 async function autoCreate(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
@@ -1750,6 +1782,17 @@ async function autoCreate(request, env){
   const notify = (body.notify === 'email') ? 'email' : 'app';
   const approval = _autoApprovalOf(body.approval, 'require');
   const scope = (body.scope && typeof body.scope === 'object') ? body.scope : null;
+  /* WHICH CATALOGUE JOB THIS CAME FROM, IF ANY.
+
+     A job is stored as free text, so nothing here could ever say which of the
+     catalogue entries people actually reach for. The owner asked for a
+     most-used list "based on actual data", and the data has to start existing
+     before any such list can be real - so the catalogue id rides along.
+
+     Validated to a short slug rather than trusted: it becomes part of an
+     aggregate key. Absent for anything typed from scratch, which is most of
+     them, and that is fine - the ranking is of catalogue entries. */
+  const srcId = /^[a-z0-9_-]{1,40}$/i.test(String(body.srcId||'')) ? String(body.srcId) : '';
   if(!detail) return json({ error:'detail required' }, 400);
   if(detail.length > 2000) return json({ error:'detail too long' }, 400);
   if(!AUTO_INTERVALS[repeat]) return json({ error:'invalid repeat interval' }, 400);
@@ -1844,6 +1887,22 @@ async function autoCreate(request, env){
     if((fresh.items||[]).length >= budget.max){ overBudget = true; return; }
     fresh.items = (fresh.items||[]).concat(item);
   }, { items:[], results:[] });
+  /* COUNTS ONLY, AND NOTHING THAT SAYS WHO.
+
+     One record, a map of catalogue id to a number. No email, no job text, no
+     timestamp per user - there is nothing in here that could be turned back
+     into a person, which is the whole reason it is safe to aggregate across
+     everybody. Written after the job actually exists, so a refused create does
+     not inflate the count. */
+  if(srcId && !overBudget){
+    try{
+      await _withKV(env, 'stats', 'jobuse', (rec)=>{
+        rec.counts = rec.counts || {};
+        rec.counts[srcId] = (rec.counts[srcId]||0) + 1;
+        rec.total = (rec.total||0) + 1;
+      }, { counts:{}, total:0 });
+    }catch(_e){}
+  }
   if(overBudget){
     return budget.free
       ? json({ error:'The free plan runs one job in the background, weekly. Pro runs '+AUTO_MAX_BY_PLAN.pro+
@@ -7441,6 +7500,7 @@ async function _route(request, env, ctx) {
     case '/sync/push':       return syncPush(request, env);
     case '/auto/list':       return autoList(request, env);
     case '/auto/create':     return autoCreate(request, env);
+    case '/crew/popular':    return crewPopular(request, env);
     case '/auto/update':     return autoUpdate(request, env);
     case '/auto/read':       return autoClearResults(request, env);
     case '/auto/pause':      return autoPause(request, env);
