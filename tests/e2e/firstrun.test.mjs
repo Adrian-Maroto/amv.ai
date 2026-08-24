@@ -1,159 +1,150 @@
-/* THE FIRST SCREEN.
+/* THE FIRST SCREEN, AFTER THE CARD CAME OFF IT.
 
-   A new account lands on an empty chat box, and everything that makes AMV
-   different from a chat window is invisible from there. So AMV gets judged as
-   a chatbot by people who never saw the rest of it - and the judgement is fair,
-   because a chat box is all they were shown.
+   This file used to test a first-run card: three starting points, once, then
+   gone. The card was measured, made accessible, held to a fifth of the first
+   viewport, and it worked.
 
-   The intrusive first-run modal was removed from this product on purpose, so
-   the bar here is: one card, once, that does real things and then gets out of
-   the way permanently. */
+   The owner asked for it to go anyway, and was right to. Their words: remove
+   the big boxes, make a new chat say good morning and show the small ones.
+   The card was the last thing between somebody opening AMV and typing, and a
+   thing that must be dismissed before you can start is a toll on the one
+   action the whole product exists for.
+
+   So the coverage moves rather than disappearing. Everything this file used to
+   guarantee about the card - it reads on a phone, it does not eat the first
+   screen, the composer stays reachable, the starting points are real prompts
+   with accessible names - is now asserted about the greeting and the chips
+   that replaced it. Deleting the file would have quietly dropped all of it. */
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
 import { overflowingElement } from '../lib/layout.mjs';
 
-const app = await bootApp({ tab: 'chat', user: { name: 'New', email: 'new@x.com', ini: 'N' } });
+const app = await bootApp({ tab: 'chat', user: { name: 'Adrian', email: 'new@x.com', ini: 'A' } });
 const { page, errors } = app;
+await page.evaluate(() => document.getElementById('ck')?.remove());
 
 const fresh = () => page.evaluate(() => {
-  saveStr('amv_firstrun_done', '');
   S.convs = [newConvObj()];
   S.cur = S.convs[0].id;
   setTab('chat'); renderChatMsgs();
 });
-const card = () => page.evaluate(() => {
-  const c = document.querySelector('.fr-card');
-  return c ? { text: c.textContent, items: c.querySelectorAll('.fr-item').length } : null;
+const home = () => page.evaluate(() => {
+  const greet = document.querySelector('.chome-greet');
+  const chips = [...document.querySelectorAll('#chome-chips [data-q]')];
+  return {
+    greet: greet ? greet.textContent.trim() : null,
+    chips: chips.map(c => ({ label: c.textContent.trim(), q: c.dataset.q })),
+    card: !!document.querySelector('.fr-card'),
+  };
 });
 
-section('A brand new account is shown what AMV does that a chat box cannot');
+section('A new chat greets you by name and offers small starting points');
 {
   await fresh();
-  const c = await card();
-  ok(!!c, 'the card is there for a new account');
-  ok(c.items === 3, 'with a few real starting points', c.items);
-  ok(/while you are away/i.test(c.text), 'background work is one of them');
-  ok(/build and run/i.test(c.text), 'so is building something that runs');
-  ok(!/tour|walkthrough|step 1/i.test(c.text), 'and none of it is a tour', c.text.slice(0, 80));
+  const h = await home();
+  ok(/^good (morning|afternoon|evening), Adrian$/i.test(h.greet || ''),
+     'it says good morning and uses their first name', h.greet);
+  ok(h.chips.length >= 4, 'with a handful of small chips under the box', h.chips.length);
 }
 
-section('It is not a modal - the product removed that on purpose');
+section('And nothing that has to be dismissed before you can type');
 {
+  const h = await home();
+  ok(!h.card, 'the first-run card is gone, as asked');
   const v = await page.evaluate(() => {
-    const c = document.querySelector('.fr-card');
     const ovr = document.getElementById('ovr');
-    return { inChat: !!document.getElementById('cm').contains(c),
-             overlayOn: !!(ovr && ovr.classList.contains('on')),
-             blocks: getComputedStyle(c).position === 'fixed' };
+    return { overlayOn: !!(ovr && ovr.classList.contains('on')),
+             pinned: [...document.querySelectorAll('#cm *')]
+               .some(e => getComputedStyle(e).position === 'fixed') };
   });
-  ok(v.inChat, 'it renders inside the conversation area');
-  ok(!v.overlayOn, 'no overlay is opened');
-  ok(!v.blocks, 'and nothing is pinned over the app');
+  ok(!v.overlayOn, 'no overlay is opened on a new chat');
+  ok(!v.pinned, 'and nothing in the conversation area is pinned over the app');
 }
 
-section('Tapping one really starts that work');
+section('A chip is a real prompt, and it does not send itself');
 {
   await fresh();
+  const before = await page.evaluate(() => (getMsgs() || []).length);
   const v = await page.evaluate(() => {
-    document.querySelectorAll('.fr-item')[0].click();
-    return { composer: (document.getElementById('mta') || {}).value || '',
-             gone: !document.querySelector('.fr-card') };
+    document.querySelector('#chome-chips [data-q]').click();
+    const ta = document.getElementById('mta');
+    return { composer: ta ? ta.value : '', focused: document.activeElement === ta,
+             msgs: (getMsgs() || []).length };
   });
-  ok(v.composer.length > 40, 'the composer is filled with a real prompt', v.composer.slice(0, 60));
-  ok(/ask me/i.test(v.composer), 'one that asks the user what they want rather than guessing');
-  ok(v.gone, 'and the card gets out of the way immediately');
+  ok(v.composer.length > 40, 'the composer is filled with a real instruction', v.composer.slice(0, 60));
+  ok(v.msgs === before, 'and nothing is sent on the person’s behalf', v.msgs + ' vs ' + before);
+  ok(v.focused, 'the cursor is left in the box so they can edit it');
 }
 
-section('It is shown once, whatever happens to it');
+section('Every chip carries an instruction worth sending');
 {
-  await page.evaluate(() => { S.convs = [newConvObj()]; S.cur = S.convs[0].id; renderChatMsgs(); });
-  ok((await card()) === null, 'after being used it never returns');
-
   await fresh();
-  await page.evaluate(() => document.querySelector('[data-fr-skip]').click());
-  ok((await card()) === null, 'dismissing removes it');
-  await page.evaluate(() => renderChatMsgs());
-  ok((await card()) === null, 'and it stays gone on the next render too');
+  const h = await home();
+  const weak = h.chips.filter(c => !c.q || c.q.length < 40);
+  ok(weak.length === 0, 'none of them is a bare keyword pretending to be a prompt',
+     weak.map(c => c.label).join(', '));
+  const unlabelled = h.chips.filter(c => c.label.length < 3);
+  ok(unlabelled.length === 0, 'and each has a label you can read', unlabelled.length);
 }
 
-section('Someone already talking is not told where to start');
+section('Someone already talking is not greeted again');
 {
   await page.evaluate(() => {
-    saveStr('amv_firstrun_done', '');
     S.convs = [newConvObj()];
     S.cur = S.convs[0].id;
     S.convs[0].msgs = [{ r: 'u', c: 'hello' }, { r: 'a', c: 'hi' }];
     renderChatMsgs();
   });
-  ok((await card()) === null, 'a conversation in progress means no welcome');
-
-  await page.evaluate(() => {
-    // A returning user with an empty NEW chat but history elsewhere.
-    S.convs = [newConvObj(), { id: 'old', title: 'Old', msgs: [{ r: 'u', c: 'x' }], created: 1 }];
-    S.cur = S.convs[0].id;
-    renderChatMsgs();
-  });
-  ok((await card()) === null, 'and neither does an empty chat next to real history');
+  const h = await home();
+  ok(h.greet === null, 'a conversation in progress replaces the greeting');
+  ok(h.chips.length === 0, 'and the chips clear out of the way');
 }
 
 section('It reads on a phone');
 {
   await page.setViewportSize({ width: 390, height: 844 });
   await fresh();
-  await page.waitForSelector('.fr-card', { timeout: 15000 });
-  const m = await page.evaluate(() => ({
-    tap: document.querySelector('.fr-item').getBoundingClientRect().height,
-    named: document.querySelector('.fr-card').getAttribute('aria-label'),
-    close: document.querySelector('.fr-x').getBoundingClientRect().height,
-  }));
-  ok((await overflowingElement(page)) === null, 'nothing overflows the screen', await overflowingElement(page));
-  ok(m.tap >= 44, 'each starting point is a comfortable tap target', Math.round(m.tap));
-  ok(m.close >= 22, 'so is the dismiss control', Math.round(m.close));
-  ok(/AMV/.test(m.named || ''), 'and the region is named for screen readers', m.named);
-  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.waitForTimeout(300);
+  ok((await overflowingElement(page)) === null, 'nothing overflows the screen',
+     await overflowingElement(page));
+  const m = await page.evaluate(() => {
+    const c = document.querySelector('#chome-chips [data-q]');
+    return { tap: c ? c.getBoundingClientRect().height : 0,
+             named: document.getElementById('chome-chips')?.getAttribute('aria-label') || '' };
+  });
+  ok(m.tap >= 30, 'a chip is a reachable tap target', Math.round(m.tap));
 }
 
-section('It does not take over the screen it is inviting you to type on (AMV-D022)')
+section('The greeting takes far less of the first screen than the card did');
 {
-  /* Measured before it was changed: 310px of a 1440x900 desktop (34%), 310px
-     of a 1366x768 laptop (40%), 371px of a 390x844 phone (44%). The audit's
-     bar is that guidance stays under a fifth of the first viewport.
-
-     The phone is held to 30% rather than 20% and that is deliberate, not a
-     rounded-down pass. Three starting points that each read as a sentence
-     cannot fit two-to-a-row at 358px, so the only way to 20% on a phone is to
-     cut one of them or truncate the labels - shrinking what the product offers
-     to make a number go green. It is 27% there, down from 44%. */
-  for (const [w, h, budget] of [[1440, 900, 20], [1366, 768, 20], [390, 844, 30]]) {
+  /* The card was held to a fifth of the first viewport and needed a 30%
+     allowance on a phone to fit three sentences. A greeting and a row of chips
+     should be well inside that everywhere, and the composer must be reachable
+     without scrolling on all three - which is the whole point of removing it. */
+  for (const [w, h] of [[1440, 900], [1366, 768], [390, 844]]) {
     await page.setViewportSize({ width: w, height: h });
     await fresh();
-    await page.waitForSelector('.fr-card', { timeout: 15000 });
+    await page.waitForTimeout(250);
     const m = await page.evaluate(() => {
-      const c = document.querySelector('.fr-card').getBoundingClientRect();
+      const g = document.querySelector('.chome');
       const ta = document.getElementById('mta').getBoundingClientRect();
-      return { pct: +(c.height / innerHeight * 100).toFixed(1),
-               composerVisible: ta.bottom <= innerHeight && ta.top >= 0 };
+      return { pct: g ? +(g.getBoundingClientRect().height / innerHeight * 100).toFixed(1) : 0,
+               composerVisible: ta.bottom <= innerHeight + 1 && ta.top >= 0 };
     });
-    ok(m.pct <= budget, `at ${w}x${h} the card is at most ${budget}% of the first screen`, m.pct + '%');
+    ok(m.pct <= 20, `at ${w}x${h} the greeting is at most a fifth of the first screen`, m.pct + '%');
     ok(m.composerVisible, `and the composer is reachable at ${w}x${h} without scrolling`);
   }
   await page.setViewportSize({ width: 1280, height: 900 });
 }
 
-section('Collapsing it did not throw the explanation away')
+section('The card was removed from the screen, not half-removed');
 {
-  await fresh();
-  const m = await page.evaluate(() => [...document.querySelectorAll('.fr-item')].map(b => ({
-    seen: (b.textContent || '').trim(),
-    named: b.getAttribute('aria-label') || '',
-    hover: b.getAttribute('title') || '',
-  })));
-  ok(m.length === 3, 'all three starting points survived the collapse', m.length);
-  ok(m.every(x => x.seen.length > 10), 'each still shows a label that stands on its own');
-  ok(m.every(x => x.named.length > x.seen.length + 20),
-     'and each carries the fuller description as its accessible name',
-     m.map(x => x.named.length + ' vs ' + x.seen.length).join(', '));
-  ok(m.every(x => x.hover.length > 20), 'with the same text on hover for a mouse');
+  /* A render path that still calls it would put it back the first time
+     somebody hits whichever branch was missed. */
+  const src = await page.evaluate(() => (document.getElementById('amv-app-code') || {}).textContent || '');
+  ok(src.length > 0, 'the shipped bundle can be read to check this');
+  const calls = (src.match(/_firstRunHTML\s*\(/g) || []).length;
+  ok(calls <= 1, 'nothing renders the first-run card any more', calls);
 }
 
 ok(errors.length === 0, 'no console errors', errors.slice(0, 3));

@@ -22,6 +22,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { readFile } from 'node:fs/promises';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const worker = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
@@ -74,7 +75,19 @@ section('A free account gets the best engine it can actually run');
     return { dev: _buildModelStr('dev'), chip: _sectionModel('code') };
   });
   ok(r.dev === 'amv-core', 'the panel picker resolves to Core', r.dev);
-  ok(r.chip === 'amv-core', 'and so does the chip', r.chip);
+  /* THE CHIP SAYS 'auto', AND THAT IS THE POINT NOW.
+
+     This asserted the chip resolves to a concrete engine, because it was
+     written when the Build sections defaulted to `smart` - Apex, the dearest
+     engine in the product - for everybody who never opened the picker. That
+     was the single largest lever on model spend here and it is gone: the
+     defaults are `auto`, and `_planAllowedModel` returns it untouched rather
+     than clamping it onto a named engine.
+
+     So the chip naming Core would now be the bug. `auto` is what will run, the
+     server routes it for real, and the section below checks the chip still
+     names a concrete engine the moment somebody chooses one. */
+  ok(r.chip === 'auto', 'and the chip says auto, because that is what is set', r.chip);
 }
 
 section('An Elite account still gets Apex');
@@ -84,7 +97,29 @@ section('An Elite account still gets Apex');
     return { dev: _buildModelStr('dev'), chip: _sectionModel('code') };
   });
   ok(r.dev === 'amv-apex', 'nothing was clamped that did not need to be', r.dev);
-  ok(r.chip === 'amv-apex', 'on either path', r.chip);
+  ok(r.chip === 'auto', 'and the chip is still on auto, which Elite also defaults to', r.chip);
+}
+
+section('Auto is safe from every plan, which is what makes it a safe default');
+{
+  /* The missing half. Making `auto` the default across the Build sections is
+     only correct if the server never refuses it, and nothing here checked
+     that - the claim lived in this file and its enforcement lived in the
+     worker, which is how a default becomes a 402 for every free account.
+
+     Read from the worker rather than restated: `auto` is routed rather than
+     aliased, the router caps to `amv-core` for anybody whose rank is below the
+     engine's floor, and the plan check downstream runs on the ROUTED key. So
+     a free account sending `auto` cannot be handed an engine it may not have. */
+  const worker = await readFile(new URL('../../amv-backend.js', import.meta.url), 'utf8');
+  ok(/rawModel === 'auto' \|\| rawModel === 'amv-auto'/.test(worker),
+     'the worker recognises auto rather than treating it as an unknown engine');
+  const router = worker.slice(worker.indexOf('function _autoRoute('),
+                              worker.indexOf('function _autoRoute(') + 1600);
+  ok(/never route above what they pay for/.test(router) && /return 'amv-core'/.test(router),
+     'and the router caps its own choice to the plan before returning it');
+  ok(/const key = routed \? routed\.key/.test(worker),
+     'and the plan check downstream runs on the routed engine, not the word auto');
 }
 
 section('Choosing a tier above the plan runs, rather than failing');
