@@ -9247,3 +9247,35 @@ body.light .fr-d{ color:#67656d; }
 .team-role b{ color:var(--tx); font-size:var(--t-md); font-weight:650; }
 .team-role span{ color:var(--mu); font-size:var(--t-sm); line-height:1.6; }
 @media(max-width:560px){ .team-roles{ grid-template-columns:1fr; } }
+
+/* ── LAYER A107: THE NUDGE THAT SITS IN THE CORNER ────────────────────────
+   Deliberately not a modal. AMV already has one of those for the moment you
+   hit a wall, which is the right shape for a wall - it takes the screen
+   because you cannot continue. This is the other case: nothing is wrong and
+   nothing is blocked, so it waits in the corner and is easy to dismiss.
+   On a phone it spans the width above the composer rather than covering it. */
+.habit-nudge{
+  position:fixed; right:var(--sp-5); bottom:var(--sp-5); z-index:9500;
+  width:min(330px, calc(100vw - var(--sp-6)));
+  background:var(--s1); border:1px solid var(--bdl); border-radius:var(--r-3xl);
+  padding:var(--sp-5); box-shadow:var(--sh-xl);
+  animation:fi .2s var(--ease);
+}
+.habit-x{
+  position:absolute; top:var(--sp-2); right:var(--sp-2);
+  width:30px; height:30px; min-height:30px; border:none; background:transparent;
+  color:var(--mu); font-size:var(--ic-md); line-height:1; cursor:pointer;
+  border-radius:var(--r-sm);
+}
+.habit-x:hover{ background:var(--s2); color:var(--tx); }
+.habit-t{
+  font-family:var(--fdisplay); font-size:var(--t-lg); font-weight:600;
+  color:var(--tx); letter-spacing:-.02em; margin:0 var(--sp-6) var(--sp-2) 0;
+}
+.habit-p{ color:var(--mu); font-size:var(--t-base); line-height:1.6; margin:0 0 var(--sp-4); }
+.habit-acts{ display:flex; gap:var(--sp-2); flex-wrap:wrap; }
+.habit-acts .btn{ font-size:var(--t-sm); }
+@media(max-width:560px){
+  .habit-nudge{ left:var(--sp-3); right:var(--sp-3); bottom:var(--sp-3); width:auto; }
+}
+@media(prefers-reduced-motion:reduce){ .habit-nudge{ animation:none; } }

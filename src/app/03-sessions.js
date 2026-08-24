@@ -970,6 +970,10 @@ function _restoreSidebarState(){
 try{ window._restoreSidebarState=_restoreSidebarState; }catch(e){}
 function setTab(t){
   try{ if(t==='settings' && S.tab && S.tab!=='settings') S._preSettingsTab=S.tab; }catch(e){}
+  /* Counted here because this is the one place every surface is opened through,
+     so the count cannot drift from what somebody actually did. The nudge itself
+     is checked after the view has rendered, never before. */
+  try{ if(typeof _habitTouch==='function') _habitTouch(t); }catch(e){}
   // Leaving a workspace tool (Dev/Lab/Studio): save its work to Recents, then
   // reset it so the next visit starts fresh (the work stays saved and resumable).
   // Skip entirely while resuming - _sessResume restores state and then navigates,
@@ -1018,6 +1022,7 @@ function setTab(t){
   try{ _mountMobilePaneToggle(t); }catch(e){}
   try{ if(_lang()!=='auto'&&_lang()!=='en'){ _translateUI(); } }catch(e){}
   try{ _initA11y(); }catch(e){}
+  try{ setTimeout(()=>{ if(typeof maybeHabitNudge==='function') maybeHabitNudge(); }, 1200); }catch(e){}
 }
 
 /* ── Mobile: stack the workbench panes and toggle between them ──────────────

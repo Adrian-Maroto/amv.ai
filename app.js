@@ -3549,6 +3549,10 @@ function _restoreSidebarState(){
 try{ window._restoreSidebarState=_restoreSidebarState; }catch(e){}
 function setTab(t){
   try{ if(t==='settings' && S.tab && S.tab!=='settings') S._preSettingsTab=S.tab; }catch(e){}
+  /* Counted here because this is the one place every surface is opened through,
+     so the count cannot drift from what somebody actually did. The nudge itself
+     is checked after the view has rendered, never before. */
+  try{ if(typeof _habitTouch==='function') _habitTouch(t); }catch(e){}
   // Leaving a workspace tool (Dev/Lab/Studio): save its work to Recents, then
   // reset it so the next visit starts fresh (the work stays saved and resumable).
   // Skip entirely while resuming - _sessResume restores state and then navigates,
@@ -3597,6 +3601,7 @@ function setTab(t){
   try{ _mountMobilePaneToggle(t); }catch(e){}
   try{ if(_lang()!=='auto'&&_lang()!=='en'){ _translateUI(); } }catch(e){}
   try{ _initA11y(); }catch(e){}
+  try{ setTimeout(()=>{ if(typeof maybeHabitNudge==='function') maybeHabitNudge(); }, 1200); }catch(e){}
 }
 
 /* ── Mobile: stack the workbench panes and toggle between them ──────────────
@@ -13810,6 +13815,112 @@ function renderAppsView(){
 function setTabBtn(t){ setTab(t); }
 window.setTabBtn=setTabBtn;
 
+
+/* ═══════════════════════════════════════════════════════════════════════
+   THE NUDGE THAT HAS TO EARN ITSELF.
+
+   The owner asked for "you have been using xyz a lot, would you like to look at
+   the xyz plan?" - at most once a fortnight, dismissible, low-key.
+
+   The rule that makes it worth building rather than annoying: it must name a
+   feature the person ACTUALLY leaned on. A nudge that guesses is worse than no
+   nudge, because it tells somebody the product is not paying attention. So this
+   counts real opens per surface over a rolling fortnight and stays silent until
+   one of them clears a threshold that means habit rather than curiosity.
+
+   Everything here is local. Which screens somebody opens is not worth sending
+   anywhere, and a counter in their own browser answers the question just as
+   well as a server would.
+
+   It is deliberately NOT a modal. AMV already has one of those for the moment
+   you hit a wall, which is the right shape for a wall. This is the other case -
+   nothing is wrong, nothing is blocked - so it sits in the corner and waits.
+   ═══════════════════════════════════════════════════════════════════════ */
+const HABIT_WINDOW_MS = 14 * 86400000;
+const HABIT_MIN_OPENS = 12;            // habit, not a look around
+const HABIT_QUIET_MS  = 14 * 86400000; // at most one per fortnight, dismissed or not
+
+/* Which surfaces are worth mentioning, what a heavier plan actually adds, and
+   the plan that adds it. Anything not listed here never nudges - there is no
+   point telling somebody their chat habit could be improved by paying. */
+const HABIT_FEATURES = {
+  crew:   { label:'Crew',   plan:'pro',   gain:'run jobs in the background while AMV is closed' },
+  dev:    { label:'Build',  plan:'pro',   gain:'build and ship real apps, with the app sandbox' },
+  studio: { label:'Studio', plan:'pro',   gain:'every model, and designs that keep their own style' },
+  lab:    { label:'Lab',    plan:'pro',   gain:'the deeper engine on debugging, and longer files' },
+  images: { label:'Images', plan:'pro',   gain:'a far larger daily allowance and HD output' },
+  team:   { label:'Teams',  plan:'elite', gain:'shared projects, roles and one bill for everyone' },
+};
+
+function _habitLog(){ try{ return load('amv_habit') || {}; }catch(e){ return {}; } }
+function _habitSave(h){ try{ store('amv_habit', h); }catch(e){} }
+
+/* Called when a surface is opened. Keeps timestamps rather than a bare count so
+   the window can actually roll - a count with no dates only ever grows. */
+function _habitTouch(tab){
+  if(!HABIT_FEATURES[tab]) return;
+  try{
+    const h=_habitLog(); const now=Date.now();
+    const list=(h[tab]||[]).filter(t=>now-t < HABIT_WINDOW_MS);
+    list.push(now);
+    if(list.length>60) list.splice(0, list.length-60);   // no unbounded growth
+    h[tab]=list; _habitSave(h);
+  }catch(e){}
+}
+try{ window._habitTouch=_habitTouch; }catch(e){}
+
+function _habitCandidate(){
+  const plan = loadStr('amv_plan') || 'free';
+  const rank = { free:0, pro:1, elite:2, ultra:3, team:2, custom:2 };
+  const mine = rank[plan] === undefined ? 0 : rank[plan];
+  const h=_habitLog(); const now=Date.now();
+  let best=null;
+  for(const tab in HABIT_FEATURES){
+    const f=HABIT_FEATURES[tab];
+    if((rank[f.plan]||0) <= mine) continue;              // already have it
+    const uses=(h[tab]||[]).filter(t=>now-t < HABIT_WINDOW_MS).length;
+    if(uses < HABIT_MIN_OPENS) continue;
+    if(!best || uses > best.uses) best={ tab, uses, ...f };
+  }
+  return best;
+}
+
+function _habitNudgeDue(){
+  try{
+    const last=+(loadStr('amv_habit_nudge')||0);
+    return !last || (Date.now()-last) > HABIT_QUIET_MS;
+  }catch(e){ return false; }
+}
+
+function _habitNudgeSeen(){ try{ saveStr('amv_habit_nudge', String(Date.now())); }catch(e){} }
+
+function maybeHabitNudge(){
+  try{
+    if(!S.user) return;                       // nothing to upgrade yet
+    if(!_habitNudgeDue()) return;
+    if(document.getElementById('habit-nudge')) return;
+    const c=_habitCandidate(); if(!c) return;
+    const P=(typeof PLANS!=='undefined'&&PLANS[c.plan])||{name:c.plan,price:''};
+    const el=document.createElement('div');
+    el.id='habit-nudge'; el.className='habit-nudge'; el.setAttribute('role','status');
+    el.innerHTML=
+      '<button class="habit-x" id="habit-x" aria-label="'+escH(T('Close'))+'">×</button>'+
+      '<div class="habit-t">'+escH(T('You have been using')+' '+c.label+' '+T('a lot'))+'</div>'+
+      '<p class="habit-p">'+escH(c.uses+' '+T('times in the last two weeks')+'. '+P.name+' '+T('lets you')+' '+c.gain+'.')+'</p>'+
+      '<div class="habit-acts">'+
+        '<button class="btn bp habit-go" id="habit-go">'+escH(T('See')+' '+P.name)+'</button>'+
+        '<button class="btn bs" id="habit-later">'+escH(T('Not now'))+'</button>'+
+      '</div>';
+    document.body.appendChild(el);
+    try{ track('habit_nudge_shown', { feature:c.tab, uses:c.uses, plan:loadStr('amv_plan')||'free' }); }catch(e){}
+    try{ if(typeof announce==='function') announce(T('Suggestion')+': '+c.label); }catch(e){}
+    const close=()=>{ _habitNudgeSeen(); el.remove(); };
+    on($('habit-x'),'click',close);
+    on($('habit-later'),'click',close);
+    on($('habit-go'),'click',()=>{ close(); try{ setTab('plans'); }catch(e){} });
+  }catch(e){}
+}
+try{ window.maybeHabitNudge=maybeHabitNudge; }catch(e){}
 /* ============================================================
    AMV CO-WORKER  - autonomous agent: standing jobs + approval inbox
    The differentiator: it watches your connected accounts and proposes
