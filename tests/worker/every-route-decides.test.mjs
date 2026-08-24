@@ -76,6 +76,14 @@ const PUBLIC = {
      IP, and a refused visit still answers 200 because this runs on somebody's
      first page load and a metric must not break the thing it measures. */
   '/v1/visit':           'counting arrivals, from people who have no account yet',
+  /* Aggregate counts of a catalogue that is already public, so there is nothing
+     here that a login would protect - and requiring one to read a leaderboard
+     of your own product's features helps nobody. The record it reads holds
+     catalogue id to integer and nothing else: no address, no job text, no
+     per-user timestamp, so there is nothing in it to attribute to a person.
+     It only READS, and it is bounded per IP because an endpoint anybody can
+     reach without a credential is the one worth hammering. */
+  '/crew/popular':       'a ranking of a public catalogue, read by people deciding what to try',
 };
 
 /* One definition, in tests/lib/source.mjs. Three files carried an identical
@@ -180,6 +188,13 @@ section('The public writes are bounded');
      'the error sink is rate limited per IP', true);
   const wl = bodyOf('waitlistAdd');
   ok(/limitAction\(|guardAction\(/.test(wl), 'and so is the waitlist', true);
+  /* And the public READ. It writes nothing, which is why it is in this section
+     rather than above it - but it costs a storage read per call, and an
+     unauthenticated call that costs anything is somebody else's free amplifier
+     unless it is bounded. */
+  const pop = bodyOf('crewPopular');
+  ok(/limitAction\(|guardAction\(/.test(pop), 'and the public ranking read is limited too', true);
+  ok(/CF-Connecting-IP/.test(pop), 'per caller rather than as one global tap', true);
 }
 
 if (report('every-route-decides') > 0) process.exitCode = 1;

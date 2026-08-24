@@ -6236,6 +6236,17 @@ const BACKUP_PREFIXES = [
      question an incident asks, and it is the cheapest record here: 200 lines a
      team, capped. */
   'teamlog:',   // a team's action history, keyed by the team
+  /* The catalogue usage tally behind the most-used ranking. One record holding
+     catalogue id to an integer and a total, nothing else: no address, no job
+     text, no per-user timestamp, so there is nothing in it to protect and
+     nothing that could be turned back into a person.
+
+     It is backed up rather than excluded because it is the one kind here that
+     genuinely cannot be regenerated. A rate-limit bucket or a cached catalogue
+     rebuilds itself in a minute; months of "what did people actually turn on"
+     does not, and a restore that dropped it would silently reset the ranking
+     to "not enough data yet" with no way back. */
+  'stats:',     // aggregate counts only, and unrecoverable if lost
   /* SEVENTEEN MORE, FOUND THE SAME WAY AND MISSED FOR ONE REASON.
 
      The check that produced the four above derives the record kinds from
