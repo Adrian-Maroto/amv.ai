@@ -91,6 +91,34 @@ section('It holds for the conversation, and a new chat starts fresh');
   ok(!/motivational/i.test(r.promptAfter), 'with nothing left in the prompt either', r.promptAfter);
 }
 
+section('And the words are actually wired to the send path');
+{
+  /* THE CHECK THAT CATCHES THE BUG THIS FILE EXISTS FOR.
+
+     Everything above calls _detectChatTone and _setChatTone directly, so it
+     passes whether or not anything in the product ever calls them - which was
+     the entire fault: _setChatTone was defined, exported, and had no callers,
+     so saying the words did nothing. Proved by unhooking the call from the send
+     path and watching every check above stay green.
+
+     Reachability is the property, so it is asserted directly: the detector has
+     to appear in the bundle somewhere that is not its own definition or its
+     window export. A behaviour test cannot see this, because the behaviour is
+     "somebody else invokes me". */
+  const uses = await page.evaluate(() => {
+    const src = (document.getElementById('amv-app-code') || {}).textContent || '';
+    if (!src) return { noSource: true };
+    const hits = (src.match(/_detectChatTone\s*\(/g) || []).length;
+    const setHits = (src.match(/_setChatTone\s*\(/g) || []).length;
+    return { hits, setHits, len: src.length };
+  });
+
+  ok(!uses.noSource, 'the shipped bundle can be read to check this', JSON.stringify(uses));
+  /* One is the definition. A caller makes two. */
+  ok(uses.hits >= 2, '_detectChatTone is invoked somewhere, not just defined', uses.hits);
+  ok(uses.setHits >= 2, 'and so is _setChatTone', uses.setHits);
+}
+
 section('No JavaScript errors');
 ok(errors.length === 0, 'zero uncaught page errors', errors.slice(0, 3));
 
