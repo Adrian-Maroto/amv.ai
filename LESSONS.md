@@ -6165,3 +6165,48 @@ Second time this session a gate failure looked like flakiness and was not
 (LESSONS 285 was the first, on a button measuring 31.998046875 against a
 threshold of 32). Both times the evidence was already in the output and the
 cost of reading it was under five minutes.
+
+## 290. A test that would pass with the feature ripped out, again
+
+The credential guard's key claim is "nothing credential-shaped ever leaves the
+browser". The test spied on `fetch`, scheduled a job whose detail contained a
+password, and asserted no request went out. It passed.
+
+It would also have passed with the guard deleted. `_autoApi` throws
+`not-connected` before it fetches when no backend is configured, and the test
+harness configures none - so NOTHING reaches the network from that page, guard
+or no guard. The assertion was true for a reason that had nothing to do with
+the thing being tested.
+
+Caught by the control case rather than by inspection: the paired assertion
+"an ordinary job still reaches the server" failed, and it failed for exactly
+the same reason the other one passed. A guard test needs the negative control
+in the same file, or the positive result means nothing.
+
+Fixed by configuring a backend and token before both cases, so "no request left
+the browser" is now a statement about the guard. Sabotage confirms it: removing
+the client check turns 17 passed into 12 passed, 5 failed.
+
+The rule that keeps coming back: **when a test passes, ask what else would make
+it pass.** This is the tenth time this session an instrument measured a proxy.
+
+## 291. The feature that was already half built, in the dangerous direction
+
+The owner asked for a box on each Crew job where somebody enters "account
+details passwords etc so AMV can act". The instinct is to design the box.
+
+The box already existed. Every job with an `asks` prompt writes the answer into
+the job's detail, and that detail is POSTed to the server, stored in KV, and
+handed to the model on every run for as long as the job is on. Nothing stopped
+a bank password going into it. The dangerous half had shipped and the safe half
+had not.
+
+So the work was not building what was asked for. It was noticing that the
+asked-for thing already existed without its safety, and adding the refusal:
+before the answer is written to the device, on the way out of the client, and
+on the server for both create and edit.
+
+Worth generalising. **When a request describes a feature, check whether the
+risky part of it is already live.** A request is often a description of
+something half-present, and the half that is present is usually the half that
+does not ask permission.

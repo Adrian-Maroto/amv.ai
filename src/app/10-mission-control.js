@@ -2247,7 +2247,13 @@ async function _cwToggleReal(jobs, j){
        precisely the broken one. */
     let extra = '';
     if(j.asks && j.asks.q){
-      const said = await showTextPromptAsync(j.asks.q + '\n\n' + (j.asks.ph||''), j.answer || '');
+      /* Said BEFORE they type it, not after. Refusing a pasted password is
+         correct and is still a worse moment than never inviting one. */
+      const said = await showTextPromptAsync(
+        j.asks.q + '\n\n' + (j.asks.ph||'') +
+        '\n\nDo not put passwords, card numbers or security codes here. AMV does not store them, '+
+        'and this is kept on the server and read on every run. Connect an account in Integrations instead.',
+        j.answer || '');
       if(said === null) return;                 // they backed out; nothing is created
       extra = String(said||'').trim();
       /* Before j.answer is written, not after. _scheduleTask refuses this too,
