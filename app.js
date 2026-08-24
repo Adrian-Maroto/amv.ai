@@ -5796,7 +5796,7 @@ async function _callAI(msgs, _opts) {
     '\u2022 account_status - their real plan, usage and what background work has cost. Never estimate any of that from memory; look.\n'+
     'Never claim a background job was created, changed or removed unless the tool said so - if it failed, tell them exactly what failed. These jobs run unattended and cost money on a timer, so they are worth being precise about.\n'+
     'Prefer doing over explaining. Don\u2019t say "here is code you could run" - run it. Don\u2019t say "you could generate an image" - generate it. After a tool runs, briefly tell them what you did and what they got.';
-  const sysPrompt=(MODEL_SYSTEMS[_routeKey]||SYS)+_agenticSys+_profileContext()+_skillsContext()+_pluginContext()+_localeContext()+_handoffContext('chat')+_langInstruction()+(_mems&&_mems.length?' Memory about you: '+_mems.join('; '):'')+_integrationStatusPrompt()+(_dnaShouldApply(msgs)?('\n\n'+dnaPromptBlock()+'\nApply this DESIGN DNA to any website, app, UI, HTML, or visual output you produce.'):'');
+  const sysPrompt=(MODEL_SYSTEMS[_routeKey]||SYS)+_agenticSys+_profileContext()+_chatToneContext()+_skillsContext()+_pluginContext()+_localeContext()+_handoffContext('chat')+_langInstruction()+(_mems&&_mems.length?' Memory about you: '+_mems.join('; '):'')+_integrationStatusPrompt()+(_dnaShouldApply(msgs)?('\n\n'+dnaPromptBlock()+'\nApply this DESIGN DNA to any website, app, UI, HTML, or visual output you produce.'):'');
 
   // Add streaming placeholder message
   _streamBubbleReset();
@@ -16685,7 +16685,7 @@ async function _studioCreate(brief){
     : type==='component' ? 'Build a polished, self-contained component demo - the component centered on a tasteful backdrop, with real states (hover/active) and a couple of variants shown.'
     : type==='graphic' ? 'Build a single high-impact graphic/poster as a self-contained HTML page sized like a social/print asset, with striking type and composition.'
     : 'Build a complete, multi-section responsive web page - every section finished with real convincing copy, no placeholders.';
-  const sys='You are AMV Design - the most talented design AI ever built. Your output must look like a $50k agency deliverable that wins design awards: a distinctive concept (never a template), confident typography with real hierarchy, a cohesive intentional palette, generous deliberate whitespace, editorial layout, tasteful micro-interactions, pixel-perfect alignment. '+typeGuide+' Output a COMPLETE self-contained HTML document (inline <style>, no external assets except Google Fonts) - fully responsive, production-quality. The DESIGN DNA below is the sole source of truth for style. Return ONLY the HTML in a single ```html code block.';
+  const sys='You are AMV Design - the most talented design AI ever built. Your output must look like a $50k agency deliverable that wins design awards: a distinctive concept (never a template), confident typography with real hierarchy, a cohesive intentional palette, generous deliberate whitespace, editorial layout, tasteful micro-interactions, pixel-perfect alignment. '+typeGuide+' Output a COMPLETE self-contained HTML document (inline <style>, no external assets except Google Fonts) - fully responsive, production-quality. The DESIGN DNA below is the sole source of truth for style. Return ONLY the HTML in a single ```html code block.'+_userStyle();
   try{
     _studioStatus('Designing…');
     const resp=await aiComplete(dnaPromptBlock()+'\n\nDesign this, obeying the DESIGN DNA exactly. Make it breathtaking - award-tier, finished:\n'+brief, sys, {max_tokens:16000, model:_sectionModel('design')});
@@ -16700,7 +16700,7 @@ async function _studioRefine(){
   const a=_studioActive(); if(!a){ toast('Create a design first','error'); return; }
   if(inp) inp.value='';
   _studioStatus('Refining…');
-  const sys='You are AMV Design, an expert design AI. Apply the user\u2019s change request to the existing HTML exactly and completely - do what they asked, even if it changes the style. Keep everything they did NOT ask to change intact. Maintain high visual quality and the DESIGN DNA where it doesn\u2019t conflict with their request. Return the COMPLETE updated HTML in one ```html block only, nothing else.';
+  const sys='You are AMV Design, an expert design AI. Apply the user\u2019s change request to the existing HTML exactly and completely - do what they asked, even if it changes the style. Keep everything they did NOT ask to change intact. Maintain high visual quality and the DESIGN DNA where it doesn\u2019t conflict with their request. Return the COMPLETE updated HTML in one ```html block only, nothing else.'+_userStyle();
   try{
     const resp=await aiComplete(dnaPromptBlock()+'\n\nCurrent design HTML:\n```html\n'+a.html+'\n```\n\nChange request: '+msg+'\n\nReturn the full updated HTML, staying true to the DESIGN DNA.', sys, {max_tokens:16000, model:_sectionModel('design')});
     const html=extractCode(resp,'html')||extractCode(resp)||resp;
@@ -17978,7 +17978,7 @@ async function _devSend(){
         'You may create or edit ANY files. For EACH file you write, output a fenced block whose FIRST line is "WRITE_FILE: <path>" followed by the COMPLETE file contents (never fragments/diffs). '+
         'Only include files you actually changed or added. Before the file blocks, give a one or two sentence summary of what you changed. '+
         'When starting a NEW project, scaffold it as a REAL multi-file project the way a senior engineer would - separate files for markup, styles, scripts, components, config and a README - rather than cramming everything into one file. Use clear, conventional paths (index.html, styles/main.css, scripts/app.js, components/<name>.js). '+
-        'If any UI is involved, it must look like a top design agency built it.';
+        'If any UI is involved, it must look like a top design agency built it.'+_userStyle();
       const _isUI=Object.keys(_DEV.project).some(p=>/\.(html|css|jsx|tsx)$/i.test(p))||/\b(html|css|ui|page|component|design|frontend)\b/i.test(msg);
       const prompt=(_isUI?dnaPromptBlock()+'\n\nApply the DESIGN DNA above to any UI.\n\n':'')+_devProjectContext()+'\n\nCHANGE REQUEST: '+msg;
       const resp=await aiCompleteLong(prompt, sys+_handoffContext('dev'), {max_tokens:16000, model:_sectionModel('code'),
@@ -18006,7 +18006,7 @@ async function _devSend(){
     const hasCurrent=!!_DEV.curCode;
     const sys='You are AMV Forge - a principal-level '+_DEV.lang+' engineer in a live code workspace. Your code must be the best version possible: production-ready, complete error handling, performance-aware, secure by default, elegantly structured. '+
       (hasCurrent?'You are EDITING existing code. Apply the user\u2019s requested change to the current code and return the COMPLETE updated program - never a fragment. ':'Write complete, runnable '+_DEV.lang+' code for the request. ')+
-      'If the request is UI, it must look like a top design agency built it - real hierarchy, deliberate spacing, polished interactions. Briefly explain what you did in one or two sentences, then give ONE fenced '+_DEV.lang+' code block with the full program. Keep it self-contained so it runs directly.';
+      'If the request is UI, it must look like a top design agency built it - real hierarchy, deliberate spacing, polished interactions. Briefly explain what you did in one or two sentences, then give ONE fenced '+_DEV.lang+' code block with the full program. Keep it self-contained so it runs directly.'+_userStyle();
     const _isUI=/\b(html|css|ui|page|site|landing|component|button|form|card|layout|design|style|frontend|web ?app|dashboard)\b/i.test(msg)||/html/i.test(_DEV.curLang||'');
     const prompt=(_isUI?dnaPromptBlock()+'\n\nApply the DESIGN DNA above to any UI/visual output.\n\n':'')+
       (hasCurrent?('Current '+(_DEV.curLang||_DEV.lang)+' code:\n```\n'+_DEV.curCode+'\n```\n\nChange request: '+msg+'\n\nReturn the full updated program.'):msg);
@@ -20789,6 +20789,59 @@ function _profileContext(){
   }catch(e){ return ''; }
 }
 try{ window._profileContext=_profileContext; }catch(e){}
+
+/* PERSONALIZATION THAT ONLY REACHED CHAT.
+
+   _profileContext() - nickname, work area, and the standing instructions typed
+   on the Personalization page - was added to exactly one system prompt: chat.
+   Build, Lab and Studio never saw it, so "always answer in Spanish" or "keep it
+   short" held in one place and was silently dropped everywhere else.
+
+   Worse than dropped: the Build context meter COUNTED it. _ctxUsageChat added
+   _tok(_profileContext()) to the tokens it reports, so the interface told you
+   your instructions were riding along in every request while the request went
+   out without them. A number that describes something that is not happening.
+
+   _userStyle() is the same context in the form the other surfaces need: a short
+   suffix rather than a block, since those prompts end in an instruction about
+   output format and the user's own preference has to come after it to win.
+
+   TONE FOR ONE CHAT. The owner asked for "keep this chat motivational" to hold
+   for that conversation and reset on a new one - which is what a per-conversation
+   field gives, and why it lives on the conversation rather than in storage. The
+   Personalization page is the persistent half; this is the temporary one, and
+   the temporary one wins where both apply, because it was said more recently. */
+function _chatTone(){
+  try{
+    const c=(S.convs||[]).find(x=>x.id===S.cur);
+    return (c && typeof c.tone==='string') ? c.tone.trim() : '';
+  }catch(e){ return ''; }
+}
+function _setChatTone(t){
+  try{
+    const c=(S.convs||[]).find(x=>x.id===S.cur);
+    if(!c) return false;
+    c.tone=String(t||'').slice(0,400);
+    try{ if(S.user&&S.user.email&&typeof saveUserConvs==='function') saveUserConvs(S.user.email,S.convs); }catch(_e){}
+    return true;
+  }catch(e){ return false; }
+}
+function _userStyle(){
+  try{
+    const instr=(loadStr('amv_instructions')||'').trim();
+    const tone=_chatTone();
+    const bits=[];
+    if(instr) bits.push(instr);
+    if(tone) bits.push(tone);
+    return bits.length ? ('\n\nHow this user wants you to work: '+bits.join(' ')) : '';
+  }catch(e){ return ''; }
+}
+function _chatToneContext(){
+  const t=_chatTone();
+  return t ? ('\n\n[For this conversation only]\n'+t) : '';
+}
+try{ window._userStyle=_userStyle; window._chatTone=_chatTone; window._setChatTone=_setChatTone;
+     window._chatToneContext=_chatToneContext; }catch(e){}
 
 /* THIS DEVICE, AND THE CONTROL THAT REVOKES THE REST.
 
@@ -24817,7 +24870,7 @@ async function autoDebug(code, lang, maxIters, onStep, modelStr){
     const sys='You are AMV Apex - the most capable debugging intelligence ever built. Given a program and the EXACT runtime error it produced, you find and fix the TRUE root cause with zero collateral damage. '+
       'You reason about: duplicate/shadowed declarations, scope and hoisting, async/await and promise handling, off-by-one and boundary conditions, type coercion, null/undefined access, closure capture, recursion limits, and library misuse. '+
       'You NEVER paper over a symptom, never delete features to make an error disappear, and never introduce a regression. Preserve every bit of working logic and the program\u2019s intent. '+
-      'Respond in TWO parts: first a line "ROOT CAUSE: <one sentence>", then the COMPLETE corrected program in a single fenced '+lang+' code block'+(isLarge?' (return the ENTIRE file, every line - this is a large program)':'')+'.';
+      'Respond in TWO parts: first a line "ROOT CAUSE: <one sentence>", then the COMPLETE corrected program in a single fenced '+lang+' code block'+(isLarge?' (return the ENTIRE file, every line - this is a large program)':'')+'.'+_userStyle();
     const prompt='Fix this '+lang+' program so it runs cleanly.\n\nCODE:\n```'+lang+'\n'+cur+'\n```\n\nEXACT RUNTIME ERROR:\n'+err+
       (region?('\n\nCODE AROUND THE FAILING LINE:\n'+region):'')+
       '\n\nSTDOUT BEFORE THE ERROR:\n'+(run.stdout||'(none)')+

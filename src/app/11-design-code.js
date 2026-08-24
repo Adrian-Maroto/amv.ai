@@ -419,7 +419,7 @@ async function _studioCreate(brief){
     : type==='component' ? 'Build a polished, self-contained component demo - the component centered on a tasteful backdrop, with real states (hover/active) and a couple of variants shown.'
     : type==='graphic' ? 'Build a single high-impact graphic/poster as a self-contained HTML page sized like a social/print asset, with striking type and composition.'
     : 'Build a complete, multi-section responsive web page - every section finished with real convincing copy, no placeholders.';
-  const sys='You are AMV Design - the most talented design AI ever built. Your output must look like a $50k agency deliverable that wins design awards: a distinctive concept (never a template), confident typography with real hierarchy, a cohesive intentional palette, generous deliberate whitespace, editorial layout, tasteful micro-interactions, pixel-perfect alignment. '+typeGuide+' Output a COMPLETE self-contained HTML document (inline <style>, no external assets except Google Fonts) - fully responsive, production-quality. The DESIGN DNA below is the sole source of truth for style. Return ONLY the HTML in a single ```html code block.';
+  const sys='You are AMV Design - the most talented design AI ever built. Your output must look like a $50k agency deliverable that wins design awards: a distinctive concept (never a template), confident typography with real hierarchy, a cohesive intentional palette, generous deliberate whitespace, editorial layout, tasteful micro-interactions, pixel-perfect alignment. '+typeGuide+' Output a COMPLETE self-contained HTML document (inline <style>, no external assets except Google Fonts) - fully responsive, production-quality. The DESIGN DNA below is the sole source of truth for style. Return ONLY the HTML in a single ```html code block.'+_userStyle();
   try{
     _studioStatus('Designing…');
     const resp=await aiComplete(dnaPromptBlock()+'\n\nDesign this, obeying the DESIGN DNA exactly. Make it breathtaking - award-tier, finished:\n'+brief, sys, {max_tokens:16000, model:_sectionModel('design')});
@@ -434,7 +434,7 @@ async function _studioRefine(){
   const a=_studioActive(); if(!a){ toast('Create a design first','error'); return; }
   if(inp) inp.value='';
   _studioStatus('Refining…');
-  const sys='You are AMV Design, an expert design AI. Apply the user\u2019s change request to the existing HTML exactly and completely - do what they asked, even if it changes the style. Keep everything they did NOT ask to change intact. Maintain high visual quality and the DESIGN DNA where it doesn\u2019t conflict with their request. Return the COMPLETE updated HTML in one ```html block only, nothing else.';
+  const sys='You are AMV Design, an expert design AI. Apply the user\u2019s change request to the existing HTML exactly and completely - do what they asked, even if it changes the style. Keep everything they did NOT ask to change intact. Maintain high visual quality and the DESIGN DNA where it doesn\u2019t conflict with their request. Return the COMPLETE updated HTML in one ```html block only, nothing else.'+_userStyle();
   try{
     const resp=await aiComplete(dnaPromptBlock()+'\n\nCurrent design HTML:\n```html\n'+a.html+'\n```\n\nChange request: '+msg+'\n\nReturn the full updated HTML, staying true to the DESIGN DNA.', sys, {max_tokens:16000, model:_sectionModel('design')});
     const html=extractCode(resp,'html')||extractCode(resp)||resp;
@@ -1712,7 +1712,7 @@ async function _devSend(){
         'You may create or edit ANY files. For EACH file you write, output a fenced block whose FIRST line is "WRITE_FILE: <path>" followed by the COMPLETE file contents (never fragments/diffs). '+
         'Only include files you actually changed or added. Before the file blocks, give a one or two sentence summary of what you changed. '+
         'When starting a NEW project, scaffold it as a REAL multi-file project the way a senior engineer would - separate files for markup, styles, scripts, components, config and a README - rather than cramming everything into one file. Use clear, conventional paths (index.html, styles/main.css, scripts/app.js, components/<name>.js). '+
-        'If any UI is involved, it must look like a top design agency built it.';
+        'If any UI is involved, it must look like a top design agency built it.'+_userStyle();
       const _isUI=Object.keys(_DEV.project).some(p=>/\.(html|css|jsx|tsx)$/i.test(p))||/\b(html|css|ui|page|component|design|frontend)\b/i.test(msg);
       const prompt=(_isUI?dnaPromptBlock()+'\n\nApply the DESIGN DNA above to any UI.\n\n':'')+_devProjectContext()+'\n\nCHANGE REQUEST: '+msg;
       const resp=await aiCompleteLong(prompt, sys+_handoffContext('dev'), {max_tokens:16000, model:_sectionModel('code'),
@@ -1740,7 +1740,7 @@ async function _devSend(){
     const hasCurrent=!!_DEV.curCode;
     const sys='You are AMV Forge - a principal-level '+_DEV.lang+' engineer in a live code workspace. Your code must be the best version possible: production-ready, complete error handling, performance-aware, secure by default, elegantly structured. '+
       (hasCurrent?'You are EDITING existing code. Apply the user\u2019s requested change to the current code and return the COMPLETE updated program - never a fragment. ':'Write complete, runnable '+_DEV.lang+' code for the request. ')+
-      'If the request is UI, it must look like a top design agency built it - real hierarchy, deliberate spacing, polished interactions. Briefly explain what you did in one or two sentences, then give ONE fenced '+_DEV.lang+' code block with the full program. Keep it self-contained so it runs directly.';
+      'If the request is UI, it must look like a top design agency built it - real hierarchy, deliberate spacing, polished interactions. Briefly explain what you did in one or two sentences, then give ONE fenced '+_DEV.lang+' code block with the full program. Keep it self-contained so it runs directly.'+_userStyle();
     const _isUI=/\b(html|css|ui|page|site|landing|component|button|form|card|layout|design|style|frontend|web ?app|dashboard)\b/i.test(msg)||/html/i.test(_DEV.curLang||'');
     const prompt=(_isUI?dnaPromptBlock()+'\n\nApply the DESIGN DNA above to any UI/visual output.\n\n':'')+
       (hasCurrent?('Current '+(_DEV.curLang||_DEV.lang)+' code:\n```\n'+_DEV.curCode+'\n```\n\nChange request: '+msg+'\n\nReturn the full updated program.'):msg);

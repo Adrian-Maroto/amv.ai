@@ -1515,6 +1515,59 @@ function _profileContext(){
 }
 try{ window._profileContext=_profileContext; }catch(e){}
 
+/* PERSONALIZATION THAT ONLY REACHED CHAT.
+
+   _profileContext() - nickname, work area, and the standing instructions typed
+   on the Personalization page - was added to exactly one system prompt: chat.
+   Build, Lab and Studio never saw it, so "always answer in Spanish" or "keep it
+   short" held in one place and was silently dropped everywhere else.
+
+   Worse than dropped: the Build context meter COUNTED it. _ctxUsageChat added
+   _tok(_profileContext()) to the tokens it reports, so the interface told you
+   your instructions were riding along in every request while the request went
+   out without them. A number that describes something that is not happening.
+
+   _userStyle() is the same context in the form the other surfaces need: a short
+   suffix rather than a block, since those prompts end in an instruction about
+   output format and the user's own preference has to come after it to win.
+
+   TONE FOR ONE CHAT. The owner asked for "keep this chat motivational" to hold
+   for that conversation and reset on a new one - which is what a per-conversation
+   field gives, and why it lives on the conversation rather than in storage. The
+   Personalization page is the persistent half; this is the temporary one, and
+   the temporary one wins where both apply, because it was said more recently. */
+function _chatTone(){
+  try{
+    const c=(S.convs||[]).find(x=>x.id===S.cur);
+    return (c && typeof c.tone==='string') ? c.tone.trim() : '';
+  }catch(e){ return ''; }
+}
+function _setChatTone(t){
+  try{
+    const c=(S.convs||[]).find(x=>x.id===S.cur);
+    if(!c) return false;
+    c.tone=String(t||'').slice(0,400);
+    try{ if(S.user&&S.user.email&&typeof saveUserConvs==='function') saveUserConvs(S.user.email,S.convs); }catch(_e){}
+    return true;
+  }catch(e){ return false; }
+}
+function _userStyle(){
+  try{
+    const instr=(loadStr('amv_instructions')||'').trim();
+    const tone=_chatTone();
+    const bits=[];
+    if(instr) bits.push(instr);
+    if(tone) bits.push(tone);
+    return bits.length ? ('\n\nHow this user wants you to work: '+bits.join(' ')) : '';
+  }catch(e){ return ''; }
+}
+function _chatToneContext(){
+  const t=_chatTone();
+  return t ? ('\n\n[For this conversation only]\n'+t) : '';
+}
+try{ window._userStyle=_userStyle; window._chatTone=_chatTone; window._setChatTone=_setChatTone;
+     window._chatToneContext=_chatToneContext; }catch(e){}
+
 /* THIS DEVICE, AND THE CONTROL THAT REVOKES THE REST.
 
    Two things were wrong here, and both were in the Security pane - the screen

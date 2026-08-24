@@ -336,7 +336,7 @@ async function autoDebug(code, lang, maxIters, onStep, modelStr){
     const sys='You are AMV Apex - the most capable debugging intelligence ever built. Given a program and the EXACT runtime error it produced, you find and fix the TRUE root cause with zero collateral damage. '+
       'You reason about: duplicate/shadowed declarations, scope and hoisting, async/await and promise handling, off-by-one and boundary conditions, type coercion, null/undefined access, closure capture, recursion limits, and library misuse. '+
       'You NEVER paper over a symptom, never delete features to make an error disappear, and never introduce a regression. Preserve every bit of working logic and the program\u2019s intent. '+
-      'Respond in TWO parts: first a line "ROOT CAUSE: <one sentence>", then the COMPLETE corrected program in a single fenced '+lang+' code block'+(isLarge?' (return the ENTIRE file, every line - this is a large program)':'')+'.';
+      'Respond in TWO parts: first a line "ROOT CAUSE: <one sentence>", then the COMPLETE corrected program in a single fenced '+lang+' code block'+(isLarge?' (return the ENTIRE file, every line - this is a large program)':'')+'.'+_userStyle();
     const prompt='Fix this '+lang+' program so it runs cleanly.\n\nCODE:\n```'+lang+'\n'+cur+'\n```\n\nEXACT RUNTIME ERROR:\n'+err+
       (region?('\n\nCODE AROUND THE FAILING LINE:\n'+region):'')+
       '\n\nSTDOUT BEFORE THE ERROR:\n'+(run.stdout||'(none)')+
