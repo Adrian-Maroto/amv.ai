@@ -824,12 +824,213 @@ function _paintIntegrations(){
 window._refreshIntegrationsUI=_refreshIntegrationsUI;
 
 /* Standalone Integrations page - its OWN view, no longer redirects to Settings. */
+/* ── CONNECTED ACCOUNTS ──────────────────────────────────────────────────────
+
+   The screen for the thing that carries the most risk in this product, so it
+   is written to be read by somebody deciding whether to trust it rather than by
+   somebody admiring it.
+
+   Three facts per connection, because these are the three somebody actually
+   wants: what it may do, whether it works while AMV is closed, and when it was
+   last used and by which job. "Last used by Morning inbox digest, 6 hours ago"
+   is the line that makes an unattended grant something a person can supervise
+   rather than something they have to take on faith. */
+let _connState = { state:'idle', data:null, err:'' };
+
+async function _connLoad(force){
+  if(_connState.state === 'loading') return;
+  if(_connState.state === 'done' && !force) return;
+  if(!(window.AMV_API && AMV_API.live && AMV_API.connectList)){
+    _connState = { state:'off', data:null, err:'' }; _connPaint(); return;
+  }
+  _connState.state = 'loading'; _connPaint();
+  try{
+    const d = await AMV_API.connectList();
+    _connState = { state:'done', data:d || null, err:'' };
+  }catch(e){
+    _connState = { state:'error', data:null, err:String((e&&e.message)||'').slice(0,120) };
+  }
+  _connPaint();
+}
+function _connPaint(){
+  try{ const el=document.getElementById('conn-body'); if(el) el.innerHTML=_connBodyHTML(); }catch(e){}
+}
+function connReload(){ _connState={state:'idle',data:null,err:''}; _connLoad(true); }
+try{ window.connReload=connReload; }catch(e){}
+
+function _connAgo(ts){
+  const t = Number(ts)||0; if(!t) return 'never';
+  const m = Math.round((Date.now()-t)/60000);
+  if(m < 1) return 'just now';
+  if(m < 60) return m+' min ago';
+  if(m < 1440) return Math.round(m/60)+'h ago';
+  const d = Math.round(m/1440);
+  return d === 1 ? 'yesterday' : d+' days ago';
+}
+/* Capability keys are for the wire. These are for people. */
+const _CONN_SCOPE_WORDS = {
+  'mail.read':'read your mail', 'mail.send':'send mail as you',
+  'calendar.read':'read your calendar', 'calendar.write':'add and change events',
+  'drive.read':'read your files', 'repo.read':'read your repositories',
+  'issues.write':'open and update issues',
+};
+function _connScopeWords(list){
+  return (Array.isArray(list)?list:[]).map(k => _CONN_SCOPE_WORDS[k] || k);
+}
+
+async function connAdd(provider){
+  const d = _connState.data || {};
+  const p = (d.providers||[]).find(x => x.id === provider);
+  if(!p) return;
+  if(!p.ready){
+    toast(p.name+' is not set up on this deployment yet. It needs an app registered with '+p.name+' and its credentials added on the server.','info',7000);
+    return;
+  }
+  /* ASKED FOR, NOT ASSUMED. The person chooses what this connection may do,
+     and the list is what the provider actually offers. Connecting for a
+     calendar digest must not quietly request permission to send mail. */
+  const pick = await _connScopePick(p);
+  if(!pick || !pick.length) return;
+  try{
+    const redirect = window.location.origin + window.location.pathname;
+    const r = await AMV_API.connectStart(provider, pick, redirect);
+    if(r && r.url){ saveStr('amv_conn_return', S.tab||'integrations'); window.location.href = r.url; return; }
+    toast('That connection could not be started.','error',5000);
+  }catch(e){
+    toast(String((e&&e.message)||'That connection could not be started.'),'error',7000);
+  }
+}
+try{ window.connAdd=connAdd; }catch(e){}
+
+/* A real choice, with the consequence of each line written out. */
+function _connScopePick(p){
+  return new Promise(resolve => {
+    const r = $('ovr'); if(!r){ resolve(null); return; }
+    const rows = (p.scopes||[]).map((k,i) =>
+      '<label class="conn-scope"><input type="checkbox" data-scope="'+escH(k)+'"'+(i===0?' checked':'')+'>'+
+      '<span>'+escH(_CONN_SCOPE_WORDS[k] || k)+'</span></label>').join('');
+    r.innerHTML =
+      '<div class="ov" id="conn-bg"><div class="cwp" role="dialog" aria-modal="true" aria-labelledby="conn-t">'+
+        '<button class="cwp-x" id="conn-x" aria-label="Close">✕</button>'+
+        '<div class="cwp-head"><div><h2 class="cwp-t" id="conn-t">Connect '+escH(p.name)+'</h2>'+
+          '<div class="cwp-meta"><span class="cwp-pill">You choose what it may do</span></div></div></div>'+
+        '<p class="cwp-desc">Pick only what you need. You can disconnect at any time, and AMV revokes it with '+escH(p.name)+' when you do.</p>'+
+        '<div class="conn-scopes">'+rows+'</div>'+
+        '<p class="conn-warn"><b>This lets AMV work while you are away.</b> It also means AMV’s servers hold a key to this account until you disconnect it. Every time a job uses it, that is recorded here with the job’s name.</p>'+
+        '<div class="cwp-foot"><button class="btn" id="conn-cancel">Cancel</button>'+
+          '<button class="btn bp" id="conn-go">Continue to '+escH(p.name)+'</button></div>'+
+      '</div></div>';
+    const done = (v) => { r.innerHTML=''; resolve(v); };
+    on($('conn-x'),'click',()=>done(null));
+    on($('conn-cancel'),'click',()=>done(null));
+    onBackdrop($('conn-bg'),()=>done(null));
+    on($('conn-go'),'click',()=>{
+      const picked=[...r.querySelectorAll('[data-scope]')].filter(c=>c.checked).map(c=>c.dataset.scope);
+      if(!picked.length){ toast('Pick at least one thing AMV may do, or cancel.','info',4000); return; }
+      done(picked);
+    });
+  });
+}
+
+async function _connectFinish(code, state){
+  try{
+    const r = await AMV_API.connectFinish(code, state);
+    if(r && r.ok){
+      toast(r.unattended
+        ? (r.name||'That account')+' is connected. Jobs using it now run with AMV closed.'
+        : (r.note || 'Connected, but only while AMV is open.'),
+        r.unattended ? 'success' : 'info', r.unattended ? 5000 : 9000);
+    } else {
+      toast('That connection did not complete.','error',6000);
+    }
+  }catch(e){
+    toast(String((e&&e.message)||'That connection did not complete.'),'error',8000);
+  }
+  try{ const back=loadStr('amv_conn_return')||'integrations'; saveStr('amv_conn_return',''); setTab(back); }catch(e){}
+  connReload();
+}
+try{ window._connectFinish=_connectFinish; }catch(e){}
+
+async function connRemove(id){
+  const d=_connState.data||{};
+  const it=(d.items||[]).find(x=>x.id===id); if(!it) return;
+  const okd = await showConfirmAsync('Disconnect '+(it.name||it.provider)+'?\n\n'+
+    'AMV will revoke this with '+(it.name||it.provider)+' and forget it. Any job using it stops working until you connect it again.');
+  if(!okd) return;
+  try{
+    const r = await AMV_API.connectRemove(id);
+    toast((r && r.message) || 'Disconnected.', (r && r.revoked) ? 'success' : 'info', (r && r.revoked) ? 4000 : 9000);
+  }catch(e){
+    toast(String((e&&e.message)||'That could not be disconnected.'),'error',7000);
+  }
+  connReload();
+}
+try{ window.connRemove=connRemove; }catch(e){}
+
+function _connSectionHTML(){
+  try{ setTimeout(()=>_connLoad(false), 0); }catch(e){}
+  return '<section class="conn-sec">'+
+    '<div class="sec-head"><h3>'+escH(T('Connected accounts'))+'</h3>'+
+      '<span class="sec-sub">'+escH(T('Accounts AMV holds a key to, so Crew jobs keep running with this tab closed. Every one shows what it may do and which job used it last.'))+'</span></div>'+
+    '<div id="conn-body" class="conn-body">'+_connBodyHTML()+'</div>'+
+  '</section>';
+}
+
+function _connBodyHTML(){
+  const st=_connState;
+  if(st.state==='off')
+    return '<div class="conn-note">'+escH(T('This copy of AMV is not connected to a backend, so there is nowhere safe to keep an account token. Connected accounts are off rather than pretending to work.'))+'</div>';
+  if(st.state==='idle'||st.state==='loading')
+    return '<div class="conn-note" aria-busy="true">'+escH(T('Checking what is connected...'))+'</div>';
+  if(st.state==='error')
+    return '<div class="conn-note">'+escH(T('Your connected accounts could not be loaded'))+(st.err?' ('+escH(st.err)+')':'')+
+      '. '+escH(T('They have not been disconnected.'))+' <button class="mc-sec-link" data-dact="connReload">'+escH(T('Try again'))+'</button></div>';
+
+  const d=st.data||{};
+  if(!d.configured)
+    return '<div class="conn-note"><b>'+escH(T('Not switched on yet.'))+'</b> '+
+      escH(T('AMV will not hold an account token until the server has an encryption key for it, because storing one unencrypted is not a trade worth making. Nothing here works until that is set.'))+'</div>';
+
+  const items=(d.items||[]).map(it => {
+    const words=_connScopeWords(it.scopes);
+    return '<div class="conn-row'+(it.broken?' broken':'')+'">'+
+      '<div class="conn-main">'+
+        '<div class="conn-name">'+escH(it.name||it.provider)+
+          (it.unattended
+            ? '<span class="conn-tag bg">'+escH(T('works with AMV closed'))+'</span>'
+            : '<span class="conn-tag open">'+escH(T('only while AMV is open'))+'</span>')+
+        '</div>'+
+        '<div class="conn-can">'+escH(T('Can'))+' '+escH(words.join(', '))+'</div>'+
+        '<div class="conn-used">'+escH(T('Connected'))+' '+escH(_connAgo(it.at))+
+          ' · '+escH(T('last used'))+' '+escH(_connAgo(it.lastUsed))+
+          (it.lastJob?' '+escH(T('by'))+' '+escH(it.lastJob):'')+'</div>'+
+        (it.broken
+          ? '<div class="conn-broken">'+escH(T('This stopped working - it was probably revoked at the provider. Reconnect it, or the jobs using it will keep doing nothing.'))+'</div>'
+          : '')+
+        (it.revokeNote?'<div class="conn-note-sm">'+escH(it.revokeNote)+'</div>':'')+
+      '</div>'+
+      '<button class="btn conn-x" data-dact="connRemove" data-darg="'+escH(it.id)+'">'+escH(T('Disconnect'))+'</button>'+
+    '</div>';
+  }).join('');
+
+  const add=(d.providers||[]).map(p =>
+    '<button class="conn-add'+(p.ready?'':' dark')+'" data-dact="connAdd" data-darg="'+escH(p.id)+'"'+
+      (p.ready?'':' aria-disabled="true"')+'>'+
+      '<span class="conn-add-n">'+escH(p.name)+'</span>'+
+      '<span class="conn-add-s">'+escH(p.ready?T('Connect'):T('Not set up on this deployment'))+'</span>'+
+    '</button>').join('');
+
+  return (items || '<div class="conn-note">'+escH(T('Nothing is connected. Jobs that need an account say so on the Crew screen, and send you here.'))+'</div>')+
+    '<div class="conn-add-row">'+add+'</div>';
+}
+
 function renderIntegrationsView(){
   const vc=$('vc'); if(!vc) return;
   vc.innerHTML=
     '<div class="sv fi"><div class="vi">'+
       '<h2>Integrations</h2>'+
       '<p class="vsub">Connect AMV to your tools. <b style="color:var(--tx)">Autonomous</b> integrations work in the background once connected; <b style="color:var(--tx)">manual</b> ones you trigger or upload to. Click Connect - you approve in a popup, no keys to paste.</p>'+
+      _connSectionHTML()+
       '<div id="int-catalog">'+_integrationsCatalogHTML()+'</div>'+
     '</div></div>';
   _wireIntegrationCatalog(vc);

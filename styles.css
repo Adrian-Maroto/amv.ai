@@ -9402,3 +9402,75 @@ body.light .fr-d{ color:#67656d; }
   .sec-head>h3{ flex:1 1 100%; min-width:0; }
   .sec-head>.sec-sub{ flex:1 1 100%; min-width:0; }
 }
+
+/* ── LAYER A111: CONNECTED ACCOUNTS ────────────────────────────────────────
+   The screen for the riskiest thing in the product. Built to be read by
+   somebody deciding whether to trust it: what it may do, whether it runs with
+   AMV closed, and when it was last used sit at equal weight, and the warning
+   before connecting is not styled quieter than the button beside it. */
+.conn-sec{ margin:0 0 var(--sp-6); }
+.conn-sec .sec-head{ margin-bottom:var(--sp-3); }
+.conn-note{
+  border:1px solid var(--bd); border-radius:var(--r-lg); background:var(--s1);
+  padding:var(--sp-4); color:var(--mu); font-size:var(--t-md); line-height:1.55;
+}
+.conn-note b{ color:var(--tx); }
+.conn-note-sm{ margin-top:var(--sp-1); font-size:var(--t-xs); color:var(--dim); }
+
+.conn-row{
+  display:flex; align-items:flex-start; gap:var(--sp-3);
+  border:1px solid var(--bd); border-radius:var(--r-lg); background:var(--s1);
+  padding:var(--sp-4); margin-bottom:var(--sp-2);
+}
+.conn-row.broken{ border-color:var(--red); }
+.conn-main{ flex:1 1 auto; min-width:0; }
+.conn-name{
+  display:flex; align-items:center; gap:var(--sp-2); flex-wrap:wrap;
+  font-size:var(--t-lg); font-weight:650; color:var(--tx);
+}
+.conn-tag{
+  font-size:var(--t-2xs); font-weight:600; padding:2px 8px; border-radius:var(--r-pill);
+  border:1px solid var(--bd);
+}
+.conn-tag.bg{ color:var(--grn-txt); border-color:color-mix(in srgb, var(--grn) 40%, transparent); }
+.conn-tag.open{ color:var(--gold-txt); border-color:color-mix(in srgb, var(--gold) 40%, transparent); }
+.conn-can{ margin-top:var(--sp-1); font-size:var(--t-md); color:var(--tx); }
+.conn-used{ margin-top:2px; font-size:var(--t-sm); color:var(--mu); }
+.conn-broken{ margin-top:var(--sp-2); font-size:var(--t-sm); color:var(--red-txt); }
+.conn-x{ flex:0 0 auto; }
+
+.conn-add-row{ display:flex; flex-wrap:wrap; gap:var(--sp-2); margin-top:var(--sp-3); }
+.conn-add{
+  display:flex; flex-direction:column; gap:2px; text-align:left;
+  padding:var(--sp-3) var(--sp-4); min-width:170px;
+  border:1px solid var(--bd); border-radius:var(--r-lg); background:var(--s1);
+  color:var(--tx); cursor:pointer;
+}
+.conn-add:hover{ border-color:var(--accent); background:var(--s2); }
+.conn-add:focus-visible{ outline:2px solid var(--accent); outline-offset:3px; }
+.conn-add-n{ font-size:var(--t-md); font-weight:650; }
+.conn-add-s{ font-size:var(--t-xs); color:var(--mu); }
+/* Not set up is not a disabled-looking button that still does something. It
+   reads as unavailable and says why when pressed. */
+.conn-add.dark{ opacity:.6; cursor:default; }
+.conn-add.dark:hover{ border-color:var(--bd); background:var(--s1); }
+
+.conn-scopes{ display:flex; flex-direction:column; gap:var(--sp-2); margin:var(--sp-3) 0; }
+.conn-scope{
+  display:flex; align-items:center; gap:var(--sp-3);
+  padding:var(--sp-3); border:1px solid var(--bd); border-radius:var(--r-md);
+  background:var(--s1); font-size:var(--t-md); color:var(--tx); cursor:pointer;
+}
+.conn-scope:hover{ border-color:var(--accent); }
+.conn-scope input{ width:18px; height:18px; accent-color:var(--accent); flex:0 0 auto; }
+/* The consequence, at the same weight as the thing it is a consequence of. */
+.conn-warn{
+  border:1px solid color-mix(in srgb, var(--gold) 45%, transparent);
+  border-radius:var(--r-md); background:color-mix(in srgb, var(--gold) 8%, transparent);
+  padding:var(--sp-3); font-size:var(--t-md); line-height:1.55; color:var(--tx);
+}
+@media(max-width:720px){
+  .conn-row{ flex-wrap:wrap; }
+  .conn-x{ width:100%; margin-top:var(--sp-2); }
+  .conn-add{ flex:1 1 100%; }
+}

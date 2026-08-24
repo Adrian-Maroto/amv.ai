@@ -743,6 +743,22 @@ const AMV_API = {
      public catalogue. No token is attached because none is needed, and one
      less endpoint that reads a session is one less endpoint to get wrong. */
   async crewPopular(){ const r=await this._fetch('/crew/popular'); return await r.json(); },
+  /* CONNECTED ACCOUNTS. Note what is absent: there is no method here that
+     fetches a provider token, because no route on the server returns one. The
+     browser can start a connection, finish one, list what exists as metadata,
+     and remove one. It can never hold the credential. */
+  async connectStart(provider, scopes, redirect){
+    return this._wrote('/v1/connect/start', { provider, scopes, redirect },
+      'That connection could not be started.');
+  },
+  async connectFinish(code, state){
+    return this._wrote('/v1/connect/finish', { code, state },
+      'That connection could not be completed.');
+  },
+  async connectList(){ const r=await this._fetch('/v1/connect/list'); return await r.json(); },
+  async connectRemove(id){
+    return this._wrote('/v1/connect/remove', { id }, 'That could not be disconnected.');
+  },
   async createHandoff(h){ return this._wrote('/api/handoff',h,'That handoff was not accepted.'); },
   async listHandoff(){ const r=await this._fetch('/api/handoff'); return await r.json(); },
   async actHandoff(id,action){ return this._wrote('/api/handoff/act',{id,action},'That could not be updated.'); },

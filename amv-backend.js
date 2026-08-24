@@ -1959,12 +1959,35 @@ async function connStart(request, env){
   const granted = want.filter(k => Object.prototype.hasOwnProperty.call(p.scopes, k));
   if(!granted.length) return json({ error:'no_valid_scopes', available:Object.keys(p.scopes) }, 400);
 
+  /* WHERE THE PROVIDER SENDS THEM BACK.
+
+     Not a path AMV invents. This ships as a single-file app served from the
+     root, so a redirect to `/connected` would 404 on the static host - and the
+     value has to match what is registered with the provider byte for byte,
+     including whether there is a trailing slash. So the browser sends the exact
+     string it will actually return to, and the server checks it rather than
+     trusting it: same origin as APP_URL, no query, no fragment. Without that
+     check this parameter is an open redirect with an authorization code
+     attached to it. */
   const appUrl = String(env.APP_URL || env.APP_ORIGIN || '').replace(/\/$/,'');
   if(!appUrl) return json({ error:'no_app_url',
     message:'APP_URL is not set, so there is no address for the provider to send anybody back to.' }, 503);
-  const redirect = appUrl + '/connected';
+  const redirect = String(body.redirect || appUrl);
+  let rOrigin = '';
+  try{ const u = new URL(redirect); rOrigin = u.origin; if(u.search || u.hash) rOrigin = ''; }catch(_e){ rOrigin = ''; }
+  let appOrigin = '';
+  try{ appOrigin = new URL(appUrl).origin; }catch(_e){ appOrigin = ''; }
+  if(!rOrigin || !appOrigin || rOrigin !== appOrigin)
+    return json({ error:'bad_redirect',
+      message:'That return address is not this deployment.' }, 400);
 
-  const state = _connRandom(24);
+  /* SELF-IDENTIFYING, because two OAuth returns land on the same URL.
+
+     The older Google sign-in flow already handles `?code=&state=` at the app
+     root. Both would arrive looking identical, and the client would have to
+     guess which handler owns the response. The prefix removes the guess. It is
+     not a secret and does not need to be - the 24 bytes after it are. */
+  const state = 'c_' + _connRandom(24);
   const verifier = _connRandom(48);
   const challenge = await _pkceChallenge(verifier);
 

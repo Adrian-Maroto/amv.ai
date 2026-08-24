@@ -3563,6 +3563,19 @@ function checkOAuthCallback(){
     const q = new URLSearchParams(window.location.search || '');
     if(q.get('code') && q.get('state')){
       const st = q.get('state');
+      /* TWO FLOWS RETURN TO THE SAME URL, AND THEY ARE NOT THE SAME THING.
+
+         This handler owns the older Google SIGN-IN return, whose verifier lives
+         in this browser. A connected-account return carries a state the server
+         issued and a verifier the browser never had, so running it through
+         _pkceConsume below would find nothing and tell somebody their
+         connection could not be verified - when it was simply not this
+         handler's. The server prefixes its own state for exactly this. */
+      if(st.indexOf('c_') === 0){
+        history.replaceState(null, '', window.location.pathname);
+        if(typeof _connectFinish === 'function') _connectFinish(q.get('code'), st);
+        return;
+      }
       const pk = (typeof _pkceConsume === 'function') ? _pkceConsume(st, 'google') : { ok:false };
       history.replaceState(null, '', window.location.pathname);
       if(!pk.ok || !pk.verifier){
