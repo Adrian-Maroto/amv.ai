@@ -1755,6 +1755,481 @@ function _autoBudget(ent, family){
    Public on purpose: it is aggregate counts of a public catalogue, it makes the
    catalogue better for somebody deciding what to try, and requiring a login to
    read a leaderboard of your own product's features helps nobody. */
+/* ══════════════════════════════════════════════════════════════════════════
+   CONNECTED ACCOUNTS  -  tokens AMV holds so work can run with the tab closed.
+
+   THE DECISION THIS IMPLEMENTS, AND WHAT IT COSTS.
+
+   Until now a provider token lived in the browser and AMV's servers never saw
+   anybody's mail. That is a real privacy property, and it is the honest reason
+   the Crew screen said mailbox jobs run only while AMV is open.
+
+   The owner chose the other side deliberately: work that runs with the tab
+   closed. That is worth a great deal and it is not free - it means AMV holds a
+   key to somebody's mailbox, and one breach of AMV would otherwise expose every
+   connected account at once. Everything below exists because of that sentence.
+
+   WHAT MAKES IT SAFE, concretely, rather than as an adjective:
+
+   1. ENCRYPTED AT REST, with a key that is not in the database. KV records are
+      plaintext to anything that can read KV - a stolen namespace, a mistaken
+      export, an operator query. The refresh token is the crown jewel here, so
+      it is sealed with AES-GCM under CONNECT_KEY, a Worker secret. Somebody who
+      walks off with the whole store gets ciphertext.
+   2. NEVER IN A BACKUP. `conn:` joins BACKUP_NEVER. A backup is a file somebody
+      downloads; a long-lived mailbox grant does not belong in one.
+   3. NEVER RETURNED TO A CLIENT. Every read path answers with metadata only -
+      provider, scopes, when connected, when last used, by which job. There is
+      no route that hands a token to a browser, deliberately, so no bug in the
+      interface can leak one.
+   4. DECRYPTED ONLY TO CALL THE PROVIDER, in the request that needs it, and
+      never logged. `_connAudit` records the connection id and the job, never
+      the material.
+   5. REVOCATION IS REAL. Disconnecting calls the provider's revoke endpoint
+      first. Deleting our row while the grant stays live at Google is a lie
+      told to somebody who believed they had ended it.
+   6. THE PAUSE REACHES IT. Autonomy paused means no unattended run may open a
+      connection - the emergency stop has to stop the thing that motivated it.
+
+   Without CONNECT_KEY configured nothing here pretends to work: connecting is
+   refused with a message naming the missing secret, rather than storing a token
+   in the clear and calling it degraded.                                        */
+
+const CONN_KV = 'conn';            // conn:<email> -> { [connId]: record }
+const CONN_VER = 1;                // sealed-payload version, so a format change is detectable
+
+/* AES-GCM under a Worker secret. Returns a compact string that carries its own
+   IV and version, because a ciphertext whose IV lives somewhere else is one
+   migration away from being undecryptable. */
+async function _connKey(env){
+  const raw = String((env && env.CONNECT_KEY) || '');
+  if(!raw) return null;
+  /* Hashed to exactly 256 bits so any secret length works and the stored bytes
+     are not the secret itself. */
+  const bits = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
+  return crypto.subtle.importKey('raw', bits, { name:'AES-GCM' }, false, ['encrypt','decrypt']);
+}
+function _b64(buf){ let s=''; const b=new Uint8Array(buf); for(let i=0;i<b.length;i++) s+=String.fromCharCode(b[i]); return btoa(s); }
+function _unb64(str){ const s=atob(String(str)); const b=new Uint8Array(s.length); for(let i=0;i<s.length;i++) b[i]=s.charCodeAt(i); return b; }
+
+async function connSeal(env, obj){
+  const key = await _connKey(env);
+  if(!key) throw new Error('connect_key_missing');
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const pt = new TextEncoder().encode(JSON.stringify(obj));
+  const ct = await crypto.subtle.encrypt({ name:'AES-GCM', iv }, key, pt);
+  return CONN_VER + '.' + _b64(iv) + '.' + _b64(ct);
+}
+async function connOpen(env, sealed){
+  const key = await _connKey(env);
+  if(!key) throw new Error('connect_key_missing');
+  const parts = String(sealed||'').split('.');
+  if(parts.length !== 3 || Number(parts[0]) !== CONN_VER) throw new Error('connect_format');
+  const iv = _unb64(parts[1]);
+  const ct = _unb64(parts[2]);
+  /* A failure here is a WRONG KEY or a tampered record, and both must be loud.
+     Returning null would present a rotated secret as "no connections", and the
+     person would reconnect every account for no reason. */
+  const pt = await crypto.subtle.decrypt({ name:'AES-GCM', iv }, key, ct);
+  return JSON.parse(new TextDecoder().decode(pt));
+}
+
+/* Whether this deployment can hold connections at all. Said once so every
+   caller refuses the same way. */
+function connConfigured(env){ return !!(env && env.CONNECT_KEY); }
+
+/* ── PROVIDERS, AS DATA ──────────────────────────────────────────────────────
+
+   Adding a provider is a row here, not a new code path. That is the whole
+   reason this is a framework rather than eight integrations: eight hand-written
+   auth flows is eight places to get PKCE, state, refresh and revoke subtly
+   wrong, and auth is the last area that should be written eight times.
+
+   `scopes` is the FULL set the provider can be asked for. Nothing requests all
+   of it - a connection asks only for the scopes the jobs being switched on
+   actually declare, so connecting for a calendar digest does not ask to send
+   mail as you. `revoke` is required: a provider AMV cannot really disconnect
+   from does not go in this table.
+
+   Every one is dark until its client id and secret exist as Worker secrets.
+   Dark means the interface says "not set up on this deployment" and the flow
+   cannot be entered - not a button that 500s.                                  */
+const CONN_PROVIDERS = {
+  google: {
+    name: 'Google',
+    auth:   'https://accounts.google.com/o/oauth2/v2/auth',
+    token:  'https://oauth2.googleapis.com/token',
+    revoke: 'https://oauth2.googleapis.com/revoke',
+    idEnv: 'GOOGLE_CLIENT_ID', secretEnv: 'GOOGLE_CLIENT_SECRET',
+    /* offline + consent, because a refresh token is what makes the tab-closed
+       promise true, and Google only issues one when both are asked for. */
+    extra: { access_type: 'offline', prompt: 'consent' },
+    scopes: {
+      'mail.read':     'https://www.googleapis.com/auth/gmail.readonly',
+      'mail.send':     'https://www.googleapis.com/auth/gmail.send',
+      'calendar.read': 'https://www.googleapis.com/auth/calendar.readonly',
+      'calendar.write':'https://www.googleapis.com/auth/calendar.events',
+      'drive.read':    'https://www.googleapis.com/auth/drive.readonly',
+    },
+  },
+  microsoft: {
+    name: 'Microsoft',
+    auth:   'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
+    token:  'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+    /* Microsoft has no token-revocation endpoint in the OAuth sense: a grant is
+       ended from the account's own app list. Saying so here keeps the rule
+       above honest - AMV will state that plainly at disconnect rather than
+       implying it revoked something it cannot. */
+    revoke: null,
+    revokeNote: 'Microsoft ends this from your account’s connected-apps page.',
+    idEnv: 'MS_CLIENT_ID', secretEnv: 'MS_CLIENT_SECRET',
+    extra: { response_mode: 'query' },
+    scopes: {
+      'mail.read':     'Mail.Read offline_access',
+      'mail.send':     'Mail.Send offline_access',
+      'calendar.read': 'Calendars.Read offline_access',
+      'calendar.write':'Calendars.ReadWrite offline_access',
+    },
+  },
+  github: {
+    name: 'GitHub',
+    auth:   'https://github.com/login/oauth/authorize',
+    token:  'https://github.com/login/oauth/access_token',
+    revoke: null,
+    revokeNote: 'GitHub ends this from Settings → Applications.',
+    idEnv: 'GH_CLIENT_ID', secretEnv: 'GH_CLIENT_SECRET',
+    scopes: { 'repo.read': 'repo', 'issues.write': 'repo' },
+  },
+};
+function connProviderReady(env, id){
+  const p = CONN_PROVIDERS[id];
+  return !!(p && env && env[p.idEnv] && env[p.secretEnv]);
+}
+
+/* ── THE HANDSHAKE ───────────────────────────────────────────────────────────
+
+   State and the PKCE verifier are held SERVER-SIDE, single use, five minutes.
+
+   The existing Google flow keeps `amv_oauth_state` in localStorage, which is a
+   CSRF guard that page script can read and rewrite - so it defends against a
+   third-party site and not against anything that is already running on the
+   page, which is the attacker that matters for an account-linking flow. The
+   verifier must never be in localStorage either: PKCE exists so that a stolen
+   authorization code is useless, and a verifier sitting beside it hands both to
+   the same injection.
+
+   The browser gets an opaque handle. Everything that proves the exchange is
+   ours stays here.                                                             */
+const CONN_STATE_TTL_MS = 5 * 60 * 1000;
+
+function _connRandom(n){
+  const b = crypto.getRandomValues(new Uint8Array(n));
+  return _b64(b).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+async function _pkceChallenge(verifier){
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+  return _b64(d).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+
+/* Begin a connection. Returns the URL to send the person to, and nothing that
+   could be replayed: the state handle is meaningless without the record here. */
+async function connStart(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'unauthorized' }, 401);
+  if(!connConfigured(env))
+    return json({ error:'not_configured', code:'connect_key_missing',
+      message:'Connected accounts are not set up on this deployment. The CONNECT_KEY secret has to exist before AMV can hold an account token, because without it the token would be stored unencrypted.' }, 503);
+
+  const blocked = await guardAction(env, 'connstart:' + user.email, 10, 60, 'account connections');
+  if(blocked) return blocked;
+
+  const body = await request.json().catch(()=>({}));
+  const pid = String(body.provider||'');
+  const p = CONN_PROVIDERS[pid];
+  if(!p) return json({ error:'unknown_provider' }, 400);
+  if(!connProviderReady(env, pid))
+    return json({ error:'provider_not_configured', provider:pid, name:p.name,
+      message:p.name+' is not set up on this deployment. It needs an app registered with '+p.name+' and its client id and secret added as Worker secrets.' }, 503);
+
+  /* LEAST PRIVILEGE, ENFORCED HERE RATHER THAN TRUSTED FROM THE CLIENT.
+     The caller names the capabilities it wants; anything not in the provider's
+     table is dropped rather than passed through, so a crafted request cannot
+     widen its own grant by inventing a scope string. */
+  const want = Array.isArray(body.scopes) ? body.scopes.map(String) : [];
+  const granted = want.filter(k => Object.prototype.hasOwnProperty.call(p.scopes, k));
+  if(!granted.length) return json({ error:'no_valid_scopes', available:Object.keys(p.scopes) }, 400);
+
+  const appUrl = String(env.APP_URL || env.APP_ORIGIN || '').replace(/\/$/,'');
+  if(!appUrl) return json({ error:'no_app_url',
+    message:'APP_URL is not set, so there is no address for the provider to send anybody back to.' }, 503);
+  const redirect = appUrl + '/connected';
+
+  const state = _connRandom(24);
+  const verifier = _connRandom(48);
+  const challenge = await _pkceChallenge(verifier);
+
+  /* Sealed like the tokens themselves. A verifier in the clear in KV is a
+     verifier available to anything that can read KV. */
+  await DB.put(env, 'connstate', state, {
+    sealed: await connSeal(env, { verifier, email:user.email, provider:pid, scopes:granted, redirect }),
+    exp: Date.now() + CONN_STATE_TTL_MS,
+  });
+
+  const scopeStr = [...new Set(granted.map(k => p.scopes[k]).join(' ').split(/\s+/))].join(' ');
+  const q = new URLSearchParams(Object.assign({
+    client_id: env[p.idEnv], redirect_uri: redirect, response_type: 'code',
+    scope: scopeStr, state, code_challenge: challenge, code_challenge_method: 'S256',
+  }, p.extra || {}));
+  audit(env, 'conn_start', { by:user.email, provider:pid, scopes:granted });
+  return json({ ok:true, url: p.auth + '?' + q.toString(), provider:pid, scopes:granted });
+}
+
+/* Finish it. The code is exchanged HERE, so it never touches a browser that
+   already handed it back through a URL. */
+async function connFinish(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'unauthorized' }, 401);
+  if(!connConfigured(env)) return json({ error:'not_configured' }, 503);
+  const blocked = await guardAction(env, 'connfin:' + user.email, 10, 60, 'account connections');
+  if(blocked) return blocked;
+
+  const body = await request.json().catch(()=>({}));
+  const state = String(body.state||'');
+  const code = String(body.code||'');
+  if(!state || !code) return json({ error:'missing_code_or_state' }, 400);
+
+  const rec = await DB.get(env, 'connstate', state);
+  /* SINGLE USE, whatever happens next. Deleted before the exchange rather than
+     after it, so a failed or replayed exchange cannot be retried against the
+     same state. */
+  await DB.del(env, 'connstate', state);
+  if(!rec) return json({ error:'unknown_state', message:'That connection attempt is not one AMV started, or it has already been used.' }, 400);
+  if(!rec.exp || rec.exp < Date.now()) return json({ error:'expired_state', message:'That took too long. Start the connection again.' }, 400);
+
+  let st;
+  try{ st = await connOpen(env, rec.sealed); }
+  catch(_e){ return json({ error:'state_unreadable' }, 400); }
+
+  /* The state belongs to the account that started it. Without this, somebody
+     could finish their own handshake while signed in as anybody else and hang
+     the resulting grant on that account. */
+  if(st.email !== user.email){
+    audit(env, 'conn_state_mismatch', { by:user.email });
+    return json({ error:'state_mismatch' }, 400);
+  }
+
+  const p = CONN_PROVIDERS[st.provider];
+  if(!p || !connProviderReady(env, st.provider)) return json({ error:'provider_not_configured' }, 503);
+
+  const res = await fetchDeadline(p.token, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/x-www-form-urlencoded', 'Accept':'application/json' },
+    body: new URLSearchParams({
+      client_id: env[p.idEnv], client_secret: env[p.secretEnv],
+      code, redirect_uri: st.redirect, grant_type:'authorization_code',
+      code_verifier: st.verifier,
+    }).toString(),
+  }, 20000);
+  const d = await res.json().catch(()=>({}));
+  if(!res.ok || !d.access_token){
+    /* The provider's own words, not a generic failure - "redirect_uri_mismatch"
+       is the difference between a five minute fix and an afternoon. The token
+       is not in this object; the error field is safe to pass on. */
+    audit(env, 'conn_exchange_failed', { by:user.email, provider:st.provider, why:String(d.error||res.status).slice(0,60) });
+    return json({ error:'exchange_failed', provider:st.provider, why:String(d.error||('http_'+res.status)).slice(0,120) }, 400);
+  }
+
+  /* A provider that returned no refresh token cannot do the thing this whole
+     feature exists for, and saying so now beats a job that quietly stops
+     working in an hour. */
+  const connId = st.provider + ':' + _connRandom(8);
+  const all = (await DB.get(env, CONN_KV, user.email)) || {};
+  all[connId] = {
+    provider: st.provider, scopes: st.scopes, at: Date.now(),
+    unattended: !!d.refresh_token,
+    sealed: await connSeal(env, {
+      access: d.access_token, refresh: d.refresh_token || '',
+      exp: Date.now() + ((Number(d.expires_in)||3600) * 1000),
+    }),
+    lastUsed: 0, lastJob: '',
+  };
+  await DB.put(env, CONN_KV, user.email, all);
+  audit(env, 'conn_added', { by:user.email, provider:st.provider, scopes:st.scopes, unattended:!!d.refresh_token });
+
+  return json({ ok:true, id:connId, provider:st.provider, name:p.name, scopes:st.scopes,
+    unattended: !!d.refresh_token,
+    note: d.refresh_token ? null
+      : p.name+' did not return a long-lived token, so this connection only works while AMV is open. Disconnect and reconnect to try again.' });
+}
+
+/* ── USING A CONNECTION, WHICH IS THE PART THAT MATTERS ──────────────────────
+
+   This is the only way anything in the worker gets a provider token, and it is
+   deliberately awkward to call: you must name the job, and you must name the
+   capability you need. Both are checked, both are recorded.
+
+   A convenience accessor that just returned "the Google token" would make the
+   scope list decoration - every job would hold every permission the connection
+   was ever granted, and the reason for asking narrowly at connect time would be
+   gone by the first call site. */
+async function connUse(env, email, need, jobId, opts){
+  const o = opts || {};
+  if(!connConfigured(env)) return { ok:false, code:'connect_key_missing' };
+
+  /* THE EMERGENCY STOP REACHES IN HERE.
+
+     "Pause all autonomous" exists because somebody wants AMV to stop touching
+     things. A pause that halted the schedule but still let a run in flight open
+     a mailbox would be the pause failing at the one moment it is used. Attended
+     calls pass `attended` and are unaffected - the person is present.
+
+     Read from the record the pause is ACTUALLY written to. The first version
+     of this checked `autonomyPaused` on the user row - a field that does not
+     exist anywhere in this worker, so the emergency stop would have compiled,
+     read undefined, and let every unattended run open a mailbox while the
+     screen said everything was stopped. The pause lives on the automations
+     record as `paused`, which is what autoPause writes and what the cron tick
+     reads. Same failure as every other one this week: a claim in one file and
+     its enforcement in another. */
+  if(!o.attended){
+    try{
+      const rec = await DB.get(env, 'auto', _autoKey(email));
+      if(rec && rec.paused) return { ok:false, code:'autonomy_paused' };
+    }catch(_e){
+      /* Cannot tell. Refuse: an unenforceable stop is not a stop, and the cost
+         of being wrong here is a job that waits, not a mailbox that is read. */
+      return { ok:false, code:'autonomy_unknown' };
+    }
+  }
+
+  const all = (await DB.get(env, CONN_KV, email)) || {};
+  const id = Object.keys(all).find(k => {
+    const c = all[k];
+    return c && Array.isArray(c.scopes) && c.scopes.indexOf(need) >= 0
+        && (o.attended || c.unattended);
+  });
+  if(!id) return { ok:false, code:'not_connected', need };
+
+  const c = all[id];
+  const p = CONN_PROVIDERS[c.provider];
+  if(!p || !connProviderReady(env, c.provider)) return { ok:false, code:'provider_not_configured' };
+
+  let tok;
+  try{ tok = await connOpen(env, c.sealed); }
+  catch(_e){
+    /* A record that will not open is a rotated CONNECT_KEY or a tampered row.
+       Both are loud: presenting it as "not connected" would send somebody to
+       reconnect every account to fix a secret they changed. */
+    audit(env, 'conn_unreadable', { by:email, id });
+    return { ok:false, code:'unreadable' };
+  }
+
+  /* Refreshed with a minute to spare, so a token does not expire between this
+     check and the request it is about to be used for. */
+  if(tok.exp && tok.exp - 60000 < Date.now()){
+    if(!tok.refresh) return { ok:false, code:'expired_no_refresh', id };
+    const r = await fetchDeadline(p.token, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/x-www-form-urlencoded', 'Accept':'application/json' },
+      body: new URLSearchParams({ client_id: env[p.idEnv], client_secret: env[p.secretEnv],
+        refresh_token: tok.refresh, grant_type:'refresh_token' }).toString(),
+    }, 20000).catch(()=>null);
+    const d = r ? await r.json().catch(()=>({})) : {};
+    if(!r || !r.ok || !d.access_token){
+      /* A refresh that fails usually means the person revoked it at the
+         provider. Marked so the interface can say "reconnect this" instead of
+         a job failing silently every morning for a fortnight. */
+      c.broken = String(d.error||'refresh_failed').slice(0,60);
+      all[id] = c; await DB.put(env, CONN_KV, email, all);
+      audit(env, 'conn_refresh_failed', { by:email, id, why:c.broken });
+      return { ok:false, code:'refresh_failed', id, why:c.broken };
+    }
+    tok.access = d.access_token;
+    if(d.refresh_token) tok.refresh = d.refresh_token;   // providers that rotate
+    tok.exp = Date.now() + ((Number(d.expires_in)||3600) * 1000);
+    c.sealed = await connSeal(env, tok);
+    delete c.broken;
+  }
+
+  /* WHAT USED WHAT, AND WHEN. Never the token, and never what it read - the
+     point is an account holder can see that a job opened their mailbox on
+     Tuesday, not a copy of their mail in an audit log. */
+  c.lastUsed = Date.now();
+  c.lastJob = String(jobId||'').slice(0, 60);
+  all[id] = c;
+  await DB.put(env, CONN_KV, email, all);
+  audit(env, 'conn_used', { by:email, id, provider:c.provider, need, job:c.lastJob, attended:!!o.attended });
+
+  return { ok:true, id, provider:c.provider, token: tok.access };
+}
+
+/* What the account holder can see. Metadata only, and that is structural: there
+   is no route in this worker that returns a provider token to a browser, so no
+   mistake in the interface can leak one. */
+async function connList(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'unauthorized' }, 401);
+  const all = (await DB.get(env, CONN_KV, user.email)) || {};
+  const items = Object.keys(all).map(id => {
+    const c = all[id];
+    const p = CONN_PROVIDERS[c.provider] || {};
+    return { id, provider:c.provider, name:p.name || c.provider, scopes:c.scopes || [],
+             at:c.at || 0, lastUsed:c.lastUsed || 0, lastJob:c.lastJob || '',
+             unattended: !!c.unattended, broken: c.broken || null,
+             revokeNote: p.revoke ? null : (p.revokeNote || null) };
+  }).sort((a,b) => (b.at||0) - (a.at||0));
+  const providers = Object.keys(CONN_PROVIDERS).map(id => ({
+    id, name: CONN_PROVIDERS[id].name,
+    ready: connProviderReady(env, id),
+    scopes: Object.keys(CONN_PROVIDERS[id].scopes),
+  }));
+  return json({ ok:true, configured: connConfigured(env), items, providers });
+}
+
+/* Disconnect. Revokes at the provider FIRST, and only then forgets it.
+
+   Deleting our row and reporting success is the version somebody writes when
+   they are thinking about the database rather than about the person: the grant
+   stays live at Google, AMV simply stops being able to see it, and the account
+   holder has been told they ended something they did not. */
+async function connRemove(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'unauthorized' }, 401);
+  const body = await request.json().catch(()=>({}));
+  const id = String(body.id||'');
+  const all = (await DB.get(env, CONN_KV, user.email)) || {};
+  const c = all[id];
+  if(!c) return json({ error:'not_found' }, 404);
+  const p = CONN_PROVIDERS[c.provider] || {};
+
+  let revoked = false, why = '';
+  if(p.revoke){
+    try{
+      const tok = await connOpen(env, c.sealed);
+      const r = await fetchDeadline(p.revoke, {
+        method:'POST', headers:{ 'Content-Type':'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ token: tok.refresh || tok.access }).toString(),
+      }, 15000);
+      revoked = !!(r && r.ok);
+      if(!revoked) why = 'http_' + (r ? r.status : 'no_response');
+    }catch(e){ why = String((e && e.message) || 'failed').slice(0, 60); }
+  }
+
+  /* Forgotten either way. Keeping a token AMV could not revoke would be holding
+     a credential the person has asked it to stop holding - the honest failure
+     is to drop it here and tell them to finish the job at the provider. */
+  delete all[id];
+  await DB.put(env, CONN_KV, user.email, all);
+  audit(env, 'conn_removed', { by:user.email, provider:c.provider, revoked, why });
+
+  return json({ ok:true, revoked,
+    message: revoked
+      ? 'Disconnected, and the grant was revoked at ' + (p.name||c.provider) + '.'
+      : (p.revoke
+          ? 'AMV forgot this account, but ' + (p.name||c.provider) + ' did not confirm the grant was revoked' + (why?' ('+why+')':'') + '. Remove it in your ' + (p.name||c.provider) + ' account to be certain.'
+          : 'AMV forgot this account and can no longer use it. ' + (p.revokeNote || (p.name||c.provider) + ' has no revoke endpoint, so end it there too if you want the grant gone.')) });
+}
+
 const CREW_POPULAR_MIN = 25;      // total jobs created before any ranking is shown
 async function crewPopular(request, env){
   /* PUBLIC AND UNAUTHENTICATED IS NOT THE SAME AS FREE.
@@ -6292,6 +6767,11 @@ const BACKUP_NEVER = [
      never in a file anybody can download. */
   'telegram:',
   'goauth:',    // OAuth tokens - a backup file is the last place these belong
+  /* Connected accounts. Sealed with AES-GCM already, so an export would carry
+     ciphertext rather than tokens - and it is still excluded, because the point
+     of a backup is that it can be restored somewhere, and a file that restores
+     somebody's live mailbox grant onto another deployment is not a backup. */
+  'conn:',
   /* A school access token, for the same reason as the bank link above it: a
      backup is a file somebody downloads, and one leaked export should not hand
      over a student's school account. A restore leaves Canvas unlinked, which is
@@ -7603,6 +8083,10 @@ async function _route(request, env, ctx) {
     case '/auto/list':       return autoList(request, env);
     case '/auto/create':     return autoCreate(request, env);
     case '/crew/popular':    return crewPopular(request, env);
+    case '/v1/connect/start':  return connStart(request, env);
+    case '/v1/connect/finish': return connFinish(request, env);
+    case '/v1/connect/list':   return connList(request, env);
+    case '/v1/connect/remove': return connRemove(request, env);
     case '/auto/update':     return autoUpdate(request, env);
     case '/auto/read':       return autoClearResults(request, env);
     case '/auto/pause':      return autoPause(request, env);
@@ -8485,6 +8969,12 @@ const PER_USER_KINDS = ['acct', 'ent', 'entitleitem', 'data', 'auto', 'crewjobs'
      EXPORT_REDACTED beside the mailbox password - but the fact of it, which is
      the thing they would want to revoke. */
   'goauth',
+  /* Connected accounts, for exactly the reason stated above about the Google
+     grant - and this one is worse if it is missed, because these tokens are the
+     ones AMV uses while nobody is watching. A deleted account that left a live
+     unattended mailbox grant behind would be the most serious version of this
+     mistake the product could make. */
+  'conn',
   /* Support tickets are keyed by the reporter's email precisely so they land
      here: a support inbox is one of the easiest places for somebody's words
      about their own account to outlive them. Erased with the account, and in
@@ -8508,7 +8998,14 @@ const EXPORT_REDACTED = { fin: 'bank connection credential', finlink: 'bank link
   /* AMV-SP-02. Named so the export says a grant exists, redacted because the
      refresh token in it is a working key to somebody's Google account - which
      then travels wherever a downloaded file travels. */
-  goauth: 'Google account access grant (revoke it in your Google account, or by disconnecting here)' };
+  goauth: 'Google account access grant (revoke it in your Google account, or by disconnecting here)',
+  /* Sealed in the store already, so an export would carry ciphertext rather
+     than tokens. Redacted anyway: handing somebody an encrypted blob of their
+     own live credentials in a downloadable file is a key waiting for the day
+     the key leaks, and the useful disclosure - that these grants exist, to
+     whom, with what permission - is what the connections screen already shows
+     in words a person can act on. */
+  conn: 'connected account tokens (see Connected accounts to review or disconnect them)' };
 
 /* GET /v1/account/export - everything the server holds about the caller.
 
@@ -9107,6 +9604,39 @@ async function authDeleteAccount(request, env) {
       audit(env, 'google_revoked_on_erasure', { by: email });
     }
     await DB.del(env, 'goauth', email);
+  } catch {}
+
+  /* EVERY CONNECTED ACCOUNT, REVOKED BEFORE THE ROW GOES.
+
+     Same reasoning as the Google grant above, and more urgent: these are the
+     tokens AMV uses while nobody is watching. An account closed while a live
+     unattended mailbox grant stayed valid at the provider would be the worst
+     thing this feature could do to somebody - they deleted their account
+     precisely to end that, and would have no way left to reach it.
+
+     `conn` is also in PER_USER_KINDS, so the loop below deletes the record
+     regardless. This runs first so the grant is dead at the provider before
+     the only copy of the token is gone. A provider that cannot be reached does
+     not keep the account open - the row still goes - but it is audited, because
+     that is a live grant nobody can now revoke and somebody should know. */
+  try {
+    const conns = (await DB.get(env, CONN_KV, email)) || {};
+    for (const id of Object.keys(conns)) {
+      const c = conns[id];
+      const p = CONN_PROVIDERS[(c && c.provider) || ''];
+      if (!p || !p.revoke) { audit(env, 'conn_unrevocable_on_erasure', { by: email, provider: (c&&c.provider)||'' }); continue; }
+      try {
+        const tok = await connOpen(env, c.sealed);
+        const r = await fetchDeadline(p.revoke, {
+          method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ token: tok.refresh || tok.access }).toString(),
+        }, 15000);
+        audit(env, 'conn_revoked_on_erasure', { by: email, provider: c.provider, ok: !!(r && r.ok) });
+      } catch (e) {
+        audit(env, 'conn_revoke_failed_on_erasure', { by: email, provider: c.provider,
+          why: String((e && e.message) || 'failed').slice(0, 60) });
+      }
+    }
   } catch {}
 
   /* Links this account is part of, in BOTH directions. A link lives under each
@@ -19033,6 +19563,28 @@ function _readinessReport(env) {
     { id: 'modelFallback', name: 'Model failover', blocking: false, on: _has(env, 'MODEL_API_FALLBACK_URL'),
       turnsOn: 'A second endpoint AMV falls back to when the primary cannot answer. Non-streaming requests are retried there; a stream that already sent words is never retried, because repeating them is worse than an honest error.',
       how: put('MODEL_API_FALLBACK_URL') },
+    /* THE SECRET THAT DECIDES WHETHER TOKENS ARE STORED IN THE CLEAR.
+
+       Not blocking, because AMV is fully usable without connected accounts and
+       refusing to boot over an optional feature would be the wrong trade. It is
+       listed loudly instead: without it, connecting is refused outright rather
+       than falling back to plaintext storage, which is the only degradation
+       that would actually be dishonest here. */
+    { id: 'connectKey', name: 'Connected accounts (encryption)', blocking: false,
+      on: _has(env, 'CONNECT_KEY'),
+      turnsOn: 'Holding account tokens so Crew jobs run with the tab closed. The key seals every stored token with AES-GCM, so a stolen copy of the database is ciphertext rather than mailboxes. Without it AMV refuses to connect an account at all - it will not store a token unencrypted.',
+      how: put('CONNECT_KEY') },
+    /* Each provider is its own line, because "connected accounts is on" is not
+       a thing - Google can be live while Microsoft is dark, and the operator
+       needs to see which. */
+    { id: 'connectGoogle', name: 'Connect Google', blocking: false,
+      on: _has(env, 'GOOGLE_CLIENT_ID') && _has(env, 'GOOGLE_CLIENT_SECRET'),
+      turnsOn: 'Gmail, Calendar and Drive as connected accounts. Needs an app registered with Google and both halves pasted here; until then Google shows as not set up rather than opening a flow that fails.',
+      how: put('GOOGLE_CLIENT_ID') + ' and ' + put('GOOGLE_CLIENT_SECRET') },
+    { id: 'connectMicrosoft', name: 'Connect Microsoft', blocking: false,
+      on: _has(env, 'MS_CLIENT_ID') && _has(env, 'MS_CLIENT_SECRET'),
+      turnsOn: 'Outlook mail and calendar as connected accounts.',
+      how: put('MS_CLIENT_ID') + ' and ' + put('MS_CLIENT_SECRET') },
     { id: 'teamSeats', name: 'Teams (per-seat billing)', blocking: false, on: _has(env, 'STRIPE_PRICE_TEAM_SEAT'),
       turnsOn: 'Selling Teams by the seat at $' + TEAM_SEAT_PRICE_USD + '/seat/month. Without it Teams is still usable on Elite and Ultra, and the per-seat plan says it is not switched on rather than failing at checkout.',
       how: put('STRIPE_PRICE_TEAM_SEAT') },
