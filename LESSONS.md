@@ -6135,3 +6135,33 @@ A fifth attempt paired elements by DOM position across a re-render and returned
 fine.** Total failure is rarer than a broken probe. The way out was a control:
 measure something already known to work in the same run, and if the control fails
 too, the instrument is what is broken.
+
+## 289. The test failed because the machine was busy, and that is a real defect
+
+The full gate went red on three checks in the sign-in throttle suite. Standalone
+the suite passed 55/55, three times in a row. The tempting conclusion is noise.
+
+The gate log said otherwise. `limitAction` buckets by wall-clock minute -
+`act:<key>:${floor(now/60000)}` - and each attempt in that burst is a real
+PBKDF2 at six hundred thousand iterations. On an idle machine 45 attempts take
+milliseconds and land in one bucket. On a machine running the full gate they
+took about 100ms each, and the timestamps show exactly what happened: **27
+attempts in minute 03:53, 18 in 03:54.** Neither half reached the limit of 30,
+nothing was cut off, and the check reported `stopped: 0`.
+
+**A test that only fails when the machine is busy fails exactly when it is being
+relied on.** The gate is the one place every suite runs at once; that is the
+slowest the machine ever is. So "flaky under load" is not a lesser category of
+broken, it is the category that matters most.
+
+The fix pins `Date.now` for the duration of the burst. That is not a weakening,
+and the distinction is worth being able to state: the claim is "45 attempts from
+one source in one minute get cut off", and freezing the minute is what makes the
+test say that - rather than saying it on a fast machine and saying something
+else on a slow one. Confirmed by raising the limit to 9999 in the worker: all
+three checks fail again, so the limiter is still what makes them pass.
+
+Second time this session a gate failure looked like flakiness and was not
+(LESSONS 285 was the first, on a button measuring 31.998046875 against a
+threshold of 32). Both times the evidence was already in the output and the
+cost of reading it was under five minutes.

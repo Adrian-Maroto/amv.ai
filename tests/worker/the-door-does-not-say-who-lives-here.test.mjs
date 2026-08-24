@@ -311,11 +311,33 @@ section('And the cost of that equal treatment is bounded');
   const env = mkEnv();
   await read(await W.authSignup(post('/auth/signup', { email: 'real@example.com', name: 'R', password: PW }), env));
 
+  /* THE CLOCK HAS TO HOLD STILL, OR THIS TESTS THE WEATHER.
+
+     limitAction buckets by wall-clock minute: `act:<key>:${floor(now/60000)}`.
+     Each of these attempts is a real PBKDF2 at six hundred thousand iterations,
+     so on a loaded machine the burst takes seconds rather than milliseconds -
+     and it straddles a minute boundary. Caught in a full gate run: 27 attempts
+     landed in one minute and 18 in the next, neither half reached the limit of
+     30, nothing was cut off, and the check reported `stopped: 0`.
+
+     Standalone it passes every time, because standalone it is fast. That is the
+     shape of a test that fails only when the machine is busy, which is exactly
+     when a gate runs.
+
+     Freezing the clock for the burst is not a weakening. The claim is "45
+     attempts from one source in one minute get cut off", and pinning the minute
+     is what makes the test say that, rather than saying it on a fast machine
+     and something else on a slow one. */
+  const _realNow = Date.now;
+  const _frozen = _realNow();
+  Date.now = () => _frozen;
   const burst = [];
-  for (let i = 0; i < 45; i++) {
-    burst.push(await read(await W.authLogin(
-      post('/auth/login', { email: 'ghost' + i + '@example.com', password: 'Not-the-Passw0rd!' }, '4.4.4.4'), env)));
-  }
+  try {
+    for (let i = 0; i < 45; i++) {
+      burst.push(await read(await W.authLogin(
+        post('/auth/login', { email: 'ghost' + i + '@example.com', password: 'Not-the-Passw0rd!' }, '4.4.4.4'), env)));
+    }
+  } finally { Date.now = _realNow; }
   const stopped = burst.filter(r => r.status === 429).length;
   ok(stopped > 0, 'a burst of sign-in attempts from one source is cut off', stopped);
   ok(burst.filter(r => r.status === 401).length <= 30,
