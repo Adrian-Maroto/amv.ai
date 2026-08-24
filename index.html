@@ -46,7 +46,7 @@
      ============================================================ -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
-  script-src 'sha256-REFqXHLTolqnfA0M9ypUo6jlUvmXN60LNpr9teboiLk=' 'sha256-ATJYgy5u1vl52owQhXvcqJIy6OEB6cK7U7Px+exXmVI=' 'sha256-GORo4wG96VhNpVQzB32F80tEx08/aR6CO4wZ4WKp/ew=' 'self' blob: https://accounts.google.com https://js.stripe.com https://www.paypal.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://challenges.cloudflare.com https://www.googletagmanager.com https://plausible.io;
+  script-src 'sha256-oRtW2UYP3ValNbt1KKmkAUSVXsnGlrhf6zVjSgYukt4=' 'sha256-ATJYgy5u1vl52owQhXvcqJIy6OEB6cK7U7Px+exXmVI=' 'sha256-GORo4wG96VhNpVQzB32F80tEx08/aR6CO4wZ4WKp/ew=' 'self' blob: https://accounts.google.com https://js.stripe.com https://www.paypal.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://challenges.cloudflare.com https://www.googletagmanager.com https://plausible.io;
   worker-src 'self' blob:;
   style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
   font-src 'self' https://fonts.gstatic.com data:;
@@ -9366,15 +9366,20 @@ body.light .fr-d{ color:#67656d; }
       return;
     }
   }catch(e){}
-  try{
-    var u = localStorage.getItem('amv_user');
-    if(u && JSON.parse(u) && JSON.parse(u).email){
-      // Hides BOTH the landing page and the intro/onboarding overlay
-      // before the first paint. The main bundle is deferred, so without
-      // this they flash for a frame on every refresh.
-      document.documentElement.classList.add('booted-in');
-    }
-  }catch(e){}
+  /* EVERYONE LANDS IN A CHAT, NOT ONLY PEOPLE WITH A SESSION.
+
+     The bundle has always sent a first-time visitor straight into the app -
+     "First-ever visit, no session: straight into the app, gated at first send."
+     But this guard only hid the landing page when a saved user was found, so a
+     signed-out visitor sat looking at the landing page until a deferred 1.3MB
+     bundle arrived and called goApp(). On a phone that is not a flash, it is
+     the whole first impression, and it reads as "amv.homes shows me a website"
+     rather than "amv.homes opens a chat".
+
+     Marked unconditionally now. The landing markup stays in the document - it
+     carries the h1, the product description and the pricing copy, which is the
+     only thing a crawler can read on this page - it is simply not painted. */
+  try{ document.documentElement.classList.add('booted-in'); }catch(e){}
 })();
 </script>
 </head>
