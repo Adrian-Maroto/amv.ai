@@ -9226,3 +9226,24 @@ body.light .fr-d{ color:#67656d; }
 .cw-open-note b{ color:var(--tx); font-weight:650; }
 .cw-open-note-in{ margin:var(--sp-3) 0 0; color:var(--mu); font-size:var(--t-base); line-height:1.6; }
 .cw-open-note-in b{ color:var(--tx); font-weight:650; }
+
+/* ── LAYER A106: TEAMS, EXPLAINED BEFORE IT IS SOLD ───────────────────────
+   The owner could not explain their own team model, which means no buyer
+   could. This block answers the four questions in order - what you pay for,
+   how somebody joins, what a role decides, and what is shared - and sits
+   ABOVE the feature list, because "what it includes" is only useful once you
+   know what the thing is. */
+.team-how{ margin-bottom:var(--sp-4); }
+.team-steps{ margin:0 0 var(--sp-5); padding-left:var(--sp-5); display:flex;
+  flex-direction:column; gap:var(--sp-3); }
+.team-steps li{ color:var(--mu); line-height:1.65; font-size:var(--t-base); }
+.team-steps li b{ color:var(--tx); font-weight:650; }
+.team-steps li::marker{ color:var(--accent-txt); font-weight:700; }
+.team-roles{ display:grid; gap:var(--sp-3);
+  grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); }
+.team-role{ background:var(--s2); border:1px solid var(--bd);
+  border-radius:var(--r-md); padding:var(--sp-4); display:flex;
+  flex-direction:column; gap:var(--sp-2); }
+.team-role b{ color:var(--tx); font-size:var(--t-md); font-weight:650; }
+.team-role span{ color:var(--mu); font-size:var(--t-sm); line-height:1.6; }
+@media(max-width:560px){ .team-roles{ grid-template-columns:1fr; } }

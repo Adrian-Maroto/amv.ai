@@ -66,6 +66,40 @@ function renderTeamView(){
   const teamPlan=PLANS.elite||{name:'Elite',price:75};
   const hasTeamPlan=_planAllowsTeams();
 
+  /* HOW IT WORKS, IN ORDER, BEFORE ANYTHING ELSE.
+
+     The owner could not explain their own team model, which means no buyer
+     could either. Everything on this screen described what Teams INCLUDES -
+     shared projects, roles, memory - and nothing said what you actually do:
+     pay for seats, invite people by email, each one gets a role.
+
+     The three roles are real and enforced on the server (owner, admin, member;
+     only the owner can change an admin, and the owner cannot be removed), so
+     they are written down here exactly as the worker enforces them rather than
+     described loosely. */
+  const teamHowItWorks=
+    '<div class="ss2 team-how"><h3>How Teams works</h3>'+
+      '<ol class="team-steps">'+
+        '<li><b>Pick how many seats you need.</b> One seat per person, billed monthly. '+
+          'Each seat brings its own full allowance into one shared pool, so five people have '+
+          'five plans\u2019 worth of capacity and you get one bill.</li>'+
+        '<li><b>Invite them by email.</b> They get a link, sign in, and they are in your '+
+          'workspace - no admin console, no seat keys to hand out.</li>'+
+        '<li><b>Give each person a role.</b> That decides what they can change, not what '+
+          'they can use - everybody gets the full product either way.</li>'+
+        '<li><b>Work in one place.</b> Projects, prompts and what AMV remembers are shared, '+
+          'so somebody joining on Tuesday has the context from Monday.</li>'+
+      '</ol>'+
+      '<div class="team-roles">'+
+        '<div class="team-role"><b>Owner</b><span>You. Pays the bill, changes seat count, '+
+          'can promote or remove anyone. Cannot be removed - there is always exactly one.</span></div>'+
+        '<div class="team-role"><b>Admin</b><span>Invites and removes members, manages shared '+
+          'projects and prompts. Cannot remove another admin - only the owner can do that.</span></div>'+
+        '<div class="team-role"><b>Member</b><span>Uses everything and works in the shared '+
+          'projects. Does not manage who is on the team or what it is billed.</span></div>'+
+      '</div>'+
+    '</div>';
+
   // Reusable "what Teams includes + which plan" block
   const teamExplainer=
     '<div class="ss2"><h3>What you get with Teams</h3><div class="team-feats">'+
@@ -127,6 +161,7 @@ function renderTeamView(){
       '<span class="eyebrow">Collaboration</span>'+
       '<h2>Team workspaces</h2>'+
       '<p class="vsub">Share projects, prompts, and AMV\u2019s memory across your whole team - with roles and permissions.</p>'+
+      teamHowItWorks+
       teamExplainer+
       planRequirementCard+
       '<div class="ss2"><p style="font-size:var(--t-sm);color:var(--mu);line-height:1.6;margin:0">Team mode runs on your AMV backend. Once it\u2019s connected and you\u2019re on the '+teamPlan.name+' plan, you can create a team and invite members right here.</p></div>'+
@@ -149,7 +184,8 @@ function renderTeamView(){
         '<h2>Team workspaces</h2>'+
         '<p class="vsub">Shared projects, prompts, memory, and roles - for your whole team.</p>'+
         seatBuyCard+
-        teamExplainer+
+        teamHowItWorks+
+      teamExplainer+
         planRequirementCard+
       '</div></div>';
       _wireSeatBuy();
