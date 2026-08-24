@@ -1254,7 +1254,20 @@ function _setPlan(plan){
   // apply the usage tier to the local guardrail
   try{ if(window.AEGIS&&AEGIS.cfg){ AEGIS.cfg.dailyTokenCap=t.dailyTokenCap; AEGIS.cfg.rpmMax=t.rpmMax; } saveStr('amv_plan_caps',JSON.stringify(t)); }catch(e){}
   // if the user's selected model isn't allowed on this plan, drop to an allowed one
-  try{ const allowed=t.models; if(allowed.indexOf(S.model)<0){ S.model=allowed[allowed.length-1]; } }catch(e){}
+  /* AUTO IS NOT AN ENGINE, AND CLAMPING IT COSTS MONEY.
+
+     PLAN_TIERS[plan].models lists engines - fast, core, coding, smart. 'auto'
+     is not one, so changing plan found it "not allowed" and dropped to
+     allowed[length-1], the LAST and therefore most expensive engine the plan
+     permits. Somebody on auto who upgraded was silently moved onto Apex and
+     billed for it on every turn afterwards.
+
+     Same shape as the server-side clamp fixed in _planAllowedModel: auto is a
+     request for routing, and the ceiling it needs is applied by the router on
+     the server, which is where it belongs. */
+  try{ const allowed=t.models;
+    if(S.model!=='auto' && allowed.indexOf(S.model)<0){ S.model=allowed[allowed.length-1]; }
+  }catch(e){}
   updateSbUser&&updateSbUser();
   // Teams is packaged with Elite and above, so its entry point follows the plan.
   try{ if(typeof _revealTeamNav==='function') _revealTeamNav(); }catch(e){}

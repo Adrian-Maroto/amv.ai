@@ -9216,3 +9216,13 @@ body.light .fr-d{ color:#67656d; }
   padding-right:0;
   border-bottom:1px solid var(--bd);
 }
+
+
+/* ── LAYER A105: THE CATALOGUE IS A SAMPLE, AND HAS TO READ LIKE ONE ───────
+   A number beside a list of jobs reads as a limit. This note sits directly
+   under the Crew headline and is the one place the framing is stated, so it
+   is allowed to be a little louder than the subtitle above it. */
+.cw-open-note{ margin-top:var(--sp-3); color:var(--mu); }
+.cw-open-note b{ color:var(--tx); font-weight:650; }
+.cw-open-note-in{ margin:var(--sp-3) 0 0; color:var(--mu); font-size:var(--t-base); line-height:1.6; }
+.cw-open-note-in b{ color:var(--tx); font-weight:650; }

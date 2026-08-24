@@ -2155,7 +2155,19 @@ function _wireModelPicker(root){
    back to a sensible default. Every one of these sections calls
    _sectionModel(section) instead of hardcoding a model string.
    ============================================================ */
-const _SECTION_DEFAULTS = { code:'smart', debug:'smart', design:'smart' };
+/* THE DEFAULT IS AUTO, NOT THE DEAREST ENGINE.
+
+   These three sections defaulted to `smart` - Apex, the most expensive engine
+   in the product - for everybody who never opened the picker, which is almost
+   everybody. A one-line CSS tweak in Build and a "fix this typo" in Lab both
+   ran on the heaviest model available.
+
+   The server has routed auto properly since AMV-065: it reads the turn, picks
+   the cheapest engine that will not visibly do a worse job, and applies the
+   plan ceiling itself. Defaulting to that is what chat already does, and it is
+   the single largest lever on model spend in the product. Anybody who wants a
+   specific engine still picks one, and their choice is remembered. */
+const _SECTION_DEFAULTS = { code:'auto', debug:'auto', design:'auto' };
 /* There are two of these - _BUILD_MODEL for the pickers in the panels, and
    this one for the chip and for _sectionModel, which is what aiCompleteLong
    and the agentic runner are handed. Both defaulted to Apex, so both needed
@@ -12583,7 +12595,20 @@ function _setPlan(plan){
   // apply the usage tier to the local guardrail
   try{ if(window.AEGIS&&AEGIS.cfg){ AEGIS.cfg.dailyTokenCap=t.dailyTokenCap; AEGIS.cfg.rpmMax=t.rpmMax; } saveStr('amv_plan_caps',JSON.stringify(t)); }catch(e){}
   // if the user's selected model isn't allowed on this plan, drop to an allowed one
-  try{ const allowed=t.models; if(allowed.indexOf(S.model)<0){ S.model=allowed[allowed.length-1]; } }catch(e){}
+  /* AUTO IS NOT AN ENGINE, AND CLAMPING IT COSTS MONEY.
+
+     PLAN_TIERS[plan].models lists engines - fast, core, coding, smart. 'auto'
+     is not one, so changing plan found it "not allowed" and dropped to
+     allowed[length-1], the LAST and therefore most expensive engine the plan
+     permits. Somebody on auto who upgraded was silently moved onto Apex and
+     billed for it on every turn afterwards.
+
+     Same shape as the server-side clamp fixed in _planAllowedModel: auto is a
+     request for routing, and the ceiling it needs is applied by the router on
+     the server, which is where it belongs. */
+  try{ const allowed=t.models;
+    if(S.model!=='auto' && allowed.indexOf(S.model)<0){ S.model=allowed[allowed.length-1]; }
+  }catch(e){}
   updateSbUser&&updateSbUser();
   // Teams is packaged with Elite and above, so its entry point follows the plan.
   try{ if(typeof _revealTeamNav==='function') _revealTeamNav(); }catch(e){}
@@ -14327,6 +14352,10 @@ function _cwCatChips(jobs){
   const chip=(k,label,n)=>`<button class="cw-chip${_cwCat===k?' on':''}" data-dact="cwCat" data-darg="${escH(k)}">${escH(label)}<span class="cw-chip-n">${n}</span></button>`;
   return `<div class="cw-chips" role="group" aria-label="Filter jobs by category">`
     + chip('all','All',jobs.length)
+    /* The count is a filter aid, not a capability claim. Said once, here,
+       because a lone number beside a catalogue reads as a ceiling - and the
+       owner's point was exactly that: it makes AMV look like it can do 93
+       things when the text box takes anything you can describe. */
     + CW_CATS.filter(c=>count(c)).map(c=>chip(c,c,count(c))).join('')
     + `</div>`;
 }
@@ -15335,9 +15364,12 @@ function renderCrewView(){
       <p class="vsub">Give it an outcome and it plans the steps, does the work, and brings back something finished -
         every morning, every week, whatever you set. Here is every job it can run. Open any of them to see the
         exact instruction it follows and the shape of what it sends back.</p>
+      <p class="vsub cw-open-note">${jobs.length} of them are written out below. They are <b>examples</b>, not the
+        menu - Crew runs what you describe, in your own words, so anything you can write down is a job it can take.
+        The catalogue is here to show you the shape of one.</p>
       <div class="cw-lock-band">
         <div class="cw-lock-figs">
-          <span class="cw-lock-fig"><b>${jobs.length}</b> jobs ready to run</span>
+          <span class="cw-lock-fig"><b>${jobs.length}</b> examples, not a limit</span>
           <span class="cw-lock-fig"><b>${bgJobs}</b> run with AMV closed</span>
           <span class="cw-lock-fig"><b>${CREW_JOBS_BY_PLAN.pro} jobs</b> at once on ${escH(P.name)}</span>
         </div>
@@ -15438,6 +15470,8 @@ function renderCrewView(){
         <div class="eyebrow">Crew · Autonomous work</div>
         <h2>Mission Control</h2>
         <p class="vsub">Crew is AMV working on its own. Tell it an outcome and it plans the steps, does the work across your connected apps, and stops for your approval before anything is sent. This page is where you watch it all - what needs you, what’s running, and what’s scheduled.</p>
+        <p class="cw-open-note-in">The jobs below are <b>examples</b>, not the menu. Describe what you want in your
+          own words and Crew takes it - the catalogue is here to show you the shape of a job, not the list of them.</p>
       </div>
       <div class="mc-head-r">
         ${(() => {

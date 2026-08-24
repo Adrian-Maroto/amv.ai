@@ -593,6 +593,10 @@ function _cwCatChips(jobs){
   const chip=(k,label,n)=>`<button class="cw-chip${_cwCat===k?' on':''}" data-dact="cwCat" data-darg="${escH(k)}">${escH(label)}<span class="cw-chip-n">${n}</span></button>`;
   return `<div class="cw-chips" role="group" aria-label="Filter jobs by category">`
     + chip('all','All',jobs.length)
+    /* The count is a filter aid, not a capability claim. Said once, here,
+       because a lone number beside a catalogue reads as a ceiling - and the
+       owner's point was exactly that: it makes AMV look like it can do 93
+       things when the text box takes anything you can describe. */
     + CW_CATS.filter(c=>count(c)).map(c=>chip(c,c,count(c))).join('')
     + `</div>`;
 }
@@ -1601,9 +1605,12 @@ function renderCrewView(){
       <p class="vsub">Give it an outcome and it plans the steps, does the work, and brings back something finished -
         every morning, every week, whatever you set. Here is every job it can run. Open any of them to see the
         exact instruction it follows and the shape of what it sends back.</p>
+      <p class="vsub cw-open-note">${jobs.length} of them are written out below. They are <b>examples</b>, not the
+        menu - Crew runs what you describe, in your own words, so anything you can write down is a job it can take.
+        The catalogue is here to show you the shape of one.</p>
       <div class="cw-lock-band">
         <div class="cw-lock-figs">
-          <span class="cw-lock-fig"><b>${jobs.length}</b> jobs ready to run</span>
+          <span class="cw-lock-fig"><b>${jobs.length}</b> examples, not a limit</span>
           <span class="cw-lock-fig"><b>${bgJobs}</b> run with AMV closed</span>
           <span class="cw-lock-fig"><b>${CREW_JOBS_BY_PLAN.pro} jobs</b> at once on ${escH(P.name)}</span>
         </div>
@@ -1704,6 +1711,8 @@ function renderCrewView(){
         <div class="eyebrow">Crew · Autonomous work</div>
         <h2>Mission Control</h2>
         <p class="vsub">Crew is AMV working on its own. Tell it an outcome and it plans the steps, does the work across your connected apps, and stops for your approval before anything is sent. This page is where you watch it all - what needs you, what’s running, and what’s scheduled.</p>
+        <p class="cw-open-note-in">The jobs below are <b>examples</b>, not the menu. Describe what you want in your
+          own words and Crew takes it - the catalogue is here to show you the shape of a job, not the list of them.</p>
       </div>
       <div class="mc-head-r">
         ${(() => {

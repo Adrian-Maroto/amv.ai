@@ -627,7 +627,19 @@ function _wireModelPicker(root){
    back to a sensible default. Every one of these sections calls
    _sectionModel(section) instead of hardcoding a model string.
    ============================================================ */
-const _SECTION_DEFAULTS = { code:'smart', debug:'smart', design:'smart' };
+/* THE DEFAULT IS AUTO, NOT THE DEAREST ENGINE.
+
+   These three sections defaulted to `smart` - Apex, the most expensive engine
+   in the product - for everybody who never opened the picker, which is almost
+   everybody. A one-line CSS tweak in Build and a "fix this typo" in Lab both
+   ran on the heaviest model available.
+
+   The server has routed auto properly since AMV-065: it reads the turn, picks
+   the cheapest engine that will not visibly do a worse job, and applies the
+   plan ceiling itself. Defaulting to that is what chat already does, and it is
+   the single largest lever on model spend in the product. Anybody who wants a
+   specific engine still picks one, and their choice is remembered. */
+const _SECTION_DEFAULTS = { code:'auto', debug:'auto', design:'auto' };
 /* There are two of these - _BUILD_MODEL for the pickers in the panels, and
    this one for the chip and for _sectionModel, which is what aiCompleteLong
    and the agentic runner are handed. Both defaulted to Apex, so both needed
