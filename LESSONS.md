@@ -6097,3 +6097,41 @@ The new test's own heading check then failed, and the finding was mine: the
 section above it left a conversation in state, which replaces chat's home screen
 where its `h1` lives. **A test that drives the app is a test that mutates it.**
 Reset what you changed before measuring something else.
+
+## 288. I sabotaged with uncommitted work in the tree, again
+
+The rule already exists in this file: commit BEFORE sabotaging, because the way
+back from a deliberate break is `git checkout`, and `git checkout` does not know
+which changes were the sabotage and which were the fix.
+
+I did it anyway. The i18n fixes were finished, verified, measured at zero
+untranslated labels - and uncommitted. The first sabotage reverted the file, and
+`git checkout` took the sabotage and the fix together. Five edits gone, and the
+only reason it cost minutes rather than an hour is that the measurement had just
+printed exactly what they were.
+
+**A rule that has already been written down and is broken again is not a
+knowledge problem, it is a sequencing problem.** The fix is not to remember
+harder; it is that "verified" and "committed" have to be the same step. Nothing
+gets deliberately broken from a dirty tree.
+
+### And four readings in a row were the instrument
+
+The same session's other habit, in one investigation. "Spanish translates 0% of
+the interface" was reported four times, and every one was mine:
+
+- calling `_applyLang`, `applyI18N`, `_i18nWholeUI` - none of which exist, so
+  nothing ran and nothing changed;
+- sampling only `#vc` when the sidebar was the part that demonstrably worked;
+- calling `setTab()` inside the sampler, which re-renders each tab in English
+  *after* the translation pass;
+- probing seven hand-picked dictionary terms that appear nowhere on the tabs
+  being measured, so the result was empty and read as "nothing translated".
+
+A fifth attempt paired elements by DOM position across a re-render and returned
+"Chat -> Transferir". Nonsense, and confidently formatted.
+
+**When a measurement says a whole feature does nothing, the feature is usually
+fine.** Total failure is rarer than a broken probe. The way out was a control:
+measure something already known to work in the same run, and if the control fails
+too, the instrument is what is broken.
