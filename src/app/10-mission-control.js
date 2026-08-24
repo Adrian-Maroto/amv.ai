@@ -2250,6 +2250,11 @@ async function _cwToggleReal(jobs, j){
       const said = await showTextPromptAsync(j.asks.q + '\n\n' + (j.asks.ph||''), j.answer || '');
       if(said === null) return;                 // they backed out; nothing is created
       extra = String(said||'').trim();
+      /* Before j.answer is written, not after. _scheduleTask refuses this too,
+         but it refuses further down the line - and the line between here and
+         there runs through localStorage. Saving a password to the device and
+         then declining to send it is not a refusal, it is a second copy. */
+      if(typeof refuseSecrets === 'function' && !refuseSecrets(extra, 'crew_ask')) return;
       if(!extra){
         toast('"'+j.title+'" needs that to work - without it, it would run every day on nothing. Nothing was set up.','info',7000);
         return;

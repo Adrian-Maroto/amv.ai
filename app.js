@@ -1530,6 +1530,121 @@ async function showTextPromptAsync(message, defaultValue=''){
 }
 function showError(message){ toast(message,'error',5000); }
 
+
+/* ── AMV WILL NOT TAKE YOUR PASSWORD ─────────────────────────────────────────
+
+   The owner's ask was that a Crew job have a box where somebody "puts account
+   details passwords etc so AMV can act". The box already existed - every job
+   with an `asks` prompt writes what you type into the job's detail, and that
+   detail is POSTed to the server, stored in KV against the job, and sent to
+   the model on every single run for as long as the job is on.
+
+   So the feature was already half built, in the worst possible direction:
+   nothing stopped anybody pasting their bank password into it, and if they had,
+   it would have been persisted server-side and shipped to a model provider
+   every morning, forever, in plain text.
+
+   The right version of what was asked for is not a nicer box. It is:
+
+     - the account is CONNECTED (a real sign-in the person controls and can
+       revoke), which AMV already does for Google and is the only safe shape;
+     - or AMV does everything up to the credential and hands that one step
+       back, which is worth almost as much and cannot leak anything.
+
+   So this refuses. It runs before anything is sent anywhere, it never logs or
+   transmits the text it matched, and it names what it saw so the person can
+   remove that line rather than guessing which of six lines was the problem.
+
+   It is deliberately conservative about what counts. "Reset my password on the
+   supplier site" is an instruction and must go through; "password: hunter2" is
+   a credential and must not. The difference is a separator and a value.        */
+
+/* Luhn, so a sixteen digit order reference is not mistaken for a card. */
+function _luhnOk(digits){
+  let sum = 0, alt = false;
+  for(let i = digits.length - 1; i >= 0; i--){
+    let n = digits.charCodeAt(i) - 48;
+    if(n < 0 || n > 9) return false;
+    if(alt){ n *= 2; if(n > 9) n -= 9; }
+    sum += n; alt = !alt;
+  }
+  return digits.length >= 13 && sum % 10 === 0;
+}
+
+const _SECRET_RULES = [
+  ['a private key',        /-----BEGIN[ A-Z]*PRIVATE KEY-----/],
+  ['an API key or token',  /\b(?:sk-[A-Za-z0-9_-]{16,}|sk_live_[A-Za-z0-9]{10,}|rk_live_[A-Za-z0-9]{10,}|ghp_[A-Za-z0-9]{20,}|gho_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35})\b/],
+  ['an authorization header', /\bBearer\s+[A-Za-z0-9._-]{20,}/i],
+  /* Label, separator, value. The separator is what makes it a credential being
+     handed over rather than a sentence about one. */
+  ['a password',           /\b(?:password|passwd|pass\s?word|passphrase|pwd)\b\s*(?:is|=|:)\s*\S/i],
+  ['a PIN or passcode',    /\b(?:pin|passcode|pass\s?code)\b\s*(?:is|=|:)\s*[0-9A-Za-z]/i],
+  ['a one-time code',      /\b(?:otp|one[\s-]?time\s?(?:code|password)|2fa\s?code|verification\s?code|security\s?code|auth\s?code)\b\s*(?:is|=|:)\s*[0-9A-Za-z]/i],
+  ['a card security code', /\b(?:cvv|cvc|cv2|card\s?(?:security|verification)\s?(?:code|value))\b\s*(?:is|=|:)\s*\d{3,4}/i],
+  ['a secret or token',    /\b(?:api[\s_-]?key|secret[\s_-]?key|client[\s_-]?secret|access[\s_-]?token|refresh[\s_-]?token|auth[\s_-]?token|private[\s_-]?key)\b\s*(?:is|=|:)\s*\S{8,}/i],
+  ['bank account details', /\b(?:sort[\s-]?code|routing[\s-]?number|iban|account[\s-]?number|acct[\s.-]?(?:no|number)|swift|bic)\b\s*(?:is|=|:)\s*[0-9A-Z]/i],
+  ['a national ID number', /\b(?:social[\s-]?security(?:\s?number)?|ssn|national[\s-]?insurance(?:\s?number)?|nino|tax[\s-]?id|tin)\b\s*(?:is|=|:)\s*[0-9A-Z]/i],
+  ['a recovery phrase',    /\b(?:seed|recovery|mnemonic)\s?phrase\b\s*(?:is|=|:)?\s*(?:\b[a-z]{3,10}\b[\s,]+){11,}/i],
+  ['a security answer',    /\b(?:mother'?s\s?maiden\s?name|security\s?(?:question|answer)|memorable\s?(?:word|information))\b\s*(?:is|=|:)\s*\S/i],
+];
+
+/* Returns a short list of WHAT was found, never the text that matched it.
+   Nothing here may be logged, sent or shown back - naming the kind is enough
+   for somebody to find their own line, and is all AMV should ever hold. */
+function findSecrets(text){
+  const t = String(text || '');
+  if(!t) return [];
+  const found = [];
+  for(const [label, rx] of _SECRET_RULES){
+    try{ if(rx.test(t) && found.indexOf(label) < 0) found.push(label); }catch(_e){}
+  }
+  /* Card numbers are structure rather than a label: 13 to 19 digits, spaced or
+     dashed however somebody typed them, that satisfy Luhn. */
+  try{
+    const runs = t.match(/\b(?:\d[ -]?){12,22}\d\b/g) || [];
+    for(const r of runs){
+      const d = r.replace(/[^0-9]/g, '');
+      if(d.length >= 13 && d.length <= 19 && _luhnOk(d)){
+        if(found.indexOf('a card number') < 0) found.push('a card number');
+        break;
+      }
+    }
+  }catch(_e){}
+  return found;
+}
+
+/* The refusal, said once and in one place so every surface says the same
+   thing. Returns true when the text is safe to send. */
+function refuseSecrets(text, whereFor){
+  const found = findSecrets(text);
+  if(!found.length) return true;
+  const what = found.length === 1 ? found[0]
+    : found.slice(0, -1).join(', ') + ' and ' + found[found.length - 1];
+  try{
+    /* Recorded as a COUNT and a KIND. Never the text, never a fragment of it. */
+    if(typeof AEGIS !== 'undefined' && AEGIS.log)
+      AEGIS.log('secret_refused', { kinds: found.length, where: String(whereFor || '').slice(0, 24) });
+  }catch(_e){}
+  try{
+    if(typeof _showModalAsync === 'function'){
+      _showModalAsync({ title:'AMV will not store that', okText:'Got it', body:
+        'That looks like it contains ' + what + '. AMV does not keep passwords, card numbers or '+
+        'security codes - not encrypted, not briefly, not at all. A standing job keeps its '+
+        'instructions on the server and reads them on every run, so anything in this box would be '+
+        'stored and read for as long as the job is on.\n\n'+
+        'Nothing was saved and nothing was sent.\n\n'+
+        'What works instead: connect the account in Integrations, which is a real sign-in you '+
+        'control and can revoke at any time. Where there is no way to connect one, describe the '+
+        'task without the credential - AMV will do everything up to the sign-in and hand that one '+
+        'step back to you.\n\n'+
+        'Remove that part and try again.' });
+    } else if(typeof toast === 'function'){
+      toast('AMV will not store ' + what + '. Nothing was saved. Remove it and try again.', 'error', 9000);
+    }
+  }catch(_e){}
+  return false;
+}
+try{ window.findSecrets = findSecrets; window.refuseSecrets = refuseSecrets; }catch(e){}
 /* ============================================================
    CENTRALIZED STATE STORE
    One source of truth. All app state lives in `S`. Writing to a
@@ -16240,6 +16355,11 @@ async function _cwToggleReal(jobs, j){
       const said = await showTextPromptAsync(j.asks.q + '\n\n' + (j.asks.ph||''), j.answer || '');
       if(said === null) return;                 // they backed out; nothing is created
       extra = String(said||'').trim();
+      /* Before j.answer is written, not after. _scheduleTask refuses this too,
+         but it refuses further down the line - and the line between here and
+         there runs through localStorage. Saving a password to the device and
+         then declining to send it is not a refusal, it is a second copy. */
+      if(typeof refuseSecrets === 'function' && !refuseSecrets(extra, 'crew_ask')) return;
       if(!extra){
         toast('"'+j.title+'" needs that to work - without it, it would run every day on nothing. Nothing was set up.','info',7000);
         return;
@@ -26477,6 +26597,17 @@ let _AUTO_EMAIL_READY = false;
 let _AUTO_CAN_SCHEDULE = null;
 
 async function _scheduleTask(t){
+  /* THE ONE PLACE EVERY STANDING INSTRUCTION PASSES THROUGH.
+
+     A scheduled job's detail is stored on the server and read by the model on
+     every run for as long as the job is on. Anything credential-shaped in it
+     would therefore be persisted and re-transmitted indefinitely, so the check
+     belongs here rather than on each of the six screens that can create one -
+     a guard on five of six is not a guard. The server refuses it as well: this
+     is the courteous half, and the authority is over there. */
+  try{
+    if(typeof refuseSecrets === 'function' && !refuseSecrets(t && t.detail, 'schedule')) return null;
+  }catch(_e){}
   try{
     // Ask for email when the deployment can send it - "have it ready when I get
     // up" is only true if it arrives somewhere the user looks when AMV is shut.

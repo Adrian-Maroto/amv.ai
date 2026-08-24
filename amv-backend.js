@@ -1772,6 +1772,56 @@ async function crewPopular(request, env){
   return json({ enough:true, total, top });
 }
 
+/* WHAT A STORED INSTRUCTION MAY NEVER CONTAIN.
+
+   Mirrors findSecrets on the client deliberately: the client one exists to give
+   somebody a helpful message before they press anything, and this one is the
+   rule. Conservative on purpose - "reset my password on the supplier site" is
+   an instruction and must go through, "password: hunter2" is a credential and
+   must not. A separator followed by a value is the difference between the two. */
+function _luhnOkSrv(d){
+  let sum = 0, alt = false;
+  for(let i = d.length - 1; i >= 0; i--){
+    let n = d.charCodeAt(i) - 48;
+    if(n < 0 || n > 9) return false;
+    if(alt){ n *= 2; if(n > 9) n -= 9; }
+    sum += n; alt = !alt;
+  }
+  return d.length >= 13 && sum % 10 === 0;
+}
+const _SECRET_RULES_SRV = [
+  ['private_key',    /-----BEGIN[ A-Z]*PRIVATE KEY-----/],
+  ['api_key',        /\b(?:sk-[A-Za-z0-9_-]{16,}|sk_live_[A-Za-z0-9]{10,}|rk_live_[A-Za-z0-9]{10,}|ghp_[A-Za-z0-9]{20,}|gho_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35})\b/],
+  ['bearer_token',   /\bBearer\s+[A-Za-z0-9._-]{20,}/i],
+  ['password',       /\b(?:password|passwd|pass\s?word|passphrase|pwd)\b\s*(?:is|=|:)\s*\S/i],
+  ['pin',            /\b(?:pin|passcode|pass\s?code)\b\s*(?:is|=|:)\s*[0-9A-Za-z]/i],
+  ['otp',            /\b(?:otp|one[\s-]?time\s?(?:code|password)|2fa\s?code|verification\s?code|security\s?code|auth\s?code)\b\s*(?:is|=|:)\s*[0-9A-Za-z]/i],
+  ['card_cvv',       /\b(?:cvv|cvc|cv2|card\s?(?:security|verification)\s?(?:code|value))\b\s*(?:is|=|:)\s*\d{3,4}/i],
+  ['secret_token',   /\b(?:api[\s_-]?key|secret[\s_-]?key|client[\s_-]?secret|access[\s_-]?token|refresh[\s_-]?token|auth[\s_-]?token|private[\s_-]?key)\b\s*(?:is|=|:)\s*\S{8,}/i],
+  ['bank_details',   /\b(?:sort[\s-]?code|routing[\s-]?number|iban|account[\s-]?number|acct[\s.-]?(?:no|number)|swift|bic)\b\s*(?:is|=|:)\s*[0-9A-Z]/i],
+  ['national_id',    /\b(?:social[\s-]?security(?:\s?number)?|ssn|national[\s-]?insurance(?:\s?number)?|nino|tax[\s-]?id|tin)\b\s*(?:is|=|:)\s*[0-9A-Z]/i],
+  ['recovery_phrase',/\b(?:seed|recovery|mnemonic)\s?phrase\b\s*(?:is|=|:)?\s*(?:\b[a-z]{3,10}\b[\s,]+){11,}/i],
+  ['security_answer',/\b(?:mother'?s\s?maiden\s?name|security\s?(?:question|answer)|memorable\s?(?:word|information))\b\s*(?:is|=|:)\s*\S/i],
+];
+function _detailSecrets(text){
+  const t = String(text || '');
+  if(!t) return [];
+  const out = [];
+  for(const [label, rx] of _SECRET_RULES_SRV){
+    try{ if(rx.test(t) && out.indexOf(label) < 0) out.push(label); }catch(_e){}
+  }
+  /* A card number is structure rather than a label, so Luhn decides - a
+     sixteen digit order reference is not a card and must not be refused. */
+  try{
+    const runs = t.match(/\b(?:\d[ -]?){12,22}\d\b/g) || [];
+    for(const r of runs){
+      const d = r.replace(/[^0-9]/g, '');
+      if(d.length >= 13 && d.length <= 19 && _luhnOkSrv(d)){ out.push('card_number'); break; }
+    }
+  }catch(_e){}
+  return out;
+}
+
 async function autoCreate(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
@@ -1795,6 +1845,22 @@ async function autoCreate(request, env){
   const srcId = /^[a-z0-9_-]{1,40}$/i.test(String(body.srcId||'')) ? String(body.srcId) : '';
   if(!detail) return json({ error:'detail required' }, 400);
   if(detail.length > 2000) return json({ error:'detail too long' }, 400);
+  /* NOTHING CREDENTIAL-SHAPED IS EVER WRITTEN TO KV.
+
+     A job's detail is stored here and read by the model on every run for as
+     long as the job is on, so a password pasted into it would be persisted and
+     re-transmitted indefinitely. The client refuses it first; this is the half
+     that matters, because a client check is a suggestion.
+
+     The reply names the KIND and never echoes the text, and nothing about the
+     refusal is logged beyond that - a rejection that quotes the secret back has
+     stored it in a log instead of a record, which is not an improvement. */
+  const _sec = _detailSecrets(detail);
+  if(_sec.length){
+    return json({ error:'credentials_in_detail', kinds:_sec,
+      message:'AMV does not store passwords, card numbers or security codes. Nothing was saved. '+
+              'Connect the account instead, or describe the task without the credential.' }, 400);
+  }
   if(!AUTO_INTERVALS[repeat]) return json({ error:'invalid repeat interval' }, 400);
 
   /* Every account can schedule background work; what differs is how much.
@@ -2017,6 +2083,13 @@ async function autoUpdate(request, env){
       const detail = body.detail.trim();
       if(!detail) return json({ error:'detail required' }, 400);
       if(detail.length > 2000) return json({ error:'detail too long' }, 400);
+      /* The same rule on the way in through the side door. A guard only on
+         create is not a guard: edit writes to exactly the same field. */
+      const _esec = _detailSecrets(detail);
+      if(_esec.length){
+        return json({ error:'credentials_in_detail', kinds:_esec,
+          message:'AMV does not store passwords, card numbers or security codes. The job was not changed.' }, 400);
+      }
       items[i].detail = detail;
     }
     if(body.repeat != null){

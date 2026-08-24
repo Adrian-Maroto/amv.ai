@@ -1410,6 +1410,17 @@ let _AUTO_EMAIL_READY = false;
 let _AUTO_CAN_SCHEDULE = null;
 
 async function _scheduleTask(t){
+  /* THE ONE PLACE EVERY STANDING INSTRUCTION PASSES THROUGH.
+
+     A scheduled job's detail is stored on the server and read by the model on
+     every run for as long as the job is on. Anything credential-shaped in it
+     would therefore be persisted and re-transmitted indefinitely, so the check
+     belongs here rather than on each of the six screens that can create one -
+     a guard on five of six is not a guard. The server refuses it as well: this
+     is the courteous half, and the authority is over there. */
+  try{
+    if(typeof refuseSecrets === 'function' && !refuseSecrets(t && t.detail, 'schedule')) return null;
+  }catch(_e){}
   try{
     // Ask for email when the deployment can send it - "have it ready when I get
     // up" is only true if it arrives somewhere the user looks when AMV is shut.
