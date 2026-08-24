@@ -646,7 +646,16 @@ function _cwRunsUnattended(j){
   return needs.length>0 && needs.every(n=>n==='Web research');
 }
 function _cwWhereLabel(j){
-  return _cwRunsUnattended(j) ? 'Runs with AMV closed' : 'Runs while AMV is open';
+  if(_cwRunsUnattended(j)) return 'Runs with AMV closed';
+  /* The promise on the card has to match where the job will actually be put.
+     A job that COULD run in the background once an account is connected says
+     so, rather than reading as a permanent limitation - and it does not claim
+     the background until the connection that makes it true exists. */
+  if(typeof _cwUnattendedReady === 'function' && _cwUnattendedReady(j)) return 'Runs with AMV closed';
+  const needs = String((j && j.needs) || '').split(',').map(x => x.trim()).filter(Boolean);
+  const mappable = needs.length && needs.every(n => n === 'Web research' || _CW_NEEDS_TO_USES[n]);
+  return mappable ? 'Runs while AMV is open - connect the account to run it closed'
+                  : 'Runs while AMV is open';
 }
 function _cwNeedsMissing(j){
   const out=[];
@@ -1965,6 +1974,11 @@ function renderCrewView(){
   if(!st.serverLoaded && !_mcAskedServer){
     _mcAskedServer = true;
     try{ if(typeof _autoRefresh === 'function') _autoRefresh().then(()=>{ if(S.tab==='crew') renderCrewView(); }); }catch(e){}
+    /* And what is connected, because that decides whether a job needing a
+       mailbox says "runs with AMV closed" or "connect the account to run it
+       closed". Without this the screen answers that question from an empty
+       list and always gives the pessimistic answer. */
+    try{ if(typeof _connLoad === 'function') _connLoad(false).then(()=>{ if(S.tab==='crew') renderCrewView(); }); }catch(e){}
   }
   const paused=_autonomyPaused();
   const tiles=[
@@ -2159,7 +2173,7 @@ function cwToggle(id){
      rather than setting a boolean. Switching one on used to write a flag into a
      record nothing in the cron has ever read, so every standing job on this
      screen was a switch attached to nothing. */
-  if(_cwRunsUnattended(j)) return _cwToggleReal(jobs, j);
+  if(_cwUnattendedReady(j)) return _cwToggleReal(jobs, j);
 
   /* Everything else needs this tab, because the mailbox and calendar tokens
      live here and the server never sees them. So it goes on the LOCAL schedule,
@@ -2223,6 +2237,64 @@ function _cwSyncLocalSched(j, turningOn){
 /* Turning a background job on and off for real. The switch only moves once the
    server has agreed, so a failure leaves the screen showing what is actually
    true rather than an on-looking card with nothing behind it. */
+/* WHAT A JOB NEEDS, IN THE WORDS THE SERVER USES.
+
+   `needs` is written for a person to read on a card ("Email, Web research").
+   The runner needs a capability key it can check a grant against. Mapping them
+   here keeps the cards in plain English and the wire precise, rather than
+   making one of the two worse to save a lookup.
+
+   Web research is absent on purpose: it needs no account, and listing it would
+   make every job on the screen look like it wants a connection. */
+const _CW_NEEDS_TO_USES = {
+  'Email': 'mail.read',
+  'Calendar': 'calendar.read',
+};
+function _cwUsesFor(j){
+  return String((j && j.needs) || '').split(',').map(x => x.trim())
+    .map(n => _CW_NEEDS_TO_USES[n]).filter(Boolean)
+    .filter((v, i, a) => a.indexOf(v) === i);
+}
+
+/* IS THERE A LIVE CONNECTION THAT WOULD LET THIS RUN UNATTENDED?
+
+   Read from the connections the server reported, not from a local flag. An
+   `unattended` connection is one the provider gave a long-lived token for; a
+   `broken` one is a grant that has been revoked at the provider and would fail
+   on the next run, which is worse than not having it, because the card would
+   promise background work that silently produces nothing. */
+function _cwConnHas(cap){
+  try{
+    const d = (typeof _connState !== 'undefined' && _connState) ? _connState.data : null;
+    if(!d || !Array.isArray(d.items)) return false;
+    return d.items.some(it => it && it.unattended && !it.broken
+      && Array.isArray(it.scopes) && it.scopes.indexOf(cap) >= 0);
+  }catch(e){ return false; }
+}
+
+/* WHERE THIS JOB CAN ACTUALLY RUN, NOW THAT THE SERVER CAN HOLD AN ACCOUNT.
+
+   _cwRunsUnattended answers the old question: does this need nothing but web
+   research. That was the whole story while provider tokens lived in the browser
+   and the server had no way to reach a mailbox.
+
+   It is no longer the whole story, and leaving it as the only test would have
+   made everything above inert: a job needing Email would still have gone to the
+   local schedule, so `uses` would never have reached the server and the runner
+   would never have opened the mailbox it can now open. Correct at both ends and
+   not joined in the middle - the same failure, one level further down.
+
+   A need AMV has no capability for at all (a bank link) still runs foreground,
+   because nothing here can change that. */
+function _cwUnattendedReady(j){
+  if(_cwRunsUnattended(j)) return true;
+  const needs = String((j && j.needs) || '').split(',').map(x => x.trim()).filter(Boolean);
+  const mappable = needs.every(n => n === 'Web research' || _CW_NEEDS_TO_USES[n]);
+  if(!mappable) return false;
+  const uses = _cwUsesFor(j);
+  return uses.length > 0 && uses.every(_cwConnHas);
+}
+
 async function _cwToggleReal(jobs, j){
   const turningOn=!j.on;
   if(turningOn){
@@ -2276,6 +2348,11 @@ async function _cwToggleReal(jobs, j){
         + (extra ? '\n\nWhat the user has told you, which is the only information you have about them - use it and do not invent anything beyond it:\n' + j.answer : '');
       item=await _scheduleTask({ detail, repeat:(j.every||'daily'),
                                  kind:'research', notify:'app', approval:'auto',
+                                 /* So the unattended run may open the account
+                                    this job says it needs. The server filters
+                                    this against its own allow-list and still
+                                    checks the connection carries the scope. */
+                                 uses: _cwUsesFor(j),
                                  /* Which catalogue job this is, so the most-used
                                     list is built from what people actually turn
                                     on rather than from a guess. */

@@ -1435,6 +1435,9 @@ async function _scheduleTask(t){
       /* The catalogue entry this came from, when it came from one. Counts only,
          and only in aggregate - see crewPopular in the worker. */
       srcId: t.srcId || '',
+      /* Which connected-account capabilities this job may draw on. Passed
+         through rather than decided here - the server validates it. */
+      uses: Array.isArray(t.uses) ? t.uses : [],
       scope: t.scope || null
     });
     if(typeof d.emailReady === 'boolean') _AUTO_EMAIL_READY = d.emailReady;
