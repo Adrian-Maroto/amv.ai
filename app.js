@@ -3500,6 +3500,39 @@ function _renderBottomNav(){
 }
 window._renderBottomNav=_renderBottomNav;
 window._initMobileSidebar=_initMobileSidebar;
+
+/* THE LAYOUT WAS DECIDED ONCE, AT BOOT, AND NEVER AGAIN.
+
+   _initMobileSidebar picks phone-or-desktop from the viewport and runs from
+   goApp(). Nothing in the product listened for the viewport CHANGING - no
+   resize handler, no orientationchange, nothing.
+
+   So: open AMV on a phone held sideways. 844px is over the 720 breakpoint, so
+   it boots in desktop mode with the sidebar open. Turn the phone upright and
+   the viewport becomes 390px - and the sidebar stays open, sitting on top of
+   the conversation. The chat is squeezed into what is left, replies are cut
+   off mid-word, and the send button is behind the panel. Which is exactly the
+   three things the owner reported as separate faults: "down and side on
+   mobile", "no send button showing", and a reply that looks "off centred and
+   smushed". One cause.
+
+   matchMedia's change event is the right listener rather than resize: it fires
+   when the breakpoint is CROSSED and not on every pixel of a drag, so somebody
+   who deliberately collapsed their sidebar on a desktop does not have it
+   reopened by nudging the window. */
+try{
+  const _mqPhone = window.matchMedia && window.matchMedia('(max-width:720px)');
+  if(_mqPhone && _mqPhone.addEventListener){
+    _mqPhone.addEventListener('change', ()=>{
+      try{
+        _initMobileSidebar();
+        /* A desktop rail preference is only meaningful on a desktop, and
+           _initMobileSidebar has just cleared it on the way down. */
+        if(typeof _restoreSidebarState==='function') _restoreSidebarState();
+      }catch(e){}
+    });
+  }
+}catch(e){}
 async function _ensureBackendSession(){
   try{
     if(window.AMV_API && AMV_API.live && S.user && S.user.email){
