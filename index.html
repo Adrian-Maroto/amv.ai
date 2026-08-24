@@ -9502,6 +9502,22 @@ body.light .fr-d{ color:#67656d; }
   .cw-errand:active{ transform:none; }
 }
 
+/* ── LAYER A110: A SECTION HEADING IS NOT A 60px COLUMN ────────────────────
+   `.sec-head` is a row: heading, then the explanatory line beside it. On a
+   desktop that reads well. On a phone the flex row keeps both on one line, so
+   every heading in the product was squeezed into about sixty pixels and set
+   over four lines - "How the crew should work" stacked one word per line while
+   its subtitle had the rest of the screen. Measured on the Crew page at 360px,
+   where six of six headings did it.
+
+   Below the phone breakpoint the heading takes the full width and the subtitle
+   drops underneath, which is the order they are read in anyway. */
+@media(max-width:720px){
+  .sec-head{ flex-wrap:wrap; align-items:flex-start; }
+  .sec-head>h3{ flex:1 1 100%; min-width:0; }
+  .sec-head>.sec-sub{ flex:1 1 100%; min-width:0; }
+}
+
 </style>
 <!-- BUILD:CSS:END -->
 <script>
