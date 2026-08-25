@@ -65,12 +65,19 @@ section('Honesty: no faking when the engine is off');
    where it matters most now - a background job the person is told was created,
    and was not, is a worse lie than a missing picture. */
 const honest = await page.evaluate(async () => {
-  const realApi = window.api;
-  window.api = async () => { const e = new Error('not-connected'); throw e; };
-  const out = await _amvRunTool('crew_add', { title: 'water the plants', every: 'daily', prompt: 'x' });
-  window.api = realApi;
-  return { text: String((out && out.text) || out || ''), render: (out && out.render) || null };
+  /* The engine is genuinely disconnected for this one call rather than stubbed,
+     because AMV_API.live is derived from the base URL and clearing it is what a
+     visitor who has pasted no key actually has. A faked rejection would prove
+     the fake behaved, not that the product does. */
+  const base = AMV_API.base, token = AMV_API.token;
+  AMV_API.base = ''; AMV_API.token = '';
+  const live = !!AMV_API.live;
+  const out = await _amvRunTool('crew_add',
+    { detail: 'water the plants and tell me if the soil is dry', repeat: 'daily' });
+  AMV_API.base = base; AMV_API.token = token;
+  return { text: String((out && out.text) || out || ''), render: (out && out.render) || null, live };
 });
+ok(honest.live === false, 'the engine really is unreachable, so the refusal below is not a fake', honest.live);
 ok(/not connected/i.test(honest.text),
    'a tool whose engine is unreachable says exactly that', honest.text.slice(0, 80));
 ok(/do not say/i.test(honest.text),

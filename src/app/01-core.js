@@ -1089,8 +1089,7 @@ function emptyState(o){
 
 /* Empty-state CTA helpers - guide a new user to their first action. */
 function _focusMemInput(){ const i=$('mem-inp'); if(i){ i.focus(); i.scrollIntoView({behavior:'smooth',block:'center'}); } }
-function _tryExampleImage(){ const i=$('img-inp'); if(i){ i.value='a serene mountain lake at golden hour, photorealistic'; i.focus(); } }
-window._focusMemInput=_focusMemInput; window._tryExampleImage=_tryExampleImage;
+window._focusMemInput=_focusMemInput;
 function _newPromptCTA(){ try{ createPromptModal(); }catch(e){} }
 window._newPromptCTA=_newPromptCTA;
 

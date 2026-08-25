@@ -5,6 +5,7 @@
      node tests/run.mjs security   # only suites matching "security"
 */
 import { spawn } from 'child_process';
+import { cpus } from 'os';
 import { readdirSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -87,19 +88,103 @@ if (flags.includes('--list')) {
   process.exit(0);
 }
 
+/* ── HOW MANY AT ONCE ──────────────────────────────────────────────────────
+
+   Every suite was run one after another, and the browser-driven ones are the
+   overwhelming majority of the clock: each boots Chromium, loads the app, and
+   drives it. Serially that is hours on a four-core machine that is idle for
+   most of them, and a gate somebody has to plan their afternoon around is a
+   gate they stop running before pushing - which is the failure that matters,
+   because an unrun check is not a check.
+
+   The only thing that made serial necessary was the harness counting ports up
+   from a fixed number. It asks the kernel for a free one now, so two suites
+   running at once cannot take the same port, and there is nothing else shared
+   between them: each is its own process with its own server and its own
+   browser.
+
+   Default is the core count, capped at 4 - past that the browsers contend for
+   CPU and the wall clock stops improving. `--jobs=N` overrides it and
+   `--serial` is `--jobs=1`, which is what to reach for when a failure might be
+   about ordering and needs to be reproduced without interleaving. */
+const JOBS = (() => {
+  if (flags.includes('--serial')) return 1;
+  const j = flags.find(f => f.startsWith('--jobs='));
+  if (j) return Math.max(1, Math.min(16, parseInt(j.slice(7), 10) || 1));
+  return Math.max(1, Math.min(4, cpus().length || 1));
+})();
+
 /* Say what was selected. A run that quietly covers one file looks exactly like
    a run that covers all of them once the output scrolls. */
 sayLine(`\x1b[2mselected ${suites.length} suite(s)` +
-  (dirFilter ? ` in tests/${dirFilter}/` : nameFilter ? ` matching "${nameFilter}"` : ' (all)') + '\x1b[0m');
+  (dirFilter ? ` in tests/${dirFilter}/` : nameFilter ? ` matching "${nameFilter}"` : ' (all)') +
+  `, ${JOBS} at a time\x1b[0m`);
 
+/* OUTPUT IS BUFFERED PER SUITE AND PRINTED WHOLE.
+
+   'inherit' was right when one child spoke at a time. With several it
+   interleaves them line by line, so a failing assertion appears under whichever
+   suite header happened to be printed last - a report that is not merely hard
+   to read but actively wrong about which suite failed.
+
+   So each child writes into its own buffer and the whole thing is printed, with
+   its header, when that suite finishes. The suites are still reported in the
+   order they were selected, not the order they happened to finish, so two runs
+   of the same tree read the same. */
 const run = (s) => new Promise((resolve) => {
-  sayLine(`\n\x1b[1m\x1b[36m━━━ ${s.name} ━━━\x1b[0m`);
-  const p = spawn('node', [s.path], { stdio: 'inherit', cwd: ROOT });
-  p.on('close', (code) => resolve({ name: s.name, code }));
+  const chunks = [];
+  const p = spawn('node', [s.path], { stdio: ['ignore', 'pipe', 'pipe'], cwd: ROOT });
+  p.stdout.on('data', (d) => chunks.push(d));
+  p.stderr.on('data', (d) => chunks.push(d));
+  /* A suite that cannot be spawned at all resolves like one that failed, rather
+     than leaving a promise nobody settles and a run that hangs for ever with no
+     output. */
+  p.on('error', (e) => resolve({ name: s.name, code: 1, out: Buffer.from(String(e && e.message || e) + '\n') }));
+  p.on('close', (code) => resolve({ name: s.name, code, out: Buffer.concat(chunks) }));
 });
 
-const results = [];
-for (const s of suites) results.push(await run(s));
+const results = new Array(suites.length);
+{
+  let next = 0;
+  let printed = 0;
+  /* Printed in SELECTION order however they finish, so the transcript of a
+     parallel run is identical to a serial one. A suite that finished early
+     waits its turn in the buffer. */
+  const flush = () => {
+    while (printed < results.length && results[printed]) {
+      const r = results[printed];
+      sayLine(`\n\x1b[1m\x1b[36m━━━ ${r.name} ━━━\x1b[0m`);
+      if (r.out && r.out.length) process.stdout.write(r.out);
+      printed++;
+    }
+  };
+  /* PROGRESS, SEPARATELY FROM THE TRANSCRIPT.
+
+     Printing in selection order means a slow suite early in the list holds back
+     everything that finished behind it, so for minutes at a time the screen
+     shows nothing at all and a working run is indistinguishable from a hung
+     one. The count goes to STDERR, which is not the transcript, so it can say
+     what is happening without getting into the record the gate reads. */
+  let done = 0;
+  const tick = (name) => {
+    done++;
+    if (!process.stderr.isTTY) return;
+    const line = `  [${done}/${suites.length}] ${name}`;
+    process.stderr.write('\r\x1b[2K\x1b[2m' + line.slice(0, 100) + '\x1b[0m');
+    if (done === suites.length) process.stderr.write('\r\x1b[2K');
+  };
+  const worker = async () => {
+    for (;;) {
+      const i = next++;
+      if (i >= suites.length) return;
+      results[i] = await run(suites[i]);
+      tick(suites[i].name);
+      flush();
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(JOBS, suites.length) }, worker));
+  flush();
+}
 
 const failed = results.filter(r => r.code !== 0);
 sayLine('\n\x1b[1m════════ SUMMARY ════════\x1b[0m');

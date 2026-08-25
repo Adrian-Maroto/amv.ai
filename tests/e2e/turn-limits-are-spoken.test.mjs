@@ -32,11 +32,15 @@ await page.evaluate(() => {
      "Hold on" and measure nothing. */
   try { AEGIS.check = () => ({ ok: true }); } catch (e) {}
 
-  /* Every model turn asks for a tool. account_status needs no consent, reads
-     the caller's own plan and usage, and changes nothing - so the loop runs for
-     real without side effects. It was generate_image until image generation
-     was removed; what the loop needs is a consent-free tool with no side
-     effect, not that particular one. */
+  /* Every model turn asks for a tool. memory_list needs no consent, reads what
+     AMV already remembers, changes nothing and - the part that matters here -
+     makes no request of its own. It was generate_image until image generation
+     was removed. The first replacement tried was account_status, which reads
+     the plan and the background jobs, and reading the jobs is a POST to the
+     same host this stub counts: five tool rounds became ten "turns" and the
+     runaway guard looked broken. A counter that counts the thing it is
+     measuring PLUS something else is not a counter, so the tool the loop uses
+     has to be one that stays inside the browser. */
   window.__turns = 0;
   const realFetch = window.fetch;
   window.fetch = async (url, opts) => {
@@ -45,7 +49,7 @@ await page.evaluate(() => {
       window.__turns++;
       const sse =
         'data: {"type":"message_start","message":{"usage":{"input_tokens":1}}}\n\n' +
-        'data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"t' + window.__turns + '","name":"account_status"}}\n\n' +
+        'data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"t' + window.__turns + '","name":"memory_list"}}\n\n' +
         'data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{}"}}\n\n' +
         'data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":2}}\n\n' +
         'data: {"type":"message_stop"}\n\n';

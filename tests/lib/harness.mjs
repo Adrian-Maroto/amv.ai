@@ -9,7 +9,6 @@ import { dirname, join } from 'path';
 const __dir = dirname(fileURLToPath(import.meta.url));
 export const APP = join(__dir, '..', '..', 'index.html');
 
-let _port = 9100;
 
 /* WHICH CHROMIUM TO DRIVE.
 
@@ -46,7 +45,6 @@ export async function serveApp() {
     throw new Error('index.html not found - run `node build.mjs` first');
   }
   const html = readFileSync(APP);
-  const port = _port++;
   /* Real sibling files, with real content types.
 
      This answered EVERY path with index.html as text/html, which is fine until
@@ -76,7 +74,25 @@ export async function serveApp() {
     res.writeHead(200, { 'Content-Type': 'text/html' });
     res.end(html);
   });
-  await new Promise(r => server.listen(port, r));
+  /* THE OPERATING SYSTEM PICKS THE PORT, BECAUSE IT IS THE ONLY THING THAT
+     KNOWS WHICH ARE FREE.
+
+     This counted up from 9100. Inside one process that is fine. Across several
+     it is a collision: two suites running at once both start at 9100, the
+     second gets EADDRINUSE, and the failure is about the machine rather than
+     the code - which is exactly the failure the gate used to spend a whole
+     stage guarding against, and the reason the suites could only ever be run
+     one at a time.
+
+     `listen(0)` asks the kernel for a free port and it answers with one that
+     is free right now. Nothing to reserve, nothing to collide with, and the
+     gate no longer needs to check that a fixed port is unoccupied before it
+     starts. */
+  await new Promise((res, rej) => {
+    server.once('error', rej);
+    server.listen(0, res);
+  });
+  const port = server.address().port;
   return { url: `http://localhost:${port}`, server };
 }
 

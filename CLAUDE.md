@@ -64,10 +64,16 @@ Companion docs (do not duplicate them here - read them):
 
 ## Verify like this
 - `npm run check` is the shippability gate (syntax, worker load, build fresh,
-  all suites, deploy preflight -> "SHIPPABLE"). It takes 40-50 MINUTES now, not
-  the ~210s this line used to claim - the e2e directory grew and every suite
-  drives a real browser. Budget for it; do not run a
-  second test that binds port 9100 while it runs.
+  all suites, deploy preflight -> "SHIPPABLE"). Roughly 15 MINUTES: the suites
+  run several at a time (`tests/run.mjs`, default four, `--jobs=N` to change it,
+  `--serial` to reproduce something that might be about ordering). All 138 e2e
+  suites take ~13 minutes together; serially they took hours, which is why the
+  runner is parallel now. Output is buffered per suite and printed in selection
+  order, so a parallel transcript reads exactly like a serial one - and a slow
+  suite early in the list holds back the printing of everything behind it, which
+  is what the `[n/138]` counter on stderr is for.
+  The harness asks the kernel for a free port, so nothing binds a fixed one and
+  two runs no longer collide.
 - `npm run check:fast` is the ITERATION loop: ~9 seconds, six stages (syntax,
   worker loads, build fresh, page weight, deps, preflight). It deliberately
   SKIPS the suites and the workerd stage, so it catches a broken build and a

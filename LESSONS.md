@@ -6310,3 +6310,43 @@ naming the existing trap was forty lines from where I put the duplicate.
 stripping. A mention in prose inflates the count, which sends me to look by
 hand. Under-reporting dead code costs nothing; over-reporting it deletes
 working features.
+
+## 295. Deleting a feature deleted three things that were not the feature
+
+Removing image and video generation took out five routes, two views, two model
+tools and the plan allowances. It also took out three things that had nothing
+to do with either feature, because they happened to sit inside the span being
+cut:
+
+- `AMV_CLIENT_TOOLS`, the allowlist deciding which client-supplied tools reach
+  the model. `_safeTools` was left calling a name that no longer existed. The
+  whole tool surface, dead on the first turn that forwards a tool.
+- `AMVCurrency`, the local-currency estimate under every price. Its only caller
+  survived, because that caller is the pricing page rather than the feature, and
+  it throws inside a try/catch - so no error anybody sees and every estimate
+  silently blank outside the US.
+- The prose that made a comment true. Two comments were left describing paths
+  that no longer exist, and one described the contract of a function whose
+  contract had changed.
+
+None of the three could be found by reading the diff, because the diff looks
+correct: it removes a contiguous region, and the region really was mostly the
+feature. `node --check` passed. The Worker loaded as a module. `check:fast`
+went green. Every one of them was found by a test suite failing.
+
+**A cut defined by position will take its neighbours.** The unit of removal is
+the definition, not the region. Cut by name and re-read what is left touching
+the gap.
+
+**After removing anything, diff the set of DEFINED names against the set of
+REFERENCED names, in both directions.** Thirty seconds of scripting found all
+three, one at a time, after the tests had already found them. Run it before the
+tests, not after.
+
+**And ask what the removal ORPHANED, not only what it broke.** `_spendGate` -
+the one gate every paid path is supposed to ask before spending - lost its only
+two callers and became a hundred correct lines that nothing runs. Deleting it
+would have removed the rule that stops the next paid path being written outside
+the ceiling; leaving it would have been another entry in this file. SMS became
+the caller, which also closed the hole that SMS had never asked the day's
+ceiling at all.

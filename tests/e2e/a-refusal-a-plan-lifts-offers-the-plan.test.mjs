@@ -105,11 +105,16 @@ section('The code reaches the card at all');
 
 section('Every refusal a plan lifts offers the plan');
 {
+  /* NOT quota_day or quota_month. Those are plan-liftable and they are in the
+     table, but chat catches them one layer earlier and answers with the quota
+     card and its live countdown instead of a refusal card - which is the right
+     answer for "you are out until the reset" and a different one from this.
+     Putting one here asserted the wrong screen, and locked the composer for
+     every case after it. */
   const cases = [
     ['plan_required', 402, 'That engine is part of Elite.'],
     ['plan_limit',    402, 'The free plan runs one job in the background, weekly.'],
     ['job_limit',     429, 'Your plan runs 25 background jobs. Remove one or upgrade.'],
-    ['quota_month',   429, 'You have used your full allowance for this billing cycle.'],
     ['free_capacity', 503, 'AMV is at capacity for free accounts today. Paid plans are running normally.'],
   ];
   for (const [code, status, error] of cases) {

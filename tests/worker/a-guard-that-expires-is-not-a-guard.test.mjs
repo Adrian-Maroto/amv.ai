@@ -12,7 +12,7 @@
                             new: seller credited twice for one sale, platform
                             fee booked twice, a renewal payment recorded twice.
      sale                   the same thing one layer in, guarding the credit.
-     vidrefund              a failed video gives the quota back "EXACTLY ONCE",
+     vidrefund              a failed video gave the quota back "EXACTLY ONCE",
                             says the comment above it. Polling that job's status
                             once a minute gave it back once a minute.
      inviteused             "this invite has already been used" was true for
@@ -246,13 +246,19 @@ section('A one-time invite is one-time for longer than half a minute');
      'and an hour later it is still used up', true);
 }
 
-section('A failed video gives the quota back once, not once a minute');
+section('A claim that is meant to be permanent does not expire in thirty seconds');
 {
+  /* The video refund poll is the case this was written against and it is gone
+     with video generation. The shape it proved is not: anything polled on a
+     timer that claims "do this exactly once" is only exactly-once if the claim
+     outlives the polling interval. A thirty-second claim polled every minute
+     is a claim that fires every minute. Keyed on a name that belongs to no
+     feature, so it cannot rot into a statement about something deleted. */
   const env = mkEnv();
-  ok(await W._claimOnce(env, 'vidrefund', 'vid_1', W.CLAIM_ONCE_TTL_S) === true,
-     'the first poll refunds', true);
+  ok(await W._claimOnce(env, 'clmtest', 'poll_1', W.CLAIM_ONCE_TTL_S) === true,
+     'the first poll takes it', true);
   advance(5 * 60 * 1000);
-  ok(await W._claimOnce(env, 'vidrefund', 'vid_1', W.CLAIM_ONCE_TTL_S) === false,
+  ok(await W._claimOnce(env, 'clmtest', 'poll_1', W.CLAIM_ONCE_TTL_S) === false,
      'and polling again five minutes later does not', true);
 }
 

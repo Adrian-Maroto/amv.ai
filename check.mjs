@@ -39,9 +39,9 @@ let stepNum = 0;
 /* Kept in step with the stages below. Adding the dependency audit without
    updating this printed "[8/7]", and the fast total was two out as well - small
    things, and they read as nobody looking at the screen they are on.
-   Full: syntax, worker, build, ports, suites, page weight, deps, preflight.
-   Fast skips the two that need a clear machine and forty minutes (ports, suites). */
-const TOTAL = FAST ? 6 : 9;
+   Full: syntax, worker, build, suites, real runtime, page weight, deps, preflight.
+   Fast skips the two that need a clear machine and a long wait (suites, runtime). */
+const TOTAL = FAST ? 6 : 8;
 /* Stages that ran but did nothing, so the final verdict can say so instead of
    letting a green tick stand in for work that never happened. */
 const skipped = [];
@@ -174,34 +174,19 @@ step('Build is fresh (index.html reflects source)', () => {
     throw new Error(`index.html is STALE - missing ${missing.join(', ')}. The build did not pick up current app.js.`);
 });
 
-/* ── 3b. Nothing else is holding the test ports ───────────────────────────
-   The e2e harness serves the app from 9100 upwards. If anything else is on
-   9100 - a leftover server, or a second gate somebody forgot to stop - every
-   browser-driven suite dies with EADDRINUSE and the run reports fifty-odd
-   failures that say nothing about the code.
+/* ── 3b. THE TEST PORTS WERE A STAGE, AND ARE NOT ONE ANY MORE ─────────────
 
-   That has now cost two full gate runs and a lot of reading, both times because
-   the symptom points at the product and the cause is the machine. So it is
-   checked in one second, before the thirty minutes, and named exactly. */
-/* Synchronous on purpose: step() calls fn() without awaiting it, so an async
-   check here would return a promise nobody looks at and report a tick whatever
-   happened. A guard that cannot fail is worse than no guard. */
-if (!FAST) step('Test ports are free', () => {
-  const probe =
-    "const s=require('net').createServer();" +
-    "s.once('error',e=>{console.log(e.code||'EADDRINUSE');process.exit(3)});" +
-    "s.listen(9100,()=>s.close(()=>process.exit(0)));";
-  try {
-    execSync(`node -e "${probe}"`, { cwd: ROOT, stdio: 'pipe' });
-  } catch (e) {
-    const why = ((e.stdout || '').toString() + (e.stderr || '').toString()).trim() || 'in use';
-    throw new Error(
-      'port 9100 is not free (' + why + '), so every browser-driven suite would fail with '
-      + 'EADDRINUSE and not one of those failures would be about the code. Something else is '
-      + 'still running - most likely another `npm run check`, or a test server left behind. '
-      + 'Stop it, then run this again.');
-  }
-});
+   There was a check here that port 9100 was free. The e2e harness counted
+   ports up from that number, so a leftover server or a second gate meant every
+   browser-driven suite died with EADDRINUSE and the run reported fifty-odd
+   failures that said nothing about the code. It cost two full gate runs before
+   it was worth a stage.
+
+   The harness asks the kernel for a free port now (`listen(0)`), which is also
+   what let the suites start running several at a time. There is no fixed port
+   left to be occupied, so the guard has nothing to guard and a stage that
+   cannot fail is worse than no stage - it teaches people that a green tick
+   means something was checked. */
 
 /* ── 4. All test suites ──────────────────────────────────────────────────── */
 /* LEAD WITH THE ANSWER, AND PRINT ONLY WHAT IS BEING ASKED ABOUT.
