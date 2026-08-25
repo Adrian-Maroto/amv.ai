@@ -5800,6 +5800,11 @@ async function sendMsg(_opts) {
       }
     }
   }catch(e){}
+  /* Sent, so there is nothing left to recover. Cleared before the box is, so a
+     failure between the two cannot leave a draft of a message that already
+     went. */
+  try{ clearTimeout(_draftTimer); }catch(e){}
+  _draftClear();
   ta.value=''; ta.style.height='auto'; S.att=null;
   const ab2=$('ab2'); if(ab2) ab2.style.display='none';
 
@@ -6660,10 +6665,116 @@ function showModelPicker(){
   setTimeout(()=>document.addEventListener('click',close),50);
 }
 
+/* ── WHAT SOMEBODY HAS TYPED AND NOT SENT ───────────────────────────────────
+
+   A half-written message did not survive a reload. Measured before fixing:
+   492 characters typed, 0 after refreshing the page.
+
+   That is somebody's work, and it is the most valuable text in the product at
+   the moment it is lost - a long prompt is usually the thing they opened AMV to
+   write. It goes on an accidental refresh, a back gesture, a crashed tab, and
+   on a phone it goes whenever the browser decides to evict a background tab,
+   which it does routinely and without warning.
+
+   Kept per conversation, because a draft belongs to the thread it was being
+   written in - restoring it into a different chat would be worse than losing
+   it. Written on a short debounce rather than on every keystroke, cleared the
+   moment the message is actually sent, and capped so a pasted novel cannot fill
+   somebody's storage quota and break the things that matter more. */
+const DRAFT_MAX = 12000;
+const DRAFT_KEEP = 12;                       // how many conversations keep a draft
+let _draftTimer = null;
+
+function _draftKey(){
+  try{ return 'amv_draft_' + (S.cur || 'new'); }catch(e){ return 'amv_draft_new'; }
+}
+function _draftSave(text){
+  try{
+    const t = String(text || '');
+    const k = _draftKey();
+    if(!t.trim()){ saveStr(k, ''); _draftIndexDrop(k); return; }
+    saveStr(k, t.slice(0, DRAFT_MAX));
+    _draftIndexTouch(k);
+  }catch(e){}
+}
+function _draftLoad(){
+  try{ return loadStr(_draftKey()) || ''; }catch(e){ return ''; }
+}
+function _draftClear(){
+  try{ const k=_draftKey(); saveStr(k, ''); _draftIndexDrop(k); }catch(e){}
+}
+/* An index, so old drafts are pruned rather than accumulating one row per
+   conversation somebody once opened. Without it this leaks storage quietly and
+   for ever, which is how a well-meant feature becomes the reason the app stops
+   being able to save anything. */
+function _draftIndexTouch(k){
+  try{
+    let ix = load('amv_draft_ix') || [];
+    ix = ix.filter(x => x !== k); ix.push(k);
+    while(ix.length > DRAFT_KEEP){ const old = ix.shift(); try{ saveStr(old, ''); }catch(e){} }
+    store('amv_draft_ix', ix);
+  }catch(e){}
+}
+function _draftIndexDrop(k){
+  try{ store('amv_draft_ix', (load('amv_draft_ix') || []).filter(x => x !== k)); }catch(e){}
+}
+/* Put it back, and only when the box is empty - never over something somebody
+   is already typing.
+
+   THE PART THAT MADE THE FIRST VERSION USELESS.
+
+   A draft keyed to its conversation is the right shape, and on its own it never
+   restored anything: S.cur is deliberately not persisted, so every reload lands
+   in a NEW conversation (that is how amv.homes opens straight into a fresh
+   chat). The key on the way back never matched the key on the way out, and the
+   feature was a storage write nobody ever read.
+
+   So a reload is handled as what it is. If the chat being opened is empty, the
+   draft worth restoring is the most recent one whose own conversation never
+   received a message - somebody was typing, nothing was sent, and here they are
+   in an empty box again. A draft from a conversation that DID go on to have
+   messages stays with that conversation and is offered only there, because
+   dropping it into an unrelated thread is worse than losing it. */
+function _draftConvEmpty(convId){
+  try{
+    const c = (S.convs || []).find(x => x && x.id === convId);
+    return !c || !(c.msgs && c.msgs.length);
+  }catch(e){ return false; }
+}
+function _draftRestore(){
+  try{
+    const ta = $('mta'); if(!ta || ta.value) return;
+    let d = _draftLoad();
+    if(!d && _draftConvEmpty(S.cur)){
+      const ix = load('amv_draft_ix') || [];
+      for(let i = ix.length - 1; i >= 0; i--){
+        const k = ix[i];
+        const id = String(k).replace(/^amv_draft_/, '');
+        if(!_draftConvEmpty(id)) continue;      // it belongs to a real thread
+        const v = loadStr(k);
+        if(v){ d = v; try{ saveStr(k, ''); }catch(e){} _draftIndexDrop(k); _draftSave(d); break; }
+      }
+    }
+    if(!d) return;
+    ta.value = d;
+    ta.style.height = 'auto';
+    ta.style.height = Math.min(ta.scrollHeight, 130) + 'px';
+  }catch(e){}
+}
+try{ window._draftSave=_draftSave; window._draftLoad=_draftLoad; window._draftClear=_draftClear;
+     window._draftRestore=_draftRestore; }catch(e){}
+
 function bindChatEvents() {
   const ta=$('mta');
   on(ta,'keydown',e=>{ if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){e.preventDefault();sendMsg();return;} if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();} });
-  on(ta,'input',()=>{ ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,130)+'px'; });
+  on(ta,'input',()=>{
+    ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,130)+'px';
+    /* Debounced: a keystroke is not worth a write, and losing the last 400ms of
+       typing is not the failure this is here to prevent. */
+    try{ clearTimeout(_draftTimer); }catch(e){}
+    _draftTimer = setTimeout(()=>{ _draftSave(ta.value); }, 400);
+  });
+  _draftRestore();
   on($('snd'),'click',()=>{ if(S.busy) stopGenerating(); else sendMsg(); });
   // All message action buttons via delegation (avoids inline onclick quote escaping)
   on($('cm'),'click',e=>{
