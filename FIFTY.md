@@ -1,88 +1,98 @@
-# Fifty edits, found and worked overnight
+# The overnight run: what was asked, what was found, what was done
 
-Rules I set for this list, so it is worth what it claims:
+You asked for fifty beneficial edits that do not need your approval, done
+continuously overnight, all green, nothing left queued.
 
-- **Nothing on it needs approval.** No schema change, no auth change, no billing
-  change, no deleted feature, no visual redesign. Every item is a defect, a
-  broken promise, an accessibility gap, or a safety or clarity fix.
-- **Every item was verified before it went on the list**, not guessed from a
-  smell. Where a scan suggested something and the code disproved it, it was
-  dropped rather than padded in. Two candidates were dropped exactly that way:
-  `_spendRecord` looked like an uncounted spend ceiling and its own comment
-  explains it is a deliberate leftover beside a live reserve/release path, and
-  the worker's other unreferenced helpers are one-line wrappers, not features.
-- **Value, not tidiness.** The largest group is things the product ADVERTISES
-  and cannot actually do, because that is what a customer meets.
-
-Status is kept honest: an item is only ticked when it is done, tested, and the
-test has been sabotaged to prove it would fail if the fix were removed.
+This file is the honest version of that. It is written to be read first.
 
 ---
 
-## A. Advertised, built, and unreachable (the broken promises)
+## The number
 
-Found by counting references in the built bundle: a function that appears
-exactly once appears only in its own definition. Nothing reaches it - not a
-call, not a `window.` export, not a `data-dact` string.
+**Nine real fixes are in, verified and merged. Not fifty.**
 
-1. **Excel & CSV upload does nothing.** Integrations advertises "Upload a sheet
-   - AMV runs formulas, builds pivots and charts, then you download." The
-   handler `handleSheetFile` is unreachable, as is the editor it opens.
-2. **The Word document editor is unreachable.** `openDocEditor` and its
-   download path exist and nothing opens them.
-3. **`quickGmail` is unreachable.** A one-click inbox read, fully written.
-4. **`quickCalendar` is unreachable.**
-5. **`quickDrive` is unreachable.**
-6. **`_modelPickerHTML` is unreachable** - a whole engine picker component.
-7. **`_activeSessionsHTML` is unreachable.** Somebody cannot see the devices
-   signed in to their account, which is a security surface, not a nicety.
-8. **`_crewSyncLive` is unreachable** - the multi-device sync for Crew jobs.
-9. **`_handoffSyncLive` is unreachable** - the same for handoffs.
-10. **`_planDetails` and `_planHighlights` are unreachable** - pricing detail on
-    the page whose entire job is converting somebody.
-11. **`_payActivate`, `goToStripeSettings`, `_pmLabel`, `_cardBrand` are
-    unreachable** - billing surface.
-12. **`_cehCard`, `_starterCard`, `_starterChip`, `_chomeRecentWork` are
-    unreachable** - chat home components.
-13. **`_mcAutonCard` and `_crewQueueHTML` are unreachable** - Mission Control.
-14. **`filterTaskCat`, `showMsg`, `closeTab`, `_pageReset` are unreachable.**
-15. **`connectGoogle` is unreachable**, duplicated by the Integrations path.
+I could have reached fifty. Doing so would have meant keeping findings I could
+not defend, and two of my first ten were already wrong - which is the whole
+reason the number is what it is rather than what you asked for.
 
-Each of these gets one of two honest outcomes: wired up where the product
-promises it, or removed where it is a leftover - and removing unreachable code
-takes weight off a 605KB page every visitor downloads.
+What went wrong is worth more to you than a longer list:
 
-## B. Accessibility, which is both reach and legal exposure
+I wrote a scanner that finds functions defined and called by nobody. It has
+been the best tool I have. It stripped block comments before counting, and this
+codebase is full of regexes and URLs inside strings, so one stray sequence
+opened a fake comment that swallowed real code. Two findings came out of it and
+both were false:
 
-16. Twelve icon-only buttons carry no accessible name - close buttons, delete
-    buttons, a help button. A screen reader announces "button".
-17. Three `role="dialog"` elements have no `aria-modal`.
-18. Five `<select>` controls have no accessible name.
-19. Modals do not trap focus; tab walks out of a dialog into the page behind it.
-20. There is no skip-to-content link.
-21. The engine picker's options are not announced when the plan disables one.
+- *"Sign out everywhere renders nowhere while the Security pane names it."* It
+  renders in Settings, Account, and always did.
+- *"No dialog traps focus, Escape closes only six."* Both were already handled
+  globally, forty lines below where I added them again. The file's own comment
+  says "There is a Tab trap." I had not read it.
 
-## C. Destructive actions
+I shipped both as fixes. The first put a second element on the page sharing an
+id with the real one. The second duplicated a working handler. **Sabotage caught
+both and nothing else would have** - the focus test passed happily with my trap
+disabled, because the real trap underneath was doing the work.
 
-22. Seven destructive actions use the browser's native `confirm()` - leaving a
-    team, removing a member, deleting a task, delisting from the marketplace.
-    It blocks the page, cannot be styled, reads as browser spam on a phone, and
-    the product already has `showConfirmAsync` for exactly this.
+The scanner now has a negative control it must pass before I believe anything
+it says, and it counts raw occurrences: a mention in prose inflates a count,
+which sends me to look by hand. Under-reporting dead code costs nothing.
+Over-reporting it deletes working features.
 
-## D. Honesty and error recovery
+## What is actually in
 
-23. Errors that name a cause but not a fix.
-24. An offline state that says what still works.
-25. States audited on the surfaces that lack them.
+Each one a direct fact about the source or a behaviour I drove and watched
+fail, never an inference from a tool.
 
-## E. Weight and speed
+1. **A half-written message no longer dies with the tab.** Measured before:
+   type 492 characters, refresh, 492 characters gone. That is the most valuable
+   text in the product at the moment it is lost, and on a phone the browser
+   evicts background tabs routinely. Now persisted per conversation, debounced,
+   capped, pruned, and re-keyed onto the fresh chat a reload lands you in.
+2. **Eleven icon-only buttons** announced themselves as "button" to a screen
+   reader - the close control on nine dialogs, a delete, a help.
+3. **Ten selects and range inputs** sat beside labels that were siblings rather
+   than associated, so the visible text named nothing.
+4. **Six colour pickers** were not merely unnamed but indistinguishable from
+   each other; the control inventory had been counting them as one.
+5. **Three dialogs** declared a role and no modality.
+6. **A skip link**, so reaching the conversation does not mean tabbing the whole
+   shell on every page.
+7. **Ten destructive actions** used the browser's own confirm - leaving a team,
+   delisting from the marketplace, pausing the service for every user. They now
+   use the product's own dialog and say what is actually lost.
+8. **`_mcCancelSched` swallowed a failed write** and reported success, so a job
+   that could not be cancelled told somebody it was.
+9. **The Google access token left localStorage** - a live bearer token to
+   somebody's mail, readable by any script and outliving the tab.
 
-26. The page is 2.1MB, 605KB over the wire. Dead code removal from A pays into
-    this directly.
+## What the gate caught in my own work
 
-## F. Tests for the paths that carry money and trust
+Eight defects, in one night, all mine, none found by me reading it back:
 
-27. Sabotage-proof coverage for each fix above.
+- the skip link failed WCAG contrast at 1.1:1 - the one control added FOR
+  accessibility was the least readable text in the product
+- the same link failed the keyboard sweep, sliding in 140ms late
+- a duplicate function, committed while reading the duplication checker's output
+- a test seeding a store the code no longer reads
+- two storage-registry facts about my own changes
+- an unbounded outbound call on the disconnect route
+- a durable record neither backed up nor excluded
+- a public endpoint with no rate limit
 
-(The remaining items are enumerated as they are verified, so the list stays
-honest rather than padded to a round number in advance.)
+## Left for you, deliberately
+
+**The 27 functions that really are unreachable.** Verified with the corrected
+scanner. I have NOT deleted them, and that is a decision rather than an
+omission: several read as features you may want wired rather than removed -
+`quickGmail`, `quickCalendar`, `quickDrive`, a whole engine picker, the Excel
+and Word editors. Deleting a feature is on your approval list, and 27.9KB of a
+2.1MB page is not worth guessing with. The list is in the commit history and I
+can wire or remove any of them on a word from you.
+
+**Connected accounts need three secrets** before any of it does anything:
+`CONNECT_KEY`, then `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`. Until they
+exist, providers read as "not set up on this deployment" rather than opening a
+flow that fails.
+
+**`AMV_KV` is still the placeholder**, so nothing deploys.
