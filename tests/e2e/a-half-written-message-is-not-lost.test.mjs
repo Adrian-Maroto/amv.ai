@@ -79,6 +79,37 @@ section('But never into a thread it did not come from');
   ok(r.box === '', 'and no unrelated draft is dropped into it', JSON.stringify(r.box));
 }
 
+section('And a draft from a real thread is not dragged into an empty one');
+{
+  /* The case the inner guard exists for, and the one the section above does
+     NOT reach: there, the chat being opened already had messages, so the outer
+     check refused before the search ever ran. Sabotaging the inner guard
+     changed nothing and the test did not notice.
+
+     Here the chat being opened IS empty - so the search runs - and the most
+     recent draft belongs to a conversation that went on to have messages.
+     Dragging it into an unrelated empty chat is exactly what must not happen. */
+  const r = await page.evaluate(async () => {
+    newChat();
+    const threadId = S.cur;
+    const ta = () => document.getElementById('mta');
+    ta().value = 'notes I was typing inside a real conversation';
+    ta().dispatchEvent(new Event('input'));
+    await new Promise(s => setTimeout(s, 600));
+    /* That conversation is now a real thread. */
+    S.convs.find(c => c.id === threadId).msgs = [{ r: 'u', c: 'hi' }, { r: 'a', c: 'hello' }];
+
+    newChat();                                  // a fresh, empty chat
+    await new Promise(s => setTimeout(s, 150));
+    ta().value = '';
+    const emptyHere = _draftConvEmpty(S.cur);
+    _draftRestore();
+    return { emptyHere, box: ta().value };
+  });
+  ok(r.emptyHere, 'the chat being opened is empty, so the search really runs', r.emptyHere);
+  ok(r.box === '', 'and a draft from a real conversation stays there', JSON.stringify(r.box));
+}
+
 section('Sending clears it, so nothing is offered back twice');
 {
   const r = await page.evaluate(async () => {
