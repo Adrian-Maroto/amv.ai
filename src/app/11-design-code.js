@@ -1643,12 +1643,16 @@ function _devRenderLog(){
     _devRenderLog();
   }));
 }
-/* Does this Dev request want a TOOL (ship it / make an image) rather than code?
-   Dev used to be able to do neither - you had to leave and find another tab. */
+/* Does this Dev request want a TOOL - shipping it - rather than code? Dev used
+   to be able to do neither: you had to leave and find another tab.
+
+   There was a second branch here returning 'image'. Nothing read it after image
+   generation came out, so it matched a request, named an intent, and the caller
+   below fell through to writing code anyway. A classifier whose answer nobody
+   acts on is worse than no classifier: it reads as a decision being made. */
 function _devToolIntent(msg){
   const t=String(msg||'').toLowerCase();
   if(/\b(deploy|publish|ship it|put it live|go live|make it live|host it|give me a (live )?(url|link))\b/.test(t)) return 'deploy';
-  if(/\b(generate|create|make|add)\b[^.]*\b(image|picture|photo|illustration|logo|icon|hero image|graphic)\b/.test(t)) return 'image';
   return null;
 }
 

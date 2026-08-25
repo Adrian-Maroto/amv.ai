@@ -946,7 +946,14 @@ async function _crewSyncLive(){
       }));
     }
     if(appr){ store('amv_cw_approvals', appr.map(a=>({id:a.id,icon:a.icon,title:a.title,preview:a.preview}))); }
-    renderCrewView();
+    /* ONLY IF THEY ARE STILL LOOKING AT IT.
+
+       This is fired when the tab opens and answers whenever the network
+       answers. Somebody who moved on in the meantime would have the screen they
+       are now reading replaced by the one they left - the stored state above is
+       still updated, which is the point, so the next time they open Crew it is
+       correct without anything being redrawn under them. */
+    if(S.tab === 'crew' || S.tab === 'extensions') renderCrewView();
   }catch(e){}
 }
 /* ============================================================
@@ -1077,9 +1084,6 @@ function _mcRetry(id){
   toast('Retrying - running in the background','info'); renderCrewView();
 }
 window._mcRetry=_mcRetry;
-function _mcAutonCard(j){
-  return `<div class="mc-card"><div class="mc-card-top"><span class="mc-card-t">${escH(j.title)}</span><span class="mc-pill ok">On</span></div><div class="mc-card-sub">${escH(j.desc||'')}</div><div class="mc-card-act"><span class="mc-card-uses">Uses: ${escH(j.needs||'-')}</span><button class="btn mc-mini ghost" data-dact="cwToggle" data-darg="${j.id}">Turn off</button></div></div>`;
-}
 function _mcSchedRow(t, st){
   const when = t.sched?((typeof _schedHumanOf==='function')?_schedHumanOf(t.sched):''):((typeof _freqLabel==='function')?_freqLabel(t.freq):'');
   let next='';
@@ -2172,15 +2176,6 @@ function renderCrewView(){
     var _ci=$('mc-cmd-input'); if(_ci) on(_ci,'keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); _mcRun(); } });
     vc.querySelectorAll('[data-mccmd]').forEach(function(c){ on(c,'click',function(){ var el=$('mc-cmd-input'); if(el){ el.value=c.dataset.mccmd; el.focus(); } }); });
   }catch(e){}
-}
-function _crewQueueHTML(){
-  try{
-    var q=(typeof _bgQueue!=='undefined'&&_bgQueue.tasks)?_bgQueue.tasks:[];
-    if(!q.length) return '<div class="cw-empty">No background tasks running.</div>';
-    var sc=s=>s==='done'?'#4ade80':s==='running'?'#5590ff':s==='failed'?'#ff4d4d':'#e0b341';
-    var si=s=>s==='done'?'✓':s==='running'?'⟳':s==='failed'?'✕':'⏳';
-    return q.slice().reverse().map(function(t){return '<div class="cw-qrow"><span style="color:'+sc(t.status)+'">'+si(t.status)+'</span><span style="flex:1">'+escH(t.title||t.type||'Task')+'</span><span style="font-size:var(--t-xs);color:var(--mu)">'+(t.status||'')+'</span></div>';}).join('');
-  }catch(e){ return '<div class="cw-empty">No background tasks running.</div>'; }
 }
 function cwToggle(id){
   const jobs=_cwJobs(); const j=jobs.find(x=>x.id===id); if(!j) return;

@@ -70,8 +70,18 @@ section('No plan is sold something the server refuses');
      from the table, rather than a literal somebody has to remember to update. */
   ok(/Scheduled & background jobs['"],\s*p\s*=>\s*String\(_autoMaxForPlan\(p\)\)/.test(code),
      'the comparison row is computed from the cap, not typed out', true);
-  ok(/_autoMaxLabel\('elite'\)/.test(code) && /_autoMaxLabel\('ultra'\)/.test(code),
-     'and so are the two feature lists that named it', true);
+  /* The two plan feature lists that named the number are gone - they were
+     _planDetails and _planHighlights, unreachable copy superseded by the plans
+     page, removed with the rest of the dead surface. The comparison table above
+     is now the only place the page states it, and it is computed.
+
+     _autoMaxLabel stays and is still checked against the server's table further
+     down, because it is the one function that turns the cap into a sentence:
+     the next screen that wants to say "25 scheduled jobs" must reach for it
+     rather than typing the number, which is how the word "unlimited" got onto
+     the page the first time. */
+  ok(/function _autoMaxLabel\(/.test(code),
+     'and the one function that puts the number into a sentence is still there', true);
 }
 
 section('The page prints the number the server would actually grant')

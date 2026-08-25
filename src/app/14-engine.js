@@ -776,7 +776,6 @@ function renderLabView(){
   }
   _labChatRender();
   on($('lab-agents'),'click',_labAgents);
-  _wireModelPicker(vc);
   vc.querySelectorAll('.lab-chip').forEach(ch=>on(ch,'click',()=>_labAnalyze(ch.dataset.an)));
 }
 function _labOut(html){ const b=$('lab-out-body'); if(b) b.innerHTML=html; try{ _mobileShowOutput('lab'); }catch(e){} }

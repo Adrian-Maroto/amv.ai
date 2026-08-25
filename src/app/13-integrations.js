@@ -419,55 +419,6 @@ async function runAutonomousTask(instruction){
 }
 window.runAutonomousTask=runAutonomousTask;
 
-async function quickGmail(){
-  const token = getGToken();
-  if(!token){ toast('Connect Gmail first - click Connect in Integrations','error',4000); return; }
-  toast('Loading inbox...','info',2000);
-  try{
-    const r = await fetchDeadline('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10&labelIds=INBOX&q=is:unread',{headers:{'Authorization':'Bearer '+token}});
-    const d = await r.json();
-    if(d.error){ toast('Gmail: '+d.error.message,'error'); return; }
-    const msgs = d.messages||[];
-    if(!msgs.length){ toast('No unread emails!','success'); return; }
-    const details = await Promise.all(msgs.slice(0,8).map(m=>
-      fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/'+m.id+'?format=metadata&metadataHeaders=Subject&metadataHeaders=From',{headers:{'Authorization':'Bearer '+token}}).then(r=>r.json())
-    ));
-    const summary = details.map(d=>{
-      const subj = d.payload&&d.payload.headers&&d.payload.headers.find(h=>h.name==='Subject');
-      const from = d.payload&&d.payload.headers&&d.payload.headers.find(h=>h.name==='From');
-      return 'From: '+(from&&from.value||'?')+'\nSubject: '+(subj&&subj.value||'(no subject)');
-    }).join('\n\n');
-    setTab('chat');
-    setTimeout(()=>{ const ta=$('mta'); if(ta){ ta.value='I have '+msgs.length+' unread emails. Summarize what needs attention:\n\n'+summary; ta.focus(); } },200);
-  }catch(e){ toast('Gmail error: '+e.message,'error'); }
-}
-async function quickCalendar(){
-  const token = getGToken();
-  if(!token){ toast('Connect Calendar first','error',4000); return; }
-  toast('Loading calendar...','info',2000);
-  try{
-    const now=new Date(), end=new Date(now.getTime()+7*24*60*60*1000);
-    const r = await fetchDeadline('https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin='+now.toISOString()+'&timeMax='+end.toISOString()+'&singleEvents=true&orderBy=startTime&maxResults=20',{headers:{'Authorization':'Bearer '+token}});
-    const d = await r.json();
-    if(d.error){ toast('Calendar: '+d.error.message,'error'); return; }
-    const events = (d.items||[]).map(e=>(e.start&&(e.start.dateTime||e.start.date))+': '+e.summary).join('\n');
-    setTab('chat');
-    setTimeout(()=>{ const ta=$('mta'); if(ta){ ta.value='Here is my calendar for the next 7 days:\n\n'+(events||'No events')+'\n\nHelp me optimize my week.'; ta.focus(); } },200);
-  }catch(e){ toast('Calendar error: '+e.message,'error'); }
-}
-async function quickDrive(){
-  const token = getGToken();
-  if(!token){ toast('Connect Drive first','error',4000); return; }
-  toast('Reading Drive...','info',2000);
-  try{
-    const r = await fetchDeadline('https://www.googleapis.com/drive/v3/files?pageSize=30&orderBy=modifiedTime desc&fields=files(name,mimeType,modifiedTime)',{headers:{'Authorization':'Bearer '+token}});
-    const d = await r.json();
-    if(d.error){ toast('Drive: '+d.error.message,'error'); return; }
-    const files = (d.files||[]).map(f=>f.name+' ('+(f.mimeType&&f.mimeType.split('/').pop())+')').join('\n');
-    setTab('chat');
-    setTimeout(()=>{ const ta=$('mta'); if(ta){ ta.value='Here are my recent Google Drive files:\n\n'+files+'\n\nSuggest how to organize them.'; ta.focus(); } },200);
-  }catch(e){ toast('Drive error: '+e.message,'error'); }
-}
 
 /* 3. TASK LAUNCHER */
 const TASKS={
@@ -633,23 +584,6 @@ async function amvNotifyMe(which,name,waitKey){
 window.amvStoreLink=amvStoreLink;
 window.amvNotifyMe=amvNotifyMe;
 let _taskCat=null;
-function filterTaskCat(cat){
-  const secs=document.querySelectorAll('.task-sec');
-  if(_taskCat===cat){
-    _taskCat=null;
-    secs.forEach(s=>s.style.display='');
-    document.querySelectorAll('[id^="tcb-"]').forEach(b=>{b.style.background='';b.style.color='';b.style.borderColor='';});
-  } else {
-    _taskCat=cat;
-    secs.forEach(s=>{s.style.display=s.dataset.section===cat?'':'none';});
-    document.querySelectorAll('[id^="tcb-"]').forEach(b=>{
-      const active=b.id==='tcb-'+cat;
-      b.style.background=active?'rgba(85,144,255,.15)':'';
-      b.style.color=active?'#7cb8ff':'';
-      b.style.borderColor=active?'rgba(88,166,255,.35)':'';
-    });
-  }
-}
 
 /* 5. INTEGRATIONS VIEW - routes to the unified catalog in Settings so there is
    ONE integrations experience (the new Connect catalog), not two. */
@@ -1064,12 +998,6 @@ function _sheetDownloadCSV(){
   _saveBlob(new Blob([csv],{type:'text/csv'}), 'amv_'+Date.now()+'.csv');
   toast('Downloaded','success');
 }
-function _docDownloadTxt(){
-  const b=$('doc-body');
-  if(!b || !b.innerText.trim()){ toast('There is nothing in this document to download yet.','error'); return; }
-  _saveBlob(new Blob([b.innerText],{type:'text/plain'}), 'doc_'+Date.now()+'.txt');
-  toast('Downloaded','success');
-}
 function _saveBlob(blob,name){
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
@@ -1083,7 +1011,7 @@ function _bgAddGmailCheck(){ _bgAddTask({type:'gmail_check',title:'Check Gmail i
 function _bgAddCalendarCheck(){ _bgAddTask({type:'calendar_check',title:'Optimize my week'}); }
 function _toastResultCopied(){ toast('Result copied','success'); }
 try{
-  window._sheetDownloadCSV=_sheetDownloadCSV; window._docDownloadTxt=_docDownloadTxt;
+  window._sheetDownloadCSV=_sheetDownloadCSV;
   window._bgAddGmailCheck=_bgAddGmailCheck; window._bgAddCalendarCheck=_bgAddCalendarCheck;
   window._toastResultCopied=_toastResultCopied;
 }catch(e){}
@@ -1151,44 +1079,6 @@ async function runSheetAI(query){
     } else if(res){res.style.display='block';res.textContent=reply;}
     if($('sheet-inp')) $('sheet-inp').value='';
   }catch(e){if(res){res.style.display='block';res.textContent='Error: '+e.message;}}
-  if(btn){btn.disabled=false;btn.textContent='Ask';}
-}
-function openDocEditor(content,name){
-  const vc=$('vc'); if(!vc) return;
-  vc.innerHTML=`<div style="display:flex;flex-direction:column;height:100%">
-<div style="display:flex;align-items:center;gap:10px;padding:10px 16px;background:rgba(13,17,23,.95);border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0">
-  <span style="font-size:var(--t-base);font-weight:600">&#128196; ${escH(name||'Document')}</span>
-  <div style="margin-left:auto;display:flex;gap:6px">
-    <button class="ext-btn" data-dact="_docDownloadTxt">&#8681; Download</button>
-    <button class="ext-btn" data-stab="extensions">&#10005; Close</button>
-  </div>
-</div>
-<div id="doc-body" contenteditable="true" spellcheck="true" style="flex:1;overflow-y:auto;padding:40px 60px;font-size:var(--t-md);line-height:1.9;color:var(--tx);outline:none;max-width:780px;margin:0 auto;width:100%;box-sizing:border-box">${(content||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n\n/g,'</p><p style="margin:0 0 14px">').replace(/\n/g,'<br>')}</div>
-<div style="background:rgba(13,17,23,.97);border-top:1px solid rgba(255,255,255,.1);padding:12px 14px;flex-shrink:0">
-  <div style="font-size:var(--t-2xs);color:#7cb8ff;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:7px">AMV AI Toolbar</div>
-  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
-    ${['Improve writing','Fix grammar','Make it longer','Make it shorter','Change tone to formal'].map(q=>`<button class="ext-btn" data-dact="runDocAI" data-darg="${q}">${q}</button>`).join('')}
-  </div>
-  <div style="display:flex;gap:8px">
-    <input type="text" id="doc-inp" placeholder="Ask AMV to edit, rewrite, or expand..." style="flex:1;font-size:var(--t-base)">
-    <button class="btn bp" id="doc-ask" style="font-size:var(--t-base);padding:8px 18px">Ask</button>
-  </div>
-</div></div>`;
-  on($('doc-ask'),'click',()=>runDocAI($('doc-inp')&&$('doc-inp').value));
-  on($('doc-inp'),'keydown',e=>{if(e.key==='Enter')runDocAI($('doc-inp')&&$('doc-inp').value);});
-}
-async function runDocAI(query){
-  if(!query||!query.trim()) return;
-  const btn=$('doc-ask'),body=$('doc-body');
-  if(btn){btn.disabled=true;btn.textContent='Editing...';}
-  const mk=loadStr('amv_mk');
-  if(!mk){toast('Add API key in Settings','error');if(btn){btn.disabled=false;btn.textContent='Ask';}return;}
-  try{
-    const reply=await aiComplete('Document editor. Current document:\n\n'+(body&&body.innerText||'').slice(0,6000)+'\n\nRequest: '+query+'\n\nReturn ONLY the complete revised document. No explanation.', null, {model:(typeof qModel==='function'?qModel('rewrite'):'amv-core'), max_tokens:3000, noLang:true});
-    if(body) body.innerHTML=reply.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n\n/g,'</p><p style="margin:0 0 14px">').replace(/\n/g,'<br>');
-    if($('doc-inp')) $('doc-inp').value='';
-    toast('Document updated','success');
-  }catch(e){toast('Error: '+e.message,'error');}
   if(btn){btn.disabled=false;btn.textContent='Ask';}
 }
 

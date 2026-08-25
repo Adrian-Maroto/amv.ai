@@ -1517,14 +1517,6 @@ function openUpgradeModal(lockedModel){
   r.querySelectorAll('[data-upg]').forEach(btn=>on(btn,'click',()=>{ const k=btn.dataset.upg; close(); if(k==='custom'){ openCustomPlan(); } else { openCheckout(k); } }));
   const cmp=$('upg-compare'); if(cmp) on(cmp,'click',()=>{ close(); openPlanCompare(needPlan); });
 }
-function _planDetails(k){
-  const D={
-    pro:['All models, including AMV Forge for coding','5\u00d7 the usage of the Free plan','Autonomous agents and Crew for multi-step work','Image, video, and 3D generation','Build and run apps in the sandbox','Connect Gmail, calendar, and files','Scheduled and background automation','Faster generation'],
-    elite:['Everything in Pro, dialed up','20\u00d7 the usage','AMV Apex first - our most capable engine','Full-stack app builder with one-click deploy','Double Pro\u2019s throughput - '+_rpmLabel('elite'),'4K video & premium image quality',_autoMaxLabel('elite')+' running in the background','Team workspaces - 10 seats on one subscription','Early access + 24/7 priority support'],
-    ultra:['Everything in Elite, maxed out','50\u00d7 the usage','The highest throughput AMV offers - '+_rpmLabel('ultra'),_autoMaxLabel('ultra')+' running in the background','Whole-codebase context & autonomous projects','Export & download full multi-file projects','Deploy & host multiple live apps','Team workspaces - 25 seats, roles & shared projects','Fastest hardware + dedicated support'],
-  };
-  return D[k]||['More usage','All models'];
-}
 function openPlanCompare(highlight){
   const r=$('ovr'); if(!r) return;
   const plans=['free','pro','elite','ultra','custom'];
@@ -1639,13 +1631,6 @@ function _cpInclFeatures(hasApex){
   ];
 }
 window.openCustomPlan=openCustomPlan;
-function _planHighlights(k){
-  return {
-    pro:['All 4 models incl. Forge','5\u00d7 the usage','Autonomous agents & Crew',' video & 3D','Priority speed'],
-    elite:['Everything in Pro','20\u00d7 the usage','Fastest models first','Double Pro\u2019s throughput','Early access'],
-    ultra:['Everything in Elite','50\u00d7 the usage','Max concurrency','Team-grade throughput','Dedicated support'],
-  }[k]||['More usage','All models'];
-}
 window.openUpgradeModal=openUpgradeModal;
 function _switchPlan(target){
   if(target==='free'){
@@ -1661,7 +1646,6 @@ function _switchPlan(target){
   openCheckout(target);
 }
 function _secItem(ic,t,d){ return '<div class="sec-item"><div class="sec-ic">'+ic+'</div><div><div class="sec-t">'+t+'</div><div class="sec-d">'+d+'</div></div></div>'; }
-function _pmLabel(pm){ return ({card:'Card',apple:'Apple Pay',google:'Google Pay',paypal:'PayPal',bank:'Bank'})[pm.type]||'Card'; }
 /* THE PAYMENT-METHOD CARD IS GONE, AND IT NEVER RENDERED ANYWAY.
 
    Three functions lived here: _savePM, _loadPM, removePM. Nothing ever called

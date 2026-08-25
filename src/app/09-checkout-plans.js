@@ -506,7 +506,6 @@ async function _payCard(plan){
     toast('Could not open secure checkout. Please try again.','error',5000);
   }
 }
-function _cardBrand(d){ if(/^4/.test(d))return'visa'; if(/^5[1-5]/.test(d)||/^2[2-7]/.test(d))return'mastercard'; if(/^3[47]/.test(d))return'amex'; if(/^6/.test(d))return'discover'; return'card'; }
 /* Single entry point for a completed payment, regardless of processor or path
    (Stripe redirect, PayPal capture, in-app card, or test simulation). Refreshes
    entitlement from the server when live, updates local plan + UI, and confirms
@@ -529,7 +528,6 @@ async function handlePaymentSuccess(plan, opts){
 }
 try{ window.handlePaymentSuccess=handlePaymentSuccess; }catch(e){}
 
-function _payActivate(kind,plan){ _savePM({type:kind,brand:kind,last4:'••'}); handlePaymentSuccess(plan); }
 /* When the user returns from an external checkout with ?paid=<plan>&pm=<method>, activate it. */
 function _checkPayReturn(){
   try{

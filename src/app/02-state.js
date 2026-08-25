@@ -590,30 +590,11 @@ function _planAllowedModel(want){
 function _buildModelAllowed(section){ return _planAllowedModel(_BUILD_MODEL[section] || 'smart'); }
 // resolve a section's chosen model key → real API model string for aiComplete/opts.model
 function _buildModelStr(section){ const k=_buildModelAllowed(section); const m=MODELS[k]; return (m&&m.model&&m.model!=='auto')?m.model:'amv-core'; }
-// usage dots (1-4) as a compact visual - clearly shows how much each model costs
-function _usageDots(cost){ let s=''; for(let i=1;i<=4;i++){ s+='<span class="mp-dot'+(i<=cost?' on':'')+'"></span>'; } return '<span class="mp-dots" title="Usage per run">'+s+'</span>'; }
-function _usageWord(cost){ return ['No','Low','Medium','High','Maximum'][cost]||'Medium'; }
-// build a model picker for a section
-function _modelPickerHTML(section){
-  /* Show what will RUN, not what was stored - a chip naming an engine the plan
-     cannot reach is the thing that made this look like it worked. */
-  const cur=_buildModelAllowed(section);
-  const opts=MODEL_ORDER.filter(k=>k!=='auto'||section==='studio').map(k=>{ const m=MODELS[k]; return '<option value="'+k+'"'+(k===cur?' selected':'')+'>'+m.label+' \u00b7 '+_usageWord(m.cost).toLowerCase()+' usage</option>'; }).join('');
-  const m=MODELS[cur];
-  return '<div class="mp-wrap"><label class="mp-label">Model</label>'+
-    '<select class="mp-sel" data-mp="'+section+'" aria-label="Engine for '+escH(section)+'">'+opts+'</select>'+
-    _usageDots(m.cost)+
-    '<span class="mp-note" data-mp-note="'+section+'">'+_usageWord(m.cost)+' usage per run</span>'+
-  '</div>';
-}
-function _wireModelPicker(root){
-  (root||document).querySelectorAll('[data-mp]').forEach(sel=>on(sel,'change',()=>{
-    const section=sel.dataset.mp; _BUILD_MODEL[section]=sel.value; _saveBuildModels();
-    const m=MODELS[sel.value];
-    const wrap=sel.closest('.mp-wrap'); if(wrap){ const dots=wrap.querySelector('.mp-dots'); if(dots) dots.outerHTML=_usageDots(m.cost); const note=wrap.querySelector('[data-mp-note]'); if(note) note.textContent=_usageWord(m.cost)+' usage per run'; }
-    toast(m.label+' selected - '+_usageWord(m.cost).toLowerCase()+' usage per run','info',2500);
-  }));
-}
+/* The per-section model picker that _modelPickerHTML rendered lived here:
+   _wireModelPicker bound every [data-mp] select, and _usageDots/_usageWord drew
+   the cost meter beside it. The picker markup is gone and _sectionModelSelect is
+   what renders now, so the binding matched nothing on every call - a listener
+   attached to zero elements, which looks exactly like one that works. */
 
 /* ============================================================
    PER-SECTION MODEL CHOICE - lets users decide which model powers

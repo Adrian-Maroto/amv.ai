@@ -1508,7 +1508,6 @@ function _paginate(key, total, pageSize){
   return { shown, hasMore: shown < total, remaining: total - shown, pageSize };
 }
 function _pageMore(key, pageSize){ _PAGE[key] = (_PAGE[key]||30) + (pageSize||30); }
-function _pageReset(key, pageSize){ _PAGE[key] = pageSize||30; }
 function _showMoreBtn(key, remaining, pageSize){
   const n = Math.min(remaining, pageSize||30);
   return '<button class="show-more-btn" data-pagemore="'+key+'">Show '+n+' more <span class="show-more-count">'+remaining+' remaining</span></button>';

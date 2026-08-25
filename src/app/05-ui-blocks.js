@@ -1620,11 +1620,6 @@ function bindChatEvents() {
   on(cib,'drop',e=>{ e.preventDefault(); cib.style.borderColor=''; if(e.dataTransfer.files.length) handleFiles(e.dataTransfer.files); });
 }
 
-function closeTab(id) {
-  S.openTabs=S.openTabs.filter(t=>t!==id);
-  if(S.cur===id) S.cur=(S.openTabs[0]||S.convs[0]?.id);
-  renderChatView();
-}
 
 /* ---------------- Message reactions ----------------
    Quick emoji reactions on AI messages. Reactions are stored on the message
@@ -1736,15 +1731,6 @@ function _toggleReaction(idx, emoji){
   renderChatMsgs();
 }
 
-/* A capability card for the chat home - title, subtitle, and a rich example
-   prompt that fills the composer on click. `icon` is inner SVG path markup. */
-function _cehCard(id, title, sub, prompt, icon){
-  return '<button class="ceh-card" data-c="'+id+'" data-q="'+escH(prompt)+'">'+
-    '<span class="ceh-card-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+icon+'</svg></span>'+
-    '<span class="ceh-card-txt"><span class="ceh-card-title">'+escH(title)+'</span><span class="ceh-card-sub">'+escH(sub)+'</span></span>'+
-    '<span class="ceh-card-arrow"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>'+
-  '</button>';
-}
 // A subtle starter chip for the clean chat home: label the user sees, full
 // prompt inserted into the composer on click.
 // Small pill chip with an icon - sits under the composer on the home screen.
@@ -1760,62 +1746,11 @@ function _chip(kind, label, prompt){
     '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+ic+'</svg>'+
     escH(label)+'</button>';
 }
-function _starterChip(label, prompt){
-  return '<button class="chome-chip" data-q="'+escH(prompt)+'">'+escH(label)+'</button>';
-}
 // A capability card for the home - icon, title, one-line what-it-does. Reads as
 // "pick a job for your AI workforce," not a generic chat suggestion pill.
-function _starterCard(kind, title, sub, prompt){
-  const ic={
-    build:'<path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/>',
-    research:'<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>',
-    image:'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>',
-    automate:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'
-  }[kind]||'<circle cx="12" cy="12" r="9"/>';
-  return '<button class="chome-card-starter" data-q="'+escH(prompt)+'">'+
-    '<span class="csc-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+ic+'</svg></span>'+
-    '<span class="csc-txt"><span class="csc-title">'+escH(title)+'</span><span class="csc-sub">'+sub+'</span></span>'+
-  '</button>';
-}
 // Build a grounded "Jump back in" section for the chat home from the most
 // recent work sessions (Dev/Lab/Studio) and conversations. Returns '' when
 // there's nothing meaningful yet, so new/empty accounts keep the minimal home.
-function _chomeRecentWork(){
-  try{
-    const items=[];
-    (Array.isArray(_SESSIONS)?_SESSIONS:[]).forEach(s=>items.push({kind:'sess',t:s.updated||0,rec:s}));
-    (Array.isArray(S.convs)?S.convs:[]).forEach(c=>{
-      const has=c.msgs&&c.msgs.some(m=>m.r==='u');
-      if(has) items.push({kind:'conv',t:c._t||c.ts||0,rec:c});
-    });
-    if(items.length<1) return '';
-    items.sort((a,b)=>(b.t||0)-(a.t||0));
-    const top=items.slice(0,4);
-    if(!top.length) return '';
-    const timeAgo=(t)=>{ if(!t) return ''; const d=Date.now()-t; const m=Math.floor(d/60000); if(m<1)return 'just now'; if(m<60)return m+'m ago'; const h=Math.floor(m/60); if(h<24)return h+'h ago'; const dy=Math.floor(h/24); return dy+'d ago'; };
-    const kindMeta={
-      dev:{label:'Dev',svg:'<path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/>'},
-      lab:{label:'Lab',svg:'<path d="M10 2h4M12 2v6.5L7 19a1 1 0 0 0 .9 1.5h8.2A1 1 0 0 0 17 19l-5-10.5"/>'},
-      studio:{label:'Studio',svg:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/>'},
-      chat:{label:'Chat',svg:'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>'}
-    };
-    const cards=top.map(it=>{
-      if(it.kind==='sess'){
-        const km=kindMeta[it.rec.kind]||kindMeta.chat;
-        return '<button class="chome-card" data-chome-sess="'+it.rec.id+'">'+
-          '<span class="chome-card-ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+km.svg+'</svg></span>'+
-          '<span class="chome-card-txt"><span class="chome-card-title">'+escH(it.rec.title||km.label)+'</span>'+
-            '<span class="chome-card-meta">'+km.label+(it.t?' \u00b7 '+timeAgo(it.t):'')+'</span></span></button>';
-      }
-      const km=kindMeta.chat;
-      return '<button class="chome-card" data-chome-conv="'+it.rec.id+'">'+
-        '<span class="chome-card-ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+km.svg+'</svg></span>'+
-        '<span class="chome-card-txt"><span class="chome-card-title">'+escH(it.rec.title||'Conversation')+'</span>'+
-          '<span class="chome-card-meta">Chat'+(it.t?' \u00b7 '+timeAgo(it.t):'')+'</span></span></button>';
-    }).join('');
-    return '<div class="chome-recent"><div class="chome-recent-h">Jump back in</div><div class="chome-recent-grid">'+cards+'</div></div>';
-  }catch(e){ return ''; }
-}
 
 // Update ONLY the streaming assistant bubble in place (no full re-render), so
 // token reveal stays smooth on long/fast responses. The streaming bubble is the
@@ -2008,7 +1943,7 @@ function renderChatMsgs() {
       chips.innerHTML=
         _chip('build','Build','Build a full-stack web app with React, a clean UI, and auth. Then run it so I can see it working.')+
         _chip('write','Write','Write a clear, well-structured article. Ask me what it should be about if you need to.')+
-        _chip('create','Create','Generate a photorealistic hero image for a premium coffee brand - warm morning light, editorial style.')+
+        _chip('create','Create','Design a landing page for a premium coffee brand - a clear headline, one product shot slot, and a sign-up form. Then run it so I can see it.')+
         _chip('research','Research','Research a topic thoroughly and write a sourced report with a clear takeaway.')+
         _chip('automate','Automate','Every morning at 7am, research overnight news and have a concise brief ready for me.');
       chips.querySelectorAll('[data-q]').forEach(p=>p.addEventListener('click',()=>{
@@ -2017,8 +1952,6 @@ function renderChatMsgs() {
       }));
       document.querySelectorAll('.chome-recent').forEach(e=>e.remove());
     }
-    cm.querySelectorAll('[data-chome-sess]').forEach(el=>el.addEventListener('click',()=>{ try{ _sessResume(el.dataset.chomeSess); }catch(e){} }));
-    cm.querySelectorAll('[data-chome-conv]').forEach(el=>el.addEventListener('click',()=>{ try{ loadConv(el.dataset.chomeConv); }catch(e){} }));
     return;
   }
 

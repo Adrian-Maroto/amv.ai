@@ -1508,7 +1508,6 @@ function _paginate(key, total, pageSize){
   return { shown, hasMore: shown < total, remaining: total - shown, pageSize };
 }
 function _pageMore(key, pageSize){ _PAGE[key] = (_PAGE[key]||30) + (pageSize||30); }
-function _pageReset(key, pageSize){ _PAGE[key] = pageSize||30; }
 function _showMoreBtn(key, remaining, pageSize){
   const n = Math.min(remaining, pageSize||30);
   return '<button class="show-more-btn" data-pagemore="'+key+'">Show '+n+' more <span class="show-more-count">'+remaining+' remaining</span></button>';
@@ -2253,30 +2252,11 @@ function _planAllowedModel(want){
 function _buildModelAllowed(section){ return _planAllowedModel(_BUILD_MODEL[section] || 'smart'); }
 // resolve a section's chosen model key → real API model string for aiComplete/opts.model
 function _buildModelStr(section){ const k=_buildModelAllowed(section); const m=MODELS[k]; return (m&&m.model&&m.model!=='auto')?m.model:'amv-core'; }
-// usage dots (1-4) as a compact visual - clearly shows how much each model costs
-function _usageDots(cost){ let s=''; for(let i=1;i<=4;i++){ s+='<span class="mp-dot'+(i<=cost?' on':'')+'"></span>'; } return '<span class="mp-dots" title="Usage per run">'+s+'</span>'; }
-function _usageWord(cost){ return ['No','Low','Medium','High','Maximum'][cost]||'Medium'; }
-// build a model picker for a section
-function _modelPickerHTML(section){
-  /* Show what will RUN, not what was stored - a chip naming an engine the plan
-     cannot reach is the thing that made this look like it worked. */
-  const cur=_buildModelAllowed(section);
-  const opts=MODEL_ORDER.filter(k=>k!=='auto'||section==='studio').map(k=>{ const m=MODELS[k]; return '<option value="'+k+'"'+(k===cur?' selected':'')+'>'+m.label+' \u00b7 '+_usageWord(m.cost).toLowerCase()+' usage</option>'; }).join('');
-  const m=MODELS[cur];
-  return '<div class="mp-wrap"><label class="mp-label">Model</label>'+
-    '<select class="mp-sel" data-mp="'+section+'" aria-label="Engine for '+escH(section)+'">'+opts+'</select>'+
-    _usageDots(m.cost)+
-    '<span class="mp-note" data-mp-note="'+section+'">'+_usageWord(m.cost)+' usage per run</span>'+
-  '</div>';
-}
-function _wireModelPicker(root){
-  (root||document).querySelectorAll('[data-mp]').forEach(sel=>on(sel,'change',()=>{
-    const section=sel.dataset.mp; _BUILD_MODEL[section]=sel.value; _saveBuildModels();
-    const m=MODELS[sel.value];
-    const wrap=sel.closest('.mp-wrap'); if(wrap){ const dots=wrap.querySelector('.mp-dots'); if(dots) dots.outerHTML=_usageDots(m.cost); const note=wrap.querySelector('[data-mp-note]'); if(note) note.textContent=_usageWord(m.cost)+' usage per run'; }
-    toast(m.label+' selected - '+_usageWord(m.cost).toLowerCase()+' usage per run','info',2500);
-  }));
-}
+/* The per-section model picker that _modelPickerHTML rendered lived here:
+   _wireModelPicker bound every [data-mp] select, and _usageDots/_usageWord drew
+   the cost meter beside it. The picker markup is gone and _sectionModelSelect is
+   what renders now, so the binding matched nothing on every call - a listener
+   attached to zero elements, which looks exactly like one that works. */
 
 /* ============================================================
    PER-SECTION MODEL CHOICE - lets users decide which model powers
@@ -6774,11 +6754,6 @@ function bindChatEvents() {
   on(cib,'drop',e=>{ e.preventDefault(); cib.style.borderColor=''; if(e.dataTransfer.files.length) handleFiles(e.dataTransfer.files); });
 }
 
-function closeTab(id) {
-  S.openTabs=S.openTabs.filter(t=>t!==id);
-  if(S.cur===id) S.cur=(S.openTabs[0]||S.convs[0]?.id);
-  renderChatView();
-}
 
 /* ---------------- Message reactions ----------------
    Quick emoji reactions on AI messages. Reactions are stored on the message
@@ -6890,15 +6865,6 @@ function _toggleReaction(idx, emoji){
   renderChatMsgs();
 }
 
-/* A capability card for the chat home - title, subtitle, and a rich example
-   prompt that fills the composer on click. `icon` is inner SVG path markup. */
-function _cehCard(id, title, sub, prompt, icon){
-  return '<button class="ceh-card" data-c="'+id+'" data-q="'+escH(prompt)+'">'+
-    '<span class="ceh-card-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+icon+'</svg></span>'+
-    '<span class="ceh-card-txt"><span class="ceh-card-title">'+escH(title)+'</span><span class="ceh-card-sub">'+escH(sub)+'</span></span>'+
-    '<span class="ceh-card-arrow"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>'+
-  '</button>';
-}
 // A subtle starter chip for the clean chat home: label the user sees, full
 // prompt inserted into the composer on click.
 // Small pill chip with an icon - sits under the composer on the home screen.
@@ -6914,62 +6880,11 @@ function _chip(kind, label, prompt){
     '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+ic+'</svg>'+
     escH(label)+'</button>';
 }
-function _starterChip(label, prompt){
-  return '<button class="chome-chip" data-q="'+escH(prompt)+'">'+escH(label)+'</button>';
-}
 // A capability card for the home - icon, title, one-line what-it-does. Reads as
 // "pick a job for your AI workforce," not a generic chat suggestion pill.
-function _starterCard(kind, title, sub, prompt){
-  const ic={
-    build:'<path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/>',
-    research:'<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>',
-    image:'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>',
-    automate:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'
-  }[kind]||'<circle cx="12" cy="12" r="9"/>';
-  return '<button class="chome-card-starter" data-q="'+escH(prompt)+'">'+
-    '<span class="csc-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+ic+'</svg></span>'+
-    '<span class="csc-txt"><span class="csc-title">'+escH(title)+'</span><span class="csc-sub">'+sub+'</span></span>'+
-  '</button>';
-}
 // Build a grounded "Jump back in" section for the chat home from the most
 // recent work sessions (Dev/Lab/Studio) and conversations. Returns '' when
 // there's nothing meaningful yet, so new/empty accounts keep the minimal home.
-function _chomeRecentWork(){
-  try{
-    const items=[];
-    (Array.isArray(_SESSIONS)?_SESSIONS:[]).forEach(s=>items.push({kind:'sess',t:s.updated||0,rec:s}));
-    (Array.isArray(S.convs)?S.convs:[]).forEach(c=>{
-      const has=c.msgs&&c.msgs.some(m=>m.r==='u');
-      if(has) items.push({kind:'conv',t:c._t||c.ts||0,rec:c});
-    });
-    if(items.length<1) return '';
-    items.sort((a,b)=>(b.t||0)-(a.t||0));
-    const top=items.slice(0,4);
-    if(!top.length) return '';
-    const timeAgo=(t)=>{ if(!t) return ''; const d=Date.now()-t; const m=Math.floor(d/60000); if(m<1)return 'just now'; if(m<60)return m+'m ago'; const h=Math.floor(m/60); if(h<24)return h+'h ago'; const dy=Math.floor(h/24); return dy+'d ago'; };
-    const kindMeta={
-      dev:{label:'Dev',svg:'<path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/>'},
-      lab:{label:'Lab',svg:'<path d="M10 2h4M12 2v6.5L7 19a1 1 0 0 0 .9 1.5h8.2A1 1 0 0 0 17 19l-5-10.5"/>'},
-      studio:{label:'Studio',svg:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/>'},
-      chat:{label:'Chat',svg:'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>'}
-    };
-    const cards=top.map(it=>{
-      if(it.kind==='sess'){
-        const km=kindMeta[it.rec.kind]||kindMeta.chat;
-        return '<button class="chome-card" data-chome-sess="'+it.rec.id+'">'+
-          '<span class="chome-card-ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+km.svg+'</svg></span>'+
-          '<span class="chome-card-txt"><span class="chome-card-title">'+escH(it.rec.title||km.label)+'</span>'+
-            '<span class="chome-card-meta">'+km.label+(it.t?' \u00b7 '+timeAgo(it.t):'')+'</span></span></button>';
-      }
-      const km=kindMeta.chat;
-      return '<button class="chome-card" data-chome-conv="'+it.rec.id+'">'+
-        '<span class="chome-card-ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+km.svg+'</svg></span>'+
-        '<span class="chome-card-txt"><span class="chome-card-title">'+escH(it.rec.title||'Conversation')+'</span>'+
-          '<span class="chome-card-meta">Chat'+(it.t?' \u00b7 '+timeAgo(it.t):'')+'</span></span></button>';
-    }).join('');
-    return '<div class="chome-recent"><div class="chome-recent-h">Jump back in</div><div class="chome-recent-grid">'+cards+'</div></div>';
-  }catch(e){ return ''; }
-}
 
 // Update ONLY the streaming assistant bubble in place (no full re-render), so
 // token reveal stays smooth on long/fast responses. The streaming bubble is the
@@ -7162,7 +7077,7 @@ function renderChatMsgs() {
       chips.innerHTML=
         _chip('build','Build','Build a full-stack web app with React, a clean UI, and auth. Then run it so I can see it working.')+
         _chip('write','Write','Write a clear, well-structured article. Ask me what it should be about if you need to.')+
-        _chip('create','Create','Generate a photorealistic hero image for a premium coffee brand - warm morning light, editorial style.')+
+        _chip('create','Create','Design a landing page for a premium coffee brand - a clear headline, one product shot slot, and a sign-up form. Then run it so I can see it.')+
         _chip('research','Research','Research a topic thoroughly and write a sourced report with a clear takeaway.')+
         _chip('automate','Automate','Every morning at 7am, research overnight news and have a concise brief ready for me.');
       chips.querySelectorAll('[data-q]').forEach(p=>p.addEventListener('click',()=>{
@@ -7171,8 +7086,6 @@ function renderChatMsgs() {
       }));
       document.querySelectorAll('.chome-recent').forEach(e=>e.remove());
     }
-    cm.querySelectorAll('[data-chome-sess]').forEach(el=>el.addEventListener('click',()=>{ try{ _sessResume(el.dataset.chomeSess); }catch(e){} }));
-    cm.querySelectorAll('[data-chome-conv]').forEach(el=>el.addEventListener('click',()=>{ try{ loadConv(el.dataset.chomeConv); }catch(e){} }));
     return;
   }
 
@@ -12508,14 +12421,6 @@ function openUpgradeModal(lockedModel){
   r.querySelectorAll('[data-upg]').forEach(btn=>on(btn,'click',()=>{ const k=btn.dataset.upg; close(); if(k==='custom'){ openCustomPlan(); } else { openCheckout(k); } }));
   const cmp=$('upg-compare'); if(cmp) on(cmp,'click',()=>{ close(); openPlanCompare(needPlan); });
 }
-function _planDetails(k){
-  const D={
-    pro:['All models, including AMV Forge for coding','5\u00d7 the usage of the Free plan','Autonomous agents and Crew for multi-step work','Image, video, and 3D generation','Build and run apps in the sandbox','Connect Gmail, calendar, and files','Scheduled and background automation','Faster generation'],
-    elite:['Everything in Pro, dialed up','20\u00d7 the usage','AMV Apex first - our most capable engine','Full-stack app builder with one-click deploy','Double Pro\u2019s throughput - '+_rpmLabel('elite'),'4K video & premium image quality',_autoMaxLabel('elite')+' running in the background','Team workspaces - 10 seats on one subscription','Early access + 24/7 priority support'],
-    ultra:['Everything in Elite, maxed out','50\u00d7 the usage','The highest throughput AMV offers - '+_rpmLabel('ultra'),_autoMaxLabel('ultra')+' running in the background','Whole-codebase context & autonomous projects','Export & download full multi-file projects','Deploy & host multiple live apps','Team workspaces - 25 seats, roles & shared projects','Fastest hardware + dedicated support'],
-  };
-  return D[k]||['More usage','All models'];
-}
 function openPlanCompare(highlight){
   const r=$('ovr'); if(!r) return;
   const plans=['free','pro','elite','ultra','custom'];
@@ -12630,13 +12535,6 @@ function _cpInclFeatures(hasApex){
   ];
 }
 window.openCustomPlan=openCustomPlan;
-function _planHighlights(k){
-  return {
-    pro:['All 4 models incl. Forge','5\u00d7 the usage','Autonomous agents & Crew',' video & 3D','Priority speed'],
-    elite:['Everything in Pro','20\u00d7 the usage','Fastest models first','Double Pro\u2019s throughput','Early access'],
-    ultra:['Everything in Elite','50\u00d7 the usage','Max concurrency','Team-grade throughput','Dedicated support'],
-  }[k]||['More usage','All models'];
-}
 window.openUpgradeModal=openUpgradeModal;
 function _switchPlan(target){
   if(target==='free'){
@@ -12652,7 +12550,6 @@ function _switchPlan(target){
   openCheckout(target);
 }
 function _secItem(ic,t,d){ return '<div class="sec-item"><div class="sec-ic">'+ic+'</div><div><div class="sec-t">'+t+'</div><div class="sec-d">'+d+'</div></div></div>'; }
-function _pmLabel(pm){ return ({card:'Card',apple:'Apple Pay',google:'Google Pay',paypal:'PayPal',bank:'Bank'})[pm.type]||'Card'; }
 /* THE PAYMENT-METHOD CARD IS GONE, AND IT NEVER RENDERED ANYWAY.
 
    Three functions lived here: _savePM, _loadPM, removePM. Nothing ever called
@@ -13173,7 +13070,6 @@ async function _payCard(plan){
     toast('Could not open secure checkout. Please try again.','error',5000);
   }
 }
-function _cardBrand(d){ if(/^4/.test(d))return'visa'; if(/^5[1-5]/.test(d)||/^2[2-7]/.test(d))return'mastercard'; if(/^3[47]/.test(d))return'amex'; if(/^6/.test(d))return'discover'; return'card'; }
 /* Single entry point for a completed payment, regardless of processor or path
    (Stripe redirect, PayPal capture, in-app card, or test simulation). Refreshes
    entitlement from the server when live, updates local plan + UI, and confirms
@@ -13196,7 +13092,6 @@ async function handlePaymentSuccess(plan, opts){
 }
 try{ window.handlePaymentSuccess=handlePaymentSuccess; }catch(e){}
 
-function _payActivate(kind,plan){ _savePM({type:kind,brand:kind,last4:'••'}); handlePaymentSuccess(plan); }
 /* When the user returns from an external checkout with ?paid=<plan>&pm=<method>, activate it. */
 function _checkPayReturn(){
   try{
@@ -14460,7 +14355,14 @@ async function _crewSyncLive(){
       }));
     }
     if(appr){ store('amv_cw_approvals', appr.map(a=>({id:a.id,icon:a.icon,title:a.title,preview:a.preview}))); }
-    renderCrewView();
+    /* ONLY IF THEY ARE STILL LOOKING AT IT.
+
+       This is fired when the tab opens and answers whenever the network
+       answers. Somebody who moved on in the meantime would have the screen they
+       are now reading replaced by the one they left - the stored state above is
+       still updated, which is the point, so the next time they open Crew it is
+       correct without anything being redrawn under them. */
+    if(S.tab === 'crew' || S.tab === 'extensions') renderCrewView();
   }catch(e){}
 }
 /* ============================================================
@@ -14591,9 +14493,6 @@ function _mcRetry(id){
   toast('Retrying - running in the background','info'); renderCrewView();
 }
 window._mcRetry=_mcRetry;
-function _mcAutonCard(j){
-  return `<div class="mc-card"><div class="mc-card-top"><span class="mc-card-t">${escH(j.title)}</span><span class="mc-pill ok">On</span></div><div class="mc-card-sub">${escH(j.desc||'')}</div><div class="mc-card-act"><span class="mc-card-uses">Uses: ${escH(j.needs||'-')}</span><button class="btn mc-mini ghost" data-dact="cwToggle" data-darg="${j.id}">Turn off</button></div></div>`;
-}
 function _mcSchedRow(t, st){
   const when = t.sched?((typeof _schedHumanOf==='function')?_schedHumanOf(t.sched):''):((typeof _freqLabel==='function')?_freqLabel(t.freq):'');
   let next='';
@@ -15686,15 +15585,6 @@ function renderCrewView(){
     var _ci=$('mc-cmd-input'); if(_ci) on(_ci,'keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); _mcRun(); } });
     vc.querySelectorAll('[data-mccmd]').forEach(function(c){ on(c,'click',function(){ var el=$('mc-cmd-input'); if(el){ el.value=c.dataset.mccmd; el.focus(); } }); });
   }catch(e){}
-}
-function _crewQueueHTML(){
-  try{
-    var q=(typeof _bgQueue!=='undefined'&&_bgQueue.tasks)?_bgQueue.tasks:[];
-    if(!q.length) return '<div class="cw-empty">No background tasks running.</div>';
-    var sc=s=>s==='done'?'#4ade80':s==='running'?'#5590ff':s==='failed'?'#ff4d4d':'#e0b341';
-    var si=s=>s==='done'?'✓':s==='running'?'⟳':s==='failed'?'✕':'⏳';
-    return q.slice().reverse().map(function(t){return '<div class="cw-qrow"><span style="color:'+sc(t.status)+'">'+si(t.status)+'</span><span style="flex:1">'+escH(t.title||t.type||'Task')+'</span><span style="font-size:var(--t-xs);color:var(--mu)">'+(t.status||'')+'</span></div>';}).join('');
-  }catch(e){ return '<div class="cw-empty">No background tasks running.</div>'; }
 }
 function cwToggle(id){
   const jobs=_cwJobs(); const j=jobs.find(x=>x.id===id); if(!j) return;
@@ -18046,12 +17936,16 @@ function _devRenderLog(){
     _devRenderLog();
   }));
 }
-/* Does this Dev request want a TOOL (ship it / make an image) rather than code?
-   Dev used to be able to do neither - you had to leave and find another tab. */
+/* Does this Dev request want a TOOL - shipping it - rather than code? Dev used
+   to be able to do neither: you had to leave and find another tab.
+
+   There was a second branch here returning 'image'. Nothing read it after image
+   generation came out, so it matched a request, named an intent, and the caller
+   below fell through to writing code anyway. A classifier whose answer nobody
+   acts on is worse than no classifier: it reads as a decision being made. */
 function _devToolIntent(msg){
   const t=String(msg||'').toLowerCase();
   if(/\b(deploy|publish|ship it|put it live|go live|make it live|host it|give me a (live )?(url|link))\b/.test(t)) return 'deploy';
-  if(/\b(generate|create|make|add)\b[^.]*\b(image|picture|photo|illustration|logo|icon|hero image|graphic)\b/.test(t)) return 'image';
   return null;
 }
 
@@ -19358,7 +19252,9 @@ async function _handoffSyncLive(){
       const seen=new Set(fromServer.map(h=>h.id));
       store('amv_handoffs_out', fromServer.concat(keep.filter(h=>!seen.has(h.id))));
     }
-    renderHandoffView();
+    /* Only if they are still on it - see _crewSyncLive. The store above is
+       updated either way, so nothing is lost by not redrawing. */
+    if(S.tab === 'handoff') renderHandoffView();
   }catch(e){}
 }
 function renderHandoffView(){
@@ -19656,14 +19552,30 @@ function renderView(){
     case 'apps': renderAppsView(); break;
     case 'tasks': renderTasksView(); break;
     case 'integrations': renderIntegrationsView(); break;
-    case 'extensions': renderCrewView(); break;
-    case 'crew': renderCrewView(); break;
+    /* RENDER FROM WHAT IS HERE, THEN ASK THE SERVER.
+
+       Crew job state is WRITTEN to the server on every toggle - AMV_API.toggleJob
+       fires from cwToggle and _cwToggleReal. It was READ back by exactly one
+       function, _crewSyncLive, and nothing called it. So switching a job on from
+       a phone and opening Crew on a laptop showed the laptop's own stale
+       picture: the server had the truth, the endpoint existed, the write half
+       ran on every toggle, and the read half was never reached.
+
+       Not awaited, deliberately. The local list renders immediately and the
+       server's answer updates it when it arrives - blocking the screen on a
+       network round trip to show something already on disk would be a slower
+       product for a fresher one nobody was waiting for. */
+    case 'extensions': renderCrewView(); _crewSyncLive(); break;
+    case 'crew': renderCrewView(); _crewSyncLive(); break;
     /* One door for all three (AMV-D007 step 2). The renderers behind it are
        unchanged; this is only where they are reached from. */
     case 'studio':
     case 'dev':
     case 'lab': renderBuildView(); break;
-    case 'handoff': renderHandoffView(); break;
+    /* Same shape, same fix: AMV_API.listHandoff appeared once in the whole
+       client, inside _handoffSyncLive, which nothing called. A handoff sent to
+       you was invisible until you happened to be on the device that sent it. */
+    case 'handoff': renderHandoffView(); _handoffSyncLive(); break;
     case 'market': renderMarketView(); break;
     case 'admin': renderAdminView(); break;
     case 'notfound': render404View(); break;
@@ -20481,12 +20393,6 @@ const INTEGRATION_META = {
   notion:  { name:'Notion',     key:'amv_notion',  oauth:'amv_notion_client' },
   canvas:  { name:'Canvas LMS', key:'amv_canvas' },
 };
-/* DEPRECATED / NEUTRALIZED: launching a custom protocol (vscode://, etc.) can
-   make the browser show "a problem occurred" and blank the whole page when no
-   handler is installed. We never do this anymore - integrations connect via
-   OAuth popups (which can't blank the page) or via CLI/API-key guidance. This
-   stub is kept so any legacy caller is a harmless no-op instead of a hazard. */
-function _tryProtocol(url){ /* intentionally does nothing - see comment above */ }
 async function connectIntegration(id){
   const m = INTEGRATION_META[id];
   if(!m){ return; }
@@ -22019,8 +21925,6 @@ function setupApp(){
 
 /* -- Navigation helpers -- */
 function goSettings(pane){ S.settingsPane=pane; setTab('settings'); }
-function goToStripeSettings(){ closeOvr(); goSettings('platform'); }
-function showMsg(msg){ toast(msg||'Configure in Settings.','info'); }
 function askAmv(){ setTab('chat'); setTimeout(()=>{ const ta=document.getElementById('mta'); if(ta){ta.value='I need help with: ';ta.focus();} },150); }
 /* In-app feedback: bug reports & feature suggestions. Stored locally and surfaced
    to the operator in the admin, and sent to a support email/endpoint if configured. */
@@ -23494,55 +23398,6 @@ async function runAutonomousTask(instruction){
 }
 window.runAutonomousTask=runAutonomousTask;
 
-async function quickGmail(){
-  const token = getGToken();
-  if(!token){ toast('Connect Gmail first - click Connect in Integrations','error',4000); return; }
-  toast('Loading inbox...','info',2000);
-  try{
-    const r = await fetchDeadline('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10&labelIds=INBOX&q=is:unread',{headers:{'Authorization':'Bearer '+token}});
-    const d = await r.json();
-    if(d.error){ toast('Gmail: '+d.error.message,'error'); return; }
-    const msgs = d.messages||[];
-    if(!msgs.length){ toast('No unread emails!','success'); return; }
-    const details = await Promise.all(msgs.slice(0,8).map(m=>
-      fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/'+m.id+'?format=metadata&metadataHeaders=Subject&metadataHeaders=From',{headers:{'Authorization':'Bearer '+token}}).then(r=>r.json())
-    ));
-    const summary = details.map(d=>{
-      const subj = d.payload&&d.payload.headers&&d.payload.headers.find(h=>h.name==='Subject');
-      const from = d.payload&&d.payload.headers&&d.payload.headers.find(h=>h.name==='From');
-      return 'From: '+(from&&from.value||'?')+'\nSubject: '+(subj&&subj.value||'(no subject)');
-    }).join('\n\n');
-    setTab('chat');
-    setTimeout(()=>{ const ta=$('mta'); if(ta){ ta.value='I have '+msgs.length+' unread emails. Summarize what needs attention:\n\n'+summary; ta.focus(); } },200);
-  }catch(e){ toast('Gmail error: '+e.message,'error'); }
-}
-async function quickCalendar(){
-  const token = getGToken();
-  if(!token){ toast('Connect Calendar first','error',4000); return; }
-  toast('Loading calendar...','info',2000);
-  try{
-    const now=new Date(), end=new Date(now.getTime()+7*24*60*60*1000);
-    const r = await fetchDeadline('https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin='+now.toISOString()+'&timeMax='+end.toISOString()+'&singleEvents=true&orderBy=startTime&maxResults=20',{headers:{'Authorization':'Bearer '+token}});
-    const d = await r.json();
-    if(d.error){ toast('Calendar: '+d.error.message,'error'); return; }
-    const events = (d.items||[]).map(e=>(e.start&&(e.start.dateTime||e.start.date))+': '+e.summary).join('\n');
-    setTab('chat');
-    setTimeout(()=>{ const ta=$('mta'); if(ta){ ta.value='Here is my calendar for the next 7 days:\n\n'+(events||'No events')+'\n\nHelp me optimize my week.'; ta.focus(); } },200);
-  }catch(e){ toast('Calendar error: '+e.message,'error'); }
-}
-async function quickDrive(){
-  const token = getGToken();
-  if(!token){ toast('Connect Drive first','error',4000); return; }
-  toast('Reading Drive...','info',2000);
-  try{
-    const r = await fetchDeadline('https://www.googleapis.com/drive/v3/files?pageSize=30&orderBy=modifiedTime desc&fields=files(name,mimeType,modifiedTime)',{headers:{'Authorization':'Bearer '+token}});
-    const d = await r.json();
-    if(d.error){ toast('Drive: '+d.error.message,'error'); return; }
-    const files = (d.files||[]).map(f=>f.name+' ('+(f.mimeType&&f.mimeType.split('/').pop())+')').join('\n');
-    setTab('chat');
-    setTimeout(()=>{ const ta=$('mta'); if(ta){ ta.value='Here are my recent Google Drive files:\n\n'+files+'\n\nSuggest how to organize them.'; ta.focus(); } },200);
-  }catch(e){ toast('Drive error: '+e.message,'error'); }
-}
 
 /* 3. TASK LAUNCHER */
 const TASKS={
@@ -23708,23 +23563,6 @@ async function amvNotifyMe(which,name,waitKey){
 window.amvStoreLink=amvStoreLink;
 window.amvNotifyMe=amvNotifyMe;
 let _taskCat=null;
-function filterTaskCat(cat){
-  const secs=document.querySelectorAll('.task-sec');
-  if(_taskCat===cat){
-    _taskCat=null;
-    secs.forEach(s=>s.style.display='');
-    document.querySelectorAll('[id^="tcb-"]').forEach(b=>{b.style.background='';b.style.color='';b.style.borderColor='';});
-  } else {
-    _taskCat=cat;
-    secs.forEach(s=>{s.style.display=s.dataset.section===cat?'':'none';});
-    document.querySelectorAll('[id^="tcb-"]').forEach(b=>{
-      const active=b.id==='tcb-'+cat;
-      b.style.background=active?'rgba(85,144,255,.15)':'';
-      b.style.color=active?'#7cb8ff':'';
-      b.style.borderColor=active?'rgba(88,166,255,.35)':'';
-    });
-  }
-}
 
 /* 5. INTEGRATIONS VIEW - routes to the unified catalog in Settings so there is
    ONE integrations experience (the new Connect catalog), not two. */
@@ -24139,12 +23977,6 @@ function _sheetDownloadCSV(){
   _saveBlob(new Blob([csv],{type:'text/csv'}), 'amv_'+Date.now()+'.csv');
   toast('Downloaded','success');
 }
-function _docDownloadTxt(){
-  const b=$('doc-body');
-  if(!b || !b.innerText.trim()){ toast('There is nothing in this document to download yet.','error'); return; }
-  _saveBlob(new Blob([b.innerText],{type:'text/plain'}), 'doc_'+Date.now()+'.txt');
-  toast('Downloaded','success');
-}
 function _saveBlob(blob,name){
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
@@ -24158,7 +23990,7 @@ function _bgAddGmailCheck(){ _bgAddTask({type:'gmail_check',title:'Check Gmail i
 function _bgAddCalendarCheck(){ _bgAddTask({type:'calendar_check',title:'Optimize my week'}); }
 function _toastResultCopied(){ toast('Result copied','success'); }
 try{
-  window._sheetDownloadCSV=_sheetDownloadCSV; window._docDownloadTxt=_docDownloadTxt;
+  window._sheetDownloadCSV=_sheetDownloadCSV;
   window._bgAddGmailCheck=_bgAddGmailCheck; window._bgAddCalendarCheck=_bgAddCalendarCheck;
   window._toastResultCopied=_toastResultCopied;
 }catch(e){}
@@ -24226,44 +24058,6 @@ async function runSheetAI(query){
     } else if(res){res.style.display='block';res.textContent=reply;}
     if($('sheet-inp')) $('sheet-inp').value='';
   }catch(e){if(res){res.style.display='block';res.textContent='Error: '+e.message;}}
-  if(btn){btn.disabled=false;btn.textContent='Ask';}
-}
-function openDocEditor(content,name){
-  const vc=$('vc'); if(!vc) return;
-  vc.innerHTML=`<div style="display:flex;flex-direction:column;height:100%">
-<div style="display:flex;align-items:center;gap:10px;padding:10px 16px;background:rgba(13,17,23,.95);border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0">
-  <span style="font-size:var(--t-base);font-weight:600">&#128196; ${escH(name||'Document')}</span>
-  <div style="margin-left:auto;display:flex;gap:6px">
-    <button class="ext-btn" data-dact="_docDownloadTxt">&#8681; Download</button>
-    <button class="ext-btn" data-stab="extensions">&#10005; Close</button>
-  </div>
-</div>
-<div id="doc-body" contenteditable="true" spellcheck="true" style="flex:1;overflow-y:auto;padding:40px 60px;font-size:var(--t-md);line-height:1.9;color:var(--tx);outline:none;max-width:780px;margin:0 auto;width:100%;box-sizing:border-box">${(content||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n\n/g,'</p><p style="margin:0 0 14px">').replace(/\n/g,'<br>')}</div>
-<div style="background:rgba(13,17,23,.97);border-top:1px solid rgba(255,255,255,.1);padding:12px 14px;flex-shrink:0">
-  <div style="font-size:var(--t-2xs);color:#7cb8ff;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:7px">AMV AI Toolbar</div>
-  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
-    ${['Improve writing','Fix grammar','Make it longer','Make it shorter','Change tone to formal'].map(q=>`<button class="ext-btn" data-dact="runDocAI" data-darg="${q}">${q}</button>`).join('')}
-  </div>
-  <div style="display:flex;gap:8px">
-    <input type="text" id="doc-inp" placeholder="Ask AMV to edit, rewrite, or expand..." style="flex:1;font-size:var(--t-base)">
-    <button class="btn bp" id="doc-ask" style="font-size:var(--t-base);padding:8px 18px">Ask</button>
-  </div>
-</div></div>`;
-  on($('doc-ask'),'click',()=>runDocAI($('doc-inp')&&$('doc-inp').value));
-  on($('doc-inp'),'keydown',e=>{if(e.key==='Enter')runDocAI($('doc-inp')&&$('doc-inp').value);});
-}
-async function runDocAI(query){
-  if(!query||!query.trim()) return;
-  const btn=$('doc-ask'),body=$('doc-body');
-  if(btn){btn.disabled=true;btn.textContent='Editing...';}
-  const mk=loadStr('amv_mk');
-  if(!mk){toast('Add API key in Settings','error');if(btn){btn.disabled=false;btn.textContent='Ask';}return;}
-  try{
-    const reply=await aiComplete('Document editor. Current document:\n\n'+(body&&body.innerText||'').slice(0,6000)+'\n\nRequest: '+query+'\n\nReturn ONLY the complete revised document. No explanation.', null, {model:(typeof qModel==='function'?qModel('rewrite'):'amv-core'), max_tokens:3000, noLang:true});
-    if(body) body.innerHTML=reply.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n\n/g,'</p><p style="margin:0 0 14px">').replace(/\n/g,'<br>');
-    if($('doc-inp')) $('doc-inp').value='';
-    toast('Document updated','success');
-  }catch(e){toast('Error: '+e.message,'error');}
   if(btn){btn.disabled=false;btn.textContent='Ask';}
 }
 
@@ -25675,7 +25469,6 @@ function renderLabView(){
   }
   _labChatRender();
   on($('lab-agents'),'click',_labAgents);
-  _wireModelPicker(vc);
   vc.querySelectorAll('.lab-chip').forEach(ch=>on(ch,'click',()=>_labAnalyze(ch.dataset.an)));
 }
 function _labOut(html){ const b=$('lab-out-body'); if(b) b.innerHTML=html; try{ _mobileShowOutput('lab'); }catch(e){} }

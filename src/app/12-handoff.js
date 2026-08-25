@@ -40,7 +40,9 @@ async function _handoffSyncLive(){
       const seen=new Set(fromServer.map(h=>h.id));
       store('amv_handoffs_out', fromServer.concat(keep.filter(h=>!seen.has(h.id))));
     }
-    renderHandoffView();
+    /* Only if they are still on it - see _crewSyncLive. The store above is
+       updated either way, so nothing is lost by not redrawing. */
+    if(S.tab === 'handoff') renderHandoffView();
   }catch(e){}
 }
 function renderHandoffView(){
@@ -338,14 +340,30 @@ function renderView(){
     case 'apps': renderAppsView(); break;
     case 'tasks': renderTasksView(); break;
     case 'integrations': renderIntegrationsView(); break;
-    case 'extensions': renderCrewView(); break;
-    case 'crew': renderCrewView(); break;
+    /* RENDER FROM WHAT IS HERE, THEN ASK THE SERVER.
+
+       Crew job state is WRITTEN to the server on every toggle - AMV_API.toggleJob
+       fires from cwToggle and _cwToggleReal. It was READ back by exactly one
+       function, _crewSyncLive, and nothing called it. So switching a job on from
+       a phone and opening Crew on a laptop showed the laptop's own stale
+       picture: the server had the truth, the endpoint existed, the write half
+       ran on every toggle, and the read half was never reached.
+
+       Not awaited, deliberately. The local list renders immediately and the
+       server's answer updates it when it arrives - blocking the screen on a
+       network round trip to show something already on disk would be a slower
+       product for a fresher one nobody was waiting for. */
+    case 'extensions': renderCrewView(); _crewSyncLive(); break;
+    case 'crew': renderCrewView(); _crewSyncLive(); break;
     /* One door for all three (AMV-D007 step 2). The renderers behind it are
        unchanged; this is only where they are reached from. */
     case 'studio':
     case 'dev':
     case 'lab': renderBuildView(); break;
-    case 'handoff': renderHandoffView(); break;
+    /* Same shape, same fix: AMV_API.listHandoff appeared once in the whole
+       client, inside _handoffSyncLive, which nothing called. A handoff sent to
+       you was invisible until you happened to be on the device that sent it. */
+    case 'handoff': renderHandoffView(); _handoffSyncLive(); break;
     case 'market': renderMarketView(); break;
     case 'admin': renderAdminView(); break;
     case 'notfound': render404View(); break;
@@ -1163,12 +1181,6 @@ const INTEGRATION_META = {
   notion:  { name:'Notion',     key:'amv_notion',  oauth:'amv_notion_client' },
   canvas:  { name:'Canvas LMS', key:'amv_canvas' },
 };
-/* DEPRECATED / NEUTRALIZED: launching a custom protocol (vscode://, etc.) can
-   make the browser show "a problem occurred" and blank the whole page when no
-   handler is installed. We never do this anymore - integrations connect via
-   OAuth popups (which can't blank the page) or via CLI/API-key guidance. This
-   stub is kept so any legacy caller is a harmless no-op instead of a hazard. */
-function _tryProtocol(url){ /* intentionally does nothing - see comment above */ }
 async function connectIntegration(id){
   const m = INTEGRATION_META[id];
   if(!m){ return; }
@@ -2701,8 +2713,6 @@ function setupApp(){
 
 /* -- Navigation helpers -- */
 function goSettings(pane){ S.settingsPane=pane; setTab('settings'); }
-function goToStripeSettings(){ closeOvr(); goSettings('platform'); }
-function showMsg(msg){ toast(msg||'Configure in Settings.','info'); }
 function askAmv(){ setTab('chat'); setTimeout(()=>{ const ta=document.getElementById('mta'); if(ta){ta.value='I need help with: ';ta.focus();} },150); }
 /* In-app feedback: bug reports & feature suggestions. Stored locally and surfaced
    to the operator in the admin, and sent to a support email/endpoint if configured. */
