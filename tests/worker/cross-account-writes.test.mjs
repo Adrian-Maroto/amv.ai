@@ -59,6 +59,13 @@ const CLASSIFIED = {
   marketReview:      'a review is a buyer\'s statement about a seller, filed under the seller; the handler refuses unless the buyer owns something of theirs, and the reviewer is stored as a hash',
   apiKeyCreate:      'the lookup row is keyed by a hash of the new key, not by a person',
   shareCreate:       'a share is keyed by its own generated id',
+  /* Not another account's record - a record belonging to nobody. The OAuth
+     handshake row has to be findable from the provider's callback, which
+     carries a state and no session, so it is keyed by the random state itself.
+     The account it belongs to is sealed INSIDE it and checked on the way out:
+     connFinish refuses when the caller is not the address that started it, so
+     this row cannot be used to hang a grant on anybody else. */
+  connStart:         'the handshake row is keyed by its own random state, and the account inside it is checked before the grant is written',
   shareVisibility:   'checks rec.owner before writing',
   autoCreate:        'key is _autoKey(caller)',
   autoUpdate:        'key is _autoKey(caller)',

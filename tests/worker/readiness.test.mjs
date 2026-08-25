@@ -61,6 +61,18 @@ section('It NEVER returns a secret, in any form');
     // Per-seat Teams billing and the model failover endpoint are optional
     // capabilities too, so "everything configured" has to include them.
     STRIPE_PRICE_TEAM_SEAT: 'price_SUPERSECRET', MODEL_API_FALLBACK_URL: 'https://backup.example',
+    /* Connected accounts, all three parts, for the same reason as the two
+       above: they are optional capabilities and "everything is configured" has
+       to include them or the sentence is not true.
+
+       CONNECT_KEY is the one that matters most here. Without it AMV refuses to
+       hold an account token at all rather than storing one unencrypted, so a
+       deployment missing it is not a deployment with a feature switched off -
+       it is one where the safe refusal is doing the work. The registry says so
+       and this env sets it, so the green case is a real one. */
+    CONNECT_KEY: 'ck-SUPERSECRET',
+    GOOGLE_CLIENT_SECRET: 'gsec-SUPERSECRET',
+    MS_CLIENT_ID: 'msid-SUPERSECRET', MS_CLIENT_SECRET: 'mssec-SUPERSECRET',
     /* A verified sender is part of being configured, not an extra. With only a
        Resend key the default address delivers to the account owner and nobody
        else, so "everything is configured" while every other person's password

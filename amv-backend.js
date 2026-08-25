@@ -2218,6 +2218,14 @@ async function connList(request, env){
 async function connRemove(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
+  /* This reaches a third party - the provider's revoke endpoint - so it is
+     bounded like everything else that does. Generous, because disconnecting is
+     something somebody should never feel discouraged from doing, and bounded,
+     because an unbounded outbound call is an unbounded outbound call even when
+     the intent behind it is good. */
+  const blocked = await guardAction(env, 'connrm:' + user.email, 20, 200, 'disconnections');
+  if(blocked) return blocked;
+
   const body = await request.json().catch(()=>({}));
   const id = String(body.id||'');
   const all = (await DB.get(env, CONN_KV, user.email)) || {};
@@ -6957,6 +6965,11 @@ const BACKUP_NEVER = [
      of a backup is that it can be restored somewhere, and a file that restores
      somebody's live mailbox grant onto another deployment is not a backup. */
   'conn:',
+  /* The five-minute handshake record. It holds a sealed PKCE verifier, and it
+     is single-use by design - restoring one from a backup would revive a
+     handshake that was either already spent or long expired, which is at best
+     meaningless and at worst a replay somebody has kept a copy of. */
+  'connstate:',
   /* A school access token, for the same reason as the bank link above it: a
      backup is a file somebody downloads, and one leaked export should not hand
      over a student's school account. A restore leaves Canvas unlinked, which is
