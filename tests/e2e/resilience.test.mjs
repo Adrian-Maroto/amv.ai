@@ -23,23 +23,35 @@ const tok = await page.evaluate(async () => {
   };
   saveStr('amv_api_base', 'https://api.test'); saveStr('amv_api_token', 't');
 
+  /* SEEDED THROUGH _gSet, NOT localStorage.
+
+     This used to write amv_gtoken and amv_gtoken_exp straight into storage,
+     which was the right door while the access token lived there. It does not
+     any more: a live Google bearer token in localStorage is readable by any
+     script that reaches the page and outlives the tab, so it is held in memory
+     and re-minted from the server's refresh token on demand.
+
+     Every assertion below is unchanged in strength. Only the way the state is
+     set up moved, because seeding a store the code no longer reads tests
+     nothing - it would have reported whatever the previous step left behind. */
+
   // expired -> must renew rather than force a reconnect
-  saveStr('amv_gtoken', 'OLD'); saveStr('amv_gtoken_exp', String(Date.now() - 1000));
+  _gSet('OLD', Date.now() - 1000);
   out.expired = await ensureGToken();
 
   // about to expire -> renew early so a long job never dies mid-run
-  saveStr('amv_gtoken', 'OLD2'); saveStr('amv_gtoken_exp', String(Date.now() + 60000));
+  _gSet('OLD2', Date.now() + 60000);
   out.nearExpiry = await ensureGToken();
 
   // healthy -> no needless network call
   const before = calls;
-  saveStr('amv_gtoken', 'GOOD'); saveStr('amv_gtoken_exp', String(Date.now() + 3600000));
+  _gSet('GOOD', Date.now() + 3600000);
   out.healthy = await ensureGToken();
   out.noExtraCall = (calls === before);
 
   // no backend -> degrade honestly, never hand back a dead token
   saveStr('amv_api_base', ''); saveStr('amv_api_token', '');
-  saveStr('amv_gtoken', 'DEAD'); saveStr('amv_gtoken_exp', String(Date.now() - 1000));
+  _gSet('DEAD', Date.now() - 1000);
   out.noBackend = await ensureGToken();
 
   window.fetch = origFetch;

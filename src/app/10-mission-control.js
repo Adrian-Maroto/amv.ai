@@ -626,6 +626,11 @@ const CW_NEEDS_CHECK = {
 };
 /* IS GOOGLE LINKED - which is not the same as "is a token in hand right now".
 
+   The ONE definition of this. It briefly had a twin called _googleLinked in
+   13-integrations.js with an identical body, which the one-definition checker
+   caught - written while I was reading that checker's output about somebody
+   else's duplication.
+
    This used to ask getGToken(), which was fine while the token sat on disk and
    was therefore present the instant the page loaded. The token lives in memory
    now, so on a fresh tab it is empty until something mints one - and this

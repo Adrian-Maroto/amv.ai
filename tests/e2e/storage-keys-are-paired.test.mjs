@@ -161,6 +161,15 @@ section('Every key is both written and read, or is named here with the reason');
     amv_mkt_verified:       'set by the marketplace seller verification flow',
     amv_imgs:               'legacy image list, read for migration from an older build',
     amv_mem:                'legacy memory list, same',
+    /* Read once on boot and deleted, never written again. The Google access
+       token used to live here - a working bearer token to somebody's mail,
+       readable by any script on the page and outliving the tab. It is held in
+       memory now and re-minted from the server's refresh token on demand, so
+       the only remaining reader is the migration that takes an existing one
+       off disk. Without that, the change would have protected new connections
+       and left every existing one exactly as exposed. */
+    amv_gtoken:             'legacy Google access token, read once on boot to move it off disk, then removed',
+    amv_gtoken_exp:         'its expiry, read and removed by the same migration',
   };
   /* Written but never read: residue. Each one is dead weight rather than a
      bug, and saying so here is what keeps it from being mistaken for a
@@ -168,7 +177,6 @@ section('Every key is both written and read, or is named here with the reason');
   const WRITE_ONLY = {
     amv_onboarded:        'the first-run popup was removed; these writes were left so nothing could re-trigger it',
     amv_ent_token:        'the server does not put a token on an entitlement record, so this never fires',
-    amv_google_connected: 'connection is decided by whether the Google token is present, not by this flag',
     amv_fin_pending:      'a link-in-progress marker the finance panel no longer consults',
     amv_owner:            'set by ?owner=1; the admin surfaces gate on the admin token instead',
   };

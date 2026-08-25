@@ -9479,12 +9479,33 @@ body.light .fr-d{ color:#67656d; }
    Off-screen until focused, then a real, visible target. Reaching the
    conversation used to mean tabbing the whole sidebar and header on every
    page; this is one key. Nothing changes for anybody using a mouse. */
-.skip-link{
+/* `a.skip-link`, not `.skip-link`. The first version set color:#fff and the
+   link rendered accent-on-accent at 1.1:1 in light and 1.5:1 in dark - an
+   anchor rule elsewhere was winning, so the one control added FOR
+   accessibility was the least readable text in the product. The contrast
+   sweep caught it.
+
+   The pair is fixed rather than themed: white on --accent-fill is the darker
+   of the two accents and clears 4.5:1 in both themes, which a link that only
+   ever appears for a moment cannot afford to get wrong. */
+a.skip-link{
   position:absolute; left:var(--sp-3); top:calc(var(--sp-3) * -6);
   z-index:9999; padding:var(--sp-3) var(--sp-4);
-  background:var(--accent); color:#fff; font-size:var(--t-md); font-weight:650;
+  background:var(--accent-fill);
+  /* !important, matched against an !important. Line 981 sets
+     `a,.lnk{color:var(--accent-txt)!important}` for every anchor in the
+     product, which is why a.skip-link{color:#fff} lost and the link rendered
+     accent-on-accent at 1.1:1 - the one control added for accessibility was
+     the least readable text on the page. Overriding a blanket !important is
+     the case the keyword exists for; the alternative is weakening a rule that
+     four hundred other links depend on. */
+  color:#fff !important;
+  font-size:var(--t-md); font-weight:650;
   border-radius:var(--r-md); text-decoration:none;
-  transition:top .14s var(--ease);
+  /* NO TRANSITION, deliberately. A slide looked nicer and made the link
+     measurably absent: the keyboard sweep tabs to it and reads its position
+     immediately, catching it mid-animation still off-screen. A person tabbing
+     fast sees the same thing. The one control whose whole job is to appear the
+     instant it is focused should not be 140ms late to it. */
 }
-.skip-link:focus{ top:var(--sp-3); outline:2px solid var(--tx); outline-offset:2px; }
-@media(prefers-reduced-motion:reduce){ .skip-link{ transition:none; } }
+a.skip-link:focus{ top:var(--sp-3); outline:2px solid var(--tx); outline-offset:2px; }
