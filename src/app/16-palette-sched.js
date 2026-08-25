@@ -18,8 +18,6 @@ function _paletteCommands(){
     {id:'shortcuts',label:'Keyboard shortcuts',group:'Actions',kw:'keyboard shortcuts cheat sheet hotkeys help keys',icon:'nav',run:()=>{ try{ openShortcutSheet(); }catch(e){} }},
     // Navigation
     nav('go-chat','Chat','chat','chat home talk'),
-    nav('go-images','Images','images','image picture generate art'),
-    nav('go-video','Video','video','video clip generate'),
     nav('go-studio','Studio','studio','studio design page website'),
     nav('go-dev','Dev','dev','dev build code app engineer'),
     nav('go-lab','Lab','lab','lab run execute code'),

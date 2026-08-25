@@ -1099,7 +1099,7 @@ window._newPromptCTA=_newPromptCTA;
    Runs after render so it covers dynamically-created controls too.
    Enterprise buyers audit this; it also helps every keyboard user.
    ============================================================ */
-const _TAB_LABELS={dashboard:'Dashboard',chat:'Chat',images:'Images',video:'Video',workspaces:'Projects',memory:'Memory',team:'Team',usage:'Usage',billing:'Billing',plans:'Plans',settings:'Settings',help:'Help Center',apps:'Apps',tasks:'Tasks',integrations:'Integrations',crew:'Crew',studio:'Studio',dev:'Dev',handoff:'Handoff',lab:'Lab',market:'Marketplace'};
+const _TAB_LABELS={dashboard:'Dashboard',chat:'Chat',workspaces:'Projects',memory:'Memory',team:'Team',usage:'Usage',billing:'Billing',plans:'Plans',settings:'Settings',help:'Help Center',apps:'Apps',tasks:'Tasks',integrations:'Integrations',crew:'Crew',studio:'Studio',dev:'Dev',handoff:'Handoff',lab:'Lab',market:'Marketplace'};
 function _initA11y(){
   try{
     // landmark roles

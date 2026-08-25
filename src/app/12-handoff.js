@@ -326,8 +326,6 @@ function renderView(){
   switch(S.tab){
     case 'dashboard': renderDashboard(); break;
     case 'chat': renderChatView(); break;
-    case 'images': renderImgsView(); break;
-    case 'video': renderVideoView(); break;
     case 'prompts': renderPromptsView(); break;
     case 'workspaces': goSettings('projects'); return;
     case 'memory': renderMemoryView(); break;
@@ -1453,8 +1451,6 @@ async function _exportUserData(){
       },
       conversations:S.convs||[],
       memory:S.memory||[],
-      images:S.imgs||[],
-      videos:S.vids||[],
       prompts:S.prompts||[],
       workspaces:S.workspaces||[],
       skills:_exportSkills(),
@@ -3016,7 +3012,7 @@ function _completeIntroLogin(acct){
   const uc=loadUserConvs(acct.email);
   if(uc&&uc.length){S.convs=uc;S.cur=S.convs[0].id;}
   else{S.convs=[newConvObj()];S.cur=S.convs[0].id;}
-  S.imgs=[];S.vids=[];
+  
   document.getElementById('land')?.classList.add('hidden');
   S.tab='chat';   // new sign-ins land straight in chat
   goApp();
@@ -3140,7 +3136,7 @@ try {
     var b=e.target.closest && e.target.closest('.snb'); if(b) document.getElementById('amv-tip').classList.remove('on');
   });
   });
-  _idle(()=>{ try{ var _lbl={dashboard:'Dashboard',chat:'Chat',images:'Images',video:'Video',workspaces:'Projects',memory:'Memory',usage:'Usage',billing:'Billing',plans:'Plans',settings:'Settings',help:'Help Center',apps:'Apps',tasks:'Tasks',integrations:'Integrations',extensions:'Extensions',crew:'Crew',studio:'Studio',dev:'Dev',handoff:'Handoff',market:'Marketplace'}; document.querySelectorAll('.snb').forEach(function(b){var t=b.dataset.tab; if(_lbl[t]) b.setAttribute('data-label',_lbl[t]);}); }catch(e){} });
+  _idle(()=>{ try{ var _lbl={dashboard:'Dashboard',chat:'Chat',workspaces:'Projects',memory:'Memory',usage:'Usage',billing:'Billing',plans:'Plans',settings:'Settings',help:'Help Center',apps:'Apps',tasks:'Tasks',integrations:'Integrations',extensions:'Extensions',crew:'Crew',studio:'Studio',dev:'Dev',handoff:'Handoff',market:'Marketplace'}; document.querySelectorAll('.snb').forEach(function(b){var t=b.dataset.tab; if(_lbl[t]) b.setAttribute('data-label',_lbl[t]);}); }catch(e){} });
 
 } catch(e) {
   console.error('Boot error:', e);

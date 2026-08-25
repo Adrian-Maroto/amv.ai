@@ -1691,19 +1691,6 @@ async function _devSend(){
     }
     _DEV.busy=false; return;
   }
-  if(intent==='image'){
-    try{
-      if(stat) stat.textContent='creating image…';
-      const out=await _amvRunTool('generate_image',{prompt:msg},(m)=>{ if(stat) stat.textContent=m; });
-      _DEV.log.push({role:'ai',text:out.text, html:out.render||''});
-      _devRenderLog();
-      if(stat) stat.textContent='';
-    }catch(e){
-      _DEV.log.push({role:'ai',text:'Couldn\u2019t create the image: '+e.message}); _devRenderLog();
-    }
-    _DEV.busy=false; return;
-  }
-
   try{
     if(hasProject){
       // ---- MULTI-FILE PROJECT MODE ----
@@ -1777,24 +1764,6 @@ window.renderCodeView=renderCodeView;
    to a REAL function that already powers a tab - nothing here is a mock.
    ══════════════════════════════════════════════════════════════ */
 const AMV_TOOLS = [
-  {
-    name:'generate_video',
-    description:'Generate a short video clip from a text prompt. Use when the person asks for a video, clip, animation, or moving footage. Takes a minute or two; the clip is shown to them automatically when it is ready.',
-    input_schema:{ type:'object', properties:{
-      prompt:{type:'string', description:'A vivid description of the scene, including camera movement, lighting and action.'},
-      seconds:{type:'number', description:'Clip length in seconds (5 or 10).'},
-      aspect:{type:'string', description:'Aspect ratio: 16:9, 9:16 or 1:1.'}
-    }, required:['prompt'] }
-  },
-  {
-    name:'generate_image',
-    description:'Generate an image from a text prompt. Use whenever the person asks for a picture, illustration, logo, poster, mockup, concept art, or any visual. Returns the image, which is shown to them automatically.',
-    input_schema:{ type:'object', properties:{
-      prompt:{type:'string', description:'A vivid, detailed description of the image.'},
-      style:{type:'string', description:'Optional style, e.g. photorealistic, illustration, 3d, watercolor.'},
-      ratio:{type:'string', description:'Optional aspect ratio: 1:1, 16:9, 9:16, 4:3.'}
-    }, required:['prompt'] }
-  },
   {
     name:'run_code',
     description:'Actually EXECUTE code and return its real output/errors. Use whenever the person wants code run, tested, verified, or when you want to check your own work before answering. Supports js, python, html.',
@@ -1946,12 +1915,12 @@ const AMV_TOOLS = [
    - Dev couldn't ship what it built, Lab couldn't publish a fix. */
 function _toolsFor(surface){
   const by = n => AMV_TOOLS.find(t=>t.name===n);
-  if(surface==='dev')  return [by('generate_image'), by('deploy_site'), by('run_code')].filter(Boolean);
+  if(surface==='dev')  return [by('deploy_site'), by('run_code')].filter(Boolean);
   if(surface==='lab')  return [by('run_code'), by('fix_code'), by('deploy_site')].filter(Boolean);
   /* The Crew surface can run the Crew. Talking to AMV on the screen that shows
      your background jobs and not being able to change one of them from there
      is the gap this whole path exists to close. */
-  if(surface==='crew') return [by('generate_image'), by('run_code'), by('build_app'), by('deploy_site'),
+  if(surface==='crew') return [by('run_code'), by('build_app'), by('deploy_site'),
                                by('crew_list'), by('crew_add'), by('crew_update'), by('crew_pause'),
                                by('crew_resume'), by('crew_remove'), by('crew_standing'), by('crew_ceiling')].filter(Boolean);
   return AMV_TOOLS;   // chat gets everything
@@ -2122,72 +2091,9 @@ async function _confirmModelTool(name, input){
 }
 async function _amvRunTool(name, input, onStatus){
   try{
-    if(name==='generate_image'){
-      /* The same content policy the Images tab enforces. The prompt here was
-         written by the MODEL, which may have been steered by a page it read, so
-         this is the door most in need of the check rather than least. Quota is
-         not re-counted: /v1/image/generate reserves against the plan atomically
-         and is the authority on it. */
-      if(_imagePolicyBlocked(input.prompt))
-        return { text:'Refused: '+IMG_POLICY_REFUSAL+' Tell the user plainly that AMV will not generate this.', render:null };
-      onStatus && onStatus('Generating your image\u2026');
-      const src = await _premiumImageSrc(input.prompt, input.style||'', input.ratio||'1:1', Math.floor(Math.random()*1e6));
-      if(!src) return { text:'Image generation needs the AMV engine connected. Tell the user to enable it in Settings.', render:null };
-      return {
-        text:'Image generated successfully and shown to the user.',
-        render:'<img src="'+escH(safeMediaSrc(src))+'" alt="'+escH(input.prompt)+'" class="chat-img" loading="lazy">'
-      };
-    }
-
-    if(name==='generate_video'){
-      /* Video is a JOB, not a request - it takes a minute or two. The tool call
-         waits for the real provider to finish and then hands back the real file.
-         It never invents progress and never returns a video that isn't there. */
-      if(_imagePolicyBlocked(input.prompt))
-        return { text:'Refused: '+IMG_POLICY_REFUSAL+' Tell the user plainly that AMV will not generate this.', render:null };
-      onStatus && onStatus('Starting the video\u2026');
-      try{
-        const d = await _vidApi('/v1/video/generate', {
-          prompt: input.prompt,
-          seconds: Math.min(10, Math.max(1, parseInt(input.seconds)||5)),
-          aspect: ['16:9','9:16','1:1'].includes(input.aspect) ? input.aspect : '16:9'
-        });
-        if(d.configured === false)
-          return { text:'No video engine is connected to this workspace, so video cannot be generated. Tell the user plainly - do not pretend.', render:null };
-
-        onStatus && onStatus('Generating your video\u2026 this takes a minute or two.');
-        // poll until the provider is actually done
-        for(let i=0;i<120;i++){
-          await new Promise(r=>setTimeout(r, i<15 ? 2000 : 5000));
-          let st;
-          try{ st = await _vidApi('/v1/video/status', { id: d.id }); }
-          catch(e){ continue; }
-          if(st.status==='succeeded' && st.url){
-            // also drop it into the Video tab so it isn't stranded in the chat
-            try{
-              S.vids.unshift({ id:'tool_'+d.id, p:input.prompt, dur:input.seconds||5,
-                               aspect:input.aspect||'16:9', status:'succeeded', url:st.url, stage:'', error:'', jobId:d.id });
-              if(S.tab==='video') renderVidGrid();
-            }catch(e){}
-            return {
-              text:'The video was generated and is shown to the user.',
-              render:'<video src="'+escH(safeMediaSrc(st.url))+'" class="chat-vid" controls playsinline preload="metadata"></video>'
-            };
-          }
-          if(st.status==='failed')
-            return { text:'The video failed to generate: '+(st.error||'unknown error')+'. Tell the user honestly.', render:null };
-        }
-        return { text:'The video is taking unusually long. Tell the user it is still processing.', render:null };
-      }catch(e){
-        if(e.message==='__NOT_CONNECTED__')
-          return { text:'AMV is not connected to its engine, so video cannot be generated. Say so plainly.', render:null };
-        if(e.code==='plan_required')
-          return { text:'Video is not included in this user\u2019s plan. Tell them they need to upgrade.', render:null };
-        if(e.code==='video_quota')
-          return { text:'The user has used all the video in their plan this month. Tell them.', render:null };
-        return { text:'Video generation failed: '+e.message, render:null };
-      }
-    }
+    /* generate_image and generate_video were handled here. Removed with the
+       feature: a tool the model can call and the product cannot honour is the
+       worst of both - it promises, then fails at the last step. */
 
     if(name==='run_code'){
       onStatus && onStatus('Running the code\u2026');

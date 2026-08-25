@@ -665,10 +665,10 @@ const PLAN_LIMITS = {
      is on the account record but not on the request path, so that needs new
      plumbing and a fallback for records without it - machinery for a smaller
      gain than the one line below. */
-  free:  { dayTokens: 20000,    monthTokens: 325000,    rpm: 8,  imagesDay: 8,   videosMonth: 0 },
-  pro:   { dayTokens: 325000,   monthTokens: 2340000,   rpm: 20, imagesDay: 100, videosMonth: 20 },
-  elite: { dayTokens: 1170000,  monthTokens: 9100000,   rpm: 40, imagesDay: 500, videosMonth: 120 },
-  ultra: { dayTokens: 2860000,  monthTokens: 23400000,  rpm: 80, imagesDay: 2000, videosMonth: 600 },
+  free:  { dayTokens: 20000,    monthTokens: 325000,    rpm: 8 },
+  pro:   { dayTokens: 325000,   monthTokens: 2340000,   rpm: 20 },
+  elite: { dayTokens: 1170000,  monthTokens: 9100000,   rpm: 40 },
+  ultra: { dayTokens: 2860000,  monthTokens: 23400000,  rpm: 80 },
 };
 /* The ratio above, named so it is a decision rather than a magic number. If the
    engine line changes again, re-measure with count_tokens rather than guessing. */
@@ -698,10 +698,6 @@ const FREE_TIER_CAP_SHARE = 0.7;
    them and a stale constant is how a cap silently stops meaning what it says.
    They are deliberately not free to be zero: a cost of nothing would restore
    exactly the blindness this closes. */
-const IMAGE_COST_USD = Math.max(0.001, parseFloat(globalThis.AMV_IMAGE_COST || '0') || 0.04);
-const VIDEO_COST_USD = Math.max(0.01, parseFloat(globalThis.AMV_VIDEO_COST || '0') || 0.50);
-const _imageCost = (env) => Math.max(0.001, parseFloat(env && env.IMAGE_COST_USD) || IMAGE_COST_USD);
-const _videoCost = (env) => Math.max(0.01, parseFloat(env && env.VIDEO_COST_USD) || VIDEO_COST_USD);
 
 /* THE CEILING ON ONE ACCOUNT'S MONTH, IN ONE PLACE.
 
@@ -8354,11 +8350,6 @@ async function _route(request, env, ctx) {
     case '/team/task/create': return teamTaskCreate(request, env);
     case '/team/task/update': return teamTaskUpdate(request, env);
     case '/v1/messages':     return aiProxy(request, env, ctx);
-    case '/v1/image':        return imageMeter(request, env);
-    case '/v1/image/generate': return imageGenerate(request, env);
-    case '/v1/video/generate': return videoGenerate(request, env);
-    case '/v1/video/status':   return videoStatus(request, env);
-    case '/v1/video/list':     return videoList(request, env);
     case '/v1/usage':        return usageReport(request, env);
     case '/sms/register':    return smsRegister(request, env);
     case '/waitlist':        return waitlistAdd(request, env);
@@ -11162,8 +11153,6 @@ function _baseLimits(user) {
       dayTokens: per.dayTokens * seats,
       monthTokens: per.monthTokens * seats,
       rpm: per.rpm,                       // per person: this is a burst control, not a pool
-      imagesDay: per.imagesDay * seats,
-      videosMonth: per.videosMonth * seats,
       allModels: true,                    // Apex included - it is what the seat price buys
     };
   }
@@ -11175,14 +11164,10 @@ function _baseLimits(user) {
     // genuinely buys proportionally more media - not a flat binary. Bounded so
     // they never exceed what the price can cover (margin stays protected).
     // ~1 image per 30k tokens of headroom; videos scale per $ above $15.
-    const imagesDay = Math.min(5000, Math.max(50, Math.floor(monthTokens / 30000)));
-    const videosMonth = price >= 15 ? Math.min(1000, Math.floor((price - 10) * 4)) : 0;
     return {
       dayTokens: c.dayTokens || Math.round(50000 * TOKENIZER_SCALE),
       monthTokens,                              // HARD CAP - the profit guarantee
       rpm: c.rpm || 16,
-      imagesDay,
-      videosMonth,
       allModels: true,
     };
   }
@@ -11228,239 +11213,6 @@ function _videoConfigured(env) {
 }
 
 /* POST /v1/video/generate  -> { id, status } */
-async function videoGenerate(request, env) {
-  const user = await requireUser(request, env);
-  if (!user) return json({ error: 'Please sign in again.' }, 401);
-
-  if (!_videoConfigured(env)) return json({ configured: false });
-
-  const body = await request.json().catch(() => ({}));
-  const prompt = String(body.prompt || '').trim().slice(0, 2000);
-  if (!prompt) return json({ error: 'Describe the video you want.' }, 400);
-  const refused = await mediaPolicyRefusal(env, user, prompt, 'video');
-  if (refused) return refused;
-
-  const seconds = Math.min(VIDEO_MAX_SECONDS, Math.max(1, parseInt(body.seconds) || 5));
-  const aspect  = ['16:9', '9:16', '1:1'].includes(body.aspect) ? body.aspect : '16:9';
-
-  const limits = effectiveLimits(user);
-  if (!limits.videosMonth) {
-    return json({
-      error: 'Video isn\u2019t included in your plan. Upgrade to generate video.',
-      code: 'plan_required'
-    }, 402);
-  }
-
-  /* Reserve one video against the monthly cap ATOMICALLY, before we spend a
-     cent at the provider. Same reasoning as the token quota: a plain
-     read-then-check lets a burst of parallel requests all pass. */
-  const vName = `vid:${user.billingSubject || user.email}:${_periodKeyOf(user)}`;
-  const res = await counter(env, vName, {
-    op: 'reserve', amount: 1, cap: limits.videosMonth, ttlMs: 86400000 * 70
-  });
-  if (!res.allowed) {
-    return json({
-      error: 'You\u2019ve used all the video in your plan this month.',
-      code: 'video_quota',
-      limit: limits.videosMonth
-    }, 429);
-  }
-  const refund = async () => {
-    try { await counter(env, vName, { op: 'incr', amount: -1, ttlMs: 86400000 * 70 }); } catch (e) {}
-  };
-
-  /* AMV-199: and the day's ceiling. A video is the single most expensive thing
-     AMV can be asked to do, and this path used to spend it without ever asking
-     whether the day's budget was gone. After the per-user reservation, so a
-     refusal here hands that allowance back. */
-  /* AMV-004: the gate now BOOKS the video's price rather than reading a total,
-     so a burst of requests cannot all pass the same ceiling. `vidBook` carries
-     what was booked so the failure paths below can hand it back and the
-     recording below can settle rather than charge twice. */
-  const vidBook = {};
-  const vidGate = await _spendGate(env, user, 'video', _videoCost(env), vidBook);
-  if (vidGate) { await refund(); return vidGate; }
-
-  let providerId = '';
-  try {
-    const resp = await fetchDeadline(env.VIDEO_API_URL, {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + env.VIDEO_API_KEY,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        version: env.VIDEO_MODEL,
-        input: { prompt, duration: seconds, aspect_ratio: aspect },
-      }),
-    }, GENERATION_TIMEOUT_MS);
-    const d = await resp.json().catch(() => ({}));
-    if (!resp.ok) throw new Error(d?.detail || d?.error?.message || ('Provider returned ' + resp.status));
-    providerId = String(d.id || d.request_id || '');
-    if (!providerId) throw new Error('The video provider did not return a job id.');
-  } catch (e) {
-    await refund();                       // nothing was generated - give it back
-    /* And the money the gate booked for it. The provider never started a
-       render, so nothing was billed and nothing may be held against either
-       ceiling. */
-    await _releaseSpendGate(env, vidBook);
-    try { await _workerError(env, 'videoGenerate', e); } catch (_) {}
-    return json({ error: 'Could not start the video: ' + e.message }, 502);
-  }
-
-  const id = 'vid_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16);
-  const job = {
-    id, providerId, email: user.email, prompt, seconds, aspect,
-    status: 'starting', url: '', error: '',
-    created: Date.now(), updated: Date.now(),
-  };
-  await env.AMV_KV.put('vidjob:' + id, JSON.stringify(job), { expirationTtl: VIDEO_JOB_TTL });
-
-  /* Counted at ACCEPTANCE, not at delivery. The provider bills for the render
-     the moment it starts it, so waiting for the finished file to record the
-     cost would leave every in-flight video invisible to the ceiling - and a
-     burst of them is exactly the shape of a runaway bill. Cancelling or failing
-     later does not refund the provider, so it does not refund this either. */
-  await _recordSpend(env, user.billingSubject || user.email, _videoCost(env), 'video', _periodKeyOf(user), vidBook);
-
-  audit(env, 'video_start', { email: user.email });
-  return json({ ok: true, id, status: 'starting' });
-}
-
-/* POST /v1/video/status { id } -> { status, url?, error?, progress }
-   Real state from the provider. No invented percentages. */
-async function videoStatus(request, env) {
-  const user = await requireUser(request, env);
-  if (!user) return json({ error: 'Please sign in again.' }, 401);
-
-  const body = await request.json().catch(() => ({}));
-  const id = String(body.id || '').replace(/[^a-zA-Z0-9_]/g, '').slice(0, 40);
-  if (!id) return json({ error: 'missing id' }, 400);
-
-  const raw = await env.AMV_KV.get('vidjob:' + id);
-  if (!raw) return json({ error: 'That video job no longer exists.' }, 404);
-
-  let job;
-  try { job = JSON.parse(raw); } catch (e) { return json({ error: 'bad job' }, 500); }
-
-  // A job belongs to the user who started it. Nobody else may read it.
-  if (job.email !== user.email) return json({ error: 'not found' }, 404);
-
-  // Terminal states are cached - stop hammering the provider.
-  if (job.status === 'succeeded' || job.status === 'failed') {
-    return json({ ok: true, status: job.status, url: job.url, error: job.error, prompt: job.prompt });
-  }
-
-  if (!_videoConfigured(env)) return json({ configured: false });
-
-  try {
-    const base = env.VIDEO_API_URL.replace(/\/+$/, '');
-    const resp = await fetchDeadline(base + '/' + job.providerId, {
-      headers: { 'Authorization': 'Bearer ' + env.VIDEO_API_KEY },
-    });
-    const d = await resp.json().catch(() => ({}));
-    if (!resp.ok) throw new Error(d?.detail || ('Provider returned ' + resp.status));
-
-    // Normalise the provider's vocabulary to ours.
-    const raw_status = String(d.status || '').toLowerCase();
-    let status = 'processing';
-    if (['succeeded', 'completed', 'success'].includes(raw_status)) status = 'succeeded';
-    else if (['failed', 'error', 'canceled', 'cancelled'].includes(raw_status)) status = 'failed';
-    else if (['starting', 'queued', 'pending'].includes(raw_status)) status = 'starting';
-
-    let url = '';
-    if (status === 'succeeded') {
-      const out = d.output;
-      url = Array.isArray(out) ? String(out[out.length - 1] || '') : String(out || '');
-      if (!url) { status = 'failed'; job.error = 'The provider finished but returned no video.'; }
-    }
-    if (status === 'failed' && !job.error) {
-      job.error = String(d.error || 'The video could not be generated.');
-      // It produced nothing, so it shouldn't count against their plan - but refund
-      // EXACTLY ONCE (AMV-024). Concurrent status polls both see a fresh failure;
-      // an atomic per-job claim guarantees only the first one gives the quota back
-      // (a plain "!job.error" read races and can refund twice / go negative).
-      const limits = effectiveLimits(user);
-      if (limits.videosMonth && await _claimOnce(env, 'vidrefund', id, CLAIM_ONCE_TTL_S)) {
-        /* The claim is permanent, so a refund that fails has to give it back
-           or the quota is never returned - the next poll would find the claim
-           held and conclude the refund had already happened. It was recoverable
-           before only because the claim lapsed after thirty seconds. */
-        try {
-          /* The SAME window the charge went into. A refund keyed to the
-             calendar month while the charge sits in the billing period gives
-             the credit back into a bucket the person is not spending from. */
-          await counter(env, `vid:${user.billingSubject || user.email}:${_periodKeyOf(user)}`,
-            { op: 'incr', amount: -1, ttlMs: 86400000 * 70 });
-        } catch (e) {
-          try { await _releaseClaim(env, 'vidrefund', id); } catch (_) {}
-          audit(env, 'video_refund_failed', { id, error: String((e && e.message) || e).slice(0, 160) });
-        }
-      }
-    }
-
-    job.status = status;
-    job.url = url || job.url;
-    job.updated = Date.now();
-    await env.AMV_KV.put('vidjob:' + id, JSON.stringify(job), { expirationTtl: VIDEO_JOB_TTL });
-
-    return json({ ok: true, status: job.status, url: job.url, error: job.error, prompt: job.prompt });
-  } catch (e) {
-    try { await _workerError(env, 'videoStatus', e); } catch (_) {}
-    // A transient polling failure is NOT a failed video - don't kill the job.
-    return json({ ok: true, status: job.status, url: job.url, error: '', transient: e.message });
-  }
-}
-
-/* POST /v1/video/list -> the user's recent videos (survives a page reload) */
-async function videoList(request, env) {
-  const user = await requireUser(request, env);
-  if (!user) return json({ error: 'Please sign in again.' }, 401);
-  const limits = effectiveLimits(user);
-  const used = (await counter(env, `vid:${user.billingSubject || user.email}:${_periodKeyOf(user)}`, { op: 'get' })).value || 0;
-  return json({
-    ok: true,
-    configured: _videoConfigured(env),
-    used,
-    limit: limits.videosMonth || 0,
-  });
-}
-
-/* ---- WHICH TOOLS ARE ALLOWED THROUGH TO THE MODEL ----------------------
-
-   The rule has always been right: never forward arbitrary client-supplied tool
-   definitions upstream. Somebody with a modified client could otherwise ship a
-   thousand tools, or one with a megabyte of schema, on every turn - a cost and
-   bounds attack paid for by AMV.
-
-   The implementation was wrong in a way nothing could see. It allowed by
-   `t.type`, and only 'web_search_20250305' has a type at all. Every one of
-   AMV's OWN tools is a custom tool - { name, description, input_schema }, no
-   type - so every one of them was silently dropped here, on every turn, since
-   the day they were written.
-
-   The effect was invisible from both ends and worse than either. The client
-   assembled the tools and believed it had sent them. The system prompt told the
-   model "you have real tools: generate_image, run_code, build_app" - and then
-   the model was handed none of them, so it could not emit a tool call even when
-   it wanted to. A person asking for an image got a sentence about generating an
-   image. Everything in _amvRunTool - real image generation, real execution,
-   real deploys - was unreachable in production, while the code for all of it
-   passed review and every test that did not go through this function.
-
-   So: named tools are allowed by NAME, from a list kept here, and the shape is
-   bounded rather than trusted. A name AMV does not know is still dropped. */
-const AMV_CLIENT_TOOLS = new Set([
-  'generate_image', 'generate_video', 'run_code', 'fix_code', 'build_app', 'deploy_site',
-  'crew_list', 'crew_add', 'crew_update', 'crew_pause', 'crew_resume', 'crew_remove', 'crew_standing',
-  'crew_ceiling',
-  'memory_list', 'memory_add', 'memory_forget',
-  'approvals_list', 'approval_act', 'account_status',
-]);
-const TOOLS_MAX          = 24;      // more than AMV has, far less than an attack
-const TOOL_DESC_MAX      = 1200;    // a description, not a second prompt
-const TOOL_SCHEMA_MAX    = 4000;    // a schema, not a payload
-
 function _safeTools(list) {
   const out = [];
   for (const t of list) {
@@ -12556,39 +12308,6 @@ function _estimateReserveInput(body) {
 }
 
 /* ---------------- IMAGE METERING ----------------------------------- */
-async function imageMeter(request, env) {
-  const user = await requireUser(request, env);
-  if (!user) return json({ error: 'sign in' }, 401);
-  const limits = effectiveLimits(user);
-  const imgName = `img:${user.email}:${todayKey()}`;
-  // ATOMIC reserve (not get-then-incr) so parallel image requests can't race past
-  // the cap (AMV-023). The counter denies when the result would exceed the cap.
-  const res = await counter(env, imgName, { op: 'reserve', amount: 1, cap: limits.imagesDay, ttlMs: 86400000 * 2 });
-  if (!res.allowed) return json({ error: 'Daily image limit reached. Upgrade for more.', code: 'img_quota' }, 429);
-  return json({ ok: true, remaining: Math.max(0, limits.imagesDay - (res.value || 0)) });
-}
-
-/* ---------------- MEDIA CONTENT POLICY ------------------------------
-   The app has always shown "No explicit content" under the image box and
-   refused a prompt matching this list. That refusal lived entirely in the
-   browser, which means it was decoration: /v1/image/generate and
-   /v1/video/generate accept any prompt from anybody holding a valid session
-   token, and a request made with curl never loads the page that would have
-   said no.
-
-   So the block list moves to where it can actually block. Both media endpoints
-   check it before reserving quota and long before a provider is paid, and a
-   refusal is recorded against the account - not as a dispute or a refund, which
-   gate purchases, but as an event, so a pattern of attempts is visible instead
-   of being silently absorbed one 400 at a time.
-
-   The prompt itself is never stored. The matched term is enough to know what
-   happened and does not put the text back in our own logs. */
-const MEDIA_BLOCKED = ['explicit nudity', 'pornographic', 'nsfw', 'erotic', 'hentai', 'child sexual',
-  'nudify', 'undress', 'deepfake nude', 'deepfake porn', 'deep nude', 'revenge porn',
-  'non-consensual', 'nonconsensual', 'underage', 'jailbait', 'loli', 'shota', 'cp for'];
-const MEDIA_POLICY_REFUSAL = 'Content Policy: explicit sexual content is not permitted.';
-
 function mediaPolicyMatch(prompt) {
   const s = String(prompt == null ? '' : prompt).toLowerCase();
   return MEDIA_BLOCKED.find(w => s.indexOf(w) >= 0) || '';
@@ -12612,89 +12331,6 @@ async function mediaPolicyRefusal(env, user, prompt, surface) {
    { url } or { b64 }. If no provider is configured we return {configured:false}
    so the client falls back to the built-in free generator. This means adding a
    premium key is the ONLY step needed to upgrade image quality app-wide. */
-async function imageGenerate(request, env) {
-  const user = await requireUser(request, env);
-  if (!user) return json({ error: 'sign in' }, 401);
-
-  // No premium provider configured → tell the client to use its free fallback.
-  if (!env.IMAGE_API_URL || !env.IMAGE_API_KEY) {
-    return json({ configured: false });
-  }
-
-  // Validate input first (cheap), then reserve, then call the provider.
-  const limits = effectiveLimits(user);
-  let body;
-  try { body = await request.json(); } catch (e) { return json({ error: 'bad request' }, 400); }
-  const prompt = String(body.prompt || '').slice(0, 4000);
-  if (!prompt) return json({ error: 'prompt required' }, 400);
-  const refused = await mediaPolicyRefusal(env, user, prompt, 'image');
-  if (refused) return refused;
-  const width = Math.min(2048, Math.max(256, parseInt(body.width) || 1024));
-  const height = Math.min(2048, Math.max(256, parseInt(body.height) || 1024));
-  const size = `${width}x${height}`;
-
-  // ATOMIC reserve (AMV-023): parallel calls can't exceed the cap, and every
-  // failure path REFUNDS so a provider error never permanently burns quota.
-  const imgName = `img:${user.email}:${todayKey()}`;
-  const reserved = await counter(env, imgName, { op: 'reserve', amount: 1, cap: limits.imagesDay, ttlMs: 86400000 * 2 });
-  if (!reserved.allowed) return json({ error: 'Daily image limit reached. Upgrade for more.', code: 'img_quota' }, 429);
-  const refundImage = async () => { try { await counter(env, imgName, { op: 'incr', amount: -1, ttlMs: 86400000 * 2 }); } catch (e) {} };
-
-  /* AMV-199: the day's ceiling applies here too. A picture costs many times
-     what a message does, and this path used to ask nobody's permission before
-     spending it - so the one control that stops a runaway bill could not see
-     the spend most likely to run away. Checked AFTER the per-user reservation
-     so a refusal here gives that allowance back rather than charging somebody
-     for a call AMV declined to make. */
-  /* AMV-004: books the picture's price against both ceilings rather than
-     reading them, so twenty parallel requests cannot all pass the same total. */
-  const imgBook = {};
-  const imgGate = await _spendGate(env, user, 'image', _imageCost(env), imgBook);
-  if (imgGate) { await refundImage(); return imgGate; }
-
-  try {
-    const model = env.IMAGE_API_MODEL || 'gpt-image-1';
-    const upstream = await fetchDeadline(env.IMAGE_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${env.IMAGE_API_KEY}`,   // KEY HIDDEN SERVER-SIDE
-      },
-      body: JSON.stringify({ model, prompt, size, n: 1 }),
-    }, GENERATION_TIMEOUT_MS);
-    if (!upstream.ok) {
-      // AMV-053: log the provider's raw response server-side; return a generic
-      // message so upstream/internal details aren't exposed to the client.
-      const txt = await upstream.text().catch(() => '');
-      try { await _workerError(env, 'imageGenerate.provider', new Error('status ' + upstream.status + ': ' + txt.slice(0, 300))); } catch (_) {}
-      await refundImage();
-      await _releaseSpendGate(env, imgBook);
-      return json({ error: 'Image generation is temporarily unavailable. Please try again.' }, 502);
-    }
-    const data = await upstream.json().catch(() => ({}));
-    const item = (data && data.data && data.data[0]) || {};
-    if (item.url || item.b64_json) {
-      /* Recorded only when a picture was really produced, so a provider error
-         does not appear on the bill or on the account's cost. */
-      await _recordSpend(env, user.billingSubject || user.email, _imageCost(env), 'image', _periodKeyOf(user), imgBook);
-      return json(item.url ? { ok: true, url: item.url } : { ok: true, b64: item.b64_json });
-    }
-    await refundImage();
-    /* No picture, so no provider bill and nothing to hold against either
-       ceiling. The comment above _recordSpend says the cost is recorded only
-       when an image was really produced; the reservation has to follow the same
-       rule or the ceiling fills up with failures. */
-    await _releaseSpendGate(env, imgBook);
-    return json({ error: 'Image generation returned no image. Please try again.' }, 502);
-  } catch (e) {
-    try { await _workerError(env, 'imageGenerate', e); } catch (_) {}
-    await refundImage();
-    await _releaseSpendGate(env, imgBook);
-    return json({ error: 'Image generation failed. Please try again.' }, 502);
-  }
-}
-
-/* ---------------- USAGE REPORT (for the in-app dashboard) ----------- */
 async function usageReport(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'sign in' }, 401);
@@ -12705,26 +12341,9 @@ async function usageReport(request, env) {
   const dUsed = (await counter(env, `usg:${subject}:${todayKey()}`, { op: 'get' })).value || 0;
   const mUsed = (await counter(env, `usg:${subject}:${_periodKeyOf(user)}`, { op: 'get' })).value || 0;
   const mCost = (await counter(env, `cost:${subject}:${_periodKeyOf(user)}`, { op: 'get' })).value || 0;
-  /* AMV-186: IMAGES AND VIDEO BELONG HERE TOO.
-
-     Tokens were the only allowance this endpoint reported, so they were the
-     only one any screen could show honestly. The images bar on the usage page
-     was a device-local count against a hardcoded 4 - wrong for every paid plan,
-     where the real cap is 100, 500 or 2000 - and the video allowance had no
-     reader at all, so somebody paying for twenty videos a month had no way to
-     learn how many were left until generation refused.
-
-     These are the counters the Worker actually reserves against, keyed the same
-     way, so the screen and the refusal can no longer disagree. Images are per
-     DAY and video per MONTH, matching how each is enforced. */
-  const imgUsed = (await counter(env, `img:${user.email}:${todayKey()}`, { op: 'get' })).value || 0;
-  const vidUsed = (await counter(env, `vid:${subject}:${_periodKeyOf(user)}`, { op: 'get' })).value || 0;
   return json({
     plan: user.plan,
     day: { used: dUsed, limit: limits.dayTokens },
-    images: { used: imgUsed, limit: limits.imagesDay || 0, per: 'day' },
-    videos: { used: vidUsed, limit: limits.videosMonth || 0, per: 'month',
-              configured: _videoConfigured(env) },
     // `bonus` is the referral capacity folded into the monthly limit above, sent
     // separately so the app can say WHERE the extra allowance came from.
     month: { used: mUsed, limit: limits.monthTokens, costUSD: +mCost.toFixed(4), bonus: limits.bonusTokens || 0 },

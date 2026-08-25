@@ -235,7 +235,6 @@ function loginUser(acct) {
     S.convs = [newConvObj()];
     S.cur = S.convs[0].id;
   }
-  S.imgs = load('amv_imgs')||[];
   S.memory = load('amv_memory')||load('amv_mem')||[];
   _loadSessions();
   S.prompts = load('amv_pl')||getDefaultPrompts();
@@ -899,7 +898,6 @@ function _initMobileSidebar(){
 // "More" opens the full sidebar for everything else.
 const BOTTOM_NAV=[
   {tab:'chat',   label:'Chat',   svg:'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>'},
-  {tab:'images', label:'Images', svg:'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>'},
   {tab:'studio', label:'Studio', svg:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/>'},
   {tab:'dev',    label:'Dev',    svg:'<path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/>'},
   {tab:'__more', label:'More',   svg:'<line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/>'},
@@ -1026,7 +1024,7 @@ function setTab(t){
   }catch(e){}
   // Auth gate: a logged-out visitor can browse the chat tab, but using any AMV
   // feature (images, video, crew, studio, dev, lab, etc.) requires an account.
-  const _gatedTabs=['images','video','crew','studio','dev','lab','handoff','workspaces','memory','team','market','tasks','integrations','apps','extensions','prompts'];
+  const _gatedTabs=['crew','studio','dev','lab','handoff','workspaces','memory','team','market','tasks','integrations','apps','extensions','prompts'];
   if((!S.user||!S.user.email) && _gatedTabs.indexOf(t)>=0){
     try{ openAuth('signup'); }catch(e){}
     if(typeof toast==='function') toast('Create a free account to use '+(t.charAt(0).toUpperCase()+t.slice(1)),'info',3500);
@@ -1034,13 +1032,13 @@ function setTab(t){
   }
   try{ if(t!=='team' && window.AMVTeam && AMVTeam.stopPresence) AMVTeam.stopPresence(); }catch(e){}
   try{ if(t!=='chat' && window.AMVSpeech){ AMVSpeech.stop(); _voiceMode=false; const vb=$('voicemode-btn'); if(vb) vb.classList.remove('on'); } }catch(e){}
-  try{ if(typeof AEGIS!=='undefined' && AEGIS.log && t && t!==S.tab){ const _fmap={chat:'chat',images:'images',video:'video',dev:'dev',lab:'lab',crew:'crew',studio:'studio',handoff:'handoff',workspaces:'projects',memory:'memory',team:'team',market:'marketplace',tasks:'tasks'}; if(_fmap[t]) AEGIS.log('feature',{name:_fmap[t]}); } }catch(e){}
+  try{ if(typeof AEGIS!=='undefined' && AEGIS.log && t && t!==S.tab){ const _fmap={chat:'chat',dev:'dev',lab:'lab',crew:'crew',studio:'studio',handoff:'handoff',workspaces:'projects',memory:'memory',team:'team',market:'marketplace',tasks:'tasks'}; if(_fmap[t]) AEGIS.log('feature',{name:_fmap[t]}); } }catch(e){}
   S.tab=t;
   try{ _renderBottomNav(); }catch(e){}
   document.querySelectorAll('.snb, .sb-tool').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));
   try{ _buildGroupSync(); }catch(e){}   // keep Build open when a build tab is active
   /* (old 'More' section removed - tools now live in the bottom-left row) */
-  const _titles={dashboard:'Dashboard',chat:'',images:'Images',video:'Video',prompts:'Prompt Library',workspaces:'Projects',memory:'Memory',usage:'Usage',billing:'Billing',plans:'Plans',settings:'Settings',help:'Help Center',apps:'Apps',tasks:'Tasks',integrations:'Integrations',extensions:'Extensions',crew:'Crew',studio:'Studio',dev:'Dev',handoff:'Handoff',lab:'Lab',market:'Marketplace'};
+  const _titles={dashboard:'Dashboard',chat:'',prompts:'Prompt Library',workspaces:'Projects',memory:'Memory',usage:'Usage',billing:'Billing',plans:'Plans',settings:'Settings',help:'Help Center',apps:'Apps',tasks:'Tasks',integrations:'Integrations',extensions:'Extensions',crew:'Crew',studio:'Studio',dev:'Dev',handoff:'Handoff',lab:'Lab',market:'Marketplace'};
   const _nt=document.getElementById('nav-title');
   if(_nt){ const lbl=_titles[t]!==undefined?_titles[t]:''; _nt.textContent=lbl; _nt.style.opacity=lbl?'1':'0'; }
   // On mobile, close the overlay sidebar after picking a destination
@@ -1145,7 +1143,7 @@ function _wipeAccountState(){
     _resetToolState('studio'); _STUDIO.sessId=null;
   }catch(e){}
   try{
-    S.memory=[]; S.convs=[]; S.cur=null; S.imgs=[]; S.vids=[]; S.att=null;
+    S.memory=[]; S.convs=[]; S.cur=null; S.att=null;
     S._chatFiles=[]; S._labFiles=[]; S._chatHandoff=null; S._preSettingsTab=null;
     S.workspaces=getDefaultWorkspaces(); S.prompts=getDefaultPrompts(); S.mk='';
     /* FOUND BY ENUMERATING WHAT SURVIVED, NOT BY REMEMBERING TO ADD THEM.

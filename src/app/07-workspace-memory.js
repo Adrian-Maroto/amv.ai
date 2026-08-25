@@ -1627,9 +1627,9 @@ function createWorkspaceModal(){
 /* Shared usage content - used by the standalone view AND the Settings pane,
    so they never drift. Returns inner HTML (no outer .sv/.vi wrapper). */
 function _usageContentHTML(){
-  const mc=getMsgs().length,ic=S.imgs.length;
+  const mc=getMsgs().length;
   const week=AMVValue.stats(7), all=AMVValue.stats(null);
-  const typeLabel={message:'Conversations',image:'Images',video:'Videos',code:'Code tasks',document:'Documents',agent_action:'Autonomous actions',research:'Research',design:'Designs'};
+  const typeLabel={message:'Conversations',code:'Code tasks',document:'Documents',agent_action:'Autonomous actions',research:'Research',design:'Designs'};
   const breakdown=Object.entries(all.byType).sort((a,b)=>b[1]-a[1]).map(([t,n])=>
     '<div class="vrow"><span>'+(typeLabel[t]||t)+'</span><span class="vrow-n">'+n+'</span></div>').join('')||'<div class="vrow"><span style="color:var(--mu)">Nothing yet - start a chat to see your impact grow.</span></div>';
   // --- Task #7: rolling usage window ---
@@ -1697,7 +1697,6 @@ function _usageContentHTML(){
         '<p class="vsub" style="margin-bottom:12px">What this browser has done in this session. Your real allowance is above, counted by AMV\u2019s servers.</p>'+
         '<div class="vbreak">'+
           '<div class="vrow"><span>Conversations</span><span class="vrow-n">'+mc+'</span></div>'+
-          '<div class="vrow"><span>Images made here</span><span class="vrow-n">'+ic+'</span></div>'+
         '</div>'+
         '<button class="btn bp" data-stab="plans" style="margin-top:14px;font-size:var(--t-sm)">See plans &rarr;</button>'+
       '</div>'+
@@ -1727,19 +1726,6 @@ function _paintServerUsage(){
       '<p class="srv-sub">Counted by AMV\u2019s servers - these are the limits that actually apply.</p>'+
       '<div class="srv-row"><div class="srv-lbl"><span>Today</span><span>'+n(d.day.used)+' / '+n(d.day.limit)+'</span></div>'+bar(d.day.used, d.day.limit)+'</div>'+
       '<div class="srv-row"><div class="srv-lbl"><span>This month</span><span>'+n(d.month.used)+' / '+n(d.month.limit)+'</span></div>'+bar(d.month.used, d.month.limit)+'</div>'+
-      /* Images and video, from the same counters the server refuses on. They
-         used to be absent here and guessed at below against a hardcoded 4,
-         which is wrong on every paid plan - and video had no reader anywhere,
-         so the allowance somebody pays for was invisible until it ran out. */
-      (d.images && d.images.limit
-        ? '<div class="srv-row"><div class="srv-lbl"><span>Images today</span><span>'+n(d.images.used)+' / '+n(d.images.limit)+'</span></div>'+bar(d.images.used, d.images.limit)+'</div>'
-        : '')+
-      (d.videos && d.videos.limit
-        ? '<div class="srv-row"><div class="srv-lbl"><span>Videos this month</span><span>'+n(d.videos.used)+' / '+n(d.videos.limit)+'</span></div>'+bar(d.videos.used, d.videos.limit)+
-          (d.videos.configured===false?'<div class="srv-off" style="margin-top:6px">Video generation is not switched on for this deployment yet, so none of these have been used.</div>':'')+'</div>'
-        : (d.videos && d.videos.limit===0
-            ? '<div class="srv-row"><div class="srv-lbl"><span>Videos</span><span>Not on your plan</span></div></div>'
-            : ''))+
       (bonus > 0
         ? '<div class="srv-bonus">Includes <b>+'+n(bonus)+'</b> bonus tokens from invites you have earned. '+
           '<a data-sp-go="invite" style="color:var(--accent-txt);cursor:pointer">See your invites &rarr;</a></div>'
