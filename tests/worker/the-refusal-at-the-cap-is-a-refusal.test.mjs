@@ -28,7 +28,7 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
 const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
-const harness = join(__dir, '.build', 'ceiling.harness.mjs');
+const harness = join(__dir, '.build', 'caprefusal.harness.mjs');
 writeFileSync(harness, src + '\nexport { _monthlyCeiling, _monthlyCeilingUSD };\n');
 const W = await import(harness + '?t=' + Date.now());
 

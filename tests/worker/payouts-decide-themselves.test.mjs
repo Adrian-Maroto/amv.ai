@@ -40,7 +40,7 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
 const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
-const harness = join(__dir, '.build', 'payout.harness.mjs');
+const harness = join(__dir, '.build', 'payoutdecide.harness.mjs');
 writeFileSync(harness, src + '\nexport { PAYOUT_RESERVE_PCT, PAYOUT_RESERVE_MS, PAYOUT_HOLD_MS, PAYOUT_AUTO_MAX_USD, PAYOUT_KYC_THRESHOLD_USD, PAYOUT_MIN_AGE_DAYS, _payoutRisk, _availableOf, _creditSale };\n');
 const W = await import(harness + '?t=' + Date.now());
 const worker = W.default;

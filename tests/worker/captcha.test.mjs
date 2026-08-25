@@ -132,6 +132,46 @@ section('But it is never silent - skipping a security control is shouted about')
      'and the operator is paged, because they think this is switched on', paged.length);
 }
 
+section('And the DEFAULT state is shouted about too, because it is the default');
+{
+  /* The half-configured case above was found and fixed and made loud. The
+     fully-unset case - no TURNSTILE_SECRET at all - was left silent, and it is
+     the state every deployment is in until somebody sets two secrets. So the
+     one configuration AMV is MOST likely to be in on the day it has real users
+     was the one that produced no evidence anywhere that a security control had
+     been skipped.
+
+     Allowing it through is still right: demanding a token when no widget
+     exists refuses every sign-up. What was missing is the record. If AMV is
+     ever flooded with bot signups, the log has to say that the thing which
+     would have stopped them was never switched on. */
+  const logged = [];
+  const realLog = console.log;
+  console.log = (...a) => { logged.push(a.join(' ')); };
+  const paged = [];
+  const realFetch3 = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => {
+    paged.push(String(url) + ' ' + String((opts && opts.body) || ''));
+    return { ok: true, status: 200, json: async () => ({}) };
+  };
+  store.clear();
+  const bareEnv = { ...baseEnv, ALERT_WEBHOOK: 'https://hooks.example/alert' };
+  delete bareEnv.TURNSTILE_SECRET; delete bareEnv.TURNSTILE_SITE_KEY;
+  const allowed = await W._verifyCaptcha(bareEnv, null, req({}));
+  console.log = realLog;
+  globalThis.fetch = realFetch3;
+
+  ok(allowed === true, 'a deployment with no captcha still lets people sign up', allowed);
+  ok(logged.some(l => /captcha_skipped/.test(l)),
+     'and an audit event records that the check did not happen', logged.filter(l => /AUDIT/.test(l)).length);
+  ok(logged.some(l => /TURNSTILE_SECRET/.test(l)),
+     'naming the secret that is missing', true);
+  ok(paged.some(p => /honeypot/.test(p) || /rate limit/.test(p)),
+     'and the operator is told what IS standing in front of account creation instead', paged.length);
+  ok(paged.some(p => /allowance/.test(p) || /scheduled job/.test(p)),
+     'including that an account is not free, which is why this matters at all', true);
+}
+
 section('Readiness reports HALF SET UP rather than on');
 {
   /* This line used to read TURNSTILE_SECRET alone, so the one state that needs

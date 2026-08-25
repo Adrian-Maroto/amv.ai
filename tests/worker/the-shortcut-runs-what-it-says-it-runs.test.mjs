@@ -210,6 +210,64 @@ section('The selection is announced, so a narrow run cannot pass for a wide one'
   ok(out.length > 0, 'and listing works without running anything', out.split('\n').length);
 }
 
+section('The suites that must not share the machine are recognised');
+{
+  /* A SECOND SELECTOR THAT CAN SILENTLY SELECT NOTHING, which is the whole
+     subject of this file.
+
+     Two suites mutate the repository every other suite reads: check.test.mjs
+     writes a syntax error into app.js and a bad export into amv-backend.js to
+     prove the gate catches them, and preflight.test.mjs rewrites
+     wrangler.toml. Now that suites run several at a time, those two have to run
+     alone, and the runner decides that by looking for an @exclusive marker in
+     each file.
+
+     It went wrong the first time in exactly the way this file exists for. The
+     marker regex was written into run.mjs by a script that turned `\b` into a
+     literal backspace character, so the pattern was `/@exclusive<BS>/` and
+     matched nothing. Every suite came back "shares the machine", the two ran
+     inside the pool, and four unrelated suites failed with
+     "Export '__definitelyNotDefined__' is not defined" - a symbol from another
+     test. Nothing reported that the isolation had not happened; the only sign
+     was somebody else's failure.
+
+     So it is asserted from both ends: the files that carry the marker, and the
+     runner's own regex actually matching them. */
+  const files = readdirSync(join(ROOT, 'tests', 'worker')).filter(f => f.endsWith('.test.mjs'));
+  const marked = files.filter(f =>
+    /@exclusive\b/.test(readFileSync(join(ROOT, 'tests', 'worker', f), 'utf8').slice(0, 4000)));
+  ok(marked.length >= 2, 'the marker is on the suites that mutate the tree', marked);
+  ok(marked.includes('check.test.mjs'), 'check.test.mjs, which corrupts app.js and the Worker', marked);
+  ok(marked.includes('preflight.test.mjs'), 'and preflight.test.mjs, which rewrites wrangler.toml', marked);
+
+  /* THE RUNNER'S OWN PATTERN, run against a real marked file. Reimplementing
+     the regex here would only prove that MY regex works. */
+  const runnerSrc = readFileSync(RUNNER, 'utf8');
+  const m = /const EXCLUSIVE = (\/.*?\/[a-z]*);/.exec(runnerSrc);
+  ok(!!m, 'the runner names its marker pattern where it can be read', !!m);
+  if (m) {
+    let rx = null;
+    try { rx = eval(m[1]); } catch (e) {}
+    ok(!!rx, 'and it is a pattern that compiles', m[1]);
+    const sample = readFileSync(join(ROOT, 'tests', 'worker', 'check.test.mjs'), 'utf8').slice(0, 4000);
+    ok(!!rx && rx.test(sample),
+       'and it really matches a file that carries the marker', m[1]);
+    ok(!!rx && !rx.test('nothing here says it needs the tree to itself'),
+       'while not matching a file that does not', true);
+  }
+
+  /* And nothing that mutates the tree is left unmarked. The test is the write
+     itself: a suite writing outside its own .build directory is one that can
+     be seen by every other suite. */
+  const unmarked = files.filter(f => {
+    if (marked.includes(f)) return false;
+    const body = readFileSync(join(ROOT, 'tests', 'worker', f), 'utf8');
+    return /writeFileSync\((?!harness)[A-Z]/.test(body) || /copyFileSync\(/.test(body);
+  });
+  ok(unmarked.length === 0,
+     'and every suite that writes outside its own build directory carries it', unmarked);
+}
+
 section('The two names that mean a directory are the two directories');
 {
   /* A hardcoded pair that drifts from the filesystem would put a new directory

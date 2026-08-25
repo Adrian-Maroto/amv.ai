@@ -87,6 +87,88 @@ section('A request that produced nothing can be tried somewhere else');
   ok(r.status === 200, 'and also rescued', r.status);
 }
 
+section('A HUNG provider is the failure the fallback exists for, so it has to survive it');
+{
+  /* THE FAILOVER COULD NOT SURVIVE A TIMEOUT.
+
+     _modelFetch fills in a deadline when the caller supplies none, then reused
+     the SAME init - signal included - for the fallback attempt. On a timeout
+     that signal has already fired, so the second request aborted before the
+     connection opened. The failover worked for a transport error, where the
+     signal is still live, and was inert for a hung provider - which is the
+     failure a second endpoint is bought to cover.
+
+     Nothing said so. The immediate abort was swallowed by the catch around the
+     fallback and the primary's error was reported as though there had been no
+     fallback configured at all. It would have been discovered during the
+     outage, by someone reading a bill for a second endpoint that never served
+     a request. */
+  const e = env({ MODEL_API_URL: 'https://primary.test', MODEL_API_FALLBACK_URL: 'https://backup.test' });
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    const sig = init && init.signal;
+    /* A PROVIDER THAT STALLS, MODELLED AS ONE.
+
+       The first version of this threw a TimeoutError immediately, which is what
+       a timeout LOOKS like from the caller and is not what produces the defect:
+       the signal had not actually fired yet, so the reused one was not aborted
+       and sabotaging the fix changed nothing. A fake that skips the mechanism
+       cannot test the mechanism.
+
+       So this waits for the real AbortSignal to fire and rejects the way fetch
+       does - which means by the time the fallback is attempted, the deadline
+       this function invented has genuinely been spent. */
+    if (calls.length === 0) {
+      calls.push({ url: String(url), aborted: !!(sig && sig.aborted) });
+      await new Promise((res) => {
+        if (!sig || sig.aborted) return res();
+        sig.addEventListener('abort', () => res(), { once: true });
+        /* A REF'D TIMER, OR THE PROCESS EXITS BEFORE THE ABORT ARRIVES.
+           AbortSignal.timeout()'s own timer is unref'd, so with nothing else
+           scheduled the event loop drains and Node reports an unsettled
+           top-level await instead of running the test. This keeps the loop
+           alive just past the deadline. */
+        setTimeout(res, 200);
+      });
+      const err = new Error('The operation was aborted due to timeout');
+      err.name = 'TimeoutError';
+      throw err;
+    }
+    calls.push({ url: String(url), aborted: !!(sig && sig.aborted) });
+    return { ok: true, status: 200, json: async () => ({}), text: async () => '' };
+  };
+  const r = await W._modelFetch(e, { messages: [] }, { timeoutMs: 20 });
+  globalThis.fetch = realFetch;
+
+  ok(calls.length === 2, 'the fallback is attempted after a timeout', calls.length);
+  ok(calls[1] && calls[1].url.startsWith('https://backup.test'), 'and it goes to the other endpoint', calls[1] && calls[1].url);
+  ok(calls[1] && calls[1].aborted === false,
+     'carrying a signal that has NOT already fired, or it dies before it connects', calls[1] && calls[1].aborted);
+  ok(r && r.status === 200, 'so the request is actually rescued', r && r.status);
+}
+
+section('A caller who cancelled stays cancelled');
+{
+  /* The deadline this function invents is its own and gets renewed. A signal
+     the CALLER passed is theirs: if they aborted, the whole thing is aborted,
+     and quietly retrying on another endpoint would be AMV continuing to spend
+     on work somebody asked it to stop. */
+  const e = env({ MODEL_API_URL: 'https://primary.test', MODEL_API_FALLBACK_URL: 'https://backup.test' });
+  const ac = new AbortController();
+  ac.abort();
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url: String(url), aborted: !!(init && init.signal && init.signal.aborted) });
+    if (calls.length === 1) throw new Error('aborted');
+    return { ok: true, status: 200, json: async () => ({}), text: async () => '' };
+  };
+  await W._modelFetch(e, { messages: [] }, { signal: ac.signal }).catch(() => {});
+  globalThis.fetch = realFetch;
+  ok(calls.length >= 2 ? calls[1].aborted === true : true,
+     'the caller\u2019s own aborted signal is carried through, not replaced with a fresh one',
+     calls.length >= 2 ? calls[1].aborted : 'no second attempt');
+}
+
 section('A request that is simply wrong is not sent twice');
 {
   const e = env({ MODEL_API_URL: 'https://primary.test', MODEL_API_FALLBACK_URL: 'https://backup.test' });

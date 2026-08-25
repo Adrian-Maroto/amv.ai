@@ -34,7 +34,7 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
 const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
-const harness = join(__dir, '.build', 'inbox.harness.mjs');
+const harness = join(__dir, '.build', 'inboxfill.harness.mjs');
 writeFileSync(harness, src +
   '\nexport { _sendEmail, _emailBudgetOk, EMAIL_DAY_CAP, DB };\n' +
   '\nexport { default as worker } from "./inbox.harness.mjs";\n'.replace(/^.*$/, ''));

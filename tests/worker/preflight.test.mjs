@@ -1,3 +1,6 @@
+/* @exclusive - this suite rewrites wrangler.toml and restores it. Anything
+   else reading that file while it does would see a deliberately broken one, so
+   the runner gives this suite the tree to itself. */
 /* PREFLIGHT self-test.
    A preflight that only passes on a good config is worthless - it has to FAIL
    on a broken one. This runs preflight.mjs against deliberately-broken copies of

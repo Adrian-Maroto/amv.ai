@@ -1,3 +1,7 @@
+/* @exclusive - this suite writes a syntax error into app.js and a bad export
+   into amv-backend.js, then restores them. Every other suite reads those files,
+   so run alongside anything else it makes them fail with a symbol from THIS
+   test. The runner keeps it to itself; the marker above is what tells it to. */
 /* HEALTH GATE self-test.
    The gate (check.mjs) is the thing you trust to say "shippable". We can't run
    the whole 60s gate inside a suite, but we CAN prove its failure-detection

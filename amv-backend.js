@@ -229,7 +229,28 @@ async function _modelFetch(env, payload, opts){
   const alt = _modelBase(env, 'fallback');
   if(worthRetrying && alt && alt !== primary && !o.stream){
     try{
-      const r2 = await fetch(alt + '/v1/messages', init);
+      /* A FRESH DEADLINE, OR THE FAILOVER CANNOT SURVIVE THE FAILURE IT EXISTS
+         FOR.
+
+         This reused `init` unchanged, signal included. A caller's own signal is
+         theirs and is left alone - if they cancelled, the whole thing is
+         cancelled. But the deadline this function fills in when they supply
+         none is ALREADY ABORTED by the time a timeout brings us here: the
+         primary stalled, the signal fired, and handing that same signal to the
+         second endpoint aborts it before the connection opens.
+
+         So the failover worked for a transport error, where the signal is
+         still live, and was inert for a hung provider - which is the failure
+         mode a second endpoint is bought to cover, and the one nobody would
+         have found until the outage. Nothing errors, nothing logs; the
+         `catch(e2)` below swallows the immediate abort and the primary's error
+         is reported as though there had been no fallback at all. */
+      const init2 = Object.assign({}, init);
+      if(!o.signal){
+        try{ init2.signal = AbortSignal.timeout(+o.timeoutMs || MODEL_DEADLINE_MS); }
+        catch(_){ delete init2.signal; }
+      }
+      const r2 = await fetch(alt + '/v1/messages', init2);
       /* Only report the failover when it actually rescued the request. Saying
          "we failed over" and then returning the same error is noise. */
       if(r2 && r2.ok){
@@ -1803,41 +1824,98 @@ function _autoBudget(ent, family){
    in the clear and calling it degraded.                                        */
 
 const CONN_KV = 'conn';            // conn:<email> -> { [connId]: record }
-const CONN_VER = 1;                // sealed-payload version, so a format change is detectable
+const CONN_VER = 2;                // sealed-payload version, so a format change is detectable
 
 /* AES-GCM under a Worker secret. Returns a compact string that carries its own
    IV and version, because a ciphertext whose IV lives somewhere else is one
    migration away from being undecryptable. */
+/* ── ROTATION, WHICH IS THE ONLY REASON THIS IS MORE THAN ONE KEY ────────────
+
+   Every stored token was sealed under one secret with nothing recorded about
+   WHICH secret. That is fine until the day the secret has to change - and the
+   day it has to change is the day somebody thinks it leaked, which is the worst
+   possible day to discover that the only way to rotate it is to make every
+   customer reconnect every account. A control that can only be used at that
+   cost is a control nobody uses, so in practice the key would never rotate.
+
+   So the sealed payload carries a KEY ID: eight hex characters of the hash of
+   the secret, which identifies the key without being derivable back into it.
+   CONNECT_KEY is the primary, CONNECT_KEY_PREV is one retired key kept readable
+   during a rotation. Records re-seal under the primary the next time they are
+   used, so a rotation drains itself and CONNECT_KEY_PREV can be dropped once
+   the connections have been touched.
+
+   What this deliberately does NOT claim: it does not shrink the blast radius.
+   Whoever holds the primary key can open every record, exactly as before.
+   Per-record data keys wrapped by a master key would not change that either -
+   the master still unwraps everything - and the thing that would (a KMS holding
+   material AMV never sees) is not available here and would put a network call
+   on the critical path of every unattended job. Rotation is the honest win;
+   pretending to more would be worse than saying so. */
+async function _connKeyFor(raw){
+  const enc = new TextEncoder();
+  const bits = await crypto.subtle.digest('SHA-256', enc.encode(String(raw)));
+  /* The id is a hash of the HASH, so the stored id is two rounds away from the
+     secret rather than one - and it never shares bytes with the key material
+     that is actually imported. */
+  const idBits = await crypto.subtle.digest('SHA-256', new Uint8Array(bits));
+  const id = [...new Uint8Array(idBits).slice(0, 4)].map(b => b.toString(16).padStart(2, '0')).join('');
+  const key = await crypto.subtle.importKey('raw', bits, { name:'AES-GCM' }, false, ['encrypt','decrypt']);
+  return { id, key };
+}
+/* Primary first, then any retired key that is still configured. */
+async function _connKeys(env){
+  const out = [];
+  const primary = String((env && env.CONNECT_KEY) || '');
+  if(!primary) return out;
+  out.push(await _connKeyFor(primary));
+  const prev = String((env && env.CONNECT_KEY_PREV) || '');
+  if(prev && prev !== primary) out.push(await _connKeyFor(prev));
+  return out;
+}
 async function _connKey(env){
-  const raw = String((env && env.CONNECT_KEY) || '');
-  if(!raw) return null;
-  /* Hashed to exactly 256 bits so any secret length works and the stored bytes
-     are not the secret itself. */
-  const bits = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
-  return crypto.subtle.importKey('raw', bits, { name:'AES-GCM' }, false, ['encrypt','decrypt']);
+  const ks = await _connKeys(env);
+  return ks.length ? ks[0].key : null;
 }
 function _b64(buf){ let s=''; const b=new Uint8Array(buf); for(let i=0;i<b.length;i++) s+=String.fromCharCode(b[i]); return btoa(s); }
 function _unb64(str){ const s=atob(String(str)); const b=new Uint8Array(s.length); for(let i=0;i<s.length;i++) b[i]=s.charCodeAt(i); return b; }
 
 async function connSeal(env, obj){
-  const key = await _connKey(env);
-  if(!key) throw new Error('connect_key_missing');
+  const ks = await _connKeys(env);
+  if(!ks.length) throw new Error('connect_key_missing');
+  const { id, key } = ks[0];                       // always seal under the primary
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const pt = new TextEncoder().encode(JSON.stringify(obj));
   const ct = await crypto.subtle.encrypt({ name:'AES-GCM', iv }, key, pt);
-  return CONN_VER + '.' + _b64(iv) + '.' + _b64(ct);
+  return CONN_VER + '.' + id + '.' + _b64(iv) + '.' + _b64(ct);
+}
+/* Which key a stored record is sealed under, without opening it. Callers use
+   this to decide whether to write the record back re-sealed. */
+function connSealedKeyId(sealed){
+  const parts = String(sealed||'').split('.');
+  return (parts.length === 4 && Number(parts[0]) === CONN_VER) ? parts[1] : '';
+}
+async function connIsPrimary(env, sealed){
+  const ks = await _connKeys(env);
+  return !!ks.length && connSealedKeyId(sealed) === ks[0].id;
 }
 async function connOpen(env, sealed){
-  const key = await _connKey(env);
-  if(!key) throw new Error('connect_key_missing');
+  const ks = await _connKeys(env);
+  if(!ks.length) throw new Error('connect_key_missing');
   const parts = String(sealed||'').split('.');
-  if(parts.length !== 3 || Number(parts[0]) !== CONN_VER) throw new Error('connect_format');
-  const iv = _unb64(parts[1]);
-  const ct = _unb64(parts[2]);
-  /* A failure here is a WRONG KEY or a tampered record, and both must be loud.
-     Returning null would present a rotated secret as "no connections", and the
-     person would reconnect every account for no reason. */
-  const pt = await crypto.subtle.decrypt({ name:'AES-GCM', iv }, key, ct);
+  if(parts.length !== 4 || Number(parts[0]) !== CONN_VER) throw new Error('connect_format');
+  const kid = parts[1];
+  const match = ks.find(k => k.id === kid);
+  /* A record sealed under a key that is not configured any more. Named as
+     exactly that, because the remedy is specific: put the old value back in
+     CONNECT_KEY_PREV. Reporting it as corruption, or as "no connections", would
+     send somebody to reconnect every account to fix a secret they changed. */
+  if(!match) throw new Error('connect_key_retired');
+  const iv = _unb64(parts[2]);
+  const ct = _unb64(parts[3]);
+  /* A failure HERE is a tampered record or a key id that collides, and both
+     must be loud for the same reason. */
+  const pt = await crypto.subtle.decrypt({ name:'AES-GCM', iv }, match.key, ct);
   return JSON.parse(new TextDecoder().decode(pt));
 }
 
@@ -2147,12 +2225,27 @@ async function connUse(env, email, need, jobId, opts){
   let tok;
   try{ tok = await connOpen(env, c.sealed); }
   catch(_e){
-    /* A record that will not open is a rotated CONNECT_KEY or a tampered row.
-       Both are loud: presenting it as "not connected" would send somebody to
-       reconnect every account to fix a secret they changed. */
-    audit(env, 'conn_unreadable', { by:email, id });
+    /* A record that will not open is a retired CONNECT_KEY, a tampered row, or
+       a secret changed with no CONNECT_KEY_PREV set. All are loud: presenting
+       it as "not connected" would send somebody to reconnect every account to
+       fix a secret they changed. */
+    const why = String((_e && _e.message) || 'unreadable');
+    audit(env, 'conn_unreadable', { by:email, id, why });
+    if(why === 'connect_key_retired'){
+      try{ await alertOnce(env, 'connect_key_retired',
+        'A stored connection is sealed under a CONNECT_KEY that is no longer configured, so it cannot be '
+        + 'read. Put the previous value in CONNECT_KEY_PREV until every connection has been used once, '
+        + 'then remove it. Nothing is lost while the old key exists.', 60); }catch(_a){}
+    }
     return { ok:false, code:'unreadable' };
   }
+  /* LAZY ROTATION. This record is about to be written back anyway - the last
+     used stamp below - so a record sealed under a retired key is re-sealed
+     under the primary here, at no extra write. A rotation therefore drains
+     itself as connections get used, rather than needing a migration job that
+     would have to hold every token in memory to run. */
+  let reseal = false;
+  try{ reseal = !(await connIsPrimary(env, c.sealed)); }catch(_e){}
 
   /* Refreshed with a minute to spare, so a token does not expire between this
      check and the request it is about to be used for. */
@@ -2186,6 +2279,10 @@ async function connUse(env, email, need, jobId, opts){
      Tuesday, not a copy of their mail in an audit log. */
   c.lastUsed = Date.now();
   c.lastJob = String(jobId||'').slice(0, 60);
+  if(reseal){
+    c.sealed = await connSeal(env, tok);
+    audit(env, 'conn_resealed', { by:email, id });
+  }
   all[id] = c;
   await DB.put(env, CONN_KV, email, all);
   audit(env, 'conn_used', { by:email, id, provider:c.provider, need, job:c.lastJob, attended:!!o.attended });
@@ -8526,7 +8623,27 @@ async function _hashPassword(password, salt, iterations){
    entirely a configuration one, so it is allowed through and shouted about
    instead: a silent security downgrade is its own failure. */
 async function _verifyCaptcha(env, token, request){
-  if (!env.TURNSTILE_SECRET) return true;           // not set up yet → don't block
+  if (!env.TURNSTILE_SECRET) {
+    /* NOT SET UP. Allowed - demanding a token when no widget exists would
+       refuse every sign-up on a fresh deployment, which is the opposite of
+       honest degradation. The honeypot and the per-address rate limit still
+       apply, and free-tier spend is bounded by its share of the day's ceiling,
+       so this is a bounded gap rather than an open door.
+
+       What was missing is that it happened in SILENCE. The half-configured
+       case one line down audits and pages; the fully-unset case - which is the
+       DEFAULT, and therefore the state AMV is most likely to be in on the day
+       it has real users - produced no evidence anywhere that a security
+       control had been skipped. If AMV is ever flooded with bot signups, the
+       logs need to say that the thing which would have stopped them was not
+       switched on. Alerted once a day, not once a signup. */
+    audit(env, 'captcha_skipped', { why: 'TURNSTILE_SECRET not set' });
+    try { await alertOnce(env, 'turnstile_unset',
+      'Turnstile is not configured, so sign-up and sign-in have no captcha. Only the honeypot and the '
+      + 'per-address rate limit stand in front of account creation, and every account carries a free '
+      + 'allowance and a scheduled job. Set TURNSTILE_SITE_KEY and TURNSTILE_SECRET.', 60 * 24); } catch (e) {}
+    return true;
+  }
   if (!env.TURNSTILE_SITE_KEY) {
     /* Half-configured. The browser cannot possibly have produced a token, so
        blocking everybody would be self-inflicted. Allowed, and shouted about,
@@ -13173,6 +13290,18 @@ async function verifyToken(token, secret, env = null, expectedTyp = 'access') {
    3. Secrets:
         wrangler secret put AMV_MODEL_KEY
         wrangler secret put JWT_SECRET           (LONG random string - 32+ chars)
+
+        # OPTIONAL - connected accounts. CONNECT_KEY seals every stored
+        # provider token with AES-GCM; without it AMV refuses to connect an
+        # account rather than storing a token in the clear.
+        # To ROTATE it: put the new value in CONNECT_KEY, the old one in
+        # CONNECT_KEY_PREV, and leave both for as long as it takes every
+        # connection to be used once - each re-seals under the new key when it
+        # is. Then remove CONNECT_KEY_PREV. Rotating WITHOUT setting PREV makes
+        # every stored connection unreadable and every customer has to
+        # reconnect every account.
+        wrangler secret put CONNECT_KEY
+        wrangler secret put CONNECT_KEY_PREV     (only during a rotation)
 
    4. wrangler.toml config:
         [vars]
@@ -19390,6 +19519,20 @@ function _readinessReport(env) {
       on: _has(env, 'CONNECT_KEY'),
       turnsOn: 'Holding account tokens so Crew jobs run with the tab closed. The key seals every stored token with AES-GCM, so a stolen copy of the database is ciphertext rather than mailboxes. Without it AMV refuses to connect an account at all - it will not store a token unencrypted.',
       how: put('CONNECT_KEY') },
+    /* A ROTATION IN PROGRESS IS A STATE, AND STATES BELONG ON THIS SCREEN.
+
+       CONNECT_KEY_PREV being set is not a missing capability - it is a rotation
+       that has started and has not finished. Left off this list, the only way
+       to know AMV is still able to read records sealed under an old secret
+       would be to remember setting it, and the whole point of the screen is
+       that nothing about the deployment is only in somebody's head. It reports
+       "on" when it is ABSENT, because absent is the settled state. */
+    { id: 'connectKeyPrev', name: 'Connected accounts (key rotation)', blocking: false,
+      on: !_has(env, 'CONNECT_KEY_PREV'),
+      turnsOn: _has(env, 'CONNECT_KEY_PREV')
+        ? 'A ROTATION IS IN PROGRESS. CONNECT_KEY_PREV is set, so records sealed under the previous key can still be read; each one re-seals under the current key the next time it is used. Remove CONNECT_KEY_PREV once every connection has been used, and check the audit log for conn_resealed before you do.'
+        : 'Nothing to do - no rotation is in progress. To rotate: put the new value in CONNECT_KEY and the old one in CONNECT_KEY_PREV, leave it a while, then remove CONNECT_KEY_PREV. Rotating without it makes every stored connection unreadable and every customer reconnect every account.',
+      how: 'Only during a rotation: ' + put('CONNECT_KEY_PREV') },
     /* Each provider is its own line, because "connected accounts is on" is not
        a thing - Google can be live while Microsoft is dark, and the operator
        needs to see which. */
@@ -19432,9 +19575,28 @@ function _readinessReport(env) {
     { id: 'd1', name: 'D1 database', on: !!(env && env.DB && typeof env.DB.prepare === 'function'),
       turnsOn: 'Guaranteed sync writes: without it two devices saving at the same instant cannot be arbitrated, only merged.',
       how: 'Bind DB in wrangler.toml', blocking: false },
+    /* BLOCKING once money is being taken, and only then - the same shape as
+       the payment webhook above and for the same reason.
+
+       Without the Durable Object every `reserve` degrades to a read followed by
+       a write. That is the exact race the reservation exists to close: twenty
+       requests arriving together all read the same total, all decide they fit,
+       and all proceed, so the overshoot is bounded only by how many arrive at
+       once. The daily spend ceiling, every plan's token allowance and every
+       exactly-once claim are all built on it.
+
+       On a machine with no customers that is a documented degradation and
+       refusing to run there would mean AMV does not work without a paid
+       Cloudflare plan. On a deployment taking payments it is the difference
+       between a bill with a ceiling and a bill without one, and the operator
+       has to be told that before the first customer rather than by the
+       invoice. */
     { id: 'counter', name: 'Atomic counter', on: !!(env && env.AMV_COUNTER),
-      turnsOn: 'Race-free usage limits, spend caps and one-time claims.',
-      how: 'Bind AMV_COUNTER (the AMVCounter Durable Object) in wrangler.toml', blocking: false },
+      blocking: _has(env, 'STRIPE_SECRET_KEY'),
+      turnsOn: (_has(env, 'STRIPE_SECRET_KEY') && !(env && env.AMV_COUNTER))
+        ? 'REQUIRED NOW - you are taking payments without it. Every spend ceiling and token allowance falls back to read-then-write, so requests arriving together all pass the same check and the day\u2019s ceiling can be overshot by however many arrive at once. It is the one control standing between AMV and an unbounded bill.'
+        : 'Race-free usage limits, spend caps and one-time claims. Without it they are a read followed by a write, which is the race they exist to close.',
+      how: 'Bind AMV_COUNTER (the AMVCounter Durable Object) in wrangler.toml' },
   ];
 
   const all = items.concat(storage);

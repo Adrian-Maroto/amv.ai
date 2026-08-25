@@ -6,7 +6,7 @@
 */
 import { spawn } from 'child_process';
 import { cpus } from 'os';
-import { readdirSync, existsSync } from 'fs';
+import { readdirSync, existsSync, readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { say, sayLine } from './lib/say.mjs';
@@ -143,6 +143,36 @@ const run = (s) => new Promise((resolve) => {
   p.on('close', (code) => resolve({ name: s.name, code, out: Buffer.concat(chunks) }));
 });
 
+/* ── SUITES THAT CANNOT SHARE THE MACHINE ──────────────────────────────────
+
+   Two suites mutate the repository they live in: check.test.mjs writes a
+   syntax error into app.js and a bad export into amv-backend.js to prove the
+   gate catches them, and preflight.test.mjs rewrites wrangler.toml. Both
+   restore afterwards, and both are correct on their own.
+
+   Run alongside anything else they are a hazard, and it is not subtle: four
+   suites failed with "Export '__definitelyNotDefined__' is not defined"
+   because they happened to read amv-backend.js during the fraction of a second
+   check.test.mjs had it corrupted. The failures name a symbol from another
+   test, which is a confusing enough report to be worth never producing again.
+
+   The honest description of these two is that they need the tree to
+   themselves, so that is what the marker says. They run first, one at a time
+   and with nothing else in flight, and the pool starts once they are done.
+   Printing is by index either way, so the transcript is unchanged.
+
+   The marker is read from the file rather than kept in a list here, because a
+   list in this file is a thing somebody adding a third such suite would not
+   know to update. */
+const EXCLUSIVE = /@exclusive\b/;
+for (const s of suites) {
+  try { s.exclusive = EXCLUSIVE.test(readFileSync(s.path, 'utf8').slice(0, 4000)); }
+  /* Not swallowed silently. A file that cannot be read here is a suite whose
+     isolation nobody decided, and treating that as "shares the machine" without
+     saying so is how the tree gets corrupted by a test again. */
+  catch (e) { s.exclusive = false; sayErr(`could not read ${s.name} to check isolation: ${e.message}`); }
+}
+
 const results = new Array(suites.length);
 {
   let next = 0;
@@ -177,11 +207,19 @@ const results = new Array(suites.length);
     for (;;) {
       const i = next++;
       if (i >= suites.length) return;
+      if (suites[i].exclusive) continue;      // already run, alone, above
       results[i] = await run(suites[i]);
       tick(suites[i].name);
       flush();
     }
   };
+  /* Alone first, with nothing else started. */
+  for (let i = 0; i < suites.length; i++) {
+    if (!suites[i].exclusive) continue;
+    results[i] = await run(suites[i]);
+    tick(suites[i].name);
+    flush();
+  }
   await Promise.all(Array.from({ length: Math.min(JOBS, suites.length) }, worker));
   flush();
 }

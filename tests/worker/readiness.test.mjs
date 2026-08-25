@@ -139,6 +139,70 @@ section('Storage bindings are reported, including what their absence costs');
   ok(find(bound, 'counter').on === true, 'and so is the counter');
 }
 
+section('Taking money without the atomic counter is NOT ready');
+{
+  /* The Durable Object was optional, and on a machine with no customers it
+     should be - refusing to run without it would mean AMV does not work without
+     a paid Cloudflare plan, and the KV fallback is a documented degradation.
+
+     On a deployment taking payments it is a different thing entirely. Every
+     `reserve` becomes a read followed by a write, which is the exact race the
+     reservation exists to close: requests arriving together all read the same
+     total, all decide they fit, and all proceed. The day's spend ceiling, every
+     plan's token allowance and every exactly-once claim are built on it, so
+     without it the one control standing between AMV and an unbounded bill is
+     bounded only by how many requests arrive at once.
+
+     Same shape as the payment webhook: blocking once, and only once, the thing
+     it protects is real money. */
+  const noPay = await get(Object.assign(bare(), { AMV_MODEL_KEY: 'k', JWT_SECRET: 'j' }));
+  ok(find(noPay, 'counter').blocking === false,
+     'a deployment selling nothing is not blocked on it', find(noPay, 'counter').blocking);
+  ok(/^Core product is live/.test(noPay.summary.verdict),
+     'and can still report the core as live', noPay.summary.verdict);
+
+  const paying = await get(Object.assign(bare(), {
+    AMV_MODEL_KEY: 'k', JWT_SECRET: 'j', STRIPE_SECRET_KEY: 'sk_live_x', STRIPE_WEBHOOK_SECRET: 'whsec_x' }));
+  ok(find(paying, 'counter').blocking === true,
+     'a deployment taking payments IS blocked on it', find(paying, 'counter').blocking);
+  ok(/^Not ready/.test(paying.summary.verdict),
+     'so the verdict refuses to say ready', paying.summary.verdict);
+  ok(/Atomic counter/.test(paying.summary.verdict),
+     'and names it, rather than leaving somebody to guess', paying.summary.verdict);
+  ok(/REQUIRED NOW/.test(find(paying, 'counter').turnsOn),
+     'with a line that says this is required NOW, not one day', find(paying, 'counter').turnsOn);
+  ok(/read-then-write|read followed by a write/.test(find(paying, 'counter').turnsOn),
+     'and says what the fallback actually does, not just that it is worse', find(paying, 'counter').turnsOn);
+
+  /* And bound, it stops blocking - a gate that stays red once tripped is one
+     people learn to ignore. */
+  const bound = await get(Object.assign(bare(), {
+    AMV_MODEL_KEY: 'k', JWT_SECRET: 'j', STRIPE_SECRET_KEY: 'sk_live_x', STRIPE_WEBHOOK_SECRET: 'whsec_x',
+    AMV_COUNTER: {} }));
+  ok(find(bound, 'counter').on === true && bound.summary.blockingMissing === 0,
+     'and binding it clears the block', bound.summary.blockingMissing);
+}
+
+section('A rotation in progress is a state the screen reports');
+{
+  /* CONNECT_KEY_PREV set is not a missing capability, it is a rotation that has
+     started and not finished. It reports "on" when ABSENT, because absent is
+     the settled state - the inverse of every other line here, which is exactly
+     why it needs asserting rather than assuming. */
+  const settled = await get(Object.assign(bare(), { AMV_MODEL_KEY: 'k', JWT_SECRET: 'j', CONNECT_KEY: 'ck' }));
+  ok(find(settled, 'connectKeyPrev').on === true,
+     'no rotation in progress reads as nothing to do', find(settled, 'connectKeyPrev').on);
+
+  const mid = await get(Object.assign(bare(), {
+    AMV_MODEL_KEY: 'k', JWT_SECRET: 'j', CONNECT_KEY: 'ck', CONNECT_KEY_PREV: 'old' }));
+  ok(find(mid, 'connectKeyPrev').on === false,
+     'a rotation in progress is reported as unfinished', find(mid, 'connectKeyPrev').on);
+  ok(/ROTATION IS IN PROGRESS/.test(find(mid, 'connectKeyPrev').turnsOn),
+     'saying so in words', find(mid, 'connectKeyPrev').turnsOn);
+  ok(find(mid, 'connectKeyPrev').blocking === false,
+     'and it does not block a launch, because a rotation is normal work', find(mid, 'connectKeyPrev').blocking);
+}
+
 section('It is operator-only');
 {
   const env = bare();
