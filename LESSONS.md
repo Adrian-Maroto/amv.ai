@@ -6350,3 +6350,40 @@ would have removed the rule that stops the next paid path being written outside
 the ceiling; leaving it would have been another entry in this file. SMS became
 the caller, which also closed the hole that SMS had never asked the day's
 ceiling at all.
+
+## 296. "No callers" and "dead" are different claims, and I conflated them
+
+`connectGoogle` appeared exactly once in the codebase - its own definition. By
+the rule that has been reliable all week, that is dead code. I removed it. Two
+tests failed within the hour and both were right.
+
+It is the START of a subsystem that is still running:
+
+    connectGoogle -> Google consent -> checkOAuthCallback
+      -> /v1/oauth/google/exchange -> /v1/oauth/google/refresh
+      -> the mailbox, the calendar, and the school reader
+
+Everything after the first arrow is live. What is missing is that nothing calls
+the first one, so an account connected earlier keeps working and nobody new can
+start. That is a BUG - a front door that fell off - and deleting the door makes
+it permanent and silent instead of fixable.
+
+It also took the only place two read-only Google Classroom scopes are requested,
+which is why the school reader gets a 403: the reader is live, the scope request
+was unreachable. Correct at both ends, not joined in the middle, for the third
+time in this codebase - and this time I made it worse before the tests stopped
+me.
+
+**A function with no callers is unreachable. Whether it is DEAD depends on what
+is downstream of it.** If deleting it would make an existing gap permanent, it
+is not residue, it is half of a repair somebody has not made yet.
+
+The check that would have caught this before the tests did: for each candidate,
+ask what it is the only caller OF, and what state only it can create. A leaf
+with nothing downstream is residue. A root with a live subtree is a missing
+entry point.
+
+The removal is reverted, the reasoning is in the code where the next person
+will find it, and the decision it actually needs - AMV has two Google systems
+and should keep one - is in GOOGLE-PATHS.md rather than settled by me at the end
+of a long session.

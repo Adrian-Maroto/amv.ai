@@ -3513,16 +3513,44 @@ function _amvStartVoice(btn){
   try{ window._voiceRec.start(); } catch(e){ toast('Voice failed: '+e.message,'error'); }
 }
 
-/* 2. GOOGLE OAUTH - redirect flow (no popup cross-origin errors)
-   Security notes (auditor #5):
-   - Adds a cryptographic `state` nonce to defend against CSRF on the
-     callback (an attacker can't forge a redirect back into your session).
-   - Uses the implicit flow (response_type=token) so the app works WITHOUT
-     a backend. The honest tradeoff: the Google access token lands in
-     localStorage. For a hardened deployment, broker OAuth through the
-     Worker (auth-code flow) so the token never reaches the browser - see
-     SECURITY-HEADERS.md. We scope the token to the minimum needed and
-     expire it aggressively. */
+/* 2. GOOGLE OAUTH.
+
+   The block that stood here described the design as it was: an implicit flow
+   chosen so AMV worked without a backend, with the honest tradeoff written out
+   - "the Google access token lands in localStorage" - and a note that a
+   hardened deployment should broker the exchange through the Worker instead.
+
+   Every clause of that is now false. The exchange IS brokered through the
+   Worker, the token never reaches this page, and the sign-in token that does
+   is held in memory rather than on disk. A comment that describes a tradeoff
+   the code no longer makes is worse than no comment: the next person to touch
+   this reads it as the current design and reasons from it. */
+/* CONNECTGOOGLE HAS NO CALLERS, AND IS NOT DEAD CODE. THE DIFFERENCE MATTERS.
+
+   I removed it as residue and the tests said no, twice, in ways worth writing
+   down. It starts a subsystem that is still running underneath:
+
+     connectGoogle -> Google consent -> checkOAuthCallback
+       -> /v1/oauth/google/exchange   (the Worker stores a refresh token)
+       -> /v1/oauth/google/refresh    (mints a short-lived token for THIS page)
+       -> the browser-side jobs: the mailbox, the calendar, classroom_due
+
+   Every one of those still exists and still runs. What is missing is the first
+   arrow. Nothing on any screen calls this function, so nobody can START that
+   grant any more - an account that connected before it went unreachable keeps
+   working, and nobody new can. Deleting it would have made that permanent and
+   silent, and taken with it the only place the read-only Classroom scopes are
+   named, which is why the school reader 403s: the scope was requested by a
+   function nobody could reach.
+
+   Connected accounts is the newer, better system - the server holds everything
+   and jobs run with the tab closed - and it does not offer Classroom, so it is
+   not a replacement for this yet.
+
+   Two live Google systems, one of them missing its front door. Which one AMV
+   keeps is an authentication decision, and it is recorded in GOOGLE-PATHS.md
+   rather than settled here at the end of a long session. Left exactly as it
+   was, deliberately, and not tidied. */
 async function connectGoogle(){
   const cid = loadStr('amv_gauth');
   if(!cid){ toast('Add Google Client ID in Settings → Integrations first','error',5000); goSettings('integrations'); return; }
@@ -3568,8 +3596,7 @@ async function connectGoogle(){
   const state = _oauthTxStart('google', '');   // AMV-039: provider-bound, per-attempt state
   const url = 'https://accounts.google.com/o/oauth2/v2/auth?client_id='+encodeURIComponent(cid)+'&redirect_uri='+encodeURIComponent(redirectUri)+'&response_type=token&scope='+encodeURIComponent(scopes)+'&prompt=consent&state='+encodeURIComponent(state);
   window.location.href = url;
-}
-function checkOAuthCallback(){
+}function checkOAuthCallback(){
   /* AUTH-CODE return (?code=...&state=...). The code is single-use and useless
      without the verifier, which never left this browser. We hand both to our
      own server, which does the exchange with the client secret. */

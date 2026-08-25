@@ -592,9 +592,20 @@ let _taskCat=null;
    The catalog renders identically as its own full-page view AND
    inside the Settings pane, from one source of truth.
    ============================================================ */
+/* Is there a REAL connection to this provider - a grant the server holds - as
+   opposed to a sign-in token that proves identity and permits nothing? The
+   catalogue used getGToken() for Google, which answers the second question and
+   was being read as the first. */
+function _connHasProvider(id){
+  try{
+    const items=((_connState&&_connState.data)||{}).items||[];
+    return items.some(x=>x && x.provider===id && !x.broken);
+  }catch(e){ return false; }
+}
+try{ window._connHasProvider=_connHasProvider; }catch(e){}
+
 function _integrationsCatalogHTML(){
   const smsPhone=loadStr('amv_sms_phone');
-  const gConnected=!!getGToken();
   const isConn=(k)=>!!loadStr(k);
   const intRow=(o)=>{
     const connected=o.connected;
@@ -628,7 +639,23 @@ function _integrationsCatalogHTML(){
       '<div class="ax-legend-item"><span class="ax-badge ax-manual">Manual</span><span>You trigger it or upload files each time.</span></div>'+
     '</div>'+
     cat('Email &amp; calendar',
-      intRow({id:'google',name:'Google (Gmail, Drive, Calendar)',desc:'Reads & drafts email, organizes Drive, manages your calendar - automatically.',auto:true,connected:gConnected,icon:'\uD83D\uDCE7',bg:'rgba(66,133,244,.14)'})+
+      /* CONNECT MEANT SIGN IN, AND THE ROW SAID GMAIL.
+
+         This row is labelled Autonomous - "runs on its own in the background
+         after you connect" - and describes reading and drafting email. Its
+         Connect button called connectIntegration('google'), which calls
+         triggerGoogle: Google SIGN-IN, the one-tap that proves who you are and
+         grants no Gmail, Drive or Calendar scope at all. Somebody who wanted
+         AMV to read their mail could press Connect, complete a real Google
+         flow, come back, and have granted nothing - and `connected` was read
+         from the sign-in token, so the row would then show a tick.
+
+         The flow that does what this row describes is Connected accounts,
+         directly above: the server holds the grant, the scopes are chosen, and
+         it survives the tab closing. So the row points there. Nothing is
+         removed - the capability moves to the entry that actually delivers it,
+         which is the difference between a catalogue and a promise. */
+      intRow({id:'google',name:'Google (Gmail, Drive, Calendar)',desc:'Reads & drafts email, organizes Drive, manages your calendar - automatically. Set up under Connected accounts above, where you choose what AMV may do.',auto:true,connected:_connHasProvider('google'),icon:'\uD83D\uDCE7',bg:'rgba(66,133,244,.14)'})+
       intRow({id:'outlook',name:'Microsoft 365 (Outlook, OneDrive)',desc:'Email, calendar and files across your Microsoft account.',auto:true,connected:isConn('amv_outlook'),icon:'\uD83D\uDCEB',bg:'rgba(0,120,212,.14)'})+
       /* The rest of the world. Google and Microsoft cover a lot of people and
          not most of them: QQ and 163 in China, Naver in Korea, Yandex and
@@ -709,6 +736,28 @@ function _integrationsCatalogHTML(){
 }
 window._integrationsCatalogHTML=_integrationsCatalogHTML;
 
+/* Which providers the connected-accounts framework handles. Read from what the
+   server actually offers rather than a list kept here, so the two cannot drift:
+   a provider added on the server is owned by the framework the moment it
+   appears, and one removed stops being claimed. */
+function _connOwnsProvider(id){
+  try{
+    const provs=((_connState&&_connState.data)||{}).providers||[];
+    return provs.some(p=>p && p.id===id);
+  }catch(e){ return false; }
+}
+/* Take them to the section that does it, and open the scope picker so the
+   press does something rather than scrolling and stopping. */
+function _connGoTo(id){
+  try{
+    const sec=document.getElementById('conn-sec');
+    if(sec) sec.scrollIntoView({behavior:'smooth',block:'start'});
+  }catch(e){}
+  try{ if(typeof announce==='function') announce('Connected accounts'); }catch(e){}
+  try{ return connAdd(id); }catch(e){}
+}
+try{ window._connOwnsProvider=_connOwnsProvider; window._connGoTo=_connGoTo; }catch(e){}
+
 function _wireIntegrationCatalog(root){
   root=root||document;
   /* Mail is connected with a password rather than an OAuth round trip, so it
@@ -716,6 +765,12 @@ function _wireIntegrationCatalog(root){
   root.querySelectorAll('[data-int-conn]').forEach(btn=>on(btn,'click',()=>{
     if(btn.dataset.intConn==='mail') return openMailConnect();
     if(btn.dataset.intConn==='telegram') return openTelegramConnect();
+    /* Providers the connected-accounts framework owns are STARTED there, not
+       here. Google's row used to run a sign-in from this button; sending it to
+       the real flow is the whole fix, and it is done by provider id rather
+       than by naming Google, so adding Microsoft to that framework does not
+       leave a second row quietly doing the wrong thing. */
+    if(_connOwnsProvider(btn.dataset.intConn)) return _connGoTo(btn.dataset.intConn);
     connectIntegration(btn.dataset.intConn);
   }));
   root.querySelectorAll('[data-int-disc]').forEach(btn=>on(btn,'click',()=>{
@@ -903,7 +958,7 @@ try{ window.connRemove=connRemove; }catch(e){}
 
 function _connSectionHTML(){
   try{ setTimeout(()=>_connLoad(false), 0); }catch(e){}
-  return '<section class="conn-sec">'+
+  return '<section class="conn-sec" id="conn-sec">'+
     '<div class="sec-head"><h3>'+escH(T('Connected accounts'))+'</h3>'+
       '<span class="sec-sub">'+escH(T('Accounts AMV holds a key to, so Crew jobs keep running with this tab closed. Every one shows what it may do and which job used it last.'))+'</span></div>'+
     '<div id="conn-body" class="conn-body">'+_connBodyHTML()+'</div>'+

@@ -22725,16 +22725,44 @@ function _amvStartVoice(btn){
   try{ window._voiceRec.start(); } catch(e){ toast('Voice failed: '+e.message,'error'); }
 }
 
-/* 2. GOOGLE OAUTH - redirect flow (no popup cross-origin errors)
-   Security notes (auditor #5):
-   - Adds a cryptographic `state` nonce to defend against CSRF on the
-     callback (an attacker can't forge a redirect back into your session).
-   - Uses the implicit flow (response_type=token) so the app works WITHOUT
-     a backend. The honest tradeoff: the Google access token lands in
-     localStorage. For a hardened deployment, broker OAuth through the
-     Worker (auth-code flow) so the token never reaches the browser - see
-     SECURITY-HEADERS.md. We scope the token to the minimum needed and
-     expire it aggressively. */
+/* 2. GOOGLE OAUTH.
+
+   The block that stood here described the design as it was: an implicit flow
+   chosen so AMV worked without a backend, with the honest tradeoff written out
+   - "the Google access token lands in localStorage" - and a note that a
+   hardened deployment should broker the exchange through the Worker instead.
+
+   Every clause of that is now false. The exchange IS brokered through the
+   Worker, the token never reaches this page, and the sign-in token that does
+   is held in memory rather than on disk. A comment that describes a tradeoff
+   the code no longer makes is worse than no comment: the next person to touch
+   this reads it as the current design and reasons from it. */
+/* CONNECTGOOGLE HAS NO CALLERS, AND IS NOT DEAD CODE. THE DIFFERENCE MATTERS.
+
+   I removed it as residue and the tests said no, twice, in ways worth writing
+   down. It starts a subsystem that is still running underneath:
+
+     connectGoogle -> Google consent -> checkOAuthCallback
+       -> /v1/oauth/google/exchange   (the Worker stores a refresh token)
+       -> /v1/oauth/google/refresh    (mints a short-lived token for THIS page)
+       -> the browser-side jobs: the mailbox, the calendar, classroom_due
+
+   Every one of those still exists and still runs. What is missing is the first
+   arrow. Nothing on any screen calls this function, so nobody can START that
+   grant any more - an account that connected before it went unreachable keeps
+   working, and nobody new can. Deleting it would have made that permanent and
+   silent, and taken with it the only place the read-only Classroom scopes are
+   named, which is why the school reader 403s: the scope was requested by a
+   function nobody could reach.
+
+   Connected accounts is the newer, better system - the server holds everything
+   and jobs run with the tab closed - and it does not offer Classroom, so it is
+   not a replacement for this yet.
+
+   Two live Google systems, one of them missing its front door. Which one AMV
+   keeps is an authentication decision, and it is recorded in GOOGLE-PATHS.md
+   rather than settled here at the end of a long session. Left exactly as it
+   was, deliberately, and not tidied. */
 async function connectGoogle(){
   const cid = loadStr('amv_gauth');
   if(!cid){ toast('Add Google Client ID in Settings → Integrations first','error',5000); goSettings('integrations'); return; }
@@ -22780,8 +22808,7 @@ async function connectGoogle(){
   const state = _oauthTxStart('google', '');   // AMV-039: provider-bound, per-attempt state
   const url = 'https://accounts.google.com/o/oauth2/v2/auth?client_id='+encodeURIComponent(cid)+'&redirect_uri='+encodeURIComponent(redirectUri)+'&response_type=token&scope='+encodeURIComponent(scopes)+'&prompt=consent&state='+encodeURIComponent(state);
   window.location.href = url;
-}
-function checkOAuthCallback(){
+}function checkOAuthCallback(){
   /* AUTH-CODE return (?code=...&state=...). The code is single-use and useless
      without the verifier, which never left this browser. We hand both to our
      own server, which does the exchange with the client secret. */
@@ -23571,9 +23598,20 @@ let _taskCat=null;
    The catalog renders identically as its own full-page view AND
    inside the Settings pane, from one source of truth.
    ============================================================ */
+/* Is there a REAL connection to this provider - a grant the server holds - as
+   opposed to a sign-in token that proves identity and permits nothing? The
+   catalogue used getGToken() for Google, which answers the second question and
+   was being read as the first. */
+function _connHasProvider(id){
+  try{
+    const items=((_connState&&_connState.data)||{}).items||[];
+    return items.some(x=>x && x.provider===id && !x.broken);
+  }catch(e){ return false; }
+}
+try{ window._connHasProvider=_connHasProvider; }catch(e){}
+
 function _integrationsCatalogHTML(){
   const smsPhone=loadStr('amv_sms_phone');
-  const gConnected=!!getGToken();
   const isConn=(k)=>!!loadStr(k);
   const intRow=(o)=>{
     const connected=o.connected;
@@ -23607,7 +23645,23 @@ function _integrationsCatalogHTML(){
       '<div class="ax-legend-item"><span class="ax-badge ax-manual">Manual</span><span>You trigger it or upload files each time.</span></div>'+
     '</div>'+
     cat('Email &amp; calendar',
-      intRow({id:'google',name:'Google (Gmail, Drive, Calendar)',desc:'Reads & drafts email, organizes Drive, manages your calendar - automatically.',auto:true,connected:gConnected,icon:'\uD83D\uDCE7',bg:'rgba(66,133,244,.14)'})+
+      /* CONNECT MEANT SIGN IN, AND THE ROW SAID GMAIL.
+
+         This row is labelled Autonomous - "runs on its own in the background
+         after you connect" - and describes reading and drafting email. Its
+         Connect button called connectIntegration('google'), which calls
+         triggerGoogle: Google SIGN-IN, the one-tap that proves who you are and
+         grants no Gmail, Drive or Calendar scope at all. Somebody who wanted
+         AMV to read their mail could press Connect, complete a real Google
+         flow, come back, and have granted nothing - and `connected` was read
+         from the sign-in token, so the row would then show a tick.
+
+         The flow that does what this row describes is Connected accounts,
+         directly above: the server holds the grant, the scopes are chosen, and
+         it survives the tab closing. So the row points there. Nothing is
+         removed - the capability moves to the entry that actually delivers it,
+         which is the difference between a catalogue and a promise. */
+      intRow({id:'google',name:'Google (Gmail, Drive, Calendar)',desc:'Reads & drafts email, organizes Drive, manages your calendar - automatically. Set up under Connected accounts above, where you choose what AMV may do.',auto:true,connected:_connHasProvider('google'),icon:'\uD83D\uDCE7',bg:'rgba(66,133,244,.14)'})+
       intRow({id:'outlook',name:'Microsoft 365 (Outlook, OneDrive)',desc:'Email, calendar and files across your Microsoft account.',auto:true,connected:isConn('amv_outlook'),icon:'\uD83D\uDCEB',bg:'rgba(0,120,212,.14)'})+
       /* The rest of the world. Google and Microsoft cover a lot of people and
          not most of them: QQ and 163 in China, Naver in Korea, Yandex and
@@ -23688,6 +23742,28 @@ function _integrationsCatalogHTML(){
 }
 window._integrationsCatalogHTML=_integrationsCatalogHTML;
 
+/* Which providers the connected-accounts framework handles. Read from what the
+   server actually offers rather than a list kept here, so the two cannot drift:
+   a provider added on the server is owned by the framework the moment it
+   appears, and one removed stops being claimed. */
+function _connOwnsProvider(id){
+  try{
+    const provs=((_connState&&_connState.data)||{}).providers||[];
+    return provs.some(p=>p && p.id===id);
+  }catch(e){ return false; }
+}
+/* Take them to the section that does it, and open the scope picker so the
+   press does something rather than scrolling and stopping. */
+function _connGoTo(id){
+  try{
+    const sec=document.getElementById('conn-sec');
+    if(sec) sec.scrollIntoView({behavior:'smooth',block:'start'});
+  }catch(e){}
+  try{ if(typeof announce==='function') announce('Connected accounts'); }catch(e){}
+  try{ return connAdd(id); }catch(e){}
+}
+try{ window._connOwnsProvider=_connOwnsProvider; window._connGoTo=_connGoTo; }catch(e){}
+
 function _wireIntegrationCatalog(root){
   root=root||document;
   /* Mail is connected with a password rather than an OAuth round trip, so it
@@ -23695,6 +23771,12 @@ function _wireIntegrationCatalog(root){
   root.querySelectorAll('[data-int-conn]').forEach(btn=>on(btn,'click',()=>{
     if(btn.dataset.intConn==='mail') return openMailConnect();
     if(btn.dataset.intConn==='telegram') return openTelegramConnect();
+    /* Providers the connected-accounts framework owns are STARTED there, not
+       here. Google's row used to run a sign-in from this button; sending it to
+       the real flow is the whole fix, and it is done by provider id rather
+       than by naming Google, so adding Microsoft to that framework does not
+       leave a second row quietly doing the wrong thing. */
+    if(_connOwnsProvider(btn.dataset.intConn)) return _connGoTo(btn.dataset.intConn);
     connectIntegration(btn.dataset.intConn);
   }));
   root.querySelectorAll('[data-int-disc]').forEach(btn=>on(btn,'click',()=>{
@@ -23882,7 +23964,7 @@ try{ window.connRemove=connRemove; }catch(e){}
 
 function _connSectionHTML(){
   try{ setTimeout(()=>_connLoad(false), 0); }catch(e){}
-  return '<section class="conn-sec">'+
+  return '<section class="conn-sec" id="conn-sec">'+
     '<div class="sec-head"><h3>'+escH(T('Connected accounts'))+'</h3>'+
       '<span class="sec-sub">'+escH(T('Accounts AMV holds a key to, so Crew jobs keep running with this tab closed. Every one shows what it may do and which job used it last.'))+'</span></div>'+
     '<div id="conn-body" class="conn-body">'+_connBodyHTML()+'</div>'+
