@@ -468,7 +468,7 @@ function _mktPreview(it, after){
   on($('mkt-pv-get'),'click',async()=>{ try{ await AMVMarket.install(it); after&&after(); _mktAfterInstall(it); }catch(e){ toast(e.message||'Could not add','error'); } });
   on($('mkt-pv-use'),'click',async()=>{ try{ await AMVMarket.install(it); _mktAfterInstall(it); }catch(e){ toast('Could not add','error'); } });
   on($('mkt-pv-remove'),'click',async()=>{
-    if(!confirm('Remove this listing from the marketplace? Buyers who already own it keep it.')) return;
+    if(!await showConfirmAsync('Remove this listing from the marketplace?\n\nIt stops being visible to new buyers. Anybody who already owns it keeps it.')) return;
     try{ await AMVMarket.unlist(it.id); toast('Listing removed','info'); closeOvr(); if(S.tab==='market'){ try{ renderMarketView(); }catch(e){} } }
     catch(e){ toast(e.message||'Could not remove','error'); }
   });
@@ -1115,7 +1115,7 @@ function _mktSell(body){
       catch(e){ toast(e.message||'Could not update','error'); }
     }));
     el.querySelectorAll('[data-sl-del]').forEach(b=>on(b,'click',async()=>{
-      if(!confirm('Remove this listing permanently? Buyers who already own it keep it.')) return;
+      if(!await showConfirmAsync('Remove this listing permanently?\n\nIt stops being visible to new buyers. Anybody who already owns it keeps it.')) return;
       try{ await AMVMarket.unlist(b.dataset.slDel); toast('Listing removed','info'); loadMine(); }catch(e){ toast(e.message||'Could not remove','error'); }
     }));
   }).catch(e=>{
@@ -1362,7 +1362,7 @@ function renderMemList(){
     '<div class="memc">'+
       '<div class="memic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--indigo)" stroke-width="2" stroke-linecap="round"><path d="M12 2a5 5 0 1 0 5 5H7a5 5 0 0 0 5-5z"/><path d="M12 12v10"/></svg></div>'+
       '<div style="flex:1"><div class="memt">'+escH(m.text)+'</div><div class="memtm">Added '+new Date(m.added).toLocaleDateString()+'</div></div>'+
-      '<button class="memdel" data-dact="delMemory" data-darg="'+escH(m.id)+'">×</button>'+
+      '<button class="memdel" data-dact="delMemory" data-darg="'+escH(m.id)+'" aria-label="Delete this memory">×</button>'+
     '</div>'
   ).join('') + (pg.hasMore ? _showMoreBtn('memory', pg.remaining, 30) : '');
   const mb=list.querySelector('[data-pagemore="memory"]');
@@ -1501,7 +1501,7 @@ function createPromptModal(){
   const r=$('ovr'); if(!r) return;
   r.innerHTML=
     '<div class="ov" id="cp-bg"><div class="ob wide">'+
-      '<button class="oc" data-dact="closeOvr">×</button>'+
+      '<button class="oc" data-dact="closeOvr" aria-label="Close">×</button>'+
       '<h2 style="margin-bottom:4px">Create Prompt</h2>'+
       '<p class="ob-sub">Add a reusable prompt to your personal library.</p>'+
       '<div class="af">'+
@@ -1597,7 +1597,7 @@ function createWorkspaceModal(){
   const icons=['📁','💼','🔬','🎨','💻','📊','✍️','🏠','🎯','🚀','📚','⚡'];
   r.innerHTML=
     '<div class="ov" id="ws-bg"><div class="ob">'+
-      '<button class="oc" data-dact="closeOvr">×</button>'+
+      '<button class="oc" data-dact="closeOvr" aria-label="Close">×</button>'+
       '<h2 style="margin-bottom:4px">New Workspace</h2>'+
       '<p class="ob-sub">Create a workspace to organize related conversations.</p>'+
       '<div class="af">'+

@@ -539,7 +539,7 @@ function _studioRenderArtifacts(){
 }
 function _studioAddPrompt(){
   const r=$('ovr'); if(!r) return;
-  r.innerHTML='<div class="ov" id="sa-bg"><div class="ob" style="max-width:440px"><button class="oc" data-dact="closeOvr">×</button>'+
+  r.innerHTML='<div class="ov" id="sa-bg"><div class="ob" style="max-width:440px"><button class="oc" data-dact="closeOvr" aria-label="Close">×</button>'+
     '<h2 style="margin-bottom:6px">Add a design</h2><p class="ob-sub" style="margin-bottom:12px">Describe another page, screen, slide deck, or graphic. It joins this project so your whole set stays consistent.</p>'+
     '<textarea id="sa-brief" rows="3" placeholder="e.g. \'an about page matching this style\' or \'a pitch deck of 6 slides\'" style="width:100%;font-size:var(--t-base)"></textarea>'+
     '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px"><button class="btn bs" data-dact="closeOvr">Cancel</button><button class="btn bp" id="sa-go">Design it</button></div></div></div>';
@@ -553,7 +553,7 @@ function _studioHistory(){
   const a=_studioActive(); if(!a||!a.history.length){ toast('No history yet','info'); return; }
   const r=$('ovr'); if(!r) return;
   const rows=a.history.slice().reverse().map((h,i)=>{ const realIdx=a.history.length-1-i; return '<div class="studio-hrow"><div class="studio-hrow-b"><div class="studio-hrow-t">'+(i===0?'Current':('Version '+(realIdx+1)))+'</div><div class="studio-hrow-d">'+escH(h.brief||'(initial)')+' · '+_timeAgo(h.ts||Date.now())+'</div></div>'+(i===0?'':'<button class="btn bs" data-revert="'+realIdx+'">Revert</button>')+'</div>'; }).join('');
-  r.innerHTML='<div class="ov" id="sh-bg"><div class="ob" style="max-width:460px"><button class="oc" data-dact="closeOvr">×</button><h2 style="margin-bottom:12px">Version history</h2><div class="studio-hlist">'+rows+'</div></div></div>';
+  r.innerHTML='<div class="ov" id="sh-bg"><div class="ob" style="max-width:460px"><button class="oc" data-dact="closeOvr" aria-label="Close">×</button><h2 style="margin-bottom:12px">Version history</h2><div class="studio-hlist">'+rows+'</div></div></div>';
   onBackdrop($('sh-bg'),closeOvr);
   r.querySelectorAll('[data-revert]').forEach(b=>on(b,'click',()=>{ const idx=+b.dataset.revert; const h=a.history[idx]; if(h){ a.html=h.html; a.history.push({brief:'reverted to v'+(idx+1),html:h.html,ts:Date.now()}); _STUDIO.html=h.html; _studioRenderPreview(h.html); closeOvr(); toast('Reverted','success'); } }));
 }
@@ -757,7 +757,7 @@ function openDNA(){
       <div><h2>Design DNA</h2><p>Your reusable style guide. Set it once - every design AMV makes follows it.</p></div>
       <div style="display:flex;align-items:center;gap:4px">
         <button class="dna-x" id="dna-help" title="What is this?" style="font-size:var(--t-prose)">?</button>
-        <button class="dna-x" id="dna-x">✕</button>
+        <button class="dna-x" id="dna-x" aria-label="Close">✕</button>
       </div>
     </div>
     <div class="dna-intro" id="dna-intro" style="${seen?'display:none':''}">
@@ -801,19 +801,19 @@ function openDNA(){
 function closeDNA(){ const r=$('ovr'); if(r) r.innerHTML=''; }
 function _dnaFoot(){ const el=$('dna-foot-l'); if(el) el.textContent=(_DNA.colors.length)+' colors · '+_DNA.themeFamily+' · '+_DNA.theme+' theme'; }
 
-function _sld(label,obj,key){ const v=obj[key]; return `<div class="dna-slider"><div class="dna-slider-h"><span>${label}</span><span>${v}</span></div><input type="range" min="0" max="100" value="${v}" data-sld="${key}"></div>`; }
+function _sld(label,obj,key){ const v=obj[key]; return `<div class="dna-slider"><div class="dna-slider-h"><span>${label}</span><span>${v}</span></div><input type="range" min="0" max="100" value="${v}" data-sld="${key}" aria-label="${escH(label)}" aria-valuetext="${v}"></div>`; }
 function _opt(key,current){ return (DNA_OPTS[key]||[]).map(o=>`<button class="dna-pill ${o===current?'on':''}" data-pill="${key}" data-val="${o}">${String(o).replace(/_/g,' ')}</button>`).join(''); }
 
 function _dnaRenderSection(sec){
   const c=$('dna-content'); if(!c) return;
   if(sec==='identity'){
     c.innerHTML=`<div class="dna-sec-t">Identity</div><div class="dna-sec-d">What you're building and for whom. This frames every decision.</div>
-      <div class="dna-field"><label>Project name</label><input type="text" data-txt="projectName" value="${escH(_DNA.projectName)}" placeholder="e.g. Northwind Analytics"></div>
+      <div class="dna-field"><label>Project name</label><input aria-label="Project name" type="text" data-txt="projectName" value="${escH(_DNA.projectName)}" placeholder="e.g. Northwind Analytics"></div>
       <div class="dna-grid2">
-        <div class="dna-field"><label>Project type</label><select data-sel="projectType">${DNA_OPTS.projectType.map(o=>`<option ${o===_DNA.projectType?'selected':''}>${o}</option>`).join('')}</select></div>
-        <div class="dna-field"><label>Industry</label><input type="text" data-txt="industry" value="${escH(_DNA.industry)}" placeholder="Technology, Finance, Health…"></div>
+        <div class="dna-field"><label>Project type</label><select aria-label="Project type" data-sel="projectType">${DNA_OPTS.projectType.map(o=>`<option ${o===_DNA.projectType?'selected':''}>${o}</option>`).join('')}</select></div>
+        <div class="dna-field"><label>Industry</label><input aria-label="Industry" type="text" data-txt="industry" value="${escH(_DNA.industry)}" placeholder="Technology, Finance, Health…"></div>
       </div>
-      <div class="dna-field"><label>Target audience</label><input type="text" data-txt="audience" value="${escH(_DNA.audience)}" placeholder="e.g. enterprise IT buyers, Gen-Z gamers"></div>`;
+      <div class="dna-field"><label>Target audience</label><input aria-label="Target audience" type="text" data-txt="audience" value="${escH(_DNA.audience)}" placeholder="e.g. enterprise IT buyers, Gen-Z gamers"></div>`;
   }
   else if(sec==='colors'){
     c.innerHTML=`<div class="dna-sec-t">Color system</div><div class="dna-sec-d">Paste ANY palette - hex, rgb, hsl, GitHub lists, Tailwind, CSS variables. AMV extracts every color and maps it to roles. Or pick a preset, or set each swatch by hand.</div>
@@ -831,7 +831,7 @@ or paste a whole CSS / Tailwind / GitHub palette - AMV finds the colors"></texta
         <div class="dna-preview-strip">${_DNA.colors.map(c2=>`<span style="background:${c2.hex}"></span>`).join('')}</div>
         <div class="dna-swatches" id="dna-swatches">${_DNA.colors.map((c2,i)=>`
           <div class="dna-swatch">
-            <div class="dna-swatch-c" style="background:${c2.hex}"><input type="color" value="${/^#[0-9a-f]{6}$/i.test(c2.hex)?c2.hex:'#000000'}" data-cidx="${i}"></div>
+            <div class="dna-swatch-c" style="background:${c2.hex}"><input type="color" aria-label="${escH(c2.role.replace(/_/g," "))} colour" value="${/^#[0-9a-f]{6}$/i.test(c2.hex)?c2.hex:'#000000'}" data-cidx="${i}"></div>
             <div class="dna-swatch-meta"><div class="dna-swatch-role">${c2.role.replace(/_/g,' ')}</div><div class="dna-swatch-hex">${c2.hex}</div></div>
           </div>`).join('')}</div>
         <button class="dna-add-btn" id="dna-add-color">+ Add color</button>
@@ -867,11 +867,11 @@ or paste a whole CSS / Tailwind / GitHub palette - AMV finds the colors"></texta
   else if(sec==='typography'){
     c.innerHTML=`<div class="dna-sec-t">Typography</div><div class="dna-sec-d">Fonts and rhythm. Heading + body pairing defines the whole feel.</div>
       <div class="dna-grid2">
-        <div class="dna-field"><label>Heading font</label><select data-sel="headingFont">${DNA_OPTS.headingFont.map(o=>`<option ${o===_DNA.headingFont?'selected':''}>${o}</option>`).join('')}</select></div>
-        <div class="dna-field"><label>Body font</label><select data-sel="bodyFont">${DNA_OPTS.bodyFont.map(o=>`<option ${o===_DNA.bodyFont?'selected':''}>${o}</option>`).join('')}</select></div>
+        <div class="dna-field"><label>Heading font</label><select aria-label="Heading font" data-sel="headingFont">${DNA_OPTS.headingFont.map(o=>`<option ${o===_DNA.headingFont?'selected':''}>${o}</option>`).join('')}</select></div>
+        <div class="dna-field"><label>Body font</label><select aria-label="Body font" data-sel="bodyFont">${DNA_OPTS.bodyFont.map(o=>`<option ${o===_DNA.bodyFont?'selected':''}>${o}</option>`).join('')}</select></div>
       </div>
       <div class="dna-grid2">
-        <div class="dna-field"><label>Heading weight</label><select data-sel="headingWeight">${['400','500','600','700','800'].map(o=>`<option ${o===_DNA.headingWeight?'selected':''}>${o}</option>`).join('')}</select></div>
+        <div class="dna-field"><label>Heading weight</label><select aria-label="Heading weight" data-sel="headingWeight">${['400','500','600','700','800'].map(o=>`<option ${o===_DNA.headingWeight?'selected':''}>${o}</option>`).join('')}</select></div>
         <div class="dna-field"><label>Font scale</label><div class="dna-pills">${_opt('fontScale',_DNA.fontScale)}</div></div>
       </div>
       <div class="dna-grid2">
@@ -883,7 +883,7 @@ or paste a whole CSS / Tailwind / GitHub palette - AMV finds the colors"></texta
     c.innerHTML=`<div class="dna-sec-t">Layout & space</div><div class="dna-sec-d">Structure, width and breathing room.</div>
       <div class="dna-field"><label>Structure</label><div class="dna-pills">${_opt('structure',_DNA.structure)}</div></div>
       <div class="dna-grid2">
-        <div class="dna-field"><label>Max width</label><input type="text" data-txt="maxWidth" value="${escH(_DNA.maxWidth)}" placeholder="1200px"></div>
+        <div class="dna-field"><label>Max width</label><input aria-label="Max width" type="text" data-txt="maxWidth" value="${escH(_DNA.maxWidth)}" placeholder="1200px"></div>
         <div class="dna-field"><label>Navigation</label><div class="dna-pills">${_opt('navigation',_DNA.navigation)}</div></div>
       </div>
       <div class="dna-grid2">

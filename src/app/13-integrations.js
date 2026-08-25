@@ -1575,7 +1575,7 @@ async function openMailConnect(){
 }
 
 async function disconnectMail(){
-  if(!confirm('Disconnect this mailbox? AMV will stop reading it and will forget the password.')) return;
+  if(!await showConfirmAsync('Disconnect this mailbox?\n\nAMV stops reading it and forgets the password. Any job that needs it will say so instead of running.')) return;
   try{ await AMV_API.mailDisconnect(); }catch(e){}
   await refreshMailStatus();
   toast('Mailbox disconnected','success');
@@ -1730,7 +1730,7 @@ async function openTelegramConnect(){
 }
 window.openTelegramConnect = openTelegramConnect;
 async function disconnectTelegram(){
-  if(!confirm('Disconnect Telegram? AMV will forget the bot token.')) return;
+  if(!await showConfirmAsync('Disconnect Telegram?\n\nAMV forgets the bot token. Messages will stop arriving until you connect it again.')) return;
   try{ await AMV_API.telegramDisconnect(); }catch(e){}
   toast('Telegram disconnected','success');
   try{ _refreshIntegrationsUI(); }catch(e){}

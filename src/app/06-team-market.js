@@ -487,7 +487,7 @@ function _renderTeamManage(vc, team){
     catch(e){ if(btn){ btn.disabled=false; btn.textContent='Leave team'; } toast(e.message||'Could not leave the team','error',6000); }
   });
   vc.querySelectorAll('[data-team-remove]').forEach(b=>on(b,'click',async()=>{
-    if(!confirm('Remove '+b.dataset.teamRemove+' from the team?')) return;
+    if(!await showConfirmAsync('Remove '+b.dataset.teamRemove+' from the team?\n\nThey lose access to everything shared with the team. You can invite them again later.')) return;
     try{ await AMVTeam.remove(b.dataset.teamRemove); toast('Member removed','info'); renderTeamView(); }
     catch(e){ toast(e.message||'Could not remove','error'); }
   }));
@@ -606,7 +606,7 @@ async function _loadTeamTasks(team, role, myEmail){
       catch(e){ toast(e.message||'Could not update','error'); }
     }));
     el.querySelectorAll('[data-tt-del]').forEach(b=>on(b,'click',async()=>{
-      if(!confirm('Delete this task?')) return;
+      if(!await showConfirmAsync('Delete this task?\n\nIt is removed for everybody on the team and cannot be brought back.')) return;
       try{ const nt=await AMVTeam.taskUpdate(b.dataset.ttDel,{del:true}); tasks.length=0; tasks.push(...nt); render(); }
       catch(e){ toast(e.message||'Could not delete','error'); }
     }));

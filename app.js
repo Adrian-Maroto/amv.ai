@@ -1055,6 +1055,7 @@ function _initOverlayFocus(){
       const f=_ovrFocusables(ovr)[0];
       if(f){ try{ f.focus(); }catch(e){} }
     }).observe(ovr,{childList:true,subtree:true});
+
   }catch(e){}
 }
 
@@ -1521,7 +1522,7 @@ function _showModalAsync({title, body, okText='OK', cancelText, placeholder, def
     const r=$('ovr'); if(!r){ resolve(null); return; }
     r.innerHTML=
       '<div class="ov" id="modal-bg"><div class="ob" id="modal-box" style="max-width:520px;min-width:320px;cursor:auto;position:relative">'+
-        '<button class="oc" id="modal-close" style="position:absolute;top:10px;right:10px">×</button>'+
+        '<button class="oc" id="modal-close" aria-label="Close" style="position:absolute;top:10px;right:10px">×</button>'+
         (title?'<h2 style="margin-bottom:10px">'+escH(title)+'</h2>':'')+
         '<div class="ob-sub" style="margin-bottom:16px;white-space:pre-wrap;line-height:1.5">'+escH(body)+'</div>'+
         (placeholder!==undefined?'<input id="modal-input" type="text" value="'+escH(defaultValue||'')+'" placeholder="'+escH(placeholder||'')+'" style="width:100%;margin-bottom:16px;padding:12px;border-radius:var(--r-lg);border:1px solid var(--bd);font-size:var(--t-base)">':'')+
@@ -2269,7 +2270,7 @@ function _modelPickerHTML(section){
   const opts=MODEL_ORDER.filter(k=>k!=='auto'||section==='studio').map(k=>{ const m=MODELS[k]; return '<option value="'+k+'"'+(k===cur?' selected':'')+'>'+m.label+' \u00b7 '+_usageWord(m.cost).toLowerCase()+' usage</option>'; }).join('');
   const m=MODELS[cur];
   return '<div class="mp-wrap"><label class="mp-label">Model</label>'+
-    '<select class="mp-sel" data-mp="'+section+'">'+opts+'</select>'+
+    '<select class="mp-sel" data-mp="'+section+'" aria-label="Engine for '+escH(section)+'">'+opts+'</select>'+
     _usageDots(m.cost)+
     '<span class="mp-note" data-mp-note="'+section+'">'+_usageWord(m.cost)+' usage per run</span>'+
   '</div>';
@@ -9154,7 +9155,7 @@ function _renderTeamManage(vc, team){
     catch(e){ if(btn){ btn.disabled=false; btn.textContent='Leave team'; } toast(e.message||'Could not leave the team','error',6000); }
   });
   vc.querySelectorAll('[data-team-remove]').forEach(b=>on(b,'click',async()=>{
-    if(!confirm('Remove '+b.dataset.teamRemove+' from the team?')) return;
+    if(!await showConfirmAsync('Remove '+b.dataset.teamRemove+' from the team?\n\nThey lose access to everything shared with the team. You can invite them again later.')) return;
     try{ await AMVTeam.remove(b.dataset.teamRemove); toast('Member removed','info'); renderTeamView(); }
     catch(e){ toast(e.message||'Could not remove','error'); }
   }));
@@ -9273,7 +9274,7 @@ async function _loadTeamTasks(team, role, myEmail){
       catch(e){ toast(e.message||'Could not update','error'); }
     }));
     el.querySelectorAll('[data-tt-del]').forEach(b=>on(b,'click',async()=>{
-      if(!confirm('Delete this task?')) return;
+      if(!await showConfirmAsync('Delete this task?\n\nIt is removed for everybody on the team and cannot be brought back.')) return;
       try{ const nt=await AMVTeam.taskUpdate(b.dataset.ttDel,{del:true}); tasks.length=0; tasks.push(...nt); render(); }
       catch(e){ toast(e.message||'Could not delete','error'); }
     }));
@@ -10304,7 +10305,7 @@ function _mktPreview(it, after){
   on($('mkt-pv-get'),'click',async()=>{ try{ await AMVMarket.install(it); after&&after(); _mktAfterInstall(it); }catch(e){ toast(e.message||'Could not add','error'); } });
   on($('mkt-pv-use'),'click',async()=>{ try{ await AMVMarket.install(it); _mktAfterInstall(it); }catch(e){ toast('Could not add','error'); } });
   on($('mkt-pv-remove'),'click',async()=>{
-    if(!confirm('Remove this listing from the marketplace? Buyers who already own it keep it.')) return;
+    if(!await showConfirmAsync('Remove this listing from the marketplace?\n\nIt stops being visible to new buyers. Anybody who already owns it keeps it.')) return;
     try{ await AMVMarket.unlist(it.id); toast('Listing removed','info'); closeOvr(); if(S.tab==='market'){ try{ renderMarketView(); }catch(e){} } }
     catch(e){ toast(e.message||'Could not remove','error'); }
   });
@@ -10951,7 +10952,7 @@ function _mktSell(body){
       catch(e){ toast(e.message||'Could not update','error'); }
     }));
     el.querySelectorAll('[data-sl-del]').forEach(b=>on(b,'click',async()=>{
-      if(!confirm('Remove this listing permanently? Buyers who already own it keep it.')) return;
+      if(!await showConfirmAsync('Remove this listing permanently?\n\nIt stops being visible to new buyers. Anybody who already owns it keeps it.')) return;
       try{ await AMVMarket.unlist(b.dataset.slDel); toast('Listing removed','info'); loadMine(); }catch(e){ toast(e.message||'Could not remove','error'); }
     }));
   }).catch(e=>{
@@ -11198,7 +11199,7 @@ function renderMemList(){
     '<div class="memc">'+
       '<div class="memic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--indigo)" stroke-width="2" stroke-linecap="round"><path d="M12 2a5 5 0 1 0 5 5H7a5 5 0 0 0 5-5z"/><path d="M12 12v10"/></svg></div>'+
       '<div style="flex:1"><div class="memt">'+escH(m.text)+'</div><div class="memtm">Added '+new Date(m.added).toLocaleDateString()+'</div></div>'+
-      '<button class="memdel" data-dact="delMemory" data-darg="'+escH(m.id)+'">×</button>'+
+      '<button class="memdel" data-dact="delMemory" data-darg="'+escH(m.id)+'" aria-label="Delete this memory">×</button>'+
     '</div>'
   ).join('') + (pg.hasMore ? _showMoreBtn('memory', pg.remaining, 30) : '');
   const mb=list.querySelector('[data-pagemore="memory"]');
@@ -11337,7 +11338,7 @@ function createPromptModal(){
   const r=$('ovr'); if(!r) return;
   r.innerHTML=
     '<div class="ov" id="cp-bg"><div class="ob wide">'+
-      '<button class="oc" data-dact="closeOvr">×</button>'+
+      '<button class="oc" data-dact="closeOvr" aria-label="Close">×</button>'+
       '<h2 style="margin-bottom:4px">Create Prompt</h2>'+
       '<p class="ob-sub">Add a reusable prompt to your personal library.</p>'+
       '<div class="af">'+
@@ -11433,7 +11434,7 @@ function createWorkspaceModal(){
   const icons=['📁','💼','🔬','🎨','💻','📊','✍️','🏠','🎯','🚀','📚','⚡'];
   r.innerHTML=
     '<div class="ov" id="ws-bg"><div class="ob">'+
-      '<button class="oc" data-dact="closeOvr">×</button>'+
+      '<button class="oc" data-dact="closeOvr" aria-label="Close">×</button>'+
       '<h2 style="margin-bottom:4px">New Workspace</h2>'+
       '<p class="ob-sub">Create a workspace to organize related conversations.</p>'+
       '<div class="af">'+
@@ -13527,7 +13528,7 @@ function openPaymentSheet(plan){
   const p=PLANS[plan]||PLANS.pro;
   const r=$('ovr'); if(!r) return;
   r.innerHTML='<div class="pay-ov" id="pay-bg"><div class="pay-modal">'+
-    '<div class="pay-head"><div><div class="pay-title">Upgrade to '+p.name+'</div><div class="pay-sub">'+(p.blurb||'')+'</div></div><button class="dna-x" id="pay-x">✕</button></div>'+
+    '<div class="pay-head"><div><div class="pay-title">Upgrade to '+p.name+'</div><div class="pay-sub">'+(p.blurb||'')+'</div></div><button class="dna-x" id="pay-x" aria-label="Close checkout">✕</button></div>'+
     '<div class="pay-amount"><span class="pay-amt">$'+p.price+'</span><span class="pay-per">/month</span></div>'+
     '<div class="pay-methods-tabs" id="pay-tabs">'+
       '<button class="pay-tab on" data-pt="card">💳 Card</button>'+
@@ -15228,7 +15229,22 @@ function _mcSchedRow(t, st){
     </div>
   </div>`;
 }
-function _mcCancelSched(id){ try{ _saveSched(_loadSched().filter(t=>t.id!==id)); }catch(e){} toast('Scheduled task cancelled','info'); renderCrewView(); }
+/* CHECKED, then said. The save was wrapped in an empty catch and the message
+   went out regardless, so a write that failed - storage full, storage disabled,
+   a private window - told somebody a job was cancelled while it stayed on the
+   schedule and kept running. This one is local, which is exactly why it is
+   worth getting right: there is no server to correct it later. */
+function _mcCancelSched(id){
+  let gone = false;
+  try{
+    _saveSched(_loadSched().filter(t=>t.id!==id));
+    gone = !_loadSched().some(t=>t.id===id);
+  }catch(e){ gone = false; }
+  toast(gone ? 'Scheduled task cancelled'
+             : 'That could not be cancelled - it is still on the schedule. Try again.',
+        gone ? 'info' : 'error', gone ? 3000 : 7000);
+  renderCrewView();
+}
 window._mcCancelSched=_mcCancelSched;
 /* "From the marketplace" - crews the user bought, usable right here in Crew. */
 function _mcBoughtCrewsHTML(){
@@ -16709,7 +16725,7 @@ function apvPreview(id){
   const r=$('ovr'); if(!r) return;
   const act=_apvAction(a);
   // Shell + skeleton first (real progressive render; iframe results keep the skeleton until load).
-  r.innerHTML=`<div class="ov pvw-ov" id="pvw-bg"><div class="pvw" role="dialog" aria-label="Preview and approve">
+  r.innerHTML=`<div class="ov pvw-ov" id="pvw-bg"><div class="pvw" role="dialog" aria-modal="true" aria-label="Preview and approve">
     <header class="pvw-top">
       <button class="pvw-back" data-dact="apvClose" aria-label="Back">← <span>Back</span></button>
       <div class="pvw-top-mid"><span class="pvw-top-ic">${a.icon||'✉️'}</span><span class="pvw-top-t">${escH(a.title)}</span>${a.project?`<span class="pvw-chip">${escH(a.project)}</span>`:''}</div>
@@ -16771,7 +16787,7 @@ function _apvInspectArtifact(art){
 async function apvQuickApprove(id){
   const a=_cwApprovals().find(x=>x.id===id); if(!a){ renderCrewView(); return; }
   const act=_apvAction(a);
-  if(!confirm(act.line)) return;
+  if(!await showConfirmAsync(act.line)) return;
   await _apvDoApprove(a);
 }
 async function apvApprove(id){
@@ -16844,7 +16860,7 @@ function apvEdit(id){
   const body=_apvBodyField(a);
   const when=a.scheduledAt||'';
   const recips=(a.recipients!=null)?a.recipients:'';
-  r.innerHTML=`<div class="ov ape-ov" id="ape-bg"><div class="ape" role="dialog" aria-label="Edit before sending">
+  r.innerHTML=`<div class="ov ape-ov" id="ape-bg"><div class="ape" role="dialog" aria-modal="true" aria-label="Edit before sending">
     <header class="ape-top">
       <button class="pvw-back ape-back" data-dact="apvClose" aria-label="Back">← <span>Back</span></button>
       <div class="ape-top-t">Edit before it sends</div>
@@ -16977,7 +16993,7 @@ async function _apvEditSend(id){
   }
   await _apvDoApprove(a);
 }
-function _apvEditDelete(id){ if(!confirm('Delete this - it won’t be sent?')) return; apvClose(); cwReject(id); }
+async function _apvEditDelete(id){ if(!await showConfirmAsync('Delete this draft?\n\nIt will not be sent, and it is not kept anywhere.')) return; apvClose(); cwReject(id); }
 window._apvEditSave=_apvEditSave; window._apvEditSend=_apvEditSend; window._apvEditDelete=_apvEditDelete;
 function apvRevise(id){
   const item=_cwApprovals().find(x=>x.id===id); apvClose();
@@ -17529,7 +17545,7 @@ function _studioRenderArtifacts(){
 }
 function _studioAddPrompt(){
   const r=$('ovr'); if(!r) return;
-  r.innerHTML='<div class="ov" id="sa-bg"><div class="ob" style="max-width:440px"><button class="oc" data-dact="closeOvr">×</button>'+
+  r.innerHTML='<div class="ov" id="sa-bg"><div class="ob" style="max-width:440px"><button class="oc" data-dact="closeOvr" aria-label="Close">×</button>'+
     '<h2 style="margin-bottom:6px">Add a design</h2><p class="ob-sub" style="margin-bottom:12px">Describe another page, screen, slide deck, or graphic. It joins this project so your whole set stays consistent.</p>'+
     '<textarea id="sa-brief" rows="3" placeholder="e.g. \'an about page matching this style\' or \'a pitch deck of 6 slides\'" style="width:100%;font-size:var(--t-base)"></textarea>'+
     '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px"><button class="btn bs" data-dact="closeOvr">Cancel</button><button class="btn bp" id="sa-go">Design it</button></div></div></div>';
@@ -17543,7 +17559,7 @@ function _studioHistory(){
   const a=_studioActive(); if(!a||!a.history.length){ toast('No history yet','info'); return; }
   const r=$('ovr'); if(!r) return;
   const rows=a.history.slice().reverse().map((h,i)=>{ const realIdx=a.history.length-1-i; return '<div class="studio-hrow"><div class="studio-hrow-b"><div class="studio-hrow-t">'+(i===0?'Current':('Version '+(realIdx+1)))+'</div><div class="studio-hrow-d">'+escH(h.brief||'(initial)')+' · '+_timeAgo(h.ts||Date.now())+'</div></div>'+(i===0?'':'<button class="btn bs" data-revert="'+realIdx+'">Revert</button>')+'</div>'; }).join('');
-  r.innerHTML='<div class="ov" id="sh-bg"><div class="ob" style="max-width:460px"><button class="oc" data-dact="closeOvr">×</button><h2 style="margin-bottom:12px">Version history</h2><div class="studio-hlist">'+rows+'</div></div></div>';
+  r.innerHTML='<div class="ov" id="sh-bg"><div class="ob" style="max-width:460px"><button class="oc" data-dact="closeOvr" aria-label="Close">×</button><h2 style="margin-bottom:12px">Version history</h2><div class="studio-hlist">'+rows+'</div></div></div>';
   onBackdrop($('sh-bg'),closeOvr);
   r.querySelectorAll('[data-revert]').forEach(b=>on(b,'click',()=>{ const idx=+b.dataset.revert; const h=a.history[idx]; if(h){ a.html=h.html; a.history.push({brief:'reverted to v'+(idx+1),html:h.html,ts:Date.now()}); _STUDIO.html=h.html; _studioRenderPreview(h.html); closeOvr(); toast('Reverted','success'); } }));
 }
@@ -17747,7 +17763,7 @@ function openDNA(){
       <div><h2>Design DNA</h2><p>Your reusable style guide. Set it once - every design AMV makes follows it.</p></div>
       <div style="display:flex;align-items:center;gap:4px">
         <button class="dna-x" id="dna-help" title="What is this?" style="font-size:var(--t-prose)">?</button>
-        <button class="dna-x" id="dna-x">✕</button>
+        <button class="dna-x" id="dna-x" aria-label="Close">✕</button>
       </div>
     </div>
     <div class="dna-intro" id="dna-intro" style="${seen?'display:none':''}">
@@ -17791,19 +17807,19 @@ function openDNA(){
 function closeDNA(){ const r=$('ovr'); if(r) r.innerHTML=''; }
 function _dnaFoot(){ const el=$('dna-foot-l'); if(el) el.textContent=(_DNA.colors.length)+' colors · '+_DNA.themeFamily+' · '+_DNA.theme+' theme'; }
 
-function _sld(label,obj,key){ const v=obj[key]; return `<div class="dna-slider"><div class="dna-slider-h"><span>${label}</span><span>${v}</span></div><input type="range" min="0" max="100" value="${v}" data-sld="${key}"></div>`; }
+function _sld(label,obj,key){ const v=obj[key]; return `<div class="dna-slider"><div class="dna-slider-h"><span>${label}</span><span>${v}</span></div><input type="range" min="0" max="100" value="${v}" data-sld="${key}" aria-label="${escH(label)}" aria-valuetext="${v}"></div>`; }
 function _opt(key,current){ return (DNA_OPTS[key]||[]).map(o=>`<button class="dna-pill ${o===current?'on':''}" data-pill="${key}" data-val="${o}">${String(o).replace(/_/g,' ')}</button>`).join(''); }
 
 function _dnaRenderSection(sec){
   const c=$('dna-content'); if(!c) return;
   if(sec==='identity'){
     c.innerHTML=`<div class="dna-sec-t">Identity</div><div class="dna-sec-d">What you're building and for whom. This frames every decision.</div>
-      <div class="dna-field"><label>Project name</label><input type="text" data-txt="projectName" value="${escH(_DNA.projectName)}" placeholder="e.g. Northwind Analytics"></div>
+      <div class="dna-field"><label>Project name</label><input aria-label="Project name" type="text" data-txt="projectName" value="${escH(_DNA.projectName)}" placeholder="e.g. Northwind Analytics"></div>
       <div class="dna-grid2">
-        <div class="dna-field"><label>Project type</label><select data-sel="projectType">${DNA_OPTS.projectType.map(o=>`<option ${o===_DNA.projectType?'selected':''}>${o}</option>`).join('')}</select></div>
-        <div class="dna-field"><label>Industry</label><input type="text" data-txt="industry" value="${escH(_DNA.industry)}" placeholder="Technology, Finance, Health…"></div>
+        <div class="dna-field"><label>Project type</label><select aria-label="Project type" data-sel="projectType">${DNA_OPTS.projectType.map(o=>`<option ${o===_DNA.projectType?'selected':''}>${o}</option>`).join('')}</select></div>
+        <div class="dna-field"><label>Industry</label><input aria-label="Industry" type="text" data-txt="industry" value="${escH(_DNA.industry)}" placeholder="Technology, Finance, Health…"></div>
       </div>
-      <div class="dna-field"><label>Target audience</label><input type="text" data-txt="audience" value="${escH(_DNA.audience)}" placeholder="e.g. enterprise IT buyers, Gen-Z gamers"></div>`;
+      <div class="dna-field"><label>Target audience</label><input aria-label="Target audience" type="text" data-txt="audience" value="${escH(_DNA.audience)}" placeholder="e.g. enterprise IT buyers, Gen-Z gamers"></div>`;
   }
   else if(sec==='colors'){
     c.innerHTML=`<div class="dna-sec-t">Color system</div><div class="dna-sec-d">Paste ANY palette - hex, rgb, hsl, GitHub lists, Tailwind, CSS variables. AMV extracts every color and maps it to roles. Or pick a preset, or set each swatch by hand.</div>
@@ -17821,7 +17837,7 @@ or paste a whole CSS / Tailwind / GitHub palette - AMV finds the colors"></texta
         <div class="dna-preview-strip">${_DNA.colors.map(c2=>`<span style="background:${c2.hex}"></span>`).join('')}</div>
         <div class="dna-swatches" id="dna-swatches">${_DNA.colors.map((c2,i)=>`
           <div class="dna-swatch">
-            <div class="dna-swatch-c" style="background:${c2.hex}"><input type="color" value="${/^#[0-9a-f]{6}$/i.test(c2.hex)?c2.hex:'#000000'}" data-cidx="${i}"></div>
+            <div class="dna-swatch-c" style="background:${c2.hex}"><input type="color" aria-label="${escH(c2.role.replace(/_/g," "))} colour" value="${/^#[0-9a-f]{6}$/i.test(c2.hex)?c2.hex:'#000000'}" data-cidx="${i}"></div>
             <div class="dna-swatch-meta"><div class="dna-swatch-role">${c2.role.replace(/_/g,' ')}</div><div class="dna-swatch-hex">${c2.hex}</div></div>
           </div>`).join('')}</div>
         <button class="dna-add-btn" id="dna-add-color">+ Add color</button>
@@ -17857,11 +17873,11 @@ or paste a whole CSS / Tailwind / GitHub palette - AMV finds the colors"></texta
   else if(sec==='typography'){
     c.innerHTML=`<div class="dna-sec-t">Typography</div><div class="dna-sec-d">Fonts and rhythm. Heading + body pairing defines the whole feel.</div>
       <div class="dna-grid2">
-        <div class="dna-field"><label>Heading font</label><select data-sel="headingFont">${DNA_OPTS.headingFont.map(o=>`<option ${o===_DNA.headingFont?'selected':''}>${o}</option>`).join('')}</select></div>
-        <div class="dna-field"><label>Body font</label><select data-sel="bodyFont">${DNA_OPTS.bodyFont.map(o=>`<option ${o===_DNA.bodyFont?'selected':''}>${o}</option>`).join('')}</select></div>
+        <div class="dna-field"><label>Heading font</label><select aria-label="Heading font" data-sel="headingFont">${DNA_OPTS.headingFont.map(o=>`<option ${o===_DNA.headingFont?'selected':''}>${o}</option>`).join('')}</select></div>
+        <div class="dna-field"><label>Body font</label><select aria-label="Body font" data-sel="bodyFont">${DNA_OPTS.bodyFont.map(o=>`<option ${o===_DNA.bodyFont?'selected':''}>${o}</option>`).join('')}</select></div>
       </div>
       <div class="dna-grid2">
-        <div class="dna-field"><label>Heading weight</label><select data-sel="headingWeight">${['400','500','600','700','800'].map(o=>`<option ${o===_DNA.headingWeight?'selected':''}>${o}</option>`).join('')}</select></div>
+        <div class="dna-field"><label>Heading weight</label><select aria-label="Heading weight" data-sel="headingWeight">${['400','500','600','700','800'].map(o=>`<option ${o===_DNA.headingWeight?'selected':''}>${o}</option>`).join('')}</select></div>
         <div class="dna-field"><label>Font scale</label><div class="dna-pills">${_opt('fontScale',_DNA.fontScale)}</div></div>
       </div>
       <div class="dna-grid2">
@@ -17873,7 +17889,7 @@ or paste a whole CSS / Tailwind / GitHub palette - AMV finds the colors"></texta
     c.innerHTML=`<div class="dna-sec-t">Layout & space</div><div class="dna-sec-d">Structure, width and breathing room.</div>
       <div class="dna-field"><label>Structure</label><div class="dna-pills">${_opt('structure',_DNA.structure)}</div></div>
       <div class="dna-grid2">
-        <div class="dna-field"><label>Max width</label><input type="text" data-txt="maxWidth" value="${escH(_DNA.maxWidth)}" placeholder="1200px"></div>
+        <div class="dna-field"><label>Max width</label><input aria-label="Max width" type="text" data-txt="maxWidth" value="${escH(_DNA.maxWidth)}" placeholder="1200px"></div>
         <div class="dna-field"><label>Navigation</label><div class="dna-pills">${_opt('navigation',_DNA.navigation)}</div></div>
       </div>
       <div class="dna-grid2">
@@ -20175,7 +20191,7 @@ function _hoPickChat(){
   }).join('');
 
   r.innerHTML='<div class="ov" id="hopick-bg"><div class="ob hopick-modal" style="max-width:520px">'+
-    '<button class="oc" data-dact="closeOvr">×</button>'+
+    '<button class="oc" data-dact="closeOvr" aria-label="Close">×</button>'+
     '<h2 style="margin:0 0 4px">Pull in your work</h2>'+
     '<p style="font-size:var(--t-sm);color:var(--mu);margin:0 0 14px">A conversation, a design, a project or some code. '+
       'The actual content comes across, not a description of it.</p>'+
@@ -22221,7 +22237,7 @@ function _renderSetPaneInner(only, into){
            it did not check. */
         if(kbtn) on(kbtn,'click',async()=>{
           const turnOn=!d.spend.killed;
-          if(!confirm(turnOn?'Pause the ENTIRE service for all users?':'Resume the service?')) return;
+          if(!await showConfirmAsync(turnOn?'Pause the ENTIRE service for every user?\n\nNobody will be able to use AMV until you resume it.':'Resume the service for everybody?')) return;
           const wasLabel=kbtn.textContent;
           kbtn.disabled=true; kbtn.textContent=turnOn?'Pausing…':'Resuming…';
           try{
@@ -25336,7 +25352,7 @@ async function openMailConnect(){
 }
 
 async function disconnectMail(){
-  if(!confirm('Disconnect this mailbox? AMV will stop reading it and will forget the password.')) return;
+  if(!await showConfirmAsync('Disconnect this mailbox?\n\nAMV stops reading it and forgets the password. Any job that needs it will say so instead of running.')) return;
   try{ await AMV_API.mailDisconnect(); }catch(e){}
   await refreshMailStatus();
   toast('Mailbox disconnected','success');
@@ -25491,7 +25507,7 @@ async function openTelegramConnect(){
 }
 window.openTelegramConnect = openTelegramConnect;
 async function disconnectTelegram(){
-  if(!confirm('Disconnect Telegram? AMV will forget the bot token.')) return;
+  if(!await showConfirmAsync('Disconnect Telegram?\n\nAMV forgets the bot token. Messages will stop arriving until you connect it again.')) return;
   try{ await AMV_API.telegramDisconnect(); }catch(e){}
   toast('Telegram disconnected','success');
   try{ _refreshIntegrationsUI(); }catch(e){}
@@ -26840,7 +26856,7 @@ function openTaskPanel(mode){
   const ph = isFile ? "e.g. 'find the bugs and fix them', 'summarize the key points', 'clean this data and chart revenue by month'"
                     : "Describe exactly what you want AMV to do. Be specific - it will actually do it and show the result.";
   r.innerHTML = `<div class="ov tp-ov" id="tp-bg"><div class="tp-modal">
-    <div class="tp-head"><div><div class="eyebrow">AMV Task</div><h2 class="tp-title">${title}</h2></div><button class="tp-x" id="tp-close">✕</button></div>
+    <div class="tp-head"><div><div class="eyebrow">AMV Task</div><h2 class="tp-title">${title}</h2></div><button class="tp-x" id="tp-close" aria-label="Close">✕</button></div>
     <div class="tp-body" id="tp-step1">
       ${fileLine}
       <label class="tp-f"><span>What should AMV do?</span><textarea id="tp-detail" rows="4" placeholder="${escH(ph)}"></textarea></label>
@@ -27706,7 +27722,7 @@ function _aaInit(){
 function openCowork(){
   const r=$('ovr'); if(!r) return;
   r.innerHTML = `<div class="ov tp-ov" id="cw-bg"><div class="tp-modal cowork-modal">
-    <div class="tp-head"><div><div class="eyebrow">AMV Autonomous</div><h2 class="tp-title">Give AMV an outcome</h2></div><button class="tp-x" id="cw-close">✕</button></div>
+    <div class="tp-head"><div><div class="eyebrow">AMV Autonomous</div><h2 class="tp-title">Give AMV an outcome</h2></div><button class="tp-x" id="cw-close" aria-label="Close">✕</button></div>
     <div class="tp-body" id="cw-step1">
       <p class="trip-sub">Describe the result you want - not the steps. AMV plans the work, executes each step itself, and brings back a finished deliverable. You approve anything that sends or shares.</p>
       <label class="tp-f"><span>What outcome do you want?</span><textarea id="cw-goal" rows="4" placeholder="e.g. 'Analyze the sales numbers in this file and write an executive summary with the top 3 insights' or 'Rename and sort every file in this folder, then write a summary of what's inside'"></textarea></label>
@@ -27977,7 +27993,7 @@ function _schedEdit(id){
   const hourOpts = Array.from({length:24},(_,h)=>`<option value="${h}"${h===hour?' selected':''}>${_hourLabel(h)}</option>`).join('');
   const dayChk = _DOWNAMES.map((d,i)=>`<label class="ape-day"><input type="checkbox" data-schday="${i}"${days.includes(i)?' checked':''}> ${d}</label>`).join('');
   const domOpts = Array.from({length:28},(_,i)=>`<option value="${i+1}"${(i+1)===dom?' selected':''}>${i+1}</option>`).join('');
-  r.innerHTML=`<div class="ov ape-ov" id="sce-bg"><div class="ape" role="dialog" aria-label="Edit scheduled work">
+  r.innerHTML=`<div class="ov ape-ov" id="sce-bg"><div class="ape" role="dialog" aria-modal="true" aria-label="Edit scheduled work">
     <header class="ape-top">
       <button class="pvw-back ape-back" data-dact="apvClose" aria-label="Back">← <span>Back</span></button>
       <div class="ape-top-t">Edit scheduled work</div>
@@ -28057,7 +28073,7 @@ function _schedEditSave(id){
   })();
   if(S.tab==='crew'){ try{ renderCrewView(); }catch(e){} }
 }
-function _schedEditDelete(id){ if(!confirm('Delete this scheduled task?')) return; apvClose(); _schedCancel(id); }
+async function _schedEditDelete(id){ if(!await showConfirmAsync('Delete this scheduled task?\n\nIt stops running from now on. Anything it has already produced is kept.')) return; apvClose(); _schedCancel(id); }
 window._schedEdit=_schedEdit; window._schedEditSave=_schedEditSave; window._schedEditDelete=_schedEditDelete;
 
 function _smRow(t){

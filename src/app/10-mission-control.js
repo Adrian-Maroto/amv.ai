@@ -1107,7 +1107,22 @@ function _mcSchedRow(t, st){
     </div>
   </div>`;
 }
-function _mcCancelSched(id){ try{ _saveSched(_loadSched().filter(t=>t.id!==id)); }catch(e){} toast('Scheduled task cancelled','info'); renderCrewView(); }
+/* CHECKED, then said. The save was wrapped in an empty catch and the message
+   went out regardless, so a write that failed - storage full, storage disabled,
+   a private window - told somebody a job was cancelled while it stayed on the
+   schedule and kept running. This one is local, which is exactly why it is
+   worth getting right: there is no server to correct it later. */
+function _mcCancelSched(id){
+  let gone = false;
+  try{
+    _saveSched(_loadSched().filter(t=>t.id!==id));
+    gone = !_loadSched().some(t=>t.id===id);
+  }catch(e){ gone = false; }
+  toast(gone ? 'Scheduled task cancelled'
+             : 'That could not be cancelled - it is still on the schedule. Try again.',
+        gone ? 'info' : 'error', gone ? 3000 : 7000);
+  renderCrewView();
+}
 window._mcCancelSched=_mcCancelSched;
 /* "From the marketplace" - crews the user bought, usable right here in Crew. */
 function _mcBoughtCrewsHTML(){
@@ -2588,7 +2603,7 @@ function apvPreview(id){
   const r=$('ovr'); if(!r) return;
   const act=_apvAction(a);
   // Shell + skeleton first (real progressive render; iframe results keep the skeleton until load).
-  r.innerHTML=`<div class="ov pvw-ov" id="pvw-bg"><div class="pvw" role="dialog" aria-label="Preview and approve">
+  r.innerHTML=`<div class="ov pvw-ov" id="pvw-bg"><div class="pvw" role="dialog" aria-modal="true" aria-label="Preview and approve">
     <header class="pvw-top">
       <button class="pvw-back" data-dact="apvClose" aria-label="Back">← <span>Back</span></button>
       <div class="pvw-top-mid"><span class="pvw-top-ic">${a.icon||'✉️'}</span><span class="pvw-top-t">${escH(a.title)}</span>${a.project?`<span class="pvw-chip">${escH(a.project)}</span>`:''}</div>
@@ -2650,7 +2665,7 @@ function _apvInspectArtifact(art){
 async function apvQuickApprove(id){
   const a=_cwApprovals().find(x=>x.id===id); if(!a){ renderCrewView(); return; }
   const act=_apvAction(a);
-  if(!confirm(act.line)) return;
+  if(!await showConfirmAsync(act.line)) return;
   await _apvDoApprove(a);
 }
 async function apvApprove(id){
@@ -2723,7 +2738,7 @@ function apvEdit(id){
   const body=_apvBodyField(a);
   const when=a.scheduledAt||'';
   const recips=(a.recipients!=null)?a.recipients:'';
-  r.innerHTML=`<div class="ov ape-ov" id="ape-bg"><div class="ape" role="dialog" aria-label="Edit before sending">
+  r.innerHTML=`<div class="ov ape-ov" id="ape-bg"><div class="ape" role="dialog" aria-modal="true" aria-label="Edit before sending">
     <header class="ape-top">
       <button class="pvw-back ape-back" data-dact="apvClose" aria-label="Back">← <span>Back</span></button>
       <div class="ape-top-t">Edit before it sends</div>
@@ -2856,7 +2871,7 @@ async function _apvEditSend(id){
   }
   await _apvDoApprove(a);
 }
-function _apvEditDelete(id){ if(!confirm('Delete this - it won’t be sent?')) return; apvClose(); cwReject(id); }
+async function _apvEditDelete(id){ if(!await showConfirmAsync('Delete this draft?\n\nIt will not be sent, and it is not kept anywhere.')) return; apvClose(); cwReject(id); }
 window._apvEditSave=_apvEditSave; window._apvEditSend=_apvEditSend; window._apvEditDelete=_apvEditDelete;
 function apvRevise(id){
   const item=_cwApprovals().find(x=>x.id===id); apvClose();

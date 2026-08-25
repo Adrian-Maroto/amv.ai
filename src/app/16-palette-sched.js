@@ -244,7 +244,7 @@ function _aaInit(){
 function openCowork(){
   const r=$('ovr'); if(!r) return;
   r.innerHTML = `<div class="ov tp-ov" id="cw-bg"><div class="tp-modal cowork-modal">
-    <div class="tp-head"><div><div class="eyebrow">AMV Autonomous</div><h2 class="tp-title">Give AMV an outcome</h2></div><button class="tp-x" id="cw-close">✕</button></div>
+    <div class="tp-head"><div><div class="eyebrow">AMV Autonomous</div><h2 class="tp-title">Give AMV an outcome</h2></div><button class="tp-x" id="cw-close" aria-label="Close">✕</button></div>
     <div class="tp-body" id="cw-step1">
       <p class="trip-sub">Describe the result you want - not the steps. AMV plans the work, executes each step itself, and brings back a finished deliverable. You approve anything that sends or shares.</p>
       <label class="tp-f"><span>What outcome do you want?</span><textarea id="cw-goal" rows="4" placeholder="e.g. 'Analyze the sales numbers in this file and write an executive summary with the top 3 insights' or 'Rename and sort every file in this folder, then write a summary of what's inside'"></textarea></label>
@@ -515,7 +515,7 @@ function _schedEdit(id){
   const hourOpts = Array.from({length:24},(_,h)=>`<option value="${h}"${h===hour?' selected':''}>${_hourLabel(h)}</option>`).join('');
   const dayChk = _DOWNAMES.map((d,i)=>`<label class="ape-day"><input type="checkbox" data-schday="${i}"${days.includes(i)?' checked':''}> ${d}</label>`).join('');
   const domOpts = Array.from({length:28},(_,i)=>`<option value="${i+1}"${(i+1)===dom?' selected':''}>${i+1}</option>`).join('');
-  r.innerHTML=`<div class="ov ape-ov" id="sce-bg"><div class="ape" role="dialog" aria-label="Edit scheduled work">
+  r.innerHTML=`<div class="ov ape-ov" id="sce-bg"><div class="ape" role="dialog" aria-modal="true" aria-label="Edit scheduled work">
     <header class="ape-top">
       <button class="pvw-back ape-back" data-dact="apvClose" aria-label="Back">← <span>Back</span></button>
       <div class="ape-top-t">Edit scheduled work</div>
@@ -595,7 +595,7 @@ function _schedEditSave(id){
   })();
   if(S.tab==='crew'){ try{ renderCrewView(); }catch(e){} }
 }
-function _schedEditDelete(id){ if(!confirm('Delete this scheduled task?')) return; apvClose(); _schedCancel(id); }
+async function _schedEditDelete(id){ if(!await showConfirmAsync('Delete this scheduled task?\n\nIt stops running from now on. Anything it has already produced is kept.')) return; apvClose(); _schedCancel(id); }
 window._schedEdit=_schedEdit; window._schedEditSave=_schedEditSave; window._schedEditDelete=_schedEditDelete;
 
 function _smRow(t){

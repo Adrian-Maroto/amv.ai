@@ -6271,3 +6271,42 @@ Nothing fails loudly in that situation; the feature just never runs.
 The check that would have caught both, and is now in the file: count the
 references. One is a definition. A feature nothing calls is a feature that does
 not exist, however well it is built.
+
+## 294. Three claims, two of them wrong, all from one broken scanner
+
+Asked to find fifty beneficial edits, I wrote a scanner that counts references
+to each function and reports the ones that appear exactly once - defined and
+called by nobody. It has been the highest-yield check all week.
+
+It stripped block comments before counting. This codebase is full of regexes
+and URLs inside strings, so a stray sequence opened a comment span that ran to
+the next close and swallowed real code with it. Two findings came out of that:
+
+- "Sign out everywhere renders nowhere while the Security pane names it." It
+  renders in Settings, Account. The swallowed span contained the call.
+- "No dialog traps focus and Escape closes six of them." Both were already
+  handled globally, forty lines below where I added them again. The file's own
+  comment says "There is a Tab trap." I did not read it.
+
+I shipped both as fixes. The first added a second element with the same id as
+the real one. The second added a duplicate handler beside a working one - the
+precise thing this codebase's comments repeatedly warn about, because two
+implementations of one behaviour drift.
+
+Both were caught by sabotage, and only by sabotage: disable the thing you
+believe you fixed and watch the test not care. The trap test passed happily
+with my trap disabled, because the real trap underneath was doing the work.
+
+Three rules out of it.
+
+**A tool that produces findings needs its own negative control.** I never asked
+the scanner to prove it could see a call it was shown. One `assert refs>=2` on
+a function I know is called would have failed on the first run.
+
+**Read the code around the finding before acting, not after.** The comment
+naming the existing trap was forty lines from where I put the duplicate.
+
+**Wrong in the safe direction.** The scanner now counts raw occurrences with no
+stripping. A mention in prose inflates the count, which sends me to look by
+hand. Under-reporting dead code costs nothing; over-reporting it deletes
+working features.

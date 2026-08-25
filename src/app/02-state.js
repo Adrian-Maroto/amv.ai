@@ -606,7 +606,7 @@ function _modelPickerHTML(section){
   const opts=MODEL_ORDER.filter(k=>k!=='auto'||section==='studio').map(k=>{ const m=MODELS[k]; return '<option value="'+k+'"'+(k===cur?' selected':'')+'>'+m.label+' \u00b7 '+_usageWord(m.cost).toLowerCase()+' usage</option>'; }).join('');
   const m=MODELS[cur];
   return '<div class="mp-wrap"><label class="mp-label">Model</label>'+
-    '<select class="mp-sel" data-mp="'+section+'">'+opts+'</select>'+
+    '<select class="mp-sel" data-mp="'+section+'" aria-label="Engine for '+escH(section)+'">'+opts+'</select>'+
     _usageDots(m.cost)+
     '<span class="mp-note" data-mp-note="'+section+'">'+_usageWord(m.cost)+' usage per run</span>'+
   '</div>';

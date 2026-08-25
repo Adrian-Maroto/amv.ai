@@ -1055,6 +1055,7 @@ function _initOverlayFocus(){
       const f=_ovrFocusables(ovr)[0];
       if(f){ try{ f.focus(); }catch(e){} }
     }).observe(ovr,{childList:true,subtree:true});
+
   }catch(e){}
 }
 
@@ -1521,7 +1522,7 @@ function _showModalAsync({title, body, okText='OK', cancelText, placeholder, def
     const r=$('ovr'); if(!r){ resolve(null); return; }
     r.innerHTML=
       '<div class="ov" id="modal-bg"><div class="ob" id="modal-box" style="max-width:520px;min-width:320px;cursor:auto;position:relative">'+
-        '<button class="oc" id="modal-close" style="position:absolute;top:10px;right:10px">×</button>'+
+        '<button class="oc" id="modal-close" aria-label="Close" style="position:absolute;top:10px;right:10px">×</button>'+
         (title?'<h2 style="margin-bottom:10px">'+escH(title)+'</h2>':'')+
         '<div class="ob-sub" style="margin-bottom:16px;white-space:pre-wrap;line-height:1.5">'+escH(body)+'</div>'+
         (placeholder!==undefined?'<input id="modal-input" type="text" value="'+escH(defaultValue||'')+'" placeholder="'+escH(placeholder||'')+'" style="width:100%;margin-bottom:16px;padding:12px;border-radius:var(--r-lg);border:1px solid var(--bd);font-size:var(--t-base)">':'')+

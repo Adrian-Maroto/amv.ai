@@ -1241,7 +1241,7 @@ function openTaskPanel(mode){
   const ph = isFile ? "e.g. 'find the bugs and fix them', 'summarize the key points', 'clean this data and chart revenue by month'"
                     : "Describe exactly what you want AMV to do. Be specific - it will actually do it and show the result.";
   r.innerHTML = `<div class="ov tp-ov" id="tp-bg"><div class="tp-modal">
-    <div class="tp-head"><div><div class="eyebrow">AMV Task</div><h2 class="tp-title">${title}</h2></div><button class="tp-x" id="tp-close">✕</button></div>
+    <div class="tp-head"><div><div class="eyebrow">AMV Task</div><h2 class="tp-title">${title}</h2></div><button class="tp-x" id="tp-close" aria-label="Close">✕</button></div>
     <div class="tp-body" id="tp-step1">
       ${fileLine}
       <label class="tp-f"><span>What should AMV do?</span><textarea id="tp-detail" rows="4" placeholder="${escH(ph)}"></textarea></label>

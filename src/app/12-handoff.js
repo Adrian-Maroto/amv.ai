@@ -176,7 +176,7 @@ function _hoPickChat(){
   }).join('');
 
   r.innerHTML='<div class="ov" id="hopick-bg"><div class="ob hopick-modal" style="max-width:520px">'+
-    '<button class="oc" data-dact="closeOvr">×</button>'+
+    '<button class="oc" data-dact="closeOvr" aria-label="Close">×</button>'+
     '<h2 style="margin:0 0 4px">Pull in your work</h2>'+
     '<p style="font-size:var(--t-sm);color:var(--mu);margin:0 0 14px">A conversation, a design, a project or some code. '+
       'The actual content comes across, not a description of it.</p>'+
@@ -2222,7 +2222,7 @@ function _renderSetPaneInner(only, into){
            it did not check. */
         if(kbtn) on(kbtn,'click',async()=>{
           const turnOn=!d.spend.killed;
-          if(!confirm(turnOn?'Pause the ENTIRE service for all users?':'Resume the service?')) return;
+          if(!await showConfirmAsync(turnOn?'Pause the ENTIRE service for every user?\n\nNobody will be able to use AMV until you resume it.':'Resume the service for everybody?')) return;
           const wasLabel=kbtn.textContent;
           kbtn.disabled=true; kbtn.textContent=turnOn?'Pausing…':'Resuming…';
           try{

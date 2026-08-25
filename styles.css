@@ -9474,3 +9474,17 @@ body.light .fr-d{ color:#67656d; }
   .conn-x{ width:100%; margin-top:var(--sp-2); }
   .conn-add{ flex:1 1 100%; }
 }
+
+/* ── LAYER A112: THE FIRST STOP FOR A KEYBOARD ────────────────────────────
+   Off-screen until focused, then a real, visible target. Reaching the
+   conversation used to mean tabbing the whole sidebar and header on every
+   page; this is one key. Nothing changes for anybody using a mouse. */
+.skip-link{
+  position:absolute; left:var(--sp-3); top:calc(var(--sp-3) * -6);
+  z-index:9999; padding:var(--sp-3) var(--sp-4);
+  background:var(--accent); color:#fff; font-size:var(--t-md); font-weight:650;
+  border-radius:var(--r-md); text-decoration:none;
+  transition:top .14s var(--ease);
+}
+.skip-link:focus{ top:var(--sp-3); outline:2px solid var(--tx); outline-offset:2px; }
+@media(prefers-reduced-motion:reduce){ .skip-link{ transition:none; } }

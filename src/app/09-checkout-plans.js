@@ -253,7 +253,7 @@ function openPaymentSheet(plan){
   const p=PLANS[plan]||PLANS.pro;
   const r=$('ovr'); if(!r) return;
   r.innerHTML='<div class="pay-ov" id="pay-bg"><div class="pay-modal">'+
-    '<div class="pay-head"><div><div class="pay-title">Upgrade to '+p.name+'</div><div class="pay-sub">'+(p.blurb||'')+'</div></div><button class="dna-x" id="pay-x">✕</button></div>'+
+    '<div class="pay-head"><div><div class="pay-title">Upgrade to '+p.name+'</div><div class="pay-sub">'+(p.blurb||'')+'</div></div><button class="dna-x" id="pay-x" aria-label="Close checkout">✕</button></div>'+
     '<div class="pay-amount"><span class="pay-amt">$'+p.price+'</span><span class="pay-per">/month</span></div>'+
     '<div class="pay-methods-tabs" id="pay-tabs">'+
       '<button class="pay-tab on" data-pt="card">💳 Card</button>'+
