@@ -7,6 +7,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { codeOnly, functionBody } from '../lib/source.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -114,17 +115,22 @@ section('Texting has a dollar ceiling on every plan, including the free one');
   ok(!/if \(price > 0\) \{\s*\n\s*const capRes/.test(srcTxt),
      'the handler no longer skips the check when the plan price is zero');
   /* THE PROPERTY, NOT THE SPELLING. This matched the literal text of the
-     arithmetic while it lived inline in the chat handler. Moving it into one
-     shared helper - which is what made the same ceiling bind image, video, SMS
-     and the widget - broke the match while the 45% backstop it guards was
-     untouched. A rule written against a spelling fails on a correct fix and
-     passes on a regression that keeps the words (LESSONS #203). */
-  ok(/_monthlyCeilingUSD\(user\)/.test(srcTxt),
-     'it picks a ceiling for every plan instead - the same one every other spending path uses', true);
-  ok(/FREE_AUTO_CEILING_USD/.test(srcTxt),
+     arithmetic while it lived inline in the chat handler, and again when SMS
+     kept its own copy. Both moves - into _monthlyCeiling, then into _spendGate
+     - broke the match while the backstop being guarded was untouched. A rule
+     written against a spelling fails on a correct fix and passes on a
+     regression that keeps the words (LESSONS #203). So it is asked of the
+     handler and then of what the handler delegates to. */
+  const smsFn = codeOnly(functionBody(srcTxt, 'smsIncoming'));
+  ok(/_spendGate\(env, user, 'sms'/.test(smsFn),
+     'it asks the shared gate instead - the same one every other spending path uses', true);
+  ok(/fallbackCeilingUSD: FREE_AUTO_CEILING_USD/.test(smsFn),
      'with the free ceiling as the fallback when there is no plan or family limit at all', true);
-  ok(/cost:\$\{user\.billingSubject\}/.test(srcTxt),
-     'and charges it to the account or team that is actually paying');
+  const gate = codeOnly(functionBody(srcTxt, '_spendGate'));
+  ok(/_monthlyCeiling\(user\)/.test(gate),
+     'and that gate reads the shared ceiling, so a parent\u2019s limit reaches a text message', true);
+  ok(/cost:\$\{user\.billingSubject \|\| user\.email\}/.test(gate),
+     'and charges it to the account or team that is actually paying', true);
 }
 
 if (report() > 0) process.exitCode = 1;

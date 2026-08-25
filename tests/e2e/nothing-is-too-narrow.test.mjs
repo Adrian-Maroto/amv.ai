@@ -175,7 +175,7 @@ section('Nothing runs off the side of a tablet either');
      edge of the screen and took the horizontal scrollbar with it - a flex row
      with space-between and no wrap, comfortable on a desktop and not at 768. */
   const spills = [];
-  const TABS = ['chat', 'images', 'video', 'crew', 'handoff', 'studio', 'dev', 'lab', 'tasks', 'market', 'plans', 'settings'];
+  const TABS = ['chat', 'crew', 'handoff', 'studio', 'dev', 'lab', 'tasks', 'market', 'plans', 'settings'];
   for (const width of [768, 900]) {
     const page = await browser.newPage({ viewport: { width, height: 1000 } });
     await page.goto(`http://localhost:${PORT}`, { waitUntil: 'load' });

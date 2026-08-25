@@ -27,7 +27,7 @@ import { ok, section, report, done } from '../lib/assert.mjs';
 
 const app = await bootApp({ tab: 'chat', user: { name: 'A', email: 'a@x.com', ini: 'A' } });
 const { page, errors } = app;
-const TABS = ['chat', 'images', 'crew', 'dev', 'market', 'plans', 'settings', 'help'];
+const TABS = ['chat', 'crew', 'dev', 'market', 'plans', 'settings', 'help'];
 
 /* TEXT, NOT GLYPHS - and the difference is the whole point.
 

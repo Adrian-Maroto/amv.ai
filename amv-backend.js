@@ -7,7 +7,6 @@
      • Per-account + per-IP RATE LIMITS
      • GLOBAL spend cap + KILL SWITCH
      • Usage + cost tracking per user (KV)
-     • Image / video metering hooks
      • Payments (Stripe + PayPal) - from the payments worker
    ---------------------------------------------------------------------
    This is what converts AMV from "demo" to "live product you can fund."
@@ -791,15 +790,18 @@ async function _accountHold(env, subject, what) {
 /* AMV-004: this books the money it is about to allow, rather than reading a
    total and hoping nothing else arrives before the charge lands.
 
-   `usd` is what this call will cost. Image and video have a fixed published
-   price, so the reservation is exact rather than an upper bound and there is
-   nothing to settle beyond the amount itself.
+   `usd` is what this call will cost. Where the price is published and fixed the
+   reservation is exact; where it is not - SMS reserves a full-length reply at
+   the tier's rate before knowing what the turn will use - it is an upper bound,
+   and the difference is settled afterwards.
 
-   `out` is filled in with what was booked, per counter, so the caller can pass
+   `out` is filled in with what was booked, per counter, so the caller MUST pass
    it to _recordSpend (which then applies only the difference) or to
    _releaseSpendGate if the work does not happen. A caller that passes neither
-   gets the old read-only behaviour, which is still correct for a pure check. */
-async function _spendGate(env, user, what, usd, out) {
+   gets the old read-only behaviour, which is still correct for a pure check -
+   but for a caller that reserves, forgetting to settle leaves somebody's
+   allowance holding money for work that already finished. */
+async function _spendGate(env, user, what, usd, out, opts) {
   const held = await _accountHold(env, user, what);
   if (held) return held;
   const price = Math.max(0, +usd || 0);
@@ -819,7 +821,15 @@ async function _spendGate(env, user, what, usd, out) {
      reason and the person needs to hear the right one: "you have used the
      limit set for your account" is not "AMV is busy". */
   const ceilingInfo = _monthlyCeiling(user);
-  const ceiling = ceilingInfo.value;
+  /* A free account has no plan backstop, so _monthlyCeiling answers null and
+     the account half of this gate does not run. For most paths that is right -
+     the free tier is bounded by the token allowance and by the free share of
+     the day's ceiling. A caller that has its own free-tier budget passes it
+     here rather than checking separately, or routing through this gate would
+     be a downgrade for exactly the accounts that pay nothing. */
+  const fallback = opts && opts.fallbackCeilingUSD;
+  const ceiling = ceilingInfo.value != null ? ceilingInfo.value
+                : (typeof fallback === 'number' && fallback >= 0 ? fallback : null);
   if (ceiling != null) {
     const costName = `cost:${user.billingSubject || user.email}:${_periodKeyOf(user)}`;
     let capRes = null;
@@ -980,18 +990,19 @@ async function _recordSpend(env, subject, usd, what, period, reserved) {
     if (dAccount !== 0) await counter(env, `cost:${subject}:${period || monthKey()}`, { op: 'incr', amount: dAccount, ttlMs: 86400000 * 70 });
     /* AND the platform total, which is the one the owner actually reads.
 
-       Chat books all three of these. This booked the first two, so image and
-       video reached the daily ceiling and the per-account cost and never
-       reached costtotal - the number the founder dashboard reports as the
-       month's cost, and the number every margin on that screen is derived
-       from. Video is the dearest call in the product at half a dollar a go,
-       and it was the one missing from the profit figure.
+       Chat books all three of these. Image and video generation, when they
+       existed, booked the first two: they reached the daily ceiling and the
+       per-account cost and never reached costtotal - the number the founder
+       dashboard reports as the month's cost, and the number every margin on
+       that screen is derived from. Video was the dearest call in the product
+       at half a dollar a go, and it was the one missing from the profit
+       figure.
 
-       This is the same blindness the ceiling had before it was fixed, left
-       behind in the place where it is least visible: a ceiling that is too
-       low announces itself, a cost that is too low does not. The comment
-       above IMAGE_COST_USD says a number that is quietly wrong is worse than
-       one that is missing, and for a while this was the number. */
+       Both features are gone now, and the rule they taught is why this line
+       stays where it is rather than at each call site: a ceiling that is too
+       low announces itself, a cost that is too low does not. Anything that
+       spends books all three here, or it will be invisible in exactly the
+       place somebody is reading to decide whether AMV makes money. */
     await counter(env, `costtotal:${monthKey()}`, { op: 'incr', amount, ttlMs: 86400000 * 70 });
     await counter(env, `featcost:${what || 'other'}:${monthKey()}`, { op: 'incr', amount, ttlMs: 86400000 * 70 });
   } catch (e) {
@@ -1713,8 +1724,8 @@ async function _budgetFor(env, user){
    between where some children are still spending against the old number.
 
    It has to be here at all because the ceiling was computed from the plan and
-   nothing else. A parent who set $10 a month bounded their child's chat,
-   images and video, and then any automation that child had scheduled ran to
+   nothing else. A parent who set $10 a month bounded their child's chat and
+   texting, and then any automation that child had scheduled ran to
    the PLAN's ceiling instead - unattended, monthly, and invisible to the
    person who set the limit. The limit somebody sets has to hold everywhere,
    and the place it is easiest to miss is the work that runs while nobody is
@@ -3364,7 +3375,7 @@ async function runDueAutomations(env, atMs){
 
     /* THE DAY'S CEILING, WHICH THIS PATH CONTRIBUTED TO AND NEVER CONSULTED.
 
-       Chat, image, video and the widget all check the global daily cap before
+       Chat, the widget and SMS all check the global daily cap before
        spending. This tick incremented it afterwards and never asked - so once
        the ceiling was reached, every path a person can SEE refused, and the
        unattended cron kept going. The one thing running while nobody is
@@ -4245,11 +4256,6 @@ function _webIsConsequential(verb, label, text){
    a different server, and it does not get to keep the key that was meant for
    the first one. */
 const OUTBOUND_TIMEOUT_MS = 15000;
-/* Image and video generation legitimately take minutes, so they get their own
-   number. A ceiling that cuts off work people paid for is not a safety
-   feature, it is the same outage from the other side - but a job that has been
-   silent for three minutes is hung, not slow. */
-const GENERATION_TIMEOUT_MS = 180000;
 const OUTBOUND_MAX_HOPS = 5;
 
 /* THE ONE EXEMPTION, STATED RATHER THAN LEFT IMPLICIT.
@@ -6992,7 +6998,6 @@ const BACKUP_NEVER = [
   'smsverify:',             // a phone confirmation code, same reason
   'invite:',                // a pending invitation with its code, like link: above
   'resume:',                // a half-finished answer, held for minutes
-  'vidjob:',                // in-flight video job state; the provider is the source of truth
   /* apikey: was briefly on the OTHER list, reasoned as "these are only
      hashes". That is true about reading the file and wrong about restoring
      one. The record maps a hash to an account, so a planted row mints a
@@ -7920,8 +7925,8 @@ export default {
       }catch(_){}
       /* The MESSAGE stays on the server. This returned err.message straight to
          whoever made the request, which is the one thing this file is careful
-         about everywhere else - the image path logs the provider's raw response
-         and answers generically for exactly this reason. An exception message
+         about everywhere else - a provider's raw response is logged and the
+         caller told something generic, for exactly this reason. An exception message
          is written for an engineer and can carry a key name, a storage path, a
          query fragment or a stack-shaped hint; none of that belongs in an
          answer to a stranger. It is recorded above, with an alert, so nothing
@@ -11160,10 +11165,6 @@ function _baseLimits(user) {
     const c = user.customCfg;
     const price = c.price || 30;
     const monthTokens = c.monthTokens || Math.round(300000 * TOKENIZER_SCALE);
-    // Image & video limits scale with the plan size so a bigger custom budget
-    // genuinely buys proportionally more media - not a flat binary. Bounded so
-    // they never exceed what the price can cover (margin stays protected).
-    // ~1 image per 30k tokens of headroom; videos scale per $ above $15.
     return {
       dayTokens: c.dayTokens || Math.round(50000 * TOKENIZER_SCALE),
       monthTokens,                              // HARD CAP - the profit guarantee
@@ -11188,31 +11189,48 @@ function effectiveLimits(user) {
 }
 
 
-/* ==============================================================
-   VIDEO GENERATION - real, not a progress bar.
+/* ---- WHICH TOOLS ARE ALLOWED THROUGH TO THE MODEL ----------------------
 
-   Video is unlike everything else here: it takes 30s-3min, so it cannot be a
-   single request. It's a JOB. We create it, hand back an id, and the client
-   polls. The job lives in KV so it survives the user closing the tab.
+   The rule has always been right: never forward arbitrary client-supplied tool
+   definitions upstream. Somebody with a modified client could otherwise ship a
+   thousand tools, or one with a megabyte of schema, on every turn - a cost and
+   bounds attack paid for by AMV.
 
-   Provider-agnostic. Set three secrets and it works:
-     VIDEO_API_URL    e.g. https://api.replicate.com/v1/predictions
-     VIDEO_API_KEY    the provider key
-     VIDEO_MODEL      the model/version id at that provider
+   The implementation was wrong in a way nothing could see. It allowed by
+   `t.type`, and only 'web_search_20250305' has a type at all. Every one of
+   AMV's OWN tools is a custom tool - { name, description, input_schema }, no
+   type - so every one of them was silently dropped here, on every turn, since
+   the day they were written.
 
-   Without them we return { configured:false } and the app SAYS SO rather than
-   faking a render. That honesty is the whole point - this feature used to be a
-   setInterval that ticked a fake progress bar and produced nothing.
-   ============================================================== */
+   The effect was invisible from both ends and worse than either. The client
+   assembled the tools and believed it had sent them. The system prompt told the
+   model "you have real tools: run_code, build_app, crew_add" - and then the
+   model was handed none of them, so it could not emit a tool call even when it
+   wanted to. A person asking for an app got a sentence about building one.
+   Everything in _amvRunTool - real execution, real deploys, real Crew jobs -
+   was unreachable in production, while the code for all of it passed review and
+   every test that did not go through this function.
 
-const VIDEO_MAX_SECONDS = 30;
-const VIDEO_JOB_TTL     = 60 * 60 * 24 * 7;   // keep finished jobs for a week
+   So: named tools are allowed by NAME, from a list kept here, and the shape is
+   bounded rather than trusted. A name AMV does not know is still dropped.
 
-function _videoConfigured(env) {
-  return !!(env.VIDEO_API_URL && env.VIDEO_API_KEY && env.VIDEO_MODEL);
-}
+   This list is also the thing that has to be edited when a tool is retired.
+   Removing image and video generation took generate_image and generate_video
+   out of it, and took this whole block with them by accident - the Set went,
+   the three bounds went, and _safeTools was left calling a name that no longer
+   existed. Nothing that only parses the file could see it: the throw waits
+   until the first turn that forwards a tool, which is every real turn. */
+const AMV_CLIENT_TOOLS = new Set([
+  'run_code', 'fix_code', 'build_app', 'deploy_site',
+  'crew_list', 'crew_add', 'crew_update', 'crew_pause', 'crew_resume', 'crew_remove', 'crew_standing',
+  'crew_ceiling',
+  'memory_list', 'memory_add', 'memory_forget',
+  'approvals_list', 'approval_act', 'account_status',
+]);
+const TOOLS_MAX          = 24;      // more than AMV has, far less than an attack
+const TOOL_DESC_MAX      = 1200;    // a description, not a second prompt
+const TOOL_SCHEMA_MAX    = 4000;    // a schema, not a payload
 
-/* POST /v1/video/generate  -> { id, status } */
 function _safeTools(list) {
   const out = [];
   for (const t of list) {
@@ -11582,9 +11600,9 @@ async function aiProxy(request, env, ctx) {
   const gCap = parseFloat(env.GLOBAL_DAILY_USD_CAP || '500');
   const _paying = _planPriceUSD(user.plan, user.customCfg) > 0;
   const gCapForThem = _paying ? gCap : +(gCap * FREE_TIER_CAP_SHARE).toFixed(2);
-  /* One definition, shared with the image and video gate - see
-     _monthlyCeilingUSD. It used to be written out here and only here, which is
-     why it bound chat and nothing else. */
+  /* One definition, shared with _spendGate - see _monthlyCeilingUSD. It used
+     to be written out here and only here, which is why it bound chat and
+     nothing else. */
   const ceiling = _monthlyCeiling(user);
   const costCeiling = ceiling.value;
   /* AMV-004: the most this call can cost, priced from the tokens already
@@ -12307,30 +12325,6 @@ function _estimateReserveInput(body) {
   return msgs + sys;
 }
 
-/* ---------------- IMAGE METERING ----------------------------------- */
-function mediaPolicyMatch(prompt) {
-  const s = String(prompt == null ? '' : prompt).toLowerCase();
-  return MEDIA_BLOCKED.find(w => s.indexOf(w) >= 0) || '';
-}
-
-/* Returns a Response to send back, or null when the prompt is allowed. */
-async function mediaPolicyRefusal(env, user, prompt, surface) {
-  const term = mediaPolicyMatch(prompt);
-  if (!term) return null;
-  try { await _abuseRecord(env, user && user.email, 'content_policy', { surface, term }); } catch (e) {}
-  try { audit(env, 'content_policy_refused', { email: user && user.email, surface, term }); } catch (e) {}
-  return json({ error: MEDIA_POLICY_REFUSAL, code: 'content_policy' }, 400);
-}
-
-/* ---------------- PREMIUM IMAGE GENERATION (operator-configured) ------
-   When the operator sets a premium image provider (IMAGE_API_URL +
-   IMAGE_API_KEY as Worker secrets), image generation is proxied here so the
-   key stays server-side and every call is metered against the user's daily
-   image cap. The request body is { prompt, width, height }. We POST to the
-   configured provider in a the standard images-API shape most providers accept and return
-   { url } or { b64 }. If no provider is configured we return {configured:false}
-   so the client falls back to the built-in free generator. This means adding a
-   premium key is the ONLY step needed to upgrade image quality app-wide. */
 async function usageReport(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'sign in' }, 401);
@@ -12623,8 +12617,8 @@ async function widgetChat(request, env, ctx) {
      about a distributed burst, which is the case a cap on a PUBLIC endpoint
      exists for.
 
-     `reserve` is the operation the counter already has for this, and it is what
-     the image and video quotas use. A cap of 0 means unlimited, so that case
+     `reserve` is the operation the counter already has for this, and it is
+     what every other dollar and token ceiling uses. A cap of 0 means unlimited, so that case
      counts without a ceiling rather than reserving against zero and refusing
      everything. */
   const msgName = `wmsg:${key}:${todayKey()}`;
@@ -12648,7 +12642,7 @@ async function widgetChat(request, env, ctx) {
      The widget was bounded by three things and none of them was this one: a
      per-widget message cap, a per-widget daily spend cap the owner sets (and
      which defaults to unlimited), and the owner's TOKEN allowance. Tokens are
-     a count. The ceiling that stops chat, image, video and SMS is a dollar
+     a count. The ceiling that stops chat and SMS is a dollar
      figure - the lower of the plan's cost backstop and a parent's monthly
      limit - and a widget belonging to a capped account ran past it, because
      the widget asked a different question.
@@ -13180,16 +13174,6 @@ async function verifyToken(token, secret, env = null, expectedTyp = 'access') {
         wrangler secret put AMV_MODEL_KEY
         wrangler secret put JWT_SECRET           (LONG random string - 32+ chars)
 
-        # OPTIONAL - premium image generation. Set these three and image
-        # generation app-wide automatically upgrades from the built-in free
-        # generator to your paid provider (key stays server-side, metered
-        # against each user's daily image cap). Any endpoint with the standard
-        # images shape works - it must accept POST { model, prompt, size, n }
-        # and answer { data: [ { url } ] } or { data: [ { b64_json } ] }, which
-        # is what most image providers and their proxies already speak:
-        wrangler secret put IMAGE_API_KEY        (your image provider key)
-        wrangler secret put IMAGE_API_URL        (the provider's images endpoint)
-        wrangler secret put IMAGE_API_MODEL      (the model name that provider expects)
    4. wrangler.toml config:
         [vars]
         GLOBAL_DAILY_USD_CAP = "500"             (your hard ceiling)
@@ -13511,32 +13495,46 @@ async function smsIncoming(request, env, ctx) {
      budget (AMV-100), which is also the only reading under which the seat the
      team paid for is the thing being spent. */
   const price = _planPriceUSD(user.plan, user.customCfg);
-  let smsCostName = '', smsReserveUSD = 0, smsBookedUSD = 0;
+  const smsBook = {};
   {
-    /* The shared ceiling, so a parent's limit reaches this too. This path
-       computed the plan backstop itself and never looked at family limits, so
-       a child capped at $10 a month could keep running AMV over SMS on the
-       plan's allowance - the limit was real on the paths that happened to
-       contain the code. */
-    const shared = _monthlyCeilingUSD(user);
-    /* No shared ceiling means no plan backstop and no family limit, which is
-       exactly the free case - so the fallback is the free automation ceiling
-       and the plan arithmetic does not need repeating here. */
-    const cap = shared != null ? shared : FREE_AUTO_CEILING_USD;
-    /* AMV-004: booked, not read. A text message is the cheapest way to produce
-       genuine concurrency against one account - a script can post to this
-       endpoint as fast as it likes - and reading the total then charging after
-       let every one of them pass the same check. Reserved at the tier's
-       published rate for a full-length reply; settled below to what the turn
-       really cost. */
-    smsCostName = `cost:${user.billingSubject}:${_periodKeyOf(user)}`;
+    /* THROUGH THE ONE GATE, like every other path that spends.
+
+       This used to do half of _spendGate's job inline: it asked the account's
+       monthly ceiling and never asked the DAY'S. So the control that exists to
+       stop a runaway bill could not see SMS at all, and SMS is the cheapest way
+       to produce real concurrency against AMV - a script can post to this
+       endpoint as fast as it likes. It also repeated the ceiling arithmetic,
+       which is how the family limit came to be missing from it in the first
+       place: a rule that lives at each call site is a rule the next call site
+       will not have.
+
+       AMV-004: booked, not read. Reserved at the tier's published rate for a
+       full-length reply, settled below to what the turn really cost.
+
+       The free case is passed in rather than looked up, because a free account
+       has no plan backstop and the gate would otherwise leave it to the global
+       free share alone - which is a budget for everybody, not for one number
+       texting in a loop. */
     const smsEng = ENGINES['amv-pulse'];
-    smsReserveUSD = (SMS_EST_IN_TOK / 1e6) * smsEng.inCost + (SMS_MAX_OUT_TOK / 1e6) * smsEng.outCost;
-    const capRes = await _reserveUSD(env, smsCostName, smsReserveUSD, cap, 86400000 * 70);
-    smsBookedUSD = capRes.reserved;
-    if (!capRes.allowed) return twiml(price > 0
-      ? 'You\u2019ve used your plan\u2019s allowance for this cycle. It resets next month.'
-      : 'You\u2019ve used what the free plan covers for texting this month. Upgrade for more, or it resets next month.');
+    const reserveUSD = (SMS_EST_IN_TOK / 1e6) * smsEng.inCost + (SMS_MAX_OUT_TOK / 1e6) * smsEng.outCost;
+    const refused = await _spendGate(env, user, 'sms', reserveUSD, smsBook,
+                                     { fallbackCeilingUSD: FREE_AUTO_CEILING_USD });
+    if (refused) {
+      /* The gate answers in JSON because most callers are the web app. Over SMS
+         the only thing that can be sent is a sentence, so the code is turned
+         back into one here rather than a customer receiving a status number. */
+      let code = '';
+      try { code = (await refused.clone().json()).code || ''; } catch (e) {}
+      if (code === 'account_blocked')
+        return twiml('This account is on hold and cannot use paid features. Contact support if you think that is wrong.');
+      if (code === 'family_cap')
+        return twiml('You\u2019ve used the monthly limit set for your account. It resets next month, or whoever manages your family can raise it.');
+      if (code === 'global_cap' || code === 'free_capacity')
+        return twiml('AMV is unusually busy right now. Try again shortly.');
+      return twiml(price > 0
+        ? 'You\u2019ve used your plan\u2019s allowance for this cycle. It resets next month.'
+        : 'You\u2019ve used what the free plan covers for texting this month. Upgrade for more, or it resets next month.');
+    }
   }
 
   /* AMV-003 (second half): THE CEILING WAS CHECKED AND NEVER FED.
@@ -13553,7 +13551,7 @@ async function smsIncoming(request, env, ctx) {
      same defect as the wash-trading signal that read a field nobody wrote: it
      reads as a control and cannot fire.
 
-     Recorded through _recordSpend like chat, image and video, so it lands in
+     Recorded through _recordSpend like chat and the widget, so it lands in
      the account ceiling, the day's global spend, the platform total and the
      per-feature split - and 'sms' becomes a line the owner can see rather than
      a cost hidden inside somebody else's total. */
@@ -13569,13 +13567,14 @@ async function smsIncoming(request, env, ctx) {
   if (smsUsage) {
     const eng = ENGINES['amv-pulse'];
     const usd = (smsUsage.input / 1e6) * eng.inCost + (smsUsage.output / 1e6) * eng.outCost;
-    await _recordSpend(env, user.billingSubject || email, usd, 'sms', _periodKeyOf(user),
-                       { account: smsBookedUSD });
-  } else if (smsBookedUSD > 0) {
+    await _recordSpend(env, user.billingSubject || email, usd, 'sms', smsBook.period,
+                       smsBook);
+  } else {
     /* The turn failed, so there is nothing to settle against - hand the whole
        reservation back rather than leaving somebody's allowance holding money
-       for an answer they never got. */
-    await _releaseUSD(env, smsCostName, smsBookedUSD, 86400000 * 70);
+       for an answer they never got. Both halves, since the gate books the
+       day's ceiling as well as the account's. */
+    await _releaseSpendGate(env, smsBook);
   }
   // SMS segments are 160 chars; keep replies tight
   if (reply.length > 600) reply = reply.slice(0, 590) + '…';
@@ -13725,7 +13724,7 @@ const PLAN_FROM_PRICE = (env) => {
 
    The "DoorDash method": pay, consume the product, then claw the money back
    (chargeback or refund) while keeping what you took. For AMV the product is
-   compute - model calls, video, deep research - which costs real money the
+   compute - model calls, deep research, autonomous jobs - which costs real money the
    moment it's delivered. So a refund/chargeback after heavy use is a direct
    loss, and a repeat pattern is fraud.
 
@@ -13848,8 +13847,8 @@ async function _abuseRecord(env, email, kind, detail = {}) {
          This flag was set here and read in two places: whether a new checkout
          may start, and whether a referral pays out. Nothing on the paths that
          actually cost money asked. So an account blocked for charging back
-         went on calling the model, generating images and running scheduled
-         work - all of it billed to AMV, from somebody who has already proved
+         went on calling the model and running scheduled work - all of it
+         billed to AMV, from somebody who has already proved
          they take the money back.
 
          Denormalised onto the entitlement because requireUser reads that
@@ -18702,7 +18701,7 @@ async function adminStats(request, env) {
   const freeCost = +(cohorts.free ? cohorts.free.cost : 0).toFixed(2);
 
   // Where the money went this month, and what caching saved.
-  const features = ['chat', 'image', 'video', 'automation', 'sms', 'widget'];
+  const features = ['chat', 'automation', 'sms', 'widget'];
   const featureCost = {};
   for (const feat of features) {
     const v = (await counter(env, `featcost:${feat}:${month}`, { op: 'get' })).value || 0;
@@ -19420,12 +19419,6 @@ function _readinessReport(env) {
     { id: 'googleAuth', name: 'Google sign-in', blocking: false, on: _has(env, 'GOOGLE_CLIENT_ID'),
       turnsOn: 'Sign in with Google. It fails closed until set, rather than trusting an unverified token.',
       how: put('GOOGLE_CLIENT_ID') },
-    { id: 'images', name: 'Premium images', blocking: false, on: _has(env, 'IMAGE_API_URL') && _has(env, 'IMAGE_API_KEY'),
-      turnsOn: 'Photoreal image generation. Without it the app falls back to its built-in generator and says so.',
-      how: put('IMAGE_API_URL') + ' and ' + put('IMAGE_API_KEY') },
-    { id: 'video', name: 'Video generation', blocking: false, on: _videoConfigured(env),
-      turnsOn: 'Real video rendering. Without it the app reports that video is unavailable rather than faking a progress bar.',
-      how: put('VIDEO_API_URL') + ', ' + put('VIDEO_API_KEY') + ' and ' + put('VIDEO_MODEL') },
     { id: 'alerts', name: 'Operator alerts', blocking: false, on: _has(env, 'ALERT_WEBHOOK'),
       turnsOn: 'Being paged when spend caps are hit, checkout breaks, or the model rejects a request.',
       how: put('ALERT_WEBHOOK') },

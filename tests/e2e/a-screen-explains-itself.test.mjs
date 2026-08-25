@@ -142,27 +142,6 @@ section('Help can be reached by topic, not only by already knowing the word (AMV
 }
 
 /* ──────────────────────────────────────────────────────────────────────── */
-section('Images and Video say what they are (AMV-D070)');
-{
-  for (const tab of ['images', 'video']) {
-    await page.evaluate((t) => setTab(t), tab);
-    await page.waitForSelector('#vc .pghd h2', { timeout: 15000 }).catch(() => {});
-    const h = await page.evaluate((t) => {
-      const vc = document.getElementById('vc');
-      const head = vc.querySelector('.pghd');
-      const title = head && head.querySelector('h2');
-      return { hasHeader: !!head, title: title ? title.textContent.trim() : null,
-               sub: !!vc.querySelector('.pghd-sub'),
-               repeats: [...vc.querySelectorAll('h2,h3')].filter(x => new RegExp('^' + t + '$', 'i').test(x.textContent.trim())).length };
-    }, tab);
-    ok(h.hasHeader, `${tab} opens with a page header rather than straight into a form`);
-    ok((h.title || '').length > 8, `${tab} names the outcome`, h.title);
-    ok(h.sub, `${tab} says in one line what happens here`);
-    ok(h.repeats === 0, `${tab} does not repeat the sidebar's own label as a heading`, h.repeats);
-  }
-}
-
-/* ──────────────────────────────────────────────────────────────────────── */
 section('The cookie banner is sized like compliance, not like the product (AMV-D059)');
 {
   for (const [w, h, maxPct] of [[1440, 900, 10], [390, 844, 17]]) {

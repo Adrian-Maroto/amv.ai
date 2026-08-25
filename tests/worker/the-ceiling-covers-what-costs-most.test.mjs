@@ -5,9 +5,17 @@
 
    It was checked in two places - chat and the widget - and the counter it reads
    was incremented in two places, the stream meter and the automation tick.
-   Image generation and video generation, which call a paid provider and cost
+   Image generation and video generation, which called a paid provider and cost
    many times what a message costs, did neither. They never asked the ceiling
    for permission, and their cost never reached the number the ceiling reads.
+
+   Those two features are gone. What they left behind is _spendGate - the one
+   place a path asks both ceilings and books what it is about to spend - and
+   the rule that a path added later must go through it. SMS is the caller that
+   proves it still works, and SMS is also the path that had the same hole: it
+   asked the ACCOUNT's monthly ceiling inline and never asked the day's, so the
+   control that stops a runaway bill could not see the cheapest way to produce
+   real concurrency against AMV.
 
    Three consequences, and the third is the quiet one:
 
@@ -29,33 +37,19 @@ const ROOT = join(__dir, '..', '..');
 const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'ceiling.harness.mjs');
-writeFileSync(harness, src + '\nexport { DB, setEntitlement, todayKey, monthKey, FREE_TIER_CAP_SHARE, _imageCost, _videoCost, _monthlyCeilingUSD, _spendGate, _periodKeyFor, _periodStartISO };\n');
+writeFileSync(harness, src + '\nexport { DB, setEntitlement, todayKey, monthKey, FREE_TIER_CAP_SHARE, FREE_AUTO_CEILING_USD, _monthlyCeilingUSD, _spendGate, _releaseSpendGate, _periodKeyFor, _periodStartISO };\n');
 const W = await import(harness + '?t=' + Date.now());
 const worker = W.default;
 
 const CAP = 100;
-let providerCalls = { image: 0, video: 0 };
 const realFetch = globalThis.fetch;
-globalThis.fetch = async (url) => {
-  const u = String(url);
-  if (/image\.example/.test(u)) {
-    providerCalls.image++;
-    return new Response(JSON.stringify({ data: [{ b64_json: 'AAAA' }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-  }
-  if (/video\.example/.test(u)) {
-    providerCalls.video++;
-    return new Response(JSON.stringify({ id: 'prov_1' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-  }
-  return { ok: true, status: 200, json: async () => ({}) };
-};
+globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({}) });
 
 function mkEnv() {
-  const m = new Map(); const vals = new Map(); providerCalls = { image: 0, video: 0 };
+  const m = new Map(); const vals = new Map();
   return {
     JWT_SECRET: 'a-real-looking-secret-value-for-tests', ADMIN_TOKEN: 'a', APP_URL: 'https://amv.test',
     GLOBAL_DAILY_USD_CAP: String(CAP),
-    IMAGE_API_URL: 'https://image.example/v1', IMAGE_API_KEY: 'k',
-    VIDEO_API_URL: 'https://video.example/v1', VIDEO_API_KEY: 'k', VIDEO_MODEL: 'v1',
     _vals: vals,
     AMV_KV: {
       _map: m,
@@ -101,145 +95,140 @@ const signup = async (env, email) => (await (await call(env, '/auth/signup', { e
 
 const spend = (env) => env._vals.get(`spend:${W.todayKey()}`) || 0;
 const spendToday = (env, usd) => env._vals.set(`spend:${W.todayKey()}`, usd);
-const makeImage = (env, tok) => post(env, '/v1/image/generate', { prompt: 'a house' }, tok);
-const makeVideo = (env, tok) => post(env, '/v1/video/generate', { prompt: 'a house', seconds: 5 }, tok);
+/* The gate is asked directly. Driving it through a handler was how this suite
+   read when image generation existed and had a fixed published price; SMS, the
+   caller that replaced it, needs a linked phone and a signed Twilio webhook to
+   reach, and testing the ceiling through all of that would be testing Twilio.
+   What has to be true is a property of the gate plus the fact that the paths
+   that spend go through it, and both are asserted here. */
+const principal = (email, plan, extra) =>
+  Object.assign({ email, plan, billingSubject: email }, extra || {});
+const USD = 0.02;
 
-section('A picture costs something, and the something is not zero');
-{
-  ok(W._imageCost({}) > 0, 'an image has a stated price', W._imageCost({}));
-  ok(W._videoCost({}) > 0, 'and so does a video', W._videoCost({}));
-  ok(W._videoCost({}) > W._imageCost({}),
-     'with video the more expensive of the two, which is the real ordering', {
-       image: W._imageCost({}), video: W._videoCost({}) });
-  ok(W._imageCost({ IMAGE_COST_USD: '0.25' }) === 0.25,
-     'and a deployment can state its own, because providers change their prices',
-     W._imageCost({ IMAGE_COST_USD: '0.25' }));
-  ok(W._imageCost({ IMAGE_COST_USD: '0' }) > 0,
-     'but not to nothing, which would restore exactly the blindness this closes',
-     W._imageCost({ IMAGE_COST_USD: '0' }));
-}
-
-section('Generating a picture reaches the number the ceiling reads');
+section('The gate books what it is about to allow, on both counters');
 {
   const env = mkEnv();
-  const tok = await signup(env, 'painter@example.com');
-  await W.setEntitlement(env, 'painter@example.com', 'ultra', { source: 'stripe' });
   const before = spend(env);
-
-  const r = await makeImage(env, tok);
-  ok(r.body.ok === true, 'the picture is generated', r.body.error || 'ok');
-  ok(providerCalls.image === 1, 'and it really went to the provider', providerCalls.image);
-  const delta = spend(env) - before;
-  ok(delta > 0, 'the day’s spend went up', delta);
-  ok(Math.abs(delta - W._imageCost(env)) < 1e-9, 'by what a picture costs', delta);
-
-  /* Looked up through the window the PRODUCT uses, not the calendar month.
-     An allowance is counted over the billing period now - see _periodKeyFor -
-     and a test that reads the old key would report zero spend on a working
-     meter, which is the most misleading way for this to fail. */
-  const ent = await W.DB.get(env, 'ent', 'painter@example.com');
-  const period = W._periodKeyFor(ent && ent.renewedAt, 'ultra', null);
-  const mine = env._vals.get(`cost:painter@example.com:${period}`) || 0;
-  ok(Math.abs(mine - W._imageCost(env)) < 1e-9,
-     'and it is on the account that spent it, so unit economics can see it', mine);
+  const book = {};
+  const refused = await W._spendGate(env, principal('spender@example.com', 'ultra'), 'sms', USD, book);
+  ok(refused === null, 'the call is allowed', refused && refused.status);
+  ok(Math.abs(spend(env) - before - USD) < 1e-9, 'the day\u2019s spend went up by what it will cost', spend(env) - before);
+  ok(Math.abs(book.global - USD) < 1e-9, 'and the caller is told what was booked globally', book.global);
+  ok(Math.abs(book.account - USD) < 1e-9, 'and on the account, so it can settle the difference', book.account);
+  ok(book.accountName.indexOf('spender@example.com') > 0,
+     'against the account that spent it, so unit economics can see it', book.accountName);
 }
 
-section('And starting a video does too');
+section('Past the ceiling it refuses, and books nothing');
 {
   const env = mkEnv();
-  const tok = await signup(env, 'director@example.com');
-  await W.setEntitlement(env, 'director@example.com', 'ultra', { source: 'stripe' });
-  const before = spend(env);
-
-  const r = await makeVideo(env, tok);
-  ok(r.body.ok === true, 'the job starts', r.body.error || 'ok');
-  const delta = spend(env) - before;
-  ok(Math.abs(delta - W._videoCost(env)) < 1e-9, 'and is counted at what a video costs', delta);
-
-  /* Counted at acceptance, because the provider bills for the render the moment
-     it starts. Waiting for the finished file would leave every in-flight video
-     invisible to the ceiling, and a burst of them is the shape of the bill this
-     exists to stop. */
-  ok(delta > 0, 'at the moment it is accepted, not when the file arrives', delta);
-}
-
-section('Past the ceiling, a picture is refused - and never paid for');
-{
-  const env = mkEnv();
-  const tok = await signup(env, 'over@example.com');
-  await W.setEntitlement(env, 'over@example.com', 'ultra', { source: 'stripe' });
   spendToday(env, CAP + 1);
-
-  const r = await makeImage(env, tok);
-  ok(r.status === 503, 'it is refused', r.status);
-  ok(r.body.code === 'global_cap', 'by the ceiling, saying so', r.body.code);
-  ok(providerCalls.image === 0, 'and nothing was spent at the provider', providerCalls.image);
-}
-
-section('Past the ceiling, a video is refused too');
-{
-  const env = mkEnv();
-  const tok = await signup(env, 'over2@example.com');
-  await W.setEntitlement(env, 'over2@example.com', 'ultra', { source: 'stripe' });
-  spendToday(env, CAP + 1);
-
-  const r = await makeVideo(env, tok);
-  ok(r.status === 503, 'it is refused', r.status);
-  ok(providerCalls.video === 0, 'and no render was started', providerCalls.video);
+  const book = {};
+  const r = await W._spendGate(env, principal('over@example.com', 'ultra'), 'sms', USD, book);
+  ok(r && r.status === 503, 'it is refused', r && r.status);
+  const body = await r.json();
+  ok(body.code === 'global_cap', 'by the ceiling, saying so', body.code);
+  ok(book.global === 0, 'and nothing was booked against the day', book.global);
 }
 
 section('Being refused does not also cost them their own allowance');
 {
-  /* The per-user reservation is taken first. Refusing without giving it back
-     would mean somebody turned away for capacity ALSO lost one of the images
-     their plan includes. */
+  /* The account reservation is taken FIRST. Refusing at the day's ceiling
+     without giving it back would mean somebody turned away for capacity also
+     lost part of the allowance their plan includes - charged for work that
+     never ran, by the control that stopped it running. */
   const env = mkEnv();
-  const tok = await signup(env, 'refunded@example.com');
-  await W.setEntitlement(env, 'refunded@example.com', 'ultra', { source: 'stripe' });
   spendToday(env, CAP + 1);
-
-  const key = `img:refunded@example.com:${W.todayKey()}`;
+  const user = principal('refunded@example.com', 'ultra');
+  const key = `cost:refunded@example.com:${W._periodKeyFor(null, 'ultra', null)}`;
   const before = env._vals.get(key) || 0;
-  await makeImage(env, tok);
+  const book = {};
+  await W._spendGate(env, user, 'sms', USD, book);
   const after = env._vals.get(key) || 0;
-  ok(after <= before, 'the image allowance is given back', { before, after });
+  ok(Math.abs(after - before) < 1e-9, 'the account allowance is given back', { before, after });
+  ok(book.account === 0, 'and the caller is not told it holds one', book.account);
 }
 
 section('On a busy day it is the free tier that stops, not the customer');
 {
-  /* The same order as chat: above the free share and below the whole ceiling,
-     free stops and paid keeps working. Turning away somebody who has paid is a
-     refund, then a chargeback, then a review. */
+  /* Turning away somebody who has paid is a refund, then a chargeback, then a
+     review. Above the free share and below the whole ceiling, free stops. */
   const env = mkEnv();
-  const free = await signup(env, 'freehand@example.com');
-  const paid = await signup(env, 'paidhand@example.com');
-  await W.setEntitlement(env, 'paidhand@example.com', 'ultra', { source: 'stripe' });
   spendToday(env, CAP * W.FREE_TIER_CAP_SHARE + 1);
 
-  const a = await makeImage(env, free);
-  ok(a.status === 503, 'the free account is turned away', a.status);
-  ok(a.body.code === 'free_capacity', 'and told which kind of busy this is', a.body.code);
-  ok(/free accounts/i.test(a.body.error || ''), 'in words that are true and worth knowing', a.body.error);
+  const a = await W._spendGate(env, principal('freehand@example.com', 'free'), 'sms', USD, {});
+  ok(a && a.status === 503, 'the free account is turned away', a && a.status);
+  const ab = await a.json();
+  ok(ab.code === 'free_capacity', 'and told which kind of busy this is', ab.code);
+  ok(/free accounts/i.test(ab.error || ''), 'in words that are true and worth knowing', ab.error);
 
-  const b = await makeImage(env, paid);
-  ok(b.body.ok === true, 'while somebody who paid still gets their picture', b.body.error || 'ok');
+  const b = await W._spendGate(env, principal('paidhand@example.com', 'ultra'), 'sms', USD, {});
+  ok(b === null, 'while somebody who paid still gets through', b && b.status);
 }
 
-section('Nothing is charged for a picture that was never produced');
+section('A reservation that is handed back leaves nothing behind');
 {
+  /* The work did not happen, so neither counter should still be holding money
+     for it. Both halves, because releasing only the account half is the shape
+     that leaves the day's ceiling creeping up on failures nobody was charged
+     for - and a ceiling that rises without spend refuses real customers. */
   const env = mkEnv();
-  const tok = await signup(env, 'unlucky@example.com');
-  await W.setEntitlement(env, 'unlucky@example.com', 'ultra', { source: 'stripe' });
-  const before = spend(env);
-  const saved = globalThis.fetch;
-  globalThis.fetch = async (url) => /image\.example/.test(String(url))
-    ? new Response('upstream said no', { status: 502 })
-    : ({ ok: true, status: 200, json: async () => ({}) });
+  const user = principal('failed@example.com', 'ultra');
+  const key = `cost:failed@example.com:${W._periodKeyFor(null, 'ultra', null)}`;
+  const book = {};
+  await W._spendGate(env, user, 'sms', USD, book);
+  await W._releaseSpendGate(env, book);
+  ok(Math.abs((env._vals.get(key) || 0)) < 1e-9, 'the account holds nothing', env._vals.get(key));
+  ok(Math.abs(spend(env)) < 1e-9, 'and neither does the day', spend(env));
+}
 
-  const r = await makeImage(env, tok);
-  globalThis.fetch = saved;
-  ok(r.status === 502, 'the failure is reported', r.status);
-  ok(spend(env) === before, 'and the day’s spend did not move', spend(env) - before);
+section('A free account is not left to the global share alone');
+{
+  /* _monthlyCeiling answers null for a free account - there is no plan
+     backstop and no family limit - so the account half of the gate does not
+     run and the only thing left is the free share of the DAY'S ceiling. That
+     is a budget for every free account at once, not for one of them. A caller
+     with its own free-tier ceiling passes it in, or routing that caller
+     through the shared gate would be a downgrade for exactly the accounts
+     that pay nothing. SMS is that caller. */
+  const env = mkEnv();
+  const user = principal('texter@example.com', 'free');
+  const opts = { fallbackCeilingUSD: W.FREE_AUTO_CEILING_USD };
+  let allowed = 0, refusedCode = '';
+  for (let i = 0; i < 40 && !refusedCode; i++) {
+    const r = await W._spendGate(env, user, 'sms', USD, {}, opts);
+    if (r) refusedCode = (await r.json()).code || 'refused'; else allowed++;
+  }
+  ok(refusedCode !== '', 'a free account texting in a loop is eventually stopped', { allowed, refusedCode });
+  ok(allowed * USD <= W.FREE_AUTO_CEILING_USD + USD,
+     'at its own free monthly ceiling, not at the whole free share of the day',
+     { spent: +(allowed * USD).toFixed(4), ceiling: W.FREE_AUTO_CEILING_USD });
+  ok(spend(env) < CAP * W.FREE_TIER_CAP_SHARE,
+     'which is far below the day\u2019s free share, so one number cannot drain it', spend(env));
+  /* And without the fallback the same account is NOT bounded by an account
+     ceiling - which is what makes passing it a real decision rather than
+     decoration. */
+  const env2 = mkEnv();
+  const r2 = await W._spendGate(env2, principal('nofallback@example.com', 'free'), 'sms', 5, {});
+  ok(r2 === null, 'while a free caller that passes none has no account ceiling at all', r2 && r2.status);
+}
+
+section('And SMS really goes through it, rather than keeping its own copy');
+{
+  /* The defect this file exists for was a path nobody had put inside the
+     ceiling. SMS was the last one: it asked the account\u2019s monthly ceiling
+     inline and never asked the day\u2019s, so the control that stops a runaway
+     bill could not see the cheapest way to make AMV spend in parallel. */
+  const sms = codeOnly(functionBody(src, 'smsIncoming') || '');
+  ok(sms.length > 1000, 'the SMS handler was found', sms.length);
+  ok(/_spendGate\(env, user, 'sms'/.test(sms),
+     'SMS asks the shared gate', true);
+  ok(/fallbackCeilingUSD: FREE_AUTO_CEILING_USD/.test(sms),
+     'passing its own free-tier ceiling, so a free number is still bounded', true);
+  ok(!/_reserveUSD\(/.test(sms),
+     'and no longer reserves against a ceiling it worked out itself', true);
+  ok(/_releaseSpendGate\(env, smsBook\)/.test(sms),
+     'and gives both reservations back when the turn produced nothing', true);
 }
 
 section('Every path that calls a paid provider goes through the one gate');
@@ -247,13 +236,13 @@ section('Every path that calls a paid provider goes through the one gate');
   /* Stated as a source rule, because the defect was not a wrong number - it was
      a path nobody had put inside the ceiling, and the next one added would be
      outside it for the same reason. */
-  const gated = ['aiProxy', 'widgetChat', 'imageGenerate', 'videoGenerate'];
+  const gated = ['aiProxy', 'widgetChat', 'smsIncoming', 'runDueAutomations'];
   const missing = gated.filter(fn => {
     const m = src.match(new RegExp('async function ' + fn + '\\s*\\('));
     if (!m) return true;
     const nexts = [src.indexOf('\nasync function ', m.index + 10), src.indexOf('\nfunction ', m.index + 10)].filter(i => i > 0);
     const body = src.slice(m.index, Math.min(...nexts));
-    return !/_spendGate\(|GLOBAL_DAILY_USD_CAP/.test(body);
+    return !/_spendGate\(|GLOBAL_DAILY_USD_CAP|_globalSpendCap|spend:\$\{todayKey/.test(body);
   });
   ok(missing.length === 0, 'no spending path is outside the day’s ceiling', missing);
 }
@@ -272,7 +261,7 @@ globalThis.fetch = realFetch;
    the DAILY ceiling was blind to the two most expensive calls, here the
    PER-ACCOUNT one was. Both because the rule lived where one path could see
    it. There is one definition now and both paths ask it. */
-section('The account ceiling binds image and video, not only chat');
+section('The account ceiling binds every spending path, not only chat');
 {
   /* DERIVED, not named. This asserted the literal `_monthlyCeilingUSD`, so a
      rename would have failed it for the wrong reason - and, worse, a rename
@@ -283,7 +272,7 @@ section('The account ceiling binds image and video, not only chat');
   const CEIL = /_monthlyCeiling(?:USD)?\(/g;
   const gateAsks = [...new Set((gate.match(CEIL) || []))];
   ok(gateAsks.length === 1,
-     'the media gate asks for this account’s ceiling, from one helper', gateAsks);
+     'the shared gate asks for this account’s ceiling, from one helper', gateAsks);
   ok(/family_cap/.test(gate),
      'and can refuse for the family limit specifically, so the message names the person who can change it', true);
 
@@ -309,7 +298,7 @@ section('The account ceiling binds image and video, not only chat');
   ok(chatAsks.length === 1, 'and chat asks one too', chatAsks);
   ok(chatAsks[0] === gateAsks[0],
      'and it is the same helper, which is the whole point',
-     { chat: chatAsks[0], media: gateAsks[0] });
+     { chat: chatAsks[0], gate: gateAsks[0] });
 
   /* And that helper is the one holding the rule, not a wrapper that forwards
      to a second copy. */

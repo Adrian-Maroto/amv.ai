@@ -32,20 +32,21 @@ await page.evaluate(() => {
      "Hold on" and measure nothing. */
   try { AEGIS.check = () => ({ ok: true }); } catch (e) {}
 
-  /* Every model turn asks for a tool. generate_image needs no consent and,
-     with no premium provider reachable, returns an honest "not connected"
-     string - so the loop runs for real without side effects. */
+  /* Every model turn asks for a tool. account_status needs no consent, reads
+     the caller's own plan and usage, and changes nothing - so the loop runs for
+     real without side effects. It was generate_image until image generation
+     was removed; what the loop needs is a consent-free tool with no side
+     effect, not that particular one. */
   window.__turns = 0;
   const realFetch = window.fetch;
   window.fetch = async (url, opts) => {
     const u = String(url);
-    if (u.includes('/v1/image/generate')) return new Response('{}', { status: 500 });
     if (opts && opts.method === 'POST' && u.includes('engine.test')) {
       window.__turns++;
       const sse =
         'data: {"type":"message_start","message":{"usage":{"input_tokens":1}}}\n\n' +
-        'data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"t' + window.__turns + '","name":"generate_image"}}\n\n' +
-        'data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\\"prompt\\":\\"a cat\\"}"}}\n\n' +
+        'data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"t' + window.__turns + '","name":"account_status"}}\n\n' +
+        'data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{}"}}\n\n' +
         'data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":2}}\n\n' +
         'data: {"type":"message_stop"}\n\n';
       return new Response(sse, { status: 200, headers: { 'Content-Type': 'text/event-stream' } });

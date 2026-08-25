@@ -89,8 +89,8 @@ const consent = await page.evaluate(async () => {
     deploy_site: _toolNeedsConsent('deploy_site'),
     run_code: _toolNeedsConsent('run_code'),
     fix_code: _toolNeedsConsent('fix_code'),
-    generate_image: _toolNeedsConsent('generate_image'),
-    generate_video: _toolNeedsConsent('generate_video'),
+    crew_list: _toolNeedsConsent('crew_list'),
+    memory_list: _toolNeedsConsent('memory_list'),
   };
   const orig = window._showModalAsync;
   const race = (p) => Promise.race([p, new Promise(r => setTimeout(() => r('HANG'), 3000))]);
@@ -103,7 +103,8 @@ const consent = await page.evaluate(async () => {
   return { cls, denied, allowed, wired };
 });
 ok(consent.cls.deploy_site && consent.cls.run_code && consent.cls.fix_code, 'deploy/run/fix are consent-gated');
-ok(!consent.cls.generate_image && !consent.cls.generate_video, 'benign content tools are not gated');
+ok(!consent.cls.crew_list && !consent.cls.memory_list,
+   'while reading things back is not gated - a prompt for every read teaches people to click through');
 ok(consent.denied === false, 'denying the approval blocks the tool');
 ok(consent.allowed === true, 'approving the tool lets it proceed');
 ok(consent.wired, 'the agentic dispatch actually consults the consent gate');

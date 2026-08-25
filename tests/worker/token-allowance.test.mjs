@@ -130,8 +130,10 @@ section('Margin is still guaranteed by the dollar backstop, not by these caps');
      used to start at the words "Keyed by the billing subject so a team", so
      rewording that comment moved the check onto whatever followed. */
   const sms = codeOnly(functionBody(src, 'smsIncoming'));
-  ok(/_monthlyCeilingUSD\(user\)/.test(sms),
-     'the SMS path asks the shared ceiling, so a parent’s limit reaches it', true);
+  ok(/_spendGate\(env, user, 'sms'/.test(sms),
+     'the SMS path asks the shared gate, so a parent’s limit reaches it', true);
+  ok(/_monthlyCeiling\(user\)/.test(codeOnly(functionBody(src, '_spendGate'))),
+     'and that gate is where the ceiling is read, once, for every path that spends', true);
   ok(/anti-abuse guard/.test(src), 'and the token caps are documented as the secondary guard they are');
 }
 

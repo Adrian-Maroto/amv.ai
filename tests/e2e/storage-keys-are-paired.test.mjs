@@ -159,7 +159,6 @@ section('Every key is both written and read, or is named here with the reason');
     amv_plugin_web:         'per-plugin off switch; absent means on, which is the default',
     amv_stripe_customer:    'cached by the checkout return path when the processor sends one',
     amv_mkt_verified:       'set by the marketplace seller verification flow',
-    amv_imgs:               'legacy image list, read for migration from an older build',
     amv_mem:                'legacy memory list, same',
     /* Read once on boot and deleted, never written again. The Google access
        token used to live here - a working bearer token to somebody's mail,

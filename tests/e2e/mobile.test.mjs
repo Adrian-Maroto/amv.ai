@@ -86,7 +86,7 @@ ok(devMobile.prevShown && devMobile.chatHidden, 'tapping Preview flips to the pr
 section('Mobile: no horizontal overflow on any main tab');
 
 const overflow = await m.page.evaluate(async () => {
-  const tabs = ['chat', 'images', 'video', 'dev', 'lab', 'studio', 'crew', 'projects', 'marketplace'];
+  const tabs = ['chat', 'dev', 'lab', 'studio', 'crew', 'projects', 'marketplace'];
   const bad = [];
   for (const t of tabs) {
     setTab(t);

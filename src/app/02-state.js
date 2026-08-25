@@ -12,8 +12,7 @@
 const _PERSIST = {            // key on S  ->  storage key
   user:'amv_user', mk:'amv_mk', rl:'amv_rl', sp:'amv_sp', se:'amv_se',
   model:'amv_model', memory:'amv_memory', workspaces:'amv_workspaces',
-  prompts:'amv_prompts', settingsPane:null, imgStyle:'amv_imgstyle',
-  imgRatio:'amv_imgratio',
+  prompts:'amv_prompts', settingsPane:null,
 };
 const _subs = {};   // key -> [fns]
 const _AMVState = {
@@ -44,10 +43,6 @@ const _raw = {
   cur: null,
   openTabs: [],
   model: loadStr('amv_model')||'auto',
-  imgs: [],
-  imgStyle: loadStr('amv_imgstyle')||'Normal',
-  imgRatio: loadStr('amv_imgratio')||'1:1',
-  vids: [],
   memory: load('amv_memory')||[],
   prompts: load('amv_prompts')||[],
   workspaces: load('amv_workspaces')||[],
@@ -147,7 +142,7 @@ try{ window.AMVState = AMVState; }catch(e){}
      AMVSync.push()  -> upload current user data (debounced)
    It auto-pushes whenever synced state keys change.
    ============================================================ */
-const _SYNC_KEYS = ['convs','memory','workspaces','prompts','imgs','model','imgStyle','imgRatio'];
+const _SYNC_KEYS = ['convs','memory','workspaces','prompts','model'];
 /* Your actual WORK - Recents (Dev projects, Lab sessions), skills, handoffs,
    profile. These are NOT AMVState keys (_SESSIONS is a module-level array), so
    they're gathered and restored explicitly below. Before this they never left
@@ -155,9 +150,9 @@ const _SYNC_KEYS = ['convs','memory','workspaces','prompts','imgs','model','imgS
    simply gone. */
 const _SYNC_EXTRA = ['sessions','skills','handoffs','profile'];
 /* Keys whose values are id-bearing lists, so a pull can merge them item by item
-   instead of replacing the list. `model`/`imgStyle`/`imgRatio` are scalars and
-   deliberately absent - last write genuinely should win on a preference. */
-const _SYNC_MERGEABLE = new Set(['convs','memory','workspaces','prompts','imgs','vids']);
+   instead of replacing the list. `model` is a scalar and deliberately absent -
+   last write genuinely should win on a preference. */
+const _SYNC_MERGEABLE = new Set(['convs','memory','workspaces','prompts']);
 const _syncStamp = it => (it && (it.updated || it.updatedAt || it.ts || it.added || it.created || it.createdAt)) || 0;
 /* How much substance an item carries - only breaks a tie, and it is what stops
    an upload that was trimmed to fit the size cap from erasing the full copy. */

@@ -1,9 +1,13 @@
-/* AI ABUSE CONTROLS (AMV-022, AMV-023).
+/* AI ABUSE CONTROLS (AMV-022).
 
    AMV-022  the public widget had no per-visitor throttle, so one caller could
             drain the widget's whole daily budget in a burst.
-   AMV-023  image generation used get-then-incr (racy) and never refunded on a
-            provider failure, so failures permanently burned quota. */
+
+   This suite also carried AMV-023 - image generation used get-then-incr, which
+   is racy, and never refunded quota when the provider failed. Image generation
+   is gone, and so are those two sections. The pattern is not gone: any counter
+   that reserves before the work and does not give it back on failure burns
+   somebody's allowance for something they never got. */
 import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -14,7 +18,7 @@ const ROOT = join(__dir, '..', '..');
 const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'ai-abuse.harness.mjs');
-writeFileSync(harness, src + '\nexport { imageMeter, imageGenerate, widgetChat, issueTokens };\n');
+writeFileSync(harness, src + '\nexport { widgetChat, issueTokens };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 const store = new Map();
@@ -29,40 +33,6 @@ const mkEnv = (extra = {}) => ({
   ...extra,
 });
 const tok = async (env, email) => (await W.issueTokens(env, email, 'U')).token;
-const imgCtr = () => { const k = [...store.keys()].find(x => x.startsWith('ctr:img:')); return k ? parseFloat(store.get(k)) : 0; };
-
-/* ── AMV-023: image reservation is atomic and refunded on failure ──────── */
-section('AMV-023: image quota is atomic + refunded on provider failure');
-{
-  store.clear();
-  const env = mkEnv({ IMAGE_API_URL: 'https://img.example', IMAGE_API_KEY: 'k' });
-  const t = await tok(env, 'u@x.com');   // free plan → imagesDay 8
-  const realFetch = globalThis.fetch;
-  const gen = (b) => new Request('https://api/v1/image/generate', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + t }, body: JSON.stringify(b) });
-  // provider FAILS → 502 and quota is refunded (back to 0)
-  globalThis.fetch = async () => ({ ok: false, status: 502, text: async () => 'boom', json: async () => ({}) });
-  let r = await W.imageGenerate(gen({ prompt: 'a cat' }), env);
-  ok(r.status === 502, 'a provider failure returns 502', r.status);
-  ok(imgCtr() === 0, 'the failed image is refunded (quota back to 0)', imgCtr());
-  // provider SUCCEEDS → 200 and exactly one is consumed
-  globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ data: [{ url: 'https://img.example/1.png' }] }) });
-  r = await W.imageGenerate(gen({ prompt: 'a dog' }), env);
-  ok(r.status === 200, 'a successful image returns 200', r.status);
-  ok(imgCtr() === 1, 'a successful image consumes exactly one from quota', imgCtr());
-  globalThis.fetch = realFetch;
-}
-
-section('AMV-023: image meter denies past the daily cap (no overshoot)');
-{
-  store.clear();
-  const env = mkEnv();
-  const t = await tok(env, 'v@x.com');   // free → 8/day
-  const meter = () => new Request('https://api/v1/image', { method: 'POST', headers: { Authorization: 'Bearer ' + t } });
-  let allowed = 0, denied = 0;
-  for (let i = 0; i < 10; i++) { const r = await W.imageMeter(meter(), env); (r.status === 200 ? allowed++ : denied++); }
-  ok(allowed === 8 && denied === 2, 'exactly 8 images allowed on the free plan, then denied', { allowed, denied });
-}
-
 /* ── AMV-022: the public widget throttles per visitor ──────────────────── */
 section('AMV-022: public widget throttles a single visitor');
 {

@@ -178,7 +178,7 @@ section('The screens that would be empty offer the next step');
      plans the steps ... Included with Pro, $15/month" - which is a better
      first visit than an empty list, and my first version called it a failure
      for not containing the word "create". */
-  const shouldGuide = ['images', 'tasks', 'crew', 'memory'];
+  const shouldGuide = ['tasks', 'crew', 'memory'];
   const silent = shouldGuide.filter(t => {
     const r = seen[t];
     if (!r) return false;

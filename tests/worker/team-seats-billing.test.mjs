@@ -98,7 +98,14 @@ section('A Teams seat carries Elite-grade capability');
      'so Apex is included rather than sold again', [W._planRankOf('team'), W._planRankOf('elite')]);
   const lim = W.effectiveLimits({ plan: 'team', customCfg: { seats: 5 } });
   ok(lim.allModels === true, 'and no engine is gated behind a further upgrade');
-  ok(lim.videosMonth > 0, 'video is included, scaled by seats', lim.videosMonth);
+  /* And the allowance really scales with the seats bought, rather than a team
+     of twenty getting one person's monthly tokens. This asserted the video
+     allowance, which was the only per-seat number that visibly grew; video is
+     gone, so it asks the number that actually decides what a team can do. */
+  const one = W.effectiveLimits({ plan: 'team', customCfg: { seats: 1 } });
+  ok(lim.monthTokens > one.monthTokens,
+     'and the monthly allowance scales with the seats paid for',
+     { one: one.monthTokens, five: lim.monthTokens });
 }
 
 section('The customer cannot name their own seat count');
@@ -186,8 +193,8 @@ section('One definition of what a plan costs');
   ok(copies === 1, 'the plan price table exists exactly once', copies);
   /* THE PROPERTY, NOT THE SPELLING. This matched the literal text of the
      arithmetic while it lived inline in the chat handler. Moving it into one
-     shared helper - which is what made the same ceiling bind image, video, SMS
-     and the widget - broke the match while the 45% backstop it guards was
+     shared helper - which is what made the same ceiling bind chat, SMS, the
+     widget and the cron - broke the match while the 45% backstop it guards was
      untouched. A rule written against a spelling fails on a correct fix and
      passes on a regression that keeps the words (LESSONS #203). */
   const ceilFn3 = src.slice(src.indexOf('function _monthlyCeiling('), src.indexOf('function _monthlyCeiling(') + 900);

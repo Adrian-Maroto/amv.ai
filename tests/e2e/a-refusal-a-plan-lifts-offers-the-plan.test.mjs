@@ -109,7 +109,7 @@ section('Every refusal a plan lifts offers the plan');
     ['plan_required', 402, 'That engine is part of Elite.'],
     ['plan_limit',    402, 'The free plan runs one job in the background, weekly.'],
     ['job_limit',     429, 'Your plan runs 25 background jobs. Remove one or upgrade.'],
-    ['img_quota',     429, 'You have used today’s images on this plan.'],
+    ['quota_month',   429, 'You have used your full allowance for this billing cycle.'],
     ['free_capacity', 503, 'AMV is at capacity for free accounts today. Paid plans are running normally.'],
   ];
   for (const [code, status, error] of cases) {
@@ -183,44 +183,6 @@ section('The button actually arrives');
   });
   ok(!r.missing, 'the card has a button', !r.missing);
   ok(r.after === 'plans', 'pressing it reaches the plans', r.before + ' -> ' + r.after);
-}
-
-section('The pitch quotes the plan, not a number somebody typed once')
-{
-  /* The upgrade nudge fires at the single moment somebody is most likely to
-     pay: they have just run out of images. It promised "up to 60 images a day"
-     to everybody at every tier, while Pro gives 100 and Elite gives 500 - so
-     the pitch understated the thing being sold by a factor of eight, at the
-     one moment it mattered. Read from the cap table now. */
-  const r = await page.evaluate(async () => {
-    const seen = [];
-    for (const plan of ['free', 'pro', 'elite']) {
-      _smartUpgradeNudge('images', plan, 'You have used all of today\u2019s images.');
-      await new Promise(res => setTimeout(res, 120));
-      const perk = document.querySelector('#ovr .nudge-perk');
-      const up   = document.querySelector('#ovr #nudge-up');
-      seen.push({ plan, perk: perk ? perk.textContent : '', btn: up ? up.textContent : '' });
-      try { closeOvr(); } catch (e) {}
-      await new Promise(res => setTimeout(res, 80));
-    }
-    return { seen, caps: { pro: IMG_DAY_CAP.pro, elite: IMG_DAY_CAP.elite, ultra: IMG_DAY_CAP.ultra } };
-  });
-  const byPlan = Object.fromEntries(r.seen.map(x => [x.plan, x]));
-  /* The page groups thousands, so 2000 is rendered "2,000". Comparing against
-     the raw digits failed on Ultra alone and would have read as a broken tier -
-     the assertion has to compare what is on the screen, not what is in the
-     table before it is written out. */
-  const shown = (n) => Number(n).toLocaleString('en-US');
-  ok(byPlan.free && byPlan.free.perk.includes(shown(r.caps.pro)),
-     'a free account is told what Pro actually gives', byPlan.free && byPlan.free.perk);
-  ok(byPlan.pro && byPlan.pro.perk.includes(shown(r.caps.elite)),
-     'and a Pro account what Elite actually gives', byPlan.pro && byPlan.pro.perk);
-  ok(byPlan.elite && byPlan.elite.perk.includes(shown(r.caps.ultra)),
-     'and an Elite account what Ultra actually gives', byPlan.elite && byPlan.elite.perk);
-  ok(!r.seen.some(x => /\b60\b/.test(x.perk)),
-     'and nobody is quoted the number that was in none of the plans', r.seen.map(x => x.perk));
-  ok(byPlan.free && /Pro/.test(byPlan.free.btn) && byPlan.pro && /Elite/.test(byPlan.pro.btn),
-     'the button names the tier it would move them to', r.seen.map(x => x.btn));
 }
 
 section('No JavaScript errors');

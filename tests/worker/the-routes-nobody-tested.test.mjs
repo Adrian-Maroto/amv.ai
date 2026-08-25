@@ -1,12 +1,13 @@
-/* SIXTEEN ROUTES NOTHING HAD EVER CALLED.
+/* THE ROUTES NOTHING HAD EVER CALLED.
 
    A route with no test is not a route that works. It is a route whose behaviour
    nobody has stated, which means the next refactor is free to change it and the
-   gate will say SHIPPABLE. These sixteen were the remainder after every other
-   suite in this directory: sign-in exchange, finishing a bank link, leaving a
-   family, joining a team, presence, the task board, the video allowance, the
-   billing portal and invoices, publishing / installing / unlisting / rating /
-   messaging on the marketplace, and saving a chat widget.
+   gate will say SHIPPABLE. These were the remainder after every other suite in
+   this directory: sign-in exchange, finishing a bank link, leaving a family,
+   joining a team, presence, the task board, the billing portal and invoices,
+   publishing / installing / unlisting / rating / messaging on the marketplace,
+   and saving a chat widget. There were sixteen; the video allowance was one of
+   them and went with video generation.
 
    They are covered here for what actually matters about each one, which in
    almost every case is the same two questions: can somebody who is not you
@@ -102,7 +103,7 @@ section('None of them answer a stranger');
   const env = mkEnv();
   const paths = ['/v1/oauth/google/exchange', '/v1/finance/link/finish', '/v1/family/leave',
                  '/team/join', '/team/presence', '/team/tasks', '/team/task/update',
-                 '/v1/video/list', '/v1/stripe/portal', '/v1/stripe/invoices',
+                 '/v1/stripe/portal', '/v1/stripe/invoices',
                  '/v1/market/publish', '/v1/market/install', '/v1/market/unlist',
                  '/v1/market/rate', '/v1/market/message', '/v1/widget/save'];
   const answered = [];
@@ -110,26 +111,11 @@ section('None of them answer a stranger');
     const r = await post(env, p, {});
     if (r.status !== 401) answered.push(p + ' -> ' + r.status);
   }
-  ok(answered.length === 0, 'all sixteen require a signed-in account', answered);
+  ok(answered.length === 0, 'every one of them requires a signed-in account', answered);
+  /* The roster has to still find them. A path that is renamed or removed and
+     left in this list would be posted to, get a 404, count as "not 200", and
+     pass - a check that goes green because its subject vanished. */
   ok(paths.every(p => src.includes("'" + p + "'")), 'and every path checked is a real route', paths.length);
-}
-
-section('The video screen reports the real allowance, not a hopeful one');
-{
-  const env = mkEnv();
-  const tok = await signup(env, 'vid@example.com');
-  const r = await post(env, '/v1/video/list', {}, tok);
-  ok(r.body.ok === true, 'it answers', r.body);
-  ok(r.body.configured === false,
-     'and says video is NOT configured when no key is set, rather than offering it', r.body.configured);
-  ok(r.body.limit === 0, 'a free account is told its real monthly allowance', r.body.limit);
-  ok(r.body.used === 0, 'and its real usage', r.body.used);
-
-  /* Paying changes the number, which is the only way to know the number means
-     anything. A constant would pass every assertion above. */
-  await W.DB.put(env, 'ent', 'vid@example.com', { plan: 'elite', source: 'stripe' });
-  const paid = await post(env, '/v1/video/list', {}, tok);
-  ok(paid.body.limit > r.body.limit, 'and paying raises it', { free: r.body.limit, paid: paid.body.limit });
 }
 
 section('Billing history and the portal belong to the caller and nobody else');

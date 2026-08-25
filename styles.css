@@ -254,28 +254,7 @@ footer.lfoot{border-top:1px solid var(--bd);padding:20px 24px;display:flex;align
 .atb.rec{background:rgba(248,81,73,.1);border-color:var(--red-txt);color:var(--red-txt);animation:rp 1s ease-in-out infinite}@keyframes rp{0%,100%{opacity:1}50%{opacity:.4}}
 #snd{width:36px;height:36px;border-radius:50%;background:var(--accent);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:transform .15s,background .14s}#snd:hover{transform:scale(1.07);background:var(--accent-d)}
 #snd:hover{background:var(--blue)}#snd:disabled{opacity:.35;cursor:not-allowed}
-.ih{font-size:var(--t-2xs);color:var(--dim)}
-#imgv{display:flex;flex-direction:column;height:100%;min-height:0;overflow:hidden}
-#imgctrl{flex-shrink:0;padding:11px 16px;border-bottom:1px solid var(--bd)}
-#imgg{flex:1;overflow-y:auto;padding:11px 16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(196px,1fr));gap:10px;align-content:start}
-.ic{background:var(--s1);border:1px solid var(--bd);border-radius:var(--r-sm);overflow:hidden;transition:background-color .13s,border-color .13s,color .13s,box-shadow .13s,transform .13s,opacity .13s,filter .13s}.ic:hover{border-color:var(--bdl)}
-.ifr{position:relative;overflow:hidden;background:var(--s2)}.ifr img{width:100%;display:block;transition:opacity .35s;opacity:0}.ifr img.ldd{opacity:1}
-.ild{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:var(--s2);transition:opacity .27s}.ild.gone{opacity:0;pointer-events:none}
-.ilt{font-size:var(--t-xs);color:var(--mu);text-align:center;padding:0 9px;line-height:1.5}
-.ifoot{padding:8px 10px}.ipr{font-size:var(--t-xs);color:var(--mu);line-height:1.4;margin-bottom:5px;display:-webkit-box;-webkit-line-clamp:2;line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.ia{display:flex;align-items:center;justify-content:space-between}
-.ial{font-size:var(--t-2xs);color:var(--mu);text-decoration:none;border:1px solid var(--bd);padding:2px 7px;border-radius:var(--r-2xs);transition:background-color .12s,border-color .12s,color .12s,box-shadow .12s,transform .12s,opacity .12s,filter .12s;cursor:pointer;font-family:var(--fn)}.ial:hover{color:var(--tx);border-color:var(--bdl)}
 .stb{padding:3px 10px;border-radius:var(--r-2xs);font-size:var(--t-xs);cursor:pointer;font-family:var(--fn);transition:background-color .12s,border-color .12s,color .12s,box-shadow .12s,transform .12s,opacity .12s,filter .12s;border:1px solid var(--bd);background:var(--s1);color:var(--mu)}.stb.on{background:var(--s3);border-color:var(--blued);color:var(--blue)}.stb:hover:not(.on){border-color:var(--bdl);color:var(--tx)}
-.rab{padding:3px 9px;border-radius:var(--r-2xs);font-size:var(--t-xs);cursor:pointer;font-family:var(--fn);transition:background-color .12s,border-color .12s,color .12s,box-shadow .12s,transform .12s,opacity .12s,filter .12s;border:1px solid var(--bd);background:var(--s1);color:var(--mu)}.rab.on{background:var(--s3);border-color:var(--blued);color:var(--blue)}
-#vidv{height:100%;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:13px}
-.vg{display:grid;grid-template-columns:repeat(auto-fill,minmax(228px,1fr));gap:10px}
-.vc2{background:var(--s1);border:1px solid var(--bd);border-radius:var(--r-sm);overflow:hidden;transition:background-color .13s,border-color .13s,color .13s,box-shadow .13s,transform .13s,opacity .13s,filter .13s}.vc2:hover{border-color:var(--bdl)}
-.vth{aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;background:var(--s2);position:relative;overflow:hidden}
-.vpo{position:absolute;inset:0;background:rgba(13,17,23,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px}
-.vpb{width:70%;height:2px;background:var(--s4);border-radius:2px;overflow:hidden}.vpf{height:100%;background:var(--blued);border-radius:2px;transition:width .28s}
-.vdo{display:none;flex-direction:column;align-items:center;justify-content:center;width:100%;height:100%;gap:8px;text-align:center;padding:12px}
-.vft{padding:8px 11px;border-top:1px solid var(--bd)}.vtt{font-size:var(--t-base);font-weight:500;margin-bottom:3px}
-.vtg{display:flex;gap:5px;flex-wrap:wrap}.vtk{padding:1px 7px;border-radius:var(--r-2xs);background:var(--s3);border:1px solid var(--bd);font-size:var(--t-2xs);color:var(--mu)}
 .sv{height:100%;overflow-y:auto;padding:20px 18px}
 .vi{max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:13px}
 .vi h2{font-size:var(--t-xl);font-weight:600;letter-spacing:-.35px;margin-bottom:2px}.vsub{font-size:var(--t-base);color:var(--mu);margin-bottom:4px;line-height:1.55}
@@ -733,7 +712,7 @@ html,body{height:100%;overflow:hidden}
    ============================================================ */
 
 /* ---- 1. Surfaces: opaque dark cards -> soft translucent glass ---- */
-.ss2,.fcrd,.wsc,.memc,.stc,.step-c,.ho-card,.dc,.vc2,.ce-c,.lp,.plc,.plnc,.cw-job,.cw-appr,.cw-quick-card,.ifc,.hsi,.card,.qab,.rab{
+.ss2,.fcrd,.wsc,.memc,.stc,.step-c,.ho-card,.dc,.ce-c,.lp,.plc,.plnc,.cw-job,.cw-appr,.cw-quick-card,.ifc,.hsi,.card,.qab{
   background:var(--panel)!important;
   border:1px solid var(--glass-soft2)!important;
   border-radius:var(--r-2xl)!important;
@@ -744,7 +723,7 @@ html,body{height:100%;overflow:hidden}
 .cw-job,.cw-appr,.int-row,.ho-card{box-shadow:none}
 
 /* ---- 2. Soften every remaining hard inner border to a hairline ---- */
-.vtk,.htag,.int-pill,.ce-pill,.hero-pill,.plcat,.step-n,.atb,.stb,.bb,.wb,.ic,.ial,.memc,.plc{
+.htag,.int-pill,.ce-pill,.hero-pill,.plcat,.step-n,.atb,.stb,.bb,.wb,.memc,.plc{
   border-color:var(--glass-soft2)!important;
 }
 
@@ -752,7 +731,6 @@ html,body{height:100%;overflow:hidden}
 .wg{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))!important;gap:20px!important}
 .ce-g,.stg,.dg,.qa-g{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))!important;gap:18px!important}
 .dsn-grid{gap:16px!important}
-.vg,#imgg{gap:16px!important}
 .cw-quick{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))!important;gap:14px!important}
 
 /* ---- 4. Typographic hierarchy: bigger, more confident ---- */
@@ -799,7 +777,7 @@ html,body{height:100%;overflow:hidden}
 
 /* --- 1. Kill glassmorphism everywhere (no blur, solid quiet surfaces) --- */
 *{backdrop-filter:none;-webkit-backdrop-filter:none}
-.ss2,.fcrd,.wsc,.memc,.stc,.step-c,.ho-card,.dc,.vc2,.ce-c,.lp,.plc,.plnc,.cw-job,.cw-appr,.cw-quick-card,.ifc,.hsi,.card,.qab,.rab,.dsn-tile,.dsn-callout,.cht{
+.ss2,.fcrd,.wsc,.memc,.stc,.step-c,.ho-card,.dc,.ce-c,.lp,.plc,.plnc,.cw-job,.cw-appr,.cw-quick-card,.ifc,.hsi,.card,.qab,.dsn-tile,.dsn-callout,.cht{
   background:#15191f!important;
   border:1px solid #232a33!important;
   box-shadow:none;
@@ -959,8 +937,8 @@ body { background:var(--bg)!important; }
 .eyebrow, .dsn-eyebrow { color:var(--accent-txt)!important; opacity:1; font-weight:600; letter-spacing:.14em; }
 
 /* ---- Surfaces: warm, soft, minimal (no glass, gentle borders) ---- */
-.ss2,.fcrd,.wsc,.memc,.stc,.step-c,.ho-card,.dc,.vc2,.ce-c,.lp,.plc,.plnc,
-.cw-job,.cw-appr,.cw-quick-card,.ifc,.hsi,.card,.qab,.rab,.dsn-tile,.dsn-callout,.cht,.tk-spotlight{
+.ss2,.fcrd,.wsc,.memc,.stc,.step-c,.ho-card,.dc,.ce-c,.lp,.plc,.plnc,
+.cw-job,.cw-appr,.cw-quick-card,.ifc,.hsi,.card,.qab,.dsn-tile,.dsn-callout,.cht,.tk-spotlight{
   background:var(--s1)!important;
   border:1px solid var(--bd)!important;
   border-radius:var(--r-xl)!important;
@@ -997,10 +975,7 @@ input,textarea,select{font-family:var(--fn);}
 .vi textarea,.vi input[type=text]{background:var(--s1)!important;border:1px solid var(--bd)!important;border-radius:var(--r-lg)!important;color:var(--tx)!important;}
 
 /* ---- Pills / tags warmed ---- */
-.htag,.int-pill,.ce-pill,.hero-pill,.vtk,.cw-badge,.plcat{background:var(--accent-soft)!important;border:1px solid transparent!important;color:var(--accent-txt)!important;}
-
-/* ---- Images/Video grids: a touch more breathing room ---- */
-.vg,#imgg{gap:18px!important;}
+.htag,.int-pill,.ce-pill,.hero-pill,.cw-badge,.plcat{background:var(--accent-soft)!important;border:1px solid transparent!important;color:var(--accent-txt)!important;}
 
 /* === LAYER 26 - warm ambient + final polish === */
 #vc{background:radial-gradient(1100px 520px at 72% -8%,rgba(63, 118, 245,.07),transparent 62%)!important}
@@ -1392,7 +1367,7 @@ body::before{display:none!important}            /* remove the ambient radial was
 body.light{--hair:rgba(0,0,0,.09);--hair-strong:rgba(0,0,0,.14);--surface:#ffffff;--surface-2:#f0efec}
 
 /* ---- 2. Surfaces: quieter, fewer frames. Cards lose their hard border. ---- */
-.ss2,.fcrd,.wsc,.memc,.stc,.step-c,.ho-card,.dc,.vc2,.ce-c,.plc,.cw-job,.cw-appr,
+.ss2,.fcrd,.wsc,.memc,.stc,.step-c,.ho-card,.dc,.ce-c,.plc,.cw-job,.cw-appr,
 .cw-quick-card,.ifc,.card,.dsn-tile,.cht,.tk-spotlight,.crew-res,.lab-explain,
 .dna-pal-card,.dna-swatch,.sched-row,.sched-panel,.tpl-card{
   background:var(--surface)!important;
@@ -1482,7 +1457,7 @@ input:focus,textarea:focus,select:focus,.dna-field input:focus,.dna-field textar
 #anav .ib:hover{background:var(--surface)!important;color:var(--tx)!important}
 
 /* ---- 9. Pills/tags/badges: restrained, not neon ---- */
-.htag,.int-pill,.ce-pill,.hero-pill,.vtk,.plcat,.dna-pill,.badge{
+.htag,.int-pill,.ce-pill,.hero-pill,.plcat,.dna-pill,.badge{
   border-radius:var(--rad-sm)!important;box-shadow:none;background:var(--surface)!important;
   border:1px solid transparent!important;color:var(--mu)!important;font-weight:500!important;
 }
@@ -1786,7 +1761,6 @@ hr,.mb hr,.plndiv{border-color:var(--hair)!important;background:none!important}
 .inp-model-sel:hover{color:var(--tx)!important;background:var(--surface-2)!important}
 .inp-model-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
 .inp-model-sel svg{opacity:.6}
-.chat-img{max-width:100%;width:420px;border-radius:var(--r-lg);margin:8px 0;display:block;border:1px solid var(--hair)}
 
 /* ---- Billing: subscription details + plan options ---- */
 .bill-detail{background:var(--surface);border:1px solid var(--hair);border-radius:var(--rad-md);overflow:hidden}
@@ -2867,7 +2841,7 @@ body.light .card,body.light .ss2,body.light .wsc,body.light .dc,body.light .memc
 /* generous, consistent rounding - soft and modern */
 .btn,.plnbtn,.gbtn,.ncb,#ncb,input,textarea,select{border-radius:var(--r-lg)!important}
 .card,.ss2,.wsc,.dc,.memc,.adm-stat,.adm-kpi,.mp-wrap,.onb-card,.pane{border-radius:var(--r-2xl)!important}
-.pill,.htag,.ce-pill,.int-pill,.hero-pill,.vtk,.cw-badge,.plcat{border-radius:var(--r-pill)!important}
+.pill,.htag,.ce-pill,.int-pill,.hero-pill,.cw-badge,.plcat{border-radius:var(--r-pill)!important}
 .adm-tab,.snb{border-radius:var(--r-md)!important}
 
 /* avatars: circular, soft neutral tint (never bare white) */
@@ -2875,7 +2849,7 @@ body.light .card,body.light .ss2,body.light .wsc,body.light .dc,body.light .memc
 .mav.ai,.amv-av{background:var(--accent-fill)!important;color:#fff!important}
 
 /* neutral accent surfaces - calm, tasteful, tinted not loud */
-.htag,.int-pill,.ce-pill,.hero-pill,.vtk,.cw-badge,.plcat{background:var(--accent-soft)!important;border:1px solid var(--hair)!important;color:var(--mu)!important}
+.htag,.int-pill,.ce-pill,.hero-pill,.cw-badge,.plcat{background:var(--accent-soft)!important;border:1px solid var(--hair)!important;color:var(--mu)!important}
 .snb.on{background:var(--accent-soft)!important;color:var(--tx)!important;border-radius:var(--r-md)!important;font-weight:600}
 .snb.on svg{color:var(--tx)!important}
 .vs-amv{background:var(--s3)!important;color:var(--tx)!important}
@@ -3482,34 +3456,6 @@ html[dir="rtl"] .qab,html[dir="rtl"] .dc,html[dir="rtl"] .ss2{text-align:right}
 }
 
 /* ============================================================
-   IMAGE / VIDEO GENERATION CHOREOGRAPHY (#10)
-   A branded generating state (shimmer + pulsing orb + phased
-   status) and a graceful blur-to-sharp reveal when the result lands.
-   ============================================================ */
-/* Shimmering placeholder sweep while generating */
-.gen-shimmer{position:absolute;inset:0;
-  background:linear-gradient(105deg,transparent 30%,color-mix(in srgb,var(--accent) 10%,transparent) 50%,transparent 70%);
-  background-size:220% 100%;animation:genSweep 1.5s linear infinite}
-@keyframes genSweep{from{background-position:220% 0}to{background-position:-120% 0}}
-/* Pulsing accent orb centered in the placeholder */
-.gen-orb{width:34px;height:34px;border-radius:50%;position:relative;z-index:1;
-  background:radial-gradient(circle at 38% 38%,var(--accent),color-mix(in srgb,var(--accent) 45%,#000));
-  box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 55%,transparent);animation:genOrb 1.5s ease-in-out infinite}
-@keyframes genOrb{
-  0%,100%{transform:scale(.85);box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 50%,transparent)}
-  50%{transform:scale(1.05);box-shadow:0 0 0 12px color-mix(in srgb,var(--accent) 0%,transparent)}
-}
-.ild .ilt{z-index:1;margin-top:2px;font-weight:500}
-/* Graceful reveal: the finished image comes into focus (blur+scale -> sharp) */
-@media (prefers-reduced-motion:no-preference){
-  .ifr img.img-reveal{animation:imgReveal .6s var(--ease-out,cubic-bezier(.22,1,.36,1))}
-  @keyframes imgReveal{
-    from{opacity:0;transform:scale(1.04);filter:blur(12px) saturate(.7)}
-    to{opacity:1;transform:none;filter:blur(0) saturate(1)}
-  }
-}
-
-/* ============================================================
    LIVING CHAT HOME - "Jump back in" (#11)
    Grounded recent-work cards, only shown when there's activity.
    ============================================================ */
@@ -3907,7 +3853,6 @@ html.reduce-motion *,html.reduce-motion *::before,html.reduce-motion *::after{
   animation-duration:.001ms!important;animation-iteration-count:1!important;
   transition-duration:.001ms!important;scroll-behavior:auto!important}
 html.reduce-motion .stream-cursor,html.reduce-motion .ai-think-orb,
-html.reduce-motion .gen-orb,html.reduce-motion .gen-shimmer,
 html.reduce-motion .voice-ring,html.reduce-motion .sb-status-dot.ok::after{animation:none!important}
 
 /* ── Marketplace rules & moderation ── */
@@ -5341,31 +5286,9 @@ body.light #ovr.on:has(> .nudge-modal){ background:rgba(40,40,50,.55); }
 }
 
 /* ── Video: real player, real states ── */
-.vth.has-vid{padding:0;background:#000}
-.vvid{
-  width:100%;height:100%;display:block;
-  aspect-ratio:16/9;object-fit:contain;background:#000;
-  border-radius:var(--r-md) 10px 0 0;
-}
-.vstage{font-size:var(--t-sm);color:var(--mu);margin-top:7px;text-align:center;padding:0 10px;line-height:1.5}
 /* An indeterminate bar - because the provider gives us no percentage, and
    inventing one is exactly what this feature used to do. */
-.vbar{width:70%;height:3px;border-radius:2px;background:var(--s3);overflow:hidden;margin-top:9px}
-.vbar-run{
-  width:38%;height:100%;border-radius:2px;background:var(--accent);
-  animation:vbar-slide 1.35s ease-in-out infinite;
-}
-@keyframes vbar-slide{
-  0%{transform:translateX(-100%)}
-  100%{transform:translateX(268%)}
-}
-.vfail{gap:8px;padding:14px}
-.vfail svg{color:var(--red,#f85149);opacity:.85}
-.vmsg{font-size:var(--t-sm);color:var(--mu);text-align:center;line-height:1.55;max-width:230px}
-.vretry{font-size:var(--t-xs);padding:4px 11px;margin-top:2px}
-.vdl{cursor:pointer;text-decoration:none}
-.vdl:hover{background:var(--s3);color:var(--tx)}
-.chat-vid{width:100%;max-width:520px;border-radius:var(--r-lg);background:#000;display:block;margin:8px 0}
+
 
 /* ═══════════════════════════════════════════════════════════════════════
    MOBILE  (≤760px)
@@ -5448,7 +5371,7 @@ body.light #ovr.on:has(> .nudge-modal){ background:rgba(40,40,50,.55); }
 
   /* ---- Tap targets: nothing interactive smaller than 44px ---- */
   .dev-ico, .dev-openext, .lab-ico,
-  .vtk, .dev-pt, .lab-pt, .rb-tab {
+  .dev-pt, .lab-pt, .rb-tab {
     min-height: 40px;
     min-width: 40px;
     display: inline-flex;
@@ -5463,7 +5386,7 @@ body.light #ovr.on:has(> .nudge-modal){ background:rgba(40,40,50,.55); }
 
   /* Pill selectors (image style, aspect ratio, etc.) were ~20px tall - far
      below a comfortable thumb target. Give them real height on mobile. */
-  .stb, .rab, .chip, .seg-btn, .pill-btn {
+  .stb, .chip, .seg-btn, .pill-btn {
     min-height: 40px;
     padding-top: 9px;
     padding-bottom: 9px;
@@ -6270,11 +6193,8 @@ body.light .aa-date{color-scheme:light}
    Only engages >=1500px; normal desktops are untouched.
    ============================================================ */
 @media(min-width:1500px){
-  #imgv,#vidv{max-width:1120px;margin-left:auto;margin-right:auto}
-  #imgctrl,#imgg{max-width:100%}
 }
 @media(min-width:1900px){
-  #imgv,#vidv{max-width:1240px}
 }
 
 /* ============================================================
@@ -6327,7 +6247,7 @@ body.light .aa-date{color-scheme:light}
   #sb-backdrop.on{opacity:1;pointer-events:auto}
 
   /* Composer + content: never let anything spill past the right edge */
-  #vc,#imgv,#vidv,.vi,.sv{max-width:100%!important}
+  #vc,.vi,.sv{max-width:100%!important}
   .vi,.sv{padding-left:14px!important;padding-right:14px!important}
   #snd{flex:none}
   .input-bar,.inp-wrap,#chome-input{max-width:100%!important;box-sizing:border-box}
@@ -8729,7 +8649,7 @@ body.light .fr-d{ color:#67656d; }
    the next sweep finds the decision before it finds the numbers. Raising them
    is a visual change across half the product's screens, not a correctness fix,
    and it needs the owner rather than a quiet layer. */
-.stb,.rab{ min-height:24px; display:inline-flex; align-items:center; }
+.stb{ min-height:24px; display:inline-flex; align-items:center; }
 
 /* ── LAYER A88 note: WHY THERE IS NO `transition: all` IN THIS FILE ───────
    There were 67. `transition:all` tells the browser to watch every animatable

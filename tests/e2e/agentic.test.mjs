@@ -17,7 +17,7 @@ const tools = await page.evaluate(() => ({
   lab: _toolsFor('lab').map(t => t.name),
 }));
 ok(tools.all.includes('run_code'), 'run_code tool exists');
-ok(tools.all.includes('generate_image'), 'generate_image tool exists');
+ok(tools.all.includes('crew_add'), 'crew_add tool exists');
 ok(tools.all.includes('build_app'), 'build_app tool exists');
 ok(tools.all.includes('deploy_site'), 'deploy_site tool exists');
 ok(tools.dev.length > 0, 'Dev has its own tools (not chat-only)', tools.dev);
@@ -57,37 +57,26 @@ ok(toolXss.pwned === 0, 'code output containing HTML cannot execute', toolXss.pw
 
 section('Honesty: no faking when the engine is off');
 
+/* The rule this guards is older than any one tool: when the thing a tool needs
+   is not there, AMV says so instead of producing something that looks like a
+   result. It used to be asserted through image generation, which returned no
+   picture and said "connect the engine" rather than drawing a placeholder one.
+   That tool is gone; the rule is not, and the tools that reach the server are
+   where it matters most now - a background job the person is told was created,
+   and was not, is a worse lie than a missing picture. */
 const honest = await page.evaluate(async () => {
-  const realSrc = window._premiumImageSrc;
-  window._premiumImageSrc = async () => null;      // engine unavailable
-  const out = await _amvRunTool('generate_image', { prompt: 'a cat' });
-  window._premiumImageSrc = realSrc;
-  return { text: out.text, render: out.render };
+  const realApi = window.api;
+  window.api = async () => { const e = new Error('not-connected'); throw e; };
+  const out = await _amvRunTool('crew_add', { title: 'water the plants', every: 'daily', prompt: 'x' });
+  window.api = realApi;
+  return { text: String((out && out.text) || out || ''), render: (out && out.render) || null };
 });
-ok(/connect/i.test(honest.text),
-   'image tool says the engine must be connected', honest.text.slice(0, 60));
+ok(/not connected/i.test(honest.text),
+   'a tool whose engine is unreachable says exactly that', honest.text.slice(0, 80));
+ok(/do not say/i.test(honest.text),
+   'and tells the model not to claim it worked, which is the failure that costs trust', honest.text.slice(0, 120));
 ok(honest.render === null,
-   'it renders NO fake image', honest.render);
-
-/* Video USED to be a lie: a setInterval faking a progress bar, producing
-   nothing. It is now a real job against a real provider (see video.test.mjs).
-   What this guards is that the FAKE never comes back. */
-section('Video is real - and the fake never returns');
-
-const video = await page.evaluate(async () => {
-  setTab('video');
-  await new Promise(r => setTimeout(r, 250));
-  const src = String(window.genVid || '');
-  return {
-    noInterval: !/setInterval/.test(src),
-    callsRealApi: /_vidApi|\/v1\/video\/generate/.test(src),
-    pollsRealStatus: typeof window._vidRetry === 'function' || /video\/status/.test(String(window._vidPoll || '')),
-    engineFlagGone: typeof VIDEO_ENGINE_READY === 'undefined'
-  };
-});
-ok(video.noInterval, 'genVid does NOT run a fake progress interval');
-ok(video.callsRealApi, 'it calls the real video endpoint');
-ok(video.engineFlagGone, 'the "not implemented" placeholder flag is gone - it IS implemented');
+   'and renders nothing that could be mistaken for a result', honest.render);
 
 section('No JavaScript errors');
 ok(errors.length === 0, 'zero uncaught page errors', errors.slice(0, 3));

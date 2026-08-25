@@ -28,7 +28,7 @@ const app = await bootApp({ tab: 'chat', user: { name: 'Ada', email: 'ada@amv.de
 const { page, errors } = app;
 await page.setViewportSize({ width: 1440, height: 900 });
 
-const TABS = ['chat', 'images', 'crew', 'dev', 'market', 'plans', 'settings', 'help', 'usage'];
+const TABS = ['chat', 'crew', 'dev', 'market', 'plans', 'settings', 'help', 'usage'];
 
 const sweep = () => page.evaluate(async (tabs) => {
   const lum = (c) => { const a = c.map(v => { v /= 255; return v <= .03928 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4); });

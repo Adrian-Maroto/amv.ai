@@ -99,7 +99,7 @@ export async function shoot({ tabs, themes = ['dark'], sizes = ['phone', 'deskto
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const tabs = (process.argv[2] || 'chat,images,video,crew,dev,lab,market,tasks,plans,settings').split(',');
+  const tabs = (process.argv[2] || 'chat,crew,dev,lab,market,tasks,plans,settings').split(',');
   const sizes = (process.argv[3] || 'phone,desktop').split(',');
   const themes = (process.argv[4] || 'dark').split(',');
   const r = await shoot({ tabs, sizes, themes });

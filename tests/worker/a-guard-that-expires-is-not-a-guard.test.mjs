@@ -56,7 +56,12 @@ section('Every claim states how long it lasts');
     .map(m => m[1].replace(/\s+/g, ' ').trim())
     /* The definition's own signature is not a call site. */
     .filter(a => !/^env,|ttlSec/.test(a));
-  ok(sites.length >= 15, 'every call site was found', sites.length);
+  /* A floor, not a census. It is the negative control on the regex above: if a
+     refactor changes how claims are written and this stops matching anything,
+     the real assertion below would pass by finding nothing to check. The floor
+     sits below the current count so removing a feature does not fail a test
+     about lifetimes - it was 16 before image and video generation came out. */
+  ok(sites.length >= 12, 'the scan still finds the call sites', sites.length);
 
   /* Three arguments means the lifetime was left to the default. */
   /* A backtick OPENS and CLOSES with the same character, so counting it as a

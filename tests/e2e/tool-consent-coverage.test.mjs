@@ -74,8 +74,6 @@ section('And every tool has been classified either way');
      with the reason. Adding a tool means adding a line, which means somebody
      thought about whether it needs permission. */
   const SAFE_WITHOUT_ASKING = {
-    generate_image: 'produces a picture shown to the person who asked; nothing leaves AMV',
-    generate_video: 'the same, metered by the plan allowance',
     build_app:      'writes a page into the conversation, and publishing it is a separate gated tool',
     /* Reading their own data. Nothing leaves AMV, nothing is spent, nothing is
        changed - and putting a dialog in front of "what is running for me"
@@ -161,7 +159,6 @@ section('EVERY dispatch path asks, not just the one that was written first');
   /* And the literal ones are named, so "it is a literal" cannot become a way to
      smuggle a dangerous tool past the gate without anybody deciding. */
   const USER_INITIATED = {
-    "'generate_image'": 'Dev: the person typed a request for a picture; the tool needs no permission anyway',
     "'deploy_site'":    'Lab: the person pressed Publish, with the code in their own editor - the press IS the intent',
   };
   const unexplained = calls

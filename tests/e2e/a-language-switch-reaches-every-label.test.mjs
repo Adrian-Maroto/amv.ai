@@ -30,7 +30,7 @@ const { page, errors } = app;
 await page.setViewportSize({ width: 1440, height: 900 });
 await page.evaluate(() => document.getElementById('ck')?.remove());
 
-const TABS = ['chat', 'images', 'crew', 'market', 'plans', 'settings', 'help', 'usage', 'team'];
+const TABS = ['chat', 'crew', 'market', 'plans', 'settings', 'help', 'usage', 'team'];
 
 section('Every label that CAN be translated, is');
 {

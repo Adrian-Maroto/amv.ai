@@ -671,7 +671,7 @@ function _saidPlainly(err){ try{ err._saidPlainly = true; }catch(e){} return err
    answer to that one, and it keeps it. */
 const REFUSAL_LIFTED_BY = {
   plan_required: 'plans', plan_limit: 'plans', job_limit: 'plans',
-  quota_day: 'plans', quota_month: 'plans', img_quota: 'plans',
+  quota_day: 'plans', quota_month: 'plans',
   free_capacity: 'plans', team_full: 'team',
 };
 function _refusalRoute(code){ return REFUSAL_LIFTED_BY[String(code || '')] || ''; }
@@ -2383,28 +2383,6 @@ function showAttChip(){
 function fmtSize(b){ if(b<1024) return b+'B'; if(b<1024*1024) return (b/1024).toFixed(1)+'KB'; return (b/(1024*1024)).toFixed(1)+'MB'; }
 
 
-const IMG_STYLES={
-  'Normal':'',   // exact words, no style modifiers - the prompt is passed as typed
-  'Photorealistic':'photorealistic, professional DSLR photography, ultra-detailed, sharp focus, 8k uhd, award winning photography, natural lighting, hyperrealistic',
-  'Cinematic':'cinematic photography, dramatic lighting, shallow depth of field, film grain, anamorphic lens, movie still, blockbuster quality',
-  'Digital Art':'vibrant digital art, highly detailed illustration, concept art, trending on artstation, professional quality',
-  'Oil Painting':'classical oil painting, rich impasto texture, masterful brushwork, fine art gallery quality, museum quality',
-  'Watercolor':'beautiful watercolor painting, soft flowing colors, delicate washes, luminous transparency, professional illustration',
-  'Anime':'high quality anime style, vibrant colors, detailed linework, professional anime production quality',
-  '3D Render':'photorealistic 3D render, global illumination, studio lighting, octane render, ultra detailed, 8k',
-  'Sketch':'detailed pencil sketch, expert draftsmanship, fine linework, cross-hatching, professional illustration',
-  'Vintage':'vintage 35mm film photograph, kodachrome colors, retro aesthetics, nostalgic, film grain',
-  'Fantasy Art':'epic fantasy illustration, intricate magical details, dramatic cinematic lighting, painterly, mythical',
-};
-const BLOCKED=['explicit nudity','pornographic','nsfw','erotic','hentai','child sexual',
-  'nudify','undress','deepfake nude','deepfake porn','deep nude','revenge porn',
-  'non-consensual','nonconsensual','underage','jailbait','loli','shota','cp for'];
-
-/* Light prompt enhancement: when a prompt looks like it names a real person
-   doing something, phrase it so the image model renders a clearer likeness.
-   This does NOT search the web for the person or use reference photos - it
-   only improves the text prompt. Public-figure depiction is allowed for
-   editorial/creative use per the content policy. */
 /* ── IMAGE AND VIDEO GENERATION LIVED HERE ──────────────────────────────────
 
    Removed on the owner's instruction: AMV is chat, Crew and Build.
@@ -2419,6 +2397,33 @@ const BLOCKED=['explicit nudity','pornographic','nsfw','erotic','hentai','child 
    Attaching a picture to a chat message is NOT this and stays: it is an input,
    it costs nothing to produce, and it makes chat better. showAttChip and
    fmtSize above are that path. */
+
+/* AMVCurrency sat inside the span that image and video generation were cut
+   from, and went with them. _localizePrices survived because it is not part of
+   that feature - it is every price on the pricing page - so the removal left a
+   function calling an object that no longer existed. It throws inside a
+   try/catch, which is the worst version of this: no error anybody sees, and
+   every local-currency estimate silently blank for everyone outside the US.
+   Deleting a feature means deleting the feature, not the lines near it. */
+/* ── LOCAL CURRENCY (display only, USD-pegged) ─────────────────────────────
+   Prices are always denominated and CHARGED in US dollars. We show a local-
+   currency ESTIMATE for convenience, computed from the USD price at an
+   indicative FX rate. Crucially there are NO regional/country discounts: the
+   amount is the same real value everywhere, so switching region (VPN, spoofed
+   locale) changes only the label, never what you pay. That removes the
+   "cheap-country storefront" arbitrage (the Argentina-priced-store trick) and
+   keeps billing simple and compliant. Location is inferred from the browser
+   locale only - no GPS permission, no precise-location tracking. */
+const AMVCurrency = {
+  // Indicative USD -> local rates. DISPLAY ONLY.
+  FX:{USD:1,EUR:0.92,GBP:0.79,CAD:1.36,AUD:1.52,INR:83,JPY:157,BRL:5.1,MXN:17,ZAR:18.5,AED:3.67,SGD:1.35,CHF:0.88,SEK:10.5,NOK:10.7,DKK:6.9,PLN:4,TRY:32,NZD:1.64,HKD:7.8,KRW:1350,CNY:7.2,PHP:57,IDR:15800,THB:36,MYR:4.7,VND:25000,NGN:1500,EGP:48,ARS:900,CLP:950,COP:3900,SAR:3.75,ILS:3.7,CZK:23,HUF:360,RON:4.6,UAH:40},
+  CUR_BY_REGION:{AT:'EUR',BE:'EUR',HR:'EUR',CY:'EUR',EE:'EUR',FI:'EUR',FR:'EUR',DE:'EUR',GR:'EUR',IE:'EUR',IT:'EUR',LV:'EUR',LT:'EUR',LU:'EUR',MT:'EUR',NL:'EUR',PT:'EUR',SK:'EUR',SI:'EUR',ES:'EUR',GB:'GBP',CA:'CAD',AU:'AUD',IN:'INR',JP:'JPY',BR:'BRL',MX:'MXN',ZA:'ZAR',AE:'AED',SG:'SGD',CH:'CHF',SE:'SEK',NO:'NOK',DK:'DKK',PL:'PLN',TR:'TRY',NZ:'NZD',HK:'HKD',KR:'KRW',CN:'CNY',PH:'PHP',ID:'IDR',TH:'THB',MY:'MYR',VN:'VND',NG:'NGN',EG:'EGP',AR:'ARS',CL:'CLP',CO:'COP',SA:'SAR',IL:'ILS',CZ:'CZK',HU:'HUF',RO:'RON',UA:'UAH',US:'USD'},
+  region(){ try{ const langs=(navigator.languages&&navigator.languages.length?navigator.languages:[navigator.language||'en-US']); for(const l of langs){ const p=String(l).split('-'); if(p[1]) return p[1].toUpperCase(); } }catch(e){} return ''; },
+  currency(){ try{ const o=loadStr('amv_currency'); if(o&&this.FX[o]) return o; }catch(e){} const c=this.CUR_BY_REGION[this.region()]; return (c&&this.FX[c])?c:'USD'; },
+  isLocal(){ return this.currency()!=='USD'; },
+  fmt(usd){ const c=this.currency(); const amt=usd*(this.FX[c]||1); const zero=['JPY','INR','KRW','IDR','VND','CLP','COP','NGN','HUF','ARS'].includes(c)||amt>=1000; try{ return new Intl.NumberFormat(undefined,{style:'currency',currency:c,maximumFractionDigits:zero?0:2}).format(amt);}catch(e){ return c+' '+(zero?Math.round(amt):amt.toFixed(2)); } }
+};
+try{ window.AMVCurrency=AMVCurrency; }catch(e){}
 
 function _localizePrices(root){
   try{

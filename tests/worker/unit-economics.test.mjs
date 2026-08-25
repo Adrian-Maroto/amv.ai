@@ -97,13 +97,13 @@ section('Where the money goes, and what caching is worth');
   const env = makeEnv(); await seed(env);
   const mk = W.monthKey();
   await W.counter(env, `featcost:chat:${mk}`, { op: 'incr', amount: 40 });
-  await W.counter(env, `featcost:image:${mk}`, { op: 'incr', amount: 220 });
+  await W.counter(env, `featcost:sms:${mk}`, { op: 'incr', amount: 220 });
   await W.counter(env, `cachesave:${mk}`, { op: 'incr', amount: 63.5 });
   const d = await (await dash(env)).json();
-  ok(d.margin.featureCost.image === 220, 'spend is split by feature', d.margin.featureCost);
-  ok(d.margin.featureCost.image > d.margin.featureCost.chat,
-     'so "images are eating the margin while chat is fine" is visible at a glance');
-  ok(!('video' in d.margin.featureCost), 'features with no spend are omitted rather than shown as zero');
+  ok(d.margin.featureCost.sms === 220, 'spend is split by feature', d.margin.featureCost);
+  ok(d.margin.featureCost.sms > d.margin.featureCost.chat,
+     'so "one feature is eating the margin while the rest are fine" is visible at a glance');
+  ok(!('widget' in d.margin.featureCost), 'features with no spend are omitted rather than shown as zero');
   ok(d.margin.cacheSavedUSD === 63.5, 'and caching reports what it saved, which is otherwise invisible money',
      d.margin.cacheSavedUSD);
 }

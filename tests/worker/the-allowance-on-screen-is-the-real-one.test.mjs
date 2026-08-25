@@ -7,18 +7,20 @@
 
    Both failures were live.
 
-   The images bar was a device-local count against a hardcoded 4. The real cap
-   is 100 a day on Pro and 2000 on Ultra, so somebody paying was shown a ceiling
-   five hundred times smaller than the one they bought. Nothing errored; the bar
-   just filled up and said upgrade, to a customer already on the top plan.
+   Both failures were live, on the two allowances that no longer exist. The
+   images bar was a device-local count against a hardcoded 4 while the real cap
+   was 100 a day on Pro - somebody paying was shown a ceiling twenty-five times
+   smaller than the one they bought, and told to upgrade while already on the
+   top plan. The video allowance was reported by a route no screen read, so it
+   was invisible until generation refused.
 
-   Video was worse in the other direction: `/v1/video/list` existed, worked, and
-   had tests, and no screen anywhere read it. The allowance somebody pays twenty
-   videos a month for was invisible until generation refused.
-
-   So this file asserts one thing in several ways: every allowance a person can
-   spend is reported by the server, from the same counter that enforces it, and
-   moves when the plan moves. */
+   Removing image and video generation does not retire the property, it narrows
+   it to the allowance that is left and matters most: TOKENS. So this file
+   asserts one thing in several ways - every allowance a person can spend is
+   reported by the server, from the same counter that enforces it, and moves
+   when the plan moves. The reported number is checked by being SPENT, because
+   a hardcoded figure that happens to match one plan passes any assertion that
+   only reads it. */
 import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -30,7 +32,7 @@ const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 const client = readFileSync(join(ROOT, 'app.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'allowance.harness.mjs');
-writeFileSync(harness, src + '\nexport { DB, PLAN_LIMITS };\n');
+writeFileSync(harness, src + '\nexport { DB, PLAN_LIMITS, todayKey, _periodKeyOf };\n');
 const W = await import(harness + '?t=' + Date.now());
 const worker = W.default;
 
@@ -41,6 +43,9 @@ function mkEnv(extra) {
   const m = new Map(); const vals = new Map();
   return Object.assign({
     JWT_SECRET: 'j', ADMIN_TOKEN: 'a', APP_URL: 'https://amv.test',
+    /* Exposed so a test can fill an allowance to a chosen point and watch where
+       the refusal lands, rather than making thousands of requests to get there. */
+    _counters: vals,
     AMV_KV: {
       _map: m,
       async get(k) { return m.has(k) ? m.get(k) : null; },
@@ -91,36 +96,47 @@ section('Every allowance a person can spend is reported');
   const env = mkEnv();
   const tok = await signedIn(env, 'pro');
   const u = (await post(env, '/v1/usage', {}, tok)).body;
-  ok(!!u.day && !!u.month, 'tokens, as before', !!u.day);
-  ok(!!u.images, 'images', u.images);
-  ok(!!u.videos, 'and video, which nothing reported at all before', u.videos);
+  ok(!!u.day && !!u.month, 'the day and the month, with a used and a limit on each', u.day);
+  ok(u.day.limit === W.PLAN_LIMITS.pro.dayTokens,
+     'and the day\u2019s limit is the plan\u2019s own number', { reported: u.day.limit, plan: W.PLAN_LIMITS.pro.dayTokens });
+  ok(u.month.limit === W.PLAN_LIMITS.pro.monthTokens,
+     'as is the month\u2019s', { reported: u.month.limit, plan: W.PLAN_LIMITS.pro.monthTokens });
+  ok(typeof u.month.costUSD === 'number', 'with what it has cost so far', u.month.costUSD);
 }
 
 section('And it is the number the server actually enforces');
 {
-  /* The point of the whole file. Read the reported cap, then spend up to it and
-     one past it, and require the refusal to land exactly where the screen said
-     it would. A hardcoded number on a page cannot pass this. */
-  const env = mkEnv();
+  /* The point of the whole file. Read the reported limit, fill the counter to
+     one token short of it, and require the next turn to be refused - at the
+     number the screen showed, not at some other number the handler happens to
+     hold. A hardcoded figure on a page cannot pass this, because the fill is
+     computed from what the page was told. */
+  const env = mkEnv({ AMV_MODEL_KEY: 'sk-test' });
   const tok = await signedIn(env, 'pro');
   const u = (await post(env, '/v1/usage', {}, tok)).body;
-  const cap = (u.images || {}).limit;
-  ok(cap != null && cap === W.PLAN_LIMITS.pro.imagesDay,
-     'the reported image cap is the plan’s own number', { reported: cap, plan: W.PLAN_LIMITS.pro.imagesDay });
-  ok(cap > 4, 'and is nothing like the 4 the screen used to claim', cap);
-  if (cap == null) throw new Error('no image cap reported - the sections below cannot run');
+  const limit = u.day.limit;
+  ok(limit > 0, 'the day\u2019s allowance was reported', limit);
 
-  /* Spend the whole day's allowance through the metering route. */
-  let lastOk = 0, refusedAt = 0;
-  for (let i = 1; i <= cap + 1; i++) {
-    const r = await post(env, '/v1/image', {}, tok);
-    if (r.status === 200) lastOk = i; else { refusedAt = i; break; }
-  }
-  ok(lastOk === cap, 'every image up to the reported cap is allowed', { lastOk, cap });
-  ok(refusedAt === cap + 1, 'and the one past it is refused, at exactly the number shown', refusedAt);
+  const ent = await W.DB.get(env, 'ent', USER);
+  const dayName = `usg:${USER}:${W.todayKey()}`;
+  const chat = () => post(env, '/v1/messages',
+    { model: 'amv-core', messages: [{ role: 'user', content: 'hello' }] }, tok);
 
-  const after = (await post(env, '/v1/usage', {}, tok)).body;
-  ok(((after.images) || {}).used === cap, 'and the screen now shows the allowance as spent', (after.images || {}).used);
+  /* One token short of the reported limit. Any reservation at all is now more
+     than what is left, so the refusal has to come from the allowance rather
+     than from anything else that can refuse a turn. */
+  env._counters.set(dayName, limit - 1);
+  const over = await chat();
+  ok(over.status === 429, 'a turn that does not fit the reported allowance is refused', over.status);
+  ok(/quota|allowance|limit/i.test(JSON.stringify(over.body)),
+     'and says it is the allowance, not something the customer cannot act on', over.body);
+
+  /* And the same request, with the same everything, is NOT refused when the
+     counter is empty - so the refusal above is the allowance and not a
+     permanent property of this request. */
+  env._counters.set(dayName, 0);
+  const under = await chat();
+  ok(under.status !== 429, 'while the same turn on an empty allowance is not', under.status);
 }
 
 section('A bigger plan really is a bigger number');
@@ -133,28 +149,20 @@ section('A bigger plan really is a bigger number');
   await W.DB.put(env, 'ent', USER, { plan: 'ultra', source: 'stripe', updatedAt: Date.now(), renewedAt: Date.now() });
   const ultra = (await post(env, '/v1/usage', {}, tok)).body;
 
-  const fi = (free.images || {}).limit, ui = (ultra.images || {}).limit;
-  ok(ui != null && fi != null && ui > fi, 'paying raises the image allowance', { free: fi, ultra: ui });
-  const fv = (free.videos || {}).limit, uv = (ultra.videos || {}).limit;
-  ok(uv != null && fv != null && uv > fv, 'and the video allowance', { free: fv, ultra: uv });
-  ok(fv === 0, 'while a free account is told plainly that video is not on their plan', fv);
+  ok(ultra.day.limit > free.day.limit, 'paying raises the daily allowance', { free: free.day.limit, ultra: ultra.day.limit });
+  ok(ultra.month.limit > free.month.limit, 'and the monthly one', { free: free.month.limit, ultra: ultra.month.limit });
+  ok(ultra.plan === 'ultra', 'and the screen is told which plan it is reading', ultra.plan);
 }
 
-section('An allowance that cannot be spent says so rather than promising it');
+section('A shared allowance says it is shared');
 {
-  /* Video is the honest-degradation case: the plan grants it, the deployment
-     may not have it switched on. Showing "0 of 120 used" to somebody who cannot
-     make a video at all is a promise AMV cannot keep. */
+  /* Somebody on a team sees usage that is not all theirs. "Used" meaning the
+     whole team is a surprise otherwise - they go looking for what they spent
+     and find a number they did not spend. */
   const env = mkEnv();
-  const tok = await signedIn(env, 'ultra');
-  const u = (await post(env, '/v1/usage', {}, tok)).body;
-  ok((u.videos || {}).configured === false,
-     'with no video provider configured, the screen is told so', (u.videos || {}).configured);
-
-  const on = mkEnv({ VIDEO_API_URL: 'https://v.example', VIDEO_API_KEY: 'k', VIDEO_MODEL: 'm' });
-  const tok2 = await signedIn(on, 'ultra');
-  const u2 = (await post(on, '/v1/usage', {}, tok2)).body;
-  ok((u2.videos || {}).configured === true, 'and told when it really is available', (u2.videos || {}).configured);
+  const tok = await signedIn(env, 'pro');
+  const solo = (await post(env, '/v1/usage', {}, tok)).body;
+  ok(solo.shared === null, 'an ordinary account is not told about a team it is not on', solo.shared);
 }
 
 section('The screen reads those numbers, rather than inventing its own');
@@ -162,10 +170,10 @@ section('The screen reads those numbers, rather than inventing its own');
   /* The defect was never in the Worker - it was a page confidently drawing a
      limit nobody enforced. Checked against the shipped bundle, because that is
      what a person looks at. */
-  ok(/d\.images/.test(client) && /d\.videos/.test(client),
-     'the usage screen reads the reported image and video allowances', true);
+  ok(/d\.day/.test(client) && /d\.month/.test(client),
+     'the usage screen reads the reported day and month allowances', true);
   ok(!/Images<\/span><span>'\+ic\+' \/ 4</.test(client),
-     'and no longer draws images against a hardcoded 4', true);
+     'and draws no allowance against a hardcoded number', true);
   ok(!/'\+mc\+' \/ 30</.test(client),
      'nor messages against a hardcoded 30', true);
 }

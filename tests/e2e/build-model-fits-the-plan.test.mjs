@@ -159,7 +159,7 @@ section('The chip names what will actually run');
 section('A custom plan is left alone');
 {
   /* Its allowance is negotiated per account and the client cannot compute it,
-     so the server decides - same rule as the image caps. */
+     so the server decides - same rule as every other allowance. */
   const r = await page.evaluate(() => {
     saveStr('amv_plan', 'custom');
     _setSectionModel('code', 'smart');

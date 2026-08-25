@@ -27,7 +27,10 @@
                   exists precisely to finish an unfinished sale - refusing to
                   run because the claim said it was finished.
      vidrefund    a refund whose counter write failed never happened, and never
-                  would: the next poll saw the claim and stopped.
+                  would: the next poll saw the claim and stopped. That handler
+                  is gone with image and video generation; what it taught is
+                  not, so the mechanism it exercised is still asserted below
+                  under a neutral key.
      inviteused   every exit that is not a join burned a one-time invitation.
                   One of those exits is the team record being momentarily busy,
                   which resolves in about a second. Somebody clicks their
@@ -238,32 +241,25 @@ section('A sale that fails at the very last step finishes that step, and only th
   ok(log.length === 1, 'and the platform fee is on the books exactly once', log.length);
 }
 
-section('A refund whose write fails is refunded by the next poll');
+section('A claim given back after a failure can be taken again');
 {
+  /* This was written against the video refund poll, which no longer exists.
+     What it proves is the mechanism underneath every caller that hand-rolls
+     _claimOnce rather than going through _onceOrRetry: give the claim back and
+     the retry can do the work; do not, and the work never happens again. Keyed
+     on a name that belongs to no feature, so it cannot rot into a statement
+     about something that was deleted. */
   const env = mkEnv();
-  FAIL = 'vid:someone@test.com';
-  const first = await W._claimOnce(env, 'vidrefund', 'vid_9', W.CLAIM_ONCE_TTL_S);
-  ok(first === true, 'the first attempt claims the refund', first);
-  /* What the handler does on a failed counter write. */
-  try { throw new Error('counter refused'); } catch (e) { await W._releaseClaim(env, 'vidrefund', 'vid_9'); }
+  FAIL = 'clm:someone@test.com';
+  const first = await W._claimOnce(env, 'clmtest', 'clm_9', W.CLAIM_ONCE_TTL_S);
+  ok(first === true, 'the first attempt claims the work', first);
+  try { throw new Error('counter refused'); } catch (e) { await W._releaseClaim(env, 'clmtest', 'clm_9'); }
   FAIL = null;
   advance(60 * 1000);
-  ok(await W._claimOnce(env, 'vidrefund', 'vid_9', W.CLAIM_ONCE_TTL_S) === true,
-     'and because it gave the claim back, the next poll can actually refund', true);
-  ok(await W._claimOnce(env, 'vidrefund', 'vid_9', W.CLAIM_ONCE_TTL_S) === false,
+  ok(await W._claimOnce(env, 'clmtest', 'clm_9', W.CLAIM_ONCE_TTL_S) === true,
+     'and because it gave the claim back, the retry can actually run', true);
+  ok(await W._claimOnce(env, 'clmtest', 'clm_9', W.CLAIM_ONCE_TTL_S) === false,
      'after which it is spent for good', true);
-}
-
-section('The handler really does release it, not just the test');
-{
-  /* The section above proves the mechanism. This proves the CODE uses it -
-     without this, the assertion above is a statement about _releaseClaim and
-     nothing at all about the video path. */
-  const vid = codeOnly(functionBody(src, 'videoStatus') || '');
-  const where = vid.indexOf("'vidrefund'");
-  ok(where > 0, 'the video path claims its refund', where);
-  ok(/_releaseClaim\(env, 'vidrefund'/.test(vid),
-     'and gives the claim back when the refund does not happen', true);
 }
 
 section('An invitation is spent only if somebody actually joined');

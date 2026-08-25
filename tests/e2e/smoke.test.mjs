@@ -3,7 +3,7 @@
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
 
-const TABS = ['chat','images','video','crew','handoff','studio','dev','lab',
+const TABS = ['chat','crew','handoff','studio','dev','lab',
               'projects','memory','team','marketplace','integrations','tasks'];
 
 const app = await bootApp();

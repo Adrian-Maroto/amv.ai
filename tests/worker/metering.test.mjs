@@ -14,7 +14,7 @@ const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'meter.harness.mjs');
 writeFileSync(harness, src +
-  '\nexport { aiProxy, imageGenerate, imageMeter, effectiveLimits, PLAN_LIMITS, PLAN_RANK, ENGINES };' +
+  '\nexport { aiProxy, effectiveLimits, PLAN_LIMITS, PLAN_RANK, ENGINES };' +
   '\nexport function __setRequireUser(fn){ requireUser = fn; }\n');
 const W = await import(harness + '?t=' + Date.now());
 
@@ -211,24 +211,6 @@ for (let i = 0; i < rpm + 4; i++) {
 }
 ok(rateBlocked > 0, `more than ${rpm} requests/min is throttled`, rateBlocked);
 
-section('ATTACK 5: generate unlimited images on a free account');
-
-counters.clear(); resetGlobal();
-CURRENT = { email: 'imgs@test.com' };
-await setPlan('imgs@test.com', 'free');
-const imgCap = W.PLAN_LIMITS.free.imagesDay;   // 10
-
-let imgAllowed = 0, imgBlocked = 0;
-for (let i = 0; i < imgCap + 5; i++) {
-  const rr = await W.imageMeter(new Request('https://api.amv.dev/v1/image', {
-    method: 'POST', headers: { Authorization: 'Bearer tok', 'Content-Type': 'application/json' },
-    body: JSON.stringify({})
-  }), env);
-  if (rr.status === 429) imgBlocked++; else imgAllowed++;
-}
-ok(imgBlocked > 0, 'image generation is capped per day on the free plan', { imgAllowed, imgBlocked });
-ok(imgAllowed <= imgCap + 1, 'and the cap is roughly the plan"s imagesDay', { imgAllowed, imgCap });
-
 /* ────────────────────────────────────────────────────────────────────────
    ATTACK: fire everything AT ONCE.
 
@@ -241,7 +223,7 @@ ok(imgAllowed <= imgCap + 1, 'and the cap is roughly the plan"s imagesDay', { im
    Worker silently falls back to a KV counter that its own comments admit is
    "NOT atomic".
    ──────────────────────────────────────────────────────────────────────── */
-section('ATTACK 6: concurrent requests (the race that bypasses the cap)');
+section('ATTACK 5: concurrent requests (the race that bypasses the cap)');
 
 counters.clear(); resetGlobal();
 CURRENT = { email: 'racer@test.com' };
@@ -262,7 +244,7 @@ ok(burned <= W.PLAN_LIMITS.free.dayTokens * 1.5,
    'a parallel burst cannot blow far past the daily cap',
    { landed, burned, cap: W.PLAN_LIMITS.free.dayTokens });
 
-section('ATTACK 7: unauthenticated access');
+section('ATTACK 6: unauthenticated access');
 
 W.__setRequireUser(async () => null);
 r = await W.aiProxy(msg(basePayload()), env, ctx);

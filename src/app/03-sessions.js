@@ -1121,14 +1121,14 @@ try{ window._mobileShowOutput=_mobileShowOutput; }catch(e){}
    automatically cleared - without this, one account's Recents / Dev project /
    Lab code leak into the next account signed in on the same browser. */
 /* The S fields that may legitimately outlive a sign-out: where you were, what
-   the sidebar looked like, which model and image style you picked. Anything NOT
+   the sidebar looked like, which model you picked. Anything NOT
    here and not cleared below is a field nobody has classified, and
    tests/e2e/a-reset-really-resets fails on it - which is how _entVerified and
    the admin totals were caught. A view preference crossing accounts is
    untidy; content or an entitlement crossing accounts is a defect. */
 const _S_SIGNOUT_KEEP = [
   'tab','sbOpen','openTabs','settingsPane','starFilter','busy','ck','se','sp',
-  'model','imgStyle','imgRatio','_researchDepth','_researchTier',
+  'model','_researchDepth','_researchTier',
   '_adminTab','_mktTab','_setSearch','user',
 ];
 try{ window._S_SIGNOUT_KEEP=_S_SIGNOUT_KEEP; }catch(e){}

@@ -18,7 +18,7 @@ const PHONE = { width: 390, height: 844 };
 const SMALL = { width: 320, height: 568 };     // the narrowest phone still in use
 
 /* Every tab reachable from the app shell. */
-const TABS = ['chat', 'images', 'video', 'workspaces', 'memory', 'usage', 'billing', 'plans',
+const TABS = ['chat', 'workspaces', 'memory', 'usage', 'billing', 'plans',
               'settings', 'help', 'apps', 'tasks', 'integrations', 'crew', 'studio', 'dev',
               'handoff', 'lab', 'market'];
 
@@ -165,7 +165,7 @@ section('The composer stays reachable with the keyboard up');
 section('Every control on a phone is big enough to hit');
 {
   /* Measured, not assumed. At 390px the Crew screen alone had 39 job toggles
-     under 32px tall, plus the selects and chips on chat, Lab, Dev and Video. A
+     under 32px tall, plus the selects and chips on chat, Lab and Dev. A
      control you miss is a control that does not work, and a screen that merely
      FITS on a phone is not the same as one you can use on a phone.
 
@@ -175,7 +175,7 @@ section('Every control on a phone is big enough to hit');
   const bad = await page.evaluate(async () => {
     saveStr('amv_plan', 'ultra');
     const out = [];
-    for (const t of ['crew', 'chat', 'lab', 'video', 'dev', 'studio', 'market', 'plans', 'settings']) {
+    for (const t of ['crew', 'chat', 'lab', 'dev', 'studio', 'market', 'plans', 'settings']) {
       S.tab = t; try { setTab(t); } catch (e) {}
       await new Promise(r => setTimeout(r, 110));
       const small = [];

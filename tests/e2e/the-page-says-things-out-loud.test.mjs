@@ -85,7 +85,7 @@ section('An answer arriving is announced at both ends');
 
 section('Headings describe the page, on every tab');
 {
-  const TABS = ['chat', 'images', 'crew', 'dev', 'market', 'plans', 'settings', 'help', 'usage', 'team'];
+  const TABS = ['chat', 'crew', 'dev', 'market', 'plans', 'settings', 'help', 'usage', 'team'];
   /* Clear the conversation the section above left behind. With messages present
      chat shows the transcript instead of its home screen, which is where its h1
      lives - so this reported chat as having no headings at all, and the finding
@@ -137,7 +137,7 @@ section('Every field says what it is for');
       });
     }
     return bad;
-  }, ['chat', 'images', 'crew', 'dev', 'market', 'plans', 'settings', 'help', 'team']);
+  }, ['chat', 'crew', 'dev', 'market', 'plans', 'settings', 'help', 'team']);
   ok(r.length === 0, 'no field is announced as nothing but its own value', r.slice(0, 6));
 }
 

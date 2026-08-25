@@ -26,7 +26,7 @@ const server=createServer((_q,s)=>{s.writeHead(200,{'Content-Type':'text/html'})
 await new Promise(r=>server.listen(9425,r));
 const LAUNCH=process.env.PLAYWRIGHT_BROWSERS_PATH?{executablePath:process.env.PLAYWRIGHT_BROWSERS_PATH+'/chromium'}:{};
 const browser=await chromium.launch(LAUNCH);
-const TABS=['chat','dev','lab','images','video','crew','market','dashboard'];
+const TABS=['chat','dev','lab','crew','market','dashboard'];
 
 for (const [label,w,h,floor] of [['desktop',1280,900,24],['phone',390,844,24]]) {
   const page=await browser.newPage({viewport:{width:w,height:h}});

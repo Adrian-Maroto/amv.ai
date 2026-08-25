@@ -11,11 +11,11 @@
 
    Nothing could see it from either end. The client assembled the tools and
    believed it had sent them. The system prompt told the model "you have real
-   tools: generate_image, run_code, build_app" - and then handed it none, so it
-   could not have called one if it wanted to. Someone asking for an image got a
-   sentence about generating an image. Every line of _amvRunTool - real image
-   generation, real code execution, real deploys - was unreachable in
-   production, and passed review, because nothing tested this function.
+   tools: run_code, build_app, crew_add" - and then handed it none, so it could
+   not have called one if it wanted to. Someone asking for an app got a sentence
+   about building one. Every line of _amvRunTool - real code execution, real
+   deploys, real Crew jobs - was unreachable in production, and passed review,
+   because nothing tested this function.
 
    The lesson is the one these cases enforce: the allowlist and the tools have
    to be checked against each other, or they drift the moment either changes.
@@ -41,9 +41,9 @@ const names = list => W._safeTools(list).map(t => t.name);
 
 section('A custom tool with no type is forwarded, which is the whole bug');
 {
-  const out = W._safeTools([tool('generate_image')]);
+  const out = W._safeTools([tool('run_code')]);
   ok(out.length === 1, 'it survives the filter', out.length);
-  ok(out[0].name === 'generate_image', 'by name', out[0].name);
+  ok(out[0].name === 'run_code', 'by name', out[0].name);
   ok(!!out[0].input_schema, 'with its schema, or the model cannot call it', !!out[0].input_schema);
   ok(typeof out[0].description === 'string' && out[0].description.length > 0,
      'and its description, which is how the model knows when to use it', out[0].description);
@@ -80,9 +80,9 @@ section('A tool AMV did not write is still refused');
 {
   ok(names([tool('exfiltrate_everything')]).length === 0,
      'an invented name does not get through', names([tool('exfiltrate_everything')]));
-  ok(names([tool('generate_image'), tool('rm_rf'), tool('run_code')]).join(',') === 'generate_image,run_code',
+  ok(names([tool('build_app'), tool('rm_rf'), tool('run_code')]).join(',') === 'build_app,run_code',
      'and it is dropped from the middle of a real list without taking the rest with it',
-     names([tool('generate_image'), tool('rm_rf'), tool('run_code')]));
+     names([tool('build_app'), tool('rm_rf'), tool('run_code')]));
 }
 
 section('Web search still works exactly as it did');
@@ -99,7 +99,7 @@ section('Web search still works exactly as it did');
 
 section('Both kinds travel together, because a real turn sends both');
 {
-  const out = names([websearch, tool('generate_image'), tool('crew_add')]);
+  const out = names([websearch, tool('run_code'), tool('crew_add')]);
   ok(out.length === 3, 'search and AMV\'s own tools survive the same call', out);
 }
 
@@ -124,7 +124,7 @@ section('The bounds the filter exists for are real');
 section('Nothing here crashes on rubbish');
 {
   /* This runs on every single chat turn. A throw is an outage. */
-  ok(W._safeTools([null, undefined, 0, '', [], 'generate_image']).length === 0,
+  ok(W._safeTools([null, undefined, 0, '', [], 'run_code']).length === 0,
      'junk in the list is skipped', true);
   ok(W._safeTools([]).length === 0, 'an empty list is empty', true);
   const circular = tool('crew_add'); circular.input_schema.self = circular.input_schema;

@@ -24,7 +24,7 @@ await page.waitForTimeout(900);
 const r=await page.evaluate(async()=>{
   S.user={name:'T',email:'t@amv.dev',ini:'T'}; document.getElementById('ck')?.remove();
   const bad=new Set();
-  for(const t of ['chat','images','video','crew','market','dashboard']){
+  for(const t of ['chat','crew','market','dashboard']){
     setTab(t); await new Promise(r=>setTimeout(r,280));
     for(const el of document.querySelectorAll('input,textarea,select')){
       const rect=el.getBoundingClientRect(); if(rect.width<2) continue;

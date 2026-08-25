@@ -8,8 +8,8 @@
    It was read in exactly two places: whether a new checkout could start, and
    whether a referral paid out. Neither of those is where the money goes.
 
-   So a blocked account went on calling the model, generating images, generating
-   video, texting, serving a widget on a public website and running scheduled
+   So a blocked account went on calling the model, texting, serving a widget on
+   a public website and running scheduled
    work every hour - every one of them an invoice AMV pays a provider - and it
    could still withdraw marketplace earnings to a PayPal address on the way out.
    The one thing it could not do was pay AMV again.
@@ -40,7 +40,7 @@ const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'hold.harness.mjs');
 writeFileSync(harness, src +
-  '\nexport { DB, setEntitlement, todayKey, _abuseRecord, _abuseStatus, _accountHold, runDueAutomations, ACCOUNT_HOLD_MESSAGE };\n');
+  '\nexport { DB, setEntitlement, todayKey, _abuseRecord, _abuseStatus, _accountHold, _spendGate, runDueAutomations, ACCOUNT_HOLD_MESSAGE };\n');
 const W = await import(harness + '?t=' + Date.now());
 const worker = W.default;
 
@@ -79,6 +79,17 @@ for (const m of code.matchAll(/`cost:\$\{/g)) {
   if (!fn) continue;
   const body = codeOnly(functionBody(src, fn));
   if (/op:\s*'checkCap'/.test(body) || /_reserveUSD\(/.test(body)) SPENDERS.add(fn);
+}
+/* AND the paths that ask the shared gate instead of building the counter name
+   themselves, which is the better spelling and is where SMS ended up. The
+   derivation above finds a path by the counter it names; a path that delegates
+   names none, so it would have dropped out of the roster the moment it was
+   improved - and dropping out of a roster looks exactly like being in order.
+   That is the same failure this file is about, one level up: a detector that
+   goes quiet when the thing it watches changes shape. */
+for (const m of code.matchAll(/_spendGate\(env,/g)) {
+  const fn = enclosing(m.index);
+  if (fn && fn !== '_spendGate') SPENDERS.add(fn);
 }
 
 section('The paths that spend an account’s money were found');
@@ -154,11 +165,9 @@ section('The flag survives a plan change, which is the one thing they will do ne
 
 /* ── and now the same claims, against the running Worker ───────────────── */
 
-const PROVIDER = { chat: 0, image: 0, video: 0 };
+const PROVIDER = { chat: 0 };
 globalThis.fetch = async (url) => {
   const u = String(url);
-  if (/image\.example/.test(u)) { PROVIDER.image++; return new Response(JSON.stringify({ data: [{ b64_json: 'AA' }] }), { status: 200, headers: { 'Content-Type': 'application/json' } }); }
-  if (/video\.example/.test(u)) { PROVIDER.video++; return new Response(JSON.stringify({ id: 'p1' }), { status: 200, headers: { 'Content-Type': 'application/json' } }); }
   if (/model\.example/.test(u)) {
     PROVIDER.chat++;
     return new Response('data: {"type":"content_block_delta","delta":{"text":"hi"}}\n\n', { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
@@ -172,8 +181,6 @@ function mkEnv() {
     JWT_SECRET: 'a-real-looking-secret-value-for-tests', ADMIN_TOKEN: 'admin-secret', APP_URL: 'https://amv.test',
     GLOBAL_DAILY_USD_CAP: '500',
     AMV_MODEL_KEY: 'mk', MODEL_API_URL: 'https://model.example/v1',
-    IMAGE_API_URL: 'https://image.example/v1', IMAGE_API_KEY: 'k',
-    VIDEO_API_URL: 'https://video.example/v1', VIDEO_API_KEY: 'k', VIDEO_MODEL: 'v1',
     _map: m, _vals: vals,
     AMV_KV: {
       async get(k) { return m.has(k) ? m.get(k) : null; },
@@ -238,24 +245,27 @@ section('A chargeback marks the account where the spending paths can see it');
 
 section('Nothing that costs money will run for it');
 {
-  PROVIDER.chat = PROVIDER.image = PROVIDER.video = 0;
+  PROVIDER.chat = 0;
 
   const chat = await post(env, '/v1/messages', { messages: [{ role: 'user', content: 'hello' }] }, tok);
   ok(chat.status === 403, 'chat refuses', chat.status);
   ok(chat.body.code === 'account_blocked', 'and says why in a code the client can act on', chat.body.code);
 
-  const img = await post(env, '/v1/image/generate', { prompt: 'a house' }, tok);
-  ok(img.status === 403, 'image generation refuses', img.status);
-  ok(img.body.code === 'account_blocked', 'with the same code', img.body.code);
-
-  const vid = await post(env, '/v1/video/generate', { prompt: 'a house', seconds: 5 }, tok);
-  ok(vid.status === 403, 'video refuses', vid.status);
-  ok(vid.body.code === 'account_blocked', 'with the same code', vid.body.code);
+  /* The gate every non-chat spending path goes through, asked directly. It is
+     what SMS, the widget and the automation tick all reach the hold through,
+     and it refuses before a ceiling is even consulted - so a blocked account
+     cannot spend by taking a route that is cheap rather than one that is
+     watched. */
+  const blocked = await W.DB.get(env, 'ent', SELLER);
+  const gated = await W._spendGate(env, { email: SELLER, plan: 'pro', billingSubject: SELLER,
+                                          blocked: true, blockedReason: blocked.blockedReason }, 'sms', 0.02, {});
+  ok(gated && gated.status === 403, 'the shared spending gate refuses too', gated && gated.status);
+  ok((await gated.json()).code === 'account_blocked', 'with the same code', true);
 
   await ctx.settle();
-  /* The point of all three. A refusal that still called the provider has cost
-     AMV the money it was written to save. */
-  ok(PROVIDER.chat === 0 && PROVIDER.image === 0 && PROVIDER.video === 0,
+  /* The point of both. A refusal that still called the provider has cost AMV
+     the money it was written to save. */
+  ok(PROVIDER.chat === 0,
      'and no provider was called, so nothing was billed to AMV', PROVIDER);
 }
 
