@@ -1955,6 +1955,19 @@ const CONN_PROVIDERS = {
       'calendar.read': 'https://www.googleapis.com/auth/calendar.readonly',
       'calendar.write':'https://www.googleapis.com/auth/calendar.events',
       'drive.read':    'https://www.googleapis.com/auth/drive.readonly',
+      /* SCHOOL WORK, READ-ONLY BY SCOPE RATHER THAN BY RULE.
+
+         What a student has been set and when it is due. AMV cannot turn
+         anything in, and that is not a promise in a prompt - the permission
+         that would allow it (classroom.coursework.me, WITHOUT .readonly) is
+         never requested, so Google refuses the call. A rule can be argued with;
+         a permission that was never granted cannot.
+
+         courses.readonly lists the classes. coursework.me.readonly reads what
+         THIS student was set - never coursework.students, which would read
+         other people's work. This is a minor's school record and the narrowest
+         access that does the job is the only one worth asking for. */
+      'school.read':   'https://www.googleapis.com/auth/classroom.courses.readonly https://www.googleapis.com/auth/classroom.coursework.me.readonly',
     },
   },
   microsoft: {
@@ -2906,7 +2919,7 @@ function _investText(r){
    in the prompt, in words, and instructed to say it. An inbox digest that
    quietly reports on nothing looks identical to an inbox with nothing in it,
    which is how somebody misses a fortnight of mail believing AMV was watching. */
-const AUTO_USES_ALLOWED = ['mail.read', 'calendar.read'];
+const AUTO_USES_ALLOWED = ['mail.read', 'calendar.read', 'school.read'];
 const AUTO_MAIL_MAX = 25;          // headers, not bodies
 const AUTO_EVENTS_MAX = 20;
 const AUTO_SNIPPET_MAX = 180;
@@ -2958,6 +2971,65 @@ async function _fetchCalendar(token){
   }));
 }
 
+const AUTO_COURSES_MAX = 12;
+const AUTO_WORK_PER_COURSE = 30;
+
+/* WHAT A STUDENT HAS BEEN SET, AND WHEN IT IS DUE.
+
+   Returns { items, unread }. `unread` is the list of classes that could not be
+   read, and it is returned rather than swallowed for the reason that decides
+   the whole shape of this function: a class that failed to load is NOT a class
+   with nothing due. Returning nothing for it turns "Chemistry did not load"
+   into "Chemistry has nothing due" - on a screen somebody plans their week
+   from. The student misses the deadline, and AMV told them confidently there
+   was not one.
+
+   Reading five classes out of six is genuinely useful and worth returning.
+   Presenting it as all six is the part that is not. */
+async function _fetchClassroom(token){
+  const r = await fetchDeadline(
+    'https://classroom.googleapis.com/v1/courses?studentId=me&courseStates=ACTIVE&pageSize=' + AUTO_COURSES_MAX,
+    { headers: { Authorization: 'Bearer ' + token } }, 15000);
+  if(!r.ok) throw new Error('classroom_' + r.status);
+  const d = await r.json().catch(()=>({}));
+  const courses = (d.courses || []).slice(0, AUTO_COURSES_MAX);
+  if(!courses.length) return { items: [], unread: [] };
+
+  const unread = [];
+  const per = await Promise.all(courses.map(async (c) => {
+    try{
+      const w = await fetchDeadline(
+        'https://classroom.googleapis.com/v1/courses/' + encodeURIComponent(c.id)
+        + '/courseWork?pageSize=' + AUTO_WORK_PER_COURSE + '&orderBy=dueDate%20asc',
+        { headers: { Authorization: 'Bearer ' + token } }, 15000);
+      if(!w.ok){ unread.push(String(c.name || c.id).slice(0, 60)); return []; }
+      const wd = await w.json().catch(()=>({}));
+      if(wd.error){ unread.push(String(c.name || c.id).slice(0, 60)); return []; }
+      return (wd.courseWork || []).map(x => {
+        /* Google sends the date and the time separately and either may be
+           absent. Work with no due date is real and common - reported as
+           having none rather than given an invented one, which is the same
+           rule as the unreadable class one level up. */
+        let due = '';
+        if(x.dueDate && x.dueDate.year){
+          const t = x.dueTime || {};
+          const dt = new Date(Date.UTC(x.dueDate.year, (x.dueDate.month || 1) - 1, x.dueDate.day || 1,
+                                       t.hours || 0, t.minutes || 0));
+          due = dt.toISOString();
+        }
+        return { course: String(c.name || '').slice(0, 60),
+                 title: String(x.title || '(untitled)').slice(0, 140),
+                 due, points: Number(x.maxPoints) || 0 };
+      });
+    }catch(e){ unread.push(String(c.name || c.id).slice(0, 60)); return []; }
+  }));
+
+  const items = [].concat(...per)
+    .sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999'))
+    .slice(0, 60);
+  return { items, unread };
+}
+
 /* Returns { text, missing[] }. `missing` is never swallowed - it is the
    difference between "your inbox was quiet" and "AMV could not see your
    inbox", and those must never read the same. */
@@ -2997,6 +3069,20 @@ async function _autoAccountContext(env, item, email){
           + (ev.length ? ev.map(e => '- ' + e.start + ' to ' + e.end + ' | ' + e.title
               + (e.where ? ' | at ' + e.where : '') + (e.guests ? ' | ' + e.guests + ' people' : '')).join('\n')
             : '(nothing scheduled)'));
+      } else if(need === 'school.read'){
+        const sc = await _fetchClassroom(got.token);
+        /* The unreadable classes are named IN the context the model is given,
+           not logged somewhere it cannot see. A model handed a partial list
+           with no indication it is partial will summarise it as the whole
+           week, which is the failure this whole path is shaped around. */
+        parts.push('REAL SCHOOL WORK (' + sc.items.length + ' pieces, read-only - you cannot turn anything in):\n'
+          + (sc.items.length
+              ? sc.items.map(w => '- ' + (w.due ? 'due ' + w.due : 'NO DUE DATE GIVEN')
+                  + ' | ' + w.course + ' | ' + w.title + (w.points ? ' | ' + w.points + ' points' : '')).join('\n')
+              : '(nothing set, or nothing with a deadline)')
+          + (sc.unread.length
+              ? '\n\nCOULD NOT READ: ' + sc.unread.join(', ') + '. Say so - these classes may have work due that is NOT in the list above. Do not describe this as the complete picture.'
+              : ''));
       }
     }catch(e){
       missing.push({ need, why: 'the provider refused the request (' + String((e&&e.message)||'error').slice(0,40) + ')' });

@@ -47,7 +47,29 @@ It offers `mail.read`, `mail.send`, `calendar.read`, `calendar.write`,
 `drive.read`. **It does not offer Classroom**, so it is not yet a replacement
 for (2).
 
-## What needs deciding
+## DECIDED: keep Connected accounts
+
+Approved. The migration is in stages, because the older grant has six live
+browser-side actions on it and moving them all at once is how a working feature
+becomes a broken one.
+
+**Stage 1 - done.** The two read-only Classroom scopes are on the server's
+Google provider, there is a server-side reader, and the school job is joined to
+it. That job now runs with the tab closed, which it never could before. Three
+separate joins were missing and each was invisible on its own - see
+`tests/worker/it-can-see-the-homework-and-not-hand-it-in.test.mjs`.
+
+**Stage 2 - not started.** Five browser-side actions remain on the older grant:
+`gmail_list_unread`, `gmail_send`, `calendar_list`, `calendar_create`,
+`drive_list`. Two of them WRITE, so they need the approval flow carried across
+with them, not bolted on afterwards.
+
+**Stage 3 - not started.** Retire the older grant: `connectGoogle`,
+`checkOAuthCallback`'s Google branch, `/v1/oauth/google/exchange`,
+`/v1/oauth/google/refresh`, `refreshGToken` and the in-memory token. Last,
+because until stage 2 lands it is the only thing holding those five up.
+
+## What was decided
 
 **Which system AMV keeps.** They overlap on mail, calendar and Drive, and
 holding both means two grants, two revocation paths and two places a bug can

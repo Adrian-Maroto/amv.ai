@@ -617,7 +617,12 @@ const CW_NEEDS_CHECK = {
      Google for their mail already has this. A job needing it that runs with
      nothing connected would switch on and do nothing for ever, which is the
      failure this whole table exists to prevent. */
-  'Classroom':       { label:'Google Classroom', has:()=>_cwHasGoogle() },
+  /* Asked of the CONNECTION, not of the sign-in. _cwHasGoogle answers "is
+     somebody signed in with Google", which is a different question and was
+     being used to answer this one: a student who had only ever pressed Sign in
+     with Google was told Classroom was available, switched the job on, and it
+     ran every morning with no permission to read anything. */
+  'Classroom':       { label:'Google Classroom', has:()=>_cwConnHas('school.read') },
   /* Through the one accessor, so "is an account linked" has a single definition
      that the server refresh keeps current. Reading the key directly here meant
      this screen and the investing pane could disagree. */
@@ -2279,6 +2284,18 @@ function _cwSyncLocalSched(j, turningOn){
 const _CW_NEEDS_TO_USES = {
   'Email': 'mail.read',
   'Calendar': 'calendar.read',
+  /* THE SCHOOL JOB DECLARED A NEED NOTHING COULD MAP.
+
+     school_auto says needs:'Classroom' and its instruction is written around
+     real coursework, but this table had no row for it - so _cwUsesFor returned
+     an empty list, the job never asked for school.read, and the server never
+     fetched anything. The job would switch on, run every morning, and plan a
+     week from nothing while its own prompt told the model to name any class it
+     could not read.
+
+     A `needs` string with no row here is not a smaller job, it is a job whose
+     whole input is missing, and nothing said so at any layer. */
+  'Classroom': 'school.read',
 };
 function _cwUsesFor(j){
   return String((j && j.needs) || '').split(',').map(x => x.trim())

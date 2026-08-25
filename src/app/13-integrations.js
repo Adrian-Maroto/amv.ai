@@ -862,6 +862,9 @@ const _CONN_SCOPE_WORDS = {
   'calendar.read':'read your calendar', 'calendar.write':'add and change events',
   'drive.read':'read your files', 'repo.read':'read your repositories',
   'issues.write':'open and update issues',
+  /* Said as what it can SEE and what it cannot DO, in one line, because this is
+     the one on the list a parent will read twice. */
+  'school.read':'see what you have been set at school and when it is due - it cannot turn work in',
 };
 function _connScopeWords(list){
   return (Array.isArray(list)?list:[]).map(k => _CONN_SCOPE_WORDS[k] || k);
