@@ -624,7 +624,22 @@ const CW_NEEDS_CHECK = {
   'Bank connection': { label:'a bank connection',
     has:()=>{ try{ return typeof AMVFinance!=='undefined' && AMVFinance.linked(); }catch(e){ return false; } } },
 };
-function _cwHasGoogle(){ try{ return typeof getGToken==='function' && !!getGToken(); }catch(e){ return false; } }
+/* IS GOOGLE LINKED - which is not the same as "is a token in hand right now".
+
+   This used to ask getGToken(), which was fine while the token sat on disk and
+   was therefore present the instant the page loaded. The token lives in memory
+   now, so on a fresh tab it is empty until something mints one - and this
+   function would have reported every Google-backed job as needing a connection
+   that was already there, on every single reload.
+
+   The grant is the right question anyway: it is what decides whether the job
+   CAN run, and a token is a detail of the next few minutes. */
+function _cwHasGoogle(){
+  try{
+    if(typeof _gHasGrant === 'function' && _gHasGrant()) return true;
+    return typeof getGToken === 'function' && !!getGToken();
+  }catch(e){ return false; }
+}
 
 /* ── WHERE A JOB CAN ACTUALLY RUN ────────────────────────────────────────────
 

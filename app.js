@@ -14745,7 +14745,22 @@ const CW_NEEDS_CHECK = {
   'Bank connection': { label:'a bank connection',
     has:()=>{ try{ return typeof AMVFinance!=='undefined' && AMVFinance.linked(); }catch(e){ return false; } } },
 };
-function _cwHasGoogle(){ try{ return typeof getGToken==='function' && !!getGToken(); }catch(e){ return false; } }
+/* IS GOOGLE LINKED - which is not the same as "is a token in hand right now".
+
+   This used to ask getGToken(), which was fine while the token sat on disk and
+   was therefore present the instant the page loaded. The token lives in memory
+   now, so on a fresh tab it is empty until something mints one - and this
+   function would have reported every Google-backed job as needing a connection
+   that was already there, on every single reload.
+
+   The grant is the right question anyway: it is what decides whether the job
+   CAN run, and a token is a detail of the next few minutes. */
+function _cwHasGoogle(){
+  try{
+    if(typeof _gHasGrant === 'function' && _gHasGrant()) return true;
+    return typeof getGToken === 'function' && !!getGToken();
+  }catch(e){ return false; }
+}
 
 /* ── WHERE A JOB CAN ACTUALLY RUN ────────────────────────────────────────────
 
@@ -21252,7 +21267,10 @@ function _openOAuthPopup(url, id){
   let tries=0;
   const iv=setInterval(()=>{
     tries++;
-    if(loadStr(meta.key)){ clearInterval(iv); toast(meta.name+' connected!','success'); _refreshIntegrationsUI(); }
+    /* Google's key is no longer in storage, so the poll has to ask the marker
+       instead or it would wait for a token that will never appear there. */
+    const seen = (id==='google') ? (typeof _gHasGrant==='function' && _gHasGrant()) : !!loadStr(meta.key);
+    if(seen){ clearInterval(iv); toast(meta.name+' connected!','success'); _refreshIntegrationsUI(); }
     if(tries>60 || (pop&&pop.closed)){ clearInterval(iv); _refreshIntegrationsUI(); }
   },1000);
 }
@@ -21297,7 +21315,13 @@ function disconnectIntegration(id){
     return;
   }
   try{ localStorage.removeItem(_scopeKey(m.key)); }catch(e){}
-  if(id==='google'){ try{ localStorage.removeItem(_scopeKey('amv_gtoken')); localStorage.removeItem(_scopeKey('amv_gtoken_exp')); }catch(e){} }
+  if(id==='google'){
+    /* Memory first - that is where the live token is now. The two removeItem
+       calls stay for anybody arriving from an older build who has not been
+       through the migration yet. */
+    try{ _gClear(); }catch(e){}
+    try{ localStorage.removeItem(_scopeKey('amv_gtoken')); localStorage.removeItem(_scopeKey('amv_gtoken_exp')); }catch(e){}
+  }
   toast(m.name+' disconnected','info'); _refreshIntegrationsUI();
 }
 window.connectIntegration=connectIntegration;
@@ -23574,8 +23598,7 @@ function checkOAuthCallback(){
           redirect_uri: window.location.origin + window.location.pathname })
       }).then(r=>r.json()).then(d=>{
         if(!d || !d.ok || !d.access_token) throw new Error(d && (d.error||d.need) || 'exchange failed');
-        saveStr('amv_gtoken', d.access_token);
-        saveStr('amv_gtoken_exp', String(Date.now() + ((d.expires_in||3600)-60)*1000));
+        _gSet(d.access_token, Date.now() + ((d.expires_in||3600)-60)*1000);
         try{ saveStr('amv_google_connected','1'); }catch(e){}
         toast('Google connected','success');
         try{ const back=loadStr('amv_oauth_return'); if(back) setTab(back); }catch(e){}
@@ -23612,8 +23635,12 @@ function checkOAuthCallback(){
   const token = params.get('access_token');
   const exp = parseInt(params.get('expires_in')||'3600');
   if(token){
-    saveStr('amv_gtoken', token);
-    saveStr('amv_gtoken_exp', String(Date.now()+(exp-60)*1000));
+    /* The implicit flow issues no refresh token, so this one cannot be
+       re-minted and dies with the tab. That is a real cost and it is the right
+       trade: this path only runs on a deployment with no backend, and the
+       alternative is a bearer token to somebody's mail sitting on disk with no
+       way to revoke it. Honest degradation, said out loud below. */
+    _gSet(token, Date.now()+(exp-60)*1000);
     history.replaceState(null,'',window.location.pathname);
     const ret = loadStr('amv_oauth_return')||'integrations';
     localStorage.removeItem('amv_oauth_return');
@@ -23626,6 +23653,62 @@ function checkOAuthCallback(){
    later - which quietly breaks every standing job that runs overnight, the
    exact time nobody is watching. Only possible on the auth-code flow, since
    the implicit flow never issues a refresh token. */
+/* ── THE GOOGLE ACCESS TOKEN LIVES IN MEMORY, NOT IN STORAGE ─────────────────
+
+   It was in localStorage as `amv_gtoken`: a live bearer token to somebody's
+   Gmail, Calendar and Drive, readable by any script that ends up on the page,
+   and still sitting there long after the tab was closed.
+
+   The thing that makes removing it easy is that it was never needed there. The
+   server already holds the refresh token, and refreshGToken below already mints
+   a fresh access token from it on demand. Persisting the access token bought
+   exactly one saved round trip on page load, and cost a stored credential.
+
+   It also closes a case the sign-out list cannot. `amv_gtoken` is a GLOBAL key,
+   cleared by _SIGNOUT_CLEAR_GLOBAL when somebody signs out properly - which is
+   the right fix for the path it covers, and it only covers that path. A closed
+   laptop, a crashed tab, a browser quit: none of those run sign-out, and the
+   token stayed for whoever opened AMV next on that machine. A token in memory
+   dies with the page, so that case cannot happen at all.
+
+   `amv_google_connected` is what remains in storage: a boolean, not a
+   credential, so the Integrations screen and the Crew cards can say Google is
+   linked before the first mint of the tab without holding anything worth
+   stealing.
+
+   Deliberately NOT sessionStorage: that is still storage, still readable by
+   script, and still survives a reload. The point is that there is nothing on
+   disk to read. */
+let _gTok = '', _gTokExp = 0;
+function _gSet(token, expMs){
+  _gTok = String(token || '');
+  _gTokExp = Number(expMs) || 0;
+  /* The marker, not the token. */
+  try{ saveStr('amv_google_connected', _gTok ? '1' : ''); }catch(e){}
+}
+function _gClear(){
+  _gTok = ''; _gTokExp = 0;
+  try{ saveStr('amv_google_connected', ''); }catch(e){}
+}
+function _gHasGrant(){ try{ return loadStr('amv_google_connected') === '1'; }catch(e){ return false; } }
+try{ window._gHasGrant=_gHasGrant; window._gClear=_gClear; }catch(e){}
+
+/* ONE-TIME MIGRATION. Somebody upgrading arrives with a token already on disk.
+   Read it into memory, then remove it - leaving it would mean this change
+   protects new connections only, and every existing one keeps the exposure it
+   was supposed to lose. */
+(function _gMigrateOffDisk(){
+  try{
+    const old = loadStr('amv_gtoken');
+    if(old){
+      _gSet(old, parseInt(loadStr('amv_gtoken_exp')||'0', 10) || 0);
+    } else if(loadStr('amv_gtoken_exp')){
+      /* An expiry with no token: the leftovers of the old cleanup path. */
+    }
+    try{ localStorage.removeItem('amv_gtoken'); localStorage.removeItem('amv_gtoken_exp'); }catch(e){}
+  }catch(e){}
+})();
+
 let _gRefreshInFlight = null;
 async function refreshGToken(){
   if(_gRefreshInFlight) return _gRefreshInFlight;
@@ -23638,8 +23721,7 @@ async function refreshGToken(){
         method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok}, body:'{}' });
       const d = await r.json().catch(()=>({}));
       if(!r.ok || !d.ok || !d.access_token) return null;
-      saveStr('amv_gtoken', d.access_token);
-      saveStr('amv_gtoken_exp', String(Date.now() + ((d.expires_in||3600)-60)*1000));
+      _gSet(d.access_token, Date.now() + ((d.expires_in||3600)-60)*1000);
       return d.access_token;
     }catch(e){ return null; }
     finally{ _gRefreshInFlight = null; }
@@ -23650,23 +23732,26 @@ async function refreshGToken(){
    Anything that is going to call Google should use this rather than the
    synchronous getGToken(). */
 async function ensureGToken(){
-  const tok = loadStr('amv_gtoken');
-  const exp = parseInt(loadStr('amv_gtoken_exp')||'0');
   // renew a couple of minutes early so a long job never expires mid-run
-  if(tok && exp && Date.now() < exp - 120000) return tok;
+  if(_gTok && _gTokExp && Date.now() < _gTokExp - 120000) return _gTok;
+  /* A fresh tab has an empty memory and a grant on the server, which is now the
+     ordinary case rather than an error. Minting here is what replaces reading
+     it off disk. */
   const fresh = await refreshGToken();
   if(fresh) return fresh;
   return getGToken();
 }
+/* Synchronous, so it can only answer from what is already in hand. Anything
+   about to CALL Google should use ensureGToken, which can mint one. */
 function getGToken(){
-  const token = loadStr('amv_gtoken'); if(!token) return null;
-  const exp = parseInt(loadStr('amv_gtoken_exp')||'0');
-  if(!exp) return token;
-  if(Date.now()<exp) return token;
-  // Expired. Try to renew in the background so the NEXT call succeeds instead
-  // of forcing the user to reconnect, but do not hand back a dead token now.
+  if(!_gTok) return null;
+  if(!_gTokExp) return _gTok;
+  if(Date.now() < _gTokExp) return _gTok;
+  // Expired. Renew in the background so the NEXT call succeeds instead of
+  // forcing a reconnect, but never hand back a dead token now.
   try{ refreshGToken(); }catch(e){}
-  localStorage.removeItem('amv_gtoken'); localStorage.removeItem('amv_gtoken_exp'); return null;
+  _gTok = ''; _gTokExp = 0;
+  return null;
 }
 try{ window.refreshGToken=refreshGToken; window.ensureGToken=ensureGToken; }catch(e){}
 /* disconnectGoogle lived here and was reachable from nothing.
@@ -23861,6 +23946,20 @@ const INTEGRATION_ACTIONS = {
    Never pretends a task can run when the capability is missing.
    ============================================================ */
 
+/* LINKED, not "holding a token this second".
+
+   These read getGToken() while the token sat on disk, so it was there the
+   moment the page loaded. It lives in memory now, and a fresh tab has none
+   until something mints one - so all three Google capabilities would have
+   reported themselves disconnected on every reload, and the router would have
+   told somebody to connect an account they had already connected. */
+function _googleLinked(){
+  try{
+    if(typeof _gHasGrant === 'function' && _gHasGrant()) return true;
+    return typeof getGToken === 'function' && !!getGToken();
+  }catch(e){ return false; }
+}
+
 /* Each capability: the human action, the integration it belongs to,
    the EXACT API + auth required, the tools that fulfil it, and a live
    connection check. Keywords drive intent detection. */
@@ -23868,17 +23967,17 @@ const TASK_CAPABILITIES = [
   { id:'gmail', integration:'Google', label:'send, read or manage email',
     api:'Gmail API', auth:'Google account (OAuth)',
     connectId:'google', tools:['gmail_list_unread','gmail_send'],
-    isConnected:()=>!!getGToken(),
+    isConnected:()=>_googleLinked(),
     keywords:['email','emails','gmail','inbox','e-mail','reply to','send a mail','unread','draft a reply','respond to','mailbox'] },
   { id:'calendar', integration:'Google Calendar', label:'view or create calendar events',
     api:'Google Calendar API', auth:'Google account (OAuth)',
     connectId:'google', tools:['calendar_list','calendar_create'],
-    isConnected:()=>!!getGToken(),
+    isConnected:()=>_googleLinked(),
     keywords:['calendar','schedule','meeting','event','appointment','book time','block time','remind me to meet','agenda','availability'] },
   { id:'drive', integration:'Google Drive', label:'read or list your files',
     api:'Google Drive API', auth:'Google account (OAuth)',
     connectId:'google', tools:['drive_list'],
-    isConnected:()=>!!getGToken(),
+    isConnected:()=>_googleLinked(),
     keywords:['drive','google drive','my files','documents','spreadsheet in drive','file named'] },
   { id:'github', integration:'GitHub', label:'manage issues and repositories',
     api:'GitHub REST API', auth:'GitHub personal access token or OAuth',
@@ -32454,12 +32553,21 @@ const SCHOOL_DOC_KINDS = { doc:'Google Doc', sheet:'Google Sheet', slides:'Slide
 /* The Google token the browser already holds. Drive is in the scopes AMV asks
    for at sign-in, and www.googleapis.com is in the page's connect-src, so this
    really can copy and share - it is not a stub waiting for an operator. */
+/* Read from memory through getGToken rather than off disk, because the token
+   is no longer on disk. Kept synchronous: every caller here is, and the one
+   thing worse than asking for a reconnect is silently doing nothing. Somebody
+   whose tab has not minted a token yet is told to try again rather than told
+   they are disconnected, because those are different and only one is true. */
 function _schoolGoogleToken(){
-  const tok = loadStr('amv_gtoken');
-  const exp = +loadStr('amv_gtoken_exp') || 0;
-  if(!tok) return { ok:false, why:'Connect your Google account first, in Settings → Integrations. AMV needs it to make the copy in your own Drive.' };
-  if(exp && Date.now() > exp) return { ok:false, why:'Your Google connection has expired. Reconnect it in Settings → Integrations and try again.' };
-  return { ok:true, token:tok };
+  const tok = (typeof getGToken === 'function') ? getGToken() : null;
+  if(tok) return { ok:true, token:tok };
+  const linked = (typeof _gHasGrant === 'function') && _gHasGrant();
+  if(linked){
+    /* Warm it for the next attempt, which is usually a second later. */
+    try{ if(typeof refreshGToken === 'function') refreshGToken(); }catch(e){}
+    return { ok:false, why:'AMV is reconnecting to your Google account. Give it a moment and try again.' };
+  }
+  return { ok:false, why:'Connect your Google account first, in Settings → Integrations. AMV needs it to make the copy in your own Drive.' };
 }
 
 /* Google's own words when it refuses, because "something went wrong" sends

@@ -30,12 +30,21 @@ const SCHOOL_DOC_KINDS = { doc:'Google Doc', sheet:'Google Sheet', slides:'Slide
 /* The Google token the browser already holds. Drive is in the scopes AMV asks
    for at sign-in, and www.googleapis.com is in the page's connect-src, so this
    really can copy and share - it is not a stub waiting for an operator. */
+/* Read from memory through getGToken rather than off disk, because the token
+   is no longer on disk. Kept synchronous: every caller here is, and the one
+   thing worse than asking for a reconnect is silently doing nothing. Somebody
+   whose tab has not minted a token yet is told to try again rather than told
+   they are disconnected, because those are different and only one is true. */
 function _schoolGoogleToken(){
-  const tok = loadStr('amv_gtoken');
-  const exp = +loadStr('amv_gtoken_exp') || 0;
-  if(!tok) return { ok:false, why:'Connect your Google account first, in Settings → Integrations. AMV needs it to make the copy in your own Drive.' };
-  if(exp && Date.now() > exp) return { ok:false, why:'Your Google connection has expired. Reconnect it in Settings → Integrations and try again.' };
-  return { ok:true, token:tok };
+  const tok = (typeof getGToken === 'function') ? getGToken() : null;
+  if(tok) return { ok:true, token:tok };
+  const linked = (typeof _gHasGrant === 'function') && _gHasGrant();
+  if(linked){
+    /* Warm it for the next attempt, which is usually a second later. */
+    try{ if(typeof refreshGToken === 'function') refreshGToken(); }catch(e){}
+    return { ok:false, why:'AMV is reconnecting to your Google account. Give it a moment and try again.' };
+  }
+  return { ok:false, why:'Connect your Google account first, in Settings → Integrations. AMV needs it to make the copy in your own Drive.' };
 }
 
 /* Google's own words when it refuses, because "something went wrong" sends

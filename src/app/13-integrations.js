@@ -185,6 +185,20 @@ const INTEGRATION_ACTIONS = {
    Never pretends a task can run when the capability is missing.
    ============================================================ */
 
+/* LINKED, not "holding a token this second".
+
+   These read getGToken() while the token sat on disk, so it was there the
+   moment the page loaded. It lives in memory now, and a fresh tab has none
+   until something mints one - so all three Google capabilities would have
+   reported themselves disconnected on every reload, and the router would have
+   told somebody to connect an account they had already connected. */
+function _googleLinked(){
+  try{
+    if(typeof _gHasGrant === 'function' && _gHasGrant()) return true;
+    return typeof getGToken === 'function' && !!getGToken();
+  }catch(e){ return false; }
+}
+
 /* Each capability: the human action, the integration it belongs to,
    the EXACT API + auth required, the tools that fulfil it, and a live
    connection check. Keywords drive intent detection. */
@@ -192,17 +206,17 @@ const TASK_CAPABILITIES = [
   { id:'gmail', integration:'Google', label:'send, read or manage email',
     api:'Gmail API', auth:'Google account (OAuth)',
     connectId:'google', tools:['gmail_list_unread','gmail_send'],
-    isConnected:()=>!!getGToken(),
+    isConnected:()=>_googleLinked(),
     keywords:['email','emails','gmail','inbox','e-mail','reply to','send a mail','unread','draft a reply','respond to','mailbox'] },
   { id:'calendar', integration:'Google Calendar', label:'view or create calendar events',
     api:'Google Calendar API', auth:'Google account (OAuth)',
     connectId:'google', tools:['calendar_list','calendar_create'],
-    isConnected:()=>!!getGToken(),
+    isConnected:()=>_googleLinked(),
     keywords:['calendar','schedule','meeting','event','appointment','book time','block time','remind me to meet','agenda','availability'] },
   { id:'drive', integration:'Google Drive', label:'read or list your files',
     api:'Google Drive API', auth:'Google account (OAuth)',
     connectId:'google', tools:['drive_list'],
-    isConnected:()=>!!getGToken(),
+    isConnected:()=>_googleLinked(),
     keywords:['drive','google drive','my files','documents','spreadsheet in drive','file named'] },
   { id:'github', integration:'GitHub', label:'manage issues and repositories',
     api:'GitHub REST API', auth:'GitHub personal access token or OAuth',
