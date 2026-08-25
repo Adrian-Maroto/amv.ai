@@ -2474,7 +2474,6 @@ function planCards(inApp){
         '<li><span class="fck">\u2713</span>File analysis - PDF, images, code</li>'+
         '<li><span class="fck">\u2713</span>Essays, code, math &amp; research</li>'+
         '<li><span class="fxx">\u2717</span>Autonomous agents &amp; Crew</li>'+
-        '<li><span class="fxx">\u2717</span>Video generation</li>'+
         '<li><span class="fxx">\u2717</span>Connected accounts (Gmail, Calendar)</li>'+
       '</ul>'+
       pBtn('Get started free','pbs','free',isLand)+
@@ -2493,7 +2492,6 @@ function planCards(inApp){
         '<li><span class="fck">\u2713</span>Autonomous agents &amp; Crew, run from <b>Mission Control</b></li>'+
         '<li><span class="fck">\u2713</span><b>Preview &amp; approve</b> every action before it runs</li>'+
         '<li><span class="fck">\u2713</span><b>Auto Approve</b> for trusted recurring tasks</li>'+
-        '<li><span class="fck">\u2713</span>HD images, video &amp; interactive 3D</li>'+
         '<li><span class="fck">\u2713</span>Build &amp; ship real apps in Dev</li>'+
         '<li><span class="fck">\u2713</span>Connect Gmail, Calendar &amp; files</li>'+
         '<li><span class="fck">\u2713</span>Scheduled &amp; background automation</li>'+
@@ -2575,7 +2573,7 @@ function _customPlanBanner(inApp){
   return '<div class="cpb">'+
     '<div class="cpb-l"><div class="cpb-tier">Custom \u00b7 from $10/mo</div>'+
       '<div class="cpb-t">Want a plan sized exactly to you?</div>'+
-      '<div class="cpb-d">Pick your budget and pay for what you use - all models including Apex, agents, images, video &amp; 3D. Hard-capped, so it\u2019s never a surprise charge. Resize or cancel anytime.</div></div>'+
+      '<div class="cpb-d">Pick your budget and pay for what you use - all models including Apex, agents and the app sandbox. Hard-capped, so it\u2019s never a surprise charge. Resize or cancel anytime.</div></div>'+
     '<div class="cpb-r">'+btn+'</div>'+
   '</div>';
 }
@@ -2860,8 +2858,6 @@ function renderDashboard(){
       '<div class="ss2"><h3>Quick Actions</h3>'+
         '<div class="qa-g">'+
           '<button class="qab" data-qa="chat"><div class="qai">💬</div><div class="qat">New Chat</div><div class="qad">Start a conversation</div></button>'+
-          '<button class="qab" data-qa="images"><div class="qai">🖼️</div><div class="qat">Generate Image</div><div class="qad">Create HD images</div></button>'+
-          '<button class="qab" data-qa="video"><div class="qai">🎬</div><div class="qat">Create Video</div><div class="qad">AI video generation</div></button>'+
           '<button class="qab" data-qa="prompts"><div class="qai">📚</div><div class="qat">Prompt Library</div><div class="qad">Browse saved prompts</div></button>'+
           '<button class="qab" data-qa="workspaces"><div class="qai">📁</div><div class="qat">Workspaces</div><div class="qad">Organize projects</div></button>'+
           '<button class="qab" data-qa="memory"><div class="qai">🧠</div><div class="qat">AI Memory</div><div class="qad">View saved facts</div></button>'+

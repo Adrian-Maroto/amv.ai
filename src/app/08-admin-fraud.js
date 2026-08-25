@@ -1544,7 +1544,6 @@ function openPlanCompare(highlight){
     ['Autonomous multi-step projects', p=>isC(p)?'\u2713':(PLAN_RANK[p]>=3?'\u2713':(PLAN_RANK[p]>=2?'Limited':'-'))],
     ['Context window (how much it holds)', p=>p==='free'?'Standard':(PLAN_RANK[p]>=3?'Whole codebase':(PLAN_RANK[p]>=2?'Extra-large':'Large'))],
     ['Image generation', p=>'\u2713'],
-    ['Video generation', p=>p==='free'?'-':(PLAN_RANK[p]>=2?'4K':'HD')],
     /* Was "Limited / Up to 5 / Unlimited" for parallel agents, which nothing
        enforced at any tier. This is the throughput limit that is real, and it
        is read from the table the Worker checks against. */
@@ -1642,7 +1641,7 @@ function _cpInclFeatures(hasApex){
 window.openCustomPlan=openCustomPlan;
 function _planHighlights(k){
   return {
-    pro:['All 4 models incl. Forge','5\u00d7 the usage','Autonomous agents & Crew','HD images, video & 3D','Priority speed'],
+    pro:['All 4 models incl. Forge','5\u00d7 the usage','Autonomous agents & Crew',' video & 3D','Priority speed'],
     elite:['Everything in Pro','20\u00d7 the usage','Fastest models first','Double Pro\u2019s throughput','Early access'],
     ultra:['Everything in Elite','50\u00d7 the usage','Max concurrency','Team-grade throughput','Dedicated support'],
   }[k]||['More usage','All models'];

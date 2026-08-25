@@ -360,7 +360,7 @@ function renderPlansView(){
     '<div class="sv fi"><div class="vi vi-plans">'+
       '<div class="plans-head"><div class="eyebrow">Pricing</div>'+
         '<h2>One subscription. Every AI tool you need.</h2>'+
-        '<p class="vsub">Chat, images, video, autonomous agents, an app builder and Mission Control - in one place. Start free, upgrade any time, cancel whenever.</p></div>'+
+        '<p class="vsub">Chat, autonomous agents, an app builder and Mission Control - in one place. Start free, upgrade any time, cancel whenever.</p></div>'+
       '<div class="pg pg-app pg-4">'+planCards(true)+'</div>'+
       _teamPlanBanner(true)+
       _customPlanBanner(true)+
@@ -390,7 +390,6 @@ const FAQS=[
   {c:'auto', q:'How do approvals work - Preview &amp; Approve?', a:'When AMV finishes something that would send, publish, or change anything, it waits in “Needs your approval.” Press Preview to open the full workspace: the finished result, a timeline of what happened, the agents involved, and a plain-language summary of exactly what will happen. Then Approve, Edit, or Reject.'},
   {c:'auto', q:'What is Auto Approve?', a:'When you trust a recurring task, turn on Auto Approve while setting it up. AMV then completes and performs the final action on its own - scoped to every run or just the first, capped by risk level, with an optional end date. High-risk actions still stop and ask unless you allow them. You can pause all autonomous work anytime from Mission Control.'},
   {c:'auto', q:'How do I schedule recurring autonomous work?', a:'Start an autonomous task (Crew → Autonomous task) and pick a schedule - once, daily, weekly, or monthly. Manage everything under Scheduled: next run, last run, approval mode, and per-task pause or cancel. Connect the backend for true 24/7 runs even with AMV closed.'},
-  {c:'create', q:'How do I generate images and video?', a:'Click Images or Video in the sidebar, describe what you want, choose a style and aspect ratio, and generate. Images render in seconds; video is sent to the engine and returned when ready.'},
   {c:'create', q:'How do I create interactive 3D models?', a:'Just ask in chat - e.g. “create a 3D model of a human heart.” It renders live with drag-to-rotate, scroll-to-zoom, and pan controls.'},
   {c:'create', q:'What is Studio (AMV Design)?', a:'Studio is a live design canvas. Describe a landing page, UI mockup, poster, or graphic and watch it build, then refine by chatting (“make it darker,” “add a pricing section”). Set a reusable Design DNA once and everything follows your colors, fonts, and style.'},
   {c:'build', q:'Can AMV build and run real apps?', a:'Yes - Dev writes the code, runs it in a live sandbox, and shows you the result. Lab lets you paste or upload existing code (any size) to run, find and fix bugs, review, refactor, or add tests. On higher plans you can deploy to a live URL.'},
@@ -2135,7 +2134,7 @@ function _renderSetPaneInner(only, into){
          actually sees, so it is said here rather than discovered. */
       (_aiBackendReady()
         ? '<div class="ss2"><h3>The app itself</h3><p style="font-size:var(--t-base);color:var(--mu);line-height:1.65;margin:0">'+
-          'Every screen - chat, images, video, Studio, Dev, Lab, the marketplace, settings - switches with it. '+
+          'Every screen - chat, Crew, Studio, Dev, Lab, the marketplace, settings - switches with it. '+
           'The first screen you open in a new language takes a moment to come across, then it is remembered.</p></div>'
         : '<div class="ss2"><h3>The app itself</h3><p style="font-size:var(--t-base);color:var(--mu);line-height:1.65;margin:0">'+
           'AMV\u2019s replies will be in your language straight away. Translating <b>the app\u2019s own screens</b> '+
@@ -2155,7 +2154,7 @@ function _renderSetPaneInner(only, into){
       '<div class="ss2"><h3>How it works</h3>'+
         '<div class="lang-info">'+
           '<p>\u2022 <b>Auto-detect</b> replies in whatever language you write in.</p>'+
-          '<p>\u2022 Pick a language and every reply, plus text inside generated images, videos and models, comes back in it.</p>'+
+          '<p>\u2022 Pick a language and every reply, comes back in it.</p>'+
           '<p>\u2022 Override anytime - e.g. \u201cmake me a poster, but in Chinese\u201d - and AMV follows that request just for that task.</p>'+
           '<p>\u2022 Not listed? AMV speaks 95+ languages - just write to it in yours and it responds in kind.</p>'+
         '</div>'+
