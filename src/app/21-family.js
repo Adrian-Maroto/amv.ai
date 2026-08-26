@@ -86,7 +86,7 @@ const AMVFamily = {
      with no backend it cannot email, and says so rather than pretending. */
   _deliver(inv){
     try{
-      if(window.AMV_API && AMV_API.live && AMV_API.token){
+      if(window.AMV_API && AMV_API.live && AMV_API.hasSession){
         /* The reply is what decides whether a code was actually sent, so it is
            read rather than discarded. This used to fire the request with a
            swallowed catch and announce "a confirmation code was sent" - while
@@ -130,7 +130,7 @@ const AMVFamily = {
      genuinely share it. The local path below is the offline mirror. */
   async acceptRemote(inviteId, code){
     const base = (typeof loadStr === 'function' && (loadStr('amv_api_base')||'')).replace(/\/$/,'');
-    const tok = (typeof loadStr === 'function' && loadStr('amv_api_token')) || '';
+    const tok = (window.AMV_API && AMV_API.token) || '';
     if(!base || !tok) return this.accept(inviteId, code);   // offline mirror
     const r = await fetchDeadline(base + '/v1/link/accept', {
       method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},

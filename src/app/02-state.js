@@ -220,7 +220,7 @@ try{ window._syncSessionList=_syncSessionList; }catch(e){}
 
 const AMVSync = {
   _timer: null,
-  enabled(){ try{ return !!(window.AMV_API && AMV_API.live && AMV_API.token); }catch(e){ return false; } },
+  enabled(){ try{ return !!(window.AMV_API && AMV_API.live && AMV_API.hasSession); }catch(e){ return false; } },
   async pull(){
     if(!this.enabled()) return false;
     try{

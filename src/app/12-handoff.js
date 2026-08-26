@@ -963,7 +963,7 @@ function renderSettingsView(){
    the public site key live server-side. */
 let _WIDGET_CFG=null;
 function _renderWidgetPane(pane){
-  const live=!!(window.AMV_API && AMV_API.live && AMV_API.token);
+  const live=!!(window.AMV_API && AMV_API.live && AMV_API.hasSession);
   const base=(loadStr('amv_api_base')||'').replace(/\/+$/,'');
   if(!live){
     pane.innerHTML=
@@ -1382,7 +1382,7 @@ window.disconnectIntegration=disconnectIntegration;
    irreversible, so we require the user to type DELETE to confirm. */
 function _confirmDeleteAccount(){
   const ovr=$('ovr'); if(!ovr) return;
-  const connected = !!(window.AMV_API && AMV_API.live && AMV_API.token);
+  const connected = !!(window.AMV_API && AMV_API.live && AMV_API.hasSession);
   ovr.innerHTML=
     '<div class="ov" id="del-bg"><div class="ob">'+
       '<button class="oc" data-dact="closeOvr">&#215;</button>'+
@@ -1473,7 +1473,7 @@ async function _exportUserData(){
        "Delete account". Automations, approvals, handoffs, purchases, the
        wallet, listings and the activity log all live on the server. */
     let server=null, serverError='';
-    if(window.AMV_API && AMV_API.live && AMV_API.token){
+    if(window.AMV_API && AMV_API.live && AMV_API.hasSession){
       try{
         const r=await AMV_API._fetch('/v1/account/export', { method:'GET' });
         const d=await r.json().catch(()=>null);
@@ -1691,7 +1691,7 @@ function _activeSessionsHTML(){
     const started=loadStr('amv_session_started')||Date.now();
     if(!loadStr('amv_session_started')) saveStr('amv_session_started',String(started));
     const when=new Date(Number(started)).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
-    const live=!!(window.AMV_API && AMV_API.live && AMV_API.token);
+    const live=!!(window.AMV_API && AMV_API.live && AMV_API.hasSession);
     return '<div class="ss2"><h3>This device</h3>'+
       '<div class="set-sub" style="margin-top:-2px;margin-bottom:12px">AMV cannot list your other devices - nothing on the server records which browsers hold a session. What it can do is end every one of them at once.</div>'+
       '<div class="sess-row sess-current">'+
@@ -1942,7 +1942,7 @@ function _renderSetPaneInner(only, into){
        implementation here would leave two to keep in step; there is one. */
     on($('signout-others'),'click',()=>{
       const msg=$('sess-msg');
-      if(!(window.AMV_API && AMV_API.live && AMV_API.token)){
+      if(!(window.AMV_API && AMV_API.live && AMV_API.hasSession)){
         if(msg) msg.textContent='Not connected to the AMV backend, so there are no server sessions to end. Nothing was changed.';
         return;
       }
@@ -2294,7 +2294,9 @@ function _renderSetPaneInner(only, into){
 
   } else if(sp==='backend'){
     const liveBase=loadStr('amv_api_base')||'';
-    const tokenSet=!!(loadStr('amv_api_token'));
+    /* Is there a SESSION, which on a fresh tab in cookie mode is not the same
+       question as whether a token has been minted yet. */
+    const tokenSet=!!(window.AMV_API && AMV_API.hasSession);
     pane.innerHTML=
       '<h2 class="set-title">Live / Backend</h2>'+
       '<div class="set-sub">Connect AMV to your deployed backend so Crew jobs, approvals and Handoff work for real and across accounts. Leave blank to run in local demo mode.</div>'+

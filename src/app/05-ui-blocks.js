@@ -1300,7 +1300,7 @@ async function _callAI(msgs, _opts) {
 async function _recoverAnswer(turnId){
   if(!turnId) return '';
   try{
-    if(!(window.AMV_API && AMV_API.live && AMV_API.token)) return '';
+    if(!(window.AMV_API && AMV_API.live && AMV_API.hasSession)) return '';
     for(let attempt=0; attempt<3; attempt++){
       const r = await AMV_API._fetch('/v1/resume?id='+encodeURIComponent(turnId), { method:'GET', timeout:8000 });
       const d = await r.json().catch(()=>null);
@@ -1665,7 +1665,7 @@ function _reportAnswerRating(m, emoji, on){
     const up = /\u{1F44D}|\u{2764}|\u{1F525}|\u{1F389}/u.test(emoji);
     const down = /\u{1F44E}/u.test(emoji);
     if(!up && !down) return;                         // only the two that mean good/bad
-    if(!(window.AMV_API && AMV_API.live && AMV_API.token)) return;
+    if(!(window.AMV_API && AMV_API.live && AMV_API.hasSession)) return;
     const engine = m._engine || (typeof MODELS!=='undefined' && MODELS[m.model] ? MODELS[m.model].model : '');
     AMV_API._fetch('/v1/feedback', { method:'POST', body: JSON.stringify({
       rating: up ? 'up' : 'down',
@@ -1697,7 +1697,7 @@ function _askWhyBad(engine){
     host.scrollTop = host.scrollHeight;
     const send = (reason) => {
       try{
-        if(reason && window.AMV_API && AMV_API.live && AMV_API.token){
+        if(reason && window.AMV_API && AMV_API.live && AMV_API.hasSession){
           AMV_API._fetch('/v1/feedback', { method:'POST', body: JSON.stringify({
             rating:'down', engine, feature:'chat', reason })}).catch(()=>{});
         }

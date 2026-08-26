@@ -1379,7 +1379,7 @@ async function _devDeploy(){
 
   const title=(_DEV.activePath?_DEV.activePath.split('/').pop().replace(/\.\w+$/,''):'My app')||'My app';
 
-  if(!(window.AMV_API && AMV_API.live && AMV_API.token)){
+  if(!(window.AMV_API && AMV_API.live && AMV_API.hasSession)){
     toast('Connect the AMV engine in Settings to publish a live URL. You can still download the file.','error',6000);
     return;
   }
@@ -2130,7 +2130,7 @@ async function _amvRunTool(name, input, onStatus){
 
     if(name==='deploy_site'){
       onStatus && onStatus('Publishing it live\u2026');
-      if(!(window.AMV_API && AMV_API.live && AMV_API.token))
+      if(!(window.AMV_API && AMV_API.live && AMV_API.hasSession))
         return { text:'Publishing needs the AMV engine connected. Tell the user to enable it in Settings.', render:null };
       let html = String(input.html||'').replace(/^```[a-z]*\n?/i,'').replace(/```\s*$/,'').trim();
       if(!html) return { text:'Nothing to publish - no HTML was given.', render:null };

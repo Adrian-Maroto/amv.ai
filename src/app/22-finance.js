@@ -86,7 +86,9 @@ const AMVFinance = {
   },
 
   _base(){ try{ return (loadStr('amv_api_base')||'').replace(/\/$/,''); }catch(e){ return ''; } },
-  _tok(){ try{ return loadStr('amv_api_token')||''; }catch(e){ return ''; } },
+  /* The live token, wherever it is being held. Read off disk this returned
+     nothing in cookie mode and every finance call went out unauthenticated. */
+  _tok(){ try{ return (window.AMV_API && AMV_API.token)||''; }catch(e){ return ''; } },
 
   /* Every call goes through OUR server, never straight to the bank from the
      browser - so the provider secret and the access token stay server-side. */

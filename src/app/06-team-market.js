@@ -6,7 +6,7 @@
    ============================================================ */
 const AMVTeam = {
   _cache:null,
-  enabled(){ try{ return !!(window.AMV_API && AMV_API.live && AMV_API.token); }catch(e){ return false; } },
+  enabled(){ try{ return !!(window.AMV_API && AMV_API.live && AMV_API.hasSession); }catch(e){ return false; } },
   /* Throws rather than returning null on failure. A network error is NOT "you
      have no team" - answering it that way showed an existing team's owner a
      create-a-team form, and a member an upgrade wall, for a team that exists. */
@@ -223,7 +223,7 @@ function _wireSeatBuy(){
   on($('seat-buy'),'click',async()=>{
     const n=clamp(el.value);
     const say=t=>{ const s2=$('seat-say'); if(s2) s2.textContent=t||''; };
-    if(!(window.AMV_API&&AMV_API.live&&AMV_API.token)){
+    if(!(window.AMV_API&&AMV_API.live&&AMV_API.hasSession)){
       say('Sign in first and this takes you straight to checkout.');
       try{ openAuth('signup'); }catch(e){}
       return;
@@ -717,7 +717,7 @@ const MARKET_STARTER = [
 
 const AMVMarket = {
   _remote:null,
-  _live(){ try{ return !!(window.AMV_API && AMV_API.live && AMV_API.token); }catch(e){ return false; } },
+  _live(){ try{ return !!(window.AMV_API && AMV_API.live && AMV_API.hasSession); }catch(e){ return false; } },
   _me(){ return ((S.user&&S.user.email)||'you@amv.local').toLowerCase(); },
   _meName(){ return (S.user&&S.user.name)||'You'; },
   // --- local stores (used when there's no backend) ---

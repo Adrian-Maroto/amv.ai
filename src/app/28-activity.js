@@ -79,7 +79,7 @@ function _actWhere(ev){
 
 function _renderActivityBlock(host){
   host.innerHTML = '<div class="act-load">Loading your account activity…</div>';
-  if(!(window.AMV_API && AMV_API.live && AMV_API.token)){
+  if(!(window.AMV_API && AMV_API.live && AMV_API.hasSession)){
     host.innerHTML = '<div class="act-off">Account activity is recorded on the server. '+
       'Sign in to your AMV account to see where and when it has been used.</div>';
     return;

@@ -43,7 +43,7 @@ const AMVCompliance = {
     this._save(r);
     try{
       const base = (loadStr('amv_api_base')||'').replace(/\/$/,'');
-      const tok = loadStr('amv_api_token')||'';
+      const tok = (window.AMV_API && AMV_API.token)||'';
       if(base && tok) fetch(base + '/v1/consent', {
         method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
         /* The birth year goes with it. The gate that matters is the server's -
@@ -78,7 +78,7 @@ const AMVCompliance = {
        the terms - and the server refuses money until it has this. */
     try{
       const base = (loadStr('amv_api_base')||'').replace(/\/$/,'');
-      const tok = loadStr('amv_api_token')||'';
+      const tok = (window.AMV_API && AMV_API.token)||'';
       if(base && tok && r.termsVersion) fetch(base + '/v1/consent', {
         method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
         body: JSON.stringify({ termsVersion:r.termsVersion, birthYear:y })

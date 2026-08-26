@@ -514,7 +514,7 @@ async function handlePaymentSuccess(plan, opts){
   opts = opts || {};
   try{
     if(plan) _setPlan(plan);
-    if(window.AMV_API && AMV_API.live && AMV_API.token){
+    if(window.AMV_API && AMV_API.live && AMV_API.hasSession){
       let tries=0; const poll=async()=>{ await syncEntitlement(); if(++tries<3) setTimeout(poll, 2500); };
       poll();
     }

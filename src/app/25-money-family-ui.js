@@ -538,7 +538,7 @@ function _renderFamilyPane(pane){
 
   _wireFamilyParent(pane);
   _wireFamilyChild(pane);
-  if(needState && !_FAM_BUSY && window.AMV_API && AMV_API.live && AMV_API.token){
+  if(needState && !_FAM_BUSY && window.AMV_API && AMV_API.live && AMV_API.hasSession){
     _FAM_BUSY = true;
     AMV_API.familyGet()
       .then(d => { _FAM_BUSY = false; _FAM_STATE = d; _renderFamilyPane(pane); })
@@ -546,7 +546,7 @@ function _renderFamilyPane(pane){
   }
   /* Same shape, same trap: set on BOTH paths so a failure cannot leave this
      null and re-fetch on every redraw forever. */
-  if(needLinks && !_LINK_BUSY && window.AMV_API && AMV_API.live && AMV_API.token){
+  if(needLinks && !_LINK_BUSY && window.AMV_API && AMV_API.live && AMV_API.hasSession){
     _LINK_BUSY = true;
     AMV_API.linkList()
       .then(d => { _LINK_BUSY = false; _LINK_STATE = d; _renderFamilyPane(pane); })
@@ -564,7 +564,7 @@ function _renderFamilyPane(pane){
          immediately" - which was false, because nothing had told the authority
          that enforces it. So the server goes first, and nothing is claimed
          unless it agreed. */
-      const online = !!(window.AMV_API && AMV_API.live && AMV_API.token);
+      const online = !!(window.AMV_API && AMV_API.live && AMV_API.hasSession);
       if(online){
         this.disabled = true;
         try{

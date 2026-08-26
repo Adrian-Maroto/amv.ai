@@ -196,7 +196,7 @@ AMVConnectors.register({
           const e = new Error('Web automation needs the AMV backend. Connect it in Settings and this starts working.');
           e.code = 'needs_service'; throw e;
         }
-        const tok = (typeof loadStr === 'function' && loadStr('amv_api_token')) || '';
+        const tok = (window.AMV_API && AMV_API.token) || '';
         const r = await fetchDeadline(base.replace(/\/$/, '') + '/v1/browser/run', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok },

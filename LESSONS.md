@@ -6451,3 +6451,52 @@ Every `catch(e){}` in a boot path is a place where a whole feature can be
 removed without a single gate noticing. That is not an argument for catching
 less - some of those guards are load-bearing against browsers that lack an API -
 it is an argument for naming what each one is allowed to swallow.
+
+## 298. A key filed under the account, describing the server
+
+`amv_refresh_cookie` is the flag that says "this deployment's server holds the
+refresh token in a cookie". It was written with `saveStr`, which files a key
+under the signed-in account. Every other key in this client is per-account, so
+this looked exactly like all of them.
+
+It is not about a person. It is about the server, and it is the same answer for
+everybody who opens the build. Filing it per-account produced this:
+
+1. Signing up writes the flag while nobody is signed in yet, so it lands under
+   the anonymous scope.
+2. A moment later the account is created and the scope changes.
+3. From then on `cookieAuth` reads a DIFFERENT key, finds nothing, answers
+   false.
+4. The client then believed it was holding its own refresh token, looked in
+   `localStorage` where nothing had been written, and restored no session.
+
+**On the deployment the whole feature was built for, pressing F5 signed you
+out.** Shipped, in `main`, with tests green on both sides of it.
+
+Green on both sides is the whole point. The Worker suite proved the cookie is
+set with HttpOnly, Secure, SameSite=None and Path=/auth. The client suite read
+the source of the setter and proved it asks `cookieAuth` before writing.
+**Neither one signed in and then reloaded.** Correct at both ends, not joined in
+the middle, for the sixth time in this codebase - and the first time it was a
+FEATURE that had never once worked rather than a feature that broke.
+
+Two rules out of it.
+
+**A storage key belongs to whatever it describes.** Per-account is the default
+here and defaults are how this happened. Before writing one, ask what it is a
+fact about: this person, this device, or this server. A key whose value would be
+identical for every account on the machine is not a per-account key, and filing
+it as one means it is read back under a scope that did not exist when it was
+written.
+
+**A round trip is not covered by testing each leg.** Set-cookie and read-cookie
+were both asserted and the journey between them was not, because no test ever
+did the one thing a person does constantly: come back to the page. Where a
+feature spans a reload, a sign-in, or a device, the test has to make that
+crossing - the halves passing is not evidence about the middle, and this is the
+sixth time that sentence has needed writing.
+
+Related: LESSONS 297, where the deletion that shipped through every gate was
+also a thing no test ever did (arrive at the URL a provider returns to). The
+pattern underneath both is the same. **Coverage is measured over the code, and
+defects live in the journeys.**

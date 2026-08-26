@@ -1669,7 +1669,7 @@ function _usageContentHTML(){
      device-local tally that the server has never seen. The distinction is
      stated on the panel rather than left for the user to discover when the two
      disagree. */
-  const serverPanel = (window.AMV_API && AMV_API.live && AMV_API.token)
+  const serverPanel = (window.AMV_API && AMV_API.live && AMV_API.hasSession)
     ? '<div class="ss2" id="srv-usage"><h3>Your plan allowance</h3><div class="srv-load">Loading your real usage\u2026</div></div>'
     : '';
   setTimeout(_paintServerUsage, 0);
@@ -1708,7 +1708,7 @@ window._usageContentHTML=_usageContentHTML;
    builder so a slow or failed request never delays the rest of the screen. */
 function _paintServerUsage(){
   const host = document.getElementById('srv-usage');
-  if(!host || !(window.AMV_API && AMV_API.live && AMV_API.token)) return;
+  if(!host || !(window.AMV_API && AMV_API.live && AMV_API.hasSession)) return;
   AMV_API.usage().then(d=>{
     if(!d || !d.day || !d.month){
       host.innerHTML = '<h3>Your plan allowance</h3><div class="srv-off">Your real allowance is unavailable right now. The figures below are this device\u2019s own tally.</div>';

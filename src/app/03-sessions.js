@@ -741,7 +741,13 @@ async function handleGoogleCred(resp) {
         try{ if(typeof _refClear==='function') _refClear(); }catch(e){}
         // server returns the verified profile + a session token
         const acct=saveGoogleAccount((data.name||p.name||p.email.split('@')[0]), (data.email||p.email));
-        if(data.token){ try{ AMV_API.token=data.token; saveStr('amv_api_token', data.token); }catch(e){} }
+        /* Through the setter ONLY. The saveStr beside it wrote the token
+           straight to disk, past the setter that decides whether it may go
+           there - so in cookie mode the one path that is supposed to keep the
+           token in memory would have persisted it anyway, quietly, and the
+           whole change would have been true everywhere except the screen most
+           people sign in from. */
+        if(data.token){ try{ AMV_API.token=data.token; }catch(e){} }
         const pic=data.picture||p.picture;
         if(pic&&acct.email){ fetch(pic).then(x=>x.blob()).then(b=>{const rd=new FileReader();rd.onload=e=>{saveStr('amv_pfp_'+acct.email,e.target.result);updateSbUser();};rd.readAsDataURL(b);}).catch(()=>{}); }
         /* accCk, not saveStr: cookie consent is per DEVICE, so it lives in the
@@ -961,7 +967,15 @@ async function _ensureBackendSession(){
       // on boot, so the first authenticated action doesn't eat a 401+retry
       // round-trip. Single-flight in _doRefresh means this is safe to call
       // even if something else triggers a refresh at the same time.
-      if(AMV_API.refreshTok){
+      /* OR THE COOKIE, WHICH THIS SIDE CANNOT SEE.
+
+         The guard was `if(AMV_API.refreshTok)` - correct while the refresh
+         token was in storage, and false for every cookie-mode session, where
+         the browser holds it and script cannot read it. Left as it was, a
+         reload would have restored nothing: no token, no refresh attempted,
+         and a person signed out by the act of pressing F5 with a valid session
+         sitting in a cookie. */
+      if(AMV_API.refreshTok || AMV_API.cookieAuth){
         try{ await AMV_API._doRefresh(); }catch(e){ /* fall through */ }
       }
       // If refresh failed (or there was none), we keep whatever token we have;
@@ -969,6 +983,19 @@ async function _ensureBackendSession(){
       // password accounts we can't silently re-auth (no stored password).
     }
   }catch(e){ /* backend offline → app falls back to direct mode */ }
+  finally{
+    /* THE RESTORE IS OVER, whichever way it went, and the screens drawn during
+       it may have been drawn on the wrong answer. Cleared first, then one
+       re-render - a flag left set would make hasSession permanently true and
+       turn a signed-out person into a screen full of controls that 401. */
+    try{
+      if(window.AMV_API && AMV_API._restoring){
+        AMV_API._restoring = false;
+        if(typeof setTab === 'function' && S && S.tab) setTab(S.tab);
+        if(typeof updateSbUser === 'function') updateSbUser();
+      }
+    }catch(e){}
+  }
 }
 function toggleSb(){
   const sb=$('sb'); if(!sb) return;
@@ -1293,10 +1320,18 @@ const _SIGNOUT_CLEAR_GLOBAL = [
   'amv_market_local','amv_market_purchases','amv_market_wallet',
   'amv_market_ratings','amv_market_reviews','amv_market_installed','amv_market_threads',
 ];
+/* amv_api_token and amv_api_refresh stay listed even though cookie mode keeps
+   neither on disk: a device that ran an older build still has them, and the
+   erase test fails on any _GLOBAL_KEYS entry that is in neither list. A key
+   that has stopped being written is not a key that has stopped existing. */
 const _DEVICE_GLOBAL_KEYS = [
   'amv_user','amv_api_token','amv_api_refresh','amv_token_exp',
   'amv_theme','amv_accent','amv_sb_rail','amv_session_started','amv_reduce_motion',
   'amv_mute_chime','amv_api_base','amv_lang','amv_support_email','amv_gauth',
+  /* Which auth mode this deployment uses. A fact about the server, not about
+     the person, so it survives a sign-out - the next person to sign in on this
+     machine meets the same server. */
+  'amv_refresh_cookie',
   'amv_cookie_consent','amv_analytics_id','amv_ref_code','amv_links',
 ];
 try{ window._SIGNOUT_CLEAR_GLOBAL=_SIGNOUT_CLEAR_GLOBAL; window._DEVICE_GLOBAL_KEYS=_DEVICE_GLOBAL_KEYS; }catch(e){}
@@ -1305,8 +1340,13 @@ function signOut(){
      post to /auth/logout with no body, which revoked every token on the
      account - so signing out of a laptop silently signed out a phone. The
      button says this device; now it means it. */
-  try{ if(window.AMV_API && AMV_API.live && AMV_API.token) AMV_API.logout(false); }catch(e){}
+  try{ if(window.AMV_API && AMV_API.live && AMV_API.hasSession) AMV_API.logout(false); }catch(e){}
+  /* Disk AND memory. The removeItem calls clear the non-cookie path; in cookie
+     mode both halves are held in module variables, and a sign-out that emptied
+     storage while leaving a usable token in memory would be a sign-out that
+     only looked like one - the next request would still succeed. */
   try{ localStorage.removeItem('amv_api_token'); localStorage.removeItem('amv_api_refresh'); localStorage.removeItem('amv_token_exp'); }catch(e){}
+  try{ if(window.AMV_API){ AMV_API._atMem=''; AMV_API._rtMem=''; AMV_API._restoring=false; } }catch(e){}
   /* Everything unscoped that belongs to the person rather than the machine.
      A connected Google account is the one that matters most: leaving its access
      token behind hands the next account somebody's mail. */
@@ -1488,7 +1528,7 @@ function _buildShareLink(c){
    Slack or X shows no title and no preview. It reads as a bare URL, which
    reads as spam. A hosted page previews properly and can be revoked. */
 async function _createHostedShare(c){
-  if(!(window.AMV_API && AMV_API.live && AMV_API.token)) return null;
+  if(!(window.AMV_API && AMV_API.live && AMV_API.hasSession)) return null;
   try{
     const r = await AMV_API._fetch('/v1/share/create', { method:'POST', body: JSON.stringify({
       title: c.title || 'Shared conversation',
@@ -1501,7 +1541,7 @@ async function _createHostedShare(c){
 /* Put a shared page into search results, or take it back out. The server owns
    the decision; this only carries it. */
 async function _setShareListed(id, listed){
-  if(!(window.AMV_API && AMV_API.live && AMV_API.token)) return false;
+  if(!(window.AMV_API && AMV_API.live && AMV_API.hasSession)) return false;
   try{
     const r = await AMV_API._fetch('/v1/share/visibility', { method:'POST', body: JSON.stringify({ id, listed:!!listed }) });
     const d = await r.json().catch(()=>null);
@@ -1593,7 +1633,7 @@ function _renderSharedView(data){
    anywhere to manage. */
 async function openSharedChatsManager(){
   const ovr=$('ovr'); if(!ovr) return;
-  const live = !!(window.AMV_API && AMV_API.live && AMV_API.token);
+  const live = !!(window.AMV_API && AMV_API.live && AMV_API.hasSession);
   ovr.innerHTML='<div class="ov" id="shr-bg"><div class="ob">'+
     '<button class="oc" data-dact="closeOvr">&#215;</button>'+
     '<h2>Shared conversations</h2>'+

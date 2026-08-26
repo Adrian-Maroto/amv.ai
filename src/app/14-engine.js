@@ -11,7 +11,7 @@ window.AMV_ENGINE = true;
    cap can never be bypassed. _aiBase()/_aiHeaders() are the single choke-point;
    if the backend isn't configured, AI calls fail loudly instead of silently
    leaking a key into the browser. */
-function _aiBackendReady(){ return !!(window.AMV_API && AMV_API.live && AMV_API.token); }
+function _aiBackendReady(){ return !!(window.AMV_API && AMV_API.live && AMV_API.hasSession); }
 function _aiBase(){
   if(!_aiBackendReady()) throw new Error('AMV isn’t connected yet. The workspace owner needs to switch on the AMV engine in Settings.');
   return AMV_API.base.replace(/\/$/,'')+'/v1/messages';
@@ -883,7 +883,7 @@ async function _labDeploy(){
     toast('Publishing works for web pages. Switch the language to HTML, or build a page in Dev.','info',5000);
     return;
   }
-  if(!(window.AMV_API && AMV_API.live && AMV_API.token)){
+  if(!(window.AMV_API && AMV_API.live && AMV_API.hasSession)){
     toast('Connect the AMV engine in Settings to publish a live URL.','error',5000);
     return;
   }
@@ -1313,7 +1313,7 @@ async function _taskRun(mode){
    app, which made a "7am daily brief" useless.) If the engine isn't connected,
    we say so honestly instead of silently pretending to schedule. */
 async function _autoApi(path, body){
-  if(!(window.AMV_API && AMV_API.live && AMV_API.token))
+  if(!(window.AMV_API && AMV_API.live && AMV_API.hasSession))
     throw new Error('not-connected');
   const r = await fetchDeadline(AMV_API.base.replace(/\/$/,'') + path, {
     method:'POST',

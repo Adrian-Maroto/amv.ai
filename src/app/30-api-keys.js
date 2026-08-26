@@ -31,7 +31,7 @@ function _renderApiKeysPane(pane){
     _apiDocsHTML();
 
   const body = document.getElementById('api-body');
-  if(!(window.AMV_API && AMV_API.live && AMV_API.token)){
+  if(!(window.AMV_API && AMV_API.live && AMV_API.hasSession)){
     body.innerHTML = '<div class="ak-off">API keys live on your AMV account. Sign in and they appear here.</div>';
     return;
   }

@@ -262,7 +262,10 @@ const AMVFraud = {
     try{ if(typeof AEGIS!=='undefined'&&AEGIS.log) AEGIS.log('fraud_flag',{category:a.category,risk:a.risk,action:a.action}); }catch(e){}
     try{
       const base=(typeof loadStr==='function'&&loadStr('amv_api_base'))||'';
-      const tok=(typeof loadStr==='function'&&loadStr('amv_api_token'))||(window.AMV_API&&AMV_API.token)||'';
+      /* Through AMV_API, not off disk. In cookie mode the access token is in
+         memory and this key is empty, so a storage read here is a request sent
+         with no Authorization header - a 401 on a screen that was working. */
+      const tok=(window.AMV_API&&AMV_API.token)||'';
       if(base) fetch(base.replace(/\/$/,'')+'/v1/fraud/record',{method:'POST',headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},body:JSON.stringify(a)}).catch(()=>{});
     }catch(e){}
     return a;
@@ -1194,7 +1197,7 @@ function renderBillingView(targetEl){
 /* Fetch and render the user's invoice history into the billing view. */
 async function _loadInvoices(){
   const el=$('bill-invoices'); if(!el) return;
-  const base=loadStr('amv_api_base')||''; const tok=loadStr('amv_api_token')||(window.AMV_API&&AMV_API.token)||'';
+  const base=loadStr('amv_api_base')||''; const tok=(window.AMV_API&&AMV_API.token)||'';
   if(!base){ return; }
   try{
     const r=await fetchDeadline(base.replace(/\/$/,'')+'/v1/stripe/invoices',{headers:{'Authorization':'Bearer '+tok}},15000);
@@ -1294,7 +1297,7 @@ function _planAllowsModel(mk){ if(mk==='auto') return true; const plan=(typeof v
    post-checkout redirect (?upgraded=1). Falls back silently with no backend. */
 async function syncEntitlement(){
   try{
-    if(!(window.AMV_API && AMV_API.live && AMV_API.token)) return;
+    if(!(window.AMV_API && AMV_API.live && AMV_API.hasSession)) return;
     const r = await AMV_API._fetch('/v1/entitlement', { method:'GET' });
     const d = await r.json().catch(()=>null);
     if(d && d.ok && d.entitlement){

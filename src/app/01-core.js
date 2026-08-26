@@ -114,7 +114,7 @@ function _renderFramedRefusal(){
    it cannot live in the requester's private bucket. It is safe because every
    read filters by the signed-in identity (AMVFamily.check/mine), and because
    the server is authoritative for links once the backend is connected. */
-const _GLOBAL_KEYS = new Set(['amv_links','amv_user','amv_theme','amv_accent','amv_sb_rail','amv_session_started','amv_credits','amv_credits_autoreload','amv_reduce_motion','amv_mute_chime','amv_oauth_return','amv_oauth_state','amv_gtoken','amv_gtoken_exp','amv_gauth','amv_api_base','amv_api_token','amv_api_refresh','amv_token_exp','amv_owner','amv_lang','amv_support_email',
+const _GLOBAL_KEYS = new Set(['amv_links','amv_user','amv_theme','amv_accent','amv_sb_rail','amv_session_started','amv_credits','amv_credits_autoreload','amv_reduce_motion','amv_mute_chime','amv_oauth_return','amv_oauth_state','amv_gtoken','amv_gtoken_exp','amv_gauth','amv_api_base','amv_api_token','amv_api_refresh','amv_token_exp','amv_refresh_cookie','amv_owner','amv_lang','amv_support_email',
   'amv_market_local','amv_market_purchases','amv_market_wallet','amv_market_ratings','amv_market_reviews','amv_market_installed','amv_market_threads',
   'amv_cookie_consent','amv_analytics_id',
   /* An invite code is captured before anyone is signed in, and belongs to the
@@ -360,8 +360,67 @@ const AMV_API = {
      Worker without rebuilding. Clearing it falls back to what shipped. */
   get base(){ try{ return loadStr('amv_api_base')||_defaultApiBase(); }catch(e){ return _defaultApiBase(); } },
   set base(v){ try{ const val=(v||'').trim(); if(val && !_isSecureApiOrigin(_originOf(val))){ try{ toast('Backend URL must be a valid https:// address','error'); }catch(e){} return; } saveStr('amv_api_base', val); }catch(e){} },
-  get token(){ try{ return loadStr('amv_api_token')||''; }catch(e){ return ''; } },
-  set token(v){ try{ saveStr('amv_api_token', v||''); }catch(e){} },
+  /* AMV-019 PART TWO: THE SHORT-LIVED HALF LEAVES STORAGE TOO.
+
+     Part one put the REFRESH token in an HttpOnly cookie, which was the half
+     worth the most: weeks valid, and a copy of it is a copy of the account.
+     This is the access token, and it is worth being precise about what moving
+     it does and does not buy, because the sentence "the session token is no
+     longer in localStorage" sounds like more than it is.
+
+     It does NOT stop an injected script that is running on this page right now.
+     Script that can read localStorage can read a module variable just as
+     easily - they are both in reach of code executing in the page, and anything
+     claiming otherwise is describing a different threat.
+
+     What it does stop is everything that reads storage WITHOUT executing here:
+     an extension enumerating localStorage, a shared or stolen machine, a disk
+     image, a browser profile copied off a laptop - and the plain fact that a
+     token in localStorage outlives the tab, so a page closed on Friday leaves a
+     working credential on that machine. A token in memory dies with the page.
+     That is a real and bounded win, and it is the same reasoning that took the
+     Google token off disk.
+
+     ONLY IN COOKIE MODE, and that is not a hedge. Without the cookie there is
+     nothing to re-mint from, so a memory-only access token would mean signing
+     in again on every reload - the feature would be "more secure" by being
+     broken. A deployment with no configured origin keeps the old path and keeps
+     working, which is honest degradation rather than a compromise. */
+  get token(){
+    if(this.cookieAuth) return this._atMem||'';
+    try{ return loadStr('amv_api_token')||''; }catch(e){ return ''; }
+  },
+  set token(v){
+    if(this.cookieAuth){
+      this._atMem = v||'';
+      /* Anything an earlier build left behind goes on the way past. Leaving it
+         would mean this change protects new sessions only, and every existing
+         one keeps the exposure it was supposed to lose. */
+      try{ localStorage.removeItem('amv_api_token'); }catch(e){}
+      try{ localStorage.removeItem('amv_token_exp'); }catch(e){}
+      return;
+    }
+    try{ saveStr('amv_api_token', v||''); }catch(e){}
+  },
+  /* IS THERE A SESSION - which on a fresh tab is NOT "is a token in hand".
+
+     In cookie mode a reload starts with an empty memory and a valid session in
+     a cookie the page cannot read. For the few hundred milliseconds before the
+     first mint, `token` is correctly empty and every screen that asked
+     `AMV_API.live && AMV_API.token` would have rendered as signed out and then
+     never corrected itself.
+
+     That is the same mistake this codebase has made repeatedly in the other
+     direction: one question standing in for another. "May I make a request
+     right now" is `token`. "Is this person signed in" is this. The thirty-one
+     places that only ever wanted the second one ask for it by name.
+
+     `_restoring` is set synchronously at load, before anything renders, so it
+     is never briefly false while a session is being restored. */
+  get hasSession(){
+    try{ return !!this.token || !!this._restoring; }catch(e){ return false; }
+  },
+  _restoring: false,
   /* AMV-019: the refresh token is the long-lived half of a session - weeks
      valid, and it mints access tokens on demand, so a copy of it is a copy of
      the account. Written to localStorage it was readable by anything that ended
@@ -375,6 +434,27 @@ const AMV_API = {
      with no configured origin cannot use a cross-origin cookie - the browser
      refuses it - so the old path stays for those, and the session keeps working
      rather than silently failing to survive a reload. */
+  /* GLOBAL, NOT PER-ACCOUNT, and it was per-account - which broke the whole
+     feature in a way nothing noticed.
+
+     Everything else here is filed under the signed-in account by _scopeKey.
+     This is not about a person: it is "does the server on this deployment put
+     the refresh token in a cookie", which is the same answer for everybody who
+     opens this build.
+
+     Scoped, the sequence was fatal. Signing up writes it while nobody is signed
+     in yet, so it lands under the anonymous scope; a moment later the account
+     is created and the scope changes; and from then on cookieAuth reads a
+     DIFFERENT key, finds nothing, and answers false. So the client believed it
+     was holding its own refresh token, the getter went to localStorage where
+     nothing had been written, and a reload restored no session at all. On the
+     deployment the cookie was built for, pressing F5 signed you out.
+
+     It was invisible because the two halves were tested apart: the Worker
+     tests proved the cookie is set with the right flags, and the client tests
+     read the source of the setter. Neither signed in and reloaded. Correct at
+     both ends, not joined in the middle - for the sixth time in this codebase,
+     and the reason a suite now does the whole round trip. */
   get cookieAuth(){ try{ return loadStr('amv_refresh_cookie')==='1'; }catch(e){ return false; } },
   set cookieAuth(v){ try{ saveStr('amv_refresh_cookie', v?'1':''); }catch(e){} },
   get refreshTok(){
@@ -496,7 +576,10 @@ const AMV_API = {
 
     // On 401 for an authenticated call, try a one-time silent refresh, then retry.
     if(r.status===401 && !/^\/auth\//.test(path)){
-      if(!_retried && this.refreshTok){
+      /* Cookie mode has no refresh token on this side to test for, and that
+         is the whole point of it - the browser carries one. Without this the
+         401 retry never fired for exactly the deployments the cookie is for. */
+      if(!_retried && (this.refreshTok || this.cookieAuth)){
         const refreshed = await this._doRefresh();
         if(refreshed){
           // re-run through _fetch so the token is re-attached under the origin guard
@@ -855,6 +938,22 @@ const AMV_API = {
   async portal(customer){ const r=await this._fetch('/v1/stripe/portal',{method:'POST',body:JSON.stringify({customer})}); const d=await r.json(); if(!r.ok||!d.url) throw new Error(d.error||'Could not open billing.'); return d.url; },
 };
 window.AMV_API = AMV_API;
+
+/* SET BEFORE ANYTHING RENDERS, AND SET SYNCHRONOUSLY.
+
+   In cookie mode a reload begins with no access token in hand and a live
+   session in a cookie this page cannot read. If `_restoring` were set later -
+   inside the boot refresh, say - there would be a window where hasSession
+   answered false while a perfectly good session was being restored, and every
+   screen that rendered in that window would have drawn itself signed out.
+
+   The condition is deliberately "cookie mode AND somebody was signed in here",
+   not cookie mode alone: a first-time visitor has no session to restore and
+   must not be told they have one. `amv_user` is a name and an address, not a
+   credential, which is why it is still on disk and can be asked. */
+try{
+  AMV_API._restoring = !!(AMV_API.cookieAuth && loadStr('amv_user'));
+}catch(e){ AMV_API._restoring = false; }
 function amvSaveBackend(){ var v=(document.getElementById('be-url')||{}).value||''; AMV_API.base=v.trim(); toast(v.trim()?'Backend URL saved':'Cleared - local mode','info'); if(typeof renderSetPane==='function') renderSetPane(); }
 async function amvBackendLogin(){ var em=(document.getElementById('be-email')||{}).value||''; var pw=(document.getElementById('be-pass')||{}).value||''; if(!em.trim()){ toast('Enter your email','error'); return; } if(!pw){ toast('Enter your password','error'); return; } if(!AMV_API.live){ toast('Set the backend URL first','error'); return; } try{ await AMV_API.login(em.trim(), {name:(S.user&&S.user.name)||'', password:pw}); var p=document.getElementById('be-pass'); if(p) p.value=''; toast('Connected to backend','info'); if(typeof renderSetPane==='function') renderSetPane(); }catch(e){ toast(e.message||'Login failed','error'); } }
 window.amvSaveBackend=amvSaveBackend; window.amvBackendLogin=amvBackendLogin;

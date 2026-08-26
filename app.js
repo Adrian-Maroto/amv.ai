@@ -114,7 +114,7 @@ function _renderFramedRefusal(){
    it cannot live in the requester's private bucket. It is safe because every
    read filters by the signed-in identity (AMVFamily.check/mine), and because
    the server is authoritative for links once the backend is connected. */
-const _GLOBAL_KEYS = new Set(['amv_links','amv_user','amv_theme','amv_accent','amv_sb_rail','amv_session_started','amv_credits','amv_credits_autoreload','amv_reduce_motion','amv_mute_chime','amv_oauth_return','amv_oauth_state','amv_gtoken','amv_gtoken_exp','amv_gauth','amv_api_base','amv_api_token','amv_api_refresh','amv_token_exp','amv_owner','amv_lang','amv_support_email',
+const _GLOBAL_KEYS = new Set(['amv_links','amv_user','amv_theme','amv_accent','amv_sb_rail','amv_session_started','amv_credits','amv_credits_autoreload','amv_reduce_motion','amv_mute_chime','amv_oauth_return','amv_oauth_state','amv_gtoken','amv_gtoken_exp','amv_gauth','amv_api_base','amv_api_token','amv_api_refresh','amv_token_exp','amv_refresh_cookie','amv_owner','amv_lang','amv_support_email',
   'amv_market_local','amv_market_purchases','amv_market_wallet','amv_market_ratings','amv_market_reviews','amv_market_installed','amv_market_threads',
   'amv_cookie_consent','amv_analytics_id',
   /* An invite code is captured before anyone is signed in, and belongs to the
@@ -360,8 +360,67 @@ const AMV_API = {
      Worker without rebuilding. Clearing it falls back to what shipped. */
   get base(){ try{ return loadStr('amv_api_base')||_defaultApiBase(); }catch(e){ return _defaultApiBase(); } },
   set base(v){ try{ const val=(v||'').trim(); if(val && !_isSecureApiOrigin(_originOf(val))){ try{ toast('Backend URL must be a valid https:// address','error'); }catch(e){} return; } saveStr('amv_api_base', val); }catch(e){} },
-  get token(){ try{ return loadStr('amv_api_token')||''; }catch(e){ return ''; } },
-  set token(v){ try{ saveStr('amv_api_token', v||''); }catch(e){} },
+  /* AMV-019 PART TWO: THE SHORT-LIVED HALF LEAVES STORAGE TOO.
+
+     Part one put the REFRESH token in an HttpOnly cookie, which was the half
+     worth the most: weeks valid, and a copy of it is a copy of the account.
+     This is the access token, and it is worth being precise about what moving
+     it does and does not buy, because the sentence "the session token is no
+     longer in localStorage" sounds like more than it is.
+
+     It does NOT stop an injected script that is running on this page right now.
+     Script that can read localStorage can read a module variable just as
+     easily - they are both in reach of code executing in the page, and anything
+     claiming otherwise is describing a different threat.
+
+     What it does stop is everything that reads storage WITHOUT executing here:
+     an extension enumerating localStorage, a shared or stolen machine, a disk
+     image, a browser profile copied off a laptop - and the plain fact that a
+     token in localStorage outlives the tab, so a page closed on Friday leaves a
+     working credential on that machine. A token in memory dies with the page.
+     That is a real and bounded win, and it is the same reasoning that took the
+     Google token off disk.
+
+     ONLY IN COOKIE MODE, and that is not a hedge. Without the cookie there is
+     nothing to re-mint from, so a memory-only access token would mean signing
+     in again on every reload - the feature would be "more secure" by being
+     broken. A deployment with no configured origin keeps the old path and keeps
+     working, which is honest degradation rather than a compromise. */
+  get token(){
+    if(this.cookieAuth) return this._atMem||'';
+    try{ return loadStr('amv_api_token')||''; }catch(e){ return ''; }
+  },
+  set token(v){
+    if(this.cookieAuth){
+      this._atMem = v||'';
+      /* Anything an earlier build left behind goes on the way past. Leaving it
+         would mean this change protects new sessions only, and every existing
+         one keeps the exposure it was supposed to lose. */
+      try{ localStorage.removeItem('amv_api_token'); }catch(e){}
+      try{ localStorage.removeItem('amv_token_exp'); }catch(e){}
+      return;
+    }
+    try{ saveStr('amv_api_token', v||''); }catch(e){}
+  },
+  /* IS THERE A SESSION - which on a fresh tab is NOT "is a token in hand".
+
+     In cookie mode a reload starts with an empty memory and a valid session in
+     a cookie the page cannot read. For the few hundred milliseconds before the
+     first mint, `token` is correctly empty and every screen that asked
+     `AMV_API.live && AMV_API.token` would have rendered as signed out and then
+     never corrected itself.
+
+     That is the same mistake this codebase has made repeatedly in the other
+     direction: one question standing in for another. "May I make a request
+     right now" is `token`. "Is this person signed in" is this. The thirty-one
+     places that only ever wanted the second one ask for it by name.
+
+     `_restoring` is set synchronously at load, before anything renders, so it
+     is never briefly false while a session is being restored. */
+  get hasSession(){
+    try{ return !!this.token || !!this._restoring; }catch(e){ return false; }
+  },
+  _restoring: false,
   /* AMV-019: the refresh token is the long-lived half of a session - weeks
      valid, and it mints access tokens on demand, so a copy of it is a copy of
      the account. Written to localStorage it was readable by anything that ended
@@ -375,6 +434,27 @@ const AMV_API = {
      with no configured origin cannot use a cross-origin cookie - the browser
      refuses it - so the old path stays for those, and the session keeps working
      rather than silently failing to survive a reload. */
+  /* GLOBAL, NOT PER-ACCOUNT, and it was per-account - which broke the whole
+     feature in a way nothing noticed.
+
+     Everything else here is filed under the signed-in account by _scopeKey.
+     This is not about a person: it is "does the server on this deployment put
+     the refresh token in a cookie", which is the same answer for everybody who
+     opens this build.
+
+     Scoped, the sequence was fatal. Signing up writes it while nobody is signed
+     in yet, so it lands under the anonymous scope; a moment later the account
+     is created and the scope changes; and from then on cookieAuth reads a
+     DIFFERENT key, finds nothing, and answers false. So the client believed it
+     was holding its own refresh token, the getter went to localStorage where
+     nothing had been written, and a reload restored no session at all. On the
+     deployment the cookie was built for, pressing F5 signed you out.
+
+     It was invisible because the two halves were tested apart: the Worker
+     tests proved the cookie is set with the right flags, and the client tests
+     read the source of the setter. Neither signed in and reloaded. Correct at
+     both ends, not joined in the middle - for the sixth time in this codebase,
+     and the reason a suite now does the whole round trip. */
   get cookieAuth(){ try{ return loadStr('amv_refresh_cookie')==='1'; }catch(e){ return false; } },
   set cookieAuth(v){ try{ saveStr('amv_refresh_cookie', v?'1':''); }catch(e){} },
   get refreshTok(){
@@ -496,7 +576,10 @@ const AMV_API = {
 
     // On 401 for an authenticated call, try a one-time silent refresh, then retry.
     if(r.status===401 && !/^\/auth\//.test(path)){
-      if(!_retried && this.refreshTok){
+      /* Cookie mode has no refresh token on this side to test for, and that
+         is the whole point of it - the browser carries one. Without this the
+         401 retry never fired for exactly the deployments the cookie is for. */
+      if(!_retried && (this.refreshTok || this.cookieAuth)){
         const refreshed = await this._doRefresh();
         if(refreshed){
           // re-run through _fetch so the token is re-attached under the origin guard
@@ -855,6 +938,22 @@ const AMV_API = {
   async portal(customer){ const r=await this._fetch('/v1/stripe/portal',{method:'POST',body:JSON.stringify({customer})}); const d=await r.json(); if(!r.ok||!d.url) throw new Error(d.error||'Could not open billing.'); return d.url; },
 };
 window.AMV_API = AMV_API;
+
+/* SET BEFORE ANYTHING RENDERS, AND SET SYNCHRONOUSLY.
+
+   In cookie mode a reload begins with no access token in hand and a live
+   session in a cookie this page cannot read. If `_restoring` were set later -
+   inside the boot refresh, say - there would be a window where hasSession
+   answered false while a perfectly good session was being restored, and every
+   screen that rendered in that window would have drawn itself signed out.
+
+   The condition is deliberately "cookie mode AND somebody was signed in here",
+   not cookie mode alone: a first-time visitor has no session to restore and
+   must not be told they have one. `amv_user` is a name and an address, not a
+   credential, which is why it is still on disk and can be asked. */
+try{
+  AMV_API._restoring = !!(AMV_API.cookieAuth && loadStr('amv_user'));
+}catch(e){ AMV_API._restoring = false; }
 function amvSaveBackend(){ var v=(document.getElementById('be-url')||{}).value||''; AMV_API.base=v.trim(); toast(v.trim()?'Backend URL saved':'Cleared - local mode','info'); if(typeof renderSetPane==='function') renderSetPane(); }
 async function amvBackendLogin(){ var em=(document.getElementById('be-email')||{}).value||''; var pw=(document.getElementById('be-pass')||{}).value||''; if(!em.trim()){ toast('Enter your email','error'); return; } if(!pw){ toast('Enter your password','error'); return; } if(!AMV_API.live){ toast('Set the backend URL first','error'); return; } try{ await AMV_API.login(em.trim(), {name:(S.user&&S.user.name)||'', password:pw}); var p=document.getElementById('be-pass'); if(p) p.value=''; toast('Connected to backend','info'); if(typeof renderSetPane==='function') renderSetPane(); }catch(e){ toast(e.message||'Login failed','error'); } }
 window.amvSaveBackend=amvSaveBackend; window.amvBackendLogin=amvBackendLogin;
@@ -1957,7 +2056,7 @@ try{ window._syncSessionList=_syncSessionList; }catch(e){}
 
 const AMVSync = {
   _timer: null,
-  enabled(){ try{ return !!(window.AMV_API && AMV_API.live && AMV_API.token); }catch(e){ return false; } },
+  enabled(){ try{ return !!(window.AMV_API && AMV_API.live && AMV_API.hasSession); }catch(e){ return false; } },
   async pull(){
     if(!this.enabled()) return false;
     try{
@@ -3505,7 +3604,13 @@ async function handleGoogleCred(resp) {
         try{ if(typeof _refClear==='function') _refClear(); }catch(e){}
         // server returns the verified profile + a session token
         const acct=saveGoogleAccount((data.name||p.name||p.email.split('@')[0]), (data.email||p.email));
-        if(data.token){ try{ AMV_API.token=data.token; saveStr('amv_api_token', data.token); }catch(e){} }
+        /* Through the setter ONLY. The saveStr beside it wrote the token
+           straight to disk, past the setter that decides whether it may go
+           there - so in cookie mode the one path that is supposed to keep the
+           token in memory would have persisted it anyway, quietly, and the
+           whole change would have been true everywhere except the screen most
+           people sign in from. */
+        if(data.token){ try{ AMV_API.token=data.token; }catch(e){} }
         const pic=data.picture||p.picture;
         if(pic&&acct.email){ fetch(pic).then(x=>x.blob()).then(b=>{const rd=new FileReader();rd.onload=e=>{saveStr('amv_pfp_'+acct.email,e.target.result);updateSbUser();};rd.readAsDataURL(b);}).catch(()=>{}); }
         /* accCk, not saveStr: cookie consent is per DEVICE, so it lives in the
@@ -3725,7 +3830,15 @@ async function _ensureBackendSession(){
       // on boot, so the first authenticated action doesn't eat a 401+retry
       // round-trip. Single-flight in _doRefresh means this is safe to call
       // even if something else triggers a refresh at the same time.
-      if(AMV_API.refreshTok){
+      /* OR THE COOKIE, WHICH THIS SIDE CANNOT SEE.
+
+         The guard was `if(AMV_API.refreshTok)` - correct while the refresh
+         token was in storage, and false for every cookie-mode session, where
+         the browser holds it and script cannot read it. Left as it was, a
+         reload would have restored nothing: no token, no refresh attempted,
+         and a person signed out by the act of pressing F5 with a valid session
+         sitting in a cookie. */
+      if(AMV_API.refreshTok || AMV_API.cookieAuth){
         try{ await AMV_API._doRefresh(); }catch(e){ /* fall through */ }
       }
       // If refresh failed (or there was none), we keep whatever token we have;
@@ -3733,6 +3846,19 @@ async function _ensureBackendSession(){
       // password accounts we can't silently re-auth (no stored password).
     }
   }catch(e){ /* backend offline → app falls back to direct mode */ }
+  finally{
+    /* THE RESTORE IS OVER, whichever way it went, and the screens drawn during
+       it may have been drawn on the wrong answer. Cleared first, then one
+       re-render - a flag left set would make hasSession permanently true and
+       turn a signed-out person into a screen full of controls that 401. */
+    try{
+      if(window.AMV_API && AMV_API._restoring){
+        AMV_API._restoring = false;
+        if(typeof setTab === 'function' && S && S.tab) setTab(S.tab);
+        if(typeof updateSbUser === 'function') updateSbUser();
+      }
+    }catch(e){}
+  }
 }
 function toggleSb(){
   const sb=$('sb'); if(!sb) return;
@@ -4057,10 +4183,18 @@ const _SIGNOUT_CLEAR_GLOBAL = [
   'amv_market_local','amv_market_purchases','amv_market_wallet',
   'amv_market_ratings','amv_market_reviews','amv_market_installed','amv_market_threads',
 ];
+/* amv_api_token and amv_api_refresh stay listed even though cookie mode keeps
+   neither on disk: a device that ran an older build still has them, and the
+   erase test fails on any _GLOBAL_KEYS entry that is in neither list. A key
+   that has stopped being written is not a key that has stopped existing. */
 const _DEVICE_GLOBAL_KEYS = [
   'amv_user','amv_api_token','amv_api_refresh','amv_token_exp',
   'amv_theme','amv_accent','amv_sb_rail','amv_session_started','amv_reduce_motion',
   'amv_mute_chime','amv_api_base','amv_lang','amv_support_email','amv_gauth',
+  /* Which auth mode this deployment uses. A fact about the server, not about
+     the person, so it survives a sign-out - the next person to sign in on this
+     machine meets the same server. */
+  'amv_refresh_cookie',
   'amv_cookie_consent','amv_analytics_id','amv_ref_code','amv_links',
 ];
 try{ window._SIGNOUT_CLEAR_GLOBAL=_SIGNOUT_CLEAR_GLOBAL; window._DEVICE_GLOBAL_KEYS=_DEVICE_GLOBAL_KEYS; }catch(e){}
@@ -4069,8 +4203,13 @@ function signOut(){
      post to /auth/logout with no body, which revoked every token on the
      account - so signing out of a laptop silently signed out a phone. The
      button says this device; now it means it. */
-  try{ if(window.AMV_API && AMV_API.live && AMV_API.token) AMV_API.logout(false); }catch(e){}
+  try{ if(window.AMV_API && AMV_API.live && AMV_API.hasSession) AMV_API.logout(false); }catch(e){}
+  /* Disk AND memory. The removeItem calls clear the non-cookie path; in cookie
+     mode both halves are held in module variables, and a sign-out that emptied
+     storage while leaving a usable token in memory would be a sign-out that
+     only looked like one - the next request would still succeed. */
   try{ localStorage.removeItem('amv_api_token'); localStorage.removeItem('amv_api_refresh'); localStorage.removeItem('amv_token_exp'); }catch(e){}
+  try{ if(window.AMV_API){ AMV_API._atMem=''; AMV_API._rtMem=''; AMV_API._restoring=false; } }catch(e){}
   /* Everything unscoped that belongs to the person rather than the machine.
      A connected Google account is the one that matters most: leaving its access
      token behind hands the next account somebody's mail. */
@@ -4252,7 +4391,7 @@ function _buildShareLink(c){
    Slack or X shows no title and no preview. It reads as a bare URL, which
    reads as spam. A hosted page previews properly and can be revoked. */
 async function _createHostedShare(c){
-  if(!(window.AMV_API && AMV_API.live && AMV_API.token)) return null;
+  if(!(window.AMV_API && AMV_API.live && AMV_API.hasSession)) return null;
   try{
     const r = await AMV_API._fetch('/v1/share/create', { method:'POST', body: JSON.stringify({
       title: c.title || 'Shared conversation',
@@ -4265,7 +4404,7 @@ async function _createHostedShare(c){
 /* Put a shared page into search results, or take it back out. The server owns
    the decision; this only carries it. */
 async function _setShareListed(id, listed){
-  if(!(window.AMV_API && AMV_API.live && AMV_API.token)) return false;
+  if(!(window.AMV_API && AMV_API.live && AMV_API.hasSession)) return false;
   try{
     const r = await AMV_API._fetch('/v1/share/visibility', { method:'POST', body: JSON.stringify({ id, listed:!!listed }) });
     const d = await r.json().catch(()=>null);
@@ -4357,7 +4496,7 @@ function _renderSharedView(data){
    anywhere to manage. */
 async function openSharedChatsManager(){
   const ovr=$('ovr'); if(!ovr) return;
-  const live = !!(window.AMV_API && AMV_API.live && AMV_API.token);
+  const live = !!(window.AMV_API && AMV_API.live && AMV_API.hasSession);
   ovr.innerHTML='<div class="ov" id="shr-bg"><div class="ob">'+
     '<button class="oc" data-dact="closeOvr">&#215;</button>'+
     '<h2>Shared conversations</h2>'+
@@ -6514,7 +6653,7 @@ async function _callAI(msgs, _opts) {
 async function _recoverAnswer(turnId){
   if(!turnId) return '';
   try{
-    if(!(window.AMV_API && AMV_API.live && AMV_API.token)) return '';
+    if(!(window.AMV_API && AMV_API.live && AMV_API.hasSession)) return '';
     for(let attempt=0; attempt<3; attempt++){
       const r = await AMV_API._fetch('/v1/resume?id='+encodeURIComponent(turnId), { method:'GET', timeout:8000 });
       const d = await r.json().catch(()=>null);
@@ -6879,7 +7018,7 @@ function _reportAnswerRating(m, emoji, on){
     const up = /\u{1F44D}|\u{2764}|\u{1F525}|\u{1F389}/u.test(emoji);
     const down = /\u{1F44E}/u.test(emoji);
     if(!up && !down) return;                         // only the two that mean good/bad
-    if(!(window.AMV_API && AMV_API.live && AMV_API.token)) return;
+    if(!(window.AMV_API && AMV_API.live && AMV_API.hasSession)) return;
     const engine = m._engine || (typeof MODELS!=='undefined' && MODELS[m.model] ? MODELS[m.model].model : '');
     AMV_API._fetch('/v1/feedback', { method:'POST', body: JSON.stringify({
       rating: up ? 'up' : 'down',
@@ -6911,7 +7050,7 @@ function _askWhyBad(engine){
     host.scrollTop = host.scrollHeight;
     const send = (reason) => {
       try{
-        if(reason && window.AMV_API && AMV_API.live && AMV_API.token){
+        if(reason && window.AMV_API && AMV_API.live && AMV_API.hasSession){
           AMV_API._fetch('/v1/feedback', { method:'POST', body: JSON.stringify({
             rating:'down', engine, feature:'chat', reason })}).catch(()=>{});
         }
@@ -8074,7 +8213,7 @@ window._ovShell=_ovShell; window._ovWire=_ovWire;
    ============================================================ */
 const AMVTeam = {
   _cache:null,
-  enabled(){ try{ return !!(window.AMV_API && AMV_API.live && AMV_API.token); }catch(e){ return false; } },
+  enabled(){ try{ return !!(window.AMV_API && AMV_API.live && AMV_API.hasSession); }catch(e){ return false; } },
   /* Throws rather than returning null on failure. A network error is NOT "you
      have no team" - answering it that way showed an existing team's owner a
      create-a-team form, and a member an upgrade wall, for a team that exists. */
@@ -8291,7 +8430,7 @@ function _wireSeatBuy(){
   on($('seat-buy'),'click',async()=>{
     const n=clamp(el.value);
     const say=t=>{ const s2=$('seat-say'); if(s2) s2.textContent=t||''; };
-    if(!(window.AMV_API&&AMV_API.live&&AMV_API.token)){
+    if(!(window.AMV_API&&AMV_API.live&&AMV_API.hasSession)){
       say('Sign in first and this takes you straight to checkout.');
       try{ openAuth('signup'); }catch(e){}
       return;
@@ -8785,7 +8924,7 @@ const MARKET_STARTER = [
 
 const AMVMarket = {
   _remote:null,
-  _live(){ try{ return !!(window.AMV_API && AMV_API.live && AMV_API.token); }catch(e){ return false; } },
+  _live(){ try{ return !!(window.AMV_API && AMV_API.live && AMV_API.hasSession); }catch(e){ return false; } },
   _me(){ return ((S.user&&S.user.email)||'you@amv.local').toLowerCase(); },
   _meName(){ return (S.user&&S.user.name)||'You'; },
   // --- local stores (used when there's no backend) ---
@@ -10906,7 +11045,7 @@ function _usageContentHTML(){
      device-local tally that the server has never seen. The distinction is
      stated on the panel rather than left for the user to discover when the two
      disagree. */
-  const serverPanel = (window.AMV_API && AMV_API.live && AMV_API.token)
+  const serverPanel = (window.AMV_API && AMV_API.live && AMV_API.hasSession)
     ? '<div class="ss2" id="srv-usage"><h3>Your plan allowance</h3><div class="srv-load">Loading your real usage\u2026</div></div>'
     : '';
   setTimeout(_paintServerUsage, 0);
@@ -10945,7 +11084,7 @@ window._usageContentHTML=_usageContentHTML;
    builder so a slow or failed request never delays the rest of the screen. */
 function _paintServerUsage(){
   const host = document.getElementById('srv-usage');
-  if(!host || !(window.AMV_API && AMV_API.live && AMV_API.token)) return;
+  if(!host || !(window.AMV_API && AMV_API.live && AMV_API.hasSession)) return;
   AMV_API.usage().then(d=>{
     if(!d || !d.day || !d.month){
       host.innerHTML = '<h3>Your plan allowance</h3><div class="srv-off">Your real allowance is unavailable right now. The figures below are this device\u2019s own tally.</div>';
@@ -11246,7 +11385,10 @@ const AMVFraud = {
     try{ if(typeof AEGIS!=='undefined'&&AEGIS.log) AEGIS.log('fraud_flag',{category:a.category,risk:a.risk,action:a.action}); }catch(e){}
     try{
       const base=(typeof loadStr==='function'&&loadStr('amv_api_base'))||'';
-      const tok=(typeof loadStr==='function'&&loadStr('amv_api_token'))||(window.AMV_API&&AMV_API.token)||'';
+      /* Through AMV_API, not off disk. In cookie mode the access token is in
+         memory and this key is empty, so a storage read here is a request sent
+         with no Authorization header - a 401 on a screen that was working. */
+      const tok=(window.AMV_API&&AMV_API.token)||'';
       if(base) fetch(base.replace(/\/$/,'')+'/v1/fraud/record',{method:'POST',headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},body:JSON.stringify(a)}).catch(()=>{});
     }catch(e){}
     return a;
@@ -12178,7 +12320,7 @@ function renderBillingView(targetEl){
 /* Fetch and render the user's invoice history into the billing view. */
 async function _loadInvoices(){
   const el=$('bill-invoices'); if(!el) return;
-  const base=loadStr('amv_api_base')||''; const tok=loadStr('amv_api_token')||(window.AMV_API&&AMV_API.token)||'';
+  const base=loadStr('amv_api_base')||''; const tok=(window.AMV_API&&AMV_API.token)||'';
   if(!base){ return; }
   try{
     const r=await fetchDeadline(base.replace(/\/$/,'')+'/v1/stripe/invoices',{headers:{'Authorization':'Bearer '+tok}},15000);
@@ -12278,7 +12420,7 @@ function _planAllowsModel(mk){ if(mk==='auto') return true; const plan=(typeof v
    post-checkout redirect (?upgraded=1). Falls back silently with no backend. */
 async function syncEntitlement(){
   try{
-    if(!(window.AMV_API && AMV_API.live && AMV_API.token)) return;
+    if(!(window.AMV_API && AMV_API.live && AMV_API.hasSession)) return;
     const r = await AMV_API._fetch('/v1/entitlement', { method:'GET' });
     const d = await r.json().catch(()=>null);
     if(d && d.ok && d.entitlement){
@@ -13158,7 +13300,7 @@ async function handlePaymentSuccess(plan, opts){
   opts = opts || {};
   try{
     if(plan) _setPlan(plan);
-    if(window.AMV_API && AMV_API.live && AMV_API.token){
+    if(window.AMV_API && AMV_API.live && AMV_API.hasSession){
       let tries=0; const poll=async()=>{ await syncEntitlement(); if(++tries<3) setTimeout(poll, 2500); };
       poll();
     }
@@ -17765,7 +17907,7 @@ async function _devDeploy(){
 
   const title=(_DEV.activePath?_DEV.activePath.split('/').pop().replace(/\.\w+$/,''):'My app')||'My app';
 
-  if(!(window.AMV_API && AMV_API.live && AMV_API.token)){
+  if(!(window.AMV_API && AMV_API.live && AMV_API.hasSession)){
     toast('Connect the AMV engine in Settings to publish a live URL. You can still download the file.','error',6000);
     return;
   }
@@ -18516,7 +18658,7 @@ async function _amvRunTool(name, input, onStatus){
 
     if(name==='deploy_site'){
       onStatus && onStatus('Publishing it live\u2026');
-      if(!(window.AMV_API && AMV_API.live && AMV_API.token))
+      if(!(window.AMV_API && AMV_API.live && AMV_API.hasSession))
         return { text:'Publishing needs the AMV engine connected. Tell the user to enable it in Settings.', render:null };
       let html = String(input.html||'').replace(/^```[a-z]*\n?/i,'').replace(/```\s*$/,'').trim();
       if(!html) return { text:'Nothing to publish - no HTML was given.', render:null };
@@ -20268,7 +20410,7 @@ function renderSettingsView(){
    the public site key live server-side. */
 let _WIDGET_CFG=null;
 function _renderWidgetPane(pane){
-  const live=!!(window.AMV_API && AMV_API.live && AMV_API.token);
+  const live=!!(window.AMV_API && AMV_API.live && AMV_API.hasSession);
   const base=(loadStr('amv_api_base')||'').replace(/\/+$/,'');
   if(!live){
     pane.innerHTML=
@@ -20687,7 +20829,7 @@ window.disconnectIntegration=disconnectIntegration;
    irreversible, so we require the user to type DELETE to confirm. */
 function _confirmDeleteAccount(){
   const ovr=$('ovr'); if(!ovr) return;
-  const connected = !!(window.AMV_API && AMV_API.live && AMV_API.token);
+  const connected = !!(window.AMV_API && AMV_API.live && AMV_API.hasSession);
   ovr.innerHTML=
     '<div class="ov" id="del-bg"><div class="ob">'+
       '<button class="oc" data-dact="closeOvr">&#215;</button>'+
@@ -20778,7 +20920,7 @@ async function _exportUserData(){
        "Delete account". Automations, approvals, handoffs, purchases, the
        wallet, listings and the activity log all live on the server. */
     let server=null, serverError='';
-    if(window.AMV_API && AMV_API.live && AMV_API.token){
+    if(window.AMV_API && AMV_API.live && AMV_API.hasSession){
       try{
         const r=await AMV_API._fetch('/v1/account/export', { method:'GET' });
         const d=await r.json().catch(()=>null);
@@ -20996,7 +21138,7 @@ function _activeSessionsHTML(){
     const started=loadStr('amv_session_started')||Date.now();
     if(!loadStr('amv_session_started')) saveStr('amv_session_started',String(started));
     const when=new Date(Number(started)).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
-    const live=!!(window.AMV_API && AMV_API.live && AMV_API.token);
+    const live=!!(window.AMV_API && AMV_API.live && AMV_API.hasSession);
     return '<div class="ss2"><h3>This device</h3>'+
       '<div class="set-sub" style="margin-top:-2px;margin-bottom:12px">AMV cannot list your other devices - nothing on the server records which browsers hold a session. What it can do is end every one of them at once.</div>'+
       '<div class="sess-row sess-current">'+
@@ -21247,7 +21389,7 @@ function _renderSetPaneInner(only, into){
        implementation here would leave two to keep in step; there is one. */
     on($('signout-others'),'click',()=>{
       const msg=$('sess-msg');
-      if(!(window.AMV_API && AMV_API.live && AMV_API.token)){
+      if(!(window.AMV_API && AMV_API.live && AMV_API.hasSession)){
         if(msg) msg.textContent='Not connected to the AMV backend, so there are no server sessions to end. Nothing was changed.';
         return;
       }
@@ -21599,7 +21741,9 @@ function _renderSetPaneInner(only, into){
 
   } else if(sp==='backend'){
     const liveBase=loadStr('amv_api_base')||'';
-    const tokenSet=!!(loadStr('amv_api_token'));
+    /* Is there a SESSION, which on a fresh tab in cookie mode is not the same
+       question as whether a token has been minted yet. */
+    const tokenSet=!!(window.AMV_API && AMV_API.hasSession);
     pane.innerHTML=
       '<h2 class="set-title">Live / Backend</h2>'+
       '<div class="set-sub">Connect AMV to your deployed backend so Crew jobs, approvals and Handoff work for real and across accounts. Leave blank to run in local demo mode.</div>'+
@@ -24764,7 +24908,7 @@ window.AMV_ENGINE = true;
    cap can never be bypassed. _aiBase()/_aiHeaders() are the single choke-point;
    if the backend isn't configured, AI calls fail loudly instead of silently
    leaking a key into the browser. */
-function _aiBackendReady(){ return !!(window.AMV_API && AMV_API.live && AMV_API.token); }
+function _aiBackendReady(){ return !!(window.AMV_API && AMV_API.live && AMV_API.hasSession); }
 function _aiBase(){
   if(!_aiBackendReady()) throw new Error('AMV isn’t connected yet. The workspace owner needs to switch on the AMV engine in Settings.');
   return AMV_API.base.replace(/\/$/,'')+'/v1/messages';
@@ -25636,7 +25780,7 @@ async function _labDeploy(){
     toast('Publishing works for web pages. Switch the language to HTML, or build a page in Dev.','info',5000);
     return;
   }
-  if(!(window.AMV_API && AMV_API.live && AMV_API.token)){
+  if(!(window.AMV_API && AMV_API.live && AMV_API.hasSession)){
     toast('Connect the AMV engine in Settings to publish a live URL.','error',5000);
     return;
   }
@@ -26066,7 +26210,7 @@ async function _taskRun(mode){
    app, which made a "7am daily brief" useless.) If the engine isn't connected,
    we say so honestly instead of silently pretending to schedule. */
 async function _autoApi(path, body){
-  if(!(window.AMV_API && AMV_API.live && AMV_API.token))
+  if(!(window.AMV_API && AMV_API.live && AMV_API.hasSession))
     throw new Error('not-connected');
   const r = await fetchDeadline(AMV_API.base.replace(/\/$/,'') + path, {
     method:'POST',
@@ -27838,7 +27982,7 @@ AMVConnectors.register({
           const e = new Error('Web automation needs the AMV backend. Connect it in Settings and this starts working.');
           e.code = 'needs_service'; throw e;
         }
-        const tok = (typeof loadStr === 'function' && loadStr('amv_api_token')) || '';
+        const tok = (window.AMV_API && AMV_API.token) || '';
         const r = await fetchDeadline(base.replace(/\/$/, '') + '/v1/browser/run', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok },
@@ -28654,7 +28798,7 @@ const AMVFamily = {
      with no backend it cannot email, and says so rather than pretending. */
   _deliver(inv){
     try{
-      if(window.AMV_API && AMV_API.live && AMV_API.token){
+      if(window.AMV_API && AMV_API.live && AMV_API.hasSession){
         /* The reply is what decides whether a code was actually sent, so it is
            read rather than discarded. This used to fire the request with a
            swallowed catch and announce "a confirmation code was sent" - while
@@ -28698,7 +28842,7 @@ const AMVFamily = {
      genuinely share it. The local path below is the offline mirror. */
   async acceptRemote(inviteId, code){
     const base = (typeof loadStr === 'function' && (loadStr('amv_api_base')||'')).replace(/\/$/,'');
-    const tok = (typeof loadStr === 'function' && loadStr('amv_api_token')) || '';
+    const tok = (window.AMV_API && AMV_API.token) || '';
     if(!base || !tok) return this.accept(inviteId, code);   // offline mirror
     const r = await fetchDeadline(base + '/v1/link/accept', {
       method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
@@ -28923,7 +29067,9 @@ const AMVFinance = {
   },
 
   _base(){ try{ return (loadStr('amv_api_base')||'').replace(/\/$/,''); }catch(e){ return ''; } },
-  _tok(){ try{ return loadStr('amv_api_token')||''; }catch(e){ return ''; } },
+  /* The live token, wherever it is being held. Read off disk this returned
+     nothing in cookie mode and every finance call went out unauthenticated. */
+  _tok(){ try{ return (window.AMV_API && AMV_API.token)||''; }catch(e){ return ''; } },
 
   /* Every call goes through OUR server, never straight to the bank from the
      browser - so the provider secret and the access token stay server-side. */
@@ -29608,7 +29754,7 @@ const AMVCompliance = {
     this._save(r);
     try{
       const base = (loadStr('amv_api_base')||'').replace(/\/$/,'');
-      const tok = loadStr('amv_api_token')||'';
+      const tok = (window.AMV_API && AMV_API.token)||'';
       if(base && tok) fetch(base + '/v1/consent', {
         method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
         /* The birth year goes with it. The gate that matters is the server's -
@@ -29643,7 +29789,7 @@ const AMVCompliance = {
        the terms - and the server refuses money until it has this. */
     try{
       const base = (loadStr('amv_api_base')||'').replace(/\/$/,'');
-      const tok = loadStr('amv_api_token')||'';
+      const tok = (window.AMV_API && AMV_API.token)||'';
       if(base && tok && r.termsVersion) fetch(base + '/v1/consent', {
         method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
         body: JSON.stringify({ termsVersion:r.termsVersion, birthYear:y })
@@ -30290,7 +30436,7 @@ function _renderFamilyPane(pane){
 
   _wireFamilyParent(pane);
   _wireFamilyChild(pane);
-  if(needState && !_FAM_BUSY && window.AMV_API && AMV_API.live && AMV_API.token){
+  if(needState && !_FAM_BUSY && window.AMV_API && AMV_API.live && AMV_API.hasSession){
     _FAM_BUSY = true;
     AMV_API.familyGet()
       .then(d => { _FAM_BUSY = false; _FAM_STATE = d; _renderFamilyPane(pane); })
@@ -30298,7 +30444,7 @@ function _renderFamilyPane(pane){
   }
   /* Same shape, same trap: set on BOTH paths so a failure cannot leave this
      null and re-fetch on every redraw forever. */
-  if(needLinks && !_LINK_BUSY && window.AMV_API && AMV_API.live && AMV_API.token){
+  if(needLinks && !_LINK_BUSY && window.AMV_API && AMV_API.live && AMV_API.hasSession){
     _LINK_BUSY = true;
     AMV_API.linkList()
       .then(d => { _LINK_BUSY = false; _LINK_STATE = d; _renderFamilyPane(pane); })
@@ -30316,7 +30462,7 @@ function _renderFamilyPane(pane){
          immediately" - which was false, because nothing had told the authority
          that enforces it. So the server goes first, and nothing is claimed
          unless it agreed. */
-      const online = !!(window.AMV_API && AMV_API.live && AMV_API.token);
+      const online = !!(window.AMV_API && AMV_API.live && AMV_API.hasSession);
       if(online){
         this.disabled = true;
         try{
@@ -30789,7 +30935,7 @@ function _actWhere(ev){
 
 function _renderActivityBlock(host){
   host.innerHTML = '<div class="act-load">Loading your account activity…</div>';
-  if(!(window.AMV_API && AMV_API.live && AMV_API.token)){
+  if(!(window.AMV_API && AMV_API.live && AMV_API.hasSession)){
     host.innerHTML = '<div class="act-off">Account activity is recorded on the server. '+
       'Sign in to your AMV account to see where and when it has been used.</div>';
     return;
@@ -31068,7 +31214,7 @@ function _renderApiKeysPane(pane){
     _apiDocsHTML();
 
   const body = document.getElementById('api-body');
-  if(!(window.AMV_API && AMV_API.live && AMV_API.token)){
+  if(!(window.AMV_API && AMV_API.live && AMV_API.hasSession)){
     body.innerHTML = '<div class="ak-off">API keys live on your AMV account. Sign in and they appear here.</div>';
     return;
   }
