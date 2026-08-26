@@ -102,10 +102,17 @@ section('The exemptions have not gone stale');
 
 section('The ones that create sessions at a third party are bounded by name');
 {
-  /* Named individually: these four are where an unbounded loop hurts other
-     customers rather than the caller, so a general rule passing is not enough. */
+  /* Named individually: these are where an unbounded loop hurts other customers
+     rather than the caller, so a general rule passing is not enough.
+
+     googleOAuthRefresh was the fourth. It minted a Google access token for the
+     browser on demand, which is exactly the shape that gets an OAuth client
+     throttled for everybody, and it is gone with the rest of the older grant.
+     The renewal it did now happens inside connUse, driven by the token's own
+     expiry rather than by however often a page asks - so the thing the bound
+     existed to prevent cannot be triggered from outside at all. */
   [['stripeCheckout', 'stripeco:'], ['stripePortal', 'stripepo:'],
-   ['marketBuy', 'mktbuy:'], ['googleOAuthRefresh', 'goauthref:']].forEach(([fn, key]) => {
+   ['marketBuy', 'mktbuy:']].forEach(([fn, key]) => {
     ok(new RegExp('guardAction\\(env, `' + key).test(bodyOf(fn)),
        fn + ' is rate limited per account', fn);
   });

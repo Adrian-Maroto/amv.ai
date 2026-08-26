@@ -32,11 +32,18 @@ const worker = await readFile(new URL('../../amv-backend.js', import.meta.url), 
 
    Sliced to the next top-level function instead, so a window is exactly one
    function however long it is or how much comment it carries. */
+/* Plain `function` as well as `async function`. This looked only for the async
+   form, so asking it for a synchronous helper returned an empty string - and
+   every assertion against that empty string fails for a reason that has nothing
+   to do with the code. A slicer that answers "" for a function that exists is
+   the same class of problem as one that slices too far. */
 const fn = (name) => {
-  const i = worker.indexOf('async function ' + name + '(');
+  let i = worker.indexOf('async function ' + name + '(');
+  let lead = 10;
+  if (i < 0) { i = worker.indexOf('\nfunction ' + name + '('); lead = 1; }
   if (i < 0) return '';
-  const next = worker.slice(i + 10).search(/\n(?:async )?function [A-Za-z_]/);
-  return next < 0 ? worker.slice(i) : worker.slice(i, i + 10 + next);
+  const next = worker.slice(i + lead).search(/\n(?:async )?function [A-Za-z_]/);
+  return next < 0 ? worker.slice(i) : worker.slice(i, i + lead + next);
 };
 
 const app = await bootApp({ tab: 'chat', user: { name: 'Adrian', email: 'a@amv.dev', ini: 'A' } });
@@ -99,8 +106,17 @@ section('The emergency stop reaches an unattended run before it opens anything')
 section('A grant is only good for what it was granted for');
 {
   const use = fn('connUse');
-  ok(/c\.scopes\.indexOf\(need\) >= 0/.test(use),
-     'using a connection checks the capability against what was granted');
+  /* A SET, NOT A SINGLE CAPABILITY. Copying a school document needs permission
+     to read the teacher's file AND permission to create one, at the same
+     moment; satisfying half from one grant and half from another would put the
+     refusal in the middle of the operation, after the read and before the copy.
+     So the caller names what it needs, and ONE connection has to carry all of
+     it. Asserted on `every`, which is what makes a partial grant a refusal
+     rather than a half-done job. */
+  ok(/const needs = Array\.isArray\(need\)/.test(use),
+     'a capability requirement can be a set, not just one string');
+  ok(/needs\.every\(n => c\.scopes\.indexOf\(n\) >= 0\)/.test(use),
+     'and using a connection checks EVERY capability against what was granted');
   ok(/o\.attended \|\| c\.unattended/.test(use),
      'and a foreground-only connection is not used by a background run');
   const start = fn('connStart');
@@ -153,8 +169,18 @@ section('The handshake cannot be replayed or hijacked');
   ok(/code_challenge_method: 'S256'/.test(start), 'PKCE is used');
   ok(/sealed: await connSeal\(env, \{ verifier/.test(start),
      'and the verifier is sealed server-side rather than left in the browser');
-  ok(/rOrigin !== appOrigin/.test(start),
+  /* THE COMPARISON MOVED OUT OF THIS FUNCTION AND INTO THE ONE THE WORKER
+     ALREADY HAD. connStart used to parse and compare origins inline, which was
+     correct and was a second implementation of _sameOrigin - the arrangement
+     where a fix applied to one copy silently misses the other. Anchored on the
+     call now, plus the query/fragment rule that is specific to a redirect
+     target and stayed here. */
+  ok(/_sameOrigin\(redirect, appUrl\)/.test(start),
      'the return address is checked against this deployment, so it is not an open redirect');
+  ok(/!u\.search && !u\.hash/.test(start),
+     'and one carrying a query or fragment is refused, because the provider matches it exactly');
+  ok(/if \(x\.username \|\| x\.password\) return false/.test(fn('_sameOrigin')),
+     'and the comparison it calls refuses a credential URL outright, which a prefix check cannot');
 }
 
 section('The two OAuth returns do not collide');
@@ -225,7 +251,7 @@ section('A capability asked for cannot conjure access that was not granted');
   ok(/AUTO_USES_ALLOWED\.indexOf\(u\) >= 0/.test(create),
      'create filters the requested capabilities against an allow-list');
   const use = fn('connUse');
-  ok(/c\.scopes\.indexOf\(need\) >= 0/.test(use),
+  ok(/needs\.every\(n => c\.scopes\.indexOf\(n\) >= 0\)/.test(use),
      'and the grant is still checked at the point of use, so naming one is not having one');
 }
 

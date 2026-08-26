@@ -44,6 +44,24 @@ const NOT_A_DOOR = {
   runAgentic:  'the agentic tool loop - an engine other code calls into, exposed so a surface can drive it without importing across module boundaries in a single-scope bundle',
   qDecompose:  'the quality module’s task splitter, same shape: engine, not screen',
   amvOpenFile: 'the file-open bridge the desktop and editor integrations call from outside the page, so by definition nothing inside the bundle references it',
+  /* THE CONSUME HALF OF A PAIR WHOSE START HALF IS LIVE.
+
+     _pkceChallenge mints a verifier and stores a transaction; _pkceConsume
+     reads it back and spends it. Its one caller was checkOAuthCallback's Google
+     branch, and that branch is gone - the connected-accounts handshake keeps
+     its verifier on the server, so the browser has nothing to consume.
+
+     What still calls _pkceChallenge is _oauthUrl, which builds the
+     authorisation URL for the catalogue providers - Outlook, Slack, GitHub -
+     none of which is completable yet (_OAUTH_COMPLETABLE is deliberately
+     empty). So the start half is live and the consume half is waiting for the
+     first of those to get a callback.
+
+     Not deleted, because deleting it would leave _pkceChallenge writing
+     transactions nothing can ever read, and the next person to add a provider
+     would write a worse version of it. Declared here rather than left to look
+     like decay - which is the whole point of this list. */
+  _pkceConsume: 'the consume half of the client-side PKCE pair; _pkceChallenge still mints transactions for the catalogue providers, and this spends one when the first of them gets a callback',
 };
 
 /* A name is exported as an entry point when the bundle does window.X = X. */

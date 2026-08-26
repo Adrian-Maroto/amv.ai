@@ -1092,6 +1092,59 @@ function closeOvr() {
   }
 }
 
+/* CONFIRM SOMETHING DESTRUCTIVE, IN AMV'S OWN LANGUAGE.
+
+   Three places asked for this - erasing this device's data, removing a link,
+   signing out everywhere - each guarded by `typeof confirmModal === 'function'`
+   with a native window.confirm() underneath. The guard was permanently false,
+   because confirmModal was never written. So the fallback was not a fallback:
+   it was the only path, and three destructive actions were confirmed in the
+   browser's grey box while the rest of the product has a modal of its own.
+
+   Nothing was broken - a native confirm does confirm - so this is not a bug
+   fix. It is the difference between a product and a page: these are exactly the
+   moments somebody should be able to read what is about to happen, and the
+   native dialog cannot show a second line, cannot be styled, cannot be
+   dismissed with the backdrop, and looks like the browser rather than like AMV.
+
+   Same overlay, same classes, same focus handling as every other modal here.
+   The destructive button is `bd2`, which is what the account-deletion dialog
+   uses, so the colour means the same thing everywhere.
+
+   THE FALLBACK STAYS AT EACH CALL SITE. If the overlay is missing - an embedded
+   context, a partial render - this returns false rather than throwing, and the
+   caller's window.confirm still runs. A confirmation that silently does not
+   happen is worse than an ugly one. */
+function confirmModal(title, body, onConfirm, opts){
+  const o = opts || {};
+  const ovr = $('ovr');
+  if(!ovr) return false;
+  ovr.innerHTML =
+    '<div class="ov" id="cfm-bg"><div class="ob" role="alertdialog" aria-modal="true" aria-labelledby="cfm-t">'+
+      '<button class="oc" data-dact="closeOvr" aria-label="Close">&#215;</button>'+
+      '<h2 id="cfm-t">'+escH(title||'Are you sure?')+'</h2>'+
+      (body ? '<p class="ob-sub">'+escH(body)+'</p>' : '')+
+      '<div style="display:flex;gap:9px;margin-top:14px">'+
+        '<button class="btn bs" id="cfm-no" style="flex:1">'+escH(o.cancel||'Cancel')+'</button>'+
+        '<button class="btn '+(o.safe ? 'bp' : 'bd2')+'" id="cfm-yes" style="flex:1">'+escH(o.confirm||'Continue')+'</button>'+
+      '</div>'+
+    '</div></div>';
+  ovr.classList.add('on');
+  onBackdrop($('cfm-bg'), closeOvr);
+  on($('cfm-no'), 'click', closeOvr);
+  on($('cfm-yes'), 'click', () => {
+    closeOvr();
+    /* After the overlay is down, so a handler that opens its own modal is not
+       fighting the one being closed. */
+    setTimeout(() => { try{ if(typeof onConfirm==='function') onConfirm(); }catch(e){} }, 0);
+  });
+  /* Cancel is focused, not Continue. Somebody who arrives here and presses
+     Enter out of habit should not have destroyed anything. */
+  setTimeout(() => { try{ const n=$('cfm-no'); if(n) n.focus(); }catch(e){} }, 0);
+  return true;
+}
+try{ window.confirmModal = confirmModal; }catch(e){}
+
 /* Reusable polished empty state: icon + title + subtitle + optional action.
    emptyState({icon,title,sub,btn:{label,act,arg}}) -> HTML string */
 function emptyState(o){

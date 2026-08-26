@@ -1,69 +1,74 @@
-# There are two Google systems, and one has lost its front door
+# There were two Google systems. There is one now.
 
-Three things in this client are called something like "connect Google" and they
-are not variants of each other. I went looking to tidy one away, found it was
-load-bearing, and put it back. This is what is actually there.
+Three things in this client were called something like "connect Google" and they
+were not variants of each other. I went looking to tidy one away, found it was
+load-bearing, put it back, and then retired it properly. This is what is there
+now and how it got there.
 
 ## 1. Sign-in - `triggerGoogle`
 
 Google Identity Services one-tap. Proves who you are so AMV can make you an
 account. Grants **no** access to Gmail, Drive, Calendar or anything else.
 
-Reachable from the sign-in button and, until tonight, from the Integrations
-catalogue's Google row - which is the bug fixed in this batch: that row is
-badged Autonomous and describes reading and drafting email, so Connect ran a
-sign-in and the tick afterwards came from the sign-in token. Somebody could
-grant nothing and be told they were connected.
+Still here, still the only Google thing on the sign-in screen. The Integrations
+catalogue used to reach it too, from a row badged Autonomous that described
+reading and drafting email - so somebody could grant nothing and be told they
+were connected. That row leads to Connected accounts now.
 
-## 2. The older grant - `connectGoogle`, and everything under it
+Signing in is not granting access. Nothing in the product decides what AMV may
+do by asking who somebody is any more, which was the single most repeated defect
+in this whole area.
+
+## 2. The older grant - `connectGoogle` - RETIRED
 
     connectGoogle -> Google consent -> checkOAuthCallback
-      -> /v1/oauth/google/exchange   the Worker stores a refresh token
-      -> /v1/oauth/google/refresh    mints a short-lived token for the page
+      -> /v1/oauth/google/exchange   the Worker stored a refresh token
+      -> /v1/oauth/google/refresh    minted a short-lived token for the page
       -> the browser-side jobs: mailbox, calendar, classroom_due
 
-Every arrow after the first still exists and still runs. **Nothing calls
-`connectGoogle`.** An account that connected while it was still reachable keeps
-working; nobody new can start one.
+Every arrow is gone. The function, both routes, both handlers, the in-memory
+token, the migration off disk, and the last implicit flow in the client.
 
-That is why the school reader fails. `classroom_due` calls
-`classroom.googleapis.com` for real, and the only place the two read-only
-Classroom scopes are ever requested is inside `connectGoogle`. The reader is
-live, the scope request is unreachable, so Google answers 403 - correct at both
-ends, not joined in the middle, which is the third instance of that shape in
-this codebase.
+Two things were wrong with it that no amount of care inside those functions
+could fix. A provider token that reaches a page is a token anything on that page
+can take. And it dies with the tab, so nothing built on it could run overnight
+however it was described on screen.
 
-I removed this function as dead code and two tests caught it within the hour.
-It is restored and deliberately untidied.
+It also asked for the FULL `drive` scope - everything a person owns - to do a
+job that touches one document.
 
-## 3. Connected accounts - `connAdd` / `/v1/connect/start`
+**I removed this once as dead code and two tests reversed me within the hour.**
+It had no callers, which made it unreachable; it was not dead, because a whole
+live subsystem hung off it. Deleting it would have made an existing gap
+permanent and silent, and taken with it the only place the read-only Classroom
+scopes were named - which is why the school reader was getting a 403 from
+Google: correct at both ends, not joined in the middle. That is LESSONS 296.
 
-The newer system, and the better one. The server picks the verifier, keeps it
-sealed, builds the authorisation URL, does the exchange with the client secret,
-and seals the token under `CONNECT_KEY`. No provider token ever reaches the
-page, so jobs run with the tab closed. The person chooses the scopes.
+It went this time because everything downstream had moved first, one stage at a
+time, each stage verified before the next started.
+
+## 3. Connected accounts - `connAdd` / `/v1/connect/start` - THE ONE THAT STAYED
+
+The server picks the verifier, keeps it sealed, builds the authorisation URL,
+does the exchange with the client secret, and seals the token under
+`CONNECT_KEY`. No provider token ever reaches the page, so jobs run with the tab
+closed. The person chooses the scopes, per capability, and can revoke each one.
 
 It offers `mail.read`, `mail.send`, `calendar.read`, `calendar.write`,
-`drive.read`. **It does not offer Classroom**, so it is not yet a replacement
-for (2).
+`drive.read`, `school.read` and `drive.write`.
 
-## DECIDED: keep Connected accounts
+## How the migration went
 
-Approved. The migration is in stages, because the older grant has six live
-browser-side actions on it and moving them all at once is how a working feature
-becomes a broken one.
-
-**Stage 1 - done.** The two read-only Classroom scopes are on the server's
-Google provider, there is a server-side reader, and the school job is joined to
-it. That job now runs with the tab closed, which it never could before. Three
+**Stage 1 - done.** The two read-only Classroom scopes went on the server's
+Google provider, with a server-side reader, and the school job was joined to it.
+That job now runs with the tab closed, which it never could before. Three
 separate joins were missing and each was invisible on its own - see
 `tests/worker/it-can-see-the-homework-and-not-hand-it-in.test.mjs`.
 
 **Stage 2 - done.** Every action that reached Google from the browser now asks
 the server, through one route, `/v1/connect/act`. That is the mailbox, sending
 mail, the calendar, adding an event, Drive, school work, both background checks
-and the chat engine's own Gmail path. The credential never arrives here, so
-nothing on this page can take it and nothing stops working when the tab closes.
+and the chat engine's own Gmail path.
 
 The capability each action needs is declared beside it in a table rather than at
 each call site, so an action added later cannot be written without one - which
@@ -71,62 +76,60 @@ is exactly how the old layer came to call Google with a token that had never
 been granted the scope. Writes are rate-limited harder than reads: reading your
 inbox forty times is a busy morning, sending forty mails is not.
 
-One thing did NOT move and is deliberate. The school pane copies a document into
-the student's own Drive, which needs a Drive WRITE scope. Only `drive.read` is
-offered. **That needs your approval** - see below.
+**Stage 3 - done.** The older grant is retired, and the school Drive copy that
+was the last thing depending on it moved with the rest.
 
-**Stage 3 - waiting on one decision.** Retiring the older grant means removing
-`connectGoogle`, `checkOAuthCallback`'s Google branch,
-`/v1/oauth/google/exchange`, `/v1/oauth/google/refresh`, `refreshGToken` and the
-in-memory token.
+The decision that unblocked it was whether AMV should be able to put a copy of a
+school document into a student's Drive. The answer was yes, and it was built
+with `https://www.googleapis.com/auth/drive.file` - the NARROW scope, which
+reaches only files AMV itself created or ones the student explicitly opened with
+it. It cannot read their Drive. The broad `drive` scope the old flow used is not
+coming back.
 
-Only the school Drive copy still depends on it. So the decision is:
+Copying needs two capabilities at once, `drive.read` to read the teacher's
+document and `drive.write` to create the copy, so `connUse` accepts a SET and
+requires all of it on one connection. Satisfying half from one grant and half
+from another would mean the refusal arrives from Google in the middle of the
+operation, after the read and before the copy, which is the worst place for it.
 
-**Do you want AMV to be able to put a copy of a school document into a
-student's Drive?**
+`drive.copy` and `drive.share` are reachable only from the school pane's own
+buttons. Neither is in the model's tool table, so nothing AMV writes can share a
+document with an address of its choosing - the share is a person pressing a
+button with the address in front of them.
 
-  YES  →  one more scope: `https://www.googleapis.com/auth/drive.file`. This is
-          the NARROW one - it grants access only to files AMV itself creates or
-          the student explicitly opens with it, NOT to their Drive. The broad
-          `drive` scope the old flow used would have given AMV their whole
-          Drive, and it should not come back. With this, stage 3 can finish and
-          the older grant goes.
+## The one that nearly got away
 
-  NO   →  the school pane loses "make me a copy", keeps "open the original",
-          and stage 3 finishes immediately.
+`checkOAuthCallback` served both flows, and I deleted it with the older one.
 
-**My recommendation: yes, with `drive.file`.** Turning a link a teacher sent
-into a copy the student can actually work in is the moment the feature earns its
-place - without it the pane is a list of links they already had. `drive.file`
-is the scope designed for exactly this and it cannot read anything AMV did not
-make, so the blast radius is a folder of AMV's own documents rather than
-somebody's Drive. It is the difference between a feature that does the job and
-one that asks for a permission it does not need.
+It passed the syntax check, the build, and all 138 e2e suites - because not one
+of them ever opened the URL a provider returns to, and the call site was
+`try{ checkOAuthCallback(); }catch(e){}`. A bare catch. The ReferenceError went
+into it and the page booted perfectly.
 
-## What was decided
+Anyone connecting an account would have approved real access at Google, come
+back to a normal-looking AMV, and had the code silently thrown away. No tick, no
+error, nothing in the console. The worst thing this feature can do, and
+everything was green.
 
-**Which system AMV keeps.** They overlap on mail, calendar and Drive, and
-holding both means two grants, two revocation paths and two places a bug can
-live. My recommendation is (3), because it is the one that can honour "runs
-while the tab is closed", and because a token that never reaches the browser is
-a token XSS cannot take.
+It is restored as the `c_`-only handler, the guard at the call site names it
+instead of catching everything, and
+`tests/e2e/coming-back-from-the-provider-finishes-the-job.test.mjs` now arrives
+at the return URL for real. Deleting the handler again turns that suite red.
 
-If that is the answer, two things follow:
+## What moved with the code, and where the tests went
 
-1. **Two scopes need your approval** before the school feature can work:
-   `classroom.courses.readonly` and `classroom.coursework.me.readonly`, added to
-   the server's `CONN_PROVIDERS.google.scopes`. Read-only is the entire safety
-   argument - AMV can see what a student has been set and cannot turn anything
-   in, because the scope that would let it (`classroom.coursework.me`, without
-   `.readonly`) is never requested and Google refuses the call. A rule in a
-   prompt can be argued with; a permission that was never granted cannot. This
-   is a minor's school record, which is why I have not added them myself.
+Retiring a subsystem strands the tests that guarded it, and a stranded test goes
+green about nothing. Each was repointed at whatever now holds the property
+rather than deleted:
 
-2. **`classroom_due` moves server-side** with the rest, and stops being a job
-   that only runs while a tab is open.
+| the property | was asserted against | is asserted against |
+|---|---|---|
+| a grant renews before it expires | `ensureGToken`, in the browser | `connUse`, in the Worker - `the-grant-renews-itself-overnight` |
+| a redirect cannot point elsewhere | `googleOAuthExchange` | `connStart` - `the-routes-nobody-tested` |
+| the refresh token never reaches a browser | `googleOAuthExchange` | `connFinish`, and every response in the file |
+| the implicit flow is only the fallback | `connectGoogle`, ordering | it is nowhere - asserted as absence |
+| a row shows connected only on a real grant | a seeded sign-in token | `S.user` with a Google account and no grant |
 
-If the answer is instead to keep (2), it needs an entry point on a screen, and
-the implicit-flow fallback inside it should go now that every deployment worth
-having has a backend.
-
-Either way, doing nothing leaves a feature that 403s and two systems drifting.
+`_sameOrigin` was left with no callers when the exchange went, while `connStart`
+carried its own inline copy of the same comparison - two definitions of "same
+origin", one of them live. `connStart` calls the shared one now.

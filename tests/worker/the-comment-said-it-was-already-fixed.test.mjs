@@ -81,14 +81,57 @@ section('And the guarantees that remain are checked against what runs');
     ['the key never leaves the server',
      () => !/_modelKey\(env\)/.test(codeOnly(functionBody(src, 'publicConfig') || 'x')),
      'the model key is not in anything the browser is handed'],
+    /* This used to be checked against googleOAuthExchange, which was where the
+       exchange happened and where a slip would have handed a long-lived
+       credential to a page. That route is retired; connFinish is where a code
+       becomes a token now, and it is the handler this claim is about.
+
+       Widened at the same time, because the narrow version only ever proved it
+       about one function: no response ANYWHERE in the Worker may carry one.
+       A refresh token that reached a browser through some other route would be
+       the same failure by a different door. */
     ['the refresh token never reaches the browser',
      () => {
-       const b = codeOnly(functionBody(src, 'googleOAuthExchange') || '');
-       /* Every response this handler builds, and none of them may carry one. */
-       const answers = [...b.matchAll(/return json\(([\s\S]{0,400}?)\);/g)].map(m => m[1]);
-       return answers.length > 0 && !answers.some(a => /refresh_?[Tt]oken/.test(a));
+       /* THE RULE IS ABOUT VALUE POSITIONS, NOT ABOUT THE WORD.
+
+          The first version of this failed on two responses that are both
+          correct, which is the more useful kind of wrong answer:
+
+            unattended: !!d.refresh_token   - a BOOLEAN. The page is told whether
+              the grant can run with the tab closed. That is the whole point of
+              the field and it carries nothing.
+            _refreshCookie(env, tokens.refreshToken, ...) - AMV's OWN session
+              refresh, in an HttpOnly cookie. A different credential to a
+              different party, and a cookie the script cannot read is exactly
+              where it belongs.
+
+          So: a provider refresh token may be TESTED in a response - coerced to
+          a boolean, or used as a ternary condition - and may never be a value.
+          Anything else is the failure this claim is about. */
+       const valued = (a) => [...a.matchAll(/refresh_?[Tt]oken|\.refresh\b/g)].some(m => {
+         /* Walk back over the whole expression (`d.refresh_token`, `tok.refresh`)
+            before asking what precedes it. Looking at the two characters
+            immediately before the MATCH finds `d.`, not the `!!` four back, and
+            reports a boolean as a leak - which is how the first version of this
+            failed on a correct response. */
+         let i = m.index;
+         while (i > 0 && /[A-Za-z0-9_.$]/.test(a[i - 1])) i--;
+         const negated = a.slice(Math.max(0, i - 2), i) === '!!';
+         const after = a.slice(m.index + m[0].length, m.index + m[0].length + 2);
+         return !negated && !/^\s*\?/.test(after);
+       });
+       const ours = (a) => /_refreshCookie/.test(a);
+
+       const fin = codeOnly(functionBody(src, 'connFinish') || '');
+       const answers = [...fin.matchAll(/return json\(([\s\S]{0,400}?)\);/g)].map(m => m[1]);
+       if (!answers.length || answers.some(a => !ours(a) && valued(a))) return false;
+       /* And every other response in the file, because a refresh token that
+          reached a browser through some other route is the same failure by a
+          different door. */
+       const all = [...codeOnly(src).matchAll(/return json\(([\s\S]{0,400}?)\);/g)].map(m => m[1]);
+       return all.length > 50 && !all.some(a => !ours(a) && valued(a));
      },
-     'no response it builds carries one'],
+     'connFinish builds no response carrying one, and neither does anything else'],
     ['the value that cannot be edited could be edited',
      () => /_withKind\(env, 'consent'/.test(codeOnly(src)),
      'the birth year is decided and written inside one lock'],

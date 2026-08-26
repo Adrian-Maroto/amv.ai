@@ -6387,3 +6387,67 @@ The removal is reverted, the reasoning is in the code where the next person
 will find it, and the decision it actually needs - AMV has two Google systems
 and should keep one - is in GOOGLE-PATHS.md rather than settled by me at the end
 of a long session.
+
+## 297. A bare catch hid a deleted feature from every gate I have
+
+Stage 3 of the Google migration retired the older grant. `checkOAuthCallback`
+served both flows, so it went with the one being removed.
+
+It shipped through the syntax check (calling a function that does not exist is
+not a syntax error), the build, `npm run check:fast`, all 189 worker suites, and
+all 138 e2e suites. Nothing anywhere went red.
+
+The call site is at boot:
+
+    try{ checkOAuthCallback(); }catch(e){}
+
+The ReferenceError went into that bare catch and the page carried on booting
+perfectly. And no e2e suite had ever opened the URL a provider returns to -
+every one of them boots the app at its own address, which is the one URL where
+this handler has nothing to do.
+
+So: anybody connecting an account would have been sent to Google, approved real
+access to their mail, come back to a completely normal-looking AMV, and had the
+authorization code silently thrown away. No tick, no error, nothing in the
+console, no reason to suspect anything. The single most damaging thing this
+feature can do, with the whole suite green.
+
+I found it by accident, chasing a different failing assertion that happened to
+read `String(window.checkOAuthCallback)` and got an empty string.
+
+**A bare catch converts "this feature was deleted" into "this feature did
+nothing this time". Every gate I have measures the first and none measure the
+second.**
+
+Three things came out of it:
+
+1. **The guard names what it is guarding.** `if(typeof checkOAuthCallback ===
+   'function')` around the call, with an `else` that says so on the console. A
+   missing handler is now visible at boot instead of absorbed.
+2. **The door has a test that opens it.** `bootApp` takes a `query`, and
+   `coming-back-from-the-provider-finishes-the-job` arrives at
+   `?code=...&state=c_...` for real - the code reaches the server, the address
+   bar is cleaned, a return that is not ours is left alone, a refusal is spoken.
+   Deleting the handler again turns it red.
+
+   **And the scan became a gate.** `npm run check` has a stage that fails when
+   `typeof X === 'function'` names something defined nowhere. Run once by hand
+   it found two more of these immediately: `applyTheme`, so the model tool that
+   switches to light mode saved the setting and left the screen dark; and
+   `confirmModal`, never written, so three destructive actions fell to their
+   fallbacks and two of those did the thing without asking at all. Three real
+   defects from one regex is a stage, not an anecdote - and it catches the
+   original deletion in 6.5 seconds, where the fifteen-minute gate could not.
+3. **The removal rule from 296 gained a second half.** 296 says a function with
+   no callers may still be a root with a live subtree. This one had a caller -
+   and the caller could not report its absence. So before removing anything, ask
+   both: what is downstream of it, and *would anything actually notice if it
+   stopped existing?* If the only caller is inside a bare catch, the answer is
+   no, and the test has to be written before the deletion, not after.
+
+The general shape: **an error nobody can observe is indistinguishable from
+correct behaviour, and a test suite can only ever measure what is observable.**
+Every `catch(e){}` in a boot path is a place where a whole feature can be
+removed without a single gate noticing. That is not an argument for catching
+less - some of those guards are load-bearing against browsers that lack an API -
+it is an argument for naming what each one is allowed to swallow.

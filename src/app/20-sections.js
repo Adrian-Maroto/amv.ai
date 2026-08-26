@@ -39,8 +39,24 @@
          stopping to ask about it teaches people to click through the prompts
          that matter. Same reasoning that took the risk chooser out of Crew. */
       set_theme:{ desc:'Switch the theme. Args: {theme:"dark"|"light"}',
+        /* THIS SAVED THE PREFERENCE AND NEVER CHANGED THE SCREEN.
+
+           It called applyTheme, guarded by `typeof applyTheme === 'function'`,
+           and there is no applyTheme anywhere in this product - the theme is a
+           `light` class on the body, which is what every other place that
+           switches it does. So the guard was permanently false: somebody asked
+           AMV to switch to light, AMV answered {theme:'light'}, and the screen
+           stayed dark until the next reload.
+
+           A guard that is always false is a feature that never ran, and this one
+           reported success while doing half the job. Applied the way the rest of
+           the product applies it. */
         async run(a){ const t=(a&&a.theme)==='light'?'light':'dark';
-          try{ saveStr('amv_theme',t); if(typeof applyTheme==='function') applyTheme(t); }catch(e){}
+          try{
+            saveStr('amv_theme',t);
+            document.body.classList.toggle('light', t==='light');
+            const sw=$('dark-sw'); if(sw) sw.checked = (t==='dark');
+          }catch(e){}
           return { theme:t }; } },
       set_language:{ desc:'Change the interface language. Args: {code}',
         async run(a){ const c=String((a&&a.code)||'').trim();

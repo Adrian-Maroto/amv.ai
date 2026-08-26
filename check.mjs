@@ -24,6 +24,7 @@ import { execSync } from 'child_process';
 import { readFileSync, existsSync, writeFileSync, writeSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { codeOnly } from './tests/lib/source.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const R = (p) => join(ROOT, p);
@@ -39,9 +40,10 @@ let stepNum = 0;
 /* Kept in step with the stages below. Adding the dependency audit without
    updating this printed "[8/7]", and the fast total was two out as well - small
    things, and they read as nobody looking at the screen they are on.
-   Full: syntax, worker, build, suites, real runtime, page weight, deps, preflight.
+   Full: syntax, worker, build, suites, dead guards, page weight, deps, real
+   runtime, preflight.
    Fast skips the two that need a clear machine and a long wait (suites, runtime). */
-const TOTAL = FAST ? 6 : 8;
+const TOTAL = FAST ? 7 : 9;
 /* Stages that ran but did nothing, so the final verdict can say so instead of
    letting a green tick stand in for work that never happened. */
 const skipped = [];
@@ -259,6 +261,73 @@ if (!FAST) step('All test suites', () => {
     const tail = out.split('\n').slice(-12).join('\n');
     throw new Error(`the suite did not report a clean pass:\n${tail}`);
   }
+});
+
+/* ── A GUARD THAT IS ALWAYS FALSE IS A FEATURE THAT NEVER RAN ─────────────
+   This exists because of LESSONS 297. checkOAuthCallback was deleted, its only
+   call site was `try{ checkOAuthCallback(); }catch(e){}`, and the ReferenceError
+   went into that bare catch - so every account connection silently threw away
+   the authorization code while the syntax check, the build and all 327 suites
+   stayed green. Nothing measured it, because nothing CAN: an error nobody can
+   observe is indistinguishable from correct behaviour.
+
+   The same scan, run once by hand, found two more:
+     applyTheme  - guarded by typeof and never written, so the model tool that
+                   switches to light mode saved the preference and left the
+                   screen dark.
+     confirmModal - guarded by typeof and never written, so three destructive
+                   actions fell to their fallbacks, two of which did the thing
+                   without asking at all.
+
+   Three real defects from one regex, so it is a stage rather than an anecdote.
+   It reads app.js because that is the whole client in one scope. */
+step('No guard names a function that does not exist', () => {
+  /* COMMENTS AND STRINGS STRIPPED FIRST, and this is not a detail.
+
+     The first version of this read app.js whole and reported `applyTheme` -
+     which had just been FIXED, and whose only remaining mention was the comment
+     explaining the fix. A check that reads prose as code reports a correct
+     repair as the defect it repaired, and there is already a suite in this
+     repo named after that exact mistake. */
+  const src = codeOnly(readFileSync(R('app.js'), 'utf8'));
+
+  const defined = new Set();
+  for (const m of src.matchAll(/\n\s*(?:async\s+)?function\s+([A-Za-z0-9_$]+)\s*\(/g)) defined.add(m[1]);
+  for (const m of src.matchAll(/\n\s*(?:const|let|var)\s+([A-Za-z0-9_$]+)\s*=/g)) defined.add(m[1]);
+  for (const m of src.matchAll(/window\.([A-Za-z0-9_$]+)\s*=/g)) defined.add(m[1]);
+  /* PARAMETERS COUNT AS DEFINED. A helper that takes a callback and guards it
+     with `typeof onConfirm === 'function'` is doing exactly the right thing -
+     the argument is optional and may not be passed. Without this the check
+     reports every such helper, which is the way a useful check gets switched
+     off. Both shapes: a parameter list, and an arrow's. */
+  for (const m of src.matchAll(/(?:function\s*[A-Za-z0-9_$]*\s*|\b)\(([^()]{0,300}?)\)\s*(?:\{|=>)/g))
+    for (const part of m[1].split(','))
+      { const n = part.trim().split(/[\s=:.[\]]/)[0]; if (/^[A-Za-z_$][\w$]*$/.test(n)) defined.add(n); }
+
+  /* THE NEGATIVE CONTROL (LESSONS 294). If the patterns above stop matching,
+     every name reads as undefined and this stage fails on everything - or, if
+     it were written the other way round, passes on everything. Named, so the
+     failure says "the scanner broke" rather than "the code is wrong". */
+  if (defined.size < 500)
+    throw new Error(`the definition scan found only ${defined.size} names in app.js, which cannot be right - `
+      + 'the scanner is broken, not the code.');
+
+  /* Things the browser provides, or that a page may legitimately ask about
+     because they are not everywhere. A guard on one of these is doing its job:
+     the point of the check is a guard on a name that was OURS and is gone. */
+  const PROVIDED = new Set(['alert', 'confirm', 'prompt', 'fetch', 'requestIdleCallback',
+    'matchMedia', 'IntersectionObserver', 'ResizeObserver', 'structuredClone', 'reportError',
+    'queueMicrotask', 'showOpenFilePicker', 'BarcodeDetector', 'SpeechRecognition',
+    'webkitSpeechRecognition', 'AbortSignal', 'ClipboardItem', 'IdleDetector']);
+
+  const dead = [...new Set([...src.matchAll(/typeof\s+([A-Za-z_$][\w$]*)\s*===?\s*['"]function['"]/g)]
+    .map(m => m[1])
+    .filter(n => !defined.has(n) && !PROVIDED.has(n)))];
+
+  if (dead.length)
+    throw new Error('these are guarded by `typeof X === "function"` and are defined nowhere, so the guard is '
+      + 'permanently false and whatever it protects never runs: ' + dead.join(', ')
+      + '. Write the function, or take the branch out - a guard that cannot pass is not a fallback.');
 });
 
 /* ── 4b. Page weight ──────────────────────────────────────────────────────

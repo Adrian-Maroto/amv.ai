@@ -101,7 +101,14 @@ const signup = async (env, email, name) =>
 section('None of them answer a stranger');
 {
   const env = mkEnv();
-  const paths = ['/v1/oauth/google/exchange', '/v1/finance/link/finish', '/v1/family/leave',
+  /* /v1/oauth/google/exchange was the first entry here and the route is gone -
+     retired with the rest of the older Google grant. Replaced by the five that
+     took over its job rather than simply deleted: connected accounts is where a
+     provider grant is started, finished, listed, used and revoked now, and
+     every one of them is an authenticated route holding somebody's token. */
+  const paths = ['/v1/connect/start', '/v1/connect/finish', '/v1/connect/list',
+                 '/v1/connect/act', '/v1/connect/remove',
+                 '/v1/finance/link/finish', '/v1/family/leave',
                  '/team/join', '/team/presence', '/team/tasks', '/team/task/update',
                  '/v1/stripe/portal', '/v1/stripe/invoices',
                  '/v1/market/publish', '/v1/market/install', '/v1/market/unlist',
@@ -494,35 +501,76 @@ section('A widget belongs to whoever made it');
   ok(wild.body.config.accent === '#112233', 'a colour that is not a colour is ignored', wild.body.config.accent);
 }
 
-section('Signing in with Google needs a code, and cannot be pointed elsewhere');
+section('Connecting an account cannot be pointed somewhere AMV does not serve');
 {
-  const env = mkEnv({ GOOGLE_CLIENT_ID: 'gid', GOOGLE_CLIENT_SECRET: 'gsec' });
-  const tok = await signup(env, 'goog@example.com');
+  /* THIS USED TO TEST /v1/oauth/google/exchange, WHICH NO LONGER EXISTS.
 
-  const bare = await post(env, '/v1/oauth/google/exchange', {}, tok);
-  ok(bare.status === 400, 'nothing to exchange is refused', bare.body);
+     That route took a code and a redirect_uri from the browser, and the
+     property under test was that a redirect_uri pointing anywhere but this
+     deployment is refused - because the value goes straight to Google, and an
+     unchecked one is an open redirect with an authorization code attached.
 
-  const elsewhere = await post(env, '/v1/oauth/google/exchange',
-    { code: 'c', verifier: 'v', redirect_uri: 'https://evil.example/cb' }, tok);
-  ok(elsewhere.status === 400 && /not permitted/i.test(elsewhere.body.error || ''),
-     'and a redirect back to somewhere AMV does not serve is refused', elsewhere.body.error);
-  ok(!outbound.some(u => /oauth2\.googleapis/.test(u)),
-     'without asking Google anything, so a refused call costs nothing', outbound);
+     The route is retired; the property is not. connStart takes a redirect from
+     the caller for the same reason (the string has to match what is registered
+     with the provider byte for byte) and hands it to the provider the same way.
+     Same test, moved to the thing that now does the job. */
+  const env = mkEnv({ GOOGLE_CLIENT_ID: 'gid', GOOGLE_CLIENT_SECRET: 'gsec',
+                      CONNECT_KEY: 'a-key-long-enough-to-seal-with', APP_URL: 'https://amv.test' });
+  const tok = await signup(env, 'conn@example.com');
 
-  const good = await post(env, '/v1/oauth/google/exchange',
-    { code: 'c', verifier: 'v', redirect_uri: 'https://amv.test/cb' }, tok);
+  const bare = await post(env, '/v1/connect/start', {}, tok);
+  ok(bare.status === 400, 'a request naming no provider is refused', bare.body);
+
+  const noScopes = await post(env, '/v1/connect/start', { provider: 'google', scopes: [] }, tok);
+  ok(noScopes.status === 400, 'and one asking for no capability is refused', noScopes.body);
+
+  /* THE SCOPE FILTER, WHICH IS THE LEAST-PRIVILEGE RULE ITSELF. A caller that
+     could name its own scope string would grant itself whatever it liked. */
+  const invented = await post(env, '/v1/connect/start',
+    { provider: 'google', scopes: ['https://www.googleapis.com/auth/drive'] }, tok);
+  ok(invented.status === 400, 'a scope AMV does not offer cannot be smuggled in', invented.body);
+
+  for (const evil of ['https://evil.example/cb', 'https://amv.test.evil.example/cb',
+                      'https://amv.test@evil.example/cb', 'http://amv.test/cb',
+                      'https://amv.test/cb?next=https://evil.example']) {
+    const r = await post(env, '/v1/connect/start',
+      { provider: 'google', scopes: ['mail.read'], redirect: evil }, tok);
+    ok(r.status === 400 && r.body.error === 'bad_redirect',
+       'refused as a return address: ' + evil, r.status + ' ' + (r.body.error || ''));
+  }
+  ok(!outbound.some(u => /accounts\.google\.com|oauth2\.googleapis/.test(u)),
+     'and none of those cost a call to Google', outbound);
+
+  const good = await post(env, '/v1/connect/start',
+    { provider: 'google', scopes: ['mail.read'], redirect: 'https://amv.test' }, tok);
   ok(good.status === 200, 'the real one goes through', good.body);
+  ok(/accounts\.google\.com/.test(good.body.url || ''), 'with an authorisation URL to send them to', (good.body.url || '').slice(0, 60));
+  ok(/code_challenge_method=S256/.test(good.body.url || ''), 'carrying an S256 PKCE challenge', true);
+  ok(!/response_type=token/.test(good.body.url || ''), 'and never the implicit flow', true);
+
+  /* NOTHING IN THE ANSWER IS A CREDENTIAL. The verifier was minted here and
+     sealed here; the page gets a URL and nothing it could replay. */
   const blob = JSON.stringify(good.body);
-  ok(!blob.includes('gr'), 'and the refresh token stays on the server', blob.slice(0, 160));
+  ok(!/verifier/i.test(blob), 'the PKCE verifier is not in the response', true);
+  ok(!blob.includes('gsec'), 'and neither is the client secret', true);
 }
 
-section('Without Google configured it says so instead of failing oddly');
+section('Without the pieces it needs, connecting says so instead of failing oddly');
 {
-  const env = mkEnv();
-  const tok = await signup(env, 'nogoog@example.com');
-  const r = await post(env, '/v1/oauth/google/exchange', { code: 'c', verifier: 'v', redirect_uri: 'https://amv.test/cb' }, tok);
-  ok(r.status === 503 && r.body.code === 'needs_service',
-     'an unconfigured deployment degrades honestly', r.body);
+  /* Two different missing things, two different answers. Collapsing them would
+     send somebody to register an app with Google to fix a secret they have not
+     set on their own Worker. */
+  const noKey = mkEnv({ GOOGLE_CLIENT_ID: 'gid', GOOGLE_CLIENT_SECRET: 'gsec', APP_URL: 'https://amv.test' });
+  const t1 = await signup(noKey, 'nokey@example.com');
+  const r1 = await post(noKey, '/v1/connect/start', { provider: 'google', scopes: ['mail.read'] }, t1);
+  ok(r1.status === 503 && r1.body.code === 'connect_key_missing',
+     'with no CONNECT_KEY it refuses rather than storing a token in the clear', r1.body);
+
+  const noApp = mkEnv({ CONNECT_KEY: 'a-key-long-enough-to-seal-with', APP_URL: 'https://amv.test' });
+  const t2 = await signup(noApp, 'noapp@example.com');
+  const r2 = await post(noApp, '/v1/connect/start', { provider: 'google', scopes: ['mail.read'] }, t2);
+  ok(r2.status === 503 && r2.body.error === 'provider_not_configured',
+     'and with no Google app registered it names that instead', r2.body);
 }
 
 globalThis.fetch = realFetch;

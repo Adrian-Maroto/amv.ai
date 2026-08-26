@@ -147,7 +147,10 @@ export async function bootApp(opts = {}) {
 
   await armGeom(page);
 
-  await page.goto(url, { waitUntil: 'load' });
+  /* opts.query lets a suite arrive at a URL the app is really sent to from
+     outside - a provider's OAuth return being the one that matters, because the
+     handler for it runs once at boot and cannot be reached any other way. */
+  await page.goto(url + (opts.query || ''), { waitUntil: 'load' });
   await page.waitForTimeout(600);
 
   await page.evaluate((o) => {

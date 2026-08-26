@@ -594,9 +594,19 @@ function _renderFamilyPane(pane){
         ? 'Link removed. That access stopped immediately.'
         : 'Removed on this device. Connect AMV and it will stop on the server too.', online?'ok':'err');
     };
-    if(typeof confirmModal === 'function'){
-      confirmModal('Remove this link?','Access stops straight away. You can always set it up again later.', go);
-    } else go();
+    /* THE FALLBACK USED TO BE `else go()` - REVOKE SOMEBODY'S ACCESS WITH NO
+       CONFIRMATION AT ALL. That was harmless only while confirmModal did not
+       exist and the branch never ran, which is the worst reason for a line to
+       be safe. Now it can run: confirmModal answers false when there is no
+       overlay to draw into, and the honest fallback for a destructive action is
+       to ask in the browser's own dialog, not to skip asking. */
+    let asked = false;
+    try{ asked = (typeof confirmModal === 'function') && confirmModal(
+      'Remove this link?', 'Access stops straight away. You can always set it up again later.',
+      go, { confirm:'Remove link' }); }catch(e){ asked = false; }
+    if(!asked){
+      if(typeof confirm !== 'function' || confirm('Remove this link? Access stops straight away.')) go();
+    }
   }));
 }
 try{ window._renderFamilyPane = _renderFamilyPane; }catch(e){}

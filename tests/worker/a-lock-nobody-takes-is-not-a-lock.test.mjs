@@ -163,7 +163,14 @@ const NO_LOCK_NEEDED = {
   _workerError:    'the same sink, from the Worker side',
   errorsResolve:   'an operator marking an error group read',
   _investCheckin:  'a snapshot for one account, rewritten in full each time',
-  googleOAuthExchange: 'writes the token it has just received for one account',
+  /* googleOAuthExchange was exempted here and the route no longer exists. It
+     took a code from the browser and wrote the refresh token it got back, and
+     the whole flow was retired when the connected-accounts handshake replaced
+     it - the exchange happens in connFinish now, and the token is sealed rather
+     than stored in the clear. The line is deleted rather than repointed at
+     connFinish: that one takes its own claim, so it needs no exemption, and an
+     exemption inherited by a different function is how a real bypass gets waved
+     through on somebody else's reasoning. */
   stripeSubscribe: 'writes the billing row for the checkout it is creating',
   fraudRecord:     'an append-only assessment log, read only by an operator',
   widgetConfigGet: 'creates the caller\'s widget record on first read, with a key nobody else has yet',

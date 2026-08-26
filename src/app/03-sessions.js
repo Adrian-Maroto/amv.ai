@@ -1242,13 +1242,18 @@ function signOutAndErase(){
     try{ toast('Signed out and erased ' + n + ' items from this device.','success',5000); }catch(e){}
     signOut();
   };
+  /* THE RETURN VALUE IS CHECKED, NOT JUST THE TYPE.
+
+     This used to `return` as soon as confirmModal existed. It does now, so that
+     was about to become: on any screen without the overlay - an embedded
+     context, a partial render - nothing appears and nothing happens, and
+     somebody presses a button that silently does nothing. confirmModal answers
+     false when it could not draw itself, and the native dialog is still there
+     underneath for exactly that case. */
   try{
-    if(typeof confirmModal === 'function'){
-      confirmModal('Erase AMV data on this device?',
+    if(typeof confirmModal === 'function' && confirmModal('Erase AMV data on this device?',
         'This removes your chats, memories, projects, files and saved details from THIS device only. Anything synced to your account stays safe. Use this on a shared or public computer.',
-        go);
-      return;
-    }
+        go, { confirm:'Erase this device' })) return;
   }catch(e){}
   if(typeof confirm !== 'function' || confirm('Erase all AMV data from this device? Your account is not deleted.')) go();
 }

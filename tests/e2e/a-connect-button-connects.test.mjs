@@ -123,19 +123,31 @@ section('A connection is what marks it connected, not a sign-in');
      without a single test noticing, which is the shape of the original defect
      one level up: correct at both ends, not joined in the middle. So this signs
      somebody in with Google, grants nothing, and looks at the tick. */
+  /* SIGNED IN WITH GOOGLE IS SET THROUGH S.user, WHICH IS WHERE IT NOW LIVES.
+
+     This used to seed a Google access token with _gSet and check the row did
+     not read it. There is no such token in this browser any more - the whole
+     machinery is gone - so seeding it would test nothing, and asserting its
+     absence would only restate a removal.
+
+     What remains is the question the original defect got wrong, and it is still
+     answerable: somebody whose ACCOUNT is a Google account has granted AMV no
+     access to anything, and the row must not say otherwise. That is identity
+     standing in for access, which is the shape of the bug rather than the
+     particular variable it was read from. */
   const withSignInOnly = await page.evaluate(() => {
-    try { _gSet('ya29.a-google-sign-in-token', Date.now() + 3600000); } catch (e) {}
+    S.user = { name: 'Signed In', email: 'signed.in@gmail.com', ini: 'S', provider: 'google' };
     _connState.data = { configured: true, items: [],
                         providers: [{ id: 'google', name: 'Google', ready: true, scopes: ['mail.read'] }] };
     const host = document.getElementById('int-catalog');
     if (host) host.innerHTML = _integrationsCatalogHTML();
     const row = [...document.querySelectorAll('.int-card')]
       .find(c => /Google \(Gmail/.test(c.textContent || ''));
-    return { signedIn: !!getGToken(), tick: !!(row && row.querySelector('.int-ok')),
-             found: !!row };
+    return { signedIn: !!(S.user && S.user.provider === 'google'),
+             tick: !!(row && row.querySelector('.int-ok')), found: !!row };
   });
   ok(withSignInOnly.found, 'the Google row is on the screen', withSignInOnly);
-  ok(withSignInOnly.signedIn === true, 'somebody is signed in with Google', withSignInOnly.signedIn);
+  ok(withSignInOnly.signedIn === true, 'somebody is signed in with a Google account', withSignInOnly.signedIn);
   ok(withSignInOnly.tick === false,
      'and the row does NOT claim to be connected - signing in is not granting access', withSignInOnly);
 
@@ -148,6 +160,37 @@ section('A connection is what marks it connected, not a sign-in');
     return !!(row && row.querySelector('.int-ok'));
   });
   ok(withGrant === true, 'while a real grant does show as connected', withGrant);
+}
+
+section('And the general entry point routes it too, not just the row');
+{
+  /* THE ROW WAS FIXED IN THE CALLER, WHICH IS ONE CALLER.
+
+     _wireIntegrationCatalog checks _connOwnsProvider before calling
+     connectIntegration, so the button on the screen was right. Inside
+     connectIntegration, the Google branch still ran triggerGoogle - the
+     sign-in - and connectIntegration is on window and is the general way in.
+     The comment on INTEGRATION_META even said the routing happened there when
+     it happened in the caller: two places deciding one thing, and the
+     documentation describing the one that was not doing it.
+
+     Called directly here, bypassing the catalogue entirely, because that is the
+     path that was still wrong. */
+  const out = await page.evaluate(async () => {
+    _connState.data = { configured: true, items: [],
+      providers: [{ id: 'google', name: 'Google', ready: true, scopes: ['mail.read'] }] };
+    const realTrigger = window.triggerGoogle, realAdd = window.connAdd;
+    let signedIn = 0, added = [];
+    window.triggerGoogle = () => { signedIn++; };
+    window.connAdd = (id) => { added.push(id); };
+    try { await connectIntegration('google'); } catch (e) {}
+    window.triggerGoogle = realTrigger; window.connAdd = realAdd;
+    return { signedIn, added };
+  });
+  ok(out.signedIn === 0,
+     'connectIntegration("google") does NOT run a sign-in', out.signedIn);
+  ok(out.added.indexOf('google') >= 0,
+     'it starts a real connected-accounts grant instead', out.added);
 }
 
 section('It is decided by what the server offers, not by naming Google');

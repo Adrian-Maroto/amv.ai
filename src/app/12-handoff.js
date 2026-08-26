@@ -1170,7 +1170,12 @@ function _readinessHTML(d){
    you (owner) register each provider's OAuth app once and add its Client ID in
    the platform settings - exactly how every big AI product does it. */
 const INTEGRATION_META = {
-  google:  { name:'Google',     key:'amv_gtoken',  oauth:'amv_gauth',   storeKey:'amv_google_connected' },
+  /* Google is handled by Connected accounts and is not started from this table
+     any more - connectIntegration routes it there by provider id, which it now
+     really does rather than relying on its caller to. The row stays for the
+     NAME, which the disconnect path and the catalogue still read, and carries
+     no storage key because there is no Google credential in this browser. */
+  google:  { name:'Google',     oauth:'amv_gauth' },
   outlook: { name:'Microsoft 365', key:'amv_outlook', oauth:'amv_ms_client' },
   slack:   { name:'Slack',      key:'amv_slack',   oauth:'amv_slack_client' },
   sms:     { name:'Text messages', key:'amv_sms_phone' },
@@ -1196,14 +1201,36 @@ async function connectIntegration(id){
     toast('The school screens are not loaded on this page.','error',5000);
     return;
   }
-  // Google has a real OAuth path already wired
+  /* PROVIDERS THE CONNECTED-ACCOUNTS FRAMEWORK OWNS ARE STARTED THERE.
+
+     This branch used to be Google-specific and ran triggerGoogle - the SIGN-IN.
+     That is the defect this whole area was fixed for: a button labelled Connect
+     on a row describing Gmail, Drive and Calendar, which proved who you were
+     and granted access to nothing.
+
+     The catalogue's own click handler already checks _connOwnsProvider before
+     calling this, so in practice the row was safe. It was safe in the CALLER,
+     which is one caller: connectIntegration is on window and is the general
+     entry point, and the comment on INTEGRATION_META claimed the routing
+     happened here when it did not. Two places deciding one thing, and the
+     documentation describing the one that was not there.
+
+     Decided here, by provider id rather than by naming Google, so adding
+     Microsoft to the framework cannot leave a second door quietly running the
+     old flow. The check in the catalogue stays as well - it costs nothing and
+     it keeps the scroll-to-section behaviour attached to the click. */
+  if(typeof _connOwnsProvider === 'function' && _connOwnsProvider(id)){
+    if(typeof _connGoTo === 'function') return _connGoTo(id);
+    if(typeof connAdd === 'function') return connAdd(id);
+    toast('Connected accounts are not loaded on this page.','error',5000);
+    return;
+  }
+  /* And if the framework does not own it yet, say so rather than falling
+     through to a sign-in. Google reaches here only on a page where the
+     connected-accounts list has not loaded - which is a reason to wait, not a
+     reason to run a different flow and call it connecting. */
   if(id==='google'){
-    const cid=loadStr('amv_gauth');
-    if(cid && window.google?.accounts?.id){ triggerGoogle(); return; }
-    if(cid){ // OAuth configured but library not ready
-      toast('Opening Google sign-in…','info'); triggerGoogle(); return;
-    }
-    toast('Google connection isn\u2019t switched on yet for this site. Once the operator enables it, Connect opens the Google approval popup - no keys to paste.','info',6000);
+    toast('AMV could not reach the Connected accounts list, so it cannot start a Google connection yet. Reload and try again from Settings - Integrations.','info',7000);
     return;
   }
   // SMS uses the phone link flow
@@ -1237,19 +1264,26 @@ async function connectIntegration(id){
   // Not configured by the operator yet - honest message, no fake "connected"
   toast(m.name+' isn\u2019t connected yet. It needs its API key added by the operator in Settings first - once that\u2019s done, Connect opens '+m.name+'\u2019s secure approval popup (nothing for you to paste).','info',6000);
 }
-/* The providers whose approval AMV can actually complete: there is a callback
-   that exchanges the code, and a token the tools can then use.
+/* The providers whose approval AMV can actually complete FROM THIS PAGE - and
+   the answer is now none of them.
 
-   Everything in _oauthUrl below builds a redirect to `/oauth/<id>`. The worker
-   serves exactly one exchange route, /v1/oauth/google/exchange, and nothing
-   client-side or server-side answers /oauth/github, /oauth/notion, or the rest.
-   The rest of the product already knows this - 13-integrations.js files Notion,
-   Linear, Discord and Outlook under PLANNED_CAPABILITIES, "no executable
-   backend yet" - and this file was the one place that disagreed and would have
-   launched the flow anyway the moment an operator pasted a client id.
+   Everything in _oauthUrl below builds a redirect to `/oauth/<id>`, and nothing
+   answers /oauth/github, /oauth/notion or the rest. Google used to be the one
+   exception, through a client-side exchange that has been retired: it goes to
+   Connected accounts now, where the server runs the whole handshake and the
+   browser never holds a code, a verifier or a token.
 
-   Add a provider here when its callback exists, not before. */
-const _OAUTH_COMPLETABLE = new Set(['google']);
+   Empty is the honest value and the guard is the point of it. Sending somebody
+   to approve real scopes on their own account, and then dropping them on a page
+   that cannot receive what they granted, is worse than a button that does
+   nothing: they have changed something outside AMV and have no reason to think
+   they need to undo it.
+
+   Add a provider to Connected accounts, not to this set. This set exists to
+   stop a flow being launched before there is anywhere for it to land, and the
+   right way for a provider to become completable is for the SERVER to learn
+   it. */
+const _OAUTH_COMPLETABLE = new Set();
 try{ window._OAUTH_COMPLETABLE=_OAUTH_COMPLETABLE; }catch(e){}
 async function _oauthUrl(id, clientId){
   const redirect = encodeURIComponent(location.origin + '/oauth/' + id);
@@ -1277,9 +1311,11 @@ function _openOAuthPopup(url, id){
   let tries=0;
   const iv=setInterval(()=>{
     tries++;
-    /* Google's key is no longer in storage, so the poll has to ask the marker
-       instead or it would wait for a token that will never appear there. */
-    const seen = (id==='google') ? (typeof _gHasGrant==='function' && _gHasGrant()) : !!loadStr(meta.key);
+    /* Google never reaches this poll - connectIntegration sends it to the
+       Connected accounts flow, which has its own return. Anything that does get
+       here is a provider whose token this browser really does hold, so the
+       question is whether that key has appeared. */
+    const seen = !!(meta.key && loadStr(meta.key));
     if(seen){ clearInterval(iv); toast(meta.name+' connected!','success'); _refreshIntegrationsUI(); }
     if(tries>60 || (pop&&pop.closed)){ clearInterval(iv); _refreshIntegrationsUI(); }
   },1000);
@@ -1324,13 +1360,15 @@ function disconnectIntegration(id){
     })();
     return;
   }
-  try{ localStorage.removeItem(_scopeKey(m.key)); }catch(e){}
+  try{ if(m.key) localStorage.removeItem(_scopeKey(m.key)); }catch(e){}
+  /* Keys the older Google grant used to leave behind. Removed on the way past
+     for anybody arriving from a build that had them, so a disconnect really
+     clears everything rather than leaving something that reads as connected. */
   if(id==='google'){
-    /* Memory first - that is where the live token is now. The two removeItem
-       calls stay for anybody arriving from an older build who has not been
-       through the migration yet. */
-    try{ _gClear(); }catch(e){}
-    try{ localStorage.removeItem(_scopeKey('amv_gtoken')); localStorage.removeItem(_scopeKey('amv_gtoken_exp')); }catch(e){}
+    ['amv_gtoken','amv_gtoken_exp','amv_google_connected'].forEach(k=>{
+      try{ localStorage.removeItem(_scopeKey(k)); }catch(e){}
+      try{ localStorage.removeItem(k); }catch(e){}
+    });
   }
   toast(m.name+' disconnected','info'); _refreshIntegrationsUI();
 }
@@ -3125,7 +3163,16 @@ try {
   setupApp();
   setupKeyboard();
   try{ _initCookieConsent(); }catch(e){ try{ renderCk(); }catch(_){} }
-  try{ checkOAuthCallback(); }catch(e){}
+  /* NAMED, NOT BLANKET-CAUGHT. This was `try{ checkOAuthCallback(); }catch(e){}`
+     and the function was deleted underneath it - so a ReferenceError went into
+     the catch and every account connection returned to a page that did nothing.
+     A missing handler is now a visible failure at boot rather than a feature
+     that quietly stopped existing. */
+  if(typeof checkOAuthCallback === 'function'){
+    try{ checkOAuthCallback(); }catch(e){ try{ console.error('AMV: the connection return could not be handled', e); }catch(_){} }
+  } else {
+    try{ console.error('AMV: checkOAuthCallback is missing - account connections cannot complete'); }catch(_){}
+  }
   try{ _setPlan(loadStr('amv_plan')||'free'); }catch(e){}
   // deferred: not needed for first interaction - run when idle
   _idle(()=>{ try{ _initReveal(); }catch(e){} });
@@ -3525,268 +3572,134 @@ function _amvStartVoice(btn){
    is held in memory rather than on disk. A comment that describes a tradeoff
    the code no longer makes is worse than no comment: the next person to touch
    this reads it as the current design and reasons from it. */
-/* CONNECTGOOGLE HAS NO CALLERS, AND IS NOT DEAD CODE. THE DIFFERENCE MATTERS.
+/* WHAT COMES BACK FROM A PROVIDER, AND THE ONLY THING THAT NOW HANDLES IT.
 
-   I removed it as residue and the tests said no, twice, in ways worth writing
-   down. It starts a subsystem that is still running underneath:
+   A provider returns somebody to the app root with `?code=...&state=...`. This
+   is the boot-time handler for that, and it is the whole of it.
 
-     connectGoogle -> Google consent -> checkOAuthCallback
-       -> /v1/oauth/google/exchange   (the Worker stores a refresh token)
-       -> /v1/oauth/google/refresh    (mints a short-lived token for THIS page)
-       -> the browser-side jobs: the mailbox, the calendar, classroom_due
+   It used to be much larger, because two flows returned to this same URL: the
+   older Google grant did its own exchange from here, holding a PKCE verifier
+   this browser had minted, and connected accounts arrived alongside it. That is
+   why the server prefixes its state with `c_` - so the two could be told apart
+   without guessing. The older flow is retired, so this handler is now only ever
+   looking at its own return, and the prefix has become the thing that stops it
+   consuming a return that is not its.
 
-   Every one of those still exists and still runs. What is missing is the first
-   arrow. Nothing on any screen calls this function, so nobody can START that
-   grant any more - an account that connected before it went unreachable keeps
-   working, and nobody new can. Deleting it would have made that permanent and
-   silent, and taken with it the only place the read-only Classroom scopes are
-   named, which is why the school reader 403s: the scope was requested by a
-   function nobody could reach.
+   THIS FUNCTION WAS DELETED ONCE AND THE DELETION SHIPPED THROUGH A SYNTAX
+   CHECK, A BUILD AND THE WHOLE SUITE. The call at boot is wrapped in a bare
+   try/catch, so a missing function threw a ReferenceError into a swallowed
+   catch and every account connection came back to a page that did nothing at
+   all - no error, no tick, no reason to look. The guard there names this
+   function now instead of catching everything, so the same removal fails loudly
+   rather than quietly.
 
-   Connected accounts is the newer, better system - the server holds everything
-   and jobs run with the tab closed - and it does not offer Classroom, so it is
-   not a replacement for this yet.
+   Nothing is stored here and nothing is decided here: the code is single-use,
+   the verifier is sealed on the server, and the exchange is the server's. All
+   this does is get the code out of the address bar and hand it over. */
+function checkOAuthCallback(){
+  let q;
+  try{ q = new URLSearchParams(window.location.search || ''); }catch(e){ return; }
+  const state = q.get('state') || '';
+  /* Not ours: leave the address bar exactly as it is. Stripping a return this
+     handler does not own would destroy the only copy of somebody else's code. */
+  if(state.indexOf('c_') !== 0) return;
 
-   Two live Google systems, one of them missing its front door. Which one AMV
-   keeps is an authentication decision, and it is recorded in GOOGLE-PATHS.md
-   rather than settled here at the end of a long session. Left exactly as it
-   was, deliberately, and not tidied. */
-async function connectGoogle(){
-  const cid = loadStr('amv_gauth');
-  if(!cid){ toast('Add Google Client ID in Settings → Integrations first','error',5000); goSettings('integrations'); return; }
-  /* Classroom is asked for READ-ONLY, and that is the whole safety argument.
+  const clear = () => {
+    try{ history.replaceState(null, '', window.location.pathname); }catch(e){}
+  };
 
-     AMV can see what a student has been set and when it is due. It cannot turn
-     anything in, because the scope to do that (classroom.coursework.me, without
-     .readonly) is not requested and Google will refuse the call. That is a much
-     better guarantee than a rule in a prompt: a prompt can be argued with, and
-     a token that was never granted the permission cannot.
-
-     It matters because this is a minor's school record. The narrowest scope
-     that does the job is the only defensible one to ask for, and "read what is
-     due" is the whole job. */
-  const scopes = 'https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/calendar'
-    + ' https://www.googleapis.com/auth/classroom.courses.readonly'
-    + ' https://www.googleapis.com/auth/classroom.coursework.me.readonly';
-  const redirectUri = window.location.origin + window.location.pathname;
-  saveStr('amv_oauth_return', S.tab||'integrations');
-
-  /* Prefer the AUTH-CODE + PKCE flow: the browser only ever holds a single-use
-     code, the exchange happens on our server where the secret lives, and the
-     refresh token never reaches the browser at all. The implicit flow below is
-     kept only as a fallback for deployments with no backend yet - it puts the
-     access token in the URL fragment, where it lands in history and referrers. */
-  const canExchange = !!(window.AMV_API && AMV_API.live && AMV_API.token);
-  if(canExchange && typeof _pkceChallenge === 'function'){
-    try{
-      const p = await _pkceChallenge('google');
-      const url = 'https://accounts.google.com/o/oauth2/v2/auth'
-        + '?client_id=' + encodeURIComponent(cid)
-        + '&redirect_uri=' + encodeURIComponent(redirectUri)
-        + '&response_type=code'
-        + '&scope=' + encodeURIComponent(scopes)
-        + '&code_challenge=' + encodeURIComponent(p.challenge)
-        + '&code_challenge_method=S256'
-        + '&access_type=offline&prompt=consent'
-        + '&state=' + encodeURIComponent(p.state);
-      window.location.href = url;
-      return;
-    }catch(e){ /* fall through to the legacy flow rather than blocking sign-in */ }
-  }
-  const state = _oauthTxStart('google', '');   // AMV-039: provider-bound, per-attempt state
-  const url = 'https://accounts.google.com/o/oauth2/v2/auth?client_id='+encodeURIComponent(cid)+'&redirect_uri='+encodeURIComponent(redirectUri)+'&response_type=token&scope='+encodeURIComponent(scopes)+'&prompt=consent&state='+encodeURIComponent(state);
-  window.location.href = url;
-}function checkOAuthCallback(){
-  /* AUTH-CODE return (?code=...&state=...). The code is single-use and useless
-     without the verifier, which never left this browser. We hand both to our
-     own server, which does the exchange with the client secret. */
-  try{
-    const q = new URLSearchParams(window.location.search || '');
-    if(q.get('code') && q.get('state')){
-      const st = q.get('state');
-      /* TWO FLOWS RETURN TO THE SAME URL, AND THEY ARE NOT THE SAME THING.
-
-         This handler owns the older Google SIGN-IN return, whose verifier lives
-         in this browser. A connected-account return carries a state the server
-         issued and a verifier the browser never had, so running it through
-         _pkceConsume below would find nothing and tell somebody their
-         connection could not be verified - when it was simply not this
-         handler's. The server prefixes its own state for exactly this. */
-      if(st.indexOf('c_') === 0){
-        history.replaceState(null, '', window.location.pathname);
-        if(typeof _connectFinish === 'function') _connectFinish(q.get('code'), st);
-        return;
-      }
-      const pk = (typeof _pkceConsume === 'function') ? _pkceConsume(st, 'google') : { ok:false };
-      history.replaceState(null, '', window.location.pathname);
-      if(!pk.ok || !pk.verifier){
-        toast('Sign-in could not be verified. Please try connecting again.','error',5000);
-        return;
-      }
-      const base = (loadStr('amv_api_base')||'').replace(/\/$/,'');
-      const tok = loadStr('amv_api_token')||'';
-      fetch(base + '/v1/oauth/google/exchange', {
-        method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
-        body: JSON.stringify({ code:q.get('code'), verifier:pk.verifier,
-          redirect_uri: window.location.origin + window.location.pathname })
-      }).then(r=>r.json()).then(d=>{
-        if(!d || !d.ok || !d.access_token) throw new Error(d && (d.error||d.need) || 'exchange failed');
-        _gSet(d.access_token, Date.now() + ((d.expires_in||3600)-60)*1000);
-        try{ saveStr('amv_google_connected','1'); }catch(e){}
-        toast('Google connected','success');
-        try{ const back=loadStr('amv_oauth_return'); if(back) setTab(back); }catch(e){}
-        try{ if(typeof renderIntegrationsView==='function' && S.tab==='integrations') renderIntegrationsView(); }catch(e){}
-      }).catch(err=>{
-        toast('Google sign-in could not be completed. '+(err&&err.message?String(err.message).slice(0,80):''),'error',5000);
-      });
-      return;
-    }
-    if(q.get('error') && q.get('state')){
-      history.replaceState(null,'',window.location.pathname);
-      toast('Google sign-in was cancelled or failed.','info',4000);
-      return;
-    }
-  }catch(e){}
-
-  const hash = window.location.hash;
-  if(!hash || hash.indexOf('access_token')<0) return;
-  const params = new URLSearchParams(hash.slice(1));
-  // CSRF: validate the returned state against the per-attempt, provider-bound
-  // transaction we stored before redirect (AMV-039 - single-use, expiring).
-  const returnedState = params.get('state')||'';
-  const tx = _oauthTxConsume(returnedState, 'google');
-  if(!tx){
-    history.replaceState(null,'',window.location.pathname);
-    toast('Sign-in could not be verified. Please try connecting again.','error',5000);
+  /* The person said no at the provider, or the provider refused. That is not a
+     failure to hide - somebody is waiting on a screen for something to happen. */
+  const err = q.get('error');
+  if(err){
+    clear();
+    toast(err === 'access_denied'
+      ? 'That connection was cancelled, so AMV has no access to the account.'
+      : 'The account could not be connected. Nothing was changed.', 'info', 6000);
     return;
   }
-  if(params.get('error')){
-    history.replaceState(null,'',window.location.pathname);
-    toast('Google sign-in was cancelled or failed.','info',4000);
-    return;
-  }
-  const token = params.get('access_token');
-  const exp = parseInt(params.get('expires_in')||'3600');
-  if(token){
-    /* The implicit flow issues no refresh token, so this one cannot be
-       re-minted and dies with the tab. That is a real cost and it is the right
-       trade: this path only runs on a deployment with no backend, and the
-       alternative is a bearer token to somebody's mail sitting on disk with no
-       way to revoke it. Honest degradation, said out loud below. */
-    _gSet(token, Date.now()+(exp-60)*1000);
-    history.replaceState(null,'',window.location.pathname);
-    const ret = loadStr('amv_oauth_return')||'integrations';
-    localStorage.removeItem('amv_oauth_return');
-    toast('Google connected! Gmail, Drive & Calendar active.','success',5000);
-    setTimeout(()=>setTab(ret), 500);
-  }
+
+  const code = q.get('code');
+  if(!code) return;
+  clear();
+  if(typeof _connectFinish === 'function'){ _connectFinish(code, state); return; }
+  /* Said out loud rather than swallowed. Somebody has just approved real
+     access at a provider; a silent return leaves them believing it worked. */
+  toast('AMV could not finish connecting that account. Try again from Settings.', 'error', 8000);
 }
-/* Silently renew the Google access token from the refresh token held on the
-   server. Without this a user who connected once is disconnected an hour
-   later - which quietly breaks every standing job that runs overnight, the
-   exact time nobody is watching. Only possible on the auth-code flow, since
-   the implicit flow never issues a refresh token. */
-/* ── THE GOOGLE ACCESS TOKEN LIVES IN MEMORY, NOT IN STORAGE ─────────────────
+try{ window.checkOAuthCallback = checkOAuthCallback; }catch(e){}
 
-   It was in localStorage as `amv_gtoken`: a live bearer token to somebody's
-   Gmail, Calendar and Drive, readable by any script that ends up on the page,
-   and still sitting there long after the tab was closed.
+/* CONNECTGOOGLE IS GONE NOW, AND THE REASON IT SURVIVED THE LAST ATTEMPT IS
+   worth keeping.
 
-   The thing that makes removing it easy is that it was never needed there. The
-   server already holds the refresh token, and refreshGToken below already mints
-   a fresh access token from it on demand. Persisting the access token bought
-   exactly one saved round trip on page load, and cost a stored credential.
+   It had no callers, so I removed it as dead code and two suites failed within
+   the hour. It was not dead - it was the START of a subsystem that was still
+   running underneath: the exchange route, the refresh route, the in-memory
+   token, and the mailbox, calendar, Drive and school readers built on them.
+   What was missing was the first arrow. Deleting the front door would have
+   made an existing gap permanent and silent rather than fixable, and taken
+   with it the only place the read-only Classroom scopes were named - which is
+   why the school reader was getting a 403 from Google.
 
-   It also closes a case the sign-out list cannot. `amv_gtoken` is a GLOBAL key,
-   cleared by _SIGNOUT_CLEAR_GLOBAL when somebody signs out properly - which is
-   the right fix for the path it covers, and it only covers that path. A closed
-   laptop, a crashed tab, a browser quit: none of those run sign-out, and the
-   token stayed for whoever opened AMV next on that machine. A token in memory
-   dies with the page, so that case cannot happen at all.
+   Everything downstream has moved. The readers ask the server, the server holds
+   the sealed grant, the routes that handed a token to a page are gone. So this
+   one really is a leaf now, and the thing it started has a better replacement
+   that a person can actually reach.
 
-   `amv_google_connected` is what remains in storage: a boolean, not a
-   credential, so the Integrations screen and the Crew cards can say Google is
-   linked before the first mint of the tab without holding anything worth
-   stealing.
+   It also took the last implicit flow in the client with it: response_type=token
+   returns an access token in the URL fragment, where it lands in history, in
+   referrers, and in anything that can read the address bar. It survived here as
+   the no-backend fallback, which was an honest trade when the alternative was
+   the feature not existing. Connected accounts needs a backend by construction,
+   so the trade is no longer on the table and neither is the flow.
 
-   Deliberately NOT sessionStorage: that is still storage, still readable by
-   script, and still survives a reload. The point is that there is nothing on
-   disk to read. */
-let _gTok = '', _gTokExp = 0;
-function _gSet(token, expMs){
-  _gTok = String(token || '');
-  _gTokExp = Number(expMs) || 0;
-  /* The marker, not the token. */
-  try{ saveStr('amv_google_connected', _gTok ? '1' : ''); }catch(e){}
-}
-function _gClear(){
-  _gTok = ''; _gTokExp = 0;
-  try{ saveStr('amv_google_connected', ''); }catch(e){}
-}
-function _gHasGrant(){ try{ return loadStr('amv_google_connected') === '1'; }catch(e){ return false; } }
-try{ window._gHasGrant=_gHasGrant; window._gClear=_gClear; }catch(e){}
+   LESSONS 296: a function with no callers is unreachable. Whether it is DEAD
+   depends on what is downstream of it. */
 
-/* ONE-TIME MIGRATION. Somebody upgrading arrives with a token already on disk.
-   Read it into memory, then remove it - leaving it would mean this change
-   protects new connections only, and every existing one keeps the exposure it
-   was supposed to lose. */
-(function _gMigrateOffDisk(){
-  try{
-    const old = loadStr('amv_gtoken');
-    if(old){
-      _gSet(old, parseInt(loadStr('amv_gtoken_exp')||'0', 10) || 0);
-    } else if(loadStr('amv_gtoken_exp')){
-      /* An expiry with no token: the leftovers of the old cleanup path. */
-    }
-    try{ localStorage.removeItem('amv_gtoken'); localStorage.removeItem('amv_gtoken_exp'); }catch(e){}
-  }catch(e){}
+
+/* THE GOOGLE ACCESS TOKEN USED TO LIVE HERE, AND NOW IT LIVES NOWHERE.
+
+   This block held one in a module variable - already an improvement on holding
+   it in localStorage, which is where it was before - along with the code to
+   mint a fresh one from the refresh token the server kept, and a migration that
+   read the old key off disk once and deleted it.
+
+   None of it is needed. Every path that called Google from this page now asks
+   the server to act instead, so the token stays in the Worker and the browser
+   receives results rather than credentials. A token that never arrives cannot
+   be read by anything that gets a foothold on this page, cannot go stale
+   mid-job, and does not vanish when the tab closes.
+
+   What is left of Google in this browser is sign-in, which is a different
+   thing: it proves who somebody is and grants access to nothing.
+
+   `amv_google_connected` went with it. It was a marker meaning "this account
+   granted the older Google connection", and the question it answered is now
+   answered by the server's own list of grants, per capability. Two answers to
+   one question is how a screen came to say Gmail was connected on an account
+   that had granted no mail scope at all. */
+/* AND ANYTHING AN EARLIER BUILD LEFT ON DISK GOES ON THE WAY PAST.
+
+   There was a migration here that read `amv_gtoken` into memory and deleted it.
+   It went with the memory it was reading into, and the DELETE half went with it
+   - so a browser that ran a build where the token was on disk would have kept
+   it there indefinitely, cleared only by a sign-out somebody may never perform.
+
+   The token is short-lived and this product has never shipped, so the real
+   exposure is a development machine rather than a customer. It is three lines
+   either way, and "a live bearer token to somebody's mail sits in localStorage
+   until they remember to sign out" is not a sentence worth being true for
+   anybody, including us.
+
+   Unconditional and silent: there is nothing to migrate INTO, so the only
+   correct thing to do with these keys is remove them. */
+(function _purgeRetiredGoogleKeys(){
+  ['amv_gtoken', 'amv_gtoken_exp', 'amv_google_connected'].forEach(k => {
+    try{ localStorage.removeItem(k); }catch(e){}
+    try{ localStorage.removeItem(_scopeKey(k)); }catch(e){}
+  });
 })();
 
-let _gRefreshInFlight = null;
-async function refreshGToken(){
-  if(_gRefreshInFlight) return _gRefreshInFlight;
-  const base = (loadStr('amv_api_base')||'').replace(/\/$/,'');
-  const tok = loadStr('amv_api_token')||'';
-  if(!base || !tok) return null;
-  _gRefreshInFlight = (async () => {
-    try{
-      const r = await fetchDeadline(base + '/v1/oauth/google/refresh', {
-        method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok}, body:'{}' });
-      const d = await r.json().catch(()=>({}));
-      if(!r.ok || !d.ok || !d.access_token) return null;
-      _gSet(d.access_token, Date.now() + ((d.expires_in||3600)-60)*1000);
-      return d.access_token;
-    }catch(e){ return null; }
-    finally{ _gRefreshInFlight = null; }
-  })();
-  return _gRefreshInFlight;
-}
-/* Await a USABLE token - refreshing first if it has expired or is about to.
-   Anything that is going to call Google should use this rather than the
-   synchronous getGToken(). */
-async function ensureGToken(){
-  // renew a couple of minutes early so a long job never expires mid-run
-  if(_gTok && _gTokExp && Date.now() < _gTokExp - 120000) return _gTok;
-  /* A fresh tab has an empty memory and a grant on the server, which is now the
-     ordinary case rather than an error. Minting here is what replaces reading
-     it off disk. */
-  const fresh = await refreshGToken();
-  if(fresh) return fresh;
-  return getGToken();
-}
-/* Synchronous, so it can only answer from what is already in hand. Anything
-   about to CALL Google should use ensureGToken, which can mint one. */
-function getGToken(){
-  if(!_gTok) return null;
-  if(!_gTokExp) return _gTok;
-  if(Date.now() < _gTokExp) return _gTok;
-  // Expired. Renew in the background so the NEXT call succeeds instead of
-  // forcing a reconnect, but never hand back a dead token now.
-  try{ refreshGToken(); }catch(e){}
-  _gTok = ''; _gTokExp = 0;
-  return null;
-}
-try{ window.refreshGToken=refreshGToken; window.ensureGToken=ensureGToken; }catch(e){}
 /* disconnectGoogle lived here and was reachable from nothing.
    disconnectIntegration('google') does the same work from the Connectors list,
    which is where somebody actually looks for it. Two functions for one action

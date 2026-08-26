@@ -1,9 +1,13 @@
 /* OAUTH HARDENING - the implicit flow returns the access token in the URL
    fragment, where it lands in browser history, referrers, and anything that can
-   read the address bar, and it cannot issue a refresh token. These assertions
-   prove AMV uses auth-code + PKCE whenever a backend is available, that the
-   verifier never leaves the browser except to our own server, and that the
-   CSRF/state protections still hold. */
+   read the address bar, and it cannot issue a refresh token.
+
+   These assertions prove AMV uses auth-code + PKCE everywhere, and that the
+   CSRF/state protections hold. What they no longer say is that the verifier
+   "never leaves the browser except to our own server": for the provider AMV
+   holds a key for, the verifier is minted and sealed on the SERVER and the
+   browser never has one to protect. The catalogue providers the page still
+   starts itself do mint one here, and those are asserted separately below. */
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -114,52 +118,67 @@ section('And the providers the client still starts itself use PKCE too');
   ok(stateless.length === 0, 'and every one carries CSRF state', stateless);
 }
 
-section('The implicit flow is the fallback, never the first choice');
+section('The implicit flow is not the fallback, because it is not anywhere');
 {
-  /* THE ONE PLACE IN THE CLIENT THAT CAN STILL ASK FOR A TOKEN IN THE URL.
+  /* THIS SECTION USED TO ASSERT AN ORDERING, AND NOW ASSERTS AN ABSENCE, WHICH
+     IS THE STRONGER OF THE TWO.
 
-     connectGoogle starts the older Google grant - the one the mailbox, the
-     calendar and the school reader still run on. It tries auth-code + PKCE
-     first and falls back to the implicit flow only when there is no backend to
-     do the exchange, which is the deployment where the alternative is the
-     feature not existing.
-
-     That ordering IS the guarantee. The implicit flow returns the access token
-     in the URL fragment, where it lands in history, in referrers, and in
-     anything that can read the address bar, and it cannot issue a refresh
-     token. So: it must come second, and it must be reachable only when the
+     connectGoogle started the older Google grant. It tried auth-code + PKCE
+     first and fell back to `response_type=token` - the implicit flow - only
+     when there was no backend to do the exchange. The ordering WAS the
+     guarantee, and this suite asserted it: second, and reachable only when the
      first branch cannot run.
 
-     This suite once asserted all of this and nothing else, against a function
-     with no callers - see GOOGLE-PATHS.md. The two sections above are the paths
-     a person actually takes today; this one is the path that is still wired
-     underneath them. */
-  const bundleSrc = readFileSync(join(ROOT, 'app.js'), 'utf8');
-  const at = bundleSrc.indexOf('function connectGoogle');
-  ok(at > 0, 'the older Google grant is still in the bundle', at);
-  const fn = bundleSrc.slice(at, bundleSrc.indexOf('\nfunction ', at + 10));
-  const codeIdx = fn.indexOf('response_type=code');
-  const tokenIdx = fn.indexOf('response_type=token');
-  ok(codeIdx > 0, 'the auth-code flow is built', codeIdx);
-  ok(/code_challenge_method=S256/.test(fn), 'with an S256 PKCE challenge', true);
-  ok(/access_type=offline/.test(fn), 'and offline access, so a refresh token can be issued', true);
-  ok(/AMV_API && AMV_API\.live && AMV_API\.token/.test(fn),
-     'chosen whenever a backend is available to do the exchange', true);
-  ok(tokenIdx > codeIdx,
-     'and the implicit flow appears only AFTER it, as the no-backend fallback', { codeIdx, tokenIdx });
-  ok(/state=/.test(fn), 'CSRF state is present in both paths', true);
+     That was an honest trade while the alternative was the feature not
+     existing. Connected accounts needs a backend by construction, so the trade
+     is no longer on the table and neither is the flow. The implicit flow returns
+     the access token in the URL fragment, where it lands in history, in
+     referrers and in anything that can read the address bar, and it cannot issue
+     a refresh token. It is gone from the client entirely.
 
-  /* And nowhere else. One fallback in one function is a stated tradeoff; a
-     second copy somewhere else is how a tradeoff becomes the default. */
-  const all = (bundleSrc.match(/response_type=token/g) || []).length;
-  ok(all === 1, 'and it is the only place in the whole client that asks for one', all);
+     READ FROM THE SHIPPED BLOCK, NOT FROM app.js. The readable bundle carries
+     the comments explaining what was removed, and those comments name the flow
+     - so a correct removal reads as a leak if you grep the copy with the prose
+     in it. index.html's generated block is what a visitor downloads: minified,
+     comments stripped. */
+  const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
+  const a = html.indexOf('<!-- BUILD:JS:START -->');
+  const b = html.indexOf('<!-- BUILD:JS:END -->');
+  ok(a > 0 && b > a, 'the generated block markers were found', { a, b });
+  const shipped = html.slice(a, b);
+  /* A NEGATIVE CONTROL. If the markers move, the slice above becomes a few
+     characters and every absence below passes for the wrong reason. */
+  ok(shipped.length > 100000, 'and it really is the bundle, not an empty slice', shipped.length);
+
+  ok(!/response_type=token/.test(shipped),
+     'nothing in the shipped page asks a provider for a token in the URL', true);
+  ok(!/connectGoogle/.test(shipped), 'and the function that used to is gone with it', true);
+  ok(!/oauth\/google\/(exchange|refresh)/.test(shipped),
+     'along with the routes it exchanged and refreshed through', true);
+
+  /* AND THE SERVER SIDE OF THE SAME STATEMENT. A client that cannot ask is only
+     half of it - a route that would still answer is one somebody finds a use
+     for. */
+  const worker = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
+  ok(!/case '\/v1\/oauth\/google\/(exchange|refresh)'/.test(worker),
+     'the Worker no longer routes either of them', true);
+  ok(!/function googleOAuth(Exchange|Refresh)/.test(worker),
+     'and the handlers are deleted, not merely unrouted', true);
 }
 
-section('The verifier is only ever sent to our own server');
-const src = await page.evaluate(() => String(window.checkOAuthCallback));
-ok(/v1\/oauth\/google\/exchange/.test(src), 'the code and verifier go to our exchange endpoint');
-ok(!/oauth2\.googleapis\.com\/token/.test(src), 'the browser never calls the token endpoint directly (no client secret in the client)');
-ok(/history\.replaceState/.test(src), 'the code is stripped from the address bar after handling');
+section('The verifier is never in this browser, so it cannot leave it');
+{
+  /* The original property was "the verifier is only ever sent to our own
+     server", which was the right one while the browser minted it. The server
+     mints and seals it now, so the browser has nothing to send - a stronger
+     statement, and asserted as one rather than as the old one reworded. */
+  const src = await page.evaluate(() => String(window.checkOAuthCallback || ''));
+  ok(src.length > 100, 'the return handler was read, not an empty string', src.length);
+  ok(!/verifier/.test(src), 'the return handler holds no PKCE verifier');
+  ok(!/oauth2\.googleapis\.com/.test(src), 'and never calls a provider token endpoint directly');
+  ok(/_connectFinish/.test(src), 'it hands the code to the server instead');
+  ok(/history\.replaceState/.test(src), 'and the code is stripped from the address bar after handling');
+}
 
 section('No JavaScript errors');
 ok(errors.length === 0, 'zero uncaught page errors', errors.slice(0, 3));

@@ -629,36 +629,23 @@ const CW_NEEDS_CHECK = {
   'Bank connection': { label:'a bank connection',
     has:()=>{ try{ return typeof AMVFinance!=='undefined' && AMVFinance.linked(); }catch(e){ return false; } } },
 };
-/* IS GOOGLE LINKED - which is not the same as "is a token in hand right now".
+/* _cwHasGoogle STOOD HERE AND ANSWERED THE WRONG QUESTION FOR A LONG TIME.
 
-   The ONE definition of this. It briefly had a twin called _googleLinked in
-   13-integrations.js with an identical body, which the one-definition checker
-   caught - written while I was reading that checker's output about somebody
-   else's duplication.
+   It meant "is Google linked", and screen after screen used it to decide
+   whether AMV could READ somebody's account - which it never could answer,
+   because a sign-in proves identity and grants access to nothing. That is how a
+   row came to show Gmail as connected on an account that had granted no mail
+   scope at all.
 
-   This used to ask getGToken(), which was fine while the token sat on disk and
-   was therefore present the instant the page loaded. The token lives in memory
-   now, so on a fresh tab it is empty until something mints one - and this
-   function would have reported every Google-backed job as needing a connection
-   that was already there, on every single reload.
+   Every one of those callers asks _cwConnHas(capability) now: the server's own
+   list of grants, per capability, so a mailbox reads as connected exactly when
+   the mailbox was granted. And the token machinery it was built on is gone -
+   no Google credential reaches this browser any more, so there is nothing left
+   here for it to look at.
 
-   The grant is the right question anyway: it is what decides whether the job
-   CAN run, and a token is a detail of the next few minutes. */
-/* IS SOMEBODY SIGNED IN WITH GOOGLE - and nothing more than that.
-
-   This used to answer "can AMV read this account", which it never could: a
-   sign-in proves identity and grants no access to anything. Every caller that
-   was asking the second question now asks _cwConnHas(capability) instead.
-
-   Kept because signing in with Google is still a real thing AMV does, and this
-   is how that is asked. Do not reach for it to decide whether a feature can
-   run - that is what the grant is for. */
-function _cwHasGoogle(){
-  try{
-    if(typeof _gHasGrant === 'function' && _gHasGrant()) return true;
-    return typeof getGToken === 'function' && !!getGToken();
-  }catch(e){ return false; }
-}
+   If you need "is this person signed in", that is S.user. If you need "may AMV
+   do X", that is _cwConnHas('X'). They were one function for a while and that
+   was the bug. */
 
 /* ── WHERE A JOB CAN ACTUALLY RUN ────────────────────────────────────────────
 

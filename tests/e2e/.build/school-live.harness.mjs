@@ -1968,6 +1968,18 @@ const CONN_PROVIDERS = {
          other people's work. This is a minor's school record and the narrowest
          access that does the job is the only one worth asking for. */
       'school.read':   'https://www.googleapis.com/auth/classroom.courses.readonly https://www.googleapis.com/auth/classroom.coursework.me.readonly',
+      /* THE NARROW WRITE, AND IT IS NARROW ON PURPOSE.
+
+         drive.file reaches ONLY files this app created, or ones the person
+         explicitly opened with it. It cannot read their Drive. The older flow
+         asked for the full `drive` scope, which hands over everything somebody
+         owns to do a job that needs one folder - and that is not coming back.
+
+         It is what makes "turn the link your teacher sent into a copy you can
+         work in" possible, and the copy AMV creates is the only thing it can
+         then touch. A permission AMV does not need is a permission it will one
+         day be asked to justify. */
+      'drive.write':   'https://www.googleapis.com/auth/drive.file',
     },
   },
   microsoft: {
@@ -2070,21 +2082,44 @@ async function connStart(request, env){
   const appUrl = String(env.APP_URL || env.APP_ORIGIN || '').replace(/\/$/,'');
   if(!appUrl) return json({ error:'no_app_url',
     message:'APP_URL is not set, so there is no address for the provider to send anybody back to.' }, 503);
+  /* ONE DEFINITION OF "SAME ORIGIN", NOT TWO.
+
+     This used to parse and compare the origins inline, which was correct - and
+     was the second implementation of a comparison the Worker already had in
+     _sameOrigin. The other one belonged to the older Google exchange; when that
+     route was retired, _sameOrigin was left with no callers and this copy was
+     left as the only live one, which is the exact arrangement where a fix
+     applied to one of them silently misses the other.
+
+     _sameOrigin is the survivor because it is the stricter of the two and its
+     reasoning is written down: scheme, host and port are compared as parsed
+     fields so nothing in one can reach across into another, and a URL carrying
+     credentials (https://amv.homes@attacker.example) is refused outright rather
+     than compared. The query/fragment rejection below is kept on top of it,
+     because that is specific to a redirect target and not to origins in
+     general: this exact string goes to the provider as redirect_uri, and it has
+     to match what was registered byte for byte. */
   const redirect = String(body.redirect || appUrl);
-  let rOrigin = '';
-  try{ const u = new URL(redirect); rOrigin = u.origin; if(u.search || u.hash) rOrigin = ''; }catch(_e){ rOrigin = ''; }
-  let appOrigin = '';
-  try{ appOrigin = new URL(appUrl).origin; }catch(_e){ appOrigin = ''; }
-  if(!rOrigin || !appOrigin || rOrigin !== appOrigin)
+  let clean = false;
+  try{ const u = new URL(redirect); clean = !u.search && !u.hash; }catch(_e){ clean = false; }
+  if(!clean || !_sameOrigin(redirect, appUrl))
     return json({ error:'bad_redirect',
       message:'That return address is not this deployment.' }, 400);
 
-  /* SELF-IDENTIFYING, because two OAuth returns land on the same URL.
+  /* SELF-IDENTIFYING, and it stays that way now that it is the only return.
 
-     The older Google sign-in flow already handles `?code=&state=` at the app
-     root. Both would arrive looking identical, and the client would have to
-     guess which handler owns the response. The prefix removes the guess. It is
-     not a secret and does not need to be - the 24 bytes after it are. */
+     It exists because two OAuth returns used to land on the same URL: the older
+     Google grant also handled `?code=&state=` at the app root, both arrived
+     looking identical, and the client had to guess which handler owned the
+     response. That grant is retired, so today the prefix distinguishes this
+     from nothing.
+
+     Kept anyway, and deliberately. The next provider added to this framework
+     returns to the same address, and a state that says which flow issued it is
+     the difference between a handler that knows the response is not its own and
+     one that consumes it and reports a failure to somebody whose connection
+     actually worked. It is not a secret and does not need to be - the 24 bytes
+     after it are. */
   const state = 'c_' + _connRandom(24);
   const verifier = _connRandom(48);
   const challenge = await _pkceChallenge(verifier);
@@ -2224,12 +2259,21 @@ async function connUse(env, email, need, jobId, opts){
   }
 
   const all = (await DB.get(env, CONN_KV, email)) || {};
+  /* ONE CONNECTION THAT CARRIES ALL OF THEM, not one per capability.
+
+     Copying a school document needs two things at once: permission to read the
+     document the teacher owns, and permission to create a file. Satisfying
+     them from two different grants would mean a token that can do one half of
+     the job, and the failure would arrive from Google in the middle of the
+     operation - after the read, before the copy - which is the worst place for
+     it. Asked as a set, refused as a set. */
+  const needs = Array.isArray(need) ? need.filter(Boolean) : [need];
   const id = Object.keys(all).find(k => {
     const c = all[k];
-    return c && Array.isArray(c.scopes) && c.scopes.indexOf(need) >= 0
+    return c && Array.isArray(c.scopes) && needs.every(n => c.scopes.indexOf(n) >= 0)
         && (o.attended || c.unattended);
   });
-  if(!id) return { ok:false, code:'not_connected', need };
+  if(!id) return { ok:false, code:'not_connected', need: needs.join(' + ') };
 
   const c = all[id];
   const p = CONN_PROVIDERS[c.provider];
@@ -2432,6 +2476,50 @@ const CONN_ACTIONS = {
   'school.due': {
     need: 'school.read', writes: false,
     async run(token){ return await _fetchClassroom(token); },
+  },
+  /* TURN THE LINK A TEACHER SENT INTO A COPY YOU CAN WORK IN.
+
+     Two capabilities, not one, and the pair is the honest requirement: reading
+     the document the teacher owns needs drive.read, creating the copy needs
+     drive.write (which is drive.file - only what AMV made). Declaring one of
+     them would mean a token that can do half the job and a refusal from Google
+     arriving mid-operation. */
+  'drive.copy': {
+    need: ['drive.read', 'drive.write'], writes: true,
+    async run(token, args){
+      const fileId = String(args.fileId || '').slice(0, 200);
+      if(!/^[A-Za-z0-9_-]{5,}$/.test(fileId)) throw new Error('bad_file');
+      const title = String(args.title || 'Copy').slice(0, 200);
+      const r = await fetchDeadline(
+        'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(fileId) + '/copy?fields=id,name,webViewLink',
+        { method:'POST', headers:{ Authorization:'Bearer ' + token, 'Content-Type':'application/json' },
+          body: JSON.stringify({ name: title }) }, 20000);
+      if(!r.ok) throw new Error('drive_' + r.status);
+      const d = await r.json().catch(()=>({}));
+      return { id: d.id || '', name: d.name || title, link: d.webViewLink || '' };
+    },
+  },
+  /* Share the copy AMV made - never anything else. drive.file cannot reach a
+     file this app did not create, so the permission this grants is bounded by
+     the same scope that made the copy: there is no shape of arguments that
+     turns this into sharing somebody's own documents. */
+  'drive.share': {
+    need: 'drive.write', writes: true,
+    async run(token, args){
+      const fileId = String(args.fileId || '').slice(0, 200);
+      if(!/^[A-Za-z0-9_-]{5,}$/.test(fileId)) throw new Error('bad_file');
+      const to = String(args.email || '').slice(0, 320);
+      if(!/^[^\s@:]{1,64}@[^\s@:]+\.[^\s@:]{2,}$/.test(to)) throw new Error('bad_recipient');
+      /* Reader or writer, and nothing else. `owner` transfers the document away
+         from the student, which is not a share and is not undoable by them. */
+      const role = args.role === 'reader' ? 'reader' : 'writer';
+      const r = await fetchDeadline(
+        'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(fileId) + '/permissions?sendNotificationEmail=true',
+        { method:'POST', headers:{ Authorization:'Bearer ' + token, 'Content-Type':'application/json' },
+          body: JSON.stringify({ type:'user', role, emailAddress: to }) }, 20000);
+      if(!r.ok) throw new Error('drive_' + r.status);
+      return { shared: true, role };
+    },
   },
 };
 
@@ -5418,110 +5506,24 @@ async function fraudRecord(request, env){
   return json({ ok:true, stored:true });
 }
 
-/* ============================================================
-   GOOGLE OAUTH CODE EXCHANGE  (/v1/oauth/google/exchange)
+/* THE OLDER GOOGLE GRANT WAS EXCHANGED AND REFRESHED HERE.
 
-   The implicit flow returns the access token in the URL fragment,
-   where it lands in browser history, referrers and any extension that
-   reads the address bar, and it cannot issue a refresh token.
+   googleOAuthExchange took a code and a verifier from the browser and traded
+   them for a refresh token this Worker stored. googleOAuthRefresh minted a
+   short-lived access token from it and HANDED THAT TO THE PAGE, which is what
+   made the browser-side mailbox, calendar, Drive and Classroom readers
+   possible - and what made them a liability: a provider token in a page is a
+   token anything in that page can take, and it dies with the tab, so nothing
+   built on it could run overnight however it was described.
 
-   This is the auth-code + PKCE replacement: the browser only ever
-   holds a single-use code and its verifier, and the exchange happens
-   HERE, where the client secret lives. The refresh token is kept
-   server-side and never reaches the browser at all.
-   ============================================================ */
-async function googleOAuthExchange(request, env){
-  const user = await requireUser(request, env);
-  if(!user) return json({ error:'sign in first' }, 401);
-  const blocked = await guardAction(env, 'oauthx:' + user.email, 10, 60, 'sign-in attempts');
-  if(blocked) return blocked;
+   Connected accounts replaced both. The exchange happens in connFinish, the
+   token is sealed under CONNECT_KEY and never leaves this Worker, and the
+   browser asks /v1/connect/act to have something DONE rather than asking for a
+   key to do it with.
 
-  if(!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET)
-    return json({ error:'Google sign-in is not fully configured on this deployment.', code:'needs_service' }, 503);
+   The routes are gone rather than left answering: an endpoint that still hands
+   out a provider token is one somebody will find a use for. */
 
-  const body = await request.json().catch(() => ({}));
-  const code = String(body.code || '');
-  const verifier = String(body.verifier || '');
-  const redirectUri = String(body.redirect_uri || '');
-  if(!code || !verifier || !redirectUri) return json({ error:'code, verifier and redirect_uri are required' }, 400);
-
-  /* AMV-SP-08: "STARTS WITH" IS NOT "IS".
-
-     This compared the caller's redirect_uri against the app's own address with
-     indexOf === 0, which is a string prefix and not an origin. Every one of
-     these passes a prefix check against https://amv.homes:
-
-        https://amv.homes.attacker.example/steal
-        https://amv.homes@attacker.example/steal
-        https://amv.homes.evil.co
-
-     and the first two are the ones that matter, because a browser sends the
-     authorisation code to the HOST, not to the string. Google will happily
-     redirect there if the attacker has registered it; and even where it will
-     not, this endpoint hands the redirect_uri straight to Google's token
-     exchange, so a value that is not ours has no business being accepted here
-     at all.
-
-     Compared as an ORIGIN, parsed rather than matched. A path underneath it is
-     fine - that is what a callback path is - and a different host, a different
-     scheme, a different port or a userinfo trick is not, because parsing puts
-     each of those in a field of its own where a prefix cannot reach across
-     them. */
-  const allowed = (env.APP_ORIGIN || env.APP_URL || '').replace(/\/$/, '');
-  if(allowed && !_sameOrigin(redirectUri, allowed))
-    return json({ error:'redirect_uri is not permitted' }, 400);
-
-  try{
-    const r = await fetchDeadline('https://oauth2.googleapis.com/token', {
-      method:'POST', headers:{ 'Content-Type':'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        code, code_verifier: verifier, redirect_uri: redirectUri,
-        client_id: env.GOOGLE_CLIENT_ID, client_secret: env.GOOGLE_CLIENT_SECRET,
-        grant_type: 'authorization_code'
-      }).toString()
-    });
-    const d = await r.json();
-    if(!r.ok) return json({ error: d.error_description || d.error || 'Sign-in could not be completed.' }, 400);
-
-    // The REFRESH token stays here. The browser gets only a short-lived access
-    // token, so a stolen browser token expires by itself within the hour.
-    if(d.refresh_token){
-      const rec = (await DB.get(env, 'goauth', user.email)) || {};
-      rec.refreshToken = d.refresh_token; rec.scope = d.scope || ''; rec.at = Date.now();
-      await DB.put(env, 'goauth', user.email, rec);
-    }
-    audit(env, 'google_oauth_exchange', { by:user.email, refreshed:!!d.refresh_token });
-    return json({ ok:true, access_token: d.access_token, expires_in: d.expires_in || 3600, scope: d.scope || '' });
-  }catch(e){
-    return json({ error:'Sign-in could not be completed.' }, 502);
-  }
-}
-
-/* Silently mint a new access token from the stored refresh token, so a user
-   who connected once does not have to reconnect every hour. */
-async function googleOAuthRefresh(request, env){
-  const user = await requireUser(request, env);
-  if(!user) return json({ error:'sign in first' }, 401);
-  /* Each call mints a fresh token at Google. An access token lasts an hour, so
-     nothing legitimate needs this often - and hammering it is how an OAuth
-     client gets throttled for everybody. */
-  const gr = await guardAction(env, `goauthref:${user.email}`, 20, 500, 'Google token refreshes');
-  if(gr) return gr;
-  if(!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET)
-    return json({ error:'not configured', code:'needs_service' }, 503);
-  const rec = await DB.get(env, 'goauth', user.email);
-  if(!rec || !rec.refreshToken) return json({ error:'Google is not connected.', code:'needs_auth' }, 400);
-  try{
-    const r = await fetchDeadline('https://oauth2.googleapis.com/token', {
-      method:'POST', headers:{ 'Content-Type':'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ refresh_token: rec.refreshToken, client_id: env.GOOGLE_CLIENT_ID,
-        client_secret: env.GOOGLE_CLIENT_SECRET, grant_type: 'refresh_token' }).toString()
-    });
-    const d = await r.json();
-    if(!r.ok) return json({ error:d.error_description || 'Could not refresh access.', code:'needs_auth' }, 400);
-    return json({ ok:true, access_token:d.access_token, expires_in:d.expires_in || 3600 });
-  }catch(e){ return json({ error:'Could not refresh access.' }, 502); }
-}
 
 /* Accept a link invitation (/v1/link/accept). The client mirror cannot be the
    authority here: two different accounts, usually on different devices, must
@@ -8633,8 +8635,6 @@ async function _route(request, env, ctx) {
     case '/v1/browser/run':  return browserRun(request, env, ctx);
     case '/v1/finance/accounts':     return financeRoute(request, env, 'accounts');
     case '/v1/finance/transactions': return financeRoute(request, env, 'transactions');
-    case '/v1/oauth/google/exchange': return googleOAuthExchange(request, env);
-    case '/v1/oauth/google/refresh':  return googleOAuthRefresh(request, env);
     case '/v1/finance/checkin':      return financeCheckin(request, env);
     case '/v1/finance/status':       return financeStatus(request, env);
     case '/v1/finance/link/start':   return financeLinkStart(request, env);
@@ -10137,13 +10137,20 @@ async function authDeleteAccount(request, env) {
     }
   } catch {}
 
-  /* The same reasoning, and the same reach outside this worker, for Google.
-     A connected account leaves a LONG-LIVED refresh token here - the browser
-     only ever holds a short one - and nothing erased it. So closing an account
-     left a standing grant to somebody's mail and calendar, revocable by nobody,
-     against a user who no longer exists. Revoked at Google first, then the
-     record goes either way: a third party being unreachable must not keep
-     somebody connected to a service they have left. */
+  /* THE OLDER GOOGLE GRANT'S REFRESH TOKENS, WHICH NOTHING WRITES ANY MORE.
+
+     `goauth` is where googleOAuthExchange stored a long-lived refresh token.
+     That route is retired and connected accounts replaced it, so no new row can
+     appear here - and every row that already exists is a standing grant to
+     somebody's mail and calendar. Closing an account has to end those, or the
+     grant outlives the user it belonged to, revocable by nobody.
+
+     KEPT UNTIL THE ROWS ARE GONE, deliberately. Deleting this because nothing
+     writes it any more would leave exactly the accounts that connected under
+     the old flow - the ones with the longest-lived tokens - as the ones erasure
+     silently skips. Revoked at Google first, then the record goes either way: a
+     third party being unreachable must not keep somebody connected to a service
+     they have left. */
   try {
     const g = await DB.get(env, 'goauth', email);
     if (g && g.refreshToken) {

@@ -171,7 +171,12 @@ ok(approve.links === 1, 'the correct code, from the right account, creates the l
 
 section('Either side can cut the link, and it stops access immediately');
 const revoked = await page.evaluate(() => {
-  window.confirmModal = (t, b, go) => go();     // accept the confirmation
+  /* Accept the confirmation. Returns TRUE, which is confirmModal's contract:
+     it answers whether it managed to ASK, and the caller falls back to the
+     native dialog when it could not. A stub returning undefined reads as "could
+     not ask", so the caller would run go() from here and then ask a second time
+     - the right outcome by accident. */
+  window.confirmModal = (t, b, go) => { go(); return true; };
   const asGrantee = () => { S.user = { name: 'Alice', email: 'alice@x.com', ini: 'A' }; };
   const asOwner = () => { S.user = { name: 'Mum', email: 'mum@x.com', ini: 'M' }; };
   asGrantee();

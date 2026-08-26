@@ -177,11 +177,34 @@ section('A redirect target is compared as an origin, not as a prefix');
   ok(W._sameOrigin('', APP) === false, 'and so is nothing at all');
   ok(W._sameOrigin('javascript:alert(1)', APP) === false, 'and a scheme that is not the web');
 
-  const handler = codeOnly(functionBody(src, 'googleOAuthExchange') || codeOnly(src));
-  ok(!/redirectUri\.indexOf\(allowed\) !== 0/.test(codeOnly(src)),
+  /* AND THE THING THAT ASKS IT IS THE THING THAT TAKES A REDIRECT FROM A CALLER.
+
+     The bug this whole section exists for lived in googleOAuthExchange, which
+     compared a caller-supplied redirect_uri against the app's own address with
+     indexOf === 0. That route is retired. The property is not retired with it:
+     connStart still accepts a redirect from the browser and still hands it
+     straight to the provider as redirect_uri, so it is an open redirect with an
+     authorization code attached if the check is ever weakened.
+
+     connStart had its own inline origin comparison for a while, which was
+     correct and was a SECOND implementation - the arrangement where a fix
+     applied to one copy silently misses the other. Asserted here as: there is
+     one comparison, connStart is what calls it, and the prefix shape is
+     nowhere. */
+  const code = codeOnly(src);
+  ok(!/indexOf\(allowed\) !== 0/.test(code),
      'the prefix comparison is gone from the source, not merely wrapped', true);
-  ok(/_sameOrigin\(redirectUri, allowed\)/.test(codeOnly(src)),
-     'and the origin comparison is what the exchange uses', true);
+  const start = codeOnly(functionBody(src, 'connStart') || '');
+  ok(start.length > 400, 'the handshake start was found, not an empty slice', start.length);
+  ok(/_sameOrigin\(redirect, appUrl\)/.test(start),
+     'and the origin comparison is what the redirect check uses', true);
+  ok(!/rOrigin !== appOrigin/.test(code),
+     'with no second copy of it left inline', true);
+  /* The extra condition that is NOT about origins, kept beside it: this exact
+     string is registered with the provider, so a query or fragment on it is a
+     mismatch even when the origin is right. */
+  ok(/!u\.search && !u\.hash/.test(start),
+     'and a return address carrying a query or fragment is still refused', true);
 }
 
 section('A share link is long enough to be a password, because it is one');

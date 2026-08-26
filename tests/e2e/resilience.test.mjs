@@ -1,66 +1,77 @@
 /* RESILIENCE - two failure modes that erode trust quietly:
-   1. a Google token that silently expires overnight, killing every standing
+   1. a provider grant that silently expires overnight, killing every standing
       job at the one-hour mark with no error anyone sees;
    2. a failed fetch that leaves a panel blank, which reads as "empty" rather
       than "this did not load".
-   Both must fail loudly and recover on their own where possible. */
+   Both must fail loudly and recover on their own where possible.
+
+   (1) IS NO LONGER A BROWSER PROBLEM, AND THAT IS THE POINT.
+
+   It used to be one. The page held a Google access token, and this suite
+   asserted that ensureGToken renewed it a couple of minutes early so a long job
+   never expired mid-run. That was correct, and it only ever protected a job
+   while a tab was open.
+
+   The token moved to the server. The page asks it to ACT rather than asking for
+   a key to act with, so there is nothing here left to expire - and the renewal
+   that keeps the overnight promise is asserted where it now lives, against
+   connUse, in tests/worker/the-grant-renews-itself-overnight.
+
+   What is asserted HERE is the browser half of the same guarantee, and it is a
+   property rather than an absence: every action on a server-held grant reaches
+   the server, none of them carries a credential, and no machinery for holding
+   or renewing one is left behind to be reached by accident. */
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
 
 const app = await bootApp({ user: { name: 'O', email: 'o@x.com', ini: 'O' } });
 const { page, errors } = app;
 
-section('Google access renews itself instead of disconnecting the user');
-const tok = await page.evaluate(async () => {
-  const out = {};
-  const origFetch = window.fetch; let calls = 0;
-  window.fetch = async (u, o) => {
-    if (String(u).includes('/v1/oauth/google/refresh')) {
-      calls++;
-      return { ok: true, json: async () => ({ ok: true, access_token: 'NEW_TOKEN', expires_in: 3600 }) };
-    }
-    return origFetch(u, o);
-  };
-  saveStr('amv_api_base', 'https://api.test'); saveStr('amv_api_token', 't');
+section('Nothing in this browser holds or renews a provider token');
+{
+  const gone = await page.evaluate(() => ({
+    symbols: ['getGToken', 'ensureGToken', 'refreshGToken', '_gSet', '_gClear', '_gHasGrant', 'connectGoogle']
+      .filter(n => typeof window[n] !== 'undefined'),
+    marker: (() => { try { return localStorage.getItem('amv_google_connected'); } catch (e) { return null; } })(),
+    stored: (() => {
+      try { return Object.keys(localStorage).filter(k => /gtoken/i.test(k)); } catch (e) { return []; }
+    })(),
+  }));
+  ok(gone.symbols.length === 0,
+     'not one piece of the old token machinery is reachable on the page', gone.symbols);
+  ok(!gone.marker,
+     'and no "Google is connected" marker is left in storage to be believed', gone.marker);
+  ok(gone.stored.length === 0, 'and nothing token-shaped is on disk', gone.stored);
 
-  /* SEEDED THROUGH _gSet, NOT localStorage.
+  /* AND NOTHING ASKS FOR ONE EITHER. The routes that used to mint a token for
+     this page are gone from the Worker, so a client that still called them
+     would get a 404 and show somebody a failure instead of a mailbox - the kind
+     of break that only appears once it is deployed. */
+  const asks = await page.evaluate(() => {
+    const src = [String(window.checkOAuthCallback || ''),
+                 String(window._connActRun || ''),
+                 String(window.connectIntegration || '')].join('\n');
+    return {
+      read: src.length > 200,
+      exchange: /oauth\/google\/exchange/.test(src),
+      refresh: /oauth\/google\/refresh/.test(src),
+      direct: /oauth2\.googleapis\.com/.test(src),
+    };
+  });
+  ok(asks.read, 'the handlers were read, not three empty strings', asks.read);
+  ok(!asks.exchange, 'nothing calls the retired exchange route', asks.exchange);
+  ok(!asks.refresh, 'nothing calls the retired refresh route', asks.refresh);
+  ok(!asks.direct, 'and the browser never calls a provider token endpoint itself', asks.direct);
 
-     This used to write amv_gtoken and amv_gtoken_exp straight into storage,
-     which was the right door while the access token lived there. It does not
-     any more: a live Google bearer token in localStorage is readable by any
-     script that reaches the page and outlives the tab, so it is held in memory
-     and re-minted from the server's refresh token on demand.
-
-     Every assertion below is unchanged in strength. Only the way the state is
-     set up moved, because seeding a store the code no longer reads tests
-     nothing - it would have reported whatever the previous step left behind. */
-
-  // expired -> must renew rather than force a reconnect
-  _gSet('OLD', Date.now() - 1000);
-  out.expired = await ensureGToken();
-
-  // about to expire -> renew early so a long job never dies mid-run
-  _gSet('OLD2', Date.now() + 60000);
-  out.nearExpiry = await ensureGToken();
-
-  // healthy -> no needless network call
-  const before = calls;
-  _gSet('GOOD', Date.now() + 3600000);
-  out.healthy = await ensureGToken();
-  out.noExtraCall = (calls === before);
-
-  // no backend -> degrade honestly, never hand back a dead token
-  saveStr('amv_api_base', ''); saveStr('amv_api_token', '');
-  _gSet('DEAD', Date.now() - 1000);
-  out.noBackend = await ensureGToken();
-
-  window.fetch = origFetch;
-  return out;
-});
-ok(tok.expired === 'NEW_TOKEN', 'an expired token is renewed automatically', tok.expired);
-ok(tok.nearExpiry === 'NEW_TOKEN', 'a nearly-expired token is renewed early (jobs never expire mid-run)', tok.nearExpiry);
-ok(tok.healthy === 'GOOD' && tok.noExtraCall, 'a healthy token is reused with no extra network call');
-ok(!tok.noBackend, 'with no backend it returns nothing rather than a dead token', tok.noBackend);
+  /* AND THE RETURN HANDLER KEEPS NOTHING EITHER. What comes back from a
+     provider is a single-use code in the address bar; this handler's whole job
+     is to get it to the server and get it out of the URL. */
+  const cb = await page.evaluate(() => String(window.checkOAuthCallback || ''));
+  ok(cb.length > 100, 'the return handler was read, not an empty string', cb.length);
+  ok(/_connectFinish/.test(cb), 'the code goes to the connected-accounts finish, which asks the server');
+  ok(!/verifier/.test(cb), 'and it carries no PKCE verifier, because it never had one');
+  ok(/history\.replaceState/.test(cb), 'the code is stripped from the address bar after handling');
+}
 
 section('The account actions never hold a provider token at all');
 {

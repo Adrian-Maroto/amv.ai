@@ -27,59 +27,30 @@
 
 const SCHOOL_DOC_KINDS = { doc:'Google Doc', sheet:'Google Sheet', slides:'Slides deck', file:'file' };
 
-/* The Google token the browser already holds. Drive is in the scopes AMV asks
-   for at sign-in, and www.googleapis.com is in the page's connect-src, so this
-   really can copy and share - it is not a stub waiting for an operator. */
-/* Read from memory through getGToken rather than off disk, because the token
-   is no longer on disk. Kept synchronous: every caller here is, and the one
-   thing worse than asking for a reconnect is silently doing nothing. Somebody
-   whose tab has not minted a token yet is told to try again rather than told
-   they are disconnected, because those are different and only one is true. */
-function _schoolGoogleToken(){
-  const tok = (typeof getGToken === 'function') ? getGToken() : null;
-  if(tok) return { ok:true, token:tok };
-  const linked = (typeof _gHasGrant === 'function') && _gHasGrant();
-  if(linked){
-    /* Warm it for the next attempt, which is usually a second later. */
-    try{ if(typeof refreshGToken === 'function') refreshGToken(); }catch(e){}
-    return { ok:false, why:'AMV is reconnecting to your Google account. Give it a moment and try again.' };
-  }
-  return { ok:false, why:'Connect your Google account first, in Settings → Integrations. AMV needs it to make the copy in your own Drive.' };
-}
+/* THE COPY AND THE SHARE HAPPEN ON THE SERVER.
 
-/* Google's own words when it refuses, because "something went wrong" sends
-   somebody to the wrong place. A missing scope and a deleted file are different
-   problems with different fixes. */
-async function _schoolDrive(path, init, token){
-  let r;
-  try{
-    r = await fetchDeadline('https://www.googleapis.com/drive/v3/' + path, Object.assign({
-      headers: Object.assign({ Authorization:'Bearer ' + token, 'Content-Type':'application/json' }, (init && init.headers) || {}),
-    }, init || {}), 20000);
-  }catch(e){
-    throw new Error('AMV could not reach Google Drive just now. Check your connection and try again.');
-  }
-  const d = await r.json().catch(()=>({}));
-  if(r.ok) return d;
-  const msg = (d && d.error && d.error.message) || '';
-  if(r.status === 401) throw new Error('Google says that sign-in has expired. Reconnect Google in Settings → Integrations.');
-  if(r.status === 403 && /insufficient|scope/i.test(msg))
-    throw new Error('Your Google connection does not include permission to create files in Drive. Disconnect and reconnect Google, and approve Drive access when it asks.');
-  if(r.status === 403) throw new Error('Google refused: ' + (msg || 'you may not have access to that document.'));
-  if(r.status === 404) throw new Error('That document is not shared with your Google account, so AMV cannot copy it. Open the assignment link once while signed in to your school account, then try again.');
-  throw new Error(msg || ('Google Drive answered ' + r.status + '.'));
-}
+   This block used to hold a Google token in the page and call Drive from here,
+   with the FULL `drive` scope behind it - permission over everything the
+   student owns, to do a job that touches one document.
 
-async function _schoolCopyDoc(fileId, title, token){
-  const copy = await _schoolDrive('files/' + encodeURIComponent(fileId) + '/copy?fields=id,name,webViewLink',
-    { method:'POST', body: JSON.stringify({ name: title }) }, token);
-  return copy;
+   Both moved. The server holds the grant, and the scope behind the copy is now
+   drive.file: it reaches only files AMV itself created, or ones the person
+   explicitly opened with it. It cannot read their Drive. That is the difference
+   between a feature that does the job and one that asks for a permission it
+   does not need - and the copy AMV makes is the only thing it can afterwards
+   share.
+
+   Copying needs BOTH capabilities at once, read and write, because the document
+   being copied belongs to the teacher and the copy belongs to the student. The
+   server asks for them as a set, so a half-granted connection is refused before
+   anything happens rather than failing between the read and the write. */
+async function _schoolCopyDoc(fileId, title){
+  return await _connActRun('drive.copy', { fileId, title });
 }
-async function _schoolShareDoc(fileId, email, role, token){
-  /* sendNotificationEmail: the teacher gets told, which is the point - a share
-     nobody knows about is the same as no share. */
-  await _schoolDrive('files/' + encodeURIComponent(fileId) + '/permissions?sendNotificationEmail=true',
-    { method:'POST', body: JSON.stringify({ type:'user', role: role || 'writer', emailAddress: email }) }, token);
+async function _schoolShareDoc(fileId, email, role){
+  /* The teacher is notified, which is the point - a share nobody knows about is
+     the same as no share. */
+  await _connActRun('drive.share', { fileId, email, role: role || 'writer' });
   return true;
 }
 
@@ -147,9 +118,11 @@ async function schoolPrepare(index){
   const docs = a.docs || [];
   if(!docs.length){ toast(T('That assignment has no document attached.'), 'info'); return; }
 
-  const g = _schoolGoogleToken();
-  if(!g.ok){ toast(g.why, 'error', 7000); return; }
-
+  /* No token check here any more. The page holds none, and the SERVER is the
+     thing that knows whether the grant covers this - checking here would be a
+     second answer to a question that already has one, and the two would drift.
+     The refusal arrives from the copy below, in the person's own words, at the
+     moment it is relevant. */
   const body = $('sch-body'); if(!body) return;
   /* An assignment often points at more than one document - the template you
      are meant to work in, and a rubric or an example you are not. Copying the
@@ -193,22 +166,25 @@ async function schoolPrepare(index){
     btn.disabled = true; btn.textContent = T('Copying…');
     let copy;
     try{
-      copy = await _schoolCopyDoc(doc.id, (a.name || 'Assignment'), g.token);
+      copy = await _schoolCopyDoc(doc.id, (a.name || 'Assignment'));
     }catch(e){
       btn.disabled = false; btn.textContent = T('Try again');
       const box = document.querySelector('.sch-ask');
       if(box) box.insertAdjacentHTML('beforeend', '<div class="sch-err">' + escH(e.message) + '</div>');
       return;
     }
-    await _schoolAfterCopy(a, copy, g.token);
+    await _schoolAfterCopy(a, copy);
   });
 }
 
 /* The copy exists. Now the part that involves somebody else, so it is asked
    with the address visible rather than done and reported. */
-async function _schoolAfterCopy(a, copy, token){
+async function _schoolAfterCopy(a, copy){
   const body = $('sch-body'); if(!body) return;
-  const link = copy.webViewLink || ('https://docs.google.com/document/d/' + copy.id + '/edit');
+  /* The server returns `link`; Drive itself calls the field webViewLink. Both
+     are accepted so a change at either end degrades to the constructed URL
+     rather than to an empty href, which looks like a working button. */
+  const link = copy.link || copy.webViewLink || ('https://docs.google.com/document/d/' + copy.id + '/edit');
 
   let teachers = [];
   try{
@@ -247,7 +223,7 @@ async function _schoolAfterCopy(a, copy, token){
     }
     btn.disabled = true; btn.textContent = T('Sharing…');
     try{
-      await _schoolShareDoc(copy.id, who, ($('sch-edit') || {}).checked ? 'writer' : 'reader', token);
+      await _schoolShareDoc(copy.id, who, ($('sch-edit') || {}).checked ? 'writer' : 'reader');
     }catch(e){
       btn.disabled = false; btn.textContent = T('Try again');
       const box = document.querySelector('.sch-ask');

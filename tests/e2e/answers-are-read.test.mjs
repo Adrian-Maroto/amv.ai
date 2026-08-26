@@ -146,14 +146,30 @@ section('A refused sign-out does not report a sign-out');
     window.signOut = () => { signedOut = true; };
     AMV_API.logout = async () => false;              // the server said no
     document.body.insertAdjacentHTML('beforeend', '<div id="act-say"></div>');
+    /* SIGNING EVERY DEVICE OUT NOW ASKS FIRST, IN AMV'S OWN MODAL.
+
+       It used to fall through to the action directly, because confirmModal was
+       guarded by `typeof` and had never been written. It exists now, so this
+       has to answer it - and it answers by pressing the real button rather than
+       by stubbing the modal away, so the thing between the click and the server
+       is exercised instead of skipped.
+
+       Worth noting what happened without this: the first assertion below still
+       passed. Nothing had been signed out - because nothing had run at all. A
+       check that goes green because its subject never executed is the failure
+       this file is named after. */
     _actSignOutEverywhere();
-    await new Promise(r => setTimeout(r, 300));
+    await new Promise(r => setTimeout(r, 60));
+    const yes = document.getElementById('cfm-yes');
+    if (yes) yes.click();
+    await new Promise(r => setTimeout(r, 400));
     const say = (document.getElementById('act-say') || {}).textContent || '';
     document.getElementById('act-say')?.remove();
     window.toast = realToast; AMV_API.logout = realLogout;
     window.confirm = realConfirm; window.signOut = realSignOut;
-    return { said, say, signedOut };
+    return { said, say, signedOut, asked: !!yes };
   });
+  ok(r.asked, 'it asks before signing every device out, rather than just doing it', r.asked);
   ok(!r.signedOut, 'it does not sign you out locally when nothing was revoked', r.signedOut);
   ok(/STILL SIGNED IN/.test(r.say) || /failed|nothing was changed/i.test(r.said.join(' ')),
      'and says the other sessions are still live', { say: r.say, said: r.said });

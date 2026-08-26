@@ -74,11 +74,20 @@ Companion docs (do not duplicate them here - read them):
   is what the `[n/138]` counter on stderr is for.
   The harness asks the kernel for a free port, so nothing binds a fixed one and
   two runs no longer collide.
-- `npm run check:fast` is the ITERATION loop: ~9 seconds, six stages (syntax,
-  worker loads, build fresh, page weight, deps, preflight). It deliberately
-  SKIPS the suites and the workerd stage, so it catches a broken build and a
-  stale artifact but NOT a behavioural regression. Use it between edits; use the
-  full `npm run check` before calling anything done.
+- `npm run check:fast` is the ITERATION loop: ~7 seconds, seven stages (syntax,
+  worker loads, build fresh, dead guards, page weight, deps, preflight). It
+  deliberately SKIPS the suites and the workerd stage, so it catches a broken
+  build and a stale artifact but NOT a behavioural regression. Use it between
+  edits; use the full `npm run check` before calling anything done.
+- The DEAD GUARDS stage exists because of LESSONS 297. It fails when
+  `typeof X === 'function'` names something defined nowhere - a guard that can
+  never pass, so whatever it protects never runs. That is not theoretical: it
+  caught `checkOAuthCallback` being deleted (every account connection silently
+  threw away the authorization code), `applyTheme` (the model tool that switches
+  to light mode saved the setting and left the screen dark) and `confirmModal`
+  (three destructive actions fell to their fallbacks, two of which skipped
+  asking entirely). It reads `app.js` with comments and strings stripped, so a
+  comment explaining a removal is not mistaken for the removal not happening.
 - e2e uses the Playwright harness in `tests/lib/harness.mjs` (`bootApp`).
 - Rebuild (`node build.mjs`) before checking, or the "build fresh" step fails.
 - **Editing `index.html`:** only lines outside the BUILD:CSS and BUILD:JS

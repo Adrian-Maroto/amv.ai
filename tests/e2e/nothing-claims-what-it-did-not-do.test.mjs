@@ -163,17 +163,37 @@ section('The widget says that 0 means no limit');
 
 section('An unfinished sign-in does not send you to approve it');
 {
-  /* Every provider here redirects to /oauth/<id>. Only Google has anything
-     waiting there, so approving on GitHub or Notion would grant real scopes
-     that AMV has nowhere to receive - and the person has no reason to think
-     they need to go and revoke them. */
-  const r = await page.evaluate(() => ({
-    completable: [..._OAUTH_COMPLETABLE],
-    offered: Object.keys(INTEGRATION_META).filter(k => INTEGRATION_META[k].oauth),
-  }));
-  ok(r.completable.includes('google'), 'Google is completable', r.completable);
-  const dead = r.offered.filter(k => !r.completable.includes(k));
-  ok(dead.length > 0, 'and the others are known not to be', dead);
+  /* Every provider here redirects to /oauth/<id>, and NOTHING answers any of
+     them any more. Google used to be the exception - it had a client-side
+     exchange waiting - and that flow is retired: Google is started through
+     Connected accounts now, where the whole handshake happens on the server.
+
+     So _OAUTH_COMPLETABLE is EMPTY, and that is the correct value rather than a
+     gap. Sending somebody to approve real scopes on their GitHub or Notion
+     account and then dropping them on a page that cannot receive the code
+     leaves them having granted access AMV never gets, with no reason to think
+     they need to revoke it. Empty means nobody can be sent anywhere that cannot
+     receive them. */
+  const r = await page.evaluate(() => {
+    /* The server's answer for this screen, seeded, because _connOwnsProvider
+       reads it. Without this the list is empty, Google reads as unowned, and
+       the assertion below tests the degraded "could not reach the list" path
+       instead of the ordinary one - a test measuring the wrong branch. */
+    _connState.data = { configured: true, items: [],
+      providers: [{ id: 'google', name: 'Google', ready: true, scopes: ['mail.read'] }] };
+    return {
+      completable: [..._OAUTH_COMPLETABLE],
+      offered: Object.keys(INTEGRATION_META).filter(k => INTEGRATION_META[k].oauth),
+      ownedByFramework: Object.keys(INTEGRATION_META).filter(k =>
+        typeof _connOwnsProvider === 'function' && _connOwnsProvider(k)),
+    };
+  });
+  ok(r.ownedByFramework.includes('google'),
+     'Google is owned by the connected-accounts framework, not started from here', r.ownedByFramework);
+  ok(r.completable.length === 0,
+     'nothing is completable from this page - the server owns every live handshake', r.completable);
+  const dead = r.offered.filter(k => !r.completable.includes(k) && !r.ownedByFramework.includes(k));
+  ok(dead.length > 0, 'and the providers still started from here are known not to be', dead);
 
   const said = await page.evaluate(async (dead) => {
     const out = [];

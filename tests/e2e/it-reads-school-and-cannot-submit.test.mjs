@@ -66,16 +66,34 @@ const SCHOOL_USER = 'student@example.com';
 
 section('AMV asks to READ school work, and never to submit it');
 {
-  /* Checked against the shipped bundle, because this is the promise. The
-     read-only scopes end in .readonly; the ones that can turn work in do not,
-     and their absence is what makes "it cannot submit" true. */
+  /* CHECKED AGAINST THE WORKER, BECAUSE THAT IS WHERE THE SCOPES NOW LIVE.
+
+     This read app.js, which was right while the browser asked for the scopes
+     itself - the older Google grant named them inside connectGoogle. That grant
+     is retired: the server builds the authorisation URL now, from
+     CONN_PROVIDERS, and the browser never names a scope at all. So the bundle
+     has none to find and this check went green-turned-red against an empty
+     list, which is at least the honest failure - a check whose subject moved
+     should not keep passing.
+
+     THE PROMISE IS UNCHANGED and so is everything below it. The read-only
+     scopes end in .readonly; the ones that can turn work in do not, and their
+     absence is what makes "it cannot submit" true. Only the file that has to
+     contain them moved.
+
+     Both files are read, and BOTH must hold: the Worker must ask for them, and
+     the client must not have quietly kept a copy to ask for itself. */
+  const worker = readFileSync('amv-backend.js', 'utf8');
   const app = readFileSync('app.js', 'utf8');
   /* Only what is REQUESTED - the scope URLs. Matching every occurrence of
      "classroom." also picks up the API hostname and the comment naming the
      permission that is deliberately not asked for, and then reports a correct
      implementation as unsafe. A check that cannot tell a scope from a sentence
      about a scope will block the right answer. */
-  const scopes = [...new Set(app.match(/auth\/classroom\.[a-z.]+/g) || [])];
+  const scopes = [...new Set(worker.match(/auth\/classroom\.[a-z.]+/g) || [])];
+  const clientScopes = [...new Set(app.match(/auth\/classroom\.[a-z.]+/g) || [])];
+  ok(clientScopes.length === 0,
+     'the browser asks for no Classroom scope of its own - the server owns the grant', clientScopes);
   ok(scopes.length > 0, 'Classroom access is requested at all', scopes);
   ok(scopes.every(s => s.endsWith('.readonly')),
      'and every Classroom scope requested is read-only', scopes);
