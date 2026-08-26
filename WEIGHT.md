@@ -43,13 +43,44 @@ the artifact is delivered, which is on your approval list.
 
 ## What is left that is mine
 
-**Dead CSS: 647 rules, ~70KB raw, ~13KB gzipped.** Selectors naming classes
-that appear nowhere in the client or the shell. I removed only the ones I could
-name - what belonged to image and video generation, the chat-home cards and the
-model picker - because a stylesheet rule that turns out to be live does not
-throw, it just silently un-styles a screen nobody's test is looking at. Doing
-the remaining 600 safely means driving every screen and comparing screenshots,
-not trusting a scan. Worth doing; worth doing carefully.
+**Dead CSS - the safe subset is DONE: 97 rules, 10KB raw.**
+
+That is far short of the 647 rules I first counted, and the gap is the point.
+That number counted every rule mentioning a class that appears nowhere. This
+removal used three much stricter conditions, all of which have to hold:
+
+1. the class appears nowhere in the bundle, the shell, or the service worker;
+2. no PREFIX of it appears either, so it cannot be assembled at runtime -
+   `'chome-card-' + kind` builds a name a plain search never finds;
+3. EVERY selector in the rule is dead, so `.live,.dead{}` keeps `.live` and
+   loses nothing.
+
+That takes 315 never-mentioned classes down to 102, and 647 rules to 97.
+
+**Verified three ways, because a rule that turns out to be live does not throw -
+it silently un-styles a screen nobody's test is looking at.**
+
+- Computed styles for all 4,538 elements across 18 screens, before and after:
+  identical. Animations are stopped first - the first run reported 29 "changes"
+  that were all opacity partway through a fade, which is noise that looks
+  exactly like a finding.
+- The comparison itself was proved able to see a change, by forcing
+  `display:none` on a live class and confirming it showed up. Without that, an
+  identical result proves nothing about the removal and everything about a
+  broken harness.
+- And the strongest one: all 102 classes were given
+  `display:none;padding:77px` at once, and NOT ONE element on any screen moved.
+  A class that is really applied somewhere would have vanished. This proves they
+  are absent from the DOM, not merely absent from the source.
+
+The tools are kept: `tools/dead-css.mjs` (dry run by default) and
+`tools/css-snapshot.mjs`.
+
+**What is deliberately NOT done.** The negative control turned up something
+else: removing a live `.chome-chip` rule changed nothing, because a later
+append layer re-specifies it. There are fully-overridden rules in here beyond
+the unused-class set. Removing those is a different risk - a rule overridden on
+one screen may be the one that applies on another - and wants its own pass.
 
 ## What is NOT worth doing
 
