@@ -32,15 +32,50 @@ const PW = 'A-real-Passw0rd!';
 const SELLER = 'sam@example.com';
 const BUYER = 'bea@example.com';
 
-/* Sign up through the real form, the way a person does. */
+/* Sign up through the real form, the way a person does.
+
+   WAITS ON THE CONDITION, NOT ON A NUMBER OF MILLISECONDS.
+
+   This slept 350ms for the form and 1200ms for the round trip. Both are enough
+   on an idle machine and neither is a guarantee: under the full gate, with four
+   browsers and the Worker suites running alongside, the signup had not landed
+   by the time the next step ran - so the buyer sent their message while still
+   signed out, nothing reached the seller's inbox, and twelve assertions failed
+   describing a product that was working.
+
+   That is the worst kind of red: it points at the feature instead of at the
+   clock, and it only happens under load, which is exactly when nobody has time
+   to look properly. A fixed sleep in a test is a guess about somebody else's
+   machine.
+
+   Both waits are now polls with a real ceiling, and the ceiling THROWS rather
+   than continuing quietly - a signup that never completed should say so here,
+   not five assertions later. */
 async function signUp(p, email, name) {
   await p.evaluate(async ([em, pw, nm]) => {
+    const until = async (label, cond, ms) => {
+      const stop = Date.now() + ms;
+      while (Date.now() < stop) {
+        try { if (cond()) return; } catch (e) {}
+        await new Promise(x => setTimeout(x, 40));
+      }
+      throw new Error('timed out waiting for ' + label);
+    };
+
     openAuth('signup');
-    await new Promise(x => setTimeout(x, 350));
+    await until('the signup form', () => document.querySelector('#a-name')
+      && document.getElementById('auth-submit'), 8000);
+
     const type = (sel, v) => { const el = document.querySelector(sel); el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); };
     type('#a-name', nm); type('#a-email', em); type('#a-pass', pw);
     document.getElementById('auth-submit').click();
-    await new Promise(x => setTimeout(x, 1200));
+
+    /* Signed in AS THIS PERSON, not merely signed in. Two accounts are created
+       in this file and a stale S.user from the previous one would satisfy a
+       bare "is anybody signed in" check. */
+    await until('the signup for ' + em, () => S.user && S.user.email === em, 20000);
+    /* And the token the next request will carry actually exists. */
+    await until('a session token for ' + em, () => !!(window.AMV_API && AMV_API.token), 20000);
   }, [email, PW, name]);
 }
 
@@ -86,10 +121,27 @@ section('And the SELLER sees it, on their own machine');
   const inbox = await page.evaluate(async () => {
     await AMVMarket.syncThreads();
     const t = AMVMarket.myThreads();
+    /* WHAT THE SERVER ACTUALLY HOLDS, read alongside what the screen shows.
+
+       This suite went red once inside the full gate and passed every time it
+       was run again, which is the least useful shape a failure can have: an
+       empty inbox is either "the client never asked" - the defect this file
+       exists for - or "the write had not landed", and the assertion could not
+       tell them apart. So the raw answer is captured too, and the failure now
+       says which. Not a retry: retrying here would hide the real defect, which
+       is the one thing this file must never do. */
+    let server = null;
+    try {
+      const r = await AMV_API._fetch('/v1/market/threads');
+      const d = await r.json().catch(() => null);
+      server = { status: r.status, threads: d && Array.isArray(d.threads) ? d.threads.length : d };
+    } catch (e) { server = { err: String((e && e.message) || e) }; }
     return { count: t.length, unread: AMVMarket.unreadCount(),
-             texts: t.flatMap(x => (x.msgs || []).map(m => m.text)) };
+             texts: t.flatMap(x => (x.msgs || []).map(m => m.text)),
+             signedIn: !!(S.user && S.user.email), token: !!(window.AMV_API && AMV_API.token), server };
   });
-  ok(inbox.count === 1, 'the conversation is in the seller’s inbox', inbox.count);
+  ok(inbox.count === 1, 'the conversation is in the seller’s inbox',
+     { count: inbox.count, signedIn: inbox.signedIn, token: inbox.token, server: inbox.server });
   ok(inbox.texts.some(x => /still available/i.test(x)),
      'carrying what the buyer actually asked', inbox.texts);
   ok(inbox.unread === 1, 'and it is flagged as waiting for them', inbox.unread);
