@@ -30,7 +30,10 @@ const r = await page.evaluate(async () => {
     missing: false,
     catCount: cat.length,
     addedNoCode: cat.some(a => a.id === 'acme.post'),
-    adoptedExisting: cat.some(a => a.id === 'google.gmail_send'),
+    /* 'connect', not 'google'. These actions stopped belonging to one provider
+       when the token stopped coming to the browser - they belong to whatever
+       the server holds a grant for. */
+    adoptedExisting: cat.some(a => a.id === 'connect.gmail_send'),
     hasBrowserChannel: cat.some(a => a.id === 'browser.do'),
     blockAcme: U.blockerFor({ tool: 'acme.post' }),
     blockBrowser: U.blockerFor({ tool: 'browser.do' }),

@@ -136,7 +136,15 @@ try{
       };
     });
     const meta = {
-      google: { name: 'Google (Gmail, Calendar, Drive)', auth: 'oauth', isLive: () => { try{ return !!getGToken(); }catch(e){ return false; } } },
+      /* Keyed on 'connect' now, because these actions no longer belong to one
+         provider - they belong to whatever the server holds a grant for. Live
+         means "the server has a working connection", which is a question only
+         the server's own list can answer; asking whether a Google token is in
+         this page stopped being the question when the token stopped coming
+         here, and would have reported no connectors on an account with every
+         permission granted. */
+      connect: { name: 'Connected accounts', auth: 'server',
+                 isLive: () => { try{ return typeof _connHasAny === 'function' && _connHasAny(); }catch(e){ return false; } } },
       github: { name: 'GitHub', auth: 'bearer', tokenKey: 'amv_github' },
       slack:  { name: 'Slack', auth: 'bearer', tokenKey: 'amv_slack' }
     };

@@ -4,135 +4,94 @@
    tools. The AI is given the tool list, decides what to do, and we
    execute the calls against the provider APIs with the user's token.
    ============================================================ */
+/* Is there ANY usable connection? The per-action capability is the server's to
+   check - it holds the grant and refuses without the scope - so this only has
+   to answer whether offering these tools at all makes sense. */
+function _connHasAny(){
+  try{
+    const items=((_connState&&_connState.data)||{}).items||[];
+    return items.some(x=>x && !x.broken);
+  }catch(e){ return false; }
+}
+try{ window._connHasAny=_connHasAny; }catch(e){}
+
+/* One door to the server for every connected-account action.
+
+   The refusal is passed through rather than flattened to "that failed",
+   because the server distinguishes three cases the person can act on and they
+   have three different fixes: nothing is connected, something is connected but
+   this permission was not granted, and the connection has stopped working.
+   Collapsing them sends somebody to reconnect an account that is fine. */
+async function _connActRun(action, args){
+  if(!(window.AMV_API && AMV_API.live))
+    throw new Error('AMV is not connected to its engine, so it cannot reach your accounts.');
+  const d = await AMV_API.connectAct(action, args || {});
+  if(d && d.error) throw new Error(d.message || d.error);
+  return d ? d.result : null;
+}
+try{ window._connActRun=_connActRun; }catch(e){}
+
 const INTEGRATION_ACTIONS = {
   /* ---- SCHOOL --------------------------------------------------------------
 
-     What a student has been set, and when it is due, read from Google
-     Classroom. This is the piece that turns "tell AMV your deadlines every
-     week" into "AMV already knows", which is the difference between a planner
-     somebody maintains and one that maintains itself.
+     What a student has been set, and when it is due. The piece that turns "tell
+     AMV your deadlines every week" into "AMV already knows", which is the
+     difference between a planner somebody maintains and one that maintains
+     itself.
 
-     Read-only, by scope rather than by rule: AMV was never granted permission
-     to turn anything in, so it cannot, and no instruction can talk it into
-     doing so. Deliberately so - this is a minor's school record, and the
-     narrowest access that does the job is the only one worth asking for.
+     Read-only by SCOPE rather than by rule: the permission that would let AMV
+     turn work in was never requested, so Google refuses the call. A rule in a
+     prompt can be argued with by anything that gets text in front of a model.
+     A permission that does not exist cannot.
 
-     It reads from THIS BROWSER, like the mailbox and the calendar, because the
-     Google token lives here and the server never sees it. So a job built on it
-     runs while AMV is open and says so, rather than implying an overnight run
-     it cannot perform. */
+     The whole reader moved to the server with the rest. It used to say, in this
+     comment, that it read from THIS BROWSER and so ran only while AMV was open
+     - which was honest about a real limitation and is no longer the limitation.
+     It reads with the sealed grant now, so the morning plan is there whether or
+     not anybody opened a tab. The class-that-could-not-be-read rule went with
+     it: a class that failed to load is not a class with nothing due, and it is
+     named in what the model is handed rather than dropped. */
   classroom_due: {
     desc:'List what the user has been set at school and when it is due, from Google Classroom. Read-only.',
-    needs:'google',
-    async run(){
-      const t=(typeof ensureGToken==='function'? await ensureGToken() : getGToken());
-      if(!t) throw new Error('Google Classroom is not connected');
-      const cr=await fetchDeadline('https://classroom.googleapis.com/v1/courses?studentId=me&courseStates=ACTIVE&pageSize=20',{headers:{'Authorization':'Bearer '+t}});
-      const cd=await cr.json();
-      if(cd.error) throw new Error(cd.error.message);
-      const courses=(cd.courses||[]).slice(0,12);
-      if(!courses.length) return { courses:0, items:[] };
-
-      const now=Date.now();
-      /* A CLASS THAT COULD NOT BE READ IS NOT A CLASS WITH NOTHING DUE.
-
-         Swallowing a failed per-course read and returning nothing for it turns
-         "Chemistry did not load" into "Chemistry has nothing due" - on a screen
-         somebody plans their week from. The student misses the deadline and
-         AMV told them, confidently, that there wasn't one.
-
-         So a failure is recorded and reported. Reading five classes out of six
-         is genuinely useful and worth returning; presenting it as all six is
-         the part that is not. */
-      const unread=[];
-      const per=await Promise.all(courses.map(async c=>{
-        try{
-          const r=await fetchDeadline('https://classroom.googleapis.com/v1/courses/'+encodeURIComponent(c.id)
-            +'/courseWork?pageSize=30&orderBy=dueDate%20asc',{headers:{'Authorization':'Bearer '+t}});
-          const d=await r.json();
-          if(d.error){ unread.push(c.name||c.id); return []; }
-          return (d.courseWork||[]).map(w=>{
-            /* Google gives the date and time separately, and either may be
-               absent. A piece of work with no due date is real and common -
-               reported as having none rather than given an invented one. */
-            let due=null;
-            if(w.dueDate && w.dueDate.year){
-              const tm=w.dueTime||{};
-              due=Date.UTC(w.dueDate.year,(w.dueDate.month||1)-1,w.dueDate.day||1,
-                           tm.hours||23,tm.minutes||59);
-            }
-            return { course:c.name||'', title:w.title||'', due,
-                     dueText: due ? new Date(due).toISOString().slice(0,10) : 'no due date',
-                     link:w.alternateLink||'', points:w.maxPoints||null };
-          });
-        }catch(e){ unread.push(c.name||c.id); return []; }
-      }));
-      const items=per.flat()
-        /* Only what is still ahead of them. A planner listing last term's work
-           is noise, and noise is what stops somebody reading it. */
-        .filter(x=>x.due===null || x.due>=now-86400000)
-        .sort((a,b)=>(a.due||Infinity)-(b.due||Infinity))
-        .slice(0,40);
-      return { courses:courses.length, items, unread,
-               /* Said in words as well as in a field, because the field is
-                  what a caller checks and the sentence is what reaches the
-                  person. */
-               note: unread.length
-                 ? 'Could not read ' + unread.length + ' of ' + courses.length + ' classes ('
-                   + unread.join(', ') + '). Anything set in those is NOT in this list.'
-                 : '' };
-    }
+    needs:'connect',
+    async run(){ return await _connActRun('school.due'); }
   },
+  /* ── THE FIVE THAT MOVED TO THE SERVER ────────────────────────────────────
+
+     Each of these used to hold a Google token in this page and call Google
+     from here. That is the older grant, and two things were wrong with it that
+     no amount of care in these functions could fix: a provider token that
+     reaches a page is a token anything on that page can take, and it is gone
+     when the tab closes, so nothing built on it could ever run overnight.
+
+     They ask the server now. The server holds the sealed grant, checks that the
+     capability was actually granted, records the use against the account, and
+     returns the result. The credential never comes here.
+
+     The `needs` key is 'connect' rather than 'google' because the question is
+     no longer "is a Google token in this browser" - it is "is there a grant on
+     the server that covers this". A high-risk action still asks the person
+     first, in this browser, before the request is made: the server refusing
+     without the scope is the floor, not the consent. */
   gmail_list_unread: {
-    desc:'List the user\u2019s unread emails (sender + subject).', needs:'google',
-    async run(){
-      const t=(typeof ensureGToken==='function'? await ensureGToken() : getGToken()); if(!t) throw new Error('Gmail not connected');
-      const r=await fetchDeadline('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10&labelIds=INBOX&q=is:unread',{headers:{'Authorization':'Bearer '+t}});
-      const d=await r.json(); if(d.error) throw new Error(d.error.message);
-      const msgs=d.messages||[];
-      const details=await Promise.all(msgs.slice(0,8).map(m=>fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/'+m.id+'?format=metadata&metadataHeaders=Subject&metadataHeaders=From',{headers:{'Authorization':'Bearer '+t}}).then(r=>r.json())));
-      return details.map(d=>{const h=(d.payload&&d.payload.headers)||[];const g=n=>(h.find(x=>x.name===n)||{}).value||'';return {id:d.id, from:g('From'), subject:g('Subject')};});
-    }
+    desc:'List the user\u2019s unread emails (sender + subject).', needs:'connect',
+    async run(){ return await _connActRun('gmail.unread'); }
   },
   gmail_send: {
-    desc:'Send an email. Args: {to, subject, body}.', needs:'google', risk:'high', riskLabel:'send an email',
-    async run(args){
-      const t=(typeof ensureGToken==='function'? await ensureGToken() : getGToken()); if(!t) throw new Error('Gmail not connected');
-      const raw=['To: '+args.to,'Subject: '+(args.subject||''),'Content-Type: text/plain; charset=utf-8','',args.body||''].join('\r\n');
-      const b64=btoa(unescape(encodeURIComponent(raw))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
-      const r=await fetchDeadline('https://gmail.googleapis.com/gmail/v1/users/me/messages/send',{method:'POST',headers:{'Authorization':'Bearer '+t,'Content-Type':'application/json'},body:JSON.stringify({raw:b64})});
-      const d=await r.json(); if(d.error) throw new Error(d.error.message);
-      return {sent:true, id:d.id};
-    }
+    desc:'Send an email. Args: {to, subject, body}.', needs:'connect', risk:'high', riskLabel:'send an email',
+    async run(args){ return await _connActRun('gmail.send', args); }
   },
   calendar_list: {
-    desc:'List upcoming calendar events for the next 7 days.', needs:'google',
-    async run(){
-      const t=(typeof ensureGToken==='function'? await ensureGToken() : getGToken()); if(!t) throw new Error('Calendar not connected');
-      const now=new Date(), end=new Date(now.getTime()+7*864e5);
-      const r=await fetchDeadline('https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin='+now.toISOString()+'&timeMax='+end.toISOString()+'&singleEvents=true&orderBy=startTime&maxResults=20',{headers:{'Authorization':'Bearer '+t}});
-      const d=await r.json(); if(d.error) throw new Error(d.error.message);
-      return (d.items||[]).map(e=>({when:(e.start&&(e.start.dateTime||e.start.date)), title:e.summary}));
-    }
+    desc:'List upcoming calendar events for the next 7 days.', needs:'connect',
+    async run(){ return await _connActRun('calendar.list'); }
   },
   calendar_create: {
-    desc:'Create a calendar event. Args: {title, start (ISO), end (ISO), description?}.', needs:'google', risk:'high', riskLabel:'create a calendar event',
-    async run(args){
-      const t=(typeof ensureGToken==='function'? await ensureGToken() : getGToken()); if(!t) throw new Error('Calendar not connected');
-      const body={summary:args.title, description:args.description||'', start:{dateTime:args.start}, end:{dateTime:args.end||args.start}};
-      const r=await fetchDeadline('https://www.googleapis.com/calendar/v3/calendars/primary/events',{method:'POST',headers:{'Authorization':'Bearer '+t,'Content-Type':'application/json'},body:JSON.stringify(body)});
-      const d=await r.json(); if(d.error) throw new Error(d.error.message);
-      return {created:true, id:d.id, link:d.htmlLink};
-    }
+    desc:'Create a calendar event. Args: {title, start (ISO), end (ISO), description?}.', needs:'connect', risk:'high', riskLabel:'create a calendar event',
+    async run(args){ return await _connActRun('calendar.create', args); }
   },
   drive_list: {
-    desc:'List recent Google Drive files.', needs:'google',
-    async run(){
-      const t=(typeof ensureGToken==='function'? await ensureGToken() : getGToken()); if(!t) throw new Error('Drive not connected');
-      const r=await fetchDeadline('https://www.googleapis.com/drive/v3/files?pageSize=30&orderBy=modifiedTime desc&fields=files(name,mimeType,modifiedTime)',{headers:{'Authorization':'Bearer '+t}});
-      const d=await r.json(); if(d.error) throw new Error(d.error.message);
-      return (d.files||[]).map(f=>({name:f.name, type:(f.mimeType||'').split('/').pop(), modified:f.modifiedTime}));
-    }
+    desc:'List recent Google Drive files.', needs:'connect',
+    async run(){ return await _connActRun('drive.list'); }
   },
   github_list_issues: {
     desc:'List open issues for a repo. Args: {repo: "owner/name"}.', needs:'github',
@@ -192,17 +151,21 @@ const TASK_CAPABILITIES = [
   { id:'gmail', integration:'Google', label:'send, read or manage email',
     api:'Gmail API', auth:'Google account (OAuth)',
     connectId:'google', tools:['gmail_list_unread','gmail_send'],
-    isConnected:()=>_cwHasGoogle(),
+    /* Asked of the GRANT, per capability, not of the sign-in. "Somebody signed
+       in with Google" was standing in for "AMV may read this mailbox", and they
+       are different questions - which is how a screen came to report Gmail as
+       connected to an account that had granted no mail scope at all. */
+    isConnected:()=>_cwConnHas('mail.read'),
     keywords:['email','emails','gmail','inbox','e-mail','reply to','send a mail','unread','draft a reply','respond to','mailbox'] },
   { id:'calendar', integration:'Google Calendar', label:'view or create calendar events',
     api:'Google Calendar API', auth:'Google account (OAuth)',
     connectId:'google', tools:['calendar_list','calendar_create'],
-    isConnected:()=>_cwHasGoogle(),
+    isConnected:()=>_cwConnHas('calendar.read'),
     keywords:['calendar','schedule','meeting','event','appointment','book time','block time','remind me to meet','agenda','availability'] },
   { id:'drive', integration:'Google Drive', label:'read or list your files',
     api:'Google Drive API', auth:'Google account (OAuth)',
     connectId:'google', tools:['drive_list'],
-    isConnected:()=>_cwHasGoogle(),
+    isConnected:()=>_cwConnHas('drive.read'),
     keywords:['drive','google drive','my files','documents','spreadsheet in drive','file named'] },
   { id:'github', integration:'GitHub', label:'manage issues and repositories',
     api:'GitHub REST API', auth:'GitHub personal access token or OAuth',
@@ -291,11 +254,15 @@ window.taskRequirementMessage=taskRequirementMessage;
 async function runAgentTask(instruction, opts){
   opts=opts||{};
   const available=Object.entries(INTEGRATION_ACTIONS).filter(([k,a])=>{
-    if(a.needs==='google') return !!getGToken();
+    /* A server-held grant, asked of the server's own list. This used to ask
+       whether a Google token was in this browser, which stopped being the
+       question when the token stopped coming here - and would have answered
+       "no tools available" on an account with every permission granted. */
+    if(a.needs==='connect') return !!(window.AMV_API && AMV_API.live) && _connHasAny();
     if(a.needs) return !!loadStr('amv_'+a.needs);
     return true;
   });
-  if(!available.length) throw new Error('No integrations connected yet. Connect Google, GitHub, or Slack in Integrations first.');
+  if(!available.length) throw new Error('No integrations connected yet. Connect an account in Settings, Integrations first.');
   const toolList=available.map(([k,a])=>'- '+k+': '+a.desc).join('\n');
   const sys='You are AMV\u2019s autonomous agent. You can call tools to take real actions on the user\u2019s connected accounts. '+
     'Respond ONLY with a JSON array of steps to execute, in order. Each step: {"tool":"<name>","args":{...},"why":"<short reason>"}. '+
@@ -1159,30 +1126,32 @@ async function _bgRunNext(){
   const mk=loadStr('amv_mk');
   if(!mk){task.status='failed';task.error='AMV engine not connected';_bgQueue.running=false;return;}
   try{
+    /* THE TWO BACKGROUND CHECKS ASK THE SERVER TOO.
+
+       Both held a Google token in this page and called Google from here. They
+       are the last two, and leaving them behind would have been the worst
+       version of this change: five paths moved to a system where the credential
+       never reaches the browser, and two kept reaching for one - so the older
+       grant could not be retired and the reason for the whole migration would
+       still be sitting in the bundle. */
     if(task.type==='gmail_check'){
-      const token=getGToken();
-      if(!token){task.status='failed';task.error='Gmail not connected - click Connect in Integrations';_bgQueue.running=false;return;}
       task.progress=30;
-      const r=await fetchDeadline('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10&labelIds=INBOX&q=is:unread',{headers:{'Authorization':'Bearer '+token}});
-      const d=await r.json();
-      if(d.error){task.status='failed';task.error='Gmail: '+d.error.message;_bgQueue.running=false;return;}
-      const msgs=d.messages||[];
+      let mail;
+      try{ mail=await _connActRun('gmail.unread'); }
+      catch(e){ task.status='failed'; task.error=String((e&&e.message)||'Mail could not be read'); _bgQueue.running=false; return; }
+      const msgs=Array.isArray(mail)?mail:[];
       task.progress=60;
       if(!msgs.length){task.status='done';task.result='Inbox clear - no unread emails.';}
       else{
-        const details=await Promise.all(msgs.slice(0,8).map(m=>fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/'+m.id+'?format=metadata&metadataHeaders=Subject&metadataHeaders=From',{headers:{'Authorization':'Bearer '+token}}).then(r=>r.json())));
-        const summary=details.map(d=>{const s=d.payload&&d.payload.headers&&d.payload.headers.find(h=>h.name==='Subject');const f=d.payload&&d.payload.headers&&d.payload.headers.find(h=>h.name==='From');return 'From: '+(f&&f.value||'?')+'\nSubject: '+(s&&s.value||'(no subject)');}).join('\n\n');
+        const summary=msgs.map(m=>'From: '+(m.from||'?')+'\nSubject: '+(m.subject||'(no subject)')).join('\n\n');
         task.result=await aiComplete('Analyze '+msgs.length+' unread emails. What needs urgent attention?\n\n'+summary, null, {model:'amv-pulse', max_tokens:600, noLang:true})||summary;
         task.status='done';task.progress=100;
       }
     } else if(task.type==='calendar_check'){
-      const token=getGToken();
-      if(!token){task.status='failed';task.error='Calendar not connected';_bgQueue.running=false;return;}
-      const now=new Date(),end=new Date(now.getTime()+7*24*60*60*1000);
-      const r=await fetchDeadline('https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin='+now.toISOString()+'&timeMax='+end.toISOString()+'&singleEvents=true&orderBy=startTime&maxResults=20',{headers:{'Authorization':'Bearer '+token}});
-      const d=await r.json();
-      if(d.error){task.status='failed';task.error='Calendar: '+d.error.message;_bgQueue.running=false;return;}
-      const events=(d.items||[]).map(e=>(e.start&&(e.start.dateTime||e.start.date))+': '+e.summary).join('\n');
+      let ev;
+      try{ ev=await _connActRun('calendar.list'); }
+      catch(e){ task.status='failed'; task.error=String((e&&e.message)||'The calendar could not be read'); _bgQueue.running=false; return; }
+      const events=(Array.isArray(ev)?ev:[]).map(e=>(e.start||e.when||'')+': '+(e.title||'')).join('\n');
       task.result=await aiComplete('Analyze this week\'s calendar. Identify conflicts, suggest focus blocks:\n\n'+events, null, {model:'amv-pulse', max_tokens:600, noLang:true})||events;
       task.status='done';task.progress=100;
     } else {

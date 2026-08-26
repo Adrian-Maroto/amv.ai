@@ -1091,16 +1091,19 @@ async function crewRun(kind, title, opts){
     }
     else if(kind==='gmail'){
       up({note:'checking Gmail…'});
-      const token=(typeof getGToken==='function')?getGToken():null;
-      if(!token){ up({status:'failed', body:'**Gmail not connected.** Go to Integrations and connect Gmail, then run this again.'}); return res; }
-      const r=await fetchDeadline('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10&labelIds=INBOX&q=is:unread',{headers:{'Authorization':'Bearer '+token}});
-      const d=await r.json();
-      if(d.error){ up({status:'failed', body:'Gmail error: '+d.error.message}); return res; }
-      const msgs=d.messages||[];
+      /* Through the server, like every other mailbox read. This held a Google
+         token in the page and called Google from here; the credential does not
+         come here any more, so the page asks the Worker to look instead. */
+      let mail;
+      try{ mail = await _connActRun('gmail.unread'); }
+      catch(e){ up({status:'failed', body:'**'+String((e&&e.message)||'Mail could not be read')+'**'}); return res; }
+      const msgs=Array.isArray(mail)?mail:[];
       if(!msgs.length){ up({status:'done', body:'**Inbox clear** - no unread emails.'}); return res; }
       up({note:'reading '+msgs.length+' emails…'});
-      const details=await Promise.all(msgs.slice(0,8).map(m=>fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/'+m.id+'?format=metadata&metadataHeaders=Subject&metadataHeaders=From',{headers:{'Authorization':'Bearer '+token}}).then(x=>x.json())));
-      const list=details.map(m=>{const h=(m.payload&&m.payload.headers)||[];const g=n=>(h.find(x=>x.name===n)||{}).value||'';return {from:g('From'),subject:g('Subject'),snippet:m.snippet||''};});
+      /* The server already returned the headers - a second round trip per
+         message from here would need the token this page no longer has, and
+         would be asking Google for what is already in hand. */
+      const list=msgs.slice(0,8).map(m=>({from:m.from||'',subject:m.subject||'',snippet:''}));
       const summary=await aiComplete('Summarize these unread emails into a short prioritized briefing with suggested one-line replies. Emails:\n'+JSON.stringify(list,null,2),'You are an executive assistant. Use markdown.');
       up({status:'done', body:summary});
     }

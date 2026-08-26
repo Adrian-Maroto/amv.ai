@@ -106,6 +106,25 @@ export function makeOutbound() {
       } });
       return this;
     },
+    /* THE SAME URL ANSWERING DIFFERENTLY LATER IN A FILE.
+
+       Handlers are tried in registration order and the first match wins, which
+       is what makes a file readable top to bottom. It also means a section that
+       needs the outside world to answer differently - the same endpoint, now
+       refusing - cannot say so: its handler is registered last and is shadowed
+       by the one above it, so the test silently exercises the happy path again
+       and passes for the wrong reason.
+
+       onFirst puts it at the front. Use it when a later section is deliberately
+       changing what the world does, and keep on() for the ordinary case. */
+    onFirst(match, reply) {
+      handlers.unshift({ match, reply: async (u, opts) => {
+        const r = await reply(u, opts);
+        return r instanceof Response ? r : new Response(JSON.stringify(r), {
+          status: 200, headers: { 'Content-Type': 'application/json' } });
+      } });
+      return this;
+    },
     sentTo(re) { return calls.filter(c => re.test(c.url)); },
     restore() { globalThis.fetch = real; },
   };

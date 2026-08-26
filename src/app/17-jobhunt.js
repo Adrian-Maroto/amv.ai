@@ -139,9 +139,14 @@ const AMVJobs = {
      only: it matches against what was actually applied to. */
   async checkResults(){
     if(!this.cfg().trackResults) return [];
-    if(typeof AMVConnectors === 'undefined' || !AMVConnectors.live('google')) return [];
+    /* 'connect' rather than 'google': the mailbox actions belong to whatever
+       account the SERVER holds a grant for now, not to a Google token this page
+       is carrying. The id moved with them, and a stale one here would have
+       returned "no replies" for ever on an account with mail fully connected -
+       silence that reads exactly like an empty inbox. */
+    if(typeof AMVConnectors === 'undefined' || !AMVConnectors.live('connect')) return [];
     let mail = [];
-    try{ mail = await AMVConnectors.run('google.gmail_list_unread', {}); }catch(e){ return []; }
+    try{ mail = await AMVConnectors.run('connect.gmail_list_unread', {}); }catch(e){ return []; }
     const applied = this.cfg().applied || [];
     const hit = /(interview|application|position|role|schedule a|we would like|unfortunately|offer)/i;
     return (mail || []).filter(m => hit.test(String(m.subject || ''))).map(m => {

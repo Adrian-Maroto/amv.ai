@@ -105,13 +105,42 @@ section('A fresh tab still knows Google is connected');
   });
   const r = await page.evaluate(() => ({
     crew: _cwHasGoogle(),
-    caps: TASK_CAPABILITIES.filter(c => c.connectId === 'google').map(c => c.isConnected()),
     tokenInHand: !!getGToken(),
   }));
   ok(r.tokenInHand === false, 'with no token in hand at all', r.tokenInHand);
-  ok(r.crew === true, 'Crew still sees Google as connected', r.crew);
-  ok(r.caps.length === 3 && r.caps.every(Boolean),
-     'and so do all three Google capabilities', JSON.stringify(r.caps));
+  ok(r.crew === true, 'signing in with Google still reads as signed in', r.crew);
+}
+
+section('But being signed in is not being connected, and the two stopped agreeing');
+{
+  /* THIS ASSERTION USED TO SAY THE OPPOSITE, AND IT WAS THE DEFECT.
+
+     It required all three Google capabilities to report connected off the
+     sign-in marker - which is what the product did, and what made a screen tell
+     somebody Gmail was connected on an account that had granted no mail scope
+     at all. A question about identity answering a question about access.
+
+     They ask the grant now, so a sign-in with nothing granted reads as nothing
+     granted, and a grant reads as connected whether or not anybody signed in
+     with Google. The suite still owns the first half - the sign-in token is in
+     memory and survives a reload - and this is the boundary it must not cross
+     back over. */
+  const r = await page.evaluate(() => {
+    const caps = () => TASK_CAPABILITIES.filter(c => c.connectId === 'google').map(c => c.isConnected());
+    const signedInOnly = caps();
+    /* Now grant mail and calendar on the server's list, and nothing else. */
+    _connState.data = { configured: true, providers: [{ id: 'google', name: 'Google', ready: true }],
+      items: [{ id: 'c1', provider: 'google', unattended: true, scopes: ['mail.read', 'calendar.read'] }] };
+    return { signedInOnly, granted: caps(), stillSignedIn: _cwHasGoogle() };
+  });
+  ok(r.signedInOnly.every(v => v === false),
+     'a sign-in with nothing granted reads as nothing connected', JSON.stringify(r.signedInOnly));
+  ok(r.granted[0] === true && r.granted[1] === true,
+     'the capabilities that WERE granted read as connected', JSON.stringify(r.granted));
+  ok(r.granted[2] === false,
+     'and the one that was not still reads as not - per capability, not per provider', JSON.stringify(r.granted));
+  ok(r.stillSignedIn === true,
+     'while the sign-in is untouched by any of it, because it answers a different question', r.stillSignedIn);
 }
 
 section('Disconnecting clears the memory, not just the storage');

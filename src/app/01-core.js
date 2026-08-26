@@ -725,7 +725,19 @@ const AMV_API = {
     const r = await this._fetch(path, {method:'POST', body:JSON.stringify(body)});
     const d = await r.json().catch(()=>({}));
     if(!r.ok || d.error){
-      const e = new Error(d.error || what || 'That could not be completed.');
+      /* THE SENTENCE, NOT THE CODE.
+
+         The Worker's convention is `error` for a machine-readable code and
+         `message` for the sentence a person reads - "That return address is not
+         this deployment", "This account is on hold". This threw d.error, so
+         every one of those routes showed somebody `bad_redirect` or
+         `action_failed` and kept the sentence written for them in the response
+         body, unread.
+
+         Older routes send only `error` and send it as prose, so that is still
+         the fallback. Preferring `message` when it exists costs those nothing
+         and stops the newer ones speaking in codes. */
+      const e = new Error(d.message || d.error || what || 'That could not be completed.');
       e.code = d.code || (r.status===429 ? 'rate_limited' : 'failed');
       e.status = r.status;
       throw e;
@@ -758,6 +770,16 @@ const AMV_API = {
   async connectList(){ const r=await this._fetch('/v1/connect/list'); return await r.json(); },
   async connectRemove(id){
     return this._wrote('/v1/connect/remove', { id }, 'That could not be disconnected.');
+  },
+  /* ACT on a connected account. Note what this does NOT do: it does not fetch a
+     token and then use it. It asks the server to do the thing, and the answer
+     is the result. That is the whole difference between this system and the one
+     it replaces - the credential never comes here, so nothing that gets a
+     foothold on this page can take it, and the same call works when the tab is
+     shut because it was never the tab doing it. */
+  async connectAct(action, args){
+    return this._wrote('/v1/connect/act', { action, args: args || {} },
+      'That could not be done on your connected account.');
   },
   async createHandoff(h){ return this._wrote('/api/handoff',h,'That handoff was not accepted.'); },
   async listHandoff(){ const r=await this._fetch('/api/handoff'); return await r.json(); },

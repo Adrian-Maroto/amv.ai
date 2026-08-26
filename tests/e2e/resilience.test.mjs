@@ -62,12 +62,35 @@ ok(tok.nearExpiry === 'NEW_TOKEN', 'a nearly-expired token is renewed early (job
 ok(tok.healthy === 'GOOD' && tok.noExtraCall, 'a healthy token is reused with no extra network call');
 ok(!tok.noBackend, 'with no backend it returns nothing rather than a dead token', tok.noBackend);
 
-section('Google actions await a live token, not a stale one');
-const actionsSrc = await page.evaluate(() => {
-  try { return Object.keys(INTEGRATION_ACTIONS).map(k => String(INTEGRATION_ACTIONS[k].run)).join('\n'); }
-  catch (e) { return ''; }
-});
-ok(/ensureGToken/.test(actionsSrc), 'the Google actions refresh before calling out', 'ensureGToken');
+section('The account actions never hold a provider token at all');
+{
+  /* This used to assert that they call ensureGToken before reaching out - the
+     right property while the page held a Google token and a stale one would
+     make a job fail mid-run.
+
+     They do not hold one now. The server does, and the page asks it to act, so
+     the assertion changed from "refresh the token first" to something
+     stronger: there is no token here to be stale. A token that never arrives
+     cannot expire, cannot be read by anything that gets a foothold on this
+     page, and does not vanish when the tab closes. */
+  /* Only the ones on a SERVER-HELD grant. GitHub and Slack in the same table
+     use a token the person pasted themselves, which is a different arrangement
+     and not what changed - asserting over the whole table would fail on those
+     and say nothing about this. */
+  const acts = await page.evaluate(() => {
+    try {
+      return Object.keys(INTEGRATION_ACTIONS)
+        .filter(k => INTEGRATION_ACTIONS[k].needs === 'connect')
+        .map(k => ({ k, src: String(INTEGRATION_ACTIONS[k].run) }));
+    } catch (e) { return []; }
+  });
+  ok(acts.length >= 6, 'the server-held actions were found, not an empty list', acts.map(a => a.k));
+  const direct = acts.filter(a => /Bearer|googleapis\.com/.test(a.src)).map(a => a.k);
+  ok(direct.length === 0,
+     'not one of them carries a token or calls a provider from the browser', direct);
+  const asks = acts.filter(a => /_connActRun/.test(a.src)).map(a => a.k);
+  ok(asks.length === acts.length, 'every one asks the server to act', { asks: asks.length, of: acts.length });
+}
 
 section('A failed load says so instead of looking empty');
 // Assert on the handlers themselves: every network/IO promise must have a

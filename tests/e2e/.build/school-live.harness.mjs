@@ -24514,3 +24514,5 @@ async function everydayJobs(request, env) {
       .sort((a, b) => a.name.localeCompare(b.name)),
   });
 }
+
+export { DB, CONN_KV, connSeal };

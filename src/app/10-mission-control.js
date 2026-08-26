@@ -610,9 +610,9 @@ function _cwDefaultJobs(){ return [
    Web research and web automation run server-side and need nothing from the
    user, which is why they are absent here. */
 const CW_NEEDS_CHECK = {
-  'Email':           { label:'Gmail',            has:()=>_cwHasGoogle() },
-  'Calendar':        { label:'Google Calendar',  has:()=>_cwHasGoogle() },
-  'Drive':           { label:'Google Drive',     has:()=>_cwHasGoogle() },
+  'Email':           { label:'Gmail',            has:()=>_cwConnHas('mail.read') },
+  'Calendar':        { label:'Google Calendar',  has:()=>_cwConnHas('calendar.read') },
+  'Drive':           { label:'Google Drive',     has:()=>_cwConnHas('drive.read') },
   /* Read-only, and on the same Google connection - so a student who has linked
      Google for their mail already has this. A job needing it that runs with
      nothing connected would switch on and do nothing for ever, which is the
@@ -644,6 +644,15 @@ const CW_NEEDS_CHECK = {
 
    The grant is the right question anyway: it is what decides whether the job
    CAN run, and a token is a detail of the next few minutes. */
+/* IS SOMEBODY SIGNED IN WITH GOOGLE - and nothing more than that.
+
+   This used to answer "can AMV read this account", which it never could: a
+   sign-in proves identity and grants no access to anything. Every caller that
+   was asking the second question now asks _cwConnHas(capability) instead.
+
+   Kept because signing in with Google is still a real thing AMV does, and this
+   is how that is asked. Do not reach for it to decide whether a feature can
+   run - that is what the grant is for. */
 function _cwHasGoogle(){
   try{
     if(typeof _gHasGrant === 'function' && _gHasGrant()) return true;

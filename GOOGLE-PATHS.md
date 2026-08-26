@@ -59,15 +59,49 @@ it. That job now runs with the tab closed, which it never could before. Three
 separate joins were missing and each was invisible on its own - see
 `tests/worker/it-can-see-the-homework-and-not-hand-it-in.test.mjs`.
 
-**Stage 2 - not started.** Five browser-side actions remain on the older grant:
-`gmail_list_unread`, `gmail_send`, `calendar_list`, `calendar_create`,
-`drive_list`. Two of them WRITE, so they need the approval flow carried across
-with them, not bolted on afterwards.
+**Stage 2 - done.** Every action that reached Google from the browser now asks
+the server, through one route, `/v1/connect/act`. That is the mailbox, sending
+mail, the calendar, adding an event, Drive, school work, both background checks
+and the chat engine's own Gmail path. The credential never arrives here, so
+nothing on this page can take it and nothing stops working when the tab closes.
 
-**Stage 3 - not started.** Retire the older grant: `connectGoogle`,
-`checkOAuthCallback`'s Google branch, `/v1/oauth/google/exchange`,
-`/v1/oauth/google/refresh`, `refreshGToken` and the in-memory token. Last,
-because until stage 2 lands it is the only thing holding those five up.
+The capability each action needs is declared beside it in a table rather than at
+each call site, so an action added later cannot be written without one - which
+is exactly how the old layer came to call Google with a token that had never
+been granted the scope. Writes are rate-limited harder than reads: reading your
+inbox forty times is a busy morning, sending forty mails is not.
+
+One thing did NOT move and is deliberate. The school pane copies a document into
+the student's own Drive, which needs a Drive WRITE scope. Only `drive.read` is
+offered. **That needs your approval** - see below.
+
+**Stage 3 - waiting on one decision.** Retiring the older grant means removing
+`connectGoogle`, `checkOAuthCallback`'s Google branch,
+`/v1/oauth/google/exchange`, `/v1/oauth/google/refresh`, `refreshGToken` and the
+in-memory token.
+
+Only the school Drive copy still depends on it. So the decision is:
+
+**Do you want AMV to be able to put a copy of a school document into a
+student's Drive?**
+
+  YES  →  one more scope: `https://www.googleapis.com/auth/drive.file`. This is
+          the NARROW one - it grants access only to files AMV itself creates or
+          the student explicitly opens with it, NOT to their Drive. The broad
+          `drive` scope the old flow used would have given AMV their whole
+          Drive, and it should not come back. With this, stage 3 can finish and
+          the older grant goes.
+
+  NO   →  the school pane loses "make me a copy", keeps "open the original",
+          and stage 3 finishes immediately.
+
+**My recommendation: yes, with `drive.file`.** Turning a link a teacher sent
+into a copy the student can actually work in is the moment the feature earns its
+place - without it the pane is a list of links they already had. `drive.file`
+is the scope designed for exactly this and it cannot read anything AMV did not
+make, so the blast radius is a folder of AMV's own documents rather than
+somebody's Drive. It is the difference between a feature that does the job and
+one that asks for a permission it does not need.
 
 ## What was decided
 
