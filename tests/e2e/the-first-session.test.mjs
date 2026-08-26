@@ -85,11 +85,11 @@ section('A brand new account, created against a real server');
      asserting on S.user tests neither. */
   const r = await page.evaluate(async ([em, pw]) => {
     openAuth('signup');
-    await new Promise(x => setTimeout(x, 350));
+    await __amvAuthOpen();
     const type = (sel, v) => { const el = document.querySelector(sel); el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); };
     type('#a-name', 'Brand New'); type('#a-email', em); type('#a-pass', pw);
     document.getElementById('auth-submit').click();
-    await new Promise(x => setTimeout(x, 1100));
+    await __amvSignedIn();
     return { signedIn: !!(S.user && S.user.email), plan: loadStr('amv_plan') || 'free' };
   }, [EMAIL, PW]);
   ok(r.signedIn === true, 'they are signed in', r);

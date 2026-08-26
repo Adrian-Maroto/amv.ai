@@ -185,11 +185,11 @@ section('Somebody who has not paid sees the product, not a paragraph about it');
 {
   await page.evaluate(async ([em, pw]) => {
     openAuth('signup');
-    await new Promise(x => setTimeout(x, 350));
+    await __amvAuthOpen();
     const type = (s, v) => { const el = document.querySelector(s); el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); };
     type('#a-name', 'Browsing'); type('#a-email', em); type('#a-pass', pw);
     document.getElementById('auth-submit').click();
-    await new Promise(x => setTimeout(x, 1100));
+    await __amvSignedIn();
   }, [EMAIL, PW]);
 
   const r = await page.evaluate(async () => {

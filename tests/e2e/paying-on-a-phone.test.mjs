@@ -79,7 +79,7 @@ section('They can reach the button that starts an account');
 {
   const r = await page.evaluate(async () => {
     try { openAuth('signup'); } catch (e) { return { err: String(e && e.message) }; }
-    await new Promise(x => setTimeout(x, 350));
+    await __amvAuthOpen();
     return { open: !!document.getElementById('auth-submit') };
   });
   ok(r.open === true, 'the sign-up sheet opens', r);
@@ -115,7 +115,7 @@ section('They really sign up, on the phone, against the real worker');
     document.getElementById('a-email').value = em;
     document.getElementById('a-pass').value = pw;
     document.getElementById('auth-submit').click();
-    await new Promise(x => setTimeout(x, 900));
+    await __amvSignedIn();
     return { signedIn: !!(S.user && S.user.email), token: !!AMV_API.token };
   }, [EMAIL, PW]);
   ok(r.signedIn && r.token, 'they have a real account and a real token', r);

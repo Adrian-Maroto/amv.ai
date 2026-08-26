@@ -53,7 +53,7 @@ section('A keyboard user can reach the sign-up sheet and it takes their focus');
   const r = await page.evaluate(async () => {
     document.body.focus();
     openAuth('signup');
-    await new Promise(x => setTimeout(x, 400));
+    await __amvAuthOpen();
     const a = document.activeElement;
     return { inOverlay: !!(a && a.closest && a.closest('#ovr')), tag: a ? a.tagName : 'none' };
   });
@@ -119,7 +119,7 @@ section('Escape closes it and gives focus back where it came from');
     const before = document.activeElement.id;
 
     openAuth('signup');
-    await new Promise(x => setTimeout(x, 350));
+    await __amvAuthOpen();
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
     await new Promise(x => setTimeout(x, 250));
 
@@ -135,7 +135,7 @@ section('They can sign up using only the keyboard');
 {
   const r = await page.evaluate(async ([em, pw]) => {
     openAuth('signup');
-    await new Promise(x => setTimeout(x, 350));
+    await __amvAuthOpen();
     const type = (sel, v) => { const el = document.querySelector(sel); el.focus(); el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); };
     type('#a-name', 'Keyboard Person'); type('#a-email', em); type('#a-pass', pw);
     /* Enter on the submit button, not a click - which is what a keyboard

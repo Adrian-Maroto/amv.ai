@@ -78,11 +78,11 @@ section('An account that can run background work');
 {
   await page.evaluate(async ([em, pw]) => {
     openAuth('signup');
-    await new Promise(x => setTimeout(x, 350));
+    await __amvAuthOpen();
     const type = (s, v) => { const el = document.querySelector(s); el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); };
     type('#a-name', 'Ceiling'); type('#a-email', em); type('#a-pass', pw);
     document.getElementById('auth-submit').click();
-    await new Promise(x => setTimeout(x, 1100));
+    await __amvSignedIn();
   }, [EMAIL, PW]);
   await KV.put('ent:' + EMAIL, JSON.stringify({ plan: 'ultra', updatedAt: Date.now(), renewedAt: Date.now(), source: 'stripe' }));
   await page.evaluate(async () => { try { await syncEntitlement(); } catch (e) {} await new Promise(x => setTimeout(x, 500)); });

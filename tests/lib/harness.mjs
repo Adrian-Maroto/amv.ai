@@ -125,7 +125,46 @@ export async function serveApp() {
    better target when it will make more than one page. Call it BEFORE navigating.
    The check that keeps this honest is in tests/e2e/every-page-can-measure-itself:
    it fails if any suite uses the comparators on a page that never got them. */
+/* WAIT FOR THE THING, NOT FOR A NUMBER OF MILLISECONDS.
+
+   Suites slept a fixed 350ms for a form to open and 1100ms for a signup to come
+   back. Both are enough on an idle machine and neither is a guarantee: under the
+   full gate, with four browsers and the Worker suites running alongside,
+   the-seller-actually-gets-it went red with twelve assertions describing a
+   product that was working perfectly.
+
+   That is the worst kind of failure. It points at the feature instead of at the
+   clock, and it only happens under load, which is exactly when nobody has time
+   to look properly. A fixed sleep in a test is a guess about somebody else's
+   machine.
+
+   Installed as an init script so it survives a reload, and it THROWS on its
+   ceiling rather than continuing quietly - a step that never completed should
+   say so where it happened, not five assertions later. */
+export async function armWait(pageOrContext) {
+  await pageOrContext.addInitScript(() => {
+    window.__amvWaitFor = async (cond, ms, label) => {
+      const stop = Date.now() + (ms || 10000);
+      for (;;) {
+        try { const v = cond(); if (v) return v; } catch (e) {}
+        if (Date.now() >= stop) throw new Error('timed out waiting for ' + (label || cond.toString().slice(0, 80)));
+        await new Promise(r => setTimeout(r, 40));
+      }
+    };
+    /* The two this exists for, named, so a suite does not restate the condition
+       and get it subtly different each time. */
+    window.__amvAuthOpen = (ms) => window.__amvWaitFor(
+      () => document.getElementById('auth-submit') && document.querySelector('#a-email'),
+      ms || 10000, 'the auth form to open');
+    window.__amvSignedIn = (email, ms) => window.__amvWaitFor(
+      () => (typeof S !== 'undefined') && S.user && S.user.email &&
+            (!email || S.user.email === String(email).toLowerCase()),
+      ms || 20000, 'the signup for ' + (email || 'somebody') + ' to complete');
+  });
+}
+
 export async function armGeom(pageOrContext) {
+  await armWait(pageOrContext);
   await pageOrContext.addInitScript(() => {
     const EPS = 0.5;
     window.__under = (v, n) => v < n - EPS;   // meaningfully smaller than n

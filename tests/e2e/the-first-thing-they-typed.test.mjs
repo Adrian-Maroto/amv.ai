@@ -81,7 +81,7 @@ section('And after signing up, the question they typed is the one that gets aske
     const type = (sel, v) => { const el = document.querySelector(sel); el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); };
     type('#a-name', 'Newcomer'); type('#a-email', 'new@example.com'); type('#a-pass', 'A-real-Passw0rd!');
     document.getElementById('auth-submit').click();
-    await new Promise(r => setTimeout(r, 1500));
+    await __amvSignedIn();
   });
   /* The send happens on a timer after the app re-renders, so wait for the turn
      rather than for a fixed moment. */

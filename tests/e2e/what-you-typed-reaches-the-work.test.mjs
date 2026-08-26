@@ -84,11 +84,11 @@ section('A signed-in account on a plan that can run background work');
 {
   const r = await page.evaluate(async ([em, pw]) => {
     openAuth('signup');
-    await new Promise(x => setTimeout(x, 350));
+    await __amvAuthOpen();
     const type = (sel, v) => { const el = document.querySelector(sel); el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); };
     type('#a-name', 'Standing'); type('#a-email', em); type('#a-pass', pw);
     document.getElementById('auth-submit').click();
-    await new Promise(x => setTimeout(x, 1100));
+    await __amvSignedIn();
     return { signedIn: !!(S.user && S.user.email) };
   }, [EMAIL, PW]);
   ok(r.signedIn === true, 'they are signed in against the real server', r);
