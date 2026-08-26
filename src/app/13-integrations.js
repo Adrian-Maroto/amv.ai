@@ -997,12 +997,26 @@ function renderIntegrationsView(){
 }
 window.renderIntegrationsView=renderIntegrationsView;
 /* 6. EXTENSIONS VIEW - real file editors */
+/* NO ROWS MEANS NO ROWS, and an empty file used to mean one empty cell.
+
+   `''.trim().split('\n')` is `['']`, so this returned [['']] for an empty file -
+   one row, one blank column. Every caller then tested `!data.length`, which was
+   false, so the "that file has no readable rows" message could never be shown
+   and an empty CSV opened an empty grid with no explanation. A guard that
+   cannot pass is a guard that is not there.
+
+   Returning [] for nothing is the honest answer, and it makes every one of
+   those existing checks start working rather than needing a new one at each
+   call site. */
 function parseCSV(text){
-  return text.trim().split('\n').map(l=>{
+  const t=String(text||'').trim();
+  if(!t) return [];
+  return t.split('\n').map(l=>{
     const cols=[]; let cur='',inQ=false;
     for(let i=0;i<l.length;i++){if(l[i]==='"')inQ=!inQ;else if(l[i]===','&&!inQ){cols.push(cur.trim());cur='';}else cur+=l[i];}
     cols.push(cur.trim()); return cols;
-  });
+  /* And a file that is only blank lines or commas has no content either. */
+  }).filter(row => row.some(c => c !== ''));
 }
 function csvToTable(data){
   if(!data||!data.length) return '';

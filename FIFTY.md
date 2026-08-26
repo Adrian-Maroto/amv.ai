@@ -82,13 +82,28 @@ Eight defects, in one night, all mine, none found by me reading it back:
 
 ## Left for you, deliberately
 
-**The 27 functions that really are unreachable.** Verified with the corrected
-scanner. I have NOT deleted them, and that is a decision rather than an
-omission: several read as features you may want wired rather than removed -
-`quickGmail`, `quickCalendar`, `quickDrive`, a whole engine picker, the Excel
-and Word editors. Deleting a feature is on your approval list, and 27.9KB of a
-2.1MB page is not worth guessing with. The list is in the commit history and I
-can wire or remove any of them on a word from you.
+**The unreachable functions - DONE.** There were 27; the Google migration and
+the media removal accounted for most of them, and the last nine were dealt with
+one at a time rather than as a batch, because "unreachable" and "dead" are
+different claims (LESSONS 296).
+
+Four were removed as residue of something already gone: `_langForGeneration`
+(instructed image and video generators that no longer exist), and the
+`_BUILD_MODEL` family - a second store for the per-section model preference
+whose pickers were deleted, sitting beside the live one. Two stores for one
+preference is how they drift; `_autoMaxLabel` went too, being the sentence form
+of a number the plan table deliberately prints bare.
+
+One was WIRED, not removed. `handleSheetFile` is the only way into the
+spreadsheet editor - a CSV parsed into a real table with an AI toolbar and a
+download - and no file input in the product accepted a spreadsheet, so the whole
+feature was unreachable while its tests passed about it. It now has a door on
+the chat attachment chip, alongside attaching rather than instead of it.
+
+Four remain and are declared, with reasons, in
+`tests/e2e/every-entry-point-has-a-door`: `_pkceConsume` (the consume half of a
+pair whose start half is live), `runAgentic` and `qDecompose` (engines other
+code calls into), and `amvOpenFile` (a bridge called from outside the page).
 
 **Connected accounts need three secrets** before any of it does anything:
 `CONNECT_KEY`, then `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`. Until they

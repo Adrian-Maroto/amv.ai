@@ -2300,15 +2300,56 @@ function handleFile(file){
   }
   reader.onerror=()=>toast('Could not read file: '+file.name,'error');
 }
+/* Is this attachment something the spreadsheet editor can open? Extension and
+   MIME both, because a CSV exported by a spreadsheet app often arrives as
+   text/csv and one saved by hand often arrives as nothing at all. */
+function _attIsSheet(att){
+  if(!att || att.kind!=='text' || !att.name) return false;
+  const ext=String(att.name).split('.').pop().toLowerCase();
+  return ext==='csv' || ext==='tsv';
+}
 function showAttChip(){
   if(!S.att) return;
   const ab2=$('ab2'),ac=$('ac');
   if(!ab2||!ac) return;
   const icons={img:'🖼',pdf:'📄',text:'📎'};
   const sz=S.att.size?(' ('+fmtSize(S.att.size)+')'):'';
-  ac.innerHTML='<span>'+(icons[S.att.kind]||'📎')+' <strong>'+escH(S.att.name)+'</strong><span style="color:var(--dim);font-size:var(--t-2xs)">'+sz+'</span></span>';
+  ac.innerHTML='<span>'+(icons[_attIsSheet(S.att)?'sheet':S.att.kind]||(_attIsSheet(S.att)?'📊':'📎'))+' <strong>'+escH(S.att.name)+'</strong><span style="color:var(--dim);font-size:var(--t-2xs)">'+sz+'</span></span>';
+
+  /* THE SPREADSHEET EDITOR HAD NO DOOR.
+
+     openSheetEditor parses a CSV into a real table with an AI toolbar - analyse
+     trends, find duplicates, add totals, download - and handleSheetFile is the
+     only thing that opens it. Nothing called handleSheetFile. No file input
+     anywhere in the product accepted a spreadsheet, so a working feature with
+     its own tests was unreachable, exactly like the Google front door was.
+
+     Attaching stays the default, because asking a question about a file is what
+     most people want and what the chat box is for. This is offered ALONGSIDE
+     it: the file is on the chip either way, and a CSV also gets a way into the
+     editor. Nothing is taken away by adding it. */
+  if(_attIsSheet(S.att) && typeof handleSheetFile==='function' && S.att.data!=null){
+    const open=document.createElement('button');
+    open.type='button';
+    open.className='att-open';
+    open.textContent=T('Open as table');
+    open.title=T('Open this file in the spreadsheet editor');
+    open.onclick=()=>{
+      /* handleSheetFile takes a File because that is what a file input hands
+         it. The text is already read here, so it is handed back in the same
+         shape rather than reading it twice or forking the parser - one path
+         into the editor, and it is the one the tests already cover. */
+      try{
+        const name=S.att.name, text=String(S.att.data||'');
+        handleSheetFile({ name, text: () => Promise.resolve(text) });
+      }catch(e){ try{ toast(T('That file could not be opened as a table.'),'error',4500); }catch(_){} }
+    };
+    ac.appendChild(open);
+  }
+
   const btn=document.createElement('button');
-  btn.textContent='×'; btn.style.cssText='background:none;border:none;color:var(--mu);cursor:pointer;font-size:var(--t-base);line-height:1;margin-left:4px';
+  btn.textContent='×'; btn.setAttribute('aria-label', T('Remove attachment'));
+  btn.style.cssText='background:none;border:none;color:var(--mu);cursor:pointer;font-size:var(--t-base);line-height:1;margin-left:4px';
   btn.onclick=()=>{S.att=null;ab2.style.display='none';};
   ac.appendChild(btn);
   ab2.style.display='flex';

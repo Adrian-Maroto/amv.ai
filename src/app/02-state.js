@@ -538,10 +538,22 @@ try{ window.ENGINE_LABEL=ENGINE_LABEL; }catch(e){}
    Lab, Dev, and Studio let the user choose which model runs their work, so they
    control how much usage they spend. The choice is REAL - it's passed straight to
    aiComplete/runCode paths. Persisted per section. */
-const _BUILD_MODEL = { dev:'smart', lab:'smart', studio:'smart' };
-/* Scoped like every other preference - raw localStorage skips _scopeKey. */
-try{ const saved=load('amv_build_models'); if(saved && typeof saved==='object') Object.assign(_BUILD_MODEL, saved); }catch(e){}
-function _saveBuildModels(){ try{ store('amv_build_models', _BUILD_MODEL); }catch(e){} }
+/* _BUILD_MODEL AND ITS THREE HELPERS LIVED HERE. THE OTHER ONE WON.
+
+   There were two stores for the same preference: this one for the pickers in
+   the Build panels, and _sectionModelKey / _setSectionModel for the chip and
+   for _sectionModel, which is what aiCompleteLong and the agentic runner are
+   actually handed. The comment below still records why that mattered - both
+   defaulted to Apex, so both needed the same clamp, and fixing one would have
+   moved the failure rather than ended it.
+
+   The picker markup this half served is gone; _sectionModelSelect renders what
+   is on screen now, and it writes through _setSectionModel. So _BUILD_MODEL was
+   read from disk on every load, clamped by _buildModelAllowed, formatted by
+   _buildModelStr, and never written by anything - _saveBuildModels had no
+   callers, so a choice made through it could not have persisted anyway.
+
+   Two stores for one preference is how they drift. There is one now.
 /* The best engine this plan can actually run, at or below the one chosen.
 
    Dev, Lab and Studio all defaulted to `smart` - Apex, which needs Elite. A
@@ -587,9 +599,7 @@ function _planAllowedModel(want){
     return 'core';
   }catch(e){ return want; }
 }
-function _buildModelAllowed(section){ return _planAllowedModel(_BUILD_MODEL[section] || 'smart'); }
-// resolve a section's chosen model key → real API model string for aiComplete/opts.model
-function _buildModelStr(section){ const k=_buildModelAllowed(section); const m=MODELS[k]; return (m&&m.model&&m.model!=='auto')?m.model:'amv-core'; }
+
 /* The per-section model picker that _modelPickerHTML rendered lived here:
    _wireModelPicker bound every [data-mp] select, and _usageDots/_usageWord drew
    the cost meter beside it. The picker markup is gone and _sectionModelSelect is
@@ -616,11 +626,11 @@ function _buildModelStr(section){ const k=_buildModelAllowed(section); const m=M
    the single largest lever on model spend in the product. Anybody who wants a
    specific engine still picks one, and their choice is remembered. */
 const _SECTION_DEFAULTS = { code:'auto', debug:'auto', design:'auto' };
-/* There are two of these - _BUILD_MODEL for the pickers in the panels, and
-   this one for the chip and for _sectionModel, which is what aiCompleteLong
-   and the agentic runner are handed. Both defaulted to Apex, so both needed
-   the same clamp; fixing one would have moved the failure rather than ended
-   it. */
+/* THE ONE STORE, now that the other is gone. It backs the chip and
+   _sectionModel, which is what aiCompleteLong and the agentic runner are
+   handed. There used to be a second - _BUILD_MODEL, for pickers that no longer
+   exist - and both defaulted to Apex, so both needed the same clamp; fixing one
+   would have moved the failure rather than ended it. */
 function _sectionModelKey(section){
   const k=loadStr('amv_secmodel_'+section);
   return _planAllowedModel((k && MODELS[k]) ? k : (_SECTION_DEFAULTS[section]||'smart'));

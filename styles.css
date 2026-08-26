@@ -9387,3 +9387,28 @@ a.skip-link{
      instant it is focused should not be 140ms late to it. */
 }
 a.skip-link:focus{ top:var(--sp-3); outline:2px solid var(--tx); outline-offset:2px; }
+
+/* ── LAYER A113: THE SPREADSHEET EDITOR GETS A DOOR ────────────────────────
+   openSheetEditor is a real feature - a CSV parsed into a table with an AI
+   toolbar and a download - and nothing in the product could open it. The chat
+   attachment chip now offers it for a CSV, alongside attaching, so neither
+   behaviour is taken away.
+
+   Sized and coloured off the same tokens as the chip it sits in, because a
+   button that appears next to a filename should read as part of it rather than
+   as something bolted on. */
+.att-open{
+  background:var(--accent-soft);
+  border:1px solid var(--bd);
+  color:var(--accent);
+  font:600 var(--t-2xs)/1 var(--fn);
+  padding:5px 9px;
+  margin-left:8px;
+  border-radius:var(--r-pill);
+  cursor:pointer;
+  white-space:nowrap;
+  transition:background-color .13s var(--ease),border-color .13s var(--ease),color .13s var(--ease);
+}
+.att-open:hover{ background:var(--accent); color:#fff; border-color:var(--accent); }
+.att-open:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+@media (prefers-reduced-motion:reduce){ .att-open{ transition:none; } }

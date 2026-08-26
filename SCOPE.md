@@ -67,11 +67,12 @@ how two implementations drift, which is the hazard this codebase's own
 one-definition checker exists to catch - and which caught me doing exactly that
 last night.
 
-## What I have not done
+## What I have not done - RESOLVED
 
-I have not deleted any of them. Deleting a feature is on your approval list,
-and several read as things you might want back rather than gone - the engine
-picker especially. Say the word and it is twenty minutes plus a gate run.
+Every one of these has been decided. Four were removed as residue of features
+already gone, one was WIRED because it was a working feature with no door
+(`handleSheetFile`, the spreadsheet editor), and four are declared as
+deliberate non-doors with written reasons. See FIFTY.md for the breakdown.
 
 The two sync functions are a different question: those I would wire, not
 delete, and I would want to test them against two real browsers before

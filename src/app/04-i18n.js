@@ -770,14 +770,13 @@ function _explicitLangInPrompt(text){
   }
   return null;
 }
-/* For image/video/model generation: bakes the language into any text in the output. */
-function _langForGeneration(promptText){
-  const code=_lang();
-  const explicit=_explicitLangInPrompt(promptText);
-  if(explicit){ return ' (Any text, labels, captions, or signage in the output must be written in '+explicit+'.)'; }
-  if(code==='auto') return '';
-  return ' (Any text, labels, captions, or signage in the output must be written in '+_langName(code)+'.)';
-}
+/* _langForGeneration stood here and told a generator to write any text, labels,
+   captions or signage in the reader's language. It was for image and video
+   generation, which the owner removed - so it had nothing left to instruct, and
+   nothing called it.
+
+   _explicitLangInPrompt above it survives and is used: reading "in Spanish" out
+   of what somebody typed is about the CONVERSATION, not about a picture. */
 const AMV_EXCELLENCE = [
 "",
 "=== AMV QUALITY STANDARD (non-negotiable) ===",

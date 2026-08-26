@@ -2374,10 +2374,22 @@ try{ window.ENGINE_LABEL=ENGINE_LABEL; }catch(e){}
    Lab, Dev, and Studio let the user choose which model runs their work, so they
    control how much usage they spend. The choice is REAL - it's passed straight to
    aiComplete/runCode paths. Persisted per section. */
-const _BUILD_MODEL = { dev:'smart', lab:'smart', studio:'smart' };
-/* Scoped like every other preference - raw localStorage skips _scopeKey. */
-try{ const saved=load('amv_build_models'); if(saved && typeof saved==='object') Object.assign(_BUILD_MODEL, saved); }catch(e){}
-function _saveBuildModels(){ try{ store('amv_build_models', _BUILD_MODEL); }catch(e){} }
+/* _BUILD_MODEL AND ITS THREE HELPERS LIVED HERE. THE OTHER ONE WON.
+
+   There were two stores for the same preference: this one for the pickers in
+   the Build panels, and _sectionModelKey / _setSectionModel for the chip and
+   for _sectionModel, which is what aiCompleteLong and the agentic runner are
+   actually handed. The comment below still records why that mattered - both
+   defaulted to Apex, so both needed the same clamp, and fixing one would have
+   moved the failure rather than ended it.
+
+   The picker markup this half served is gone; _sectionModelSelect renders what
+   is on screen now, and it writes through _setSectionModel. So _BUILD_MODEL was
+   read from disk on every load, clamped by _buildModelAllowed, formatted by
+   _buildModelStr, and never written by anything - _saveBuildModels had no
+   callers, so a choice made through it could not have persisted anyway.
+
+   Two stores for one preference is how they drift. There is one now.
 /* The best engine this plan can actually run, at or below the one chosen.
 
    Dev, Lab and Studio all defaulted to `smart` - Apex, which needs Elite. A
@@ -2423,9 +2435,7 @@ function _planAllowedModel(want){
     return 'core';
   }catch(e){ return want; }
 }
-function _buildModelAllowed(section){ return _planAllowedModel(_BUILD_MODEL[section] || 'smart'); }
-// resolve a section's chosen model key → real API model string for aiComplete/opts.model
-function _buildModelStr(section){ const k=_buildModelAllowed(section); const m=MODELS[k]; return (m&&m.model&&m.model!=='auto')?m.model:'amv-core'; }
+
 /* The per-section model picker that _modelPickerHTML rendered lived here:
    _wireModelPicker bound every [data-mp] select, and _usageDots/_usageWord drew
    the cost meter beside it. The picker markup is gone and _sectionModelSelect is
@@ -2452,11 +2462,11 @@ function _buildModelStr(section){ const k=_buildModelAllowed(section); const m=M
    the single largest lever on model spend in the product. Anybody who wants a
    specific engine still picks one, and their choice is remembered. */
 const _SECTION_DEFAULTS = { code:'auto', debug:'auto', design:'auto' };
-/* There are two of these - _BUILD_MODEL for the pickers in the panels, and
-   this one for the chip and for _sectionModel, which is what aiCompleteLong
-   and the agentic runner are handed. Both defaulted to Apex, so both needed
-   the same clamp; fixing one would have moved the failure rather than ended
-   it. */
+/* THE ONE STORE, now that the other is gone. It backs the chip and
+   _sectionModel, which is what aiCompleteLong and the agentic runner are
+   handed. There used to be a second - _BUILD_MODEL, for pickers that no longer
+   exist - and both defaulted to Apex, so both needed the same clamp; fixing one
+   would have moved the failure rather than ended it. */
 function _sectionModelKey(section){
   const k=loadStr('amv_secmodel_'+section);
   return _planAllowedModel((k && MODELS[k]) ? k : (_SECTION_DEFAULTS[section]||'smart'));
@@ -5319,14 +5329,13 @@ function _explicitLangInPrompt(text){
   }
   return null;
 }
-/* For image/video/model generation: bakes the language into any text in the output. */
-function _langForGeneration(promptText){
-  const code=_lang();
-  const explicit=_explicitLangInPrompt(promptText);
-  if(explicit){ return ' (Any text, labels, captions, or signage in the output must be written in '+explicit+'.)'; }
-  if(code==='auto') return '';
-  return ' (Any text, labels, captions, or signage in the output must be written in '+_langName(code)+'.)';
-}
+/* _langForGeneration stood here and told a generator to write any text, labels,
+   captions or signage in the reader's language. It was for image and video
+   generation, which the owner removed - so it had nothing left to instruct, and
+   nothing called it.
+
+   _explicitLangInPrompt above it survives and is used: reading "in Spanish" out
+   of what somebody typed is about the CONVERSATION, not about a picture. */
 const AMV_EXCELLENCE = [
 "",
 "=== AMV QUALITY STANDARD (non-negotiable) ===",
@@ -7653,15 +7662,56 @@ function handleFile(file){
   }
   reader.onerror=()=>toast('Could not read file: '+file.name,'error');
 }
+/* Is this attachment something the spreadsheet editor can open? Extension and
+   MIME both, because a CSV exported by a spreadsheet app often arrives as
+   text/csv and one saved by hand often arrives as nothing at all. */
+function _attIsSheet(att){
+  if(!att || att.kind!=='text' || !att.name) return false;
+  const ext=String(att.name).split('.').pop().toLowerCase();
+  return ext==='csv' || ext==='tsv';
+}
 function showAttChip(){
   if(!S.att) return;
   const ab2=$('ab2'),ac=$('ac');
   if(!ab2||!ac) return;
   const icons={img:'🖼',pdf:'📄',text:'📎'};
   const sz=S.att.size?(' ('+fmtSize(S.att.size)+')'):'';
-  ac.innerHTML='<span>'+(icons[S.att.kind]||'📎')+' <strong>'+escH(S.att.name)+'</strong><span style="color:var(--dim);font-size:var(--t-2xs)">'+sz+'</span></span>';
+  ac.innerHTML='<span>'+(icons[_attIsSheet(S.att)?'sheet':S.att.kind]||(_attIsSheet(S.att)?'📊':'📎'))+' <strong>'+escH(S.att.name)+'</strong><span style="color:var(--dim);font-size:var(--t-2xs)">'+sz+'</span></span>';
+
+  /* THE SPREADSHEET EDITOR HAD NO DOOR.
+
+     openSheetEditor parses a CSV into a real table with an AI toolbar - analyse
+     trends, find duplicates, add totals, download - and handleSheetFile is the
+     only thing that opens it. Nothing called handleSheetFile. No file input
+     anywhere in the product accepted a spreadsheet, so a working feature with
+     its own tests was unreachable, exactly like the Google front door was.
+
+     Attaching stays the default, because asking a question about a file is what
+     most people want and what the chat box is for. This is offered ALONGSIDE
+     it: the file is on the chip either way, and a CSV also gets a way into the
+     editor. Nothing is taken away by adding it. */
+  if(_attIsSheet(S.att) && typeof handleSheetFile==='function' && S.att.data!=null){
+    const open=document.createElement('button');
+    open.type='button';
+    open.className='att-open';
+    open.textContent=T('Open as table');
+    open.title=T('Open this file in the spreadsheet editor');
+    open.onclick=()=>{
+      /* handleSheetFile takes a File because that is what a file input hands
+         it. The text is already read here, so it is handed back in the same
+         shape rather than reading it twice or forking the parser - one path
+         into the editor, and it is the one the tests already cover. */
+      try{
+        const name=S.att.name, text=String(S.att.data||'');
+        handleSheetFile({ name, text: () => Promise.resolve(text) });
+      }catch(e){ try{ toast(T('That file could not be opened as a table.'),'error',4500); }catch(_){} }
+    };
+    ac.appendChild(open);
+  }
+
   const btn=document.createElement('button');
-  btn.textContent='×'; btn.style.cssText='background:none;border:none;color:var(--mu);cursor:pointer;font-size:var(--t-base);line-height:1;margin-left:4px';
+  btn.textContent='×'; btn.setAttribute('aria-label', T('Remove attachment'));
+  btn.style.cssText='background:none;border:none;color:var(--mu);cursor:pointer;font-size:var(--t-base);line-height:1;margin-left:4px';
   btn.onclick=()=>{S.att=null;ab2.style.display='none';};
   ac.appendChild(btn);
   ab2.style.display='flex';
@@ -12892,11 +12942,12 @@ function _autoMaxForPlan(p,seats){
   if(p==='custom') return 25;               // the tier a Custom plan ranks at
   return AUTO_MAX_BY_PLAN[p]||1;            // 0 means "the one free weekly job", not none
 }
-/* How that reads on a page rather than in a table. */
-function _autoMaxLabel(p){
-  const n=_autoMaxForPlan(p);
-  return n===0 ? '-' : n+' scheduled job'+(n===1?'':'s');
-}
+/* _autoMaxLabel was the sentence form of this - "25 scheduled jobs" - and it is
+   gone because the lesson two functions above is exactly about it: the
+   automation row is already labelled "Scheduled & background jobs", so printing
+   the words again in every cell says it twice. The row uses the bare number,
+   deliberately, and nothing ever called the label. Kept as a note rather than
+   as a function nobody may use. */
 
 /* ============================================================
    CUSTOM PLAN - pay-for-what-you-need, guaranteed profitable.
@@ -24153,12 +24204,26 @@ function renderIntegrationsView(){
 }
 window.renderIntegrationsView=renderIntegrationsView;
 /* 6. EXTENSIONS VIEW - real file editors */
+/* NO ROWS MEANS NO ROWS, and an empty file used to mean one empty cell.
+
+   `''.trim().split('\n')` is `['']`, so this returned [['']] for an empty file -
+   one row, one blank column. Every caller then tested `!data.length`, which was
+   false, so the "that file has no readable rows" message could never be shown
+   and an empty CSV opened an empty grid with no explanation. A guard that
+   cannot pass is a guard that is not there.
+
+   Returning [] for nothing is the honest answer, and it makes every one of
+   those existing checks start working rather than needing a new one at each
+   call site. */
 function parseCSV(text){
-  return text.trim().split('\n').map(l=>{
+  const t=String(text||'').trim();
+  if(!t) return [];
+  return t.split('\n').map(l=>{
     const cols=[]; let cur='',inQ=false;
     for(let i=0;i<l.length;i++){if(l[i]==='"')inQ=!inQ;else if(l[i]===','&&!inQ){cols.push(cur.trim());cur='';}else cur+=l[i];}
     cols.push(cur.trim()); return cols;
-  });
+  /* And a file that is only blank lines or commas has no content either. */
+  }).filter(row => row.some(c => c !== ''));
 }
 function csvToTable(data){
   if(!data||!data.length) return '';

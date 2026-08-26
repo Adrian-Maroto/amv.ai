@@ -106,11 +106,12 @@ function _autoMaxForPlan(p,seats){
   if(p==='custom') return 25;               // the tier a Custom plan ranks at
   return AUTO_MAX_BY_PLAN[p]||1;            // 0 means "the one free weekly job", not none
 }
-/* How that reads on a page rather than in a table. */
-function _autoMaxLabel(p){
-  const n=_autoMaxForPlan(p);
-  return n===0 ? '-' : n+' scheduled job'+(n===1?'':'s');
-}
+/* _autoMaxLabel was the sentence form of this - "25 scheduled jobs" - and it is
+   gone because the lesson two functions above is exactly about it: the
+   automation row is already labelled "Scheduled & background jobs", so printing
+   the words again in every cell says it twice. The row uses the bare number,
+   deliberately, and nothing ever called the label. Kept as a note rather than
+   as a function nobody may use. */
 
 /* ============================================================
    CUSTOM PLAN - pay-for-what-you-need, guaranteed profitable.
