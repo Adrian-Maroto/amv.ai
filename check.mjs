@@ -293,8 +293,16 @@ step('No guard names a function that does not exist', () => {
 
   const defined = new Set();
   for (const m of src.matchAll(/\n\s*(?:async\s+)?function\s+([A-Za-z0-9_$]+)\s*\(/g)) defined.add(m[1]);
-  for (const m of src.matchAll(/\n\s*(?:const|let|var)\s+([A-Za-z0-9_$]+)\s*=/g)) defined.add(m[1]);
+  /* After a newline OR a semicolon OR an opening brace. Anchored on `\n` alone
+     this missed `let tries=0; const poll=()=>{...}` - a second declaration on
+     the same line - and reported `poll` as a function that does not exist. */
+  for (const m of src.matchAll(/(?:^|[\n;{(,])\s*(?:const|let|var)\s+([A-Za-z0-9_$]+)\s*=/g)) defined.add(m[1]);
   for (const m of src.matchAll(/window\.([A-Za-z0-9_$]+)\s*=/g)) defined.add(m[1]);
+  /* Object-literal and class methods, and accessors: `_save(){`, `async run(`,
+     `get cookieAuth(`. AMV_API alone is a hundred of these, and without them
+     every call to one reads as a missing function. */
+  for (const m of src.matchAll(/(?:^|[,{;\n])\s*(?:async\s+|get\s+|set\s+|\*\s*)?([A-Za-z_$][\w$]*)\s*\([^()]{0,200}\)\s*\{/g))
+    defined.add(m[1]);
   /* PARAMETERS COUNT AS DEFINED. A helper that takes a callback and guards it
      with `typeof onConfirm === 'function'` is doing exactly the right thing -
      the argument is optional and may not be passed. Without this the check
@@ -315,19 +323,64 @@ step('No guard names a function that does not exist', () => {
   /* Things the browser provides, or that a page may legitimately ask about
      because they are not everywhere. A guard on one of these is doing its job:
      the point of the check is a guard on a name that was OURS and is gone. */
-  const PROVIDED = new Set(['alert', 'confirm', 'prompt', 'fetch', 'requestIdleCallback',
-    'matchMedia', 'IntersectionObserver', 'ResizeObserver', 'structuredClone', 'reportError',
-    'queueMicrotask', 'showOpenFilePicker', 'BarcodeDetector', 'SpeechRecognition',
-    'webkitSpeechRecognition', 'AbortSignal', 'ClipboardItem', 'IdleDetector']);
+  /* NAMES THIS SCANNER MUST NOT MISTAKE FOR MISSING FUNCTIONS.
+
+     The first version of this reported twenty-one, every one of them a false
+     positive, which is worse than reporting none: a check that cries wolf gets
+     switched off, and then the one real finding goes with it. They fell into
+     four groups and each needed a different fix.
+
+     Language keywords - `if (`, `for (`, `catch (`, `async (` all look exactly
+     like a call. */
+  const KEYWORDS = new Set(['if', 'for', 'while', 'switch', 'catch', 'return', 'typeof',
+    'function', 'new', 'await', 'try', 'do', 'else', 'delete', 'void', 'in', 'of', 'yield',
+    'throw', 'async', 'case', 'get', 'set', 'this', 'super']);
+
+  /* Things the platform provides. Node has most of them, so ask rather than
+     keep a list that goes stale; the rest are browser-only or optional. */
+  const PROVIDED = new Set(['alert', 'confirm', 'prompt', 'requestIdleCallback',
+    'requestAnimationFrame', 'cancelAnimationFrame', 'matchMedia', 'IntersectionObserver',
+    'ResizeObserver', 'MutationObserver', 'showOpenFilePicker', 'BarcodeDetector',
+    'SpeechRecognition', 'webkitSpeechRecognition', 'IdleDetector', 'ClipboardItem',
+    'FileReader', 'Image', 'Audio', 'Notification', 'getComputedStyle', 'scrollTo',
+    'open', 'print', 'postMessage', 'btoa', 'atob']);
+  const isPlatform = (n) => {
+    if (PROVIDED.has(n)) return true;
+    try { return typeof globalThis[n] !== 'undefined'; } catch (e) { return false; }
+  };
 
   const dead = [...new Set([...src.matchAll(/typeof\s+([A-Za-z_$][\w$]*)\s*===?\s*['"]function['"]/g)]
     .map(m => m[1])
-    .filter(n => !defined.has(n) && !PROVIDED.has(n)))];
+    .filter(n => !defined.has(n) && !isPlatform(n)))];
 
   if (dead.length)
     throw new Error('these are guarded by `typeof X === "function"` and are defined nowhere, so the guard is '
       + 'permanently false and whatever it protects never runs: ' + dead.join(', ')
       + '. Write the function, or take the branch out - a guard that cannot pass is not a fallback.');
+
+  /* AND THE SHAPE THAT ACTUALLY SHIPPED, which the rule above would have
+     missed. checkOAuthCallback had no typeof guard at all - it was called
+     plainly, inside `try{ ... }catch(e){}`. Deleting it turned every account
+     connection into a silent no-op, and a bare catch is precisely what stops
+     that being visible: a ReferenceError goes in and nothing comes out.
+
+     So: a call inside a catch that swallows must name something that exists.
+     A catch that DOES something with the error is not covered here - if it
+     logs or reports, the failure is observable and this check has no business
+     objecting. It is the silent ones that can hide a deletion. */
+  const swallowed = new Map();
+  for (const m of src.matchAll(/try\s*\{([\s\S]{0,400}?)\}\s*catch\s*\([A-Za-z0-9_$]*\)\s*\{\s*\}/g)) {
+    for (const c of m[1].matchAll(/(?:^|[^.\w$'"`])([A-Za-z_$][\w$]*)\s*\(/g)) {
+      const n = c[1];
+      if (KEYWORDS.has(n) || defined.has(n) || isPlatform(n)) continue;
+      swallowed.set(n, (swallowed.get(n) || 0) + 1);
+    }
+  }
+  if (swallowed.size)
+    throw new Error('these are CALLED inside a try/catch that swallows the error, and are defined nowhere - '
+      + 'so the call throws a ReferenceError into an empty catch and whatever it was supposed to do silently '
+      + 'does not happen: ' + [...swallowed.keys()].join(', ')
+      + '. This is LESSONS 297: it is how a deleted feature ships through every gate.');
 });
 
 /* ── 4b. Page weight ──────────────────────────────────────────────────────

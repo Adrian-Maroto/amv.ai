@@ -82,12 +82,20 @@ Companion docs (do not duplicate them here - read them):
 - The DEAD GUARDS stage exists because of LESSONS 297. It fails when
   `typeof X === 'function'` names something defined nowhere - a guard that can
   never pass, so whatever it protects never runs. That is not theoretical: it
-  caught `checkOAuthCallback` being deleted (every account connection silently
-  threw away the authorization code), `applyTheme` (the model tool that switches
-  to light mode saved the setting and left the screen dark) and `confirmModal`
-  (three destructive actions fell to their fallbacks, two of which skipped
-  asking entirely). It reads `app.js` with comments and strings stripped, so a
-  comment explaining a removal is not mistaken for the removal not happening.
+  caught `applyTheme` (the model tool that switches to light mode saved the
+  setting and left the screen dark) and `confirmModal` (three destructive
+  actions fell to their fallbacks, two of which skipped asking entirely).
+
+  It enforces a SECOND rule, which is the one the shipped bug needed:
+  a call inside a `try{...}catch(e){}` that swallows must name something that
+  exists. `checkOAuthCallback` had no typeof guard at all - it was called
+  plainly - so deleting it threw a ReferenceError into an empty catch and every
+  account connection silently discarded the authorization code. A catch that
+  logs or reports is not covered: the failure is observable there, and only the
+  silent ones can hide a deletion.
+
+  Both rules read `app.js` with comments and strings stripped, so a comment
+  explaining a removal is not mistaken for the removal not happening.
 - e2e uses the Playwright harness in `tests/lib/harness.mjs` (`bootApp`).
 - Rebuild (`node build.mjs`) before checking, or the "build fresh" step fails.
 - **Editing `index.html`:** only lines outside the BUILD:CSS and BUILD:JS
