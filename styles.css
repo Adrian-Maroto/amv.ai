@@ -11,10 +11,10 @@
      reads comfortably and some cannot read at all. Solved numerically for the
      least change that clears 4.5:1 on --s3, the worst surface each sits on. */
   --grn-txt:#4ade80;--gold-txt:#e0b341;--red-txt:#ff6d6d;--accent-txt:#719af8;--accent-fill:#2f5fd8;
-  --fn:'Inter',-apple-system,sans-serif;--mn:'JetBrains Mono','SF Mono',monospace;
+  --fn:'Inter','Inter fallback',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;--mn:'JetBrains Mono','SF Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace;
   --sbw:252px;--nav-h:48px;
   --indigo:#3f76f5;--green:#4ade80;--amber:#e0b341;--t2:#8a8a8a;--t3:#565656;--r:10px;--g-brand:#3f76f5;
---r-2xl:22px;--glass-soft:rgba(255,255,255,.025);--glass-soft2:rgba(255,255,255,.05);--panel:#111111;--accent:#3f76f5;--accent-d:#2f5fd8;--accent-soft:rgba(63, 118, 245,.16);--accent-grad:linear-gradient(135deg,#3f76f5 0%,#356be0 100%);--accent-grad-soft:linear-gradient(135deg,rgba(63, 118, 245,.18) 0%,rgba(53, 107, 224,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(63, 118, 245,.18) 0%,rgba(53, 107, 224,.10) 40%,transparent 72%);--fdisplay:'Space Grotesk','Inter',sans-serif;}
+--r-2xl:22px;--glass-soft:rgba(255,255,255,.025);--glass-soft2:rgba(255,255,255,.05);--panel:#111111;--accent:#3f76f5;--accent-d:#2f5fd8;--accent-soft:rgba(63, 118, 245,.16);--accent-grad:linear-gradient(135deg,#3f76f5 0%,#356be0 100%);--accent-grad-soft:linear-gradient(135deg,rgba(63, 118, 245,.18) 0%,rgba(53, 107, 224,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(63, 118, 245,.18) 0%,rgba(53, 107, 224,.10) 40%,transparent 72%);--fdisplay:'Space Grotesk','Space Grotesk fallback','Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;}
 body.light{--bg:#fbfbfa;--s1:#ffffff;--s2:#f0efec;--s3:#e6e4df;--s4:#d8d5ce;--bd:rgba(0,0,0,.1);--bdl:#c8c5bd;--tx:#161513;--mu:#6b6862;--dim:#9b978f;--glass-soft:rgba(0,0,0,.02);--glass-soft2:rgba(0,0,0,.04);--panel:#ffffff;--accent:#3366d4;--accent-d:#2f5bc0;--accent-soft:rgba(51,102,212,.14);--grn-txt:#267343;--gold-txt:#7b6224;--red-txt:#b83737;--accent-txt:#3060c7;--accent-fill:#3366d4;--accent-grad:linear-gradient(135deg,#3366d4 0%,#3f74e0 100%);--accent-grad-soft:linear-gradient(135deg,rgba(51,102,212,.14) 0%,rgba(63,116,224,.14) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(51,102,212,.12) 0%,rgba(63,116,224,.07) 40%,transparent 72%)}
 html,body{height:100%;overflow:hidden}
 body{background:var(--bg);color:var(--tx);font-family:var(--fn);font-size:var(--t-md);line-height:1.6;-webkit-font-smoothing:antialiased;transition:background .2s,color .2s}
@@ -9297,3 +9297,45 @@ a.skip-link:focus{ top:var(--sp-3); outline:2px solid var(--tx); outline-offset:
 .att-open:hover{ background:var(--accent); color:#fff; border-color:var(--accent); }
 .att-open:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
 @media (prefers-reduced-motion:reduce){ .att-open{ transition:none; } }
+
+/* ── LAYER A114: THE PAGE LOOKS RIGHT BEFORE THE WEBFONT ARRIVES ───────────
+   The font stylesheet no longer blocks rendering, which means there is now a
+   real moment - short on a good connection, forever on a blocked one - where
+   the page is drawn in the fallback. Two things follow from that.
+
+   First, the fallback has to be a stack somebody chose, not whatever the
+   browser reaches for. The tokens above name the platform UI faces in order,
+   which is what every system-font stack does and what the page will look like
+   for anyone who cannot reach Google at all.
+
+   Second, and this is the part that is usually skipped: swapping from a
+   fallback to a webfont with different metrics REFLOWS the page. Text reflows
+   under somebody's finger, and the layout-shift score - measured at 0.025,
+   which is good - would climb for no reason other than the font arriving.
+
+   These @font-face rules define the fallback WITH the real font's metrics.
+   size-adjust and the line metrics are Inter's and Space Grotesk's own, so the
+   fallback occupies very nearly the same space and the swap is close to
+   invisible. Nothing is downloaded for these: `local()` with a name that does
+   not exist forces the browser to use the named local face and simply apply
+   the overrides.
+
+   Numbers are from the faces themselves rather than eyeballed: Inter has a
+   1.0 aspect against Arial at 107%, ascent 969/1000, descent 241/1000. Space
+   Grotesk is narrower, so its adjust is smaller. */
+@font-face{
+  font-family:'Inter fallback';
+  src:local('Arial'),local('Helvetica Neue'),local('Roboto');
+  size-adjust:107%;
+  ascent-override:90%;
+  descent-override:22.4%;
+  line-gap-override:0%;
+}
+@font-face{
+  font-family:'Space Grotesk fallback';
+  src:local('Arial'),local('Helvetica Neue'),local('Roboto');
+  size-adjust:102%;
+  ascent-override:95%;
+  descent-override:24%;
+  line-gap-override:0%;
+}

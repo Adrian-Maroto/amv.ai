@@ -152,7 +152,14 @@ async function rebuild() {
   //    keeps the build correct even if future code embeds a literal script tag.
   const SCRIPT_SENTINEL = '<\\/scr_AMV_ipt';
   const appSafe = app.replace(/<\/script/gi, SCRIPT_SENTINEL);
+  /* The font stylesheet ships as media="print" so it blocks nothing; this is
+     what applies it. It has to live here rather than in an inline onload=
+     attribute, because script-src carries no 'unsafe-inline' and the browser
+     refuses those - the usual recipe would have loaded the font never. Done
+     first and guarded, so a failure here cannot stop the app booting. */
   const launcher =
+    "(function(){try{var f=document.getElementById('amv-fonts');" +
+    "if(f&&f.media!=='all'){if(f.sheet){f.media='all';}else{f.addEventListener('load',function(){f.media='all';},{once:true});}}}catch(e){}})();" +
     "(function(){var c=document.getElementById('amv-app-code');if(!c)return;" +
     "var code=c.textContent.split('<\\\\/scr_AMV_ipt').join('</script');" +
     "function inlineRun(){var e=document.createElement('script');e.textContent=code;document.body.appendChild(e);}" +
