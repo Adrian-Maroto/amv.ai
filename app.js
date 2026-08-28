@@ -22676,6 +22676,32 @@ function _initReveal(){
    chat view become interactive immediately instead of waiting on everything. */
 const _idle = (fn)=>{ try{ (window.requestIdleCallback||function(f){return setTimeout(f,1)})(fn,{timeout:2000}); }catch(e){ setTimeout(fn,1); } };
 try {
+  /* THE ERROR BOUNDARY GOES FIRST, BEFORE ANYTHING CAN FAIL IN FRONT OF IT.
+
+     It used to be armed inside goApp, eleventh in a list of twenty - after
+     five UNGUARDED calls including setTab, which renders the entire current
+     view. So the window in which a boot failure was least likely to be
+     reported was exactly the window in which one was most likely to happen: a
+     throw in any of those five meant no toast, no telemetry, no console
+     handler, and boot simply stopped. Injecting a failure into goApp confirms
+     it - the visitor is left looking at a half-drawn shell that answers
+     nothing, with the product having no idea anything went wrong.
+
+     Worse, goApp only runs once somebody is INSIDE the app. Every error on the
+     landing page - the first thing every visitor sees, and the only thing most
+     of them see - happened outside any boundary at all.
+
+     Armed here instead: it installs two window listeners and depends on
+     nothing, so there is no reason for it to wait its turn. The call in goApp
+     stays and is a no-op, because it guards itself with _errBoundaryArmed and
+     a second arming point costs nothing next to a missing one.
+
+     Note what this does NOT do: it does not wrap those five calls in
+     try/catch. A boot step that fails should fail loudly - see LESSONS 297.
+     The point is that when it does, somebody hears about it. */
+  if(typeof _initErrorBoundary === 'function'){
+    try{ _initErrorBoundary(); }catch(e){ try{ console.error('AMV: the error boundary could not be armed', e); }catch(_){} }
+  }
   // critical: the app must be usable right away
   setupLanding();
   setupApp();

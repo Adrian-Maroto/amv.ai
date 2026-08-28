@@ -96,6 +96,21 @@ Companion docs (do not duplicate them here - read them):
 
   Both rules read `app.js` with comments and strings stripped, so a comment
   explaining a removal is not mistaken for the removal not happening.
+- **Performance is measured, not inferred.** There used to be one perf check, a
+  ceiling on the gzipped size of `index.html`, and the page sat comfortably
+  inside it the whole time it was taking 12.6 SECONDS to paint - a
+  render-blocking third-party stylesheet weighs nothing. Bytes are a proxy;
+  three suites now measure the thing the proxy stands for:
+  `the-page-does-not-wait-on-a-third-party` (first paint with the font host
+  dead), `the-page-arrives-fast-enough-to-use` (paint with EVERY third party
+  dead, plus total blocking time at 4x CPU throttle), and
+  `every-control-is-big-enough-to-hit` (rendered size of every control at
+  390x844). The budgets are tripwires set several times current, not targets -
+  a flaky budget is a budget somebody deletes.
+- **Nothing in the `<head>` may block the first paint.** No stylesheet without
+  `media="print"`, no synchronous external script. The font is switched on by
+  the hash-pinned launcher, NOT by an inline `onload=`, which `script-src`
+  refuses.
 - e2e uses the Playwright harness in `tests/lib/harness.mjs` (`bootApp`).
 - Rebuild (`node build.mjs`) before checking, or the "build fresh" step fails.
 - **Editing `index.html`:** only lines outside the BUILD:CSS and BUILD:JS
