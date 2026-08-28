@@ -9487,6 +9487,56 @@ a.skip-link:focus{ top:var(--sp-3); outline:2px solid var(--tx); outline-offset:
   line-gap-override:0%;
 }
 
+/* ── LAYER A115: EVERY CONTROL ON A PHONE IS BIG ENOUGH TO HIT ─────────────
+   There was already a rule for this, and it was a ROSTER: five class names
+   given min 40x40 inside the phone breakpoint. Every control added since was
+   missed, because a list of names does not know about the next one. Measured
+   at 390x844 across fifteen screens, nine to twenty controls per screen came
+   in under 40px, including twenty-four sidebar tools at 50x34 and a 24x24
+   overflow menu.
+
+   Apple asks for 44x44, Android for 48dp, and WCAG 2.5.8 sets the floor at
+   24x24. 44 is the target here; a thumb is about that wide and the cost of
+   missing is pressing the wrong thing in a product that can spend money.
+
+   Height is raised rather than width where the control is already wide - a
+   full-width row at 28px tall needs to be taller, not wider - so nothing
+   reflows sideways. The tightly-packed chips keep their look and gain the
+   height, because a chip row that grows a few pixels reads the same and a chip
+   that cannot be pressed does not.
+
+   The roster is still a roster. What changed is that it can no longer go stale
+   quietly: tests/e2e/every-control-is-big-enough-to-hit measures the rendered
+   size of every interactive element on every screen at phone width, so the
+   next control that arrives too small fails the gate rather than shipping. */
+@media (max-width:720px){
+  /* Wide but short: give them height, leave the width alone. */
+  .sb-status,.mk-report,.sbl,.sbl-toggle{ min-height:44px!important; }
+  /* Icon and pill controls: both dimensions. */
+  .hidots,.ncb,.sb-tool{ min-width:44px!important;min-height:44px!important; }
+  /* Chip rows - the height comes up, the row still reads as chips. */
+  .cw-chip,.hc-chip,.int-pill,.mk-filter,.mkt-tab{ min-height:44px!important; }
+  /* The icon buttons the OLD roster set to 40x40. Forty already clears WCAG's
+     24x24 floor, so this is not a correctness fix - it is the difference
+     between a control you hit and one you hit most of the time, on the surface
+     where a mis-tap can spend money. */
+  .ib,.atb,.mact,.oc,.set-close{ min-width:44px!important;min-height:44px!important; }
+  /* Chips with a one or two character label come out narrower than they are
+     tall. Square them off rather than letting the label decide how hittable
+     they are. */
+  .cw-chip,.hc-chip,.mk-filter,.mkt-tab,.int-pill{ min-width:44px!important; }
+  /* THE SEND BUTTON, which is the most-pressed control in the product and was
+     the smallest thing left on the screen: an explicit width:36px that came out
+     at 34 on a phone. Everything else on this list is a nice-to-have; this one
+     is the button the whole chat surface exists to have pressed. */
+  #snd{ width:44px!important;height:44px!important; }
+  /* And the general case for anything not named above, so a new control starts
+     out big enough instead of starting out wrong. Height only: a blanket
+     min-width would stretch inline controls that are correctly narrow, and the
+     test named above catches the ones that genuinely need it. */
+  #app button,#app [role="button"],#app a.btn{ min-height:44px; }
+}
+
 </style>
 <!-- BUILD:CSS:END -->
 <script>
