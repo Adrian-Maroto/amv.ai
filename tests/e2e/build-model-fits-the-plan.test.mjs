@@ -15,6 +15,21 @@
    for the chip and for what the agentic runner is actually handed. Fixing one
    would have moved the failure rather than ended it.
 
+   THERE IS ONE NOW. The panel pickers _BUILD_MODEL served were removed and
+   _sectionModelSelect renders what is on screen, writing through
+   _setSectionModel - so _BUILD_MODEL was read from disk on every load, clamped,
+   formatted, and never written by anything. It is gone, and this suite no
+   longer asks about it. Two stores for one preference is how they drift; the
+   right end state is one, not a test that keeps the second alive.
+
+   And the section keys here were wrong. This mapped dev to 'code' and left lab
+   and studio as themselves - but the real keys are 'code', 'debug' and
+   'design', so two of the three surfaces were resolving through the
+   `||'smart'` fallback rather than through their own defaults. It passed,
+   because the clamp works on the fallback too, which is exactly how a check
+   comes to be green about the wrong thing. The real keys are read from the
+   code that renders the pickers.
+
    The picker still offers every tier. Choosing one above the plan runs the best
    one below it instead of failing, which is what the router has always done. */
 import { readFileSync } from 'fs';
@@ -41,29 +56,61 @@ section('The worker’s own plan floors were read');
   ok(engineMinPlan['amv-apex'] === 'elite', 'and Apex is an Elite engine', engineMinPlan['amv-apex']);
 }
 
+/* THE SECTION KEYS THE PRODUCT REALLY USES, read from the calls that render the
+   pickers rather than typed here. A roster typed by hand is how this suite came
+   to test 'lab' and 'studio', which are not section keys at all. */
+const client = readFileSync(join(ROOT, 'app.js'), 'utf8');
+const SECTIONS = [...new Set([...client.matchAll(/_sectionModelSelect\('([a-z]+)'/g)].map(m => m[1]))];
+
+section('The section keys were read from the code, not guessed');
+{
+  ok(SECTIONS.length >= 3, 'every build surface renders a picker', SECTIONS);
+  for (const k of SECTIONS) {
+    ok(new RegExp("_SECTION_DEFAULTS[\\s\\S]{0,200}\\b" + k + "\\s*:").test(client),
+       k + ' has a default of its own, rather than falling through to smart', k);
+  }
+}
+
 section('No plan is handed an engine the server will refuse');
 {
   /* The whole property, over every plan and every build surface. */
-  const SURFACES = ['dev', 'lab', 'studio'];
   const bad = [];
   for (const plan of ['free', 'pro', 'elite', 'ultra']) {
-    const got = await page.evaluate(({ p, surfaces }) => {
+    const got = await page.evaluate(({ p, sections }) => {
       saveStr('amv_plan', p);
       const out = {};
-      surfaces.forEach(s => {
-        out[s] = { build: _buildModelStr(s), section: _sectionModel(s === 'dev' ? 'code' : s) };
-      });
+      sections.forEach(s => { out[s] = _sectionModel(s); });
       return out;
-    }, { p: plan, surfaces: SURFACES });
+    }, { p: plan, sections: SECTIONS });
 
-    for (const s of SURFACES) {
-      for (const [which, engine] of Object.entries(got[s])) {
-        const floor = engineMinPlan[engine];
-        if (floor && RANK[plan] < RANK[floor]) bad.push(`${plan}/${s}/${which} -> ${engine} (needs ${floor})`);
-      }
+    for (const s of SECTIONS) {
+      const engine = got[s];
+      const floor = engineMinPlan[engine];
+      if (floor && RANK[plan] < RANK[floor]) bad.push(`${plan}/${s} -> ${engine} (needs ${floor})`);
     }
   }
   ok(bad.length === 0, 'every default runs on the plan that gets it', bad);
+
+  /* AND WHAT SOMEBODY CHOOSES, not only what they are given. The picker offers
+     every tier; picking one above the plan must run the best one below it
+     rather than sending a request the server refuses. That is the half a
+     defaults-only check cannot see. */
+  const chosen = [];
+  for (const plan of ['free', 'pro', 'elite']) {
+    const got = await page.evaluate(({ p, sections }) => {
+      saveStr('amv_plan', p);
+      const out = {};
+      sections.forEach(s => { _setSectionModel(s, 'smart'); out[s] = _sectionModel(s); });
+      sections.forEach(s => { try { localStorage.removeItem(_scopeKey('amv_secmodel_' + s)); } catch (e) {} });
+      return out;
+    }, { p: plan, sections: SECTIONS });
+    for (const s of SECTIONS) {
+      const floor = engineMinPlan[got[s]];
+      if (floor && RANK[plan] < RANK[floor]) chosen.push(`${plan}/${s} picked apex -> ${got[s]} (needs ${floor})`);
+    }
+  }
+  ok(chosen.length === 0,
+     'and choosing the heaviest engine is clamped rather than refused', chosen);
 }
 
 section('A free account gets the best engine it can actually run');
@@ -72,9 +119,16 @@ section('A free account gets the best engine it can actually run');
      downgrade everybody's work. */
   const r = await page.evaluate(() => {
     saveStr('amv_plan', 'free');
-    return { dev: _buildModelStr('dev'), chip: _sectionModel('code') };
+    /* What a free account gets when it CHOOSES the dearest engine: the best one
+       below it, not a refusal and not the cheapest. The panel-picker half of
+       this used to be asserted through _buildModelStr, which is gone with the
+       picker it served. */
+    _setSectionModel('code', 'smart');
+    const picked = _sectionModel('code');
+    try { localStorage.removeItem(_scopeKey('amv_secmodel_code')); } catch (e) {}
+    return { picked, chip: _sectionModel('code') };
   });
-  ok(r.dev === 'amv-core', 'the panel picker resolves to Core', r.dev);
+  ok(r.picked === 'amv-core', 'choosing Apex on free resolves to Core', r.picked);
   /* THE CHIP SAYS 'auto', AND THAT IS THE POINT NOW.
 
      This asserted the chip resolves to a concrete engine, because it was
@@ -94,9 +148,12 @@ section('An Elite account still gets Apex');
 {
   const r = await page.evaluate(() => {
     saveStr('amv_plan', 'elite');
-    return { dev: _buildModelStr('dev'), chip: _sectionModel('code') };
+    _setSectionModel('code', 'smart');
+    const picked = _sectionModel('code');
+    try { localStorage.removeItem(_scopeKey('amv_secmodel_code')); } catch (e) {}
+    return { picked, chip: _sectionModel('code') };
   });
-  ok(r.dev === 'amv-apex', 'nothing was clamped that did not need to be', r.dev);
+  ok(r.picked === 'amv-apex', 'nothing was clamped that did not need to be', r.picked);
   ok(r.chip === 'auto', 'and the chip is still on auto, which Elite also defaults to', r.chip);
 }
 

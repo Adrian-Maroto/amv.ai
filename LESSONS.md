@@ -6500,3 +6500,52 @@ Related: LESSONS 297, where the deletion that shipped through every gate was
 also a thing no test ever did (arrive at the URL a provider returns to). The
 pattern underneath both is the same. **Coverage is measured over the code, and
 defects live in the journeys.**
+
+
+## 299. The third time, and the reason was already written down
+
+I removed `_autoMaxLabel` as residue. Its own comment said the plan table
+prints the bare number, nothing called it, and the lesson two functions above
+was about not saying the same thing twice in one row. Every one of those is
+true, and the conclusion was still wrong.
+
+The test said so, in words, and I had not read it:
+
+  "_autoMaxLabel stays and is still checked against the server's table further
+   down, because it is the one function that turns the cap into a sentence: the
+   next screen that wants to say '25 scheduled jobs' must reach for it rather
+   than typing the number, which is how the word 'unlimited' got onto the page
+   the first time."
+
+**It has no callers ON PURPOSE.** It is the single approved way to phrase a
+number, kept so the next screen cannot type the literal - and the absence of
+callers, which is the evidence of it working, is exactly what I read as
+permission to delete it. The same suite also evaluates it against the Worker's
+own AUTO_MAX_BY_PLAN, so removing it took a drift check with it.
+
+This is LESSONS 296 for the third time. What is new is the failure mode:
+
+**I checked the source for callers and did not check the TESTS for reasons.**
+`every-entry-point-has-a-door` scans the bundle and the shell. It does not read
+`tests/`, and `tests/` is where this codebase writes down why something exists.
+A grep for the name across the repo - not just the product - would have found
+the paragraph explaining it in under a second.
+
+So the removal rule gains a third question. Before deleting anything, ask:
+
+1. what is downstream of it (296),
+2. would anything actually notice if it stopped existing (297),
+3. **and does any test say why it is there?**
+
+The gate caught it, which is the system working - but only because I ran the
+full gate before claiming the queue was clear. Checking `npm run check:fast`
+and calling it done would have shipped it: the fast gate does not run suites.
+
+One more thing came out of the same fix. The suite guarding the build-model
+defaults mapped `dev` to the section key `code` and left `lab` and `studio` as
+themselves - and the real keys are `code`, `debug` and `design`. So two of the
+three surfaces were resolving through a `||'smart'` fallback rather than
+through their own defaults, and passing, because the clamp works on the
+fallback too. **A check can be green about the wrong subject.** The keys are
+read out of the calls that render the pickers now, rather than typed into the
+test.

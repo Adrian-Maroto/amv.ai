@@ -12942,12 +12942,30 @@ function _autoMaxForPlan(p,seats){
   if(p==='custom') return 25;               // the tier a Custom plan ranks at
   return AUTO_MAX_BY_PLAN[p]||1;            // 0 means "the one free weekly job", not none
 }
-/* _autoMaxLabel was the sentence form of this - "25 scheduled jobs" - and it is
-   gone because the lesson two functions above is exactly about it: the
-   automation row is already labelled "Scheduled & background jobs", so printing
-   the words again in every cell says it twice. The row uses the bare number,
-   deliberately, and nothing ever called the label. Kept as a note rather than
-   as a function nobody may use. */
+/* THE ONE APPROVED WAY TO SAY THE NUMBER IN A SENTENCE.
+
+   I DELETED THIS AS DEAD CODE AND A TEST REVERSED ME, which is the third time
+   in this codebase and the first where the reason was already written down.
+   tests/worker/the-page-cannot-promise-what-the-server-refuses says it plainly:
+
+     "_autoMaxLabel stays and is still checked against the server's table
+      further down, because it is the one function that turns the cap into a
+      sentence: the next screen that wants to say '25 scheduled jobs' must
+      reach for it rather than typing the number, which is how the word
+      'unlimited' got onto the page the first time."
+
+   So it has no callers ON PURPOSE, and the absence of callers is the thing I
+   read as permission to remove it. The comparison row prints the bare number
+   because that row is already labelled; the next screen that needs the words
+   must not type them. That suite also evaluates this function against the
+   Worker's own AUTO_MAX_BY_PLAN, so the wording and the server's table cannot
+   drift apart.
+
+   Do not remove it for having no callers. That is the point of it. */
+function _autoMaxLabel(p){
+  const n=_autoMaxForPlan(p);
+  return n===0 ? '-' : n+' scheduled job'+(n===1?'':'s');
+}
 
 /* ============================================================
    CUSTOM PLAN - pay-for-what-you-need, guaranteed profitable.
