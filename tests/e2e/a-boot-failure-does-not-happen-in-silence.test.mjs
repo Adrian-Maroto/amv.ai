@@ -34,16 +34,33 @@ const bundle = readFileSync(join(ROOT, 'app.js'), 'utf8');
 
 section('It is armed before anything that could fail in front of it');
 {
-  /* The boot block, read as an ordering rule. The behaviour below proves it is
-     armed; this proves it is armed FIRST, which is the part that decays
-     silently when somebody adds a line above it. */
-  const boot = bundle.slice(bundle.indexOf('// critical: the app must be usable right away') - 1500,
-                            bundle.indexOf('// critical: the app must be usable right away') + 400);
-  ok(boot.length > 500, 'the boot block was found', boot.length);
-  const armAt = boot.indexOf('_initErrorBoundary');
-  const landAt = boot.indexOf('setupLanding()');
-  ok(armAt > 0 && landAt > 0, 'both the arming and the first real step are in it', { armAt, landAt });
-  ok(armAt < landAt, 'and the boundary is armed before the first one', { armAt, landAt });
+  /* ANCHORED ON THE CALL, NOT ON THE COMMENT ABOVE IT.
+
+     The first version of this sliced a window around
+     `// critical: the app must be usable right away`, and the meta-suite
+     a-check-anchored-on-prose-is-not-a-check failed it - correctly, and while
+     I was quoting that very suite in the commit message. Editing or deleting
+     a comment would have silently moved the window, and an ordering check that
+     measures the wrong region reports whatever it happens to find.
+
+     `setupLanding();` is the call, with the semicolon, and it appears exactly
+     once - the definition reads `function setupLanding(`. That is a landmark
+     that cannot be reworded. */
+  const landAt = bundle.indexOf('setupLanding();');
+  ok(landAt > 0, 'the first real boot step was found in the bundle', landAt);
+
+  /* Look back a bounded distance for the arming. Bounded, because "somewhere
+     earlier in a 1.3MB file" would also be satisfied by the function's own
+     definition, which proves nothing about boot order. */
+  const before = bundle.slice(Math.max(0, landAt - 1200), landAt);
+  ok(/_initErrorBoundary\s*\(/.test(before),
+     'and the boundary is armed in the lines immediately before it', before.slice(-160));
+
+  /* And it really is the boot block, not some other place those two happen to
+     sit near each other. */
+  const after = bundle.slice(landAt, landAt + 400);
+  ok(/setupApp\s*\(/.test(after) && /setupKeyboard\s*\(/.test(after),
+     'the region really is the boot sequence', after.slice(0, 80));
 }
 
 section('A visitor who never enters the app is still covered');

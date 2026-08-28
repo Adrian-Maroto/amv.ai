@@ -149,15 +149,25 @@ section('A reload brings the session back from nothing this page can read');
     const real = window.fetch;
     window.fetch = async (u, o) => {
       if (String(u).includes('/auth/refresh')) {
-        /* SLOW ON PURPOSE, and the delay is load-bearing.
+        /* THE STATE IS CAPTURED HERE, AT THE MOMENT THE REFRESH IS ASKED FOR,
+           and that is what makes this deterministic.
 
-           Without it the refresh answered so fast that a token was already in
-           hand by the time the assertion below ran - so "the session reads as
-           live before any token has been minted" was testing nothing, and
-           removing the flag it exists for left the suite green. A real network
-           round trip is not instant; a stub that is instant hides the entire
-           window this flag was written for. */
-        await new Promise(r => setTimeout(r, 900));
+           This used to sleep 900ms and let the test read the state from
+           outside, racing the answer. It worked until the page got faster -
+           unblocking the fonts moved `load` earlier, the refresh resolved
+           before the assertion ran, and the negative control failed for a
+           reason that had nothing to do with what it was testing. Re-tuning
+           the delay would have been the same bug with a bigger number.
+
+           The gap this flag exists for is exactly the interval between "the
+           refresh has been asked for" and "the refresh has answered". Reading
+           it from inside that interval cannot race anything. */
+        window.__duringRestore = {
+          hasSession: !!(window.AMV_API && AMV_API.hasSession),
+          token: !!(window.AMV_API && AMV_API.token),
+          restoring: !!(window.AMV_API && AMV_API._restoring),
+        };
+        await new Promise(r => setTimeout(r, 300));
         /* What the Worker returns when it recognises the cookie. No refresh
            token in the body: that is the point of cookie mode, and a stub that
            handed one back would let a broken client pass by falling into the
@@ -176,11 +186,15 @@ section('A reload brings the session back from nothing this page can read');
   /* Read as early as possible. The question is whether a screen drawn in the
      first moments of the page would render signed out - so waiting first would
      miss the failure entirely. */
-  const early = await page.evaluate(() => ({
-    hasSession: !!(window.AMV_API && AMV_API.hasSession),
-    cookieMode: !!(window.AMV_API && AMV_API.cookieAuth),
-    token: !!(window.AMV_API && AMV_API.token),
-  }));
+  /* Read what the page saw of ITSELF while the restore was in flight, rather
+     than what the test could catch from outside afterwards. */
+  const early = await page.evaluate(async () => {
+    const stop = Date.now() + 15000;
+    while (Date.now() < stop && !window.__duringRestore) await new Promise(r => setTimeout(r, 20));
+    return Object.assign({ cookieMode: !!(window.AMV_API && AMV_API.cookieAuth) },
+                         window.__duringRestore || { missing: true });
+  });
+  ok(!early.missing, 'the page really did ask for a refresh on its own', early);
   ok(early.cookieMode, 'the page comes back knowing it is in cookie mode', early);
   /* Stated, so the assertion after it cannot pass for the wrong reason. If a
      token were already in hand, "the session reads as live" would be true
@@ -189,7 +203,8 @@ section('A reload brings the session back from nothing this page can read');
   ok(early.token === false,
      'and no token has been minted yet, so the next line is really about the gap', early);
   ok(early.hasSession,
-     'the session reads as live immediately, before any token has been minted', early);
+     'the session reads as live in that gap, before any token exists', early);
+  ok(early.restoring, 'because the restore flag is what is answering', early);
 
   const back = await page.evaluate(async () => {
     const stop = Date.now() + 20000;
