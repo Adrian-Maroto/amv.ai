@@ -162,7 +162,17 @@ section('A reload brings the session back from nothing this page can read');
            The gap this flag exists for is exactly the interval between "the
            refresh has been asked for" and "the refresh has answered". Reading
            it from inside that interval cannot race anything. */
-        window.__duringRestore = {
+        /* THE FIRST REFRESH ONLY. This assigned unconditionally, so any later
+           /auth/refresh - a retry, a scheduled renewal - overwrote the capture
+           with state from AFTER the restore had finished: a token in hand and
+           the flag already cleared. That is precisely the state the next three
+           assertions exist to rule out, so the suite failed saying the gap it
+           was measuring did not exist, having measured the wrong moment.
+
+           It only showed up under parallel load, because that is when a second
+           refresh lands inside the window. A capture that can be overwritten is
+           not a capture of a moment. */
+        if (!window.__duringRestore) window.__duringRestore = {
           hasSession: !!(window.AMV_API && AMV_API.hasSession),
           token: !!(window.AMV_API && AMV_API.token),
           restoring: !!(window.AMV_API && AMV_API._restoring),
