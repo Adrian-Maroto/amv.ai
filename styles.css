@@ -9389,3 +9389,32 @@ a.skip-link:focus{ top:var(--sp-3); outline:2px solid var(--tx); outline-offset:
      test named above catches the ones that genuinely need it. */
   #app button,#app [role="button"],#app a.btn{ min-height:44px; }
 }
+
+/* ── LAYER A116: A PHONE THREAD IS MESSAGES, NOT BUTTONS ───────────────────
+   Every turn carried its action bar permanently, and once those buttons were
+   sized for a thumb the bar came to 55px against a 46px bubble - so a one-word
+   reply occupied 131px, most of it controls nobody had asked for. That is what
+   made the thread look stretched and unfinished on a phone.
+
+   The bar is still there for the last turn, which is the one anybody acts on,
+   and any other message reveals its own when tapped. Nothing was removed.
+
+   Desktop keeps the bar under every turn: there is a pointer there, the buttons
+   are small, and the space is not scarce. */
+@media (max-width:720px){
+  #cm .mr .macts{ display:none; }
+  #cm .mr:last-child .macts,
+  #cm .mr.acts-open .macts{ display:flex; }
+  /* The tap that reveals it should feel like it belongs to the message. */
+  #cm .mr{ cursor:default; }
+  #cm .mr.acts-open .mb{ box-shadow:0 0 0 1px var(--bdl); }
+  /* .mwrap reserves 18px of bottom padding to sit the action bar in. With the
+     bar hidden that padding is simply dead space, and it was doubling up with
+     the row margin to put 36px between every turn - which is what read as a
+     thread that had been pulled apart. Reclaimed only where the bar is
+     actually hidden, so the turn that still shows one keeps its room. */
+  #cm .mr:not(:last-child):not(.acts-open) .mwrap{ padding-bottom:0!important; }
+  /* And with the bar gone from most turns, the gap between them can come down
+     to something that reads as a conversation rather than a list of cards. */
+  #cm > .mr{ margin-bottom:18px!important; }
+}

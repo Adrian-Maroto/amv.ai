@@ -7401,6 +7401,40 @@ function renderChatMsgs() {
   (typeof _nextStepHTML==='function'? _nextStepHTML(msgs) : '');
 
   // Wire it. Both actions do real work; the dismissal is permanent.
+  /* ON A PHONE, THE ACTION BAR IS BIGGER THAN THE MESSAGE.
+
+     Every turn carries edit/copy/like/speak/react underneath it, and once the
+     buttons were sized for a thumb (44px, as they must be) the bar measured
+     55px against a 46px bubble. A one-word "Thanks" became 131px of screen,
+     most of it buttons nobody had asked for - which is what made the thread
+     read as stretched out and unfinished on a phone.
+
+     Desktop is unaffected: there is a pointer there, the bar is small, and it
+     sits quietly under each turn.
+
+     On a narrow screen the bar shows for the LAST turn - the one anybody
+     actually acts on - and any other message reveals its own when tapped.
+     Nothing is removed and nothing needs discovering: the gesture is tapping
+     the thing you want to act on, which is what a phone user tries first.
+
+     Bound once. renderChatMsgs runs on every keystroke of a streaming reply,
+     and a listener added each time would stack up hundreds deep. */
+  if(!cm._actsTapWired){
+    cm._actsTapWired = 1;
+    cm.addEventListener('click', (e)=>{
+      try{
+        if(!window.matchMedia || !window.matchMedia('(max-width:720px)').matches) return;
+        /* A press on a control is that control's business, not a request to
+           reveal the bar it lives in. */
+        if(e.target.closest('.macts, button, a, input, textarea, select')) return;
+        const row = e.target.closest('.mr'); if(!row) return;
+        const wasOpen = row.classList.contains('acts-open');
+        cm.querySelectorAll('.mr.acts-open').forEach(r=>r.classList.remove('acts-open'));
+        if(!wasOpen) row.classList.add('acts-open');
+      }catch(_){}
+    });
+  }
+
   cm.querySelectorAll('[data-next-go]').forEach(b=>b.addEventListener('click',()=>{
     const kind=b.dataset.nextGo;
     try{
