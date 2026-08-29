@@ -33,9 +33,9 @@ function _cwDefaultJobs(){ return [
     sample:['OVERNIGHT: three things moved, one matters to what you follow.','Chip index down 2.1% after an earnings miss in Asia. The miss was guidance, not revenue.','Energy flat despite the headline - the market had already priced it.','ON YOUR LIST: the two names you watch closed 0.4% and 1.8% down, in line with the sector rather than company news.','Information, not financial advice.'],
     prompt:'Search the live web now and report what happened overnight in news and markets relevant to what the user follows. Give the specific moves with numbers and the reason attributed to each, distinguishing a real cause from a headline the market had already priced. Cover the user\u2019s named interests explicitly, and say when nothing relevant happened rather than padding. You must NOT give financial advice: never tell the user to buy, sell, hold or wait, and never predict a price. End by stating this is information, not financial advice.' },
   { id:'inbox_digest', cat:'Inbox & calendar', icon:'\uD83D\uDCEC', title:'Daily inbox digest', needs:'Email', on:false,
-    desc:'Each evening, the few emails that actually need you - summarised, with a ready-to-send reply drafted for each. Nothing goes out without you pressing send.',
+    desc:'Each evening, the few emails that actually need you - summarized, with a ready-to-send reply drafted for each. Nothing goes out without you pressing send.',
     sample:['6 needed you today. 58 did not.','Client asking to move Thursday to Friday - reply drafted, says yes and proposes 2pm.','Invoice query from accounts - reply drafted, needs the PO number you have not given me.','Recruiter, second follow-up - drafted a short no, since you have not replied twice.','Every draft is ready to send and has NOT been sent.'],
-    prompt:'Summarise the user\u2019s recent mail into the messages that genuinely need them and the count of those that do not. For each that needs action: who, what they want, and what is at stake if it waits. Draft a ready-to-send reply for each, in the user\u2019s own register. Where a reply needs information only the user has, say exactly what is missing rather than inventing it. State plainly on every draft that it is ready and has NOT been sent. Never describe an email you cannot actually see.' },
+    prompt:'Summarize the user\u2019s recent mail into the messages that genuinely need them and the count of those that do not. For each that needs action: who, what they want, and what is at stake if it waits. Draft a ready-to-send reply for each, in the user\u2019s own register. Where a reply needs information only the user has, say exactly what is missing rather than inventing it. State plainly on every draft that it is ready and has NOT been sent. Never describe an email you cannot actually see.' },
   { id:'competitor_watch', every:'weekly', cat:'Growing a business', icon:'\uD83D\uDD0D', title:'Competitor & industry watch', needs:'Email, Web research', on:false,
     desc:'Watches the companies you compete with and tells you what actually changed - pricing, launches, hiring, positioning - and what it means for you, not just that it happened.',
     sample:['2 real changes this week out of 40 things published.','Competitor A cut their entry tier from 29 to 19 and removed the seat limit. That is the first price move in 14 months.','WHAT IT MEANS: your 25 tier is now the expensive middle option rather than the cheap one.','Competitor B is hiring 3 enterprise salespeople. They are moving upmarket, away from your customers.','Everything else was marketing.'],
@@ -59,7 +59,7 @@ function _cwDefaultJobs(){ return [
   { id:'opportunity_radar', cat:'Work & career', icon:'\uD83C\uDFAF', title:'Opportunity radar', needs:'Email, Web research', on:false,
     desc:'Every morning AMV hunts for things you could actually get - scholarships, grants, internships, jobs, competitions, fellowships, discounts and rebates that match your profile - and emails you only the ones you qualify for, with the deadline and the direct link.',
     sample:['6 open now that you actually qualify for. 2 close inside a fortnight.','Regional innovation grant - up to 5,000, closes in 11 days, needs a one-page plan you already have most of.','Industry fellowship - paid, closes in 6 weeks, needs two references. Ask this week, not that week.','Discarded 23: wrong region, wrong stage, or already closed. No point showing you those.'],
-    asks:{ q:'What should I match against?', ph:'Your age, where you live, what you study or do, and the kinds of things you want - e.g. "17, Manchester UK, studying chemistry and maths, want scholarships and summer research"' },
+    asks:{ q:'What should I match against?', ph:'Your age, where you live, what you study or do, and the kinds of things you want - e.g. "17, in the US, studying chemistry and math, want scholarships and summer research"' },
     prompt:'Search the live web for opportunities matching the user profile and interests: scholarships, grants, internships, jobs, competitions, fellowships, rebates and tax credits. Only include ones open NOW with a future deadline. For each: name, what it gives, eligibility, deadline, direct application link. Exclude anything they clearly do not qualify for. If you find nothing new, say so plainly.' },
 
   { id:'change_digest', cat:'Watching the world', icon:'\uD83D\uDD14', title:'Did anything change today?', needs:'Web research', on:false,
@@ -81,7 +81,7 @@ function _cwDefaultJobs(){ return [
   { id:'renewal_watchdog', cat:'Money', icon:'\uD83D\uDCC4', title:'Contract & renewal watchdog', needs:'Email', on:false,
     desc:'Finds subscriptions, insurance, leases, warranties, domains and memberships heading for renewal, warns you BEFORE the auto-charge, and prepares the cancel-or-renegotiate message.',
     sample:['3 renewals inside 30 days. One of them is bad value.','Insurance auto-renews on the 22nd at 840 - up from 690 last year, for the same cover.','Domain renews on the 30th, 14. Fine, leave it.','Gym renews on the 2nd, 45/month. You have been twice since November.','Cancellation email for the gym and a renegotiation email for the insurance, both drafted and NOT sent.'],
-    prompt:'Find upcoming renewals, expirations and auto-charges in the user mail: subscriptions, insurance, leases, warranties, domains, memberships, licences. For each: what it is, the renewal date, the amount, and whether it auto-renews. Flag anything renewing within 30 days first. Draft a cancellation or renegotiation email for anything that looks poor value.' },
+    prompt:'Find upcoming renewals, expirations and auto-charges in the user mail: subscriptions, insurance, leases, warranties, domains, memberships, licenses. For each: what it is, the renewal date, the amount, and whether it auto-renews. Flag anything renewing within 30 days first. Draft a cancellation or renegotiation email for anything that looks poor value.' },
 
   { id:'followups', cat:'Inbox & calendar', icon:'\uD83E\uDD1D', title:'Relationship follow-ups', needs:'Email', on:false,
     desc:'Tells you who is waiting on you and who you have gone quiet on - clients, recruiters, mentors, friends - with the context of your last exchange and a ready-to-send message.',
@@ -122,8 +122,8 @@ function _cwDefaultJobs(){ return [
     prompt:'From order and shipping confirmation emails, list every package in transit: what it is, carrier, tracking number, expected date, and current status. Flag anything late or never shipped. Only report packages you have evidence for.' },
 
   { id:'life_admin', cat:'Home & life', icon:'\uD83D\uDDD3\uFE0F', title:'Life admin & expiry reminders', needs:'Email, Calendar', on:false,
-    desc:'Passport, licence, insurance, registration, medical checks, home and car maintenance - AMV tracks the dates and reminds you far enough ahead that renewing is easy.',
-    prompt:'Track expiries and recurring life admin: passport, licence, insurance, vehicle registration and inspection, medical and dental checks, home and car maintenance. Report what is due in the next 90 days, how long renewal usually takes, and what to do first.' },
+    desc:'Passport, license, insurance, registration, medical checks, home and car maintenance - AMV tracks the dates and reminds you far enough ahead that renewing is easy.',
+    prompt:'Track expiries and recurring life admin: passport, license, insurance, vehicle registration and inspection, medical and dental checks, home and car maintenance. Report what is due in the next 90 days, how long renewal usually takes, and what to do first.' },
 
   { id:'vip_alerts', cat:'Inbox & calendar', icon:'\uD83D\uDEA8', title:'Important email alerts', needs:'Email', on:false,
     desc:'Not a daily digest - AMV pings you the moment something genuinely urgent lands: your boss, a client, an offer, an interview invite, a deadline or anything money-related.',
@@ -135,7 +135,7 @@ function _cwDefaultJobs(){ return [
 
   { id:'calendar_brief', cat:'Inbox & calendar', icon:'\uD83C\uDF05', title:'Morning calendar briefing', needs:'Calendar', on:false,
     desc:'Your day in one message before it starts: every meeting, travel time between them, what needs prep, where the free blocks are, and the one thing you should protect time for.',
-    prompt:'Summarise today from the calendar: each event with time and attendees, realistic travel or transition time between them, which need preparation, where the genuine free blocks are, and the single most important thing to protect time for. Flag any day that is overbooked.' },
+    prompt:'Summarize today from the calendar: each event with time and attendees, realistic travel or transition time between them, which need preparation, where the genuine free blocks are, and the single most important thing to protect time for. Flag any day that is overbooked.' },
 
   { id:'conflict_watch', cat:'Inbox & calendar', icon:'\u26A0\uFE0F', title:'Scheduling conflict alerts', needs:'Calendar', on:false,
     desc:'Catches double-bookings, meetings with no travel time between them, and things scheduled outside your working hours - before they become an awkward cancellation.',
@@ -195,8 +195,8 @@ function _cwDefaultJobs(){ return [
     prompt:'Project each account balance forward against scheduled payments and known recurring debits. Warn when a projected balance falls below the user floor, with how many days remain and the exact shortfall. Never state a balance you cannot read.' },
 
   { id:'credit_watch', cat:'Money', icon:'\uD83D\uDCC9', title:'Credit score & report changes', needs:'Bank connection', on:false,
-    desc:'Tells you when your score moves and what caused it - a new account, a hard search, changed utilisation - and flags anything on your report you did not do.',
-    prompt:'Report changes to the credit score and report since the last check: the movement, the likely cause, and anything unrecognised such as an unknown account or hard search. Explain what would raise it most. If the score cannot be read, say so plainly.' },
+    desc:'Tells you when your score moves and what caused it - a new account, a hard search, changed utilization - and flags anything on your report you did not do.',
+    prompt:'Report changes to the credit score and report since the last check: the movement, the likely cause, and anything unrecognized such as an unknown account or hard search. Explain what would raise it most. If the score cannot be read, say so plainly.' },
 
   { id:'budget_trend', cat:'Money', icon:'\uD83D\uDCCA', title:'Budget pace & spending review', needs:'Bank connection', on:false,
     desc:'Not a report after the damage - it tells you mid-month that you are trending over budget while you can still do something, and where the overspend is coming from.',
@@ -205,7 +205,7 @@ function _cwDefaultJobs(){ return [
 
   { id:'target_buy', cat:'Money', icon:'\uD83D\uDECD\uFE0F', title:'Buy at my target price', needs:'Web research, Web automation', on:false, spend:true,
     desc:'Watches an item and buys it the moment it hits your target. Small purchases go through instantly with no interruption; anything above your auto-buy limit takes one tap. Your monthly cap can never be crossed.',
-    prompt:'Monitor the specified item until it reaches the user target price. When it does, read the FINAL total including shipping, tax and any pre-ticked extras, and remove anything that was added without being asked for (warranties, protection plans, insurance). Check the total against the user spending limits: below the auto-buy limit, complete the purchase; above it, request one approval. Never exceed the per-purchase or monthly cap, never substitute a different item, size or colour, and always report the exact final total and what was bought.' },
+    prompt:'Monitor the specified item until it reaches the user target price. When it does, read the FINAL total including shipping, tax and any pre-ticked extras, and remove anything that was added without being asked for (warranties, protection plans, insurance). Check the total against the user spending limits: below the auto-buy limit, complete the purchase; above it, request one approval. Never exceed the per-purchase or monthly cap, never substitute a different item, size or color, and always report the exact final total and what was bought.' },
 
   /* ---- More standing work. Each one is here because somebody would genuinely
      pay to stop doing it by hand, and each carries the concrete instruction the
@@ -222,7 +222,7 @@ function _cwDefaultJobs(){ return [
     prompt:'Identify the user’s recurring bills and the amount paid for each. Research the current new-customer and retention pricing for the same service and comparable providers. For each bill where the user is paying materially above market: state what they pay, what is available now, the annual saving, and write the exact script to use with retentions, including the competing offer to cite. Only include bills you have real evidence of.' },
 
   { id:'tax_catch', cat:'Money', icon:'🧾', title:'Deductible expense catcher', needs:'Email', on:false,
-    desc:'Deductions get lost because nobody tags them in January. AMV watches receipts all year, files the ones that count, and hands you an organised list instead of a shoebox in April.',
+    desc:'Deductions get lost because nobody tags them in January. AMV watches receipts all year, files the ones that count, and hands you an organized list instead of a shoebox in April.',
     asks:{ q:'What is your tax situation?', ph:'Country, whether employed or self-employed, and anything relevant - e.g. "UK, self-employed, work from home two days a week"' },
     prompt:'Review receipts and invoices since the last run. Identify expenses that are plausibly deductible for the user’s stated situation: work equipment, software, professional subscriptions, mileage, home office, education, charitable giving. For each: date, merchant, amount, and which category it likely falls under. Keep a running annual total. State clearly that this is organisation, not tax advice, and never assert an expense is deductible when the rules depend on facts you do not have.' },
 
@@ -237,7 +237,7 @@ function _cwDefaultJobs(){ return [
 
   { id:'salary_bench', every:'weekly', cat:'Work & career', icon:'📈', title:'Salary benchmark & timing', needs:'Web research', on:false,
     desc:'Tells you what your role pays in your market right now, whether you have fallen behind, and when the evidence is strong enough to ask - with the numbers to bring.',
-    asks:{ q:'What is your role?', ph:'Job title, level, industry and location - e.g. "backend engineer, senior, fintech, Manchester UK"' },
+    asks:{ q:'What is your role?', ph:'Job title, level, industry and location - e.g. "backend engineer, senior, fintech, Chicago"' },
     prompt:'Research current pay for the user’s role, level, industry and location using real posted ranges and published surveys. Report the range, the midpoint, where the user sits against it, and how it has moved since the last check. If they are below market, assemble the specific evidence to use in a conversation. Cite where each figure came from and its date. Never invent a figure.' },
 
   { id:'recruiter_triage', cat:'Work & career', icon:'🎯', title:'Recruiter inbound triage', needs:'Email, Web research', on:false,
@@ -284,7 +284,7 @@ function _cwDefaultJobs(){ return [
 
   { id:'ad_waste', cat:'Growing a business', icon:'🔥', title:'Ad spend waste check', needs:'Email', on:false,
     desc:'Campaigns keep spending long after they stop working. AMV reads your own reporting mail and tells you what to switch off and what to move the money to.',
-    prompt:'From advertising reports and billing emails, summarise spend and results per campaign since the last run. Identify what is spending without returning, what is improving, and where cost per result has risen. Recommend specific pauses or budget shifts with the money involved. Use only figures present in the reports - never estimate performance.' },
+    prompt:'From advertising reports and billing emails, summarize spend and results per campaign since the last run. Identify what is spending without returning, what is improving, and where cost per result has risen. Recommend specific pauses or budget shifts with the money involved. Use only figures present in the reports - never estimate performance.' },
 
   { id:'regulation_watch', every:'weekly', cat:'Watching the world', icon:'⚖️', title:'Rule & regulation change watch', needs:'Web research', on:false,
     desc:'A rule change in your industry, your visa category, your profession or your tax situation is expensive to learn late. AMV watches the sources that publish them and translates what it means for you.',
@@ -353,12 +353,12 @@ function _cwDefaultJobs(){ return [
   { id:'flight_watch', cat:'Home & life', icon:'✈️', title:'Flight price watch for a real trip', needs:'Web research', on:false,
     desc:'Watches your actual route and dates, learns what a normal fare looks like, and tells you when a price is genuinely good - including when to rebook a refundable fare cheaper.',
     sample:['Your route, your dates. Watching for 3 weeks now.','Best right now: 214 return, direct. The usual since watching began has been 260-290.','This is the lowest it has been. Not by a little - by 46.','Flying out a day earlier saves another 31, if that works.','You already hold a refundable fare at 268. Rebooking now saves 54.'],
-    asks:{ q:'Which trip?', ph:'Route and dates - e.g. "Manchester to Lisbon, leaving 14-16 June, back 21-23 June"' },
+    asks:{ q:'Which trip?', ph:'Route and dates - e.g. "Chicago to Lisbon, leaving 14-16 June, back 21-23 June"' },
     prompt:'Track fares for the user’s specified routes and date ranges. Report the current best fare, the airline, how it compares to what has been seen since watching began, and whether to book now or wait. Include nearby dates or airports when they are materially cheaper. If the user already holds a refundable booking and the fare has dropped, state the rebooking saving explicitly. Never present a fare you have not actually seen.' },
 
-  { id:'move_watch', every:'weekly', cat:'Home & life', icon:'📍', title:'Rent, property and neighbourhood watch', needs:'Web research', on:false,
+  { id:'move_watch', every:'weekly', cat:'Home & life', icon:'📍', title:'Rent, property and neighborhood watch', needs:'Web research', on:false,
     desc:'Watches what places like yours actually rent and sell for, and what is happening where you live or want to live - so a lease renewal or an offer is a decision made with numbers.',
-    asks:{ q:'Which area and what kind of place?', ph:'e.g. "2-bed flat, Chorlton Manchester, renting"' },
+    asks:{ q:'Which area and what kind of place?', ph:'e.g. "2-bed apartment, your neighborhood, renting"' },
     prompt:'Track the local market for the user’s stated area and property type: current asking and achieved prices or rents for comparable places, how they have moved, time on market, and relevant local developments such as transport, planning or school changes. Report what it means for a renewal, a purchase or a sale decision. Use real listings and cite the date checked.' },
 
   { id:'gift_radar', cat:'Home & life', icon:'🎁', title:'Birthdays, occasions and gift ideas', needs:'Calendar, Email, Web research', on:false,
@@ -426,7 +426,7 @@ function _cwDefaultJobs(){ return [
 
   { id:'evening_brief_student', every:'daily', cat:'Learning', icon:'🌙', title:'Evening wrap-up and tomorrow', needs:'Web research', on:false,
     desc:'At the end of the day: what got done, what slipped, what tomorrow actually looks like, and the one thing worth doing tonight if you only do one thing.',
-    sample:['DONE TODAY: chemistry questions, history reading.','SLIPPED: the maths problem set. It is now due in 2 days and untouched.','TOMORROW: double free in the afternoon - that is enough for the whole maths set.','IF YOU DO ONE THING TONIGHT: read the essay question so it is in your head. 5 minutes.'],
+    sample:['DONE TODAY: chemistry questions, history reading.','SLIPPED: the math problem set. It is now due in 2 days and untouched.','TOMORROW: double free in the afternoon - that is enough for the whole math set.','IF YOU DO ONE THING TONIGHT: read the essay question so it is in your head. 5 minutes.'],
     asks:{ q:'What does your week look like?', ph:'What is due and when, your timetable, and anything regular that eats your evenings' },
     prompt:'Close out the user’s day: what they finished, what slipped and what that now means for its deadline, what tomorrow looks like, and the single highest-value thing they could do tonight - including "nothing, go to bed" when that is the honest answer. Be brief and specific. Never guilt them about what slipped; state the consequence and the fix.' },
 
@@ -446,7 +446,7 @@ function _cwDefaultJobs(){ return [
     desc:'Turns a long chapter, paper or set text into the argument, the evidence and the bits that will actually be examined - plus the questions to test whether you understood it.',
     sample:['THE ARGUMENT: the author claims the revolution was economic before it was political.','THE EVIDENCE THEY USE: grain prices, tax records, three contemporary letters.','THE WEAK POINT: the letters are all from one city, which they acknowledge in a footnote and then ignore.','LIKELY EXAM ANGLE: "to what extent" questions want you to weigh this against the political reading.','5 questions to check you actually understood it - answers below, do not look first.'],
     asks:{ q:'What do you have to read?', ph:'Paste the text, or give the title, author and chapter - plus the question you are reading it for' },
-    prompt:'Take a long text the user has to read and give them: the central argument in one sentence, the evidence used to support it, the weakest part of that argument, and which aspects are most likely to be examined and how. Then give comprehension questions with answers held separately, so they can test themselves honestly. This is a companion to the reading, not a replacement for it - say so, and do not summarise so completely that reading it becomes pointless.' },
+    prompt:'Take a long text the user has to read and give them: the central argument in one sentence, the evidence used to support it, the weakest part of that argument, and which aspects are most likely to be examined and how. Then give comprehension questions with answers held separately, so they can test themselves honestly. This is a companion to the reading, not a replacement for it - say so, and do not summarize so completely that reading it becomes pointless.' },
 
   { id:'life_admin_student', every:'weekly', cat:'Home & life', icon:'📎', title:'The boring admin nobody reminds you about', needs:'Web research', on:false,
     desc:'The forms, renewals, sign-ups and appointments that have no deadline until suddenly they do - tracked, with the one that matters this week at the top.',
@@ -467,10 +467,10 @@ function _cwDefaultJobs(){ return [
     prompt:'Report what the user spent over the period from what they have recorded: the total, the largest category with the actual number, and what regular payments are due next. State plainly whether what remains covers what is coming. Give the numbers and the arithmetic without moralising about the spending. Never estimate a figure you have not been given - say what is missing instead.' },
 
   { id:'opportunity_student', every:'weekly', cat:'Learning', icon:'🎯', title:'Things I could actually get', needs:'Web research', on:false,
-    desc:'Hunts for scholarships, competitions, summer programmes, internships and free courses you genuinely qualify for - with the deadline and the direct link, and nothing you cannot enter.',
+    desc:'Hunts for scholarships, competitions, summer programs, internships and free courses you genuinely qualify for - with the deadline and the direct link, and nothing you cannot enter.',
     sample:['4 open now that you qualify for. 2 close within a month.','Regional essay competition - 500 prize, closes in 18 days, needs 1500 words on a set theme. You have written on this before.','Summer research programme - free, closes in 5 weeks, needs a teacher reference. Ask now.','Dropped 11 others: age, region or grade requirements you do not meet. No point showing you those.'],
     asks:{ q:'Who are you, for eligibility?', ph:'Age, country and region, year group or level, what you study, and the kinds of things you want' },
-    prompt:'Search the live web for opportunities the user genuinely qualifies for given their age, location, year group and interests: scholarships, competitions, summer programmes, internships, bursaries and free courses. Only include ones open now with a future deadline. For each: what it is, what it gives, what it requires, the deadline, and the direct link. Explicitly say how many you excluded and why, so they trust that the list is filtered rather than padded. Flag anything needing a reference or a document early, since those depend on other people.' },
+    prompt:'Search the live web for opportunities the user genuinely qualifies for given their age, location, year group and interests: scholarships, competitions, summer programs, internships, bursaries and free courses. Only include ones open now with a future deadline. For each: what it is, what it gives, what it requires, the deadline, and the direct link. Explicitly say how many you excluded and why, so they trust that the list is filtered rather than padded. Flag anything needing a reference or a document early, since those depend on other people.' },
 
   { id:'inbox_cleanup', every:'daily', cat:'Inbox & calendar', icon:'🧹', title:'Clear the noise out of my inbox', needs:'Email', on:false,
     desc:'Separates the handful of messages that actually need you from the pile that does not, drafts the replies, and never sends anything without you.',
@@ -535,26 +535,26 @@ function _cwDefaultJobs(){ return [
 
   { id:'weather_day', every:'daily', cat:'Home & life', icon:'🌤️', title:'The forecast, and what to do about it', needs:'Web research', on:false,
     desc:'Every morning, the day where you actually are - and the one thing it changes. Not a temperature you could have read anywhere, but whether to leave earlier, take a coat, or move the thing you had planned outside.',
-    asks:{ q:'Where are you, and what does weather change for you?', ph:'Town or postcode, then what it affects - e.g. “Manchester, I cycle to work and my kids walk to school”' },
+    asks:{ q:'Where are you, and what does weather change for you?', ph:'Your town or ZIP code, then what it affects - e.g. “your city, I cycle to work and my kids walk to school”' },
     sample:['Rain from 07:40 to about 09:15, then dry all day.','THAT MEANS: leave at 07:20 and you miss it, or leave at 09:30 and you miss it. 08:00 is the worst possible time.','14C, feels like 11 in the wind. Coat, not a jacket.','Tomorrow is the dry day this week, if you are moving anything outdoors.'],
     prompt:'Search the live web for today’s forecast for the user’s stated location, from a real forecast source you name. Do not just recite numbers: lead with the ONE thing the weather changes for them today, given what they told you it affects. Give the timing of any rain, snow or wind precisely enough to plan around - the hour it starts and the hour it stops - because a day that is “60% rain” is useless and “wet until nine, then dry” is a decision. Say what to wear only when it is not obvious. Mention tomorrow only if it is materially different and something could be moved to it. If the forecast source is uncertain or the models disagree, say so plainly rather than picking one. Never invent a temperature or a time.' },
 
   { id:'fuel_watch', every:'weekly', cat:'Money', icon:'⛽', title:'Where fuel is cheapest near me', needs:'Web research', on:false,
     desc:'Once a week, the real price at the stations you would actually drive to - what it costs to fill up at each, and whether the cheaper one is worth the detour or just further away.',
-    asks:{ q:'Where do you fill up, and what do you drive?', ph:'Your area or postcode, the fuel type, roughly your tank size, and any loyalty card - e.g. “Leeds LS6, diesel, 55 litre tank, Costco member”' },
-    sample:['Cheapest within a sensible drive: 138.9 a litre at the supermarket on Kirkstall Road.','A FULL TANK THERE: 76.40. At your usual station it is 81.35. You save 4.95.','THE CATCH: it is 2.6 miles further each way, which costs you about 0.90 in fuel. Real saving is roughly 4.','Prices rose about 2p across the area this week, so this is not the week to wait for better.'],
-    prompt:'Search the live web for current fuel prices at stations near the user’s stated location, for their stated fuel type, from a real price source you name along with how recently it was updated. List the genuinely cheapest few, with the price per litre or gallon and what a full tank of their stated size actually costs at each. Then do the arithmetic they will not: compare against their usual station, subtract the fuel burned getting to a further one, and say whether the detour is actually worth it in money. Say which way prices are moving in their area this week, so they know whether to fill now or wait. If prices at a station are stale or unverified, say so rather than presenting them as current. Never invent a price or a station.' },
+    asks:{ q:'Where do you fill up, and what do you drive?', ph:'Your area or ZIP code, the fuel type, roughly your tank size, and any loyalty card - e.g. “your area, diesel, 55 gallon tank, warehouse club member”' },
+    sample:['Cheapest within a sensible drive: 3.42 a gallon at the supermarket station two miles out.','A FULL TANK THERE: 76.40. At your usual station it is 81.35. You save 4.95.','THE CATCH: it is 2.6 miles further each way, which costs you about 0.90 in fuel. Real saving is roughly 4.','Prices rose about 2p across the area this week, so this is not the week to wait for better.'],
+    prompt:'Search the live web for current fuel prices at stations near the user’s stated location, for their stated fuel type, from a real price source you name along with how recently it was updated. List the genuinely cheapest few, with the price per liter or gallon and what a full tank of their stated size actually costs at each. Then do the arithmetic they will not: compare against their usual station, subtract the fuel burned getting to a further one, and say whether the detour is actually worth it in money. Say which way prices are moving in their area this week, so they know whether to fill now or wait. If prices at a station are stale or unverified, say so rather than presenting them as current. Never invent a price or a station.' },
 
   { id:'store_deals', every:'daily', cat:'Money', icon:'🏷️', title:'Discounts where I actually shop',  needs:'Web research', on:false,
     desc:'Every morning, real current offers at the specific shops you buy from - and only on the things you actually buy. No vouchers for a shop you have never been to and no code that expired in March.',
-    asks:{ q:'Which shops, and what do you buy there?', ph:'One per line - the shop and the kind of thing - e.g. “Tesco, weekly food shop” / “Uniqlo, basics” / “Boots, contact lenses”' },
-    sample:['3 offers worth your time today, out of 41 running.','TESCO - 3 for 2 across the nappies you buy monthly. Works out at 11.32 saved on a normal shop. Ends Tuesday.','BOOTS - your lens brand is on the 25% multibuy again. It was 25% in January too, so this is the regular cycle, not a one-off.','UNIQLO - the basics you buy are NOT in the sale. The sale is outerwear.','Dropped 38: wrong shop, wrong products, or a “deal” that is the normal price.'],
+    asks:{ q:'Which shops, and what do you buy there?', ph:'One per line - the shop and the kind of thing - e.g. “the supermarket you use, weekly food shop” / “your clothing shop, basics” / “the pharmacy, contact lenses”' },
+    sample:['3 offers worth your time today, out of 41 running.','YOUR SUPERMARKET - 3 for 2 across the diapers you buy monthly. Works out at 11.32 saved on a normal shop. Ends Tuesday.','BOOTS - your lens brand is on the 25% multibuy again. It was 25% in January too, so this is the regular cycle, not a one-off.','UNIQLO - the basics you buy are NOT in the sale. The sale is outerwear.','Dropped 38: wrong shop, wrong products, or a “deal” that is the normal price.'],
     prompt:'Search the live web for offers running RIGHT NOW at the specific shops the user named, and only on the kinds of things they said they buy there. For each: what the offer is, what it saves on a realistic basket for them in money, when it ends, and a link. Then be the filter they came for: say how many offers you discarded and why, and explicitly call out any “deal” that is simply the usual price or a discount off an inflated one. If an offer runs on a predictable cycle, say so, because knowing it will be back in six weeks changes whether they buy today. Verify every offer is currently live and dated - an expired voucher is worse than no email. Never invent an offer, a code or a saving.' },
 
   { id:'local_basket', every:'weekly', cat:'Money', icon:'🍎', title:'Where the food shop is cheapest this week', needs:'Web research', on:false,
     desc:'The things you buy every week, priced across the shops you can actually reach - so you know where the fruit is cheap this week and whether the whole shop is worth moving.',
-    asks:{ q:'Where do you shop, and what is on the list every week?', ph:'Your area, the shops within reach, then the items you always buy - e.g. “Birmingham B14, Aldi Lidl Tesco Asda, bananas milk eggs chicken rice nappies”' },
-    sample:['Your usual list, priced across 4 shops: 38.60 to 47.15. That is a 22% spread on the same food.','FRUIT IS THE GAP THIS WEEK: bananas and apples are 40% cheaper at Aldi than Tesco. Everything else is within pennies.','SO: it is not worth moving the whole shop. It is worth buying fruit in one place.','CHICKEN went up everywhere, about 8%, so that is the market and not your shop.','Prices checked today from each retailer’s own listings.'],
+    asks:{ q:'Where do you shop, and what is on the list every week?', ph:'Your area, the shops within reach, then the items you always buy - e.g. “your ZIP code, the three supermarkets you can reach, bananas milk eggs chicken rice diapers”' },
+    sample:['Your usual list, priced across 4 shops: 38.60 to 47.15. That is a 22% spread on the same food.','FRUIT IS THE GAP THIS WEEK: bananas and apples are 40% cheaper at the discounter than at your usual store. Everything else is within cents.','SO: it is not worth moving the whole shop. It is worth buying fruit in one place.','CHICKEN went up everywhere, about 8%, so that is the market and not your shop.','Prices checked today from each retailer’s own listings.'],
     prompt:'Search the live web for current prices on the specific items the user listed, at the specific shops they said they can reach, using each retailer’s own current listings and naming your source and the date. Price their whole list at each shop and give the total, so the spread is visible. Then say the useful thing rather than the obvious one: identify which few items account for most of the difference, and say honestly whether it is worth moving the entire shop or only worth buying two things elsewhere - because “drive to a fourth supermarket to save 90p” is bad advice. Flag any item that has risen everywhere, since that is the market rather than their choice of shop. If a price cannot be verified, leave the item out and say which ones you could not check. Never estimate a price and present it as read.' },
 
   { id:'fridge_recipes', every:'daily', cat:'Home & life', icon:'🥕', title:'What is about to go off, and what to cook with it', needs:'Web research', on:false,
@@ -572,7 +572,7 @@ function _cwDefaultJobs(){ return [
   { id:'appt_chase', every:'weekly', cat:'Health', icon:'🩺', title:'Get the appointment, and get ready for it', needs:'Web research', on:false,
     desc:'The parts of a medical appointment that are actually work: finding who can see you soonest, having every reference and number ready before you call, and turning up knowing what to ask. AMV does not book anything - it hands you a call you can make in two minutes.',
     asks:{ q:'What do you need seen to, and where?', ph:'Who you are registered with, what it is about, how urgent, and anything relevant - e.g. “GP in Bristol BS7, recurring headaches for 6 weeks, also due a dental check”' },
-    sample:['3 things open. One of them has been open 6 weeks.','THE HEADACHES: your surgery releases same-day slots at 08:00 and online booking opens at 07:30. That is the door, and calling at 09:30 is why you have not got in.','READY TO GO: your NHS number, the dates you have recorded, what you have already tried, and the three questions worth asking. All below, ready to read out.','THE DENTAL CHECK is overdue by 4 months. Two practices nearby are taking new NHS patients this month - both links below.','AMV has NOT booked anything. These are calls for you to make.'],
+    sample:['3 things open. One of them has been open 6 weeks.','THE HEADACHES: your surgery releases same-day slots at 08:00 and online booking opens at 07:30. That is the door, and calling at 09:30 is why you have not got in.','READY TO GO: your insurance or patient number, the dates you have recorded, what you have already tried, and the three questions worth asking. All below, ready to read out.','THE DENTAL CHECK is overdue by 4 months. Two practices nearby are taking new patients this month - both links below.','AMV has NOT booked anything. These are calls for you to make.'],
     prompt:'Help the user actually get seen. Research the real booking routes for the specific provider or area they named - opening times, when slots are released, online booking, and any triage service - from current sources you name, and say plainly when opening hours or availability could not be verified. Then prepare the call so it takes them two minutes: the number, the reference or patient details they told you, a two-sentence account of the problem in the order a receptionist needs it, and the questions worth asking once they are in front of a clinician. Track anything that has been open too long and say how long, because that is the thing that gets forgotten. You must NOT book, cancel, confirm or reschedule anything, and you must NOT contact any surgery, practice or clinician - say clearly in every report that nothing has been booked and these are calls for the user to make. Do not diagnose, do not suggest a diagnosis, and do not advise for or against treatment: you are preparing an appointment, not replacing one. If anything the user describes could be an emergency, say so first and tell them to seek urgent care now.' },
 
   { id:'family_week', every:'weekly', cat:'Family & kids', icon:'👨‍👩‍👧', title:'The week ahead for the whole house', needs:'Web research', on:false,
@@ -882,7 +882,7 @@ const CW_WORLD_COUNTRIES = [
 const CW_WORLD_KINDS = [
   { job:'doc_expiry',     icon:'\uD83D\uDEC2', cat:'Home & life',
     t:n=>'Papers and permits in '+n,
-    d:n=>'Tracks what expires and what has to be renewed in '+n+' - identity documents, residence and work permits, licences - and says how long each one normally takes so you start it in time.' },
+    d:n=>'Tracks what expires and what has to be renewed in '+n+' - identity documents, residence and work permits, licenses - and says how long each one normally takes so you start it in time.' },
   { job:'weather_day',    icon:'\uD83C\uDF26\uFE0F', cat:'Home & life',
     t:n=>'The day ahead in '+n,
     d:n=>'The forecast where you are in '+n+', and what it actually changes about your day - what to wear, what to move, what to bring.' },
@@ -1254,7 +1254,7 @@ const CW_ERRANDS = [
    'If it is a known scam pattern, name the pattern. If you cannot tell, say you cannot tell rather than reassuring me. '+
    'Then tell me the safest way to buy this thing, and what to do if I have already paid.'],
   ['papers', '📄', 'Work out which papers I need',
-   'I need to work out exactly what paperwork this requires: [WHAT I AM APPLYING FOR - e.g. a visa, a residency renewal, a passport, a licence] '+
+   'I need to work out exactly what paperwork this requires: [WHAT I AM APPLYING FOR - e.g. a visa, a residency renewal, a passport, a license] '+
    'for [WHO, NATIONALITY, WHERE THEY ARE NOW, AND WHERE THEY ARE APPLYING].\n\n'+
    'Go to the official government source and use that, not a summary on somebody else’s site. Give me: '+
    'every document required and what it must show, the exact forms with their real names and numbers, the fees, the order things must be done in, '+
@@ -2337,11 +2337,11 @@ function renderCrewView(){
         <div class="mc-cmd-inner">
           <svg class="mc-cmd-ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/></svg>
           <input id="mc-cmd-input" class="mc-cmd-input" type="text" autocomplete="off"
-                 placeholder="e.g. \u201csummarise my last meetings\u201d or \u201cfind the cheapest flights to Madrid in March\u201d">
+                 placeholder="e.g. \u201csummarize my last meetings\u201d or \u201cfind the cheapest flights to Madrid in March\u201d">
           <button class="mc-cmd-go" id="mc-cmd-go">Run</button>
         </div>
         <div class="mc-cmd-chips">${[
-          'Summarise my last meetings',
+          'Summarize my last meetings',
           'What did I agree to this week?',
           'Find the cheapest supermarket near me',
           'What paperwork do I need to renew?'
@@ -2543,7 +2543,7 @@ function renderCrewView(){
            them to set everything up a second time. */
         if(st.serverError)
           return `<div class="mc-empty-row">Your running jobs could not be loaded (${escH(st.serverError)}). They have NOT stopped - this screen just cannot show them right now. <button class="mc-sec-link" data-dact="mcReloadJobs">Try again</button></div>`;
-        return `<div class="mc-empty-row">No running jobs yet. Start a task above and choose how often it should repeat - it will show up here. You can also just tell AMV in chat: "every morning, summarise my unread email".</div>`;
+        return `<div class="mc-empty-row">No running jobs yet. Start a task above and choose how often it should repeat - it will show up here. You can also just tell AMV in chat: "every morning, summarize my unread email".</div>`;
       })()}
     </section>
 
