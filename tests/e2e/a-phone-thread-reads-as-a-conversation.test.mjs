@@ -57,7 +57,45 @@ section('On a phone, only the last turn carries its action bar');
   ok(r.shown[2] === true, 'and the last one does, because that is the one you act on', r.shown);
   /* The numbers, so a regression is visible rather than a matter of taste. */
   ok(r.heights[0] < 100, 'a short turn is a short row', r.heights);
-  ok(r.gaps.every(g => g > 0 && g <= 24), 'and the turns sit at a conversational distance', r.gaps);
+  /* Was `<= 24`, written when every gap was the same 18px. Spacing is paired
+     now - tight from a question to its answer, wider before the next question -
+     so the ceiling covers the larger of the two. The intent is unchanged and is
+     the reason this exists: turns must not be pulled apart into a list of
+     cards. Which gap is which is asserted separately, further down. */
+  ok(r.gaps.every(g => g > 0 && g <= 32), 'and the turns sit at a conversational distance', r.gaps);
+  await app.close();
+}
+
+section('A question and its answer read as one exchange');
+{
+  /* Reported twice as "off centered with the response like amv isn't
+     connected". The geometry was already right; the RHYTHM was not. Every gap
+     was a uniform 18px, and uniform spacing says every message is equally
+     related to the one before it - so a reply sat no closer to the question it
+     answered than to the next question, and nothing paired them.
+
+     Asserted as a RELATIONSHIP rather than as two numbers, so the spacing can
+     be retuned without this going red for a change that keeps the pairing. */
+  const app = await bootApp({ tab: 'chat', user: { name: 'A', email: 'a@x.com', ini: 'A' },
+                              viewport: { width: 390, height: 844 } });
+  await seed(app.page);
+  const g = await app.page.evaluate(() => {
+    const rows = [...document.querySelectorAll('#cm .mr')];
+    const rects = rows.map(e => e.getBoundingClientRect());
+    return rects.slice(1).map((r, i) => ({
+      afterAQuestion: rows[i].className.includes('u'),
+      gap: Math.round(r.top - rects[i].bottom),
+    }));
+  });
+  const toAnswer = g.filter(x => x.afterAQuestion).map(x => x.gap);
+  const toNext   = g.filter(x => !x.afterAQuestion).map(x => x.gap);
+  ok(toAnswer.length > 0 && toNext.length > 0,
+     'the thread has both kinds of gap to compare', { toAnswer, toNext });
+  ok(Math.min(...toNext) > Math.max(...toAnswer),
+     'a reply sits closer to its question than to the next one, so the pair is visible',
+     { questionToAnswer: toAnswer, betweenExchanges: toNext });
+  ok(Math.max(...toAnswer) > 0,
+     'and they are still separate messages, not run together', toAnswer);
   await app.close();
 }
 

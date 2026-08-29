@@ -1853,19 +1853,44 @@ function refuseSecrets(text, whereFor){
     if(typeof AEGIS !== 'undefined' && AEGIS.log)
       AEGIS.log('secret_refused', { kinds: found.length, where: String(whereFor || '').slice(0, 24) });
   }catch(_e){}
+  /* WHICH SERVICE THEY WERE TRYING TO HAND OVER.
+
+     Named only so the way out can be specific. A refusal that says "use
+     Integrations" leaves somebody to work out which of forty rows they need;
+     one that says "connect Gmail" is the same refusal with the next step
+     already taken. Matched on the service word alone - never on anything
+     next to it, because the whole point is that this text is not kept. */
+  let service = '';
+  try{
+    const t = String(text||'').toLowerCase();
+    const known = [['gmail','Gmail'],['google','Google'],['outlook','Microsoft 365'],
+                   ['microsoft','Microsoft 365'],['slack','Slack'],['github','GitHub'],
+                   ['linkedin','LinkedIn'],['dropbox','Dropbox'],['notion','Notion'],
+                   ['calendar','Google Calendar'],['drive','Google Drive']];
+    for(const [k,label] of known){ if(t.indexOf(k)>=0){ service = label; break; } }
+  }catch(_e){}
   try{
     if(typeof _showModalAsync === 'function'){
-      _showModalAsync({ title:'AMV will not store that', okText:'Got it', body:
+      /* The primary button DOES the safe thing rather than describing it. The
+         refusal is unchanged - nothing is saved either way - but the person
+         who came here to get a job done leaves with it moving instead of with
+         a paragraph telling them where to look. */
+      _showModalAsync({ title:'AMV will not store that',
+        okText: service ? ('Connect ' + service) : 'Connect an account',
+        cancelText:'Not now', body:
         'That looks like it contains ' + what + '. AMV does not keep passwords, card numbers or '+
         'security codes - not encrypted, not briefly, not at all. A standing job keeps its '+
         'instructions on the server and reads them on every run, so anything in this box would be '+
         'stored and read for as long as the job is on.\n\n'+
         'Nothing was saved and nothing was sent.\n\n'+
-        'What works instead: connect the account in Integrations, which is a real sign-in you '+
-        'control and can revoke at any time. Where there is no way to connect one, describe the '+
-        'task without the credential - AMV will do everything up to the sign-in and hand that one '+
-        'step back to you.\n\n'+
-        'Remove that part and try again.' });
+        'What works instead: connect the account, which is a real sign-in you control and can '+
+        'revoke at any time. AMV gets a token scoped to what you allow, the password never '+
+        'reaches AMV, and you can take the access back without changing it. Where there is no '+
+        'way to connect one, describe the task without the credential - AMV will do everything '+
+        'up to the sign-in and hand that one step back to you.\n\n'+
+        'Remove that part and try again.' })
+        .then(go => { if(go && typeof _mcGoConnect === 'function') _mcGoConnect(); })
+        .catch(() => {});
     } else if(typeof toast === 'function'){
       toast('AMV will not store ' + what + '. Nothing was saved. Remove it and try again.', 'error', 9000);
     }

@@ -97,20 +97,47 @@ section('And describing ordinary work is not mistaken for one');
   ok(wrong.length === 0, 'not one ordinary sentence is refused', wrong);
 }
 
-section('The refusal explains itself and names what does work');
+section('The refusal does the safe thing rather than describing it');
+{
+  /* This used to assert that the word "Integrations" appeared in the body,
+     which is a check on prose: it passes for a dialog that names the right
+     place and leaves somebody to go and find it among forty rows. What the
+     person came here for is the job getting done, so the assertion is now
+     that the button DOES it - the refusal is unchanged either way. */
+  const r = await page.evaluate(async () => {
+    let seen = null;
+    const realModal = window._showModalAsync;
+    window._showModalAsync = async (o) => { seen = o; return true; };   // press the primary
+    const allowed = refuseSecrets('my LinkedIn login is a@x.com password Hunter2!', 'crew_ask');
+    window._showModalAsync = realModal;
+    await new Promise(f => setTimeout(f, 250));
+    return { allowed, said: (seen && seen.body) || '', ok: seen && seen.okText,
+             cancel: seen && seen.cancelText, tab: S.tab, pane: S.settingsPane };
+  });
+  ok(r.allowed === false, 'the write is still refused', r.allowed);
+  ok(/not saved|Nothing was saved/i.test(r.said),
+     'and the person is told plainly that nothing was stored', r.said.slice(0, 90));
+  ok(/^Connect /.test(r.ok || ''), 'the primary button offers the way that works', r.ok);
+  ok(/LinkedIn/.test(r.ok || ''),
+     'and names the service they were trying to hand over, so it is one step not a search', r.ok);
+  ok(!!r.cancel, 'with a way to decline, so the dialog is not a trap', r.cancel);
+  ok(r.tab === 'settings' && r.pane === 'integrations',
+     'and pressing it actually lands on Connected accounts', { tab: r.tab, pane: r.pane });
+}
+
+section('A credential with no service named still gets a way out');
 {
   const r = await page.evaluate(async () => {
-    const seen = [];
+    let seen = null;
     const realModal = window._showModalAsync;
-    window._showModalAsync = async (o) => { seen.push(o.body || ''); return true; };
-    const allowed = refuseSecrets('Point72 portal user amaroto pass Tr@d3r2024', 'crew_ask');
+    window._showModalAsync = async (o) => { seen = o; return false; };  // decline
+    const allowed = refuseSecrets('the portal wants pass Hunter2024! every morning', 'crew_ask');
     window._showModalAsync = realModal;
-    return { allowed, said: seen.join(' ') };
+    return { allowed, ok: seen && seen.okText };
   });
-  ok(r.allowed === false, 'the write is refused', r.allowed);
-  ok(/Integrations/.test(r.said), 'and the person is pointed at the way that does work', r.said.slice(0, 90));
-  ok(/not saved|Nothing was saved/i.test(r.said),
-     'and told plainly that nothing was stored', r.said.slice(0, 90));
+  ok(r.allowed === false, 'still refused', r.allowed);
+  ok(r.ok === 'Connect an account',
+     'and offered the generic route rather than nothing at all', r.ok);
 }
 
 section('No JavaScript errors');

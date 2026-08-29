@@ -9470,3 +9470,34 @@ a.skip-link:focus{ top:var(--sp-3); outline:2px solid var(--tx); outline-offset:
    own answer; this only decides the case where the heading is shown at all. */
 body:not(.sb-rail) #sb #hist-header{ display:flex!important;align-items:center;justify-content:space-between; }
 body:not(.sb-rail) #sb #hist-header.hh-off{ display:none!important; }
+
+/* ── LAYER A118: A QUESTION AND ITS ANSWER ARE ONE EXCHANGE ────────────────
+   Reported twice, in these words: on a phone it "looks off centered with the
+   response like amv isn't connected". Measured, the geometry was already
+   right - rows symmetric at 24px a side, nothing overflowing, the standard
+   user-right / AMV-left arrangement. What was wrong was the RHYTHM: LAYER
+   A116 brought every gap down to a uniform 18px, and uniform spacing says
+   every message is equally related to the one before it. So a reply sat no
+   closer to the question it answered than to the next question, and nothing
+   on the screen paired them.
+
+   Proximity is what pairs them, and it costs nothing. A question now sits
+   close to its answer, and the space goes between exchanges instead. Same
+   average spacing - 17px against the old 18px - so the thread does not get
+   longer, it gets grouped.
+
+   NOT AN AVATAR, which was the other way to say "this came from AMV". On a
+   390px screen a 26px mark plus its gap takes about a tenth of every line's
+   width, and on the surface people come here to read, line length is worth
+   more than a badge. Bare full-width replies stay.
+
+   Phone only. On a desktop the thread is a narrow column in a wide window and
+   the pairing is already obvious. */
+@media (max-width:720px){
+  /* The question leans toward its answer. */
+  #cm > .mr.u{ margin-bottom:8px!important; }
+  /* And the exchange ends with room before the next one begins. */
+  #cm > .mr:not(.u){ margin-bottom:26px!important; }
+  /* The last row keeps its own smaller tail - there is a composer under it. */
+  #cm > .mr:last-child{ margin-bottom:8px!important; }
+}
