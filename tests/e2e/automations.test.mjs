@@ -67,8 +67,13 @@ section('Autonomy is a paid capability, said once and calmly');
              cta: !!document.querySelector('[data-stab="plans"]') };
   });
   ok(!/\brisk\b/i.test(free.text), 'no talk of risk anywhere on the screen');
-  ok(/Pro/.test(free.text), 'the plan that runs it is named', /Pro/.test(free.text));
-  ok(/\b5 jobs\b/.test(free.text), 'along with how many jobs that plan runs', free.text.slice(0, 0));
+  /* The plan name and the seat count used to be pasted across the top of this
+     screen in a stats band, and it was removed on purpose - three numbers and
+     a price standing in front of the catalogue that does the actual
+     convincing. They did not disappear: every locked card opens onto the plan,
+     the price and the button, which is where somebody is when the question
+     "what does this cost" is finally the question they have.
+     the-catalogue-sells-it walks that path and checks what is on it. */
   ok(free.toggles === 0, 'and no switch underneath it that would refuse them', free.toggles);
   ok(free.jobs > 50 && free.openable === free.jobs,
      'while every job is there to be opened and read, which is what they are deciding about',

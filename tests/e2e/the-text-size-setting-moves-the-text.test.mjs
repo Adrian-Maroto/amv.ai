@@ -82,7 +82,17 @@ section('Choosing a bigger size makes the text bigger');
      so the regression it exists for cannot pass. */
   ok(pct >= 90, 'nearly all visible text follows the setting',
      moved.length + ' of ' + keys.length + ' (' + pct + '%)');
-  ok(moved.length > 500, 'measured as a count, not only a ratio', moved.length);
+  /* WHY THIS NUMBER MOVED. The floor is here so a page that shrank to a
+     handful of elements cannot pass the percentage above on almost nothing -
+     it guards the SIZE of the sample, not the product. The Settings picker
+     lost five rows when thirteen panes were merged into eight, which is the
+     change that took this from just over five hundred to 467, and the ratio
+     it exists to protect is untouched at 99%.
+
+     Lowered to 400 rather than to whatever today's number is: a floor set at
+     the current value fails on the next honest edit, which is how a check
+     becomes something people raise without reading. */
+  ok(moved.length > 400, 'measured as a count, not only a ratio', moved.length);
 
   /* The half that took longest to see, and the first version of this check was
      too weak to catch it. Body text was tokenised before headings were, so at

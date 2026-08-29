@@ -212,7 +212,32 @@ section('Somebody who has not paid sees the product, not a paragraph about it');
   /* No switch they cannot use. A toggle that silently refuses teaches them the
      product is broken, which costs more than the sale it was protecting. */
   ok(r.toggles === 0, 'with no switch that would do nothing if they pressed it', r.toggles);
-  ok(/\$\d/.test(r.text) && /plan/i.test(r.text), 'and the price is on the page', true);
+  /* THE PRICE MOVED TO WHERE IT IS RELEVANT, WHICH IS NOT THE BROWSE PAGE.
+
+     This required a "$N" and the word "plan" in the catalogue's own text, and
+     the band that carried them - "104 examples / 49 run with AMV closed / 5
+     jobs at once on Pro / Included with Pro $15/month" - was removed on
+     purpose: three numbers and a price standing between somebody and the thing
+     that would actually convince them, which is the catalogue underneath it.
+
+     Removing it must NOT mean somebody browses a hundred jobs and only
+     discovers the plan when a switch refuses them. It does not: every locked
+     card opens onto the price. So the check follows the path a person actually
+     takes rather than scanning the page they are standing on. */
+  const priced = await page.evaluate(async () => {
+    const card = document.querySelector('.cw-job.locked .cw-job-body');
+    if (!card) return { opened: false };
+    card.click();
+    await new Promise(r => setTimeout(r, 350));
+    const ov = document.getElementById('ovr');
+    const t = ((ov && ov.textContent) || '').replace(/\s+/g, ' ');
+    return { opened: true, hasPrice: /\$\d/.test(t), hasPlan: /plan/i.test(t),
+             hasButton: !!document.getElementById('cwp-plans') };
+  });
+  ok(priced.opened, 'a locked card opens', priced);
+  ok(priced.hasPrice && priced.hasPlan,
+     'and the price and the plan are right there when it does', priced);
+  ok(priced.hasButton, 'with the button that takes them to it', priced);
 }
 
 section('Opening one shows the instruction it really runs');

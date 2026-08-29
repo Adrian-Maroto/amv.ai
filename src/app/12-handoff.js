@@ -569,12 +569,36 @@ function renderHelpView(){
    menu - so an id that stopped resolving would be a dead link somewhere nobody
    would think to look. They resolve through this table instead, and the pane
    scrolls to the half that was asked for. */
+/* THIRTEEN PANES WAS TOO MANY, AND THE GROUPS WERE ALREADY THE ANSWER.
+
+   Reported as "settings is too much very overwhelming simplify". It was
+   thirteen user-facing panes in six labelled groups - and the groups were
+   right, so the fix was not to invent a new structure but to let the groups BE
+   the panes. Five more merges take it to eight, and each of the eight is a
+   thing somebody would actually go looking for.
+
+   Nothing was deleted. Every merged pane renders under its own heading inside
+   its new home, every retired id still resolves, and a deep link to one still
+   scrolls to it - the machinery for that already existed for the first five
+   merges and is unchanged. What moved is where you find it, not what it says.
+
+   Why each one:
+     family     -> account       both are "who this account is and who shares it"
+     spending   -> billing       a limit on money belongs with the money
+     investing  -> capabilities  it is a feature switch, not a bill
+     api        -> integrations  an API key is how a developer connects a thing
+     projects   -> teamset       both are the shared workspace */
 const SET_MERGED_INTO = {
   security: 'privacy',
   usage: 'billing',
   skills: 'capabilities',
   language: 'appearance',
   invite: 'teamset',
+  family: 'account',
+  spending: 'billing',
+  investing: 'capabilities',
+  api: 'integrations',
+  projects: 'teamset',
 };
 /* The pane that actually renders for a requested id. */
 function _setPaneFor(id){ return SET_MERGED_INTO[id] || id; }
@@ -584,22 +608,19 @@ try{ window._setPaneFor=_setPaneFor; window._setSectionFor=_setSectionFor;
      window.SET_MERGED_INTO=SET_MERGED_INTO; }catch(e){}
 
 const USER_SET_SECTIONS=[
+  /* TWO HEADINGS, NOT SIX. With eight panes left, a group holding one item is
+     a label pretending to be a category - "Plan & usage" over a single "Plan &
+     usage" row said nothing twice. Two headings separate the things that are
+     about YOU from the things that are about what AMV does, and About sits on
+     its own at the bottom where it always is. */
   {group:'You'},
   {id:'account',label:'Account',icon:'<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>'},
   {id:'privacy',label:'Privacy & security',icon:'<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>'},
-  {id:'family',label:'Family & linked accounts',icon:'<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'},
-  {group:'Plan & usage'},
   {id:'billing',label:'Plan & usage',icon:'<rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/>'},
-  {id:'spending',label:'Spending limits',icon:'<path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>'},
-  {id:'investing',label:'Investing',icon:'<path d="M3 17l6-6 4 4 8-8"/><path d="M21 7h-6M21 7v6"/>'},
-  {group:'What AMV can do'},
+  {group:'AMV'},
   {id:'capabilities',label:'Capabilities & skills',icon:'<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>'},
   {id:'integrations',label:'Connectors',icon:'<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" y1="9" x2="6" y2="21"/>'},
-  {id:'api',label:'API keys',icon:'<path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>'},
-  {group:'Workspace'},
   {id:'teamset',label:'Team',icon:'<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/>'},
-  {id:'projects',label:'Projects',icon:'<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>'},
-  {group:'Preferences'},
   {id:'appearance',label:'Appearance & language',icon:'<circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>'},
   {group:''},
   {id:'about',label:'About',icon:'<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>'},
@@ -1868,6 +1889,7 @@ function _renderSetPaneInner(only, into){
   if(sp==='billing'){
     if(typeof renderBillingView==='function'){ renderBillingView(pane); }
     if(!only) _setAppendSection(pane, 'usage');
+    if(!only) _setAppendSection(pane, 'spending');
     return;
   }
   // Projects lives in Settings now - render its grid inside the pane.
@@ -1967,6 +1989,7 @@ function _renderSetPaneInner(only, into){
         sm('Changes saved!',true);
       }
     });
+    if(!only) _setAppendSection(pane, 'family');
 
   } else if(sp==='security'){
     pane.innerHTML=
@@ -2496,6 +2519,7 @@ function _renderSetPaneInner(only, into){
       _integrationsCatalogHTML();
     _wireIntegrationCatalog(pane);
     _killTokenAutofill();
+    if(!only) _setAppendSection(pane, 'api');
   } else if(sp==='skills'){
     _renderSkillsPane(pane);
   } else if(sp==='capabilities'){
@@ -2525,6 +2549,7 @@ function _renderSetPaneInner(only, into){
     on($('cap-memory'),'change',function(){ saveStr('amv_cap_memory',this.checked?'1':'0'); toast(this.checked?'Memory on':'Memory off','info',2000); });
     on($('cap-suggestions'),'change',function(){ saveStr('amv_cap_suggestions',this.checked?'1':'0'); toast(this.checked?'Suggestions on':'Suggestions off','info',2000); });
     if(!only) _setAppendSection(pane, 'skills');
+    if(!only) _setAppendSection(pane, 'investing');
   } else if(sp==='spending'){
     /* Rendered from 25-money-family-ui.js - see there for why these two panes
        exist at all (the logic shipped with no way for anyone to reach it). */
@@ -2536,6 +2561,7 @@ function _renderSetPaneInner(only, into){
     /* Invite was a pane of 180 characters and no controls. It is a section of
        Team now, which is the only place anybody was going to look for it. */
     _setAppendSection(pane, 'invite');
+    if(!only) _setAppendSection(pane, 'projects');
   } else if(sp==='family'){
     _renderFamilyPane(pane);
   } else if(sp==='api'){

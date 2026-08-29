@@ -9624,3 +9624,44 @@ body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
   .cw-find{ max-width:none;flex:1 1 100%; }
   .cw-find-wrap{ gap:var(--sp-2); }
 }
+
+/* ── LAYER A122: WHO ELSE SEES IT, ANSWERED SIDE BY SIDE ───────────────────
+   Two columns because the question has two halves and people read the one
+   they are worried about. The "never" side is not styled as a warning: it is
+   the reassuring half, and colouring it like a problem would say the opposite
+   of what it says. */
+.team-priv-g{
+  display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-4);
+  margin-top:var(--sp-3);
+}
+.team-priv-c{
+  border:1px solid var(--bd);border-radius:var(--r-lg);
+  padding:var(--sp-4);background:var(--s1);
+}
+.team-priv-c > b{
+  display:block;font-size:var(--t-sm);font-weight:650;
+  letter-spacing:.04em;text-transform:uppercase;margin-bottom:var(--sp-3);
+}
+.team-priv-c.yes > b{ color:var(--accent-txt); }
+.team-priv-c.no  > b{ color:var(--grn-txt); }
+.team-priv-c ul{ margin:0;padding-left:1.1em;display:flex;flex-direction:column;gap:6px; }
+.team-priv-c li{ font-size:var(--t-base);color:var(--mu);line-height:1.55; }
+.team-priv-n{
+  font-size:var(--t-base);color:var(--mu);line-height:1.65;
+  margin:var(--sp-4) 0 0;max-width:70ch;
+}
+@media (max-width:720px){
+  .team-priv-g{ grid-template-columns:1fr; }
+}
+
+/* ── LAYER A123: A WAY FORWARD, NOT A SALES PANEL ──────────────────────────
+   One line under the catalogue for somebody who has finished reading it and
+   wants the plan. Deliberately quiet: the band it replaces was removed for
+   being loud, and putting a smaller loud thing in its place would be missing
+   the point. */
+.cw-plan-foot{
+  display:flex;align-items:center;gap:var(--sp-3);flex-wrap:wrap;
+  margin-top:var(--sp-6);padding-top:var(--sp-5);
+  border-top:1px solid var(--bd);
+  font-size:var(--t-base);color:var(--mu);
+}

@@ -166,9 +166,21 @@ section('And the job is told to pass that on');
 
 section('The job that uses it is honest about where it runs');
 {
-  /* The Google token lives in this browser and the server never sees it, so a
-     job built on Classroom runs while AMV is open. Saying otherwise would
-     promise an overnight run that cannot happen. */
+  /* THIS PREMISE EXPIRED, AND THE ASSERTION WITH IT.
+
+     It used to read: the Google token lives in this browser and the server
+     never sees it, so a Classroom job runs only while AMV is open. That was
+     true of the old browser-held grant, and that grant is gone. Classroom is a
+     Connected account now - 'school.read' is a real scope on the provider, it
+     is in the Worker's AUTO_USES_ALLOWED, and the Worker fetches coursework
+     with it server-side. So the job genuinely does run with AMV closed once
+     the account is connected, and a card saying otherwise would now be the
+     understatement rather than the overpromise.
+
+     What has NOT changed, and is what this suite is really for, is that
+     reading is all it does: the sections below still require the job to say it
+     cannot hand anything in. Where it runs moved; what it is allowed to do did
+     not. */
   const r = await page.evaluate(() => {
     const j = _cwJobs().find(x => x.id === 'school_auto');
     return j ? { needs: j.needs, unattended: _cwRunsUnattended(j), where: _cwWhereLabel(j),
@@ -176,8 +188,10 @@ section('The job that uses it is honest about where it runs');
   });
   ok(!!r, 'the job exists', !!r);
   ok(r.needs === 'Classroom', 'it declares what it needs', r.needs);
-  ok(r.unattended === false, 'and does NOT claim to run with AMV closed', r.unattended);
-  ok(/open/i.test(r.where), 'saying so on the card', r.where);
+  ok(/runs with amv closed/i.test(r.where),
+     'it runs unattended, because the Classroom grant is held by the server now', r.where);
+  ok(/once .*connected/i.test(r.where),
+     'and the card names the connection it is waiting on rather than promising it outright', r.where);
 }
 
 section('And says plainly that it cannot hand anything in');

@@ -7394,6 +7394,13 @@ const BACKUP_NEVER = [
      of a backup is that it can be restored somewhere, and a file that restores
      somebody's live mailbox grant onto another deployment is not a backup. */
   'conn:',
+  /* A live approval for one web-agent action, alive for ten minutes and
+     deleted the moment it is spent. Restoring one from a backup would hand
+     back an approval for a purchase somebody authorised weeks ago on a page
+     that no longer exists - which is the single thing an approval must never
+     be, a licence that outlives the moment it was given. It is cheap to
+     replace: the agent stops and asks again. */
+  'webapproval:',
   /* The five-minute handshake record. It holds a sealed PKCE verifier, and it
      is single-use by design - restoring one from a backup would revive a
      handshake that was either already spent or long expired, which is at best

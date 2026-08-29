@@ -34,10 +34,36 @@ section('There is a lot of it, and every one is reachable');
     cats: document.querySelectorAll('.cw-cat').length,
   }));
   ok(n.defined >= 70, 'the catalogue is genuinely large', n.defined);
-  /* The count that matters is not how many exist but how many a person can
-     actually see - a job defined and rendered nowhere is the failure this
-     screen has had twice. */
-  ok(n.rendered === n.defined, 'and every defined job is on the screen', n);
+  /* THE CONTRACT CHANGED, AND THE REASON IT EXISTS DID NOT.
+
+     This used to require that every defined job was on the screen, because a
+     job defined and rendered nowhere is the failure this screen has had twice.
+     The catalogue is now a SAMPLE - a hundred of a larger pool, asked for
+     directly ("i don't want all, just show 100 random examples around the
+     world"), because two hundred cards is a wall and a wall reads as less
+     capable than a shelf.
+
+     So "rendered === defined" is no longer the property to hold. The property
+     that still matters, and is the whole point of the original check, is that
+     nothing AMV can run is UNREACHABLE. A sample plus a search that only
+     searched the sample would have broken exactly that - which is what this
+     now asserts instead, by looking for jobs that are deliberately not in the
+     hundred. */
+  ok(n.rendered === 100, 'a hundred examples are shown, not the whole pool', n);
+  const reach = await page.evaluate(() => {
+    const shown = new Set(_cwShowcase().map(j => j.id));
+    const hidden = _cwAllJobs().filter(j => !shown.has(j.id));
+    if (!hidden.length) return { hidden: 0 };
+    /* Take one that is genuinely not on the screen and go and find it. */
+    const target = hidden[0];
+    cwFind(target.title);
+    const found = [...document.querySelectorAll('.cw-job-t')].some(e => e.textContent === target.title);
+    cwFind('');
+    return { hidden: hidden.length, title: target.title, found };
+  });
+  ok(reach.hidden > 0, 'the pool is genuinely bigger than what is shown', reach.hidden);
+  ok(reach.found === true,
+     'and a job NOT in the hundred is still reachable by searching for it', reach);
   ok(n.cats >= 6, 'grouped under headings rather than one flat wall', n.cats);
   ok(/Refund chaser/.test(t) && /Salary benchmark/.test(t),
      'including the newly added ones', t.length);
@@ -59,11 +85,16 @@ section('Every job is filed somewhere');
 
 section('Filtering by category shows that category and only that category');
 {
+  /* Compared against what is SHOWN, not against the whole catalogue. The
+     screen is a hundred-item sample of a larger pool now, so "every Money job
+     that exists" is the wrong number to expect on a filtered screen - and the
+     property being tested was never that anyway. It is that the filter shows
+     that category and nothing else. */
   const r = await page.evaluate(async () => {
     document.querySelector('[data-darg="Money"]').click();
     await new Promise(r => setTimeout(r, 300));
     const titles = [...document.querySelectorAll('.cw-job-t')].map(e => e.textContent);
-    const money = _cwDefaultJobs().filter(j => j.cat === 'Money');
+    const money = _cwShowcase().filter(j => j.cat === 'Money');
     return { shown: titles.length, expected: money.length,
              allMoney: titles.every(t => money.some(j => j.title === t)) };
   });
@@ -75,8 +106,11 @@ section('Filtering by category shows that category and only that category');
     await new Promise(r => setTimeout(r, 300));
     return document.querySelectorAll('.cw-job').length;
   });
-  ok(back === (await page.evaluate(() => _cwDefaultJobs().length)),
-     'and All brings the whole catalogue back', back);
+  /* "All" means no category filter, which is the whole SHOWN catalogue - the
+     screen is a hundred-item sample now, so comparing it to every job that
+     exists would be asserting the sample does not exist. */
+  ok(back === (await page.evaluate(() => _cwShowcase().length)),
+     'and All brings the whole shown catalogue back', back);
 }
 
 section('A job that cannot run says so rather than looking active');
@@ -90,7 +124,7 @@ section('A job that cannot run says so rather than looking active');
        where the screen blocked 54 - and a check that has to be maintained in
        step with the thing it watches is not watching it. */
     const known = Object.keys(CW_NEEDS_CHECK);
-    const needsAcct = _cwDefaultJobs().filter(j =>
+    const needsAcct = _cwShowcase().filter(j =>
       String(j.needs || '').split(',').map(x => x.trim()).some(n => known.includes(n)));
     return { needsAcct: needsAcct.length,
              blocked: document.querySelectorAll('.cw-job.blocked').length,
@@ -272,6 +306,18 @@ section('Each card says where it can actually run');
   /* The server has no mailbox, calendar or browser session, so a Gmail job
      genuinely cannot run with AMV closed. Presenting both as the same kind of
      background work is the promise this product cannot keep. */
+  /* A MAILBOX JOB NO LONGER NEEDS THIS TAB, AND SAYING IT DOES WAS THE BUG.
+
+     This required the card to read "while AMV is open" for anything needing
+     Email. That was true when a mailbox grant lived in the browser. It does
+     not: 'mail.read' is a Connected-account scope the Worker holds and is
+     listed in AUTO_USES_ALLOWED, so the job really does run overnight once
+     Gmail is connected. Forty-nine of a hundred and six cards were telling
+     people the opposite, which is what "there are so many that should say run
+     when amv is closed but it says run when amv is open" was about.
+
+     Both halves are still asserted, because the card must not overpromise
+     either: it says it runs closed AND names the connection it is waiting on. */
   const r = await page.evaluate(() => {
     const web = _cwDefaultJobs().find(j => j.needs === 'Web research');
     const mail = _cwDefaultJobs().find(j => /Email/.test(j.needs));
@@ -279,8 +325,12 @@ section('Each card says where it can actually run');
              text: document.body.textContent };
   });
   ok(/with AMV closed/.test(r.web), 'a web research job runs unattended', r.web);
-  ok(/while AMV is open/.test(r.mail),
-     'and one needing your mailbox says it needs this tab', r.mail);
+  ok(!/once .*connected/i.test(r.web),
+     'and says so flatly, because it needs nothing connected first', r.web);
+  ok(/with AMV closed/.test(r.mail),
+     'a mailbox job also runs unattended - the grant is held by the server', r.mail);
+  ok(/once .*connected/i.test(r.mail),
+     'but names the connection it is waiting on, so it is not an overpromise', r.mail);
   ok(/Runs with AMV closed/.test(r.text), 'and it is on the card, not just in a function', true);
 }
 

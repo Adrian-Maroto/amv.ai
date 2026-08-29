@@ -100,12 +100,45 @@ function renderTeamView(){
       '</div>'+
     '</div>';
 
+  /* THE QUESTION NOBODY WAS ANSWERING.
+
+     Two screens said opposite things. Settings said "Everyone keeps their own
+     conversations", and the feature list on this one advertised "Shared team
+     memory - AMV remembers context across the whole team". Both cannot be
+     true, and the second one was not: teamShare takes an item somebody chose
+     to share, and teamShared returns only that list. Nothing about a chat
+     reaches a team unless a person puts it there.
+
+     A product that can read your mail and spend your money cannot be vague
+     about who else sees it, and "I don't understand the team section" is what
+     it sounds like from outside when it is. So the honest answer is stated
+     plainly, once, in the place somebody is deciding. */
+  const teamPrivacy=
+    '<div class="ss2 team-priv"><h3>What your teammates can and cannot see</h3>'+
+      '<div class="team-priv-g">'+
+        '<div class="team-priv-c yes"><b>They see</b><ul>'+
+          '<li>Projects and prompts somebody shared into the library</li>'+
+          '<li>Who is on the team, and each person\u2019s role</li>'+
+          '<li>How much of the shared monthly allowance is left</li>'+
+        '</ul></div>'+
+        '<div class="team-priv-c no"><b>They never see</b><ul>'+
+          '<li>Your chats - not the questions, not the answers</li>'+
+          '<li>Anything AMV remembers about you personally</li>'+
+          '<li>Your connected accounts, or anything AMV reads from them</li>'+
+          '<li>Your files, unless you share them yourself</li>'+
+        '</ul></div>'+
+      '</div>'+
+      '<p class="team-priv-n">Sharing is something you do on purpose, one item at a time. '+
+        'There is no setting that makes a conversation visible to the team, because there is '+
+        'no way for one to become visible by accident.</p>'+
+    '</div>';
+
   // Reusable "what Teams includes + which plan" block
   const teamExplainer=
     '<div class="ss2"><h3>What you get with Teams</h3><div class="team-feats">'+
       '<div class="team-feat"><span class="team-feat-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></span><div><b>Shared projects &amp; prompt library</b><span>Everyone works from the same source of truth</span></div></div>'+
       '<div class="team-feat"><span class="team-feat-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3"/></svg></span><div><b>Roles &amp; permissions</b><span>Owner, admin, and member - you control access</span></div></div>'+
-      '<div class="team-feat"><span class="team-feat-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3 3 3 0 0 0-3 3 3 3 0 0 0 0 6 3 3 0 0 0 3 3 3 3 0 0 0 6 0 3 3 0 0 0 3-3 3 3 0 0 0 0-6 3 3 0 0 0-3-3 3 3 0 0 0-3-3z"/></svg></span><div><b>Shared team memory</b><span>AMV remembers context across the whole team</span></div></div>'+
+      '<div class="team-feat"><span class="team-feat-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3 3 3 0 0 0-3 3 3 3 0 0 0 0 6 3 3 0 0 0 3 3 3 3 0 0 0 6 0 3 3 0 0 0 3-3 3 3 0 0 0 0-6 3 3 0 0 0-3-3 3 3 0 0 0-3-3z"/></svg></span><div><b>A shared library, by choice</b><span>What somebody shares into it, the team sees. Private chats stay private.</span></div></div>'+
       '<div class="team-feat"><span class="team-feat-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg></span><div><b>Invite by email</b><span>Add teammates in seconds</span></div></div>'+
       '<div class="team-feat"><span class="team-feat-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg></span><div><b>Seats on one subscription</b><span>Elite includes 10, Ultra 25. Everyone shares the plan\u2019s allowance - one bill, not one per person.</span></div></div>'+
     '</div></div>';
@@ -162,6 +195,7 @@ function renderTeamView(){
       '<h2>Team workspaces</h2>'+
       '<p class="vsub">Share projects, prompts, and AMV\u2019s memory across your whole team - with roles and permissions.</p>'+
       teamHowItWorks+
+      teamPrivacy+
       teamExplainer+
       planRequirementCard+
       '<div class="ss2"><p style="font-size:var(--t-sm);color:var(--mu);line-height:1.6;margin:0">Team mode runs on your AMV backend. Once it\u2019s connected and you\u2019re on the '+teamPlan.name+' plan, you can create a team and invite members right here.</p></div>'+
@@ -185,6 +219,7 @@ function renderTeamView(){
         '<p class="vsub">Shared projects, prompts, memory, and roles - for your whole team.</p>'+
         seatBuyCard+
         teamHowItWorks+
+        teamPrivacy+
       teamExplainer+
         planRequirementCard+
       '</div></div>';

@@ -8448,12 +8448,45 @@ function renderTeamView(){
       '</div>'+
     '</div>';
 
+  /* THE QUESTION NOBODY WAS ANSWERING.
+
+     Two screens said opposite things. Settings said "Everyone keeps their own
+     conversations", and the feature list on this one advertised "Shared team
+     memory - AMV remembers context across the whole team". Both cannot be
+     true, and the second one was not: teamShare takes an item somebody chose
+     to share, and teamShared returns only that list. Nothing about a chat
+     reaches a team unless a person puts it there.
+
+     A product that can read your mail and spend your money cannot be vague
+     about who else sees it, and "I don't understand the team section" is what
+     it sounds like from outside when it is. So the honest answer is stated
+     plainly, once, in the place somebody is deciding. */
+  const teamPrivacy=
+    '<div class="ss2 team-priv"><h3>What your teammates can and cannot see</h3>'+
+      '<div class="team-priv-g">'+
+        '<div class="team-priv-c yes"><b>They see</b><ul>'+
+          '<li>Projects and prompts somebody shared into the library</li>'+
+          '<li>Who is on the team, and each person\u2019s role</li>'+
+          '<li>How much of the shared monthly allowance is left</li>'+
+        '</ul></div>'+
+        '<div class="team-priv-c no"><b>They never see</b><ul>'+
+          '<li>Your chats - not the questions, not the answers</li>'+
+          '<li>Anything AMV remembers about you personally</li>'+
+          '<li>Your connected accounts, or anything AMV reads from them</li>'+
+          '<li>Your files, unless you share them yourself</li>'+
+        '</ul></div>'+
+      '</div>'+
+      '<p class="team-priv-n">Sharing is something you do on purpose, one item at a time. '+
+        'There is no setting that makes a conversation visible to the team, because there is '+
+        'no way for one to become visible by accident.</p>'+
+    '</div>';
+
   // Reusable "what Teams includes + which plan" block
   const teamExplainer=
     '<div class="ss2"><h3>What you get with Teams</h3><div class="team-feats">'+
       '<div class="team-feat"><span class="team-feat-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></span><div><b>Shared projects &amp; prompt library</b><span>Everyone works from the same source of truth</span></div></div>'+
       '<div class="team-feat"><span class="team-feat-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3"/></svg></span><div><b>Roles &amp; permissions</b><span>Owner, admin, and member - you control access</span></div></div>'+
-      '<div class="team-feat"><span class="team-feat-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3 3 3 0 0 0-3 3 3 3 0 0 0 0 6 3 3 0 0 0 3 3 3 3 0 0 0 6 0 3 3 0 0 0 3-3 3 3 0 0 0 0-6 3 3 0 0 0-3-3 3 3 0 0 0-3-3z"/></svg></span><div><b>Shared team memory</b><span>AMV remembers context across the whole team</span></div></div>'+
+      '<div class="team-feat"><span class="team-feat-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3 3 3 0 0 0-3 3 3 3 0 0 0 0 6 3 3 0 0 0 3 3 3 3 0 0 0 6 0 3 3 0 0 0 3-3 3 3 0 0 0 0-6 3 3 0 0 0-3-3 3 3 0 0 0-3-3z"/></svg></span><div><b>A shared library, by choice</b><span>What somebody shares into it, the team sees. Private chats stay private.</span></div></div>'+
       '<div class="team-feat"><span class="team-feat-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg></span><div><b>Invite by email</b><span>Add teammates in seconds</span></div></div>'+
       '<div class="team-feat"><span class="team-feat-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg></span><div><b>Seats on one subscription</b><span>Elite includes 10, Ultra 25. Everyone shares the plan\u2019s allowance - one bill, not one per person.</span></div></div>'+
     '</div></div>';
@@ -8510,6 +8543,7 @@ function renderTeamView(){
       '<h2>Team workspaces</h2>'+
       '<p class="vsub">Share projects, prompts, and AMV\u2019s memory across your whole team - with roles and permissions.</p>'+
       teamHowItWorks+
+      teamPrivacy+
       teamExplainer+
       planRequirementCard+
       '<div class="ss2"><p style="font-size:var(--t-sm);color:var(--mu);line-height:1.6;margin:0">Team mode runs on your AMV backend. Once it\u2019s connected and you\u2019re on the '+teamPlan.name+' plan, you can create a team and invite members right here.</p></div>'+
@@ -8533,6 +8567,7 @@ function renderTeamView(){
         '<p class="vsub">Shared projects, prompts, memory, and roles - for your whole team.</p>'+
         seatBuyCard+
         teamHowItWorks+
+        teamPrivacy+
       teamExplainer+
         planRequirementCard+
       '</div></div>';
@@ -14993,7 +15028,14 @@ function _cwPopBodyHTML(){
 
 function _cwJobsBody(jobs, jobCard){
   if(_cwFind){
-    const hits = jobs.filter(j => _cwMatches(j, _cwFind));
+    /* SEARCHES THE WHOLE POOL, NOT THE HUNDRED ON SCREEN.
+
+       The showcase is a sample, and searching only the sample would mean a job
+       AMV can really run is unfindable because it did not come up this visit -
+       which is the one thing showing a sample must not cost. So the grid shows
+       a hundred and the search reaches all of them. */
+    const all = (() => { try{ return _cwAllJobs() || jobs; }catch(e){ return jobs; } })();
+    const hits = all.filter(j => _cwMatches(j, _cwFind));
     return hits.length
       ? `<div class="cw-jobs-grid">${hits.map(jobCard).join('')}</div>`
       : _cwNoMatchHTML();
@@ -16154,9 +16196,23 @@ function renderCrewView(){
             belong here as much as on the paid screen. */ ''}
       ${_cwErrandsHTML()}
       ${_cwPopularHTML()}
-      ${_cwFindBoxHTML(_cwShowcase().filter(j=>_cwMatches(j,_cwFind)).length)}
+      ${_cwFindBoxHTML(_cwAllJobs().filter(j=>_cwMatches(j,_cwFind)).length)}
       ${_cwCatChips(_cwShowcase())}
       ${_cwJobsBody(_cwShowcase(), _cwLockedCard)}
+      ${/* ONE LINE, NOT A BAND.
+
+            The stats band came out because it was three numbers and a price
+            standing in front of the catalogue. Taking it out left no route to
+            the plan at all from this screen, which is the opposite mistake:
+            somebody who reads a hundred jobs and decides they want it should
+            not have to guess where to go. Every card already opens onto the
+            price; this is for the person who has finished browsing and is
+            looking for the way forward, and it is a sentence rather than a
+            sales panel. */ ''}
+      <div class="cw-plan-foot">
+        <span>Crew runs on ${escH(P.name)} and above - AMV keeps working when you close it.</span>
+        <button class="mc-sec-link" data-stab="plans">See plans \u2192</button>
+      </div>
     </div></div>`;
     _cwWireCmd(vc);
     return;
@@ -16350,7 +16406,7 @@ function renderCrewView(){
       <div class="cw-anything">These are starting points, not the limit. Type <b>anything</b> in the box above and AMV works out which accounts, sites and tools it needs and does it - on a schedule if you ask. If something it needs is not connected yet, it tells you exactly what to add.</div>
       ${_cwErrandsHTML()}
       ${_cwPopularHTML()}
-      ${_cwFindBoxHTML(_cwShowcase().filter(j=>_cwMatches(j,_cwFind)).length)}
+      ${_cwFindBoxHTML(_cwAllJobs().filter(j=>_cwMatches(j,_cwFind)).length)}
       ${_cwCatChips(_cwShowcase())}
       ${_cwJobsBody(_cwShowcase(), jobCard)}
     </div>
@@ -20634,12 +20690,36 @@ function renderHelpView(){
    menu - so an id that stopped resolving would be a dead link somewhere nobody
    would think to look. They resolve through this table instead, and the pane
    scrolls to the half that was asked for. */
+/* THIRTEEN PANES WAS TOO MANY, AND THE GROUPS WERE ALREADY THE ANSWER.
+
+   Reported as "settings is too much very overwhelming simplify". It was
+   thirteen user-facing panes in six labelled groups - and the groups were
+   right, so the fix was not to invent a new structure but to let the groups BE
+   the panes. Five more merges take it to eight, and each of the eight is a
+   thing somebody would actually go looking for.
+
+   Nothing was deleted. Every merged pane renders under its own heading inside
+   its new home, every retired id still resolves, and a deep link to one still
+   scrolls to it - the machinery for that already existed for the first five
+   merges and is unchanged. What moved is where you find it, not what it says.
+
+   Why each one:
+     family     -> account       both are "who this account is and who shares it"
+     spending   -> billing       a limit on money belongs with the money
+     investing  -> capabilities  it is a feature switch, not a bill
+     api        -> integrations  an API key is how a developer connects a thing
+     projects   -> teamset       both are the shared workspace */
 const SET_MERGED_INTO = {
   security: 'privacy',
   usage: 'billing',
   skills: 'capabilities',
   language: 'appearance',
   invite: 'teamset',
+  family: 'account',
+  spending: 'billing',
+  investing: 'capabilities',
+  api: 'integrations',
+  projects: 'teamset',
 };
 /* The pane that actually renders for a requested id. */
 function _setPaneFor(id){ return SET_MERGED_INTO[id] || id; }
@@ -20649,22 +20729,19 @@ try{ window._setPaneFor=_setPaneFor; window._setSectionFor=_setSectionFor;
      window.SET_MERGED_INTO=SET_MERGED_INTO; }catch(e){}
 
 const USER_SET_SECTIONS=[
+  /* TWO HEADINGS, NOT SIX. With eight panes left, a group holding one item is
+     a label pretending to be a category - "Plan & usage" over a single "Plan &
+     usage" row said nothing twice. Two headings separate the things that are
+     about YOU from the things that are about what AMV does, and About sits on
+     its own at the bottom where it always is. */
   {group:'You'},
   {id:'account',label:'Account',icon:'<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>'},
   {id:'privacy',label:'Privacy & security',icon:'<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>'},
-  {id:'family',label:'Family & linked accounts',icon:'<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'},
-  {group:'Plan & usage'},
   {id:'billing',label:'Plan & usage',icon:'<rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/>'},
-  {id:'spending',label:'Spending limits',icon:'<path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>'},
-  {id:'investing',label:'Investing',icon:'<path d="M3 17l6-6 4 4 8-8"/><path d="M21 7h-6M21 7v6"/>'},
-  {group:'What AMV can do'},
+  {group:'AMV'},
   {id:'capabilities',label:'Capabilities & skills',icon:'<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>'},
   {id:'integrations',label:'Connectors',icon:'<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" y1="9" x2="6" y2="21"/>'},
-  {id:'api',label:'API keys',icon:'<path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>'},
-  {group:'Workspace'},
   {id:'teamset',label:'Team',icon:'<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/>'},
-  {id:'projects',label:'Projects',icon:'<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>'},
-  {group:'Preferences'},
   {id:'appearance',label:'Appearance & language',icon:'<circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>'},
   {group:''},
   {id:'about',label:'About',icon:'<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>'},
@@ -21933,6 +22010,7 @@ function _renderSetPaneInner(only, into){
   if(sp==='billing'){
     if(typeof renderBillingView==='function'){ renderBillingView(pane); }
     if(!only) _setAppendSection(pane, 'usage');
+    if(!only) _setAppendSection(pane, 'spending');
     return;
   }
   // Projects lives in Settings now - render its grid inside the pane.
@@ -22032,6 +22110,7 @@ function _renderSetPaneInner(only, into){
         sm('Changes saved!',true);
       }
     });
+    if(!only) _setAppendSection(pane, 'family');
 
   } else if(sp==='security'){
     pane.innerHTML=
@@ -22561,6 +22640,7 @@ function _renderSetPaneInner(only, into){
       _integrationsCatalogHTML();
     _wireIntegrationCatalog(pane);
     _killTokenAutofill();
+    if(!only) _setAppendSection(pane, 'api');
   } else if(sp==='skills'){
     _renderSkillsPane(pane);
   } else if(sp==='capabilities'){
@@ -22590,6 +22670,7 @@ function _renderSetPaneInner(only, into){
     on($('cap-memory'),'change',function(){ saveStr('amv_cap_memory',this.checked?'1':'0'); toast(this.checked?'Memory on':'Memory off','info',2000); });
     on($('cap-suggestions'),'change',function(){ saveStr('amv_cap_suggestions',this.checked?'1':'0'); toast(this.checked?'Suggestions on':'Suggestions off','info',2000); });
     if(!only) _setAppendSection(pane, 'skills');
+    if(!only) _setAppendSection(pane, 'investing');
   } else if(sp==='spending'){
     /* Rendered from 25-money-family-ui.js - see there for why these two panes
        exist at all (the logic shipped with no way for anyone to reach it). */
@@ -22601,6 +22682,7 @@ function _renderSetPaneInner(only, into){
     /* Invite was a pane of 180 characters and no controls. It is a section of
        Team now, which is the only place anybody was going to look for it. */
     _setAppendSection(pane, 'invite');
+    if(!only) _setAppendSection(pane, 'projects');
   } else if(sp==='family'){
     _renderFamilyPane(pane);
   } else if(sp==='api'){

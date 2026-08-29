@@ -1202,7 +1202,14 @@ function _cwPopBodyHTML(){
 
 function _cwJobsBody(jobs, jobCard){
   if(_cwFind){
-    const hits = jobs.filter(j => _cwMatches(j, _cwFind));
+    /* SEARCHES THE WHOLE POOL, NOT THE HUNDRED ON SCREEN.
+
+       The showcase is a sample, and searching only the sample would mean a job
+       AMV can really run is unfindable because it did not come up this visit -
+       which is the one thing showing a sample must not cost. So the grid shows
+       a hundred and the search reaches all of them. */
+    const all = (() => { try{ return _cwAllJobs() || jobs; }catch(e){ return jobs; } })();
+    const hits = all.filter(j => _cwMatches(j, _cwFind));
     return hits.length
       ? `<div class="cw-jobs-grid">${hits.map(jobCard).join('')}</div>`
       : _cwNoMatchHTML();
@@ -2363,9 +2370,23 @@ function renderCrewView(){
             belong here as much as on the paid screen. */ ''}
       ${_cwErrandsHTML()}
       ${_cwPopularHTML()}
-      ${_cwFindBoxHTML(_cwShowcase().filter(j=>_cwMatches(j,_cwFind)).length)}
+      ${_cwFindBoxHTML(_cwAllJobs().filter(j=>_cwMatches(j,_cwFind)).length)}
       ${_cwCatChips(_cwShowcase())}
       ${_cwJobsBody(_cwShowcase(), _cwLockedCard)}
+      ${/* ONE LINE, NOT A BAND.
+
+            The stats band came out because it was three numbers and a price
+            standing in front of the catalogue. Taking it out left no route to
+            the plan at all from this screen, which is the opposite mistake:
+            somebody who reads a hundred jobs and decides they want it should
+            not have to guess where to go. Every card already opens onto the
+            price; this is for the person who has finished browsing and is
+            looking for the way forward, and it is a sentence rather than a
+            sales panel. */ ''}
+      <div class="cw-plan-foot">
+        <span>Crew runs on ${escH(P.name)} and above - AMV keeps working when you close it.</span>
+        <button class="mc-sec-link" data-stab="plans">See plans \u2192</button>
+      </div>
     </div></div>`;
     _cwWireCmd(vc);
     return;
@@ -2559,7 +2580,7 @@ function renderCrewView(){
       <div class="cw-anything">These are starting points, not the limit. Type <b>anything</b> in the box above and AMV works out which accounts, sites and tools it needs and does it - on a schedule if you ask. If something it needs is not connected yet, it tells you exactly what to add.</div>
       ${_cwErrandsHTML()}
       ${_cwPopularHTML()}
-      ${_cwFindBoxHTML(_cwShowcase().filter(j=>_cwMatches(j,_cwFind)).length)}
+      ${_cwFindBoxHTML(_cwAllJobs().filter(j=>_cwMatches(j,_cwFind)).length)}
       ${_cwCatChips(_cwShowcase())}
       ${_cwJobsBody(_cwShowcase(), jobCard)}
     </div>
