@@ -48,8 +48,7 @@ section('Structural anchors the app inserts into still exist');
     ['#ovr',          'the modal overlay every dialog is built inside'],
     ['#mta',          'the composer - the first-run card and activation offers type into it'],
     ['#hist',         'the conversation list'],
-    ['#build-group',  'the collapsible Build group'],
-    ['#build-toggle', 'its toggle'],
+    ['#build-group',  'the Build group - Studio, Dev and Lab'],
   ];
   for (const [sel, why] of ANCHORS) {
     ok(await exists(sel), sel + ' is present - ' + why);
@@ -172,28 +171,32 @@ section('Nothing is called that does not exist');
   ok(undef.length === 0,
      'every function the app calls on startup is actually defined', undef);
 
-  /* And the one that broke, end to end: the group opens, reveals what is inside
-     it, and closes again. */
+  /* The Build group used to collapse behind a toggle, and this exercised
+     opening it - the toggle was what broke when _initBuildGroup was deleted.
+     It does not collapse any more: the reason it was folded away was to leave
+     room for Images and Video, which no longer exist, so Studio, Dev and Lab
+     are simply visible. What is worth checking is therefore the thing that
+     actually matters to somebody looking at the sidebar - that all three are
+     there and reachable, with nothing hiding them. */
   const build = await page.evaluate(() => {
-    const grp = document.getElementById('build-group'), tog = document.getElementById('build-toggle');
-    if (!grp || !tog) return { there: false };
-    /* An earlier section visited every tab, and the group auto-opens on a build
-       tab by design - so start from a known closed state rather than whatever
-       the last navigation left behind. */
-    _buildGroupSetOpen(false);
-    const closed0 = grp.classList.contains('collapsed');
-    tog.click();
-    const opened = !grp.classList.contains('collapsed');
+    const grp = document.getElementById('build-group');
+    if (!grp) return { there: false };
+    const cs = getComputedStyle(grp);
     const inside = [...grp.querySelectorAll('[data-tab]')].map(b => b.dataset.tab);
-    tog.click();
-    return { there: true, closed0, opened, inside, closedAgain: grp.classList.contains('collapsed') };
+    const hidden = [...grp.querySelectorAll('[data-tab]')].filter(b => {
+      const r = b.getBoundingClientRect();
+      return r.width < 1 || r.height < 1 || getComputedStyle(b).display === 'none';
+    }).length;
+    return { there: true, display: cs.display, inside, hidden,
+             toggleGone: !document.getElementById('build-toggle') };
   });
   ok(build.there, 'the Build group exists');
-  ok(build.closed0, 'it can be closed', build);
-  ok(build.opened, 'clicking it opens the group', build);
-  ok(build.inside.includes('dev') && build.inside.includes('lab'),
-     'revealing Dev and Lab, which is the whole point of it', build.inside);
-  ok(build.closedAgain, 'and clicking again closes it');
+  ok(build.display !== 'none', 'and is shown rather than folded away', build.display);
+  ok(build.inside.includes('studio') && build.inside.includes('dev') && build.inside.includes('lab'),
+     'with all three build surfaces in it', build.inside);
+  ok(build.hidden === 0, 'and every one of them is actually visible', build);
+  ok(build.toggleGone,
+     'and the toggle is gone rather than left behind with nothing to toggle', build);
 }
 
 section('No handler is bound to a data-attribute nothing renders');

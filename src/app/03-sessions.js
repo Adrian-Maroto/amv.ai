@@ -807,41 +807,27 @@ function _wireHdrAuth(){
   if(su && !su._wired){ su._wired=1; su.addEventListener('click',()=>{ try{ openAuth('signup'); }catch(e){} }); }
   if(li && !li._wired){ li._wired=1; li.addEventListener('click',()=>{ try{ openAuth('login'); }catch(e){} }); }
 }
-function goApp(){ try{ _wireHdrAuth(); }catch(e){} try{ const cy=document.getElementById('copy-year'); if(cy) cy.textContent=String(new Date().getFullYear()); }catch(e){} document.getElementById('land').classList.add('hidden'); document.getElementById('app').classList.add('on'); updateSbUser(); _initMobileSidebar(); _restoreSidebarState(); try{ _applyReduceMotion(); }catch(e){} setTab(S.tab); _ensureBackendSession(); try{ _applyFontSize(); }catch(e){} try{ _initOfflineWatch(); }catch(e){} try{ _initErrorBoundary(); }catch(e){} try{ syncEntitlement(); _checkUpgradeReturn(); }catch(e){} /* Whether a bank account is linked is the server's answer, and three different screens read it. Refreshed once on start so Crew and the chat tool are not left showing 'not connected' on a device that simply has an empty cache. */ try{ if(typeof AMVFinance!=='undefined') AMVFinance.refresh(); }catch(e){} try{ _checkTeamInvite(); }catch(e){} try{ _initKeyboardNav(); _initOverlayFocus(); _initA11y(); }catch(e){} try{ _revealAdminNav(); }catch(e){} try{ _revealTeamNav(); }catch(e){} try{ _initBuildGroup(); }catch(e){} try{ _localizePrices(document); }catch(e){} try{ const sbtn=$('sb-status'); if(sbtn) sbtn.addEventListener('click',openStatusPanel); _checkStatus(); }catch(e){} try{ _initI18nObserver(); }catch(e){} try{ _translateUI(); setTimeout(_translateUI,120); }catch(e){ console.error('Translate UI error in goApp', e); } }
+function goApp(){ try{ _wireHdrAuth(); }catch(e){} try{ const cy=document.getElementById('copy-year'); if(cy) cy.textContent=String(new Date().getFullYear()); }catch(e){} document.getElementById('land').classList.add('hidden'); document.getElementById('app').classList.add('on'); updateSbUser(); _initMobileSidebar(); _restoreSidebarState(); try{ _applyReduceMotion(); }catch(e){} setTab(S.tab); _ensureBackendSession(); try{ _applyFontSize(); }catch(e){} try{ _initOfflineWatch(); }catch(e){} try{ _initErrorBoundary(); }catch(e){} try{ syncEntitlement(); _checkUpgradeReturn(); }catch(e){} /* Whether a bank account is linked is the server's answer, and three different screens read it. Refreshed once on start so Crew and the chat tool are not left showing 'not connected' on a device that simply has an empty cache. */ try{ if(typeof AMVFinance!=='undefined') AMVFinance.refresh(); }catch(e){} try{ _checkTeamInvite(); }catch(e){} try{ _initKeyboardNav(); _initOverlayFocus(); _initA11y(); }catch(e){} try{ _revealAdminNav(); }catch(e){} try{ _revealTeamNav(); }catch(e){} try{ _localizePrices(document); }catch(e){} try{ const sbtn=$('sb-status'); if(sbtn) sbtn.addEventListener('click',openStatusPanel); _checkStatus(); }catch(e){} try{ _initI18nObserver(); }catch(e){} try{ _translateUI(); setTimeout(_translateUI,120); }catch(e){ console.error('Translate UI error in goApp', e); } }
 
 /* The sidebar's "More" group was replaced by the tool rail in #sb-tools, so
    the collapsible it managed no longer exists. The function stayed behind,
    returning early on a missing element every time it was called - the same
    silent shape that made the Admin tab unreachable. Removed rather than left
    as a no-op that reads like working code. */
-/* "Build" (Studio, Dev, Lab) collapses under one tappable header so the default
-   sidebar stays short and calm - more room for Chat, Images, Video, Crew and
-   Handoff. Collapsed by default; opens if remembered or if you're on a build
-   tab (so the active item is always visible). */
-const _BUILD_TABS=['studio','dev','lab'];
-function _buildGroupSetOpen(open){
-  const grp=document.getElementById('build-group'), tog=document.getElementById('build-toggle');
-  if(!grp||!tog) return;
-  grp.classList.toggle('collapsed', !open);
-  tog.classList.toggle('open', open);
-  tog.setAttribute('aria-expanded', open?'true':'false');
-  try{ saveStr('amv_sb_build', open?'1':'0'); }catch(e){}
-}
-function _initBuildGroup(){
-  const tog=document.getElementById('build-toggle'); if(!tog) return;
-  if(!tog._b){
-    tog._b=1;
-    const toggle=()=>{ const grp=document.getElementById('build-group'); _buildGroupSetOpen(grp?grp.classList.contains('collapsed'):true); };
-    on(tog,'click',toggle);
-    on(tog,'keydown',(e)=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); toggle(); } });
-  }
-  const remembered=(()=>{ try{ return loadStr('amv_sb_build')==='1'; }catch(e){ return false; } })();
-  _buildGroupSetOpen(remembered || _BUILD_TABS.includes(S.tab));
-}
-/* Keep the group open whenever a build tab is active, so the highlighted item
-   is never hidden. Called from setTab. */
-function _buildGroupSync(){ if(_BUILD_TABS.includes(S.tab)) _buildGroupSetOpen(true); }
-try{ window._initBuildGroup=_initBuildGroup; window._buildGroupSync=_buildGroupSync; }catch(e){}
+/* BUILD IS NOT COLLAPSED ANY MORE.
+
+   Studio, Dev and Lab used to hide under a tappable header, and the reason was
+   written down: keep the default sidebar short "- more room for Chat, Images,
+   Video, Crew and Handoff". Images and Video are gone, so the room it was
+   buying no longer needs buying, and the cost stayed - three of the surfaces
+   AMV is for, behind an arrow, on the screen where somebody decides what this
+   product does.
+
+   They sit under a plain "Build" heading now and are always visible. The
+   toggle, the remembered open/closed state and the keep-it-open-on-a-build-tab
+   sync all went with it rather than being left as machinery with nothing to
+   manage. All three still open the one Build surface and pick a mode inside
+   it, which is what they have done since the surfaces were merged. */
 function _revealAdminNav(){
   try{
     const existing=document.getElementById('nav-admin');
@@ -1063,7 +1049,6 @@ function setTab(t){
   S.tab=t;
   try{ _renderBottomNav(); }catch(e){}
   document.querySelectorAll('.snb, .sb-tool').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));
-  try{ _buildGroupSync(); }catch(e){}   // keep Build open when a build tab is active
   /* (old 'More' section removed - tools now live in the bottom-left row) */
   const _titles={dashboard:'Dashboard',chat:'',prompts:'Prompt Library',workspaces:'Projects',memory:'Memory',usage:'Usage',billing:'Billing',plans:'Plans',settings:'Settings',help:'Help Center',apps:'Apps',tasks:'Tasks',integrations:'Integrations',extensions:'Extensions',crew:'Crew',studio:'Studio',dev:'Dev',handoff:'Handoff',lab:'Lab',market:'Marketplace'};
   const _nt=document.getElementById('nav-title');

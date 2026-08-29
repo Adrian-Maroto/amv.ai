@@ -6423,12 +6423,9 @@ html,body{height:100%;height:100dvh}
 /* ============================================================
    LAYER A15 - Sidebar: collapsible "Build" group (Studio/Dev/Lab)
    ============================================================ */
-.sbl-toggle{display:flex!important;align-items:center;justify-content:space-between;gap:6px;cursor:pointer;user-select:none}
-.sbl-toggle .sbl-chev{transition:transform .18s ease;opacity:.55;flex:none}
-.sbl-toggle.open .sbl-chev{transform:rotate(180deg)}
-.sbl-toggle:hover{color:var(--tx)}
+/* The Build group no longer collapses, so the toggle's own rules went with it.
+   .sb-group stays: it is still the column those three buttons sit in. */
 .sb-group{display:flex;flex-direction:column}
-.sb-group.collapsed{display:none}
 
 /* Handoff: pick-a-chat modal */
 .hopick-modal{max-height:82vh;display:flex;flex-direction:column}
@@ -9364,7 +9361,7 @@ a.skip-link:focus{ top:var(--sp-3); outline:2px solid var(--tx); outline-offset:
    next control that arrives too small fails the gate rather than shipping. */
 @media (max-width:720px){
   /* Wide but short: give them height, leave the width alone. */
-  .sb-status,.mk-report,.sbl,.sbl-toggle{ min-height:44px!important; }
+  .sb-status,.mk-report,.sbl{ min-height:44px!important; }
   /* Icon and pill controls: both dimensions. */
   .hidots,.ncb,.sb-tool{ min-width:44px!important;min-height:44px!important; }
   /* Chip rows - the height comes up, the row still reads as chips. */
@@ -9501,3 +9498,30 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:none!important; }
   /* The last row keeps its own smaller tail - there is a composer under it. */
   #cm > .mr:last-child{ margin-bottom:8px!important; }
 }
+
+/* ── LAYER A119: THE SIDEBAR ENDS WHERE THE SIDEBAR ENDS ───────────────────
+   With one conversation in the list the sidebar had about 110px of nothing
+   under the user card, and the footer - tools, status, account - floated in
+   the middle of the rail rather than sitting at the bottom of it.
+
+   Two rules in an earlier layer, both of which read as though they do the
+   opposite of what they do:
+
+     #sb #hist{ flex:0 0 auto!important }   - the list cannot grow, so it is
+       only ever as tall as its contents and everything under it rides up.
+     #sb .sbfoot{ margin-top:auto!important; ... margin-top:14px!important }
+       - the same declaration sets margin-top twice, so the `auto` that would
+       have pushed the footer down is overwritten by a fixed 14px a few
+       properties later. It was written to pin the footer and cannot.
+
+   The list grows into whatever room is left and scrolls when there is more
+   history than room, which is what puts the footer on the floor. min-height
+   goes back to 0 so a short window shrinks the list instead of overflowing
+   the rail - an earlier layer asks for 300px, which is taller than the space
+   available on a laptop once the nav above it is counted. */
+body:not(.sb-rail) #sb #hist{
+  flex:1 1 auto!important;
+  min-height:0!important;
+  overflow-y:auto!important;
+}
+body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
