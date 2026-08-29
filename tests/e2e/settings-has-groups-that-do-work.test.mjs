@@ -33,12 +33,25 @@ section('No group is a dumping ground any more');
     return { groups: out, panes: USER_SET_SECTIONS.filter(s => s.id).length };
   });
   const counts = Object.entries(g.groups);
-  ok(g.panes <= 13, 'eighteen user panes became thirteen or fewer', g.panes);
+  /* THE TARGET MOVED, TWICE, AND THE REASON HAS NOT.
+
+     Eighteen panes became thirteen when this was written; thirteen became
+     eight when the owner said it was still "too much very overwhelming". So
+     the number here is a ceiling on how much a person is asked to hold at
+     once, not a record of one particular tidy-up, and it comes down when the
+     screen does. */
+  ok(g.panes <= 9, 'thirteen user panes became nine or fewer', g.panes);
   ok(counts.every(([, n]) => n <= 3),
      'and no group holds more than three', JSON.stringify(g.groups));
   ok(!Object.keys(g.groups).includes('General'),
      'the group that meant "the rest" is gone', Object.keys(g.groups).join(', '));
-  ok(counts.filter(([, n]) => n > 0).length >= 5,
+  /* Was five groups, for thirteen panes. Eight panes across five headings
+     averages 1.6 each, and a heading over a single item is a label saying the
+     same word twice - which is the noise this pass removed. Three groups of
+     three, three and two: still real categories, still nothing to scroll
+     past, and the ceiling of three per group above is unchanged because THAT
+     is the rule that stops a group becoming a drawer. */
+  ok(counts.filter(([, n]) => n > 0).length >= 3,
      'the panes are spread across real groups', JSON.stringify(g.groups));
 }
 
@@ -128,7 +141,10 @@ section('Every pane behaves on a phone')
      matters is the 40px this product promises, measured on the control. */
   await page.setViewportSize({ width: 390, height: 844 });
   const panes = await page.evaluate(() => USER_SET_SECTIONS.filter(s => s.id).map(s => s.id));
-  ok(panes.length >= 10, 'there are panes to sweep', panes.length);
+  /* A floor on the SAMPLE, not on the product: this sweep visits every pane
+     and would pass vacuously if there were almost none to visit. Eight is
+     still a real sweep. */
+  ok(panes.length >= 7, 'there are panes to sweep', panes.length);
 
   const bad = [];
   const small = [];

@@ -9665,3 +9665,13 @@ body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
   border-top:1px solid var(--bd);
   font-size:var(--t-base);color:var(--mu);
 }
+
+/* ── LAYER A124: THE LINK UNDER THE CATALOGUE IS STILL A CONTROL ───────────
+   .mc-sec-link renders as a text link, and the one added under the Crew
+   catalogue measured 71x14 - under the 24x24 WCAG 2.5.8 floor for anything
+   you have to hit. It stays a link visually; it just occupies the space a
+   pointer needs. */
+.cw-plan-foot .mc-sec-link{
+  min-height:24px;padding:5px 8px;margin:-5px -8px;
+  display:inline-flex;align-items:center;
+}

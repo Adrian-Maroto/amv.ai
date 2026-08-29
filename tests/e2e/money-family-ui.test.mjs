@@ -13,12 +13,33 @@ const { page, errors } = app;
 const openPane = pane => page.evaluate(p => { S.settingsPane = p; renderSetPane(); }, pane);
 
 section('Both panes are reachable from Settings');
-const nav = await page.evaluate(() => {
+/* THEY ARE SECTIONS NOW, NOT ROWS IN THE NAV.
+
+   Settings went from thirteen panes to eight, because thirteen was "too much
+   very overwhelming". Spending limits moved inside Plan & usage - a limit on
+   money belongs with the money - and Family & linked accounts moved inside
+   Account. Neither was deleted, and this is the check that would have caught
+   it if one had been: they still render, still carry their own heading, and
+   still have the anchor a deep link to the retired id lands on. */
+const nav = await page.evaluate(async () => {
   const labels = [...document.querySelectorAll('.sn-btn')].map(b => b.dataset.sp);
-  return { spending: labels.includes('spending'), family: labels.includes('family') };
+  const inside = async (host, id) => {
+    S.settingsPane = host; renderSetPane();
+    await new Promise(r => setTimeout(r, 350));
+    return !!document.getElementById('set-sec-' + id);
+  };
+  return {
+    spendingRow: labels.includes('spending'), familyRow: labels.includes('family'),
+    spendingHost: labels.includes('billing'), familyHost: labels.includes('account'),
+    spending: await inside('billing', 'spending'),
+    family:   await inside('account', 'family'),
+  };
 });
-ok(nav.spending, 'Spending is in the settings navigation');
-ok(nav.family, 'so is Family & linked accounts');
+ok(!nav.spendingRow && !nav.familyRow,
+   'neither is a nav row any more - that is the simplification', nav);
+ok(nav.spendingHost && nav.familyHost, 'the panes they moved into are', nav);
+ok(nav.spending, 'Spending renders as a section of Plan & usage', nav.spending);
+ok(nav.family, 'and Family & linked accounts as a section of Account', nav.family);
 
 section('The consent dead end has an exit');
 await page.evaluate(() => { AMVCompliance.reset ? AMVCompliance.reset() : localStorage.removeItem(_scopeKey('amv_consent')); });

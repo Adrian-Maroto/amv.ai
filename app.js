@@ -20742,21 +20742,23 @@ try{ window._setPaneFor=_setPaneFor; window._setSectionFor=_setSectionFor;
      window.SET_MERGED_INTO=SET_MERGED_INTO; }catch(e){}
 
 const USER_SET_SECTIONS=[
-  /* TWO HEADINGS, NOT SIX. With eight panes left, a group holding one item is
-     a label pretending to be a category - "Plan & usage" over a single "Plan &
-     usage" row said nothing twice. Two headings separate the things that are
-     about YOU from the things that are about what AMV does, and About sits on
-     its own at the bottom where it always is. */
+  /* THREE HEADINGS, NONE HOLDING MORE THAN THREE.
+
+     Thirteen panes became eight by letting the groups be the panes. The
+     grouping then has to earn its own keep: a heading over one item says
+     nothing twice, and a heading over five is a drawer. Three of three, three
+     and two - each one a question somebody actually arrives with. Who am I and
+     what am I paying. What can AMV do and who else is in here. How it looks. */
   {group:'You'},
   {id:'account',label:'Account',icon:'<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>'},
   {id:'privacy',label:'Privacy & security',icon:'<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>'},
   {id:'billing',label:'Plan & usage',icon:'<rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/>'},
-  {group:'AMV'},
+  {group:'What AMV can do'},
   {id:'capabilities',label:'Capabilities & skills',icon:'<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>'},
   {id:'integrations',label:'Connectors',icon:'<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" y1="9" x2="6" y2="21"/>'},
   {id:'teamset',label:'Team',icon:'<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/>'},
+  {group:'Preferences'},
   {id:'appearance',label:'Appearance & language',icon:'<circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>'},
-  {group:''},
   {id:'about',label:'About',icon:'<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>'},
 ];
 /* OWNER-ONLY - platform controls. Hidden from end users entirely. */
@@ -22056,8 +22058,8 @@ function _renderSetPaneInner(only, into){
           '<span class="badge '+(S.user&&S.user.provider==='google'?'bb':'bg3')+'" style="margin-top:7px">'+(S.user&&S.user.provider==='google'?'Google Account':'Email Account')+'</span></div>'+
         '</div>'+
         '<div class="sf">'+
-          '<div><label class="lbl">Full name</label><input type="text" id="s-name" value="'+escH(S.user&&S.user.name?S.user.name:'')+'" placeholder="Your name"></div>'+
-          '<div><label class="lbl">What should AMV call you?</label><input type="text" id="s-nick" value="'+escH(loadStr('amv_nickname')||'')+'" placeholder="Nickname"></div>'+
+          '<div><label class="lbl" for="s-name">Full name</label><input type="text" id="s-name" value="'+escH(S.user&&S.user.name?S.user.name:'')+'" placeholder="Your name"></div>'+
+          '<div><label class="lbl" for="s-nick">What should AMV call you?</label><input type="text" id="s-nick" value="'+escH(loadStr('amv_nickname')||'')+'" placeholder="Nickname"></div>'+
           '<div><label class="lbl">What best describes your work?</label>'+
             '<select id="s-work" class="sel" aria-label="What best describes your work">'+
               ['','Software \u0026 engineering','Design \u0026 creative','Marketing \u0026 content','Sales \u0026 business','Research \u0026 academia','Operations \u0026 admin','Finance','Founder \u2044 entrepreneur','Student','Other'].map(o=>{
@@ -22066,7 +22068,7 @@ function _renderSetPaneInner(only, into){
               }).join('')+
             '</select>'+
           '</div>'+
-          '<div><label class="lbl">Instructions for AMV</label>'+
+          '<div><label class="lbl" for="s-instr">Instructions for AMV</label>'+
             '<textarea id="s-instr" rows="3" placeholder="e.g. I primarily code in Python (not a beginner). Keep answers concise and skip the preamble." style="width:100%;resize:vertical;min-height:70px">'+escH(loadStr('amv_instructions')||'')+'</textarea>'+
             '<div class="lbl-help">AMV keeps these in mind across every chat and agent. Great for your role, preferences, and how you like answers.</div>'+
           '</div>'+
