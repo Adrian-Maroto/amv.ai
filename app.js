@@ -4323,8 +4323,7 @@ function _autoSave(){
   /* Kept apart on purpose: a save that fails must not also stop the history
      list from reflecting what is on screen. */
   try{
-    const hdr=$('hist-header');
-    if(hdr) hdr.style.display=S.convs.length?'flex':'none';
+    setHistHeader(!!S.convs.length);
   }catch(e){}
 }
 function newChat(){
@@ -7996,6 +7995,16 @@ function _customPlanBanner(inApp){
 
 
 /* === SIDEBAR === */
+/* Show or hide the "Recents" heading.
+
+   Three places needed this and all three set style.display directly, which
+   `#sb .sbl{display:block!important}` outranked - so the heading sat above an
+   empty list and none of the three could do anything about it. One function,
+   one class, and the rule that decides it lives in LAYER A117. */
+function setHistHeader(show){
+  try{ const h=$('hist-header'); if(h) h.classList.toggle('hh-off', !show); }catch(e){}
+}
+try{ window.setHistHeader=setHistHeader; }catch(e){}
 function renderHist(){
   const area=$('hist'); if(!area) return;
   const hdr=$('hist-header');
@@ -8011,7 +8020,7 @@ function renderHist(){
   // star filter is active (sessions aren't starrable).
   let sessions = (!S.starFilter && Array.isArray(_SESSIONS)) ? _SESSIONS.slice() : [];
   if(search) sessions = sessions.filter(s=>(s.title||'').toLowerCase().includes(search) || (SESSION_KINDS[s.kind]?.label||'').toLowerCase().includes(search));
-  if(hdr) hdr.style.display=(!search&&!S.starFilter&&!S.convs.length&&!sessions.length)?'none':'flex';
+  if(hdr) setHistHeader(!(!search&&!S.starFilter&&!S.convs.length&&!sessions.length));
   if(!convs.length && !sessions.length){
     area.innerHTML = search
       ? '<div class="nh">No results for &ldquo;'+escH(search)+'&rdquo;</div>'
@@ -8228,8 +8237,7 @@ function updateSbUser(){
     el.innerHTML=_avatarInner(u&&u.email);
   });
   // Show/hide hist header
-  const hdr=$('hist-header');
-  if(hdr) hdr.style.display=S.convs&&S.convs.length>0?'flex':'none';
+  setHistHeader(!!(S.convs&&S.convs.length>0));
   renderHist();
   _renderSbUsage();
 }
@@ -14399,7 +14407,7 @@ function _cwDefaultJobs(){ return [
             'Information and analysis, not financial advice. AMV will not tell you what to buy or sell.'],
     prompt:'Check the public accounts the user named for new posts since your last run. For each post that genuinely bears on what they said they are watching: quote what was actually posted, with the time; identify the specific companies, sectors or assets it touches and say WHY it touches them, citing the concrete link (revenue exposure, named regulation, supply chain) rather than a vague association; and describe how comparable posts have been followed by market moves before, with the actual numbers and dates, distinguishing correlation from cause. Say plainly where the signal is weak or ambiguous. If nothing relevant was posted, say exactly that rather than reporting a post that does not matter. You must NOT give financial advice: never tell the user to buy, sell, hold, short or wait, never predict a price or a direction, and never phrase analysis as a recommendation. End every report by stating it is information and analysis, not financial advice.' },
 
-  { id:'book_table', cat:'Everyday life', icon:'\uD83C\uDF7D\uFE0F', title:'Find and book a table', needs:'Web research', on:false,
+  { id:'book_table', cat:'Home & life', icon:'\uD83C\uDF7D\uFE0F', title:'Find and book a table', needs:'Web research', on:false,
     desc:'Finds somewhere that fits the occasion, the budget and the people coming, checks what is actually available at the time you want, and books it once you say yes. It asks before reserving anything in your name.',
     asks:{ q:'What is the occasion, and any constraints?', ph:'e.g. four of us, Friday around 8, walkable from Union Square, one vegetarian, under $50 a head' },
     sample:['3 places fit Friday at 8 for four, one vegetarian, under $50 a head.','BEST FIT - Vera, 7:45 or 8:30 free. Vegetarian menu is a real one, not a side salad. 12 minutes walk.',
@@ -22313,7 +22321,18 @@ function setupApp(){
     on(btn,'click',()=>{ if(btn.dataset.tab) setTab(btn.dataset.tab); });
   });
   on($('hist-search'),'input',renderHist);
-  on($('star-filter'),'click',()=>{ S.starFilter=!S.starFilter; $('star-filter').style.color=S.starFilter?'var(--gold)':''; renderHist(); });
+  /* The pressed state is one attribute rather than an inline colour, so what
+     the eye sees and what a screen reader announces cannot drift apart. */
+  on($('star-filter'),'click',()=>{
+    S.starFilter=!S.starFilter;
+    const b=$('star-filter');
+    if(b){
+      b.setAttribute('aria-pressed', S.starFilter?'true':'false');
+      const lbl = S.starFilter ? 'Showing starred chats only. Show all chats' : 'Show starred chats only';
+      b.setAttribute('title', lbl); b.setAttribute('aria-label', lbl);
+    }
+    renderHist();
+  });
   on($('sb-user-btn'),'click',()=>{ const p=$('sb-popup'); if(p) p.classList.toggle('on'); });
   on($('smi-settings'),'click',()=>{ $('sb-popup').classList.remove('on'); S.settingsPane='account'; setTab('settings'); });
   on($('smi-whatsnew'),'click',()=>{ $('sb-popup').classList.remove('on'); openWhatsNew(); });

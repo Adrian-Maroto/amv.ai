@@ -2688,7 +2688,18 @@ function setupApp(){
     on(btn,'click',()=>{ if(btn.dataset.tab) setTab(btn.dataset.tab); });
   });
   on($('hist-search'),'input',renderHist);
-  on($('star-filter'),'click',()=>{ S.starFilter=!S.starFilter; $('star-filter').style.color=S.starFilter?'var(--gold)':''; renderHist(); });
+  /* The pressed state is one attribute rather than an inline colour, so what
+     the eye sees and what a screen reader announces cannot drift apart. */
+  on($('star-filter'),'click',()=>{
+    S.starFilter=!S.starFilter;
+    const b=$('star-filter');
+    if(b){
+      b.setAttribute('aria-pressed', S.starFilter?'true':'false');
+      const lbl = S.starFilter ? 'Showing starred chats only. Show all chats' : 'Show starred chats only';
+      b.setAttribute('title', lbl); b.setAttribute('aria-label', lbl);
+    }
+    renderHist();
+  });
   on($('sb-user-btn'),'click',()=>{ const p=$('sb-popup'); if(p) p.classList.toggle('on'); });
   on($('smi-settings'),'click',()=>{ $('sb-popup').classList.remove('on'); S.settingsPane='account'; setTab('settings'); });
   on($('smi-whatsnew'),'click',()=>{ $('sb-popup').classList.remove('on'); openWhatsNew(); });

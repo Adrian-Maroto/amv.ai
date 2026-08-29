@@ -2595,6 +2595,16 @@ function _customPlanBanner(inApp){
 
 
 /* === SIDEBAR === */
+/* Show or hide the "Recents" heading.
+
+   Three places needed this and all three set style.display directly, which
+   `#sb .sbl{display:block!important}` outranked - so the heading sat above an
+   empty list and none of the three could do anything about it. One function,
+   one class, and the rule that decides it lives in LAYER A117. */
+function setHistHeader(show){
+  try{ const h=$('hist-header'); if(h) h.classList.toggle('hh-off', !show); }catch(e){}
+}
+try{ window.setHistHeader=setHistHeader; }catch(e){}
 function renderHist(){
   const area=$('hist'); if(!area) return;
   const hdr=$('hist-header');
@@ -2610,7 +2620,7 @@ function renderHist(){
   // star filter is active (sessions aren't starrable).
   let sessions = (!S.starFilter && Array.isArray(_SESSIONS)) ? _SESSIONS.slice() : [];
   if(search) sessions = sessions.filter(s=>(s.title||'').toLowerCase().includes(search) || (SESSION_KINDS[s.kind]?.label||'').toLowerCase().includes(search));
-  if(hdr) hdr.style.display=(!search&&!S.starFilter&&!S.convs.length&&!sessions.length)?'none':'flex';
+  if(hdr) setHistHeader(!(!search&&!S.starFilter&&!S.convs.length&&!sessions.length));
   if(!convs.length && !sessions.length){
     area.innerHTML = search
       ? '<div class="nh">No results for &ldquo;'+escH(search)+'&rdquo;</div>'
@@ -2827,8 +2837,7 @@ function updateSbUser(){
     el.innerHTML=_avatarInner(u&&u.email);
   });
   // Show/hide hist header
-  const hdr=$('hist-header');
-  if(hdr) hdr.style.display=S.convs&&S.convs.length>0?'flex':'none';
+  setHistHeader(!!(S.convs&&S.convs.length>0));
   renderHist();
   _renderSbUsage();
 }

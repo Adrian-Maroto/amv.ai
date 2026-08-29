@@ -1411,8 +1411,7 @@ function _autoSave(){
   /* Kept apart on purpose: a save that fails must not also stop the history
      list from reflecting what is on screen. */
   try{
-    const hdr=$('hist-header');
-    if(hdr) hdr.style.display=S.convs.length?'flex':'none';
+    setHistHeader(!!S.convs.length);
   }catch(e){}
 }
 function newChat(){

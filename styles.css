@@ -9418,3 +9418,50 @@ a.skip-link:focus{ top:var(--sp-3); outline:2px solid var(--tx); outline-offset:
      to something that reads as a conversation rather than a list of cards. */
   #cm > .mr{ margin-bottom:18px!important; }
 }
+
+/* ── LAYER A117: THE STARRED FILTER GETS ITS BUTTON BACK ───────────────────
+   Starring a chat worked: the row context menu offers it, the row draws a
+   filled star, and renderHist() filters on S.starFilter and has a written
+   empty state for the case where nothing is starred yet. S.starFilter is even
+   in the list of state that survives a reload. Every part of the feature was
+   present except the control that turns it on - nothing in the product ever
+   rendered #star-filter, so the click handler bound to it at boot found
+   nothing, and the styling below it in this file had no element to style.
+   Star a conversation and there was no way to then see only those.
+
+   The same markup carried a second silent failure. Three separate places -
+   renderHist, updateSbUser and the session autosave - do
+   $('hist-header').style.display = ... to hide the "Recents" heading when
+   there is nothing under it. No element had that id either, so all three
+   quietly did nothing and the heading sat above an empty list. Both halves
+   were fixed by the one line of shell markup this layer styles.
+
+   The state lives in a class rather than an inline colour so the pressed look
+   and the aria-pressed the screen reader announces come from the same toggle,
+   and the button squares off to 44px on a phone for the reason LAYER A115
+   gives. */
+#star-filter{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:28px;height:28px;padding:0;flex:0 0 auto;
+  border:none;background:none;border-radius:var(--r-sm);
+  color:var(--mu);opacity:.55;cursor:pointer;
+  transition:opacity .12s var(--ease),color .12s var(--ease),background-color .12s var(--ease);
+}
+#star-filter:hover{ opacity:1;background:var(--s2); }
+#star-filter:focus-visible{ outline:2px solid var(--accent);outline-offset:2px; }
+#sb #star-filter[aria-pressed="true"]{ opacity:1;color:var(--gold-txt); }
+#sb #star-filter[aria-pressed="true"] svg{ fill:currentColor; }
+@media (max-width:720px){
+  #star-filter{ min-width:44px;min-height:44px;width:44px;height:44px; }
+}
+
+/* THE HEADING COULD NOT BE HIDDEN, EVEN ONCE IT EXISTED.
+
+   `#sb .sbl{display:block!important}` is set twice in earlier layers, so the
+   three call sites that do $('hist-header').style.display = 'none' were
+   outranked by !important and could never win - and the same rule flattened
+   the inline display:flex the row needs to put the star on the right. An
+   inline style cannot beat !important, so the visibility is a class here and
+   the call sites toggle that instead. */
+#sb #hist-header{ display:flex!important;align-items:center;justify-content:space-between; }
+#sb #hist-header.hh-off{ display:none!important; }
