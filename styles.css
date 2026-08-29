@@ -9575,3 +9575,52 @@ body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
   margin-left:0;
   margin-top:var(--sp-2);
 }
+
+/* ── LAYER A121: SAY IT IN WORDS, OR FIND IT, OR BE TOLD THE TRUTH ─────────
+   Three things the Crew catalogue needed and did not have.
+
+   The command box leads, because it is the product. It was only ever rendered
+   on the paid screen, so everybody who had not paid - which is everybody,
+   before they pay - saw a catalogue and no way to say a sentence.
+
+   The search sits above the filter chips: chips answer "what kind of thing",
+   the search answers "does it do THIS", and the second question is the one
+   somebody arrives with.
+
+   The no-match block is the one that matters most. A search that finds
+   nothing usually says "no results", which here would be a lie by omission:
+   Crew is not limited to its examples, so not-in-the-list is not cannot-be-
+   done. It says so, and hands the words straight to the box. */
+.cw-cmd-lead{ margin-top:var(--sp-5); }
+
+.cw-find-wrap{
+  display:flex;align-items:center;gap:var(--sp-3);flex-wrap:wrap;
+  margin:var(--sp-5) 0 var(--sp-3);
+}
+.cw-find-l{
+  font-size:var(--t-sm);font-weight:600;color:var(--mu);
+  letter-spacing:.02em;flex:0 0 auto;
+}
+.cw-find{
+  flex:1 1 260px;min-width:0;max-width:420px;
+  background:var(--s1);border:1px solid var(--bd);border-radius:var(--r-pill);
+  padding:9px 14px;color:var(--tx);font-size:var(--t-base);font-family:var(--fn);
+  transition:border-color .14s var(--ease),background-color .14s var(--ease);
+}
+.cw-find::placeholder{ color:var(--dim); }
+.cw-find:focus{ outline:none;border-color:var(--accent);background:var(--s2); }
+.cw-find-n{ font-size:var(--t-sm);color:var(--dim);flex:0 0 auto; }
+
+.cw-nomatch{
+  border:1px solid var(--bd);border-radius:var(--r-lg);
+  background:var(--s1);padding:var(--sp-5);
+  display:flex;flex-direction:column;gap:var(--sp-3);align-items:flex-start;
+}
+.cw-nomatch-t{ font-size:var(--t-lg);font-weight:600;color:var(--tx);line-height:1.4; }
+.cw-nomatch-d{ font-size:var(--t-base);color:var(--mu);line-height:1.6;max-width:62ch; }
+.cw-nomatch-go{ font-size:var(--t-base);padding:10px 18px; }
+
+@media (max-width:720px){
+  .cw-find{ max-width:none;flex:1 1 100%; }
+  .cw-find-wrap{ gap:var(--sp-2); }
+}

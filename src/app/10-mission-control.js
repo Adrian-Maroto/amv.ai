@@ -748,6 +748,272 @@ function _cwNeedsMissing(j){
 function cwConnect(){ try{ S.tab='integrations'; setTab('integrations'); }catch(e){} }
 try{ window.cwConnect=cwConnect; }catch(e){}
 
+
+/* ── A HUNDRED EXAMPLES, FROM A HUNDRED PLACES ────────────────────────────────
+
+   Asked for directly: "where are the foreign countries one? there should be
+   100 different ones in total including all of the different countries".
+
+   The country work already existed and nobody could see it. The Worker carries
+   everyday job packs for 105 countries - 525 jobs - and the only way to reach
+   them was Integrations, then a row called "Everyday life where you live",
+   then a modal, then a country picker. So the catalogue that is supposed to
+   show what AMV can do showed a hundred and six jobs written as though
+   everybody lived in the same place.
+
+   These are not new jobs and they are not copy. Each one is a REAL job from
+   the catalogue above, named for the country it runs in, and starting it
+   starts that job with the country in the instruction - which is what makes
+   the answer different in Lagos and in Osaka. The country list is lifted from
+   the Worker's own EVERYDAY_BY_COUNTRY so the two cannot drift: if a country
+   has a pack on the server, it has an example here.
+
+   Ten kinds, because these are the ten that genuinely change with where you
+   are - what the paperwork is called, what the shops are, what the weather
+   does to your day. A job whose answer is the same everywhere would be
+   padding, and padding is what this screen had too much of already. */
+const CW_WORLD_COUNTRIES = [
+  ['US',"United States",'🇺🇸'],
+  ['CA',"Canada",'🇨🇦'],
+  ['MX',"Mexico",'🇲🇽'],
+  ['BR',"Brazil",'🇧🇷'],
+  ['AR',"Argentina",'🇦🇷'],
+  ['DE',"Germany",'🇩🇪'],
+  ['GB',"United Kingdom",'🇬🇧'],
+  ['FR',"France",'🇫🇷'],
+  ['IT',"Italy",'🇮🇹'],
+  ['RU',"Russia",'🇷🇺'],
+  ['CN',"China",'🇨🇳'],
+  ['IN',"India",'🇮🇳'],
+  ['JP',"Japan",'🇯🇵'],
+  ['KR',"South Korea",'🇰🇷'],
+  ['ID',"Indonesia",'🇮🇩'],
+  ['SA',"Saudi Arabia",'🇸🇦'],
+  ['NG',"Nigeria",'🇳🇬'],
+  ['ZA',"South Africa",'🇿🇦'],
+  ['EG',"Egypt",'🇪🇬'],
+  ['AU',"Australia",'🇦🇺'],
+  ['AT',"Austria",'🇦🇹'],
+  ['BE',"Belgium",'🇧🇪'],
+  ['CZ',"Czechia",'🇨🇿'],
+  ['DK',"Denmark",'🇩🇰'],
+  ['FI',"Finland",'🇫🇮'],
+  ['IE',"Ireland",'🇮🇪'],
+  ['NL',"Netherlands",'🇳🇱'],
+  ['NO',"Norway",'🇳🇴'],
+  ['PL',"Poland",'🇵🇱'],
+  ['PT',"Portugal",'🇵🇹'],
+  ['ES',"Spain",'🇪🇸'],
+  ['SE',"Sweden",'🇸🇪'],
+  ['CH',"Switzerland",'🇨🇭'],
+  ['TR',"T\u00fcrkiye",'🇹🇷'],
+  ['UA',"Ukraine",'🇺🇦'],
+  ['HK',"Hong Kong",'🇭🇰'],
+  ['IL',"Israel",'🇮🇱'],
+  ['MY',"Malaysia",'🇲🇾'],
+  ['PH',"Philippines",'🇵🇭'],
+  ['SG',"Singapore",'🇸🇬'],
+  ['TW',"Taiwan",'🇹🇼'],
+  ['TH',"Thailand",'🇹🇭'],
+  ['AE',"United Arab Emirates",'🇦🇪'],
+  ['VN',"Vietnam",'🇻🇳'],
+  ['KE',"Kenya",'🇰🇪'],
+  ['PK',"Pakistan",'🇵🇰'],
+  ['BD',"Bangladesh",'🇧🇩'],
+  ['LK',"Sri Lanka",'🇱🇰'],
+  ['NP',"Nepal",'🇳🇵'],
+  ['KZ',"Kazakhstan",'🇰🇿'],
+  ['UZ',"Uzbekistan",'🇺🇿'],
+  ['KH',"Cambodia",'🇰🇭'],
+  ['MM',"Myanmar",'🇲🇲'],
+  ['IQ',"Iraq",'🇮🇶'],
+  ['JO',"Jordan",'🇯🇴'],
+  ['QA',"Qatar",'🇶🇦'],
+  ['KW',"Kuwait",'🇰🇼'],
+  ['OM',"Oman",'🇴🇲'],
+  ['BH',"Bahrain",'🇧🇭'],
+  ['LB',"Lebanon",'🇱🇧'],
+  ['AZ',"Azerbaijan",'🇦🇿'],
+  ['GE',"Georgia",'🇬🇪'],
+  ['AM',"Armenia",'🇦🇲'],
+  ['MN',"Mongolia",'🇲🇳'],
+  ['NZ',"New Zealand",'🇳🇿'],
+  ['ET',"Ethiopia",'🇪🇹'],
+  ['TZ',"Tanzania",'🇹🇿'],
+  ['UG',"Uganda",'🇺🇬'],
+  ['GH',"Ghana",'🇬🇭'],
+  ['MA',"Morocco",'🇲🇦'],
+  ['DZ',"Algeria",'🇩🇿'],
+  ['TN',"Tunisia",'🇹🇳'],
+  ['SN',"Senegal",'🇸🇳'],
+  ['CI',"Cote d'Ivoire",'🇨🇮'],
+  ['CM',"Cameroon",'🇨🇲'],
+  ['ZM',"Zambia",'🇿🇲'],
+  ['ZW',"Zimbabwe",'🇿🇼'],
+  ['RW',"Rwanda",'🇷🇼'],
+  ['MZ',"Mozambique",'🇲🇿'],
+  ['AO',"Angola",'🇦🇴'],
+  ['BW',"Botswana",'🇧🇼'],
+  ['NA',"Namibia",'🇳🇦'],
+  ['CO',"Colombia",'🇨🇴'],
+  ['PE',"Peru",'🇵🇪'],
+  ['CL',"Chile",'🇨🇱'],
+  ['EC',"Ecuador",'🇪🇨'],
+  ['BO',"Bolivia",'🇧🇴'],
+  ['VE',"Venezuela",'🇻🇪'],
+  ['GT',"Guatemala",'🇬🇹'],
+  ['DO',"Dominican Republic",'🇩🇴'],
+  ['CR',"Costa Rica",'🇨🇷'],
+  ['PA',"Panama",'🇵🇦'],
+  ['UY',"Uruguay",'🇺🇾'],
+  ['PY',"Paraguay",'🇵🇾'],
+  ['RO',"Romania",'🇷🇴'],
+  ['GR',"Greece",'🇬🇷'],
+  ['HU',"Hungary",'🇭🇺'],
+  ['BG',"Bulgaria",'🇧🇬'],
+  ['RS',"Serbia",'🇷🇸'],
+  ['HR',"Croatia",'🇭🇷'],
+  ['SK',"Slovakia",'🇸🇰'],
+  ['SI',"Slovenia",'🇸🇮'],
+  ['LT',"Lithuania",'🇱🇹'],
+  ['LV',"Latvia",'🇱🇻'],
+  ['EE',"Estonia",'🇪🇪']
+];
+const CW_WORLD_KINDS = [
+  { job:'doc_expiry',     icon:'\uD83D\uDEC2', cat:'Home & life',
+    t:n=>'Papers and permits in '+n,
+    d:n=>'Tracks what expires and what has to be renewed in '+n+' - identity documents, residence and work permits, licences - and says how long each one normally takes so you start it in time.' },
+  { job:'weather_day',    icon:'\uD83C\uDF26\uFE0F', cat:'Home & life',
+    t:n=>'The day ahead in '+n,
+    d:n=>'The forecast where you are in '+n+', and what it actually changes about your day - what to wear, what to move, what to bring.' },
+  { job:'fuel_watch',     icon:'\u26FD', cat:'Money',
+    t:n=>'Cheapest fuel in '+n,
+    d:n=>'Watches pump prices near you in '+n+' and tells you where and when to fill up, in the local currency.' },
+  { job:'store_deals',    icon:'\uD83C\uDFF7\uFE0F', cat:'Money',
+    t:n=>'This week at the shops in '+n,
+    d:n=>'The discounts running at the chains people actually use in '+n+', checked against what you buy rather than what is on the front of the leaflet.' },
+  { job:'local_basket',   icon:'\uD83E\uDDFA', cat:'Money',
+    t:n=>'Where the food shop is cheapest in '+n,
+    d:n=>'Compares a basket across the supermarkets near you in '+n+' and says where this week is cheapest and by how much.' },
+  { job:'fridge_recipes', icon:'\uD83E\uDD57', cat:'Home & life',
+    t:n=>'Cooking from what you bought in '+n,
+    d:n=>'Takes what you bought, works out what goes off first, and suggests meals from it using what is normal to find in '+n+'.' },
+  { job:'appt_chase',     icon:'\uD83E\uDE7A', cat:'Health',
+    t:n=>'Getting seen in '+n,
+    d:n=>'How appointments are actually booked in '+n+', what the wait tends to be, what to bring, and what to ask when you are there.' },
+  { job:'school_admin',   icon:'\uD83C\uDF92', cat:'Family & kids',
+    t:n=>'School paperwork in '+n,
+    d:n=>'The forms, terms, deadlines and payments schools in '+n+' ask for, and which of them are about to be due.' },
+  { job:'bills_due',      icon:'\uD83E\uDDFE', cat:'Money',
+    t:n=>'Bills and pay in '+n,
+    d:n=>'What is due and when in '+n+', in local currency - flags a failed payment or a low balance early, and confirms when your pay lands.' },
+  { job:'tax_catch',      icon:'\uD83D\uDCC9', cat:'Money',
+    t:n=>'What is deductible in '+n,
+    d:n=>'Watches for the spending that is claimable in '+n+' and keeps it together, with the deadline that applies where you are.' },
+];
+
+/* A STABLE SHUFFLE.
+
+   "100 random examples" has to mean random ACROSS VISITS and fixed WITHIN one,
+   or the cards reorder under your hand every time a filter is pressed, which
+   reads as a bug rather than as variety. Seeded once per page load. */
+let _cwWorldSeed = 0;
+function _cwWorldRand(){
+  _cwWorldSeed = (_cwWorldSeed * 1664525 + 1013904223) >>> 0;
+  return _cwWorldSeed / 4294967296;
+}
+function _cwWorldBuild(){
+  _cwWorldSeed = (Date.now() ^ 0x9e3779b9) >>> 0;
+  const out = [];
+  /* One example per country, so a hundred examples really are a hundred
+     PLACES rather than ten places wearing ten hats. The kind rotates and is
+     offset by the country's position, so neighbours in the list are not all
+     about fuel. */
+  CW_WORLD_COUNTRIES.forEach(([code, name, flag], i) => {
+    const k = CW_WORLD_KINDS[i % CW_WORLD_KINDS.length];
+    out.push({
+      id: 'world_' + code.toLowerCase() + '_' + k.job,
+      world: true, country: code, countryName: name,
+      cat: k.cat, icon: flag, on: false,
+      title: k.t(name),
+      desc: k.d(name),
+      needs: 'Web research',
+      /* The instruction is the real job's, with the country named in it. That
+         is the whole difference: the same job asked about Japan and about
+         Kenya is two different answers, and neither is invented here. */
+      prompt: 'For somebody living in ' + name + ' (' + code + '): ' +
+              (_cwPromptFor(k.job) || k.d(name)) +
+              ' Use sources and services that actually operate in ' + name +
+              ', give amounts in the local currency, and say the date you checked.',
+      basedOn: k.job,
+    });
+  });
+  /* Shuffle so the top of the list is not always the Americas. */
+  for(let i = out.length - 1; i > 0; i--){
+    const j = Math.floor(_cwWorldRand() * (i + 1));
+    const t = out[i]; out[i] = out[j]; out[j] = t;
+  }
+  return out;
+}
+function _cwPromptFor(id){
+  try{
+    const j = (_cwDefaultJobs() || []).find(x => x && x.id === id);
+    return j && j.prompt ? String(j.prompt) : '';
+  }catch(e){ return ''; }
+}
+let _cwWorldCache = null;
+function _cwWorldJobs(){
+  if(!_cwWorldCache) _cwWorldCache = _cwWorldBuild();
+  return _cwWorldCache;
+}
+try{ window._cwWorldJobs = _cwWorldJobs; window.CW_WORLD_COUNTRIES = CW_WORLD_COUNTRIES; }catch(e){}
+
+/* THE POOL, AND THE HUNDRED THAT GET SHOWN.
+
+   The catalogue used to render every job it had. Asked to stop: "i don't want
+   all, just show 100 random examples around the world in the boxes below
+   crew". Which is the right instinct - two hundred cards is a wall, and a wall
+   reads as less capable than a shelf, not more.
+
+   So the pool is everything AMV can actually run (the built-in jobs plus one
+   real job per country) and the SHOWCASE is a hundred of them. World examples
+   come first in the sample, because they are the half nobody could see before
+   and the half that answers "does this work where I live".
+
+   A world example is a real job with a country named in its instruction, so
+   switching one on switches on that job - it is not a card that does nothing. */
+function _cwAllJobs(){
+  try{ return (_cwJobs() || []).concat(_cwWorldJobs() || []); }
+  catch(e){ return _cwJobs() || []; }
+}
+const CW_SHOWCASE_N = 100;
+let _cwShowcaseCache = null;
+function _cwShowcase(){
+  if(_cwShowcaseCache) return _cwShowcaseCache;
+  const world = (()=>{ try{ return _cwWorldJobs() || []; }catch(e){ return []; } })();
+  const home  = (()=>{ try{ return _cwJobs() || []; }catch(e){ return []; } })();
+  /* Anything already switched on is always shown, whatever the sample says -
+     a job you are running must never vanish from the screen that manages it. */
+  const on = home.filter(j => j && j.on);
+  const rest = home.filter(j => !(j && j.on));
+  const out = [];
+  const seen = new Set();
+  const push = (j) => { if(j && !seen.has(j.id) && out.length < CW_SHOWCASE_N){ seen.add(j.id); out.push(j); } };
+  on.forEach(push);
+  /* Roughly half the world, half the built-ins, interleaved so the grid does
+     not read as two separate lists bolted together. */
+  const half = Math.floor((CW_SHOWCASE_N - out.length) / 2);
+  for(let i = 0; i < Math.max(world.length, rest.length); i++){
+    if(i < half) push(world[i]);
+    push(rest[i]);
+    if(out.length >= CW_SHOWCASE_N) break;
+  }
+  for(let i = 0; i < world.length && out.length < CW_SHOWCASE_N; i++) push(world[i]);
+  _cwShowcaseCache = out;
+  return out;
+}
+try{ window._cwAllJobs=_cwAllJobs; window._cwShowcase=_cwShowcase; }catch(e){}
+
 /* ── BROWSING SEVENTY JOBS ────────────────────────────────────────────────────
    A flat grid of seventy cards is a wall, and a wall reads as less capable than
    a shelf, not more. Grouped under headings with a filter, the same list reads
@@ -757,6 +1023,71 @@ const CW_CATS = ['Money','Work & career','Growing a business','Making things','I
 let _cwCat = 'all';
 function cwCat(c){ _cwCat = c || 'all'; renderCrewView(); }
 try{ window.cwCat=cwCat; }catch(e){}
+
+/* SEARCHING THE EXAMPLES, AND WHAT HAPPENS WHEN THERE IS NO MATCH.
+
+   Asked for: "make sure you can also search examples for crew like google etc
+   discord etc like ones that already show and if it doesnt show say 'prompt it
+   yourself' and it shows the textbox".
+
+   The second half is the important half. A search that finds nothing usually
+   says "no results", which on this screen would be a lie by omission - Crew
+   is not limited to the examples, so "not in the list" is not "cannot be
+   done". An empty search points at the box and offers to run the words
+   already typed, which is the true answer and also the shortest path to it.
+
+   Matched across title, description, category and the accounts a job uses, so
+   "google", "discord" and "gmail" find things by what they touch rather than
+   only by what they are called. */
+let _cwFind = '';
+function cwFind(v){
+  _cwFind = String(v || '').trim();
+  renderCrewView();
+  /* Re-render replaces the input, so put the words and the cursor back. */
+  try{
+    const el = document.getElementById('cw-find');
+    if(el){ el.value = _cwFind; el.focus();
+            el.setSelectionRange(el.value.length, el.value.length); }
+  }catch(e){}
+}
+try{ window.cwFind=cwFind; }catch(e){}
+function _cwMatches(j, q){
+  if(!q) return true;
+  const hay = [j.title, j.desc, j.cat, j.needs, j.countryName].filter(Boolean).join(' ').toLowerCase();
+  return q.toLowerCase().split(/\s+/).filter(Boolean).every(w => hay.indexOf(w) >= 0);
+}
+function _cwFindBoxHTML(n){
+  return `<div class="cw-find-wrap">
+    <label class="cw-find-l" for="cw-find">Search these examples</label>
+    <input id="cw-find" class="cw-find" type="search" autocomplete="off"
+           value="${escH(_cwFind)}" placeholder="e.g. google, discord, invoices, school, Japan">
+    ${_cwFind ? `<span class="cw-find-n">${n} match${n===1?'':'es'}</span>` : ''}
+  </div>`;
+}
+function _cwNoMatchHTML(){
+  const q = _cwFind;
+  return `<div class="cw-nomatch">
+    <div class="cw-nomatch-t">No example here says &ldquo;${escH(q)}&rdquo; - which does not mean AMV cannot do it.</div>
+    <div class="cw-nomatch-d">The examples are a shelf, not the shop. Prompt it yourself: describe what you want in
+      your own words and Crew works out which accounts and sites it needs.</div>
+    <button class="btn bp cw-nomatch-go" data-dact="cwPromptSelf" data-darg="${escH(q)}">Prompt it yourself \u2192</button>
+  </div>`;
+}
+/* Puts what they searched for into the box that actually takes it, rather than
+   making them retype it somewhere else. */
+function cwPromptSelf(q){
+  try{
+    const el = document.getElementById('mc-cmd-input');
+    if(el){
+      el.value = String(q || '');
+      el.scrollIntoView({ block:'center', behavior:'smooth' });
+      el.focus();
+      return;
+    }
+  }catch(e){}
+  try{ setTab('chat'); }catch(e){}
+}
+try{ window.cwPromptSelf=cwPromptSelf; }catch(e){}
 
 function _cwCatChips(jobs){
   const count=c=>jobs.filter(j=>j.cat===c).length;
@@ -870,6 +1201,12 @@ function _cwPopBodyHTML(){
 }
 
 function _cwJobsBody(jobs, jobCard){
+  if(_cwFind){
+    const hits = jobs.filter(j => _cwMatches(j, _cwFind));
+    return hits.length
+      ? `<div class="cw-jobs-grid">${hits.map(jobCard).join('')}</div>`
+      : _cwNoMatchHTML();
+  }
   if(_cwCat!=='all'){
     const sel=jobs.filter(j=>j.cat===_cwCat);
     return `<div class="cw-jobs-grid">${sel.map(jobCard).join('')}</div>`;
@@ -1574,7 +1911,7 @@ function _cwLockedCard(j){
 }
 
 function cwPeek(id){
-  const j = (_cwJobs()||[]).find(x=>x.id===id); if(!j) return;
+  const j = (_cwAllJobs()||[]).find(x=>x.id===id); if(!j) return;
   const r = $('ovr'); if(!r) return;
   const miss = _cwNeedsMissing(j);
   const bg = _cwRunsUnattended(j);
@@ -1979,9 +2316,38 @@ function renderCrewView(){
       <p class="vsub">Give it an outcome and it plans the steps, does the work, and brings back something finished -
         every morning, every week, whatever you set. Here is every job it can run. Open any of them to see the
         exact instruction it follows and the shape of what it sends back.</p>
-      <p class="vsub cw-open-note">${jobs.length} of them are written out below. They are <b>examples</b>, not the
-        menu - Crew runs what you describe, in your own words, so anything you can write down is a job it can take.
-        The catalogue is here to show you the shape of one.</p>
+      <p class="vsub cw-open-note">A hundred of them are below, from a hundred different countries. They are
+        <b>examples</b>, not the menu - Crew runs what you describe, in your own words, so anything you can write
+        down is a job it can take. The catalogue is here to show you the shape of one.</p>
+
+      ${/* THE BOX IS THE PRODUCT, AND IT WAS ONLY ON THE PAID SCREEN.
+
+            "have the text box remember where you can type something it
+            recognizes it and does it i still want that" - said twice, because
+            it was there and could not be seen: the command box lived on the
+            unlocked Crew view only. Anybody on Free, which is everybody
+            before they pay, got a catalogue and no way to say a sentence.
+
+            It is the first thing on the screen now, and it is the SAME box -
+            same input id, same run path, so what somebody types here is
+            treated exactly as it would be on the paid screen. */ ''}
+      <div class="mc-cmd mc-cmd-lg cw-cmd-lead">
+        <div class="mc-cmd-label">Tell AMV what to do
+          <span>- say it in your own words and it works out the rest</span></div>
+        <div class="mc-cmd-inner">
+          <svg class="mc-cmd-ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/></svg>
+          <input id="mc-cmd-input" class="mc-cmd-input" type="text" autocomplete="off"
+                 placeholder="e.g. \u201csummarise my last meetings\u201d or \u201cfind the cheapest flights to Madrid in March\u201d">
+          <button class="mc-cmd-go" id="mc-cmd-go">Run</button>
+        </div>
+        <div class="mc-cmd-chips">${[
+          'Summarise my last meetings',
+          'What did I agree to this week?',
+          'Find the cheapest supermarket near me',
+          'What paperwork do I need to renew?'
+        ].map(c=>`<button class="mc-cmd-chip" data-mccmd="${escH(c)}">${escH(c)}</button>`).join('')}</div>
+        <div id="mc-cmd-result" class="mc-cmd-result"></div>
+      </div>
       ${/* THE STATS BAND IS GONE.
 
             It said "104 examples, not a limit / 49 run with AMV closed /
@@ -1997,9 +2363,11 @@ function renderCrewView(){
             belong here as much as on the paid screen. */ ''}
       ${_cwErrandsHTML()}
       ${_cwPopularHTML()}
-      ${_cwCatChips(jobs)}
-      ${_cwJobsBody(jobs, _cwLockedCard)}
+      ${_cwFindBoxHTML(_cwShowcase().filter(j=>_cwMatches(j,_cwFind)).length)}
+      ${_cwCatChips(_cwShowcase())}
+      ${_cwJobsBody(_cwShowcase(), _cwLockedCard)}
     </div></div>`;
+    _cwWireCmd(vc);
     return;
   }
   const jobs=_cwJobs(); const appr=_cwApprovals();
@@ -2191,8 +2559,9 @@ function renderCrewView(){
       <div class="cw-anything">These are starting points, not the limit. Type <b>anything</b> in the box above and AMV works out which accounts, sites and tools it needs and does it - on a schedule if you ask. If something it needs is not connected yet, it tells you exactly what to add.</div>
       ${_cwErrandsHTML()}
       ${_cwPopularHTML()}
-      ${_cwCatChips(jobs)}
-      ${_cwJobsBody(jobs, jobCard)}
+      ${_cwFindBoxHTML(_cwShowcase().filter(j=>_cwMatches(j,_cwFind)).length)}
+      ${_cwCatChips(_cwShowcase())}
+      ${_cwJobsBody(_cwShowcase(), jobCard)}
     </div>
 
     <div class="crew-split-even">
@@ -2226,16 +2595,49 @@ function renderCrewView(){
     ${_mcBoughtCrewsHTML()}
   </div></div>`;
   try{ vc.querySelectorAll('[data-mcjump]').forEach(function(b){ on(b,'click',function(){ var el=document.getElementById(b.dataset.mcjump); if(el) el.scrollIntoView({behavior:'smooth',block:'start'}); }); }); }catch(e){}
-  // Command bar: type any goal → the real agent recognizes intent and does it.
+  _cwWireCmd(vc);
+}
+/* WIRED FROM BOTH VIEWS.
+
+   This lived inline at the end of the unlocked render, so the command box and
+   the example search only worked for somebody who was already paying. The box
+   is now the first thing on the locked view too, and a box that does nothing
+   when you press Enter is worse than no box - so the wiring is a function and
+   both views call it. */
+function _cwWireCmd(vc){
+  if(!vc) return;
+  // Command bar: type any goal - the real agent recognizes intent and does it.
   try{
     var _mcRun=function(){ var el=$('mc-cmd-input'); var v=el?el.value.trim():''; if(!v){ el&&el.focus(); return; } mcRunCommand(v); };
     on($('mc-cmd-go'),'click',_mcRun);
     var _ci=$('mc-cmd-input'); if(_ci) on(_ci,'keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); _mcRun(); } });
     vc.querySelectorAll('[data-mccmd]').forEach(function(c){ on(c,'click',function(){ var el=$('mc-cmd-input'); if(el){ el.value=c.dataset.mccmd; el.focus(); } }); });
   }catch(e){}
+  /* The search re-renders on a pause rather than on every keystroke: this
+     rebuilds a hundred cards, and doing that per character makes typing feel
+     like wading. */
+  try{
+    var _fi=$('cw-find');
+    if(_fi){
+      var _t=null;
+      on(_fi,'input',function(){ var v=this.value; clearTimeout(_t); _t=setTimeout(function(){ cwFind(v); },220); });
+      on(_fi,'keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); clearTimeout(_t); cwFind(this.value); } });
+    }
+  }catch(e){}
 }
+try{ window._cwWireCmd=_cwWireCmd; }catch(e){}
+
 function cwToggle(id){
-  const jobs=_cwJobs(); const j=jobs.find(x=>x.id===id); if(!j) return;
+  const jobs=_cwJobs(); let j=jobs.find(x=>x.id===id);
+  /* A world example is not in the saved list until somebody switches it on.
+     It is a real job with a country in its instruction, so switching it on
+     adds it and then follows exactly the same path as any other job - the
+     allowance check, the setup questions, the scheduling. */
+  if(!j){
+    const w=(()=>{ try{ return (_cwWorldJobs()||[]).find(x=>x.id===id); }catch(e){ return null; } })();
+    if(!w) return;
+    j={...w}; jobs.push(j); _cwSaveJobs(jobs);
+  }
   // Job Hunt needs a profile before it can do anything - open setup on first
   // enable if the required details are missing, instead of silently turning on.
   if(id==='job_hunt' && !j.on && typeof AMVJobs!=='undefined' && AMVJobs.missingInfo({}, AMVJobs.cfg()).length){
