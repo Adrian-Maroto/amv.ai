@@ -598,6 +598,42 @@ function _cwDefaultJobs(){ return [
     asks:{ q:'Who is in the house, and when was each thing last done?', ph:'Each person, their age, and the last date you know for dentist, optician, vaccinations and any repeat prescription' },
     sample:['1 overdue, 1 due this month, everything else fine.','OVERDUE - Layla, dentist. Last seen 20 months ago; children are usually seen every 6 to 12 months.','DUE THIS MONTH - your own repeat prescription runs out on the 19th. Ordering takes 3 working days at your surgery, so the 14th is the real deadline.','ON SCHEDULE - the pre-school booster is due at 3 years 4 months, which is April for Sami. Nothing to do yet.','AMV has not booked anything. Nothing here is medical advice.'],
     prompt:'Track routine health admin for everyone the user has told you about: dental checks, eye tests, routine vaccinations and boosters by age, health reviews and repeat prescriptions. Work from the standard schedule published for the user’s country, which you should name and link, and say when a schedule is a general guideline rather than a rule. Lead with anything genuinely overdue and say how overdue. Work backwards from real lead times - if reordering a prescription takes three days, the deadline is three days earlier, and say so. Be explicit about what is NOT due, so the list stays trustworthy. Do NOT book or contact anyone, and say so in every report. Do not give medical advice, do not interpret symptoms and do not advise for or against any vaccination or treatment - this job tracks dates and nothing else. Tell the user to confirm anything that matters with their own clinician.' },
+
+  /* WATCHING A PUBLIC ACCOUNT, AND WHERE THE LINE IS.
+
+     Asked for as "every time Trump tweets, email me what he tweeted and what
+     stocks to buy". The first half is an ordinary feed watch. The second half
+     is financial advice, and AMV does not give it - not as a matter of taste,
+     but because telling somebody what to buy is a regulated activity and the
+     abuse register already lists it.
+
+     What is genuinely useful and genuinely allowed is the part in between: the
+     post itself, what it actually says, which companies or sectors it names or
+     bears on, and what has historically moved on posts of that kind - with the
+     reasoning shown so the person can judge it. That is research, and it is
+     what the morning brief already does for markets generally.
+
+     So the job does the watch and the analysis and stops before the
+     recommendation, and says so on every send rather than leaving somebody to
+     discover the boundary. */
+  { id:'account_watch', cat:'Watching the world', icon:'\uD83D\uDCE1', title:'Watch a public account and tell me what it means', needs:'Email, Web research', on:false,
+    desc:'Watches the public accounts you name. When one posts something that matters, AMV emails you what was said, which companies or sectors it touches, and how markets have reacted to that kind of post before - with its reasoning shown. It does not tell you what to buy.',
+    asks:{ q:'Which accounts, and what are you watching them for?', ph:'e.g. @realDonaldTrump on Truth Social and X - I hold semiconductor and energy names and want to know when a post bears on them' },
+    sample:['1 post in the last hour that touches what you hold.','POSTED 09:14 - announced a review of chip export rules, naming no company.',
+            'TOUCHES: semiconductor names with China revenue. Your two holdings both have it, at roughly 20% and 34% of revenue by their last filings.',
+            'BEFORE: the four comparable posts since 2018 moved the sector index between -3.1% and +0.4% on the day; the two that named a specific rule moved it most.',
+            'UNCERTAIN: this one names no rule and no company, which historically has been the weaker signal.',
+            'Information and analysis, not financial advice. AMV will not tell you what to buy or sell.'],
+    prompt:'Check the public accounts the user named for new posts since your last run. For each post that genuinely bears on what they said they are watching: quote what was actually posted, with the time; identify the specific companies, sectors or assets it touches and say WHY it touches them, citing the concrete link (revenue exposure, named regulation, supply chain) rather than a vague association; and describe how comparable posts have been followed by market moves before, with the actual numbers and dates, distinguishing correlation from cause. Say plainly where the signal is weak or ambiguous. If nothing relevant was posted, say exactly that rather than reporting a post that does not matter. You must NOT give financial advice: never tell the user to buy, sell, hold, short or wait, never predict a price or a direction, and never phrase analysis as a recommendation. End every report by stating it is information and analysis, not financial advice.' },
+
+  { id:'book_table', cat:'Everyday life', icon:'\uD83C\uDF7D\uFE0F', title:'Find and book a table', needs:'Web research', on:false,
+    desc:'Finds somewhere that fits the occasion, the budget and the people coming, checks what is actually available at the time you want, and books it once you say yes. It asks before reserving anything in your name.',
+    asks:{ q:'What is the occasion, and any constraints?', ph:'e.g. four of us, Friday around 8, walkable from Union Square, one vegetarian, under $50 a head' },
+    sample:['3 places fit Friday at 8 for four, one vegetarian, under $50 a head.','BEST FIT - Vera, 7:45 or 8:30 free. Vegetarian menu is a real one, not a side salad. 12 minutes walk.',
+            'ALSO - Cardoon at 8:15. Cheaper, louder, and the vegetarian options are thinner.',
+            'NOT AVAILABLE - the two you have been to before are both full at that hour.',
+            'Say which and AMV will book it. Nothing has been reserved yet.'],
+    prompt:'Find restaurants that genuinely fit the user\u2019s occasion, party size, budget, location and dietary needs. Check real current availability for the date and time they asked for rather than assuming it. Present the options ranked by fit, saying honestly what is good and what is weaker about each - including where a dietary need is only nominally catered for. Name what is NOT available so the absence is visible. Do NOT reserve anything without the user choosing: present the options and wait. When they choose, make the booking in their name with the details they gave, then confirm back exactly what was booked, for when, and under what name and contact.' },
 ].concat(_everydayDefs()); }
 /* ── WHAT A JOB NEEDS, AGAINST WHAT IS ACTUALLY CONNECTED ────────────────────
 

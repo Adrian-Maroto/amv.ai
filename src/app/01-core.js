@@ -1767,6 +1767,45 @@ const _SECRET_RULES = [
   /* Label, separator, value. The separator is what makes it a credential being
      handed over rather than a sentence about one. */
   ['a password',           /\b(?:password|passwd|pass\s?word|passphrase|pwd)\b\s*(?:is|=|:)\s*\S/i],
+  /* THE SAME THING WITHOUT THE SEPARATOR, which is how people actually type it.
+
+     The rule above requires `is`, `=` or `:` after the label, on the reasoning
+     that the separator is what marks a credential being handed over rather than
+     a sentence about one. Sound, and far too narrow. Tested against what
+     somebody would really put in the Crew requirements box, BOTH of these were
+     allowed straight through and written to the server:
+
+         "my LinkedIn login is adrian@x.com password Hunter2!"
+         "Point72 portal user amaroto pass Tr@d3r2024"
+
+     The second is the worse one: `pass` was not in the list at all. So the box
+     promised "AMV does not store them" while storing them, and a standing job
+     re-reads its instructions on every run - meaning a work password would sit
+     in KV for as long as the job was on.
+
+     Widened by requiring the VALUE to look like a credential rather than like
+     the next word of a sentence: six or more characters containing a digit or a
+     symbol. "reset my password today" and "boarding pass yesterday" do not
+     match, because English words are letters. Real passwords almost always are
+     not.
+
+     False positives are the acceptable direction here. Being asked to rephrase
+     costs somebody ten seconds; the other error puts a plaintext password to
+     someone's employer in a database. */
+  ['a password',           /\b(?:password|passwd|pass\s?word|passphrase|pwd|pass)\b\s+(?=\S*[0-9!@#$%^&*()_+=\[\]{}|<>?~\/\\-])(\S{6,})/i],
+  /* The pairing, which is how a sign-in is usually written down: a name and
+     then a password label, on one line, whatever punctuation is between them.
+     Catches "user amaroto pass ..." and "login adrian@x.com / Hunter2". */
+  ['a sign-in',            /\b(?:user(?:name)?|login|log\s?in|acct|account|email)\b[^\n]{0,60}?\b(?:pass(?:word|wd)?|pwd|pin)\b/i],
+  /* The abbreviated form, which is how anybody writes a pair down in a hurry:
+     "u: amaroto p: whatever". No credential-shaped value is required here,
+     because the SHAPE is the giveaway - a one-letter label, a value, another
+     one-letter label. Nothing in an ordinary sentence looks like that. */
+  ['a sign-in',            /(?:^|[\s,;(])u(?:ser)?\s*[:=]\s*\S+\s*[,;|\/]?\s*p(?:ass|w|wd)?\s*[:=]\s*\S/i],
+  /* An address followed by a slash or a pipe and a value. Writing
+     "adrian@x.com / Hunter2!" is handing over a sign-in whatever words are
+     around it, and there is no ordinary sentence that takes that shape. */
+  ['a sign-in',            /\b[\w.+-]+@[\w-]+\.[A-Za-z]{2,}\s*[\/|]\s*\S{4,}/],
   ['a PIN or passcode',    /\b(?:pin|passcode|pass\s?code)\b\s*(?:is|=|:)\s*[0-9A-Za-z]/i],
   ['a one-time code',      /\b(?:otp|one[\s-]?time\s?(?:code|password)|2fa\s?code|verification\s?code|security\s?code|auth\s?code)\b\s*(?:is|=|:)\s*[0-9A-Za-z]/i],
   ['a card security code', /\b(?:cvv|cvc|cv2|card\s?(?:security|verification)\s?(?:code|value))\b\s*(?:is|=|:)\s*\d{3,4}/i],
