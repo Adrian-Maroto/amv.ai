@@ -31,9 +31,15 @@ import { armGeom } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
 
 const HTML = readFileSync('index.html');
-const PORT = 9411;   // outside the 9100 block the shared harness uses
+/* PORT 0 ASKS THE KERNEL FOR A FREE ONE.
+   A fixed port is a suite that fails when anything else already holds it -
+   another run, a leftover process, or simply the same gate started twice.
+   That is not a product failure but it reads exactly like one, and a gate
+   that goes red for reasons of its own is a gate people stop believing. */
+let PORT = 0;
 const server = createServer((_q, s) => { s.writeHead(200, { 'Content-Type': 'text/html' }); s.end(HTML); });
-await new Promise(r => server.listen(PORT, r));
+await new Promise(r => server.listen(0, r));
+PORT = server.address().port;
 
 const LAUNCH = process.env.PLAYWRIGHT_BROWSERS_PATH
   ? { executablePath: process.env.PLAYWRIGHT_BROWSERS_PATH + '/chromium' } : {};

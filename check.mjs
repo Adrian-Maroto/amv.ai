@@ -35,6 +35,50 @@ const G = '\x1b[32m', RED = '\x1b[31m', Y = '\x1b[33m', DIM = '\x1b[2m', B = '\x
 // (which would include the self-test, causing runaway recursion).
 const FAST = process.argv.includes('--fast');
 
+/* ONE GATE AT A TIME.
+
+   Two gates running together rebuild index.html on top of each other and then
+   fight over the ports the suites bind, and the second one loses with
+   EADDRINUSE - which surfaces as suites failing, so a green product reads as a
+   red gate. That is not hypothetical: it is what turned an overnight run red,
+   and the time after it went into deciding whether the product had broken
+   rather than into the product.
+
+   The runner takes its own lock for the port half of that. This one is here so
+   the second gate stops BEFORE it rebuilds over the first one's artifact. The
+   two locks are separate files on purpose: this gate's own child runner must
+   still be able to take the runner lock. */
+const GATE_LOCK = R('.gate.lock');
+function gateHeldBy() {
+  try {
+    const pid = parseInt(readFileSync(GATE_LOCK, 'utf8').trim(), 10);
+    if (!pid) return 0;
+    try { process.kill(pid, 0); return pid; }   // signal 0 asks "does it exist?"
+    catch (e) { return 0; }                     // stale - the writer is gone
+  } catch (e) { return 0; }
+}
+/* --fast does NOT take this lock, and must not. The gate's own self-test
+   (tests/worker/check.test.mjs) runs `check.mjs --fast` as a child WHILE the
+   full gate is running, to prove the gate still fails on a syntax error - so
+   locking --fast would make the gate fail itself. It is also the iteration
+   loop, which skips the suites entirely and so binds no ports. What needs to
+   be exclusive is the long run that rebuilds and then holds every port. */
+if (!FAST) {
+  const held = gateHeldBy();
+  if (held) {
+    console.error(RED + 'Another gate run is already going (pid ' + held + ').' + X);
+    console.error('Two gates rebuild over each other and collide on ports, so this stops here.');
+    console.error('Wait for it to finish, or stop it, then run again.');
+    process.exit(1);
+  }
+  try { writeFileSync(GATE_LOCK, String(process.pid)); } catch (e) {}
+  const drop = () => { try { if (gateHeldBy() === process.pid) execSync('rm -f ' + JSON.stringify(GATE_LOCK)); } catch (e) {} };
+  process.on('exit', drop);
+  for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+    process.on(sig, () => { drop(); process.exit(130); });
+  }
+}
+
 const t0 = Date.now();
 let stepNum = 0;
 /* Kept in step with the stages below. Adding the dependency audit without

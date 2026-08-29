@@ -6,7 +6,7 @@
 */
 import { spawn } from 'child_process';
 import { cpus } from 'os';
-import { readdirSync, existsSync, readFileSync } from 'fs';
+import { readdirSync, existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { say, sayLine } from './lib/say.mjs';
@@ -25,6 +25,46 @@ const filter = argv.find(a => !a.startsWith('--')) || '';
 if (!existsSync(join(ROOT, 'index.html'))) {
   sayErr('\x1b[31mindex.html not found. Run `node build.mjs` first.\x1b[0m');
   process.exit(1);
+}
+
+/* ONE RUN AT A TIME, BECAUSE THE SUITES OWN REAL PORTS.
+
+   Every suite that boots the app serves it over HTTP, and the bootLive ones
+   need a port they can name in advance: the Worker validates redirects and
+   builds success_url against APP_URL, so the origin the browser is on has to
+   be the origin the server was told about. That is why each of those suites
+   carries its own number rather than asking the kernel for a free one.
+
+   It works, exactly once. Start a second run while the first is going and the
+   two collide on the same ports, and the second dies with EADDRINUSE - which
+   is reported as suites failing, so a green product reads as a red gate. That
+   is not hypothetical: it is what turned an overnight run red, and the hour
+   after it went into deciding whether the product had broken.
+
+   So the gate takes a lock. A second run says what is happening and stops,
+   rather than half-running and blaming the code. Running a single suite
+   directly is untouched - that is the iteration loop and it takes no lock. */
+const LOCK = join(ROOT, '.test-run.lock');
+function lockHeldBy() {
+  try {
+    const pid = parseInt(readFileSync(LOCK, 'utf8').trim(), 10);
+    if (!pid) return 0;
+    try { process.kill(pid, 0); return pid; }   // signal 0: does it exist?
+    catch (e) { return 0; }                     // stale - the writer is gone
+  } catch (e) { return 0; }
+}
+const held = lockHeldBy();
+if (held) {
+  sayErr('\x1b[31mAnother test run is already going (pid ' + held + ').\x1b[0m');
+  sayErr('Two runs bind the same ports and the second one loses, so this stops here.');
+  sayErr('Wait for it to finish, or stop it, then run again.');
+  process.exit(1);
+}
+try { writeFileSync(LOCK, String(process.pid)); } catch (e) {}
+const dropLock = () => { try { if (lockHeldBy() === process.pid) unlinkSync(LOCK); } catch (e) {} };
+process.on('exit', dropLock);
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+  process.on(sig, () => { dropLock(); process.exit(130); });
 }
 
 /* AMV-057: A DIRECTORY NAME IS NOT A FILENAME.

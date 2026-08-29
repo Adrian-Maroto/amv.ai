@@ -31,7 +31,12 @@ import { createServer } from 'http';
 import { ok, section, report, done } from '../lib/assert.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const PORT = 9147;
+/* PORT 0 ASKS THE KERNEL FOR A FREE ONE.
+   A fixed port is a suite that fails when anything else already holds it -
+   another run, a leftover process, or simply the same gate started twice.
+   That is not a product failure but it reads exactly like one, and a gate
+   that goes red for reasons of its own is a gate people stop believing. */
+let PORT = 0;
 const TYPES = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript',
                 '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png',
                 '.webmanifest': 'application/manifest+json', '.ico': 'image/x-icon' };
@@ -54,7 +59,8 @@ const server = createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': TYPES[file.slice(file.lastIndexOf('.'))] || 'application/octet-stream' });
   res.end(body);
 });
-await new Promise(r => server.listen(PORT, r));
+await new Promise(r => server.listen(0, r));
+PORT = server.address().port;
 const browser = await chromium.launch(LAUNCH);
 
 /* A visitor who has never been here: empty storage, nothing configured. */
