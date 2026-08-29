@@ -13,7 +13,7 @@ const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'webagent.harness.mjs');
 writeFileSync(harness, src +
-  '\nexport { _webHostAllowed, _webValidateAction, _webRedact, browserRun, WEB_ALLOWED_VERBS, WEB_CONSEQUENTIAL, WEB_MAX_STEPS };\n');
+  '\nexport { _webHostAllowed, _webValidateAction, _webRedact, browserRun, _webActionFp, _webMintApproval, _webReadApproval, _webSpendApproval, WEB_ALLOWED_VERBS, WEB_CONSEQUENTIAL, WEB_MAX_STEPS };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 /* ── 1. SSRF ─────────────────────────────────────────────────────────────── */
@@ -41,7 +41,7 @@ ok(W._webHostAllowed('https://example.com/apply').ok === true, 'allows a normal 
 ok(W._webHostAllowed('http://example.com').ok === true, 'allows a normal public http site');
 
 section('SSRF is re-checked on EVERY navigation, not just the first');
-const nav = W._webValidateAction({ verb: 'goto', url: 'http://169.254.169.254/' }, { approved: true });
+const nav = W._webValidateAction({ verb: 'goto', url: 'http://169.254.169.254/' }, { approvedFp: '' });
 ok(nav.ok === false, 'a mid-run goto to metadata is refused', nav);
 
 /* ── 2. Prompt injection ─────────────────────────────────────────────────── */
@@ -50,7 +50,7 @@ section('Prompt injection: a hostile page cannot widen the agent’s powers');
 // A page that tries to make the agent do something outside the verb allow-list
 const evilVerbs = ['exec', 'eval', 'fetch', 'read_file', 'set_password', 'disable_approval', ''];
 evilVerbs.forEach(v => {
-  const r = W._webValidateAction({ verb: v, url: 'https://x.com' }, { approved: true });
+  const r = W._webValidateAction({ verb: v, url: 'https://x.com' }, { approvedFp: '' });
   ok(r.ok === false, `an invented verb "${v || '(empty)'}" injected by a page is refused`, r.why);
 });
 ok(W.WEB_ALLOWED_VERBS.length > 0 && W.WEB_ALLOWED_VERBS.indexOf('exec') < 0, 'the verb allow-list contains no code-execution verb');
@@ -61,11 +61,13 @@ ok(src.includes('_webValidateAction(decision'), 'and every model decision is re-
 /* ── 3. Consequential actions ────────────────────────────────────────────── */
 section('Irreversible actions stop for approval - the model cannot self-approve');
 W.WEB_CONSEQUENTIAL.forEach(v => {
-  const r = W._webValidateAction({ verb: v, ref: 1 }, { approved: false });
+  const r = W._webValidateAction({ verb: v, ref: 1 }, { approvedFp: '' });
   ok(r.ok === false && r.needsApproval === true, `"${v}" without approval -> needs_approval`, r.why);
 });
-const approvedSubmit = W._webValidateAction({ verb: 'submit', ref: 1 }, { approved: true });
-ok(approvedSubmit.ok === true, 'with explicit user approval, submit proceeds');
+const submitFp = W._webActionFp('submit', '', 'https://shop.example.com/cart');
+const approvedSubmit = W._webValidateAction({ verb: 'submit', ref: 1 },
+  { approvedFp: submitFp, url: 'https://shop.example.com/cart' });
+ok(approvedSubmit.ok === true, 'with a real approval for THAT action, submit proceeds');
 
 // The dangerous case: a CLICK can also be irreversible ("Place order").
 // Approval is decided by the control's real label, taken from our own
@@ -74,11 +76,11 @@ section('A click on an irreversible control also requires approval');
 [['Place order','buying'], ['Pay now','paying'], ['Delete account','deleting'],
  ['Send message','sending'], ['Publish post','publishing'], ['Submit application','submitting'],
  ['Confirm booking','booking'], ['Withdraw funds','moving money']].forEach(([label, why]) => {
-  const r = W._webValidateAction({ verb: 'click', ref: 1 }, { approved: false, label });
+  const r = W._webValidateAction({ verb: 'click', ref: 1 }, { approvedFp: '', label });
   ok(r.ok === false && r.needsApproval === true, `clicking "${label}" (${why}) needs approval`, r.why);
 });
 [['Next','pagination'], ['Read more','navigation'], ['Search','a query'], ['Filter results','filtering']].forEach(([label, why]) => {
-  const r = W._webValidateAction({ verb: 'click', ref: 1 }, { approved: false, label });
+  const r = W._webValidateAction({ verb: 'click', ref: 1 }, { approvedFp: '', label });
   ok(r.ok === true, `clicking "${label}" (${why}) does NOT need approval - the agent still flows`, r.why);
 });
 ok(/const target = \(decision && decision\.ref\)/.test(src),
@@ -89,15 +91,17 @@ ok(/const target = \(decision && decision\.ref\)/.test(src),
 // with a single keystroke.
 section('Enter cannot be used to submit around the approval gate');
 ['Enter', 'return', 'NumpadEnter'].forEach(k => {
-  const p = W._webValidateAction({ verb: 'press', text: k }, { approved: false });
+  const p = W._webValidateAction({ verb: 'press', text: k }, { approvedFp: '' });
   ok(p.ok === false && p.needsApproval === true, `press "${k}" needs approval (it submits forms)`, p.why);
 });
-ok(W._webValidateAction({ verb: 'press' }, { approved: false }).ok === false,
+ok(W._webValidateAction({ verb: 'press' }, { approvedFp: '' }).ok === false,
   'a press with no key defaults to Enter and is still gated');
-ok(W._webValidateAction({ verb: 'press', text: 'Tab' }, { approved: false }).ok === true,
+ok(W._webValidateAction({ verb: 'press', text: 'Tab' }, { approvedFp: '' }).ok === true,
   'harmless keys (Tab) still flow without approval');
-ok(W._webValidateAction({ verb: 'press', text: 'Enter' }, { approved: true }).ok === true,
-  'with approval, Enter proceeds');
+const enterFp = W._webActionFp('press', '', 'https://shop.example.com/cart');
+ok(W._webValidateAction({ verb: 'press', text: 'Enter' },
+     { approvedFp: enterFp, url: 'https://shop.example.com/cart' }).ok === true,
+  'with a real approval for that action, Enter proceeds');
 
 /* ── 4. Credentials ──────────────────────────────────────────────────────── */
 section('Secrets never reach a trace, a log, or the response');
@@ -135,6 +139,77 @@ ok(/guardAction\(env, 'webagent:/.test(src), 'runs are rate limited per user');
 ok(/if\(!env\.BROWSER\)/.test(src), 'the browser binding is feature-detected (honest 503, never a crash)');
 ok(/code:'needs_service'/.test(src), 'and it reports needs_service so the client can explain it');
 ok(/audit\(env, 'web_agent_/.test(src), 'every outcome is audited');
+
+/* ── 8. The approval is issued by the SERVER, not claimed by the caller ────
+   The consequence gate was real, and then it asked one question:
+   `const approved = !!body.approved`. A boolean, in the request body, chosen
+   by whoever sent it. Because the request is authenticated that was not a way
+   into somebody else's account - it was worse in a quieter way: the pause was
+   advisory. Anything able to compose a request as the signed-in user (an
+   injected script, a compromised extension, a prompt-injected step that builds
+   its own call) could set it true on the FIRST attempt, and the purchase went
+   through without a human ever seeing it.
+
+   Four properties are what make an approval an approval. Each one below is an
+   attack that used to work. */
+section('An approval cannot be forged, replayed, moved, or outlived');
+{
+  const KV = new Map();
+  const env = { AMV_KV: {
+    get: async (k) => (KV.has(k) ? KV.get(k) : null),
+    put: async (k, v) => { KV.set(k, v); },
+    delete: async (k) => { KV.delete(k); },
+    list: async () => ({ keys: [] }),
+  }};
+  const ME = 'me@example.com', THEM = 'them@example.com';
+  const fp = W._webActionFp('click', 'Place order', 'https://shop.example.com/cart');
+
+  ok(await W._webReadApproval(env, ME, 'wa-made-up-id') === '',
+     'an invented ticket id approves nothing');
+  ok(await W._webReadApproval(env, ME, '') === '',
+     'and no ticket at all approves nothing - not approved is the default');
+
+  const id = await W._webMintApproval(env, ME, fp);
+  ok(typeof id === 'string' && id.length > 8, 'the server mints a ticket when it stops');
+
+  ok(await W._webReadApproval(env, THEM, id) === '',
+     'a ticket issued to one account is worthless to another');
+  ok(await W._webReadApproval(env, ME, id) === fp,
+     'and its owner gets back exactly the action it authorises');
+
+  ok(W._webValidateAction({ verb: 'click', ref: 1 },
+       { approvedFp: fp, label: 'Place order', url: 'https://shop.example.com/cart' }).ok === true,
+     'the approved action runs');
+  ok(W._webValidateAction({ verb: 'click', ref: 1 },
+       { approvedFp: fp, label: 'Delete account', url: 'https://shop.example.com/cart' }).needsApproval === true,
+     'the SAME ticket does not authorise a different button');
+  ok(W._webValidateAction({ verb: 'click', ref: 1 },
+       { approvedFp: fp, label: 'Place order', url: 'https://evil.example.com/cart' }).needsApproval === true,
+     'nor the same button on a different site');
+
+  await W._webSpendApproval(env, id);
+  ok(await W._webReadApproval(env, ME, id) === '',
+     'a spent ticket cannot be used a second time');
+
+  const old = await W._webMintApproval(env, ME, fp);
+  const k = [...KV.keys()].find(x => x.indexOf(old) >= 0);
+  KV.set(k, JSON.stringify({ email: ME, fp, exp: Date.now() - 1000 }));
+  ok(await W._webReadApproval(env, ME, old) === '',
+     'and an expired one has stopped being an approval');
+}
+
+section('The boolean is gone, not merely ignored');
+{
+  /* If body.approved were still read anywhere, everything above is theatre -
+     so this reads the source rather than trusting the tests. */
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, '');
+  ok(!/body\.approved/.test(code),
+     'no code path reads an approved flag out of the request body');
+  ok(/_webReadApproval\(env, user\.email, ticketId\)/.test(code),
+     'the only source of approval is a ticket the server issued to this account');
+  ok(/_webSpendApproval\(env, ticketId\)/.test(code),
+     'and it is spent when used, so one approval is one action');
+}
 
 report();
 done();

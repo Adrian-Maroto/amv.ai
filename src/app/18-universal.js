@@ -210,7 +210,14 @@ AMVConnectors.register({
                processor, a company site handing over to its sign-in host. */
             data: args.data || {},
             dataOrigins: Array.isArray(args.dataOrigins) ? args.dataOrigins.slice(0, 4) : undefined,
-            approved: !!args.approved,           // the user's explicit OK for this run
+            /* THE TICKET, NOT A FLAG. This used to send `approved: !!args.approved`
+               - a boolean the caller chose - and the server believed it, so
+               anything able to compose a request as the signed-in user could
+               approve a purchase on the first attempt with no human involved.
+               The server now issues an approval bound to the exact action it
+               stopped on; this is that id going back. Sending nothing, or
+               anything made up, approves nothing. */
+            approvalTicket: args.approvalTicket || undefined,
             // the server enforces its own ceiling on these, independently
             spendAmount: spend || undefined,
             spendLimit: (typeof AMVSpend !== 'undefined' ? (AMVSpend.cfg().perPurchase || undefined) : undefined)
@@ -221,7 +228,12 @@ AMVConnectors.register({
         // UI can say exactly what is needed and resume when it is provided.
         if(d && d.code){
           const e = new Error(d.need || d.message || d.error || 'Web automation stopped.');
-          e.code = d.code; e.trace = d.trace; throw e;
+          e.code = d.code; e.trace = d.trace;
+          /* Carried back so whatever asks the person can hand the SAME ticket
+             to the resumed run. Without it the approval has nowhere to go and
+             the step stops again, for ever. */
+          e.approvalTicket = d.approvalTicket || '';
+          throw e;
         }
         if(!r.ok || d.error) throw new Error(d.error || 'Web automation failed.');
         return d;

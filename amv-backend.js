@@ -5372,9 +5372,14 @@ function _webValidateAction(act, opts){
   // Consequence check uses the verb AND the control's own label, so clicking
   // "Place order" or "Delete account" needs approval just like submit does.
   const label = (opts && opts.label) || act.label || '';
-  if(_webIsConsequential(verb, label, act.text) && !(opts && opts.approved))
-    return { ok:false, needsApproval:true,
-      why:'This step would ' + (label ? '"' + String(label).slice(0,40) + '"' : verb) + ' - it needs your approval first.' };
+  if(_webIsConsequential(verb, label, act.text)){
+    /* Matched against the action the ticket was issued for, not against a flag.
+       Approving "Place order" on one shop authorises that, and nothing else. */
+    const fp = _webActionFp(verb, label, (opts && opts.url) || '');
+    if(!opts || opts.approvedFp !== fp)
+      return { ok:false, needsApproval:true, fp,
+        why:'This step would ' + (label ? '"' + String(label).slice(0,40) + '"' : verb) + ' - it needs your approval first.' };
+  }
   return { ok:true, verb, act };
 }
 
@@ -6262,6 +6267,70 @@ async function linkInvite(request, env){
                   : 'Could not deliver the code right now - try again shortly.' });
 }
 
+/* AN APPROVAL THE CLIENT CANNOT WRITE FOR ITSELF.
+
+   The consequence gate was real - the server resolves the control's own label
+   from its own observation, so "Place order" cannot be talked around by the
+   model calling it something else - and then it asked one question:
+   `const approved = !!body.approved`. A boolean, in the request body, chosen
+   by the caller.
+
+   On an authenticated request that is the account owner, so this was not a way
+   into somebody else's account. It was worse in a quieter way: it meant the
+   pause was advisory. Anything able to compose a request as the signed-in user
+   - an injected script, a compromised extension, a prompt-injected agent step
+   that builds its own call - could set approved:true on the FIRST attempt and
+   the purchase, the send, the deletion went through without a human ever
+   seeing it. "It needs your explicit OK" was true only for callers that chose
+   to ask.
+
+   So the server issues the approval instead. When it stops, it mints a ticket
+   bound to THAT action - the verb, the control's label, and the host - stores
+   it server-side with a short life, and returns its id. Approving sends the id
+   back. The server looks it up, checks it belongs to this account, has not
+   expired, and describes the action actually about to run, then spends it.
+
+   What that buys, precisely:
+     - a forged approved:true is worthless, because there is no boolean left;
+     - a ticket cannot be replayed, because it is deleted when spent;
+     - a ticket cannot be moved to a different action, because the fingerprint
+       must match - approving "Place order" on one shop does not approve
+       "Delete account" anywhere, or the same order on a different host;
+     - it expires, so an old approval left in a tab is not a standing licence.
+
+   The fingerprint is deliberately coarse - verb, label, host - because the
+   page is re-observed on the resumed run and a byte-exact match would fail on
+   a re-rendered button and teach people to click twice. */
+const WEB_APPROVAL_TTL_MS = 10 * 60 * 1000;
+function _webActionFp(verb, label, url){
+  let host = '';
+  try{ host = new URL(String(url || '')).host.toLowerCase(); }catch(e){ host = ''; }
+  return [String(verb || '').toLowerCase(),
+          String(label || '').trim().toLowerCase().replace(/\s+/g, ' ').slice(0, 60),
+          host].join('|');
+}
+async function _webMintApproval(env, email, fp){
+  const id = 'wa' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+  await DB.put(env, 'webapproval', id,
+    { email, fp, exp: Date.now() + WEB_APPROVAL_TTL_MS },
+    { expirationTtl: Math.ceil(WEB_APPROVAL_TTL_MS / 1000) + 60 });
+  return id;
+}
+/* Returns the fingerprint this ticket authorises, or '' for anything that does
+   not check out. Never throws to the caller: an unreadable ticket is simply
+   not an approval. */
+async function _webReadApproval(env, email, id){
+  if(!id || typeof id !== 'string' || id.length > 64) return '';
+  let rec = null;
+  try{ rec = await DB.get(env, 'webapproval', id); }catch(e){ return ''; }
+  if(!rec || rec.email !== email) return '';
+  if(!rec.exp || Date.now() > rec.exp){ try{ await DB.del(env, 'webapproval', id); }catch(e){} return ''; }
+  return String(rec.fp || '');
+}
+async function _webSpendApproval(env, id){
+  try{ await DB.del(env, 'webapproval', id); }catch(e){}
+}
+
 /* The agent loop. Real browser, real actions, full trace. */
 async function browserRun(request, env, ctx){
   const user = await requireUser(request, env);
@@ -6272,7 +6341,12 @@ async function browserRun(request, env, ctx){
 
   const body = await request.json().catch(() => ({}));
   const goal = String(body.goal || '').slice(0, 2000);
-  const approved = !!body.approved;
+  /* The ONLY way an action becomes approved. body.approved is not read: see
+     the note above _webActionFp for why a boolean the caller chooses is not an
+     approval. An absent or bad ticket leaves this empty, which approves
+     nothing. */
+  const ticketId = String(body.approvalTicket || '').slice(0, 64);
+  const approvedFp = ticketId ? await _webReadApproval(env, user.email, ticketId) : '';
   /* AMV-001: validated into a known shape rather than trusted as one. An
      object value used to become the string "[object Object]" and then be typed
      into somebody's login form. */
@@ -6337,7 +6411,7 @@ async function browserRun(request, env, ctx){
       return json(Object.assign({ ok:false }, booked.refused), 400);
     }
     heldSpend = booked.reserved || 0;
-    audit(env, 'web_agent_spend_attempt', { by:user.email, amount:declaredSpend, approved:!!body.approved, plan:(ent&&ent.plan)||'' });
+    audit(env, 'web_agent_spend_attempt', { by:user.email, amount:declaredSpend, approved:!!approvedFp, plan:(ent&&ent.plan)||'' });
   }
   /* Whatever happens below, money booked for a purchase that never happened
      goes back. Called from exactly one place so it cannot be forgotten on a
@@ -6488,19 +6562,33 @@ async function browserRun(request, env, ctx){
       // (not from the model), so the consequence check cannot be talked around.
       const target = (decision && decision.ref)
         ? (obs.elements || []).find(el => String(el.ref) === String(decision.ref)) : null;
-      const v = _webValidateAction(decision, { approved, label: target ? target.label : '' });
+      const v = _webValidateAction(decision, { approvedFp, url: obs.url,
+                                              label: target ? target.label : '' });
       if(!v.ok){
         trace.push({ step, verb:(decision && decision.verb) || 'invalid', why:v.why });
         if(v.needsApproval){
           await browser.close();
+          /* The ticket IS the approval. It is minted here, for this action, so
+             what the person is shown and what the next run is allowed to do
+             are the same thing rather than two descriptions of it. */
+          const ticket = await _webMintApproval(env, user.email, v.fp);
           audit(env, 'web_agent_needs_approval', { by:user.email, verb:decision && decision.verb });
           return json({ ok:false, code:'needs_approval', need:v.why, url:obs.url, trace,
+            approvalTicket: ticket, expiresInMs: WEB_APPROVAL_TTL_MS,
             message:'Ready to ' + (decision && decision.verb) + '. Approve and I finish it.' });
         }
         continue;
       }
 
       const a = v.act;
+      /* SPENT THE MOMENT IT IS USED. A ticket authorises one action once; if it
+         survived the run it would be a standing approval for anything matching
+         that fingerprint until it expired, which is not what anybody pressing
+         Approve believes they are agreeing to. */
+      if(approvedFp && _webActionFp(v.verb, (target ? target.label : ''), obs.url) === approvedFp){
+        await _webSpendApproval(env, ticketId);
+        audit(env, 'web_agent_approval_spent', { by:user.email, verb:v.verb });
+      }
       trace.push({ step, verb:v.verb, ref:a.ref, why:_webRedact(a.why || '', secrets) });
 
       if(v.verb === 'done'){
