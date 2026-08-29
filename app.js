@@ -9739,9 +9739,22 @@ function renderMarketView(){
   const unread=AMVMarket.unreadCount();
   const msgBtn='<button class="mkt-msg-btn" id="mkt-open-msgs" title="Your messages"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Messages'+(unread?'<span class="mkt-msg-badge">'+unread+'</span>':'')+'</button>';
   vc.innerHTML='<div class="sv fi"><div class="vi">'+
-    '<div class="mkt-head"><div><span class="eyebrow">Community marketplace</span>'+
+    /* IT SAID "COMMUNITY" AND EVERY LISTING WAS BY AMV.
+
+       Not a lie anybody wrote on purpose - the word was true of what this is
+       FOR - but on a shop where every item says "by AMV" and every rating
+       reads "-", calling it a community marketplace describes activity that
+       has not happened yet, and somebody notices that before they notice
+       anything else. The eyebrow says what it actually is until other people
+       are selling on it, and the subtitle leads with the part that is true
+       today: these work now, and you can put yours up beside them.
+
+       The alternative was seeding fake sellers and fake ratings, which is the
+       one thing a marketplace must never do, and which this product forbids
+       itself elsewhere for the same reason. */
+    '<div class="mkt-head"><div><span class="eyebrow">Marketplace</span>'+
       '<h2>AMV Marketplace</h2></div>'+msgBtn+'</div>'+
-    '<p class="vsub">Buy and sell AMV prompts, crews, integrations, and workflows. Sellers keep 80% of every sale - paid into your in-app balance, withdraw anytime.</p>'+
+    '<p class="vsub">Prompts, crews, integrations and workflows that run the moment you get them. The listings below are AMV\u2019s own to start with - anyone can sell here, and sellers keep 80% of every sale, paid into your in-app balance to withdraw whenever you want.</p>'+
     '<div class="mkt-tabs">'+tabBtn('browse','Browse')+tabBtn('sell','Sell')+tabBtn('purchases','My purchases')+tabBtn('earnings','Earnings')+'</div>'+
     '<div id="mkt-body"></div>'+
   '</div></div>';
@@ -24342,6 +24355,18 @@ function renderTasksView(){
     ['🎨','Design a brand + site live','Watch a landing page build on a canvas, then refine it by chatting.','studio'],
     ['🔁','Auto-debug until it passes','Paste broken code; AMV runs it, reads the real error, fixes, and re-runs in a loop.','lab'],
     ['🤝','Hand off with full context','Pass any task to a teammate or another agent - nothing gets dropped.','handoff'],
+    /* THREE THINGS AMV LEARNED TO DO AND NEVER MENTIONED HERE.
+
+       This list was written before Connected accounts, before the country
+       packs, and before the agent that works a website. So the page whose job
+       is to answer "what can this actually do" was describing a smaller
+       product than the one underneath it. Each of these lands somewhere real:
+       the first opens Connected accounts, the second opens the catalogue where
+       a hundred countries now are, the third opens the box that takes a
+       sentence. */
+    ['\uD83D\uDD10','Act on your real accounts','Connect an account once and AMV works inside it - reading, drafting, organizing - with a scoped grant you can take back at any time.','connect'],
+    ['\uD83C\uDF0D','Whatever your country actually needs','The paperwork, the shops, the deadlines and the weather where you live - written for 105 countries, not translated from one.','world'],
+    ['\uD83D\uDCAC','Just say it, and it goes and does it','Describe the outcome in a sentence. AMV works out which accounts and sites it needs, does the work, and stops for your approval before anything leaves.','say'],
   ];
   const ucard=(u)=>`<button class="uniq-card" data-dact="launchUnique" data-darg="${u[3]}">
     <span class="uniq-ic">${u[0]}</span>
@@ -24382,6 +24407,19 @@ function launchUnique(kind){
   const map={crew:'crew',dev:'dev',studio:'studio',lab:'lab',handoff:'handoff'};
   if(kind==='researchwatch'){ openResearchWatch(); return; }
   if(kind==='autobrief'){ setTab('crew'); setTimeout(()=>toast('Turn on a daily brief job in Crew','info'),200); return; }
+  /* Connected accounts is a Settings pane rather than a tab, so the pane has
+     to be set before the tab or it lands on whichever one was open last. */
+  if(kind==='connect'){ try{ S.settingsPane='integrations'; }catch(e){} setTab('settings'); return; }
+  if(kind==='world'){ setTab('crew'); return; }
+  /* Straight into the box, with the cursor in it. The point of this card is
+     that saying it IS the interface, so making somebody hunt for the field
+     would be the card describing itself wrongly. */
+  if(kind==='say'){
+    setTab('crew');
+    setTimeout(()=>{ try{ const el=document.getElementById('mc-cmd-input');
+      if(el){ el.scrollIntoView({block:'center'}); el.focus(); } }catch(e){} }, 260);
+    return;
+  }
   setTab(map[kind]||'chat');
 }
 window.launchUnique=launchUnique;
@@ -24880,8 +24918,18 @@ function renderIntegrationsView(){
   const vc=$('vc'); if(!vc) return;
   vc.innerHTML=
     '<div class="sv fi"><div class="vi">'+
-      '<h2>Integrations</h2>'+
-      '<p class="vsub">Connect AMV to your tools. <b style="color:var(--tx)">Autonomous</b> integrations work in the background once connected; <b style="color:var(--tx)">manual</b> ones you trigger or upload to. Click Connect - you approve in a popup, no keys to paste.</p>'+
+      /* ONE NAME FOR ONE THING. This screen said "Integrations" while the
+         Settings pane showing the same catalogue said "Connectors", so the
+         product had two words for the thing somebody is looking for - which
+         is how you fail to find it. Connectors, in both places.
+
+         The copy also predated Connected accounts. "Click Connect, you
+         approve in a popup, no keys to paste" was true of the old per-service
+         buttons; what matters now, and what somebody deciding whether to hand
+         over a mailbox actually wants to know, is that the grant is scoped,
+         held by the server rather than this browser, and revocable. */
+      '<h2>Connectors</h2>'+
+      '<p class="vsub">Connect an account once and AMV can work inside it. A connection is a real sign-in at the provider - AMV never sees your password, only a grant limited to what you allow, and you can take it back at any time. <b style="color:var(--tx)">Autonomous</b> ones keep working when AMV is closed; <b style="color:var(--tx)">manual</b> ones you trigger or upload to.</p>'+
       _connSectionHTML()+
       '<div id="int-catalog">'+_integrationsCatalogHTML()+'</div>'+
     '</div></div>';

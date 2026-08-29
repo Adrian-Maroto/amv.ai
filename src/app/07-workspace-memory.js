@@ -187,9 +187,22 @@ function renderMarketView(){
   const unread=AMVMarket.unreadCount();
   const msgBtn='<button class="mkt-msg-btn" id="mkt-open-msgs" title="Your messages"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Messages'+(unread?'<span class="mkt-msg-badge">'+unread+'</span>':'')+'</button>';
   vc.innerHTML='<div class="sv fi"><div class="vi">'+
-    '<div class="mkt-head"><div><span class="eyebrow">Community marketplace</span>'+
+    /* IT SAID "COMMUNITY" AND EVERY LISTING WAS BY AMV.
+
+       Not a lie anybody wrote on purpose - the word was true of what this is
+       FOR - but on a shop where every item says "by AMV" and every rating
+       reads "-", calling it a community marketplace describes activity that
+       has not happened yet, and somebody notices that before they notice
+       anything else. The eyebrow says what it actually is until other people
+       are selling on it, and the subtitle leads with the part that is true
+       today: these work now, and you can put yours up beside them.
+
+       The alternative was seeding fake sellers and fake ratings, which is the
+       one thing a marketplace must never do, and which this product forbids
+       itself elsewhere for the same reason. */
+    '<div class="mkt-head"><div><span class="eyebrow">Marketplace</span>'+
       '<h2>AMV Marketplace</h2></div>'+msgBtn+'</div>'+
-    '<p class="vsub">Buy and sell AMV prompts, crews, integrations, and workflows. Sellers keep 80% of every sale - paid into your in-app balance, withdraw anytime.</p>'+
+    '<p class="vsub">Prompts, crews, integrations and workflows that run the moment you get them. The listings below are AMV\u2019s own to start with - anyone can sell here, and sellers keep 80% of every sale, paid into your in-app balance to withdraw whenever you want.</p>'+
     '<div class="mkt-tabs">'+tabBtn('browse','Browse')+tabBtn('sell','Sell')+tabBtn('purchases','My purchases')+tabBtn('earnings','Earnings')+'</div>'+
     '<div id="mkt-body"></div>'+
   '</div></div>';
