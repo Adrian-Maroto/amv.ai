@@ -53,14 +53,20 @@ function lockHeldBy() {
     catch (e) { return 0; }                     // stale - the writer is gone
   } catch (e) { return 0; }
 }
-const held = lockHeldBy();
+/* --list only ENUMERATES. It binds no port and starts no browser, and suites
+   spawn it to check the runner's own selection logic - from inside a run that
+   is holding this lock. Locking it made the runner refuse itself, which read
+   as "a substring filter selects nothing". Same reasoning as check.mjs and
+   --fast: lock the thing that owns the ports, not the thing that lists. */
+const NEEDS_LOCK = !flags.includes('--list');
+const held = NEEDS_LOCK ? lockHeldBy() : 0;
 if (held) {
   sayErr('\x1b[31mAnother test run is already going (pid ' + held + ').\x1b[0m');
   sayErr('Two runs bind the same ports and the second one loses, so this stops here.');
   sayErr('Wait for it to finish, or stop it, then run again.');
   process.exit(1);
 }
-try { writeFileSync(LOCK, String(process.pid)); } catch (e) {}
+if (NEEDS_LOCK) { try { writeFileSync(LOCK, String(process.pid)); } catch (e) {} }
 const dropLock = () => { try { if (lockHeldBy() === process.pid) unlinkSync(LOCK); } catch (e) {} };
 process.on('exit', dropLock);
 for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {

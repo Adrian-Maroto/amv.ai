@@ -55,10 +55,21 @@ section('The mechanism really does lose the end of a failure message');
 section('The gate writes its failure the way that survives');
 {
   /* Anchored to the catch block in step(), not to the whole file - the rest of
-     the gate prints progress with console.log and should keep doing so. */
-  const m = CHECK.match(/\}\s*catch\s*\(e\)\s*\{([\s\S]*?)process\.exit\(1\);/);
+     the gate prints progress with console.log and should keep doing so.
+
+     And anchored from `function step(` rather than from the first `catch (e)`
+     anywhere in the file, because that is what it used to do and the file grew
+     a second one above it: a lock added at the top of the gate had a
+     `catch (e) { return 0; }` and a `process.exit(1)` between it and step(),
+     so this read the lock's error path, found no writeSync, and went red with
+     the thing it guards completely unchanged. Same failure the comment further
+     down describes for a different check - a guard anchored on the first
+     textual match is a guard about whatever happens to come first. */
+  const stepAt = CHECK.indexOf('function step(');
+  const m = stepAt < 0 ? null
+          : CHECK.slice(stepAt).match(/\}\s*catch\s*\((\w+)\)\s*\{([\s\S]*?)process\.exit\(1\);/);
   ok(!!m, 'step() still has the failure path this is about');
-  const body = (m ? m[1] : '').replace(/\/\*[\s\S]*?\*\//g, '');
+  const body = (m ? m[2] : '').replace(/\/\*[\s\S]*?\*\//g, '');
   ok(/writeSync/.test(body), 'it writes the failure synchronously');
   ok(!/console\.log\(/.test(body),
      'and does not queue any of it behind an asynchronous write',

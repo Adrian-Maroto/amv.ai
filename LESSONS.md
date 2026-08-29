@@ -6549,3 +6549,77 @@ through their own defaults, and passing, because the clamp works on the
 fallback too. **A check can be green about the wrong subject.** The keys are
 read out of the calls that render the pickers now, rather than typed into the
 test.
+
+---
+
+## 300. A missing ELEMENT does not show up in a search for callers
+
+The starred-chats filter had every part except the one you press. The row
+context menu offered "Star", a starred row drew a filled star, `renderHist()`
+filtered on `S.starFilter`, there was a written empty state for "No starred
+chats yet", `S.starFilter` was on the list of state that survives a sign-out,
+and `styles.css` had a rule for `#star-filter`. Nothing in the product ever
+rendered that id. The click handler bound to it at boot bound to nothing.
+
+This is the `_setChatTone` shape again (296) with one difference that matters:
+a function nobody calls can be FOUND by searching for callers, which is how the
+last three were found. An element nobody renders looks exactly like a feature
+that works - the handler is there, the state is there, the CSS is there, and
+the only evidence is a negative.
+
+So the search has to run the other way: **for every click handler, does
+anything render the thing it is bound to?** That scan found it. It also
+reported fifteen false positives, all the same shape - ids passed as arguments
+(`capToggle('cap-memory', ...)`, `_sectionModelSelect('code','dev-model')`) -
+so the static version cannot be the gate. The gate is the runtime version,
+which has no blind spot: boot the page and ask whether `window[name]` is
+callable for every `data-dact` on it.
+
+**An inline style cannot beat `!important`.** The same row carried a second
+failure. Three separate places hid the "Recents" heading with
+`$('hist-header').style.display`, and no element had that id either. Giving it
+one was not enough: `#sb .sbl{display:block!important}` is set in two earlier
+layers, so all three assignments still did nothing. Visibility that CSS may
+also have an opinion about belongs in a class, not a style property.
+
+## 301. The gate broke itself, and I spent the next hour suspecting the product
+
+An overnight run reported three suites failing. One was real. The other two
+were a second gate run I had started while the first was going: six suites bind
+hard-coded ports, and the second run dies on them with `EADDRINUSE`, which the
+runner reports as those suites failing.
+
+The lesson is not "do not start two runs". It is that **a gate which can fail
+for reasons of its own is a gate that costs more than it saves** - every red
+run now has to be triaged for whether it is even about the code. The fix is
+that it can no longer happen: the six suites ask the kernel for a port like the
+shared harness already did, and both the runner and the gate take a lock, so a
+second run says what is happening and stops instead of half-running.
+
+Two details worth keeping. The locks store a pid and take over a lock whose
+writer is gone, because a lock that survives a killed run wedges the next one
+and gets deleted by hand, which is the same as not having it. And `--fast`
+deliberately takes no lock: the gate's own self-test runs `check.mjs --fast` as
+a child WHILE the full gate runs, so locking it would have made the gate fail
+itself. I checked that before trusting the lock rather than after, which is the
+only reason this is a note and not another entry about a broken gate.
+
+## 302. Three of my four probe results were my own probe being wrong
+
+Verifying the personalization page, a probe reported: no personalization pane,
+no system-prompt builder, and instructions not reaching the prompt. All three
+were false. The pane key is `account`, not `personalize`; the builder is
+constructed inline rather than named `_systemPrompt` or `buildSystem`; and the
+instructions do reach chat through `_profileContext()` and every other surface
+through `_userStyle()`. Measured properly, the whole feature works end to end,
+and two suites already covered it.
+
+Then, checking the starred filter, a probe reported the pressed state was not
+lit. Also false: `#star-filter` transitions its colour, so reading it at the
+instant of the click returns the value it is moving AWAY from. That is the
+third timing-shaped false alarm this month.
+
+**A negative result from a probe I just wrote is evidence about the probe.**
+Confirm the names exist and the mechanism is live before believing what it says
+is missing - and when the thing measured animates, wait for it to settle rather
+than racing it.

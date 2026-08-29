@@ -9610,8 +9610,13 @@ a.skip-link:focus{ top:var(--sp-3); outline:2px solid var(--tx); outline-offset:
    the inline display:flex the row needs to put the star on the right. An
    inline style cannot beat !important, so the visibility is a class here and
    the call sites toggle that instead. */
-#sb #hist-header{ display:flex!important;align-items:center;justify-content:space-between; }
-#sb #hist-header.hh-off{ display:none!important; }
+/* Scoped away from the collapsed rail. `body.sb-rail #sb .sbl` hides this
+   heading on purpose there - the rail is icons only - and an unscoped
+   `#sb #hist-header` carries two ids against that rule's one, so it won. The
+   heading and its star then sat 24px outside a 64px rail. Rail mode keeps its
+   own answer; this only decides the case where the heading is shown at all. */
+body:not(.sb-rail) #sb #hist-header{ display:flex!important;align-items:center;justify-content:space-between; }
+body:not(.sb-rail) #sb #hist-header.hh-off{ display:none!important; }
 
 </style>
 <!-- BUILD:CSS:END -->

@@ -54,8 +54,8 @@ function gateHeldBy() {
     const pid = parseInt(readFileSync(GATE_LOCK, 'utf8').trim(), 10);
     if (!pid) return 0;
     try { process.kill(pid, 0); return pid; }   // signal 0 asks "does it exist?"
-    catch (e) { return 0; }                     // stale - the writer is gone
-  } catch (e) { return 0; }
+    catch (killErr) { return 0; }               // stale - the writer is gone
+  } catch (readErr) { return 0; }
 }
 /* --fast does NOT take this lock, and must not. The gate's own self-test
    (tests/worker/check.test.mjs) runs `check.mjs --fast` as a child WHILE the
@@ -72,7 +72,7 @@ if (!FAST) {
     process.exit(1);
   }
   try { writeFileSync(GATE_LOCK, String(process.pid)); } catch (e) {}
-  const drop = () => { try { if (gateHeldBy() === process.pid) execSync('rm -f ' + JSON.stringify(GATE_LOCK)); } catch (e) {} };
+  const drop = () => { try { if (gateHeldBy() === process.pid) execSync('rm -f ' + JSON.stringify(GATE_LOCK)); } catch (dropErr) {} };
   process.on('exit', drop);
   for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
     process.on(sig, () => { drop(); process.exit(130); });
