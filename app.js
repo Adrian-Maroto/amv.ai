@@ -10354,7 +10354,7 @@ const _MKT_PROHIBITED={
   'Weapons & explosives':['firearm','handgun','rifle for sale','assault weapon','ghost gun','untraceable gun','80 lower','auto sear','glock switch','silencer','suppressor','ammunition','ammo for sale','bump stock','explosive','pipe bomb','bomb making','ied','grenade','detonator','napalm','thermite','weapon blueprint','3d printed gun','gun cad','poison','ricin','nerve agent','sarin','chemical weapon'],
   'Malware, hacking & cyber attack':['malware','ransomware','keylogger','botnet','ddos','rootkit','trojan','spyware','stalkerware','exploit kit','zero day exploit','remote access trojan','rat builder','crypter','stealer','phishing kit','phishing page','fake login page','sql injection tool','brute force tool','password cracker','credential stuffing','account cracker','combo list','sim swap','swatting','doxxing service','hack someone','hacking service','hack account'],
   'Stolen data & credentials':['stolen data','stolen account','hacked account','cracked account','database dump','leaked database','data breach dump','stolen card','stolen credit','credit card numbers','card dump','cvv dump','fullz','bank logs','bank drop','dumps with pin','carding','carder','paypal log','account list','ssn list','social security numbers','stolen identity'],
-  'Fraud, scams & counterfeiting':['money launder','launder money','money mule','cash out method','cashout method','fraud method','fraud bible','counterfeit','fake id','forged document','fake passport','fake diploma','replica designer','ponzi','pyramid scheme','guaranteed profit','risk free profit','insider trading','chargeback fraud','refund method','refund glitch','bin method'],
+  'Fraud, scams & counterfeiting':['money launder','launder money','money mule','cash out method','cashout method','fraud method','fraud bible','counterfeit','fake id','forged document','fake passport','fake diploma','fake degree','fake certificate','forge a signature','forged signature','fake utility bill','fake bank statement','fake payslip','fake invoice scam','replica designer','ponzi','pyramid scheme','guaranteed profit','risk free profit','insider trading','chargeback fraud','refund method','refund glitch','bin method','ticket bot','ticket bots','scalping bot','scalp tickets','sneaker bot','buy out the tickets','beat the queue bot','captcha farm','captcha solver service','bypass captcha','account generator','bulk accounts','sim swap','simswap','port out scam'],
   'Sexual content & exploitation':['child porn','csam','cp for sale','underage','minor sexual','loli','shota','jailbait','bestiality','rape porn','non consensual','revenge porn','upskirt','deepfake nude','nudify','escort service','prostitution','sex trafficking','nude leak'],
   'Violence, terrorism & trafficking':['assassinate','murder for hire','hitman','contract killing','kill someone','how to kill','how to murder','human trafficking','organ sale','sell organ','kidnapping guide','torture','terrorist','terrorism','extremist manifesto','mass shooting','school shooting','genocide'],
   'Hate & harassment':['white supremacy','neo nazi','race war','holocaust denial','hate speech pack','harassment campaign','brigading service'],
@@ -28238,7 +28238,11 @@ AMVConnectors.register({
    Universal does NOT mean lawless. These are refused outright, and the
    refusal is explicit rather than a silent failure. */
 const AMV_POLICY = [
-  { re:/\bfake (review|rating|testimonial)|review bomb|post .*review .*(never|didn'?t) (use|buy|visit)|astroturf/i,
+  /* "never went" was not caught, which is the most natural way anybody would
+     phrase it about a restaurant or a hotel - the rule knew use, buy and visit
+     only. Widened to the verbs people actually reach for, and to the "did not
+     actually" form. */
+  { re:/\bfake (review|rating|testimonial)|review bomb|astroturf|(?:post|write|leave) .{0,40}review .{0,30}(?:never|didn'?t|did not|have not|haven'?t) (?:use|used|buy|bought|visit|visited|go|went|been|try|tried|stay|stayed|order|ordered|eat|ate)|review .{0,30}(?:somewhere|something|a place) (?:i|we) (?:never|didn'?t)/i,
     why:'Posting a review for something you did not actually experience is review fraud (and illegal in many places). I can post an honest review of a real experience.' },
   { re:/\b(mass|bulk) (dm|message|email)|spam|blast .*(unsolicited)|scrape .*emails? .*(sell|list)/i,
     why:'Mass unsolicited messaging breaks platform rules and anti-spam law. I can send personalised messages to people you actually have a reason to contact.' },
@@ -28247,7 +28251,31 @@ const AMV_POLICY = [
   { re:/\bimpersonat|pretend to be (?!me\b)|catfish|fake (identity|profile|id)\b/i,
     why:'I can act as you on your own accounts, but I will not impersonate someone else.' },
   { re:/\b(ddos|denial of service|botnet|malware|ransomware|phish)/i,
-    why:'That is an attack. I will not do it.' }
+    why:'That is an attack. I will not do it.' },
+  /* BUYING FASTER THAN A PERSON CAN.
+
+     This guard is on the agent that ACTS, and an agent that can drive a browser
+     is one that can be pointed at a ticket queue. Automated buying to resell is
+     specifically illegal in the US under the BOTS Act and in the UK under the
+     Breaching Limits regulations, and it breaks the terms of every site that
+     sells anything in limited quantity.
+
+     The line is automation and intent to resell, not buying tickets. AMV
+     finding four seats to a game and putting them in a basket is the ordinary
+     use and stays allowed - the refusal is about queue-jumping software and
+     buying inventory to flip. */
+  { re:/\b(ticket|sneaker|drop|checkout|queue)[\s-]?bots?\b|\bbots? (?:to|that|for) (?:buy|cop|snag|grab|secure) |\bscalp|\bcop(?:ping)? (?:sneakers|drops|tickets)\b|beat the queue|skip the queue .*(bot|script|automat)/i,
+    why:'Buying automatically to resell is ticket and inventory botting - illegal under the BOTS Act in the US and the equivalent rules elsewhere, and against the terms of every site that sells in limited quantity. I can find what is available and take you to it, and you can buy it yourself.' },
+  /* Creating people who do not exist, at volume. Bulk accounts are the input to
+     almost every other abuse on this list, so it is worth naming on its own
+     rather than leaving it to the impersonation rule. */
+  { re:/\b(bulk|mass|many|multiple|hundreds of|thousands of) (?:accounts?|sign[- ]?ups?|registrations?)\b|\baccount (?:generator|farm|creator bot)\b|\bcaptcha (?:farm|solving service|solver)\b|\bsim[- ]?swap/i,
+    why:'Creating accounts in bulk, farming captchas or moving somebody\u2019s phone number are how other people get defrauded. I will not do any of them. I can set up one account for you, on a service you are entitled to use.' },
+  /* Documents that assert something untrue about somebody. The model refuses
+     this in conversation; this is the guard on the agent that could otherwise
+     go and file one. */
+  { re:/\b(?:fake|forged|counterfeit|fraudulent)\s+(?:passport|visa|id|identity|licence|license|diploma|degree|certificate|payslip|pay stub|bank statement|utility bill|reference)\b|\bforge (?:a |the )?(?:signature|document|letter)\b/i,
+    why:'That document would assert something untrue about a real person, which is forgery wherever you are. I can help you get the real one - what the actual process is, what you need, and how to fill it in correctly.' }
 ];
 function _policyCheck(text){
   const t = String(text || '');
