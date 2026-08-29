@@ -702,18 +702,41 @@ function _cwRunsUnattended(j){
   const needs=String((j&&j.needs)||'').split(',').map(s=>s.trim()).filter(Boolean);
   return needs.length>0 && needs.every(n=>n==='Web research');
 }
-function _cwWhereLabel(j){
-  if(_cwRunsUnattended(j)) return 'Runs with AMV closed';
-  /* The promise on the card has to match where the job will actually be put.
-     A job that COULD run in the background once an account is connected says
-     so, rather than reading as a permanent limitation - and it does not claim
-     the background until the connection that makes it true exists. */
-  if(typeof _cwUnattendedReady === 'function' && _cwUnattendedReady(j)) return 'Runs with AMV closed';
+/* WHERE A JOB RUNS, SAID THE RIGHT WAY ROUND.
+
+   Three states, not two. A job either runs on the server whatever you are
+   doing, runs there as soon as the account it needs is connected, or genuinely
+   needs this tab open.
+
+   The middle one used to be phrased "Runs while AMV is open - connect the
+   account to run it closed", and that is the wrong way round. It leads with
+   the limitation and buries the capability, so forty-nine of a hundred and six
+   jobs read as "this needs my laptop awake" when what is true is that they run
+   without it the moment you connect an account. Only seven are genuinely
+   open-only. Reported as exactly that: "there are so many that should say run
+   when amv is closed but it says run when amv is open".
+
+   Leading with what it does is not overpromising, because the condition is
+   still in the sentence. Naming the account makes the condition actionable
+   rather than a shrug. */
+function _cwWhereState(j){
+  if(_cwRunsUnattended(j)) return 'closed';
+  if(typeof _cwUnattendedReady === 'function' && _cwUnattendedReady(j)) return 'closed';
   const needs = String((j && j.needs) || '').split(',').map(x => x.trim()).filter(Boolean);
   const mappable = needs.length && needs.every(n => n === 'Web research' || _CW_NEEDS_TO_USES[n]);
-  return mappable ? 'Runs while AMV is open - connect the account to run it closed'
-                  : 'Runs while AMV is open';
+  return mappable ? 'pending' : 'open';
 }
+function _cwWhereLabel(j){
+  const st = _cwWhereState(j);
+  if(st === 'closed') return 'Runs with AMV closed';
+  if(st === 'open')   return 'Runs while AMV is open';
+  /* Name what is missing, so the sentence tells you what to do about it. */
+  let missing = [];
+  try{ missing = (typeof _cwNeedsMissing === 'function') ? _cwNeedsMissing(j) : []; }catch(_e){}
+  const who = missing.length ? missing.slice(0, 2).join(' and ') : 'your account';
+  return 'Runs with AMV closed - once ' + who + ' is connected';
+}
+try{ window._cwWhereState=_cwWhereState; window._cwWhereLabel=_cwWhereLabel; }catch(e){}
 function _cwNeedsMissing(j){
   const out=[];
   String((j&&j.needs)||'').split(',').map(s=>s.trim()).filter(Boolean).forEach(n=>{
@@ -1543,7 +1566,7 @@ function _cwLockedCard(j){
       <span class="cw-job-t">${escH(j.title)}</span>
       <span class="cw-job-d">${escH(j.desc)}</span>
       <span class="cw-job-need">Uses: ${escH(j.needs)}
-        <span class="cw-job-where ${_cwRunsUnattended(j)?'bg':'open'}">${escH(_cwWhereLabel(j))}</span>
+        <span class="cw-job-where ${_cwWhereState(j)}">${escH(_cwWhereLabel(j))}</span>
       </span>
       <span class="cw-job-see">${Array.isArray(j.sample)&&j.sample.length?'See an example →':'See what it does →'}</span>
     </button>
@@ -1950,7 +1973,7 @@ function renderCrewView(){
     const P=(typeof PLANS!=='undefined'&&PLANS[CREW_REQUIRED_PLAN])||{name:'Pro',price:15};
     const jobs=_cwJobs();
     const bgJobs=jobs.filter(j=>_cwRunsUnattended(j)).length;
-    vc.innerHTML=`<div class="sv fi"><div class="vi">
+    vc.innerHTML=`<div class="sv fi crew-view"><div class="vi">
       <span class="eyebrow">Crew \u00b7 Autonomous work</span>
       <h2>AMV working while you are not</h2>
       <p class="vsub">Give it an outcome and it plans the steps, does the work, and brings back something finished -
@@ -1959,18 +1982,15 @@ function renderCrewView(){
       <p class="vsub cw-open-note">${jobs.length} of them are written out below. They are <b>examples</b>, not the
         menu - Crew runs what you describe, in your own words, so anything you can write down is a job it can take.
         The catalogue is here to show you the shape of one.</p>
-      <div class="cw-lock-band">
-        <div class="cw-lock-figs">
-          <span class="cw-lock-fig"><b>${jobs.length}</b> examples, not a limit</span>
-          <span class="cw-lock-fig"><b>${bgJobs}</b> run with AMV closed</span>
-          <span class="cw-lock-fig"><b>${CREW_JOBS_BY_PLAN.pro} jobs</b> at once on ${escH(P.name)}</span>
-        </div>
-        <div class="cw-lock-buy">
-          <span class="cw-lock-price">Included with ${escH(P.name)} \u00b7 $${P.price}/month</span>
-          <button class="btn bp" data-stab="plans">See plans \u2192</button>
-        </div>
-      </div>
-      <div class="cw-lock-note">Elite runs ${CREW_JOBS_BY_PLAN.elite} at once and Ultra runs ${CREW_JOBS_BY_PLAN.ultra}. A job keeps running whether or not AMV is open, which is the part that costs money to provide.</div>
+      ${/* THE STATS BAND IS GONE.
+
+            It said "104 examples, not a limit / 49 run with AMV closed /
+            5 jobs at once on Pro / Included with Pro - $15/month", and the
+            owner asked for it to come out. It was three numbers and a price
+            standing between somebody and the thing that would actually
+            convince them, which is the catalogue underneath. The plan and
+            the price are on the Plans screen, where somebody who wants them
+            goes looking. */ ''}
     </div>
     <div class="crew-jobs-sec cw-locked">
       ${/* These open a CHAT, not a Crew job, so they work without a plan and
@@ -2003,7 +2023,7 @@ function renderCrewView(){
         <span class="cw-job-t">${escH(j.title)}</span>
         <span class="cw-job-d">${escH(j.desc)}</span>
         <span class="cw-job-need">Uses: ${escH(j.needs)}
-          <span class="cw-job-where ${_cwRunsUnattended(j)?'bg':'open'}">${escH(_cwWhereLabel(j))}</span>
+          <span class="cw-job-where ${_cwWhereState(j)}">${escH(_cwWhereLabel(j))}</span>
         </span>
         <span class="cw-job-see">${Array.isArray(j.sample)&&j.sample.length?'See an example →':'See what it does →'}</span>
       </button>

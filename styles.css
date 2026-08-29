@@ -9525,3 +9525,53 @@ body:not(.sb-rail) #sb #hist{
   overflow-y:auto!important;
 }
 body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
+
+/* ── LAYER A120: CREW IS ONE COLUMN, AND THE PILL SAYS WHICH OF THREE ──────
+   Reported as "crew is uncentered", and it was, in a way that measures: the
+   hero block sat 85px from the left of the view and everything under it -
+   the errands, the most-used list, the filter chips, the job cards - sat at
+   44px. A 41px step halfway down the page, so nothing lined up with anything
+   above it. One inset for all of it now, so there is a single left edge down
+   the whole screen. The paragraph keeps its narrower reading measure, but it
+   starts on that edge like everything else.
+
+   Scoped to the Crew view by a class on its own wrapper rather than applied to
+   every `.vi` on the site. The same step almost certainly exists elsewhere,
+   but "almost certainly" is not a screen somebody has looked at, and silently
+   re-centring a dozen views to fix one is how a fix becomes a regression.
+
+   THE PILL. Where a job runs is three states, not two, so the two classes it
+   used to carry could not say what it now says. `closed` is work that happens
+   on the server whatever you are doing. `pending` is the same thing waiting
+   on one connection - real capability, one step away, so it is marked as
+   promise rather than as limitation. `open` is the seven jobs that genuinely
+   need this tab. */
+#vc .sv.crew-view .vi{
+  max-width:none!important;width:100%!important;
+  margin-left:0!important;margin-right:0!important;
+  box-sizing:border-box!important;
+}
+
+.cw-job-where.closed{
+  color:var(--grn-txt);
+  background:color-mix(in srgb,var(--grn) 14%,transparent);
+}
+.cw-job-where.pending{
+  color:var(--gold-txt);
+  background:color-mix(in srgb,var(--gold) 13%,transparent);
+}
+.cw-job-where.open{ color:var(--mu);background:var(--s3); }
+
+/* AND THE PILLS LINE UP. They sat inline directly after "Uses: <accounts>",
+   so where each one started depended on how long that job's account list
+   happened to be - measured at 142px, 183px and 196px from the left of three
+   cards in the same column. That is the "grey things below the boxes are
+   uncentered": nothing wrong with any one of them, and no two in a row
+   agreeing on a left edge. On its own line they all start where the card's
+   text starts. */
+.cw-job .cw-job-where{
+  display:block;
+  width:fit-content;
+  margin-left:0;
+  margin-top:var(--sp-2);
+}
