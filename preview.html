@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>AMV preview</title>
+<!--
+  ============================================================
+  WHY THIS FILE EXISTS AT ALL
+
+  A preview used to be an <iframe srcdoc="..."> inside the app. That renders
+  the markup and the styling, and it silently refuses every script - because
+  an iframe whose document comes from a "local scheme" (about:srcdoc, blob:,
+  data:) INHERITS the embedding page's Content-Security-Policy, and AMV's
+  policy pins script-src to three hashes on purpose. So the browser answered
+  every generated app with "Refused to execute inline script", and a to-do
+  app, a game or a dashboard - anything that builds itself in JavaScript -
+  appeared as a white page with black text.
+
+  Measured both ways before writing this: srcdoc and blob: are refused
+  identically. The inheritance rule is the reason, and it applies to local
+  schemes only. A document fetched from a real URL gets its OWN policy, which
+  is what this file is: a real URL, carrying no CSP of its own, whose only job
+  is to receive a page and become it.
+
+  WHAT KEEPS THIS SAFE
+
+  The frame that loads this is sandboxed WITHOUT allow-same-origin, so even
+  though this file is served from AMV's origin the document runs in an opaque
+  one. It cannot read AMV's cookies, its localStorage, or its DOM. The parent
+  can post a message in; nothing can read anything out.
+
+  It also never fetches, never navigates the top window, and holds no
+  credential. The only thing it does is write the HTML it was handed.
+  ============================================================
+-->
+<style>
+  html, body { margin: 0; height: 100%; }
+  /* Shown only if a page never arrives, so an empty frame is never mistaken
+     for a page that rendered as blank. */
+  .amv-wait { font: 13px/1.5 system-ui, sans-serif; color: #6b7280; padding: 18px; }
+</style>
+</head>
+<body>
+<div class="amv-wait" id="w">Preparing the preview…</div>
+<script>
+(function () {
+  'use strict';
+  /* One page, once. document.write replaces this document - listener
+     included - so a second render is a fresh load of this file rather than a
+     second message. The parent does that by resetting src, which is also what
+     makes "reload the preview" mean what it says. */
+  var done = false;
+  window.addEventListener('message', function (e) {
+    var d = e && e.data;
+    if (!d || d.__amv !== 'preview' || done) return;
+    done = true;
+    var html = d.html == null ? '' : String(d.html);
+    try {
+      document.open();
+      document.write(html);
+      document.close();
+    } catch (err) {
+      /* Not swallowed: a preview that fails to render has to say so, or it
+         looks exactly like a page that rendered as nothing - which is the
+         confusion this whole file exists to end. */
+      try {
+        document.body.textContent = 'This preview could not be shown: ' + ((err && err.message) || err);
+      } catch (_) {}
+    }
+  });
+  /* Announce readiness, so the parent can post as soon as this is listening
+     rather than guessing at a delay. The load event covers it too; this is
+     the belt to that pair of braces. */
+  try { if (window.parent && window.parent !== window) window.parent.postMessage({ __amv: 'preview-ready' }, '*'); } catch (_) {}
+})();
+</script>
+</body>
+</html>

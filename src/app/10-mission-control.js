@@ -3263,7 +3263,10 @@ function _apvFrame(a){
     </div></div>`;
   }
   if(type==='website'){
-    const src=r.html?` srcdoc="${escH(r.html)}"`:'';
+    /* Carried on the element and hydrated once it is in the DOM, the same as
+       the live cards in chat: this markup is built as a string, so there is no
+       element to hand the page to yet. */
+    const src=r.html?` data-amv-preview="${escH(r.html)}"`:'';
     const note=r.html?'':`<div class="pvw-web-note">Live preview appears here after the site is generated.</div>`;
     return `<div class="pvw-frame web"><div class="pvw-web-tabs"><button class="pvw-web-tab on" data-apvweb="desk">Desktop</button><button class="pvw-web-tab" data-apvweb="mob">Mobile</button><span class="pvw-web-url">${escH(r.url||a.destination||'')}</span></div>
       <div class="pvw-web-stage desk"><div class="pvw-web-frame">${r.html?`<iframe class="pvw-web-if" title="Website preview" sandbox="allow-scripts"${src}></iframe>`:note}</div></div></div>`;

@@ -1010,8 +1010,11 @@ async function _labRun(){
       _labStat('\u2713 rendered','ok');
       const ifr=document.createElement('iframe');
       ifr.sandbox='allow-scripts'; ifr.style.cssText='width:100%;height:100%;border:0;background:#fff;border-radius:var(--r-sm)';
-      ifr.srcdoc=r.html;
-      const b=$('lab-out-body'); if(b){ b.innerHTML=''; b.appendChild(ifr); }
+      const b=$('lab-out-body');
+      /* Through the preview document, or Lab draws the page and refuses to run
+         a line of it - the same inherited policy that made every other preview
+         look like an unstyled white screen. */
+      if(b){ b.innerHTML=''; b.appendChild(ifr); try{ _previewSend(ifr, r.html); }catch(e){ ifr.srcdoc=r.html; } }
     } else if(r.ok){
       _labStat('\u2713 ran in '+r.ms+'ms','ok');
       _labOut('<div class="lab-sec"><div class="lab-sec-h">Output</div><pre class="lab-pre">'+_esc(r.stdout||'(no output)')+'</pre>'+

@@ -35,8 +35,25 @@ const frame = () => page.evaluate(() => {
   const f = document.querySelector('#dev-prev-body .dev-prev-frame');
   if (!f) return null;
   const r = f.getBoundingClientRect();
-  return { w: Math.round(r.width), h: Math.round(r.height), doc: f.getAttribute('srcdoc') || '' };
+  return { w: Math.round(r.width), h: Math.round(r.height) };
 });
+
+/* WHAT THE FRAME RENDERED, NOT WHAT IT WAS HANDED.
+
+   These used to read the srcdoc attribute, which stopped existing when
+   previews moved to a real document that receives the page by postMessage -
+   srcdoc could never run a script, because such a frame inherits AMV's
+   hash-pinned policy. Reading the rendered result is what the assertions
+   meant all along, and it is stronger: an inlined stylesheet that arrives but
+   does not apply now fails, where a string match on the attribute passed. */
+const inPreview = async (fn) => {
+  for (const fr of page.frames()) {
+    try { const v = await fr.evaluate(fn); if (v !== null && v !== undefined) return v; }
+    catch (e) { /* not the preview frame */ }
+  }
+  return null;
+};
+const settleFrame = async () => { await page.waitForTimeout(700); };
 
 section('A project that is already there previews without being run');
 {
@@ -59,23 +76,31 @@ section('A project that is already there previews without being run');
   const f = await frame();
   ok(f !== null, 'the preview pane holds a real frame, not a promise that one is coming', f);
   ok(f && f.w > 200 && f.h > 200, 'and it is a size somebody can see', f && { w: f.w, h: f.h });
-  ok(f && /Hello from the project/.test(f.doc), 'showing the page from the project', !!f);
-  /* The bundler is the thing being exercised, not a bare srcdoc: the stylesheet
-     is a separate file and has to be pulled in, or an uploaded site previews
-     unstyled, which looks broken rather than empty. */
-  ok(f && /rgb\(1,2,3\)/.test(f.doc) && !/<link/i.test(f.doc),
-     'with the separate stylesheet inlined, not left as a link that cannot resolve', !!f);
+
+  await settleFrame();
+  const shown = await inPreview(() => {
+    const h = document.getElementById('t');
+    return h ? { text: h.textContent, colour: getComputedStyle(h).color,
+                 links: document.querySelectorAll('link[rel=stylesheet]').length } : null;
+  });
+  ok(shown && /Hello from the project/.test(shown.text), 'showing the page from the project', shown);
+  /* The bundler is what is being exercised: the stylesheet is a separate file
+     and has to be pulled in, or an uploaded site previews unstyled, which
+     looks broken rather than empty. Asserted by the colour actually applied. */
+  ok(shown && shown.colour === 'rgb(1, 2, 3)',
+     'with the separate stylesheet inlined and applied, not left as a link that cannot resolve', shown && shown.colour);
+  ok(shown && shown.links === 0, 'and no unresolvable link tag left behind', shown && shown.links);
 }
 
 section('Asking to see the preview is the moment it has to be there');
 {
-  const after = await page.evaluate(async () => {
-    document.getElementById('dev-tab-prev').click();
-    await new Promise(r => setTimeout(r, 300));
-    const f = document.querySelector('#dev-prev-body .dev-prev-frame');
-    return !!f && /Hello from the project/.test(f.getAttribute('srcdoc') || '');
+  await page.evaluate(() => document.getElementById('dev-tab-prev').click());
+  await settleFrame();
+  const after = await inPreview(() => {
+    const h = document.getElementById('t');
+    return h ? h.textContent : null;
   });
-  ok(after, 'switching to the Preview tab shows the project', after);
+  ok(after && /Hello from the project/.test(after), 'switching to the Preview tab shows the project', after);
 }
 
 section('A project with nothing to draw says so, rather than promising');
@@ -123,14 +148,18 @@ section('Designs you already made are on screen when you come back');
     _STUDIO.atHome = false;
     renderBuildView();
     await new Promise(r => setTimeout(r, 400));
-    const f = document.getElementById('studio-frame');
     return { canvas: !!document.querySelector('.studio-canvas'),
              hero: !!document.querySelector('.dsn-hero'),
-             doc: f ? (f.getAttribute('srcdoc') || '') : null };
+             hasFrame: !!document.getElementById('studio-frame') };
   });
   ok(seen.canvas && !seen.hero,
      'returning to Design opens the work, not the blank "what should we make"', seen.canvas);
-  ok(seen.doc && /a finished design/.test(seen.doc), 'and the design is in the frame', !!seen.doc);
+  await settleFrame();
+  const drawn = await inPreview(() => {
+    const h = document.querySelector('h1');
+    return h && /a finished design/.test(h.textContent) ? h.textContent : null;
+  });
+  ok(!!drawn, 'and the design is rendered in the canvas frame', drawn);
 }
 
 section('And Studio home still goes home');

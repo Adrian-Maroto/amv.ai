@@ -17141,7 +17141,10 @@ function _apvFrame(a){
     </div></div>`;
   }
   if(type==='website'){
-    const src=r.html?` srcdoc="${escH(r.html)}"`:'';
+    /* Carried on the element and hydrated once it is in the DOM, the same as
+       the live cards in chat: this markup is built as a string, so there is no
+       element to hand the page to yet. */
+    const src=r.html?` data-amv-preview="${escH(r.html)}"`:'';
     const note=r.html?'':`<div class="pvw-web-note">Live preview appears here after the site is generated.</div>`;
     return `<div class="pvw-frame web"><div class="pvw-web-tabs"><button class="pvw-web-tab on" data-apvweb="desk">Desktop</button><button class="pvw-web-tab" data-apvweb="mob">Mobile</button><span class="pvw-web-url">${escH(r.url||a.destination||'')}</span></div>
       <div class="pvw-web-stage desk"><div class="pvw-web-frame">${r.html?`<iframe class="pvw-web-if" title="Website preview" sandbox="allow-scripts"${src}></iframe>`:note}</div></div></div>`;
@@ -18129,7 +18132,10 @@ async function _studioExportProject(){
   toast('Downloading '+n+' designs','info');
 }
 window._studioExportProject=_studioExportProject;
-function _studioRenderPreview(html){ const f=$('studio-frame'); if(f) f.srcdoc=html; }
+/* The canvas frame is persistent rather than rebuilt, so it is reloaded
+   through the preview document instead of having srcdoc set - which is what
+   stopped every design's own script from running. */
+function _studioRenderPreview(html){ const f=$('studio-frame'); if(f) _previewSend(f, html); }
 function _studioStatus(t){ const s=$('studio-status'); if(s) s.textContent=t||''; }
 
 window.designStart=designStart;window.designGo=designGo;
@@ -19233,6 +19239,106 @@ function _devProjectPreviewHTML(){
   return doc;
 }
 
+/* A PREVIEW THAT ACTUALLY RUNS THE THING.
+
+   Every preview in the product was an <iframe srcdoc>, and every one of them
+   silently refused to run a single line of the app's JavaScript. An iframe
+   whose document comes from a local scheme - about:srcdoc, blob:, data: -
+   INHERITS the embedding page's Content-Security-Policy, and AMV's policy
+   pins script-src to three hashes on purpose. So the browser answered every
+   generated app with "Refused to execute inline script".
+
+   Styling was unaffected, which is what made it so confusing to report: a
+   page with its CSS inline looked almost right and did nothing, and a page
+   that builds its own content in JavaScript - a to-do app, a game, a
+   dashboard, most of what "build an app" produces - drew as a white page with
+   black text. That is exactly how it was described, and it was not a styling
+   bug at all.
+
+   Measured before deciding: srcdoc and blob: are refused identically, because
+   the inheritance rule covers both. A document fetched from a REAL URL gets
+   its own policy instead, so previews now load preview.html - a real file,
+   carrying no policy of its own - and receive the page by postMessage.
+
+   The frame stays sandboxed WITHOUT allow-same-origin, so the preview runs in
+   an opaque origin and cannot reach AMV's cookies, storage or DOM even though
+   the file is served from AMV's origin. The only CSP change is 'self' added
+   to frame-src, which lets AMV frame AMV and nothing else; frame-ancestors
+   stays 'none', so nobody can frame AMV. script-src is untouched. */
+const PREVIEW_DOC = 'preview.html';
+/* Handed the html up front and posted on load, so there is no window in which
+   the frame is up and empty. A fresh src per render because the preview
+   document becomes the page it was given - the listener goes with it, and a
+   reload is what "show me this instead" honestly means. */
+function _previewSend(frame, html){
+  if(!frame) return frame;
+  const send = () => { try{ frame.contentWindow.postMessage({ __amv:'preview', html:String(html==null?'':html) }, '*'); }catch(e){} };
+  frame.addEventListener('load', send, { once:true });
+  /* IF THE PREVIEW DOCUMENT IS NOT THERE, SAY SO.
+
+     preview.html is a second file, and a host that answers an unknown path
+     with index.html would frame AMV inside AMV - which looks like a bizarre
+     rendering bug rather than a missing file, and would have been very hard
+     to diagnose from a screenshot. The document announces itself on load, so
+     its silence is the signal: no greeting, no preview, and a sentence naming
+     the file instead of a picture of the app looking at itself. */
+  let greeted = false;
+  const hear = (e) => {
+    if(!frame.contentWindow || e.source !== frame.contentWindow) return;
+    if(e.data && e.data.__amv === 'preview-ready'){ greeted = true; window.removeEventListener('message', hear); }
+  };
+  try{ window.addEventListener('message', hear); }catch(e){}
+  setTimeout(() => {
+    if(greeted) return;
+    try{ window.removeEventListener('message', hear); }catch(e){}
+    try{
+      const host = frame.parentNode; if(!host) return;
+      host.innerHTML = '<div class="lab-placeholder">The preview could not start. AMV serves it from '
+        + escH(PREVIEW_DOC) + ', and that file did not answer - so nothing is being shown rather than '
+        + 'something misleading.</div>';
+    }catch(e){}
+  }, 4000);
+  frame.removeAttribute('srcdoc');
+  frame.src = PREVIEW_DOC + '?r=' + Date.now().toString(36);
+  return frame;
+}
+/* Fills a host element with a preview frame. Replaces innerHTML the way the
+   old srcdoc line did, so call sites read the same. */
+function _previewMount(host, html, cls){
+  if(!host) return null;
+  host.innerHTML='';
+  const f=document.createElement('iframe');
+  f.className=cls||'dev-prev-frame';
+  f.setAttribute('sandbox','allow-scripts');
+  host.appendChild(f);
+  return _previewSend(f, html);
+}
+/* SOME PREVIEWS ARE BUILT AS HTML STRINGS, NOT AS ELEMENTS.
+
+   The live cards in chat are assembled into a string and dropped into the
+   document, so there is no element to hand a page to at the time it is
+   written. They carry the page in data-amv-preview instead, and this turns
+   each one into a real preview once it is in the DOM.
+
+   An observer rather than a call after each render, because the cards are
+   written from several places and a hydrator wired into four of five is the
+   same silent half-failure this whole change is about. */
+function _previewHydrate(root){
+  let list=[];
+  try{ list=(root||document).querySelectorAll('iframe[data-amv-preview]'); }catch(e){ return; }
+  list.forEach(f=>{
+    const html=f.getAttribute('data-amv-preview')||'';
+    f.removeAttribute('data-amv-preview');
+    _previewSend(f, html);
+  });
+}
+try{
+  const _mo=new MutationObserver(()=>{ try{ _previewHydrate(document); }catch(e){} });
+  const _start=()=>{ try{ _mo.observe(document.body,{ childList:true, subtree:true }); _previewHydrate(document); }catch(e){} };
+  if(document.body) _start(); else document.addEventListener('DOMContentLoaded', _start, { once:true });
+}catch(e){}
+try{ window._previewMount=_previewMount; window._previewSend=_previewSend; window._previewHydrate=_previewHydrate; }catch(e){}
+
 /* SHOW THE PREVIEW OF WHAT IS ALREADY HERE, NOT ONLY OF WHAT WAS JUST RUN.
 
    The preview pane was filled in exactly one place - the tail of
@@ -19262,7 +19368,7 @@ function _devPaintPreview(){
   let html='';
   try{ html=_devProjectPreviewHTML()||_DEV.lastHTML||''; }catch(e){ html=_DEV.lastHTML||''; }
   if(html && html.trim()){
-    pb.innerHTML='<iframe class="dev-prev-frame" sandbox="allow-scripts" srcdoc="'+html.replace(/"/g,'&quot;')+'"></iframe>';
+    _previewMount(pb, html, 'dev-prev-frame');
     return true;
   }
   let files=[]; try{ files=_devProjectFiles(); }catch(e){}
@@ -19282,7 +19388,7 @@ function _devShowResult(code,lang,run){
   // Preview pane
   const pb=$('dev-prev-body');
   if(pb && run){
-    if(run.html){ pb.innerHTML='<iframe class="dev-prev-frame" sandbox="allow-scripts" srcdoc="'+run.html.replace(/"/g,'&quot;')+'"></iframe>'; }
+    if(run.html){ _previewMount(pb, run.html, 'dev-prev-frame'); }
     else pb.innerHTML='<div class="dev-prev-out '+(run.ok?'ok':'err')+'"><pre>'+escH(run.ok?(run.stdout||run.result||'(no output)'):run.stderr)+'</pre></div>';
   }
 }
@@ -19400,7 +19506,7 @@ async function _devSend(){
       // preview whole project + auto-save if folder connected
       const previewHTML=_devProjectPreviewHTML();
       const pb=$('dev-prev-body');
-      if(pb){ if(previewHTML){ pb.innerHTML='<iframe class="dev-prev-frame" sandbox="allow-scripts" srcdoc="'+previewHTML.replace(/"/g,'&quot;')+'"></iframe>'; } else {
+      if(pb){ if(previewHTML){ _previewMount(pb, previewHTML, 'dev-prev-frame'); } else {
         // run the entry script
         const entryP=_devEntryFile(); const lang=_devLangFor(entryP);
         if(lang==='js'||lang==='python'){ const run=await runCode(_DEV.project[entryP].content, lang, s=>{ if(stat) stat.textContent=s; }); pb.innerHTML='<div class="dev-prev-out '+(run.ok?'ok':'err')+'"><pre>'+escH(run.ok?(run.stdout||run.result||'(no output)'):run.stderr)+'</pre></div>'; if(stat) stat.textContent=run.ok?'✓ ran':'✗ error'; }
@@ -19786,7 +19892,7 @@ async function _amvRunTool(name, input, onStatus){
       if(r.html){
         return {
           text:'The HTML rendered successfully. A live preview is shown to the user.',
-          render:'<iframe sandbox="allow-scripts" class="chat-live" srcdoc="'+escH(r.html)+'"></iframe>'
+          render:'<iframe sandbox="allow-scripts" class="chat-live" data-amv-preview="'+escH(r.html)+'"></iframe>'
         };
       }
       const out = (r.ok ? (r.stdout || '(no output)') : (r.stderr || 'failed'));
@@ -19876,7 +19982,7 @@ async function _amvRunTool(name, input, onStatus){
         const art=_artifactStore(html, 'html', true);
         card=_artifactCardHTML(art);
       }catch(e){
-        card='<iframe sandbox="allow-scripts" class="chat-live" srcdoc="'+escH(html)+'"></iframe>';
+        card='<iframe sandbox="allow-scripts" class="chat-live" data-amv-preview="'+escH(html)+'"></iframe>';
       }
       return { text:'Built it. A live, working version is shown to the user - they can open, edit, and download it.', render:card };
     }
@@ -27191,8 +27297,11 @@ async function _labRun(){
       _labStat('\u2713 rendered','ok');
       const ifr=document.createElement('iframe');
       ifr.sandbox='allow-scripts'; ifr.style.cssText='width:100%;height:100%;border:0;background:#fff;border-radius:var(--r-sm)';
-      ifr.srcdoc=r.html;
-      const b=$('lab-out-body'); if(b){ b.innerHTML=''; b.appendChild(ifr); }
+      const b=$('lab-out-body');
+      /* Through the preview document, or Lab draws the page and refuses to run
+         a line of it - the same inherited policy that made every other preview
+         look like an unstyled white screen. */
+      if(b){ b.innerHTML=''; b.appendChild(ifr); try{ _previewSend(ifr, r.html); }catch(e){ ifr.srcdoc=r.html; } }
     } else if(r.ok){
       _labStat('\u2713 ran in '+r.ms+'ms','ok');
       _labOut('<div class="lab-sec"><div class="lab-sec-h">Output</div><pre class="lab-pre">'+_esc(r.stdout||'(no output)')+'</pre>'+
