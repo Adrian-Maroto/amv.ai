@@ -345,6 +345,33 @@ try{ window.renderBuildView = renderBuildView; window._buildMode = _buildMode; }
 
 function renderDesignView(){
   const vc=$('vc'); if(!vc) return;
+  /* THE DESIGNS YOU ALREADY MADE ARE STILL THERE. SHOW THEM.
+
+     The canvas was only ever reached from _studioCreate - the moment a design
+     is generated. Every other way of arriving rendered the hero, so a session
+     restored with finished designs in it opened on "What should we make?" with
+     the work sitting in _STUDIO.artifacts, invisible. Sessions save artifacts
+     and their html on purpose, so this was throwing away something the product
+     had deliberately kept.
+
+     Same shape as the Code preview: the machinery existed, and nothing called
+     it from the place a person actually arrives.
+
+     atHome is what keeps "Studio home" meaningful. That button re-renders this
+     view, so without an explicit intent the canvas would reopen immediately
+     and there would be no way back to start something new. */
+  try{
+    if(!_STUDIO.atHome){
+      const a=_studioActive()||_STUDIO.artifacts.find(x=>x.html);
+      if(a && a.html){
+        _STUDIO.activeId=a.id;
+        _studioShowCanvas(a.brief||a.name||'');
+        _studioRenderPreview(a.html);
+        _studioRenderArtifacts();
+        return;
+      }
+    }
+  }catch(e){}
   const starts=[
     ['\uD83D\uDDA5\uFE0F','Landing page','A hero, features and a call-to-action'],
     ['\uD83D\uDCF1','App screen','A clean mobile or web UI mockup'],
@@ -417,7 +444,11 @@ function designStart(kind){ _studioCreate('A '+String(kind).toLowerCase()); }
    parity + AMV's Design DNA on top. */
 const _STUDIO = { html:'', prompt:'', history:[],
   artifacts:[],        // [{id,name,type,html,history:[{brief,html,ts}]}]
-  activeId:'' };
+  activeId:'',
+  /* Somebody pressed "Studio home" and wants the hero, not the canvas they
+     just left. Without it, re-rendering the view would reopen the canvas and
+     that button would do nothing. */
+  atHome:false };
 function _studioActive(){ return _STUDIO.artifacts.find(a=>a.id===_STUDIO.activeId)||null; }
 function _studioNewArtifact(name, type, brief){
   const id='art_'+Date.now().toString(36)+Math.random().toString(36).slice(2,4);
@@ -474,6 +505,7 @@ async function _studioRefine(){
 }
 function _studioShowCanvas(brief){
   const vc=$('vc'); if(!vc) return;
+  _STUDIO.atHome=false;   /* opening a design is leaving home */
   vc.innerHTML = `<div class="studio-canvas">
     <div class="studio-side">
       <button class="btn" id="studio-back">← Studio home</button>
@@ -517,7 +549,7 @@ function _studioShowCanvas(brief){
     _setSectionModel('design', this.value);
     toast('Design model set to '+MODELS[this.value].label,'info',2500);
   });
-  on($('studio-back'),'click',()=>setTab('studio'));
+  on($('studio-back'),'click',()=>{ _STUDIO.atHome=true; setTab('studio'); });
   on($('studio-refine-go'),'click',_studioRefine);
   on($('studio-add'),'click',_studioAddPrompt);
   on($('studio-history'),'click',_studioHistory);
@@ -1127,9 +1159,15 @@ function renderCodeView(){
      part that is Dev's: which body is on screen. */
   const showPV=(pv)=>{ const pb=$('dev-prev-body'),cb=$('dev-code-body');
     if(cb) cb.style.display = pv==='code' ? 'block' : 'none';
-    if(pb) pb.style.display = pv==='code' ? 'none' : 'flex'; };
+    if(pb) pb.style.display = pv==='code' ? 'none' : 'flex';
+    /* Switching TO the preview is somebody asking to see it, which is the
+       moment it has to be there - not the moment a run happens to end. */
+    if(pv!=='code'){ try{ _devPaintPreview(); }catch(e){} } };
   _wireVpSwitch('dev-vp', ()=>document.querySelector('#dev-prev-body .dev-prev-frame'));
   _wireResultTabs('dev-rb', showPV);
+  /* And on arrival, so re-opening Build with a project already in it shows the
+     project rather than an empty promise. */
+  try{ _devPaintPreview(); }catch(e){}
   on($('dev-open-ext'),'click',()=>_devOpenExternal());
   on($('dev-download-proj'),'click',()=>_devDownloadProject());
   on($('dev-deploy'),'click',()=>_devDeploy());
@@ -1188,6 +1226,8 @@ function renderCodeView(){
       if(isText && file.size<800000){ const text=await file.text(); const path=file.webkitRelativePath||file.name; _devSetFile(path, text); added++; }
     }
     _DEV.activePath=_DEV.activePath||_devEntryFile(); _devRenderTree(); _devShowActive();
+    /* Uploading a site and seeing it is one action, not two. */
+    try{ _devPaintPreview(); }catch(e){}
     const total=_devProjectFiles().length;
     _devPushSys('Loaded '+added+' file'+(added>1?'s':'')+' - project now has '+total+'. Ask me to build, fix, or refactor across them.'); _devRenderLog();
     toast('Loaded '+added+' file'+(added>1?'s':''),'success',3500);
@@ -1640,6 +1680,47 @@ function _devProjectPreviewHTML(){
   files.filter(p=>/\.js$/i.test(p)).forEach(p=>{ const name=p.split('/').pop(); swap('<script', name, '</scr'+'ipt>', '<script>\n'+_DEV.project[p].content+'\n</scr'+'ipt>'); });
   return doc;
 }
+
+/* SHOW THE PREVIEW OF WHAT IS ALREADY HERE, NOT ONLY OF WHAT WAS JUST RUN.
+
+   The preview pane was filled in exactly one place - the tail of
+   _devShowResult, guarded by `if(pb && run)`. So it appeared only as the
+   result of a run, and never from code that was simply present. Open a
+   project, upload a folder, click Preview: the pane said "Your live result
+   appears here" and went on saying it, with a complete web page sitting in
+   the project three feet away.
+
+   The maddening part is that the machinery was already finished.
+   _devProjectPreviewHTML bundles the html, css and js into one document, and
+   BOTH "Open in browser" and "Deploy" already call it - so the same project
+   would open correctly in a new tab and deploy correctly to a real URL while
+   showing nothing at all on the screen somebody is looking at. Correct at
+   both ends, never joined in the middle.
+
+   It refuses to overwrite the output of a run: a Python file's stdout is the
+   result for that file, and repainting a web page over it would be losing the
+   answer. And a project with no page in it says so, rather than leaving a
+   promise that nothing is going to keep. */
+function _devPaintPreview(){
+  const pb=$('dev-prev-body'); if(!pb) return false;
+  /* A run's own output stays. Only a placeholder or an existing frame is
+     replaced, which is read off the DOM rather than tracked in a flag that
+     could drift out of step with what is on screen. */
+  if(pb.querySelector('.dev-prev-out')) return false;
+  let html='';
+  try{ html=_devProjectPreviewHTML()||_DEV.lastHTML||''; }catch(e){ html=_DEV.lastHTML||''; }
+  if(html && html.trim()){
+    pb.innerHTML='<iframe class="dev-prev-frame" sandbox="allow-scripts" srcdoc="'+html.replace(/"/g,'&quot;')+'"></iframe>';
+    return true;
+  }
+  let files=[]; try{ files=_devProjectFiles(); }catch(e){}
+  pb.innerHTML = files.length
+    ? '<div class="lab-placeholder">There is no web page in these '+files.length+' file'+(files.length>1?'s':'')
+      +', so there is nothing for a browser to draw. Run them and the output appears here.</div>'
+    : '<div class="lab-placeholder">Your live result appears here.</div>';
+  return false;
+}
+try{ window._devPaintPreview=_devPaintPreview; }catch(e){}
 function _devShowResult(code,lang,run){
   // remember the latest runnable HTML so "Open in browser" can use it
   try{ if(run && run.html) _DEV.lastHTML = run.html; }catch(e){}
