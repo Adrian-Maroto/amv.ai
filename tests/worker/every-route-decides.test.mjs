@@ -255,10 +255,33 @@ section('Every route the client asks for with a GET is allowed to answer one');
     .matchAll(/'([^']+)'/g)].map(m => m[1]));
   ok(safe.size > 10, 'and GET_SAFE was read from the worker, not restated here', safe.size);
 
-  const known = new Set(routes.map(r => r.path));
-  const refused = gets.filter(p => known.has(p) && !safe.has(p));
+  /* EVERY path in the table, including the ones whose case does not end in a
+     bare call. Two routes branch on the verb inside the case - `return method
+     === 'POST' ? a(...) : b(...)` - and the `routes` list above only matches a
+     plain `return fn(`, so /api/jobs and /api/handoff were absent from it.
+     They are exactly the two routes where the verb matters most, and the check
+     was skipping them for lack of a name to look up. */
+  const allPaths = new Set([...code.matchAll(/case\s+'([^']+)'\s*:/g)].map(m => m[1]));
+  ok(allPaths.size > routes.length,
+     'the path list includes routes that branch inside the case', allPaths.size);
+
+  const refused = gets.filter(p => allPaths.has(p) && !safe.has(p));
   ok(refused.length === 0,
      'no path the client GETs is one the router answers 405 to', refused);
+
+  /* And the other half of the same seam: a path the client asks for that the
+     router has no case for at all. That is how this went wrong once already -
+     the note beside _mcScheduleServer records a client posting for months to
+     /api/schedule/create, a route the Worker has never had. */
+  const everyCall = [...client.matchAll(/_fetch\(\s*(['"`])([^'"`$]+)/g)]
+    .map(m => m[2].split('?')[0].replace(/\/+$/, ''))
+    .filter(p => p.startsWith('/'));
+  /* Some routes are matched by prefix rather than by an exact case. */
+  const prefixes = [...code.matchAll(/path\.startsWith\('([^']+)'\)/g)].map(m => m[1]);
+  const nowhere = [...new Set(everyCall)]
+    .filter(p => !allPaths.has(p) && !prefixes.some(x => p.startsWith(x)));
+  ok(nowhere.length === 0,
+     'every path the client asks for is one the router actually has', nowhere);
 }
 
 if (report('every-route-decides') > 0) process.exitCode = 1;
