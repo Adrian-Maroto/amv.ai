@@ -9716,3 +9716,34 @@ body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
   .cw-country-head{ flex-direction:column;align-items:stretch; }
   .cw-country-pick select{ min-width:0;width:100%; }
 }
+
+/* ── LAYER A126: THE PILL FITS THE CARD, AND CREW LEADS FROM THE MIDDLE ────
+   THE PILL WAS TOLD IT COULD NOT WRAP. .cw-job-where carries
+   white-space:nowrap from an earlier layer, which was fine while it said
+   "Runs with AMV closed" and impossible once it says "Runs with AMV closed -
+   once Google Classroom is connected". A line that cannot break and does not
+   fit does the only thing left to it: it sticks out of the card. It wraps
+   now, and is capped at the width of the card so it cannot exceed it however
+   long the account name is.
+
+   THE OPENING IS CENTRED. Crew answers one question - what runs while you are
+   not here - and the answer reads better as a statement in the middle of the
+   screen than as a paragraph pinned to the left margin above a grid. Only the
+   opening: the cards below stay on their left edge, because a grid centred
+   item by item is a mess. */
+.cw-job .cw-job-where{
+  white-space:normal;
+  max-width:100%;
+  line-height:1.45;
+  padding:3px var(--sp-3);
+  box-sizing:border-box;
+}
+
+#vc .sv.crew-view .vi{ text-align:center; }
+#vc .sv.crew-view .vi .vsub{
+  margin-left:auto;margin-right:auto;
+  max-width:68ch;
+}
+#vc .sv.crew-view .vi > .eyebrow{ display:block; }
+/* The command box is inside the centred block but is a control, not prose. */
+#vc .sv.crew-view .vi .mc-cmd{ text-align:left; }

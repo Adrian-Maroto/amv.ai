@@ -14888,7 +14888,11 @@ function _cwAllJobs(){
 
    Sixty rather than a hundred, for the same reason the hundred replaced two
    hundred: this is a shelf, not an inventory. */
-const CW_SHOWCASE_N = 60;
+/* A hundred, because that is what somebody browsing for ideas asked to see -
+   "if you want inspiration then you see 100 different examples". The RANKING
+   is what fixed the "shitty examples" complaint, not the cutting: the
+   strongest are still first, there are simply more of them behind. */
+const CW_SHOWCASE_N = 100;
 /* An account need is one CW_NEEDS_CHECK knows how to test for - which is the
    same list the product uses to decide whether a job can actually run, so this
    cannot drift from what "needs an account" means everywhere else. */
@@ -16298,15 +16302,18 @@ function renderCrewView(){
     vc.innerHTML=`<div class="sv fi crew-view"><div class="vi">
       <span class="eyebrow">Crew \u00b7 Autonomous work</span>
       <h2>AMV working while you are not</h2>
-      <p class="vsub">Crew is the part that works when you are not here. A job runs on AMV\u2019s own servers on the
-        schedule you set - every morning, every Monday, whenever - so it happens with this window closed, your
-        laptop shut, your phone in your pocket. You get the finished thing, not a notification asking you to come
-        and do it.</p>
-      <p class="vsub cw-open-note">The strongest ones work on accounts you connect: your <b>email</b>, your
-        <b>calendar</b>, your <b>files</b>, your <b>bank</b>. Connecting one is a real sign-in at the provider -
-        AMV never sees your password, only a grant limited to what you allow, and you can take it back at any
-        time. The jobs below are <b>examples</b>, not the menu: describe what you want in your own words and Crew
-        works out the rest.</p>
+      ${/* TWO SENTENCES, NOT TWO PARAGRAPHS.
+
+            Everything the long version said was true and none of it was the
+            first thing anybody needs. Crew answers one question - what runs
+            while you are not here - and a screen that takes four sentences to
+            get there has already lost the person it was written for. The
+            detail about grants and passwords has not gone; it is on
+            Connectors, where somebody is actually deciding whether to hand
+            one over. */ ''}
+      <p class="vsub">It runs on AMV\u2019s servers on a schedule you set, so the work happens with this window
+        closed and your laptop shut. You get the finished thing, not a reminder to go and do it.</p>
+      <p class="vsub cw-open-note">Say what you want below. The examples are there if you want ideas.</p>
 
       ${/* THE BOX IS THE PRODUCT, AND IT WAS ONLY ON THE PAID SCREEN.
 
@@ -16347,14 +16354,25 @@ function renderCrewView(){
             goes looking. */ ''}
     </div>
     <div class="crew-jobs-sec cw-locked">
-      ${/* These open a CHAT, not a Crew job, so they work without a plan and
-            belong here as much as on the paid screen. */ ''}
-      ${_cwErrandsHTML()}
-      ${_cwPopularHTML()}
+      ${/* THE ORDER IS THE ARGUMENT.
+
+            Crew is autonomous work, so the screen goes: what it is, the box
+            where you say what you want, where you live, and then a hundred
+            examples if you want ideas. The one-off errands - the ones that
+            open a chat rather than run on a schedule - are real and useful
+            and are NOT what Crew is, so they sit at the bottom where somebody
+            who wants one will still find them, instead of being the first
+            thing between you and the point.
+
+            Same reason "most used" moved down: it ranks what other people
+            run, which is interesting once you know what this is and noise
+            before. */ ''}
       ${_cwCountryHTML()}
       ${_cwFindBoxHTML(_cwAllJobs().filter(j=>_cwMatches(j,_cwFind)).length)}
       ${_cwCatChips(_cwShowcase())}
       ${_cwJobsBody(_cwShowcase(), _cwLockedCard)}
+      ${_cwPopularHTML()}
+      ${_cwErrandsHTML()}
       ${/* ONE LINE, NOT A BAND.
 
             The stats band came out because it was three numbers and a price
@@ -16560,12 +16578,14 @@ function renderCrewView(){
     <div class="crew-jobs-sec mc-start">
       <div class="sec-head"><h3>Start new work</h3><span class="sec-sub">Turn on a standing job - AMV runs it automatically and emails you results.</span></div>
       <div class="cw-anything">These are starting points, not the limit. Type <b>anything</b> in the box above and AMV works out which accounts, sites and tools it needs and does it - on a schedule if you ask. If something it needs is not connected yet, it tells you exactly what to add.</div>
-      ${_cwErrandsHTML()}
-      ${_cwPopularHTML()}
+      ${/* Same order as the locked view, for the same reason: the standing
+            work first, the one-offs last. */ ''}
       ${_cwCountryHTML()}
       ${_cwFindBoxHTML(_cwAllJobs().filter(j=>_cwMatches(j,_cwFind)).length)}
       ${_cwCatChips(_cwShowcase())}
       ${_cwJobsBody(_cwShowcase(), jobCard)}
+      ${_cwPopularHTML()}
+      ${_cwErrandsHTML()}
     </div>
 
     <div class="crew-split-even">
